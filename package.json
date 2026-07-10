@@ -1,0 +1,18 @@
+{
+  "name": "b13-bling-backend",
+  "version": "0.1.0",
+  "description": "Backend de integração B13 Bebidas <-> Bling ERP (OAuth 2.0, produtos, estoque, contatos, pedidos)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  }
+}
