@@ -180,18 +180,52 @@ app.post("/api/funcionarios/login",(req,res)=>{
   res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel]}});
 });
 
-// ---- SEPARAÇÕES (quem está separando o quê) ----
+// ---- LOCKS DE PEDIDO (quem está com o pedido) ----
+const LOCK_TIMEOUT=15*60*1000; // 15 minutos
+function lerLocks(){ return lerJSON(SEP_FILE,{}); }
+function salvarLocks(o){ salvarJSON(SEP_FILE,o); }
+function limparLocksExpirados(){
+  const locks=lerLocks(); const agora=Date.now(); let mudou=false;
+  Object.entries(locks).forEach(([id,lock])=>{ if(agora-lock.ultimaAtividade>LOCK_TIMEOUT){ delete locks[id]; mudou=true; } });
+  if(mudou) salvarLocks(locks);
+  return locks;
+}
+
+// pegar lock de um pedido
 app.post("/api/separacoes",(req,res)=>{
-  const {pedidoId,funcionarioId,funcionarioNome}=req.body||{};
+  const {pedidoId,funcionarioId,funcionarioNome,tipo,assumir}=req.body||{};
   if(!pedidoId||!funcionarioId) return res.status(400).json({erro:"pedidoId e funcionarioId obrigatórios"});
-  const seps=lerJSON(SEP_FILE,{});
-  seps[String(pedidoId)]={pedidoId,funcionarioId,funcionarioNome,inicio:Date.now()};
-  salvarJSON(SEP_FILE,seps); res.json({ok:true});
+  const locks=limparLocksExpirados(); const id=String(pedidoId);
+  const lockAtual=locks[id];
+  // se tem lock de outro e não está assumindo → bloqueia
+  if(lockAtual && lockAtual.funcionarioId!==funcionarioId && !assumir){
+    return res.status(409).json({erro:"pedido_bloqueado",lock:lockAtual});
+  }
+  // registra quem assumiu no log
+  if(lockAtual && lockAtual.funcionarioId!==funcionarioId && assumir){
+    addLog(id,"pedido_assumido",funcionarioId,funcionarioNome,{de:lockAtual.funcionarioNome,tipo});
+  } else if(!lockAtual){
+    addLog(id,`pedido_aberto_${tipo||"separacao"}`,funcionarioId,funcionarioNome,{});
+  }
+  locks[id]={pedidoId,funcionarioId,funcionarioNome,tipo:tipo||"separacao",inicio:Date.now(),ultimaAtividade:Date.now()};
+  salvarLocks(locks); res.json({ok:true});
 });
-app.get("/api/separacoes",(req,res)=>{ res.json({data:lerJSON(SEP_FILE,{})}); });
+
+// atualizar atividade (heartbeat)
+app.patch("/api/separacoes/:id",(req,res)=>{
+  const locks=lerLocks(); const id=String(req.params.id);
+  if(locks[id] && locks[id].funcionarioId===req.body?.funcionarioId){
+    locks[id].ultimaAtividade=Date.now(); salvarLocks(locks);
+  }
+  res.json({ok:true});
+});
+
+app.get("/api/separacoes",(req,res)=>{ res.json({data:limparLocksExpirados()}); });
 app.delete("/api/separacoes/:id",(req,res)=>{
-  const seps=lerJSON(SEP_FILE,{}); delete seps[String(req.params.id)];
-  salvarJSON(SEP_FILE,seps); res.json({ok:true});
+  const locks=lerLocks(); const id=String(req.params.id);
+  const {funcionarioId,funcionarioNome,tipo}=req.body||{};
+  if(locks[id]) addLog(id,`pedido_liberado_${locks[id].tipo||"separacao"}`,funcionarioId||locks[id].funcionarioId,funcionarioNome||locks[id].funcionarioNome,{});
+  delete locks[id]; salvarLocks(locks); res.json({ok:true});
 });
 
 // ---- ACRÉSCIMOS (itens novos em pedidos já separados) ----
@@ -360,6 +394,122 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
 
 // Retorna os status configurados (para uso no frontend)
 app.get("/api/fluxo/status",(req,res)=>res.json({sit:SIT}));
+
+// ---- ANALYTICS / DASHBOARD ----
+app.get("/api/analytics", async (req,res)=>{
+  try{
+    const agora=Date.now();
+    const {de, ate}=req.query;
+    const tsInicio=de?new Date(de).getTime():agora-30*24*60*60*1000;
+    const tsFim=ate?new Date(ate).getTime()+86399999:agora;
+    const dentroP=ts=>ts>=tsInicio&&ts<=tsFim;
+
+    // carrega todos os dados
+    const log=lerLog(); const pags=lerPag();
+    const pend=lerPend(); const acrs=lerJSON(ACRS_FILE,{});
+
+    // busca pedidos do Bling no período
+    const dataI=new Date(tsInicio).toISOString().slice(0,10);
+    const dataF=new Date(tsFim).toISOString().slice(0,10);
+    let pedidosBling=[];
+    try{
+      const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean).join(",");
+      const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataI,dataFinal:dataF});
+      [SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean)
+        .forEach(id=>p.append("idsSituacoes[]",id));
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      pedidosBling=r.data||[];
+    }catch(e){}
+
+    // ---- métricas por funcionário ----
+    const porFunc={};
+    const addMetric=(fId,fNome,metrica,valor=1)=>{
+      if(!fId) return;
+      if(!porFunc[fId]) porFunc[fId]={id:fId,nome:fNome||fId,pedidosSeparados:0,tempoSepTotal:0,tempoSepCount:0,pendencias:0,conferidos:0,pagamentosRecebidos:0,valorRecebido:0,pedidosAssumidos:0,acrescimos:0,retiradas:0};
+      porFunc[fId][metrica]=(porFunc[fId][metrica]||0)+valor;
+    };
+
+    // processa log
+    const tempoSepPorPedido={};
+    Object.entries(log).forEach(([pedId,eventos])=>{
+      if(!Array.isArray(eventos)) return;
+      const evPeriodo=eventos.filter(e=>dentroP(e.em));
+      evPeriodo.forEach(e=>{
+        const {evento,funcionarioId,funcionarioNome,em}=e;
+        if(evento==="separacao_completa"||evento==="separacao_com_falta"){
+          addMetric(funcionarioId,funcionarioNome,"pedidosSeparados");
+          if(evento==="separacao_com_falta") addMetric(funcionarioId,funcionarioNome,"pendencias");
+          // calcula tempo de separação
+          const inicio=tempoSepPorPedido[pedId];
+          if(inicio){ const dur=(em-inicio)/60000; addMetric(funcionarioId,funcionarioNome,"tempoSepTotal",dur); addMetric(funcionarioId,funcionarioNome,"tempoSepCount"); }
+        }
+        if(evento==="pedido_aberto_separacao") tempoSepPorPedido[pedId]=em;
+        if(evento==="conferido_entrega"||evento==="conferido_retirada") addMetric(funcionarioId,funcionarioNome,"conferidos");
+        if(evento==="pagamento_registrado"){ addMetric(funcionarioId,funcionarioNome,"pagamentosRecebidos"); }
+        if(evento==="pedido_assumido") addMetric(funcionarioId,funcionarioNome,"pedidosAssumidos");
+        if(evento==="itens_acrescentados") addMetric(funcionarioId,funcionarioNome,"acrescimos");
+        if(evento==="itens_retirados") addMetric(funcionarioId,funcionarioNome,"retiradas");
+      });
+    });
+
+    // pagamentos por funcionário
+    Object.values(pags).forEach(pag=>{
+      (pag.historico||[]).filter(h=>dentroP(h.em)).forEach(h=>{
+        if(h.funcionarioId) addMetric(h.funcionarioId,h.funcionarioNome,"valorRecebido",h.valor||0);
+      });
+    });
+
+    // ---- métricas financeiras ----
+    let totalRecebido=0, totalPendente=0, porForma={};
+    Object.values(pags).forEach(pag=>{
+      (pag.historico||[]).filter(h=>dentroP(h.em)).forEach(h=>{
+        totalRecebido+=h.valor||0;
+        const k=h.formaNome||"Outros"; porForma[k]=(porForma[k]||0)+(h.valor||0);
+      });
+    });
+    pedidosBling.filter(p=>p.situacao?.id===SIT.AGUARDANDO||p.situacao?.id===SIT.EM_SEP).forEach(p=>{ totalPendente+=p.total||0; });
+
+    // ---- métricas operacionais ----
+    const totalPedidos=pedidosBling.length;
+    const comPendencia=Object.values(pend).filter(p=>dentroP(p.em||0)).length;
+    const taxaPendencia=totalPedidos>0?Math.round(comPendencia/totalPedidos*100):0;
+    const ticketMedio=totalPedidos>0?pedidosBling.reduce((s,p)=>s+(p.total||0),0)/totalPedidos:0;
+
+    // pedidos por hora do dia
+    const porHora=Array(24).fill(0);
+    pedidosBling.forEach(p=>{ if(p.data){ const h=new Date(p.data+"T00:00:00").getHours(); porHora[h]++; } });
+
+    // pedidos por status atual
+    const porStatus={};
+    pedidosBling.forEach(p=>{ const k=p.situacao?.nome||"Outros"; porStatus[k]=(porStatus[k]||0)+1; });
+
+    // tempo médio de fluxo completo (totem → verificado) por pedido
+    let tempoFluxoTotal=0, tempoFluxoCount=0;
+    Object.entries(log).forEach(([pedId,eventos])=>{
+      if(!Array.isArray(eventos)) return;
+      const criado=eventos.find(e=>e.evento==="enviado_separacao_pago"||e.evento==="enviado_separacao_sem_pagar");
+      const concluido=eventos.find(e=>e.evento==="conferido_entrega"||e.evento==="conferido_retirada");
+      if(criado&&concluido&&dentroP(criado.em)){ tempoFluxoTotal+=(concluido.em-criado.em)/60000; tempoFluxoCount++; }
+    });
+
+    // pedidos por dia (últimos 30 dias)
+    const porDia={};
+    pedidosBling.forEach(p=>{ if(p.data){ const d=p.data.slice(0,10); porDia[d]=(porDia[d]||0)+1; } });
+
+    res.json({
+      periodo:{de:dataI,ate:dataF},
+      operacional:{ totalPedidos, comPendencia, taxaPendencia:taxaPendencia+"%",
+        ticketMedio:+ticketMedio.toFixed(2), porStatus,
+        tempoMedioFluxo:tempoFluxoCount>0?+(tempoFluxoTotal/tempoFluxoCount).toFixed(1):null },
+      financeiro:{ totalRecebido:+totalRecebido.toFixed(2), totalPendente:+totalPendente.toFixed(2), porForma },
+      funcionarios:Object.values(porFunc).map(f=>({...f,
+        tempoMedioSep:f.tempoSepCount>0?+(f.tempoSepTotal/f.tempoSepCount).toFixed(1):null,
+        taxaPendencia:f.pedidosSeparados>0?Math.round(f.pendencias/f.pedidosSeparados*100):0
+      })).sort((a,b)=>b.pedidosSeparados-a.pedidosSeparados),
+      graficos:{ porHora, porDia }
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 
 // ---- LOG DE PEDIDOS ----
 function lerLog(){ return lerJSON(LOG_FILE,{}); }
@@ -724,6 +874,7 @@ app.get("/api/preco-codigo", async (req, res) => {
   } catch(e) { res.status(e.status||500).json({ erro: e.message }); }
 });
 app.get("/listas", (req, res) => res.sendFile(path.join(__dirname, "listas.html")));
+app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
 
 // Importar NF-e por chave de acesso via Bling → SEFAZ
 app.post("/api/nfe/importar", async (req, res) => {
