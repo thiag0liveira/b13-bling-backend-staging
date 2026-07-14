@@ -351,17 +351,19 @@ async function abrirEditar(id){
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`<div class="muted">Carregando pedido…</div>`;
   try{
-    const [rPed,rPag]=await Promise.all([
+    const [rPed,rPag,rLog]=await Promise.all([
       fetch(B+"/api/pedidos/"+id).then(r=>r.json()),
       fetch(B+"/api/pagamentos/"+id).then(r=>r.json()),
+      fetch(B+"/api/log/"+id).then(r=>r.json()),
     ]);
-    const ped=rPed.data||rPed; const pag=rPag.data;
+    const ped=rPed.data||rPed; const pag=rPag.data; const logItems=rLog.data||[]; window.confLog=logItems;
     const itensOrig=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor,_orig:true}));
-    renderModalEditar(id,ped,itensOrig,pag,[],[]);
+    renderModalEditar(id,ped,itensOrig,pag,[],[],logItems);
   }catch(e){ document.getElementById("mbox").innerHTML=`<div class="err">Erro ao carregar</div>`; }
 }
 
-function renderModalEditar(id,ped,itens,pag,novos,retirados){
+function renderModalEditar(id,ped,itens,pag,novos,retirados,logItems){
+  logItems=logItems||[];
   const rows=itens.map((i,ix)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
     <span style="flex:1;${!i._orig?'color:#ff8c00':''}">${!i._orig?'🆕 ':''}${esc(i.descricao)}</span>
     <input type="number" min="1" value="${i.quantidade}" style="width:56px;padding:4px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff" onchange="itensEdit[${ix}].quantidade=+this.value">
@@ -382,10 +384,21 @@ function renderModalEditar(id,ped,itens,pag,novos,retirados){
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 Salvar e voltar pra expedição</button>
       <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
-    </div>`;
+    </div>
+    ${logItems.length?`<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-weight:800;font-size:12px;color:#9a95c9;margin-bottom:8px">📋 HISTÓRICO DO PEDIDO</div>
+      ${logItems.slice().reverse().map(l=>{
+        const labels={enviado_separacao_pago:"💳 Enviado pra separação (pago)",enviado_separacao_sem_pagar:"▶ Enviado pra separação (sem pagamento)",separacao_completa:"✅ Separação concluída",separacao_com_falta:"⚠️ Separação com falta",conferido_entrega:"🚚 Conferido → Entrega",conferido_retirada:"🏪 Conferido → Retirada",pagamento_registrado:"💰 Pagamento registrado"};
+        const dt=new Date(l.em); const hora=dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+        const data=dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+        return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span>${labels[l.evento]||esc(l.evento)} ${l.funcionarioNome?`— <b>${esc(l.funcionarioNome)}</b>`:""}</span>
+          <span style="color:#9a95c9;white-space:nowrap">${data} ${hora}</span></div>`;
+      }).join("")}
+    </div>`:""}`;
 }
 
-window.retirarItem=function(ix){ window.itensEdit.splice(ix,1); const ped=window.pedidoEditOrig; renderModalEditar(window.pedidoEditId,ped,window.itensEdit,pags[String(window.pedidoEditId)],[],[]); };
+window.retirarItem=function(ix){ window.itensEdit.splice(ix,1); const ped=window.pedidoEditOrig; renderModalEditar(window.pedidoEditId,ped,window.itensEdit,pags[String(window.pedidoEditId)],[],[],window.confLog||[]); };
 let _bet;
 window.buscarProdEdit=function(term){
   clearTimeout(_bet); const box=document.getElementById("resEdit"); if(!box)return;
@@ -436,49 +449,87 @@ async function abrirConferencia(id){
   }catch(e){ document.getElementById("mbox").innerHTML=`<div class="err">Erro ao carregar</div>`; }
 }
 
-function renderConferencia(id,ped,conf,pag,acr){
-  const total=+(ped.total||0); const pago=+(pag?.valorPago||0); const saldo=total-pago;
+function renderConferencia(id,ped,conf,pag,acr,etapa){
+  const total=+(ped.total||0); const pago=+(pag?.valorPago||0); const saldo=+(total-pago).toFixed(2);
+  const isPago=pag?.statusPagamento==="pago";
+  window.confItems=conf; window.confPed=ped; window.confPag=pag; window.confAcr=acr;
+  window.confEtapa=etapa||"itens";
+  const feitos=conf.filter(c=>c.conferido).length; const todos=feitos===conf.length;
+
+  let pagBanner="";
+  if(isPago) pagBanner=`<div class="pag-info">✅ Pago — ${brl(pago)}</div>`;
+  else pagBanner=`<div class="pag-pend" style="background:#3a0010;border-color:#ff0044">🔴 NÃO PAGO — falta ${brl(saldo)}</div>`;
+
+  if(etapa==="destino"){
+    // tela de escolha: entrega ou retirada
+    document.getElementById("mbox").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3>✅ Pedido Conferido</h3>
+        <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:10px">Pedido ${esc(ped.numero||id)} — ${esc(ped.contato?.nome||"")}</div>
+      ${pagBanner}
+      <div style="margin-top:16px;font-weight:800;font-size:14px;margin-bottom:10px">Como será o pedido?</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-blue" style="flex:1;padding:16px;font-size:15px" onclick="confirmarDestino(${id},'entrega')">
+          🚚 ENTREGA${!isPago?`<br><small style="font-size:11px;font-weight:400">sem pagamento ok</small>`:""}
+        </button>
+        <button class="btn ${isPago?'btn-grn':'btn-red'}" style="flex:1;padding:16px;font-size:15px" onclick="confirmarDestino(${id},'retirada')">
+          🏪 RETIRADA${!isPago?`<br><small style="font-size:11px;font-weight:400">⚠️ pagamento obrigatório</small>`:""}
+        </button>
+      </div>
+      <div id="confMsg" style="margin-top:8px"></div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px;font-size:12px" onclick="renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr,'itens')">← Voltar aos itens</button>`;
+    return;
+  }
+
+  // etapa: conferência dos itens
   const rows=conf.map((c,ix)=>`<div class="item-conf ${c.conferido?'ok-item':''}">
     ${c.imagem?`<img src="${esc(c.imagem)}" onerror="this.remove()">`:""}
     <div class="iinfo"><div class="inome">${esc(c.descricao)}</div>
       <div class="iqtd">${c.quantidade} un · est ${c.estoque??'?'}</div></div>
-    <button class="btn ${c.conferido?'btn-grn':'btn-ghost'}" style="flex-shrink:0" onclick="window.confItems[${ix}].conferido=!window.confItems[${ix}].conferido;renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr)">
+    <button class="btn ${c.conferido?'btn-grn':'btn-ghost'}" style="flex-shrink:0;min-width:44px" onclick="window.confItems[${ix}].conferido=!window.confItems[${ix}].conferido;renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr,'itens')">
       ${c.conferido?'✅':'○'}</button>
   </div>`).join("");
-  window.confItems=conf; window.confPed=ped; window.confPag=pag; window.confAcr=acr;
-  const feitos=conf.filter(c=>c.conferido).length; const todos=feitos===conf.length;
 
-  let pagStatus="";
-  if(pag?.statusPagamento==="pago") pagStatus=`<div class="pag-info">✅ Pago — ${brl(pago)}</div>`;
-  else if(saldo>0.01) pagStatus=`<div class="pag-pend">💰 Pagamento pendente — falta ${brl(saldo)}</div>`;
-
-  document.getElementById("mbox").innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <h3>🔍 Conferência — Pedido ${esc(ped.numero||id)}</h3>
-    <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
+  document.getElementById("mbox").innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3>🔍 Conferência — Pedido ${esc(ped.numero||id)}</h3>
+      <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
     ${acr?`<div class="acr-box">🆕 Itens alterados — confira os destaques</div>`:""}
-    ${pagStatus}
-    <div style="max-height:50vh;overflow:auto">${rows}</div>
-    <div style="margin-top:10px;color:#9a95c9;font-size:13px">${feitos}/${conf.length} conferidos</div>
+    ${pagBanner}
+    <div style="max-height:45vh;overflow:auto;margin:8px 0">${rows}</div>
+    <div style="color:#9a95c9;font-size:12px;margin-bottom:10px">${feitos}/${conf.length} itens conferidos</div>
     <div id="confMsg"></div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn btn-mag" style="flex:1" ${todos?"":"disabled"} onclick="concluirConferencia(${id})">
-        ${pag?.statusPagamento==="pago"?"✅ Conferido → VERIFICADO":"✅ Conferido → CONF. PARA ENTREGA"}</button>
-      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
-    </div>`;
+    <button class="btn btn-mag" style="width:100%" ${todos?"":"disabled"}
+      onclick="renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr,'destino')">
+      ✅ PEDIDO CONFERIDO →</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharModal()">Cancelar</button>`;
 }
 
-async function concluirConferencia(id){
+async function confirmarDestino(id,tipo){
+  const pag=window.confPag; const isPago=pag?.statusPagamento==="pago";
+  const total=+(window.confPed?.total||0); const pago=+(pag?.valorPago||0); const saldo=+(total-pago).toFixed(2);
+  if(tipo==="retirada"&&!isPago){
+    document.getElementById("confMsg").innerHTML=`<div class="err" style="background:#3a0010;border:1px solid #ff0044">
+      🔴 Retirada bloqueada — pagamento pendente (falta ${brl(saldo)})<br>
+      <small>O cliente precisa pagar antes de retirar o pedido.</small></div>`;
+    return;
+  }
   document.getElementById("confMsg").innerHTML=`<div class="muted">Finalizando…</div>`;
   try{
-    const r=await fetch(B+"/api/fluxo/"+id+"/conferido",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC?.id})});
+    const r=await fetch(B+"/api/fluxo/"+id+"/conferido",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,tipoEntrega:tipo})});
     const j=await r.json();
     if(r.ok&&j.ok){
-      fecharModal();
-      await carregar();
-      alert(j.pago?"✅ Pedido marcado como VERIFICADO!":"📦 Pedido marcado como CONFERIDO PARA ENTREGA (pagamento pendente).");
+      fecharModal(); await carregar();
+      const msg=tipo==="retirada"?"✅ Pedido liberado para RETIRADA — marcado como VERIFICADO!":
+        (j.pago?"✅ Pedido para ENTREGA — marcado como VERIFICADO!":"📦 Pedido para ENTREGA — marcado como CONFERIDO PARA ENTREGA (pagar na entrega).");
+      alert(msg);
     } else document.getElementById("confMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
   }catch(e){ document.getElementById("confMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
 }
+
+async function concluirConferencia(id){ await confirmarDestino(id,"entrega"); }
 
 // init
 document.getElementById("app").innerHTML=`<div class="top"><img src="${LOGO}"></div>`;

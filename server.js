@@ -40,6 +40,7 @@ const FUNC_FILE = `${DATA_DIR}/funcionarios.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
+const LOG_FILE  = `${DATA_DIR}/log_pedidos.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
@@ -232,6 +233,7 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
       p.statusPagamento=p.valorPago>=p.valorPedido?"pago":p.valorPago>0?"parcial":"pendente";
     }catch(e){}
     salvarPag(pags);
+    addLog(id, "pagamento_registrado", funcionarioId, funcionarioNome, {valor:Number(valor),formaNome,statusPagamento:p.statusPagamento});
     // lança a parcela no Bling
     try{ await bling(`/pedidos/vendas/${id}/financeiro`,{method:"POST",body:JSON.stringify({valor:Number(valor),formasPagamento:[{id:formaId}]})}); }catch(e){}
     res.json({ok:true,pagamento:p});
@@ -274,6 +276,7 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
     }
     // muda status no Bling
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+    addLog(id, pagamento?.valor?"enviado_separacao_pago":"enviado_separacao_sem_pagar", funcionarioId, funcionarioNome, pagamento?{valor:pagamento.valor,formaNome:pagamento.formaNome}:{});
     res.json({ok:true});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
@@ -294,6 +297,7 @@ app.post("/api/fluxo/:id/separacao-concluida",async(req,res)=>{
       if(texto) try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({data:ped.data,contato:{id:ped.contato?.id},itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto})}); }catch(e){}
     }
     await bling(`/pedidos/vendas/${id}/situacoes/${novoSit}`,{method:"PATCH"});
+    addLog(id, temFalta?"separacao_com_falta":"separacao_completa", req.body?.funcionarioId, req.body?.funcionarioNome, temFalta?{faltas}:{});
     // remove da fila de separação
     const seps=lerJSON(SEP_FILE,{}); delete seps[id]; salvarJSON(SEP_FILE,seps);
     res.json({ok:true,situacao:novoSit,temFalta});
@@ -330,12 +334,32 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     const novoSit=pago?SIT.VERIFICADO:SIT.CONF_ENTREGA;
     if(!novoSit) return res.status(400).json({erro:"Status não configurado."});
     await bling(`/pedidos/vendas/${id}/situacoes/${novoSit}`,{method:"PATCH"});
+    const tipoConf=req.body?.tipoEntrega||"entrega";
+    addLog(id, `conferido_${tipoConf}`, req.body?.funcionarioId, req.body?.funcionarioNome, {pago,valorPago:pag?.valorPago||0,valorPedido:pag?.valorPedido||0,tipoEntrega:tipoConf});
     res.json({ok:true,situacao:novoSit,pago,valorPago:pag?.valorPago||0,valorPedido:pag?.valorPedido||0});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
 // Retorna os status configurados (para uso no frontend)
 app.get("/api/fluxo/status",(req,res)=>res.json({sit:SIT}));
+
+// ---- LOG DE PEDIDOS ----
+function lerLog(){ return lerJSON(LOG_FILE,{}); }
+function salvarLog(o){ salvarJSON(LOG_FILE,o); }
+function addLog(pedidoId, evento, funcionarioId, funcionarioNome, detalhes={}){
+  const log=lerLog(); const id=String(pedidoId);
+  if(!log[id]) log[id]=[];
+  log[id].push({evento,funcionarioId,funcionarioNome,detalhes,em:Date.now()});
+  salvarLog(log);
+}
+app.get("/api/log/:id",(req,res)=>{
+  const log=lerLog(); res.json({data:log[String(req.params.id)]||[]});
+});
+app.post("/api/log/:id",(req,res)=>{
+  const {evento,funcionarioId,funcionarioNome,detalhes}=req.body||{};
+  addLog(req.params.id,evento,funcionarioId,funcionarioNome,detalhes);
+  res.json({ok:true});
+});
 app.get("/api/buscar",async(req,res)=>{
   try{ const nome=(req.query.nome||"").trim(); if(nome.length<2) return res.json({data:[]});
     const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`);
