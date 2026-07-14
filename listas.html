@@ -221,11 +221,9 @@ async function importarTabela(){
       const it=novos[i];
       try{
         // busca pelo código exato — retorna precoBling (preço do cadastro do Bling)
-        const r2=await fetch(`${BACKEND}/api/buscar-atacado?nome=${encodeURIComponent(it.codigo)}`);
+        const r2=await fetch(`${BACKEND}/api/preco-codigo?codigo=${encodeURIComponent(it.codigo)}`);
         const j2=await r2.json();
-        const prod=(j2.data||[]).find(p=>String(p.codigo)===String(it.codigo));
-        if(prod && prod.precoBling>0) it.precoBling=+prod.precoBling.toFixed(2);
-        else if(prod && prod.preco>0) it.precoBling=+prod.preco.toFixed(2);
+        if(j2.preco>0) it.precoBling=+Number(j2.preco).toFixed(2);
       }catch(e){}
       mostrarProg(i+1);
       if(i>0 && i%3===0) await new Promise(r=>setTimeout(r,400));

@@ -422,6 +422,28 @@ app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-
 app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
+// Retorna o preço de um produto pelo código (usa cache de estoque + busca direta no Bling)
+app.get("/api/preco-codigo", async (req, res) => {
+  try {
+    const codigo = String(req.query.codigo || "").trim();
+    if (!codigo) return res.status(400).json({ erro: "?codigo=..." });
+    // tenta primeiro no mapa de estoque (cache)
+    const est = await getEstoqueMap();
+    const item = est[codigo];
+    if (item?.id) {
+      // busca o produto pelo id pra pegar o preço atualizado
+      try {
+        const p = await bling(`/produtos/${item.id}`);
+        const preco = p?.data?.preco ?? 0;
+        return res.json({ codigo, preco, nome: p?.data?.nome || item.nome });
+      } catch(e) {}
+    }
+    // fallback: busca por código direto
+    const d = await bling(`/produtos?codigo=${encodeURIComponent(codigo)}&limite=1`);
+    const prod = (d.data || [])[0];
+    res.json({ codigo, preco: prod?.preco ?? 0, nome: prod?.nome || "" });
+  } catch(e) { res.status(e.status||500).json({ erro: e.message }); }
+});
 app.get("/listas", (req, res) => res.sendFile(path.join(__dirname, "listas.html")));
 
 // Importar NF-e por chave de acesso via Bling → SEFAZ
