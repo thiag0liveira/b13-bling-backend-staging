@@ -138,14 +138,31 @@ function abrirNovo(){
 
 function abrirEditar(id){
   const f=funcs.find(x=>x.id===id); if(!f) return;
+  const perms=f.permissoes||[f.nivel];
+  const chk=(v)=>perms.includes(v)?'checked':'';
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`<h3>Editar — ${esc(f.nome)}</h3>
     <div class="lbl">Nome</div><input id="fNome" value="${esc(f.nome)}">
     <div class="lbl">Login</div><input id="fLogin" value="${esc(f.login||f.id)}">
     <div class="lbl">Nova senha (deixe em branco pra manter)</div><input id="fSenha" type="password" placeholder="Nova senha (opcional)">
-    <div class="lbl">Nível de acesso</div>
+    <div class="lbl">Permissões</div>
+    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_aguardando" ${chk('ver_aguardando')}> Ver pedidos aguardando</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="receber_pagamento" ${chk('receber_pagamento')}> Receber pagamento</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="enviar_separacao" ${chk('enviar_separacao')}> Enviar para separação</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separacao" ${chk('ver_separacao')}> Ver fila de separação</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_pend" ${chk('ver_pend')}> Ver pendências</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separado" ${chk('ver_separado')}> Ver separados</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="conferir" ${chk('conferir')}> Conferir pedidos</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="editar_pedido" ${chk('editar_pedido')}> Editar pedidos</label>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" value="admin" ${chk('admin')}> Admin (tudo)</label>
+    </div>
+    <div class="lbl">Nível (referência)</div>
     <select id="fNivel">
       <option value="expedicao" ${f.nivel==='expedicao'?'selected':''}>Expedição</option>
+      <option value="financeiro_atacado" ${f.nivel==='financeiro_atacado'?'selected':''}>Financeiro Atacado</option>
+      <option value="vendedor" ${f.nivel==='vendedor'?'selected':''}>Vendedor</option>
+      <option value="conferente" ${f.nivel==='conferente'?'selected':''}>Conferente</option>
       <option value="gerente" ${f.nivel==='gerente'?'selected':''}>Gerente</option>
       <option value="admin" ${f.nivel==='admin'?'selected':''}>Admin</option>
     </select>
@@ -176,7 +193,9 @@ async function salvarEditar(id){
   const senha=document.getElementById("fSenha").value;
   const nivel=document.getElementById("fNivel").value;
   const login=document.getElementById("fLogin").value.trim().toLowerCase();
-  const body={nome,nivel,login}; if(senha) body.senha=senha;
+  const permissoes=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
+  if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
+  const body={nome,nivel,login,permissoes}; if(senha) body.senha=senha;
   try{
     const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json();
