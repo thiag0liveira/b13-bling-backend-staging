@@ -555,14 +555,22 @@ app.get("/api/analytics", async (req,res)=>{
     const taxaPendencia=totalPedidos>0?Math.round(comPendencia/totalPedidos*100):0;
     const ticketMedio=totalPedidos>0?pedidosBling.reduce((s,p)=>s+(p.total||0),0)/totalPedidos:0;
 
-    // pedidos por hora do dia
+    // pedidos por hora do dia — usa dataAlteracao ou dataCriacao se disponível
     const porHora=Array(24).fill(0);
-    pedidosBling.forEach(p=>{ if(p.data){ const h=new Date(p.data+"T00:00:00").getHours(); porHora[h]++; } });
+    pedidosBling.forEach(p=>{
+      const dt=p.dataCriacao||p.dataAlteracao||p.dataEmissao||null;
+      if(dt){ try{ const h=new Date(dt).getHours(); if(h>=0&&h<24) porHora[h]++; }catch(e){} }
+    });
+
+    // carrega situações pra mapear ids → nomes
+    let mapSitNomes={};
+    try{ const rs=await bling("/situacoes/modulos/98310"); (rs.data||[]).forEach(s=>mapSitNomes[s.id]=s.nome); }catch(e){}
 
     // pedidos por status atual — com valor
     const porStatus={}, porStatusValor={};
     pedidosBling.forEach(p=>{
-      const k=p.situacao?.nome||"Outros";
+      const sitId=p.situacao?.id;
+      const k=mapSitNomes[sitId]||p.situacao?.nome||"Outros";
       porStatus[k]=(porStatus[k]||0)+1;
       porStatusValor[k]=(porStatusValor[k]||0)+(p.total||0);
     });
