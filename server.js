@@ -481,15 +481,25 @@ app.get("/api/analytics", async (req,res)=>{
     // busca pedidos do Bling no período
     const dataI=new Date(tsInicio).toISOString().slice(0,10);
     const dataF=new Date(tsFim).toISOString().slice(0,10);
+    // busca todos os pedidos com paginação completa
+    const buscarTodosPedidos=async(dataInicial,dataFinal)=>{
+      const todos=[];
+      const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean);
+      for(let pg=1;pg<=10;pg++){
+        const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
+        sits.forEach(id=>p.append("idsSituacoes[]",id));
+        try{
+          const r=await bling(`/pedidos/vendas?${p.toString()}`);
+          const arr=r.data||[];
+          todos.push(...arr);
+          if(arr.length<100) break;
+          await new Promise(r=>setTimeout(r,400));
+        }catch(e){ break; }
+      }
+      return todos;
+    };
     let pedidosBling=[];
-    try{
-      const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean).join(",");
-      const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataI,dataFinal:dataF});
-      [SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean)
-        .forEach(id=>p.append("idsSituacoes[]",id));
-      const r=await bling(`/pedidos/vendas?${p.toString()}`);
-      pedidosBling=r.data||[];
-    }catch(e){}
+    try{ pedidosBling=await buscarTodosPedidos(dataI,dataF); }catch(e){}
 
     // ---- métricas por funcionário ----
     const porFunc={};
@@ -549,9 +559,13 @@ app.get("/api/analytics", async (req,res)=>{
     const porHora=Array(24).fill(0);
     pedidosBling.forEach(p=>{ if(p.data){ const h=new Date(p.data+"T00:00:00").getHours(); porHora[h]++; } });
 
-    // pedidos por status atual
-    const porStatus={};
-    pedidosBling.forEach(p=>{ const k=p.situacao?.nome||"Outros"; porStatus[k]=(porStatus[k]||0)+1; });
+    // pedidos por status atual — com valor
+    const porStatus={}, porStatusValor={};
+    pedidosBling.forEach(p=>{
+      const k=p.situacao?.nome||"Outros";
+      porStatus[k]=(porStatus[k]||0)+1;
+      porStatusValor[k]=(porStatusValor[k]||0)+(p.total||0);
+    });
 
     // tempo médio de fluxo completo (totem → verificado) por pedido
     let tempoFluxoTotal=0, tempoFluxoCount=0;
@@ -562,21 +576,68 @@ app.get("/api/analytics", async (req,res)=>{
       if(criado&&concluido&&dentroP(criado.em)){ tempoFluxoTotal+=(concluido.em-criado.em)/60000; tempoFluxoCount++; }
     });
 
-    // pedidos por dia (últimos 30 dias)
+    // pedidos por dia (período atual)
     const porDia={};
     pedidosBling.forEach(p=>{ if(p.data){ const d=p.data.slice(0,10); porDia[d]=(porDia[d]||0)+1; } });
 
+    // valor por dia (período atual)
+    const valorPorDia={};
+    pedidosBling.forEach(p=>{ if(p.data){ const d=p.data.slice(0,10); valorPorDia[d]=(valorPorDia[d]||0)+(p.total||0); } });
+
+    // período anterior (mesmo intervalo, antes)
+    const durMs=tsFim-tsInicio;
+    const tsInicioAnt=tsInicio-durMs; const tsFimAnt=tsInicio-1;
+    const dataIAnt=new Date(tsInicioAnt).toISOString().slice(0,10);
+    const dataFAnt=new Date(tsFimAnt).toISOString().slice(0,10);
+    let pedidosAnt=[], totalAnt=0, prodVendidosAnt=0;
+    try{
+      pedidosAnt=await buscarTodosPedidos(dataIAnt,dataFAnt);
+      totalAnt=pedidosAnt.reduce((s,p)=>s+(p.total||0),0);
+    }catch(e){}
+
+    // valor por dia período anterior (mapeado para as mesmas datas do atual)
+    const valorPorDiaAnt={};
+    pedidosAnt.forEach(p=>{ if(p.data){ const d=p.data.slice(0,10); valorPorDiaAnt[d]=(valorPorDiaAnt[d]||0)+(p.total||0); } });
+
+    // Top 10 SKUs mais vendidos — busca detalhes dos pedidos
+    const skuCount={}, skuNome={};
+    let totalProdVendidos=0;
+    // usa os pedidos que já temos — busca itens dos atendidos
+    const pedidosAtend=pedidosBling.filter(p=>p.situacao?.id===9||p.situacao?.id===SIT.VERIFICADO);
+    for(const ped of pedidosAtend.slice(0,30)){ // limita pra não estourar rate limit
+      try{
+        const rp=await bling(`/pedidos/vendas/${ped.id}`);
+        const itens=rp?.data?.itens||[];
+        itens.forEach(i=>{
+          const cod=i.produto?.codigo||i.codigo||"?";
+          const nome=i.descricao||i.produto?.nome||cod;
+          const qtd=i.quantidade||0;
+          skuCount[cod]=(skuCount[cod]||0)+qtd;
+          skuNome[cod]=nome;
+          totalProdVendidos+=qtd;
+        });
+      }catch(e){}
+    }
+    const top10=Object.entries(skuCount).sort((a,b)=>b[1]-a[1]).slice(0,10)
+      .map(([cod,qtd])=>({codigo:cod,nome:skuNome[cod]||cod,quantidade:qtd}));
+
+    // comparativo
+    const totalAtual=pedidosBling.reduce((s,p)=>s+(p.total||0),0);
+    const varPedidos=pedidosAnt.length>0?Math.round((pedidosBling.length-pedidosAnt.length)/pedidosAnt.length*100):null;
+    const varValor=totalAnt>0?Math.round((totalAtual-totalAnt)/totalAnt*100):null;
+
     res.json({
       periodo:{de:dataI,ate:dataF},
-      operacional:{ totalPedidos, comPendencia, taxaPendencia:taxaPendencia+"%",
-        ticketMedio:+ticketMedio.toFixed(2), porStatus,
-        tempoMedioFluxo:tempoFluxoCount>0?+(tempoFluxoTotal/tempoFluxoCount).toFixed(1):null },
+      operacional:{ totalPedidos, totalProdVendidos, comPendencia, taxaPendencia:taxaPendencia+"%",
+        ticketMedio:+ticketMedio.toFixed(2), porStatus, porStatusValor,
+        tempoMedioFluxo:tempoFluxoCount>0?+(tempoFluxoTotal/tempoFluxoCount).toFixed(1):null,
+        comparativo:{totalPedidosAnt:pedidosAnt.length,varPedidos,totalAtual:+totalAtual.toFixed(2),totalAnt:+totalAnt.toFixed(2),varValor} },
       financeiro:{ totalRecebido:+totalRecebido.toFixed(2), totalPendente:+totalPendente.toFixed(2), porForma },
       funcionarios:Object.values(porFunc).map(f=>({...f,
         tempoMedioSep:f.tempoSepCount>0?+(f.tempoSepTotal/f.tempoSepCount).toFixed(1):null,
         taxaPendencia:f.pedidosSeparados>0?Math.round(f.pendencias/f.pedidosSeparados*100):0
       })).sort((a,b)=>b.pedidosSeparados-a.pedidosSeparados),
-      graficos:{ porHora, porDia }
+      graficos:{ porHora, porDia, valorPorDia, valorPorDiaAnt, top10 }
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
