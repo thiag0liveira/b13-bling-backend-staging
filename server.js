@@ -1004,14 +1004,16 @@ app.post("/api/finalizar", async (req, res) => {
     const pedidoId=pedido?.data?.id;
     if(pedidoId){
       try{
-        // busca as parcelas criadas automaticamente
+        await new Promise(r=>setTimeout(r,500));
         const ped2=await bling(`/pedidos/vendas/${pedidoId}`);
         const parcAutom=ped2?.data?.parcelas||[];
-        // deleta cada parcela automática
         for(const parc of parcAutom){
-          if(parc.id) try{ await bling(`/pedidos/vendas/${pedidoId}/parcelas/${parc.id}`,{method:"DELETE"}); }catch(e){}
+          if(parc.id){
+            await new Promise(r=>setTimeout(r,400));
+            try{ await bling(`/pedidos/vendas/${pedidoId}/parcelas/${parc.id}`,{method:"DELETE"}); }catch(e){}
+          }
         }
-      }catch(e){ console.log("Não foi possível remover parcelas automáticas:", e.message); }
+      }catch(e){ console.log("Parcelas automáticas:", e.message); }
     }
     res.json({ ok: true, contatoId, criouContato, pedido });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
