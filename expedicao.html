@@ -153,12 +153,23 @@ function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; retu
 function detalheColuna(){
   const p=S.sel;
   if(!p) return `<div class="colhead">Conferência</div><div class="muted">Selecione um pedido na fila ao lado para começar a separar.</div>`;
-  const itens=S.conf.map((c,ix)=>{
+  // aviso de pendências anteriores
+  const avisoHistorico=S._tevePendencia?`<div style="background:#2a0818;border:1px solid #d400ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
+    ⚠️ Pedido com histórico de pendências — itens marcados em roxo tiveram falta anteriormente
+    ${S._acrescimos?.itensNovos?.length?`<br>➕ Acrescentado: ${S._acrescimos.itensNovos.map(i=>i.descricao).join(", ")}`:""}
+    ${S._acrescimos?.itensRetirados?.length?`<br>➖ Retirado: ${S._acrescimos.itensRetirados.map(i=>i.descricao).join(", ")}`:""}
+  </div>`:"";
+  const itens=avisoHistorico+S.conf.map((c,ix)=>{
     const falta = c.estado==='falta' ? Math.max(0, c.quantidade - c.temQtd) : 0;
-    return `<div class="it ${c.estado==='tem'||(c.estado==='falta'&&falta===0)?'tem':(c.estado==='falta'?'falta':'')}">
+    const bordaFalta=c._teveFalta?"border-left:3px solid #d400ff":""; 
+    const bgFalta=c._teveFalta&&c.estado===""?"background:#1a0820":"";
+    const tagFalta=c._teveFalta?`<span style="font-size:10px;background:#3a0020;color:#ffbfce;border-radius:4px;padding:1px 5px;margin-left:4px">⚠️ faltou ${c._faltaQtd}</span>`:"";
+    const tagAcr=c._acrescido?`<span style="font-size:10px;background:#0a2a1a;color:#a8f0c8;border-radius:4px;padding:1px 5px;margin-left:4px">➕</span>`:"";
+    const tagRet=c._retirado?`<span style="font-size:10px;background:#2a1a0a;color:#ffd23f;border-radius:4px;padding:1px 5px;margin-left:4px">➖</span>`:"";
+    return `<div class="it ${c.estado==='tem'||(c.estado==='falta'&&falta===0)?'tem':(c.estado==='falta'?'falta':'')}" style="${bordaFalta};${bgFalta}">
       <div style="display:flex;gap:10px">
         ${c.imagem?`<img src="${esc(c.imagem)}" onerror="this.remove()" style="width:56px;height:56px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">`:""}
-        <div style="flex:1"><div class="nm">${esc(c.descricao)}</div>
+        <div style="flex:1"><div class="nm">${esc(c.descricao)}${tagFalta}${tagAcr}${tagRet}</div>
           <div class="muted">pedido: ${cxTxt(c.un,c.quantidade)} · estoque: ${c.estoque??"?"}</div></div>
       </div>
       <div class="acts">
@@ -187,7 +198,11 @@ function detalheColuna(){
   }).join("");
   const feitos=S.conf.filter(c=>c.estado==="tem"||(c.estado==="falta"&&c.confirmado)).length; const todos=feitos===S.conf.length;
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
-      <div><div class="colhead" style="margin:0">Pedido ${esc(p.numero||p.id)}</div><div class="cli" style="margin-top:4px">👤 ${esc(p.contato?.nome||"—")}</div></div>
+      <div>
+        <div class="colhead" style="margin:0">Pedido ${esc(p.numero||p.id)}</div>
+        <div class="cli" style="margin-top:4px">👤 ${esc(p.contato?.nome||"—")}</div>
+        ${S._tevePendencia?`<div style="font-size:10px;color:#d400ff;margin-top:3px">⚠️ teve pendências</div>`:""}
+      </div>
       ${S.soVisualizacao?`<div style="background:#1c1846;border-radius:8px;padding:8px;font-size:12px;color:#9a95c9;text-align:center">👁 Modo visualização — outro funcionário está separando</div>`:
     `<button class="btn btn-mag" ${todos?"":"disabled"} onclick="concluir()">Concluir (${feitos}/${S.conf.length})</button>`}
     </div>${itens}
@@ -254,7 +269,31 @@ async function separar(id){
       } else { S.soVisualizacao=false; }
     }
     S.sel=j.pedido;
-    S.conf=(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade, un:i.un||1, estoque:i.estoque, imagem:i.imagem, estado:"", temQtd:0, confirmado:false}));
+    // busca pendências anteriores e log para destacar itens com histórico de falta
+    let _faltas=[], _acrs=null, _logPed=[];
+    try{
+      const [rPend,rAcr,rLog]=await Promise.all([
+        fetch(BACKEND+"/api/pendencias").then(r=>r.json()),
+        fetch(BACKEND+"/api/acrescimos").then(r=>r.json()),
+        fetch(BACKEND+"/api/log/"+j.pedido.id).then(r=>r.json()),
+      ]);
+      const pendAnterior=(rPend.data||[]).find(x=>String(x.pedidoId)===String(j.pedido.id));
+      _faltas=pendAnterior?.faltas||[];
+      const acrData=rAcr.data||[]; _acrs=acrData.find?.(x=>String(x.pedidoId)===String(j.pedido.id));
+      _logPed=rLog.data||[];
+    }catch(e){}
+    const teveSeparacaoComFalta=_logPed.some(e=>e.evento==="separacao_com_falta");
+    S._tevePendencia=teveSeparacaoComFalta;
+    S._faltas=_faltas;
+    S._acrescimos=_acrs;
+    S.conf=(j.itens||[]).map(i=>{
+      const falta=_faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&f.produtoId===i.produtoId));
+      const acrescido=_acrs?.itensNovos?.find(a=>a.descricao===i.descricao);
+      const retirado=_acrs?.itensRetirados?.find(a=>a.descricao===i.descricao);
+      return {produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade, un:i.un||1,
+        estoque:i.estoque, imagem:i.imagem, estado:"", temQtd:0, confirmado:false,
+        _teveFalta:!!falta, _faltaQtd:falta?.falta||0, _acrescido:!!acrescido, _retirado:!!retirado};
+    });
     S.telefone=getTelefone(j.pedido);
     // heartbeat a cada 2 minutos pra manter o lock
     if(S._heartbeat) clearInterval(S._heartbeat);

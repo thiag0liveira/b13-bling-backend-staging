@@ -335,13 +335,15 @@ app.get("/api/pagamentos/:id",(req,res)=>{
 });
 app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
-    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome}=req.body||{};
+    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir}=req.body||{};
     if(!valor||!formaId) return res.status(400).json({erro:"valor e formaId obrigatórios"});
     const pags=lerPag(); const id=String(req.params.id);
     if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
     const p=pags[id];
-    p.valorPago=+(p.valorPago+Number(valor)).toFixed(2);
-    p.historico.push({valor:Number(valor),formaId,formaNome,obs,funcionarioId,funcionarioNome,em:Date.now()});
+    // substituir=true: re-pagamento após voltar pra aguardando — reinicia o valor
+    if(substituir){ p.valorPago=+Number(valor).toFixed(2); }
+    else { p.valorPago=+(p.valorPago+Number(valor)).toFixed(2); }
+    p.historico.push({valor:Number(valor),formaId,formaNome,obs,funcionarioId,funcionarioNome,em:Date.now(),tipo:substituir?"substituicao":"normal"});
     // busca total do pedido pra comparar
     try{
       const ped=await bling(`/pedidos/vendas/${id}`); const total=ped?.data?.total||0;
@@ -356,6 +358,19 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/pagamentos",(req,res)=>{ res.json({data:lerPag()}); });
+app.post("/api/pagamentos/:id/resetar",(req,res)=>{
+  const id=String(req.params.id); const {funcionarioId,funcionarioNome}=req.body||{};
+  const pags=lerPag();
+  if(pags[id]){
+    const antigo=pags[id].valorPago||0;
+    pags[id].valorPago=0; pags[id].statusPagamento="pendente";
+    pags[id].historico=pags[id].historico||[];
+    pags[id].historico.push({valor:0,tipo:"resetado",em:Date.now(),funcionarioId,funcionarioNome,valorAnterior:antigo});
+    salvarPag(pags);
+    addLog(id,"pagamento_resetado",funcionarioId,funcionarioNome,{valorAnterior:antigo});
+  }
+  res.json({ok:true});
+});
 
 // Formas de pagamento (cadastradas no sistema)
 app.get("/api/formas-pagamento",async(req,res)=>{
@@ -805,6 +820,10 @@ app.get("/api/catalogo",async(req,res)=>{
 });
 
 // ------------------------- Contatos / Pedido -------------------------
+app.get("/api/contatos/:id",async(req,res)=>{
+  try{ res.json(await bling(`/contatos/${req.params.id}`)); }
+  catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
 app.get("/api/contatos",async(req,res)=>{
   try{ const doc=soDigitos(req.query.doc); if(!doc) return res.status(400).json({erro:"?doc=CPF_ou_CNPJ"});
     const d=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`); const l=d?.data||[];

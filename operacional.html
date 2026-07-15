@@ -289,21 +289,23 @@ function montarBotoes(p,aba,pago,parcial){
   const id=p.id; const sit=p.situacao?.id;
   // ABA: aguardando
   if(sit===SIT.AGUARDANDO){
-    const btnSep=PODE("enviar_separacao")?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar sem pagar</button>`:"";
-    const btnPag=PODE("receber_pagamento")?`<button class="btn btn-grn" onclick="abrirPagamento(${id},${p.total})">💰 Receber e Separar</button>`:"";
-    const btnEdit=PODE("editar_pedido")?`<button class="btn btn-ghost" onclick="abrirEditar(${id})">✏️ Editar</button>`:"";
+    const jaPago=pago||parcial;
+    // se já pagou, só mostra "Separar" (não "Separar sem pagar")
+    const btnSep=(!jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar sem pagar</button>`:"";
+    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="abrirPagamento(${id},${p.total})">💰 Receber e Separar</button>`:"";
+    const btnSepPago=(jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnEdit}${btnWhats}</div>`;
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnWhats}</div>`;
   }
   // ABA: em separação
   if(sit===SIT.EM_SEP){
     const sep=seps[String(id)];
     const quem=sep?`<div style="font-size:11px;color:#00aaff;margin-top:4px">🔧 ${esc(sep.funcionarioNome)} separando</div>`:"";
     if(sep) return quem; // travado — não mostra botões
-    // descobre origem pelo log
     const logPed=window._logsCache?.[String(id)]||[];
     const veioDepend=logPed.some(e=>e.evento==="separacao_com_falta");
-    if(!PODE("editar_pedido")) return quem;
+    // botão voltar só para admin
+    if(!PODE("admin")) return quem;
     const btnVoltar=veioDepend
       ?`<button class="btn btn-yellow" onclick="voltarPendencias(${id})">↩ Voltar para pendências</button>`
       :`<button class="btn btn-yellow" onclick="voltarAguardando(${id})">↩ Voltar para aguardando</button>`;
@@ -313,7 +315,7 @@ function montarBotoes(p,aba,pago,parcial){
   if(sit===SIT.SEP_PEND){
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">
       ${PODE("editar_pedido")?`<button class="btn btn-ghost" style="flex:1" onclick="abrirEditar(${id})">🔧 Resolver pendências</button>`:""}
-      ${PODE("ver_pend")?`<button class="btn btn-yellow" style="flex:1" onclick="enviarSepNovamente(${id})">↩ Voltar separação</button>`:""}
+      ${PODE("admin")?`<button class="btn btn-yellow" style="flex:1" onclick="enviarSepNovamente(${id})">↩ Voltar separação</button>`:""}
       ${PODE("ver_pend")?`<button class="btn btn-grn" style="flex:1" onclick="retirarPendenciasESeguir(${id})">✂️ Retirar pendências e confirmar</button>`:""}
     </div>`;
   }
@@ -388,7 +390,7 @@ async function confirmarPagRota(id,total){
   document.getElementById("pMsgRota").innerHTML=`<div class="muted">Registrando…</div>`;
   try{
     const r=await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valor:totalParcelas,formaId:_parcelas[0]?.formaId,formaNome:_parcelas[0]?.formaNome,parcelas:_parcelas,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+      body:JSON.stringify({valor:totalParcelas,formaId:_parcelas[0]?.formaId,formaNome:_parcelas[0]?.formaNome,parcelas:_parcelas,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:!!window._pagSubstituir})});
     const j=await r.json();
     if(r.ok&&j.ok){ fecharModal(); await carregar(); }
     else document.getElementById("pMsgRota").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
@@ -599,13 +601,25 @@ async function whatsAguardando(id){
   showMsg(id,`<div class="muted">Buscando pedido…</div>`);
   try{
     const r=await fetch(B+"/api/pedidos/"+id); const j=await r.json(); const ped=j.data||j;
-    // busca telefone — tenta no contato direto e também via /api/contatos
+    // busca telefone — primeiro tenta no pedido, depois busca contato completo por ID
     let tel=(ped.contato?.celular||ped.contato?.telefone||ped.contato?.fone||"").replace(/\D/g,"");
     if(!tel && ped.contato?.id){
       try{
-        const rc=await fetch(B+"/api/contatos?doc="+encodeURIComponent(ped.contato?.numeroDocumento||ped.contato?.cpfCnpj||""));
-        const jc=await rc.json(); const cont=jc.data?.[0];
+        // busca contato completo pelo ID (retorna celular que não vem no pedido)
+        const rc=await fetch(B+"/api/contatos/"+ped.contato.id);
+        const jc=await rc.json(); const cont=jc.data||jc;
         tel=(cont?.celular||cont?.telefone||cont?.fone||"").replace(/\D/g,"");
+      }catch(e){}
+    }
+    if(!tel && ped.contato?.id){
+      try{
+        // fallback: busca por documento
+        const doc=ped.contato?.numeroDocumento||ped.contato?.cpfCnpj||"";
+        if(doc){
+          const rc=await fetch(B+"/api/contatos?doc="+encodeURIComponent(doc));
+          const jc=await rc.json(); const cont=jc.data?.[0];
+          tel=(cont?.celular||cont?.telefone||cont?.fone||"").replace(/\D/g,"");
+        }
       }catch(e){}
     }
     if(!tel){ showMsg(id,`<div class="err">Telefone não encontrado para este cliente</div>`); return; }
@@ -757,10 +771,20 @@ async function voltarAguardando(id){
   if(!confirm("Voltar o pedido para Aguardando Separação?")) return;
   showMsg(id,`<div class="muted">Voltando…</div>`);
   try{
+    // verifica se tinha pagamento para exigir re-pagamento
+    const rPag=await fetch(B+"/api/pagamentos/"+id).then(r=>r.json());
+    const pag=rPag.data;
     const r=await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:SIT.AGUARDANDO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
     const j=await r.json();
-    if(r.ok&&!j.erro) await carregar();
-    else showMsg(id,`<div class="err">${esc(j.erro||"Erro")}</div>`);
+    if(r.ok&&!j.erro){
+      if(pag?.statusPagamento==="pago"){
+        // registra no log e reseta pagamento
+        await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({evento:"voltou_aguardando_pago",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{valorPagoAntes:pag.valorPago}})}).catch(()=>{});
+        // marca como pendente (resetar)
+        await fetch(B+"/api/pagamentos/"+id+"/resetar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})}).catch(()=>{});
+      }
+      await carregar();
+    } else showMsg(id,`<div class="err">${esc(j.erro||"Erro")}</div>`);
   }catch(e){ showMsg(id,`<div class="err">Erro de conexão</div>`); }
 }
 
@@ -796,7 +820,8 @@ async function enviarSepNovamente(id){
 
 // parcelas de pagamento (igual ao Bling)
 let _parcelas=[];
-function abrirPagamento(id,total){
+function abrirPagamento(id,total,substituir){
+  window._pagSubstituir=!!substituir;
   _parcelas=[{valor:Number(total).toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||"",obs:""}];
   window._pagTotal=Number(total);
   renderModalPagamento(id,total);
