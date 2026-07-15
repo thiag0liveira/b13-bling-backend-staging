@@ -253,11 +253,19 @@ function cardPedido(p,aba){
   const pendItem=window._pends&&window._pends[String(p.id)];
   let pendInfo="";
   if(pendItem&&(pendItem.faltas||[]).length){
+    const sit=p.situacao?.id;
+    const podAjustar=PODE("ver_pend")&&sit===SIT.SEP_PEND;
     pendInfo=`<div style="background:#2a0a1e;border:1px solid #d400ff;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px">
-      <div style="font-weight:800;color:#d400ff;margin-bottom:4px">⚠️ Itens com falta:</div>
-      ${pendItem.faltas.map(f=>`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #3a1050">
-        <span>${esc(f.descricao)}</span>
-        <span style="color:#ff8090">faltou ${f.falta} de ${f.quantidade} un</span>
+      <div style="font-weight:800;color:#d400ff;margin-bottom:6px">⚠️ Itens com falta:</div>
+      ${pendItem.faltas.map(f=>`<div style="padding:5px 0;border-bottom:1px solid #3a1050">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <span style="flex:1;font-weight:700;color:#ffbfce">${esc(f.descricao)}</span>
+          <span style="color:#ff8090;white-space:nowrap;font-size:11px">tem ${f.temQtd||0} · faltou ${f.falta} de ${f.quantidade}</span>
+        </div>
+        ${podAjustar?`<div style="display:flex;gap:4px;margin-top:4px">
+          ${(f.temQtd||0)>0?`<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px" onclick="event.stopPropagation();ajustarItemPend(${p.id},'${esc(f.descricao)}',${f.temQtd||0})">✂️ Ajustar para ${f.temQtd||0}</button>`:""}
+          <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;border-color:#ff4466;color:#ff8090" onclick="event.stopPropagation();ajustarItemPend(${p.id},'${esc(f.descricao)}',0)">🗑 Remover</button>
+        </div>`:""}
       </div>`).join("")}
     </div>`;
   }
@@ -635,6 +643,30 @@ async function whatsAguardando(id){
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
   }catch(e){ showMsg(id,`<div class="err">Erro ao buscar pedido</div>`); }
 }
+async function ajustarItemPend(pedidoId, descricao, novaQtd){
+  const acao=novaQtd===0?"remover":"ajustar para "+novaQtd;
+  if(!confirm(acao==="remover"?"Remover '"+descricao+"' do pedido?":"Ajustar '"+descricao+"' para "+novaQtd+" unidades?")) return;
+  showMsg(pedidoId,`<div class="muted">Ajustando…</div>`);
+  try{
+    // busca o pedido para ter os itens atuais
+    const rPed=await fetch(B+"/api/pedidos/"+pedidoId).then(r=>r.json());
+    const ped=rPed.data||rPed;
+    const itensAjust=(ped.itens||[])
+      .map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.descricao===descricao?novaQtd:i.quantidade,valor:i.valor}))
+      .filter(i=>i.quantidade>0);
+    const r=await fetch(B+"/api/pedidos/"+pedidoId+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({itens:itensAjust,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,motivo:"ajuste rápido de pendência: "+descricao})});
+    const j=await r.json();
+    if(r.ok&&!j.erro){
+      // atualiza pendência local
+      if(window._pends[String(pedidoId)]){
+        window._pends[String(pedidoId)].faltas=window._pends[String(pedidoId)].faltas.filter(f=>f.descricao!==descricao);
+      }
+      await carregar();
+    } else showMsg(pedidoId,`<div class="err">${esc(j.erro||"Erro")}</div>`);
+  }catch(e){ showMsg(pedidoId,`<div class="err">Erro de conexão</div>`); }
+}
+
 async function voltarPendencias(id){
   if(!confirm("Voltar o pedido para Separado C/ Pendências?")) return;
   showMsg(id,`<div class="muted">Voltando…</div>`);
@@ -942,12 +974,15 @@ async function abrirEditar(id){
     },2*60*1000);
   }
   try{
-    const [rPed,rPag,rLog]=await Promise.all([
+    const [rPed,rPag,rLog,rPend]=await Promise.all([
       fetch(B+"/api/pedidos/"+id).then(r=>r.json()),
       fetch(B+"/api/pagamentos/"+id).then(r=>r.json()),
       fetch(B+"/api/log/"+id).then(r=>r.json()),
+      fetch(B+"/api/pendencias/"+id).then(r=>r.json()),
     ]);
     const ped=rPed.data||rPed; const pag=rPag.data; const logItems=rLog.data||[]; window.confLog=logItems;
+    const faltas=(rPend.data?.faltas)||[];
+    window._editFaltas=faltas;
     const itensOrig=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor,_orig:true}));
     renderModalEditar(id,ped,itensOrig,pag,[],[],logItems);
   }catch(e){ document.getElementById("mbox").innerHTML=`<div class="err">Erro ao carregar</div>`; }
@@ -955,12 +990,18 @@ async function abrirEditar(id){
 
 function renderModalEditar(id,ped,itens,pag,novos,retirados,logItems){
   logItems=logItems||[];
-  const rows=itens.map((i,ix)=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
-    <span style="flex:1;${!i._orig?'color:#ff8c00':''}">${!i._orig?'🆕 ':''}${esc(i.descricao)}</span>
+  const faltas=window._editFaltas||[];
+  const rows=itens.map((i,ix)=>{
+    const flt=faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&String(f.produtoId)===String(i.produtoId)));
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px${flt?';background:#2a0a1e;border-radius:6px;padding:6px 8px;margin-bottom:2px':''}">
+    <div style="flex:1">
+      <span style="${!i._orig?'color:#ff8c00':flt?'color:#ffb347':''}">${!i._orig?'🆕 ':flt?'⚠️ ':''}${esc(i.descricao)}</span>
+      ${flt?`<div style="font-size:10px;color:#ff8090;margin-top:2px">tinha ${flt.temQtd||0} de ${flt.quantidade} · faltou ${flt.falta}</div>`:''}
+    </div>
     <input type="number" min="1" value="${i.quantidade}" style="width:56px;padding:4px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff" onchange="itensEdit[${ix}].quantidade=+this.value">
     <span style="width:80px;text-align:right">${brl(i.valor*i.quantidade)}</span>
     <button onclick="retirarItem(${ix})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:16px">🗑</button>
-  </div>`).join("");
+  </div>`;}).join("");
   const total=itens.reduce((s,i)=>s+i.valor*i.quantidade,0);
   const pago=pag?.valorPago||0; const saldo=total-pago;
   window.itensEdit=[...itens];
