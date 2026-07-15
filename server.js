@@ -1074,13 +1074,25 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
     const sit = ped.situacao?.id;
     if (sit === 9 || sit === 12) return res.status(400).json({ erro: "Pedido Atendido/Cancelado não pode ser editado." });
 
-    // status que o Bling não permite editar itens — mover temporariamente para Em Aberto
+    // helper com retry para chamadas ao Bling
+    const blingComRetry=async(url,opts={},tentativas=3,delayMs=1200)=>{
+      for(let t=0;t<tentativas;t++){
+        try{ return await bling(url,opts); }
+        catch(e){
+          if(e.status===429&&t<tentativas-1){ await new Promise(r=>setTimeout(r,delayMs*(t+1))); continue; }
+          throw e;
+        }
+      }
+    };
+
+    // status que o Bling não permite editar itens
     const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sit);
-    // status "Em aberto" no Bling (id 15 = em aberto / digitação)
-    const SIT_EDITAVEL=15;
+    const SIT_EDITAVEL=818795; // AGUARDANDO SEPARAÇÃO — status mais seguro para editar
+
     if(precisaUnlock){
-      try{ await bling(`/pedidos/vendas/${req.params.id}/situacoes/${SIT_EDITAVEL}`,{method:"PATCH"}); await new Promise(r=>setTimeout(r,500)); }catch(e){}
+      await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${SIT_EDITAVEL}`,{method:"PATCH"});
+      await new Promise(r=>setTimeout(r,1000));
     }
 
     const payload = {
@@ -1093,14 +1105,14 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
 
     let resultado;
     try{
-      resultado=await bling(`/pedidos/vendas/${req.params.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      await new Promise(r=>setTimeout(r,600));
+      resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
     }finally{
-      // restaura o status original
       if(precisaUnlock){
-        try{ await new Promise(r=>setTimeout(r,300)); await bling(`/pedidos/vendas/${req.params.id}/situacoes/${sit}`,{method:"PATCH"}); }catch(e){}
+        await new Promise(r=>setTimeout(r,800));
+        try{ await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${sit}`,{method:"PATCH"}); }catch(e){}
       }
     }
-    // registra log
     if(funcionarioId) addLog(String(req.params.id),"itens_editados",funcionarioId,funcionarioNome,{motivo:motivo||"edição manual",qtdItens:itens.length});
     res.json(resultado||{ok:true});
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
