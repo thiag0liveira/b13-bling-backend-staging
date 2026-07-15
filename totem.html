@@ -428,7 +428,7 @@ function telaCarrinho(app){
 }
 
 function irCheckout(){ const m=minAtual(); if(m!=null && subtotal()<m){alert("Abaixo do mínimo.");return;} S.etapa="checkout"; render(); }
-function enderecoObrig(){ return (S.docChecado && !S.docNome) || S.entrega==='entrega'; }
+function enderecoObrig(){ return S.docChecado || S.entrega==='entrega'; }
 function enderecoTexto(){ const e=S.end; if(!e.rua) return ""; return `${e.rua}, ${e.numero||"s/n"}${e.complemento?" "+e.complemento:""} - ${e.bairro}, ${e.cidade} - ${e.uf}, CEP ${e.cep}`; }
 function endValido(){ const e=S.end; return soDig(e.cep).length===8 && e.rua.trim() && e.numero.trim() && e.bairro.trim() && e.cidade.trim() && e.uf.trim(); }
 
@@ -448,11 +448,25 @@ function telaCheckout(app){
           : `<div class="warn">Novo cliente — preencha os dados abaixo para criar o cadastro.</div>`)
       : (soDig(S.doc).length>=11 ? `<button class="btn btn-out" style="width:100%" onclick="checarDoc()">Verificar cadastro</button>` : "")}
 
-    <input placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value">
-    <input placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value">
-    ${novo?`<input placeholder="E-mail*" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:""}
-
-    ${mostraEndereco?blocoEndereco(novo):""}
+    ${(()=>{
+      const temNome=!!S.nome.trim();
+      const temFone=!!S.telefone.trim();
+      const temEnd=S.end.rua.trim()&&S.end.cidade.trim()&&S.end.uf.trim();
+      const faltaCampos=S.docNome&&(!temFone||!temEnd);
+      return `
+        ${faltaCampos?`<div style="background:#2a1a00;border:1px solid #ffd23f;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px">
+          ⚠️ Complete os dados abaixo para finalizar:
+          ${!temFone?'<br>📱 Telefone obrigatório':''}
+          ${!temEnd?'<br>📍 Endereço obrigatório':''}
+        </div>`:''}
+        <input placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value"
+          style="${!temNome?'border-color:#ffd23f':''}">
+        <input placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value"
+          style="${!temFone?'border-color:#ffd23f':''}">
+        ${novo?`<input placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:''}
+      `;
+    })()}
+    ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo):""}
 
     <div style="font-weight:800;margin-top:14px">Como quer receber?</div>
     <div class="radio">
@@ -518,7 +532,13 @@ async function calcularFrete(){
 }
 
 async function finalizar(){
-  if(!S.nome.trim()||!S.telefone.trim()){ alert("Preencha nome e telefone."); return; }
+  const _erros=[];
+  if(!S.nome.trim()) _erros.push("Nome completo");
+  if(!S.telefone.trim()) _erros.push("Celular / WhatsApp");
+  if(!S.end.rua.trim()) _erros.push("Endereço (Rua)");
+  if(!S.end.cidade.trim()) _erros.push("Cidade");
+  if(!S.end.uf.trim()) _erros.push("UF (estado)");
+  if(_erros.length){ alert("Preencha os campos obrigatórios:\n- "+_erros.join("\n- ")); return; }
   const dd=soDig(S.doc);
   if(!docValido(dd)){ alert("CPF ou CNPJ inválido. Confira os números para finalizar."); return; }
   S.doc=dd;
@@ -541,7 +561,14 @@ async function finalizar(){
   try{
     const itensPed=itens().map(i=>({produtoId:i.id, quantidade:i.qtd, valor:i.preco}));
     const r=await fetch(BACKEND+"/api/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({documento:S.doc||"", nome:S.nome, email:S.email, telefone:S.telefone, itens:itensPed, entrega, cadastro})});
+      body:JSON.stringify({documento:S.doc||"", nome:S.nome, email:S.email, telefone:S.telefone, itens:itensPed, entrega,
+      cadastro:{
+        endereco:{
+          rua:S.end.rua, numero:S.end.numero, complemento:S.end.complemento,
+          bairro:S.end.bairro, cidade:S.end.cidade, uf:S.end.uf, cep:S.end.cep
+        }
+      }
+    })});
     const j=await r.json();
     if(r.ok && j.ok){ S.resultado={bling:true, pedido:j.pedido, entrega}; }
     else{ S.resultado={bling:false, erro:(j.erro||"erro"), detalhe:(j.body||j.detalhe), entrega}; }

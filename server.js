@@ -888,10 +888,21 @@ app.post("/api/finalizar", async (req, res) => {
       const achado = (busca.data || []).find((c) => soDigitos(c.numeroDocumento) === doc);
       if (achado) {
         contatoId = achado.id;
-        // sempre atualiza telefone quando informado — a busca de contatos não retorna celular
-        // então não dá pra saber se já tem; melhor sobrescrever com o dado mais recente
-        if(telefone){
-          try{ await bling(`/contatos/${contatoId}`,{method:"PATCH",body:JSON.stringify({celular:telefone,telefone:telefone})}); }catch(e){}
+        // atualiza dados do cliente com as informações fornecidas no totem
+        const atualizacao={};
+        if(telefone){ atualizacao.celular=telefone; atualizacao.telefone=telefone; }
+        if(nome) atualizacao.nome=nome;
+        const end=cadastro?.endereco||{};
+        if(end.rua||end.cep){
+          atualizacao.endereco={ geral:{
+            endereco:end.rua||"", numero:end.numero||"S/N",
+            complemento:end.complemento||"", bairro:end.bairro||"",
+            cep:soDigitos(end.cep||""), municipio:end.cidade||"",
+            uf:end.uf||"MG", pais:"Brasil"
+          }};
+        }
+        if(Object.keys(atualizacao).length){
+          try{ await bling(`/contatos/${contatoId}`,{method:"PATCH",body:JSON.stringify(atualizacao)}); }catch(e){}
         }
       } else {
         const tipo = doc.length === 14 ? "J" : "F";
