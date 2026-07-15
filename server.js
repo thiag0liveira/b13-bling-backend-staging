@@ -1106,7 +1106,12 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
     let resultado;
     try{
       await new Promise(r=>setTimeout(r,600));
+      console.log("PUT payload:", JSON.stringify(payload).slice(0,500));
       resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
+    }catch(putErr){
+      // tenta buscar o pedido atual para ver o estado
+      console.error("PUT erro body:", JSON.stringify(putErr.body));
+      throw putErr;
     }finally{
       if(precisaUnlock){
         await new Promise(r=>setTimeout(r,800));
