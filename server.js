@@ -844,8 +844,13 @@ app.post("/api/finalizar", async (req, res) => {
     if (doc) {
       const busca = await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`);
       const achado = (busca.data || []).find((c) => soDigitos(c.numeroDocumento) === doc);
-      if (achado) contatoId = achado.id;
-      else {
+      if (achado) {
+        contatoId = achado.id;
+        // atualiza telefone se foi informado e o contato não tem
+        if(telefone && (!achado.celular||!achado.telefone)){
+          try{ await bling(`/contatos/${contatoId}`,{method:"PATCH",body:JSON.stringify({celular:telefone,telefone:telefone})}); }catch(e){}
+        }
+      } else {
         const tipo = doc.length === 14 ? "J" : "F";
         const end = cadastro?.endereco || {};
         const contato = {

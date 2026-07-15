@@ -155,7 +155,7 @@ async function iniciar(){
 async function carregar(){
   try{
     if(!window._logsCache) window._logsCache={};
-    const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA].filter(Boolean).join(",");
+    const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO].filter(Boolean).join(",");
     const [rPed,rPag,rAcr,rSep,rPend]=await Promise.all([
       fetch(B+"/api/pedidos?limite=100&idsSituacoes="+sits).then(r=>r.json()),
       fetch(B+"/api/pagamentos").then(r=>r.json()),
@@ -673,9 +673,16 @@ async function confirmarRetirarSeguir(id){
   const valorAbatido=+window.itensEdit.filter(i=>i._ajustado&&i.quantidade<(i.quantidadeOriginal||i.quantidade))
     .reduce((s,i)=>s+((i.quantidadeOriginal||i.quantidade)-i.quantidade)*(i.valor||0),0).toFixed(2);
   try{
+    const rPed2=await fetch(B+"/api/pedidos/"+id).then(r=>r.json());
+    window.pedidoEditOrig=window.pedidoEditOrig||(rPed2.data||rPed2);
     const rPag=await fetch(B+"/api/pagamentos/"+id).then(r=>r.json());
     const pag=rPag.data;
-    if(pag?.statusPagamento==="pago"&&valorAbatido>0.01){
+    const valorPedidoAtual=+(window.itensEdit.filter(i=>i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)).toFixed(2);
+    const valorPago=+(pag?.valorPago||0);
+    const abatimentoReal=+(valorPago-valorPedidoAtual).toFixed(2);
+    const valorAbatidoFinal=abatimentoReal>0.01?abatimentoReal:valorAbatido;
+    if(pag?.statusPagamento==="pago"&&valorAbatidoFinal>0.01){
+      const valorAbatido=valorAbatidoFinal; // sobrescreve pra usar no bloco abaixo
       const valorPago=+(pag.valorPago||0); const valorNovo=+(valorPago-valorAbatido).toFixed(2);
       const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
       window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||"";
@@ -1034,9 +1041,14 @@ function renderConferencia(id,ped,conf,pag,acr,etapa){
   // etapa: conferência dos itens
   const rows=conf.map((c,ix)=>`<div class="item-conf ${c.conferido?'ok-item':''}">
     ${c.imagem?`<img src="${esc(c.imagem)}" onerror="this.remove()">`:""}
-    <div class="iinfo"><div class="inome">${esc(c.descricao)}</div>
-      <div class="iqtd">${c.quantidade} un · est ${c.estoque??'?'}</div></div>
-    <button style="flex-shrink:0;min-width:48px;height:48px;border-radius:10px;border:2px solid ${c.conferido?'#2f9e6b':'#514c96'};background:${c.conferido?'#183a2a':'transparent'};cursor:pointer;font-size:20px;color:${c.conferido?'#2f9e6b':'#514c96'};transition:.15s" onclick="window.confItems[${ix}].conferido=!window.confItems[${ix}].conferido;renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr,'itens')">
+    <div class="iinfo">
+      <div class="inome">${esc(c.descricao)}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+        <span style="background:#262366;color:#fff;font-size:16px;font-weight:900;padding:2px 10px;border-radius:6px;min-width:44px;text-align:center">${c.quantidade}</span>
+        <span style="font-size:11px;color:#9a95c9">un · est ${c.estoque??'?'}</span>
+      </div>
+    </div>
+    <button style="flex-shrink:0;min-width:48px;height:48px;border-radius:10px;border:2px solid ${c.conferido?'#2f9e6b':'#514c96'};background:${c.conferido?'#183a2a':'transparent'};cursor:pointer;font-size:22px;font-weight:900;color:${c.conferido?'#2f9e6b':'#514c96'};transition:.15s" onclick="(()=>{const el=document.querySelector('#mbox .conf-list');const st=el?el.scrollTop:0;window.confItems[${ix}].conferido=!window.confItems[${ix}].conferido;renderConferencia(${id},window.confPed,window.confItems,window.confPag,window.confAcr,'itens');requestAnimationFrame(()=>{const el2=document.querySelector('#mbox .conf-list');if(el2)el2.scrollTop=st;})})()">
       ${c.conferido?'✓':'◯'}</button>
   </div>`).join("");
 
@@ -1047,7 +1059,7 @@ function renderConferencia(id,ped,conf,pag,acr,etapa){
       <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
     ${acr?`<div class="acr-box">🆕 Itens alterados — confira os destaques</div>`:""}
     ${pagBanner}
-    <div style="max-height:38vh;overflow:auto;margin:8px 0">${rows}</div>
+    <div class="conf-list" style="max-height:38vh;overflow:auto;margin:8px 0">${rows}</div>
     <div style="color:#9a95c9;font-size:12px;margin-bottom:8px">${feitos}/${conf.length} itens conferidos</div>
     <div style="background:#0d0b1e;border:1px dashed #514c96;border-radius:8px;padding:10px;margin-bottom:8px">
       <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">📸 Foto/filmagem do pedido separado (opcional)</div>
