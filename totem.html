@@ -315,6 +315,19 @@ function tbProdRow(p){
 }
 // ---- FIM MODO TABELA ----
 
+function cardCliente(){
+  if(!S.docChecado||!S.docNome||!S.docInfo) return "";
+  const c=S.docInfo;
+  return `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:12px;margin-bottom:12px">
+    <div style="font-weight:900;color:#a8f0c8;margin-bottom:6px">✅ Cliente encontrado</div>
+    <div style="font-size:14px;font-weight:700">${esc(c.nome||"")}</div>
+    ${c.celular||c.telefone?`<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(c.celular||c.telefone)}</div>`:""}
+    ${c.email?`<div style="font-size:12px;color:#9a95c9">✉️ ${esc(c.email)}</div>`:""}
+    ${c.endereco?.rua?`<div style="font-size:12px;color:#9a95c9">📍 ${esc(c.endereco.rua)}${c.endereco.numero?", "+c.endereco.numero:""}${c.endereco.bairro?" — "+c.endereco.bairro:""}</div>`:""}
+    <div style="font-size:11px;color:#514c96;margin-top:4px">Confirme ou corrija os dados abaixo</div>
+  </div>`;
+}
+
 function telaCatalogo(app){
   const busca=S.busca.trim().toLowerCase();
   let lista, titulo;
@@ -329,16 +342,7 @@ function telaCatalogo(app){
   const cats=CAT.map((c,i)=>`<div class="cat ${!busca&&i===S.catAtiva?"on":""}" onclick="S.busca='';S.catAtiva=${i};S.expandido=null;render()">${esc(c.nome)}</div>`).join("");
   const side=CAT.map((c,i)=>`<div class="scat ${!busca&&i===S.catAtiva?"on":""}" onclick="S.busca='';S.catAtiva=${i};S.expandido=null;render()">${esc(c.nome)}</div>`).join("");
   const cards=lista.map(p=>cardProduto(p,busca)).join("") || `<div class="muted">Nenhum produto encontrado.</div>`;
-  // card de cliente encontrado
-  const cardCliente = (S.docChecado && S.docNome && S.docInfo) ? `
-    <div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:12px;margin-bottom:12px">
-      <div style="font-weight:900;color:#a8f0c8;margin-bottom:6px">✅ Cliente encontrado</div>
-      <div style="font-size:14px;font-weight:700">${esc(S.docInfo.nome||"")}</div>
-      ${S.docInfo.celular||S.docInfo.telefone?`<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(S.docInfo.celular||S.docInfo.telefone)}</div>`:""}
-      ${S.docInfo.email?`<div style="font-size:12px;color:#9a95c9">✉️ ${esc(S.docInfo.email)}</div>`:""}
-      ${S.docInfo.endereco?.rua?`<div style="font-size:12px;color:#9a95c9">📍 ${esc(S.docInfo.endereco.rua)}${S.docInfo.endereco.numero?", "+S.docInfo.endereco.numero:""}${S.docInfo.endereco.bairro?" — "+S.docInfo.endereco.bairro:""}</div>`:""}
-      <div style="font-size:11px;color:#514c96;margin-top:4px">Confirme ou corrija os dados abaixo</div>
-    </div>` : "";
+
   const boasVindas = (S.identificado && S.docChecado)
     ? `<div class="wrap" style="padding-bottom:0"><div class="${S.docNome?'ok':'warn'}" style="margin:0">${S.docNome?`👋 Olá, <b>${esc(S.docNome)}</b>! Cadastro encontrado.`:`Documento ${S.doc}: novo cliente — o cadastro será criado ao finalizar.`}</div></div>`
     : "";
@@ -441,7 +445,7 @@ function telaCheckout(app){
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
     <input placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
-    ${cardCliente}
+    ${cardCliente()}
     ${S.docChecado
       ? (S.docNome
           ? `<div class="ok">✅ Cadastro encontrado: <b>${esc(S.docNome)}</b><br><span class="muted" style="font-size:12px">Dados pré-preenchidos do cadastro — verifique e corrija se necessário.</span></div>`
