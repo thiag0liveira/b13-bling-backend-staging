@@ -230,12 +230,13 @@ async function carregarFila(silent){
 }
 
 async function separar(id){
-  // verifica se o funcionário já tem um pedido aberto
+  // se já tem um pedido aberto com lock, libera antes de abrir o novo
   if(FUNC && !S.soVisualizacao){
     const meuLock=Object.values(S._seps||{}).find(l=>l.funcionarioId===FUNC.id && String(l.pedidoId)!==String(id));
     if(meuLock){
-      S.msg=`⚠️ Você já está separando o Pedido ${meuLock.pedidoId}. Conclua ou feche o pedido atual antes de abrir outro.`;
-      render(); return;
+      // libera o lock do pedido anterior automaticamente
+      await fetch(BACKEND+"/api/separacoes/"+meuLock.pedidoId,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao"})}).catch(()=>{});
+      if(S._heartbeat){ clearInterval(S._heartbeat); S._heartbeat=null; }
     }
   }
   S.msg=""; document.getElementById("app").innerHTML=header()+`<div class="wrap"><div class="muted">Abrindo pedido…</div></div>`;
