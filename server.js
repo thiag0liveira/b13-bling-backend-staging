@@ -1085,15 +1085,13 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       }
     };
 
-    // status que o Bling não permite editar itens
+    // tenta editar direto — se der 400, tenta via Em Digitação (que aceita qualquer transição)
+    // mapa de transições permitidas para cada status
+    const SIT_EM_DIGITACAO=21; // Em digitação
+    // status que precisam de unlock via Em digitação (id=21) para editar itens
+    // requer transição criada no Bling: STATUS → Em digitação → STATUS
     const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sit);
-    const SIT_EDITAVEL=818795; // AGUARDANDO SEPARAÇÃO — status mais seguro para editar
-
-    if(precisaUnlock){
-      await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${SIT_EDITAVEL}`,{method:"PATCH"});
-      await new Promise(r=>setTimeout(r,1000));
-    }
 
     const payload = {
       data: ped.data, contato: { id: ped.contato?.id },
@@ -1105,17 +1103,24 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
 
     let resultado;
     try{
-      await new Promise(r=>setTimeout(r,600));
-      console.log("PUT payload:", JSON.stringify(payload).slice(0,500));
+      // tenta editar direto (funciona para alguns status)
+      await new Promise(r=>setTimeout(r,400));
       resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
-    }catch(putErr){
-      // tenta buscar o pedido atual para ver o estado
-      console.error("PUT erro body:", JSON.stringify(putErr.body));
-      throw putErr;
-    }finally{
-      if(precisaUnlock){
+    }catch(e1){
+      if(e1.status!==400||!precisaUnlock) throw e1;
+      // 400: tenta via Em Digitação (aceita transição de qualquer status)
+      console.log("Tentando via Em Digitação para editar itens, sit atual:", sit);
+      try{
+        await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+        await new Promise(r=>setTimeout(r,1000));
+        resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
         await new Promise(r=>setTimeout(r,800));
+        // restaura status original
         try{ await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${sit}`,{method:"PATCH"}); }catch(e){}
+      }catch(e2){
+        // última tentativa: salva sem mudar status (alguns campos aceitam)
+        console.error("PUT itens erro final:", JSON.stringify(e2.body||e2.message));
+        throw e2;
       }
     }
     if(funcionarioId) addLog(String(req.params.id),"itens_editados",funcionarioId,funcionarioNome,{motivo:motivo||"edição manual",qtdItens:itens.length});
