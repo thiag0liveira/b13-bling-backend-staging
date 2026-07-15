@@ -904,6 +904,7 @@ app.post("/api/finalizar", async (req, res) => {
       if (achado) {
         contatoId = achado.id;
         // busca o contato completo para saber o que já tem preenchido
+        await new Promise(r=>setTimeout(r,350));
         let contatoAtual={};
         try{ const ca=await bling(`/contatos/${contatoId}`); contatoAtual=ca?.data||{}; }catch(e){}
         const endAtual=contatoAtual.endereco?.geral||{};
@@ -934,6 +935,7 @@ app.post("/api/finalizar", async (req, res) => {
           try{
             await bling(`/contatos/${contatoId}`,{method:"PATCH",body:JSON.stringify(atualizacao)});
             console.log("Contato atualizado:", contatoId, Object.keys(atualizacao));
+            await new Promise(r=>setTimeout(r,400)); // aguarda para evitar rate limit
           }catch(e){ console.error("Erro ao atualizar contato:", e.message); }
         }
       } else {
@@ -997,6 +999,7 @@ app.post("/api/finalizar", async (req, res) => {
     }
     if (process.env.BLING_VENDEDOR_ID) payload.vendedor = { id: Number(process.env.BLING_VENDEDOR_ID) };
     if (process.env.BLING_SITUACAO_ID) payload.situacao = { id: Number(process.env.BLING_SITUACAO_ID) };
+    await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
     const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
     // nota: condição de pagamento padrão deve ser removida nas configurações do Bling
     // Ajustes → Preferências → Vendas → Condição de pagamento padrão → vazio
