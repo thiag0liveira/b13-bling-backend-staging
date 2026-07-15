@@ -106,7 +106,7 @@ const MIN_ID=100, MIN_ANON=600;
 
 let CAT=null, META={}, ERRO=null;
 let S = novoEstado();
-function novoEstado(){ return { etapa:"inicio", modo:"catalogo", doc:"", identificado:false, docNome:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
+function novoEstado(){ return { etapa:"inicio", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
   carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -214,7 +214,7 @@ async function identificar(){
   await checarDoc();
   S.etapa="catalogo"; S.catAtiva=0; render();
 }
-function semIdentificacao(){ S.identificado=false; S.doc=""; S.docNome=null; S.docChecado=false; S.etapa="catalogo"; S.catAtiva=0; render(); }
+function semIdentificacao(){ S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false; S.etapa="catalogo"; S.catAtiva=0; render(); }
 async function checarDoc(){
   const d=soDig(S.doc);
   if(d.length!==11 && d.length!==14){ S.docNome=null; S.docChecado=false; render(); return; }
@@ -224,19 +224,20 @@ async function checarDoc(){
     if(j.encontrado && j.contato){
       const c=j.contato;
       S.docNome = c.nome||"Cliente cadastrado";
-      // pré-preenche campos se estiverem vazios
-      if(!S.nome && c.nome) S.nome=c.nome;
-      if(!S.telefone && (c.celular||c.telefone)) S.telefone=c.celular||c.telefone;
-      if(!S.email && c.email) S.email=c.email;
-      // endereço: só preenche se o cliente não tiver começado a digitar
+      S.docInfo = c; // guarda dados completos para exibir
+      // pré-preenche TODOS os campos com dados do cadastro
+      if(c.nome) S.nome=c.nome;
+      if(c.celular||c.telefone) S.telefone=c.celular||c.telefone;
+      if(c.email) S.email=c.email;
+      // endereço
       const end=c.endereco||{};
-      if(!S.end.cep && end.cep) S.end.cep=end.cep;
-      if(!S.end.rua && end.rua) S.end.rua=end.rua;
-      if(!S.end.numero && end.numero) S.end.numero=end.numero;
-      if(!S.end.complemento && end.complemento) S.end.complemento=end.complemento;
-      if(!S.end.bairro && end.bairro) S.end.bairro=end.bairro;
-      if(!S.end.cidade && end.cidade) S.end.cidade=end.cidade;
-      if(!S.end.uf && end.uf) S.end.uf=end.uf;
+      if(end.cep) S.end.cep=end.cep;
+      if(end.rua) S.end.rua=end.rua;
+      if(end.numero) S.end.numero=end.numero;
+      if(end.complemento) S.end.complemento=end.complemento;
+      if(end.bairro) S.end.bairro=end.bairro;
+      if(end.cidade) S.end.cidade=end.cidade;
+      if(end.uf) S.end.uf=end.uf;
     } else {
       S.docNome=null;
     }
@@ -328,6 +329,16 @@ function telaCatalogo(app){
   const cats=CAT.map((c,i)=>`<div class="cat ${!busca&&i===S.catAtiva?"on":""}" onclick="S.busca='';S.catAtiva=${i};S.expandido=null;render()">${esc(c.nome)}</div>`).join("");
   const side=CAT.map((c,i)=>`<div class="scat ${!busca&&i===S.catAtiva?"on":""}" onclick="S.busca='';S.catAtiva=${i};S.expandido=null;render()">${esc(c.nome)}</div>`).join("");
   const cards=lista.map(p=>cardProduto(p,busca)).join("") || `<div class="muted">Nenhum produto encontrado.</div>`;
+  // card de cliente encontrado
+  const cardCliente = (S.docChecado && S.docNome && S.docInfo) ? `
+    <div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-weight:900;color:#a8f0c8;margin-bottom:6px">✅ Cliente encontrado</div>
+      <div style="font-size:14px;font-weight:700">${esc(S.docInfo.nome||"")}</div>
+      ${S.docInfo.celular||S.docInfo.telefone?`<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(S.docInfo.celular||S.docInfo.telefone)}</div>`:""}
+      ${S.docInfo.email?`<div style="font-size:12px;color:#9a95c9">✉️ ${esc(S.docInfo.email)}</div>`:""}
+      ${S.docInfo.endereco?.rua?`<div style="font-size:12px;color:#9a95c9">📍 ${esc(S.docInfo.endereco.rua)}${S.docInfo.endereco.numero?", "+S.docInfo.endereco.numero:""}${S.docInfo.endereco.bairro?" — "+S.docInfo.endereco.bairro:""}</div>`:""}
+      <div style="font-size:11px;color:#514c96;margin-top:4px">Confirme ou corrija os dados abaixo</div>
+    </div>` : "";
   const boasVindas = (S.identificado && S.docChecado)
     ? `<div class="wrap" style="padding-bottom:0"><div class="${S.docNome?'ok':'warn'}" style="margin:0">${S.docNome?`👋 Olá, <b>${esc(S.docNome)}</b>! Cadastro encontrado.`:`Documento ${S.doc}: novo cliente — o cadastro será criado ao finalizar.`}</div></div>`
     : "";
@@ -430,6 +441,7 @@ function telaCheckout(app){
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
     <input placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
+    ${cardCliente}
     ${S.docChecado
       ? (S.docNome
           ? `<div class="ok">✅ Cadastro encontrado: <b>${esc(S.docNome)}</b><br><span class="muted" style="font-size:12px">Dados pré-preenchidos do cadastro — verifique e corrija se necessário.</span></div>`

@@ -902,8 +902,14 @@ app.post("/api/finalizar", async (req, res) => {
           telefone: telefone || "", celular: telefone || "",
           email: (email && /\S+@\S+\.\S+/.test(email)) ? email : undefined,
           endereco: { geral: {
-            endereco: end.rua || "", numero: end.numero || "", complemento: end.complemento || "",
-            bairro: end.bairro || "", cep: soDigitos(end.cep), municipio: end.cidade || "", uf: end.uf || "",
+            endereco: end.rua || "",
+            numero: end.numero || "S/N",
+            complemento: end.complemento || "",
+            bairro: end.bairro || "",
+            cep: soDigitos(end.cep||""),
+            municipio: end.cidade || "",
+            uf: end.uf || "MG", // fallback MG
+            pais: "Brasil",
           } },
         };
         const novo = await bling(`/contatos`, { method: "POST", body: JSON.stringify(contato) });
@@ -923,11 +929,28 @@ app.post("/api/finalizar", async (req, res) => {
       data: hoje,
       contato: { id: Number(contatoId) },
       itens: itens.map((i) => ({ produto: { id: Number(i.produtoId) }, quantidade: Number(i.quantidade), valor: Number(i.valor) })),
-      parcelas: [], // cliente ainda não pagou; a loja registra o pagamento na separação
       observacoes: obs,
     };
-    if (entrega && entrega.tipo === "entrega" && Number(entrega.taxa) > 0)
-      payload.transporte = { fretePorConta: 0, frete: Number(entrega.taxa) };
+    if (entrega && entrega.tipo === "entrega"){
+      payload.transporte = {
+        fretePorConta: 0,
+        frete: Number(entrega.taxa) || 0,
+      };
+      // incluir endereço de entrega para evitar erro de UF obrigatório
+      if(entrega.endereco){
+        const endParts=entrega.endereco.split(",").map(s=>s.trim());
+        payload.transporte.enderecoEntrega={
+          endereco: endParts[0]||"",
+          numero: endParts[1]||"S/N",
+          complemento: "",
+          bairro: endParts[2]||"",
+          cep: "",
+          municipio: "Belo Horizonte",
+          uf: "MG",
+          pais: "Brasil",
+        };
+      }
+    }
     if (process.env.BLING_VENDEDOR_ID) payload.vendedor = { id: Number(process.env.BLING_VENDEDOR_ID) };
     if (process.env.BLING_SITUACAO_ID) payload.situacao = { id: Number(process.env.BLING_SITUACAO_ID) };
     const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
@@ -1133,10 +1156,30 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
         valor: Number(i.valor)
       })),
       observacoes: obsBase ? obsBase+" | edit "+tsEdit : "edit "+tsEdit,
-      loja: ped.loja?.id ? { id: ped.loja.id } : undefined,
     };
-    if (ped.transporte?.frete) payload.transporte = { fretePorConta: ped.transporte.fretePorConta ?? 0, frete: ped.transporte.frete };
-    if (ped.vendedor?.id) payload.vendedor = { id: ped.vendedor.id };
+    // incluir transporte/endereço se existir (UF obrigatório no Bling)
+    if(ped.transporte){
+      payload.transporte={
+        fretePorConta:ped.transporte.fretePorConta??0,
+        frete:ped.transporte.frete||0,
+      };
+      if(ped.transporte.enderecoEntrega){
+        const end=ped.transporte.enderecoEntrega;
+        payload.transporte.enderecoEntrega={
+          endereco:end.endereco||"",
+          numero:end.numero||"S/N",
+          complemento:end.complemento||"",
+          bairro:end.bairro||"",
+          cep:end.cep||"",
+          municipio:end.municipio||"",
+          uf:end.uf||"MG",
+          pais:end.pais||"Brasil",
+        };
+      }
+    }
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+    console.log("PUT transporte:", JSON.stringify(ped.transporte));
     console.log("PUT payload situacao:", ped.situacao?.id, "itens:", itens.length);
 
     let resultado;
