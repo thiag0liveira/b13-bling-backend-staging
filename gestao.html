@@ -197,7 +197,7 @@ async function carregarDash(){
   document.getElementById("dashCards").innerHTML=`<div class="muted">Carregando…</div>`;
   try{
     const [rPed, rPend] = await Promise.all([
-      fetch(BACKEND+"/api/pedidos?limite=100").then(r=>r.json()),
+      fetch(BACKEND+"/api/pedidos?todos=1").then(r=>r.json()),
       fetch(BACKEND+"/api/pendencias").then(r=>r.json())
     ]);
     pedidos=rPed.data||[]; pendencias=rPend.data||[];
@@ -231,7 +231,7 @@ async function carregarDash(){
 async function carregarPedidos(){
   document.getElementById("listaPedidos").innerHTML=`<div class="muted">Carregando…</div>`;
   try{
-    let u=BACKEND+"/api/pedidos?limite=100"; if(filtro!==null) u+="&idsSituacoes="+filtro;
+    let u=BACKEND+"/api/pedidos?todos=1"; if(filtro!==null) u+="&idsSituacoes="+filtro;
     const r=await fetch(u); const j=await r.json(); pedidos=j.data||[];
     const chips=`<div class="fchip ${filtro===null?'on':''}" onclick="setFiltro(null)">Todos</div>`+
       situacoes.map(s=>`<div class="fchip ${filtro===s.id?'on':''}" onclick="setFiltro(${s.id})" style="${filtro===s.id?`background:${s.cor};color:#111`:''}">${esc(s.nome)}</div>`).join("");

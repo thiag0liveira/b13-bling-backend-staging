@@ -550,13 +550,35 @@ app.get("/api/analytics", async (req,res)=>{
 
     // ---- métricas financeiras ----
     let totalRecebido=0, totalPendente=0, porForma={};
-    Object.values(pags).forEach(pag=>{
-      (pag.historico||[]).filter(h=>dentroP(h.em)).forEach(h=>{
-        totalRecebido+=h.valor||0;
-        const k=h.formaNome||"Outros"; porForma[k]=(porForma[k]||0)+(h.valor||0);
+    // busca contas a receber do Bling no período
+    try{
+      for(let pg=1;pg<=10;pg++){
+        const pr=new URLSearchParams({pagina:pg,limite:100,dataEmissaoInicial:dataI,dataEmissaoFinal:dataF});
+        const rc=await bling(`/contas/receber?${pr.toString()}`);
+        const contas=rc.data||[];
+        contas.forEach(c=>{
+          const val=c.valor||0;
+          if(c.situacao==="recebido"||c.situacao==="recebida"||(c.situacao&&c.situacao.toLowerCase().includes("receb"))){
+            totalRecebido+=val;
+            const k=c.formaPagamento?.descricao||c.portador?.descricao||"Outros";
+            porForma[k]=(porForma[k]||0)+val;
+          } else {
+            totalPendente+=val;
+          }
+        });
+        if(contas.length<100) break;
+        if(pg%3===0) await new Promise(r=>setTimeout(r,400));
+      }
+    }catch(e){
+      // fallback: usa o nosso registro de pagamentos
+      Object.values(pags).forEach(pag=>{
+        (pag.historico||[]).filter(h=>dentroP(h.em)).forEach(h=>{
+          totalRecebido+=h.valor||0;
+          const k=h.formaNome||"Outros"; porForma[k]=(porForma[k]||0)+(h.valor||0);
+        });
       });
-    });
-    pedidosBling.filter(p=>p.situacao?.id===SIT.AGUARDANDO||p.situacao?.id===SIT.EM_SEP).forEach(p=>{ totalPendente+=p.total||0; });
+      pedidosBling.filter(p=>p.situacao?.id===SIT.AGUARDANDO||p.situacao?.id===SIT.EM_SEP).forEach(p=>{ totalPendente+=p.total||0; });
+    }
 
     // ---- métricas operacionais ----
     const totalPedidos=pedidosBling.length;
@@ -857,11 +879,25 @@ app.get("/api/frete", async (req,res)=>{
 // ------------------------- Painel de pedidos -------------------------
 app.get("/api/pedidos", async (req, res) => {
   try {
+    // se pedir todos (paginar=true), faz paginação automática
+    if(req.query.todos==="1"){
+      const todos=[];
+      for(let pg=1;pg<=20;pg++){
+        const p=new URLSearchParams({pagina:pg,limite:100});
+        if(req.query.idsSituacoes) String(req.query.idsSituacoes).split(",").forEach(id=>p.append("idsSituacoes[]",id.trim()));
+        if(req.query.dataInicial) p.set("dataInicial",req.query.dataInicial);
+        if(req.query.dataFinal) p.set("dataFinal",req.query.dataFinal);
+        const r=await bling(`/pedidos/vendas?${p.toString()}`);
+        const arr=r.data||[]; todos.push(...arr);
+        if(arr.length<100) break;
+        if(pg%3===0) await new Promise(r=>setTimeout(r,400));
+      }
+      return res.json({data:todos});
+    }
     const p = new URLSearchParams();
     p.set("pagina", req.query.pagina || 1);
     p.set("limite", req.query.limite || 100);
     if (req.query.idsSituacoes){
-      // suporta múltiplos ids separados por vírgula
       String(req.query.idsSituacoes).split(",").forEach(id=>p.append("idsSituacoes[]", id.trim()));
     }
     if (req.query.dataInicial) p.set("dataInicial", req.query.dataInicial);
