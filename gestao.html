@@ -197,7 +197,7 @@ async function carregarDash(){
   document.getElementById("dashCards").innerHTML=`<div class="muted">Carregando…</div>`;
   try{
     const [rPed, rPend] = await Promise.all([
-      (()=>{ const br=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10); return fetch(BACKEND+"/api/pedidos?todos=1&dataInicial="+br+"&dataFinal="+br).then(r=>r.json()); })(),
+      (()=>{ const n=new Date(Date.now()-3*60*60*1000); const h=n.toISOString().slice(0,10); const ini=new Date(n-30*86400000).toISOString().slice(0,10); return fetch(BACKEND+`/api/pedidos?todos=1&dataInicial=${ini}&dataFinal=${h}`).then(r=>r.json()); })(),
       fetch(BACKEND+"/api/pendencias").then(r=>r.json())
     ]);
     pedidos=rPed.data||[]; pendencias=rPend.data||[];
@@ -231,7 +231,7 @@ async function carregarDash(){
 async function carregarPedidos(){
   document.getElementById("listaPedidos").innerHTML=`<div class="muted">Carregando…</div>`;
   try{
-    const _br=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10); let u=BACKEND+"/api/pedidos?todos=1&dataInicial="+_br+"&dataFinal="+_br; if(filtro!==null) u+="&idsSituacoes="+filtro;
+    const _n=new Date(Date.now()-3*60*60*1000); const _br=_n.toISOString().slice(0,10); const _ini=new Date(_n-30*86400000).toISOString().slice(0,10); let u=BACKEND+`/api/pedidos?todos=1&dataInicial=${_ini}&dataFinal=${_br}`; if(filtro!==null) u+="&idsSituacoes="+filtro;
     const r=await fetch(u); const j=await r.json(); pedidos=j.data||[];
     const chips=`<div class="fchip ${filtro===null?'on':''}" onclick="setFiltro(null)">Todos</div>`+
       situacoes.map(s=>`<div class="fchip ${filtro===s.id?'on':''}" onclick="setFiltro(${s.id})" style="${filtro===s.id?`background:${s.cor};color:#111`:''}">${esc(s.nome)}</div>`).join("");

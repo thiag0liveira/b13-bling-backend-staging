@@ -236,7 +236,7 @@ async function carregarFila(silent){
   if(!silent){ S.carregando=true; render(); }
   try{
     const [rPed,rSep]=await Promise.all([
-      fetch(BACKEND+"/api/pedidos?limite=100&idsSituacoes="+FILA).then(r=>r.json()),
+      (()=>{ const n=new Date(Date.now()-3*60*60*1000); const h=n.toISOString().slice(0,10); const ini=new Date(n-30*86400000).toISOString().slice(0,10); return fetch(BACKEND+`/api/pedidos?limite=100&idsSituacoes=${FILA}&dataInicial=${ini}&dataFinal=${h}`).then(r=>r.json()); })(),
       fetch(BACKEND+"/api/separacoes").then(r=>r.json()),
     ]);
     const arr=(rPed.data||[]).slice().sort((a,b)=>(a.numero||a.id)-(b.numero||b.id));

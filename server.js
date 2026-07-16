@@ -1110,14 +1110,14 @@ app.get("/api/frete", async (req,res)=>{
 // ------------------------- Painel de pedidos -------------------------
 app.get("/api/pedidos", async (req, res) => {
   try {
+    const offsetBR=3*60*60*1000;
+    const hojeBR=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
+    const dias=Number(req.query.dias||30);
+    const dataIniDefault=new Date(Date.now()-offsetBR-dias*86400000).toISOString().slice(0,10);
     // se pedir todos (paginar=true), faz paginação automática
     if(req.query.todos==="1"){
       const todos=[];
-      // default: últimos 30 dias em fuso Brasília
-      const offsetBR=3*60*60*1000;
-      const hojeBR=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
-      const inicioMes=new Date(new Date(Date.now()-offsetBR).toISOString().slice(0,8)+"01").toISOString().slice(0,10);
-      const dataIni=req.query.dataInicial||inicioMes;
+      const dataIni=req.query.dataInicial||dataIniDefault;
       const dataFim=req.query.dataFinal||hojeBR;
       for(let pg=1;pg<=20;pg++){
         const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
@@ -1135,8 +1135,9 @@ app.get("/api/pedidos", async (req, res) => {
     if (req.query.idsSituacoes){
       String(req.query.idsSituacoes).split(",").forEach(id=>p.append("idsSituacoes[]", id.trim()));
     }
-    if (req.query.dataInicial) p.set("dataInicial", req.query.dataInicial);
-    if (req.query.dataFinal) p.set("dataFinal", req.query.dataFinal);
+    // sempre inclui datas — padrão 30 dias se não informado
+    p.set("dataInicial", req.query.dataInicial||dataIniDefault);
+    p.set("dataFinal", req.query.dataFinal||hojeBR);
     res.json(await bling(`/pedidos/vendas?${p.toString()}`));
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
