@@ -1561,7 +1561,9 @@ app.post("/api/imagens/salvar", async(req,res)=>{
       // verifica se a imagem foi salva
       await new Promise(r=>setTimeout(r,500));
       const verificar=await bling(`/produtos/${produtoId}`);
-      const imgSalva=(verificar?.data?.imagens||[]).some(i=>i.link===imagemUrl);
+      const vd=verificar?.data||{};
+      console.log("Após PUT — imagemURL:",vd.imagemURL,"midia:",JSON.stringify(vd.midia||{}).slice(0,200),"imagens:",JSON.stringify(vd.imagens||[]).slice(0,200));
+      const imgSalva=!!(vd.imagemURL===imagemUrl||(vd.midia?.imagens?.externas||[]).some(i=>i.link===imagemUrl));
       console.log("Imagem salva no Bling:", imgSalva);
       sucesso=imgSalva;
     }catch(e1){ console.log("PUT produto erro:",e1.message); }
