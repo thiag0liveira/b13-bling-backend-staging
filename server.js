@@ -1505,7 +1505,10 @@ app.get("/api/imagens/buscar", async(req,res)=>{
           });
           const j2=await r2.json();
           // usa URL original da imagem (não thumbnail do Bing)
-          const ddgImgs=(j2.results||[]).map(r=>r.image||r.thumbnail).filter(u=>u&&u.startsWith("http")&&!u.includes("tse1.mm.bing")&&!u.includes("tse2.mm.bing")&&!u.includes("tse3.mm.bing")&&!u.includes("tse4.mm.bing")).slice(0,4);
+          const ddgImgs=(j2.results||[]).map(r=>r.image||r.thumbnail).filter(u=>{
+            if(!u||!u.startsWith("http")||u.includes("tse1.mm.bing")||u.includes("tse2.mm.bing")||u.includes("tse3.mm.bing")||u.includes("tse4.mm.bing")) return false;
+            const ul=u.toLowerCase().split("?")[0]; return ul.endsWith(".jpg")||ul.endsWith(".jpeg")||ul.endsWith(".png")||ul.endsWith(".webp");
+          }).slice(0,4);
           imgs=[...imgs,...ddgImgs].slice(0,4);
           console.log("DDG encontrou:",ddgImgs.length,"imagens para",nome);
         } else {
@@ -1552,6 +1555,10 @@ app.post("/api/imagens/salvar", async(req,res)=>{
         }
       },
     };
+    // Bling exige URL com extensão de imagem reconhecida
+    const urlBase=imagemUrl.toLowerCase().split("?")[0].split("#")[0];
+    const temExt=urlBase.endsWith(".jpg")||urlBase.endsWith(".jpeg")||urlBase.endsWith(".png")||urlBase.endsWith(".webp")||urlBase.endsWith(".gif");
+    if(!temExt) return res.status(400).json({erro:"URL deve terminar com .jpg, .png ou .webp para o Bling aceitar. Copie a URL direta da imagem."});
     console.log("PUT imagem produto",produtoId,imagemUrl.slice(0,60));
     // tenta primeiro via PUT do produto
     let sucesso=false;
