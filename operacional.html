@@ -862,20 +862,18 @@ function abrirQR(id, numero){
   const url=window.location.origin+"/pedido/"+id+"/status";
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`
-    <div style="text-align:center;padding:20px">
-      <h3 style="margin-bottom:12px">📱 QR Code — Pedido ${numero||id}</h3>
-      <div id="qrContainer" style="background:#fff;padding:16px;border-radius:12px;display:inline-block;margin-bottom:12px"></div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">${url}</div>
-      <div style="display:flex;gap:8px;justify-content:center">
-        <button class="btn btn-mag" onclick="window.print()">🖨️ Imprimir</button>
+    <div style="text-align:center;padding:20px;max-width:340px">
+      <h3 style="margin-bottom:4px">📱 QR Code — Pedido #${numero||id}</h3>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Nota de separação com QR code</div>
+      <div style="background:#fff;padding:12px;border-radius:10px;display:inline-block;margin-bottom:12px">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(url)}" style="width:180px;height:180px;display:block">
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:16px;word-break:break-all">${url}</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <a href="${url}" target="_blank" class="btn btn-mag" style="text-decoration:none">🖨️ Abrir nota completa</a>
         <button class="btn btn-ghost" onclick="fecharModal()">Fechar</button>
       </div>
     </div>`;
-  // gera QR code com API pública
-  const img=document.createElement("img");
-  img.src=`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
-  img.style.cssText="width:200px;height:200px";
-  document.getElementById("qrContainer").appendChild(img);
 }
 
 async function voltarAguardando(id){

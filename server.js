@@ -1702,66 +1702,143 @@ app.get("/api/produto/:id/imagens-debug", async(req,res)=>{
 app.get("/pedido/:id/status", async(req,res)=>{
   try{
     const id=req.params.id;
-    const [rPed,rPag,rLog]=await Promise.all([
+    const BASE=process.env.RAILWAY_PUBLIC_DOMAIN?`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`:"";
+    const [rPed,pag,logArr]=await Promise.all([
       bling(`/pedidos/vendas/${id}`),
       Promise.resolve(lerPag()[id]||null),
-      Promise.resolve(lerJSON(LOG_FILE,{})[id]||[]),
+      Promise.resolve((lerLog()[id]||[]).slice(-8).reverse()),
     ]);
     const ped=rPed?.data||{};
-    const pag=rPag;
-    const log=(rLog||[]).slice(-5).reverse();
     const sit=ped.situacao?.nome||"Desconhecido";
-    const sitCor={
-      "AGUARDANDO SEPARAÇÃO (SISTEMA)":"#fbff00",
-      "Em Separação":"#00aaff",
-      "SEPARADO C/ PENDÊNCIAS":"#d400ff",
-      "SEPARADO":"#8e42a3",
-      "Em Rota":"#6d2390",
-      "Atendido":"#3FB57A",
-    }[sit]||"#9a95c9";
+    const sitCor={"AGUARDANDO SEPARAÇÃO (SISTEMA)":"#fbff00","Em Separação":"#00aaff","SEPARADO C/ PENDÊNCIAS":"#d400ff","SEPARADO":"#a855f7","Em Rota":"#6d2390","Atendido":"#3FB57A"}[sit]||"#9a95c9";
     const pago=pag?.statusPagamento==="pago";
+    const itens=(ped.itens||[]);
+    const qrUrl=`${BASE}/pedido/${id}/status`;
+    const confUrl=`${BASE}/conferencia?pedido=${id}`;
+
+    const itensHtml=itens.map(i=>`
+      <tr>
+        <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:12px">${i.descricao||i.produto?.nome||""}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:12px;text-align:center;font-weight:700">${i.quantidade}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:12px;text-align:right">R$ ${(i.valor||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+        <td style="padding:4px 6px;border-bottom:1px solid #eee;font-size:12px;text-align:right">R$ ${((i.valor||0)*(i.quantidade||1)).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
+      </tr>`).join("");
+
+    const logHtml=logArr.map(e=>{
+      const d=new Date(e.em||0);
+      const dt=d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+      return `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid #eee;color:#444">${(e.evento||"").replace(/_/g," ")} — <b>${e.funcionarioNome||""}</b> <span style="float:right;color:#888">${dt}</span></div>`;
+    }).join("");
+
     const html=`<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pedido ${ped.numero||id}</title>
+<title>Pedido #${ped.numero||id}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-.card{background:#12103a;border:1px solid #2a2660;border-radius:16px;padding:24px;max-width:400px;width:100%;text-align:center}
-.logo{font-size:28px;font-weight:900;color:#FF0082;margin-bottom:4px}
-.sub{font-size:11px;color:#9a95c9;margin-bottom:20px}
-.numero{font-size:32px;font-weight:900;margin-bottom:4px}
-.cliente{color:#9a95c9;font-size:14px;margin-bottom:20px}
-.status{padding:10px 20px;border-radius:30px;font-size:16px;font-weight:900;display:inline-block;margin-bottom:16px}
-.total{font-size:22px;font-weight:900;color:#ffd23f;margin-bottom:8px}
-.pag{font-size:13px;margin-bottom:20px}
-.log{text-align:left;border-top:1px solid #2a2660;padding-top:16px}
-.log-title{font-size:11px;color:#9a95c9;margin-bottom:8px;font-weight:700}
-.log-item{font-size:12px;padding:5px 0;border-bottom:1px solid #1a1840;color:#cfc9f5}
-.log-item span{color:#9a95c9;font-size:10px;float:right}
+body{font-family:Arial,sans-serif;background:#f5f5f5;color:#222;padding:12px}
+.nota{background:#fff;max-width:380px;margin:0 auto;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.topo{background:#262366;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px}
+.logo{font-size:22px;font-weight:900;color:#FF0082;letter-spacing:-1px}
+.empresa{font-size:10px;color:#cfc9f5;margin-top:2px}
+.status-bar{padding:8px 16px;text-align:center;font-weight:900;font-size:14px}
+.secao{padding:10px 16px;border-bottom:1px solid #eee}
+.secao-title{font-size:10px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px}
+.cliente-nome{font-size:16px;font-weight:900}
+.cliente-info{font-size:11px;color:#666;margin-top:2px}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;color:#888;text-align:left;padding:4px 6px;border-bottom:2px solid #ddd}
+.total-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px}
+.total-row.destaque{font-size:16px;font-weight:900;color:#262366}
+.pag-ok{color:#16a34a;font-weight:700;font-size:13px}
+.pag-pend{color:#dc2626;font-weight:700;font-size:13px}
+.qr-area{padding:16px;text-align:center;background:#f9f9f9;border-top:1px solid #eee}
+.qr-area img{width:140px;height:140px}
+.qr-label{font-size:10px;color:#888;margin-top:6px}
+.acoes{display:flex;flex-direction:column;gap:8px;padding:16px}
+.btn{display:block;padding:12px;border-radius:8px;text-align:center;font-weight:700;font-size:14px;text-decoration:none;cursor:pointer;border:none}
+.btn-conf{background:#a855f7;color:#fff}
+.btn-ghost{background:#f1f5f9;color:#333;border:1px solid #ddd}
+.rodape{padding:10px 16px;text-align:center;font-size:10px;color:#aaa;border-top:1px solid #eee}
+@media print{
+  body{background:#fff;padding:0}
+  .nota{box-shadow:none;border-radius:0;max-width:100%}
+  .acoes{display:none}
+  .no-print{display:none}
+}
 </style></head><body>
-<div class="card">
-  <div class="logo">B13</div>
-  <div class="sub">BEBIDAS · STATUS DO PEDIDO</div>
-  <div class="numero">Pedido #${ped.numero||id}</div>
-  <div class="cliente">👤 ${ped.contato?.nome||"—"}</div>
-  <div class="status" style="background:${sitCor}22;color:${sitCor};border:2px solid ${sitCor}">${sit}</div>
-  <div class="total">R$ ${(ped.total||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>
-  <div class="pag">${pago?`✅ Pago: R$ ${(pag.valorPago||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"⏳ Aguardando pagamento"}</div>
-  ${log.length?`<div class="log">
-    <div class="log-title">HISTÓRICO</div>
-    ${log.map(e=>{
-      const d=new Date(e.em||0);
-      const hr=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-      const dt=d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
-      return `<div class="log-item">${(e.evento||"").replace(/_/g," ")} — ${e.funcionarioNome||""}<span>${dt} ${hr}</span></div>`;
-    }).join("")}
+<div class="nota">
+  <div class="topo">
+    <div>
+      <div class="logo">B13 BEBIDAS</div>
+      <div class="empresa">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH<br>(31) 99971-9888</div>
+    </div>
+  </div>
+
+  <div class="status-bar" style="background:${sitCor}22;color:${sitCor};border-bottom:3px solid ${sitCor}">
+    ${sit}
+  </div>
+
+  <div class="secao">
+    <div class="secao-title">Pedido</div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:20px;font-weight:900">#${ped.numero||id}</div>
+      <div style="font-size:11px;color:#666">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+    </div>
+  </div>
+
+  <div class="secao">
+    <div class="secao-title">Cliente</div>
+    <div class="cliente-nome">${ped.contato?.nome||"—"}</div>
+    ${ped.contato?.telefone?`<div class="cliente-info">📞 ${ped.contato.telefone}</div>`:""}
+    ${ped.contato?.endereco?.endereco?`<div class="cliente-info">📍 ${ped.contato.endereco.endereco}${ped.contato.endereco.numero?", "+ped.contato.endereco.numero:""} — ${ped.contato.endereco.bairro||""}</div>`:""}
+  </div>
+
+  <div class="secao">
+    <div class="secao-title">Itens (${itens.length})</div>
+    <table>
+      <thead><tr>
+        <th>Produto</th><th style="text-align:center">Qtd</th>
+        <th style="text-align:right">Unit.</th><th style="text-align:right">Total</th>
+      </tr></thead>
+      <tbody>${itensHtml}</tbody>
+    </table>
+  </div>
+
+  <div class="secao">
+    <div class="total-row"><span>Subtotal</span><span>R$ ${(ped.total||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</span></div>
+    ${ped.desconto?`<div class="total-row"><span style="color:#dc2626">Desconto</span><span style="color:#dc2626">-R$ ${(ped.desconto||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</span></div>`:""}
+    <div class="total-row destaque"><span>TOTAL</span><span>R$ ${(ped.totalProdutos||ped.total||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</span></div>
+    <div style="margin-top:8px">
+      ${pago
+        ?`<div class="pag-ok">✅ PAGO — R$ ${(pag.valorPago||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>`
+        :`<div class="pag-pend">⏳ AGUARDANDO PAGAMENTO</div>`}
+    </div>
+  </div>
+
+  ${logHtml?`<div class="secao">
+    <div class="secao-title">Histórico</div>
+    ${logHtml}
   </div>`:""}
-  <div style="margin-top:16px;font-size:10px;color:#514c96">Atualizado em ${new Date().toLocaleString("pt-BR")}</div>
-</div></body></html>`;
+
+  <div class="qr-area">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrUrl)}" alt="QR Code">
+    <div class="qr-label">Leia o QR para ver status atualizado do pedido</div>
+    <div class="qr-label" style="margin-top:2px;font-size:9px;color:#bbb">${qrUrl}</div>
+  </div>
+
+  <div class="acoes no-print">
+    <a href="${confUrl}" class="btn btn-conf">🔍 Abrir na Conferência</a>
+    <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir nota</button>
+  </div>
+
+  <div class="rodape">B13 Bebidas — CNPJ: · Emitido em ${new Date().toLocaleString("pt-BR")}</div>
+</div>
+</body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
     res.send(html);
-  }catch(e){ res.status(500).send("Erro ao buscar pedido"); }
+  }catch(e){ res.status(500).send("Erro ao buscar pedido: "+e.message); }
 });
+
 
 // Importar NF-e por chave de acesso via Bling → SEFAZ
 app.post("/api/nfe/importar", async (req, res) => {

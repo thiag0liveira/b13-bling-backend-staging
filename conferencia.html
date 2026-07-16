@@ -151,6 +151,10 @@ async function init(){
     SIT=j.SIT||{};
   }catch(e){}
   await carregar();
+  // se veio de QR code com ?pedido=ID, abre direto
+  const params=new URLSearchParams(location.search);
+  const pedidoQR=params.get("pedido");
+  if(pedidoQR) abrirPedido(pedidoQR);
 }
 
 async function carregar(){
