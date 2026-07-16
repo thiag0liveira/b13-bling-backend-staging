@@ -62,6 +62,10 @@
   .kcol-head{padding:10px 12px;font-weight:900;font-size:13px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:#0d0b1e;position:sticky;top:0}
   .kcol-head .cnt{background:var(--mag);color:#fff;border-radius:999px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;padding:0 5px}
   .kcol-body{padding:8px;overflow-y:auto;max-height:calc(100vh - 130px);flex:1}
+  .periodo-btn{padding:3px 8px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:11px;cursor:pointer;transition:.15s;white-space:nowrap}
+  .periodo-btn:hover{border-color:#514c96;color:#fff}
+  .periodo-btn.ativo{background:var(--ind);border-color:var(--mag);color:#fff;font-weight:700}
+  .periodo-custom{background:#0f0d24;border:1px solid var(--border);border-radius:5px;color:#fff;font-size:11px;padding:3px 6px}
   .refresh-bar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0d0b1e;border-bottom:1px solid var(--border);font-size:11px;color:#9a95c9}
   .dot{width:7px;height:7px;border-radius:50%;background:#2f9e6b;display:inline-block;animation:pulse 2s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -102,6 +106,7 @@ const dataBR=d=>{if(!d)return"";const p=String(d).slice(0,10).split("-");return 
 // IDs de status (carregados do backend)
 let SIT={AGUARDANDO:818795,EM_SEP:817963,SEP_PEND:819227,SEPARADO:821590,CONF_ENTREGA:821611,VERIFICADO:24,EM_ROTA:820085,ATENDIDO:9};
 let FUNC=null, pedidos=[], pags={}, acrs={}, seps={}, formasPag=[], mapSit={}, timer=null;
+let periodoIni=null, periodoFim=null; // null = padrão (últimos 7 dias)
 try{ if(typeof b13GetSession==="function"){ const sess=b13GetSession(); if(sess) FUNC=sess; } }catch(e){}
 
 // permissões por nível
@@ -155,9 +160,13 @@ async function iniciar(){
 async function carregar(){
   try{
     if(!window._logsCache) window._logsCache={};
-    const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO].filter(Boolean).join(",");
+    const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA].filter(Boolean).join(",");
+    // período configurável — padrão: últimos 7 dias
+    const agora=new Date(); agora.setHours(agora.getHours()-3);
+    const dataFim=periodoFim||agora.toISOString().slice(0,10);
+    const dataIni=periodoIni||new Date(agora-7*86400000).toISOString().slice(0,10);
     const [rPed,rPag,rAcr,rSep,rPend]=await Promise.all([
-      fetch(B+"/api/pedidos?limite=100&idsSituacoes="+sits).then(r=>r.json()),
+      fetch(B+`/api/pedidos?limite=100&dataInicial=${dataIni}&dataFinal=${dataFim}&idsSituacoes=`+sits).then(r=>r.json()),
       fetch(B+"/api/pagamentos").then(r=>r.json()),
       fetch(B+"/api/acrescimos").then(r=>r.json()),
       fetch(B+"/api/separacoes").then(r=>r.json()),
@@ -225,9 +234,61 @@ function render(){
   }).join("");
 
   app.innerHTML=top+`
-    <div class="refresh-bar"><span class="dot"></span> Atualiza a cada 10s · ${totalPed} pedido(s) total</div>
+    <div class="refresh-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span><span class="dot"></span> ${totalPed} pedido(s)</span>
+      <div id="periodBar" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"></div>
+    </div>
     <div class="kanban">${cols}</div>`;
   document.querySelectorAll(".top img").forEach(i=>i.src=LOGO);
+  renderPeriodBar();
+}
+
+function calcPeriodo(tipo){
+  const now=new Date(); now.setHours(now.getHours()-3);
+  const hoje=now.toISOString().slice(0,10);
+  const d=(n)=>new Date(now-n*86400000).toISOString().slice(0,10);
+  const primeiroDiaMes=hoje.slice(0,8)+"01";
+  if(tipo==="hoje") return {ini:hoje,fim:hoje};
+  if(tipo==="ontem") return {ini:d(1),fim:d(1)};
+  if(tipo==="anteontem") return {ini:d(2),fim:d(2)};
+  if(tipo==="semana") return {ini:d(6),fim:hoje};
+  if(tipo==="mes") return {ini:primeiroDiaMes,fim:hoje};
+  if(tipo==="7dias") return {ini:d(6),fim:hoje};
+  if(tipo==="30dias") return {ini:d(29),fim:hoje};
+  return {ini:d(6),fim:hoje};
+}
+
+let periodoAtivo="7dias";
+
+function setPeriodo(tipo, iniCustom, fimCustom){
+  if(tipo==="custom"){
+    periodoIni=iniCustom; periodoFim=fimCustom; periodoAtivo="custom";
+  } else {
+    const p=calcPeriodo(tipo);
+    periodoIni=p.ini; periodoFim=p.fim; periodoAtivo=tipo;
+  }
+  carregar();
+  renderPeriodBar();
+}
+
+function renderPeriodBar(){
+  const bar=document.getElementById("periodBar");
+  if(!bar) return;
+  const opcoes=[
+    {k:"hoje",l:"Hoje"},{k:"ontem",l:"Ontem"},{k:"anteontem",l:"Anteontem"},
+    {k:"semana",l:"Semana"},{k:"mes",l:"Mês"},{k:"7dias",l:"7 dias"},{k:"30dias",l:"30 dias"},
+  ];
+  bar.innerHTML=opcoes.map(o=>`<button class="periodo-btn ${periodoAtivo===o.k?'ativo':''}" onclick="setPeriodo('${o.k}')">${o.l}</button>`).join("")+
+    `<span style="font-size:11px;color:var(--muted);margin-left:2px">📅</span>
+     <input type="date" class="periodo-custom" id="pIni" value="${periodoIni||''}" onchange="atualizarCustom()">
+     <span style="font-size:11px;color:var(--muted)">→</span>
+     <input type="date" class="periodo-custom" id="pFim" value="${periodoFim||''}" onchange="atualizarCustom()">`;
+}
+
+function atualizarCustom(){
+  const ini=document.getElementById("pIni")?.value;
+  const fim=document.getElementById("pFim")?.value;
+  if(ini&&fim&&ini<=fim) setPeriodo("custom",ini,fim);
 }
 
 function nomeSit(id){ return mapSit[id]?.nome||""; }
