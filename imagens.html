@@ -226,7 +226,7 @@ async function salvar(prodId){
   if(!url||!prod) return;
   // Copia URL e abre Bling — API v3 não suporta salvar imagens externas
   await navigator.clipboard.writeText(url).catch(()=>{});
-  window.open(`https://www.bling.com.br/produtos.php#edit/${prod.id}/imagens`,"_blank");
+  window.open(`https://www.bling.com.br/cadastros/produtos/${prod.id}/imagens`,"_blank");
   const act=document.getElementById("act_"+prodId);
   act.innerHTML=`<div style="background:#1a1040;border:1px solid #514c96;border-radius:6px;padding:6px 8px;font-size:10px;color:#cfc9f5;max-width:180px">
     ✅ URL copiada!<br>Cole no Bling que abriu.<br>
