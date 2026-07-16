@@ -859,7 +859,7 @@ async function receberEClienteJaSeparou(id, total){
 
 // QR Code do pedido
 function abrirQR(id, numero){
-  const url=B+"/pedido/"+id+"/status";
+  const url=window.location.origin+"/pedido/"+id+"/status";
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`
     <div style="text-align:center;padding:20px">
