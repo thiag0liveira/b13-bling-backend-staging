@@ -162,6 +162,7 @@ function b13RenderNav(ativo){
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
     {href:"/gestao",label:"📋 Gestão",check:()=>b13Pode("editar_pedido")},
     {href:"/listas",label:"📄 Listas",check:()=>b13Pode("ver_listas")},
+    {href:"/pedir",label:"🛒 Totem",check:()=>b13Pode("admin")},
     {href:"/funcionarios",label:"👥 Funcionários",check:()=>b13Pode("ver_funcionarios")},
     {href:"/imagens",label:"📷 Imagens",check:()=>b13Pode("admin")},
   ].filter(l=>l.check());
