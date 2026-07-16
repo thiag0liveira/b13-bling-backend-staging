@@ -1517,15 +1517,18 @@ app.post("/api/imagens/salvar", async(req,res)=>{
   try{
     const {produtoId, imagemUrl}=req.body||{};
     if(!produtoId||!imagemUrl) return res.status(400).json({erro:"produtoId e imagemUrl obrigatórios"});
-    // busca produto completo
+
+    // busca produto completo para ter o nome e campos obrigatórios
     const prodAtual=await bling(`/produtos/${produtoId}`);
     const prod=prodAtual?.data||{};
     if(!prod.nome) return res.status(404).json({erro:"Produto não encontrado no Bling"});
-    await new Promise(r=>setTimeout(r,350));
-    // monta imagens: mantém as existentes + adiciona a nova
-    const imagensAtuais=(prod.imagens||[]).filter(i=>i.link&&i.link!==imagemUrl);
+    await new Promise(r=>setTimeout(r,400));
+
+    // mantém imagens existentes + adiciona a nova no topo
+    const imagensAtuais=(prod.imagens||[]).filter(i=>i.link&&i.link.trim()&&i.link!==imagemUrl);
     const novasImagens=[{link:imagemUrl,tipoArmazenamento:"externo",validade:""},...imagensAtuais];
-    // PUT com todos os campos obrigatórios do produto
+
+    // PUT completo com todos os campos que o Bling retornou
     const payload={
       nome:prod.nome,
       codigo:prod.codigo||"",
@@ -1535,12 +1538,30 @@ app.post("/api/imagens/salvar", async(req,res)=>{
       formato:prod.formato||"S",
       imagens:novasImagens,
     };
+    // campos opcionais — só inclui se existirem
     if(prod.unidade) payload.unidade=prod.unidade;
+    if(prod.pesoBruto) payload.pesoBruto=prod.pesoBruto;
+    if(prod.pesoLiquido) payload.pesoLiquido=prod.pesoLiquido;
+    if(prod.volumes) payload.volumes=prod.volumes;
+    if(prod.itensPorCaixa) payload.itensPorCaixa=prod.itensPorCaixa;
+    if(prod.gtin) payload.gtin=prod.gtin;
+    if(prod.gtinEmbalagem) payload.gtinEmbalagem=prod.gtinEmbalagem;
+    if(prod.tipoProducao) payload.tipoProducao=prod.tipoProducao;
+    if(prod.condicao!==undefined) payload.condicao=prod.condicao;
+    if(prod.freteGratis!==undefined) payload.freteGratis=prod.freteGratis;
+    if(prod.marca) payload.marca=prod.marca;
     if(prod.descricaoCurta) payload.descricaoCurta=prod.descricaoCurta;
+    if(prod.descricaoComplementar) payload.descricaoComplementar=prod.descricaoComplementar;
+    if(prod.linkExterno) payload.linkExterno=prod.linkExterno;
+    if(prod.observacoes) payload.observacoes=prod.observacoes;
+    if(prod.categoria?.id) payload.categoria={id:prod.categoria.id};
+    if(prod.estoque?.minimo!==undefined) payload.estoque={minimo:prod.estoque.minimo,maximo:prod.estoque.maximo,crossdocking:prod.estoque.crossdocking,localizacao:prod.estoque.localizacao};
+
+    console.log("Salvando imagem produto",produtoId,"payload.imagens:",JSON.stringify(novasImagens));
     const r=await bling(`/produtos/${produtoId}`,{method:"PUT",body:JSON.stringify(payload)});
     res.json({ok:true,data:r});
   }catch(e){
-    console.error("Erro salvar imagem:",e.message,JSON.stringify(e.body||"").slice(0,300));
+    console.error("Erro salvar imagem:",e.message,JSON.stringify(e.body||"").slice(0,500));
     res.status(e.status||500).json({erro:e.message,body:e.body});
   }
 });
