@@ -116,6 +116,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
   <div class="mbox">
     <h3>✅ Pedido Conferido</h3>
     <p class="muted" style="margin-bottom:14px;font-size:12px">Escolha como o pedido será entregue:</p>
+    <div id="pagStatus" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
     <div class="tipo-btn">
       <button id="btnEntrega" onclick="selecionarTipo('entrega')">🚚 Entrega</button>
       <button id="btnRetirada" onclick="selecionarTipo('retirada')">🏪 Retirada</button>
@@ -203,12 +204,15 @@ async function abrirPedido(id){
   document.getElementById("app").innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando pedido…</div>`;
   try{
     // busca lock — verifica se tem conferência em andamento
-    const [rPed,rLog,rPend]=await Promise.all([
+    const [rPed,rLog,rPend,rPag]=await Promise.all([
       fetch(BACKEND+"/api/pedidos/"+id).then(r=>r.json()),
       fetch(BACKEND+"/api/log/"+id).then(r=>r.json()),
       fetch(BACKEND+"/api/pendencias/"+id).then(r=>r.json()),
+      fetch(BACKEND+"/api/pagamentos/"+id).then(r=>r.json()),
     ]);
     sel=rPed.data||rPed;
+    sel._pag=rPag.data||null;
+    sel._pago=sel._pag&&sel._pag.statusPagamento==="pago";
     const logItems=rLog.data||[];
     const pend=rPend.data;
     const faltas=pend?.faltas||[];
@@ -266,6 +270,9 @@ function renderConferencia(){
           <h2>Pedido ${p.numero||p.id}</h2>
           <div class="cli">👤 ${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
           <div class="total">${brl(p.total||0)}</div>
+          ${p._pago
+            ?`<div style="font-size:11px;color:#a8f0c8;margin-top:3px">✅ Pago: ${brl(p._pag?.valorPago||0)}</div>`
+            :`<div style="font-size:11px;color:#ffd23f;margin-top:3px">⚠️ Não pago</div>`}
         </div>
         <button class="btn btn-ghost btn-sm" onclick="sel=null;itensConf=[];render()">← Fila</button>
       </div>
@@ -295,6 +302,24 @@ function abrirModal(){
   document.getElementById("btnConfirmar").disabled=true;
   document.getElementById("fotoPreview").innerHTML='📷 Toque para tirar foto do pedido (opcional)';
   document.getElementById("msgModal").textContent="";
+  // mostra status de pagamento
+  const pag=sel._pag;
+  const pago=sel._pago;
+  const valorPago=pag?.valorPago||0;
+  const total=sel.total||0;
+  const ps=document.getElementById("pagStatus");
+  if(pago){
+    ps.style.background="#0a2a1a"; ps.style.border="1px solid #2f9e6b"; ps.style.color="#a8f0c8";
+    ps.innerHTML=`✅ Pago: <b>${brl(valorPago)}</b> de ${brl(total)}`;
+  } else {
+    ps.style.background="#2a0a00"; ps.style.border="1px solid #ff8c00"; ps.style.color="#ffd23f";
+    ps.innerHTML=`⚠️ Não pago — Total: <b>${brl(total)}</b><br><span style="font-size:11px">Retirada bloqueada até pagamento</span>`;
+  }
+  // bloqueia retirada se não pago
+  const btnRet=document.getElementById("btnRetirada");
+  btnRet.disabled=!pago;
+  btnRet.style.opacity=pago?"1":"0.4";
+  btnRet.title=pago?"":"Pedido não pago — registre o pagamento antes";
   document.getElementById("modal").classList.add("open");
 }
 
