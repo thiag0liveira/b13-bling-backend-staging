@@ -92,7 +92,14 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 </head>
 <body><script>
   (function(){
-    if(!b13RequireLogin()) return;
+    // login preserva query string completa (?pedido=ID)
+    const sess=sessionStorage.getItem("b13sess")||localStorage.getItem("b13sess");
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); return; }
+    try{
+      const f=JSON.parse(sess);
+      if(!f?.id){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); return; }
+      sessionStorage.setItem("b13sess",sess);
+    }catch(e){ location.href="/login"; return; }
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/conferencia");
