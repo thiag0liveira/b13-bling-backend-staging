@@ -1402,7 +1402,7 @@ app.get("/api/imagens/sem-foto/progresso", async(req,res)=>{
         await new Promise(r=>setTimeout(r,350));
         const pj=await bling(`/produtos/${prodId}`);
         const prod=pj?.data||{};
-        const temImagem=!!(prod.imageUrl||prod.imageThumbnail||(prod.imagens&&prod.imagens.length>0));
+        const temImagem=!!(prod.imagens&&prod.imagens.some(i=>i.link&&i.link.trim()));
         if(!temImagem){
           const item={id:prodId,codigo:b.codigo||prod.codigo||"",nome:prod.nome||b.nome||it.nome||"",categoria:cat.t,preco:prod.preco||it.preco||0};
           semFoto.push(item);
@@ -1438,7 +1438,7 @@ app.get("/api/imagens/sem-foto", async(req,res)=>{
             await new Promise(r=>setTimeout(r,350)); // rate limit
             const pj=await bling(`/produtos/${prodId}`);
             const prod=pj?.data||{};
-            const temImagem=!!(prod.imageUrl||prod.imageThumbnail||(prod.imagens&&prod.imagens.length>0));
+            const temImagem=!!(prod.imagens&&prod.imagens.some(i=>i.link&&i.link.trim()));
             if(!temImagem){
               semFoto.push({
                 id:prodId,
