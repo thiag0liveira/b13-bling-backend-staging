@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>B13 · Conferência</title>
+<style>
+:root{--bg:#0a0920;--card:#12103a;--border:#2a2660;--mag:#FF0082;--ind:#262366;--text:#e8e4ff;--muted:#9a95c9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min-height:100vh}
+.header{background:var(--ind);padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--mag);position:sticky;top:0;z-index:10}
+.header img{height:28px}
+.header h1{font-size:15px;font-weight:900;flex:1}
+.btn{padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-weight:700;font-size:13px;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-mag{background:var(--mag);color:#fff}
+.btn-grn{background:#1a6b3a;color:#a8f0c8;border:1px solid #2f9e6b}
+.btn-blue{background:#1a3a6b;color:#a8c8f0;border:1px solid #2f6b9e}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.wrap{padding:16px;max-width:800px;margin:0 auto}
+.colhead{font-size:13px;font-weight:900;color:var(--mag);letter-spacing:.5px;margin-bottom:10px}
+.muted{color:var(--muted);font-size:12px}
+.err{color:#ff8090;font-size:12px}
+.ok{color:#a8f0c8}
+
+/* Fila de pedidos */
+.fila{display:flex;flex-direction:column;gap:8px}
+.fila-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;transition:.15s}
+.fila-item:hover{border-color:#514c96}
+.fila-item.ativo{border-color:var(--mag);background:#1a0530}
+.fi-num{font-weight:900;font-size:15px}
+.fi-cli{font-size:12px;color:var(--muted);margin-top:2px}
+.fi-total{font-size:13px;color:#ffd23f;font-weight:700;margin-top:4px}
+.fi-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;margin-top:4px}
+.badge-sep{background:#3a1060;color:#d400ff}
+.badge-pend{background:#3a0010;color:#ff8090}
+
+/* Painel de conferência */
+.conf-panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+.conf-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+.conf-info h2{font-size:17px;font-weight:900}
+.conf-info .cli{font-size:13px;color:var(--muted);margin-top:3px}
+.conf-info .total{font-size:14px;color:#ffd23f;font-weight:700;margin-top:4px}
+
+/* Itens */
+.conf-list{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;margin-bottom:14px;padding-right:2px}
+.it{background:#0f0d24;border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;transition:.15s;cursor:pointer;user-select:none}
+.it.ok{border-color:#2f9e6b;background:#0a1a10}
+.it.pend{border-color:#d400ff;background:#1a0520;cursor:default}
+.it-img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0;padding:2px}
+.it-nome{font-size:13px;font-weight:700;flex:1;line-height:1.3}
+.it-qtd{font-size:22px;font-weight:900;color:#ffd23f;text-align:center;min-width:40px}
+.it-check{width:32px;height:32px;border-radius:50%;border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;transition:.15s}
+.it.ok .it-check{border-color:#2f9e6b;background:#1a6b3a;color:#a8f0c8}
+.it-pend-tag{font-size:10px;color:#d400ff;background:#2a0030;border-radius:4px;padding:2px 6px;white-space:nowrap}
+
+/* Pend */
+.pend-warn{background:#2a0010;border:1px solid #d400ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce}
+
+/* Barra inferior */
+.bar{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);padding:12px 16px;display:flex;gap:8px;z-index:10}
+.bar-info{flex:1;font-size:12px;color:var(--muted)}
+.bar-info b{display:block;font-size:16px;font-weight:900;color:#ffd23f}
+
+/* Modal entrega/retirada */
+.modal{display:none;position:fixed;inset:0;background:#000a;z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.mbox{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:420px;padding:20px}
+.mbox h3{font-size:16px;font-weight:900;margin-bottom:14px}
+.tipo-btn{display:flex;gap:10px;margin-bottom:16px}
+.tipo-btn button{flex:1;padding:16px;border-radius:10px;border:2px solid var(--border);background:#0f0d24;color:var(--text);cursor:pointer;font-size:14px;font-weight:700;transition:.15s}
+.tipo-btn button.sel{border-color:var(--mag);background:#1a0530;color:#fff}
+
+/* Foto */
+.foto-area{border:2px dashed var(--border);border-radius:10px;padding:16px;text-align:center;margin-bottom:12px;cursor:pointer;transition:.15s}
+.foto-area:hover{border-color:#514c96}
+.foto-area img{max-width:100%;max-height:200px;border-radius:8px}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--mag);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:var(--bg)} ::-webkit-scrollbar-thumb{background:#514c96;border-radius:2px}
+</style>
+</head>
+<body>
+<div class="header">
+  <img src="/logo" onerror="this.style.display='none'">
+  <h1>🔍 Conferência</h1>
+  <span id="funcNome" class="muted" style="font-size:11px"></span>
+  <button class="btn btn-ghost btn-sm" onclick="location.href='/operacional'">← Voltar</button>
+</div>
+
+<div class="wrap" id="app">
+  <div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando…</div>
+</div>
+
+<!-- Modal conferir -->
+<div class="modal" id="modal">
+  <div class="mbox">
+    <h3>✅ Pedido Conferido</h3>
+    <p class="muted" style="margin-bottom:14px;font-size:12px">Escolha como o pedido será entregue:</p>
+    <div class="tipo-btn">
+      <button id="btnEntrega" onclick="selecionarTipo('entrega')">🚚 Entrega</button>
+      <button id="btnRetirada" onclick="selecionarTipo('retirada')">🏪 Retirada</button>
+    </div>
+    <div class="foto-area" id="fotoArea" onclick="document.getElementById('fotoInput').click()">
+      <input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="carregarFoto(this)">
+      <div id="fotoPreview">📷 Toque para tirar foto do pedido (opcional)</div>
+    </div>
+    <div id="msgModal" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-grn" id="btnConfirmar" onclick="confirmarConferencia()" disabled style="flex:1">✅ Confirmar</button>
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BACKEND=window.location.origin;
+let FUNC=null, SIT={}, pedidos=[], sel=null, itensConf=[], tipoSel=null, fotoBase64=null;
+
+// Auth
+const sess=sessionStorage.getItem("b13sess");
+if(!sess){ location.href="/login"; throw 0; }
+try{ FUNC=JSON.parse(sess); }catch(e){ location.href="/login"; throw 0; }
+if(!FUNC?.id){ location.href="/login"; throw 0; }
+document.getElementById("funcNome").textContent=FUNC.nome||"";
+
+async function init(){
+  // busca config de situações
+  try{
+    const r=await fetch(BACKEND+"/api/config");
+    const j=await r.json();
+    SIT=j.SIT||{};
+  }catch(e){}
+  await carregar();
+}
+
+async function carregar(){
+  try{
+    const r=await fetch(BACKEND+"/api/pedidos");
+    const j=await r.json();
+    // filtra apenas SEPARADO (821590)
+    pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO");
+    render();
+  }catch(e){
+    document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro ao carregar pedidos: ${e.message}</div>`;
+  }
+}
+
+function render(){
+  const app=document.getElementById("app");
+  if(sel){
+    renderConferencia();
+    return;
+  }
+  if(!pedidos.length){
+    app.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)">
+      <div style="font-size:36px;margin-bottom:10px">✅</div>
+      <div style="font-weight:700">Nenhum pedido aguardando conferência</div>
+      <div class="muted" style="margin-top:6px">Pedidos com status SEPARADO aparecerão aqui</div>
+      <button class="btn btn-ghost" style="margin-top:16px" onclick="carregar()">↻ Atualizar</button>
+    </div>`;
+    return;
+  }
+  app.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="colhead">Pedidos para conferir (${pedidos.length})</div>
+      <button class="btn btn-ghost btn-sm" onclick="carregar()">↻</button>
+    </div>
+    <div class="fila">${pedidos.map(p=>`
+      <div class="fila-item" onclick="abrirPedido(${p.id})">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="fi-num">Pedido ${p.numero||p.id}</div>
+            <div class="fi-cli">👤 ${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
+            <div class="fi-total">${brl(p.total||0)}</div>
+          </div>
+          <span class="fi-badge badge-sep">SEPARADO</span>
+        </div>
+      </div>`).join("")}
+    </div>
+    <div style="height:20px"></div>`;
+}
+
+async function abrirPedido(id){
+  document.getElementById("app").innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando pedido…</div>`;
+  try{
+    // busca lock — verifica se tem conferência em andamento
+    const [rPed,rLog,rPend]=await Promise.all([
+      fetch(BACKEND+"/api/pedidos/"+id).then(r=>r.json()),
+      fetch(BACKEND+"/api/log/"+id).then(r=>r.json()),
+      fetch(BACKEND+"/api/pendencias/"+id).then(r=>r.json()),
+    ]);
+    sel=rPed.data||rPed;
+    const logItems=rLog.data||[];
+    const pend=rPend.data;
+    const faltas=pend?.faltas||[];
+
+    // monta itens com info de pendência anterior
+    itensConf=(sel.itens||[]).map(i=>{
+      const falta=faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&f.produtoId===i.produto?.id));
+      return {
+        produtoId:i.produto?.id,
+        descricao:i.descricao||i.produto?.nome||"",
+        quantidade:i.quantidade,
+        valor:i.valor,
+        imagem:i.produto?.imageThumbnail||"",
+        confirmado:false,
+        _teveFalta:!!falta,
+        _faltaQtd:falta?.falta||0,
+      };
+    });
+
+    // registra abertura
+    await fetch(BACKEND+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({evento:"pedido_aberto_conferencia",funcionarioId:FUNC.id,funcionarioNome:FUNC.nome})}).catch(()=>{});
+
+    render();
+  }catch(e){
+    document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro: ${e.message}<br><br><button class="btn btn-ghost" onclick="sel=null;render()">← Voltar</button></div>`;
+  }
+}
+
+function renderConferencia(){
+  const p=sel;
+  const feitos=itensConf.filter(i=>i.confirmado).length;
+  const todos=feitos===itensConf.length;
+  const temPend=itensConf.some(i=>i._teveFalta);
+  const app=document.getElementById("app");
+
+  const linhas=itensConf.map((c,ix)=>`
+    <div class="it ${c.confirmado?'ok':''} ${c._teveFalta&&!c.confirmado?'pend':''}"
+      onclick="${c._teveFalta&&!c.confirmado?'':` confirmarItem(${ix})`}" >
+      ${c.imagem?`<img class="it-img" src="${esc(c.imagem)}" onerror="this.remove()">`:''}
+      <div style="flex:1">
+        <div class="it-nome">${esc(c.descricao)}
+          ${c._teveFalta?`<span class="it-pend-tag">⚠️ teve falta de ${c._faltaQtd}</span>`:''}
+        </div>
+        <div class="muted" style="margin-top:3px">pedido: ${c.quantidade} un</div>
+      </div>
+      <div class="it-qtd">${c.quantidade}</div>
+      <div class="it-check">${c.confirmado?'✓':''}</div>
+    </div>`).join("");
+
+  app.innerHTML=`
+    <div class="conf-panel">
+      <div class="conf-header">
+        <div class="conf-info">
+          <h2>Pedido ${p.numero||p.id}</h2>
+          <div class="cli">👤 ${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
+          <div class="total">${brl(p.total||0)}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="sel=null;itensConf=[];render()">← Fila</button>
+      </div>
+
+      ${temPend?`<div class="pend-warn">⚠️ Este pedido teve pendências — itens marcados com ⚠️ tiveram falta anteriormente. Confira com atenção.</div>`:''}
+
+      <div class="muted" style="margin-bottom:8px">Toque em cada item para confirmar · ${feitos}/${itensConf.length} confirmados</div>
+      <div class="conf-list">${linhas}</div>
+
+      ${todos?`<button class="btn btn-mag" style="width:100%" onclick="abrirModal()">✅ PEDIDO CONFERIDO — Finalizar</button>`
+        :`<div style="background:#1a1040;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:var(--muted)">
+          Confirme todos os itens para finalizar
+        </div>`}
+    </div>
+    <div style="height:80px"></div>`;
+}
+
+function confirmarItem(ix){
+  itensConf[ix].confirmado=!itensConf[ix].confirmado;
+  renderConferencia();
+}
+
+function abrirModal(){
+  tipoSel=null; fotoBase64=null;
+  document.getElementById("btnEntrega").classList.remove("sel");
+  document.getElementById("btnRetirada").classList.remove("sel");
+  document.getElementById("btnConfirmar").disabled=true;
+  document.getElementById("fotoPreview").innerHTML='📷 Toque para tirar foto do pedido (opcional)';
+  document.getElementById("msgModal").textContent="";
+  document.getElementById("modal").classList.add("open");
+}
+
+function fecharModal(){ document.getElementById("modal").classList.remove("open"); }
+
+function selecionarTipo(t){
+  tipoSel=t;
+  document.getElementById("btnEntrega").classList.toggle("sel",t==="entrega");
+  document.getElementById("btnRetirada").classList.toggle("sel",t==="retirada");
+  document.getElementById("btnConfirmar").disabled=false;
+}
+
+function carregarFoto(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    fotoBase64=e.target.result;
+    document.getElementById("fotoPreview").innerHTML=`<img src="${fotoBase64}">`;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function confirmarConferencia(){
+  if(!tipoSel) return;
+  document.getElementById("btnConfirmar").disabled=true;
+  document.getElementById("msgModal").textContent="Finalizando…";
+  const id=String(sel.id);
+  try{
+    // salva foto no log se tirou
+    if(fotoBase64){
+      await fetch(BACKEND+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({evento:"foto_conferencia",funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,detalhes:{foto:fotoBase64}})}).catch(()=>{});
+    }
+    // confirma
+    const r=await fetch(BACKEND+"/api/fluxo/"+id+"/conferido",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipoEntrega:tipoSel})});
+    const j=await r.json();
+    if(r.ok&&!j.erro){
+      fecharModal();
+      sel=null; itensConf=[];
+      await carregar();
+    } else {
+      document.getElementById("msgModal").innerHTML=`<span class="err">${esc(j.erro||"Erro")}</span>`;
+      document.getElementById("btnConfirmar").disabled=false;
+    }
+  }catch(e){
+    document.getElementById("msgModal").innerHTML=`<span class="err">Erro de conexão</span>`;
+    document.getElementById("btnConfirmar").disabled=false;
+  }
+}
+
+// Utils
+function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function brl(n){ return Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function dataBR(d){ if(!d) return "—"; const p=String(d).split("-"); return p.length===3?`${p[2]}/${p[1]}`:d; }
+
+init();
+</script>
+</body>
+</html>
