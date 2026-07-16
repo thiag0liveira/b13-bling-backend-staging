@@ -208,65 +208,44 @@ async function abrirModal(prod){
   document.getElementById("erroSalvar").textContent="";
   document.getElementById("mTitulo").textContent=prod.nome;
   document.getElementById("modal").classList.add("open");
-  document.getElementById("mBody").innerHTML=`<div class="loading"><span class="spinner"></span>Buscando no Open Food Facts…</div>`;
 
   const q=encodeURIComponent(prod.nome);
   const buscaLinks=[
-    {nome:"Apoio Entrega", cor:"#e8650a", url:`https://www.apoioentrega.com/busca?q=${q}`},
-    {nome:"Verdemar",      cor:"#2e7d32", url:`https://www.loja.verdemaratevoce.com.br/produtos?q=${q}`},
-    {nome:"Villefort",     cor:"#1565c0", url:`https://www.villefortentrega.com.br/produtos?q=${q}`},
+    {nome:"🟠 Apoio Entrega", cor:"#e8650a", url:`https://www.apoioentrega.com/busca?q=${q}`},
+    {nome:"🟢 Verdemar",      cor:"#2e7d32", url:`https://www.loja.verdemaratevoce.com.br/produtos?q=${q}`},
+    {nome:"🔵 Villefort",     cor:"#1565c0", url:`https://www.villefortentrega.com.br/produtos?q=${q}`},
+    {nome:"🔍 Google Imagens",cor:"#9090ff", url:`https://www.google.com/search?tbm=isch&q=${q}+bebida+embalagem`},
   ];
 
-  let sugestoes=[];
-  try{
-    const r=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${q}&search_simple=1&action=process&json=1&page_size=8&lc=pt&cc=br`);
-    const j=await r.json();
-    sugestoes=(j.products||[])
-      .filter(p=>p.image_front_url||p.image_url)
-      .slice(0,8)
-      .map(p=>({
-        nome:p.product_name||p.generic_name||"",
-        imgUrl:p.image_front_url||p.image_url||"",
-        pagUrl:`https://world.openfoodfacts.org/product/${p.code}`,
-      }));
-  }catch(e){}
-
-  renderModal(prod, sugestoes, buscaLinks);
+  renderModal(prod, buscaLinks);
 }
 
 
-function renderModal(prod, sugestoes, buscaLinks){
-  const sugsHtml=sugestoes.length
-    ?`<div style="font-weight:700;font-size:13px;margin-bottom:8px">🌐 Sugestões do Open Food Facts (clique para selecionar):</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:16px">
-        ${sugestoes.map(s=>`<div style="text-align:center">
-          <img class="fonte-img" src="${s.imgUrl}"
-            onclick="selecionarUrl('${s.imgUrl}',this)"
-            onerror="this.parentElement.style.display='none'"
-            loading="lazy" style="width:100%;height:100px;object-fit:contain;background:#fff;border-radius:6px;padding:4px;cursor:pointer;border:2px solid transparent;transition:.15s">
-          <div style="font-size:9px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.nome.slice(0,30)}</div>
-          <a href="${s.pagUrl}" target="_blank" style="font-size:9px;color:#9090ff">ver</a>
-        </div>`).join("")}
-      </div>`
-    :`<div style="padding:12px;background:#1a1040;border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--muted)">
-        ⚠️ Nenhuma sugestão encontrada no Open Food Facts — use os links abaixo para buscar manualmente.
-      </div>`;
-  const linksHtml=buscaLinks.map(l=>`<a href="${l.url}" target="_blank"
-    style="padding:5px 10px;background:#0f0d24;border:1px solid ${l.cor};border-radius:6px;color:${l.cor};font-size:11px;text-decoration:none;font-weight:700">
-    🔗 ${l.nome}</a>`).join("");
+function renderModal(prod, buscaLinks){
   document.getElementById("mBody").innerHTML=`
-    ${sugsHtml}
-    <div style="border-top:1px solid var(--border);padding-top:12px">
-      <div style="font-size:12px;font-weight:700;margin-bottom:6px">🔍 Buscar nos supermercados e copiar URL da imagem:</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${linksHtml}</div>
-      <div style="font-size:12px;font-weight:700;margin-bottom:6px">📋 Cole a URL da imagem aqui:</div>
-      <div class="url-row">
-        <input id="urlCustom" placeholder="https://..." type="url"
-          oninput="urlSelecionada=this.value;document.getElementById('btnSalvar').disabled=!this.value">
-        <button class="btn btn-ghost btn-sm" onclick="previewUrl()">👁 Preview</button>
-      </div>
-      <div id="preview" style="margin-top:8px"></div>
-    </div>`;
+    <div style="background:#1a1040;border:1px solid #514c96;border-radius:10px;padding:12px;margin-bottom:14px;font-size:12px;line-height:1.6">
+      <div style="font-weight:700;margin-bottom:6px">Como adicionar a imagem:</div>
+      <ol style="padding-left:16px;color:var(--muted)">
+        <li>Clique em um dos links abaixo para abrir o site</li>
+        <li>Encontre o produto e <b style="color:#fff">clique com botão direito na imagem</b></li>
+        <li>Selecione <b style="color:#fff">"Copiar endereço da imagem"</b></li>
+        <li>Cole no campo abaixo e clique em Salvar</li>
+      </ol>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      ${buscaLinks.map(l=>`
+        <a href="${l.url}" target="_blank" style="display:flex;align-items:center;justify-content:center;padding:10px;background:#0f0d24;border:1px solid ${l.cor};border-radius:8px;color:${l.cor};font-size:12px;text-decoration:none;font-weight:700;gap:6px;text-align:center">
+          ${l.nome}
+        </a>`).join("")}
+    </div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px;color:var(--muted)">📋 Cole a URL da imagem aqui:</div>
+    <div class="url-row">
+      <input id="urlCustom" placeholder="https://..." type="url"
+        oninput="urlSelecionada=this.value;document.getElementById('btnSalvar').disabled=!this.value.trim()">
+      <button class="btn btn-ghost btn-sm" onclick="previewUrl()">👁 Preview</button>
+    </div>
+    <div id="preview" style="margin-top:10px"></div>
+    <div id="erroSalvar2" class="err"></div>`;
 }
 
 

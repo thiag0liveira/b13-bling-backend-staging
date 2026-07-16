@@ -1395,20 +1395,16 @@ app.get("/api/imagens/sem-foto/progresso", async(req,res)=>{
 
     send({tipo:"total",total:todos.length});
 
+    // usa imagemURL já disponível no estoque map — sem chamadas extras ao Bling (muito mais rápido)
     for(let i=0;i<todos.length;i++){
       const {prodId,b,it,cat,e}=todos[i];
-      send({tipo:"progresso",atual:i+1,total:todos.length,nome:b.nome||it.nome||""});
-      try{
-        await new Promise(r=>setTimeout(r,350));
-        const pj=await bling(`/produtos/${prodId}`);
-        const prod=pj?.data||{};
-        const temImagem=!!(prod.imagens&&prod.imagens.some(i=>i.link&&i.link.trim()));
-        if(!temImagem){
-          const item={id:prodId,codigo:b.codigo||prod.codigo||"",nome:prod.nome||b.nome||it.nome||"",categoria:cat.t,preco:prod.preco||it.preco||0};
-          semFoto.push(item);
-          send({tipo:"sem_foto",item});
-        }
-      }catch(e2){}
+      send({tipo:"progresso",atual:i+1,total:todos.length,nome:e?.nome||b.nome||it.nome||""});
+      const temImagem=!!(e?.imagem && e.imagem.trim());
+      if(!temImagem){
+        const item={id:prodId,codigo:b.codigo||"",nome:e?.nome||b.nome||it.nome||"",categoria:cat.t,preco:it.preco||0};
+        semFoto.push(item);
+        send({tipo:"sem_foto",item});
+      }
     }
     send({tipo:"fim",total:todos.length,semFoto:semFoto.length});
     res.end();
