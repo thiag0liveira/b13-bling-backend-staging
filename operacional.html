@@ -343,6 +343,13 @@ function cardPedido(p,aba){
   else if(parcial) pagInfo=`<div class="pag-pend">⚠️ Pago parcial ${brl(pag.valorPago)} · falta ${brl(Math.abs(saldo))}</div>`;
   else if(pag?.statusPagamento==="pendente") pagInfo=`<div class="pag-pend">💰 Pagamento pendente</div>`;
 
+  // tag "Entrega" quando o pedido foi criado com frete e ainda está aguardando
+  let entregaTag="";
+  if(p.situacao?.id===SIT.AGUARDANDO){
+    const freteVal=+(((p.total||0)-(p.totalProdutos||0))).toFixed(2);
+    if(freteVal>0.01) entregaTag=`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:6px">🛵 Entrega — frete ${brl(freteVal)}</div>`;
+  }
+
   let acrInfo="";
   if(acr) acrInfo=`<div class="acr-box">🆕 ${acr.itensNovos?.length?`<b>Acréscimo:</b> ${acr.itensNovos.map(i=>`+${esc(i.descricao)}`).join(", ")}`:""} ${acr.itensRetirados?.length?`<b>Retirada:</b> ${acr.itensRetirados.map(i=>esc(i.descricao)).join(", ")}`:""}</div>`;
   // pendências da separação
@@ -383,7 +390,7 @@ function cardPedido(p,aba){
         <div class="ptot">${brl(p.total)}</div>
       </div>
     </div>
-    ${pagInfo}${pendInfo||""}${acrInfo}${sepInfo}
+    ${pagInfo}${entregaTag}${pendInfo||""}${acrInfo}${sepInfo}
     <div class="acts">${botoes}</div>
     <div id="msg-${p.id}"></div>
   </div>`;
@@ -391,13 +398,16 @@ function cardPedido(p,aba){
 
 function montarBotoes(p,aba,pago,parcial){
   const id=p.id; const sit=p.situacao?.id;
+  // frete estimado = diferença entre total e total dos produtos (não vem detalhado na listagem)
+  const freteVal=+(((p.total||0)-(p.totalProdutos||0))).toFixed(2);
+  const temFrete=freteVal>0.01;
   // ABA: aguardando
   if(sit===SIT.AGUARDANDO){
     const jaPago=pago||parcial;
     const btnSep=(!jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar para entregar</button>`:"";
-    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="abrirPagamento(${id},${p.total})">💰 Receber e Separar</button>`:"";
+    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 Receber e Separar</button>`:"";
     const btnSepPago=(jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
-    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="receberEClienteJaSeparou(${id},${p.total})">✅ Receber — cliente já separou</button>`:"";
+    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou')">✅ Receber — cliente já separou</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnWhats}${btnQR}</div>`;
@@ -1261,6 +1271,34 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
     if(resolucao==="estorno") alert(`✅ Pendências retiradas!
 ↩ Estorno de ${brl(valorAbatido)} via ${window._estornoFormaNome||""}. Efetue o estorno manualmente.`);
   }catch(e){ document.getElementById("retMsg").innerHTML=`<div class="err">Erro ao salvar</div>`; }
+}
+
+// Quando o pedido foi criado como ENTREGA (tem frete) mas o cliente está
+// retirando em loja — pergunta e remove o frete do pedido no Bling antes
+// de seguir com o recebimento normal.
+async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo){
+  if(!temFrete){
+    if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,total);
+    return abrirPagamento(id,total);
+  }
+  const ok=confirm(
+    `Este pedido foi criado como ENTREGA (frete de ${brl(freteVal)}).\n\n`+
+    `Ao continuar, o frete será removido do pedido (o pedido no Bling é atualizado e fica registrado na observação) `+
+    `e o valor cobrado será sem o frete: ${brl(total-freteVal)}.\n\n`+
+    `Confirma que o cliente vai retirar em loja?`
+  );
+  if(!ok) return;
+  showMsg(id,`<div class="muted">Removendo frete do pedido…</div>`);
+  try{
+    const r=await fetch(B+"/api/fluxo/"+id+"/converter-retirada",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+    const j=await r.json();
+    if(!r.ok||j.erro){ showMsg(id,`<div class="err">${esc(j.erro||"Erro ao remover frete")}</div>`); return; }
+    const novoTotal=j.total??(total-freteVal);
+    showMsg(id,"");
+    if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,novoTotal);
+    return abrirPagamento(id,novoTotal);
+  }catch(e){ showMsg(id,`<div class="err">Erro de conexão ao remover frete</div>`); }
 }
 
 async function receberEClienteJaSeparou(id, total){

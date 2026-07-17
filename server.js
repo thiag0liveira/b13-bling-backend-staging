@@ -2086,6 +2086,55 @@ app.get("/pedido/:id/acompanhar",(req,res)=>res.redirect(`/pedido/${req.params.i
 
 
 // Salvar observação no pedido (Bling)
+// Cliente marcou ENTREGA no totem mas decidiu retirar em loja — remove o frete
+// do pedido de verdade no Bling (edita o pedido) e registra na observação.
+app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
+  try{
+    const {funcionarioId,funcionarioNome}=req.body||{};
+    const id=String(req.params.id);
+    const pj=await bling(`/pedidos/vendas/${id}`);
+    const ped=pj?.data; if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const freteAtual=+(ped.transporte?.frete||0);
+    if(freteAtual<=0){
+      // não tinha frete (já era retirada, ou entrega grátis) — nada a remover
+      return res.json({ok:true,semFrete:true,total:+(ped.total||ped.totalProdutos||0)});
+    }
+    const sit=ped.situacao?.id;
+    if(sit===9||sit===12) return res.status(400).json({erro:"Pedido Atendido/Cancelado não pode ser editado."});
+
+    const tsConv=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const obsAtual=(ped.observacoes||"").trim();
+    const novaObs=(obsAtual?obsAtual+" | ":"")+`Pedido era ENTREGA (frete ${brlN(freteAtual)} removido) — cliente retirou em loja em ${tsConv}`;
+
+    const payload={
+      data:ped.data,
+      contato:{id:ped.contato?.id},
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      observacoes:novaObs,
+      transporte:{
+        fretePorConta:ped.transporte?.fretePorConta??0,
+        frete:0,
+      },
+    };
+    // mantém endereço de entrega salvo (referência), só zera o valor do frete
+    if(ped.transporte?.enderecoEntrega){
+      const end=ped.transporte.enderecoEntrega;
+      payload.transporte.enderecoEntrega={
+        endereco:end.endereco||"",numero:end.numero||"S/N",complemento:end.complemento||"",
+        bairro:end.bairro||"",cep:end.cep||"",municipio:end.municipio||"",uf:end.uf||"MG",pais:end.pais||"Brasil",
+      };
+    }
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+
+    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    const novoTotal=+((ped.total||ped.totalProdutos||0)-freteAtual).toFixed(2);
+    addLog(id,"retirada_convertida_frete_removido",funcionarioId,funcionarioNome,{freteRemovido:freteAtual,novoTotal});
+    res.json({ok:true,semFrete:false,freteRemovido:freteAtual,total:novoTotal});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+
 app.patch("/api/pedidos/:id/observacao", async(req,res)=>{
   try{
     const id=req.params.id;
