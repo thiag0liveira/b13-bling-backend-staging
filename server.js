@@ -510,7 +510,7 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
     const rPed=await bling(`/pedidos/vendas/${id}`);
     const ped=rPed?.data||{};
     const parcelas=ped.parcelas||[];
-    const totalPed=+(ped.totalProdutos||ped.total||0);
+    const totalPed=+(ped.total||ped.totalProdutos||0);
     const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
     const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
     if(valorPago>0.01){
@@ -1890,7 +1890,7 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
     </table>
   </div>
   <div class="secao">
-    <div class="total-row total-destaque"><span>TOTAL</span><span>R$ ${(ped.totalProdutos||ped.total||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</span></div>
+    <div class="total-row total-destaque"><span>TOTAL</span><span>R$ ${(ped.total||ped.totalProdutos||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</span></div>
     ${pago?`<div class="pag-ok">✅ PAGO — R$ ${(pag.valorPago||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>`:`<div class="pag-pend">⏳ AGUARDANDO PAGAMENTO</div>`}
   </div>
   <div class="qr-area">
@@ -2045,7 +2045,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
 
   <div class="sec">
     <div class="sec-t">${isAdmin?"Financeiro":"Pagamento"}</div>
-    <div class="total">R$ ${(ped.totalProdutos||ped.total||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>
+    <div class="total">R$ ${(ped.total||ped.totalProdutos||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>
     <div style="font-size:13px;margin-top:4px;${pago?"color:#a8f0c8":"color:#ffd23f"}">${pago?`✅ Pago: R$ ${(pag?.valorPago||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"⏳ Aguardando pagamento"}</div>
     ${isAdmin&&pag?.historico?.length?`<div style="font-size:10px;color:#514c96;margin-top:4px">${pag.historico.map(h=>`${h.formaNome||""}: R$ ${(h.valor||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`).join(" · ")}</div>`:""}
     ${separador?`<div class="sep-row">📦 Sendo separado por <b>${separador}</b></div>`:""}

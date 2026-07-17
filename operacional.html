@@ -511,7 +511,7 @@ async function abrirConfirmarEntrega(id){
     const ped=rPed.data||rPed; const pag=rPag.data;
     const pago=pag?.statusPagamento==="pago";
     const valorPago=+(pag?.valorPago||0);
-    const total=+(ped.totalProdutos||ped.total||0);
+    const total=+(ped.total||ped.totalProdutos||0);
     const falta=+(total-valorPago).toFixed(2);
     window._entregaPed=ped; window._entregaPag=pag;
     window._itensOcorrencia=[];
@@ -527,7 +527,7 @@ async function abrirConfirmarEntrega(id){
 
 function renderConfirmarEntrega(id,ped,pag,ocorrencias){
   const pago=pag?.statusPagamento==="pago";
-  const total=+(ped.totalProdutos||ped.total||0); const pago_val=+(pag?.valorPago||0);
+  const total=+(ped.total||ped.totalProdutos||0); const pago_val=+(pag?.valorPago||0);
   const falta=+(total-pago_val).toFixed(2);
   const valOcorr=ocorrencias.reduce((s,o)=>s+(o.valorItem||0),0);
   const saldoFinal=+(total-valOcorr).toFixed(2);
@@ -1015,7 +1015,8 @@ function atualizarBtnDestino(){
 function renderRetirarPend(id,faltas){
   faltas=faltas||window._pendFaltas||[];
   const items=window.itensEdit;
-  const total=+items.filter(i=>!i._removido&&i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0).toFixed(2);
+  const freteOrig=+(window.pedidoEditOrig?.transporte?.frete||0);
+  const total=+(items.filter(i=>!i._removido&&i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)+freteOrig).toFixed(2);
   const faltsCount=items.filter(i=>i._teveFalta&&!i._removido).length;
   const rows=items.map((item,ix)=>{
     if(item._removido) return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);opacity:.4;font-size:12px">
@@ -1081,8 +1082,9 @@ async function confirmarRetirarSeguir(id){
     const pag=rPag.data;
     const itensFiltrados=window.itensEdit.filter(i=>i.quantidade>0);
     
-    // Valor real do pedido após ajustes
-    const valorNovoPedido=+itensFiltrados.reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0).toFixed(2);
+    // Valor real do pedido após ajustes (itens + frete original — o frete não muda ao mexer nos itens)
+    const freteOrig=+(window.pedidoEditOrig?.transporte?.frete||0);
+    const valorNovoPedido=+(itensFiltrados.reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)+freteOrig).toFixed(2);
     const valorPago=+(pag?.valorPago||0);
     const statusPag=pag?.statusPagamento||"pendente";
     
@@ -1444,7 +1446,7 @@ async function verPedidoAtendido(id,nomeCliente){
       <div class="muted" style="margin-bottom:8px">${esc(ped.contato?.nome||nomeCliente||"—")} · ${ped.data?new Date(ped.data+"T12:00:00").toLocaleDateString("pt-BR"):""}</div>
       <div style="margin-bottom:10px">${itensHtml}</div>
       <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;padding:6px 0;margin-bottom:8px">
-        <span>Total</span><span style="color:#ffd23f">${brl(ped.totalProdutos||ped.total||0)}</span>
+        <span>Total</span><span style="color:#ffd23f">${brl(ped.total||ped.totalProdutos||0)}</span>
       </div>
       <div style="margin-bottom:10px;font-size:13px;padding:8px 12px;border-radius:8px;${pago?"background:#0a2a1a;color:#a8f0c8;border:1px solid #2f9e6b":"background:#2a0a00;color:#ff8090;border:1px solid #e5563f"}">
         ${pago?`✅ Pago — R$ ${(pag.valorPago||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"⏳ Não pago"}
