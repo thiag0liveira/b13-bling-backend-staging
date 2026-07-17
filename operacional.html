@@ -877,7 +877,9 @@ function mudaQtdNovo(key,delta,un){
 function addProdutoPend(prod,sabor,id,qtdForcar){
   const key=String((sabor?.id||sabor?.codigo||prod.id||prod.nome)).replace(/\W/g,"_");
   const qtd=qtdForcar||_qtdsNovo[key]||prod.un||1;
-  const prodId=sabor?.id||prod.id||null;
+  // ID real do Bling: sabor.id > primeiro sabor.id > null
+  const saborReal=sabor||(prod.sabores?.length===1?prod.sabores[0]:null);
+  const prodId=saborReal?.id||null;
   const nome=sabor?`${prod.nome} ${sabor.nome}`:prod.nome;
   const existe=window.itensEdit.find(i=>String(i.produtoId)===String(prodId)||i.descricao===nome);
   if(existe&&!existe._removido){ existe.quantidade+=qtd; }
@@ -1126,7 +1128,10 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
           detalhes:{itens:itensRemovidos.map(i=>i.descricao),motivo:"removido na resolução de pendências"}})}).catch(()=>{});
     }
 
-    await fetch(B+"/api/pedidos/"+id+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({itens:itensFiltrados.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}))})});
+    const rItens=await fetch(B+"/api/pedidos/"+id+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({itens:itensFiltrados.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}))})});
+    const jItens=await rItens.json();
+    if(!rItens.ok) throw new Error("Erro ao salvar itens: "+(jItens.erro||JSON.stringify(jItens).slice(0,100)));
+    console.log("Itens salvos:",itensFiltrados.map(i=>({desc:i.descricao,produtoId:i.produtoId,qtd:i.quantidade})));
     await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:destinoSit,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
     await fetch(B+"/api/pendencias/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"resolvido"})}).catch(()=>{});
 
