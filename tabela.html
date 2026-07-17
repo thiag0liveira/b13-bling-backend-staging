@@ -212,7 +212,7 @@ const DEFAULT = [
 
 // ------------------- MODELO (com ids) + PERSISTÊNCIA -------------------
 let _id = 1; const nid = () => "x" + (_id++);
-const BACKEND_PADRAO = "https://b13-bling-backend-production.up.railway.app";
+const BACKEND_PADRAO = (location.protocol.indexOf("http")===0) ? "" : "https://b13-bling-backend-production.up.railway.app";
 function fromDefault(){ return DEFAULT.map(c=>({id:nid(),col:c.col,t:c.t,itens:c.i.map(([nome,preco,obs])=>({id:nid(),nome,preco:Number(preco),obs:obs||"",caixa:1,bling:[]}))})); }
 let MODEL, META;
 function load(){
