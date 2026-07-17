@@ -800,43 +800,111 @@ async function retirarPendenciasESeguir(id){
   }catch(e){ document.getElementById("mbox").innerHTML=`<div class="err">Erro ao carregar</div>`; }
 }
 
-// Busca produto para acrescentar nas pendências
-let _buscaNovoTimer=null;
+// Cache do catálogo para busca
+let _catalogoCache=null;
+async function getCatalogo(){
+  if(_catalogoCache) return _catalogoCache;
+  const r=await fetch(B+"/api/catalogo");
+  const j=await r.json();
+  _catalogoCache=j;
+  return j;
+}
+
+let _buscaNovoTimer=null, _buscaSelProd=null, _buscaSelSabor=null;
+
 async function buscarNovoItemPend(q,id){
   clearTimeout(_buscaNovoTimer);
   const res=document.getElementById("resultadosNovoItem");
+  _buscaSelProd=null; _buscaSelSabor=null;
   if(!q||q.length<2){ if(res) res.innerHTML=""; return; }
   _buscaNovoTimer=setTimeout(async()=>{
     try{
-      res.innerHTML=`<div class="muted" style="font-size:11px;padding:4px">Buscando…</div>`;
-      const r=await fetch(B+"/api/produtos/buscar?q="+encodeURIComponent(q)).then(r=>r.json());
-      const prods=(r.data||[]).slice(0,6);
-      if(!prods.length){ res.innerHTML=`<div class="muted" style="font-size:11px;padding:4px">Nenhum produto encontrado</div>`; return; }
-      res.innerHTML=prods.map(p=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px"
-          onclick="acrescentarItemPend(${JSON.stringify(p).replace(/"/g,'&quot;')},${id})">
-          <div style="flex:1"><b>${esc(p.nome)}</b> <span class="muted">#${p.codigo}</span></div>
-          <div style="color:#ffd23f">${brl(p.preco||0)}</div>
-          <button class="btn btn-ghost" style="padding:3px 8px;font-size:11px">+ Add</button>
-        </div>`).join("");
-    }catch(e){ res.innerHTML=`<div class="err" style="font-size:11px">Erro ao buscar</div>`; }
-  },400);
+      res.innerHTML=`<div class="muted" style="font-size:11px;padding:6px">Buscando…</div>`;
+      const cat=await getCatalogo();
+      const ql=q.toLowerCase();
+      const matches=[];
+      (cat.categorias||[]).forEach(cat=>{
+        (cat.produtos||[]).forEach(p=>{
+          if(p.nome.toLowerCase().includes(ql)||(p.sabores||[]).some(s=>s.nome.toLowerCase().includes(ql)))
+            matches.push(p);
+        });
+      });
+      if(!matches.length){ res.innerHTML=`<div class="muted" style="font-size:11px;padding:6px">Nenhum produto encontrado</div>`; return; }
+      // salva matches no window para referenciar por índice
+      window._buscaMatches=matches.slice(0,8);
+      res.innerHTML=window._buscaMatches.map((p,mi)=>{
+        const temSabores=p.sabores&&p.sabores.length>1;
+        const precoCx=p.preco*(p.un||1);
+        return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:5px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:${temSabores?4:0}px">
+            ${p.imagem?`<img src="${p.imagem}" style="width:36px;height:36px;object-fit:contain;background:#fff;border-radius:5px;padding:2px">`:``}
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:700">${esc(p.nome)}</div>
+              <div style="font-size:11px;color:#ffd23f">${brl(p.preco)}/un${p.un>1?` · cx ${brl(precoCx)} (${p.un}un)`:""}</div>
+            </div>
+            ${!temSabores?`<div style="display:flex;align-items:center;gap:4px">
+              <button onclick="mudaQtdNovo('p${mi}n',-1,${p.un||1})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px">−</button>
+              <span id="qtdnovo_p${mi}n" style="min-width:32px;text-align:center;font-size:12px;font-weight:700">0${p.un>1?" cx":""}</span>
+              <button onclick="mudaQtdNovo('p${mi}n',1,${p.un||1})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px">+</button>
+              <button onclick="addProdutoPendIdx(${mi},null,${id})" style="background:var(--mag);border:none;border-radius:5px;color:#fff;cursor:pointer;padding:4px 8px;font-size:11px;font-weight:700">+ Add</button>
+            </div>`:""}
+          </div>
+          ${temSabores?`<div style="display:flex;flex-direction:column;gap:3px">
+            ${(p.sabores||[]).map((s,si)=>`<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #1a1840">
+              <span style="flex:1;font-size:11px;color:#cfc9f5">${esc(s.nome)}</span>
+              <span style="font-size:10px;color:#514c96">${s.estoque!=null?`est:${s.estoque}`:""}</span>
+              <button onclick="mudaQtdNovo('p${mi}s${si}',-1,${p.un||1})" style="background:#1c1846;border:1px solid #514c96;border-radius:4px;color:#fff;cursor:pointer;width:22px;height:22px;font-size:12px">−</button>
+              <span id="qtdnovo_p${mi}s${si}" style="min-width:28px;text-align:center;font-size:11px;font-weight:700">0</span>
+              <button onclick="mudaQtdNovo('p${mi}s${si}',1,${p.un||1})" style="background:#1c1846;border:1px solid #514c96;border-radius:4px;color:#fff;cursor:pointer;width:22px;height:22px;font-size:12px">+</button>
+              <button onclick="addProdutoPendIdx(${mi},${si},${id})" style="background:var(--mag);border:none;border-radius:4px;color:#fff;cursor:pointer;padding:3px 7px;font-size:10px;font-weight:700">+ Add</button>
+            </div>`).join("")}
+          </div>`:""}
+        </div>`;
+      }).join("");;
+    }catch(e){ res.innerHTML=`<div class="err" style="font-size:11px">Erro: ${e.message}</div>`; }
+  },350);
 }
 
-function acrescentarItemPend(prod,id){
-  const existe=window.itensEdit.find(i=>String(i.produtoId)===String(prod.id));
-  if(existe){ existe.quantidade++; existe.quantidadeOriginal=(existe.quantidadeOriginal||0)+1; }
+// Controla qtd temporária na busca
+const _qtdsNovo={};
+function mudaQtdNovo(key,delta,un){
+  const k=String(key).replace(/\W/g,"_");
+  _qtdsNovo[k]=Math.max(0,(_qtdsNovo[k]||0)+delta*un);
+  const el=document.getElementById("qtdnovo_"+k)||document.getElementById("qtdnovo_"+String(key));
+  if(el) el.textContent=un>1?`${_qtdsNovo[k]/un}cx (${_qtdsNovo[k]}un)`:_qtdsNovo[k]+"un";
+}
+
+function addProdutoPend(prod,sabor,id){
+  const key=String((sabor?.id||sabor?.codigo||prod.id||prod.nome)).replace(/\W/g,"_");
+  const qtd=_qtdsNovo[key]||prod.un||1;
+  const prodId=sabor?.id||prod.id||null;
+  const nome=sabor?`${prod.nome} ${sabor.nome}`:prod.nome;
+  const existe=window.itensEdit.find(i=>String(i.produtoId)===String(prodId)||i.descricao===nome);
+  if(existe&&!existe._removido){ existe.quantidade+=qtd; }
+  else if(existe&&existe._removido){ existe._removido=false; existe.quantidade=qtd; }
   else{
     window.itensEdit.push({
-      produtoId:prod.id, descricao:prod.nome||prod.descricao||"",
-      quantidade:1, quantidadeOriginal:0, temQtd:0, faltaQtd:0,
-      valor:prod.preco||0, _teveFalta:false, _removido:false, _novo:true,
+      produtoId:prodId, descricao:nome,
+      quantidade:qtd, quantidadeOriginal:0, temQtd:0, faltaQtd:0,
+      valor:prod.preco||0, _teveFalta:false, _removido:false, _novo:true, _un:prod.un||1,
     });
   }
+  _qtdsNovo[key]=0;
   document.getElementById("buscaNovoItem").value="";
   document.getElementById("resultadosNovoItem").innerHTML="";
   renderRetirarPend(id,window._pendFaltas||[]);
 }
+
+// Adiciona produto pelo índice do array de matches (evita JSON inline)
+function addProdutoPendIdx(mi,si,pedidoId){
+  const p=window._buscaMatches?.[mi];
+  if(!p) return;
+  const sabor=si!=null?p.sabores?.[si]:null;
+  addProdutoPend(p,sabor,pedidoId);
+}
+
+// Manter compatibilidade
+function acrescentarItemPend(prod,id){ addProdutoPend(prod,null,id); }
 
 function calcDestinoAtual(){
   const items=window.itensEdit||[];
@@ -908,10 +976,8 @@ function renderRetirarPend(id,faltas){
     <div id="retMsg"></div>
     <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">➕ Acrescentar produto:</div>
-      <div style="display:flex;gap:6px">
-        <input id="buscaNovoItem" placeholder="Buscar produto no Bling…" style="flex:1;background:#0f0d24;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:#fff;font-size:12px" oninput="buscarNovoItemPend(this.value,${id})">
-      </div>
-      <div id="resultadosNovoItem" style="max-height:120px;overflow-y:auto;margin-top:4px"></div>
+      <input id="buscaNovoItem" placeholder="🔎 Buscar por nome…" style="width:100%;background:#0f0d24;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:#fff;font-size:12px;margin-bottom:4px" oninput="buscarNovoItemPend(this.value,${id})">
+      <div id="resultadosNovoItem" style="max-height:200px;overflow-y:auto"></div>
     </div>
     <div id="retMsg"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
