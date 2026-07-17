@@ -2104,7 +2104,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
 
     const tsConv=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
     const obsAtual=(ped.observacoes||"").trim();
-    const novaObs=(obsAtual?obsAtual+" | ":"")+`Pedido era ENTREGA (frete ${brlN(freteAtual)} removido) — cliente retirou em loja em ${tsConv}`;
+    const novaObs=(obsAtual?obsAtual+" | ":"")+`Pedido tinha a informação de frete (${brlN(freteAtual)}), mas o cliente retirou em loja em ${tsConv}`;
 
     const payload={
       data:ped.data,
