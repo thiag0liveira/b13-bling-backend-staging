@@ -158,8 +158,14 @@ function detalheColuna(){
     ⚠️ Pedido com histórico de pendências — itens marcados em roxo tiveram falta anteriormente
     ${S._acrescimos?.itensNovos?.length?`<br>➕ Acrescentado: ${S._acrescimos.itensNovos.map(i=>i.descricao).join(", ")}`:""}
     ${S._acrescimos?.itensRetirados?.length?`<br>➖ Retirado: ${S._acrescimos.itensRetirados.map(i=>i.descricao).join(", ")}`:""}
+    ${S._itensRemovidosLog?.length?`<br><b style="color:#ff8090">🗑 Removido na conferência: ${S._itensRemovidosLog.join(", ")}</b>`:""}
   </div>`:"";
-  const itens=avisoHistorico+S.conf.map((c,ix)=>{
+  const avisoVoltouSep=S._itensRemovidosLog?.length?`<div style="background:#1a0010;border:1px solid #FF0082;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
+    🔄 Este pedido voltou da conferência com alterações:<br>
+    <b>🗑 Removidos: ${S._itensRemovidosLog.join(", ")}</b><br>
+    <span style="color:#9a95c9">Recolha os itens removidos e confirme os que restam.</span>
+  </div>`:"";
+  const itens=avisoVoltouSep+avisoHistorico+S.conf.map((c,ix)=>{
     const falta = c.estado==='falta' ? Math.max(0, c.quantidade - c.temQtd) : 0;
     const bordaFalta=c._teveFalta?"border-left:3px solid #d400ff":""; 
     const bgFalta=c._teveFalta&&c.estado===""?"background:#1a0820":"";
@@ -226,7 +232,7 @@ function voltarFila(){
     fetch(BACKEND+"/api/separacoes/"+S.sel.id,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao"})}).catch(()=>{});
   }
   if(S._heartbeat){ clearInterval(S._heartbeat); S._heartbeat=null; }
-  S.sel=null; S.conf=[]; S.msg=""; S.soVisualizacao=false; S._tevePendencia=false; S._faltas=[];
+  S.sel=null; S.conf=[]; S.msg=""; S.soVisualizacao=false; S._tevePendencia=false; S._faltas=[]; S._itensRemovidosLog=[];
   S._seps={}; // força recarregar locks
   carregarFila();
 }
@@ -286,6 +292,9 @@ async function separar(id){
     }catch(e){}
     const teveSeparacaoComFalta=_logPed.some(e=>e.evento==="separacao_com_falta");
     S._tevePendencia=teveSeparacaoComFalta;
+    // itens removidos na resolução de pendências
+    const evRemovidos=_logPed.filter(e=>e.evento==="itens_removidos_conferencia"||e.evento==="itens_retirados");
+    S._itensRemovidosLog=evRemovidos.flatMap(e=>e.detalhes?.itens||[]);
     S._faltas=_faltas;
     S._acrescimos=_acrs;
     S.conf=(j.itens||[]).map(i=>{

@@ -885,15 +885,38 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido){
   const itensFiltrados=window.itensEdit.filter(i=>i.quantidade>0);
   const ped=window.pedidoEditOrig;
   try{
+    // Detecta se houve mudança real além das pendências registradas
+    const itensOriginais=window.itensEdit;
+    const itensRemovidos=itensOriginais.filter(i=>i._removido||i.quantidade===0);
+    const itensAjustados=itensOriginais.filter(i=>!i._removido&&i.quantidade>0&&i.quantidade!==i.quantidadeOriginal);
+    const itensIguaisAoSeparado=itensOriginais.filter(i=>!i._removido&&i.quantidade>0&&i._teveFalta&&i.quantidade===i.temQtd);
+    
+    // Decide destino: se só ajustou para o que tinha (sem novidades), vai para SEPARADO
+    // Se removeu itens ou mudou quantidade além do que tinha → volta para EM SEPARAÇÃO
+    const temMudancaAlemDaPendencia=
+      itensRemovidos.length>0 || // item removido completamente
+      itensAjustados.some(i=>i.quantidade!==i.temQtd); // quantidade diferente do que tinha
+    
+    const destinoSit=temMudancaAlemDaPendencia?SIT.EM_SEP:SIT.SEPARADO;
+    const logEvento=temMudancaAlemDaPendencia?"pendencias_voltou_separacao":"pendencias_retiradas_seguiu";
+
+    // Notificação para expedição se voltou com itens removidos/alterados
+    if(temMudancaAlemDaPendencia&&itensRemovidos.length>0){
+      const nomesRemovidos=itensRemovidos.map(i=>i.descricao).join(", ");
+      await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({evento:"itens_removidos_conferencia",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,
+          detalhes:{itens:itensRemovidos.map(i=>i.descricao),motivo:"removido na resolução de pendências"}})}).catch(()=>{});
+    }
+
     await fetch(B+"/api/pedidos/"+id+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({itens:itensFiltrados.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}))})});
-    await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+    await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:destinoSit,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
     await fetch(B+"/api/pendencias/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"resolvido"})}).catch(()=>{});
     if(resolucao==="credito"&&valorAbatido>0&&ped?.contato?.id){
       await fetch(B+"/api/fluxo/"+id+"/confirmar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,itensNaoEntregues:[],itensDanificados:[],valorAbatido,resolucao:"credito",clienteId:ped.contato.id,clienteNome:ped.contato.nome})}).catch(()=>{});
     }
     const formaEstorno=resolucao==="estorno"?{formaId:window._estornoFormaId,formaNome:window._estornoFormaNome}:null;
-    await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({evento:"pendencias_retiradas_seguiu",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{itensAjustados:itensFiltrados.length,valorAbatido,resolucao,formaEstorno}})}).catch(()=>{});
+    await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({evento:logEvento,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{itensAjustados:itensFiltrados.length,valorAbatido,resolucao,formaEstorno,voltouSep:temMudancaAlemDaPendencia}})}).catch(()=>{});
     fecharModal(); await carregar();
     if(resolucao==="credito") alert(`✅ Pendências retiradas!
 💳 Crédito de ${brl(valorAbatido)} registrado para ${ped?.contato?.nome||"o cliente"}.`);
@@ -922,20 +945,17 @@ async function receberEClienteJaSeparou(id, total){
 function abrirQR(id, numero){
   const urlNota=window.location.origin+"/pedido/"+id+"/nota";
   const urlStatus=window.location.origin+"/pedido/"+id+"/status";
-  const urlCliente=window.location.origin+"/pedido/"+id+"/acompanhar";
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`
     <div style="text-align:center;padding:20px;max-width:340px">
       <h3 style="margin-bottom:4px">📱 QR Code — Pedido #${numero||id}</h3>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">QR da nota leva o cliente para acompanhar o pedido</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Logado no sistema → visão completa admin<br>Não logado → visão do cliente</div>
       <div style="background:#fff;padding:12px;border-radius:10px;display:inline-block;margin-bottom:10px">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(urlCliente)}" style="width:180px;height:180px;display:block">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(urlStatus)}" style="width:180px;height:180px;display:block">
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:14px;word-break:break-all">${urlCliente}</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <a href="${urlNota}" target="_blank" class="btn btn-mag" style="text-decoration:none">🖨️ Nota / Imprimir</a>
-        <a href="${urlStatus}" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px">🔐 Status Admin</a>
-        <a href="${urlCliente}" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px">👁 Ver como cliente</a>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+        <a href="${urlNota}" target="_blank" class="btn btn-mag" style="text-decoration:none">🖨️ Abrir nota / Imprimir</a>
+        <a href="${urlStatus}" target="_blank" class="btn btn-ghost" style="text-decoration:none;font-size:12px">📊 Ver status</a>
         <button class="btn btn-ghost" onclick="fecharModal()">Fechar</button>
       </div>
     </div>`;
