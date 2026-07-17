@@ -304,10 +304,10 @@ function getTelefone(p){
   return soDig(t);
 }
 function marcar(ix,estado){ const c=S.conf[ix]; if(estado==='tem'){ c.estado='tem'; c.temQtd=c.quantidade; c.confirmado=true; } else { c.estado='falta'; c.confirmado=false; if(c.temQtd>=c.quantidade) c.temQtd=0; } render(); }
-function confirmarFalta(ix){ const c=S.conf[ix]; c.confirmado=true; render(); }
+function confirmarFalta(ix){ const c=S.conf[ix]; if((c.temQtd||0)>=c.quantidade){ c.estado='tem'; } c.confirmado=true; render(); }
 function semNada(ix){ const c=S.conf[ix]; c.temQtd=0; c.confirmado=true; render(); }
-function addCx(ix,ncx){ const c=S.conf[ix]; c.temQtd=Math.min(c.quantidade, (c.temQtd||0)+ncx*(c.un||1)); render(); }
-function setTem(ix,v){ const c=S.conf[ix]; let q=parseInt(v)||0; if(q<0)q=0; if(q>c.quantidade)q=c.quantidade; c.temQtd=q; render(); }
+function addCx(ix,ncx){ const c=S.conf[ix]; c.temQtd=Math.min(c.quantidade, (c.temQtd||0)+ncx*(c.un||1)); if(c.temQtd>=c.quantidade){ c.estado='tem'; c.confirmado=true; } render(); }
+function setTem(ix,v){ const c=S.conf[ix]; let q=parseInt(v)||0; if(q<0)q=0; if(q>c.quantidade)q=c.quantidade; c.temQtd=q; if(q>=c.quantidade){ c.estado='tem'; c.confirmado=true; } render(); }
 
 async function assumirPedido(){
   if(!FUNC||!S.sel) return;
