@@ -166,7 +166,9 @@ async function carregar(){
     const dataFim=periodoFim||agora.toISOString().slice(0,10);
     const dataIni=periodoIni||new Date(agora-7*86400000).toISOString().slice(0,10);
     const [rPed,rAtend,rPag,rAcr,rSep,rPend]=await Promise.all([
-      fetch(B+`/api/pedidos?limite=100&dataInicial=${dataIni}&dataFinal=${dataFim}&idsSituacoes=`+sits).then(r=>r.json()),
+      // status ativos: pagina tudo (todos=1) — garante todos os pedidos do período
+      fetch(B+`/api/pedidos?todos=1&dataInicial=${dataIni}&dataFinal=${dataFim}&idsSituacoes=`+sits).then(r=>r.json()),
+      // atendidos: só últimos 100 (muitos pedidos, só visualização)
       fetch(B+`/api/pedidos?limite=100&dataInicial=${dataIni}&dataFinal=${dataFim}&idsSituacoes=${SIT.ATENDIDO}`).then(r=>r.json()),
       fetch(B+"/api/pagamentos").then(r=>r.json()),
       fetch(B+"/api/acrescimos").then(r=>r.json()),
