@@ -48,42 +48,38 @@
 </style>
 </head>
 <body><script>
-  document.addEventListener("DOMContentLoaded",function(){
-    if(b13GetSession()){
+  (function(){
+    const sess=(typeof b13GetSession==="function")?b13GetSession():null;
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
+    if(!(typeof b13Pode==="function" && b13Pode("ver_separacao"))){
+      document.addEventListener("DOMContentLoaded",function(){
+        document.body.innerHTML=`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
+          <div style="font-size:40px;margin-bottom:10px">🚫</div>
+          <h2>Acesso negado</h2>
+          <p style="color:#9a95c9">Seu usuário não tem permissão para acessar a Expedição.</p>
+          <a href="/operacional" style="color:#FF0082">← Voltar</a></div>`;
+      });
+      window.__b13SemAcesso=true;
+      return;
+    }
+    document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/expedicao");
       document.body.insertBefore(nav,document.body.firstChild);
-    }
-  });
+    });
+  })();
 </script>
 <div id="app"></div>
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
-const SENHA="b13exp";               // senha do painel de expedição
 const FILA=817963, SEPARADO=821590, PENDENCIA=819227, VERIFICADO=24;
 
-let FUNC=null; // funcionário logado
-try{const d=sessionStorage.getItem("b13func");if(d)FUNC=JSON.parse(d);}catch(e){}
+let FUNC=(typeof b13GetSession==="function")?b13GetSession():null; // funcionário logado (sessão compartilhada)
 
-async function loginFunc(){
-  // usa sessão compartilhada do /login
-  const sess=b13GetSession?b13GetSession():null;
-  if(sess){ FUNC=sess; iniciarFila(); return; }
-  // fallback: login direto com login+senha
-  const login=document.getElementById("funcLogin")?.value?.trim()||"";
-  const senha=document.getElementById("funcPw").value;
-  try{
-    const r=await fetch(BACKEND+"/api/funcionarios/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login,senha})});
-    const j=await r.json();
-    if(r.ok&&j.ok){ FUNC=j.funcionario; try{sessionStorage.setItem("b13sess",JSON.stringify(FUNC))}catch(e){} iniciarFila(); }
-    else{ document.getElementById("funcErr").textContent=j.erro||"Login ou senha incorretos."; }
-  }catch(e){ document.getElementById("funcErr").textContent="Erro de conexão."; }
-}
-function sairFunc(){ FUNC=null; if(typeof b13ClearSession==="function") b13ClearSession(); S=novoEstado(); render(); }
+function sairFunc(){ if(typeof b13Logout==="function") b13Logout(); }
 
-let S={ logado:false, tela:"fila", pedidos:[], sel:null, conf:[], telefone:"", sugestao:"", faltas:[], msg:"", carregando:false, soVisualizacao:false, _heartbeat:null, _seps:{} };
-try{ if(localStorage.getItem("b13exp")==="ok") S.logado=true; }catch(e){}
+let S={ logado:true, tela:"fila", pedidos:[], sel:null, conf:[], telefone:"", sugestao:"", faltas:[], msg:"", carregando:false, soVisualizacao:false, _heartbeat:null, _seps:{} };
 let timer=null;
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -92,35 +88,24 @@ const soDig=(s)=>(s||"").toString().replace(/\D/g,"");
 const dataBR=(d)=>{ if(!d)return""; const p=String(d).slice(0,10).split("-"); return p.length===3?`${p[2]}/${p[1]}`:d; };
 
 function header(){
-  const sess=typeof b13GetSession==="function"?b13GetSession():null;
-  const ok=S.logado||!!sess||!!FUNC;
   return `<div class="top"><img src="${LOGO}"><div class="t">Expedição</div><div class="sp"></div>
   ${FUNC?`<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>`:""}
   ${S.sel?`<button class="btn btn-out" onclick="fecharPedido()">Fechar pedido</button>`:""}
   <button class="btn btn-out" onclick="carregarFila()">↻</button>
   <a href="/operacional" class="btn btn-ghost" style="text-decoration:none">⚙️</a>
-  <button class="btn btn-ghost" onclick="if(typeof b13ClearSession==='function')b13ClearSession();location.href='/login'">Sair</button>
+  <button class="btn btn-ghost" onclick="sairFunc()">Sair</button>
   </div>`;
 }
 
 function render(){
   const app=document.getElementById("app");
-  if(!S.logado){ app.innerHTML=header()+`<div class="center"><img src="${LOGO}" style="height:64px;margin-bottom:10px"><h2>Expedição</h2>
-    <input id="pw" type="password" placeholder="Senha do painel" onkeydown="if(event.key==='Enter')login()" style="margin:10px 0">
-    <button class="btn btn-mag" style="width:100%" onclick="login()">Entrar</button>
-    ${S.msg?`<div class="muted" style="margin-top:10px">${esc(S.msg)}</div>`:""}</div>`; return; }
   if(!FUNC){
-    // tenta usar sessão compartilhada automaticamente
+    // tenta usar sessão compartilhada de novo (ex: acabou de logar em outra aba)
     const sess=typeof b13GetSession==="function"?b13GetSession():null;
     if(sess){ FUNC=sess; iniciarFila(); return; }
-    app.innerHTML=header()+`<div class="center"><img src="${LOGO}" style="height:64px;margin-bottom:10px"><h2>Expedição</h2>
-    <p style="color:#9a95c9;margin-bottom:14px">Entre com seu login e senha</p>
-    <input id="funcLogin" placeholder="Seu login" style="margin:6px 0;width:100%;padding:12px;border-radius:10px;border:2px solid #514c96;background:#151233;color:#fff;font-size:15px" onkeydown="if(event.key==='Enter')document.getElementById('funcPw').focus()">
-    <input id="funcPw" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')loginFunc()" style="margin:6px 0">
-    <button class="btn btn-mag" style="width:100%;margin-top:4px" onclick="loginFunc()">Entrar</button>
-    <div id="funcErr" style="color:#ff9db0;margin-top:8px;font-size:13px"></div>
-    <a href="/login" style="display:block;margin-top:14px;color:#514c96;font-size:12px;text-align:center">← Voltar para o login central</a>
-    </div>`; return; }
+    location.href="/login?next="+encodeURIComponent(location.pathname);
+    return;
+  }
   telaPrincipal(app);
 }
 
@@ -223,8 +208,6 @@ function detalheColuna(){
 }
 
 // -------- ações --------
-function login(){ const v=document.getElementById("pw").value; if(v===SENHA){ S.logado=true; S.msg=""; try{localStorage.setItem("b13exp","ok")}catch(e){} render(); iniciarFila(); } else { S.msg="Senha incorreta."; render(); } }
-function sair(){ S.logado=false; pararTimer(); try{localStorage.removeItem("b13exp")}catch(e){} render(); }
 function pararTimer(){ if(timer){ clearInterval(timer); timer=null; } }
 function iniciarFila(){ carregarFila(); pararTimer(); timer=setInterval(()=>carregarFila(true),10000); }
 function voltarFila(){
@@ -370,8 +353,10 @@ async function mudaSit(id,idSit){
   const j=await r.json(); if(!r.ok||j.erro) throw new Error(j.erro||"situação");
 }
 
-render();
-if(S.logado) iniciarFila();
+if(!window.__b13SemAcesso){
+  render();
+  if(FUNC) iniciarFila();
+}
 </script>
 </body>
 </html>
