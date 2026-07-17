@@ -523,10 +523,9 @@ function blocoEndereco(novo,bloqueado){
   if(bloqueado){
     return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:13px;color:#cfc9f5">
-      📍 ${esc(e.rua)}${e.numero?", "+e.numero:""}${e.complemento?" "+e.complemento:""}<br>
-      ${esc(e.bairro)}${e.cidade?" — "+esc(e.cidade):""}${e.uf?"/"+esc(e.uf):""}${e.cep?" · CEP "+esc(e.cep):""}
+      📍 ${esc(e.bairro)}${e.cidade?" — "+esc(e.cidade):""}${e.uf?"/"+esc(e.uf):""}
     </div>
-    <div style="font-size:11px;color:#514c96">Endereço do cadastro — não editável aqui. Pra corrigir, procure um atendente.</div>`;
+    <div style="font-size:11px;color:#514c96">Endereço completo do cadastro será usado na entrega — não editável aqui. Pra corrigir, procure um atendente.</div>`;
   }
   return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <input placeholder="CEP*" inputmode="numeric" value="${esc(e.cep)}" oninput="S.end.cep=this.value" onblur="buscarCep()">
