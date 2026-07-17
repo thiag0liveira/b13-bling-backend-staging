@@ -549,7 +549,7 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
     ?`<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#a8f0c8">✅ Pago — ${brl(pago_val)}</div>`
     :`<div style="background:#2a0a00;border:1px solid #e5563f;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#ff8090;display:flex;justify-content:space-between;align-items:center">
         <span>🔴 NÃO PAGO — falta <b>${brl(falta)}</b></span>
-        <button class="btn btn-grn" style="font-size:11px;padding:3px 10px" onclick="abrirPagamentoEntregaInline(${id},${total})">💰 Registrar</button>
+        <button class="btn btn-grn" style="font-size:11px;padding:3px 10px" onclick="abrirPagamentoEntregaInline(${id},${saldoFinal})">💰 Registrar</button>
       </div>`;
 
   document.getElementById("mbox").innerHTML=`
@@ -574,8 +574,9 @@ async function abrirPagamentoEntregaInline(id,total){
   document.getElementById("entregaMsg").innerHTML=`
     <div style="background:#1c1846;border:1px solid #514c96;border-radius:10px;padding:12px;margin-top:8px">
       <div style="font-weight:700;margin-bottom:8px">💰 Registrar pagamento</div>
-      <input type="number" id="valPagEntrega" placeholder="Valor" value="${total.toFixed(2)}"
-        style="width:100%;padding:7px;background:#0f0d24;border:1px solid #514c96;border-radius:7px;color:#fff;font-size:14px;margin-bottom:6px">
+      <input type="number" id="valPagEntrega" value="${total.toFixed(2)}" readonly
+        style="width:100%;padding:7px;background:#0a0918;border:1px solid #514c96;border-radius:7px;color:#9a95c9;font-size:14px;margin-bottom:2px;cursor:not-allowed">
+      <div style="font-size:11px;color:#9a95c9;margin-bottom:6px">Valor travado no total (já considera abatimento de ocorrências, se houver). Pra mudar o valor, ajuste as ocorrências (📦/📷) acima.</div>
       <select id="formaPagEntrega" style="width:100%;padding:7px;background:#0f0d24;border:1px solid #514c96;border-radius:7px;color:#fff;font-size:13px;margin-bottom:8px">
         ${formasOpts}
       </select>
@@ -584,12 +585,13 @@ async function abrirPagamentoEntregaInline(id,total){
 }
 
 async function confirmarPagEntregaInline(id,total){
-  const val=+document.getElementById("valPagEntrega").value||total;
+  // valor travado no total esperado (já considera ocorrências/abatimento) — não confia em input livre
+  const val=+Number(total).toFixed(2);
   const sel=document.getElementById("formaPagEntrega");
   const formaId=sel.value; const formaNome=sel.options[sel.selectedIndex]?.text||"";
   try{
     await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valor:val,formaId,formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true})});
+      body:JSON.stringify({valor:val,formaId,formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:val})});
     const rPag=await fetch(B+"/api/pagamentos/"+id).then(r=>r.json());
     window._entregaPag=rPag.data;
     renderConfirmarEntrega(id,window._entregaPed,rPag.data,window._itensOcorrencia||[]);

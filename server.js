@@ -411,8 +411,17 @@ function salvarPag(o){ salvarJSON(PAG_FILE,o); }
 
 app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
-    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir}=req.body||{};
+    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado}=req.body||{};
     if(!valor||!formaId) return res.status(400).json({erro:"valor e formaId obrigatórios"});
+    // se o chamador informou qual valor era esperado (ex: total já ajustado por
+    // ocorrências na entrega), valida que bate exatamente — defesa extra além
+    // da trava no frontend
+    if(valorEsperado!=null){
+      const diff=+(Number(valor)-Number(valorEsperado)).toFixed(2);
+      if(Math.abs(diff)>0.01){
+        return res.status(400).json({erro:`Valor informado (R$ ${Number(valor).toFixed(2)}) não bate com o valor esperado (R$ ${Number(valorEsperado).toFixed(2)}).`});
+      }
+    }
     const pags=lerPag(); const id=String(req.params.id);
     if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
     const p=pags[id];
@@ -551,8 +560,16 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,pagamento}=req.body||{};
     const id=String(req.params.id);
-    // registra pagamento se veio
+    // registra pagamento se veio — valida no servidor que o valor bate
+    // EXATAMENTE com o total do pedido (não confia só na checagem do navegador)
     if(pagamento?.valor&&pagamento?.formaId){
+      const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data).catch(()=>null);
+      const totalPed=+(ped?.total||ped?.totalProdutos||0);
+      const valorInformado=+Number(pagamento.valor).toFixed(2);
+      const diff=+(valorInformado-totalPed).toFixed(2);
+      if(Math.abs(diff)>0.01){
+        return res.status(400).json({erro:`Valor do pagamento (R$ ${valorInformado.toFixed(2)}) não confere com o total do pedido (R$ ${totalPed.toFixed(2)}). ${diff>0?"Valor maior":"Valor menor"} que o esperado.`});
+      }
       const pags=lerPag();
       if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
       pags[id].valorPago=+(pags[id].valorPago+Number(pagamento.valor)).toFixed(2);
