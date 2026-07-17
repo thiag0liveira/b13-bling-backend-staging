@@ -105,7 +105,7 @@ const dataBR=d=>{if(!d)return"";const p=String(d).slice(0,10).split("-");return 
 
 // IDs de status (carregados do backend)
 let SIT={AGUARDANDO:818795,EM_SEP:817963,SEP_PEND:819227,SEPARADO:821590,CONF_ENTREGA:821611,VERIFICADO:24,EM_ROTA:820085,ATENDIDO:9};
-let FUNC=null, pedidos=[], pags={}, acrs={}, seps={}, formasPag=[], mapSit={}, timer=null;
+let FUNC=null, pedidos=[], pags={}, acrs={}, seps={}, ents={}, formasPag=[], mapSit={}, timer=null;
 let periodoIni=null, periodoFim=null; // null = padrão (últimos 7 dias)
 try{ if(typeof b13GetSession==="function"){ const sess=b13GetSession(); if(sess) FUNC=sess; } }catch(e){}
 
@@ -165,7 +165,7 @@ async function carregar(){
     const agora=new Date(); agora.setHours(agora.getHours()-3);
     const dataFim=periodoFim||agora.toISOString().slice(0,10);
     const dataIni=periodoIni||new Date(agora-7*86400000).toISOString().slice(0,10);
-    const [rPed,rAtend,rPag,rAcr,rSep,rPend]=await Promise.all([
+    const [rPed,rAtend,rPag,rAcr,rSep,rPend,rEnt]=await Promise.all([
       // status ativos: pagina tudo (todos=1) — garante todos os pedidos do período
       fetch(B+`/api/pedidos?todos=1&dataInicial=${dataIni}&dataFinal=${dataFim}&idsSituacoes=`+sits).then(r=>r.json()),
       // atendidos: só últimos 100 (muitos pedidos, só visualização)
@@ -174,6 +174,7 @@ async function carregar(){
       fetch(B+"/api/acrescimos").then(r=>r.json()),
       fetch(B+"/api/separacoes").then(r=>r.json()),
       fetch(B+"/api/pendencias").then(r=>r.json()),
+      fetch(B+"/api/entregas").then(r=>r.json()),
     ]);
     // junta pedidos normais + atendidos (sem duplicatas)
     const todosIds=new Set();
@@ -188,6 +189,7 @@ async function carregar(){
     });
     const acrsArr=rAcr.data||[]; acrs={}; acrsArr.filter(a=>a.status==="pendente").forEach(a=>acrs[String(a.pedidoId)]=a);
     seps=rSep.data||{};
+    ents=rEnt.data||{};
     const pendArr=rPend.data||[]; window._pends={}; pendArr.filter(x=>x.status==="pendente").forEach(x=>window._pends[String(x.pedidoId)]=x);
   }catch(e){}
   render();
@@ -346,8 +348,14 @@ function cardPedido(p,aba){
   // tag "Entrega" quando o pedido foi criado com frete e ainda está aguardando
   let entregaTag="";
   if(p.situacao?.id===SIT.AGUARDANDO){
-    const freteVal=+(((p.total||0)-(p.totalProdutos||0))).toFixed(2);
-    if(freteVal>0.01) entregaTag=`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:6px">🛵 Entrega — frete ${brl(freteVal)}</div>`;
+    const ent=ents[idStr];
+    const freteCalc=+(((p.total||0)-(p.totalProdutos||0))).toFixed(2);
+    // usa o registro real (cobre frete grátis); sem registro (pedido criado direto no Bling), cai no cálculo por diferença
+    const ehEntrega=ent?ent.tipo==="entrega":freteCalc>0.01;
+    if(ehEntrega){
+      const freteMostrar=ent?(ent.freteOriginal||0):freteCalc;
+      entregaTag=`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:6px">🛵 Entrega${freteMostrar>0.01?` — frete ${brl(freteMostrar)}`:" — frete grátis"}</div>`;
+    }
   }
 
   let acrInfo="";

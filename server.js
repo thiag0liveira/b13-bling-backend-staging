@@ -44,6 +44,7 @@ const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
 const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
+const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
@@ -686,6 +687,8 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
+app.get("/api/entregas",(req,res)=>res.json({data:lerJSON(ENTREGAS_FILE,{})}));
+
 app.get("/api/perdas",(req,res)=>res.json({data:Object.values(lerJSON(PERDAS_FILE,{}))}));
 app.get("/api/perdas/:id",(req,res)=>{ const p=lerJSON(PERDAS_FILE,{}); res.json({data:p[String(req.params.id)]||null}); });
 app.get("/api/creditos/:clienteId",(req,res)=>{ const c=lerJSON(CREDITOS_FILE,{}); res.json({data:c[String(req.params.clienteId)]||null}); });
@@ -1162,6 +1165,20 @@ app.post("/api/finalizar", async (req, res) => {
     // depois mover para AGUARDANDO SEPARAÇÃO
     await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
     const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
+    // registra localmente se era entrega ou retirada (a listagem do Bling não traz
+    // esse detalhe, e frete grátis por valor mínimo zera o valor sem deixar de ser entrega)
+    if(pedidoId){
+      try{
+        const entregas=lerJSON(ENTREGAS_FILE,{});
+        entregas[String(pedidoId)]={
+          tipo: entrega?.tipo==="entrega"?"entrega":"retirada",
+          freteOriginal: entrega?.tipo==="entrega"?(Number(entrega.taxa)||0):0,
+          endereco: entrega?.endereco||"",
+          em: Date.now(),
+        };
+        salvarJSON(ENTREGAS_FILE,entregas);
+      }catch(e){}
+    }
     // mover para status AGUARDANDO SEPARAÇÃO após criação
     const pedidoId=pedido?.data?.id;
     if(pedidoId && process.env.BLING_SITUACAO_ID){
@@ -2129,6 +2146,12 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
 
     await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     const novoTotal=+((ped.total||ped.totalProdutos||0)-freteAtual).toFixed(2);
+    // atualiza o registro local (senão a tag "Entrega" continuaria aparecendo)
+    try{
+      const entregas=lerJSON(ENTREGAS_FILE,{});
+      entregas[id]={...(entregas[id]||{}),tipo:"retirada",freteOriginal:0,convertidoDeEntrega:true,em:Date.now()};
+      salvarJSON(ENTREGAS_FILE,entregas);
+    }catch(e){}
     addLog(id,"retirada_convertida_frete_removido",funcionarioId,funcionarioNome,{freteRemovido:freteAtual,novoTotal});
     res.json({ok:true,semFrete:false,freteRemovido:freteAtual,total:novoTotal});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
