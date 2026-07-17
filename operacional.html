@@ -841,7 +841,8 @@ function acrescentarItemPend(prod,id){
 function calcDestinoAtual(){
   const items=window.itensEdit||[];
   const removidos=items.filter(i=>i._removido||i.quantidade===0);
-  const qtdAlterada=items.filter(i=>!i._removido&&i.quantidade>0&&i._teveFalta&&i.quantidade!==i.temQtd);
+  // só conta como alteração se o item tinha falta registrada E a qtd mudou
+  const qtdAlterada=items.filter(i=>!i._removido&&i.quantidade>0&&i._teveFalta&&i.temQtd>0&&i.quantidade!==i.temQtd);
   const novos=items.filter(i=>i._novo&&!i._removido&&i.quantidade>0);
   return (removidos.length>0||qtdAlterada.length>0||novos.length>0) ? "sep" : "separado";
 }
@@ -1037,7 +1038,7 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
     const itensRemovidos=itensOriginais.filter(i=>i._removido||i.quantidade===0);
     // Quantidade diferente da que foi separada (temQtd) → alteração real
     const itensComQtdAlterada=itensOriginais.filter(i=>
-      !i._removido && i.quantidade>0 && i._teveFalta && i.quantidade!==i.temQtd
+      !i._removido && i.quantidade>0 && i._teveFalta && i.temQtd>0 && i.quantidade!==i.temQtd
     );
     const itensNovosAdd=itensOriginais.filter(i=>i._novo&&!i._removido&&i.quantidade>0);
 

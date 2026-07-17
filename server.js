@@ -214,8 +214,23 @@ app.get("/api/produtos/buscar", async(req,res)=>{
     const q=req.query.q||"";
     if(!q) return res.json({data:[]});
     const est=await getEstoqueMap();
-    const prods=Object.values(est).filter(p=>p.nome&&p.nome.toLowerCase().includes(q.toLowerCase())).slice(0,10);
-    res.json({data:prods.map(p=>({id:p.id,codigo:p.codigo,nome:p.nome,preco:p.preco||0,imagem:p.imagem||""}))});
+    const prods=Object.values(est)
+      .filter(p=>p.nome&&p.nome.toLowerCase().includes(q.toLowerCase()))
+      .slice(0,10);
+    // busca preço do Bling para cada produto
+    const resultado=[];
+    for(const p of prods){
+      let preco=p.preco||0;
+      if(!preco&&p.id){
+        try{
+          await new Promise(r=>setTimeout(r,150));
+          const pj=await bling(`/produtos/${p.id}`);
+          preco=pj?.data?.preco||0;
+        }catch(e){}
+      }
+      resultado.push({id:p.id,codigo:p.codigo,nome:p.nome,preco,imagem:p.imagem||""});
+    }
+    res.json({data:resultado});
   }catch(e){ res.status(500).json({erro:e.message,data:[]}); }
 });
 
