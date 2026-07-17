@@ -1165,6 +1165,7 @@ app.post("/api/finalizar", async (req, res) => {
     // depois mover para AGUARDANDO SEPARAÇÃO
     await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
     const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
+    const pedidoId=pedido?.data?.id;
     // registra localmente se era entrega ou retirada (a listagem do Bling não traz
     // esse detalhe, e frete grátis por valor mínimo zera o valor sem deixar de ser entrega)
     if(pedidoId){
@@ -1180,7 +1181,6 @@ app.post("/api/finalizar", async (req, res) => {
       }catch(e){}
     }
     // mover para status AGUARDANDO SEPARAÇÃO após criação
-    const pedidoId=pedido?.data?.id;
     if(pedidoId && process.env.BLING_SITUACAO_ID){
       try{
         await new Promise(r=>setTimeout(r,400));
