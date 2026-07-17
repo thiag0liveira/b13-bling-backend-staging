@@ -1278,7 +1278,7 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
 💳 Crédito de ${brl(valorAbatido)} registrado para ${ped?.contato?.nome||"o cliente"}.`);
     if(resolucao==="estorno") alert(`✅ Pendências retiradas!
 ↩ Estorno de ${brl(valorAbatido)} via ${window._estornoFormaNome||""}. Efetue o estorno manualmente.`);
-  }catch(e){ document.getElementById("retMsg").innerHTML=`<div class="err">Erro ao salvar</div>`; }
+  }catch(e){ document.getElementById("retMsg").innerHTML=`<div class="err">Erro ao salvar: ${esc(e.message||"desconhecido")}</div>`; console.error("executarRetirarSeguir erro:",e); }
 }
 
 // Quando o pedido foi criado como ENTREGA (tem frete) mas o cliente está
