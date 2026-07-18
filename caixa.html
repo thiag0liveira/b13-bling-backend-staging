@@ -65,7 +65,7 @@ const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
 const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
 let formasPag=[];
 let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
-let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:""};
+let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""}};
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -201,35 +201,65 @@ async function iniciarRecebimentoCaixa(modo){
   }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão ao remover frete</div>`; }
 }
 
+let _parcelasCaixa=[];
+
 function abrirPagamentoCaixa(total,modo){
-  const formasOpts=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
+  window._caixaTotal=total; window._caixaModo=modo;
+  _parcelasCaixa=[{valor:Number(total).toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
+  renderModalPagamentoCaixa();
+}
+
+function renderModalPagamentoCaixa(){
+  const total=window._caixaTotal;
+  const soma=_parcelasCaixa.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const diff=+(Number(total)-soma).toFixed(2);
+  const rows=_parcelasCaixa.map((p,ix)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
+      <input type="number" step="0.01" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+        onchange="_parcelasCaixa[${ix}].valor=this.value;renderModalPagamentoCaixa()">
+      <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
+        onchange="_parcelasCaixa[${ix}].formaId=this.value;_parcelasCaixa[${ix}].formaNome=this.options[this.selectedIndex].text">
+        ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
+      </select>
+      ${_parcelasCaixa.length>1?`<button onclick="_parcelasCaixa.splice(${ix},1);renderModalPagamentoCaixa()" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+    </div>`).join("");
   document.getElementById("caixaAcao").innerHTML=`
     <div class="card">
-      <div style="font-weight:800;margin-bottom:8px">💰 Registrar pagamento</div>
-      <input type="text" value="${brl(total)}" readonly style="background:#0a0918;color:#9a95c9;margin-bottom:8px;cursor:not-allowed">
-      <select id="formaPagCaixa" style="margin-bottom:10px">${formasOpts}</select>
-      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagamentoCaixa(${total},'${modo}')">✅ Confirmar recebimento</button>
+      <div style="font-weight:800;margin-bottom:8px">💰 Registrar pagamento — total ${brl(total)}</div>
+      ${rows}
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:10px;font-size:12px"
+        onclick="_parcelasCaixa.push({valor:'${diff>0?diff.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderModalPagamentoCaixa()">
+        + Dividir em outra forma de pagamento ${diff>0?`(falta ${brl(diff)})`:''}</button>
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-bottom:10px;font-size:13px">
+        <span>Total informado:</span>
+        <b style="color:${Math.abs(diff)<0.01?'#2f9e6b':diff<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diff)<0.01?'✅':diff>0?`(falta ${brl(diff)})`:'(passou do total)'}</b>
+      </div>
+      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagamentoCaixa()">✅ Confirmar recebimento</button>
     </div>`;
 }
 
-async function confirmarPagamentoCaixa(total,modo){
-  const ped=S.pedido;
-  const sel=document.getElementById("formaPagCaixa");
-  const formaId=sel?.value; const formaNome=sel?.options[sel.selectedIndex]?.text||"";
+async function confirmarPagamentoCaixa(){
+  const ped=S.pedido; const total=window._caixaTotal; const modo=window._caixaModo;
+  const soma=+_parcelasCaixa.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+  const diff=+(Number(total)-soma).toFixed(2);
+  if(Math.abs(diff)>0.01){
+    document.getElementById("caixaAcao").innerHTML+=`<div class="err">Valor informado (${brl(soma)}) não bate com o total (${brl(total)}). Corrija antes de confirmar.</div>`;
+    return;
+  }
   document.getElementById("caixaAcao").innerHTML=`<div class="muted">Processando…</div>`;
   try{
     if(modo==="clienteSeparou"){
-      // registra pagamento e move direto pra SEPARADO
+      // registra pagamento (com todas as parcelas) e move direto pra SEPARADO
       await fetch(B+"/api/pagamentos/"+ped.id,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({valor:total,formaId,formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
+        body:JSON.stringify({valor:total,formaId:_parcelasCaixa[0]?.formaId,formaNome:_parcelasCaixa[0]?.formaNome,parcelas:_parcelasCaixa,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
       const r=await fetch(B+"/api/pedidos/"+ped.id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
       const j=await r.json();
       if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`; return; }
     } else {
-      // Receber e Separar — valida no servidor que o valor bate com o total
       const r=await fetch(B+"/api/fluxo/"+ped.id+"/enviar-separacao",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,pagamento:{valor:total,formaId,formaNome}})});
+        body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,pagamento:{valor:total,parcelas:_parcelasCaixa,formaId:_parcelasCaixa[0]?.formaId,formaNome:_parcelasCaixa[0]?.formaNome}})});
       const j=await r.json();
       if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao enviar para separação")}</div>`; return; }
     }
@@ -242,12 +272,18 @@ async function confirmarPagamentoCaixa(total,modo){
 function irFechamento(){ S.view="fechamento"; render(); if(!F.relatorio) buscarFechamento(); }
 
 async function buscarFechamento(){
-  F.carregando=true; F.erro=""; render();
+  F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:"Iniciando…"}; render();
   try{
-    const r=await fetch(B+"/api/fechamento-caixa?data="+F.data);
-    const j=await r.json();
-    if(!r.ok||j.erro){ F.carregando=false; F.erro=j.erro||"Erro ao gerar fechamento"; F.relatorio=null; render(); return; }
-    F.relatorio=j; F.carregando=false; render();
+    const es=new EventSource(B+"/api/fechamento-caixa/progresso?data="+F.data);
+    es.onmessage=(ev)=>{
+      const d=JSON.parse(ev.data);
+      if(d.tipo==="status"){ F.progresso.mensagem=d.mensagem; render(); }
+      else if(d.tipo==="total"){ F.progresso.total=d.total; F.progresso.mensagem=d.total?`0 de ${d.total} pedidos processados`:"Nenhum pedido nesse dia"; render(); }
+      else if(d.tipo==="progresso"){ F.progresso.atual=d.atual; F.progresso.total=d.total; F.progresso.mensagem=`${d.atual} de ${d.total} pedidos processados (#${d.pedido})`; render(); }
+      else if(d.tipo==="done"){ F.relatorio=d.relatorio; F.carregando=false; es.close(); render(); }
+      else if(d.tipo==="erro"){ F.erro=d.erro||"Erro ao gerar fechamento"; F.carregando=false; es.close(); render(); }
+    };
+    es.onerror=()=>{ if(F.carregando){ F.erro="Conexão perdida ao gerar fechamento. Tenta de novo."; F.carregando=false; } es.close(); render(); };
   }catch(e){ F.carregando=false; F.erro="Erro de conexão"; render(); }
 }
 
@@ -261,9 +297,16 @@ function renderFechamento(app){
       </div>
       <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFechamento()">🔎 Gerar fechamento</button>
     </div>
-    ${F.carregando?`<div class="muted" style="text-align:center;padding:30px 0">Buscando pedidos e vendedores do dia — isso pode levar alguns segundos…</div>`:""}
+    ${F.carregando?`
+    <div class="card">
+      <div style="margin-bottom:8px;font-size:13px">${esc(F.progresso?.mensagem||"Processando…")}</div>
+      <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96">
+        <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${F.progresso?.total?Math.round((F.progresso.atual/F.progresso.total)*100):5}%;transition:width .3s"></div>
+      </div>
+      <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${F.progresso?.total?Math.round((F.progresso.atual/F.progresso.total)*100)+"%":"Buscando pedidos…"}</div>
+    </div>`:""}
     ${F.erro?`<div class="err">${esc(F.erro)}</div>`:""}
-    ${rel?renderRelatorio(rel):""}
+    ${rel&&!F.carregando?renderRelatorio(rel):""}
   </div>`;
 }
 

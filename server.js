@@ -413,7 +413,7 @@ function salvarPag(o){ salvarJSON(PAG_FILE,o); }
 
 app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
-    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado}=req.body||{};
+    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado,parcelas}=req.body||{};
     if(!valor||!formaId) return res.status(400).json({erro:"valor e formaId obrigatórios"});
     // se o chamador informou qual valor era esperado (ex: total já ajustado por
     // ocorrências na entrega), valida que bate exatamente — defesa extra além
@@ -427,14 +427,25 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     const pags=lerPag(); const id=String(req.params.id);
     if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
     const p=pags[id];
+    // suporta múltiplas formas de pagamento (split) — registra uma entrada por parcela
+    const listaParcelas=Array.isArray(parcelas)&&parcelas.length
+      ? parcelas
+      : [{valor,formaId,formaNome,obs}];
     // substituir=true OU se já estava pago: reinicia o valor (não soma)
     const jaTinhaPago=(p.statusPagamento==="pago"||p.statusPagamento==="parcial")&&(p.valorPago||0)>0;
     if(substituir||jaTinhaPago){
       p.historico.push({valor:Number(valor),formaId,formaNome,obs,funcionarioId,funcionarioNome,em:Date.now(),tipo:"substituicao",valorAnterior:p.valorPago||0});
+      listaParcelas.forEach(pc=>{
+        const v=Number(pc.valor)||0; if(v<=0) return;
+        p.historico.push({valor:v,formaId:pc.formaId,formaNome:pc.formaNome,obs:pc.obs||"",funcionarioId,funcionarioNome,em:Date.now(),tipo:"substituicao_detalhe"});
+      });
       p.valorPago=+Number(valor).toFixed(2);
     } else {
       p.valorPago=+(p.valorPago+Number(valor)).toFixed(2);
-      p.historico.push({valor:Number(valor),formaId,formaNome,obs,funcionarioId,funcionarioNome,em:Date.now(),tipo:"normal"});
+      listaParcelas.forEach(pc=>{
+        const v=Number(pc.valor)||0; if(v<=0) return;
+        p.historico.push({valor:v,formaId:pc.formaId,formaNome:pc.formaNome,obs:pc.obs||"",funcionarioId,funcionarioNome,em:Date.now(),tipo:"normal"});
+      });
     }
     // busca total do pedido pra comparar
     try{
@@ -574,8 +585,15 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
       }
       const pags=lerPag();
       if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
+      // suporta múltiplas formas de pagamento (split) — registra uma entrada por parcela
+      const parcelas=Array.isArray(pagamento.parcelas)&&pagamento.parcelas.length
+        ? pagamento.parcelas
+        : [{valor:pagamento.valor,formaId:pagamento.formaId,formaNome:pagamento.formaNome,obs:""}];
+      parcelas.forEach(pc=>{
+        const v=Number(pc.valor)||0; if(v<=0) return;
+        pags[id].historico.push({valor:v,formaId:pc.formaId,formaNome:pc.formaNome,obs:pc.obs||"",funcionarioId,funcionarioNome,em:Date.now()});
+      });
       pags[id].valorPago=+(pags[id].valorPago+Number(pagamento.valor)).toFixed(2);
-      pags[id].historico.push({valor:Number(pagamento.valor),formaId:pagamento.formaId,formaNome:pagamento.formaNome,funcionarioId,funcionarioNome,em:Date.now()});
       pags[id].statusPagamento="pago"; salvarPag(pags);
     }
     // muda status no Bling
@@ -1538,12 +1556,18 @@ function nomeSituacaoFechamento(id){
   return nomes[id]||`Situação ${id}`;
 }
 
-app.get("/api/fechamento-caixa", async(req,res)=>{
+app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.flushHeaders();
+  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+
   try{
     const data=req.query.data;
-    if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({erro:"informe ?data=AAAA-MM-DD"});
+    if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD"}); return res.end(); }
 
-    // busca todos os pedidos daquele dia (com paginação)
+    send({tipo:"status",mensagem:"Buscando pedidos do dia…"});
     const lista=[];
     for(let pg=1;pg<=20;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:data,dataFinal:data});
@@ -1552,18 +1576,19 @@ app.get("/api/fechamento-caixa", async(req,res)=>{
       if(arr.length<100) break;
       await new Promise(r=>setTimeout(r,400));
     }
+    send({tipo:"total",total:lista.length});
 
     const pags=lerPag();
     const pedidosDetalhados=[];
     const porStatus={}, porVendedor={}, porFormaPagamento={};
     let totalGeral=0, totalPago=0, totalNaoPago=0;
 
-    for(const pRaw of lista){
+    for(let i=0;i<lista.length;i++){
+      const pRaw=lista[i];
       const id=String(pRaw.id);
       const total=+(pRaw.total||pRaw.totalProdutos||0);
       totalGeral+=total;
 
-      // vendedor — não vem na listagem, precisa do detalhe
       await new Promise(r=>setTimeout(r,350));
       let vendedorId=null;
       try{ const det=await bling(`/pedidos/vendas/${id}`); vendedorId=det?.data?.vendedor?.id||null; }catch(e){}
@@ -1575,16 +1600,13 @@ app.get("/api/fechamento-caixa", async(req,res)=>{
       const pago=pagLocal?.statusPagamento==="pago"||(valorPago>=total-0.01&&valorPago>0);
       if(pago) totalPago+=total; else totalNaoPago+=total;
 
-      // por status
       if(!porStatus[sitNome]) porStatus[sitNome]={qtd:0,total:0};
       porStatus[sitNome].qtd++; porStatus[sitNome].total+=total;
 
-      // por vendedor
       if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]={qtd:0,total:0,pago:0,naoPago:0};
       porVendedor[vendedorNome].qtd++; porVendedor[vendedorNome].total+=total;
       if(pago) porVendedor[vendedorNome].pago+=total; else porVendedor[vendedorNome].naoPago+=total;
 
-      // por forma de pagamento (do histórico local)
       const formas=(pagLocal?.historico||[]).map(h=>h.formaNome||"Outro");
       if(formas.length===0 && pago) formas.push("Sem registro (Bling direto)");
       formas.forEach(f=>{ porFormaPagamento[f]=(porFormaPagamento[f]||0)+ (pagLocal?.historico?.find(h=>(h.formaNome||"Outro")===f)?.valor||0); });
@@ -1594,14 +1616,17 @@ app.get("/api/fechamento-caixa", async(req,res)=>{
         vendedor:vendedorNome, total, valorPago, pago,
         formasPagamento:formas,
       });
+
+      send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
     }
 
-    res.json({
+    send({tipo:"done",relatorio:{
       data, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
       porStatus, porVendedor, porFormaPagamento, pedidos:pedidosDetalhados,
-    });
-  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+    }});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  res.end();
 });
 
 
