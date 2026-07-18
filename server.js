@@ -1556,6 +1556,29 @@ function nomeSituacaoFechamento(id){
   return nomes[id]||`Situação ${id}`;
 }
 
+// Mesma lógica do GET /api/pagamentos/:id, mas reaproveitando um pedido (ped) e
+// log já buscados, pra não duplicar chamadas ao Bling no fechamento de caixa.
+function resolverPagamentoPedido(ped,pagLocal,logPedido){
+  const totalPed=+(ped?.total||ped?.totalProdutos||0);
+  if(pagLocal){
+    return {valorPago:+(pagLocal.valorPago||0),statusPagamento:pagLocal.statusPagamento||"pendente",historico:pagLocal.historico||[],doBling:false};
+  }
+  const passouPeloNossoFluxo=(logPedido||[]).some(e=>
+    ["pedido_criado_totem","separar_para_entregar","enviado_separacao_pago","pedido_aberto_separacao",
+     "separacao_completa","separacao_com_falta","conferido_entrega","conferido_retirada",
+     "pagamento_registrado","recebido_cliente_separou"].includes(e.evento)
+  );
+  if(passouPeloNossoFluxo) return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false};
+  const parcelas=ped?.parcelas||[];
+  const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
+  const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
+  if(valorPago>0.01){
+    const formaPag=ped.formaPagamento;
+    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico:[{valor:valorPago,formaNome:formaPag?.descricao||"Bling (à vista)",origem:"bling",em:Date.now()}],doBling:true};
+  }
+  return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false};
+}
+
 app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
@@ -1579,8 +1602,9 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     send({tipo:"total",total:lista.length});
 
     const pags=lerPag();
+    const logs=lerLog();
     const pedidosDetalhados=[];
-    const porStatus={}, porVendedor={}, porFormaPagamento={};
+    const porStatus={}, porVendedor={}, porFormaPagamento={}, porCliente={};
     let totalGeral=0, totalPago=0, totalNaoPago=0;
 
     for(let i=0;i<lista.length;i++){
@@ -1589,42 +1613,57 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       const total=+(pRaw.total||pRaw.totalProdutos||0);
       totalGeral+=total;
 
+      // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
       await new Promise(r=>setTimeout(r,350));
-      let vendedorId=null;
-      try{ const det=await bling(`/pedidos/vendas/${id}`); vendedorId=det?.data?.vendedor?.id||null; }catch(e){}
+      let det=null, vendedorId=null;
+      try{ const r=await bling(`/pedidos/vendas/${id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
       const vendedorNome=await nomeVendedor(vendedorId);
 
       const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
       const pagLocal=pags[id];
-      const valorPago=+(pagLocal?.valorPago||0);
-      const pago=pagLocal?.statusPagamento==="pago"||(valorPago>=total-0.01&&valorPago>0);
+      const {valorPago,historico,doBling}=resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
+      const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
+      const clienteNome=pRaw.contato?.nome||"—";
 
+      // por status
       if(!porStatus[sitNome]) porStatus[sitNome]={qtd:0,total:0};
       porStatus[sitNome].qtd++; porStatus[sitNome].total+=total;
 
-      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]={qtd:0,total:0,pago:0,naoPago:0};
-      porVendedor[vendedorNome].qtd++; porVendedor[vendedorNome].total+=total;
-      if(pago) porVendedor[vendedorNome].pago+=total; else porVendedor[vendedorNome].naoPago+=total;
+      // por cliente (geral)
+      if(!porCliente[clienteNome]) porCliente[clienteNome]={qtd:0,total:0};
+      porCliente[clienteNome].qtd++; porCliente[clienteNome].total+=total;
 
-      const formas=(pagLocal?.historico||[]).map(h=>h.formaNome||"Outro");
-      if(formas.length===0 && pago) formas.push("Sem registro (Bling direto)");
-      formas.forEach(f=>{ porFormaPagamento[f]=(porFormaPagamento[f]||0)+ (pagLocal?.historico?.find(h=>(h.formaNome||"Outro")===f)?.valor||0); });
+      // por vendedor (com detalhamento aninhado de forma de pagamento e cliente)
+      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]={qtd:0,total:0,pago:0,naoPago:0,porFormaPagamento:{},porCliente:{}};
+      const v=porVendedor[vendedorNome];
+      v.qtd++; v.total+=total;
+      if(pago) v.pago+=total; else v.naoPago+=total;
+      if(!v.porCliente[clienteNome]) v.porCliente[clienteNome]={qtd:0,total:0};
+      v.porCliente[clienteNome].qtd++; v.porCliente[clienteNome].total+=total;
+
+      // formas de pagamento — geral e por vendedor (do histórico local ou do heurístico do Bling)
+      const formas=historico.length?historico:(pago?[{valor:valorPago,formaNome:doBling?"Bling (à vista)":"Sem forma registrada"}]:[]);
+      formas.forEach(h=>{
+        const nome=h.formaNome||"Outro"; const v2=Number(h.valor)||0; if(v2<=0) return;
+        porFormaPagamento[nome]=(porFormaPagamento[nome]||0)+v2;
+        v.porFormaPagamento[nome]=(v.porFormaPagamento[nome]||0)+v2;
+      });
 
       pedidosDetalhados.push({
-        numero:pRaw.numero, id:pRaw.id, cliente:pRaw.contato?.nome||"", situacao:sitNome,
-        vendedor:vendedorNome, total, valorPago, pago,
-        formasPagamento:formas,
+        numero:pRaw.numero, id:pRaw.id, cliente:clienteNome, situacao:sitNome,
+        vendedor:vendedorNome, total, valorPago, pago, doBling,
+        formasPagamento:formas.map(h=>h.formaNome),
       });
 
       send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
     }
 
-    send({tipo:"done",relatorio:{
+    res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
       data, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
-      porStatus, porVendedor, porFormaPagamento, pedidos:pedidosDetalhados,
-    }});
+      porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
+    }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }
   res.end();
 });
