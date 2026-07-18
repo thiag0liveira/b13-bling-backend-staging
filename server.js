@@ -45,6 +45,7 @@ const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
+const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
@@ -1609,20 +1610,35 @@ app.get("/api/em-digitacao", async(req,res)=>{
       await new Promise(r=>setTimeout(r,400));
     }
 
+    // rastreia desde quando cada pedido foi visto em Em Digitação (Bling não dá hora, só data)
+    const track=lerJSON(EMDIG_TRACK_FILE,{});
+    const idsAtuais=new Set(lista.map(p=>String(p.id)));
+    const agora=Date.now();
+    lista.forEach(p=>{ const id=String(p.id); if(!track[id]) track[id]={desde:agora}; track[id].ultimaVez=agora; });
+    // limpa do rastreamento pedidos que não estão mais em digitação (saíram do estado)
+    Object.keys(track).forEach(id=>{ if(!idsAtuais.has(id)) delete track[id]; });
+    salvarJSON(EMDIG_TRACK_FILE,track);
+
     const porVendedor={};
+    const todosPedidos=[];
     for(const pRaw of lista){
       await new Promise(r=>setTimeout(r,350));
       let vendedorId=null, det=null;
       try{ const r=await bling(`/pedidos/vendas/${pRaw.id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
       const vendedorNome=await nomeVendedor(vendedorId);
-      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]=[];
-      porVendedor[vendedorNome].push({
-        id:pRaw.id, numero:pRaw.numero, cliente:pRaw.contato?.nome||"—",
+      const desde=track[String(pRaw.id)]?.desde||agora;
+      const obj={
+        id:pRaw.id, numero:pRaw.numero, cliente:pRaw.contato?.nome||"—", vendedor:vendedorNome,
         total:+(pRaw.total||pRaw.totalProdutos||0), data:pRaw.data,
+        desde, desdeHora:new Date(desde).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
         itens:(det?.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"Produto",quantidade:i.quantidade,valor:i.valor})),
-      });
+      };
+      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]=[];
+      porVendedor[vendedorNome].push(obj);
+      todosPedidos.push(obj);
     }
-    res.json({data:{total:lista.length,porVendedor}});
+    todosPedidos.sort((a,b)=>b.desde-a.desde);
+    res.json({data:{total:lista.length,porVendedor,recentes:todosPedidos}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
