@@ -64,13 +64,18 @@ const LOGO="/logo";
 const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
 const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
 let formasPag=[];
-let S={pedido:null,pag:null,busca:"",msg:"",carregando:false};
+let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
+let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:""};
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 
 function header(){
+  const botaoNav=S.view==="scan"
+    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>`
+    : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
   return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
+  ${botaoNav}
   ${FUNC?`<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>`:""}
   <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="if(typeof b13Logout==='function')b13Logout()">Sair</button>
   </div>`;
@@ -78,6 +83,7 @@ function header(){
 
 function render(){
   const app=document.getElementById("app");
+  if(S.view==="fechamento"){ renderFechamento(app); return; }
   if(!S.pedido){
     app.innerHTML=header()+`<div class="wrap">
       <div class="scan-box">
@@ -161,7 +167,7 @@ function renderPedido(app){
     ${!pago?`
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
       <button class="btn btn-grn" style="padding:16px" onclick="iniciarRecebimentoCaixa('receber')">💰 Receber e Separar</button>
-      <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">✅ Cliente já separou (vai pra Separado)</button>
+      <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">💰 Receber (não enviar p/ separação)</button>
     </div>`:`
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="voltarBusca()">Escanear próximo pedido</button>`}
   </div>`;
@@ -230,6 +236,83 @@ async function confirmarPagamentoCaixa(total,modo){
     document.getElementById("caixaAcao").innerHTML=`<div class="ok">✅ Pedido #${esc(ped.numero||ped.id)} recebido com sucesso!</div>`;
     setTimeout(voltarBusca,1400);
   }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão</div>`; }
+}
+
+// --------- Fechamento de Caixa ---------
+function irFechamento(){ S.view="fechamento"; render(); if(!F.relatorio) buscarFechamento(); }
+
+async function buscarFechamento(){
+  F.carregando=true; F.erro=""; render();
+  try{
+    const r=await fetch(B+"/api/fechamento-caixa?data="+F.data);
+    const j=await r.json();
+    if(!r.ok||j.erro){ F.carregando=false; F.erro=j.erro||"Erro ao gerar fechamento"; F.relatorio=null; render(); return; }
+    F.relatorio=j; F.carregando=false; render();
+  }catch(e){ F.carregando=false; F.erro="Erro de conexão"; render(); }
+}
+
+function renderFechamento(app){
+  const rel=F.relatorio;
+  app.innerHTML=header()+`<div class="wrap">
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <div class="muted" style="margin-bottom:4px">Data</div>
+        <input type="date" value="${F.data}" onchange="F.data=this.value" style="font-size:15px">
+      </div>
+      <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFechamento()">🔎 Gerar fechamento</button>
+    </div>
+    ${F.carregando?`<div class="muted" style="text-align:center;padding:30px 0">Buscando pedidos e vendedores do dia — isso pode levar alguns segundos…</div>`:""}
+    ${F.erro?`<div class="err">${esc(F.erro)}</div>`:""}
+    ${rel?renderRelatorio(rel):""}
+  </div>`;
+}
+
+function renderRelatorio(rel){
+  const statusRows=Object.entries(rel.porStatus).sort((a,b)=>b[1].total-a[1].total)
+    .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <span>${esc(nome)} <span class="muted">(${v.qtd})</span></span><span style="font-weight:700">${brl(v.total)}</span></div>`).join("");
+
+  const vendedorRows=Object.entries(rel.porVendedor).sort((a,b)=>b[1].total-a[1].total)
+    .map(([nome,v])=>`<div style="padding:8px 0;border-bottom:1px solid #2a2660">
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>${esc(nome)}</span><span>${brl(v.total)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9"><span>${v.qtd} pedido(s)</span><span>✅ ${brl(v.pago)} · 🔴 ${brl(v.naoPago)}</span></div>
+    </div>`).join("");
+
+  const formaRows=Object.entries(rel.porFormaPagamento).sort((a,b)=>b[1]-a[1])
+    .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <span>${esc(nome)}</span><span style="font-weight:700">${brl(v)}</span></div>`).join("");
+
+  const pedidosRows=rel.pedidos.map(p=>`
+    <tr style="border-bottom:1px solid #2a2660">
+      <td style="padding:6px 4px">#${esc(p.numero)}</td>
+      <td style="padding:6px 4px">${esc(p.cliente)}</td>
+      <td style="padding:6px 4px">${esc(p.vendedor)}</td>
+      <td style="padding:6px 4px">${esc(p.situacao)}</td>
+      <td style="padding:6px 4px;text-align:right">${brl(p.total)}</td>
+      <td style="padding:6px 4px;text-align:center">${p.pago?"✅":"🔴"}</td>
+    </tr>`).join("");
+
+  return `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pedidos</div><div style="font-size:22px;font-weight:900">${rel.totalPedidos}</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Total</div><div style="font-size:22px;font-weight:900">${brl(rel.totalGeral)}</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pago</div><div style="font-size:22px;font-weight:900;color:#a8f0c8">${brl(rel.totalPago)}</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Não pago</div><div style="font-size:22px;font-weight:900;color:#ff8090">${brl(rel.totalNaoPago)}</div></div>
+    </div>
+
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">📦 Por status</div>${statusRows||'<div class="muted">Sem dados</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">🧑‍💼 Por vendedor</div>${vendedorRows||'<div class="muted">Sem dados</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">💳 Por forma de pagamento (registrado no sistema)</div>${formaRows||'<div class="muted">Nenhum pagamento registrado no nosso sistema nesse dia</div>'}</div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">📋 Todos os pedidos do dia</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="color:#9a95c9;text-align:left"><th style="padding:4px">Nº</th><th style="padding:4px">Cliente</th><th style="padding:4px">Vendedor</th><th style="padding:4px">Status</th><th style="padding:4px;text-align:right">Total</th><th style="padding:4px">Pago</th></tr></thead>
+          <tbody>${pedidosRows}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 if(!window.__b13SemAcesso) render();

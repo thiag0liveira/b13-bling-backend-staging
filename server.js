@@ -1517,6 +1517,94 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
 app.get("/pedir", (req, res) => res.sendFile(path.join(__dirname, "totem.html")));
 app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-tabela.html")));
 app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
+// ------------------------- Fechamento de Caixa -------------------------
+const _vendedorCache={};
+async function nomeVendedor(id){
+  if(!id) return "Sem vendedor";
+  if(_vendedorCache[id]) return _vendedorCache[id];
+  try{
+    await new Promise(r=>setTimeout(r,350));
+    const v=await bling(`/vendedores/${id}`);
+    const nome=v?.data?.nome||v?.data?.contato?.nome||`Vendedor ${id}`;
+    _vendedorCache[id]=nome; return nome;
+  }catch(e){ return `Vendedor ${id}`; }
+}
+function nomeSituacaoFechamento(id){
+  const nomes={
+    [SIT.AGUARDANDO]:"Aguardando", [SIT.EM_SEP]:"Em Separação", [SIT.SEP_PEND]:"Separado c/ Pendências",
+    [SIT.SEPARADO]:"Separado", [SIT.EM_ROTA]:"Em Rota", [SIT.ATENDIDO]:"Atendido",
+    21:"Em digitação", 6:"Em aberto", 12:"Cancelado",
+  };
+  return nomes[id]||`Situação ${id}`;
+}
+
+app.get("/api/fechamento-caixa", async(req,res)=>{
+  try{
+    const data=req.query.data;
+    if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({erro:"informe ?data=AAAA-MM-DD"});
+
+    // busca todos os pedidos daquele dia (com paginação)
+    const lista=[];
+    for(let pg=1;pg<=20;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:data,dataFinal:data});
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,400));
+    }
+
+    const pags=lerPag();
+    const pedidosDetalhados=[];
+    const porStatus={}, porVendedor={}, porFormaPagamento={};
+    let totalGeral=0, totalPago=0, totalNaoPago=0;
+
+    for(const pRaw of lista){
+      const id=String(pRaw.id);
+      const total=+(pRaw.total||pRaw.totalProdutos||0);
+      totalGeral+=total;
+
+      // vendedor — não vem na listagem, precisa do detalhe
+      await new Promise(r=>setTimeout(r,350));
+      let vendedorId=null;
+      try{ const det=await bling(`/pedidos/vendas/${id}`); vendedorId=det?.data?.vendedor?.id||null; }catch(e){}
+      const vendedorNome=await nomeVendedor(vendedorId);
+
+      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
+      const pagLocal=pags[id];
+      const valorPago=+(pagLocal?.valorPago||0);
+      const pago=pagLocal?.statusPagamento==="pago"||(valorPago>=total-0.01&&valorPago>0);
+      if(pago) totalPago+=total; else totalNaoPago+=total;
+
+      // por status
+      if(!porStatus[sitNome]) porStatus[sitNome]={qtd:0,total:0};
+      porStatus[sitNome].qtd++; porStatus[sitNome].total+=total;
+
+      // por vendedor
+      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]={qtd:0,total:0,pago:0,naoPago:0};
+      porVendedor[vendedorNome].qtd++; porVendedor[vendedorNome].total+=total;
+      if(pago) porVendedor[vendedorNome].pago+=total; else porVendedor[vendedorNome].naoPago+=total;
+
+      // por forma de pagamento (do histórico local)
+      const formas=(pagLocal?.historico||[]).map(h=>h.formaNome||"Outro");
+      if(formas.length===0 && pago) formas.push("Sem registro (Bling direto)");
+      formas.forEach(f=>{ porFormaPagamento[f]=(porFormaPagamento[f]||0)+ (pagLocal?.historico?.find(h=>(h.formaNome||"Outro")===f)?.valor||0); });
+
+      pedidosDetalhados.push({
+        numero:pRaw.numero, id:pRaw.id, cliente:pRaw.contato?.nome||"", situacao:sitNome,
+        vendedor:vendedorNome, total, valorPago, pago,
+        formasPagamento:formas,
+      });
+    }
+
+    res.json({
+      data, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
+      totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
+      porStatus, porVendedor, porFormaPagamento, pedidos:pedidosDetalhados,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
 app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
