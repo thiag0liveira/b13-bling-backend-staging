@@ -1564,14 +1564,14 @@ function nomeSituacaoFechamento(id){
 async function resolverPagamentoPedido(ped,pagLocal,logPedido){
   const totalPed=+(ped?.total||ped?.totalProdutos||0);
   if(pagLocal){
-    return {valorPago:+(pagLocal.valorPago||0),statusPagamento:pagLocal.statusPagamento||"pendente",historico:pagLocal.historico||[],doBling:false};
+    return {valorPago:+(pagLocal.valorPago||0),statusPagamento:pagLocal.statusPagamento||"pendente",historico:pagLocal.historico||[],doBling:false,previsto:[]};
   }
   const passouPeloNossoFluxo=(logPedido||[]).some(e=>
     ["pedido_criado_totem","separar_para_entregar","enviado_separacao_pago","pedido_aberto_separacao",
      "separacao_completa","separacao_com_falta","conferido_entrega","conferido_retirada",
      "pagamento_registrado","recebido_cliente_separou"].includes(e.evento)
   );
-  if(passouPeloNossoFluxo) return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false};
+  if(passouPeloNossoFluxo) return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   const parcelas=ped?.parcelas||[];
   const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
   const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
@@ -1582,9 +1582,16 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
       const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
       historico.push({valor:pc.valor||0,formaNome:nomeForma,origem:"bling",em:Date.now()});
     }
-    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico,doBling:true};
+    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico,doBling:true,previsto:[]};
   }
-  return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false};
+  // ainda não pago — mas pode ter forma de pagamento já registrada (parcela a prazo,
+  // vencimento futuro tipo boleto/cartão). Mostra isso como informação, não como pago.
+  const previsto=[];
+  for(const pc of parcelas){
+    const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+    previsto.push({formaNome:nomeForma,valor:pc.valor||0,vencimento:pc.dataVencimento||""});
+  }
+  return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto};
 }
 
 app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
@@ -1629,7 +1636,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
       const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
       const pagLocal=pags[id];
-      const {valorPago,historico,doBling}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
+      const {valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
       const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
       const clienteNome=pRaw.contato?.nome||"—";
@@ -1662,6 +1669,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
         numero:pRaw.numero, id:pRaw.id, cliente:clienteNome, situacao:sitNome,
         vendedor:vendedorNome, total, valorPago, pago, doBling,
         formasPagamento:formas.map(h=>h.formaNome),
+        formasPrevisto:(previsto||[]).map(p=>`${p.formaNome}${p.vencimento?` (venc. ${p.vencimento.split('-').reverse().join('/')})`:''}`),
       });
 
       send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});

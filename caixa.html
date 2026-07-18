@@ -341,9 +341,12 @@ function renderRelatorio(rel){
 
   const naoPagos=rel.pedidos.filter(p=>!p.pago);
   const naoPagosRows=naoPagos.map(p=>`
-    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
-      <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
-      <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
+    <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <div style="display:flex;justify-content:space-between">
+        <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
+        <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
+      </div>
+      ${p.formasPrevisto?.length?`<div class="muted" style="font-size:11px;margin-top:2px">💳 Previsto: ${p.formasPrevisto.map(f=>esc(f)).join(", ")}</div>`:`<div class="muted" style="font-size:11px;margin-top:2px">Nenhuma forma de pagamento registrada</div>`}
     </div>`).join("");
 
   const pedidosRows=rel.pedidos.map(p=>`
