@@ -666,6 +666,17 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,itensNaoEntregues,itensDanificados,valorAbatido,resolucao,clienteId,clienteNome}=req.body||{};
     const id=String(req.params.id);
+
+    // trava: não deixa confirmar entrega sem o pagamento (considerando abatimento de ocorrências)
+    const pags=lerPag();
+    const pagoVal=+(pags[id]?.valorPago||0);
+    const pj=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data).catch(()=>null);
+    const totalPed=+(pj?.total||pj?.totalProdutos||0);
+    const saldoFinal=+(totalPed-Number(valorAbatido||0)).toFixed(2);
+    if(pagoVal<saldoFinal-0.01){
+      return res.status(400).json({erro:`Não é possível confirmar entrega sem receber o pagamento. Falta R$ ${(saldoFinal-pagoVal).toFixed(2)}.`});
+    }
+
     if(itensNaoEntregues?.length||itensDanificados?.length){
       const perdas=lerJSON(PERDAS_FILE,{});
       perdas[id]={pedidoId:id,itensNaoEntregues:itensNaoEntregues||[],itensDanificados:itensDanificados||[],valorAbatido:valorAbatido||0,resolucao,funcionarioId,funcionarioNome,em:Date.now()};

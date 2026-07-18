@@ -654,6 +654,14 @@ async function concluirEntrega(id){
   const semFoto=ocorr.filter(o=>o.tipo==="danificado"&&!o.foto);
   if(semFoto.length){ document.getElementById("entregaMsg").innerHTML=`<div class="err">📷 Foto obrigatória para ${semFoto.length} item(ns) danificado(s)</div>`; return; }
   const valorAbatido=+ocorr.reduce((s,o)=>s+(o.valorItem||0),0).toFixed(2);
+  // não deixa concluir sem receber o valor esperado (total já descontado das ocorrências)
+  const totalPed=+(ped.total||ped.totalProdutos||0);
+  const saldoFinal=+(totalPed-valorAbatido).toFixed(2);
+  const pagoVal=+(pag?.valorPago||0);
+  if(pagoVal<saldoFinal-0.01){
+    document.getElementById("entregaMsg").innerHTML=`<div class="err">🔴 Não é possível confirmar entrega sem receber o pagamento. Falta ${brl(saldoFinal-pagoVal)} — clique em "Registrar" acima.</div>`;
+    return;
+  }
   // se tem abatimento e já pagou, perguntar sobre crédito/estorno
   if(valorAbatido>0 && pag?.statusPagamento==="pago"){
     document.getElementById("entregaMsg").innerHTML=`
