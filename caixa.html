@@ -339,6 +339,13 @@ function renderRelatorio(rel){
       </div>`;
     }).join("");
 
+  const naoPagos=rel.pedidos.filter(p=>!p.pago);
+  const naoPagosRows=naoPagos.map(p=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
+      <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
+    </div>`).join("");
+
   const pedidosRows=rel.pedidos.map(p=>`
     <tr style="border-bottom:1px solid #2a2660">
       <td style="padding:6px 4px">#${esc(p.numero)}</td>
@@ -361,6 +368,8 @@ function renderRelatorio(rel){
     <div class="card"><div style="font-weight:800;margin-bottom:6px">💳 Por forma de pagamento (geral)</div>${formaRows||'<div class="muted">Nenhum pagamento identificado nesse dia</div>'}</div>
     <div class="card"><div style="font-weight:800;margin-bottom:6px">👤 Por cliente</div>${clienteRows||'<div class="muted">Sem dados</div>'}</div>
     <div class="card"><div style="font-weight:800;margin-bottom:6px">🧑‍💼 Por vendedor (detalhado)</div>${vendedorBlocos||'<div class="muted">Sem dados</div>'}</div>
+
+    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Pedidos não pagos (${naoPagos.length})</div>${naoPagosRows||'<div class="ok" style="margin:0">Tudo pago nesse dia ✅</div>'}</div>
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">📋 Todos os pedidos do dia</div>

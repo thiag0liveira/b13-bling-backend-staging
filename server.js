@@ -484,6 +484,18 @@ function parcelaEhAVista(p,ped){
   return String(p.dataVencimento)<=String(ped.data);
 }
 
+// Cache de nomes de forma de pagamento do Bling (busca a lista inteira 1x só)
+const _formaPagCache={};
+async function nomeFormaPagamentoId(id){
+  if(!id) return "Não identificada";
+  if(_formaPagCache[id]) return _formaPagCache[id];
+  try{
+    const r=await bling("/formas-pagamentos");
+    (r?.data||[]).forEach(f=>{ _formaPagCache[f.id]=f.descricao||f.nome||`Forma ${f.id}`; });
+  }catch(e){}
+  return _formaPagCache[id]||`Forma ${id}`;
+}
+
 // Buscar histórico de pagamento de um pedido específico
 app.get("/api/pagamentos/:id",async(req,res)=>{
   try{
@@ -522,25 +534,16 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
     );
     if(passouPeloNossoFluxo) return res.json({data:null});
 
-    // Pedido do Bling direto — verifica parcelas
-    // OBS: esse endpoint (/pedidos/vendas/:id) não retorna se a parcela foi
-    // efetivamente recebida (não existe campo "situacao"/"dataRecebimento" na parcela).
-    // Vendas à vista (dataVencimento da parcela <= data da venda) são baixadas
-    // automaticamente pelo Bling direto no caixa/banco no momento da criação —
-    // por isso tratamos essas como pagas. Vendas a prazo (vencimento futuro)
-    // ficam como pendentes até virarem conta a receber de fato.
+    // Pedido do Bling direto — verifica parcelas (mesma lógica usada no fechamento de caixa)
     const rPed=await bling(`/pedidos/vendas/${id}`);
     const ped=rPed?.data||{};
-    const parcelas=ped.parcelas||[];
     const totalPed=+(ped.total||ped.totalProdutos||0);
-    const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
-    const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
-    if(valorPago>0.01){
-      const formaPag=ped.formaPagamento;
+    const resolvido=await resolverPagamentoPedido(ped,null,logPedido);
+    if(resolvido.valorPago>0.01){
       return res.json({data:{
-        pedidoId:id,valorPago,valorPedido:totalPed,
-        statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",
-        historico:[{valor:valorPago,formaNome:formaPag?.descricao||"Bling",origem:"bling",em:Date.now()}],
+        pedidoId:id,valorPago:resolvido.valorPago,valorPedido:totalPed,
+        statusPagamento:resolvido.statusPagamento,
+        historico:resolvido.historico,
         _doBling:true
       }});
     }
@@ -1558,7 +1561,7 @@ function nomeSituacaoFechamento(id){
 
 // Mesma lógica do GET /api/pagamentos/:id, mas reaproveitando um pedido (ped) e
 // log já buscados, pra não duplicar chamadas ao Bling no fechamento de caixa.
-function resolverPagamentoPedido(ped,pagLocal,logPedido){
+async function resolverPagamentoPedido(ped,pagLocal,logPedido){
   const totalPed=+(ped?.total||ped?.totalProdutos||0);
   if(pagLocal){
     return {valorPago:+(pagLocal.valorPago||0),statusPagamento:pagLocal.statusPagamento||"pendente",historico:pagLocal.historico||[],doBling:false};
@@ -1573,8 +1576,13 @@ function resolverPagamentoPedido(ped,pagLocal,logPedido){
   const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
   const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
   if(valorPago>0.01){
-    const formaPag=ped.formaPagamento;
-    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico:[{valor:valorPago,formaNome:formaPag?.descricao||"Bling (à vista)",origem:"bling",em:Date.now()}],doBling:true};
+    // detalha a forma de pagamento real de cada parcela (não um rótulo genérico)
+    const historico=[];
+    for(const pc of parcelasPagas){
+      const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+      historico.push({valor:pc.valor||0,formaNome:nomeForma,origem:"bling",em:Date.now()});
+    }
+    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico,doBling:true};
   }
   return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false};
 }
@@ -1621,7 +1629,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
       const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
       const pagLocal=pags[id];
-      const {valorPago,historico,doBling}=resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
+      const {valorPago,historico,doBling}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
       const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
       const clienteNome=pRaw.contato?.nome||"—";
