@@ -638,19 +638,57 @@ function imprimir(){
 
 function telaSucesso(app){
   const r=S.resultado||{};
-  const nped=r.pedido?.data?.numero || r.pedido?.data?.id;
+  const pedidoId=r.pedido?.data?.id;
+  const nped=r.pedido?.data?.numero || pedidoId;
+  const notaUrl=pedidoId?(window.location.origin+"/pedido/"+pedidoId+"/nota"):null;
+  const listaItens=itens().map(i=>`
+    <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <div style="flex:1">
+        <div style="font-weight:700">${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` <span style="color:#9a95c9;font-weight:400">(${esc(i.sabor)})</span>`:""}</div>
+        <div style="color:#9a95c9;font-size:11px">${esc(pack(i.qtd,i.un))}</div>
+      </div>
+      <div style="font-weight:700">${brl(i.preco*i.qtd)}</div>
+    </div>`).join("");
+
   let statusBling = r.bling
-    ? `<div class="ok">✅ Pedido gerado no Bling${nped?` (nº ${nped})`:""} — vendedor SISTEMA.</div>`
-    : `<div class="warn">⚠️ Não foi possível gerar no Bling (${esc(r.erro||"erro")}).${r.detalhe?`<br><br><b>Detalhe do Bling:</b><br><small style="word-break:break-word">${esc(JSON.stringify(r.detalhe))}</small>`:""}<br><br>A loja recebeu pelo WhatsApp.</div>`;
-  app.innerHTML=header(false)+`<div class="center">
-    <div style="font-size:60px">✅</div>
-    <h1>Pedido finalizado!</h1>
-    <div class="sub">Pedido registrado no sistema. ${r.entrega?.tipo==='entrega'?"Entrega a combinar.":"Retirada na loja."}</div>
+    ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:10px 14px;font-size:13px;color:#a8f0c8;text-align:center">✅ Pedido registrado no sistema — vendedor SISTEMA</div>`
+    : `<div style="background:#2a0a00;border:1px solid #e5563f;border-radius:10px;padding:10px 14px;font-size:13px;color:#ff8090">⚠️ Não foi possível gerar no Bling (${esc(r.erro||"erro")}).${r.detalhe?`<br><small style="word-break:break-word;opacity:.8">${esc(JSON.stringify(r.detalhe))}</small>`:""}<br>A loja recebeu pelo WhatsApp.</div>`;
+
+  app.innerHTML=header(false)+`
+  <div style="max-width:480px;margin:0 auto;padding:20px 16px 40px">
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="width:64px;height:64px;border-radius:50%;background:#0a2a1a;border:2px solid #2f9e6b;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 10px">✅</div>
+      <div style="font-size:22px;font-weight:900">Pedido finalizado!</div>
+      <div style="color:#9a95c9;font-size:13px;margin-top:2px">${r.entrega?.tipo==='entrega'?"Entrega a combinar":"Retirada na loja"}</div>
+    </div>
+
+    <div style="background:#151233;border:1px solid #514c96;border-radius:14px;overflow:hidden;margin-bottom:14px">
+      <div style="background:#262366;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:900;font-size:20px">#${nped}</div>
+        <div style="font-size:11px;color:#cfc9f5">${new Date().toLocaleDateString("pt-BR")}</div>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:2px">Cliente</div>
+        <div style="font-weight:700;margin-bottom:10px">${esc(S.nome)}</div>
+        <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:4px">Itens (${itens().length})</div>
+        ${listaItens}
+        <div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:4px;font-size:13px">
+          <span style="color:#9a95c9">Subtotal</span><span>${brl(subtotal())}</span>
+        </div>
+        ${S.entrega==='entrega'&&S.frete?`<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#9a95c9">Entrega (${S.frete.km} km)</span><span>${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}</span></div>`:`<div style="font-size:13px;color:#9a95c9">Retirada na loja</div>`}
+        <div style="display:flex;justify-content:space-between;font-size:20px;font-weight:900;color:#FF0082;margin-top:8px;padding-top:8px;border-top:1px solid #2a2660">
+          <span>TOTAL</span><span>${brl(totalFinal())}</span>
+        </div>
+      </div>
+    </div>
+
     ${statusBling}
-    <div class="ok" style="text-align:left">${esc(resumoTexto()).replace(/\n/g,"<br>")}</div>
-    <button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>
-    <button class="btn btn-out big" onclick="abrirWhatsApp()">🟢 Enviar no WhatsApp (opcional)</button>
-    <button class="btn btn-mag big" onclick="recomecar(false)">Novo pedido</button>
+
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+      ${notaUrl?`<a href="${notaUrl}" target="_blank" class="btn btn-mag big" style="text-decoration:none;text-align:center">🖨️ Imprimir nota (com código pro caixa)</a>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
+      <button class="btn btn-out big" onclick="abrirWhatsApp()">🟢 Enviar no WhatsApp (opcional)</button>
+      <button class="btn btn-ghost big" onclick="recomecar(false)">Novo pedido</button>
+    </div>
   </div>`;
 }
 

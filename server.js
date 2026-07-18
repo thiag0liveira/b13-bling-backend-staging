@@ -158,6 +158,7 @@ function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
   const links=[
     {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
+    {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
     {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
@@ -1513,6 +1514,7 @@ app.get("/pedir", (req, res) => res.sendFile(path.join(__dirname, "totem.html"))
 app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-tabela.html")));
 app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
+app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
 app.get("/gerenciamento", (req, res) => res.sendFile(path.join(__dirname, "gerenciamento.html")));
 app.get("/funcionarios", (req, res) => res.sendFile(path.join(__dirname, "funcionarios.html")));
@@ -1943,12 +1945,20 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
   <div class="qr-area">
     <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(qrUrl)}" style="width:130px;height:130px">
     <div style="font-size:10px;color:#888;margin-top:6px">Leia o QR para ver status do pedido</div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #ddd">
+      <svg id="barcode"></svg>
+      <div style="font-size:10px;color:#888;margin-top:2px">Apresente este código no caixa</div>
+    </div>
   </div>
   <div class="acoes no-print">
     <a href="${confUrl}" class="btn btn-conf">🔍 Abrir na Conferência</a>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir nota</button>
   </div>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script>
+  try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.6,height:42,fontSize:12,margin:0,background:"transparent"}); }catch(e){}
+</script>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
     res.send(html);

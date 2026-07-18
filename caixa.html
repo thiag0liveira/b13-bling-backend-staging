@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Caixa</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24}
+  body{margin:0;background:var(--bg);color:#fff}
+  #app{max-width:640px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--indigo2),var(--indigo));display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:42px}.top .t{font-weight:900;font-size:18px}.top .sp{flex:1}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px;padding:12px 16px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-out{background:transparent;border:2px solid #514c96}.btn-ghost{background:#1c1846}
+  .btn-grn{background:#2f9e6b}.btn-red{background:#e5563f}.btn-blue{background:#2563eb}
+  .btn:disabled{opacity:.4}
+  .wrap{padding:16px}
+  input,select{padding:14px;border-radius:10px;border:2px solid #514c96;background:#151233;color:#fff;font-size:16px;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  .scan-box{background:#151233;border:2px dashed #514c96;border-radius:16px;padding:24px;text-align:center;margin-bottom:16px}
+  .scan-icon{font-size:44px;margin-bottom:8px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .err{background:#3a2030;color:#ffbfce;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .ok{background:#183a2a;color:#a8f0c8;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .warn{background:#2a2000;color:#ffd23f;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    const sess=(typeof b13GetSession==="function")?b13GetSession():null;
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
+    if(!(typeof b13Pode==="function" && b13Pode("receber_pagamento"))){
+      document.addEventListener("DOMContentLoaded",function(){
+        document.body.innerHTML=`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
+          <div style="font-size:40px;margin-bottom:10px">🚫</div>
+          <h2>Acesso negado</h2>
+          <p style="color:#9a95c9">Seu usuário não tem permissão para acessar o Caixa.</p>
+          <a href="/operacional" style="color:#FF0082">← Voltar</a></div>`;
+      });
+      window.__b13SemAcesso=true;
+      return;
+    }
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/caixa");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const LOGO="/logo";
+const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
+const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
+let formasPag=[];
+let S={pedido:null,pag:null,busca:"",msg:"",carregando:false};
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+
+function header(){
+  return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
+  ${FUNC?`<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>`:""}
+  <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="if(typeof b13Logout==='function')b13Logout()">Sair</button>
+  </div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  if(!S.pedido){
+    app.innerHTML=header()+`<div class="wrap">
+      <div class="scan-box">
+        <div class="scan-icon">📷</div>
+        <div style="font-weight:800;font-size:16px;margin-bottom:4px">Escaneie o código do pedido</div>
+        <div class="muted">Use o leitor de QR/código de barras, ou digite o número do pedido e aperte Enter</div>
+      </div>
+      <input id="scanInput" placeholder="Código do pedido…" autofocus
+        onkeydown="if(event.key==='Enter'){buscarPedido(this.value); this.value='';}"
+        style="font-size:20px;text-align:center;letter-spacing:1px">
+      ${S.carregando?`<div class="muted" style="text-align:center;margin-top:12px">Buscando pedido…</div>`:""}
+      ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+    </div>`;
+    const inp=document.getElementById("scanInput"); if(inp) inp.focus();
+    return;
+  }
+  renderPedido(app);
+}
+
+async function buscarPedido(valor){
+  valor=(valor||"").trim(); if(!valor) return;
+  S.msg=""; S.carregando=true; render();
+  try{
+    const r=await fetch(B+"/api/pedidos/"+encodeURIComponent(valor));
+    const j=await r.json();
+    const ped=j?.data;
+    if(!r.ok || !ped){ S.carregando=false; S.msg="Pedido não encontrado. Confira o código e tente de novo."; render(); return; }
+    const sit=ped.situacao?.id;
+    if(sit!==SIT.AGUARDANDO){
+      S.carregando=false;
+      const nomes={[SIT.EM_SEP]:"Em Separação",[SIT.SEPARADO]:"Separado",[SIT.SEP_PEND]:"Separado c/ Pendências",[SIT.EM_ROTA]:"Em Rota",[SIT.ATENDIDO]:"Atendido"};
+      S.msg=`Pedido #${ped.numero||valor} já está em "${nomes[sit]||sit}" — não está mais aguardando recebimento.`;
+      render(); return;
+    }
+    const [rPag,rEnt,rFormas]=await Promise.all([
+      fetch(B+"/api/pagamentos/"+ped.id).then(r=>r.json()).catch(()=>null),
+      fetch(B+"/api/entregas").then(r=>r.json()).catch(()=>({data:{}})),
+      formasPag.length?Promise.resolve({data:formasPag}):fetch(B+"/api/formas-pagamento").then(r=>r.json()).catch(()=>({data:[]})),
+    ]);
+    if(rFormas?.data?.length) formasPag=rFormas.data;
+    S.pedido=ped; S.pag=rPag?.data||null; S.entregaInfo=(rEnt?.data||{})[String(ped.id)]||null;
+    S.carregando=false; S.msg="";
+    render();
+  }catch(e){ S.carregando=false; S.msg="Erro de conexão ao buscar pedido."; render(); }
+}
+
+function voltarBusca(){ S={pedido:null,pag:null,busca:"",msg:"",carregando:false}; render(); }
+
+function renderPedido(app){
+  const ped=S.pedido; const pag=S.pag;
+  const pago=pag?.statusPagamento==="pago";
+  const total=+(ped.total||ped.totalProdutos||0);
+  const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
+  const ehEntrega=S.entregaInfo?S.entregaInfo.tipo==="entrega":freteCalc>0.01;
+  const freteVal=S.entregaInfo?(S.entregaInfo.freteOriginal||0):freteCalc;
+  const temFrete=ehEntrega&&freteVal>0.01;
+
+  const itensHtml=(ped.itens||[]).map(i=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <span style="flex:1">${esc(i.descricao||i.produto?.nome||"")} <span class="muted">x${i.quantidade}</span></span>
+      <span>${brl((i.valor||0)*i.quantidade)}</span>
+    </div>`).join("");
+
+  app.innerHTML=header()+`<div class="wrap">
+    <button class="btn btn-ghost" style="margin-bottom:12px" onclick="voltarBusca()">← Escanear outro pedido</button>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:20px;font-weight:900">#${esc(ped.numero||ped.id)}</div>
+        <div class="muted">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+      </div>
+      <div style="font-weight:700;margin-bottom:8px">${esc(ped.contato?.nome||"—")}</div>
+      ${ehEntrega?`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:8px">🛵 Entrega${temFrete?` — frete ${brl(freteVal)}`:" — frete grátis"}</div>`:""}
+      <div style="max-height:30vh;overflow:auto;margin-bottom:8px">${itensHtml}</div>
+      <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:900;padding-top:8px;border-top:1px solid #2a2660">
+        <span>TOTAL</span><span>${brl(total)}</span>
+      </div>
+    </div>
+    ${pago?`<div class="ok">✅ Este pedido já está pago (${brl(pag.valorPago)}).</div>`:""}
+    ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+    <div id="caixaAcao"></div>
+    ${!pago?`
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+      <button class="btn btn-grn" style="padding:16px" onclick="iniciarRecebimentoCaixa('receber')">💰 Receber e Separar</button>
+      <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">✅ Cliente já separou (vai pra Separado)</button>
+    </div>`:`
+    <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="voltarBusca()">Escanear próximo pedido</button>`}
+  </div>`;
+}
+
+// --------- fluxo de recebimento (mesmo modelo do Operacional) ---------
+async function iniciarRecebimentoCaixa(modo){
+  const ped=S.pedido; const total=+(ped.total||ped.totalProdutos||0);
+  const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
+  const ehEntrega=S.entregaInfo?S.entregaInfo.tipo==="entrega":freteCalc>0.01;
+  const freteVal=S.entregaInfo?(S.entregaInfo.freteOriginal||0):freteCalc;
+  const temFrete=ehEntrega&&freteVal>0.01;
+
+  if(!temFrete) return abrirPagamentoCaixa(total,modo);
+
+  const ok=confirm(
+    `Este pedido foi criado como ENTREGA (frete de ${brl(freteVal)}).\n\n`+
+    `Como o cliente está retirando no caixa, o frete será removido do pedido `+
+    `(atualizado no Bling e registrado na observação) e o valor cobrado será ${brl(total-freteVal)}.\n\n`+
+    `Confirma?`
+  );
+  if(!ok) return;
+  document.getElementById("caixaAcao").innerHTML=`<div class="muted">Removendo frete do pedido…</div>`;
+  try{
+    const r=await fetch(B+"/api/fluxo/"+ped.id+"/converter-retirada",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+    const j=await r.json();
+    if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao remover frete")}</div>`; return; }
+    document.getElementById("caixaAcao").innerHTML="";
+    abrirPagamentoCaixa(j.total??(total-freteVal),modo);
+  }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão ao remover frete</div>`; }
+}
+
+function abrirPagamentoCaixa(total,modo){
+  const formasOpts=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
+  document.getElementById("caixaAcao").innerHTML=`
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">💰 Registrar pagamento</div>
+      <input type="text" value="${brl(total)}" readonly style="background:#0a0918;color:#9a95c9;margin-bottom:8px;cursor:not-allowed">
+      <select id="formaPagCaixa" style="margin-bottom:10px">${formasOpts}</select>
+      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagamentoCaixa(${total},'${modo}')">✅ Confirmar recebimento</button>
+    </div>`;
+}
+
+async function confirmarPagamentoCaixa(total,modo){
+  const ped=S.pedido;
+  const sel=document.getElementById("formaPagCaixa");
+  const formaId=sel?.value; const formaNome=sel?.options[sel.selectedIndex]?.text||"";
+  document.getElementById("caixaAcao").innerHTML=`<div class="muted">Processando…</div>`;
+  try{
+    if(modo==="clienteSeparou"){
+      // registra pagamento e move direto pra SEPARADO
+      await fetch(B+"/api/pagamentos/"+ped.id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({valor:total,formaId,formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
+      const r=await fetch(B+"/api/pedidos/"+ped.id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+      const j=await r.json();
+      if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`; return; }
+    } else {
+      // Receber e Separar — valida no servidor que o valor bate com o total
+      const r=await fetch(B+"/api/fluxo/"+ped.id+"/enviar-separacao",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,pagamento:{valor:total,formaId,formaNome}})});
+      const j=await r.json();
+      if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao enviar para separação")}</div>`; return; }
+    }
+    document.getElementById("caixaAcao").innerHTML=`<div class="ok">✅ Pedido #${esc(ped.numero||ped.id)} recebido com sucesso!</div>`;
+    setTimeout(voltarBusca,1400);
+  }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão</div>`; }
+}
+
+if(!window.__b13SemAcesso) render();
+</script>
+</body>
+</html>
