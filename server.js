@@ -505,7 +505,7 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
     // Verifica se passou pelo nosso fluxo
     const logPedido=(lerLog()[id]||[]);
     const passouPeloNossoFluxo=logPedido.some(e=>
-      ["separar_para_entregar","enviado_separacao_pago","pedido_aberto_separacao",
+      ["pedido_criado_totem","separar_para_entregar","enviado_separacao_pago","pedido_aberto_separacao",
        "separacao_completa","separacao_com_falta","conferido_entrega","conferido_retirada",
        "pagamento_registrado","recebido_cliente_separou"].includes(e.evento)
     );
@@ -1193,6 +1193,10 @@ app.post("/api/finalizar", async (req, res) => {
         };
         salvarJSON(ENTREGAS_FILE,entregas);
       }catch(e){}
+      // marca que esse pedido passou pelo nosso fluxo desde a criação — sem isso,
+      // a checagem de pagamento cai no heurístico de "venda à vista" do Bling e
+      // classifica erroneamente como pago um pedido recém-criado, ainda não pago
+      addLog(String(pedidoId),"pedido_criado_totem",null,"Totem",{nome,telefone,tipoEntrega:entrega?.tipo});
     }
     // mover para status AGUARDANDO SEPARAÇÃO após criação
     if(pedidoId && process.env.BLING_SITUACAO_ID){
@@ -1967,6 +1971,7 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 
 // Mapeamento de eventos de log
 const LOG_LABELS={
+  "pedido_criado_totem":       {txt:"Pedido criado pelo totem",               admin:false},
   "separar_para_entregar":    {txt:"Pedido enviado para separação",          admin:false},
   "enviado_separacao_pago":   {txt:"Pedido enviado para separação (pago)",   admin:false},
   "pedido_aberto_separacao":  {txt:"Separação iniciada",                     admin:false},
