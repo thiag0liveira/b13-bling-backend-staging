@@ -93,6 +93,7 @@
       <button class="btn btn-ghost" onclick="ir('pedidos')" style="font-size:12px">📦 Pedidos</button>
       <button class="btn btn-ghost" onclick="ir('pendencias')" style="font-size:12px">⚠️ Pendências</button>
       <button class="btn btn-ghost" onclick="ir('nfe')" style="font-size:12px">📥 NF-e</button>
+      <button class="btn btn-ghost" onclick="ir('emdigitacao')" style="font-size:12px">✏️ Em Digitação</button>
     </div>
     <div class="pg" id="pgTitle">Dashboard</div>
     <button class="btn btn-out" onclick="atualizar()">↻ Atualizar</button>
@@ -138,6 +139,12 @@
         <div id="nfeResult"></div>
       </div>
     </div>
+
+    <!-- EM DIGITAÇÃO -->
+    <div id="sec-emdigitacao" class="sec" style="display:none">
+      <div class="muted" style="margin-bottom:10px">Pedidos travados em "Em digitação" — geralmente ficam assim enquanto alguém está com o caixa (PDV) aberto editando. Clique num pedido pra abrir e editar/salvar.</div>
+      <div id="listaEmDigitacao" class="muted">Carregando…</div>
+    </div>
   </div>
 
 <!-- MODAL PEDIDO -->
@@ -159,11 +166,12 @@ function ir(sec){
   secAtual=sec;
   document.querySelectorAll(".sec").forEach(s=>s.style.display="none");
   const s=document.getElementById("sec-"+sec); if(s) s.style.display="block";
-  const titles={"dash":"Dashboard","pedidos":"Pedidos de Venda","pendencias":"Pendências","nfe":"Entrada de NF-e"};
+  const titles={"dash":"Dashboard","pedidos":"Pedidos de Venda","pendencias":"Pendências","nfe":"Entrada de NF-e","emdigitacao":"Em Digitação (por vendedor)"};
   const pg=document.getElementById("pgTitle"); if(pg) pg.textContent=titles[sec]||sec;
   if(sec==="pedidos") carregarPedidos();
   if(sec==="pendencias") carregarPend();
   if(sec==="dash") carregarDash();
+  if(sec==="emdigitacao") carregarEmDigitacao();
 }
 function atualizar(){
   if(secAtual==="pedidos") carregarPedidos();
@@ -245,6 +253,25 @@ async function carregarPedidos(){
   }catch(e){ document.getElementById("listaPedidos").innerHTML=`<div class="err">Erro ao carregar pedidos</div>`; }
 }
 function setFiltro(id){ filtro=id; carregarPedidos(); }
+
+// ---- EM DIGITAÇÃO (por vendedor) ----
+async function carregarEmDigitacao(){
+  document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
+  try{
+    const r=await fetch(BACKEND+"/api/em-digitacao"); const j=await r.json();
+    const d=j.data||{total:0,porVendedor:{}};
+    if(!d.total){ document.getElementById("listaEmDigitacao").innerHTML=`<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`; return; }
+    const blocos=Object.entries(d.porVendedor).sort((a,b)=>b[1].length-a[1].length).map(([nome,peds])=>`
+      <div style="margin-bottom:16px">
+        <div style="font-weight:900;font-size:15px;margin-bottom:6px">🧑‍💼 ${esc(nome)} <span class="muted" style="font-weight:400">(${peds.length})</span></div>
+        ${peds.map(p=>`<div class="pcard" onclick="abrirPedido(${p.id})">
+          <div class="info"><div class="n">Pedido ${esc(p.numero||p.id)}</div><div class="c">${esc(p.cliente)} · ${dataBR(p.data)}</div></div>
+          <div style="text-align:right"><div style="font-weight:900;color:#ffd23f">${brl(p.total)}</div></div>
+        </div>`).join("")}
+      </div>`).join("");
+    document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total</div>${blocos}`;
+  }catch(e){ document.getElementById("listaEmDigitacao").innerHTML=`<div class="err">Erro ao carregar</div>`; }
+}
 
 async function abrirPedido(id){
   document.getElementById("modal").style.display="flex";

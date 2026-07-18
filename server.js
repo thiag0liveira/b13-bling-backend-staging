@@ -1594,6 +1594,38 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
   return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto};
 }
 
+app.get("/api/em-digitacao", async(req,res)=>{
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const dataInicial=req.query.dataInicial||new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    const dataFinal=req.query.dataFinal||hoje;
+
+    const lista=[];
+    for(let pg=1;pg<=20;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal,idsSituacoes:"21"});
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,400));
+    }
+
+    const porVendedor={};
+    for(const pRaw of lista){
+      await new Promise(r=>setTimeout(r,350));
+      let vendedorId=null;
+      try{ const det=await bling(`/pedidos/vendas/${pRaw.id}`); vendedorId=det?.data?.vendedor?.id||null; }catch(e){}
+      const vendedorNome=await nomeVendedor(vendedorId);
+      if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]=[];
+      porVendedor[vendedorNome].push({
+        id:pRaw.id, numero:pRaw.numero, cliente:pRaw.contato?.nome||"—",
+        total:+(pRaw.total||pRaw.totalProdutos||0), data:pRaw.data,
+      });
+    }
+    res.json({data:{total:lista.length,porVendedor}});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+
 app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
