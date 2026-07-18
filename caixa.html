@@ -65,7 +65,7 @@ const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
 const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
 let formasPag=[];
 let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
-let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""}};
+let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null};
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -310,10 +310,28 @@ function renderFechamento(app){
   </div>`;
 }
 
+function toggleStatusExpandido(nome){
+  F.statusExpandido=(F.statusExpandido===nome)?null:nome;
+  render();
+}
+
 function renderRelatorio(rel){
   const statusRows=Object.entries(rel.porStatus).sort((a,b)=>b[1].total-a[1].total)
-    .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
-      <span>${esc(nome)} <span class="muted">(${v.qtd})</span></span><span style="font-weight:700">${brl(v.total)}</span></div>`).join("");
+    .map(([nome,v])=>{
+      const expandido=F.statusExpandido===nome;
+      const pedidosDoStatus=expandido?rel.pedidos.filter(p=>p.situacao===nome):[];
+      const listaPedidos=pedidosDoStatus.map(p=>`
+        <div style="display:flex;justify-content:space-between;padding:5px 8px;font-size:12px;border-bottom:1px solid #201d4a">
+          <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)})</span></span>
+          <span>${p.pago?"✅":"🔴"} ${brl(p.total)}</span>
+        </div>`).join("");
+      return `<div style="border-bottom:1px solid #2a2660">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;cursor:pointer" onclick="toggleStatusExpandido('${esc(nome).replace(/'/g,"\\'")}')">
+          <span>${expandido?"▼":"▶"} ${esc(nome)} <span class="muted">(${v.qtd})</span></span><span style="font-weight:700">${brl(v.total)}</span>
+        </div>
+        ${expandido?`<div style="background:#0f0d24;border-radius:8px;margin-bottom:6px">${listaPedidos||'<div class="muted" style="padding:6px 8px;font-size:12px">Nenhum pedido</div>'}</div>`:""}
+      </div>`;
+    }).join("");
 
   const formaRows=Object.entries(rel.porFormaPagamento).sort((a,b)=>b[1]-a[1])
     .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
