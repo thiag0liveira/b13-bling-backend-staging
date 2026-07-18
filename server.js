@@ -1171,7 +1171,9 @@ app.post("/api/finalizar", async (req, res) => {
         };
       }
     }
-    if (process.env.BLING_VENDEDOR_ID) payload.vendedor = { id: Number(process.env.BLING_VENDEDOR_ID) };
+    // pedidos do totem sempre vêm com vendedor "SISTEMA" (ID 15596923213 no Bling),
+    // pra distinguir de pedidos digitados manualmente por um vendedor de verdade
+    payload.vendedor = { id: Number(process.env.BLING_VENDEDOR_ID || 15596923213) };
     // NÃO definir situação aqui — criar em Em digitação (padrão) sem condição de pagamento
     // depois mover para AGUARDANDO SEPARAÇÃO
     await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
