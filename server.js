@@ -1955,9 +1955,9 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir nota</button>
   </div>
 </div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script>
-  try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.6,height:42,fontSize:12,margin:0,background:"transparent"}); }catch(e){}
+  try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.6,height:42,fontSize:12,margin:0,background:"transparent"}); }catch(e){ console.error("Erro ao gerar código de barras:",e); }
 </script>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
