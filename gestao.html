@@ -158,12 +158,14 @@ const LOGO="/logo";
 const VERIFICADO=24, PENDENCIA=819227;
 
 let logado=false, secAtual="dash", situacoes=[], mapSit={}, filtro=null, pedidos=[], pendencias=[], selPed=null, editItens=[], editavel=true, msg="";
+let emDigDados=null, emDigFiltro=[], emDigTimer=null;
 try{ if(typeof b13GetSession==="function" && b13GetSession()) logado=true; }catch(e){}
 
 function sair(){ logado=false; if(typeof b13ClearSession==="function") b13ClearSession(); location.href="/login"; }
 function mostrarApp(){ ir("dash"); }
 function ir(sec){
   secAtual=sec;
+  if(sec!=="emdigitacao"&&emDigTimer){ clearTimeout(emDigTimer); emDigTimer=null; }
   document.querySelectorAll(".sec").forEach(s=>s.style.display="none");
   const s=document.getElementById("sec-"+sec); if(s) s.style.display="block";
   const titles={"dash":"Dashboard","pedidos":"Pedidos de Venda","pendencias":"Pendências","nfe":"Entrada de NF-e","emdigitacao":"Em Digitação (por vendedor)"};
@@ -254,23 +256,59 @@ async function carregarPedidos(){
 }
 function setFiltro(id){ filtro=id; carregarPedidos(); }
 
-// ---- EM DIGITAÇÃO (por vendedor) ----
-async function carregarEmDigitacao(){
-  document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
+// ---- EM DIGITAÇÃO (por vendedor, com itens visíveis e atualização automática) ----
+async function carregarEmDigitacao(mostrarCarregando=true){
+  if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
   try{
     const r=await fetch(BACKEND+"/api/em-digitacao"); const j=await r.json();
-    const d=j.data||{total:0,porVendedor:{}};
-    if(!d.total){ document.getElementById("listaEmDigitacao").innerHTML=`<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`; return; }
-    const blocos=Object.entries(d.porVendedor).sort((a,b)=>b[1].length-a[1].length).map(([nome,peds])=>`
-      <div style="margin-bottom:16px">
-        <div style="font-weight:900;font-size:15px;margin-bottom:6px">🧑‍💼 ${esc(nome)} <span class="muted" style="font-weight:400">(${peds.length})</span></div>
-        ${peds.map(p=>`<div class="pcard" onclick="abrirPedido(${p.id})">
+    emDigDados=j.data||{total:0,porVendedor:{}};
+    renderEmDigitacao();
+  }catch(e){ if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="err">Erro ao carregar</div>`; }
+  // fica "escutando" o Bling — atualiza sozinho a cada 45s enquanto a tela estiver aberta
+  if(emDigTimer) clearTimeout(emDigTimer);
+  if(secAtual==="emdigitacao") emDigTimer=setTimeout(()=>carregarEmDigitacao(false),45000);
+}
+
+function toggleFiltroVendedorDig(nome){
+  const ix=emDigFiltro.indexOf(nome);
+  if(ix>=0) emDigFiltro.splice(ix,1); else emDigFiltro.push(nome);
+  renderEmDigitacao();
+}
+
+function renderEmDigitacao(){
+  const d=emDigDados||{total:0,porVendedor:{}};
+  const box=document.getElementById("listaEmDigitacao");
+  if(!d.total){ box.innerHTML=`<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`; return; }
+
+  const nomesVendedores=Object.keys(d.porVendedor).sort();
+  const chipsVendedor=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+    ${nomesVendedores.map(n=>{
+      const ativo=emDigFiltro.length===0||emDigFiltro.includes(n);
+      return `<div class="fchip ${emDigFiltro.includes(n)?'on':''}" onclick="toggleFiltroVendedorDig('${esc(n).replace(/'/g,"\\'")}')" style="${ativo?'':'opacity:.45'}">${esc(n)} (${d.porVendedor[n].length})</div>`;
+    }).join("")}
+    ${emDigFiltro.length?`<div class="fchip" onclick="emDigFiltro=[];renderEmDigitacao()">✕ Limpar filtro</div>`:""}
+  </div>`;
+
+  const vendedoresParaMostrar=nomesVendedores.filter(n=>emDigFiltro.length===0||emDigFiltro.includes(n));
+  const blocos=vendedoresParaMostrar.map(nome=>{
+    const peds=d.porVendedor[nome];
+    return `<div style="margin-bottom:16px">
+      <div style="font-weight:900;font-size:15px;margin-bottom:6px">🧑‍💼 ${esc(nome)} <span class="muted" style="font-weight:400">(${peds.length})</span></div>
+      ${peds.map(p=>`<div class="pcard" style="flex-direction:column;align-items:stretch;cursor:default">
+        <div style="display:flex;justify-content:space-between;width:100%;cursor:pointer" onclick="abrirPedido(${p.id})">
           <div class="info"><div class="n">Pedido ${esc(p.numero||p.id)}</div><div class="c">${esc(p.cliente)} · ${dataBR(p.data)}</div></div>
           <div style="text-align:right"><div style="font-weight:900;color:#ffd23f">${brl(p.total)}</div></div>
-        </div>`).join("")}
-      </div>`).join("");
-    document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total</div>${blocos}`;
-  }catch(e){ document.getElementById("listaEmDigitacao").innerHTML=`<div class="err">Erro ao carregar</div>`; }
+        </div>
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);width:100%">
+          ${(p.itens||[]).map(i=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#9a95c9);padding:2px 0">
+            <span>${esc(i.descricao)} <b>x${i.quantidade}</b></span><span>${brl((i.valor||0)*(i.quantidade||1))}</span></div>`).join("")||`<div class="muted" style="font-size:11px">Sem itens</div>`}
+          <button class="btn btn-ghost" style="width:100%;margin-top:6px;font-size:11px;padding:6px" onclick="abrirPedido(${p.id})">✏️ Abrir e editar</button>
+        </div>
+      </div>`).join("")}
+    </div>`;
+  }).join("");
+
+  box.innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total · atualiza sozinho a cada 45s</div>${chipsVendedor}${blocos}`;
 }
 
 async function abrirPedido(id){

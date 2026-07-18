@@ -1612,13 +1612,14 @@ app.get("/api/em-digitacao", async(req,res)=>{
     const porVendedor={};
     for(const pRaw of lista){
       await new Promise(r=>setTimeout(r,350));
-      let vendedorId=null;
-      try{ const det=await bling(`/pedidos/vendas/${pRaw.id}`); vendedorId=det?.data?.vendedor?.id||null; }catch(e){}
+      let vendedorId=null, det=null;
+      try{ const r=await bling(`/pedidos/vendas/${pRaw.id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
       const vendedorNome=await nomeVendedor(vendedorId);
       if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]=[];
       porVendedor[vendedorNome].push({
         id:pRaw.id, numero:pRaw.numero, cliente:pRaw.contato?.nome||"—",
         total:+(pRaw.total||pRaw.totalProdutos||0), data:pRaw.data,
+        itens:(det?.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"Produto",quantidade:i.quantidade,valor:i.valor})),
       });
     }
     res.json({data:{total:lista.length,porVendedor}});
