@@ -65,7 +65,7 @@ const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
 const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
 let formasPag=[];
 let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
-let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null};
+let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null};
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -315,7 +315,102 @@ function toggleStatusExpandido(nome){
   render();
 }
 
+function renderDetalheVendedor(rel,nome){
+  const v=rel.porVendedor[nome];
+  const pedidosVend=rel.pedidos.filter(p=>p.vendedor===nome);
+  const naoPagosVend=pedidosVend.filter(p=>!p.pago);
+  const pagosVend=pedidosVend.filter(p=>p.pago);
+
+  // status desse vendedor
+  const statusVend={};
+  pedidosVend.forEach(p=>{ if(!statusVend[p.situacao]) statusVend[p.situacao]={qtd:0,total:0}; statusVend[p.situacao].qtd++; statusVend[p.situacao].total+=p.total; });
+  const statusVendRows=Object.entries(statusVend).sort((a,b)=>b[1].total-a[1].total)
+    .map(([sn,sv])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(sn)} (${sv.qtd})</span><span>${brl(sv.total)}</span></div>`).join("");
+
+  // formas de pagamento recebidas por esse vendedor
+  const formaVendRows=Object.entries(v.porFormaPagamento||{}).sort((a,b)=>b[1]-a[1])
+    .map(([fn,fv])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(fn)}</span><span style="font-weight:700">${brl(fv)}</span></div>`).join("");
+
+  // clientes atendidos, com detalhe de prazo se tiver pendência
+  const clienteVendRows=Object.entries(v.porCliente||{}).sort((a,b)=>b[1].total-a[1].total)
+    .map(([cn,cv])=>{
+      const pedidosCliente=pedidosVend.filter(p=>p.cliente===cn);
+      const naoPagosCliente=pedidosCliente.filter(p=>!p.pago);
+      const prazoInfo=naoPagosCliente.map(p=>`#${esc(p.numero)}: ${p.formasPrevisto?.length?p.formasPrevisto.map(esc).join(", "):"sem forma registrada"} — ${brl(p.total)}`).join("<br>");
+      return `<div style="padding:6px 0;border-bottom:1px solid #201d4a">
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>${esc(cn)}</span><span>${brl(cv.total)}</span></div>
+        <div class="muted" style="font-size:11px">${cv.qtd} pedido(s)${naoPagosCliente.length?` · ${naoPagosCliente.length} não pago(s)`:""}</div>
+        ${naoPagosCliente.length?`<div style="font-size:11px;color:#ffd23f;margin-top:2px">⏳ ${prazoInfo}</div>`:""}
+      </div>`;
+    }).join("");
+
+  // pedidos não pagos desse vendedor, com prazo detalhado
+  const naoPagosVendRows=naoPagosVend.map(p=>`
+    <div style="padding:5px 0;border-bottom:1px solid #201d4a;font-size:12px">
+      <div style="display:flex;justify-content:space-between">
+        <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)})</span></span>
+        <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
+      </div>
+      <div class="muted" style="font-size:11px">${p.formasPrevisto?.length?"💳 "+p.formasPrevisto.map(esc).join(", "):"Nenhuma forma de pagamento registrada"}</div>
+    </div>`).join("");
+
+  // todos os pedidos desse vendedor
+  const todosVendRows=pedidosVend.map(p=>`
+    <tr style="border-bottom:1px solid #201d4a">
+      <td style="padding:5px 4px">#${esc(p.numero)}</td>
+      <td style="padding:5px 4px">${esc(p.cliente)}</td>
+      <td style="padding:5px 4px">${esc(p.situacao)}</td>
+      <td style="padding:5px 4px;text-align:right">${brl(p.total)}</td>
+      <td style="padding:5px 4px;text-align:center">${p.pago?"✅":"🔴"}</td>
+      <td style="padding:5px 4px;font-size:11px">${p.pago?(p.formasPagamento||[]).join(", "):(p.formasPrevisto||[]).join(", ")}</td>
+    </tr>`).join("");
+
+  return `<div class="card" style="border:1px solid #FF0082">
+    <div style="font-weight:900;font-size:16px;margin-bottom:2px">🧑‍💼 ${esc(nome)}</div>
+    <div class="muted" style="margin-bottom:10px">${v.qtd} pedido(s) no dia</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:12px">
+      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Total</div><div style="font-weight:800">${brl(v.total)}</div></div>
+      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Pago</div><div style="font-weight:800;color:#a8f0c8">${brl(v.pago)}</div></div>
+      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Não pago</div><div style="font-weight:800;color:#ff8090">${brl(v.naoPago)}</div></div>
+      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Clientes</div><div style="font-weight:800">${Object.keys(v.porCliente||{}).length}</div></div>
+    </div>
+
+    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:10px 0 4px">📦 Por status</div>
+    ${statusVendRows||'<div class="muted" style="font-size:12px">—</div>'}
+
+    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">💳 Formas de pagamento recebidas</div>
+    ${formaVendRows||'<div class="muted" style="font-size:12px">Nenhum pagamento identificado</div>'}
+
+    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">👤 Clientes atendidos (${Object.keys(v.porCliente||{}).length})</div>
+    ${clienteVendRows||'<div class="muted" style="font-size:12px">—</div>'}
+
+    <div style="font-size:11px;color:#ffd23f;text-transform:uppercase;font-weight:700;margin:14px 0 4px">⏳ Pedidos não pagos / a prazo (${naoPagosVend.length})</div>
+    ${naoPagosVendRows||'<div class="ok" style="margin:0;font-size:12px">Tudo pago ✅</div>'}
+
+    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">📋 Todos os pedidos de ${esc(nome)}</div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="color:#9a95c9;text-align:left"><th style="padding:3px">Nº</th><th style="padding:3px">Cliente</th><th style="padding:3px">Situação</th><th style="padding:3px;text-align:right">Total</th><th style="padding:3px">Pago</th><th style="padding:3px">Forma/Prazo</th></tr></thead>
+        <tbody>${todosVendRows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 function renderRelatorio(rel){
+  const nomesVendedores=Object.keys(rel.porVendedor).sort();
+  const seletorVendedor=`
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">🔎 Fechamento detalhado por vendedor</div>
+      <select onchange="F.vendedorSelecionado=this.value||null;render()" style="margin-bottom:4px">
+        <option value="">— Escolha um vendedor —</option>
+        ${nomesVendedores.map(n=>`<option value="${esc(n)}" ${F.vendedorSelecionado===n?"selected":""}>${esc(n)}</option>`).join("")}
+      </select>
+    </div>
+    ${F.vendedorSelecionado&&rel.porVendedor[F.vendedorSelecionado]?renderDetalheVendedor(rel,F.vendedorSelecionado):""}
+  `;
+
   const statusRows=Object.entries(rel.porStatus).sort((a,b)=>b[1].total-a[1].total)
     .map(([nome,v])=>{
       const expandido=F.statusExpandido===nome;
@@ -384,6 +479,8 @@ function renderRelatorio(rel){
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pago</div><div style="font-size:22px;font-weight:900;color:#a8f0c8">${brl(rel.totalPago)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Não pago</div><div style="font-size:22px;font-weight:900;color:#ff8090">${brl(rel.totalNaoPago)}</div></div>
     </div>
+
+    ${seletorVendedor}
 
     <div class="card"><div style="font-weight:800;margin-bottom:6px">📦 Por status</div>${statusRows||'<div class="muted">Sem dados</div>'}</div>
     <div class="card"><div style="font-weight:800;margin-bottom:6px">💳 Por forma de pagamento (geral)</div>${formaRows||'<div class="muted">Nenhum pagamento identificado nesse dia</div>'}</div>
