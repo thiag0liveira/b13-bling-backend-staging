@@ -1666,10 +1666,10 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       });
 
       pedidosDetalhados.push({
-        numero:pRaw.numero, id:pRaw.id, cliente:clienteNome, situacao:sitNome,
+        numero:pRaw.numero, id:pRaw.id, data:pRaw.data, cliente:clienteNome, situacao:sitNome,
         vendedor:vendedorNome, total, valorPago, pago, doBling,
-        formasPagamento:formas.map(h=>h.formaNome),
-        formasPrevisto:(previsto||[]).map(p=>`${p.formaNome}${p.vencimento?` (venc. ${p.vencimento.split('-').reverse().join('/')})`:''}`),
+        formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2)})),
+        formasPrevisto:(previsto||[]).map(p=>({nome:p.formaNome,valor:+(Number(p.valor)||0).toFixed(2),vencimento:p.vencimento?p.vencimento.split('-').reverse().join('/'):''})),
       });
 
       send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});

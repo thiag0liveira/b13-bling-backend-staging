@@ -69,6 +69,7 @@ let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (venc. ${esc(f.vencimento)})`:''}`; }
 
 function header(){
   const botaoNav=S.view==="scan"
@@ -336,7 +337,7 @@ function renderDetalheVendedor(rel,nome){
     .map(([cn,cv])=>{
       const pedidosCliente=pedidosVend.filter(p=>p.cliente===cn);
       const naoPagosCliente=pedidosCliente.filter(p=>!p.pago);
-      const prazoInfo=naoPagosCliente.map(p=>`#${esc(p.numero)}: ${p.formasPrevisto?.length?p.formasPrevisto.map(esc).join(", "):"sem forma registrada"} — ${brl(p.total)}`).join("<br>");
+      const prazoInfo=naoPagosCliente.map(p=>`#${esc(p.numero)}: ${p.formasPrevisto?.length?p.formasPrevisto.map(fmtForma).join(", "):"sem forma registrada"} — total ${brl(p.total)}`).join("<br>");
       return `<div style="padding:6px 0;border-bottom:1px solid #201d4a">
         <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>${esc(cn)}</span><span>${brl(cv.total)}</span></div>
         <div class="muted" style="font-size:11px">${cv.qtd} pedido(s)${naoPagosCliente.length?` · ${naoPagosCliente.length} não pago(s)`:""}</div>
@@ -351,18 +352,19 @@ function renderDetalheVendedor(rel,nome){
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
       </div>
-      <div class="muted" style="font-size:11px">${p.formasPrevisto?.length?"💳 "+p.formasPrevisto.map(esc).join(", "):"Nenhuma forma de pagamento registrada"}</div>
+      <div class="muted" style="font-size:11px">${p.formasPrevisto?.length?"💳 "+p.formasPrevisto.map(fmtForma).join(", "):"Nenhuma forma de pagamento registrada"}</div>
     </div>`).join("");
 
   // todos os pedidos desse vendedor
   const todosVendRows=pedidosVend.map(p=>`
     <tr style="border-bottom:1px solid #201d4a">
       <td style="padding:5px 4px">#${esc(p.numero)}</td>
+      <td style="padding:5px 4px">${p.data?esc(p.data.split('-').reverse().join('/')):''}</td>
       <td style="padding:5px 4px">${esc(p.cliente)}</td>
       <td style="padding:5px 4px">${esc(p.situacao)}</td>
       <td style="padding:5px 4px;text-align:right">${brl(p.total)}</td>
       <td style="padding:5px 4px;text-align:center">${p.pago?"✅":"🔴"}</td>
-      <td style="padding:5px 4px;font-size:11px">${p.pago?(p.formasPagamento||[]).join(", "):(p.formasPrevisto||[]).join(", ")}</td>
+      <td style="padding:5px 4px;font-size:11px">${p.pago?(p.formasPagamento||[]).map(fmtForma).join("<br>"):(p.formasPrevisto||[]).map(fmtForma).join("<br>")||"—"}</td>
     </tr>`).join("");
 
   return `<div class="card" style="border:1px solid #FF0082">
@@ -391,7 +393,7 @@ function renderDetalheVendedor(rel,nome){
     <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">📋 Todos os pedidos de ${esc(nome)}</div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
-        <thead><tr style="color:#9a95c9;text-align:left"><th style="padding:3px">Nº</th><th style="padding:3px">Cliente</th><th style="padding:3px">Situação</th><th style="padding:3px;text-align:right">Total</th><th style="padding:3px">Pago</th><th style="padding:3px">Forma/Prazo</th></tr></thead>
+        <thead><tr style="color:#9a95c9;text-align:left"><th style="padding:3px">Nº</th><th style="padding:3px">Data</th><th style="padding:3px">Cliente</th><th style="padding:3px">Situação</th><th style="padding:3px;text-align:right">Total</th><th style="padding:3px">Pago</th><th style="padding:3px">Forma/Prazo (valores)</th></tr></thead>
         <tbody>${todosVendRows}</tbody>
       </table>
     </div>
@@ -404,12 +406,16 @@ function renderRelatorio(rel){
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">🔎 Fechamento detalhado por vendedor</div>
       <select onchange="F.vendedorSelecionado=this.value||null;render()" style="margin-bottom:4px">
-        <option value="">— Escolha um vendedor —</option>
+        <option value="">— Ver fechamento geral do dia —</option>
         ${nomesVendedores.map(n=>`<option value="${esc(n)}" ${F.vendedorSelecionado===n?"selected":""}>${esc(n)}</option>`).join("")}
       </select>
     </div>
-    ${F.vendedorSelecionado&&rel.porVendedor[F.vendedorSelecionado]?renderDetalheVendedor(rel,F.vendedorSelecionado):""}
   `;
+
+  // se um vendedor estiver selecionado, mostra SÓ as informações dele
+  if(F.vendedorSelecionado&&rel.porVendedor[F.vendedorSelecionado]){
+    return seletorVendedor+renderDetalheVendedor(rel,F.vendedorSelecionado);
+  }
 
   const statusRows=Object.entries(rel.porStatus).sort((a,b)=>b[1].total-a[1].total)
     .map(([nome,v])=>{
@@ -459,7 +465,7 @@ function renderRelatorio(rel){
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
       </div>
-      ${p.formasPrevisto?.length?`<div class="muted" style="font-size:11px;margin-top:2px">💳 Previsto: ${p.formasPrevisto.map(f=>esc(f)).join(", ")}</div>`:`<div class="muted" style="font-size:11px;margin-top:2px">Nenhuma forma de pagamento registrada</div>`}
+      ${p.formasPrevisto?.length?`<div class="muted" style="font-size:11px;margin-top:2px">💳 Previsto: ${p.formasPrevisto.map(fmtForma).join(", ")}</div>`:`<div class="muted" style="font-size:11px;margin-top:2px">Nenhuma forma de pagamento registrada</div>`}
     </div>`).join("");
 
   const pedidosRows=rel.pedidos.map(p=>`
