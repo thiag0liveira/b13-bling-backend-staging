@@ -1612,12 +1612,11 @@ app.get("/api/em-digitacao", async(req,res)=>{
 
     // rastreia desde quando cada pedido foi visto em Em Digitação (Bling não dá hora, só data)
     const track=lerJSON(EMDIG_TRACK_FILE,{});
+    const idsAtuais=new Set(lista.map(p=>String(p.id)));
     const agora=Date.now();
     lista.forEach(p=>{ const id=String(p.id); if(!track[id]) track[id]={desde:agora}; track[id].ultimaVez=agora; });
-    // limpa só entradas realmente velhas (não vistas há mais de 180 dias) — evita
-    // apagar pedidos de fora do período de busca atual só porque o filtro mudou
-    const limite=agora-180*86400000;
-    Object.keys(track).forEach(id=>{ if((track[id].ultimaVez||0)<limite) delete track[id]; });
+    // limpa do rastreamento pedidos que não estão mais em digitação (saíram do estado)
+    Object.keys(track).forEach(id=>{ if(!idsAtuais.has(id)) delete track[id]; });
     salvarJSON(EMDIG_TRACK_FILE,track);
 
     const porVendedor={};
