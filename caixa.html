@@ -178,8 +178,8 @@ function renderPedido(app){
     <div id="caixaAcao"></div>
     ${!pago?`
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-      <button class="btn btn-grn" style="padding:16px" onclick="iniciarRecebimentoCaixa('receber')">💰 Receber e Separar</button>
-      <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">💰 RECEBER / SEPARAÇÃO DO CLIENTE</button>
+      <button class="btn btn-grn" style="padding:16px" onclick="iniciarRecebimentoCaixa('receber')">💰 RECEBER E SEPARAR</button>
+      <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>
     </div>`:`
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="voltarBusca()">Escanear próximo pedido</button>`}
   </div>`;

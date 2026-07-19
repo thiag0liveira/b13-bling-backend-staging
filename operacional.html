@@ -413,9 +413,9 @@ function montarBotoes(p,aba,pago,parcial){
   if(sit===SIT.AGUARDANDO){
     const jaPago=pago||parcial;
     const btnSep=(!jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar para entregar</button>`:"";
-    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 Receber e Separar</button>`:"";
+    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 RECEBER E SEPARAR</button>`:"";
     const btnSepPago=(jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
-    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou')">💰 RECEBER / SEPARAÇÃO DO CLIENTE</button>`:"";
+    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou')">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnWhats}${btnQR}</div>`;
