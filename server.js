@@ -91,7 +91,7 @@ async function getAccessToken(){
   if(Date.now() >= t.obtido_em+(t.expires_in-60)*1000) t=await renovarToken(t.refresh_token);
   return t.access_token;
 }
-async function bling(path,options={},_tentativa=0){
+async function blingRaw(path,options={},_tentativa=0){
   const token=await getAccessToken();
   const ctrl=new AbortController();
   const timeout=setTimeout(()=>ctrl.abort(),30000); // 30s timeout
@@ -99,14 +99,32 @@ async function bling(path,options={},_tentativa=0){
     const r=await fetch(API+path,{...options,signal:ctrl.signal,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",Accept:"application/json",...(options.headers||{})}});
     clearTimeout(timeout);
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
-    if(r.status===429&&_tentativa<5){
+    if(r.status===429&&_tentativa<8){
       // limite de requisições do Bling — espera com backoff crescente e tenta de novo
-      await new Promise(res=>setTimeout(res,800*(_tentativa+1)));
-      return bling(path,options,_tentativa+1);
+      await new Promise(res=>setTimeout(res,1200*(_tentativa+1)));
+      return blingRaw(path,options,_tentativa+1);
     }
     if(!r.ok) throw Object.assign(new Error("Erro Bling "+r.status),{status:r.status,body:j});
     return j;
   }catch(e){ clearTimeout(timeout); throw e; }
+}
+// Fila global: TODAS as chamadas ao Bling do sistema (não importa de qual endpoint/
+// tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
+// Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
+// em digitação atualizando sozinho) somem chamadas e estourem o limite do Bling.
+let _blingFila=Promise.resolve();
+const BLING_INTERVALO_MIN=450; // ms entre quaisquer duas chamadas ao Bling
+let _blingUltimaChamada=0;
+function bling(path,options={}){
+  const rodar=async()=>{
+    const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
+    if(espera>0) await new Promise(r=>setTimeout(r,espera));
+    _blingUltimaChamada=Date.now();
+    return blingRaw(path,options);
+  };
+  const resultado=_blingFila.then(rodar,rodar);
+  _blingFila=resultado.catch(()=>{}); // não deixa um erro travar a fila pros próximos
+  return resultado;
 }
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
 
