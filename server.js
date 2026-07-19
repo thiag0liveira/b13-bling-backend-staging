@@ -1597,25 +1597,24 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
   );
   if(passouPeloNossoFluxo) return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   const parcelas=ped?.parcelas||[];
-  const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
-  const valorPago=+parcelasPagas.reduce((s,p)=>s+(p.valor||0),0).toFixed(2);
-  if(valorPago>0.01){
-    // detalha a forma de pagamento real de cada parcela (não um rótulo genérico)
-    const historico=[];
-    for(const pc of parcelasPagas){
-      const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
-      historico.push({valor:pc.valor||0,formaNome:nomeForma,origem:"bling",em:Date.now()});
-    }
-    return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico,doBling:true,previsto:[]};
+  if(parcelas.length===0){
+    // sem nenhuma parcela/forma de pagamento cadastrada — aí sim é não pago
+    return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   }
-  // ainda não pago — mas pode ter forma de pagamento já registrada (parcela a prazo,
-  // vencimento futuro tipo boleto/cartão). Mostra isso como informação, não como pago.
-  const previsto=[];
+  // tem forma de pagamento registrada — conta como pago (à vista ou a prazo).
+  // parcelas a prazo (vencimento futuro) continuam destacadas em "previsto",
+  // mas entram no total pago normalmente.
+  const historico=[]; const previsto=[]; let valorPago=0;
   for(const pc of parcelas){
     const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
-    previsto.push({formaNome:nomeForma,valor:pc.valor||0,vencimento:pc.dataVencimento||""});
+    const aPrazo=!parcelaEhAVista(pc,ped);
+    const valor=+(pc.valor||0);
+    valorPago+=valor;
+    historico.push({valor,formaNome:nomeForma,origem:"bling",em:Date.now(),aPrazo,vencimento:pc.dataVencimento||""});
+    if(aPrazo) previsto.push({formaNome:nomeForma,valor,vencimento:pc.dataVencimento||""});
   }
-  return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto};
+  valorPago=+valorPago.toFixed(2);
+  return {valorPago,statusPagamento:valorPago>=totalPed-0.01?"pago":"parcial",historico,doBling:true,previsto};
 }
 
 app.get("/api/em-digitacao", async(req,res)=>{
@@ -1753,7 +1752,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       pedidosDetalhados.push({
         numero:pRaw.numero, id:pRaw.id, data:pRaw.data, cliente:clienteNome, situacao:sitNome,
         vendedor:vendedorNome, total, valorPago, pago, doBling,
-        formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2)})),
+        formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2),vencimento:h.aPrazo&&h.vencimento?h.vencimento.split('-').reverse().join('/'):''})),
         formasPrevisto:(previsto||[]).map(p=>({nome:p.formaNome,valor:+(Number(p.valor)||0).toFixed(2),vencimento:p.vencimento?p.vencimento.split('-').reverse().join('/'):''})),
       });
 
