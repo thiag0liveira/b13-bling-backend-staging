@@ -1283,7 +1283,7 @@ app.get("/api/pedidos", async (req, res) => {
       const todos=[];
       const dataIni=req.query.dataInicial||dataIniDefault;
       const dataFim=req.query.dataFinal||hojeBR;
-      for(let pg=1;pg<=20;pg++){
+      for(let pg=1;pg<=100;pg++){
         const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
         if(req.query.idsSituacoes) String(req.query.idsSituacoes).split(",").forEach(id=>p.append("idsSituacoes[]",id.trim()));
         const r=await bling(`/pedidos/vendas?${p.toString()}`);
@@ -1602,7 +1602,7 @@ app.get("/api/em-digitacao", async(req,res)=>{
     const dataFinal=req.query.dataFinal||hoje;
 
     const lista=[];
-    for(let pg=1;pg<=20;pg++){
+    for(let pg=1;pg<=100;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal,idsSituacoes:"21"});
       const r=await bling(`/pedidos/vendas?${p.toString()}`);
       const arr=r.data||[]; lista.push(...arr);
@@ -1663,7 +1663,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
     send({tipo:"status",mensagem:dataInicial===dataFinal?"Buscando pedidos do dia…":"Buscando pedidos do período…"});
     const lista=[];
-    for(let pg=1;pg<=20;pg++){
+    for(let pg=1;pg<=100;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
       const r=await bling(`/pedidos/vendas?${p.toString()}`);
       const arr=r.data||[]; lista.push(...arr);
