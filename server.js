@@ -2192,7 +2192,7 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 </style></head><body>
 <div class="nota">
   <div class="topo">
-    <div class="logo">B13 BEBIDAS</div>
+    <div class="logo"><img src="/logo" style="height:36px;display:block"></div>
     <div class="empresa">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888</div>
   </div>
   <div class="secao">
