@@ -128,20 +128,6 @@ function bling(path,options={}){
 }
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
 
-// Cache curto (3 min) do detalhe do pedido — só para os relatórios de leitura
-// (fechamento de caixa, em digitação), que reconsultam com frequência (auto-
-// atualização) os mesmos pedidos que não mudam de um minuto pro outro.
-const _pedidoDetalheCache={};
-const PEDIDO_DETALHE_TTL=3*60*1000;
-async function pedidoDetalheCache(id){
-  const c=_pedidoDetalheCache[id];
-  if(c&&Date.now()-c.ts<PEDIDO_DETALHE_TTL) return c.data;
-  const r=await bling(`/pedidos/vendas/${id}`);
-  const data=r?.data||null;
-  _pedidoDetalheCache[id]={data,ts:Date.now()};
-  return data;
-}
-
 // contato genérico para pedidos sem identificação (CONSUMIDOR FINAL)
 let _contatoPadrao=null;
 async function getContatoPadrao(){
@@ -1660,7 +1646,7 @@ app.get("/api/em-digitacao", async(req,res)=>{
     const todosPedidos=[];
     for(const pRaw of lista){
       let vendedorId=null, det=null;
-      try{ det=await pedidoDetalheCache(pRaw.id); vendedorId=det?.vendedor?.id||null; }catch(e){}
+      try{ const r=await bling(`/pedidos/vendas/${pRaw.id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
       const vendedorNome=await nomeVendedor(vendedorId);
       const desde=track[String(pRaw.id)]?.desde||agora;
       const obj={
@@ -1730,7 +1716,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       } else {
         // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
         let det=null, vendedorId=null;
-        try{ det=await pedidoDetalheCache(id); vendedorId=det?.vendedor?.id||null; }catch(e){}
+        try{ const r=await bling(`/pedidos/vendas/${id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
         vendedorNome=await nomeVendedor(vendedorId);
         const pagLocal=pags[id];
         ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]));
