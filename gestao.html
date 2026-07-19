@@ -163,7 +163,24 @@ let emDigDados=null, emDigFiltro=[], emDigTimer=null, emDigModo="vendedor";
 function renderEmDigitacao(){
   const d=emDigDados||{total:0,porVendedor:{},recentes:[]};
   const box=document.getElementById("listaEmDigitacao");
-  if(!d.total){ box.innerHTML=`<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`; return; }
+
+  const filtroData=`<div style="margin-bottom:12px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="emDigPreset('mes')">Mês atual</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="emDigPreset('mesAnterior')">Mês anterior</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="emDigPreset('q1')">1ª quinzena</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="emDigPreset('q2')">2ª quinzena</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="date" value="${emDigDataInicial}" onchange="emDigDataInicial=this.value" style="padding:6px;font-size:12px">
+      <span class="muted" style="font-size:12px">até</span>
+      <input type="date" value="${emDigDataFinal}" onchange="emDigDataFinal=this.value" style="padding:6px;font-size:12px">
+      <button class="btn btn-mag" style="font-size:12px;padding:6px 14px" onclick="carregarEmDigitacao()">🔎 Buscar</button>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:4px">Período atual: ${emDigDataInicial.split('-').reverse().join('/')} até ${emDigDataFinal.split('-').reverse().join('/')}</div>
+  </div>`;
+
+  if(!d.total){ box.innerHTML=filtroData+`<div class="ok">Nenhum pedido em digitação nesse período 🎉</div>`; return; }
 
   const nomesVendedores=Object.keys(d.porVendedor).sort();
   const chipsVendedor=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
@@ -208,7 +225,7 @@ function renderEmDigitacao(){
     }).join("");
   }
 
-  box.innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total · atualiza sozinho a cada 45s</div>${modoToggle}${chipsVendedor}${conteudo}`;
+  box.innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total · atualiza sozinho a cada 45s</div>${filtroData}${modoToggle}${chipsVendedor}${conteudo}`;
 }
 try{ if(typeof b13GetSession==="function" && b13GetSession()) logado=true; }catch(e){}
 
@@ -308,10 +325,24 @@ async function carregarPedidos(){
 function setFiltro(id){ filtro=id; carregarPedidos(); }
 
 // ---- EM DIGITAÇÃO (por vendedor, com itens visíveis e atualização automática) ----
+function fmtLocal(d){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
+let emDigDataInicial=fmtLocal(new Date(new Date().getFullYear(),new Date().getMonth(),1));
+let emDigDataFinal=fmtLocal(new Date());
+
+function emDigPreset(tipo){
+  const hoje=new Date(); const y=hoje.getFullYear(), m=hoje.getMonth();
+  if(tipo==="mes"){ emDigDataInicial=fmtLocal(new Date(y,m,1)); emDigDataFinal=fmtLocal(hoje); }
+  else if(tipo==="mesAnterior"){ emDigDataInicial=fmtLocal(new Date(y,m-1,1)); emDigDataFinal=fmtLocal(new Date(y,m,0)); }
+  else if(tipo==="q1"){ emDigDataInicial=fmtLocal(new Date(y,m,1)); emDigDataFinal=fmtLocal(new Date(y,m,15)); }
+  else if(tipo==="q2"){ emDigDataInicial=fmtLocal(new Date(y,m,16)); emDigDataFinal=fmtLocal(new Date(y,m+1,0)); }
+  carregarEmDigitacao();
+}
+
 async function carregarEmDigitacao(mostrarCarregando=true){
   if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
   try{
-    const r=await fetch(BACKEND+"/api/em-digitacao"); const j=await r.json();
+    const p=new URLSearchParams({dataInicial:emDigDataInicial,dataFinal:emDigDataFinal});
+    const r=await fetch(BACKEND+"/api/em-digitacao?"+p.toString()); const j=await r.json();
     emDigDados=j.data||{total:0,porVendedor:{}};
     renderEmDigitacao();
   }catch(e){ if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="err">Erro ao carregar</div>`; }
