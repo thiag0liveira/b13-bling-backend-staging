@@ -1669,18 +1669,23 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
   res.setHeader("Connection","keep-alive");
+  res.setHeader("X-Accel-Buffering","no"); // evita proxy segurar o buffer (Railway/nginx)
   res.flushHeaders();
   const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+  // batimento cardíaco: mantém a conexão viva em buscas longas (evita o proxy
+  // derrubar por "inatividade" mesmo com o processamento rodando normalmente)
+  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
+  res.on("close",()=>clearInterval(heartbeat));
 
   try{
     const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
     let dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
     if(!dataInicial||!dataFinal){
       const data=req.query.data;
-      if(!data||!dataRegex.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="}); return res.end(); }
+      if(!data||!dataRegex.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="}); clearInterval(heartbeat); return res.end(); }
       dataInicial=data; dataFinal=data;
     }
-    if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){ send({tipo:"erro",erro:"datas em formato inválido (AAAA-MM-DD)"}); return res.end(); }
+    if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){ send({tipo:"erro",erro:"datas em formato inválido (AAAA-MM-DD)"}); clearInterval(heartbeat); return res.end(); }
     const data=dataInicial; // mantido por compatibilidade no objeto de resposta
 
     const rapido=req.query.rapido==="1";
@@ -1780,6 +1785,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(heartbeat);
   res.end();
 });
 

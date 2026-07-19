@@ -283,8 +283,9 @@ async function confirmarPagamentoCaixa(){
 // --------- Fechamento de Caixa ---------
 function irFechamento(){ S.view="fechamento"; render(); if(!F.relatorio) buscarFechamento(); }
 
-async function buscarFechamento(){
-  F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:"Iniciando…"}; render();
+async function buscarFechamento(_tentativa=0){
+  F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:_tentativa?`Reconectando (tentativa ${_tentativa+1})…`:"Iniciando…"}; render();
+  let recebeuDone=false;
   try{
     const p=new URLSearchParams({dataInicial:F.dataInicial,dataFinal:F.dataFinal});
     if(F.rapido) p.set("rapido","1");
@@ -294,10 +295,20 @@ async function buscarFechamento(){
       if(d.tipo==="status"){ F.progresso.mensagem=d.mensagem; render(); }
       else if(d.tipo==="total"){ F.progresso.total=d.total; F.progresso.mensagem=d.total?`0 de ${d.total} pedidos processados`:"Nenhum pedido nesse dia"; render(); }
       else if(d.tipo==="progresso"){ F.progresso.atual=d.atual; F.progresso.total=d.total; F.progresso.mensagem=`${d.atual} de ${d.total} pedidos processados (#${d.pedido})`; render(); }
-      else if(d.tipo==="done"){ F.relatorio=d.relatorio; F.carregando=false; es.close(); render(); }
-      else if(d.tipo==="erro"){ F.erro=d.erro||"Erro ao gerar fechamento"; F.carregando=false; es.close(); render(); }
+      else if(d.tipo==="done"){ recebeuDone=true; F.relatorio=d.relatorio; F.carregando=false; es.close(); render(); }
+      else if(d.tipo==="erro"){ recebeuDone=true; F.erro=d.erro||"Erro ao gerar fechamento"; F.carregando=false; es.close(); render(); }
     };
-    es.onerror=()=>{ if(F.carregando){ F.erro="Conexão perdida ao gerar fechamento. Tenta de novo."; F.carregando=false; } es.close(); render(); };
+    es.onerror=()=>{
+      es.close();
+      if(recebeuDone) return; // já tinha terminado normalmente, ignora
+      if(_tentativa<2){
+        // conexão caiu no meio — tenta de novo automaticamente (até 2x) do zero
+        setTimeout(()=>buscarFechamento(_tentativa+1),1500);
+      } else {
+        F.erro="Conexão perdida ao gerar fechamento, mesmo após tentar de novo. Tenta um período menor, ou tenta de novo mais tarde.";
+        F.carregando=false; render();
+      }
+    };
   }catch(e){ F.carregando=false; F.erro="Erro de conexão"; render(); }
 }
 
