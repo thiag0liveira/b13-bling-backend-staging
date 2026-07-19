@@ -113,7 +113,7 @@ async function blingRaw(path,options={},_tentativa=0){
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
 // em digitação atualizando sozinho) somem chamadas e estourem o limite do Bling.
 let _blingFila=Promise.resolve();
-const BLING_INTERVALO_MIN=450; // ms entre quaisquer duas chamadas ao Bling
+const BLING_INTERVALO_MIN=340; // ms entre quaisquer duas chamadas ao Bling (~2,9/s, o limite documentado é 3/s)
 let _blingUltimaChamada=0;
 function bling(path,options={}){
   const rodar=async()=>{
@@ -1644,7 +1644,7 @@ app.get("/api/em-digitacao", async(req,res)=>{
       const r=await bling(`/pedidos/vendas?${p.toString()}`);
       const arr=r.data||[]; lista.push(...arr);
       if(arr.length<100) break;
-      await new Promise(r=>setTimeout(r,400));
+      // fila global ja garante o espacamento
     }
 
     // rastreia desde quando cada pedido foi visto em Em Digitação (Bling não dá hora, só data)
@@ -1697,6 +1697,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){ send({tipo:"erro",erro:"datas em formato inválido (AAAA-MM-DD)"}); return res.end(); }
     const data=dataInicial; // mantido por compatibilidade no objeto de resposta
 
+    const rapido=req.query.rapido==="1";
     send({tipo:"status",mensagem:dataInicial===dataFinal?"Buscando pedidos do dia…":"Buscando pedidos do período…"});
     const lista=[];
     for(let pg=1;pg<=100;pg++){
@@ -1704,7 +1705,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       const r=await bling(`/pedidos/vendas?${p.toString()}`);
       const arr=r.data||[]; lista.push(...arr);
       if(arr.length<100) break;
-      await new Promise(r=>setTimeout(r,400));
+      // fila global ja garante o espacamento
     }
     send({tipo:"total",total:lista.length});
 
@@ -1720,14 +1721,21 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       const total=+(pRaw.total||pRaw.totalProdutos||0);
       totalGeral+=total;
 
-      // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
-      let det=null, vendedorId=null;
-      try{ det=await pedidoDetalheCache(id); vendedorId=det?.vendedor?.id||null; }catch(e){}
-      const vendedorNome=await nomeVendedor(vendedorId);
-
+      let vendedorNome, valorPago, historico, doBling, previsto;
+      if(rapido){
+        // modo rápido: não consulta detalhe do pedido (sem vendedor, sem checar parcela do Bling)
+        vendedorNome="Não verificado (busca rápida)";
+        const pagLocal=pags[id];
+        valorPago=+(pagLocal?.valorPago||0); historico=pagLocal?.historico||[]; doBling=false; previsto=[];
+      } else {
+        // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
+        let det=null, vendedorId=null;
+        try{ det=await pedidoDetalheCache(id); vendedorId=det?.vendedor?.id||null; }catch(e){}
+        vendedorNome=await nomeVendedor(vendedorId);
+        const pagLocal=pags[id];
+        ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]));
+      }
       const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
-      const pagLocal=pags[id];
-      const {valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]);
       const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
       const clienteNome=pRaw.contato?.nome||"—";

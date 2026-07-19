@@ -66,7 +66,7 @@ const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_RO
 let formasPag=[];
 let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
 function fmtLocalCx(d){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
-let F={dataInicial:fmtLocalCx(new Date()),dataFinal:fmtLocalCx(new Date()),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null};
+let F={dataInicial:fmtLocalCx(new Date()),dataFinal:fmtLocalCx(new Date()),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null,rapido:false};
 
 function fechamentoPreset(tipo){
   const hoje=new Date(); const y=hoje.getFullYear(), m=hoje.getMonth();
@@ -287,6 +287,7 @@ async function buscarFechamento(){
   F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:"Iniciando…"}; render();
   try{
     const p=new URLSearchParams({dataInicial:F.dataInicial,dataFinal:F.dataFinal});
+    if(F.rapido) p.set("rapido","1");
     const es=new EventSource(B+"/api/fechamento-caixa/progresso?"+p.toString());
     es.onmessage=(ev)=>{
       const d=JSON.parse(ev.data);
@@ -321,6 +322,10 @@ function renderFechamento(app){
       </div>
       <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFechamento()">🔎 Gerar fechamento</button>
     </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9a95c9;margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" ${F.rapido?"checked":""} onchange="F.rapido=this.checked" style="width:auto">
+      Busca rápida (sem vendedor nem conferência fina de pagamento no Bling — muito mais rápida pra períodos grandes)
+    </label>
     ${F.carregando?`
     <div class="card">
       <div style="margin-bottom:8px;font-size:13px">${esc(F.progresso?.mensagem||"Processando…")}</div>
