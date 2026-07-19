@@ -91,7 +91,7 @@ async function getAccessToken(){
   if(Date.now() >= t.obtido_em+(t.expires_in-60)*1000) t=await renovarToken(t.refresh_token);
   return t.access_token;
 }
-async function bling(path,options={}){
+async function bling(path,options={},_tentativa=0){
   const token=await getAccessToken();
   const ctrl=new AbortController();
   const timeout=setTimeout(()=>ctrl.abort(),30000); // 30s timeout
@@ -99,6 +99,11 @@ async function bling(path,options={}){
     const r=await fetch(API+path,{...options,signal:ctrl.signal,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",Accept:"application/json",...(options.headers||{})}});
     clearTimeout(timeout);
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
+    if(r.status===429&&_tentativa<5){
+      // limite de requisições do Bling — espera com backoff crescente e tenta de novo
+      await new Promise(res=>setTimeout(res,800*(_tentativa+1)));
+      return bling(path,options,_tentativa+1);
+    }
     if(!r.ok) throw Object.assign(new Error("Erro Bling "+r.status),{status:r.status,body:j});
     return j;
   }catch(e){ clearTimeout(timeout); throw e; }
