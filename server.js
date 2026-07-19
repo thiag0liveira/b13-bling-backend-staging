@@ -2362,18 +2362,31 @@ app.get("/pedido/:id/status", async(req,res)=>{
     // A página carrega e o JS verifica localStorage/sessionStorage, depois recarrega com ?admin=1 se logado
     const isAdmin=req.query.admin==="1";
 
-    // LOG HTML (admin)
-    const logHtml=isAdmin?(logArr||[]).slice().reverse().map(e=>{
-      const lbl=LOG_LABELS[e.evento]||{txt:(e.evento||"").replace(/_/g," "),admin:false};
-      const d=new Date(e.em||0);
-      const dt=d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-      const extra=e.detalhes?.valor?` · R$ ${Number(e.detalhes.valor).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"";
-      const adminBadge=lbl.admin?`<span style="background:#FF008833;color:#FF0082;border-radius:3px;padding:1px 5px;font-size:9px;margin-left:4px">admin</span>`:"";
-      return `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #1a1840;display:flex;justify-content:space-between;gap:8px">
-        <div style="color:#cfc9f5">${lbl.txt}${extra}${adminBadge} <span style="color:#9a95c9;font-size:10px">— ${e.funcionarioNome||""}</span></div>
+    // LOG HTML — completo pra admin; versão simplificada (sem valores/eventos
+    // administrativos) pra quem não está logado, útil pro funcionário que só
+    // escaneou a etiqueta sem estar logado nesse aparelho
+    const logHtml=(logArr||[]).slice().reverse()
+      .filter(e=>{
+        const lbl=LOG_LABELS[e.evento];
+        return isAdmin || !lbl?.admin; // esconde eventos administrativos/financeiros do público
+      })
+      .map(e=>{
+        const lbl=LOG_LABELS[e.evento]||{txt:(e.evento||"").replace(/_/g," "),admin:false};
+        const d=new Date(e.em||0);
+        const dt=d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+        const extra=isAdmin&&e.detalhes?.valor?` · R$ ${Number(e.detalhes.valor).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"";
+        const adminBadge=isAdmin&&lbl.admin?`<span style="background:#FF008833;color:#FF0082;border-radius:3px;padding:1px 5px;font-size:9px;margin-left:4px">admin</span>`:"";
+        return `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #1a1840;display:flex;justify-content:space-between;gap:8px">
+        <div style="color:#cfc9f5">${lbl.txt}${extra}${adminBadge}${isAdmin?` <span style="color:#9a95c9;font-size:10px">— ${e.funcionarioNome||""}</span>`:""}</div>
         <div style="color:#514c96;font-size:10px;white-space:nowrap">${dt}</div>
       </div>`;
-    }).join(""):"";
+      }).join("");
+    // itens do pedido — sempre visível (não é dado pessoal, ajuda a conferir o pedido pela etiqueta)
+    const itensHtmlStatus=(ped.itens||[]).map(i=>`
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #1a1840">
+        <span>${(i.descricao||i.produto?.nome||"").replace(/</g,"&lt;")}</span>
+        <span style="font-weight:700">x${i.quantidade}</span>
+      </div>`).join("");
 
     const html=`<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2438,7 +2451,12 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
     ${separador?`<div class="sep-row">📦 Sendo separado por <b>${separador}</b></div>`:""}
   </div>
 
-  ${isAdmin&&logHtml?`<div class="sec"><div class="sec-t">Histórico completo</div>${logHtml}</div>`:""}
+  <div class="sec">
+    <div class="sec-t">Itens</div>
+    ${itensHtmlStatus||'<div style="font-size:12px;color:#9a95c9">Sem itens</div>'}
+  </div>
+
+  ${logHtml?`<div class="sec"><div class="sec-t">${isAdmin?"Histórico completo":"Andamento"}</div>${logHtml}</div>`:""}
 
   ${isAdmin?`<a href="${confUrl}" class="btn-conf">🔍 Abrir na Conferência</a>`:""}
 
