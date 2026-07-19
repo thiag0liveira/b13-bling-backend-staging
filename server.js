@@ -2181,11 +2181,11 @@ body{font-family:Arial,sans-serif;background:#fff;color:#000;padding:0}
   <div class="numero">#${ped.numero||id}</div>
   <div class="cliente">${(ped.contato?.nome||"").replace(/</g,"&lt;")}</div>
   <div class="tipo ${ehEntrega?"entrega":"retirada"}">${ehEntrega?"🛵 ENTREGA":"🏪 RETIRADA"}</div>
-  ${ehEntrega?`<div class="linha"></div>
+  <div class="linha"></div>
   <div class="qr">
     <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrUrl)}">
-    <div>Escaneie pra ver status da entrega</div>
-  </div>`:""}
+    <div>Escaneie pra ver status do pedido</div>
+  </div>
   <div class="acoes"><button class="btn" onclick="window.print()">🖨️ Imprimir etiqueta</button></div>
 </div>
 </body></html>`;
