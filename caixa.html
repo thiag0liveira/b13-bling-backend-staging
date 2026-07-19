@@ -65,7 +65,18 @@ const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
 const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
 let formasPag=[];
 let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
-let F={data:new Date().toISOString().slice(0,10),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null};
+function fmtLocalCx(d){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
+let F={dataInicial:fmtLocalCx(new Date()),dataFinal:fmtLocalCx(new Date()),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null};
+
+function fechamentoPreset(tipo){
+  const hoje=new Date(); const y=hoje.getFullYear(), m=hoje.getMonth();
+  if(tipo==="hoje"){ F.dataInicial=fmtLocalCx(hoje); F.dataFinal=fmtLocalCx(hoje); }
+  else if(tipo==="mes"){ F.dataInicial=fmtLocalCx(new Date(y,m,1)); F.dataFinal=fmtLocalCx(hoje); }
+  else if(tipo==="mesAnterior"){ F.dataInicial=fmtLocalCx(new Date(y,m-1,1)); F.dataFinal=fmtLocalCx(new Date(y,m,0)); }
+  else if(tipo==="q1"){ F.dataInicial=fmtLocalCx(new Date(y,m,1)); F.dataFinal=fmtLocalCx(new Date(y,m,15)); }
+  else if(tipo==="q2"){ F.dataInicial=fmtLocalCx(new Date(y,m,16)); F.dataFinal=fmtLocalCx(new Date(y,m+1,0)); }
+  buscarFechamento();
+}
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -275,7 +286,8 @@ function irFechamento(){ S.view="fechamento"; render(); if(!F.relatorio) buscarF
 async function buscarFechamento(){
   F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:"Iniciando…"}; render();
   try{
-    const es=new EventSource(B+"/api/fechamento-caixa/progresso?data="+F.data);
+    const p=new URLSearchParams({dataInicial:F.dataInicial,dataFinal:F.dataFinal});
+    const es=new EventSource(B+"/api/fechamento-caixa/progresso?"+p.toString());
     es.onmessage=(ev)=>{
       const d=JSON.parse(ev.data);
       if(d.tipo==="status"){ F.progresso.mensagem=d.mensagem; render(); }
@@ -291,10 +303,21 @@ async function buscarFechamento(){
 function renderFechamento(app){
   const rel=F.relatorio;
   app.innerHTML=header()+`<div class="wrap">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('hoje')">Hoje</button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('mes')">Mês atual</button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('mesAnterior')">Mês anterior</button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('q1')">1ª quinzena</button>
+      <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('q2')">2ª quinzena</button>
+    </div>
     <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
-      <div style="flex:1;min-width:160px">
-        <div class="muted" style="margin-bottom:4px">Data</div>
-        <input type="date" value="${F.data}" onchange="F.data=this.value" style="font-size:15px">
+      <div>
+        <div class="muted" style="margin-bottom:4px;font-size:12px">De</div>
+        <input type="date" value="${F.dataInicial}" onchange="F.dataInicial=this.value" style="font-size:14px">
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:4px;font-size:12px">Até</div>
+        <input type="date" value="${F.dataFinal}" onchange="F.dataFinal=this.value" style="font-size:14px">
       </div>
       <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFechamento()">🔎 Gerar fechamento</button>
     </div>

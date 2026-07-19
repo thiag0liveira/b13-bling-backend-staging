@@ -1651,13 +1651,20 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
 
   try{
-    const data=req.query.data;
-    if(!data||!/^\d{4}-\d{2}-\d{2}$/.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD"}); return res.end(); }
+    const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
+    let dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
+    if(!dataInicial||!dataFinal){
+      const data=req.query.data;
+      if(!data||!dataRegex.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="}); return res.end(); }
+      dataInicial=data; dataFinal=data;
+    }
+    if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){ send({tipo:"erro",erro:"datas em formato inválido (AAAA-MM-DD)"}); return res.end(); }
+    const data=dataInicial; // mantido por compatibilidade no objeto de resposta
 
-    send({tipo:"status",mensagem:"Buscando pedidos do dia…"});
+    send({tipo:"status",mensagem:dataInicial===dataFinal?"Buscando pedidos do dia…":"Buscando pedidos do período…"});
     const lista=[];
     for(let pg=1;pg<=20;pg++){
-      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:data,dataFinal:data});
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
       const r=await bling(`/pedidos/vendas?${p.toString()}`);
       const arr=r.data||[]; lista.push(...arr);
       if(arr.length<100) break;
@@ -1725,7 +1732,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     }
 
     res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
-      data, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
+      data, dataInicial, dataFinal, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
