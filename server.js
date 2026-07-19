@@ -1601,13 +1601,14 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
     // sem nenhuma parcela/forma de pagamento cadastrada — aí sim é não pago
     return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   }
-  // tem forma de pagamento registrada — conta como pago (à vista ou a prazo).
-  // parcelas a prazo (vencimento futuro) continuam destacadas em "previsto",
-  // mas entram no total pago normalmente.
+  // tem forma de pagamento registrada — conta como pago (data igual ou diferente).
+  // parcelas com data de vencimento diferente da data do pedido continuam
+  // destacadas em "previsto" (pode ser erro de digitação de prazo, ou pedido de
+  // entrega criado num dia e pago/entregue em outro), mas entram no total pago.
   const historico=[]; const previsto=[]; let valorPago=0;
   for(const pc of parcelas){
     const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
-    const aPrazo=!parcelaEhAVista(pc,ped);
+    const aPrazo=!!(pc.dataVencimento&&ped?.data&&String(pc.dataVencimento)!==String(ped.data));
     const valor=+(pc.valor||0);
     valorPago+=valor;
     historico.push({valor,formaNome:nomeForma,origem:"bling",em:Date.now(),aPrazo,vencimento:pc.dataVencimento||""});
@@ -1698,12 +1699,23 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     const logs=lerLog();
     const pedidosDetalhados=[];
     const porStatus={}, porVendedor={}, porFormaPagamento={}, porCliente={};
-    let totalGeral=0, totalPago=0, totalNaoPago=0;
+    let totalGeral=0, totalPago=0, totalNaoPago=0, totalCancelados=0, qtdCancelados=0;
 
     for(let i=0;i<lista.length;i++){
       const pRaw=lista[i];
       const id=String(pRaw.id);
       const total=+(pRaw.total||pRaw.totalProdutos||0);
+      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
+      const cancelado=sitNome==="Cancelado";
+
+      if(cancelado){
+        // cancelados não entram no total geral/pago/não pago — só contados à parte
+        qtdCancelados++; totalCancelados+=total;
+        if(!porStatus[sitNome]) porStatus[sitNome]={qtd:0,total:0};
+        porStatus[sitNome].qtd++; porStatus[sitNome].total+=total;
+        send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
+        continue;
+      }
       totalGeral+=total;
 
       let vendedorNome, valorPago, historico, doBling, previsto;
@@ -1720,7 +1732,6 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
         const pagLocal=pags[id];
         ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]));
       }
-      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
       const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
       const clienteNome=pRaw.contato?.nome||"—";
@@ -1759,9 +1770,13 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
     }
 
+    const totalPrevisto=pedidosDetalhados.filter(p=>p.pago&&p.formasPrevisto?.length).reduce((s,p)=>s+p.total,0);
+    const qtdPrevisto=pedidosDetalhados.filter(p=>p.pago&&p.formasPrevisto?.length).length;
     res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
       data, dataInicial, dataFinal, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
+      totalCancelados:+totalCancelados.toFixed(2), qtdCancelados,
+      totalPrevisto:+totalPrevisto.toFixed(2), qtdPrevisto,
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }

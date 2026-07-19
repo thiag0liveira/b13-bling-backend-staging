@@ -533,9 +533,11 @@ function renderRelatorio(rel){
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px">
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pedidos</div><div style="font-size:22px;font-weight:900">${rel.totalPedidos}</div></div>
-      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Total</div><div style="font-size:22px;font-weight:900">${brl(rel.totalGeral)}</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Total (sem cancelados)</div><div style="font-size:22px;font-weight:900">${brl(rel.totalGeral)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pago</div><div style="font-size:22px;font-weight:900;color:#a8f0c8">${brl(rel.totalPago)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Não pago</div><div style="font-size:22px;font-weight:900;color:#ff8090">${brl(rel.totalNaoPago)}</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Cancelados</div><div style="font-size:22px;font-weight:900;color:#9a95c9">${brl(rel.totalCancelados||0)}</div><div class="muted" style="font-size:11px">${rel.qtdCancelados||0} pedido(s)</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Previsto (data diferente)</div><div style="font-size:22px;font-weight:900;color:#ffd23f">${brl(rel.totalPrevisto||0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrevisto||0} pedido(s) — já contam no Pago</div></div>
     </div>
 
     ${seletorVendedor}
