@@ -2142,6 +2142,58 @@ app.get("/api/produto/:id/imagens-debug", async(req,res)=>{
 
 // Página pública de status do pedido (acessada via QR code)
 // Nota de separação para impressão (estática, sem status)
+app.get("/pedido/:id/etiqueta", async(req,res)=>{
+  try{
+    const id=req.params.id;
+    const BASE=process.env.RAILWAY_PUBLIC_DOMAIN?`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`:"";
+    const [rPed,entregas]=await Promise.all([
+      bling(`/pedidos/vendas/${id}`),
+      Promise.resolve(lerJSON(ENTREGAS_FILE,{})),
+    ]);
+    const ped=rPed?.data||{};
+    const entregaInfo=entregas[String(id)]||null;
+    const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
+    const ehEntrega=entregaInfo?entregaInfo.tipo==="entrega":freteCalc>0.01;
+    const qrUrl=`${BASE}/pedido/${id}/acompanhar`;
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Etiqueta #${ped.numero||id}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#fff;color:#000;padding:0}
+.etq{max-width:280px;margin:0 auto;padding:10px;text-align:center}
+.logo{height:28px;margin-bottom:6px}
+.numero{font-size:26px;font-weight:900;letter-spacing:1px}
+.cliente{font-size:15px;font-weight:700;margin-top:2px;word-break:break-word}
+.tipo{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;color:#fff}
+.tipo.entrega{background:#00aaff}
+.tipo.retirada{background:#2f9e6b}
+.qr{margin-top:10px}
+.qr img{width:150px;height:150px}
+.qr div{font-size:10px;color:#555;margin-top:3px}
+.linha{border-top:1px dashed #999;margin:8px 0}
+.acoes{margin-top:12px}
+.btn{display:inline-block;padding:10px 18px;border-radius:8px;background:#FF0082;color:#fff;font-weight:700;font-size:13px;text-decoration:none;border:none;cursor:pointer}
+@media print{ .acoes{display:none!important} body{padding:0} .etq{max-width:100%} }
+</style></head><body>
+<div class="etq">
+  <img class="logo" src="/logo">
+  <div class="numero">#${ped.numero||id}</div>
+  <div class="cliente">${(ped.contato?.nome||"").replace(/</g,"&lt;")}</div>
+  <div class="tipo ${ehEntrega?"entrega":"retirada"}">${ehEntrega?"🛵 ENTREGA":"🏪 RETIRADA"}</div>
+  ${ehEntrega?`<div class="linha"></div>
+  <div class="qr">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrUrl)}">
+    <div>Escaneie pra ver status da entrega</div>
+  </div>`:""}
+  <div class="acoes"><button class="btn" onclick="window.print()">🖨️ Imprimir etiqueta</button></div>
+</div>
+</body></html>`;
+    res.send(html);
+  }catch(e){ res.status(500).send("Erro ao gerar etiqueta: "+e.message); }
+});
+
+
 app.get("/pedido/:id/nota", async(req,res)=>{
   try{
     const id=req.params.id;

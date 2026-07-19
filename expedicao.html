@@ -341,9 +341,13 @@ async function concluir(){
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
     fetch(BACKEND+"/api/separacoes/"+S.sel.id,{method:"DELETE"}).catch(()=>{});
     if(faltas.length===0){
-      alert("✅ Pedido completo — marcado como SEPARADO."); 
+      if(confirm("✅ Pedido completo — marcado como SEPARADO.\n\nImprimir etiqueta pra colar no pedido?")){
+        window.open(BACKEND+"/pedido/"+S.sel.id+"/etiqueta","_blank");
+      }
     } else {
-      alert("⚠️ Pedido com falta — marcado como SEPARADO C/ PENDÊNCIAS.");
+      if(confirm("⚠️ Pedido com falta — marcado como SEPARADO C/ PENDÊNCIAS.\n\nImprimir etiqueta mesmo assim?")){
+        window.open(BACKEND+"/pedido/"+S.sel.id+"/etiqueta","_blank");
+      }
     }
     voltarFila();
   }catch(e){ S.msg="Erro ao concluir: "+e.message; render(); }
