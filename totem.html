@@ -651,7 +651,7 @@ function telaSucesso(app){
     </div>`).join("");
 
   let statusBling = r.bling
-    ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:10px 14px;font-size:13px;color:#a8f0c8;text-align:center">✅ Pedido registrado no sistema — vendedor SISTEMA</div>`
+    ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:10px 14px;font-size:13px;color:#a8f0c8;text-align:center">✅ Pedido registrado no sistema</div>`
     : `<div style="background:#2a0a00;border:1px solid #e5563f;border-radius:10px;padding:10px 14px;font-size:13px;color:#ff8090">⚠️ Não foi possível gerar no Bling (${esc(r.erro||"erro")}).${r.detalhe?`<br><small style="word-break:break-word;opacity:.8">${esc(JSON.stringify(r.detalhe))}</small>`:""}<br>A loja recebeu pelo WhatsApp.</div>`;
 
   app.innerHTML=header(false)+`
