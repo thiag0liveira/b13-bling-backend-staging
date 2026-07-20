@@ -1473,8 +1473,10 @@ async function confirmarPagamentoClienteSeparou(id){
   if(Math.abs(diff)>0.01){ document.getElementById("pMsg").innerHTML=`<div class="err">❌ Valor das parcelas (${brl(totalParcelas)}) não bate com o total do pedido (${brl(totalPedido)}). Corrija antes de confirmar.</div>`; return; }
   document.getElementById("pMsg").innerHTML=`<div class="muted">Registrando pagamento…</div>`;
   try{
-    await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+    const rPag=await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({valor:totalParcelas,parcelas:_parcelas,formaId:_parcelas[0]?.formaId,formaNome:_parcelas[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:totalPedido})});
+    const jPag=await rPag.json();
+    if(!rPag.ok||jPag.erro){ document.getElementById("pMsg").innerHTML=`<div class="err">${esc(jPag.erro||"Erro ao registrar pagamento")}</div>`; return; }
     document.getElementById("pMsg").innerHTML=`<div class="muted">Movendo para Separado…</div>`;
     const r=await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
