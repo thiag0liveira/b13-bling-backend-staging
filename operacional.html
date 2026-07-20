@@ -1124,6 +1124,17 @@ async function confirmarRetirarSeguir(id){
     
     const diff=+(valorPago-valorNovoPedido).toFixed(2); // positivo=estorno, negativo=falta pagamento
 
+    // pedidos de ENTREGA só recebem o pagamento lá na etapa "Em Rota" (na
+    // confirmação de entrega) — não faz sentido exigir pagamento aqui ainda,
+    // deixa o pedido seguir o fluxo normalmente
+    const entInfo=ents[String(id)];
+    const freteCalcPend=+(((window.pedidoEditOrig?.total||0)-(window.pedidoEditOrig?.totalProdutos||0))).toFixed(2);
+    const ehEntregaPend=entInfo?entInfo.tipo==="entrega":freteCalcPend>0.01;
+    if(ehEntregaPend){
+      await executarRetirarSeguir(id,'ok',0,'');
+      return;
+    }
+
     // salvar em globais para uso nos onclicks
     window._pendDescItens=descItens||"";
     window._pendDiff=Math.abs(diff);
