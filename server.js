@@ -435,6 +435,33 @@ app.patch("/api/acrescimos/:id",(req,res)=>{
 function lerPag(){ return lerJSON(PAG_FILE,{}); }
 function salvarPag(o){ salvarJSON(PAG_FILE,o); }
 
+// Atualiza as parcelas do pedido no Bling de verdade (via PUT, já comprovado
+// que funciona nesse sistema), substituindo a parcela única "placeholder"
+// pelas formas de pagamento reais usadas no recebimento.
+async function atualizarParcelasBling(id,parcelas){
+  try{
+    const rPed=await bling(`/pedidos/vendas/${id}`);
+    const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
+    const payload={
+      data:ped.data,
+      contato:{id:ped.contato?.id},
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      observacoes:ped.observacoes||"",
+      parcelas:parcelas.filter(p=>(Number(p.valor)||0)>0).map(p=>({
+        formaPagamento:{id:p.formaId}, dataVencimento:ped.data, valor:+Number(p.valor).toFixed(2),
+      })),
+    };
+    if(ped.transporte) payload.transporte={
+      fretePorConta:ped.transporte.fretePorConta??0, frete:ped.transporte.frete||0,
+      ...(ped.transporte.enderecoEntrega?{enderecoEntrega:ped.transporte.enderecoEntrega}:{}),
+    };
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    const r=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    return {ok:true,resposta:r};
+  }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+}
+
 app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
     const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado,parcelas}=req.body||{};
@@ -480,12 +507,10 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     }catch(e){}
     salvarPag(pags);
     addLog(id, "pagamento_registrado", funcionarioId, funcionarioNome, {valor:Number(valor),formaNome,statusPagamento:p.statusPagamento});
-    // lança a parcela no Bling — expõe o resultado (antes ficava escondido em catch vazio)
-    let blingFinanceiroResultado=null;
-    try{
-      const rFin=await bling(`/pedidos/vendas/${id}/financeiro`,{method:"POST",body:JSON.stringify({valor:Number(valor),formasPagamento:[{id:formaId}]})});
-      blingFinanceiroResultado={ok:true,resposta:rFin};
-    }catch(e){ blingFinanceiroResultado={ok:false,erro:e.message,status:e.status,body:e.body}; }
+    // lança a(s) forma(s) de pagamento no Bling de verdade — substitui a
+    // parcela única "placeholder" pelas parcelas reais usadas no recebimento
+    const parcelasParaBling=(listaParcelas.length?listaParcelas:[{valor,formaId}]).map(pc=>({valor:pc.valor,formaId:pc.formaId}));
+    const blingFinanceiroResultado=await atualizarParcelasBling(id,parcelasParaBling);
     res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -647,6 +672,8 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
       });
       pags[id].valorPago=valorInformado; // sempre = valor confirmado, nunca soma com o que já existia
       pags[id].statusPagamento="pago"; salvarPag(pags);
+      // lança a(s) forma(s) de pagamento no Bling de verdade
+      await atualizarParcelasBling(id,parcelas.map(pc=>({valor:pc.valor,formaId:pc.formaId})));
     }
     // muda status no Bling
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
