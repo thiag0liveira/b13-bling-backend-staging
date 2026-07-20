@@ -2333,6 +2333,16 @@ function statusPublico(sit){
 }
 
 // Rota única — detecta sessão pelo header e mostra visão correta
+function etapaIndex(sit){
+  const s=(sit||"").toUpperCase();
+  if(s.includes("ATENDIDO")) return 4;
+  if(s.includes("ROTA")) return 3;
+  if(s.includes("SEPARADO")) return 2; // inclui "separado c/ pendências"
+  if(s.includes("SEPARAÇÃO")) return 1; // "em separação"
+  if(s.includes("AGUARDANDO")) return 0;
+  return -1; // outras situações (cancelado, em digitação etc) — não mostra a linha do tempo
+}
+
 app.get("/pedido/:id/status", async(req,res)=>{
   try{
     const id=req.params.id;
@@ -2391,6 +2401,22 @@ app.get("/pedido/:id/status", async(req,res)=>{
     // pedido finalizado (Atendido/Cancelado) — pro público, mostra só o essencial
     const finalizadoPublico=!isAdmin&&(sit==="Atendido"||sit==="Cancelado");
 
+    // linha do tempo visual (Recebido → Separando → Separado → Em Rota → Entregue)
+    const etIdx=etapaIndex(sit);
+    const etapas=["Recebido","Separando","Separado","Em Rota","Entregue"];
+    const timelineHtml=etIdx<0?"":`
+      <div style="display:flex;justify-content:space-between;padding:14px 16px 6px;position:relative">
+        ${etapas.map((nome,i)=>{
+          const feito=i<=etIdx;
+          const atual=i===etIdx;
+          return `<div style="flex:1;text-align:center;position:relative;z-index:1">
+            <div style="width:${atual?26:18}px;height:${atual?26:18}px;border-radius:50%;margin:0 auto 4px;background:${feito?cor:"#2a2660"};display:flex;align-items:center;justify-content:center;font-size:${atual?13:10}px;font-weight:900;color:${feito?"#0a0920":"#514c96"};transition:all .2s">${feito?(i<etIdx?"✓":"●"):""}</div>
+            <div style="font-size:9px;color:${atual?cor:"#514c96"};font-weight:${atual?800:400}">${nome}</div>
+          </div>`;
+        }).join("")}
+        <div style="position:absolute;top:23px;left:10%;right:10%;height:2px;background:#2a2660;z-index:0"></div>
+      </div>`;
+
     const html=`<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pedido #${ped.numero||id}</title>
@@ -2446,6 +2472,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
     <div class="status-ptxt">${sp.txt}</div>
   </div>`:""}
   <div class="status-bar" style="background:${cor}22;color:${cor}">${sit}</div>
+  ${timelineHtml}
 
   <div class="sec">
     <div class="sec-t">Cliente</div>
