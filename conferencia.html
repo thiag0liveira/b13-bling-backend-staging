@@ -18,7 +18,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 .btn-blue{background:#1a3a6b;color:#a8c8f0;border:1px solid #2f6b9e}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
 .btn-sm{padding:5px 10px;font-size:11px}
-.wrap{padding:16px;max-width:800px;margin:0 auto}
+.wrap{padding:16px;max-width:1200px;margin:0 auto}
 .colhead{font-size:13px;font-weight:900;color:var(--mag);letter-spacing:.5px;margin-bottom:10px}
 .muted{color:var(--muted);font-size:12px}
 .err{color:#ff8090;font-size:12px}
@@ -79,6 +79,10 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--mag);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:var(--bg)} ::-webkit-scrollbar-thumb{background:#514c96;border-radius:2px}
+
+/* Layout em duas colunas (igual expedição) */
+.split{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:860px){ .split{grid-template-columns:320px 1fr;align-items:start} .split .fila-col{position:sticky;top:60px;max-height:calc(100vh - 76px);overflow:auto} }
 </style>
 <script src="/nav.js"></script>
 <style>
@@ -196,16 +200,13 @@ async function carregar(){
   }
 }
 
-function render(){
-  const app=document.getElementById("app");
-  if(sel){
-    renderConferencia();
-    return;
-  }
+function filaHtml(){
   const barHtml=`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
     ${["hoje","ontem","semana","mes","30dias"].map(k=>`<button onclick="setPeriodoConf('${k}')"
       style="padding:3px 8px;border-radius:5px;border:1px solid ${periodoAtivo===k?"#FF0082":"#2a2660"};background:${periodoAtivo===k?"#262366":"transparent"};color:${periodoAtivo===k?"#fff":"#9a95c9"};font-size:11px;cursor:pointer">
       ${{hoje:"Hoje",ontem:"Ontem",semana:"Semana",mes:"Mês","30dias":"30 dias"}[k]}</button>`).join("")}
+  </div>
+  <div style="display:flex;gap:4px;align-items:center;margin-bottom:12px">
     <span style="font-size:11px;color:var(--muted)">📅</span>
     <input type="date" value="${periodoIni||""}" onchange="document.getElementById('pfim') && setPeriodoConf('custom',this.value,document.getElementById('pfim').value)" style="background:#0f0d24;border:1px solid #2a2660;border-radius:5px;color:#fff;font-size:11px;padding:2px 5px">
     <span style="font-size:11px;color:var(--muted)">→</span>
@@ -213,21 +214,19 @@ function render(){
   </div>`;
 
   if(!pedidos.length){
-    app.innerHTML=barHtml+`<div style="text-align:center;padding:40px;color:var(--muted)">
-      <div style="font-size:36px;margin-bottom:10px">✅</div>
-      <div style="font-weight:700">Nenhum pedido aguardando conferência</div>
-      <div class="muted" style="margin-top:6px">Pedidos com status SEPARADO aparecerão aqui</div>
-      <button class="btn btn-ghost" style="margin-top:16px" onclick="carregar()">↻ Atualizar</button>
+    return barHtml+`<div style="text-align:center;padding:30px 10px;color:var(--muted)">
+      <div style="font-size:30px;margin-bottom:8px">✅</div>
+      <div style="font-weight:700;font-size:13px">Nenhum pedido aguardando conferência</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="carregar()">↻ Atualizar</button>
     </div>`;
-    return;
   }
-  app.innerHTML=barHtml+`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="colhead">Pedidos para conferir (${pedidos.length})</div>
+  return barHtml+`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="colhead" style="margin-bottom:0">Aguardando (${pedidos.length})</div>
       <button class="btn btn-ghost btn-sm" onclick="carregar()">↻</button>
     </div>
     <div class="fila">${pedidos.map(p=>`
-      <div class="fila-item" onclick="abrirPedido(${p.id})">
+      <div class="fila-item ${sel&&String(sel.id)===String(p.id)?'ativo':''}" onclick="abrirPedido(${p.id})">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
             <div class="fi-num">Pedido ${p.numero||p.id}</div>
@@ -237,12 +236,22 @@ function render(){
           <span class="fi-badge badge-sep">SEPARADO</span>
         </div>
       </div>`).join("")}
-    </div>
-    <div style="height:20px"></div>`;
+    </div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`<div class="split">
+    <div class="fila-col">${filaHtml()}</div>
+    <div class="det-col" id="detCol">${sel?'':'<div style="text-align:center;padding:40px;color:var(--muted)">← Selecione um pedido na fila ao lado para conferir</div>'}</div>
+  </div>`;
+  if(sel) renderConferencia();
 }
 
 async function abrirPedido(id){
-  document.getElementById("app").innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando pedido…</div>`;
+  const detCol=document.getElementById("detCol");
+  if(detCol) detCol.innerHTML=`<div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando pedido…</div>`;
+  else { render(); return abrirPedido(id); }
   try{
     // busca lock — verifica se tem conferência em andamento
     const [rPed,rLog,rPend,rPag]=await Promise.all([
@@ -297,7 +306,8 @@ async function abrirPedido(id){
 
     render();
   }catch(e){
-    document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro: ${e.message}<br><br><button class="btn btn-ghost" onclick="sel=null;render()">← Voltar</button></div>`;
+    const dc=document.getElementById("detCol");
+    if(dc) dc.innerHTML=`<div class="err" style="padding:20px">Erro: ${e.message}<br><br><button class="btn btn-ghost" onclick="sel=null;render()">← Voltar</button></div>`;
   }
 }
 
@@ -306,7 +316,7 @@ function renderConferencia(){
   const feitos=itensConf.filter(i=>i.confirmado).length;
   const todos=feitos===itensConf.length;
   const temPend=itensConf.some(i=>i._teveFalta);
-  const app=document.getElementById("app");
+  const app=document.getElementById("detCol")||document.getElementById("app");
 
   const linhas=itensConf.map((c,ix)=>`
     <div class="it ${c.confirmado?'ok':''} ${c._teveFalta&&!c.confirmado?'pend':''}"
