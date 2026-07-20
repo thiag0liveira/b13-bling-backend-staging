@@ -1183,11 +1183,17 @@ function desativarBotoesFundoPend(){
   if(bcf){ bcf.disabled=true; bcf.style.opacity="0.4"; bcf.style.cursor="not-allowed"; }
 }
 
-function renderPainelEstorno(id,descItens){
+function renderPainelEstorno(id){
+  const descItens=window._pendDescItens||"";
   const pag=window._pendPag;
   const diff=window._pendDiffValor;
   const valorNovoPedido=window._valorNovoPedidoEstorno;
   const histPag=(pag?.historico||[]).map(h=>`${h.formaNome||""}(${brl(h.valor||0)})`).join(", ");
+  const formasDevolucaoPermitidas=formasPag.filter(f=>{
+    const n=(f.nome||"").toLowerCase();
+    return n.includes("dinheiro")||n.includes("pix")||(n.includes("estorno")&&n.includes("maquin"));
+  });
+  const optsFormaDevolucao=(formasDevolucaoPermitidas.length?formasDevolucaoPermitidas:formasPag).map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
   const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
 
   const parcelas=window._parcelasPosEstorno;
@@ -1197,12 +1203,12 @@ function renderPainelEstorno(id,descItens){
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
       <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
       <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
-        onchange="window._parcelasPosEstorno[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderPainelEstorno(${id},${JSON.stringify(descItens)})">
+        onchange="window._parcelasPosEstorno[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderPainelEstorno(${id})">
       <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
         onchange="window._parcelasPosEstorno[${ix}].formaId=this.value;window._parcelasPosEstorno[${ix}].formaNome=this.options[this.selectedIndex].text">
         ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
       </select>
-      ${parcelas.length>1?`<button onclick="window._parcelasPosEstorno.splice(${ix},1);renderPainelEstorno(${id},${JSON.stringify(descItens)})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+      ${parcelas.length>1?`<button onclick="window._parcelasPosEstorno.splice(${ix},1);renderPainelEstorno(${id})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
     </div>`).join("");
 
   document.getElementById("retMsg").innerHTML=`
@@ -1224,7 +1230,7 @@ function renderPainelEstorno(id,descItens){
         <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Forma da devolução (canal usado pra devolver o dinheiro):</div>
         <select id="estornoFormaSelect" onchange="window._estornoFormaId=this.value;window._estornoFormaNome=this.options[this.selectedIndex].text"
           style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:6px">
-          ${optsForma}
+          ${optsFormaDevolucao}
         </select>
         <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *"
           style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px;margin-bottom:12px"
@@ -1232,7 +1238,7 @@ function renderPainelEstorno(id,descItens){
         <div style="font-weight:700;margin-bottom:6px;color:#ffd23f">Como fica o pagamento depois do estorno? (total: ${brl(valorNovoPedido)})</div>
         ${rowsParcelas}
         <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px"
-          onclick="window._parcelasPosEstorno.push({valor:'${diffParc>0?diffParc.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderPainelEstorno(${id},${JSON.stringify(descItens)})">
+          onclick="window._parcelasPosEstorno.push({valor:'${diffParc>0?diffParc.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderPainelEstorno(${id})">
           + Dividir em outra forma de pagamento ${diffParc>0?`(falta ${brl(diffParc)})`:''}</button>
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);margin-bottom:4px;font-size:12px">
           <span>Total informado:</span>
@@ -1287,12 +1293,16 @@ async function confirmarRetirarSeguir(id){
     window._pendDiff=Math.abs(diff);
     // Caso 1: pagou mais do que o novo total (seja pago total ou parcial) — precisa de estorno
     if(diff>0.01){
-      window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||""; window._estornoContaNome="";
+      const formaDevolucaoPadrao=formasPag.find(f=>{
+        const n=(f.nome||"").toLowerCase();
+        return n.includes("dinheiro")||n.includes("pix")||(n.includes("estorno")&&n.includes("maquin"));
+      })||formasPag[0];
+      window._estornoFormaId=formaDevolucaoPadrao?.id||""; window._estornoFormaNome=formaDevolucaoPadrao?.nome||""; window._estornoContaNome="";
       window._resolucaoSel=null;
       window._parcelasPosEstorno=[{valor:valorNovoPedido.toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
       window._valorNovoPedidoEstorno=valorNovoPedido;
       window._pendPag=pag; window._pendDiffValor=diff;
-      renderPainelEstorno(id,descItens);
+      renderPainelEstorno(id);
       desativarBotoesFundoPend();
       return;
     }
