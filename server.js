@@ -480,9 +480,13 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     }catch(e){}
     salvarPag(pags);
     addLog(id, "pagamento_registrado", funcionarioId, funcionarioNome, {valor:Number(valor),formaNome,statusPagamento:p.statusPagamento});
-    // lança a parcela no Bling
-    try{ await bling(`/pedidos/vendas/${id}/financeiro`,{method:"POST",body:JSON.stringify({valor:Number(valor),formasPagamento:[{id:formaId}]})}); }catch(e){}
-    res.json({ok:true,pagamento:p});
+    // lança a parcela no Bling — expõe o resultado (antes ficava escondido em catch vazio)
+    let blingFinanceiroResultado=null;
+    try{
+      const rFin=await bling(`/pedidos/vendas/${id}/financeiro`,{method:"POST",body:JSON.stringify({valor:Number(valor),formasPagamento:[{id:formaId}]})});
+      blingFinanceiroResultado={ok:true,resposta:rFin};
+    }catch(e){ blingFinanceiroResultado={ok:false,erro:e.message,status:e.status,body:e.body}; }
+    res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/pagamentos",(req,res)=>{ res.json({data:lerPag()}); });
