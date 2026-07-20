@@ -440,7 +440,7 @@ function salvarPag(o){ salvarJSON(PAG_FILE,o); }
 // pelas formas de pagamento reais usadas no recebimento. Algumas situações
 // (Em Separação, Separado, Em Rota etc) bloqueiam edição direta no Bling —
 // usa o mesmo desbloqueio via "Em Digitação" já usado pra editar itens.
-async function atualizarParcelasBling(id,parcelas){
+async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
   const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
   try{
@@ -448,12 +448,19 @@ async function atualizarParcelasBling(id,parcelas){
     const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
     const sitAtual=ped.situacao?.id;
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sitAtual);
+    // modo "somar": mantém as parcelas que já existem no pedido no Bling e
+    // acrescenta as novas (usado em pagamento adicional) — em vez de substituir
+    let parcelasFinais=parcelas;
+    if(opts.append){
+      const parcelasExistentes=(ped.parcelas||[]).map(p=>({valor:p.valor,formaId:p.formaPagamento?.id})).filter(p=>p.formaId&&(Number(p.valor)||0)>0);
+      parcelasFinais=[...parcelasExistentes,...parcelas];
+    }
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
       itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
       observacoes:ped.observacoes||"",
-      parcelas:parcelas.filter(p=>(Number(p.valor)||0)>0).map(p=>({
+      parcelas:parcelasFinais.filter(p=>(Number(p.valor)||0)>0).map(p=>({
         formaPagamento:{id:p.formaId}, dataVencimento:ped.data, valor:+Number(p.valor).toFixed(2),
       })),
     };
@@ -490,7 +497,7 @@ async function atualizarParcelasBling(id,parcelas){
 
 app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
-    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado,parcelas}=req.body||{};
+    const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado,parcelas,somar}=req.body||{};
     if(!valor||!formaId) return res.status(400).json({erro:"valor e formaId obrigatórios"});
     if(Number(valor)<0) return res.status(400).json({erro:"Valor de pagamento não pode ser negativo"});
     // se o chamador informou qual valor era esperado (ex: total já ajustado por
@@ -509,9 +516,14 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     const listaParcelas=Array.isArray(parcelas)&&parcelas.length
       ? parcelas
       : [{valor,formaId,formaNome,obs}];
-    // substituir=true OU se já estava pago: reinicia o valor (não soma)
+    // substituir=true: reinicia o valor (não soma). somar=true: força somar,
+    // mesmo que já tivesse pago antes (ex: pagamento adicional de verdade,
+    // que não deve ser confundido com uma repetição da mesma ação).
+    // Sem nenhuma das duas flags explícitas, cai no heurístico antigo (evita
+    // duplicar valor se a mesma tela for reenviada sem querer).
     const jaTinhaPago=(p.statusPagamento==="pago"||p.statusPagamento==="parcial")&&(p.valorPago||0)>0;
-    if(substituir||jaTinhaPago){
+    const modoSubstituir=somar?false:(substituir||jaTinhaPago);
+    if(modoSubstituir){
       p.historico.push({valor:Number(valor),formaId,formaNome,obs,funcionarioId,funcionarioNome,em:Date.now(),tipo:"substituicao",valorAnterior:p.valorPago||0});
       listaParcelas.forEach(pc=>{
         const v=Number(pc.valor)||0; if(v<=0) return;
@@ -533,10 +545,11 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     }catch(e){}
     salvarPag(pags);
     addLog(id, "pagamento_registrado", funcionarioId, funcionarioNome, {valor:Number(valor),formaNome,statusPagamento:p.statusPagamento});
-    // lança a(s) forma(s) de pagamento no Bling de verdade — substitui a
-    // parcela única "placeholder" pelas parcelas reais usadas no recebimento
+    // lança a(s) forma(s) de pagamento no Bling de verdade. Se for pagamento
+    // adicional (somar), mantém as parcelas que já existiam lá e acrescenta;
+    // senão, substitui a parcela única "placeholder" pelas parcelas reais.
     const parcelasParaBling=(listaParcelas.length?listaParcelas:[{valor,formaId}]).map(pc=>({valor:pc.valor,formaId:pc.formaId}));
-    const blingFinanceiroResultado=await atualizarParcelasBling(id,parcelasParaBling);
+    const blingFinanceiroResultado=await atualizarParcelasBling(id,parcelasParaBling,{append:!!somar});
     res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

@@ -1265,27 +1265,11 @@ async function confirmarRetirarSeguir(id){
     // a diferença do cliente antes de mandar de volta pra separação
     if(diff<-0.01){
       const falta=Math.abs(diff);
-      const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
-      window._novaFormaId=formasPag[0]?.id||""; window._novaFormaNome=formasPag[0]?.nome||"";
-      document.getElementById("retMsg").innerHTML=`
-        <div style="background:#1c1846;border:1px solid #ffd23f;border-radius:10px;padding:14px;margin-top:8px">
-          <div style="font-weight:900;font-size:14px;margin-bottom:6px;color:#ffd23f">💰 Valor do pedido mudou</div>
-          <div style="font-size:13px;margin-bottom:6px">
-            Já pago: <b style="color:#a8f0c8">${brl(valorPago)}</b> &nbsp;
-            Novo total: <b style="color:#ffd23f">${brl(valorNovoPedido)}</b> &nbsp;
-            <b style="color:#ff8090">Falta: ${brl(falta)}</b>
-          </div>
-          <div style="font-weight:700;margin-bottom:6px">Registrar pagamento adicional de ${brl(falta)}:</div>
-          <select id="novaFormaSelect" onchange="window._novaFormaId=this.value;window._novaFormaNome=this.options[this.selectedIndex].text"
-            style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:8px">
-            ${optsForma}
-          </select>
-          <div id="resolucaoSel" style="font-size:12px;color:#9a95c9;margin-bottom:8px"></div>
-          <button class="btn btn-grn" style="width:100%"
-            onclick="executarRetirarSeguir(${id},'pagamento_adicional',window._pendDiff,window._pendDescItens)">
-            ✅ Registrar e Confirmar
-          </button>
-        </div>`;
+      window._parcelasAdicional=[{valor:falta.toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
+      window._faltaAdicional=falta;
+      window._pagoAntesAdicional=valorPago;
+      window._novoTotalAdicional=valorNovoPedido;
+      renderPainelPagamentoAdicional(id);
       desativarBotoesFundoPend();
       return;
     }
@@ -1319,6 +1303,55 @@ function validarBotaoEstorno(){
   } else {
     btnConf.disabled=false; btnConf.style.opacity="1";
   }
+}
+
+function renderPainelPagamentoAdicional(id){
+  const falta=window._faltaAdicional;
+  const parcelas=window._parcelasAdicional;
+  const soma=parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const diffParc=+(falta-soma).toFixed(2);
+  const rows=parcelas.map((p,ix)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
+      <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+        onchange="window._parcelasAdicional[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderPainelPagamentoAdicional(${id})">
+      <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
+        onchange="window._parcelasAdicional[${ix}].formaId=this.value;window._parcelasAdicional[${ix}].formaNome=this.options[this.selectedIndex].text">
+        ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
+      </select>
+      ${parcelas.length>1?`<button onclick="window._parcelasAdicional.splice(${ix},1);renderPainelPagamentoAdicional(${id})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+    </div>`).join("");
+  document.getElementById("retMsg").innerHTML=`
+    <div style="background:#1c1846;border:1px solid #ffd23f;border-radius:10px;padding:14px;margin-top:8px">
+      <div style="font-weight:900;font-size:14px;margin-bottom:6px;color:#ffd23f">💰 Valor do pedido mudou</div>
+      <div style="font-size:13px;margin-bottom:6px">
+        Já pago: <b style="color:#a8f0c8">${brl(window._pagoAntesAdicional)}</b> &nbsp;
+        Novo total: <b style="color:#ffd23f">${brl(window._novoTotalAdicional)}</b> &nbsp;
+        <b style="color:#ff8090">Falta: ${brl(falta)}</b>
+      </div>
+      <div style="font-weight:700;margin-bottom:6px">Registrar pagamento adicional de ${brl(falta)}:</div>
+      ${rows}
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px"
+        onclick="window._parcelasAdicional.push({valor:'${diffParc>0?diffParc.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderPainelPagamentoAdicional(${id})">
+        + Dividir em outra forma de pagamento ${diffParc>0?`(falta ${brl(diffParc)})`:''}</button>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);margin-bottom:8px;font-size:12px">
+        <span>Total informado:</span>
+        <b style="color:${Math.abs(diffParc)<0.01?'#2f9e6b':diffParc<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diffParc)<0.01?'✅':diffParc>0?`(falta ${brl(diffParc)})`:'(passou do total)'}</b>
+      </div>
+      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagamentoAdicionalPend(${id})">✅ Registrar e Confirmar</button>
+    </div>`;
+}
+
+function confirmarPagamentoAdicionalPend(id){
+  const falta=window._faltaAdicional;
+  const parcelas=window._parcelasAdicional;
+  const soma=+parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+  if(Math.abs(soma-falta)>0.01){
+    document.getElementById("retMsg").innerHTML+=`<div class="err">Valor informado (${brl(soma)}) não bate com o que falta (${brl(falta)}). Corrija antes de confirmar.</div>`;
+    return;
+  }
+  window._novaFormaId=parcelas[0]?.formaId; window._novaFormaNome=parcelas[0]?.formaNome;
+  executarRetirarSeguir(id,'pagamento_adicional',window._pendDiff,window._pendDescItens);
 }
 
 async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
@@ -1377,16 +1410,17 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
       } else if(resolucao==="credito"){
         obs=`Crédito de ${brl(valorAbatido)} registrado para o cliente em decorrência de pendências: ${descItens||""}. Pgto original: ${histTxt}`;
       } else if(resolucao==="pagamento_adicional"){
-        obs=`Pgto adicional de ${brl(valorAbatido)} via ${window._novaFormaNome||""} referente a ajuste de itens: ${descItens||""}. Pgto anterior: ${histTxt}`;
+        const formasTxt=(window._parcelasAdicional||[]).map(p=>`${p.formaNome||""}(${brl(p.valor||0)})`).join(", ")||window._novaFormaNome||"";
+        obs=`Pgto adicional de ${brl(valorAbatido)} via ${formasTxt} referente a ajuste de itens: ${descItens||""}. Pgto anterior: ${histTxt}`;
       } else {
         obs=`Diferença de ${brl(valorAbatido)} registrada. Ajuste nos itens: ${descItens||""}. Pgto: ${histTxt}`;
       }
       if(obs) await fetch(B+"/api/pedidos/"+id+"/observacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({texto:obs,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})}).catch(()=>{});
       
-      // Pagamento adicional — registra nova forma
-      if(resolucao==="pagamento_adicional"&&window._novaFormaId){
+      // Pagamento adicional — registra as formas divididas, somando ao que já existia
+      if(resolucao==="pagamento_adicional"&&window._parcelasAdicional?.length){
         await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({valor:valorAbatido,formaId:window._novaFormaId,formaNome:window._novaFormaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,adicional:true})}).catch(()=>{});
+          body:JSON.stringify({valor:valorAbatido,parcelas:window._parcelasAdicional,formaId:window._novaFormaId,formaNome:window._novaFormaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,somar:true})}).catch(()=>{});
       }
       // Estorno — registra no pagamento
       if(resolucao==="estorno"&&valorAbatido>0){
