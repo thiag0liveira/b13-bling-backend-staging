@@ -535,6 +535,7 @@ async function abrirConfirmarEntrega(id){
     const falta=+(total-valorPago).toFixed(2);
     window._entregaPed=ped; window._entregaPag=pag;
     window._itensOcorrencia=[];
+    window._editItemIx=null; window._editOcorrencia=null;
     // Se não pago ou parcial, mostra aviso mas permite continuar
     if(!pago&&falta>0.01){
       window._entregaFalta=falta;
@@ -551,19 +552,58 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
   const falta=+(total-pago_val).toFixed(2);
   const valOcorr=ocorrencias.reduce((s,o)=>s+(o.valorItem||0),0);
   const saldoFinal=+(total-valOcorr).toFixed(2);
+  const editIx=window._editItemIx;
+  const ed=window._editOcorrencia;
   const itens=(ped.itens||[]).map((it,ix)=>{
     const ocorr=ocorrencias.find(o=>o.ix===ix);
+
+    // painel de edição inline (aberto pra esse item)
+    if(editIx===ix&&ed){
+      const valorAbaterEd=+((it.valor||0)*ed.qtd).toFixed(2);
+      const fotoOk=ed.tipo!=="danificado"||!!ed.foto;
+      const motivoOk=ed.tipo!=="nao_entregue"||!!(ed.motivo||"").trim();
+      return `<div style="border:1px solid #FF0082;border-radius:10px;padding:10px;margin:6px 0;background:#1a0a20">
+        <div style="font-weight:800;font-size:13px;margin-bottom:8px">${ed.tipo==="danificado"?"📷 Danificado":"📦 Não entregue"} — ${esc(it.descricao||it.produto?.nome||"")}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;color:#9a95c9">Quantidade:</span>
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:16px" onclick="ajustarQtdEdicao(${id},-1)">−</button>
+          <span style="font-weight:900;font-size:16px;min-width:24px;text-align:center">${ed.qtd}</span>
+          <button class="btn btn-ghost" style="padding:4px 10px;font-size:16px" onclick="ajustarQtdEdicao(${id},1)">+</button>
+          <span style="font-size:12px;color:#9a95c9">de ${it.quantidade}</span>
+        </div>
+        <div style="font-size:13px;margin-bottom:8px">Valor a abater do pedido: <b style="color:#ff8090">${brl(valorAbaterEd)}</b></div>
+        ${ed.tipo==="danificado"?`
+          <div style="margin-bottom:8px">
+            ${ed.foto
+              ?`<div style="display:flex;align-items:center;gap:8px"><img src="${ed.foto}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #514c96"><button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="tirarFotoOcorrencia(${id})">🔄 Trocar foto</button></div>`
+              :`<button class="btn btn-mag" style="width:100%;font-size:12px" onclick="tirarFotoOcorrencia(${id})">📷 Adicionar foto (obrigatória)</button>`}
+          </div>`:`
+          <div style="margin-bottom:8px">
+            <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Motivo de não ter sido entregue:</div>
+            <input type="text" value="${esc(ed.motivo||'')}" placeholder="Ex: cliente ausente, endereço errado…" style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+              oninput="window._editOcorrencia.motivo=this.value;document.getElementById('btnConfOcorr').disabled=!this.value.trim()">
+          </div>`}
+        <div style="display:flex;gap:8px">
+          <button id="btnConfOcorr" class="btn btn-grn" style="flex:1" ${(!fotoOk||!motivoOk)?"disabled":""} onclick="confirmarEdicaoOcorrencia(${id})">✅ Confirmar</button>
+          <button class="btn btn-ghost" onclick="cancelarEdicaoOcorrencia(${id})">Cancelar</button>
+        </div>
+      </div>`;
+    }
+
     const qtdAfe=ocorr?.quantidadeAfetada??ocorr?.quantidade;
     const parcial=ocorr&&qtdAfe<it.quantidade;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="flex:1;${ocorr&&!parcial?"color:#ff8090;text-decoration:line-through":""}">${esc(it.descricao||it.produto?.nome||"")}${parcial?` <span style="color:#ff8090">(${qtdAfe} de ${it.quantidade})</span>`:""}</span>
-      <span class="muted">x${it.quantidade}</span>
-      <span style="width:80px;text-align:right">${brl((it.valor||0)*it.quantidade)}</span>
-      ${ocorr
-        ?`<span style="font-size:10px;color:#ff8090;padding:2px 6px;background:#3a0010;border-radius:5px">${ocorr.tipo==="danificado"?"📷 Danif.":"📦 N.Entregue"}${parcial?` ${qtdAfe}un`:""}</span>
-          <button onclick="window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==${ix});renderConfirmarEntrega(${id},window._entregaPed,window._entregaPag,window._itensOcorrencia)" style="background:none;border:none;color:#9a95c9;cursor:pointer">✕</button>`
-        :`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="marcarOcorrencia(${id},${ix},'nao_entregue')">📦</button>
-          <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="marcarOcorrencia(${id},${ix},'danificado')">📷</button>`}
+    return `<div style="display:flex;flex-direction:column;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="flex:1;${ocorr&&!parcial?"color:#ff8090;text-decoration:line-through":""}">${esc(it.descricao||it.produto?.nome||"")}${parcial?` <span style="color:#ff8090">(${qtdAfe} de ${it.quantidade})</span>`:""}</span>
+        <span class="muted">x${it.quantidade}</span>
+        <span style="width:80px;text-align:right">${brl((it.valor||0)*it.quantidade)}</span>
+        ${ocorr
+          ?`<span style="font-size:10px;color:#ff8090;padding:2px 6px;background:#3a0010;border-radius:5px">${ocorr.tipo==="danificado"?"📷 Danif.":"📦 N.Entregue"}${parcial?` ${qtdAfe}un`:""}</span>
+            <button onclick="window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==${ix});renderConfirmarEntrega(${id},window._entregaPed,window._entregaPag,window._itensOcorrencia)" style="background:none;border:none;color:#9a95c9;cursor:pointer">✕</button>`
+          :`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="abrirEdicaoOcorrencia(${id},${ix},'nao_entregue')">📦</button>
+            <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="abrirEdicaoOcorrencia(${id},${ix},'danificado')">📷</button>`}
+      </div>
+      ${ocorr?.tipo==="nao_entregue"&&ocorr.motivo?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">💬 ${esc(ocorr.motivo)}</div>`:""}
     </div>`;
   }).join("");
 
@@ -573,6 +613,8 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
         <span>🔴 NÃO PAGO — falta <b>${brl(falta)}</b></span>
         <button class="btn btn-grn" style="font-size:11px;padding:3px 10px" onclick="abrirPagamentoEntregaInline(${id},${saldoFinal})">💰 Registrar</button>
       </div>`;
+
+  const podeConfirmar=pago_val>=saldoFinal-0.01;
 
   document.getElementById("mbox").innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -586,9 +628,64 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
       ⚠️ ${ocorrencias.length} ocorrência(s) — abatimento: <b style="color:#ff8090">${brl(valOcorr)}</b>
       <br>Novo total: <b>${brl(saldoFinal)}</b></div>`:""}
     <div id="entregaMsg"></div>
-    <button class="btn btn-grn" style="width:100%;margin-top:8px" onclick="concluirEntrega(${id})">
+    <button class="btn btn-grn" style="width:100%;margin-top:8px" ${podeConfirmar?"":"disabled title=\"Registre o pagamento do valor total (já recalculado) antes de confirmar\""} onclick="concluirEntrega(${id})">
       ✅ Confirmar entrega${ocorrencias.length?` com ${ocorrencias.length} ocorrência(s)`:""}</button>
+    ${!podeConfirmar?`<div class="muted" style="text-align:center;margin-top:4px;font-size:11px">Registre o pagamento do valor total antes de confirmar</div>`:""}
     <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="fecharModal()">Cancelar</button>`;
+}
+
+function abrirEdicaoOcorrencia(id,ix,tipo){
+  const it=window._entregaPed?.itens?.[ix]; if(!it) return;
+  window._editItemIx=ix;
+  window._editOcorrencia={tipo, qtd: it.quantidade, motivo:"", foto:null};
+  renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
+}
+
+function ajustarQtdEdicao(id,delta){
+  const it=window._entregaPed?.itens?.[window._editItemIx]; if(!it||!window._editOcorrencia) return;
+  let q=(window._editOcorrencia.qtd||1)+delta;
+  if(q<1) q=1; if(q>it.quantidade) q=it.quantidade;
+  window._editOcorrencia.qtd=q;
+  renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
+}
+
+function tirarFotoOcorrencia(id){
+  const input=document.createElement("input"); input.type="file"; input.accept="image/*"; input.capture="environment";
+  input.onchange=(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const canvas=document.createElement("canvas"); const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const MAX=800; let w=img.width,h=img.height;
+      if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      canvas.width=w; canvas.height=h;
+      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      window._editOcorrencia.foto=canvas.toDataURL("image/jpeg",0.7);
+      renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
+    };
+    img.src=url;
+  };
+  input.click();
+}
+
+function confirmarEdicaoOcorrencia(id){
+  const ix=window._editItemIx; const it=window._entregaPed?.itens?.[ix]; const ed=window._editOcorrencia;
+  if(!it||!ed) return;
+  if(ed.tipo==="danificado"&&!ed.foto) return;
+  if(ed.tipo==="nao_entregue"&&!(ed.motivo||"").trim()) return;
+  window._itensOcorrencia=(window._itensOcorrencia||[]).filter(o=>o.ix!==ix);
+  window._itensOcorrencia.push({
+    ix, tipo:ed.tipo, descricao:it.descricao||it.produto?.nome||"", quantidade:it.quantidade,
+    quantidadeAfetada:ed.qtd, valorItem:+((it.valor||0)*ed.qtd).toFixed(2),
+    foto:ed.tipo==="danificado"?ed.foto:null, motivo:ed.tipo==="nao_entregue"?ed.motivo.trim():"",
+  });
+  window._editItemIx=null; window._editOcorrencia=null;
+  renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
+}
+
+function cancelarEdicaoOcorrencia(id){
+  window._editItemIx=null; window._editOcorrencia=null;
+  renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
 }
 
 async function abrirPagamentoEntregaInline(id,total){
@@ -648,41 +745,6 @@ async function confirmarPagEntregaInline(id){
 }
 
 
-async function marcarOcorrencia(id,ix,tipo){
-  const it=window._entregaPed?.itens?.[ix]; if(!it) return;
-  const qtdTotal=it.quantidade;
-  let qtdAfetadaStr=qtdTotal>1?prompt(`Quantas unidades ${tipo==="danificado"?"estão danificadas":"não foram entregues"}? (de ${qtdTotal})`,qtdTotal):String(qtdTotal);
-  if(qtdAfetadaStr===null) return; // cancelou
-  let qtdAfetada=parseInt(qtdAfetadaStr)||0;
-  if(qtdAfetada<=0){ return; }
-  if(qtdAfetada>qtdTotal) qtdAfetada=qtdTotal;
-  if(tipo==="danificado"){
-    // pede foto (uma só, mesmo que várias unidades do mesmo produto estejam danificadas)
-    const input=document.createElement("input"); input.type="file"; input.accept="image/*"; input.capture="environment";
-    input.onchange=async(e)=>{
-      const file=e.target.files[0]; if(!file) return;
-      // converte pra base64 (comprimido)
-      const canvas=document.createElement("canvas"); const img=new Image();
-      const url=URL.createObjectURL(file);
-      img.onload=()=>{
-        const MAX=800; let w=img.width,h=img.height;
-        if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
-        canvas.width=w; canvas.height=h;
-        canvas.getContext("2d").drawImage(img,0,0,w,h);
-        const foto=canvas.toDataURL("image/jpeg",0.7);
-        window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==ix);
-        window._itensOcorrencia.push({ix,tipo:"danificado",descricao:it.descricao||it.produto?.nome||"",quantidade:qtdTotal,quantidadeAfetada:qtdAfetada,valorItem:+(it.valor||0)*qtdAfetada,foto});
-        renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
-      };
-      img.src=url;
-    };
-    input.click();
-  } else {
-    window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==ix);
-    window._itensOcorrencia.push({ix,tipo:"nao_entregue",descricao:it.descricao||it.produto?.nome||"",quantidade:qtdTotal,quantidadeAfetada:qtdAfetada,valorItem:+(it.valor||0)*qtdAfetada});
-    renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
-  }
-}
 
 async function concluirEntrega(id){
   const ped=window._entregaPed; const pag=window._entregaPag;
