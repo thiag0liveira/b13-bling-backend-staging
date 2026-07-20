@@ -553,12 +553,14 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
   const saldoFinal=+(total-valOcorr).toFixed(2);
   const itens=(ped.itens||[]).map((it,ix)=>{
     const ocorr=ocorrencias.find(o=>o.ix===ix);
+    const qtdAfe=ocorr?.quantidadeAfetada??ocorr?.quantidade;
+    const parcial=ocorr&&qtdAfe<it.quantidade;
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="flex:1;${ocorr?"color:#ff8090;text-decoration:line-through":""}">${esc(it.descricao||it.produto?.nome||"")}</span>
+      <span style="flex:1;${ocorr&&!parcial?"color:#ff8090;text-decoration:line-through":""}">${esc(it.descricao||it.produto?.nome||"")}${parcial?` <span style="color:#ff8090">(${qtdAfe} de ${it.quantidade})</span>`:""}</span>
       <span class="muted">x${it.quantidade}</span>
       <span style="width:80px;text-align:right">${brl((it.valor||0)*it.quantidade)}</span>
       ${ocorr
-        ?`<span style="font-size:10px;color:#ff8090;padding:2px 6px;background:#3a0010;border-radius:5px">${ocorr.tipo==="danificado"?"📷 Danif.":"📦 N.Entregue"}</span>
+        ?`<span style="font-size:10px;color:#ff8090;padding:2px 6px;background:#3a0010;border-radius:5px">${ocorr.tipo==="danificado"?"📷 Danif.":"📦 N.Entregue"}${parcial?` ${qtdAfe}un`:""}</span>
           <button onclick="window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==${ix});renderConfirmarEntrega(${id},window._entregaPed,window._entregaPag,window._itensOcorrencia)" style="background:none;border:none;color:#9a95c9;cursor:pointer">✕</button>`
         :`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="marcarOcorrencia(${id},${ix},'nao_entregue')">📦</button>
           <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="marcarOcorrencia(${id},${ix},'danificado')">📷</button>`}
@@ -590,28 +592,55 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
 }
 
 async function abrirPagamentoEntregaInline(id,total){
-  const formasOpts=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
+  window._parcelasEntrega=[{valor:Number(total).toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
+  window._totalEntregaAtual=total;
+  renderModalPagEntregaInline(id);
+}
+
+function renderModalPagEntregaInline(id){
+  const total=window._totalEntregaAtual;
+  const parcelas=window._parcelasEntrega;
+  const soma=parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const diff=+(Number(total)-soma).toFixed(2);
+  const rows=parcelas.map((p,ix)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
+      <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+        onchange="window._parcelasEntrega[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderModalPagEntregaInline(${id})">
+      <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
+        onchange="window._parcelasEntrega[${ix}].formaId=this.value;window._parcelasEntrega[${ix}].formaNome=this.options[this.selectedIndex].text">
+        ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
+      </select>
+      ${parcelas.length>1?`<button onclick="window._parcelasEntrega.splice(${ix},1);renderModalPagEntregaInline(${id})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+    </div>`).join("");
   document.getElementById("entregaMsg").innerHTML=`
     <div style="background:#1c1846;border:1px solid #514c96;border-radius:10px;padding:12px;margin-top:8px">
-      <div style="font-weight:700;margin-bottom:8px">💰 Registrar pagamento</div>
-      <input type="number" id="valPagEntrega" value="${total.toFixed(2)}" readonly
-        style="width:100%;padding:7px;background:#0a0918;border:1px solid #514c96;border-radius:7px;color:#9a95c9;font-size:14px;margin-bottom:2px;cursor:not-allowed">
-      <div style="font-size:11px;color:#9a95c9;margin-bottom:6px">Valor travado no total (já considera abatimento de ocorrências, se houver). Pra mudar o valor, ajuste as ocorrências (📦/📷) acima.</div>
-      <select id="formaPagEntrega" style="width:100%;padding:7px;background:#0f0d24;border:1px solid #514c96;border-radius:7px;color:#fff;font-size:13px;margin-bottom:8px">
-        ${formasOpts}
-      </select>
-      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagEntregaInline(${id},${total})">✅ Registrar e continuar</button>
+      <div style="font-weight:700;margin-bottom:8px">💰 Registrar pagamento — total ${brl(total)}</div>
+      <div style="font-size:11px;color:#9a95c9;margin-bottom:8px">Já considera abatimento de ocorrências (📦/📷), se houver.</div>
+      ${rows}
+      <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px"
+        onclick="window._parcelasEntrega.push({valor:'${diff>0?diff.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderModalPagEntregaInline(${id})">
+        + Dividir em outra forma de pagamento ${diff>0?`(falta ${brl(diff)})`:''}</button>
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);margin-bottom:8px;font-size:12px">
+        <span>Total informado:</span>
+        <b style="color:${Math.abs(diff)<0.01?'#2f9e6b':diff<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diff)<0.01?'✅':diff>0?`(falta ${brl(diff)})`:'(passou do total)'}</b>
+      </div>
+      <button class="btn btn-grn" style="width:100%" onclick="confirmarPagEntregaInline(${id})">✅ Registrar e continuar</button>
     </div>`;
 }
 
-async function confirmarPagEntregaInline(id,total){
-  // valor travado no total esperado (já considera ocorrências/abatimento) — não confia em input livre
-  const val=+Number(total).toFixed(2);
-  const sel=document.getElementById("formaPagEntrega");
-  const formaId=sel.value; const formaNome=sel.options[sel.selectedIndex]?.text||"";
+async function confirmarPagEntregaInline(id){
+  const total=window._totalEntregaAtual;
+  const parcelas=window._parcelasEntrega;
+  const soma=+parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+  const diff=+(Number(total)-soma).toFixed(2);
+  if(Math.abs(diff)>0.01){
+    document.getElementById("entregaMsg").innerHTML+=`<div class="err">Valor informado (${brl(soma)}) não bate com o total (${brl(total)}). Corrija antes de confirmar.</div>`;
+    return;
+  }
   try{
     await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valor:val,formaId,formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:val})});
+      body:JSON.stringify({valor:soma,parcelas,formaId:parcelas[0]?.formaId,formaNome:parcelas[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
     const rPag=await fetch(B+"/api/pagamentos/"+id).then(r=>r.json());
     window._entregaPag=rPag.data;
     renderConfirmarEntrega(id,window._entregaPed,rPag.data,window._itensOcorrencia||[]);
@@ -621,8 +650,14 @@ async function confirmarPagEntregaInline(id,total){
 
 async function marcarOcorrencia(id,ix,tipo){
   const it=window._entregaPed?.itens?.[ix]; if(!it) return;
+  const qtdTotal=it.quantidade;
+  let qtdAfetadaStr=qtdTotal>1?prompt(`Quantas unidades ${tipo==="danificado"?"estão danificadas":"não foram entregues"}? (de ${qtdTotal})`,qtdTotal):String(qtdTotal);
+  if(qtdAfetadaStr===null) return; // cancelou
+  let qtdAfetada=parseInt(qtdAfetadaStr)||0;
+  if(qtdAfetada<=0){ return; }
+  if(qtdAfetada>qtdTotal) qtdAfetada=qtdTotal;
   if(tipo==="danificado"){
-    // pede foto
+    // pede foto (uma só, mesmo que várias unidades do mesmo produto estejam danificadas)
     const input=document.createElement("input"); input.type="file"; input.accept="image/*"; input.capture="environment";
     input.onchange=async(e)=>{
       const file=e.target.files[0]; if(!file) return;
@@ -636,7 +671,7 @@ async function marcarOcorrencia(id,ix,tipo){
         canvas.getContext("2d").drawImage(img,0,0,w,h);
         const foto=canvas.toDataURL("image/jpeg",0.7);
         window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==ix);
-        window._itensOcorrencia.push({ix,tipo:"danificado",descricao:it.descricao||it.produto?.nome||"",quantidade:it.quantidade,valorItem:+(it.valor||0)*it.quantidade,foto});
+        window._itensOcorrencia.push({ix,tipo:"danificado",descricao:it.descricao||it.produto?.nome||"",quantidade:qtdTotal,quantidadeAfetada:qtdAfetada,valorItem:+(it.valor||0)*qtdAfetada,foto});
         renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
       };
       img.src=url;
@@ -644,7 +679,7 @@ async function marcarOcorrencia(id,ix,tipo){
     input.click();
   } else {
     window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==ix);
-    window._itensOcorrencia.push({ix,tipo:"nao_entregue",descricao:it.descricao||it.produto?.nome||"",quantidade:it.quantidade,valorItem:+(it.valor||0)*it.quantidade});
+    window._itensOcorrencia.push({ix,tipo:"nao_entregue",descricao:it.descricao||it.produto?.nome||"",quantidade:qtdTotal,quantidadeAfetada:qtdAfetada,valorItem:+(it.valor||0)*qtdAfetada});
     renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
   }
 }
