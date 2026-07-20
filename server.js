@@ -2388,6 +2388,9 @@ app.get("/pedido/:id/status", async(req,res)=>{
         <span style="font-weight:700">x${i.quantidade}</span>
       </div>`).join("");
 
+    // pedido finalizado (Atendido/Cancelado) — pro público, mostra só o essencial
+    const finalizadoPublico=!isAdmin&&(sit==="Atendido"||sit==="Cancelado");
+
     const html=`<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pedido #${ped.numero||id}</title>
@@ -2430,6 +2433,13 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
     </div>
   </div>
 
+  ${finalizadoPublico?`
+  <div class="status-pub" style="padding:34px 16px">
+    <div class="status-emoji">${sit==="Atendido"?"✅":"❌"}</div>
+    <div class="status-ptxt">${sit==="Atendido"?"Pedido atendido e finalizado":"Pedido cancelado"}</div>
+  </div>
+  <div class="rodape">${new Date().toLocaleString("pt-BR")}</div>
+  `:`
   ${!isAdmin?`
   <div class="status-pub">
     <div class="status-emoji">${sp.emoji}</div>
@@ -2461,6 +2471,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
   ${isAdmin?`<a href="${confUrl}" class="btn-conf">🔍 Abrir na Conferência</a>`:""}
 
   <div class="rodape">${isAdmin?"":"Atualiza a cada 30s · "}${new Date().toLocaleString("pt-BR")}</div>
+  `}
 </div>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
