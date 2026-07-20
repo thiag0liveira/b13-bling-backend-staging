@@ -521,6 +521,19 @@ async function nomeFormaPagamentoId(id){
   return _formaPagCache[id]||`Forma ${id}`;
 }
 
+// Busca reversa: acha o ID de uma forma de pagamento pelo nome (ex: "Ficha Financeira")
+let _formaPagIdPorNomeCache={};
+async function getFormaPagamentoIdPorNome(nomeAlvo){
+  const chave=nomeAlvo.toLowerCase();
+  if(_formaPagIdPorNomeCache[chave]!==undefined) return _formaPagIdPorNomeCache[chave];
+  try{
+    const r=await bling("/formas-pagamentos");
+    const achado=(r?.data||[]).find(f=>(f.descricao||f.nome||"").toLowerCase().includes(chave));
+    _formaPagIdPorNomeCache[chave]=achado?.id||null;
+  }catch(e){ _formaPagIdPorNomeCache[chave]=null; }
+  return _formaPagIdPorNomeCache[chave];
+}
+
 // Buscar histórico de pagamento de um pedido específico
 app.get("/api/pagamentos/:id",async(req,res)=>{
   try{
@@ -1199,12 +1212,24 @@ app.post("/api/finalizar", async (req, res) => {
       ? `ENTREGA — ${entrega.endereco || ""} (taxa ${brlN(entrega.taxa || 0)})`
       : "RETIRADA na loja");
     const hoje = new Date(Date.now() - 3*3600*1000).toISOString().slice(0,10); // data de hoje (BRT), formato AAAA-MM-DD
+    // valor total (itens + frete se for entrega) pra usar na parcela obrigatória do Bling
+    const totalItensCalc=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    const freteCalc=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
+    const totalPedidoCalc=+(totalItensCalc+freteCalc).toFixed(2);
+    // usa "Ficha Financeira" como forma de pagamento da parcela — não é usada de
+    // verdade na loja, então serve de marcador claro de "ainda não foi pago de
+    // fato" pra quem olhar direto no Bling (diferente de "Dinheiro", que é comum)
+    const formaFichaFinanceira=await getFormaPagamentoIdPorNome("ficha financeira");
+    console.log("[totem] forma 'Ficha Financeira' encontrada:", formaFichaFinanceira);
     const payload = {
       data: hoje,
       contato: { id: Number(contatoId) },
       itens: itens.map((i) => ({ produto: { id: Number(i.produtoId) }, quantidade: Number(i.quantidade), valor: Number(i.valor) })),
       observacoes: obs,
     };
+    if(formaFichaFinanceira){
+      payload.parcelas=[{ formaPagamento:{id:formaFichaFinanceira}, dataVencimento:hoje, valor:totalPedidoCalc }];
+    }
     if (entrega && entrega.tipo === "entrega"){
       payload.transporte = {
         fretePorConta: 0,
