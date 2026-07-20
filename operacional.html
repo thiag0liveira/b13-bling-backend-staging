@@ -1310,8 +1310,12 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
   const ped=window.pedidoEditOrig;
   try{
     const itensOriginais=window.itensEdit;
-    // Item removido = marcado como removido ou quantidade zerada
-    const itensRemovidos=itensOriginais.filter(i=>i._removido||i.quantidade===0);
+    // Item removido de verdade = marcado como removido OU zerado, mas SÓ conta
+    // como alteração física (precisa voltar pra separação) se esse item tinha
+    // algo realmente separado antes (temQtd>0). Se já tinha 0 (nunca foi
+    // encontrado) e continua em 0, não mudou nada em relação ao que foi
+    // fisicamente separado — não precisa voltar pra separação por causa dele.
+    const itensRemovidos=itensOriginais.filter(i=>(i._removido||i.quantidade===0)&&(i.temQtd||0)>0);
     // Quantidade diferente da que foi separada (temQtd) → alteração real
     const itensComQtdAlterada=itensOriginais.filter(i=>
       !i._removido && i.quantidade>0 && i._teveFalta && i.temQtd>0 && i.quantidade!==i.temQtd
@@ -1320,7 +1324,7 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
 
     // Regra:
     // → Confirmou com a qtd que tinha (temQtd) = vai para SEPARADO
-    // → Removeu item OU mudou qtd OU adicionou item novo = volta para EM SEPARAÇÃO
+    // → Removeu item que tinha algo separado, OU mudou qtd, OU adicionou item novo = volta para EM SEPARAÇÃO
     const temAlteracao = itensRemovidos.length>0 || itensComQtdAlterada.length>0 || itensNovosAdd.length>0;
     const destinoSit  = temAlteracao ? SIT.EM_SEP : SIT.SEPARADO;
     const logEvento   = temAlteracao ? "pendencias_voltou_separacao" : "pendencias_confirmadas_separado";
