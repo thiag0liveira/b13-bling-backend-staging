@@ -1247,11 +1247,16 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
     const destinoSit  = temAlteracao ? SIT.EM_SEP : SIT.SEPARADO;
     const logEvento   = temAlteracao ? "pendencias_voltou_separacao" : "pendencias_confirmadas_separado";
 
-    // Notificação para expedição se voltou com itens removidos/alterados
-    if(temAlteracao&&itensRemovidos.length>0){
+    // Notificação para expedição — itens totalmente removidos E itens com
+    // quantidade reduzida (o ajuste de verdade que precisa ser feito na separação)
+    if(temAlteracao&&(itensRemovidos.length>0||itensComQtdAlterada.length>0)){
+      const detalhesItens=[
+        ...itensRemovidos.map(i=>({descricao:i.descricao,tipo:"removido_total",quantidadeOriginal:i.quantidadeOriginal||i.quantidade})),
+        ...itensComQtdAlterada.map(i=>({descricao:i.descricao,tipo:"reduzido",quantidadeOriginal:i.quantidade,quantidadeNova:i.temQtd,quantidadeRemover:i.quantidade-i.temQtd})),
+      ];
       await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({evento:"itens_removidos_conferencia",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,
-          detalhes:{itens:itensRemovidos.map(i=>i.descricao),motivo:"removido na resolução de pendências"}})}).catch(()=>{});
+          detalhes:{itens:itensRemovidos.map(i=>i.descricao),itensDetalhado:detalhesItens,motivo:"ajuste na resolução de pendências"}})}).catch(()=>{});
     }
 
     const rItens=await fetch(B+"/api/pedidos/"+id+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({itens:itensFiltrados.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}))})});
