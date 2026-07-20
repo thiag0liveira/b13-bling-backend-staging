@@ -2333,6 +2333,21 @@ function statusPublico(sit){
 }
 
 // Rota única — detecta sessão pelo header e mostra visão correta
+function nomeSituacaoStatus(id){
+  const nomes={
+    [SIT.AGUARDANDO]:"AGUARDANDO SEPARAÇÃO (SISTEMA)",
+    [SIT.EM_SEP]:"Em Separação",
+    [SIT.SEP_PEND]:"SEPARADO C/ PENDÊNCIAS",
+    [SIT.SEPARADO]:"SEPARADO",
+    [SIT.EM_ROTA]:"Em Rota",
+    [SIT.ATENDIDO]:"Atendido",
+    21:"Em digitação",
+    12:"Cancelado",
+    6:"Em aberto",
+  };
+  return nomes[id]||null;
+}
+
 function etapaIndex(sit){
   const s=(sit||"").toUpperCase();
   if(s.includes("ATENDIDO")) return 4;
@@ -2354,7 +2369,7 @@ app.get("/pedido/:id/status", async(req,res)=>{
       Promise.resolve((lerLog()[id]||[])),
     ]);
     const ped=rPed?.data||{};
-    const sit=ped.situacao?.nome||"—";
+    const sit=ped.situacao?.nome||nomeSituacaoStatus(ped.situacao?.id)||"—";
     const cor={"AGUARDANDO SEPARAÇÃO (SISTEMA)":"#fbff00","AGUARDANDO SEPARAÇÃO":"#fbff00","Em Separação":"#00aaff","SEPARADO C/ PENDÊNCIAS":"#d400ff","SEPARADO":"#a855f7","Em Rota":"#FF0082","Atendido":"#3FB57A","Em digitação":"#9a95c9"}[sit]||"#9a95c9";
     const pago=pag?.statusPagamento==="pago";
     const sp=statusPublico(sit);
