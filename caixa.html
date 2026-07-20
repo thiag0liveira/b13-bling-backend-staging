@@ -518,7 +518,16 @@ function renderRelatorio(rel){
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
       </div>
-      <div class="muted" style="font-size:11px;margin-top:2px">Nenhuma forma de pagamento registrada</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${p.fichaFinanceira?'🗂️ Ficha Financeira (pedido do totem, sem pagamento real ainda)':'Nenhuma forma de pagamento registrada'}</div>
+    </div>`).join("");
+
+  const fichaFinanceiraPedidos=rel.pedidos.filter(p=>p.fichaFinanceira);
+  const fichaFinanceiraRows=fichaFinanceiraPedidos.map(p=>`
+    <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <div style="display:flex;justify-content:space-between">
+        <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
+        <span style="font-weight:700;color:#00aaff">${brl(p.total)}</span>
+      </div>
     </div>`).join("");
 
   const pagosAPrazo=rel.pedidos.filter(p=>p.pago&&p.formasPrevisto?.length);
@@ -549,6 +558,7 @@ function renderRelatorio(rel){
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Não pago</div><div style="font-size:22px;font-weight:900;color:#ff8090">${brl(rel.totalNaoPago)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Cancelados</div><div style="font-size:22px;font-weight:900;color:#9a95c9">${brl(rel.totalCancelados||0)}</div><div class="muted" style="font-size:11px">${rel.qtdCancelados||0} pedido(s)</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Previsto (data diferente)</div><div style="font-size:22px;font-weight:900;color:#ffd23f">${brl(rel.totalPrevisto||0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrevisto||0} pedido(s) — já contam no Pago</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">🗂️ Ficha Financeira</div><div style="font-size:22px;font-weight:900;color:#00aaff">${brl(rel.totalFichaFinanceira||0)}</div><div class="muted" style="font-size:11px">${rel.qtdFichaFinanceira||0} pedido(s) do totem sem pagamento real ainda</div></div>
     </div>
 
     ${seletorVendedor}
@@ -559,6 +569,8 @@ function renderRelatorio(rel){
     <div class="card"><div style="font-weight:800;margin-bottom:6px">🧑‍💼 Por vendedor (detalhado)</div>${vendedorBlocos||'<div class="muted">Sem dados</div>'}</div>
 
     <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Pedidos não pagos (${naoPagos.length})</div>${naoPagosRows||'<div class="ok" style="margin:0">Tudo pago nesse dia ✅</div>'}</div>
+
+    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#00aaff">🗂️ Ficha Financeira — pedidos do totem sem pagamento real (${fichaFinanceiraPedidos.length})</div>${fichaFinanceiraRows||'<div class="muted" style="margin:0">Nenhum</div>'}</div>
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">📋 Todos os pedidos do dia</div>

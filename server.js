@@ -1880,7 +1880,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       }
       totalGeral+=total;
 
-      let vendedorNome, valorPago, historico, doBling, previsto;
+      let vendedorNome, valorPago, historico, doBling, previsto, detPedido=null;
       if(rapido){
         // modo rápido: não consulta detalhe do pedido (sem vendedor, sem checar parcela do Bling)
         vendedorNome="Não verificado (busca rápida)";
@@ -1888,14 +1888,23 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
         valorPago=+(pagLocal?.valorPago||0); historico=pagLocal?.historico||[]; doBling=false; previsto=[];
       } else {
         // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
-        let det=null, vendedorId=null;
-        try{ const r=await bling(`/pedidos/vendas/${id}`); det=r?.data||null; vendedorId=det?.vendedor?.id||null; }catch(e){}
+        let vendedorId=null;
+        try{ const r=await bling(`/pedidos/vendas/${id}`); detPedido=r?.data||null; vendedorId=detPedido?.vendedor?.id||null; }catch(e){}
         vendedorNome=await nomeVendedor(vendedorId);
         const pagLocal=pags[id];
-        ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(det||pRaw,pagLocal,logs[id]||[]));
+        ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(detPedido||pRaw,pagLocal,logs[id]||[]));
       }
       const pago=valorPago>=total-0.01&&valorPago>0;
       if(pago) totalPago+=total; else totalNaoPago+=total;
+      // pedido não pago do totem que ainda está com a parcela "Ficha Financeira"
+      // (placeholder que o Bling exige na criação, sem nenhum pagamento real ainda)
+      let fichaFinanceira=false;
+      if(!pago&&detPedido?.parcelas?.length){
+        for(const pc of detPedido.parcelas){
+          const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+          if((nomeForma||"").toLowerCase().includes("ficha financeira")){ fichaFinanceira=true; break; }
+        }
+      }
       const clienteNome=pRaw.contato?.nome||"—";
 
       // por status
@@ -1924,7 +1933,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
       pedidosDetalhados.push({
         numero:pRaw.numero, id:pRaw.id, data:pRaw.data, cliente:clienteNome, situacao:sitNome,
-        vendedor:vendedorNome, total, valorPago, pago, doBling,
+        vendedor:vendedorNome, total, valorPago, pago, doBling, fichaFinanceira,
         formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2),vencimento:h.aPrazo&&h.vencimento?h.vencimento.split('-').reverse().join('/'):''})),
         formasPrevisto:(previsto||[]).map(p=>({nome:p.formaNome,valor:+(Number(p.valor)||0).toFixed(2),vencimento:p.vencimento?p.vencimento.split('-').reverse().join('/'):''})),
       });
@@ -1934,11 +1943,14 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
     const totalPrevisto=pedidosDetalhados.filter(p=>p.pago&&p.formasPrevisto?.length).reduce((s,p)=>s+p.total,0);
     const qtdPrevisto=pedidosDetalhados.filter(p=>p.pago&&p.formasPrevisto?.length).length;
+    const totalFichaFinanceira=pedidosDetalhados.filter(p=>p.fichaFinanceira).reduce((s,p)=>s+p.total,0);
+    const qtdFichaFinanceira=pedidosDetalhados.filter(p=>p.fichaFinanceira).length;
     res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
       data, dataInicial, dataFinal, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
       totalCancelados:+totalCancelados.toFixed(2), qtdCancelados,
       totalPrevisto:+totalPrevisto.toFixed(2), qtdPrevisto,
+      totalFichaFinanceira:+totalFichaFinanceira.toFixed(2), qtdFichaFinanceira,
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }
