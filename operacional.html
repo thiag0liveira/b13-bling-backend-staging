@@ -345,9 +345,9 @@ function cardPedido(p,aba){
   else if(parcial) pagInfo=`<div class="pag-pend">⚠️ Pago parcial ${brl(pag.valorPago)} · falta ${brl(Math.abs(saldo))}</div>`;
   else if(pag?.statusPagamento==="pendente") pagInfo=`<div class="pag-pend">💰 Pagamento pendente</div>`;
 
-  // tag "Entrega" quando o pedido foi criado com frete e ainda está aguardando
+  // tag "Entrega"/"Retirada" — mostra em todas as colunas, não só Aguardando
   let entregaTag="";
-  if(p.situacao?.id===SIT.AGUARDANDO){
+  {
     const ent=ents[idStr];
     const freteCalc=+(((p.total||0)-(p.totalProdutos||0))).toFixed(2);
     // usa o registro real (cobre frete grátis); sem registro (pedido criado direto no Bling), cai no cálculo por diferença
@@ -355,6 +355,8 @@ function cardPedido(p,aba){
     if(ehEntrega){
       const freteMostrar=ent?(ent.freteOriginal||0):freteCalc;
       entregaTag=`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:6px">🛵 Entrega${freteMostrar>0.01?` — frete ${brl(freteMostrar)}`:" — frete grátis"}</div>`;
+    } else if(ent&&ent.tipo==="retirada"){
+      entregaTag=`<div style="font-size:11px;color:#2f9e6b;background:#0d2a1a;border:1px solid #2f9e6b44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:6px">🏪 Retirada</div>`;
     }
   }
 

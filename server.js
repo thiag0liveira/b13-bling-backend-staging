@@ -2424,9 +2424,20 @@ app.get("/pedido/:id/status", async(req,res)=>{
     // pedido finalizado (Atendido/Cancelado) — pro público, mostra só o essencial
     const finalizadoPublico=!isAdmin&&(sit==="Atendido"||sit==="Cancelado");
 
-    // linha do tempo visual (Recebido → Separando → Separado → Em Rota → Entregue)
-    const etIdx=etapaIndex(sit);
-    const etapas=["Recebido","Separando","Separado","Em Rota","Entregue"];
+    // linha do tempo visual — pedido de retirada pula "Em Rota" (vai direto de Separado pra Entregue)
+    const entregasMap=lerJSON(ENTREGAS_FILE,{});
+    const entregaInfoStatus=entregasMap[String(id)]||null;
+    const freteCalcStatus=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
+    const ehEntregaStatus=entregaInfoStatus?entregaInfoStatus.tipo==="entrega":freteCalcStatus>0.01;
+    const etIdxRaw=etapaIndex(sit);
+    let etapas, etIdx;
+    if(ehEntregaStatus){
+      etapas=["Recebido","Separando","Separado","Em Rota","Entregue"];
+      etIdx=etIdxRaw;
+    } else {
+      etapas=["Recebido","Separando","Separado","Entregue"];
+      etIdx=etIdxRaw>=4?3:etIdxRaw; // Atendido (4) vira a última posição (3) desse array de 4
+    }
     const timelineHtml=etIdx<0?"":`
       <div style="display:flex;justify-content:space-between;padding:14px 16px 6px;position:relative">
         ${etapas.map((nome,i)=>{
