@@ -439,6 +439,7 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
   try{
     const {valor,formaId,formaNome,obs,funcionarioId,funcionarioNome,substituir,valorEsperado,parcelas}=req.body||{};
     if(!valor||!formaId) return res.status(400).json({erro:"valor e formaId obrigatórios"});
+    if(Number(valor)<0) return res.status(400).json({erro:"Valor de pagamento não pode ser negativo"});
     // se o chamador informou qual valor era esperado (ex: total já ajustado por
     // ocorrências na entrega), valida que bate exatamente — defesa extra além
     // da trava no frontend

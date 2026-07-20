@@ -228,8 +228,8 @@ function renderModalPagamentoCaixa(){
   const rows=_parcelasCaixa.map((p,ix)=>`
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
       <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
-      <input type="number" step="0.01" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
-        onchange="_parcelasCaixa[${ix}].valor=this.value;renderModalPagamentoCaixa()">
+      <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+        onchange="_parcelasCaixa[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderModalPagamentoCaixa()">
       <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
         onchange="_parcelasCaixa[${ix}].formaId=this.value;_parcelasCaixa[${ix}].formaNome=this.options[this.selectedIndex].text">
         ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
