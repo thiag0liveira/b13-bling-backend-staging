@@ -1204,7 +1204,6 @@ app.post("/api/finalizar", async (req, res) => {
       contato: { id: Number(contatoId) },
       itens: itens.map((i) => ({ produto: { id: Number(i.produtoId) }, quantidade: Number(i.quantidade), valor: Number(i.valor) })),
       observacoes: obs,
-      parcelas: [], // tenta criar sem nenhuma parcela/condição de pagamento (o Bling vinha gerando uma sozinho)
     };
     if (entrega && entrega.tipo === "entrega"){
       payload.transporte = {
@@ -1236,20 +1235,9 @@ app.post("/api/finalizar", async (req, res) => {
     // NÃO definir situação aqui — criar em Em digitação (padrão) sem condição de pagamento
     // depois mover para AGUARDANDO SEPARAÇÃO
     await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
-    let pedido;
-    try{
-      pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
-    }catch(e){
-      // se o Bling recusar pedido sem nenhuma parcela, tenta de novo deixando
-      // ele gerar a condição de pagamento padrão dele mesmo (comportamento antigo)
-      console.log("[totem] falhou criar sem parcelas, tentando de novo com o padrão do Bling:", e.message);
-      const payloadSemParcelas={...payload}; delete payloadSemParcelas.parcelas;
-      await new Promise(r=>setTimeout(r,350));
-      pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payloadSemParcelas) });
-    }
+    const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
     const pedidoId=pedido?.data?.id;
     console.log("[totem] vendedor retornado na criação:", JSON.stringify(pedido?.data?.vendedor));
-    console.log("[totem] parcelas retornadas na criação:", JSON.stringify(pedido?.data?.parcelas));
     // reforço: alguns endpoints do Bling não respeitam vendedor na criação (POST),
     // só no PUT — garante explicitamente logo depois de criar
     if(pedidoId){
