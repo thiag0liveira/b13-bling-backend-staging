@@ -1166,10 +1166,17 @@ function renderRetirarPend(id,faltas){
     <div id="retMsg"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button id="btnConfirmarPend" class="btn btn-grn" style="flex:1;border:1px solid" onclick="confirmarRetirarSeguir(${id})">✅ Confirmar e marcar como SEPARADO</button>
-      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+      <button id="btnCancelarPend" class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
     </div>`;
   atualizarBtnDestino();
 }
+function desativarBotoesFundoPend(){
+  const bc=document.getElementById("btnCancelarPend");
+  if(bc){ bc.disabled=true; bc.style.opacity="0.4"; bc.style.cursor="not-allowed"; bc.title="Use o botão Confirmar acima pra concluir ou finalizar a resolução"; }
+  const bcf=document.getElementById("btnConfirmarPend");
+  if(bcf){ bcf.disabled=true; bcf.style.opacity="0.4"; bcf.style.cursor="not-allowed"; }
+}
+
 async function confirmarRetirarSeguir(id){
   document.getElementById("retMsg").innerHTML=`<div class="muted">Verificando pagamento…</div>`;
   try{
@@ -1243,6 +1250,7 @@ async function confirmarRetirarSeguir(id){
             ✅ Confirmar
           </button>
         </div>`;
+      desativarBotoesFundoPend();
       return;
     }
 
@@ -1272,6 +1280,7 @@ async function confirmarRetirarSeguir(id){
             ✅ Registrar e Confirmar
           </button>
         </div>`;
+      desativarBotoesFundoPend();
       return;
     }
 
@@ -1282,7 +1291,7 @@ async function confirmarRetirarSeguir(id){
 
 function selecionarResolucao(btn,tipo){
   window._resolucaoSel=tipo;
-  document.querySelectorAll("#retMsg .btn").forEach(b=>{ b.style.opacity="0.5"; b.style.outline=""; });
+  document.querySelectorAll("#retMsg .btn").forEach(b=>{ if(b.id!=="btnConfirmarRetirar"){ b.style.opacity="0.5"; b.style.outline=""; } });
   btn.style.opacity="1"; btn.style.outline="2px solid #FF0082";
   const box=document.getElementById("estornoDetalheBox");
   if(box) box.style.display=tipo==="estorno"?"block":"none";
@@ -1292,7 +1301,7 @@ function selecionarResolucao(btn,tipo){
     tipo==="estorno"?"↩ Devolução — informe a forma e nome da conta":
     "📋 Só registrar a diferença no log";
   const btnConf=document.getElementById("btnConfirmarRetirar");
-  if(btnConf) btnConf.style.display="block";
+  if(btnConf){ btnConf.style.display="block"; btnConf.style.opacity="1"; }
 }
 
 async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
