@@ -184,7 +184,8 @@ function setPeriodoConf(tipo, ini, fim){
   periodoAtivo=tipo; carregar();
 }
 
-async function carregar(){
+let _confTimer=null;
+async function carregar(silencioso){
   try{
     const sits=[SIT.SEPARADO||821590].filter(Boolean).join(",");
     const url=BACKEND+`/api/pedidos?limite=100&idsSituacoes=${sits}&dataInicial=${periodoIni||calcP("30dias").ini}&dataFinal=${periodoFim||calcP("30dias").fim}`;
@@ -193,8 +194,11 @@ async function carregar(){
     pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO");
     render();
   }catch(e){
-    document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro ao carregar pedidos: ${e.message}</div>`;
+    if(!silencioso) document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro ao carregar pedidos: ${e.message}</div>`;
   }
+  // fica "escutando" — atualiza a fila sozinha a cada 30s, sem perder o pedido aberto
+  if(_confTimer) clearTimeout(_confTimer);
+  _confTimer=setTimeout(()=>carregar(true),30000);
 }
 
 function filaHtml(){
@@ -218,10 +222,11 @@ function filaHtml(){
     </div>`;
   }
   return barHtml+`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div class="colhead" style="margin-bottom:0">Aguardando (${pedidos.length})</div>
       <button class="btn btn-ghost btn-sm" onclick="carregar()">↻</button>
     </div>
+    <div class="muted" style="font-size:10px;margin-bottom:10px">Atualiza sozinho a cada 30s</div>
     <div class="fila">${pedidos.map(p=>`
       <div class="fila-item ${sel&&String(sel.id)===String(p.id)?'ativo':''}" onclick="abrirPedido(${p.id})">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
