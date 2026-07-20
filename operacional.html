@@ -1125,8 +1125,8 @@ async function confirmarRetirarSeguir(id){
     // salvar em globais para uso nos onclicks
     window._pendDescItens=descItens||"";
     window._pendDiff=Math.abs(diff);
-    // Caso 1: pago e precisa estorno
-    if(statusPag==="pago"&&diff>0.01){
+    // Caso 1: pagou mais do que o novo total (seja pago total ou parcial) — precisa de estorno
+    if(diff>0.01){
       const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
       window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||"";
       const histPag=(pag?.historico||[]).map(h=>`${h.formaNome||""}(${brl(h.valor||0)})`).join(", ");
@@ -1164,8 +1164,10 @@ async function confirmarRetirarSeguir(id){
       return;
     }
 
-    // Caso 2: não pago ou pago parcial e valor mudou para menos — falta pagamento
-    if(statusPag!=="pago"&&diff<-0.01){
+    // Caso 2: o novo total ficou maior do que o que já foi pago (pedido novo,
+    // parcial, ou até já marcado como "pago" no valor antigo) — precisa cobrar
+    // a diferença do cliente antes de mandar de volta pra separação
+    if(diff<-0.01){
       const falta=Math.abs(diff);
       const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
       window._novaFormaId=formasPag[0]?.id||""; window._novaFormaNome=formasPag[0]?.nome||"";
