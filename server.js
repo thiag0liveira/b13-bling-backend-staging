@@ -2350,11 +2350,11 @@ function nomeSituacaoStatus(id){
 
 function etapaIndex(sit){
   const s=(sit||"").toUpperCase();
+  if(s.includes("AGUARDANDO")) return 0; // precisa vir antes — "AGUARDANDO SEPARAÇÃO" contém a palavra "separação"
   if(s.includes("ATENDIDO")) return 4;
   if(s.includes("ROTA")) return 3;
   if(s.includes("SEPARADO")) return 2; // inclui "separado c/ pendências"
   if(s.includes("SEPARAÇÃO")) return 1; // "em separação"
-  if(s.includes("AGUARDANDO")) return 0;
   return -1; // outras situações (cancelado, em digitação etc) — não mostra a linha do tempo
 }
 
