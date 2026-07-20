@@ -126,12 +126,9 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 <div class="modal" id="modal">
   <div class="mbox">
     <h3>✅ Pedido Conferido</h3>
-    <p class="muted" style="margin-bottom:14px;font-size:12px">Escolha como o pedido será entregue:</p>
+    <p class="muted" style="margin-bottom:14px;font-size:12px">Tipo definido desde a criação do pedido (totem):</p>
     <div id="pagStatus" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
-    <div class="tipo-btn">
-      <button id="btnEntrega" onclick="selecionarTipo('entrega')">🚚 Entrega</button>
-      <button id="btnRetirada" onclick="selecionarTipo('retirada')">🏪 Retirada</button>
-    </div>
+    <div id="tipoFixo" style="text-align:center;padding:14px;border-radius:10px;border:2px solid var(--mag);background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
     <div class="foto-area" id="fotoArea" onclick="document.getElementById('fotoInput').click()">
       <input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="carregarFoto(this)">
       <div id="fotoPreview">📷 Toque para tirar foto do pedido (opcional)</div>
@@ -254,15 +251,20 @@ async function abrirPedido(id){
   else { render(); return abrirPedido(id); }
   try{
     // busca lock — verifica se tem conferência em andamento
-    const [rPed,rLog,rPend,rPag]=await Promise.all([
+    const [rPed,rLog,rPend,rPag,rEnt]=await Promise.all([
       fetch(BACKEND+"/api/pedidos/"+id).then(r=>r.json()),
       fetch(BACKEND+"/api/log/"+id).then(r=>r.json()),
       fetch(BACKEND+"/api/pendencias/"+id).then(r=>r.json()),
       fetch(BACKEND+"/api/pagamentos/"+id).then(r=>r.json()),
+      fetch(BACKEND+"/api/entregas").then(r=>r.json()).catch(()=>({data:{}})),
     ]);
     sel=rPed.data||rPed;
     sel._pag=rPag.data||null;
     sel._pago=sel._pag&&sel._pag.statusPagamento==="pago";
+    // tipo de entrega já definido lá no totem — não deixa escolher de novo aqui
+    const entregaInfo=(rEnt.data||{})[String(sel.id)]||null;
+    const freteCalc=+(((sel.total||0)-(sel.totalProdutos||0))).toFixed(2);
+    sel._tipoEntrega=entregaInfo?entregaInfo.tipo:(freteCalc>0.01?"entrega":"retirada");
     const logItems=rLog.data||[];
     const pend=rPend.data;
     const faltas=pend?.faltas||[];
@@ -367,10 +369,7 @@ function confirmarItem(ix){
 }
 
 function abrirModal(){
-  tipoSel=null; fotoBase64=null;
-  document.getElementById("btnEntrega").classList.remove("sel");
-  document.getElementById("btnRetirada").classList.remove("sel");
-  document.getElementById("btnConfirmar").disabled=true;
+  fotoBase64=null;
   document.getElementById("fotoPreview").innerHTML='📷 Toque para tirar foto do pedido (opcional)';
   document.getElementById("msgModal").textContent="";
   // mostra status de pagamento
@@ -386,22 +385,22 @@ function abrirModal(){
     ps.style.background="#2a0a00"; ps.style.border="1px solid #ff8c00"; ps.style.color="#ffd23f";
     ps.innerHTML=`⚠️ Não pago — Total: <b>${brl(total)}</b><br><span style="font-size:11px">Retirada bloqueada até pagamento</span>`;
   }
-  // bloqueia retirada se não pago
-  const btnRet=document.getElementById("btnRetirada");
-  btnRet.disabled=!pago;
-  btnRet.style.opacity=pago?"1":"0.4";
-  btnRet.title=pago?"":"Pedido não pago — registre o pagamento antes";
+  // tipo já definido lá no totem — não dá pra escolher aqui, só confirma
+  tipoSel=sel._tipoEntrega;
+  const tf=document.getElementById("tipoFixo");
+  tf.innerHTML=tipoSel==="entrega"?"🚚 ENTREGA":"🏪 RETIRADA";
+  // retirada só é liberada se já estiver pago
+  const btnConf=document.getElementById("btnConfirmar");
+  if(tipoSel==="retirada"&&!pago){
+    btnConf.disabled=true;
+    document.getElementById("msgModal").innerHTML=`<span class="err">Pedido de retirada precisa estar pago antes de confirmar.</span>`;
+  } else {
+    btnConf.disabled=false;
+  }
   document.getElementById("modal").classList.add("open");
 }
 
 function fecharModal(){ document.getElementById("modal").classList.remove("open"); }
-
-function selecionarTipo(t){
-  tipoSel=t;
-  document.getElementById("btnEntrega").classList.toggle("sel",t==="entrega");
-  document.getElementById("btnRetirada").classList.toggle("sel",t==="retirada");
-  document.getElementById("btnConfirmar").disabled=false;
-}
 
 function carregarFoto(input){
   const file=input.files[0]; if(!file) return;
