@@ -1295,13 +1295,24 @@ app.post("/api/finalizar", async (req, res) => {
     const pedidoId=pedido?.data?.id;
     console.log("[totem] vendedor retornado na criação:", JSON.stringify(pedido?.data?.vendedor));
     // reforço: alguns endpoints do Bling não respeitam vendedor na criação (POST),
-    // só no PUT — garante explicitamente logo depois de criar
+    // só no PUT — garante explicitamente logo depois de criar. Aproveita e tenta
+    // remover a parcela "placeholder" também (o PUT costuma ser mais permissivo
+    // que o POST de criação, que já recusou pedido sem nenhuma parcela antes)
     if(pedidoId){
       try{
         await new Promise(r=>setTimeout(r,350));
-        const rReforco=await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)});
+        const payloadSemParcela={...payload,parcelas:[]};
+        const rReforco=await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payloadSemParcela)});
+        console.log("[totem] parcelas após tentar remover via PUT:", JSON.stringify(rReforco?.data?.parcelas));
         console.log("[totem] vendedor após reforço (PUT):", JSON.stringify(rReforco?.data?.vendedor));
-      }catch(e){ console.log("[totem] erro ao reforçar vendedor via PUT:", e.message); }
+      }catch(e){
+        console.log("[totem] PUT sem parcela falhou, mantém a parcela e só reforça vendedor:", e.message);
+        try{
+          await new Promise(r=>setTimeout(r,350));
+          const rReforco2=await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)});
+          console.log("[totem] vendedor após reforço (PUT fallback):", JSON.stringify(rReforco2?.data?.vendedor));
+        }catch(e2){ console.log("[totem] erro ao reforçar vendedor via PUT (fallback):", e2.message); }
+      }
     }
     // registra localmente se era entrega ou retirada (a listagem do Bling não traz
     // esse detalhe, e frete grátis por valor mínimo zera o valor sem deixar de ser entrega)
