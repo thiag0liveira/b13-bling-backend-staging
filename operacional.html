@@ -1218,7 +1218,7 @@ async function confirmarRetirarSeguir(id){
     // Caso 1: pagou mais do que o novo total (seja pago total ou parcial) — precisa de estorno
     if(diff>0.01){
       const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
-      window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||"";
+      window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||""; window._estornoContaNome="";
       const histPag=(pag?.historico||[]).map(h=>`${h.formaNome||""}(${brl(h.valor||0)})`).join(", ");
       document.getElementById("retMsg").innerHTML=`
         <div style="background:#1c1846;border:1px solid #3a357f;border-radius:10px;padding:14px;margin-top:8px">
@@ -1241,9 +1241,9 @@ async function confirmarRetirarSeguir(id){
               style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:6px">
               ${optsForma}
             </select>
-            <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank)"
+            <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *"
               style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
-              oninput="window._estornoContaNome=this.value">
+              oninput="window._estornoContaNome=this.value;validarBotaoEstorno()">
           </div>
           <div id="resolucaoSel" style="font-size:12px;color:#9a95c9;margin-bottom:8px"></div>
           <button id="btnConfirmarRetirar" class="btn btn-mag" style="width:100%;display:none"
@@ -1299,10 +1299,21 @@ function selecionarResolucao(btn,tipo){
   const info=document.getElementById("resolucaoSel");
   if(info) info.textContent=
     tipo==="credito"?"💳 Crédito será registrado no cadastro do cliente":
-    tipo==="estorno"?"↩ Devolução — informe a forma e nome da conta":
+    tipo==="estorno"?"↩ Devolução — informe a forma e nome da conta (obrigatório)":
     "📋 Só registrar a diferença no log";
   const btnConf=document.getElementById("btnConfirmarRetirar");
   if(btnConf){ btnConf.style.display="block"; btnConf.style.opacity="1"; }
+  validarBotaoEstorno();
+}
+
+function validarBotaoEstorno(){
+  const btnConf=document.getElementById("btnConfirmarRetirar");
+  if(!btnConf) return;
+  if(window._resolucaoSel==="estorno"&&!(window._estornoContaNome||"").trim()){
+    btnConf.disabled=true; btnConf.style.opacity="0.5";
+  } else {
+    btnConf.disabled=false; btnConf.style.opacity="1";
+  }
 }
 
 async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
