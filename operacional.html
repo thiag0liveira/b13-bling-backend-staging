@@ -1320,19 +1320,7 @@ async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo){
 }
 
 async function receberEClienteJaSeparou(id, total){
-  // abre modal de pagamento e ao confirmar vai direto para SEPARADO
-  abrirPagamento(id, total, async()=>{
-    showMsg(id,`<div class="muted">Movendo para Separado…</div>`);
-    try{
-      const r=await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
-      const j=await r.json();
-      if(r.ok&&!j.erro){
-        addLog(id,"recebido_cliente_separou",FUNC?.id,FUNC?.nome,{total});
-        await carregar();
-      } else showMsg(id,`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`);
-    }catch(e){ showMsg(id,`<div class="err">Erro de conexão</div>`); }
-  }, true); // substituir pagamento
+  abrirPagamento(id, total, "clienteSeparou");
 }
 
 // QR Code do pedido
@@ -1408,8 +1396,9 @@ async function enviarSepNovamente(id){
 
 // parcelas de pagamento (igual ao Bling)
 let _parcelas=[];
-function abrirPagamento(id,total,substituir){
-  window._pagSubstituir=!!substituir;
+function abrirPagamento(id,total,modo){
+  window._pagModo=modo||"receber"; // "receber" = manda pra Em Separação; "clienteSeparou" = vai direto pra Separado
+  window._pagSubstituir=window._pagModo==="clienteSeparou";
   _parcelas=[{valor:Number(total).toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||"",obs:""}];
   window._pagTotal=Number(total);
   renderModalPagamento(id,total);
@@ -1447,9 +1436,33 @@ function renderModalPagamento(id,total){
     </div>
     <div id="pMsg"></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-grn" style="flex:1" onclick="confirmarPagamento(${id})">✅ Confirmar e enviar pra separação</button>
+      ${window._pagModo==="clienteSeparou"
+        ?`<button class="btn btn-blue" style="flex:1" onclick="confirmarPagamentoClienteSeparou(${id})">✅ Confirmar — SEPARADO (separação pelo cliente)</button>`
+        :`<button class="btn btn-grn" style="flex:1" onclick="confirmarPagamento(${id})">✅ Confirmar e enviar pra separação</button>`}
       <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
     </div>`;
+}
+
+async function confirmarPagamentoClienteSeparou(id){
+  const totalParcelas=+_parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+  const totalPedido=+window._pagTotal;
+  const diff=+(totalParcelas-totalPedido).toFixed(2);
+  if(!totalParcelas||totalParcelas<=0){ document.getElementById("pMsg").innerHTML=`<div class="err">Informe o valor</div>`; return; }
+  if(Math.abs(diff)>0.01){ document.getElementById("pMsg").innerHTML=`<div class="err">❌ Valor das parcelas (${brl(totalParcelas)}) não bate com o total do pedido (${brl(totalPedido)}). Corrija antes de confirmar.</div>`; return; }
+  document.getElementById("pMsg").innerHTML=`<div class="muted">Registrando pagamento…</div>`;
+  try{
+    await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({valor:totalParcelas,parcelas:_parcelas,formaId:_parcelas[0]?.formaId,formaNome:_parcelas[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:totalPedido})});
+    document.getElementById("pMsg").innerHTML=`<div class="muted">Movendo para Separado…</div>`;
+    const r=await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+    const j=await r.json();
+    if(r.ok&&!j.erro){
+      await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({evento:"recebido_cliente_separou",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{total:totalParcelas}})}).catch(()=>{});
+      fecharModal(); await carregar();
+    } else document.getElementById("pMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`;
+  }catch(e){ document.getElementById("pMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
 }
 
 async function confirmarPagamento(id){
