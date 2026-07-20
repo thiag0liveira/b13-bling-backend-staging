@@ -2253,6 +2253,10 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
       <div style="font-size:22px;font-weight:900">#${ped.numero||id}</div>
       <div style="font-size:11px;color:#666">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
     </div>
+    <div style="text-align:center;margin-top:8px">
+      <svg id="barcode"></svg>
+      <div style="font-size:10px;color:#888">Apresente este código no caixa</div>
+    </div>
   </div>
   <div class="secao">
     <div class="secao-title">Cliente</div>
@@ -2274,10 +2278,6 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
   <div class="qr-area">
     <img src="https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${encodeURIComponent(qrUrl)}" style="width:130px;height:130px">
     <div style="font-size:10px;color:#888;margin-top:6px">Leia o QR para ver status do pedido</div>
-    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #ddd">
-      <svg id="barcode"></svg>
-      <div style="font-size:10px;color:#888;margin-top:2px">Apresente este código no caixa</div>
-    </div>
   </div>
   <div class="acoes no-print">
     <a href="${confUrl}" class="btn btn-conf">🔍 Abrir na Conferência</a>
