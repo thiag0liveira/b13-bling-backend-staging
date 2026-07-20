@@ -1592,11 +1592,26 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
     };
     // preserva as parcelas que já existem no pedido — sem isso, o Bling reseta
     // a forma de pagamento pro padrão dele (Dinheiro) toda vez que os itens
-    // são editados (ex: resolução de pendências), mesmo sem mexer no pagamento
+    // são editados (ex: resolução de pendências), mesmo sem mexer no pagamento.
+    // Ajusta o valor proporcionalmente pro novo total (itens podem ter mudado),
+    // senão o Bling rejeita com 400 por causa da soma das parcelas não bater.
     if(ped.parcelas?.length){
+      const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+      const freteAtual=+(ped.transporte?.frete||0);
+      const novoTotal=+(novoTotalItens+freteAtual).toFixed(2);
+      const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
+      const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
       payload.parcelas=ped.parcelas.map(p=>({
-        formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data, valor:p.valor,
+        formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data,
+        valor:+((p.valor||0)*fator).toFixed(2),
       }));
+      // corrige arredondamento na última parcela pra bater exatamente com o novo total
+      const somaAjustada=payload.parcelas.reduce((s,p)=>s+p.valor,0);
+      const diffArred=+(novoTotal-somaAjustada).toFixed(2);
+      if(payload.parcelas.length&&Math.abs(diffArred)>0.001){
+        const ultima=payload.parcelas[payload.parcelas.length-1];
+        ultima.valor=+(ultima.valor+diffArred).toFixed(2);
+      }
     }
     // incluir transporte/endereço se existir (UF obrigatório no Bling)
     if(ped.transporte){
