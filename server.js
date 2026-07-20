@@ -437,11 +437,17 @@ function salvarPag(o){ salvarJSON(PAG_FILE,o); }
 
 // Atualiza as parcelas do pedido no Bling de verdade (via PUT, já comprovado
 // que funciona nesse sistema), substituindo a parcela única "placeholder"
-// pelas formas de pagamento reais usadas no recebimento.
+// pelas formas de pagamento reais usadas no recebimento. Algumas situações
+// (Em Separação, Separado, Em Rota etc) bloqueiam edição direta no Bling —
+// usa o mesmo desbloqueio via "Em Digitação" já usado pra editar itens.
 async function atualizarParcelasBling(id,parcelas){
+  const SIT_EM_DIGITACAO=21;
+  const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
   try{
     const rPed=await bling(`/pedidos/vendas/${id}`);
     const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
+    const sitAtual=ped.situacao?.id;
+    const precisaUnlock=STATUS_BLOQUEADOS.includes(sitAtual);
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
@@ -457,8 +463,28 @@ async function atualizarParcelasBling(id,parcelas){
     };
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
-    const r=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
-    return {ok:true,resposta:r};
+
+    let resultado, fezUnlock=false;
+    try{
+      resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    }catch(e1){
+      if(e1.status!==400||!precisaUnlock) throw e1;
+      // situação bloqueada — desbloqueia via Em Digitação, edita, depois restaura
+      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+      fezUnlock=true;
+      await new Promise(r=>setTimeout(r,400));
+      try{
+        resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+      }finally{
+        // sempre restaura a situação original, mesmo se o PUT falhar
+        await new Promise(r=>setTimeout(r,400));
+        for(let t=0;t<3;t++){
+          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); break; }
+          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
+        }
+      }
+    }
+    return {ok:true,resposta:resultado,fezUnlock};
   }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 

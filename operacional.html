@@ -375,10 +375,6 @@ function cardPedido(p,aba){
           <span style="flex:1;font-weight:700;color:#ffbfce">${esc(f.descricao)}</span>
           <span style="color:#ff8090;white-space:nowrap;font-size:11px">tem ${f.temQtd||0} · faltou ${f.falta} de ${f.quantidade}</span>
         </div>
-        ${podAjustar?`<div style="display:flex;gap:4px;margin-top:4px">
-          ${(f.temQtd||0)>0?`<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px" onclick="event.stopPropagation();ajustarItemPend(${p.id},'${esc(f.descricao)}',${f.temQtd||0})">✂️ Ajustar para ${f.temQtd||0}</button>`:""}
-          <button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;border-color:#ff4466;color:#ff8090" onclick="event.stopPropagation();ajustarItemPend(${p.id},'${esc(f.descricao)}',0)">🗑 Remover</button>
-        </div>`:""}
       </div>`).join("")}
     </div>`;
   }
@@ -909,30 +905,6 @@ async function whatsAguardando(id){
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
   }catch(e){ showMsg(id,`<div class="err">Erro ao buscar pedido</div>`); }
 }
-async function ajustarItemPend(pedidoId, descricao, novaQtd){
-  const acao=novaQtd===0?"remover":"ajustar para "+novaQtd;
-  if(!confirm(acao==="remover"?"Remover '"+descricao+"' do pedido?":"Ajustar '"+descricao+"' para "+novaQtd+" unidades?")) return;
-  showMsg(pedidoId,`<div class="muted">Ajustando…</div>`);
-  try{
-    // busca o pedido para ter os itens atuais
-    const rPed=await fetch(B+"/api/pedidos/"+pedidoId).then(r=>r.json());
-    const ped=rPed.data||rPed;
-    const itensAjust=(ped.itens||[])
-      .map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.descricao===descricao?novaQtd:i.quantidade,valor:i.valor}))
-      .filter(i=>i.quantidade>0);
-    const r=await fetch(B+"/api/pedidos/"+pedidoId+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({itens:itensAjust,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,motivo:"ajuste rápido de pendência: "+descricao})});
-    const j=await r.json();
-    if(r.ok&&!j.erro){
-      // atualiza pendência local
-      if(window._pends[String(pedidoId)]){
-        window._pends[String(pedidoId)].faltas=window._pends[String(pedidoId)].faltas.filter(f=>f.descricao!==descricao);
-      }
-      await carregar();
-    } else showMsg(pedidoId,`<div class="err">${esc(j.erro||"Erro")}</div>`);
-  }catch(e){ showMsg(pedidoId,`<div class="err">Erro de conexão</div>`); }
-}
-
 async function voltarPendencias(id){
   if(!confirm("Voltar o pedido para Separado C/ Pendências?")) return;
   showMsg(id,`<div class="muted">Voltando…</div>`);
