@@ -415,7 +415,7 @@ function montarBotoes(p,aba,pago,parcial){
     const btnSep=(!jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar para entregar</button>`:"";
     const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 RECEBER E SEPARAR</button>`:"";
     const btnSepPago=(jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
-    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou')">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
+    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou',${pago})">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnWhats}${btnQR}</div>`;
@@ -1294,9 +1294,12 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
 // Quando o pedido foi criado como ENTREGA (tem frete) mas o cliente está
 // retirando em loja — pergunta e remove o frete do pedido no Bling antes
 // de seguir com o recebimento normal.
-async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo){
+async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo,jaPagoTotal){
   if(!temFrete){
-    if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,total);
+    if(modo==="clienteSeparou"){
+      if(jaPagoTotal) return moverParaSeparadoJaPago(id,total);
+      return receberEClienteJaSeparou(id,total);
+    }
     return abrirPagamento(id,total);
   }
   const ok=confirm(
@@ -1314,9 +1317,26 @@ async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo){
     if(!r.ok||j.erro){ showMsg(id,`<div class="err">${esc(j.erro||"Erro ao remover frete")}</div>`); return; }
     const novoTotal=j.total??(total-freteVal);
     showMsg(id,"");
+    // o frete mudou o total — não dá mais pra confiar no "já pago" de antes,
+    // então sempre passa pela tela de pagamento pra conferir o valor novo
     if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,novoTotal);
     return abrirPagamento(id,novoTotal);
   }catch(e){ showMsg(id,`<div class="err">Erro de conexão ao remover frete</div>`); }
+}
+
+async function moverParaSeparadoJaPago(id,total){
+  if(!confirm(`Este pedido já está pago (${brl(total)}).\n\nConfirma mover direto pra SEPARADO?`)) return;
+  showMsg(id,`<div class="muted">Movendo para Separado…</div>`);
+  try{
+    const r=await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+    const j=await r.json();
+    if(r.ok&&!j.erro){
+      await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({evento:"recebido_cliente_separou",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{total,jaEstavaPago:true}})}).catch(()=>{});
+      await carregar();
+    } else showMsg(id,`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`);
+  }catch(e){ showMsg(id,`<div class="err">Erro de conexão</div>`); }
 }
 
 async function receberEClienteJaSeparou(id, total){

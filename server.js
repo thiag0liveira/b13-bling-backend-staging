@@ -613,6 +613,13 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
       }
       const pags=lerPag();
       if(!pags[id]) pags[id]={pedidoId:id,valorPago:0,historico:[],statusPagamento:"pendente"};
+      // se o pedido já tinha pagamento registrado (voltou pra essa etapa por
+      // algum motivo), NÃO soma — o valor informado já é o total confirmado,
+      // então substitui, deixando um marcador no histórico pra auditoria
+      const jaTinhaPago=(pags[id].statusPagamento==="pago"||pags[id].statusPagamento==="parcial")&&(pags[id].valorPago||0)>0;
+      if(jaTinhaPago){
+        pags[id].historico.push({valor:valorInformado,formaId:pagamento.formaId,formaNome:pagamento.formaNome,funcionarioId,funcionarioNome,em:Date.now(),tipo:"substituicao",valorAnterior:pags[id].valorPago});
+      }
       // suporta múltiplas formas de pagamento (split) — registra uma entrada por parcela
       const parcelas=Array.isArray(pagamento.parcelas)&&pagamento.parcelas.length
         ? pagamento.parcelas
@@ -621,7 +628,7 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
         const v=Number(pc.valor)||0; if(v<=0) return;
         pags[id].historico.push({valor:v,formaId:pc.formaId,formaNome:pc.formaNome,obs:pc.obs||"",funcionarioId,funcionarioNome,em:Date.now()});
       });
-      pags[id].valorPago=+(pags[id].valorPago+Number(pagamento.valor)).toFixed(2);
+      pags[id].valorPago=valorInformado; // sempre = valor confirmado, nunca soma com o que já existia
       pags[id].statusPagamento="pago"; salvarPag(pags);
     }
     // muda status no Bling
