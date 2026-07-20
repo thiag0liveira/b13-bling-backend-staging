@@ -369,8 +369,14 @@ function renderConferencia(){
 }
 
 function confirmarItem(ix){
+  const listaEl=document.querySelector(".conf-list");
+  const scrollListaTop=listaEl?listaEl.scrollTop:0;
+  const scrollPagina=window.scrollY;
   itensConf[ix].confirmado=!itensConf[ix].confirmado;
   renderConferencia();
+  const novaLista=document.querySelector(".conf-list");
+  if(novaLista) novaLista.scrollTop=scrollListaTop;
+  window.scrollTo(0,scrollPagina);
 }
 
 function abrirModal(){
