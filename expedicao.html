@@ -79,7 +79,7 @@ let FUNC=(typeof b13GetSession==="function")?b13GetSession():null; // funcionár
 
 function sairFunc(){ if(typeof b13Logout==="function") b13Logout(); }
 
-let S={ logado:true, tela:"fila", pedidos:[], sel:null, conf:[], telefone:"", sugestao:"", faltas:[], msg:"", carregando:false, soVisualizacao:false, _heartbeat:null, _seps:{} };
+let S={ logado:true, tela:"fila", pedidos:[], sel:null, conf:[], telefone:"", sugestao:"", faltas:[], msg:"", carregando:false, soVisualizacao:false, _heartbeat:null, _seps:{}, sucesso:null };
 let timer=null;
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -137,7 +137,23 @@ function filaColuna(){
 function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; return `${q} un (${Number.isInteger(cx)?cx:cx.toFixed(1)} cx)`; }
 function detalheColuna(){
   const p=S.sel;
-  if(!p) return `<div class="colhead">Conferência</div><div class="muted">Selecione um pedido na fila ao lado para começar a separar.</div>`;
+  if(!p){
+    if(S.sucesso){
+      const s=S.sucesso;
+      return `<div class="colhead">Conferência</div>
+      <div class="card" style="flex-direction:column;align-items:stretch;text-align:center;padding:24px">
+        <div style="font-size:40px;margin-bottom:8px">${s.comFalta?"⚠️":"✅"}</div>
+        <div style="font-weight:900;font-size:16px;margin-bottom:4px">Pedido ${esc(s.numero)} ${s.comFalta?"marcado como SEPARADO C/ PENDÊNCIAS":"concluído — SEPARADO"}</div>
+        <div class="muted" style="margin-bottom:16px">${s.comFalta?"Foi salvo com item(ns) em falta.":"Todos os itens foram separados."}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-mag" onclick="window.open('${BACKEND}/pedido/${s.id}/etiqueta','_blank')">🖨️ Imprimir etiqueta</button>
+          <button class="btn btn-ghost" onclick="S.sucesso=null;render()">Continuar</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="colhead">Conferência</div><div class="muted">Selecione um pedido na fila ao lado para começar a separar.</div>`;
+  }
+  S.sucesso=null;
   // aviso de pendências anteriores
   const detalheItensTxt=(S._itensRemovidosDetalhado||[]).map(i=>
     i.tipo==="reduzido"
@@ -341,21 +357,16 @@ async function concluir(){
   }
   S.msg="Salvando…"; render();
   try{
-    const r=await fetch(BACKEND+"/api/fluxo/"+S.sel.id+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
+    const idConcluido=S.sel.id, numeroConcluido=S.sel.numero||S.sel.id;
+    const r=await fetch(BACKEND+"/api/fluxo/"+idConcluido+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({faltas, funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
-    fetch(BACKEND+"/api/separacoes/"+S.sel.id,{method:"DELETE"}).catch(()=>{});
-    if(faltas.length===0){
-      if(confirm("✅ Pedido completo — marcado como SEPARADO.\n\nImprimir etiqueta pra colar no pedido?")){
-        window.open(BACKEND+"/pedido/"+S.sel.id+"/etiqueta","_blank");
-      }
-    } else {
-      if(confirm("⚠️ Pedido com falta — marcado como SEPARADO C/ PENDÊNCIAS.\n\nImprimir etiqueta mesmo assim?")){
-        window.open(BACKEND+"/pedido/"+S.sel.id+"/etiqueta","_blank");
-      }
-    }
-    voltarFila();
+    fetch(BACKEND+"/api/separacoes/"+idConcluido,{method:"DELETE"}).catch(()=>{});
+    // tela inline de sucesso (em vez de confirm()+window.open, que o navegador bloqueia)
+    S.sel=null; S.conf=[];
+    S.sucesso={id:idConcluido, numero:numeroConcluido, comFalta:faltas.length>0};
+    await carregarFila();
   }catch(e){ S.msg="Erro ao concluir: "+e.message; render(); }
 }
 async function mudaSit(id,idSit){
