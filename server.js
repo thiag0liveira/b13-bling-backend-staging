@@ -1590,6 +1590,14 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       })),
       observacoes: obsBase ? obsBase+" | edit "+tsEdit : "edit "+tsEdit,
     };
+    // preserva as parcelas que já existem no pedido — sem isso, o Bling reseta
+    // a forma de pagamento pro padrão dele (Dinheiro) toda vez que os itens
+    // são editados (ex: resolução de pendências), mesmo sem mexer no pagamento
+    if(ped.parcelas?.length){
+      payload.parcelas=ped.parcelas.map(p=>({
+        formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data, valor:p.valor,
+      }));
+    }
     // incluir transporte/endereço se existir (UF obrigatório no Bling)
     if(ped.transporte){
       payload.transporte={
@@ -2775,7 +2783,17 @@ app.post("/api/pagamentos/:id/estorno", async(req,res)=>{
     p.statusPagamento=p.valorPago>=p.valorPedido-0.01?"pago":p.valorPago>0?"parcial":"pendente";
     salvarPag(pags);
     addLog(id,"estorno_registrado",funcionarioId,funcionarioNome,{valor,formaNome,contaNome});
-    res.json({ok:true,data:p});
+    // atualiza as parcelas no Bling refletindo o valor restante (após o
+    // estorno), usando a forma original do pagamento — não a forma da
+    // devolução, que é só o canal usado pra devolver o dinheiro ao cliente
+    let blingResultado=null;
+    if(p.valorPago>0.01){
+      const original=(p.historico||[]).find(h=>h.tipo!=="estorno"&&h.tipo!=="resetado"&&h.formaId);
+      if(original){
+        blingResultado=await atualizarParcelasBling(id,[{valor:p.valorPago,formaId:original.formaId}]);
+      }
+    }
+    res.json({ok:true,data:p,_blingFinanceiro:blingResultado});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
