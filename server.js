@@ -2353,13 +2353,15 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
   </div>
   <div class="secao">
     <div class="secao-title">Pedido</div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:22px;font-weight:900">#${ped.numero||id}</div>
-      <div style="font-size:11px;color:#666">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
-    </div>
-    <div style="text-align:center;margin-top:8px">
-      <svg id="barcode"></svg>
-      <div style="font-size:10px;color:#888">Apresente este código no caixa</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
+      <div>
+        <div style="font-size:22px;font-weight:900">#${ped.numero||id}</div>
+        <div style="font-size:11px;color:#666">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+      </div>
+      <div style="text-align:center;flex-shrink:0">
+        <svg id="barcode"></svg>
+        <div style="font-size:9px;color:#888">Apresente no caixa</div>
+      </div>
     </div>
   </div>
   <div class="secao">
@@ -2390,7 +2392,7 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script>
-  try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.6,height:42,fontSize:12,margin:0,background:"transparent"}); }catch(e){ console.error("Erro ao gerar código de barras:",e); }
+  try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.1,height:36,fontSize:10,margin:0,background:"transparent"}); }catch(e){ console.error("Erro ao gerar código de barras:",e); }
 </script>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
