@@ -2735,7 +2735,14 @@ app.post("/api/pagamentos/:id/estorno", async(req,res)=>{
     p.valorPago=+Math.max(0,+(p.valorPago||0)-+valor).toFixed(2);
     if(!p.historico) p.historico=[];
     p.historico.push({tipo:"estorno",valor:-+valor,formaNome,contaNome,funcionarioId,funcionarioNome,em:Date.now()});
-    p.statusPagamento=p.valorPago>=p.valorPedido?"pago":p.valorPago>0?"parcial":"pendente";
+    // busca o total ATUAL do pedido no Bling — não confia no valorPedido salvo
+    // localmente, que pode estar desatualizado (ex: frete removido, itens
+    // ajustados na resolução de pendências depois do pagamento original)
+    try{
+      const ped=await bling(`/pedidos/vendas/${id}`); const totalAtual=ped?.data?.total||ped?.data?.totalProdutos||0;
+      p.valorPedido=+Number(totalAtual).toFixed(2);
+    }catch(e){}
+    p.statusPagamento=p.valorPago>=p.valorPedido-0.01?"pago":p.valorPago>0?"parcial":"pendente";
     salvarPag(pags);
     addLog(id,"estorno_registrado",funcionarioId,funcionarioNome,{valor,formaNome,contaNome});
     res.json({ok:true,data:p});
