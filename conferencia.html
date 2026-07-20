@@ -47,7 +47,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 .conf-list{display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;margin-bottom:14px;padding-right:2px}
 .it{background:#0f0d24;border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;transition:.15s;cursor:pointer;user-select:none}
 .it.ok{border-color:#2f9e6b;background:#0a1a10}
-.it.pend{border-color:#d400ff;background:#1a0520;cursor:default}
+.it.pend{border-color:#d400ff;background:#1a0520;cursor:pointer}
 .it-img{width:52px;height:52px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0;padding:2px}
 .it-nome{font-size:13px;font-weight:700;flex:1;line-height:1.3}
 .it-qtd{font-size:22px;font-weight:900;color:#ffd23f;text-align:center;min-width:40px}
@@ -327,7 +327,7 @@ function renderConferencia(){
 
   const linhas=itensConf.map((c,ix)=>`
     <div class="it ${c.confirmado?'ok':''} ${c._teveFalta&&!c.confirmado?'pend':''}"
-      onclick="${c._teveFalta&&!c.confirmado?'':` confirmarItem(${ix})`}" >
+      onclick="confirmarItem(${ix})">
       ${c.imagem
         ?`<img class="it-img" src="${esc(c.imagem)}" onerror="this.outerHTML='<div class=\'it-img\' style=\'background:#1a1040;display:flex;align-items:center;justify-content:center;font-size:18px\'>📦</div>'">`
         :`<div class="it-img" style="background:#1a1040;display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>`}
