@@ -669,6 +669,23 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,pagamento}=req.body||{};
     const id=String(req.params.id);
+    // pedido de RETIRADA precisa sempre receber o pagamento antes de separar —
+    // não existe "retirar sem pagar". Se não veio pagamento junto, bloqueia.
+    if(!pagamento?.valor){
+      const entregas=lerJSON(ENTREGAS_FILE,{});
+      const entInfo=entregas[id]||null;
+      let ehEntrega=entInfo?entInfo.tipo==="entrega":null;
+      if(ehEntrega===null){
+        try{
+          const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+          const freteCalc=+(((ped?.total||0)-(ped?.totalProdutos||0))).toFixed(2);
+          ehEntrega=freteCalc>0.01;
+        }catch(e){ ehEntrega=true; } // se não conseguir checar, não bloqueia (evita falso positivo)
+      }
+      if(!ehEntrega){
+        return res.status(400).json({erro:"Pedido de RETIRADA precisa receber o pagamento antes de ir pra separação."});
+      }
+    }
     // registra pagamento se veio — valida no servidor que o valor bate
     // EXATAMENTE com o total do pedido (não confia só na checagem do navegador)
     if(pagamento?.valor&&pagamento?.formaId){
