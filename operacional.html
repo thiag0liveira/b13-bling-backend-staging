@@ -1183,6 +1183,71 @@ function desativarBotoesFundoPend(){
   if(bcf){ bcf.disabled=true; bcf.style.opacity="0.4"; bcf.style.cursor="not-allowed"; }
 }
 
+function renderPainelEstorno(id,descItens){
+  const pag=window._pendPag;
+  const diff=window._pendDiffValor;
+  const valorNovoPedido=window._valorNovoPedidoEstorno;
+  const histPag=(pag?.historico||[]).map(h=>`${h.formaNome||""}(${brl(h.valor||0)})`).join(", ");
+  const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
+
+  const parcelas=window._parcelasPosEstorno;
+  const soma=parcelas.reduce((s,p)=>s+parseFloat(p.valor||0),0);
+  const diffParc=+(valorNovoPedido-soma).toFixed(2);
+  const rowsParcelas=parcelas.map((p,ix)=>`
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
+      <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
+        onchange="window._parcelasPosEstorno[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderPainelEstorno(${id},${JSON.stringify(descItens)})">
+      <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
+        onchange="window._parcelasPosEstorno[${ix}].formaId=this.value;window._parcelasPosEstorno[${ix}].formaNome=this.options[this.selectedIndex].text">
+        ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
+      </select>
+      ${parcelas.length>1?`<button onclick="window._parcelasPosEstorno.splice(${ix},1);renderPainelEstorno(${id},${JSON.stringify(descItens)})" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+    </div>`).join("");
+
+  document.getElementById("retMsg").innerHTML=`
+    <div style="background:#1c1846;border:1px solid #3a357f;border-radius:10px;padding:14px;margin-top:8px">
+      <div style="font-weight:900;font-size:14px;margin-bottom:6px">💬 Pedido já pago — precisa de estorno</div>
+      <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Pagamento original: <b style="color:#fff">${histPag||brl(pag?.valorPago||0)}</b></div>
+      <div style="font-size:13px;margin-bottom:6px">
+        Novo total: <b style="color:#ffd23f">${brl(valorNovoPedido)}</b> &nbsp;
+        <b style="color:#ff8090">Estorno: ${brl(diff)}</b>
+      </div>
+      <div style="font-size:12px;color:#9a95c9;margin-bottom:10px">Itens alterados: ${esc(descItens)}</div>
+      <div style="font-weight:700;margin-bottom:6px">Como realizar o estorno de ${brl(diff)}?</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'credito')">💳 Crédito ao cliente</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'estorno')">↩ Devolução</button>
+        <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'registrar')">📋 Só registrar</button>
+      </div>
+      <div id="estornoDetalheBox" style="display:${window._resolucaoSel==='estorno'?'block':'none'};margin-bottom:10px">
+        <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Forma da devolução (canal usado pra devolver o dinheiro):</div>
+        <select id="estornoFormaSelect" onchange="window._estornoFormaId=this.value;window._estornoFormaNome=this.options[this.selectedIndex].text"
+          style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:6px">
+          ${optsForma}
+        </select>
+        <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *"
+          style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px;margin-bottom:12px"
+          oninput="window._estornoContaNome=this.value;validarBotaoEstorno()">
+        <div style="font-weight:700;margin-bottom:6px;color:#ffd23f">Como fica o pagamento depois do estorno? (total: ${brl(valorNovoPedido)})</div>
+        ${rowsParcelas}
+        <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px"
+          onclick="window._parcelasPosEstorno.push({valor:'${diffParc>0?diffParc.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderPainelEstorno(${id},${JSON.stringify(descItens)})">
+          + Dividir em outra forma de pagamento ${diffParc>0?`(falta ${brl(diffParc)})`:''}</button>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);margin-bottom:4px;font-size:12px">
+          <span>Total informado:</span>
+          <b style="color:${Math.abs(diffParc)<0.01?'#2f9e6b':diffParc<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diffParc)<0.01?'✅':diffParc>0?`(falta ${brl(diffParc)})`:'(passou do total)'}</b>
+        </div>
+      </div>
+      <div id="resolucaoSel" style="font-size:12px;color:#9a95c9;margin-bottom:8px"></div>
+      <button id="btnConfirmarRetirar" class="btn btn-mag" style="width:100%;display:${window._resolucaoSel?'block':'none'}"
+        onclick="executarRetirarSeguir(${id},window._resolucaoSel||'registrar',window._pendDiff,window._pendDescItens)">
+        ✅ Confirmar
+      </button>
+    </div>`;
+  if(window._resolucaoSel==="estorno") validarBotaoEstorno();
+}
+
 async function confirmarRetirarSeguir(id){
   document.getElementById("retMsg").innerHTML=`<div class="muted">Verificando pagamento…</div>`;
   try{
@@ -1222,40 +1287,12 @@ async function confirmarRetirarSeguir(id){
     window._pendDiff=Math.abs(diff);
     // Caso 1: pagou mais do que o novo total (seja pago total ou parcial) — precisa de estorno
     if(diff>0.01){
-      const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
       window._estornoFormaId=formasPag[0]?.id||""; window._estornoFormaNome=formasPag[0]?.nome||""; window._estornoContaNome="";
-      const histPag=(pag?.historico||[]).map(h=>`${h.formaNome||""}(${brl(h.valor||0)})`).join(", ");
-      document.getElementById("retMsg").innerHTML=`
-        <div style="background:#1c1846;border:1px solid #3a357f;border-radius:10px;padding:14px;margin-top:8px">
-          <div style="font-weight:900;font-size:14px;margin-bottom:6px">💬 Pedido já pago — precisa de estorno</div>
-          <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Pagamento original: <b style="color:#fff">${histPag||brl(valorPago)}</b></div>
-          <div style="font-size:13px;margin-bottom:6px">
-            Novo total: <b style="color:#ffd23f">${brl(valorNovoPedido)}</b> &nbsp;
-            <b style="color:#ff8090">Estorno: ${brl(diff)}</b>
-          </div>
-          <div style="font-size:12px;color:#9a95c9;margin-bottom:10px">Itens alterados: ${esc(descItens)}</div>
-          <div style="font-weight:700;margin-bottom:6px">Como realizar o estorno de ${brl(diff)}?</div>
-          <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-            <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'credito')">💳 Crédito ao cliente</button>
-            <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'estorno')">↩ Devolução</button>
-            <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="selecionarResolucao(this,'registrar')">📋 Só registrar</button>
-          </div>
-          <div id="estornoDetalheBox" style="display:none;margin-bottom:10px">
-            <div style="font-size:12px;color:#9a95c9;margin-bottom:4px">Forma da devolução:</div>
-            <select id="estornoFormaSelect" onchange="window._estornoFormaId=this.value;window._estornoFormaNome=this.options[this.selectedIndex].text"
-              style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:6px">
-              ${optsForma}
-            </select>
-            <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *"
-              style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
-              oninput="window._estornoContaNome=this.value;validarBotaoEstorno()">
-          </div>
-          <div id="resolucaoSel" style="font-size:12px;color:#9a95c9;margin-bottom:8px"></div>
-          <button id="btnConfirmarRetirar" class="btn btn-mag" style="width:100%;display:none"
-            onclick="executarRetirarSeguir(${id},window._resolucaoSel||'registrar',window._pendDiff,window._pendDescItens)">
-            ✅ Confirmar
-          </button>
-        </div>`;
+      window._resolucaoSel=null;
+      window._parcelasPosEstorno=[{valor:valorNovoPedido.toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
+      window._valorNovoPedidoEstorno=valorNovoPedido;
+      window._pendPag=pag; window._pendDiffValor=diff;
+      renderPainelEstorno(id,descItens);
       desativarBotoesFundoPend();
       return;
     }
@@ -1298,11 +1335,13 @@ function selecionarResolucao(btn,tipo){
 function validarBotaoEstorno(){
   const btnConf=document.getElementById("btnConfirmarRetirar");
   if(!btnConf) return;
-  if(window._resolucaoSel==="estorno"&&!(window._estornoContaNome||"").trim()){
-    btnConf.disabled=true; btnConf.style.opacity="0.5";
-  } else {
-    btnConf.disabled=false; btnConf.style.opacity="1";
+  if(window._resolucaoSel==="estorno"){
+    const contaOk=!!(window._estornoContaNome||"").trim();
+    const soma=+(window._parcelasPosEstorno||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+    const somaOk=Math.abs((window._valorNovoPedidoEstorno||0)-soma)<0.01;
+    if(!contaOk||!somaOk){ btnConf.disabled=true; btnConf.style.opacity="0.5"; return; }
   }
+  btnConf.disabled=false; btnConf.style.opacity="1";
 }
 
 function renderPainelPagamentoAdicional(id){
@@ -1422,10 +1461,15 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
         await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({valor:valorAbatido,parcelas:window._parcelasAdicional,formaId:window._novaFormaId,formaNome:window._novaFormaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,somar:true})}).catch(()=>{});
       }
-      // Estorno — registra no pagamento
-      if(resolucao==="estorno"&&valorAbatido>0){
+      // Estorno — registra o pagamento final declarado (as parcelas que o
+      // usuário definiu de como fica o pagamento depois do estorno), em vez
+      // de tentar adivinhar a forma original automaticamente
+      if(resolucao==="estorno"&&window._parcelasPosEstorno?.length){
         await fetch(B+"/api/pagamentos/"+id+"/estorno",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({valor:valorAbatido,formaId:window._estornoFormaId,formaNome:window._estornoFormaNome,contaNome:window._estornoContaNome||"",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})}).catch(()=>{});
+          body:JSON.stringify({valor:0,formaId:window._estornoFormaId,formaNome:window._estornoFormaNome,contaNome:window._estornoContaNome||"",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,soRegistrarLog:true})}).catch(()=>{});
+        const totalPosEstorno=+window._parcelasPosEstorno.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+        await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({valor:totalPosEstorno,parcelas:window._parcelasPosEstorno,formaId:window._parcelasPosEstorno[0]?.formaId,formaNome:window._parcelasPosEstorno[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true})}).catch(()=>{});
       }
     }
 

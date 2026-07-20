@@ -2781,12 +2781,22 @@ app.patch("/api/pedidos/:id/observacao", async(req,res)=>{
 app.post("/api/pagamentos/:id/estorno", async(req,res)=>{
   try{
     const id=String(req.params.id);
-    const {valor,formaId,formaNome,contaNome,funcionarioId,funcionarioNome}=req.body||{};
+    const {valor,formaId,formaNome,contaNome,funcionarioId,funcionarioNome,soRegistrarLog}=req.body||{};
     const pags=lerPag();
     if(!pags[id]) return res.status(404).json({erro:"Pagamento não encontrado"});
     const p=pags[id];
-    p.valorPago=+Math.max(0,+(p.valorPago||0)-+valor).toFixed(2);
     if(!p.historico) p.historico=[];
+    // soRegistrarLog: só deixa marcado no histórico que houve um estorno (pra
+    // auditoria/observação) — o valor final de fato é declarado por uma
+    // chamada separada com as parcelas corretas (substituir), evitando
+    // cálculo automático de "forma original" que pode errar
+    if(soRegistrarLog){
+      p.historico.push({tipo:"estorno",valor:0,formaNome,contaNome,funcionarioId,funcionarioNome,em:Date.now(),soRegistrarLog:true});
+      salvarPag(pags);
+      addLog(id,"estorno_registrado",funcionarioId,funcionarioNome,{formaNome,contaNome});
+      return res.json({ok:true,data:p});
+    }
+    p.valorPago=+Math.max(0,+(p.valorPago||0)-+valor).toFixed(2);
     p.historico.push({tipo:"estorno",valor:-+valor,formaNome,contaNome,funcionarioId,funcionarioNome,em:Date.now()});
     // busca o total ATUAL do pedido no Bling — não confia no valorPedido salvo
     // localmente, que pode estar desatualizado (ex: frete removido, itens
