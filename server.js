@@ -1652,7 +1652,7 @@ app.get("/api/em-digitacao", async(req,res)=>{
       const obj={
         id:pRaw.id, numero:pRaw.numero, cliente:pRaw.contato?.nome||"—", vendedor:vendedorNome,
         total:+(pRaw.total||pRaw.totalProdutos||0), data:pRaw.data,
-        desde, desdeHora:new Date(desde).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+        desde, desdeHora:new Date(desde).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Sao_Paulo"}),
         itens:(det?.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"Produto",quantidade:i.quantidade,valor:i.valor})),
       };
       if(!porVendedor[vendedorNome]) porVendedor[vendedorNome]=[];
@@ -2398,7 +2398,7 @@ app.get("/pedido/:id/status", async(req,res)=>{
       .map(e=>{
         const lbl=LOG_LABELS[e.evento]||{txt:(e.evento||"").replace(/_/g," "),admin:false};
         const d=new Date(e.em||0);
-        const dt=d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+        const dt=d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"America/Sao_Paulo"});
         const extra=isAdmin&&e.detalhes?.valor?` · R$ ${Number(e.detalhes.valor).toLocaleString("pt-BR",{minimumFractionDigits:2})}`:"";
         const adminBadge=isAdmin&&lbl.admin?`<span style="background:#FF008833;color:#FF0082;border-radius:3px;padding:1px 5px;font-size:9px;margin-left:4px">admin</span>`:"";
         return `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid #1a1840;display:flex;justify-content:space-between;gap:8px">
@@ -2440,7 +2440,7 @@ app.get("/pedido/:id/status", async(req,res)=>{
 body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:20px}
 .card{background:#12103a;border:1px solid #2a2660;border-radius:20px;max-width:380px;width:100%;overflow:hidden}
 .topo{background:#262366;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #FF0082}
-.logo{font-size:18px;font-weight:900;color:#FF0082}
+.logo{display:flex;align-items:center;gap:0}
 .num{font-size:12px;color:#cfc9f5}
 .admin-tag{background:#FF008833;color:#FF0082;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:6px}
 .status-pub{text-align:center;padding:20px 16px 8px}
@@ -2469,7 +2469,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
 <div class="card">
   <div class="topo">
     <div>
-      <div class="logo">B13 BEBIDAS${isAdmin?`<span class="admin-tag">ADMIN</span>`:""}</div>
+      <div class="logo"><img src="/logo" style="height:26px;display:block">${isAdmin?`<span class="admin-tag">ADMIN</span>`:""}</div>
       <div class="num">Pedido #${ped.numero||id} · ${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
     </div>
   </div>
@@ -2479,7 +2479,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
     <div class="status-emoji">${sit==="Atendido"?"✅":"❌"}</div>
     <div class="status-ptxt">${sit==="Atendido"?"Pedido atendido e finalizado":"Pedido cancelado"}</div>
   </div>
-  <div class="rodape">${new Date().toLocaleString("pt-BR")}</div>
+  <div class="rodape">${new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}</div>
   `:`
   ${!isAdmin?`
   <div class="status-pub">
@@ -2512,7 +2512,7 @@ body{background:#0a0920;color:#e8e4ff;font-family:system-ui,sans-serif;min-heigh
 
   ${isAdmin?`<a href="${confUrl}" class="btn-conf">🔍 Abrir na Conferência</a>`:""}
 
-  <div class="rodape">${isAdmin?"":"Atualiza a cada 30s · "}${new Date().toLocaleString("pt-BR")}</div>
+  <div class="rodape">${isAdmin?"":"Atualiza a cada 30s · "}${new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}</div>
   `}
 </div>
 </body></html>`;
@@ -2543,7 +2543,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     const sit=ped.situacao?.id;
     if(sit===9||sit===12) return res.status(400).json({erro:"Pedido Atendido/Cancelado não pode ser editado."});
 
-    const tsConv=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const tsConv=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"America/Sao_Paulo"});
     const obsAtual=(ped.observacoes||"").trim();
     const novaObs=(obsAtual?obsAtual+" | ":"")+`Pedido tinha a informação de frete (${brlN(freteAtual)}), mas o cliente retirou em loja em ${tsConv}`;
 
