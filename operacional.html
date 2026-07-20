@@ -736,13 +736,16 @@ async function confirmarPagEntregaInline(id){
     document.getElementById("entregaMsg").innerHTML+=`<div class="err">Valor informado (${brl(soma)}) não bate com o total (${brl(total)}). Corrija antes de confirmar.</div>`;
     return;
   }
+  document.getElementById("entregaMsg").innerHTML=`<div class="muted">Registrando pagamento…</div>`;
   try{
-    await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+    const rPost=await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({valor:soma,parcelas,formaId:parcelas[0]?.formaId,formaNome:parcelas[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
+    const jPost=await rPost.json();
+    if(!rPost.ok||jPost.erro){ document.getElementById("entregaMsg").innerHTML=`<div class="err">${esc(jPost.erro||"Erro ao registrar pagamento")}</div>`; return; }
     const rPag=await fetch(B+"/api/pagamentos/"+id).then(r=>r.json());
     window._entregaPag=rPag.data;
     renderConfirmarEntrega(id,window._entregaPed,rPag.data,window._itensOcorrencia||[]);
-  }catch(e){ document.getElementById("entregaMsg").innerHTML=`<div class="err">Erro ao registrar</div>`; }
+  }catch(e){ document.getElementById("entregaMsg").innerHTML=`<div class="err">Erro de conexão ao registrar</div>`; }
 }
 
 
