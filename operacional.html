@@ -1193,7 +1193,7 @@ function renderPainelEstorno(id){
     const n=(f.nome||"").toLowerCase();
     return n.includes("dinheiro")||n.includes("pix")||(n.includes("estorno")&&n.includes("maquin"));
   });
-  const optsFormaDevolucao=(formasDevolucaoPermitidas.length?formasDevolucaoPermitidas:formasPag).map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
+  const optsFormaDevolucao=(formasDevolucaoPermitidas.length?formasDevolucaoPermitidas:formasPag).map(f=>`<option value="${f.id}" ${f.id==window._estornoFormaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("");
   const optsForma=formasPag.map(f=>`<option value="${f.id}">${esc(f.nome||f.id)}</option>`).join("");
 
   const parcelas=window._parcelasPosEstorno;
@@ -1231,7 +1231,7 @@ function renderPainelEstorno(id){
           style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px;margin-bottom:6px">
           ${optsFormaDevolucao}
         </select>
-        <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *"
+        <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *" value="${esc(window._estornoContaNome||'')}"
           style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px;margin-bottom:12px"
           oninput="window._estornoContaNome=this.value;validarBotaoEstorno()">
         <div style="font-weight:700;margin-bottom:6px;color:#ffd23f">Como fica o pagamento depois do estorno? (total: ${brl(valorNovoPedido)})</div>
