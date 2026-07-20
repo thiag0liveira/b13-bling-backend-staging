@@ -796,6 +796,7 @@ async function finalizarEntrega(id,resolucao){
 
 function fecharModal(){
   document.getElementById("modal").style.display="none";
+  window._pendenteConverterRetirada=null;
   if(window._confLockId && FUNC && !window._confSoVis){
     fetch(B+"/api/separacoes/"+window._confLockId,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"conferencia"})}).catch(()=>{});
     window._confLockId=null;
@@ -1405,24 +1406,32 @@ async function iniciarRecebimentoAguardando(id,total,temFrete,freteVal,modo,jaPa
   }
   const ok=confirm(
     `Este pedido foi criado como ENTREGA (frete de ${brl(freteVal)}).\n\n`+
-    `Ao continuar, o frete será removido do pedido (o pedido no Bling é atualizado e fica registrado na observação) `+
+    `Ao confirmar o pagamento a seguir, o frete será removido do pedido (o pedido no Bling é atualizado e fica registrado na observação) `+
     `e o valor cobrado será sem o frete: ${brl(total-freteVal)}.\n\n`+
     `Confirma que o cliente vai retirar em loja?`
   );
   if(!ok) return;
-  showMsg(id,`<div class="muted">Removendo frete do pedido…</div>`);
+  // NÃO remove o frete ainda — só marca como pendente. A conversão de verdade
+  // só acontece quando o pagamento for realmente confirmado (se cancelar a
+  // tela de pagamento, nada é alterado no Bling).
+  window._pendenteConverterRetirada=id;
+  const novoTotal=+(total-freteVal).toFixed(2);
+  if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,novoTotal);
+  return abrirPagamento(id,novoTotal);
+}
+
+// Executa a conversão entrega→retirada (remove frete) que ficou pendente,
+// só chamado no momento em que o pagamento é realmente confirmado.
+async function commitarConversaoRetiradaSePendente(id){
+  if(window._pendenteConverterRetirada!==id) return {ok:true};
   try{
     const r=await fetch(B+"/api/fluxo/"+id+"/converter-retirada",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
     const j=await r.json();
-    if(!r.ok||j.erro){ showMsg(id,`<div class="err">${esc(j.erro||"Erro ao remover frete")}</div>`); return; }
-    const novoTotal=j.total??(total-freteVal);
-    showMsg(id,"");
-    // o frete mudou o total — não dá mais pra confiar no "já pago" de antes,
-    // então sempre passa pela tela de pagamento pra conferir o valor novo
-    if(modo==="clienteSeparou") return receberEClienteJaSeparou(id,novoTotal);
-    return abrirPagamento(id,novoTotal);
-  }catch(e){ showMsg(id,`<div class="err">Erro de conexão ao remover frete</div>`); }
+    if(!r.ok||j.erro) return {ok:false,erro:j.erro||"Erro ao remover frete"};
+    window._pendenteConverterRetirada=null;
+    return {ok:true};
+  }catch(e){ return {ok:false,erro:"Erro de conexão ao remover frete"}; }
 }
 
 async function moverParaSeparadoJaPago(id,total){
@@ -1570,6 +1579,9 @@ async function confirmarPagamentoClienteSeparou(id){
   const diff=+(totalParcelas-totalPedido).toFixed(2);
   if(!totalParcelas||totalParcelas<=0){ document.getElementById("pMsg").innerHTML=`<div class="err">Informe o valor</div>`; return; }
   if(Math.abs(diff)>0.01){ document.getElementById("pMsg").innerHTML=`<div class="err">❌ Valor das parcelas (${brl(totalParcelas)}) não bate com o total do pedido (${brl(totalPedido)}). Corrija antes de confirmar.</div>`; return; }
+  document.getElementById("pMsg").innerHTML=`<div class="muted">Confirmando…</div>`;
+  const conv=await commitarConversaoRetiradaSePendente(id);
+  if(!conv.ok){ document.getElementById("pMsg").innerHTML=`<div class="err">${esc(conv.erro)}</div>`; return; }
   document.getElementById("pMsg").innerHTML=`<div class="muted">Registrando pagamento…</div>`;
   try{
     const rPag=await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1596,6 +1608,9 @@ async function confirmarPagamento(id){
   if(diff>0.01){ document.getElementById("pMsg").innerHTML=`<div class="err">❌ Valor das parcelas (${brl(totalParcelas)}) é maior que o total do pedido (${brl(totalPedido)}). Corrija antes de confirmar.</div>`; return; }
   if(diff<-0.01){ document.getElementById("pMsg").innerHTML=`<div class="err">❌ Valor das parcelas (${brl(totalParcelas)}) é menor que o total do pedido (${brl(totalPedido)}). Corrija antes de confirmar.</div>`; return; }
   const total=totalParcelas;
+  document.getElementById("pMsg").innerHTML=`<div class="muted">Confirmando…</div>`;
+  const conv=await commitarConversaoRetiradaSePendente(id);
+  if(!conv.ok){ document.getElementById("pMsg").innerHTML=`<div class="err">${esc(conv.erro)}</div>`; return; }
   document.getElementById("pMsg").innerHTML=`<div class="muted">Registrando…</div>`;
   try{
     const r=await fetch(B+"/api/fluxo/"+id+"/enviar-separacao",{method:"POST",headers:{"Content-Type":"application/json"},
