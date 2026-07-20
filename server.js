@@ -1226,13 +1226,27 @@ app.post("/api/finalizar", async (req, res) => {
       }
     }
     // pedidos do totem sempre vêm com vendedor "SISTEMA" (ID 15596923213 no Bling),
-    // pra distinguir de pedidos digitados manualmente por um vendedor de verdade
-    payload.vendedor = { id: Number(process.env.BLING_VENDEDOR_ID || 15596923213) };
+    // pra distinguir de pedidos digitados manualmente por um vendedor de verdade.
+    // Blindado contra env var vazia/invalida (NaN vira null no JSON, e o Bling reseta pra 0)
+    let vendedorIdTotem=Number(process.env.BLING_VENDEDOR_ID);
+    if(!vendedorIdTotem||isNaN(vendedorIdTotem)) vendedorIdTotem=15596923213;
+    payload.vendedor = { id: vendedorIdTotem };
+    console.log("[totem] vendedor enviado no payload:", JSON.stringify(payload.vendedor));
     // NÃO definir situação aqui — criar em Em digitação (padrão) sem condição de pagamento
     // depois mover para AGUARDANDO SEPARAÇÃO
     await new Promise(r=>setTimeout(r,350)); // delay para evitar rate limit
     const pedido = await bling(`/pedidos/vendas`, { method: "POST", body: JSON.stringify(payload) });
     const pedidoId=pedido?.data?.id;
+    console.log("[totem] vendedor retornado na criação:", JSON.stringify(pedido?.data?.vendedor));
+    // reforço: alguns endpoints do Bling não respeitam vendedor na criação (POST),
+    // só no PUT — garante explicitamente logo depois de criar
+    if(pedidoId){
+      try{
+        await new Promise(r=>setTimeout(r,350));
+        const rReforco=await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)});
+        console.log("[totem] vendedor após reforço (PUT):", JSON.stringify(rReforco?.data?.vendedor));
+      }catch(e){ console.log("[totem] erro ao reforçar vendedor via PUT:", e.message); }
+    }
     // registra localmente se era entrega ou retirada (a listagem do Bling não traz
     // esse detalhe, e frete grátis por valor mínimo zera o valor sem deixar de ser entrega)
     if(pedidoId){
