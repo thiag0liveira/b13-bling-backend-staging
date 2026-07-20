@@ -156,15 +156,15 @@ function detalheColuna(){
   S.sucesso=null;
   // aviso de pendências anteriores
   const detalheItensTxt=(S._itensRemovidosDetalhado||[]).map(i=>
-    i.tipo==="reduzido"
-      ? `${esc(i.descricao)}: tirar ${i.quantidadeRemover} un (de ${i.quantidadeOriginal} pra ${i.quantidadeNova})`
-      : `${esc(i.descricao)}: remover todo (${i.quantidadeOriginal} un)`
+    i.tipo==="reduzido" ? `➖ ${esc(i.descricao)}: tirar ${i.quantidadeRemover} un (de ${i.quantidadeOriginal} pra ${i.quantidadeNova})`
+    : i.tipo==="adicionado" ? `➕ ${esc(i.descricao)}: adicionar ${i.quantidadeNova} un`
+    : `🗑 ${esc(i.descricao)}: remover todo (${i.quantidadeOriginal} un)`
   ).join("<br>");
   const avisoHistorico=S._tevePendencia?`<div style="background:#2a0818;border:1px solid #d400ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
     ⚠️ Pedido com histórico de pendências — itens marcados em roxo tiveram falta anteriormente
     ${S._acrescimos?.itensNovos?.length?`<br>➕ Acrescentado: ${S._acrescimos.itensNovos.map(i=>i.descricao).join(", ")}`:""}
     ${S._acrescimos?.itensRetirados?.length?`<br>➖ Retirado: ${S._acrescimos.itensRetirados.map(i=>i.descricao).join(", ")}`:""}
-    ${detalheItensTxt?`<br><b style="color:#ff8090">🗑 Ajuste na conferência:</b><br>${detalheItensTxt}`:(S._itensRemovidosLog?.length?`<br><b style="color:#ff8090">🗑 Removido na conferência: ${S._itensRemovidosLog.join(", ")}</b>`:"")}
+    ${detalheItensTxt?`<br><b style="color:#ff8090">🔧 Ajuste na conferência:</b><br>${detalheItensTxt}`:(S._itensRemovidosLog?.length?`<br><b style="color:#ff8090">🗑 Removido na conferência: ${S._itensRemovidosLog.join(", ")}</b>`:"")}
   </div>`:"";
   const avisoVoltouSep=S._itensRemovidosLog?.length?`<div style="background:#1a0010;border:1px solid #FF0082;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
     🔄 Este pedido voltou da conferência com alterações — ajuste a separação:<br>
