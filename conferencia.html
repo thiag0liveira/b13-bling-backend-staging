@@ -435,12 +435,8 @@ async function confirmarConferencia(){
     const j=await r.json();
     if(r.ok&&!j.erro){
       fecharModal();
-      const idImpressao=id;
       sel=null; itensConf=[];
       await carregar();
-      if(confirm("✅ Pedido conferido!\n\nImprimir etiqueta pra colar no pedido?")){
-        window.open(BACKEND+"/pedido/"+idImpressao+"/etiqueta","_blank");
-      }
     } else {
       document.getElementById("msgModal").innerHTML=`<span class="err">${esc(j.erro||"Erro")}</span>`;
       document.getElementById("btnConfirmar").disabled=false;
