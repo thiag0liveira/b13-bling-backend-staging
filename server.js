@@ -45,6 +45,7 @@ const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
+const GTIN_INDEX_FILE = `${DATA_DIR}/gtin_index.json`;
 const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const FPAG_DEFAULT=[
@@ -2273,6 +2274,79 @@ Content-Type: ${ct}
 app.get("/imagens",(req,res)=>res.sendFile(path.join(__dirname,"imagens.html")));
 
 // Contar total de produtos no Bling
+// ------------------------- Consulta de Preço (leitor tipo supermercado) -------------------------
+// Consulta instantânea no índice local (rápido) — sem índice, cai num fallback ao vivo no Bling
+app.get("/api/preco/gtin/:codigo", async(req,res)=>{
+  try{
+    const codigo=String(req.params.codigo||"").trim();
+    if(!codigo) return res.status(400).json({erro:"informe o código"});
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    if(indice[codigo]) return res.json({data:indice[codigo],origem:"indice"});
+    // fallback ao vivo: tenta pelo campo "codigo" (SKU interno) direto no Bling
+    try{
+      const r=await bling(`/produtos?codigo=${encodeURIComponent(codigo)}&limite=1`);
+      const p=(r?.data||[])[0];
+      if(p){
+        const item={produtoId:p.id,nome:p.nome,preco:+(p.preco||0),imagem:p.imagemURL||p.imagem?.link?.grande||null,codigo:p.codigo||""};
+        return res.json({data:item,origem:"bling_ao_vivo"});
+      }
+    }catch(e){}
+    res.json({data:null});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+app.get("/api/preco/indice-info",(req,res)=>{
+  const indice=lerJSON(GTIN_INDEX_FILE,{});
+  const qtd=Object.keys(indice).length;
+  const arq=`${GTIN_INDEX_FILE}`;
+  let atualizadoEm=null;
+  try{ atualizadoEm=fs.statSync(arq).mtime; }catch(e){}
+  res.json({qtd,atualizadoEm});
+});
+
+// Reconstrói o índice GTIN percorrendo todos os produtos (com progresso via SSE)
+app.get("/api/preco/reconstruir-indice", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.setHeader("X-Accel-Buffering","no");
+  res.flushHeaders();
+  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
+  res.on("close",()=>clearInterval(heartbeat));
+
+  try{
+    send({tipo:"status",mensagem:"Buscando lista de produtos…"});
+    const lista=[];
+    for(let pg=1;pg<=100;pg++){
+      const r=await bling(`/produtos?pagina=${pg}&limite=100`);
+      const arr=r?.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+    }
+    send({tipo:"total",total:lista.length});
+
+    const indice={};
+    for(let i=0;i<lista.length;i++){
+      const p=lista[i];
+      try{
+        const det=await bling(`/produtos/${p.id}`);
+        const d=det?.data||p;
+        const item={produtoId:p.id,nome:d.nome||p.nome,preco:+(d.preco||p.preco||0),
+          imagem:d.imagemURL||d.imagem?.link?.grande||null, codigo:d.codigo||p.codigo||""};
+        const codigos=[d.gtin,d.gtinEmbalagem,d.codigo].filter(Boolean).map(String);
+        codigos.forEach(c=>{ indice[c]=item; });
+      }catch(e){}
+      if(i%10===0) send({tipo:"progresso",atual:i+1,total:lista.length,nome:p.nome||""});
+    }
+    salvarJSON(GTIN_INDEX_FILE,indice);
+    send({tipo:"done",qtdProdutos:lista.length,qtdCodigos:Object.keys(indice).length});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(heartbeat);
+  res.end();
+});
+
+app.get("/preco", (req, res) => res.sendFile(path.join(__dirname, "preco.html")));
+
 app.get("/api/produtos/total", async(req,res)=>{
   try{
     let total=0, pg=1;

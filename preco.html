@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Consulta de Preço</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent;user-select:none}
+  :root{--indigo:#262366;--mag:#FF0082;--bg:#0f0d24}
+  body{margin:0;background:var(--bg);color:#fff;min-height:100vh;display:flex;flex-direction:column}
+  .top{background:linear-gradient(180deg,#2b2870,var(--indigo));padding:16px 20px;border-bottom:4px solid var(--mag);display:flex;align-items:center;gap:12px}
+  .top img{height:40px}
+  .top .t{font-weight:900;font-size:20px;letter-spacing:.5px}
+  .top .sp{flex:1}
+  .top .link{color:#9a95c9;font-size:11px;text-decoration:none}
+  #app{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center}
+  .scan-icon{font-size:80px;margin-bottom:10px;opacity:.85}
+  .titulo{font-size:22px;font-weight:900;margin-bottom:6px}
+  .sub{color:#9a95c9;font-size:14px;margin-bottom:26px}
+  #entrada{opacity:0;position:absolute;pointer-events:none}
+  .resultado{background:#151233;border:2px solid var(--mag);border-radius:20px;padding:32px 40px;max-width:520px;width:100%;animation:pop .18s ease-out}
+  @keyframes pop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+  .resultado img{width:140px;height:140px;object-fit:contain;border-radius:12px;background:#fff;margin-bottom:14px}
+  .resultado .nome{font-size:20px;font-weight:800;margin-bottom:14px;line-height:1.3}
+  .resultado .preco{font-size:56px;font-weight:900;color:#FF0082}
+  .resultado .preco small{font-size:22px;color:#ffd23f;display:block;font-weight:700;margin-top:2px}
+  .naoachou{background:#2a0a00;border:2px solid #e5563f;border-radius:20px;padding:32px 40px;max-width:480px}
+  .naoachou .ico{font-size:56px;margin-bottom:10px}
+  .naoachou .msg{font-size:18px;font-weight:800;color:#ff8090}
+  .naoachou .cod{color:#9a95c9;font-size:13px;margin-top:6px}
+  .rodape{padding:14px;text-align:center;color:#514c96;font-size:11px}
+  .adminBox{position:fixed;bottom:10px;right:10px;font-size:10px}
+  .adminBox button{background:#1c1846;color:#9a95c9;border:1px solid #2a2660;border-radius:6px;padding:5px 9px;font-size:10px;cursor:pointer}
+  .barraProg{background:#0a0918;border:1px solid #514c96;border-radius:8px;height:12px;overflow:hidden;margin-top:8px;max-width:280px}
+  .barraProg .fill{height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);transition:width .2s}
+</style>
+</head>
+<body>
+<div class="top">
+  <img src="/logo">
+  <div class="t">Consulta de Preço</div>
+  <div class="sp"></div>
+  <span style="font-size:11px;color:#9a95c9" id="indiceInfo"></span>
+</div>
+<div id="app"></div>
+<div class="rodape">Aponte o leitor pro código de barras do produto</div>
+<div class="adminBox">
+  <button onclick="reconstruirIndice()">🔄 Atualizar índice de produtos</button>
+</div>
+<input id="entrada" autofocus>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+let buffer="";
+let timerReset=null;
+
+function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function telaIdle(){
+  document.getElementById("app").innerHTML=`
+    <div class="scan-icon">🔍</div>
+    <div class="titulo">Consulte o preço do produto</div>
+    <div class="sub">Escaneie o código de barras (ou digite e aperte Enter)</div>`;
+}
+
+async function buscarPreco(codigo){
+  document.getElementById("app").innerHTML=`<div class="sub" style="font-size:16px">Buscando…</div>`;
+  try{
+    const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(codigo));
+    const j=await r.json();
+    if(j.data){
+      const p=j.data;
+      document.getElementById("app").innerHTML=`
+        <div class="resultado">
+          ${p.imagem?`<img src="${esc(p.imagem)}" onerror="this.style.display='none'">`:""}
+          <div class="nome">${esc(p.nome)}</div>
+          <div class="preco">${brl(p.preco)}<small>preço unitário</small></div>
+        </div>`;
+    } else {
+      document.getElementById("app").innerHTML=`
+        <div class="naoachou">
+          <div class="ico">❓</div>
+          <div class="msg">Produto não encontrado</div>
+          <div class="cod">Código: ${esc(codigo)}</div>
+        </div>`;
+    }
+  }catch(e){
+    document.getElementById("app").innerHTML=`
+      <div class="naoachou">
+        <div class="ico">⚠️</div>
+        <div class="msg">Erro ao consultar</div>
+      </div>`;
+  }
+  if(timerReset) clearTimeout(timerReset);
+  timerReset=setTimeout(telaIdle,6000);
+}
+
+const input=document.getElementById("entrada");
+function manterFoco(){ input.focus(); }
+input.addEventListener("keydown",(e)=>{
+  if(e.key==="Enter"){
+    const v=input.value.trim(); input.value="";
+    if(v) buscarPreco(v);
+  }
+});
+document.addEventListener("click",manterFoco);
+setInterval(manterFoco,1500);
+
+async function carregarIndiceInfo(){
+  try{
+    const j=await fetch(B+"/api/preco/indice-info").then(r=>r.json());
+    const info=document.getElementById("indiceInfo");
+    if(!j.qtd){ info.textContent="⚠️ Índice vazio — clique em Atualizar"; return; }
+    const dt=j.atualizadoEm?new Date(j.atualizadoEm).toLocaleString("pt-BR"):"";
+    info.textContent=`${j.qtd} códigos indexados · atualizado em ${dt}`;
+  }catch(e){}
+}
+
+function reconstruirIndice(){
+  if(!confirm("Isso vai reconstruir o índice de todos os produtos — pode levar alguns minutos. Continuar?")) return;
+  document.getElementById("app").innerHTML=`
+    <div class="titulo">Atualizando índice de produtos…</div>
+    <div class="sub" id="progTxt">Iniciando…</div>
+    <div class="barraProg"><div class="fill" id="progFill" style="width:5%"></div></div>`;
+  const es=new EventSource(B+"/api/preco/reconstruir-indice");
+  es.onmessage=(ev)=>{
+    const d=JSON.parse(ev.data);
+    const txt=document.getElementById("progTxt"); const fill=document.getElementById("progFill");
+    if(d.tipo==="status"&&txt) txt.textContent=d.mensagem;
+    else if(d.tipo==="total"&&txt) txt.textContent=`0 de ${d.total} produtos`;
+    else if(d.tipo==="progresso"&&txt){ txt.textContent=`${d.atual} de ${d.total} — ${d.nome}`; if(fill) fill.style.width=Math.round(d.atual/d.total*100)+"%"; }
+    else if(d.tipo==="done"){ es.close(); telaIdle(); carregarIndiceInfo(); alert(`✅ Índice atualizado! ${d.qtdProdutos} produtos, ${d.qtdCodigos} códigos.`); }
+    else if(d.tipo==="erro"){ es.close(); telaIdle(); alert("Erro ao atualizar índice: "+d.erro); }
+  };
+  es.onerror=()=>{ es.close(); };
+}
+
+telaIdle();
+carregarIndiceInfo();
+</script>
+</body>
+</html>
