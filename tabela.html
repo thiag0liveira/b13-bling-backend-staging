@@ -469,12 +469,12 @@ function exportPDF(){
     const {jsPDF}=window.jspdf;
     const imgData=canvas.toDataURL("image/png");
     const imgRatio=canvas.width/canvas.height;
-    // escolhe paisagem ou retrato conforme o formato da imagem, pra aproveitar melhor a folha
-    const orientation=imgRatio>1?"l":"p";
-    const doc=new jsPDF({orientation,unit:"mm",format:"a4"});
-    const pageW=doc.internal.pageSize.getWidth();
-    const pageH=doc.internal.pageSize.getHeight();
-    doc.addImage(imgData,"PNG",0,0,pageW,pageH);
+    // cria a página do PDF com o MESMO formato/proporção da imagem (não um A4
+    // fixo) — assim ela preenche 100% da folha sem esticar/distorcer nada
+    const pageWmm=297; // largura de referência
+    const pageHmm=pageWmm/imgRatio;
+    const doc=new jsPDF({unit:"mm",format:[pageWmm,pageHmm]});
+    doc.addImage(imgData,"PNG",0,0,pageWmm,pageHmm);
     doc.save("tabela_precos_b13.pdf");
   });
 }
