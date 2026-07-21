@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>B13 Bebidas — Gestão da Tabela de Preços</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.0.0/jspdf.umd.min.js"></script>
 <style>
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { margin:0; background:#0f0d24; font-family:Arial,Helvetica,sans-serif; color:#fff; }
@@ -107,6 +108,7 @@
     <label class="sw"><input type="checkbox" id="editToggle" onchange="toggleEdit()"> Modo edição</label>
     <label class="sw"><input type="checkbox" id="bindToggle" onchange="toggleBind()"> Vínculo Bling</label>
     <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)</button>
+    <button class="btn btn-mag" onclick="exportPDF()">📄 Gerar PDF</button>
     <button class="btn btn-mag" onclick="enviarImagem()">📤 Enviar</button>
     <button class="btn btn-out" onclick="sortAll()">🔤 Ordenar A→Z</button>
     <button class="btn btn-out" onclick="exportCSV()">📄 CSV (sistema)</button>
@@ -459,6 +461,26 @@ function enviarImagem(){
         alert("Este dispositivo não permite compartilhar direto. A imagem foi baixada — anexe no WhatsApp manualmente.\n\nNo celular, o botão Enviar abre o WhatsApp direto.");
       }
     },"image/png");
+  });
+}
+
+function exportPDF(){
+  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    const {jsPDF}=window.jspdf;
+    const imgData=canvas.toDataURL("image/png");
+    const pdfWidth=210, pdfHeight=297; // A4 em mm
+    const imgHeightMM=canvas.height*pdfWidth/canvas.width;
+    const doc=new jsPDF({orientation:"p",unit:"mm",format:"a4"});
+    let posicao=0, restante=imgHeightMM;
+    doc.addImage(imgData,"PNG",0,posicao,pdfWidth,imgHeightMM);
+    restante-=pdfHeight;
+    while(restante>0){
+      posicao=restante-imgHeightMM;
+      doc.addPage();
+      doc.addImage(imgData,"PNG",0,posicao,pdfWidth,imgHeightMM);
+      restante-=pdfHeight;
+    }
+    doc.save("tabela_precos_b13.pdf");
   });
 }
 
