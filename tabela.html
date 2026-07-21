@@ -474,12 +474,7 @@ function exportPDF(){
     const doc=new jsPDF({orientation,unit:"mm",format:"a4"});
     const pageW=doc.internal.pageSize.getWidth();
     const pageH=doc.internal.pageSize.getHeight();
-    const margin=6;
-    const maxW=pageW-margin*2, maxH=pageH-margin*2;
-    let w=maxW, h=w/imgRatio;
-    if(h>maxH){ h=maxH; w=h*imgRatio; }
-    const x=(pageW-w)/2, y=(pageH-h)/2;
-    doc.addImage(imgData,"PNG",x,y,w,h);
+    doc.addImage(imgData,"PNG",0,0,pageW,pageH);
     doc.save("tabela_precos_b13.pdf");
   });
 }
