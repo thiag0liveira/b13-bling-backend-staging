@@ -1867,9 +1867,18 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     for(let i=0;i<lista.length;i++){
       const pRaw=lista[i];
       const id=String(pRaw.id);
-      const total=+(pRaw.total||pRaw.totalProdutos||0);
       const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
       const cancelado=sitNome==="Cancelado";
+
+      // busca o detalhe do pedido ANTES de decidir o total — a listagem em
+      // lote do Bling pode ficar desatualizada depois que os itens são
+      // editados (ex: resolução de pendências ajustando mercadoria), então
+      // sempre prioriza o valor do detalhe individual (mais confiável)
+      let detPedido=null;
+      if(!rapido && !cancelado){
+        try{ const r=await bling(`/pedidos/vendas/${id}`); detPedido=r?.data||null; }catch(e){}
+      }
+      const total=+(detPedido?.total ?? pRaw.total ?? pRaw.totalProdutos ?? 0);
 
       if(cancelado){
         // cancelados não entram no total geral/pago/não pago — só contados à parte
@@ -1881,16 +1890,14 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       }
       totalGeral+=total;
 
-      let vendedorNome, valorPago, historico, doBling, previsto, detPedido=null;
+      let vendedorNome, valorPago, historico, doBling, previsto;
       if(rapido){
         // modo rápido: não consulta detalhe do pedido (sem vendedor, sem checar parcela do Bling)
         vendedorNome="Não verificado (busca rápida)";
         const pagLocal=pags[id];
         valorPago=+(pagLocal?.valorPago||0); historico=pagLocal?.historico||[]; doBling=false; previsto=[];
       } else {
-        // busca detalhe uma vez só — usa pra vendedor E pra resolver pagamento (evita 2ª chamada)
-        let vendedorId=null;
-        try{ const r=await bling(`/pedidos/vendas/${id}`); detPedido=r?.data||null; vendedorId=detPedido?.vendedor?.id||null; }catch(e){}
+        const vendedorId=detPedido?.vendedor?.id||null;
         vendedorNome=await nomeVendedor(vendedorId);
         const pagLocal=pags[id];
         ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(detPedido||pRaw,pagLocal,logs[id]||[]));
