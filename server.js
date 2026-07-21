@@ -2451,7 +2451,6 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
     <div style="font-size:10px;color:#888;margin-top:6px">Leia o QR para ver status do pedido</div>
   </div>
   <div class="acoes no-print">
-    <a href="${confUrl}" class="btn btn-conf">🔍 Abrir na Conferência</a>
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir nota</button>
   </div>
 </div>
