@@ -468,18 +468,18 @@ function exportPDF(){
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
     const {jsPDF}=window.jspdf;
     const imgData=canvas.toDataURL("image/png");
-    const pdfWidth=210, pdfHeight=297; // A4 em mm
-    const imgHeightMM=canvas.height*pdfWidth/canvas.width;
-    const doc=new jsPDF({orientation:"p",unit:"mm",format:"a4"});
-    let posicao=0, restante=imgHeightMM;
-    doc.addImage(imgData,"PNG",0,posicao,pdfWidth,imgHeightMM);
-    restante-=pdfHeight;
-    while(restante>0){
-      posicao=restante-imgHeightMM;
-      doc.addPage();
-      doc.addImage(imgData,"PNG",0,posicao,pdfWidth,imgHeightMM);
-      restante-=pdfHeight;
-    }
+    const imgRatio=canvas.width/canvas.height;
+    // escolhe paisagem ou retrato conforme o formato da imagem, pra aproveitar melhor a folha
+    const orientation=imgRatio>1?"l":"p";
+    const doc=new jsPDF({orientation,unit:"mm",format:"a4"});
+    const pageW=doc.internal.pageSize.getWidth();
+    const pageH=doc.internal.pageSize.getHeight();
+    const margin=6;
+    const maxW=pageW-margin*2, maxH=pageH-margin*2;
+    let w=maxW, h=w/imgRatio;
+    if(h>maxH){ h=maxH; w=h*imgRatio; }
+    const x=(pageW-w)/2, y=(pageH-h)/2;
+    doc.addImage(imgData,"PNG",x,y,w,h);
     doc.save("tabela_precos_b13.pdf");
   });
 }
