@@ -112,7 +112,7 @@ const MIN_ID=100, MIN_ANON=600;
 
 let CAT=null, META={}, ERRO=null;
 let S = novoEstado();
-function novoEstado(){ return { etapa:"inicio", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
+function novoEstado(){ return { etapa:"splash", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
   carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -191,11 +191,42 @@ function render(){
     <div style="color:#9a95c9;font-size:13px">Buscando produtos e estoque ao vivo</div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
   </div>`; return; }
+  if(S.etapa==="splash") return telaSplash(app);
   if(S.etapa==="inicio") return telaInicio(app);
   if(S.etapa==="catalogo") return S.modo==="tabela" ? telaTabela(app) : telaCatalogo(app);
   if(S.etapa==="carrinho") return telaCarrinho(app);
   if(S.etapa==="checkout") return telaCheckout(app);
   if(S.etapa==="sucesso") return telaSucesso(app);
+}
+
+function telaSplash(app){
+  app.innerHTML=`
+  <div onclick="S.etapa='inicio';render()" style="
+    position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 30%,#2b2870 0%,#181542 55%,#0c0a24 100%);
+    cursor:pointer;overflow:hidden;text-align:center;padding:24px">
+    <div style="position:absolute;inset:0;background:
+      repeating-linear-gradient(45deg,rgba(255,0,130,.03) 0 2px,transparent 2px 40px);pointer-events:none"></div>
+    <img src="${LOGO}" style="height:170px;margin-bottom:22px;filter:drop-shadow(0 0 40px rgba(255,0,130,.35))">
+    <div style="font-size:38px;font-weight:900;letter-spacing:1px;margin-bottom:10px">ATACADO DE BEBIDAS</div>
+    <div style="font-size:19px;color:#cfc9f5;max-width:640px;line-height:1.5;margin-bottom:60px">
+      Monte seu pedido no atacado direto aqui — preços especiais, entrega rápida e retirada na loja.
+    </div>
+    <div id="tocarComecar" style="
+      position:absolute;bottom:70px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:14px">
+      <div style="width:74px;height:74px;border-radius:50%;background:var(--mag,#FF0082);display:flex;align-items:center;justify-content:center;
+        font-size:32px;animation:pulseAnel 1.6s ease-out infinite">👆</div>
+      <div style="font-size:26px;font-weight:900;letter-spacing:2px;color:#fff;animation:pulseTexto 1.6s ease-in-out infinite">TOQUE PARA COMEÇAR</div>
+    </div>
+  </div>
+  <style>
+    @keyframes pulseAnel{
+      0%{box-shadow:0 0 0 0 rgba(255,0,130,.55)}
+      70%{box-shadow:0 0 0 26px rgba(255,0,130,0)}
+      100%{box-shadow:0 0 0 0 rgba(255,0,130,0)}
+    }
+    @keyframes pulseTexto{ 0%,100%{opacity:1} 50%{opacity:.45} }
+  </style>`;
 }
 
 function telaInicio(app){
@@ -694,13 +725,13 @@ function telaSucesso(app){
 
 function recomecar(perguntar){
   if(perguntar && contagem()>0 && !confirm("Recomeçar? O carrinho será esvaziado.")) return;
-  S=novoEstado(); S.etapa="inicio"; render();
+  S=novoEstado(); render();
 }
 
 // ------- timeout de inatividade (3 min) -------
 let ultimo=Date.now();
 ["click","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>ultimo=Date.now(),true));
-setInterval(()=>{ if(S.etapa!=="inicio" && Date.now()-ultimo>180000){ S=novoEstado(); render(); } },5000);
+setInterval(()=>{ if(S.etapa!=="splash" && Date.now()-ultimo>180000){ S=novoEstado(); render(); } },5000);
 
 // carrega carrinho salvo pelo modo tabela ou parâmetro de modo
 try{
