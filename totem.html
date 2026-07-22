@@ -200,48 +200,59 @@ function render(){
 }
 
 let _splashTimer=null;
-function imagensDestaque(){
-  const vistos=new Set(); const imgs=[];
+function produtosDestaque(){
+  const vistos=new Set(); const itens=[];
   todosProdutos().forEach(p=>{
-    (p.sabores||[]).forEach(s=>{
-      if(s.imagem && !vistos.has(s.imagem) && (s.estoque||0)>0){ vistos.add(s.imagem); imgs.push(s.imagem); }
+    saboresDisp(p).forEach(s=>{
+      if(!vistos.has(s.id)){
+        vistos.add(s.id);
+        itens.push({imagem:s.imagem,nome:s.nome||p.nome,preco:p.preco});
+      }
     });
   });
-  // embaralha e limita, pra não sobrecarregar e ficar variado a cada carregamento
-  for(let i=imgs.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [imgs[i],imgs[j]]=[imgs[j],imgs[i]]; }
-  return imgs.slice(0,18);
+  for(let i=itens.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [itens[i],itens[j]]=[itens[j],itens[i]]; }
+  return itens.filter(i=>i.imagem).slice(0,18);
 }
 
 function telaSplash(app){
-  const imgs=imagensDestaque();
-  const slidesHtml=imgs.map((url,i)=>`
-    <img src="${url}" class="slideImg" data-i="${i}" style="
-      position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-      opacity:${i===0?1:0};transition:opacity 1.4s ease-in-out;filter:saturate(1.15)">
+  const itens=produtosDestaque();
+  const slidesHtml=itens.map((it,i)=>`
+    <div class="slideCard" data-i="${i}" style="
+      position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+      opacity:${i===0?1:0};transition:opacity 1.2s ease-in-out">
+      <div style="background:#fff;border-radius:22px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.45)">
+        <img src="${it.imagem}" style="width:220px;height:220px;object-fit:contain;display:block">
+      </div>
+      <div style="background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:14px;padding:8px 26px;font-weight:900;font-size:18px;max-width:520px;text-align:center;box-shadow:0 8px 20px rgba(255,0,130,.35)">
+        ${esc((it.nome||"").toUpperCase())}
+      </div>
+      <div style="background:#181542;border:2px solid #FF0082;border-radius:14px;padding:6px 30px;font-weight:900;font-size:34px;color:#ffd23f;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        ${brl(it.preco)}
+      </div>
+    </div>
   `).join("");
 
   app.innerHTML=`
   <div onclick="if(_splashTimer)clearInterval(_splashTimer);S.etapa='inicio';render()" style="
     position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    cursor:pointer;overflow:hidden;text-align:center;padding:24px;background:#0c0a24">
-    ${slidesHtml}
-    <div style="position:absolute;inset:0;background:
-      linear-gradient(180deg,rgba(12,10,36,.55) 0%,rgba(12,10,36,.72) 45%,rgba(12,10,36,.92) 100%),
-      radial-gradient(circle at 50% 30%,rgba(43,40,112,.35) 0%,transparent 60%)"></div>
+    cursor:pointer;overflow:hidden;text-align:center;padding:24px;
+    background:radial-gradient(circle at 50% 25%,#2b2870 0%,#181542 55%,#0c0a24 100%)">
     <div style="position:absolute;inset:0;background:
       repeating-linear-gradient(45deg,rgba(255,0,130,.03) 0 2px,transparent 2px 40px);pointer-events:none"></div>
-    <div style="position:relative;z-index:1">
-      <img src="${LOGO}" style="height:170px;margin-bottom:22px;filter:drop-shadow(0 0 40px rgba(255,0,130,.45))">
-      <div style="font-size:38px;font-weight:900;letter-spacing:1px;margin-bottom:10px;text-shadow:0 2px 12px rgba(0,0,0,.6)">ATACADO DE BEBIDAS</div>
-      <div style="font-size:19px;color:#e8e5ff;max-width:640px;line-height:1.5;margin-bottom:60px;text-shadow:0 2px 10px rgba(0,0,0,.6)">
-        Monte seu pedido no atacado direto aqui — preços especiais, entrega rápida e retirada na loja.
-      </div>
+
+    <div style="position:absolute;top:36px;left:0;right:0;display:flex;flex-direction:column;align-items:center;z-index:1">
+      <img src="${LOGO}" style="height:74px;margin-bottom:6px;filter:drop-shadow(0 0 24px rgba(255,0,130,.4))">
+      <div style="font-size:15px;font-weight:900;letter-spacing:2px;color:#cfc9f5">ATACADO DE BEBIDAS · OFERTAS</div>
     </div>
+
+    <div style="position:relative;width:100%;height:420px;margin-top:40px;z-index:1">${slidesHtml||`
+      <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9a95c9;font-size:18px">Monte seu pedido no atacado direto aqui</div>`}</div>
+
     <div id="tocarComecar" style="
-      position:absolute;bottom:70px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:14px;z-index:1">
-      <div style="width:74px;height:74px;border-radius:50%;background:var(--mag,#FF0082);display:flex;align-items:center;justify-content:center;
-        font-size:32px;animation:pulseAnel 1.6s ease-out infinite">👆</div>
-      <div style="font-size:26px;font-weight:900;letter-spacing:2px;color:#fff;animation:pulseTexto 1.6s ease-in-out infinite;text-shadow:0 2px 10px rgba(0,0,0,.6)">TOQUE PARA COMEÇAR</div>
+      position:absolute;bottom:60px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:1">
+      <div style="width:68px;height:68px;border-radius:50%;background:var(--mag,#FF0082);display:flex;align-items:center;justify-content:center;
+        font-size:30px;animation:pulseAnel 1.6s ease-out infinite">👆</div>
+      <div style="font-size:24px;font-weight:900;letter-spacing:2px;color:#fff;animation:pulseTexto 1.6s ease-in-out infinite;text-shadow:0 2px 10px rgba(0,0,0,.6)">TOQUE PARA COMEÇAR</div>
     </div>
   </div>
   <style>
@@ -253,12 +264,12 @@ function telaSplash(app){
     @keyframes pulseTexto{ 0%,100%{opacity:1} 50%{opacity:.45} }
   </style>`;
 
-  // carrossel de fotos — troca a cada 4s com crossfade
+  // carrossel de cards — troca a cada 4s com crossfade
   if(_splashTimer) clearInterval(_splashTimer);
-  if(imgs.length>1){
+  if(itens.length>1){
     let atual=0;
     _splashTimer=setInterval(()=>{
-      const els=document.querySelectorAll(".slideImg");
+      const els=document.querySelectorAll(".slideCard");
       if(!els.length){ clearInterval(_splashTimer); return; }
       const prox=(atual+1)%els.length;
       els[atual].style.opacity=0;
