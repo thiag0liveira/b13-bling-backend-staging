@@ -347,7 +347,79 @@ function renderFechamento(app){
     </div>`:""}
     ${F.erro?`<div class="err">${esc(F.erro)}</div>`:""}
     ${rel&&!F.carregando?renderRelatorio(rel):""}
+
+    <div class="card" style="margin-top:20px">
+      <div style="font-weight:800;margin-bottom:8px">💳 Formas de pagamento recebidas numa data</div>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">
+        Olha os pedidos criados nos <b id="fpDiasLbl">7</b> dias antes da data escolhida — pra pegar pedidos que só foram pagos alguns dias depois de criados.
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <div class="muted" style="margin-bottom:4px;font-size:12px">Data</div>
+          <input type="date" id="fpData" value="${new Date().toISOString().slice(0,10)}" style="font-size:14px">
+        </div>
+        <div>
+          <div class="muted" style="margin-bottom:4px;font-size:12px">Dias antes</div>
+          <input type="number" id="fpDias" min="1" value="7" style="font-size:14px;width:70px" oninput="document.getElementById('fpDiasLbl').textContent=this.value||7">
+        </div>
+        <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFormasPorData()">🔎 Consultar</button>
+      </div>
+      <div id="fpResultado"></div>
+    </div>
   </div>`;
+}
+
+async function buscarFormasPorData(){
+  const data=document.getElementById("fpData").value;
+  const dias=document.getElementById("fpDias").value||7;
+  if(!data){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha uma data.</div>`; return; }
+  const box=document.getElementById("fpResultado");
+  box.innerHTML=`<div class="muted">Iniciando…</div>`;
+  const es=new EventSource(B+"/api/formas-pagamento-por-data?"+new URLSearchParams({data,dias}).toString());
+  es.onmessage=(ev)=>{
+    const d=JSON.parse(ev.data);
+    if(d.tipo==="status"){ box.innerHTML=`<div class="muted">${esc(d.mensagem)}</div>`; }
+    else if(d.tipo==="total"){ box.innerHTML=`<div class="muted">0 de ${d.total} pedidos processados</div>`; }
+    else if(d.tipo==="progresso"){ box.innerHTML=`<div class="muted">${d.atual} de ${d.total} pedidos processados</div>`; }
+    else if(d.tipo==="done"){
+      es.close();
+      const naoPagos=d.pedidos.filter(p=>!p.pago);
+      box.innerHTML=`
+        <div class="muted" style="font-size:12px;margin-bottom:10px">Período verificado: ${d.dataInicial} até ${d.dataFinal}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <div class="card" style="flex:1;min-width:140px;text-align:center;margin-bottom:0">
+            <div class="muted">Pago</div>
+            <div style="font-size:20px;font-weight:900;color:#2f9e6b">${brl(d.totalPago)}</div>
+            <div class="muted" style="font-size:11px">${d.qtdPagos} pedido(s)</div>
+          </div>
+          <div class="card" style="flex:1;min-width:140px;text-align:center;margin-bottom:0">
+            <div class="muted">Não pago</div>
+            <div style="font-size:20px;font-weight:900;color:#ff8090">${brl(d.totalNaoPago)}</div>
+            <div class="muted" style="font-size:11px">${d.qtdNaoPagos} pedido(s)</div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:800;margin-bottom:6px">Por forma de pagamento</div>
+          ${d.formasPagamento.length?d.formasPagamento.map(f=>`
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
+              <span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span>
+              <b>${brl(f.valor)}</b>
+            </div>`).join(""):'<div class="muted" style="margin:0">Nenhum pagamento no período.</div>'}
+        </div>
+        ${naoPagos.length?`
+        <div class="card" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Ainda não pagos (${naoPagos.length})</div>
+          ${naoPagos.map(p=>`
+            <div style="padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
+              #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)} · ${p.data})</span>
+              <span style="float:right;font-weight:700;color:#ff8090">${brl(p.total)}</span>
+            </div>`).join("")}
+        </div>`:""}
+      `;
+    }
+    else if(d.tipo==="erro"){ es.close(); box.innerHTML=`<div class="err">${esc(d.erro)}</div>`; }
+  };
+  es.onerror=()=>{ es.close(); };
 }
 
 function toggleStatusExpandido(nome){

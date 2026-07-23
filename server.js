@@ -1908,6 +1908,78 @@ app.get("/api/em-digitacao", async(req,res)=>{
 });
 
 
+// Formas de pagamento recebidas numa data escolhida — olha pedidos CRIADOS
+// nos N dias antes dessa data (padrão 7), pra pegar pedidos que só foram
+// pagos alguns dias depois de criados, e soma por forma de pagamento
+app.get("/api/formas-pagamento-por-data", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.setHeader("X-Accel-Buffering","no");
+  res.flushHeaders();
+  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
+  res.on("close",()=>clearInterval(heartbeat));
+
+  try{
+    const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
+    const dataAlvo=req.query.data;
+    if(!dataAlvo||!dataRegex.test(dataAlvo)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD"}); clearInterval(heartbeat); return res.end(); }
+    const janelaDias=Math.max(1,parseInt(req.query.dias)||7);
+    const alvo=new Date(dataAlvo+"T00:00:00");
+    const dataInicial=new Date(alvo.getTime()-janelaDias*86400000).toISOString().slice(0,10);
+    const dataFinal=dataAlvo;
+
+    send({tipo:"status",mensagem:`Buscando pedidos criados entre ${dataInicial} e ${dataFinal}…`});
+    const lista=[];
+    for(let pg=1;pg<=100;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+    }
+    send({tipo:"total",total:lista.length});
+
+    const pags=lerPag();
+    const logsTodos=lerJSON(LOG_FILE,{});
+    const porForma={}; // nome -> {valor, qtd}
+    let totalPago=0, qtdPagos=0, totalNaoPago=0, qtdNaoPagos=0;
+    const pedidosDetalhados=[];
+    for(let i=0;i<lista.length;i++){
+      const pRaw=lista[i];
+      const id=String(pRaw.id);
+      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
+      if(sitNome==="Cancelado"){ send({tipo:"progresso",atual:i+1,total:lista.length}); continue; }
+      let det=null;
+      try{ const r=await bling(`/pedidos/vendas/${id}`); det=r?.data||null; }catch(e){}
+      const total=+(det?.total??pRaw.total??pRaw.totalProdutos??0);
+      const pagLocal=pags[id];
+      const {valorPago,historico}=await resolverPagamentoPedido(det||pRaw,pagLocal,logsTodos[id]||[]);
+      const pago=valorPago>=total-0.01&&valorPago>0;
+      if(pago){
+        totalPago+=total; qtdPagos++;
+        // soma por forma de pagamento — usa o histórico (pode ter mais de uma forma)
+        (historico||[]).forEach(h=>{
+          const nome=h.formaNome||"Não identificada";
+          if(!porForma[nome]) porForma[nome]={valor:0,qtd:0};
+          porForma[nome].valor+=+(h.valor||0);
+          porForma[nome].qtd++;
+        });
+      } else {
+        totalNaoPago+=total; qtdNaoPagos++;
+      }
+      pedidosDetalhados.push({numero:pRaw.numero,id:pRaw.id,cliente:pRaw.contato?.nome||"—",data:pRaw.data,situacao:sitNome,total,pago});
+      send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
+    }
+    const formasArr=Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor);
+    send({tipo:"done",dataAlvo,dataInicial,dataFinal,janelaDias,
+      totalPago:+totalPago.toFixed(2),qtdPagos,totalNaoPago:+totalNaoPago.toFixed(2),qtdNaoPagos,
+      formasPagamento:formasArr, pedidos:pedidosDetalhados});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(heartbeat);
+  res.end();
+});
+
 app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
