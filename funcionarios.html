@@ -195,7 +195,7 @@ async function salvarNovo(){
   if(!nome||!senha){ document.getElementById("fMsg").innerHTML=`<div class="err">Preencha nome e senha</div>`; return; }
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
   try{
-    const r=await fetch(B+"/api/funcionarios",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nome,login:document.getElementById("fLogin").value.trim().toLowerCase().replace(/\s+/g,""),senha,nivel,permissoes})});
+    const r=await fetch(B+"/api/funcionarios",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({nome,login:document.getElementById("fLogin").value.trim().toLowerCase().replace(/\s+/g,""),senha,nivel,permissoes})});
     const j=await r.json();
     if(r.ok&&j.ok){ fecharModal(); msg=`<div class="ok">✅ Funcionário criado!</div>`; carregar(); }
     else document.getElementById("fMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
@@ -211,7 +211,7 @@ async function salvarEditar(id){
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
   const body={nome,nivel,login,permissoes}; if(senha) body.senha=senha;
   try{
-    const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify(body)});
     const j=await r.json();
     if(r.ok&&j.ok){ fecharModal(); msg=`<div class="ok">✅ Funcionário atualizado!</div>`; carregar(); }
     else document.getElementById("fMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
@@ -221,7 +221,7 @@ async function salvarEditar(id){
 async function toggleAtivo(id,ativo){
   if(!confirm(`${ativo?'Ativar':'Desativar'} este funcionário?`)) return;
   try{
-    await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({ativo})});
+    await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({ativo})});
     carregar();
   }catch(e){}
 }

@@ -38,6 +38,7 @@ const TOKENS_FILE = `${DATA_DIR}/tokens.json`;
 const TABELA_FILE = `${DATA_DIR}/tabela.json`;
 const PEND_FILE = `${DATA_DIR}/pendencias.json`;
 const FUNC_FILE = `${DATA_DIR}/funcionarios.json`;
+const SESSOES_FILE = `${DATA_DIR}/sessoes.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
@@ -67,7 +68,18 @@ const SIT = {
 };
 
 const app = express();
-app.use(cors());
+const ORIGENS_PERMITIDAS=[
+  "https://b13-bling-backend-production.up.railway.app",
+  "https://b13-bling-backend-staging-production.up.railway.app",
+  "http://localhost:3000","http://127.0.0.1:3000",
+];
+app.use(cors({
+  origin(origin,cb){
+    // requisições sem "origin" (apps mobile, curl, mesma origem) sempre passam
+    if(!origin||ORIGENS_PERMITIDAS.includes(origin)) return cb(null,true);
+    cb(new Error("Origem não permitida por CORS"));
+  },
+}));
 app.use(express.json({ limit: "5mb" }));
 
 // ------------------------- tokens -------------------------
@@ -292,25 +304,67 @@ app.get("/api/situacoes",async(req,res)=>{ try{ const m=req.query.modulo; res.js
 // ---- helpers ----
 const lerJSON=(f,def={})=>{ try{return JSON.parse(fs.readFileSync(f,"utf8"));}catch{return def;} };
 const salvarJSON=(f,d)=>fs.writeFileSync(f,JSON.stringify(d));
-const hashSenha=(s)=>crypto.createHash("sha256").update(s+(process.env.SALT||"b13salt")).digest("hex");
+// Hash de senha forte: scrypt com sal único por usuário (formato salvo: "salt:hash").
+// Antigo (SHA-256 com sal fixo compartilhado) ainda é reconhecido pra não invalidar
+// senhas já cadastradas — migra sozinho pro formato novo no próximo login com sucesso.
+const hashSenhaAntigo=(s)=>crypto.createHash("sha256").update(s+(process.env.SALT||"b13salt")).digest("hex");
+function hashSenha(s){
+  const salt=crypto.randomBytes(16).toString("hex");
+  const hash=crypto.scryptSync(s,salt,64).toString("hex");
+  return `${salt}:${hash}`;
+}
+function verificarSenha(senhaDigitada,armazenado){
+  if(!armazenado) return false;
+  if(armazenado.includes(":")){
+    const [salt,hash]=armazenado.split(":");
+    try{
+      const hashDigitado=crypto.scryptSync(senhaDigitada,salt,64).toString("hex");
+      return crypto.timingSafeEqual(Buffer.from(hash,"hex"),Buffer.from(hashDigitado,"hex"));
+    }catch(e){ return false; }
+  }
+  // formato antigo (sem sal por usuário) — ainda aceito pra compatibilidade
+  return hashSenhaAntigo(senhaDigitada)===armazenado;
+}
+
+// ---- SESSÕES (token emitido no login, exigido pra ações administrativas sensíveis) ----
+function lerSessoes(){ return lerJSON(SESSOES_FILE,{}); }
+function salvarSessoes(s){ salvarJSON(SESSOES_FILE,s); }
+function criarSessao(f){
+  const sessoes=lerSessoes();
+  const token=crypto.randomBytes(24).toString("hex");
+  sessoes[token]={funcionarioId:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],criadoEm:Date.now(),expiraEm:Date.now()+12*3600*1000};
+  salvarSessoes(sessoes);
+  return token;
+}
+// Middleware: exige token de sessão válido de um admin (ou de quem tem "admin" nas permissões)
+function requireAdmin(req,res,next){
+  const token=req.headers["x-auth-token"];
+  if(!token) return res.status(401).json({erro:"Não autenticado — faça login novamente"});
+  const sessoes=lerSessoes();
+  const s=sessoes[token];
+  if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  if(s.nivel!=="admin"&&!(s.permissoes||[]).includes("admin")) return res.status(403).json({erro:"Sem permissão de administrador"});
+  req.sessao=s;
+  next();
+}
 
 // ---- FUNCIONÁRIOS ----
 app.get("/api/funcionarios",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
   res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo}))});
 });
-app.post("/api/funcionarios",(req,res)=>{
+app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   const {nome,senha,nivel}=req.body||{};
   if(!nome||!senha||!nivel) return res.status(400).json({erro:"nome, senha e nivel obrigatórios"});
   const funcs=lerJSON(FUNC_FILE,{});
-  const id="f"+Date.now();
+  const id="f"+Date.now()+crypto.randomBytes(4).toString("hex");
   // verificar login duplicado
   if(req.body.login && Object.values(funcs).some(f=>f.login===req.body.login))
     return res.status(400).json({erro:"Login já em uso por outro funcionário"});
   funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now()};
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id});
 });
-app.patch("/api/funcionarios/:id",(req,res)=>{
+app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); const f=funcs[req.params.id];
   if(!f) return res.status(404).json({erro:"funcionário não encontrado"});
   if(req.body.nome) f.nome=req.body.nome;
@@ -325,7 +379,7 @@ app.patch("/api/funcionarios/:id",(req,res)=>{
   if(req.body.senha) f.senhaHash=hashSenha(req.body.senha);
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
 });
-app.delete("/api/funcionarios/:id",(req,res)=>{
+app.delete("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); if(!funcs[req.params.id]) return res.status(404).json({erro:"não encontrado"});
   delete funcs[req.params.id]; salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
 });
@@ -334,17 +388,44 @@ app.delete("/api/funcionarios/:id",(req,res)=>{
 // conta por qualquer pessoa). Reset de senha agora só via PUT /api/funcionarios/:id
 // (já usado pela tela de Funcionários, que exige estar logado como admin no app).
 
+// Limite de tentativas de login por IP — evita força bruta de senha
+const _loginTentativas={}; // ip -> {tentativas, bloqueadoAte}
+function checarLimiteLogin(ip){
+  const agora=Date.now();
+  const info=_loginTentativas[ip]||{tentativas:0,primeiraEm:agora,bloqueadoAte:0};
+  if(info.bloqueadoAte>agora) return {bloqueado:true,restanteMs:info.bloqueadoAte-agora};
+  return {bloqueado:false,info};
+}
+function registrarFalhaLogin(ip){
+  const agora=Date.now();
+  const info=_loginTentativas[ip]||{tentativas:0,primeiraEm:agora,bloqueadoAte:0};
+  // reseta contador se a janela de 15 min já passou
+  if(agora-info.primeiraEm>15*60*1000){ info.tentativas=0; info.primeiraEm=agora; }
+  info.tentativas++;
+  if(info.tentativas>=6) info.bloqueadoAte=agora+10*60*1000; // 10 min de bloqueio após 6 tentativas erradas
+  _loginTentativas[ip]=info;
+}
+function limparTentativasLogin(ip){ delete _loginTentativas[ip]; }
+
 app.post("/api/funcionarios/login",(req,res)=>{
+  const ip=req.ip||req.headers["x-forwarded-for"]||req.socket.remoteAddress||"desconhecido";
+  const limite=checarLimiteLogin(ip);
+  if(limite.bloqueado){
+    return res.status(429).json({erro:`Muitas tentativas erradas. Tente de novo em ${Math.ceil(limite.restanteMs/60000)} min.`});
+  }
   const {login,senha,nivel}=req.body||{};
   const funcs=lerJSON(FUNC_FILE,{});
-  const hash=hashSenha(senha||"");
   // busca por login+senha (se tiver login), senão só pela senha (compatibilidade)
   const f=Object.values(funcs).find(x=>{
     const loginOk=login?x.login===login:true;
-    return loginOk&&x.senhaHash===hash&&x.ativo&&(!nivel||x.nivel===nivel||(x.permissoes||[]).includes(nivel)||x.nivel==="admin");
+    return loginOk&&verificarSenha(senha||"",x.senhaHash)&&x.ativo&&(!nivel||x.nivel===nivel||(x.permissoes||[]).includes(nivel)||x.nivel==="admin");
   });
-  if(!f) return res.status(401).json({erro:"Login ou senha incorretos"});
-  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel]}});
+  if(!f){ registrarFalhaLogin(ip); return res.status(401).json({erro:"Login ou senha incorretos"}); }
+  limparTentativasLogin(ip);
+  // migra sozinho pro hash forte (scrypt) se ainda estava no formato antigo
+  if(!f.senhaHash.includes(":")){ f.senhaHash=hashSenha(senha); salvarJSON(FUNC_FILE,funcs); }
+  const token=criarSessao(f);
+  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],token}});
 });
 
 // ---- LOCKS DE PEDIDO (quem está com o pedido) ----
