@@ -235,6 +235,8 @@ async function carregarInstagramPosts(){
     const j=await fetch(B+"/api/instagram/posts").then(r=>r.json());
     INSTAGRAM_POSTS=(j.data||[]).filter(p=>p.imagem);
   }catch(e){ INSTAGRAM_POSTS=[]; }
+  // se ainda estiver na tela splash, redesenha pra já usar os posts recém-carregados
+  if(S.etapa==="splash") render();
 }
 
 let _instagramIdx=0;
