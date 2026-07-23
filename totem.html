@@ -51,10 +51,11 @@
     .side .scat{padding:12px 14px;border-radius:10px;background:#1c1846;color:#cfc9f5;font-weight:700;cursor:pointer;font-size:14px;border:2px solid transparent}
     .side .scat.on{background:var(--mag);color:#fff}
   }
-  .grid{display:grid;grid-template-columns:1fr;gap:10px}
+  .grid{display:grid;grid-template-columns:1fr;gap:10px;align-items:stretch}
   @media(min-width:480px){.grid{grid-template-columns:1fr 1fr}}
   @media(min-width:760px){.grid{grid-template-columns:1fr 1fr 1fr}}
-  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px;display:flex;flex-direction:column}
+  .card .addrow,.card .tag{margin-top:auto;padding-top:8px}
   .card .nm{font-weight:800;font-size:16px}
   .pimg{width:100%;height:96px;object-fit:contain;background:#fff;border-radius:8px;margin-bottom:8px}
   .card .obs{font-size:11px;color:#9a95c9;font-weight:700}
