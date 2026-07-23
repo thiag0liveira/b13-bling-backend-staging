@@ -2401,7 +2401,9 @@ app.get("/api/instagram/posts", async(req,res)=>{
 
     const posts=(j.data||[]).map(p=>({
       id:p.id,
+      tipo:p.media_type, // IMAGE, VIDEO ou CAROUSEL_ALBUM
       imagem:p.media_type==="VIDEO"?p.thumbnail_url:p.media_url,
+      video:p.media_type==="VIDEO"?p.media_url:null,
       legenda:(p.caption||"").slice(0,120),
       link:p.permalink,
       data:p.timestamp,
