@@ -7,11 +7,16 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   body{background:#181542;color:#fff;overflow:hidden;height:100vh}
-  #fundo{position:fixed;inset:0;z-index:0;overflow:hidden;background:
-    linear-gradient(180deg,rgba(12,10,36,.92) 0%,rgba(24,21,66,.75) 30%,rgba(24,21,66,.80) 100%),
-    url('/loja-fundo') center 30%/cover no-repeat,
-    linear-gradient(160deg,#2b2870 0%,#181542 55%,#0c0a24 100%)}
-  #fundo .topoEscuro{position:absolute;top:0;left:0;right:0;height:38%;background:linear-gradient(180deg,#0c0a24 0%,rgba(12,10,36,.85) 60%,transparent 100%)}
+  #fundo{position:fixed;inset:0;z-index:0;overflow:hidden;
+    background-color:#181542;
+    background-image:
+      linear-gradient(180deg,rgba(12,10,36,.55) 0%,rgba(24,21,66,.30) 35%,rgba(24,21,66,.40) 100%),
+      url('/loja-fundo'),
+      linear-gradient(160deg,#2b2870 0%,#181542 55%,#0c0a24 100%);
+    background-size:cover,contain,cover;
+    background-position:center,center top,center;
+    background-repeat:no-repeat,no-repeat,no-repeat}
+  #fundo .topoEscuro{position:absolute;top:0;left:0;right:0;height:30%;background:linear-gradient(180deg,#0c0a24 0%,rgba(12,10,36,.7) 60%,transparent 100%)}
   #fundo .brilho{position:absolute;border-radius:50%;filter:blur(60px);opacity:.45}
   #fundo .b1{width:340px;height:340px;background:#FF0082;top:-80px;left:-80px;animation:flutuar 14s ease-in-out infinite}
   #fundo .b2{width:420px;height:420px;background:#6228d7;bottom:-140px;right:-100px;animation:flutuar 18s ease-in-out infinite reverse}
