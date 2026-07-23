@@ -1966,7 +1966,7 @@ app.get("/api/fechamento-por-pagamento", async(req,res)=>{
     // ---- 2) pedidos direto do Bling — usa vencimento da parcela como aproximação ----
     // busca pedidos criados numa janela ampla (até 60 dias antes da data final),
     // já que um pedido pode ter sido criado bem antes de ser pago
-    const janelaBuscaDias=60;
+    const janelaBuscaDias=7;
     const dataBuscaInicial=new Date(new Date(dataFinal+"T00:00:00").getTime()-janelaBuscaDias*86400000).toISOString().slice(0,10);
     const lista=[];
     for(let pg=1;pg<=100;pg++){
