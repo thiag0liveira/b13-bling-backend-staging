@@ -2395,7 +2395,7 @@ app.get("/api/instagram/posts", async(req,res)=>{
       return res.json({data:cache.posts,origem:"cache"});
     }
 
-    const url=`https://graph.facebook.com/v25.0/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=6&access_token=${encodeURIComponent(token)}`;
+    const url=`https://graph.facebook.com/v25.0/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=20&access_token=${encodeURIComponent(token)}`;
     const r=await fetch(url);
     const j=await r.json();
     if(j.error) return res.json({data:cache.posts||[],erro:j.error.message,origem:"cache_fallback"});
