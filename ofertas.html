@@ -17,6 +17,7 @@
     background-position:center,center top,center;
     background-repeat:no-repeat,no-repeat,no-repeat}
   #fundo .topoEscuro{position:absolute;top:0;left:0;right:0;height:30%;background:linear-gradient(180deg,#0c0a24 0%,rgba(12,10,36,.7) 60%,transparent 100%)}
+  #fundo .baixoEscuro{position:absolute;bottom:0;left:0;right:0;height:32%;background:linear-gradient(0deg,#0c0a24 0%,rgba(12,10,36,.75) 55%,transparent 100%)}
   #fundo .brilho{position:absolute;border-radius:50%;filter:blur(60px);opacity:.45}
   #fundo .b1{width:340px;height:340px;background:#FF0082;top:-80px;left:-80px;animation:flutuar 14s ease-in-out infinite}
   #fundo .b2{width:420px;height:420px;background:#6228d7;bottom:-140px;right:-100px;animation:flutuar 18s ease-in-out infinite reverse}
@@ -29,8 +30,8 @@
   #app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:18px 26px}
 
   .topo{background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:18px;padding:10px 26px;display:flex;align-items:center;gap:18px;box-shadow:0 10px 30px rgba(255,0,130,.4);flex:0 0 auto}
-  .topo .logoBox{background:#fff;border-radius:12px;padding:6px 12px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.2)}
-  .topo img{height:36px;display:block}
+  .topo .logoBox{background:#000;border-radius:12px;padding:6px 10px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.15)}
+  .topo img{height:38px;display:block;border-radius:4px}
   .topo .txt{font-weight:900;font-size:20px;line-height:1.2}
   .topo .zap{display:flex;align-items:center;gap:8px;margin-left:auto;font-weight:900;font-size:24px;background:rgba(0,0,0,.15);padding:6px 18px;border-radius:12px}
 
@@ -57,13 +58,16 @@
     padding:5px 14px;text-align:center;width:100%;box-shadow:0 4px 14px rgba(255,0,130,.25)}
   .card .precoTag small{color:#ffd23f;font-size:14px;font-weight:800}
 
-  .rodape{flex:0 0 auto;text-align:center;font-size:13px;color:#cfc9f5;padding-top:12px;display:flex;flex-direction:column;gap:2px}
+  .rodape{flex:0 0 auto;text-align:center;font-size:13px;color:#cfc9f5;display:flex;flex-direction:column;gap:2px;
+    border:1.5px solid rgba(255,0,130,.55);border-radius:14px;padding:10px 20px;margin-top:12px;
+    background:rgba(12,10,36,.55);box-shadow:0 6px 20px rgba(0,0,0,.35)}
   .rodape b{color:#fff}
 </style>
 </head>
 <body>
 <div id="fundo">
   <div class="topoEscuro"></div>
+  <div class="baixoEscuro"></div>
   <div class="brilho b1"></div>
   <div class="brilho b2"></div>
   <div class="brilho b3"></div>
@@ -72,7 +76,7 @@
 </div>
 <div id="app">
   <div class="topo">
-    <div class="logoBox"><img src="/logo"></div>
+    <div class="logoBox"><img src="/logo-ofertas"></div>
     <div class="txt">ATACADO: ENTRE EM CONTATO CONOSCO</div>
     <div class="zap">💬 (31) 9971-9888</div>
   </div>
