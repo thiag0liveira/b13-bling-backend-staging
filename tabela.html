@@ -281,6 +281,7 @@ function render(){
       // captura referências locais — imunes ao render()
       (function(catId, itId, inputEl, resEl){
         let timer;
+        let ultimaLista=[]; // guarda os produtos da última busca, pra achar pelo índice no clique
         inputEl.addEventListener("input", function(){
           clearTimeout(timer);
           const term=(this.value||"").trim();
@@ -290,27 +291,29 @@ function render(){
             try{
               const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/buscar?nome="+encodeURIComponent(term);
               const r=await fetch(url); const j=await r.json(); const lista=j.data||[];
+              ultimaLista=lista;
               resEl.innerHTML="";
               if(!lista.length){ resEl.innerHTML="<div class='resload'>nada encontrado</div>"; return; }
-              lista.forEach(prod=>{
-                const btn=document.createElement("button"); btn.className="resitem";
-                btn.innerHTML=esc(prod.nome)+" <small>#"+esc(String(prod.codigo))+" · est "+(prod.estoque??"?")+"</small>";
-                btn.addEventListener("click",function(){
-                  const ci=catIndex(catId); const c=MODEL[ci];
-                  const it=c&&c.itens.find(x=>x.id===itId); if(!it) return;
-                  if(!Array.isArray(it.bling)) it.bling=[];
-                  if(!it.bling.some(b=>String(b.codigo)===String(prod.codigo)))
-                    it.bling.push({codigo:prod.codigo,id:prod.id,nome:prod.nome,estoque:prod.estoque});
-                  save();
-                  // atualiza só os chips desse item — evita reconstruir a tela toda
-                  // (que perdia edições em andamento e podia dar impressão de "mudar de lugar")
-                  const ch=document.getElementById("chips_"+itId); if(ch) ch.innerHTML=chipsHTML(catId,it);
-                  resEl.innerHTML=""; inputEl.value="";
-                });
-                resEl.appendChild(btn);
-              });
+              resEl.innerHTML=lista.map((prod,ix)=>
+                `<button type="button" class="resitem" data-ix="${ix}">${esc(prod.nome)} <small>#${esc(String(prod.codigo))} · est ${prod.estoque??"?"}</small></button>`
+              ).join("");
             }catch(e){ resEl.innerHTML="<div class='resload'>erro ao buscar</div>"; }
           },400);
+        });
+        // um único listener no container (delegação) — mais robusto do que um por botão
+        resEl.addEventListener("click", function(ev){
+          const btn=ev.target.closest(".resitem"); if(!btn||!resEl.contains(btn)) return;
+          const prod=ultimaLista[Number(btn.dataset.ix)]; if(!prod) return;
+          const ci=catIndex(catId); const c=MODEL[ci];
+          const it=c&&c.itens.find(x=>x.id===itId); if(!it) return;
+          if(!Array.isArray(it.bling)) it.bling=[];
+          if(!it.bling.some(b=>String(b.codigo)===String(prod.codigo)))
+            it.bling.push({codigo:prod.codigo,id:prod.id,nome:prod.nome,estoque:prod.estoque});
+          save();
+          // atualiza só os chips desse item — evita reconstruir a tela toda
+          // (que perdia edições em andamento e podia dar impressão de "mudar de lugar")
+          const ch=document.getElementById("chips_"+itId); if(ch) ch.innerHTML=chipsHTML(catId,it);
+          resEl.innerHTML=""; inputEl.value="";
         });
       })(cat.id, it.id, vb.querySelector("input.busca"), vb.querySelector(".res"));
       box.appendChild(vb);
