@@ -161,7 +161,7 @@ setInterval(async()=>{ await carregarProdutos(); }, 10*60*1000);
 function exportarImagem(){
   const btn=document.getElementById("btnExportar");
   btn.style.display="none";
-  html2canvas(document.getElementById("app"),{backgroundColor:"#181542",scale:2,useCORS:true}).then(canvas=>{
+  html2canvas(document.body,{backgroundColor:"#181542",scale:2,useCORS:true,width:document.documentElement.clientWidth,height:document.documentElement.clientHeight,windowWidth:document.documentElement.clientWidth,windowHeight:document.documentElement.clientHeight}).then(canvas=>{
     btn.style.display="block";
     const a=document.createElement("a");
     a.download="b13_ofertas.png";
