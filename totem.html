@@ -232,7 +232,7 @@ function cardProdutoHtml(it){
 let INSTAGRAM_POSTS=[];
 async function carregarInstagramPosts(){
   try{
-    const j=await fetch(B+"/api/instagram/posts").then(r=>r.json());
+    const j=await fetch(BACKEND+"/api/instagram/posts").then(r=>r.json());
     INSTAGRAM_POSTS=(j.data||[]).filter(p=>p.imagem);
   }catch(e){ INSTAGRAM_POSTS=[]; }
   // se ainda estiver na tela splash, redesenha pra já usar os posts recém-carregados
