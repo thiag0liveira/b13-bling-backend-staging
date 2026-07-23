@@ -412,10 +412,18 @@ async function buscarFormasPorData(){
   const es=new EventSource(B+"/api/fechamento-por-pagamento?"+new URLSearchParams({dataInicial,dataFinal}).toString());
   es.onmessage=(ev)=>{
     const d=JSON.parse(ev.data);
-    if(d.tipo==="status"){ box.innerHTML=`<div class="muted">${esc(d.mensagem)}</div>`; }
-    else if(d.tipo==="total"){ box.innerHTML=`<div class="muted">0 de ${d.total} pedidos verificados no Bling</div>`; }
-    else if(d.tipo==="progresso"){ box.innerHTML=`<div class="muted">${d.atual} de ${d.total} pedidos verificados no Bling</div>`; }
-    else if(d.tipo==="progresso2"){ box.innerHTML=`<div class="muted">Buscando detalhes: ${d.atual} de ${d.total}</div>`; }
+    const barra=(msg,atual,total)=>`
+      <div class="card">
+        <div style="margin-bottom:8px;font-size:13px">${esc(msg)}</div>
+        <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96">
+          <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${total?Math.round((atual/total)*100):5}%;transition:width .3s"></div>
+        </div>
+        <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${total?Math.round((atual/total)*100)+"%":"Buscando pedidos…"}</div>
+      </div>`;
+    if(d.tipo==="status"){ box.innerHTML=barra(d.mensagem,0,0); }
+    else if(d.tipo==="total"){ box.innerHTML=barra(`0 de ${d.total} pedidos verificados no Bling`,0,d.total); }
+    else if(d.tipo==="progresso"){ box.innerHTML=barra(`${d.atual} de ${d.total} pedidos verificados no Bling`,d.atual,d.total); }
+    else if(d.tipo==="progresso2"){ box.innerHTML=barra(`Buscando detalhes: ${d.atual} de ${d.total}`,d.atual,d.total); }
     else if(d.tipo==="done"){
       es.close();
       box.innerHTML=`
