@@ -353,20 +353,33 @@ function renderFechamento(app){
 }
 
 function renderFormasPagamento(app){
+  const hoje=new Date().toISOString().slice(0,10);
   app.innerHTML=header()+`<div class="wrap">
     <div class="card">
-      <div style="font-weight:800;margin-bottom:8px">💳 Formas de pagamento recebidas numa data</div>
+      <div style="font-weight:800;margin-bottom:8px">💳 Formas de pagamento recebidas</div>
       <div class="muted" style="font-size:12px;margin-bottom:10px">
-        Olha os pedidos criados a partir da data escolhida até <b id="fpDiasLbl">7</b> dias depois — pra pegar pedidos que só foram pagos alguns dias depois de criados.
+        Olha o <b>dia em que o pagamento foi recebido de verdade</b> (não a data em que o pedido foi criado). O pedido aparece como se fosse do dia do pagamento.
+      </div>
+      <div style="display:flex;gap:16px;margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="radio" name="fpModo" value="dia" checked onchange="fpMudarModo()" style="width:auto"> Um dia
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="radio" name="fpModo" value="periodo" onchange="fpMudarModo()" style="width:auto"> Período
+        </label>
       </div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
-        <div>
+        <div id="fpDiaUnico">
           <div class="muted" style="margin-bottom:4px;font-size:12px">Data</div>
-          <input type="date" id="fpData" value="${new Date().toISOString().slice(0,10)}" style="font-size:14px">
+          <input type="date" id="fpData" value="${hoje}" style="font-size:14px">
         </div>
-        <div>
-          <div class="muted" style="margin-bottom:4px;font-size:12px">Dias depois</div>
-          <input type="number" id="fpDias" min="1" value="7" style="font-size:14px;width:70px" oninput="document.getElementById('fpDiasLbl').textContent=this.value||7">
+        <div id="fpPeriodoDe" style="display:none">
+          <div class="muted" style="margin-bottom:4px;font-size:12px">De</div>
+          <input type="date" id="fpDataIni" value="${hoje}" style="font-size:14px">
+        </div>
+        <div id="fpPeriodoAte" style="display:none">
+          <div class="muted" style="margin-bottom:4px;font-size:12px">Até</div>
+          <input type="date" id="fpDataFim" value="${hoje}" style="font-size:14px">
         </div>
         <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFormasPorData()">🔎 Consultar</button>
       </div>
@@ -375,34 +388,42 @@ function renderFormasPagamento(app){
   </div>`;
 }
 
+function fpMudarModo(){
+  const modo=document.querySelector('input[name="fpModo"]:checked').value;
+  document.getElementById("fpDiaUnico").style.display=modo==="dia"?"block":"none";
+  document.getElementById("fpPeriodoDe").style.display=modo==="periodo"?"block":"none";
+  document.getElementById("fpPeriodoAte").style.display=modo==="periodo"?"block":"none";
+}
+
 async function buscarFormasPorData(){
-  const data=document.getElementById("fpData").value;
-  const dias=document.getElementById("fpDias").value||7;
-  if(!data){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha uma data.</div>`; return; }
+  const modo=document.querySelector('input[name="fpModo"]:checked').value;
+  let dataInicial,dataFinal;
+  if(modo==="dia"){
+    const data=document.getElementById("fpData").value;
+    if(!data){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha uma data.</div>`; return; }
+    dataInicial=data; dataFinal=data;
+  } else {
+    dataInicial=document.getElementById("fpDataIni").value;
+    dataFinal=document.getElementById("fpDataFim").value;
+    if(!dataInicial||!dataFinal){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha o período.</div>`; return; }
+  }
   const box=document.getElementById("fpResultado");
   box.innerHTML=`<div class="muted">Iniciando…</div>`;
-  const es=new EventSource(B+"/api/formas-pagamento-por-data?"+new URLSearchParams({data,dias}).toString());
+  const es=new EventSource(B+"/api/fechamento-por-pagamento?"+new URLSearchParams({dataInicial,dataFinal}).toString());
   es.onmessage=(ev)=>{
     const d=JSON.parse(ev.data);
     if(d.tipo==="status"){ box.innerHTML=`<div class="muted">${esc(d.mensagem)}</div>`; }
-    else if(d.tipo==="total"){ box.innerHTML=`<div class="muted">0 de ${d.total} pedidos processados</div>`; }
-    else if(d.tipo==="progresso"){ box.innerHTML=`<div class="muted">${d.atual} de ${d.total} pedidos processados</div>`; }
+    else if(d.tipo==="total"){ box.innerHTML=`<div class="muted">0 de ${d.total} pedidos verificados no Bling</div>`; }
+    else if(d.tipo==="progresso"){ box.innerHTML=`<div class="muted">${d.atual} de ${d.total} pedidos verificados no Bling</div>`; }
+    else if(d.tipo==="progresso2"){ box.innerHTML=`<div class="muted">Buscando detalhes: ${d.atual} de ${d.total}</div>`; }
     else if(d.tipo==="done"){
       es.close();
-      const naoPagos=d.pedidos.filter(p=>!p.pago);
       box.innerHTML=`
-        <div class="muted" style="font-size:12px;margin-bottom:10px">Período verificado: ${d.dataInicial} até ${d.dataFinal}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-          <div class="card" style="flex:1;min-width:140px;text-align:center;margin-bottom:0">
-            <div class="muted">Pago</div>
-            <div style="font-size:20px;font-weight:900;color:#2f9e6b">${brl(d.totalPago)}</div>
-            <div class="muted" style="font-size:11px">${d.qtdPagos} pedido(s)</div>
-          </div>
-          <div class="card" style="flex:1;min-width:140px;text-align:center;margin-bottom:0">
-            <div class="muted">Não pago</div>
-            <div style="font-size:20px;font-weight:900;color:#ff8090">${brl(d.totalNaoPago)}</div>
-            <div class="muted" style="font-size:11px">${d.qtdNaoPagos} pedido(s)</div>
-          </div>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">Pagamentos recebidos entre ${d.dataInicial} e ${d.dataFinal}</div>
+        <div class="card" style="text-align:center;margin-bottom:14px">
+          <div class="muted">Total recebido</div>
+          <div style="font-size:24px;font-weight:900;color:#2f9e6b">${brl(d.totalPago)}</div>
+          <div class="muted" style="font-size:11px">${d.qtdPedidos} pedido(s)</div>
         </div>
         <div class="card">
           <div style="font-weight:800;margin-bottom:6px">Por forma de pagamento</div>
@@ -412,13 +433,13 @@ async function buscarFormasPorData(){
               <b>${brl(f.valor)}</b>
             </div>`).join(""):'<div class="muted" style="margin:0">Nenhum pagamento no período.</div>'}
         </div>
-        ${naoPagos.length?`
+        ${d.pedidos.length?`
         <div class="card" style="margin-top:10px">
-          <div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Ainda não pagos (${naoPagos.length})</div>
-          ${naoPagos.map(p=>`
+          <div style="font-weight:800;margin-bottom:6px">Pedidos (mostrados como se fossem do dia do pagamento)</div>
+          ${d.pedidos.map(p=>`
             <div style="padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
-              #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)} · ${p.data})</span>
-              <span style="float:right;font-weight:700;color:#ff8090">${brl(p.total)}</span>
+              #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)} · criado em ${p.data})</span>
+              <span style="float:right;font-weight:700;color:#2f9e6b">${brl(p.valorRecebidoNoPeriodo)}</span>
             </div>`).join("")}
         </div>`:""}
       `;

@@ -1908,9 +1908,130 @@ app.get("/api/em-digitacao", async(req,res)=>{
 });
 
 
-// Formas de pagamento recebidas numa data escolhida — olha pedidos CRIADOS
-// nos N dias antes dessa data (padrão 7), pra pegar pedidos que só foram
-// pagos alguns dias depois de criados, e soma por forma de pagamento
+// Fechamento baseado no DIA DO PAGAMENTO (não na data de criação do pedido) —
+// funciona por dia único ou período. Duas fontes:
+// 1) pagamentos.json (nosso sistema) - tem a hora exata que cada pagamento foi
+//    registrado, então sabemos com certeza em que dia entrou o dinheiro.
+// 2) pedidos direto do Bling (nunca passaram pelo nosso sistema) - usamos a
+//    data de vencimento da parcela como aproximação do dia do pagamento,
+//    procurando numa janela ampla de pedidos criados até a data final.
+app.get("/api/fechamento-por-pagamento", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.setHeader("X-Accel-Buffering","no");
+  res.flushHeaders();
+  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
+  res.on("close",()=>clearInterval(heartbeat));
+
+  try{
+    const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
+    let dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
+    if(!dataInicial||!dataFinal){
+      const data=req.query.data;
+      if(!data||!dataRegex.test(data)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="}); clearInterval(heartbeat); return res.end(); }
+      dataInicial=data; dataFinal=data;
+    }
+    if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){ send({tipo:"erro",erro:"datas em formato inválido (AAAA-MM-DD)"}); clearInterval(heartbeat); return res.end(); }
+
+    const inicioMs=new Date(dataInicial+"T00:00:00").getTime();
+    const fimMs=new Date(dataFinal+"T23:59:59.999").getTime();
+
+    send({tipo:"status",mensagem:"Verificando pagamentos registrados pelo nosso sistema…"});
+
+    // ---- 1) pagamentos.json — fonte confiável, com hora exata ----
+    const pags=lerPag();
+    const porForma={}; // nome -> {valor, qtd}
+    let totalPago=0;
+    const pedidosEncontrados=new Map(); // id -> {numero,cliente,total,valorNoPeriodo,situacao,data}
+    const idsJaVistos=new Set();
+
+    for(const [id,p] of Object.entries(pags)){
+      const entradasNoPeriodo=(p.historico||[]).filter(h=>h.em>=inicioMs&&h.em<=fimMs&&h.valor);
+      if(!entradasNoPeriodo.length) continue;
+      idsJaVistos.add(id);
+      let valorNoPeriodo=0;
+      entradasNoPeriodo.forEach(h=>{
+        const nome=h.formaNome||(h.tipo==="estorno"?"Estorno":"Não identificada");
+        if(!porForma[nome]) porForma[nome]={valor:0,qtd:0};
+        porForma[nome].valor+=h.valor; porForma[nome].qtd++;
+        valorNoPeriodo+=h.valor;
+      });
+      totalPago+=valorNoPeriodo;
+      pedidosEncontrados.set(id,{id,valorNoPeriodo});
+    }
+    send({tipo:"status",mensagem:`${pedidosEncontrados.size} pedido(s) do nosso sistema encontrados. Verificando pedidos direto do Bling…`});
+
+    // ---- 2) pedidos direto do Bling — usa vencimento da parcela como aproximação ----
+    // busca pedidos criados numa janela ampla (até 60 dias antes da data final),
+    // já que um pedido pode ter sido criado bem antes de ser pago
+    const janelaBuscaDias=60;
+    const dataBuscaInicial=new Date(new Date(dataFinal+"T00:00:00").getTime()-janelaBuscaDias*86400000).toISOString().slice(0,10);
+    const lista=[];
+    for(let pg=1;pg<=100;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataBuscaInicial,dataFinal});
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+    }
+    send({tipo:"total",total:lista.length});
+
+    const logsTodos=lerJSON(LOG_FILE,{});
+    for(let i=0;i<lista.length;i++){
+      const pRaw=lista[i];
+      const id=String(pRaw.id);
+      send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
+      if(idsJaVistos.has(id)) continue; // já contado via pagamentos.json
+      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
+      if(sitNome==="Cancelado") continue;
+      let det=null;
+      try{ const r=await bling(`/pedidos/vendas/${id}`); det=r?.data||null; }catch(e){}
+      const parcelas=(det||pRaw)?.parcelas||[];
+      if(!parcelas.length) continue; // sem parcela = sem pagamento registrado no Bling
+      let valorNoPeriodo=0;
+      for(const pc of parcelas){
+        const venc=pc.dataVencimento;
+        if(!venc) continue;
+        const vencMs=new Date(venc+"T12:00:00").getTime(); // meio-dia, evita problema de fuso
+        if(vencMs<inicioMs||vencMs>fimMs) continue;
+        const nome=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+        const valor=+(pc.valor||0);
+        if(!porForma[nome]) porForma[nome]={valor:0,qtd:0};
+        porForma[nome].valor+=valor; porForma[nome].qtd++;
+        valorNoPeriodo+=valor;
+      }
+      if(valorNoPeriodo>0){ totalPago+=valorNoPeriodo; pedidosEncontrados.set(id,{id,valorNoPeriodo}); idsJaVistos.add(id); }
+    }
+
+    // busca dados básicos (número, cliente, situação, total, data) de cada pedido encontrado
+    send({tipo:"status",mensagem:`Buscando detalhes de ${pedidosEncontrados.size} pedido(s)…`});
+    const pedidosFinal=[];
+    let i2=0;
+    for(const [id,info] of pedidosEncontrados){
+      i2++;
+      let pRaw=lista.find(p=>String(p.id)===id);
+      if(!pRaw){ try{ const r=await bling(`/pedidos/vendas/${id}`); pRaw=r?.data||null; }catch(e){} }
+      if(!pRaw) continue;
+      const total=+(pRaw.total??pRaw.totalProdutos??0);
+      pedidosFinal.push({
+        numero:pRaw.numero, id, cliente:pRaw.contato?.nome||"—",
+        data:pRaw.data, situacao:nomeSituacaoFechamento(pRaw.situacao?.id),
+        total, valorRecebidoNoPeriodo:+info.valorNoPeriodo.toFixed(2),
+      });
+      send({tipo:"progresso2",atual:i2,total:pedidosEncontrados.size});
+    }
+    pedidosFinal.sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+
+    const formasArr=Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor);
+    send({tipo:"done",dataInicial,dataFinal,
+      totalPago:+totalPago.toFixed(2), qtdPedidos:pedidosFinal.length,
+      formasPagamento:formasArr, pedidos:pedidosFinal});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(heartbeat);
+  res.end();
+});
+
 app.get("/api/formas-pagamento-por-data", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
