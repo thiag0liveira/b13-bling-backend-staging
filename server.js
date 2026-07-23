@@ -46,6 +46,7 @@ const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
 const GTIN_INDEX_FILE = `${DATA_DIR}/gtin_index.json`;
+const INSTAGRAM_CACHE_FILE = `${DATA_DIR}/instagram_cache.json`;
 const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const FPAG_DEFAULT=[
@@ -2300,6 +2301,42 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     }catch(e){}
     res.json({data:null});
   }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ------------------------- Instagram (posts recentes pro totem) -------------------------
+// Usa cache local (30 min) pra não estourar o limite de chamadas da API do Instagram.
+// Token e ID ficam só em variável de ambiente — nunca expostos ao navegador do totem.
+app.get("/api/instagram/posts", async(req,res)=>{
+  try{
+    const token=process.env.INSTAGRAM_TOKEN;
+    const igUserId=process.env.INSTAGRAM_IG_USER_ID;
+    if(!token||!igUserId) return res.json({data:[],erro:"Instagram não configurado"});
+
+    const cache=lerJSON(INSTAGRAM_CACHE_FILE,{atualizadoEm:0,posts:[]});
+    const trintaMin=30*60*1000;
+    if(Date.now()-cache.atualizadoEm<trintaMin && cache.posts?.length){
+      return res.json({data:cache.posts,origem:"cache"});
+    }
+
+    const url=`https://graph.facebook.com/v25.0/${igUserId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=6&access_token=${encodeURIComponent(token)}`;
+    const r=await fetch(url);
+    const j=await r.json();
+    if(j.error) return res.json({data:cache.posts||[],erro:j.error.message,origem:"cache_fallback"});
+
+    const posts=(j.data||[]).map(p=>({
+      id:p.id,
+      imagem:p.media_type==="VIDEO"?p.thumbnail_url:p.media_url,
+      legenda:(p.caption||"").slice(0,120),
+      link:p.permalink,
+      data:p.timestamp,
+    })).filter(p=>p.imagem);
+
+    salvarJSON(INSTAGRAM_CACHE_FILE,{atualizadoEm:Date.now(),posts});
+    res.json({data:posts,origem:"ao_vivo"});
+  }catch(e){
+    const cache=lerJSON(INSTAGRAM_CACHE_FILE,{posts:[]});
+    res.json({data:cache.posts||[],erro:e.message});
+  }
 });
 
 app.get("/api/preco/indice-info",(req,res)=>{

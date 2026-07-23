@@ -229,7 +229,30 @@ function cardProdutoHtml(it){
   </div>`;
 }
 
+let INSTAGRAM_POSTS=[];
+async function carregarInstagramPosts(){
+  try{
+    const j=await fetch(B+"/api/instagram/posts").then(r=>r.json());
+    INSTAGRAM_POSTS=(j.data||[]).filter(p=>p.imagem);
+  }catch(e){ INSTAGRAM_POSTS=[]; }
+}
+
+let _instagramIdx=0;
 function cardInstagramHtml(){
+  if(INSTAGRAM_POSTS.length){
+    const post=INSTAGRAM_POSTS[_instagramIdx%INSTAGRAM_POSTS.length];
+    _instagramIdx++;
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;width:100%">
+      <div style="position:relative;border-radius:22px;overflow:hidden;box-shadow:0 20px 50px rgba(238,42,123,.35);border:3px solid transparent;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);padding:4px">
+        <img src="${esc(post.imagem)}" style="width:220px;height:220px;object-fit:cover;display:block;border-radius:18px">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ee2a7b" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="6"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.3" cy="6.7" r="1.1" fill="#ee2a7b" stroke="none"/></svg>
+        <span style="font-size:22px;font-weight:900;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);-webkit-background-clip:text;background-clip:text;color:transparent">@b13_bebidas</span>
+      </div>
+      ${post.legenda?`<div style="color:#e8e5ff;font-size:14px;max-width:420px;text-align:center;line-height:1.4">${esc(post.legenda)}</div>`:""}
+    </div>`;
+  }
   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;width:100%">
     <div style="width:130px;height:130px;border-radius:32px;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);display:flex;align-items:center;justify-content:center;box-shadow:0 20px 50px rgba(238,42,123,.4)">
       <svg width="70" height="70" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"><rect x="2" y="2" width="20" height="20" rx="6"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.3" cy="6.7" r="1.1" fill="#fff" stroke="none"/></svg>
@@ -824,6 +847,7 @@ try{
 }catch(e){}
 
 carregarCatalogo();
+carregarInstagramPosts();
 </script>
 </body>
 </html>
