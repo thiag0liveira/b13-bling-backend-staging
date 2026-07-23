@@ -30,7 +30,7 @@
   #app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:18px 26px}
 
   .telefoneTopo{position:absolute;top:18px;right:26px;z-index:2;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
-  .telefoneTopo .selo{font-size:22px;font-weight:900;letter-spacing:2px;color:#FF0082;text-shadow:0 2px 10px rgba(0,0,0,.5)}
+  .telefoneTopo .selo{font-size:32px;font-weight:900;letter-spacing:2px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6)}
   .telefoneTopo .num{display:flex;align-items:center;gap:10px;font-weight:900;font-size:32px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6)}
   .telefoneTopo svg{width:34px;height:34px;flex-shrink:0}
 
@@ -51,8 +51,9 @@
   .card .inner{display:flex;flex-direction:column;align-items:center;padding:10px;border-radius:15px}
   .card .nomeTag{background:linear-gradient(90deg,#FF0082,#ff4fa8);color:#fff;font-weight:900;font-size:13px;text-align:center;
     border-radius:9px;padding:6px 10px;margin-bottom:8px;width:100%;box-shadow:0 4px 12px rgba(255,0,130,.35);letter-spacing:.3px}
-  .card .imgBox{width:100%;border-radius:12px;padding:8px;margin-bottom:10px}
-  .card img{width:100%;height:112px;object-fit:contain;display:block;mix-blend-mode:multiply}
+  .card .imgBox{width:100%;background:radial-gradient(circle at 50% 30%,#ffffff,#f0eefc);border-radius:12px;padding:8px;margin-bottom:10px;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.04),0 4px 10px rgba(0,0,0,.15)}
+  .card img{width:100%;height:112px;object-fit:contain;display:block}
   .card .precoTag{background:#0f0d2e;border:2px solid #FF0082;color:#fff;font-weight:900;font-size:23px;border-radius:9px;
     padding:5px 14px;text-align:center;width:100%;box-shadow:0 4px 14px rgba(255,0,130,.25)}
   .card .precoTag small{color:#ffd23f;font-size:14px;font-weight:800}
@@ -90,7 +91,9 @@
   </div>
   <div id="grid"></div>
   <div class="rodape">
-    <div class="end">📍 Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH &nbsp;·&nbsp; 📷 @b13_bebidas &nbsp;·&nbsp; 💬 31 9971-9888</div>
+    <div class="end">📍 Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH &nbsp;·&nbsp; 📷 @b13_bebidas &nbsp;·&nbsp;
+      <svg viewBox="0 0 32 32" fill="#fff" style="width:18px;height:18px;vertical-align:-3px;margin-right:3px"><path d="M16 3C9 3 3.3 8.7 3.3 15.7c0 2.4.7 4.7 1.9 6.7L3 29l6.8-2.1c1.9 1 4 1.6 6.2 1.6 7 0 12.7-5.7 12.7-12.7C28.7 8.7 23 3 16 3zm0 23.2c-2 0-3.9-.5-5.5-1.5l-.4-.2-4.1 1.3 1.3-4-.3-.4c-1.1-1.7-1.7-3.7-1.7-5.7 0-5.9 4.8-10.7 10.7-10.7 5.9 0 10.7 4.8 10.7 10.7 0 5.9-4.8 10.5-10.7 10.5zm5.9-8c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.1-.3-.2-.6-.4z"/></svg>
+      (31) 99971-9888</div>
     <div class="aviso">*Beba com moderação. Venda proibida para menores de 18 anos.*</div>
   </div>
 </div>
