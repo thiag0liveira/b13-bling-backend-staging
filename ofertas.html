@@ -29,13 +29,13 @@
   #fundo .vinheta{position:absolute;inset:0;box-shadow:inset 0 0 220px 60px rgba(0,0,0,.65)}
   #app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:18px 26px}
 
-  .topo{background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:18px;padding:10px 26px;display:flex;align-items:center;gap:18px;box-shadow:0 10px 30px rgba(255,0,130,.4);flex:0 0 auto}
-  .topo .logoBox{background:#000;border-radius:12px;padding:6px 10px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.15)}
-  .topo img{height:38px;display:block;border-radius:4px}
-  .topo .txt{font-weight:900;font-size:20px;line-height:1.2}
-  .topo .zap{display:flex;align-items:center;gap:8px;margin-left:auto;font-weight:900;font-size:24px;background:rgba(0,0,0,.15);padding:6px 18px;border-radius:12px}
+  .telefoneTopo{position:absolute;top:18px;right:26px;z-index:2;display:flex;align-items:center;gap:8px;
+    background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:14px;padding:10px 18px;
+    box-shadow:0 8px 24px rgba(255,0,130,.5);font-weight:900;font-size:19px;color:#fff}
+  .telefoneTopo svg{width:22px;height:22px;flex-shrink:0}
 
-  .titulo{text-align:center;margin:18px 0 10px;flex:0 0 auto}
+  .titulo{text-align:center;margin:44px 0 10px;flex:0 0 auto}
+  .titulo img{height:100px;display:block;margin:0 auto 8px}
   .titulo .l1{font-size:46px;font-weight:900;color:#fff;letter-spacing:1px;text-shadow:0 4px 0 #0c0a24,0 6px 18px rgba(0,0,0,.5)}
   .titulo .l2{font-size:54px;font-weight:900;color:#FF0082;letter-spacing:1px;text-shadow:0 4px 0 #6b0038,0 8px 24px rgba(255,0,130,.5);margin-top:-6px}
 
@@ -58,10 +58,12 @@
     padding:5px 14px;text-align:center;width:100%;box-shadow:0 4px 14px rgba(255,0,130,.25)}
   .card .precoTag small{color:#ffd23f;font-size:14px;font-weight:800}
 
-  .rodape{flex:0 0 auto;text-align:center;font-size:13px;color:#cfc9f5;display:flex;flex-direction:column;gap:2px;
-    border:1.5px solid rgba(255,0,130,.55);border-radius:14px;padding:10px 20px;margin-top:12px;
-    background:rgba(12,10,36,.55);box-shadow:0 6px 20px rgba(0,0,0,.35)}
-  .rodape b{color:#fff}
+  .rodape{flex:0 0 auto;text-align:center;display:flex;flex-direction:column;gap:4px;
+    border:2px solid #ff4fa8;border-radius:16px;padding:12px 24px;margin-top:12px;
+    background:linear-gradient(90deg,rgba(255,0,130,.18),rgba(255,79,166,.18));
+    box-shadow:0 0 24px rgba(255,0,130,.45),inset 0 0 20px rgba(255,0,130,.15)}
+  .rodape .end{font-size:15px;font-weight:900;color:#fff;text-shadow:0 0 10px rgba(255,0,130,.6)}
+  .rodape .aviso{font-size:12px;color:#ffd6ea;font-weight:700}
 </style>
 </head>
 <body>
@@ -75,20 +77,19 @@
   <div class="vinheta"></div>
 </div>
 <div id="app">
-  <div class="topo">
-    <div class="logoBox"><img src="/logo-ofertas"></div>
-    <div class="txt">ATACADO: ENTRE EM CONTATO CONOSCO</div>
-    <div class="zap">💬 (31) 9971-9888</div>
+  <div class="telefoneTopo">
+    <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2C6.48 2 2 6.48 2 12c0 1.85.5 3.58 1.36 5.07L2 22l5.07-1.33A9.94 9.94 0 0 0 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm5.2 14.2c-.22.6-1.28 1.16-1.76 1.2-.46.05-.93.24-3.1-.65-2.6-1.08-4.3-3.73-4.43-3.9-.13-.17-1.05-1.4-1.05-2.67 0-1.27.67-1.9.9-2.16.24-.26.52-.32.7-.32h.5c.16 0 .38-.03.58.44.22.53.75 1.83.82 1.96.06.13.1.28.02.45-.08.17-.13.28-.25.43-.13.15-.27.34-.38.46-.13.13-.26.28-.11.55.15.27.68 1.12 1.46 1.82 1 .9 1.85 1.18 2.12 1.31.27.13.43.11.59-.07.16-.18.68-.79.86-1.06.18-.27.36-.22.6-.13.25.09 1.58.75 1.85.88.27.13.45.2.52.31.07.11.07.63-.15 1.23z"/></svg>
+    (31) 9971-9888
   </div>
   <div class="titulo">
-    <img src="/logo-ofertas" style="height:90px;mix-blend-mode:screen;display:block;margin:0 auto 6px">
+    <img src="/logo">
     <div class="l1">OFERTAS</div>
     <div class="l2">IMPERDÍVEIS</div>
   </div>
   <div id="grid"></div>
   <div class="rodape">
-    <div><b>Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH</b> · 📷 @b13_bebidas · 💬 31 9971-9888</div>
-    <div>*Beba com moderação. Venda proibida para menores de 18 anos.*</div>
+    <div class="end">📍 Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH &nbsp;·&nbsp; 📷 @b13_bebidas &nbsp;·&nbsp; 💬 31 9971-9888</div>
+    <div class="aviso">*Beba com moderação. Venda proibida para menores de 18 anos.*</div>
   </div>
 </div>
 <button id="btnExportar" onclick="exportarImagem()" style="position:fixed;bottom:14px;right:14px;z-index:5;background:#FF0082;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 8px 20px rgba(255,0,130,.4)">📷 Exportar imagem</button>
