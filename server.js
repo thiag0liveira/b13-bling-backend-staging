@@ -159,6 +159,11 @@ async function getContatoPadrao(){
 // ------------------------- OAuth -------------------------
 app.get("/auth",(req,res)=> res.redirect(`${AUTH_URL}?response_type=code&client_id=${BLING_CLIENT_ID}&state=b13${Date.now()}`));
 app.get("/logo",(req,res)=>res.sendFile(path.join(__dirname,"logo.png")));
+app.get("/musica-fundo",(req,res)=>{
+  const arq=path.join(__dirname,"musica-fundo.mp3");
+  if(!fs.existsSync(arq)) return res.status(404).send("Música de fundo ainda não configurada");
+  res.sendFile(arq);
+});
 app.get("/login",(req,res)=>res.sendFile(path.join(__dirname,"login.html")));
 app.get("/nav.js",(req,res)=>{
   res.setHeader("Content-Type","application/javascript");
