@@ -213,7 +213,10 @@ const DEFAULT = [
 ];
 
 // ------------------- MODELO (com ids) + PERSISTÊNCIA -------------------
-let _id = 1; const nid = () => "x" + (_id++);
+// IDs únicos de verdade (nunca repetem entre sessões) — antes era só um contador
+// que reiniciava a cada carregamento da página, podendo colidir com IDs salvos
+// de sessões anteriores e bagunçar qual item era atualizado na tela
+const nid = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
 const BACKEND_PADRAO = (location.protocol.indexOf("http")===0) ? "" : "https://b13-bling-backend-production.up.railway.app";
 function fromDefault(){ return DEFAULT.map(c=>({id:nid(),col:c.col,t:c.t,itens:c.i.map(([nome,preco,obs])=>({id:nid(),nome,preco:Number(preco),obs:obs||"",caixa:1,bling:[]}))})); }
 let MODEL, META;
