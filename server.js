@@ -2390,7 +2390,8 @@ app.get("/api/instagram/posts", async(req,res)=>{
 
     const cache=lerJSON(INSTAGRAM_CACHE_FILE,{atualizadoEm:0,posts:[]});
     const trintaMin=30*60*1000;
-    if(Date.now()-cache.atualizadoEm<trintaMin && cache.posts?.length){
+    const forcar=req.query.forcar==="1";
+    if(!forcar && Date.now()-cache.atualizadoEm<trintaMin && cache.posts?.length){
       return res.json({data:cache.posts,origem:"cache"});
     }
 
