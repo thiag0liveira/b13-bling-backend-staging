@@ -221,7 +221,7 @@ function cardProdutoHtml(it){
     <div style="background:#fff;border-radius:20px;padding:16px;box-shadow:0 16px 40px rgba(0,0,0,.4)">
       <img src="${it.imagem}" style="width:180px;height:180px;object-fit:contain;display:block">
     </div>
-    <div style="background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:10px;padding:7px 16px;font-weight:900;font-size:14px;max-width:220px;text-align:center;box-shadow:0 6px 16px rgba(255,0,130,.3)">
+    <div style="background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:10px;padding:7px 16px;font-weight:900;font-size:14px;width:220px;min-height:54px;display:flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 6px 16px rgba(255,0,130,.3)">
       ${esc((it.nome||"").toUpperCase())}
     </div>
     <div style="background:#181542;border:2px solid #FF0082;border-radius:10px;padding:5px 20px;font-weight:900;font-size:27px;color:#ffd23f;box-shadow:0 6px 18px rgba(0,0,0,.35)">
