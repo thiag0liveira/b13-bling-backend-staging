@@ -301,7 +301,11 @@ function render(){
                   if(!Array.isArray(it.bling)) it.bling=[];
                   if(!it.bling.some(b=>String(b.codigo)===String(prod.codigo)))
                     it.bling.push({codigo:prod.codigo,id:prod.id,nome:prod.nome,estoque:prod.estoque});
-                  save(); render();
+                  save();
+                  // atualiza só os chips desse item — evita reconstruir a tela toda
+                  // (que perdia edições em andamento e podia dar impressão de "mudar de lugar")
+                  const ch=document.getElementById("chips_"+itId); if(ch) ch.innerHTML=chipsHTML(catId,it);
+                  resEl.innerHTML=""; inputEl.value="";
                 });
                 resEl.appendChild(btn);
               });
