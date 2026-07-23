@@ -329,15 +329,10 @@ app.delete("/api/funcionarios/:id",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); if(!funcs[req.params.id]) return res.status(404).json({erro:"não encontrado"});
   delete funcs[req.params.id]; salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
 });
-// Reset de senha via URL (temporário para recuperação)
-app.get("/api/funcionarios/:id/reset-senha/:novaSenha",(req,res)=>{
-  const funcs=lerJSON(FUNC_FILE,{});
-  const f=funcs[req.params.id];
-  if(!f) return res.status(404).json({erro:"não encontrado"});
-  f.senhaHash=hashSenha(req.params.novaSenha);
-  salvarJSON(FUNC_FILE,funcs);
-  res.json({ok:true,nome:f.nome,login:f.login});
-});
+// Endpoint antigo de reset de senha via URL foi removido por segurança (sem
+// autenticação, com ID previsível e senha exposta na URL — permitia tomada de
+// conta por qualquer pessoa). Reset de senha agora só via PUT /api/funcionarios/:id
+// (já usado pela tela de Funcionários, que exige estar logado como admin no app).
 
 app.post("/api/funcionarios/login",(req,res)=>{
   const {login,senha,nivel}=req.body||{};
