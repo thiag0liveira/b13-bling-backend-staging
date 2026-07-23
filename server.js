@@ -1800,6 +1800,7 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
 });
 
 app.get("/pedir", (req, res) => res.sendFile(path.join(__dirname, "totem.html")));
+app.get("/ofertas", (req, res) => res.sendFile(path.join(__dirname, "ofertas.html")));
 app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-tabela.html")));
 app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
 // ------------------------- Fechamento de Caixa -------------------------
