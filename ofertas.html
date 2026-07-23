@@ -28,8 +28,9 @@
   #fundo .vinheta{position:absolute;inset:0;box-shadow:inset 0 0 220px 60px rgba(0,0,0,.65)}
   #app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:18px 26px}
 
-  .topo{background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:18px;padding:14px 26px;display:flex;align-items:center;gap:18px;box-shadow:0 10px 30px rgba(255,0,130,.4);flex:0 0 auto}
-  .topo img{height:44px}
+  .topo{background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:18px;padding:10px 26px;display:flex;align-items:center;gap:18px;box-shadow:0 10px 30px rgba(255,0,130,.4);flex:0 0 auto}
+  .topo .logoBox{background:#fff;border-radius:12px;padding:6px 12px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+  .topo img{height:36px;display:block}
   .topo .txt{font-weight:900;font-size:20px;line-height:1.2}
   .topo .zap{display:flex;align-items:center;gap:8px;margin-left:auto;font-weight:900;font-size:24px;background:rgba(0,0,0,.15);padding:6px 18px;border-radius:12px}
 
@@ -37,16 +38,16 @@
   .titulo .l1{font-size:46px;font-weight:900;color:#fff;letter-spacing:1px;text-shadow:0 4px 0 #0c0a24,0 6px 18px rgba(0,0,0,.5)}
   .titulo .l2{font-size:54px;font-weight:900;color:#FF0082;letter-spacing:1px;text-shadow:0 4px 0 #6b0038,0 8px 24px rgba(255,0,130,.5);margin-top:-6px}
 
-  #grid{flex:1 1 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;min-height:0;position:relative}
-  .grupo{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;opacity:0;transition:opacity 1s ease-in-out}
-  .grupo.ativo{opacity:1}
+  #grid{flex:1 1 auto;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+  .grupo{position:absolute;width:100%;display:grid;grid-template-columns:repeat(4,1fr);gap:16px;opacity:0;transition:opacity 1s ease-in-out;align-content:center}
+  .grupo.ativo{opacity:1;position:relative}
   .card{position:relative;background:linear-gradient(160deg,#252158,#1a1748);border-radius:18px;padding:3px;
-    box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px rgba(255,0,130,.15);isolation:isolate}
+    box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px rgba(255,0,130,.15);isolation:isolate;align-self:start}
   .card::before{content:"";position:absolute;inset:0;border-radius:18px;padding:2px;
     background:linear-gradient(135deg,#FF0082,#6228d7,#00c8ff,#FF0082);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;mask-composite:exclude;opacity:.55;z-index:-1}
-  .card .inner{display:flex;flex-direction:column;align-items:center;justify-content:space-between;height:100%;padding:10px;border-radius:15px}
+  .card .inner{display:flex;flex-direction:column;align-items:center;padding:10px;border-radius:15px}
   .card .nomeTag{background:linear-gradient(90deg,#FF0082,#ff4fa8);color:#fff;font-weight:900;font-size:13px;text-align:center;
     border-radius:9px;padding:6px 10px;margin-bottom:8px;width:100%;box-shadow:0 4px 12px rgba(255,0,130,.35);letter-spacing:.3px}
   .card .imgBox{width:100%;background:radial-gradient(circle at 50% 30%,#ffffff,#f0eefc);border-radius:12px;padding:8px;margin-bottom:10px;
@@ -71,7 +72,7 @@
 </div>
 <div id="app">
   <div class="topo">
-    <img src="/logo">
+    <div class="logoBox"><img src="/logo"></div>
     <div class="txt">ATACADO: ENTRE EM CONTATO CONOSCO</div>
     <div class="zap">💬 (31) 9971-9888</div>
   </div>
@@ -85,6 +86,7 @@
     <div>*Beba com moderação. Venda proibida para menores de 18 anos.*</div>
   </div>
 </div>
+<button id="btnExportar" onclick="exportarImagem()" style="position:fixed;bottom:14px;right:14px;z-index:5;background:#FF0082;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;box-shadow:0 8px 20px rgba(255,0,130,.4)">📷 Exportar imagem</button>
 
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
@@ -144,6 +146,19 @@ async function iniciar(){
 iniciar();
 // atualiza a lista de produtos a cada 10 minutos (preço/estoque podem mudar)
 setInterval(async()=>{ await carregarProdutos(); }, 10*60*1000);
+
+function exportarImagem(){
+  const btn=document.getElementById("btnExportar");
+  btn.style.display="none";
+  html2canvas(document.getElementById("app"),{backgroundColor:"#181542",scale:2,useCORS:true}).then(canvas=>{
+    btn.style.display="block";
+    const a=document.createElement("a");
+    a.download="b13_ofertas.png";
+    a.href=canvas.toDataURL("image/png");
+    a.click();
+  }).catch(()=>{ btn.style.display="block"; });
+}
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </body>
 </html>
