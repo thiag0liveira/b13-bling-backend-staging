@@ -425,7 +425,7 @@ async function buscarFormasPorData(){
     else if(d.tipo==="progresso"){ box.innerHTML=barra(`${d.atual} de ${d.total} pedidos verificados no Bling`,d.atual,d.total); }
     else if(d.tipo==="progresso2"){ box.innerHTML=barra(`Buscando detalhes: ${d.atual} de ${d.total}`,d.atual,d.total); }
     else if(d.tipo==="done"){
-      es.close();
+      recebeuDone=true; es.close();
       box.innerHTML=`
         <div class="muted" style="font-size:12px;margin-bottom:10px">Pagamentos recebidos entre ${d.dataInicial} e ${d.dataFinal}</div>
         <div class="card" style="text-align:center;margin-bottom:14px">
@@ -452,9 +452,15 @@ async function buscarFormasPorData(){
         </div>`:""}
       `;
     }
-    else if(d.tipo==="erro"){ es.close(); box.innerHTML=`<div class="err">${esc(d.erro)}</div>`; }
+    else if(d.tipo==="erro"){ recebeuDone=true; es.close(); box.innerHTML=`<div class="err">${esc(d.erro)}</div>`; }
   };
-  es.onerror=()=>{ es.close(); };
+  let recebeuDone=false;
+  es.onerror=()=>{
+    es.close();
+    if(!recebeuDone){
+      box.innerHTML+=`<div class="err" style="margin-top:10px">⚠️ A conexão caiu antes de terminar (comum em buscas longas). Tenta um período menor, ou clica em Consultar de novo.</div>`;
+    }
+  };
 }
 
 function toggleStatusExpandido(nome){
