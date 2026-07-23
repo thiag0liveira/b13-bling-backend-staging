@@ -1927,8 +1927,8 @@ app.get("/api/formas-pagamento-por-data", async(req,res)=>{
     if(!dataAlvo||!dataRegex.test(dataAlvo)){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD"}); clearInterval(heartbeat); return res.end(); }
     const janelaDias=Math.max(1,parseInt(req.query.dias)||7);
     const alvo=new Date(dataAlvo+"T00:00:00");
-    const dataInicial=new Date(alvo.getTime()-janelaDias*86400000).toISOString().slice(0,10);
-    const dataFinal=dataAlvo;
+    const dataInicial=dataAlvo;
+    const dataFinal=new Date(alvo.getTime()+janelaDias*86400000).toISOString().slice(0,10);
 
     send({tipo:"status",mensagem:`Buscando pedidos criados entre ${dataInicial} e ${dataFinal}…`});
     const lista=[];

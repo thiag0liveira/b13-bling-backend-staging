@@ -84,7 +84,8 @@ function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (ve
 
 function header(){
   const botaoNav=S.view==="scan"
-    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>`
+    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>
+       <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='formasPag';render()">💳 Formas de Pagamento</button>`
     : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
   return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
   ${botaoNav}
@@ -96,6 +97,7 @@ function header(){
 function render(){
   const app=document.getElementById("app");
   if(S.view==="fechamento"){ renderFechamento(app); return; }
+  if(S.view==="formasPag"){ renderFormasPagamento(app); return; }
   if(!S.pedido){
     app.innerHTML=header()+`<div class="wrap">
       <div class="scan-box">
@@ -347,11 +349,15 @@ function renderFechamento(app){
     </div>`:""}
     ${F.erro?`<div class="err">${esc(F.erro)}</div>`:""}
     ${rel&&!F.carregando?renderRelatorio(rel):""}
+  </div>`;
+}
 
-    <div class="card" style="margin-top:20px">
+function renderFormasPagamento(app){
+  app.innerHTML=header()+`<div class="wrap">
+    <div class="card">
       <div style="font-weight:800;margin-bottom:8px">💳 Formas de pagamento recebidas numa data</div>
       <div class="muted" style="font-size:12px;margin-bottom:10px">
-        Olha os pedidos criados nos <b id="fpDiasLbl">7</b> dias antes da data escolhida — pra pegar pedidos que só foram pagos alguns dias depois de criados.
+        Olha os pedidos criados a partir da data escolhida até <b id="fpDiasLbl">7</b> dias depois — pra pegar pedidos que só foram pagos alguns dias depois de criados.
       </div>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
         <div>
@@ -359,7 +365,7 @@ function renderFechamento(app){
           <input type="date" id="fpData" value="${new Date().toISOString().slice(0,10)}" style="font-size:14px">
         </div>
         <div>
-          <div class="muted" style="margin-bottom:4px;font-size:12px">Dias antes</div>
+          <div class="muted" style="margin-bottom:4px;font-size:12px">Dias depois</div>
           <input type="number" id="fpDias" min="1" value="7" style="font-size:14px;width:70px" oninput="document.getElementById('fpDiasLbl').textContent=this.value||7">
         </div>
         <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFormasPorData()">🔎 Consultar</button>
