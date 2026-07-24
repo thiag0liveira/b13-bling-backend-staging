@@ -54,7 +54,7 @@
   .card .imgBox{width:100%;background:radial-gradient(circle at 50% 30%,#ffffff,#f0eefc);border-radius:12px;padding:8px;margin-bottom:10px;
     box-shadow:inset 0 0 0 1px rgba(0,0,0,.04),0 4px 10px rgba(0,0,0,.15)}
   .card img{width:100%;height:112px;object-fit:contain;display:block}
-  .card .precoTag{background:#0f0d2e;border:2px solid #FF0082;color:#fff;font-weight:900;font-size:23px;border-radius:9px;
+  .card .precoTag{background:rgba(15,13,46,.55);border:2px solid #FF0082;color:#fff;font-weight:900;font-size:23px;border-radius:9px;
     padding:5px 14px;text-align:center;width:100%;box-shadow:0 4px 14px rgba(255,0,130,.25)}
   .card .precoTag small{color:#ffd23f;font-size:14px;font-weight:800}
 
@@ -112,7 +112,7 @@ async function carregarProdutos(){
     (j.categorias||[]).forEach(c=>{
       (c.produtos||[]).forEach(p=>{
         const imagem=p.imagem||(p.sabores||[]).find(s=>s.imagem)?.imagem;
-        if(imagem&&p.preco>0) todos.push({nome:p.nome,preco:p.preco,imagem});
+        if(imagem&&p.preco>0) todos.push({nome:p.nome,preco:p.preco,imagem,categoria:c.t||c.nome||""});
       });
     });
     PRODUTOS=todos;
@@ -120,10 +120,12 @@ async function carregarProdutos(){
 }
 
 function cardHtml(p){
+  const ehLatao=(p.categoria||"").toLowerCase().includes("latao 473ml")||(p.categoria||"").toLowerCase().includes("latão 473ml");
+  const nomeExibido=ehLatao?`${p.nome} 473ml`:p.nome;
   return `<div class="card"><div class="inner">
-    <div class="nomeTag">${esc((p.nome||"").toUpperCase())}</div>
+    <div class="nomeTag">${esc(nomeExibido.toUpperCase())}</div>
     <div class="imgBox"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
-    <div class="precoTag">R$ ${brl(p.preco).replace("R$","").trim()}<br><small>/un</small></div>
+    <div class="precoTag">R$ ${brl(p.preco).replace("R$","").trim()}</div>
   </div></div>`;
 }
 
