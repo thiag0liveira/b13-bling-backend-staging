@@ -182,13 +182,20 @@ async function alternarGravacao(){
   try{
     const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:false});
     _chunksGravacao=[];
-    _gravador=new MediaRecorder(stream,{mimeType:"video/webm;codecs=vp9"});
+    const candidatos=[
+      {mime:"video/mp4;codecs=avc1",ext:"mp4"},
+      {mime:"video/mp4",ext:"mp4"},
+      {mime:"video/webm;codecs=vp9",ext:"webm"},
+      {mime:"video/webm",ext:"webm"},
+    ];
+    const escolhido=candidatos.find(c=>MediaRecorder.isTypeSupported(c.mime))||{mime:"",ext:"webm"};
+    _gravador=new MediaRecorder(stream,escolhido.mime?{mimeType:escolhido.mime}:{});
     _gravador.ondataavailable=(e)=>{ if(e.data.size>0) _chunksGravacao.push(e.data); };
     _gravador.onstop=()=>{
       stream.getTracks().forEach(t=>t.stop());
-      const blob=new Blob(_chunksGravacao,{type:"video/webm"});
+      const blob=new Blob(_chunksGravacao,{type:escolhido.mime||"video/webm"});
       const a=document.createElement("a");
-      a.download="b13_ofertas.webm";
+      a.download="b13_ofertas."+escolhido.ext;
       a.href=URL.createObjectURL(blob);
       a.click();
       btn.textContent="🎥";
