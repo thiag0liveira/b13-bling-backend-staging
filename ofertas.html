@@ -40,7 +40,7 @@
   .titulo .l2{font-size:54px;font-weight:900;color:#FF0082;letter-spacing:1px;text-shadow:0 4px 0 #6b0038,0 8px 24px rgba(255,0,130,.5);margin-top:-6px}
 
   #grid{flex:1 1 auto;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
-  .grupo{position:absolute;width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;opacity:0;transition:opacity 3s ease-in-out;align-content:center}
+  .grupo{position:absolute;width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;opacity:0;transition:opacity 1s ease-in-out;align-content:center}
   .grupo.ativo{opacity:1;position:relative}
   .card{position:relative;background:linear-gradient(160deg,#252158,#1a1748);border-radius:18px;padding:3px;
     box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px rgba(255,0,130,.15);isolation:isolate;align-self:start}
@@ -146,7 +146,8 @@ function montarGrupos(){
       if(!els.length) return;
       const prox=(_grupoAtivo+1)%els.length;
       els[_grupoAtivo].classList.remove("ativo");
-      els[prox].classList.add("ativo");
+      // pausa de 1s com a tela sem nenhum produto, revelando o fundo, antes de mostrar o proximo grupo
+      setTimeout(()=>{ els[prox].classList.add("ativo"); },1000);
       _grupoAtivo=prox;
     },9000);
   }
