@@ -1151,6 +1151,17 @@ function renderRetirarPend(id,faltas){
         ${item.quantidade===0?`<div style="font-size:11px;color:#ff8090;margin-top:4px">será removido do pedido</div>`:""}
       </div>`;
     }
+    if(item._novo&&!item._removido){
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;background:rgba(47,158,107,.08);border-radius:6px;padding-left:6px">
+        <span style="flex:1">${esc(item.descricao)} <span style="color:#2f9e6b;font-size:10px">novo</span></span>
+        <button onclick="if(window.itensEdit[${ix}].quantidade>1)window.itensEdit[${ix}].quantidade--;else{window.itensEdit[${ix}]._removido=true;window.itensEdit[${ix}].quantidade=0;}renderRetirarPend(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px">−</button>
+        <input type="number" min="1" value="${item.quantidade}" style="width:54px;padding:4px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;text-align:center;font-size:13px;font-weight:700"
+          onchange="window.itensEdit[${ix}].quantidade=Math.max(1,+this.value||1);renderRetirarPend(${id})">
+        <button onclick="window.itensEdit[${ix}].quantidade++;renderRetirarPend(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px">+</button>
+        <span style="width:86px;text-align:right">${brl((item.valor||0)*item.quantidade)}</span>
+        <button onclick="window.itensEdit[${ix}]._removido=true;window.itensEdit[${ix}].quantidade=0;renderRetirarPend(${id})" style="background:#3a0010;border:1px solid #ff4466;border-radius:5px;color:#ff8090;cursor:pointer;padding:4px 8px;font-size:11px">🗑</button>
+      </div>`;
+    }
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
       <span style="flex:1">${esc(item.descricao)}</span>
       <span class="muted">x${item.quantidade}</span>

@@ -118,7 +118,10 @@ async function blingRaw(path,options={},_tentativa=0){
       await new Promise(res=>setTimeout(res,1200*(_tentativa+1)));
       return blingRaw(path,options,_tentativa+1);
     }
-    if(!r.ok) throw Object.assign(new Error("Erro Bling "+r.status),{status:r.status,body:j});
+    if(!r.ok){
+      const motivo=j?.error?.description||j?.error?.message||(Array.isArray(j?.errors)?j.errors.map(x=>x.msg||x.message).join("; "):null)||JSON.stringify(j).slice(0,200);
+      throw Object.assign(new Error(`Erro Bling ${r.status}: ${motivo}`),{status:r.status,body:j});
+    }
     return j;
   }catch(e){ clearTimeout(timeout); throw e; }
 }
