@@ -124,8 +124,15 @@ async function carregarProdutos(){
 }
 
 function cardHtml(p){
-  const ehLatao=(p.categoria||"").toLowerCase().includes("latao 473ml")||(p.categoria||"").toLowerCase().includes("latão 473ml");
-  const nomeExibido=ehLatao?`${p.nome} 473ml`:p.nome;
+  const cat=(p.categoria||"").toLowerCase();
+  const SUFIXOS_POR_CATEGORIA=[
+    {chave:"latao 473ml",sufixo:"473ml"},
+    {chave:"latão 473ml",sufixo:"473ml"},
+    {chave:"refrigerante 200ml",sufixo:"200ml"},
+    {chave:"refrigerante 350ml",sufixo:"350ml"},
+  ];
+  const match=SUFIXOS_POR_CATEGORIA.find(x=>cat.includes(x.chave));
+  const nomeExibido=match?`${p.nome} ${match.sufixo}`:p.nome;
   return `<div class="card"><div class="inner">
     <div class="nomeTag">${esc(nomeExibido.toUpperCase())}</div>
     <div class="imgBox"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
