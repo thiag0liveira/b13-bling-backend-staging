@@ -748,6 +748,17 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
 });
 
 
+// Diagnóstico temporário: testa possíveis endpoints de lista de preço na API do Bling
+app.get("/api/diagnostico/listas-preco-bling", async(req,res)=>{
+  const candidatos=["/listas-precos","/tabelas-precos","/tabelaprecos","/listasprecos","/produtos/tabelaspreco"];
+  const resultado={};
+  for(const c of candidatos){
+    try{ const r=await bling(c); resultado[c]={ok:true,qtd:(r?.data||[]).length,amostra:(r?.data||[]).slice(0,2)}; }
+    catch(e){ resultado[c]={ok:false,status:e.status,erro:e.message}; }
+  }
+  res.json({resultado});
+});
+
 app.get("/api/formas-pagamento",async(req,res)=>{
   // tenta o Bling primeiro com endpoint correto
   try{
