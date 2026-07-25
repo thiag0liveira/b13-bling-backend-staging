@@ -1338,6 +1338,42 @@ function resumoSessaoCaixa(sessao){
 }
 
 // status atual do caixa (aberto/fechado + resumo se aberto)
+// DIAGNÓSTICO: descobre o que a API de caixas do Bling suporta (GET/POST) —
+// usado pra avaliar a viabilidade de espelhar o caixa no Bling
+app.get("/api/diag/caixas-bling", async(req,res)=>{
+  const resultado={};
+  // 1) lista caixas
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const trintaDiasAtras=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const r=await bling(`/caixas?dataInicial=${trintaDiasAtras}&dataFinal=${hoje}`);
+    resultado.get_caixas={ok:true,qtd:(r?.data||[]).length,amostra:(r?.data||[]).slice(0,3)};
+  }catch(e){ resultado.get_caixas={ok:false,erro:e.message,status:e.status}; }
+
+  // 2) tenta detalhe do primeiro caixa (se houver)
+  try{
+    const primeiroId=resultado.get_caixas?.amostra?.[0]?.id;
+    if(primeiroId){
+      const r=await bling(`/caixas/${primeiroId}`);
+      resultado.get_caixa_detalhe={ok:true,dados:r?.data};
+    } else resultado.get_caixa_detalhe={ok:false,motivo:"nenhum caixa encontrado pra testar"};
+  }catch(e){ resultado.get_caixa_detalhe={ok:false,erro:e.message,status:e.status}; }
+
+  // 3) testa se POST /caixas existe (sem body válido — só pra ver se responde 404 ou erro de validação)
+  try{
+    await bling(`/caixas`,{method:"POST",body:JSON.stringify({})});
+    resultado.post_caixas={existe:true,observacao:"aceitou POST vazio (inesperado)"};
+  }catch(e){
+    resultado.post_caixas={
+      existe: e.status!==404 && e.status!==405,
+      status:e.status,
+      erro:e.message,
+      interpretacao: e.status===404?"endpoint NAO existe":(e.status===405?"metodo POST nao permitido (so leitura)":"endpoint existe, mas exige campos - da pra criar via API"),
+    };
+  }
+  res.json(resultado);
+});
+
 app.get("/api/caixa-sessao/atual",(req,res)=>{
   const s=sessaoCaixaAberta();
   if(!s) return res.json({aberta:false});
