@@ -207,6 +207,7 @@ function b13RenderNav(ativo){
   const links=[
     {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
     {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
+    {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
     {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
@@ -1287,6 +1288,58 @@ app.get("/api/contatos",async(req,res)=>{
     }});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
+// ---------------- FRENTE DE CAIXA (PDV varejo, venda balcao) ----------------
+// Cria o pedido direto no Bling já como Atendido (venda de balcão, sem separação),
+// registra o(s) pagamento(s) (pode ser dividido entre formas) e tenta emitir a NFCe.
+app.post("/api/pdv/venda", async(req,res)=>{
+  try{
+    const {itens,contatoId,desconto,pagamentos,emitirNfce}=req.body||{};
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
+    if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+
+    let vendedorId=Number(process.env.BLING_VENDEDOR_ID)||null;
+
+    const itensPayload=itens.map(i=>({
+      produto:{id:Number(i.produtoId)},
+      quantidade:Number(i.quantidade),
+      valor:Number(i.valor),
+      ...(i.desconto?{desconto:Number(i.desconto)}:{}),
+    }));
+
+    const totalItens=itens.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0);
+    const totalDesconto=Number(desconto||0);
+    const totalPedido=+(totalItens-totalDesconto).toFixed(2);
+
+    const payload={
+      itens:itensPayload,
+      situacao:{id:SIT.ATENDIDO},
+      ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
+      ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
+      ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
+      parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:new Date().toISOString().slice(0,10),formaPagamento:{id:Number(p.formaId)}})),
+    };
+
+    const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    const pedidoId=criado?.data?.id;
+    if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
+
+    // registra localmente (mesmo padrão usado no restante do sistema)
+    const pags=lerPag();
+    const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"pdv_varejo"}));
+    pags[String(pedidoId)]={valorPago:totalPedido,historico};
+    salvarJSON(PAG_FILE,pags);
+
+    let nfce=null;
+    if(emitirNfce){
+      try{
+        nfce=await bling(`/nfce`,{method:"POST",body:JSON.stringify({idPedidoVenda:pedidoId})});
+      }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
+    }
+
+    res.json({ok:true,pedidoId,numero:criado?.data?.numero,total:totalPedido,nfce});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
 app.post("/api/pedido",async(req,res)=>{
   try{ const {contatoId,itens}=req.body;
     if(!contatoId||!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Envie { contatoId, itens }"});
@@ -2250,6 +2303,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
 app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
+app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
 app.get("/gerenciamento", (req, res) => res.sendFile(path.join(__dirname, "gerenciamento.html")));
 app.get("/funcionarios", (req, res) => res.sendFile(path.join(__dirname, "funcionarios.html")));

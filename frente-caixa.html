@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B13 — Frente de Caixa</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  body{background:#0f0d24;color:#fff;min-height:100vh}
+  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4);position:sticky;top:0;z-index:10}
+  .top img{height:36px}
+  .top .t{font-weight:900;font-size:20px}
+  .top .sp{flex:1}
+  .btn{background:#FF0082;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px;display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
+  @media(max-width:860px){ .wrap{grid-template-columns:1fr} }
+  .card{background:#181542;border-radius:14px;padding:16px;margin-bottom:16px}
+  .busca{width:100%;padding:14px;font-size:16px;background:#0f0d24;border:2px solid #514c96;border-radius:10px;color:#fff}
+  .busca:focus{border-color:#FF0082;outline:none}
+  .res{margin-top:8px;max-height:280px;overflow:auto}
+  .resitem{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #2a2660;cursor:pointer}
+  .resitem:hover{background:#1f1c4d}
+  .resitem img{width:38px;height:38px;object-fit:contain;background:#fff;border-radius:6px}
+  .resitem .info{flex:1}
+  .resitem .nome{font-size:13px;font-weight:700}
+  .resitem .meta{font-size:11px;color:#9a95c9}
+  .item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px}
+  .item .nome{flex:1}
+  .item .qtd{display:flex;align-items:center;gap:4px}
+  .item .qtd button{width:26px;height:26px;background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer}
+  .item .qtd input{width:44px;text-align:center;background:#0f0d24;border:1px solid #514c96;border-radius:5px;color:#fff;padding:4px}
+  .item .subtotal{width:80px;text-align:right;font-weight:800}
+  .item .rm{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px}
+  .linha{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
+  .linha b{font-weight:900}
+  .total{font-size:26px;font-weight:900;color:#ffd23f}
+  .formas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+  .forma{background:#1c1846;border:2px solid #514c96;border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:13px;font-weight:800}
+  .forma.sel{border-color:#FF0082;background:#2a1a4d}
+  .pagRow{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px}
+  .pagRow input{flex:1;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;text-align:right}
+  .muted{color:#9a95c9;font-size:12px}
+  .err{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .ok{background:#0a3a20;border:1px solid #2f9e6b;color:#8fffc0;border-radius:8px;padding:14px;margin:10px 0;font-size:14px;text-align:center}
+  input[type=checkbox]{width:auto}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<script>
+if(!b13RequireLogin())document.write=function(){};
+document.addEventListener("DOMContentLoaded",function(){
+  const nav=document.createElement("div");
+  nav.innerHTML=b13RenderNav("/frente-caixa");
+  document.body.insertBefore(nav,document.body.firstChild);
+});
+</script>
+<div class="top">
+  <img src="/logo">
+  <div class="t">Frente de Caixa</div>
+  <div class="sp"></div>
+  <button class="btn btn-ghost" onclick="location.href='/gestao'">← Gestão</button>
+</div>
+
+<div class="wrap">
+  <div>
+    <div class="card">
+      <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
+      <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
+      <div id="resBusca" class="res"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">🛒 Carrinho</div>
+      <div id="carrinho"><div class="muted">Nenhum item ainda.</div></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="linha"><span>Subtotal</span><b id="lblSubtotal">R$ 0,00</b></div>
+      <div class="linha">
+        <span>Desconto (R$)</span>
+        <input id="desconto" type="number" min="0" step="0.01" value="0" style="width:100px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;text-align:right" oninput="render()">
+      </div>
+      <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
+        <span>Total</span><span class="total" id="lblTotal">R$ 0,00</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">💳 Forma de pagamento</div>
+      <div class="formas" id="formasBox"></div>
+      <div id="pagamentos"></div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
+      <div class="linha" style="margin-top:10px">
+        <span>Pago</span><b id="lblPago">R$ 0,00</b>
+      </div>
+      <div class="linha">
+        <span id="lblRestanteLabel">Falta</span><b id="lblRestante">R$ 0,00</b>
+      </div>
+      <div class="linha" id="linhaTroco" style="display:none">
+        <span>Troco</span><b id="lblTroco" style="color:#8fffc0">R$ 0,00</b>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
+        <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar
+      </label>
+      <div id="msgFinalizar"></div>
+      <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px" onclick="finalizarVenda()">✅ Finalizar Venda</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+let CARRINHO=[]; // {produtoId,nome,preco,quantidade,imagem}
+let FORMAS=[]; // formas de pagamento carregadas do bling
+let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
+
+async function carregarFormas(){
+  try{
+    const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
+    FORMAS=(j.data||[]).filter(f=>f.situacao!=="I");
+    montarFormasBox();
+  }catch(e){ FORMAS=[]; }
+}
+
+function montarFormasBox(){
+  const box=document.getElementById("formasBox");
+  box.innerHTML=FORMAS.map(f=>`<div class="forma" data-id="${f.id}" onclick="selecionarForma(0,${f.id},'${esc(f.descricao||f.nome||"")}')">${esc(f.descricao||f.nome||("Forma "+f.id))}</div>`).join("");
+}
+
+function selecionarForma(idx,formaId,formaNome){
+  PAGAMENTOS[idx].formaId=formaId;
+  PAGAMENTOS[idx].formaNome=formaNome;
+  if(!PAGAMENTOS[idx].valor) PAGAMENTOS[idx].valor=restante()+((PAGAMENTOS[idx].valor)||0);
+  render();
+}
+
+function adicionarFormaPagamento(){
+  PAGAMENTOS.push({formaId:null,formaNome:"",valor:0});
+  render();
+}
+
+// ---------- busca ----------
+let _timerBusca=null;
+document.getElementById("busca").addEventListener("input",function(){
+  clearTimeout(_timerBusca);
+  const termo=this.value.trim();
+  const resEl=document.getElementById("resBusca");
+  if(termo.length<2){ resEl.innerHTML=""; return; }
+  resEl.innerHTML=`<div class="muted">buscando…</div>`;
+  _timerBusca=setTimeout(async()=>{
+    try{
+      // se parecer código de barras (só números, 6+ dígitos), tenta pelo índice de GTIN primeiro
+      let achouPorCodigo=false;
+      if(/^\d{6,}$/.test(termo)){
+        const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
+        if(r&&r.data){
+          adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem});
+          resEl.innerHTML=""; document.getElementById("busca").value=""; achouPorCodigo=true;
+        }
+      }
+      if(achouPorCodigo) return;
+      const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+      const lista=j.data||[];
+      if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+      resEl.innerHTML=lista.slice(0,30).map((p,ix)=>`
+        <div class="resitem" onclick="selecionarResultado(${ix})">
+          <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
+        </div>`).join("");
+      window._ultimaBusca=lista;
+    }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
+  },350);
+});
+
+async function selecionarResultado(ix){
+  const p=window._ultimaBusca[ix];
+  // busca o preço de verdade via índice de preço (mesma base usada na tela /preco)
+  let preco=0,imagem=null;
+  try{
+    const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo||"")).then(r=>r.json());
+    if(r?.data){ preco=r.data.preco; imagem=r.data.imagem; }
+  }catch(e){}
+  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco,imagem});
+  document.getElementById("resBusca").innerHTML="";
+  document.getElementById("busca").value="";
+  document.getElementById("busca").focus();
+}
+
+function adicionarAoCarrinho(p){
+  const existente=CARRINHO.find(i=>i.produtoId===p.produtoId);
+  if(existente){ existente.quantidade++; } else { CARRINHO.push({...p,quantidade:1}); }
+  render();
+}
+
+function subtotal(){ return CARRINHO.reduce((s,i)=>s+i.preco*i.quantidade,0); }
+function totalPedido(){ return Math.max(0,subtotal()-Number(document.getElementById("desconto")?.value||0)); }
+function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
+function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
+
+function render(){
+  const carEl=document.getElementById("carrinho");
+  carEl.innerHTML=CARRINHO.length?CARRINHO.map((i,ix)=>`
+    <div class="item">
+      <span class="nome">${esc(i.nome)}</span>
+      <div class="qtd">
+        <button onclick="alterarQtd(${ix},-1)">−</button>
+        <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
+        <button onclick="alterarQtd(${ix},1)">+</button>
+      </div>
+      <span class="subtotal">${brl(i.preco*i.quantidade)}</span>
+      <button class="rm" onclick="removerItem(${ix})">🗑</button>
+    </div>`).join(""):`<div class="muted">Nenhum item ainda.</div>`;
+
+  document.getElementById("lblSubtotal").textContent=brl(subtotal());
+  document.getElementById("lblTotal").textContent=brl(totalPedido());
+
+  // pagamentos
+  const pagBox=document.getElementById("pagamentos");
+  pagBox.innerHTML=PAGAMENTOS.map((p,ix)=>`
+    <div class="pagRow">
+      <span style="flex:1">${p.formaNome?esc(p.formaNome):'<span class="muted">escolha a forma acima</span>'}</span>
+      <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
+      ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
+    </div>`).join("");
+
+  document.querySelectorAll(".forma").forEach(el=>{
+    const ativo=PAGAMENTOS.some(p=>String(p.formaId)===el.dataset.id);
+    el.classList.toggle("sel",ativo);
+  });
+
+  document.getElementById("lblPago").textContent=brl(totalPago());
+  const r=restante();
+  const ehDinheiro=PAGAMENTOS.some(p=>(p.formaNome||"").toLowerCase().includes("dinheiro"));
+  if(r<0&&ehDinheiro){
+    document.getElementById("linhaTroco").style.display="flex";
+    document.getElementById("lblTroco").textContent=brl(-r);
+    document.getElementById("lblRestanteLabel").textContent="Falta";
+    document.getElementById("lblRestante").textContent=brl(0);
+  } else {
+    document.getElementById("linhaTroco").style.display="none";
+    document.getElementById("lblRestanteLabel").textContent="Falta";
+    document.getElementById("lblRestante").textContent=brl(Math.max(0,r));
+  }
+
+  document.getElementById("btnFinalizar").disabled=!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||(r>0.009);
+}
+
+function alterarQtd(ix,delta){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+delta); render(); }
+function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); render(); }
+function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
+
+async function finalizarVenda(){
+  const msg=document.getElementById("msgFinalizar");
+  msg.innerHTML="";
+  const btn=document.getElementById("btnFinalizar");
+  btn.disabled=true; btn.textContent="Processando…";
+  try{
+    const body={
+      itens:CARRINHO.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
+      desconto:Number(document.getElementById("desconto").value||0),
+      pagamentos:PAGAMENTOS.filter(p=>p.formaId).map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(p.valor,totalPedido())})),
+      emitirNfce:document.getElementById("emitirNfce").checked,
+    };
+    const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
+    msg.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} finalizada — ${brl(j.total)}
+      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?"<br>NFCe emitida com sucesso":"")}</div>`;
+    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
+    document.getElementById("desconto").value=0;
+    render();
+  }catch(e){
+    msg.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+  }
+  btn.textContent="✅ Finalizar Venda";
+  render();
+}
+
+carregarFormas();
+render();
+</script>
+</body>
+</html>
