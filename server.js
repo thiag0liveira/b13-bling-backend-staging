@@ -1374,6 +1374,29 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
   res.json(resultado);
 });
 
+// Diagnóstico: descobre o que a API do Bling permite fazer com /caixas na sua conta
+app.get("/api/diagnostico/caixas-bling", async(req,res)=>{
+  const resultado={};
+  // 1) listar caixas (GET) — sabemos que existe pelo changelog do Bling
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const ontem=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+    const r=await bling(`/caixas?dataInicial=${ontem}&dataFinal=${hoje}`);
+    resultado.listar={ok:true,qtd:(r?.data||[]).length,amostra:(r?.data||[]).slice(0,3)};
+  }catch(e){ resultado.listar={ok:false,erro:e.message,status:e.status}; }
+
+  // 2) tentar abrir um caixa (POST) — só pra descobrir se o endpoint aceita escrita
+  try{
+    const r=await bling(`/caixas`,{method:"POST",body:JSON.stringify({saldoInicial:0})});
+    resultado.abrir={ok:true,resposta:r};
+  }catch(e){ resultado.abrir={ok:false,erro:e.message,status:e.status}; }
+
+  res.json({
+    aviso:"Diagnóstico apenas. Se 'abrir' der 404/405, a API do Bling não permite abrir caixa — só consultar.",
+    resultado,
+  });
+});
+
 app.get("/api/caixa-sessao/atual",(req,res)=>{
   const s=sessaoCaixaAberta();
   if(!s) return res.json({aberta:false});
