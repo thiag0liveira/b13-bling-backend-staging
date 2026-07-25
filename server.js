@@ -50,6 +50,7 @@ const GTIN_INDEX_FILE = `${DATA_DIR}/gtin_index.json`;
 const INSTAGRAM_CACHE_FILE = `${DATA_DIR}/instagram_cache.json`;
 const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
+const CAIXA_SESSOES_FILE = `${DATA_DIR}/caixa_sessoes.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -1291,6 +1292,115 @@ app.get("/api/contatos",async(req,res)=>{
 // ---------------- FRENTE DE CAIXA (PDV varejo, venda balcao) ----------------
 // Cria o pedido direto no Bling já como Atendido (venda de balcão, sem separação),
 // registra o(s) pagamento(s) (pode ser dividido entre formas) e tenta emitir a NFCe.
+// ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
+function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
+function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
+function sessaoCaixaAberta(){
+  const d=lerCaixaSessoes();
+  return (d.sessoes||[]).find(s=>!s.fechadaEm)||null;
+}
+// Resumo consolidado de uma sessão: soma vendas por forma, sangrias, suprimentos
+function resumoSessaoCaixa(sessao){
+  const movs=sessao.movimentos||[];
+  const vendas=movs.filter(m=>m.tipo==="venda");
+  const sangrias=movs.filter(m=>m.tipo==="sangria");
+  const suprimentos=movs.filter(m=>m.tipo==="suprimento");
+
+  const porForma={};
+  vendas.forEach(v=>{
+    (v.pagamentos||[]).forEach(p=>{
+      const nome=p.formaNome||"Não identificada";
+      if(!porForma[nome]) porForma[nome]={valor:0,qtd:0};
+      porForma[nome].valor+=Number(p.valor)||0;
+      porForma[nome].qtd++;
+    });
+  });
+
+  const ehDinheiro=(nome)=>String(nome||"").toLowerCase().includes("dinheiro");
+  const vendasDinheiro=Object.entries(porForma).filter(([n])=>ehDinheiro(n)).reduce((s,[,v])=>s+v.valor,0);
+  const totalVendas=Object.values(porForma).reduce((s,v)=>s+v.valor,0);
+  const totalSangrias=sangrias.reduce((s,m)=>s+(Number(m.valor)||0),0);
+  const totalSuprimentos=suprimentos.reduce((s,m)=>s+(Number(m.valor)||0),0);
+
+  // o que deveria ter na gaveta agora, só em dinheiro
+  const esperadoGaveta=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
+
+  return {
+    trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
+    qtdVendas:vendas.length,
+    totalVendas:+totalVendas.toFixed(2),
+    vendasDinheiro:+vendasDinheiro.toFixed(2),
+    totalSangrias:+totalSangrias.toFixed(2),
+    totalSuprimentos:+totalSuprimentos.toFixed(2),
+    esperadoGaveta,
+    porForma:Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor),
+  };
+}
+
+// status atual do caixa (aberto/fechado + resumo se aberto)
+app.get("/api/caixa-sessao/atual",(req,res)=>{
+  const s=sessaoCaixaAberta();
+  if(!s) return res.json({aberta:false});
+  res.json({aberta:true,sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,trocoInicial:s.trocoInicial},resumo:resumoSessaoCaixa(s)});
+});
+
+// abre o caixa informando o troco inicial (fundo de caixa)
+app.post("/api/caixa-sessao/abrir",(req,res)=>{
+  if(sessaoCaixaAberta()) return res.status(400).json({erro:"Já existe um caixa aberto. Feche o atual antes de abrir outro."});
+  const {trocoInicial,operador}=req.body||{};
+  const d=lerCaixaSessoes();
+  const sessao={
+    id:"cx"+Date.now()+crypto.randomBytes(3).toString("hex"),
+    abertaEm:Date.now(),
+    operador:operador||"—",
+    trocoInicial:+Number(trocoInicial||0).toFixed(2),
+    movimentos:[],
+    fechadaEm:null,
+  };
+  d.sessoes=d.sessoes||[]; d.sessoes.push(sessao); salvarCaixaSessoes(d);
+  res.json({ok:true,sessao,resumo:resumoSessaoCaixa(sessao)});
+});
+
+// registra sangria (retirada) ou suprimento (entrada de dinheiro)
+app.post("/api/caixa-sessao/movimento",(req,res)=>{
+  const {tipo,valor,motivo,operador}=req.body||{};
+  if(!["sangria","suprimento"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser sangria ou suprimento"});
+  const v=+Number(valor||0).toFixed(2);
+  if(!(v>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
+  const d=lerCaixaSessoes();
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm);
+  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto"});
+  sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now()});
+  salvarCaixaSessoes(d);
+  res.json({ok:true,resumo:resumoSessaoCaixa(sessao)});
+});
+
+// fecha o caixa, comparando o contado com o esperado (conferência)
+app.post("/api/caixa-sessao/fechar",(req,res)=>{
+  const {valorContado,observacao,operador}=req.body||{};
+  const d=lerCaixaSessoes();
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm);
+  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto"});
+  const resumo=resumoSessaoCaixa(sessao);
+  const contado=+Number(valorContado||0).toFixed(2);
+  const diferenca=+(contado-resumo.esperadoGaveta).toFixed(2);
+  sessao.fechadaEm=Date.now();
+  sessao.fechamento={valorContado:contado,esperado:resumo.esperadoGaveta,diferenca,observacao:observacao||"",operador:operador||"—"};
+  sessao.resumoFinal=resumo;
+  salvarCaixaSessoes(d);
+  res.json({ok:true,resumo,fechamento:sessao.fechamento});
+});
+
+// histórico de sessões já fechadas
+app.get("/api/caixa-sessao/historico",(req,res)=>{
+  const d=lerCaixaSessoes();
+  const fechadas=(d.sessoes||[]).filter(s=>s.fechadaEm).sort((a,b)=>b.fechadaEm-a.fechadaEm).slice(0,50);
+  res.json({data:fechadas.map(s=>({
+    id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,
+    trocoInicial:s.trocoInicial,fechamento:s.fechamento,resumo:s.resumoFinal||resumoSessaoCaixa(s),
+  }))});
+});
+
 app.post("/api/pdv/venda", async(req,res)=>{
   try{
     const {itens,contatoId,desconto,pagamentos,emitirNfce}=req.body||{};
@@ -1328,6 +1438,20 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"pdv_varejo"}));
     pags[String(pedidoId)]={valorPago:totalPedido,historico};
     salvarJSON(PAG_FILE,pags);
+
+    // vincula a venda à sessão de caixa aberta (pra entrar no fechamento/conferência)
+    try{
+      const dCx=lerCaixaSessoes();
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm);
+      if(sessaoAtual){
+        sessaoAtual.movimentos.push({
+          tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
+          total:totalPedido,
+          pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
+        });
+        salvarCaixaSessoes(dCx);
+      }
+    }catch(e){ console.error("Falha ao vincular venda à sessão de caixa (ignorado):",e.message); }
 
     let nfce=null;
     if(emitirNfce){

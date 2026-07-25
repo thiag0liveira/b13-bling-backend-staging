@@ -7,44 +7,57 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   body{background:#0f0d24;color:#fff;min-height:100vh}
-  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4);position:sticky;top:0;z-index:10}
-  .top img{height:36px}
-  .top .t{font-weight:900;font-size:20px}
+  .top{background:#181542;padding:12px 20px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 14px rgba(0,0,0,.4);position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  .top img{height:32px}
+  .top .t{font-weight:900;font-size:18px}
   .top .sp{flex:1}
+  .pill{font-size:12px;font-weight:800;padding:5px 12px;border-radius:20px}
+  .pill.aberto{background:#0a3a20;color:#8fffc0;border:1px solid #2f9e6b}
+  .pill.fechado{background:#3a0010;color:#ff8090;border:1px solid #ff4466}
   .btn{background:#FF0082;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:800;font-size:13px;cursor:pointer}
   .btn:disabled{opacity:.4;cursor:not-allowed}
   .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
-  .wrap{max-width:1100px;margin:0 auto;padding:18px;display:grid;grid-template-columns:1.4fr 1fr;gap:18px}
-  @media(max-width:860px){ .wrap{grid-template-columns:1fr} }
-  .card{background:#181542;border-radius:14px;padding:16px;margin-bottom:16px}
+  .btn-sm{padding:7px 12px;font-size:12px}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+  @media(max-width:900px){ .wrap{grid-template-columns:1fr} }
+  .card{background:#181542;border-radius:14px;padding:16px;margin-bottom:14px}
+  .card h3{font-size:15px;margin-bottom:10px}
   .busca{width:100%;padding:14px;font-size:16px;background:#0f0d24;border:2px solid #514c96;border-radius:10px;color:#fff}
   .busca:focus{border-color:#FF0082;outline:none}
-  .res{margin-top:8px;max-height:280px;overflow:auto}
-  .resitem{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #2a2660;cursor:pointer}
+  .res{margin-top:8px;max-height:300px;overflow:auto}
+  .resitem{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #2a2660;cursor:pointer;border-radius:8px}
   .resitem:hover{background:#1f1c4d}
-  .resitem img{width:38px;height:38px;object-fit:contain;background:#fff;border-radius:6px}
-  .resitem .info{flex:1}
+  .resitem img{width:46px;height:46px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0}
+  .resitem .semimg{width:46px;height:46px;background:#241f52;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .resitem .info{flex:1;min-width:0}
   .resitem .nome{font-size:13px;font-weight:700}
   .resitem .meta{font-size:11px;color:#9a95c9}
+  .resitem .preco{font-weight:900;color:#ffd23f;font-size:14px}
   .item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px}
-  .item .nome{flex:1}
+  .item img{width:38px;height:38px;object-fit:contain;background:#fff;border-radius:5px;flex-shrink:0}
+  .item .semimg{width:38px;height:38px;background:#241f52;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+  .item .nome{flex:1;min-width:0}
   .item .qtd{display:flex;align-items:center;gap:4px}
   .item .qtd button{width:26px;height:26px;background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer}
   .item .qtd input{width:44px;text-align:center;background:#0f0d24;border:1px solid #514c96;border-radius:5px;color:#fff;padding:4px}
-  .item .subtotal{width:80px;text-align:right;font-weight:800}
+  .item .subtotal{width:82px;text-align:right;font-weight:800}
   .item .rm{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px}
-  .linha{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
-  .linha b{font-weight:900}
+  .linha{display:flex;justify-content:space-between;padding:6px 0;font-size:14px;align-items:center}
   .total{font-size:26px;font-weight:900;color:#ffd23f}
   .formas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
   .forma{background:#1c1846;border:2px solid #514c96;border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:13px;font-weight:800}
   .forma.sel{border-color:#FF0082;background:#2a1a4d}
   .pagRow{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px}
-  .pagRow input{flex:1;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;text-align:right}
+  .pagRow input{width:100px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;text-align:right}
   .muted{color:#9a95c9;font-size:12px}
   .err{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
   .ok{background:#0a3a20;border:1px solid #2f9e6b;color:#8fffc0;border-radius:8px;padding:14px;margin:10px 0;font-size:14px;text-align:center}
   input[type=checkbox]{width:auto}
+  input[type=number],input[type=text]{background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:8px}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .modal{background:#181542;border-radius:14px;padding:20px;max-width:460px;width:100%;max-height:90vh;overflow:auto}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .bloqueio{text-align:center;padding:50px 20px}
 </style>
 </head>
 <body>
@@ -57,234 +70,431 @@ document.addEventListener("DOMContentLoaded",function(){
   document.body.insertBefore(nav,document.body.firstChild);
 });
 </script>
+
 <div class="top">
   <img src="/logo">
   <div class="t">Frente de Caixa</div>
+  <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
   <div class="sp"></div>
-  <button class="btn btn-ghost" onclick="location.href='/gestao'">← Gestão</button>
+  <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
+  <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
+  <button class="btn btn-ghost btn-sm" onclick="abrirModalHistorico()">📜 Histórico</button>
+  <button class="btn btn-sm" id="btnAbrirFechar" onclick="abrirModalCaixa()">🔓 Abrir caixa</button>
 </div>
 
-<div class="wrap">
-  <div>
-    <div class="card">
-      <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
-      <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
-      <div id="resBusca" class="res"></div>
-    </div>
-
-    <div class="card">
-      <div style="font-weight:800;margin-bottom:8px">🛒 Carrinho</div>
-      <div id="carrinho"><div class="muted">Nenhum item ainda.</div></div>
-    </div>
-  </div>
-
-  <div>
-    <div class="card">
-      <div class="linha"><span>Subtotal</span><b id="lblSubtotal">R$ 0,00</b></div>
-      <div class="linha">
-        <span>Desconto (R$)</span>
-        <input id="desconto" type="number" min="0" step="0.01" value="0" style="width:100px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;text-align:right" oninput="render()">
-      </div>
-      <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
-        <span>Total</span><span class="total" id="lblTotal">R$ 0,00</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div style="font-weight:800;margin-bottom:10px">💳 Forma de pagamento</div>
-      <div class="formas" id="formasBox"></div>
-      <div id="pagamentos"></div>
-      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
-      <div class="linha" style="margin-top:10px">
-        <span>Pago</span><b id="lblPago">R$ 0,00</b>
-      </div>
-      <div class="linha">
-        <span id="lblRestanteLabel">Falta</span><b id="lblRestante">R$ 0,00</b>
-      </div>
-      <div class="linha" id="linhaTroco" style="display:none">
-        <span>Troco</span><b id="lblTroco" style="color:#8fffc0">R$ 0,00</b>
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
-        <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar
-      </label>
-      <div id="msgFinalizar"></div>
-      <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px" onclick="finalizarVenda()">✅ Finalizar Venda</button>
-    </div>
-  </div>
-</div>
+<div id="conteudo"></div>
+<div id="modais"></div>
 
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function hora(ms){ return new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}); }
+function operadorAtual(){ try{ return (b13GetSession()||{}).nome||"—"; }catch(e){ return "—"; } }
 
-let CARRINHO=[]; // {produtoId,nome,preco,quantidade,imagem}
-let FORMAS=[]; // formas de pagamento carregadas do bling
+let CAIXA={aberta:false,sessao:null,resumo:null};
+let CARRINHO=[];
+let FORMAS=[];
 let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
 
+// ---------------- sessão de caixa ----------------
+async function carregarCaixa(){
+  try{
+    const j=await fetch(BACKEND+"/api/caixa-sessao/atual").then(r=>r.json());
+    CAIXA=j;
+  }catch(e){ CAIXA={aberta:false}; }
+  render();
+}
+
+function abrirModalCaixa(){
+  if(CAIXA.aberta) return abrirModalFechamento();
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3>🔓 Abrir caixa</h3>
+        <p class="muted" style="margin-bottom:12px">Informe o valor em dinheiro que já está na gaveta (fundo de troco).</p>
+        <div class="muted" style="margin-bottom:4px">Troco inicial (R$)</div>
+        <input type="number" step="0.01" min="0" id="mTroco" value="0" style="width:100%;font-size:18px;text-align:right" autofocus>
+        <div id="mErro"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn" style="flex:1" onclick="confirmarAbertura()">Abrir caixa</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function confirmarAbertura(){
+  const trocoInicial=+document.getElementById("mTroco").value||0;
+  try{
+    const r=await fetch(BACKEND+"/api/caixa-sessao/abrir",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({trocoInicial,operador:operadorAtual()})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao abrir caixa");
+    fecharModais(); carregarCaixa();
+  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+function abrirModalMovimento(tipo){
+  if(!CAIXA.aberta) return alert("Abra o caixa antes de registrar "+(tipo==="sangria"?"uma sangria":"um suprimento")+".");
+  const ehSangria=tipo==="sangria";
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3>${ehSangria?"💸 Sangria (retirada)":"💰 Suprimento (entrada)"}</h3>
+        <p class="muted" style="margin-bottom:12px">${ehSangria?"Retirada de dinheiro da gaveta (ex: depósito, pagamento de despesa).":"Entrada de dinheiro na gaveta (ex: reforço de troco)."}</p>
+        <div class="muted" style="margin-bottom:4px">Valor (R$)</div>
+        <input type="number" step="0.01" min="0.01" id="mValor" style="width:100%;font-size:18px;text-align:right" autofocus>
+        <div class="muted" style="margin:10px 0 4px">Motivo</div>
+        <input type="text" id="mMotivo" placeholder="${ehSangria?"ex: depósito bancário":"ex: reforço de troco"}" style="width:100%">
+        <div id="mErro"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn" style="flex:1" onclick="confirmarMovimento('${tipo}')">Registrar</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function confirmarMovimento(tipo){
+  const valor=+document.getElementById("mValor").value||0;
+  const motivo=document.getElementById("mMotivo").value.trim();
+  if(!(valor>0)){ document.getElementById("mErro").innerHTML=`<div class="err">Informe um valor maior que zero.</div>`; return; }
+  try{
+    const r=await fetch(BACKEND+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual()})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao registrar");
+    fecharModais(); carregarCaixa();
+  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+function abrirModalFechamento(){
+  const r=CAIXA.resumo||{};
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3>🔒 Fechar caixa — conferência</h3>
+        <div class="card" style="background:#1c1846;margin:12px 0">
+          <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+          <div class="linha"><span>Vendas em dinheiro</span><b>${brl(r.vendasDinheiro)}</b></div>
+          <div class="linha"><span>+ Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
+          <div class="linha"><span>− Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
+          <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px">
+            <span><b>Esperado na gaveta</b></span><b style="font-size:18px;color:#ffd23f">${brl(r.esperadoGaveta)}</b>
+          </div>
+        </div>
+        <div class="muted" style="margin-bottom:4px">Valor contado na gaveta (R$)</div>
+        <input type="number" step="0.01" min="0" id="mContado" style="width:100%;font-size:20px;text-align:right" oninput="calcularDiferenca()" autofocus>
+        <div id="mDif" style="text-align:center;margin-top:10px;font-weight:800"></div>
+        <div class="muted" style="margin:10px 0 4px">Observação (opcional)</div>
+        <input type="text" id="mObs" placeholder="ex: faltou troco de R$ 2" style="width:100%">
+        <div id="mErro"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn" style="flex:1" onclick="confirmarFechamento()">Fechar caixa</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function calcularDiferenca(){
+  const contado=+document.getElementById("mContado").value||0;
+  const esperado=(CAIXA.resumo||{}).esperadoGaveta||0;
+  const dif=+(contado-esperado).toFixed(2);
+  const el=document.getElementById("mDif");
+  if(Math.abs(dif)<0.01){ el.innerHTML=`<span style="color:#8fffc0">✅ Caixa bate certinho</span>`; }
+  else if(dif>0){ el.innerHTML=`<span style="color:#ffd23f">▲ Sobra de ${brl(dif)}</span>`; }
+  else { el.innerHTML=`<span style="color:#ff8090">▼ Falta ${brl(-dif)}</span>`; }
+}
+
+async function confirmarFechamento(){
+  const valorContado=+document.getElementById("mContado").value||0;
+  const observacao=document.getElementById("mObs").value.trim();
+  try{
+    const r=await fetch(BACKEND+"/api/caixa-sessao/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({valorContado,observacao,operador:operadorAtual()})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao fechar caixa");
+    const f=j.fechamento;
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this){fecharModais();carregarCaixa();}">
+        <div class="modal" style="text-align:center">
+          <h3>✅ Caixa fechado</h3>
+          <div class="card" style="background:#1c1846;margin:14px 0;text-align:left">
+            <div class="linha"><span>Esperado</span><b>${brl(f.esperado)}</b></div>
+            <div class="linha"><span>Contado</span><b>${brl(f.valorContado)}</b></div>
+            <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px">
+              <span>Diferença</span>
+              <b style="color:${Math.abs(f.diferenca)<0.01?"#8fffc0":(f.diferenca>0?"#ffd23f":"#ff8090")}">${brl(f.diferenca)}</b>
+            </div>
+          </div>
+          <button class="btn" style="width:100%" onclick="fecharModais();carregarCaixa()">OK</button>
+        </div>
+      </div>`;
+  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+async function abrirModalHistorico(){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/caixa-sessao/historico").then(r=>r.json());
+    const lista=j.data||[];
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+        <div class="modal" style="max-width:560px">
+          <h3>📜 Histórico de caixas</h3>
+          ${lista.length?lista.map(s=>`
+            <div class="card" style="background:#1c1846;margin:10px 0">
+              <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">
+                ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · ${esc(s.operador||"—")}
+              </div>
+              <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+              <div class="linha"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
+              <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
+              <div class="linha"><span>Diferença</span>
+                <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?"#8fffc0":((s.fechamento?.diferenca||0)>0?"#ffd23f":"#ff8090")}">${brl(s.fechamento?.diferenca)}</b></div>
+              ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
+            </div>`).join(""):'<div class="muted">Nenhum caixa fechado ainda.</div>'}
+          <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
+        </div>
+      </div>`;
+  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar histórico</div></div></div>`; }
+}
+
+function fecharModais(){ document.getElementById("modais").innerHTML=""; }
+
+// ---------------- formas de pagamento ----------------
 async function carregarFormas(){
   try{
     const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
     FORMAS=(j.data||[]).filter(f=>f.situacao!=="I");
-    montarFormasBox();
   }catch(e){ FORMAS=[]; }
-}
-
-function montarFormasBox(){
-  const box=document.getElementById("formasBox");
-  box.innerHTML=FORMAS.map(f=>`<div class="forma" data-id="${f.id}" onclick="selecionarForma(0,${f.id},'${esc(f.descricao||f.nome||"")}')">${esc(f.descricao||f.nome||("Forma "+f.id))}</div>`).join("");
-}
-
-function selecionarForma(idx,formaId,formaNome){
-  PAGAMENTOS[idx].formaId=formaId;
-  PAGAMENTOS[idx].formaNome=formaNome;
-  if(!PAGAMENTOS[idx].valor) PAGAMENTOS[idx].valor=restante()+((PAGAMENTOS[idx].valor)||0);
   render();
 }
 
-function adicionarFormaPagamento(){
-  PAGAMENTOS.push({formaId:null,formaNome:"",valor:0});
+function selecionarForma(formaId,formaNome){
+  const idx=PAGAMENTOS.findIndex(p=>!p.formaId);
+  const alvo=idx>=0?idx:PAGAMENTOS.length-1;
+  PAGAMENTOS[alvo].formaId=formaId;
+  PAGAMENTOS[alvo].formaNome=formaNome;
+  if(!PAGAMENTOS[alvo].valor) PAGAMENTOS[alvo].valor=Math.max(0,restante());
   render();
 }
 
-// ---------- busca ----------
+function adicionarFormaPagamento(){ PAGAMENTOS.push({formaId:null,formaNome:"",valor:0}); render(); }
+
+// ---------------- busca de produto ----------------
 let _timerBusca=null;
-document.getElementById("busca").addEventListener("input",function(){
-  clearTimeout(_timerBusca);
-  const termo=this.value.trim();
-  const resEl=document.getElementById("resBusca");
-  if(termo.length<2){ resEl.innerHTML=""; return; }
-  resEl.innerHTML=`<div class="muted">buscando…</div>`;
-  _timerBusca=setTimeout(async()=>{
-    try{
-      // se parecer código de barras (só números, 6+ dígitos), tenta pelo índice de GTIN primeiro
-      let achouPorCodigo=false;
-      if(/^\d{6,}$/.test(termo)){
-        const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
-        if(r&&r.data){
-          adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem});
-          resEl.innerHTML=""; document.getElementById("busca").value=""; achouPorCodigo=true;
+function ligarBusca(){
+  const el=document.getElementById("busca"); if(!el) return;
+  el.addEventListener("input",function(){
+    clearTimeout(_timerBusca);
+    const termo=this.value.trim();
+    const resEl=document.getElementById("resBusca");
+    if(termo.length<2){ resEl.innerHTML=""; return; }
+    resEl.innerHTML=`<div class="muted">buscando…</div>`;
+    _timerBusca=setTimeout(async()=>{
+      try{
+        if(/^\d{6,}$/.test(termo)){
+          const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
+          if(r&&r.data){
+            adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem});
+            resEl.innerHTML=""; el.value=""; return;
+          }
         }
-      }
-      if(achouPorCodigo) return;
-      const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
-      const lista=j.data||[];
-      if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
-      resEl.innerHTML=lista.slice(0,30).map((p,ix)=>`
-        <div class="resitem" onclick="selecionarResultado(${ix})">
-          <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
-        </div>`).join("");
-      window._ultimaBusca=lista;
-    }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
-  },350);
-});
+        const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+        const lista=(j.data||[]).slice(0,25);
+        if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+        window._ultimaBusca=lista;
+        resEl.innerHTML=lista.map((p,ix)=>`
+          <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
+            <div class="semimg">📦</div>
+            <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
+            <div class="preco" id="pr_${ix}">—</div>
+          </div>`).join("");
+        // busca preço e imagem de cada resultado em paralelo, atualizando conforme chega
+        lista.forEach(async(p,ix)=>{
+          if(!p.codigo) return;
+          try{
+            const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+            if(r?.data){
+              p._preco=r.data.preco; p._imagem=r.data.imagem;
+              const prEl=document.getElementById("pr_"+ix);
+              if(prEl) prEl.textContent=brl(r.data.preco);
+              const cardEl=document.getElementById("rb_"+ix);
+              if(cardEl&&r.data.imagem){
+                const ph=cardEl.querySelector(".semimg");
+                if(ph) ph.outerHTML=`<img src="${esc(r.data.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`;
+              }
+            }
+          }catch(e){}
+        });
+      }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
+    },350);
+  });
+}
 
-async function selecionarResultado(ix){
+function selecionarResultado(ix){
   const p=window._ultimaBusca[ix];
-  // busca o preço de verdade via índice de preço (mesma base usada na tela /preco)
-  let preco=0,imagem=null;
-  try{
-    const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo||"")).then(r=>r.json());
-    if(r?.data){ preco=r.data.preco; imagem=r.data.imagem; }
-  }catch(e){}
-  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco,imagem});
+  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco||0,imagem:p._imagem||null});
   document.getElementById("resBusca").innerHTML="";
-  document.getElementById("busca").value="";
-  document.getElementById("busca").focus();
+  const b=document.getElementById("busca"); if(b){ b.value=""; b.focus(); }
 }
 
 function adicionarAoCarrinho(p){
-  const existente=CARRINHO.find(i=>i.produtoId===p.produtoId);
-  if(existente){ existente.quantidade++; } else { CARRINHO.push({...p,quantidade:1}); }
+  const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
+  if(ex) ex.quantidade++; else CARRINHO.push({...p,quantidade:1});
   render();
 }
 
 function subtotal(){ return CARRINHO.reduce((s,i)=>s+i.preco*i.quantidade,0); }
-function totalPedido(){ return Math.max(0,subtotal()-Number(document.getElementById("desconto")?.value||0)); }
+function descontoAtual(){ return Number(document.getElementById("desconto")?.value||0); }
+function totalPedido(){ return Math.max(0,subtotal()-descontoAtual()); }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
-
-function render(){
-  const carEl=document.getElementById("carrinho");
-  carEl.innerHTML=CARRINHO.length?CARRINHO.map((i,ix)=>`
-    <div class="item">
-      <span class="nome">${esc(i.nome)}</span>
-      <div class="qtd">
-        <button onclick="alterarQtd(${ix},-1)">−</button>
-        <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
-        <button onclick="alterarQtd(${ix},1)">+</button>
-      </div>
-      <span class="subtotal">${brl(i.preco*i.quantidade)}</span>
-      <button class="rm" onclick="removerItem(${ix})">🗑</button>
-    </div>`).join(""):`<div class="muted">Nenhum item ainda.</div>`;
-
-  document.getElementById("lblSubtotal").textContent=brl(subtotal());
-  document.getElementById("lblTotal").textContent=brl(totalPedido());
-
-  // pagamentos
-  const pagBox=document.getElementById("pagamentos");
-  pagBox.innerHTML=PAGAMENTOS.map((p,ix)=>`
-    <div class="pagRow">
-      <span style="flex:1">${p.formaNome?esc(p.formaNome):'<span class="muted">escolha a forma acima</span>'}</span>
-      <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
-      ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
-    </div>`).join("");
-
-  document.querySelectorAll(".forma").forEach(el=>{
-    const ativo=PAGAMENTOS.some(p=>String(p.formaId)===el.dataset.id);
-    el.classList.toggle("sel",ativo);
-  });
-
-  document.getElementById("lblPago").textContent=brl(totalPago());
-  const r=restante();
-  const ehDinheiro=PAGAMENTOS.some(p=>(p.formaNome||"").toLowerCase().includes("dinheiro"));
-  if(r<0&&ehDinheiro){
-    document.getElementById("linhaTroco").style.display="flex";
-    document.getElementById("lblTroco").textContent=brl(-r);
-    document.getElementById("lblRestanteLabel").textContent="Falta";
-    document.getElementById("lblRestante").textContent=brl(0);
-  } else {
-    document.getElementById("linhaTroco").style.display="none";
-    document.getElementById("lblRestanteLabel").textContent="Falta";
-    document.getElementById("lblRestante").textContent=brl(Math.max(0,r));
-  }
-
-  document.getElementById("btnFinalizar").disabled=!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||(r>0.009);
-}
-
-function alterarQtd(ix,delta){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+delta); render(); }
+function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+d); render(); }
 function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); render(); }
 function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
+function limparCarrinho(){ if(CARRINHO.length&&!confirm("Cancelar a venda e limpar o carrinho?"))return; CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; render(); }
+
+// ---------------- render ----------------
+function render(){
+  const pill=document.getElementById("pillCaixa");
+  const btnAF=document.getElementById("btnAbrirFechar");
+  if(CAIXA.aberta){
+    pill.className="pill aberto";
+    pill.textContent="Caixa aberto · "+brl((CAIXA.resumo||{}).esperadoGaveta);
+    btnAF.textContent="🔒 Fechar caixa";
+  } else {
+    pill.className="pill fechado"; pill.textContent="Caixa fechado";
+    btnAF.textContent="🔓 Abrir caixa";
+  }
+
+  const cont=document.getElementById("conteudo");
+  if(!CAIXA.aberta){
+    cont.innerHTML=`<div class="bloqueio">
+      <div style="font-size:52px;margin-bottom:14px">🔒</div>
+      <h2 style="margin-bottom:8px">Caixa fechado</h2>
+      <p class="muted" style="margin-bottom:18px">Abra o caixa informando o troco inicial pra começar a vender.</p>
+      <button class="btn" onclick="abrirModalCaixa()">🔓 Abrir caixa</button>
+    </div>`;
+    return;
+  }
+
+  const r=CAIXA.resumo||{};
+  const descAtual=descontoAtual();
+  cont.innerHTML=`<div class="wrap">
+    <div>
+      <div class="card">
+        <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
+        <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
+        <div id="resBusca" class="res"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:center;margin-bottom:8px">
+          <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>
+          ${CARRINHO.length?`<button class="btn btn-ghost btn-sm" onclick="limparCarrinho()">Cancelar venda</button>`:""}
+        </div>
+        <div id="carrinho">${CARRINHO.length?CARRINHO.map((i,ix)=>`
+          <div class="item">
+            ${i.imagem?`<img src="${esc(i.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`:`<div class="semimg">📦</div>`}
+            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.preco)} un</span></span>
+            <div class="qtd">
+              <button onclick="alterarQtd(${ix},-1)">−</button>
+              <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
+              <button onclick="alterarQtd(${ix},1)">+</button>
+            </div>
+            <span class="subtotal">${brl(i.preco*i.quantidade)}</span>
+            <button class="rm" onclick="removerItem(${ix})">🗑</button>
+          </div>`).join(""):'<div class="muted">Nenhum item ainda.</div>'}</div>
+      </div>
+      <div class="card">
+        <h3>📊 Resumo do caixa</h3>
+        <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+        <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
+        <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
+        <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">
+          <span><b>Esperado na gaveta</b></span><b style="color:#ffd23f">${brl(r.esperadoGaveta)}</b></div>
+        ${(r.porForma||[]).length?`<div style="margin-top:10px">
+          <div class="muted" style="margin-bottom:4px">Por forma de pagamento</div>
+          ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        </div>`:""}
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
+        <div class="linha"><span>Desconto (R$)</span>
+          <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" oninput="render()"></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
+          <span>Total</span><span class="total">${brl(totalPedido())}</span></div>
+      </div>
+
+      <div class="card">
+        <h3>💳 Pagamento</h3>
+        <div class="formas">${FORMAS.map(f=>{
+          const nome=f.descricao||f.nome||("Forma "+f.id);
+          const sel=PAGAMENTOS.some(p=>String(p.formaId)===String(f.id));
+          return `<div class="forma ${sel?"sel":""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g,"\\'")}')">${esc(nome)}</div>`;
+        }).join("")}</div>
+        ${PAGAMENTOS.map((p,ix)=>`
+          <div class="pagRow">
+            <span style="flex:1">${p.formaNome?esc(p.formaNome):'<span class="muted">escolha a forma acima</span>'}</span>
+            <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
+            ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
+          </div>`).join("")}
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
+        <div class="linha" style="margin-top:10px"><span>Pago</span><b>${brl(totalPago())}</b></div>
+        ${(()=>{
+          const rest=restante();
+          const ehDin=PAGAMENTOS.some(p=>(p.formaNome||"").toLowerCase().includes("dinheiro"));
+          if(rest<-0.009&&ehDin) return `<div class="linha"><span>Troco</span><b style="color:#8fffc0;font-size:18px">${brl(-rest)}</b></div>`;
+          if(rest>0.009) return `<div class="linha"><span>Falta</span><b style="color:#ff8090">${brl(rest)}</b></div>`;
+          return `<div class="linha"><span>Falta</span><b style="color:#8fffc0">${brl(0)}</b></div>`;
+        })()}
+        <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
+          <input type="checkbox" id="emitirNfce"> Emitir NFCe ao finalizar</label>
+        <div id="msgFinalizar"></div>
+        <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
+          ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009)?"disabled":""}
+          onclick="finalizarVenda()">✅ Finalizar Venda</button>
+      </div>
+    </div>
+  </div>`;
+  ligarBusca();
+}
 
 async function finalizarVenda(){
   const msg=document.getElementById("msgFinalizar");
-  msg.innerHTML="";
   const btn=document.getElementById("btnFinalizar");
-  btn.disabled=true; btn.textContent="Processando…";
+  msg.innerHTML=""; btn.disabled=true; btn.textContent="Processando…";
   try{
     const body={
       itens:CARRINHO.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
-      desconto:Number(document.getElementById("desconto").value||0),
+      desconto:descontoAtual(),
       pagamentos:PAGAMENTOS.filter(p=>p.formaId).map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(p.valor,totalPedido())})),
       emitirNfce:document.getElementById("emitirNfce").checked,
     };
     const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
-    msg.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} finalizada — ${brl(j.total)}
-      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?"<br>NFCe emitida com sucesso":"")}</div>`;
     CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
-    document.getElementById("desconto").value=0;
-    render();
+    await carregarCaixa();
+    const m=document.getElementById("msgFinalizar");
+    if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
+      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?"<br>NFCe emitida":"")}</div>`;
   }catch(e){
-    msg.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+    const m=document.getElementById("msgFinalizar");
+    if(m) m.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+    render();
   }
-  btn.textContent="✅ Finalizar Venda";
-  render();
 }
 
 carregarFormas();
-render();
+carregarCaixa();
 </script>
 </body>
 </html>
