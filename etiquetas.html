@@ -23,7 +23,7 @@
   .linha input{width:auto}
   @media print{ .noprint{display:none!important} body{background:#fff} }
 
-  .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:start}
+  .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:stretch}
   .etiqueta{background:#fff;color:#181542;border:2px solid #181542;border-radius:6px;overflow:hidden;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif}
   .etiqueta .nome{font-weight:900;font-size:19px;padding:10px 14px 6px;letter-spacing:.3px;text-transform:uppercase}
   .etiqueta .secoes{display:flex;border-top:2px solid #181542}
@@ -50,7 +50,7 @@
 
   /* -------- Modelo 2 -------- */
   .etq2{position:relative;background:#fff;color:#000;border:3px solid #181542;border-radius:14px;overflow:hidden;page-break-inside:avoid;
-    font-family:'Poppins',Arial,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+    font-family:'Poppins',Arial,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.12);display:flex;flex-direction:column}
   .etq2::before{content:"";position:absolute;inset:0;background-image:url('/logo');background-repeat:no-repeat;background-position:center 58%;
     background-size:65%;opacity:.06;pointer-events:none;filter:grayscale(1)}
   .etq2 > *{position:relative;z-index:1}
@@ -73,7 +73,7 @@
   .etq2 .atacado2 .preco2 .cif2{font-size:15px}
   .etq2 .atacado2 .lblGrande2{font-size:20px;font-weight:900;color:#000}
   .etq2 .obs2{text-align:center;font-size:9px;font-weight:800;color:#000;margin:2px 12px 8px}
-  .etq2 .rodapeLogo{background:#c40018;padding:10px;display:flex;align-items:center;justify-content:center}
+  .etq2 .rodapeLogo{background:#c40018;padding:10px;display:flex;align-items:center;justify-content:center;margin-top:auto}
   .etq2 .rodapeLogo img{height:34px;filter:brightness(0) invert(1)}
 </style>
 </head>
