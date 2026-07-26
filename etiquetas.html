@@ -22,7 +22,7 @@
   .linha input{width:auto}
   @media print{ .noprint{display:none!important} body{background:#fff} }
 
-  .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:start}
   .etiqueta{background:#fff;color:#181542;border:2px solid #181542;border-radius:6px;overflow:hidden;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif}
   .etiqueta .nome{font-weight:900;font-size:19px;padding:10px 14px 6px;letter-spacing:.3px;text-transform:uppercase}
   .etiqueta .secoes{display:flex;border-top:2px solid #181542}
@@ -42,7 +42,7 @@
   .etiqueta .secao .valor .cifra{font-size:17px;font-weight:800;align-self:flex-start;margin-top:6px}
   .etiqueta .secao .sub{font-size:9px;font-weight:700;margin-top:4px;letter-spacing:.3px}
   @media print{
-    .etiqueta,.etiqueta *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+    .etiqueta,.etiqueta *,.etq2,.etq2 *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
   }
   .etiqueta .rodape{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
   .etiqueta .rodape .categoria{font-size:12px;font-weight:900;color:#181542;letter-spacing:.5px;text-transform:uppercase}
@@ -207,7 +207,7 @@ async function gerarEtiquetasModelo2(){
           <div class="lblGrande2">ATACADO</div>
         </div>
         <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`:""}
-        <div class="rodapeLogo"><img src="/logo"></div>
+        <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
       </div>`;
     }).join("");
     document.getElementById("btnImprimir").style.display="inline-block";
