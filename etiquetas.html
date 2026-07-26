@@ -130,9 +130,9 @@ async function gerarEtiquetas(){
       const temFardo=it.precoFardo!=null;
       const temAtacado=it.precoAtacado!=null;
       const secoes=[];
-      secoes.push(`<div class="secao branca"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
+      secoes.push(`<div class="secao preta"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
       if(temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
-      if(temAtacado) secoes.push(`<div class="secao preta"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
+      if(temAtacado) secoes.push(`<div class="secao branca"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
       return `<div class="etiqueta">
         <div class="nome">${esc(it.nome)}</div>
         <div class="secoes">${secoes.join("")}</div>
