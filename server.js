@@ -51,6 +51,7 @@ const INSTAGRAM_CACHE_FILE = `${DATA_DIR}/instagram_cache.json`;
 const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const CAIXA_SESSOES_FILE = `${DATA_DIR}/caixa_sessoes.json`;
+const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -209,6 +210,8 @@ function b13RenderNav(ativo){
     {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
     {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
+    {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
+    {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
     {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
     {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
@@ -1441,6 +1444,97 @@ app.get("/api/caixa-sessao/historico",(req,res)=>{
   }))});
 });
 
+// ---------------- LISTA DE FARDO (varejo promocional por fardo) ----------------
+// Reaproveita os vínculos (código Bling) já feitos na Tabela Atacado, mas guarda um
+// preço PRÓPRIO (o "preço de fardo") num arquivo separado — nunca mexe no tabela.json.
+function lerListaFardo(){ return lerJSON(LISTA_FARDO_FILE,{}); } // { itemId: precoFardo }
+function salvarListaFardo(d){ salvarJSON(LISTA_FARDO_FILE,d); }
+
+// Varre o modelo da tabela atacado e monta um índice: código Bling -> {itemId, categoriaNome, itemNome, precoAtacado, produtoId}
+function indexarVinculosTabela(){
+  const tab=lerTabela();
+  const idx={};
+  (tab?.model||[]).forEach(cat=>{
+    (cat.itens||[]).forEach(it=>{
+      (it.bling||[]).forEach(b=>{
+        idx[String(b.codigo)]={itemId:it.id,categoriaNome:cat.t||"",itemNome:it.nome||"",precoAtacado:it.preco,produtoId:b.id};
+      });
+    });
+  });
+  return idx;
+}
+
+// lista completa (pra tela de gestão) — junta nome/categoria/preço atacado + preço fardo salvo
+app.get("/api/lista-fardo",(req,res)=>{
+  const fardo=lerListaFardo();
+  const idx=indexarVinculosTabela();
+  // agrupa por item (um item pode ter vários códigos/sabores vinculados)
+  const porItem={};
+  Object.values(idx).forEach(v=>{
+    if(!porItem[v.itemId]) porItem[v.itemId]={itemId:v.itemId,categoriaNome:v.categoriaNome,itemNome:v.itemNome,precoAtacado:v.precoAtacado,precoFardo:fardo[v.itemId]??null};
+  });
+  res.json({data:Object.values(porItem).sort((a,b)=>a.itemNome.localeCompare(b.itemNome))});
+});
+
+// importa a lista vinda do Bling (código + preço) — casa pelo código já vinculado na tabela atacado
+app.post("/api/lista-fardo/importar",(req,res)=>{
+  const {linhas}=req.body||{};
+  if(!Array.isArray(linhas)) return res.status(400).json({erro:"informe { linhas: [{codigo,preco}] }"});
+  const idx=indexarVinculosTabela();
+  const fardo=lerListaFardo();
+  const casados=[], naoEncontrados=[];
+  linhas.forEach(l=>{
+    const codigo=String(l.codigo||"").trim();
+    const preco=+Number(l.preco||0);
+    if(!codigo||!(preco>0)) return;
+    const match=idx[codigo];
+    if(match){
+      fardo[match.itemId]=preco;
+      casados.push({codigo,preco,itemNome:match.itemNome,categoriaNome:match.categoriaNome});
+    } else {
+      naoEncontrados.push({codigo,preco});
+    }
+  });
+  salvarListaFardo(fardo);
+  res.json({ok:true,qtdCasados:casados.length,qtdNaoEncontrados:naoEncontrados.length,casados,naoEncontrados});
+});
+
+// edita/remove manualmente o preço de fardo de um item específico
+app.put("/api/lista-fardo/:itemId",(req,res)=>{
+  const {preco}=req.body||{};
+  const fardo=lerListaFardo();
+  if(preco==null||preco===""){ delete fardo[req.params.itemId]; }
+  else { fardo[req.params.itemId]=+Number(preco); }
+  salvarListaFardo(fardo);
+  res.json({ok:true});
+});
+
+// etiqueta de preço: pra cada item pedido, traz Atacado + Fardo + Varejo (preço ao vivo do Bling)
+app.get("/api/etiquetas",async(req,res)=>{
+  const ids=String(req.query.itens||"").split(",").map(s=>s.trim()).filter(Boolean);
+  if(!ids.length) return res.status(400).json({erro:"informe ?itens=id1,id2,..."});
+  const tab=lerTabela();
+  const fardo=lerListaFardo();
+  const itensPorId={};
+  (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{ itensPorId[it.id]={...it,categoriaNome:cat.t||""}; }));
+
+  const resultado=[];
+  for(const id of ids){
+    const it=itensPorId[id];
+    if(!it){ resultado.push({itemId:id,erro:"item não encontrado na tabela atacado"}); continue; }
+    let precoVarejo=null;
+    const primeiroVinculo=(it.bling||[])[0];
+    if(primeiroVinculo?.id){
+      try{ const r=await bling(`/produtos/${primeiroVinculo.id}`); precoVarejo=+(r?.data?.preco||0); }catch(e){}
+    }
+    resultado.push({
+      itemId:id, nome:it.nome, categoriaNome:it.categoriaNome,
+      precoAtacado:it.preco??null, precoFardo:fardo[id]??null, precoVarejo,
+    });
+  }
+  res.json({data:resultado});
+});
+
 app.post("/api/pdv/venda", async(req,res)=>{
   try{
     const {itens,contatoId,desconto,pagamentos,emitirNfce}=req.body||{};
@@ -2468,6 +2562,8 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
 app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
 app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
+app.get("/lista-fardo", (req, res) => res.sendFile(path.join(__dirname, "lista-fardo.html")));
+app.get("/etiquetas", (req, res) => res.sendFile(path.join(__dirname, "etiquetas.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
 app.get("/gerenciamento", (req, res) => res.sendFile(path.join(__dirname, "gerenciamento.html")));
 app.get("/funcionarios", (req, res) => res.sendFile(path.join(__dirname, "funcionarios.html")));

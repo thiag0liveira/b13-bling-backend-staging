@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B13 — Etiquetas de Preço</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  body{background:#0f0d24;color:#fff;min-height:100vh}
+  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .top img{height:32px}
+  .top .t{font-weight:900;font-size:18px}
+  .top .sp{flex:1}
+  .btn{background:#FF0082;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
+  .wrap{max-width:1000px;margin:0 auto;padding:18px}
+  .card{background:#181542;border-radius:14px;padding:18px;margin-bottom:16px}
+  .muted{color:#9a95c9;font-size:12px}
+  .busca{width:100%;padding:12px;font-size:15px;background:#0f0d24;border:2px solid #514c96;border-radius:10px;color:#fff}
+  .lista{max-height:340px;overflow:auto;margin-top:10px}
+  .linha{display:flex;align-items:center;gap:10px;padding:7px;border-bottom:1px solid #2a2660;font-size:13px}
+  .linha input{width:auto}
+  @media print{ .noprint{display:none!important} body{background:#fff} }
+
+  .folha{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .etiqueta{background:#fff;color:#181542;border:2px dashed #999;border-radius:8px;padding:12px;page-break-inside:avoid}
+  .etiqueta .nome{font-weight:900;font-size:14px;margin-bottom:8px;min-height:36px}
+  .etiqueta .linhaPreco{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px}
+  .etiqueta .linhaPreco b{font-size:16px}
+  .etiqueta .varejo{color:#181542}
+  .etiqueta .fardo{color:#FF0082}
+  .etiqueta .atacado{color:#0a6b3a}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<script>
+if(!b13RequireLogin())document.write=function(){};
+document.addEventListener("DOMContentLoaded",function(){
+  const nav=document.createElement("div");
+  nav.innerHTML=b13RenderNav("/etiquetas");
+  document.body.insertBefore(nav,document.body.firstChild);
+});
+</script>
+
+<div class="top noprint">
+  <img src="/logo">
+  <div class="t">Etiquetas de Preço</div>
+  <div class="sp"></div>
+  <button class="btn btn-ghost" onclick="location.href='/lista-fardo'">📋 Lista de Fardo</button>
+</div>
+
+<div class="wrap noprint">
+  <div class="card">
+    <div class="muted" style="margin-bottom:6px">Selecione os produtos pra gerar etiquetas (mostra Atacado, Fardo e Varejo)</div>
+    <input class="busca" id="filtro" placeholder="Filtrar por nome…" oninput="renderLista()">
+    <div class="lista" id="lista"><div class="muted">Carregando…</div></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn" onclick="gerarEtiquetas()">🏷 Gerar etiquetas selecionadas</button>
+      <button class="btn btn-ghost" onclick="window.print()" id="btnImprimir" style="display:none">🖨 Imprimir</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="folhaEtiquetas" class="folha"></div>
+</div>
+
+<script>
+const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function brl(n){ return n==null?"—":(Number(n)).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+let TODOS=[];
+let SELECIONADOS=new Set();
+
+async function carregar(){
+  try{
+    const j=await fetch(BACKEND+"/api/lista-fardo").then(r=>r.json());
+    TODOS=j.data||[];
+  }catch(e){ TODOS=[]; }
+  renderLista();
+}
+
+function renderLista(){
+  const termo=(document.getElementById("filtro").value||"").toLowerCase();
+  const box=document.getElementById("lista");
+  const filtrados=TODOS.filter(i=>i.itemNome.toLowerCase().includes(termo));
+  if(!filtrados.length){ box.innerHTML=`<div class="muted">Nenhum produto encontrado.</div>`; return; }
+  box.innerHTML=filtrados.map(i=>`
+    <label class="linha">
+      <input type="checkbox" ${SELECIONADOS.has(i.itemId)?"checked":""} onchange="toggleSel('${i.itemId}',this.checked)">
+      <span style="flex:1">${esc(i.itemNome)}</span>
+      <span class="muted">Atacado ${brl(i.precoAtacado)}${i.precoFardo!=null?" · Fardo "+brl(i.precoFardo):""}</span>
+    </label>`).join("");
+}
+
+function toggleSel(id,marcado){ if(marcado) SELECIONADOS.add(id); else SELECIONADOS.delete(id); }
+
+async function gerarEtiquetas(){
+  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
+  const folha=document.getElementById("folhaEtiquetas");
+  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
+    folha.innerHTML=(j.data||[]).map(it=>{
+      if(it.erro) return "";
+      return `<div class="etiqueta">
+        <div class="nome">${esc(it.nome)}</div>
+        <div class="linhaPreco varejo"><span>Varejo (un.)</span><b>${brl(it.precoVarejo)}</b></div>
+        ${it.precoFardo!=null?`<div class="linhaPreco fardo"><span>Fardo</span><b>${brl(it.precoFardo)}</b></div>`:""}
+        <div class="linhaPreco atacado"><span>Atacado</span><b>${brl(it.precoAtacado)}</b></div>
+      </div>`;
+    }).join("");
+    document.getElementById("btnImprimir").style.display="inline-block";
+  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+}
+
+carregar();
+</script>
+</body>
+</html>

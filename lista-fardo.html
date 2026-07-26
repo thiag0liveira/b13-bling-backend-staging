@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B13 — Lista de Fardo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  body{background:#0f0d24;color:#fff;min-height:100vh}
+  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .top img{height:32px}
+  .top .t{font-weight:900;font-size:18px}
+  .top .sp{flex:1}
+  .btn{background:#FF0082;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
+  .wrap{max-width:900px;margin:0 auto;padding:18px}
+  .card{background:#181542;border-radius:14px;padding:18px;margin-bottom:16px}
+  .muted{color:#9a95c9;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:#9a95c9;font-weight:700;padding:6px;border-bottom:2px solid #2a2660}
+  td{padding:6px;border-bottom:1px solid #2a2660}
+  input[type=number],input[type=text]{background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:6px;width:100px;text-align:right}
+  .ok{background:#0a3a20;border:1px solid #2f9e6b;color:#8fffc0;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .warn{background:#3a2a00;border:1px solid #d4a017;color:#ffd23f;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .err{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .rm{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:5px;padding:4px 8px;cursor:pointer;font-size:11px}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<script>
+if(!b13RequireLogin())document.write=function(){};
+document.addEventListener("DOMContentLoaded",function(){
+  const nav=document.createElement("div");
+  nav.innerHTML=b13RenderNav("/lista-fardo");
+  document.body.insertBefore(nav,document.body.firstChild);
+});
+</script>
+
+<div class="top">
+  <img src="/logo">
+  <div class="t">Lista de Fardo (varejo promocional)</div>
+  <div class="sp"></div>
+  <button class="btn btn-ghost" onclick="location.href='/etiquetas'">🏷 Gerar Etiquetas</button>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <h3 style="margin-bottom:8px">📥 Importar do Bling</h3>
+    <p class="muted" style="margin-bottom:10px">
+      Envia o arquivo CSV/Excel exportado do Bling. O sistema casa cada produto pelo <b>código</b> já vinculado na Tabela Atacado —
+      só o preço de fardo é salvo, a tabela de atacado não é alterada.
+    </p>
+    <input type="file" id="arquivo" accept=".csv,.xlsx,.xls" onchange="processarArquivo(this.files[0])">
+    <div id="mapeamento" style="margin-top:12px;display:none">
+      <div class="muted" style="margin-bottom:6px">Qual coluna é o código do produto e qual é o preço?</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <select id="colCodigo"></select>
+        <select id="colPreco"></select>
+        <button class="btn" onclick="confirmarImportacao()">Importar</button>
+      </div>
+    </div>
+    <div id="resultadoImport"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:8px">📋 Preços de fardo cadastrados</h3>
+    <div id="lista"><div class="muted">Carregando…</div></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function brl(n){ return n==null?"—":(Number(n)).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+let LINHAS_ARQUIVO=[]; // array de arrays (linhas cruas da planilha)
+let CABECALHO=[];
+
+function processarArquivo(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const wb=XLSX.read(e.target.result,{type:"array"});
+    const primeiraAba=wb.Sheets[wb.SheetNames[0]];
+    const linhas=XLSX.utils.sheet_to_json(primeiraAba,{header:1});
+    if(!linhas.length) return;
+    CABECALHO=linhas[0].map(String);
+    LINHAS_ARQUIVO=linhas.slice(1);
+    const selCodigo=document.getElementById("colCodigo");
+    const selPreco=document.getElementById("colPreco");
+    const opts=CABECALHO.map((c,ix)=>`<option value="${ix}">${esc(c)}</option>`).join("");
+    selCodigo.innerHTML=opts; selPreco.innerHTML=opts;
+    // tenta adivinhar automaticamente pelo nome da coluna
+    CABECALHO.forEach((c,ix)=>{
+      const l=c.toLowerCase();
+      if(l.includes("codigo")||l.includes("código")||l.includes("sku")) selCodigo.value=ix;
+      if(l.includes("preco")||l.includes("preço")||l.includes("valor")) selPreco.value=ix;
+    });
+    document.getElementById("mapeamento").style.display="block";
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function confirmarImportacao(){
+  const ixCodigo=+document.getElementById("colCodigo").value;
+  const ixPreco=+document.getElementById("colPreco").value;
+  const linhas=LINHAS_ARQUIVO.map(l=>({codigo:l[ixCodigo],preco:l[ixPreco]})).filter(l=>l.codigo!=null&&l.preco!=null);
+  const box=document.getElementById("resultadoImport");
+  box.innerHTML=`<div class="muted">Importando ${linhas.length} linha(s)…</div>`;
+  try{
+    const r=await fetch(BACKEND+"/api/lista-fardo/importar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({linhas})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"erro ao importar");
+    box.innerHTML=`
+      <div class="ok">✅ ${j.qtdCasados} produto(s) casados com a tabela atacado e atualizados.</div>
+      ${j.qtdNaoEncontrados?`<div class="warn">⚠️ ${j.qtdNaoEncontrados} código(s) não encontrados na tabela atacado (não têm vínculo lá ainda):<br>
+        ${j.naoEncontrados.slice(0,20).map(n=>`#${esc(String(n.codigo))} — ${brl(n.preco)}`).join("<br>")}
+        ${j.naoEncontrados.length>20?`<br>e mais ${j.naoEncontrados.length-20}...`:""}
+      </div>`:""}
+    `;
+    carregarLista();
+  }catch(e){ box.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+async function carregarLista(){
+  const box=document.getElementById("lista");
+  try{
+    const j=await fetch(BACKEND+"/api/lista-fardo").then(r=>r.json());
+    const itens=(j.data||[]).filter(i=>i.precoFardo!=null);
+    if(!itens.length){ box.innerHTML=`<div class="muted">Nenhum preço de fardo cadastrado ainda.</div>`; return; }
+    box.innerHTML=`<table>
+      <tr><th>Produto</th><th>Categoria</th><th>Atacado</th><th>Fardo</th><th></th></tr>
+      ${itens.map(i=>`
+        <tr>
+          <td>${esc(i.itemNome)}</td>
+          <td class="muted">${esc(i.categoriaNome)}</td>
+          <td>${brl(i.precoAtacado)}</td>
+          <td><input type="number" step="0.01" value="${i.precoFardo}" onchange="editarFardo('${i.itemId}',this.value)"></td>
+          <td><button class="rm" onclick="removerFardo('${i.itemId}')">🗑</button></td>
+        </tr>`).join("")}
+    </table>`;
+  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar</div>`; }
+}
+
+async function editarFardo(itemId,valor){
+  await fetch(BACKEND+"/api/lista-fardo/"+itemId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({preco:valor})});
+  carregarLista();
+}
+async function removerFardo(itemId){
+  if(!confirm("Remover o preço de fardo desse produto?")) return;
+  await fetch(BACKEND+"/api/lista-fardo/"+itemId,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({preco:null})});
+  carregarLista();
+}
+
+carregarLista();
+</script>
+</body>
+</html>
