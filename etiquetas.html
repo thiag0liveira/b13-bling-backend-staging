@@ -73,6 +73,23 @@
   .etq2 .atacado2 .preco2 .cif2{font-size:15px}
   .etq2 .atacado2 .lblGrande2{font-size:20px;font-weight:900;color:#000}
   .etq2 .obs2{text-align:center;font-size:9px;font-weight:800;color:#000;margin:2px 12px 8px}
+
+  /* layout com 1 preço só (varejo) — grande e centralizado no meio do card */
+  .etq2 .unico2{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 10px}
+  .etq2 .unico2 .grande2{font-size:64px!important}
+  .etq2 .unico2 .lblGrande2{font-size:18px;margin-top:6px}
+
+  /* layout com 2 precos — um em cima, outro embaixo, cada um ocupando a largura toda */
+  .etq2 .empilhado2{display:flex;flex-direction:column;padding:6px 12px 10px;gap:8px}
+  .etq2 .unidadeEmpilhada2{padding:10px 0}
+  .etq2 .unidadeEmpilhada2 .preco2{font-size:48px}
+  .etq2 .pack2Full,.etq2 .atacado2Full{border:2px solid #181542;border-radius:12px;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .etq2 .pack2Full .preco2,.etq2 .atacado2Full .preco2{font-size:38px;font-weight:900;color:#000;display:flex;align-items:baseline;gap:2px;justify-content:center}
+  .etq2 .pack2Full .preco2 .cif2,.etq2 .atacado2Full .preco2 .cif2{font-size:17px}
+  .etq2 .pack2Full .lblGrande2{font-size:11px;font-weight:900;color:#000;margin-top:2px}
+  .etq2 .atacado2Full .lblGrande2{font-size:18px;font-weight:900;color:#000;margin-top:2px}
+  .etq2 .rosa2{background:#FF0082}
+  .etq2 .azul2{background:#29ABE2}
   .etq2 .rodapeLogo{background:#c40018;padding:10px;display:flex;align-items:center;justify-content:center;margin-top:auto}
   .etq2 .rodapeLogo img{height:34px;filter:brightness(0) invert(1)}
 </style>
@@ -190,28 +207,59 @@ async function gerarEtiquetasModelo2(){
       const varejo=partesPreco(it.precoVarejo);
       const fardo=partesPreco(it.precoFardo);
       const atacado=partesPreco(it.precoAtacado);
-      return `<div class="etq2">
-        <div class="nome2">${esc(it.nome)}</div>
-        <div class="corpo2">
+      const temFardo=it.precoFardo!=null;
+      const temAtacado=it.precoAtacado!=null;
+      const qtdPrecos=1+(temFardo?1:0)+(temAtacado?1:0);
+
+      let corpoHtml;
+      if(qtdPrecos===1){
+        // só o varejo -> mostra bem grande, centralizado no meio do card
+        corpoHtml=`<div class="unico2">
+          <div class="preco2 grande2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+          <div class="lbl2">UND</div>
+          <div class="lblGrande2">UNIDADE</div>
+        </div>`;
+      } else if(qtdPrecos===2){
+        // um em cima (varejo), o outro embaixo (fardo ou atacado) — cada um ocupando a largura toda
+        const seg=temFardo
+          ?{classe:"pack2Full",cor:"rosa2",preco:fardo,label:`ACIMA DE ${it.caixaQtd||"—"} UNIDADES`}
+          :{classe:"atacado2Full",cor:"azul2",preco:atacado,label:"ATACADO"};
+        corpoHtml=`<div class="empilhado2">
+          <div class="unidade2 unidadeEmpilhada2">
+            <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+            <div class="lbl2">UND</div>
+            <div class="lblGrande2">UNIDADE</div>
+          </div>
+          <div class="${seg.classe} ${seg.cor}">
+            <div class="preco2"><span class="cif2">R$</span>${seg.preco.i}<span class="cent2">,${seg.preco.c}</span></div>
+            <div class="lblGrande2">${seg.label}</div>
+          </div>
+        </div>`;
+      } else {
+        // os 3 preços -> layout original (unidade+fardo lado a lado, atacado embaixo)
+        corpoHtml=`<div class="corpo2">
           <div class="unidade2">
             <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
             <div class="lbl2">UND</div>
             <div class="lblGrande2">UNIDADE</div>
           </div>
-          ${it.precoFardo!=null?`
           <div class="divisor2"></div>
           <div class="pack2">
             <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
             <div class="lbl2">UND</div>
             <div class="lblGrande2">ACIMA DE ${it.caixaQtd||"—"} UNIDADES</div>
-          </div>`:""}
+          </div>
         </div>
-        ${it.precoAtacado!=null?`
         <div class="atacado2">
           <div class="preco2"><span class="cif2">R$</span>${atacado.i}<span class="cent2">,${atacado.c}</span></div>
           <div class="lblGrande2">ATACADO</div>
         </div>
-        <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`:""}
+        <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`;
+      }
+
+      return `<div class="etq2">
+        <div class="nome2">${esc(it.nome)}</div>
+        ${corpoHtml}
         <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
       </div>`;
     }).join("");
