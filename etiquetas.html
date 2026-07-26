@@ -44,7 +44,8 @@
   @media print{
     .etiqueta,.etiqueta *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
   }
-  .etiqueta .rodape{display:flex;justify-content:space-between;padding:5px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
+  .etiqueta .rodape{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
+  .etiqueta .rodape .categoria{font-size:12px;font-weight:900;color:#181542;letter-spacing:.5px;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -129,13 +130,13 @@ async function gerarEtiquetas(){
       const temFardo=it.precoFardo!=null;
       const temAtacado=it.precoAtacado!=null;
       const secoes=[];
-      if(temAtacado) secoes.push(`<div class="secao preta"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
-      if(temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
       secoes.push(`<div class="secao branca"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
+      if(temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
+      if(temAtacado) secoes.push(`<div class="secao preta"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
       return `<div class="etiqueta">
         <div class="nome">${esc(it.nome)}</div>
         <div class="secoes">${secoes.join("")}</div>
-        <div class="rodape"><span>${esc(it.categoriaNome||"")}</span><span>${hojeFmt()}</span></div>
+        <div class="rodape"><span class="categoria">${esc(it.categoriaNome||"")}</span><span>${hojeFmt()}</span></div>
       </div>`;
     }).join("");
     document.getElementById("btnImprimir").style.display="inline-block";
