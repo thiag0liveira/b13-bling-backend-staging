@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>B13 — Etiquetas de Preço</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   body{background:#0f0d24;color:#fff;min-height:100vh}
   .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
@@ -42,14 +43,18 @@
   .etiqueta .secao .valor .cifra{font-size:17px;font-weight:800;align-self:flex-start;margin-top:6px}
   .etiqueta .secao .sub{font-size:9px;font-weight:700;margin-top:4px;letter-spacing:.3px}
   @media print{
-    .etiqueta,.etiqueta *,.etq2,.etq2 *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+    .etiqueta,.etiqueta *,.etq2,.etq2 *,.etq2::before{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
   }
   .etiqueta .rodape{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
   .etiqueta .rodape .categoria{font-size:12px;font-weight:900;color:#181542;letter-spacing:.5px;text-transform:uppercase}
 
   /* -------- Modelo 2 -------- */
-  .etq2{background:radial-gradient(circle at 50% -10%,#f3f3f3,#fff 60%);color:#000;border:1px solid #ddd;border-radius:10px;overflow:hidden;page-break-inside:avoid}
-  .etq2 .nome2{font-weight:900;font-size:22px;line-height:1.1;text-transform:uppercase;text-align:center;padding:14px 10px 8px}
+  .etq2{position:relative;background:#fff;color:#000;border:3px solid #181542;border-radius:14px;overflow:hidden;page-break-inside:avoid;
+    font-family:'Poppins',Arial,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+  .etq2::before{content:"";position:absolute;inset:0;background-image:url('/logo');background-repeat:no-repeat;background-position:center 58%;
+    background-size:65%;opacity:.06;pointer-events:none;filter:grayscale(1)}
+  .etq2 > *{position:relative;z-index:1}
+  .etq2 .nome2{font-weight:900;font-size:22px;line-height:1.15;text-transform:uppercase;text-align:center;padding:14px 10px 8px;letter-spacing:.3px}
   .etq2 .corpo2{display:flex;align-items:stretch;padding:0 12px;gap:10px}
   .etq2 .unidade2{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 0}
   .etq2 .unidade2 .preco2{font-size:44px;font-weight:900;display:flex;align-items:baseline;gap:2px}
@@ -58,12 +63,12 @@
   .etq2 .unidade2 .lbl2{font-size:11px;font-weight:800;color:#444}
   .etq2 .unidade2 .lblGrande2{font-size:15px;font-weight:900;margin-top:4px;letter-spacing:.5px}
   .etq2 .divisor2{width:2px;background:#000;align-self:stretch;margin:10px 0}
-  .etq2 .pack2{flex:1;background:#FF0082;color:#000;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 6px;margin:8px 0}
+  .etq2 .pack2{flex:1;background:#FF0082;color:#000;border:2px solid #181542;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 6px;margin:8px 0}
   .etq2 .pack2 .preco2{font-size:36px;font-weight:900;color:#000;display:flex;align-items:baseline;gap:2px}
   .etq2 .pack2 .preco2 .cif2{font-size:16px}
   .etq2 .pack2 .lbl2{font-size:10px;font-weight:800;color:#000}
-  .etq2 .pack2 .lblGrande2{font-size:13px;font-weight:900;color:#000}
-  .etq2 .atacado2{margin:8px 12px 0;background:#29ABE2;border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+  .etq2 .pack2 .lblGrande2{font-size:9px;font-weight:900;color:#000;letter-spacing:.3px}
+  .etq2 .atacado2{margin:8px 12px 0;background:#29ABE2;border:2px solid #181542;border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
   .etq2 .atacado2 .preco2{font-size:34px;font-weight:900;color:#000;display:flex;align-items:baseline;gap:2px}
   .etq2 .atacado2 .preco2 .cif2{font-size:15px}
   .etq2 .atacado2 .lblGrande2{font-size:20px;font-weight:900;color:#000}
@@ -198,7 +203,7 @@ async function gerarEtiquetasModelo2(){
           <div class="pack2">
             <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
             <div class="lbl2">UND</div>
-            <div class="lblGrande2">FARDO</div>
+            <div class="lblGrande2">ACIMA DE ${it.caixaQtd||"—"} UNIDADES</div>
           </div>`:""}
         </div>
         ${it.precoAtacado!=null?`

@@ -1560,6 +1560,7 @@ app.get("/api/etiquetas",async(req,res)=>{
       categoriaNome:avulso?"(avulso)":it.categoriaNome,
       precoAtacado:avulso?null:(it.preco??null),
       precoFardo:fardo[id]?.preco??null,
+      caixaQtd:avulso?null:(it.caixa||null),
       precoVarejo,
     });
   }
