@@ -1471,7 +1471,13 @@ app.get("/api/lista-fardo",(req,res)=>{
   // agrupa por item (um item pode ter vários códigos/sabores vinculados)
   const porItem={};
   Object.values(idx).forEach(v=>{
-    if(!porItem[v.itemId]) porItem[v.itemId]={itemId:v.itemId,categoriaNome:v.categoriaNome,itemNome:v.itemNome,precoAtacado:v.precoAtacado,precoFardo:fardo[v.itemId]??null};
+    if(!porItem[v.itemId]) porItem[v.itemId]={itemId:v.itemId,categoriaNome:v.categoriaNome,itemNome:v.itemNome,precoAtacado:v.precoAtacado,precoFardo:fardo[v.itemId]?.preco??null};
+  });
+  // inclui também os itens "avulsos" (associados manualmente, sem vínculo na tabela atacado)
+  Object.entries(fardo).forEach(([itemId,v])=>{
+    if(v.origem==="avulso"){
+      porItem[itemId]={itemId,categoriaNome:v.categoriaNome||"(avulso)",itemNome:v.nome,precoAtacado:null,precoFardo:v.preco};
+    }
   });
   res.json({data:Object.values(porItem).sort((a,b)=>a.itemNome.localeCompare(b.itemNome))});
 });
@@ -1479,32 +1485,51 @@ app.get("/api/lista-fardo",(req,res)=>{
 // importa a lista vinda do Bling (código + preço) — casa pelo código já vinculado na tabela atacado
 app.post("/api/lista-fardo/importar",(req,res)=>{
   const {linhas}=req.body||{};
-  if(!Array.isArray(linhas)) return res.status(400).json({erro:"informe { linhas: [{codigo,preco}] }"});
+  if(!Array.isArray(linhas)) return res.status(400).json({erro:"informe { linhas: [{codigo,preco,nome}] }"});
   const idx=indexarVinculosTabela();
   const fardo=lerListaFardo();
   const casados=[], naoEncontrados=[];
   linhas.forEach(l=>{
     const codigo=String(l.codigo||"").trim();
     const preco=+Number(l.preco||0);
+    const nome=String(l.nome||"").trim();
     if(!codigo||!(preco>0)) return;
     const match=idx[codigo];
     if(match){
-      fardo[match.itemId]=preco;
+      fardo[match.itemId]={preco,nome:match.itemNome,categoriaNome:match.categoriaNome,origem:"tabela"};
       casados.push({codigo,preco,itemNome:match.itemNome,categoriaNome:match.categoriaNome});
     } else {
-      naoEncontrados.push({codigo,preco});
+      naoEncontrados.push({codigo,preco,nome});
     }
   });
   salvarListaFardo(fardo);
   res.json({ok:true,qtdCasados:casados.length,qtdNaoEncontrados:naoEncontrados.length,casados,naoEncontrados});
 });
 
+// associa manualmente um código que não tinha vínculo na tabela atacado, a um produto do Bling escolhido na busca
+app.post("/api/lista-fardo/associar-avulso",async(req,res)=>{
+  const {produtoId,nome,preco,codigo}=req.body||{};
+  if(!produtoId||!nome||!(preco>0)) return res.status(400).json({erro:"informe produtoId, nome e preco"});
+  const fardo=lerListaFardo();
+  const chave="avulso_"+produtoId;
+  fardo[chave]={preco:+Number(preco),nome,categoriaNome:"(avulso)",origem:"avulso",produtoId,codigoImportado:codigo||""};
+  salvarListaFardo(fardo);
+  res.json({ok:true,itemId:chave});
+});
+
 // edita/remove manualmente o preço de fardo de um item específico
 app.put("/api/lista-fardo/:itemId",(req,res)=>{
   const {preco}=req.body||{};
   const fardo=lerListaFardo();
-  if(preco==null||preco===""){ delete fardo[req.params.itemId]; }
-  else { fardo[req.params.itemId]=+Number(preco); }
+  const itemId=req.params.itemId;
+  if(preco==null||preco===""){ delete fardo[itemId]; }
+  else if(fardo[itemId]){ fardo[itemId].preco=+Number(preco); }
+  else {
+    // item ainda não tinha preço de fardo salvo — busca nome/categoria pra criar o registro completo
+    const idx=indexarVinculosTabela();
+    const match=Object.values(idx).find(v=>v.itemId===itemId);
+    fardo[itemId]={preco:+Number(preco),nome:match?.itemNome||"",categoriaNome:match?.categoriaNome||"",origem:"tabela"};
+  }
   salvarListaFardo(fardo);
   res.json({ok:true});
 });
@@ -1520,16 +1545,22 @@ app.get("/api/etiquetas",async(req,res)=>{
 
   const resultado=[];
   for(const id of ids){
+    const avulso=fardo[id]?.origem==="avulso"?fardo[id]:null;
     const it=itensPorId[id];
-    if(!it){ resultado.push({itemId:id,erro:"item não encontrado na tabela atacado"}); continue; }
+    if(!it&&!avulso){ resultado.push({itemId:id,erro:"item não encontrado"}); continue; }
+
     let precoVarejo=null;
-    const primeiroVinculo=(it.bling||[])[0];
-    if(primeiroVinculo?.id){
-      try{ const r=await bling(`/produtos/${primeiroVinculo.id}`); precoVarejo=+(r?.data?.preco||0); }catch(e){}
+    const produtoIdParaBusca=avulso?avulso.produtoId:(it.bling||[])[0]?.id;
+    if(produtoIdParaBusca){
+      try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); }catch(e){}
     }
     resultado.push({
-      itemId:id, nome:it.nome, categoriaNome:it.categoriaNome,
-      precoAtacado:it.preco??null, precoFardo:fardo[id]??null, precoVarejo,
+      itemId:id,
+      nome:avulso?avulso.nome:it.nome,
+      categoriaNome:avulso?"(avulso)":it.categoriaNome,
+      precoAtacado:avulso?null:(it.preco??null),
+      precoFardo:fardo[id]?.preco??null,
+      precoVarejo,
     });
   }
   res.json({data:resultado});

@@ -53,9 +53,10 @@ document.addEventListener("DOMContentLoaded",function(){
     </p>
     <input type="file" id="arquivo" accept=".csv,.xlsx,.xls" onchange="processarArquivo(this.files[0])">
     <div id="mapeamento" style="margin-top:12px;display:none">
-      <div class="muted" style="margin-bottom:6px">Qual coluna é o código do produto e qual é o preço?</div>
+      <div class="muted" style="margin-bottom:6px">Qual coluna é o código, o nome do produto e o preço?</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <select id="colCodigo"></select>
+        <select id="colNome"></select>
         <select id="colPreco"></select>
         <button class="btn" onclick="confirmarImportacao()">Importar</button>
       </div>
@@ -114,13 +115,15 @@ function processarArquivo(file){
     CABECALHO=linhas[0].map(String);
     LINHAS_ARQUIVO=linhas.slice(1);
     const selCodigo=document.getElementById("colCodigo");
+    const selNome=document.getElementById("colNome");
     const selPreco=document.getElementById("colPreco");
     const opts=CABECALHO.map((c,ix)=>`<option value="${ix}">${esc(c)}</option>`).join("");
-    selCodigo.innerHTML=opts; selPreco.innerHTML=opts;
+    selCodigo.innerHTML=opts; selNome.innerHTML=opts; selPreco.innerHTML=opts;
     // tenta adivinhar automaticamente pelo nome da coluna
     CABECALHO.forEach((c,ix)=>{
       const l=c.toLowerCase();
       if(l.includes("codigo")||l.includes("código")||l.includes("sku")) selCodigo.value=ix;
+      if(l.includes("nome")||l.includes("produto")||l.includes("descri")) selNome.value=ix;
       if(l.includes("preco")||l.includes("preço")||l.includes("valor")) selPreco.value=ix;
     });
     document.getElementById("mapeamento").style.display="block";
@@ -130,6 +133,7 @@ function processarArquivo(file){
 
 async function confirmarImportacao(){
   const ixCodigo=+document.getElementById("colCodigo").value;
+  const ixNome=+document.getElementById("colNome").value;
   const ixPreco=+document.getElementById("colPreco").value;
   function paraNumeroBR(v){
     if(v==null) return null;
@@ -138,22 +142,72 @@ async function confirmarImportacao(){
     const n=parseFloat(limpo);
     return isNaN(n)?null:n;
   }
-  const linhas=LINHAS_ARQUIVO.map(l=>({codigo:l[ixCodigo],preco:paraNumeroBR(l[ixPreco])})).filter(l=>l.codigo!=null&&l.preco!=null);
+  const linhas=LINHAS_ARQUIVO.map(l=>({codigo:l[ixCodigo],nome:l[ixNome],preco:paraNumeroBR(l[ixPreco])})).filter(l=>l.codigo!=null&&l.preco!=null);
   const box=document.getElementById("resultadoImport");
   box.innerHTML=`<div class="muted">Importando ${linhas.length} linha(s)…</div>`;
   try{
     const r=await fetch(BACKEND+"/api/lista-fardo/importar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({linhas})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"erro ao importar");
+    window._naoEncontrados=j.naoEncontrados||[];
     box.innerHTML=`
       <div class="ok">✅ ${j.qtdCasados} produto(s) casados com a tabela atacado e atualizados.</div>
-      ${j.qtdNaoEncontrados?`<div class="warn">⚠️ ${j.qtdNaoEncontrados} código(s) não encontrados na tabela atacado (não têm vínculo lá ainda):<br>
-        ${j.naoEncontrados.slice(0,20).map(n=>`#${esc(String(n.codigo))} — ${brl(n.preco)}`).join("<br>")}
-        ${j.naoEncontrados.length>20?`<br>e mais ${j.naoEncontrados.length-20}...`:""}
-      </div>`:""}
+      ${j.qtdNaoEncontrados?`<div class="warn">⚠️ ${j.qtdNaoEncontrados} produto(s) não encontrados na tabela atacado (sem vínculo lá ainda) — escolhe o produto certo do Bling pra associar:</div>
+        <div id="naoEncontradosBox">${window._naoEncontrados.map((n,ix)=>`
+          <div class="card" style="background:#1c1846;margin:6px 0;padding:10px" id="ne_${ix}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span><b>${esc(n.nome||"(sem nome)")}</b> <span class="muted">#${esc(String(n.codigo))} · ${brl(n.preco)}</span></span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="abrirAssociar(${ix})">🔗 Associar</button>
+            </div>
+            <div id="assocBox_${ix}"></div>
+          </div>`).join("")}
+        </div>`:""}
     `;
     carregarLista();
   }catch(e){ box.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+let _timerAssoc=null;
+function abrirAssociar(ix){
+  const n=window._naoEncontrados[ix];
+  const box=document.getElementById("assocBox_"+ix);
+  box.innerHTML=`
+    <input type="text" placeholder="Buscar produto no Bling pelo nome…" style="width:100%;margin-top:8px" value="${esc(n.nome||"")}"
+      oninput="buscarParaAssociar(${ix},this.value)">
+    <div class="res" id="resAssoc_${ix}"></div>`;
+  buscarParaAssociar(ix,n.nome||"");
+}
+
+function buscarParaAssociar(ix,termo){
+  clearTimeout(_timerAssoc);
+  const resEl=document.getElementById("resAssoc_"+ix);
+  if(!termo||termo.trim().length<2){ resEl.innerHTML=""; return; }
+  resEl.innerHTML=`<div class="muted">buscando…</div>`;
+  _timerAssoc=setTimeout(async()=>{
+    try{
+      const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+      const lista=(j.data||[]).slice(0,15);
+      if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+      resEl.innerHTML=lista.map((p,pix)=>`
+        <div class="resitemAssoc" style="padding:6px;border-bottom:1px solid #2a2660;cursor:pointer;font-size:12px"
+          onclick="confirmarAssociacao(${ix},${p.id},'${esc(p.nome).replace(/'/g,"\\'")}')">
+          ${esc(p.nome)} <span class="muted">#${esc(String(p.codigo))} · estoque ${p.estoque??"?"}</span>
+        </div>`).join("");
+    }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
+  },350);
+}
+
+async function confirmarAssociacao(ix,produtoId,nomeProduto){
+  const n=window._naoEncontrados[ix];
+  try{
+    const r=await fetch(BACKEND+"/api/lista-fardo/associar-avulso",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({produtoId,nome:nomeProduto,preco:n.preco,codigo:n.codigo})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"erro ao associar");
+    const el=document.getElementById("ne_"+ix);
+    if(el) el.outerHTML=`<div class="ok" style="margin:6px 0">✅ ${esc(nomeProduto)} associado (fardo ${brl(n.preco)})</div>`;
+    carregarLista();
+  }catch(e){ alert("Erro: "+e.message); }
 }
 
 async function carregarLista(){
