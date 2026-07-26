@@ -46,6 +46,30 @@
   }
   .etiqueta .rodape{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
   .etiqueta .rodape .categoria{font-size:12px;font-weight:900;color:#181542;letter-spacing:.5px;text-transform:uppercase}
+
+  /* -------- Modelo 2 -------- */
+  .etq2{background:radial-gradient(circle at 50% -10%,#f3f3f3,#fff 60%);color:#000;border:1px solid #ddd;border-radius:10px;overflow:hidden;page-break-inside:avoid}
+  .etq2 .nome2{font-weight:900;font-size:22px;line-height:1.1;text-transform:uppercase;text-align:center;padding:14px 10px 8px}
+  .etq2 .corpo2{display:flex;align-items:stretch;padding:0 12px;gap:10px}
+  .etq2 .unidade2{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 0}
+  .etq2 .unidade2 .preco2{font-size:44px;font-weight:900;display:flex;align-items:baseline;gap:2px}
+  .etq2 .unidade2 .preco2 .cif2{font-size:18px}
+  .etq2 .unidade2 .preco2 .cent2{font-size:20px}
+  .etq2 .unidade2 .lbl2{font-size:11px;font-weight:800;color:#444}
+  .etq2 .unidade2 .lblGrande2{font-size:15px;font-weight:900;margin-top:4px;letter-spacing:.5px}
+  .etq2 .divisor2{width:2px;background:#000;align-self:stretch;margin:10px 0}
+  .etq2 .pack2{flex:1;background:#FF0082;color:#000;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 6px;margin:8px 0}
+  .etq2 .pack2 .preco2{font-size:36px;font-weight:900;color:#000;display:flex;align-items:baseline;gap:2px}
+  .etq2 .pack2 .preco2 .cif2{font-size:16px}
+  .etq2 .pack2 .lbl2{font-size:10px;font-weight:800;color:#000}
+  .etq2 .pack2 .lblGrande2{font-size:13px;font-weight:900;color:#000}
+  .etq2 .atacado2{margin:8px 12px 0;background:#29ABE2;border-radius:12px;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap}
+  .etq2 .atacado2 .preco2{font-size:34px;font-weight:900;color:#000;display:flex;align-items:baseline;gap:2px}
+  .etq2 .atacado2 .preco2 .cif2{font-size:15px}
+  .etq2 .atacado2 .lblGrande2{font-size:20px;font-weight:900;color:#000}
+  .etq2 .obs2{text-align:center;font-size:9px;font-weight:800;color:#000;margin:2px 12px 8px}
+  .etq2 .rodapeLogo{background:#c40018;padding:10px;display:flex;align-items:center;justify-content:center}
+  .etq2 .rodapeLogo img{height:34px;filter:brightness(0) invert(1)}
 </style>
 </head>
 <body>
@@ -72,7 +96,8 @@ document.addEventListener("DOMContentLoaded",function(){
     <input class="busca" id="filtro" placeholder="Filtrar por nome…" oninput="renderLista()">
     <div class="lista" id="lista"><div class="muted">Carregando…</div></div>
     <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn" onclick="gerarEtiquetas()">🏷 Gerar etiquetas selecionadas</button>
+      <button class="btn" onclick="gerarEtiquetas()">🏷 Gerar etiquetas (modelo 1)</button>
+      <button class="btn btn-ghost" onclick="gerarEtiquetasModelo2()">🏷 Gerar etiquetas (modelo 2)</button>
       <button class="btn btn-ghost" onclick="window.print()" id="btnImprimir" style="display:none">🖨 Imprimir</button>
     </div>
   </div>
@@ -137,6 +162,52 @@ async function gerarEtiquetas(){
         <div class="nome">${esc(it.nome)}</div>
         <div class="secoes">${secoes.join("")}</div>
         <div class="rodape"><span class="categoria">${esc(it.categoriaNome||"")}</span><span>${hojeFmt()}</span></div>
+      </div>`;
+    }).join("");
+    document.getElementById("btnImprimir").style.display="inline-block";
+  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+}
+
+function partesPreco(v){
+  if(v==null) return {i:"—",c:""};
+  const s=Number(v).toFixed(2).split(".");
+  return {i:s[0],c:s[1]};
+}
+
+async function gerarEtiquetasModelo2(){
+  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
+  const folha=document.getElementById("folhaEtiquetas");
+  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
+    folha.innerHTML=(j.data||[]).map(it=>{
+      if(it.erro) return "";
+      const varejo=partesPreco(it.precoVarejo);
+      const fardo=partesPreco(it.precoFardo);
+      const atacado=partesPreco(it.precoAtacado);
+      return `<div class="etq2">
+        <div class="nome2">${esc(it.nome)}</div>
+        <div class="corpo2">
+          <div class="unidade2">
+            <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+            <div class="lbl2">UND</div>
+            <div class="lblGrande2">UNIDADE</div>
+          </div>
+          ${it.precoFardo!=null?`
+          <div class="divisor2"></div>
+          <div class="pack2">
+            <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
+            <div class="lbl2">UND</div>
+            <div class="lblGrande2">FARDO</div>
+          </div>`:""}
+        </div>
+        ${it.precoAtacado!=null?`
+        <div class="atacado2">
+          <div class="preco2"><span class="cif2">R$</span>${atacado.i}<span class="cent2">,${atacado.c}</span></div>
+          <div class="lblGrande2">ATACADO</div>
+        </div>
+        <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`:""}
+        <div class="rodapeLogo"><img src="/logo"></div>
       </div>`;
     }).join("");
     document.getElementById("btnImprimir").style.display="inline-block";
