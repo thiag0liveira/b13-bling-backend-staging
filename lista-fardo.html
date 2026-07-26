@@ -78,13 +78,38 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 let LINHAS_ARQUIVO=[]; // array de arrays (linhas cruas da planilha)
 let CABECALHO=[];
 
+function parseCsvTexto(texto){
+  // detecta o separador mais comum na primeira linha (; ou ,)
+  const primeiraLinha=texto.split(/\r?\n/)[0]||"";
+  const sep=(primeiraLinha.split(";").length>primeiraLinha.split(",").length)?";":",";
+  return texto.split(/\r?\n/).filter(l=>l.trim()!=="").map(linha=>{
+    // split simples respeitando aspas
+    const partes=[]; let atual=""; let dentroAspas=false;
+    for(let i=0;i<linha.length;i++){
+      const c=linha[i];
+      if(c==='"'){ dentroAspas=!dentroAspas; continue; }
+      if(c===sep&&!dentroAspas){ partes.push(atual); atual=""; continue; }
+      atual+=c;
+    }
+    partes.push(atual);
+    return partes;
+  });
+}
+
 function processarArquivo(file){
   if(!file) return;
+  const ehCsv=/\.csv$/i.test(file.name);
   const reader=new FileReader();
   reader.onload=function(e){
-    const wb=XLSX.read(e.target.result,{type:"array"});
-    const primeiraAba=wb.Sheets[wb.SheetNames[0]];
-    const linhas=XLSX.utils.sheet_to_json(primeiraAba,{header:1});
+    let linhas;
+    if(ehCsv){
+      // le como texto puro — evita o SheetJS "adivinhar" errado a virgula decimal
+      linhas=parseCsvTexto(e.target.result);
+    } else {
+      const wb=XLSX.read(e.target.result,{type:"array"});
+      const primeiraAba=wb.Sheets[wb.SheetNames[0]];
+      linhas=XLSX.utils.sheet_to_json(primeiraAba,{header:1,raw:false});
+    }
     if(!linhas.length) return;
     CABECALHO=linhas[0].map(String);
     LINHAS_ARQUIVO=linhas.slice(1);
@@ -100,13 +125,20 @@ function processarArquivo(file){
     });
     document.getElementById("mapeamento").style.display="block";
   };
-  reader.readAsArrayBuffer(file);
+  if(ehCsv) reader.readAsText(file,"UTF-8"); else reader.readAsArrayBuffer(file);
 }
 
 async function confirmarImportacao(){
   const ixCodigo=+document.getElementById("colCodigo").value;
   const ixPreco=+document.getElementById("colPreco").value;
-  const linhas=LINHAS_ARQUIVO.map(l=>({codigo:l[ixCodigo],preco:l[ixPreco]})).filter(l=>l.codigo!=null&&l.preco!=null);
+  function paraNumeroBR(v){
+    if(v==null) return null;
+    // remove separador de milhar (ponto) e troca virgula decimal por ponto
+    const limpo=String(v).trim().replace(/\./g,"").replace(",",".");
+    const n=parseFloat(limpo);
+    return isNaN(n)?null:n;
+  }
+  const linhas=LINHAS_ARQUIVO.map(l=>({codigo:l[ixCodigo],preco:paraNumeroBR(l[ixPreco])})).filter(l=>l.codigo!=null&&l.preco!=null);
   const box=document.getElementById("resultadoImport");
   box.innerHTML=`<div class="muted">Importando ${linhas.length} linha(s)…</div>`;
   try{
