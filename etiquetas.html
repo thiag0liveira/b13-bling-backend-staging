@@ -22,14 +22,20 @@
   .linha input{width:auto}
   @media print{ .noprint{display:none!important} body{background:#fff} }
 
-  .folha{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .etiqueta{background:#fff;color:#181542;border:2px dashed #999;border-radius:8px;padding:12px;page-break-inside:avoid}
-  .etiqueta .nome{font-weight:900;font-size:14px;margin-bottom:8px;min-height:36px}
-  .etiqueta .linhaPreco{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px}
-  .etiqueta .linhaPreco b{font-size:16px}
-  .etiqueta .varejo{color:#181542}
-  .etiqueta .fardo{color:#FF0082}
-  .etiqueta .atacado{color:#0a6b3a}
+  .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .etiqueta{background:#fff;color:#181542;border:2px solid #181542;border-radius:6px;overflow:hidden;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif}
+  .etiqueta .nome{font-weight:900;font-size:19px;padding:10px 14px 6px;letter-spacing:.3px;text-transform:uppercase}
+  .etiqueta .secoes{display:flex;border-top:2px solid #181542}
+  .etiqueta .secao{flex:1;padding:10px 8px;text-align:center;position:relative}
+  .etiqueta .secao+.secao{border-left:2px solid #181542}
+  .etiqueta .secao.preta{background:#181542;color:#fff}
+  .etiqueta .secao.branca{background:#fff;color:#181542}
+  .etiqueta .secao.rosa{background:#FF0082;color:#fff}
+  .etiqueta .secao .rotulo{font-size:11px;font-weight:800;letter-spacing:1.5px;margin-bottom:2px}
+  .etiqueta .secao .valor{font-size:34px;font-weight:900;line-height:1;display:flex;align-items:baseline;justify-content:center;gap:2px}
+  .etiqueta .secao .valor .cifra{font-size:16px;font-weight:800;align-self:flex-start;margin-top:6px}
+  .etiqueta .secao .sub{font-size:9px;font-weight:700;margin-top:4px;letter-spacing:.3px}
+  .etiqueta .rodape{display:flex;justify-content:space-between;padding:5px 12px;font-size:9px;color:#555;border-top:1px solid #ccc}
 </style>
 </head>
 <body>
@@ -97,6 +103,12 @@ function renderLista(){
 
 function toggleSel(id,marcado){ if(marcado) SELECIONADOS.add(id); else SELECIONADOS.delete(id); }
 
+function fmtPreco(v){
+  if(v==null) return "—";
+  return Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function hojeFmt(){ const d=new Date(); return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear(); }
+
 async function gerarEtiquetas(){
   if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
   const folha=document.getElementById("folhaEtiquetas");
@@ -105,11 +117,16 @@ async function gerarEtiquetas(){
     const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
     folha.innerHTML=(j.data||[]).map(it=>{
       if(it.erro) return "";
+      const temFardo=it.precoFardo!=null;
+      const temAtacado=it.precoAtacado!=null;
+      const secoes=[];
+      if(temAtacado) secoes.push(`<div class="secao preta"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
+      if(temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
+      secoes.push(`<div class="secao branca"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
       return `<div class="etiqueta">
         <div class="nome">${esc(it.nome)}</div>
-        <div class="linhaPreco varejo"><span>Varejo (un.)</span><b>${brl(it.precoVarejo)}</b></div>
-        ${it.precoFardo!=null?`<div class="linhaPreco fardo"><span>Fardo</span><b>${brl(it.precoFardo)}</b></div>`:""}
-        <div class="linhaPreco atacado"><span>Atacado</span><b>${brl(it.precoAtacado)}</b></div>
+        <div class="secoes">${secoes.join("")}</div>
+        <div class="rodape"><span>${esc(it.categoriaNome||"")}</span><span>${hojeFmt()}</span></div>
       </div>`;
     }).join("");
     document.getElementById("btnImprimir").style.display="inline-block";
