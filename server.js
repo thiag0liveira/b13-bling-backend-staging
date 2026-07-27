@@ -213,6 +213,7 @@ function b13RenderNav(ativo){
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
     {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
+    {href:"/listas-extras",label:"📂 Listas Extras",check:()=>b13Pode("editar_pedido")},
     {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
     {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
@@ -2744,6 +2745,7 @@ app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html"))
 app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
 app.get("/lista-fardo", (req, res) => res.sendFile(path.join(__dirname, "lista-fardo.html")));
 app.get("/etiquetas", (req, res) => res.sendFile(path.join(__dirname, "etiquetas.html")));
+app.get("/listas-extras", (req, res) => res.sendFile(path.join(__dirname, "listas-extras.html")));
 app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
 app.get("/gerenciamento", (req, res) => res.sendFile(path.join(__dirname, "gerenciamento.html")));
 app.get("/funcionarios", (req, res) => res.sendFile(path.join(__dirname, "funcionarios.html")));
