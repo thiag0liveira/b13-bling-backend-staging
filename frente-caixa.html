@@ -329,7 +329,7 @@ async function carregarFormas(){
     const todas=(j.data||[]).filter(f=>f.situacao!=="I");
     // mostra pix, dinheiro, e credito/debito de cada bandeira (nao filtra so uma) —
     // as outras formas (ficha financeira, estorno, etc) ficam escondidas
-    const padroes=[/pix/i,/dinheiro/i,/cr[eé]dito/i,/d[eé]bito/i];
+    const padroes=[/pix/i,/dinheiro/i,/d[eé]bito/i,/cr[eé]dito.*vista/i];
     FORMAS=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||"")));
     if(!FORMAS.length) FORMAS=todas;
   }catch(e){ FORMAS=[]; }
