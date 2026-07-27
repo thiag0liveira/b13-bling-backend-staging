@@ -1887,12 +1887,21 @@ app.post("/api/pdv/venda", async(req,res)=>{
     let nfce=null;
     if(emitirNfce){
       try{
-        nfce=await bling(`/nfce`,{method:"POST",body:JSON.stringify({
-          idPedidoVenda:pedidoId,
-          dataOperacao:dataHojeBR,
-          itens:itensPayload,
-          ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
-        })});
+        // gera a NFC-e puxando os dados direto do pedido (igual o botão "Gerar NFC-e" do Bling faz)
+        const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
+        const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
+        if(!idNotaFiscal){
+          nfce={erro:"Bling não retornou o ID da NFC-e gerada",detalhe:gerado};
+        }else{
+          // transmite/autoriza a nota gerada
+          try{
+            const enviado=await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
+            nfce={ok:true,idNotaFiscal,detalheEnvio:enviado?.data||null};
+          }catch(e){
+            // a nota foi gerada mas não foi transmitida — fica "Pendente" no Bling, pode reenviar depois
+            nfce={ok:true,idNotaFiscal,erroEnvio:e.message,detalheEnvio:e.body};
+          }
+        }
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
