@@ -1824,14 +1824,15 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const totalDesconto=Number(desconto||0);
     const totalPedido=+(totalItens-totalDesconto).toFixed(2);
 
+    const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
     const payload={
-      data: new Date().toISOString().slice(0,10),
+      data: dataHojeBR,
       itens:itensPayload,
       situacao:{id:SIT.ATENDIDO},
       ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
       ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
-      parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:new Date().toISOString().slice(0,10),formaPagamento:{id:Number(p.formaId)}})),
+      parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
     };
 
     const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
