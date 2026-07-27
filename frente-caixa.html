@@ -98,6 +98,16 @@ let CAIXA={aberta:false,sessao:null,resumo:null};
 let CARRINHO=[];
 let FORMAS=[];
 let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
+let CONSUMIDOR_FINAL=null; // {id,nome} — cliente padrão quando ninguém é selecionado
+let CLIENTE_SELECIONADO=null; // {id,nome} — se o operador escolher um cliente específico
+let _timerPainelAdicionado=null;
+
+async function carregarConsumidorFinal(){
+  try{
+    const j=await fetch(BACKEND+"/api/pdv/consumidor-final").then(r=>r.json());
+    CONSUMIDOR_FINAL=j.data;
+  }catch(e){ CONSUMIDOR_FINAL=null; }
+}
 
 // ---------------- sessão de caixa ----------------
 async function carregarCaixa(){
@@ -349,6 +359,59 @@ function adicionarFormaPagamento(){ PAGAMENTOS.push({formaId:null,formaNome:"",v
 
 // ---------------- busca de produto ----------------
 let _timerBusca=null;
+// ---------------- cliente ----------------
+function abrirBuscaCliente(){
+  document.getElementById("buscaClienteBox").innerHTML=`
+    <input type="text" id="inputBuscaCliente" placeholder="Nome, CPF/CNPJ ou telefone…" style="width:100%;margin-top:8px" oninput="buscarClientes(this.value)" autofocus>
+    <div class="res" id="resBuscaCliente"></div>`;
+  document.getElementById("inputBuscaCliente").focus();
+}
+
+let _timerBuscaCliente=null;
+function buscarClientes(termo){
+  clearTimeout(_timerBuscaCliente);
+  const resEl=document.getElementById("resBuscaCliente");
+  if(!termo||termo.trim().length<2){ resEl.innerHTML=""; return; }
+  resEl.innerHTML=`<div class="muted">buscando…</div>`;
+  _timerBuscaCliente=setTimeout(async()=>{
+    try{
+      const j=await fetch(BACKEND+"/api/pdv/clientes?termo="+encodeURIComponent(termo)).then(r=>r.json());
+      const lista=j.data||[];
+      if(!lista.length){ resEl.innerHTML=`<div class="muted">nenhum cliente encontrado</div>`; return; }
+      resEl.innerHTML=lista.map(c=>`
+        <div class="resitem" onclick='selecionarCliente(${c.id},${JSON.stringify(c.nome)})'>
+          <div class="info"><div class="nome">${esc(c.nome)}</div><div class="meta">${esc(c.numeroDocumento||c.telefone||"")}</div></div>
+        </div>`).join("");
+    }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
+  },350);
+}
+
+function selecionarCliente(id,nome){
+  CLIENTE_SELECIONADO={id,nome};
+  render();
+}
+
+function limparCliente(){
+  CLIENTE_SELECIONADO=null;
+  render();
+}
+
+// ---------------- painel grande (feedback ao adicionar produto) ----------------
+function mostrarPainelAdicionado(item){
+  clearTimeout(_timerPainelAdicionado);
+  const box=document.getElementById("painelAdicionado");
+  if(!box) return;
+  box.innerHTML=`
+    <div class="card" style="display:flex;align-items:center;gap:18px;border:2px solid var(--mag,#FF0082);background:#241a4d">
+      ${item.imagem?`<img src="${esc(item.imagem)}" style="width:90px;height:90px;object-fit:contain;background:#fff;border-radius:10px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:90px;height:90px;background:#241f52;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0">📦</div>`}
+      <div style="flex:1">
+        <div style="font-size:18px;font-weight:900">${esc(item.nome)}</div>
+        <div style="font-size:24px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(item.preco)}</div>
+      </div>
+    </div>`;
+  _timerPainelAdicionado=setTimeout(()=>{ const b=document.getElementById("painelAdicionado"); if(b) b.innerHTML=""; },3000);
+}
+
 function ligarBusca(){
   const el=document.getElementById("busca"); if(!el) return;
   el.addEventListener("input",function(){
@@ -419,10 +482,15 @@ async function adicionarAoCarrinho(p){
 }
 
 function efetivarAdicao(p,ex,qtdDesejada,estoqueAtual){
-  if(ex){ ex.quantidade=qtdDesejada; ex.estoque=estoqueAtual; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render(); return; }
+  if(ex){
+    ex.quantidade=qtdDesejada; ex.estoque=estoqueAtual; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render();
+    mostrarPainelAdicionado(ex);
+    return;
+  }
   const item={...p,quantidade:qtdDesejada,estoque:estoqueAtual,precoNormal:p.preco,precoFardo:null,caixaQtd:null};
   CARRINHO.push(item);
   render();
+  mostrarPainelAdicionado(item);
   // busca em segundo plano se esse produto tem preço de fardo configurado
   if(p.codigo){
     fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json()).then(info=>{
@@ -573,13 +641,23 @@ function render(){
 
   const r=CAIXA.resumo||{};
   const descAtual=descontoAtual();
+  const clienteAtual=CLIENTE_SELECIONADO||CONSUMIDOR_FINAL;
   cont.innerHTML=`<div class="wrap">
     <div>
+      <div class="card">
+        <div class="muted" style="margin-bottom:6px">👤 Cliente</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="flex:1;font-weight:800">${clienteAtual?esc(clienteAtual.nome):"Consumidor Final"}</span>
+          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`<button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>`}
+        </div>
+        <div id="buscaClienteBox"></div>
+      </div>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
         <div id="resBusca" class="res"></div>
       </div>
+      <div id="painelAdicionado"></div>
       <div class="card">
         <div style="display:flex;align-items:center;margin-bottom:8px">
           <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>
@@ -681,11 +759,12 @@ async function finalizarVenda(){
       })(),
       emitirNfce:document.getElementById("emitirNfce").checked,
       funcionarioId:funcionarioIdAtual(),
+      contatoId:(CLIENTE_SELECIONADO||CONSUMIDOR_FINAL)?.id||null,
     };
     const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
-    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false;
+    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; CLIENTE_SELECIONADO=null;
     await carregarCaixa();
     const m=document.getElementById("msgFinalizar");
     if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
@@ -699,6 +778,7 @@ async function finalizarVenda(){
 
 carregarFormas();
 carregarCaixa();
+carregarConsumidorFinal();
 </script>
 </body>
 </html>

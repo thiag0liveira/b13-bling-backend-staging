@@ -1594,6 +1594,29 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
 });
 
 // estoque ao vivo do produto (o indice de preco pode estar desatualizado quanto a quantidade)
+// busca do "Consumidor Final" pelo codigo 2 no Bling, com cache curto (pra nao bater na API toda hora)
+let _consumidorFinalCache=null, _consumidorFinalEm=0;
+app.get("/api/pdv/consumidor-final",async(req,res)=>{
+  try{
+    if(_consumidorFinalCache&&Date.now()-_consumidorFinalEm<10*60*1000) return res.json({data:_consumidorFinalCache});
+    const r=await bling(`/contatos?codigo=2&limite=1`);
+    const c=(r?.data||[])[0]||null;
+    if(c){ _consumidorFinalCache={id:c.id,nome:c.nome}; _consumidorFinalEm=Date.now(); }
+    res.json({data:_consumidorFinalCache});
+  }catch(e){ res.json({data:null,erro:e.message}); }
+});
+
+// busca de clientes (nome, cpf/cnpj, telefone) - igual a busca de cliente do Frente de Caixa do Bling
+app.get("/api/pdv/clientes",async(req,res)=>{
+  const termo=String(req.query.termo||"").trim();
+  if(termo.length<2) return res.json({data:[]});
+  try{
+    const r=await bling(`/contatos?pesquisa=${encodeURIComponent(termo)}&limite=20`);
+    const lista=(r?.data||[]).map(c=>({id:c.id,nome:c.nome,numeroDocumento:c.numeroDocumento||"",telefone:c.telefone||c.celular||""}));
+    res.json({data:lista});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/pdv/estoque/:produtoId",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.produtoId}`);
