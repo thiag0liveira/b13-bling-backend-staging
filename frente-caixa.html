@@ -555,10 +555,12 @@ function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>⚠️ Sem estoque no sistema</h3>
-        <p style="margin-bottom:14px">Esse produto está com <b>${estoqueAtual} unidade(s)</b> no sistema, mas você está tentando vender <b>${qtdDesejada}</b>.</p>
+        <p style="margin-bottom:14px">Esse produto está com <b>${estoqueAtual} unidade(s)</b> no sistema.</p>
+        <div class="muted" style="margin-bottom:4px">Quantas unidades quer vender? (confirma de uma vez, sem precisar autorizar de novo depois)</div>
+        <input type="number" id="qtdAjusteEstoque" min="1" value="${qtdDesejada}" style="width:100%;font-size:18px;text-align:center;margin-bottom:14px">
         <p class="muted" style="margin-bottom:16px">Pra vender mesmo assim (ex: chegou mais produto e o estoque ainda não foi atualizado), um <b>gerente, líder de caixa ou admin</b> precisa autorizar o ajuste do estoque no Bling.</p>
         <div style="display:flex;gap:8px">
-          <button class="btn" style="flex:1" onclick="continuarAutorizacaoEstoque('${p.produtoId}',${qtdDesejada},${estoqueAtual})">Continuar</button>
+          <button class="btn" style="flex:1" onclick="continuarAutorizacaoEstoque()">Continuar</button>
           <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
         </div>
       </div>
@@ -566,7 +568,8 @@ function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
   window._itemEstoquePendente=p;
 }
 
-function continuarAutorizacaoEstoque(produtoId,qtdDesejada,estoqueAtual){
+function continuarAutorizacaoEstoque(){
+  const qtdDesejada=Math.max(1,+document.getElementById("qtdAjusteEstoque").value||1);
   const p=window._itemEstoquePendente;
   pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada)=>{
     try{
