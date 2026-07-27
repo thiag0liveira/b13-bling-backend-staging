@@ -91,6 +91,7 @@ function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function hora(ms){ return new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}); }
 function operadorAtual(){ try{ return (b13GetSession()||{}).nome||"—"; }catch(e){ return "—"; } }
+function funcionarioIdAtual(){ try{ return (b13GetSession()||{}).id||""; }catch(e){ return ""; } }
 
 let CAIXA={aberta:false,sessao:null,resumo:null};
 let CARRINHO=[];
@@ -100,7 +101,7 @@ let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
 // ---------------- sessão de caixa ----------------
 async function carregarCaixa(){
   try{
-    const j=await fetch(BACKEND+"/api/caixa-sessao/atual").then(r=>r.json());
+    const j=await fetch(BACKEND+"/api/caixa-sessao/atual?funcionarioId="+encodeURIComponent(funcionarioIdAtual())).then(r=>r.json());
     CAIXA=j;
   }catch(e){ CAIXA={aberta:false}; }
   render();
@@ -128,7 +129,7 @@ async function confirmarAbertura(){
   const trocoInicial=+document.getElementById("mTroco").value||0;
   try{
     const r=await fetch(BACKEND+"/api/caixa-sessao/abrir",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({trocoInicial,operador:operadorAtual()})});
+      body:JSON.stringify({trocoInicial,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao abrir caixa");
     fecharModais(); carregarCaixa();
@@ -162,7 +163,7 @@ async function confirmarMovimento(tipo){
   if(!(valor>0)){ document.getElementById("mErro").innerHTML=`<div class="err">Informe um valor maior que zero.</div>`; return; }
   try{
     const r=await fetch(BACKEND+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual()})});
+      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao registrar");
     fecharModais(); carregarCaixa();
@@ -213,7 +214,7 @@ async function confirmarFechamento(){
   const observacao=document.getElementById("mObs").value.trim();
   try{
     const r=await fetch(BACKEND+"/api/caixa-sessao/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valorContado,observacao,operador:operadorAtual()})});
+      body:JSON.stringify({valorContado,observacao,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao fechar caixa");
     const f=j.fechamento;
@@ -299,7 +300,7 @@ function ligarBusca(){
         if(/^\d{6,}$/.test(termo)){
           const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
           if(r&&r.data){
-            adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem});
+            adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem,codigo:termo});
             resEl.innerHTML=""; el.value=""; return;
           }
         }
@@ -337,15 +338,39 @@ function ligarBusca(){
 
 function selecionarResultado(ix){
   const p=window._ultimaBusca[ix];
-  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco||0,imagem:p._imagem||null});
+  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco||0,imagem:p._imagem||null,codigo:p.codigo||""});
   document.getElementById("resBusca").innerHTML="";
   const b=document.getElementById("busca"); if(b){ b.value=""; b.focus(); }
 }
 
-function adicionarAoCarrinho(p){
+async function adicionarAoCarrinho(p){
   const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
-  if(ex) ex.quantidade++; else CARRINHO.push({...p,quantidade:1});
+  if(ex){ ex.quantidade++; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render(); return; }
+  const item={...p,quantidade:1,precoNormal:p.preco,precoFardo:null,caixaQtd:null};
+  CARRINHO.push(item);
   render();
+  // busca em segundo plano se esse produto tem preço de fardo configurado
+  if(p.codigo){
+    try{
+      const info=await fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+      if(info.temFardo){
+        item.precoFardo=info.precoFardo; item.caixaQtd=info.caixaQtd;
+        aplicarPrecoAutomatico(CARRINHO.indexOf(item));
+        render();
+      }
+    }catch(e){}
+  }
+}
+
+// se a quantidade bater o minimo do fardo (configurado na Tabela Atacado), troca o preço
+// automaticamente pro preço de fardo; produtos sem fardo configurado nunca mudam de preço
+function aplicarPrecoAutomatico(ix){
+  const item=CARRINHO[ix]; if(!item) return;
+  if(item.caixaQtd&&item.precoFardo!=null&&item.quantidade>=item.caixaQtd){
+    item.preco=item.precoFardo; item._usandoFardo=true;
+  } else {
+    item.preco=item.precoNormal; item._usandoFardo=false;
+  }
 }
 
 function subtotal(){ return CARRINHO.reduce((s,i)=>s+i.preco*i.quantidade,0); }
@@ -353,10 +378,54 @@ function descontoAtual(){ return Number(document.getElementById("desconto")?.val
 function totalPedido(){ return Math.max(0,subtotal()-descontoAtual()); }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
-function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+d); render(); }
-function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); render(); }
-function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
-function limparCarrinho(){ if(CARRINHO.length&&!confirm("Cancelar a venda e limpar o carrinho?"))return; CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; render(); }
+function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+d); aplicarPrecoAutomatico(ix); render(); }
+function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); aplicarPrecoAutomatico(ix); render(); }
+function removerItem(ix){
+  pedirAutorizacao(()=>{ CARRINHO.splice(ix,1); render(); });
+}
+
+// ---------------- autorização especial (remover item / aplicar desconto) ----------------
+let DESCONTO_DESBLOQUEADO=false;
+function pedirAutorizacao(aoAutorizar){
+  window._aoAutorizarCallback=aoAutorizar;
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3>🔒 Autorização necessária</h3>
+        <p class="muted" style="margin-bottom:12px">Essa ação exige autorização de um gerente, líder de caixa ou admin.</p>
+        <div class="muted" style="margin-bottom:4px">ID</div>
+        <input type="text" id="autId" style="width:100%;font-size:18px" autofocus>
+        <div class="muted" style="margin:10px 0 4px">Senha</div>
+        <input type="password" id="autSenha" style="width:100%;font-size:18px" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
+        <div id="autErro"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn" style="flex:1" onclick="confirmarAutorizacao()">Confirmar</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function confirmarAutorizacao(){
+  const idDigitado=document.getElementById("autId").value.trim();
+  const senhaDigitada=document.getElementById("autSenha").value;
+  try{
+    const r=await fetch(BACKEND+"/api/pdv/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idDigitado,senhaDigitada})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Autorização inválida");
+    fecharModais();
+    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor);
+  }catch(e){ document.getElementById("autErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+function autorizarDesconto(){
+  pedirAutorizacao(()=>{
+    DESCONTO_DESBLOQUEADO=true;
+    render();
+    setTimeout(()=>{ const el=document.getElementById("desconto"); if(el) el.focus(); },50);
+  });
+}
+function limparCarrinho(){ if(CARRINHO.length&&!confirm("Cancelar a venda e limpar o carrinho?"))return; CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; render(); }
 
 // ---------------- render ----------------
 function render(){
@@ -399,7 +468,7 @@ function render(){
         <div id="carrinho">${CARRINHO.length?CARRINHO.map((i,ix)=>`
           <div class="item">
             ${i.imagem?`<img src="${esc(i.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`:`<div class="semimg">📦</div>`}
-            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.preco)} un</span></span>
+            <span class="nome">${esc(i.nome)}${i._usandoFardo?' <span style="color:#FF0082;font-weight:800;font-size:10px">FARDO ✓</span>':''}<br><span class="muted">${brl(i.preco)} un${i.caixaQtd?` · fardo a partir de ${i.caixaQtd}un`:""}</span></span>
             <div class="qtd">
               <button onclick="alterarQtd(${ix},-1)">−</button>
               <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
@@ -428,7 +497,10 @@ function render(){
       <div class="card">
         <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
         <div class="linha"><span>Desconto (R$)</span>
-          <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" oninput="render()"></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} oninput="render()">
+            ${DESCONTO_DESBLOQUEADO?"":`<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
+          </div></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
           <span>Total</span><span class="total">${brl(totalPedido())}</span></div>
       </div>
@@ -477,11 +549,12 @@ async function finalizarVenda(){
       desconto:descontoAtual(),
       pagamentos:PAGAMENTOS.filter(p=>p.formaId).map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(p.valor,totalPedido())})),
       emitirNfce:document.getElementById("emitirNfce").checked,
+      funcionarioId:funcionarioIdAtual(),
     };
     const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
-    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
+    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false;
     await carregarCaixa();
     const m=document.getElementById("msgFinalizar");
     if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
