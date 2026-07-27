@@ -822,9 +822,9 @@ async function finalizarVenda(){
     if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
       ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?"<br>NFCe emitida":"")}</div>`;
   }catch(e){
+    render();
     const m=document.getElementById("msgFinalizar");
     if(m) m.innerHTML=`<div class="err">${esc(e.message)}</div>`;
-    render();
   }
 }
 
