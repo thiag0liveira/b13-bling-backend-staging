@@ -525,7 +525,10 @@ function autorizarDesconto(){
     setTimeout(()=>{ const el=document.getElementById("desconto"); if(el) el.focus(); },50);
   });
 }
-function limparCarrinho(){ if(CARRINHO.length&&!confirm("Cancelar a venda e limpar o carrinho?"))return; CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; render(); }
+function limparCarrinho(){
+  if(!CARRINHO.length) return;
+  pedirAutorizacao(()=>{ CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; render(); },"Cancelar a venda e limpar o carrinho exige autorização.");
+}
 
 // ---------------- render ----------------
 function render(){
