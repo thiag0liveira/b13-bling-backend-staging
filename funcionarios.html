@@ -203,6 +203,7 @@ function abrirEditar(id){
     <div class="lbl">Código de confirmação (Frente de Caixa)</div>
     <div style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:13px">
       Código: <b style="color:#FF0082;font-size:16px">${esc(f.codigoConfirmacao||"—")}</b>
+      ${!f.codigoConfirmacao?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-left:8px" onclick="gerarCodigo('${id}')">🔄 Gerar código</button>`:""}
       <div class="lbl" style="margin-top:8px">PIN de confirmação ${f.temPin?"(já configurado — deixe em branco pra manter)":"(ainda não configurado)"}</div>
       <input id="fPin" type="password" placeholder="PIN de confirmação" style="width:100%">
     </div>
@@ -226,6 +227,15 @@ async function salvarNovo(){
     if(r.ok&&j.ok){ fecharModal(); msg=`<div class="ok">✅ Funcionário criado!</div>`; carregar(); }
     else document.getElementById("fMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
   }catch(e){ document.getElementById("fMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
+}
+
+async function gerarCodigo(id){
+  try{
+    const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({gerarCodigo:true})});
+    const j=await r.json();
+    if(r.ok&&j.ok){ await carregar(); abrirEditar(id); }
+    else alert(j.erro||"Erro ao gerar código");
+  }catch(e){ alert("Erro de conexão"); }
 }
 
 async function salvarEditar(id){

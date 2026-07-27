@@ -403,7 +403,15 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   if(req.body.senha) f.senhaHash=hashSenha(req.body.senha);
   if(req.body.pinConfirmacao!==undefined) f.pinConfirmacao=req.body.pinConfirmacao;
   if(req.body.codigoConfirmacao!==undefined) f.codigoConfirmacao=req.body.codigoConfirmacao.toUpperCase();
-  salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
+  if(req.body.gerarCodigo){
+    const letras="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    let novoCodigo;
+    do{
+      novoCodigo=letras[Math.floor(Math.random()*letras.length)]+String(Math.floor(Math.random()*100)).padStart(2,"0");
+    }while(Object.values(funcs).some(x=>x.codigoConfirmacao===novoCodigo));
+    f.codigoConfirmacao=novoCodigo;
+  }
+  salvarJSON(FUNC_FILE,funcs); res.json({ok:true,codigoConfirmacao:f.codigoConfirmacao});
 });
 app.delete("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); if(!funcs[req.params.id]) return res.status(404).json({erro:"não encontrado"});
