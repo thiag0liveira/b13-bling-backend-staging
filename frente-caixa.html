@@ -327,21 +327,11 @@ async function carregarFormas(){
   try{
     const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
     const todas=(j.data||[]).filter(f=>f.situacao!=="I");
-    // mostra só as 4 formas do dia a dia — as outras (ficha financeira, estorno, etc) ficam escondidas
-    const chaves=[
-      {chave:"pix",nomeExib:"Pix"},
-      {chave:"dinheiro",nomeExib:"Dinheiro"},
-      {chave:"débito",nomeExib:"Cartão de Débito"},
-      {chave:"debito",nomeExib:"Cartão de Débito"},
-      {chave:"crédito",nomeExib:"Crédito à Vista"},
-      {chave:"credito",nomeExib:"Crédito à Vista"},
-    ];
-    const escolhidas=[];
-    chaves.forEach(({chave})=>{
-      const achado=todas.find(f=>(f.descricao||f.nome||"").toLowerCase().includes(chave)&&!escolhidas.some(e=>e.id===f.id));
-      if(achado) escolhidas.push(achado);
-    });
-    FORMAS=escolhidas.length?escolhidas:todas;
+    // mostra pix, dinheiro, e credito/debito de cada bandeira (nao filtra so uma) —
+    // as outras formas (ficha financeira, estorno, etc) ficam escondidas
+    const padroes=[/pix/i,/dinheiro/i,/cr[eé]dito/i,/d[eé]bito/i];
+    FORMAS=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||"")));
+    if(!FORMAS.length) FORMAS=todas;
   }catch(e){ FORMAS=[]; }
   render();
 }
