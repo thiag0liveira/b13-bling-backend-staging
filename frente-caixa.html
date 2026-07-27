@@ -396,6 +396,33 @@ function limparCliente(){
   render();
 }
 
+function abrirCpfNota(){
+  document.getElementById("cpfNotaBox").innerHTML=`
+    <div style="margin-top:8px">
+      <input type="text" id="inputCpfNota" placeholder="CPF ou CNPJ do cliente" style="width:100%" maxlength="18">
+      <input type="text" id="inputNomeCpfNota" placeholder="Nome (opcional, só se for cliente novo)" style="width:100%;margin-top:6px">
+      <div id="cpfNotaMsg"></div>
+      <button class="btn btn-sm" style="width:100%;margin-top:8px" onclick="confirmarCpfNota()">Usar esse CPF na nota</button>
+    </div>`;
+  document.getElementById("inputCpfNota").focus();
+}
+
+async function confirmarCpfNota(){
+  const documento=document.getElementById("inputCpfNota").value.trim();
+  const nome=document.getElementById("inputNomeCpfNota").value.trim();
+  const msg=document.getElementById("cpfNotaMsg");
+  const doc=documento.replace(/\D/g,"");
+  if(doc.length!==11&&doc.length!==14){ msg.innerHTML=`<div class="err">CPF deve ter 11 dígitos (ou CNPJ 14).</div>`; return; }
+  msg.innerHTML=`<div class="muted">Verificando…</div>`;
+  try{
+    const r=await fetch(BACKEND+"/api/pdv/cliente-por-cpf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({documento:doc,nome})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao buscar/criar cliente");
+    CLIENTE_SELECIONADO={id:j.id,nome:j.nome};
+    render();
+  }catch(e){ msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
 function mostrarPainelAdicionado(item){
   clearTimeout(_timerPainelAdicionado);
@@ -648,16 +675,20 @@ function render(){
         <div class="muted" style="margin-bottom:6px">👤 Cliente</div>
         <div style="display:flex;align-items:center;gap:8px">
           <span style="flex:1;font-weight:800">${clienteAtual?esc(clienteAtual.nome):"Consumidor Final"}</span>
-          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`<button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>`}
+          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`
+            <button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>
+            <button class="btn btn-ghost btn-sm" onclick="abrirCpfNota()">🧾 CPF na nota</button>
+          `}
         </div>
         <div id="buscaClienteBox"></div>
+        <div id="cpfNotaBox"></div>
       </div>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
         <div id="resBusca" class="res"></div>
       </div>
-      <div id="painelAdicionado"></div>
+      <div id="painelAdicionado" style="min-height:126px"></div>
       <div class="card">
         <div style="display:flex;align-items:center;margin-bottom:8px">
           <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>

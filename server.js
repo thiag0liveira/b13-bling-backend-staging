@@ -1596,14 +1596,15 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
 // estoque ao vivo do produto (o indice de preco pode estar desatualizado quanto a quantidade)
 // busca do "Consumidor Final" pelo codigo 2 no Bling, com cache curto (pra nao bater na API toda hora)
 let _consumidorFinalCache=null, _consumidorFinalEm=0;
+const CONSUMIDOR_FINAL_ID=17313605063; // ID confirmado direto do link do contato no Bling
 app.get("/api/pdv/consumidor-final",async(req,res)=>{
   try{
     if(_consumidorFinalCache&&Date.now()-_consumidorFinalEm<10*60*1000) return res.json({data:_consumidorFinalCache});
-    const r=await bling(`/contatos?codigo=2&limite=1`);
-    const c=(r?.data||[])[0]||null;
+    const r=await bling(`/contatos/${CONSUMIDOR_FINAL_ID}`);
+    const c=r?.data||null;
     if(c){ _consumidorFinalCache={id:c.id,nome:c.nome}; _consumidorFinalEm=Date.now(); }
     res.json({data:_consumidorFinalCache});
-  }catch(e){ res.json({data:null,erro:e.message}); }
+  }catch(e){ res.json({data:{id:CONSUMIDOR_FINAL_ID,nome:"Consumidor Final"},erro:e.message}); }
 });
 
 // busca de clientes (nome, cpf/cnpj, telefone) - igual a busca de cliente do Frente de Caixa do Bling
@@ -1615,6 +1616,28 @@ app.get("/api/pdv/clientes",async(req,res)=>{
     const lista=(r?.data||[]).map(c=>({id:c.id,nome:c.nome,numeroDocumento:c.numeroDocumento||"",telefone:c.telefone||c.celular||""}));
     res.json({data:lista});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
+// busca um contato pelo CPF/CNPJ; se não existir, cria um novo minimo (so pra colocar o
+// documento na nota, sem precisar de cadastro completo)
+app.post("/api/pdv/cliente-por-cpf",async(req,res)=>{
+  const doc=soDigitos(req.body?.documento);
+  const nome=String(req.body?.nome||"").trim();
+  if(!doc) return res.status(400).json({erro:"informe o CPF/CNPJ"});
+  try{
+    const busca=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`);
+    const achado=(busca?.data||[]).find(c=>soDigitos(c.numeroDocumento)===doc);
+    if(achado) return res.json({id:achado.id,nome:achado.nome,criado:false});
+
+    const tipo=doc.length===14?"J":"F";
+    const criado=await bling(`/contatos`,{method:"POST",body:JSON.stringify({
+      nome:nome||"Consumidor",
+      tipo,
+      numeroDocumento:doc,
+      situacao:"A",
+    })});
+    res.json({id:criado?.data?.id,nome:nome||"Consumidor",criado:true});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
 app.get("/api/pdv/estoque/:produtoId",async(req,res)=>{
