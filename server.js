@@ -71,6 +71,8 @@ const SIT = {
 };
 
 const app = express();
+const _iniciadoEm=new Date().toISOString();
+app.get("/api/versao-deploy",(req,res)=>res.json({iniciadoEm:_iniciadoEm,agora:new Date().toISOString(),marcador:"venda-fix-v3-situacao-digitacao"}));
 const ORIGENS_PERMITIDAS=[
   "https://b13-bling-backend-production.up.railway.app",
   "https://b13-bling-backend-staging-production.up.railway.app",
