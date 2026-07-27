@@ -1825,6 +1825,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const totalPedido=+(totalItens-totalDesconto).toFixed(2);
 
     const payload={
+      data: new Date().toISOString().slice(0,10),
       itens:itensPayload,
       situacao:{id:SIT.ATENDIDO},
       ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
