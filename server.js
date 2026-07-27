@@ -1887,7 +1887,12 @@ app.post("/api/pdv/venda", async(req,res)=>{
     let nfce=null;
     if(emitirNfce){
       try{
-        nfce=await bling(`/nfce`,{method:"POST",body:JSON.stringify({idPedidoVenda:pedidoId})});
+        nfce=await bling(`/nfce`,{method:"POST",body:JSON.stringify({
+          idPedidoVenda:pedidoId,
+          dataOperacao:dataHojeBR,
+          itens:itensPayload,
+          ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
+        })});
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
