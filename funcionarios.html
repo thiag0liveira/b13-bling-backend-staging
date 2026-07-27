@@ -64,7 +64,7 @@
 <script>
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
-const NIVEIS={admin:"Admin",gerente:"Gerente",expedicao:"Expedição",financeiro_atacado:"Financeiro",vendedor:"Vendedor",conferente:"Conferente"};
+const NIVEIS={admin:"Admin",gerente:"Gerente",lider_caixa:"Líder de Caixa",expedicao:"Expedição",financeiro_atacado:"Financeiro",vendedor:"Vendedor",conferente:"Conferente"};
 let logado=false, funcs=[], msg="";
 try{ const sess=typeof b13GetSession==="function"?b13GetSession():null; if(sess&&(sess.nivel==="admin"||(sess.permissoes||[]).includes("admin"))) logado=true; }catch(e){}
 
@@ -108,7 +108,25 @@ function render(){
     : `<div class="muted" style="text-align:center;padding:30px">Nenhum funcionário cadastrado.<br><br>
         <button class="btn btn-mag" onclick="abrirNovo()">+ Adicionar primeiro funcionário</button></div>`;
 
-  app.innerHTML=top+`<div class="wrap">${msg}${cards}</div>`;
+  // seção de grupos — quem está em cada um
+  const gruposHtml=Object.keys(NIVEIS).map(nivelKey=>{
+    const membros=funcs.filter(f=>f.nivel===nivelKey||((f.permissoes||[]).includes(nivelKey)));
+    if(!membros.length) return "";
+    return `<div class="card" style="display:block">
+      <div class="nome" style="margin-bottom:6px">${esc(NIVEIS[nivelKey])} <span class="muted" style="font-weight:400">(${membros.length})</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${membros.map(m=>`<span class="badge badge-${m.nivel}">${esc(m.nome)}</span>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+
+  app.innerHTML=top+`<div class="wrap">
+    ${msg}
+    <h3 style="margin:10px 0">👥 Grupos</h3>
+    ${gruposHtml||'<div class="muted">Nenhum grupo com membros ainda.</div>'}
+    <h3 style="margin:20px 0 10px">🧑 Funcionários</h3>
+    ${cards}
+  </div>`;
   msg="";
 }
 
@@ -140,6 +158,7 @@ function abrirNovo(){
       <option value="financeiro_atacado">Financeiro Atacado</option>
       <option value="vendedor">Vendedor</option>
       <option value="conferente">Conferente</option>
+      <option value="lider_caixa">Líder de Caixa</option>
       <option value="gerente">Gerente</option>
       <option value="admin">Admin</option>
     </select>
@@ -177,9 +196,16 @@ function abrirEditar(id){
       <option value="financeiro_atacado" ${f.nivel==='financeiro_atacado'?'selected':''}>Financeiro Atacado</option>
       <option value="vendedor" ${f.nivel==='vendedor'?'selected':''}>Vendedor</option>
       <option value="conferente" ${f.nivel==='conferente'?'selected':''}>Conferente</option>
+      <option value="lider_caixa" ${f.nivel==='lider_caixa'?'selected':''}>Líder de Caixa</option>
       <option value="gerente" ${f.nivel==='gerente'?'selected':''}>Gerente</option>
       <option value="admin" ${f.nivel==='admin'?'selected':''}>Admin</option>
     </select>
+    <div class="lbl">Código de confirmação (Frente de Caixa)</div>
+    <div style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:13px">
+      Código: <b style="color:#FF0082;font-size:16px">${esc(f.codigoConfirmacao||"—")}</b>
+      <div class="lbl" style="margin-top:8px">PIN de confirmação ${f.temPin?"(já configurado — deixe em branco pra manter)":"(ainda não configurado)"}</div>
+      <input id="fPin" type="password" placeholder="PIN de confirmação" style="width:100%">
+    </div>
     <div id="fMsg"></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-mag" style="flex:1" onclick="salvarEditar('${id}')">💾 Salvar</button>
@@ -208,8 +234,9 @@ async function salvarEditar(id){
   const nivel=document.getElementById("fNivel").value;
   const login=document.getElementById("fLogin").value.trim().toLowerCase();
   const permissoes=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
+  const pinConfirmacao=document.getElementById("fPin")?.value||"";
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
-  const body={nome,nivel,login,permissoes}; if(senha) body.senha=senha;
+  const body={nome,nivel,login,permissoes}; if(senha) body.senha=senha; if(pinConfirmacao) body.pinConfirmacao=pinConfirmacao;
   try{
     const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify(body)});
     const j=await r.json();
