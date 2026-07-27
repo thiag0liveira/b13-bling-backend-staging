@@ -1828,7 +1828,6 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const payload={
       data: dataHojeBR,
       itens:itensPayload,
-      situacao:{id:SIT.ATENDIDO},
       ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
       ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
@@ -1838,6 +1837,9 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
     const pedidoId=criado?.data?.id;
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
+    // move pra Atendido depois de criado (igual o fluxo do totem, que já funciona)
+    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"}); }
+    catch(e){ console.error("Falha ao mover pedido pra Atendido (venda ja foi criada, id="+pedidoId+"):",e.message); }
 
     // registra localmente (mesmo padrão usado no restante do sistema)
     const pags=lerPag();
