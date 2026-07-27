@@ -779,7 +779,7 @@ function render(){
         })()}
         ${somaNaoDinheiro()>totalPedido()+0.009?`<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>`:""}
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
-          <input type="checkbox" id="emitirNfce"> Emitir NFCe ao finalizar</label>
+          <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar</label>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
           ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
