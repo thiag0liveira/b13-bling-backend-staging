@@ -76,11 +76,11 @@ document.addEventListener("DOMContentLoaded",function(){
   <div class="t">Frente de Caixa</div>
   <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
   <div class="sp"></div>
-  <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
-  <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
-  <button class="btn btn-ghost btn-sm" onclick="abrirModalHistorico()">📜 Histórico</button>
-  <button class="btn btn-ghost btn-sm" onclick="abrirModalCaixasAbertos()">🏪 Caixas Abertos</button>
-  <button class="btn btn-sm" id="btnAbrirFechar" onclick="abrirModalCaixa()">🔓 Abrir caixa</button>
+  <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(()=>abrirModalMovimento('sangria'))">💸 Sangria</button>
+  <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(()=>abrirModalMovimento('suprimento'))">💰 Suprimento</button>
+  <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(abrirModalHistorico)">📜 Histórico</button>
+  <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(abrirModalCaixasAbertos)">🏪 Caixas Abertos</button>
+  <button class="btn btn-sm" id="btnAbrirFechar" onclick="cliqueAbrirFechar()">🔓 Abrir caixa</button>
 </div>
 
 <div id="conteudo"></div>
@@ -106,6 +106,11 @@ async function carregarCaixa(){
     CAIXA=j;
   }catch(e){ CAIXA={aberta:false}; }
   render();
+}
+
+function cliqueAbrirFechar(){
+  if(CAIXA.aberta) pedirAutorizacao(abrirModalFechamento);
+  else abrirModalCaixa();
 }
 
 function abrirModalCaixa(){
@@ -321,7 +326,22 @@ function fecharModais(){ document.getElementById("modais").innerHTML=""; }
 async function carregarFormas(){
   try{
     const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
-    FORMAS=(j.data||[]).filter(f=>f.situacao!=="I");
+    const todas=(j.data||[]).filter(f=>f.situacao!=="I");
+    // mostra só as 4 formas do dia a dia — as outras (ficha financeira, estorno, etc) ficam escondidas
+    const chaves=[
+      {chave:"pix",nomeExib:"Pix"},
+      {chave:"dinheiro",nomeExib:"Dinheiro"},
+      {chave:"débito",nomeExib:"Cartão de Débito"},
+      {chave:"debito",nomeExib:"Cartão de Débito"},
+      {chave:"crédito",nomeExib:"Crédito à Vista"},
+      {chave:"credito",nomeExib:"Crédito à Vista"},
+    ];
+    const escolhidas=[];
+    chaves.forEach(({chave})=>{
+      const achado=todas.find(f=>(f.descricao||f.nome||"").toLowerCase().includes(chave)&&!escolhidas.some(e=>e.id===f.id));
+      if(achado) escolhidas.push(achado);
+    });
+    FORMAS=escolhidas.length?escolhidas:todas;
   }catch(e){ FORMAS=[]; }
   render();
 }
@@ -430,6 +450,7 @@ function descontoAtual(){ return Number(document.getElementById("desconto")?.val
 function totalPedido(){ return Math.max(0,subtotal()-descontoAtual()); }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
+function somaNaoDinheiro(){ return PAGAMENTOS.filter(p=>!(p.formaNome||"").toLowerCase().includes("dinheiro")).reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+d); aplicarPrecoAutomatico(ix); render(); }
 function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); aplicarPrecoAutomatico(ix); render(); }
 function removerItem(ix){
@@ -440,15 +461,16 @@ function removerItem(ix){
 let DESCONTO_DESBLOQUEADO=false;
 function pedirAutorizacao(aoAutorizar){
   window._aoAutorizarCallback=aoAutorizar;
+  const dia=String(new Date().getDate()).padStart(2,"0");
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔒 Autorização necessária</h3>
         <p class="muted" style="margin-bottom:12px">Essa ação exige autorização de um gerente, líder de caixa ou admin.</p>
-        <div class="muted" style="margin-bottom:4px">ID</div>
-        <input type="text" id="autId" style="width:100%;font-size:18px" autofocus>
-        <div class="muted" style="margin:10px 0 4px">Senha</div>
-        <input type="password" id="autSenha" style="width:100%;font-size:18px" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
+        <div class="muted" style="margin-bottom:4px">ID <span style="color:#9a95c9">(dia de hoje "${dia}" + código do funcionário. Ex: código T01 → digite ${dia}T01)</span></div>
+        <input type="password" id="autId" style="width:100%;font-size:18px;letter-spacing:2px" autofocus autocomplete="off">
+        <div class="muted" style="margin:10px 0 4px">Senha <span style="color:#9a95c9">(PIN do funcionário + dia de hoje "${dia}". Ex: PIN 1234 → digite 1234${dia})</span></div>
+        <input type="password" id="autSenha" style="width:100%;font-size:18px;letter-spacing:2px" autocomplete="off" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
         <div id="autErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">
           <button class="btn" style="flex:1" onclick="confirmarAutorizacao()">Confirmar</button>
@@ -579,11 +601,12 @@ function render(){
           if(rest>0.009) return `<div class="linha"><span>Falta</span><b style="color:#ff8090">${brl(rest)}</b></div>`;
           return `<div class="linha"><span>Falta</span><b style="color:#8fffc0">${brl(0)}</b></div>`;
         })()}
+        ${somaNaoDinheiro()>totalPedido()+0.009?`<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>`:""}
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
           <input type="checkbox" id="emitirNfce"> Emitir NFCe ao finalizar</label>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
-          ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009)?"disabled":""}
+          ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
           onclick="finalizarVenda()">✅ Finalizar Venda</button>
       </div>
     </div>
@@ -599,7 +622,17 @@ async function finalizarVenda(){
     const body={
       itens:CARRINHO.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
       desconto:descontoAtual(),
-      pagamentos:PAGAMENTOS.filter(p=>p.formaId).map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(p.valor,totalPedido())})),
+      pagamentos:(()=>{
+        const total=totalPedido();
+        const naoDinheiro=PAGAMENTOS.filter(p=>p.formaId&&!(p.formaNome||"").toLowerCase().includes("dinheiro"));
+        const dinheiro=PAGAMENTOS.filter(p=>p.formaId&&(p.formaNome||"").toLowerCase().includes("dinheiro"));
+        const somaNaoDin=naoDinheiro.reduce((s,p)=>s+(Number(p.valor)||0),0);
+        const faltaParaDinheiro=Math.max(0,+(total-somaNaoDin).toFixed(2));
+        return [
+          ...naoDinheiro.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:+Number(p.valor).toFixed(2)})),
+          ...dinheiro.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(+Number(p.valor).toFixed(2),faltaParaDinheiro)})),
+        ];
+      })(),
       emitirNfce:document.getElementById("emitirNfce").checked,
       funcionarioId:funcionarioIdAtual(),
     };
