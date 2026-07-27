@@ -488,14 +488,32 @@ function ligarBusca(){
   });
 }
 
-function selecionarResultado(ix){
+async function selecionarResultado(ix){
   const p=window._ultimaBusca[ix];
-  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco||0,imagem:p._imagem||null,codigo:p.codigo||""});
+  const cardEl=document.getElementById("rb_"+ix);
+  // se o preço ainda não chegou (carregando em segundo plano), busca agora e espera antes de adicionar
+  if(p._preco==null&&p.codigo){
+    if(cardEl) cardEl.style.opacity=".5";
+    try{
+      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+      if(r?.data){ p._preco=r.data.preco; p._imagem=r.data.imagem; }
+    }catch(e){}
+    if(cardEl) cardEl.style.opacity="1";
+  }
+  if(!(p._preco>0)){
+    alert("Não foi possível confirmar o preço desse produto. Tenta buscar de novo.");
+    return;
+  }
+  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco,imagem:p._imagem||null,codigo:p.codigo||""});
   document.getElementById("resBusca").innerHTML="";
   const b=document.getElementById("busca"); if(b){ b.value=""; b.focus(); }
 }
 
 async function adicionarAoCarrinho(p){
+  if(!(Number(p.preco)>0)){
+    alert("Esse produto não tem preço confirmado. Não é permitido adicionar sem preço.");
+    return;
+  }
   const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
   const qtdDesejada=ex?ex.quantidade+1:1;
   // confere o estoque ao vivo antes de adicionar/aumentar
