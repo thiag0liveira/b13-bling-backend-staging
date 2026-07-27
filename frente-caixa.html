@@ -438,6 +438,23 @@ function efetivarAdicao(p,ex,qtdDesejada,estoqueAtual){
 // produto sem estoque suficiente — pede autorização e, se aprovado, ajusta o estoque no
 // Bling pra quantidade que o funcionário está tentando vender (ex: contagem desatualizada)
 function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3>⚠️ Sem estoque no sistema</h3>
+        <p style="margin-bottom:14px">Esse produto está com <b>${estoqueAtual} unidade(s)</b> no sistema, mas você está tentando vender <b>${qtdDesejada}</b>.</p>
+        <p class="muted" style="margin-bottom:16px">Pra vender mesmo assim (ex: chegou mais produto e o estoque ainda não foi atualizado), um <b>gerente, líder de caixa ou admin</b> precisa autorizar o ajuste do estoque no Bling.</p>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="flex:1" onclick="continuarAutorizacaoEstoque('${p.produtoId}',${qtdDesejada},${estoqueAtual})">Continuar</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+  window._itemEstoquePendente=p;
+}
+
+function continuarAutorizacaoEstoque(produtoId,qtdDesejada,estoqueAtual){
+  const p=window._itemEstoquePendente;
   pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada)=>{
     try{
       const r=await fetch(BACKEND+"/api/pdv/ajustar-estoque",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -447,7 +464,7 @@ function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
       const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
       efetivarAdicao(p,ex,qtdDesejada,qtdDesejada);
     }catch(e){ alert("Não foi possível ajustar o estoque: "+e.message); }
-  },`⚠️ Esse produto está com estoque insuficiente no sistema (${estoqueAtual} disponível, tentando ${qtdDesejada}). Autorize pra ajustar o estoque no Bling e liberar a venda.`);
+  },`Autorizando ajuste de estoque pra ${qtdDesejada} unidade(s).`);
 }
 
 // se a quantidade bater o minimo do fardo (configurado na Tabela Atacado), troca o preço
