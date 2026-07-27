@@ -52,6 +52,7 @@ const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const CAIXA_SESSOES_FILE = `${DATA_DIR}/caixa_sessoes.json`;
 const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
+const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -366,7 +367,7 @@ function requireAdmin(req,res,next){
 // ---- FUNCIONÁRIOS ----
 app.get("/api/funcionarios",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
-  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo}))});
+  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao}))});
 });
 app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   const {nome,senha,nivel}=req.body||{};
@@ -376,8 +377,15 @@ app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   // verificar login duplicado
   if(req.body.login && Object.values(funcs).some(f=>f.login===req.body.login))
     return res.status(400).json({erro:"Login já em uso por outro funcionário"});
-  funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now()};
-  salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id});
+  // código de confirmação (1 letra + 2 números), sem repetir um já existente
+  const letras="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let codigoConfirmacao;
+  do{
+    codigoConfirmacao=letras[Math.floor(Math.random()*letras.length)]+String(Math.floor(Math.random()*100)).padStart(2,"0");
+  }while(Object.values(funcs).some(f=>f.codigoConfirmacao===codigoConfirmacao));
+  funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now(),
+    codigoConfirmacao,pinConfirmacao:req.body.pinConfirmacao||""};
+  salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id,codigoConfirmacao});
 });
 app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); const f=funcs[req.params.id];
@@ -392,6 +400,8 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   if(req.body.permissoes) f.permissoes=req.body.permissoes;
   if(typeof req.body.ativo==="boolean") f.ativo=req.body.ativo;
   if(req.body.senha) f.senhaHash=hashSenha(req.body.senha);
+  if(req.body.pinConfirmacao!==undefined) f.pinConfirmacao=req.body.pinConfirmacao;
+  if(req.body.codigoConfirmacao!==undefined) f.codigoConfirmacao=req.body.codigoConfirmacao.toUpperCase();
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
 });
 app.delete("/api/funcionarios/:id",requireAdmin,(req,res)=>{
@@ -1300,8 +1310,9 @@ app.get("/api/contatos",async(req,res)=>{
 // ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
 function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
 function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
-function sessaoCaixaAberta(){
+function sessaoCaixaAberta(funcionarioId){
   const d=lerCaixaSessoes();
+  if(funcionarioId) return (d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId)||null;
   return (d.sessoes||[]).find(s=>!s.fechadaEm)||null;
 }
 // Resumo consolidado de uma sessão: soma vendas por forma, sangrias, suprimentos
@@ -1382,20 +1393,29 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
 
 
 app.get("/api/caixa-sessao/atual",(req,res)=>{
-  const s=sessaoCaixaAberta();
+  const s=sessaoCaixaAberta(req.query.funcionarioId);
   if(!s) return res.json({aberta:false});
-  res.json({aberta:true,sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,trocoInicial:s.trocoInicial},resumo:resumoSessaoCaixa(s)});
+  res.json({aberta:true,sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,funcionarioId:s.funcionarioId,trocoInicial:s.trocoInicial},resumo:resumoSessaoCaixa(s)});
 });
 
-// abre o caixa informando o troco inicial (fundo de caixa)
+// lista todos os caixas abertos agora (de todo mundo) — pra ver quem está com caixa aberto
+app.get("/api/caixa-sessao/abertos",(req,res)=>{
+  const d=lerCaixaSessoes();
+  const abertos=(d.sessoes||[]).filter(s=>!s.fechadaEm);
+  res.json({data:abertos.map(s=>({id:s.id,operador:s.operador,funcionarioId:s.funcionarioId,abertaEm:s.abertaEm,resumo:resumoSessaoCaixa(s)}))});
+});
+
+// abre o caixa informando o troco inicial (fundo de caixa) — vinculado ao funcionário logado
 app.post("/api/caixa-sessao/abrir",(req,res)=>{
-  if(sessaoCaixaAberta()) return res.status(400).json({erro:"Já existe um caixa aberto. Feche o atual antes de abrir outro."});
-  const {trocoInicial,operador}=req.body||{};
+  const {trocoInicial,operador,funcionarioId}=req.body||{};
+  if(!funcionarioId) return res.status(400).json({erro:"Sessão não identificada — faça login de novo."});
+  if(sessaoCaixaAberta(funcionarioId)) return res.status(400).json({erro:"Você já tem um caixa aberto. Feche o atual antes de abrir outro."});
   const d=lerCaixaSessoes();
   const sessao={
     id:"cx"+Date.now()+crypto.randomBytes(3).toString("hex"),
     abertaEm:Date.now(),
     operador:operador||"—",
+    funcionarioId,
     trocoInicial:+Number(trocoInicial||0).toFixed(2),
     movimentos:[],
     fechadaEm:null,
@@ -1406,13 +1426,13 @@ app.post("/api/caixa-sessao/abrir",(req,res)=>{
 
 // registra sangria (retirada) ou suprimento (entrada de dinheiro)
 app.post("/api/caixa-sessao/movimento",(req,res)=>{
-  const {tipo,valor,motivo,operador}=req.body||{};
+  const {tipo,valor,motivo,operador,funcionarioId}=req.body||{};
   if(!["sangria","suprimento"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser sangria ou suprimento"});
   const v=+Number(valor||0).toFixed(2);
   if(!(v>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
   const d=lerCaixaSessoes();
-  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm);
-  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto"});
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
   sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now()});
   salvarCaixaSessoes(d);
   res.json({ok:true,resumo:resumoSessaoCaixa(sessao)});
@@ -1420,10 +1440,10 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
 
 // fecha o caixa, comparando o contado com o esperado (conferência)
 app.post("/api/caixa-sessao/fechar",(req,res)=>{
-  const {valorContado,observacao,operador}=req.body||{};
+  const {valorContado,observacao,operador,funcionarioId}=req.body||{};
   const d=lerCaixaSessoes();
-  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm);
-  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto"});
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+  if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
   const resumo=resumoSessaoCaixa(sessao);
   const contado=+Number(valorContado||0).toFixed(2);
   const diferenca=+(contado-resumo.esperadoGaveta).toFixed(2);
@@ -1434,14 +1454,22 @@ app.post("/api/caixa-sessao/fechar",(req,res)=>{
   res.json({ok:true,resumo,fechamento:sessao.fechamento});
 });
 
-// histórico de sessões já fechadas
+// histórico de sessões já fechadas (traz também os movimentos, pra ver o que foi feito naquele dia)
 app.get("/api/caixa-sessao/historico",(req,res)=>{
   const d=lerCaixaSessoes();
   const fechadas=(d.sessoes||[]).filter(s=>s.fechadaEm).sort((a,b)=>b.fechadaEm-a.fechadaEm).slice(0,50);
   res.json({data:fechadas.map(s=>({
-    id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,
-    trocoInicial:s.trocoInicial,fechamento:s.fechamento,resumo:s.resumoFinal||resumoSessaoCaixa(s),
+    id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,funcionarioId:s.funcionarioId,
+    trocoInicial:s.trocoInicial,fechamento:s.fechamento,resumo:s.resumoFinal||resumoSessaoCaixa(s),movimentos:s.movimentos||[],
   }))});
+});
+
+// detalhe (histórico de movimentos) de UMA sessão específica, aberta ou fechada
+app.get("/api/caixa-sessao/:id/movimentos",(req,res)=>{
+  const d=lerCaixaSessoes();
+  const s=(d.sessoes||[]).find(x=>x.id===req.params.id);
+  if(!s) return res.status(404).json({erro:"sessão não encontrada"});
+  res.json({sessao:{id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador},movimentos:(s.movimentos||[]).sort((a,b)=>b.em-a.em)});
 });
 
 // ---------------- LISTA DE FARDO (varejo promocional por fardo) ----------------
@@ -1457,7 +1485,7 @@ function indexarVinculosTabela(){
   (tab?.model||[]).forEach(cat=>{
     (cat.itens||[]).forEach(it=>{
       (it.bling||[]).forEach(b=>{
-        idx[String(b.codigo)]={itemId:it.id,categoriaNome:cat.t||"",itemNome:it.nome||"",precoAtacado:it.preco,produtoId:b.id};
+        idx[String(b.codigo)]={itemId:it.id,categoriaNome:cat.t||"",itemNome:it.nome||"",precoAtacado:it.preco,produtoId:b.id,caixaQtd:it.caixa||null};
       });
     });
   });
@@ -1465,6 +1493,107 @@ function indexarVinculosTabela(){
 }
 
 // lista completa (pra tela de gestão) — junta nome/categoria/preço atacado + preço fardo salvo
+// info de fardo (preço + quantidade mínima) pra um código específico — usado no Frente de
+// Caixa pra aplicar automaticamente o preço de fardo quando a quantidade bater
+// ---------------- LISTAS EXTRAS (promoção, produto perto do vencimento, etc) ----------------
+// Diferente da Lista de Fardo (fixa, ligada à quantidade), essas são listas criadas livremente,
+// cada uma com nome, tipo e data final opcional (pra saber até quando o preço vale).
+function lerListasExtras(){ return lerJSON(LISTAS_EXTRAS_FILE,{listas:[]}); }
+function salvarListasExtras(d){ salvarJSON(LISTAS_EXTRAS_FILE,d); }
+
+app.get("/api/listas-extras",(req,res)=>{
+  const d=lerListasExtras();
+  res.json({data:(d.listas||[]).map(l=>({id:l.id,nome:l.nome,tipo:l.tipo,dataFinal:l.dataFinal||null,qtdItens:Object.keys(l.precos||{}).length,
+    expirada:l.dataFinal?new Date(l.dataFinal+"T23:59:59")<new Date():false}))});
+});
+
+app.post("/api/listas-extras",(req,res)=>{
+  const {nome,tipo,dataFinal}=req.body||{};
+  if(!nome) return res.status(400).json({erro:"informe o nome da lista"});
+  const d=lerListasExtras();
+  const lista={id:"le"+Date.now()+crypto.randomBytes(3).toString("hex"),nome,tipo:tipo||"promocao",dataFinal:dataFinal||null,precos:{},criadaEm:Date.now()};
+  d.listas=d.listas||[]; d.listas.push(lista);
+  salvarListasExtras(d);
+  res.json({ok:true,id:lista.id});
+});
+
+app.delete("/api/listas-extras/:listaId",(req,res)=>{
+  const d=lerListasExtras();
+  d.listas=(d.listas||[]).filter(l=>l.id!==req.params.listaId);
+  salvarListasExtras(d);
+  res.json({ok:true});
+});
+
+// detalhe de uma lista, já cruzado com nome/atacado da tabela (mesmo padrão da lista de fardo)
+app.get("/api/listas-extras/:listaId",(req,res)=>{
+  const d=lerListasExtras();
+  const lista=(d.listas||[]).find(l=>l.id===req.params.listaId);
+  if(!lista) return res.status(404).json({erro:"lista não encontrada"});
+  const idx=indexarVinculosTabela();
+  const porItem={};
+  Object.values(idx).forEach(v=>{ if(!porItem[v.itemId]) porItem[v.itemId]={itemId:v.itemId,categoriaNome:v.categoriaNome,itemNome:v.itemNome,precoAtacado:v.precoAtacado,precoLista:lista.precos[v.itemId]??null}; });
+  Object.entries(lista.precos||{}).forEach(([itemId,v])=>{
+    if(v&&v.origem==="avulso") porItem[itemId]={itemId,categoriaNome:"(avulso)",itemNome:v.nome,precoAtacado:null,precoLista:v.preco};
+  });
+  res.json({lista:{id:lista.id,nome:lista.nome,tipo:lista.tipo,dataFinal:lista.dataFinal},
+    data:Object.values(porItem).filter(i=>i.precoLista!=null).sort((a,b)=>a.itemNome.localeCompare(b.itemNome))});
+});
+
+app.post("/api/listas-extras/:listaId/importar",(req,res)=>{
+  const {linhas}=req.body||{};
+  if(!Array.isArray(linhas)) return res.status(400).json({erro:"informe { linhas: [{codigo,preco,nome}] }"});
+  const d=lerListasExtras();
+  const lista=(d.listas||[]).find(l=>l.id===req.params.listaId);
+  if(!lista) return res.status(404).json({erro:"lista não encontrada"});
+  const idx=indexarVinculosTabela();
+  const casados=[], naoEncontrados=[];
+  linhas.forEach(l=>{
+    const codigo=String(l.codigo||"").trim();
+    const preco=+Number(l.preco||0);
+    const nome=String(l.nome||"").trim();
+    if(!codigo||!(preco>0)) return;
+    const match=idx[codigo];
+    if(match){ lista.precos[match.itemId]=preco; casados.push({codigo,preco,itemNome:match.itemNome}); }
+    else naoEncontrados.push({codigo,preco,nome});
+  });
+  salvarListasExtras(d);
+  res.json({ok:true,qtdCasados:casados.length,qtdNaoEncontrados:naoEncontrados.length,casados,naoEncontrados});
+});
+
+app.post("/api/listas-extras/:listaId/associar-avulso",(req,res)=>{
+  const {produtoId,nome,preco,codigo}=req.body||{};
+  if(!produtoId||!nome||!(preco>0)) return res.status(400).json({erro:"informe produtoId, nome e preco"});
+  const d=lerListasExtras();
+  const lista=(d.listas||[]).find(l=>l.id===req.params.listaId);
+  if(!lista) return res.status(404).json({erro:"lista não encontrada"});
+  const chave="avulso_"+produtoId;
+  lista.precos[chave]={preco:+Number(preco),nome,origem:"avulso",produtoId,codigoImportado:codigo||""};
+  salvarListasExtras(d);
+  res.json({ok:true,itemId:chave});
+});
+
+app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
+  const {preco}=req.body||{};
+  const d=lerListasExtras();
+  const lista=(d.listas||[]).find(l=>l.id===req.params.listaId);
+  if(!lista) return res.status(404).json({erro:"lista não encontrada"});
+  if(preco==null||preco==="") delete lista.precos[req.params.itemId];
+  else if(lista.precos[req.params.itemId]&&typeof lista.precos[req.params.itemId]==="object") lista.precos[req.params.itemId].preco=+Number(preco);
+  else lista.precos[req.params.itemId]=+Number(preco);
+  salvarListasExtras(d);
+  res.json({ok:true});
+});
+
+app.get("/api/pdv/info-fardo/:codigo",(req,res)=>{
+  const idx=indexarVinculosTabela();
+  const match=idx[String(req.params.codigo).trim()];
+  if(!match) return res.json({temFardo:false});
+  const fardo=lerListaFardo();
+  const entradaFardo=fardo[match.itemId];
+  if(!entradaFardo||!(entradaFardo.preco>0)||!(match.caixaQtd>0)) return res.json({temFardo:false});
+  res.json({temFardo:true,precoFardo:entradaFardo.preco,caixaQtd:match.caixaQtd});
+});
+
 app.get("/api/lista-fardo",(req,res)=>{
   const fardo=lerListaFardo();
   const idx=indexarVinculosTabela();
@@ -1567,9 +1696,28 @@ app.get("/api/etiquetas",async(req,res)=>{
   res.json({data:resultado});
 });
 
+// Autorização especial pra remover produto/aplicar desconto na Frente de Caixa —
+// exige ID (dia do mês + código do funcionário) e senha (PIN do funcionário + dia do mês).
+// Só libera pra quem é admin, gerente ou lider_caixa.
+const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"];
+app.post("/api/pdv/autorizar",(req,res)=>{
+  const {idDigitado,senhaDigitada}=req.body||{};
+  if(!idDigitado||!senhaDigitada) return res.status(400).json({erro:"Informe o ID e a senha"});
+  const dia=String(new Date().getDate()).padStart(2,"0");
+  if(!String(idDigitado).startsWith(dia)) return res.status(401).json({erro:"ID ou senha incorretos"});
+  const codigo=String(idDigitado).slice(dia.length).toUpperCase();
+  const funcs=lerJSON(FUNC_FILE,{});
+  const f=Object.values(funcs).find(x=>x.ativo&&x.codigoConfirmacao===codigo&&
+    (GRUPOS_AUTORIZAM_PDV.includes(x.nivel)||(x.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))));
+  if(!f) return res.status(401).json({erro:"ID ou senha incorretos"});
+  const senhaEsperada=(f.pinConfirmacao||"")+dia;
+  if(senhaDigitada!==senhaEsperada) return res.status(401).json({erro:"ID ou senha incorretos"});
+  res.json({ok:true,autorizadoPor:f.nome});
+});
+
 app.post("/api/pdv/venda", async(req,res)=>{
   try{
-    const {itens,contatoId,desconto,pagamentos,emitirNfce}=req.body||{};
+    const {itens,contatoId,desconto,pagamentos,emitirNfce,funcionarioId}=req.body||{};
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -1605,10 +1753,10 @@ app.post("/api/pdv/venda", async(req,res)=>{
     pags[String(pedidoId)]={valorPago:totalPedido,historico};
     salvarJSON(PAG_FILE,pags);
 
-    // vincula a venda à sessão de caixa aberta (pra entrar no fechamento/conferência)
+    // vincula a venda à sessão de caixa aberta DESSE funcionário (pra entrar no fechamento/conferência)
     try{
       const dCx=lerCaixaSessoes();
-      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm);
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
       if(sessaoAtual){
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
