@@ -1593,6 +1593,16 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
   res.json({ok:true});
 });
 
+// estoque ao vivo do produto (o indice de preco pode estar desatualizado quanto a quantidade)
+app.get("/api/pdv/estoque/:produtoId",async(req,res)=>{
+  try{
+    const r=await bling(`/produtos/${req.params.produtoId}`);
+    const p=r?.data||{};
+    const estoque=p?.estoque?.saldoVirtualTotal??p?.estoque?.saldoFisicoTotal??p?.estoqueAtual??0;
+    res.json({estoque:Number(estoque)||0});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/pdv/info-fardo/:codigo",(req,res)=>{
   const idx=indexarVinculosTabela();
   const match=idx[String(req.params.codigo).trim()];
@@ -1705,23 +1715,48 @@ app.get("/api/etiquetas",async(req,res)=>{
   res.json({data:resultado});
 });
 
-// Autorização especial pra remover produto/aplicar desconto na Frente de Caixa —
-// exige ID (dia do mês + código do funcionário) e senha (PIN do funcionário + dia do mês).
-// Só libera pra quem é admin, gerente ou lider_caixa.
+// Autorização especial pra remover produto/aplicar desconto/ajustar estoque na Frente de
+// Caixa — exige ID (dia do mês + código do funcionário) e senha (PIN do funcionário + dia
+// do mês). Só libera pra quem é admin, gerente ou lider_caixa.
 const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"];
-app.post("/api/pdv/autorizar",(req,res)=>{
-  const {idDigitado,senhaDigitada}=req.body||{};
-  if(!idDigitado||!senhaDigitada) return res.status(400).json({erro:"Informe o ID e a senha"});
+function validarAutorizacaoPdv(idDigitado,senhaDigitada){
+  if(!idDigitado||!senhaDigitada) return {erro:"Informe o ID e a senha"};
   const dia=String(new Date().getDate()).padStart(2,"0");
-  if(!String(idDigitado).startsWith(dia)) return res.status(401).json({erro:"ID ou senha incorretos"});
+  if(!String(idDigitado).startsWith(dia)) return {erro:"ID ou senha incorretos"};
   const codigo=String(idDigitado).slice(dia.length).toUpperCase();
   const funcs=lerJSON(FUNC_FILE,{});
   const f=Object.values(funcs).find(x=>x.ativo&&x.codigoConfirmacao===codigo&&
     (GRUPOS_AUTORIZAM_PDV.includes(x.nivel)||(x.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))));
-  if(!f) return res.status(401).json({erro:"ID ou senha incorretos"});
+  if(!f) return {erro:"ID ou senha incorretos"};
   const senhaEsperada=(f.pinConfirmacao||"")+dia;
-  if(senhaDigitada!==senhaEsperada) return res.status(401).json({erro:"ID ou senha incorretos"});
-  res.json({ok:true,autorizadoPor:f.nome});
+  if(senhaDigitada!==senhaEsperada) return {erro:"ID ou senha incorretos"};
+  return {funcionario:f};
+}
+
+app.post("/api/pdv/autorizar",(req,res)=>{
+  const {idDigitado,senhaDigitada}=req.body||{};
+  const r=validarAutorizacaoPdv(idDigitado,senhaDigitada);
+  if(r.erro) return res.status(401).json({erro:r.erro});
+  res.json({ok:true,autorizadoPor:r.funcionario.nome});
+});
+
+// Ajusta o estoque do produto no Bling (define o saldo pro valor informado) — usado quando
+// o funcionário tenta vender um produto sem estoque suficiente no sistema, mas o produto
+// está fisicamente disponível (ex: contagem desatualizada). Exige a mesma autorização.
+app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
+  const {idDigitado,senhaDigitada,produtoId,quantidade}=req.body||{};
+  const auth=validarAutorizacaoPdv(idDigitado,senhaDigitada);
+  if(auth.erro) return res.status(401).json({erro:auth.erro});
+  if(!produtoId||!(quantidade>0)) return res.status(400).json({erro:"informe produtoId e quantidade"});
+  try{
+    await bling(`/estoques`,{method:"POST",body:JSON.stringify({
+      produto:{id:Number(produtoId)},
+      operacao:"B", // balanço — define o saldo absoluto do estoque
+      quantidade:Number(quantidade),
+      observacoes:`Ajuste via Frente de Caixa — autorizado por ${auth.funcionario.nome}`,
+    })});
+    res.json({ok:true,autorizadoPor:auth.funcionario.nome,novoEstoque:Number(quantidade)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
 app.post("/api/pdv/venda", async(req,res)=>{

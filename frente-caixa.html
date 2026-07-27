@@ -407,21 +407,47 @@ function selecionarResultado(ix){
 
 async function adicionarAoCarrinho(p){
   const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
-  if(ex){ ex.quantidade++; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render(); return; }
-  const item={...p,quantidade:1,precoNormal:p.preco,precoFardo:null,caixaQtd:null};
+  const qtdDesejada=ex?ex.quantidade+1:1;
+  // confere o estoque ao vivo antes de adicionar/aumentar
+  let estoqueAtual=0;
+  try{ estoqueAtual=(await fetch(BACKEND+"/api/pdv/estoque/"+p.produtoId).then(r=>r.json())).estoque||0; }catch(e){}
+  if(qtdDesejada>estoqueAtual){
+    pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual);
+    return;
+  }
+  efetivarAdicao(p,ex,qtdDesejada,estoqueAtual);
+}
+
+function efetivarAdicao(p,ex,qtdDesejada,estoqueAtual){
+  if(ex){ ex.quantidade=qtdDesejada; ex.estoque=estoqueAtual; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render(); return; }
+  const item={...p,quantidade:qtdDesejada,estoque:estoqueAtual,precoNormal:p.preco,precoFardo:null,caixaQtd:null};
   CARRINHO.push(item);
   render();
   // busca em segundo plano se esse produto tem preço de fardo configurado
   if(p.codigo){
-    try{
-      const info=await fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+    fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json()).then(info=>{
       if(info.temFardo){
         item.precoFardo=info.precoFardo; item.caixaQtd=info.caixaQtd;
         aplicarPrecoAutomatico(CARRINHO.indexOf(item));
         render();
       }
-    }catch(e){}
+    }).catch(()=>{});
   }
+}
+
+// produto sem estoque suficiente — pede autorização e, se aprovado, ajusta o estoque no
+// Bling pra quantidade que o funcionário está tentando vender (ex: contagem desatualizada)
+function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
+  pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada)=>{
+    try{
+      const r=await fetch(BACKEND+"/api/pdv/ajustar-estoque",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({idDigitado,senhaDigitada,produtoId:p.produtoId,quantidade:qtdDesejada})});
+      const j=await r.json();
+      if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao ajustar estoque no Bling");
+      const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
+      efetivarAdicao(p,ex,qtdDesejada,qtdDesejada);
+    }catch(e){ alert("Não foi possível ajustar o estoque: "+e.message); }
+  },`⚠️ Esse produto está com estoque insuficiente no sistema (${estoqueAtual} disponível, tentando ${qtdDesejada}). Autorize pra ajustar o estoque no Bling e liberar a venda.`);
 }
 
 // se a quantidade bater o minimo do fardo (configurado na Tabela Atacado), troca o preço
@@ -441,22 +467,32 @@ function totalPedido(){ return Math.max(0,subtotal()-descontoAtual()); }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
 function somaNaoDinheiro(){ return PAGAMENTOS.filter(p=>!(p.formaNome||"").toLowerCase().includes("dinheiro")).reduce((s,p)=>s+(Number(p.valor)||0),0); }
-function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,CARRINHO[ix].quantidade+d); aplicarPrecoAutomatico(ix); render(); }
-function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,+v||1); aplicarPrecoAutomatico(ix); render(); }
+function alterarQtd(ix,d){
+  const item=CARRINHO[ix];
+  const nova=Math.max(1,item.quantidade+d);
+  if(d>0&&nova>item.estoque){ pedirAutorizacaoEstoque(item,nova,item.estoque); return; }
+  item.quantidade=nova; aplicarPrecoAutomatico(ix); render();
+}
+function definirQtd(ix,v){
+  const item=CARRINHO[ix];
+  const nova=Math.max(1,+v||1);
+  if(nova>item.estoque){ pedirAutorizacaoEstoque(item,nova,item.estoque); render(); return; }
+  item.quantidade=nova; aplicarPrecoAutomatico(ix); render();
+}
 function removerItem(ix){
   pedirAutorizacao(()=>{ CARRINHO.splice(ix,1); render(); });
 }
 
 // ---------------- autorização especial (remover item / aplicar desconto) ----------------
 let DESCONTO_DESBLOQUEADO=false;
-function pedirAutorizacao(aoAutorizar){
+function pedirAutorizacao(aoAutorizar,mensagemExtra){
   window._aoAutorizarCallback=aoAutorizar;
   const dia=String(new Date().getDate()).padStart(2,"0");
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔒 Autorização necessária</h3>
-        <p class="muted" style="margin-bottom:12px">Essa ação exige autorização de um gerente, líder de caixa ou admin.</p>
+        <p class="muted" style="margin-bottom:12px">${mensagemExtra?esc(mensagemExtra):"Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
         <div class="muted" style="margin-bottom:4px">ID <span style="color:#9a95c9">(dia de hoje "${dia}" + código do funcionário. Ex: código T01 → digite ${dia}T01)</span></div>
         <input type="password" id="autId" style="width:100%;font-size:18px;letter-spacing:2px" autofocus autocomplete="off">
         <div class="muted" style="margin:10px 0 4px">Senha <span style="color:#9a95c9">(PIN do funcionário + dia de hoje "${dia}". Ex: PIN 1234 → digite 1234${dia})</span></div>
@@ -478,7 +514,7 @@ async function confirmarAutorizacao(){
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Autorização inválida");
     fecharModais();
-    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor);
+    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor,idDigitado,senhaDigitada);
   }catch(e){ document.getElementById("autErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
