@@ -162,11 +162,54 @@ function abrirNovo(){
       <option value="gerente">Gerente</option>
       <option value="admin">Admin</option>
     </select>
+    <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
+    ${htmlVendedorBusca(null)}
     <div id="fMsg"></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-mag" style="flex:1" onclick="salvarNovo()">💾 Salvar</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Cancelar</button>
     </div>`;
+}
+
+// gera o bloco de busca/seleção de vendedor Bling, reaproveitado no criar e no editar
+function htmlVendedorBusca(f){
+  const idAtual=f?.vendedorBlingId||"";
+  const nomeAtual=f?.vendedorBlingNome||"";
+  return `<div style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
+    <input type="hidden" id="fVendedorId" value="${esc(String(idAtual))}">
+    <div id="fVendedorAtual" style="font-size:13px;margin-bottom:6px">
+      ${idAtual?`Vinculado a: <b style="color:#FF0082">${esc(nomeAtual||("Vendedor "+idAtual))}</b> <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-left:6px" onclick="limparVendedor()">✕ remover</button>`:`<span class="muted">Nenhum vendedor vinculado</span>`}
+    </div>
+    <input id="fVendedorBusca" placeholder="Buscar vendedor pelo nome..." oninput="buscarVendedorDebounce()">
+    <div id="fVendedorResultados" style="margin-top:6px"></div>
+  </div>`;
+}
+function limparVendedor(){
+  document.getElementById("fVendedorId").value="";
+  document.getElementById("fVendedorAtual").innerHTML=`<span class="muted">Nenhum vendedor vinculado</span>`;
+}
+function escolherVendedor(id,nome){
+  document.getElementById("fVendedorId").value=id;
+  document.getElementById("fVendedorAtual").innerHTML=`Vinculado a: <b style="color:#FF0082">${esc(nome)}</b> <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;margin-left:6px" onclick="limparVendedor()">✕ remover</button>`;
+  document.getElementById("fVendedorBusca").value="";
+  document.getElementById("fVendedorResultados").innerHTML="";
+}
+let _vendedorBuscaT=null;
+function buscarVendedorDebounce(){
+  clearTimeout(_vendedorBuscaT);
+  _vendedorBuscaT=setTimeout(buscarVendedor,350);
+}
+async function buscarVendedor(){
+  const termo=document.getElementById("fVendedorBusca").value.trim();
+  const div=document.getElementById("fVendedorResultados");
+  if(termo.length<2){ div.innerHTML=""; return; }
+  div.innerHTML=`<span class="muted" style="font-size:12px">Buscando...</span>`;
+  try{
+    const r=await fetch(B+"/api/vendedores/busca?termo="+encodeURIComponent(termo),{headers:{"X-Auth-Token":b13GetSession()?.token||""}});
+    const j=await r.json();
+    const lista=j.data||[];
+    div.innerHTML=lista.length?lista.map(v=>`<div style="padding:6px;border-bottom:1px solid #2a2650;cursor:pointer;font-size:13px" onclick="escolherVendedor('${v.id}','${esc(v.nome).replace(/'/g,"\\'")}')">${esc(v.nome)}</div>`).join(""):`<span class="muted" style="font-size:12px">Nenhum vendedor encontrado</span>`;
+  }catch(e){ div.innerHTML=`<span class="err" style="font-size:12px">Erro na busca</span>`; }
 }
 
 function abrirEditar(id){
@@ -200,6 +243,8 @@ function abrirEditar(id){
       <option value="gerente" ${f.nivel==='gerente'?'selected':''}>Gerente</option>
       <option value="admin" ${f.nivel==='admin'?'selected':''}>Admin</option>
     </select>
+    <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
+    ${htmlVendedorBusca(f)}
     <div class="lbl">Código de confirmação (Frente de Caixa)</div>
     <div style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:13px">
       Código: <b style="color:#FF0082;font-size:16px">${esc(f.codigoConfirmacao||"—")}</b>
@@ -222,7 +267,9 @@ async function salvarNovo(){
   if(!nome||!senha){ document.getElementById("fMsg").innerHTML=`<div class="err">Preencha nome e senha</div>`; return; }
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
   try{
-    const r=await fetch(B+"/api/funcionarios",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({nome,login:document.getElementById("fLogin").value.trim().toLowerCase().replace(/\s+/g,""),senha,nivel,permissoes})});
+    const vendedorBlingId=document.getElementById("fVendedorId")?.value||"";
+    const vendedorBlingNome=vendedorBlingId?(document.getElementById("fVendedorAtual").querySelector("b")?.textContent||""):"";
+    const r=await fetch(B+"/api/funcionarios",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({nome,login:document.getElementById("fLogin").value.trim().toLowerCase().replace(/\s+/g,""),senha,nivel,permissoes,vendedorBlingId,vendedorBlingNome})});
     const j=await r.json();
     if(r.ok&&j.ok){ fecharModal(); msg=`<div class="ok">✅ Funcionário criado!</div>`; carregar(); }
     else document.getElementById("fMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
@@ -246,7 +293,9 @@ async function salvarEditar(id){
   const permissoes=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
   const pinConfirmacao=document.getElementById("fPin")?.value||"";
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
-  const body={nome,nivel,login,permissoes}; if(senha) body.senha=senha; if(pinConfirmacao) body.pinConfirmacao=pinConfirmacao;
+  const vendedorBlingId=document.getElementById("fVendedorId")?.value||"";
+  const vendedorBlingNome=vendedorBlingId?(document.getElementById("fVendedorAtual").querySelector("b")?.textContent||""):"";
+  const body={nome,nivel,login,permissoes,vendedorBlingId,vendedorBlingNome}; if(senha) body.senha=senha; if(pinConfirmacao) body.pinConfirmacao=pinConfirmacao;
   try{
     const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify(body)});
     const j=await r.json();

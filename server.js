@@ -370,7 +370,7 @@ function requireAdmin(req,res,next){
 // ---- FUNCIONÁRIOS ----
 app.get("/api/funcionarios",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
-  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao}))});
+  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao,vendedorBlingId:f.vendedorBlingId||null,vendedorBlingNome:f.vendedorBlingNome||""}))});
 });
 app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   const {nome,senha,nivel}=req.body||{};
@@ -387,7 +387,8 @@ app.post("/api/funcionarios",requireAdmin,(req,res)=>{
     codigoConfirmacao=letras[Math.floor(Math.random()*letras.length)]+String(Math.floor(Math.random()*100)).padStart(2,"0");
   }while(Object.values(funcs).some(f=>f.codigoConfirmacao===codigoConfirmacao));
   funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now(),
-    codigoConfirmacao,pinConfirmacao:req.body.pinConfirmacao||""};
+    codigoConfirmacao,pinConfirmacao:req.body.pinConfirmacao||"",
+    vendedorBlingId:req.body.vendedorBlingId?Number(req.body.vendedorBlingId):null,vendedorBlingNome:req.body.vendedorBlingNome||""};
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id,codigoConfirmacao});
 });
 app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
@@ -405,6 +406,8 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   if(req.body.senha) f.senhaHash=hashSenha(req.body.senha);
   if(req.body.pinConfirmacao!==undefined) f.pinConfirmacao=req.body.pinConfirmacao;
   if(req.body.codigoConfirmacao!==undefined) f.codigoConfirmacao=req.body.codigoConfirmacao.toUpperCase();
+  if(req.body.vendedorBlingId!==undefined) f.vendedorBlingId=req.body.vendedorBlingId?Number(req.body.vendedorBlingId):null;
+  if(req.body.vendedorBlingNome!==undefined) f.vendedorBlingNome=req.body.vendedorBlingNome||"";
   if(req.body.gerarCodigo){
     const letras="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     let novoCodigo;
@@ -1609,6 +1612,16 @@ app.get("/api/pdv/consumidor-final",async(req,res)=>{
   }catch(e){ res.json({data:{id:CONSUMIDOR_FINAL_ID,nome:"Consumidor Final"},erro:e.message}); }
 });
 
+// busca de vendedores do Bling (pra vincular um vendedor a um funcionário do sistema)
+app.get("/api/vendedores/busca",requireAdmin,async(req,res)=>{
+  const termo=String(req.query.termo||"").trim();
+  try{
+    const r=await bling(`/vendedores${termo?`?pesquisa=${encodeURIComponent(termo)}`:""}`);
+    const lista=(r?.data||[]).map(v=>({id:v.id,nome:v.nome||v.contato?.nome||`Vendedor ${v.id}`,situacao:v.situacao}));
+    res.json({data:lista});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
 // busca de clientes (nome, cpf/cnpj, telefone) - igual a busca de cliente do Frente de Caixa do Bling
 app.get("/api/pdv/clientes",async(req,res)=>{
   const termo=String(req.query.termo||"").trim();
@@ -1813,7 +1826,15 @@ app.post("/api/pdv/venda", async(req,res)=>{
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
-    let vendedorId=Number(process.env.BLING_VENDEDOR_ID)||null;
+    // vendedor: usa o vendedor Bling vinculado ao funcionário logado no caixa;
+    // se o funcionário não tiver um vendedor configurado, cai pro ID fixo do .env (compatibilidade)
+    let vendedorId=null;
+    if(funcionarioId){
+      const funcs=lerJSON(FUNC_FILE,{});
+      const func=funcs[funcionarioId];
+      if(func?.vendedorBlingId) vendedorId=Number(func.vendedorBlingId);
+    }
+    if(!vendedorId) vendedorId=Number(process.env.BLING_VENDEDOR_ID)||null;
 
     const itensPayload=itens.map(i=>({
       produto:{id:Number(i.produtoId)},
