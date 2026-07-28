@@ -1409,7 +1409,12 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
 app.get("/api/caixa-sessao/atual",(req,res)=>{
   const s=sessaoCaixaAberta(req.query.funcionarioId);
   if(!s) return res.json({aberta:false});
-  res.json({aberta:true,sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,funcionarioId:s.funcionarioId,trocoInicial:s.trocoInicial},resumo:resumoSessaoCaixa(s)});
+  res.json({
+    aberta:true,
+    sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,funcionarioId:s.funcionarioId,trocoInicial:s.trocoInicial},
+    resumo:resumoSessaoCaixa(s),
+    movimentos:(s.movimentos||[]).slice().sort((a,b)=>b.em-a.em),
+  });
 });
 
 // lista todos os caixas abertos agora (de todo mundo) — pra ver quem está com caixa aberto
@@ -1465,7 +1470,11 @@ app.post("/api/caixa-sessao/fechar",(req,res)=>{
   sessao.fechamento={valorContado:contado,esperado:resumo.esperadoGaveta,diferenca,observacao:observacao||"",operador:operador||"—"};
   sessao.resumoFinal=resumo;
   salvarCaixaSessoes(d);
-  res.json({ok:true,resumo,fechamento:sessao.fechamento});
+  res.json({
+    ok:true,resumo,fechamento:sessao.fechamento,
+    sessao:{id:sessao.id,abertaEm:sessao.abertaEm,operador:sessao.operador,trocoInicial:sessao.trocoInicial},
+    movimentos:(sessao.movimentos||[]).slice().sort((a,b)=>b.em-a.em),
+  });
 });
 
 // histórico de sessões já fechadas (traz também os movimentos, pra ver o que foi feito naquele dia)
@@ -1483,7 +1492,12 @@ app.get("/api/caixa-sessao/:id/movimentos",(req,res)=>{
   const d=lerCaixaSessoes();
   const s=(d.sessoes||[]).find(x=>x.id===req.params.id);
   if(!s) return res.status(404).json({erro:"sessão não encontrada"});
-  res.json({sessao:{id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador},movimentos:(s.movimentos||[]).sort((a,b)=>b.em-a.em)});
+  res.json({
+    sessao:{id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,trocoInicial:s.trocoInicial},
+    resumo:s.resumoFinal||resumoSessaoCaixa(s),
+    fechamento:s.fechamento||null,
+    movimentos:(s.movimentos||[]).sort((a,b)=>b.em-a.em),
+  });
 });
 
 // ---------------- LISTA DE FARDO (varejo promocional por fardo) ----------------
@@ -1822,7 +1836,7 @@ app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
 
 app.post("/api/pdv/venda", async(req,res)=>{
   try{
-    const {itens,contatoId,desconto,pagamentos,emitirNfce,funcionarioId}=req.body||{};
+    const {itens,contatoId,clienteNome,desconto,pagamentos,emitirNfce,funcionarioId}=req.body||{};
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -1877,7 +1891,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(sessaoAtual){
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
-          total:totalPedido,
+          total:totalPedido, clienteNome:clienteNome||"",
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
@@ -1896,7 +1910,9 @@ app.post("/api/pdv/venda", async(req,res)=>{
           // transmite/autoriza a nota gerada
           try{
             const enviado=await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
-            nfce={ok:true,idNotaFiscal,detalheEnvio:enviado?.data||null};
+            let linkDanfe=null;
+            try{ const det=await bling(`/nfce/${idNotaFiscal}`); linkDanfe=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
+            nfce={ok:true,idNotaFiscal,linkDanfe,detalheEnvio:enviado?.data||null};
           }catch(e){
             // a nota foi gerada mas não foi transmitida — fica "Pendente" no Bling, pode reenviar depois
             nfce={ok:true,idNotaFiscal,erroEnvio:e.message,detalheEnvio:e.body};

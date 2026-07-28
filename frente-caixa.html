@@ -76,6 +76,8 @@ document.addEventListener("DOMContentLoaded",function(){
   <div class="t">Frente de Caixa</div>
   <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
   <div class="sp"></div>
+  <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
+  <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
   <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(()=>abrirModalMovimento('sangria'))">💸 Sangria</button>
   <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(()=>abrirModalMovimento('suprimento'))">💰 Suprimento</button>
   <button class="btn btn-ghost btn-sm" onclick="pedirAutorizacao(abrirModalHistorico)">📜 Histórico</button>
@@ -101,6 +103,7 @@ let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
 let CONSUMIDOR_FINAL=null; // {id,nome} — cliente padrão quando ninguém é selecionado
 let CLIENTE_SELECIONADO=null; // {id,nome} — se o operador escolher um cliente específico
 let _timerPainelAdicionado=null;
+let ULTIMA_VENDA=null; // guarda a última venda concluída, pra reimprimir o comprovante
 
 async function carregarConsumidorFinal(){
   try{
@@ -208,6 +211,7 @@ function abrirModalFechamento(){
         <input type="text" id="mObs" placeholder="ex: faltou troco de R$ 2" style="width:100%">
         <div id="mErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn btn-ghost btn-sm" onclick="imprimirRelatorioCaixa(CAIXA.sessao,CAIXA.resumo,CAIXA.movimentos,null)">🖨️</button>
           <button class="btn" style="flex:1" onclick="confirmarFechamento()">Fechar caixa</button>
           <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
         </div>
@@ -234,6 +238,7 @@ async function confirmarFechamento(){
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao fechar caixa");
     const f=j.fechamento;
+    window._ultimoFechamento=j;
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="if(event.target===this){fecharModais();carregarCaixa();}">
         <div class="modal" style="text-align:center">
@@ -246,7 +251,10 @@ async function confirmarFechamento(){
               <b style="color:${Math.abs(f.diferenca)<0.01?"#8fffc0":(f.diferenca>0?"#ffd23f":"#ff8090")}">${brl(f.diferenca)}</b>
             </div>
           </div>
-          <button class="btn" style="width:100%" onclick="fecharModais();carregarCaixa()">OK</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(window._ultimoFechamento.sessao,window._ultimoFechamento.resumo,window._ultimoFechamento.movimentos,window._ultimoFechamento.fechamento)">🖨️ Imprimir relatório</button>
+            <button class="btn" style="flex:1" onclick="fecharModais();carregarCaixa()">OK</button>
+          </div>
         </div>
       </div>`;
   }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
@@ -276,7 +284,7 @@ async function abrirModalCaixasAbertos(){
 }
 
 function nomeMovimento(m){
-  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}`;
+  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>`;
   if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
   if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
   return esc(m.tipo);
@@ -287,16 +295,26 @@ async function verMovimentosSessao(id){
   try{
     const j=await fetch(BACKEND+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
     const movs=j.movimentos||[];
+    window._sessaoInspecionada=j;
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal" style="max-width:560px">
           <h3>📋 Movimentos — ${esc(j.sessao?.operador||"")}</h3>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
           ${movs.length?movs.map(m=>`
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
               <div>${nomeMovimento(m)}</div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
-          <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
+          <div class="card" style="background:#1c1846;margin:12px 0">
+            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
+            ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
+            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?"#8fffc0":(j.fechamento.diferenca>0?"#ffd23f":"#ff8090")}">${brl(j.fechamento.diferenca)}</b></div>`:""}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(window._sessaoInspecionada.sessao,window._sessaoInspecionada.resumo,window._sessaoInspecionada.movimentos,window._sessaoInspecionada.fechamento)">🖨️ Imprimir</button>
+            <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Fechar</button>
+          </div>
         </div>
       </div>`;
   }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
@@ -331,6 +349,139 @@ async function abrirModalHistorico(){
 }
 
 function fecharModais(){ document.getElementById("modais").innerHTML=""; }
+
+// ---------------- impressão: comprovante da venda ----------------
+function imprimirComprovante(v){
+  if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
+  const linhas=v.itens.map(i=>`
+    <tr><td>${i.quantidade}x ${esc(i.nome||("Produto "+i.produtoId))}</td><td style="text-align:right">${brl(i.preco*i.quantidade)}</td></tr>`).join("");
+  const pagLinhas=v.pagamentos.map(p=>`<tr><td>${esc(p.formaNome||"—")}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("");
+  const subtotal=v.itens.reduce((s,i)=>s+i.preco*i.quantidade,0);
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante #${esc(v.numero)}</title>
+    <style>
+      body{font-family:monospace;font-size:13px;width:300px;margin:0 auto;padding:10px}
+      table{width:100%;border-collapse:collapse}
+      td{padding:2px 0}
+      h2,h3{text-align:center;margin:6px 0}
+      hr{border:none;border-top:1px dashed #000;margin:8px 0}
+      .tot{font-size:16px;font-weight:bold}
+    </style></head><body>
+    <h2>B13 Bebidas</h2>
+    <div style="text-align:center">Comprovante de venda</div>
+    <hr>
+    <div>Venda: #${esc(v.numero)}</div>
+    <div>Data: ${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
+    <div>Cliente: ${esc(v.cliente?.nome||"Consumidor Final")}</div>
+    <hr>
+    <table>${linhas}</table>
+    <hr>
+    <table>
+      <tr><td>Subtotal</td><td style="text-align:right">${brl(subtotal)}</td></tr>
+      ${v.desconto?`<tr><td>Desconto</td><td style="text-align:right">- ${brl(v.desconto)}</td></tr>`:""}
+      <tr class="tot"><td>Total</td><td style="text-align:right">${brl(v.total)}</td></tr>
+    </table>
+    <hr>
+    <table>${pagLinhas}</table>
+    ${v.nfce?.idNotaFiscal?`<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
+    <hr>
+    <div style="text-align:center">Obrigado pela preferência!</div>
+    <script>window.onload=()=>window.print();</script>
+    </body></html>`;
+  const w=window.open("","_blank","width=380,height=600");
+  w.document.write(html); w.document.close();
+}
+
+// ---------------- relatório de acompanhamento/fechamento de caixa (imprimível) ----------------
+function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
+  const vendas=(movimentos||[]).filter(m=>m.tipo==="venda");
+  const outros=(movimentos||[]).filter(m=>m.tipo!=="venda");
+  const linhasVendas=vendas.map(m=>`
+    <tr>
+      <td>${hora(m.em)}</td>
+      <td>#${esc(m.numero||m.pedidoId)}</td>
+      <td>${esc(m.clienteNome||"—")}</td>
+      <td>${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join("<br>")}</td>
+      <td style="text-align:right">${brl(m.total)}</td>
+    </tr>`).join("");
+  const linhasOutros=outros.map(m=>`
+    <tr>
+      <td>${hora(m.em)}</td>
+      <td colspan="3">${m.tipo==="sangria"?"💸 Sangria":"💰 Suprimento"}${m.motivo?" — "+esc(m.motivo):""}</td>
+      <td style="text-align:right">${brl(m.valor)}</td>
+    </tr>`).join("");
+  const linhasForma=(resumo.porForma||[]).map(f=>`
+    <tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("");
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:13px;max-width:700px;margin:0 auto;padding:16px;color:#000}
+      table{width:100%;border-collapse:collapse;margin-bottom:14px}
+      th,td{padding:4px 6px;border-bottom:1px solid #ccc;text-align:left}
+      h2,h3{margin:6px 0}
+      .tot{font-size:15px;font-weight:bold}
+      .sec{margin-top:18px}
+    </style></head><body>
+    <h2>B13 Bebidas — Relatório de Caixa</h2>
+    <div>Operador: <b>${esc(sessao.operador||"—")}</b></div>
+    <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento?" · Fechado em: "+hora(sessao.fechadaEm||Date.now()):" · (em andamento)"}</div>
+    <div>Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
+
+    <div class="sec"><h3>Vendas (${vendas.length})</h3>
+    <table><tr><th>Hora</th><th>Nº</th><th>Cliente</th><th>Pagamento</th><th>Total</th></tr>${linhasVendas||"<tr><td colspan=5>Nenhuma venda</td></tr>"}</table></div>
+
+    <div class="sec"><h3>Sangrias / Suprimentos</h3>
+    <table>${linhasOutros||"<tr><td>Nenhum movimento</td></tr>"}</table></div>
+
+    <div class="sec"><h3>Totais por forma de pagamento</h3>
+    <table>${linhasForma}</table></div>
+
+    <div class="sec"><h3>Resumo</h3>
+    <table>
+      <tr><td>Troco inicial</td><td style="text-align:right">${brl(resumo.trocoInicial)}</td></tr>
+      <tr><td>Vendas em dinheiro</td><td style="text-align:right">${brl(resumo.vendasDinheiro)}</td></tr>
+      <tr><td>+ Suprimentos</td><td style="text-align:right">${brl(resumo.totalSuprimentos)}</td></tr>
+      <tr><td>− Sangrias</td><td style="text-align:right">${brl(resumo.totalSangrias)}</td></tr>
+      <tr class="tot"><td>Esperado na gaveta</td><td style="text-align:right">${brl(resumo.esperadoGaveta)}</td></tr>
+      ${fechamento?`
+      <tr><td>Valor contado</td><td style="text-align:right">${brl(fechamento.valorContado)}</td></tr>
+      <tr class="tot"><td>Diferença</td><td style="text-align:right">${brl(fechamento.diferenca)}</td></tr>
+      ${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
+      <tr><td>Total geral de vendas</td><td style="text-align:right">${brl(resumo.totalVendas)}</td></tr>
+    </table></div>
+    <script>window.onload=()=>window.print();</script>
+    </body></html>`;
+  return html;
+}
+function imprimirRelatorioCaixa(sessao,resumo,movimentos,fechamento){
+  const w=window.open("","_blank","width=800,height=900");
+  w.document.write(gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento)); w.document.close();
+}
+
+// ---------------- Minhas Vendas (o operador vê as próprias vendas da sessão, sem precisar de autorização) ----------------
+function abrirModalMinhasVendas(){
+  if(!CAIXA.aberta){ alert("Abra o caixa pra ver suas vendas."); return; }
+  const vendas=(CAIXA.movimentos||[]).filter(m=>m.tipo==="venda");
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal" style="max-width:560px">
+        <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
+        <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
+        ${vendas.length?vendas.map(m=>`
+          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
+            <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+            ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
+            <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+          </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
+        <div class="card" style="background:#1c1846;margin:12px 0">
+          ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
+          <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl(CAIXA.resumo?.totalVendas)}</b></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(CAIXA.sessao,CAIXA.resumo,CAIXA.movimentos,null)">🖨️ Imprimir</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Fechar</button>
+        </div>
+      </div>
+    </div>`;
+}
 
 // ---------------- formas de pagamento ----------------
 async function carregarFormas(){
@@ -425,7 +576,6 @@ async function confirmarCpfNota(){
 
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
 function mostrarPainelAdicionado(item){
-  clearTimeout(_timerPainelAdicionado);
   const box=document.getElementById("painelAdicionado");
   if(!box) return;
   box.innerHTML=`
@@ -436,7 +586,10 @@ function mostrarPainelAdicionado(item){
         <div style="font-size:24px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(item.preco)}</div>
       </div>
     </div>`;
-  _timerPainelAdicionado=setTimeout(()=>{ const b=document.getElementById("painelAdicionado"); if(b) b.innerHTML=""; },3000);
+}
+function limparPainelAdicionado(){
+  const box=document.getElementById("painelAdicionado");
+  if(box) box.innerHTML="";
 }
 
 function ligarBusca(){
@@ -660,7 +813,7 @@ function autorizarDesconto(){
 }
 function limparCarrinho(){
   if(!CARRINHO.length) return;
-  pedirAutorizacao(()=>{ CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; render(); },"Cancelar a venda e limpar o carrinho exige autorização.");
+  pedirAutorizacao(()=>{ CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; limparPainelAdicionado(); render(); },"Cancelar a venda e limpar o carrinho exige autorização.");
 }
 
 // ---------------- render ----------------
@@ -794,10 +947,13 @@ async function finalizarVenda(){
   const msg=document.getElementById("msgFinalizar");
   const btn=document.getElementById("btnFinalizar");
   msg.innerHTML=""; btn.disabled=true; btn.textContent="Processando…";
+  const clienteFinal=(CLIENTE_SELECIONADO||CONSUMIDOR_FINAL)||null;
+  const itensVenda=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco}));
+  const descontoVenda=descontoAtual();
   try{
     const body={
-      itens:CARRINHO.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
-      desconto:descontoAtual(),
+      itens:itensVenda.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
+      desconto:descontoVenda,
       pagamentos:(()=>{
         const total=totalPedido();
         const naoDinheiro=PAGAMENTOS.filter(p=>p.formaId&&!(p.formaNome||"").toLowerCase().includes("dinheiro"));
@@ -811,16 +967,26 @@ async function finalizarVenda(){
       })(),
       emitirNfce:document.getElementById("emitirNfce").checked,
       funcionarioId:funcionarioIdAtual(),
-      contatoId:(CLIENTE_SELECIONADO||CONSUMIDOR_FINAL)?.id||null,
+      contatoId:clienteFinal?.id||null,
+      clienteNome:clienteFinal?.nome||"",
     };
     const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
+    ULTIMA_VENDA={
+      numero:j.numero||j.pedidoId, pedidoId:j.pedidoId, total:j.total, desconto:descontoVenda,
+      itens:itensVenda, pagamentos:body.pagamentos, cliente:clienteFinal, nfce:j.nfce, dataHora:Date.now(),
+    };
     CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; CLIENTE_SELECIONADO=null;
+    limparPainelAdicionado();
     await carregarCaixa();
     const m=document.getElementById("msgFinalizar");
     if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
-      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?.erroEnvio?`<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>`:(j.nfce?"<br>NFCe emitida":""))}</div>`;
+      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?.erroEnvio?`<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>`:(j.nfce?"<br>NFCe emitida":""))}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
+        ${j.nfce?.linkDanfe?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="window.open('${esc(j.nfce.linkDanfe)}','_blank')">🧾 Imprimir NFCe</button>`:""}
+      </div></div>`;
   }catch(e){
     render();
     const m=document.getElementById("msgFinalizar");
