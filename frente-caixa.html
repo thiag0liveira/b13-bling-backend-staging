@@ -18,8 +18,9 @@
   .btn:disabled{opacity:.4;cursor:not-allowed}
   .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
   .btn-sm{padding:7px 12px;font-size:12px}
-  .wrap{max-width:1180px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
-  @media(max-width:900px){ .wrap{grid-template-columns:1fr} }
+  .wrap{max-width:1380px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 1.05fr 0.75fr;gap:16px}
+  @media(max-width:1100px){ .wrap{grid-template-columns:1fr 1fr} }
+  @media(max-width:700px){ .wrap{grid-template-columns:1fr} }
   .card{background:#181542;border-radius:14px;padding:16px;margin-bottom:14px}
   .card h3{font-size:15px;margin-bottom:10px}
   .busca{width:100%;padding:14px;font-size:16px;background:#0f0d24;border:2px solid #514c96;border-radius:10px;color:#fff}
@@ -587,6 +588,11 @@ async function confirmarCpfNota(){
 
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
 let ULTIMO_ITEM_PAINEL=null; // sobrevive a re-renders da tela, até trocar de item ou limpar
+function htmlLogoGrande(){
+  return `<div style="display:flex;align-items:center;justify-content:center;min-height:126px">
+    <img src="/logo" style="max-height:100px;max-width:80%;object-fit:contain" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:20px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'">
+  </div>`;
+}
 function htmlPainelAdicionado(item){
   return `<div class="card" style="display:flex;align-items:center;gap:18px;border:2px solid var(--mag,#FF0082);background:#241a4d">
       ${item.imagem?`<img src="${esc(item.imagem)}" style="width:90px;height:90px;object-fit:contain;background:#fff;border-radius:10px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:90px;height:90px;background:#241f52;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0">📦</div>`}
@@ -604,7 +610,7 @@ function mostrarPainelAdicionado(item){
 function limparPainelAdicionado(){
   ULTIMO_ITEM_PAINEL=null;
   const box=document.getElementById("painelAdicionado");
-  if(box) box.innerHTML="";
+  if(box) box.innerHTML=htmlLogoGrande();
 }
 
 function ligarBusca(){
@@ -871,24 +877,12 @@ function render(){
   const clienteAtual=CLIENTE_SELECIONADO||CONSUMIDOR_FINAL;
   cont.innerHTML=`<div class="wrap">
     <div>
-      <div class="card">
-        <div class="muted" style="margin-bottom:6px">👤 Cliente</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="flex:1;font-weight:800">${clienteAtual?esc(clienteAtual.nome):"Consumidor Final"}</span>
-          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`
-            <button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>
-            <button class="btn btn-ghost btn-sm" onclick="abrirCpfNota()">🧾 CPF na nota</button>
-          `}
-        </div>
-        <div id="buscaClienteBox"></div>
-        <div id="cpfNotaBox"></div>
-      </div>
+      <div id="painelAdicionado" style="min-height:126px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):htmlLogoGrande()}</div>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
         <div id="resBusca" class="res"></div>
       </div>
-      <div id="painelAdicionado" style="min-height:126px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):""}</div>
       <div class="card">
         <div style="display:flex;align-items:center;margin-bottom:8px">
           <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>
@@ -907,22 +901,22 @@ function render(){
             <button class="rm" onclick="removerItem(${ix})">🗑</button>
           </div>`).join(""):'<div class="muted">Nenhum item ainda.</div>'}</div>
       </div>
-      <div class="card">
-        <h3>📊 Resumo do caixa</h3>
-        <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
-        <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
-        <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
-        <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
-        <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">
-          <span><b>Esperado na gaveta</b></span><b style="color:#ffd23f">${brl(r.esperadoGaveta)}</b></div>
-        ${(r.porForma||[]).length?`<div style="margin-top:10px">
-          <div class="muted" style="margin-bottom:4px">Por forma de pagamento</div>
-          ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-        </div>`:""}
-      </div>
     </div>
 
     <div>
+      <div class="card">
+        <div class="muted" style="margin-bottom:6px">👤 Cliente</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="flex:1;font-weight:800">${clienteAtual?esc(clienteAtual.nome):"Consumidor Final"}</span>
+          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`
+            <button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>
+            <button class="btn btn-ghost btn-sm" onclick="abrirCpfNota()">🧾 CPF na nota</button>
+          `}
+        </div>
+        <div id="buscaClienteBox"></div>
+        <div id="cpfNotaBox"></div>
+      </div>
+
       <div class="card">
         <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
         <div class="linha"><span>Desconto (R$)</span>
@@ -963,6 +957,22 @@ function render(){
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
           ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
           onclick="finalizarVenda()">✅ Finalizar Venda</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h3>📊 Resumo do caixa</h3>
+        <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+        <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
+        <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
+        <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">
+          <span><b>Esperado na gaveta</b></span><b style="color:#ffd23f">${brl(r.esperadoGaveta)}</b></div>
+        ${(r.porForma||[]).length?`<div style="margin-top:10px">
+          <div class="muted" style="margin-bottom:4px">Por forma de pagamento</div>
+          ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        </div>`:""}
       </div>
     </div>
   </div>`;
