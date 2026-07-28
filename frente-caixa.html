@@ -385,7 +385,7 @@ function imprimirComprovante(v){
     ${v.nfce?.idNotaFiscal?`<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
     <hr>
     <div style="text-align:center">Obrigado pela preferência!</div>
-    <script>window.onload=()=>window.print();</script>
+    <script>window.onload=()=>window.print();<\/script>
     </body></html>`;
   const w=window.open("","_blank","width=380,height=600");
   w.document.write(html); w.document.close();
@@ -447,7 +447,7 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
       ${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
       <tr><td>Total geral de vendas</td><td style="text-align:right">${brl(resumo.totalVendas)}</td></tr>
     </table></div>
-    <script>window.onload=()=>window.print();</script>
+    <script>window.onload=()=>window.print();<\/script>
     </body></html>`;
   return html;
 }
