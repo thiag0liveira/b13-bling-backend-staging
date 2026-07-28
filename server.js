@@ -1891,7 +1891,8 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(sessaoAtual){
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
-          total:totalPedido, clienteNome:clienteNome||"",
+          total:totalPedido, clienteNome:clienteNome||"", desconto:totalDesconto,
+          itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);

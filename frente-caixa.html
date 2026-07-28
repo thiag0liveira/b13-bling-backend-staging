@@ -351,6 +351,14 @@ async function abrirModalHistorico(){
 function fecharModais(){ document.getElementById("modais").innerHTML=""; }
 
 // ---------------- impressão: comprovante da venda ----------------
+// converte um movimento de venda (vindo do backend) pro formato que imprimirComprovante espera
+function movimentoParaComprovante(m){
+  return {
+    numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
+    itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
+    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null,
+  };
+}
 function imprimirComprovante(v){
   if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
   const linhas=v.itens.map(i=>`
@@ -466,10 +474,13 @@ function abrirModalMinhasVendas(){
         <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
         <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
         ${vendas.length?vendas.map(m=>`
-          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
-            <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
-            ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
-            <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1">
+              <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+              ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
+              <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
           </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
         <div class="card" style="background:#1c1846;margin:12px 0">
           ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
@@ -956,7 +967,7 @@ async function finalizarVenda(){
   const descontoVenda=descontoAtual();
   try{
     const body={
-      itens:itensVenda.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.preco})),
+      itens:itensVenda.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.preco})),
       desconto:descontoVenda,
       pagamentos:(()=>{
         const total=totalPedido();
