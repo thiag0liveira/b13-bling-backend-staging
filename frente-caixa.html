@@ -788,15 +788,14 @@ function removerItem(ix){
 let DESCONTO_DESBLOQUEADO=false;
 function pedirAutorizacao(aoAutorizar,mensagemExtra){
   window._aoAutorizarCallback=aoAutorizar;
-  const dia=String(new Date().getDate()).padStart(2,"0");
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔒 Autorização necessária</h3>
         <p class="muted" style="margin-bottom:12px">${mensagemExtra?esc(mensagemExtra):"Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
-        <div class="muted" style="margin-bottom:4px">ID <span style="color:#9a95c9">(dia de hoje "${dia}" + código do funcionário. Ex: código T01 → digite ${dia}T01)</span></div>
+        <div class="muted" style="margin-bottom:4px">ID</div>
         <input type="password" id="autId" style="width:100%;font-size:18px;letter-spacing:2px" autofocus autocomplete="off">
-        <div class="muted" style="margin:10px 0 4px">Senha <span style="color:#9a95c9">(PIN do funcionário + dia de hoje "${dia}". Ex: PIN 1234 → digite 1234${dia})</span></div>
+        <div class="muted" style="margin:10px 0 4px">Senha</div>
         <input type="password" id="autSenha" style="width:100%;font-size:18px;letter-spacing:2px" autocomplete="off" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
         <div id="autErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">

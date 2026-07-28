@@ -65,6 +65,7 @@
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
 const NIVEIS={admin:"Admin",gerente:"Gerente",lider_caixa:"Líder de Caixa",expedicao:"Expedição",financeiro_atacado:"Financeiro",vendedor:"Vendedor",conferente:"Conferente"};
+const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"]; // grupos que conseguem autorizar ações no Frente de Caixa
 let logado=false, funcs=[], msg="";
 try{ const sess=typeof b13GetSession==="function"?b13GetSession():null; if(sess&&(sess.nivel==="admin"||(sess.permissoes||[]).includes("admin"))) logado=true; }catch(e){}
 
@@ -251,6 +252,12 @@ function abrirEditar(id){
       ${!f.codigoConfirmacao?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-left:8px" onclick="gerarCodigo('${id}')">🔄 Gerar código</button>`:""}
       <div class="lbl" style="margin-top:8px">PIN de confirmação ${f.temPin?"(já configurado — deixe em branco pra manter)":"(ainda não configurado)"}</div>
       <input id="fPin" type="password" placeholder="PIN de confirmação" style="width:100%">
+      ${perms.some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))?`
+      <div class="muted" style="margin-top:8px;font-size:12px;background:#1c1846;border-radius:6px;padding:8px">
+        Esse funcionário pode autorizar ações no Frente de Caixa. Pra autorizar, ele digita:<br>
+        <b>ID</b>: dia de hoje + código (ex: código ${esc(f.codigoConfirmacao||"T01")} no dia 27 → <code>27${esc(f.codigoConfirmacao||"T01")}</code>)<br>
+        <b>Senha</b>: PIN + dia de hoje (ex: PIN 1234 no dia 27 → <code>123427</code>)
+      </div>`:""}
     </div>
     <div id="fMsg"></div>
     <div style="display:flex;gap:8px">
