@@ -575,11 +575,9 @@ async function confirmarCpfNota(){
 }
 
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
-function mostrarPainelAdicionado(item){
-  const box=document.getElementById("painelAdicionado");
-  if(!box) return;
-  box.innerHTML=`
-    <div class="card" style="display:flex;align-items:center;gap:18px;border:2px solid var(--mag,#FF0082);background:#241a4d">
+let ULTIMO_ITEM_PAINEL=null; // sobrevive a re-renders da tela, até trocar de item ou limpar
+function htmlPainelAdicionado(item){
+  return `<div class="card" style="display:flex;align-items:center;gap:18px;border:2px solid var(--mag,#FF0082);background:#241a4d">
       ${item.imagem?`<img src="${esc(item.imagem)}" style="width:90px;height:90px;object-fit:contain;background:#fff;border-radius:10px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:90px;height:90px;background:#241f52;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0">📦</div>`}
       <div style="flex:1">
         <div style="font-size:18px;font-weight:900">${esc(item.nome)}</div>
@@ -587,7 +585,13 @@ function mostrarPainelAdicionado(item){
       </div>
     </div>`;
 }
+function mostrarPainelAdicionado(item){
+  ULTIMO_ITEM_PAINEL=item;
+  const box=document.getElementById("painelAdicionado");
+  if(box) box.innerHTML=htmlPainelAdicionado(item);
+}
 function limparPainelAdicionado(){
+  ULTIMO_ITEM_PAINEL=null;
   const box=document.getElementById("painelAdicionado");
   if(box) box.innerHTML="";
 }
@@ -862,7 +866,7 @@ function render(){
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
         <div id="resBusca" class="res"></div>
       </div>
-      <div id="painelAdicionado" style="min-height:126px"></div>
+      <div id="painelAdicionado" style="min-height:126px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):""}</div>
       <div class="card">
         <div style="display:flex;align-items:center;margin-bottom:8px">
           <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>
