@@ -18,7 +18,7 @@
   .btn:disabled{opacity:.4;cursor:not-allowed}
   .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
   .btn-sm{padding:7px 12px;font-size:12px}
-  .wrap{max-width:1380px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 1.05fr 0.75fr;gap:16px}
+  .wrap{max-width:1380px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
   @media(max-width:1100px){ .wrap{grid-template-columns:1fr 1fr} }
   @media(max-width:700px){ .wrap{grid-template-columns:1fr} }
   .card{background:#181542;border-radius:14px;padding:16px;margin-bottom:14px}
@@ -589,16 +589,16 @@ async function confirmarCpfNota(){
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
 let ULTIMO_ITEM_PAINEL=null; // sobrevive a re-renders da tela, até trocar de item ou limpar
 function htmlLogoGrande(){
-  return `<div style="display:flex;align-items:center;justify-content:center;min-height:126px">
-    <img src="/logo" style="max-height:100px;max-width:80%;object-fit:contain" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:20px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'">
+  return `<div style="display:flex;align-items:center;justify-content:center;min-height:400px">
+    <img src="/logo" style="max-height:320px;max-width:90%;object-fit:contain" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:48px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'">
   </div>`;
 }
 function htmlPainelAdicionado(item){
-  return `<div class="card" style="display:flex;align-items:center;gap:18px;border:2px solid var(--mag,#FF0082);background:#241a4d">
-      ${item.imagem?`<img src="${esc(item.imagem)}" style="width:90px;height:90px;object-fit:contain;background:#fff;border-radius:10px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:90px;height:90px;background:#241f52;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0">📦</div>`}
+  return `<div class="card" style="display:flex;align-items:center;gap:28px;border:2px solid var(--mag,#FF0082);background:#241a4d;min-height:400px">
+      ${item.imagem?`<img src="${esc(item.imagem)}" style="width:280px;height:280px;object-fit:contain;background:#fff;border-radius:14px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:280px;height:280px;background:#241f52;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:100px;flex-shrink:0">📦</div>`}
       <div style="flex:1">
-        <div style="font-size:18px;font-weight:900">${esc(item.nome)}</div>
-        <div style="font-size:24px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(item.preco)}</div>
+        <div style="font-size:32px;font-weight:900">${esc(item.nome)}</div>
+        <div style="font-size:44px;font-weight:900;color:#ffd23f;margin-top:10px">${brl(item.preco)}</div>
       </div>
     </div>`;
 }
@@ -877,7 +877,7 @@ function render(){
   const clienteAtual=CLIENTE_SELECIONADO||CONSUMIDOR_FINAL;
   cont.innerHTML=`<div class="wrap">
     <div>
-      <div id="painelAdicionado" style="min-height:126px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):htmlLogoGrande()}</div>
+      <div id="painelAdicionado" style="min-height:400px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):htmlLogoGrande()}</div>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
@@ -918,17 +918,6 @@ function render(){
       </div>
 
       <div class="card">
-        <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
-        <div class="linha"><span>Desconto (R$)</span>
-          <div style="display:flex;gap:6px;align-items:center">
-            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} oninput="render()">
-            ${DESCONTO_DESBLOQUEADO?"":`<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
-          </div></div>
-        <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
-          <span>Total</span><span class="total">${brl(totalPedido())}</span></div>
-      </div>
-
-      <div class="card">
         <h3>💳 Pagamento</h3>
         <div class="formas">${FORMAS.map(f=>{
           const nome=f.descricao||f.nome||("Forma "+f.id);
@@ -961,6 +950,16 @@ function render(){
     </div>
 
     <div>
+      <div class="card">
+        <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
+        <div class="linha"><span>Desconto (R$)</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} oninput="render()">
+            ${DESCONTO_DESBLOQUEADO?"":`<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
+          </div></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
+          <span>Total</span><span class="total">${brl(totalPedido())}</span></div>
+      </div>
       <div class="card">
         <h3>📊 Resumo do caixa</h3>
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
