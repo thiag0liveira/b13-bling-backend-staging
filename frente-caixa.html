@@ -677,13 +677,22 @@ async function selecionarResultado(ix){
   const b=document.getElementById("busca"); if(b){ b.value=""; b.focus(); }
 }
 
-async function adicionarAoCarrinho(p){
+// serializa as chamadas (evita duas leituras rápidas do mesmo produto criarem 2 linhas
+// em vez de somar a quantidade, já que a checagem de estoque é assíncrona)
+let _filaAdicionar=Promise.resolve();
+function adicionarAoCarrinho(p){
+  const proxima=_filaAdicionar.then(()=>_adicionarAoCarrinhoInterno(p));
+  _filaAdicionar=proxima.catch(()=>{});
+  return proxima;
+}
+async function _adicionarAoCarrinhoInterno(p){
   if(!(Number(p.preco)>0)){
     alert("Esse produto não tem preço confirmado. Não é permitido adicionar sem preço.");
     return;
   }
-  const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
-  const qtdDesejada=ex?ex.quantidade+1:1;
+  p.produtoId=Number(p.produtoId);
+  const exAntes=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
+  const qtdDesejada=(exAntes?exAntes.quantidade:0)+1;
   // confere o estoque ao vivo antes de adicionar/aumentar
   let estoqueAtual=0;
   try{ estoqueAtual=(await fetch(BACKEND+"/api/pdv/estoque/"+p.produtoId).then(r=>r.json())).estoque||0; }catch(e){}
@@ -691,7 +700,10 @@ async function adicionarAoCarrinho(p){
     pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual);
     return;
   }
-  efetivarAdicao(p,ex,qtdDesejada,estoqueAtual);
+  // reconfere o carrinho aqui (depois do await), caso outra adição do MESMO produto
+  // já tenha rodado enquanto esse fetch estava em andamento
+  const ex=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
+  efetivarAdicao(p,ex,ex?ex.quantidade+1:1,estoqueAtual);
 }
 
 function efetivarAdicao(p,ex,qtdDesejada,estoqueAtual){
