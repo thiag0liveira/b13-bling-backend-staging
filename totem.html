@@ -100,6 +100,44 @@
     #tabelaGrid{grid-template-columns:1fr !important}
     #tabelaGrid > div{border-right:none !important}
   }
+
+  /* ==================== MODO TOTEM (monitor vertical de 27") ====================
+     Ativado via classe .totem no <html>, definida por JS quando a tela é alta/estreita
+     (portrait, largura típica ~1080-1200px). Aumenta tudo pra facilitar o toque. */
+  html.totem body{font-size:18px}
+  html.totem #app{max-width:1040px}
+  html.totem .top{padding:22px 20px}
+  html.totem .top img{height:64px}
+  html.totem .top .t{font-size:26px}
+  html.totem .cartbtn{padding:16px 22px;font-size:19px;border-radius:16px}
+  html.totem .cartbtn .cnt{min-width:28px;height:28px;font-size:14px;top:-10px;right:-10px}
+  html.totem .btn{font-size:20px;padding:20px 24px;border-radius:16px}
+  html.totem .big{font-size:24px;padding:24px}
+  html.totem input{font-size:20px;padding:20px;border-radius:16px;margin:10px 0}
+  html.totem .searchbar{padding:14px 20px;top:94px}
+  html.totem .searchbar input{font-size:20px}
+  html.totem .clr{font-size:20px;padding:0 22px}
+  html.totem .cats{padding:12px 20px;top:184px;gap:12px}
+  html.totem .cat{font-size:18px;padding:14px 20px}
+  html.totem .side{width:280px}
+  html.totem .side .scat{font-size:18px;padding:16px 18px}
+  html.totem .grid{grid-template-columns:1fr 1fr !important;gap:16px}
+  html.totem .card{padding:18px;border-radius:18px}
+  html.totem .pimg{height:150px}
+  html.totem .card .nm{font-size:20px}
+  html.totem .card .pr{font-size:19px}
+  html.totem .card .cx,html.totem .card .obs,html.totem .card .est{font-size:15px}
+  html.totem .addrow .btn{font-size:18px;padding:16px}
+  html.totem .step button{width:64px;height:64px;font-size:28px}
+  html.totem .step .q{font-size:20px;min-width:90px}
+  html.totem .flav{padding:14px 16px;font-size:17px}
+  html.totem .flav button{padding:12px 18px;font-size:17px}
+  html.totem .line{padding:18px;font-size:17px}
+  html.totem .radio label{padding:22px;font-size:19px}
+  html.totem .chk{font-size:18px}
+  html.totem .chk input{width:28px;height:28px}
+  html.totem h1{font-size:36px}
+  html.totem .sub{font-size:19px}
 </style>
 </head>
 <body>
@@ -110,6 +148,9 @@ const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-back
 const LOGO="/logo";
 const WHATS="5531999719888";
 const MIN_ID=100, MIN_ANON=600;
+
+// esta página passou a ser exclusiva do totem físico (monitor vertical 27") — aumenta tudo pro toque
+document.documentElement.classList.add("totem");
 
 let CAT=null, META={}, ERRO=null;
 let S = novoEstado();
@@ -389,7 +430,7 @@ function telaInicio(app){
     <img src="${LOGO}" style="height:70px;margin-bottom:10px">
     <h1>Bem-vindo!</h1>
     <div class="sub">Para começar seu pedido no atacado, identifique-se com CPF ou CNPJ.</div>
-    <input id="docInput" inputmode="numeric" placeholder="Digite seu CPF ou CNPJ" value="${S.doc}" oninput="S.doc=this.value">
+    <input autocomplete="off" id="docInput" inputmode="numeric" placeholder="Digite seu CPF ou CNPJ" value="${S.doc}" oninput="S.doc=this.value">
     <button class="btn btn-mag big" onclick="identificar()">Continuar</button>
     <button class="btn btn-ghost big" onclick="semIdentificacao()">Continuar sem identificação</button>
     <div style="margin:16px 0;border-top:1px solid #2c2660;padding-top:16px">
@@ -559,7 +600,7 @@ function telaCatalogo(app){
 
   const boasVindas = ""; // removido — cardCliente() já mostra essa info
   app.innerHTML=header(true)+ boasVindas +
-    `<div class="searchbar"><input placeholder="🔎 Buscar produto (ex.: heineken, gin, coca)" value="${esc(S.busca)}" oninput="S.busca=this.value;S.expandido=null;render()">${S.busca?`<button class="clr" onclick="S.busca='';render()">✕</button>`:""}</div>
+    `<div class="searchbar"><input autocomplete="off" placeholder="🔎 Buscar produto (ex.: heineken, gin, coca)" value="${esc(S.busca)}" oninput="S.busca=this.value;S.expandido=null;render()">${S.busca?`<button class="clr" onclick="S.busca='';render()">✕</button>`:""}</div>
      <div class="cats">${cats}</div>
      <div class="wrap"><div class="layout">
        <div class="side">${side}</div>
@@ -656,7 +697,7 @@ function telaCheckout(app){
     <div class="muted">Subtotal: <b style="color:#ffd23f">${brl(subtotal())}</b></div>
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
-    <input placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
+    <input autocomplete="off" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
     ${cardCliente()}
     ${S.docChecado
       ? (S.docNome
@@ -677,13 +718,13 @@ function telaCheckout(app){
         </div>`:''}
         ${S.docNome
           ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">${esc(S.nome)}</div>`
-          : `<input placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value" style="${!temNome?'border-color:#ffd23f':''}">`
+          : `<input autocomplete="off" placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value" style="${!temNome?'border-color:#ffd23f':''}">`
         }
         ${S.docNome&&temFone
           ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">📱 ${esc(maskFone(S.telefone))}</div>`
-          : `<input placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value" style="${!temFone?'border-color:#ffd23f':''}">`
+          : `<input autocomplete="off" placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value" style="${!temFone?'border-color:#ffd23f':''}">`
         }
-        ${novo?`<input placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:''}
+        ${novo?`<input autocomplete="off" placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:''}
       `;
     })()}
     ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo,S.docNome&&!!S.end.rua.trim()):""}
@@ -714,17 +755,17 @@ function blocoEndereco(novo,bloqueado){
     <div style="font-size:11px;color:#514c96">Endereço completo do cadastro será usado na entrega — não editável aqui. Pra corrigir, procure um atendente.</div>`;
   }
   return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
-    <input placeholder="CEP*" inputmode="numeric" value="${esc(e.cep)}" oninput="S.end.cep=this.value" onblur="buscarCep()">
+    <input autocomplete="off" placeholder="CEP*" inputmode="numeric" value="${esc(e.cep)}" oninput="S.end.cep=this.value" onblur="buscarCep()">
     ${S.cepMsg?`<div class="muted">${esc(S.cepMsg)}</div>`:""}
-    <input placeholder="Rua / logradouro*" value="${esc(e.rua)}" oninput="S.end.rua=this.value">
+    <input autocomplete="off" placeholder="Rua / logradouro*" value="${esc(e.rua)}" oninput="S.end.rua=this.value">
     <div style="display:flex;gap:8px">
-      <input placeholder="Número*" style="flex:1" value="${esc(e.numero)}" oninput="S.end.numero=this.value">
-      <input placeholder="Complemento" style="flex:1" value="${esc(e.complemento)}" oninput="S.end.complemento=this.value">
+      <input autocomplete="off" placeholder="Número*" style="flex:1" value="${esc(e.numero)}" oninput="S.end.numero=this.value">
+      <input autocomplete="off" placeholder="Complemento" style="flex:1" value="${esc(e.complemento)}" oninput="S.end.complemento=this.value">
     </div>
-    <input placeholder="Bairro*" value="${esc(e.bairro)}" oninput="S.end.bairro=this.value">
+    <input autocomplete="off" placeholder="Bairro*" value="${esc(e.bairro)}" oninput="S.end.bairro=this.value">
     <div style="display:flex;gap:8px">
-      <input placeholder="Cidade*" style="flex:2" value="${esc(e.cidade)}" oninput="S.end.cidade=this.value">
-      <input placeholder="UF*" style="flex:1" maxlength="2" value="${esc(e.uf)}" oninput="S.end.uf=this.value.toUpperCase()">
+      <input autocomplete="off" placeholder="Cidade*" style="flex:2" value="${esc(e.cidade)}" oninput="S.end.cidade=this.value">
+      <input autocomplete="off" placeholder="UF*" style="flex:1" maxlength="2" value="${esc(e.uf)}" oninput="S.end.uf=this.value.toUpperCase()">
     </div>`;
 }
 function blocoFrete(){
