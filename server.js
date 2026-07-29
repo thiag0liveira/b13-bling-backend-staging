@@ -2444,8 +2444,8 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
 
-app.get("/pedir", (req, res) => res.sendFile(path.join(__dirname, "totem.html")));
-app.get("/pedir-online", (req, res) => res.sendFile(path.join(__dirname, "pedir-online.html")));
+app.get("/pedir", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "totem.html")); });
+app.get("/pedir-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-online.html")); });
 app.get("/ofertas", (req, res) => res.sendFile(path.join(__dirname, "ofertas.html")));
 app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-tabela.html")));
 app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
