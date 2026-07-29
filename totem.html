@@ -429,17 +429,27 @@ function agendarProximoSlideSplash(){
 }
 
 function avancarSlideSplash(){
-  const els=document.querySelectorAll(".slideCard");
-  if(!els.length) return;
-  const atualEl=els[_splashAtual];
-  const videoSaindo=atualEl.querySelector("video");
-  if(videoSaindo){ try{ videoSaindo.pause(); }catch(e){} }
-  const prox=(_splashAtual+1)%els.length;
-  atualEl.style.opacity=0;
-  els[prox].style.opacity=1;
-  _splashAtual=prox;
-  tocarSlideAtual();
-  agendarProximoSlideSplash();
+  try{
+    const els=document.querySelectorAll(".slideCard");
+    if(!els.length) return;
+    // se o índice guardado não bate mais com a quantidade atual de slides
+    // (ex: recarregou os posts do Instagram no meio do caminho), volta pro 0 em vez de travar
+    if(_splashAtual>=els.length) _splashAtual=0;
+    const atualEl=els[_splashAtual];
+    const videoSaindo=atualEl?.querySelector("video");
+    if(videoSaindo){ try{ videoSaindo.pause(); }catch(e){} }
+    const prox=(_splashAtual+1)%els.length;
+    if(atualEl) atualEl.style.opacity=0;
+    if(els[prox]) els[prox].style.opacity=1;
+    _splashAtual=prox;
+    tocarSlideAtual();
+  }catch(e){
+    console.error("Erro no carrossel do splash (ignorado, seguindo em frente):",e);
+  }finally{
+    // sempre reagenda a próxima troca, mesmo se algo acima der errado —
+    // assim o carrossel nunca fica travado pra sempre numa única imagem
+    agendarProximoSlideSplash();
+  }
 }
 
 function telaInicio(app){
