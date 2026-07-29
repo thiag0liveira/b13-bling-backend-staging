@@ -937,7 +937,9 @@ function recomecar(perguntar){
 // ------- timeout de inatividade (3 min) -------
 let ultimo=Date.now();
 ["click","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>ultimo=Date.now(),true));
-setInterval(()=>{ if(S.etapa!=="splash" && Date.now()-ultimo>180000){ S=novoEstado(); render(); } },5000);
+// reinicia a página inteira (não só o estado) depois de 2min sem ninguém tocar —
+// isso também garante que qualquer atualização de código publicada seja pega automaticamente
+setInterval(()=>{ if(Date.now()-ultimo>120000) location.reload(); },5000);
 
 // carrega carrinho salvo pelo modo tabela ou parâmetro de modo
 try{
