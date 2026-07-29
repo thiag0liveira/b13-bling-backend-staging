@@ -149,6 +149,15 @@ function bling(path,options={}){
   return resultado;
 }
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
+// formata telefone/celular no padrão que o Bling exige pra validar o contato;
+// se não tiver DDD+número válido (10 ou 11 dígitos), retorna vazio em vez de
+// mandar algo torto que derruba a criação/atualização do contato inteiro
+function formatarTelefoneBling(tel){
+  const d=soDigitos(tel);
+  if(d.length===11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if(d.length===10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  return "";
+}
 
 // contato genérico para pedidos sem identificação (CONSUMIDOR FINAL)
 let _contatoPadrao=null;
@@ -1958,7 +1967,10 @@ app.post("/api/finalizar", async (req, res) => {
 
         // atualiza dados do cliente com as informações fornecidas no totem
         const atualizacao={};
-        if(telefone) { atualizacao.celular=telefone; atualizacao.telefone=telefone; }
+        if(telefone) {
+          const telFmt=formatarTelefoneBling(telefone);
+          if(telFmt){ atualizacao.celular=telFmt; atualizacao.telefone=telFmt; }
+        }
         if(email && /\S+@\S+\.\S+/.test(email) && !contatoAtual.email) atualizacao.email=email;
 
         // endereço: atualiza campos que estão vazios no Bling mas foram preenchidos no totem
@@ -2001,7 +2013,7 @@ app.post("/api/finalizar", async (req, res) => {
         const contato = {
           nome: nome || ("Cliente " + doc),
           tipo, numeroDocumento: doc, situacao: "A",
-          telefone: telefone || "", celular: telefone || "",
+          telefone: formatarTelefoneBling(telefone), celular: formatarTelefoneBling(telefone),
           email: (email && /\S+@\S+\.\S+/.test(email)) ? email : undefined,
           endereco: { geral: {
             endereco: end.rua || "",
