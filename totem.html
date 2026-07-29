@@ -138,6 +138,8 @@
   html.totem .chk input{width:28px;height:28px}
   html.totem h1{font-size:36px}
   html.totem .sub{font-size:19px}
+  @keyframes alertaFundo{ from{opacity:0} to{opacity:1} }
+  @keyframes alertaPop{ from{transform:scale(.9);opacity:0} to{transform:scale(1);opacity:1} }
 </style>
 </head>
 <body>
@@ -163,6 +165,24 @@ function validaCPF(c){ c=soDig(c); if(c.length!==11||/^(\d)\1+$/.test(c))return 
 function validaCNPJ(c){ c=soDig(c); if(c.length!==14||/^(\d)\1+$/.test(c))return false; const calc=(x)=>{let n=0,p=x-7; for(let i=x;i>=1;i--){n+=+c[x-i]*p--; if(p<2)p=9;} const r=11-(n%11); return r>9?0:r;}; return calc(12)===+c[12]&&calc(13)===+c[13]; }
 function docValido(d){ d=soDig(d); return d.length===11?validaCPF(d):d.length===14?validaCNPJ(d):false; }
 const esc=(s)=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+// alerta com o visual do app, em vez do alertaBonito() feio/genérico do navegador — melhor pro totem
+function alertaBonito(msg){
+  let old=document.getElementById("alertaBonitoOverlay");
+  if(old) old.remove();
+  const div=document.createElement("div");
+  div.id="alertaBonitoOverlay";
+  div.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;animation:alertaFundo .15s ease-out";
+  div.onclick=(e)=>{ if(e.target===div) div.remove(); };
+  div.innerHTML=`
+    <div style="background:#181542;border:2px solid var(--mag,#FF0082);border-radius:22px;padding:36px 30px;max-width:520px;width:100%;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.55);animation:alertaPop .25s ease-out">
+      <div style="font-size:52px;margin-bottom:12px">⚠️</div>
+      <div style="font-size:20px;font-weight:700;color:#fff;white-space:pre-line;line-height:1.5">${esc(msg)}</div>
+      <button style="margin-top:26px;background:var(--mag,#FF0082);color:#fff;border:none;border-radius:16px;padding:18px 32px;font-size:19px;font-weight:900;cursor:pointer;width:100%">OK, entendi</button>
+    </div>`;
+  div.querySelector("button").onclick=()=>div.remove();
+  document.body.appendChild(div);
+}
 function maxUnid(estoque,un){ un=un||1; return Math.floor((estoque||0)/un)*un; }
 
 async function carregarCatalogo(){
@@ -462,7 +482,7 @@ function telaInicio(app){
 }
 async function identificar(){
   const d=soDig(S.doc);
-  if(!docValido(d)){ alert("CPF ou CNPJ inválido. Confira os números."); return; }
+  if(!docValido(d)){ alertaBonito("CPF ou CNPJ inválido. Confira os números."); return; }
   S.identificado=true; S.doc=d;
   await checarDoc();
   S.etapa="catalogo"; S.catAtiva=0; render();
@@ -684,7 +704,7 @@ function barra(){
     <button class="btn btn-mag" onclick="irCarrinho()">Ver carrinho →</button></div></div>`;
 }
 
-function irCarrinho(){ if(contagem()===0){alert("Seu carrinho está vazio.");return;} S.etapa="carrinho"; render(); }
+function irCarrinho(){ if(contagem()===0){alertaBonito("Seu carrinho está vazio.");return;} S.etapa="carrinho"; render(); }
 function telaCarrinho(app){
   const lines=itens().map(i=>`<div class="line">${i.imagem?`<img src="${esc(i.imagem)}" onerror="this.remove()" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">`:""}<div class="info"><div style="font-weight:800">${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` — ${esc(i.sabor)}`:""}</div>
      <div class="muted">${brl(i.preco)}/un · ${pack(i.qtd,i.un)} = <b style="color:#ffd23f">${brl(i.preco*i.qtd)}</b></div>
@@ -704,7 +724,7 @@ function telaCarrinho(app){
       <button class="btn btn-mag" ${falta?"disabled":""} onclick="irCheckout()">Continuar</button></div></div>`;
 }
 
-function irCheckout(){ const m=minAtual(); if(m!=null && subtotal()<m){alert("Abaixo do mínimo.");return;} S.etapa="checkout"; render(); }
+function irCheckout(){ const m=minAtual(); if(m!=null && subtotal()<m){alertaBonito("Abaixo do mínimo.");return;} S.etapa="checkout"; render(); }
 function enderecoObrig(){ return S.docChecado; } // no totem físico não existe opção de entrega, só retirada
 function enderecoTexto(){ const e=S.end; if(!e.rua) return ""; return `${e.rua}, ${e.numero||"s/n"}${e.complemento?" "+e.complemento:""} - ${e.bairro}, ${e.cidade} - ${e.uf}, CEP ${e.cep}`; }
 function endValido(){ const e=S.end; return soDig(e.cep).length===8 && e.rua.trim() && e.numero.trim() && e.bairro.trim() && e.cidade.trim() && e.uf.trim(); }
@@ -802,7 +822,7 @@ async function buscarCep(){
 
 async function calcularFrete(){
   const txt=enderecoTexto();
-  if(!txt){ alert("Preencha o endereço (CEP, rua, número) para calcular a entrega."); return; }
+  if(!txt){ alertaBonito("Preencha o endereço (CEP, rua, número) para calcular a entrega."); return; }
   S.freteMsg="Calculando…"; S.frete=null; render();
   try{
     const u=BACKEND+"/api/frete?endereco="+encodeURIComponent(txt)+"&valor="+subtotal();
@@ -820,19 +840,19 @@ async function finalizar(){
   if(!S.end.rua.trim()) _erros.push("Endereço (Rua)");
   if(!S.end.cidade.trim()) _erros.push("Cidade");
   if(!S.end.uf.trim()) _erros.push("UF (estado)");
-  if(_erros.length){ alert("Preencha os campos obrigatórios:\n- "+_erros.join("\n- ")); return; }
+  if(_erros.length){ alertaBonito("Preencha os campos obrigatórios:\n- "+_erros.join("\n- ")); return; }
   const dd=soDig(S.doc);
-  if(!docValido(dd)){ alert("CPF ou CNPJ inválido. Confira os números para finalizar."); return; }
+  if(!docValido(dd)){ alertaBonito("CPF ou CNPJ inválido. Confira os números para finalizar."); return; }
   S.doc=dd;
   if(!S.docChecado) await checarDoc();
   const novo = !S.docNome;
   const min = S.docNome?MIN_ID:MIN_ANON;
-  if(subtotal()<min){ alert(`Pedido mínimo de ${brl(min)} ${S.docNome?"(cliente com cadastro)":"(sem cadastro — para mínimo de "+brl(MIN_ID)+", use um CPF/CNPJ já cadastrado)"}. Faltam ${brl(min-subtotal())}.`); return; }
-  if(!S.entrega){ alert("Escolha Retirada ou Entrega."); return; }
-  if(novo && !S.email.trim()){ alert("Informe o e-mail para o cadastro."); return; }
-  if(novo && !/^\S+@\S+\.\S+$/.test(S.email.trim())){ alert("Informe um e-mail válido (ex.: nome@email.com)."); return; }
-  if((novo || S.entrega==='entrega') && !endValido()){ alert("Preencha o endereço completo: CEP, rua, número, bairro, cidade e UF."); return; }
-  if(S.entrega==='entrega' && (!S.frete || !S.frete.entregaDisponivel)){ alert("Calcule a taxa de entrega (ou escolha Retirada)."); return; }
+  if(subtotal()<min){ alertaBonito(`Pedido mínimo de ${brl(min)} ${S.docNome?"(cliente com cadastro)":"(sem cadastro — para mínimo de "+brl(MIN_ID)+", use um CPF/CNPJ já cadastrado)"}. Faltam ${brl(min-subtotal())}.`); return; }
+  if(!S.entrega){ alertaBonito("Escolha Retirada ou Entrega."); return; }
+  if(novo && !S.email.trim()){ alertaBonito("Informe o e-mail para o cadastro."); return; }
+  if(novo && !/^\S+@\S+\.\S+$/.test(S.email.trim())){ alertaBonito("Informe um e-mail válido (ex.: nome@email.com)."); return; }
+  if((novo || S.entrega==='entrega') && !endValido()){ alertaBonito("Preencha o endereço completo: CEP, rua, número, bairro, cidade e UF."); return; }
+  if(S.entrega==='entrega' && (!S.frete || !S.frete.entregaDisponivel)){ alertaBonito("Calcule a taxa de entrega (ou escolha Retirada)."); return; }
 
   const entrega = S.entrega==='entrega'
     ? {tipo:'entrega', endereco:enderecoTexto(), taxa:S.frete.taxa}
