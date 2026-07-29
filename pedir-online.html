@@ -149,13 +149,10 @@ const LOGO="/logo";
 const WHATS="5531999719888";
 const MIN_ID=100, MIN_ANON=600;
 
-// esta página passou a ser exclusiva do totem físico (monitor vertical 27") — aumenta tudo pro toque
-document.documentElement.classList.add("totem");
-
 let CAT=null, META={}, ERRO=null;
 let S = novoEstado();
 function novoEstado(){ return { etapa:"splash", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
-  carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"retirada", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
+  carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
 const soDig=(s)=>(s||"").replace(/\D/g,"");
@@ -685,11 +682,12 @@ function telaCarrinho(app){
 }
 
 function irCheckout(){ const m=minAtual(); if(m!=null && subtotal()<m){alert("Abaixo do mínimo.");return;} S.etapa="checkout"; render(); }
-function enderecoObrig(){ return S.docChecado; } // no totem físico não existe opção de entrega, só retirada
+function enderecoObrig(){ return S.docChecado || S.entrega==='entrega'; }
 function enderecoTexto(){ const e=S.end; if(!e.rua) return ""; return `${e.rua}, ${e.numero||"s/n"}${e.complemento?" "+e.complemento:""} - ${e.bairro}, ${e.cidade} - ${e.uf}, CEP ${e.cep}`; }
 function endValido(){ const e=S.end; return soDig(e.cep).length===8 && e.rua.trim() && e.numero.trim() && e.bairro.trim() && e.cidade.trim() && e.uf.trim(); }
 
 function telaCheckout(app){
+  const podeEntrega = subtotal()>=(META.entrega?.minEntrega ?? 1000);
   const novo = S.docChecado && !S.docNome;
   const mostraEndereco = enderecoObrig();
   app.innerHTML=header(false)+`<div class="wrap"><h1 style="font-size:22px">Finalizar pedido</h1>
@@ -728,12 +726,18 @@ function telaCheckout(app){
     })()}
     ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo,S.docNome&&!!S.end.rua.trim()):""}
 
-    <div class="ok" style="margin-top:14px">🏪 Retirada na loja — sem taxa de entrega.</div>
+    <div style="font-weight:800;margin-top:14px">Como quer receber?</div>
+    <div class="radio">
+      <label class="${S.entrega==='retirada'?'on':''}" onclick="S.entrega='retirada';S.frete=null;render()">🏪 Retirada<br><small class="muted">grátis</small></label>
+      <label class="${S.entrega==='entrega'?'on':''} ${podeEntrega?'':'esg'}" onclick="${podeEntrega?"S.entrega='entrega';render()":"alert('Entrega disponível a partir de '+'"+brl(META.entrega?.minEntrega??1000)+"'+'. Abaixo disso, só retirada.')"}">🛵 Entrega<br><small class="muted">${podeEntrega?"calcular taxa":"a partir de "+brl(META.entrega?.minEntrega??1000)}</small></label>
+    </div>
+    ${S.entrega==='entrega'?blocoFrete():""}
+    ${S.entrega==='retirada'?`<div class="ok">Retirada na loja — sem taxa.</div>`:""}
 
     <div style="height:120px"></div></div>
     <div class="bar"><div class="barbox" style="flex-wrap:wrap;gap:8px">
       <button class="btn btn-ghost" onclick="S.etapa='catalogo';render()" style="flex:1">+ Adicionar itens</button>
-      <div style="display:flex;align-items:center;gap:8px;flex:2"><div class="tot" style="flex:1">${brl(totalFinal())}<br><small class="muted">total</small></div>
+      <div style="display:flex;align-items:center;gap:8px;flex:2"><div class="tot" style="flex:1">${brl(totalFinal())}<br><small class="muted">${S.entrega==='entrega'&&S.frete?`inclui frete ${brl(S.frete.taxa)}`:"total"}</small></div>
       <button class="btn btn-mag" onclick="finalizar()" ${S.enviando?"disabled":""}>${S.enviando?"Enviando…":"Finalizar pedido"}</button></div>
     </div></div>`;
 }
