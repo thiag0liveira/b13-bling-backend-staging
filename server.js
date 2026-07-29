@@ -42,6 +42,7 @@ const SESSOES_FILE = `${DATA_DIR}/sessoes.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
+const LEDGER_FILE = `${DATA_DIR}/ledger-pagamentos.json`;
 const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
@@ -227,6 +228,7 @@ function b13RenderNav(ativo){
   const links=[
     {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
     {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
+    {href:"/caixa-diario",label:"📅 Relatório Diário",check:()=>b13Pode("receber_pagamento")},
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
     {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
@@ -566,6 +568,12 @@ app.patch("/api/acrescimos/:id",(req,res)=>{
 // ---- PAGAMENTOS ----
 function lerPag(){ return lerJSON(PAG_FILE,{}); }
 function salvarPag(o){ salvarJSON(PAG_FILE,o); }
+
+// ---- LEDGER DIÁRIO (ficha local de cada pedido: data em que foi CRIADO x
+// data em que foi de fato PAGO — essa segunda data, uma vez detectada, fica
+// travada pra sempre, então o fechamento de um dia já fechado nunca muda) ----
+function lerLedger(){ return lerJSON(LEDGER_FILE,{}); }
+function salvarLedger(o){ salvarJSON(LEDGER_FILE,o); }
 
 // Atualiza as parcelas do pedido no Bling de verdade (via PUT, já comprovado
 // que funciona nesse sistema), substituindo a parcela única "placeholder"
@@ -2762,6 +2770,134 @@ app.get("/api/formas-pagamento-por-data", async(req,res)=>{
   res.end();
 });
 
+// ------------------------- Ledger diário de pagamentos -------------------------
+// Sincroniza pedidos criados no período [dataInicial,dataFinal] (data do PEDIDO)
+// e atualiza a ficha local de cada um. IMPORTANTE: uma vez que um pedido é
+// detectado como PAGO, sua dataPagamento fica travada — sincronizações futuras
+// não mudam mais essa data, então o fechamento de um dia já fechado é estável.
+// Pedidos já marcados como "pago" não são reconsultados no Bling (mais rápido).
+app.get("/api/ledger/sincronizar", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  res.setHeader("Connection","keep-alive");
+  res.setHeader("X-Accel-Buffering","no");
+  res.flushHeaders();
+  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
+  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
+  res.on("close",()=>clearInterval(heartbeat));
+
+  try{
+    const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
+    const dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
+    if(!dataInicial||!dataFinal||!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)){
+      send({tipo:"erro",erro:"informe ?dataInicial=AAAA-MM-DD&dataFinal=AAAA-MM-DD"}); clearInterval(heartbeat); return res.end();
+    }
+    send({tipo:"status",mensagem:`Buscando pedidos criados entre ${dataInicial} e ${dataFinal}…`});
+    const lista=[];
+    for(let pg=1;pg<=100;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+    }
+    send({tipo:"total",total:lista.length});
+
+    const ledger=lerLedger();
+    const pags=lerPag();
+    const logsTodos=lerJSON(LOG_FILE,{});
+    const hoje=new Date().toISOString().slice(0,10);
+    let atualizados=0, jaEstavaPago=0;
+
+    for(let i=0;i<lista.length;i++){
+      const pRaw=lista[i];
+      const id=String(pRaw.id);
+      send({tipo:"progresso",atual:i+1,total:lista.length,pedido:pRaw.numero});
+      const sitNome=nomeSituacaoFechamento(pRaw.situacao?.id);
+      if(sitNome==="Cancelado"){ if(ledger[id]) ledger[id].status="cancelado"; continue; }
+
+      let entry=ledger[id]||{id,numero:pRaw.numero,cliente:pRaw.contato?.nome||"—",vendedor:null,dataPedido:pRaw.data,dataPagamento:null,total:0,formas:[],status:"pendente"};
+      if(entry.status==="pago"){ jaEstavaPago++; continue; } // já fechado, não reconsulta
+
+      let det=null;
+      try{ det=(await bling(`/pedidos/vendas/${id}`))?.data||null; }catch(e){}
+      const total=+(det?.total??pRaw.total??pRaw.totalProdutos??0);
+      const vendedorId=det?.vendedor?.id||null;
+      const vendedorNome=await nomeVendedor(vendedorId);
+      const pagLocal=pags[id];
+      const {valorPago,historico}=await resolverPagamentoPedido(det||pRaw,pagLocal,logsTodos[id]||[]);
+      const pago=valorPago>=total-0.01 && valorPago>0;
+
+      entry.numero=pRaw.numero; entry.cliente=pRaw.contato?.nome||"—"; entry.vendedor=vendedorNome;
+      entry.total=total; entry.dataPedido=pRaw.data;
+      entry.formas=(historico||[]).map(h=>({nome:h.formaNome||"Não identificada",valor:+(h.valor||0)}));
+
+      if(pago){
+        // trava a data de pagamento agora, se ainda não tinha uma —
+        // usa a hora real do nosso sistema (pagamentos.json) quando existir,
+        // senão considera hoje como o dia em que detectamos o recebimento
+        if(!entry.dataPagamento){
+          const emReal=(pagLocal?.historico||[]).slice(-1)[0]?.em;
+          entry.dataPagamento = emReal ? new Date(emReal).toISOString().slice(0,10) : hoje;
+        }
+        entry.status="pago";
+      } else {
+        entry.status = valorPago>0 ? "parcial" : "pendente";
+      }
+      ledger[id]=entry;
+      atualizados++;
+    }
+    salvarLedger(ledger);
+    send({tipo:"done",atualizados,jaEstavaPago,totalPedidos:lista.length});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(heartbeat);
+  res.end();
+});
+
+// Lê o relatório diário direto da ficha local (rápido, sem chamar o Bling).
+// modo=pagamento (padrão): agrupa pelo dia em que o dinheiro foi de fato
+// recebido — esse é o número que fecha o caixa e não muda depois.
+// modo=pedido: agrupa pelo dia em que o pedido foi criado (útil pra ver o que
+// ainda está em aberto/sem pagamento daquele dia, mesmo que feche em outro dia).
+app.get("/api/ledger/relatorio", (req,res)=>{
+  const data=req.query.data;
+  const modo=req.query.modo==="pedido"?"pedido":"pagamento";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(data||"")) return res.status(400).json({erro:"informe ?data=AAAA-MM-DD"});
+  const campo=modo==="pedido"?"dataPedido":"dataPagamento";
+  const ledger=lerLedger();
+  const linhas=Object.values(ledger).filter(e=>e[campo]===data && e.status!=="cancelado");
+  const pagos=linhas.filter(e=>e.status==="pago");
+  const naoPagos=linhas.filter(e=>e.status!=="pago");
+
+  const porForma={}, porVendedor={};
+  pagos.forEach(e=>{
+    (e.formas||[]).forEach(f=>{
+      if(!porForma[f.nome]) porForma[f.nome]={valor:0,qtd:0};
+      porForma[f.nome].valor+=f.valor; porForma[f.nome].qtd++;
+    });
+    const vend=e.vendedor||"Sem vendedor";
+    if(!porVendedor[vend]) porVendedor[vend]={valor:0,qtd:0,formas:{}};
+    porVendedor[vend].valor+=e.total; porVendedor[vend].qtd++;
+    (e.formas||[]).forEach(f=>{
+      if(!porVendedor[vend].formas[f.nome]) porVendedor[vend].formas[f.nome]={valor:0,qtd:0};
+      porVendedor[vend].formas[f.nome].valor+=f.valor; porVendedor[vend].formas[f.nome].qtd++;
+    });
+  });
+
+  res.json({
+    data, modo,
+    totalPago:+pagos.reduce((s,e)=>s+e.total,0).toFixed(2), qtdPagos:pagos.length,
+    totalNaoPago:+naoPagos.reduce((s,e)=>s+e.total,0).toFixed(2), qtdNaoPagos:naoPagos.length,
+    formasPagamento:Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor),
+    porVendedor:Object.entries(porVendedor).map(([nome,v])=>({
+      nome,valor:+v.valor.toFixed(2),qtd:v.qtd,
+      formas:Object.entries(v.formas).map(([n,x])=>({nome:n,valor:+x.valor.toFixed(2),qtd:x.qtd})).sort((a,b)=>b.valor-a.valor),
+    })).sort((a,b)=>b.valor-a.valor),
+    pedidosPagos:pagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,dataPagamento:e.dataPagamento,formas:e.formas})).sort((a,b)=>String(a.numero).localeCompare(String(b.numero))),
+    pedidosNaoPagos:naoPagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,status:e.status})).sort((a,b)=>String(a.numero).localeCompare(String(b.numero))),
+  });
+});
+
+
 app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
@@ -2908,6 +3044,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
 app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
+app.get("/caixa-diario", (req, res) => res.sendFile(path.join(__dirname, "caixa-diario.html")));
 app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
 app.get("/lista-fardo", (req, res) => res.sendFile(path.join(__dirname, "lista-fardo.html")));
 app.get("/etiquetas", (req, res) => res.sendFile(path.join(__dirname, "etiquetas.html")));

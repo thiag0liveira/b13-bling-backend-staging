@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Relatório Diário de Pagamentos</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24}
+  body{margin:0;background:var(--bg);color:#fff}
+  #app{max-width:920px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--indigo2),var(--indigo));display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:42px}.top .t{font-weight:900;font-size:18px}.top .sp{flex:1}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:14px;padding:11px 16px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}.btn-ghost{background:#1c1846}
+  .btn:disabled{opacity:.4}
+  .wrap{padding:16px}
+  input,select{padding:12px;border-radius:10px;border:2px solid #514c96;background:#151233;color:#fff;font-size:15px}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:14px}
+  .muted{color:#9a95c9;font-size:13px}
+  .err{background:#3a2030;color:#ffbfce;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .linha{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #23204f;font-size:14px}
+  .linha:last-child{border-bottom:none}
+  .toggle{display:flex;background:#0a0918;border-radius:10px;padding:4px;gap:4px;margin-bottom:14px}
+  .toggle button{flex:1;background:transparent;border:none;color:#9a95c9;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-size:13px}
+  .toggle button.on{background:var(--mag);color:#fff}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:#9a95c9;font-weight:700;padding:6px;border-bottom:1px solid #2c2660}
+  td{padding:6px;border-bottom:1px solid #201d47}
+  .tot-verde{color:#2f9e6b;font-weight:900}
+  .tot-verm{color:#ff8090;font-weight:900}
+  .barra-bg{background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96}
+  .barra-fill{height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);transition:width .3s}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    const sess=(typeof b13GetSession==="function")?b13GetSession():null;
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
+    if(!(typeof b13Pode==="function" && b13Pode("receber_pagamento"))){
+      document.addEventListener("DOMContentLoaded",function(){
+        document.body.innerHTML=`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
+          <div style="font-size:40px;margin-bottom:10px">🚫</div>
+          <h2>Acesso negado</h2>
+          <p style="color:#9a95c9">Seu usuário não tem permissão para acessar o Caixa.</p>
+          <a href="/operacional" style="color:#FF0082">← Voltar</a></div>`;
+      });
+      window.__b13SemAcesso=true;
+      return;
+    }
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/caixa-diario");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+if(!window.__b13SemAcesso){
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const hojeStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"America/Sao_Paulo"}); // AAAA-MM-DD
+
+let MODO="pagamento"; // "pagamento" ou "pedido"
+let DATA=hojeStr();
+let ULTIMO_RELATORIO=null;
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">Relatório Diário de Pagamentos</div><div class="sp"></div>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div class="muted" style="margin-bottom:8px">Esse relatório lê de uma ficha local (rápido, sem consultar o Bling ao vivo). Sincronize periodicamente pra manter ela atualizada.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="date" id="inpData" value="${DATA}" style="flex:1;min-width:150px" onchange="DATA=this.value;carregarRelatorio()">
+          <button class="btn btn-ghost" onclick="mudarDia(-1)">◀</button>
+          <button class="btn btn-ghost" onclick="mudarDia(1)">▶</button>
+          <button class="btn btn-out" onclick="abrirSincronizar()">🔄 Sincronizar</button>
+        </div>
+        <div class="toggle">
+          <button class="${MODO==='pagamento'?'on':''}" onclick="MODO='pagamento';carregarRelatorio()">💰 Por dia do PAGAMENTO</button>
+          <button class="${MODO==='pedido'?'on':''}" onclick="MODO='pedido';carregarRelatorio()">📝 Por dia do PEDIDO</button>
+        </div>
+        <div class="muted" style="font-size:12px">
+          ${MODO==='pagamento'
+            ?'Mostra o dinheiro que entrou de fato nesse dia (não muda depois de sincronizado).'
+            :'Mostra os pedidos criados nesse dia — útil pra ver quem ainda não pagou, mesmo que feche em outro dia.'}
+        </div>
+      </div>
+      <div id="sincBox"></div>
+      <div id="resultado"><div class="muted">Carregando…</div></div>
+    </div>`;
+  carregarRelatorio();
+}
+
+function mudarDia(delta){
+  const d=new Date(DATA+"T12:00:00");
+  d.setDate(d.getDate()+delta);
+  DATA=d.toISOString().slice(0,10);
+  const inp=document.getElementById("inpData"); if(inp) inp.value=DATA;
+  carregarRelatorio();
+}
+
+async function carregarRelatorio(){
+  render._skip=true;
+  const topo=document.querySelector(".toggle");
+  if(topo) topo.querySelectorAll("button").forEach((b,i)=>b.className=(i===0?MODO==='pagamento':MODO==='pedido')?'on':'');
+  const box=document.getElementById("resultado");
+  if(!box) return;
+  box.innerHTML=`<div class="muted">Carregando…</div>`;
+  try{
+    const j=await fetch(B+"/api/ledger/relatorio?"+new URLSearchParams({data:DATA,modo:MODO})).then(r=>r.json());
+    if(j.erro){ box.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
+    ULTIMO_RELATORIO=j;
+    box.innerHTML=`
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="card" style="flex:1;min-width:160px;text-align:center">
+          <div class="muted">Total pago</div>
+          <div style="font-size:26px" class="tot-verde">${brl(j.totalPago)}</div>
+          <div class="muted" style="font-size:11px">${j.qtdPagos} pedido(s)</div>
+        </div>
+        <div class="card" style="flex:1;min-width:160px;text-align:center">
+          <div class="muted">${MODO==='pedido'?'Sem pagamento ainda':'Pendente/parcial'}</div>
+          <div style="font-size:26px" class="tot-verm">${brl(j.totalNaoPago)}</div>
+          <div class="muted" style="font-size:11px">${j.qtdNaoPagos} pedido(s)</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px">💳 Por forma de pagamento</h3>
+        ${j.formasPagamento.length?j.formasPagamento.map(f=>`
+          <div class="linha"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>
+        `).join(""):'<div class="muted">Nenhum pagamento nesse dia.</div>'}
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px">👤 Por vendedor</h3>
+        ${j.porVendedor.length?j.porVendedor.map(v=>`
+          <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #23204f">
+            <div class="linha" style="border:none;font-weight:800"><span>${esc(v.nome)}</span><b>${brl(v.valor)} <span class="muted" style="font-weight:400">(${v.qtd}x)</span></b></div>
+            ${v.formas.map(f=>`<div style="font-size:12px;color:#9a95c9;padding-left:10px">${esc(f.nome)}: ${brl(f.valor)} (${f.qtd}x)</div>`).join("")}
+          </div>
+        `).join(""):'<div class="muted">Nenhum vendedor com pagamento nesse dia.</div>'}
+      </div>
+
+      ${j.pedidosNaoPagos.length?`
+      <div class="card">
+        <h3 style="margin:0 0 10px">⚠️ ${MODO==='pedido'?'Sem pagamento / sem forma definida':'Ainda pendentes ou parciais'} (${j.pedidosNaoPagos.length})</h3>
+        <table><tr><th>Nº</th><th>Cliente</th><th>Vendedor</th><th>Status</th><th style="text-align:right">Total</th></tr>
+        ${j.pedidosNaoPagos.map(p=>`<tr>
+          <td>#${esc(p.numero)}</td><td>${esc(p.cliente)}</td><td>${esc(p.vendedor||"—")}</td>
+          <td style="color:${p.status==='parcial'?'#ffd23f':'#ff8090'}">${esc(p.status)}</td>
+          <td style="text-align:right">${brl(p.total)}</td>
+        </tr>`).join("")}
+        </table>
+      </div>`:""}
+
+      <div class="card">
+        <h3 style="margin:0 0 10px">✅ Pedidos pagos (${j.pedidosPagos.length})</h3>
+        ${j.pedidosPagos.length?`<table><tr><th>Nº</th><th>Cliente</th><th>Vendedor</th><th>Pedido</th><th>Pago em</th><th style="text-align:right">Total</th></tr>
+        ${j.pedidosPagos.map(p=>`<tr>
+          <td>#${esc(p.numero)}</td><td>${esc(p.cliente)}</td><td>${esc(p.vendedor||"—")}</td>
+          <td>${esc(p.dataPedido)}</td><td>${esc(p.dataPagamento)}</td>
+          <td style="text-align:right">${brl(p.total)}</td>
+        </tr>`).join("")}
+        </table>`:'<div class="muted">Nenhum pedido pago nesse dia.</div>'}
+      </div>`;
+  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar: ${esc(e.message)}</div>`; }
+}
+
+function abrirSincronizar(){
+  const box=document.getElementById("sincBox");
+  const ini=new Date(DATA+"T12:00:00"); ini.setDate(ini.getDate()-7);
+  box.innerHTML=`
+    <div class="card">
+      <h3 style="margin:0 0 10px">🔄 Sincronizar ficha local</h3>
+      <div class="muted" style="margin-bottom:10px">Busca no Bling os pedidos criados nesse período e atualiza a ficha. Pedidos já marcados como pagos não são reconsultados (mais rápido a cada vez).</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input type="date" id="sincIni" value="${ini.toISOString().slice(0,10)}" style="flex:1;min-width:140px">
+        <input type="date" id="sincFim" value="${DATA}" style="flex:1;min-width:140px">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-mag" style="flex:1" onclick="rodarSincronizacao()">Sincronizar agora</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('sincBox').innerHTML=''">Cancelar</button>
+      </div>
+      <div id="sincResultado" style="margin-top:12px"></div>
+    </div>`;
+}
+
+function rodarSincronizacao(){
+  const dataInicial=document.getElementById("sincIni").value;
+  const dataFinal=document.getElementById("sincFim").value;
+  if(!dataInicial||!dataFinal) return;
+  const out=document.getElementById("sincResultado");
+  out.innerHTML=`<div class="muted">Iniciando…</div>`;
+  const es=new EventSource(B+"/api/ledger/sincronizar?"+new URLSearchParams({dataInicial,dataFinal}));
+  const barra=(msg,atual,total)=>`
+    <div class="muted" style="margin-bottom:6px;font-size:12px">${esc(msg)}</div>
+    <div class="barra-bg"><div class="barra-fill" style="width:${total?Math.round((atual/total)*100):5}%"></div></div>`;
+  es.onmessage=(ev)=>{
+    const d=JSON.parse(ev.data);
+    if(d.tipo==="status") out.innerHTML=barra(d.mensagem,0,0);
+    else if(d.tipo==="total") out.innerHTML=barra(`0 de ${d.total} pedidos`,0,d.total);
+    else if(d.tipo==="progresso") out.innerHTML=barra(`${d.atual} de ${d.total} pedidos — #${d.pedido||""}`,d.atual,d.total);
+    else if(d.tipo==="done"){
+      es.close();
+      out.innerHTML=`<div class="muted">✅ Sincronização concluída: ${d.atualizados} atualizado(s), ${d.jaEstavaPago} já estavam pagos (não reconsultados), de ${d.totalPedidos} pedido(s) no período.</div>`;
+      carregarRelatorio();
+    } else if(d.tipo==="erro"){ es.close(); out.innerHTML=`<div class="err">${esc(d.erro)}</div>`; }
+  };
+  es.onerror=()=>{ es.close(); out.innerHTML+=`<div class="err">Conexão perdida.</div>`; };
+}
+
+render();
+}
+</script>
+</body>
+</html>
