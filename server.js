@@ -169,6 +169,7 @@ app.get("/auth",(req,res)=> res.redirect(`${AUTH_URL}?response_type=code&client_
 app.get("/logo",(req,res)=>res.sendFile(path.join(__dirname,"logo.png")));
 app.get("/loja-fundo",(req,res)=>res.sendFile(path.join(__dirname,"loja-fundo.png")));
 app.get("/logo-ofertas",(req,res)=>res.sendFile(path.join(__dirname,"logo-ofertas.jpg")));
+app.use("/promo", express.static(path.join(__dirname, "promo"))); // imagens promocionais fixas (splash do totem)
 app.get("/musica-fundo",(req,res)=>{
   const arq=path.join(__dirname,"musica-fundo.mp3");
   if(!fs.existsSync(arq)) return res.status(404).send("Música de fundo ainda não configurada");
