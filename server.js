@@ -2859,12 +2859,18 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
 // modo=pedido: agrupa pelo dia em que o pedido foi criado (útil pra ver o que
 // ainda está em aberto/sem pagamento daquele dia, mesmo que feche em outro dia).
 app.get("/api/ledger/relatorio", (req,res)=>{
-  const data=req.query.data;
   const modo=req.query.modo==="pedido"?"pedido":"pagamento";
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(data||"")) return res.status(400).json({erro:"informe ?data=AAAA-MM-DD"});
+  const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
+  let dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
+  if(!dataInicial||!dataFinal){
+    const data=req.query.data;
+    if(!dataRegex.test(data||"")) return res.status(400).json({erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="});
+    dataInicial=data; dataFinal=data;
+  }
+  if(!dataRegex.test(dataInicial)||!dataRegex.test(dataFinal)) return res.status(400).json({erro:"datas em formato inválido (AAAA-MM-DD)"});
   const campo=modo==="pedido"?"dataPedido":"dataPagamento";
   const ledger=lerLedger();
-  const linhas=Object.values(ledger).filter(e=>e[campo]===data && e.status!=="cancelado");
+  const linhas=Object.values(ledger).filter(e=>e[campo] && e[campo]>=dataInicial && e[campo]<=dataFinal && e.status!=="cancelado");
   const pagos=linhas.filter(e=>e.status==="pago");
   const naoPagos=linhas.filter(e=>e.status!=="pago");
 
@@ -2884,7 +2890,7 @@ app.get("/api/ledger/relatorio", (req,res)=>{
   });
 
   res.json({
-    data, modo,
+    dataInicial, dataFinal, modo,
     totalPago:+pagos.reduce((s,e)=>s+e.total,0).toFixed(2), qtdPagos:pagos.length,
     totalNaoPago:+naoPagos.reduce((s,e)=>s+e.total,0).toFixed(2), qtdNaoPagos:naoPagos.length,
     formasPagamento:Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor),
@@ -2892,8 +2898,8 @@ app.get("/api/ledger/relatorio", (req,res)=>{
       nome,valor:+v.valor.toFixed(2),qtd:v.qtd,
       formas:Object.entries(v.formas).map(([n,x])=>({nome:n,valor:+x.valor.toFixed(2),qtd:x.qtd})).sort((a,b)=>b.valor-a.valor),
     })).sort((a,b)=>b.valor-a.valor),
-    pedidosPagos:pagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,dataPagamento:e.dataPagamento,formas:e.formas})).sort((a,b)=>String(a.numero).localeCompare(String(b.numero))),
-    pedidosNaoPagos:naoPagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,status:e.status})).sort((a,b)=>String(a.numero).localeCompare(String(b.numero))),
+    pedidosPagos:pagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,dataPagamento:e.dataPagamento,formas:e.formas})).sort((a,b)=>String(a[campo]).localeCompare(String(b[campo]))),
+    pedidosNaoPagos:naoPagos.map(e=>({numero:e.numero,cliente:e.cliente,vendedor:e.vendedor,total:e.total,dataPedido:e.dataPedido,status:e.status})).sort((a,b)=>String(a.dataPedido).localeCompare(String(b.dataPedido))),
   });
 });
 

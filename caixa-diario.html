@@ -73,7 +73,10 @@ const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,max
 const hojeStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"America/Sao_Paulo"}); // AAAA-MM-DD
 
 let MODO="pagamento"; // "pagamento" ou "pedido"
+let TIPO_BUSCA="dia"; // "dia" ou "periodo"
 let DATA=hojeStr();
+let DATA_INI=hojeStr();
+let DATA_FIM=hojeStr();
 let ULTIMO_RELATORIO=null;
 
 function render(){
@@ -86,20 +89,35 @@ function render(){
     <div class="wrap">
       <div class="card">
         <div class="muted" style="margin-bottom:8px">Esse relatório lê de uma ficha local (rápido, sem consultar o Bling ao vivo). Sincronize periodicamente pra manter ela atualizada.</div>
+
+        <div class="toggle" style="margin-bottom:10px">
+          <button class="${TIPO_BUSCA==='dia'?'on':''}" onclick="TIPO_BUSCA='dia';render()">📆 Dia único</button>
+          <button class="${TIPO_BUSCA==='periodo'?'on':''}" onclick="TIPO_BUSCA='periodo';render()">🗓️ Período</button>
+        </div>
+
+        ${TIPO_BUSCA==='dia'?`
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="date" id="inpData" value="${DATA}" style="flex:1;min-width:150px" onchange="DATA=this.value;carregarRelatorio()">
           <button class="btn btn-ghost" onclick="mudarDia(-1)">◀</button>
           <button class="btn btn-ghost" onclick="mudarDia(1)">▶</button>
           <button class="btn btn-out" onclick="abrirSincronizar()">🔄 Sincronizar</button>
-        </div>
+        </div>`:`
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="date" id="inpDataIni" value="${DATA_INI}" style="flex:1;min-width:140px" onchange="DATA_INI=this.value">
+          <span class="muted">até</span>
+          <input type="date" id="inpDataFim" value="${DATA_FIM}" style="flex:1;min-width:140px" onchange="DATA_FIM=this.value">
+          <button class="btn btn-mag" onclick="carregarRelatorio()">Buscar</button>
+          <button class="btn btn-out" onclick="abrirSincronizar()">🔄 Sincronizar</button>
+        </div>`}
+
         <div class="toggle">
           <button class="${MODO==='pagamento'?'on':''}" onclick="MODO='pagamento';carregarRelatorio()">💰 Por dia do PAGAMENTO</button>
           <button class="${MODO==='pedido'?'on':''}" onclick="MODO='pedido';carregarRelatorio()">📝 Por dia do PEDIDO</button>
         </div>
         <div class="muted" style="font-size:12px">
           ${MODO==='pagamento'
-            ?'Mostra o dinheiro que entrou de fato nesse dia (não muda depois de sincronizado).'
-            :'Mostra os pedidos criados nesse dia — útil pra ver quem ainda não pagou, mesmo que feche em outro dia.'}
+            ?'Mostra o dinheiro que entrou de fato nesse período (não muda depois de sincronizado).'
+            :'Mostra os pedidos criados nesse período — útil pra ver quem ainda não pagou, mesmo que feche em outro dia.'}
         </div>
       </div>
       <div id="sincBox"></div>
@@ -117,14 +135,14 @@ function mudarDia(delta){
 }
 
 async function carregarRelatorio(){
-  render._skip=true;
-  const topo=document.querySelector(".toggle");
-  if(topo) topo.querySelectorAll("button").forEach((b,i)=>b.className=(i===0?MODO==='pagamento':MODO==='pedido')?'on':'');
   const box=document.getElementById("resultado");
   if(!box) return;
   box.innerHTML=`<div class="muted">Carregando…</div>`;
   try{
-    const j=await fetch(B+"/api/ledger/relatorio?"+new URLSearchParams({data:DATA,modo:MODO})).then(r=>r.json());
+    const params=TIPO_BUSCA==='dia'
+      ? {data:DATA,modo:MODO}
+      : {dataInicial:DATA_INI,dataFinal:DATA_FIM,modo:MODO};
+    const j=await fetch(B+"/api/ledger/relatorio?"+new URLSearchParams(params)).then(r=>r.json());
     if(j.erro){ box.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
     ULTIMO_RELATORIO=j;
     box.innerHTML=`
