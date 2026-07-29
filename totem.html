@@ -276,7 +276,7 @@ let INSTAGRAM_POSTS=[];
 const PROMO_IMGS=["/promo/heineken-lata.png","/promo/bob-pinga.png","/promo/busca-brisa.png","/promo/heineken-ultimate.png","/promo/gordons-pink.png"];
 function cardPromoHtml(src){
   return `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%">
-    <img src="${esc(src)}" style="max-height:100%;max-width:min(70vw,560px);object-fit:contain;border-radius:22px;box-shadow:0 20px 60px rgba(0,0,0,.45)">
+    <img src="${esc(src)}" style="max-height:100%;max-width:92vw;height:100%;width:auto;object-fit:contain;border-radius:22px;box-shadow:0 20px 60px rgba(0,0,0,.45)">
   </div>`;
 }
 async function carregarInstagramPosts(){
@@ -335,13 +335,19 @@ function telaSplash(app){
   if(!slides.length) PROMO_IMGS.forEach(src=>slides.push({tipo:"promo",src}));
   if(!slides.length) slides.push({tipo:"produtos",itens:[]});
 
-  const slidesHtml=slides.map((sl,i)=>`
-    <div class="slideCard" data-i="${i}" style="
-      position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;
-      opacity:${i===0?1:0};transition:opacity 1.2s ease-in-out;padding:10px 24px">
-      ${sl.tipo==="instagram"?cardInstagramHtml():sl.tipo==="promo"?cardPromoHtml(sl.src):`<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
+  const slidesHtml=slides.map((sl,i)=>{
+    const ehPromo=sl.tipo==="promo";
+    // o slide de imagem promocional cobre a tela inteira, do topo até logo acima do "toque para começar",
+    // sobrepondo a logo de cabeçalho (a imagem já vem com a marca aplicada)
+    const estiloBase=ehPromo
+      ? `position:fixed;top:0;left:0;right:0;bottom:230px;z-index:3;display:flex;align-items:center;justify-content:center;padding:20px`
+      : `position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;padding:10px 24px`;
+    return `
+    <div class="slideCard" data-i="${i}" style="${estiloBase}
+      opacity:${i===0?1:0};transition:opacity 1.2s ease-in-out">
+      ${sl.tipo==="instagram"?cardInstagramHtml():ehPromo?cardPromoHtml(sl.src):`<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
     </div>
-  `).join("");
+  `;}).join("");
 
   app.innerHTML=`
   <div onclick="if(_splashTimer)clearTimeout(_splashTimer);document.querySelectorAll('.slideCard video').forEach(v=>{try{v.pause()}catch(e){}});const m=document.getElementById('musicaFundo');if(m)m.pause();S.etapa='inicio';render()" style="
