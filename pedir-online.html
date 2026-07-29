@@ -475,19 +475,21 @@ async function checarDoc(){
       const c=j.contato;
       S.docNome = c.nome||"Cliente cadastrado";
       S.docInfo = c; // guarda dados completos para exibir
-      // pré-preenche TODOS os campos com dados do cadastro
-      if(c.nome) S.nome=c.nome;
-      if(c.celular||c.telefone) S.telefone=c.celular||c.telefone;
-      if(c.email) S.email=c.email;
+      // pré-preenche os campos com dados do cadastro — só os que o cliente ainda
+      // não mexeu, pra não sobrescrever o que ele já digitou enquanto essa busca
+      // (assíncrona) estava em andamento
+      if(c.nome && !S.nome.trim()) S.nome=c.nome;
+      if((c.celular||c.telefone) && !S.telefone.trim()) S.telefone=c.celular||c.telefone;
+      if(c.email && !S.email.trim()) S.email=c.email;
       // endereço
       const end=c.endereco||{};
-      if(end.cep) S.end.cep=end.cep;
-      if(end.rua) S.end.rua=end.rua;
-      if(end.numero) S.end.numero=end.numero;
-      if(end.complemento) S.end.complemento=end.complemento;
-      if(end.bairro) S.end.bairro=end.bairro;
-      if(end.cidade) S.end.cidade=end.cidade;
-      if(end.uf) S.end.uf=end.uf;
+      if(end.cep && !S.end.cep.trim()) S.end.cep=end.cep;
+      if(end.rua && !S.end.rua.trim()) S.end.rua=end.rua;
+      if(end.numero && !S.end.numero.trim()) S.end.numero=end.numero;
+      if(end.complemento && !S.end.complemento.trim()) S.end.complemento=end.complemento;
+      if(end.bairro && !S.end.bairro.trim()) S.end.bairro=end.bairro;
+      if(end.cidade && !S.end.cidade.trim()) S.end.cidade=end.cidade;
+      if(end.uf && !S.end.uf.trim()) S.end.uf=end.uf;
     } else {
       S.docNome=null;
     }
