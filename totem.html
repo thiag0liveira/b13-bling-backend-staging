@@ -340,7 +340,7 @@ function telaSplash(app){
     // o slide de imagem promocional cobre a tela inteira, do topo até logo acima do "toque para começar",
     // sobrepondo a logo de cabeçalho (a imagem já vem com a marca aplicada)
     const estiloBase=ehPromo
-      ? `position:fixed;top:0;left:0;right:0;bottom:230px;z-index:3;display:flex;align-items:center;justify-content:center;padding:20px`
+      ? `position:fixed;top:0;left:0;right:0;bottom:260px;z-index:3;display:flex;align-items:center;justify-content:center;padding:30px`
       : `position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;padding:10px 24px`;
     return `
     <div class="slideCard" data-i="${i}" style="${estiloBase}
@@ -362,7 +362,7 @@ function telaSplash(app){
       <div style="font-size:26px;font-weight:900;letter-spacing:3px;color:#cfc9f5">ATACADO DE BEBIDAS · OFERTAS</div>
     </div>
 
-    <div style="position:relative;flex:1 1 auto;width:100%;z-index:1;min-height:0">${itens.length?slidesHtml:`
+    <div style="position:relative;flex:1 1 auto;width:100%;min-height:0">${itens.length?slidesHtml:`
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:18px;padding:0 30px">Monte seu pedido no atacado direto aqui</div>`}</div>
 
     <div id="tocarComecar" style="
