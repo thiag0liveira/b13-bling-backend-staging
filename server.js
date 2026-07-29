@@ -153,9 +153,14 @@ const soDigitos=(s)=>(s||"").replace(/\D/g,"");
 // se não tiver DDD+número válido (10 ou 11 dígitos), retorna vazio em vez de
 // mandar algo torto que derruba a criação/atualização do contato inteiro
 function formatarTelefoneBling(tel){
-  const d=soDigitos(tel);
+  let d=soDigitos(tel);
+  // remove o "55" do Brasil se veio junto (comum quando o número é copiado
+  // do WhatsApp com o +55 na frente) — senão o número fica com 12/13 dígitos
+  // e é descartado silenciosamente por não bater 10 nem 11
+  if((d.length===12||d.length===13) && d.startsWith("55")) d=d.slice(2);
   if(d.length===11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
   if(d.length===10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  if(tel) console.warn(`formatarTelefoneBling: número não reconhecido (${d.length} dígitos), não vai ser salvo:`,tel);
   return "";
 }
 
