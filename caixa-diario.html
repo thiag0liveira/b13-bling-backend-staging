@@ -216,8 +216,33 @@ function abrirSincronizar(){
         <button class="btn btn-mag" style="flex:1" onclick="rodarSincronizacao()">Sincronizar agora</button>
         <button class="btn btn-ghost" onclick="document.getElementById('sincBox').innerHTML=''">Cancelar</button>
       </div>
+      <div style="border-top:1px solid #2c2660;margin-top:14px;padding-top:12px">
+        <div class="muted" style="font-size:12px;margin-bottom:8px">Se algo entrou errado na ficha, dá pra zerar e sincronizar de novo do zero:</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1;color:#ff8090" onclick="limparLedger(false)">🗑️ Zerar esse período</button>
+          <button class="btn btn-ghost" style="flex:1;color:#ff8090" onclick="limparLedger(true)">🗑️ Zerar TUDO</button>
+        </div>
+      </div>
       <div id="sincResultado" style="margin-top:12px"></div>
     </div>`;
+}
+
+async function limparLedger(tudo){
+  const dataInicial=document.getElementById("sincIni").value;
+  const dataFinal=document.getElementById("sincFim").value;
+  const msg=tudo
+    ? "Isso vai apagar a ficha local INTEIRA (todos os períodos já sincronizados). Confirma?"
+    : `Isso vai apagar da ficha local os pedidos criados entre ${dataInicial} e ${dataFinal}. Confirma?`;
+  if(!confirm(msg)) return;
+  const out=document.getElementById("sincResultado");
+  out.innerHTML=`<div class="muted">Apagando…</div>`;
+  try{
+    const body=tudo?{}:{dataInicial,dataFinal};
+    const j=await fetch(B+"/api/ledger/limpar",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":(typeof b13GetSession==="function"?b13GetSession()?.token:"")||""},body:JSON.stringify(body)}).then(r=>r.json());
+    if(j.erro){ out.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
+    out.innerHTML=`<div class="muted">🗑️ ${j.removidos} registro(s) removido(s). Agora sincroniza de novo o período que precisar.</div>`;
+    carregarRelatorio();
+  }catch(e){ out.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
 }
 
 function rodarSincronizacao(){

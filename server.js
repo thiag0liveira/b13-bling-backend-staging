@@ -2858,6 +2858,25 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
 // recebido — esse é o número que fecha o caixa e não muda depois.
 // modo=pedido: agrupa pelo dia em que o pedido foi criado (útil pra ver o que
 // ainda está em aberto/sem pagamento daquele dia, mesmo que feche em outro dia).
+// Limpa a ficha local — tudo, ou só as entradas de um período (por data do PEDIDO).
+// Não mexe no Bling, só apaga o que está guardado aqui pra poder sincronizar de novo do zero.
+app.post("/api/ledger/limpar", requireAdmin, (req,res)=>{
+  const {dataInicial,dataFinal}=req.body||{};
+  const ledger=lerLedger();
+  if(!dataInicial||!dataFinal){
+    const qtd=Object.keys(ledger).length;
+    salvarLedger({});
+    return res.json({ok:true,removidos:qtd,modo:"tudo"});
+  }
+  let removidos=0;
+  for(const id of Object.keys(ledger)){
+    const dp=ledger[id].dataPedido;
+    if(dp && dp>=dataInicial && dp<=dataFinal){ delete ledger[id]; removidos++; }
+  }
+  salvarLedger(ledger);
+  res.json({ok:true,removidos,modo:"periodo",dataInicial,dataFinal});
+});
+
 app.get("/api/ledger/relatorio", (req,res)=>{
   const modo=req.query.modo==="pedido"?"pedido":"pagamento";
   const dataRegex=/^\d{4}-\d{2}-\d{2}$/;
