@@ -380,6 +380,7 @@ function telaSplash(app){
   // áudio) e só aí avança; nunca mais de um vídeo tocando ao mesmo tempo
   if(_splashTimer) clearTimeout(_splashTimer);
   _splashAtual=0;
+  atualizarHeaderSplash(slides[0]?.tipo); // primeira exibição: aplica direto, sem fade pra esperar
   if(slides.length>1){
     tocarSlideAtual();
     agendarProximoSlideSplash();
@@ -397,7 +398,6 @@ let _splashAtual=0;
 function tocarSlideAtual(){
   const els=document.querySelectorAll(".slideCard");
   const atualEl=els[_splashAtual];
-  atualizarHeaderSplash(atualEl?.dataset.tipo);
   const video=atualEl?.querySelector("video");
   const musica=document.getElementById("musicaFundo");
   if(video){
@@ -442,6 +442,9 @@ function avancarSlideSplash(){
   _splashAtual=prox;
   tocarSlideAtual();
   agendarProximoSlideSplash();
+  // só troca a logo depois que o fade (1.2s) terminar, senão o espaço muda de
+  // tamanho no meio da transição e a imagem "pula"/perde o formato
+  setTimeout(()=>atualizarHeaderSplash(els[prox]?.dataset.tipo),1250);
 }
 
 function telaInicio(app){
