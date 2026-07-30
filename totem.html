@@ -152,6 +152,7 @@
 <body>
 <div id="app"></div>
 <div id="recibo"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app"; // hospedado: mesmo servidor; local: Railway
 const LOGO="/logo";
@@ -923,11 +924,43 @@ function imprimir(){
   window.print();
 }
 
+// monta a nota completa (com código de barras/QR) ESCONDIDA na própria tela e já
+// dispara o print — tudo dentro do mesmo clique do usuário (por isso não trava,
+// diferente de abrir uma página nova e imprimir sozinho depois que ela carregar)
+function imprimirNotaLocal(){
+  const r=S.resultado||{};
+  const pedidoId=r.pedido?.data?.id||"";
+  const numero=r.pedido?.data?.numero||pedidoId||"";
+  const itensHtml=itens().map(i=>`
+    <tr><td>${esc(pack(i.qtd,i.un))} ${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` (${esc(i.sabor)})`:""}</td>
+    <td style="text-align:right;white-space:nowrap">${brl(i.preco*i.qtd)}</td></tr>`).join("");
+  document.getElementById("recibo").innerHTML=`
+    <div style="text-align:center;font-weight:900;font-size:15px">B13 BEBIDAS</div>
+    <div style="text-align:center;font-size:9px;color:#333;margin-bottom:6px">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888</div>
+    <hr>
+    <div style="font-weight:900;font-size:16px">Pedido #${esc(numero)}</div>
+    <div style="font-size:10px">${new Date().toLocaleString("pt-BR")}</div>
+    ${pedidoId?`<div style="text-align:center;margin:6px 0"><svg id="barcodeLocal"></svg><div style="font-size:8px;color:#888">Apresente no caixa</div></div>`:""}
+    <hr>
+    <div style="font-size:10px">CLIENTE</div>
+    <div style="font-weight:900;font-size:13px">${esc(S.nome)}</div>
+    <hr>
+    <table style="width:100%;font-size:12px;border-collapse:collapse">${itensHtml}</table>
+    <hr>
+    <div style="font-weight:900;font-size:15px;display:flex;justify-content:space-between"><span>TOTAL</span><span>${brl(totalFinal())}</span></div>
+    <div style="text-align:center;font-size:10px;margin-top:4px">${S.entrega==="entrega"?"Entrega":"Retirada na loja"}</div>
+    ${pedidoId?`<hr><div style="text-align:center;margin-top:6px">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(window.location.origin+"/pedido/"+pedidoId+"/status")}" style="width:110px;height:110px">
+      <div style="font-size:8px;color:#666">Leia o QR pra ver status do pedido</div>
+    </div>`:""}`;
+  if(pedidoId){ try{ JsBarcode("#barcodeLocal",String(pedidoId),{format:"CODE128",width:1.1,height:34,fontSize:9,margin:0}); }catch(e){} }
+  window.print();
+}
+
 function telaSucesso(app){
   const r=S.resultado||{};
   const pedidoId=r.pedido?.data?.id;
   const nped=r.pedido?.data?.numero || pedidoId;
-  const notaUrl=pedidoId?(window.location.origin+"/pedido/"+pedidoId+"/nota"):null;
   const listaItens=itens().map(i=>`
     <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="flex:1">
@@ -972,7 +1005,7 @@ function telaSucesso(app){
     ${statusBling}
 
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      ${notaUrl?`<a href="${notaUrl}" target="_blank" class="btn btn-mag big" style="text-decoration:none;text-align:center">🖨️ Imprimir nota (com código pro caixa)</a>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
+      ${pedidoId?`<button class="btn btn-mag big" onclick="imprimirNotaLocal()">🖨️ Imprimir nota (com código pro caixa)</button>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
       <button class="btn btn-ghost big" onclick="recomecar(false)">Novo pedido</button>
     </div>
   </div>`;
