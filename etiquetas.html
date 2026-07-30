@@ -21,7 +21,13 @@
   .lista{max-height:340px;overflow:auto;margin-top:10px}
   .linha{display:flex;align-items:center;gap:10px;padding:7px;border-bottom:1px solid #2a2660;font-size:13px}
   .linha input{width:auto}
-  @media print{ .noprint{display:none!important} body{background:#fff} }
+  @media print{ .noprint{display:none!important} body{background:#fff} @page{ size:A4; margin:10mm } }
+  .folha.modelo2{ grid-template-columns:repeat(2,1fr) }
+  @media print{
+    .folha.modelo2{ grid-auto-rows:134mm; row-gap:8mm; column-gap:8mm }
+    .folha.modelo2 .etq2{ height:134mm }
+    .folha.modelo2 .etq2:nth-child(4n){ page-break-after:always }
+  }
 
   .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:stretch}
   .etiqueta{background:#fff;color:#181542;border:2px solid #181542;border-radius:6px;overflow:hidden;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif}
@@ -176,6 +182,7 @@ function hojeFmt(){ const d=new Date(); return String(d.getDate()).padStart(2,"0
 async function gerarEtiquetas(){
   if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
   const folha=document.getElementById("folhaEtiquetas");
+  folha.className="folha";
   folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
   try{
     const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
@@ -206,6 +213,7 @@ function partesPreco(v){
 async function gerarEtiquetasModelo2(){
   if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
   const folha=document.getElementById("folhaEtiquetas");
+  folha.className="folha modelo2";
   folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
   try{
     const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
