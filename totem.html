@@ -885,22 +885,9 @@ async function finalizar(){
     else{ S.resultado={bling:false, erro:(j.erro||"erro"), detalhe:(j.body||j.detalhe), entrega}; }
   }catch(e){ S.resultado={bling:false, erro:"conexão", entrega}; }
   S.enviando=false; S.etapa="sucesso"; render();
-  // imprime automaticamente na impressora local (USB), sem abrir nada visível na tela:
-  // a nota (com código de barras/QR) quando o pedido foi gerado no Bling; senão, o
-  // recibo simples como reserva — sempre imprime algo, mesmo se o Bling falhar
-  const pedidoId=S.resultado?.pedido?.data?.id;
-  if(S.resultado?.bling && pedidoId) imprimirNotaSemAbrir(pedidoId);
-  else imprimir();
-}
-
-// carrega a nota num quadro escondido (iframe invisível) só pra imprimir — a própria
-// nota já dispara o print sozinha ao carregar; some da tela sem o cliente ver nada
-function imprimirNotaSemAbrir(pedidoId){
-  const f=document.createElement("iframe");
-  f.style.cssText="position:fixed;width:0;height:0;border:none;opacity:0;pointer-events:none";
-  f.src=window.location.origin+"/pedido/"+pedidoId+"/nota";
-  document.body.appendChild(f);
-  setTimeout(()=>{ try{ f.remove(); }catch(e){} },15000); // some depois de dar tempo de imprimir
+  // IMPORTANTE: a impressão automática foi desligada por travar o app no totem
+  // (window.print() bloqueando a aba). Por enquanto fica manual — o botão
+  // "Imprimir nota" / "Imprimir" na tela de sucesso continua funcionando normal.
 }
 
 function resumoTexto(){
