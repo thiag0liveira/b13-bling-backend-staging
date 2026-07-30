@@ -2810,7 +2810,7 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
     const pags=lerPag();
     const logsTodos=lerJSON(LOG_FILE,{});
     const hoje=dataBR();
-    let atualizados=0, jaEstavaPago=0;
+    let atualizados=0, jaEstavaPago=0, novosPagos=0, novosPendentes=0, novosParciais=0;
 
     for(let i=0;i<lista.length;i++){
       const pRaw=lista[i];
@@ -2843,15 +2843,16 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
           const emReal=(pagLocal?.historico||[]).slice(-1)[0]?.em;
           entry.dataPagamento = emReal ? dataBR(emReal) : hoje;
         }
-        entry.status="pago";
+        entry.status="pago"; novosPagos++;
       } else {
         entry.status = valorPago>0 ? "parcial" : "pendente";
+        if(entry.status==="parcial") novosParciais++; else novosPendentes++;
       }
       ledger[id]=entry;
       atualizados++;
     }
     salvarLedger(ledger);
-    send({tipo:"done",atualizados,jaEstavaPago,totalPedidos:lista.length});
+    send({tipo:"done",atualizados,jaEstavaPago,totalPedidos:lista.length,novosPagos,novosPendentes,novosParciais});
   }catch(e){ send({tipo:"erro",erro:e.message}); }
   clearInterval(heartbeat);
   res.end();
