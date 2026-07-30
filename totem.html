@@ -886,12 +886,11 @@ async function finalizar(){
   }catch(e){ S.resultado={bling:false, erro:"conexão", entrega}; }
   S.enviando=false; S.etapa="sucesso"; render();
   // imprime automaticamente na impressora local (USB), sem abrir nada visível na tela:
-  // a nota (com código de barras/QR) quando o pedido foi gerado no Bling; senão, o recibo simples
-  if(S.resultado?.bling){
-    const pedidoId=S.resultado.pedido?.data?.id;
-    if(pedidoId) imprimirNotaSemAbrir(pedidoId);
-    else imprimir();
-  }
+  // a nota (com código de barras/QR) quando o pedido foi gerado no Bling; senão, o
+  // recibo simples como reserva — sempre imprime algo, mesmo se o Bling falhar
+  const pedidoId=S.resultado?.pedido?.data?.id;
+  if(S.resultado?.bling && pedidoId) imprimirNotaSemAbrir(pedidoId);
+  else imprimir();
 }
 
 // carrega a nota num quadro escondido (iframe invisível) só pra imprimir — a própria
