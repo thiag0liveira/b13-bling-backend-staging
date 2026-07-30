@@ -3693,6 +3693,7 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
   </div>
   <div class="acoes no-print">
     <button class="btn btn-ghost" onclick="window.print()">🖨️ Imprimir nota</button>
+    <button class="btn" onclick="location.href='/pedir'">⬅️ Voltar / Novo pedido</button>
   </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
