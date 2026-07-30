@@ -893,7 +893,7 @@ function resumoTexto(){
   l.push(`*TOTAL: ${brl(totalFinal())}*`);
   return l.join("\n");
 }
-function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURIComponent(resumoTexto()),"_blank"); }
+function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURIComponent(resumoTexto()),"_blank"); } // sem uso na UI, mantida caso volte a ser necessária
 function textoReciboImpressao(){
   const r=S.resultado||{};
   const nped=r.pedido?.data?.numero || r.pedido?.data?.id || "";
