@@ -150,6 +150,10 @@ function bling(path,options={}){
   return resultado;
 }
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
+// data (AAAA-MM-DD) no fuso do Brasil (UTC-3, sem horário de verão) — usa isso em vez de
+// toISOString().slice(0,10) sempre que for guardar "o dia de hoje/desse timestamp",
+// senão à noite (depois das 21h BRT) o UTC já vira o dia seguinte e as datas ficam erradas
+const dataBR=(quando)=>new Date((quando?new Date(quando).getTime():Date.now())-3*60*60*1000).toISOString().slice(0,10);
 // formata telefone/celular no padrão que o Bling exige pra validar o contato;
 // se não tiver DDD+número válido (10 ou 11 dígitos), retorna vazio em vez de
 // mandar algo torto que derruba a criação/atualização do contato inteiro
@@ -1397,7 +1401,7 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
   const resultado={};
   // 1) lista caixas
   try{
-    const hoje=new Date().toISOString().slice(0,10);
+    const hoje=dataBR();
     const trintaDiasAtras=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
     const r=await bling(`/caixas?dataInicial=${trintaDiasAtras}&dataFinal=${hoje}`);
     resultado.get_caixas={ok:true,qtd:(r?.data||[]).length,amostra:(r?.data||[]).slice(0,3)};
@@ -2532,7 +2536,7 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
 
 app.get("/api/em-digitacao", async(req,res)=>{
   try{
-    const hoje=new Date().toISOString().slice(0,10);
+    const hoje=dataBR();
     const dataInicial=req.query.dataInicial||new Date(Date.now()-90*86400000).toISOString().slice(0,10);
     const dataFinal=req.query.dataFinal||hoje;
 
@@ -2805,7 +2809,7 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
     const ledger=lerLedger();
     const pags=lerPag();
     const logsTodos=lerJSON(LOG_FILE,{});
-    const hoje=new Date().toISOString().slice(0,10);
+    const hoje=dataBR();
     let atualizados=0, jaEstavaPago=0;
 
     for(let i=0;i<lista.length;i++){
@@ -2837,7 +2841,7 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
         // senão considera hoje como o dia em que detectamos o recebimento
         if(!entry.dataPagamento){
           const emReal=(pagLocal?.historico||[]).slice(-1)[0]?.em;
-          entry.dataPagamento = emReal ? new Date(emReal).toISOString().slice(0,10) : hoje;
+          entry.dataPagamento = emReal ? dataBR(emReal) : hoje;
         }
         entry.status="pago";
       } else {
