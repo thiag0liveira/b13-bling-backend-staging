@@ -2475,9 +2475,9 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
 
 app.get("/pedir", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "totem.html")); });
 app.get("/pedir-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-online.html")); });
-app.get("/ofertas", (req, res) => res.sendFile(path.join(__dirname, "ofertas.html")));
-app.get("/pedir-tabela", (req, res) => res.sendFile(path.join(__dirname, "pedir-tabela.html")));
-app.get("/painel", (req, res) => res.sendFile(path.join(__dirname, "painel.html")));
+app.get("/ofertas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "ofertas.html")); });
+app.get("/pedir-tabela", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-tabela.html")); });
+app.get("/painel", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "painel.html")); });
 // ------------------------- Fechamento de Caixa -------------------------
 const _vendedorCache={};
 async function nomeVendedor(id){
@@ -3072,17 +3072,17 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 });
 
 
-app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
+app.get("/expedicao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "expedicao.html")); });
 app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa.html")); });
 app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
-app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
-app.get("/lista-fardo", (req, res) => res.sendFile(path.join(__dirname, "lista-fardo.html")));
-app.get("/etiquetas", (req, res) => res.sendFile(path.join(__dirname, "etiquetas.html")));
-app.get("/listas-extras", (req, res) => res.sendFile(path.join(__dirname, "listas-extras.html")));
-app.get("/gestao", (req, res) => res.sendFile(path.join(__dirname, "gestao.html")));
-app.get("/gerenciamento", (req, res) => res.sendFile(path.join(__dirname, "gerenciamento.html")));
-app.get("/funcionarios", (req, res) => res.sendFile(path.join(__dirname, "funcionarios.html")));
-app.get("/operacional", (req, res) => res.sendFile(path.join(__dirname, "operacional.html")));
+app.get("/frente-caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "frente-caixa.html")); });
+app.get("/lista-fardo", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "lista-fardo.html")); });
+app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "etiquetas.html")); });
+app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas-extras.html")); });
+app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
+app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
+app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });
+app.get("/operacional", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "operacional.html")); });
 // Retorna o preço de um produto pelo código (usa cache de estoque + busca direta no Bling)
 app.get("/api/preco-codigo", async (req, res) => {
   try {
@@ -3109,8 +3109,8 @@ app.get("/conferencia",(req,res)=>res.sendFile(path.join(__dirname,"conferencia.
 // Config pública (situações)
 app.get("/api/config",(req,res)=>res.json({SIT}));
 app.get("/tabela",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
-app.get("/listas", (req, res) => res.sendFile(path.join(__dirname, "listas.html")));
-app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "dashboard.html")));
+app.get("/listas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas.html")); });
+app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "dashboard.html")); });
 
 // ---- Gerenciador de imagens de produtos ----
 // Progresso em tempo real via SSE
@@ -3501,7 +3501,7 @@ app.get("/api/preco/reconstruir-indice", async(req,res)=>{
   res.end();
 });
 
-app.get("/preco", (req, res) => res.sendFile(path.join(__dirname, "preco.html")));
+app.get("/preco", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "preco.html")); });
 
 app.get("/api/produtos/total", async(req,res)=>{
   try{
