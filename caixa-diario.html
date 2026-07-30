@@ -269,6 +269,11 @@ function rodarSincronizacao(){
   es.onerror=()=>{ es.close(); out.innerHTML+=`<div class="err">Conexão perdida.</div>`; };
 }
 
+// registra explicitamente no escopo global — os onclick/onchange do HTML
+// sempre procuram as funções em window, não no escopo de bloco do if() acima
+window.render=render; window.mudarDia=mudarDia; window.carregarRelatorio=carregarRelatorio;
+window.abrirSincronizar=abrirSincronizar; window.limparLedger=limparLedger; window.rodarSincronizacao=rodarSincronizacao;
+
 render();
 }
 </script>
