@@ -109,6 +109,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <img src="/logo">
   <div class="t">Etiquetas de Preço</div>
   <div class="sp"></div>
+  <button class="btn btn-ghost" onclick="atualizarLista()">🔄 Atualizar lista</button>
   <button class="btn btn-ghost" onclick="location.href='/lista-fardo'">📋 Lista de Fardo</button>
 </div>
 
@@ -143,6 +144,12 @@ async function carregar(){
     TODOS=j.data||[];
   }catch(e){ TODOS=[]; }
   renderLista();
+}
+
+async function atualizarLista(){
+  const div=document.getElementById("lista");
+  if(div) div.innerHTML=`<div class="muted">Atualizando…</div>`;
+  await carregar();
 }
 
 function renderLista(){
