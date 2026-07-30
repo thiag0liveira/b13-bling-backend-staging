@@ -919,7 +919,7 @@ function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURICo
 function textoReciboImpressao(){
   const r=S.resultado||{};
   const nped=r.pedido?.data?.numero || r.pedido?.data?.id || "";
-  let l=[`Pedido #${nped}`, new Date().toLocaleString("pt-BR"), ""];
+  let l=[nped?`Pedido #${nped}`:"Pedido (aguardando registro)", new Date().toLocaleString("pt-BR"), ""];
   l.push(`Cliente: ${S.nome}`); l.push(`Telefone: ${S.telefone}`);
   if(soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
   l.push(""); l.push("Itens:");
@@ -964,7 +964,7 @@ function telaSucesso(app){
 
     <div style="background:#151233;border:1px solid #514c96;border-radius:14px;overflow:hidden;margin-bottom:14px">
       <div style="background:#262366;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-weight:900;font-size:20px">#${nped}</div>
+        <div style="font-weight:900;font-size:20px">${nped?"#"+nped:"Pedido registrado localmente"}</div>
         <div style="font-size:11px;color:#cfc9f5">${new Date().toLocaleDateString("pt-BR")}</div>
       </div>
       <div style="padding:14px 18px">
