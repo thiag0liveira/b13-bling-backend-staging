@@ -123,6 +123,7 @@ document.addEventListener("DOMContentLoaded",function(){
 <div class="wrap noprint">
   <div class="card">
     <div class="muted" style="margin-bottom:6px">Selecione os produtos pra gerar etiquetas (mostra Atacado, Fardo e Varejo)</div>
+    <div id="categorias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <input class="busca" id="filtro" placeholder="Filtrar por nome…" oninput="renderLista()">
     <div class="lista" id="lista"><div class="muted">Carregando…</div></div>
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -150,6 +151,7 @@ async function carregar(){
     const j=await fetch(BACKEND+"/api/lista-fardo").then(r=>r.json());
     TODOS=j.data||[];
   }catch(e){ TODOS=[]; }
+  renderCategorias();
   renderLista();
 }
 
@@ -157,6 +159,31 @@ async function atualizarLista(){
   const div=document.getElementById("lista");
   if(div) div.innerHTML=`<div class="muted">Atualizando…</div>`;
   await carregar();
+}
+
+function categoriasUnicas(){
+  return [...new Set(TODOS.map(i=>i.categoriaNome||"(sem categoria)"))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+}
+
+function renderCategorias(){
+  const box=document.getElementById("categorias");
+  if(!box) return;
+  const cats=categoriasUnicas();
+  if(!cats.length){ box.innerHTML=""; return; }
+  box.innerHTML=cats.map(cat=>{
+    const itensCat=TODOS.filter(i=>(i.categoriaNome||"(sem categoria)")===cat);
+    const todosMarcados=itensCat.length>0 && itensCat.every(i=>SELECIONADOS.has(i.itemId));
+    return `<button class="btn ${todosMarcados?"":"btn-ghost"}" style="font-size:11px;padding:6px 10px"
+      onclick="toggleCategoria('${esc(cat).replace(/'/g,"&#39;")}')">${todosMarcados?"✓ ":""}${esc(cat)} <span style="opacity:.7">(${itensCat.length})</span></button>`;
+  }).join("");
+}
+
+function toggleCategoria(cat){
+  const itensCat=TODOS.filter(i=>(i.categoriaNome||"(sem categoria)")===cat);
+  const todosMarcados=itensCat.length>0 && itensCat.every(i=>SELECIONADOS.has(i.itemId));
+  itensCat.forEach(i=> todosMarcados?SELECIONADOS.delete(i.itemId):SELECIONADOS.add(i.itemId));
+  renderCategorias();
+  renderLista();
 }
 
 function renderLista(){
@@ -172,7 +199,7 @@ function renderLista(){
     </label>`).join("");
 }
 
-function toggleSel(id,marcado){ if(marcado) SELECIONADOS.add(id); else SELECIONADOS.delete(id); }
+function toggleSel(id,marcado){ if(marcado) SELECIONADOS.add(id); else SELECIONADOS.delete(id); renderCategorias(); }
 
 function fmtPreco(v){
   if(v==null) return "—";
