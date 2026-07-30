@@ -3699,8 +3699,10 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script>
   try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.1,height:36,fontSize:10,margin:0,background:"transparent"}); }catch(e){ console.error("Erro ao gerar código de barras:",e); }
-  // IMPORTANTE: a impressão automática foi removida por travar o totem
-  // (window.print() bloqueando a aba). Fica manual, pelo botão "Imprimir nota".
+  // imprime automaticamente ao abrir. Antes isso travava o totem com a flag --kiosk-printing;
+  // agora a impressão silenciosa é feita pela política SilentPrintingEnabled do Windows/Edge,
+  // que não tem esse bug de travamento.
+  window.onload=()=>{ setTimeout(()=>window.print(),350); };
 </script>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");
