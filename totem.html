@@ -878,6 +878,7 @@ async function finalizar(){
     else{ S.resultado={bling:false, erro:(j.erro||"erro"), detalhe:(j.body||j.detalhe), entrega}; }
   }catch(e){ S.resultado={bling:false, erro:"conexão", entrega}; }
   S.enviando=false; S.etapa="sucesso"; render();
+  if(S.resultado?.bling) imprimir(); // imprime o comprovante automaticamente na impressora local (USB)
 }
 
 function resumoTexto(){
@@ -893,8 +894,23 @@ function resumoTexto(){
   return l.join("\n");
 }
 function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURIComponent(resumoTexto()),"_blank"); }
+function textoReciboImpressao(){
+  const r=S.resultado||{};
+  const nped=r.pedido?.data?.numero || r.pedido?.data?.id || "";
+  let l=[`Pedido #${nped}`, new Date().toLocaleString("pt-BR"), ""];
+  l.push(`Cliente: ${S.nome}`); l.push(`Telefone: ${S.telefone}`);
+  if(soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
+  l.push(""); l.push("Itens:");
+  itens().forEach(i=> l.push(`${pack(i.qtd,i.un)} ${i.nomeProduto}${i.sabor&&i.sabor!==i.nomeProduto?` (${i.sabor})`:""} = ${brl(i.preco*i.qtd)}`));
+  l.push(""); l.push(`Subtotal: ${brl(subtotal())}`);
+  if(S.entrega==='entrega'&&S.frete){ l.push(`Entrega: ${S.endereco}`); l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}`); }
+  else l.push("Retirada na loja");
+  l.push(`TOTAL: ${brl(totalFinal())}`);
+  l.push(""); l.push("Obrigado pela preferência!");
+  return l.join("\n");
+}
 function imprimir(){
-  document.getElementById("recibo").innerHTML=`<h2>B13 BEBIDAS — Pedido Atacado</h2><pre style="font-size:14px;white-space:pre-wrap">${esc(resumoTexto())}</pre>`;
+  document.getElementById("recibo").innerHTML=`<h2>B13 BEBIDAS — Pedido Atacado</h2><pre style="font-size:14px;white-space:pre-wrap">${esc(textoReciboImpressao())}</pre>`;
   window.print();
 }
 
