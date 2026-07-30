@@ -3637,8 +3637,19 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 .btn-ghost{background:#f1f5f9;color:#333;border:1px solid #ddd}
 @media print{
   .acoes,.no-print{display:none!important}
-  body{padding:0}
+  @page{ size:80mm auto; margin:0 }
+  body{padding:0;font-size:14px}
   .nota{max-width:100%}
+  .topo{padding:8px 10px}
+  .logo img{height:30px!important}
+  .empresa{font-size:11px!important}
+  .secao{padding:8px 10px}
+  .secao-title{font-size:11px!important}
+  table th{font-size:11px!important}
+  table td{font-size:15px!important;padding:6px 4px!important}
+  .total-row{font-size:16px!important}
+  .total-destaque{font-size:22px!important;font-weight:900!important}
+  .pag-ok,.pag-pend{font-size:17px!important}
 }
 </style></head><body>
 <div class="nota">
@@ -3687,6 +3698,8 @@ th{font-size:10px;color:#888;padding:4px 6px;border-bottom:2px solid #ddd;text-a
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script>
   try{ JsBarcode("#barcode","${id}",{format:"CODE128",width:1.1,height:36,fontSize:10,margin:0,background:"transparent"}); }catch(e){ console.error("Erro ao gerar código de barras:",e); }
+  // imprime automaticamente ao abrir (dá um tempinho pra imagem do QR/código de barras carregar)
+  window.onload=()=>{ setTimeout(()=>window.print(),350); };
 </script>
 </body></html>`;
     res.setHeader("Content-Type","text/html;charset=utf-8");

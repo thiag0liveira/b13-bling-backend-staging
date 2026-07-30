@@ -885,7 +885,13 @@ async function finalizar(){
     else{ S.resultado={bling:false, erro:(j.erro||"erro"), detalhe:(j.body||j.detalhe), entrega}; }
   }catch(e){ S.resultado={bling:false, erro:"conexão", entrega}; }
   S.enviando=false; S.etapa="sucesso"; render();
-  if(S.resultado?.bling) imprimir(); // imprime o comprovante automaticamente na impressora local (USB)
+  // imprime automaticamente na impressora local (USB): a nota com código de barras/QR
+  // quando o pedido foi gerado no Bling; senão, o recibo simples como reserva
+  if(S.resultado?.bling){
+    const pedidoId=S.resultado.pedido?.data?.id;
+    if(pedidoId) window.open(window.location.origin+"/pedido/"+pedidoId+"/nota","_blank");
+    else imprimir();
+  }
 }
 
 function resumoTexto(){
