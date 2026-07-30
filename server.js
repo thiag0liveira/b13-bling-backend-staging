@@ -3068,8 +3068,8 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
 
 app.get("/expedicao", (req, res) => res.sendFile(path.join(__dirname, "expedicao.html")));
-app.get("/caixa", (req, res) => res.sendFile(path.join(__dirname, "caixa.html")));
-app.get("/caixa-diario", (req, res) => res.sendFile(path.join(__dirname, "caixa-diario.html")));
+app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa.html")); });
+app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
 app.get("/frente-caixa", (req, res) => res.sendFile(path.join(__dirname, "frente-caixa.html")));
 app.get("/lista-fardo", (req, res) => res.sendFile(path.join(__dirname, "lista-fardo.html")));
 app.get("/etiquetas", (req, res) => res.sendFile(path.join(__dirname, "etiquetas.html")));
