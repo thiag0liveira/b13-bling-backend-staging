@@ -928,6 +928,7 @@ function imprimir(){
 // dispara o print — tudo dentro do mesmo clique do usuário (por isso não trava,
 // diferente de abrir uma página nova e imprimir sozinho depois que ela carregar)
 function imprimirNotaLocal(){
+ try{
   const r=S.resultado||{};
   const pedidoId=r.pedido?.data?.id||"";
   const numero=r.pedido?.data?.numero||pedidoId||"";
@@ -955,6 +956,9 @@ function imprimirNotaLocal(){
     </div>`:""}`;
   if(pedidoId){ try{ JsBarcode("#barcodeLocal",String(pedidoId),{format:"CODE128",width:1.1,height:34,fontSize:9,margin:0}); }catch(e){} }
   window.print();
+ }catch(e){
+  alertaBonito("Deu erro ao montar/imprimir a nota:\n\n"+(e.message||e)+"\n\nTira uma foto dessa tela e manda pro suporte.");
+ }
 }
 
 function telaSucesso(app){
