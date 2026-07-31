@@ -122,6 +122,12 @@ document.addEventListener("DOMContentLoaded",function(){
 
 <div class="wrap noprint">
   <div class="card">
+    <div class="muted" style="margin-bottom:6px">🔍 Buscar produto direto no Bling (qualquer produto, mesmo sem vínculo na Tabela Atacado — imprime só o preço de varejo se não tiver atacado/fardo)</div>
+    <input class="busca" id="buscaBling" placeholder="Digite o nome do produto…" oninput="buscarBlingDebounce()">
+    <div id="resultadosBling" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
     <div class="muted" style="margin-bottom:6px">Selecione os produtos pra gerar etiquetas (mostra Atacado, Fardo e Varejo)</div>
     <div id="categorias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <input class="busca" id="filtro" placeholder="Filtrar por nome…" oninput="renderLista()">
@@ -159,6 +165,37 @@ async function atualizarLista(){
   const div=document.getElementById("lista");
   if(div) div.innerHTML=`<div class="muted">Atualizando…</div>`;
   await carregar();
+}
+
+let _buscaBlingT=null;
+function buscarBlingDebounce(){ clearTimeout(_buscaBlingT); _buscaBlingT=setTimeout(buscarBling,350); }
+
+async function buscarBling(){
+  const termo=document.getElementById("buscaBling").value.trim();
+  const box=document.getElementById("resultadosBling");
+  if(termo.length<2){ box.innerHTML=""; return; }
+  box.innerHTML=`<div class="muted">Buscando…</div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    const lista=j.data||[];
+    box.innerHTML=lista.length?lista.map(p=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2660">
+        <span style="flex:1;font-size:13px">${esc(p.nome)} <span class="muted">(cód. ${esc(p.codigo||"—")})</span></span>
+        <button class="btn btn-sm" onclick='adicionarAvulsoBling(${JSON.stringify({id:p.id,nome:p.nome}).replace(/'/g,"&#39;")})'>+ Adicionar</button>
+      </div>`).join(""):`<div class="muted">Nenhum produto encontrado no Bling.</div>`;
+  }catch(e){ box.innerHTML=`<div class="muted">Erro na busca.</div>`; }
+}
+
+async function adicionarAvulsoBling(p){
+  try{
+    const j=await fetch(BACKEND+"/api/lista-fardo/associar-avulso",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({produtoId:p.id,nome:p.nome})}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    await carregar(); // recarrega a lista (já vem com esse item novo)
+    SELECIONADOS.add(j.itemId);
+    renderCategorias(); renderLista();
+    document.getElementById("buscaBling").value="";
+    document.getElementById("resultadosBling").innerHTML=`<div class="muted">✅ "${esc(p.nome)}" adicionado à seleção (sem preço de atacado/fardo — só varejo).</div>`;
+  }catch(e){ alert("Erro ao adicionar produto."); }
 }
 
 function categoriasUnicas(){

@@ -1759,10 +1759,10 @@ app.post("/api/lista-fardo/importar",(req,res)=>{
 // associa manualmente um código que não tinha vínculo na tabela atacado, a um produto do Bling escolhido na busca
 app.post("/api/lista-fardo/associar-avulso",async(req,res)=>{
   const {produtoId,nome,preco,codigo}=req.body||{};
-  if(!produtoId||!nome||!(preco>0)) return res.status(400).json({erro:"informe produtoId, nome e preco"});
+  if(!produtoId||!nome) return res.status(400).json({erro:"informe produtoId e nome"});
   const fardo=lerListaFardo();
   const chave="avulso_"+produtoId;
-  fardo[chave]={preco:+Number(preco),nome,categoriaNome:"(avulso)",origem:"avulso",produtoId,codigoImportado:codigo||""};
+  fardo[chave]={preco:(preco>0?+Number(preco):null),nome,categoriaNome:"(avulso)",origem:"avulso",produtoId,codigoImportado:codigo||""};
   salvarListaFardo(fardo);
   res.json({ok:true,itemId:chave});
 });
