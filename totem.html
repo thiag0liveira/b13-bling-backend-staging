@@ -172,7 +172,7 @@ const soDig=(s)=>(s||"").replace(/\D/g,"");
 function validaCPF(c){ c=soDig(c); if(c.length!==11||/^(\d)\1+$/.test(c))return false; let s=0; for(let i=0;i<9;i++)s+=+c[i]*(10-i); let d1=11-(s%11); if(d1>=10)d1=0; if(d1!==+c[9])return false; s=0; for(let i=0;i<10;i++)s+=+c[i]*(11-i); let d2=11-(s%11); if(d2>=10)d2=0; return d2===+c[10]; }
 function validaCNPJ(c){ c=soDig(c); if(c.length!==14||/^(\d)\1+$/.test(c))return false; const calc=(x)=>{let n=0,p=x-7; for(let i=x;i>=1;i--){n+=+c[x-i]*p--; if(p<2)p=9;} const r=11-(n%11); return r>9?0:r;}; return calc(12)===+c[12]&&calc(13)===+c[13]; }
 function docValido(d){ d=soDig(d); return d.length===11?validaCPF(d):d.length===14?validaCNPJ(d):false; }
-const esc=(s)=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
 // alerta com o visual do app, em vez do alertaBonito() feio/genérico do navegador — melhor pro totem
 function alertaBonito(msg){
