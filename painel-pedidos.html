@@ -49,6 +49,7 @@
   <img src="/logo" onerror="this.style.display='none'">
   <div class="t">ACOMPANHAMENTO DE PEDIDOS</div>
   <div class="sp"></div>
+  <a href="/operacional" id="btnVoltar" style="display:none;color:#cfc9f5;text-decoration:none;font-size:2vh;font-weight:700;margin-right:16px">← Menu</a>
   <div class="hora" id="hora"></div>
 </div>
 <div class="grade">
@@ -128,6 +129,16 @@ async function atualizar(){
 
 atualizar();
 setInterval(atualizar,10000); // atualiza a cada 10s
+
+// botão "Menu" só aparece quando o mouse se mexe (some depois de 3s parado) —
+// mantém a tela limpa pra usar como monitor, mas dá um jeito de voltar
+let _mouseTimer=null;
+document.addEventListener("mousemove",()=>{
+  const b=document.getElementById("btnVoltar");
+  if(b) b.style.display="inline";
+  clearTimeout(_mouseTimer);
+  _mouseTimer=setTimeout(()=>{ if(b) b.style.display="none"; },3000);
+});
 </script>
 </body>
 </html>

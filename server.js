@@ -231,6 +231,7 @@ function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
   const links=[
     {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
+    {href:"/painel-pedidos",label:"📺 Painel de Pedidos",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
     {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/caixa-diario",label:"📅 Relatório Diário",check:()=>b13Pode("receber_pagamento")},
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
