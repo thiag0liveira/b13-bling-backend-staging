@@ -546,6 +546,41 @@ app.patch("/api/separacoes/:id",(req,res)=>{
 });
 
 app.get("/api/separacoes",(req,res)=>{ res.json({data:limparLocksExpirados()}); });
+
+// Painel de acompanhamento (monitor de TV): junta os pedidos por situação com
+// quem está separando (locks). Divide em 4 grupos pra tela.
+app.get("/api/painel-pedidos", async(req,res)=>{
+  try{
+    const locks=limparLocksExpirados();
+    // busca todos os pedidos nas situações que interessam ao painel
+    const params=new URLSearchParams({pagina:1,limite:100});
+    [SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
+    const r=await bling(`/pedidos/vendas?${params.toString()}`);
+    const pedidos=r.data||[];
+
+    const aguardando=[], separando=[], pendencia=[], separado=[];
+    for(const p of pedidos){
+      const sit=p.situacao?.id;
+      const base={numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",total:p.total||0};
+      if(sit===SIT.SEPARADO){ separado.push(base); }
+      else if(sit===SIT.SEP_PEND){ pendencia.push(base); }
+      else if(sit===SIT.EM_SEP){
+        const lock=locks[String(p.id)];
+        if(lock && lock.tipo==="separacao"){ separando.push({...base,funcionario:lock.funcionarioNome||"—"}); }
+        else { aguardando.push(base); }
+      }
+    }
+    const ordena=a=>a.sort((x,y)=>String(x.numero).localeCompare(String(y.numero)));
+    res.json({
+      aguardando:ordena(aguardando),
+      separando:ordena(separando),
+      pendencia:ordena(pendencia),
+      separado:ordena(separado),
+      atualizadoEm:Date.now(),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.delete("/api/separacoes/:id",(req,res)=>{
   const locks=lerLocks(); const id=String(req.params.id);
   const {funcionarioId,funcionarioNome,tipo}=req.body||{};
@@ -3083,6 +3118,7 @@ app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, 
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
 app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });
 app.get("/operacional", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "operacional.html")); });
+app.get("/painel-pedidos", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "painel-pedidos.html")); });
 // Retorna o preço de um produto pelo código (usa cache de estoque + busca direta no Bling)
 app.get("/api/preco-codigo", async (req, res) => {
   try {
