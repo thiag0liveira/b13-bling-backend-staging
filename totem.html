@@ -606,6 +606,12 @@ function maskFone(v){
   const meio="*".repeat(Math.max(d.length-6,3));
   return `(${d.slice(0,2)}) ${meio}-${d.slice(-4)}`;
 }
+function maskDoc(v){
+  const d=soDig(v||"");
+  if(d.length===11) return `***.***.${d.slice(6,9)}-${d.slice(9)}`; // CPF: mostra só os 5 últimos
+  if(d.length===14) return `**.***.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`; // CNPJ
+  return v||"";
+}
 function maskEmail(v){
   if(!v||!v.includes("@")) return v||"";
   const [u,dom]=v.split("@");
@@ -749,7 +755,12 @@ function telaCheckout(app){
     <div class="muted">Subtotal: <b style="color:#ffd23f">${brl(subtotal())}</b></div>
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
-    <input autocomplete="off" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
+    ${(S.docChecado && S.docNome)
+      ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5;display:flex;align-items:center;gap:8px">
+           <span style="flex:1">🔒 ${esc(maskDoc(S.doc))}</span>
+           <button class="btn btn-ghost" style="font-size:12px;padding:6px 10px" onclick="S.docChecado=false;S.docNome=null;render()">Trocar</button>
+         </div>`
+      : `<input autocomplete="off" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">`}
     ${cardCliente()}
     ${S.docChecado
       ? (S.docNome
