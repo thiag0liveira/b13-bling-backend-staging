@@ -608,9 +608,9 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
         <span style="width:80px;text-align:right">${brl((it.valor||0)*it.quantidade)}</span>
         ${ocorr
           ?`<span style="font-size:10px;color:#ff8090;padding:2px 6px;background:#3a0010;border-radius:5px">${ocorr.tipo==="danificado"?"📷 Danif.":"📦 N.Entregue"}${parcial?` ${qtdAfe}un`:""}</span>
-            <button onclick="window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==${ix});renderConfirmarEntrega(${id},window._entregaPed,window._entregaPag,window._itensOcorrencia)" style="background:none;border:none;color:#9a95c9;cursor:pointer">✕</button>`
-          :`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="abrirEdicaoOcorrencia(${id},${ix},'nao_entregue')">📦</button>
-            <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="abrirEdicaoOcorrencia(${id},${ix},'danificado')">📷</button>`}
+            <button onclick="window._itensOcorrencia=window._itensOcorrencia.filter(o=>o.ix!==${ix});renderConfirmarEntrega(${id},window._entregaPed,window._entregaPag,window._itensOcorrencia)" style="background:none;border:none;color:#9a95c9;cursor:pointer" title="Desfazer ocorrência">✕</button>`
+          :`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;border:1px solid #e5563f;color:#ff8090" onclick="abrirEdicaoOcorrencia(${id},${ix},'nao_entregue')" title="Marcar item como não entregue (será abatido do valor)">📦 Não entregue</button>
+            <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;border:1px solid #e5a53f;color:#ffd23f" onclick="abrirEdicaoOcorrencia(${id},${ix},'danificado')" title="Marcar item como danificado (será abatido do valor, com foto)">📷 Danificado</button>`}
       </div>
       ${ocorr?.tipo==="nao_entregue"&&ocorr.motivo?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">💬 ${esc(ocorr.motivo)}</div>`:""}
     </div>`;
@@ -631,7 +631,11 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
       <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
     <div class="muted" style="margin-bottom:8px">${esc(ped.contato?.nome||"—")}</div>
     ${pagStatusHtml}
-    <div style="font-size:12px;color:#9a95c9;margin:4px 0 6px">📦 = Não entregue &nbsp; 📷 = Danificado</div>
+    <div style="background:#151233;border:1px solid #2a2660;border-radius:8px;padding:8px 10px;margin:4px 0 8px;font-size:11px;line-height:1.5;color:#cfc9f5">
+      Marque abaixo os itens com problema — o valor deles é <b>abatido do total</b> automaticamente:<br>
+      <span style="color:#ff8090">📦 Não entregue</span> = item que faltou / não foi entregue &nbsp;·&nbsp;
+      <span style="color:#ffd23f">📷 Danificado</span> = item entregue com avaria (pede foto)
+    </div>
     <div style="max-height:35vh;overflow:auto;margin:8px 0">${itens}</div>
     ${ocorrencias.length?`<div style="background:#3a0010;border-radius:8px;padding:8px;margin-bottom:8px;font-size:13px">
       ⚠️ ${ocorrencias.length} ocorrência(s) — abatimento: <b style="color:#ff8090">${brl(valOcorr)}</b>
