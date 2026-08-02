@@ -1290,25 +1290,26 @@ app.get("/api/buscar",async(req,res)=>{
     const nome=(req.query.nome||"").trim();
     if(nome.length<2) return res.json({data:[]});
     const t=nome.toLowerCase();
-
-    // 1) busca no índice local de produtos (tem TODOS os produtos e permite achar
-    //    o termo em qualquer parte do nome — ex.: "aperol" acha "APERITIVO APEROL 750ML")
-    const indice=lerJSON(GTIN_INDEX_FILE,{});
     const porId={};
+
+    // 1) índice local — rápido e acha o termo em qualquer parte do nome
+    //    (ex.: "aperol" acha "APERITIVO APEROL 750ML")
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
     Object.values(indice).forEach(p=>{
       if((p.nome||"").toLowerCase().includes(t) || String(p.codigo||"").toLowerCase()===t){
         porId[p.produtoId]={id:p.produtoId,nome:p.nome,codigo:p.codigo,estoque:null};
       }
     });
-    let achados=Object.values(porId);
 
-    // 2) se o índice está vazio (nunca reconstruído) ou não achou nada, tenta o Bling
-    if(!achados.length){
-      const add=(arr)=>(arr||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
-      try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`); add(d.data); }catch(e){}
-      achados=Object.values(porId);
-    }
-    res.json({data:achados});
+    // 2) SEMPRE consulta o Bling também — assim produtos cadastrados depois da
+    //    última reconstrução do índice já aparecem, sem precisar atualizar nada.
+    //    Filtra pelo termo pra descartar a lista genérica que o Bling devolve.
+    try{
+      const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`);
+      (d.data||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
+    }catch(e){}
+
+    res.json({data:Object.values(porId)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -4200,4 +4201,30 @@ app.get("/api/nfe/buscar/:chave", async (req, res) => {
   catch(e) { res.status(e.status||500).json({ erro:e.message, body:e.body }); }
 });
 app.get("/",(req,res)=> res.send("B13 Bling Backend rodando. Comece em <a href='/auth'>/auth</a>. Totem do cliente em <a href='/pedir'>/pedir</a>."));
+// Reconstrói o índice de produtos (nome/código/preço) em segundo plano, sem travar
+// nada. Roda ao subir o servidor e depois a cada 30 min — assim produtos novos
+// entram na busca automaticamente, sem precisar reconstruir manualmente em /preco.
+async function reconstruirIndiceProdutosBg(){
+  try{
+    const lista=[];
+    for(let pg=1;pg<=100;pg++){
+      const r=await bling(`/produtos?pagina=${pg}&limite=100`);
+      const arr=r?.data||[]; lista.push(...arr);
+      if(arr.length<100) break;
+      await sleep(400); // respeita o limite de req/s do Bling
+    }
+    const indice={};
+    for(const p of lista){
+      const item={produtoId:p.id,nome:p.nome,preco:+(p.preco||0),imagem:p.imagemURL||null,codigo:p.codigo||""};
+      const codigos=[p.gtin,p.codigo].filter(Boolean).map(String);
+      if(codigos.length) codigos.forEach(c=>{ indice[c]=item; });
+      else indice["id_"+p.id]=item; // garante que o produto entre no índice mesmo sem código
+    }
+    if(Object.keys(indice).length) salvarJSON(GTIN_INDEX_FILE,indice);
+    console.log(`[indice] atualizado em segundo plano: ${lista.length} produtos`);
+  }catch(e){ console.log("[indice] falha ao atualizar em segundo plano:",e.message); }
+}
+setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
+setInterval(reconstruirIndiceProdutosBg, 30*60*1000);      // e a cada 30 min
+
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
