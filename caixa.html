@@ -85,6 +85,18 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (venc. ${esc(f.vencimento)})`:''}`; }
 function toggleMenuLateral(){ document.body.classList.toggle("menu-oculto"); }
+function toggleTelaInteira(){
+  const btn=document.getElementById("btnTelaInteira");
+  if(!document.fullscreenElement){
+    (document.documentElement.requestFullscreen?document.documentElement.requestFullscreen():Promise.reject()).catch(()=>{});
+  }else{
+    (document.exitFullscreen?document.exitFullscreen():Promise.reject()).catch(()=>{});
+  }
+}
+document.addEventListener("fullscreenchange",()=>{
+  const btn=document.getElementById("btnTelaInteira");
+  if(btn) btn.textContent=document.fullscreenElement?"⛶ Sair da tela inteira":"⛶ Tela inteira";
+});
 
 function header(){
   const botaoNav=S.view==="scan"
@@ -123,6 +135,7 @@ function render(){
           <div style="font-weight:800;font-size:15px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
           <div class="sp" style="flex:1"></div>
           <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="toggleMenuLateral()">↔️ Ocultar/mostrar menu</button>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="toggleTelaInteira()" id="btnTelaInteira">⛶ Tela inteira</button>
         </div>
         <iframe src="/operacional?embed=caixa" style="width:100%;height:calc(100vh - 260px);min-height:520px;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
       </div>`;
