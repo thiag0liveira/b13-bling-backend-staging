@@ -1070,7 +1070,7 @@ app.get("/api/analytics", async (req,res)=>{
     const buscarTodosPedidos=async(dataInicial,dataFinal)=>{
       const todos=[];
       const sits=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,9].filter(Boolean);
-      for(let pg=1;pg<=50;pg++){
+      for(let pg=1;pg<=300;pg++){
         const p=new URLSearchParams({pagina:pg,limite:100,dataInicial,dataFinal});
         sits.forEach(id=>p.append("idsSituacoes[]",id));
         try{
@@ -1084,7 +1084,7 @@ app.get("/api/analytics", async (req,res)=>{
           const arr=r.data||[];
           todos.push(...arr);
           if(arr.length<100) break;
-          if(pg%3===0) await new Promise(r=>setTimeout(r,400)); // delay a cada 3 páginas
+          await new Promise(r=>setTimeout(r,350)); // respeita o limite de req/s do Bling a cada página
         }catch(e){ break; }
       }
       return todos;
