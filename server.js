@@ -1832,7 +1832,17 @@ app.get("/api/etiquetas",async(req,res)=>{
   const resultado=[];
   for(const id of ids){
     const avulso=fardo[id]?.origem==="avulso"?fardo[id]:null;
-    const it=itensPorId[id];
+    let it=itensPorId[id];
+
+    // se é avulso (buscado direto no Bling), verifica se esse mesmo produto do Bling
+    // já está cadastrado na Tabela Atacado — se estiver, usa os preços de lá
+    // (atacado/fardo), em vez de mostrar só o varejo
+    let itVinculado=null;
+    if(avulso && avulso.produtoId){
+      itVinculado=(tab?.model||[]).flatMap(cat=>(cat.itens||[]).map(x=>({...x,categoriaNome:cat.t||""})))
+        .find(x=>(x.bling||[]).some(b=>String(b.id)===String(avulso.produtoId)));
+    }
+
     if(!it&&!avulso){ resultado.push({itemId:id,erro:"item não encontrado"}); continue; }
 
     let precoVarejo=null;
@@ -1840,13 +1850,20 @@ app.get("/api/etiquetas",async(req,res)=>{
     if(produtoIdParaBusca){
       try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); }catch(e){}
     }
+
+    // fonte dos preços de atacado/fardo: o próprio item da tabela, ou o item vinculado
+    // encontrado pelo produtoId (quando o avulso já existe na tabela)
+    const fonteAtacado = it || itVinculado;
+    // preço de fardo: procura pela chave normal (id) e também pela chave do item vinculado
+    const precoFardo = (fardo[id]?.preco ?? (itVinculado ? fardo[itVinculado.id]?.preco : null)) ?? null;
+
     resultado.push({
       itemId:id,
-      nome:avulso?avulso.nome:it.nome,
-      categoriaNome:avulso?"(avulso)":it.categoriaNome,
-      precoAtacado:avulso?null:(it.preco??null),
-      precoFardo:fardo[id]?.preco??null,
-      caixaQtd:avulso?null:(it.caixa||null),
+      nome: (fonteAtacado?fonteAtacado.nome:null) || (avulso?avulso.nome:null) || (it?it.nome:""),
+      categoriaNome: fonteAtacado?fonteAtacado.categoriaNome:(avulso?"(avulso)":it.categoriaNome),
+      precoAtacado: fonteAtacado?(fonteAtacado.preco??null):null,
+      precoFardo,
+      caixaQtd: fonteAtacado?(fonteAtacado.caixa||null):null,
       precoVarejo,
     });
   }
