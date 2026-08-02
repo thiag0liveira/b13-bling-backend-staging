@@ -1290,19 +1290,25 @@ app.get("/api/buscar",async(req,res)=>{
     const nome=(req.query.nome||"").trim();
     if(nome.length<2) return res.json({data:[]});
     const t=nome.toLowerCase();
+
+    // 1) busca no índice local de produtos (tem TODOS os produtos e permite achar
+    //    o termo em qualquer parte do nome — ex.: "aperol" acha "APERITIVO APEROL 750ML")
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
     const porId={};
-    const add=(arr)=>(arr||[]).forEach(p=>{ porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
+    Object.values(indice).forEach(p=>{
+      if((p.nome||"").toLowerCase().includes(t) || String(p.codigo||"").toLowerCase()===t){
+        porId[p.produtoId]={id:p.produtoId,nome:p.nome,codigo:p.codigo,estoque:null};
+      }
+    });
+    let achados=Object.values(porId);
 
-    // 1) filtro por nome (padrão do Bling)
-    try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`); add(d.data); }catch(e){}
-    // 2) parâmetro 'pesquisa' — acha o termo em qualquer parte do nome/código
-    //    (ex.: buscar "aperol" encontra "APERITIVO APEROL 750ML")
-    try{ const d2=await bling(`/produtos?pesquisa=${encodeURIComponent(nome)}&limite=100`); add(d2.data); }catch(e){}
-
-    let l=Object.values(porId);
-    // prioriza os que realmente contêm o termo no nome
-    const contem=l.filter(p=>(p.nome||"").toLowerCase().includes(t));
-    res.json({data:(contem.length?contem:l)});
+    // 2) se o índice está vazio (nunca reconstruído) ou não achou nada, tenta o Bling
+    if(!achados.length){
+      const add=(arr)=>(arr||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
+      try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`); add(d.data); }catch(e){}
+      achados=Object.values(porId);
+    }
+    res.json({data:achados});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -2354,13 +2360,21 @@ app.get("/api/buscar-atacado", async (req, res) => {
     if (nome.length < 2) return res.json({ data: [] });
     const termo = nome.toLowerCase();
     const porId={};
-    const add=(arr)=>(arr||[]).forEach(p=>{ porId[p.id]={ id: p.id, nome: p.nome, codigo: p.codigo, estoque: p.estoque?.saldoVirtualTotal ?? null, precoBling: p.preco ?? null }; });
-    // filtro por nome + parâmetro 'pesquisa' (acha o termo em qualquer parte do nome/código)
-    try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=50`); add(d.data); }catch(e){}
-    try{ const d2=await bling(`/produtos?pesquisa=${encodeURIComponent(nome)}&limite=50`); add(d2.data); }catch(e){}
+
+    // 1) índice local (todos os produtos, busca em qualquer parte do nome)
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    Object.values(indice).forEach(p=>{
+      if((p.nome||"").toLowerCase().includes(termo) || String(p.codigo||"").toLowerCase()===termo){
+        porId[p.produtoId]={ id:p.produtoId, nome:p.nome, codigo:p.codigo, estoque:null, precoBling:p.preco ?? null };
+      }
+    });
+    // 2) se índice vazio/sem match, tenta o Bling
+    if(!Object.keys(porId).length){
+      const add=(arr)=>(arr||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(termo)) porId[p.id]={ id: p.id, nome: p.nome, codigo: p.codigo, estoque: p.estoque?.saldoVirtualTotal ?? null, precoBling: p.preco ?? null }; });
+      try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=50`); add(d.data); }catch(e){}
+    }
     let lista=Object.values(porId);
-    const f = lista.filter(p => (p.nome || "").toLowerCase().includes(termo));
-    lista = f.length ? f : lista;
+
     // aplica o preço de atacado (tabela publicada); se não houver, usa o preço padrão do Bling
     const tab = lerTabela(); const precoPorCod = {};
     (tab?.model || []).forEach(c => (c.itens || []).forEach(it => (it.bling || []).forEach(b => { precoPorCod[String(b.codigo)] = it.preco; })));
