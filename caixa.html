@@ -98,23 +98,25 @@ function render(){
   if(S.view==="fechamento"){ renderFechamento(app); return; }
   if(S.view==="formasPag"){ renderFormasPagamento(app); return; }
   if(!S.pedido){
-    app.innerHTML=header()+`<div class="wrap">
-      <div class="scan-box">
-        <div class="scan-icon">📷</div>
-        <div style="font-weight:800;font-size:16px;margin-bottom:4px">Escaneie o código do pedido</div>
-        <div class="muted">Use o leitor de QR/código de barras, ou digite o número do pedido e aperte Enter</div>
+    app.innerHTML=header()+`
+      <div style="max-width:720px;margin:0 auto;padding:16px 16px 0">
+        <div class="scan-box" style="padding:16px">
+          <div style="display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap">
+            <span class="scan-icon" style="font-size:32px;margin:0">📷</span>
+            <span style="font-weight:800;font-size:15px">Escaneie o código do pedido</span>
+          </div>
+          <input id="scanInput" placeholder="Código do pedido…" autofocus
+            onkeydown="if(event.key==='Enter'){buscarPedido(this.value); this.value='';}"
+            style="font-size:20px;text-align:center;letter-spacing:1px;margin-top:10px">
+          ${S.carregando?`<div class="muted" style="text-align:center;margin-top:8px">Buscando pedido…</div>`:""}
+          ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+        </div>
       </div>
-      <input id="scanInput" placeholder="Código do pedido…" autofocus
-        onkeydown="if(event.key==='Enter'){buscarPedido(this.value); this.value='';}"
-        style="font-size:20px;text-align:center;letter-spacing:1px">
-      ${S.carregando?`<div class="muted" style="text-align:center;margin-top:12px">Buscando pedido…</div>`:""}
-      ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
 
-      <div style="margin-top:22px;border-top:1px solid #2a2660;padding-top:14px">
-        <div style="font-weight:800;font-size:15px;margin-bottom:8px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
-        <iframe src="/operacional?embed=caixa" style="width:100%;height:70vh;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
-      </div>
-    </div>`;
+      <div style="padding:0 16px 16px">
+        <div style="font-weight:800;font-size:15px;margin:4px 0 8px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
+        <iframe src="/operacional?embed=caixa" style="width:100%;height:calc(100vh - 260px);min-height:520px;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
+      </div>`;
     const inp=document.getElementById("scanInput"); if(inp) inp.focus();
     return;
   }
