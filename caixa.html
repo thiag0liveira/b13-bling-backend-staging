@@ -9,6 +9,7 @@
   :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24}
   body{margin:0;background:var(--bg);color:#fff}
   #app{max-width:640px;margin:0 auto;min-height:100vh}
+  #app.full{max-width:none}
   .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--indigo2),var(--indigo));display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
   .top img{height:42px}.top .t{font-weight:900;font-size:18px}.top .sp{flex:1}
   .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:15px;padding:12px 16px;color:#fff}
@@ -32,6 +33,8 @@
     #b13nav{transform:translateX(0%) !important}
     button[onclick="b13ToggleNav()"]{display:none !important}
     body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+    body.menu-oculto #b13nav{ display:none !important }
+    body.menu-oculto > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:0 !important }
   }
 </style>
 </head>
@@ -81,6 +84,7 @@ function fechamentoPreset(tipo){
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (venc. ${esc(f.vencimento)})`:''}`; }
+function toggleMenuLateral(){ document.body.classList.toggle("menu-oculto"); }
 
 function header(){
   const botaoNav=S.view==="scan"
@@ -98,6 +102,7 @@ function render(){
   if(S.view==="fechamento"){ renderFechamento(app); return; }
   if(S.view==="formasPag"){ renderFormasPagamento(app); return; }
   if(!S.pedido){
+    document.getElementById("app").classList.add("full");
     app.innerHTML=header()+`
       <div style="max-width:720px;margin:0 auto;padding:16px 16px 0">
         <div class="scan-box" style="padding:16px">
@@ -114,12 +119,17 @@ function render(){
       </div>
 
       <div style="padding:0 16px 16px">
-        <div style="font-weight:800;font-size:15px;margin:4px 0 8px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
+        <div style="display:flex;align-items:center;gap:10px;margin:4px 0 8px">
+          <div style="font-weight:800;font-size:15px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
+          <div class="sp" style="flex:1"></div>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="toggleMenuLateral()">↔️ Ocultar/mostrar menu</button>
+        </div>
         <iframe src="/operacional?embed=caixa" style="width:100%;height:calc(100vh - 260px);min-height:520px;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
       </div>`;
     const inp=document.getElementById("scanInput"); if(inp) inp.focus();
     return;
   }
+  document.getElementById("app").classList.remove("full");
   renderPedido(app);
 }
 
