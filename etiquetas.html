@@ -116,9 +116,11 @@ document.addEventListener("DOMContentLoaded",function(){
   <img src="/logo">
   <div class="t">Etiquetas de Preço</div>
   <div class="sp"></div>
+  <button class="btn btn-ghost" onclick="atualizarProdutosVarejo()" id="btnVarejo">🔃 Atualizar produtos varejo</button>
   <button class="btn btn-ghost" onclick="atualizarLista()">🔄 Atualizar lista</button>
   <button class="btn btn-ghost" onclick="location.href='/lista-fardo'">📋 Lista de Fardo</button>
 </div>
+<div id="statusVarejo" class="noprint" style="max-width:1000px;margin:0 auto;padding:0 18px"></div>
 
 <div class="wrap noprint">
   <div class="card">
@@ -165,6 +167,32 @@ async function atualizarLista(){
   const div=document.getElementById("lista");
   if(div) div.innerHTML=`<div class="muted">Atualizando…</div>`;
   await carregar();
+}
+
+// força a reconstrução do índice de produtos (preços de varejo) — útil logo depois
+// de cadastrar/alterar um produto no Bling, sem esperar a atualização automática
+function atualizarProdutosVarejo(){
+  const btn=document.getElementById("btnVarejo");
+  const box=document.getElementById("statusVarejo");
+  if(btn) btn.disabled=true;
+  box.innerHTML=`<div class="card" style="margin-top:10px"><div class="muted">Iniciando atualização dos produtos…</div>
+    <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96;margin-top:8px"><div id="barVarejo" style="height:100%;width:5%;background:linear-gradient(90deg,#FF0082,#ff5fae);transition:width .3s"></div></div></div>`;
+  const es=new EventSource(BACKEND+"/api/preco/reconstruir-indice");
+  es.onmessage=(ev)=>{
+    const d=JSON.parse(ev.data);
+    const bar=document.getElementById("barVarejo");
+    const txt=box.querySelector(".muted");
+    if(d.tipo==="status"&&txt) txt.textContent=d.mensagem;
+    else if(d.tipo==="total"&&txt) txt.textContent=`0 de ${d.total} produtos…`;
+    else if(d.tipo==="progresso"){ if(txt) txt.textContent=`${d.atual} de ${d.total} produtos… ${d.nome||""}`; if(bar) bar.style.width=Math.round((d.atual/d.total)*100)+"%"; }
+    else if(d.tipo==="done"){
+      es.close(); if(btn) btn.disabled=false; if(bar) bar.style.width="100%";
+      box.innerHTML=`<div class="card" style="margin-top:10px"><div class="muted">✅ Produtos atualizados: ${d.qtdProdutos} produto(s). A busca já reflete os preços/produtos mais novos.</div></div>`;
+      atualizarLista();
+      setTimeout(()=>{ box.innerHTML=""; },8000);
+    } else if(d.tipo==="erro"){ es.close(); if(btn) btn.disabled=false; box.innerHTML=`<div class="card" style="margin-top:10px"><div style="color:#ff8090">Erro: ${esc(d.erro)}</div></div>`; }
+  };
+  es.onerror=()=>{ es.close(); if(btn) btn.disabled=false; };
 }
 
 let _buscaBlingT=null;
