@@ -1286,11 +1286,23 @@ app.post("/api/log/:id",(req,res)=>{
   res.json({ok:true});
 });
 app.get("/api/buscar",async(req,res)=>{
-  try{ const nome=(req.query.nome||"").trim(); if(nome.length<2) return res.json({data:[]});
-    const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`);
-    let l=(d.data||[]).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}));
-    const t=nome.toLowerCase(); const f=l.filter(p=>(p.nome||"").toLowerCase().includes(t));
-    res.json({data:f.length?f:l});
+  try{
+    const nome=(req.query.nome||"").trim();
+    if(nome.length<2) return res.json({data:[]});
+    const t=nome.toLowerCase();
+    const porId={};
+    const add=(arr)=>(arr||[]).forEach(p=>{ porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
+
+    // 1) filtro por nome (padrão do Bling)
+    try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`); add(d.data); }catch(e){}
+    // 2) parâmetro 'pesquisa' — acha o termo em qualquer parte do nome/código
+    //    (ex.: buscar "aperol" encontra "APERITIVO APEROL 750ML")
+    try{ const d2=await bling(`/produtos?pesquisa=${encodeURIComponent(nome)}&limite=100`); add(d2.data); }catch(e){}
+
+    let l=Object.values(porId);
+    // prioriza os que realmente contêm o termo no nome
+    const contem=l.filter(p=>(p.nome||"").toLowerCase().includes(t));
+    res.json({data:(contem.length?contem:l)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
