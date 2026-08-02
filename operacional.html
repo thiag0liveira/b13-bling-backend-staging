@@ -80,11 +80,13 @@
     button[onclick="b13ToggleNav()"]{display:none !important}
     body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
   }
+  body.embed > *{ margin-left:0 !important }
 </style>
 </head>
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
+    if(new URLSearchParams(location.search).get("embed")==="caixa") return; // embutido: sem menu
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/operacional");
@@ -107,6 +109,11 @@ const dataBR=d=>{if(!d)return"";const p=String(d).slice(0,10).split("-");return 
 let SIT={AGUARDANDO:818795,EM_SEP:817963,SEP_PEND:819227,SEPARADO:821590,CONF_ENTREGA:821611,VERIFICADO:24,EM_ROTA:820085,ATENDIDO:9};
 let FUNC=null, pedidos=[], pags={}, acrs={}, seps={}, ents={}, formasPag=[], mapSit={}, timer=null;
 let periodoIni=null, periodoFim=null; // null = padrão (últimos 7 dias)
+// modo embutido (dentro do /caixa): oculta a coluna Atendidos, os botões de
+// conferência e o cabeçalho/menu, pra ficar como painel embutido
+const _urlp=new URLSearchParams(location.search);
+const MODO_CAIXA=_urlp.get("embed")==="caixa";
+if(MODO_CAIXA){ try{ document.body.classList.add("embed"); }catch(e){} }
 try{ if(typeof b13GetSession==="function"){ const sess=b13GetSession(); if(sess) FUNC=sess; } }catch(e){}
 
 // permissões por nível
@@ -197,7 +204,7 @@ async function carregar(){
 
 function render(){
   const app=document.getElementById("app");
-  const top=`<div class="top"><img src="${LOGO}">
+  const top=MODO_CAIXA?"":`<div class="top"><img src="${LOGO}">
     <div class="t">${FUNC?`B13 · ${esc(FUNC.nome)}`:"Operacional B13"}</div><div class="sp"></div>
     ${FUNC?`<a href="/gerenciamento" class="btn btn-out" style="text-decoration:none;font-size:12px">📊 Gestão</a>
     <button class="btn btn-ghost" onclick="sair()">Sair</button>`:""}
@@ -222,7 +229,7 @@ function render(){
   if(PODE("ver_pend"))       colunas.push({label:"⚠️ C/ Pendências",cor:"#d400ff",sit:SIT.SEP_PEND});
   if(PODE("ver_separado")||PODE("conferir")) colunas.push({label:"📦 Separados",cor:"#8e42a3",sit:SIT.SEPARADO});
   if(PODE("conferir")||PODE("editar_pedido")) colunas.push({label:"🚚 Em Rota",cor:"#6d2390",sit:SIT.EM_ROTA});
-  if(PODE("editar_pedido"))  colunas.push({label:"✅ Atendidos",cor:"#2f9e6b",sit:SIT.ATENDIDO});
+  if(PODE("editar_pedido") && !MODO_CAIXA)  colunas.push({label:"✅ Atendidos",cor:"#2f9e6b",sit:SIT.ATENDIDO});
 
   if(!colunas.length){ app.innerHTML=top+`<div style="padding:30px;text-align:center"><div class="muted">Seu perfil não tem acesso a nenhuma fila.<br>Fale com o administrador.</div></div>`; return; }
 
@@ -445,7 +452,7 @@ function montarBotoes(p,aba,pago,parcial){
     </div>`
   }
   // ABA: separados — conferente
-  if(sit===SIT.SEPARADO && PODE("conferir")){
+  if(sit===SIT.SEPARADO && PODE("conferir") && !MODO_CAIXA){
     return `<button class="btn btn-mag" onclick="abrirConferencia(${id})">🔍 Conferir pedido</button>`;
   }
   // ABA: em rota

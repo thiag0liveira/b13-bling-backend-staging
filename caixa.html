@@ -84,8 +84,7 @@ function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (ve
 
 function header(){
   const botaoNav=S.view==="scan"
-    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>
-       <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='formasPag';render()">💳 Formas de Pagamento</button>`
+    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>`
     : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
   return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
   ${botaoNav}
@@ -110,6 +109,11 @@ function render(){
         style="font-size:20px;text-align:center;letter-spacing:1px">
       ${S.carregando?`<div class="muted" style="text-align:center;margin-top:12px">Buscando pedido…</div>`:""}
       ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+
+      <div style="margin-top:22px;border-top:1px solid #2a2660;padding-top:14px">
+        <div style="font-weight:800;font-size:15px;margin-bottom:8px">📋 Acompanhamento de pedidos (últimos 7 dias)</div>
+        <iframe src="/operacional?embed=caixa" style="width:100%;height:70vh;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
+      </div>
     </div>`;
     const inp=document.getElementById("scanInput"); if(inp) inp.focus();
     return;
