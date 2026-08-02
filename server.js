@@ -2352,9 +2352,13 @@ app.get("/api/buscar-atacado", async (req, res) => {
   try {
     const nome = (req.query.nome || "").trim();
     if (nome.length < 2) return res.json({ data: [] });
-    const d = await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=50`);
     const termo = nome.toLowerCase();
-    let lista = (d.data || []).map(p => ({ id: p.id, nome: p.nome, codigo: p.codigo, estoque: p.estoque?.saldoVirtualTotal ?? null, precoBling: p.preco ?? null }));
+    const porId={};
+    const add=(arr)=>(arr||[]).forEach(p=>{ porId[p.id]={ id: p.id, nome: p.nome, codigo: p.codigo, estoque: p.estoque?.saldoVirtualTotal ?? null, precoBling: p.preco ?? null }; });
+    // filtro por nome + parâmetro 'pesquisa' (acha o termo em qualquer parte do nome/código)
+    try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=50`); add(d.data); }catch(e){}
+    try{ const d2=await bling(`/produtos?pesquisa=${encodeURIComponent(nome)}&limite=50`); add(d2.data); }catch(e){}
+    let lista=Object.values(porId);
     const f = lista.filter(p => (p.nome || "").toLowerCase().includes(termo));
     lista = f.length ? f : lista;
     // aplica o preço de atacado (tabela publicada); se não houver, usa o preço padrão do Bling
