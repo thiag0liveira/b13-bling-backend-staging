@@ -3057,6 +3057,8 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
         ({valorPago,historico,doBling,previsto}=await resolverPagamentoPedido(detPedido||pRaw,pagLocal,logs[id]||[]));
       }
       const pago=valorPago>=total-0.01&&valorPago>0;
+      const parcial=!pago && valorPago>0; // pagou algo, mas não cobre o total
+      const falta=+(total-valorPago).toFixed(2);
       if(pago) totalPago+=total; else totalNaoPago+=total;
       // pedido não pago do totem que ainda está com a parcela "Ficha Financeira"
       // (placeholder que o Bling exige na criação, sem nenhum pagamento real ainda)
@@ -3095,7 +3097,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
       pedidosDetalhados.push({
         numero:pRaw.numero, id:pRaw.id, data:pRaw.data, cliente:clienteNome, situacao:sitNome,
-        vendedor:vendedorNome, total, valorPago, pago, doBling, fichaFinanceira,
+        vendedor:vendedorNome, total, valorPago, pago, parcial, falta, doBling, fichaFinanceira,
         formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2),vencimento:h.aPrazo&&h.vencimento?h.vencimento.split('-').reverse().join('/'):''})),
         formasPrevisto:(previsto||[]).map(p=>({nome:p.formaNome,valor:+(Number(p.valor)||0).toFixed(2),vencimento:p.vencimento?p.vencimento.split('-').reverse().join('/'):''})),
       });
@@ -3107,12 +3109,17 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     const qtdPrevisto=pedidosDetalhados.filter(p=>p.pago&&p.formasPrevisto?.length).length;
     const totalFichaFinanceira=pedidosDetalhados.filter(p=>p.fichaFinanceira).reduce((s,p)=>s+p.total,0);
     const qtdFichaFinanceira=pedidosDetalhados.filter(p=>p.fichaFinanceira).length;
+    // pagamentos parciais: pagou algo mas não cobre o total do pedido
+    const parciais=pedidosDetalhados.filter(p=>p.parcial);
+    const qtdParciais=parciais.length;
+    const totalFaltaParciais=+parciais.reduce((s,p)=>s+p.falta,0).toFixed(2);
     res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
       data, dataInicial, dataFinal, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
       totalCancelados:+totalCancelados.toFixed(2), qtdCancelados,
       totalPrevisto:+totalPrevisto.toFixed(2), qtdPrevisto,
       totalFichaFinanceira:+totalFichaFinanceira.toFixed(2), qtdFichaFinanceira,
+      qtdParciais, totalFaltaParciais,
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }
