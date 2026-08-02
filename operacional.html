@@ -1256,14 +1256,11 @@ function renderPainelEstorno(id){
         <input id="estornoContaNome" placeholder="Nome da conta para devolução (ex: João Silva - Nubank) *" value="${esc(window._estornoContaNome||'')}"
           style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px;margin-bottom:12px"
           oninput="window._estornoContaNome=this.value;validarBotaoEstorno()">
-        <div style="font-weight:700;margin-bottom:6px;color:#ffd23f">Como fica o pagamento depois do estorno? (total: ${brl(valorNovoPedido)})</div>
-        ${rowsParcelas}
-        <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:12px"
-          onclick="window._parcelasPosEstorno.push({valor:'${diffParc>0?diffParc.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderPainelEstorno(${id})">
-          + Dividir em outra forma de pagamento ${diffParc>0?`(falta ${brl(diffParc)})`:''}</button>
-        <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);margin-bottom:4px;font-size:12px">
-          <span>Total informado:</span>
-          <b style="color:${Math.abs(diffParc)<0.01?'#2f9e6b':diffParc<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diffParc)<0.01?'✅':diffParc>0?`(falta ${brl(diffParc)})`:'(passou do total)'}</b>
+        <div style="background:#151233;border:1px solid #2f9e6b;border-radius:8px;padding:10px;font-size:12px;margin-bottom:8px;line-height:1.5">
+          <div style="color:#2f9e6b;font-weight:700;margin-bottom:4px">✅ O sistema vai fazer automaticamente:</div>
+          • Novo total do pedido: <b>${brl(valorNovoPedido)}</b><br>
+          • A parcela de pagamento vira <b>${brl(valorNovoPedido)}</b> (mantendo a forma original)<br>
+          • Nas observações fica registrado o pagamento original, o estorno de <b>${brl(diff>0?diff:0)}</b> e a conta de devolução, pra conferência depois
         </div>
       </div>
       <div id="resolucaoSel" style="font-size:12px;color:#9a95c9;margin-bottom:8px"></div>
@@ -1367,10 +1364,9 @@ function validarBotaoEstorno(){
   const btnConf=document.getElementById("btnConfirmarRetirar");
   if(!btnConf) return;
   if(window._resolucaoSel==="estorno"){
+    // agora só precisa do nome da conta de devolução — o novo total é automático
     const contaOk=!!(window._estornoContaNome||"").trim();
-    const soma=+(window._parcelasPosEstorno||[]).reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
-    const somaOk=Math.abs((window._valorNovoPedidoEstorno||0)-soma)<0.01;
-    if(!contaOk||!somaOk){ btnConf.disabled=true; btnConf.style.opacity="0.5"; return; }
+    if(!contaOk){ btnConf.disabled=true; btnConf.style.opacity="0.5"; return; }
   }
   btnConf.disabled=false; btnConf.style.opacity="1";
 }
@@ -1473,10 +1469,22 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
     if(resolucao!=="ok"&&(valorAbatido>0.01||resolucao==="pagamento_adicional")){
       const histPag=(await fetch(B+"/api/pagamentos/"+id).then(r=>r.json()).catch(()=>({}))).data?.historico||[];
       const histTxt=histPag.map(h=>`${h.formaNome||""}:${brl(h.valor||0)}`).join(", ");
+      // valor total do pagamento ORIGINAL (o que de fato caiu na conta, ex.: o PIX de 300)
+      const totalPagoOriginal=+histPag.reduce((s,h)=>s+parseFloat(h.valor||0),0).toFixed(2);
+      // forma original do pagamento (mantida na parcela nova, só muda o valor)
+      const formaOriginal=histPag[0]||{};
+      // novo total do pedido = soma dos itens que ficaram (não pode ser menor nem maior)
+      const novoTotalPedido=+itensFiltrados.reduce((s,i)=>s+(parseFloat(i.valor||0)*parseFloat(i.quantidade||0)),0).toFixed(2);
       let obs="";
       if(resolucao==="estorno"){
         const contaNome=window._estornoContaNome||"";
-        obs=`Estorno de ${brl(valorAbatido)} via ${window._estornoFormaNome||""}${contaNome?` para ${contaNome}`:""} em decorrência de pendências nos itens: ${descItens||""}. Pgto original: ${histTxt}`;
+        const formaEstornoNome=window._estornoFormaNome||"";
+        obs=`ESTORNO POR PENDÊNCIA — Pedido original: ${brl(totalPagoOriginal)}`
+          + (histTxt?` pago via ${histTxt}`:"")
+          + `. Estorno de ${brl(valorAbatido)} via ${formaEstornoNome}${contaNome?` para a conta/chave: ${contaNome}`:""}`
+          + `. Novo total do pedido: ${brl(novoTotalPedido)}`
+          + `. Itens com pendência: ${descItens||""}`
+          + `. OBS: o pagamento original de ${brl(totalPagoOriginal)} que consta no extrato refere-se a este pedido; a diferença de ${brl(valorAbatido)} foi estornada.`;
       } else if(resolucao==="credito"){
         obs=`Crédito de ${brl(valorAbatido)} registrado para o cliente em decorrência de pendências: ${descItens||""}. Pgto original: ${histTxt}`;
       } else if(resolucao==="pagamento_adicional"){
@@ -1486,21 +1494,20 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
         obs=`Diferença de ${brl(valorAbatido)} registrada. Ajuste nos itens: ${descItens||""}. Pgto: ${histTxt}`;
       }
       if(obs) await fetch(B+"/api/pedidos/"+id+"/observacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({texto:obs,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})}).catch(()=>{});
-      
+
       // Pagamento adicional — registra as formas divididas, somando ao que já existia
       if(resolucao==="pagamento_adicional"&&window._parcelasAdicional?.length){
         await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({valor:valorAbatido,parcelas:window._parcelasAdicional,formaId:window._novaFormaId,formaNome:window._novaFormaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,somar:true})}).catch(()=>{});
       }
-      // Estorno — registra o pagamento final declarado (as parcelas que o
-      // usuário definiu de como fica o pagamento depois do estorno), em vez
-      // de tentar adivinhar a forma original automaticamente
-      if(resolucao==="estorno"&&window._parcelasPosEstorno?.length){
+      // Estorno — AUTOMÁTICO: registra o log do estorno (forma/conta) e substitui a
+      // parcela do pedido pelo novo total (mantendo a forma de pagamento original,
+      // mudando só o valor). Não pede mais pro usuário informar como fica o pagamento.
+      if(resolucao==="estorno"){
         await fetch(B+"/api/pagamentos/"+id+"/estorno",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({valor:0,formaId:window._estornoFormaId,formaNome:window._estornoFormaNome,contaNome:window._estornoContaNome||"",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,soRegistrarLog:true})}).catch(()=>{});
-        const totalPosEstorno=+window._parcelasPosEstorno.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
+          body:JSON.stringify({valor:valorAbatido,formaId:window._estornoFormaId,formaNome:window._estornoFormaNome,contaNome:window._estornoContaNome||"",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,soRegistrarLog:true})}).catch(()=>{});
         await fetch(B+"/api/pagamentos/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({valor:totalPosEstorno,parcelas:window._parcelasPosEstorno,formaId:window._parcelasPosEstorno[0]?.formaId,formaNome:window._parcelasPosEstorno[0]?.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true})}).catch(()=>{});
+          body:JSON.stringify({valor:novoTotalPedido,parcelas:[{valor:novoTotalPedido,formaId:formaOriginal.formaId,formaNome:formaOriginal.formaNome}],formaId:formaOriginal.formaId,formaNome:formaOriginal.formaNome,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true})}).catch(()=>{});
       }
     }
 
