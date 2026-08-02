@@ -2547,26 +2547,32 @@ async function resolverPagamentoPedido(ped,pagLocal,logPedido){
      "separacao_completa","separacao_com_falta","conferido_entrega","conferido_retirada",
      "pagamento_registrado","recebido_cliente_separou"].includes(e.evento)
   );
-  const parcelas=ped?.parcelas||[];
-  // Antes: se passou pelo fluxo interno, marcava como não pago sempre (ignorando o Bling).
-  // Durante a transição (totem já implementado, mas caixa/frente ainda entrando em uso),
-  // é comum o pagamento de um pedido de totem ser lançado direto no Bling. Então:
-  // só considera "não pago por regra interna" se NÃO houver parcela no Bling.
-  // Se tiver parcela no Bling, confia nela (cai no cálculo abaixo).
+  const parcelasBrutas=ped?.parcelas||[];
+  // O totem cria o pedido com uma parcela de "ficha financeira" só como marcador
+  // interno — isso NÃO é pagamento real. Separa as parcelas reais das de ficha:
+  const parcelas=[];
+  for(const pc of parcelasBrutas){
+    const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+    const ehFicha=(nomeForma||"").toLowerCase().includes("ficha financeira");
+    if(!ehFicha) parcelas.push({...pc,_nomeForma:nomeForma});
+  }
+
+  // Se passou pelo fluxo interno e NÃO tem nenhuma parcela real (só a ficha, ou nada),
+  // é não pago — o pagamento ainda não foi registrado nem interno nem no Bling.
   if(passouPeloNossoFluxo && parcelas.length===0){
     return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   }
   if(parcelas.length===0){
-    // sem nenhuma parcela/forma de pagamento cadastrada — aí sim é não pago
+    // sem nenhuma forma de pagamento real cadastrada — não pago
     return {valorPago:0,statusPagamento:"pendente",historico:[],doBling:false,previsto:[]};
   }
-  // tem forma de pagamento registrada — conta como pago (data igual ou diferente).
+  // tem forma de pagamento REAL registrada — conta como pago (data igual ou diferente).
   // parcelas com data de vencimento diferente da data do pedido continuam
   // destacadas em "previsto" (pode ser erro de digitação de prazo, ou pedido de
   // entrega criado num dia e pago/entregue em outro), mas entram no total pago.
   const historico=[]; const previsto=[]; let valorPago=0;
   for(const pc of parcelas){
-    const nomeForma=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+    const nomeForma=pc._nomeForma||await nomeFormaPagamentoId(pc.formaPagamento?.id);
     const aPrazo=!!(pc.dataVencimento&&ped?.data&&String(pc.dataVencimento)!==String(ped.data));
     const valor=+(pc.valor||0);
     valorPago+=valor;
