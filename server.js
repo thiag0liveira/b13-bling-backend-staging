@@ -1437,6 +1437,7 @@ app.get("/api/contatos",async(req,res)=>{
     const end=detalhe.endereco?.geral||{};
     res.json({encontrado:true, contato:{
       id:detalhe.id, nome:detalhe.nome||"",
+      documento:soDigitos(detalhe.numeroDocumento)||doc,
       telefone:detalhe.telefone||"", celular:detalhe.celular||"",
       email:detalhe.email||"",
       endereco:{ cep:end.cep||"", rua:end.endereco||"", numero:end.numero||"",
