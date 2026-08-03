@@ -4382,6 +4382,10 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     if(!prop.itens?.length) return res.status(400).json({erro:"a proposta não tem itens"});
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    const totalPed=+prop.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
+    // o Bling exige uma parcela pra validar a venda — usa "Ficha Financeira" como
+    // marcador de "ainda não pago" (mesma regra do totem)
+    const formaFicha=await getFormaPagamentoIdPorNome("ficha financeira");
     const payload={
       data:dataHojeBR,
       contato:{id:Number(prop.cliente.id)},
@@ -4389,11 +4393,18 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       ...(prop.vendedorId?{vendedor:{id:Number(prop.vendedorId)}}:{}),
       ...(prop.observacao?{observacoes:prop.observacao}:{}),
     };
+    if(formaFicha){
+      payload.parcelas=[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:totalPed}];
+    }
     const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
     const pedidoId=criado?.data?.id;
     let numero=criado?.data?.numero||pedidoId;
+    // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
+    if(pedidoId&&prop.vendedorId){
+      try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){}
+    }
     // move pra "aguardando separação" (mesmo status do fluxo do totem)
-    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
+    try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
     addLog(String(pedidoId),"pedido_criado_atacado",prop.funcionarioId,prop.funcionarioNome,{proposta:prop.id});
 
     prop.status="pedido_gerado";
