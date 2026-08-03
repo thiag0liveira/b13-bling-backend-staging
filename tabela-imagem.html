@@ -142,19 +142,29 @@ function baixar(){
 
 async function compartilhar(){
   const cv=document.getElementById("cv");
-  // usa o compartilhamento nativo (celular) que permite mandar a imagem direto no WhatsApp
+  let blob;
   try{
-    const blob=await new Promise(r=>cv.toBlob(r,"image/png"));
-    const file=new File([blob],"tabela-b13.png",{type:"image/png"});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({files:[file],title:"Tabela de Preços B13",text:"Tabela de Preços — B13 Bebidas"});
+    blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error("toBlob falhou")),"image/png"));
+  }catch(e){
+    alert("Não consegui gerar a imagem da tabela. Tente 'Baixar imagem' e anexar manualmente.");
+    return;
+  }
+  const file=new File([blob],"tabela-b13.png",{type:"image/png"});
+  // tenta o compartilhamento nativo com arquivo (funciona em celular)
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file],title:"Tabela de Preços B13"});
       return;
+    }catch(e){
+      // usuário cancelou ou deu erro — não faz nada (não cai no fallback pra não baixar sem querer)
+      if(e && e.name==="AbortError") return;
     }
-  }catch(e){}
-  // fallback: baixa a imagem e abre o WhatsApp pra anexar manualmente
-  baixar();
-  alert("A imagem foi baixada. Agora abra o WhatsApp e anexe a imagem da tabela que acabou de salvar.");
-  window.open("https://wa.me/","_blank");
+  }
+  // fallback (computador ou navegador sem suporte): baixa e explica
+  const a=document.createElement("a");
+  a.download="tabela-b13-"+new Date().toISOString().slice(0,10)+".png";
+  a.href=cv.toDataURL("image/png"); a.click();
+  alert("Seu aparelho não permite enviar a imagem direto pelo navegador.\n\nA imagem foi BAIXADA. Agora é só abrir o WhatsApp, escolher o contato e anexar a imagem da tabela que acabou de salvar. 📎");
 }
 
 carregar();
