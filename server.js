@@ -54,6 +54,7 @@ const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
 const CAIXA_SESSOES_FILE = `${DATA_DIR}/caixa_sessoes.json`;
 const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
 const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
+const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -4269,5 +4270,95 @@ async function reconstruirIndiceProdutosBg(){
 }
 setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
 setInterval(reconstruirIndiceProdutosBg, 30*60*1000);      // e a cada 30 min
+
+// ===== VENDA ATACADO — propostas e pedidos =====
+// A "proposta comercial" fica só no nosso sistema (o Bling v3 não expõe propostas
+// via API). Quando o cliente aprova, um botão gera o pedido de venda no Bling.
+
+function lerPropostas(){ return lerJSON(PROPOSTAS_FILE,{}); }
+function salvarPropostas(p){ salvarJSON(PROPOSTAS_FILE,p); }
+
+// lista propostas/pedidos-atacado (mais recentes primeiro), com filtro opcional por tipo/status
+app.get("/api/atacado/propostas",(req,res)=>{
+  const {tipo,status}=req.query;
+  let lista=Object.values(lerPropostas());
+  if(tipo) lista=lista.filter(p=>p.tipo===tipo);
+  if(status) lista=lista.filter(p=>p.status===status);
+  lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+  res.json({data:lista});
+});
+
+app.get("/api/atacado/propostas/:id",(req,res)=>{
+  const p=lerPropostas()[req.params.id];
+  if(!p) return res.status(404).json({erro:"não encontrada"});
+  res.json({data:p});
+});
+
+// cria ou atualiza uma proposta/rascunho de pedido no nosso sistema
+app.post("/api/atacado/propostas",(req,res)=>{
+  try{
+    const b=req.body||{};
+    const props=lerPropostas();
+    const id=b.id||("prop_"+Date.now()+"_"+Math.random().toString(36).slice(2,7));
+    const agora=Date.now();
+    const registro={
+      id,
+      tipo:b.tipo||"proposta",           // "proposta" | "pedido"
+      status:b.status||"aberta",         // aberta | aprovada | pedido_gerado | cancelada
+      cliente:b.cliente||null,           // {id,nome,documento,telefone,...}
+      itens:b.itens||[],                 // [{produtoId,nome,quantidade,valor,imagem}]
+      observacao:b.observacao||"",
+      vendedorId:b.vendedorId||null, vendedorNome:b.vendedorNome||"",
+      funcionarioId:b.funcionarioId||null, funcionarioNome:b.funcionarioNome||"",
+      total:+(b.itens||[]).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2),
+      pedidoBlingId:b.pedidoBlingId||(props[id]?.pedidoBlingId)||null,
+      pedidoBlingNumero:b.pedidoBlingNumero||(props[id]?.pedidoBlingNumero)||null,
+      criadoEm:props[id]?.criadoEm||agora,
+      atualizadoEm:agora,
+    };
+    props[id]=registro;
+    salvarPropostas(props);
+    res.json({ok:true,data:registro});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+app.delete("/api/atacado/propostas/:id",(req,res)=>{
+  const props=lerPropostas();
+  if(props[req.params.id]){ delete props[req.params.id]; salvarPropostas(props); }
+  res.json({ok:true});
+});
+
+// gera o pedido de venda no Bling a partir de uma proposta e marca situação "aguardando separação"
+app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+prop.pedidoBlingNumero});
+    if(!prop.cliente?.id) return res.status(400).json({erro:"a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido"});
+    if(!prop.itens?.length) return res.status(400).json({erro:"a proposta não tem itens"});
+
+    const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    const payload={
+      data:dataHojeBR,
+      contato:{id:Number(prop.cliente.id)},
+      itens:prop.itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+      ...(prop.vendedorId?{vendedor:{id:Number(prop.vendedorId)}}:{}),
+      ...(prop.observacao?{observacoes:prop.observacao}:{}),
+    };
+    const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    const pedidoId=criado?.data?.id;
+    let numero=criado?.data?.numero||pedidoId;
+    // move pra "aguardando separação" (mesmo status do fluxo do totem)
+    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
+    addLog(String(pedidoId),"pedido_criado_atacado",prop.funcionarioId,prop.funcionarioNome,{proposta:prop.id});
+
+    prop.status="pedido_gerado";
+    prop.pedidoBlingId=pedidoId; prop.pedidoBlingNumero=numero;
+    prop.atualizadoEm=Date.now();
+    props[prop.id]=prop; salvarPropostas(props);
+    res.json({ok:true,pedidoId,numero});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
