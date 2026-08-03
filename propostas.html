@@ -109,12 +109,92 @@ function cardProposta(p){
     ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
-      <button class="btn btn-ghost" onclick="window.open('/proposta-imagem?id='+${JSON.stringify(p.id)},'_blank')">🖼️ Imagem</button>
+      <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
       ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
       ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
       ${!p.pedidoBlingId?`<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>`:''}
     </div>
   </div>`;
+}
+
+function verImagem(id){
+  const p=LISTA.find(x=>x.id===id);
+  if(!p){ alert("Proposta não encontrada."); return; }
+  const ov=document.createElement("div");
+  ov.id="modalImg";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px";
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`
+    <div style="background:#151233;border:1px solid #2c2660;border-radius:14px;max-width:720px;width:100%;max-height:92vh;overflow:auto;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:800">🖼️ ${p.pedidoBlingId?('Pedido #'+p.pedidoBlingNumero):(p.tipo==='pedido'?'Pedido':'Proposta')}</div>
+        <button class="btn btn-ghost" style="padding:6px 12px" onclick="document.getElementById('modalImg').remove()">✕ Fechar</button>
+      </div>
+      <canvas id="cvNota" style="max-width:100%;height:auto;border-radius:10px;border:1px solid #2c2660;background:#fff"></canvas>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-mag" style="flex:1" onclick="baixarImg()">⬇️ Baixar</button>
+        <button class="btn btn-wa" style="flex:1" onclick="compartilharImg()">📱 Compartilhar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  desenharNota(p);
+}
+
+function desenharNota(p){
+  const itens=p.itens||[];
+  const W=680, padd=28, headerH=120, itemH=40, footerH=90;
+  const H=headerH+itens.length*itemH+footerH+30;
+  const cv=document.getElementById("cvNota");
+  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%";
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-24);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-24,W,6);
+  ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42);
+  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
+  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
+  ctx.fillText(tipoTxt,padd,68);
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.fillText("Cliente: "+(p.cliente?.nome||"—"),padd,90);
+  ctx.textAlign="right";
+  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
+  ctx.fillText(data,W-padd,42);
+  if(p.vendedorNome) ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,90);
+  let y=headerH;
+  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
+  ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
+  ctx.textAlign="right"; ctx.fillText("UNIT.",W-140,y); ctx.fillText("TOTAL",W-padd,y);
+  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
+  itens.forEach(i=>{
+    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
+    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
+    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
+    ctx.fillText(nome,padd,y+itemH/2);
+    ctx.textAlign="center"; ctx.fillText(String(qtd),W-260,y+itemH/2);
+    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un),W-140,y+itemH/2);
+    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd),W-padd,y+itemH/2);
+    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
+    y+=itemH;
+  });
+  y+=10; ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
+  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+12,y+28);
+  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial"; ctx.fillText(brl(p.total),W-padd-12,y+29);
+  y+=44;
+  if(p.observacao){ y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText("Obs: "+p.observacao.slice(0,70),padd,y); }
+  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center"; ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻",W/2,H-16);
+}
+
+function baixarImg(){
+  const cv=document.getElementById("cvNota"); if(!cv) return;
+  const a=document.createElement("a"); a.download="nota-b13.png"; a.href=cv.toDataURL("image/png"); a.click();
+}
+async function compartilharImg(){
+  const cv=document.getElementById("cvNota"); if(!cv) return;
+  let blob; try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }catch(e){ baixarImg(); return; }
+  const file=new File([blob],"nota-b13.png",{type:"image/png"});
+  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:"Nota B13"}); return; }catch(e){ if(e&&e.name==="AbortError") return; }
+  }
+  baixarImg(); alert("Imagem baixada — anexe no WhatsApp. 📎");
 }
 
 async function cancelar(id){
