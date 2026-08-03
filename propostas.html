@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Propostas</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:38px}.top .t{font-weight:900;font-size:17px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-grn{background:#2f9e6b}.btn-ghost{background:#1c1846}.btn-wa{background:#25d366;color:#0a2a1a}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .tag{font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px}
+  .tag-prop{background:#2a1f00;color:#ffd23f}.tag-ped{background:#0a2a1a;color:#3ce88a}
+  .tag-ger{background:#0d2440;color:#7fd4ff}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/propostas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const soDig=(s)=>String(s??"").replace(/\D/g,"");
+
+let FILTRO="todas";
+let LISTA=[];
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">📄 Propostas & Pedidos Atacado</div><div class="sp"></div>
+      <a href="/venda-atacado" class="btn btn-mag" style="text-decoration:none;font-size:12px">+ Nova venda</a>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip ${FILTRO==='todas'?'on':''}" onclick="FILTRO='todas';carregar()">Todas</span>
+          <span class="chip ${FILTRO==='proposta'?'on':''}" onclick="FILTRO='proposta';carregar()">📄 Propostas</span>
+          <span class="chip ${FILTRO==='pedido'?'on':''}" onclick="FILTRO='pedido';carregar()">🛒 Pedidos</span>
+        </div>
+      </div>
+      <div id="lista"><div class="muted">Carregando…</div></div>
+    </div>`;
+  carregar();
+}
+
+async function carregar(){
+  const box=document.getElementById("lista");
+  if(!box) return;
+  const params=new URLSearchParams();
+  if(FILTRO==='proposta'||FILTRO==='pedido') params.set("tipo",FILTRO);
+  try{
+    const j=await fetch(B+"/api/atacado/propostas?"+params.toString()).then(r=>r.json());
+    LISTA=j.data||[];
+    if(!LISTA.length){ box.innerHTML=`<div class="card"><div class="muted">Nenhuma ${FILTRO==='todas'?'proposta/pedido':FILTRO} ainda.</div></div>`; return; }
+    box.innerHTML=LISTA.map(cardProposta).join("");
+  }catch(e){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro ao carregar.</div>`; }
+}
+
+function statusTag(p){
+  if(p.pedidoBlingId) return `<span class="tag tag-ger">Pedido #${esc(p.pedidoBlingNumero)} gerado</span>`;
+  if(p.tipo==='pedido') return `<span class="tag tag-ped">Pedido</span>`;
+  return `<span class="tag tag-prop">Proposta</span>`;
+}
+
+function cardProposta(p){
+  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
+  const itensTxt=(p.itens||[]).map(i=>`${i.quantidade}x ${i.nome}`).join(", ");
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div>
+        <div style="font-weight:800">${esc(p.cliente?.nome||'—')}</div>
+        <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome||'—')}</div>
+      </div>
+      <div style="text-align:right">
+        ${statusTag(p)}
+        <div style="font-size:18px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(p.total)}</div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:12px;margin:8px 0;line-height:1.4">${esc(itensTxt)}</div>
+    ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
+      ${!p.pedidoBlingId?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
+      <button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>
+    </div>
+  </div>`;
+}
+
+async function gerarPedido(id){
+  if(!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
+  try{
+    const j=await fetch(B+"/api/atacado/propostas/"+id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    alert("Pedido #"+j.numero+" criado (aguardando separação)!");
+    carregar();
+  }catch(e){ alert("Erro ao gerar pedido."); }
+}
+
+async function excluir(id){
+  if(!confirm("Excluir esta proposta/pedido do sistema? (não afeta pedidos já gerados no Bling)")) return;
+  try{ await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}); carregar(); }catch(e){}
+}
+
+function enviarWhats(id){
+  const p=LISTA.find(x=>x.id===id);
+  if(!p) return;
+  const tel=soDig(p.cliente?.telefone||"");
+  const itens=(p.itens||[]).map(i=>`• ${i.quantidade}x ${i.nome} — ${brl(i.valor*i.quantidade)}`).join("\n");
+  const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:(p.tipo==='pedido'?"*Pedido — B13 Bebidas*":"*Proposta comercial — B13 Bebidas*");
+  const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
+  if(!tel){
+    if(confirm("Este cliente não tem telefone cadastrado. Deseja abrir o WhatsApp mesmo assim (sem número, você escolhe o contato)?")){
+      window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+    }
+    return;
+  }
+  const tel55=tel.length<=11?("55"+tel):tel;
+  window.open("https://wa.me/"+tel55+"?text="+encodeURIComponent(msg),"_blank");
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Venda Atacado</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:38px}.top .t{font-weight:900;font-size:17px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:11px 14px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-grn{background:#2f9e6b}.btn-ghost{background:#1c1846}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}
+  .btn:disabled{opacity:.4;cursor:default}
+  input,select{padding:11px;border-radius:9px;border:2px solid #514c96;background:#0f0d24;color:#fff;font-size:14px;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  label{font-size:12px;color:#9a95c9;display:block;margin-bottom:3px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:120px}
+  .seg{display:flex;gap:6px;background:#0f0d24;border-radius:10px;padding:4px}
+  .seg button{flex:1;padding:10px;border:none;border-radius:8px;background:transparent;color:#9a95c9;font-weight:800;cursor:pointer;font-size:13px}
+  .seg button.on{background:var(--mag);color:#fff}
+  .prod{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid #23204f}
+  .prod img{width:44px;height:44px;object-fit:cover;border-radius:7px;background:#241f52;flex-shrink:0}
+  .prod .semf{width:44px;height:44px;border-radius:7px;background:#241f52;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #23204f}
+  .qtd{display:flex;align-items:center;gap:6px}
+  .qtd button{width:32px;height:32px;border-radius:8px;border:none;background:#1c1846;color:#fff;font-size:18px;font-weight:900;cursor:pointer}
+  .qtd input{width:52px;text-align:center;padding:6px}
+  .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:800}
+  .badge-at{background:#0a2a1a;color:#3ce88a}.badge-bl{background:#2a1f00;color:#ffd23f}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/venda-atacado");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const soDig=(s)=>String(s??"").replace(/\D/g,"");
+let FUNC=null;
+try{ if(typeof b13GetSession==="function"){ FUNC=b13GetSession(); } }catch(e){}
+
+const S={
+  tipo:"proposta",      // proposta | pedido
+  cliente:null,         // {id,nome,documento,telefone,...}
+  editandoCliente:false,
+  itens:[],             // {produtoId,nome,valor,quantidade,imagem,origemPreco}
+  observacao:"",
+  vendedorId:null, vendedorNome:"",
+  buscaProd:"", resultadosProd:[],
+  msg:"",
+};
+
+// resolve vendedor do funcionário logado
+(async()=>{
+  if(FUNC?.id){
+    try{ const j=await fetch(B+"/api/atacado/vendedor/"+FUNC.id).then(r=>r.json());
+      S.vendedorId=j.vendedorId; S.vendedorNome=j.vendedorNome||FUNC.nome||""; render();
+    }catch(e){}
+  }
+})();
+
+function total(){ return S.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">🛒 Venda Atacado</div><div class="sp"></div>
+      <a href="/propostas" class="btn btn-ghost" style="text-decoration:none;font-size:12px">📄 Ver propostas</a>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div class="seg" style="margin-bottom:10px">
+          <button class="${S.tipo==='proposta'?'on':''}" onclick="S.tipo='proposta';render()">📄 Proposta comercial</button>
+          <button class="${S.tipo==='pedido'?'on':''}" onclick="S.tipo='pedido';render()">🛒 Pedido de venda</button>
+        </div>
+        <div class="muted">${S.tipo==='proposta'?'Orçamento — fica salvo no sistema; depois você pode gerar o pedido.':'Cria o pedido de venda direto no Bling (status aguardando separação).'}</div>
+      </div>
+
+      ${cardCliente()}
+      ${S.cliente?cardProdutos():''}
+      ${S.cliente&&S.itens.length?cardResumo():''}
+      ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}</div>`:''}
+    </div>`;
+}
+
+/* ---------- CLIENTE ---------- */
+function cardCliente(){
+  if(S.cliente&&!S.editandoCliente){
+    const c=S.cliente;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-weight:800">👤 ${esc(c.nome)}</div>
+        <button class="btn btn-ghost" style="font-size:12px;padding:6px 10px" onclick="S.editandoCliente=true;render()">Editar</button>
+      </div>
+      <div class="muted" style="margin-top:4px">${esc(c.documento||'')}${c.telefone?' · '+esc(c.telefone):''}</div>
+      <button class="btn btn-out" style="margin-top:10px;font-size:12px" onclick="trocarCliente()">🔄 Trocar cliente</button>
+    </div>`;
+  }
+  if(S.editandoCliente) return cardFormCliente();
+  // busca inicial
+  return `<div class="card">
+    <label>Buscar cliente por CPF / CNPJ</label>
+    <div class="row">
+      <input id="docBusca" placeholder="Digite o CPF ou CNPJ" inputmode="numeric" style="flex:3"
+        onkeydown="if(event.key==='Enter')buscarCliente()">
+      <button class="btn btn-mag" style="flex:1;min-width:100px" onclick="buscarCliente()">🔍 Buscar</button>
+    </div>
+    <div id="buscaClienteMsg" class="muted" style="margin-top:8px"></div>
+  </div>`;
+}
+
+function cardFormCliente(){
+  const c=S.cliente||{};
+  const e=c.endereco||{};
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:10px">${c.id?'✏️ Editar cliente':'🆕 Novo cliente'}</div>
+    <div class="row" style="margin-bottom:8px">
+      <div style="flex:2"><label>Nome / Razão social *</label><input id="cNome" value="${esc(c.nome||'')}"></div>
+      <div><label>CPF / CNPJ *</label><input id="cDoc" value="${esc(c.documento||'')}" inputmode="numeric" ${c.id?'readonly':''}></div>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <div><label>Telefone / WhatsApp</label><input id="cTel" value="${esc(c.telefone||'')}" inputmode="numeric"></div>
+      <div><label>E-mail</label><input id="cEmail" value="${esc(c.email||'')}"></div>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <div style="flex:2"><label>Rua</label><input id="cRua" value="${esc(e.rua||'')}"></div>
+      <div><label>Número</label><input id="cNum" value="${esc(e.numero||'')}"></div>
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <div><label>Bairro</label><input id="cBairro" value="${esc(e.bairro||'')}"></div>
+      <div><label>Cidade</label><input id="cCidade" value="${esc(e.cidade||'')}"></div>
+      <div style="max-width:80px"><label>UF</label><input id="cUf" value="${esc(e.uf||'MG')}" maxlength="2"></div>
+    </div>
+    <div class="row">
+      <button class="btn btn-grn" onclick="salvarCliente()">💾 Salvar cliente</button>
+      <button class="btn btn-ghost" style="flex:0;min-width:100px" onclick="S.editandoCliente=false;if(!S.cliente?.id)S.cliente=null;render()">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+async function buscarCliente(){
+  const doc=soDig(document.getElementById("docBusca").value);
+  const msg=document.getElementById("buscaClienteMsg");
+  if(doc.length!==11&&doc.length!==14){ msg.textContent="Digite um CPF (11) ou CNPJ (14 dígitos)."; return; }
+  msg.textContent="Buscando…";
+  try{
+    const j=await fetch(B+"/api/contatos?doc="+doc).then(r=>r.json());
+    if(j.encontrado&&j.contato){
+      S.cliente=j.contato; S.editandoCliente=false; render();
+    }else{
+      // não existe: abre form pra cadastrar novo já com o documento
+      S.cliente={documento:doc, endereco:{uf:"MG"}}; S.editandoCliente=true; render();
+    }
+  }catch(e){ msg.textContent="Erro ao buscar."; }
+}
+
+async function salvarCliente(){
+  const doc=soDig(document.getElementById("cDoc").value);
+  const nome=document.getElementById("cNome").value.trim();
+  if(!nome){ alert("Informe o nome."); return; }
+  if(doc.length!==11&&doc.length!==14){ alert("CPF ou CNPJ inválido."); return; }
+  const payload={
+    id:S.cliente?.id||null, documento:doc, nome,
+    telefone:document.getElementById("cTel").value.trim(),
+    email:document.getElementById("cEmail").value.trim(),
+    endereco:{
+      rua:document.getElementById("cRua").value.trim(), numero:document.getElementById("cNum").value.trim(),
+      bairro:document.getElementById("cBairro").value.trim(), cidade:document.getElementById("cCidade").value.trim(),
+      uf:document.getElementById("cUf").value.trim()||"MG",
+    },
+  };
+  S.msg="";
+  try{
+    const j=await fetch(B+"/api/atacado/cliente",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    S.cliente={id:j.id,nome:j.nome,documento:j.documento,telefone:payload.telefone,email:payload.email,endereco:payload.endereco};
+    S.editandoCliente=false; render();
+  }catch(e){ alert("Erro ao salvar cliente."); }
+}
+
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; render(); }
+
+/* ---------- PRODUTOS ---------- */
+function cardProdutos(){
+  return `<div class="card">
+    <label>Adicionar produto</label>
+    <input id="buscaProd" placeholder="Buscar produto pelo nome…" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
+    <div id="resultadosProd">${S.resultadosProd.map(prodRow).join("")}</div>
+    ${S.itens.length?`<div style="margin-top:14px;font-weight:800">🛒 Itens (${S.itens.length})</div>${S.itens.map(itemRow).join("")}`:''}
+  </div>`;
+}
+
+function prodRow(p){
+  const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id));
+  return `<div class="prod">
+    ${p.imagem?`<img src="${esc(p.imagem)}">`:`<div class="semf">📦</div>`}
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:700">${esc(p.nome)}</div>
+      <div style="margin-top:2px">
+        <span class="badge ${p.origemPreco==='atacado'?'badge-at':'badge-bl'}">${p.origemPreco==='atacado'?'Atacado':'Bling'}</span>
+        <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
+      </div>
+    </div>
+    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''} onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+  </div>`;
+}
+
+function itemRow(i,ix){
+  return `<div class="item">
+    ${i.imagem?`<img src="${esc(i.imagem)}" style="width:36px;height:36px;object-fit:cover;border-radius:6px">`:`<div class="semf" style="width:36px;height:36px;font-size:16px">📦</div>`}
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:700">${esc(i.nome)}</div>
+      <div class="muted" style="font-size:11px">${brl(i.valor)} un</div>
+    </div>
+    <div class="qtd">
+      <button onclick="mudarQtd(${ix},-1)">−</button>
+      <input type="number" min="1" value="${i.quantidade}" onchange="setQtd(${ix},this.value)">
+      <button onclick="mudarQtd(${ix},1)">+</button>
+    </div>
+    <div style="width:90px;text-align:right;font-weight:800">${brl(i.valor*i.quantidade)}</div>
+    <button onclick="removerItem(${ix})" style="background:none;border:none;color:#9a95c9;cursor:pointer;font-size:16px">🗑</button>
+  </div>`;
+}
+
+let _prodT=null;
+function buscarProdDebounce(v){ S.buscaProd=v; clearTimeout(_prodT); _prodT=setTimeout(buscarProd,350); }
+async function buscarProd(){
+  const t=S.buscaProd.trim();
+  if(t.length<2){ S.resultadosProd=[]; render(); return; }
+  try{
+    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(t)).then(r=>r.json());
+    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||""}));
+    // preserva o texto digitado sem re-renderizar o input inteiro
+    document.getElementById("resultadosProd").innerHTML=S.resultadosProd.map(prodRow).join("");
+  }catch(e){}
+}
+
+function addItem(p){
+  if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
+  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:1,imagem:p.imagem||"",origemPreco:p.origemPreco});
+  render();
+}
+function mudarQtd(ix,d){ S.itens[ix].quantidade=Math.max(1,(+S.itens[ix].quantidade||1)+d); render(); }
+function setQtd(ix,v){ S.itens[ix].quantidade=Math.max(1,parseInt(v)||1); render(); }
+function removerItem(ix){ S.itens.splice(ix,1); render(); }
+
+/* ---------- RESUMO / SALVAR ---------- */
+function cardResumo(){
+  return `<div class="card">
+    <label>Observação (opcional)</label>
+    <input id="obs" value="${esc(S.observacao)}" placeholder="Ex: condição de pagamento, prazo…" oninput="S.observacao=this.value">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px">
+      <span style="font-weight:800">Total</span>
+      <span style="font-size:24px;font-weight:900;color:#ffd23f">${brl(total())}</span>
+    </div>
+    <div class="muted" style="margin-bottom:10px">Vendedor: ${esc(S.vendedorNome||'—')}</div>
+    <button class="btn btn-grn" style="width:100%;font-size:15px" onclick="salvar()">
+      ${S.tipo==='proposta'?'💾 Salvar proposta':'🛒 Salvar pedido'}
+    </button>
+  </div>`;
+}
+
+async function salvar(){
+  if(!S.cliente?.id){ alert("Selecione um cliente cadastrado."); return; }
+  if(!S.itens.length){ alert("Adicione ao menos um item."); return; }
+  S.msg="";
+  const payload={
+    tipo:S.tipo,
+    cliente:S.cliente,
+    itens:S.itens,
+    observacao:S.observacao,
+    vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
+    funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
+  };
+  try{
+    const j=await fetch(B+"/api/atacado/propostas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    if(S.tipo==='pedido'){
+      // gera o pedido no Bling imediatamente
+      const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
+      if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; render(); return; }
+      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`;
+    }else{
+      S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
+    }
+    // limpa pra próxima venda
+    S.itens=[]; S.observacao=""; render();
+  }catch(e){ alert("Erro ao salvar."); }
+}
+
+render();
+</script>
+</body>
+</html>

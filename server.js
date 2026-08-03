@@ -236,6 +236,8 @@ function b13RenderNav(ativo){
     {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/caixa-diario",label:"📅 Relatório Diário",check:()=>b13Pode("receber_pagamento")},
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
+    {href:"/venda-atacado",label:"🛒 Venda Atacado",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
+    {href:"/propostas",label:"📄 Propostas",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
     {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
     {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
     {href:"/listas-extras",label:"📂 Listas Extras",check:()=>b13Pode("editar_pedido")},
@@ -3260,6 +3262,8 @@ app.get("/tabela",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
 app.get("/listas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas.html")); });
 app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "dashboard.html")); });
 app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
+app.get("/venda-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "venda-atacado.html")); });
+app.get("/propostas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "propostas.html")); });
 
 // ---- Gerenciador de imagens de produtos ----
 // Progresso em tempo real via SSE
@@ -4275,8 +4279,47 @@ setInterval(reconstruirIndiceProdutosBg, 30*60*1000);      // e a cada 30 min
 // A "proposta comercial" fica só no nosso sistema (o Bling v3 não expõe propostas
 // via API). Quando o cliente aprova, um botão gera o pedido de venda no Bling.
 
+// retorna o vendedor Bling vinculado a um funcionário (pra pré-preencher na venda atacado)
+app.get("/api/atacado/vendedor/:funcId",(req,res)=>{
+  const funcs=lerJSON(FUNC_FILE,{});
+  const func=funcs[req.params.funcId];
+  const vendedorId=func?.vendedorBlingId?Number(func.vendedorBlingId):(Number(process.env.BLING_VENDEDOR_ID)||null);
+  res.json({vendedorId,vendedorNome:func?.nome||""});
+});
+
 function lerPropostas(){ return lerJSON(PROPOSTAS_FILE,{}); }
 function salvarPropostas(p){ salvarJSON(PROPOSTAS_FILE,p); }
+
+// cria ou atualiza um cliente no Bling (usado pela tela de venda atacado)
+app.post("/api/atacado/cliente",async(req,res)=>{
+  try{
+    const b=req.body||{};
+    const doc=soDigitos(b.documento);
+    if(!doc||(doc.length!==11&&doc.length!==14)) return res.status(400).json({erro:"informe um CPF (11) ou CNPJ (14) válido"});
+    const tipo=doc.length===14?"J":"F";
+    const end=b.endereco||{};
+    const corpo={
+      nome:b.nome||("Cliente "+doc),
+      tipo, numeroDocumento:doc, situacao:"A",
+      telefone:formatarTelefoneBling(b.telefone), celular:formatarTelefoneBling(b.celular||b.telefone),
+      email:(b.email&&/\S+@\S+\.\S+/.test(b.email))?b.email:undefined,
+      endereco:{ geral:{
+        endereco:end.rua||"", numero:end.numero||"S/N", complemento:end.complemento||"",
+        bairro:end.bairro||"", cep:soDigitos(end.cep||""), municipio:end.cidade||"",
+        uf:end.uf||"MG", pais:"Brasil",
+      } },
+    };
+    let contatoId=b.id||null, criou=false;
+    if(contatoId){
+      await bling(`/contatos/${contatoId}`,{method:"PUT",body:JSON.stringify(corpo)});
+    }else{
+      const novo=await bling(`/contatos`,{method:"POST",body:JSON.stringify(corpo)});
+      contatoId=novo?.data?.id; criou=true;
+    }
+    res.json({ok:true,id:contatoId,criou,nome:corpo.nome,documento:doc,telefone:b.telefone||b.celular||""});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
 
 // lista propostas/pedidos-atacado (mais recentes primeiro), com filtro opcional por tipo/status
 app.get("/api/atacado/propostas",(req,res)=>{
