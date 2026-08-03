@@ -4327,36 +4327,39 @@ app.post("/api/atacado/cliente/:id/telefone",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
-// produtos novos — os de maior código (produtos recém-cadastrados têm código
-// sequencial mais alto). Retorna os N últimos (padrão 5). Marca quais já estão na Tabela Atacado.
+// produtos novos — os de maior ID (produtos recém-cadastrados têm ID sequencial
+// mais alto). Retorna os N últimos (padrão 5). Marca quais já estão na Tabela Atacado.
 app.get("/api/atacado/produtos-novos",async(req,res)=>{
   try{
     const qtd=Number(req.query.qtd||5);
-    // busca produtos ordenados por id desc (mais recentes primeiro)
-    let arr=[];
-    try{ const r=await bling(`/produtos?pagina=1&limite=100&criterio=5`); arr=r?.data||[]; }catch(e){}
-    // ordena por código numérico desc (garante pegar os de código mais alto)
-    arr.sort((a,b)=>{
-      const ca=parseInt(String(a.codigo).replace(/\D/g,""))||0;
-      const cb=parseInt(String(b.codigo).replace(/\D/g,""))||0;
-      return cb-ca;
-    });
-    const topN=arr.slice(0,qtd);
+    // O índice local já tem todos os produtos; pega os de maior ID a partir dele
+    // (rápido e confiável — ID sequencial, o mais alto é o mais novo).
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    let todos=Object.values(indice).filter(p=>p.produtoId);
+    // dedup por produtoId (o índice tem uma entrada por código/gtin)
+    const porId={};
+    todos.forEach(p=>{ porId[p.produtoId]=p; });
+    let lista=Object.values(porId).sort((a,b)=>(Number(b.produtoId)||0)-(Number(a.produtoId)||0));
+    let topN=lista.slice(0,qtd).map(p=>({id:p.produtoId,nome:p.nome,codigo:p.codigo,preco:+(p.preco||0),imagem:p.imagem||""}));
+
+    // fallback: se o índice estiver vazio, busca direto no Bling
+    if(!topN.length){
+      let arr=[];
+      try{ const r=await bling(`/produtos?pagina=1&limite=100&criterio=5`); arr=r?.data||[]; }catch(e){}
+      arr.sort((a,b)=>(Number(b.id)||0)-(Number(a.id)||0));
+      topN=arr.slice(0,qtd).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,preco:+(p.preco||0),imagem:p.imagemURL||""}));
+    }
 
     const tab=lerTabela(); const codsTabela=new Set();
     (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>codsTabela.add(String(b.codigo)))));
 
     const novos=[];
     for(const p of topN){
-      let imagem=p.imagemURL||"";
-      // busca o detalhe pra pegar a imagem (a lista resumida raramente traz)
+      let imagem=p.imagem||"";
       if(!imagem){
         try{ const d=await bling(`/produtos/${p.id}`); imagem=d?.data?.imagemURL||""; await new Promise(r=>setTimeout(r,120)); }catch(e){}
       }
-      novos.push({
-        id:p.id, nome:p.nome, codigo:p.codigo, preco:+(p.preco||0), imagem,
-        naTabelaAtacado:codsTabela.has(String(p.codigo)),
-      });
+      novos.push({id:p.id,nome:p.nome,codigo:p.codigo,preco:+(p.preco||0),imagem,naTabelaAtacado:codsTabela.has(String(p.codigo))});
     }
     res.json({data:novos});
   }catch(e){ res.status(500).json({erro:e.message}); }
