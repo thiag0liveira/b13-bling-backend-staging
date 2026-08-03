@@ -71,6 +71,7 @@ const S={
   observacao:"",
   vendedorId:null, vendedorNome:"",
   buscaProd:"", resultadosProd:[],
+  analise:null, carregandoAnalise:false,
   msg:"",
 };
 
@@ -84,6 +85,16 @@ const S={
 })();
 
 function total(){ return S.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+
+async function carregarAnalise(){
+  if(!S.cliente?.id){ S.analise=null; return; }
+  S.carregandoAnalise=true; render();
+  try{
+    const j=await fetch(B+"/api/atacado/cliente/"+S.cliente.id+"/analise").then(r=>r.json());
+    S.analise=j.erro?null:j;
+  }catch(e){ S.analise=null; }
+  S.carregandoAnalise=false; render();
+}
 
 function render(){
   const app=document.getElementById("app");
@@ -103,6 +114,7 @@ function render(){
       </div>
 
       ${cardCliente()}
+      ${S.cliente&&!S.editandoCliente?cardAnalise():''}
       ${S.cliente?cardProdutos():''}
       ${S.cliente&&S.itens.length?cardResumo():''}
       ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}</div>`:''}
@@ -172,7 +184,7 @@ async function buscarCliente(){
   try{
     const j=await fetch(B+"/api/contatos?doc="+doc).then(r=>r.json());
     if(j.encontrado&&j.contato){
-      S.cliente=j.contato; S.editandoCliente=false; render();
+      S.cliente=j.contato; S.editandoCliente=false; S.analise=null; render(); carregarAnalise();
     }else{
       // não existe: abre form pra cadastrar novo já com o documento
       S.cliente={documento:doc, endereco:{uf:"MG"}}; S.editandoCliente=true; render();
@@ -200,11 +212,66 @@ async function salvarCliente(){
     const j=await fetch(B+"/api/atacado/cliente",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
     if(j.erro){ alert(j.erro); return; }
     S.cliente={id:j.id,nome:j.nome,documento:j.documento,telefone:payload.telefone,email:payload.email,endereco:payload.endereco};
-    S.editandoCliente=false; render();
+    S.editandoCliente=false; render(); carregarAnalise();
   }catch(e){ alert("Erro ao salvar cliente."); }
 }
 
-function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; render(); }
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; render(); }
+
+/* ---------- ANÁLISE DO CLIENTE (Fase 2) ---------- */
+function cardAnalise(){
+  if(S.carregandoAnalise) return `<div class="card"><div class="muted">📊 Analisando histórico do cliente…</div></div>`;
+  const a=S.analise;
+  if(!a) return '';
+  if(!a.qtdPedidos) return `<div class="card"><div class="muted">📊 Cliente sem compras anteriores registradas.</div></div>`;
+  const ultima=a.ultimaCompra?a.ultimaCompra.split('-').reverse().join('/'):'—';
+  const mesesTxt=(a.gastoPorMes||[]).map(m=>{
+    const [ano,mes]=m.mes.split('-');
+    const nomeMes=["","jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"][+mes];
+    return `<span style="display:inline-block;background:#0f0d24;border:1px solid #2c2660;border-radius:6px;padding:4px 8px;margin:2px;font-size:11px">${nomeMes}/${ano.slice(2)}: <b style="color:#ffd23f">${brl(m.valor)}</b></span>`;
+  }).join("");
+  const sugestoes=(a.maisComprados||[]).slice(0,8);
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:8px">📊 Histórico do cliente</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="flex:1;min-width:100px;background:#0f0d24;border-radius:10px;padding:10px;text-align:center">
+        <div class="muted" style="font-size:11px">Total gasto</div><div style="font-weight:900;color:#3ce88a">${brl(a.totalGasto)}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:#0f0d24;border-radius:10px;padding:10px;text-align:center">
+        <div class="muted" style="font-size:11px">Pedidos</div><div style="font-weight:900">${a.qtdPedidos}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:#0f0d24;border-radius:10px;padding:10px;text-align:center">
+        <div class="muted" style="font-size:11px">Média/pedido</div><div style="font-weight:900;color:#ffd23f">${brl(a.media)}</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:#0f0d24;border-radius:10px;padding:10px;text-align:center">
+        <div class="muted" style="font-size:11px">Última compra</div><div style="font-weight:900">${ultima}</div>
+      </div>
+    </div>
+    ${mesesTxt?`<div class="muted" style="font-size:12px;margin-bottom:4px">Gasto por mês:</div><div style="margin-bottom:10px">${mesesTxt}</div>`:''}
+    ${sugestoes.length?`
+      <div class="muted" style="font-size:12px;margin-bottom:6px">🔁 Produtos que costuma comprar (toque pra adicionar):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${sugestoes.map(s=>{
+          const jaTem=S.itens.some(i=>String(i.produtoId)===String(s.produtoId));
+          return `<button class="btn ${jaTem?'btn-ghost':'btn-out'}" style="font-size:11px;padding:7px 10px" ${jaTem?'disabled':''}
+            onclick='addSugestao(${JSON.stringify({id:s.produtoId,nome:s.nome}).replace(/'/g,"&#39;")})'>${jaTem?'✓ ':'+ '}${esc(s.nome)} <span class="muted">(${s.vezes}x)</span></button>`;
+        }).join("")}
+      </div>`:''}
+  </div>`;
+}
+
+// adiciona um produto sugerido (busca preço/estoque/múltiplo ao vivo, igual a busca normal)
+async function addSugestao(s){
+  if(S.itens.some(i=>String(i.produtoId)===String(s.id))) return;
+  S.msg="Buscando dados do produto…"; render();
+  try{
+    // usa a busca pelo nome pra pegar preço de atacado, múltiplo e estoque
+    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(s.nome)).then(r=>r.json());
+    const p=(j.data||[]).find(x=>String(x.id)===String(s.id))||(j.data||[])[0];
+    if(!p){ S.msg="Não encontrei os dados do produto."; render(); return; }
+    await addItem({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,imagem:p.imagem||"",origemPreco:p.origemPreco||'bling',multiplo:p.multiplo||1,estoque:p.estoque});
+  }catch(e){ S.msg="Erro ao adicionar sugestão."; render(); }
+}
 
 /* ---------- PRODUTOS ---------- */
 function cardProdutos(){
@@ -350,7 +417,7 @@ async function salvar(){
     }
     // limpa tudo pra próxima venda
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
-    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta";
+    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null;
     render();
   }catch(e){ alert("Erro ao salvar."); }
 }

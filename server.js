@@ -4310,6 +4310,58 @@ app.get("/api/atacado/vendedor/:funcId",(req,res)=>{
 function lerPropostas(){ return lerJSON(PROPOSTAS_FILE,{}); }
 function salvarPropostas(p){ salvarJSON(PROPOSTAS_FILE,p); }
 
+// análise do histórico de compras do cliente (Fase 2): última compra, total gasto,
+// gasto por mês, média por pedido, e produtos que ele mais compra
+app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{
+  try{
+    const contatoId=req.params.id;
+    // busca até 200 pedidos desse contato (dá conta da grande maioria dos clientes)
+    const pedidos=[];
+    for(let pg=1;pg<=4;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,idContato:contatoId});
+      let arr=[];
+      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+      pedidos.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,300));
+    }
+    // ignora cancelados (situação 12)
+    const validos=pedidos.filter(p=>p.situacao?.id!==12);
+    const totalGasto=+validos.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
+    const qtdPedidos=validos.length;
+    const media=qtdPedidos?+(totalGasto/qtdPedidos).toFixed(2):0;
+    // última compra
+    const datas=validos.map(p=>p.data).filter(Boolean).sort();
+    const ultimaCompra=datas.length?datas[datas.length-1]:null;
+    // gasto por mês (últimos 6 meses com movimento)
+    const porMes={};
+    validos.forEach(p=>{ if(p.data){ const m=p.data.slice(0,7); porMes[m]=+((porMes[m]||0)+Number(p.total||0)).toFixed(2); } });
+    const meses=Object.entries(porMes).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6).map(([mes,valor])=>({mes,valor}));
+
+    // produtos mais comprados — precisa do detalhe de cada pedido (tem os itens).
+    // busca o detalhe dos até 30 pedidos mais recentes pra não pesar demais.
+    const recentes=[...validos].sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,30);
+    const prodCount={};
+    for(const ped of recentes){
+      try{
+        const d=await bling(`/pedidos/vendas/${ped.id}`); const itens=d?.data?.itens||[];
+        itens.forEach(it=>{
+          const pid=it.produto?.id; if(!pid) return;
+          if(!prodCount[pid]) prodCount[pid]={produtoId:pid,nome:it.descricao||it.produto?.nome||"",vezes:0,qtdTotal:0};
+          prodCount[pid].vezes++; prodCount[pid].qtdTotal+=Number(it.quantidade||0);
+        });
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,120));
+    }
+    const maisComprados=Object.values(prodCount).sort((a,b)=>b.vezes-a.vezes||b.qtdTotal-a.qtdTotal).slice(0,10);
+
+    res.json({
+      qtdPedidos, totalGasto, media, ultimaCompra,
+      gastoPorMes:meses, maisComprados,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // cria ou atualiza um cliente no Bling (usado pela tela de venda atacado)
 app.post("/api/atacado/cliente",async(req,res)=>{
   try{
@@ -4387,8 +4439,31 @@ app.post("/api/atacado/propostas",(req,res)=>{
 
 app.delete("/api/atacado/propostas/:id",(req,res)=>{
   const props=lerPropostas();
-  if(props[req.params.id]){ delete props[req.params.id]; salvarPropostas(props); }
+  const p=props[req.params.id];
+  if(!p){ return res.json({ok:true}); }
+  // se já gerou pedido no Bling, NÃO pode excluir — só cancelar
+  if(p.pedidoBlingId){
+    return res.status(400).json({erro:"Este já virou o pedido #"+p.pedidoBlingNumero+" e não pode ser excluído. Use 'Cancelar' para movê-lo pro status cancelado."});
+  }
+  delete props[req.params.id]; salvarPropostas(props);
   res.json({ok:true});
+});
+
+// cancela a proposta/pedido (muda o status pra cancelada; se tem pedido no Bling, cancela lá também)
+app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const p=props[req.params.id];
+    if(!p) return res.status(404).json({erro:"não encontrada"});
+    // se tem pedido gerado no Bling, move pra situação Cancelado lá também
+    if(p.pedidoBlingId){
+      const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
+      try{ await bling(`/pedidos/vendas/${p.pedidoBlingId}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"}); }catch(e){}
+    }
+    p.status="cancelada"; p.atualizadoEm=Date.now();
+    props[p.id]=p; salvarPropostas(props);
+    res.json({ok:true});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
 // gera o pedido de venda no Bling a partir de uma proposta e marca situação "aguardando separação"

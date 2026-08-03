@@ -109,10 +109,20 @@ function cardProposta(p){
     ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
-      ${!p.pedidoBlingId?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
-      <button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>
+      ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
+      ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
+      ${!p.pedidoBlingId?`<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>`:''}
     </div>
   </div>`;
+}
+
+async function cancelar(id){
+  if(!confirm("Cancelar? O pedido/proposta vai pro status cancelado (se já tiver pedido no Bling, ele também será cancelado lá). Não pode ser desfeito.")) return;
+  try{
+    const j=await fetch(B+"/api/atacado/propostas/"+id+"/cancelar",{method:"POST"}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    carregar();
+  }catch(e){ alert("Erro ao cancelar."); }
 }
 
 async function gerarPedido(id){
@@ -126,8 +136,8 @@ async function gerarPedido(id){
 }
 
 async function excluir(id){
-  if(!confirm("Excluir esta proposta/pedido do sistema? (não afeta pedidos já gerados no Bling)")) return;
-  try{ await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}); carregar(); }catch(e){}
+  if(!confirm("Excluir esta proposta do sistema? (só é possível em propostas que ainda não viraram pedido)")) return;
+  try{ const j=await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}).then(r=>r.json()); if(j.erro){alert(j.erro);return;} carregar(); }catch(e){}
 }
 
 function enviarWhats(id){
