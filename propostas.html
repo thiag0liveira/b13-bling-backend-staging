@@ -109,6 +109,7 @@ function cardProposta(p){
     ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
+      <button class="btn btn-ghost" onclick="window.open('/proposta-imagem?id='+${JSON.stringify(p.id)},'_blank')">🖼️ Imagem</button>
       ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
       ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
       ${!p.pedidoBlingId?`<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>`:''}

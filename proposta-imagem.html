@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Proposta (imagem)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:3px solid var(--mag);flex-wrap:wrap}
+  .top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:10px 14px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-wa{background:#25d366;color:#0a2a1a}.btn-ghost{background:#1c1846}
+  .wrap{padding:14px;text-align:center}
+  .muted{color:#9a95c9;font-size:13px}
+  canvas{max-width:100%;height:auto;border-radius:10px;border:1px solid #2c2660;background:#fff;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="t">📄 Proposta / Pedido</div>
+  <div class="sp"></div>
+  <button class="btn btn-mag" onclick="baixar()">⬇️ Baixar</button>
+  <button class="btn btn-wa" onclick="compartilhar()">📱 Compartilhar</button>
+</div>
+<div class="wrap">
+  <div class="muted" id="msg">Gerando imagem…</div>
+  <canvas id="cv"></canvas>
+</div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const params=new URLSearchParams(location.search);
+const ID=params.get("id");
+
+async function carregar(){
+  if(!ID){ document.getElementById("msg").textContent="Proposta não informada."; return; }
+  try{
+    const j=await fetch(B+"/api/atacado/propostas/"+ID).then(r=>r.json());
+    if(j.erro||!j.data){ document.getElementById("msg").textContent="Proposta não encontrada."; return; }
+    desenhar(j.data);
+    document.getElementById("msg").style.display="none";
+  }catch(e){ document.getElementById("msg").textContent="Erro ao carregar."; }
+}
+
+function desenhar(p){
+  const itens=p.itens||[];
+  const W=680, padd=28;
+  const headerH=120, itemH=40, footerH=90;
+  const H=headerH + itens.length*itemH + footerH + 30;
+  const cv=document.getElementById("cv");
+  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px";
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+
+  // fundo
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  // cabeçalho
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-24);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-24,W,6);
+  ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left";
+  ctx.fillText("B13 BEBIDAS", padd, 42);
+  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
+  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
+  ctx.fillText(tipoTxt, padd, 68);
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5";
+  ctx.fillText("Cliente: "+(p.cliente?.nome||"—"), padd, 90);
+  ctx.textAlign="right";
+  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
+  ctx.fillText(data, W-padd, 42);
+  if(p.vendedorNome){ ctx.fillText("Vendedor: "+p.vendedorNome, W-padd, 90); }
+
+  // itens
+  let y=headerH;
+  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left";
+  ctx.fillText("PRODUTO", padd, y); ctx.textAlign="center"; ctx.fillText("QTD", W-260, y);
+  ctx.textAlign="right"; ctx.fillText("UNIT.", W-140, y); ctx.fillText("TOTAL", W-padd, y);
+  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
+
+  itens.forEach(i=>{
+    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
+    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
+    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
+    ctx.fillText(nome, padd, y+itemH/2);
+    ctx.textAlign="center"; ctx.fillText(String(qtd), W-260, y+itemH/2);
+    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un), W-140, y+itemH/2);
+    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd), W-padd, y+itemH/2);
+    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
+    y+=itemH;
+  });
+
+  // total
+  y+=10;
+  ctx.fillStyle="#262366"; ctx.fillRect(W-280,y,280-padd+padd,44); // faixa do total
+  ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
+  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left";
+  ctx.fillText("TOTAL", padd+12, y+28);
+  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial";
+  ctx.fillText(brl(p.total), W-padd-12, y+29);
+  y+=44;
+
+  // observação
+  if(p.observacao){
+    y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left";
+    ctx.fillText("Obs: "+p.observacao.slice(0,70), padd, y);
+  }
+  // rodapé
+  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W/2, H-16);
+}
+
+function baixar(){
+  const cv=document.getElementById("cv");
+  const a=document.createElement("a");
+  a.download="proposta-b13-"+(ID||"")+".png";
+  a.href=cv.toDataURL("image/png"); a.click();
+}
+
+async function compartilhar(){
+  const cv=document.getElementById("cv");
+  let blob;
+  try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }
+  catch(e){ alert("Não consegui gerar a imagem. Use 'Baixar'."); return; }
+  const file=new File([blob],"proposta-b13.png",{type:"image/png"});
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file],title:"Proposta B13"}); return; }
+    catch(e){ if(e&&e.name==="AbortError") return; }
+  }
+  baixar();
+  alert("Seu aparelho não permite enviar direto. A imagem foi baixada — abra o WhatsApp e anexe. 📎");
+}
+
+carregar();
+</script>
+</body>
+</html>

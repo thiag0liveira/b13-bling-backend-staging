@@ -74,6 +74,7 @@ const S={
   analise:null, carregandoAnalise:false,
   novos:[], carregandoNovos:false, novosSelecionados:{},
   compraSelecionados:{}, minComprados:false, minNovos:false,
+  modoTabela:false, tabelaCompleta:null, buscaTabela:"",
   msg:"",
 };
 
@@ -401,12 +402,68 @@ function abrirWhats(tel,msg){
 /* ---------- PRODUTOS ---------- */
 function cardProdutos(){
   return `<div class="card">
-    <label>Adicionar produto</label>
-    <input id="buscaProd" placeholder="Buscar produto pelo nome…" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
-    <div id="resultadosProd">${S.resultadosProd.map(prodRow).join("")}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label style="margin:0">Adicionar produto</label>
+      <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="toggleModoTabela()">${S.modoTabela?'🔍 Modo busca':'⊞ Modo tabela'}</button>
+    </div>
+    ${S.modoTabela?viewTabela():`
+      <input id="buscaProd" placeholder="Buscar produto pelo nome…" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
+      <div id="resultadosProd">${S.resultadosProd.map(prodRow).join("")}</div>`}
     ${S.itens.length?`<div style="margin-top:14px;font-weight:800">🛒 Itens (${S.itens.length})</div>${S.itens.map(itemRow).join("")}`:''}
   </div>`;
 }
+
+/* ---------- MODO TABELA ---------- */
+async function toggleModoTabela(){
+  S.modoTabela=!S.modoTabela;
+  if(S.modoTabela&&!S.tabelaCompleta){
+    S.msg=""; render();
+    try{ S.tabelaCompleta=await fetch(B+"/api/tabela").then(r=>r.json()); }catch(e){ S.tabelaCompleta={model:[]}; }
+  }
+  render();
+}
+
+function viewTabela(){
+  if(!S.tabelaCompleta) return `<div class="muted">Carregando tabela…</div>`;
+  const model=S.tabelaCompleta.model||[];
+  if(!model.length) return `<div class="muted">Tabela não publicada. Publique em Tabela Atacado.</div>`;
+  const filtro=(S.buscaTabela||"").toLowerCase();
+  const cats=model.map(c=>{
+    const itens=(c.itens||[]).filter(i=>i.preco>0 && (!filtro||(i.nome||"").toLowerCase().includes(filtro)));
+    return {titulo:c.t||"",itens};
+  }).filter(c=>c.itens.length);
+  return `
+    <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="S.buscaTabela=this.value;render();document.getElementById('buscaTabela')?.focus()">
+    <div style="margin-top:8px;max-height:60vh;overflow-y:auto">
+      ${cats.map(c=>`
+        <div style="margin-bottom:10px">
+          <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
+          ${c.itens.map(tbItemRow).join("")}
+        </div>`).join("")}
+    </div>`;
+}
+
+function tbItemRow(it){
+  const jaTem=S.itens.some(i=>String(i.produtoId)===String(it.bling?.[0]?.id||it.produtoId));
+  const mult=it.caixa||1;
+  const pid=it.bling?.[0]?.id||it.produtoId||"";
+  return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #23204f;font-size:13px">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.nome)}</div>
+      <div style="color:#ffd23f;font-weight:800;font-size:12px">${brl(it.preco)}${mult>1?` <span class="muted" style="font-size:10px">· fardo ${mult}</span>`:''}</div>
+    </div>
+    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:7px 12px;flex-shrink:0" ${jaTem||!pid?'disabled':''}
+      onclick='addDaTabela(${JSON.stringify({id:pid,nome:it.nome,preco:it.preco,multiplo:mult}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+  </div>`;
+}
+
+async function addDaTabela(it){
+  if(!it.id){ S.msg="Este item não tem produto vinculado no Bling."; render(); return; }
+  if(S.itens.some(i=>String(i.produtoId)===String(it.id))) return;
+  // busca estoque ao vivo e adiciona (o preço já vem da tabela)
+  await addItem({id:it.id,nome:it.nome,preco:it.preco,imagem:"",origemPreco:'atacado',multiplo:it.multiplo||1,estoque:null});
+}
+
 
 function prodRow(p){
   const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id));

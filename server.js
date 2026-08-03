@@ -3285,6 +3285,7 @@ app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, 
 app.get("/venda-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "venda-atacado.html")); });
 app.get("/propostas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "propostas.html")); });
 app.get("/tabela-imagem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "tabela-imagem.html")); });
+app.get("/proposta-imagem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "proposta-imagem.html")); });
 
 // ---- Gerenciador de imagens de produtos ----
 // Progresso em tempo real via SSE
