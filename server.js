@@ -238,6 +238,7 @@ function b13RenderNav(ativo){
     {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
     {href:"/venda-atacado",label:"🛒 Venda Atacado",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
     {href:"/propostas",label:"📄 Propostas",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
+    {href:"/vendedor",label:"🎯 Apoio ao Vendedor",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
     {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
     {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
     {href:"/listas-extras",label:"📂 Listas Extras",check:()=>b13Pode("editar_pedido")},
@@ -1807,6 +1808,8 @@ app.get("/api/produto-estoque/:id",async(req,res)=>{
 // busca do "Consumidor Final" pelo codigo 2 no Bling, com cache curto (pra nao bater na API toda hora)
 let _consumidorFinalCache=null, _consumidorFinalEm=0;
 const CONSUMIDOR_FINAL_ID=17313605063; // ID confirmado direto do link do contato no Bling
+// vendedores do VAREJO (frente de caixa) — pedidos deles não entram na análise de atacado
+const VENDEDORES_VAREJO=[15596682312,15596893031]; // Claudinéia e Andreia
 app.get("/api/pdv/consumidor-final",async(req,res)=>{
   try{
     if(_consumidorFinalCache&&Date.now()-_consumidorFinalEm<10*60*1000) return res.json({data:_consumidorFinalCache});
@@ -3339,6 +3342,7 @@ app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
 app.get("/venda-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "venda-atacado.html")); });
 app.get("/propostas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "propostas.html")); });
+app.get("/vendedor", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "vendedor.html")); });
 app.get("/tabela-imagem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "tabela-imagem.html")); });
 app.get("/proposta-imagem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "proposta-imagem.html")); });
 
@@ -4680,6 +4684,148 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     props[prop.id]=prop; salvarPropostas(props);
     res.json({ok:true,pedidoId,numero});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// ===== APOIO À DECISÃO DO VENDEDOR (atacado) =====
+// Analisa pedidos de atacado (exclui vendedores de varejo e Consumidor Final).
+// Retorna: meta do mês (atendidos), clientes que sumiram, pedidos grandes, top por produto.
+app.get("/api/vendedor/apoio",async(req,res)=>{
+  try{
+    const minValor=Number(req.query.minValor||1000);
+    const diasAtencao=Number(req.query.diasAtencao||15);
+    const diasPerdido=Number(req.query.diasPerdido||30);
+    // busca pedidos dos últimos ~180 dias (o suficiente pra ver quem sumiu)
+    const agora=Date.now();
+    const dataIni=new Date(agora-180*24*60*60*1000).toISOString().slice(0,10);
+    const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
+    const pedidos=[];
+    for(let pg=1;pg<=60;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+      let arr=[];
+      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+      pedidos.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,300));
+    }
+    // filtra: fora varejo, fora consumidor final, fora cancelados
+    const atacado=pedidos.filter(p=>{
+      const vend=Number(p.vendedor?.id||0);
+      const cont=Number(p.contato?.id||0);
+      const sit=Number(p.situacao?.id||0);
+      if(VENDEDORES_VAREJO.includes(vend)) return false;
+      if(cont===CONSUMIDOR_FINAL_ID) return false;
+      if(sit===12) return false; // cancelado
+      return true;
+    });
+
+    // META DO MÊS — pedidos atendidos no mês corrente
+    const mesAtual=new Date(agora-3*60*60*1000).toISOString().slice(0,7);
+    const SIT_ATENDIDO=Number(process.env.SIT_ATENDIDO||9);
+    const doMes=atacado.filter(p=>String(p.data||"").slice(0,7)===mesAtual);
+    const atendidosMes=doMes.filter(p=>Number(p.situacao?.id)===SIT_ATENDIDO);
+    const metaMes={
+      qtdAtendidos:atendidosMes.length,
+      valorAtendidos:+atendidosMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
+      qtdTotalMes:doMes.length,
+      valorTotalMes:+doMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
+    };
+
+    // agrupa por cliente pra achar quem sumiu
+    const porCliente={};
+    atacado.forEach(p=>{
+      const id=Number(p.contato?.id||0); if(!id) return;
+      if(!porCliente[id]) porCliente[id]={id,nome:p.contato?.nome||"—",pedidos:[],total:0};
+      porCliente[id].pedidos.push({data:p.data,total:Number(p.total||0)});
+      porCliente[id].total+=Number(p.total||0);
+    });
+
+    // CLIENTES QUE SUMIRAM — eram regulares (vários pedidos, ticket alto) e pararam
+    const perdidos=[];
+    Object.values(porCliente).forEach(c=>{
+      const datas=c.pedidos.map(x=>x.data).filter(Boolean).sort();
+      if(!datas.length) return;
+      const ultima=datas[datas.length-1];
+      const diasSem=Math.floor((agora-new Date(ultima+"T12:00:00").getTime())/(24*60*60*1000));
+      const ticketMedio=c.total/c.pedidos.length;
+      const eraRegular=c.pedidos.length>=3 && ticketMedio>=minValor; // 3+ pedidos, média acima do mínimo
+      if(eraRegular && diasSem>=diasAtencao){
+        perdidos.push({
+          id:c.id, nome:c.nome, diasSem, ultimaCompra:ultima,
+          qtdPedidos:c.pedidos.length, ticketMedio:+ticketMedio.toFixed(2),
+          totalGasto:+c.total.toFixed(2),
+          nivel: diasSem>=diasPerdido?"perdido":"atencao",
+        });
+      }
+    });
+    perdidos.sort((a,b)=>b.totalGasto-a.totalGasto);
+
+    // PEDIDOS GRANDES — acima do valor mínimo (últimos 30 dias)
+    const ha30=new Date(agora-30*24*60*60*1000).toISOString().slice(0,10);
+    const pedidosGrandes=atacado
+      .filter(p=>Number(p.total||0)>=minValor && String(p.data||"")>=ha30)
+      .map(p=>({numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",contatoId:p.contato?.id,total:Number(p.total||0),data:p.data}))
+      .sort((a,b)=>b.total-a.total).slice(0,50);
+
+    res.json({
+      metaMes, mesAtual,
+      perdidos: perdidos.slice(0,50),
+      qtdPerdidos: perdidos.length,
+      pedidosGrandes,
+      totalClientesAtacado: Object.keys(porCliente).length,
+      config:{minValor,diasAtencao,diasPerdido},
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// telefone de um cliente (pra montar o WhatsApp de recuperação)
+app.get("/api/vendedor/cliente/:id/contato",async(req,res)=>{
+  try{
+    const r=await bling(`/contatos/${req.params.id}`);
+    const d=r?.data||{};
+    res.json({nome:d.nome||"",telefone:d.telefone||d.celular||""});
+  }catch(e){ res.json({nome:"",telefone:"",erro:e.message}); }
+});
+
+// quem mais compra um produto (busca por nome do produto) — atacado only
+app.get("/api/vendedor/top-produto",async(req,res)=>{
+  try{
+    const nomeProd=(req.query.nome||"").trim().toLowerCase();
+    if(nomeProd.length<2) return res.json({data:[]});
+    const agora=Date.now();
+    const dataIni=new Date(agora-120*24*60*60*1000).toISOString().slice(0,10);
+    const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
+    const pedidos=[];
+    for(let pg=1;pg<=40;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+      let arr=[];
+      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+      pedidos.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,300));
+    }
+    const atacado=pedidos.filter(p=>{
+      const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
+      return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
+    });
+    // busca detalhe dos pedidos pra ver os itens (limita a 60 pedidos mais recentes)
+    const recentes=atacado.sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,60);
+    const porCliente={};
+    for(const ped of recentes){
+      try{
+        const d=await bling(`/pedidos/vendas/${ped.id}`); const itens=d?.data?.itens||[];
+        const temProd=itens.some(it=>(it.descricao||"").toLowerCase().includes(nomeProd));
+        if(temProd){
+          const cid=ped.contato?.id; if(!cid) continue;
+          const qtd=itens.filter(it=>(it.descricao||"").toLowerCase().includes(nomeProd)).reduce((s,it)=>s+Number(it.quantidade||0),0);
+          if(!porCliente[cid]) porCliente[cid]={id:cid,nome:ped.contato?.nome||"—",qtdTotal:0,pedidos:0};
+          porCliente[cid].qtdTotal+=qtd; porCliente[cid].pedidos++;
+        }
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,120));
+    }
+    const top=Object.values(porCliente).sort((a,b)=>b.qtdTotal-a.qtdTotal).slice(0,20);
+    res.json({data:top});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));

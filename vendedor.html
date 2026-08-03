@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Apoio ao Vendedor</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:980px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top .t{font-weight:900;font-size:17px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:14px}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-wa{background:#25d366;color:#0a2a1a}.btn-ghost{background:#1c1846}
+  .seg{display:flex;gap:6px;background:#0f0d24;border-radius:10px;padding:4px;margin-bottom:14px}
+  .seg button{flex:1;padding:10px;border:none;border-radius:8px;background:transparent;color:#9a95c9;font-weight:800;cursor:pointer;font-size:13px}
+  .seg button.on{background:var(--mag);color:#fff}
+  .rc{background:#0f0d24;border-radius:12px;padding:14px;text-align:center}
+  .rc .v{font-size:24px;font-weight:900}
+  .cli{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #23204f}
+  .cli:last-child{border:none}
+  .tag{font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px}
+  .tag-at{background:#3a2a00;color:#ffd23f}.tag-pd{background:#3a0010;color:#ff8090}
+  input,select{padding:10px;border-radius:9px;border:2px solid #514c96;background:#0f0d24;color:#fff;font-size:14px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/vendedor");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const soDig=(s)=>String(s??"").replace(/\D/g,"");
+let ABA="recuperar", DADOS=null, carregando=false;
+let MIN_VALOR=1000;
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <div class="t">🎯 Apoio ao Vendedor</div><div class="sp"></div>
+    </div>
+    <div class="wrap">
+      <div class="seg">
+        <button class="${ABA==='recuperar'?'on':''}" onclick="ABA='recuperar';render()">💰 Meta & Recuperar clientes</button>
+        <button class="${ABA==='prospectar'?'on':''}" onclick="ABA='prospectar';render()">🔍 Prospectar novos</button>
+      </div>
+      ${ABA==='recuperar'?viewRecuperar():viewProspectar()}
+    </div>`;
+  if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
+}
+
+/* ===== ABA 1: RECUPERAR ===== */
+function viewRecuperar(){
+  if(carregando) return `<div class="card"><div class="muted">📊 Analisando pedidos de atacado (pode levar 1-2 min)…</div></div>`;
+  if(!DADOS) return `<div class="card"><div class="muted">Carregando…</div></div>`;
+  const m=DADOS.metaMes||{};
+  const perdidos=DADOS.perdidos||[];
+  const grandes=DADOS.pedidosGrandes||[];
+  return `
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:10px">💰 Meta do mês (atacado — sem varejo/consumidor final)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="rc"><div class="muted" style="font-size:11px">Pedidos atendidos</div><div class="v" style="color:#3ce88a">${m.qtdAtendidos||0}</div></div>
+        <div class="rc"><div class="muted" style="font-size:11px">Valor atendido</div><div class="v" style="color:#3ce88a">${brl(m.valorAtendidos)}</div></div>
+        <div class="rc"><div class="muted" style="font-size:11px">Total pedidos no mês</div><div class="v">${m.qtdTotalMes||0}</div></div>
+        <div class="rc"><div class="muted" style="font-size:11px">Valor total no mês</div><div class="v" style="color:#ffd23f">${brl(m.valorTotalMes)}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:800">⚠️ Clientes que sumiram (${DADOS.qtdPerdidos||0})</div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="recarregar()">🔄 Atualizar</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Eram regulares (3+ pedidos, ticket médio acima de ${brl(MIN_VALOR)}) e pararam de comprar.</div>
+      ${perdidos.length?perdidos.map(cliRow).join(""):'<div class="muted">Nenhum cliente perdido detectado. 🎉</div>'}
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">🔎 Quem mais compra um produto</div>
+      <div style="display:flex;gap:8px">
+        <input id="buscaTop" placeholder="Ex: skol, heineken…" style="flex:1" onkeydown="if(event.key==='Enter')buscarTop()">
+        <button class="btn btn-mag" onclick="buscarTop()">Buscar</button>
+      </div>
+      <div id="topResultado" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:8px">💵 Pedidos grandes (acima de ${brl(MIN_VALOR)}, últimos 30 dias)</div>
+      ${grandes.length?grandes.map(g=>`
+        <div class="cli">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13px">#${esc(g.numero)} — ${esc(g.cliente)}</div>
+            <div class="muted" style="font-size:11px">${g.data?g.data.split('-').reverse().join('/'):''}</div>
+          </div>
+          <div style="font-weight:800;color:#ffd23f">${brl(g.total)}</div>
+        </div>`).join(""):'<div class="muted">Nenhum pedido grande nos últimos 30 dias.</div>'}
+    </div>`;
+}
+
+function cliRow(c){
+  return `<div class="cli">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:14px">${esc(c.nome)}</div>
+      <div class="muted" style="font-size:11px">
+        <span class="tag ${c.nivel==='perdido'?'tag-pd':'tag-at'}">${c.nivel==='perdido'?'PERDIDO':'ATENÇÃO'}</span>
+        ${c.diasSem} dias sem comprar · ${c.qtdPedidos} pedidos · média ${brl(c.ticketMedio)}
+      </div>
+    </div>
+    <button class="btn btn-wa" style="font-size:12px" onclick='recuperar(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📱 Recuperar</button>
+  </div>`;
+}
+
+async function recuperar(id,nome){
+  let tel="";
+  try{ const j=await fetch(B+"/api/vendedor/cliente/"+id+"/contato").then(r=>r.json()); tel=soDig(j.telefone||""); }catch(e){}
+  const msg=`Olá, ${nome}! Aqui é da B13 Bebidas 🍻\n\nSentimos sua falta por aqui! Temos novidades e ótimos preços no atacado. Posso te passar uma proposta especial?`;
+  if(tel.length<10){
+    if(confirm(nome+" não tem telefone cadastrado. Abrir o WhatsApp mesmo assim (você escolhe o contato)?")){
+      window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+    }
+    return;
+  }
+  const t55=tel.length<=11?("55"+tel):tel;
+  window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank");
+}
+
+async function buscarTop(){
+  const nome=document.getElementById("buscaTop").value.trim();
+  const box=document.getElementById("topResultado");
+  if(nome.length<2){ box.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
+  box.innerHTML='<div class="muted">Buscando (pode demorar)…</div>';
+  try{
+    const j=await fetch(B+"/api/vendedor/top-produto?nome="+encodeURIComponent(nome)).then(r=>r.json());
+    const l=j.data||[];
+    box.innerHTML=l.length?l.map((c,i)=>`
+      <div class="cli">
+        <div style="width:24px;font-weight:900;color:#ffd23f">${i+1}º</div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(c.nome)}</div>
+          <div class="muted" style="font-size:11px">${c.qtdTotal} un em ${c.pedidos} pedido(s)</div></div>
+        <button class="btn btn-wa" style="font-size:12px" onclick='recuperar(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📱</button>
+      </div>`).join(""):'<div class="muted">Ninguém comprou esse produto no período (ou nome não encontrado).</div>';
+  }catch(e){ box.innerHTML='<div class="muted">Erro na busca.</div>'; }
+}
+
+async function carregar(){
+  carregando=true; render();
+  try{ DADOS=await fetch(B+"/api/vendedor/apoio?minValor="+MIN_VALOR).then(r=>r.json()); }
+  catch(e){ DADOS={erro:"Erro ao carregar"}; }
+  carregando=false; render();
+}
+function recarregar(){ DADOS=null; carregar(); }
+
+/* ===== ABA 2: PROSPECTAR (em breve) ===== */
+function viewProspectar(){
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:8px">🔍 Prospecção de novos clientes</div>
+    <div class="muted" style="line-height:1.6">Em breve: busca de estabelecimentos (bares, restaurantes, mercadinhos, adegas) na sua região usando o Google Maps, marcando quais ainda não são seus clientes, com telefone pra prospecção.</div>
+  </div>`;
+}
+
+render();
+</script>
+</body>
+</html>
