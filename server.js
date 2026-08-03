@@ -4408,7 +4408,31 @@ app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{
       }catch(e){}
       await new Promise(r=>setTimeout(r,120));
     }
-    const maisComprados=Object.values(prodCount).sort((a,b)=>b.vezes-a.vezes||b.qtdTotal-a.qtdTotal).slice(0,10);
+    let maisComprados=Object.values(prodCount).sort((a,b)=>b.vezes-a.vezes||b.qtdTotal-a.qtdTotal).slice(0,10);
+    // enriquece com preço de atacado (tabela), múltiplo e imagem — pra já mostrar o
+    // preço certo antes de adicionar
+    const tab=lerTabela();
+    const infoPorCod={}; const infoPorProdId={};
+    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{
+      const info={precoAtacado:it.preco,multiplo:it.caixa||1,categoria:c.t||""};
+      infoPorCod[String(b.codigo)]=info; if(b.id) infoPorProdId[String(b.id)]=info;
+    })));
+    const indiceProd=lerJSON(GTIN_INDEX_FILE,{});
+    const idxPorProdId={}; Object.values(indiceProd).forEach(p=>{ if(p.produtoId) idxPorProdId[String(p.produtoId)]=p; });
+    maisComprados=maisComprados.map(m=>{
+      const idx=idxPorProdId[String(m.produtoId)];
+      const info=infoPorProdId[String(m.produtoId)]||(idx?infoPorCod[String(idx.codigo)]:null);
+      const precoBling=idx?+(idx.preco||0):0;
+      return {
+        ...m,
+        imagem:idx?.imagem||"",
+        codigo:idx?.codigo||"",
+        precoAtacado:info?info.precoAtacado:null,
+        multiplo:info?info.multiplo:1,
+        preco:info?info.precoAtacado:precoBling,
+        origemPreco:info?"atacado":"bling",
+      };
+    });
 
     res.json({
       qtdPedidos, totalGasto, media, ultimaCompra,

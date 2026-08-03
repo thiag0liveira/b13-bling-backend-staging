@@ -73,6 +73,7 @@ const S={
   buscaProd:"", resultadosProd:[],
   analise:null, carregandoAnalise:false,
   novos:[], carregandoNovos:false, novosSelecionados:{},
+  compraSelecionados:{}, minComprados:false, minNovos:false,
   msg:"",
 };
 
@@ -229,7 +230,7 @@ async function salvarCliente(){
   }catch(e){ alert("Erro ao salvar cliente."); }
 }
 
-function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; render(); }
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={}; render(); }
 
 /* ---------- ANÁLISE DO CLIENTE (Fase 2) ---------- */
 function cardAnalise(){
@@ -262,15 +263,50 @@ function cardAnalise(){
     </div>
     ${mesesTxt?`<div class="muted" style="font-size:12px;margin-bottom:4px">Gasto por mês:</div><div style="margin-bottom:10px">${mesesTxt}</div>`:''}
     ${sugestoes.length?`
-      <div class="muted" style="font-size:12px;margin-bottom:6px">🔁 Produtos que costuma comprar (toque pra adicionar):</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${sugestoes.map(s=>{
-          const jaTem=S.itens.some(i=>String(i.produtoId)===String(s.produtoId));
-          return `<button class="btn ${jaTem?'btn-ghost':'btn-out'}" style="font-size:11px;padding:7px 10px" ${jaTem?'disabled':''}
-            onclick='addSugestao(${JSON.stringify({id:s.produtoId,nome:s.nome}).replace(/'/g,"&#39;")})'>${jaTem?'✓ ':'+ '}${esc(s.nome)} <span class="muted">(${s.vezes}x)</span></button>`;
-        }).join("")}
-      </div>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="muted" style="font-size:12px">🔁 Produtos que costuma comprar:</div>
+        <div style="display:flex;gap:6px">
+          ${Object.values(S.compraSelecionados).filter(Boolean).length?`<button class="btn btn-wa" style="font-size:11px;padding:6px 10px" onclick="enviarSugestoesWhats()">📱 Sugerir ${Object.values(S.compraSelecionados).filter(Boolean).length}</button>`:''}
+          <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="S.minComprados=!S.minComprados;render()">${S.minComprados?'▼ Expandir':'▲ Minimizar'}</button>
+        </div>
+      </div>
+      ${S.minComprados?'':`<div style="display:flex;flex-direction:column;gap:2px">${sugestoes.map(compraRow).join("")}</div>`}
+      `:''}
   </div>`;
+}
+
+function compraRow(s){
+  const sel=!!S.compraSelecionados[s.produtoId];
+  const jaTem=S.itens.some(i=>String(i.produtoId)===String(s.produtoId));
+  const origem=s.origemPreco==='atacado'?'Atacado':'Bling';
+  return `<div class="prod" style="${sel?'background:rgba(37,211,102,.12);border-radius:8px':''}">
+    <div onclick="toggleCompra('${s.produtoId}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+      <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel?'#25d366':'#514c96'};background:${sel?'#25d366':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel?'✓':''}</div>
+      ${s.imagem?`<img src="${esc(s.imagem)}" style="width:38px;height:38px">`:`<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${esc(s.nome)}</div>
+        <div style="margin-top:2px">
+          <span class="badge ${s.origemPreco==='atacado'?'badge-at':'badge-bl'}">${origem}</span>
+          <b style="color:#ffd23f;margin-left:6px">${brl(s.preco)}</b>
+          <span class="muted" style="font-size:11px;margin-left:6px">(${s.vezes}x)</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''}
+      onclick='addSugestao(${JSON.stringify({id:s.produtoId,nome:s.nome}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+  </div>`;
+}
+
+function toggleCompra(id){ S.compraSelecionados[id]=!S.compraSelecionados[id]; render(); }
+
+async function enviarSugestoesWhats(){
+  const sel=(S.analise?.maisComprados||[]).filter(s=>S.compraSelecionados[s.produtoId]);
+  if(!sel.length) return;
+  const tel=await garantirTelefone();
+  if(tel===false) return;
+  const linhas=sel.map(s=>`• ${s.nome} — ${brl(s.preco)}`).join("\n");
+  const msg=`*B13 Bebidas* 🍻\n\nOlá, ${S.cliente.nome}! Separei algumas sugestões pra você:\n\n${linhas}\n\nQuer que eu já separe? É só responder! 😉`;
+  abrirWhats(tel,msg);
 }
 
 // adiciona um produto sugerido (busca preço/estoque/múltiplo ao vivo, igual a busca normal)
@@ -294,12 +330,16 @@ function cardNovos(){
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div style="font-weight:800">✨ Últimos produtos cadastrados</div>
-      ${selCount?`<button class="btn btn-wa" style="font-size:12px;padding:7px 12px" onclick="enviarNovidadesWhats()">📱 Enviar ${selCount} por WhatsApp</button>`:''}
+      <div style="display:flex;gap:6px">
+        ${selCount?`<button class="btn btn-wa" style="font-size:12px;padding:7px 12px" onclick="enviarNovidadesWhats()">📱 Enviar ${selCount}</button>`:''}
+        <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="S.minNovos=!S.minNovos;render()">${S.minNovos?'▼ Expandir':'▲ Minimizar'}</button>
+      </div>
     </div>
+    ${S.minNovos?'':`
     <div class="muted" style="font-size:12px;margin-bottom:8px">Selecione pra sugerir ao cliente por WhatsApp, ou toque no + pra adicionar ao pedido.</div>
     <div style="display:flex;flex-direction:column;gap:2px">
       ${S.novos.map(novoRow).join("")}
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -501,7 +541,7 @@ async function salvar(){
     }
     // limpa tudo pra próxima venda
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
-    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={};
+    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     render();
   }catch(e){ alert("Erro ao salvar."); }
 }
