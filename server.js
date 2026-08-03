@@ -241,6 +241,7 @@ function b13RenderNav(ativo){
     {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
     {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
     {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
+    {href:"/perdas",label:"📉 Perdas (danif./não entregue)",check:()=>b13Pode("ver_dashboard")},
     {href:"/gestao",label:"📋 Gestão",check:()=>b13Pode("editar_pedido")},
     {href:"/tabela",label:"🗂️ Tabela Atacado",check:()=>b13Pode("ver_listas")},
     {href:"/listas",label:"📄 Listas de Preço",check:()=>b13Pode("ver_listas")},
@@ -998,6 +999,47 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
 });
 
 // Confirmar entrega (EM ROTA → ATENDIDO) com registro de perdas/danos
+// Análise de perdas — lista as ocorrências (não entregue / danificado) com fotos,
+// quantidades e valores, filtrando por período opcional.
+app.get("/api/perdas", async(req,res)=>{
+  try{
+    const {dataInicial,dataFinal}=req.query;
+    const iniTs=dataInicial?new Date(dataInicial+"T00:00:00-03:00").getTime():null;
+    const fimTs=dataFinal?new Date(dataFinal+"T23:59:59-03:00").getTime():null;
+    const perdasObj=lerJSON(PERDAS_FILE,{});
+    let ocorrencias=Object.values(perdasObj);
+    if(iniTs) ocorrencias=ocorrencias.filter(o=>(o.em||0)>=iniTs);
+    if(fimTs) ocorrencias=ocorrencias.filter(o=>(o.em||0)<=fimTs);
+    ocorrencias.sort((a,b)=>(b.em||0)-(a.em||0));
+
+    // enriquece com número do pedido e nome do cliente (best-effort, do Bling)
+    const detalhes=[];
+    let totalNaoEntregue=0, totalDanificado=0, qtdNaoEntregue=0, qtdDanificado=0;
+    for(const o of ocorrencias){
+      let numero=o.pedidoId, cliente="—";
+      try{ const pj=await bling(`/pedidos/vendas/${o.pedidoId}`).then(r=>r?.data); if(pj){ numero=pj.numero||o.pedidoId; cliente=pj.contato?.nome||"—"; } }catch(e){}
+      const nEnt=(o.itensNaoEntregues||[]).map(i=>({...i,tipo:"nao_entregue"}));
+      const dan=(o.itensDanificados||[]).map(i=>({...i,tipo:"danificado"}));
+      nEnt.forEach(i=>{ totalNaoEntregue+=(i.valorItem||0); qtdNaoEntregue+=(i.quantidadeAfetada||i.quantidade||1); });
+      dan.forEach(i=>{ totalDanificado+=(i.valorItem||0); qtdDanificado+=(i.quantidadeAfetada||i.quantidade||1); });
+      detalhes.push({
+        pedidoId:o.pedidoId, numero, cliente, em:o.em, resolucao:o.resolucao||"",
+        funcionarioNome:o.funcionarioNome||"", valorAbatido:o.valorAbatido||0,
+        itens:[...nEnt,...dan],
+      });
+    }
+    res.json({
+      ocorrencias:detalhes,
+      resumo:{
+        totalOcorrencias:detalhes.length,
+        totalNaoEntregue:+totalNaoEntregue.toFixed(2), qtdNaoEntregue,
+        totalDanificado:+totalDanificado.toFixed(2), qtdDanificado,
+        totalGeral:+(totalNaoEntregue+totalDanificado).toFixed(2),
+      },
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,itensNaoEntregues,itensDanificados,valorAbatido,resolucao,clienteId,clienteNome}=req.body||{};
@@ -3216,6 +3258,7 @@ app.get("/api/config",(req,res)=>res.json({SIT}));
 app.get("/tabela",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
 app.get("/listas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas.html")); });
 app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "dashboard.html")); });
+app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
 
 // ---- Gerenciador de imagens de produtos ----
 // Progresso em tempo real via SSE

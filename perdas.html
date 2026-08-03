@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Análise de Perdas</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:1100px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:40px}.top .t{font-weight:900;font-size:18px}.top .sp{flex:1}
+  .wrap{padding:16px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:10px 14px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:14px}
+  .muted{color:#9a95c9;font-size:13px}
+  input[type=date]{padding:10px;border-radius:8px;border:2px solid #514c96;background:#0f0d24;color:#fff;font-size:14px}
+  .filtros{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .resumo{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .rc{flex:1;min-width:150px;background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;text-align:center}
+  .rc .v{font-size:24px;font-weight:900}
+  .ocorr{border-bottom:1px solid #23204f;padding:14px 0}
+  .ocorr:last-child{border-bottom:none}
+  .item{display:flex;align-items:center;gap:12px;padding:8px;background:#0f0d24;border-radius:10px;margin-top:8px}
+  .item img{width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #514c96;cursor:pointer;flex-shrink:0}
+  .item .semfoto{width:70px;height:70px;border-radius:8px;background:#241f52;display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+  .tag{font-size:11px;font-weight:800;padding:2px 8px;border-radius:5px}
+  .tag-ne{background:#3a0010;color:#ff8090}
+  .tag-dn{background:#3a2a00;color:#ffd23f}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+  .lightbox img{max-width:95%;max-height:95%;border-radius:10px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/perdas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const hojeStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"America/Sao_Paulo"});
+
+let PERIODO="30dias";
+let DATA_INI=null, DATA_FIM=null;
+
+function calcPeriodo(){
+  const hoje=new Date();
+  const fmt=(d)=>d.toLocaleDateString("sv-SE",{timeZone:"America/Sao_Paulo"});
+  if(PERIODO==="hoje") return {ini:hojeStr(),fim:hojeStr()};
+  if(PERIODO==="7dias"){ const d=new Date(hoje); d.setDate(d.getDate()-7); return {ini:fmt(d),fim:hojeStr()}; }
+  if(PERIODO==="30dias"){ const d=new Date(hoje); d.setDate(d.getDate()-30); return {ini:fmt(d),fim:hojeStr()}; }
+  if(PERIODO==="mes"){ const d=new Date(hoje.getFullYear(),hoje.getMonth(),1); return {ini:fmt(d),fim:hojeStr()}; }
+  if(PERIODO==="periodo") return {ini:DATA_INI,fim:DATA_FIM};
+  return {ini:null,fim:null};
+}
+
+function render(){
+  const app=document.getElementById("app");
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">📉 Análise de Perdas</div><div class="sp"></div>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div class="muted" style="margin-bottom:8px">Ocorrências de itens não entregues ou danificados registradas na confirmação de entrega.</div>
+        <div class="filtros">
+          <span class="chip ${PERIODO==='hoje'?'on':''}" onclick="PERIODO='hoje';carregar()">Hoje</span>
+          <span class="chip ${PERIODO==='7dias'?'on':''}" onclick="PERIODO='7dias';carregar()">7 dias</span>
+          <span class="chip ${PERIODO==='30dias'?'on':''}" onclick="PERIODO='30dias';carregar()">30 dias</span>
+          <span class="chip ${PERIODO==='mes'?'on':''}" onclick="PERIODO='mes';carregar()">Este mês</span>
+          <span class="chip ${PERIODO==='tudo'?'on':''}" onclick="PERIODO='tudo';carregar()">Tudo</span>
+          <span class="chip ${PERIODO==='periodo'?'on':''}" onclick="PERIODO='periodo';render()">Período…</span>
+        </div>
+        ${PERIODO==='periodo'?`
+          <div class="filtros" style="margin-top:8px">
+            <input type="date" id="di" value="${DATA_INI||''}" onchange="DATA_INI=this.value">
+            <span class="muted">até</span>
+            <input type="date" id="df" value="${DATA_FIM||''}" onchange="DATA_FIM=this.value">
+            <button class="btn btn-mag" onclick="carregar()">Buscar</button>
+          </div>`:''}
+      </div>
+      <div id="resultado"><div class="muted">Carregando…</div></div>
+    </div>`;
+  if(PERIODO!=='periodo'||( DATA_INI&&DATA_FIM)) carregar();
+}
+
+async function carregar(){
+  const box=document.getElementById("resultado");
+  if(!box) return;
+  box.innerHTML=`<div class="muted">Carregando…</div>`;
+  const {ini,fim}=calcPeriodo();
+  const params=new URLSearchParams();
+  if(ini) params.set("dataInicial",ini);
+  if(fim) params.set("dataFinal",fim);
+  try{
+    const j=await fetch(B+"/api/perdas?"+params.toString()).then(r=>r.json());
+    if(j.erro){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro: ${esc(j.erro)}</div>`; return; }
+    const r=j.resumo||{};
+    const ocRows=(j.ocorrencias||[]).map(o=>`
+      <div class="ocorr">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <div><b>#${esc(o.numero)}</b> — ${esc(o.cliente)}</div>
+          <div class="muted">${o.em?new Date(o.em).toLocaleString("pt-BR"):""} ${o.funcionarioNome?`· ${esc(o.funcionarioNome)}`:""}</div>
+        </div>
+        ${(o.itens||[]).map(i=>`
+          <div class="item">
+            ${i.foto?`<img src="${i.foto}" onclick="ampliar('${i.foto.replace(/'/g,"")}')" title="Clique pra ampliar">`:`<div class="semfoto">${i.tipo==='danificado'?'📷':'📦'}</div>`}
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700">${esc(i.descricao||i.produto?.nome||"—")}</div>
+              <div style="margin-top:2px">
+                <span class="tag ${i.tipo==='danificado'?'tag-dn':'tag-ne'}">${i.tipo==='danificado'?'📷 Danificado':'📦 Não entregue'}</span>
+                <span class="muted" style="margin-left:6px">${i.quantidadeAfetada||i.quantidade||1} un</span>
+              </div>
+              ${i.motivo?`<div class="muted" style="font-size:11px;margin-top:3px">💬 ${esc(i.motivo)}</div>`:''}
+            </div>
+            <div style="text-align:right;font-weight:800;color:#ff8090">${brl(i.valorItem||0)}</div>
+          </div>`).join("")}
+      </div>`).join("");
+
+    box.innerHTML=`
+      <div class="resumo">
+        <div class="rc"><div class="muted">Total de perdas</div><div class="v" style="color:#ff8090">${brl(r.totalGeral)}</div><div class="muted" style="font-size:11px">${r.totalOcorrencias} ocorrência(s)</div></div>
+        <div class="rc"><div class="muted">📦 Não entregue</div><div class="v" style="color:#ff8090">${brl(r.totalNaoEntregue)}</div><div class="muted" style="font-size:11px">${r.qtdNaoEntregue} item(ns)</div></div>
+        <div class="rc"><div class="muted">📷 Danificado</div><div class="v" style="color:#ffd23f">${brl(r.totalDanificado)}</div><div class="muted" style="font-size:11px">${r.qtdDanificado} item(ns)</div></div>
+      </div>
+      <div class="card">
+        ${(j.ocorrencias||[]).length?ocRows:'<div class="muted">Nenhuma ocorrência de perda nesse período. 🎉</div>'}
+      </div>`;
+  }catch(e){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro ao carregar: ${esc(e.message)}</div>`; }
+}
+
+function ampliar(src){
+  const div=document.createElement("div");
+  div.className="lightbox";
+  div.onclick=()=>div.remove();
+  div.innerHTML=`<img src="${src}">`;
+  document.body.appendChild(div);
+}
+
+render();
+</script>
+</body>
+</html>
