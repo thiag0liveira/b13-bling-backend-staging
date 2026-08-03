@@ -1739,6 +1739,15 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
   res.json({ok:true});
 });
 
+// estoque ao vivo de um produto específico (usado ao adicionar item na venda atacado)
+app.get("/api/produto-estoque/:id",async(req,res)=>{
+  try{
+    const r=await bling(`/produtos/${req.params.id}`);
+    const est=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+    res.json({estoque:est});
+  }catch(e){ res.json({estoque:null,erro:e.message}); }
+});
+
 // estoque ao vivo do produto (o indice de preco pode estar desatualizado quanto a quantidade)
 // busca do "Consumidor Final" pelo codigo 2 no Bling, com cache curto (pra nao bater na API toda hora)
 let _consumidorFinalCache=null, _consumidorFinalEm=0;
@@ -4391,6 +4400,23 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+prop.pedidoBlingNumero});
     if(!prop.cliente?.id) return res.status(400).json({erro:"a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido"});
     if(!prop.itens?.length) return res.status(400).json({erro:"a proposta não tem itens"});
+
+    // valida o estoque ao vivo de cada item antes de tentar criar (evita o erro genérico
+    // do Bling e diz exatamente qual produto está sem saldo)
+    const semEstoque=[];
+    for(const it of prop.itens){
+      try{
+        const r=await bling(`/produtos/${it.produtoId}`);
+        const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+        if(saldo!=null && Number(it.quantidade)>Number(saldo)){
+          semEstoque.push(`${it.nome} (pediu ${it.quantidade}, tem ${saldo})`);
+        }
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,120));
+    }
+    if(semEstoque.length){
+      return res.status(400).json({erro:"Estoque insuficiente: "+semEstoque.join("; ")+". Ajuste as quantidades."});
+    }
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
     const totalPed=+prop.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);

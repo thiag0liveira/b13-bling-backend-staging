@@ -268,11 +268,21 @@ async function buscarProd(){
   }catch(e){}
 }
 
-function addItem(p){
+async function addItem(p){
   if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
   const mult=Math.max(1,parseInt(p.multiplo)||1);
-  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult,estoque:(p.estoque==null?null:Number(p.estoque))});
-  render();
+  let estoque=(p.estoque==null?null:Number(p.estoque));
+  // se o estoque não veio na busca (produto além dos primeiros resultados),
+  // busca ao vivo agora — garante que a quantidade seja limitada corretamente
+  if(estoque==null){
+    try{ const j=await fetch(B+"/api/produto-estoque/"+p.id).then(r=>r.json()); estoque=(j.estoque==null?null:Number(j.estoque)); }catch(e){}
+  }
+  if(estoque!=null&&estoque<mult){
+    S.msg=`⚠️ ${p.nome} está sem estoque suficiente pra 1 fardo (estoque: ${estoque}, fardo: ${mult}).`;
+    render(); return;
+  }
+  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult,estoque});
+  S.msg=""; render();
 }
 // maior quantidade permitida = múltiplo do fardo que não passa do estoque
 function maxPorEstoque(it){
