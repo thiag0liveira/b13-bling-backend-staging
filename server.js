@@ -1740,13 +1740,37 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
 });
 
 // estoque ao vivo de um produto específico (usado ao adicionar item na venda atacado)
+// diagnóstico: mostra os campos de imagem de um produto (pra descobrir onde a foto fica)
+app.get("/api/debug-imagem/:id",async(req,res)=>{
+  try{
+    const r=await bling(`/produtos/${req.params.id}`);
+    const d=r?.data||{};
+    res.json({
+      imagemURL:d.imagemURL||null,
+      imagens:d.imagens||null,
+      midia:d.midia||null,
+      chaves:Object.keys(d),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/produto-estoque/:id",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.id}`);
     const d=r?.data||{};
     const est=d?.estoque?.saldoVirtualTotal ?? d?.estoque?.saldoFisicoTotal ?? null;
-    // no Bling v3 a imagem fica em imagens[].link (imagemURL costuma vir vazio)
-    const imagem=(d.imagens&&d.imagens.find(i=>i.link&&i.link.trim())?.link) || d.imagemURL || "";
+    // no Bling v3 a imagem pode vir em vários formatos dependendo da conta:
+    // imagens[].link, midia.imagens.externas[].link, ou imagemURL
+    let imagem="";
+    if(d.imagens&&Array.isArray(d.imagens)){
+      const img=d.imagens.find(i=>(i.link||i.url||"").trim());
+      imagem=img?(img.link||img.url):"";
+    }
+    if(!imagem&&d.midia?.imagens){
+      const ext=d.midia.imagens.externas?.find(i=>i.link)||d.midia.imagens.internas?.find(i=>i.link);
+      imagem=ext?.link||"";
+    }
+    if(!imagem) imagem=d.imagemURL||"";
     res.json({estoque:est,imagem});
   }catch(e){ res.json({estoque:null,imagem:"",erro:e.message}); }
 });
