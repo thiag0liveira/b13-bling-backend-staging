@@ -1754,6 +1754,27 @@ app.get("/api/debug-imagem/:id",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// diagnóstico por nome: busca o produto pelo nome e mostra os campos de imagem
+app.get("/api/debug-imagem-nome",async(req,res)=>{
+  try{
+    const nome=(req.query.nome||"").trim();
+    if(!nome) return res.json({erro:"informe ?nome=..."});
+    // acha o produto no índice local
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    const achado=Object.values(indice).find(p=>(p.nome||"").toLowerCase().includes(nome.toLowerCase()));
+    if(!achado) return res.json({erro:"produto não encontrado no índice com esse nome"});
+    const r=await bling(`/produtos/${achado.produtoId}`);
+    const d=r?.data||{};
+    res.json({
+      produtoId:achado.produtoId, nome:d.nome,
+      imagemURL:d.imagemURL||null,
+      imagens:d.imagens||null,
+      midia:d.midia||null,
+      chaves:Object.keys(d),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/produto-estoque/:id",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.id}`);
