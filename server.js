@@ -4398,7 +4398,20 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     if(formaFicha){
       payload.parcelas=[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:totalPed}];
     }
-    const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    console.log("[atacado] payload gerar-pedido:",JSON.stringify(payload));
+    let criado;
+    try{
+      criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    }catch(errBling){
+      // extrai o detalhe do erro do Bling (quais campos falharam) pra mostrar na tela
+      console.error("[atacado] erro Bling ao criar pedido:",JSON.stringify(errBling.body||errBling.message));
+      const b=errBling.body||{};
+      const campos=b?.error?.fields||b?.error?.details||[];
+      const detalhe=Array.isArray(campos)&&campos.length
+        ? campos.map(f=>`${f.element||f.field||f.campo||''}: ${f.msg||f.message||f.descricao||JSON.stringify(f)}`).join(" | ")
+        : (b?.error?.description||b?.error?.message||errBling.message||"erro desconhecido");
+      return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
+    }
     const pedidoId=criado?.data?.id;
     let numero=criado?.data?.numero||pedidoId;
     // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
