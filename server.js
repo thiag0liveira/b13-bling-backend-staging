@@ -1744,8 +1744,8 @@ app.get("/api/produto-estoque/:id",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.id}`);
     const est=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
-    res.json({estoque:est});
-  }catch(e){ res.json({estoque:null,erro:e.message}); }
+    res.json({estoque:est,imagem:r?.data?.imagemURL||""});
+  }catch(e){ res.json({estoque:null,imagem:"",erro:e.message}); }
 });
 
 // estoque ao vivo do produto (o indice de preco pode estar desatualizado quanto a quantidade)

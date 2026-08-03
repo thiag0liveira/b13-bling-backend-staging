@@ -75,6 +75,7 @@ const S={
   novos:[], carregandoNovos:false, novosSelecionados:{},
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"",
+  rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
   msg:"",
 };
 
@@ -88,6 +89,36 @@ const S={
 })();
 
 function total(){ return S.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+
+// AUTO-SAVE: salva a proposta como "em digitação" de tempos em tempos, pra não perder o trabalho.
+let _autoSaveT=null;
+function agendarAutoSave(){
+  clearTimeout(_autoSaveT);
+  _autoSaveT=setTimeout(salvarRascunho,2500); // salva 2.5s depois da última mudança
+}
+async function salvarRascunho(){
+  // só salva se já tem cliente e ao menos um item (senão não há o que guardar)
+  if(!S.cliente?.id || !S.itens.length) return;
+  S.salvandoRascunho=true; atualizarStatusSalvo();
+  try{
+    const payload={
+      id:S.rascunhoId, tipo:S.tipo, status:"em_digitacao",
+      cliente:S.cliente, itens:S.itens, observacao:S.observacao,
+      vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
+      funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
+    };
+    const j=await fetch(B+"/api/atacado/propostas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(j.data?.id){ S.rascunhoId=j.data.id; S.ultimoSalvo=new Date(); }
+  }catch(e){}
+  S.salvandoRascunho=false; atualizarStatusSalvo();
+}
+function atualizarStatusSalvo(){
+  const el=document.getElementById("statusSalvo");
+  if(!el) return;
+  if(S.salvandoRascunho){ el.textContent="💾 Salvando…"; }
+  else if(S.ultimoSalvo){ el.textContent="✅ Rascunho salvo "+S.ultimoSalvo.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
+  else el.textContent="";
+}
 
 async function carregarAnalise(){
   if(!S.cliente?.id){ S.analise=null; return; }
@@ -135,6 +166,7 @@ function render(){
       ${S.cliente&&S.itens.length?cardResumo():''}
       ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}</div>`:''}
     </div>`;
+  atualizarStatusSalvo();
 }
 
 /* ---------- CLIENTE ---------- */
@@ -521,17 +553,17 @@ async function addItem(p){
   if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
   const mult=Math.max(1,parseInt(p.multiplo)||1);
   let estoque=(p.estoque==null?null:Number(p.estoque));
-  // se o estoque não veio na busca (produto além dos primeiros resultados),
-  // busca ao vivo agora — garante que a quantidade seja limitada corretamente
-  if(estoque==null){
-    try{ const j=await fetch(B+"/api/produto-estoque/"+p.id).then(r=>r.json()); estoque=(j.estoque==null?null:Number(j.estoque)); }catch(e){}
+  let imagem=p.imagem||"";
+  // se falta estoque ou imagem, busca ao vivo agora (garante limite de qtd e foto)
+  if(estoque==null||!imagem){
+    try{ const j=await fetch(B+"/api/produto-estoque/"+p.id).then(r=>r.json()); if(estoque==null) estoque=(j.estoque==null?null:Number(j.estoque)); if(!imagem) imagem=j.imagem||""; }catch(e){}
   }
   if(estoque!=null&&estoque<mult){
     S.msg=`⚠️ ${p.nome} está sem estoque suficiente pra 1 fardo (estoque: ${estoque}, fardo: ${mult}).`;
     render(); return;
   }
-  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult,estoque});
-  S.msg=""; render();
+  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:imagem||"",origemPreco:p.origemPreco,multiplo:mult,estoque});
+  S.msg=""; render(); agendarAutoSave();
 }
 // maior quantidade permitida = múltiplo do fardo que não passa do estoque
 function maxPorEstoque(it){
@@ -545,7 +577,7 @@ function mudarQtd(ix,d){
   const max=maxPorEstoque(it);
   if(q>max){ q=max; S.msg=`⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`; }
   else S.msg="";
-  it.quantidade=q; render();
+  it.quantidade=q; render(); agendarAutoSave();
 }
 function setQtd(ix,v){
   const it=S.itens[ix]; const mult=Math.max(1,parseInt(it.multiplo)||1);
@@ -554,32 +586,48 @@ function setQtd(ix,v){
   const max=maxPorEstoque(it);
   if(q>max){ q=max; S.msg=`⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`; }
   else S.msg="";
-  it.quantidade=q; render();
+  it.quantidade=q; render(); agendarAutoSave();
 }
-function removerItem(ix){ S.itens.splice(ix,1); render(); }
+function removerItem(ix){ S.itens.splice(ix,1); render(); agendarAutoSave(); }
 
 /* ---------- RESUMO / SALVAR ---------- */
 function cardResumo(){
   return `<div class="card">
     <label>Observação (opcional)</label>
-    <input id="obs" value="${esc(S.observacao)}" placeholder="Ex: condição de pagamento, prazo…" oninput="S.observacao=this.value">
+    <input id="obs" value="${esc(S.observacao)}" placeholder="Ex: condição de pagamento, prazo…" oninput="S.observacao=this.value;agendarAutoSave()">
     <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px">
       <span style="font-weight:800">Total</span>
       <span style="font-size:24px;font-weight:900;color:#ffd23f">${brl(total())}</span>
     </div>
-    <div class="muted" style="margin-bottom:10px">Vendedor: ${esc(S.vendedorNome||'—')}</div>
-    <button class="btn btn-grn" style="width:100%;font-size:15px" onclick="salvar()">
-      ${S.tipo==='proposta'?'💾 Salvar proposta':'🛒 Salvar pedido'}
-    </button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div class="muted">Vendedor: ${esc(S.vendedorNome||'—')}</div>
+      <div class="muted" id="statusSalvo" style="font-size:11px"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:0;min-width:130px" onclick="visualizarNota()">👁️ Ver nota</button>
+      <button class="btn btn-grn" style="flex:1;font-size:15px" onclick="salvar()">
+        ${S.tipo==='proposta'?'💾 Salvar proposta':'🛒 Salvar pedido'}
+      </button>
+    </div>
   </div>`;
+}
+
+// abre a visualização da nota (imagem) — salva o rascunho antes pra garantir que
+// a imagem reflita o estado atual
+async function visualizarNota(){
+  if(!S.cliente?.id||!S.itens.length){ alert("Adicione cliente e itens primeiro."); return; }
+  await salvarRascunho();
+  if(S.rascunhoId) window.open("/proposta-imagem?id="+S.rascunhoId,"_blank");
 }
 
 async function salvar(){
   if(!S.cliente?.id){ alert("Selecione um cliente cadastrado."); return; }
   if(!S.itens.length){ alert("Adicione ao menos um item."); return; }
+  clearTimeout(_autoSaveT); // cancela auto-save pendente
   S.msg="";
   const payload={
-    tipo:S.tipo,
+    id:S.rascunhoId, // reaproveita o rascunho (não duplica)
+    tipo:S.tipo, status:"aberta",
     cliente:S.cliente,
     itens:S.itens,
     observacao:S.observacao,
@@ -590,7 +638,6 @@ async function salvar(){
     const j=await fetch(B+"/api/atacado/propostas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
     if(j.erro){ alert(j.erro); return; }
     if(S.tipo==='pedido'){
-      // gera o pedido no Bling imediatamente
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
       if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; render(); return; }
       S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`;
@@ -600,6 +647,7 @@ async function salvar(){
     // limpa tudo pra próxima venda
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
+    S.rascunhoId=null; S.ultimoSalvo=null;
     render();
   }catch(e){ alert("Erro ao salvar."); }
 }
