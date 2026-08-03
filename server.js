@@ -4402,18 +4402,24 @@ app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{
     // busca o detalhe dos até 30 pedidos mais recentes pra não pesar demais.
     const recentes=[...validos].sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,30);
     const prodCount={};
+    let pedidosAnalisados=0;
     for(const ped of recentes){
       try{
         const d=await bling(`/pedidos/vendas/${ped.id}`); const itens=d?.data?.itens||[];
+        pedidosAnalisados++;
+        // conta 1 aparição por pedido pra cada produto (não repete se aparecer 2x no mesmo pedido)
+        const vistosNestePedido=new Set();
         itens.forEach(it=>{
           const pid=it.produto?.id; if(!pid) return;
-          if(!prodCount[pid]) prodCount[pid]={produtoId:pid,nome:it.descricao||it.produto?.nome||"",vezes:0,qtdTotal:0};
-          prodCount[pid].vezes++; prodCount[pid].qtdTotal+=Number(it.quantidade||0);
+          if(!prodCount[pid]) prodCount[pid]={produtoId:pid,nome:it.descricao||it.produto?.nome||"",vezes:0,qtdTotal:0,emPedidos:0};
+          prodCount[pid].qtdTotal+=Number(it.quantidade||0);
+          if(!vistosNestePedido.has(String(pid))){ prodCount[pid].emPedidos++; vistosNestePedido.add(String(pid)); }
+          prodCount[pid].vezes++;
         });
       }catch(e){}
       await new Promise(r=>setTimeout(r,120));
     }
-    let maisComprados=Object.values(prodCount).sort((a,b)=>b.vezes-a.vezes||b.qtdTotal-a.qtdTotal).slice(0,10);
+    let maisComprados=Object.values(prodCount).sort((a,b)=>b.emPedidos-a.emPedidos||b.qtdTotal-a.qtdTotal).slice(0,10);
     // enriquece com preço de atacado (tabela), múltiplo e imagem — pra já mostrar o
     // preço certo antes de adicionar
     const tab=lerTabela();
@@ -4441,7 +4447,7 @@ app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{
 
     res.json({
       qtdPedidos, totalGasto, media, ultimaCompra,
-      gastoPorMes:meses, maisComprados,
+      gastoPorMes:meses, maisComprados, pedidosAnalisados,
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
