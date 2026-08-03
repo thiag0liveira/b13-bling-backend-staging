@@ -134,7 +134,14 @@ function enviarWhats(id){
   const p=LISTA.find(x=>x.id===id);
   if(!p) return;
   const tel=soDig(p.cliente?.telefone||"");
-  const itens=(p.itens||[]).map(i=>`• ${i.quantidade}x ${i.nome} — ${brl(i.valor*i.quantidade)}`).join("\n");
+  const itens=(p.itens||[]).map(i=>{
+    const qtd=Number(i.quantidade)||1;
+    const un=Number(i.valor)||0;
+    // se for só 1 unidade, mostra direto o total; senão mostra unitário x qtd = total
+    return qtd>1
+      ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`
+      : `• ${i.nome} — ${brl(un)}`;
+  }).join("\n");
   const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:(p.tipo==='pedido'?"*Pedido — B13 Bebidas*":"*Proposta comercial — B13 Bebidas*");
   const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
   if(!tel){

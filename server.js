@@ -2422,13 +2422,15 @@ app.get("/api/buscar-atacado", async (req, res) => {
     let lista=Object.values(porId);
 
     // aplica o preço de atacado (tabela publicada); se não houver, usa o preço padrão do Bling
-    const tab = lerTabela(); const precoPorCod = {};
-    (tab?.model || []).forEach(c => (c.itens || []).forEach(it => (it.bling || []).forEach(b => { precoPorCod[String(b.codigo)] = it.preco; })));
+    // também traz o "múltiplo" de venda (campo caixa da tabela: soma de N em N unidades)
+    const tab = lerTabela(); const precoPorCod = {}; const caixaPorCod = {};
+    (tab?.model || []).forEach(c => (c.itens || []).forEach(it => (it.bling || []).forEach(b => { precoPorCod[String(b.codigo)] = it.preco; caixaPorCod[String(b.codigo)] = it.caixa||1; })));
     lista.forEach(p => {
       const atacado = precoPorCod[String(p.codigo)];
       p.precoAtacado = (atacado != null) ? atacado : null;
       p.preco = (atacado != null) ? atacado : (p.precoBling ?? 0);
       p.origemPreco = (atacado != null) ? "atacado" : "bling";
+      p.multiplo = caixaPorCod[String(p.codigo)] || 1; // de quantas em quantas unidades some
     });
     res.json({ data: lista });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }

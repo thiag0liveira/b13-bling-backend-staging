@@ -227,21 +227,22 @@ function prodRow(p){
         <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
       </div>
     </div>
-    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''} onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''} onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:p.multiplo||1}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
   </div>`;
 }
 
 function itemRow(i,ix){
+  const mult=Math.max(1,parseInt(i.multiplo)||1);
   return `<div class="item">
     ${i.imagem?`<img src="${esc(i.imagem)}" style="width:36px;height:36px;object-fit:cover;border-radius:6px">`:`<div class="semf" style="width:36px;height:36px;font-size:16px">📦</div>`}
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:700">${esc(i.nome)}</div>
-      <div class="muted" style="font-size:11px">${brl(i.valor)} un</div>
+      <div class="muted" style="font-size:11px">${brl(i.valor)} un${mult>1?` · fardo de ${mult}`:''}</div>
     </div>
     <div class="qtd">
-      <button onclick="mudarQtd(${ix},-1)">−</button>
-      <input type="number" min="1" value="${i.quantidade}" onchange="setQtd(${ix},this.value)">
-      <button onclick="mudarQtd(${ix},1)">+</button>
+      <button onclick="mudarQtd(${ix},-1)" title="${mult>1?`− ${mult} un`:'−1'}">−</button>
+      <input type="number" min="${mult}" step="${mult}" value="${i.quantidade}" onchange="setQtd(${ix},this.value)">
+      <button onclick="mudarQtd(${ix},1)" title="${mult>1?`+ ${mult} un`:'+1'}">+</button>
     </div>
     <div style="width:90px;text-align:right;font-weight:800">${brl(i.valor*i.quantidade)}</div>
     <button onclick="removerItem(${ix})" style="background:none;border:none;color:#9a95c9;cursor:pointer;font-size:16px">🗑</button>
@@ -255,7 +256,7 @@ async function buscarProd(){
   if(t.length<2){ S.resultadosProd=[]; render(); return; }
   try{
     const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(t)).then(r=>r.json());
-    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||""}));
+    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||"",multiplo:p.multiplo||1}));
     // preserva o texto digitado sem re-renderizar o input inteiro
     document.getElementById("resultadosProd").innerHTML=S.resultadosProd.map(prodRow).join("");
   }catch(e){}
@@ -263,11 +264,22 @@ async function buscarProd(){
 
 function addItem(p){
   if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
-  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:1,imagem:p.imagem||"",origemPreco:p.origemPreco});
+  const mult=Math.max(1,parseInt(p.multiplo)||1);
+  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult});
   render();
 }
-function mudarQtd(ix,d){ S.itens[ix].quantidade=Math.max(1,(+S.itens[ix].quantidade||1)+d); render(); }
-function setQtd(ix,v){ S.itens[ix].quantidade=Math.max(1,parseInt(v)||1); render(); }
+function mudarQtd(ix,d){
+  const it=S.itens[ix]; const mult=Math.max(1,parseInt(it.multiplo)||1);
+  it.quantidade=Math.max(mult,(+it.quantidade||mult)+d*mult); // soma/subtrai de mult em mult
+  render();
+}
+function setQtd(ix,v){
+  const it=S.itens[ix]; const mult=Math.max(1,parseInt(it.multiplo)||1);
+  let q=parseInt(v)||mult;
+  q=Math.max(mult,Math.round(q/mult)*mult); // arredonda pro múltiplo mais próximo
+  it.quantidade=q;
+  render();
+}
 function removerItem(ix){ S.itens.splice(ix,1); render(); }
 
 /* ---------- RESUMO / SALVAR ---------- */
@@ -309,8 +321,10 @@ async function salvar(){
     }else{
       S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
     }
-    // limpa pra próxima venda
-    S.itens=[]; S.observacao=""; render();
+    // limpa tudo pra próxima venda
+    S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
+    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta";
+    render();
   }catch(e){ alert("Erro ao salvar."); }
 }
 
