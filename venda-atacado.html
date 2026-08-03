@@ -72,6 +72,7 @@ const S={
   vendedorId:null, vendedorNome:"",
   buscaProd:"", resultadosProd:[],
   analise:null, carregandoAnalise:false,
+  novos:[], carregandoNovos:false, novosSelecionados:{},
   msg:"",
 };
 
@@ -94,6 +95,17 @@ async function carregarAnalise(){
     S.analise=j.erro?null:j;
   }catch(e){ S.analise=null; }
   S.carregandoAnalise=false; render();
+  carregarNovos();
+}
+
+async function carregarNovos(){
+  if(S.novos.length) return; // já carregou nesta sessão
+  S.carregandoNovos=true;
+  try{
+    const j=await fetch(B+"/api/atacado/produtos-novos?dias=30").then(r=>r.json());
+    S.novos=j.data||[];
+  }catch(e){ S.novos=[]; }
+  S.carregandoNovos=false; render();
 }
 
 function render(){
@@ -115,6 +127,7 @@ function render(){
 
       ${cardCliente()}
       ${S.cliente&&!S.editandoCliente?cardAnalise():''}
+      ${S.cliente&&!S.editandoCliente?cardNovos():''}
       ${S.cliente?cardProdutos():''}
       ${S.cliente&&S.itens.length?cardResumo():''}
       ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}</div>`:''}
@@ -216,7 +229,7 @@ async function salvarCliente(){
   }catch(e){ alert("Erro ao salvar cliente."); }
 }
 
-function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; render(); }
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; render(); }
 
 /* ---------- ANÁLISE DO CLIENTE (Fase 2) ---------- */
 function cardAnalise(){
@@ -271,6 +284,77 @@ async function addSugestao(s){
     if(!p){ S.msg="Não encontrei os dados do produto."; render(); return; }
     await addItem({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,imagem:p.imagem||"",origemPreco:p.origemPreco||'bling',multiplo:p.multiplo||1,estoque:p.estoque});
   }catch(e){ S.msg="Erro ao adicionar sugestão."; render(); }
+}
+
+/* ---------- PRODUTOS NOVOS (Fase 3) ---------- */
+function cardNovos(){
+  if(S.carregandoNovos) return `<div class="card"><div class="muted">✨ Buscando produtos novos…</div></div>`;
+  if(!S.novos.length) return '';
+  const selCount=Object.values(S.novosSelecionados).filter(Boolean).length;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-weight:800">✨ Novidades (últimos 30 dias)</div>
+      ${selCount?`<button class="btn btn-wa" style="font-size:12px;padding:7px 12px" onclick="enviarNovidadesWhats()">📱 Enviar ${selCount} por WhatsApp</button>`:''}
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">Selecione pra sugerir ao cliente por WhatsApp, ou toque no + pra adicionar ao pedido.</div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      ${S.novos.map(novoRow).join("")}
+    </div>
+  </div>`;
+}
+
+function novoRow(p){
+  const sel=!!S.novosSelecionados[p.id];
+  const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id));
+  return `<div class="prod" style="${sel?'background:rgba(37,211,102,.12);border-radius:8px':''}">
+    <div onclick="toggleNovo('${p.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+      <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel?'#25d366':'#514c96'};background:${sel?'#25d366':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel?'✓':''}</div>
+      ${p.imagem?`<img src="${esc(p.imagem)}" style="width:38px;height:38px">`:`<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${esc(p.nome)}</div>
+        <div style="margin-top:2px">
+          <span class="badge ${p.naTabelaAtacado?'badge-at':'badge-bl'}">${p.naTabelaAtacado?'Atacado':'Bling'}</span>
+          <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
+        </div>
+      </div>
+    </div>
+    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''}
+      onclick='addSugestao(${JSON.stringify({id:p.id,nome:p.nome}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+  </div>`;
+}
+
+function toggleNovo(id){ S.novosSelecionados[id]=!S.novosSelecionados[id]; render(); }
+
+async function enviarNovidadesWhats(){
+  const sel=S.novos.filter(p=>S.novosSelecionados[p.id]);
+  if(!sel.length) return;
+  // garante telefone
+  const tel=await garantirTelefone();
+  if(tel===false) return; // cancelou
+  const linhas=sel.map(p=>`• ${p.nome} — ${brl(p.preco)}`).join("\n");
+  const msg=`*Novidades — B13 Bebidas* ✨\n\nOlá, ${S.cliente.nome}! Chegaram produtos novos que podem te interessar:\n\n${linhas}\n\nQualquer coisa é só chamar! 🍻`;
+  abrirWhats(tel,msg);
+}
+
+// garante que o cliente tem telefone; se não tiver, pede e salva no Bling. Retorna o número ou false se cancelar.
+async function garantirTelefone(){
+  let tel=soDig(S.cliente?.telefone||"");
+  if(tel.length>=10) return tel;
+  const novo=prompt("Este cliente não tem telefone/WhatsApp cadastrado. Digite o número (com DDD) pra salvar e enviar:");
+  if(!novo) return false;
+  const novoDig=soDig(novo);
+  if(novoDig.length<10){ alert("Número inválido."); return false; }
+  try{
+    const j=await fetch(B+"/api/atacado/cliente/"+S.cliente.id+"/telefone",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({telefone:novoDig})}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return false; }
+    S.cliente.telefone=novoDig; // atualiza local
+    return novoDig;
+  }catch(e){ alert("Erro ao salvar telefone."); return false; }
+}
+
+function abrirWhats(tel,msg){
+  const t=soDig(tel); const t55=t.length<=11?("55"+t):t;
+  window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank");
 }
 
 /* ---------- PRODUTOS ---------- */
@@ -417,7 +501,7 @@ async function salvar(){
     }
     // limpa tudo pra próxima venda
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
-    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null;
+    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={};
     render();
   }catch(e){ alert("Erro ao salvar."); }
 }

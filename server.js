@@ -4310,6 +4310,63 @@ app.get("/api/atacado/vendedor/:funcId",(req,res)=>{
 function lerPropostas(){ return lerJSON(PROPOSTAS_FILE,{}); }
 function salvarPropostas(p){ salvarJSON(PROPOSTAS_FILE,p); }
 
+// salva/atualiza só o telefone do cliente no Bling (usado antes de enviar WhatsApp)
+app.post("/api/atacado/cliente/:id/telefone",async(req,res)=>{
+  try{
+    const tel=req.body?.telefone||"";
+    if(soDigitos(tel).length<10) return res.status(400).json({erro:"telefone inválido"});
+    // busca o contato atual pra não sobrescrever outros dados
+    const atual=await bling(`/contatos/${req.params.id}`).then(r=>r?.data).catch(()=>null);
+    if(!atual) return res.status(404).json({erro:"contato não encontrado"});
+    const corpo={
+      nome:atual.nome, tipo:atual.tipo, numeroDocumento:atual.numeroDocumento,
+      telefone:formatarTelefoneBling(tel), celular:formatarTelefoneBling(tel),
+    };
+    await bling(`/contatos/${req.params.id}`,{method:"PUT",body:JSON.stringify(corpo)});
+    res.json({ok:true,telefone:tel});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// produtos novos — cadastrados no Bling nos últimos N dias (padrão 30).
+// marca quais já estão na Tabela Atacado. Traz foto pra sugestão por WhatsApp.
+app.get("/api/atacado/produtos-novos",async(req,res)=>{
+  try{
+    const dias=Number(req.query.dias||30);
+    const limite=new Date(Date.now()-dias*24*60*60*1000);
+    // busca as primeiras páginas ordenadas por id desc (mais recentes primeiro)
+    const encontrados=[];
+    for(let pg=1;pg<=5;pg++){
+      let arr=[];
+      try{ const r=await bling(`/produtos?pagina=${pg}&limite=100&criterio=5`); arr=r?.data||[]; }catch(e){ break; }
+      if(!arr.length) break;
+      // pega o detalhe pra ter dataCriacao e imagem (a lista resumida às vezes não traz)
+      encontrados.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    // filtra por data de criação recente
+    const tab=lerTabela(); const codsTabela=new Set();
+    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>codsTabela.add(String(b.codigo)))));
+    const novos=[];
+    for(const p of encontrados){
+      let dataCriacao=p.dataCriacao;
+      let imagem=p.imagemURL||"";
+      // se a lista não trouxe data/imagem, busca o detalhe (limitado)
+      if((!dataCriacao||!imagem)&&novos.length<25){
+        try{ const d=await bling(`/produtos/${p.id}`); dataCriacao=d?.data?.dataCriacao||dataCriacao; imagem=d?.data?.imagemURL||imagem; await new Promise(r=>setTimeout(r,120)); }catch(e){}
+      }
+      if(dataCriacao && new Date(dataCriacao)>=limite){
+        novos.push({
+          id:p.id, nome:p.nome, codigo:p.codigo, preco:+(p.preco||0), imagem,
+          dataCriacao, naTabelaAtacado:codsTabela.has(String(p.codigo)),
+        });
+      }
+    }
+    novos.sort((a,b)=>String(b.dataCriacao).localeCompare(String(a.dataCriacao)));
+    res.json({data:novos,dias});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // análise do histórico de compras do cliente (Fase 2): última compra, total gasto,
 // gasto por mês, média por pedido, e produtos que ele mais compra
 app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{

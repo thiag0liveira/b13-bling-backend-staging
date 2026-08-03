@@ -140,25 +140,29 @@ async function excluir(id){
   try{ const j=await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}).then(r=>r.json()); if(j.erro){alert(j.erro);return;} carregar(); }catch(e){}
 }
 
-function enviarWhats(id){
+async function enviarWhats(id){
   const p=LISTA.find(x=>x.id===id);
   if(!p) return;
-  const tel=soDig(p.cliente?.telefone||"");
+  let tel=soDig(p.cliente?.telefone||"");
   const itens=(p.itens||[]).map(i=>{
     const qtd=Number(i.quantidade)||1;
     const un=Number(i.valor)||0;
-    // se for só 1 unidade, mostra direto o total; senão mostra unitário x qtd = total
     return qtd>1
       ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`
       : `• ${i.nome} — ${brl(un)}`;
   }).join("\n");
   const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:(p.tipo==='pedido'?"*Pedido — B13 Bebidas*":"*Proposta comercial — B13 Bebidas*");
   const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
-  if(!tel){
-    if(confirm("Este cliente não tem telefone cadastrado. Deseja abrir o WhatsApp mesmo assim (sem número, você escolhe o contato)?")){
-      window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+  // se não tem telefone, oferece salvar no cadastro antes de enviar
+  if(tel.length<10){
+    const novo=prompt("Este cliente não tem telefone cadastrado. Digite o número (com DDD) pra salvar no cadastro e enviar:");
+    if(!novo) return;
+    const novoDig=soDig(novo);
+    if(novoDig.length<10){ alert("Número inválido."); return; }
+    if(p.cliente?.id){
+      try{ const j=await fetch(B+"/api/atacado/cliente/"+p.cliente.id+"/telefone",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({telefone:novoDig})}).then(r=>r.json()); if(j.erro) alert("Aviso: não salvou no cadastro ("+j.erro+"), mas vou abrir o WhatsApp."); }catch(e){}
     }
-    return;
+    tel=novoDig;
   }
   const tel55=tel.length<=11?("55"+tel):tel;
   window.open("https://wa.me/"+tel55+"?text="+encodeURIComponent(msg),"_blank");
