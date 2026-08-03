@@ -2432,6 +2432,15 @@ app.get("/api/buscar-atacado", async (req, res) => {
       p.origemPreco = (atacado != null) ? "atacado" : "bling";
       p.multiplo = caixaPorCod[String(p.codigo)] || 1; // de quantas em quantas unidades some
     });
+    // busca o estoque AO VIVO dos primeiros resultados (o índice não guarda saldo,
+    // que muda toda hora) — limita pra não estourar o rate limit do Bling
+    const topN=lista.slice(0,8);
+    await Promise.all(topN.map(async p=>{
+      try{
+        const r=await bling(`/produtos/${p.id}`);
+        p.estoque=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+      }catch(e){ p.estoque=null; }
+    }));
     res.json({ data: lista });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });

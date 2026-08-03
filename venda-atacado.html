@@ -218,6 +218,9 @@ function cardProdutos(){
 
 function prodRow(p){
   const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id));
+  const mult=Math.max(1,parseInt(p.multiplo)||1);
+  const est=(p.estoque==null)?null:Number(p.estoque);
+  const semEstoquePraFardo=(est!=null&&est<mult);
   return `<div class="prod">
     ${p.imagem?`<img src="${esc(p.imagem)}">`:`<div class="semf">📦</div>`}
     <div style="flex:1;min-width:0">
@@ -225,9 +228,12 @@ function prodRow(p){
       <div style="margin-top:2px">
         <span class="badge ${p.origemPreco==='atacado'?'badge-at':'badge-bl'}">${p.origemPreco==='atacado'?'Atacado':'Bling'}</span>
         <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
+        ${est!=null?`<span class="muted" style="font-size:11px;margin-left:6px">· estoque: ${est}${mult>1?` (fardo ${mult})`:''}</span>`:''}
       </div>
     </div>
-    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem?'disabled':''} onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:p.multiplo||1}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+    <button class="btn ${jaTem||semEstoquePraFardo?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem||semEstoquePraFardo?'disabled':''}
+      title="${semEstoquePraFardo?'Estoque insuficiente pra 1 fardo':''}"
+      onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:p.multiplo||1,estoque:p.estoque}).replace(/'/g,"&#39;")})'>${jaTem?'✓':(semEstoquePraFardo?'sem estoque':'+ Add')}</button>
   </div>`;
 }
 
@@ -237,7 +243,7 @@ function itemRow(i,ix){
     ${i.imagem?`<img src="${esc(i.imagem)}" style="width:36px;height:36px;object-fit:cover;border-radius:6px">`:`<div class="semf" style="width:36px;height:36px;font-size:16px">📦</div>`}
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:700">${esc(i.nome)}</div>
-      <div class="muted" style="font-size:11px">${brl(i.valor)} un${mult>1?` · fardo de ${mult}`:''}</div>
+      <div class="muted" style="font-size:11px">${brl(i.valor)} un${mult>1?` · fardo de ${mult}`:''}${i.estoque!=null?` · estoque ${i.estoque}`:''}</div>
     </div>
     <div class="qtd">
       <button onclick="mudarQtd(${ix},-1)" title="${mult>1?`− ${mult} un`:'−1'}">−</button>
@@ -256,7 +262,7 @@ async function buscarProd(){
   if(t.length<2){ S.resultadosProd=[]; render(); return; }
   try{
     const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(t)).then(r=>r.json());
-    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||"",multiplo:p.multiplo||1}));
+    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||"",multiplo:p.multiplo||1,estoque:p.estoque}));
     // preserva o texto digitado sem re-renderizar o input inteiro
     document.getElementById("resultadosProd").innerHTML=S.resultadosProd.map(prodRow).join("");
   }catch(e){}
@@ -265,20 +271,31 @@ async function buscarProd(){
 function addItem(p){
   if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
   const mult=Math.max(1,parseInt(p.multiplo)||1);
-  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult});
+  S.itens.push({produtoId:p.id,nome:p.nome,valor:+p.preco||0,quantidade:mult,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:mult,estoque:(p.estoque==null?null:Number(p.estoque))});
   render();
+}
+// maior quantidade permitida = múltiplo do fardo que não passa do estoque
+function maxPorEstoque(it){
+  const mult=Math.max(1,parseInt(it.multiplo)||1);
+  if(it.estoque==null) return Infinity;            // sem info de estoque, não limita
+  return Math.max(mult,Math.floor(Number(it.estoque)/mult)*mult);
 }
 function mudarQtd(ix,d){
   const it=S.itens[ix]; const mult=Math.max(1,parseInt(it.multiplo)||1);
-  it.quantidade=Math.max(mult,(+it.quantidade||mult)+d*mult); // soma/subtrai de mult em mult
-  render();
+  let q=Math.max(mult,(+it.quantidade||mult)+d*mult);
+  const max=maxPorEstoque(it);
+  if(q>max){ q=max; S.msg=`⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`; }
+  else S.msg="";
+  it.quantidade=q; render();
 }
 function setQtd(ix,v){
   const it=S.itens[ix]; const mult=Math.max(1,parseInt(it.multiplo)||1);
   let q=parseInt(v)||mult;
   q=Math.max(mult,Math.round(q/mult)*mult); // arredonda pro múltiplo mais próximo
-  it.quantidade=q;
-  render();
+  const max=maxPorEstoque(it);
+  if(q>max){ q=max; S.msg=`⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`; }
+  else S.msg="";
+  it.quantidade=q; render();
 }
 function removerItem(ix){ S.itens.splice(ix,1); render(); }
 
