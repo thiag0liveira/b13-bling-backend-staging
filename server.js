@@ -1743,8 +1743,11 @@ app.put("/api/listas-extras/:listaId/:itemId",(req,res)=>{
 app.get("/api/produto-estoque/:id",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.id}`);
-    const est=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
-    res.json({estoque:est,imagem:r?.data?.imagemURL||""});
+    const d=r?.data||{};
+    const est=d?.estoque?.saldoVirtualTotal ?? d?.estoque?.saldoFisicoTotal ?? null;
+    // no Bling v3 a imagem fica em imagens[].link (imagemURL costuma vir vazio)
+    const imagem=(d.imagens&&d.imagens.find(i=>i.link&&i.link.trim())?.link) || d.imagemURL || "";
+    res.json({estoque:est,imagem});
   }catch(e){ res.json({estoque:null,imagem:"",erro:e.message}); }
 });
 

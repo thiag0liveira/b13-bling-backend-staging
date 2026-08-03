@@ -441,7 +441,14 @@ function cardProdutos(){
     ${S.modoTabela?viewTabela():`
       <input id="buscaProd" placeholder="Buscar produto pelo nome…" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
       <div id="resultadosProd">${S.resultadosProd.map(prodRow).join("")}</div>`}
-    ${S.itens.length?`<div style="margin-top:14px;font-weight:800">🛒 Itens (${S.itens.length})</div>${S.itens.map(itemRow).join("")}`:''}
+    ${S.itens.length?`
+      <div style="margin-top:16px;border:2px solid var(--mag);border-radius:12px;padding:12px;background:rgba(255,0,130,.06)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:900;font-size:15px">🛒 Pedido sendo montado — ${S.itens.length} ${S.itens.length>1?'itens':'item'}</div>
+          <div style="font-weight:900;color:#ffd23f;font-size:16px">${brl(total())}</div>
+        </div>
+        ${S.itens.map(itemRow).join("")}
+      </div>`:'<div style="margin-top:14px;text-align:center;color:#9a95c9;font-size:13px;padding:16px;border:1px dashed #514c96;border-radius:12px">Nenhum item ainda. Busque ou use o modo tabela pra adicionar produtos.</div>'}
   </div>`;
 }
 
@@ -520,8 +527,8 @@ function prodRow(p){
 
 function itemRow(i,ix){
   const mult=Math.max(1,parseInt(i.multiplo)||1);
-  return `<div class="item">
-    ${i.imagem?`<img src="${esc(i.imagem)}" style="width:36px;height:36px;object-fit:cover;border-radius:6px">`:`<div class="semf" style="width:36px;height:36px;font-size:16px">📦</div>`}
+  return `<div class="item" style="background:#151233;border-radius:8px;padding:8px;margin-bottom:4px">
+    ${i.imagem?`<img src="${esc(i.imagem)}" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#fff" onerror="this.outerHTML='<div class=&quot;semf&quot; style=&quot;width:48px;height:48px;font-size:20px&quot;>📦</div>'">`:`<div class="semf" style="width:48px;height:48px;font-size:20px">📦</div>`}
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;font-weight:700">${esc(i.nome)}</div>
       <div class="muted" style="font-size:11px">${brl(i.valor)} un${mult>1?` · fardo de ${mult}`:''}${i.estoque!=null?` · estoque ${i.estoque}`:''}</div>
