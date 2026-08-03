@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Tabela de Preços (imagem)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:3px solid var(--mag);flex-wrap:wrap}
+  .top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:10px 14px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-wa{background:#25d366;color:#0a2a1a}.btn-ghost{background:#1c1846}
+  .wrap{padding:14px;text-align:center}
+  .muted{color:#9a95c9;font-size:13px}
+  canvas{max-width:100%;height:auto;border-radius:10px;border:1px solid #2c2660;background:#fff;margin-top:12px}
+  .filtros{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="t">📋 Tabela de Preços</div>
+  <div class="sp"></div>
+  <button class="btn btn-mag" onclick="baixar()">⬇️ Baixar imagem</button>
+  <button class="btn btn-wa" onclick="compartilhar()">📱 Compartilhar / WhatsApp</button>
+</div>
+<div class="wrap">
+  <div class="muted" id="msg">Carregando tabela…</div>
+  <div class="filtros" id="filtros"></div>
+  <canvas id="cv"></canvas>
+</div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+let TABELA=null, CAT_ATIVA="todas";
+
+async function carregar(){
+  try{
+    TABELA=await fetch(B+"/api/tabela").then(r=>r.json());
+    if(!TABELA||!TABELA.model||!TABELA.model.length){ document.getElementById("msg").textContent="Tabela não publicada ainda."; return; }
+    document.getElementById("msg").style.display="none";
+    montarFiltros();
+    desenhar();
+  }catch(e){ document.getElementById("msg").textContent="Erro ao carregar a tabela."; }
+}
+
+function montarFiltros(){
+  const cats=TABELA.model.map(c=>c.t).filter(Boolean);
+  const box=document.getElementById("filtros");
+  box.innerHTML=`<span class="chip ${CAT_ATIVA==='todas'?'on':''}" onclick="CAT_ATIVA='todas';montarFiltros();desenhar()">Todas</span>`+
+    cats.map(c=>`<span class="chip ${CAT_ATIVA===c?'on':''}" onclick="CAT_ATIVA='${c.replace(/'/g,"")}';montarFiltros();desenhar()">${c}</span>`).join("");
+}
+
+function desenhar(){
+  const cats=(CAT_ATIVA==='todas')?TABELA.model:TABELA.model.filter(c=>c.t===CAT_ATIVA);
+  // monta as linhas
+  const linhas=[];
+  cats.forEach(c=>{
+    const itens=(c.itens||[]).filter(i=>i.preco>0);
+    if(!itens.length) return;
+    linhas.push({tipo:"cat",texto:c.t||""});
+    itens.forEach(i=>linhas.push({tipo:"item",nome:i.nome||"",preco:i.preco,caixa:i.caixa||1}));
+  });
+
+  // dimensões
+  const W=760, padd=24, rowH=34, catH=40, headerH=110;
+  const colsPorLinha=Math.ceil(linhas.length/ (linhas.length>28?2:1)); // 2 colunas se for grande
+  const usaDuasColunas=linhas.length>28;
+  const colW=usaDuasColunas?(W-padd*3)/2:(W-padd*2);
+  const linhasPorCol=usaDuasColunas?Math.ceil(linhas.length/2):linhas.length;
+  const alturaCorpo=linhasPorCol*rowH+ (linhas.filter(l=>l.tipo==='cat').length*(catH-rowH));
+  const H=headerH+alturaCorpo+40;
+
+  const cv=document.getElementById("cv");
+  const dpr=2; // nitidez
+  cv.width=W*dpr; cv.height=H*dpr;
+  cv.style.width=W+"px";
+  const ctx=cv.getContext("2d");
+  ctx.scale(dpr,dpr);
+
+  // fundo
+  ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,W,H);
+  // cabeçalho
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-20);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-20,W,6);
+  ctx.fillStyle="#fff"; ctx.font="900 30px Arial"; ctx.textAlign="left";
+  ctx.fillText("B13 BEBIDAS", padd, 44);
+  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
+  ctx.fillText("Tabela de Preços — Atacado", padd, 70);
+  ctx.font="12px Arial"; ctx.fillStyle="#cfc9f5";
+  const hoje=new Date().toLocaleDateString("pt-BR");
+  ctx.textAlign="right";
+  ctx.fillText("Atualizada em "+hoje, W-padd, 44);
+
+  // corpo
+  ctx.textAlign="left";
+  function desenhaColuna(linhasCol, x0){
+    let y=headerH;
+    linhasCol.forEach(l=>{
+      if(l.tipo==="cat"){
+        ctx.fillStyle="#262366"; ctx.fillRect(x0,y,colW,catH-6);
+        ctx.fillStyle="#fff"; ctx.font="900 15px Arial";
+        ctx.fillText(l.texto.toUpperCase(), x0+8, y+catH/2);
+        y+=catH;
+      }else{
+        ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
+        let nome=l.nome; if(nome.length>34) nome=nome.slice(0,33)+"…";
+        ctx.fillText(nome, x0+8, y+rowH/2+2);
+        ctx.font="900 14px Arial"; ctx.fillStyle="#c8007a"; ctx.textAlign="right";
+        ctx.fillText(brl(l.preco), x0+colW-8, y+rowH/2+2);
+        ctx.textAlign="left";
+        // linha separadora
+        ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(x0,y+rowH); ctx.lineTo(x0+colW,y+rowH); ctx.stroke();
+        y+=rowH;
+      }
+    });
+  }
+  if(usaDuasColunas){
+    const meio=Math.ceil(linhas.length/2);
+    desenhaColuna(linhas.slice(0,meio), padd);
+    desenhaColuna(linhas.slice(meio), padd*2+colW);
+  }else{
+    desenhaColuna(linhas, padd);
+  }
+  // rodapé
+  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center";
+  ctx.fillText("Preços sujeitos a alteração · Fale com a gente pra fazer seu pedido!", W/2, H-16);
+
+  document.getElementById("msg").style.display="none";
+}
+
+function baixar(){
+  const cv=document.getElementById("cv");
+  const a=document.createElement("a");
+  a.download="tabela-b13-"+new Date().toISOString().slice(0,10)+".png";
+  a.href=cv.toDataURL("image/png");
+  a.click();
+}
+
+async function compartilhar(){
+  const cv=document.getElementById("cv");
+  // usa o compartilhamento nativo (celular) que permite mandar a imagem direto no WhatsApp
+  try{
+    const blob=await new Promise(r=>cv.toBlob(r,"image/png"));
+    const file=new File([blob],"tabela-b13.png",{type:"image/png"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:"Tabela de Preços B13",text:"Tabela de Preços — B13 Bebidas"});
+      return;
+    }
+  }catch(e){}
+  // fallback: baixa a imagem e abre o WhatsApp pra anexar manualmente
+  baixar();
+  alert("A imagem foi baixada. Agora abra o WhatsApp e anexe a imagem da tabela que acabou de salvar.");
+  window.open("https://wa.me/","_blank");
+}
+
+carregar();
+</script>
+</body>
+</html>
