@@ -1775,24 +1775,30 @@ app.get("/api/debug-imagem-nome",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// extrai a URL da imagem de um produto do Bling v3 (detalhe) — o caminho é
+// midia.imagens.externas[].link (ou internas). Reutilizável.
+function extrairImagemProduto(d){
+  if(!d) return "";
+  const m=d.midia?.imagens;
+  if(m){
+    const ext=(m.externas||[]).find(i=>i.link&&i.link.trim());
+    if(ext) return ext.link;
+    const intn=(m.internas||[]).find(i=>i.link&&i.link.trim());
+    if(intn) return intn.link;
+    const url=(m.imagensURL||[]).find(u=>u&&String(u).trim());
+    if(url) return url;
+  }
+  // formatos alternativos
+  if(Array.isArray(d.imagens)){ const img=d.imagens.find(i=>(i.link||i.url||"").trim()); if(img) return img.link||img.url; }
+  return d.imagemURL||"";
+}
+
 app.get("/api/produto-estoque/:id",async(req,res)=>{
   try{
     const r=await bling(`/produtos/${req.params.id}`);
     const d=r?.data||{};
     const est=d?.estoque?.saldoVirtualTotal ?? d?.estoque?.saldoFisicoTotal ?? null;
-    // no Bling v3 a imagem pode vir em vários formatos dependendo da conta:
-    // imagens[].link, midia.imagens.externas[].link, ou imagemURL
-    let imagem="";
-    if(d.imagens&&Array.isArray(d.imagens)){
-      const img=d.imagens.find(i=>(i.link||i.url||"").trim());
-      imagem=img?(img.link||img.url):"";
-    }
-    if(!imagem&&d.midia?.imagens){
-      const ext=d.midia.imagens.externas?.find(i=>i.link)||d.midia.imagens.internas?.find(i=>i.link);
-      imagem=ext?.link||"";
-    }
-    if(!imagem) imagem=d.imagemURL||"";
-    res.json({estoque:est,imagem});
+    res.json({estoque:est,imagem:extrairImagemProduto(d)});
   }catch(e){ res.json({estoque:null,imagem:"",erro:e.message}); }
 });
 
