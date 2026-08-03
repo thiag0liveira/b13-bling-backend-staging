@@ -64,10 +64,11 @@ function render(){
     </div>
     <div class="wrap">
       <div class="seg">
-        <button class="${ABA==='recuperar'?'on':''}" onclick="ABA='recuperar';render()">💰 Meta & Recuperar clientes</button>
-        <button class="${ABA==='prospectar'?'on':''}" onclick="ABA='prospectar';render()">🔍 Prospectar novos</button>
+        <button class="${ABA==='recuperar'?'on':''}" onclick="ABA='recuperar';render()">💰 Meta & Recuperar</button>
+        <button class="${ABA==='historico'?'on':''}" onclick="ABA='historico';render()">🕐 Histórico</button>
+        <button class="${ABA==='prospectar'?'on':''}" onclick="ABA='prospectar';render()">🔍 Prospectar</button>
       </div>
-      ${ABA==='recuperar'?viewRecuperar():viewProspectar()}
+      ${ABA==='recuperar'?viewRecuperar():ABA==='historico'?viewHistorico():viewProspectar()}
     </div>`;
   if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
 }
@@ -122,16 +123,46 @@ function viewRecuperar(){
 }
 
 function cliRow(c){
-  return `<div class="cli">
-    <div style="flex:1;min-width:0">
+  const ult=c.ultimoContato;
+  return `<div class="cli" style="flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
       <div style="font-weight:700;font-size:14px">${esc(c.nome)}</div>
       <div class="muted" style="font-size:11px">
         <span class="tag ${c.nivel==='perdido'?'tag-pd':'tag-at'}">${c.nivel==='perdido'?'PERDIDO':'ATENÇÃO'}</span>
         ${c.diasSem} dias sem comprar · ${c.qtdPedidos} pedidos · média ${brl(c.ticketMedio)}
       </div>
+      ${c.qtdContatos?`<div class="muted" style="font-size:11px;margin-top:3px;color:#7fd4ff">📞 ${c.qtdContatos} contato(s) · último: ${ult?ult.resultado:''} ${ult&&ult.quando?'('+new Date(ult.quando).toLocaleDateString("pt-BR")+')':''}</div>`:''}
+      ${ult&&ult.nota?`<div class="muted" style="font-size:11px;font-style:italic">"${esc(ult.nota)}"</div>`:''}
     </div>
-    <button class="btn btn-wa" style="font-size:12px" onclick='recuperar(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📱 Recuperar</button>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="btn btn-wa" style="font-size:11px;padding:7px 10px" onclick='recuperar(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📱 WhatsApp</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:7px 10px" onclick='registrarContato(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📝 Registrar</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:7px 10px;opacity:.7" onclick='ignorarCliente(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})' title="Remover da lista (ex: cadastro duplicado)">🚫</button>
+    </div>
   </div>`;
+}
+
+async function registrarContato(id,nome){
+  const nota=prompt(`Registrar contato com ${nome}.\n\nO que aconteceu? (ex: "Ligou, vai pensar", "Fez pedido", "Não atendeu")`);
+  if(nota===null) return;
+  let resultado="contatado";
+  const low=(nota||"").toLowerCase();
+  if(low.includes("pedido")||low.includes("compr")||low.includes("vendeu")) resultado="voltou";
+  else if(low.includes("não atend")||low.includes("nao atend")||low.includes("sem resposta")) resultado="sem resposta";
+  else if(low.includes("pensar")||low.includes("depois")) resultado="em negociação";
+  try{
+    await fetch(B+"/api/vendedor/prospeccao/contato",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({clienteId:id,clienteNome:nome,nota,resultado})});
+    DADOS=null; TIMELINE=null; carregar();
+  }catch(e){ alert("Erro ao registrar."); }
+}
+
+async function ignorarCliente(id,nome){
+  if(!confirm(`Remover "${nome}" da lista de análise?\n\nUse pra cadastros duplicados ou clientes que não quer acompanhar.`)) return;
+  try{
+    await fetch(B+"/api/vendedor/prospeccao/ignorar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({clienteId:id,ignorar:true})});
+    DADOS=null; carregar();
+  }catch(e){ alert("Erro."); }
 }
 
 async function recuperar(id,nome){
@@ -146,6 +177,9 @@ async function recuperar(id,nome){
   }
   const t55=tel.length<=11?("55"+tel):tel;
   window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank");
+  // registra automaticamente que houve tentativa de contato via WhatsApp
+  fetch(B+"/api/vendedor/prospeccao/contato",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({clienteId:id,clienteNome:nome,nota:"Abriu WhatsApp",resultado:"contatado"})}).then(()=>{ TIMELINE=null; });
 }
 
 async function buscarTop(){
@@ -173,6 +207,30 @@ async function carregar(){
   carregando=false; render();
 }
 function recarregar(){ DADOS=null; carregar(); }
+
+/* ===== ABA HISTÓRICO (linha do tempo) ===== */
+let TIMELINE=null;
+function viewHistorico(){
+  if(!TIMELINE){ carregarTimeline(); return `<div class="card"><div class="muted">Carregando histórico…</div></div>`; }
+  if(!TIMELINE.length) return `<div class="card"><div class="muted">Nenhum contato registrado ainda. Registre contatos na aba "Meta & Recuperar" pra montar o histórico.</div></div>`;
+  const resIcon={voltou:"✅","sem resposta":"❌","em negociação":"🔄",contatado:"📞"};
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:10px">🕐 Linha do tempo de prospecção</div>
+    <div style="position:relative;padding-left:8px">
+      ${TIMELINE.map(e=>`
+        <div style="border-left:2px solid #514c96;padding:0 0 14px 14px;position:relative">
+          <div style="position:absolute;left:-7px;top:0;width:12px;height:12px;border-radius:50%;background:${e.resultado==='voltou'?'#3ce88a':e.resultado==='sem resposta'?'#ff5f8f':'#ffd23f'}"></div>
+          <div style="font-weight:700;font-size:13px">${resIcon[e.resultado]||'📞'} ${esc(e.clienteNome||('Cliente '+e.clienteId))}</div>
+          <div class="muted" style="font-size:11px">${e.quando?new Date(e.quando).toLocaleString("pt-BR"):''} · ${esc(e.resultado||'')}</div>
+          ${e.nota?`<div class="muted" style="font-size:12px;margin-top:2px">"${esc(e.nota)}"</div>`:''}
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+async function carregarTimeline(){
+  try{ const j=await fetch(B+"/api/vendedor/prospeccao").then(r=>r.json()); TIMELINE=j.timeline||[]; render(); }
+  catch(e){ TIMELINE=[]; render(); }
+}
 
 /* ===== ABA 2: PROSPECTAR (em breve) ===== */
 function viewProspectar(){

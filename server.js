@@ -55,6 +55,7 @@ const CAIXA_SESSOES_FILE = `${DATA_DIR}/caixa_sessoes.json`;
 const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
 const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
+const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -4687,6 +4688,51 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
 });
 
 // ===== APOIO À DECISÃO DO VENDEDOR (atacado) =====
+
+// armazenamento de prospecção: { historico:{clienteId:[{em,quando,vendedor,nota,resultado}]}, ignorados:{clienteId:true} }
+function lerProspeccao(){ return lerJSON(PROSPECCAO_FILE,{historico:{},ignorados:{}}); }
+function salvarProspeccao(p){ salvarJSON(PROSPECCAO_FILE,p); }
+
+// histórico completo de prospecção (linha do tempo de todos os contatos)
+app.get("/api/vendedor/prospeccao",(req,res)=>{
+  const p=lerProspeccao();
+  // monta uma linha do tempo achatada, mais recente primeiro
+  const timeline=[];
+  Object.entries(p.historico||{}).forEach(([cid,eventos])=>{
+    (eventos||[]).forEach(e=>timeline.push({clienteId:cid,...e}));
+  });
+  timeline.sort((a,b)=>(b.em||0)-(a.em||0));
+  res.json({historico:p.historico||{},ignorados:p.ignorados||{},timeline});
+});
+
+// registra um contato feito com o cliente (linha do tempo)
+app.post("/api/vendedor/prospeccao/contato",(req,res)=>{
+  const {clienteId,clienteNome,nota,resultado,vendedor}=req.body||{};
+  if(!clienteId) return res.status(400).json({erro:"clienteId obrigatório"});
+  const p=lerProspeccao();
+  if(!p.historico) p.historico={};
+  if(!p.historico[clienteId]) p.historico[clienteId]=[];
+  p.historico[clienteId].push({
+    em:Date.now(),
+    quando:new Date(Date.now()-3*60*60*1000).toISOString(),
+    clienteNome:clienteNome||"", nota:nota||"", resultado:resultado||"contatado", vendedor:vendedor||"",
+  });
+  salvarProspeccao(p);
+  res.json({ok:true,historico:p.historico[clienteId]});
+});
+
+// ignora um cliente (some da lista de análise — ex.: cadastro duplicado)
+app.post("/api/vendedor/prospeccao/ignorar",(req,res)=>{
+  const {clienteId,ignorar}=req.body||{};
+  if(!clienteId) return res.status(400).json({erro:"clienteId obrigatório"});
+  const p=lerProspeccao();
+  if(!p.ignorados) p.ignorados={};
+  if(ignorar===false) delete p.ignorados[clienteId];
+  else p.ignorados[clienteId]=true;
+  salvarProspeccao(p);
+  res.json({ok:true,ignorados:p.ignorados});
+});
+
 // Analisa pedidos de atacado (exclui vendedores de varejo e Consumidor Final).
 // Retorna: meta do mês (atendidos), clientes que sumiram, pedidos grandes, top por produto.
 app.get("/api/vendedor/apoio",async(req,res)=>{
@@ -4694,6 +4740,9 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     const minValor=Number(req.query.minValor||1000);
     const diasAtencao=Number(req.query.diasAtencao||15);
     const diasPerdido=Number(req.query.diasPerdido||30);
+    const prosp=lerProspeccao();
+    const ignorados=prosp.ignorados||{};
+    const historicoProsp=prosp.historico||{};
     // busca pedidos dos últimos ~180 dias (o suficiente pra ver quem sumiu)
     const agora=Date.now();
     const dataIni=new Date(agora-180*24*60*60*1000).toISOString().slice(0,10);
@@ -4742,6 +4791,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     // CLIENTES QUE SUMIRAM — eram regulares (vários pedidos, ticket alto) e pararam
     const perdidos=[];
     Object.values(porCliente).forEach(c=>{
+      if(ignorados[c.id]) return; // cliente marcado como ignorado (ex.: duplicado)
       const datas=c.pedidos.map(x=>x.data).filter(Boolean).sort();
       if(!datas.length) return;
       const ultima=datas[datas.length-1];
@@ -4749,11 +4799,15 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       const ticketMedio=c.total/c.pedidos.length;
       const eraRegular=c.pedidos.length>=3 && ticketMedio>=minValor; // 3+ pedidos, média acima do mínimo
       if(eraRegular && diasSem>=diasAtencao){
+        const hist=historicoProsp[c.id]||[];
+        const ultimoContato=hist.length?hist[hist.length-1]:null;
         perdidos.push({
           id:c.id, nome:c.nome, diasSem, ultimaCompra:ultima,
           qtdPedidos:c.pedidos.length, ticketMedio:+ticketMedio.toFixed(2),
           totalGasto:+c.total.toFixed(2),
           nivel: diasSem>=diasPerdido?"perdido":"atencao",
+          qtdContatos:hist.length,
+          ultimoContato:ultimoContato?{quando:ultimoContato.quando,resultado:ultimoContato.resultado,nota:ultimoContato.nota}:null,
         });
       }
     });
