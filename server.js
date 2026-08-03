@@ -4327,43 +4327,38 @@ app.post("/api/atacado/cliente/:id/telefone",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
-// produtos novos — cadastrados no Bling nos últimos N dias (padrão 30).
-// marca quais já estão na Tabela Atacado. Traz foto pra sugestão por WhatsApp.
+// produtos novos — os de maior código (produtos recém-cadastrados têm código
+// sequencial mais alto). Retorna os N últimos (padrão 5). Marca quais já estão na Tabela Atacado.
 app.get("/api/atacado/produtos-novos",async(req,res)=>{
   try{
-    const dias=Number(req.query.dias||30);
-    const limite=new Date(Date.now()-dias*24*60*60*1000);
-    // busca as primeiras páginas ordenadas por id desc (mais recentes primeiro)
-    const encontrados=[];
-    for(let pg=1;pg<=5;pg++){
-      let arr=[];
-      try{ const r=await bling(`/produtos?pagina=${pg}&limite=100&criterio=5`); arr=r?.data||[]; }catch(e){ break; }
-      if(!arr.length) break;
-      // pega o detalhe pra ter dataCriacao e imagem (a lista resumida às vezes não traz)
-      encontrados.push(...arr);
-      if(arr.length<100) break;
-      await new Promise(r=>setTimeout(r,250));
-    }
-    // filtra por data de criação recente
+    const qtd=Number(req.query.qtd||5);
+    // busca produtos ordenados por id desc (mais recentes primeiro)
+    let arr=[];
+    try{ const r=await bling(`/produtos?pagina=1&limite=100&criterio=5`); arr=r?.data||[]; }catch(e){}
+    // ordena por código numérico desc (garante pegar os de código mais alto)
+    arr.sort((a,b)=>{
+      const ca=parseInt(String(a.codigo).replace(/\D/g,""))||0;
+      const cb=parseInt(String(b.codigo).replace(/\D/g,""))||0;
+      return cb-ca;
+    });
+    const topN=arr.slice(0,qtd);
+
     const tab=lerTabela(); const codsTabela=new Set();
     (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>codsTabela.add(String(b.codigo)))));
+
     const novos=[];
-    for(const p of encontrados){
-      let dataCriacao=p.dataCriacao;
+    for(const p of topN){
       let imagem=p.imagemURL||"";
-      // se a lista não trouxe data/imagem, busca o detalhe (limitado)
-      if((!dataCriacao||!imagem)&&novos.length<25){
-        try{ const d=await bling(`/produtos/${p.id}`); dataCriacao=d?.data?.dataCriacao||dataCriacao; imagem=d?.data?.imagemURL||imagem; await new Promise(r=>setTimeout(r,120)); }catch(e){}
+      // busca o detalhe pra pegar a imagem (a lista resumida raramente traz)
+      if(!imagem){
+        try{ const d=await bling(`/produtos/${p.id}`); imagem=d?.data?.imagemURL||""; await new Promise(r=>setTimeout(r,120)); }catch(e){}
       }
-      if(dataCriacao && new Date(dataCriacao)>=limite){
-        novos.push({
-          id:p.id, nome:p.nome, codigo:p.codigo, preco:+(p.preco||0), imagem,
-          dataCriacao, naTabelaAtacado:codsTabela.has(String(p.codigo)),
-        });
-      }
+      novos.push({
+        id:p.id, nome:p.nome, codigo:p.codigo, preco:+(p.preco||0), imagem,
+        naTabelaAtacado:codsTabela.has(String(p.codigo)),
+      });
     }
-    novos.sort((a,b)=>String(b.dataCriacao).localeCompare(String(a.dataCriacao)));
-    res.json({data:novos,dias});
+    res.json({data:novos});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

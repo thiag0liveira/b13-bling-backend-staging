@@ -102,7 +102,7 @@ async function carregarNovos(){
   if(S.novos.length) return; // já carregou nesta sessão
   S.carregandoNovos=true;
   try{
-    const j=await fetch(B+"/api/atacado/produtos-novos?dias=30").then(r=>r.json());
+    const j=await fetch(B+"/api/atacado/produtos-novos?qtd=5").then(r=>r.json());
     S.novos=j.data||[];
   }catch(e){ S.novos=[]; }
   S.carregandoNovos=false; render();
@@ -293,7 +293,7 @@ function cardNovos(){
   const selCount=Object.values(S.novosSelecionados).filter(Boolean).length;
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div style="font-weight:800">✨ Novidades (últimos 30 dias)</div>
+      <div style="font-weight:800">✨ Últimos produtos cadastrados</div>
       ${selCount?`<button class="btn btn-wa" style="font-size:12px;padding:7px 12px" onclick="enviarNovidadesWhats()">📱 Enviar ${selCount} por WhatsApp</button>`:''}
     </div>
     <div class="muted" style="font-size:12px;margin-bottom:8px">Selecione pra sugerir ao cliente por WhatsApp, ou toque no + pra adicionar ao pedido.</div>
