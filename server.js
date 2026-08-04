@@ -4841,7 +4841,10 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       if(arr.length<100) break;
       await new Promise(r=>setTimeout(r,250));
     }
+    // deduplica por ID
+    const vistosMes=new Set();
     const doMes=pedidosMes.filter(p=>{
+      const id=String(p.id); if(vistosMes.has(id)) return false; vistosMes.add(id);
       const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
       return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
     });
@@ -4852,6 +4855,22 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       qtdTotalMes:doMes.length,
       valorTotalMes:+doMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
     };
+
+    // VENDIDO POR VENDEDOR — agrupa automaticamente (exclui varejo já filtrado)
+    const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido"};
+    const porVendedor={};
+    doMes.forEach(p=>{
+      const vid=Number(p.vendedor?.id||0);
+      const vnome=p.vendedor?.nome||("Vendedor "+vid)||"Sem vendedor";
+      if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
+      const v=porVendedor[vid];
+      v.qtd++; v.valor+=Number(p.total||0);
+      const sit=Number(p.situacao?.id||0);
+      const snome=SIT_NOMES[sit]||("Status "+sit);
+      v.porStatus[snome]=(v.porStatus[snome]||0)+1;
+      if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
+    });
+    const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
 
     // agrupa por cliente pra achar quem sumiu
     const porCliente={};
@@ -4904,7 +4923,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       .slice(0,50);
 
     const dados={
-      metaMes, mesAtual,
+      metaMes, mesAtual, vendedores,
       perdidos, // lista completa (a paginação é feita no front)
       qtdPerdidos: perdidos.length,
       pedidosGrandes,

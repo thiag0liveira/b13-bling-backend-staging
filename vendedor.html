@@ -93,12 +93,11 @@ function viewRecuperar(){
   return `
     ${cardMetaProgresso()}
     <div class="card">
-      <div style="font-weight:800;margin-bottom:10px">💰 Meta do mês (atacado — sem varejo/consumidor final)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="rc"><div class="muted" style="font-size:11px">Pedidos atendidos</div><div class="v" style="color:#3ce88a">${m.qtdAtendidos||0}</div></div>
-        <div class="rc"><div class="muted" style="font-size:11px">Valor atendido</div><div class="v" style="color:#3ce88a">${brl(m.valorAtendidos)}</div></div>
-        <div class="rc"><div class="muted" style="font-size:11px">Total pedidos no mês</div><div class="v">${m.qtdTotalMes||0}</div></div>
-        <div class="rc"><div class="muted" style="font-size:11px">Valor total no mês</div><div class="v" style="color:#ffd23f">${brl(m.valorTotalMes)}</div></div>
+      <div style="font-weight:800;margin-bottom:10px">👤 Vendido por vendedor (atacado — sem varejo)</div>
+      ${(DADOS.vendedores&&DADOS.vendedores.length)?DADOS.vendedores.map(vendedorRow).join(""):'<div class="muted">Nenhuma venda de atacado no mês.</div>'}
+      <div style="border-top:1px solid #2c2660;margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:800">
+        <span>Total geral</span>
+        <span style="color:#ffd23f">${brl(m.valorTotalMes)} · ${m.qtdTotalMes||0} pedidos</span>
       </div>
     </div>
 
@@ -164,8 +163,9 @@ function cardMetaProgresso(){
       <div style="height:100%;width:${pct}%;background:${corPct};border-radius:20px"></div>
     </div>
     <div class="muted" style="font-size:12px;margin-bottom:12px">${frase}</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
-      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Vendido</div><div style="font-weight:800;color:#3ce88a;font-size:14px">${brl(a.vendido)}</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Pedidos de venda</div><div style="font-weight:800;color:#3ce88a;font-size:14px">${brl(a.vendido)}</div></div>
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Atendidos</div><div style="font-weight:800;color:#7fd4ff;font-size:14px">${brl((DADOS.metaMes&&DADOS.metaMes.valorAtendidos)||0)}</div></div>
       <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Média/dia</div><div style="font-weight:800;font-size:14px">${brl(a.mediaDiaria)}</div></div>
       <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Ideal/dia rest.</div><div style="font-weight:800;color:#ffd23f;font-size:14px">${brl(a.idealPorDiaRestante)}</div></div>
     </div>
@@ -227,6 +227,20 @@ function desenharGraficoMeta(){
   dias.forEach((d,i)=>{ if(d.dia%5===0||d.dia===1){ const x=padL+gw*i/n+gw/n*0.5; ctx.fillText(d.dia,x,H-6); } });
 }
 /* ===== fim acompanhamento meta ===== */
+
+function vendedorRow(v){
+  const statusTxt=Object.entries(v.porStatus||{}).map(([nome,qtd])=>`${nome}: ${qtd}`).join(" · ");
+  return `<div style="padding:10px 0;border-bottom:1px solid #23204f">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div style="font-weight:700;font-size:14px">${esc(v.nome)}</div>
+      <div style="font-weight:900;color:#ffd23f">${brl(v.valor)}</div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:3px">
+      ${v.qtd} pedido(s) · <span style="color:#3ce88a">${v.atendidos} atendido(s) = ${brl(v.valorAtendido)}</span>
+    </div>
+    ${statusTxt?`<div class="muted" style="font-size:11px;margin-top:2px">${esc(statusTxt)}</div>`:''}
+  </div>`;
+}
 
 function cliRow(c){
   const ult=c.ultimoContato;
