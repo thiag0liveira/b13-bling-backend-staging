@@ -281,6 +281,7 @@ function viewMapa(){
       </div>
       <div class="muted" style="font-size:11px;margin-top:4px">Na 1ª vez, clique em "Processar mais" várias vezes pra ir localizando os clientes (faz aos poucos).</div>
       <div id="geoProgresso" class="muted" style="font-size:11px;margin-top:4px"></div>
+      <button class="btn btn-mag" style="width:100%;margin-top:8px;font-size:12px" onclick="abrirMapaCompleto()">🗺️ Ver mapa com todos os clientes</button>
     </div>
 
     <label class="muted" style="font-size:12px">Buscar cliente</label>
@@ -352,6 +353,48 @@ async function buscarProximos(){
     PROXIMOS=j.proximos||[];
   }catch(e){ PROXIMOS=[]; }
   render();
+}
+
+async function abrirMapaCompleto(){
+  // carrega o Leaflet (CSS+JS) sob demanda, só quando abre o mapa
+  if(!window.L){
+    await new Promise((res)=>{
+      const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+      const js=document.createElement("script"); js.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload=res; document.head.appendChild(js);
+    });
+  }
+  // busca os clientes geocodificados
+  let clientes=[];
+  try{ const j=await fetch(B+"/api/vendedor/mapa-clientes").then(r=>r.json()); clientes=j.clientes||[]; }catch(e){}
+  if(!clientes.length){ alert("Nenhum cliente localizado ainda. Clique em 'Processar mais' pra localizar os clientes primeiro."); return; }
+
+  // modal com o mapa
+  const ov=document.createElement("div");
+  ov.id="modalMapa";
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:2000;display:flex;flex-direction:column;padding:10px";
+  ov.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-weight:800;color:#fff">🗺️ ${clientes.length} clientes no mapa</div>
+      <button class="btn btn-ghost" style="padding:8px 14px" onclick="document.getElementById('modalMapa').remove()">✕ Fechar</button>
+    </div>
+    <div id="mapaLeaflet" style="flex:1;border-radius:12px;overflow:hidden"></div>`;
+  document.body.appendChild(ov);
+
+  // inicializa o mapa centralizado na média das coordenadas
+  const latMed=clientes.reduce((s,c)=>s+c.lat,0)/clientes.length;
+  const lngMed=clientes.reduce((s,c)=>s+c.lng,0)/clientes.length;
+  const map=L.map("mapaLeaflet").setView([latMed,lngMed],12);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+  // adiciona a loja (referência)
+  const grupo=[];
+  clientes.forEach(c=>{
+    const m=L.marker([c.lat,c.lng]).addTo(map);
+    m.bindPopup(`<b>${(c.nome||"").replace(/</g,"&lt;")}</b><br>${(c.endereco||"").replace(/</g,"&lt;")}`);
+    grupo.push([c.lat,c.lng]);
+  });
+  // ajusta o zoom pra caber todos os pontos
+  if(grupo.length>1){ try{ map.fitBounds(grupo,{padding:[40,40]}); }catch(e){} }
+  setTimeout(()=>map.invalidateSize(),200); // corrige renderização dentro do modal
 }
 
 async function carregarStatusMapa(){
