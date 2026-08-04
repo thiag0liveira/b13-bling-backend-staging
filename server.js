@@ -4913,6 +4913,36 @@ app.post("/api/vendedor/geocodificar",async(req,res)=>{
 });
 
 // retorna todos os clientes geocodificados (pro mapa)
+// busca cliente por nome direto no Bling; geocodifica na hora se ainda não tiver coordenada
+app.get("/api/vendedor/buscar-cliente-mapa",async(req,res)=>{
+  try{
+    const termo=(req.query.nome||"").trim();
+    if(termo.length<2) return res.json({clientes:[]});
+    const r=await bling(`/contatos?pesquisa=${encodeURIComponent(termo)}&limite=15`);
+    const achados=r?.data||[];
+    const geo=lerGeoClientes();
+    const clientes=[];
+    for(const c of achados){
+      const id=String(c.id);
+      let g=geo[id];
+      // se ainda não tem coordenada, tenta geocodificar agora
+      if(!g||!g.lat){
+        let end=null;
+        try{ const d=await bling(`/contatos/${id}`); const gr=d?.data?.endereco?.geral; if(gr&&gr.endereco){ end=`${gr.endereco}, ${gr.numero||""}, ${gr.bairro||""}, ${gr.municipio||""} - ${gr.uf||""}`; } }catch(e){}
+        if(end){
+          const coord=await geocodeEndereco(end);
+          if(coord){ g={lat:coord.lat,lng:coord.lng,nome:c.nome,endereco:end}; geo[id]=g; }
+          else g={semCoord:true,nome:c.nome,endereco:end};
+        }
+        await new Promise(r=>setTimeout(r,150));
+      }
+      clientes.push({id,nome:c.nome,lat:g?.lat||null,lng:g?.lng||null,endereco:g?.endereco||""});
+    }
+    salvarGeoClientes(geo);
+    res.json({clientes});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/vendedor/mapa-clientes",(req,res)=>{
   const geo=lerGeoClientes();
   const clientes=Object.entries(geo).filter(([id,g])=>g.lat).map(([id,g])=>({id,nome:g.nome,lat:g.lat,lng:g.lng,endereco:g.endereco||""}));

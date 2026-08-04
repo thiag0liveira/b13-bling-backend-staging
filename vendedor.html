@@ -321,9 +321,9 @@ function cliMapaRow(c){
   return `<div class="cli">
     <div style="flex:1;min-width:0">
       <div style="font-weight:700;font-size:13px">${esc(c.nome)}</div>
-      <div class="muted" style="font-size:11px">${esc(c.endereco||'')}</div>
+      <div class="muted" style="font-size:11px">${c.lat?esc(c.endereco||''):'⚠️ sem endereço no Bling — não dá pra localizar'}</div>
     </div>
-    <button class="btn btn-mag" style="font-size:11px;padding:7px 10px" onclick='selecionarCli(${JSON.stringify(c).replace(/'/g,"&#39;")})'>Ver próximos</button>
+    <button class="btn ${c.lat?'btn-mag':'btn-ghost'}" style="font-size:11px;padding:7px 10px" ${c.lat?'':'disabled'} onclick='selecionarCli(${JSON.stringify(c).replace(/'/g,"&#39;")})'>Ver próximos</button>
   </div>`;
 }
 
@@ -331,10 +331,11 @@ let _cliT=null;
 function buscarCliDebounce(v){ BUSCA_CLI=v; clearTimeout(_cliT); _cliT=setTimeout(buscarCliMapa,350); }
 async function buscarCliMapa(){
   if(BUSCA_CLI.trim().length<2){ RESULT_CLI=[]; render(); return; }
+  const box=document.getElementById("resultCli");
+  if(box) box.innerHTML='<div class="muted" style="font-size:12px">Buscando…</div>';
   try{
-    const j=await fetch(B+"/api/vendedor/mapa-clientes").then(r=>r.json());
-    const termo=BUSCA_CLI.toLowerCase();
-    RESULT_CLI=(j.clientes||[]).filter(c=>(c.nome||"").toLowerCase().includes(termo)).slice(0,15);
+    const j=await fetch(B+"/api/vendedor/buscar-cliente-mapa?nome="+encodeURIComponent(BUSCA_CLI.trim())).then(r=>r.json());
+    RESULT_CLI=j.clientes||[];
     render();
   }catch(e){}
 }
