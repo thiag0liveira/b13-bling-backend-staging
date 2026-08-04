@@ -4853,6 +4853,26 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// diagnóstico: testa o que o endpoint de movimentações de estoque do Bling retorna
+// (pra ver se traz o cliente/pedido de cada saída de um produto)
+app.get("/api/debug-estoque/:produtoId",async(req,res)=>{
+  const pid=req.params.produtoId;
+  const tentativas={};
+  // tenta os endpoints possíveis de estoque/movimentações na API v3
+  const rotas=[
+    `/estoques?idProduto=${pid}`,
+    `/estoques/saldos?idsProdutos[]=${pid}`,
+    `/estoques/${pid}`,
+    `/produtos/${pid}/estoques`,
+  ];
+  for(const rota of rotas){
+    try{ const r=await bling(rota); tentativas[rota]={ok:true,amostra:r?.data?(Array.isArray(r.data)?r.data.slice(0,3):r.data):r}; }
+    catch(e){ tentativas[rota]={ok:false,erro:e.message}; }
+    await new Promise(r=>setTimeout(r,300));
+  }
+  res.json(tentativas);
+});
+
 // telefone de um cliente (pra montar o WhatsApp de recuperação)
 app.get("/api/vendedor/cliente/:id/contato",async(req,res)=>{
   try{
