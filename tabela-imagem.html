@@ -36,9 +36,13 @@
 <script>
 const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 function voltar(){
-  if(window.opener && !window.opener.closed){ window.close(); }
-  else if(window.history.length>1){ window.history.back(); }
-  else { location.href="/venda-atacado"; }
+  // tenta fechar se foi aberta em nova aba; se não fechar (comum no celular), navega de volta
+  try{ if(window.opener && !window.opener.closed){ window.close(); } }catch(e){}
+  // se ainda estiver aberta após tentar fechar, ou não tiver como fechar, navega
+  setTimeout(function(){
+    if(window.history.length>1){ window.history.back(); }
+    else { location.href="/venda-atacado"; }
+  }, 120);
 }
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 let TABELA=null, CAT_ATIVA="todas";
