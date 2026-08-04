@@ -4853,6 +4853,86 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===== MAPA DE CLIENTES + PROXIMIDADE =====
+// geocodifica os clientes do Bling (endereço -> lat/lng) e guarda em cache,
+// pra montar um mapa e achar clientes próximos uns dos outros.
+const GEO_CLIENTES_FILE=`${DATA_DIR}/geo_clientes.json`;
+
+function lerGeoClientes(){ return lerJSON(GEO_CLIENTES_FILE,{}); }
+function salvarGeoClientes(g){ salvarJSON(GEO_CLIENTES_FILE,g); }
+
+// distância entre duas coordenadas (km) — fórmula de Haversine
+function distanciaKm(lat1,lng1,lat2,lng2){
+  const R=6371, rad=x=>x*Math.PI/180;
+  const dLat=rad(lat2-lat1), dLng=rad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+async function geocodeEndereco(endereco){
+  const url=`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(endereco)}&region=br&key=${GOOGLE_MAPS_KEY}`;
+  const r=await fetch(url).then(x=>x.json());
+  const loc=r?.results?.[0]?.geometry?.location;
+  return loc?{lat:loc.lat,lng:loc.lng}:null;
+}
+
+// processa a geocodificação em lotes (chamado sob demanda). Retorna progresso.
+app.post("/api/vendedor/geocodificar",async(req,res)=>{
+  try{
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado."});
+    const lote=Math.min(Number(req.body?.lote||20),40); // quantos processar por chamada
+    const geo=lerGeoClientes();
+    // busca contatos do Bling (paginado) e geocodifica os que ainda não têm coordenada
+    let processados=0, novos=0;
+    for(let pg=1;pg<=20 && processados<lote;pg++){
+      let arr=[];
+      try{ const r=await bling(`/contatos?pagina=${pg}&limite=100`); arr=r?.data||[]; }catch(e){ break; }
+      if(!arr.length) break;
+      for(const c of arr){
+        if(processados>=lote) break;
+        const id=String(c.id);
+        if(geo[id]&&geo[id].lat) continue; // já geocodificado
+        if(geo[id]&&geo[id].semEndereco) continue; // já sabemos que não tem endereço
+        // pega o detalhe pra ter o endereço completo
+        let end=null;
+        try{ const d=await bling(`/contatos/${id}`); const g=d?.data?.endereco?.geral; if(g&&g.endereco){ end=`${g.endereco}, ${g.numero||""}, ${g.bairro||""}, ${g.municipio||""} - ${g.uf||""}`; } }catch(e){}
+        await new Promise(r=>setTimeout(r,150));
+        if(!end){ geo[id]={semEndereco:true,nome:c.nome}; processados++; continue; }
+        const coord=await geocodeEndereco(end);
+        await new Promise(r=>setTimeout(r,150));
+        if(coord){ geo[id]={lat:coord.lat,lng:coord.lng,nome:c.nome,endereco:end}; novos++; }
+        else geo[id]={semCoord:true,nome:c.nome,endereco:end};
+        processados++;
+      }
+      if(arr.length<100) break;
+    }
+    salvarGeoClientes(geo);
+    const comCoord=Object.values(geo).filter(g=>g.lat).length;
+    res.json({ok:true,processadosAgora:processados,novosComCoord:novos,totalComCoord:comCoord,totalRegistrados:Object.keys(geo).length});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// retorna todos os clientes geocodificados (pro mapa)
+app.get("/api/vendedor/mapa-clientes",(req,res)=>{
+  const geo=lerGeoClientes();
+  const clientes=Object.entries(geo).filter(([id,g])=>g.lat).map(([id,g])=>({id,nome:g.nome,lat:g.lat,lng:g.lng,endereco:g.endereco||""}));
+  res.json({clientes,total:clientes.length,totalRegistrados:Object.keys(geo).length});
+});
+
+// clientes próximos a um cliente específico (raio em km)
+app.get("/api/vendedor/clientes-proximos/:id",(req,res)=>{
+  const geo=lerGeoClientes();
+  const base=geo[req.params.id];
+  if(!base||!base.lat) return res.status(400).json({erro:"este cliente ainda não tem localização. Rode a geocodificação primeiro."});
+  const raioKm=Number(req.query.raio||3);
+  const proximos=Object.entries(geo)
+    .filter(([id,g])=>g.lat && id!==req.params.id)
+    .map(([id,g])=>({id,nome:g.nome,lat:g.lat,lng:g.lng,endereco:g.endereco||"",dist:+distanciaKm(base.lat,base.lng,g.lat,g.lng).toFixed(2)}))
+    .filter(c=>c.dist<=raioKm)
+    .sort((a,b)=>a.dist-b.dist);
+  res.json({base:{id:req.params.id,nome:base.nome,lat:base.lat,lng:base.lng},raioKm,proximos});
+});
+
 // ===== PROSPECÇÃO DE NOVOS CLIENTES (Google Places) =====
 // busca estabelecimentos (bares, restaurantes, etc.) perto da loja e marca quais
 // já são clientes no Bling (por telefone). O Places é pago por uso — cache de 12h.
