@@ -83,6 +83,7 @@ function viewRecuperar(){
   const perdidos=DADOS.perdidos||[];
   const grandes=DADOS.pedidosGrandes||[];
   return `
+    ${cardMetaProgresso()}
     <div class="card">
       <div style="font-weight:800;margin-bottom:10px">💰 Meta do mês (atacado — sem varejo/consumidor final)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -126,6 +127,98 @@ function viewRecuperar(){
         </div>`).join(""):'<div class="muted">Nenhum pedido grande nos últimos 30 dias.</div>'}
     </div>`;
 }
+
+/* ===== ACOMPANHAMENTO DA META (gráfico) ===== */
+let META_AC=null, META_CARREGANDO=false;
+function cardMetaProgresso(){
+  if(META_CARREGANDO) return `<div class="card"><div class="muted">📈 Carregando meta…</div></div>`;
+  if(!META_AC){ carregarMetaAc(); return `<div class="card"><div class="muted">📈 Carregando meta…</div></div>`; }
+  if(!META_AC.meta){
+    return `<div class="card" style="border-color:#514c96">
+      <div style="font-weight:800;margin-bottom:6px">🎯 Meta do mês não definida</div>
+      <div class="muted" style="font-size:13px">Defina a meta do mês no <b>Dashboard</b> pra acompanhar o progresso aqui com gráficos.</div>
+    </div>`;
+  }
+  const a=META_AC;
+  const pct=Math.min(100,a.pctMeta);
+  const corPct=pct>=100?'#3ce88a':pct>=70?'#ffd23f':pct>=40?'#ff9f40':'#ff5f8f';
+  let frase="";
+  if(pct>=100) frase="🎉 Meta batida! Parabéns!";
+  else if(a.diasRestantes>0) frase=`Faltam ${brl(a.falta)} em ${a.diasRestantes} dia(s). Ritmo ideal: <b style="color:#ffd23f">${brl(a.idealPorDiaRestante)}/dia</b>.`;
+  else frase=`Mês encerrado. Vendido: ${brl(a.vendido)} de ${brl(a.meta)}.`;
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:10px">🎯 Progresso da meta — ${a.mes.split("-").reverse().join("/")}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <span style="font-size:22px;font-weight:900;color:${corPct}">${brl(a.vendido)}</span>
+      <span class="muted">de ${brl(a.meta)} · ${a.pctMeta}%</span>
+    </div>
+    <div style="background:#0f0d24;border-radius:20px;height:16px;overflow:hidden;margin-bottom:6px">
+      <div style="height:100%;width:${pct}%;background:${corPct};border-radius:20px"></div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">${frase}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Vendido</div><div style="font-weight:800;color:#3ce88a;font-size:14px">${brl(a.vendido)}</div></div>
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Média/dia</div><div style="font-weight:800;font-size:14px">${brl(a.mediaDiaria)}</div></div>
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Ideal/dia rest.</div><div style="font-weight:800;color:#ffd23f;font-size:14px">${brl(a.idealPorDiaRestante)}</div></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-bottom:4px">Vendas por dia (barra rosa) · realizado acum. (verde) · ideal (tracejado amarelo):</div>
+    <canvas id="graficoMeta" style="width:100%;height:180px"></canvas>
+  </div>`;
+}
+
+async function carregarMetaAc(){
+  if(META_CARREGANDO) return;
+  META_CARREGANDO=true;
+  try{ META_AC=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); }
+  catch(e){ META_AC={meta:0}; }
+  META_CARREGANDO=false;
+  render();
+  setTimeout(desenharGraficoMeta,100);
+}
+
+function desenharGraficoMeta(){
+  const cv=document.getElementById("graficoMeta");
+  if(!cv||!META_AC||!META_AC.dias) return;
+  const dias=META_AC.dias;
+  const W=cv.clientWidth||600, H=180, dpr=2;
+  cv.width=W*dpr; cv.height=H*dpr;
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,W,H);
+  const padL=44,padR=10,padT=10,padB=20;
+  const gw=W-padL-padR, gh=H-padT-padB;
+  const maxAc=Math.max(META_AC.meta, ...dias.map(d=>d.acumulado||0))||1;
+  const n=dias.length;
+  const bw=Math.max(2,gw/n*0.6);
+  ctx.strokeStyle="#2c2660"; ctx.fillStyle="#9a95c9"; ctx.font="9px Arial"; ctx.textAlign="right";
+  for(let i=0;i<=4;i++){
+    const y=padT+gh-(gh*i/4);
+    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillText("R$"+Math.round(maxAc*i/4/1000)+"k",padL-4,y+3);
+  }
+  const maxDia=Math.max(...dias.map(d=>d.valor||0))||1;
+  dias.forEach((d,i)=>{
+    const x=padL+gw*i/n+gw/n*0.2;
+    const bh=(d.valor/maxDia)*gh*0.7;
+    ctx.fillStyle=d.futuro?"#2c2660":"#FF0082";
+    ctx.fillRect(x,padT+gh-bh,bw,bh);
+  });
+  function linha(campo,cor,tracejado){
+    ctx.strokeStyle=cor; ctx.lineWidth=2; ctx.setLineDash(tracejado?[4,4]:[]);
+    ctx.beginPath(); let primeiro=true;
+    dias.forEach((d,i)=>{
+      const v=d[campo]; if(v==null) return;
+      const x=padL+gw*i/n+gw/n*0.5;
+      const y=padT+gh-(v/maxAc*gh);
+      if(primeiro){ ctx.moveTo(x,y); primeiro=false; } else ctx.lineTo(x,y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  linha("metaAcumulada","#ffd23f",true);
+  linha("acumulado","#3ce88a",false);
+  ctx.fillStyle="#9a95c9"; ctx.font="9px Arial"; ctx.textAlign="center";
+  dias.forEach((d,i)=>{ if(d.dia%5===0||d.dia===1){ const x=padL+gw*i/n+gw/n*0.5; ctx.fillText(d.dia,x,H-6); } });
+}
+/* ===== fim acompanhamento meta ===== */
 
 function cliRow(c){
   const ult=c.ultimoContato;

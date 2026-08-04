@@ -89,6 +89,29 @@ body{background:var(--bg);color:#fff;min-height:100vh}
 
 <script>
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
+
+const mesAtualBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,7);
+async function carregarMeta(){
+  try{
+    const j=await fetch(B+"/api/vendedor/meta?mes="+mesAtualBR).then(r=>r.json());
+    const inp=document.getElementById("metaValor");
+    const info=document.getElementById("metaInfo");
+    if(inp&&j.meta) inp.value=j.meta;
+    if(info){
+      const nomeMes=new Date(mesAtualBR+"-01T12:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+      info.innerHTML=j.meta?`Meta de ${nomeMes}: <b style="color:#ffd23f">R$ ${(+j.meta).toLocaleString("pt-BR")}</b> · veja o acompanhamento em Apoio ao Vendedor`:`Defina a meta de ${nomeMes} pra acompanhar o progresso.`;
+    }
+  }catch(e){}
+}
+async function salvarMeta(){
+  const v=Number(document.getElementById("metaValor").value||0);
+  if(v<=0){ alert("Informe um valor de meta válido."); return; }
+  try{
+    await fetch(B+"/api/vendedor/meta",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mes:mesAtualBR,meta:v})});
+    carregarMeta();
+    alert("Meta salva! Acompanhe o progresso em Apoio ao Vendedor.");
+  }catch(e){ alert("Erro ao salvar meta."); }
+}
 const LOGO="/logo";
 document.getElementById("logoImg").src=LOGO;
 const brl=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
@@ -131,6 +154,7 @@ async function carregar(){
     if(d.erro){ document.getElementById("dash").innerHTML=`<div class="err" style="margin:20px">Erro: ${esc(d.erro)}</div>`; return; }
     document.getElementById("lastUpdate").textContent="Atualizado: "+new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
     renderDash(d);
+    carregarMeta();
   }catch(e){ document.getElementById("dash").innerHTML=`<div class="err" style="margin:20px">Erro de conexão</div>`; }
 }
 
@@ -170,6 +194,19 @@ function renderDash(d){
   const statusCores=statusLabels.map((_,i)=>cores[i%cores.length]);
 
   document.getElementById("dash").innerHTML=`
+  <!-- Meta do mês -->
+  <div class="card" style="background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="sec-title" style="margin:0">🎯 Meta do mês (atacado)</div>
+        <div class="muted" id="metaInfo" style="font-size:12px;margin-top:4px">Carregando meta…</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="metaValor" type="number" placeholder="Valor da meta" style="padding:9px;border-radius:9px;border:2px solid #514c96;background:#0f0d24;color:#fff;width:150px">
+        <button onclick="salvarMeta()" style="border:none;border-radius:9px;background:#FF0082;color:#fff;font-weight:800;padding:10px 14px;cursor:pointer">💾 Salvar</button>
+      </div>
+    </div>
+  </div>
   <!-- KPIs operacionais -->
   <div>
     <div class="sec-title">📦 Operacional</div>

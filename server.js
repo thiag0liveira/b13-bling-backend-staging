@@ -56,6 +56,7 @@ const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
 const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
+const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -4852,6 +4853,88 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     res.json(dados);
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
+// ===== METAS DE VENDA =====
+function lerMetas(){ return lerJSON(METAS_FILE,{}); }
+function salvarMetas(m){ salvarJSON(METAS_FILE,m); }
+
+// lê a meta de um mês (ou do mês atual)
+app.get("/api/vendedor/meta",(req,res)=>{
+  const mes=req.query.mes||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,7);
+  const metas=lerMetas();
+  res.json({mes,meta:metas[mes]||0});
+});
+
+// define a meta de um mês
+app.post("/api/vendedor/meta",(req,res)=>{
+  const mes=req.body?.mes||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,7);
+  const meta=Number(req.body?.meta||0);
+  const metas=lerMetas();
+  metas[mes]=meta; salvarMetas(metas);
+  res.json({ok:true,mes,meta});
+});
+
+// acompanhamento da meta: vendido por dia, total, meta, ritmo ideal
+app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
+  try{
+    const agoraBR=new Date(Date.now()-3*60*60*1000);
+    const mes=req.query.mes||agoraBR.toISOString().slice(0,7);
+    const metas=lerMetas();
+    const meta=metas[mes]||0;
+    // busca os pedidos do mês (atacado, sem varejo/consumidor final, sem cancelado)
+    const [ano,mm]=mes.split("-").map(Number);
+    const dataIni=`${mes}-01`;
+    const ultimoDia=new Date(ano,mm,0).getDate();
+    const dataFim=`${mes}-${String(ultimoDia).padStart(2,"0")}`;
+    const pedidos=[];
+    for(let pg=1;pg<=30;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+      let arr=[];
+      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+      pedidos.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    const atacado=pedidos.filter(p=>{
+      const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
+      return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
+    });
+    // soma por dia
+    const porDia={};
+    atacado.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
+    // monta série de todos os dias do mês
+    const hoje=agoraBR.toISOString().slice(0,10);
+    const diaAtual=agoraBR.getDate();
+    const ehMesAtual=(mes===agoraBR.toISOString().slice(0,7));
+    const dias=[];
+    let acumulado=0;
+    for(let d=1;d<=ultimoDia;d++){
+      const dataStr=`${mes}-${String(d).padStart(2,"0")}`;
+      const valor=porDia[dataStr]||0;
+      acumulado=+(acumulado+valor).toFixed(2);
+      const futuro=ehMesAtual && d>diaAtual;
+      dias.push({dia:d,data:dataStr,valor,acumulado:futuro?null:acumulado,futuro});
+    }
+    const vendido=+atacado.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
+    const falta=+Math.max(0,meta-vendido).toFixed(2);
+    // ritmo ideal: quanto vender por dia nos dias restantes pra bater a meta
+    const diasRestantes=ehMesAtual?Math.max(0,ultimoDia-diaAtual):0;
+    const idealPorDiaRestante=diasRestantes>0?+(falta/diasRestantes).toFixed(2):0;
+    // linha ideal (meta distribuída igualmente pelos dias do mês)
+    const idealPorDia=meta/ultimoDia;
+    dias.forEach(x=>{ x.metaAcumulada=+(idealPorDia*x.dia).toFixed(2); });
+    const pctMeta=meta>0?Math.round(vendido/meta*100):0;
+
+    res.json({
+      mes, meta, vendido, falta, pctMeta,
+      diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia, diasRestantes,
+      idealPorDiaRestante, mediaDiaria: diaAtual>0?+(vendido/(ehMesAtual?diaAtual:ultimoDia)).toFixed(2):0,
+      dias,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ===== METAS DE VENDA (fim) =====
 
 // ===== MAPA DE CLIENTES + PROXIMIDADE =====
 // geocodifica os clientes do Bling (endereço -> lat/lng) e guarda em cache,
