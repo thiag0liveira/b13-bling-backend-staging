@@ -4793,7 +4793,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
   try{
     const forcar=req.query.forcar==="1";
     // usa cache se tem menos de 24h e não pediu pra forçar (economiza a varredura pesada do Bling)
-    if(_cacheApoio && !forcar && (Date.now()-_cacheApoio.em < 24*60*60*1000)){
+    if(_cacheApoio && !forcar && _cacheApoio.dados?.vendedores && (Date.now()-_cacheApoio.em < 24*60*60*1000)){
       return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em});
     }
     const minValor=Number(req.query.minValor||1000);
@@ -4988,6 +4988,7 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     // soma por dia
     const porDia={};
     atacadoUnico.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
+    const _diag={brutos:pedidos.length,filtrados:atacado.length,unicos:atacadoUnico.length};
     // monta série de todos os dias do mês
     const hoje=agoraBR.toISOString().slice(0,10);
     const diaAtual=agoraBR.getDate();
@@ -5012,7 +5013,7 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     const pctMeta=meta>0?Math.round(vendido/meta*100):0;
 
     res.json({
-      mes, meta, vendido, falta, pctMeta,
+      mes, meta, vendido, falta, pctMeta, _diag,
       diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia, diasRestantes,
       idealPorDiaRestante, mediaDiaria: diaAtual>0?+(vendido/(ehMesAtual?diaAtual:ultimoDia)).toFixed(2):0,
       dias,
