@@ -152,32 +152,39 @@ function desenharNota(p){
     if(!_logoImg.complete) return; // espera carregar
   }
   const itens=p.itens||[];
-  const W=680, padd=28, headerH=120, itemH=40, footerH=90;
+  const W=680, padd=28, headerH=150, itemH=40, footerH=90;
   const H=headerH+itens.length*itemH+footerH+30;
   const cv=document.getElementById("cvNota");
   if(!cv) return;
   const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%";
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-24);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-24,W,6);
-  // logo no lugar do texto (mantém proporção, altura ~40px)
+  // faixa azul do cabeçalho (mais alta pra caber logo + tipo + cliente)
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-18);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-18,W,5);
+  // logo no topo esquerdo
   if(_logoImg && !_logoImg.erro && _logoImg.naturalWidth){
-    const alturaLogo=42;
+    const alturaLogo=40;
     const larguraLogo=_logoImg.naturalWidth*(alturaLogo/_logoImg.naturalHeight);
-    try{ ctx.drawImage(_logoImg,padd,18,Math.min(larguraLogo,220),alturaLogo); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42); }
+    try{ ctx.drawImage(_logoImg,padd,20,Math.min(larguraLogo,200),alturaLogo); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
   }else{
-    ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42);
+    ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48);
   }
+  // data no topo direito
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="right";
+  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
+  ctx.fillText(data,W-padd,40);
+  // tipo (proposta/pedido) abaixo da logo
   ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
   const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
-  ctx.fillText(tipoTxt,padd,88);
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.fillText("Cliente: "+(p.cliente?.nome||"—"),padd,108);
-  ctx.textAlign="right";
-  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
-  ctx.fillText(data,W-padd,42);
-  if(p.vendedorNome) ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,108);
-  let y=headerH;
+  ctx.fillText(tipoTxt,padd,84);
+  // cliente e vendedor na mesma linha, dentro da faixa
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
+  let nomeCli=p.cliente?.nome||"—"; if(nomeCli.length>36) nomeCli=nomeCli.slice(0,35)+"…";
+  ctx.fillText("Cliente: "+nomeCli,padd,110);
+  if(p.vendedorNome){ ctx.textAlign="right"; ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,110); }
+  // cabeçalho da tabela (abaixo da faixa)
+  let y=headerH+14;
   ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
   ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
   ctx.textAlign="right"; ctx.fillText("UNIT.",W-140,y); ctx.fillText("TOTAL",W-padd,y);
