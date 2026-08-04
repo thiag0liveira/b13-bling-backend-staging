@@ -4826,10 +4826,25 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       return true;
     });
 
-    // META DO MÊS — pedidos atendidos no mês corrente
+    // META DO MÊS — busca os pedidos do mês atual SEPARADAMENTE (completo),
+    // pra não depender da varredura de 180 dias que pode cortar no teto de páginas
     const mesAtual=new Date(agora-3*60*60*1000).toISOString().slice(0,7);
     const SIT_ATENDIDO=Number(process.env.SIT_ATENDIDO||9);
-    const doMes=atacado.filter(p=>String(p.data||"").slice(0,7)===mesAtual);
+    const [anoM,mmM]=mesAtual.split("-").map(Number);
+    const ultimoDiaM=new Date(anoM,mmM,0).getDate();
+    const pedidosMes=[];
+    for(let pg=1;pg<=30;pg++){
+      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:`${mesAtual}-01`,dataFinal:`${mesAtual}-${String(ultimoDiaM).padStart(2,"0")}`});
+      let arr=[];
+      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+      pedidosMes.push(...arr);
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    const doMes=pedidosMes.filter(p=>{
+      const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
+      return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
+    });
     const atendidosMes=doMes.filter(p=>Number(p.situacao?.id)===SIT_ATENDIDO);
     const metaMes={
       qtdAtendidos:atendidosMes.length,
