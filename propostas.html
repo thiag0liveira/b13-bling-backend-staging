@@ -249,29 +249,91 @@ async function excluir(id){
 async function enviarWhats(id){
   const p=LISTA.find(x=>x.id===id);
   if(!p) return;
-  let tel=soDig(p.cliente?.telefone||"");
+  // monta o texto (vai como legenda da imagem, ou como fallback se não der pra mandar imagem)
   const itens=(p.itens||[]).map(i=>{
-    const qtd=Number(i.quantidade)||1;
-    const un=Number(i.valor)||0;
-    return qtd>1
-      ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`
-      : `• ${i.nome} — ${brl(un)}`;
+    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
+    return qtd>1?`• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`:`• ${i.nome} — ${brl(un)}`;
   }).join("\n");
   const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:(p.tipo==='pedido'?"*Pedido — B13 Bebidas*":"*Proposta comercial — B13 Bebidas*");
   const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
-  // se não tem telefone, oferece salvar no cadastro antes de enviar
-  if(tel.length<10){
-    const novo=prompt("Este cliente não tem telefone cadastrado. Digite o número (com DDD) pra salvar no cadastro e enviar:");
-    if(!novo) return;
-    const novoDig=soDig(novo);
-    if(novoDig.length<10){ alert("Número inválido."); return; }
-    if(p.cliente?.id){
-      try{ const j=await fetch(B+"/api/atacado/cliente/"+p.cliente.id+"/telefone",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({telefone:novoDig})}).then(r=>r.json()); if(j.erro) alert("Aviso: não salvou no cadastro ("+j.erro+"), mas vou abrir o WhatsApp."); }catch(e){}
+
+  // gera a imagem da nota num canvas oculto e tenta compartilhar (com a imagem)
+  const cv=document.createElement("canvas");
+  cv.style.display="none"; document.body.appendChild(cv);
+  await desenharNotaEm(cv,p);
+  let blob=null;
+  try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }catch(e){}
+  cv.remove();
+
+  // compartilhamento nativo com a imagem (funciona no celular)
+  if(blob && navigator.share && navigator.canShare){
+    const file=new File([blob],"nota-b13.png",{type:"image/png"});
+    if(navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],text:msg}); return; }
+      catch(e){ if(e&&e.name==="AbortError") return; }
     }
-    tel=novoDig;
   }
-  const tel55=tel.length<=11?("55"+tel):tel;
-  window.open("https://wa.me/"+tel55+"?text="+encodeURIComponent(msg),"_blank");
+  // fallback (computador ou sem suporte a compartilhar arquivo): abre o modal da imagem
+  // pra baixar/compartilhar manualmente, já com o texto no WhatsApp
+  verImagem(id);
+  let tel=soDig(p.cliente?.telefone||"");
+  if(tel.length>=10){
+    const tel55=tel.length<=11?("55"+tel):tel;
+    setTimeout(()=>window.open("https://wa.me/"+tel55+"?text="+encodeURIComponent(msg),"_blank"),300);
+  }
+}
+
+// desenha a nota num canvas específico (reaproveitável pro compartilhamento)
+async function desenharNotaEm(cv,p){
+  // garante a logo carregada
+  if(!_logoImg||(!_logoImg.erro&&!_logoImg.naturalWidth)){
+    await new Promise((res)=>{
+      _logoImg=new Image(); _logoImg.crossOrigin="anonymous";
+      _logoImg.onload=res; _logoImg.onerror=()=>{ _logoImg={erro:true}; res(); }; _logoImg.src="/logo";
+    });
+  }
+  const itens=p.itens||[];
+  const W=680, padd=28, headerH=150, itemH=40, footerH=90;
+  const H=headerH+itens.length*itemH+footerH+30;
+  const dpr=2; cv.width=W*dpr; cv.height=H*dpr;
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-18);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-18,W,5);
+  if(_logoImg && !_logoImg.erro && _logoImg.naturalWidth){
+    const aL=40, lL=_logoImg.naturalWidth*(aL/_logoImg.naturalHeight);
+    try{ ctx.drawImage(_logoImg,padd,20,Math.min(lL,200),aL); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
+  }else{ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="right";
+  ctx.fillText(p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"",W-padd,40);
+  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
+  ctx.fillText(p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial"),padd,84);
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
+  let nc=p.cliente?.nome||"—"; if(nc.length>36) nc=nc.slice(0,35)+"…";
+  ctx.fillText("Cliente: "+nc,padd,110);
+  if(p.vendedorNome){ ctx.textAlign="right"; ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,110); }
+  let y=headerH+14;
+  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
+  ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
+  ctx.textAlign="right"; ctx.fillText("UNIT.",W-140,y); ctx.fillText("TOTAL",W-padd,y);
+  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
+  itens.forEach(i=>{
+    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
+    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
+    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
+    ctx.fillText(nome,padd,y+itemH/2);
+    ctx.textAlign="center"; ctx.fillText(String(qtd),W-260,y+itemH/2);
+    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un),W-140,y+itemH/2);
+    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd),W-padd,y+itemH/2);
+    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
+    y+=itemH;
+  });
+  y+=10; ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
+  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+12,y+28);
+  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial"; ctx.fillText(brl(p.total),W-padd-12,y+29);
+  y+=44;
+  if(p.observacao){ y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText("Obs: "+p.observacao.slice(0,70),padd,y); }
+  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center"; ctx.fillText("B13 Bebidas · Obrigado pela preferência!",W/2,H-16);
 }
 
 render();
