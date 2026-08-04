@@ -22,6 +22,7 @@
 </head>
 <body>
 <div class="top">
+  <button class="btn btn-ghost" onclick="voltar()" style="padding:8px 12px">← Voltar</button>
   <div class="t">📋 Tabela de Preços</div>
   <div class="sp"></div>
   <button class="btn btn-mag" onclick="baixar()">⬇️ Baixar imagem</button>
@@ -34,6 +35,11 @@
 </div>
 <script>
 const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function voltar(){
+  if(window.opener && !window.opener.closed){ window.close(); }
+  else if(window.history.length>1){ window.history.back(); }
+  else { location.href="/venda-atacado"; }
+}
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 let TABELA=null, CAT_ATIVA="todas";
 
