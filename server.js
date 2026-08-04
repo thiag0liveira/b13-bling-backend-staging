@@ -5021,17 +5021,28 @@ app.get("/api/vendedor/prospeccao-places",async(req,res)=>{
     const coord=await geocodeLoja();
     if(!coord) return res.status(500).json({erro:"não consegui localizar o endereço da loja"});
     const t=TIPOS_PROSPECCAO[tipo]||TIPOS_PROSPECCAO.bar;
-    // Places Nearby Search
-    const url=`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coord.lat},${coord.lng}&radius=${raio}&keyword=${encodeURIComponent(t.keyword)}&language=pt-BR&key=${GOOGLE_MAPS_KEY}`;
-    const r=await fetch(url).then(x=>x.json());
-    if(r.status&&r.status!=="OK"&&r.status!=="ZERO_RESULTS"){
-      return res.status(500).json({erro:"Google Places: "+r.status+(r.error_message?" - "+r.error_message:"")});
+    // Places API (New) — Text Search via POST com JSON e field mask no header
+    const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
+        "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.currentOpeningHours.openNow",
+      },
+      body:JSON.stringify({
+        textQuery:t.keyword,
+        languageCode:"pt-BR",
+        locationBias:{circle:{center:{latitude:coord.lat,longitude:coord.lng},radius:raio}},
+      }),
+    }).then(x=>x.json());
+    if(r.error){
+      return res.status(500).json({erro:"Google Places: "+(r.error.message||r.error.status||"erro")});
     }
-    const locais=(r.results||[]).map(p=>({
-      placeId:p.place_id, nome:p.name, endereco:p.vicinity||"",
-      rating:p.rating||null, totalAvaliacoes:p.user_ratings_total||0,
-      lat:p.geometry?.location?.lat, lng:p.geometry?.location?.lng,
-      aberto:p.opening_hours?.open_now,
+    const locais=(r.places||[]).map(p=>({
+      placeId:p.id, nome:p.displayName?.text||"", endereco:p.formattedAddress||"",
+      rating:p.rating||null, totalAvaliacoes:p.userRatingCount||0,
+      lat:p.location?.latitude, lng:p.location?.longitude,
+      aberto:p.currentOpeningHours?.openNow,
     }));
     const dados={tipo,tipoLabel:t.label,raio,total:locais.length,locais,geradoEm:Date.now()};
     cacheAll[cacheKey]={em:Date.now(),dados};
@@ -5044,21 +5055,26 @@ app.get("/api/vendedor/prospeccao-places",async(req,res)=>{
 app.get("/api/vendedor/place-detalhe/:placeId",async(req,res)=>{
   try{
     if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado."});
-    const url=`https://maps.googleapis.com/maps/api/place/details/json?place_id=${req.params.placeId}&fields=name,formatted_phone_number,international_phone_number,formatted_address,website,opening_hours&language=pt-BR&key=${GOOGLE_MAPS_KEY}`;
-    const r=await fetch(url).then(x=>x.json());
-    const d=r.result||{};
-    const tel=d.formatted_phone_number||d.international_phone_number||"";
+    // Places API (New) — Place Details via GET /v1/places/{id} com field mask no header
+    const r=await fetch(`https://places.googleapis.com/v1/places/${req.params.placeId}?languageCode=pt-BR`,{
+      headers:{
+        "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
+        "X-Goog-FieldMask":"displayName,nationalPhoneNumber,internationalPhoneNumber,formattedAddress,websiteUri",
+      },
+    }).then(x=>x.json());
+    if(r.error) return res.status(500).json({erro:"Google Places: "+(r.error.message||"erro")});
+    const tel=r.nationalPhoneNumber||r.internationalPhoneNumber||"";
     // verifica se já é cliente no Bling (busca pelo telefone)
     let jaCliente=null;
     if(tel){
       try{
-        const digs=soDigitos(tel).slice(-8); // últimos 8 dígitos pra casar
+        const digs=soDigitos(tel).slice(-8);
         const b=await bling(`/contatos?pesquisa=${encodeURIComponent(digs)}`);
         const achado=(b.data||[])[0];
         if(achado) jaCliente={id:achado.id,nome:achado.nome};
       }catch(e){}
     }
-    res.json({nome:d.name,telefone:tel,endereco:d.formatted_address||"",website:d.website||"",jaCliente});
+    res.json({nome:r.displayName?.text||"",telefone:tel,endereco:r.formattedAddress||"",website:r.websiteUri||"",jaCliente});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
