@@ -54,6 +54,7 @@ const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,max
 const soDig=(s)=>String(s??"").replace(/\D/g,"");
 let ABA="recuperar", DADOS=null, carregando=false;
 let MIN_VALOR=1000;
+let mostrarPerdidos=10;
 
 function render(){
   const app=document.getElementById("app");
@@ -94,28 +95,31 @@ function viewRecuperar(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <div style="font-weight:800">⚠️ Clientes que sumiram (${DADOS.qtdPerdidos||0})</div>
-        <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="recarregar()">🔄 Atualizar</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="novaAnalise()">🔄 Nova análise</button>
       </div>
-      <div class="muted" style="font-size:12px;margin-bottom:8px">Eram regulares (3+ pedidos, ticket médio acima de ${brl(MIN_VALOR)}) e pararam de comprar.</div>
-      ${perdidos.length?perdidos.map(cliRow).join(""):'<div class="muted">Nenhum cliente perdido detectado. 🎉</div>'}
+      <div class="muted" style="font-size:12px;margin-bottom:8px">Eram regulares (3+ pedidos, ticket médio acima de ${brl(MIN_VALOR)}) e pararam de comprar.${DADOS.cacheEm?` <span style="color:#7fd4ff">Análise de ${new Date(DADOS.cacheEm).toLocaleString("pt-BR")}</span>`:''}</div>
+      ${perdidos.length?perdidos.slice(0,mostrarPerdidos).map(cliRow).join(""):'<div class="muted">Nenhum cliente perdido detectado. 🎉</div>'}
+      ${perdidos.length>mostrarPerdidos?`<button class="btn btn-mag" style="width:100%;margin-top:10px" onclick="mostrarPerdidos+=10;render()">▼ Ver mais 10 (${perdidos.length-mostrarPerdidos} restantes)</button>`:''}
     </div>
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">🔎 Quem mais compra um produto</div>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">1º pesquise o produto, depois veja quem mais compra ele.</div>
       <div style="display:flex;gap:8px">
-        <input id="buscaTop" placeholder="Ex: skol, heineken…" style="flex:1" onkeydown="if(event.key==='Enter')buscarTop()">
-        <button class="btn btn-mag" onclick="buscarTop()">Buscar</button>
+        <input id="buscaTop" placeholder="Pesquisar produto (ex: skol, heineken)…" style="flex:1" oninput="buscarProdutoDebounce(this.value)">
       </div>
+      <div id="produtosEncontrados" style="margin-top:8px"></div>
       <div id="topResultado" style="margin-top:10px"></div>
     </div>
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">💵 Pedidos grandes (acima de ${brl(MIN_VALOR)}, últimos 30 dias)</div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">Ordenados por quem está há mais tempo sem comprar (prioridade de contato).</div>
       ${grandes.length?grandes.map(g=>`
         <div class="cli">
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:13px">#${esc(g.numero)} — ${esc(g.cliente)}</div>
-            <div class="muted" style="font-size:11px">${g.data?g.data.split('-').reverse().join('/'):''}</div>
+            <div class="muted" style="font-size:11px">Pedido: ${g.data?g.data.split('-').reverse().join('/'):''} · Última compra: ${g.ultimaCompra?g.ultimaCompra.split('-').reverse().join('/'):''} <b style="color:${g.diasSemComprar>=15?'#ff8090':'#9a95c9'}">(${g.diasSemComprar} dias)</b></div>
           </div>
           <div style="font-weight:800;color:#ffd23f">${brl(g.total)}</div>
         </div>`).join(""):'<div class="muted">Nenhum pedido grande nos últimos 30 dias.</div>'}
@@ -153,7 +157,12 @@ async function registrarContato(id,nome){
   try{
     await fetch(B+"/api/vendedor/prospeccao/contato",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({clienteId:id,clienteNome:nome,nota,resultado})});
-    DADOS=null; TIMELINE=null; carregar();
+    // atualiza localmente sem refazer a análise pesada
+    if(DADOS?.perdidos){
+      const c=DADOS.perdidos.find(x=>String(x.id)===String(id));
+      if(c){ c.qtdContatos=(c.qtdContatos||0)+1; c.ultimoContato={quando:new Date().toISOString(),resultado,nota}; }
+    }
+    TIMELINE=null; render();
   }catch(e){ alert("Erro ao registrar."); }
 }
 
@@ -161,7 +170,9 @@ async function ignorarCliente(id,nome){
   if(!confirm(`Remover "${nome}" da lista de análise?\n\nUse pra cadastros duplicados ou clientes que não quer acompanhar.`)) return;
   try{
     await fetch(B+"/api/vendedor/prospeccao/ignorar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({clienteId:id,ignorar:true})});
-    DADOS=null; carregar();
+    // remove localmente do cache atual (instantâneo, sem refazer a análise pesada)
+    if(DADOS?.perdidos){ DADOS.perdidos=DADOS.perdidos.filter(c=>String(c.id)!==String(id)); DADOS.qtdPerdidos=DADOS.perdidos.length; }
+    render();
   }catch(e){ alert("Erro."); }
 }
 
@@ -182,31 +193,53 @@ async function recuperar(id,nome){
     body:JSON.stringify({clienteId:id,clienteNome:nome,nota:"Abriu WhatsApp",resultado:"contatado"})}).then(()=>{ TIMELINE=null; });
 }
 
-async function buscarTop(){
-  const nome=document.getElementById("buscaTop").value.trim();
-  const box=document.getElementById("topResultado");
-  if(nome.length<2){ box.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
-  box.innerHTML='<div class="muted">Buscando (pode demorar)…</div>';
+let _prodT=null;
+function buscarProdutoDebounce(v){ clearTimeout(_prodT); _prodT=setTimeout(()=>buscarProdutoTop(v),350); }
+async function buscarProdutoTop(termo){
+  termo=(termo||"").trim();
+  const box=document.getElementById("produtosEncontrados");
+  const topBox=document.getElementById("topResultado");
+  if(topBox) topBox.innerHTML="";
+  if(termo.length<2){ box.innerHTML=""; return; }
+  box.innerHTML='<div class="muted">Buscando produtos…</div>';
   try{
-    const j=await fetch(B+"/api/vendedor/top-produto?nome="+encodeURIComponent(nome)).then(r=>r.json());
+    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    const prods=(j.data||[]).slice(0,8);
+    box.innerHTML=prods.length?`
+      <div class="muted" style="font-size:11px;margin-bottom:4px">Escolha o produto:</div>
+      ${prods.map(p=>`<button class="btn btn-ghost" style="font-size:12px;padding:7px 10px;margin:2px" onclick='verQuemCompra(${JSON.stringify(p.nome).replace(/'/g,"&#39;")})'>${esc(p.nome)}</button>`).join("")}
+    `:'<div class="muted">Nenhum produto encontrado.</div>';
+  }catch(e){ box.innerHTML='<div class="muted">Erro na busca.</div>'; }
+}
+
+async function verQuemCompra(nomeProduto){
+  const box=document.getElementById("topResultado");
+  document.getElementById("produtosEncontrados").innerHTML=`<div class="muted" style="font-size:12px">Produto: <b>${esc(nomeProduto)}</b></div>`;
+  box.innerHTML='<div class="muted">Buscando quem compra (pode demorar)…</div>';
+  try{
+    const j=await fetch(B+"/api/vendedor/top-produto?nome="+encodeURIComponent(nomeProduto)).then(r=>r.json());
     const l=j.data||[];
-    box.innerHTML=l.length?l.map((c,i)=>`
+    box.innerHTML=l.length?`<div style="font-weight:700;margin-bottom:6px">🏆 Quem mais compra:</div>`+l.map((c,i)=>`
       <div class="cli">
         <div style="width:24px;font-weight:900;color:#ffd23f">${i+1}º</div>
         <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(c.nome)}</div>
           <div class="muted" style="font-size:11px">${c.qtdTotal} un em ${c.pedidos} pedido(s)</div></div>
         <button class="btn btn-wa" style="font-size:12px" onclick='recuperar(${JSON.stringify(c.id)},${JSON.stringify(c.nome)})'>📱</button>
-      </div>`).join(""):'<div class="muted">Ninguém comprou esse produto no período (ou nome não encontrado).</div>';
+      </div>`).join(""):'<div class="muted">Ninguém comprou esse produto no período.</div>';
   }catch(e){ box.innerHTML='<div class="muted">Erro na busca.</div>'; }
 }
 
-async function carregar(){
+async function carregar(forcar){
   carregando=true; render();
-  try{ DADOS=await fetch(B+"/api/vendedor/apoio?minValor="+MIN_VALOR).then(r=>r.json()); }
+  try{ DADOS=await fetch(B+"/api/vendedor/apoio?minValor="+MIN_VALOR+(forcar?"&forcar=1":"")).then(r=>r.json()); }
   catch(e){ DADOS={erro:"Erro ao carregar"}; }
   carregando=false; render();
 }
-function recarregar(){ DADOS=null; carregar(); }
+function recarregar(){ DADOS=null; mostrarPerdidos=10; carregar(); }
+function novaAnalise(){
+  if(!confirm("Refazer a análise agora? Isso varre todos os pedidos no Bling e leva 1-2 min. (A análise já é atualizada automaticamente 1x por dia.)")) return;
+  DADOS=null; mostrarPerdidos=10; carregar(true);
+}
 
 /* ===== ABA HISTÓRICO (linha do tempo) ===== */
 let TIMELINE=null;

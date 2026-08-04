@@ -4735,8 +4735,14 @@ app.post("/api/vendedor/prospeccao/ignorar",(req,res)=>{
 
 // Analisa pedidos de atacado (exclui vendedores de varejo e Consumidor Final).
 // Retorna: meta do mês (atendidos), clientes que sumiram, pedidos grandes, top por produto.
+let _cacheApoio=null; // {em, dados}
 app.get("/api/vendedor/apoio",async(req,res)=>{
   try{
+    const forcar=req.query.forcar==="1";
+    // usa cache se tem menos de 24h e não pediu pra forçar (economiza a varredura pesada do Bling)
+    if(_cacheApoio && !forcar && (Date.now()-_cacheApoio.em < 24*60*60*1000)){
+      return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em});
+    }
     const minValor=Number(req.query.minValor||1000);
     const diasAtencao=Number(req.query.diasAtencao||15);
     const diasPerdido=Number(req.query.diasPerdido||30);
@@ -4813,21 +4819,33 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     });
     perdidos.sort((a,b)=>b.totalGasto-a.totalGasto);
 
-    // PEDIDOS GRANDES — acima do valor mínimo (últimos 30 dias)
+    // PEDIDOS GRANDES — acima do valor mínimo (últimos 30 dias), com a última compra
+    // do cliente, ordenados por quem está há mais tempo sem comprar
     const ha30=new Date(agora-30*24*60*60*1000).toISOString().slice(0,10);
     const pedidosGrandes=atacado
       .filter(p=>Number(p.total||0)>=minValor && String(p.data||"")>=ha30)
-      .map(p=>({numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",contatoId:p.contato?.id,total:Number(p.total||0),data:p.data}))
-      .sort((a,b)=>b.total-a.total).slice(0,50);
+      .map(p=>{
+        const cid=Number(p.contato?.id||0);
+        const cli=porCliente[cid];
+        const datas=cli?cli.pedidos.map(x=>x.data).filter(Boolean).sort():[];
+        const ultimaCompra=datas.length?datas[datas.length-1]:p.data;
+        const diasSemComprar=Math.floor((agora-new Date(ultimaCompra+"T12:00:00").getTime())/(24*60*60*1000));
+        return {numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",contatoId:cid,total:Number(p.total||0),data:p.data,ultimaCompra,diasSemComprar};
+      })
+      .sort((a,b)=>b.diasSemComprar-a.diasSemComprar) // mais tempo sem comprar primeiro
+      .slice(0,50);
 
-    res.json({
+    const dados={
       metaMes, mesAtual,
-      perdidos: perdidos.slice(0,50),
+      perdidos, // lista completa (a paginação é feita no front)
       qtdPerdidos: perdidos.length,
       pedidosGrandes,
       totalClientesAtacado: Object.keys(porCliente).length,
       config:{minValor,diasAtencao,diasPerdido},
-    });
+      geradoEm:Date.now(),
+    };
+    _cacheApoio={em:Date.now(),dados};
+    res.json(dados);
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
