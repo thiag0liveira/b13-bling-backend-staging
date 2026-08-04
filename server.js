@@ -4963,9 +4963,12 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
       const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
       return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
     });
+    // deduplica por ID (a paginação do Bling às vezes repete pedidos entre páginas)
+    const vistosMA=new Set();
+    const atacadoUnico=atacado.filter(p=>{ const id=String(p.id); if(vistosMA.has(id)) return false; vistosMA.add(id); return true; });
     // soma por dia
     const porDia={};
-    atacado.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
+    atacadoUnico.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
     // monta série de todos os dias do mês
     const hoje=agoraBR.toISOString().slice(0,10);
     const diaAtual=agoraBR.getDate();
@@ -4979,7 +4982,7 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
       const futuro=ehMesAtual && d>diaAtual;
       dias.push({dia:d,data:dataStr,valor,acumulado:futuro?null:acumulado,futuro});
     }
-    const vendido=+atacado.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
+    const vendido=+atacadoUnico.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
     const falta=+Math.max(0,meta-vendido).toFixed(2);
     // ritmo ideal: quanto vender por dia nos dias restantes pra bater a meta
     const diasRestantes=ehMesAtual?Math.max(0,ultimoDia-diaAtual):0;
