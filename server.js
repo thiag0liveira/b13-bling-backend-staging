@@ -4853,6 +4853,88 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===== PROSPECÇÃO DE NOVOS CLIENTES (Google Places) =====
+// busca estabelecimentos (bares, restaurantes, etc.) perto da loja e marca quais
+// já são clientes no Bling (por telefone). O Places é pago por uso — cache de 12h.
+const PROSPECCAO_PLACES_FILE=`${DATA_DIR}/prospeccao_places.json`;
+const LOJA_ENDERECO="AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG";
+let _lojaCoord=null;
+
+async function geocodeLoja(){
+  if(_lojaCoord) return _lojaCoord;
+  const url=`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(LOJA_ENDERECO)}&key=${GOOGLE_MAPS_KEY}`;
+  const r=await fetch(url).then(x=>x.json());
+  const loc=r?.results?.[0]?.geometry?.location;
+  if(loc){ _lojaCoord={lat:loc.lat,lng:loc.lng}; }
+  return _lojaCoord;
+}
+
+// tipos de estabelecimento que compram bebida no atacado
+const TIPOS_PROSPECCAO={
+  bar:{label:"Bares",keyword:"bar"},
+  restaurante:{label:"Restaurantes",keyword:"restaurante"},
+  lanchonete:{label:"Lanchonetes",keyword:"lanchonete"},
+  mercearia:{label:"Mercadinhos/Mercearias",keyword:"mercearia mercadinho"},
+  adega:{label:"Adegas/Distribuidoras",keyword:"adega distribuidora de bebidas"},
+  conveniencia:{label:"Conveniências",keyword:"loja de conveniência"},
+};
+
+app.get("/api/vendedor/prospeccao-places",async(req,res)=>{
+  try{
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado no servidor."});
+    const tipo=req.query.tipo||"bar";
+    const raio=Math.min(Number(req.query.raio||3000),15000); // metros, máx 15km
+    const forcar=req.query.forcar==="1";
+    const cacheKey=`${tipo}_${raio}`;
+    // cache de 12h por tipo+raio (Places é pago)
+    const cacheAll=lerJSON(PROSPECCAO_PLACES_FILE,{});
+    if(!forcar && cacheAll[cacheKey] && (Date.now()-cacheAll[cacheKey].em<12*60*60*1000)){
+      return res.json({...cacheAll[cacheKey].dados,doCache:true,cacheEm:cacheAll[cacheKey].em});
+    }
+    const coord=await geocodeLoja();
+    if(!coord) return res.status(500).json({erro:"não consegui localizar o endereço da loja"});
+    const t=TIPOS_PROSPECCAO[tipo]||TIPOS_PROSPECCAO.bar;
+    // Places Nearby Search
+    const url=`https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${coord.lat},${coord.lng}&radius=${raio}&keyword=${encodeURIComponent(t.keyword)}&language=pt-BR&key=${GOOGLE_MAPS_KEY}`;
+    const r=await fetch(url).then(x=>x.json());
+    if(r.status&&r.status!=="OK"&&r.status!=="ZERO_RESULTS"){
+      return res.status(500).json({erro:"Google Places: "+r.status+(r.error_message?" - "+r.error_message:"")});
+    }
+    const locais=(r.results||[]).map(p=>({
+      placeId:p.place_id, nome:p.name, endereco:p.vicinity||"",
+      rating:p.rating||null, totalAvaliacoes:p.user_ratings_total||0,
+      lat:p.geometry?.location?.lat, lng:p.geometry?.location?.lng,
+      aberto:p.opening_hours?.open_now,
+    }));
+    const dados={tipo,tipoLabel:t.label,raio,total:locais.length,locais,geradoEm:Date.now()};
+    cacheAll[cacheKey]={em:Date.now(),dados};
+    salvarJSON(PROSPECCAO_PLACES_FILE,cacheAll);
+    res.json(dados);
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// detalhes de um lugar (telefone) — chamado só quando o vendedor clica, pra economizar
+app.get("/api/vendedor/place-detalhe/:placeId",async(req,res)=>{
+  try{
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado."});
+    const url=`https://maps.googleapis.com/maps/api/place/details/json?place_id=${req.params.placeId}&fields=name,formatted_phone_number,international_phone_number,formatted_address,website,opening_hours&language=pt-BR&key=${GOOGLE_MAPS_KEY}`;
+    const r=await fetch(url).then(x=>x.json());
+    const d=r.result||{};
+    const tel=d.formatted_phone_number||d.international_phone_number||"";
+    // verifica se já é cliente no Bling (busca pelo telefone)
+    let jaCliente=null;
+    if(tel){
+      try{
+        const digs=soDigitos(tel).slice(-8); // últimos 8 dígitos pra casar
+        const b=await bling(`/contatos?pesquisa=${encodeURIComponent(digs)}`);
+        const achado=(b.data||[])[0];
+        if(achado) jaCliente={id:achado.id,nome:achado.nome};
+      }catch(e){}
+    }
+    res.json({nome:d.name,telefone:tel,endereco:d.formatted_address||"",website:d.website||"",jaCliente});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // telefone de um cliente (pra montar o WhatsApp de recuperação)
 app.get("/api/vendedor/cliente/:id/contato",async(req,res)=>{
   try{
