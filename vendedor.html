@@ -285,7 +285,8 @@ function viewMapa(){
 
     <label class="muted" style="font-size:12px">Buscar cliente</label>
     <div style="display:flex;gap:8px;margin:4px 0 10px">
-      <input id="buscaCli" placeholder="Nome do cliente…" value="${esc(BUSCA_CLI)}" style="flex:1" oninput="buscarCliDebounce(this.value)">
+      <input id="buscaCli" placeholder="Nome ou parte do nome…" value="${esc(BUSCA_CLI)}" style="flex:1" oninput="BUSCA_CLI=this.value" onkeydown="if(event.key==='Enter')buscarCliMapa()">
+      <button class="btn btn-mag" onclick="buscarCliMapa()">🔍 Buscar</button>
     </div>
     <div id="resultCli">${RESULT_CLI.map(cliMapaRow).join("")}</div>
 
@@ -330,14 +331,17 @@ function cliMapaRow(c){
 let _cliT=null;
 function buscarCliDebounce(v){ BUSCA_CLI=v; clearTimeout(_cliT); _cliT=setTimeout(buscarCliMapa,350); }
 async function buscarCliMapa(){
-  if(BUSCA_CLI.trim().length<2){ RESULT_CLI=[]; render(); return; }
+  const inp=document.getElementById("buscaCli");
+  if(inp) BUSCA_CLI=inp.value;
+  if(BUSCA_CLI.trim().length<2){ alert("Digite ao menos 2 letras."); return; }
   const box=document.getElementById("resultCli");
-  if(box) box.innerHTML='<div class="muted" style="font-size:12px">Buscando…</div>';
+  if(box) box.innerHTML='<div class="muted" style="font-size:12px">Buscando… (pode levar alguns segundos)</div>';
   try{
     const j=await fetch(B+"/api/vendedor/buscar-cliente-mapa?nome="+encodeURIComponent(BUSCA_CLI.trim())).then(r=>r.json());
     RESULT_CLI=j.clientes||[];
+    if(!RESULT_CLI.length && box){ box.innerHTML='<div class="muted" style="font-size:12px">Nenhum cliente encontrado com esse nome.</div>'; return; }
     render();
-  }catch(e){}
+  }catch(e){ if(box) box.innerHTML='<div class="muted">Erro na busca.</div>'; }
 }
 
 function selecionarCli(c){ CLI_SEL=c; PROXIMOS=null; render(); buscarProximos(); }

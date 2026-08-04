@@ -4918,8 +4918,25 @@ app.get("/api/vendedor/buscar-cliente-mapa",async(req,res)=>{
   try{
     const termo=(req.query.nome||"").trim();
     if(termo.length<2) return res.json({clientes:[]});
-    const r=await bling(`/contatos?pesquisa=${encodeURIComponent(termo)}&limite=15`);
-    const achados=r?.data||[];
+    const termoLow=termo.toLowerCase();
+    const achadosMap={};
+    // 1) busca direta pelo termo no Bling
+    try{ const r=await bling(`/contatos?pesquisa=${encodeURIComponent(termo)}&limite=100`); (r?.data||[]).forEach(c=>achadosMap[c.id]=c); }catch(e){}
+    // 2) filtra os que contêm a palavra em qualquer parte do nome
+    let achados=Object.values(achadosMap).filter(c=>(c.nome||"").toLowerCase().includes(termoLow));
+    // 3) se não achou nada, varre páginas gerais procurando a palavra em qualquer parte
+    if(!achados.length){
+      for(let pg=1;pg<=12;pg++){
+        let arr=[];
+        try{ const r=await bling(`/contatos?pagina=${pg}&limite=100`); arr=r?.data||[]; }catch(e){ break; }
+        if(!arr.length) break;
+        arr.forEach(c=>{ if((c.nome||"").toLowerCase().includes(termoLow)) achadosMap[c.id]=c; });
+        if(arr.length<100) break;
+        await new Promise(r=>setTimeout(r,200));
+      }
+      achados=Object.values(achadosMap).filter(c=>(c.nome||"").toLowerCase().includes(termoLow));
+    }
+    achados=achados.slice(0,20);
     const geo=lerGeoClientes();
     const clientes=[];
     for(const c of achados){
