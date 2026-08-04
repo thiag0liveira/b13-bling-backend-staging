@@ -1372,6 +1372,26 @@ app.post("/api/tabela",(req,res)=>{
 });
 app.get("/api/tabela",(req,res)=> res.json(lerTabela()||{model:[],meta:{}}));
 
+// estoque atual de vários produtos de uma vez (usa o endpoint de saldos do Bling)
+app.post("/api/tabela/estoques",async(req,res)=>{
+  try{
+    const ids=(req.body?.ids||[]).map(Number).filter(Boolean);
+    if(!ids.length) return res.json({estoques:{}});
+    const estoques={};
+    // o endpoint de saldos aceita vários idsProdutos por vez — processa em blocos de 40
+    for(let i=0;i<ids.length;i+=40){
+      const bloco=ids.slice(i,i+40);
+      const qs=bloco.map(id=>`idsProdutos[]=${id}`).join("&");
+      try{
+        const r=await bling(`/estoques/saldos?${qs}`);
+        (r?.data||[]).forEach(s=>{ estoques[s.produto?.id]=s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0; });
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,250));
+    }
+    res.json({estoques});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ------------------------- Catálogo p/ o totem (tabela + estoque ao vivo) -------------------------
 let _estCache={t:0,map:null};
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));

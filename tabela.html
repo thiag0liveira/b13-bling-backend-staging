@@ -67,6 +67,14 @@
 
   /* ---------------- CONTROLES DE EDIÇÃO (nunca entram na imagem) ---------------- */
   [data-edit]{ display:none; }
+  /* item desabilitado ou sem estoque: aparece apagado na tela, some na exportação */
+  .item.off{ opacity:.35; }
+  .item.off .nm span{ text-decoration:line-through; }
+  .offtag{ display:none; font-size:9px; font-weight:800; padding:1px 5px; border-radius:4px; margin-left:5px; vertical-align:middle; }
+  body.editing .offtag, body.binding .offtag{ display:inline-block; }
+  .offtag.semest{ background:#3a2030; color:#ffbfce; }
+  .offtag.desab{ background:#3a2f00; color:#ffd23f; }
+  .offbtn{ background:none; border:none; cursor:pointer; font-size:13px; margin-right:3px; }
   body.viewonly .toolbar{ display:none; }
   body.viewonly #poster{ pointer-events:none; user-select:none; }
   body.viewonly [contenteditable]{ pointer-events:none; -webkit-user-modify:read-only; }
@@ -107,6 +115,7 @@
     <h1>Gestão da Tabela B13</h1>
     <label class="sw"><input type="checkbox" id="editToggle" onchange="toggleEdit()"> Modo edição</label>
     <label class="sw"><input type="checkbox" id="bindToggle" onchange="toggleBind()"> Vínculo Bling</label>
+    <button class="btn btn-out" id="btnEstoque" onclick="atualizarEstoque()">📦 Atualizar estoque</button>
     <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)</button>
     <button class="btn btn-mag" onclick="exportPDF()">📄 Gerar PDF</button>
     <button class="btn btn-mag" onclick="enviarImagem()">📤 Enviar</button>
@@ -220,6 +229,8 @@ const nid = () => "x" + Date.now().toString(36) + Math.random().toString(36).sli
 const BACKEND_PADRAO = (location.protocol.indexOf("http")===0) ? "" : "https://b13-bling-backend-production.up.railway.app";
 function fromDefault(){ return DEFAULT.map(c=>({id:nid(),col:c.col,t:c.t,itens:c.i.map(([nome,preco,obs])=>({id:nid(),nome,preco:Number(preco),obs:obs||"",caixa:1,bling:[]}))})); }
 let MODEL, META;
+let ESTOQUE_ATUAL={};   // {produtoId: saldo} atualizado do Bling
+let ESTOQUE_CARREGADO=false;
 function load(){
   try{
     const raw = localStorage.getItem("b13tabela");
@@ -265,9 +276,19 @@ function render(){
     box.appendChild(h);
     // itens
     cat.itens.forEach((it)=>{
-      const row=document.createElement("div"); row.className="item";
+      // estoque total dos produtos vinculados (soma dos vínculos)
+      const estTotal=(it.bling||[]).reduce((s,b)=>s+(ESTOQUE_ATUAL[b.id]!=null?ESTOQUE_ATUAL[b.id]:(b.estoque!=null?b.estoque:0)),0);
+      const temVinculo=(it.bling||[]).length>0;
+      const semEstoque=temVinculo && ESTOQUE_CARREGADO && estTotal<=0;
+      const desab=!!it.desabilitado;
+      const off=desab||semEstoque; // apagado na tela E fora da exportação
+      const row=document.createElement("div"); row.className="item"+(off?" off":"");
+      if(off) row.setAttribute("data-html2canvas-ignore","true"); // não entra na imagem/PDF
       row.innerHTML=
-        `<div class="nm"><span contenteditable="true" oninput="edIt('${cat.id}','${it.id}','nome',this.innerText)">${it.nome}</span>`+
+        `<div class="nm">`+
+          `<button class="offbtn" data-edit data-html2canvas-ignore="true" title="${desab?'Reativar produto':'Desabilitar (sem excluir o vínculo)'}" onclick="toggleDesab('${cat.id}','${it.id}')">${desab?'🚫':'✅'}</button>`+
+          `<span contenteditable="true" oninput="edIt('${cat.id}','${it.id}','nome',this.innerText)">${it.nome}</span>`+
+          `${semEstoque?'<span class="offtag semest">SEM ESTOQUE</span>':''}${desab?'<span class="offtag desab">DESABILITADO</span>':''}`+
           ` <small contenteditable="true" oninput="edIt('${cat.id}','${it.id}','obs',this.innerText)">${it.obs||""}</small></div>`+
         `<div class="pr">`+
           `<span class="cxwrap" data-html2canvas-ignore="true">un:<input class="cxin" type="number" min="1" value="${it.caixa||1}" onchange="edCaixa('${cat.id}','${it.id}',this.value)"></span> `+
@@ -396,6 +417,28 @@ async function publicar(){
   }catch(e){ alert("Erro ao publicar (o backend está online e conectado?): "+e.message); }
 }
 function edCaixa(cid,iid,v){ const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid); if(it){ it.caixa=Math.max(1,parseInt(v)||1); save(); } }
+
+// desabilita/reativa um produto sem excluir o vínculo
+function toggleDesab(cid,iid){
+  const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid);
+  if(it){ it.desabilitado=!it.desabilitado; save(); render(); }
+}
+
+// busca o estoque atual de todos os produtos vinculados no Bling
+async function atualizarEstoque(){
+  const btn=document.getElementById("btnEstoque");
+  if(btn){ btn.textContent="⏳ Buscando estoque…"; btn.disabled=true; }
+  const ids=[];
+  MODEL.forEach(c=>c.itens.forEach(it=>(it.bling||[]).forEach(b=>{ if(b.id) ids.push(b.id); })));
+  try{
+    const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/estoques";
+    const j=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})}).then(r=>r.json());
+    ESTOQUE_ATUAL=j.estoques||{};
+    ESTOQUE_CARREGADO=true;
+    render();
+  }catch(e){ alert("Erro ao buscar estoque."); }
+  if(btn){ btn.textContent="📦 Atualizar estoque"; btn.disabled=false; }
+}
 
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function chipsHTML(cid,it){
