@@ -117,6 +117,7 @@
     <label class="sw"><input type="checkbox" id="bindToggle" onchange="toggleBind()"> Vínculo Bling</label>
     <button class="btn btn-out" id="btnEstoque" onclick="atualizarEstoque()">📦 Atualizar estoque</button>
     <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)</button>
+    <button class="btn btn-grn" onclick="publicarTabelaVendedor()" style="background:#00aa66">🎯 Disponibilizar p/ vendedores</button>
     <button class="btn btn-mag" onclick="exportPDF()">📄 Gerar PDF</button>
     <button class="btn btn-mag" onclick="enviarImagem()">📤 Enviar</button>
     <button class="btn btn-out" onclick="sortAll()">🔤 Ordenar A→Z</button>
@@ -503,8 +504,27 @@ async function verificarVinculos(){
   alert(`✅ ${invalidos.length} vínculo(s) removido(s)!`);
 }
 
+// gera a imagem da tabela e salva no servidor pra os vendedores acessarem no Apoio ao Vendedor
+function publicarTabelaVendedor(){
+  const antesEdit=document.body.classList.contains("editing");
+  // garante que a tabela saia limpa (sem controles de edição)
+  document.body.classList.remove("editing","binding");
+  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
+    fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:canvas.toDataURL("image/png")})})
+      .then(r=>r.json())
+      .then(j=>{ if(j.ok) alert("✅ Tabela disponibilizada!\n\nOs vendedores já podem compartilhá-la no 'Apoio ao Vendedor' → botão 'Compartilhar tabela'."); else alert("Erro ao disponibilizar: "+(j.erro||"tente de novo")); })
+      .catch(()=>alert("Erro ao enviar. Verifique a conexão."));
+  });
+}
+
 function enviarImagem(){
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    // salva no servidor pra ficar disponível no Apoio ao Vendedor
+    try{
+      const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
+      fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:canvas.toDataURL("image/png")})});
+    }catch(e){}
     canvas.toBlob(async (blob)=>{
       const file=new File([blob],"tabela_precos_b13.png",{type:"image/png"});
       if(navigator.canShare && navigator.canShare({files:[file]})){
