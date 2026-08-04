@@ -4735,7 +4735,10 @@ app.post("/api/vendedor/prospeccao/ignorar",(req,res)=>{
 
 // Analisa pedidos de atacado (exclui vendedores de varejo e Consumidor Final).
 // Retorna: meta do mês (atendidos), clientes que sumiram, pedidos grandes, top por produto.
+const APOIO_CACHE_FILE=`${DATA_DIR}/apoio_cache.json`;
 let _cacheApoio=null; // {em, dados}
+// carrega o cache do disco ao subir (sobrevive a deploy/reinício)
+try{ const c=lerJSON(APOIO_CACHE_FILE,null); if(c&&c.em) _cacheApoio=c; }catch(e){}
 app.get("/api/vendedor/apoio",async(req,res)=>{
   try{
     const forcar=req.query.forcar==="1";
@@ -4845,6 +4848,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       geradoEm:Date.now(),
     };
     _cacheApoio={em:Date.now(),dados};
+    try{ salvarJSON(APOIO_CACHE_FILE,_cacheApoio); }catch(e){}
     res.json(dados);
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
