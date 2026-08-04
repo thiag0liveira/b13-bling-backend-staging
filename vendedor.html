@@ -179,7 +179,7 @@ async function ignorarCliente(id,nome){
 async function recuperar(id,nome){
   let tel="";
   try{ const j=await fetch(B+"/api/vendedor/cliente/"+id+"/contato").then(r=>r.json()); tel=soDig(j.telefone||""); }catch(e){}
-  const msg=`Olá, ${nome}! Aqui é da B13 Bebidas 🍻\n\nSentimos sua falta por aqui! Temos novidades e ótimos preços no atacado. Posso te passar uma proposta especial?`;
+  const msg=`Olá, ${nome}! Nós da B13 Bebidas estamos sentindo sua falta! Estamos com diversas promoções! Posso te enviar a tabela?`;
   if(tel.length<10){
     if(confirm(nome+" não tem telefone cadastrado. Abrir o WhatsApp mesmo assim (você escolhe o contato)?")){
       window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
