@@ -140,25 +140,43 @@ function verImagem(id){
   desenharNota(p);
 }
 
+let _logoImg=null;
 function desenharNota(p){
+  // carrega a logo uma vez; quando pronta, redesenha
+  if(!_logoImg){
+    _logoImg=new Image();
+    _logoImg.crossOrigin="anonymous";
+    _logoImg.onload=()=>desenharNota(p);
+    _logoImg.onerror=()=>{ _logoImg={erro:true}; desenharNota(p); };
+    _logoImg.src="/logo";
+    if(!_logoImg.complete) return; // espera carregar
+  }
   const itens=p.itens||[];
   const W=680, padd=28, headerH=120, itemH=40, footerH=90;
   const H=headerH+itens.length*itemH+footerH+30;
   const cv=document.getElementById("cvNota");
+  if(!cv) return;
   const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%";
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
   ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-24);
   ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-24,W,6);
-  ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42);
-  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
+  // logo no lugar do texto (mantém proporção, altura ~40px)
+  if(_logoImg && !_logoImg.erro && _logoImg.naturalWidth){
+    const alturaLogo=42;
+    const larguraLogo=_logoImg.naturalWidth*(alturaLogo/_logoImg.naturalHeight);
+    try{ ctx.drawImage(_logoImg,padd,18,Math.min(larguraLogo,220),alturaLogo); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42); }
+  }else{
+    ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,42);
+  }
+  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
   const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
-  ctx.fillText(tipoTxt,padd,68);
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.fillText("Cliente: "+(p.cliente?.nome||"—"),padd,90);
+  ctx.fillText(tipoTxt,padd,88);
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.fillText("Cliente: "+(p.cliente?.nome||"—"),padd,108);
   ctx.textAlign="right";
   const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
   ctx.fillText(data,W-padd,42);
-  if(p.vendedorNome) ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,90);
+  if(p.vendedorNome) ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,108);
   let y=headerH;
   ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
   ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
