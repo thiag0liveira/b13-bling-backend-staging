@@ -534,7 +534,13 @@ function exportPDF(){
 
 function exportPNG(){
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
-    const a=document.createElement("a"); a.download="tabela_precos_b13.png"; a.href=canvas.toDataURL("image/png"); a.click();
+    const dataUrl=canvas.toDataURL("image/png");
+    const a=document.createElement("a"); a.download="tabela_precos_b13.png"; a.href=dataUrl; a.click();
+    // salva no servidor pra ficar disponível no Apoio ao Vendedor
+    try{
+      const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
+      fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:dataUrl})});
+    }catch(e){}
   });
 }
 function modoVisu(on){

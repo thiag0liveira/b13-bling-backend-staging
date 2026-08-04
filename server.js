@@ -1370,6 +1370,35 @@ app.post("/api/tabela",(req,res)=>{
     res.json({ok:true, produtos: model.reduce((s,c)=>s+((c.itens&&c.itens.length)||0),0)});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// salva a imagem da tabela de preços (gerada na tela /tabela) pra o vendedor compartilhar
+const TABELA_IMG_FILE=`${DATA_DIR}/tabela_precos_atual.png`;
+app.post("/api/tabela/salvar-imagem", express.json({limit:"12mb"}), (req,res)=>{
+  try{
+    const dataUrl=req.body?.imagem||"";
+    const m=dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+    if(!m) return res.status(400).json({erro:"imagem inválida"});
+    fs.writeFileSync(TABELA_IMG_FILE, Buffer.from(m[1],"base64"));
+    fs.writeFileSync(TABELA_IMG_FILE+".meta", JSON.stringify({em:Date.now()}));
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// serve a última imagem salva
+app.get("/api/tabela/imagem-atual",(req,res)=>{
+  try{
+    if(!fs.existsSync(TABELA_IMG_FILE)) return res.status(404).json({erro:"nenhuma tabela salva ainda"});
+    res.set("Content-Type","image/png"); res.set("Cache-Control","no-store");
+    res.sendFile(TABELA_IMG_FILE);
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// info da última imagem (quando foi gerada)
+app.get("/api/tabela/imagem-info",(req,res)=>{
+  try{
+    if(!fs.existsSync(TABELA_IMG_FILE)) return res.json({existe:false});
+    let em=null; try{ em=JSON.parse(fs.readFileSync(TABELA_IMG_FILE+".meta","utf8")).em; }catch(e){}
+    res.json({existe:true,em});
+  }catch(e){ res.json({existe:false}); }
+});
+
 app.get("/api/tabela",(req,res)=> res.json(lerTabela()||{model:[],meta:{}}));
 
 // estoque atual de vários produtos de uma vez (usa o endpoint de saldos do Bling)

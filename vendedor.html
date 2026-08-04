@@ -70,9 +70,17 @@ function render(){
         <button class="${ABA==='mapa'?'on':''}" onclick="ABA='mapa';render()">🗺️ Mapa</button>
         <button class="${ABA==='prospectar'?'on':''}" onclick="ABA='prospectar';render()">🔍 Prospectar</button>
       </div>
+      <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:800">📋 Tabela de preços</div>
+          <div class="muted" id="tabInfo" style="font-size:11px">Verificando…</div>
+        </div>
+        <button class="btn btn-wa" onclick="compartilharTabela()">📱 Compartilhar tabela</button>
+      </div>
       ${ABA==='recuperar'?viewRecuperar():ABA==='historico'?viewHistorico():ABA==='mapa'?viewMapa():viewProspectar()}
     </div>`;
   if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
+  setTimeout(carregarTabInfo,50);
 }
 
 /* ===== ABA 1: RECUPERAR ===== */
@@ -573,7 +581,32 @@ async function verDetalhe(placeId,ix){
   }catch(e){ if(el) el.textContent="Erro ao buscar contato."; }
 }
 
+async function carregarTabInfo(){
+  const el=document.getElementById("tabInfo");
+  if(!el) return;
+  try{
+    const j=await fetch(B+"/api/tabela/imagem-info").then(r=>r.json());
+    if(j.existe){ el.innerHTML=`Atualizada em ${j.em?new Date(j.em).toLocaleDateString("pt-BR"):'—'} · toque pra enviar ao cliente`; }
+    else el.innerHTML='<span style="color:#ffbf00">Ainda não gerada — exporte na tela "Tabela Atacado"</span>';
+  }catch(e){ el.textContent=""; }
+}
+async function compartilharTabela(){
+  try{
+    const resp=await fetch(B+"/api/tabela/imagem-atual");
+    if(!resp.ok){ alert("A tabela ainda não foi gerada.\n\nVá em 'Tabela Atacado', ajuste os preços e clique em exportar imagem (PNG) — ela fica disponível aqui pra compartilhar."); return; }
+    const blob=await resp.blob();
+    const file=new File([blob],"tabela-b13.png",{type:"image/png"});
+    if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],text:"Tabela de preços — B13 Bebidas 🍻"}); return; }
+      catch(e){ if(e&&e.name==="AbortError") return; }
+    }
+    const a=document.createElement("a"); a.download="tabela-b13.png"; a.href=URL.createObjectURL(blob); a.click();
+    alert("Imagem da tabela baixada — anexe no WhatsApp. 📎");
+  }catch(e){ alert("Erro ao carregar a tabela."); }
+}
+
 render();
+setTimeout(carregarTabInfo,300);
 </script>
 </body>
 </html>
