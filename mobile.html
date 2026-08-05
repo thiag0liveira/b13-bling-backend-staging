@@ -307,17 +307,45 @@ function abrirScanner() {
 function iniciarScanner() {
   try {
     _scanner = new Html5Qrcode("reader");
+    // tenta achar a camera traseira pelo label (mais confiavel que so facingMode em alguns aparelhos)
+    Html5Qrcode.getCameras().then(function (cameras) {
+      var camId = null;
+      if (cameras && cameras.length) {
+        for (var i = 0; i < cameras.length; i++) {
+          var lbl = (cameras[i].label || "").toLowerCase();
+          if (lbl.indexOf("back") >= 0 || lbl.indexOf("traseira") >= 0 || lbl.indexOf("rear") >= 0 || lbl.indexOf("environment") >= 0) {
+            camId = cameras[i].id; break;
+          }
+        }
+        // sem label reconhecivel: heuristica — quando ha mais de uma camera, a traseira costuma vir por ultimo
+        if (!camId && cameras.length > 1) camId = cameras[cameras.length - 1].id;
+        if (!camId) camId = cameras[0].id;
+      }
+      iniciarComConfig(camId || { facingMode: { exact: "environment" } });
+    }).catch(function () {
+      iniciarComConfig({ facingMode: { exact: "environment" } });
+    });
+  } catch (e) {
+    el("scanBox").innerHTML = '<div class="card err">Leitor não suportado neste aparelho. Use o campo de digitar o número.</div>';
+  }
+}
+function iniciarComConfig(config) {
+  _scanner.start(
+    config,
+    { fps: 10, qrbox: 250 },
+    function (texto) { onQrLido(texto); },
+    function () {}
+  ).catch(function (e) {
+    // se falhou com deviceId ou facingMode exato, tenta o modo mais generico como ultimo recurso
     _scanner.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: 250 },
       function (texto) { onQrLido(texto); },
       function () {}
-    ).catch(function (e) {
-      el("scanBox").innerHTML = '<div class="card err">Não consegui abrir a câmera: ' + esc(e && e.message ? e.message : e) + '<br><br>Use o campo de digitar o número.</div>';
+    ).catch(function (e2) {
+      el("scanBox").innerHTML = '<div class="card err">Não consegui abrir a câmera: ' + esc(e2 && e2.message ? e2.message : e2) + '<br><br>Use o campo de digitar o número.</div>';
     });
-  } catch (e) {
-    el("scanBox").innerHTML = '<div class="card err">Leitor não suportado neste aparelho. Use o campo de digitar o número.</div>';
-  }
+  });
 }
 function fecharScanner() {
   pararScanner();
