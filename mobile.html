@@ -79,10 +79,13 @@
     <h3>✅ Pedido Conferido</h3>
     <div id="pagStatusMob" class="mt" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
     <div id="tipoFixoMob" style="text-align:center;padding:14px;border-radius:10px;border:2px solid #FF0082;background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
-    <div class="foto-area" id="fotoAreaMob" onclick="document.getElementById('fotoInputMob').click()">
-      <input type="file" id="fotoInputMob" accept="image/*" capture="environment" style="display:none" onchange="carregarFotoMob(this)">
-      <div id="fotoPreviewMob">📷 Toque para tirar foto do pedido (opcional)</div>
+    <div class="row">
+      <div class="col"><button class="btn btn-out" style="margin-top:0" onclick="document.getElementById('fotoInputMob').click()">📷 Foto</button></div>
+      <div class="col"><button class="btn btn-out" style="margin-top:0" onclick="document.getElementById('videoInputMob').click()">🎥 Vídeo</button></div>
     </div>
+    <input type="file" id="fotoInputMob" accept="image/*" capture="environment" style="display:none" onchange="carregarFotoMob(this)">
+    <input type="file" id="videoInputMob" accept="video/*" capture="environment" style="display:none" onchange="carregarVideoMob(this)">
+    <div id="fotoPreviewMob" class="muted center mt" style="margin-bottom:12px">Opcional: registre uma foto ou um vídeo curto do pedido.</div>
     <div id="msgModalMob" class="mt center" style="margin-bottom:10px"></div>
     <div class="row">
       <div class="col"><button class="btn btn-grn" id="btnConfirmarMob" onclick="confirmarConferencia()">✅ Confirmar</button></div>
@@ -539,12 +542,13 @@ function toggleItem(ix) {
   if (ITENS[ix]) { ITENS[ix].confirmado = !ITENS[ix].confirmado; render(); }
 }
 
-/* --- Modal de finalização (igual /conferencia): status pagamento + foto opcional --- */
-var fotoBase64Mob = null;
+/* --- Modal de finalização (igual /conferencia): status pagamento + foto/vídeo opcional --- */
+var comprovanteMob = null; // { dataUrl, tipo: "foto"|"video" }
+var LIMITE_COMPROVANTE = 15 * 1024 * 1024; // ~15MB de arquivo bruto (fica ~20MB em base64, dentro do limite do endpoint)
 function abrirModalMob() {
   if (!PEDIDO) return;
-  fotoBase64Mob = null;
-  el("fotoPreviewMob").innerHTML = "📷 Toque para tirar foto do pedido (opcional)";
+  comprovanteMob = null;
+  el("fotoPreviewMob").innerHTML = "Opcional: registre uma foto ou um vídeo curto do pedido.";
   el("msgModalMob").textContent = "";
   var pago = !!PEDIDO._pago;
   var pag = PEDIDO._pag;
@@ -575,11 +579,25 @@ function fecharModalMob() {
 function carregarFotoMob(input) {
   var file = input.files && input.files[0];
   if (!file) return;
+  if (file.size > LIMITE_COMPROVANTE) { el("fotoPreviewMob").innerHTML = '<span class="err">Foto muito grande. Tente novamente.</span>'; return; }
   var reader = new FileReader();
   reader.onload = function (e) {
-    fotoBase64Mob = e.target.result;
-    el("fotoPreviewMob").innerHTML = '<img src="' + fotoBase64Mob + '">';
+    comprovanteMob = { dataUrl: e.target.result, tipo: "foto" };
+    el("fotoPreviewMob").innerHTML = '<img src="' + comprovanteMob.dataUrl + '" style="max-width:100%;max-height:180px;border-radius:8px">';
   };
+  reader.readAsDataURL(file);
+}
+function carregarVideoMob(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  if (file.size > LIMITE_COMPROVANTE) { el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande — grave um trecho mais curto.</span>'; return; }
+  el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Carregando vídeo…';
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    comprovanteMob = { dataUrl: e.target.result, tipo: "video" };
+    el("fotoPreviewMob").innerHTML = '<video src="' + comprovanteMob.dataUrl + '" controls style="max-width:100%;max-height:200px;border-radius:8px"></video>';
+  };
+  reader.onerror = function () { el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui carregar o vídeo.</span>'; };
   reader.readAsDataURL(file);
 }
 
@@ -592,10 +610,10 @@ function confirmarConferencia() {
   if (btn) btn.disabled = true;
   msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
 
-  var passo = fotoBase64Mob
-    ? fetch(BACKEND + "/api/log/" + id, {
+  var passo = comprovanteMob
+    ? fetch(BACKEND + "/api/comprovante/" + id, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ evento: "foto_conferencia", funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, detalhes: { foto: fotoBase64Mob } })
+        body: JSON.stringify({ dataUrl: comprovanteMob.dataUrl, tipo: comprovanteMob.tipo, evento: (comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia"), funcionarioId: FUNC.id, funcionarioNome: FUNC.nome })
       }).catch(function () {})
     : Promise.resolve();
 

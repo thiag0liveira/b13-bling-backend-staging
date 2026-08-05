@@ -211,6 +211,36 @@ app.get("/logo",(req,res)=>res.sendFile(path.join(__dirname,"logo.png")));
 app.get("/loja-fundo",(req,res)=>res.sendFile(path.join(__dirname,"loja-fundo.png")));
 app.get("/logo-ofertas",(req,res)=>res.sendFile(path.join(__dirname,"logo-ofertas.jpg")));
 app.use("/promo", express.static(path.join(__dirname, "promo"))); // imagens promocionais fixas (splash do totem)
+
+// ---- Comprovantes de conferência (foto/vídeo) — salvos como arquivo real no volume, nunca em base64 no JSON de log ----
+const COMPROVANTES_DIR = `${DATA_DIR}/comprovantes`;
+try { fs.mkdirSync(COMPROVANTES_DIR, { recursive: true }); } catch (e) {}
+app.use("/comprovantes", express.static(COMPROVANTES_DIR));
+function extPorMime(mime) {
+  mime = String(mime || "").toLowerCase();
+  if (mime.indexOf("webm") >= 0) return "webm";
+  if (mime.indexOf("mp4") >= 0) return "mp4";
+  if (mime.indexOf("quicktime") >= 0 || mime.indexOf("mov") >= 0) return "mov";
+  if (mime.indexOf("png") >= 0) return "png";
+  if (mime.indexOf("webp") >= 0) return "webp";
+  return "jpg";
+}
+app.post("/api/comprovante/:id", express.json({ limit: "25mb" }), (req, res) => {
+  try {
+    const { dataUrl, tipo, funcionarioId, funcionarioNome, evento } = req.body || {};
+    if (!dataUrl || typeof dataUrl !== "string") return res.status(400).json({ erro: "dataUrl obrigatório" });
+    const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!m) return res.status(400).json({ erro: "dataUrl inválido" });
+    const mime = m[1]; const b64 = m[2];
+    const buf = Buffer.from(b64, "base64");
+    const ext = extPorMime(mime);
+    const nomeArq = `${req.params.id}_${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(COMPROVANTES_DIR, nomeArq), buf);
+    const url = `/comprovantes/${nomeArq}`;
+    addLog(req.params.id, evento || "comprovante_conferencia", funcionarioId, funcionarioNome, { tipo: tipo || (ext === "jpg" || ext === "png" || ext === "webp" ? "foto" : "video"), url, mime });
+    res.json({ ok: true, url });
+  } catch (e) { res.status(500).json({ erro: e.message }); }
+});
 app.get("/musica-fundo",(req,res)=>{
   const arq=path.join(__dirname,"musica-fundo.mp3");
   if(!fs.existsSync(arq)) return res.status(404).send("Música de fundo ainda não configurada");
