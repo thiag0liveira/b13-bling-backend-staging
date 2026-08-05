@@ -260,7 +260,12 @@ function b13ClearSession(){ try{ sessionStorage.removeItem("b13sess"); }catch(e)
 function b13Pode(acao){
   const f=b13GetSession(); if(!f) return false;
   const n=f.permissoes||[f.nivel];
+  return b13PodeComPermissoes(acao,n);
+}
+function b13PodeComPermissoes(acao,n){
+  n=n||[];
   if(n.includes("admin")) return true;
+  if(n.includes(acao)) return true; // permissão granular marcada diretamente pro funcionário
   const mapa={
     ver_aguardando:["financeiro_atacado","vendedor","gerente"],
     receber_pagamento:["financeiro_atacado"],
@@ -279,30 +284,34 @@ function b13Pode(acao){
 function b13RequireLogin(){ if(!b13GetSession()){ location.href="/login?next="+encodeURIComponent(location.pathname); return false; } return true; }
 function b13Logout(){ b13ClearSession(); location.href="/login"; }
 
+// Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
+// mostrar no cadastro de Funcionários quais abas cada permissão libera.
+const B13_NAV_LINKS=[
+  {href:"/operacional",label:"⚙️ Operacional",acoes:["ver_aguardando","ver_separacao","conferir"]},
+  {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["ver_aguardando","ver_separacao","conferir"]},
+  {href:"/caixa",label:"💳 Caixa",acoes:["receber_pagamento"]},
+  {href:"/caixa-diario",label:"📅 Relatório Diário",acoes:["receber_pagamento"]},
+  {href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["receber_pagamento"]},
+  {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["receber_pagamento","editar_pedido"]},
+  {href:"/propostas",label:"📄 Propostas",acoes:["receber_pagamento","editar_pedido"]},
+  {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["receber_pagamento","editar_pedido"]},
+  {href:"/lista-fardo",label:"📋 Lista de Fardo",acoes:["editar_pedido"]},
+  {href:"/etiquetas",label:"🏷 Etiquetas",acoes:["editar_pedido"]},
+  {href:"/listas-extras",label:"📂 Listas Extras",acoes:["editar_pedido"]},
+  {href:"/expedicao",label:"🚚 Expedição",acoes:["ver_separacao"]},
+  {href:"/conferencia",label:"🔍 Conferência",acoes:["conferir"]},
+  {href:"/dashboard",label:"📊 Dashboard",acoes:["ver_dashboard"]},
+  {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["ver_dashboard"]},
+  {href:"/gestao",label:"📋 Gestão",acoes:["editar_pedido"]},
+  {href:"/tabela",label:"🗂️ Tabela Atacado",acoes:["ver_listas"]},
+  {href:"/listas",label:"📄 Listas de Preço",acoes:["ver_listas"]},
+  {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
+  {href:"/imagens",label:"📷 Imagens",acoes:["admin"]},
+];
+
 function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
-  const links=[
-    {href:"/operacional",label:"⚙️ Operacional",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
-    {href:"/painel-pedidos",label:"📺 Painel de Pedidos",check:()=>b13Pode("ver_aguardando")||b13Pode("ver_separacao")||b13Pode("conferir")},
-    {href:"/caixa",label:"💳 Caixa",check:()=>b13Pode("receber_pagamento")},
-    {href:"/caixa-diario",label:"📅 Relatório Diário",check:()=>b13Pode("receber_pagamento")},
-    {href:"/frente-caixa",label:"🧾 Frente de Caixa",check:()=>b13Pode("receber_pagamento")},
-    {href:"/venda-atacado",label:"🛒 Venda Atacado",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
-    {href:"/propostas",label:"📄 Propostas",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
-    {href:"/vendedor",label:"🎯 Apoio ao Vendedor",check:()=>b13Pode("receber_pagamento")||b13Pode("editar_pedido")},
-    {href:"/lista-fardo",label:"📋 Lista de Fardo",check:()=>b13Pode("editar_pedido")},
-    {href:"/etiquetas",label:"🏷 Etiquetas",check:()=>b13Pode("editar_pedido")},
-    {href:"/listas-extras",label:"📂 Listas Extras",check:()=>b13Pode("editar_pedido")},
-    {href:"/expedicao",label:"🚚 Expedição",check:()=>b13Pode("ver_separacao")},
-    {href:"/conferencia",label:"🔍 Conferência",check:()=>b13Pode("conferir")},
-    {href:"/dashboard",label:"📊 Dashboard",check:()=>b13Pode("ver_dashboard")},
-    {href:"/perdas",label:"📉 Perdas (danif./não entregue)",check:()=>b13Pode("ver_dashboard")},
-    {href:"/gestao",label:"📋 Gestão",check:()=>b13Pode("editar_pedido")},
-    {href:"/tabela",label:"🗂️ Tabela Atacado",check:()=>b13Pode("ver_listas")},
-    {href:"/listas",label:"📄 Listas de Preço",check:()=>b13Pode("ver_listas")},
-    {href:"/funcionarios",label:"👥 Funcionários",check:()=>b13Pode("ver_funcionarios")},
-    {href:"/imagens",label:"📷 Imagens",check:()=>b13Pode("admin")},
-  ].filter(l=>l.check());
+  const links=B13_NAV_LINKS.filter(l=>l.acoes.some(a=>b13Pode(a)));
 
   return \`<div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s" id="b13nav">
     <div style="padding:14px 12px;border-bottom:1px solid rgba(255,0,130,.3)">
@@ -433,6 +442,20 @@ function criarSessao(f){
   salvarSessoes(sessoes);
   return token;
 }
+// Regra de senha forte: mínimo 6 caracteres, com maiúscula, minúscula e número
+function senhaForte(s){
+  return typeof s==="string" && s.length>=6 && /[a-z]/.test(s) && /[A-Z]/.test(s) && /[0-9]/.test(s);
+}
+// Middleware: exige apenas sessão válida (qualquer funcionário logado, não só admin)
+function requireSessao(req,res,next){
+  const token=req.headers["x-auth-token"];
+  if(!token) return res.status(401).json({erro:"Não autenticado — faça login novamente"});
+  const sessoes=lerSessoes();
+  const s=sessoes[token];
+  if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  req.sessao=s;
+  next();
+}
 // Middleware: exige token de sessão válido de um admin (ou de quem tem "admin" nas permissões)
 function requireAdmin(req,res,next){
   const token=req.headers["x-auth-token"];
@@ -448,11 +471,12 @@ function requireAdmin(req,res,next){
 // ---- FUNCIONÁRIOS ----
 app.get("/api/funcionarios",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
-  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao,vendedorBlingId:f.vendedorBlingId||null,vendedorBlingNome:f.vendedorBlingNome||""}))});
+  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao,precisaTrocarSenha:!!f.precisaTrocarSenha,vendedorBlingId:f.vendedorBlingId||null,vendedorBlingNome:f.vendedorBlingNome||""}))});
 });
 app.post("/api/funcionarios",requireAdmin,(req,res)=>{
-  const {nome,senha,nivel}=req.body||{};
-  if(!nome||!senha||!nivel) return res.status(400).json({erro:"nome, senha e nivel obrigatórios"});
+  const {nome,nivel}=req.body||{};
+  const senha=req.body.senha||"12345"; // senha padrão — o funcionário troca no primeiro acesso
+  if(!nome||!nivel) return res.status(400).json({erro:"nome e nivel obrigatórios"});
   const funcs=lerJSON(FUNC_FILE,{});
   const id="f"+Date.now()+crypto.randomBytes(4).toString("hex");
   // verificar login duplicado
@@ -465,9 +489,10 @@ app.post("/api/funcionarios",requireAdmin,(req,res)=>{
     codigoConfirmacao=letras[Math.floor(Math.random()*letras.length)]+String(Math.floor(Math.random()*100)).padStart(2,"0");
   }while(Object.values(funcs).some(f=>f.codigoConfirmacao===codigoConfirmacao));
   funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now(),
+    precisaTrocarSenha:true, // sempre pede pra trocar a senha padrão no primeiro acesso
     codigoConfirmacao,pinConfirmacao:req.body.pinConfirmacao||"",
     vendedorBlingId:req.body.vendedorBlingId?Number(req.body.vendedorBlingId):null,vendedorBlingNome:req.body.vendedorBlingNome||""};
-  salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id,codigoConfirmacao});
+  salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id,codigoConfirmacao,senhaPadrao:senha});
 });
 app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); const f=funcs[req.params.id];
@@ -481,7 +506,8 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   if(req.body.nivel) f.nivel=req.body.nivel;
   if(req.body.permissoes) f.permissoes=req.body.permissoes;
   if(typeof req.body.ativo==="boolean") f.ativo=req.body.ativo;
-  if(req.body.senha) f.senhaHash=hashSenha(req.body.senha);
+  if(req.body.senha) { f.senhaHash=hashSenha(req.body.senha); f.precisaTrocarSenha=true; } // reset manual de senha pelo admin também força troca
+  if(req.body.resetarSenhaPadrao){ f.senhaHash=hashSenha("12345"); f.precisaTrocarSenha=true; }
   if(req.body.pinConfirmacao!==undefined) f.pinConfirmacao=req.body.pinConfirmacao;
   if(req.body.codigoConfirmacao!==undefined) f.codigoConfirmacao=req.body.codigoConfirmacao.toUpperCase();
   if(req.body.vendedorBlingId!==undefined) f.vendedorBlingId=req.body.vendedorBlingId?Number(req.body.vendedorBlingId):null;
@@ -542,7 +568,23 @@ app.post("/api/funcionarios/login",(req,res)=>{
   // migra sozinho pro hash forte (scrypt) se ainda estava no formato antigo
   if(!f.senhaHash.includes(":")){ f.senhaHash=hashSenha(senha); salvarJSON(FUNC_FILE,funcs); }
   const token=criarSessao(f);
-  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],token}});
+  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],precisaTrocarSenha:!!f.precisaTrocarSenha,token}});
+});
+
+// troca de senha pelo próprio funcionário logado — usada tanto no fluxo
+// obrigatório do primeiro acesso quanto numa troca voluntária futura
+app.post("/api/funcionarios/trocar-senha",requireSessao,(req,res)=>{
+  const {senhaAtual,novaSenha}=req.body||{};
+  if(!senhaAtual||!novaSenha) return res.status(400).json({erro:"Informe a senha atual e a nova senha"});
+  if(!senhaForte(novaSenha)) return res.status(400).json({erro:"A nova senha precisa ter pelo menos 6 caracteres, com letra maiúscula, minúscula e número."});
+  const funcs=lerJSON(FUNC_FILE,{});
+  const f=funcs[req.sessao.funcionarioId];
+  if(!f) return res.status(404).json({erro:"Funcionário não encontrado"});
+  if(!verificarSenha(senhaAtual,f.senhaHash)) return res.status(401).json({erro:"Senha atual incorreta"});
+  f.senhaHash=hashSenha(novaSenha);
+  f.precisaTrocarSenha=false;
+  salvarJSON(FUNC_FILE,funcs);
+  res.json({ok:true});
 });
 
 // ---- LOCKS DE PEDIDO (quem está com o pedido) ----

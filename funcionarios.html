@@ -100,7 +100,8 @@ function render(){
       <div style="font-size:28px">${f.nivel==='admin'?'👑':f.nivel==='gerente'?'🧑‍💼':'🔧'}</div>
       <div class="info">
         <div class="nome">${esc(f.nome)} <span class="badge badge-${f.nivel}">${esc(NIVEIS[f.nivel]||f.nivel)}</span>
-          ${!f.ativo?'<span class="badge" style="background:#3a2030;color:#ff9db0">Inativo</span>':''}</div>
+          ${!f.ativo?'<span class="badge" style="background:#3a2030;color:#ff9db0">Inativo</span>':''}
+          ${f.precisaTrocarSenha?'<span class="badge" style="background:#3a2a00;color:#ffd23f">🔑 Precisa trocar senha</span>':''}</div>
         <div class="nivel">${f.login?`Login: <b>${esc(f.login)}</b> · `:""}ID: ${esc(f.id)}</div>
       </div>
       <button class="btn btn-ghost" onclick="abrirEditar('${f.id}')">✏️ Editar</button>
@@ -135,24 +136,54 @@ function login(){ location.href="/login?next=/funcionarios"; }
 function sair(){ logado=false; if(typeof b13ClearSession==="function") b13ClearSession(); render(); }
 function fecharModal(){ document.getElementById("modal").style.display="none"; }
 
+// Lista de permissões granulares que existem no sistema
+const PERMS_DISPONIVEIS=[
+  {v:"ver_aguardando",lbl:"Ver pedidos aguardando"},
+  {v:"receber_pagamento",lbl:"Receber pagamento"},
+  {v:"enviar_separacao",lbl:"Enviar para separação"},
+  {v:"ver_separacao",lbl:"Ver fila de separação"},
+  {v:"ver_pend",lbl:"Ver pendências"},
+  {v:"ver_separado",lbl:"Ver separados"},
+  {v:"conferir",lbl:"Conferir pedidos"},
+  {v:"editar_pedido",lbl:"Editar pedidos"},
+  {v:"ver_dashboard",lbl:"Ver Dashboard / Perdas"},
+  {v:"ver_listas",lbl:"Ver Tabela Atacado / Listas de Preço"},
+  {v:"ver_funcionarios",lbl:"Gerenciar Funcionários"},
+  {v:"admin",lbl:"Admin (acesso total a tudo)"},
+];
+// bloco de checkboxes de permissão + pré-visualização de quais abas cada combinação libera
+function htmlPermsBlock(checked){
+  checked=checked||[];
+  const chk=v=>checked.includes(v)?"checked":"";
+  return `<div class="lbl">Permissões</div>
+    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px" onchange="atualizarPreviewAbas()">
+      ${PERMS_DISPONIVEIS.map(p=>`<label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="${p.v}" ${chk(p.v)}> ${esc(p.lbl)}</label>`).join("")}
+    </div>
+    <div class="lbl">📱 Abas que esse funcionário vai poder acessar</div>
+    <div id="previewAbas" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:12px"></div>`;
+}
+// recalcula ao vivo, usando a MESMA lógica de permissão do resto do sistema
+// (B13_NAV_LINKS e b13PodeComPermissoes vêm do /nav.js, já carregado nesta página)
+function atualizarPreviewAbas(){
+  const box=document.getElementById("previewAbas"); if(!box) return;
+  const marcadas=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
+  const linhas=(window.B13_NAV_LINKS||[]).map(l=>{
+    const liberado=l.acoes.some(a=>b13PodeComPermissoes(a,marcadas));
+    return `<div style="display:flex;justify-content:space-between;padding:3px 0">
+      <span>${esc(l.label)}</span><span style="font-weight:700;color:${liberado?'#3ce88a':'#ff8090'}">${liberado?'✅ Libera':'🚫 Bloqueado'}</span>
+    </div>`;
+  }).join("");
+  box.innerHTML=linhas||'<div class="muted">—</div>';
+}
+
 function abrirNovo(){
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`<h3>Novo Funcionário</h3>
     <div class="lbl">Nome</div><input id="fNome" placeholder="Nome completo">
     <div class="lbl">Login (usuário de acesso)</div><input id="fLogin" placeholder="Ex.: joao.silva">
-    <div class="lbl">Senha</div><input id="fSenha" type="password" placeholder="Senha de acesso">
-    <div class="lbl">Permissões</div>
-    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_aguardando"> Ver pedidos aguardando</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="receber_pagamento"> Receber pagamento</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="enviar_separacao"> Enviar para separação</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separacao"> Ver fila de separação</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_pend"> Ver pendências</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separado"> Ver separados</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="conferir"> Conferir pedidos</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="editar_pedido"> Editar pedidos</label>
-      <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" value="admin"> Admin (tudo)</label>
-    </div>
+    <div class="lbl">Senha inicial</div><input id="fSenha" type="password" value="12345">
+    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Senha padrão sugerida: <b>12345</b>. O funcionário será obrigado a criar uma senha própria (maiúscula, minúscula e número) no primeiro acesso.</div>
+    ${htmlPermsBlock([])}
     <div class="lbl">Nível (referência)</div>
     <select id="fNivel">
       <option value="expedicao">Expedição</option>
@@ -170,6 +201,7 @@ function abrirNovo(){
       <button class="btn btn-mag" style="flex:1" onclick="salvarNovo()">💾 Salvar</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Cancelar</button>
     </div>`;
+  atualizarPreviewAbas();
 }
 
 // gera o bloco de busca/seleção de vendedor Bling, reaproveitado no criar e no editar
@@ -216,24 +248,16 @@ async function buscarVendedor(){
 function abrirEditar(id){
   const f=funcs.find(x=>x.id===id); if(!f) return;
   const perms=f.permissoes||[f.nivel];
-  const chk=(v)=>perms.includes(v)?'checked':'';
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`<h3>Editar — ${esc(f.nome)}</h3>
     <div class="lbl">Nome</div><input id="fNome" value="${esc(f.nome)}">
     <div class="lbl">Login</div><input id="fLogin" value="${esc(f.login||f.id)}">
     <div class="lbl">Nova senha (deixe em branco pra manter)</div><input id="fSenha" type="password" placeholder="Nova senha (opcional)">
-    <div class="lbl">Permissões</div>
-    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_aguardando" ${chk('ver_aguardando')}> Ver pedidos aguardando</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="receber_pagamento" ${chk('receber_pagamento')}> Receber pagamento</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="enviar_separacao" ${chk('enviar_separacao')}> Enviar para separação</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separacao" ${chk('ver_separacao')}> Ver fila de separação</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_pend" ${chk('ver_pend')}> Ver pendências</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="ver_separado" ${chk('ver_separado')}> Ver separados</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="conferir" ${chk('conferir')}> Conferir pedidos</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="editar_pedido" ${chk('editar_pedido')}> Editar pedidos</label>
-      <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" value="admin" ${chk('admin')}> Admin (tudo)</label>
+    <div style="margin:-6px 0 10px">
+      <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="resetarSenhaPadrao('${id}')">🔄 Resetar p/ senha padrão (12345)</button>
+      ${f.precisaTrocarSenha?'<span class="badge" style="background:#3a2a00;color:#ffd23f;margin-left:6px">🔑 Aguardando troca no próximo login</span>':''}
     </div>
+    ${htmlPermsBlock(perms)}
     <div class="lbl">Nível (referência)</div>
     <select id="fNivel">
       <option value="expedicao" ${f.nivel==='expedicao'?'selected':''}>Expedição</option>
@@ -264,6 +288,17 @@ function abrirEditar(id){
       <button class="btn btn-mag" style="flex:1" onclick="salvarEditar('${id}')">💾 Salvar</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Cancelar</button>
     </div>`;
+  atualizarPreviewAbas();
+}
+
+async function resetarSenhaPadrao(id){
+  if(!confirm("Resetar a senha desse funcionário pra padrão (12345)? Ele vai precisar trocar no próximo login.")) return;
+  try{
+    const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({resetarSenhaPadrao:true})});
+    const j=await r.json();
+    if(r.ok&&j.ok){ alert("✅ Senha resetada para 12345."); await carregar(); abrirEditar(id); }
+    else alert(j.erro||"Erro ao resetar senha");
+  }catch(e){ alert("Erro de conexão"); }
 }
 
 async function salvarNovo(){

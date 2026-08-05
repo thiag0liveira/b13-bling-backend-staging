@@ -37,6 +37,21 @@ h1{font-size:22px;font-weight:900;margin-bottom:4px}
   <div class="div-or">ou</div>
   <a href="/pedir" class="link-totem">🛒 Ir para o Totem de Pedidos</a>
 </div>
+<div class="box" id="boxTrocarSenha" style="display:none;max-width:420px">
+  <div style="font-size:40px;margin-bottom:8px">🔑</div>
+  <h1>Crie uma nova senha</h1>
+  <div class="sub">Essa é sua primeira vez entrando (ou sua senha foi redefinida). Escolha uma senha nova antes de continuar.</div>
+  <div class="field"><label>Nova senha</label><input id="novaSenhaInp" type="password" placeholder="Nova senha" autocomplete="new-password" oninput="validarSenhaVisual()"></div>
+  <div class="field"><label>Confirmar nova senha</label><input id="confSenhaInp" type="password" placeholder="Repita a nova senha" autocomplete="new-password" onkeydown="if(event.key==='Enter')trocarSenha()"></div>
+  <div id="regrasSenha" style="text-align:left;font-size:12px;color:#9a95c9;margin-bottom:10px;line-height:1.7">
+    <div id="regraLen">○ Pelo menos 6 caracteres</div>
+    <div id="regraMai">○ Uma letra maiúscula</div>
+    <div id="regraMin">○ Uma letra minúscula</div>
+    <div id="regraNum">○ Um número</div>
+  </div>
+  <button class="btn" id="btnTrocar" onclick="trocarSenha()">Salvar nova senha e entrar</button>
+  <div id="errMsgTroca"></div>
+</div>
 <script>
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
@@ -55,6 +70,9 @@ function irPara(f){
   location.href="/operacional";
 }
 
+let _senhaAtualDigitada="";
+let _funcPendente=null;
+
 async function entrar(){
   const login=document.getElementById("loginInp").value.trim();
   const senha=document.getElementById("senhaInp").value;
@@ -67,6 +85,13 @@ async function entrar(){
     const j=await r.json();
     if(r.ok&&j.ok){
       sessionStorage.setItem("b13sess",JSON.stringify(j.funcionario));
+      if(j.funcionario.precisaTrocarSenha){
+        _senhaAtualDigitada=senha; _funcPendente=j.funcionario;
+        document.querySelector(".box").style.display="none";
+        document.getElementById("boxTrocarSenha").style.display="block";
+        document.getElementById("novaSenhaInp").focus();
+        return;
+      }
       irPara(j.funcionario);
     } else {
       err.innerHTML=`<div class="err">❌ ${j.erro||"Login ou senha incorretos"}</div>`;
@@ -75,6 +100,38 @@ async function entrar(){
       document.getElementById("senhaInp").focus();
     }
   }catch(e){ err.innerHTML=`<div class="err">Erro de conexão</div>`; btn.disabled=false; btn.textContent="Entrar"; }
+}
+
+function validarSenhaVisual(){
+  const v=document.getElementById("novaSenhaInp").value;
+  const marca=(id,ok)=>{ const el=document.getElementById(id); el.style.color=ok?"#3ce88a":"#9a95c9"; el.textContent=(ok?"✓":"○")+el.textContent.slice(1); };
+  marca("regraLen",v.length>=6);
+  marca("regraMai",/[A-Z]/.test(v));
+  marca("regraMin",/[a-z]/.test(v));
+  marca("regraNum",/[0-9]/.test(v));
+}
+
+async function trocarSenha(){
+  const nova=document.getElementById("novaSenhaInp").value;
+  const conf=document.getElementById("confSenhaInp").value;
+  const err=document.getElementById("errMsgTroca");
+  const btn=document.getElementById("btnTrocar");
+  const forte=nova.length>=6&&/[A-Z]/.test(nova)&&/[a-z]/.test(nova)&&/[0-9]/.test(nova);
+  if(!forte){ err.innerHTML=`<div class="err">A senha precisa ter 6+ caracteres, maiúscula, minúscula e número.</div>`; return; }
+  if(nova!==conf){ err.innerHTML=`<div class="err">As senhas não conferem.</div>`; return; }
+  btn.disabled=true; btn.textContent="Salvando…"; err.innerHTML="";
+  try{
+    const r=await fetch(B+"/api/funcionarios/trocar-senha",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":_funcPendente?.token||""},body:JSON.stringify({senhaAtual:_senhaAtualDigitada,novaSenha:nova})});
+    const j=await r.json();
+    if(r.ok&&j.ok){
+      const f={..._funcPendente,precisaTrocarSenha:false};
+      sessionStorage.setItem("b13sess",JSON.stringify(f));
+      irPara(f);
+    }else{
+      err.innerHTML=`<div class="err">${j.erro||"Erro ao trocar senha"}</div>`;
+      btn.disabled=false; btn.textContent="Salvar nova senha e entrar";
+    }
+  }catch(e){ err.innerHTML=`<div class="err">Erro de conexão</div>`; btn.disabled=false; btn.textContent="Salvar nova senha e entrar"; }
 }
 document.getElementById("loginInp").focus();
 </script>
