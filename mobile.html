@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>B13 Mobile — Conferência</title>
+<style>
+  /* CSS simples, compatível com navegadores antigos (Chrome 79) */
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #0f0d24; color: #fff; font-size: 16px; }
+  .top { background: #262366; border-bottom: 3px solid #FF0082; padding: 12px 14px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 10; }
+  .top .logo { font-weight: 900; font-size: 18px; }
+  .top .logo span { color: #FF0082; }
+  .top .sp { flex: 1; }
+  .wrap { padding: 14px; }
+  .card { background: #151233; border: 1px solid #2c2660; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .btn { display: block; width: 100%; border: none; border-radius: 10px; font-weight: 800; font-size: 17px; padding: 15px; color: #fff; cursor: pointer; margin-top: 8px; text-align: center; }
+  .btn-mag { background: #FF0082; }
+  .btn-grn { background: #16a34a; }
+  .btn-ghost { background: #1c1846; border: 1px solid #2c2660; }
+  .btn-out { background: transparent; border: 2px solid #514c96; }
+  .muted { color: #9a95c9; font-size: 13px; }
+  .lbl { color: #9a95c9; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+  input { width: 100%; padding: 14px; border-radius: 10px; border: 2px solid #514c96; background: #0f0d24; color: #fff; font-size: 18px; }
+  .big-num { font-size: 26px; font-weight: 900; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 6px; }
+  .tag-ok { background: #0f3a24; color: #3ce88a; }
+  .tag-wait { background: #3a2a00; color: #ffd23f; }
+  .tag-pend { background: #3a0010; color: #ff8090; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #23204f; }
+  .item:last-child { border-bottom: none; }
+  .item .qt { background: #262366; border-radius: 8px; padding: 6px 10px; font-weight: 900; font-size: 18px; min-width: 46px; text-align: center; }
+  .item .nm { flex: 1; font-size: 15px; font-weight: 600; }
+  .item.done { opacity: .5; }
+  .item.done .nm { text-decoration: line-through; }
+  .chk { width: 34px; height: 34px; border-radius: 8px; border: 2px solid #514c96; background: #0f0d24; color: #3ce88a; font-size: 20px; font-weight: 900; cursor: pointer; flex-shrink: 0; }
+  .chk.on { background: #16a34a; border-color: #16a34a; color: #fff; }
+  .row { display: flex; gap: 8px; }
+  .row .col { flex: 1; }
+  .err { color: #ff8090; }
+  .ok { color: #3ce88a; }
+  .center { text-align: center; }
+  .mt { margin-top: 10px; }
+  .divider { height: 1px; background: #2c2660; margin: 12px 0; }
+  h2 { font-size: 20px; margin-bottom: 4px; }
+  .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid #2c2660; border-top-color: #FF0082; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #reader { width: 100%; border-radius: 12px; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="logo">B<span>13</span> Mobile</div>
+  <div class="sp"></div>
+  <div id="funcNome" class="muted"></div>
+</div>
+<div class="wrap" id="app"></div>
+
+<!-- Biblioteca de leitura de QR (html5-qrcode) - carregada só quando precisa -->
+<script>
+/* ================= B13 MOBILE — CONFERENCIA =================
+   Escrito em JS compativel com Chrome 79 (sem ?. sem ?? sem features novas).
+*/
+var BACKEND = (location.protocol.indexOf("http") === 0) ? "" : "https://b13-bling-backend-production.up.railway.app";
+
+/* --- Situacoes (status) do Bling --- */
+var SIT = {
+  AGUARDANDO: 818795, EM_SEP: 817963, SEPARADO: 821590, SEP_PEND: 819227,
+  CONF_ENTREGA: 821611, VERIFICADO: 24, EM_ROTA: 820085, ATENDIDO: 9, CANCELADO: 12
+};
+var SIT_NOME = {};
+SIT_NOME[818795] = "Aguardando"; SIT_NOME[817963] = "Em separação"; SIT_NOME[821590] = "Separado";
+SIT_NOME[819227] = "Separado c/ pendência"; SIT_NOME[821611] = "Conferir entrega"; SIT_NOME[24] = "Verificado";
+SIT_NOME[820085] = "Em rota"; SIT_NOME[9] = "Atendido"; SIT_NOME[12] = "Cancelado"; SIT_NOME[21] = "Em digitação"; SIT_NOME[6] = "Em aberto";
+
+/* --- Estado --- */
+var FUNC = null;
+var TELA = "inicio"; // inicio | scan | pedido
+var PEDIDO = null;
+var ITENS = [];
+var carregando = false;
+
+/* --- Utils compativeis --- */
+function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function brl(n) { var v = Number(n) || 0; return "R$ " + v.toFixed(2).replace(".", ","); }
+function el(id) { return document.getElementById(id); }
+function getSit(p) { return p && p.situacao && p.situacao.id ? Number(p.situacao.id) : 0; }
+
+/* --- Login simples: reusa a sessao do sistema se existir --- */
+function carregarFunc() {
+  try {
+    var s = sessionStorage.getItem("b13sess");
+    if (s) { var f = JSON.parse(s); if (f && f.id) { FUNC = f; return true; } }
+  } catch (e) {}
+  try {
+    var l = localStorage.getItem("b13sess");
+    if (l) { var f2 = JSON.parse(l); if (f2 && f2.id) { FUNC = f2; return true; } }
+  } catch (e) {}
+  return false;
+}
+
+/* ================= RENDER ================= */
+function render() {
+  if (FUNC && el("funcNome")) el("funcNome").textContent = FUNC.nome || "";
+  var app = el("app");
+  if (!FUNC) { app.innerHTML = viewLogin(); return; }
+  if (TELA === "inicio") { app.innerHTML = viewInicio(); return; }
+  if (TELA === "pedido") { app.innerHTML = viewPedido(); return; }
+  app.innerHTML = viewInicio();
+}
+
+/* --- LOGIN --- */
+function viewLogin() {
+  return '<div class="card">' +
+    '<h2>Entrar</h2>' +
+    '<div class="muted mt">Acesso à conferência mobile.</div>' +
+    '<div class="mt"><div class="lbl">Login</div><input id="inLogin" autocapitalize="off" autocomplete="off"></div>' +
+    '<div class="mt"><div class="lbl">Senha</div><input id="inSenha" type="password" autocomplete="off"></div>' +
+    '<button class="btn btn-mag" onclick="fazerLogin()">Entrar</button>' +
+    '<div id="loginMsg" class="mt center err"></div>' +
+    '</div>';
+}
+function fazerLogin() {
+  var login = el("inLogin").value.trim();
+  var senha = el("inSenha").value;
+  if (!login || !senha) { el("loginMsg").textContent = "Preencha login e senha."; return; }
+  el("loginMsg").innerHTML = '<span class="spinner"></span>';
+  fetch(BACKEND + "/api/funcionarios/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: login, senha: senha })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    var f = (j && j.funcionario) ? j.funcionario : j;
+    if (f && f.id) {
+      FUNC = f;
+      try { sessionStorage.setItem("b13sess", JSON.stringify(f)); } catch (e) {}
+      TELA = "inicio"; render();
+    } else {
+      el("loginMsg").textContent = (j && j.erro) ? j.erro : "Login ou senha inválidos.";
+    }
+  }).catch(function () { el("loginMsg").textContent = "Erro de conexão."; });
+}
+
+/* --- INICIO: buscar pedido por numero ou escanear --- */
+function viewInicio() {
+  return '<div class="card center">' +
+    '<h2>Conferência</h2>' +
+    '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' +
+    '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' +
+    '<div class="divider"></div>' +
+    '<div class="lbl">Ou digite o número/ID do pedido</div>' +
+    '<div class="row mt">' +
+      '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724"></div>' +
+    '</div>' +
+    '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' +
+    '</div>' +
+    '<div id="scanBox"></div>';
+}
+function buscarDigitado() {
+  var v = el("inPedido").value.trim();
+  if (!v) return;
+  abrirPedido(v);
+}
+
+/* --- SCANNER de QR --- */
+var _scanner = null;
+function abrirScanner() {
+  var box = el("scanBox");
+  box.innerHTML = '<div class="card"><div id="reader"></div>' +
+    '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button>' +
+    '<div class="muted center mt">Aponte para o QR code da nota.</div></div>';
+  // carrega a lib de QR sob demanda
+  if (window.Html5Qrcode) { iniciarScanner(); return; }
+  var s = document.createElement("script");
+  s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+  s.onload = iniciarScanner;
+  s.onerror = function () { box.innerHTML = '<div class="card err">Não consegui carregar o leitor. Verifique a internet.</div>'; };
+  document.body.appendChild(s);
+}
+function iniciarScanner() {
+  try {
+    _scanner = new Html5Qrcode("reader");
+    _scanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      function (texto) { onQrLido(texto); },
+      function () {}
+    ).catch(function (e) {
+      el("scanBox").innerHTML = '<div class="card err">Não consegui abrir a câmera: ' + esc(e && e.message ? e.message : e) + '<br><br>Use o campo de digitar o número.</div>';
+    });
+  } catch (e) {
+    el("scanBox").innerHTML = '<div class="card err">Leitor não suportado neste aparelho. Use o campo de digitar o número.</div>';
+  }
+}
+function fecharScanner() {
+  pararScanner();
+  el("scanBox").innerHTML = "";
+}
+function pararScanner() {
+  if (_scanner) {
+    try { _scanner.stop().then(function () { try { _scanner.clear(); } catch (e) {} }); } catch (e) {}
+    _scanner = null;
+  }
+}
+function onQrLido(texto) {
+  pararScanner();
+  el("scanBox").innerHTML = "";
+  // o QR pode ser uma URL tipo .../conferencia?pedido=ID ou .../pedido/ID/... ou só o ID
+  var id = extrairIdDoQr(texto);
+  if (id) abrirPedido(id);
+  else { el("scanBox").innerHTML = '<div class="card err">QR não reconhecido: ' + esc(texto) + '</div>'; }
+}
+function extrairIdDoQr(texto) {
+  if (!texto) return null;
+  texto = String(texto).trim();
+  // tenta achar ?pedido=NUM
+  var m = texto.match(/[?&]pedido=(\d+)/);
+  if (m) return m[1];
+  // tenta achar /pedido/NUM
+  m = texto.match(/\/pedido[s]?\/(\d+)/);
+  if (m) return m[1];
+  // tenta achar qualquer sequencia longa de numeros (id do bling)
+  m = texto.match(/(\d{5,})/);
+  if (m) return m[1];
+  return null;
+}
+
+/* --- ABRIR PEDIDO --- */
+function abrirPedido(id) {
+  TELA = "pedido"; PEDIDO = null; ITENS = []; carregando = true;
+  render();
+  el("app").innerHTML = '<div class="card center"><span class="spinner"></span><div class="mt muted">Carregando pedido…</div></div>';
+
+  var idStr = String(id);
+  var got = { ped: null, pend: null, pag: null };
+
+  fetch(BACKEND + "/api/pedidos/" + idStr).then(function (r) { return r.json(); }).then(function (jPed) {
+    got.ped = (jPed && jPed.data) ? jPed.data : jPed;
+    return fetch(BACKEND + "/api/pendencias/" + idStr).then(function (r) { return r.json(); }).then(function (jp) {
+      got.pend = jp && jp.data ? jp.data : null;
+    }).catch(function () {});
+  }).then(function () {
+    return fetch(BACKEND + "/api/pagamentos/" + idStr).then(function (r) { return r.json(); }).then(function (jpg) {
+      got.pag = jpg && jpg.data ? jpg.data : null;
+    }).catch(function () {});
+  }).then(function () {
+    if (!got.ped || (!got.ped.id && !got.ped.numero)) {
+      el("app").innerHTML = '<div class="card err">Pedido não encontrado.<br><br><button class="btn btn-ghost" onclick="voltarInicio()">← Voltar</button></div>';
+      carregando = false; return;
+    }
+    PEDIDO = got.ped;
+    PEDIDO._pag = got.pag;
+    PEDIDO._pago = !!(got.pag && got.pag.statusPagamento === "pago");
+    var faltas = (got.pend && got.pend.faltas) ? got.pend.faltas : [];
+    var itensPed = PEDIDO.itens || [];
+    ITENS = [];
+    for (var i = 0; i < itensPed.length; i++) {
+      var it = itensPed[i];
+      var desc = it.descricao || (it.produto && it.produto.nome) || "";
+      var teveFalta = false, faltaQtd = 0;
+      for (var f = 0; f < faltas.length; f++) {
+        if (faltas[f].descricao === desc) { teveFalta = true; faltaQtd = faltas[f].falta || 0; break; }
+      }
+      ITENS.push({
+        descricao: desc,
+        quantidade: it.quantidade,
+        valor: it.valor,
+        confirmado: false,
+        teveFalta: teveFalta,
+        faltaQtd: faltaQtd
+      });
+    }
+    carregando = false;
+    render();
+    // registra abertura (nao bloqueia)
+    fetch(BACKEND + "/api/log/" + idStr, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evento: "pedido_aberto_conferencia_mobile", funcionarioId: FUNC.id, funcionarioNome: FUNC.nome })
+    }).catch(function () {});
+  }).catch(function (e) {
+    el("app").innerHTML = '<div class="card err">Erro ao carregar: ' + esc(e && e.message ? e.message : e) + '<br><br><button class="btn btn-ghost" onclick="voltarInicio()">← Voltar</button></div>';
+    carregando = false;
+  });
+}
+
+/* --- VIEW DO PEDIDO --- */
+function viewPedido() {
+  if (!PEDIDO) return '<div class="card">Carregando…</div>';
+  var p = PEDIDO;
+  var sit = getSit(p);
+  var sitNome = SIT_NOME[sit] || ("Status " + sit);
+  var cliente = (p.contato && p.contato.nome) ? p.contato.nome : "—";
+  var numero = p.numero || p.id;
+  var tipoEntrega = "";
+  var frete = Number(((p.total || 0) - (p.totalProdutos || 0)));
+  tipoEntrega = frete > 0.01 ? "🛵 Entrega" : "🏪 Retirada";
+
+  // tag de status colorida
+  var tagClasse = "tag-wait";
+  if (sit === SIT.ATENDIDO || sit === SIT.VERIFICADO) tagClasse = "tag-ok";
+  else if (sit === SIT.SEP_PEND) tagClasse = "tag-pend";
+
+  var h = "";
+  h += '<div class="card">';
+  h += '<div class="row"><div class="col"><h2>Pedido ' + esc(numero) + '</h2></div>';
+  h += '<button class="btn-out" style="width:auto;padding:8px 12px;border-radius:8px;color:#fff;font-weight:700" onclick="voltarInicio()">← Voltar</button></div>';
+  h += '<div class="mt"><span class="tag ' + tagClasse + '">' + esc(sitNome) + '</span></div>';
+  h += '<div class="mt"><div class="lbl">Cliente</div><div style="font-size:17px;font-weight:700">' + esc(cliente) + '</div></div>';
+  h += '<div class="row mt">';
+  h += '<div class="col"><div class="lbl">Entrega</div><div>' + tipoEntrega + '</div></div>';
+  h += '<div class="col"><div class="lbl">Total</div><div class="big-num" style="font-size:20px;color:#ffd23f">' + brl(p.total) + '</div></div>';
+  h += '</div>';
+  // pagamento
+  h += '<div class="mt"><div class="lbl">Pagamento</div>';
+  if (p._pago) h += '<span class="tag tag-ok">✓ Pago</span>';
+  else h += '<span class="tag tag-pend">Não consta pagamento</span>';
+  h += '</div>';
+  h += '</div>';
+
+  // pendências (se separado com pendência)
+  var temFalta = false;
+  for (var i = 0; i < ITENS.length; i++) { if (ITENS[i].teveFalta) { temFalta = true; break; } }
+  if (temFalta) {
+    h += '<div class="card" style="border-color:#5a2030">';
+    h += '<div style="font-weight:800;color:#ff8090">⚠️ Itens com pendência anterior</div>';
+    for (var j = 0; j < ITENS.length; j++) {
+      if (ITENS[j].teveFalta) {
+        h += '<div class="muted mt">• ' + esc(ITENS[j].descricao) + ' — faltou ' + ITENS[j].faltaQtd + '</div>';
+      }
+    }
+    h += '</div>';
+  }
+
+  // lista de itens pra conferir
+  h += '<div class="card">';
+  h += '<div style="font-weight:800;margin-bottom:6px">Itens para conferir</div>';
+  var confCount = 0;
+  for (var k = 0; k < ITENS.length; k++) {
+    var it = ITENS[k];
+    if (it.confirmado) confCount++;
+    h += '<div class="item ' + (it.confirmado ? "done" : "") + '">';
+    h += '<div class="qt">' + it.quantidade + '</div>';
+    h += '<div class="nm">' + esc(it.descricao) + (it.teveFalta ? ' <span class="tag tag-pend" style="font-size:10px">PEND</span>' : '') + '</div>';
+    h += '<button class="chk ' + (it.confirmado ? "on" : "") + '" onclick="toggleItem(' + k + ')">' + (it.confirmado ? "✓" : "") + '</button>';
+    h += '</div>';
+  }
+  h += '<div class="muted mt center">' + confCount + ' de ' + ITENS.length + ' conferidos</div>';
+  h += '</div>';
+
+  // botão de conferir (só habilita se for status que permite)
+  var podeConferir = (sit === SIT.SEPARADO || sit === SIT.SEP_PEND);
+  if (podeConferir) {
+    var todos = (confCount === ITENS.length && ITENS.length > 0);
+    h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="confirmarConferencia()">' +
+      (todos ? "✓ Confirmar conferência" : "Confirmar mesmo com itens não marcados") + '</button>';
+  } else {
+    h += '<div class="card muted center">Este pedido está como "' + esc(sitNome) + '" — a conferência é feita quando está "Separado".</div>';
+  }
+  h += '<div id="confMsg" class="mt center"></div>';
+  return h;
+}
+
+function toggleItem(ix) {
+  if (ITENS[ix]) { ITENS[ix].confirmado = !ITENS[ix].confirmado; render(); }
+}
+
+function confirmarConferencia() {
+  if (!PEDIDO) return;
+  var id = String(PEDIDO.id);
+  var frete = Number(((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0)));
+  var tipoEntrega = frete > 0.01 ? "entrega" : "retirada";
+  el("confMsg").innerHTML = '<span class="spinner"></span> Finalizando…';
+  fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, tipoEntrega: tipoEntrega })
+  }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (res) {
+      if (res.ok && !res.j.erro) {
+        el("confMsg").innerHTML = '<span class="ok">✓ Conferência registrada!</span>';
+        setTimeout(function () { voltarInicio(); }, 1200);
+      } else {
+        el("confMsg").innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
+      }
+    }).catch(function () {
+      el("confMsg").innerHTML = '<span class="err">Erro de conexão</span>';
+    });
+}
+
+function voltarInicio() {
+  pararScanner();
+  TELA = "inicio"; PEDIDO = null; ITENS = [];
+  render();
+}
+
+/* --- INICIO --- */
+carregarFunc();
+render();
+</script>
+</body>
+</html>
