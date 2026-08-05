@@ -3342,6 +3342,11 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       const pago=valorPago>=total-0.01&&valorPago>0;
       const parcial=!pago && valorPago>0; // pagou algo, mas não cobre o total
       const falta=+(total-valorPago).toFixed(2);
+      // pagou a MAIS que o total (comum quando uma pendência é resolvida removendo
+      // itens do pedido depois que ele já tinha sido pago no valor cheio) — precisa
+      // de estorno pro cliente, mesmo contando como "pago" pra fins de fechamento
+      const excedente=+(valorPago-total).toFixed(2);
+      const precisaEstorno=excedente>0.01;
       if(pago) totalPago+=total; else totalNaoPago+=total;
       // pedido não pago do totem que ainda está com a parcela "Ficha Financeira"
       // (placeholder que o Bling exige na criação, sem nenhum pagamento real ainda)
@@ -3380,7 +3385,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
 
       pedidosDetalhados.push({
         numero:pRaw.numero, id:pRaw.id, data:pRaw.data, cliente:clienteNome, situacao:sitNome,
-        vendedor:vendedorNome, total, valorPago, pago, parcial, falta, doBling, fichaFinanceira,
+        vendedor:vendedorNome, total, valorPago, pago, parcial, falta, precisaEstorno, excedente, doBling, fichaFinanceira,
         formasPagamento:formas.map(h=>({nome:h.formaNome,valor:+(Number(h.valor)||0).toFixed(2),vencimento:h.aPrazo&&h.vencimento?h.vencimento.split('-').reverse().join('/'):''})),
         formasPrevisto:(previsto||[]).map(p=>({nome:p.formaNome,valor:+(Number(p.valor)||0).toFixed(2),vencimento:p.vencimento?p.vencimento.split('-').reverse().join('/'):''})),
       });
@@ -3396,6 +3401,11 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
     const parciais=pedidosDetalhados.filter(p=>p.parcial);
     const qtdParciais=parciais.length;
     const totalFaltaParciais=+parciais.reduce((s,p)=>s+p.falta,0).toFixed(2);
+    // pagos a MAIS que o total — geralmente pendência resolvida com itens removidos
+    // depois do pagamento cheio; precisa devolver o excedente pro cliente
+    const precisamEstorno=pedidosDetalhados.filter(p=>p.precisaEstorno);
+    const qtdPrecisamEstorno=precisamEstorno.length;
+    const totalExcedenteEstorno=+precisamEstorno.reduce((s,p)=>s+p.excedente,0).toFixed(2);
     res.write(`data: ${JSON.stringify({tipo:"done",relatorio:{
       data, dataInicial, dataFinal, totalPedidos:lista.length, totalGeral:+totalGeral.toFixed(2),
       totalPago:+totalPago.toFixed(2), totalNaoPago:+totalNaoPago.toFixed(2),
@@ -3403,6 +3413,7 @@ app.get("/api/fechamento-caixa/progresso", async(req,res)=>{
       totalPrevisto:+totalPrevisto.toFixed(2), qtdPrevisto,
       totalFichaFinanceira:+totalFichaFinanceira.toFixed(2), qtdFichaFinanceira,
       qtdParciais, totalFaltaParciais,
+      qtdPrecisamEstorno, totalExcedenteEstorno,
       porStatus, porVendedor, porFormaPagamento, porCliente, pedidos:pedidosDetalhados,
     }})}\n\n`);
   }catch(e){ send({tipo:"erro",erro:e.message}); }
