@@ -46,6 +46,15 @@
   .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid #2c2660; border-top-color: #FF0082; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   #reader { width: 100%; border-radius: 12px; overflow: hidden; }
+  .it-img { width: 48px; height: 48px; object-fit: contain; background: #fff; border-radius: 8px; flex-shrink: 0; padding: 2px; }
+  .it-img-ph { width: 48px; height: 48px; border-radius: 8px; background: #262366; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .pend-warn { background: #3a0010; border: 1px solid #d400ff; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 12px; color: #ffbfce; }
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+  .modal.open { display: flex; }
+  .mbox { background: #151233; border: 1px solid #2c2660; border-radius: 16px; width: 100%; max-width: 420px; padding: 20px; max-height: 90vh; overflow-y: auto; }
+  .mbox h3 { font-size: 17px; font-weight: 900; margin-bottom: 14px; }
+  .foto-area { border: 2px dashed #2c2660; border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px; cursor: pointer; }
+  .foto-area img { max-width: 100%; max-height: 180px; border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -55,6 +64,24 @@
   <div id="funcNome" class="muted"></div>
 </div>
 <div class="wrap" id="app"></div>
+
+<!-- Modal de finalizacao (foto + status pagamento) -->
+<div class="modal" id="modalConf">
+  <div class="mbox">
+    <h3>✅ Pedido Conferido</h3>
+    <div id="pagStatusMob" class="mt" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
+    <div id="tipoFixoMob" style="text-align:center;padding:14px;border-radius:10px;border:2px solid #FF0082;background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
+    <div class="foto-area" id="fotoAreaMob" onclick="document.getElementById('fotoInputMob').click()">
+      <input type="file" id="fotoInputMob" accept="image/*" capture="environment" style="display:none" onchange="carregarFotoMob(this)">
+      <div id="fotoPreviewMob">📷 Toque para tirar foto do pedido (opcional)</div>
+    </div>
+    <div id="msgModalMob" class="mt center" style="margin-bottom:10px"></div>
+    <div class="row">
+      <div class="col"><button class="btn btn-grn" id="btnConfirmarMob" onclick="confirmarConferencia()">✅ Confirmar</button></div>
+      <div class="col"><button class="btn btn-ghost" onclick="fecharModalMob()">Cancelar</button></div>
+    </div>
+  </div>
+</div>
 
 <!-- Biblioteca de leitura de QR (html5-qrcode) - carregada só quando precisa -->
 <script>
@@ -147,18 +174,43 @@ function viewInicio() {
     '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' +
     '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' +
     '<div class="divider"></div>' +
-    '<div class="lbl">Ou digite o número/ID do pedido</div>' +
+    '<div class="lbl">Ou digite/leia o número/ID do pedido</div>' +
     '<div class="row mt">' +
-      '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724"></div>' +
+      '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724" autofocus onkeypress="onInPedidoKey(event)" oninput="onInPedidoInput()"></div>' +
     '</div>' +
     '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' +
+    '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' +
     '</div>' +
     '<div id="scanBox"></div>';
 }
+/* --- auto-busca quando o leitor a laser "digita" o codigo no campo ---
+   a maioria dos leitores manda um Enter no final da leitura; como reforco,
+   tambem dispara sozinho apos uma pausa se o valor ja parece um codigo/URL. */
+var _inTimer = null;
+function onInPedidoKey(e) {
+  var code = e.keyCode || e.which;
+  if (code === 13) { e.preventDefault && e.preventDefault(); buscarDigitado(); }
+}
+function onInPedidoInput() {
+  if (_inTimer) clearTimeout(_inTimer);
+  var campo = el("inPedido");
+  if (!campo) return;
+  var v = campo.value.trim();
+  if (v.length >= 5) {
+    _inTimer = setTimeout(function () {
+      var atual = el("inPedido");
+      if (atual && atual.value.trim() === v) buscarDigitado();
+    }, 350);
+  }
+}
 function buscarDigitado() {
-  var v = el("inPedido").value.trim();
+  var campo = el("inPedido");
+  if (!campo) return;
+  var v = campo.value.trim();
   if (!v) return;
-  abrirPedido(v);
+  if (_inTimer) { clearTimeout(_inTimer); _inTimer = null; }
+  var id = extrairIdDoQr(v) || v;
+  abrirPedido(id);
 }
 
 /* --- SCANNER de QR --- */
@@ -243,6 +295,21 @@ function abrirPedido(id) {
       got.pag = jpg && jpg.data ? jpg.data : null;
     }).catch(function () {});
   }).then(function () {
+    return fetch(BACKEND + "/api/catalogo").then(function (r) { return r.json(); }).then(function (jc) {
+      var estMap = {};
+      var cats = (jc && jc.categorias) ? jc.categorias : [];
+      for (var c = 0; c < cats.length; c++) {
+        var prods = cats[c].produtos || [];
+        for (var p = 0; p < prods.length; p++) {
+          var sabs = prods[p].sabores || [];
+          for (var s = 0; s < sabs.length; s++) {
+            if (sabs[s].codigo) estMap[String(sabs[s].codigo)] = { imagem: sabs[s].imagem || "" };
+          }
+        }
+      }
+      got.estMap = estMap;
+    }).catch(function () { got.estMap = {}; });
+  }).then(function () {
     if (!got.ped || (!got.ped.id && !got.ped.numero)) {
       el("app").innerHTML = '<div class="card err">Pedido não encontrado.<br><br><button class="btn btn-ghost" onclick="voltarInicio()">← Voltar</button></div>';
       carregando = false; return;
@@ -250,12 +317,18 @@ function abrirPedido(id) {
     PEDIDO = got.ped;
     PEDIDO._pag = got.pag;
     PEDIDO._pago = !!(got.pag && got.pag.statusPagamento === "pago");
+    var frete0 = Number(((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0)));
+    PEDIDO._tipoEntrega = frete0 > 0.01 ? "entrega" : "retirada";
     var faltas = (got.pend && got.pend.faltas) ? got.pend.faltas : [];
     var itensPed = PEDIDO.itens || [];
+    var estMap = got.estMap || {};
     ITENS = [];
     for (var i = 0; i < itensPed.length; i++) {
       var it = itensPed[i];
       var desc = it.descricao || (it.produto && it.produto.nome) || "";
+      var codigo = (it.produto && it.produto.codigo) || it.codigo || "";
+      var estItem = estMap[String(codigo)] || {};
+      var imagem = (it.produto && it.produto.imageThumbnail) || estItem.imagem || "";
       var teveFalta = false, faltaQtd = 0;
       for (var f = 0; f < faltas.length; f++) {
         if (faltas[f].descricao === desc) { teveFalta = true; faltaQtd = faltas[f].falta || 0; break; }
@@ -264,6 +337,7 @@ function abrirPedido(id) {
         descricao: desc,
         quantidade: it.quantidade,
         valor: it.valor,
+        imagem: imagem,
         confirmado: false,
         teveFalta: teveFalta,
         faltaQtd: faltaQtd
@@ -320,27 +394,25 @@ function viewPedido() {
   var temFalta = false;
   for (var i = 0; i < ITENS.length; i++) { if (ITENS[i].teveFalta) { temFalta = true; break; } }
   if (temFalta) {
-    h += '<div class="card" style="border-color:#5a2030">';
-    h += '<div style="font-weight:800;color:#ff8090">⚠️ Itens com pendência anterior</div>';
-    for (var j = 0; j < ITENS.length; j++) {
-      if (ITENS[j].teveFalta) {
-        h += '<div class="muted mt">• ' + esc(ITENS[j].descricao) + ' — faltou ' + ITENS[j].faltaQtd + '</div>';
-      }
-    }
-    h += '</div>';
+    h += '<div class="pend-warn">⚠️ Este pedido teve pendências — itens marcados com PEND tiveram falta anteriormente. Confira com atenção.</div>';
   }
 
-  // lista de itens pra conferir
+  // lista de itens pra conferir (igual /conferencia: toque no item inteiro, com imagem)
   h += '<div class="card">';
   h += '<div style="font-weight:800;margin-bottom:6px">Itens para conferir</div>';
   var confCount = 0;
   for (var k = 0; k < ITENS.length; k++) {
     var it = ITENS[k];
     if (it.confirmado) confCount++;
-    h += '<div class="item ' + (it.confirmado ? "done" : "") + '">';
+    h += '<div class="item ' + (it.confirmado ? "done" : "") + '" onclick="toggleItem(' + k + ')" style="cursor:pointer">';
+    if (it.imagem) {
+      h += '<img class="it-img" src="' + esc(it.imagem) + '" onerror="this.outerHTML=\'<div class=&quot;it-img-ph&quot;>📦</div>\'">';
+    } else {
+      h += '<div class="it-img-ph">📦</div>';
+    }
+    h += '<div class="nm">' + esc(it.descricao) + (it.teveFalta ? ' <span class="tag tag-pend" style="font-size:10px">PEND ' + it.faltaQtd + '</span>' : '') + '</div>';
     h += '<div class="qt">' + it.quantidade + '</div>';
-    h += '<div class="nm">' + esc(it.descricao) + (it.teveFalta ? ' <span class="tag tag-pend" style="font-size:10px">PEND</span>' : '') + '</div>';
-    h += '<button class="chk ' + (it.confirmado ? "on" : "") + '" onclick="toggleItem(' + k + ')">' + (it.confirmado ? "✓" : "") + '</button>';
+    h += '<div class="chk ' + (it.confirmado ? "on" : "") + '">' + (it.confirmado ? "✓" : "") + '</div>';
     h += '</div>';
   }
   h += '<div class="muted mt center">' + confCount + ' de ' + ITENS.length + ' conferidos</div>';
@@ -350,8 +422,8 @@ function viewPedido() {
   var podeConferir = (sit === SIT.SEPARADO || sit === SIT.SEP_PEND);
   if (podeConferir) {
     var todos = (confCount === ITENS.length && ITENS.length > 0);
-    h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="confirmarConferencia()">' +
-      (todos ? "✓ Confirmar conferência" : "Confirmar mesmo com itens não marcados") + '</button>';
+    h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="' + (todos ? "abrirModalMob()" : "confirmarConferencia()") + '">' +
+      (todos ? "✅ PEDIDO CONFERIDO — Finalizar" : "Confirmar mesmo com itens não marcados") + '</button>';
   } else {
     h += '<div class="card muted center">Este pedido está como "' + esc(sitNome) + '" — a conferência é feita quando está "Separado".</div>';
   }
@@ -363,25 +435,83 @@ function toggleItem(ix) {
   if (ITENS[ix]) { ITENS[ix].confirmado = !ITENS[ix].confirmado; render(); }
 }
 
+/* --- Modal de finalização (igual /conferencia): status pagamento + foto opcional --- */
+var fotoBase64Mob = null;
+function abrirModalMob() {
+  if (!PEDIDO) return;
+  fotoBase64Mob = null;
+  el("fotoPreviewMob").innerHTML = "📷 Toque para tirar foto do pedido (opcional)";
+  el("msgModalMob").textContent = "";
+  var pago = !!PEDIDO._pago;
+  var pag = PEDIDO._pag;
+  var valorPago = (pag && pag.valorPago) || 0;
+  var total = PEDIDO.total || 0;
+  var ps = el("pagStatusMob");
+  if (pago) {
+    ps.style.background = "#0f3a24"; ps.style.border = "1px solid #2f9e6b"; ps.style.color = "#3ce88a";
+    ps.innerHTML = "✅ Pago: <b>" + brl(valorPago) + "</b> de " + brl(total);
+  } else {
+    ps.style.background = "#3a2a00"; ps.style.border = "1px solid #ff8c00"; ps.style.color = "#ffd23f";
+    ps.innerHTML = "⚠️ Não pago — Total: <b>" + brl(total) + "</b><br><span style=\"font-size:11px\">Retirada bloqueada até pagamento</span>";
+  }
+  var tipoSel = PEDIDO._tipoEntrega;
+  el("tipoFixoMob").innerHTML = tipoSel === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA";
+  var btn = el("btnConfirmarMob");
+  if (tipoSel === "retirada" && !pago) {
+    btn.disabled = true;
+    el("msgModalMob").innerHTML = '<span class="err">Pedido de retirada precisa estar pago antes de confirmar.</span>';
+  } else {
+    btn.disabled = false;
+  }
+  el("modalConf").className = "modal open";
+}
+function fecharModalMob() {
+  el("modalConf").className = "modal";
+}
+function carregarFotoMob(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    fotoBase64Mob = e.target.result;
+    el("fotoPreviewMob").innerHTML = '<img src="' + fotoBase64Mob + '">';
+  };
+  reader.readAsDataURL(file);
+}
+
 function confirmarConferencia() {
   if (!PEDIDO) return;
   var id = String(PEDIDO.id);
-  var frete = Number(((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0)));
-  var tipoEntrega = frete > 0.01 ? "entrega" : "retirada";
-  el("confMsg").innerHTML = '<span class="spinner"></span> Finalizando…';
-  fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, tipoEntrega: tipoEntrega })
+  var tipoEntrega = PEDIDO._tipoEntrega || "retirada";
+  var msgEl = el("msgModalMob") || el("confMsg");
+  var btn = el("btnConfirmarMob");
+  if (btn) btn.disabled = true;
+  msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
+
+  var passo = fotoBase64Mob
+    ? fetch(BACKEND + "/api/log/" + id, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evento: "foto_conferencia", funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, detalhes: { foto: fotoBase64Mob } })
+      }).catch(function () {})
+    : Promise.resolve();
+
+  passo.then(function () {
+    return fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, tipoEntrega: tipoEntrega })
+    });
   }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
     .then(function (res) {
       if (res.ok && !res.j.erro) {
-        el("confMsg").innerHTML = '<span class="ok">✓ Conferência registrada!</span>';
-        setTimeout(function () { voltarInicio(); }, 1200);
+        msgEl.innerHTML = '<span class="ok">✓ Conferência registrada!</span>';
+        setTimeout(function () { fecharModalMob(); voltarInicio(); }, 1200);
       } else {
-        el("confMsg").innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
+        msgEl.innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
+        if (btn) btn.disabled = false;
       }
     }).catch(function () {
-      el("confMsg").innerHTML = '<span class="err">Erro de conexão</span>';
+      msgEl.innerHTML = '<span class="err">Erro de conexão</span>';
+      if (btn) btn.disabled = false;
     });
 }
 
