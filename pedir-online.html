@@ -153,7 +153,7 @@ const MIN_ID=100, MIN_ANON=600;
 
 let CAT=null, META={}, ERRO=null;
 let S = novoEstado();
-function novoEstado(){ return { etapa:"splash", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
+function novoEstado(){ return { etapa:"inicio", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
   carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
 
 const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
