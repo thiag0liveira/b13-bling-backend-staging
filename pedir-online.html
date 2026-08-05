@@ -27,6 +27,8 @@
   .btn-ghost{background:#1c1846}
   .btn:disabled{opacity:.4}
   .cartbtn{position:relative;background:var(--mag);color:#fff;border:none;border-radius:12px;padding:10px 14px;font-weight:800;cursor:pointer;font-size:15px}
+  .modobtn{display:inline-flex;align-items:center;gap:6px;background:#1c1846;color:#cfc9f5;padding:9px 14px;font-size:13px;border:1px solid #2c2660}
+  .modobtn svg{color:#ff3d9a}
   .cartbtn .cnt{position:absolute;top:-8px;right:-8px;background:#fff;color:var(--indigo);border-radius:999px;min-width:22px;height:22px;font-size:12px;display:flex;align-items:center;justify-content:center;font-weight:900;padding:0 5px}
   .wrap{flex:1;padding:16px}
   @media(max-width:480px){.wrap{padding:10px}}
@@ -232,8 +234,11 @@ function minAtual(){ return S.docChecado ? (S.docNome?MIN_ID:MIN_ANON) : null; }
 // ================= RENDER =================
 function header(showCart){
   const modoBtn = S.etapa==="catalogo"
-    ? `<button class="btn btn-ghost" style="padding:8px 10px;font-size:12px" onclick="S.modo=S.modo==='tabela'?'catalogo':'tabela';S.expandido=null;render()">
-        ${S.modo==="tabela"?"☰ Catálogo":"⊞ Tabela"}</button>`
+    ? `<button class="btn modobtn" onclick="S.modo=S.modo==='tabela'?'catalogo':'tabela';S.expandido=null;render()">
+        ${S.modo==="tabela"
+          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/></svg><span>Catálogo</span>`
+          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 5h16M4 10h16M4 15h16M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Tabela</span>`}
+      </button>`
     : "";
   return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div><div class="sp"></div>
     ${modoBtn}
