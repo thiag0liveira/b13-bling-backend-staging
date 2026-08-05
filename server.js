@@ -4871,6 +4871,8 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
     });
     const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
+    // diagnóstico: amostra do campo vendedor dos primeiros pedidos
+    const _diagVend=doMes.slice(0,5).map(p=>({num:p.numero,vendedor:p.vendedor,temVend:!!p.vendedor}));
 
     // agrupa por cliente pra achar quem sumiu
     const porCliente={};
@@ -4923,7 +4925,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       .slice(0,50);
 
     const dados={
-      metaMes, mesAtual, vendedores,
+      metaMes, mesAtual, vendedores, _diagVend,
       perdidos, // lista completa (a paginação é feita no front)
       qtdPerdidos: perdidos.length,
       pedidosGrandes,
