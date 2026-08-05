@@ -55,6 +55,14 @@
   .mbox h3 { font-size: 17px; font-weight: 900; margin-bottom: 14px; }
   .foto-area { border: 2px dashed #2c2660; border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px; cursor: pointer; }
   .foto-area img { max-width: 100%; max-height: 180px; border-radius: 8px; }
+  .fila-item { background: #151233; border: 1px solid #2c2660; border-radius: 10px; padding: 12px; margin-bottom: 8px; cursor: pointer; }
+  .fila-item:active { border-color: #514c96; }
+  .fi-num { font-weight: 900; font-size: 15px; }
+  .fi-cli { font-size: 12px; color: #9a95c9; margin-top: 2px; }
+  .fi-total { font-size: 13px; color: #ffd23f; font-weight: 700; margin-top: 4px; }
+  .fi-badge { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: 800; margin-top: 4px; background: #3a1060; color: #d400ff; }
+  .periodo-btn { padding: 4px 9px; border-radius: 6px; border: 1px solid #2c2660; background: transparent; color: #9a95c9; font-size: 11px; margin-right: 4px; margin-bottom: 4px; }
+  .periodo-btn.ativo { border-color: #FF0082; background: #262366; color: #fff; }
 </style>
 </head>
 <body>
@@ -106,6 +114,9 @@ var TELA = "inicio"; // inicio | scan | pedido
 var PEDIDO = null;
 var ITENS = [];
 var carregando = false;
+var FILA = [];
+var filaPeriodoIni = null, filaPeriodoFim = null, filaPeriodoAtivo = "hoje";
+var _filaTimer = null;
 
 /* --- Utils compativeis --- */
 function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -161,6 +172,7 @@ function fazerLogin() {
       FUNC = f;
       try { sessionStorage.setItem("b13sess", JSON.stringify(f)); } catch (e) {}
       TELA = "inicio"; render();
+      carregarFila();
     } else {
       el("loginMsg").textContent = (j && j.erro) ? j.erro : "Login ou senha inválidos.";
     }
@@ -181,7 +193,71 @@ function viewInicio() {
     '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' +
     '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' +
     '</div>' +
-    '<div id="scanBox"></div>';
+    '<div id="scanBox"></div>' +
+    filaHtml();
+}
+
+/* --- FILA: mesma lista de "aguardando conferência" que tem em /conferencia --- */
+function calcPeriodoMob(tipo) {
+  var n = new Date(); n.setHours(n.getHours() - 3); // fuso Brasil
+  var h = n.toISOString().slice(0, 10);
+  function d(x) { return new Date(n - x * 86400000).toISOString().slice(0, 10); }
+  if (tipo === "hoje") return { ini: h, fim: h };
+  if (tipo === "ontem") return { ini: d(1), fim: d(1) };
+  if (tipo === "semana") return { ini: d(6), fim: h };
+  if (tipo === "mes") return { ini: h.slice(0, 8) + "01", fim: h };
+  return { ini: d(29), fim: h };
+}
+function setPeriodoMob(tipo) {
+  filaPeriodoAtivo = tipo;
+  carregarFila();
+}
+function carregarFila(silencioso) {
+  var p = calcPeriodoMob(filaPeriodoAtivo);
+  filaPeriodoIni = p.ini; filaPeriodoFim = p.fim;
+  var url = BACKEND + "/api/pedidos?limite=100&idsSituacoes=" + SIT.SEPARADO + "&dataInicial=" + p.ini + "&dataFinal=" + p.fim;
+  fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+    var lista = (j && j.data) ? j.data : [];
+    FILA = [];
+    for (var i = 0; i < lista.length; i++) {
+      var pp = lista[i];
+      var sitId = pp.situacao && pp.situacao.id;
+      if (sitId === SIT.SEPARADO) FILA.push(pp);
+    }
+    if (TELA === "inicio" && FUNC) render();
+  }).catch(function () {
+    if (!silencioso) { /* falha silenciosa: fica sem lista, mas nao trava a tela */ }
+  });
+  if (_filaTimer) clearTimeout(_filaTimer);
+  _filaTimer = setTimeout(function () { carregarFila(true); }, 30000);
+}
+function filaHtml() {
+  var barHtml = '<div class="card">';
+  barHtml += '<div class="lbl mt" style="margin-bottom:8px">Aguardando conferência</div>';
+  var periodos = [["hoje", "Hoje"], ["ontem", "Ontem"], ["semana", "Semana"], ["mes", "Mês"], ["30dias", "30 dias"]];
+  for (var pi = 0; pi < periodos.length; pi++) {
+    var k = periodos[pi][0], lbl = periodos[pi][1];
+    barHtml += '<button class="periodo-btn' + (filaPeriodoAtivo === k ? " ativo" : "") + '" onclick="setPeriodoMob(\'' + k + '\')">' + lbl + '</button>';
+  }
+  if (!FILA.length) {
+    barHtml += '<div class="muted center mt" style="padding:10px 0">✅ Nenhum pedido aguardando conferência.</div>';
+    barHtml += '<button class="btn btn-ghost mt" onclick="carregarFila()">↻ Atualizar</button>';
+    barHtml += '</div>';
+    return barHtml;
+  }
+  barHtml += '<div class="muted mt" style="font-size:11px">' + FILA.length + ' pedido(s) · atualiza sozinho a cada 30s</div>';
+  barHtml += '</div>';
+  for (var i = 0; i < FILA.length; i++) {
+    var p = FILA[i];
+    var cliente = (p.contato && p.contato.nome) ? p.contato.nome : "—";
+    barHtml += '<div class="fila-item" onclick="abrirPedido(' + p.id + ')">';
+    barHtml += '<div class="fi-num">Pedido ' + esc(p.numero || p.id) + '</div>';
+    barHtml += '<div class="fi-cli">👤 ' + esc(cliente) + '</div>';
+    barHtml += '<div class="fi-total">' + brl(p.total) + '</div>';
+    barHtml += '<span class="fi-badge">SEPARADO</span>';
+    barHtml += '</div>';
+  }
+  return barHtml;
 }
 /* --- auto-busca quando o leitor a laser "digita" o codigo no campo ---
    a maioria dos leitores manda um Enter no final da leitura; como reforco,
@@ -519,11 +595,13 @@ function voltarInicio() {
   pararScanner();
   TELA = "inicio"; PEDIDO = null; ITENS = [];
   render();
+  carregarFila(true);
 }
 
 /* --- INICIO --- */
 carregarFunc();
 render();
+if (FUNC) carregarFila();
 </script>
 </body>
 </html>
