@@ -41,9 +41,8 @@
   @media(max-width:480px){.searchbar{padding:6px 10px;top:62px}}
   .searchbar input{margin:0;font-size:16px}
   .clr{background:#1c1846;border:none;color:#fff;border-radius:12px;padding:0 16px;font-weight:800;cursor:pointer;font-size:16px}
-  .cats{display:flex;gap:7px;overflow-x:auto;padding:8px 12px;position:sticky;top:136px;background:var(--bg);z-index:5;-webkit-overflow-scrolling:touch}
-  .cats::-webkit-scrollbar{display:none}
-  .cat{white-space:nowrap;padding:8px 15px;border-radius:999px;background:#1c1846;color:#cfc9f5;font-weight:700;border:2px solid transparent;cursor:pointer;font-size:13px;transition:all .15s}
+  .cats{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;background:var(--bg);z-index:5}
+  .cat{white-space:nowrap;padding:7px 13px;border-radius:999px;background:#1c1846;color:#cfc9f5;font-weight:700;border:2px solid transparent;cursor:pointer;font-size:12.5px;transition:all .15s}
   .cat.on{background:var(--mag);color:#fff;box-shadow:0 3px 10px rgba(255,0,130,.4)}
   .layout{display:flex;gap:14px;align-items:flex-start}
   .side{display:none}
@@ -237,8 +236,7 @@ function header(showCart){
     : "";
   return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div><div class="sp"></div>
     ${modoBtn}
-    ${showCart?`<button class="cartbtn" onclick="irCarrinho()">🛒 ${contagem()>0?`<span class="cnt">${contagem()}</span>`:""}</button>`:""}
-    ${S.etapa!=="inicio"?`<button class="btn btn-out" style="padding:10px 12px" onclick="recomecar(true)">Recomeçar</button>`:""}</div>`;
+    ${showCart?`<button class="cartbtn" onclick="irCarrinho()">🛒 ${contagem()>0?`<span class="cnt">${contagem()}</span>`:""}</button>`:""}</div>`;
 }
 function render(){
   const app=document.getElementById("app");
@@ -971,10 +969,8 @@ function recomecar(perguntar){
   S=novoEstado(); render();
 }
 
-// ------- timeout de inatividade (3 min) -------
-let ultimo=Date.now();
-["click","touchstart","keydown"].forEach(ev=>document.addEventListener(ev,()=>ultimo=Date.now(),true));
-setInterval(()=>{ if(S.etapa!=="splash" && Date.now()-ultimo>180000){ S=novoEstado(); render(); } },5000);
+// (temporizador de inatividade removido — o cliente usa o próprio celular, não faz
+// sentido esvaziar o pedido sozinho por inatividade)
 
 // carrega carrinho salvo pelo modo tabela ou parâmetro de modo
 try{
