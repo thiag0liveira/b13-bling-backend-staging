@@ -4872,7 +4872,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     });
     const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
     // diagnóstico: amostra do campo vendedor dos primeiros pedidos
-    const _diagVend=doMes.slice(0,5).map(p=>({num:p.numero,vendedor:p.vendedor,temVend:!!p.vendedor}));
+    const _diagVend=doMes.slice(0,3).map(p=>({campos:Object.keys(p),vendedor:p.vendedor,loja:p.loja,numeroLoja:p.numeroLoja}));
 
     // agrupa por cliente pra achar quem sumiu
     const porCliente={};
