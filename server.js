@@ -4380,7 +4380,7 @@ app.get("/api/nfe/buscar/:chave", async (req, res) => {
   try { res.json(await bling(`/notasfiscaisentrada?chaveAcesso=${req.params.chave.replace(/\D/g,"")}`)); }
   catch(e) { res.status(e.status||500).json({ erro:e.message, body:e.body }); }
 });
-app.get("/",(req,res)=> res.send("B13 Bling Backend rodando. Comece em <a href='/auth'>/auth</a>. Totem do cliente em <a href='/pedir'>/pedir</a>."));
+app.get("/",(req,res)=> res.redirect("/pedir-online"));
 // Reconstrói o índice de produtos (nome/código/preço) em segundo plano, sem travar
 // nada. Roda ao subir o servidor e depois a cada 30 min — assim produtos novos
 // entram na busca automaticamente, sem precisar reconstruir manualmente em /preco.
