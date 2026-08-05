@@ -43,7 +43,7 @@ const LOGO="/logo";
 document.getElementById("logoImg").src=LOGO;
 
 // se já tem sessão, redireciona
-try{ const s=sessionStorage.getItem("b13sess"); if(s){ const f=JSON.parse(s); if(f?.id) { irPara(f); } } }catch(e){}
+try{ const s=sessionStorage.getItem("b13sess"); if(s){ const f=JSON.parse(s); if(f && f.id) { irPara(f); } } }catch(e){}
 
 function irPara(f){
   const next=new URLSearchParams(location.search).get("next");
