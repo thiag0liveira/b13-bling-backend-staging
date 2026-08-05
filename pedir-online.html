@@ -751,7 +751,7 @@ function telaCheckout(app){
     <div style="font-weight:800;margin-top:14px">Como quer receber?</div>
     <div class="radio">
       <label class="${S.entrega==='retirada'?'on':''}" onclick="S.entrega='retirada';S.frete=null;render()">🏪 Retirada<br><small class="muted">grátis</small></label>
-      <label class="${S.entrega==='entrega'?'on':''} ${podeEntrega?'':'esg'}" onclick="${podeEntrega?"S.entrega='entrega';render()":"alertaBonito('Entrega disponível a partir de '+'"+brl(META.entrega?.minEntrega??1000)+"'+'. Abaixo disso, só retirada.')"}">🛵 Entrega<br><small class="muted">${podeEntrega?"calcular taxa":"a partir de "+brl(META.entrega?.minEntrega??1000)}</small></label>
+      <label class="${S.entrega==='entrega'?'on':''} ${podeEntrega?'':'esg'}" onclick="${podeEntrega?"S.entrega='entrega';render();freteAuto()":"alertaBonito('Entrega disponível a partir de '+'"+brl(META.entrega?.minEntrega??1000)+"'+'. Abaixo disso, só retirada.')"}">🛵 Entrega<br><small class="muted">${podeEntrega?"taxa automática":"a partir de "+brl(META.entrega?.minEntrega??1000)}</small></label>
     </div>
     ${S.entrega==='entrega'?blocoFrete():""}
     ${S.entrega==='retirada'?`<div class="ok">Retirada na loja — sem taxa.</div>`:""}
@@ -776,21 +776,21 @@ function blocoEndereco(novo,bloqueado){
   return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <input autocomplete="off" placeholder="CEP*" inputmode="numeric" value="${esc(e.cep)}" oninput="S.end.cep=this.value" onblur="buscarCep()">
     ${S.cepMsg?`<div class="muted">${esc(S.cepMsg)}</div>`:""}
-    <input autocomplete="off" placeholder="Rua / logradouro*" value="${esc(e.rua)}" oninput="S.end.rua=this.value">
+    <input autocomplete="off" placeholder="Rua / logradouro*" value="${esc(e.rua)}" oninput="S.end.rua=this.value;freteAuto()">
     <div style="display:flex;gap:8px">
-      <input autocomplete="off" placeholder="Número*" inputmode="numeric" style="flex:1" value="${esc(e.numero)}" oninput="S.end.numero=this.value">
+      <input autocomplete="off" placeholder="Número*" inputmode="numeric" style="flex:1" value="${esc(e.numero)}" oninput="S.end.numero=this.value;freteAuto()">
       <input autocomplete="off" placeholder="Complemento" style="flex:1" value="${esc(e.complemento)}" oninput="S.end.complemento=this.value">
     </div>
-    <input autocomplete="off" placeholder="Bairro*" value="${esc(e.bairro)}" oninput="S.end.bairro=this.value">
+    <input autocomplete="off" placeholder="Bairro*" value="${esc(e.bairro)}" oninput="S.end.bairro=this.value;freteAuto()">
     <div style="display:flex;gap:8px">
-      <input autocomplete="off" placeholder="Cidade*" style="flex:2" value="${esc(e.cidade)}" oninput="S.end.cidade=this.value">
-      <input autocomplete="off" placeholder="UF*" style="flex:1" maxlength="2" value="${esc(e.uf)}" oninput="S.end.uf=this.value.toUpperCase()">
+      <input autocomplete="off" placeholder="Cidade*" style="flex:2" value="${esc(e.cidade)}" oninput="S.end.cidade=this.value;freteAuto()">
+      <input autocomplete="off" placeholder="UF*" style="flex:1" maxlength="2" value="${esc(e.uf)}" oninput="S.end.uf=this.value.toUpperCase();freteAuto()">
     </div>`;
 }
 function blocoFrete(){
-  return `<button class="btn btn-out" style="width:100%;margin-top:8px" onclick="calcularFrete()">Calcular taxa de entrega</button>
-    ${S.freteMsg?`<div class="warn">${esc(S.freteMsg)}</div>`:""}
-    ${S.frete&&S.frete.entregaDisponivel?`<div class="ok">Distância ${S.frete.km} km · ${S.frete.gratis?"Frete GRÁTIS":`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:""}`;
+  return `${S.freteMsg?`<div class="${S.freteMsg==='Calculando…'?'muted':'warn'}" style="margin-top:8px">${esc(S.freteMsg)}</div>`:""}
+    ${S.frete&&S.frete.entregaDisponivel?`<div class="ok" style="margin-top:8px">Distância ${S.frete.km} km · ${S.frete.gratis?"Frete GRÁTIS":`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:""}
+    ${(!S.frete&&!S.freteMsg)?`<div class="muted" style="margin-top:8px;font-size:12px">Preencha o endereço (CEP e número) — a taxa é calculada automaticamente.</div>`:""}`;
 }
 function totalFinal(){ let t=subtotal(); if(S.entrega==='entrega'&&S.frete&&S.frete.entregaDisponivel) t+=Number(S.frete.taxa||0); return t; }
 
@@ -804,6 +804,7 @@ async function buscarCep(){
     else{ S.end.rua=j.logradouro||S.end.rua; S.end.bairro=j.bairro||S.end.bairro; S.end.cidade=j.localidade||S.end.cidade; S.end.uf=j.uf||S.end.uf; S.cepMsg=""; }
   }catch(e){ S.cepMsg="Não consegui buscar o CEP. Preencha manualmente."; }
   render();
+  freteAuto(); // se já tiver número, calcula; senão espera o número
 }
 
 async function calcularFrete(){
@@ -816,6 +817,32 @@ async function calcularFrete(){
     if(j.entregaDisponivel){ S.frete=j; S.freteMsg=""; }
     else{ S.frete=null; S.freteMsg=j.motivo||"Não foi possível calcular a entrega."; }
   }catch(e){ S.freteMsg="Erro ao calcular. Tente de novo."; }
+  render();
+}
+
+// calcula o frete automaticamente quando o endereço fica completo (com debounce)
+let _freteTimer=null;
+function freteAuto(){
+  if(S.entrega!=='entrega') return;
+  clearTimeout(_freteTimer);
+  _freteTimer=setTimeout(()=>{
+    // só calcula se tiver o mínimo do endereço: rua, número, bairro, cidade, uf
+    const e=S.end;
+    if(e.rua && e.numero && e.bairro && e.cidade && e.uf && e.uf.length===2){
+      calcularFreteSilencioso();
+    }
+  }, 700);
+}
+async function calcularFreteSilencioso(){
+  const txt=enderecoTexto();
+  if(!txt) return;
+  S.freteMsg="Calculando…"; render();
+  try{
+    const u=BACKEND+"/api/frete?endereco="+encodeURIComponent(txt)+"&valor="+subtotal();
+    const r=await fetch(u); const j=await r.json();
+    if(j.entregaDisponivel){ S.frete=j; S.freteMsg=""; }
+    else{ S.frete=null; S.freteMsg=j.motivo||"Não foi possível calcular a entrega."; }
+  }catch(e){ S.freteMsg=""; }
   render();
 }
 
