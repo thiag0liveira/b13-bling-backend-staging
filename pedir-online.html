@@ -912,7 +912,7 @@ function imprimir(){
 function telaSucesso(app){
   const r=S.resultado||{};
   const pedidoId=r.pedido?.data?.id;
-  const nped=r.pedido?.data?.numero || pedidoId;
+  const nped=r.pedido?.data?.numero || pedidoId || null;
   const notaUrl=pedidoId?(window.location.origin+"/pedido/"+pedidoId+"/nota"):null;
   const listaItens=itens().map(i=>`
     <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
@@ -937,7 +937,7 @@ function telaSucesso(app){
 
     <div style="background:#151233;border:1px solid #514c96;border-radius:14px;overflow:hidden;margin-bottom:14px">
       <div style="background:#262366;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-weight:900;font-size:20px">#${nped}</div>
+        <div style="font-weight:900;font-size:20px">${nped?("#"+nped):"Pedido recebido"}</div>
         <div style="font-size:11px;color:#cfc9f5">${new Date().toLocaleDateString("pt-BR")}</div>
       </div>
       <div style="padding:14px 18px">

@@ -80,8 +80,27 @@ app.get("/api/versao-deploy",(req,res)=>res.json({iniciadoEm:_iniciadoEm,agora:n
 const ORIGENS_PERMITIDAS=[
   "https://b13-bling-backend-production.up.railway.app",
   "https://b13-bling-backend-staging-production.up.railway.app",
+  "https://app.b13bebidas.com.br",
   "http://localhost:3000","http://127.0.0.1:3000",
 ];
+
+// ---- Rate limiter simples em memória (protege endpoints sensíveis de raspagem) ----
+const _rateHits={}; // { chave: [timestamps] }
+function rateLimit({janelaMs,max,prefixo}){
+  return (req,res,next)=>{
+    const ip=(req.headers["x-forwarded-for"]||"").split(",")[0].trim()||req.socket?.remoteAddress||"?";
+    const chave=`${prefixo}:${ip}`;
+    const agora=Date.now();
+    const hits=(_rateHits[chave]||[]).filter(t=>agora-t<janelaMs);
+    if(hits.length>=max){
+      return res.status(429).json({erro:"Muitas requisições. Aguarde um momento e tente novamente."});
+    }
+    hits.push(agora); _rateHits[chave]=hits;
+    next();
+  };
+}
+// limpeza periódica pra não acumular memória
+setInterval(()=>{ const agora=Date.now(); for(const k in _rateHits){ _rateHits[k]=_rateHits[k].filter(t=>agora-t<600000); if(!_rateHits[k].length) delete _rateHits[k]; } }, 300000);
 app.use(cors({
   origin(origin,cb){
     // requisições sem "origin" (apps mobile, curl, mesma origem) sempre passam
@@ -1463,7 +1482,7 @@ app.get("/api/contatos/:id",async(req,res)=>{
   try{ res.json(await bling(`/contatos/${req.params.id}`)); }
   catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
-app.get("/api/contatos",async(req,res)=>{
+app.get("/api/contatos",rateLimit({janelaMs:60000,max:8,prefixo:"contatos"}),async(req,res)=>{
   try{ const doc=soDigitos(req.query.doc); if(!doc) return res.status(400).json({erro:"?doc=CPF_ou_CNPJ"});
     // tenta buscar pelo número do documento
     const d=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`); let l=d?.data||[];
@@ -1481,7 +1500,6 @@ app.get("/api/contatos",async(req,res)=>{
       const d3=await bling(`/contatos?numeroDocumento=${encodeURIComponent(doc)}`); const l3=d3?.data||[];
       a=l3.find(c=>soDigitos(c.numeroDocumento)===doc)||null;
     }
-    console.log("Busca contato doc:", doc, "encontrado:", !!a, "id:", a?.id);
     if(!a) return res.json({encontrado:false,contato:null});
     // busca detalhe completo (com endereço, telefone, celular, email)
     let detalhe=a;
@@ -2292,7 +2310,20 @@ app.post("/api/finalizar", async (req, res) => {
       : "RETIRADA na loja");
     const hoje = new Date(Date.now() - 3*3600*1000).toISOString().slice(0,10); // data de hoje (BRT), formato AAAA-MM-DD
     // valor total (itens + frete se for entrega) pra usar na parcela obrigatória do Bling
-    const totalItensCalc=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    // SEGURANÇA: o preço NÃO pode vir do cliente (manipulável). Usa o preço oficial
+    // da tabela de atacado (indexado por produtoId). Se não achar, mantém o enviado
+    // mas registra — nunca deixa o cliente comprar por um valor arbitrário.
+    const _idxCod=indexarVinculosTabela();
+    const _precoPorProduto={};
+    Object.values(_idxCod).forEach(v=>{ if(v.produtoId!=null) _precoPorProduto[String(v.produtoId)]=Number(v.precoAtacado)||0; });
+    const itensSeguros=itens.map(i=>{
+      const pid=String(i.produtoId);
+      const precoOficial=_precoPorProduto[pid];
+      // usa o preço oficial da tabela; só cai no enviado se o produto não estiver na tabela
+      const valorFinal=(precoOficial!=null && precoOficial>0)?precoOficial:Number(i.valor)||0;
+      return {...i, valor:valorFinal};
+    });
+    const totalItensCalc=itensSeguros.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
     const freteCalc=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
     const totalPedidoCalc=+(totalItensCalc+freteCalc).toFixed(2);
     // usa "Ficha Financeira" como forma de pagamento da parcela — não é usada de
@@ -2303,7 +2334,7 @@ app.post("/api/finalizar", async (req, res) => {
     const payload = {
       data: hoje,
       contato: { id: Number(contatoId) },
-      itens: itens.map((i) => ({ produto: { id: Number(i.produtoId) }, quantidade: Number(i.quantidade), valor: Number(i.valor) })),
+      itens: itensSeguros.map((i) => ({ produto: { id: Number(i.produtoId) }, quantidade: Number(i.quantidade), valor: Number(i.valor) })),
       observacoes: obs,
     };
     if(formaFichaFinanceira){
