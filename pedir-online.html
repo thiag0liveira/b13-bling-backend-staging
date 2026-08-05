@@ -599,7 +599,13 @@ function cardCliente(){
 
 function mudarCategoria(i){
   S.busca=''; S.catAtiva=i; S.expandido=null;
+  // guarda a posição do scroll horizontal da barra de categorias
+  const catsEl=document.querySelector('.cats');
+  const scrollX=catsEl?catsEl.scrollLeft:0;
   render();
+  // restaura a posição horizontal das categorias (pra não voltar ao início)
+  const novaCats=document.querySelector('.cats');
+  if(novaCats) novaCats.scrollLeft=scrollX;
 }
 
 function telaCatalogo(app){
