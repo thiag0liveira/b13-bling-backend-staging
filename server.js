@@ -4856,12 +4856,21 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       valorTotalMes:+doMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
     };
 
-    // VENDIDO POR VENDEDOR — agrupa automaticamente (exclui varejo já filtrado)
-    const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido"};
+    // VENDIDO POR VENDEDOR — a listagem do Bling NÃO traz o vendedor, só o detalhe.
+    // Busca o detalhe de cada pedido do mês pra obter o vendedor real e agrupar.
+    const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido",21:"Em digitação",6:"Em aberto"};
     const porVendedor={};
-    doMes.forEach(p=>{
-      const vid=Number(p.vendedor?.id||0);
-      const vnome=p.vendedor?.nome||("Vendedor "+vid)||"Sem vendedor";
+    let valorAtacadoReal=0, qtdAtacadoReal=0;
+    for(const p of doMes){
+      let vid=0, vnome="Sem vendedor";
+      try{
+        const det=await bling(`/pedidos/vendas/${p.id}`);
+        vid=Number(det?.data?.vendedor?.id||0);
+        if(vid) vnome=await nomeVendedor(vid);
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,120));
+      if(VENDEDORES_VAREJO.includes(vid)) continue; // agora sim exclui o varejo de verdade
+      valorAtacadoReal+=Number(p.total||0); qtdAtacadoReal++;
       if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
       const v=porVendedor[vid];
       v.qtd++; v.valor+=Number(p.total||0);
@@ -4869,10 +4878,15 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       const snome=SIT_NOMES[sit]||("Status "+sit);
       v.porStatus[snome]=(v.porStatus[snome]||0)+1;
       if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
-    });
+    }
     const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
-    // diagnóstico: amostra do campo vendedor dos primeiros pedidos
-    const _diagVend=doMes.slice(0,3).map(p=>({campos:Object.keys(p),vendedor:p.vendedor,loja:p.loja,numeroLoja:p.numeroLoja}));
+    // recalcula o metaMes com os valores REAIS de atacado (varejo já excluído pelo vendedor do detalhe)
+    const atendidosReais=vendedores.reduce((s,v)=>s+v.atendidos,0);
+    const valorAtendidosReais=vendedores.reduce((s,v)=>s+v.valorAtendido,0);
+    metaMes.qtdTotalMes=qtdAtacadoReal;
+    metaMes.valorTotalMes=+valorAtacadoReal.toFixed(2);
+    metaMes.qtdAtendidos=atendidosReais;
+    metaMes.valorAtendidos=+valorAtendidosReais.toFixed(2);
 
     // agrupa por cliente pra achar quem sumiu
     const porCliente={};
@@ -4925,7 +4939,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       .slice(0,50);
 
     const dados={
-      metaMes, mesAtual, vendedores, _diagVend,
+      metaMes, mesAtual, vendedores,
       perdidos, // lista completa (a paginação é feita no front)
       qtdPerdidos: perdidos.length,
       pedidosGrandes,
