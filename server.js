@@ -4988,7 +4988,6 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     // soma por dia
     const porDia={};
     atacadoUnico.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
-    const _diag={brutos:pedidos.length,filtrados:atacado.length,unicos:atacadoUnico.length};
     // monta série de todos os dias do mês
     const hoje=agoraBR.toISOString().slice(0,10);
     const diaAtual=agoraBR.getDate();
@@ -5013,7 +5012,7 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     const pctMeta=meta>0?Math.round(vendido/meta*100):0;
 
     res.json({
-      mes, meta, vendido, falta, pctMeta, _diag,
+      mes, meta, vendido, falta, pctMeta,
       diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia, diasRestantes,
       idealPorDiaRestante, mediaDiaria: diaAtual>0?+(vendido/(ehMesAtual?diaAtual:ultimoDia)).toFixed(2):0,
       dias,
