@@ -91,12 +91,12 @@
   @media print{
     @page{ size:80mm auto; margin:0 }
     body *{visibility:hidden}
-    #recibo{display:block!important;position:absolute;left:0;top:0;width:80mm;color:#000;padding:2mm 3mm;font-size:13px;font-family:'Arial',sans-serif;font-weight:600;-webkit-font-smoothing:none}
-    #recibo,#recibo *{visibility:visible;color:#000!important}
-    #recibo h2{font-size:15px;margin:0 0 6px}
-    #recibo pre{font-family:'Arial',sans-serif;font-size:12px;line-height:1.45;font-weight:600}
-    #recibo table td{font-size:13px;font-weight:600}
-    #recibo hr{border:none;border-top:1px dashed #000}
+    #recibo{display:block!important;position:absolute;left:0;top:0;width:80mm;color:#000;padding:2mm 3mm;font-size:14px;font-family:'Arial',sans-serif;font-weight:700;-webkit-font-smoothing:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;color-adjust:exact}
+    #recibo,#recibo *{visibility:visible;color:#000!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    #recibo h2{font-size:16px;margin:0 0 6px;font-weight:900}
+    #recibo pre{font-family:'Arial',sans-serif;font-size:13px;line-height:1.5;font-weight:700}
+    #recibo table td{font-size:14px;font-weight:700}
+    #recibo hr{border:none;border-top:2px dashed #000}
   }
   #recibo{display:none}
   /* modo tabela responsivo */
@@ -950,27 +950,27 @@ function imprimirNotaLocal(){
     <tr><td>${esc(pack(i.qtd,i.un))} ${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` (${esc(i.sabor)})`:""}</td>
     <td style="text-align:right;white-space:nowrap">${brl(i.preco*i.qtd)}</td></tr>`).join("");
   document.getElementById("recibo").innerHTML=`
-    <div style="text-align:center;font-weight:900;font-size:15px">B13 BEBIDAS</div>
-    <div style="text-align:center;font-size:9px;color:#333;margin-bottom:6px">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888</div>
+    <div style="text-align:center;font-weight:900;font-size:16px">B13 BEBIDAS</div>
+    <div style="text-align:center;font-size:10px;font-weight:700;color:#000;margin-bottom:6px">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888</div>
     <hr>
-    <div style="font-weight:900;font-size:16px">Pedido #${esc(numero)}</div>
-    <div style="font-size:10px">${new Date().toLocaleString("pt-BR")}</div>
-    ${pedidoId?`<div style="text-align:center;margin:6px 0"><svg id="barcodeLocal"></svg><div style="font-size:8px;color:#888">Apresente no caixa</div></div>`:""}
+    <div style="font-weight:900;font-size:17px">Pedido #${esc(numero)}</div>
+    <div style="font-size:11px;font-weight:700">${new Date().toLocaleString("pt-BR")}</div>
+    ${pedidoId?`<div style="text-align:center;margin:6px 0"><svg id="barcodeLocal"></svg><div style="font-size:9px;font-weight:700;color:#000">Apresente no caixa</div></div>`:""}
     <hr>
-    <div style="font-size:10px">CLIENTE</div>
-    <div style="font-weight:900;font-size:13px">${esc(S.nome)}</div>
+    <div style="font-size:11px;font-weight:700">CLIENTE</div>
+    <div style="font-weight:900;font-size:14px">${esc(S.nome)}</div>
     <hr>
-    <table style="width:100%;font-size:12px;border-collapse:collapse">${itensHtml}</table>
+    <table style="width:100%;font-size:13px;font-weight:700;border-collapse:collapse">${itensHtml}</table>
     <hr>
-    <div style="font-weight:900;font-size:15px;display:flex;justify-content:space-between"><span>TOTAL</span><span>${brl(totalFinal())}</span></div>
-    <div style="text-align:center;font-size:10px;margin-top:4px">${S.entrega==="entrega"?"Entrega":"Retirada na loja"}</div>
+    <div style="font-weight:900;font-size:16px;display:flex;justify-content:space-between"><span>TOTAL</span><span>${brl(totalFinal())}</span></div>
+    <div style="text-align:center;font-size:11px;font-weight:700;margin-top:4px">${S.entrega==="entrega"?"Entrega":"Retirada na loja"}</div>
     ${pedidoId?`<hr><div style="text-align:center;margin-top:6px">
       <div id="qrLocal" style="display:inline-block"></div>
-      <div style="font-size:8px;color:#666">Leia o QR pra ver status do pedido</div>
+      <div style="font-size:9px;font-weight:700;color:#000">Leia o QR pra ver status do pedido</div>
     </div>`:""}`;
   if(pedidoId){
-    try{ JsBarcode("#barcodeLocal",String(pedidoId),{format:"CODE128",width:1.1,height:34,fontSize:9,margin:0}); }catch(e){}
-    try{ new QRCode(document.getElementById("qrLocal"),{text:window.location.origin+"/pedido/"+pedidoId+"/status",width:120,height:120,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+    try{ JsBarcode("#barcodeLocal",String(pedidoId),{format:"CODE128",width:1.5,height:38,fontSize:10,margin:0}); }catch(e){}
+    try{ new QRCode(document.getElementById("qrLocal"),{text:window.location.origin+"/pedido/"+pedidoId+"/status",width:140,height:140,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
   }
   window.print();
  }catch(e){
