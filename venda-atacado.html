@@ -77,6 +77,7 @@ const S={
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"",
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
+  tipoEntrega:"retirada", frete:null, freteMsg:"",
   msg:"",
 };
 
@@ -90,12 +91,45 @@ const S={
 })();
 
 function total(){ return S.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+function totalComFrete(){ return total()+(S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel?Number(S.frete.taxa)||0:0); }
+
+/* ---------- ENTREGA / FRETE (mesmo endpoint do pedir-online) ---------- */
+function enderecoClienteTexto(){
+  const e=S.cliente?.endereco||{};
+  const partes=[e.rua&&e.numero?`${e.rua}, ${e.numero}`:e.rua,e.bairro,e.cidade,e.uf].filter(Boolean);
+  return partes.join(", ");
+}
+let _freteTimerAtacado=null;
+function freteAutoAtacado(){
+  clearTimeout(_freteTimerAtacado);
+  S.frete=null;
+  const txt=enderecoClienteTexto();
+  const e=S.cliente?.endereco||{};
+  if(!e.rua||!e.numero||!e.bairro||!e.cidade){ S.freteMsg="Endereço do cliente incompleto — edite o cadastro pra calcular o frete."; render(); return; }
+  S.freteMsg="Calculando…"; render();
+  _freteTimerAtacado=setTimeout(()=>calcularFreteAtacado(txt),300);
+}
+async function calcularFreteAtacado(txt){
+  try{
+    const u=B+"/api/frete?endereco="+encodeURIComponent(txt)+"&valor="+total();
+    const j=await fetch(u).then(r=>r.json());
+    if(j.entregaDisponivel){ S.frete=j; S.freteMsg=""; }
+    else{ S.frete=null; S.freteMsg=j.motivo||"Não foi possível calcular a entrega."; }
+  }catch(e){ S.freteMsg="Erro ao calcular o frete. Tente de novo."; }
+  render();
+}
+function setTipoEntrega(t){
+  S.tipoEntrega=t;
+  if(t==='entrega') freteAutoAtacado();
+  else { S.frete=null; S.freteMsg=""; render(); }
+}
 
 // AUTO-SAVE: salva a proposta como "em digitação" de tempos em tempos, pra não perder o trabalho.
 let _autoSaveT=null;
 function agendarAutoSave(){
   clearTimeout(_autoSaveT);
   _autoSaveT=setTimeout(salvarRascunho,2500); // salva 2.5s depois da última mudança
+  if(S.tipoEntrega==='entrega') freteAutoAtacado(); // total mudou — recalcula a taxa
 }
 async function salvarRascunho(){
   // só salva se já tem cliente e ao menos um item (senão não há o que guardar)
@@ -106,6 +140,9 @@ async function salvarRascunho(){
       id:S.rascunhoId, tipo:S.tipo, status:"em_digitacao",
       cliente:S.cliente, itens:S.itens, observacao:S.observacao,
       vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
+      entrega:S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel
+        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa}
+        :{tipo:"retirada"},
       funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
     };
     const j=await fetch(B+"/api/atacado/propostas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
@@ -265,7 +302,7 @@ async function salvarCliente(){
   }catch(e){ alert("Erro ao salvar cliente."); }
 }
 
-function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={}; render(); }
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={}; S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; render(); }
 
 /* ---------- ANÁLISE DO CLIENTE (Fase 2) ---------- */
 function cardAnalise(){
@@ -603,10 +640,23 @@ function cardResumo(){
   return `<div class="card">
     <label>Observação (opcional)</label>
     <input id="obs" value="${esc(S.observacao)}" placeholder="Ex: condição de pagamento, prazo…" oninput="S.observacao=this.value;agendarAutoSave()">
+
+    <label style="margin-top:12px">Entrega</label>
+    <div class="seg" style="margin-bottom:6px">
+      <button class="${S.tipoEntrega==='retirada'?'on':''}" onclick="setTipoEntrega('retirada')">🏪 Retirada</button>
+      <button class="${S.tipoEntrega==='entrega'?'on':''}" onclick="setTipoEntrega('entrega')">🛵 Entrega</button>
+    </div>
+    ${S.tipoEntrega==='entrega'?`
+      <div class="muted" style="font-size:12px;margin-bottom:4px">${esc(enderecoClienteTexto()||'—')}</div>
+      ${S.freteMsg?`<div class="muted" style="font-size:12px;${S.freteMsg.startsWith('Erro')||S.freteMsg.includes('incompleto')||S.freteMsg.includes('Não foi possível')?'color:#ff8090':''}">${esc(S.freteMsg)}</div>`:''}
+      ${S.frete&&S.frete.entregaDisponivel?`<div style="font-size:12px;color:#3ce88a;margin-bottom:4px">Distância ${S.frete.km} km · ${S.frete.gratis?'Frete GRÁTIS':`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:''}
+    `:''}
+
     <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px">
       <span style="font-weight:800">Total</span>
-      <span style="font-size:24px;font-weight:900;color:#ffd23f">${brl(total())}</span>
+      <span style="font-size:24px;font-weight:900;color:#ffd23f">${brl(totalComFrete())}</span>
     </div>
+    ${S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel&&!S.frete.gratis?`<div class="muted" style="font-size:11px;margin-bottom:6px;text-align:right">inclui frete de ${brl(S.frete.taxa)}</div>`:''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div class="muted">Vendedor: ${esc(S.vendedorNome||'—')}</div>
       <div class="muted" id="statusSalvo" style="font-size:11px"></div>
@@ -623,9 +673,11 @@ function cardResumo(){
 // mostra a nota atual (mesmo parcial) num modal dentro da própria tela
 function visualizarNota(){
   if(!S.cliente?.id||!S.itens.length){ alert("Adicione cliente e itens primeiro."); return; }
+  const entregaInfo=S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel?{km:S.frete.km,taxa:S.frete.taxa,gratis:S.frete.gratis}:null;
   const prop={
     tipo:S.tipo, cliente:S.cliente, itens:S.itens, observacao:S.observacao,
-    vendedorNome:S.vendedorNome, total:total(), criadoEm:Date.now(),
+    vendedorNome:S.vendedorNome, total:totalComFrete(), criadoEm:Date.now(),
+    tipoEntrega:S.tipoEntrega, entregaInfo,
     pedidoBlingId:null, status:"em_digitacao",
   };
   const ov=document.createElement("div");
@@ -651,8 +703,9 @@ function fecharNota(){ document.getElementById("modalNota")?.remove(); }
 
 function desenharNota(p){
   const itens=p.itens||[];
-  const W=680, padd=28, headerH=120, itemH=40, footerH=90;
-  const H=headerH+itens.length*itemH+footerH+30;
+  const temFrete=p.entregaInfo&&!p.entregaInfo.gratis&&p.entregaInfo.taxa>0;
+  const W=680, padd=28, headerH=120, itemH=40, footerH=90, freteH=temFrete?26:0, entregaLinhaH=24;
+  const H=headerH+itens.length*itemH+freteH+entregaLinhaH+footerH+30;
   const cv=document.getElementById("cvNota");
   const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%";
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
@@ -681,10 +734,17 @@ function desenharNota(p){
     ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
     y+=itemH;
   });
+  if(temFrete){
+    ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText(`Frete (${p.entregaInfo.km} km)`,padd,y+18);
+    ctx.textAlign="right"; ctx.fillStyle="#111"; ctx.font="700 13px Arial"; ctx.fillText(brl(p.entregaInfo.taxa),W-padd,y+18);
+    y+=freteH;
+  }
   y+=10; ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
   ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+12,y+28);
   ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial"; ctx.fillText(brl(p.total),W-padd-12,y+29);
   y+=44;
+  y+=20; ctx.fillStyle="#555"; ctx.font="700 13px Arial"; ctx.textAlign="center";
+  ctx.fillText(p.tipoEntrega==='entrega'?(p.entregaInfo&&p.entregaInfo.gratis?"🛵 Entrega — frete grátis":"🛵 Entrega"):"🏪 Retirada na loja",W/2,y);
   if(p.observacao){ y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText("Obs: "+p.observacao.slice(0,70),padd,y); }
   ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center"; ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻",W/2,H-16);
 }
@@ -706,6 +766,7 @@ async function compartilharNota(){
 async function salvar(){
   if(!S.cliente?.id){ alert("Selecione um cliente cadastrado."); return; }
   if(!S.itens.length){ alert("Adicione ao menos um item."); return; }
+  if(S.tipoEntrega==='entrega'&&(!S.frete||!S.frete.entregaDisponivel)){ alert("Calcule a taxa de entrega (endereço do cliente) ou escolha Retirada."); return; }
   clearTimeout(_autoSaveT); // cancela auto-save pendente
   S.msg="";
   const payload={
@@ -715,6 +776,9 @@ async function salvar(){
     itens:S.itens,
     observacao:S.observacao,
     vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
+    entrega:S.tipoEntrega==='entrega'
+      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa}
+      :{tipo:"retirada"},
     funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
   };
   try{
@@ -731,6 +795,7 @@ async function salvar(){
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
+    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg="";
     render();
   }catch(e){ alert("Erro ao salvar."); }
 }

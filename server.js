@@ -4686,6 +4686,8 @@ app.post("/api/atacado/propostas",(req,res)=>{
     const props=lerPropostas();
     const id=b.id||("prop_"+Date.now()+"_"+Math.random().toString(36).slice(2,7));
     const agora=Date.now();
+    const totalItens=+(b.itens||[]).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
+    const entrega=b.entrega&&b.entrega.tipo==="entrega"?{tipo:"entrega",endereco:b.entrega.endereco||"",km:b.entrega.km||0,taxa:Number(b.entrega.taxa)||0}:{tipo:"retirada"};
     const registro={
       id,
       tipo:b.tipo||"proposta",           // "proposta" | "pedido"
@@ -4695,7 +4697,9 @@ app.post("/api/atacado/propostas",(req,res)=>{
       observacao:b.observacao||"",
       vendedorId:b.vendedorId||null, vendedorNome:b.vendedorNome||"",
       funcionarioId:b.funcionarioId||null, funcionarioNome:b.funcionarioNome||"",
-      total:+(b.itens||[]).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2),
+      entrega,
+      totalItens,
+      total:+(totalItens+(entrega.tipo==="entrega"?entrega.taxa:0)).toFixed(2),
       pedidoBlingId:b.pedidoBlingId||(props[id]?.pedidoBlingId)||null,
       pedidoBlingNumero:b.pedidoBlingNumero||(props[id]?.pedidoBlingNumero)||null,
       criadoEm:props[id]?.criadoEm||agora,
@@ -4764,7 +4768,10 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     }
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
-    const totalPed=+prop.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
+    const totalItensPed=+prop.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
+    const entregaProp=prop.entrega&&prop.entrega.tipo==="entrega"?prop.entrega:{tipo:"retirada"};
+    const freteProp=entregaProp.tipo==="entrega"?Number(entregaProp.taxa)||0:0;
+    const totalPed=+(totalItensPed+freteProp).toFixed(2);
     // o Bling exige uma parcela pra validar a venda — usa "Ficha Financeira" como
     // marcador de "ainda não pago" (mesma regra do totem)
     const formaFicha=await getFormaPagamentoIdPorNome("ficha financeira");
@@ -4777,6 +4784,22 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     };
     if(formaFicha){
       payload.parcelas=[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:totalPed}];
+    }
+    if(entregaProp.tipo==="entrega"){
+      payload.transporte={ fretePorConta:0, frete:freteProp };
+      const end=prop.cliente?.endereco;
+      if(end){
+        payload.transporte.enderecoEntrega={
+          endereco: end.rua||"",
+          numero: end.numero||"S/N",
+          complemento: "",
+          bairro: end.bairro||"",
+          cep: "",
+          municipio: end.cidade||"Belo Horizonte",
+          uf: end.uf||"MG",
+          pais: "Brasil",
+        };
+      }
     }
     console.log("[atacado] payload gerar-pedido:",JSON.stringify(payload));
     let criado;
