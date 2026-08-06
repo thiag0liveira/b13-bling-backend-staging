@@ -297,11 +297,19 @@ function b13PodeAba(href){
 function b13BloquearSeSemAcesso(href){
   if(b13PodeAba(href)) return true;
   document.addEventListener("DOMContentLoaded",function(){
-    document.body.innerHTML=\`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
-      <div style="font-size:40px;margin-bottom:10px">🚫</div>
-      <h2>Acesso negado</h2>
-      <p style="color:#9a95c9">Seu usuário não tem permissão para acessar esta página.</p>
-      <a href="/operacional" style="color:#FF0082">← Voltar</a></div>\`;
+    document.body.innerHTML=\`
+      <style>
+        @media (min-width:769px){
+          body > *:not(#b13nav):not(button[onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+        }
+      </style>
+      \${(typeof b13RenderNav==="function")?b13RenderNav(href):""}
+      <div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial;padding:0 16px">
+        <div style="font-size:40px;margin-bottom:10px">🚫</div>
+        <h2>Acesso negado</h2>
+        <p style="color:#9a95c9">Seu usuário não tem permissão para acessar esta página.</p>
+        <a href="/operacional" style="color:#FF0082">← Voltar</a>
+      </div>\`;
   });
   window.__b13SemAcesso=true;
   return false;
