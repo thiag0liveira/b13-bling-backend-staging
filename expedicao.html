@@ -125,6 +125,19 @@ function filaColuna(){
   return `<div class="colhead">Fila de separação <span class="muted">(${S.pedidos.length})</span></div>${lista}`;
 }
 function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; return `${q} un (${Number.isInteger(cx)?cx:cx.toFixed(1)} cx)`; }
+// imprime a etiqueta sem sair da tela: carrega a pagina da etiqueta num iframe
+// escondido e dispara o print dele, em vez de abrir uma aba/janela nova
+function imprimirEtiqueta(id){
+  let f=document.getElementById("etiquetaFrame");
+  if(!f){
+    f=document.createElement("iframe");
+    f.id="etiquetaFrame";
+    f.style.cssText="position:fixed;width:0;height:0;border:0;visibility:hidden";
+    document.body.appendChild(f);
+  }
+  f.onload=function(){ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} };
+  f.src=BACKEND+"/pedido/"+id+"/etiqueta";
+}
 function detalheColuna(){
   const p=S.sel;
   if(!p){
@@ -136,7 +149,7 @@ function detalheColuna(){
         <div style="font-weight:900;font-size:16px;margin-bottom:4px">Pedido ${esc(s.numero)} ${s.comFalta?"marcado como SEPARADO C/ PENDÊNCIAS":"concluído — SEPARADO"}</div>
         <div class="muted" style="margin-bottom:16px">${s.comFalta?"Foi salvo com item(ns) em falta.":"Todos os itens foram separados."}</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-mag" onclick="window.open('${BACKEND}/pedido/${s.id}/etiqueta','_blank')">🖨️ Imprimir etiqueta</button>
+          <button class="btn btn-mag" onclick="imprimirEtiqueta(${s.id})">🖨️ Imprimir etiqueta</button>
           <button class="btn btn-ghost" onclick="S.sucesso=null;render()">Continuar</button>
         </div>
       </div>`;
