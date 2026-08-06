@@ -1279,6 +1279,31 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
       }
       addLog(id,"entrega_com_ocorrencia",funcionarioId,funcionarioNome,{valorAbatido,resolucao,naoEntregues:itensNaoEntregues?.length||0,danificados:itensDanificados?.length||0});
     }
+    // se teve abatimento (dano/não entregue), a Bling ainda está com os itens/total
+    // ORIGINAIS — sem reduzir isso lá, a parcela de pagamento (menor, já ajustada)
+    // não bate com o total do pedido e o Bling rejeita a atualização (erro 400).
+    // Reduz os itens afetados no Bling e, se dessa vez a sincronização passar,
+    // tenta de novo sincronizar o pagamento (que pode ter falhado antes por causa
+    // desse descompasso).
+    let avisoItensBling=null;
+    if(Number(valorAbatido||0)>0 && pj?.itens?.length){
+      const todasOcorrencias=[...(itensNaoEntregues||[]),...(itensDanificados||[])];
+      const itensNovos=pj.itens.map((it,ix)=>{
+        const ocorr=todasOcorrencias.find(o=>o.ix===ix);
+        const qtdOriginal=it.quantidade||0;
+        const qtdFinal=ocorr?Math.max(0,qtdOriginal-(ocorr.quantidadeAfetada||0)):qtdOriginal;
+        return {produtoId:it.produto?.id,quantidade:qtdFinal,valor:it.valor};
+      }).filter(i=>i.produtoId&&i.quantidade>0);
+      const resItens=await atualizarItensBling(id,itensNovos);
+      if(!resItens.ok){
+        avisoItensBling=`⚠️ Entrega confirmada, mas não foi possível reduzir os itens no Bling: ${detalheErroBling(resItens)}. O pagamento pode não bater com o total do pedido lá — confira manualmente.`;
+      } else {
+        // itens corrigidos — tenta de novo sincronizar o pagamento com o novo total
+        const histAtual=lerPag()[id]?.historico||[];
+        const formaUltima=[...histAtual].reverse().find(h=>h.formaId);
+        if(formaUltima) await atualizarParcelasBling(id,[{valor:pagoVal,formaId:formaUltima.formaId}],{}).catch(()=>{});
+      }
+    }
     // se teve abatimento (dano/não entregue), grava no Bling — nas observações
     // do pedido — o valor que era previsto e o quanto foi efetivamente pago,
     // pra ficar registrado no próprio pedido, não só no sistema interno
@@ -1295,7 +1320,7 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
     liberarLock(id,funcionarioId,funcionarioNome,"entrega_confirmada");
     addLog(id,"entrega_confirmada",funcionarioId,funcionarioNome,{});
-    res.json({ok:true,avisoObsBling});
+    res.json({ok:true,avisoObsBling,avisoItensBling});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -2793,6 +2818,101 @@ app.get("/api/buscar-atacado", async (req, res) => {
 });
 
 // Atualiza os ITENS de um pedido (mantém o resto do pedido), bloqueando Atendido/Cancelado
+// Atualiza os itens de um pedido no Bling (reduzindo quantidade/removendo item,
+// por ex. quando teve dano/não entrega), ajustando as parcelas já existentes
+// proporcionalmente ao novo total — sem isso, o Bling rejeita a parcela por
+// não bater com o total do pedido. Reaproveitado tanto pela edição manual de
+// itens (resolução de pendências) quanto pela confirmação de entrega com
+// ocorrências (Em Rota).
+async function atualizarItensBling(id,itens){
+  try{
+    const atualJson=await bling(`/pedidos/vendas/${id}`);
+    const ped=atualJson?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
+    const sit=ped.situacao?.id;
+    if(sit===9||sit===12) return {ok:false,erro:"Pedido Atendido/Cancelado não pode ser editado."};
+
+    const blingComRetry=async(url,opts={},tentativas=3,delayMs=1200)=>{
+      for(let t=0;t<tentativas;t++){
+        try{ return await bling(url,opts); }
+        catch(e){
+          if(e.status===429&&t<tentativas-1){ await new Promise(r=>setTimeout(r,delayMs*(t+1))); continue; }
+          throw e;
+        }
+      }
+    };
+
+    const SIT_EM_DIGITACAO=21;
+    const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
+    const precisaUnlock=STATUS_BLOQUEADOS.includes(sit);
+
+    const tsEdit=new Date().toISOString().slice(0,16).replace('T',' ');
+    const obsBase=(ped.observacoes||"").replace(/\s*\|\s*edit\s+[\d\-: ]+$/,"").trim();
+    const payload={
+      data:ped.data,
+      contato:{id:ped.contato?.id},
+      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+      observacoes:obsBase?obsBase+" | edit "+tsEdit:"edit "+tsEdit,
+    };
+    if(ped.parcelas?.length){
+      const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+      const freteAtual=+(ped.transporte?.frete||0);
+      const novoTotal=+(novoTotalItens+freteAtual).toFixed(2);
+      const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
+      const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
+      payload.parcelas=ped.parcelas.map(p=>({
+        formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data,
+        valor:+((p.valor||0)*fator).toFixed(2),
+      }));
+      const somaAjustada=payload.parcelas.reduce((s,p)=>s+p.valor,0);
+      const diffArred=+(novoTotal-somaAjustada).toFixed(2);
+      if(payload.parcelas.length&&Math.abs(diffArred)>0.001){
+        const ultima=payload.parcelas[payload.parcelas.length-1];
+        ultima.valor=+(ultima.valor+diffArred).toFixed(2);
+      }
+    }
+    if(ped.transporte){
+      payload.transporte={fretePorConta:ped.transporte.fretePorConta??0,frete:ped.transporte.frete||0};
+      if(ped.transporte.enderecoEntrega){
+        const end=ped.transporte.enderecoEntrega;
+        payload.transporte.enderecoEntrega={
+          endereco:end.endereco||"",numero:end.numero||"S/N",complemento:end.complemento||"",
+          bairro:end.bairro||"",cep:end.cep||"",municipio:end.municipio||"",uf:end.uf||"MG",pais:end.pais||"Brasil",
+        };
+      }
+    }
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+
+    let resultado, fezUnlock=false;
+    try{
+      await new Promise(r=>setTimeout(r,200));
+      resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    }catch(e1){
+      if(!precisaUnlock) throw e1;
+      try{
+        await blingComRetry(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+        fezUnlock=true;
+        await new Promise(r=>setTimeout(r,400));
+        resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+      }catch(e2){ throw e2; }
+    }finally{
+      if(fezUnlock){
+        await new Promise(r=>setTimeout(r,400));
+        const sitRestaurar=sit===SIT.SEP_PEND?SIT.EM_SEP:sit;
+        let restaurado=false;
+        for(let t=0;t<3;t++){
+          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitRestaurar}`,{method:"PATCH"}); restaurado=true; break; }
+          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
+        }
+        if(!restaurado){
+          try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
+        }
+      }
+    }
+    return {ok:true,resultado};
+  }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+}
+
 app.put("/api/pedidos/:id/itens", async (req, res) => {
   try {
     const {itens, funcionarioId, funcionarioNome, motivo} = req.body||{};

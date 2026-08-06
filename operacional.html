@@ -845,6 +845,7 @@ async function finalizarEntrega(id,resolucao){
       fecharModal(); await carregar();
       if(resolucao==="credito") alert(`✅ Entrega confirmada!
 💳 Crédito de ${brl(valorAbatido)} registrado para ${ped.contato?.nome||"o cliente"}.`);
+      if(j.avisoItensBling) alert(j.avisoItensBling);
       if(j.avisoObsBling) alert(j.avisoObsBling);
     } else document.getElementById("entregaMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
   }catch(e){ document.getElementById("entregaMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
