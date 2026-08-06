@@ -136,57 +136,59 @@ function login(){ location.href="/login?next=/funcionarios"; }
 function sair(){ logado=false; if(typeof b13ClearSession==="function") b13ClearSession(); render(); }
 function fecharModal(){ document.getElementById("modal").style.display="none"; }
 
-// Lista de permissões granulares que existem no sistema — cada uma calcula sozinha
-// quais abas do menu ela libera (usando B13_NAV_LINKS, a mesma lista real do menu lateral)
-const PERMS_DISPONIVEIS=[
-  {v:"ver_aguardando",lbl:"Ver pedidos aguardando"},
-  {v:"receber_pagamento",lbl:"Receber pagamento"},
-  {v:"enviar_separacao",lbl:"Enviar para separação"},
-  {v:"ver_separacao",lbl:"Ver fila de separação"},
-  {v:"ver_pend",lbl:"Ver pendências"},
-  {v:"ver_separado",lbl:"Ver separados"},
-  {v:"conferir",lbl:"Conferir pedidos"},
-  {v:"editar_pedido",lbl:"Editar pedidos"},
-  {v:"ver_dashboard",lbl:"Ver Dashboard / Perdas"},
-  {v:"ver_listas",lbl:"Ver Tabela Atacado / Listas de Preço"},
-  {v:"ver_funcionarios",lbl:"Gerenciar Funcionários"},
-  {v:"admin",lbl:"Admin (acesso total a tudo)"},
-];
-// abas (do menu lateral de verdade) que cada permissão libera — sozinha, sem depender de mais nada marcado
-function abasQueEssaPermissaoLibera(acao){
-  return (window.B13_NAV_LINKS||[]).filter(l=>l.acoes.includes(acao)).map(l=>l.href);
-}
-// bloco de checkboxes de permissão + pré-visualização de quais abas cada combinação libera
+// Estado de trabalho do modal aberto no momento (novo ou editar) — a lista de
+// permissões "de verdade" (as mesmas usadas em todo o resto do sistema), mas
+// controlada pela tela só através das abas, nunca mostrando esses nomes internos.
+let PERMS_ATUAL=[];
+
+function abaLiberada(tab){ return tab.acoes.some(a=>PERMS_ATUAL.includes("admin")||PERMS_ATUAL.includes(a)); }
+
+// bloco: uma linha por aba do menu lateral (igual o menu de verdade), com toggle de acesso
 function htmlPermsBlock(checked){
-  checked=checked||[];
-  const chk=v=>checked.includes(v)?"checked":"";
-  return `<div class="lbl">Permissões</div>
-    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px" onchange="atualizarPreviewAbas()">
-      ${PERMS_DISPONIVEIS.map(p=>{
-        const abas=abasQueEssaPermissaoLibera(p.v);
-        return `<label style="display:block;padding:6px 0;border-bottom:1px solid #201d47;font-size:13px">
-          <div style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${p.v}" ${chk(p.v)}> ${esc(p.lbl)}</div>
-          ${abas.length?`<div class="muted" style="font-size:11px;margin:2px 0 0 26px">Libera: ${abas.map(h=>`<code style="background:#1c1846;padding:1px 5px;border-radius:4px">${esc(h)}</code>`).join(" ")}</div>`
-                       :p.v==="admin"?`<div class="muted" style="font-size:11px;margin:2px 0 0 26px">Libera: <code style="background:#1c1846;padding:1px 5px;border-radius:4px">todas as abas</code></div>`:""}
-        </label>`;
-      }).join("")}
+  PERMS_ATUAL=(checked||[]).slice();
+  return `<div class="lbl">Acesso às abas do sistema</div>
+    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
+      <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #201d47;font-size:13px;font-weight:800">
+        <input type="checkbox" id="fAdmin" ${PERMS_ATUAL.includes("admin")?"checked":""} onclick="toggleAdmin()"> Admin — acesso total a tudo
+      </label>
+      <div id="fAbasLista"></div>
     </div>
-    <div class="lbl">📱 Resultado — abas que esse funcionário vai poder acessar</div>
-    <div id="previewAbas" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:12px"></div>`;
+    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Algumas abas usam a mesma trava por trás (ex: Venda Atacado e Lista de Fardo). Se desmarcar uma e outra também perder acesso, a lista já mostra isso na hora — é o resultado real.</div>`;
 }
-// recalcula ao vivo, usando a MESMA lógica de permissão do resto do sistema
-// (B13_NAV_LINKS e b13PodeComPermissoes vêm do /nav.js, já carregado nesta página)
-function atualizarPreviewAbas(){
-  const box=document.getElementById("previewAbas"); if(!box) return;
-  const marcadas=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
-  const linhas=(window.B13_NAV_LINKS||[]).map(l=>{
-    const liberado=l.acoes.some(a=>b13PodeComPermissoes(a,marcadas));
-    return `<div style="display:flex;justify-content:space-between;padding:3px 0">
+function renderAbasLista(){
+  const box=document.getElementById("fAbasLista"); if(!box) return;
+  const isAdmin=PERMS_ATUAL.includes("admin");
+  box.innerHTML=(window.B13_NAV_LINKS||[]).map(l=>{
+    const liberado=abaLiberada(l);
+    return `<label style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #201d47;font-size:13px;${isAdmin?'opacity:.6':''}">
       <span><code style="background:#1c1846;padding:1px 5px;border-radius:4px;margin-right:6px">${esc(l.href)}</code>${esc(l.label)}</span>
-      <span style="font-weight:700;color:${liberado?'#3ce88a':'#ff8090'}">${liberado?'✅ Libera':'🚫 Bloqueado'}</span>
-    </div>`;
+      <span style="display:flex;align-items:center;gap:6px">
+        <span style="font-weight:700;color:${liberado?'#3ce88a':'#ff8090'}">${liberado?'✅ Tem acesso':'🚫 Sem acesso'}</span>
+        <input type="checkbox" ${liberado?"checked":""} ${isAdmin?"disabled":""} onclick="toggleAba('${l.href}')">
+      </span>
+    </label>`;
   }).join("");
-  box.innerHTML=linhas||'<div class="muted">—</div>';
+}
+function toggleAdmin(){
+  if(PERMS_ATUAL.includes("admin")){
+    if(!confirm("Remover Admin? O acesso vai voltar a ser controlado aba por aba (tudo desmarcado até você escolher de novo).")) { document.getElementById("fAdmin").checked=true; return; }
+    PERMS_ATUAL=[];
+  } else {
+    PERMS_ATUAL=["admin"];
+  }
+  renderAbasLista();
+}
+function toggleAba(href){
+  const tab=(window.B13_NAV_LINKS||[]).find(l=>l.href===href); if(!tab) return;
+  if(abaLiberada(tab)){
+    // desmarcando: tira todas as acoes dessa aba (outras abas que dependiam da mesma ficam sem acesso também — mostrado na lista)
+    PERMS_ATUAL=PERMS_ATUAL.filter(p=>!tab.acoes.includes(p));
+  } else {
+    // marcando: basta UMA das ações que liberam essa aba
+    const acaoPrincipal=tab.acoes[0];
+    if(!PERMS_ATUAL.includes(acaoPrincipal)) PERMS_ATUAL.push(acaoPrincipal);
+  }
+  renderAbasLista();
 }
 
 function abrirNovo(){
@@ -214,7 +216,7 @@ function abrirNovo(){
       <button class="btn btn-mag" style="flex:1" onclick="salvarNovo()">💾 Salvar</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Cancelar</button>
     </div>`;
-  atualizarPreviewAbas();
+  renderAbasLista();
 }
 
 // gera o bloco de busca/seleção de vendedor Bling, reaproveitado no criar e no editar
@@ -301,7 +303,7 @@ function abrirEditar(id){
       <button class="btn btn-mag" style="flex:1" onclick="salvarEditar('${id}')">💾 Salvar</button>
       <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Cancelar</button>
     </div>`;
-  atualizarPreviewAbas();
+  renderAbasLista();
 }
 
 async function resetarSenhaPadrao(id){
@@ -318,7 +320,7 @@ async function salvarNovo(){
   const nome=document.getElementById("fNome").value.trim();
   const senha=document.getElementById("fSenha").value;
   const nivel=document.getElementById("fNivel").value;
-  const permissoes=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
+  const permissoes=PERMS_ATUAL.slice();
   if(!nome||!senha){ document.getElementById("fMsg").innerHTML=`<div class="err">Preencha nome e senha</div>`; return; }
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
   try{
@@ -345,7 +347,7 @@ async function salvarEditar(id){
   const senha=document.getElementById("fSenha").value;
   const nivel=document.getElementById("fNivel").value;
   const login=document.getElementById("fLogin").value.trim().toLowerCase();
-  const permissoes=[...document.querySelectorAll("#fPerms input:checked")].map(c=>c.value);
+  const permissoes=PERMS_ATUAL.slice();
   const pinConfirmacao=document.getElementById("fPin")?.value||"";
   if(!permissoes.length){ document.getElementById("fMsg").innerHTML=`<div class="err">Selecione ao menos uma permissão</div>`; return; }
   const vendedorBlingId=document.getElementById("fVendedorId")?.value||"";
