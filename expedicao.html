@@ -37,8 +37,23 @@
   .barbox{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;display:flex;align-items:center;gap:12px}
   .warn{background:#3a2030;color:#ffbfce;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
   .ok{background:#183a2a;color:#a8f0c8;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  @media print{
+    body *{visibility:hidden}
+    #etiquetaPrint,#etiquetaPrint *{visibility:visible}
+    #etiquetaPrint{position:absolute;left:0;top:0;width:280px;padding:10px;text-align:center;color:#000;font-family:Arial,sans-serif}
+    #etiquetaPrint .logo{height:28px;margin-bottom:6px}
+    #etiquetaPrint .numero{font-size:26px;font-weight:900;letter-spacing:1px}
+    #etiquetaPrint .cliente{font-size:15px;font-weight:700;margin-top:2px;word-break:break-word}
+    #etiquetaPrint .tipo{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;color:#fff}
+    #etiquetaPrint .tipo.entrega{background:#00aaff}
+    #etiquetaPrint .tipo.retirada{background:#2f9e6b}
+    #etiquetaPrint .linha{border-top:1px dashed #999;margin:8px 0}
+    #etiquetaPrint .qr{margin-top:10px}
+    #etiquetaPrint .qr div{font-size:10px;color:#555;margin-top:3px}
+  }
 </style>
 <script src="/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   @media(min-width:900px){
     #b13nav{transform:translateX(0%) !important}
@@ -60,6 +75,7 @@
   })();
 </script>
 <div id="app"></div>
+<div id="etiquetaPrint" style="position:absolute;left:-9999px;top:-9999px"></div>
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
@@ -125,26 +141,26 @@ function filaColuna(){
   return `<div class="colhead">Fila de separação <span class="muted">(${S.pedidos.length})</span></div>${lista}`;
 }
 function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; return `${q} un (${Number.isInteger(cx)?cx:cx.toFixed(1)} cx)`; }
-// imprime a etiqueta sem sair da tela: carrega a pagina da etiqueta num iframe
-// escondido e dispara o print dele, em vez de abrir uma aba/janela nova
-function imprimirEtiqueta(id){
-  let f=document.getElementById("etiquetaFrame");
-  if(!f){
-    f=document.createElement("iframe");
-    f.id="etiquetaFrame";
-    // "visível" de propósito (só 1x1px, quase transparente) — iframe com
-    // visibility:hidden ou display:none não dispara impressão em vários
-    // navegadores (principalmente Chrome Android), porque o conteúdo nunca
-    // chega a ser "pintado" de verdade
-    f.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0.01;pointer-events:none";
-    document.body.appendChild(f);
-  }
-  f.onload=function(){
-    try{ f.contentWindow.focus(); f.contentWindow.print(); }
-    catch(e){ window.open(BACKEND+"/pedido/"+id+"/etiqueta","_blank"); } // se der erro, cai pro modo antigo (aba nova) em vez de não fazer nada
-  };
-  f.onerror=function(){ window.open(BACKEND+"/pedido/"+id+"/etiqueta","_blank"); };
-  f.src=BACKEND+"/pedido/"+id+"/etiqueta";
+// Gera a etiqueta com os dados que já temos em mãos (sem esperar nenhuma
+// resposta de rede) e chama window.print() na mesma execução do clique.
+// IMPORTANTE: manter isso síncrono — em vários navegadores (especialmente
+// Chrome Android) window.print() só funciona quando disparado direto de um
+// clique; se esperar um fetch/iframe carregar antes (assíncrono), o navegador
+// não associa mais o print ao gesto do usuário e simplesmente não faz nada,
+// sem erro nenhum (mesmo problema já visto no totem).
+function imprimirEtiqueta(id,numero,clienteNomeCod,ehEntrega){
+  const clienteNome=decodeURIComponent(clienteNomeCod||"");
+  const box=document.getElementById("etiquetaPrint");
+  const qrTexto=window.location.origin+"/pedido/"+id+"/acompanhar";
+  box.innerHTML=`
+    <img class="logo" src="/logo">
+    <div class="numero">#${numero||id}</div>
+    <div class="cliente">${(clienteNome||"").replace(/</g,"&lt;")}</div>
+    <div class="tipo ${ehEntrega?"entrega":"retirada"}">${ehEntrega?"🛵 ENTREGA":"🏪 RETIRADA"}</div>
+    <div class="linha"></div>
+    <div class="qr" id="qrEtiquetaPrint"><div>Escaneie pra ver status do pedido</div></div>`;
+  try{ new QRCode(document.getElementById("qrEtiquetaPrint"),{text:qrTexto,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  window.print();
 }
 function detalheColuna(){
   const p=S.sel;
@@ -157,7 +173,7 @@ function detalheColuna(){
         <div style="font-weight:900;font-size:16px;margin-bottom:4px">Pedido ${esc(s.numero)} ${s.comFalta?"marcado como SEPARADO C/ PENDÊNCIAS":"concluído — SEPARADO"}</div>
         <div class="muted" style="margin-bottom:16px">${s.comFalta?"Foi salvo com item(ns) em falta.":"Todos os itens foram separados."}</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-mag" onclick="imprimirEtiqueta(${s.id})">🖨️ Imprimir etiqueta</button>
+          <button class="btn btn-mag" onclick="imprimirEtiqueta(${s.id},'${esc(s.numero)}','${encodeURIComponent(s.clienteNome||"")}',${!!s.ehEntrega})">🖨️ Imprimir etiqueta</button>
           <button class="btn btn-ghost" onclick="S.sucesso=null;render()">Continuar</button>
         </div>
       </div>`;
@@ -369,6 +385,9 @@ async function concluir(){
   S.msg="Salvando…"; render();
   try{
     const idConcluido=S.sel.id, numeroConcluido=S.sel.numero||S.sel.id;
+    const clienteNomeConcluido=S.sel.contato?.nome||"";
+    const freteCalcConcluido=+(((S.sel.total||0)-(S.sel.totalProdutos||0))).toFixed(2);
+    const ehEntregaConcluido=freteCalcConcluido>0.01;
     const r=await fetch(BACKEND+"/api/fluxo/"+idConcluido+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({faltas, funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome})});
     const j=await r.json();
@@ -376,7 +395,7 @@ async function concluir(){
     fetch(BACKEND+"/api/separacoes/"+idConcluido,{method:"DELETE"}).catch(()=>{});
     // tela inline de sucesso (em vez de confirm()+window.open, que o navegador bloqueia)
     S.sel=null; S.conf=[];
-    S.sucesso={id:idConcluido, numero:numeroConcluido, comFalta:faltas.length>0};
+    S.sucesso={id:idConcluido, numero:numeroConcluido, comFalta:faltas.length>0, clienteNome:clienteNomeConcluido, ehEntrega:ehEntregaConcluido};
     await carregarFila();
   }catch(e){ S.msg="Erro ao concluir: "+e.message; render(); }
 }
