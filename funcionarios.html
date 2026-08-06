@@ -136,7 +136,8 @@ function login(){ location.href="/login?next=/funcionarios"; }
 function sair(){ logado=false; if(typeof b13ClearSession==="function") b13ClearSession(); render(); }
 function fecharModal(){ document.getElementById("modal").style.display="none"; }
 
-// Lista de permissões granulares que existem no sistema
+// Lista de permissões granulares que existem no sistema — cada uma calcula sozinha
+// quais abas do menu ela libera (usando B13_NAV_LINKS, a mesma lista real do menu lateral)
 const PERMS_DISPONIVEIS=[
   {v:"ver_aguardando",lbl:"Ver pedidos aguardando"},
   {v:"receber_pagamento",lbl:"Receber pagamento"},
@@ -151,15 +152,26 @@ const PERMS_DISPONIVEIS=[
   {v:"ver_funcionarios",lbl:"Gerenciar Funcionários"},
   {v:"admin",lbl:"Admin (acesso total a tudo)"},
 ];
+// abas (do menu lateral de verdade) que cada permissão libera — sozinha, sem depender de mais nada marcado
+function abasQueEssaPermissaoLibera(acao){
+  return (window.B13_NAV_LINKS||[]).filter(l=>l.acoes.includes(acao)).map(l=>l.href);
+}
 // bloco de checkboxes de permissão + pré-visualização de quais abas cada combinação libera
 function htmlPermsBlock(checked){
   checked=checked||[];
   const chk=v=>checked.includes(v)?"checked":"";
   return `<div class="lbl">Permissões</div>
     <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px" onchange="atualizarPreviewAbas()">
-      ${PERMS_DISPONIVEIS.map(p=>`<label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px"><input type="checkbox" value="${p.v}" ${chk(p.v)}> ${esc(p.lbl)}</label>`).join("")}
+      ${PERMS_DISPONIVEIS.map(p=>{
+        const abas=abasQueEssaPermissaoLibera(p.v);
+        return `<label style="display:block;padding:6px 0;border-bottom:1px solid #201d47;font-size:13px">
+          <div style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${p.v}" ${chk(p.v)}> ${esc(p.lbl)}</div>
+          ${abas.length?`<div class="muted" style="font-size:11px;margin:2px 0 0 26px">Libera: ${abas.map(h=>`<code style="background:#1c1846;padding:1px 5px;border-radius:4px">${esc(h)}</code>`).join(" ")}</div>`
+                       :p.v==="admin"?`<div class="muted" style="font-size:11px;margin:2px 0 0 26px">Libera: <code style="background:#1c1846;padding:1px 5px;border-radius:4px">todas as abas</code></div>`:""}
+        </label>`;
+      }).join("")}
     </div>
-    <div class="lbl">📱 Abas que esse funcionário vai poder acessar</div>
+    <div class="lbl">📱 Resultado — abas que esse funcionário vai poder acessar</div>
     <div id="previewAbas" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px;font-size:12px"></div>`;
 }
 // recalcula ao vivo, usando a MESMA lógica de permissão do resto do sistema
@@ -170,7 +182,8 @@ function atualizarPreviewAbas(){
   const linhas=(window.B13_NAV_LINKS||[]).map(l=>{
     const liberado=l.acoes.some(a=>b13PodeComPermissoes(a,marcadas));
     return `<div style="display:flex;justify-content:space-between;padding:3px 0">
-      <span>${esc(l.label)}</span><span style="font-weight:700;color:${liberado?'#3ce88a':'#ff8090'}">${liberado?'✅ Libera':'🚫 Bloqueado'}</span>
+      <span><code style="background:#1c1846;padding:1px 5px;border-radius:4px;margin-right:6px">${esc(l.href)}</code>${esc(l.label)}</span>
+      <span style="font-weight:700;color:${liberado?'#3ce88a':'#ff8090'}">${liberado?'✅ Libera':'🚫 Bloqueado'}</span>
     </div>`;
   }).join("");
   box.innerHTML=linhas||'<div class="muted">—</div>';
