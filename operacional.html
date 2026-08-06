@@ -832,11 +832,28 @@ async function finalizarEntrega(id,resolucao){
   const ped=window._entregaPed; const ocorr=window._itensOcorrencia||[];
   const valorAbatido=+ocorr.reduce((s,o)=>s+(o.valorItem||0),0).toFixed(2);
   try{
+    // salva a foto de cada item danificado como arquivo de verdade (mesmo
+    // endpoint usado nos comprovantes de conferência) — antes a foto era
+    // cortada pra só 50 caracteres antes de enviar, então nunca era salva
+    // de fato (a tela de Perdas ficava sem imagem nenhuma pra conferir depois)
+    const itensDanificados=[];
+    for(const o of ocorr.filter(x=>x.tipo==="danificado")){
+      let fotoUrl=null;
+      if(o.foto){
+        try{
+          const rf=await fetch(B+"/api/comprovante/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({dataUrl:o.foto,tipo:"foto",evento:"foto_produto_danificado",funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
+          const jf=await rf.json();
+          if(rf.ok&&jf.ok) fotoUrl=jf.url;
+        }catch(e){}
+      }
+      itensDanificados.push({...o,foto:fotoUrl});
+    }
     const r=await fetch(B+"/api/fluxo/"+id+"/confirmar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,
         itensNaoEntregues:ocorr.filter(o=>o.tipo==="nao_entregue"),
-        itensDanificados:ocorr.filter(o=>o.tipo==="danificado").map(o=>({...o,foto:o.foto?o.foto.slice(0,50)+"...":null})),
+        itensDanificados,
         valorAbatido,resolucao,
         clienteId:ped.contato?.id,clienteNome:ped.contato?.nome
       })});
