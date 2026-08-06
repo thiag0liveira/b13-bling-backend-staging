@@ -249,6 +249,7 @@ app.get("/musica-fundo",(req,res)=>{
 app.get("/login",(req,res)=>res.sendFile(path.join(__dirname,"login.html")));
 app.get("/nav.js",(req,res)=>{
   res.setHeader("Content-Type","application/javascript");
+  res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
   res.send(`
 // B13 Nav — módulo de autenticação compartilhado
 const B13_BACKEND="${process.env.RAILWAY_PUBLIC_DOMAIN?'https://'+process.env.RAILWAY_PUBLIC_DOMAIN:''}";
