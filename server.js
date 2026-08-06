@@ -286,7 +286,7 @@ function b13Logout(){ b13ClearSession(); location.href="/login"; }
 
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
-const B13_NAV_LINKS=[
+window.B13_NAV_LINKS=[
   {href:"/operacional",label:"⚙️ Operacional",acoes:["ver_aguardando","ver_separacao","conferir"]},
   {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["ver_aguardando","ver_separacao","conferir"]},
   {href:"/caixa",label:"💳 Caixa",acoes:["receber_pagamento"]},
