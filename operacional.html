@@ -658,6 +658,25 @@ function abrirEdicaoOcorrencia(id,ix,tipo){
   renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
 }
 
+// mostra, junto do evento de log, quais produtos foram removidos/reduzidos/
+// adicionados quando essa informação estiver salva no log (pendências
+// resolvidas, itens ajustados na conferência, etc.) — antes só aparecia o
+// nome genérico do evento, sem dizer qual produto foi afetado
+function detalhesItensDoLog(e){
+  const d=e?.detalhes||{};
+  if(d.itensTexto) return `<div style="font-size:10px;color:#ffbfce;margin-top:2px">${esc(d.itensTexto)}</div>`;
+  if(Array.isArray(d.itensDetalhado)&&d.itensDetalhado.length){
+    const linhas=d.itensDetalhado.map(i=>{
+      if(i.tipo==="reduzido") return `➖ ${esc(i.descricao)}: ${i.quantidadeOriginal}→${i.quantidadeNova}`;
+      if(i.tipo==="adicionado") return `➕ ${esc(i.descricao)}: ${i.quantidadeNova}un`;
+      if(i.tipo==="removido_total") return `➖ ${esc(i.descricao)}: removido (${i.quantidadeOriginal}un)`;
+      return esc(i.descricao||"");
+    });
+    return `<div style="font-size:10px;color:#ffbfce;margin-top:2px">${linhas.join("<br>")}</div>`;
+  }
+  if(Array.isArray(d.itens)&&d.itens.length) return `<div style="font-size:10px;color:#ffbfce;margin-top:2px">${d.itens.map(x=>esc(x)).join(", ")}</div>`;
+  return "";
+}
 function ajustarQtdEdicao(id,delta){
   const it=window._entregaPed?.itens?.[window._editItemIx]; if(!it||!window._editOcorrencia) return;
   let q=(window._editOcorrencia.qtd||1)+delta;
@@ -886,8 +905,8 @@ async function verPedido(id){
         <span style="font-size:11px;font-weight:800;color:#9a95c9">📋 HISTÓRICO</span>
         <button onclick="const d=document.getElementById('histlog-${id}');const open=d.style.display!=='none';d.style.display=open?'none':'block';this.textContent=open?'Ver tudo (${logItems.length})':'Recolher'" style="background:none;border:1px solid #514c96;border-radius:5px;color:#9a95c9;font-size:10px;padding:2px 7px;cursor:pointer">Ver tudo (${logItems.length})</button>
       </div>
-      ${ult?`<div style="font-size:12px;padding:5px 8px;background:#0d0b1e;border-radius:6px;margin-bottom:4px"><b>${LBL[ult.evento]||esc(ult.evento)}</b>${ult.funcionarioNome?` — ${esc(ult.funcionarioNome)}`:""}<span style="color:#514c96;float:right">${new Date(ult.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span></div>`:""}
-      <div id="histlog-${id}" style="display:none">${logItems.slice().reverse().map(l=>{const dt=new Date(l.em);return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px"><span>${LBL[l.evento]||esc(l.evento)}${l.funcionarioNome?` <span style="color:#9a95c9">— ${esc(l.funcionarioNome)}</span>`:""}</span><span style="color:#514c96;white-space:nowrap;margin-left:6px">${dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})} ${dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span></div>`;}).join("")}</div>
+      ${ult?`<div style="font-size:12px;padding:5px 8px;background:#0d0b1e;border-radius:6px;margin-bottom:4px"><b>${LBL[ult.evento]||esc(ult.evento)}</b>${ult.funcionarioNome?` — ${esc(ult.funcionarioNome)}`:""}<span style="color:#514c96;float:right">${new Date(ult.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span>${detalhesItensDoLog(ult)}</div>`:""}
+      <div id="histlog-${id}" style="display:none">${logItems.slice().reverse().map(l=>{const dt=new Date(l.em);return `<div style="padding:3px 0;border-bottom:1px solid var(--border);font-size:11px"><div style="display:flex;justify-content:space-between"><span>${LBL[l.evento]||esc(l.evento)}${l.funcionarioNome?` <span style="color:#9a95c9">— ${esc(l.funcionarioNome)}</span>`:""}</span><span style="color:#514c96;white-space:nowrap;margin-left:6px">${dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})} ${dt.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span></div>${detalhesItensDoLog(l)}</div>`;}).join("")}</div>
     </div>`:"";
 
     document.getElementById("mbox").innerHTML=`
@@ -1323,7 +1342,7 @@ async function confirmarRetirarSeguir(id){
     const freteCalcPend=+(((window.pedidoEditOrig?.total||0)-(window.pedidoEditOrig?.totalProdutos||0))).toFixed(2);
     const ehEntregaPend=entInfo?entInfo.tipo==="entrega":freteCalcPend>0.01;
     if(ehEntregaPend){
-      await executarRetirarSeguir(id,'ok',0,'');
+      await executarRetirarSeguir(id,'ok',0,descItens||"");
       return;
     }
 
@@ -1361,7 +1380,7 @@ async function confirmarRetirarSeguir(id){
     }
 
     // Caso 3: sem diferença ou não pago — segue normalmente
-    await executarRetirarSeguir(id,'ok',0,'');
+    await executarRetirarSeguir(id,'ok',0,descItens||"");
   }catch(e){ document.getElementById("retMsg").innerHTML=`<div class="err">Erro ao verificar pagamento: ${e.message}</div>`; }
 }
 
@@ -1537,7 +1556,7 @@ async function executarRetirarSeguir(id,resolucao,valorAbatido,descItens){
         body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,itensNaoEntregues:[],itensDanificados:[],valorAbatido,resolucao:"credito",clienteId:ped.contato.id,clienteNome:ped.contato.nome})}).catch(()=>{});
     }
     const formaEstorno=resolucao==="estorno"?{formaId:window._estornoFormaId,formaNome:window._estornoFormaNome}:null;
-    await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({evento:logEvento,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{itensAjustados:itensFiltrados.length,valorAbatido,resolucao,formaEstorno,voltouSep:temAlteracao}})}).catch(()=>{});
+    await fetch(B+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({evento:logEvento,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,detalhes:{itensAjustados:itensFiltrados.length,valorAbatido,resolucao,formaEstorno,voltouSep:temAlteracao,itensTexto:descItens||""}})}).catch(()=>{});
     fecharModal(); await carregar();
     if(resolucao==="credito") alert(`✅ Pendências retiradas!
 💳 Crédito de ${brl(valorAbatido)} registrado para ${ped?.contato?.nome||"o cliente"}.`);
@@ -1805,9 +1824,12 @@ async function verPedidoAtendido(id,nomeCliente){
       </div>`).join("");
     const logHtml=logItems.slice(0,8).map(e=>{
       const d=new Date(e.em||0).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
-      return `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);color:#cfc9f5">
-        <span>${(e.evento||"").replace(/_/g," ")} <span style="color:#9a95c9">— ${e.funcionarioNome||""}</span></span>
-        <span style="color:#514c96;white-space:nowrap;margin-left:8px">${d}</span>
+      return `<div style="font-size:11px;padding:3px 0;border-bottom:1px solid var(--border);color:#cfc9f5">
+        <div style="display:flex;justify-content:space-between">
+          <span>${(e.evento||"").replace(/_/g," ")} <span style="color:#9a95c9">— ${e.funcionarioNome||""}</span></span>
+          <span style="color:#514c96;white-space:nowrap;margin-left:8px">${d}</span>
+        </div>
+        ${detalhesItensDoLog(e)}
       </div>`;
     }).join("");
     document.getElementById("mbox").innerHTML=`
