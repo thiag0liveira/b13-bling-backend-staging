@@ -144,6 +144,7 @@
   @keyframes alertaFundo{ from{opacity:0} to{opacity:1} }
   @keyframes alertaPop{ from{transform:scale(.9);opacity:0} to{transform:scale(1);opacity:1} }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -984,94 +985,136 @@ function telaSucesso(app){
   if(pedidoId) gerarImagemNota(pedidoId, nped);
 }
 
-// gera a imagem da nota (com QR pra acompanhar o pedido) num canvas, mostra
-// ela na própria tela de sucesso e deixa pronta pro botão "Baixar pedido"
+// gera a imagem da nota (com código de barras + QR, igual a nota impressa da loja)
+// num canvas, mostra ela na própria tela de sucesso e deixa pronta pro "Baixar pedido"
 let _cvNotaOnline=null;
 function gerarImagemNota(pedidoId, numero){
   const area=document.getElementById("notaImgArea");
   if(area) area.innerHTML=`<div class="muted" style="font-size:12px">Gerando nota…</div>`;
-  // gera o QR num container temporário fora da tela (a lib qrcodejs desenha em canvas local, sem CORS)
   const tmp=document.createElement("div");
   tmp.style.cssText="position:absolute;left:-9999px;top:-9999px";
   document.body.appendChild(tmp);
+  // QR (acompanhamento do pedido) — a lib qrcodejs desenha num canvas local, sem CORS
   try{ new QRCode(tmp,{text:window.location.origin+"/pedido/"+pedidoId+"/acompanhar",width:180,height:180,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
-  // carrega a logo de verdade (mesmo domínio, sem problema de CORS pro canvas)
+  // código de barras (mesmo número apresentado no caixa da loja)
+  const barCanvas=document.createElement("canvas");
+  tmp.appendChild(barCanvas);
+  try{ JsBarcode(barCanvas,String(pedidoId),{format:"CODE128",width:1.5,height:52,fontSize:12,margin:0}); }catch(e){}
+  // logo de verdade (mesmo domínio, sem problema de CORS pro canvas)
   const logoImg=new Image();
   let logoPronta=false;
   logoImg.onload=()=>{ logoPronta=true; };
   logoImg.onerror=()=>{ logoPronta=false; };
   logoImg.src=LOGO;
   setTimeout(()=>{
-    const qrCanvas=tmp.querySelector("canvas");
-    const qrImg=tmp.querySelector("img");
-    desenharNotaOnline(numero, qrCanvas||qrImg, logoPronta?logoImg:null);
+    const qrCanvas=tmp.querySelector("canvas"); // 1º canvas do container = o do QRCode.js (o barCanvas foi anexado depois dele)
+    const qrImg=tmp.querySelector("img"); // fallback, caso a lib use <img> em vez de <canvas>
+    desenharNotaOnline(numero, qrCanvas||qrImg, barCanvas, logoPronta?logoImg:null);
     document.body.removeChild(tmp);
-  },200); // pequena espera pra lib do QR e a logo terminarem de carregar
+  },200); // pequena espera pra QR/barcode/logo terminarem de carregar
 }
-function desenharNotaOnline(numero, qrEl, logoImg){
+function desenharNotaOnline(numero, qrEl, barCanvas, logoImg){
   const itensArr=itens();
-  const itemH=36, headerH=104, qrSize=180;
-  // altura calculada seguindo exatamente os mesmos incrementos usados no desenho
-  // abaixo (header + cliente + itens + divisores + total + qr + rodapé), com uma
-  // margem de segurança extra pra nunca cortar o conteúdo
-  const H=headerH + 52 + itensArr.length*itemH + 24 + 20 + 28 + 44 + qrSize + 18 + 20 + 40;
+  const itemHeadH=26, itemH=40, headerH=120, qrSize=170;
+  // margem generosa de propósito (já erramos essa conta 2x) — melhor sobrar
+  // espaço em branco no rodapé do que cortar conteúdo
+  const H=900 + itensArr.length*itemH;
   const W=560, padd=24;
   const cv=document.createElement("canvas");
   const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%"; cv.style.maxWidth="420px"; cv.style.borderRadius="12px";
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-20);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-20,W,5);
+
+  // ---- cabeçalho (logo + endereço) ----
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-14);
   if(logoImg && logoImg.naturalWidth){
-    const logoH=36, logoW=logoImg.naturalWidth*(logoH/logoImg.naturalHeight);
-    try{ ctx.drawImage(logoImg,padd,18,logoW,logoH); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 24px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,38); }
+    const logoH=42, logoW=logoImg.naturalWidth*(logoH/logoImg.naturalHeight);
+    try{ ctx.drawImage(logoImg,padd,18,logoW,logoH); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
   } else {
-    ctx.fillStyle="#fff"; ctx.font="900 24px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,38);
+    ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48);
   }
-  ctx.font="700 14px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left"; ctx.fillText("Pedido #"+(numero||"—"),padd,62);
-  ctx.textAlign="right"; ctx.fillStyle="#cfc9f5"; ctx.font="12px Arial"; ctx.fillText(new Date().toLocaleDateString("pt-BR"),W-padd,38);
-  ctx.fillText(S.entrega==='entrega'?"🛵 Entrega":"🏪 Retirada na loja",W-padd,58);
-  let y=headerH;
+  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888",padd,headerH-28);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-14,W,5);
+
+  let y=headerH+16;
+  // ---- pedido + codigo de barras ----
+  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
+  ctx.font="900 34px Arial"; ctx.fillStyle="#111"; ctx.fillText("#"+(numero||"—"),padd,y+40);
+  ctx.font="13px Arial"; ctx.fillStyle="#888"; ctx.fillText(new Date().toLocaleDateString("pt-BR"),padd,y+62);
+  if(barCanvas){
+    const bw=220, bh=barCanvas.height*(bw/barCanvas.width);
+    try{ ctx.drawImage(barCanvas,W-padd-bw,y-6,bw,bh);
+      ctx.font="10px Arial"; ctx.fillStyle="#888"; ctx.textAlign="center";
+      ctx.fillText("Apresente no caixa",W-padd-bw/2,y-6+bh+14);
+    }catch(e){}
+  }
+  y+=100;
+  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  y+=26;
+
+  // ---- cliente ----
   ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
-  ctx.font="700 15px Arial"; ctx.fillStyle="#111"; ctx.fillText(S.nome||"—",padd,y+18);
-  y+=38;
-  ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=14;
-  itensArr.forEach(i=>{
-    ctx.fillStyle="#111"; ctx.font="13px Arial"; ctx.textAlign="left";
+  ctx.font="900 20px Arial"; ctx.fillStyle="#111"; ctx.fillText(S.nome||"—",padd,y+26);
+  y+=44;
+  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  y+=26;
+
+  // ---- itens ----
+  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y);
+  y+=22;
+  ctx.font="700 11px Arial"; ctx.fillStyle="#888";
+  ctx.textAlign="left"; ctx.fillText("Produto",padd,y);
+  ctx.textAlign="center"; ctx.fillText("Qtd",W-190,y);
+  ctx.textAlign="right"; ctx.fillText("Unit.",W-padd,y);
+  y+=10;
+  ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke();
+  y+=itemH-8;
+  itensArr.forEach((i,ix)=>{
+    ctx.fillStyle="#111"; ctx.font="15px Arial"; ctx.textAlign="left";
     let nome=(i.nomeProduto||"")+(i.sabor&&i.sabor!==i.nomeProduto?" ("+i.sabor+")":"");
-    if(nome.length>36) nome=nome.slice(0,35)+"…";
+    if(nome.length>28) nome=nome.slice(0,27)+"…";
     ctx.fillText(nome,padd,y);
-    ctx.fillStyle="#888"; ctx.font="11px Arial"; ctx.fillText(pack(i.qtd,i.un),padd,y+15);
-    ctx.fillStyle="#111"; ctx.font="700 13px Arial"; ctx.textAlign="right"; ctx.fillText(brl(i.preco*i.qtd),W-padd,y+7);
+    ctx.font="900 17px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="center"; ctx.fillText(String(i.qtd),W-190,y);
+    ctx.font="13px Arial"; ctx.fillStyle="#333"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
+    if(ix<itensArr.length-1){ ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+16); ctx.lineTo(W-padd,y+16); ctx.stroke(); }
     y+=itemH;
   });
-  y+=6; ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=18;
-  ctx.font="13px Arial"; ctx.fillStyle="#555"; ctx.textAlign="left"; ctx.fillText("Subtotal",padd,y);
-  ctx.textAlign="right"; ctx.fillText(brl(subtotal()),W-padd,y);
-  y+=20; // linha de entrega/retirada — sempre desenhada, pra altura ficar consistente
-  ctx.textAlign="left"; ctx.fillStyle="#888"; ctx.font="12px Arial";
-  if(S.entrega==='entrega' && S.frete){
-    ctx.fillText(`Entrega (${S.frete.km} km)`,padd,y);
-    ctx.textAlign="right"; ctx.fillStyle="#111"; ctx.font="700 12px Arial"; ctx.fillText(S.frete.gratis?"GRÁTIS":brl(S.frete.taxa),W-padd,y);
-  } else {
-    ctx.fillText("Retirada na loja — sem taxa",padd,y);
-  }
-  y+=28; ctx.fillStyle="#262366"; ctx.fillRect(padd,y-20,W-padd*2,38);
-  ctx.fillStyle="#fff"; ctx.font="900 16px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+10,y+4);
-  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 20px Arial"; ctx.fillText(brl(totalFinal()),W-padd-10,y+5);
-  y+=44;
+  y+=8;
+  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  y+=42;
+
+  // ---- total + status de pagamento ----
+  ctx.font="900 26px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
+  ctx.textAlign="right"; ctx.font="900 30px Arial"; ctx.fillText(brl(totalFinal()),W-padd,y);
+  y+=34;
+  ctx.textAlign="left"; ctx.font="900 16px Arial"; ctx.fillStyle="#dc2626";
+  ctx.fillText("⏳ AGUARDANDO PAGAMENTO",padd,y);
+  y+=30;
+
+  // ---- divisor tracejado ----
+  ctx.strokeStyle="#ccc"; ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]);
+  y+=32;
+
+  // ---- QR ----
   if(qrEl){
     const qrX=(W-qrSize)/2;
     try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){}
-    y+=qrSize+18;
+    y+=qrSize+22;
   }
-  ctx.fillStyle="#555"; ctx.font="700 12px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR pra ver o status do pedido",W/2,y);
-  y+=20;
-  ctx.fillStyle="#9a95c9"; ctx.font="11px Arial"; ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻",W/2,y);
+  ctx.fillStyle="#888"; ctx.font="13px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR para ver status do pedido",W/2,y);
+  y+=24; // margem final
 
-  _cvNotaOnline=cv;
+  // aparar o canvas pro tamanho real do conteúdo (desenhamos com folga de
+  // propósito acima, pra nunca cortar; agora cortamos o espaço em branco sobrando)
+  const cvFinal=document.createElement("canvas");
+  cvFinal.width=W*dpr; cvFinal.height=Math.round(y*dpr);
+  cvFinal.style.width="100%"; cvFinal.style.maxWidth="420px"; cvFinal.style.borderRadius="12px";
+  cvFinal.getContext("2d").drawImage(cv,0,0);
+
+  _cvNotaOnline=cvFinal;
   const area=document.getElementById("notaImgArea");
-  if(area){ area.innerHTML=""; area.appendChild(cv); }
+  if(area){ area.innerHTML=""; area.appendChild(cvFinal); }
 }
 function baixarNotaImagem(){
   if(!_cvNotaOnline){ alertaBonito("A nota ainda está sendo gerada, aguarde um instante e tente de novo."); return; }
