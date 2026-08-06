@@ -793,7 +793,12 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     try{
       resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     }catch(e1){
-      if(e1.status!==400||!precisaUnlock) throw e1;
+      // qualquer erro na 1ª tentativa, se o pedido estava numa situação bloqueada,
+      // tenta o caminho de desbloquear/editar/restaurar — antes só tentava quando
+      // o erro vinha com status exatamente 400, mas o Bling nem sempre retorna
+      // esse código pra "situação bloqueada", o que fazia falhar silenciosamente
+      // (o pagamento ficava salvo aqui no sistema, mas não ia pro Bling)
+      if(!precisaUnlock) throw e1;
       // situação bloqueada — desbloqueia via Em Digitação, edita, depois restaura
       await bling(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
       fezUnlock=true;
@@ -810,6 +815,56 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       }
     }
     return {ok:true,resposta:resultado,fezUnlock};
+  }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+}
+
+// acrescenta uma nota nas observações do pedido no Bling (sem apagar o que já
+// tinha escrito) — usado pra registrar valor previsto x valor efetivamente
+// pago quando teve abatimento por item danificado/não entregue na entrega.
+// Usa o mesmo esquema de desbloquear/editar/restaurar situação quando necessário.
+async function acrescentarObservacaoBling(id,notaAdicional){
+  const SIT_EM_DIGITACAO=21;
+  const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
+  try{
+    const rPed=await bling(`/pedidos/vendas/${id}`);
+    const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
+    const sitAtual=ped.situacao?.id;
+    const precisaUnlock=STATUS_BLOQUEADOS.includes(sitAtual);
+    const obsAtual=ped.observacoes||"";
+    const payload={
+      data:ped.data,
+      contato:{id:ped.contato?.id},
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      observacoes:(obsAtual?obsAtual+"\n":"")+notaAdicional,
+      ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
+    };
+    if(ped.transporte) payload.transporte={
+      fretePorConta:ped.transporte.fretePorConta??0, frete:ped.transporte.frete||0,
+      ...(ped.transporte.enderecoEntrega?{enderecoEntrega:ped.transporte.enderecoEntrega}:{}),
+    };
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+
+    const tentarPut=()=>bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    let fezUnlock=false;
+    try{
+      await tentarPut();
+    }catch(e1){
+      if(!precisaUnlock) throw e1;
+      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+      fezUnlock=true;
+      await new Promise(r=>setTimeout(r,400));
+      try{
+        await tentarPut();
+      }finally{
+        await new Promise(r=>setTimeout(r,400));
+        for(let t=0;t<3;t++){
+          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); break; }
+          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
+        }
+      }
+    }
+    return {ok:true,fezUnlock};
   }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
@@ -868,7 +923,12 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     // senão, substitui a parcela única "placeholder" pelas parcelas reais.
     const parcelasParaBling=(listaParcelas.length?listaParcelas:[{valor,formaId}]).map(pc=>({valor:pc.valor,formaId:pc.formaId}));
     const blingFinanceiroResultado=await atualizarParcelasBling(id,parcelasParaBling,{append:!!somar});
-    res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado});
+    // avisa o front se a sincronização com o Bling falhou — antes respondia
+    // ok:true mesmo quando o Bling não recebia a forma de pagamento nova,
+    // e ninguém ficava sabendo (o pagamento ficava só salvo aqui no sistema)
+    const avisoBling=blingFinanceiroResultado.ok?null:`⚠️ Pagamento salvo no sistema, mas NÃO foi possível atualizar a forma de pagamento no Bling: ${blingFinanceiroResultado.erro||"erro desconhecido"}. Confira/ajuste manualmente no Bling.`;
+    if(avisoBling) addLog(id,"erro_sync_pagamento_bling",funcionarioId,funcionarioNome,{erro:blingFinanceiroResultado.erro||"",status:blingFinanceiroResultado.status||null});
+    res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado,avisoBling});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/pagamentos",(req,res)=>{ res.json({data:lerPag()}); });
@@ -1206,10 +1266,23 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
       }
       addLog(id,"entrega_com_ocorrencia",funcionarioId,funcionarioNome,{valorAbatido,resolucao,naoEntregues:itensNaoEntregues?.length||0,danificados:itensDanificados?.length||0});
     }
+    // se teve abatimento (dano/não entregue), grava no Bling — nas observações
+    // do pedido — o valor que era previsto e o quanto foi efetivamente pago,
+    // pra ficar registrado no próprio pedido, não só no sistema interno
+    let avisoObsBling=null;
+    if(Number(valorAbatido||0)>0){
+      const tipos=[];
+      if(itensDanificados?.length) tipos.push(`${itensDanificados.length} produto(s) danificado(s)`);
+      if(itensNaoEntregues?.length) tipos.push(`${itensNaoEntregues.length} item(ns) não entregue(s)`);
+      const dataHoraBR=new Date(Date.now()-3*60*60*1000).toLocaleString("pt-BR");
+      const nota=`[Entrega ${dataHoraBR}] Valor previsto: R$ ${totalPed.toFixed(2)} — Valor pago: R$ ${pagoVal.toFixed(2)} (abatimento de R$ ${Number(valorAbatido).toFixed(2)} — ${tipos.join(" e ")}).`;
+      const resObs=await acrescentarObservacaoBling(id,nota);
+      if(!resObs.ok) avisoObsBling=`⚠️ Entrega confirmada, mas não foi possível gravar a observação no Bling: ${resObs.erro||"erro desconhecido"}.`;
+    }
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
     liberarLock(id,funcionarioId,funcionarioNome,"entrega_confirmada");
     addLog(id,"entrega_confirmada",funcionarioId,funcionarioNome,{});
-    res.json({ok:true});
+    res.json({ok:true,avisoObsBling});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
