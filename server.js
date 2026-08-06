@@ -110,6 +110,14 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "5mb" }));
 
+// nunca deixa o navegador cachear respostas de API — já pegamos esse bug 2x
+// (nav.js e /api/vendedor/meta) onde um funcionario via dado desatualizado
+// simplesmente por causa do cache do navegador, nao um bug de logica.
+app.use((req,res,next)=>{
+  if(req.path.startsWith("/api/")) res.set("Cache-Control","no-store, no-cache, must-revalidate");
+  next();
+});
+
 // ------------------------- tokens -------------------------
 function lerTokens(){ try{ return JSON.parse(fs.readFileSync(TOKENS_FILE,"utf8")); }catch{ return null; } }
 function salvarTokens(t){ t.obtido_em=Date.now(); fs.writeFileSync(TOKENS_FILE, JSON.stringify(t,null,2)); }
@@ -5129,6 +5137,7 @@ function salvarMetas(m){ salvarJSON(METAS_FILE,m); }
 
 // lê a meta de um mês (ou do mês atual)
 app.get("/api/vendedor/meta",(req,res)=>{
+  res.set("Cache-Control","no-store, no-cache, must-revalidate");
   const mes=req.query.mes||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,7);
   const metas=lerMetas();
   res.json({mes,meta:metas[mes]||0});
@@ -5145,6 +5154,7 @@ app.post("/api/vendedor/meta",(req,res)=>{
 
 // acompanhamento da meta: vendido por dia, total, meta, ritmo ideal
 app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
+  res.set("Cache-Control","no-store, no-cache, must-revalidate");
   try{
     const agoraBR=new Date(Date.now()-3*60*60*1000);
     const mes=req.query.mes||agoraBR.toISOString().slice(0,7);
