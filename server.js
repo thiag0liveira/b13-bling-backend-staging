@@ -283,6 +283,29 @@ function b13PodeComPermissoes(acao,n){
   return (mapa[acao]||[]).some(x=>n.includes(x));
 }
 function b13RequireLogin(){ if(!b13GetSession()){ location.href="/login?next="+encodeURIComponent(location.pathname); return false; } return true; }
+// checa se o funcionário logado tem acesso a uma aba específica, usando a
+// MESMA lista/regras do menu lateral — fonte única de verdade
+function b13PodeAba(href){
+  const l=(window.B13_NAV_LINKS||[]).find(x=>x.href===href);
+  if(!l) return true; // aba não cadastrada na lista: não bloqueia (evita travar telas fora do menu, tipo /login)
+  return l.acoes.some(a=>b13Pode(a));
+}
+// bloqueia a página inteira com uma mensagem de acesso negado se a aba não for permitida.
+// Uso: no topo de cada página, logo depois do require de login:
+//   if(!b13RequireLogin()) return;
+//   if(!b13BloquearSeSemAcesso("/caixa")) return;
+function b13BloquearSeSemAcesso(href){
+  if(b13PodeAba(href)) return true;
+  document.addEventListener("DOMContentLoaded",function(){
+    document.body.innerHTML=\`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
+      <div style="font-size:40px;margin-bottom:10px">🚫</div>
+      <h2>Acesso negado</h2>
+      <p style="color:#9a95c9">Seu usuário não tem permissão para acessar esta página.</p>
+      <a href="/operacional" style="color:#FF0082">← Voltar</a></div>\`;
+  });
+  window.__b13SemAcesso=true;
+  return false;
+}
 function b13Logout(){ b13ClearSession(); location.href="/login"; }
 
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra

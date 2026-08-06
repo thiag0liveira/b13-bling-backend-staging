@@ -46,17 +46,7 @@
   (function(){
     const sess=(typeof b13GetSession==="function")?b13GetSession():null;
     if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
-    if(!(typeof b13Pode==="function" && b13Pode("receber_pagamento"))){
-      document.addEventListener("DOMContentLoaded",function(){
-        document.body.innerHTML=`<div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial">
-          <div style="font-size:40px;margin-bottom:10px">🚫</div>
-          <h2>Acesso negado</h2>
-          <p style="color:#9a95c9">Seu usuário não tem permissão para acessar o Caixa.</p>
-          <a href="/operacional" style="color:#FF0082">← Voltar</a></div>`;
-      });
-      window.__b13SemAcesso=true;
-      return;
-    }
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/caixa-diario")) return;
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/caixa-diario");

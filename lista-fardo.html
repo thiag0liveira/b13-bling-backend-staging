@@ -30,6 +30,7 @@
 <script src="/nav.js"></script>
 <script>
 if(!b13RequireLogin())document.write=function(){};
+if(!b13BloquearSeSemAcesso("/lista-fardo"))document.write=function(){};
 document.addEventListener("DOMContentLoaded",function(){
   const nav=document.createElement("div");
   nav.innerHTML=b13RenderNav("/lista-fardo");

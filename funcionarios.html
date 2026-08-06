@@ -67,7 +67,7 @@ const LOGO="/logo";
 const NIVEIS={admin:"Admin",gerente:"Gerente",lider_caixa:"Líder de Caixa",expedicao:"Expedição",financeiro_atacado:"Financeiro",vendedor:"Vendedor",conferente:"Conferente"};
 const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"]; // grupos que conseguem autorizar ações no Frente de Caixa
 let logado=false, funcs=[], msg="";
-try{ const sess=typeof b13GetSession==="function"?b13GetSession():null; if(sess&&(sess.nivel==="admin"||(sess.permissoes||[]).includes("admin"))) logado=true; }catch(e){}
+try{ if(typeof b13PodeAba==="function") logado=b13PodeAba("/funcionarios"); }catch(e){}
 
 const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 

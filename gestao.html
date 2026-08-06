@@ -78,6 +78,7 @@
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/gestao")) return;
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/gestao");

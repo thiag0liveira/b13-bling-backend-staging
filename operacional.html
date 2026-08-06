@@ -87,6 +87,7 @@
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/operacional")) return;
     if(new URLSearchParams(location.search).get("embed")==="caixa") return; // embutido: sem menu
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");

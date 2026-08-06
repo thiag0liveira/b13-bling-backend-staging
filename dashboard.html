@@ -61,6 +61,7 @@ body{background:var(--bg);color:#fff;min-height:100vh}
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/dashboard")) return;
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/dashboard");

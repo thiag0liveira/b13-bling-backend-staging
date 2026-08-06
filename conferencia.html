@@ -149,6 +149,7 @@ let FUNC=null, SIT={}, pedidos=[], sel=null, itensConf=[], tipoSel=null, fotoBas
 // Auth — usa sessão do nav
 FUNC=b13GetSession();
 if(!FUNC) throw 0; // b13RequireLogin já redirecionou
+if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/conferencia")) throw 0;
 document.getElementById("funcNome").textContent=FUNC.nome||"";
 
 async function init(){

@@ -46,6 +46,7 @@
 <body><script>
   (function(){
     if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/perdas")) return;
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/perdas");
