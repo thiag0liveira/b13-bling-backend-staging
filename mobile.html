@@ -69,6 +69,7 @@
 </style>
 </head>
 <body>
+<script src="/nav.js"></script>
 <div class="top">
   <img src="/logo" alt="B13" style="height:26px" onerror="this.style.display='none'">
   <div class="sp"></div>
@@ -123,6 +124,7 @@ var carregando = false;
 var FILA = [];
 var filaPeriodoIni = null, filaPeriodoFim = null, filaPeriodoAtivo = "semana";
 var _filaTimer = null;
+var SEM_ACESSO = false; // logou, mas nao tem permissao de /conferencia
 
 /* --- Utils compativeis --- */
 function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -130,17 +132,31 @@ function brl(n) { var v = Number(n) || 0; return "R$ " + v.toFixed(2).replace(".
 function el(id) { return document.getElementById(id); }
 function getSit(p) { return p && p.situacao && p.situacao.id ? Number(p.situacao.id) : 0; }
 
+/* --- Acesso: quem pode usar o /mobile e quem tem acesso a /conferencia --- */
+function podeUsarMobile() {
+  try {
+    if (typeof b13PodeAba === "function") return b13PodeAba("/conferencia");
+  } catch (e) {}
+  return true; // se o nav.js nao carregou por algum motivo, nao trava o coletor a toa
+}
+
 /* --- Login simples: reusa a sessao do sistema se existir --- */
 function carregarFunc() {
+  var f = null;
   try {
     var s = sessionStorage.getItem("b13sess");
-    if (s) { var f = JSON.parse(s); if (f && f.id) { FUNC = f; return true; } }
+    if (s) { var f1 = JSON.parse(s); if (f1 && f1.id) f = f1; }
   } catch (e) {}
-  try {
-    var l = localStorage.getItem("b13sess");
-    if (l) { var f2 = JSON.parse(l); if (f2 && f2.id) { FUNC = f2; return true; } }
-  } catch (e) {}
-  return false;
+  if (!f) {
+    try {
+      var l = localStorage.getItem("b13sess");
+      if (l) { var f2 = JSON.parse(l); if (f2 && f2.id) f = f2; }
+    } catch (e) {}
+  }
+  if (!f) return false;
+  if (!podeUsarMobile()) { FUNC = f; SEM_ACESSO = true; return true; }
+  FUNC = f; SEM_ACESSO = false;
+  return true;
 }
 
 /* ================= RENDER ================= */
@@ -148,9 +164,24 @@ function render() {
   if (FUNC && el("funcNome")) el("funcNome").textContent = FUNC.nome || "";
   var app = el("app");
   if (!FUNC) { app.innerHTML = viewLogin(); return; }
+  if (SEM_ACESSO) { app.innerHTML = viewSemAcesso(); return; }
   if (TELA === "inicio") { app.innerHTML = viewInicio(); return; }
   if (TELA === "pedido") { app.innerHTML = viewPedido(); return; }
   app.innerHTML = viewInicio();
+}
+function viewSemAcesso() {
+  return '<div class="card center">' +
+    '<div style="font-size:40px;margin-bottom:10px">🚫</div>' +
+    '<h2>Acesso negado</h2>' +
+    '<div class="muted mt">Olá, ' + esc(FUNC ? FUNC.nome : "") + '. Seu usuário não tem permissão de Conferência — quem acessa o /mobile precisa ter acesso liberado à aba Conferência.</div>' +
+    '<button class="btn btn-ghost mt" onclick="sairMobile()">Sair</button>' +
+    '</div>';
+}
+function sairMobile() {
+  try { sessionStorage.removeItem("b13sess"); } catch (e) {}
+  try { localStorage.removeItem("b13sess"); } catch (e) {}
+  FUNC = null; SEM_ACESSO = false; TELA = "inicio";
+  render();
 }
 
 /* --- LOGIN --- */
@@ -177,6 +208,10 @@ function fazerLogin() {
     if (f && f.id) {
       FUNC = f;
       try { sessionStorage.setItem("b13sess", JSON.stringify(f)); } catch (e) {}
+      if (!podeUsarMobile()) {
+        SEM_ACESSO = true; render(); return;
+      }
+      SEM_ACESSO = false;
       TELA = "inicio"; render();
       carregarFila();
     } else {
@@ -658,7 +693,7 @@ function voltarInicio() {
 /* --- INICIO --- */
 carregarFunc();
 render();
-if (FUNC) carregarFila();
+if (FUNC && !SEM_ACESSO) carregarFila();
 </script>
 </body>
 </html>
