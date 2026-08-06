@@ -144,6 +144,7 @@
   @keyframes alertaFundo{ from{opacity:0} to{opacity:1} }
   @keyframes alertaPop{ from{transform:scale(.9);opacity:0} to{transform:scale(1);opacity:1} }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -240,7 +241,12 @@ function header(showCart){
           : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 5h16M4 10h16M4 15h16M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Tabela</span>`}
       </button>`
     : "";
-  return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div><div class="sp"></div>
+  // nome do cliente identificado — mostrado no topo até finalizar o pedido
+  const nomeTopo = (S.identificado && (S.docNome||S.nome).trim() && S.etapa!=="inicio" && S.etapa!=="sucesso") ? (S.docNome||S.nome).trim() : "";
+  const clienteBadge = nomeTopo
+    ? `<div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ffd23f;margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" title="${esc(nomeTopo)}">👤 ${esc(nomeTopo)}</div>`
+    : "";
+  return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div>${clienteBadge}<div class="sp"></div>
     ${modoBtn}
     ${showCart?`<button class="cartbtn" onclick="irCarrinho()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.2a1 1 0 0 0 1-.8L21 8H6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="20" r="1.4" fill="#fff"/><circle cx="17.5" cy="20" r="1.4" fill="#fff"/></svg>${contagem()>0?`<span class="cnt">${contagem()}</span>`:""}</button>`:""}</div>`;
 }
@@ -924,7 +930,6 @@ function telaSucesso(app){
   const r=S.resultado||{};
   const pedidoId=r.pedido?.data?.id;
   const nped=r.pedido?.data?.numero || pedidoId || null;
-  const notaUrl=pedidoId?(window.location.origin+"/pedido/"+pedidoId+"/nota"):null;
   const listaItens=itens().map(i=>`
     <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="flex:1">
@@ -968,12 +973,92 @@ function telaSucesso(app){
 
     ${statusBling}
 
+    <div id="notaImgArea" style="text-align:center;margin-top:14px"></div>
+
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      ${notaUrl?`<a href="${notaUrl}" target="_blank" class="btn btn-mag big" style="text-decoration:none;text-align:center">🖨️ Imprimir nota (com código pro caixa)</a>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
+      ${pedidoId?`<button class="btn btn-mag big" onclick="baixarNotaImagem()">⬇️ Baixar pedido</button>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
       <button class="btn btn-out big" onclick="abrirWhatsApp()">🟢 Enviar no WhatsApp (opcional)</button>
       <button class="btn btn-ghost big" onclick="recomecar(false)">Novo pedido</button>
     </div>
   </div>`;
+  if(pedidoId) gerarImagemNota(pedidoId, nped);
+}
+
+// gera a imagem da nota (com QR pra acompanhar o pedido) num canvas, mostra
+// ela na própria tela de sucesso e deixa pronta pro botão "Baixar pedido"
+let _cvNotaOnline=null;
+function gerarImagemNota(pedidoId, numero){
+  const area=document.getElementById("notaImgArea");
+  if(area) area.innerHTML=`<div class="muted" style="font-size:12px">Gerando nota…</div>`;
+  // gera o QR num container temporário fora da tela (a lib qrcodejs desenha em canvas local, sem CORS)
+  const tmp=document.createElement("div");
+  tmp.style.cssText="position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmp);
+  try{ new QRCode(tmp,{text:window.location.origin+"/pedido/"+pedidoId+"/acompanhar",width:180,height:180,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  setTimeout(()=>{
+    const qrCanvas=tmp.querySelector("canvas");
+    const qrImg=tmp.querySelector("img");
+    desenharNotaOnline(numero, qrCanvas||qrImg);
+    document.body.removeChild(tmp);
+  },120); // pequena espera pra lib terminar de desenhar o QR
+}
+function desenharNotaOnline(numero, qrEl){
+  const itensArr=itens();
+  const temFrete=S.entrega==='entrega'&&S.frete&&!S.frete.gratis;
+  const W=560, padd=24, headerH=104, itemH=36, freteH=temFrete?24:0, qrH=230, footerH=40;
+  const H=headerH+itensArr.length*itemH+freteH+50+qrH+footerH;
+  const cv=document.createElement("canvas");
+  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%"; cv.style.maxWidth="420px"; cv.style.borderRadius="12px";
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-20);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-20,W,5);
+  ctx.fillStyle="#fff"; ctx.font="900 24px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,38);
+  ctx.font="700 14px Arial"; ctx.fillStyle="#ffd23f"; ctx.fillText("Pedido #"+(numero||"—"),padd,62);
+  ctx.textAlign="right"; ctx.fillStyle="#cfc9f5"; ctx.font="12px Arial"; ctx.fillText(new Date().toLocaleDateString("pt-BR"),W-padd,38);
+  ctx.fillText(S.entrega==='entrega'?"🛵 Entrega":"🏪 Retirada na loja",W-padd,58);
+  let y=headerH;
+  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
+  ctx.font="700 15px Arial"; ctx.fillStyle="#111"; ctx.fillText(S.nome||"—",padd,y+18);
+  y+=38;
+  ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=14;
+  itensArr.forEach(i=>{
+    ctx.fillStyle="#111"; ctx.font="13px Arial"; ctx.textAlign="left";
+    let nome=(i.nomeProduto||"")+(i.sabor&&i.sabor!==i.nomeProduto?" ("+i.sabor+")":"");
+    if(nome.length>36) nome=nome.slice(0,35)+"…";
+    ctx.fillText(nome,padd,y);
+    ctx.fillStyle="#888"; ctx.font="11px Arial"; ctx.fillText(pack(i.qtd,i.un),padd,y+15);
+    ctx.fillStyle="#111"; ctx.font="700 13px Arial"; ctx.textAlign="right"; ctx.fillText(brl(i.preco*i.qtd),W-padd,y+7);
+    y+=itemH;
+  });
+  y+=6; ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=18;
+  ctx.font="13px Arial"; ctx.fillStyle="#555"; ctx.textAlign="left"; ctx.fillText("Subtotal",padd,y);
+  ctx.textAlign="right"; ctx.fillText(brl(subtotal()),W-padd,y);
+  if(temFrete){ y+=20; ctx.textAlign="left"; ctx.fillText(`Entrega (${S.frete.km} km)`,padd,y); ctx.textAlign="right"; ctx.fillText(brl(S.frete.taxa),W-padd,y); }
+  else if(S.entrega!=='entrega'){ y+=20; ctx.textAlign="left"; ctx.fillStyle="#888"; ctx.fillText("Retirada na loja — sem taxa",padd,y); }
+  y+=28; ctx.fillStyle="#262366"; ctx.fillRect(padd,y-20,W-padd*2,38);
+  ctx.fillStyle="#fff"; ctx.font="900 16px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+10,y+4);
+  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 20px Arial"; ctx.fillText(brl(totalFinal()),W-padd-10,y+5);
+  y+=44;
+  if(qrEl){
+    const qrSize=180, qrX=(W-qrSize)/2;
+    try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){}
+    y+=qrSize+18;
+  }
+  ctx.fillStyle="#555"; ctx.font="700 12px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR pra ver o status do pedido",W/2,y);
+  y+=20;
+  ctx.fillStyle="#9a95c9"; ctx.font="11px Arial"; ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻",W/2,y);
+
+  _cvNotaOnline=cv;
+  const area=document.getElementById("notaImgArea");
+  if(area){ area.innerHTML=""; area.appendChild(cv); }
+}
+function baixarNotaImagem(){
+  if(!_cvNotaOnline){ alertaBonito("A nota ainda está sendo gerada, aguarde um instante e tente de novo."); return; }
+  const a=document.createElement("a");
+  a.download="pedido-b13.png";
+  a.href=_cvNotaOnline.toDataURL("image/png");
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 function recomecar(perguntar){
