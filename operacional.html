@@ -578,7 +578,9 @@ function renderConfirmarEntrega(id,ped,pag,ocorrencias){
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <span style="font-size:12px;color:#9a95c9">Quantidade:</span>
           <button class="btn btn-ghost" style="padding:4px 10px;font-size:16px" onclick="ajustarQtdEdicao(${id},-1)">−</button>
-          <span style="font-weight:900;font-size:16px;min-width:24px;text-align:center">${ed.qtd}</span>
+          <input type="number" inputmode="numeric" min="1" max="${it.quantidade}" value="${ed.qtd}"
+            style="width:56px;text-align:center;font-weight:900;font-size:16px;padding:4px 2px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff"
+            onchange="digitarQtdEdicao(${id},this.value)" onclick="this.select()">
           <button class="btn btn-ghost" style="padding:4px 10px;font-size:16px" onclick="ajustarQtdEdicao(${id},1)">+</button>
           <span style="font-size:12px;color:#9a95c9">de ${it.quantidade}</span>
         </div>
@@ -660,6 +662,15 @@ function ajustarQtdEdicao(id,delta){
   const it=window._entregaPed?.itens?.[window._editItemIx]; if(!it||!window._editOcorrencia) return;
   let q=(window._editOcorrencia.qtd||1)+delta;
   if(q<1) q=1; if(q>it.quantidade) q=it.quantidade;
+  window._editOcorrencia.qtd=q;
+  renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
+}
+// permite digitar a quantidade direto (em vez de só clicar +/-), útil quando
+// a diferença é grande (ex: faltaram 40 de 60 unidades)
+function digitarQtdEdicao(id,valor){
+  const it=window._entregaPed?.itens?.[window._editItemIx]; if(!it||!window._editOcorrencia) return;
+  let q=parseInt(valor,10);
+  if(isNaN(q)||q<1) q=1; if(q>it.quantidade) q=it.quantidade;
   window._editOcorrencia.qtd=q;
   renderConfirmarEntrega(id,window._entregaPed,window._entregaPag,window._itensOcorrencia);
 }
