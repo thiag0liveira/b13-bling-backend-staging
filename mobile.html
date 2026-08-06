@@ -80,7 +80,7 @@
 <!-- Modal de finalizacao (foto + status pagamento) -->
 <div class="modal" id="modalConf">
   <div class="mbox">
-    <h3>✅ Pedido Conferido</h3>
+    <h3 id="modalTituloMob">✅ Pedido Conferido</h3>
     <div id="pagStatusMob" class="mt" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
     <div id="tipoFixoMob" style="text-align:center;padding:14px;border-radius:10px;border:2px solid #FF0082;background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
     <div class="row">
@@ -575,8 +575,10 @@ function viewPedido() {
   var podeConferir = (sit === SIT.SEPARADO || sit === SIT.SEP_PEND);
   if (podeConferir) {
     var todos = (confCount === ITENS.length && ITENS.length > 0);
-    h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="' + (todos ? "abrirModalMob()" : "confirmarConferencia()") + '">' +
-      (todos ? "✅ PEDIDO CONFERIDO — Finalizar" : "Confirmar mesmo com itens não marcados") + '</button>';
+    var txtBtn = todos
+      ? (PEDIDO._tipoEntrega === "entrega" ? "✅ Pedido conferido! Liberar para entrega" : "✅ PEDIDO CONFERIDO — Finalizar")
+      : "Confirmar mesmo com itens não marcados";
+    h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="' + (todos ? "abrirModalMob()" : "confirmarConferencia()") + '">' + txtBtn + '</button>';
   } else {
     h += '<div class="card muted center">Este pedido está como "' + esc(sitNome) + '" — a conferência é feita quando está "Separado".</div>';
   }
@@ -596,6 +598,8 @@ function abrirModalMob() {
   comprovanteMob = null;
   el("fotoPreviewMob").innerHTML = "Opcional: registre uma foto ou um vídeo curto do pedido.";
   el("msgModalMob").textContent = "";
+  var tituloEl = el("modalTituloMob");
+  if (tituloEl) tituloEl.textContent = PEDIDO._tipoEntrega === "entrega" ? "✅ Liberar para entrega" : "✅ Pedido Conferido";
   var pago = !!PEDIDO._pago;
   var pag = PEDIDO._pag;
   var valorPago = (pag && pag.valorPago) || 0;
