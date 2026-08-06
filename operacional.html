@@ -124,21 +124,14 @@ const MODO_CAIXA=_urlp.get("embed")==="caixa";
 if(MODO_CAIXA){ try{ document.body.classList.add("embed"); }catch(e){} }
 try{ if(typeof b13GetSession==="function"){ const sess=b13GetSession(); if(sess) FUNC=sess; } }catch(e){}
 
-// permissões por nível
+// permissões — usa a MESMA fonte de verdade do nav.js (b13PodeComPermissoes),
+// evitando manter uma cópia própria que pode ficar desatualizada
 const PODE=(acao)=>{
   if(!FUNC) return false;
   const n=FUNC.permissoes||[FUNC.nivel];
-  const mapa={
-    receber_pagamento:["financeiro_atacado","admin"],
-    enviar_separacao:["financeiro_atacado","vendedor","gerente","admin"],
-    ver_aguardando:["financeiro_atacado","vendedor","gerente","admin"],
-    ver_separacao:["expedicao","gerente","admin"],
-    ver_separado:["conferente","gerente","admin"],
-    ver_pend:["conferente","gerente","admin"],
-    conferir:["conferente","gerente","admin"],
-    editar_pedido:["gerente","admin"],
-  };
-  return (mapa[acao]||[]).some(x=>n.includes(x));
+  if(typeof b13PodeComPermissoes==="function") return b13PodeComPermissoes(acao,n);
+  // fallback só se o nav.js não carregou por algum motivo
+  return n.includes("admin")||n.includes(acao);
 };
 
 async function login(){
@@ -230,13 +223,15 @@ function render(){
     </div>`; return;
   }
 
-  // monta colunas do kanban conforme permissões
+  // monta colunas do kanban conforme permissões — no modo embutido no /caixa,
+  // o acesso já foi validado (acesso à aba /caixa), então mostra o board
+  // completo de acompanhamento sem depender das permissões finas de operação
   const colunas=[];
-  if(PODE("ver_aguardando")) colunas.push({label:"⏳ Aguardando",cor:"#fbff00",sit:SIT.AGUARDANDO});
-  if(PODE("ver_separacao"))  colunas.push({label:"🔄 Em Separação",cor:"#00aaff",sit:SIT.EM_SEP});
-  if(PODE("ver_pend"))       colunas.push({label:"⚠️ C/ Pendências",cor:"#d400ff",sit:SIT.SEP_PEND});
-  if(PODE("ver_separado")||PODE("conferir")) colunas.push({label:"📦 Separados",cor:"#8e42a3",sit:SIT.SEPARADO});
-  if(PODE("conferir")||PODE("editar_pedido")) colunas.push({label:"🚚 Em Rota",cor:"#6d2390",sit:SIT.EM_ROTA});
+  if(MODO_CAIXA||PODE("ver_aguardando")) colunas.push({label:"⏳ Aguardando",cor:"#fbff00",sit:SIT.AGUARDANDO});
+  if(MODO_CAIXA||PODE("ver_separacao"))  colunas.push({label:"🔄 Em Separação",cor:"#00aaff",sit:SIT.EM_SEP});
+  if(MODO_CAIXA||PODE("ver_pend"))       colunas.push({label:"⚠️ C/ Pendências",cor:"#d400ff",sit:SIT.SEP_PEND});
+  if(MODO_CAIXA||PODE("ver_separado")||PODE("conferir")) colunas.push({label:"📦 Separados",cor:"#8e42a3",sit:SIT.SEPARADO});
+  if(MODO_CAIXA||PODE("conferir")||PODE("editar_pedido")) colunas.push({label:"🚚 Em Rota",cor:"#6d2390",sit:SIT.EM_ROTA});
   if(PODE("editar_pedido") && !MODO_CAIXA)  colunas.push({label:"✅ Atendidos",cor:"#2f9e6b",sit:SIT.ATENDIDO});
 
   if(!colunas.length){ app.innerHTML=top+`<div style="padding:30px;text-align:center"><div class="muted">Seu perfil não tem acesso a nenhuma fila.<br>Fale com o administrador.</div></div>`; return; }
