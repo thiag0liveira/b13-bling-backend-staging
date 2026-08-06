@@ -87,8 +87,14 @@
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
+    const embed=new URLSearchParams(location.search).get("embed");
+    if(embed==="caixa"){
+      // embutido dentro do /caixa (iframe de acompanhamento) — quem já passou pela
+      // checagem do /caixa pode ver isso, mesmo sem acesso direto ao /operacional
+      if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/caixa")) return;
+      return; // embutido: sem menu lateral
+    }
     if(!b13BloquearSeSemAcesso("/operacional")) return;
-    if(new URLSearchParams(location.search).get("embed")==="caixa") return; // embutido: sem menu
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/operacional");
