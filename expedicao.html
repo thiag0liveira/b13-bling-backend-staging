@@ -132,10 +132,18 @@ function imprimirEtiqueta(id){
   if(!f){
     f=document.createElement("iframe");
     f.id="etiquetaFrame";
-    f.style.cssText="position:fixed;width:0;height:0;border:0;visibility:hidden";
+    // "visível" de propósito (só 1x1px, quase transparente) — iframe com
+    // visibility:hidden ou display:none não dispara impressão em vários
+    // navegadores (principalmente Chrome Android), porque o conteúdo nunca
+    // chega a ser "pintado" de verdade
+    f.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0.01;pointer-events:none";
     document.body.appendChild(f);
   }
-  f.onload=function(){ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} };
+  f.onload=function(){
+    try{ f.contentWindow.focus(); f.contentWindow.print(); }
+    catch(e){ window.open(BACKEND+"/pedido/"+id+"/etiqueta","_blank"); } // se der erro, cai pro modo antigo (aba nova) em vez de não fazer nada
+  };
+  f.onerror=function(){ window.open(BACKEND+"/pedido/"+id+"/etiqueta","_blank"); };
   f.src=BACKEND+"/pedido/"+id+"/etiqueta";
 }
 function detalheColuna(){
