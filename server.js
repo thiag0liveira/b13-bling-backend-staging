@@ -815,7 +815,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       }
     }
     return {ok:true,resposta:resultado,fezUnlock};
-  }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+  }catch(e){ console.error("[atualizarParcelasBling] falhou pedido",id,"status",e.status,"body:",JSON.stringify(e.body||{})); return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
 // acrescenta uma nota nas observações do pedido no Bling (sem apagar o que já
@@ -865,7 +865,20 @@ async function acrescentarObservacaoBling(id,notaAdicional){
       }
     }
     return {ok:true,fezUnlock};
-  }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+  }catch(e){ console.error("[acrescentarObservacaoBling] falhou pedido",id,"status",e.status,"body:",JSON.stringify(e.body||{})); return {ok:false,erro:e.message,status:e.status,body:e.body}; }
+}
+
+// extrai o maximo de detalhe possivel de um erro do Bling — a mensagem
+// generica ("houveram erros de validacao") normalmente vem acompanhada de uma
+// lista de campos especificos com o motivo real, que a mensagem sozinha nao mostra
+function detalheErroBling(resultado){
+  if(!resultado) return "erro desconhecido";
+  const body=resultado.body;
+  const campos=body?.error?.fields;
+  if(Array.isArray(campos)&&campos.length){
+    return campos.map(f=>`${f.element||f.field||"?"}: ${f.msg||f.message||JSON.stringify(f)}`).join(" | ");
+  }
+  return resultado.erro||"erro desconhecido";
 }
 
 app.post("/api/pagamentos/:id",async(req,res)=>{
@@ -926,8 +939,8 @@ app.post("/api/pagamentos/:id",async(req,res)=>{
     // avisa o front se a sincronização com o Bling falhou — antes respondia
     // ok:true mesmo quando o Bling não recebia a forma de pagamento nova,
     // e ninguém ficava sabendo (o pagamento ficava só salvo aqui no sistema)
-    const avisoBling=blingFinanceiroResultado.ok?null:`⚠️ Pagamento salvo no sistema, mas NÃO foi possível atualizar a forma de pagamento no Bling: ${blingFinanceiroResultado.erro||"erro desconhecido"}. Confira/ajuste manualmente no Bling.`;
-    if(avisoBling) addLog(id,"erro_sync_pagamento_bling",funcionarioId,funcionarioNome,{erro:blingFinanceiroResultado.erro||"",status:blingFinanceiroResultado.status||null});
+    const avisoBling=blingFinanceiroResultado.ok?null:`⚠️ Pagamento salvo no sistema, mas NÃO foi possível atualizar a forma de pagamento no Bling: ${detalheErroBling(blingFinanceiroResultado)}. Confira/ajuste manualmente no Bling.`;
+    if(avisoBling) addLog(id,"erro_sync_pagamento_bling",funcionarioId,funcionarioNome,{erro:detalheErroBling(blingFinanceiroResultado),status:blingFinanceiroResultado.status||null,bodyBruto:JSON.stringify(blingFinanceiroResultado.body||{}).slice(0,500)});
     res.json({ok:true,pagamento:p,_blingFinanceiro:blingFinanceiroResultado,avisoBling});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -1277,7 +1290,7 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
       const dataHoraBR=new Date(Date.now()-3*60*60*1000).toLocaleString("pt-BR");
       const nota=`[Entrega ${dataHoraBR}] Valor previsto: R$ ${totalPed.toFixed(2)} — Valor pago: R$ ${pagoVal.toFixed(2)} (abatimento de R$ ${Number(valorAbatido).toFixed(2)} — ${tipos.join(" e ")}).`;
       const resObs=await acrescentarObservacaoBling(id,nota);
-      if(!resObs.ok) avisoObsBling=`⚠️ Entrega confirmada, mas não foi possível gravar a observação no Bling: ${resObs.erro||"erro desconhecido"}.`;
+      if(!resObs.ok) avisoObsBling=`⚠️ Entrega confirmada, mas não foi possível gravar a observação no Bling: ${detalheErroBling(resObs)}.`;
     }
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
     liberarLock(id,funcionarioId,funcionarioNome,"entrega_confirmada");
