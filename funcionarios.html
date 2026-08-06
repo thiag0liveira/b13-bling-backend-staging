@@ -153,7 +153,7 @@ function htmlPermsBlock(checked){
       </label>
       <div id="fAbasLista"></div>
     </div>
-    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Algumas abas usam a mesma trava por trás (ex: Venda Atacado e Lista de Fardo). Se desmarcar uma e outra também perder acesso, a lista já mostra isso na hora — é o resultado real.</div>`;
+    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Cada aba agora tem sua própria permissão — marcar/desmarcar uma não afeta as outras.</div>`;
 }
 function renderAbasLista(){
   const box=document.getElementById("fAbasLista"); if(!box) return;
@@ -181,10 +181,22 @@ function toggleAdmin(){
 function toggleAba(href){
   const tab=(window.B13_NAV_LINKS||[]).find(l=>l.href===href); if(!tab) return;
   if(abaLiberada(tab)){
-    // desmarcando: tira todas as acoes dessa aba (outras abas que dependiam da mesma ficam sem acesso também — mostrado na lista)
-    PERMS_ATUAL=PERMS_ATUAL.filter(p=>!tab.acoes.includes(p));
+    // desmarcando: antes de tirar a(s) acao(oes) dessa aba, preserva o acesso de
+    // QUALQUER outra aba que dependia da mesma trava compartilhada (comum em
+    // funcionarios antigos, que ainda usam as permissoes antigas tipo editar_pedido) —
+    // migra elas pra sua propria acao especifica antes de remover a trava velha
+    const acoesRemovendo=tab.acoes.slice();
+    (window.B13_NAV_LINKS||[]).forEach(outra=>{
+      if(outra.href===href) return;
+      const dependiaDeAlgumaRemovida=outra.acoes.some(a=>acoesRemovendo.includes(a));
+      const aindaLiberadaSemElas=outra.acoes.some(a=>!acoesRemovendo.includes(a)&&PERMS_ATUAL.includes(a));
+      if(dependiaDeAlgumaRemovida && !aindaLiberadaSemElas && !PERMS_ATUAL.includes(outra.acoes[0])){
+        PERMS_ATUAL.push(outra.acoes[0]); // garante a acao propria dela antes de remover a compartilhada
+      }
+    });
+    PERMS_ATUAL=PERMS_ATUAL.filter(p=>!acoesRemovendo.includes(p));
   } else {
-    // marcando: basta UMA das ações que liberam essa aba
+    // marcando: usa só a acao PRÓPRIA dessa aba (a primeira da lista) — nunca afeta outras abas
     const acaoPrincipal=tab.acoes[0];
     if(!PERMS_ATUAL.includes(acaoPrincipal)) PERMS_ATUAL.push(acaoPrincipal);
   }
