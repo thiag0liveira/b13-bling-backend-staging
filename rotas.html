@@ -186,6 +186,70 @@ async function sugerirRota(carroId){
   setTimeout(()=>desenharMapa(carroId),100);
 }
 
+// distância em linha reta (km) — usada só pra AGRUPAR entregas próximas antes
+// de mandar pro Google calcular a rota de verdade (esse cálculo é local, não
+// gasta chamada de API)
+function distanciaRetaKm(a,b){
+  const R=6371;
+  const dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
+  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function pedidosCarroAtual(carroId){
+  return (S.atribuicoes[carroId]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
+}
+
+// Distribui os pedidos disponíveis entre as rotas configuradas, tentando
+// equilibrar 3 coisas ao mesmo tempo: (1) a quantidade de entregas de cada
+// rota (configurada), (2) o peso sugerido de cada rota (pode passar um pouco
+// se precisar fechar a quantidade), e (3) proximidade geográfica — não adianta
+// o peso encaixar se as entregas forem espalhadas longe uma da outra, então
+// agrupa por perto primeiro (rotas mais rápidas) e só depois verifica peso.
+async function sugerirDistribuicaoDia(){
+  if(!confirm("Isso vai redistribuir os pedidos disponíveis entre as rotas configuradas (mantendo os que já foram atribuídos manualmente antes). Continuar?")) return;
+  const disponiveisComCoord=pedidosDisponiveis().filter(p=>p.lat&&p.lng);
+  const semCoord=pedidosDisponiveis().filter(p=>!p.lat||!p.lng);
+  if(!disponiveisComCoord.length){ alert("Nenhum pedido disponível tem coordenadas identificadas (endereço geocodificado)."); return; }
+  let pool=disponiveisComCoord.slice();
+  const carros=S.config.carros;
+
+  for(const carro of carros){
+    const alvoQtd=carro.limiteEntregas||99;
+    const alvoPeso=carro.pesoSugeridoKg||99999;
+    const jaTem=(S.atribuicoes[carro.id].pedidoIds||[]).length;
+    const faltamQtd=Math.max(0,alvoQtd-jaTem);
+    if(!pool.length||faltamQtd<=0) continue;
+    let pesoAcum=pedidosCarroAtual(carro.id).reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
+
+    // semente: pedido mais distante da loja ainda disponível — prioriza cobrir
+    // os cantos mais longe primeiro, pra cada rota virar um "raio" coerente
+    let semente=pool[0], maiorDist=-1;
+    pool.forEach(p=>{ const d=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(d>maiorDist){ maiorDist=d; semente=p; } });
+
+    const candidatos=pool.slice().sort((a,b)=>distanciaRetaKm(semente,a)-distanciaRetaKm(semente,b));
+    const escolhidos=[];
+    for(const p of candidatos){
+      if(escolhidos.length>=faltamQtd) break;
+      const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
+      // permite passar até 20% do peso sugerido se for preciso pra fechar a
+      // quantidade de entregas da rota — prioriza fechar a rota (mais rápido/
+      // eficiente) a deixar pedido de fora só por causa do peso
+      if(pesoTeste>alvoPeso*1.2 && escolhidos.length>0 && pool.length>faltamQtd) continue;
+      escolhidos.push(p); pesoAcum=pesoTeste;
+    }
+    escolhidos.forEach(p=>{ S.atribuicoes[carro.id].pedidoIds.push(p.id); });
+    pool=pool.filter(p=>!escolhidos.some(e=>e.id===p.id));
+  }
+
+  render();
+  if(semCoord.length) S.msg=`⚠️ ${semCoord.length} pedido(s) sem coordenada identificada não puderam ser distribuídos automaticamente — atribua manualmente.`;
+  // calcula a rota otimizada de cada carro que recebeu pedidos novos
+  for(const carro of carros){
+    if((S.atribuicoes[carro.id].pedidoIds||[]).length>0) await sugerirRota(carro.id);
+  }
+}
+
 // ---------- decodifica o polyline do Google (formato padrão de encoding) ----------
 function decodePolyline(str){
   let index=0,lat=0,lng=0,coords=[];
@@ -240,7 +304,7 @@ async function desenharMapa(carroId){
 function abrirConfig(){ S.editandoConfig=true; render(); }
 function fecharConfig(){ S.editandoConfig=false; render(); }
 function toggleDiaConfig(ix){ S.config.diasEntrega[ix]=!S.config.diasEntrega[ix]; render(); }
-function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Carro "+(S.config.carros.length+1),limiteEntregas:10}); render(); }
+function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200}); render(); }
 function removerCarroConfig(ix){ S.config.carros.splice(ix,1); render(); }
 async function salvarConfig(){
   await fetch(B+"/api/rotas/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.config)});
@@ -279,8 +343,9 @@ function render(){
   // ---- pedidos disponíveis ----
   const disponiveis=pedidosDisponiveis();
   h+=`<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-weight:900">📦 Pedidos disponíveis (${disponiveis.length})</div>
+      ${disponiveis.length?`<button class="btn btn-mag" onclick="sugerirDistribuicaoDia()">🧭 Sugerir distribuição do dia</button>`:''}
     </div>
     ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p)).join(""):'<div class="muted">Todos os pedidos de entrega já foram atribuídos a um carro — ou não há pedidos de entrega pendentes.</div>'}
   </div>`;
@@ -305,14 +370,17 @@ function htmlConfig(){
     <div class="diasgrid">
       ${DIAS_SEMANA.map((d,ix)=>`<div class="diachip ${c.diasEntrega[ix]?'on':''}" onclick="toggleDiaConfig(${ix})">${d}</div>`).join("")}
     </div>
-    <div class="lbl">Carros disponíveis</div>
+    <div class="lbl">Rotas/carros disponíveis</div>
     ${c.carros.map((carro,ix)=>`
       <div class="carrorow">
-        <input type="text" value="${esc(carro.nome)}" oninput="S.config.carros[${ix}].nome=this.value" placeholder="Nome do carro">
-        <input type="number" value="${carro.limiteEntregas}" min="1" oninput="S.config.carros[${ix}].limiteEntregas=Number(this.value)" title="Limite de entregas">
-        <span class="muted" style="white-space:nowrap">entregas máx.</span>
-        <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover carro">✕</button>
+        <input type="text" value="${esc(carro.nome)}" oninput="S.config.carros[${ix}].nome=this.value" placeholder="Nome da rota/carro">
+        <input type="number" value="${carro.limiteEntregas}" min="1" style="width:56px" oninput="S.config.carros[${ix}].limiteEntregas=Number(this.value)" title="Quantidade de entregas dessa rota">
+        <span class="muted" style="white-space:nowrap">entregas</span>
+        <input type="number" value="${carro.pesoSugeridoKg||200}" min="1" style="width:70px" oninput="S.config.carros[${ix}].pesoSugeridoKg=Number(this.value)" title="Peso sugerido (kg)">
+        <span class="muted" style="white-space:nowrap">kg sugeridos</span>
+        <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover">✕</button>
       </div>`).join("")}
+    <div class="muted" style="font-size:11px;margin:-2px 0 8px">"Entregas" é quantas paradas essa rota deve ter no dia. "Kg sugeridos" é o peso ideal pra essa rota — o sistema tenta chegar perto disso, mas pode passar um pouco se precisar pra fechar a quantidade de entregas.</div>
     <button class="btn btn-ghost" style="margin-top:6px" onclick="addCarroConfig()">+ Adicionar carro</button>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn btn-grn" style="flex:1" onclick="salvarConfig()">💾 Salvar configuração</button>
@@ -381,7 +449,7 @@ function htmlCarroBox(carro){
         </div>`).join(""))}
     <div class="resumo">
       <span>💰 Total: <b>${brl(valorTotal)}</b></span>
-      <span>⚖️ Peso: <b>${pesoTotal} kg</b></span>
+      <span>⚖️ Peso: <b style="${pesoTotal>(carro.pesoSugeridoKg||99999)?'color:#ffd23f':''}">${pesoTotal} kg</b> <span class="muted">/ ${carro.pesoSugeridoKg||'—'} kg sugeridos</span></span>
       ${resultado?`<span>🛣️ Distância total: <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ Tempo estimado: <b>${resultado.duracaoTotalMin} min</b></span>`:''}
     </div>
     ${resultado?`<button class="btn btn-ghost" style="margin-top:10px" onclick="S.carroMapaAtivo='${carro.id}';render()">🗺️ ${S.carroMapaAtivo===carro.id?'Mapa aberto abaixo':'Ver rota no mapa'}</button>`:''}
