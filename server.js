@@ -182,6 +182,26 @@ function bling(path,options={}){
   return resultado;
 }
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
+// monta o bloco de endereço de entrega no formato que o Bling realmente usa —
+// descobrimos (endereço sumindo mesmo com o campo certo preenchido) que a seção
+// "Endereço de entrega" da tela do Bling corresponde ao objeto `etiqueta` dentro
+// de `transporte` (tem até campo "nome" = nome da etiqueta, que bate com o que
+// aparecia na tela). Manda os dois formatos (etiqueta + enderecoEntrega) pra
+// cobrir qualquer versão da API sem depender de 100% de certeza no schema.
+function montarBlocoEnderecoEntrega(end,nomeDestinatario){
+  end=end||{};
+  const bloco={
+    endereco: end.rua||end.endereco||"",
+    numero: end.numero||"S/N",
+    complemento: end.complemento||"",
+    bairro: end.bairro||"",
+    cep: end.cep||"",
+    municipio: end.cidade||end.municipio||"Belo Horizonte",
+    uf: end.uf||"MG",
+    pais: end.pais||"Brasil",
+  };
+  return { enderecoEntrega:bloco, etiqueta:{ nome:nomeDestinatario||"", ...bloco } };
+}
 // data (AAAA-MM-DD) no fuso do Brasil (UTC-3, sem horário de verão) — usa isso em vez de
 // toISOString().slice(0,10) sempre que for guardar "o dia de hoje/desse timestamp",
 // senão à noite (depois das 21h BRT) o UTC já vira o dia seguinte e as datas ficam erradas
@@ -2582,16 +2602,7 @@ app.post("/api/finalizar", async (req, res) => {
       // com vírgulas, então não bate 1:1 com uma vírgula = um campo)
       const endCad=cadastro?.endereco||{};
       if(endCad.rua||entrega.endereco){
-        payload.transporte.enderecoEntrega={
-          endereco: endCad.rua||"",
-          numero: endCad.numero||"S/N",
-          complemento: endCad.complemento||"",
-          bairro: endCad.bairro||"",
-          cep: endCad.cep||"",
-          municipio: endCad.cidade||"Belo Horizonte",
-          uf: endCad.uf||"MG",
-          pais: "Brasil",
-        };
+        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(endCad, cadastro?.nome||""));
       }
     }
     // pedidos do totem sempre vêm com vendedor "SISTEMA" (ID 15596923213 no Bling),
@@ -2885,10 +2896,7 @@ async function atualizarItensBling(id,itens){
       payload.transporte={fretePorConta:ped.transporte.fretePorConta??0,frete:ped.transporte.frete||0};
       if(ped.transporte.enderecoEntrega){
         const end=ped.transporte.enderecoEntrega;
-        payload.transporte.enderecoEntrega={
-          endereco:end.endereco||"",numero:end.numero||"S/N",complemento:end.complemento||"",
-          bairro:end.bairro||"",cep:end.cep||"",municipio:end.municipio||"",uf:end.uf||"MG",pais:end.pais||"Brasil",
-        };
+        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(end, ped.contato?.nome||""));
       }
     }
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
@@ -2996,16 +3004,7 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       };
       if(ped.transporte.enderecoEntrega){
         const end=ped.transporte.enderecoEntrega;
-        payload.transporte.enderecoEntrega={
-          endereco:end.endereco||"",
-          numero:end.numero||"S/N",
-          complemento:end.complemento||"",
-          bairro:end.bairro||"",
-          cep:end.cep||"",
-          municipio:end.municipio||"",
-          uf:end.uf||"MG",
-          pais:end.pais||"Brasil",
-        };
+        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(end, ped.contato?.nome||""));
       }
     }
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
@@ -4645,10 +4644,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     // mantém endereço de entrega salvo (referência), só zera o valor do frete
     if(ped.transporte?.enderecoEntrega){
       const end=ped.transporte.enderecoEntrega;
-      payload.transporte.enderecoEntrega={
-        endereco:end.endereco||"",numero:end.numero||"S/N",complemento:end.complemento||"",
-        bairro:end.bairro||"",cep:end.cep||"",municipio:end.municipio||"",uf:end.uf||"MG",pais:end.pais||"Brasil",
-      };
+      Object.assign(payload.transporte, montarBlocoEnderecoEntrega(end, ped.contato?.nome||""));
     }
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
@@ -5086,7 +5082,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       payload.parcelas=[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:totalPed}];
     }
     if(entregaProp.tipo==="entrega"){
-      payload.transporte={ fretePorConta:0, frete:freteProp };
+      payload.transporte={ fretePorConta:0, frete:freteProp, quantidade:1, pesoBruto:estimarPesoPedido(prop.itens||[])||1 };
       const end=prop.cliente?.endereco||{};
       // fallback: se os campos estruturados do cliente vierem incompletos por
       // algum motivo (endereço não totalmente cadastrado, por ex.), usa o texto
@@ -5095,16 +5091,14 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       const partesTexto=(entregaProp.endereco||"").split(",").map(s=>s.trim()).filter(Boolean);
       const temAlgumEndereco=!!(end.rua||partesTexto.length);
       if(temAlgumEndereco){
-        payload.transporte.enderecoEntrega={
-          endereco: end.rua||partesTexto[0]||"Endereço não detalhado",
-          numero: end.numero||"S/N",
-          complemento: "",
+        const endFallback={
+          rua: end.rua||partesTexto[0]||"Endereço não detalhado",
+          numero: end.numero||"",
           bairro: end.bairro||partesTexto[1]||"",
-          cep: "",
-          municipio: end.cidade||partesTexto[partesTexto.length-2]||"Belo Horizonte",
+          cidade: end.cidade||partesTexto[partesTexto.length-2]||"Belo Horizonte",
           uf: end.uf||partesTexto[partesTexto.length-1]||"MG",
-          pais: "Brasil",
         };
+        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(endFallback, prop.cliente?.nome||""));
       } else {
         console.warn("[atacado] gerar-pedido: entrega sem NENHUM endereco disponivel (nem estruturado, nem texto) - proposta",req.params.id);
       }
@@ -5541,11 +5535,23 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
         const det=await bling(`/pedidos/vendas/${resumo.id}`).then(r=>r?.data);
         if(!det) continue;
         const frete=+(det.transporte?.frete||0);
-        const temEndereco=!!det.transporte?.enderecoEntrega?.endereco;
-        // heurística "é entrega": tem frete OU tem endereço de entrega cadastrado
+        // tenta achar o endereço em qualquer um dos formatos possíveis (o Bling
+        // guarda em transporte.etiqueta OU transporte.enderecoEntrega dependendo
+        // da versão/forma como o pedido foi criado); se nenhum dos dois tiver
+        // dado, tenta extrair do texto da observação como último recurso
+        // (cobre pedidos criados antes dessa descoberta)
+        const endObj = det.transporte?.enderecoEntrega?.endereco ? det.transporte.enderecoEntrega
+                     : det.transporte?.etiqueta?.endereco ? det.transporte.etiqueta
+                     : null;
+        let enderecoTxt = endObj?[endObj.endereco,endObj.numero,endObj.bairro,endObj.municipio,endObj.uf].filter(Boolean).join(", "):"";
+        if(!enderecoTxt && det.observacoes){
+          const m=det.observacoes.match(/ENTREGA\s*—\s*([^(]+)/);
+          if(m) enderecoTxt=m[1].trim();
+        }
+        const temEndereco=!!enderecoTxt;
+        // heurística "é entrega": tem frete (mesmo que grátis, verificado via
+        // observação/tag) OU tem endereço de entrega identificado
         if(frete<=0 && !temEndereco) continue;
-        const end=det.transporte?.enderecoEntrega;
-        const enderecoTxt=end?[end.endereco,end.numero,end.bairro,end.municipio,end.uf].filter(Boolean).join(", "):"";
         let coord=null;
         if(enderecoTxt) coord=await geocodeEndereco(enderecoTxt).catch(()=>null);
         detalhados.push({
