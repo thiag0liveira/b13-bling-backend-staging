@@ -5465,7 +5465,7 @@ async function geocodeEndereco(endereco){
 function lerRotasConfig(){
   return lerJSON(ROTAS_CONFIG_FILE,{
     diasEntrega:[false,true,true,true,true,true,false], // dom,seg,ter,qua,qui,sex,sab
-    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10}],
+    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200}],
   });
 }
 function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
@@ -5478,7 +5478,7 @@ app.post("/api/rotas/config",(req,res)=>{
   const atual=lerRotasConfig();
   const nova={
     diasEntrega:Array.isArray(b.diasEntrega)&&b.diasEntrega.length===7?b.diasEntrega:atual.diasEntrega,
-    carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),nome:c.nome||"Carro",limiteEntregas:Number(c.limiteEntregas)||10})):atual.carros,
+    carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),nome:c.nome||"Carro",limiteEntregas:Number(c.limiteEntregas)||10,pesoSugeridoKg:Number(c.pesoSugeridoKg)||200})):atual.carros,
   };
   salvarRotasConfig(nova);
   res.json({ok:true,data:nova});
