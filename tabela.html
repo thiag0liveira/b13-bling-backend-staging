@@ -507,22 +507,54 @@ async function verificarVinculos(){
   alert(`✅ ${invalidos.length} vínculo(s) removido(s)!`);
 }
 
+// Calibra a largura do poster ANTES de exportar, testando o resultado real
+// (com os dados de verdade carregados no momento) até a proporção largura×altura
+// bater com a referência (retrato, tipo tela de celular/monitor em pé) — assim
+// funciona certo não importa quantos produtos/categorias tiver, sem precisar
+// travar num número fixo de pixels que só serve pra uma quantidade de itens.
+const RATIO_ALVO_POSTER = 0.5246;
+function calibrarLarguraPoster(targetRatio){
+  targetRatio = targetRatio || RATIO_ALVO_POSTER;
+  const poster=document.getElementById("poster");
+  const larguraOriginal=poster.style.width;
+  let lo=380, hi=2200, melhorW=poster.offsetWidth, melhorDiff=Infinity;
+  for(let i=0;i<16;i++){
+    const meio=Math.round((lo+hi)/2);
+    poster.style.width=meio+"px";
+    const h=poster.offsetHeight; // força o reflow e lê a altura real com essa largura
+    const ratio=meio/h;
+    const diff=Math.abs(ratio-targetRatio);
+    if(diff<melhorDiff){ melhorDiff=diff; melhorW=meio; }
+    if(ratio>targetRatio) hi=meio; else lo=meio; // ratio cresce com a largura, então dá pra buscar por bisseção
+  }
+  poster.style.width=melhorW+"px";
+  void poster.offsetHeight; // garante que o layout final foi aplicado antes de capturar
+  return larguraOriginal;
+}
+function restaurarLarguraPoster(larguraOriginal){
+  document.getElementById("poster").style.width=larguraOriginal||"";
+}
+
 // gera a imagem da tabela e salva no servidor pra os vendedores acessarem no Apoio ao Vendedor
 function publicarTabelaVendedor(){
   const antesEdit=document.body.classList.contains("editing");
   // garante que a tabela saia limpa (sem controles de edição)
   document.body.classList.remove("editing","binding");
+  const larguraOriginal=calibrarLarguraPoster();
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    restaurarLarguraPoster(larguraOriginal);
     const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
     fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:canvas.toDataURL("image/png")})})
       .then(r=>r.json())
       .then(j=>{ if(j.ok) alert("✅ Tabela disponibilizada!\n\nOs vendedores já podem compartilhá-la no 'Apoio ao Vendedor' → botão 'Compartilhar tabela'."); else alert("Erro ao disponibilizar: "+(j.erro||"tente de novo")); })
       .catch(()=>alert("Erro ao enviar. Verifique a conexão."));
-  });
+  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
 }
 
 function enviarImagem(){
+  const larguraOriginal=calibrarLarguraPoster();
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    restaurarLarguraPoster(larguraOriginal);
     // salva no servidor pra ficar disponível no Apoio ao Vendedor
     try{
       const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
@@ -537,11 +569,13 @@ function enviarImagem(){
         alert("Este dispositivo não permite compartilhar direto. A imagem foi baixada — anexe no WhatsApp manualmente.\n\nNo celular, o botão Enviar abre o WhatsApp direto.");
       }
     },"image/png");
-  });
+  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
 }
 
 function exportPDF(){
+  const larguraOriginal=calibrarLarguraPoster();
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    restaurarLarguraPoster(larguraOriginal);
     const {jsPDF}=window.jspdf;
     const imgData=canvas.toDataURL("image/png");
     const imgRatio=canvas.width/canvas.height;
@@ -552,11 +586,13 @@ function exportPDF(){
     const doc=new jsPDF({unit:"mm",format:[pageWmm,pageHmm]});
     doc.addImage(imgData,"PNG",0,0,pageWmm,pageHmm);
     doc.save("tabela_precos_b13.pdf");
-  });
+  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
 }
 
 function exportPNG(){
+  const larguraOriginal=calibrarLarguraPoster();
   html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+    restaurarLarguraPoster(larguraOriginal);
     const dataUrl=canvas.toDataURL("image/png");
     const a=document.createElement("a"); a.download="tabela_precos_b13.png"; a.href=dataUrl; a.click();
     // salva no servidor pra ficar disponível no Apoio ao Vendedor
@@ -564,7 +600,7 @@ function exportPNG(){
       const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
       fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:dataUrl})});
     }catch(e){}
-  });
+  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
 }
 function modoVisu(on){
   document.body.classList.toggle("viewonly", on);
