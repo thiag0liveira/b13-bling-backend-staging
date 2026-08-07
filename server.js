@@ -2570,6 +2570,11 @@ app.post("/api/finalizar", async (req, res) => {
       payload.transporte = {
         fretePorConta: 0,
         frete: Number(entrega.taxa) || 0,
+        // quantidade/pesoBruto sempre preenchidos (mesmo com frete grátis) —
+        // suspeita: o Bling pode estar descartando o endereço de entrega
+        // quando o bloco de transporte parece "vazio" (frete=0 E quantidade=0)
+        quantidade: 1,
+        pesoBruto: estimarPesoPedido(itensSeguros.map(i=>({descricao:i.descricao||"",quantidade:i.quantidade})))||1,
       };
       // usa os campos ESTRUTURADOS do endereço (cadastro.endereco), não o texto
       // formatado pra exibição — quebrar aquele texto por vírgula misturava
