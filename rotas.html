@@ -139,6 +139,16 @@ function toggleExpandido(id){ S.expandido[id]=!S.expandido[id]; render(); }
 
 function atribuirCarro(pedidoId,carroId){
   if(!carroId) return;
+  const carro=(S.config.carros||[]).find(c=>c.id===carroId);
+  const pedido=pedidoPorId(pedidoId);
+  if(carro && pedido){
+    const pesoAtual=pedidosCarroAtual(carroId).reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
+    const pesoDepois=pesoAtual+(pedido.pesoEstimadoKg||0);
+    const teto=(carro.pesoSugeridoKg||99999)*1.2;
+    if(pesoDepois>teto){
+      if(!confirm(`⚠️ Essa rota ficaria com ${pesoDepois.toFixed(1)}kg — acima dos ${carro.pesoSugeridoKg}kg sugeridos (+20% = ${teto.toFixed(0)}kg máx.).\n\nAtribuir mesmo assim?`)) return;
+    }
+  }
   Object.values(S.atribuicoes).forEach(a=>{ a.pedidoIds=(a.pedidoIds||[]).filter(id=>id!==pedidoId); });
   S.atribuicoes[carroId].pedidoIds.push(pedidoId);
   render();
