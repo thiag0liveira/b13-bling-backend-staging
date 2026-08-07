@@ -477,6 +477,23 @@ async function identificar(){
   S.etapa="catalogo"; S.catAtiva=0; render();
 }
 function semIdentificacao(){ S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false; S.etapa="catalogo"; S.catAtiva=0; render(); }
+// chamado a cada tecla no campo de CPF/CNPJ do checkout — se já tinha um
+// cliente identificado antes e o número mudou, limpa os dados que vieram
+// daquela busca (nome, telefone, email, endereço), pra não ficar com o
+// endereço/nome do cliente ANTERIOR quando troca pra outro documento
+function mudarDoc(valor){
+  const tinhaIdentificado = S.docChecado && S.docNome;
+  S.doc=valor; S.docChecado=false;
+  if(tinhaIdentificado){
+    // só re-renderiza (e refoca) no momento em que realmente limpa os dados —
+    // não em toda tecla digitada, senão perderia o foco do campo a cada letra
+    S.docNome=null; S.docInfo=null;
+    S.nome=""; S.telefone=""; S.email="";
+    S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
+    render();
+    const el=document.getElementById("docInputCheckout"); if(el){ el.focus(); el.setSelectionRange(valor.length,valor.length); }
+  }
+}
 async function checarDoc(){
   const d=soDig(S.doc);
   if(d.length!==11 && d.length!==14){ S.docNome=null; S.docChecado=false; render(); return; }
@@ -600,13 +617,26 @@ function cardCliente(){
   if(!S.docChecado||!S.docNome||!S.docInfo) return "";
   const c=S.docInfo;
   return `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:12px;margin-bottom:12px">
-    <div style="font-weight:900;color:#a8f0c8;margin-bottom:6px">✅ Cliente encontrado</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-weight:900;color:#a8f0c8">✅ Cliente encontrado</div>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="sairCadastro()">↩ Sair / trocar</button>
+    </div>
     <div style="font-size:14px;font-weight:700">${esc(c.nome||"")}</div>
     ${c.celular||c.telefone?`<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(maskFone(c.celular||c.telefone))}</div>`:""}
     ${c.email?`<div style="font-size:12px;color:#9a95c9">✉️ ${esc(maskEmail(c.email))}</div>`:""}
     ${c.endereco?.rua?`<div style="font-size:12px;color:#9a95c9">📍 ${esc(maskEndereco(c.endereco))}</div>`:""}
     <div style="font-size:11px;color:#514c96;margin-top:4px">Dados protegidos — confira só os campos abaixo</div>
   </div>`;
+}
+// zera tudo que veio de um CPF/CNPJ identificado, pra digitar outro do zero —
+// evita o problema de ficar com nome/telefone/endereço do cliente ANTERIOR
+// quando só o número do documento é trocado
+function sairCadastro(){
+  S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false;
+  S.nome=""; S.telefone=""; S.email="";
+  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
+  render();
+  setTimeout(()=>{ const el=document.getElementById("docInputCheckout")||document.getElementById("docInput"); if(el) el.focus(); },50);
 }
 
 function mudarCategoria(i){
@@ -734,7 +764,7 @@ function telaCheckout(app){
     <div class="muted">Subtotal: <b style="color:#ffd23f">${brl(subtotal())}</b></div>
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
-    <input autocomplete="off" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="S.doc=this.value;S.docChecado=false" onblur="checarDoc()">
+    <input autocomplete="off" id="docInputCheckout" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="mudarDoc(this.value)" onblur="checarDoc()">
     ${cardCliente()}
     ${S.docChecado
       ? (S.docNome
