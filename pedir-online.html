@@ -812,7 +812,7 @@ function telaCheckout(app){
         ${novo?`<input autocomplete="off" placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:''}
       `;
     })()}
-    ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo,S.docNome&&!!S.end.rua.trim()):""}
+    ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo,S.docNome&&endValido()):""}
 
     <div style="font-weight:800;margin-top:14px">Como quer receber?</div>
     <div class="radio">
@@ -835,7 +835,7 @@ function blocoEndereco(novo,bloqueado){
   if(bloqueado){
     return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:13px;color:#cfc9f5">
-      📍 ${esc(e.bairro)}${e.cidade?" — "+esc(e.cidade):""}${e.uf?"/"+esc(e.uf):""}
+      📍 ${esc(e.rua)}, ${esc(e.numero)}${e.complemento?" "+esc(e.complemento):""} — ${esc(e.bairro)}, ${esc(e.cidade)}/${esc(e.uf)} · CEP ${esc(e.cep)}
     </div>
     <div style="font-size:11px;color:#514c96">Endereço completo do cadastro será usado na entrega — não editável aqui. Pra corrigir, procure um atendente.</div>`;
   }
