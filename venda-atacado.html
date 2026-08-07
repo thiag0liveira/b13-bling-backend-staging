@@ -582,7 +582,7 @@ function tbSaborRow(it, b, mult, semIndent){
       <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
       <div class="qtd" style="flex-shrink:0">
         <button onclick="mudarQtd(${ix},-1)" title="${mult>1?`− ${mult} un`:'−1'}">−</button>
-        <input type="number" min="${mult}" step="${mult}" value="${item.quantidade}" onchange="setQtd(${ix},this.value)" style="width:46px">
+        <input type="number" min="${mult}" step="${mult}" value="${item.quantidade}" onchange="setQtd(${ix},this.value)" style="width:64px">
         <button onclick="mudarQtd(${ix},1)" title="${mult>1?`+ ${mult} un`:'+1'}">+</button>
       </div>
     </div>`;
