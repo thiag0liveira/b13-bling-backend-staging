@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>B13 — Gerenciamento de Rota</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24;--card:#151233;--border:#2c2660}
+  body{background:var(--bg);color:#fff;min-height:100vh}
+  .topbar{background:linear-gradient(180deg,var(--indigo2),var(--indigo));border-bottom:2px solid var(--mag);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  .topbar .pg{font-weight:900;font-size:18px}
+  .content{padding:20px;max-width:1100px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 14px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}.btn-ghost{background:#1c1846}.btn-grn{background:#2f9e6b}.btn-red{background:#c0304a}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+  .muted{color:#9a95c9;font-size:12px}
+  .lbl{color:#9a95c9;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+  input,select{background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px;font-size:13px}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  .diachip{padding:8px 4px;border-radius:8px;background:#1c1846;color:#514c96;font-weight:800;font-size:12px;text-align:center;cursor:pointer;border:2px solid transparent;user-select:none}
+  .diachip.on{background:rgba(255,0,130,.15);color:#fff;border-color:var(--mag)}
+  .diasgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:14px}
+  .carrorow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .carrorow input[type=text]{flex:1}
+  .carrorow input[type=number]{width:70px}
+  .pedcard{background:#181433;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px}
+  .pedcard .top2{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .pedcard .num{font-weight:900;font-size:15px}
+  .pedcard .cli{font-size:13px;color:#cfc9f5;margin-top:2px}
+  .pedcard .vend{font-size:11px;color:#9a95c9}
+  .pedcard .vals{text-align:right;font-size:12px}
+  .pedcard .vals b{color:#ffd23f;font-size:14px}
+  .pedcard .itenslist{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:none}
+  .pedcard .itenslist.on{display:block}
+  .itemrow{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:#cfc9f5}
+  .assignrow{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+  .carrobox{background:#181433;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px}
+  .carrobox .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .carrobox .head .nm{font-weight:900;font-size:15px}
+  .stopitem{display:flex;align-items:center;gap:8px;background:#0f0d24;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px}
+  .stopitem .ordn{width:22px;height:22px;border-radius:50%;background:var(--mag);color:#fff;font-weight:900;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .stopitem .nm{flex:1}
+  .stopitem .km{color:#9a95c9;font-size:11px;white-space:nowrap}
+  .iconbtn{background:none;border:none;color:#9a95c9;cursor:pointer;font-size:15px;padding:2px 6px}
+  .iconbtn:hover{color:#fff}
+  .resumo{display:flex;gap:16px;margin-top:10px;font-size:12px;color:#9a95c9;flex-wrap:wrap}
+  .resumo b{color:#3ce88a}
+  #mapaRota{width:100%;height:360px;border-radius:12px;margin-top:10px;background:#181433}
+  .tabsel{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tabsel button{padding:8px 14px;border-radius:999px;background:#1c1846;color:#cfc9f5;border:2px solid transparent;font-weight:700;font-size:12px;cursor:pointer}
+  .tabsel button.on{border-color:var(--mag);color:#fff}
+  .warn{background:#3a2a00;color:#ffd23f;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:12px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/rotas")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/rotas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const DIAS_SEMANA=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+function hojeBR(){ return new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10); }
+function dataLabel(iso){
+  const d=new Date(iso+"T12:00:00");
+  return d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"});
+}
+
+const S={
+  data: hojeBR(),
+  config: null,
+  pedidos: [],
+  lojaCoord: null,
+  carregando: true,
+  editandoConfig: false,
+  expandido: {},
+  atribuicoes: {}, // carroId -> {pedidoIds:[...]}
+  resultadoRota: {}, // carroId -> {distanciaTotalKm,duracaoTotalMin,paradasOrdenadas}
+  calculando: {}, // carroId -> bool
+  carroMapaAtivo: null,
+  salvando: false,
+  msg: "",
+};
+
+async function carregarTudo(){
+  S.carregando=true; render();
+  try{
+    const j=await fetch(B+"/api/rotas/pedidos-entrega?data="+S.data).then(r=>r.json());
+    S.pedidos=j.data||[];
+    S.config=j.config;
+    S.lojaCoord=j.lojaCoord;
+    // reconstrói atribuições a partir do que já veio salvo (carroAtribuido em cada pedido)
+    const rDia=await fetch(B+"/api/rotas/dia?data="+S.data).then(r=>r.json());
+    const salvo=rDia.data||{};
+    S.atribuicoes={};
+    (S.config.carros||[]).forEach(c=>{ S.atribuicoes[c.id]={pedidoIds:(salvo[c.id]?.pedidoIds)||[]}; });
+  }catch(e){ S.msg="Erro ao carregar: "+e.message; }
+  S.carregando=false; render();
+}
+
+function pedidosDisponiveis(){
+  const usados=new Set();
+  Object.values(S.atribuicoes).forEach(a=>(a.pedidoIds||[]).forEach(id=>usados.add(id)));
+  return S.pedidos.filter(p=>!usados.has(p.id));
+}
+function pedidoPorId(id){ return S.pedidos.find(p=>p.id===id); }
+
+function mudarDia(delta){
+  const d=new Date(S.data+"T12:00:00");
+  d.setDate(d.getDate()+delta);
+  S.data=d.toISOString().slice(0,10);
+  S.resultadoRota={}; S.carroMapaAtivo=null;
+  carregarTudo();
+}
+
+function toggleExpandido(id){ S.expandido[id]=!S.expandido[id]; render(); }
+
+function atribuirCarro(pedidoId,carroId){
+  if(!carroId) return;
+  Object.values(S.atribuicoes).forEach(a=>{ a.pedidoIds=(a.pedidoIds||[]).filter(id=>id!==pedidoId); });
+  S.atribuicoes[carroId].pedidoIds.push(pedidoId);
+  render();
+}
+function removerDoCarreo(carroId,pedidoId){
+  S.atribuicoes[carroId].pedidoIds=(S.atribuicoes[carroId].pedidoIds||[]).filter(id=>id!==pedidoId);
+  delete S.resultadoRota[carroId];
+  render();
+}
+function moverNaLista(carroId,ix,delta){
+  const arr=S.atribuicoes[carroId].pedidoIds;
+  const novo=ix+delta; if(novo<0||novo>=arr.length) return;
+  [arr[ix],arr[novo]]=[arr[novo],arr[ix]];
+  delete S.resultadoRota[carroId];
+  render();
+}
+
+async function salvarDia(){
+  S.salvando=true; render();
+  try{
+    await fetch(B+"/api/rotas/dia",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({data:S.data,carros:S.atribuicoes})});
+    S.msg="✅ Salvo!";
+  }catch(e){ S.msg="Erro ao salvar: "+e.message; }
+  S.salvando=false; render();
+  setTimeout(()=>{ S.msg=""; render(); },2500);
+}
+
+async function sugerirRota(carroId){
+  const ids=S.atribuicoes[carroId]?.pedidoIds||[];
+  if(ids.length<1){ alert("Adicione pelo menos 1 pedido a esse carro."); return; }
+  const paradas=ids.map(id=>{ const p=pedidoPorId(id); return {id, endereco:p?.endereco||""}; }).filter(p=>p.endereco);
+  if(!paradas.length){ alert("Nenhum pedido desse carro tem endereço de entrega cadastrado."); return; }
+  S.calculando[carroId]=true; render();
+  try{
+    const j=await fetch(B+"/api/rotas/calcular",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({paradas})}).then(r=>r.json());
+    if(!j.ok){ alert(j.erro||"Erro ao calcular rota"); S.calculando[carroId]=false; render(); return; }
+    S.resultadoRota[carroId]=j;
+    // reordena a lista de pedidoIds desse carro conforme a rota otimizada
+    S.atribuicoes[carroId].pedidoIds=j.paradasOrdenadas.map(p=>p.id);
+    S.carroMapaAtivo=carroId;
+  }catch(e){ alert("Erro: "+e.message); }
+  S.calculando[carroId]=false; render();
+  setTimeout(()=>desenharMapa(carroId),100);
+}
+
+// ---------- decodifica o polyline do Google (formato padrão de encoding) ----------
+function decodePolyline(str){
+  let index=0,lat=0,lng=0,coords=[];
+  while(index<str.length){
+    let b,shift=0,result=0;
+    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+    lat+=(result&1)?~(result>>1):(result>>1);
+    shift=0; result=0;
+    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
+    lng+=(result&1)?~(result>>1):(result>>1);
+    coords.push([lat/1e5,lng/1e5]);
+  }
+  return coords;
+}
+
+let _leafletCarregado=false;
+function carregarLeaflet(){
+  return new Promise(res=>{
+    if(_leafletCarregado||window.L){ _leafletCarregado=true; res(); return; }
+    const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    const js=document.createElement("script"); js.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload=()=>{_leafletCarregado=true;res();}; document.head.appendChild(js);
+  });
+}
+let _mapaLeaflet=null;
+async function desenharMapa(carroId){
+  const box=document.getElementById("mapaRota"); if(!box) return;
+  await carregarLeaflet();
+  const resultado=S.resultadoRota[carroId]; if(!resultado) return;
+  if(_mapaLeaflet){ _mapaLeaflet.remove(); _mapaLeaflet=null; }
+  const centro=S.lojaCoord||{lat:-19.917,lng:-43.934};
+  _mapaLeaflet=L.map("mapaRota").setView([centro.lat,centro.lng],12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(_mapaLeaflet);
+  const pontos=[[centro.lat,centro.lng]];
+  L.marker([centro.lat,centro.lng]).addTo(_mapaLeaflet).bindPopup("🏪 B13 Bebidas (saída/volta)");
+  resultado.paradasOrdenadas.forEach((p,ix)=>{
+    const ped=pedidoPorId(p.id);
+    if(ped?.lat&&ped?.lng){
+      pontos.push([ped.lat,ped.lng]);
+      L.marker([ped.lat,ped.lng]).addTo(_mapaLeaflet).bindPopup(`${ix+1}º — Pedido ${ped.numero}<br>${esc(ped.clienteNome)}`);
+    }
+  });
+  if(resultado.polyline){
+    const linha=decodePolyline(resultado.polyline);
+    L.polyline(linha,{color:"#FF0082",weight:4}).addTo(_mapaLeaflet);
+    if(linha.length) _mapaLeaflet.fitBounds(linha);
+  } else if(pontos.length>1){
+    _mapaLeaflet.fitBounds(pontos);
+  }
+}
+
+// ---------- CONFIG ----------
+function abrirConfig(){ S.editandoConfig=true; render(); }
+function fecharConfig(){ S.editandoConfig=false; render(); }
+function toggleDiaConfig(ix){ S.config.diasEntrega[ix]=!S.config.diasEntrega[ix]; render(); }
+function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Carro "+(S.config.carros.length+1),limiteEntregas:10}); render(); }
+function removerCarroConfig(ix){ S.config.carros.splice(ix,1); render(); }
+async function salvarConfig(){
+  await fetch(B+"/api/rotas/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.config)});
+  S.editandoConfig=false;
+  await carregarTudo();
+}
+
+function render(){
+  const app=document.getElementById("app");
+  if(S.carregando){ app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="muted">Carregando pedidos de entrega…</div></div>`; return; }
+
+  const diaIx=new Date(S.data+"T12:00:00").getDay();
+  const diaHabilitado=S.config.diasEntrega[diaIx];
+
+  let h=`<div class="topbar">
+    <div class="pg">🗺️ Gerenciamento de Rota</div>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost" onclick="abrirConfig()">⚙️ Configurar</button>
+  </div>
+  <div class="content">`;
+
+  if(S.msg) h+=`<div class="warn">${esc(S.msg)}</div>`;
+
+  // seletor de dia
+  h+=`<div class="card" style="display:flex;align-items:center;gap:10px">
+    <button class="btn btn-ghost" onclick="mudarDia(-1)">← Dia anterior</button>
+    <div style="flex:1;text-align:center">
+      <div style="font-weight:900;font-size:16px;text-transform:capitalize">${dataLabel(S.data)}</div>
+      ${!diaHabilitado?'<div class="muted" style="color:#ff8090">⚠️ Esse dia não está configurado como dia de entrega</div>':''}
+    </div>
+    <button class="btn btn-ghost" onclick="mudarDia(1)">Próximo dia →</button>
+  </div>`;
+
+  if(S.editandoConfig) h+=htmlConfig();
+
+  // ---- pedidos disponíveis ----
+  const disponiveis=pedidosDisponiveis();
+  h+=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-weight:900">📦 Pedidos disponíveis (${disponiveis.length})</div>
+    </div>
+    ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p)).join(""):'<div class="muted">Todos os pedidos de entrega já foram atribuídos a um carro — ou não há pedidos de entrega pendentes.</div>'}
+  </div>`;
+
+  // ---- carros ----
+  (S.config.carros||[]).forEach(carro=>{
+    h+=htmlCarroBox(carro);
+  });
+
+  h+=`<button class="btn btn-mag" style="width:100%;padding:14px;font-size:15px" ${S.salvando?"disabled":""} onclick="salvarDia()">${S.salvando?"Salvando…":"💾 Salvar plano do dia"}</button>`;
+
+  h+=`</div>`;
+  app.innerHTML=h;
+  if(S.carroMapaAtivo && S.resultadoRota[S.carroMapaAtivo]) setTimeout(()=>desenharMapa(S.carroMapaAtivo),50);
+}
+
+function htmlConfig(){
+  const c=S.config;
+  return `<div class="card">
+    <div style="font-weight:900;margin-bottom:10px">⚙️ Configuração de entregas</div>
+    <div class="lbl">Dias em que fazemos entrega</div>
+    <div class="diasgrid">
+      ${DIAS_SEMANA.map((d,ix)=>`<div class="diachip ${c.diasEntrega[ix]?'on':''}" onclick="toggleDiaConfig(${ix})">${d}</div>`).join("")}
+    </div>
+    <div class="lbl">Carros disponíveis</div>
+    ${c.carros.map((carro,ix)=>`
+      <div class="carrorow">
+        <input type="text" value="${esc(carro.nome)}" oninput="S.config.carros[${ix}].nome=this.value" placeholder="Nome do carro">
+        <input type="number" value="${carro.limiteEntregas}" min="1" oninput="S.config.carros[${ix}].limiteEntregas=Number(this.value)" title="Limite de entregas">
+        <span class="muted" style="white-space:nowrap">entregas máx.</span>
+        <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover carro">✕</button>
+      </div>`).join("")}
+    <button class="btn btn-ghost" style="margin-top:6px" onclick="addCarroConfig()">+ Adicionar carro</button>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-grn" style="flex:1" onclick="salvarConfig()">💾 Salvar configuração</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="fecharConfig()">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+function htmlPedidoCard(p){
+  const exp=!!S.expandido[p.id];
+  const opcoesCarro=(S.config.carros||[]).map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("");
+  return `<div class="pedcard">
+    <div class="top2">
+      <div>
+        <div class="num">Pedido ${esc(p.numero)}</div>
+        <div class="cli">${esc(p.clienteNome)}</div>
+        <div class="vend">Vendedor: ${esc(p.vendedorNome)}</div>
+      </div>
+      <div class="vals">
+        <div><b>${brl(p.total)}</b></div>
+        <div class="muted">Frete: ${brl(p.frete)}</div>
+        <div class="muted">⚖️ ${p.pesoEstimadoKg} kg (estim.)</div>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:6px">📍 ${esc(p.endereco||"endereço não identificado")}</div>
+    <div class="assignrow">
+      <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="toggleExpandido(${p.id})">${exp?"▲ Ocultar itens":"▼ Ver itens ("+p.itens.length+")"}</button>
+      <select id="selCarro-${p.id}" style="flex:1;min-width:120px">${opcoesCarro}</select>
+      <button class="btn btn-mag" style="padding:6px 12px;font-size:11px" onclick="atribuirCarro(${p.id},document.getElementById('selCarro-${p.id}').value)">Atribuir →</button>
+    </div>
+    <div class="itenslist ${exp?'on':''}">
+      ${p.itens.map(i=>`<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function htmlCarroBox(carro){
+  const ids=S.atribuicoes[carro.id]?.pedidoIds||[];
+  const pedidosCarro=ids.map(id=>pedidoPorId(id)).filter(Boolean);
+  const pesoTotal=+pedidosCarro.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0).toFixed(1);
+  const valorTotal=pedidosCarro.reduce((s,p)=>s+(p.total||0),0);
+  const resultado=S.resultadoRota[carro.id];
+  const acimaLimite=ids.length>carro.limiteEntregas;
+  return `<div class="carrobox">
+    <div class="head">
+      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${ids.length}/${carro.limiteEntregas} entregas)</span></div>
+      <button class="btn btn-out" ${S.calculando[carro.id]?"disabled":""} onclick="sugerirRota('${carro.id}')">${S.calculando[carro.id]?"Calculando…":"🧭 Sugerir rota"}</button>
+    </div>
+    ${acimaLimite?'<div class="warn">⚠️ Esse carro passou do limite configurado de entregas.</div>':''}
+    ${!ids.length?'<div class="muted">Nenhum pedido atribuído a esse carro ainda.</div>':
+      (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
+        const ped=pedidoPorId(p.id);
+        return `<div class="stopitem">
+          <div class="ordn">${ix+1}</div>
+          <div class="nm">Pedido ${esc(ped?.numero||"")} — ${esc(ped?.clienteNome||"")}</div>
+          <div class="km">${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui</div>
+          <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${p.id})" title="Remover">✕</button>
+        </div>`;
+      }).join("")
+      :pedidosCarro.map((p,ix)=>`<div class="stopitem">
+          <div class="ordn">${ix+1}</div>
+          <div class="nm">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
+          <button class="iconbtn" onclick="moverNaLista('${carro.id}',${ix},-1)" title="Subir">▲</button>
+          <button class="iconbtn" onclick="moverNaLista('${carro.id}',${ix},1)" title="Descer">▼</button>
+          <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${p.id})" title="Remover">✕</button>
+        </div>`).join(""))}
+    <div class="resumo">
+      <span>💰 Total: <b>${brl(valorTotal)}</b></span>
+      <span>⚖️ Peso: <b>${pesoTotal} kg</b></span>
+      ${resultado?`<span>🛣️ Distância total: <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ Tempo estimado: <b>${resultado.duracaoTotalMin} min</b></span>`:''}
+    </div>
+    ${resultado?`<button class="btn btn-ghost" style="margin-top:10px" onclick="S.carroMapaAtivo='${carro.id}';render()">🗺️ ${S.carroMapaAtivo===carro.id?'Mapa aberto abaixo':'Ver rota no mapa'}</button>`:''}
+    ${S.carroMapaAtivo===carro.id?`<div id="mapaRota"></div>`:''}
+  </div>`;
+}
+
+carregarTudo();
+</script>
+</body>
+</html>

@@ -57,6 +57,8 @@ const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
 const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
+const ROTAS_CONFIG_FILE = `${DATA_DIR}/rotas_config.json`; // dias de entrega + carros disponíveis
+const ROTAS_DIAS_FILE = `${DATA_DIR}/rotas_dias.json`; // atribuição de pedidos a carros por dia
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -343,6 +345,7 @@ window.B13_NAV_LINKS=[
   {href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
   {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["acesso_perdas","ver_dashboard"]},
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
+  {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
   {href:"/tabela",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
   {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
@@ -3718,6 +3721,7 @@ app.get("/lista-fardo", (req, res) => { res.set("Cache-Control","no-store, no-ca
 app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "etiquetas.html")); });
 app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas-extras.html")); });
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
+app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
 app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });
 app.get("/operacional", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "operacional.html")); });
@@ -5446,6 +5450,152 @@ async function geocodeEndereco(endereco){
   const loc=r?.results?.[0]?.geometry?.location;
   return loc?{lat:loc.lat,lng:loc.lng}:null;
 }
+
+// ======================= GERENCIAMENTO DE ROTA =======================
+function lerRotasConfig(){
+  return lerJSON(ROTAS_CONFIG_FILE,{
+    diasEntrega:[false,true,true,true,true,true,false], // dom,seg,ter,qua,qui,sex,sab
+    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10}],
+  });
+}
+function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
+function lerRotasDias(){ return lerJSON(ROTAS_DIAS_FILE,{}); }
+function salvarRotasDias(d){ salvarJSON(ROTAS_DIAS_FILE,d); }
+
+app.get("/api/rotas/config",(req,res)=>res.json({data:lerRotasConfig()}));
+app.post("/api/rotas/config",(req,res)=>{
+  const b=req.body||{};
+  const atual=lerRotasConfig();
+  const nova={
+    diasEntrega:Array.isArray(b.diasEntrega)&&b.diasEntrega.length===7?b.diasEntrega:atual.diasEntrega,
+    carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),nome:c.nome||"Carro",limiteEntregas:Number(c.limiteEntregas)||10})):atual.carros,
+  };
+  salvarRotasConfig(nova);
+  res.json({ok:true,data:nova});
+});
+
+// Estimativa de peso do pedido a partir do nome/quantidade dos produtos —
+// baseada em regras (volume detectado no nome + tipo de embalagem), não uma
+// chamada de IA por produto (seria lento/caro e pouco confiável no servidor
+// pra cada item). Cobre os padrões mais comuns de bebida (lata, garrafa, pet).
+function estimarPesoProduto(nome){
+  const n=String(nome||"").toLowerCase();
+  let litros=0;
+  const mL=n.match(/(\d+[.,]?\d*)\s*ml\b/);
+  const mL2=n.match(/(\d+[.,]?\d*)\s*l\b/);
+  if(mL) litros=parseFloat(mL[1].replace(",","."))/1000;
+  else if(mL2) litros=parseFloat(mL2[1].replace(",","."));
+  if(!litros) litros=0.5; // sem volume identificado no nome — assume padrão médio (500ml)
+  let embalagemKg=0.03; // lata (padrão mais leve)
+  if(/\bpet\b/.test(n)) embalagemKg=0.05;
+  else if(/vidro|garrafa|long ?neck|whisky|whiskey|vodka|gin|licor|espumante|vinho|champanhe|conhaque|rum\b/.test(n)) embalagemKg=litros>=0.9?0.5:0.35;
+  else if(/barril|chopp/.test(n)) embalagemKg=1.5;
+  return +((litros*1+embalagemKg)).toFixed(3); // 1L de líquido ≈ 1kg
+}
+function estimarPesoPedido(itens){
+  return +((itens||[]).reduce((s,i)=>s+estimarPesoProduto(i.descricao||i.produto?.nome||"")*Number(i.quantidade||0),0)).toFixed(2);
+}
+
+// Lista pedidos elegíveis pra entrega (tipo entrega, ainda não atendidos/cancelados)
+// com os dados já prontos pra tela: cliente, vendedor, valor, frete, itens, peso.
+app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
+  try{
+    const dataAlvo=req.query.data||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    const offsetBR=3*60*60*1000;
+    const dataFim=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
+    const dataIni=new Date(Date.now()-offsetBR-21*86400000).toISOString().slice(0,10); // janela de 21 dias
+    const situacoes=[SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
+    const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+    situacoes.forEach(id=>p.append("idsSituacoes[]",id));
+    const lista=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]);
+    // remove duplicados (a paginação do Bling às vezes repete)
+    const vistos=new Set(); const unicos=lista.filter(p=>{ if(vistos.has(p.id)) return false; vistos.add(p.id); return true; });
+
+    const rotasDias=lerRotasDias();
+    const atribuidoNoDia=rotasDias[dataAlvo]||{};
+    const acharCarroDoPedido=(pid)=>{
+      for(const carroId in atribuidoNoDia){ if((atribuidoNoDia[carroId].pedidoIds||[]).includes(pid)) return carroId; }
+      return null;
+    };
+
+    const detalhados=[];
+    for(let i=0;i<unicos.length;i++){
+      const resumo=unicos[i];
+      try{
+        const det=await bling(`/pedidos/vendas/${resumo.id}`).then(r=>r?.data);
+        if(!det) continue;
+        const frete=+(det.transporte?.frete||0);
+        const temEndereco=!!det.transporte?.enderecoEntrega?.endereco;
+        // heurística "é entrega": tem frete OU tem endereço de entrega cadastrado
+        if(frete<=0 && !temEndereco) continue;
+        const end=det.transporte?.enderecoEntrega;
+        const enderecoTxt=end?[end.endereco,end.numero,end.bairro,end.municipio,end.uf].filter(Boolean).join(", "):"";
+        let coord=null;
+        if(enderecoTxt) coord=await geocodeEndereco(enderecoTxt).catch(()=>null);
+        detalhados.push({
+          id:det.id, numero:det.numero, clienteNome:det.contato?.nome||"—", clienteId:det.contato?.id||null,
+          vendedorNome:det.vendedor?.nome||"—",
+          total:+(det.total||0), totalProdutos:+(det.totalProdutos||0), frete,
+          situacao:det.situacao?.id, situacaoNome:det.situacao?.nome||"",
+          endereco:enderecoTxt, lat:coord?.lat||null, lng:coord?.lng||null,
+          itens:(det.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor})),
+          pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
+          carroAtribuido:acharCarroDoPedido(det.id),
+        });
+      }catch(e){}
+      if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling
+    }
+    res.json({data:detalhados, config:lerRotasConfig(), lojaCoord:await geocodeEndereco(LOJA_ENDERECO).catch(()=>null), lojaEndereco:LOJA_ENDERECO});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// Salva/lê a atribuição de pedidos aos carros num dia específico
+app.get("/api/rotas/dia",(req,res)=>{
+  const data=req.query.data; if(!data) return res.status(400).json({erro:"data obrigatória"});
+  const rotas=lerRotasDias();
+  res.json({data:rotas[data]||{}});
+});
+app.post("/api/rotas/dia",(req,res)=>{
+  const {data,carros}=req.body||{};
+  if(!data||!carros) return res.status(400).json({erro:"data e carros obrigatórios"});
+  const rotas=lerRotasDias();
+  rotas[data]=carros;
+  salvarRotasDias(rotas);
+  res.json({ok:true});
+});
+
+// Calcula a melhor ordem de entrega entre os pedidos selecionados (Google
+// Directions com otimização de waypoints) + distância/tempo total, saindo da
+// loja e voltando pra loja no final.
+app.post("/api/rotas/calcular",async(req,res)=>{
+  try{
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado no servidor."});
+    const paradas=req.body?.paradas||[]; // [{id,endereco}]
+    if(!paradas.length) return res.status(400).json({erro:"Informe ao menos uma parada."});
+    const origem=LOJA_ENDERECO;
+    const waypointsStr=paradas.map(p=>encodeURIComponent(p.endereco)).join("|");
+    const url=`https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origem)}&destination=${encodeURIComponent(origem)}&waypoints=optimize:true|${waypointsStr}&key=${GOOGLE_MAPS_KEY}`;
+    const j=await fetch(url).then(r=>r.json());
+    if(j.status!=="OK") return res.status(400).json({erro:`Google Directions: ${j.status}${j.error_message?" — "+j.error_message:""}`});
+    const rota=j.routes[0];
+    const ordemOtimizada=rota.waypoint_order; // índices na ordem otimizada (referentes a `paradas`)
+    const distanciaTotalM=rota.legs.reduce((s,l)=>s+l.distance.value,0);
+    const duracaoTotalS=rota.legs.reduce((s,l)=>s+l.duration.value,0);
+    const paradasOrdenadas=ordemOtimizada.map((ix,pos)=>({
+      ...paradas[ix],
+      distanciaProximaKm:+(rota.legs[pos].distance.value/1000).toFixed(1),
+      duracaoProximaMin:Math.round(rota.legs[pos].duration.value/60),
+    }));
+    res.json({
+      ok:true,
+      ordemOtimizada, paradasOrdenadas,
+      distanciaTotalKm:+(distanciaTotalM/1000).toFixed(1),
+      duracaoTotalMin:Math.round(duracaoTotalS/60),
+      polyline:rota.overview_polyline?.points||"",
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 
 // processa a geocodificação em lotes (chamado sob demanda). Retorna progresso.
 app.post("/api/vendedor/geocodificar",async(req,res)=>{
