@@ -245,7 +245,10 @@ function header(showCart){
   // nome do cliente identificado — mostrado no topo até finalizar o pedido
   const nomeTopo = (S.identificado && (S.docNome||S.nome).trim() && S.etapa!=="inicio" && S.etapa!=="sucesso") ? (S.docNome||S.nome).trim() : "";
   const clienteBadge = nomeTopo
-    ? `<div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ffd23f;margin-left:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px" title="${esc(nomeTopo)}">👤 ${esc(nomeTopo)}</div>`
+    ? `<div style="display:flex;align-items:center;gap:6px;margin-left:8px">
+        <div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ffd23f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="${esc(nomeTopo)}">👤 ${esc(nomeTopo)}</div>
+        <button onclick="if(confirm('Sair do cadastro e digitar outro CPF/CNPJ? Seu carrinho será mantido.'))sairDoCadastro()" title="Sair / trocar CPF ou CNPJ" style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 9px;font-size:12px;color:#9a95c9;cursor:pointer">🚪</button>
+      </div>`
     : "";
   return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div>${clienteBadge}<div class="sp"></div>
     ${modoBtn}
@@ -472,11 +475,26 @@ function telaInicio(app){
 async function identificar(){
   const d=soDig(S.doc);
   if(!docValido(d)){ alertaBonito("CPF ou CNPJ inválido. Confira os números."); return; }
+  // sempre limpa os dados de uma consulta anterior antes de checar de novo —
+  // senão, ao trocar de CPF/CNPJ nessa tela, o endereço/nome do cliente
+  // ANTERIOR ficava preso (checarDoc só preenche campos vazios)
+  S.docNome=null; S.docInfo=null; S.docChecado=false;
+  S.nome=""; S.telefone=""; S.email="";
+  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
   S.identificado=true; S.doc=d;
   await checarDoc();
   S.etapa="catalogo"; S.catAtiva=0; render();
 }
 function semIdentificacao(){ S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false; S.etapa="catalogo"; S.catAtiva=0; render(); }
+// "Sair do cadastro" — limpa tudo (documento, nome, endereço) e volta pro
+// campo de CPF/CNPJ em branco, pra digitar outro do zero
+function sairDoCadastro(){
+  S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false;
+  S.nome=""; S.telefone=""; S.email="";
+  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
+  S.etapa="inicio"; render();
+  setTimeout(()=>{ const el=document.getElementById("docInput"); if(el) el.focus(); },50);
+}
 // chamado a cada tecla no campo de CPF/CNPJ do checkout — se já tinha um
 // cliente identificado antes e o número mudou, limpa os dados que vieram
 // daquela busca (nome, telefone, email, endereço), pra não ficar com o
