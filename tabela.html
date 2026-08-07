@@ -19,7 +19,9 @@
   .wrap { padding:18px; display:flex; justify-content:center; }
 
   /* ---------------- POSTER ---------------- */
-  #poster { width:1080px; background:#262366; background:linear-gradient(180deg,#2b2870,#262366); padding:26px 26px 16px; }
+  /* mais largo e com mais colunas (4→6) pra ficar em formato paisagem,
+     tipo tela de celular deitado, em vez de ficar alto/estreito */
+  #poster { width:1560px; background:#262366; background:linear-gradient(180deg,#2b2870,#262366); padding:26px 26px 16px; }
   .head { display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:center; }
   .logo-cell { display:flex; align-items:center; }
   .logo-cell img { height:104px; width:auto; }
@@ -34,7 +36,7 @@
   .head-info .zap .ic { display:inline-block; background:#25D366; color:#0b3; border-radius:50%; width:26px; height:26px; line-height:26px; text-align:center; margin-right:6px; }
   .endereco { text-align:center; font-weight:900; font-size:16px; margin:8px 0 14px; }
 
-  .cols { display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
+  .cols { display:grid; grid-template-columns:repeat(6,1fr); gap:0; }
   .col { padding:0 14px; }
   .col + .col { border-left:4px solid #FF0082; }   /* linhas rosas entre colunas */
   .cat { margin-bottom:12px; }
@@ -263,7 +265,7 @@ function render(){
   document.querySelector('[data-field="foot1"]').innerText = META.foot1;
   document.querySelector('[data-field="foot2"]').innerText = META.foot2;
 
-  const colDivs=[1,2,3,4].map(()=>{ const d=document.createElement("div"); d.className="col"; return d; });
+  const colDivs=[1,2,3,4,5,6].map(()=>{ const d=document.createElement("div"); d.className="col"; return d; });
   MODEL.forEach((cat)=>{
     const box=document.createElement("div"); box.className="cat";
     // cabeçalho
@@ -273,7 +275,7 @@ function render(){
       `<div class="catctl" data-edit data-html2canvas-ignore="true">`+
         `<button class="mvbtn" title="Subir" onclick="moveCat('${cat.id}',-1)">▲</button>`+
         `<button class="mvbtn" title="Descer" onclick="moveCat('${cat.id}',1)">▼</button>`+
-        `Coluna <select onchange="setCol('${cat.id}',this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${cat.col==n?"selected":""}>${n}</option>`).join("")}</select>`+
+        `Coluna <select onchange="setCol('${cat.id}',this.value)">${[1,2,3,4,5,6].map(n=>`<option value="${n}" ${cat.col==n?"selected":""}>${n}</option>`).join("")}</select>`+
       `</div>`;
     box.appendChild(h);
     // itens
