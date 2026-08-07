@@ -75,14 +75,26 @@ function desenhar(){
     itens.forEach(i=>linhas.push({tipo:"item",nome:i.nome||"",preco:i.preco,caixa:i.caixa||1}));
   });
 
-  // dimensões
-  const W=760, padd=24, rowH=34, catH=40, headerH=110;
-  const colsPorLinha=Math.ceil(linhas.length/ (linhas.length>28?2:1)); // 2 colunas se for grande
-  const usaDuasColunas=linhas.length>28;
-  const colW=usaDuasColunas?(W-padd*3)/2:(W-padd*2);
-  const linhasPorCol=usaDuasColunas?Math.ceil(linhas.length/2):linhas.length;
-  const alturaCorpo=linhasPorCol*rowH+ (linhas.filter(l=>l.tipo==='cat').length*(catH-rowH));
-  const H=headerH+alturaCorpo+40;
+  // dimensões — formato PAISAGEM (parecido com a tela de um celular deitado),
+  // pra imagem preencher bem uma tela horizontal sem sobrar faixa preta nem
+  // esticar. Escolhe o número de colunas automaticamente conforme a
+  // quantidade de itens, mirando numa proporção ~16:9.
+  const W=1600, padd=36, rowH=46, catH=54, headerH=150, footerH=54;
+  const alturaPara=(n)=>{
+    const linhasPorCol=Math.ceil(linhas.length/n);
+    const catsTotais=linhas.filter(l=>l.tipo==='cat').length;
+    const catsPorCol=Math.ceil(catsTotais/n);
+    return headerH+footerH+linhasPorCol*rowH+catsPorCol*(catH-rowH);
+  };
+  const TARGET_RATIO=9/16; // altura/largura ~ celular deitado
+  let numCols=2, melhorDiff=Infinity;
+  for(let n=2;n<=6;n++){
+    const H=alturaPara(n);
+    const diff=Math.abs((H/W)-TARGET_RATIO);
+    if(diff<melhorDiff){ melhorDiff=diff; numCols=n; }
+  }
+  const colW=(W-padd*(numCols+1))/numCols;
+  const H=alturaPara(numCols);
 
   const cv=document.getElementById("cv");
   const dpr=2; // nitidez
@@ -94,33 +106,33 @@ function desenhar(){
   // fundo
   ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,W,H);
   // cabeçalho
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-20);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-20,W,6);
-  ctx.fillStyle="#fff"; ctx.font="900 30px Arial"; ctx.textAlign="left";
-  ctx.fillText("B13 BEBIDAS", padd, 44);
-  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
-  ctx.fillText("Tabela de Preços — Atacado", padd, 70);
-  ctx.font="12px Arial"; ctx.fillStyle="#cfc9f5";
+  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-26);
+  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-26,W,8);
+  ctx.fillStyle="#fff"; ctx.font="900 46px Arial"; ctx.textAlign="left";
+  ctx.fillText("B13 BEBIDAS", padd, 64);
+  ctx.font="700 24px Arial"; ctx.fillStyle="#ffd23f";
+  ctx.fillText("Tabela de Preços — Atacado", padd, 100);
+  ctx.font="16px Arial"; ctx.fillStyle="#cfc9f5";
   const hoje=new Date().toLocaleDateString("pt-BR");
   ctx.textAlign="right";
-  ctx.fillText("Atualizada em "+hoje, W-padd, 44);
+  ctx.fillText("Atualizada em "+hoje, W-padd, 64);
 
-  // corpo
+  // corpo, dividido em N colunas
   ctx.textAlign="left";
   function desenhaColuna(linhasCol, x0){
     let y=headerH;
     linhasCol.forEach(l=>{
       if(l.tipo==="cat"){
-        ctx.fillStyle="#262366"; ctx.fillRect(x0,y,colW,catH-6);
-        ctx.fillStyle="#fff"; ctx.font="900 15px Arial";
-        ctx.fillText(l.texto.toUpperCase(), x0+8, y+catH/2);
+        ctx.fillStyle="#262366"; ctx.fillRect(x0,y,colW,catH-8);
+        ctx.fillStyle="#fff"; ctx.font="900 19px Arial";
+        ctx.fillText(l.texto.toUpperCase(), x0+10, y+catH/2);
         y+=catH;
       }else{
-        ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
-        let nome=l.nome; if(nome.length>34) nome=nome.slice(0,33)+"…";
-        ctx.fillText(nome, x0+8, y+rowH/2+2);
-        ctx.font="900 14px Arial"; ctx.fillStyle="#c8007a"; ctx.textAlign="right";
-        ctx.fillText(brl(l.preco), x0+colW-8, y+rowH/2+2);
+        ctx.fillStyle="#111"; ctx.font="17px Arial"; ctx.textAlign="left";
+        let nome=l.nome; if(nome.length>30) nome=nome.slice(0,29)+"…";
+        ctx.fillText(nome, x0+10, y+rowH/2+3);
+        ctx.font="900 17px Arial"; ctx.fillStyle="#c8007a"; ctx.textAlign="right";
+        ctx.fillText(brl(l.preco), x0+colW-10, y+rowH/2+3);
         ctx.textAlign="left";
         // linha separadora
         ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(x0,y+rowH); ctx.lineTo(x0+colW,y+rowH); ctx.stroke();
@@ -128,16 +140,17 @@ function desenhar(){
       }
     });
   }
-  if(usaDuasColunas){
-    const meio=Math.ceil(linhas.length/2);
-    desenhaColuna(linhas.slice(0,meio), padd);
-    desenhaColuna(linhas.slice(meio), padd*2+colW);
-  }else{
-    desenhaColuna(linhas, padd);
+  // distribui as linhas em N colunas iguais (sequencial)
+  const totalLinhas=linhas.length;
+  const porColuna=Math.ceil(totalLinhas/numCols);
+  for(let i=0;i<numCols;i++){
+    const fatia=linhas.slice(i*porColuna,(i+1)*porColuna);
+    if(!fatia.length) continue;
+    desenhaColuna(fatia, padd+i*(colW+padd));
   }
   // rodapé
-  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center";
-  ctx.fillText("Preços sujeitos a alteração · Fale com a gente pra fazer seu pedido!", W/2, H-16);
+  ctx.fillStyle="#9a95c9"; ctx.font="16px Arial"; ctx.textAlign="center";
+  ctx.fillText("Preços sujeitos a alteração · Fale com a gente pra fazer seu pedido!", W/2, H-18);
 
   document.getElementById("msg").style.display="none";
 }
