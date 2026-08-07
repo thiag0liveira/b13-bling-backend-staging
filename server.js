@@ -2571,17 +2571,20 @@ app.post("/api/finalizar", async (req, res) => {
         fretePorConta: 0,
         frete: Number(entrega.taxa) || 0,
       };
-      // incluir endereço de entrega para evitar erro de UF obrigatório
-      if(entrega.endereco){
-        const endParts=entrega.endereco.split(",").map(s=>s.trim());
+      // usa os campos ESTRUTURADOS do endereço (cadastro.endereco), não o texto
+      // formatado pra exibição — quebrar aquele texto por vírgula misturava
+      // número/bairro/cidade/UF nos campos errados (o texto usa " - " misturado
+      // com vírgulas, então não bate 1:1 com uma vírgula = um campo)
+      const endCad=cadastro?.endereco||{};
+      if(endCad.rua||entrega.endereco){
         payload.transporte.enderecoEntrega={
-          endereco: endParts[0]||"",
-          numero: endParts[1]||"S/N",
-          complemento: "",
-          bairro: endParts[2]||"",
-          cep: "",
-          municipio: "Belo Horizonte",
-          uf: "MG",
+          endereco: endCad.rua||"",
+          numero: endCad.numero||"S/N",
+          complemento: endCad.complemento||"",
+          bairro: endCad.bairro||"",
+          cep: endCad.cep||"",
+          municipio: endCad.cidade||"Belo Horizonte",
+          uf: endCad.uf||"MG",
           pais: "Brasil",
         };
       }
