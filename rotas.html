@@ -232,10 +232,11 @@ async function sugerirDistribuicaoDia(){
     for(const p of candidatos){
       if(escolhidos.length>=faltamQtd) break;
       const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
-      // permite passar até 20% do peso sugerido se for preciso pra fechar a
-      // quantidade de entregas da rota — prioriza fechar a rota (mais rápido/
-      // eficiente) a deixar pedido de fora só por causa do peso
-      if(pesoTeste>alvoPeso*1.2 && escolhidos.length>0 && pool.length>faltamQtd) continue;
+      // teto de 20% acima do peso sugerido é sempre respeitado (mesmo que
+      // sobre menos entregas do que a meta nessa rota) — só o 1º pedido da
+      // rota entra sempre, mesmo que sozinho já passe do peso, pra rota nunca
+      // ficar vazia por causa de um pedido pesado
+      if(pesoTeste>alvoPeso*1.2 && escolhidos.length>0) continue;
       escolhidos.push(p); pesoAcum=pesoTeste;
     }
     escolhidos.forEach(p=>{ S.atribuicoes[carro.id].pedidoIds.push(p.id); });
@@ -243,7 +244,10 @@ async function sugerirDistribuicaoDia(){
   }
 
   render();
-  if(semCoord.length) S.msg=`⚠️ ${semCoord.length} pedido(s) sem coordenada identificada não puderam ser distribuídos automaticamente — atribua manualmente.`;
+  const avisos=[];
+  if(pool.length) avisos.push(`${pool.length} pedido(s) não couberam em nenhuma rota sem estourar o peso sugerido em mais de 20% — ficaram em "Pedidos disponíveis" pra você decidir manualmente.`);
+  if(semCoord.length) avisos.push(`${semCoord.length} pedido(s) sem coordenada identificada não puderam ser distribuídos automaticamente.`);
+  if(avisos.length) S.msg="⚠️ "+avisos.join(" ");
   // calcula a rota otimizada de cada carro que recebeu pedidos novos
   for(const carro of carros){
     if((S.atribuicoes[carro.id].pedidoIds||[]).length>0) await sugerirRota(carro.id);
