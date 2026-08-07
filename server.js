@@ -5079,18 +5079,26 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     }
     if(entregaProp.tipo==="entrega"){
       payload.transporte={ fretePorConta:0, frete:freteProp };
-      const end=prop.cliente?.endereco;
-      if(end){
+      const end=prop.cliente?.endereco||{};
+      // fallback: se os campos estruturados do cliente vierem incompletos por
+      // algum motivo (endereço não totalmente cadastrado, por ex.), usa o texto
+      // do endereço que JÁ foi usado pra calcular o frete, em vez de simplesmente
+      // deixar de enviar o endereço de entrega pro Bling sem avisar ninguém
+      const partesTexto=(entregaProp.endereco||"").split(",").map(s=>s.trim()).filter(Boolean);
+      const temAlgumEndereco=!!(end.rua||partesTexto.length);
+      if(temAlgumEndereco){
         payload.transporte.enderecoEntrega={
-          endereco: end.rua||"",
+          endereco: end.rua||partesTexto[0]||"Endereço não detalhado",
           numero: end.numero||"S/N",
           complemento: "",
-          bairro: end.bairro||"",
+          bairro: end.bairro||partesTexto[1]||"",
           cep: "",
-          municipio: end.cidade||"Belo Horizonte",
-          uf: end.uf||"MG",
+          municipio: end.cidade||partesTexto[partesTexto.length-2]||"Belo Horizonte",
+          uf: end.uf||partesTexto[partesTexto.length-1]||"MG",
           pais: "Brasil",
         };
+      } else {
+        console.warn("[atacado] gerar-pedido: entrega sem NENHUM endereco disponivel (nem estruturado, nem texto) - proposta",req.params.id);
       }
     }
     console.log("[atacado] payload gerar-pedido:",JSON.stringify(payload));
