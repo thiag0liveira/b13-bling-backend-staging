@@ -64,7 +64,7 @@ function montarFiltros(){
     cats.map(c=>`<span class="chip ${CAT_ATIVA===c?'on':''}" onclick="CAT_ATIVA='${c.replace(/'/g,"")}';montarFiltros();desenhar()">${c}</span>`).join("");
 }
 
-function desenhar(){
+async function desenhar(){
   const cats=(CAT_ATIVA==='todas')?TABELA.model:TABELA.model.filter(c=>c.t===CAT_ATIVA);
   // monta as linhas
   const linhas=[];
@@ -103,15 +103,28 @@ function desenhar(){
   const ctx=cv.getContext("2d");
   ctx.scale(dpr,dpr);
 
+  // carrega a logo de verdade antes de desenhar
+  const logoImg=await new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>res(img);
+    img.onerror=()=>res(null);
+    img.src=B+"/logo";
+  });
+
   // fundo
   ctx.fillStyle="#ffffff"; ctx.fillRect(0,0,W,H);
   // cabeçalho
   ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-26);
   ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-26,W,8);
-  ctx.fillStyle="#fff"; ctx.font="900 46px Arial"; ctx.textAlign="left";
-  ctx.fillText("B13 BEBIDAS", padd, 64);
-  ctx.font="700 24px Arial"; ctx.fillStyle="#ffd23f";
-  ctx.fillText("Tabela de Preços — Atacado", padd, 100);
+  if(logoImg){
+    const logoH=64, logoW=logoImg.naturalWidth*(logoH/logoImg.naturalHeight);
+    ctx.drawImage(logoImg,padd,28,logoW,logoH);
+  } else {
+    ctx.fillStyle="#fff"; ctx.font="900 46px Arial"; ctx.textAlign="left";
+    ctx.fillText("B13 BEBIDAS", padd, 64);
+  }
+  ctx.font="700 24px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
+  ctx.fillText("Tabela de Preços — Atacado", padd, headerH-40);
   ctx.font="16px Arial"; ctx.fillStyle="#cfc9f5";
   const hoje=new Date().toLocaleDateString("pt-BR");
   ctx.textAlign="right";
@@ -128,11 +141,22 @@ function desenhar(){
         ctx.fillText(l.texto.toUpperCase(), x0+10, y+catH/2);
         y+=catH;
       }else{
-        ctx.fillStyle="#111"; ctx.font="17px Arial"; ctx.textAlign="left";
-        let nome=l.nome; if(nome.length>30) nome=nome.slice(0,29)+"…";
+        // desenha o preço primeiro pra saber exatamente quanto espaço ele ocupa,
+        // e só então trunca o nome pra caber no que sobrar — evita sobrepor
+        // (antes cortava por quantidade fixa de caracteres, que não se ajustava
+        // à largura real da coluna quando ela ficava mais estreita)
+        ctx.font="900 17px Arial";
+        const precoTxt=brl(l.preco);
+        const precoW=ctx.measureText(precoTxt).width;
+        const espacoNome=colW-20-precoW-14; // padding lateral + respiro entre nome e preço
+        ctx.font="17px Arial";
+        let nome=l.nome;
+        while(nome.length>3 && ctx.measureText(nome).width>espacoNome){ nome=nome.slice(0,-1); }
+        if(nome!==l.nome) nome=nome.slice(0,-1)+"…";
+        ctx.fillStyle="#111"; ctx.textAlign="left";
         ctx.fillText(nome, x0+10, y+rowH/2+3);
         ctx.font="900 17px Arial"; ctx.fillStyle="#c8007a"; ctx.textAlign="right";
-        ctx.fillText(brl(l.preco), x0+colW-10, y+rowH/2+3);
+        ctx.fillText(precoTxt, x0+colW-10, y+rowH/2+3);
         ctx.textAlign="left";
         // linha separadora
         ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(x0,y+rowH); ctx.lineTo(x0+colW,y+rowH); ctx.stroke();
