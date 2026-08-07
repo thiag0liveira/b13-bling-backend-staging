@@ -5504,7 +5504,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     const offsetBR=3*60*60*1000;
     const dataFim=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
     const dataIni=new Date(Date.now()-offsetBR-21*86400000).toISOString().slice(0,10); // janela de 21 dias
-    const situacoes=[SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
+    const situacoes=[SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
     const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataIni,dataFinal:dataFim});
     situacoes.forEach(id=>p.append("idsSituacoes[]",id));
     const lista=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]);
