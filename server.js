@@ -2602,7 +2602,7 @@ app.post("/api/finalizar", async (req, res) => {
       // com vírgulas, então não bate 1:1 com uma vírgula = um campo)
       const endCad=cadastro?.endereco||{};
       if(endCad.rua||entrega.endereco){
-        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(endCad, cadastro?.nome||""));
+        Object.assign(payload.transporte, montarBlocoEnderecoEntrega(endCad, nome||""));
       }
     }
     // pedidos do totem sempre vêm com vendedor "SISTEMA" (ID 15596923213 no Bling),
@@ -5556,7 +5556,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
         if(enderecoTxt) coord=await geocodeEndereco(enderecoTxt).catch(()=>null);
         detalhados.push({
           id:det.id, numero:det.numero, clienteNome:det.contato?.nome||"—", clienteId:det.contato?.id||null,
-          vendedorNome:det.vendedor?.nome||"—",
+          vendedorNome:await nomeVendedor(det.vendedor?.id),
           total:+(det.total||0), totalProdutos:+(det.totalProdutos||0), frete,
           situacao:det.situacao?.id, situacaoNome:det.situacao?.nome||"",
           endereco:enderecoTxt, lat:coord?.lat||null, lng:coord?.lng||null,
