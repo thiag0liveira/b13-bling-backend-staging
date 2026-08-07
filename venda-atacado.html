@@ -76,7 +76,7 @@ const S={
   analise:null, carregandoAnalise:false,
   novos:[], carregandoNovos:false, novosSelecionados:{},
   compraSelecionados:{}, minComprados:false, minNovos:false,
-  modoTabela:false, tabelaCompleta:null, buscaTabela:"",
+  modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
   tipoEntrega:"retirada", frete:null, freteMsg:"",
   msg:"",
@@ -516,29 +516,74 @@ function viewTabela(){
       ${cats.map(c=>`
         <div style="margin-bottom:10px">
           <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
-          ${c.itens.map(tbItemRow).join("")}
+          ${c.itens.map((it,ix)=>tbItemRow(it, c.titulo+"|"+ix+"|"+it.nome)).join("")}
         </div>`).join("")}
     </div>`;
 }
 
-function tbItemRow(it){
-  const jaTem=S.itens.some(i=>String(i.produtoId)===String(it.bling?.[0]?.id||it.produtoId));
+function tbItemRow(it, chaveUnica){
   const mult=it.caixa||1;
-  const pid=it.bling?.[0]?.id||it.produtoId||"";
-  return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #23204f;font-size:13px">
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.nome)}</div>
-      <div style="color:#ffd23f;font-weight:800;font-size:12px">${brl(it.preco)}${mult>1?` <span class="muted" style="font-size:10px">· fardo ${mult}</span>`:''}</div>
-    </div>
-    <button class="btn ${jaTem?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:7px 12px;flex-shrink:0" ${jaTem||!pid?'disabled':''}
-      onclick='addDaTabela(${JSON.stringify({id:pid,nome:it.nome,preco:it.preco,multiplo:mult}).replace(/'/g,"&#39;")})'>${jaTem?'✓':'+ Add'}</button>
+  const blingList=(it.bling||[]).filter(b=>b&&b.id);
+
+  // sem vínculo nenhum no Bling — não dá pra adicionar
+  if(!blingList.length){
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #23204f;font-size:13px;opacity:.5">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.nome)}</div>
+        <div style="color:#ffd23f;font-weight:800;font-size:12px">${brl(it.preco)}</div>
+      </div>
+      <span class="muted" style="font-size:11px">sem vínculo Bling</span>
+    </div>`;
+  }
+
+  // produto com várias associações no Bling (vários sabores/variações) — igual
+  // o /pedir já faz: mostra "Escolher sabor" e expande a lista de opções
+  if(blingList.length>1){
+    const aberto=!!S.tbAbertos[chaveUnica];
+    return `<div style="border-bottom:1px solid #23204f">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.nome)}</div>
+          <div style="color:#ffd23f;font-weight:800;font-size:12px">${brl(it.preco)}${mult>1?` <span class="muted" style="font-size:10px">· fardo ${mult}</span>`:''} <span class="muted" style="font-size:10px">· ${blingList.length} sabores</span></div>
+        </div>
+        <button class="btn btn-out" style="font-size:12px;padding:7px 12px;flex-shrink:0" onclick="S.tbAbertos['${chaveUnica}']=!S.tbAbertos['${chaveUnica}'];render()">${aberto?'▲ Fechar':'▼ Escolher sabor'}</button>
+      </div>
+      ${aberto?`<div style="padding:0 4px 8px 14px">${blingList.map(b=>tbSaborRow(it,b,mult)).join("")}</div>`:''}
+    </div>`;
+  }
+
+  // associação única — comportamento simples de sempre
+  return tbSaborRow(it, blingList[0], mult, true);
+}
+
+function tbSaborRow(it, b, mult, semIndent){
+  const ix=S.itens.findIndex(i=>String(i.produtoId)===String(b.id));
+  const jaTem=ix>=0;
+  const nomeExib=semIndent?it.nome:(b.nome||it.nome);
+  const payload=JSON.stringify({id:b.id,nome:nomeExib,preco:it.preco,multiplo:mult}).replace(/'/g,"&#39;");
+  if(jaTem){
+    const item=S.itens[ix];
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 4px;${semIndent?'border-bottom:1px solid #23204f;':''}font-size:12.5px">
+      <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+      <div class="qtd" style="flex-shrink:0">
+        <button onclick="mudarQtd(${ix},-1)" title="${mult>1?`− ${mult} un`:'−1'}">−</button>
+        <input type="number" min="${mult}" step="${mult}" value="${item.quantidade}" onchange="setQtd(${ix},this.value)" style="width:46px">
+        <button onclick="mudarQtd(${ix},1)" title="${mult>1?`+ ${mult} un`:'+1'}">+</button>
+      </div>
+    </div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:8px;padding:5px 4px;${semIndent?'border-bottom:1px solid #23204f;':''}font-size:12.5px">
+    <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+    <button class="btn btn-mag" style="font-size:12px;padding:6px 12px;flex-shrink:0" onclick='addDaTabela(${payload})'>+ Add</button>
   </div>`;
 }
 
 async function addDaTabela(it){
   if(!it.id){ S.msg="Este item não tem produto vinculado no Bling."; render(); return; }
   if(S.itens.some(i=>String(i.produtoId)===String(it.id))) return;
-  // busca estoque ao vivo e adiciona (o preço já vem da tabela)
+  // busca estoque ao vivo e adiciona (o preço já vem da tabela) — não fecha o
+  // modo tabela nem limpa a busca, então dá pra continuar adicionando outros
+  // produtos direto, sem precisar buscar de novo
   await addItem({id:it.id,nome:it.nome,preco:it.preco,imagem:"",origemPreco:'atacado',multiplo:it.multiplo||1,estoque:null});
 }
 
