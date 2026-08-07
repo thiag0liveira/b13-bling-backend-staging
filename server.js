@@ -4831,8 +4831,11 @@ app.get("/api/atacado/produtos-novos",async(req,res)=>{
       topN=arr.slice(0,qtd).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,preco:+(p.preco||0),imagem:p.imagemURL||""}));
     }
 
-    const tab=lerTabela(); const codsTabela=new Set();
-    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>codsTabela.add(String(b.codigo)))));
+    const tab=lerTabela(); const codsTabela=new Set(); const precoAtacadoPorCodigo={};
+    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{
+      codsTabela.add(String(b.codigo));
+      if(it.preco>0) precoAtacadoPorCodigo[String(b.codigo)]=it.preco; // preço de atacado, não o do Bling
+    })));
 
     const novos=[];
     for(const p of topN){
@@ -4840,7 +4843,12 @@ app.get("/api/atacado/produtos-novos",async(req,res)=>{
       if(!imagem){
         try{ const d=await bling(`/produtos/${p.id}`); imagem=d?.data?.imagemURL||""; await new Promise(r=>setTimeout(r,120)); }catch(e){}
       }
-      novos.push({id:p.id,nome:p.nome,codigo:p.codigo,preco:+(p.preco||0),imagem,naTabelaAtacado:codsTabela.has(String(p.codigo))});
+      const naTabela=codsTabela.has(String(p.codigo));
+      // usa o preço de ATACADO por padrão quando o produto já tem um cadastrado
+      // na tabela — antes sempre mostrava o preço do Bling, mesmo já tendo
+      // preço de atacado definido, e só corrigia depois de selecionar
+      const precoFinal=naTabela&&precoAtacadoPorCodigo[String(p.codigo)]!=null?precoAtacadoPorCodigo[String(p.codigo)]:+(p.preco||0);
+      novos.push({id:p.id,nome:p.nome,codigo:p.codigo,preco:precoFinal,imagem,naTabelaAtacado:naTabela});
     }
     res.json({data:novos});
   }catch(e){ res.status(500).json({erro:e.message}); }
