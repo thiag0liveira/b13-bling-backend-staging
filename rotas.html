@@ -102,6 +102,8 @@ const S={
   carroMapaAtivo: null,
   salvando: false,
   msg: "",
+  diasResumo: {}, // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
+  idsUsadosOutrosDias: {}, // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
 };
 
 async function carregarTudo(){
@@ -116,6 +118,12 @@ async function carregarTudo(){
     const salvo=rDia.data||{};
     S.atribuicoes={};
     (S.config.carros||[]).forEach(c=>{ S.atribuicoes[c.id]={pedidoIds:(salvo[c.id]?.pedidoIds)||[]}; });
+    // resumo geral: quantos pedidos já tem em cada dia + quais pedidos já
+    // estão agendados em OUTRO dia (pra não aparecerem como "disponíveis" aqui)
+    const rResumo=await fetch(B+"/api/rotas/dias-resumo").then(r=>r.json());
+    S.diasResumo=rResumo.porDia||{};
+    S.idsUsadosOutrosDias={};
+    Object.entries(rResumo.idsUsados||{}).forEach(([pid,data])=>{ if(data!==S.data) S.idsUsadosOutrosDias[pid]=data; });
   }catch(e){ S.msg="Erro ao carregar: "+e.message; }
   S.carregando=false; render();
 }
@@ -123,9 +131,29 @@ async function carregarTudo(){
 function pedidosDisponiveis(){
   const usados=new Set();
   Object.values(S.atribuicoes).forEach(a=>(a.pedidoIds||[]).forEach(id=>usados.add(id)));
-  return S.pedidos.filter(p=>!usados.has(p.id));
+  return S.pedidos.filter(p=>!usados.has(p.id) && !S.idsUsadosOutrosDias[p.id]);
 }
 function pedidoPorId(id){ return S.pedidos.find(p=>p.id===id); }
+
+// ---------- capacidade / horário ----------
+function minutosDoDia(hhmm){ const [h,m]=(hhmm||"10:00").split(":").map(Number); return h*60+(m||0); }
+function janelaMin(carro){ return Math.max(0, minutosDoDia(S.config.horaFimJanela)-minutosDoDia(carro.horaSaida)); }
+// estimativa (antes de calcular a rota de verdade): quantas paradas dá pra
+// fazer no tempo disponível, usando o tempo médio de trajeto + parada configurados
+function capacidadeEstimada(carro){
+  const porParada=(S.config.tempoTrajetoMin||12)+(S.config.tempoParadaMin||15);
+  return Math.max(0, Math.floor(janelaMin(carro)/porParada));
+}
+// depois que a rota foi calculada de verdade (com km/tempo reais do Google),
+// verifica se o tempo total (trajeto real + tempo de parada por entrega) cabe
+// na janela de horário daquele carro
+function verificarRisco(carro, resultado){
+  if(!resultado) return null;
+  const jan=janelaMin(carro);
+  const tempoParadas=resultado.paradasOrdenadas.length*(S.config.tempoParadaMin||15);
+  const tempoTotal=resultado.duracaoTotalMin+tempoParadas;
+  return { tempoTotal, jan, risco: tempoTotal>jan };
+}
 
 function mudarDia(delta){
   const d=new Date(S.data+"T12:00:00");
@@ -147,6 +175,11 @@ function atribuirCarro(pedidoId,carroId){
     const teto=(carro.pesoSugeridoKg||99999)*1.2;
     if(pesoDepois>teto){
       if(!confirm(`⚠️ Essa rota ficaria com ${pesoDepois.toFixed(1)}kg — acima dos ${carro.pesoSugeridoKg}kg sugeridos (+20% = ${teto.toFixed(0)}kg máx.).\n\nAtribuir mesmo assim?`)) return;
+    }
+    const qtdDepois=(S.atribuicoes[carroId]?.pedidoIds||[]).length+1;
+    const cap=capacidadeEstimada(carro);
+    if(qtdDepois>cap){
+      if(!confirm(`⚠️ Essa rota ficaria com ${qtdDepois} entregas — acima da capacidade estimada de ~${cap} entregas até as ${S.config.horaFimJanela} (saindo às ${carro.horaSaida}).\n\nHá risco de não dar tempo de completar todas. Atribuir mesmo assim?`)) return;
     }
   }
   Object.values(S.atribuicoes).forEach(a=>{ a.pedidoIds=(a.pedidoIds||[]).filter(id=>id!==pedidoId); });
@@ -225,7 +258,10 @@ async function sugerirDistribuicaoDia(){
   const carros=S.config.carros;
 
   for(const carro of carros){
-    const alvoQtd=carro.limiteEntregas||99;
+    // usa o menor entre a meta configurada e a capacidade estimada (tempo
+    // disponível até o fim da janela, considerando trajeto+parada médios) —
+    // não adianta mirar numa quantidade que provavelmente não cabe no horário
+    const alvoQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
     const alvoPeso=carro.pesoSugeridoKg||99999;
     const jaTem=(S.atribuicoes[carro.id].pedidoIds||[]).length;
     const faltamQtd=Math.max(0,alvoQtd-jaTem);
@@ -318,7 +354,7 @@ async function desenharMapa(carroId){
 function abrirConfig(){ S.editandoConfig=true; render(); }
 function fecharConfig(){ S.editandoConfig=false; render(); }
 function toggleDiaConfig(ix){ S.config.diasEntrega[ix]=!S.config.diasEntrega[ix]; render(); }
-function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200}); render(); }
+function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00"}); render(); }
 function removerCarroConfig(ix){ S.config.carros.splice(ix,1); render(); }
 async function salvarConfig(){
   await fetch(B+"/api/rotas/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.config)});
@@ -329,6 +365,10 @@ async function salvarConfig(){
 function render(){
   const app=document.getElementById("app");
   if(S.carregando){ app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="muted">Carregando pedidos de entrega…</div></div>`; return; }
+  if(!S.config){
+    app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="warn">${esc(S.msg||"Não foi possível carregar. Verifique a conexão com o Bling e tente de novo.")}</div><button class="btn btn-mag" onclick="carregarTudo()">↻ Tentar de novo</button></div>`;
+    return;
+  }
 
   const diaIx=new Date(S.data+"T12:00:00").getDay();
   const diaHabilitado=S.config.diasEntrega[diaIx];
@@ -351,6 +391,8 @@ function render(){
     </div>
     <button class="btn btn-ghost" onclick="mudarDia(1)">Próximo dia →</button>
   </div>`;
+
+  h+=htmlResumoDias();
 
   if(S.editandoConfig) h+=htmlConfig();
 
@@ -376,6 +418,30 @@ function render(){
   if(S.carroMapaAtivo && S.resultadoRota[S.carroMapaAtivo]) setTimeout(()=>desenharMapa(S.carroMapaAtivo),50);
 }
 
+// mostra quantos pedidos já estão agendados nos próximos dias de entrega —
+// pra ter a visão geral de "quantos pedidos é de cada dia" antes de mexer em
+// carro/rota. Clicar num dia pula direto pra ele.
+function htmlResumoDias(){
+  const dias=[];
+  const base=new Date(S.data+"T12:00:00");
+  for(let i=-2;i<=10;i++){
+    const d=new Date(base); d.setDate(d.getDate()+i);
+    const iso=d.toISOString().slice(0,10);
+    if(!S.config.diasEntrega[d.getDay()]) continue;
+    dias.push({iso, label:d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}), qtd:S.diasResumo[iso]||0});
+  }
+  if(!dias.length) return "";
+  return `<div class="card">
+    <div style="font-weight:900;margin-bottom:8px">📅 Pedidos já agendados por dia</div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+      ${dias.map(d=>`<button onclick="S.data='${d.iso}';carregarTudo()" style="flex:0 0 auto;min-width:78px;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso===S.data?'#FF0082':'#2c2660'};background:${d.iso===S.data?'rgba(255,0,130,.12)':'#181433'};color:#fff;cursor:pointer;text-align:center">
+        <div style="font-size:11px;color:#9a95c9;text-transform:capitalize">${d.label}</div>
+        <div style="font-size:18px;font-weight:900;${d.qtd>0?'color:#3ce88a':'color:#514c96'}">${d.qtd}</div>
+      </button>`).join("")}
+    </div>
+  </div>`;
+}
+
 function htmlConfig(){
   const c=S.config;
   return `<div class="card">
@@ -384,14 +450,32 @@ function htmlConfig(){
     <div class="diasgrid">
       ${DIAS_SEMANA.map((d,ix)=>`<div class="diachip ${c.diasEntrega[ix]?'on':''}" onclick="toggleDiaConfig(${ix})">${d}</div>`).join("")}
     </div>
+
+    <div class="lbl">Horário de funcionamento das rotas</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="muted">Nenhuma rota pode sair depois das</span>
+      <input type="time" value="${c.horaFimJanela||'19:00'}" oninput="S.config.horaFimJanela=this.value" style="width:110px">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span class="muted">Tempo médio de trajeto entre paradas (só pra estimativa)</span>
+      <input type="number" min="1" value="${c.tempoTrajetoMin||12}" oninput="S.config.tempoTrajetoMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span class="muted">Tempo médio de carregar/descarregar + entregar em cada parada</span>
+      <input type="number" min="1" value="${c.tempoParadaMin||15}" oninput="S.config.tempoParadaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
+    </div>
+    <div class="muted" style="font-size:11px;margin:-6px 0 12px">O sistema usa isso pra estimar quantas entregas cada rota consegue fazer no horário disponível, e avisa quando uma rota corre risco de não dar tempo.</div>
+
     <div class="lbl">Rotas/carros disponíveis</div>
     ${c.carros.map((carro,ix)=>`
-      <div class="carrorow">
+      <div class="carrorow" style="flex-wrap:wrap">
         <input type="text" value="${esc(carro.nome)}" oninput="S.config.carros[${ix}].nome=this.value" placeholder="Nome da rota/carro">
         <input type="number" value="${carro.limiteEntregas}" min="1" style="width:56px" oninput="S.config.carros[${ix}].limiteEntregas=Number(this.value)" title="Quantidade de entregas dessa rota">
         <span class="muted" style="white-space:nowrap">entregas</span>
         <input type="number" value="${carro.pesoSugeridoKg||200}" min="1" style="width:70px" oninput="S.config.carros[${ix}].pesoSugeridoKg=Number(this.value)" title="Peso sugerido (kg)">
         <span class="muted" style="white-space:nowrap">kg sugeridos</span>
+        <span class="muted" style="white-space:nowrap">· sai às</span>
+        <input type="time" value="${carro.horaSaida||'10:00'}" oninput="S.config.carros[${ix}].horaSaida=this.value" style="width:100px">
         <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover">✕</button>
       </div>`).join("")}
     <div class="muted" style="font-size:11px;margin:-2px 0 8px">"Entregas" é quantas paradas essa rota deve ter no dia. "Kg sugeridos" é o peso ideal pra essa rota — o sistema tenta chegar perto disso, mas pode passar um pouco se precisar pra fechar a quantidade de entregas.</div>
@@ -438,12 +522,17 @@ function htmlCarroBox(carro){
   const valorTotal=pedidosCarro.reduce((s,p)=>s+(p.total||0),0);
   const resultado=S.resultadoRota[carro.id];
   const acimaLimite=ids.length>carro.limiteEntregas;
+  const cap=capacidadeEstimada(carro);
+  const acimaCapacidade=ids.length>cap;
+  const risco=verificarRisco(carro,resultado);
   return `<div class="carrobox">
     <div class="head">
-      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${ids.length}/${carro.limiteEntregas} entregas)</span></div>
+      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${ids.length}/${carro.limiteEntregas} entregas · sai ${carro.horaSaida||'10:00'})</span></div>
       <button class="btn btn-out" ${S.calculando[carro.id]?"disabled":""} onclick="sugerirRota('${carro.id}')">${S.calculando[carro.id]?"Calculando…":"🧭 Sugerir rota"}</button>
     </div>
     ${acimaLimite?'<div class="warn">⚠️ Esse carro passou do limite configurado de entregas.</div>':''}
+    ${acimaCapacidade?`<div class="warn">🔴 Atenção: ${ids.length} entregas é mais do que a estimativa de capacidade (~${cap}) pra sair às ${carro.horaSaida} e terminar até ${S.config.horaFimJanela}. Risco de não dar tempo de completar a rota.</div>`:''}
+    ${risco&&risco.risco?`<div class="warn">🔴 Atenção: pelo cálculo real da rota (${Math.round(risco.tempoTotal)} min entre trajeto e paradas), essa rota provavelmente não cabe na janela disponível (${risco.jan} min, até ${S.config.horaFimJanela}). Considere tirar alguma parada ou trocar de carro.</div>`:''}
     ${!ids.length?'<div class="muted">Nenhum pedido atribuído a esse carro ainda.</div>':
       (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
         const ped=pedidoPorId(p.id);
@@ -464,7 +553,8 @@ function htmlCarroBox(carro){
     <div class="resumo">
       <span>💰 Total: <b>${brl(valorTotal)}</b></span>
       <span>⚖️ Peso: <b style="${pesoTotal>(carro.pesoSugeridoKg||99999)?'color:#ffd23f':''}">${pesoTotal} kg</b> <span class="muted">/ ${carro.pesoSugeridoKg||'—'} kg sugeridos</span></span>
-      ${resultado?`<span>🛣️ Distância total: <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ Tempo estimado: <b>${resultado.duracaoTotalMin} min</b></span>`:''}
+      <span>📦 Capacidade estimada: <b>~${cap} entregas</b></span>
+      ${resultado?`<span>🛣️ Distância total: <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ Tempo estimado: <b>${resultado.duracaoTotalMin} min</b>${risco?` <span class="muted">(+${ids.length*(S.config.tempoParadaMin||15)} min de parada = ${Math.round(risco.tempoTotal)} min)</span>`:''}</span>`:''}
     </div>
     ${resultado?`<button class="btn btn-ghost" style="margin-top:10px" onclick="S.carroMapaAtivo='${carro.id}';render()">🗺️ ${S.carroMapaAtivo===carro.id?'Mapa aberto abaixo':'Ver rota no mapa'}</button>`:''}
     ${S.carroMapaAtivo===carro.id?`<div id="mapaRota"></div>`:''}

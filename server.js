@@ -5473,7 +5473,10 @@ async function geocodeEndereco(endereco){
 function lerRotasConfig(){
   return lerJSON(ROTAS_CONFIG_FILE,{
     diasEntrega:[false,true,true,true,true,true,false], // dom,seg,ter,qua,qui,sex,sab
-    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200}],
+    horaFimJanela:"19:00", // até que horas um carro pode sair pra rota
+    tempoParadaMin:15,     // tempo médio de carregar/descarregar + entregar em cada parada
+    tempoTrajetoMin:12,    // tempo médio estimado de trajeto ENTRE paradas (só pra estimativa antes de calcular a rota de verdade)
+    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00"}],
   });
 }
 function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
@@ -5484,12 +5487,39 @@ app.get("/api/rotas/config",(req,res)=>res.json({data:lerRotasConfig()}));
 app.post("/api/rotas/config",(req,res)=>{
   const b=req.body||{};
   const atual=lerRotasConfig();
+  const validaHora=(h,fallback)=>/^\d{1,2}:\d{2}$/.test(h||"")?h:fallback;
   const nova={
     diasEntrega:Array.isArray(b.diasEntrega)&&b.diasEntrega.length===7?b.diasEntrega:atual.diasEntrega,
-    carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),nome:c.nome||"Carro",limiteEntregas:Number(c.limiteEntregas)||10,pesoSugeridoKg:Number(c.pesoSugeridoKg)||200})):atual.carros,
+    horaFimJanela:validaHora(b.horaFimJanela,atual.horaFimJanela),
+    tempoParadaMin:Number(b.tempoParadaMin)||atual.tempoParadaMin,
+    tempoTrajetoMin:Number(b.tempoTrajetoMin)||atual.tempoTrajetoMin,
+    carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({
+      id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),
+      nome:c.nome||"Carro",
+      limiteEntregas:Number(c.limiteEntregas)||10,
+      pesoSugeridoKg:Number(c.pesoSugeridoKg)||200,
+      horaSaida:validaHora(c.horaSaida,"10:00"),
+    })):atual.carros,
   };
   salvarRotasConfig(nova);
   res.json({ok:true,data:nova});
+});
+
+// Resumo de quantos pedidos já estão atribuídos em cada dia salvo — usado
+// pra (1) mostrar uma visão geral de quantos pedidos tem por dia e (2)
+// garantir que um pedido já agendado numa data não apareça como "disponível"
+// quando o usuário está olhando outra data.
+app.get("/api/rotas/dias-resumo",(req,res)=>{
+  const rotas=lerRotasDias();
+  const porDia={}; const idsUsados={};
+  Object.entries(rotas).forEach(([data,carros])=>{
+    let total=0;
+    Object.entries(carros||{}).forEach(([carroId,c])=>{
+      (c.pedidoIds||[]).forEach(id=>{ idsUsados[id]=data; total++; });
+    });
+    if(total>0) porDia[data]=total;
+  });
+  res.json({porDia, idsUsados});
 });
 
 // Estimativa de peso do pedido a partir do nome/quantidade dos produtos —
