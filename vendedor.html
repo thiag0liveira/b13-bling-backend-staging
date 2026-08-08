@@ -134,16 +134,52 @@ function viewRecuperar(){
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">💵 Pedidos grandes (acima de ${brl(MIN_VALOR)}, últimos 30 dias)</div>
-      <div class="muted" style="font-size:11px;margin-bottom:8px">Ordenados por quem está há mais tempo sem comprar (prioridade de contato).</div>
-      ${grandes.length?grandes.map(g=>`
+      <div class="muted" style="font-size:11px;margin-bottom:8px">Ordenados por quem está há mais tempo sem comprar (prioridade de contato). Toque em 💬 pra chamar no WhatsApp.</div>
+      ${grandes.length?grandes.map((g,ix)=>`
         <div class="cli">
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:13px">#${esc(g.numero)} — ${esc(g.cliente)}</div>
             <div class="muted" style="font-size:11px">Pedido: ${g.data?g.data.split('-').reverse().join('/'):''} · Última compra: ${g.ultimaCompra?g.ultimaCompra.split('-').reverse().join('/'):''} <b style="color:${g.diasSemComprar>=15?'#ff8090':'#9a95c9'}">(${g.diasSemComprar} dias)</b></div>
           </div>
-          <div style="font-weight:800;color:#ffd23f">${brl(g.total)}</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:800;color:#ffd23f">${brl(g.total)}</div>
+            <button class="btn" style="background:#25d366;color:#0a3d1e;font-weight:800;font-size:12px;padding:5px 10px;margin-top:4px" onclick="abrirWhatsGrande(${g.contatoId},'${esc(g.cliente).replace(/'/g,"\\'")}')">💬 WhatsApp</button>
+          </div>
         </div>`).join(""):'<div class="muted">Nenhum pedido grande nos últimos 30 dias.</div>'}
     </div>`;
+}
+
+// 4 mensagens pré-determinadas pra chamar no WhatsApp o cliente de um pedido grande.
+// {nome} é trocado pelo nome do cliente.
+const MSGS_PEDIDO_GRANDE=[
+  {rotulo:"Reposição", texto:"Olá, {nome}! Aqui é da B13 Bebidas. Passando pra saber se já está na hora de repor o estoque. Quer que eu te mande a tabela atualizada?"},
+  {rotulo:"Promoção", texto:"Oi, {nome}! Tudo bem? Estamos com promoções novas essa semana na B13 Bebidas que podem te interessar. Posso te enviar?"},
+  {rotulo:"Sentimos falta", texto:"Olá, {nome}! Faz um tempinho que você não faz um pedido com a gente. Aconteceu alguma coisa? Estamos à disposição e com ótimas condições!"},
+  {rotulo:"Novidades", texto:"Oi, {nome}! Chegaram novidades no nosso mix aqui na B13 Bebidas. Quer dar uma olhada na tabela atualizada?"},
+];
+
+async function abrirWhatsGrande(contatoId, nome){
+  // pega o telefone do cliente
+  let tel="";
+  try{ const j=await fetch(B+"/api/vendedor/cliente/"+contatoId+"/contato").then(r=>r.json()); tel=soDig(j.telefone||""); }catch(e){}
+  // deixa o vendedor escolher qual das 4 mensagens usar
+  const opcoes=MSGS_PEDIDO_GRANDE.map((m,i)=>`${i+1}) ${m.rotulo}`).join("\n");
+  const escolha=prompt(`Qual mensagem enviar pra ${nome}?\n\n${opcoes}\n\nDigite o número (1 a 4):`,"1");
+  if(escolha===null) return; // cancelou
+  const ix=Number(escolha)-1;
+  if(!(ix>=0 && ix<MSGS_PEDIDO_GRANDE.length)){ alert("Escolha inválida. Digite um número de 1 a 4."); return; }
+  const msg=MSGS_PEDIDO_GRANDE[ix].texto.replace(/\{nome\}/g, nome);
+  if(tel.length<10){
+    if(confirm(nome+" não tem telefone cadastrado. Abrir o WhatsApp mesmo assim (você escolhe o contato)?")){
+      window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank");
+    }
+    return;
+  }
+  const t55=tel.length<=11?("55"+tel):tel;
+  window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank");
+  // registra o contato no histórico de prospecção (mesma lógica dos clientes perdidos)
+  fetch(B+"/api/vendedor/prospeccao/contato",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({clienteId:contatoId,clienteNome:nome,nota:"WhatsApp ("+MSGS_PEDIDO_GRANDE[ix].rotulo+")",resultado:"contatado"})}).then(()=>{ TIMELINE=null; });
 }
 
 /* ===== ACOMPANHAMENTO DA META (gráfico) ===== */
