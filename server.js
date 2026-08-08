@@ -5250,191 +5250,207 @@ let _cachePedidoVendedor={};
 try{ _cachePedidoVendedor=lerJSON(PEDIDO_VENDEDOR_CACHE_FILE,{})||{}; }catch(e){ _cachePedidoVendedor={}; }
 // carrega o cache do disco ao subir (sobrevive a deploy/reinício)
 try{ const c=lerJSON(APOIO_CACHE_FILE,null); if(c&&c.em) _cacheApoio=c; }catch(e){}
+// Estado do processamento em segundo plano do "apoio ao vendedor".
+// A análise é PESADA (varre centenas/milhares de pedidos no Bling) e não pode
+// rodar dentro da requisição da tela — o tempo limite do servidor/Railway
+// mataria a requisição no meio, sem nem salvar o progresso. Então ela roda em
+// SEGUNDO PLANO: a tela pede, o servidor devolve na hora o último resultado
+// pronto (ou avisa "calculando…"), e dispara o cálculo pesado por fora, sem
+// prazo. Quando termina, o próximo carregamento da tela já pega o novo.
+let _apoioComputando=false;
+let _apoioComputandoDesde=0;
+let _apoioProgresso="";
+
+// salva o cache pedido->vendedor no disco (chamado de tempos em tempos DURANTE
+// o cálculo, não só no fim — assim, se o processo reiniciar no meio, o que já
+// foi descoberto não se perde e a próxima rodada continua de onde parou)
+function salvarCachePedidoVendedor(){ try{ salvarJSON(PEDIDO_VENDEDOR_CACHE_FILE,_cachePedidoVendedor); }catch(e){} }
+
+// A COMPUTAÇÃO PESADA de verdade — roda em segundo plano, sem prazo.
+async function computarApoio({minValor,diasAtencao,diasPerdido}){
+  const prosp=lerProspeccao();
+  const ignorados=prosp.ignorados||{};
+  const historicoProsp=prosp.historico||{};
+  const agora=Date.now();
+  const dataIni=new Date(agora-180*24*60*60*1000).toISOString().slice(0,10);
+  const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
+  const pedidos=[];
+  for(let pg=1;pg<=100;pg++){
+    const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+    let arr=[];
+    try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+    pedidos.push(...arr);
+    _apoioProgresso=`Lendo pedidos (${pedidos.length})…`;
+    if(arr.length<100) break;
+    await new Promise(r=>setTimeout(r,300));
+  }
+  const atacado=pedidos.filter(p=>{
+    const vend=Number(p.vendedor?.id||0);
+    const cont=Number(p.contato?.id||0);
+    const sit=Number(p.situacao?.id||0);
+    if(VENDEDORES_VAREJO.includes(vend)) return false;
+    if(cont===CONSUMIDOR_FINAL_ID) return false;
+    if(sit===12) return false;
+    return true;
+  });
+
+  const mesAtual=new Date(agora-3*60*60*1000).toISOString().slice(0,7);
+  const SIT_ATENDIDO=Number(process.env.SIT_ATENDIDO||9);
+  const [anoM,mmM]=mesAtual.split("-").map(Number);
+  const ultimoDiaM=new Date(anoM,mmM,0).getDate();
+  const pedidosMes=[];
+  for(let pg=1;pg<=60;pg++){
+    const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:`${mesAtual}-01`,dataFinal:`${mesAtual}-${String(ultimoDiaM).padStart(2,"0")}`});
+    let arr=[];
+    try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+    pedidosMes.push(...arr);
+    if(arr.length<100) break;
+    await new Promise(r=>setTimeout(r,250));
+  }
+  const vistosMes=new Set();
+  const doMes=pedidosMes.filter(p=>{
+    const id=String(p.id); if(vistosMes.has(id)) return false; vistosMes.add(id);
+    const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
+    return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
+  });
+  const atendidosMes=doMes.filter(p=>Number(p.situacao?.id)===SIT_ATENDIDO);
+  const metaMes={
+    qtdAtendidos:atendidosMes.length,
+    valorAtendidos:+atendidosMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
+    qtdTotalMes:doMes.length,
+    valorTotalMes:+doMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
+  };
+
+  // VENDIDO POR VENDEDOR — precisa do vendedor de cada pedido, que só vem no
+  // detalhe. Usa o cache permanente pedido->vendedor: só busca o detalhe dos
+  // pedidos AINDA não conhecidos. Salva o cache a cada 25 buscas novas, pra não
+  // perder progresso se reiniciar. Sem prazo — roda em segundo plano.
+  const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido",21:"Em digitação",6:"Em aberto"};
+  const porVendedor={};
+  let novasBuscas=0, feitos=0;
+  for(const p of doMes){
+    feitos++;
+    let vid, vnome="Sem vendedor";
+    const cacheKey=String(p.id);
+    if(_cachePedidoVendedor[cacheKey]!==undefined){
+      vid=Number(_cachePedidoVendedor[cacheKey]||0);
+      if(vid) vnome=await nomeVendedor(vid);
+    } else {
+      vid=0;
+      try{
+        const det=await bling(`/pedidos/vendas/${p.id}`);
+        vid=Number(det?.data?.vendedor?.id||0);
+        if(vid) vnome=await nomeVendedor(vid);
+        _cachePedidoVendedor[cacheKey]=vid;
+        novasBuscas++;
+        if(novasBuscas%25===0){ salvarCachePedidoVendedor(); } // salva o progresso a cada 25
+      }catch(e){ continue; }
+    }
+    _apoioProgresso=`Analisando vendedores (${feitos}/${doMes.length})…`;
+    if(VENDEDORES_VAREJO.includes(vid)) continue;
+    if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
+    const v=porVendedor[vid];
+    v.qtd++; v.valor+=Number(p.total||0);
+    const sit=Number(p.situacao?.id||0);
+    const snome=SIT_NOMES[sit]||("Status "+sit);
+    v.porStatus[snome]=(v.porStatus[snome]||0)+1;
+    if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
+  }
+  if(novasBuscas>0) salvarCachePedidoVendedor(); // salva o resto no fim
+  const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
+  // total geral vira o valor exato de atacado (varejo excluído pelo vendedor real)
+  metaMes.qtdTotalMes=vendedores.reduce((s,v)=>s+v.qtd,0);
+  metaMes.valorTotalMes=+vendedores.reduce((s,v)=>s+v.valor,0).toFixed(2);
+  metaMes.qtdAtendidos=vendedores.reduce((s,v)=>s+v.atendidos,0);
+  metaMes.valorAtendidos=+vendedores.reduce((s,v)=>s+v.valorAtendido,0).toFixed(2);
+
+  const porCliente={};
+  atacado.forEach(p=>{
+    const id=Number(p.contato?.id||0); if(!id) return;
+    if(!porCliente[id]) porCliente[id]={id,nome:p.contato?.nome||"—",pedidos:[],total:0};
+    porCliente[id].pedidos.push({data:p.data,total:Number(p.total||0)});
+    porCliente[id].total+=Number(p.total||0);
+  });
+
+  const perdidos=[];
+  Object.values(porCliente).forEach(c=>{
+    if(ignorados[c.id]) return;
+    const datas=c.pedidos.map(x=>x.data).filter(Boolean).sort();
+    if(!datas.length) return;
+    const ultima=datas[datas.length-1];
+    const diasSem=Math.floor((agora-new Date(ultima+"T12:00:00").getTime())/(24*60*60*1000));
+    const ticketMedio=c.total/c.pedidos.length;
+    const eraRegular=c.pedidos.length>=3 && ticketMedio>=minValor;
+    if(eraRegular && diasSem>=diasAtencao){
+      const hist=historicoProsp[c.id]||[];
+      const ultimoContato=hist.length?hist[hist.length-1]:null;
+      perdidos.push({
+        id:c.id, nome:c.nome, diasSem, ultimaCompra:ultima,
+        qtdPedidos:c.pedidos.length, ticketMedio:+ticketMedio.toFixed(2),
+        totalGasto:+c.total.toFixed(2),
+        nivel: diasSem>=diasPerdido?"perdido":"atencao",
+        qtdContatos:hist.length,
+        ultimoContato:ultimoContato?{quando:ultimoContato.quando,resultado:ultimoContato.resultado,nota:ultimoContato.nota}:null,
+      });
+    }
+  });
+  perdidos.sort((a,b)=>b.totalGasto-a.totalGasto);
+
+  const ha30=new Date(agora-30*24*60*60*1000).toISOString().slice(0,10);
+  const pedidosGrandes=atacado
+    .filter(p=>Number(p.total||0)>=minValor && String(p.data||"")>=ha30)
+    .map(p=>{
+      const cid=Number(p.contato?.id||0);
+      const cli=porCliente[cid];
+      const datas=cli?cli.pedidos.map(x=>x.data).filter(Boolean).sort():[];
+      const ultimaCompra=datas.length?datas[datas.length-1]:p.data;
+      const diasSemComprar=Math.floor((agora-new Date(ultimaCompra+"T12:00:00").getTime())/(24*60*60*1000));
+      return {numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",contatoId:cid,total:Number(p.total||0),data:p.data,ultimaCompra,diasSemComprar};
+    })
+    .sort((a,b)=>b.diasSemComprar-a.diasSemComprar)
+    .slice(0,50);
+
+  return {
+    metaMes, mesAtual, vendedores,
+    perdidos, qtdPerdidos: perdidos.length,
+    pedidosGrandes,
+    totalClientesAtacado: Object.keys(porCliente).length,
+    config:{minValor,diasAtencao,diasPerdido},
+    geradoEm:Date.now(),
+  };
+}
+
+// dispara a computação em segundo plano (se já não estiver rodando)
+function dispararApoioBackground(opts){
+  if(_apoioComputando) return;
+  _apoioComputando=true; _apoioComputandoDesde=Date.now(); _apoioProgresso="Iniciando…";
+  computarApoio(opts)
+    .then(dados=>{ _cacheApoio={em:Date.now(),dados}; try{ salvarJSON(APOIO_CACHE_FILE,_cacheApoio); }catch(e){} })
+    .catch(e=>{ console.error("[apoio] erro no cálculo em segundo plano:",e.message); })
+    .finally(()=>{ _apoioComputando=false; _apoioProgresso=""; });
+}
+
 app.get("/api/vendedor/apoio",async(req,res)=>{
   try{
     const forcar=req.query.forcar==="1";
-    // usa cache se tem menos de 24h e não pediu pra forçar (economiza a varredura pesada do Bling)
-    if(_cacheApoio && !forcar && _cacheApoio.dados?.vendedores && (Date.now()-_cacheApoio.em < 24*60*60*1000)){
-      return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em});
-    }
     const minValor=Number(req.query.minValor||1000);
     const diasAtencao=Number(req.query.diasAtencao||15);
     const diasPerdido=Number(req.query.diasPerdido||30);
-    const prosp=lerProspeccao();
-    const ignorados=prosp.ignorados||{};
-    const historicoProsp=prosp.historico||{};
-    // busca pedidos dos últimos ~180 dias (o suficiente pra ver quem sumiu)
-    const agora=Date.now();
-    const dataIni=new Date(agora-180*24*60*60*1000).toISOString().slice(0,10);
-    const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
-    const pedidos=[];
-    for(let pg=1;pg<=100;pg++){
-      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
-      let arr=[];
-      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
-      pedidos.push(...arr);
-      if(arr.length<100) break;
-      await new Promise(r=>setTimeout(r,300));
+    const temCacheValido=_cacheApoio && _cacheApoio.dados?.vendedores;
+    const cacheFresco=temCacheValido && (Date.now()-_cacheApoio.em < 24*60*60*1000);
+
+    // tem cache fresco e não pediu pra forçar → devolve na hora
+    if(cacheFresco && !forcar){
+      return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em, computando:_apoioComputando});
     }
-    // filtra: fora varejo, fora consumidor final, fora cancelados
-    const atacado=pedidos.filter(p=>{
-      const vend=Number(p.vendedor?.id||0);
-      const cont=Number(p.contato?.id||0);
-      const sit=Number(p.situacao?.id||0);
-      if(VENDEDORES_VAREJO.includes(vend)) return false;
-      if(cont===CONSUMIDOR_FINAL_ID) return false;
-      if(sit===12) return false; // cancelado
-      return true;
-    });
-
-    // META DO MÊS — busca os pedidos do mês atual SEPARADAMENTE (completo),
-    // pra não depender da varredura de 180 dias que pode cortar no teto de páginas
-    const mesAtual=new Date(agora-3*60*60*1000).toISOString().slice(0,7);
-    const SIT_ATENDIDO=Number(process.env.SIT_ATENDIDO||9);
-    const [anoM,mmM]=mesAtual.split("-").map(Number);
-    const ultimoDiaM=new Date(anoM,mmM,0).getDate();
-    const pedidosMes=[];
-    for(let pg=1;pg<=60;pg++){
-      const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:`${mesAtual}-01`,dataFinal:`${mesAtual}-${String(ultimoDiaM).padStart(2,"0")}`});
-      let arr=[];
-      try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
-      pedidosMes.push(...arr);
-      if(arr.length<100) break;
-      await new Promise(r=>setTimeout(r,250));
+    // precisa (re)calcular — dispara em segundo plano e responde na hora
+    dispararApoioBackground({minValor,diasAtencao,diasPerdido});
+    if(temCacheValido){
+      // já tem um resultado anterior: mostra ele enquanto o novo é calculado
+      return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em, computando:true, progresso:_apoioProgresso});
     }
-    // deduplica por ID
-    const vistosMes=new Set();
-    const doMes=pedidosMes.filter(p=>{
-      const id=String(p.id); if(vistosMes.has(id)) return false; vistosMes.add(id);
-      const vend=Number(p.vendedor?.id||0), cont=Number(p.contato?.id||0), sit=Number(p.situacao?.id||0);
-      return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
-    });
-    const atendidosMes=doMes.filter(p=>Number(p.situacao?.id)===SIT_ATENDIDO);
-    // TOTAL GERAL: calculado direto da listagem do mês (rápido, sempre funciona,
-    // não depende do laço lento que busca o detalhe de cada pedido). É o número
-    // de cabeçalho ("Total geral") — precisa aparecer certo mesmo se o
-    // detalhamento por vendedor não terminar a tempo.
-    const metaMes={
-      qtdAtendidos:atendidosMes.length,
-      valorAtendidos:+atendidosMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
-      qtdTotalMes:doMes.length,
-      valorTotalMes:+doMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
-    };
-
-    // VENDIDO POR VENDEDOR — a listagem do Bling NÃO traz o vendedor, só o detalhe.
-    // Busca o detalhe de cada pedido do mês pra obter o vendedor real e agrupar.
-    // MAS com limite de tempo: se o volume de pedidos for grande, buscar o
-    // detalhe de todos um por um pode estourar o tempo da requisição e derrubar
-    // a tela inteira. Então roda por no máximo ~90s; se não terminar, mostra o
-    // detalhamento parcial (o total geral acima já está completo de qualquer jeito).
-    const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido",21:"Em digitação",6:"Em aberto"};
-    const porVendedor={};
-    const LIMITE_DETALHE_MS=90*1000;
-    const inicioDetalhe=Date.now();
-    let detalheParcial=false, processados=0, cacheAtualizado=false;
-    for(const p of doMes){
-      let vid, vnome="Sem vendedor";
-      const cacheKey=String(p.id);
-      if(_cachePedidoVendedor[cacheKey]!==undefined){
-        // já sabemos o vendedor desse pedido de uma análise anterior — não busca o detalhe de novo
-        vid=Number(_cachePedidoVendedor[cacheKey]||0);
-        if(vid) vnome=await nomeVendedor(vid); // nomeVendedor tem cache próprio, é barato
-      } else {
-        if(Date.now()-inicioDetalhe>LIMITE_DETALHE_MS){ detalheParcial=true; break; }
-        vid=0;
-        try{
-          const det=await bling(`/pedidos/vendas/${p.id}`);
-          vid=Number(det?.data?.vendedor?.id||0);
-          if(vid) vnome=await nomeVendedor(vid);
-          _cachePedidoVendedor[cacheKey]=vid; cacheAtualizado=true; // guarda pra próxima vez
-        }catch(e){ continue; } // falhou o detalhe — não conta esse pedido nem cacheia (tenta de novo na próxima)
-      }
-      processados++;
-      if(VENDEDORES_VAREJO.includes(vid)) continue; // exclui o varejo de verdade (pelo vendedor do detalhe)
-      if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
-      const v=porVendedor[vid];
-      v.qtd++; v.valor+=Number(p.total||0);
-      const sit=Number(p.situacao?.id||0);
-      const snome=SIT_NOMES[sit]||("Status "+sit);
-      v.porStatus[snome]=(v.porStatus[snome]||0)+1;
-      if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
-    }
-    if(cacheAtualizado){ try{ salvarJSON(PEDIDO_VENDEDOR_CACHE_FILE,_cachePedidoVendedor); }catch(e){} }
-    const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
-    metaMes.detalhePorVendedorParcial=detalheParcial;
-    metaMes.pedidosDetalhados=processados;
-    // se o detalhamento terminou completo, o total geral vira o valor EXATO de
-    // atacado (varejo excluído pelo vendedor real) — mais preciso. Se ficou
-    // parcial, mantém o total da listagem (aproximado, mas nunca zero).
-    if(!detalheParcial){
-      metaMes.qtdTotalMes=vendedores.reduce((s,v)=>s+v.qtd,0);
-      metaMes.valorTotalMes=+vendedores.reduce((s,v)=>s+v.valor,0).toFixed(2);
-      metaMes.qtdAtendidos=vendedores.reduce((s,v)=>s+v.atendidos,0);
-      metaMes.valorAtendidos=+vendedores.reduce((s,v)=>s+v.valorAtendido,0).toFixed(2);
-    }
-
-    // agrupa por cliente pra achar quem sumiu
-    const porCliente={};
-    atacado.forEach(p=>{
-      const id=Number(p.contato?.id||0); if(!id) return;
-      if(!porCliente[id]) porCliente[id]={id,nome:p.contato?.nome||"—",pedidos:[],total:0};
-      porCliente[id].pedidos.push({data:p.data,total:Number(p.total||0)});
-      porCliente[id].total+=Number(p.total||0);
-    });
-
-    // CLIENTES QUE SUMIRAM — eram regulares (vários pedidos, ticket alto) e pararam
-    const perdidos=[];
-    Object.values(porCliente).forEach(c=>{
-      if(ignorados[c.id]) return; // cliente marcado como ignorado (ex.: duplicado)
-      const datas=c.pedidos.map(x=>x.data).filter(Boolean).sort();
-      if(!datas.length) return;
-      const ultima=datas[datas.length-1];
-      const diasSem=Math.floor((agora-new Date(ultima+"T12:00:00").getTime())/(24*60*60*1000));
-      const ticketMedio=c.total/c.pedidos.length;
-      const eraRegular=c.pedidos.length>=3 && ticketMedio>=minValor; // 3+ pedidos, média acima do mínimo
-      if(eraRegular && diasSem>=diasAtencao){
-        const hist=historicoProsp[c.id]||[];
-        const ultimoContato=hist.length?hist[hist.length-1]:null;
-        perdidos.push({
-          id:c.id, nome:c.nome, diasSem, ultimaCompra:ultima,
-          qtdPedidos:c.pedidos.length, ticketMedio:+ticketMedio.toFixed(2),
-          totalGasto:+c.total.toFixed(2),
-          nivel: diasSem>=diasPerdido?"perdido":"atencao",
-          qtdContatos:hist.length,
-          ultimoContato:ultimoContato?{quando:ultimoContato.quando,resultado:ultimoContato.resultado,nota:ultimoContato.nota}:null,
-        });
-      }
-    });
-    perdidos.sort((a,b)=>b.totalGasto-a.totalGasto);
-
-    // PEDIDOS GRANDES — acima do valor mínimo (últimos 30 dias), com a última compra
-    // do cliente, ordenados por quem está há mais tempo sem comprar
-    const ha30=new Date(agora-30*24*60*60*1000).toISOString().slice(0,10);
-    const pedidosGrandes=atacado
-      .filter(p=>Number(p.total||0)>=minValor && String(p.data||"")>=ha30)
-      .map(p=>{
-        const cid=Number(p.contato?.id||0);
-        const cli=porCliente[cid];
-        const datas=cli?cli.pedidos.map(x=>x.data).filter(Boolean).sort():[];
-        const ultimaCompra=datas.length?datas[datas.length-1]:p.data;
-        const diasSemComprar=Math.floor((agora-new Date(ultimaCompra+"T12:00:00").getTime())/(24*60*60*1000));
-        return {numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",contatoId:cid,total:Number(p.total||0),data:p.data,ultimaCompra,diasSemComprar};
-      })
-      .sort((a,b)=>b.diasSemComprar-a.diasSemComprar) // mais tempo sem comprar primeiro
-      .slice(0,50);
-
-    const dados={
-      metaMes, mesAtual, vendedores,
-      perdidos, // lista completa (a paginação é feita no front)
-      qtdPerdidos: perdidos.length,
-      pedidosGrandes,
-      totalClientesAtacado: Object.keys(porCliente).length,
-      config:{minValor,diasAtencao,diasPerdido},
-      geradoEm:Date.now(),
-    };
-    _cacheApoio={em:Date.now(),dados};
-    try{ salvarJSON(APOIO_CACHE_FILE,_cacheApoio); }catch(e){}
-    res.json(dados);
+    // primeira análise de todas, nada pronto ainda
+    return res.json({computando:true, primeira:true, progresso:_apoioProgresso||"Iniciando…"});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

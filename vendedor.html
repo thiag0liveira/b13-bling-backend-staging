@@ -88,10 +88,19 @@ function render(){
 function viewRecuperar(){
   if(carregando) return `<div class="card"><div class="muted">📊 Analisando pedidos de atacado (pode levar 1-2 min)…</div></div>`;
   if(!DADOS) return `<div class="card"><div class="muted">Carregando…</div></div>`;
+  // primeira análise de todas ainda rodando em segundo plano — nada pronto
+  if(DADOS.primeira && DADOS.computando){
+    return `<div class="card">
+      <div style="font-weight:800;margin-bottom:6px">⏳ Montando a análise pela primeira vez…</div>
+      <div class="muted" style="font-size:13px">Isso roda em segundo plano no servidor e pode levar alguns minutos nessa primeira vez (depois fica rápido). ${DADOS.progresso?`<br><br><b>${esc(DADOS.progresso)}</b>`:''}<br><br>Pode deixar essa tela aberta — ela atualiza sozinha quando ficar pronta.</div>
+    </div>`;
+  }
+  if(DADOS.erro) return `<div class="card"><div class="muted">${esc(DADOS.erro)} — <a href="#" onclick="novaAnalise();return false" style="color:#7fd4ff">tentar de novo</a></div></div>`;
   const m=DADOS.metaMes||{};
   const perdidos=DADOS.perdidos||[];
   const grandes=DADOS.pedidosGrandes||[];
   return `
+    ${DADOS.computando?`<div class="card" style="border-color:#ffd23f"><div class="muted" style="font-size:12px;color:#ffd23f">🔄 Atualizando a análise em segundo plano${DADOS.progresso?` — ${esc(DADOS.progresso)}`:''}… Os números abaixo são da última análise pronta e atualizam sozinhos.</div></div>`:''}
     ${cardMetaProgresso()}
     <div class="card">
       <div style="font-weight:800;margin-bottom:10px">👤 Vendido por vendedor (atacado — sem varejo)</div>
@@ -352,6 +361,23 @@ async function carregar(forcar){
   try{ DADOS=await fetch(B+"/api/vendedor/apoio?minValor="+MIN_VALOR+(forcar?"&forcar=1":"")).then(r=>r.json()); }
   catch(e){ DADOS={erro:"Erro ao carregar"}; }
   carregando=false; render();
+  // a análise pesada roda em segundo plano no servidor — se ainda está
+  // calculando, tenta de novo daqui a pouco pra pegar o resultado quando ficar
+  // pronto (sem travar a tela enquanto isso)
+  agendarPollApoio();
+}
+let _pollApoioT=null;
+function agendarPollApoio(){
+  clearTimeout(_pollApoioT);
+  if(DADOS && DADOS.computando){
+    _pollApoioT=setTimeout(async()=>{
+      try{ const novo=await fetch(B+"/api/vendedor/apoio?minValor="+MIN_VALOR).then(r=>r.json());
+        // só troca se avançou (ficou pronto, ou mudou o progresso)
+        DADOS=novo; render();
+      }catch(e){}
+      agendarPollApoio();
+    }, 12000); // a cada 12s
+  }
 }
 function recarregar(){ DADOS=null; mostrarPerdidos=10; carregar(); }
 function novaAnalise(){
