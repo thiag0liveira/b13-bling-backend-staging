@@ -5489,6 +5489,7 @@ function lerRotasConfig(){
     diasEntrega:[false,true,true,true,true,true,false], // dom,seg,ter,qua,qui,sex,sab
     tempoParadaMin:15,     // tempo médio de carregar/descarregar + entregar em cada parada
     tempoTrajetoMin:12,    // tempo médio estimado de trajeto ENTRE paradas (só pra estimativa antes de calcular a rota de verdade)
+    tempoRecargaMin:20,    // tempo médio pra voltar na loja, recarregar e sair de novo (entre 1 viagem e outra do mesmo carro)
     carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00",horaFimJanela:"19:00"}],
   });
 }
@@ -5502,7 +5503,8 @@ function acharAgendamentoPedido(pedidoId){
   const pid=Number(pedidoId);
   for(const [data,carros] of Object.entries(rotas)){
     for(const [carroId,c] of Object.entries(carros||{})){
-      if((c.pedidoIds||[]).some(x=>Number(x)===pid)) return {data,carroId};
+      const idsDoCarro=(c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[]));
+      if(idsDoCarro.some(x=>Number(x)===pid)) return {data,carroId};
     }
   }
   return null;
@@ -5517,6 +5519,7 @@ app.post("/api/rotas/config",(req,res)=>{
     diasEntrega:Array.isArray(b.diasEntrega)&&b.diasEntrega.length===7?b.diasEntrega:atual.diasEntrega,
     tempoParadaMin:Number(b.tempoParadaMin)||atual.tempoParadaMin,
     tempoTrajetoMin:Number(b.tempoTrajetoMin)||atual.tempoTrajetoMin,
+    tempoRecargaMin:Number(b.tempoRecargaMin)||atual.tempoRecargaMin,
     carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({
       id:c.id||("carro"+Date.now()+Math.random().toString(36).slice(2,6)),
       nome:c.nome||"Carro",
@@ -5540,8 +5543,11 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
   Object.entries(rotas).forEach(([data,carros])=>{
     let total=0; const porCarro={};
     Object.entries(carros||{}).forEach(([carroId,c])=>{
-      (c.pedidoIds||[]).forEach(id=>{ idsUsados[id]=data; total++; });
-      if((c.pedidoIds||[]).length) porCarro[carroId]=c.pedidoIds;
+      // carro pode ter várias viagens (c.viagens) ou, em dados antigos, uma
+      // lista única (c.pedidoIds) — junta tudo pra contar certo
+      const idsDoCarrocarro=(c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[]));
+      idsDoCarrocarro.forEach(id=>{ idsUsados[id]=data; total++; });
+      if(idsDoCarrocarro.length) porCarro[carroId]=idsDoCarrocarro;
     });
     if(total>0){ porDia[data]=total; detalheDias[data]=porCarro; }
   });
