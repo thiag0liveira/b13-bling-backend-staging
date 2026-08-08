@@ -141,7 +141,7 @@ function pedidoPorId(id){ return S.pedidos.find(p=>p.id===id); }
 
 // ---------- capacidade / horário ----------
 function minutosDoDia(hhmm){ const [h,m]=(hhmm||"10:00").split(":").map(Number); return h*60+(m||0); }
-function janelaMin(carro){ return Math.max(0, minutosDoDia(S.config.horaFimJanela)-minutosDoDia(carro.horaSaida)); }
+function janelaMin(carro){ return Math.max(0, minutosDoDia(carro.horaFimJanela||"19:00")-minutosDoDia(carro.horaSaida)); }
 // estimativa (antes de calcular a rota de verdade): quantas paradas dá pra
 // fazer no tempo disponível, usando o tempo médio de trajeto + parada configurados
 function capacidadeEstimada(carro){
@@ -185,37 +185,75 @@ async function sugerirCarrosParaSemCarro(){
   if(!pendentes.length){ alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro."); return; }
   let pool=pendentes.filter(p=>p.lat&&p.lng);
   const semCoord=pendentes.filter(p=>!p.lat||!p.lng);
-  const carros=S.config.carros;
-  const usados=new Set();
-  for(const carro of carros){
-    const alvoQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
-    if(!pool.length) break;
-    let pesoAcum=0;
-    let semente=pool[0], maiorDist=-1;
-    pool.forEach(p=>{ const d=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(d>maiorDist){ maiorDist=d; semente=p; } });
-    const candidatos=pool.slice().sort((a,b)=>distanciaRetaKm(semente,a)-distanciaRetaKm(semente,b));
-    const escolhidos=[];
-    for(const p of candidatos){
-      if(escolhidos.length>=alvoQtd) break;
-      const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
-      if(pesoTeste>(carro.pesoSugeridoKg||99999)*1.2 && escolhidos.length>0) continue;
-      escolhidos.push(p); pesoAcum=pesoTeste;
-    }
-    if(escolhidos.length) usados.add(carro.id);
-    escolhidos.forEach(p=>{
-      S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
-      S.atribuicoes[carro.id].pedidoIds.push(p.id);
-    });
-    pool=pool.filter(p=>!escolhidos.some(e=>e.id===p.id));
+  const carros=S.config.carros||[];
+
+  // avisa se algum pedido sozinho já é mais pesado do que QUALQUER carro
+  // configurado aguenta — nesse caso não tem como caber num veículo só, precisa
+  // de 2 carros juntos ou o mesmo carro fazer 2 viagens até esse cliente
+  const maiorCapacidadeKg=Math.max(0,...carros.map(c=>(c.pesoSugeridoKg||0)*1.2));
+  const pesadosDemais=pendentes.filter(p=>(p.pesoEstimadoKg||0)>maiorCapacidadeKg);
+  if(pesadosDemais.length){
+    const lista=pesadosDemais.map(p=>`Pedido ${p.numero} (${p.pesoEstimadoKg}kg)`).join(", ");
+    if(!confirm(`⚠️ ${pesadosDemais.length} pedido(s) sozinho(s) já passam do que qualquer carro configurado aguenta: ${lista}.\n\nVai precisar de 2 carros juntos nessa entrega, ou o mesmo carro fazer 2 viagens até esse cliente — isso não é feito automaticamente aqui.\n\nContinuar distribuindo o resto mesmo assim?`)) return;
   }
+
+  // carro é sempre mais barato quanto menos veículo/viagem/km rodar — por isso
+  // tenta primeiro colocar TUDO num carro só (o de maior capacidade sugerida),
+  // e só espalha pra mais carros se realmente não couber
+  const carrosPorCapacidade=carros.slice().sort((a,b)=>(b.pesoSugeridoKg||0)-(a.pesoSugeridoKg||0));
+  const usados=new Set();
+
+  for(const carro of carrosPorCapacidade){
+    if(!pool.length) break;
+    const pesoTotalPool=pool.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
+    const capQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
+    const cabeTudoNesseCarro=pesoTotalPool<=(carro.pesoSugeridoKg||99999)*1.2 && pool.length<=capQtd;
+    if(cabeTudoNesseCarro){
+      // tudo cabe num carro só — não mexe em mais nenhum outro veículo
+      pool.forEach(p=>{
+        S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
+        S.atribuicoes[carro.id].pedidoIds.push(p.id);
+      });
+      usados.add(carro.id);
+      pool=[];
+      break;
+    }
+  }
+
+  // se não coube tudo num carro só, distribui por proximidade+peso entre os
+  // carros (na ordem configurada), preenchendo um antes de passar pro próximo
+  if(pool.length){
+    for(const carro of carros){
+      const alvoQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
+      if(!pool.length) break;
+      let pesoAcum=pedidosCarroAtual(carro.id).reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
+      let semente=pool[0], maiorDist=-1;
+      pool.forEach(p=>{ const d=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(d>maiorDist){ maiorDist=d; semente=p; } });
+      const candidatos=pool.slice().sort((a,b)=>distanciaRetaKm(semente,a)-distanciaRetaKm(semente,b));
+      const escolhidos=[];
+      for(const p of candidatos){
+        if(escolhidos.length>=alvoQtd) break;
+        const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
+        if(pesoTeste>(carro.pesoSugeridoKg||99999)*1.2 && escolhidos.length>0) continue;
+        escolhidos.push(p); pesoAcum=pesoTeste;
+      }
+      if(escolhidos.length) usados.add(carro.id);
+      escolhidos.forEach(p=>{
+        S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
+        S.atribuicoes[carro.id].pedidoIds.push(p.id);
+      });
+      pool=pool.filter(p=>!escolhidos.some(e=>e.id===p.id));
+    }
+  }
+
   render();
   const nomesUsados=[...usados].map(id=>S.config.carros.find(c=>c.id===id)?.nome).filter(Boolean);
   const sobrouSemCoord=semCoord.length;
   const sobrouNaoCoube=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).length-sobrouSemCoord;
   let msg = usados.size<=1
-    ? `✅ Esses pedidos cabem em só 1 veículo: ${nomesUsados.join(", ")||"—"}.`
-    : `🚚 Vai precisar de ${usados.size} veículos pra esses pedidos: ${nomesUsados.join(", ")}.`;
-  if(sobrouNaoCoube>0) msg+=` ⚠️ ${sobrouNaoCoube} pedido(s) não coube(ram) em nenhum carro sem estourar peso/capacidade — precisa de outro veículo ou ajustar manualmente.`;
+    ? `✅ Esses pedidos cabem em só 1 veículo: ${nomesUsados.join(", ")||"—"} — menos carro/viagem/km rodando = menos custo.`
+    : `🚚 Não coube tudo num carro só — vai precisar de ${usados.size} veículos: ${nomesUsados.join(", ")}.`;
+  if(sobrouNaoCoube>0) msg+=` ⚠️ ${sobrouNaoCoube} pedido(s) não coube(ram) em nenhum carro sem estourar peso/capacidade — precisa de outro veículo, mais uma viagem, ou ajustar manualmente.`;
   if(sobrouSemCoord>0) msg+=` ⚠️ ${sobrouSemCoord} pedido(s) sem coordenada identificada ficou(aram) de fora.`;
   S.msg=msg;
   for(const carroId of usados){ await sugerirRota(carroId); }
@@ -226,6 +264,15 @@ function atribuirCarro(pedidoId,carroId){
   const carro=(S.config.carros||[]).find(c=>c.id===carroId);
   const pedido=pedidoPorId(pedidoId);
   if(carro && pedido){
+    const tetoEsseCarro=(carro.pesoSugeridoKg||99999)*1.2;
+    if((pedido.pesoEstimadoKg||0)>tetoEsseCarro){
+      const maiorCapacidadeKg=Math.max(0,...(S.config.carros||[]).map(c=>(c.pesoSugeridoKg||0)*1.2));
+      if((pedido.pesoEstimadoKg||0)>maiorCapacidadeKg){
+        if(!confirm(`⚠️ Esse pedido sozinho (${pedido.pesoEstimadoKg}kg) já passa do que QUALQUER carro configurado aguenta. Provavelmente vai precisar de 2 carros juntos, ou o mesmo carro fazer 2 viagens até esse cliente.\n\nAtribuir mesmo assim?`)) return;
+      } else {
+        if(!confirm(`⚠️ Esse pedido (${pedido.pesoEstimadoKg}kg) sozinho já passa da capacidade do ${carro.nome} (${carro.pesoSugeridoKg}kg). Talvez caiba melhor num carro maior.\n\nAtribuir mesmo assim?`)) return;
+      }
+    }
     const pesoAtual=pedidosCarroAtual(carroId).reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
     const pesoDepois=pesoAtual+(pedido.pesoEstimadoKg||0);
     const teto=(carro.pesoSugeridoKg||99999)*1.2;
@@ -235,7 +282,7 @@ function atribuirCarro(pedidoId,carroId){
     const qtdDepois=(S.atribuicoes[carroId]?.pedidoIds||[]).length+1;
     const cap=capacidadeEstimada(carro);
     if(qtdDepois>cap){
-      if(!confirm(`⚠️ Essa rota ficaria com ${qtdDepois} entregas — acima da capacidade estimada de ~${cap} entregas até as ${S.config.horaFimJanela} (saindo às ${carro.horaSaida}).\n\nHá risco de não dar tempo de completar todas. Atribuir mesmo assim?`)) return;
+      if(!confirm(`⚠️ Essa rota ficaria com ${qtdDepois} entregas — acima da capacidade estimada de ~${cap} entregas até as ${carro.horaFimJanela||"19:00"} (saindo às ${carro.horaSaida}).\n\nHá risco de não dar tempo de completar todas. Atribuir mesmo assim?`)) return;
     }
   }
   Object.values(S.atribuicoes).forEach(a=>{ a.pedidoIds=(a.pedidoIds||[]).filter(id=>id!==pedidoId); });
@@ -425,7 +472,7 @@ async function desenharMapa(carroId){
 function abrirConfig(){ S.editandoConfig=true; render(); }
 function fecharConfig(){ S.editandoConfig=false; render(); }
 function toggleDiaConfig(ix){ S.config.diasEntrega[ix]=!S.config.diasEntrega[ix]; render(); }
-function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00"}); render(); }
+function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00",horaFimJanela:"19:00"}); render(); }
 function removerCarroConfig(ix){ S.config.carros.splice(ix,1); render(); }
 async function salvarConfig(){
   await fetch(B+"/api/rotas/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.config)});
@@ -578,10 +625,7 @@ function htmlConfig(){
     </div>
 
     <div class="lbl">Horário de funcionamento das rotas</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-      <span class="muted">Nenhuma rota pode sair depois das</span>
-      <input type="time" value="${c.horaFimJanela||'19:00'}" oninput="S.config.horaFimJanela=this.value" style="width:110px">
-    </div>
+    <div class="muted" style="font-size:11px;margin-bottom:8px">Cada carro tem seu próprio horário de saída e até que horas pode terminar a rota — configure na lista de carros abaixo.</div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
       <span class="muted">Tempo médio de trajeto entre paradas (só pra estimativa)</span>
       <input type="number" min="1" value="${c.tempoTrajetoMin||12}" oninput="S.config.tempoTrajetoMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
@@ -602,6 +646,8 @@ function htmlConfig(){
         <span class="muted" style="white-space:nowrap">kg sugeridos</span>
         <span class="muted" style="white-space:nowrap">· sai às</span>
         <input type="time" value="${carro.horaSaida||'10:00'}" oninput="S.config.carros[${ix}].horaSaida=this.value" style="width:100px">
+        <span class="muted" style="white-space:nowrap">· volta até</span>
+        <input type="time" value="${carro.horaFimJanela||'19:00'}" oninput="S.config.carros[${ix}].horaFimJanela=this.value" style="width:100px">
         <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover">✕</button>
       </div>`).join("")}
     <div class="muted" style="font-size:11px;margin:-2px 0 8px">"Entregas" é quantas paradas essa rota deve ter no dia. "Kg sugeridos" é o peso ideal pra essa rota — o sistema tenta chegar perto disso, mas pode passar um pouco se precisar pra fechar a quantidade de entregas.</div>
@@ -663,12 +709,12 @@ function htmlCarroBox(carro){
   const risco=verificarRisco(carro,resultado);
   return `<div class="carrobox">
     <div class="head">
-      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${ids.length}/${carro.limiteEntregas} entregas · sai ${carro.horaSaida||'10:00'})</span></div>
+      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${ids.length}/${carro.limiteEntregas} entregas · ${carro.horaSaida||'10:00'}–${carro.horaFimJanela||'19:00'})</span></div>
       <button class="btn btn-out" ${S.calculando[carro.id]?"disabled":""} onclick="sugerirRota('${carro.id}')">${S.calculando[carro.id]?"Calculando…":"🧭 Sugerir rota"}</button>
     </div>
     ${acimaLimite?'<div class="warn">⚠️ Esse carro passou do limite configurado de entregas.</div>':''}
-    ${acimaCapacidade?`<div class="warn">🔴 Atenção: ${ids.length} entregas é mais do que a estimativa de capacidade (~${cap}) pra sair às ${carro.horaSaida} e terminar até ${S.config.horaFimJanela}. Risco de não dar tempo de completar a rota.</div>`:''}
-    ${risco&&risco.risco?`<div class="warn">🔴 Atenção: pelo cálculo real da rota (${Math.round(risco.tempoTotal)} min entre trajeto e paradas), essa rota provavelmente não cabe na janela disponível (${risco.jan} min, até ${S.config.horaFimJanela}). Considere tirar alguma parada ou trocar de carro.</div>`:''}
+    ${acimaCapacidade?`<div class="warn">🔴 Atenção: ${ids.length} entregas é mais do que a estimativa de capacidade (~${cap}) pra sair às ${carro.horaSaida} e terminar até ${carro.horaFimJanela||'19:00'}. Risco de não dar tempo de completar a rota.</div>`:''}
+    ${risco&&risco.risco?`<div class="warn">🔴 Atenção: pelo cálculo real da rota (${Math.round(risco.tempoTotal)} min entre trajeto e paradas), essa rota provavelmente não cabe na janela disponível (${risco.jan} min, até ${carro.horaFimJanela||'19:00'}). Considere tirar alguma parada ou trocar de carro.</div>`:''}
     ${!ids.length?'<div class="muted">Nenhum pedido atribuído a esse carro ainda.</div>':
       (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
         const ped=pedidoPorId(p.id);

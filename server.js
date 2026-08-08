@@ -5487,10 +5487,9 @@ async function geocodeEndereco(endereco){
 function lerRotasConfig(){
   return lerJSON(ROTAS_CONFIG_FILE,{
     diasEntrega:[false,true,true,true,true,true,false], // dom,seg,ter,qua,qui,sex,sab
-    horaFimJanela:"19:00", // até que horas um carro pode sair pra rota
     tempoParadaMin:15,     // tempo médio de carregar/descarregar + entregar em cada parada
     tempoTrajetoMin:12,    // tempo médio estimado de trajeto ENTRE paradas (só pra estimativa antes de calcular a rota de verdade)
-    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00"}],
+    carros:[{id:"carro1",nome:"Carro 1",limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00",horaFimJanela:"19:00"}],
   });
 }
 function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
@@ -5516,7 +5515,6 @@ app.post("/api/rotas/config",(req,res)=>{
   const validaHora=(h,fallback)=>/^\d{1,2}:\d{2}$/.test(h||"")?h:fallback;
   const nova={
     diasEntrega:Array.isArray(b.diasEntrega)&&b.diasEntrega.length===7?b.diasEntrega:atual.diasEntrega,
-    horaFimJanela:validaHora(b.horaFimJanela,atual.horaFimJanela),
     tempoParadaMin:Number(b.tempoParadaMin)||atual.tempoParadaMin,
     tempoTrajetoMin:Number(b.tempoTrajetoMin)||atual.tempoTrajetoMin,
     carros:Array.isArray(b.carros)&&b.carros.length?b.carros.map(c=>({
@@ -5525,6 +5523,7 @@ app.post("/api/rotas/config",(req,res)=>{
       limiteEntregas:Number(c.limiteEntregas)||10,
       pesoSugeridoKg:Number(c.pesoSugeridoKg)||200,
       horaSaida:validaHora(c.horaSaida,"10:00"),
+      horaFimJanela:validaHora(c.horaFimJanela,"19:00"),
     })):atual.carros,
   };
   salvarRotasConfig(nova);
