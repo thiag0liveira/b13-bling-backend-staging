@@ -576,10 +576,14 @@ function tbSaborRow(it, b, mult, semIndent){
   const jaTem=ix>=0;
   const nomeExib=semIndent?it.nome:(b.nome||it.nome);
   const payload=JSON.stringify({id:b.id,nome:nomeExib,preco:it.preco,multiplo:mult}).replace(/'/g,"&#39;");
+  const precoTxt=`<span style="color:#ffd23f;font-weight:800;font-size:11px;white-space:nowrap">${brl(it.preco)}${mult>1?` <span class="muted" style="font-size:9px">· fardo ${mult}</span>`:''}</span>`;
   if(jaTem){
     const item=S.itens[ix];
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 4px;${semIndent?'border-bottom:1px solid #23204f;':''}font-size:12.5px">
-      <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+        ${precoTxt}
+      </div>
       <div class="qtd" style="flex-shrink:0">
         <button onclick="mudarQtd(${ix},-1)" title="${mult>1?`− ${mult} un`:'−1'}">−</button>
         <input type="number" min="${mult}" step="${mult}" value="${item.quantidade}" onchange="setQtd(${ix},this.value)" style="width:64px">
@@ -588,7 +592,10 @@ function tbSaborRow(it, b, mult, semIndent){
     </div>`;
   }
   return `<div style="display:flex;align-items:center;gap:8px;padding:5px 4px;${semIndent?'border-bottom:1px solid #23204f;':''}font-size:12.5px">
-    <div style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+    <div style="flex:1;min-width:0">
+      <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${semIndent?'':'🔸 '}${esc(nomeExib)}</div>
+      ${precoTxt}
+    </div>
     <button class="btn btn-mag" style="font-size:12px;padding:6px 12px;flex-shrink:0" onclick='addDaTabela(${payload})'>+ Add</button>
   </div>`;
 }
