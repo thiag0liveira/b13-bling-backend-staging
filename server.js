@@ -5065,8 +5065,21 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     const prop=props[req.params.id];
     if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
     if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+prop.pedidoBlingNumero});
-    if(!prop.cliente?.id) return res.status(400).json({erro:"a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido"});
-    if(!prop.itens?.length) return res.status(400).json({erro:"a proposta não tem itens"});
+    // trava contra clique duplicado / requisição repetida: sem isso, 2 chamadas
+    // quase simultâneas passavam as duas pela checagem acima (nenhuma tinha
+    // pedidoBlingId ainda, porque a 1ª ainda não tinha terminado de criar no
+    // Bling) e cada uma criava o SEU próprio pedido — duplicando no Bling.
+    // Trava ANTES de qualquer await, e expira sozinha em 1 min (se travou por
+    // erro/timeout, não fica bloqueado pra sempre).
+    if(prop.gerandoPedidoEm && (Date.now()-prop.gerandoPedidoEm)<60000){
+      return res.status(409).json({erro:"Esse pedido já está sendo gerado agora (evitando duplicar) — aguarde alguns segundos e confira em Propostas antes de tentar de novo."});
+    }
+    prop.gerandoPedidoEm=Date.now();
+    props[req.params.id]=prop;
+    salvarPropostas(props);
+    const liberarTrava=()=>{ try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e){} };
+    if(!prop.cliente?.id){ liberarTrava(); return res.status(400).json({erro:"a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido"}); }
+    if(!prop.itens?.length){ liberarTrava(); return res.status(400).json({erro:"a proposta não tem itens"}); }
 
     // valida o estoque ao vivo de cada item antes de tentar criar (evita o erro genérico
     // do Bling e diz exatamente qual produto está sem saldo)
@@ -5082,6 +5095,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       await new Promise(r=>setTimeout(r,120));
     }
     if(semEstoque.length){
+      liberarTrava();
       return res.status(400).json({erro:"Estoque insuficiente: "+semEstoque.join("; ")+". Ajuste as quantidades."});
     }
 
@@ -5137,6 +5151,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       const detalhe=Array.isArray(campos)&&campos.length
         ? campos.map(f=>`${f.element||f.field||f.campo||''}: ${f.msg||f.message||f.descricao||JSON.stringify(f)}`).join(" | ")
         : (b?.error?.description||b?.error?.message||errBling.message||"erro desconhecido");
+      liberarTrava();
       return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
     }
     const pedidoId=criado?.data?.id;
@@ -5162,15 +5177,19 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         if(!rotas[data]["_semCarro"].pedidoIds.includes(pedidoId)) rotas[data]["_semCarro"].pedidoIds.push(pedidoId);
         salvarRotasDias(rotas);
         agendadoRotaData=data;
-      }catch(e){}
+      }catch(e){ console.error("[atacado] falhou ao agendar pedido",pedidoId,"no Gerenciamento de Rota:",e.message); }
     }
 
     prop.status="pedido_gerado";
     prop.pedidoBlingId=pedidoId; prop.pedidoBlingNumero=numero;
+    prop.gerandoPedidoEm=null;
     prop.atualizadoEm=Date.now();
     props[prop.id]=prop; salvarPropostas(props);
     res.json({ok:true,pedidoId,numero,agendadoRotaData});
-  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+  }catch(e){
+    try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e2){}
+    res.status(e.status||500).json({erro:e.message,body:e.body});
+  }
 });
 
 // ===== APOIO À DECISÃO DO VENDEDOR (atacado) =====

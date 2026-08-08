@@ -727,8 +727,8 @@ function cardResumo(){
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-ghost" style="flex:0;min-width:150px" onclick="visualizarNota()">👁️ Ver nota parcial</button>
-      <button class="btn btn-grn" style="flex:1;font-size:15px" onclick="salvar()">
-        ${S.tipo==='proposta'?'💾 Salvar proposta':'🛒 Salvar pedido'}
+      <button class="btn btn-grn" style="flex:1;font-size:15px" ${S.salvando?"disabled":""} onclick="salvar()">
+        ${S.salvando?"⏳ Salvando…":(S.tipo==='proposta'?'💾 Salvar proposta':'🛒 Salvar pedido')}
       </button>
     </div>
   </div>`;
@@ -828,11 +828,12 @@ async function compartilharNota(){
 }
 
 async function salvar(){
+  if(S.salvando) return; // trava contra clique duplo (mesmo problema corrigido no backend, reforço aqui)
   if(!S.cliente?.id){ alert("Selecione um cliente cadastrado."); return; }
   if(!S.itens.length){ alert("Adicione ao menos um item."); return; }
   if(S.tipoEntrega==='entrega'&&(!S.frete||!S.frete.entregaDisponivel)){ alert("Calcule a taxa de entrega (endereço do cliente) ou escolha Retirada."); return; }
   clearTimeout(_autoSaveT); // cancela auto-save pendente
-  S.msg="";
+  S.msg=""; S.salvando=true; render();
   const payload={
     id:S.rascunhoId, // reaproveita o rascunho (não duplica)
     tipo:S.tipo, status:"aberta",
@@ -850,7 +851,7 @@ async function salvar(){
     if(j.erro){ alert(j.erro); return; }
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
-      if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; render(); return; }
+      if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
       S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
         (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
     }else{
@@ -860,9 +861,9 @@ async function salvar(){
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
-    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg="";
-    render();
+    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada="";
   }catch(e){ alert("Erro ao salvar."); }
+  finally{ S.salvando=false; render(); }
 }
 
 render();
