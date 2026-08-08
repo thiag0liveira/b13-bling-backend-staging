@@ -5149,11 +5149,27 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
     addLog(String(pedidoId),"pedido_criado_atacado",prop.funcionarioId,prop.funcionarioNome,{proposta:prop.id});
 
+    // se o vendedor já marcou um dia desejado de entrega, agenda o pedido
+    // direto no Gerenciamento de Rota (fica em "aguardando carro" nesse dia,
+    // pronto pra já entrar na distribuição depois)
+    let agendadoRotaData=null;
+    if(entregaProp.tipo==="entrega" && entregaProp.dataDesejada && /^\d{4}-\d{2}-\d{2}$/.test(entregaProp.dataDesejada) && pedidoId){
+      try{
+        const rotas=lerRotasDias();
+        const data=entregaProp.dataDesejada;
+        if(!rotas[data]) rotas[data]={};
+        if(!rotas[data]["_semCarro"]) rotas[data]["_semCarro"]={pedidoIds:[]};
+        if(!rotas[data]["_semCarro"].pedidoIds.includes(pedidoId)) rotas[data]["_semCarro"].pedidoIds.push(pedidoId);
+        salvarRotasDias(rotas);
+        agendadoRotaData=data;
+      }catch(e){}
+    }
+
     prop.status="pedido_gerado";
     prop.pedidoBlingId=pedidoId; prop.pedidoBlingNumero=numero;
     prop.atualizadoEm=Date.now();
     props[prop.id]=prop; salvarPropostas(props);
-    res.json({ok:true,pedidoId,numero});
+    res.json({ok:true,pedidoId,numero,agendadoRotaData});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 

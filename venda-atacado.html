@@ -80,7 +80,7 @@ const S={
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
-  tipoEntrega:"retirada", frete:null, freteMsg:"",
+  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"",
   msg:"",
 };
 
@@ -144,7 +144,7 @@ async function salvarRascunho(){
       cliente:S.cliente, itens:S.itens, observacao:S.observacao,
       vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
       entrega:S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel
-        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa}
+        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null}
         :{tipo:"retirada"},
       funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
     };
@@ -711,6 +711,9 @@ function cardResumo(){
       <div class="muted" style="font-size:12px;margin-bottom:4px">${esc(enderecoClienteTexto()||'—')}</div>
       ${S.freteMsg?`<div class="muted" style="font-size:12px;${S.freteMsg.startsWith('Erro')||S.freteMsg.includes('incompleto')||S.freteMsg.includes('Não foi possível')?'color:#ff8090':''}">${esc(S.freteMsg)}</div>`:''}
       ${S.frete&&S.frete.entregaDisponivel?`<div style="font-size:12px;color:#3ce88a;margin-bottom:4px">Distância ${S.frete.km} km · ${S.frete.gratis?'Frete GRÁTIS':`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:''}
+      <label style="margin-top:8px;font-size:12px">Dia desejado da entrega (opcional)</label>
+      <input type="date" value="${S.dataEntregaDesejada}" oninput="S.dataEntregaDesejada=this.value;agendarAutoSave()" style="margin-bottom:4px">
+      <div class="muted" style="font-size:11px">Fica salvo junto do pedido pra facilitar organizar no Gerenciamento de Rota depois.</div>
     `:''}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px">
@@ -838,7 +841,7 @@ async function salvar(){
     observacao:S.observacao,
     vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
     entrega:S.tipoEntrega==='entrega'
-      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa}
+      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null}
       :{tipo:"retirada"},
     funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
   };
@@ -848,7 +851,8 @@ async function salvar(){
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
       if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; render(); return; }
-      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`;
+      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
+        (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
     }else{
       S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
     }

@@ -750,6 +750,25 @@ function htmlPedidoCard(p, modo){
   </div>`;
 }
 
+// linha de uma parada (usada tanto antes quanto depois de calcular a rota) —
+// sempre dá pra expandir e ver os produtos do pedido, clicando no nome
+function htmlStopItem(ped,ix,infoExtra,botoes){
+  if(!ped) return `<div class="stopitem"><div class="ordn">${ix+1}</div><div class="nm">Pedido não encontrado</div></div>`;
+  const exp=!!S.expandido[ped.id];
+  return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">
+    <div class="stopitem" style="border:none;margin-bottom:0;cursor:pointer" onclick="toggleExpandido(${ped.id});event.stopPropagation()">
+      <div class="ordn">${ix+1}</div>
+      <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp?'▲':'▼'} ${ped.itens?.length||0} itens</span></div>
+      ${infoExtra?`<div class="km">${infoExtra}</div>`:''}
+      <div onclick="event.stopPropagation()" style="display:flex;gap:4px">${botoes}</div>
+    </div>
+    ${exp?`<div style="padding:6px 12px 10px 40px;border-top:1px solid var(--border)">
+      <div class="muted" style="font-size:11px;margin-bottom:4px">💰 ${brl(ped.total)} · Frete ${brl(ped.frete)} · ⚖️ ${ped.pesoEstimadoKg}kg (estim.) · 📍 ${esc(ped.endereco||"—")}</div>
+      ${(ped.itens||[]).map(i=>`<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")||'<div class="muted" style="font-size:11px">Sem itens carregados.</div>'}
+    </div>`:''}
+  </div>`;
+}
+
 function htmlCarroBox(carro){
   const viagens=S.atribuicoes[carro.id]?.viagens||[{pedidoIds:[]}];
   const todosPedidos=pedidosCarroAtual(carro.id);
@@ -795,20 +814,14 @@ function htmlViagemBox(carro,vix,cap){
     ${!ids.length?'<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>':
       (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
         const ped=pedidoPorId(p.id);
-        return `<div class="stopitem">
-          <div class="ordn">${ix+1}</div>
-          <div class="nm">Pedido ${esc(ped?.numero||"")} — ${esc(ped?.clienteNome||"")}</div>
-          <div class="km">${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui</div>
-          <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>
-        </div>`;
+        return htmlStopItem(ped,ix,`${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`,
+          `<button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
       }).join("")
-      :pedidosViagemArr.map((p,ix)=>`<div class="stopitem">
-          <div class="ordn">${ix+1}</div>
-          <div class="nm">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
-          <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
-          <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
-          <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>
-        </div>`).join(""))}
+      :pedidosViagemArr.map((p,ix)=>htmlStopItem(p,ix,null,
+          `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
+           <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
+           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`
+        )).join(""))}
     ${resultado?`<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> de trajeto</span></div>
     <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo===chave?'Mapa aberto abaixo':'Ver rota no mapa'}</button>
     ${S.carroMapaAtivo===chave?`<div id="mapaRota"></div>`:''}`:''}
