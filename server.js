@@ -5262,7 +5262,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     const dataIni=new Date(agora-180*24*60*60*1000).toISOString().slice(0,10);
     const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
     const pedidos=[];
-    for(let pg=1;pg<=60;pg++){
+    for(let pg=1;pg<=100;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
       let arr=[];
       try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
@@ -5288,7 +5288,7 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     const [anoM,mmM]=mesAtual.split("-").map(Number);
     const ultimoDiaM=new Date(anoM,mmM,0).getDate();
     const pedidosMes=[];
-    for(let pg=1;pg<=30;pg++){
+    for(let pg=1;pg<=60;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:`${mesAtual}-01`,dataFinal:`${mesAtual}-${String(ultimoDiaM).padStart(2,"0")}`});
       let arr=[];
       try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
@@ -5323,7 +5323,9 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
         vid=Number(det?.data?.vendedor?.id||0);
         if(vid) vnome=await nomeVendedor(vid);
       }catch(e){}
-      await new Promise(r=>setTimeout(r,120));
+      // a fila do bling() já garante ~340ms mínimo entre chamadas — essa pausa
+      // extra de 120ms era redundante e só deixava a análise mais lenta ainda,
+      // o que pesa cada vez mais conforme o volume de pedidos do mês cresce
       if(VENDEDORES_VAREJO.includes(vid)) continue; // agora sim exclui o varejo de verdade
       valorAtacadoReal+=Number(p.total||0); qtdAtacadoReal++;
       if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
@@ -5443,7 +5445,7 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     const ultimoDia=new Date(ano,mm,0).getDate();
     const dataFim=`${mes}-${String(ultimoDia).padStart(2,"0")}`;
     const pedidos=[];
-    for(let pg=1;pg<=30;pg++){
+    for(let pg=1;pg<=60;pg++){
       const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
       let arr=[];
       try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
