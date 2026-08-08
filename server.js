@@ -5241,7 +5241,13 @@ app.post("/api/vendedor/prospeccao/ignorar",(req,res)=>{
 // Analisa pedidos de atacado (exclui vendedores de varejo e Consumidor Final).
 // Retorna: meta do mês (atendidos), clientes que sumiram, pedidos grandes, top por produto.
 const APOIO_CACHE_FILE=`${DATA_DIR}/apoio_cache.json`;
+const PEDIDO_VENDEDOR_CACHE_FILE=`${DATA_DIR}/pedido_vendedor_cache.json`;
 let _cacheApoio=null; // {em, dados}
+// cache permanente pedidoId -> vendedorId (o vendedor de um pedido nunca muda,
+// então uma vez descoberto não precisa buscar o detalhe de novo — isso deixa as
+// análises seguintes MUITO mais rápidas conforme o volume de pedidos cresce)
+let _cachePedidoVendedor={};
+try{ _cachePedidoVendedor=lerJSON(PEDIDO_VENDEDOR_CACHE_FILE,{})||{}; }catch(e){ _cachePedidoVendedor={}; }
 // carrega o cache do disco ao subir (sobrevive a deploy/reinício)
 try{ const c=lerJSON(APOIO_CACHE_FILE,null); if(c&&c.em) _cacheApoio=c; }catch(e){}
 app.get("/api/vendedor/apoio",async(req,res)=>{
@@ -5304,6 +5310,10 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       return !VENDEDORES_VAREJO.includes(vend) && cont!==CONSUMIDOR_FINAL_ID && sit!==12;
     });
     const atendidosMes=doMes.filter(p=>Number(p.situacao?.id)===SIT_ATENDIDO);
+    // TOTAL GERAL: calculado direto da listagem do mês (rápido, sempre funciona,
+    // não depende do laço lento que busca o detalhe de cada pedido). É o número
+    // de cabeçalho ("Total geral") — precisa aparecer certo mesmo se o
+    // detalhamento por vendedor não terminar a tempo.
     const metaMes={
       qtdAtendidos:atendidosMes.length,
       valorAtendidos:+atendidosMes.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2),
@@ -5313,21 +5323,34 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
 
     // VENDIDO POR VENDEDOR — a listagem do Bling NÃO traz o vendedor, só o detalhe.
     // Busca o detalhe de cada pedido do mês pra obter o vendedor real e agrupar.
+    // MAS com limite de tempo: se o volume de pedidos for grande, buscar o
+    // detalhe de todos um por um pode estourar o tempo da requisição e derrubar
+    // a tela inteira. Então roda por no máximo ~90s; se não terminar, mostra o
+    // detalhamento parcial (o total geral acima já está completo de qualquer jeito).
     const SIT_NOMES={818795:"Aguardando",817963:"Em separação",821590:"Separado",819227:"Pendência",821611:"Conf. entrega",24:"Verificado",820085:"Em rota",9:"Atendido",21:"Em digitação",6:"Em aberto"};
     const porVendedor={};
-    let valorAtacadoReal=0, qtdAtacadoReal=0;
+    const LIMITE_DETALHE_MS=90*1000;
+    const inicioDetalhe=Date.now();
+    let detalheParcial=false, processados=0, cacheAtualizado=false;
     for(const p of doMes){
-      let vid=0, vnome="Sem vendedor";
-      try{
-        const det=await bling(`/pedidos/vendas/${p.id}`);
-        vid=Number(det?.data?.vendedor?.id||0);
-        if(vid) vnome=await nomeVendedor(vid);
-      }catch(e){}
-      // a fila do bling() já garante ~340ms mínimo entre chamadas — essa pausa
-      // extra de 120ms era redundante e só deixava a análise mais lenta ainda,
-      // o que pesa cada vez mais conforme o volume de pedidos do mês cresce
-      if(VENDEDORES_VAREJO.includes(vid)) continue; // agora sim exclui o varejo de verdade
-      valorAtacadoReal+=Number(p.total||0); qtdAtacadoReal++;
+      let vid, vnome="Sem vendedor";
+      const cacheKey=String(p.id);
+      if(_cachePedidoVendedor[cacheKey]!==undefined){
+        // já sabemos o vendedor desse pedido de uma análise anterior — não busca o detalhe de novo
+        vid=Number(_cachePedidoVendedor[cacheKey]||0);
+        if(vid) vnome=await nomeVendedor(vid); // nomeVendedor tem cache próprio, é barato
+      } else {
+        if(Date.now()-inicioDetalhe>LIMITE_DETALHE_MS){ detalheParcial=true; break; }
+        vid=0;
+        try{
+          const det=await bling(`/pedidos/vendas/${p.id}`);
+          vid=Number(det?.data?.vendedor?.id||0);
+          if(vid) vnome=await nomeVendedor(vid);
+          _cachePedidoVendedor[cacheKey]=vid; cacheAtualizado=true; // guarda pra próxima vez
+        }catch(e){ continue; } // falhou o detalhe — não conta esse pedido nem cacheia (tenta de novo na próxima)
+      }
+      processados++;
+      if(VENDEDORES_VAREJO.includes(vid)) continue; // exclui o varejo de verdade (pelo vendedor do detalhe)
       if(!porVendedor[vid]) porVendedor[vid]={id:vid,nome:vnome,qtd:0,valor:0,atendidos:0,valorAtendido:0,porStatus:{}};
       const v=porVendedor[vid];
       v.qtd++; v.valor+=Number(p.total||0);
@@ -5336,14 +5359,19 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
       v.porStatus[snome]=(v.porStatus[snome]||0)+1;
       if(sit===SIT_ATENDIDO){ v.atendidos++; v.valorAtendido+=Number(p.total||0); }
     }
+    if(cacheAtualizado){ try{ salvarJSON(PEDIDO_VENDEDOR_CACHE_FILE,_cachePedidoVendedor); }catch(e){} }
     const vendedores=Object.values(porVendedor).map(v=>({...v,valor:+v.valor.toFixed(2),valorAtendido:+v.valorAtendido.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
-    // recalcula o metaMes com os valores REAIS de atacado (varejo já excluído pelo vendedor do detalhe)
-    const atendidosReais=vendedores.reduce((s,v)=>s+v.atendidos,0);
-    const valorAtendidosReais=vendedores.reduce((s,v)=>s+v.valorAtendido,0);
-    metaMes.qtdTotalMes=qtdAtacadoReal;
-    metaMes.valorTotalMes=+valorAtacadoReal.toFixed(2);
-    metaMes.qtdAtendidos=atendidosReais;
-    metaMes.valorAtendidos=+valorAtendidosReais.toFixed(2);
+    metaMes.detalhePorVendedorParcial=detalheParcial;
+    metaMes.pedidosDetalhados=processados;
+    // se o detalhamento terminou completo, o total geral vira o valor EXATO de
+    // atacado (varejo excluído pelo vendedor real) — mais preciso. Se ficou
+    // parcial, mantém o total da listagem (aproximado, mas nunca zero).
+    if(!detalheParcial){
+      metaMes.qtdTotalMes=vendedores.reduce((s,v)=>s+v.qtd,0);
+      metaMes.valorTotalMes=+vendedores.reduce((s,v)=>s+v.valor,0).toFixed(2);
+      metaMes.qtdAtendidos=vendedores.reduce((s,v)=>s+v.atendidos,0);
+      metaMes.valorAtendidos=+vendedores.reduce((s,v)=>s+v.valorAtendido,0).toFixed(2);
+    }
 
     // agrupa por cliente pra achar quem sumiu
     const porCliente={};

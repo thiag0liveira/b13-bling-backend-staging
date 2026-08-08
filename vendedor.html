@@ -96,6 +96,7 @@ function viewRecuperar(){
     <div class="card">
       <div style="font-weight:800;margin-bottom:10px">👤 Vendido por vendedor (atacado — sem varejo)</div>
       ${(DADOS.vendedores&&DADOS.vendedores.length)?DADOS.vendedores.map(vendedorRow).join(""):'<div class="muted">Nenhuma venda de atacado no mês.</div>'}
+      ${m.detalhePorVendedorParcial?`<div class="muted" style="font-size:11px;color:#ffd23f;margin-top:8px">⚠️ O detalhamento por vendedor ficou parcial (muitos pedidos no mês — analisou ${m.pedidosDetalhados||0} até agora). O "Total geral" abaixo está completo. Rode "Nova análise" mais tarde pra completar o resto.</div>`:''}
       <div style="border-top:1px solid #2c2660;margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:800">
         <span>Total geral</span>
         <span style="color:#ffd23f">${brl(m.valorTotalMes)} · ${m.qtdTotalMes||0} pedidos</span>
