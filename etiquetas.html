@@ -61,7 +61,8 @@
   .etq2::before{content:"";position:absolute;inset:0;background-image:url('/logo');background-repeat:no-repeat;background-position:center 58%;
     background-size:65%;opacity:.06;pointer-events:none;filter:grayscale(1)}
   .etq2 > *{position:relative;z-index:1}
-  .etq2 .nome2{font-weight:900;font-size:32px;line-height:1.15;text-transform:uppercase;text-align:center;padding:20px 14px 10px;letter-spacing:.3px}
+  .etq2 .nome2{font-weight:900;font-size:32px;line-height:1.15;text-transform:uppercase;text-align:center;padding:20px 14px 4px;letter-spacing:.3px}
+  .etq2 .categoria2{text-align:center;font-size:13px;font-weight:800;color:#c40018;text-transform:uppercase;letter-spacing:1px;padding-bottom:10px}
   .etq2 .corpo2{display:flex;align-items:stretch;padding:0 16px;gap:14px}
   .etq2 .unidade2{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 0}
   .etq2 .unidade2 .preco2{font-size:64px;font-weight:900;display:flex;align-items:baseline;gap:2px}
@@ -368,6 +369,7 @@ async function gerarEtiquetasModelo2(){
 
       return `<div class="etq2">
         <div class="nome2">${esc(it.nome)}</div>
+        ${it.categoriaNome?`<div class="categoria2">${esc(it.categoriaNome)}</div>`:""}
         ${corpoHtml}
         <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
       </div>`;
