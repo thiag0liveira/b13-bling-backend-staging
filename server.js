@@ -59,6 +59,7 @@ const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos
 const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
 const ROTAS_CONFIG_FILE = `${DATA_DIR}/rotas_config.json`; // dias de entrega + carros disponíveis
 const ROTAS_DIAS_FILE = `${DATA_DIR}/rotas_dias.json`; // atribuição de pedidos a carros por dia
+const ROTAS_ATRASOS_FILE = `${DATA_DIR}/rotas_atrasos.json`; // pedidos entregues em dia diferente do planejado na rota
 const FPAG_DEFAULT=[
   {id:1,nome:"Dinheiro"},{id:2,nome:"PIX"},{id:3,nome:"Cartão de Crédito"},
   {id:4,nome:"Cartão de Débito"},{id:5,nome:"Transferência"},{id:6,nome:"Boleto"},
@@ -1288,6 +1289,19 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
       return res.status(400).json({erro:`Não é possível confirmar entrega sem receber o pagamento. Falta R$ ${(saldoFinal-pagoVal).toFixed(2)}.`});
     }
 
+    // compara com o dia que esse pedido tinha sido planejado no Gerenciamento
+    // de Rota (se tiver passado por lá) — pra saber se a entrega aconteceu no
+    // dia certo ou se teve que "escorregar" pra outro dia
+    let avisoAgendamento=null;
+    const hojeBR2=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    const agendamento=acharAgendamentoPedido(id);
+    if(agendamento && agendamento.data!==hojeBR2){
+      avisoAgendamento=`📅 Esse pedido estava planejado pra sair na rota do dia ${agendamento.data.split('-').reverse().join('/')}, mas a entrega só foi confirmada em ${hojeBR2.split('-').reverse().join('/')}.`;
+      const atrasos=lerJSON(ROTAS_ATRASOS_FILE,{});
+      atrasos[id]={pedidoId:id,dataPlanejada:agendamento.data,dataEntregaReal:hojeBR2,carroId:agendamento.carroId,em:Date.now()};
+      salvarJSON(ROTAS_ATRASOS_FILE,atrasos);
+    }
+
     if(itensNaoEntregues?.length||itensDanificados?.length){
       const perdas=lerJSON(PERDAS_FILE,{});
       perdas[id]={pedidoId:id,itensNaoEntregues:itensNaoEntregues||[],itensDanificados:itensDanificados||[],valorAbatido:valorAbatido||0,resolucao,funcionarioId,funcionarioNome,em:Date.now()};
@@ -1343,7 +1357,7 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
     liberarLock(id,funcionarioId,funcionarioNome,"entrega_confirmada");
     addLog(id,"entrega_confirmada",funcionarioId,funcionarioNome,{});
-    res.json({ok:true,avisoObsBling,avisoItensBling});
+    res.json({ok:true,avisoObsBling,avisoItensBling,avisoAgendamento});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -5482,6 +5496,18 @@ function lerRotasConfig(){
 function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
 function lerRotasDias(){ return lerJSON(ROTAS_DIAS_FILE,{}); }
 function salvarRotasDias(d){ salvarJSON(ROTAS_DIAS_FILE,d); }
+// acha em qual dia/carro um pedido foi planejado na rota (procura em todos os
+// dias salvos) — usado pra comparar planejado x entregue de verdade
+function acharAgendamentoPedido(pedidoId){
+  const rotas=lerRotasDias();
+  const pid=Number(pedidoId);
+  for(const [data,carros] of Object.entries(rotas)){
+    for(const [carroId,c] of Object.entries(carros||{})){
+      if((c.pedidoIds||[]).some(x=>Number(x)===pid)) return {data,carroId};
+    }
+  }
+  return null;
+}
 
 app.get("/api/rotas/config",(req,res)=>res.json({data:lerRotasConfig()}));
 app.post("/api/rotas/config",(req,res)=>{
@@ -5511,15 +5537,16 @@ app.post("/api/rotas/config",(req,res)=>{
 // quando o usuário está olhando outra data.
 app.get("/api/rotas/dias-resumo",(req,res)=>{
   const rotas=lerRotasDias();
-  const porDia={}; const idsUsados={};
+  const porDia={}; const idsUsados={}; const detalheDias={};
   Object.entries(rotas).forEach(([data,carros])=>{
-    let total=0;
+    let total=0; const porCarro={};
     Object.entries(carros||{}).forEach(([carroId,c])=>{
       (c.pedidoIds||[]).forEach(id=>{ idsUsados[id]=data; total++; });
+      if((c.pedidoIds||[]).length) porCarro[carroId]=c.pedidoIds;
     });
-    if(total>0) porDia[data]=total;
+    if(total>0){ porDia[data]=total; detalheDias[data]=porCarro; }
   });
-  res.json({porDia, idsUsados});
+  res.json({porDia, idsUsados, detalheDias});
 });
 
 // Estimativa de peso do pedido a partir do nome/quantidade dos produtos —

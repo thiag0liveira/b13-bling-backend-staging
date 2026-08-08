@@ -103,7 +103,9 @@ const S={
   salvando: false,
   msg: "",
   diasResumo: {}, // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
+  diasDetalhe: {}, // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
   idsUsadosOutrosDias: {}, // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
+  verVisaoGeral: false,
 };
 
 async function carregarTudo(){
@@ -118,10 +120,12 @@ async function carregarTudo(){
     const salvo=rDia.data||{};
     S.atribuicoes={};
     (S.config.carros||[]).forEach(c=>{ S.atribuicoes[c.id]={pedidoIds:(salvo[c.id]?.pedidoIds)||[]}; });
+    S.atribuicoes["_semCarro"]={pedidoIds:(salvo["_semCarro"]?.pedidoIds)||[]};
     // resumo geral: quantos pedidos já tem em cada dia + quais pedidos já
     // estão agendados em OUTRO dia (pra não aparecerem como "disponíveis" aqui)
     const rResumo=await fetch(B+"/api/rotas/dias-resumo").then(r=>r.json());
     S.diasResumo=rResumo.porDia||{};
+    S.diasDetalhe=rResumo.detalheDias||{};
     S.idsUsadosOutrosDias={};
     Object.entries(rResumo.idsUsados||{}).forEach(([pid,data])=>{ if(data!==S.data) S.idsUsadosOutrosDias[pid]=data; });
   }catch(e){ S.msg="Erro ao carregar: "+e.message; }
@@ -165,6 +169,58 @@ function mudarDia(delta){
 
 function toggleExpandido(id){ S.expandido[id]=!S.expandido[id]; render(); }
 
+function agendarSemCarro(pedidoId){
+  S.atribuicoes["_semCarro"].pedidoIds.push(pedidoId);
+  render();
+}
+function desagendar(pedidoId){
+  S.atribuicoes["_semCarro"].pedidoIds=(S.atribuicoes["_semCarro"].pedidoIds||[]).filter(id=>id!==pedidoId);
+  render();
+}
+// pega os pedidos já agendados pro dia (mas ainda sem carro) e distribui entre
+// os carros configurados (mesma lógica de proximidade+peso da distribuição
+// geral), avisando ao final se deu pra usar só 1 carro ou se precisou de mais
+async function sugerirCarrosParaSemCarro(){
+  const pendentes=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
+  if(!pendentes.length){ alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro."); return; }
+  let pool=pendentes.filter(p=>p.lat&&p.lng);
+  const semCoord=pendentes.filter(p=>!p.lat||!p.lng);
+  const carros=S.config.carros;
+  const usados=new Set();
+  for(const carro of carros){
+    const alvoQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
+    if(!pool.length) break;
+    let pesoAcum=0;
+    let semente=pool[0], maiorDist=-1;
+    pool.forEach(p=>{ const d=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(d>maiorDist){ maiorDist=d; semente=p; } });
+    const candidatos=pool.slice().sort((a,b)=>distanciaRetaKm(semente,a)-distanciaRetaKm(semente,b));
+    const escolhidos=[];
+    for(const p of candidatos){
+      if(escolhidos.length>=alvoQtd) break;
+      const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
+      if(pesoTeste>(carro.pesoSugeridoKg||99999)*1.2 && escolhidos.length>0) continue;
+      escolhidos.push(p); pesoAcum=pesoTeste;
+    }
+    if(escolhidos.length) usados.add(carro.id);
+    escolhidos.forEach(p=>{
+      S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
+      S.atribuicoes[carro.id].pedidoIds.push(p.id);
+    });
+    pool=pool.filter(p=>!escolhidos.some(e=>e.id===p.id));
+  }
+  render();
+  const nomesUsados=[...usados].map(id=>S.config.carros.find(c=>c.id===id)?.nome).filter(Boolean);
+  const sobrouSemCoord=semCoord.length;
+  const sobrouNaoCoube=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).length-sobrouSemCoord;
+  let msg = usados.size<=1
+    ? `✅ Esses pedidos cabem em só 1 veículo: ${nomesUsados.join(", ")||"—"}.`
+    : `🚚 Vai precisar de ${usados.size} veículos pra esses pedidos: ${nomesUsados.join(", ")}.`;
+  if(sobrouNaoCoube>0) msg+=` ⚠️ ${sobrouNaoCoube} pedido(s) não coube(ram) em nenhum carro sem estourar peso/capacidade — precisa de outro veículo ou ajustar manualmente.`;
+  if(sobrouSemCoord>0) msg+=` ⚠️ ${sobrouSemCoord} pedido(s) sem coordenada identificada ficou(aram) de fora.`;
+  S.msg=msg;
+  for(const carroId of usados){ await sugerirRota(carroId); }
+}
+
 function atribuirCarro(pedidoId,carroId){
   if(!carroId) return;
   const carro=(S.config.carros||[]).find(c=>c.id===carroId);
@@ -199,12 +255,27 @@ function moverNaLista(carroId,ix,delta){
   render();
 }
 
+async function atualizarResumoDias(){
+  try{
+    const rResumo=await fetch(B+"/api/rotas/dias-resumo").then(r=>r.json());
+    S.diasResumo=rResumo.porDia||{};
+    S.diasDetalhe=rResumo.detalheDias||{};
+  }catch(e){}
+}
+async function toggleVisaoGeral(){
+  const ligando=!S.verVisaoGeral;
+  if(ligando) await atualizarResumoDias(); // busca fresco, senão mostra dado desatualizado
+  S.verVisaoGeral=ligando;
+  render();
+}
+
 async function salvarDia(){
   S.salvando=true; render();
   try{
     await fetch(B+"/api/rotas/dia",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({data:S.data,carros:S.atribuicoes})});
     S.msg="✅ Salvo!";
+    await atualizarResumoDias(); // sem isso, a Visão geral ficava mostrando o resumo de antes de salvar
   }catch(e){ S.msg="Erro ao salvar: "+e.message; }
   S.salvando=false; render();
   setTimeout(()=>{ S.msg=""; render(); },2500);
@@ -362,6 +433,45 @@ async function salvarConfig(){
   await carregarTudo();
 }
 
+// visão de várias colunas de dias lado a lado — mostra, pra cada dia de
+// entrega dos próximos ~10 dias, quantas entregas tem e quais pedidos estão
+// em cada carro. Ajuda a ver a semana toda de uma vez sem ficar trocando de dia.
+function htmlVisaoGeral(){
+  const dias=[];
+  const base=new Date(S.data+"T12:00:00");
+  for(let i=-1;i<=9;i++){
+    const d=new Date(base); d.setDate(d.getDate()+i);
+    if(!S.config.diasEntrega[d.getDay()]) continue;
+    dias.push({iso:d.toISOString().slice(0,10), label:d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"})});
+  }
+  return `<div class="card">
+    <div style="font-weight:900;margin-bottom:10px">📊 Visão geral — próximos dias de entrega</div>
+    <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">
+      ${dias.map(d=>{
+        const detalhe=S.diasDetalhe[d.iso]||{};
+        const totalDia=Object.values(detalhe).reduce((s,ids)=>s+ids.length,0);
+        const semCarroQtd=(detalhe["_semCarro"]||[]).length;
+        return `<div style="flex:0 0 220px;background:#181433;border:2px solid ${d.iso===S.data?'#FF0082':'#2c2660'};border-radius:12px;padding:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="text-transform:capitalize;font-weight:900;font-size:13px">${d.label}</div>
+            <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px" onclick="S.data='${d.iso}';S.verVisaoGeral=false;carregarTudo()">Abrir</button>
+          </div>
+          ${!totalDia?'<div class="muted" style="font-size:12px">Nenhum pedido agendado.</div>':`
+            <div class="muted" style="font-size:11px;margin-bottom:6px">${totalDia} entrega(s) no total</div>
+            ${(S.config.carros||[]).filter(c=>detalhe[c.id]?.length).map(c=>`
+              <div style="margin-bottom:8px">
+                <div style="font-weight:800;font-size:11px;color:#ffd23f">🚚 ${esc(c.nome)} (${detalhe[c.id].length})</div>
+                ${detalhe[c.id].slice(0,6).map(id=>{ const p=pedidoPorId(id); return `<div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${p?('Pedido '+esc(p.numero)+' — '+esc(p.clienteNome)):('#'+id)}</div>`; }).join("")}
+                ${detalhe[c.id].length>6?`<div class="muted" style="font-size:10px">+${detalhe[c.id].length-6} mais…</div>`:''}
+              </div>`).join("")}
+            ${semCarroQtd?`<div style="font-size:11px;color:#ff8090;font-weight:700">🗓️ ${semCarroQtd} aguardando carro</div>`:''}
+          `}
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
 function render(){
   const app=document.getElementById("app");
   if(S.carregando){ app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="muted">Carregando pedidos de entrega…</div></div>`; return; }
@@ -376,11 +486,14 @@ function render(){
   let h=`<div class="topbar">
     <div class="pg">🗺️ Gerenciamento de Rota</div>
     <div style="flex:1"></div>
+    <button class="btn btn-ghost" onclick="toggleVisaoGeral()">${S.verVisaoGeral?'📋 Ver dia a dia':'📊 Visão geral da semana'}</button>
     <button class="btn btn-ghost" onclick="abrirConfig()">⚙️ Configurar</button>
   </div>
   <div class="content">`;
 
   if(S.msg) h+=`<div class="warn">${esc(S.msg)}</div>`;
+
+  if(S.verVisaoGeral){ h+=htmlVisaoGeral(); h+="</div>"; app.innerHTML=h; return; }
 
   // seletor de dia
   h+=`<div class="card" style="display:flex;align-items:center;gap:10px">
@@ -396,15 +509,28 @@ function render(){
 
   if(S.editandoConfig) h+=htmlConfig();
 
-  // ---- pedidos disponíveis ----
+  // ---- pedidos disponíveis (ainda sem dia nenhum) ----
   const disponiveis=pedidosDisponiveis();
   h+=`<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-weight:900">📦 Pedidos disponíveis (${disponiveis.length})</div>
-      ${disponiveis.length?`<button class="btn btn-mag" onclick="sugerirDistribuicaoDia()">🧭 Sugerir distribuição do dia</button>`:''}
+      <div style="font-weight:900">⏳ Aguardando agendamento (${disponiveis.length})</div>
+      ${disponiveis.length?`<button class="btn btn-ghost" onclick="sugerirDistribuicaoDia()">⚡ Já dividir tudo em carros (automático)</button>`:''}
     </div>
-    ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p)).join(""):'<div class="muted">Todos os pedidos de entrega já foram atribuídos a um carro — ou não há pedidos de entrega pendentes.</div>'}
+    <div class="muted" style="font-size:11px;margin:-4px 0 10px">Primeiro agenda o pedido pra esse dia — o carro você decide depois (manual ou com sugestão automática).</div>
+    ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p,"disponivel")).join(""):'<div class="muted">Nenhum pedido aguardando agendamento — ou já estão todos num dia.</div>'}
   </div>`;
+
+  // ---- agendados pra esse dia, mas ainda sem carro definido ----
+  const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
+  if(semCarro.length){
+    h+=`<div class="card" style="border-color:#FF0082">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:900">🗓️ Agendados pra ${dataLabel(S.data)}, aguardando carro (${semCarro.length})</div>
+        <button class="btn btn-mag" onclick="sugerirCarrosParaSemCarro()">🚚 Sugerir carro(s) pra esses pedidos</button>
+      </div>
+      ${semCarro.map(p=>htmlPedidoCard(p,"semCarro")).join("")}
+    </div>`;
+  }
 
   // ---- carros ----
   (S.config.carros||[]).forEach(carro=>{
@@ -487,10 +613,21 @@ function htmlConfig(){
   </div>`;
 }
 
-function htmlPedidoCard(p){
+function htmlPedidoCard(p, modo){
+  modo = modo || "disponivel"; // "disponivel" | "semCarro"
   const exp=!!S.expandido[p.id];
   const opcoesCarro=(S.config.carros||[]).map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("");
+  const faixa = modo==="disponivel"
+    ? `<div style="background:#3a2a00;color:#ffd23f;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">⏳ Aguardando agendamento</div>`
+    : `<div style="background:#0f3a24;color:#3ce88a;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">🗓️ Agendado pra ${dataLabel(S.data)} — aguardando carro</div>`;
+  const diaCurto=new Date(S.data+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
+  const acao = modo==="disponivel"
+    ? `<button class="btn btn-mag" style="flex:1" onclick="agendarSemCarro(${p.id})">📅 Agendar pra ${diaCurto}</button>`
+    : `<select id="selCarro-${p.id}" style="flex:1;min-width:120px">${opcoesCarro}</select>
+       <button class="btn btn-mag" style="padding:6px 12px;font-size:11px" onclick="atribuirCarro(${p.id},document.getElementById('selCarro-${p.id}').value)">Atribuir →</button>
+       <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="desagendar(${p.id})" title="Tirar do dia">↩</button>`;
   return `<div class="pedcard">
+    ${faixa}
     <div class="top2">
       <div>
         <div class="num">Pedido ${esc(p.numero)}</div>
@@ -506,8 +643,7 @@ function htmlPedidoCard(p){
     <div class="muted" style="margin-top:6px">📍 ${esc(p.endereco||"endereço não identificado")}</div>
     <div class="assignrow">
       <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="toggleExpandido(${p.id})">${exp?"▲ Ocultar itens":"▼ Ver itens ("+p.itens.length+")"}</button>
-      <select id="selCarro-${p.id}" style="flex:1;min-width:120px">${opcoesCarro}</select>
-      <button class="btn btn-mag" style="padding:6px 12px;font-size:11px" onclick="atribuirCarro(${p.id},document.getElementById('selCarro-${p.id}').value)">Atribuir →</button>
+      ${acao}
     </div>
     <div class="itenslist ${exp?'on':''}">
       ${p.itens.map(i=>`<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")}
