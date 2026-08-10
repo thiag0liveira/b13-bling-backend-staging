@@ -728,7 +728,7 @@ function cardProduto(p,busca){
         const cap=maxUnid(s.estoque,p.un); const key=String(s.codigo); const noCart=S.carrinho[key];
         if(cap<=0) return `<div class="flav esg"><div class="flavtop"><span class="flavnm">${esc(s.nome)}</span></div><span class="tag" style="flex-shrink:0">sem estoque</span></div>`;
         return `<div class="flav">
-          <div class="flavtop">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:34px;height:34px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)} <small style="color:#8f8ac0">(est ${s.estoque})</small></span></div>
+          <div class="flavtop">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:34px;height:34px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)}</span></div>
           <div class="flavacao">`+
           (noCart? stepperMini(key) : `<button onclick='addFlav("${p.id}","${key}")'>+ ${p.un>1?"caixa":"add"}</button>`)+`</div>
         </div>`;
@@ -740,7 +740,7 @@ function cardProduto(p,busca){
     const noCart=key&&S.carrinho[key];
     acao=`<div class="addrow">`+(noCart?stepper(key):`<button class="btn btn-mag" onclick='addSingle("${p.id}")'>+ Adicionar</button>`)+`</div>`;
   }
-  const estTxt = !esgotado && !multi && disp[0]?`<div class="est">estoque: ${disp[0].estoque} un</div>`:``;
+  const estTxt = ``;
   return `<div class="card ${esgotado?"esg":""}">
     ${p.imagem?`<img class="pimg" src="${esc(p.imagem)}" onerror="this.remove()">`:""}
     <div class="nm">${esc(p.nome)} ${p.obs?`<span class="obs">${esc(p.obs)}</span>`:""}</div>
