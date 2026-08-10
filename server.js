@@ -5801,7 +5801,114 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
-// ===== METAS DE VENDA =====
+// ==================== SUGESTÃO DE ESTOQUE PARADO (Parte 4) ====================
+// Acha produtos que TÊM estoque mas NÃO venderam nos últimos N meses — provável
+// estoque fantasma (produto que talvez nem exista mais na loja, mas segue com
+// saldo no Bling). Roda em SEGUNDO PLANO (a varredura é pesada: precisa ler o
+// detalhe de cada pedido de venda do período pra saber quais produtos venderam),
+// e guarda o resultado em cache pra tela abrir na hora.
+const ESTOQUE_PARADO_FILE=`${DATA_DIR}/estoque_parado_cache.json`;
+let _cacheParado=null;
+try{ const c=lerJSON(ESTOQUE_PARADO_FILE,null); if(c&&c.em) _cacheParado=c; }catch(e){}
+let _paradoComputando=false, _paradoDesde=0, _paradoProgresso="";
+
+async function computarEstoqueParado({meses}){
+  const agora=Date.now();
+  const diasPeriodo=meses*30;
+  const dataIni=new Date(agora-diasPeriodo*24*60*60*1000).toISOString().slice(0,10);
+  const dataFim=new Date(agora+24*60*60*1000).toISOString().slice(0,10);
+
+  // 1) lista os pedidos de venda do período (a listagem NÃO traz itens)
+  const pedidos=[];
+  for(let pg=1;pg<=200;pg++){
+    const p=new URLSearchParams({pagina:pg,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+    let arr=[];
+    try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+    pedidos.push(...arr);
+    _paradoProgresso=`Lendo pedidos do período (${pedidos.length})…`;
+    if(arr.length<100) break;
+    await new Promise(r=>setTimeout(r,300));
+  }
+  // ignora cancelados
+  const validos=pedidos.filter(p=>Number(p.situacao?.id||0)!==12);
+
+  // 2) lê o DETALHE de cada pedido pra descobrir quais PRODUTOS venderam
+  const produtosVendidos=new Set(); // ids de produto que tiveram venda no período
+  let feitos=0;
+  for(const ped of validos){
+    try{
+      const d=await bling(`/pedidos/vendas/${ped.id}`).then(r=>r?.data);
+      (d?.itens||[]).forEach(it=>{ if(it.produto?.id) produtosVendidos.add(Number(it.produto.id)); });
+    }catch(e){}
+    feitos++;
+    if(feitos%20===0){ _paradoProgresso=`Analisando vendas (${feitos}/${validos.length})…`; }
+    await new Promise(r=>setTimeout(r,150));
+  }
+
+  // 3) varre os produtos que TÊM estoque e cruza: com estoque + sem venda = parado
+  _paradoProgresso="Verificando produtos com estoque…";
+  const tab=lerTabela();
+  // índice nome/categoria/preço pela tabela de atacado (por id de produto Bling)
+  const infoPorId={};
+  (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{
+    if(b.id) infoPorId[Number(b.id)]={nome:b.nome||it.nome||"",categoria:cat.t||"",preco:it.preco??null};
+  })));
+
+  const parados=[];
+  for(let pg=1;pg<=60;pg++){
+    let arr=[];
+    try{ const r=await bling(`/produtos?pagina=${pg}&limite=100`); arr=r?.data||[]; }catch(e){ break; }
+    if(!arr.length) break;
+    for(const prod of arr){
+      const saldo=prod.estoque?.saldoVirtualTotal ?? prod.estoque?.saldoFisicoTotal ?? 0;
+      if(!(saldo>0)) continue;               // só interessa quem TEM estoque
+      if(produtosVendidos.has(Number(prod.id))) continue; // vendeu no período → não está parado
+      const info=infoPorId[Number(prod.id)];
+      parados.push({
+        produtoId:prod.id, codigo:prod.codigo||"", nome:prod.nome||info?.nome||"",
+        categoria:info?.categoria||"", estoque:saldo, preco:info?.preco ?? +(prod.preco||0),
+        valorParado:+((info?.preco ?? +(prod.preco||0))*saldo).toFixed(2),
+      });
+    }
+    _paradoProgresso=`Verificando produtos (${parados.length} parados até agora)…`;
+    if(arr.length<100) break;
+    await new Promise(r=>setTimeout(r,300));
+  }
+  // ordena pelo maior valor parado (o que mais “trava” dinheiro em estoque)
+  parados.sort((a,b)=>(b.valorParado||0)-(a.valorParado||0));
+  return {meses, periodoDesde:dataIni, totalParados:parados.length,
+    valorTotalParado:+(parados.reduce((s,p)=>s+(p.valorParado||0),0)).toFixed(2),
+    produtos:parados};
+}
+
+function dispararParadoBackground(opts){
+  if(_paradoComputando) return;
+  _paradoComputando=true; _paradoDesde=Date.now(); _paradoProgresso="Iniciando…";
+  computarEstoqueParado(opts)
+    .then(dados=>{ _cacheParado={em:Date.now(),dados}; try{ salvarJSON(ESTOQUE_PARADO_FILE,_cacheParado); }catch(e){} })
+    .catch(e=>{ console.error("[estoque-parado] erro no cálculo:",e.message); })
+    .finally(()=>{ _paradoComputando=false; _paradoProgresso=""; });
+}
+
+app.get("/api/estoque/parado",(req,res)=>{
+  try{
+    const forcar=req.query.forcar==="1";
+    const meses=Number(req.query.meses||3);
+    const temCache=_cacheParado && _cacheParado.dados?.produtos;
+    // cache válido por 24h (a varredura é pesada, não faz sentido refazer sempre)
+    const cacheFresco=temCache && (Date.now()-_cacheParado.em < 24*60*60*1000) && _cacheParado.dados.meses===meses;
+    if(cacheFresco && !forcar){
+      return res.json({..._cacheParado.dados, doCache:true, cacheEm:_cacheParado.em, computando:_paradoComputando});
+    }
+    dispararParadoBackground({meses});
+    if(temCache){
+      return res.json({..._cacheParado.dados, doCache:true, cacheEm:_cacheParado.em, computando:true, progresso:_paradoProgresso});
+    }
+    return res.json({computando:true, primeira:true, progresso:_paradoProgresso||"Iniciando…"});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+
 function lerMetas(){ return lerJSON(METAS_FILE,{}); }
 function salvarMetas(m){ salvarJSON(METAS_FILE,m); }
 
