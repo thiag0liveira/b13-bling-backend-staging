@@ -4985,7 +4985,12 @@ app.post("/api/atacado/cliente",async(req,res)=>{
 app.get("/api/atacado/propostas",(req,res)=>{
   const {tipo,status}=req.query;
   let lista=Object.values(lerPropostas());
-  if(tipo) lista=lista.filter(p=>p.tipo===tipo);
+  // "Pedidos" = qualquer um que já virou pedido no Bling (tem pedidoBlingId),
+  // independente de ter nascido como proposta ou como pedido direto.
+  // "Propostas" = os que ainda NÃO viraram pedido. Assim, quando uma proposta
+  // é convertida em pedido, ela sai da aba Propostas e passa pra aba Pedidos.
+  if(tipo==="pedido") lista=lista.filter(p=>!!p.pedidoBlingId);
+  else if(tipo==="proposta") lista=lista.filter(p=>!p.pedidoBlingId);
   if(status) lista=lista.filter(p=>p.status===status);
   lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
   res.json({data:lista});
