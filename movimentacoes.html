@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B13 — Movimentações</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  body{background:#0f0d24;color:#fff;min-height:100vh}
+  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .top img{height:32px}
+  .top .t{font-weight:900;font-size:18px}
+  .top .sp{flex:1}
+  .wrap{max-width:900px;margin:0 auto;padding:18px}
+  .card{background:#181542;border-radius:14px;padding:18px;margin-bottom:16px}
+  .muted{color:#9a95c9;font-size:12px}
+  .err{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{background:#1c1846;border:1px solid #514c96;color:#fff;border-radius:20px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .tab.on{background:#FF0082;border-color:#FF0082}
+  .row{display:flex;align-items:center;gap:10px;background:#1c1846;border-radius:10px;padding:12px;margin-bottom:8px;flex-wrap:wrap}
+  .row .nm{flex:1;min-width:150px}
+  .row .nm .sub{font-size:11px;color:#9a95c9}
+  .row .qtd{font-size:18px;font-weight:900;color:#ffd23f}
+  .tagOrigem{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:#2a1a4d;color:#cfa8ff}
+  .tagOrigem.exp{background:#3a2a00;color:#ffd23f}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<script>
+if(typeof b13RequireLogin==="function" && !b13RequireLogin())document.write=function(){};
+if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/movimentacoes"))document.write=function(){};
+document.addEventListener("DOMContentLoaded",function(){
+  const nav=document.createElement("div");
+  nav.innerHTML=(typeof b13RenderNav==="function")?b13RenderNav("/movimentacoes"):"";
+  document.body.insertBefore(nav,document.body.firstChild);
+  carregar();
+});
+</script>
+
+<div class="top">
+  <img src="/logo">
+  <div class="t">🔄 Movimentações de Produto</div>
+  <div class="sp"></div>
+</div>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab on" id="tab-retirados" onclick="mudarAba('retirados')">✂️ Itens retirados</div>
+    <div class="tab" id="tab-pendencias" onclick="mudarAba('pendencias')">⚠️ Faltou na separação (pendências)</div>
+  </div>
+  <div class="card">
+    <div id="conteudo"><div class="muted">Carregando…</div></div>
+  </div>
+</div>
+
+<script>
+const B="";
+let ABA="retirados";
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function dataHora(ts){ if(!ts) return ""; const d=new Date(ts); return d.toLocaleDateString("pt-BR")+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
+
+function mudarAba(a){
+  ABA=a;
+  document.getElementById("tab-retirados").classList.toggle("on",a==="retirados");
+  document.getElementById("tab-pendencias").classList.toggle("on",a==="pendencias");
+  carregar();
+}
+
+async function carregar(){
+  document.getElementById("conteudo").innerHTML=`<div class="muted">Carregando…</div>`;
+  try{
+    if(ABA==="retirados"){
+      const j=await fetch(B+"/api/movimentacoes/retirados").then(r=>r.json());
+      renderRetirados(j.data||[]);
+    }else{
+      const j=await fetch(B+"/api/pendencias").then(r=>r.json());
+      renderPendencias(j.data||[]);
+    }
+  }catch(e){ document.getElementById("conteudo").innerHTML=`<div class="err">Erro ao carregar.</div>`; }
+}
+
+function renderRetirados(lista){
+  if(!lista.length){ document.getElementById("conteudo").innerHTML=`<div class="muted">Nenhum item foi retirado de pedidos ainda.</div>`; return; }
+  document.getElementById("conteudo").innerHTML=`
+    <div class="muted" style="margin-bottom:10px">Produtos retirados de pedidos (na edição do caixa ou na expedição). Últimos ${lista.length}.</div>
+    ${lista.map(r=>`
+      <div class="row">
+        <div class="nm">
+          <div style="font-weight:700">${esc(r.descricao||"—")}</div>
+          <div class="sub">Pedido #${esc(r.numero||r.pedidoId)} · ${esc(r.cliente||"—")}${r.por?` · por ${esc(r.por)}`:''} · ${dataHora(r.em)}</div>
+        </div>
+        ${r.quantidade!=null?`<div class="qtd">${r.quantidade}x</div>`:''}
+        <div class="tagOrigem ${r.origem&&r.origem.includes('expedi')?'exp':''}">${esc(r.origem||"")}</div>
+      </div>`).join("")}`;
+}
+
+function renderPendencias(lista){
+  if(!lista.length){ document.getElementById("conteudo").innerHTML=`<div class="muted">Nenhuma pendência aberta. 🎉</div>`; return; }
+  document.getElementById("conteudo").innerHTML=`
+    <div class="muted" style="margin-bottom:10px">Pedidos que faltaram itens na separação e foram pra pendência.</div>
+    ${lista.map(p=>`
+      <div class="row" style="align-items:flex-start;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;width:100%;align-items:center;gap:8px">
+          <div class="nm">
+            <div style="font-weight:700">Pedido #${esc(p.numero||p.pedidoId)} · ${esc(p.cliente||"—")}</div>
+            <div class="sub">${dataHora(p.em)}${p.telefone?` · ${esc(p.telefone)}`:''}</div>
+          </div>
+          <div class="tagOrigem exp">${(p.faltas||[]).length} item(ns) em falta</div>
+        </div>
+        ${(p.faltas||[]).length?`<div style="width:100%;padding-left:4px">${(p.faltas||[]).map(f=>`
+          <div style="font-size:13px;color:#ffb0b0">• ${esc(f.descricao||f.nome||f.produto||"item")}${f.quantidade||f.qtd?` — ${esc(String(f.quantidade||f.qtd))}x`:''}</div>`).join("")}</div>`:''}
+      </div>`).join("")}`;
+}
+</script>
+</body>
+</html>

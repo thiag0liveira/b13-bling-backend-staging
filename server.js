@@ -368,6 +368,7 @@ window.B13_NAV_LINKS=[
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
   {href:"/estoque",label:"📦 Ajuste de Estoque",acoes:["editar_pedido","admin"]},
+  {href:"/movimentacoes",label:"🔄 Movimentações",acoes:["editar_pedido","admin"]},
   {href:"/tabela",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
   {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
@@ -3058,6 +3059,34 @@ app.patch("/api/pendencias/:id", (req, res) => {
   if (req.body?.status) p.status = req.body.status;
   salvarPend(o); res.json({ ok: true, pendencia: p });
 });
+
+// ==================== MOVIMENTAÇÕES DE PRODUTO (itens retirados) ====================
+// Consolida os produtos que SAÍRAM de pedidos: retirados na edição do caixa
+// (movimentacoes_pedido.json) e retirados na expedição (acrescimos.json).
+app.get("/api/movimentacoes/retirados",(req,res)=>{
+  try{
+    const lista=[];
+    const movs=lerJSON(`${DATA_DIR}/movimentacoes_pedido.json`,{});
+    Object.values(movs).forEach(m=>{
+      (m.removidos||[]).forEach(r=>{
+        lista.push({pedidoId:m.pedidoId,numero:m.numero,cliente:m.cliente,
+          produtoId:r.produtoId,descricao:r.descricao,quantidade:r.quantidade,
+          em:m.em,por:m.por||"",origem:"Edição no caixa"});
+      });
+    });
+    const acrs=lerJSON(ACRS_FILE,{});
+    Object.values(acrs).forEach(a=>{
+      (a.itensRetirados||[]).forEach(r=>{
+        lista.push({pedidoId:a.pedidoId,numero:a.numero,cliente:a.cliente,
+          produtoId:r.produtoId||r.id||null,descricao:r.descricao||r.nome||"",quantidade:r.quantidade||r.qtd||null,
+          em:a.em,por:a.por||"",origem:"Retirada na expedição"});
+      });
+    });
+    lista.sort((a,b)=>(b.em||0)-(a.em||0));
+    res.json({data:lista.slice(0,200)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.patch("/api/pedidos/:id/situacao", async (req, res) => {
   try {
     const idSituacao = Number(req.body?.idSituacao);
@@ -4003,6 +4032,7 @@ app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
 app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
 app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque.html")); });
+app.get("/movimentacoes", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "movimentacoes.html")); });
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
 app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });
 app.get("/operacional", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "operacional.html")); });
