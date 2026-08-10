@@ -1020,32 +1020,15 @@ async function editarPedidoAguardando(id){
 
 function renderEditarAguardando(id){
   const items=window.itensEdit;
-  const freteOrig=+(window.pedidoEditOrig?.transporte?.frete||0);
-  const total=+(items.filter(i=>!i._removido&&i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)+freteOrig).toFixed(2);
-  const rows=items.map((item,ix)=>{
-    if(item._removido) return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);opacity:.5;font-size:12px">
-      <span style="text-decoration:line-through;flex:1;color:#9a95c9">${esc(item.descricao)}</span>
-      <span style="color:#ff8090;font-size:11px">removido</span>
-      <button onclick="window.itensEdit[${ix}]._removido=false;window.itensEdit[${ix}].quantidade=window.itensEdit[${ix}].quantidadeOriginal||1;renderEditarAguardando(${id})" style="background:none;border:1px solid #514c96;border-radius:4px;color:#9a95c9;cursor:pointer;font-size:10px;padding:2px 6px">↩ Restaurar</button>
-    </div>`;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="flex:1;min-width:0">${esc(item.descricao)}${item._novo?' <span style="color:#2f9e6b;font-size:10px">novo</span>':''}<br><span class="muted" style="font-size:11px">${brl(item.valor||0)} un</span></span>
-      <button onclick="if(window.itensEdit[${ix}].quantidade>1)window.itensEdit[${ix}].quantidade--;renderEditarAguardando(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">−</button>
-      <input type="number" min="1" value="${item.quantidade}" style="width:56px;padding:5px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;text-align:center;font-size:14px;font-weight:700"
-        onchange="window.itensEdit[${ix}].quantidade=Math.max(1,+this.value||1);renderEditarAguardando(${id})">
-      <button onclick="window.itensEdit[${ix}].quantidade++;renderEditarAguardando(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">+</button>
-      <span style="width:80px;text-align:right;font-weight:700">${brl((item.valor||0)*item.quantidade)}</span>
-      <button onclick="window.itensEdit[${ix}]._removido=true;renderEditarAguardando(${id})" style="background:#3a0010;border:1px solid #ff4466;border-radius:5px;color:#ff8090;cursor:pointer;padding:4px 8px;font-size:11px">🗑</button>
-    </div>`;
-  }).join("");
+  const rows=items.map((item,ix)=>linhaItemEdit(item,ix,id)).join("");
   document.getElementById("mbox").innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h3>✏️ Editar Pedido ${esc(window.pedidoEditOrig?.numero||id)}</h3>
       <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
     <div class="muted" style="margin-bottom:8px;font-size:12px">Ajuste o que identificou ao pedido chegar. Ao salvar, altera também no Bling.</div>
-    <div style="max-height:42vh;overflow:auto;padding-right:2px">${rows}</div>
+    <div id="edLista" style="max-height:42vh;overflow:auto;padding-right:2px">${rows}</div>
     <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border);margin-top:6px">
-      <span class="muted">Total ajustado:</span><b style="color:#ffd23f">${brl(total)}</b>
+      <span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">${brl(totalEdit())}</b>
     </div>
     <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">➕ Adicionar produto:</div>
@@ -1059,6 +1042,61 @@ function renderEditarAguardando(id){
     </div>`;
 }
 
+// total dos itens (usado pra atualizar só o número, sem re-render)
+function totalEdit(){
+  const items=window.itensEdit||[];
+  const freteOrig=+(window.pedidoEditOrig?.transporte?.frete||0);
+  return +(items.filter(i=>!i._removido&&i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)+freteOrig).toFixed(2);
+}
+
+// HTML de UMA linha de item (pra poder atualizar só ela)
+function linhaItemEdit(item,ix,id){
+  if(item._removido) return `<div id="edrow-${ix}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);opacity:.5;font-size:12px">
+    <span style="text-decoration:line-through;flex:1;color:#9a95c9">${esc(item.descricao)}</span>
+    <span style="color:#ff8090;font-size:11px">removido</span>
+    <button onclick="restaurarItemEdit(${ix},${id})" style="background:none;border:1px solid #514c96;border-radius:4px;color:#9a95c9;cursor:pointer;font-size:10px;padding:2px 6px">↩ Restaurar</button>
+  </div>`;
+  return `<div id="edrow-${ix}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+    <span style="flex:1;min-width:0">${esc(item.descricao)}${item._novo?' <span style="color:#2f9e6b;font-size:10px">novo</span>':''}<br><span class="muted" style="font-size:11px">${brl(item.valor||0)} un</span></span>
+    <button onclick="qtdItemEdit(${ix},-1,${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">−</button>
+    <input type="number" min="1" value="${item.quantidade}" style="width:56px;padding:5px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;text-align:center;font-size:14px;font-weight:700"
+      onchange="setQtdItemEdit(${ix},this.value,${id})">
+    <button onclick="qtdItemEdit(${ix},1,${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">+</button>
+    <span style="width:80px;text-align:right;font-weight:700" id="edsub-${ix}">${brl((item.valor||0)*item.quantidade)}</span>
+    <button onclick="removerItemEdit(${ix},${id})" style="background:#3a0010;border:1px solid #ff4466;border-radius:5px;color:#ff8090;cursor:pointer;padding:4px 8px;font-size:11px">🗑</button>
+  </div>`;
+}
+
+// atualiza SÓ a linha do item + o total (sem reconstruir o modal → não volta pro topo)
+function atualizarLinhaEdit(ix,id){
+  const item=window.itensEdit[ix];
+  const row=document.getElementById("edrow-"+ix);
+  if(row){
+    const novo=document.createElement("div");
+    novo.innerHTML=linhaItemEdit(item,ix,id);
+    row.replaceWith(novo.firstElementChild);
+  }
+  const t=document.getElementById("edTotal"); if(t) t.textContent=brl(totalEdit());
+}
+function qtdItemEdit(ix,delta,id){
+  const it=window.itensEdit[ix];
+  it.quantidade=Math.max(1,(it.quantidade||1)+delta);
+  atualizarLinhaEdit(ix,id);
+}
+function setQtdItemEdit(ix,val,id){
+  window.itensEdit[ix].quantidade=Math.max(1,+val||1);
+  atualizarLinhaEdit(ix,id);
+}
+function removerItemEdit(ix,id){
+  window.itensEdit[ix]._removido=true;
+  atualizarLinhaEdit(ix,id);
+}
+function restaurarItemEdit(ix,id){
+  window.itensEdit[ix]._removido=false;
+  window.itensEdit[ix].quantidade=window.itensEdit[ix].quantidadeOriginal||1;
+  atualizarLinhaEdit(ix,id);
+}
+
 let _buscaEdTimer=null;
 function buscarNovoItemEdit(q,id){
   clearTimeout(_buscaEdTimer);
@@ -1068,25 +1106,61 @@ function buscarNovoItemEdit(q,id){
   _buscaEdTimer=setTimeout(async()=>{
     try{
       const j=await fetch(B+"/api/estoque/buscar-produto?q="+encodeURIComponent(q)).then(r=>r.json());
-      const res=j.data||[];
-      if(box) box.innerHTML=res.length?res.map(r=>`
-        <div style="display:flex;align-items:center;gap:8px;background:#141130;border-radius:7px;padding:7px 9px;margin-bottom:4px">
-          <div style="flex:1;min-width:0;font-size:12px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome)}</div><div class="muted" style="font-size:10px">${brl(r.preco)} · estoque: ${r.estoque!=null?r.estoque:'?'}</div></div>
-          <button class="btn btn-grn" style="padding:5px 10px;font-size:11px" onclick='addItemEdit(${JSON.stringify(r).replace(/'/g,"&#39;")},${id})'>+ Add</button>
-        </div>`).join(""):`<div class="muted" style="font-size:11px">Nada encontrado.</div>`;
+      window._resBuscaEd=j.data||[];
+      renderResultadosBuscaEd(id);
     }catch(e){ if(box) box.innerHTML=`<div class="err" style="font-size:11px">Erro na busca.</div>`; }
   },350);
 }
+// mostra os resultados. Se o produto já está no pedido, mostra o controle de
+// quantidade (− qtd +) ali mesmo na busca, sem fechar a lista.
+function renderResultadosBuscaEd(id){
+  const box=document.getElementById("resultadosNovoItemEd");
+  if(!box) return;
+  const res=window._resBuscaEd||[];
+  if(!res.length){ box.innerHTML=`<div class="muted" style="font-size:11px">Nada encontrado.</div>`; return; }
+  box.innerHTML=res.map(r=>{
+    const ix=window.itensEdit.findIndex(i=>Number(i.produtoId)===Number(r.id)&&!i._removido);
+    const noPedido=ix>=0;
+    const controle=noPedido
+      ? `<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+          <button onclick="qtdBuscaEd(${r.id},-1,${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px;font-size:15px">−</button>
+          <span style="min-width:26px;text-align:center;font-weight:800;font-size:13px">${window.itensEdit[ix].quantidade}</span>
+          <button onclick="qtdBuscaEd(${r.id},1,${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:26px;height:26px;font-size:15px">+</button>
+        </div>`
+      : `<button class="btn btn-grn" style="padding:5px 10px;font-size:11px;flex-shrink:0" onclick='addItemEdit(${JSON.stringify(r).replace(/'/g,"&#39;")},${id})'>+ Add</button>`;
+    return `<div style="display:flex;align-items:center;gap:8px;background:#141130;border-radius:7px;padding:7px 9px;margin-bottom:4px">
+      <div style="flex:1;min-width:0;font-size:12px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome)}</div><div class="muted" style="font-size:10px">${brl(r.preco)} · estoque: ${r.estoque!=null?r.estoque:'?'}</div></div>
+      ${controle}
+    </div>`;
+  }).join("");
+}
 function addItemEdit(r,id){
-  if(window.itensEdit.some(i=>Number(i.produtoId)===Number(r.id)&&!i._removido)){
-    document.getElementById("edMsg").innerHTML=`<div class="pag-pend" style="font-size:11px">Esse produto já está no pedido — ajuste a quantidade.</div>`;
-    return;
-  }
   window.itensEdit.push({produtoId:r.id,descricao:r.nome,quantidade:1,quantidadeOriginal:0,valor:Number(r.preco)||0,_removido:false,_novo:true});
-  document.getElementById("edMsg").innerHTML="";
-  const inp=document.getElementById("buscaNovoItemEd"); if(inp) inp.value="";
-  const box=document.getElementById("resultadosNovoItemEd"); if(box) box.innerHTML="";
-  renderEditarAguardando(id);
+  const em=document.getElementById("edMsg"); if(em) em.innerHTML="";
+  // NÃO fecha a busca — só atualiza a lista de itens de cima e re-renderiza os
+  // resultados (o produto adicionado agora aparece com o controle − qtd + inline)
+  atualizarListaItensEdit(id);
+  renderResultadosBuscaEd(id);
+}
+// ajusta a quantidade de um item DIRETO da busca (sem fechar a lista)
+function qtdBuscaEd(produtoId,delta,id){
+  const ix=window.itensEdit.findIndex(i=>Number(i.produtoId)===Number(produtoId)&&!i._removido);
+  if(ix<0) return;
+  const it=window.itensEdit[ix];
+  const novo=(it.quantidade||1)+delta;
+  if(novo<1){ // chegou a 0 → remove do pedido
+    it._removido=true;
+  } else {
+    it.quantidade=novo;
+  }
+  atualizarListaItensEdit(id);
+  renderResultadosBuscaEd(id);
+}
+// re-renderiza a lista de itens de cima e o total (sem mexer na busca)
+function atualizarListaItensEdit(id){
+  const lista=document.getElementById("edLista");
+  if(lista) lista.innerHTML=window.itensEdit.map((item,ix)=>linhaItemEdit(item,ix,id)).join("");
+  const t=document.getElementById("edTotal"); if(t) t.textContent=brl(totalEdit());
 }
 async function salvarEditarAguardando(id){
   const setMsg=(h)=>{ const el=document.getElementById("edMsg"); if(el) el.innerHTML=h; };
