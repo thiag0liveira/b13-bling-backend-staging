@@ -5046,19 +5046,42 @@ app.delete("/api/atacado/propostas/:id",(req,res)=>{
   res.json({ok:true});
 });
 
-// cancela a proposta/pedido. REGRA: se tem pedido no Bling, o cancelamento só
-// vale se conseguir cancelar NOS DOIS (Bling + nosso sistema). Se o Bling
-// recusar/falhar, NÃO marca como cancelada aqui — devolve o erro pra tentar de
-// novo, pra nunca ficar "cancelado no sistema mas ativo no Bling".
+// verifica a situação ATUAL do pedido no Bling. Retorna {ok, situacaoId, situacaoNome}
+// ou {ok:false, erro} se não conseguir consultar (nesse caso é mais seguro NÃO
+// deixar cancelar, pra não agir sem saber o estado real).
+async function situacaoAtualBling(pedidoBlingId){
+  try{
+    const r=await bling(`/pedidos/vendas/${pedidoBlingId}`);
+    const sit=Number(r?.data?.situacao?.id||0);
+    return {ok:true, situacaoId:sit};
+  }catch(e){
+    return {ok:false, erro:e.message||"erro ao consultar o Bling"};
+  }
+}
+
+// cancela a proposta/pedido. REGRAS:
+// 1) Só dá pra cancelar enquanto o pedido ainda está no status inicial
+//    "AGUARDANDO SEPARAÇÃO (SISTEMA)". Se já entrou no fluxo (em separação,
+//    separado, em rota, entregue etc.), NÃO deixa mais cancelar por aqui.
+// 2) Ação atômica: se tem pedido no Bling, o cancelamento só vale se conseguir
+//    cancelar NOS DOIS. Se o Bling recusar/falhar, não muda nada aqui.
 app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
   try{
     const props=lerPropostas();
     const p=props[req.params.id];
     if(!p) return res.status(404).json({erro:"não encontrada"});
     if(p.status==="cancelada") return res.json({ok:true, jaEstava:true});
-    // se tem pedido gerado no Bling, cancela LÁ PRIMEIRO. Só marca no nosso
-    // sistema se o Bling confirmar — se falhar, aborta e não muda nada aqui.
+    // se tem pedido gerado no Bling, confere a situação atual ANTES de qualquer coisa
     if(p.pedidoBlingId){
+      const atual=await situacaoAtualBling(p.pedidoBlingId);
+      if(!atual.ok){
+        return res.status(502).json({erro:"Não foi possível consultar a situação do pedido no Bling ("+atual.erro+"). Por segurança, nada foi alterado — tente de novo."});
+      }
+      // só permite cancelar se ainda estiver no status inicial (aguardando separação)
+      if(atual.situacaoId!==SIT.AGUARDANDO){
+        return res.status(400).json({erro:"Este pedido já saiu de 'Aguardando separação' e entrou no fluxo (separação/rota/entrega). Não é mais possível cancelá-lo por aqui — ajuste direto no Bling se precisar."});
+      }
+      // está no status inicial: cancela no Bling PRIMEIRO. Só marca aqui se confirmar.
       const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
       try{
         await bling(`/pedidos/vendas/${p.pedidoBlingId}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"});
