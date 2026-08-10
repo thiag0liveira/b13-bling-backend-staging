@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>B13 Bebidas — Pedido Atacado</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:Arial,Helvetica,sans-serif}
@@ -55,6 +58,7 @@
     .side .scat.on{background:var(--mag);color:#fff}
   }
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
+  @media(max-width:520px){.grid{grid-template-columns:1fr}}
   @media(min-width:760px){.grid{grid-template-columns:1fr 1fr 1fr}}
   @media(min-width:1000px){.grid{grid-template-columns:1fr 1fr 1fr 1fr}}
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:10px;display:flex;flex-direction:column}
@@ -69,14 +73,22 @@
   .tag{display:inline-block;background:#3a2030;color:#ff9db0;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-top:4px}
   .addrow{display:flex;gap:8px;margin-top:10px;align-items:center;min-height:48px}
   .addrow .btn{flex:1;padding:11px 10px;font-size:14px;height:48px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
-  .flavs{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px}
-  .flav button{background:var(--mag);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}
+  .flavs{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%}
+  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px;width:100%;max-width:100%;box-sizing:border-box;overflow:hidden;flex-wrap:wrap}
+  .flav>div:first-child{min-width:0;flex:1 1 100px}
+  .flav .flavnm{min-width:0;overflow:hidden;word-break:normal;overflow-wrap:break-word}
+  .flav button{background:var(--mag);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap}
+  .flav .step{flex-shrink:0;width:auto;max-width:100%}
   .flav.esg{opacity:.5}
   .step{display:flex;align-items:center;gap:8px;width:100%;justify-content:space-between}
   .step button{flex:0 0 auto;width:48px;height:48px;border-radius:10px;border:none;background:var(--mag);color:#fff;font-size:22px;font-weight:900;cursor:pointer;touch-action:manipulation;box-sizing:border-box}
   @media(max-width:480px){.step button{width:48px;height:48px;font-size:22px}}
   .step .q{flex:1;font-weight:900;font-size:16px;min-width:0;text-align:center}
+  /* stepper compacto dentro dos sabores — botões pequenos, largura contida,
+     nunca faz o card crescer nem empurrar pro lado */
+  .flav .step.stepmini{width:auto;flex:0 0 auto;gap:6px;justify-content:flex-end;max-width:100%}
+  .flav .step.stepmini button{width:36px !important;height:36px !important;font-size:19px !important;flex:0 0 auto}
+  .flav .step.stepmini .q{flex:0 0 auto;min-width:42px;max-width:66px;font-size:12px !important;line-height:1.1}
   .line{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#151233;border:1px solid #2c2660;border-radius:12px;padding:12px;margin-bottom:8px}
   .line .info{flex:1}
   .line .rm{background:none;border:none;color:#ff8090;font-size:20px;cursor:pointer}
@@ -150,6 +162,7 @@
 </head>
 <body>
 <div id="app"></div>
+<div style="position:fixed;bottom:4px;right:6px;font-size:11px;color:#8f8ac0;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:6px;z-index:9999;pointer-events:none">v2026.08.11-c</div>
 <div id="recibo"></div>
 <script>
 const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app"; // hospedado: mesmo servidor; local: Railway
@@ -711,8 +724,8 @@ function cardProduto(p,busca){
       const fonte = busca ? ordenarSabores(p.sabores||[]) : disp;
       acao+=`<div class="flavs">`+fonte.map(s=>{
         const cap=maxUnid(s.estoque,p.un); const key=String(s.codigo); const noCart=S.carrinho[key];
-        if(cap<=0) return `<div class="flav esg"><div style="display:flex;align-items:center;gap:8px">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span>${esc(s.nome)}</span></div><span class="tag">sem estoque</span></div>`;
-        return `<div class="flav"><div style="display:flex;align-items:center;gap:8px;flex:1">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span>${esc(s.nome)} <small style="color:#8f8ac0">(est ${s.estoque})</small></span></div>`+
+        if(cap<=0) return `<div class="flav esg"><div style="display:flex;align-items:center;gap:8px;min-width:0">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)}</span></div><span class="tag" style="flex-shrink:0">sem estoque</span></div>`;
+        return `<div class="flav"><div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)} <small style="color:#8f8ac0">(est ${s.estoque})</small></span></div>`+
           (noCart? stepperMini(key) : `<button onclick='addFlav("${p.id}","${key}")'>+ ${p.un>1?"caixa":"add"}</button>`)+`</div>`;
       }).join("")+`</div>`;
     }
@@ -736,7 +749,7 @@ function stepperMini(key){
   const lbl = it.un===1
     ? `${it.qtd} un`
     : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd/it.un} cx</small>`;
-  return `<div class="step"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q" style="min-width:60px;text-align:center">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
+  return `<div class="step stepmini"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
 }
 
 function findProd(id){ for(const c of CAT){ const p=c.produtos.find(x=>String(x.id)===String(id)); if(p) return p; } return null; }
