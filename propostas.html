@@ -243,6 +243,7 @@ async function cancelar(id){
     const j=await fetch(B+"/api/atacado/propostas/"+id+"/cancelar",{method:"POST"}).then(r=>r.json());
     if(j.erro){ alert("❌ "+j.erro); return; }
     if(j.jaEstava){ alert("Este já estava cancelado."); }
+    else if(j.tiradoDaRota){ alert("✅ Cancelado. Esse pedido também foi tirado do Gerenciamento de Rota onde estava agendado."); }
     carregar();
   }catch(e){ alert("Erro de conexão ao cancelar. Nada foi alterado — tente de novo."); }
 }

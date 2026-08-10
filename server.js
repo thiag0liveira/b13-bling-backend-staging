@@ -5093,7 +5093,11 @@ app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
     // chegou aqui = ou não tinha pedido no Bling, ou o Bling confirmou o cancelamento
     p.status="cancelada"; p.atualizadoEm=Date.now();
     props[p.id]=p; salvarPropostas(props);
-    res.json({ok:true});
+    // tira o pedido de qualquer rota onde estava agendado (não deixa fantasma
+    // ocupando lugar/peso/capacidade no gerenciamento de rota)
+    let tiradoDaRota=null;
+    if(p.pedidoBlingId){ const r=removerPedidoDeTodasRotas(p.pedidoBlingId); if(r.removido) tiradoDaRota=r.ondeEstava; }
+    res.json({ok:true, tiradoDaRota});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -5622,6 +5626,38 @@ function lerRotasConfig(){
 function salvarRotasConfig(c){ salvarJSON(ROTAS_CONFIG_FILE,c); }
 function lerRotasDias(){ return lerJSON(ROTAS_DIAS_FILE,{}); }
 function salvarRotasDias(d){ salvarJSON(ROTAS_DIAS_FILE,d); }
+
+// Remove um pedido de QUALQUER rota/dia/carro/viagem onde ele esteja agendado.
+// Chamado quando um pedido é cancelado ou excluído — pra não deixar "pedido
+// fantasma" ocupando espaço no gerenciamento de rota (contando no peso, na
+// capacidade e no resumo do dia) depois de ter sumido do Bling.
+// Recebe o ID do pedido no Bling (número que fica salvo na rota).
+function removerPedidoDeTodasRotas(pedidoBlingId){
+  if(!pedidoBlingId) return {removido:false};
+  const pid=Number(pedidoBlingId);
+  const rotas=lerRotasDias();
+  let mexeu=false; const ondeEstava=[];
+  for(const [data,carros] of Object.entries(rotas)){
+    for(const [carroId,c] of Object.entries(carros||{})){
+      // formato com viagens
+      if(Array.isArray(c.viagens)){
+        c.viagens.forEach((v,vix)=>{
+          const antes=(v.pedidoIds||[]).length;
+          v.pedidoIds=(v.pedidoIds||[]).filter(x=>Number(x)!==pid);
+          if(v.pedidoIds.length!==antes){ mexeu=true; ondeEstava.push({data,carroId,viagem:vix}); }
+        });
+      }
+      // formato antigo (lista única)
+      if(Array.isArray(c.pedidoIds)){
+        const antes=c.pedidoIds.length;
+        c.pedidoIds=c.pedidoIds.filter(x=>Number(x)!==pid);
+        if(c.pedidoIds.length!==antes){ mexeu=true; ondeEstava.push({data,carroId}); }
+      }
+    }
+  }
+  if(mexeu) salvarRotasDias(rotas);
+  return {removido:mexeu, ondeEstava};
+}
 // acha em qual dia/carro um pedido foi planejado na rota (procura em todos os
 // dias salvos) — usado pra comparar planejado x entregue de verdade
 function acharAgendamentoPedido(pedidoId){
@@ -5719,8 +5755,36 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
 
     const rotasDias=lerRotasDias();
     const atribuidoNoDia=rotasDias[dataAlvo]||{};
+
+    // AUTO-LIMPEZA de pedidos "fantasma": IDs agendados nesse dia que não estão
+    // mais na lista ativa do Bling. Pode ser porque foram (a) cancelados/excluídos
+    // no Bling — nesse caso devem sair da rota; ou (b) já entregues (atendido) —
+    // nesse caso ficam (é histórico legítimo do planejado x realizado). Confere a
+    // situação real SÓ dos IDs suspeitos (barato — normalmente é zero).
+    const idsAtivos=new Set(unicos.map(p=>Number(p.id)));
+    const idsAgendados=new Set();
+    Object.values(atribuidoNoDia).forEach(c=>{
+      (c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[])).forEach(id=>idsAgendados.add(Number(id)));
+    });
+    const suspeitos=[...idsAgendados].filter(id=>!idsAtivos.has(id));
+    for(const id of suspeitos){
+      let situacao=null, existe=true;
+      try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); situacao=Number(d?.situacao?.id||0); }
+      catch(e){ if(e.status===404) existe=false; } // 404 = foi excluído no Bling
+      const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
+      // remove da rota só se foi cancelado ou excluído (não se foi entregue)
+      if(!existe || situacao===SIT_CANCELADO){
+        removerPedidoDeTodasRotas(id);
+      }
+    }
+    // relê depois da limpeza (pode ter mudado)
+    const atribuidoNoDiaLimpo=lerRotasDias()[dataAlvo]||{};
     const acharCarroDoPedido=(pid)=>{
-      for(const carroId in atribuidoNoDia){ if((atribuidoNoDia[carroId].pedidoIds||[]).includes(pid)) return carroId; }
+      for(const carroId in atribuidoNoDiaLimpo){
+        const c=atribuidoNoDiaLimpo[carroId];
+        const ids=(c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[]));
+        if(ids.map(Number).includes(Number(pid))) return carroId;
+      }
       return null;
     };
 
