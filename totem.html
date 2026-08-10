@@ -66,14 +66,21 @@
   .tag{display:inline-block;background:#3a2030;color:#ff9db0;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-top:4px}
   .addrow{display:flex;gap:8px;margin-top:10px;align-items:center;min-height:56px}
   .addrow .btn{flex:1;height:56px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
-  .flavs{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px}
-  .flav button{background:var(--mag);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}
+  .flavs{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%}
+  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;overflow:hidden}
+  .flav>div:first-child{min-width:0;flex:1}
+  .flav .flavnm{min-width:0;overflow:hidden;word-break:normal;overflow-wrap:break-word}
+  .flav button{background:var(--mag);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap}
+  .flav .step{flex-shrink:0;width:auto}
   .flav.esg{opacity:.5}
   .step{display:flex;align-items:center;gap:8px;width:100%;justify-content:space-between}
   .step button{flex:0 0 auto;width:56px;height:56px;border-radius:10px;border:none;background:var(--mag);color:#fff;font-size:22px;font-weight:900;cursor:pointer;touch-action:manipulation;box-sizing:border-box}
   @media(max-width:480px){.step button{width:56px;height:56px;font-size:24px}}
   .step .q{flex:1;font-weight:900;font-size:16px;min-width:0;text-align:center}
+  /* stepper compacto dentro dos sabores — não ocupa 100% nem estoura a largura do card */
+  .step.stepmini{width:auto;flex:0 0 auto;gap:4px;justify-content:flex-end}
+  .step.stepmini button{width:40px;height:40px;font-size:20px}
+  .step.stepmini .q{flex:0 0 auto;min-width:48px;font-size:14px}
   .line{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#151233;border:1px solid #2c2660;border-radius:12px;padding:12px;margin-bottom:8px}
   .line .info{flex:1}
   .line .rm{background:none;border:none;color:#ff8090;font-size:20px;cursor:pointer}
@@ -131,6 +138,9 @@
   html.totem .side{width:280px}
   html.totem .side .scat{font-size:18px;padding:16px 18px}
   html.totem .grid{grid-template-columns:1fr 1fr !important;gap:16px}
+  /* em tela estreita (celular), 1 coluna mesmo no modo totem — 2 colunas
+     espremiam os cards e estouravam a largura, jogando o conteudo pra fora */
+  @media(max-width:600px){ html.totem .grid{grid-template-columns:1fr !important;gap:12px} }
   html.totem .card{padding:18px;border-radius:18px}
   html.totem .pimg{height:150px}
   html.totem .card .nm{font-size:20px}
@@ -140,6 +150,8 @@
   html.totem .addrow .btn{font-size:18px;padding:16px;height:64px}
   html.totem .step button{width:64px;height:64px;font-size:28px}
   html.totem .step .q{font-size:20px;min-width:0}
+  html.totem .step.stepmini button{width:48px;height:48px;font-size:24px}
+  html.totem .step.stepmini .q{font-size:16px;min-width:52px}
   html.totem .flav{padding:14px 16px;font-size:17px}
   html.totem .flav button{padding:12px 18px;font-size:17px}
   html.totem .line{padding:18px;font-size:17px}
@@ -685,8 +697,8 @@ function cardProduto(p,busca){
       const fonte = busca ? ordenarSabores(p.sabores||[]) : disp;
       acao+=`<div class="flavs">`+fonte.map(s=>{
         const cap=maxUnid(s.estoque,p.un); const key=String(s.codigo); const noCart=S.carrinho[key];
-        if(cap<=0) return `<div class="flav esg"><div style="display:flex;align-items:center;gap:8px">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span>${esc(s.nome)}</span></div><span class="tag">sem estoque</span></div>`;
-        return `<div class="flav"><div style="display:flex;align-items:center;gap:8px;flex:1">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span>${esc(s.nome)} <small style="color:#8f8ac0">(est ${s.estoque})</small></span></div>`+
+        if(cap<=0) return `<div class="flav esg"><div style="display:flex;align-items:center;gap:8px;min-width:0">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)}</span></div><span class="tag" style="flex-shrink:0">sem estoque</span></div>`;
+        return `<div class="flav"><div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)} <small style="color:#8f8ac0">(est ${s.estoque})</small></span></div>`+
           (noCart? stepperMini(key) : `<button onclick='addFlav("${p.id}","${key}")'>+ ${p.un>1?"caixa":"add"}</button>`)+`</div>`;
       }).join("")+`</div>`;
     }
@@ -710,7 +722,7 @@ function stepperMini(key){
   const lbl = it.un===1
     ? `${it.qtd} un`
     : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd/it.un} cx</small>`;
-  return `<div class="step"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q" style="min-width:60px;text-align:center">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
+  return `<div class="step stepmini"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
 }
 
 function findProd(id){ for(const c of CAT){ const p=c.produtos.find(x=>String(x.id)===String(id)); if(p) return p; } return null; }
