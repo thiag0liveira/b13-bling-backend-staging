@@ -2093,6 +2093,152 @@ app.post("/api/estoque/ajustar",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
+// Busca produto pra EDIÇÃO de pedido no caixa: retorna nome, preço de ATACADO
+// (da tabela, quando houver) e o estoque atual — pra adicionar produto no pedido
+// já com o preço e sabendo se tem estoque.
+app.get("/api/estoque/buscar-produto",async(req,res)=>{
+  try{
+    const q=(req.query.q||"").toLowerCase().trim();
+    if(!q) return res.json({data:[]});
+    const est=await getEstoqueMap();
+    // índice de preço de atacado por código
+    const tab=lerTabela(); const precoAtacadoPorCodigo={};
+    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{
+      if(it.preco>0) precoAtacadoPorCodigo[String(b.codigo)]=it.preco;
+    })));
+    const achados=Object.values(est).filter(p=>p.nome&&p.nome.toLowerCase().includes(q)).slice(0,12);
+    const idsBloco=achados.map(p=>p.id).filter(Boolean);
+    const saldos={};
+    if(idsBloco.length){
+      for(let i=0;i<idsBloco.length;i+=40){
+        const qs=idsBloco.slice(i,i+40).map(id=>`idsProdutos[]=${id}`).join("&");
+        try{ const r=await bling(`/estoques/saldos?${qs}`); (r?.data||[]).forEach(s=>{ saldos[s.produto?.id]=s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0; }); }catch(e){}
+      }
+    }
+    const data=achados.map(p=>{
+      const precoAtac=precoAtacadoPorCodigo[String(p.codigo)];
+      return {
+        id:p.id, codigo:p.codigo, nome:p.nome,
+        preco: precoAtac!=null ? precoAtac : +(p.preco||0),
+        precoAtacado: precoAtac!=null,
+        estoque: saldos[p.id] ?? null,
+      };
+    });
+    res.json({data});
+  }catch(e){ res.status(500).json({erro:e.message,data:[]}); }
+});
+
+// ==================== EDITAR ITENS DE UM PEDIDO (atômico com o Bling) ====================
+// Ajusta os itens de um pedido que ainda está em AGUARDANDO SEPARAÇÃO — pra
+// corrigir algo identificado quando o pedido chega no caixa. A alteração é feita
+// NO BLING (PUT do pedido); só confirma se o Bling aceitar (nunca fica diferente
+// entre os dois). Recebe { itens: [...] } = a lista FINAL de itens do pedido.
+app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
+  try{
+    const id=String(req.params.id);
+    const {itens,funcionarioNome}=req.body||{};
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"O pedido precisa ter ao menos 1 item."});
+    for(const it of itens){
+      if(!it.produtoId) return res.status(400).json({erro:"Todos os itens precisam ter produto vinculado no Bling."});
+      if(!(Number(it.quantidade)>0)) return res.status(400).json({erro:"Quantidade inválida em algum item."});
+    }
+    let ped;
+    try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }
+    catch(e){ return res.status(502).json({erro:"Não foi possível ler o pedido no Bling: "+(e.message||"erro")+". Nada foi alterado."}); }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    if(Number(ped.situacao?.id)!==SIT.AGUARDANDO){
+      return res.status(400).json({erro:"Este pedido já saiu de 'Aguardando separação'. Não é mais possível editar os itens por aqui."});
+    }
+    const itensAntes=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade}));
+    const idsDepois=new Set(itens.map(i=>Number(i.produtoId)));
+    const removidos=itensAntes.filter(a=>!idsDepois.has(Number(a.produtoId)));
+
+    const payload={
+      data:ped.data,
+      contato:{id:ped.contato?.id},
+      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+    };
+    if(ped.observacoes) payload.observacoes=ped.observacoes;
+    if(ped.transporte) payload.transporte=ped.transporte;
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+
+    // aplica no Bling PRIMEIRO — se falhar, aborta sem mexer em nada aqui
+    try{
+      await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    }catch(e){
+      return res.status(502).json({erro:"O Bling recusou a alteração: "+(e.message||"erro")+". Nada foi alterado — verifique e tente de novo.",detalhe:e.body});
+    }
+
+    let pedNovo;
+    try{ pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    const novoTotal=+(pedNovo?.total||0);
+
+    // avisa se algum produto REMOVIDO está sem estoque no Bling
+    const avisosEstoque=[];
+    if(removidos.length){
+      const ids=removidos.map(r=>Number(r.produtoId)).filter(Boolean);
+      const saldos={};
+      if(ids.length){
+        const qs=ids.map(x=>`idsProdutos[]=${x}`).join("&");
+        try{ const r=await bling(`/estoques/saldos?${qs}`); (r?.data||[]).forEach(s=>{ saldos[s.produto?.id]=s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0; }); }catch(e){}
+      }
+      removidos.forEach(rm=>{
+        const saldo=saldos[Number(rm.produtoId)];
+        if(saldo!==undefined && saldo<=0) avisosEstoque.push(`${rm.descricao} está SEM estoque no Bling.`);
+      });
+    }
+
+    // registra na lista de movimentações (usada na Parte 3 - itens retirados)
+    try{
+      const movs=lerJSON(`${DATA_DIR}/movimentacoes_pedido.json`,{});
+      movs[`${id}_${Date.now()}`]={pedidoId:id,numero:ped.numero,cliente:ped.contato?.nome||"",em:Date.now(),
+        por:funcionarioNome||"",origem:"edicao_caixa",
+        removidos:removidos.map(r=>({produtoId:r.produtoId,descricao:r.descricao,quantidade:r.quantidade}))};
+      salvarJSON(`${DATA_DIR}/movimentacoes_pedido.json`,movs);
+    }catch(e){}
+
+    res.json({ok:true, novoTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// EDITA os itens de um pedido a partir do caixa (adicionar/remover/mudar qtd).
+// Ação atômica: aplica no Bling; só se o Bling confirmar considera OK. Só
+// permite enquanto o pedido está em AGUARDANDO SEPARAÇÃO (antes de seguir pro
+// fluxo). Ao final, avisa quais itens da lista final estão sem estoque.
+app.post("/api/caixa/pedido/:id/editar-itens",async(req,res)=>{
+  try{
+    const id=req.params.id;
+    const itens=req.body?.itens;
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"o pedido precisa ter ao menos 1 item"});
+    // confere a situação atual: só edita se ainda está em Aguardando separação
+    const atualJson=await bling(`/pedidos/vendas/${id}`).catch(()=>null);
+    if(!atualJson?.data) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const sit=Number(atualJson.data.situacao?.id||0);
+    if(sit!==SIT.AGUARDANDO){
+      return res.status(400).json({erro:"Este pedido já saiu de 'Aguardando separação' e entrou no fluxo — não pode mais ser editado por aqui."});
+    }
+    // aplica no Bling (função já existente, trata parcelas/unlock). Se falhar, sobe o erro e nada muda.
+    const r=await atualizarItensBling(id, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})));
+    if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações no Bling: "+(r?.erro||"erro desconhecido")+". Nada foi alterado."});
+    // confere estoque dos itens FINAIS (avisa os que ficaram sem saldo suficiente)
+    const idsFinais=itens.map(i=>Number(i.produtoId)).filter(Boolean);
+    const saldos={};
+    if(idsFinais.length){
+      for(let i=0;i<idsFinais.length;i+=40){
+        const qs=idsFinais.slice(i,i+40).map(x=>`idsProdutos[]=${x}`).join("&");
+        try{ const rr=await bling(`/estoques/saldos?${qs}`); (rr?.data||[]).forEach(s=>{ saldos[s.produto?.id]=s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0; }); }catch(e){}
+      }
+    }
+    const semEstoque=itens
+      .map(i=>({...i, saldo: saldos[Number(i.produtoId)] ?? null}))
+      .filter(i=>i.saldo!=null && i.saldo < Number(i.quantidade))
+      .map(i=>({nome:i.nome||("produto "+i.produtoId), pedido:Number(i.quantidade), emEstoque:i.saldo}));
+    res.json({ok:true, semEstoque});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
+
 
 app.post("/api/listas-extras/:listaId/importar",(req,res)=>{
   const {linhas}=req.body||{};

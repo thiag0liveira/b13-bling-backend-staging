@@ -185,7 +185,10 @@ function renderPedido(app){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:20px;font-weight:900">#${esc(ped.numero||ped.id)}</div>
-        <div class="muted">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${!pago?`<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="abrirEdicao()">✏️ Editar</button>`:''}
+          <div class="muted">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+        </div>
       </div>
       <div style="font-weight:700;margin-bottom:8px">${esc(ped.contato?.nome||"—")}</div>
       ${ehEntrega?`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:8px">🛵 Entrega${temFrete?` — frete ${brl(freteVal)}`:" — frete grátis"}</div>`:""}
@@ -206,7 +209,128 @@ function renderPedido(app){
   </div>`;
 }
 
-// --------- fluxo de recebimento (mesmo modelo do Operacional) ---------
+// --------- EDIÇÃO DO PEDIDO (adicionar/remover produtos antes de receber/separar) ---------
+let EDIT=null; // {itens:[{produtoId,nome,quantidade,valor}], busca:"", resultados:[], salvando:false, msg:""}
+
+function abrirEdicao(){
+  const ped=S.pedido;
+  EDIT={
+    itens:(ped.itens||[]).map(i=>({
+      produtoId:i.produto?.id||i.produtoId,
+      nome:i.descricao||i.produto?.nome||"",
+      quantidade:Number(i.quantidade)||1,
+      valor:Number(i.valor)||0,
+    })),
+    busca:"", resultados:[], buscando:false, salvando:false, msg:"",
+  };
+  renderEdicao();
+}
+function fecharEdicao(){ EDIT=null; render(); }
+
+function renderEdicao(){
+  const app=document.getElementById("app");
+  const totalItens=EDIT.itens.reduce((s,i)=>s+i.quantidade*i.valor,0);
+  app.innerHTML=header()+`<div class="wrap">
+    <button class="btn btn-ghost" style="margin-bottom:12px" onclick="fecharEdicao()">← Voltar sem salvar</button>
+    <div class="card">
+      <div style="font-weight:900;font-size:16px;margin-bottom:4px">✏️ Editar pedido #${esc(S.pedido.numero||S.pedido.id)}</div>
+      <div class="muted" style="margin-bottom:12px">Ajuste os itens que identificou ao pedido chegar. Ao salvar, a alteração é aplicada também no Bling. Só dá pra editar enquanto o pedido está em "Aguardando separação".</div>
+      ${EDIT.msg?`<div class="${EDIT.msg.startsWith('✅')?'ok':'err'}">${esc(EDIT.msg)}</div>`:""}
+
+      <div style="font-weight:800;margin:6px 0">Itens do pedido</div>
+      ${EDIT.itens.length?EDIT.itens.map((it,ix)=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1c1846;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">
+          <div style="flex:1;min-width:120px">
+            <div style="font-weight:700;font-size:13px">${esc(it.nome)}</div>
+            <div class="muted">${brl(it.valor)} un</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <button class="btn btn-ghost" style="padding:4px 10px" onclick="editQtd(${ix},-1)">−</button>
+            <span style="min-width:32px;text-align:center;font-weight:800">${it.quantidade}</span>
+            <button class="btn btn-ghost" style="padding:4px 10px" onclick="editQtd(${ix},1)">+</button>
+          </div>
+          <div style="font-weight:800;min-width:70px;text-align:right">${brl(it.valor*it.quantidade)}</div>
+          <button class="rm" style="background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:5px;padding:5px 9px;cursor:pointer" onclick="editRemover(${ix})">✕</button>
+        </div>`).join(""):'<div class="muted">Nenhum item — adicione ao menos um.</div>'}
+
+      <div style="display:flex;justify-content:space-between;font-weight:900;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">
+        <span>Total dos itens</span><span>${brl(totalItens)}</span>
+      </div>
+
+      <div style="font-weight:800;margin:14px 0 6px">Adicionar produto</div>
+      <div style="display:flex;gap:8px">
+        <input id="editBusca" type="text" placeholder="Buscar produto (nome)…" value="${esc(EDIT.busca)}"
+          style="flex:1;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px"
+          oninput="EDIT.busca=this.value" onkeydown="if(event.key==='Enter')buscarEdicao()">
+        <button class="btn" onclick="buscarEdicao()" ${EDIT.buscando?'disabled':''}>${EDIT.buscando?'Buscando…':'Buscar'}</button>
+      </div>
+      <div id="editResultados">${renderResultadosEdicao()}</div>
+
+      <button class="btn btn-grn" style="width:100%;padding:14px;margin-top:16px" onclick="salvarEdicao()" ${EDIT.salvando?'disabled':''}>
+        ${EDIT.salvando?'Salvando no Bling…':'💾 Salvar alterações'}
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderResultadosEdicao(){
+  if(!EDIT.resultados.length) return "";
+  return `<div style="margin-top:8px">`+EDIT.resultados.map(r=>{
+    const semEst=r.estoque!=null && r.estoque<=0;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#0f0d24;border:1px solid #2a2660;border-radius:8px;margin-bottom:5px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px">${esc(r.nome)}</div>
+        <div class="muted">${brl(r.preco)}${r.precoAtacado?' (atacado)':''} · estoque: ${r.estoque!=null?r.estoque:'—'}${semEst?' ⚠️':''}</div>
+      </div>
+      <button class="btn" style="padding:6px 12px" onclick='editAdicionar(${JSON.stringify(r).replace(/'/g,"&#39;")})'>+ Add</button>
+    </div>`;
+  }).join("")+`</div>`;
+}
+
+function editQtd(ix,delta){
+  EDIT.itens[ix].quantidade=Math.max(1,EDIT.itens[ix].quantidade+delta);
+  renderEdicao();
+}
+function editRemover(ix){
+  EDIT.itens.splice(ix,1);
+  renderEdicao();
+}
+function editAdicionar(prod){
+  const existe=EDIT.itens.find(i=>String(i.produtoId)===String(prod.id));
+  if(existe){ existe.quantidade++; }
+  else EDIT.itens.push({produtoId:prod.id,nome:prod.nome,quantidade:1,valor:Number(prod.preco)||0});
+  EDIT.msg="";
+  renderEdicao();
+}
+async function buscarEdicao(){
+  const q=(EDIT.busca||"").trim();
+  if(q.length<2){ EDIT.msg="Digite ao menos 2 letras pra buscar."; renderEdicao(); return; }
+  EDIT.buscando=true; EDIT.msg=""; renderEdicao();
+  try{
+    const j=await fetch(B+"/api/estoque/buscar-produto?q="+encodeURIComponent(q)).then(r=>r.json());
+    EDIT.resultados=j.data||[];
+    if(!EDIT.resultados.length) EDIT.msg="Nenhum produto encontrado.";
+  }catch(e){ EDIT.msg="Erro ao buscar produto."; }
+  EDIT.buscando=false; renderEdicao();
+}
+async function salvarEdicao(){
+  if(!EDIT.itens.length){ EDIT.msg="O pedido precisa ter ao menos 1 item."; renderEdicao(); return; }
+  if(!confirm("Salvar as alterações? Isso vai alterar os itens do pedido também no Bling.")) return;
+  EDIT.salvando=true; EDIT.msg=""; renderEdicao();
+  try{
+    const j=await fetch(B+"/api/pedidos/"+S.pedido.id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({itens:EDIT.itens, funcionarioNome:FUNC?.nome||""})}).then(r=>r.json());
+    if(j.erro){ EDIT.msg="❌ "+j.erro; EDIT.salvando=false; renderEdicao(); return; }
+    // avisa se algum item REMOVIDO está sem estoque
+    if(j.avisosEstoque && j.avisosEstoque.length){
+      alert("⚠️ Atenção:\n\n"+j.avisosEstoque.join("\n"));
+    }
+    // recarrega o pedido atualizado e volta pra tela normal
+    EDIT=null;
+    await buscarPedido(String(S.pedido.numero||S.pedido.id));
+  }catch(e){ EDIT.msg="Erro de conexão ao salvar. Nada foi alterado."; EDIT.salvando=false; renderEdicao(); }
+}
+
 async function iniciarRecebimentoCaixa(modo){
   const ped=S.pedido; const total=+(ped.total||ped.totalProdutos||0);
   const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
