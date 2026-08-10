@@ -67,20 +67,21 @@
   .addrow{display:flex;gap:8px;margin-top:10px;align-items:center;min-height:56px}
   .addrow .btn{flex:1;height:56px;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
   .flavs{display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%}
-  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;overflow:hidden}
-  .flav>div:first-child{min-width:0;flex:1}
+  .flav{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1c1846;border:1px solid #2c2660;border-radius:10px;padding:8px 10px;font-size:13px;width:100%;max-width:100%;box-sizing:border-box;overflow:hidden;flex-wrap:wrap}
+  .flav>div:first-child{min-width:0;flex:1 1 100px}
   .flav .flavnm{min-width:0;overflow:hidden;word-break:normal;overflow-wrap:break-word}
   .flav button{background:var(--mag);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap}
-  .flav .step{flex-shrink:0;width:auto}
+  .flav .step{flex-shrink:0;width:auto;max-width:100%}
   .flav.esg{opacity:.5}
   .step{display:flex;align-items:center;gap:8px;width:100%;justify-content:space-between}
   .step button{flex:0 0 auto;width:56px;height:56px;border-radius:10px;border:none;background:var(--mag);color:#fff;font-size:22px;font-weight:900;cursor:pointer;touch-action:manipulation;box-sizing:border-box}
   @media(max-width:480px){.step button{width:56px;height:56px;font-size:24px}}
   .step .q{flex:1;font-weight:900;font-size:16px;min-width:0;text-align:center}
-  /* stepper compacto dentro dos sabores — não ocupa 100% nem estoura a largura do card */
-  .step.stepmini{width:auto;flex:0 0 auto;gap:4px;justify-content:flex-end}
-  .step.stepmini button{width:40px;height:40px;font-size:20px}
-  .step.stepmini .q{flex:0 0 auto;min-width:48px;font-size:14px}
+  /* stepper compacto dentro dos sabores — botões pequenos, largura contida,
+     nunca faz o card crescer nem empurrar pro lado */
+  .flav .step.stepmini{width:auto;flex:0 0 auto;gap:6px;justify-content:flex-end;max-width:100%}
+  .flav .step.stepmini button{width:38px !important;height:38px !important;font-size:20px !important;flex:0 0 auto}
+  .flav .step.stepmini .q{flex:0 0 auto;min-width:44px;max-width:70px;font-size:13px !important;line-height:1.1}
   .line{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#151233;border:1px solid #2c2660;border-radius:12px;padding:12px;margin-bottom:8px}
   .line .info{flex:1}
   .line .rm{background:none;border:none;color:#ff8090;font-size:20px;cursor:pointer}
@@ -150,8 +151,8 @@
   html.totem .addrow .btn{font-size:18px;padding:16px;height:64px}
   html.totem .step button{width:64px;height:64px;font-size:28px}
   html.totem .step .q{font-size:20px;min-width:0}
-  html.totem .step.stepmini button{width:48px;height:48px;font-size:24px}
-  html.totem .step.stepmini .q{font-size:16px;min-width:52px}
+  html.totem .flav .step.stepmini button{width:42px !important;height:42px !important;font-size:22px !important}
+  html.totem .flav .step.stepmini .q{font-size:14px !important;min-width:48px;max-width:74px}
   html.totem .flav{padding:14px 16px;font-size:17px}
   html.totem .flav button{padding:12px 18px;font-size:17px}
   html.totem .line{padding:18px;font-size:17px}
