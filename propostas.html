@@ -73,17 +73,13 @@ function render(){
   carregar();
 }
 
-// troca o filtro E atualiza qual chip fica marcado (antes o 'on' só era
-// calculado no template inicial, então a marcação ficava presa no "Todas")
+// troca o filtro. Reconstrói a tela inteira (render) a partir do FILTRO atual,
+// então os botões de cima SEMPRE refletem o que está selecionado — sem depender
+// de mexer na classe na mão, que podia dessincronizar.
 function mudarFiltro(f){
+  if(FILTRO===f) return;
   FILTRO=f;
-  const wrap=document.getElementById("filtroChips");
-  if(wrap){
-    const chips=wrap.querySelectorAll(".chip");
-    const ordem=["todas","proposta","pedido"];
-    chips.forEach((c,ix)=>c.classList.toggle("on", ordem[ix]===f));
-  }
-  carregar();
+  render();
 }
 
 async function carregar(){
