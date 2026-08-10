@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B13 — Ajuste de Estoque</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  body{background:#0f0d24;color:#fff;min-height:100vh}
+  .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .top img{height:32px}
+  .top .t{font-weight:900;font-size:18px}
+  .top .sp{flex:1}
+  .btn{background:#FF0082;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:800;font-size:13px;cursor:pointer}
+  .btn-ghost{background:transparent;border:1px solid #514c96;color:#fff}
+  .btn-grn{background:#12a150}
+  .btn:disabled{opacity:.5;cursor:default}
+  .wrap{max-width:900px;margin:0 auto;padding:18px}
+  .card{background:#181542;border-radius:14px;padding:18px;margin-bottom:16px}
+  .muted{color:#9a95c9;font-size:12px}
+  .ok{background:#0a3a20;border:1px solid #2f9e6b;color:#8fffc0;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .warn{background:#3a2a00;border:1px solid #d4a017;color:#ffd23f;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  .err{background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:8px;padding:10px;margin:10px 0;font-size:13px}
+  input[type=number]{background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:8px;width:90px;text-align:right;font-size:15px}
+  .prod{display:flex;align-items:center;gap:10px;background:#1c1846;border-radius:10px;padding:12px;margin-bottom:8px;flex-wrap:wrap}
+  .prod .nm{flex:1;min-width:150px}
+  .prod .nm .cat{font-size:11px;color:#9a95c9}
+  .prod .est{text-align:right}
+  .prod .est .lbl{font-size:11px;color:#9a95c9}
+  .prod .est .val{font-size:20px;font-weight:900;color:#ffd23f}
+  .pag{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
+  .pag button{background:#1c1846;border:1px solid #514c96;color:#fff;border-radius:8px;padding:8px 14px;font-weight:800;cursor:pointer}
+  .pag button:disabled{opacity:.4;cursor:default}
+</style>
+</head>
+<body>
+<script src="/nav.js"></script>
+<script>
+if(!b13RequireLogin())document.write=function(){};
+if(!b13BloquearSeSemAcesso("/estoque"))document.write=function(){};
+document.addEventListener("DOMContentLoaded",function(){
+  const nav=document.createElement("div");
+  nav.innerHTML=b13RenderNav("/estoque");
+  document.body.insertBefore(nav,document.body.firstChild);
+  carregar(1);
+});
+</script>
+
+<div class="top">
+  <img src="/logo">
+  <div class="t">📦 Ajuste de Estoque</div>
+  <div class="sp"></div>
+</div>
+
+<div class="wrap">
+  <div id="msg"></div>
+  <div class="card">
+    <div style="font-weight:900;margin-bottom:4px">Estoque atual por produto</div>
+    <div class="muted" style="margin-bottom:12px">Na ordem da tabela de atacado, 20 por página. O saldo é lido do Bling. Pra corrigir, digite o novo total e toque em "Salvar".</div>
+    <div id="lista"><div class="muted">Carregando…</div></div>
+    <div class="pag" id="paginacao"></div>
+  </div>
+</div>
+
+<script>
+const B="";
+let PAGINA=1, TOTAL_PAGINAS=1, CARREGANDO=false;
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function sessNome(){ try{ return (JSON.parse(localStorage.getItem("b13sess")||"{}").nome)||""; }catch(e){ return ""; } }
+function msg(txt,tipo){ document.getElementById("msg").innerHTML = txt?`<div class="${tipo||'ok'}">${esc(txt)}</div>`:""; if(txt) setTimeout(()=>{ const m=document.getElementById("msg"); if(m) m.innerHTML=""; },4000); }
+
+async function carregar(pg){
+  if(CARREGANDO) return;
+  CARREGANDO=true;
+  PAGINA=pg;
+  document.getElementById("lista").innerHTML=`<div class="muted">Carregando estoque da página ${pg}… (lendo do Bling)</div>`;
+  document.getElementById("paginacao").innerHTML="";
+  try{
+    const j=await fetch(B+"/api/estoque/lista?pagina="+pg).then(r=>r.json());
+    if(j.erro){ document.getElementById("lista").innerHTML=`<div class="err">${esc(j.erro)}</div>`; CARREGANDO=false; return; }
+    TOTAL_PAGINAS=j.totalPaginas||1;
+    render(j);
+  }catch(e){
+    document.getElementById("lista").innerHTML=`<div class="err">Erro ao carregar. Tente de novo.</div>`;
+  }
+  CARREGANDO=false;
+}
+
+function render(j){
+  const itens=j.itens||[];
+  if(!itens.length){ document.getElementById("lista").innerHTML=`<div class="muted">Nenhum produto nessa página.</div>`; return; }
+  document.getElementById("lista").innerHTML=itens.map(p=>`
+    <div class="prod" id="prod-${p.produtoId}">
+      <div class="nm">
+        <div style="font-weight:700">${esc(p.nome)}</div>
+        <div class="cat">${esc(p.categoria)}${p.codigo?` · cód ${esc(p.codigo)}`:''}</div>
+      </div>
+      <div class="est">
+        <div class="lbl">estoque atual</div>
+        <div class="val" id="atual-${p.produtoId}">${p.estoqueAtual!==null?p.estoqueAtual:'—'}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="number" id="novo-${p.produtoId}" placeholder="novo total" min="0" step="1">
+        <button class="btn btn-grn" style="padding:8px 12px" onclick="salvar(${p.produtoId})">Salvar</button>
+      </div>
+    </div>`).join("");
+  const ini=(j.pagina-1)*j.porPagina+1;
+  const fim=Math.min(j.pagina*j.porPagina, j.totalProdutos);
+  document.getElementById("paginacao").innerHTML=`
+    <button onclick="carregar(${j.pagina-1})" ${j.pagina<=1?'disabled':''}>← Anterior</button>
+    <span class="muted">${ini}–${fim} de ${j.totalProdutos} · página ${j.pagina}/${j.totalPaginas}</span>
+    <button onclick="carregar(${j.pagina+1})" ${j.pagina>=j.totalPaginas?'disabled':''}>Próxima →</button>`;
+}
+
+async function salvar(produtoId){
+  const inp=document.getElementById("novo-"+produtoId);
+  const val=inp.value.trim();
+  if(val===""){ msg("Digite o novo total antes de salvar.","warn"); return; }
+  const novo=Number(val);
+  if(isNaN(novo)||novo<0){ msg("Total inválido.","err"); return; }
+  const atualEl=document.getElementById("atual-"+produtoId);
+  const btn=inp.nextElementSibling;
+  btn.disabled=true; btn.textContent="Salvando…";
+  try{
+    const j=await fetch(B+"/api/estoque/ajustar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({produtoId,novoTotal:novo,funcionarioNome:sessNome()})}).then(r=>r.json());
+    if(j.erro){ msg("Erro ao ajustar: "+j.erro,"err"); btn.disabled=false; btn.textContent="Salvar"; return; }
+    atualEl.textContent=novo;
+    inp.value="";
+    msg("✅ Estoque atualizado.","ok");
+  }catch(e){ msg("Erro de conexão ao salvar.","err"); }
+  btn.disabled=false; btn.textContent="Salvar";
+}
+</script>
+</body>
+</html>

@@ -367,6 +367,7 @@ window.B13_NAV_LINKS=[
   {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["acesso_perdas","ver_dashboard"]},
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+  {href:"/estoque",label:"📦 Ajuste de Estoque",acoes:["editar_pedido","admin"]},
   {href:"/tabela",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
   {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
@@ -2024,6 +2025,74 @@ app.get("/api/listas-extras/:listaId",(req,res)=>{
   res.json({lista:{id:lista.id,nome:lista.nome,tipo:lista.tipo,dataFinal:lista.dataFinal},
     data:Object.values(porItem).filter(i=>i.precoLista!=null).sort((a,b)=>a.itemNome.localeCompare(b.itemNome))});
 });
+
+// ==================== ÁREA DE AJUSTE DE ESTOQUE ====================
+// Monta a lista "achatada" de produtos na ORDEM da tabela de atacado (categoria
+// por categoria, item por item, um por vínculo Bling) — usada pra listar/ajustar estoque.
+function listaProdutosOrdemTabela(){
+  const tab=lerTabela();
+  const linhas=[];
+  const vistos=new Set();
+  (tab?.model||[]).forEach(cat=>{
+    (cat.itens||[]).forEach(it=>{
+      (it.bling||[]).forEach(b=>{
+        if(!b.id||vistos.has(String(b.id))) return;
+        vistos.add(String(b.id));
+        linhas.push({
+          produtoId:Number(b.id),
+          codigo:b.codigo||"",
+          nome:b.nome||it.nome||"",
+          itemNome:it.nome||"",
+          categoria:cat.t||"",
+          precoAtacado:it.preco??null,
+        });
+      });
+    });
+  });
+  return linhas;
+}
+
+// Lista os produtos na ordem da tabela, paginado de 20 em 20, com o saldo atual do Bling.
+app.get("/api/estoque/lista",async(req,res)=>{
+  try{
+    const pagina=Math.max(1,Number(req.query.pagina||1));
+    const porPagina=20;
+    const todas=listaProdutosOrdemTabela();
+    const totalProdutos=todas.length;
+    const totalPaginas=Math.max(1,Math.ceil(totalProdutos/porPagina));
+    const ini=(pagina-1)*porPagina;
+    const bloco=todas.slice(ini,ini+porPagina);
+    const estoques={};
+    if(bloco.length){
+      const qs=bloco.map(p=>`idsProdutos[]=${p.produtoId}`).join("&");
+      try{
+        const r=await bling(`/estoques/saldos?${qs}`);
+        (r?.data||[]).forEach(s=>{ estoques[s.produto?.id]=s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0; });
+      }catch(e){}
+    }
+    const itens=bloco.map(p=>({...p, estoqueAtual: estoques[p.produtoId] ?? null}));
+    res.json({itens, pagina, porPagina, totalProdutos, totalPaginas});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// Ajusta (define o saldo absoluto) o estoque de um produto no Bling.
+app.post("/api/estoque/ajustar",async(req,res)=>{
+  try{
+    const {produtoId,novoTotal,funcionarioNome}=req.body||{};
+    if(!produtoId || novoTotal===undefined || novoTotal===null || isNaN(Number(novoTotal))){
+      return res.status(400).json({erro:"informe produtoId e o novo total"});
+    }
+    if(Number(novoTotal)<0) return res.status(400).json({erro:"o estoque não pode ser negativo"});
+    await bling(`/estoques`,{method:"POST",body:JSON.stringify({
+      produto:{id:Number(produtoId)},
+      operacao:"B",
+      quantidade:Number(novoTotal),
+      observacoes:`Ajuste de estoque via sistema${funcionarioNome?` — ${funcionarioNome}`:""}`,
+    })});
+    res.json({ok:true, produtoId:Number(produtoId), novoTotal:Number(novoTotal)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
 
 app.post("/api/listas-extras/:listaId/importar",(req,res)=>{
   const {linhas}=req.body||{};
@@ -3743,6 +3812,7 @@ app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas-extras.html")); });
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
 app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
+app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque.html")); });
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
 app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });
 app.get("/operacional", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "operacional.html")); });
