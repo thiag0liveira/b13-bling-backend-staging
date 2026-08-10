@@ -62,14 +62,27 @@ function render(){
     </div>
     <div class="wrap">
       <div class="card">
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <span class="chip ${FILTRO==='todas'?'on':''}" onclick="FILTRO='todas';carregar()">Todas</span>
-          <span class="chip ${FILTRO==='proposta'?'on':''}" onclick="FILTRO='proposta';carregar()">📄 Propostas</span>
-          <span class="chip ${FILTRO==='pedido'?'on':''}" onclick="FILTRO='pedido';carregar()">🛒 Pedidos</span>
+        <div id="filtroChips" style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip ${FILTRO==='todas'?'on':''}" onclick="mudarFiltro('todas')">Todas</span>
+          <span class="chip ${FILTRO==='proposta'?'on':''}" onclick="mudarFiltro('proposta')">📄 Propostas</span>
+          <span class="chip ${FILTRO==='pedido'?'on':''}" onclick="mudarFiltro('pedido')">🛒 Pedidos</span>
         </div>
       </div>
       <div id="lista"><div class="muted">Carregando…</div></div>
     </div>`;
+  carregar();
+}
+
+// troca o filtro E atualiza qual chip fica marcado (antes o 'on' só era
+// calculado no template inicial, então a marcação ficava presa no "Todas")
+function mudarFiltro(f){
+  FILTRO=f;
+  const wrap=document.getElementById("filtroChips");
+  if(wrap){
+    const chips=wrap.querySelectorAll(".chip");
+    const ordem=["todas","proposta","pedido"];
+    chips.forEach((c,ix)=>c.classList.toggle("on", ordem[ix]===f));
+  }
   carregar();
 }
 
