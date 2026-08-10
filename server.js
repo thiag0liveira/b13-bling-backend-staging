@@ -5046,17 +5046,28 @@ app.delete("/api/atacado/propostas/:id",(req,res)=>{
   res.json({ok:true});
 });
 
-// cancela a proposta/pedido (muda o status pra cancelada; se tem pedido no Bling, cancela lá também)
+// cancela a proposta/pedido. REGRA: se tem pedido no Bling, o cancelamento só
+// vale se conseguir cancelar NOS DOIS (Bling + nosso sistema). Se o Bling
+// recusar/falhar, NÃO marca como cancelada aqui — devolve o erro pra tentar de
+// novo, pra nunca ficar "cancelado no sistema mas ativo no Bling".
 app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
   try{
     const props=lerPropostas();
     const p=props[req.params.id];
     if(!p) return res.status(404).json({erro:"não encontrada"});
-    // se tem pedido gerado no Bling, move pra situação Cancelado lá também
+    if(p.status==="cancelada") return res.json({ok:true, jaEstava:true});
+    // se tem pedido gerado no Bling, cancela LÁ PRIMEIRO. Só marca no nosso
+    // sistema se o Bling confirmar — se falhar, aborta e não muda nada aqui.
     if(p.pedidoBlingId){
       const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
-      try{ await bling(`/pedidos/vendas/${p.pedidoBlingId}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"}); }catch(e){}
+      try{
+        await bling(`/pedidos/vendas/${p.pedidoBlingId}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"});
+      }catch(e){
+        console.error("[atacado] falha ao cancelar pedido no Bling:",p.pedidoBlingId,e.message);
+        return res.status(502).json({erro:"Não foi possível cancelar o pedido no Bling: "+(e.message||"erro de conexão")+". Nada foi alterado — tente de novo. (O pedido continua ativo nos dois lados.)"});
+      }
     }
+    // chegou aqui = ou não tinha pedido no Bling, ou o Bling confirmou o cancelamento
     p.status="cancelada"; p.atualizadoEm=Date.now();
     props[p.id]=p; salvarPropostas(props);
     res.json({ok:true});

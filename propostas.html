@@ -238,12 +238,13 @@ async function compartilharImg(){
 }
 
 async function cancelar(id){
-  if(!confirm("Cancelar? O pedido/proposta vai pro status cancelado (se já tiver pedido no Bling, ele também será cancelado lá). Não pode ser desfeito.")) return;
+  if(!confirm("Cancelar? O pedido/proposta vai pro status cancelado (se já tiver pedido no Bling, ele também será cancelado lá — se não conseguir cancelar no Bling, nada será alterado). Não pode ser desfeito.")) return;
   try{
     const j=await fetch(B+"/api/atacado/propostas/"+id+"/cancelar",{method:"POST"}).then(r=>r.json());
-    if(j.erro){ alert(j.erro); return; }
+    if(j.erro){ alert("❌ "+j.erro); return; }
+    if(j.jaEstava){ alert("Este já estava cancelado."); }
     carregar();
-  }catch(e){ alert("Erro ao cancelar."); }
+  }catch(e){ alert("Erro de conexão ao cancelar. Nada foi alterado — tente de novo."); }
 }
 
 async function gerarPedido(id){
