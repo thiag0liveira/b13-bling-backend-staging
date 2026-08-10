@@ -2128,7 +2128,51 @@ app.get("/api/estoque/buscar-produto",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,data:[]}); }
 });
 
-// ==================== EDITAR ITENS DE UM PEDIDO (atômico com o Bling) ====================
+// ==================== MOVIMENTAÇÃO DE PRODUTOS (retirados / faltaram na separação) ====================
+// Consolida numa lista só os produtos que "saíram" de pedidos, de duas origens:
+// 1) RETIRADOS: itens tirados de um pedido em aguardando separação (via edição no caixa);
+// 2) FALTA NA SEPARAÇÃO: itens que faltaram na hora de separar e o pedido foi pra pendência.
+// Serve pra ter visão do que está saindo dos pedidos e por quê.
+app.get("/api/movimentacoes",(req,res)=>{
+  try{
+    const diasAtras=Number(req.query.dias||30);
+    const desde=Date.now()-diasAtras*24*60*60*1000;
+    const linhas=[];
+
+    // 1) retirados na edição do caixa
+    const movs=lerJSON(`${DATA_DIR}/movimentacoes_pedido.json`,{});
+    Object.values(movs).forEach(m=>{
+      if((m.em||0)<desde) return;
+      (m.removidos||[]).forEach(r=>{
+        linhas.push({
+          tipo:"retirado",
+          produtoId:r.produtoId, descricao:r.descricao, quantidade:r.quantidade,
+          pedidoNumero:m.numero, pedidoId:m.pedidoId, cliente:m.cliente||"",
+          por:m.por||"", em:m.em,
+        });
+      });
+    });
+
+    // 2) faltas na separação (foram pra pendência)
+    const pend=lerJSON(PEND_FILE,{});
+    Object.values(pend).forEach(p=>{
+      if((p.em||0)<desde) return;
+      (p.faltas||[]).forEach(f=>{
+        linhas.push({
+          tipo:"falta_separacao",
+          produtoId:f.produtoId||f.id||null, descricao:f.descricao||f.nome||"", quantidade:f.quantidade||f.qtd||null,
+          pedidoNumero:p.numero, pedidoId:p.pedidoId, cliente:p.cliente||"",
+          statusPendencia:p.status||"pendente", em:p.em,
+        });
+      });
+    });
+
+    linhas.sort((a,b)=>(b.em||0)-(a.em||0));
+    res.json({data:linhas, dias:diasAtras});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+
 // Ajusta os itens de um pedido que ainda está em AGUARDANDO SEPARAÇÃO — pra
 // corrigir algo identificado quando o pedido chega no caixa. A alteração é feita
 // NO BLING (PUT do pedido); só confirma se o Bling aceitar (nunca fica diferente
