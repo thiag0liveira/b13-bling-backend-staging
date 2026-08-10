@@ -1711,7 +1711,7 @@ async function getEstoqueMap(){
   for(let pg=1; pg<=40; pg++){
     const d=await bling(`/produtos?pagina=${pg}&limite=100`);
     const arr=d.data||[]; if(!arr.length) break;
-    arr.forEach(p=>{ map[String(p.codigo)]={estoque:p.estoque?.saldoVirtualTotal ?? 0, nome:p.nome, id:p.id, imagem:p.imagemURL||""}; });
+    arr.forEach(p=>{ map[String(p.codigo)]={estoque:p.estoque?.saldoVirtualTotal ?? 0, nome:p.nome, id:p.id, imagem:p.imagemURL||"", preco:+(p.preco||0)}; });
     if(arr.length<100) break;
     await sleep(400); // respeita o limite de 3 req/s do Bling
   }
@@ -2102,11 +2102,17 @@ app.get("/api/estoque/buscar-produto",async(req,res)=>{
     const q=(req.query.q||"").toLowerCase().trim();
     if(!q) return res.json({data:[]});
     const est=await getEstoqueMap();
-    // índice de preço de atacado por código
-    const tab=lerTabela(); const precoAtacadoPorCodigo={};
-    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{
-      if(it.preco>0) precoAtacadoPorCodigo[String(b.codigo)]=it.preco;
-    })));
+    // índice de preço de atacado por código E por nome do vínculo (nem todo
+    // produto tem o mesmo código na tabela; buscar por nome pega mais casos)
+    const tab=lerTabela(); const precoAtacPorCodigo={}, precoAtacPorNome={};
+    (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>{
+      if(!(it.preco>0)) return;
+      (it.bling||[]).forEach(b=>{
+        if(b.codigo) precoAtacPorCodigo[String(b.codigo)]=it.preco;
+        if(b.nome) precoAtacPorNome[String(b.nome).toLowerCase().trim()]=it.preco;
+      });
+      if(it.nome) precoAtacPorNome[String(it.nome).toLowerCase().trim()]=it.preco;
+    }));
     const achados=Object.values(est).filter(p=>p.nome&&p.nome.toLowerCase().includes(q)).slice(0,12);
     const idsBloco=achados.map(p=>p.id).filter(Boolean);
     const saldos={};
@@ -2117,10 +2123,12 @@ app.get("/api/estoque/buscar-produto",async(req,res)=>{
       }
     }
     const data=achados.map(p=>{
-      const precoAtac=precoAtacadoPorCodigo[String(p.codigo)];
+      // preço: 1º tabela de atacado (por código, depois por nome), senão o preço do próprio Bling
+      const precoAtac = precoAtacPorCodigo[String(p.codigo)] ?? precoAtacPorNome[String(p.nome||"").toLowerCase().trim()];
+      const preco = precoAtac!=null ? precoAtac : +(p.preco||0);
       return {
         id:p.id, codigo:p.codigo, nome:p.nome,
-        preco: precoAtac!=null ? precoAtac : +(p.preco||0),
+        preco,
         precoAtacado: precoAtac!=null,
         estoque: saldos[p.id] ?? null,
       };

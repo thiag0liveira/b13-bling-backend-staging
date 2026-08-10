@@ -262,7 +262,7 @@ function renderEdicao(){
         <input id="editBusca" type="text" placeholder="Buscar produto (nome)…" value="${esc(EDIT.busca)}"
           style="flex:1;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px"
           oninput="EDIT.busca=this.value" onkeydown="if(event.key==='Enter')buscarEdicao()">
-        <button class="btn" onclick="buscarEdicao()" ${EDIT.buscando?'disabled':''}>${EDIT.buscando?'Buscando…':'Buscar'}</button>
+        <button class="btn btn-mag" onclick="buscarEdicao()" ${EDIT.buscando?'disabled':''}>${EDIT.buscando?'Buscando…':'Buscar'}</button>
       </div>
       <div id="editResultados">${renderResultadosEdicao()}</div>
 
@@ -282,7 +282,7 @@ function renderResultadosEdicao(){
         <div style="font-size:13px">${esc(r.nome)}</div>
         <div class="muted">${brl(r.preco)}${r.precoAtacado?' (atacado)':''} · estoque: ${r.estoque!=null?r.estoque:'—'}${semEst?' ⚠️':''}</div>
       </div>
-      <button class="btn" style="padding:6px 12px" onclick='editAdicionar(${JSON.stringify(r).replace(/'/g,"&#39;")})'>+ Add</button>
+      <button class="btn btn-grn" style="padding:6px 12px" onclick='editAdicionar(${JSON.stringify(r).replace(/'/g,"&#39;")})'>+ Add</button>
     </div>`;
   }).join("")+`</div>`;
 }
