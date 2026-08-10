@@ -431,7 +431,8 @@ function montarBotoes(p,aba,pago,parcial){
     const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou',${pago})">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnWhats}${btnQR}</div>`;
+    const btnEditar=PODE("editar_pedido")?`<button class="btn btn-ghost" onclick="editarPedidoAguardando(${id})" title="Editar itens do pedido">✏️ Editar</button>`:"";
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnEditar}${btnWhats}${btnQR}</div>`;
   }
   // ABA: em separação
   if(sit===SIT.EM_SEP){
@@ -993,6 +994,119 @@ async function voltarPendencias(id){
 }
 
 // Função unificada — abre modal de resolver pendências com abas
+async function editarPedidoAguardando(id){
+  document.getElementById("modal").style.display="flex";
+  document.getElementById("mbox").innerHTML=`<div class="muted">Carregando…</div>`;
+  try{
+    const rPed=await fetch(B+"/api/pedidos/"+id).then(r=>r.json());
+    const ped=rPed.data||rPed;
+    if(Number(ped.situacao?.id)!==SIT.AGUARDANDO){
+      document.getElementById("mbox").innerHTML=`<div class="err">Este pedido já saiu de "Aguardando separação" — não dá mais pra editar por aqui.</div><div style="margin-top:10px"><button class="btn btn-ghost" onclick="fecharModal()">Fechar</button></div>`;
+      return;
+    }
+    window.pedidoEditOrig=ped;
+    window.pedidoEditId=id;
+    window.itensEdit=(ped.itens||[]).map(i=>({
+      produtoId:i.produto?.id,
+      descricao:i.descricao||i.produto?.nome||"",
+      quantidade:i.quantidade, quantidadeOriginal:i.quantidade,
+      valor:i.valor, _removido:false, _novo:false,
+    }));
+    renderEditarAguardando(id);
+  }catch(e){
+    document.getElementById("mbox").innerHTML=`<div class="err">Erro ao carregar o pedido.</div>`;
+  }
+}
+
+function renderEditarAguardando(id){
+  const items=window.itensEdit;
+  const freteOrig=+(window.pedidoEditOrig?.transporte?.frete||0);
+  const total=+(items.filter(i=>!i._removido&&i.quantidade>0).reduce((s,i)=>s+(i.quantidade*(i.valor||0)),0)+freteOrig).toFixed(2);
+  const rows=items.map((item,ix)=>{
+    if(item._removido) return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);opacity:.5;font-size:12px">
+      <span style="text-decoration:line-through;flex:1;color:#9a95c9">${esc(item.descricao)}</span>
+      <span style="color:#ff8090;font-size:11px">removido</span>
+      <button onclick="window.itensEdit[${ix}]._removido=false;window.itensEdit[${ix}].quantidade=window.itensEdit[${ix}].quantidadeOriginal||1;renderEditarAguardando(${id})" style="background:none;border:1px solid #514c96;border-radius:4px;color:#9a95c9;cursor:pointer;font-size:10px;padding:2px 6px">↩ Restaurar</button>
+    </div>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="flex:1;min-width:0">${esc(item.descricao)}${item._novo?' <span style="color:#2f9e6b;font-size:10px">novo</span>':''}<br><span class="muted" style="font-size:11px">${brl(item.valor||0)} un</span></span>
+      <button onclick="if(window.itensEdit[${ix}].quantidade>1)window.itensEdit[${ix}].quantidade--;renderEditarAguardando(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">−</button>
+      <input type="number" min="1" value="${item.quantidade}" style="width:56px;padding:5px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;text-align:center;font-size:14px;font-weight:700"
+        onchange="window.itensEdit[${ix}].quantidade=Math.max(1,+this.value||1);renderEditarAguardando(${id})">
+      <button onclick="window.itensEdit[${ix}].quantidade++;renderEditarAguardando(${id})" style="background:#1c1846;border:1px solid #514c96;border-radius:5px;color:#fff;cursor:pointer;width:28px;height:28px;font-size:16px">+</button>
+      <span style="width:80px;text-align:right;font-weight:700">${brl((item.valor||0)*item.quantidade)}</span>
+      <button onclick="window.itensEdit[${ix}]._removido=true;renderEditarAguardando(${id})" style="background:#3a0010;border:1px solid #ff4466;border-radius:5px;color:#ff8090;cursor:pointer;padding:4px 8px;font-size:11px">🗑</button>
+    </div>`;
+  }).join("");
+  document.getElementById("mbox").innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3>✏️ Editar Pedido ${esc(window.pedidoEditOrig?.numero||id)}</h3>
+      <button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
+    <div class="muted" style="margin-bottom:8px;font-size:12px">Ajuste o que identificou ao pedido chegar. Ao salvar, altera também no Bling.</div>
+    <div style="max-height:42vh;overflow:auto;padding-right:2px">${rows}</div>
+    <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border);margin-top:6px">
+      <span class="muted">Total ajustado:</span><b style="color:#ffd23f">${brl(total)}</b>
+    </div>
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">➕ Adicionar produto:</div>
+      <input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" style="width:100%;background:#0f0d24;border:1px solid var(--border);border-radius:7px;padding:7px 10px;color:#fff;font-size:12px;margin-bottom:4px" oninput="buscarNovoItemEdit(this.value,${id})">
+      <div id="resultadosNovoItemEd" style="max-height:180px;overflow-y:auto"></div>
+    </div>
+    <div id="edMsg"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-grn" style="flex:1" onclick="salvarEditarAguardando(${id})">💾 Salvar alterações no Bling</button>
+      <button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>
+    </div>`;
+}
+
+let _buscaEdTimer=null;
+function buscarNovoItemEdit(q,id){
+  clearTimeout(_buscaEdTimer);
+  q=(q||"").trim();
+  const box=document.getElementById("resultadosNovoItemEd");
+  if(q.length<2){ if(box) box.innerHTML=""; return; }
+  _buscaEdTimer=setTimeout(async()=>{
+    try{
+      const j=await fetch(B+"/api/estoque/buscar-produto?q="+encodeURIComponent(q)).then(r=>r.json());
+      const res=j.data||[];
+      if(box) box.innerHTML=res.length?res.map(r=>`
+        <div style="display:flex;align-items:center;gap:8px;background:#141130;border-radius:7px;padding:7px 9px;margin-bottom:4px">
+          <div style="flex:1;min-width:0;font-size:12px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome)}</div><div class="muted" style="font-size:10px">${brl(r.preco)} · estoque: ${r.estoque!=null?r.estoque:'?'}</div></div>
+          <button class="btn btn-grn" style="padding:5px 10px;font-size:11px" onclick='addItemEdit(${JSON.stringify(r).replace(/'/g,"&#39;")},${id})'>+ Add</button>
+        </div>`).join(""):`<div class="muted" style="font-size:11px">Nada encontrado.</div>`;
+    }catch(e){ if(box) box.innerHTML=`<div class="err" style="font-size:11px">Erro na busca.</div>`; }
+  },350);
+}
+function addItemEdit(r,id){
+  if(window.itensEdit.some(i=>Number(i.produtoId)===Number(r.id)&&!i._removido)){
+    document.getElementById("edMsg").innerHTML=`<div class="pag-pend" style="font-size:11px">Esse produto já está no pedido — ajuste a quantidade.</div>`;
+    return;
+  }
+  window.itensEdit.push({produtoId:r.id,descricao:r.nome,quantidade:1,quantidadeOriginal:0,valor:Number(r.preco)||0,_removido:false,_novo:true});
+  document.getElementById("edMsg").innerHTML="";
+  const inp=document.getElementById("buscaNovoItemEd"); if(inp) inp.value="";
+  const box=document.getElementById("resultadosNovoItemEd"); if(box) box.innerHTML="";
+  renderEditarAguardando(id);
+}
+async function salvarEditarAguardando(id){
+  const setMsg=(h)=>{ const el=document.getElementById("edMsg"); if(el) el.innerHTML=h; };
+  const itens=window.itensEdit.filter(i=>!i._removido&&i.quantidade>0)
+    .map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}));
+  if(!itens.length){ setMsg(`<div class="err">O pedido precisa ter ao menos 1 item.</div>`); return; }
+  if(!confirm("Salvar as alterações? Isso vai alterar os itens do pedido também no Bling.")) return;
+  setMsg(`<div class="muted">Salvando no Bling…</div>`);
+  try{
+    const j=await fetch(B+"/api/pedidos/"+id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({itens, funcionarioNome:(window.FUNC?.nome||"")})}).then(r=>r.json());
+    if(j.erro){ setMsg(`<div class="err">❌ ${esc(j.erro)}</div>`); return; }
+    let aviso="";
+    if(j.avisosEstoque&&j.avisosEstoque.length) aviso="\n\n⚠️ Atenção:\n"+j.avisosEstoque.join("\n");
+    fecharModal();
+    alert("✅ Pedido atualizado no Bling! Novo total: "+brl(j.novoTotal)+aviso);
+    if(typeof carregar==="function") carregar();
+  }catch(e){ setMsg(`<div class="err">Erro de conexão. Nada foi alterado.</div>`); }
+}
+
 async function resolverPendencias(id){
   document.getElementById("modal").style.display="flex";
   document.getElementById("mbox").innerHTML=`<div class="muted">Carregando…</div>`;
