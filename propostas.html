@@ -87,8 +87,13 @@ async function carregar(){
 }
 
 function statusTag(p){
+  // só é "Pedido" de verdade quando existe o pedido no Bling (pedidoBlingId).
+  // Um item marcado como tipo "pedido" mas SEM pedidoBlingId é uma venda direta
+  // cujo pedido não chegou a ser gerado no Bling (deu erro) — nesse caso ele
+  // continua sendo tratado como PROPOSTA (fica na aba Propostas, mostra os
+  // botões de proposta e pode tentar gerar de novo).
   if(p.pedidoBlingId) return `<span class="tag tag-ger">Pedido #${esc(p.pedidoBlingNumero)} gerado</span>`;
-  if(p.tipo==='pedido') return `<span class="tag tag-ped">Pedido</span>`;
+  if(p.tipo==='pedido') return `<span class="tag tag-prop">⚠️ Proposta (pedido não gerado)</span>`;
   return `<span class="tag tag-prop">Proposta</span>`;
 }
 
@@ -128,7 +133,7 @@ function verImagem(id){
   ov.innerHTML=`
     <div style="background:#151233;border:1px solid #2c2660;border-radius:14px;max-width:720px;width:100%;max-height:92vh;overflow:auto;padding:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-weight:800">🖼️ ${p.pedidoBlingId?('Pedido #'+p.pedidoBlingNumero):(p.tipo==='pedido'?'Pedido':'Proposta')}</div>
+        <div style="font-weight:800">🖼️ ${p.pedidoBlingId?('Pedido #'+p.pedidoBlingNumero):('Proposta')}</div>
         <button class="btn btn-ghost" style="padding:6px 12px" onclick="document.getElementById('modalImg').remove()">✕ Fechar</button>
       </div>
       <canvas id="cvNota" style="max-width:100%;height:auto;border-radius:10px;border:1px solid #2c2660;background:#fff"></canvas>
@@ -177,7 +182,7 @@ function desenharNota(p){
   ctx.fillText(data,W-padd,40);
   // tipo (proposta/pedido) abaixo da logo
   ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
-  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
+  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):("Proposta Comercial");
   ctx.fillText(tipoTxt,padd,84);
   // cliente e vendedor na mesma linha, dentro da faixa
   ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
@@ -236,10 +241,10 @@ async function gerarPedido(id){
   if(!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
   try{
     const j=await fetch(B+"/api/atacado/propostas/"+id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
-    if(j.erro){ alert(j.erro); return; }
+    if(j.erro){ alert("❌ Não foi possível gerar o pedido no Bling:\n\n"+j.erro+"\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo."); return; }
     alert("Pedido #"+j.numero+" criado (aguardando separação)!");
     carregar();
-  }catch(e){ alert("Erro ao gerar pedido."); }
+  }catch(e){ alert("Erro de conexão ao gerar o pedido. Ela continua como proposta — tente de novo."); }
 }
 
 async function excluir(id){
@@ -255,7 +260,7 @@ async function enviarWhats(id){
     const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
     return qtd>1?`• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`:`• ${i.nome} — ${brl(un)}`;
   }).join("\n");
-  const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:(p.tipo==='pedido'?"*Pedido — B13 Bebidas*":"*Proposta comercial — B13 Bebidas*");
+  const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:("*Proposta comercial — B13 Bebidas*");
   const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
 
   // gera a imagem da nota num canvas oculto e tenta compartilhar (com a imagem)
@@ -308,7 +313,7 @@ async function desenharNotaEm(cv,p){
   ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="right";
   ctx.fillText(p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"",W-padd,40);
   ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
-  ctx.fillText(p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial"),padd,84);
+  ctx.fillText(p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):("Proposta Comercial"),padd,84);
   ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
   let nc=p.cliente?.nome||"—"; if(nc.length>36) nc=nc.slice(0,35)+"…";
   ctx.fillText("Cliente: "+nc,padd,110);

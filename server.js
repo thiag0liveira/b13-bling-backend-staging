@@ -5160,6 +5160,12 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
     }
     const pedidoId=criado?.data?.id;
+    // proteção: se o Bling respondeu sem erro mas não devolveu o ID do pedido,
+    // não dá pra considerar gerado — trata como falha e mantém como proposta
+    if(!pedidoId){
+      liberarTrava();
+      return res.status(400).json({erro:"O Bling não retornou o número do pedido — tente de novo. Se persistir, confira no Bling se o pedido chegou a ser criado antes de gerar outro."});
+    }
     let numero=criado?.data?.numero||pedidoId;
     // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
     if(pedidoId&&prop.vendedorId){
