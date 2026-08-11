@@ -1202,7 +1202,13 @@ function recomecar(perguntar){
 // carrega carrinho salvo pelo modo tabela ou parâmetro de modo
 try{
   const params=new URLSearchParams(location.search);
-  if(params.get("modo")==="tabela") S.modo="tabela";
+  if(params.get("modo")==="tabela"){
+    // link direto pro modo tabela (pra mandar pro cliente): já pula a tela de
+    // boas-vindas e cai direto na tabela de preços, sem deixar de funcionar no
+    // modo normal (que continua começando na tela inicial).
+    S.modo="tabela";
+    S.etapa="catalogo";
+  }
   const saved=sessionStorage.getItem("b13cart");
   if(saved && params.get("carrinho")==="1"){
     const cart=JSON.parse(saved); sessionStorage.removeItem("b13cart");
