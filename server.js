@@ -1996,7 +1996,43 @@ function indexarVinculosTabela(){
 // lista completa (pra tela de gestão) — junta nome/categoria/preço atacado + preço fardo salvo
 // info de fardo (preço + quantidade mínima) pra um código específico — usado no Frente de
 // Caixa pra aplicar automaticamente o preço de fardo quando a quantidade bater
-// ---------------- LISTAS EXTRAS (promoção, produto perto do vencimento, etc) ----------------
+// ---------------- PESQUISA DE PREÇO (pra responder cliente no WhatsApp) ----------------
+// Retorna os produtos agrupados por categoria, cada um com os 3 preços: atacado
+// (da tabela), Bling (preço cheio do produto) e fardo (se tiver, com a qtd da caixa).
+// Usado na aba "Pesquisar preço" do Apoio ao Vendedor.
+app.get("/api/precos/catalogo",async(req,res)=>{
+  try{
+    const tab=lerTabela();
+    if(!tab||!tab.model) return res.json({categorias:[]});
+    const fardo=lerListaFardo(); // { itemId: precoFardo }
+    const estMap=await getEstoqueMap().catch(()=>({})); // pra pegar o preço do Bling por código
+    // índice de preço do Bling por código
+    const precoBlingPorCodigo={};
+    Object.entries(estMap||{}).forEach(([cod,v])=>{ if(v&&v.preco>0) precoBlingPorCodigo[String(cod)]=v.preco; });
+
+    const categorias=(tab.model||[]).map(cat=>({
+      nome: cat.t||"",
+      produtos: (cat.itens||[]).map(it=>{
+        // preço do Bling: pega do primeiro vínculo que tiver
+        let precoBling=null;
+        (it.bling||[]).forEach(b=>{ if(precoBling==null && precoBlingPorCodigo[String(b.codigo)]) precoBling=precoBlingPorCodigo[String(b.codigo)]; });
+        const precoFardo = fardo[it.id]!=null ? Number(fardo[it.id]) : null;
+        return {
+          itemId: it.id,
+          nome: it.nome||"",
+          precoAtacado: it.preco??null,
+          precoBling,
+          precoFardo,
+          caixaQtd: it.caixa||null,
+        };
+      }).filter(p=>p.nome),
+    })).filter(c=>c.produtos.length);
+
+    res.json({categorias});
+  }catch(e){ res.status(500).json({erro:e.message,categorias:[]}); }
+});
+
+
 // Diferente da Lista de Fardo (fixa, ligada à quantidade), essas são listas criadas livremente,
 // cada uma com nome, tipo e data final opcional (pra saber até quando o preço vale).
 function lerListasExtras(){ return lerJSON(LISTAS_EXTRAS_FILE,{listas:[]}); }
