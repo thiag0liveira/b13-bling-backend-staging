@@ -517,9 +517,20 @@ function salvarSessoes(s){ salvarJSON(SESSOES_FILE,s); }
 function criarSessao(f){
   const sessoes=lerSessoes();
   const token=crypto.randomBytes(24).toString("hex");
-  sessoes[token]={funcionarioId:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],criadoEm:Date.now(),expiraEm:Date.now()+12*3600*1000};
+  // sessão dura 7 dias e é renovada a cada uso (ver renovarSessao) — assim ninguém
+  // é deslogado no meio do expediente; só expira depois de 7 dias SEM usar.
+  sessoes[token]={funcionarioId:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],criadoEm:Date.now(),expiraEm:Date.now()+7*24*3600*1000};
   salvarSessoes(sessoes);
   return token;
+}
+const DURACAO_SESSAO_MS=7*24*3600*1000;
+// estende a validade da sessão a cada requisição autenticada (renovação deslizante)
+function renovarSessao(sessoes,token,s){
+  const novoExpira=Date.now()+DURACAO_SESSAO_MS;
+  // só grava se mudou bastante (evita escrever no disco a cada request)
+  if(novoExpira - (s.expiraEm||0) > 3600*1000){
+    s.expiraEm=novoExpira; sessoes[token]=s; try{ salvarSessoes(sessoes); }catch(e){}
+  }
 }
 // Regra de senha forte: mínimo 6 caracteres, com maiúscula, minúscula e número
 function senhaForte(s){
@@ -532,6 +543,7 @@ function requireSessao(req,res,next){
   const sessoes=lerSessoes();
   const s=sessoes[token];
   if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  renovarSessao(sessoes,token,s); // renovação deslizante: enquanto usa, não expira
   req.sessao=s;
   next();
 }
@@ -543,6 +555,7 @@ function requireAdmin(req,res,next){
   const s=sessoes[token];
   if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
   if(s.nivel!=="admin"&&!(s.permissoes||[]).includes("admin")) return res.status(403).json({erro:"Sem permissão de administrador"});
+  renovarSessao(sessoes,token,s); // renovação deslizante
   req.sessao=s;
   next();
 }

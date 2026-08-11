@@ -369,6 +369,11 @@ async function salvarEditar(id){
     const r=await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify(body)});
     const j=await r.json();
     if(r.ok&&j.ok){ fecharModal(); msg=`<div class="ok">✅ Funcionário atualizado!</div>`; carregar(); }
+    else if(r.status===401){
+      // sessão expirou — avisa e manda pro login (não perde o trabalho por um erro genérico)
+      document.getElementById("fMsg").innerHTML=`<div class="err">Sua sessão expirou. Você vai ser levado pro login pra entrar de novo.</div>`;
+      setTimeout(()=>{ try{ localStorage.removeItem("b13sess"); }catch(e){} location.href="/login?next="+encodeURIComponent(location.pathname); },1800);
+    }
     else document.getElementById("fMsg").innerHTML=`<div class="err">${esc(j.erro||"Erro")}</div>`;
   }catch(e){ document.getElementById("fMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
 }
