@@ -113,6 +113,19 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "5mb" }));
 
+// Headers de segurança básicos em todas as respostas. Protegem contra:
+// - clickjacking (X-Frame-Options): impede que o site seja embutido em iframe de
+//   outro domínio pra enganar o usuário. SAMEORIGIN pra não quebrar o /caixa, que
+//   embute o /operacional via iframe no mesmo domínio.
+// - MIME sniffing (X-Content-Type-Options): navegador respeita o content-type.
+// - vazamento de URL (Referrer-Policy): não manda a URL cheia pra outros sites.
+app.use((req,res,next)=>{
+  res.set("X-Content-Type-Options","nosniff");
+  res.set("X-Frame-Options","SAMEORIGIN");
+  res.set("Referrer-Policy","strict-origin-when-cross-origin");
+  next();
+});
+
 // nunca deixa o navegador cachear respostas de API — já pegamos esse bug 2x
 // (nav.js e /api/vendedor/meta) onde um funcionario via dado desatualizado
 // simplesmente por causa do cache do navegador, nao um bug de logica.
@@ -2743,11 +2756,32 @@ app.post("/api/pedido",async(req,res)=>{
 });
 
 // Finaliza: concilia contato por CPF/CNPJ (cria se não existir) e gera o pedido de venda
-app.post("/api/finalizar", async (req, res) => {
+app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"}), async (req, res) => {
   try {
-    const { documento, nome, email, telefone, itens, entrega, cadastro } = req.body || {};
+    const { documento, itens, entrega, cadastro } = req.body || {};
     const doc = soDigitos(documento);
     if (!Array.isArray(itens) || !itens.length) return res.status(400).json({ erro: "itens vazios" });
+    // SEGURANÇA: valida a entrada antes de qualquer coisa (a tela é pública).
+    // Limita o número de itens e valida cada um (produto válido + quantidade sã),
+    // pra ninguém conseguir criar pedido gigante/malformado no Bling.
+    if (itens.length > 200) return res.status(400).json({ erro: "pedido com itens demais" });
+    for (const it of itens) {
+      const q = Number(it.quantidade);
+      if (!it.produtoId || !Number.isFinite(q) || q <= 0 || q > 100000 || Math.floor(q) !== q) {
+        return res.status(400).json({ erro: "item inválido no pedido" });
+      }
+    }
+    // limita o tamanho dos campos de texto livres (evita abuso/poluição no Bling)
+    const lim = (s, n) => (typeof s === "string" ? s.slice(0, n) : s);
+    const nome = lim(req.body?.nome, 120), email = lim(req.body?.email, 120), telefone = lim(req.body?.telefone, 30);
+    if (doc && (doc.length !== 11 && doc.length !== 14)) return res.status(400).json({ erro: "documento inválido" });
+    // SEGURANÇA: a taxa de entrega vem do cliente — nunca deixa ser negativa (baixaria
+    // o total) nem absurda. Limita a um teto razoável. (O ideal seria recalcular no
+    // servidor; por ora, sanitiza pra impedir manipulação óbvia do total.)
+    if (entrega && typeof entrega === "object") {
+      const t = Number(entrega.taxa);
+      entrega.taxa = (Number.isFinite(t) && t >= 0) ? Math.min(t, 1000) : 0;
+    }
 
     // 1) resolve o contato: por documento (identificado) ou contato padrão (sem identificação)
     let contatoId = null, criouContato = false;
@@ -2844,13 +2878,18 @@ app.post("/api/finalizar", async (req, res) => {
     const _idxCod=indexarVinculosTabela();
     const _precoPorProduto={};
     Object.values(_idxCod).forEach(v=>{ if(v.produtoId!=null) _precoPorProduto[String(v.produtoId)]=Number(v.precoAtacado)||0; });
-    const itensSeguros=itens.map(i=>{
-      const pid=String(i.produtoId);
-      const precoOficial=_precoPorProduto[pid];
-      // usa o preço oficial da tabela; só cai no enviado se o produto não estiver na tabela
-      const valorFinal=(precoOficial!=null && precoOficial>0)?precoOficial:Number(i.valor)||0;
-      return {...i, valor:valorFinal};
-    });
+    // SEGURANÇA: só aceita produtos que existem na tabela oficial com preço válido.
+    // O preço SEMPRE vem do servidor (nunca do cliente). Produto que não está na
+    // tabela é descartado — assim ninguém injeta um produtoId qualquer com preço
+    // arbitrário. Se sobrar nenhum item válido, recusa o pedido.
+    const itensSeguros=itens
+      .map(i=>{
+        const precoOficial=_precoPorProduto[String(i.produtoId)];
+        if(!(precoOficial!=null && precoOficial>0)) return null; // fora da tabela → descarta
+        return { produtoId:i.produtoId, descricao:i.descricao, quantidade:Number(i.quantidade), valor:precoOficial };
+      })
+      .filter(Boolean);
+    if(!itensSeguros.length) return res.status(400).json({ erro: "nenhum item válido no pedido" });
     const totalItensCalc=itensSeguros.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
     const freteCalc=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
     const totalPedidoCalc=+(totalItensCalc+freteCalc).toFixed(2);
@@ -2957,9 +2996,9 @@ function porKmPara(valor, faixas){
   faixas.slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(valor > Number(f.min)) escolhido=f; });
   return escolhido;
 }
-app.get("/api/frete", async (req,res)=>{
+app.get("/api/frete", rateLimit({janelaMs:60000,max:20,prefixo:"frete"}), async (req,res)=>{
   try{
-    const endereco=(req.query.endereco||"").trim();
+    const endereco=(req.query.endereco||"").toString().slice(0,200).trim();
     const valor=Number(req.query.valor||0);
     const cfg=configEntrega();
     if(!endereco) return res.status(400).json({erro:"endereco obrigatório"});
