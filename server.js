@@ -3586,11 +3586,16 @@ app.get("/pedir-online", (req, res) => { res.set("Cache-Control","no-store, no-c
 // ---- ATALHOS CURTOS (encurtador próprio, com a marca B13) ----
 // Links curtos e fáceis de mandar pro cliente. O /tabela abre a tabela de preços
 // pro cliente (a tela interna de gestão foi movida pra /tabela-atacado).
-app.get("/tabela", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
-app.get("/precos", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
-app.get("/tabela-precos", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
-app.get("/loja",   (req,res)=> res.redirect("/pedir-online"));
-app.get("/pedir-agora", (req,res)=> res.redirect("/pedir-online"));
+// no-store nos redirects pra o navegador não cachear o destino (evita mostrar a
+// versão antiga de /tabela, que antes servia a tela interna com login).
+function atalho(destino){
+  return (req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.redirect(destino); };
+}
+app.get("/tabela", atalho("/pedir-online?modo=tabela"));
+app.get("/precos", atalho("/pedir-online?modo=tabela"));
+app.get("/tabela-precos", atalho("/pedir-online?modo=tabela"));
+app.get("/loja",   atalho("/pedir-online"));
+app.get("/pedir-agora", atalho("/pedir-online"));
 app.get("/ofertas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "ofertas.html")); });
 app.get("/pedir-tabela", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-tabela.html")); });
 app.get("/painel", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "painel.html")); });
