@@ -134,6 +134,12 @@ const PODE=(acao)=>{
   return n.includes("admin")||n.includes(acao);
 };
 
+// PODEC = "pode no caixa": no modo /caixa (embed=caixa), quem consegue abrir a
+// tela tem acesso a TODOS os botões de ação, independente das permissões
+// individuais. Fora do caixa, respeita a permissão normal (PODE). Isso atende a
+// regra: "quem visualiza o /caixa tem todos os botões liberados".
+const PODEC=(acao)=> MODO_CAIXA || PODE(acao);
+
 async function login(){
   const senha=document.getElementById("pwInp").value;
   try{
@@ -377,7 +383,7 @@ function cardPedido(p,aba){
   let pendInfo="";
   if(pendItem&&(pendItem.faltas||[]).length){
     const sit=p.situacao?.id;
-    const podAjustar=PODE("ver_pend")&&sit===SIT.SEP_PEND;
+    const podAjustar=PODEC("ver_pend")&&sit===SIT.SEP_PEND;
     pendInfo=`<div style="background:#2a0a1e;border:1px solid #d400ff;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:12px">
       <div style="font-weight:800;color:#d400ff;margin-bottom:6px">⚠️ Itens com falta:</div>
       ${pendItem.faltas.map(f=>`<div style="padding:5px 0;border-bottom:1px solid #3a1050">
@@ -425,14 +431,14 @@ function montarBotoes(p,aba,pago,parcial){
     const jaPago=pago||parcial;
     // "Separar para entregar" só faz sentido pra pedidos de ENTREGA (retirada precisa
     // sempre receber o pagamento antes, na loja — não existe "entregar sem pagar")
-    const btnSep=(!jaPago&&PODE("enviar_separacao")&&ehEntregaBtn)?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar para entregar</button>`:"";
-    const btnPag=(!jaPago&&PODE("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 RECEBER E SEPARAR</button>`:"";
-    const btnSepPago=(jaPago&&PODE("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
-    const btnClienteSep=PODE("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou',${pago})">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
+    const btnSep=(!jaPago&&PODEC("enviar_separacao")&&ehEntregaBtn)?`<button class="btn btn-blue" onclick="enviarSep(${id},false)">▶ Separar para entregar</button>`:"";
+    const btnPag=(!jaPago&&PODEC("receber_pagamento"))?`<button class="btn btn-grn" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'receber')">💰 RECEBER E SEPARAR</button>`:"";
+    const btnSepPago=(jaPago&&PODEC("enviar_separacao"))?`<button class="btn btn-grn" onclick="enviarSep(${id},true)">▶ Separar (já pago)</button>`:"";
+    const btnClienteSep=PODEC("receber_pagamento")?`<button class="btn btn-ghost" onclick="iniciarRecebimentoAguardando(${id},${p.total},${temFrete},${freteVal},'clienteSeparou',${pago})">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>`:"";
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
-    const btnEditar=PODE("editar_pedido")?`<button class="btn btn-ghost" onclick="editarPedidoAguardando(${id})" title="Editar itens do pedido">✏️ Editar</button>`:"";
-    const btnCancelar=PODE("editar_pedido")?`<button class="btn btn-ghost" style="border:1px solid #ff4466;color:#ff8090" onclick="cancelarPedidoAguardando(${id})" title="Cancelar pedido (no sistema e no Bling)">🚫 Cancelar</button>`:"";
+    const btnEditar=PODEC("editar_pedido")?`<button class="btn btn-ghost" onclick="editarPedidoAguardando(${id})" title="Editar itens do pedido">✏️ Editar</button>`:"";
+    const btnCancelar=PODEC("editar_pedido")?`<button class="btn btn-ghost" style="border:1px solid #ff4466;color:#ff8090" onclick="cancelarPedidoAguardando(${id})" title="Cancelar pedido (no sistema e no Bling)">🚫 Cancelar</button>`:"";
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnEditar}${btnWhats}${btnCancelar}${btnQR}</div>`;
   }
   // ABA: em separação
@@ -442,8 +448,8 @@ function montarBotoes(p,aba,pago,parcial){
     if(sep) return quem; // travado — não mostra botões
     const logPed=window._logsCache?.[String(id)]||[];
     const veioDepend=logPed.some(e=>e.evento==="separacao_com_falta");
-    // botão voltar só para admin
-    if(!PODE("admin")) return quem;
+    // botão voltar — no caixa liberado pra todos; fora, só admin
+    if(!PODEC("admin")) return quem;
     const btnVoltar=veioDepend
       ?`<button class="btn btn-yellow" onclick="voltarPendencias(${id})">↩ Voltar para pendências</button>`
       :`<button class="btn btn-yellow" onclick="voltarAguardando(${id})">↩ Voltar para aguardando</button>`;
@@ -452,12 +458,12 @@ function montarBotoes(p,aba,pago,parcial){
   // ABA: c/ pendências
   if(sit===SIT.SEP_PEND){
     return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">
-      ${(PODE("ver_pend")||PODE("editar_pedido"))?`<button class="btn btn-mag" style="flex:1;font-weight:900" onclick="resolverPendencias(${id})">✂️ Resolver pendências</button>`:""}
-      ${PODE("admin")?`<button class="btn btn-yellow" style="flex:1" onclick="enviarSepNovamente(${id})">↩ Voltar separação</button>`:""}
+      ${(PODEC("ver_pend")||PODEC("editar_pedido"))?`<button class="btn btn-mag" style="flex:1;font-weight:900" onclick="resolverPendencias(${id})">✂️ Resolver pendências</button>`:""}
+      ${PODEC("admin")?`<button class="btn btn-yellow" style="flex:1" onclick="enviarSepNovamente(${id})">↩ Voltar separação</button>`:""}
     </div>`
   }
-  // ABA: separados — conferente
-  if(sit===SIT.SEPARADO && PODE("conferir") && !MODO_CAIXA){
+  // ABA: separados — conferente (no caixa também aparece, pra liberar tudo)
+  if(sit===SIT.SEPARADO && PODEC("conferir")){
     return `<button class="btn btn-mag" onclick="abrirConferencia(${id})">🔍 Conferir pedido</button>`;
   }
   // ABA: em rota
