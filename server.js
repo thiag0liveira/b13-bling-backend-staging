@@ -1997,39 +1997,91 @@ function indexarVinculosTabela(){
 // info de fardo (preço + quantidade mínima) pra um código específico — usado no Frente de
 // Caixa pra aplicar automaticamente o preço de fardo quando a quantidade bater
 // ---------------- PESQUISA DE PREÇO (pra responder cliente no WhatsApp) ----------------
-// Retorna os produtos agrupados por categoria, cada um com os 3 preços: atacado
-// (da tabela), Bling (preço cheio do produto) e fardo (se tiver, com a qtd da caixa).
-// Usado na aba "Pesquisar preço" do Apoio ao Vendedor.
-app.get("/api/precos/catalogo",async(req,res)=>{
+// Índice auxiliar: por CÓDIGO e por NOME do vínculo, o preço de atacado + fardo + caixa.
+// Usado pra enriquecer os produtos vindos do Bling com atacado/fardo quando existir.
+function _indicePrecosTabela(){
+  const tab=lerTabela();
+  const fardo=lerListaFardo();
+  const porCodigo={}, porNome={};
+  (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
+    const info={itemId:it.id, categoria:cat.t||"", precoAtacado:it.preco??null,
+      precoFardo: fardo[it.id]!=null?Number(fardo[it.id]):null, caixaQtd:it.caixa||null};
+    (it.bling||[]).forEach(b=>{
+      if(b.codigo) porCodigo[String(b.codigo)]=info;
+      if(b.nome) porNome[String(b.nome).toLowerCase().trim()]=info;
+    });
+    if(it.nome) porNome[String(it.nome).toLowerCase().trim()]=info;
+  }));
+  return {porCodigo, porNome};
+}
+
+// lista as categorias da tabela de atacado (pro seletor de categoria)
+app.get("/api/precos/categorias",(req,res)=>{
   try{
     const tab=lerTabela();
-    if(!tab||!tab.model) return res.json({categorias:[]});
-    const fardo=lerListaFardo(); // { itemId: precoFardo }
-    const estMap=await getEstoqueMap().catch(()=>({})); // pra pegar o preço do Bling por código
-    // índice de preço do Bling por código
-    const precoBlingPorCodigo={};
-    Object.entries(estMap||{}).forEach(([cod,v])=>{ if(v&&v.preco>0) precoBlingPorCodigo[String(cod)]=v.preco; });
+    const cats=(tab?.model||[]).map(c=>c.t).filter(Boolean);
+    res.json({categorias:[...new Set(cats)]});
+  }catch(e){ res.json({categorias:[]}); }
+});
 
-    const categorias=(tab.model||[]).map(cat=>({
-      nome: cat.t||"",
-      produtos: (cat.itens||[]).map(it=>{
-        // preço do Bling: pega do primeiro vínculo que tiver
+// BUSCA de produto pra pesquisa de preço. Busca DIRETO no Bling por nome (todos
+// os produtos, não só os da tabela), pega o preço REAL do Bling do detalhe de
+// cada um (a listagem vem com preço zerado), e cruza com atacado + fardo da
+// tabela. Traz os 3 preços quando existirem. Se vier ?categoria=, filtra os
+// produtos da tabela de atacado daquela categoria em vez de buscar no Bling.
+app.get("/api/precos/buscar",async(req,res)=>{
+  try{
+    const q=(req.query.q||"").toString().slice(0,80).trim();
+    const categoria=(req.query.categoria||"").toString().trim();
+    const idx=_indicePrecosTabela();
+
+    // Modo 1: filtro por categoria → usa os produtos da tabela de atacado dessa categoria
+    if(categoria && !q){
+      const tab=lerTabela();
+      const cat=(tab?.model||[]).find(c=>c.t===categoria);
+      if(!cat) return res.json({data:[]});
+      // pega o preço do Bling do detalhe de cada produto da categoria (poucos por vez)
+      const out=[];
+      for(const it of (cat.itens||[])){
+        const primeiroBling=(it.bling||[])[0];
         let precoBling=null;
-        (it.bling||[]).forEach(b=>{ if(precoBling==null && precoBlingPorCodigo[String(b.codigo)]) precoBling=precoBlingPorCodigo[String(b.codigo)]; });
-        const precoFardo = fardo[it.id]!=null ? Number(fardo[it.id]) : null;
-        return {
-          itemId: it.id,
-          nome: it.nome||"",
-          precoAtacado: it.preco??null,
-          precoBling,
-          precoFardo,
-          caixaQtd: it.caixa||null,
-        };
-      }).filter(p=>p.nome),
-    })).filter(c=>c.produtos.length);
+        if(primeiroBling?.id){
+          try{ const d=await bling(`/produtos/${primeiroBling.id}`).then(r=>r?.data); precoBling=+(d?.preco||0)||null; }catch(e){}
+          await new Promise(r=>setTimeout(r,120));
+        }
+        out.push({ nome:it.nome||"", categoria, precoAtacado:it.preco??null,
+          precoBling, precoFardo: idx.porCodigo[String(primeiroBling?.codigo)]?.precoFardo ?? null,
+          caixaQtd: it.caixa||null });
+      }
+      return res.json({data:out});
+    }
 
-    res.json({categorias});
-  }catch(e){ res.status(500).json({erro:e.message,categorias:[]}); }
+    if(q.length<2) return res.json({data:[]});
+    // Modo 2: busca por nome DIRETO no Bling
+    let achados=[];
+    try{ const d=await bling(`/produtos?nome=${encodeURIComponent(q)}&limite=40`); achados=d?.data||[]; }catch(e){}
+    // pega o preço real do detalhe de cada um (a listagem vem com preço 0)
+    const out=[];
+    for(const prod of achados.slice(0,25)){
+      let precoBling=+(prod.preco||0)||null;
+      // se veio zerado na listagem, busca no detalhe
+      if(!precoBling && prod.id){
+        try{ const d=await bling(`/produtos/${prod.id}`).then(r=>r?.data); precoBling=+(d?.preco||0)||null; }catch(e){}
+        await new Promise(r=>setTimeout(r,120));
+      }
+      // cruza com atacado/fardo da tabela (por código, depois por nome)
+      const info = idx.porCodigo[String(prod.codigo)] || idx.porNome[String(prod.nome||"").toLowerCase().trim()] || null;
+      out.push({
+        nome: prod.nome||"",
+        categoria: info?.categoria || "",
+        precoAtacado: info?.precoAtacado ?? null,
+        precoBling,
+        precoFardo: info?.precoFardo ?? null,
+        caixaQtd: info?.caixaQtd ?? null,
+      });
+    }
+    res.json({data:out});
+  }catch(e){ res.status(500).json({erro:e.message,data:[]}); }
 });
 
 

@@ -82,7 +82,7 @@ function render(){
       ${ABA==='recuperar'?viewRecuperar():ABA==='precos'?viewPrecos():ABA==='historico'?viewHistorico():ABA==='mapa'?viewMapa():viewProspectar()}
     </div>`;
   if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
-  if(ABA==='precos'&&!PRECOS_CAT&&!precosCarregando) carregarPrecos();
+  if(ABA==='precos'&&!PRECOS_CATS) carregarPrecos();
   setTimeout(carregarTabInfo,50);
 }
 
@@ -686,49 +686,40 @@ async function compartilharTabela(){
 }
 
 /* ===== ABA: PESQUISAR PREÇO (montar resposta pro WhatsApp) ===== */
-let PRECOS_CAT=null, precosCarregando=false, precosBusca="", precosCatSel="", precosSel={};
-// precosSel = { itemId: {nome, atacado, bling, fardo, caixaQtd} }
+let PRECOS_CATS=null, precosBusca="", precosCatSel="", precosSel=[], precosResultados=[], precosBuscando=false;
+// precosSel = [{nome, categoria, precoAtacado, precoBling, precoFardo, caixaQtd}]
 
 async function carregarPrecos(){
-  precosCarregando=true;
+  // carrega só a lista de categorias (leve). A busca de produto vai ao Bling sob demanda.
   try{
-    const j=await fetch(B+"/api/precos/catalogo").then(r=>r.json());
-    PRECOS_CAT=j.categorias||[];
-  }catch(e){ PRECOS_CAT=[]; }
-  precosCarregando=false;
+    const j=await fetch(B+"/api/precos/categorias").then(r=>r.json());
+    PRECOS_CATS=j.categorias||[];
+  }catch(e){ PRECOS_CATS=[]; }
   render();
 }
 
 function viewPrecos(){
-  if(precosCarregando||!PRECOS_CAT) return `<div class="card"><div class="muted">Carregando produtos…</div></div>`;
-  // monta a lista de categorias pro seletor
-  const cats=PRECOS_CAT.map(c=>c.nome);
-  // aplica filtro de categoria + busca
-  const q=precosBusca.trim().toLowerCase();
-  let produtos=[];
-  PRECOS_CAT.forEach(c=>{
-    if(precosCatSel && c.nome!==precosCatSel) return;
-    c.produtos.forEach(p=>{
-      if(q && !p.nome.toLowerCase().includes(q)) return;
-      produtos.push({...p, categoria:c.nome});
-    });
-  });
-  const selCount=Object.keys(precosSel).length;
-
+  if(!PRECOS_CATS) return `<div class="card"><div class="muted">Carregando…</div></div>`;
+  const selCount=precosSel.length;
   return `
   <div class="card">
     <div style="font-weight:800;margin-bottom:2px">🏷️ Pesquisar preço</div>
-    <div class="muted" style="font-size:12px;margin-bottom:10px">Selecione um ou mais produtos pra montar uma resposta rápida de preços pro cliente no WhatsApp. Traz atacado, preço do Bling e fardo (quando tem).</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Busca o produto direto no Bling. Traz atacado, preço do Bling e fardo (quando tem). Selecione 1 ou mais pra montar a resposta pro cliente no WhatsApp.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-      <input id="precosBuscaInp" placeholder="🔎 Buscar produto…" value="${esc(precosBusca)}" oninput="precosBusca=this.value;rerenderPrecos()" style="flex:1;min-width:180px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:9px 12px;font-size:14px">
-      <select onchange="precosCatSel=this.value;render()" style="background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:9px 12px;font-size:14px">
-        <option value="">Todas as categorias</option>
-        ${cats.map(c=>`<option value="${esc(c)}" ${precosCatSel===c?'selected':''}>${esc(c)}</option>`).join("")}
+      <input id="precosBuscaInp" placeholder="🔎 Buscar produto (ex.: heineken, coca)…" value="${esc(precosBusca)}" onkeydown="if(event.key==='Enter')fazerBuscaPrecos()" oninput="precosBusca=this.value" style="flex:1;min-width:180px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:9px 12px;font-size:14px">
+      <button class="btn btn-mag" onclick="fazerBuscaPrecos()">Buscar</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      <span class="muted" style="font-size:12px">ou por categoria:</span>
+      <select onchange="buscarPorCategoria(this.value)" style="background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px;font-size:13px">
+        <option value="">Escolher categoria…</option>
+        ${PRECOS_CATS.map(c=>`<option value="${esc(c)}" ${precosCatSel===c?'selected':''}>${esc(c)}</option>`).join("")}
       </select>
     </div>
-    ${precosCatSel?`<div style="margin-bottom:8px"><button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="adicionarCategoriaInteira()">+ Adicionar todos de "${esc(precosCatSel)}"</button></div>`:''}
-    <div id="precosLista" style="max-height:44vh;overflow:auto">
-      ${produtos.length?produtos.map(p=>linhaPrecoProd(p)).join(""):'<div class="muted" style="font-size:12px">Nenhum produto encontrado.</div>'}
+    <div id="precosLista" style="max-height:40vh;overflow:auto">
+      ${precosBuscando?'<div class="muted" style="font-size:12px">Buscando no Bling…</div>'
+        :precosResultados.length?precosResultados.map((p,i)=>linhaPrecoProd(p,i)).join("")
+        :'<div class="muted" style="font-size:12px">Busque um produto ou escolha uma categoria.</div>'}
     </div>
   </div>
 
@@ -738,75 +729,77 @@ function viewPrecos(){
       ${selCount?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="limparPrecosSel()">Limpar</button>`:''}
     </div>
     ${selCount?`
-      <textarea id="precosTexto" readonly style="width:100%;min-height:${Math.min(300,80+selCount*40)}px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:12px;font-size:14px;font-family:inherit;line-height:1.5;resize:vertical">${esc(montarTextoPrecos())}</textarea>
+      <textarea id="precosTexto" readonly style="width:100%;min-height:${Math.min(320,90+selCount*38)}px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:12px;font-size:14px;font-family:inherit;line-height:1.5;resize:vertical">${esc(montarTextoPrecos())}</textarea>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn btn-wa" style="flex:1;min-width:140px" onclick="compartilharPrecosWhats()">📱 Compartilhar no WhatsApp</button>
         <button class="btn btn-ghost" onclick="copiarPrecos()">📋 Copiar texto</button>
       </div>
-    `:'<div class="muted" style="font-size:13px">Selecione produtos acima que eles aparecem aqui, prontos pra enviar.</div>'}
+    `:'<div class="muted" style="font-size:13px">Selecione produtos que eles aparecem aqui, prontos pra enviar.</div>'}
   </div>`;
 }
 
-function linhaPrecoProd(p){
-  const sel=!!precosSel[p.itemId];
+function linhaPrecoProd(p,i){
+  const sel=precoJaSelecionado(p);
   const precos=[];
   if(p.precoAtacado!=null) precos.push(`atacado ${brl(p.precoAtacado)}`);
   if(p.precoBling!=null) precos.push(`bling ${brl(p.precoBling)}`);
   if(p.precoFardo!=null) precos.push(`fardo ${brl(p.precoFardo)}${p.caixaQtd?`/${p.caixaQtd}un`:''}`);
   return `
-    <div onclick="togglePrecoProd('${p.itemId}')" style="display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:5px;border-radius:8px;cursor:pointer;background:${sel?'#153a26':'#1c1846'};border:1px solid ${sel?'#25d366':'#2c2660'}">
+    <div onclick="togglePrecoProd(${i})" style="display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:5px;border-radius:8px;cursor:pointer;background:${sel?'#153a26':'#1c1846'};border:1px solid ${sel?'#25d366':'#2c2660'}">
       <div style="width:22px;height:22px;border-radius:5px;flex-shrink:0;border:2px solid ${sel?'#25d366':'#514c96'};background:${sel?'#25d366':'transparent'};display:flex;align-items:center;justify-content:center;font-weight:900;color:#0a2a1a">${sel?'✓':''}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:13px">${esc(p.nome)}</div>
-        <div class="muted" style="font-size:11px">${esc(p.categoria)} · ${precos.join(" · ")||'sem preço'}</div>
+        <div class="muted" style="font-size:11px">${p.categoria?esc(p.categoria)+' · ':''}${precos.join(" · ")||'sem preço cadastrado'}</div>
       </div>
     </div>`;
 }
 
-// re-renderiza só a lista de produtos (sem re-render tudo, pra não perder o foco do input de busca)
-function rerenderPrecos(){
-  const q=precosBusca.trim().toLowerCase();
-  let produtos=[];
-  PRECOS_CAT.forEach(c=>{
-    if(precosCatSel && c.nome!==precosCatSel) return;
-    c.produtos.forEach(p=>{ if(q && !p.nome.toLowerCase().includes(q)) return; produtos.push({...p, categoria:c.nome}); });
-  });
-  const box=document.getElementById("precosLista");
-  if(box) box.innerHTML=produtos.length?produtos.map(p=>linhaPrecoProd(p)).join(""):'<div class="muted" style="font-size:12px">Nenhum produto encontrado.</div>';
+function precoJaSelecionado(p){ return precosSel.some(x=>x.nome===p.nome); }
+function togglePrecoProd(i){
+  const p=precosResultados[i]; if(!p) return;
+  const ix=precosSel.findIndex(x=>x.nome===p.nome);
+  if(ix>=0) precosSel.splice(ix,1);
+  else precosSel.push(p);
+  render();
 }
 
-function acharProdPrecos(itemId){
-  for(const c of PRECOS_CAT){ const p=(c.produtos||[]).find(x=>String(x.itemId)===String(itemId)); if(p) return {...p,categoria:c.nome}; }
-  return null;
+async function fazerBuscaPrecos(){
+  const q=(precosBusca||"").trim();
+  if(q.length<2){ return; }
+  precosCatSel=""; precosBuscando=true; render();
+  try{
+    const j=await fetch(B+"/api/precos/buscar?q="+encodeURIComponent(q)).then(r=>r.json());
+    precosResultados=j.data||[];
+  }catch(e){ precosResultados=[]; }
+  precosBuscando=false; render();
 }
-function togglePrecoProd(itemId){
-  if(precosSel[itemId]) delete precosSel[itemId];
-  else { const p=acharProdPrecos(itemId); if(p) precosSel[itemId]=p; }
-  render();
+async function buscarPorCategoria(cat){
+  precosCatSel=cat; precosBusca="";
+  if(!cat){ precosResultados=[]; render(); return; }
+  precosBuscando=true; render();
+  try{
+    const j=await fetch(B+"/api/precos/buscar?categoria="+encodeURIComponent(cat)).then(r=>r.json());
+    precosResultados=j.data||[];
+  }catch(e){ precosResultados=[]; }
+  precosBuscando=false; render();
 }
-function adicionarCategoriaInteira(){
-  const cat=PRECOS_CAT.find(c=>c.nome===precosCatSel);
-  if(!cat) return;
-  cat.produtos.forEach(p=>{ precosSel[p.itemId]={...p,categoria:cat.nome}; });
-  render();
-}
-function limparPrecosSel(){ precosSel={}; render(); }
+
+function limparPrecosSel(){ precosSel=[]; render(); }
 
 function montarTextoPrecos(){
-  const itens=Object.values(precosSel);
-  if(!itens.length) return "";
-  // agrupa por categoria pra ficar organizado
+  if(!precosSel.length) return "";
   const porCat={};
-  itens.forEach(p=>{ (porCat[p.categoria]=porCat[p.categoria]||[]).push(p); });
+  precosSel.forEach(p=>{ const c=p.categoria||"Outros"; (porCat[c]=porCat[c]||[]).push(p); });
   let txt="🍺 *B13 BEBIDAS — Tabela de preços*\n";
   Object.entries(porCat).forEach(([cat,prods])=>{
     txt+=`\n*${cat}*\n`;
     prods.forEach(p=>{
+      // inclui os 3 preços quando existirem
       const partes=[];
       if(p.precoAtacado!=null) partes.push(`atacado ${brl(p.precoAtacado)}`);
+      if(p.precoBling!=null) partes.push(`unidade ${brl(p.precoBling)}`);
       if(p.precoFardo!=null) partes.push(`fardo ${brl(p.precoFardo)}${p.caixaQtd?` (cx c/${p.caixaQtd})`:''}`);
-      if(p.precoBling!=null && p.precoAtacado==null) partes.push(`${brl(p.precoBling)}`);
-      txt+=`• ${p.nome}: ${partes.join(" | ")}\n`;
+      txt+=`• ${p.nome}: ${partes.join(" | ")||'consulte'}\n`;
     });
   });
   txt+="\n_Preços sujeitos a alteração. Fale com a gente pra fechar seu pedido!_";
@@ -825,7 +818,6 @@ async function copiarPrecos(){
     await navigator.clipboard.writeText(txt);
     alert("✅ Texto copiado! Cole no WhatsApp.");
   }catch(e){
-    // fallback: seleciona o textarea
     const ta=document.getElementById("precosTexto");
     if(ta){ ta.removeAttribute("readonly"); ta.select(); document.execCommand("copy"); ta.setAttribute("readonly","true"); alert("✅ Texto copiado!"); }
   }
