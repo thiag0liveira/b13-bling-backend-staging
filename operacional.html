@@ -432,7 +432,8 @@ function montarBotoes(p,aba,pago,parcial){
     const btnWhats=`<button class="btn btn-ghost" style="background:#075e54" onclick="whatsAguardando(${id})">🟢 WhatsApp</button>`;
     const btnQR=`<button class="btn btn-ghost" onclick="abrirQR(${id},'${p.numero||id}')" title="QR Code do pedido">📱</button>`;
     const btnEditar=PODE("editar_pedido")?`<button class="btn btn-ghost" onclick="editarPedidoAguardando(${id})" title="Editar itens do pedido">✏️ Editar</button>`:"";
-    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnEditar}${btnWhats}${btnQR}</div>`;
+    const btnCancelar=PODE("editar_pedido")?`<button class="btn btn-ghost" style="border:1px solid #ff4466;color:#ff8090" onclick="cancelarPedidoAguardando(${id})" title="Cancelar pedido (no sistema e no Bling)">🚫 Cancelar</button>`:"";
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">${btnPag}${btnSep}${btnSepPago}${btnClienteSep}${btnEditar}${btnWhats}${btnCancelar}${btnQR}</div>`;
   }
   // ABA: em separação
   if(sit===SIT.EM_SEP){
@@ -982,6 +983,59 @@ async function whatsAguardando(id){
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
   }catch(e){ showMsg(id,`<div class="err">Erro ao buscar pedido</div>`); }
 }
+// Cancela o pedido no sistema E no Bling (atômico) e depois abre o WhatsApp
+// pra avisar o cliente do cancelamento.
+async function cancelarPedidoAguardando(id){
+  if(!confirm("Cancelar este pedido? Ele será cancelado no sistema e no Bling juntos (só enquanto está em Aguardando). Depois você vai poder avisar o cliente pelo WhatsApp. Não dá pra desfazer.")) return;
+  showMsg(id,`<div class="muted">Cancelando no Bling…</div>`);
+  try{
+    const r=await fetch(B+"/api/pedidos/"+id+"/cancelar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioNome:FUNC?.nome||""})});
+    const j=await r.json();
+    if(!r.ok||j.erro){ showMsg(id,`<div class="err">❌ ${esc(j.erro||"Erro ao cancelar")}</div>`); return; }
+    // cancelado com sucesso — monta a mensagem e abre o WhatsApp
+    showMsg(id,`<div class="ok">✅ Pedido cancelado${j.tiradoDaRota?" (e removido da rota)":""}. Abrindo WhatsApp…</div>`);
+    await abrirWhatsCancelamento(id, j);
+    // recarrega o kanban (o pedido sai da coluna Aguardando)
+    delete window._logsCache?.[String(id)];
+    setTimeout(()=>carregar(), 800);
+  }catch(e){ showMsg(id,`<div class="err">Erro de conexão. Nada foi alterado.</div>`); }
+}
+
+// acha o telefone do cliente e abre o WhatsApp com a mensagem de cancelamento
+async function abrirWhatsCancelamento(id, dadosCancel){
+  try{
+    // 1) tenta pegar o telefone: primeiro pelo contato do pedido cancelado
+    let tel="";
+    const cli=dadosCancel.cliente||{};
+    if(cli.id){
+      try{ const rc=await fetch(B+"/api/contatos/"+cli.id); const jc=await rc.json(); const c=jc.data||jc;
+        tel=(c?.celular||c?.telefone||c?.fone||"").replace(/\D/g,""); }catch(e){}
+    }
+    if(!tel && cli.documento){
+      try{ const rc=await fetch(B+"/api/contatos?doc="+encodeURIComponent(cli.documento)); const jc=await rc.json(); const c=jc.data?.[0];
+        tel=(c?.celular||c?.telefone||c?.fone||"").replace(/\D/g,""); }catch(e){}
+    }
+    if(!tel && cli.observacoes){
+      const m=cli.observacoes.match(/\((\d[\d\s().-]{7,})\)/);
+      if(m) tel=m[1].replace(/\D/g,"");
+    }
+    const nome=cli.nome?" "+cli.nome:"";
+    const msg=`Olá${nome}! Infelizmente seu pedido *${dadosCancel.numero||id}* na B13 Bebidas precisou ser *cancelado*. 😔\n\nQualquer dúvida ou pra fazer um novo pedido, é só falar com a gente. Obrigado pela compreensão!`;
+    if(!tel){
+      // não achou telefone — abre o WhatsApp sem número (o usuário escolhe a conversa)
+      alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa.");
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`,"_blank");
+      return;
+    }
+    const num=tel.startsWith("55")?tel:"55"+tel;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`,"_blank");
+  }catch(e){
+    // se algo falhar aqui, o cancelamento já foi feito — só avisa
+    alert("Pedido cancelado, mas não consegui abrir o WhatsApp automaticamente.");
+  }
+}
+
 async function voltarPendencias(id){
   if(!confirm("Voltar o pedido para Separado C/ Pendências?")) return;
   showMsg(id,`<div class="muted">Voltando…</div>`);

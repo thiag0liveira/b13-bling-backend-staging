@@ -2356,6 +2356,47 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
+// CANCELA um pedido a partir do caixa/operacional (pelo ID do Bling). Ação
+// atômica: cancela no Bling PRIMEIRO; só considera cancelado se o Bling confirmar.
+// Trava de status: só permite cancelar se o pedido ainda estiver em AGUARDANDO
+// (não deixa cancelar algo que já entrou no fluxo). Também tira o pedido de
+// qualquer rota onde estava agendado (não deixa fantasma). Retorna os dados do
+// cliente (nome/telefone/itens) pra montar a mensagem de cancelamento no WhatsApp.
+app.post("/api/pedidos/:id/cancelar",async(req,res)=>{
+  try{
+    const id=String(req.params.id);
+    // lê o pedido pra checar a situação atual e pegar os dados do cliente
+    let ped;
+    try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }
+    catch(e){ return res.status(502).json({erro:"Não foi possível ler o pedido no Bling: "+(e.message||"erro")+". Nada foi alterado."}); }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const sitAtual=Number(ped.situacao?.id||0);
+    const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    if(sitAtual===SIT_CANCELADO) return res.json({ok:true, jaEstava:true});
+    // trava: só cancela enquanto está em AGUARDANDO
+    if(sitAtual!==SIT.AGUARDANDO){
+      return res.status(400).json({erro:"Este pedido já saiu de 'Aguardando separação' e entrou no fluxo. Não é possível cancelar por aqui — ajuste direto no Bling se precisar."});
+    }
+    // cancela no Bling PRIMEIRO — se falhar, aborta sem mexer em nada
+    try{
+      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"});
+    }catch(e){
+      return res.status(502).json({erro:"Não foi possível cancelar o pedido no Bling: "+(e.message||"erro de conexão")+". Nada foi alterado — tente de novo."});
+    }
+    // confirmou no Bling: tira das rotas (não deixa fantasma) e registra
+    let tiradoDaRota=false;
+    try{ const r=removerPedidoDeTodasRotas(Number(id)); tiradoDaRota=r.removido; }catch(e){}
+    // devolve os dados do cliente pra montar a mensagem de WhatsApp no frontend
+    const itens=(ped.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"Produto",quantidade:i.quantidade}));
+    res.json({ok:true, tiradoDaRota, cliente:{
+      nome:ped.contato?.nome||"", id:ped.contato?.id||null,
+      documento:ped.contato?.numeroDocumento||ped.contato?.cpfCnpj||"",
+      observacoes:ped.observacoes||"",
+    }, numero:ped.numero||id, itens, total:+(ped.total||0)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+
 // EDITA os itens de um pedido a partir do caixa (adicionar/remover/mudar qtd).
 // Ação atômica: aplica no Bling; só se o Bling confirmar considera OK. Só
 // permite enquanto o pedido está em AGUARDANDO SEPARAÇÃO (antes de seguir pro
