@@ -106,10 +106,10 @@
 <body><script>
   (function(){
     if(!b13RequireLogin()) return;
-    if(!b13BloquearSeSemAcesso("/tabela")) return;
+    if(!b13BloquearSeSemAcesso("/tabela-atacado")) return;
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
-      nav.innerHTML=b13RenderNav("/tabela");
+      nav.innerHTML=b13RenderNav("/tabela-atacado");
       document.body.insertBefore(nav,document.body.firstChild);
     });
   })();

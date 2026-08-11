@@ -382,7 +382,7 @@ window.B13_NAV_LINKS=[
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
   {href:"/estoque",label:"📦 Ajuste de Estoque",acoes:["editar_pedido","admin"]},
   {href:"/movimentacoes",label:"🔄 Movimentações",acoes:["editar_pedido","admin"]},
-  {href:"/tabela",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
+  {href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
   {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
   {href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
@@ -3583,6 +3583,14 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
 
 app.get("/pedir", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "totem.html")); });
 app.get("/pedir-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-online.html")); });
+// ---- ATALHOS CURTOS (encurtador próprio, com a marca B13) ----
+// Links curtos e fáceis de mandar pro cliente. O /tabela abre a tabela de preços
+// pro cliente (a tela interna de gestão foi movida pra /tabela-atacado).
+app.get("/tabela", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
+app.get("/precos", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
+app.get("/tabela-precos", (req,res)=> res.redirect("/pedir-online?modo=tabela"));
+app.get("/loja",   (req,res)=> res.redirect("/pedir-online"));
+app.get("/pedir-agora", (req,res)=> res.redirect("/pedir-online"));
 app.get("/ofertas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "ofertas.html")); });
 app.get("/pedir-tabela", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-tabela.html")); });
 app.get("/painel", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "painel.html")); });
@@ -4251,7 +4259,11 @@ app.get("/api/preco-codigo", async (req, res) => {
 app.get("/conferencia",(req,res)=>res.sendFile(path.join(__dirname,"conferencia.html")));
 // Config pública (situações)
 app.get("/api/config",(req,res)=>res.json({SIT}));
-app.get("/tabela",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
+// tela INTERNA de gestão da tabela de atacado (renomeada de /tabela pra /tabela-atacado
+// pra liberar o /tabela como link curto do cliente). Precisa de login/permissão.
+app.get("/tabela-atacado",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
+// mantém /tabela-interna como apelido, caso algum link antigo aponte pra cá
+app.get("/tabela-interna",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
 app.get("/listas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas.html")); });
 app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "dashboard.html")); });
 app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
