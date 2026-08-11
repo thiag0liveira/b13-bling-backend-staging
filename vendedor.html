@@ -790,7 +790,7 @@ function montarTextoPrecos(){
   if(!precosSel.length) return "";
   const porCat={};
   precosSel.forEach(p=>{ const c=p.categoria||"Outros"; (porCat[c]=porCat[c]||[]).push(p); });
-  let txt="🍺 *B13 BEBIDAS — Tabela de preços*\n";
+  let txt="*B13 bebidas - preços:*\n";
   Object.entries(porCat).forEach(([cat,prods])=>{
     txt+=`\n*${cat}*\n`;
     prods.forEach(p=>{
@@ -802,7 +802,7 @@ function montarTextoPrecos(){
       txt+=`• ${p.nome}: ${partes.join(" | ")||'consulte'}\n`;
     });
   });
-  txt+="\n_Preços sujeitos a alteração. Fale com a gente pra fechar seu pedido!_";
+  txt+="\n_Preços sujeitos a alteração_";
   return txt;
 }
 
