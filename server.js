@@ -1855,6 +1855,19 @@ function resumoSessaoCaixa(sessao){
   };
 }
 
+// DIAGNÓSTICO temporário: lista as situações de pedido de venda cadastradas no
+// Bling do usuário, pra confirmar os IDs reais de "Em aberto" e "Em digitação".
+app.get("/api/diag/situacoes",async(req,res)=>{
+  try{
+    // módulo de pedidos de venda no Bling v3
+    let r=null;
+    try{ r=await bling(`/situacoes/modulos`); }catch(e){}
+    // tenta também o endpoint direto de situações
+    let sits=null;
+    try{ sits=await bling(`/situacoes`); }catch(e){ sits={erro:e.message}; }
+    res.json({modulos:r, situacoes:sits, SIT_atual:SIT});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 // DIAGNÓSTICO temporário: explica por que um pedido (pelo número) aparece ou não
 // na montagem de rota. Uso: /api/diag/rota-pedido/50301
 app.get("/api/diag/rota-pedido/:numero",async(req,res)=>{
