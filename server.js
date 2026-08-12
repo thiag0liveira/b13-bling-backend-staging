@@ -1856,6 +1856,16 @@ function resumoSessaoCaixa(sessao){
 }
 
 // status atual do caixa (aberto/fechado + resumo se aberto)
+// DIAGNÓSTICO temporário: mostra o que a LISTAGEM de pedidos retorna (pra ver se
+// ela já traz frete/transporte e permite filtrar entrega sem ler o detalhe de cada um)
+app.get("/api/diag/listagem-pedidos",async(req,res)=>{
+  try{
+    const p=new URLSearchParams({pagina:1,limite:3,idsSituacoes:String(SIT.AGUARDANDO)});
+    const r=await bling(`/pedidos/vendas?${p.toString()}`);
+    // devolve o primeiro item cru pra ver todos os campos que a listagem traz
+    res.json({primeiroItemCru:(r?.data||[])[0]||null, totalNaPagina:(r?.data||[]).length});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 // DIAGNÓSTICO: descobre o que a API de caixas do Bling suporta (GET/POST) —
 // usado pra avaliar a viabilidade de espelhar o caixa no Bling
 app.get("/api/diag/caixas-bling", async(req,res)=>{
