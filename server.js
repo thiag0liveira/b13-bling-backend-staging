@@ -6108,11 +6108,23 @@ app.get("/api/estoque/parado",(req,res)=>{
 
 // DIAGNÓSTICO temporário: mostra o JSON cru do detalhe de um pedido, pra
 // descobrir qual campo indica "estoque lançado" (o badge E azul do Bling).
+// Aceita tanto o ID interno quanto o NÚMERO do pedido (o que aparece na tela).
 // Uso: /api/diag/pedido/49537  → devolve o objeto completo do Bling.
 app.get("/api/diag/pedido/:id",async(req,res)=>{
   try{
-    const d=await bling(`/pedidos/vendas/${req.params.id}`);
-    res.json(d);
+    const alvo=String(req.params.id);
+    // 1) tenta direto pelo ID interno
+    try{
+      const d=await bling(`/pedidos/vendas/${alvo}`);
+      if(d?.data) return res.json(d);
+    }catch(e){ /* provavelmente é número, não ID — continua abaixo */ }
+    // 2) trata como NÚMERO do pedido: busca na listagem pra achar o ID interno
+    const busca=await bling(`/pedidos/vendas?numero=${encodeURIComponent(alvo)}`);
+    const achado=(busca?.data||[]).find(p=>String(p.numero)===alvo) || (busca?.data||[])[0];
+    if(!achado) return res.status(404).json({erro:`Não achei pedido com número ${alvo}. Tente com o ID interno.`, listagem:busca?.data||[]});
+    // pega o detalhe completo pelo ID interno encontrado
+    const det=await bling(`/pedidos/vendas/${achado.id}`);
+    res.json({_encontradoPorNumero:true, _idInterno:achado.id, _numero:achado.numero, detalhe:det});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
