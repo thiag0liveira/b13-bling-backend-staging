@@ -2016,9 +2016,17 @@ function _indicePrecosTabela(){
   const tab=lerTabela();
   const fardo=lerListaFardo();
   const porCodigo={}, porNome={};
+  // o lista_fardo guarda o fardo como objeto {preco: X} (não número direto).
+  // lê de forma robusta: pega .preco se for objeto, ou o número se vier direto.
+  const precoFardoDe=(itemId)=>{
+    const e=fardo[itemId];
+    if(e==null) return null;
+    const v=(typeof e==="object")?e.preco:e;
+    return (v!=null && Number(v)>0)?Number(v):null;
+  };
   (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
     const info={itemId:it.id, categoria:cat.t||"", precoAtacado:it.preco??null,
-      precoFardo: fardo[it.id]!=null?Number(fardo[it.id]):null, caixaQtd:it.caixa||null};
+      precoFardo: precoFardoDe(it.id), caixaQtd:it.caixa||null};
     (it.bling||[]).forEach(b=>{
       if(b.codigo) porCodigo[String(b.codigo)]=info;
       if(b.nome) porNome[String(b.nome).toLowerCase().trim()]=info;
