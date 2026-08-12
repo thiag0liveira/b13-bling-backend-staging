@@ -6106,8 +6106,88 @@ app.get("/api/estoque/parado",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ==================== VERIFICAÇÃO: ATENDIDOS SEM BAIXA DE ESTOQUE ====================
+// Lista os pedidos ATENDIDOS de um período e, pra cada um, checa se tem nota fiscal
+// vinculada — que é o sinal mais confiável (via API) de que o estoque foi lançado.
+// Um pedido atendido SEM nota é o principal suspeito de não ter baixado estoque.
+// Como o usuário emite NF só de alguns pedidos, a tela apenas SINALIZA os suspeitos
+// pra conferência manual (não afirma com certeza — a API do Bling não permite saber
+// com 100% de certeza se um pedido específico baixou estoque).
+async function verificarAtendidosSemBaixa({dataIni,dataFim}){
+  const pedidos=[];
+  for(let pg=1;pg<=100;pg++){
+    const p=new URLSearchParams({pagina:pg,limite:100,idsSituacoes:String(SIT.ATENDIDO),dataInicial:dataIni,dataFinal:dataFim});
+    let arr=[];
+    try{ const r=await bling(`/pedidos/vendas?${p.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+    pedidos.push(...arr);
+    _verifProgresso=`Lendo pedidos atendidos (${pedidos.length})…`;
+    if(arr.length<100) break;
+    await new Promise(r=>setTimeout(r,300));
+  }
+  // pra cada pedido, lê o detalhe pra ver se tem nota fiscal vinculada
+  const resultado=[];
+  let feitos=0;
+  for(const ped of pedidos){
+    let temNota=false, numeroNota=null, itens=[];
+    try{
+      const d=await bling(`/pedidos/vendas/${ped.id}`).then(r=>r?.data);
+      // o detalhe pode trazer a nota fiscal vinculada
+      if(d?.notaFiscal?.id || d?.notaFiscal?.numero){ temNota=true; numeroNota=d.notaFiscal.numero||null; }
+      itens=(d?.itens||[]).map(i=>({nome:i.descricao||i.produto?.nome||"",qtd:i.quantidade}));
+    }catch(e){}
+    feitos++;
+    if(feitos%15===0) _verifProgresso=`Verificando notas (${feitos}/${pedidos.length})…`;
+    resultado.push({
+      pedidoId:ped.id, numero:ped.numero, data:ped.data,
+      cliente:ped.contato?.nome||"", total:+(ped.total||0),
+      temNota, numeroNota, itens,
+      suspeito:!temNota, // atendido sem nota = suspeito de não ter baixado estoque
+    });
+    await new Promise(r=>setTimeout(r,150));
+  }
+  // ordena: suspeitos primeiro, depois por data
+  resultado.sort((a,b)=>(b.suspeito-a.suspeito)||String(b.data).localeCompare(String(a.data)));
+  const suspeitos=resultado.filter(r=>r.suspeito);
+  return {dataIni,dataFim, totalAtendidos:resultado.length, totalSuspeitos:suspeitos.length, pedidos:resultado};
+}
 
-function lerMetas(){ return lerJSON(METAS_FILE,{}); }
+const VERIF_BAIXA_FILE=`${DATA_DIR}/verif_baixa_cache.json`;
+let _cacheVerif={}; // por chave de período
+try{ const c=lerJSON(VERIF_BAIXA_FILE,null); if(c) _cacheVerif=c; }catch(e){}
+let _verifComputando=false, _verifProgresso="", _verifChave="";
+
+function dispararVerifBackground(chave,opts){
+  if(_verifComputando) return;
+  _verifComputando=true; _verifChave=chave; _verifProgresso="Iniciando…";
+  verificarAtendidosSemBaixa(opts)
+    .then(dados=>{ _cacheVerif[chave]={em:Date.now(),dados}; try{ salvarJSON(VERIF_BAIXA_FILE,_cacheVerif); }catch(e){} })
+    .catch(e=>{ console.error("[verif-baixa] erro:",e.message); })
+    .finally(()=>{ _verifComputando=false; _verifProgresso=""; _verifChave=""; });
+}
+
+app.get("/api/estoque/verificar-baixa",(req,res)=>{
+  try{
+    // período: por padrão, hoje; aceita ?dataIni= e ?dataFim= (YYYY-MM-DD)
+    const hoje=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    const dataIni=(req.query.dataIni||hoje).toString().slice(0,10);
+    const dataFim=(req.query.dataFim||dataIni).toString().slice(0,10);
+    const forcar=req.query.forcar==="1";
+    const chave=`${dataIni}_${dataFim}`;
+    const cache=_cacheVerif[chave];
+    // cache válido por 1h (o dia ainda pode ter pedidos novos sendo atendidos)
+    const cacheFresco=cache && (Date.now()-cache.em < 60*60*1000);
+    if(cacheFresco && !forcar){
+      return res.json({...cache.dados, doCache:true, cacheEm:cache.em, computando:_verifComputando&&_verifChave===chave});
+    }
+    dispararVerifBackground(chave,{dataIni,dataFim});
+    if(cache){
+      return res.json({...cache.dados, doCache:true, cacheEm:cache.em, computando:true, progresso:_verifProgresso});
+    }
+    return res.json({computando:true, primeira:true, progresso:_verifProgresso||"Iniciando…", dataIni, dataFim});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+
 function salvarMetas(m){ salvarJSON(METAS_FILE,m); }
 
 // lê a meta de um mês (ou do mês atual)
