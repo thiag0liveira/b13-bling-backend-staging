@@ -6395,15 +6395,27 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
   try{
     const dataAlvo=req.query.data||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
     const offsetBR=3*60*60*1000;
-    const dataFim=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
-    const dataIni=new Date(Date.now()-offsetBR-21*86400000).toISOString().slice(0,10); // janela de 21 dias
+    // janela de datas: por padrão 60 dias pra trás e 7 dias pra frente (pega
+    // pedidos futuros agendados também). Ajustável por ?dias= (quantos dias pra trás).
+    const diasTras=Math.min(Number(req.query.dias||60),180);
+    const dataFim=new Date(Date.now()-offsetBR+7*86400000).toISOString().slice(0,10);
+    const dataIni=new Date(Date.now()-offsetBR-diasTras*86400000).toISOString().slice(0,10);
     // status que podem entrar na montagem de rota. Inclui "Em aberto" e "Em
     // digitação" (pedidos criados por vendedores nascem "Em digitação"), pra
     // permitir agendar na rota mesmo pedidos que ainda não passaram pela separação.
     const situacoes=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
-    const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataIni,dataFinal:dataFim});
-    situacoes.forEach(id=>p.append("idsSituacoes[]",id));
-    const lista=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]);
+    // pagina de verdade: busca TODAS as páginas (o Bling traz no máx 100 por vez).
+    // Sem isso, com muitos pedidos em aberto/digitação, os excedentes ficavam de fora.
+    let lista=[];
+    for(let pag=1;pag<=30;pag++){
+      const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+      situacoes.forEach(id=>p.append("idsSituacoes[]",id));
+      let arr=[];
+      try{ arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]); }catch(e){ break; }
+      lista.push(...arr);
+      if(arr.length<100) break; // última página
+      await new Promise(r=>setTimeout(r,300)); // respeita o limite do Bling
+    }
     // remove duplicados (a paginação do Bling às vezes repete)
     const vistos=new Set(); const unicos=lista.filter(p=>{ if(vistos.has(p.id)) return false; vistos.add(p.id); return true; });
 
