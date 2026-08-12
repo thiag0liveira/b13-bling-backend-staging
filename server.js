@@ -67,6 +67,8 @@ const FPAG_DEFAULT=[
 
 // IDs dos status — configurados via variáveis de ambiente ou padrões existentes
 const SIT = {
+  EM_ABERTO:    Number(process.env.SIT_EM_ABERTO    || 6),
+  EM_DIGITACAO: Number(process.env.SIT_EM_DIGITACAO || 21),
   AGUARDANDO:   Number(process.env.SIT_AGUARDANDO   || 818795),
   EM_SEP:       Number(process.env.SIT_EM_SEP       || 817963),
   SEPARADO:     Number(process.env.SIT_SEPARADO     || 821590),
@@ -6395,7 +6397,10 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     const offsetBR=3*60*60*1000;
     const dataFim=new Date(Date.now()-offsetBR).toISOString().slice(0,10);
     const dataIni=new Date(Date.now()-offsetBR-21*86400000).toISOString().slice(0,10); // janela de 21 dias
-    const situacoes=[SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
+    // status que podem entrar na montagem de rota. Inclui "Em aberto" e "Em
+    // digitação" (pedidos criados por vendedores nascem "Em digitação"), pra
+    // permitir agendar na rota mesmo pedidos que ainda não passaram pela separação.
+    const situacoes=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
     const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataIni,dataFinal:dataFim});
     situacoes.forEach(id=>p.append("idsSituacoes[]",id));
     const lista=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]);
