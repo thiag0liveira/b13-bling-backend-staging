@@ -1855,6 +1855,31 @@ function resumoSessaoCaixa(sessao){
   };
 }
 
+// DIAGNÓSTICO temporário: conta quantos pedidos o filtro idsSituacoes retorna pra
+// cada status usado na rota — confirma se os IDs de Em aberto/Em digitação batem.
+app.get("/api/diag/contar-situacoes",async(req,res)=>{
+  try{
+    const offsetBR=3*60*60*1000;
+    const dataFim=new Date(Date.now()-offsetBR+7*86400000).toISOString().slice(0,10);
+    const dataIni=new Date(Date.now()-offsetBR-60*86400000).toISOString().slice(0,10);
+    const alvos={
+      "EM_ABERTO(6)":SIT.EM_ABERTO, "EM_DIGITACAO(21)":SIT.EM_DIGITACAO,
+      "AGUARDANDO":SIT.AGUARDANDO, "SEPARADO":SIT.SEPARADO, "SEP_PEND":SIT.SEP_PEND, "EM_ROTA":SIT.EM_ROTA,
+    };
+    const contagem={};
+    const exemplos={};
+    for(const [nome,id] of Object.entries(alvos)){
+      const p=new URLSearchParams({pagina:1,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+      p.append("idsSituacoes[]",id);
+      let arr=[];
+      try{ arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]); }catch(e){ contagem[nome]="ERRO:"+e.message; continue; }
+      contagem[nome]=arr.length;
+      exemplos[nome]=arr.slice(0,3).map(x=>({numero:x.numero,situacaoId:x.situacao?.id,total:x.total}));
+      await new Promise(r=>setTimeout(r,300));
+    }
+    res.json({periodo:{dataIni,dataFim}, contagem, exemplos, SIT});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 // DIAGNÓSTICO temporário: lista as situações de pedido de venda cadastradas no
 // Bling do usuário, pra confirmar os IDs reais de "Em aberto" e "Em digitação".
 app.get("/api/diag/situacoes",async(req,res)=>{
