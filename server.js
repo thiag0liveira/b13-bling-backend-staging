@@ -1873,10 +1873,18 @@ app.get("/api/diag/situacoes",async(req,res)=>{
 app.get("/api/diag/rota-pedido/:numero",async(req,res)=>{
   try{
     const num=String(req.params.numero);
-    // acha o pedido pelo número
-    const busca=await bling(`/pedidos/vendas?numero=${encodeURIComponent(num)}`);
-    const achado=(busca?.data||[]).find(p=>String(p.numero)===num)||(busca?.data||[])[0];
-    if(!achado) return res.json({achou:false, motivo:"não encontrado pelo número na listagem", listagem:busca?.data||[]});
+    // a API v3 do Bling NÃO tem filtro por "numero" na listagem — então varre as
+    // páginas procurando o número exato (o campo do pedido é .numero).
+    let achado=null;
+    for(let pag=1;pag<=30 && !achado;pag++){
+      const p=new URLSearchParams({pagina:pag,limite:100});
+      let arr=[];
+      try{ arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]); }catch(e){ break; }
+      achado=arr.find(x=>String(x.numero)===num)||null;
+      if(arr.length<100) break;
+      await new Promise(r=>setTimeout(r,300));
+    }
+    if(!achado) return res.json({achou:false, motivo:"número não encontrado varrendo as páginas de pedidos"});
     const det=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data);
     const frete=+(det?.transporte?.frete||0);
     const endObj = det?.transporte?.enderecoEntrega?.endereco ? det.transporte.enderecoEntrega
