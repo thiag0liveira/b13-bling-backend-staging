@@ -6106,6 +6106,21 @@ app.get("/api/estoque/parado",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// DIAGNÓSTICO temporário 2: testa endpoints de estoque/movimentação de um produto,
+// pra ver se algum deles lista os lançamentos (saídas) e permite saber se um pedido
+// baixou estoque. Uso: /api/diag/estoque/16448756253
+app.get("/api/diag/estoque/:produtoId",async(req,res)=>{
+  const pid=req.params.produtoId;
+  const testes={};
+  // teste A: saldo do produto (físico vs virtual)
+  try{ testes.saldos=await bling(`/estoques/saldos?idsProdutos[]=${pid}`); }catch(e){ testes.saldos={erro:e.message}; }
+  // teste B: lançamentos de estoque do produto (se existir esse filtro)
+  try{ testes.estoquesPorProduto=await bling(`/estoques?idProduto=${pid}`); }catch(e){ testes.estoquesPorProduto={erro:e.message}; }
+  // teste C: produto detalhado (traz saldo?)
+  try{ const p=await bling(`/produtos/${pid}`); testes.produtoEstoque=p?.data?.estoque||null; }catch(e){ testes.produtoEstoque={erro:e.message}; }
+  res.json(testes);
+});
+
 // DIAGNÓSTICO temporário: mostra o JSON cru do detalhe de um pedido, pra
 // descobrir qual campo indica "estoque lançado" (o badge E azul do Bling).
 // Aceita tanto o ID interno quanto o NÚMERO do pedido (o que aparece na tela).
