@@ -6106,6 +6106,16 @@ app.get("/api/estoque/parado",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// DIAGNÓSTICO temporário: mostra o JSON cru do detalhe de um pedido, pra
+// descobrir qual campo indica "estoque lançado" (o badge E azul do Bling).
+// Uso: /api/diag/pedido/49537  → devolve o objeto completo do Bling.
+app.get("/api/diag/pedido/:id",async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.id}`);
+    res.json(d);
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
 // ==================== VERIFICAÇÃO: ATENDIDOS SEM BAIXA DE ESTOQUE ====================
 // Lista os pedidos ATENDIDOS de um período e, pra cada um, checa se tem nota fiscal
 // vinculada — que é o sinal mais confiável (via API) de que o estoque foi lançado.
