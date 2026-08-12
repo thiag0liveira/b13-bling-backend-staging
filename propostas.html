@@ -62,15 +62,20 @@ function render(){
     </div>
     <div class="wrap">
       <div class="card">
-        <div id="filtroChips" style="display:flex;gap:6px;flex-wrap:wrap">
+        <div id="filtroChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <span class="chip ${FILTRO==='todas'?'on':''}" onclick="mudarFiltro('todas')">Todas</span>
           <span class="chip ${FILTRO==='proposta'?'on':''}" onclick="mudarFiltro('proposta')">📄 Propostas</span>
           <span class="chip ${FILTRO==='pedido'?'on':''}" onclick="mudarFiltro('pedido')">🛒 Pedidos</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="sincronizarPedidos(true)" title="Verifica no Bling e remove pedidos que foram excluídos lá">🔄 <span id="syncLabel">Sincronizar</span></button>
         </div>
       </div>
       <div id="lista"><div class="muted">Carregando…</div></div>
     </div>`;
   carregar();
+  // ao abrir a tela, verifica em segundo plano se algum pedido foi excluído no
+  // Bling e limpa os fantasmas (silencioso — só recarrega a lista se removeu algo)
+  setTimeout(()=>sincronizarPedidos(false), 1200);
 }
 
 // troca o filtro. Reconstrói a tela inteira (render) a partir do FILTRO atual,
@@ -93,6 +98,33 @@ async function carregar(){
     if(!LISTA.length){ box.innerHTML=`<div class="card"><div class="muted">Nenhuma ${FILTRO==='todas'?'proposta/pedido':FILTRO} ainda.</div></div>`; return; }
     box.innerHTML=LISTA.map(cardProposta).join("");
   }catch(e){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro ao carregar.</div>`; }
+}
+
+// Sincroniza os pedidos com o Bling: remove do sistema os pedidos que foram
+// excluídos no Bling (o pedido é espelho do Bling). Propostas não são tocadas.
+// manual=true → chamado pelo botão (mostra aviso do resultado).
+// manual=false → disparo silencioso ao abrir a tela (só recarrega se removeu algo).
+let _sincronizando=false;
+async function sincronizarPedidos(manual){
+  if(_sincronizando) return;
+  _sincronizando=true;
+  const lbl=document.getElementById("syncLabel");
+  if(lbl && manual) lbl.textContent="Verificando…";
+  try{
+    const j=await fetch(B+"/api/atacado/propostas/sincronizar-pedidos",{method:"POST"}).then(r=>r.json());
+    if(lbl) lbl.textContent="Sincronizar";
+    if(j.erro){ if(manual) alert("Erro ao sincronizar: "+j.erro); return; }
+    if(j.removidos>0){
+      carregar(); // atualiza a lista (os fantasmas somem)
+      if(manual){
+        const nomes=(j.detalhes||[]).map(d=>`#${d.pedidoBlingNumero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
+        alert(`✅ ${j.removidos} pedido(s) que não existiam mais no Bling foram removidos:\n\n${nomes}`);
+      }
+    }else if(manual){
+      alert(`✅ Tudo certo! Os ${j.verificados} pedido(s) verificados ainda existem no Bling.`);
+    }
+  }catch(e){ if(lbl) lbl.textContent="Sincronizar"; if(manual) alert("Erro de conexão ao sincronizar."); }
+  finally{ _sincronizando=false; }
 }
 
 function statusTag(p){

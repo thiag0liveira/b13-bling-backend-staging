@@ -5506,6 +5506,44 @@ app.get("/api/atacado/propostas/:id",(req,res)=>{
   res.json({data:p});
 });
 
+// SINCRONIZA os PEDIDOS com o Bling: pra cada item que já virou pedido (tem
+// pedidoBlingId), verifica se o pedido ainda existe no Bling. Se foi excluído lá
+// (404), remove do nosso sistema — o pedido é um espelho do Bling, então não faz
+// sentido manter fantasma. As PROPOSTAS (sem pedidoBlingId) vivem só no nosso
+// sistema e NÃO são tocadas. Retorna quantos foram removidos.
+app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
+  try{
+    const props=lerPropostas();
+    // só os que são pedidos de verdade (espelho do Bling)
+    const pedidos=Object.values(props).filter(p=>p.pedidoBlingId);
+    const removidos=[];
+    for(const p of pedidos){
+      let existe=true;
+      try{
+        const r=await bling(`/pedidos/vendas/${p.pedidoBlingId}`);
+        // se voltou com dados, existe. Se o Bling não achou, cai no catch.
+        existe=!!(r&&r.data);
+      }catch(e){
+        // 404 = pedido não existe mais no Bling → marca pra remover.
+        // Outros erros (rede, 429, 5xx) NÃO removem — só o 404 é conclusivo,
+        // pra não apagar pedido bom por causa de instabilidade.
+        const msg=String(e.message||"");
+        const body=e.body?JSON.stringify(e.body):"";
+        const ehNaoEncontrado = e.status===404 || /404|not.?found|não encontrad|resource_not_found/i.test(msg+body);
+        if(ehNaoEncontrado) existe=false;
+        else existe=true; // erro incerto → mantém o pedido
+      }
+      if(!existe){
+        removidos.push({id:p.id, pedidoBlingNumero:p.pedidoBlingNumero, cliente:p.clienteNome||p.cliente?.nome||""});
+        delete props[p.id];
+      }
+      await new Promise(r=>setTimeout(r,150)); // respeita o limite do Bling
+    }
+    if(removidos.length) salvarPropostas(props);
+    res.json({ok:true, verificados:pedidos.length, removidos:removidos.length, detalhes:removidos});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // cria ou atualiza uma proposta/rascunho de pedido no nosso sistema
 app.post("/api/atacado/propostas",(req,res)=>{
   try{
