@@ -6624,46 +6624,74 @@ app.get("/api/vendedor/prospeccao-places",async(req,res)=>{
   try{
     if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado no servidor."});
     const tipo=req.query.tipo||"bar";
-    const raio=Math.min(Number(req.query.raio||3000),15000); // metros, máx 15km
+    const raio=Math.min(Number(req.query.raio||3000),15000); // metros, máx 15km (raio máximo da busca)
+    // raio mínimo (anel): se informado, filtra os resultados mais próximos que isso.
+    // Ex.: raioMin=3000 & raio=5000 → só o que está ENTRE 3 e 5 km.
+    const raioMin=Math.max(0,Number(req.query.raioMin||0));
     const forcar=req.query.forcar==="1";
     const cacheKey=`${tipo}_${raio}`;
-    // cache de 12h por tipo+raio (Places é pago)
+    // cache de 12h por tipo+raio máximo (Places é pago). O filtro de raioMin é
+    // aplicado depois, sobre o cache — então trocar só o mínimo não gasta a API.
     const cacheAll=lerJSON(PROSPECCAO_PLACES_FILE,{});
+    let base=null;
     if(!forcar && cacheAll[cacheKey] && (Date.now()-cacheAll[cacheKey].em<12*60*60*1000)){
-      return res.json({...cacheAll[cacheKey].dados,doCache:true,cacheEm:cacheAll[cacheKey].em});
+      base={...cacheAll[cacheKey].dados,doCache:true,cacheEm:cacheAll[cacheKey].em};
     }
     const coord=await geocodeLoja();
     if(!coord) return res.status(500).json({erro:"não consegui localizar o endereço da loja"});
-    const t=TIPOS_PROSPECCAO[tipo]||TIPOS_PROSPECCAO.bar;
-    // Places API (New) — Text Search via POST com JSON e field mask no header
-    const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
-        "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.currentOpeningHours.openNow",
-      },
-      body:JSON.stringify({
-        textQuery:t.keyword,
-        languageCode:"pt-BR",
-        locationBias:{circle:{center:{latitude:coord.lat,longitude:coord.lng},radius:raio}},
-      }),
-    }).then(x=>x.json());
-    if(r.error){
-      return res.status(500).json({erro:"Google Places: "+(r.error.message||r.error.status||"erro")});
+
+    if(!base){
+      const t=TIPOS_PROSPECCAO[tipo]||TIPOS_PROSPECCAO.bar;
+      // Places API (New) — Text Search via POST com JSON e field mask no header
+      const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
+          "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.currentOpeningHours.openNow",
+        },
+        body:JSON.stringify({
+          textQuery:t.keyword,
+          languageCode:"pt-BR",
+          locationBias:{circle:{center:{latitude:coord.lat,longitude:coord.lng},radius:raio}},
+        }),
+      }).then(x=>x.json());
+      if(r.error){
+        return res.status(500).json({erro:"Google Places: "+(r.error.message||r.error.status||"erro")});
+      }
+      const locais=(r.places||[]).map(p=>({
+        placeId:p.id, nome:p.displayName?.text||"", endereco:p.formattedAddress||"",
+        rating:p.rating||null, totalAvaliacoes:p.userRatingCount||0,
+        lat:p.location?.latitude, lng:p.location?.longitude,
+        aberto:p.currentOpeningHours?.openNow,
+      }));
+      const t2=TIPOS_PROSPECCAO[tipo]||TIPOS_PROSPECCAO.bar;
+      base={tipo,tipoLabel:t2.label,raio,total:locais.length,locais,geradoEm:Date.now()};
+      cacheAll[cacheKey]={em:Date.now(),dados:base};
+      salvarJSON(PROSPECCAO_PLACES_FILE,cacheAll);
     }
-    const locais=(r.places||[]).map(p=>({
-      placeId:p.id, nome:p.displayName?.text||"", endereco:p.formattedAddress||"",
-      rating:p.rating||null, totalAvaliacoes:p.userRatingCount||0,
-      lat:p.location?.latitude, lng:p.location?.longitude,
-      aberto:p.currentOpeningHours?.openNow,
+
+    // calcula a distância de cada lugar até a loja e aplica o filtro de anel
+    const comDist=(base.locais||[]).map(p=>({
+      ...p,
+      distanciaM: (p.lat!=null&&p.lng!=null) ? Math.round(distanciaMetros(coord.lat,coord.lng,p.lat,p.lng)) : null,
     }));
-    const dados={tipo,tipoLabel:t.label,raio,total:locais.length,locais,geradoEm:Date.now()};
-    cacheAll[cacheKey]={em:Date.now(),dados};
-    salvarJSON(PROSPECCAO_PLACES_FILE,cacheAll);
-    res.json(dados);
+    let filtrados=comDist;
+    if(raioMin>0){ filtrados=comDist.filter(p=>p.distanciaM==null || p.distanciaM>=raioMin); }
+    // ordena por distância (mais perto primeiro)
+    filtrados.sort((a,b)=>(a.distanciaM??1e9)-(b.distanciaM??1e9));
+
+    res.json({...base, raioMin, total:filtrados.length, locais:filtrados});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
+// distância em metros entre duas coordenadas (fórmula de Haversine)
+function distanciaMetros(lat1,lon1,lat2,lon2){
+  const R=6371000, rad=Math.PI/180;
+  const dLat=(lat2-lat1)*rad, dLon=(lon2-lon1)*rad;
+  const a=Math.sin(dLat/2)**2 + Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
 
 // detalhes de um lugar (telefone) — chamado só quando o vendedor clica, pra economizar
 app.get("/api/vendedor/place-detalhe/:placeId",async(req,res)=>{
