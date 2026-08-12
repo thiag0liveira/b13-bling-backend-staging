@@ -6564,10 +6564,22 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           const m=det.observacoes.match(/ENTREGA\s*—\s*([^(]+)/);
           if(m) enderecoTxt=m[1].trim();
         }
+        // FALLBACK: se o pedido não tem endereço próprio, usa o endereço do
+        // CADASTRO DO CLIENTE no Bling (muitos pedidos em digitação/aberto são
+        // criados sem transporte, mas o cliente tem endereço cadastrado).
+        let enderecoOrigem = enderecoTxt ? "pedido" : null;
+        if(!enderecoTxt && det.contato?.id){
+          try{
+            const c=await bling(`/contatos/${det.contato.id}`).then(r=>r?.data);
+            const g=c?.endereco?.geral||c?.endereco||{};
+            const eCli=[g.endereco,g.numero,g.bairro,g.municipio,g.uf].filter(Boolean).join(", ");
+            if(eCli){ enderecoTxt=eCli; enderecoOrigem="cliente"; }
+          }catch(e){}
+        }
         const temEndereco=!!enderecoTxt;
-        // heurística "é entrega": tem frete (mesmo que grátis, verificado via
-        // observação/tag) OU tem endereço de entrega identificado
-        if(frete<=0 && !temEndereco) continue;
+        // NÃO descarta mais por falta de frete/endereço: todos os candidatos
+        // entram na lista. Os sem endereço aparecem marcados (semEndereco:true)
+        // pra você adicionar o endereço ou decidir. Só o geocode precisa de endereço.
         let coord=null;
         if(enderecoTxt) coord=await geocodeEndereco(enderecoTxt).catch(()=>null);
         detalhados.push({
@@ -6576,6 +6588,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           total:+(det.total||0), totalProdutos:+(det.totalProdutos||0), frete,
           situacao:det.situacao?.id, situacaoNome:det.situacao?.nome||"",
           endereco:enderecoTxt, lat:coord?.lat||null, lng:coord?.lng||null,
+          semEndereco:!temEndereco, enderecoOrigem,
           itens:(det.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),

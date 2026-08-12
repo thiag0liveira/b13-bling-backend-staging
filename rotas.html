@@ -739,7 +739,9 @@ function htmlPedidoCard(p, modo){
         <div class="muted">⚖️ ${p.pesoEstimadoKg} kg (estim.)</div>
       </div>
     </div>
-    <div class="muted" style="margin-top:6px">📍 ${esc(p.endereco||"endereço não identificado")}</div>
+    ${p.semEndereco
+      ? `<div style="margin-top:6px;background:#3a1a00;border:1px solid #ff8c00;border-radius:6px;padding:6px 8px;font-size:11px;color:#ffb84d">⚠️ Sem endereço de entrega no pedido nem no cadastro do cliente. Adicione o endereço no Bling pra calcular a rota.</div>`
+      : `<div class="muted" style="margin-top:6px">📍 ${esc(p.endereco||"endereço não identificado")}${p.enderecoOrigem==="cliente"?` <span style="color:#7fd4ff">(do cadastro do cliente)</span>`:""}</div>`}
     <div class="assignrow">
       <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="toggleExpandido(${p.id})">${exp?"▲ Ocultar itens":"▼ Ver itens ("+p.itens.length+")"}</button>
       ${acao}
