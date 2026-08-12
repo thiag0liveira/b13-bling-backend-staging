@@ -1855,6 +1855,39 @@ function resumoSessaoCaixa(sessao){
   };
 }
 
+// DIAGNÓSTICO temporário: explica por que um pedido (pelo número) aparece ou não
+// na montagem de rota. Uso: /api/diag/rota-pedido/50301
+app.get("/api/diag/rota-pedido/:numero",async(req,res)=>{
+  try{
+    const num=String(req.params.numero);
+    // acha o pedido pelo número
+    const busca=await bling(`/pedidos/vendas?numero=${encodeURIComponent(num)}`);
+    const achado=(busca?.data||[]).find(p=>String(p.numero)===num)||(busca?.data||[])[0];
+    if(!achado) return res.json({achou:false, motivo:"não encontrado pelo número na listagem", listagem:busca?.data||[]});
+    const det=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data);
+    const frete=+(det?.transporte?.frete||0);
+    const endObj = det?.transporte?.enderecoEntrega?.endereco ? det.transporte.enderecoEntrega
+                 : det?.transporte?.etiqueta?.endereco ? det.transporte.etiqueta : null;
+    let enderecoTxt = endObj?[endObj.endereco,endObj.numero,endObj.bairro,endObj.municipio,endObj.uf].filter(Boolean).join(", "):"";
+    if(!enderecoTxt && det?.observacoes){ const m=det.observacoes.match(/ENTREGA\s*—\s*([^(]+)/); if(m) enderecoTxt=m[1].trim(); }
+    const situacaoId=Number(det?.situacao?.id||0);
+    const statusEntram=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
+    res.json({
+      achou:true, id:achado.id, numero:achado.numero,
+      total:+(det?.total||0),
+      situacaoId, situacaoNome:det?.situacao?.nome||"",
+      _checagens:{
+        statusEntraNaRota: statusEntram.includes(situacaoId),
+        passaFiltroValor_1000: +(det?.total||0)>=1000,
+        temFrete: frete>0, frete,
+        temEndereco: !!enderecoTxt, enderecoDetectado: enderecoTxt||"(nenhum)",
+        ehEntrega: (frete>0 || !!enderecoTxt),
+      },
+      transporteCru: det?.transporte||null,
+      observacoes: det?.observacoes||"",
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 // status atual do caixa (aberto/fechado + resumo se aberto)
 // DIAGNÓSTICO: descobre o que a API de caixas do Bling suporta (GET/POST) —
 // usado pra avaliar a viabilidade de espelhar o caixa no Bling
