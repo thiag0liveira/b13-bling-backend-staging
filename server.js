@@ -1856,16 +1856,6 @@ function resumoSessaoCaixa(sessao){
 }
 
 // status atual do caixa (aberto/fechado + resumo se aberto)
-// DIAGNÓSTICO temporário: mostra o que a LISTAGEM de pedidos retorna (pra ver se
-// ela já traz frete/transporte e permite filtrar entrega sem ler o detalhe de cada um)
-app.get("/api/diag/listagem-pedidos",async(req,res)=>{
-  try{
-    const p=new URLSearchParams({pagina:1,limite:3,idsSituacoes:String(SIT.AGUARDANDO)});
-    const r=await bling(`/pedidos/vendas?${p.toString()}`);
-    // devolve o primeiro item cru pra ver todos os campos que a listagem traz
-    res.json({primeiroItemCru:(r?.data||[])[0]||null, totalNaPagina:(r?.data||[]).length});
-  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
-});
 // DIAGNÓSTICO: descobre o que a API de caixas do Bling suporta (GET/POST) —
 // usado pra avaliar a viabilidade de espelhar o caixa no Bling
 app.get("/api/diag/caixas-bling", async(req,res)=>{
@@ -6464,9 +6454,20 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
       return null;
     };
 
+    // OTIMIZAÇÃO: pré-filtro por valor usando o "total" que já vem na LISTAGEM
+    // (barato, sem ler o detalhe). Pedido de entrega costuma ser acima de R$ 1.000,
+    // então descarta os menores ANTES de ler o detalhe pesado — a não ser que o
+    // pedido já esteja agendado na rota (esse sempre precisa aparecer). Ajustável
+    // por ?valorMin= (0 desliga o filtro e volta a ler todos).
+    const valorMin=req.query.valorMin!=null?Number(req.query.valorMin):1000;
+    const jaAgendado=(id)=>!!acharCarroDoPedido(id);
+    const candidatos = valorMin>0
+      ? unicos.filter(p=> Number(p.total||0)>=valorMin || jaAgendado(p.id))
+      : unicos;
+
     const detalhados=[];
-    for(let i=0;i<unicos.length;i++){
-      const resumo=unicos[i];
+    for(let i=0;i<candidatos.length;i++){
+      const resumo=candidatos[i];
       try{
         const det=await bling(`/pedidos/vendas/${resumo.id}`).then(r=>r?.data);
         if(!det) continue;
