@@ -675,19 +675,24 @@ function htmlConfig(){
 
     <div class="lbl">Horário de funcionamento das rotas</div>
     <div class="muted" style="font-size:11px;margin-bottom:8px">Cada carro tem seu próprio horário de saída e até que horas pode terminar a rota — configure na lista de carros abaixo.</div>
+
+    <div style="background:#0e2536;border:1px solid #2a6a9a;border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:11px;color:#a9d8ff">
+      💡 <b>Como o tempo é calculado:</b> quando você clica em <b>🧭 Sugerir rota</b>, o tempo de <b>trajeto</b> (dirigindo entre a loja e cada endereço, e a volta) é calculado <b>de verdade pelo Google</b>, com base nos endereços reais das entregas. Os campos abaixo são só uma <b>estimativa inicial</b> (usada antes de calcular, e pro tempo que o carro fica <b>parado</b> em cada entrega, que o Google não sabe).
+    </div>
+
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-      <span class="muted">Tempo médio de trajeto entre paradas (só pra estimativa)</span>
+      <span class="muted">Tempo médio de trajeto entre paradas <span style="color:#ffb84d">(só estimativa inicial — o real vem dos endereços)</span></span>
       <input type="number" min="1" value="${c.tempoTrajetoMin||12}" oninput="S.config.tempoTrajetoMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <span class="muted">Tempo médio de carregar/descarregar + entregar em cada parada</span>
+      <span class="muted">Tempo parado em cada entrega (descarregar + entregar) <span style="color:#7fd4ff">(esse sempre é somado — o Google não calcula)</span></span>
       <input type="number" min="1" value="${c.tempoParadaMin||15}" oninput="S.config.tempoParadaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <span class="muted">Tempo pra voltar na loja, recarregar e sair de novo (entre 1 viagem e outra do mesmo carro)</span>
       <input type="number" min="1" value="${c.tempoRecargaMin||20}" oninput="S.config.tempoRecargaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
-    <div class="muted" style="font-size:11px;margin:-6px 0 12px">O sistema usa isso pra estimar quantas entregas cada rota consegue fazer no horário disponível, se um carro pode fazer mais de 1 viagem no mesmo dia, e avisa quando o total corre risco de não dar tempo.</div>
+    <div class="muted" style="font-size:11px;margin:-6px 0 12px">O sistema usa isso pra estimar quantas entregas cada rota consegue fazer no horário disponível, se um carro pode fazer mais de 1 viagem no mesmo dia, e avisa quando o total corre risco de não dar tempo. Depois que você calcula a rota, o tempo de trajeto passa a ser o real.</div>
 
     <div class="lbl">Rotas/carros disponíveis</div>
     ${c.carros.map((carro,ix)=>`
@@ -824,7 +829,7 @@ function htmlViagemBox(carro,vix,cap){
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
            <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`
         )).join(""))}
-    ${resultado?`<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> de trajeto</span></div>
+    ${resultado?`<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin+ids.length*(S.config.tempoParadaMin||15)} min</b> no total (com as ${ids.length} parada${ids.length!==1?'s':''})</span></div>
     <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo===chave?'Mapa aberto abaixo':'Ver rota no mapa'}</button>
     ${S.carroMapaAtivo===chave?`<div id="mapaRota"></div>`:''}`:''}
   </div>`;
