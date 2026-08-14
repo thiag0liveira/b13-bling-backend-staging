@@ -6301,18 +6301,34 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     }
     const vendido=+atacadoUnico.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
     const falta=+Math.max(0,meta-vendido).toFixed(2);
-    // ritmo ideal: quanto vender por dia nos dias restantes pra bater a meta
+
+    // ---- cálculos considerando que NÃO abre aos domingos ----
+    // conta quantos dias ÚTEIS (seg-sáb, sem domingo) há entre dois dias do mês (inclusive).
+    const ehDomingo=(d)=> new Date(ano,mm-1,d).getDay()===0;
+    const contarDiasUteis=(de,ate)=>{ let n=0; for(let d=de;d<=ate;d++){ if(!ehDomingo(d)) n++; } return n; };
+    const diasUteisMes=contarDiasUteis(1,ultimoDia); // total de dias úteis no mês
+
+    // ritmo ideal: quanto vender por dia ÚTIL restante pra bater a meta (domingo não conta)
+    const diasUteisRestantes=ehMesAtual?contarDiasUteis(Math.min(diaAtual+1,ultimoDia+1),ultimoDia):0;
+    const idealPorDiaRestante=diasUteisRestantes>0?+(falta/diasUteisRestantes).toFixed(2):0;
+    // também expõe a contagem "corrida" pra referência
     const diasRestantes=ehMesAtual?Math.max(0,ultimoDia-diaAtual):0;
-    const idealPorDiaRestante=diasRestantes>0?+(falta/diasRestantes).toFixed(2):0;
-    // linha ideal (meta distribuída igualmente pelos dias do mês)
-    const idealPorDia=meta/ultimoDia;
-    dias.forEach(x=>{ x.metaAcumulada=+(idealPorDia*x.dia).toFixed(2); });
+
+    // linha ideal do gráfico: a meta é distribuída pelos DIAS ÚTEIS. A linha sobe
+    // só nos dias úteis (fica "de patamar" no domingo, já que não se espera venda).
+    const idealPorDiaUtil=diasUteisMes>0?meta/diasUteisMes:0;
+    dias.forEach(x=>{ x.metaAcumulada=+(idealPorDiaUtil*contarDiasUteis(1,x.dia)).toFixed(2); x.ehDomingo=ehDomingo(x.dia); });
+
+    // média diária: divide pelos dias ÚTEIS já passados (não pelos corridos)
+    const diasUteisPassados=contarDiasUteis(1, ehMesAtual?diaAtual:ultimoDia);
     const pctMeta=meta>0?Math.round(vendido/meta*100):0;
 
     res.json({
       mes, meta, vendido, falta, pctMeta,
-      diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia, diasRestantes,
-      idealPorDiaRestante, mediaDiaria: diaAtual>0?+(vendido/(ehMesAtual?diaAtual:ultimoDia)).toFixed(2):0,
+      diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia,
+      diasRestantes, diasUteisRestantes, diasUteisMes,
+      idealPorDiaRestante,
+      mediaDiaria: diasUteisPassados>0?+(vendido/diasUteisPassados).toFixed(2):0,
       dias,
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
