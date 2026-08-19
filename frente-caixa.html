@@ -760,10 +760,10 @@ function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
 function continuarAutorizacaoEstoque(){
   const qtdDesejada=Math.max(1,+document.getElementById("qtdAjusteEstoque").value||1);
   const p=window._itemEstoquePendente;
-  pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada)=>{
+  pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada,tokenQr)=>{
     try{
       const r=await fetch(BACKEND+"/api/pdv/ajustar-estoque",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({idDigitado,senhaDigitada,produtoId:p.produtoId,quantidade:qtdDesejada})});
+        body:JSON.stringify({tokenQr,produtoId:p.produtoId,quantidade:qtdDesejada})});
       const j=await r.json();
       if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao ajustar estoque no Bling");
       const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
@@ -806,6 +806,10 @@ function removerItem(ix){
 }
 
 // ---------------- autorização especial (remover item / aplicar desconto) ----------------
+// Agora por QR CODE: um gerente/líder de caixa/admin mostra o QR do dia (do perfil
+// dele) e o caixa lê com o leitor de código de barras/QR. O leitor funciona como
+// teclado: "digita" o token no campo e dá Enter. O campo é do tipo senha pra
+// ninguém ver o código na tela.
 let DESCONTO_DESBLOQUEADO=false;
 function pedirAutorizacao(aoAutorizar,mensagemExtra){
   window._aoAutorizarCallback=aoAutorizar;
@@ -814,29 +818,34 @@ function pedirAutorizacao(aoAutorizar,mensagemExtra){
       <div class="modal">
         <h3>🔒 Autorização necessária</h3>
         <p class="muted" style="margin-bottom:12px">${mensagemExtra?esc(mensagemExtra):"Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
-        <div class="muted" style="margin-bottom:4px">ID</div>
-        <input type="password" id="autId" style="width:100%;font-size:18px;letter-spacing:2px" autofocus autocomplete="off">
-        <div class="muted" style="margin:10px 0 4px">Senha</div>
-        <input type="password" id="autSenha" style="width:100%;font-size:18px;letter-spacing:2px" autocomplete="off" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
+        <div style="text-align:center;margin:8px 0 14px">
+          <div style="font-size:40px;line-height:1">📷</div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Passe o <b>QR code do dia</b> do gerente no leitor.</div>
+        </div>
+        <input type="password" id="autQr" style="width:100%;font-size:18px;letter-spacing:2px;text-align:center" autofocus autocomplete="off" placeholder="aguardando leitura…" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
         <div id="autErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">
-          <button class="btn" style="flex:1" onclick="confirmarAutorizacao()">Confirmar</button>
-          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>
         </div>
       </div>
     </div>`;
+  // mantém o foco no campo pra o leitor sempre digitar ali
+  setTimeout(()=>{ const el=document.getElementById("autQr"); if(el) el.focus(); },60);
 }
 
 async function confirmarAutorizacao(){
-  const idDigitado=document.getElementById("autId").value.trim();
-  const senhaDigitada=document.getElementById("autSenha").value;
+  const tokenQr=document.getElementById("autQr").value.trim();
+  if(!tokenQr) return;
   try{
-    const r=await fetch(BACKEND+"/api/pdv/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({idDigitado,senhaDigitada})});
+    const r=await fetch(BACKEND+"/api/pdv/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tokenQr})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Autorização inválida");
     fecharModais();
-    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor,idDigitado,senhaDigitada);
-  }catch(e){ document.getElementById("autErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor,null,null,tokenQr);
+  }catch(e){
+    const el=document.getElementById("autErro"); if(el) el.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+    const inp=document.getElementById("autQr"); if(inp){ inp.value=""; inp.focus(); }
+  }
 }
 
 function autorizarDesconto(){

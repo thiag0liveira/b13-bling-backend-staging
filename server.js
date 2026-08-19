@@ -2846,6 +2846,37 @@ app.get("/api/etiquetas",async(req,res)=>{
 // Caixa — exige ID (dia do mês + código do funcionário) e senha (PIN do funcionário + dia
 // do mês). Só libera pra quem é admin, gerente ou lider_caixa.
 const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"];
+
+// ---- Autorização por QR code (muda por dia) ----
+// O QR de cada funcionário autorizado codifica um token que muda diariamente.
+// Formato: B13A-<funcId>-<AAAA-MM-DD>-<assinatura>. A assinatura é um hash do
+// funcId+dia+segredo, então o backend valida sem guardar nada e o código de
+// ontem não vale hoje. Só funcionários de grupo autorizado (admin/gerente/
+// líder de caixa) geram um QR válido.
+const QR_AUTH_SECRET=process.env.QR_AUTH_SECRET||process.env.SALT||"b13-qr-secret";
+function _diaBR(d=new Date()){ return new Date(d.getTime()-3*60*60*1000).toISOString().slice(0,10); }
+function assinaturaQr(funcId,dia){
+  return crypto.createHash("sha256").update(`${funcId}|${dia}|${QR_AUTH_SECRET}`).digest("hex").slice(0,16).toUpperCase();
+}
+function gerarTokenQr(funcId,dia=_diaBR()){
+  return `B13A-${funcId}-${dia}-${assinaturaQr(funcId,dia)}`;
+}
+// valida um token de QR lido no caixa. Retorna {funcionario} se ok, {erro} se não.
+function validarTokenQr(token){
+  if(!token||typeof token!=="string") return {erro:"QR inválido"};
+  const m=token.trim().match(/^B13A-(.+?)-(\d{4}-\d{2}-\d{2})-([A-F0-9]{16})$/i);
+  if(!m) return {erro:"QR não reconhecido"};
+  const [,funcId,dia,assin]=m;
+  const hoje=_diaBR();
+  if(dia!==hoje) return {erro:"QR expirado — gere o de hoje no perfil"};
+  if(assinaturaQr(funcId,dia)!==assin.toUpperCase()) return {erro:"QR inválido"};
+  const funcs=lerJSON(FUNC_FILE,{});
+  const f=funcs[funcId];
+  if(!f||!f.ativo) return {erro:"funcionário não encontrado ou inativo"};
+  const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p));
+  if(!autoriza) return {erro:"esse funcionário não pode autorizar"};
+  return {funcionario:f};
+}
 function validarAutorizacaoPdv(idDigitado,senhaDigitada){
   if(!idDigitado||!senhaDigitada) return {erro:"Informe o ID e a senha"};
   const dia=String(new Date().getDate()).padStart(2,"0");
@@ -2861,18 +2892,39 @@ function validarAutorizacaoPdv(idDigitado,senhaDigitada){
 }
 
 app.post("/api/pdv/autorizar",(req,res)=>{
-  const {idDigitado,senhaDigitada}=req.body||{};
+  const {tokenQr,idDigitado,senhaDigitada}=req.body||{};
+  // novo fluxo: autorização por QR code (muda por dia)
+  if(tokenQr){
+    const r=validarTokenQr(tokenQr);
+    if(r.erro) return res.status(401).json({erro:r.erro});
+    return res.json({ok:true,autorizadoPor:r.funcionario.nome,via:"qr"});
+  }
+  // fluxo antigo (ID+senha) — mantido como fallback interno, mas o caixa usa QR
   const r=validarAutorizacaoPdv(idDigitado,senhaDigitada);
   if(r.erro) return res.status(401).json({erro:r.erro});
   res.json({ok:true,autorizadoPor:r.funcionario.nome});
+});
+
+// gera o token/QR do dia pra um funcionário (só se ele for de grupo autorizado).
+// usado no perfil do funcionário (tela de funcionários) pra mostrar o QR do dia.
+app.get("/api/pdv/meu-qr/:funcId",(req,res)=>{
+  try{
+    const funcs=lerJSON(FUNC_FILE,{});
+    const f=funcs[req.params.funcId];
+    if(!f||!f.ativo) return res.status(404).json({erro:"funcionário não encontrado"});
+    const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p));
+    if(!autoriza) return res.status(403).json({erro:"esse funcionário não pode autorizar caixa"});
+    const dia=_diaBR();
+    res.json({ok:true, nome:f.nome, dia, token:gerarTokenQr(f.id,dia)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 // Ajusta o estoque do produto no Bling (define o saldo pro valor informado) — usado quando
 // o funcionário tenta vender um produto sem estoque suficiente no sistema, mas o produto
 // está fisicamente disponível (ex: contagem desatualizada). Exige a mesma autorização.
 app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
-  const {idDigitado,senhaDigitada,produtoId,quantidade}=req.body||{};
-  const auth=validarAutorizacaoPdv(idDigitado,senhaDigitada);
+  const {tokenQr,idDigitado,senhaDigitada,produtoId,quantidade}=req.body||{};
+  const auth = tokenQr ? validarTokenQr(tokenQr) : validarAutorizacaoPdv(idDigitado,senhaDigitada);
   if(auth.erro) return res.status(401).json({erro:auth.erro});
   if(!produtoId||!(quantidade>0)) return res.status(400).json({erro:"informe produtoId e quantidade"});
   try{

@@ -37,6 +37,7 @@
   .login-wrap input{width:100%;padding:13px;border-radius:10px;border:2px solid #514c96;background:var(--card);color:#fff;font-size:16px;margin-bottom:10px}
 </style>
 <script src="/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
   @media(min-width:900px){
@@ -105,6 +106,7 @@ function render(){
         <div class="nivel">${f.login?`Login: <b>${esc(f.login)}</b> · `:""}ID: ${esc(f.id)}</div>
       </div>
       <button class="btn btn-ghost" onclick="abrirEditar('${f.id}')">✏️ Editar</button>
+      ${(GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p)))&&f.ativo?`<button class="btn btn-ghost" style="border:1px solid #00bc98;color:#00bc98" onclick="mostrarQrCaixa('${f.id}','${esc(f.nome).replace(/'/g,"")}')">📱 QR do caixa</button>`:''}
       <button class="btn ${f.ativo?'btn-red':'btn-grn'}" onclick="toggleAtivo('${f.id}',${!f.ativo})">${f.ativo?'Desativar':'Ativar'}</button>
     </div>`).join("")
     : `<div class="muted" style="text-align:center;padding:30px">Nenhum funcionário cadastrado.<br><br>
@@ -384,6 +386,44 @@ async function toggleAtivo(id,ativo){
     await fetch(B+"/api/funcionarios/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","X-Auth-Token":b13GetSession()?.token||""},body:JSON.stringify({ativo})});
     carregar();
   }catch(e){}
+}
+
+// ---- QR code de autorização do caixa (muda por dia) ----
+// Mostra o QR do dia do funcionário autorizado. Fica ESCONDIDO por padrão (só
+// revela ao segurar/clicar), pra ninguém ver o código de relance. É esse QR que
+// o gerente mostra pro leitor do caixa liberar ações que pedem autorização.
+async function mostrarQrCaixa(id,nome){
+  document.getElementById("modal").style.display="flex";
+  document.getElementById("mbox").innerHTML=`<h3>📱 QR do caixa — ${esc(nome)}</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">Esse QR autoriza ações no Frente de Caixa (remover item, desconto, vender sem estoque). Ele <b>muda todo dia</b>. Mostre no leitor do caixa quando pedir autorização.</div>
+    <div id="qrWrap" style="text-align:center;padding:16px;background:#0f0d24;border:1px solid #2c2660;border-radius:10px">
+      <div class="muted">Gerando…</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Fechar</button>
+    </div>`;
+  try{
+    const j=await fetch(B+"/api/pdv/meu-qr/"+id,{headers:{"X-Auth-Token":b13GetSession()?.token||""}}).then(r=>r.json());
+    if(j.erro){ document.getElementById("qrWrap").innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
+    const wrap=document.getElementById("qrWrap");
+    wrap.innerHTML=`
+      <div style="font-size:11px;color:#00bc98;margin-bottom:8px">Válido só hoje (${j.dia.split("-").reverse().join("/")})</div>
+      <div id="qrHolder" style="display:inline-block;padding:10px;background:#fff;border-radius:8px;filter:blur(11px);transition:filter .2s"></div>
+      <div style="margin-top:12px"><button class="btn btn-mag" id="btnRevelar" onclick="revelarQr()">👁️ Revelar pra ler no leitor</button></div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Fica embaçado pra ninguém ver de relance. Toque em revelar só na hora de passar no leitor — ele esconde de novo sozinho.</div>`;
+    // desenha o QR local (sem mandar o token pra fora)
+    new QRCode(document.getElementById("qrHolder"),{ text:j.token, width:190, height:190, correctLevel:QRCode.CorrectLevel.M });
+  }catch(e){ document.getElementById("qrWrap").innerHTML=`<div class="err">Erro ao gerar o QR.</div>`; }
+}
+// revela o QR por 20s (tempo de passar no leitor) e embaça de novo sozinho
+let _qrTimer=null;
+function revelarQr(){
+  const h=document.getElementById("qrHolder"); const b=document.getElementById("btnRevelar");
+  if(!h) return;
+  h.style.filter="none";
+  if(b){ b.textContent="👁️ Visível — passe no leitor"; b.disabled=true; b.style.opacity=".6"; }
+  clearTimeout(_qrTimer);
+  _qrTimer=setTimeout(()=>{ if(h) h.style.filter="blur(11px)"; if(b){ b.textContent="👁️ Revelar pra ler no leitor"; b.disabled=false; b.style.opacity="1"; } },20000);
 }
 
 document.getElementById("app").innerHTML=`<div class="top"><img src="${LOGO}"></div>`;
