@@ -4726,39 +4726,29 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
   try{
     const codigo=String(req.params.codigo||"").trim();
     if(!codigo) return res.status(400).json({erro:"informe o código"});
+    // 1) ÍNDICE LOCAL — é a fonte confiável pro código de barras (GTIN), porque o
+    //    filtro ?gtin= da API v3 do Bling NÃO funciona (ignora o filtro e devolve
+    //    lista genérica). O índice é montado em segundo plano lendo o gtin real de
+    //    cada produto. Cobre tanto código de barras quanto SKU.
     const indice=lerJSON(GTIN_INDEX_FILE,{});
     if(indice[codigo]) return res.json({data:indice[codigo],origem:"indice"});
 
-    // helper: monta o item já buscando o DETALHE do produto (a listagem do Bling
-    // traz preço 0; o preço real e a imagem só vêm no detalhe /produtos/:id).
-    const montarItem=async(p)=>{
-      let det=p;
-      try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
-      return {
-        produtoId:det.id, nome:det.nome,
-        preco:+(det.preco||p.preco||0),
-        imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
-        codigo:det.codigo||"", gtin:det.gtin||det.codigoBarras||"",
-      };
-    };
+    // 2) fallback: SKU (esse filtro do Bling funciona, é busca exata pelo código interno)
+    try{
+      const r=await bling(`/produtos?codigo=${encodeURIComponent(codigo)}&limite=1`);
+      const p=(r?.data||[])[0];
+      if(p && String(p.codigo||"")===codigo){
+        let det=p;
+        try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
+        return res.json({data:{
+          produtoId:det.id,nome:det.nome,preco:+(det.preco||0),
+          imagem:det.imagemURL||det.imagem?.link?.grande||null,codigo:det.codigo||"",gtin:det.gtin||""
+        },origem:"sku"});
+      }
+    }catch(e){}
 
-    // tenta VÁRIOS caminhos, na ordem — o código de barras (GTIN) é o principal,
-    // mas cobrimos também o SKU e a busca geral pra não falhar por diferença de campo.
-    const tentativas=[
-      `/produtos?gtin=${encodeURIComponent(codigo)}&limite=5`,        // 1) por GTIN (código de barras) — o certo pro leitor
-      `/produtos?codigo=${encodeURIComponent(codigo)}&limite=5`,      // 2) por SKU (código interno)
-      `/produtos?pesquisa=${encodeURIComponent(codigo)}&limite=5`,    // 3) busca geral (às vezes acha o GTIN aqui)
-    ];
-    for(const url of tentativas){
-      try{
-        const r=await bling(url);
-        const lista=r?.data||[];
-        // se veio por GTIN/pesquisa, tenta casar exatamente o código de barras;
-        // senão pega o primeiro (no caso do SKU, a busca já é exata)
-        const p = lista.find(x=>String(x.gtin||"")===codigo || String(x.codigo||"")===codigo) || lista[0];
-        if(p){ return res.json({data:await montarItem(p),origem:url.includes("gtin")?"gtin":url.includes("codigo")?"sku":"pesquisa"}); }
-      }catch(e){}
-    }
+    // NÃO usa o filtro ?gtin= nem ?pesquisa= como fallback: eles retornam lista
+    // genérica (não filtram), o que adicionaria o produto ERRADO no caixa.
     res.json({data:null});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -5447,28 +5437,62 @@ app.get("/",(req,res)=> res.redirect("/pedir-online"));
 // Reconstrói o índice de produtos (nome/código/preço) em segundo plano, sem travar
 // nada. Roda ao subir o servidor e depois a cada 30 min — assim produtos novos
 // entram na busca automaticamente, sem precisar reconstruir manualmente em /preco.
+let _indiceReconstruindo=false, _indiceProgresso="";
 async function reconstruirIndiceProdutosBg(){
+  if(_indiceReconstruindo) return; // evita rodar dois ao mesmo tempo
+  _indiceReconstruindo=true;
   try{
+    // 1) lista todos os produtos (a listagem é enxuta: traz id/nome/codigo, mas
+    //    NÃO traz o gtin nem o preço real — por isso precisamos do detalhe depois)
     const lista=[];
     for(let pg=1;pg<=100;pg++){
       const r=await bling(`/produtos?pagina=${pg}&limite=100`);
       const arr=r?.data||[]; lista.push(...arr);
       if(arr.length<100) break;
-      await sleep(400); // respeita o limite de req/s do Bling
+      await sleep(400);
     }
-    const indice={};
-    for(const p of lista){
-      const item={produtoId:p.id,nome:p.nome,preco:+(p.preco||0),imagem:p.imagemURL||null,codigo:p.codigo||""};
-      const codigos=[p.gtin,p.codigo].filter(Boolean).map(String);
+    // parte do índice já existente, pra não perder o que já foi indexado se cair no meio
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    let comGtin=0;
+    // 2) pra cada produto, lê o DETALHE (que traz gtin + preço real) e indexa por
+    //    GTIN (código de barras) E por código (SKU). Roda em segundo plano.
+    for(let i=0;i<lista.length;i++){
+      const p=lista[i];
+      let det=p;
+      try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
+      const item={
+        produtoId:det.id, nome:det.nome, preco:+(det.preco||0),
+        imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
+        codigo:det.codigo||"", gtin:det.gtin||det.codigoBarras||"",
+      };
+      const codigos=[det.gtin, det.codigoBarras, det.codigo].filter(Boolean).map(String);
+      if(det.gtin||det.codigoBarras) comGtin++;
       if(codigos.length) codigos.forEach(c=>{ indice[c]=item; });
-      else indice["id_"+p.id]=item; // garante que o produto entre no índice mesmo sem código
+      else indice["id_"+det.id]=item;
+      _indiceProgresso=`Indexando produtos: ${i+1}/${lista.length} (${comGtin} com código de barras)`;
+      // salva parcial a cada 40 produtos (pra já ir valendo e não perder progresso)
+      if(i%40===39) salvarJSON(GTIN_INDEX_FILE,indice);
+      await sleep(360); // respeita o limite do Bling (~2,9 req/s)
     }
-    if(Object.keys(indice).length) salvarJSON(GTIN_INDEX_FILE,indice);
-    console.log(`[indice] atualizado em segundo plano: ${lista.length} produtos`);
-  }catch(e){ console.log("[indice] falha ao atualizar em segundo plano:",e.message); }
+    salvarJSON(GTIN_INDEX_FILE,indice);
+    _indiceProgresso=`Índice pronto: ${lista.length} produtos, ${comGtin} com código de barras`;
+    console.log(`[indice] ${_indiceProgresso}`);
+  }catch(e){ console.log("[indice] falha:",e.message); }
+  finally{ _indiceReconstruindo=false; }
 }
+// endpoint pra ver o progresso e forçar a reconstrução do índice
+app.get("/api/indice-produtos/status",(req,res)=>{
+  const indice=lerJSON(GTIN_INDEX_FILE,{});
+  const comGtin=Object.values(indice).filter((v,i,arr)=>arr.findIndex(x=>x.produtoId===v.produtoId)===i && v.gtin).length;
+  res.json({reconstruindo:_indiceReconstruindo, progresso:_indiceProgresso, totalChaves:Object.keys(indice).length, produtosComGtin:comGtin});
+});
+app.post("/api/indice-produtos/reconstruir",(req,res)=>{
+  if(_indiceReconstruindo) return res.json({ok:true,ja:true,progresso:_indiceProgresso});
+  reconstruirIndiceProdutosBg();
+  res.json({ok:true,iniciado:true});
+});
 setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
-setInterval(reconstruirIndiceProdutosBg, 30*60*1000);      // e a cada 30 min
+setInterval(reconstruirIndiceProdutosBg, 6*60*60*1000);    // e a cada 6h (é pesado, lê detalhe de todos)
 
 // ===== VENDA ATACADO — propostas e pedidos =====
 // A "proposta comercial" fica só no nosso sistema (o Bling v3 não expõe propostas
