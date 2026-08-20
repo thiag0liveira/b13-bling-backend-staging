@@ -144,19 +144,35 @@ function fecharModal(){ document.getElementById("modal").style.display="none"; }
 let PERMS_ATUAL=[];
 
 // a "ação própria" de cada aba é a PRIMEIRA da lista (ex: acesso_operacional,
-// acesso_caixa...). As demais (editar_pedido, receber_pagamento, ver_separacao...)
-// são capacidades COMPARTILHADAS entre várias abas — elas NÃO devem definir se o
-// checkbox de uma aba está marcado, senão marcar/desmarcar uma mexe nas outras
-// que compartilham a mesma ação. Então o estado de cada aba olha só a ação própria.
+// acesso_caixa...). As demais (editar_pedido, receber_pagamento...) são
+// capacidades COMPARTILHADAS entre várias abas — não definem o checkbox.
 function acaoPropriaDe(tab){ return tab.acoes[0]; }
+// exibição do checkbox: olha SÓ a ação própria da aba (nunca as compartilhadas),
+// pra marcar/desmarcar uma aba não afetar as outras.
 function abaLiberada(tab){
   if(PERMS_ATUAL.includes("admin")) return true;
   return PERMS_ATUAL.includes(acaoPropriaDe(tab));
+}
+// "normaliza" as permissões: converte o acesso que o funcionário TINHA (por nível
+// ou por capacidade compartilhada, ex: gerente que via Rotas via editar_pedido)
+// em ações próprias explícitas de cada aba. Assim, quando a tela passa a controlar
+// por aba, o que aparece marcado = o que está salvo, sem sumir acesso que ele já
+// tinha. Roda uma vez ao abrir a edição.
+function normalizarPermsParaAbas(){
+  if(PERMS_ATUAL.includes("admin")) return;
+  if(typeof b13PodeComPermissoes!=="function") return;
+  (window.B13_NAV_LINKS||[]).forEach(tab=>{
+    const propria=acaoPropriaDe(tab);
+    // se ele já acessa essa aba (por qualquer via) mas não tem a ação própria, adiciona
+    const acessaAgora=tab.acoes.some(a=>b13PodeComPermissoes(a,PERMS_ATUAL));
+    if(acessaAgora && !PERMS_ATUAL.includes(propria)) PERMS_ATUAL.push(propria);
+  });
 }
 
 // bloco: uma linha por aba do menu lateral (igual o menu de verdade), com toggle de acesso
 function htmlPermsBlock(checked){
   PERMS_ATUAL=(checked||[]).slice();
+  normalizarPermsParaAbas(); // converte acessos por nível/capacidade em ações próprias das abas
   return `<div class="lbl">Acesso às abas do sistema</div>
     <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
       <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #201d47;font-size:13px;font-weight:800">
