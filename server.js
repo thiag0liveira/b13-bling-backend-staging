@@ -6946,6 +6946,101 @@ app.get("/api/vendedor/place-detalhe/:placeId",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ==================== PROSPECÇÃO 2 (busca ampla + contatos de uma vez) ====================
+// Diferente da Prospecção 1 (tipos fixos + raio da loja), essa aceita:
+//  - termo de busca LIVRE (ex: "distribuidora", "conveniência", "petiscaria")
+//  - LOCAL livre (bairro/cidade digitados) OU raio da loja
+// e já traz telefone + site de cada resultado de uma vez (sem clicar um a um),
+// marca quem já é cliente e quem já foi contatado, e monta o WhatsApp pronto.
+const PROSP2_CACHE_FILE=`${DATA_DIR}/prospeccao2_cache.json`;
+const PROSP2_CONTATADOS_FILE=`${DATA_DIR}/prospeccao2_contatados.json`;
+
+app.get("/api/vendedor/prospeccao2",async(req,res)=>{
+  try{
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado no servidor."});
+    const termo=(req.query.termo||"").toString().slice(0,80).trim();
+    const local=(req.query.local||"").toString().slice(0,80).trim();
+    const forcar=req.query.forcar==="1";
+    if(termo.length<2) return res.json({data:[]});
+
+    // monta a query: termo + local (se informado). Se não tem local, usa raio da loja.
+    const textQuery = local ? `${termo} em ${local}` : termo;
+    const cacheKey=textQuery.toLowerCase();
+    const cacheAll=lerJSON(PROSP2_CACHE_FILE,{});
+    let base=null;
+    if(!forcar && cacheAll[cacheKey] && (Date.now()-cacheAll[cacheKey].em<12*60*60*1000)){
+      base=cacheAll[cacheKey].dados;
+    }
+
+    if(!base){
+      const body={ textQuery, languageCode:"pt-BR", maxResultCount:20 };
+      // se não informou local, enviesa pela loja
+      if(!local){
+        const coord=await geocodeLoja();
+        if(coord) body.locationBias={circle:{center:{latitude:coord.lat,longitude:coord.lng},radius:8000}};
+      }
+      // field mask AMPLIADO: já pede telefone e site na própria busca (1 chamada)
+      const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
+          "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.location,places.googleMapsUri,places.businessStatus",
+        },
+        body:JSON.stringify(body),
+      }).then(x=>x.json());
+      if(r.error) return res.status(500).json({erro:"Google Places: "+(r.error.message||r.error.status||"erro")});
+      const locais=(r.places||[]).map(p=>({
+        placeId:p.id, nome:p.displayName?.text||"",
+        endereco:p.formattedAddress||"",
+        telefone:p.nationalPhoneNumber||p.internationalPhoneNumber||"",
+        website:p.websiteUri||"",
+        mapsUrl:p.googleMapsUri||"",
+        rating:p.rating||null, totalAvaliacoes:p.userRatingCount||0,
+        aberto:p.businessStatus==="OPERATIONAL",
+        lat:p.location?.latitude, lng:p.location?.longitude,
+      }));
+      base={termo,local,textQuery,total:locais.length,locais,geradoEm:Date.now()};
+      cacheAll[cacheKey]={em:Date.now(),dados:base};
+      salvarJSON(PROSP2_CACHE_FILE,cacheAll);
+    }
+
+    // enriquece: marca quem já é cliente (por telefone) e quem já foi contatado
+    const contatados=lerJSON(PROSP2_CONTATADOS_FILE,{});
+    const resultado=[];
+    for(const p of (base.locais||[])){
+      let jaCliente=null;
+      if(p.telefone){
+        try{
+          const digs=soDigitos(p.telefone).slice(-8);
+          if(digs.length>=8){
+            const b=await bling(`/contatos?pesquisa=${encodeURIComponent(digs)}`);
+            const achado=(b.data||[])[0];
+            if(achado) jaCliente={id:achado.id,nome:achado.nome};
+          }
+        }catch(e){}
+      }
+      resultado.push({...p, jaCliente, jaContatado:!!contatados[p.placeId], contatadoEm:contatados[p.placeId]?.em||null});
+      if(p.telefone) await new Promise(r=>setTimeout(r,120)); // respeita o Bling
+    }
+    res.json({...base, data:resultado, total:resultado.length});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// marca/desmarca um estabelecimento como "já contatado" (fica salvo)
+app.post("/api/vendedor/prospeccao2/contatado",(req,res)=>{
+  try{
+    const {placeId,nome,contatado}=req.body||{};
+    if(!placeId) return res.status(400).json({erro:"placeId obrigatório"});
+    const c=lerJSON(PROSP2_CONTATADOS_FILE,{});
+    if(contatado===false){ delete c[placeId]; }
+    else { c[placeId]={nome:nome||"",em:Date.now()}; }
+    salvarJSON(PROSP2_CONTATADOS_FILE,c);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+
 // telefone de um cliente (pra montar o WhatsApp de recuperação)
 app.get("/api/vendedor/cliente/:id/contato",async(req,res)=>{
   try{

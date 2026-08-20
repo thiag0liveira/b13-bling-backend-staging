@@ -71,6 +71,7 @@ function render(){
         <button class="${ABA==='historico'?'on':''}" onclick="ABA='historico';render()">🕐 Histórico</button>
         <button class="${ABA==='mapa'?'on':''}" onclick="ABA='mapa';render()">🗺️ Mapa</button>
         <button class="${ABA==='prospectar'?'on':''}" onclick="ABA='prospectar';render()">🔍 Prospectar</button>
+        <button class="${ABA==='prospectar2'?'on':''}" onclick="ABA='prospectar2';render()">🌐 Prospecção 2</button>
       </div>
       <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <div>
@@ -79,7 +80,7 @@ function render(){
         </div>
         <button class="btn btn-wa" onclick="compartilharTabela()">📱 Compartilhar tabela</button>
       </div>
-      ${ABA==='recuperar'?viewRecuperar():ABA==='precos'?viewPrecos():ABA==='historico'?viewHistorico():ABA==='mapa'?viewMapa():viewProspectar()}
+      ${ABA==='recuperar'?viewRecuperar():ABA==='precos'?viewPrecos():ABA==='historico'?viewHistorico():ABA==='mapa'?viewMapa():ABA==='prospectar2'?viewProspectar2():viewProspectar()}
     </div>`;
   if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
   if(ABA==='precos'&&!PRECOS_CATS) carregarPrecos();
@@ -677,6 +678,79 @@ async function verDetalhe(placeId,ix){
       el.innerHTML=`<span class="muted">Sem telefone no Google. ${j.website?'<a href="'+esc(j.website)+'" target="_blank" style="color:#7fd4ff">site</a>':''}</span>`;
     }
   }catch(e){ if(el) el.textContent="Erro ao buscar contato."; }
+}
+
+// ===== PROSPECÇÃO 2: busca livre (termo + local), traz contatos de uma vez =====
+let PROSP2_TERMO="", PROSP2_LOCAL="", PROSP2_DADOS=null, PROSP2_CARREGANDO=false;
+const PROSP2_SUGESTOES=["distribuidora de bebidas","conveniência","petiscaria","depósito de bebidas","choperia","hamburgueria","pizzaria","espetinho","lanchonete","mercearia","adega"];
+
+function viewProspectar2(){
+  const d=PROSP2_DADOS;
+  return `
+  <div class="card">
+    <div style="font-weight:800;margin-bottom:2px">🌐 Prospecção 2 — busca ampla</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Busca por <b>qualquer termo</b> e <b>qualquer região</b> (não só perto da loja). Já traz o <b>telefone e o WhatsApp</b> de cada lugar de uma vez, marca quem já é cliente e deixa você marcar quem já contatou.</div>
+    <input id="prosp2Termo" placeholder="O que buscar? (ex.: distribuidora, conveniência, petiscaria)" value="${esc(PROSP2_TERMO)}" oninput="PROSP2_TERMO=this.value" onkeydown="if(event.key==='Enter')buscarProspeccao2()" style="width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;margin-bottom:8px">
+    <input id="prosp2Local" placeholder="Onde? bairro ou cidade (deixe vazio = perto da loja)" value="${esc(PROSP2_LOCAL)}" oninput="PROSP2_LOCAL=this.value" onkeydown="if(event.key==='Enter')buscarProspeccao2()" style="width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;margin-bottom:8px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${PROSP2_SUGESTOES.slice(0,6).map(s=>`<button class="btn btn-ghost" style="font-size:11px;padding:5px 9px" onclick="PROSP2_TERMO='${s}';buscarProspeccao2()">${s}</button>`).join("")}
+    </div>
+    <button class="btn btn-mag" style="width:100%" onclick="buscarProspeccao2()">🔎 Buscar estabelecimentos</button>
+    <div id="prosp2Resultado" style="margin-top:12px">${PROSP2_CARREGANDO?'<div class="muted">Buscando e puxando os contatos… (pode levar alguns segundos)</div>':(d?renderProsp2Lista():'<div class="muted" style="font-size:12px">Digite o que quer buscar e onde, depois clique em Buscar.</div>')}</div>
+  </div>`;
+}
+
+async function buscarProspeccao2(){
+  if((PROSP2_TERMO||"").trim().length<2){ alert("Digite o que você quer buscar (ex.: distribuidora)."); return; }
+  PROSP2_CARREGANDO=true; render();
+  try{
+    PROSP2_DADOS=await fetch(B+"/api/vendedor/prospeccao2?termo="+encodeURIComponent(PROSP2_TERMO)+"&local="+encodeURIComponent(PROSP2_LOCAL)).then(r=>r.json());
+  }catch(e){ PROSP2_DADOS={erro:"Erro ao buscar"}; }
+  PROSP2_CARREGANDO=false; render();
+}
+
+function renderProsp2Lista(){
+  const d=PROSP2_DADOS;
+  if(d.erro) return `<div class="err">Erro: ${esc(d.erro)}</div>`;
+  const l=d.data||[];
+  if(!l.length) return `<div class="muted">Nenhum estabelecimento encontrado. Tente outro termo ou região.</div>`;
+  const comTel=l.filter(x=>x.telefone).length;
+  return `<div class="muted" style="font-size:12px;margin-bottom:10px">${l.length} encontrados · <b style="color:#25d366">${comTel} com telefone</b>${d.local?' · em '+esc(d.local):' · perto da loja'}</div>`+
+    l.map((p,i)=>{
+      const tel=soDig(p.telefone||"");
+      const t55=tel?(tel.length<=11?("55"+tel):tel):"";
+      const msg="Olá! Aqui é da B13 Bebidas 🍻 Somos distribuidora de bebidas no atacado aqui na Glória. Posso te passar nossa tabela de preços?";
+      const jaCli=p.jaCliente?`<span style="color:#3ce88a;font-size:11px">✓ já é cliente (${esc(p.jaCliente.nome)})</span>`:'';
+      const contatadoTag=p.jaContatado?`<span style="background:#2a2000;color:#ffd23f;border-radius:4px;padding:1px 6px;font-size:10px">✓ contatado</span>`:'';
+      return `
+      <div style="border:1px solid ${p.jaContatado?'#4a4020':p.jaCliente?'#1e5a3a':'#2c2660'};border-radius:9px;padding:10px 12px;margin-bottom:7px;background:${p.jaContatado?'#1a1706':'#1c1846'}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <div style="font-weight:700;font-size:13px">${esc(p.nome)} ${contatadoTag}</div>
+            <div class="muted" style="font-size:11px">${esc(p.endereco)}${p.rating?` · ⭐ ${p.rating} (${p.totalAvaliacoes})`:''}</div>
+            ${jaCli}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          ${p.telefone?`<a href="https://wa.me/${t55}?text=${encodeURIComponent(msg)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;background:#075e54;color:#fff;text-decoration:none">🟢 WhatsApp</a>
+             <a href="tel:${esc(p.telefone)}" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;text-decoration:none">📞 ${esc(p.telefone)}</a>`
+            :'<span class="muted" style="font-size:11px">sem telefone no Google</span>'}
+          ${p.website?`<a href="${esc(p.website)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;text-decoration:none;color:#7fd4ff">🌐 site</a>`:''}
+          ${p.mapsUrl?`<a href="${esc(p.mapsUrl)}" target="_blank" class="btn btn-ghost" style="font-size:11px;padding:6px 10px;text-decoration:none">🗺️ Maps</a>`:''}
+          <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="marcarContatado2('${p.placeId}','${esc(p.nome).replace(/'/g,'')}',${!p.jaContatado})">${p.jaContatado?'↩ desmarcar':'✓ marquei que contatei'}</button>
+        </div>
+      </div>`;
+    }).join("");
+}
+
+async function marcarContatado2(placeId,nome,contatado){
+  try{
+    await fetch(B+"/api/vendedor/prospeccao2/contatado",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({placeId,nome,contatado})});
+    // atualiza local sem refazer a busca
+    const p=(PROSP2_DADOS.data||[]).find(x=>x.placeId===placeId);
+    if(p){ p.jaContatado=contatado; }
+    render();
+  }catch(e){ alert("Não consegui marcar. Tente de novo."); }
 }
 
 async function carregarTabInfo(){
