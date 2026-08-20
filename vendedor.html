@@ -682,7 +682,7 @@ async function verDetalhe(placeId,ix){
 
 // ===== PROSPECÇÃO 2: busca livre (termo + local), traz contatos de uma vez =====
 let PROSP2_TERMO="", PROSP2_LOCAL="", PROSP2_DADOS=null, PROSP2_CARREGANDO=false;
-const PROSP2_SUGESTOES=["distribuidora de bebidas","conveniência","petiscaria","depósito de bebidas","choperia","hamburgueria","pizzaria","espetinho","lanchonete","mercearia","adega"];
+const PROSP2_SUGESTOES=["adega","distribuidora de bebidas","depósito de bebidas","conveniência","bar","petiscaria","choperia","boteco","hamburgueria","pizzaria","espetinho","lanchonete","mercearia","mercadinho","restaurante","tabacaria","casa noturna","food truck","empório","padaria"];
 
 function viewProspectar2(){
   const d=PROSP2_DADOS;
@@ -692,8 +692,9 @@ function viewProspectar2(){
     <div class="muted" style="font-size:12px;margin-bottom:10px">Busca por <b>qualquer termo</b> e <b>qualquer região</b> (não só perto da loja). Já traz o <b>telefone e o WhatsApp</b> de cada lugar de uma vez, marca quem já é cliente e deixa você marcar quem já contatou.</div>
     <input id="prosp2Termo" placeholder="O que buscar? (ex.: distribuidora, conveniência, petiscaria)" value="${esc(PROSP2_TERMO)}" oninput="PROSP2_TERMO=this.value" onkeydown="if(event.key==='Enter')buscarProspeccao2()" style="width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;margin-bottom:8px">
     <input id="prosp2Local" placeholder="Onde? bairro ou cidade (deixe vazio = perto da loja)" value="${esc(PROSP2_LOCAL)}" oninput="PROSP2_LOCAL=this.value" onkeydown="if(event.key==='Enter')buscarProspeccao2()" style="width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:14px;margin-bottom:8px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      ${PROSP2_SUGESTOES.slice(0,6).map(s=>`<button class="btn btn-ghost" style="font-size:11px;padding:5px 9px" onclick="PROSP2_TERMO='${s}';buscarProspeccao2()">${s}</button>`).join("")}
+    <div class="muted" style="font-size:11px;margin-bottom:4px">Sugestões rápidas:</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;max-height:96px;overflow:auto">
+      ${PROSP2_SUGESTOES.map(s=>`<button class="btn btn-ghost" style="font-size:11px;padding:5px 9px" onclick="PROSP2_TERMO='${s}';buscarProspeccao2()">${s}</button>`).join("")}
     </div>
     <button class="btn btn-mag" style="width:100%" onclick="buscarProspeccao2()">🔎 Buscar estabelecimentos</button>
     <div id="prosp2Resultado" style="margin-top:12px">${PROSP2_CARREGANDO?'<div class="muted">Buscando e puxando os contatos… (pode levar alguns segundos)</div>':(d?renderProsp2Lista():'<div class="muted" style="font-size:12px">Digite o que quer buscar e onde, depois clique em Buscar.</div>')}</div>
