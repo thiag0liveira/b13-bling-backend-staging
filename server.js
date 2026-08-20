@@ -4701,6 +4701,16 @@ app.get("/imagens",(req,res)=>res.sendFile(path.join(__dirname,"imagens.html")))
 // Contar total de produtos no Bling
 // ------------------------- Consulta de Preço (leitor tipo supermercado) -------------------------
 // Consulta instantânea no índice local (rápido) — sem índice, cai num fallback ao vivo no Bling
+// DIAGNÓSTICO temporário: testa como a API v3 do Bling busca por GTIN (código de
+// barras). Uso: /api/diag/gtin/7891234567890
+app.get("/api/diag/gtin/:codigo",async(req,res)=>{
+  const cod=String(req.params.codigo||"").trim();
+  const testes={};
+  try{ const r=await bling(`/produtos?gtin=${encodeURIComponent(cod)}&limite=3`); testes.filtro_gtin={qtd:(r?.data||[]).length,primeiro:(r?.data||[])[0]?{id:r.data[0].id,nome:r.data[0].nome,codigo:r.data[0].codigo,gtin:r.data[0].gtin}:null}; }catch(e){ testes.filtro_gtin={erro:e.message}; }
+  try{ const r=await bling(`/produtos?codigo=${encodeURIComponent(cod)}&limite=3`); testes.filtro_codigo={qtd:(r?.data||[]).length,primeiro:(r?.data||[])[0]?{id:r.data[0].id,nome:r.data[0].nome,codigo:r.data[0].codigo}:null}; }catch(e){ testes.filtro_codigo={erro:e.message}; }
+  try{ const r=await bling(`/produtos?pesquisa=${encodeURIComponent(cod)}&limite=3`); testes.filtro_pesquisa={qtd:(r?.data||[]).length,primeiros:(r?.data||[]).slice(0,3).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,gtin:p.gtin}))}; }catch(e){ testes.filtro_pesquisa={erro:e.message}; }
+  res.json(testes);
+});
 app.get("/api/preco/gtin/:codigo", async(req,res)=>{
   try{
     const codigo=String(req.params.codigo||"").trim();
