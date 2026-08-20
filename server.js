@@ -6426,24 +6426,32 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     // deduplica por ID (a paginação do Bling às vezes repete pedidos entre páginas)
     const vistosMA=new Set();
     const atacadoUnico=atacado.filter(p=>{ const id=String(p.id); if(vistosMA.has(id)) return false; vistosMA.add(id); return true; });
-    // soma por dia
+    // soma por dia (TODOS os pedidos de atacado)
     const porDia={};
     atacadoUnico.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDia[d]=+((porDia[d]||0)+Number(p.total||0)).toFixed(2); } });
+    // soma por dia SÓ dos ATENDIDOS (situação 9) — é o que realmente conta pra meta
+    const atendidos=atacadoUnico.filter(p=>Number(p.situacao?.id||0)===SIT.ATENDIDO);
+    const porDiaAt={};
+    atendidos.forEach(p=>{ const d=String(p.data||"").slice(0,10); if(d){ porDiaAt[d]=+((porDiaAt[d]||0)+Number(p.total||0)).toFixed(2); } });
     // monta série de todos os dias do mês
     const hoje=agoraBR.toISOString().slice(0,10);
     const diaAtual=agoraBR.getDate();
     const ehMesAtual=(mes===agoraBR.toISOString().slice(0,7));
     const dias=[];
-    let acumulado=0;
+    let acumulado=0, acumuladoAt=0;
     for(let d=1;d<=ultimoDia;d++){
       const dataStr=`${mes}-${String(d).padStart(2,"0")}`;
       const valor=porDia[dataStr]||0;
+      const valorAt=porDiaAt[dataStr]||0;
       acumulado=+(acumulado+valor).toFixed(2);
+      acumuladoAt=+(acumuladoAt+valorAt).toFixed(2);
       const futuro=ehMesAtual && d>diaAtual;
-      dias.push({dia:d,data:dataStr,valor,acumulado:futuro?null:acumulado,futuro});
+      dias.push({dia:d,data:dataStr,valor,valorAtendido:valorAt,acumulado:futuro?null:acumulado,acumuladoAtendido:futuro?null:acumuladoAt,futuro});
     }
     const vendido=+atacadoUnico.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
+    const vendidoAtendido=+atendidos.reduce((s,p)=>s+Number(p.total||0),0).toFixed(2);
     const falta=+Math.max(0,meta-vendido).toFixed(2);
+    const faltaAtendido=+Math.max(0,meta-vendidoAtendido).toFixed(2);
 
     // ---- cálculos considerando que NÃO abre aos domingos ----
     // conta quantos dias ÚTEIS (seg-sáb, sem domingo) há entre dois dias do mês (inclusive).
@@ -6465,13 +6473,20 @@ app.get("/api/vendedor/meta-acompanhamento",async(req,res)=>{
     // média diária: divide pelos dias ÚTEIS já passados (não pelos corridos)
     const diasUteisPassados=contarDiasUteis(1, ehMesAtual?diaAtual:ultimoDia);
     const pctMeta=meta>0?Math.round(vendido/meta*100):0;
+    // mesmos cálculos, mas pros ATENDIDOS (é o que decide se bateu a meta)
+    const pctMetaAtendido=meta>0?Math.round(vendidoAtendido/meta*100):0;
+    const idealPorDiaRestanteAtendido=diasUteisRestantes>0?+(faltaAtendido/diasUteisRestantes).toFixed(2):0;
+    const mediaDiariaAtendido=diasUteisPassados>0?+(vendidoAtendido/diasUteisPassados).toFixed(2):0;
 
     res.json({
-      mes, meta, vendido, falta, pctMeta,
+      mes, meta,
+      vendido, falta, pctMeta,
+      vendidoAtendido, faltaAtendido, pctMetaAtendido,
       diaAtual: ehMesAtual?diaAtual:ultimoDia, ultimoDia,
       diasRestantes, diasUteisRestantes, diasUteisMes,
-      idealPorDiaRestante,
+      idealPorDiaRestante, idealPorDiaRestanteAtendido,
       mediaDiaria: diasUteisPassados>0?+(vendido/diasUteisPassados).toFixed(2):0,
+      mediaDiariaAtendido,
       dias,
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
