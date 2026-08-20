@@ -143,7 +143,16 @@ function fecharModal(){ document.getElementById("modal").style.display="none"; }
 // controlada pela tela só através das abas, nunca mostrando esses nomes internos.
 let PERMS_ATUAL=[];
 
-function abaLiberada(tab){ return tab.acoes.some(a=>PERMS_ATUAL.includes("admin")||PERMS_ATUAL.includes(a)); }
+// a "ação própria" de cada aba é a PRIMEIRA da lista (ex: acesso_operacional,
+// acesso_caixa...). As demais (editar_pedido, receber_pagamento, ver_separacao...)
+// são capacidades COMPARTILHADAS entre várias abas — elas NÃO devem definir se o
+// checkbox de uma aba está marcado, senão marcar/desmarcar uma mexe nas outras
+// que compartilham a mesma ação. Então o estado de cada aba olha só a ação própria.
+function acaoPropriaDe(tab){ return tab.acoes[0]; }
+function abaLiberada(tab){
+  if(PERMS_ATUAL.includes("admin")) return true;
+  return PERMS_ATUAL.includes(acaoPropriaDe(tab));
+}
 
 // bloco: uma linha por aba do menu lateral (igual o menu de verdade), com toggle de acesso
 function htmlPermsBlock(checked){
@@ -182,25 +191,14 @@ function toggleAdmin(){
 }
 function toggleAba(href){
   const tab=(window.B13_NAV_LINKS||[]).find(l=>l.href===href); if(!tab) return;
-  if(abaLiberada(tab)){
-    // desmarcando: antes de tirar a(s) acao(oes) dessa aba, preserva o acesso de
-    // QUALQUER outra aba que dependia da mesma trava compartilhada (comum em
-    // funcionarios antigos, que ainda usam as permissoes antigas tipo editar_pedido) —
-    // migra elas pra sua propria acao especifica antes de remover a trava velha
-    const acoesRemovendo=tab.acoes.slice();
-    (window.B13_NAV_LINKS||[]).forEach(outra=>{
-      if(outra.href===href) return;
-      const dependiaDeAlgumaRemovida=outra.acoes.some(a=>acoesRemovendo.includes(a));
-      const aindaLiberadaSemElas=outra.acoes.some(a=>!acoesRemovendo.includes(a)&&PERMS_ATUAL.includes(a));
-      if(dependiaDeAlgumaRemovida && !aindaLiberadaSemElas && !PERMS_ATUAL.includes(outra.acoes[0])){
-        PERMS_ATUAL.push(outra.acoes[0]); // garante a acao propria dela antes de remover a compartilhada
-      }
-    });
-    PERMS_ATUAL=PERMS_ATUAL.filter(p=>!acoesRemovendo.includes(p));
+  const acao=acaoPropriaDe(tab);
+  if(PERMS_ATUAL.includes(acao)){
+    // desmarca: tira só a ação PRÓPRIA dessa aba. Como cada aba tem a sua, isso
+    // nunca afeta outra aba.
+    PERMS_ATUAL=PERMS_ATUAL.filter(p=>p!==acao);
   } else {
-    // marcando: usa só a acao PRÓPRIA dessa aba (a primeira da lista) — nunca afeta outras abas
-    const acaoPrincipal=tab.acoes[0];
-    if(!PERMS_ATUAL.includes(acaoPrincipal)) PERMS_ATUAL.push(acaoPrincipal);
+    // marca: adiciona só a ação própria dessa aba.
+    PERMS_ATUAL.push(acao);
   }
   renderAbasLista();
 }
