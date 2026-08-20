@@ -4717,15 +4717,37 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     if(!codigo) return res.status(400).json({erro:"informe o código"});
     const indice=lerJSON(GTIN_INDEX_FILE,{});
     if(indice[codigo]) return res.json({data:indice[codigo],origem:"indice"});
-    // fallback ao vivo: tenta pelo campo "codigo" (SKU interno) direto no Bling
-    try{
-      const r=await bling(`/produtos?codigo=${encodeURIComponent(codigo)}&limite=1`);
-      const p=(r?.data||[])[0];
-      if(p){
-        const item={produtoId:p.id,nome:p.nome,preco:+(p.preco||0),imagem:p.imagemURL||p.imagem?.link?.grande||null,codigo:p.codigo||""};
-        return res.json({data:item,origem:"bling_ao_vivo"});
-      }
-    }catch(e){}
+
+    // helper: monta o item já buscando o DETALHE do produto (a listagem do Bling
+    // traz preço 0; o preço real e a imagem só vêm no detalhe /produtos/:id).
+    const montarItem=async(p)=>{
+      let det=p;
+      try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
+      return {
+        produtoId:det.id, nome:det.nome,
+        preco:+(det.preco||p.preco||0),
+        imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
+        codigo:det.codigo||"", gtin:det.gtin||det.codigoBarras||"",
+      };
+    };
+
+    // tenta VÁRIOS caminhos, na ordem — o código de barras (GTIN) é o principal,
+    // mas cobrimos também o SKU e a busca geral pra não falhar por diferença de campo.
+    const tentativas=[
+      `/produtos?gtin=${encodeURIComponent(codigo)}&limite=5`,        // 1) por GTIN (código de barras) — o certo pro leitor
+      `/produtos?codigo=${encodeURIComponent(codigo)}&limite=5`,      // 2) por SKU (código interno)
+      `/produtos?pesquisa=${encodeURIComponent(codigo)}&limite=5`,    // 3) busca geral (às vezes acha o GTIN aqui)
+    ];
+    for(const url of tentativas){
+      try{
+        const r=await bling(url);
+        const lista=r?.data||[];
+        // se veio por GTIN/pesquisa, tenta casar exatamente o código de barras;
+        // senão pega o primeiro (no caso do SKU, a busca já é exata)
+        const p = lista.find(x=>String(x.gtin||"")===codigo || String(x.codigo||"")===codigo) || lista[0];
+        if(p){ return res.json({data:await montarItem(p),origem:url.includes("gtin")?"gtin":url.includes("codigo")?"sku":"pesquisa"}); }
+      }catch(e){}
+    }
     res.json({data:null});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

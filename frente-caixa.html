@@ -638,51 +638,67 @@ function limparPainelAdicionado(){
 
 function ligarBusca(){
   const el=document.getElementById("busca"); if(!el) return;
+  // quando o leitor de código de barras termina, ele dá ENTER. Nesse caso,
+  // dispara a busca na hora (sem esperar o timer), tratando como código de barras.
+  el.addEventListener("keydown",function(ev){
+    if(ev.key==="Enter"){
+      ev.preventDefault();
+      clearTimeout(_timerBusca);
+      const termo=this.value.trim();
+      if(termo) buscarProduto(termo, el, document.getElementById("resBusca"), true);
+    }
+  });
   el.addEventListener("input",function(){
     clearTimeout(_timerBusca);
     const termo=this.value.trim();
     const resEl=document.getElementById("resBusca");
     if(termo.length<2){ resEl.innerHTML=""; return; }
     resEl.innerHTML=`<div class="muted">buscando…</div>`;
-    _timerBusca=setTimeout(async()=>{
+    _timerBusca=setTimeout(()=>buscarProduto(termo, el, resEl, false),350);
+  });
+}
+
+// executa a busca de um produto. ehEnter=true veio do leitor (Enter) — nesse caso,
+// se for numérico, trata como código de barras com prioridade.
+async function buscarProduto(termo, el, resEl, ehEnter){
+  try{
+    if(/^\d{6,}$/.test(termo)){
+      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
+      if(r&&r.data&&r.data.preco>0){
+        adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem,codigo:termo});
+        resEl.innerHTML=""; el.value=""; return;
+      }
+      // se leu por código de barras e NÃO achou, avisa (em vez de cair na busca por nome silenciosamente)
+      if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado. Verifique se o GTIN está cadastrado no Bling, ou busque pelo nome.</div>`; return; }
+    }
+    const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    const lista=(j.data||[]).slice(0,25);
+    if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+    window._ultimaBusca=lista;
+    resEl.innerHTML=lista.map((p,ix)=>`
+      <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
+        <div class="semimg">📦</div>
+        <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
+        <div class="preco" id="pr_${ix}">—</div>
+      </div>`).join("");
+    // busca preço e imagem de cada resultado em paralelo, atualizando conforme chega
+    lista.forEach(async(p,ix)=>{
+      if(!p.codigo) return;
       try{
-        if(/^\d{6,}$/.test(termo)){
-          const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
-          if(r&&r.data){
-            adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem,codigo:termo});
-            resEl.innerHTML=""; el.value=""; return;
+        const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+        if(r?.data){
+          p._preco=r.data.preco; p._imagem=r.data.imagem;
+          const prEl=document.getElementById("pr_"+ix);
+          if(prEl) prEl.textContent=brl(r.data.preco);
+          const cardEl=document.getElementById("rb_"+ix);
+          if(cardEl&&r.data.imagem){
+            const ph=cardEl.querySelector(".semimg");
+            if(ph) ph.outerHTML=`<img src="${esc(r.data.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`;
           }
         }
-        const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
-        const lista=(j.data||[]).slice(0,25);
-        if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
-        window._ultimaBusca=lista;
-        resEl.innerHTML=lista.map((p,ix)=>`
-          <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
-            <div class="semimg">📦</div>
-            <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
-            <div class="preco" id="pr_${ix}">—</div>
-          </div>`).join("");
-        // busca preço e imagem de cada resultado em paralelo, atualizando conforme chega
-        lista.forEach(async(p,ix)=>{
-          if(!p.codigo) return;
-          try{
-            const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
-            if(r?.data){
-              p._preco=r.data.preco; p._imagem=r.data.imagem;
-              const prEl=document.getElementById("pr_"+ix);
-              if(prEl) prEl.textContent=brl(r.data.preco);
-              const cardEl=document.getElementById("rb_"+ix);
-              if(cardEl&&r.data.imagem){
-                const ph=cardEl.querySelector(".semimg");
-                if(ph) ph.outerHTML=`<img src="${esc(r.data.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`;
-              }
-            }
-          }catch(e){}
-        });
-      }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
-    },350);
-  });
+      }catch(e){}
+    });
+  }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
 }
 
 async function selecionarResultado(ix){
