@@ -820,12 +820,13 @@ function pedirAutorizacao(aoAutorizar,mensagemExtra){
         <p class="muted" style="margin-bottom:12px">${mensagemExtra?esc(mensagemExtra):"Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
         <div style="text-align:center;margin:8px 0 14px">
           <div style="font-size:40px;line-height:1">📷</div>
-          <div class="muted" style="font-size:13px;margin-top:6px">Passe o <b>QR code do dia</b> do gerente no leitor.</div>
+          <div class="muted" style="font-size:13px;margin-top:6px">Passe o <b>QR code do dia</b> do gerente no leitor.<br><span style="font-size:11px">Sem leitor? Cole o código copiado e toque em Confirmar.</span></div>
         </div>
-        <input type="password" id="autQr" style="width:100%;font-size:18px;letter-spacing:2px;text-align:center" autofocus autocomplete="off" placeholder="aguardando leitura…" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
+        <input type="password" id="autQr" style="width:100%;font-size:18px;letter-spacing:2px;text-align:center" autofocus autocomplete="off" placeholder="aguardando leitura ou colar…" onkeydown="if(event.key==='Enter')confirmarAutorizacao()">
         <div id="autErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">
-          <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>
+          <button class="btn" style="flex:1" onclick="confirmarAutorizacao()">Confirmar</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
         </div>
       </div>
     </div>`;
