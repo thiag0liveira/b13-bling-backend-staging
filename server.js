@@ -4703,6 +4703,30 @@ app.get("/imagens",(req,res)=>res.sendFile(path.join(__dirname,"imagens.html")))
 // Consulta instantânea no índice local (rápido) — sem índice, cai num fallback ao vivo no Bling
 // DIAGNÓSTICO temporário: testa como a API v3 do Bling busca por GTIN (código de
 // barras). Uso: /api/diag/gtin/7891234567890
+// DIAGNÓSTICO temporário: mostra o detalhe CRU de um produto (pelo ID interno OU
+// pelo SKU), pra ver em qual campo o Bling guarda o código de barras.
+// Uso: /api/diag/produto-detalhe/1351  (pode ser o SKU ou o ID interno)
+app.get("/api/diag/produto-detalhe/:cod",async(req,res)=>{
+  try{
+    const cod=String(req.params.cod||"").trim();
+    let id=cod;
+    // se não for um ID gigante, trata como SKU e acha o ID interno
+    if(cod.length<10){
+      try{ const r=await bling(`/produtos?codigo=${encodeURIComponent(cod)}&limite=1`); const p=(r?.data||[])[0]; if(p) id=p.id; }catch(e){}
+    }
+    const d=await bling(`/produtos/${id}`);
+    const det=d?.data||{};
+    // destaca os campos candidatos a código de barras
+    res.json({
+      camposCodigoBarras:{
+        gtin:det.gtin, gtinEmbalagem:det.gtinEmbalagem, codigoBarras:det.codigoBarras,
+        ean:det.ean, codigo_SKU:det.codigo,
+      },
+      preco:det.preco,
+      detalheCompleto:det,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 app.get("/api/diag/gtin/:codigo",async(req,res)=>{
   const cod=String(req.params.codigo||"").trim();
   const testes={codigoBuscado:cod};
