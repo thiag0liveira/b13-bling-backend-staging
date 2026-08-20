@@ -208,6 +208,11 @@ function abrirModalFechamento(){
             <span><b>Esperado na gaveta</b></span><b style="font-size:18px;color:#ffd23f">${brl(r.esperadoGaveta)}</b>
           </div>
         </div>
+        <div class="card" style="background:#141138;margin:0 0 12px">
+          <div style="font-weight:800;margin-bottom:6px">💳 Total por forma de pagamento</div>
+          <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
+          ${(r.porForma||[]).length?r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):'<div class="muted" style="font-size:12px">Nenhuma venda ainda.</div>'}
+        </div>
         <div class="muted" style="margin-bottom:4px">Valor contado na gaveta (R$)</div>
         <input type="number" step="0.01" min="0" id="mContado" style="width:100%;font-size:20px;text-align:right" oninput="calcularDiferenca()" autofocus>
         <div id="mDif" style="text-align:center;margin-top:10px;font-weight:800"></div>
@@ -255,6 +260,11 @@ async function confirmarFechamento(){
               <b style="color:${Math.abs(f.diferenca)<0.01?"#8fffc0":(f.diferenca>0?"#ffd23f":"#ff8090")}">${brl(f.diferenca)}</b>
             </div>
           </div>
+          ${(j.resumo?.porForma||[]).length?`<div class="card" style="background:#141138;margin:0 0 14px;text-align:left">
+            <div style="font-weight:800;margin-bottom:6px">💳 Total por forma de pagamento</div>
+            <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+            ${j.resumo.porForma.map(fp=>`<div class="linha" style="font-size:13px"><span>${esc(fp.nome)} <span class="muted">(${fp.qtd}x)</span></span><b>${brl(fp.valor)}</b></div>`).join("")}
+          </div>`:""}
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(window._ultimoFechamento.sessao,window._ultimoFechamento.resumo,window._ultimoFechamento.movimentos,window._ultimoFechamento.fechamento)">🖨️ Imprimir relatório</button>
             <button class="btn" style="flex:1" onclick="fecharModais();carregarCaixa()">OK</button>
@@ -279,7 +289,11 @@ async function abrirModalCaixasAbertos(){
               <div class="muted" style="font-size:12px;margin-bottom:6px">Aberto desde ${hora(s.abertaEm)}</div>
               <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
               <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
-              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver movimentos</button>
+              ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+                <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
+                ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+              </div>`:""}
+              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver histórico completo</button>
             </div>`).join(""):'<div class="muted">Nenhum caixa aberto no momento.</div>'}
           <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
         </div>
@@ -311,6 +325,11 @@ async function verMovimentosSessao(id){
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
+            ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
+              <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
+              <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+              ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+            </div>`:""}
             <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
             ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
             <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?"#8fffc0":(j.fechamento.diferenca>0?"#ffd23f":"#ff8090")}">${brl(j.fechamento.diferenca)}</b></div>`:""}
@@ -336,15 +355,16 @@ async function abrirModalHistorico(){
           ${lista.length?lista.map(s=>`
             <div class="card" style="background:#1c1846;margin:10px 0">
               <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">
-                ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · ${esc(s.operador||"—")}
+                🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")}
               </div>
               <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
-              <div class="linha"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
+              ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
+              <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
               <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
               <div class="linha"><span>Diferença</span>
                 <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?"#8fffc0":((s.fechamento?.diferenca||0)>0?"#ffd23f":"#ff8090")}">${brl(s.fechamento?.diferenca)}</b></div>
               ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
-              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver movimentos</button>
+              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver histórico completo</button>
             </div>`).join(""):'<div class="muted">Nenhum caixa fechado ainda.</div>'}
           <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
         </div>
