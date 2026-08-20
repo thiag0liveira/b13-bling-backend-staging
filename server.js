@@ -4705,10 +4705,21 @@ app.get("/imagens",(req,res)=>res.sendFile(path.join(__dirname,"imagens.html")))
 // barras). Uso: /api/diag/gtin/7891234567890
 app.get("/api/diag/gtin/:codigo",async(req,res)=>{
   const cod=String(req.params.codigo||"").trim();
-  const testes={};
-  try{ const r=await bling(`/produtos?gtin=${encodeURIComponent(cod)}&limite=3`); testes.filtro_gtin={qtd:(r?.data||[]).length,primeiro:(r?.data||[])[0]?{id:r.data[0].id,nome:r.data[0].nome,codigo:r.data[0].codigo,gtin:r.data[0].gtin}:null}; }catch(e){ testes.filtro_gtin={erro:e.message}; }
-  try{ const r=await bling(`/produtos?codigo=${encodeURIComponent(cod)}&limite=3`); testes.filtro_codigo={qtd:(r?.data||[]).length,primeiro:(r?.data||[])[0]?{id:r.data[0].id,nome:r.data[0].nome,codigo:r.data[0].codigo}:null}; }catch(e){ testes.filtro_codigo={erro:e.message}; }
-  try{ const r=await bling(`/produtos?pesquisa=${encodeURIComponent(cod)}&limite=3`); testes.filtro_pesquisa={qtd:(r?.data||[]).length,primeiros:(r?.data||[]).slice(0,3).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,gtin:p.gtin}))}; }catch(e){ testes.filtro_pesquisa={erro:e.message}; }
+  const testes={codigoBuscado:cod};
+  // busca pelo filtro gtin e mostra o GTIN REAL de cada produto (lendo o detalhe),
+  // pra confirmar se o filtro casa exato ou traz lista genérica
+  try{
+    const r=await bling(`/produtos?gtin=${encodeURIComponent(cod)}&limite=5`);
+    const lista=r?.data||[];
+    const detalhados=[];
+    for(const p of lista.slice(0,5)){
+      let gtin="?", codigo=p.codigo||"";
+      try{ const d=await bling(`/produtos/${p.id}`); gtin=d?.data?.gtin||d?.data?.codigoBarras||"(vazio)"; codigo=d?.data?.codigo||codigo; }catch(e){ gtin="erro:"+e.message; }
+      detalhados.push({id:p.id,nome:p.nome,codigoSKU:codigo,gtinReal:gtin,casaExato:String(gtin)===cod});
+      await new Promise(r=>setTimeout(r,200));
+    }
+    testes.filtro_gtin={qtd:lista.length,detalhados};
+  }catch(e){ testes.filtro_gtin={erro:e.message}; }
   res.json(testes);
 });
 app.get("/api/preco/gtin/:codigo", async(req,res)=>{
