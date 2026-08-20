@@ -6961,6 +6961,7 @@ app.get("/api/vendedor/prospeccao2",async(req,res)=>{
     const termo=(req.query.termo||"").toString().slice(0,80).trim();
     const local=(req.query.local||"").toString().slice(0,80).trim();
     const forcar=req.query.forcar==="1";
+    const pageToken=(req.query.pageToken||"").toString().trim(); // "carregar mais 20"
     if(termo.length<2) return res.json({data:[]});
 
     // monta a query: termo + local (se informado). Se não tem local, usa raio da loja.
@@ -6968,24 +6969,28 @@ app.get("/api/vendedor/prospeccao2",async(req,res)=>{
     const cacheKey=textQuery.toLowerCase();
     const cacheAll=lerJSON(PROSP2_CACHE_FILE,{});
     let base=null;
-    if(!forcar && cacheAll[cacheKey] && (Date.now()-cacheAll[cacheKey].em<12*60*60*1000)){
+    // o cache só vale pra 1ª página (sem pageToken). "Carregar mais" sempre busca fresco.
+    if(!pageToken && !forcar && cacheAll[cacheKey] && (Date.now()-cacheAll[cacheKey].em<12*60*60*1000)){
       base=cacheAll[cacheKey].dados;
     }
 
     if(!base){
-      const body={ textQuery, languageCode:"pt-BR", maxResultCount:20 };
-      // se não informou local, enviesa pela loja
+      const body={ textQuery, languageCode:"pt-BR", pageSize:20 };
+      // regra do Google: ao paginar (pageToken), os demais params devem ser IGUAIS
+      // aos da 1ª chamada. O locationBias por loja é aplicado igual nos dois casos.
       if(!local){
         const coord=await geocodeLoja();
         if(coord) body.locationBias={circle:{center:{latitude:coord.lat,longitude:coord.lng},radius:8000}};
       }
-      // field mask AMPLIADO: já pede telefone e site na própria busca (1 chamada)
+      if(pageToken) body.pageToken=pageToken;
+      // field mask AMPLIADO: já pede telefone e site na própria busca (1 chamada).
+      // inclui nextPageToken pra permitir "carregar mais 20".
       const r=await fetch("https://places.googleapis.com/v1/places:searchText",{
         method:"POST",
         headers:{
           "Content-Type":"application/json",
           "X-Goog-Api-Key":GOOGLE_MAPS_KEY,
-          "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.location,places.googleMapsUri,places.businessStatus",
+          "X-Goog-FieldMask":"places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.location,places.googleMapsUri,places.businessStatus,nextPageToken",
         },
         body:JSON.stringify(body),
       }).then(x=>x.json());
@@ -7000,9 +7005,9 @@ app.get("/api/vendedor/prospeccao2",async(req,res)=>{
         aberto:p.businessStatus==="OPERATIONAL",
         lat:p.location?.latitude, lng:p.location?.longitude,
       }));
-      base={termo,local,textQuery,total:locais.length,locais,geradoEm:Date.now()};
-      cacheAll[cacheKey]={em:Date.now(),dados:base};
-      salvarJSON(PROSP2_CACHE_FILE,cacheAll);
+      base={termo,local,textQuery,total:locais.length,locais,geradoEm:Date.now(),nextPageToken:r.nextPageToken||null};
+      // só cacheia a 1ª página (as próximas são sob demanda)
+      if(!pageToken){ cacheAll[cacheKey]={em:Date.now(),dados:base}; salvarJSON(PROSP2_CACHE_FILE,cacheAll); }
     }
 
     // enriquece: marca quem já é cliente (por telefone) e quem já foi contatado

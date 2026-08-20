@@ -703,11 +703,31 @@ function viewProspectar2(){
 
 async function buscarProspeccao2(){
   if((PROSP2_TERMO||"").trim().length<2){ alert("Digite o que você quer buscar (ex.: distribuidora)."); return; }
-  PROSP2_CARREGANDO=true; render();
+  PROSP2_CARREGANDO=true; PROSP2_DADOS=null; render();
   try{
     PROSP2_DADOS=await fetch(B+"/api/vendedor/prospeccao2?termo="+encodeURIComponent(PROSP2_TERMO)+"&local="+encodeURIComponent(PROSP2_LOCAL)).then(r=>r.json());
   }catch(e){ PROSP2_DADOS={erro:"Erro ao buscar"}; }
   PROSP2_CARREGANDO=false; render();
+}
+
+// carrega mais 20 (próxima página do Google) e acumula na lista atual
+let PROSP2_CARREGANDO_MAIS=false;
+async function carregarMaisProsp2(){
+  if(!PROSP2_DADOS?.nextPageToken || PROSP2_CARREGANDO_MAIS) return;
+  PROSP2_CARREGANDO_MAIS=true; render();
+  try{
+    const j=await fetch(B+"/api/vendedor/prospeccao2?termo="+encodeURIComponent(PROSP2_TERMO)+"&local="+encodeURIComponent(PROSP2_LOCAL)+"&pageToken="+encodeURIComponent(PROSP2_DADOS.nextPageToken)).then(r=>r.json());
+    if(j.erro){ alert("Não consegui carregar mais: "+j.erro); }
+    else{
+      // acumula, evitando duplicados por placeId
+      const existentes=new Set((PROSP2_DADOS.data||[]).map(x=>x.placeId));
+      const novos=(j.data||[]).filter(x=>!existentes.has(x.placeId));
+      PROSP2_DADOS.data=[...(PROSP2_DADOS.data||[]),...novos];
+      PROSP2_DADOS.total=PROSP2_DADOS.data.length;
+      PROSP2_DADOS.nextPageToken=j.nextPageToken||null; // token da próxima página (ou fim)
+    }
+  }catch(e){ alert("Erro ao carregar mais."); }
+  PROSP2_CARREGANDO_MAIS=false; render();
 }
 
 function renderProsp2Lista(){
@@ -741,7 +761,10 @@ function renderProsp2Lista(){
           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="marcarContatado2('${p.placeId}','${esc(p.nome).replace(/'/g,'')}',${!p.jaContatado})">${p.jaContatado?'↩ desmarcar':'✓ marquei que contatei'}</button>
         </div>
       </div>`;
-    }).join("");
+    }).join("")
+    + (PROSP2_DADOS.nextPageToken
+        ? `<button class="btn btn-ghost" style="width:100%;margin-top:6px;border:1px dashed #514c96" onclick="carregarMaisProsp2()" ${PROSP2_CARREGANDO_MAIS?'disabled':''}>${PROSP2_CARREGANDO_MAIS?'Carregando…':'➕ Carregar mais 20'}</button>`
+        : (l.length>=20?`<div class="muted" style="text-align:center;font-size:11px;margin-top:8px">Fim dos resultados pra essa busca.</div>`:''));
 }
 
 async function marcarContatado2(placeId,nome,contatado){
