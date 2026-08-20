@@ -96,19 +96,24 @@ function render(){
     </div>`; return;
   }
 
-  const cards=funcs.length ? funcs.map(f=>`
+  const cards=funcs.length ? funcs.map(f=>{
+    const temQr=(GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p)))&&f.ativo;
+    const nomeClicavel=temQr
+      ? `<span onclick="mostrarQrCaixa('${f.id}','${esc(f.nome).replace(/'/g,"")}')" style="cursor:pointer;text-decoration:underline dotted #00bc98;text-underline-offset:3px" title="Toque pra ver o QR do caixa">${esc(f.nome)}</span>`
+      : esc(f.nome);
+    return `
     <div class="card ${!f.ativo?'inativo':''}">
       <div style="font-size:28px">${f.nivel==='admin'?'👑':f.nivel==='gerente'?'🧑‍💼':'🔧'}</div>
       <div class="info">
-        <div class="nome">${esc(f.nome)} <span class="badge badge-${f.nivel}">${esc(NIVEIS[f.nivel]||f.nivel)}</span>
+        <div class="nome">${nomeClicavel} <span class="badge badge-${f.nivel}">${esc(NIVEIS[f.nivel]||f.nivel)}</span>
           ${!f.ativo?'<span class="badge" style="background:#3a2030;color:#ff9db0">Inativo</span>':''}
           ${f.precisaTrocarSenha?'<span class="badge" style="background:#3a2a00;color:#ffd23f">🔑 Precisa trocar senha</span>':''}</div>
         <div class="nivel">${f.login?`Login: <b>${esc(f.login)}</b> · `:""}ID: ${esc(f.id)}</div>
       </div>
       <button class="btn btn-ghost" onclick="abrirEditar('${f.id}')">✏️ Editar</button>
-      ${(GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p)))&&f.ativo?`<button class="btn btn-ghost" style="border:1px solid #00bc98;color:#00bc98" onclick="mostrarQrCaixa('${f.id}','${esc(f.nome).replace(/'/g,"")}')">📱 QR do caixa</button>`:''}
+      ${temQr?`<button class="btn btn-ghost" style="border:1px solid #00bc98;color:#00bc98" onclick="mostrarQrCaixa('${f.id}','${esc(f.nome).replace(/'/g,"")}')">📱 QR do caixa</button>`:''}
       <button class="btn ${f.ativo?'btn-red':'btn-grn'}" onclick="toggleAtivo('${f.id}',${!f.ativo})">${f.ativo?'Desativar':'Ativar'}</button>
-    </div>`).join("")
+    </div>`;}).join("")
     : `<div class="muted" style="text-align:center;padding:30px">Nenhum funcionário cadastrado.<br><br>
         <button class="btn btn-mag" onclick="abrirNovo()">+ Adicionar primeiro funcionário</button></div>`;
 
