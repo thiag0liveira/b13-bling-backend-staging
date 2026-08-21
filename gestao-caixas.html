@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Gestão de Caixas</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24}
+  body{margin:0;background:var(--bg);color:#fff}
+  #app{max-width:920px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,var(--indigo2),var(--indigo));display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:42px}.top .t{font-weight:900;font-size:18px}.top .sp{flex:1}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:14px;padding:11px 16px;color:#fff}
+  .btn-sm{font-size:12px;padding:8px 12px}
+  .btn-mag{background:var(--mag)}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}.btn-ghost{background:#1c1846}
+  .btn:disabled{opacity:.4}
+  .wrap{padding:16px}
+  input,select{padding:12px;border-radius:10px;border:2px solid #514c96;background:#151233;color:#fff;font-size:15px}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:16px;margin-bottom:14px}
+  .muted{color:#9a95c9;font-size:13px}
+  .err{background:#3a2030;color:#ffbfce;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .linha{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #23204f;font-size:14px}
+  .linha:last-child{border-bottom:none}
+  .toggle{display:flex;background:#0a0918;border-radius:10px;padding:4px;gap:4px;margin-bottom:14px}
+  .toggle button{flex:1;background:transparent;border:none;color:#9a95c9;padding:12px;border-radius:8px;font-weight:800;cursor:pointer;font-size:14px}
+  .toggle button.on{background:var(--mag);color:#fff}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow:auto}
+  .modal h3{margin:0 0 12px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    const sess=(typeof b13GetSession==="function")?b13GetSession():null;
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/gestao-caixas")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/gestao-caixas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<div id="modais"></div>
+<script>
+if(!window.__b13SemAcesso){
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const LOGO="https://i.imgur.com/nBQ2Ck2.png";
+
+window.ABA="abertos";
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function brl(v){ return (Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function hora(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; }
+
+window.render=function(){
+  document.getElementById("app").innerHTML=`
+    <div class="top"><img src="${LOGO}"><div class="t">🗃️ Gestão de Caixas</div></div>
+    <div class="wrap">
+      <div class="muted" style="margin-bottom:12px">Acompanhe todos os caixas do Frente de Caixa — os que estão abertos agora e o histórico dos já fechados, com horários, operador e total por forma de pagamento.</div>
+      <div class="toggle">
+        <button class="${window.ABA==='abertos'?'on':''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
+        <button class="${window.ABA==='historico'?'on':''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
+      </div>
+      <div id="conteudo"><div class="muted">Carregando…</div></div>
+    </div>`;
+  if(window.ABA==="abertos") carregarAbertos(); else carregarHistorico();
+}
+
+window.carregarAbertos=async function(){
+  const box=document.getElementById("conteudo");
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/abertos").then(r=>r.json());
+    const lista=j.data||[];
+    box.innerHTML = lista.length ? lista.map(s=>`
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
+          <div style="font-weight:800">👤 ${esc(s.operador||"—")}</div>
+          <div class="muted" style="font-size:12px">🕐 Aberto desde ${hora(s.abertaEm)}</div>
+        </div>
+        <div class="linha" style="margin-top:8px"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+        <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
+        ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+          <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
+          ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        </div>`:""}
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
+      </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa aberto no momento.</div></div>';
+  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar os caixas abertos.</div>`; }
+}
+
+window.carregarHistorico=async function(){
+  const box=document.getElementById("conteudo");
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/historico").then(r=>r.json());
+    const lista=j.data||[];
+    box.innerHTML = lista.length ? lista.map(s=>`
+      <div class="card">
+        <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")}</div>
+        <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+        ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
+        <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
+        <div class="linha"><span>Diferença</span>
+          <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?'#8fffc0':((s.fechamento?.diferenca||0)>0?'#ffd23f':'#ff8090')}">${brl(s.fechamento?.diferenca)}</b></div>
+        ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
+      </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa fechado ainda.</div></div>';
+  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar o histórico.</div>`; }
+}
+
+window.nomeMovimento=function(m){
+  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>`;
+  if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
+  if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
+  return esc(m.tipo);
+}
+
+window.verMovimentos=async function(id){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
+    const movs=j.movimentos||[];
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+        <div class="modal">
+          <h3>📋 Movimentos — ${esc(j.sessao?.operador||"")}</h3>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
+          ${movs.length?movs.map(m=>`
+            <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
+              <div>${nomeMovimento(m)}</div>
+              <div class="muted" style="font-size:11px">${hora(m.em)}</div>
+            </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
+          <div class="card" style="background:#1c1846;margin:12px 0">
+            ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
+              <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
+              <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+              ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+            </div>`:""}
+            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
+            ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
+            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?'#8fffc0':(j.fechamento.diferenca>0?'#ffd23f':'#ff8090')}">${brl(j.fechamento.diferenca)}</b></div>`:""}
+          </div>
+          <button class="btn btn-ghost" style="width:100%" onclick="fecharModais()">Fechar</button>
+        </div>
+      </div>`;
+  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+}
+
+render();
+}
+</script>
+</body>
+</html>
