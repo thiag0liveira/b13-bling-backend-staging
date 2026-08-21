@@ -394,8 +394,18 @@ window.B13_NAV_LINKS=[
 function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
   const links=B13_NAV_LINKS.filter(l=>l.acoes.some(a=>b13Pode(a)));
+  // o funcionário pode autorizar caixa? (admin/gerente/líder) → nome clicável abre o QR
+  const gruposQr=["admin","gerente","lider_caixa"];
+  const temQr=gruposQr.includes(f.nivel)||(f.permissoes||[]).some(p=>gruposQr.includes(p));
+  const nomeTopo=temQr
+    ? \`<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">\${f.nome} <span style="font-size:11px">📱</span></span>\`
+    : f.nome;
 
-  return \`<div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s" id="b13nav">
+  return \`<style>body{padding-top:44px !important}@media(min-width:900px){#b13topbar{left:200px}}</style>
+    <div id="b13topbar" style="position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:10px;padding:0 12px 0 52px;z-index:98">
+      <div style="flex:1;text-align:right;font-size:13px;color:#fff;font-weight:700">\${nomeTopo} <span style="color:#9a95c9;font-weight:400;font-size:11px">· \${f.nivel}</span></div>
+    </div>
+    <div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s">
     <div style="padding:14px 12px;border-bottom:1px solid rgba(255,0,130,.3)">
       <div style="font-weight:900;font-size:13px;color:#fff">\${f.nome}</div>
       <div style="font-size:11px;color:#9a95c9">\${f.nivel}</div>
@@ -407,8 +417,58 @@ function b13RenderNav(ativo){
       <button onclick="b13Logout()" style="width:100%;padding:8px;border:1px solid #514c96;border-radius:8px;background:transparent;color:#9a95c9;cursor:pointer;font-size:12px">Sair</button>
     </div>
   </div>
-  <button onclick="b13ToggleNav()" style="position:fixed;top:12px;left:12px;z-index:101;background:#262366;border:1px solid #FF0082;border-radius:8px;color:#fff;padding:6px 10px;cursor:pointer;font-size:18px">☰</button>
-  <div id="b13navOverlay" onclick="b13ToggleNav()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99"></div>\`;
+  <button onclick="b13ToggleNav()" style="position:fixed;top:6px;left:12px;z-index:101;background:#262366;border:1px solid #FF0082;border-radius:8px;color:#fff;padding:6px 10px;cursor:pointer;font-size:18px">☰</button>
+  <div id="b13navOverlay" onclick="b13ToggleNav()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99"></div>
+  <div id="b13qrModal"></div>\`;
+}
+
+// mostra o QR do caixa do próprio usuário logado (em qualquer página). Só funciona
+// pra quem pode autorizar (o backend valida). O QR fica embaçado até revelar.
+function b13MostrarMeuQr(){
+  const f=b13GetSession(); if(!f) return;
+  const host=document.getElementById("b13qrModal")||document.body;
+  host.innerHTML=\`<div id="b13qrBg" onclick="if(event.target===this)document.getElementById('b13qrModal').innerHTML=''" style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;z-index:200">
+    <div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:20px;max-width:340px;width:100%;text-align:center">
+      <div style="font-weight:800;margin-bottom:4px">📱 Seu QR do caixa</div>
+      <div style="font-size:12px;color:#9a95c9;margin-bottom:12px">Autoriza ações no Frente de Caixa. Muda todo dia. Mostre no leitor quando pedirem autorização.</div>
+      <div id="b13qrWrap" style="padding:14px;background:#0f0d24;border:1px solid #2c2660;border-radius:10px"><div style="color:#9a95c9">Gerando…</div></div>
+      <button onclick="document.getElementById('b13qrModal').innerHTML=''" style="width:100%;margin-top:14px;padding:10px;border:1px solid #514c96;border-radius:8px;background:transparent;color:#cfc9f5;cursor:pointer">Fechar</button>
+    </div>
+  </div>\`;
+  // carrega a lib de QR se ainda não tiver, e busca o token do dia
+  const desenhar=()=>{
+    fetch((B13_BACKEND||"")+"/api/pdv/meu-qr/"+f.id,{headers:{"X-Auth-Token":f.token||""}})
+      .then(r=>r.json()).then(j=>{
+        const wrap=document.getElementById("b13qrWrap"); if(!wrap) return;
+        if(j.erro){ wrap.innerHTML='<div style="color:#ffbfce">'+j.erro+'</div>'; return; }
+        window._b13QrToken=j.token;
+        wrap.innerHTML=\`<div style="font-size:11px;color:#00e0b0;margin-bottom:8px">Válido só hoje (\${(j.dia||"").split("-").reverse().join("/")})</div>
+          <div id="b13qrHolder" style="display:inline-block;padding:10px;background:#fff;border-radius:8px;filter:blur(11px);transition:filter .2s"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
+            <button id="b13qrRevelar" onclick="b13RevelarMeuQr()" style="padding:8px 12px;border:none;border-radius:8px;background:#FF0082;color:#fff;font-weight:800;cursor:pointer;font-size:12px">👁️ Revelar</button>
+            <button onclick="b13CopiarMeuQr()" style="padding:8px 12px;border:none;border-radius:8px;background:#1c1846;color:#fff;font-weight:800;cursor:pointer;font-size:12px">📋 Copiar código</button>
+          </div>\`;
+        new QRCode(document.getElementById("b13qrHolder"),{text:j.token,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});
+      }).catch(()=>{ const w=document.getElementById("b13qrWrap"); if(w) w.innerHTML='<div style="color:#ffbfce">Erro ao gerar o QR.</div>'; });
+  };
+  if(typeof QRCode==="undefined"){
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+    s.onload=desenhar; document.head.appendChild(s);
+  } else desenhar();
+}
+let _b13QrTimer=null;
+function b13RevelarMeuQr(){
+  const h=document.getElementById("b13qrHolder"), b=document.getElementById("b13qrRevelar");
+  if(!h) return;
+  h.style.filter="none"; if(b){ b.textContent="👁️ Visível"; b.disabled=true; b.style.opacity=".6"; }
+  clearTimeout(_b13QrTimer);
+  _b13QrTimer=setTimeout(()=>{ if(h) h.style.filter="blur(11px)"; if(b){ b.textContent="👁️ Revelar"; b.disabled=false; b.style.opacity="1"; } },20000);
+}
+function b13CopiarMeuQr(){
+  const t=window._b13QrToken; if(!t) return;
+  if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>alert("✅ Código copiado!")).catch(()=>prompt("Copie o código:",t));
+  else prompt("Copie o código:",t);
 }
 
 function b13ToggleNav(){
