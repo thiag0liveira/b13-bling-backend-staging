@@ -209,32 +209,32 @@ function cardMetaProgresso(){
   return `<div class="card">
     <div style="font-weight:800;margin-bottom:10px">🎯 Progresso da meta — ${a.mes.split("-").reverse().join("/")}</div>
 
-    <div style="background:#12143a;border:1px solid #2a4a6a;border-radius:10px;padding:12px;margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-        <span style="font-size:12px;font-weight:700;color:#7fd4ff">✅ ATENDIDOS <span class="muted" style="font-weight:400">(o que vale pra meta)</span></span>
-        <span class="muted" style="font-size:11px">${a.pctMetaAtendido||0}%</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="background:#12122e;border:1px solid #2c2660;border-radius:10px;padding:12px">
+        <div style="font-size:12px;font-weight:700;color:#3ce88a;margin-bottom:2px">🧾 PEDIDOS</div>
+        <div style="font-size:20px;font-weight:900;color:${corPct}">${brl(a.vendido)}</div>
+        <div class="muted" style="font-size:11px;margin-bottom:6px">de ${brl(a.meta)} · ${a.pctMeta}%</div>
+        <div style="background:#0f0d24;border-radius:20px;height:12px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${corPct};border-radius:20px"></div>
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <span style="font-size:22px;font-weight:900;color:${corPctAt}">${brl(a.vendidoAtendido)}</span>
-        <span class="muted">de ${brl(a.meta)}</span>
-      </div>
-      <div style="background:#0f0d24;border-radius:20px;height:16px;overflow:hidden">
-        <div style="height:100%;width:${pctAt}%;background:${corPctAt};border-radius:20px"></div>
+      <div style="background:#12143a;border:1px solid #2a4a6a;border-radius:10px;padding:12px">
+        <div style="font-size:12px;font-weight:700;color:#7fd4ff;margin-bottom:2px">✅ ATENDIDOS</div>
+        <div style="font-size:20px;font-weight:900;color:${corPctAt}">${brl(a.vendidoAtendido)}</div>
+        <div class="muted" style="font-size:11px;margin-bottom:6px">de ${brl(a.meta)} · ${a.pctMetaAtendido||0}%</div>
+        <div style="background:#0f0d24;border-radius:20px;height:12px;overflow:hidden">
+          <div style="height:100%;width:${pctAt}%;background:${corPctAt};border-radius:20px"></div>
+        </div>
       </div>
     </div>
-    <div class="muted" style="font-size:12px;margin-bottom:12px">${frase}</div>
-
-    <div class="muted" style="font-size:11px;margin-bottom:4px">Pedidos de venda (inclui os que ainda não foram atendidos): ${a.pctMeta}%</div>
-    <div style="background:#0f0d24;border-radius:20px;height:10px;overflow:hidden;margin-bottom:12px">
-      <div style="height:100%;width:${pct}%;background:${corPct};border-radius:20px;opacity:.7"></div>
-    </div>
+    <div class="muted" style="font-size:11px;margin-bottom:12px">✅ O que vale pra bater a meta é o <b style="color:#7fd4ff">atendido</b>. ${frase}</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
       <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Média/dia atendido</div><div style="font-weight:800;color:#7fd4ff;font-size:14px">${brl(a.mediaDiariaAtendido)}</div></div>
       <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Ideal/dia atendido</div><div style="font-weight:800;color:#7fd4ff;font-size:14px">${brl(a.idealPorDiaRestanteAtendido)}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Média/dia (pedidos)</div><div style="font-weight:800;font-size:14px">${brl(a.mediaDiaria)}</div></div>
+      <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Média/dia (pedidos)</div><div style="font-weight:800;color:#3ce88a;font-size:14px">${brl(a.mediaDiaria)}</div></div>
       <div class="rc" style="padding:10px"><div class="muted" style="font-size:10px">Ideal/dia (pedidos)</div><div style="font-weight:800;color:#ffd23f;font-size:14px">${brl(a.idealPorDiaRestante)}</div></div>
     </div>
     <div class="muted" style="font-size:11px;margin-bottom:4px">Barra rosa: vendas/dia · linhas: meta ideal (amarelo), pedidos (verde), atendidos (azul):</div>
