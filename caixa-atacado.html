@@ -321,7 +321,7 @@ function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
 function addProduto(p){
   const item={produtoId:p.produtoId,nome:p.nome,valor:Number(p.preco)||0,imagem:p.imagem||null};
   const ex=CARRINHO.find(i=>Number(i.produtoId)===Number(p.produtoId));
-  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||"",imagem:p.imagem||null}); }
+  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||"",imagem:p.imagem||null,origemPreco:p.origemPreco||"bling"}); }
   ULTIMO_ITEM_PAINEL=item; // mostra o produto no painel grande
   render();
 }
@@ -357,8 +357,8 @@ function ligarBusca(){
 async function buscarProduto(termo,el,resEl,ehEnter){
   try{
     if(/^\d{6,}$/.test(termo)){
-      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
-      if(r&&r.data&&r.data.preco>0){ addProduto({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,codigo:termo}); el.value=""; return; }
+      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)+"?atacado=1").then(r=>r.json()).catch(()=>null);
+      if(r&&r.data&&r.data.preco>0){ addProduto({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,codigo:termo,origemPreco:r.data.origemPreco}); el.value=""; return; }
       if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado.</div>`; return; }
     }
     const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
@@ -373,16 +373,52 @@ async function buscarProduto(termo,el,resEl,ehEnter){
       </div>`).join("");
     lista.forEach(async(p,ix)=>{
       if(!p.codigo) return;
-      try{ const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
-        if(r?.data){ p._preco=r.data.preco; const e=document.getElementById("pr_"+ix); if(e) e.textContent=brl(r.data.preco); }
+      try{ const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)+"?atacado=1").then(r=>r.json());
+        if(r?.data){ p._preco=r.data.preco; p._origemPreco=r.data.origemPreco; const e=document.getElementById("pr_"+ix); if(e) e.textContent=brl(r.data.preco); }
       }catch(e){}
     });
   }catch(e){ resEl.innerHTML='<div class="err">erro na busca</div>'; }
 }
 function selecionarResultado(ix){
   const p=(window._ultimaBusca||[])[ix]; if(!p) return;
-  addProduto({produtoId:p.id,nome:p.nome,preco:p._preco||0,codigo:p.codigo});
+  addProduto({produtoId:p.id,nome:p.nome,preco:p._preco||0,codigo:p.codigo,origemPreco:p._origemPreco});
   document.getElementById("resBusca").innerHTML=""; document.getElementById("busca").value="";
+}
+
+// ---- mudar preço de um item: pede QR (gerente/financeiro/admin) ----
+function pedirQrEditarPreco(ix){
+  const it=CARRINHO[ix]; if(!it) return;
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>✏️ Mudar preço — ${esc(it.nome)}</h3>
+      <p class="muted" style="margin-bottom:8px">Mudar o preço precisa da autorização de um gerente, financeiro ou admin. Leia o QR do caixa (ou cole o código).</p>
+      <div class="muted" style="margin-bottom:4px">Novo preço unitário</div>
+      <input id="qrNovoPreco" type="number" step="0.01" value="${it.valor}" style="margin-bottom:10px">
+      <div class="muted" style="margin-bottom:4px">QR de autorização</div>
+      <input id="qrToken" type="text" placeholder="Bipe o QR ou cole o código" autofocus>
+      <div id="qrErro"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" onclick="confirmarEditarPreco(${ix})">Confirmar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+  // o leitor de QR digita e dá Enter — confirma direto
+  setTimeout(()=>{ const t=document.getElementById("qrToken"); if(t) t.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ev.preventDefault();confirmarEditarPreco(ix);} }); },50);
+}
+async function confirmarEditarPreco(ix){
+  const it=CARRINHO[ix]; if(!it) return;
+  const novoPreco=+document.getElementById("qrNovoPreco").value||0;
+  const tokenQr=(document.getElementById("qrToken").value||"").trim();
+  const erroEl=document.getElementById("qrErro");
+  if(!(novoPreco>0)){ erroEl.innerHTML=`<div class="err">Informe um preço maior que zero.</div>`; return; }
+  if(!tokenQr){ erroEl.innerHTML=`<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
+  try{
+    const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tokenQr})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    it.valor=novoPreco; it.precoEditado=true; it.origemPreco="editado";
+    fecharModais(); render();
+  }catch(e){ erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
 // ---------------- pagamento ----------------
@@ -454,7 +490,7 @@ function render(){
         </div>
         <div id="carrinho">${CARRINHO.length?CARRINHO.map((i,ix)=>`
           <div class="item">
-            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.valor)} un</span></span>
+            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.valor)} un${i.origemPreco==="atacado"?' <span style="color:#8fffc0;font-weight:800">ATACADO ✓</span>':(i.precoEditado?' <span style="color:#ffd23f;font-weight:800">EDITADO</span>':'')}</span> <span onclick="pedirQrEditarPreco(${ix})" style="cursor:pointer;color:#7fd4ff;font-size:11px">✏️ preço</span></span>
             <div class="qtd">
               <button onclick="alterarQtd(${ix},-1)">−</button>
               <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">

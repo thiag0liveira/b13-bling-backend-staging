@@ -396,7 +396,7 @@ function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
   const links=B13_NAV_LINKS.filter(l=>l.acoes.some(a=>b13Pode(a)));
   // o funcionário pode autorizar caixa? (admin/gerente/líder) → nome clicável abre o QR
-  const gruposQr=["admin","gerente","lider_caixa"];
+  const gruposQr=["admin","gerente","lider_caixa","financeiro","financeiro_atacado"];
   const temQr=gruposQr.includes(f.nivel)||(f.permissoes||[]).some(p=>gruposQr.includes(p));
   const nomeTopo=temQr
     ? \`<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">\${f.nome} <span style="font-size:11px">📱</span></span>\`
@@ -2947,6 +2947,24 @@ function validarTokenQr(token){
   if(!autoriza) return {erro:"esse funcionário não pode autorizar"};
   return {funcionario:f};
 }
+// grupos que autorizam ações no CAIXA ATACADO (mudar preço): gerente, financeiro e admin
+const GRUPOS_AUTORIZAM_ATACADO=["admin","gerente","financeiro","financeiro_atacado"];
+// valida um QR pro caixa atacado — mesmo token do dia, mas exige grupo do atacado
+function validarTokenQrAtacado(token){
+  if(!token||typeof token!=="string") return {erro:"QR inválido"};
+  const m=token.trim().match(/^B13A-(.+?)-(\d{4}-\d{2}-\d{2})-([A-F0-9]{16})$/i);
+  if(!m) return {erro:"QR não reconhecido"};
+  const [,funcId,dia,assin]=m;
+  if(dia!==_diaBR()) return {erro:"QR expirado — gere o de hoje no perfil"};
+  if(assinaturaQr(funcId,dia)!==assin.toUpperCase()) return {erro:"QR inválido"};
+  const funcs=lerJSON(FUNC_FILE,{});
+  const f=funcs[funcId];
+  if(!f||!f.ativo) return {erro:"funcionário não encontrado ou inativo"};
+  const autoriza=GRUPOS_AUTORIZAM_ATACADO.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_ATACADO.includes(p));
+  if(!autoriza) return {erro:"Só gerente, financeiro ou admin autorizam no caixa atacado"};
+  return {funcionario:f};
+}
+
 function validarAutorizacaoPdv(idDigitado,senhaDigitada){
   if(!idDigitado||!senhaDigitada) return {erro:"Informe o ID e a senha"};
   const dia=String(new Date().getDate()).padStart(2,"0");
@@ -2975,6 +2993,14 @@ app.post("/api/pdv/autorizar",(req,res)=>{
   res.json({ok:true,autorizadoPor:r.funcionario.nome});
 });
 
+// autorização por QR pro CAIXA ATACADO (mudar preço) — aceita gerente/financeiro/admin
+app.post("/api/caixa-atacado/autorizar",(req,res)=>{
+  const {tokenQr}=req.body||{};
+  const r=validarTokenQrAtacado(tokenQr);
+  if(r.erro) return res.status(401).json({erro:r.erro});
+  res.json({ok:true,autorizadoPor:r.funcionario.nome,via:"qr"});
+});
+
 // gera o token/QR do dia pra um funcionário (só se ele for de grupo autorizado).
 // usado no perfil do funcionário (tela de funcionários) pra mostrar o QR do dia.
 app.get("/api/pdv/meu-qr/:funcId",(req,res)=>{
@@ -2982,7 +3008,11 @@ app.get("/api/pdv/meu-qr/:funcId",(req,res)=>{
     const funcs=lerJSON(FUNC_FILE,{});
     const f=funcs[req.params.funcId];
     if(!f||!f.ativo) return res.status(404).json({erro:"funcionário não encontrado"});
-    const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p));
+    // quem pode gerar QR: quem autoriza o Frente de Caixa (admin/gerente/líder) OU
+    // quem autoriza o Caixa Atacado (admin/gerente/financeiro) — assim o financeiro
+    // também tem seu QR do dia pra autorizar mudança de preço no atacado.
+    const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))
+      ||GRUPOS_AUTORIZAM_ATACADO.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_ATACADO.includes(p));
     if(!autoriza) return res.status(403).json({erro:"esse funcionário não pode autorizar caixa"});
     const dia=_diaBR();
     res.json({ok:true, nome:f.nome, dia, token:gerarTokenQr(f.id,dia)});
@@ -4951,12 +4981,29 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
   try{
     const codigo=String(req.params.codigo||"").trim();
     if(!codigo) return res.status(400).json({erro:"informe o código"});
+    const querAtacado = req.query.atacado==="1"||req.query.atacado==="true";
+
+    // aplica o preço de ATACADO da tabela quando o caixa atacado pedir. Se o produto
+    // não tiver preço de atacado cadastrado, mantém o preço que veio do Bling.
+    const aplicarAtacado=(item)=>{
+      if(!querAtacado||!item) return item;
+      try{
+        const idx=indexarVinculosTabela();
+        // procura pelo código do produto (SKU) ou pelo gtin, que estão no índice da tabela
+        const vinc = idx[String(item.codigo||"")] || idx[String(codigo)] || idx[String(item.gtin||"")];
+        const pa = vinc && Number(vinc.precoAtacado);
+        if(pa>0){ item.preco=pa; item.precoAtacado=pa; item.origemPreco="atacado"; }
+        else { item.origemPreco="bling"; }
+      }catch(e){ item.origemPreco="bling"; }
+      return item;
+    };
+
     // 1) ÍNDICE LOCAL — é a fonte confiável pro código de barras (GTIN), porque o
     //    filtro ?gtin= da API v3 do Bling NÃO funciona (ignora o filtro e devolve
     //    lista genérica). O índice é montado em segundo plano lendo o gtin real de
     //    cada produto. Cobre tanto código de barras quanto SKU.
     const indice=lerJSON(GTIN_INDEX_FILE,{});
-    if(indice[codigo]) return res.json({data:indice[codigo],origem:"indice"});
+    if(indice[codigo]) return res.json({data:aplicarAtacado({...indice[codigo]}),origem:"indice"});
 
     // 2) fallback: SKU (esse filtro do Bling funciona, é busca exata pelo código interno)
     try{
@@ -4965,10 +5012,10 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
       if(p && String(p.codigo||"")===codigo){
         let det=p;
         try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
-        return res.json({data:{
+        return res.json({data:aplicarAtacado({
           produtoId:det.id,nome:det.nome,preco:+(det.preco||0),
           imagem:det.imagemURL||det.imagem?.link?.grande||null,codigo:det.codigo||"",gtin:det.gtin||""
-        },origem:"sku"});
+        }),origem:"sku"});
       }
     }catch(e){}
 
