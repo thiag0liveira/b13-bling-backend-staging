@@ -312,6 +312,19 @@ function pintarPedidos(){
     </div>`).join("") + (ehNumero?extra:"");
 }
 
+// quando bipam um código longo no filtro (cara de código de pedido do totem, não
+// de filtro rápido), dispara a busca no Bling automaticamente após uma pequena pausa
+let _timerBuscaPed=null;
+function agendarBuscaPedido(v){
+  clearTimeout(_timerBuscaPed);
+  const t=String(v||"").trim();
+  // 7+ dígitos = é um id/número de pedido bipado, não alguém filtrando "5001"
+  if(/^\d{7,}$/.test(t)){
+    const naLista=PEDIDOS.some(p=>String(p.numero||"")===t);
+    if(!naLista) _timerBuscaPed=setTimeout(()=>buscarPedidoNoBling(t),400);
+  }
+}
+
 // busca um pedido pelo número direto no Bling (fora da janela dos recentes)
 async function buscarPedidoNoBling(numero){
   const box=document.getElementById("pedLista");
@@ -736,7 +749,7 @@ function render(){
           <h3 style="flex:1;margin:0">📋 Pedidos a receber</h3>
           <button class="btn btn-ghost btn-sm" onclick="carregarPedidos()">🔄</button>
         </div>
-        <input class="pedBusca" placeholder="Filtrar nº ou cliente…" oninput="window._filtroPed=this.value;pintarPedidos()" onkeydown="if(event.key==='Enter'){const v=this.value.trim(); if(/^\d+$/.test(v)){const naLista=PEDIDOS.some(p=>String(p.numero||'')===v); if(!naLista) buscarPedidoNoBling(v);}}" value="${esc(window._filtroPed||'')}">
+        <input class="pedBusca" placeholder="Filtrar nº ou bipar código do pedido…" oninput="window._filtroPed=this.value;pintarPedidos();agendarBuscaPedido(this.value)" onkeydown="if(event.key==='Enter'){const v=this.value.trim(); if(/^\d+$/.test(v)){const naLista=PEDIDOS.some(p=>String(p.numero||'')===v); if(!naLista) buscarPedidoNoBling(v);}}" value="${esc(window._filtroPed||'')}">
         <div class="pedLista" id="pedLista"><div class="muted">Carregando…</div></div>
       </div>
     </div>

@@ -3207,12 +3207,13 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
         if(d&&d.id) return responder(d);
       }catch(e){ /* não é um id de pedido — cai pra busca por número */ }
     }
-    // 2) tenta pelo NÚMERO do pedido (a API v3 não filtra por número, então varre páginas)
+    // 2) tenta pelo NÚMERO do pedido (a API v3 não filtra por número, então varre
+    //    páginas). Aumentei o alcance e comparo com numero E numeroLoja.
     let achado=null;
-    for(let pag=1;pag<=30 && !achado;pag++){
+    for(let pag=1;pag<=50 && !achado;pag++){
       let arr=[];
       try{ arr=await bling(`/pedidos/vendas?pagina=${pag}&limite=100`).then(r=>r?.data||[]); }catch(e){ break; }
-      achado=arr.find(x=>String(x.numero)===num)||null;
+      achado=arr.find(x=>String(x.numero)===num || String(x.numeroLoja||"")===num)||null;
       if(arr.length<100) break;
       await sleep(300);
     }
@@ -3221,6 +3222,34 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
     try{ const d=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data); if(d) return responder(d); }catch(e){}
     return responder(achado);
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
+// DIAGNÓSTICO: mostra exatamente o que o Bling retorna pra um id/número, pra
+// entender por que a busca do caixa acha ou não. Uso: /api/diag/pedido-busca/26671720297
+app.get("/api/diag/pedido-busca/:cod",async(req,res)=>{
+  const cod=String(req.params.cod||"").trim();
+  const out={cod, porId:null, porNumeroVarredura:null};
+  // tenta por id
+  try{
+    const d=await bling(`/pedidos/vendas/${cod}`).then(r=>r?.data);
+    out.porId = d&&d.id ? {achou:true, id:d.id, numero:d.numero, situacaoId:d.situacao?.id, situacaoNome:d.situacao?.nome} : {achou:false, retorno:d};
+  }catch(e){ out.porId={achou:false, erro:e.message}; }
+  // varre as primeiras 5 páginas pra ver se acha por numero
+  try{
+    let ach=null, paginasVarridas=0;
+    for(let pag=1;pag<=5 && !ach;pag++){
+      const arr=await bling(`/pedidos/vendas?pagina=${pag}&limite=100`).then(r=>r?.data||[]);
+      paginasVarridas++;
+      ach=arr.find(x=>String(x.numero)===cod || String(x.numeroLoja||"")===cod)||null;
+      if(arr.length<100) break;
+      await sleep(300);
+    }
+    out.porNumeroVarredura = ach ? {achou:true, id:ach.id, numero:ach.numero} : {achou:false, paginasVarridas};
+    // também mostra alguns números recentes pra referência
+    const amostra=await bling(`/pedidos/vendas?pagina=1&limite=5`).then(r=>r?.data||[]);
+    out.amostraRecentes=amostra.map(p=>({id:p.id, numero:p.numero, numeroLoja:p.numeroLoja}));
+  }catch(e){ out.porNumeroVarredura={erro:e.message}; }
+  res.json(out);
 });
 
 app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
