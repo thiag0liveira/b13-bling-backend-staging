@@ -89,6 +89,8 @@ document.addEventListener("DOMContentLoaded",function(){
   <div class="t">Caixa Atacado</div>
   <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
   <div class="sp"></div>
+  <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
+  <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalCaixasAbertos()">🏪 Caixas Abertos</button>
@@ -105,6 +107,7 @@ const S=b13GetSession()||{};
 const TIPO_CAIXA="atacado";
 
 let CAIXA={aberta:false,resumo:{}};
+let ULTIMA_VENDA=null; // guarda a última venda concluída, pra reimprimir o comprovante
 let PEDIDOS=[];          // pedidos não atendidos (coluna extra)
 let PEDIDO_ATUAL=null;   // {id,numero,situacaoNome,vendedorNome,...} — null = venda nova
 let CARRINHO=[];
@@ -468,6 +471,134 @@ function selecionarForma(id,nome){
 function adicionarFormaPagamento(){ PAGAMENTOS.push({formaId:"",formaNome:"",valor:0}); render(); }
 
 // ---------------- render principal (visual do frente de caixa) ----------------
+// ---------------- comprovante / minhas vendas (igual ao Frente de Caixa) ----------------
+function movimentoParaComprovante(m){
+  return {
+    numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
+    itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
+    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null,
+  };
+}
+function imprimirComprovante(v){
+  if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
+  const linhas=(v.itens||[]).map(i=>`
+    <tr><td>${i.quantidade}x ${esc(i.nome||("Produto "+i.produtoId))}</td><td style="text-align:right">${brl(i.preco*i.quantidade)}</td></tr>`).join("");
+  const pagLinhas=(v.pagamentos||[]).map(p=>`<tr><td>${esc(p.formaNome||"—")}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("");
+  const subtotal=(v.itens||[]).reduce((s,i)=>s+i.preco*i.quantidade,0);
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante #${esc(v.numero)}</title>
+    <style>
+      body{font-family:monospace;font-size:13px;width:300px;margin:0 auto;padding:10px}
+      table{width:100%;border-collapse:collapse}
+      td{padding:2px 0}
+      h2,h3{text-align:center;margin:6px 0}
+      hr{border:none;border-top:1px dashed #000;margin:8px 0}
+      .tot{font-size:16px;font-weight:bold}
+    </style></head><body>
+    <h2>B13 Bebidas</h2>
+    <div style="text-align:center">Comprovante de venda — Atacado</div>
+    <hr>
+    <div>Venda: #${esc(v.numero)}</div>
+    <div>Data: ${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
+    <div>Cliente: ${esc(v.cliente?.nome||"Consumidor Final")}</div>
+    <hr>
+    <table>${linhas}</table>
+    <hr>
+    <table>
+      <tr><td>Subtotal</td><td style="text-align:right">${brl(subtotal)}</td></tr>
+      ${v.desconto?`<tr><td>Desconto</td><td style="text-align:right">- ${brl(v.desconto)}</td></tr>`:""}
+      <tr class="tot"><td>Total</td><td style="text-align:right">${brl(v.total)}</td></tr>
+    </table>
+    <hr>
+    <table>${pagLinhas}</table>
+    ${v.nfce?.idNotaFiscal?`<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
+    <hr>
+    <div style="text-align:center">Obrigado pela preferência!</div>
+    <script>window.onload=()=>window.print();<\/script>
+    </body></html>`;
+  const w=window.open("","_blank","width=380,height=600");
+  w.document.write(html); w.document.close();
+}
+
+function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
+  const vendas=(movimentos||[]).filter(m=>m.tipo==="venda");
+  const outros=(movimentos||[]).filter(m=>m.tipo!=="venda");
+  const linhasVendas=vendas.map(m=>`
+    <tr><td>${hora(m.em)}</td><td>#${esc(m.numero||m.pedidoId)}</td><td>${esc(m.clienteNome||"—")}</td>
+    <td>${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join("<br>")}</td>
+    <td style="text-align:right">${brl(m.total)}</td></tr>`).join("");
+  const linhasOutros=outros.map(m=>`
+    <tr><td>${hora(m.em)}</td><td colspan="3">${m.tipo==="sangria"?"💸 Sangria":"💰 Suprimento"}${m.motivo?" — "+esc(m.motivo):""}</td>
+    <td style="text-align:right">${brl(m.valor)}</td></tr>`).join("");
+  const linhasForma=(resumo.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("");
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa atacado</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:13px;max-width:700px;margin:0 auto;padding:16px;color:#000}
+      table{width:100%;border-collapse:collapse;margin-bottom:14px}
+      th,td{padding:4px 6px;border-bottom:1px solid #ccc;text-align:left}
+      h2,h3{margin:6px 0}.tot{font-size:15px;font-weight:bold}.sec{margin-top:18px}
+    </style></head><body>
+    <h2>B13 Bebidas — Relatório de Caixa Atacado</h2>
+    <div>Operador: <b>${esc(sessao.operador||"—")}</b></div>
+    <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento?" · Fechado em: "+hora(sessao.fechadaEm||Date.now()):" · (em andamento)"}</div>
+    <div>Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
+    <div class="sec"><h3>Vendas (${vendas.length})</h3>
+    <table><tr><th>Hora</th><th>Nº</th><th>Cliente</th><th>Pagamento</th><th>Total</th></tr>${linhasVendas||"<tr><td colspan=5>Nenhuma venda</td></tr>"}</table></div>
+    <div class="sec"><h3>Sangrias / Suprimentos</h3>
+    <table>${linhasOutros||"<tr><td>Nenhum movimento</td></tr>"}</table></div>
+    <div class="sec"><h3>Totais por forma de pagamento</h3>
+    <table>${linhasForma}</table></div>
+    <div class="sec"><h3>Resumo</h3>
+    <table>
+      <tr><td>Troco inicial</td><td style="text-align:right">${brl(resumo.trocoInicial)}</td></tr>
+      <tr><td>Vendas em dinheiro</td><td style="text-align:right">${brl(resumo.vendasDinheiro)}</td></tr>
+      <tr><td>+ Suprimentos</td><td style="text-align:right">${brl(resumo.totalSuprimentos)}</td></tr>
+      <tr><td>− Sangrias</td><td style="text-align:right">${brl(resumo.totalSangrias)}</td></tr>
+      <tr class="tot"><td>Esperado na gaveta</td><td style="text-align:right">${brl(resumo.esperadoGaveta)}</td></tr>
+      ${fechamento?`<tr><td>Valor contado</td><td style="text-align:right">${brl(fechamento.valorContado)}</td></tr>
+      <tr class="tot"><td>Diferença</td><td style="text-align:right">${brl(fechamento.diferenca)}</td></tr>
+      ${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
+      <tr><td>Total geral de vendas</td><td style="text-align:right">${brl(resumo.totalVendas)}</td></tr>
+    </table></div>
+    <script>window.onload=()=>window.print();<\/script>
+    </body></html>`;
+  return html;
+}
+function imprimirRelatorioCaixa(sessao,resumo,movimentos,fechamento){
+  const w=window.open("","_blank","width=800,height=900");
+  w.document.write(gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento)); w.document.close();
+}
+
+// Minhas Vendas — o operador vê as próprias vendas da sessão do caixa atacado
+async function abrirModalMinhasVendas(){
+  if(!CAIXA.aberta){ alert("Abra o caixa pra ver suas vendas."); return; }
+  await carregarSessao();
+  const vendas=(CAIXA.movimentos||[]).filter(m=>m.tipo==="venda");
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal" style="max-width:560px">
+        <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
+        <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
+        ${vendas.length?vendas.map(m=>`
+          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1">
+              <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+              ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
+              <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
+          </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
+        <div class="card" style="background:#1c1846;margin:12px 0">
+          ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
+          <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl(CAIXA.resumo?.totalVendas)}</b></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(CAIXA.sessao,CAIXA.resumo,CAIXA.movimentos,null)">🖨️ Imprimir</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Fechar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 function render(){
   const pill=document.getElementById("pillCaixa");
   const btnAF=document.getElementById("btnAbrirFechar");
@@ -611,12 +742,22 @@ async function finalizar(){
         body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
+    // guarda a venda pra poder reimprimir o comprovante
+    ULTIMA_VENDA={
+      numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId,
+      total:resp.total||total, desconto:0,
+      itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
+      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null,
+    };
     const nfMsg=emitirNfce?(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":"")):"";
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
         <div style="font-size:44px">✅</div><h3>Pedido finalizado!</h3>
         <div class="ok">Total: ${brl(resp.total||total)}.${nfMsg}</div>
-        <button class="btn" style="width:100%" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
+          <button class="btn" style="flex:1" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+        </div>
       </div></div>`;
   }catch(e){ btn.disabled=false; btn.textContent="✅ Finalizar e receber"; msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
 }

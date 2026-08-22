@@ -3252,6 +3252,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
           total:totalPedido, clienteNome:clienteNome||"", origem:"caixa_atacado",
+          itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
