@@ -359,13 +359,18 @@ function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
 
 // alterna entre preço de ATACADO (padrão) e VAREJO (preço do Bling + lógica de fardo)
 function alternarModoPreco(){
-  MODO_PRECO = MODO_PRECO==="atacado" ? "varejo" : "atacado";
+  definirModoPreco(MODO_PRECO==="atacado" ? "varejo" : "atacado");
+}
+// define o modo direto (usado pelos botões grandes de Atacado/Varejo)
+function definirModoPreco(modo){
+  MODO_PRECO = modo==="varejo" ? "varejo" : "atacado";
+  // atualiza o pill do topo
   const pill=document.getElementById("pillModo");
   if(pill){
     if(MODO_PRECO==="varejo"){ pill.textContent="🛒 Varejo"; pill.style.background="#2a1a3a"; pill.style.color="#ff9fd0"; }
     else { pill.textContent="🏷️ Atacado"; pill.style.background="#1a2a44"; pill.style.color="#7fd4ff"; }
   }
-  // avisa que o modo mudou (os itens já no carrinho mantêm o preço; novos seguem o modo)
+  render(); // repinta os botões grandes (marca qual está ativo)
   if(CARRINHO.length){
     const msg=document.getElementById("msgFinalizar");
     if(msg) msg.innerHTML=`<div class="muted" style="padding:6px 0">Modo de preço agora é <b>${MODO_PRECO==="varejo"?"VAREJO":"ATACADO"}</b>. Os próximos produtos seguem esse preço.</div>`;
@@ -684,6 +689,12 @@ function render(){
           <div class="muted">🧑‍💼 Vendedor: <b style="color:#cfc9f5">${esc(PEDIDO_ATUAL.vendedorNome||"—")}</b></div>
           ${CLIENTE_NOME?`<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>`:''}
         </div>`:`<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
+        <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button onclick="definirModoPreco('atacado')" style="flex:1;padding:14px;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer;border:2px solid ${MODO_PRECO==='atacado'?'#7fd4ff':'#514c96'};background:${MODO_PRECO==='atacado'?'#1a2a44':'transparent'};color:${MODO_PRECO==='atacado'?'#7fd4ff':'#9a95c9'}">🏷️ Atacado${MODO_PRECO==='atacado'?' ✓':''}</button>
+          <button onclick="definirModoPreco('varejo')" style="flex:1;padding:14px;border-radius:10px;font-weight:800;font-size:15px;cursor:pointer;border:2px solid ${MODO_PRECO==='varejo'?'#ff9fd0':'#514c96'};background:${MODO_PRECO==='varejo'?'#2a1a3a':'transparent'};color:${MODO_PRECO==='varejo'?'#ff9fd0':'#9a95c9'}">🛒 Varejo${MODO_PRECO==='varejo'?' ✓':''}</button>
+        </div>
+        <div class="muted" style="margin-bottom:6px;font-size:11px">${MODO_PRECO==='varejo'?'Preços do varejo (Bling), com preço de fardo por quantidade.':'Preços de atacado da tabela.'}</div>
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…">
         <div id="resBusca" class="res"></div>
