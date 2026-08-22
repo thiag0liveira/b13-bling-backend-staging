@@ -502,7 +502,9 @@ function pedirQrEditarPreco(ix){
       <div class="muted" style="margin-bottom:4px">Novo preço unitário</div>
       <input id="qrNovoPreco" type="number" step="0.01" value="${it.valor}" style="margin-bottom:10px">
       <div class="muted" style="margin-bottom:4px">QR de autorização</div>
-      <input id="qrToken" type="text" placeholder="Bipe o QR ou cole o código" autofocus>
+      <input id="qrToken" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
+        autocomplete="new-password" name="qr_${Date.now()}" autocorrect="off" autocapitalize="off" spellcheck="false"
+        data-lpignore="true" data-1p-ignore data-form-type="other" autofocus>
       <div id="qrErro"></div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn" style="flex:1" onclick="confirmarEditarPreco(${ix})">Confirmar</button>
@@ -515,13 +517,16 @@ function pedirQrEditarPreco(ix){
 async function confirmarEditarPreco(ix){
   const it=CARRINHO[ix]; if(!it) return;
   const novoPreco=+document.getElementById("qrNovoPreco").value||0;
-  const tokenQr=(document.getElementById("qrToken").value||"").trim();
+  const campoQr=document.getElementById("qrToken");
+  const tokenQr=(campoQr?.value||"").trim();
   const erroEl=document.getElementById("qrErro");
   if(!(novoPreco>0)){ erroEl.innerHTML=`<div class="err">Informe um preço maior que zero.</div>`; return; }
   if(!tokenQr){ erroEl.innerHTML=`<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
   try{
     const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({tokenQr})}).then(r=>r.json());
+    // limpa o token do campo na hora, pra não ficar em memória/DOM
+    if(campoQr) campoQr.value="";
     if(r.erro) throw new Error(r.erro);
     it.valor=novoPreco; it.precoEditado=true; it.origemPreco="editado";
     fecharModais(); render();
