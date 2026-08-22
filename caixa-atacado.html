@@ -289,13 +289,47 @@ function pintarPedidos(){
   const f=(window._filtroPed||"").toLowerCase().trim();
   let lista=PEDIDOS;
   if(f) lista=lista.filter(p=>String(p.numero||"").includes(f)||String(p.clienteNome||"").toLowerCase().includes(f));
-  if(!lista.length){ box.innerHTML=`<div class="muted" style="padding:8px">${PEDIDOS.length?"Nenhum pedido bate com o filtro.":"Nenhum pedido a receber."}</div>`; return; }
+  // se o filtro é um número e não achou na lista carregada, oferece buscar no Bling
+  const ehNumero=/^\d+$/.test(f);
+  const nadaNaLista=!lista.length;
+  let extra="";
+  if(f && nadaNaLista && ehNumero){
+    extra=`<div class="muted" style="padding:8px">Nenhum pedido #${esc(f)} entre os recentes.
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="buscarPedidoNoBling('${esc(f)}')">🔎 Buscar #${esc(f)} no Bling</button></div>`;
+  }
+  if(nadaNaLista){ box.innerHTML=extra||`<div class="muted" style="padding:8px">${PEDIDOS.length?"Nenhum pedido bate com o filtro.":"Nenhum pedido a receber."}</div>`; return; }
   box.innerHTML=lista.map(p=>`
     <div class="pedItem ${PEDIDO_ATUAL&&PEDIDO_ATUAL.id===p.id?'sel':''}" onclick="abrirPedido('${p.id}')">
       <div class="l1"><span class="num">#${esc(p.numero||p.id)}</span><span class="val">${brl(p.total)}</span></div>
       <div class="cli">${esc(p.clienteNome||"sem cliente")}</div>
       <span class="stag">${esc(p.situacaoNome||"")}</span>
-    </div>`).join("");
+    </div>`).join("") + (ehNumero?extra:"");
+}
+
+// busca um pedido pelo número direto no Bling (fora da janela dos recentes)
+async function buscarPedidoNoBling(numero){
+  const box=document.getElementById("pedLista");
+  if(box) box.innerHTML=`<div class="muted" style="padding:8px">Procurando #${esc(numero)} no Bling…</div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(numero)).then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    if(!j.achou){ if(box) box.innerHTML=`<div class="muted" style="padding:8px">Pedido #${esc(numero)} não encontrado no Bling.<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="window._filtroPed='';pintarPedidos()">Voltar</button></div>`; return; }
+    // já finalizado (atendido) ou cancelado → avisa e NÃO abre
+    if(j.atendido || j.cancelado){
+      document.getElementById("modais").innerHTML=`
+        <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+          <div style="font-size:42px">${j.atendido?'✅':'🚫'}</div>
+          <h3>Pedido #${esc(j.numero)} ${j.atendido?'já finalizado':'cancelado'}</h3>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>, então não pode ser aberto no caixa.</div>
+          <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();window._filtroPed='';pintarPedidos()">OK</button>
+        </div></div>`;
+      if(box) box.innerHTML=`<div class="muted" style="padding:8px">Pedido #${esc(numero)} já finalizado.<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="window._filtroPed='';pintarPedidos()">Voltar</button></div>`;
+      return;
+    }
+    // não atendido → abre normalmente
+    abrirPedido(j.id);
+    window._filtroPed=""; pintarPedidos();
+  }catch(e){ if(box) box.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
 }
 
 async function abrirPedido(id){
@@ -461,7 +495,7 @@ function render(){
           <h3 style="flex:1;margin:0">📋 Pedidos a receber</h3>
           <button class="btn btn-ghost btn-sm" onclick="carregarPedidos()">🔄</button>
         </div>
-        <input class="pedBusca" placeholder="Filtrar nº ou cliente…" oninput="window._filtroPed=this.value;pintarPedidos()" value="${esc(window._filtroPed||'')}">
+        <input class="pedBusca" placeholder="Filtrar nº ou cliente…" oninput="window._filtroPed=this.value;pintarPedidos()" onkeydown="if(event.key==='Enter'){const v=this.value.trim(); if(/^\d+$/.test(v)){const naLista=PEDIDOS.some(p=>String(p.numero||'')===v); if(!naLista) buscarPedidoNoBling(v);}}" value="${esc(window._filtroPed||'')}">
         <div class="pedLista" id="pedLista"><div class="muted">Carregando…</div></div>
       </div>
     </div>

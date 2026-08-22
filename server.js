@@ -3169,6 +3169,31 @@ app.get("/api/caixa-atacado/pedidos-nao-atendidos",async(req,res)=>{
 });
 
 // carrega um pedido pra "abrir na tela" (com itens, pra poder editar antes de finalizar)
+// busca um pedido pelo NÚMERO direto no Bling (varre as páginas, já que a API v3
+// não filtra por número). Retorna se está atendido (pra tela avisar e não abrir).
+app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
+  try{
+    const num=String(req.params.numero||"").trim();
+    if(!num) return res.status(400).json({erro:"informe o número"});
+    const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    let achado=null;
+    for(let pag=1;pag<=30 && !achado;pag++){
+      let arr=[];
+      try{ arr=await bling(`/pedidos/vendas?pagina=${pag}&limite=100`).then(r=>r?.data||[]); }catch(e){ break; }
+      achado=arr.find(x=>String(x.numero)===num)||null;
+      if(arr.length<100) break;
+      await sleep(300);
+    }
+    if(!achado) return res.json({achou:false});
+    const sit=Number(achado.situacao?.id||0);
+    // se já está atendido (ou cancelado), não deixa abrir — só informa
+    if(sit===SIT.ATENDIDO) return res.json({achou:true, id:achado.id, numero:achado.numero, atendido:true, situacaoNome:"Atendido"});
+    if(sit===CANCELADO)    return res.json({achou:true, id:achado.id, numero:achado.numero, cancelado:true, situacaoNome:"Cancelado"});
+    // não atendido: devolve o id pra tela abrir normalmente
+    res.json({achou:true, id:achado.id, numero:achado.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
 app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
   try{
     const r=await bling(`/pedidos/vendas/${req.params.id}`);
