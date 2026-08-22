@@ -3123,7 +3123,7 @@ app.get("/api/caixa-atacado/pedidos-nao-atendidos",async(req,res)=>{
         if(sit!==SIT.ATENDIDO && sit!==CANCELADO){
           lista.push({
             id:p.id, numero:p.numero, total:Number(p.total||0),
-            data:p.data, situacaoId:sit,
+            data:p.data, situacaoId:sit, situacaoNome:nomeSituacaoFechamento(sit),
             clienteNome:p.contato?.nome||"", contatoId:p.contato?.id||null,
             vendedorId:p.vendedor?.id||null,
           });
@@ -3149,8 +3149,14 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       quantidade:Number(it.quantidade||0), valor:Number(it.valor||0),
       codigo:it.codigo||"",
     }));
+    const situacaoId=Number(d.situacao?.id||0);
+    // nome do vendedor que criou o pedido e nome legível do status
+    let vendedorNome="Sem vendedor";
+    try{ if(d.vendedor?.id) vendedorNome=await nomeVendedor(d.vendedor.id); }catch(e){}
     res.json({
-      id:d.id, numero:d.numero, situacaoId:Number(d.situacao?.id||0),
+      id:d.id, numero:d.numero, situacaoId,
+      situacaoNome:nomeSituacaoFechamento(situacaoId),
+      vendedorId:d.vendedor?.id||null, vendedorNome,
       clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
       itens,
