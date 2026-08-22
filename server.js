@@ -370,6 +370,7 @@ window.B13_NAV_LINKS=[
   {href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {href:"/caixa-diario",label:"📅 Relatório Diário",acoes:["acesso_caixa_diario","receber_pagamento"]},
   {href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
+  {href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
   {href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
@@ -3091,6 +3092,128 @@ app.post("/api/pdv/venda", async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
+// ==================== CAIXA ATACADO ====================
+// Caixa pra receber o pagamento de pedidos que JÁ existem (criados pelas vendedoras)
+// e ainda não foram atendidos, ou pra vender pra funcionário. Diferente do Frente de
+// Caixa: por padrão NÃO emite NFC-e. Ao finalizar, o pedido vai pra ATENDIDO.
+
+// lista os pedidos NÃO ATENDIDOS do sistema (a coluna que fica "escutando")
+app.get("/api/caixa-atacado/pedidos-nao-atendidos",async(req,res)=>{
+  try{
+    // varre as páginas de pedidos de venda recentes e filtra os que não estão
+    // em ATENDIDO nem CANCELADO. A listagem traz total/numero/contato/situação.
+    const dias=Math.min(Number(req.query.dias||30),120);
+    const deData=new Date(Date.now()-dias*24*60*60*1000 - 3*60*60*1000).toISOString().slice(0,10);
+    const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    const lista=[];
+    for(let pg=1;pg<=20;pg++){
+      const r=await bling(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${deData}`);
+      const arr=r?.data||[];
+      arr.forEach(p=>{
+        const sit=Number(p.situacao?.id||0);
+        if(sit!==SIT.ATENDIDO && sit!==CANCELADO){
+          lista.push({
+            id:p.id, numero:p.numero, total:Number(p.total||0),
+            data:p.data, situacaoId:sit,
+            clienteNome:p.contato?.nome||"", contatoId:p.contato?.id||null,
+            vendedorId:p.vendedor?.id||null,
+          });
+        }
+      });
+      if(arr.length<100) break;
+      await sleep(300);
+    }
+    // mais recentes primeiro
+    lista.sort((a,b)=>String(b.data||"").localeCompare(String(a.data||"")));
+    res.json({data:lista, total:lista.length});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
+// carrega um pedido pra "abrir na tela" (com itens, pra poder editar antes de finalizar)
+app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
+  try{
+    const r=await bling(`/pedidos/vendas/${req.params.id}`);
+    const d=r?.data; if(!d) return res.status(404).json({erro:"pedido não encontrado"});
+    // monta os itens com nome/preço (o detalhe do pedido já traz isso)
+    const itens=(d.itens||[]).map(it=>({
+      produtoId:it.produto?.id, nome:it.descricao||it.produto?.nome||"",
+      quantidade:Number(it.quantidade||0), valor:Number(it.valor||0),
+      codigo:it.codigo||"",
+    }));
+    res.json({
+      id:d.id, numero:d.numero, situacaoId:Number(d.situacao?.id||0),
+      clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
+      total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
+      itens,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
+// finaliza um pedido EXISTENTE: ajusta itens (se mudou), registra pagamento, move
+// pra ATENDIDO, e emite NFC-e só se pedido explicitamente.
+app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
+  try{
+    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
+    if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+
+    // 1) se vieram itens (edição), atualiza no Bling antes de finalizar
+    if(Array.isArray(itens)&&itens.length){
+      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})));
+      if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações dos itens no Bling: "+(r?.erro||"erro")+". Nada foi finalizado."});
+    }
+
+    // 2) recalcula o total a partir dos itens finais (ou usa o total enviado)
+    const totalPedido = Array.isArray(itens)&&itens.length
+      ? +itens.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0).toFixed(2)
+      : +Number(req.body.total||0).toFixed(2);
+
+    // 3) registra o pagamento localmente
+    const pags=lerPag();
+    const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"}));
+    pags[String(pedidoId)]={valorPago:pagamentos.reduce((s,p)=>s+Number(p.valor),0),historico};
+    salvarJSON(PAG_FILE,pags);
+
+    // 4) vincula à sessão de caixa aberta desse funcionário (entra no fechamento)
+    try{
+      const dCx=lerCaixaSessoes();
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+      if(sessaoAtual){
+        sessaoAtual.movimentos.push({
+          tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
+          total:totalPedido, clienteNome:clienteNome||"", origem:"caixa_atacado",
+          pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
+        });
+        salvarCaixaSessoes(dCx);
+      }
+    }catch(e){ console.error("Falha ao vincular ao caixa (ignorado):",e.message); }
+
+    // 5) move pra ATENDIDO
+    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"}); }
+    catch(e){ console.error("Falha ao mover pra Atendido (pagamento registrado, id="+pedidoId+"):",e.message); }
+
+    // 6) NFC-e só se pedido (padrão desligado nesse caixa)
+    let nfce=null;
+    if(emitirNfce){
+      try{
+        const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
+        const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
+        if(!idNotaFiscal){ nfce={erro:"Bling não retornou o ID da NFC-e",detalhe:gerado}; }
+        else{
+          try{
+            const enviado=await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
+            let linkDanfe=null;
+            try{ const det=await bling(`/nfce/${idNotaFiscal}`); linkDanfe=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
+            nfce={ok:true,idNotaFiscal,linkDanfe};
+          }catch(e){ nfce={ok:true,idNotaFiscal,erroEnvio:e.message}; }
+        }
+      }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
+    }
+
+    res.json({ok:true,pedidoId,total:totalPedido,nfce});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
 app.post("/api/pedido",async(req,res)=>{
   try{ const {contatoId,itens}=req.body;
     if(!contatoId||!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Envie { contatoId, itens }"});
@@ -4430,6 +4553,7 @@ app.get("/expedicao", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa.html")); });
 app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
 app.get("/gestao-caixas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-caixas.html")); });
+app.get("/caixa-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-atacado.html")); });
 app.get("/frente-caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "frente-caixa.html")); });
 app.get("/lista-fardo", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "lista-fardo.html")); });
 app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "etiquetas.html")); });

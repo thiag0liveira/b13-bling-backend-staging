@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Caixa Atacado</title>
+<style>
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--indigo:#262366;--indigo2:#2b2870;--mag:#FF0082;--bg:#0f0d24}
+  body{margin:0;background:var(--bg);color:#fff}
+  #app{max-width:1200px;margin:0 auto;min-height:100vh;padding:12px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:14px;padding:11px 16px;color:#fff}
+  .btn-sm{font-size:12px;padding:8px 12px}
+  .btn-mag{background:var(--mag)}.btn-out{background:transparent;border:2px solid #514c96;color:#fff}.btn-ghost{background:#1c1846}
+  .btn-grn{background:#1f8f5f}.btn:disabled{opacity:.4;cursor:default}
+  input,select{padding:11px;border-radius:10px;border:2px solid #514c96;background:#151233;color:#fff;font-size:15px}
+  input:focus,select:focus{outline:none;border-color:var(--mag)}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .err{background:#3a2030;color:#ffbfce;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .ok{background:#0f3a2a;color:#8fffc0;border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+  .linha{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #23204f;font-size:14px}
+  .linha:last-child{border-bottom:none}
+  .grid{display:grid;grid-template-columns:340px 1fr;gap:12px}
+  @media(max-width:820px){.grid{grid-template-columns:1fr}}
+  .h{font-weight:800;margin-bottom:8px;font-size:15px}
+  .pedidoItem{border:1px solid #2c2660;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;background:#1a1642}
+  .pedidoItem:hover{border-color:var(--mag)}
+  .pedidoItem.sel{border-color:var(--mag);background:#241a44}
+  .cartItem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #23204f}
+  .cartItem input{width:56px;padding:6px;text-align:center}
+  .resitem{display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #23204f;cursor:pointer}
+  .resitem:hover{background:#1c1846}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:20px;max-width:480px;width:100%;max-height:88vh;overflow:auto}
+  .tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:#2a2660;color:#cfc9f5}
+  .pill{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(#b13topbar):not(#b13qrModal){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    const sess=(typeof b13GetSession==="function")?b13GetSession():null;
+    if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/caixa-atacado")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/caixa-atacado");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<div id="modais"></div>
+<script>
+if(!window.__b13SemAcesso){
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+
+const S=b13GetSession()||{};
+let PEDIDOS=[];            // pedidos não atendidos (coluna esquerda)
+let CARRINHO=[];           // itens do pedido carregado / venda nova
+let PEDIDO_ATUAL=null;     // pedido carregado (null = venda nova)
+let CLIENTE_NOME="";
+let FORMAS=[];             // formas de pagamento do Bling
+let _timerBusca=null;
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function brl(v){ return (Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function soDig(s){ return String(s??"").replace(/\D/g,""); }
+window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; }
+window.totalCarrinho=function(){ return CARRINHO.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0); }
+
+window.render=function(){
+  document.getElementById("app").innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="font-weight:900;font-size:20px">🧾 Caixa Atacado</div>
+      <span class="pill" style="background:#2a2000;color:#ffd23f">NFC-e desligada por padrão</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost btn-sm" onclick="novaVenda()">➕ Nova venda</button>
+    </div>
+    <div class="muted" style="margin-bottom:12px">Receba o pagamento de pedidos já criados (pelas vendedoras) ou faça uma venda nova. Ao finalizar, o pedido vai pra <b>Atendido</b>.</div>
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div class="h" style="margin:0">📋 Pedidos a receber</div>
+            <button class="btn btn-ghost btn-sm" onclick="carregarPedidos()">🔄</button>
+          </div>
+          <input id="filtroPed" placeholder="Filtrar por nº ou cliente…" style="width:100%;margin-bottom:8px" oninput="window._filtroPed=this.value;renderListaPedidos()" value="${esc(window._filtroPed||'')}">
+          <div id="listaPedidos"><div class="muted">Carregando…</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          ${PEDIDO_ATUAL?`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div class="h" style="margin:0">Pedido #${esc(PEDIDO_ATUAL.numero||PEDIDO_ATUAL.id)} ${CLIENTE_NOME?`<span class="muted" style="font-weight:400">· ${esc(CLIENTE_NOME)}</span>`:''}</div>
+            <button class="btn btn-ghost btn-sm" onclick="novaVenda()">✖ fechar</button>
+          </div>`:`<div class="h">🛒 Nova venda</div>`}
+          <input id="busca" placeholder="Buscar produto por nome ou código de barras…" style="width:100%;margin-bottom:6px" autocomplete="off">
+          <div id="resBusca"></div>
+          <div id="carrinho" style="margin-top:8px">${htmlCarrinho()}</div>
+        </div>
+      </div>
+    </div>`;
+  renderListaPedidos();
+  ligarBusca();
+}
+
+window.renderListaPedidos=function(){
+  const box=document.getElementById("listaPedidos"); if(!box) return;
+  const f=(window._filtroPed||"").toLowerCase().trim();
+  let lista=PEDIDOS;
+  if(f) lista=lista.filter(p=>String(p.numero||"").includes(f)||String(p.clienteNome||"").toLowerCase().includes(f));
+  if(!lista.length){ box.innerHTML=`<div class="muted">${PEDIDOS.length?"Nenhum pedido bate com o filtro.":"Nenhum pedido a receber."}</div>`; return; }
+  box.innerHTML=lista.map(p=>`
+    <div class="pedidoItem ${PEDIDO_ATUAL&&PEDIDO_ATUAL.id===p.id?'sel':''}" onclick="abrirPedido('${p.id}')">
+      <div style="display:flex;justify-content:space-between">
+        <b style="font-size:13px">#${esc(p.numero||p.id)}</b>
+        <b style="color:#3ce88a">${brl(p.total)}</b>
+      </div>
+      <div class="muted" style="font-size:12px">${esc(p.clienteNome||"sem cliente")}</div>
+      <div class="muted" style="font-size:11px">${p.data?p.data.split("-").reverse().join("/"):""}</div>
+    </div>`).join("");
+}
+
+window.carregarPedidos=async function(){
+  const box=document.getElementById("listaPedidos"); if(box) box.innerHTML='<div class="muted">Carregando…</div>';
+  try{
+    const j=await fetch(B+"/api/caixa-atacado/pedidos-nao-atendidos").then(r=>r.json());
+    PEDIDOS=j.data||[];
+    renderListaPedidos();
+  }catch(e){ if(box) box.innerHTML='<div class="err">Erro ao carregar pedidos.</div>'; }
+}
+
+window.abrirPedido=async function(id){
+  const box=document.getElementById("carrinho"); if(box) box.innerHTML='<div class="muted">Carregando pedido…</div>';
+  try{
+    const j=await fetch(B+"/api/caixa-atacado/pedido/"+id).then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    PEDIDO_ATUAL={id:j.id,numero:j.numero,contatoId:j.contatoId};
+    CLIENTE_NOME=j.clienteNome||"";
+    CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo}));
+    render();
+  }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
+}
+
+window.novaVenda=function(){
+  PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; render();
+}
+
+window.htmlCarrinho=function(){
+  if(!CARRINHO.length) return `<div class="muted" style="padding:12px 0">${PEDIDO_ATUAL?"Este pedido não tem itens.":"Adicione produtos ou selecione um pedido à esquerda."}</div>`;
+  return `
+    ${CARRINHO.map((i,ix)=>`
+      <div class="cartItem">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:600">${esc(i.nome)}</div>
+          <div class="muted" style="font-size:11px">${brl(i.valor)} un</div>
+        </div>
+        <input type="number" min="1" value="${i.quantidade}" onchange="mudarQtd(${ix},this.value)">
+        <div style="width:80px;text-align:right;font-weight:700">${brl(i.valor*i.quantidade)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="removerItem(${ix})">✕</button>
+      </div>`).join("")}
+    <div class="linha" style="border-top:1px solid #2a2660;margin-top:6px;padding-top:10px">
+      <span style="font-weight:800">Total</span>
+      <b style="font-size:20px;color:#3ce88a">${brl(totalCarrinho())}</b>
+    </div>
+    <button class="btn btn-mag" style="width:100%;margin-top:10px" onclick="abrirPagamento()">💰 Finalizar e receber</button>`;
+}
+
+window.mudarQtd=function(ix,v){ CARRINHO[ix].quantidade=Math.max(1,Number(v)||1); document.getElementById("carrinho").innerHTML=htmlCarrinho(); }
+window.removerItem=function(ix){ CARRINHO.splice(ix,1); document.getElementById("carrinho").innerHTML=htmlCarrinho(); }
+
+window.ligarBusca=function(){
+  const el=document.getElementById("busca"); if(!el) return;
+  el.addEventListener("keydown",function(ev){
+    if(ev.key==="Enter"){ ev.preventDefault(); clearTimeout(_timerBusca); const t=this.value.trim(); if(t) buscarProduto(t,el,document.getElementById("resBusca"),true); }
+  });
+  el.addEventListener("input",function(){
+    clearTimeout(_timerBusca);
+    const termo=this.value.trim(); const resEl=document.getElementById("resBusca");
+    if(termo.length<2){ resEl.innerHTML=""; return; }
+    resEl.innerHTML='<div class="muted">buscando…</div>';
+    _timerBusca=setTimeout(()=>buscarProduto(termo,el,resEl,false),350);
+  });
+}
+
+window.buscarProduto=async function(termo, el, resEl, ehEnter){
+  try{
+    if(/^\d{6,}$/.test(termo)){
+      const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
+      if(r&&r.data&&r.data.preco>0){ addProduto({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,codigo:termo}); resEl.innerHTML=""; el.value=""; return; }
+      if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado.</div>`; return; }
+    }
+    const j=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    const lista=(j.data||[]).slice(0,20);
+    if(!lista.length){ resEl.innerHTML='<div class="muted">nada encontrado</div>'; return; }
+    window._ultimaBusca=lista;
+    resEl.innerHTML=lista.map((p,ix)=>`
+      <div class="resitem" onclick="selecionarResultado(${ix})">
+        <div style="flex:1"><div style="font-size:13px">${esc(p.nome)}</div><div class="muted" style="font-size:11px">#${esc(String(p.codigo||""))}</div></div>
+        <div id="pr_${ix}" style="font-weight:700">—</div>
+      </div>`).join("");
+    lista.forEach(async(p,ix)=>{
+      if(!p.codigo) return;
+      try{ const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
+        if(r?.data){ p._preco=r.data.preco; const e=document.getElementById("pr_"+ix); if(e) e.textContent=brl(r.data.preco); }
+      }catch(e){}
+    });
+  }catch(e){ resEl.innerHTML='<div class="err">erro na busca</div>'; }
+}
+
+window.selecionarResultado=function(ix){
+  const p=(window._ultimaBusca||[])[ix]; if(!p) return;
+  addProduto({produtoId:p.id,nome:p.nome,preco:p._preco||0,codigo:p.codigo});
+  document.getElementById("resBusca").innerHTML=""; document.getElementById("busca").value="";
+}
+
+window.addProduto=function(p){
+  const ex=CARRINHO.find(i=>Number(i.produtoId)===Number(p.produtoId));
+  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||""}); }
+  document.getElementById("carrinho").innerHTML=htmlCarrinho();
+}
+
+window.carregarFormas=async function(){
+  try{ const j=await fetch(B+"/api/formas-pagamento").then(r=>r.json()); FORMAS=(j.data||j||[]).filter(f=>f.id&&f.descricao); }catch(e){ FORMAS=[]; }
+}
+
+window.abrirPagamento=function(){
+  if(!CARRINHO.length){ alert("Adicione itens primeiro."); return; }
+  const total=totalCarrinho();
+  window._pagLinhas=[{formaId:FORMAS[0]?.id||"",valor:total}];
+  renderModalPagamento();
+}
+
+window.renderModalPagamento=function(){
+  const total=totalCarrinho();
+  const somaPag=(window._pagLinhas||[]).reduce((s,l)=>s+(Number(l.valor)||0),0);
+  const falta=+(total-somaPag).toFixed(2);
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()">
+      <div class="modal">
+        <h3 style="margin:0 0 10px">💰 Receber pagamento</h3>
+        <div class="linha"><span>Total do pedido</span><b style="font-size:18px;color:#3ce88a">${brl(total)}</b></div>
+        <div style="margin:12px 0 6px" class="muted">Formas de pagamento</div>
+        <div id="pagLinhas">${(window._pagLinhas||[]).map((l,ix)=>`
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <select onchange="window._pagLinhas[${ix}].formaId=this.value" style="flex:1">
+              ${FORMAS.map(f=>`<option value="${f.id}" ${String(l.formaId)===String(f.id)?'selected':''}>${esc(f.descricao)}</option>`).join("")}
+            </select>
+            <input type="number" step="0.01" value="${l.valor}" style="width:110px" onchange="window._pagLinhas[${ix}].valor=Number(this.value)||0;renderModalPagamento()">
+            ${(window._pagLinhas||[]).length>1?`<button class="btn btn-ghost btn-sm" onclick="window._pagLinhas.splice(${ix},1);renderModalPagamento()">✕</button>`:''}
+          </div>`).join("")}</div>
+        <button class="btn btn-ghost btn-sm" onclick="window._pagLinhas.push({formaId:FORMAS[0]?.id||'',valor:${falta>0?falta:0}});renderModalPagamento()">+ dividir em outra forma</button>
+        <div class="linha" style="margin-top:10px"><span>Soma dos pagamentos</span><b>${brl(somaPag)}</b></div>
+        ${Math.abs(falta)>=0.01?`<div class="${falta>0?'err':'ok'}" style="margin-top:6px">${falta>0?"Falta "+brl(falta):"Troco "+brl(-falta)}</div>`:''}
+        <label style="display:flex;align-items:center;gap:8px;margin:14px 0;cursor:pointer;font-size:14px">
+          <input type="checkbox" id="chkNfce" style="width:auto"> Emitir NFC-e (nota de consumidor)
+        </label>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-grn" style="flex:1" onclick="confirmarFinalizacao()">✅ Confirmar</button>
+          <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+window.confirmarFinalizacao=async function(){
+  const total=totalCarrinho();
+  const linhas=(window._pagLinhas||[]).filter(l=>l.formaId&&Number(l.valor)>0);
+  if(!linhas.length){ alert("Informe ao menos uma forma de pagamento."); return; }
+  const soma=linhas.reduce((s,l)=>s+Number(l.valor),0);
+  if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar mesmo assim?`)) return;
+  const emitirNfce=document.getElementById("chkNfce")?.checked||false;
+  const pagamentos=linhas.map(l=>({formaId:l.formaId,formaNome:(FORMAS.find(f=>String(f.id)===String(l.formaId))||{}).descricao||"",valor:Number(l.valor)}));
+  const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
+
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Finalizando…</div></div></div>`;
+  try{
+    let resp;
+    if(PEDIDO_ATUAL){
+      resp=await fetch(B+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME})}).then(r=>r.json());
+    }else{
+      // venda nova: usa o endpoint de venda do PDV, mas sem NFC-e por padrão
+      resp=await fetch(B+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME})}).then(r=>r.json());
+    }
+    if(resp.erro) throw new Error(resp.erro);
+    fecharModais();
+    const nfMsg = emitirNfce ? (resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou: "+resp.nfce.erro+")":"")) : "";
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()">
+        <div class="modal" style="text-align:center">
+          <div style="font-size:40px">✅</div>
+          <h3>Pedido finalizado!</h3>
+          <div class="muted">Total: ${brl(resp.total||total)}.${nfMsg}</div>
+          <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos()">OK</button>
+        </div>
+      </div>`;
+  }catch(e){
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao finalizar: ${esc(e.message)}</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="renderModalPagamento()">Voltar</button></div></div>`;
+  }
+}
+
+;(async function init(){
+  render();
+  await carregarFormas();
+  await carregarPedidos();
+})();
+}
+</script>
+</body>
+</html>
