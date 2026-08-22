@@ -535,7 +535,15 @@ async function finalizar(){
 // ---------------- init ----------------
 (async function(){
   await carregarSessao();
-  try{ const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json()); FORMAS=(j.data||j||[]).filter(f=>f.id&&f.descricao); }catch(e){ FORMAS=[]; }
+  try{
+    const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
+    const todas=(j.data||[]).filter(f=>f.situacao!=="I");
+    // mesma lógica do Frente de Caixa: mostra pix, dinheiro, débito e crédito à vista;
+    // as outras formas (ficha, estorno, etc) ficam escondidas. Se nada casar, mostra todas.
+    const padroes=[/pix/i,/dinheiro/i,/d[eé]bito/i,/cr[eé]dito.*vista/i];
+    FORMAS=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||""))&&!/pix.*bling.*conta/i.test(f.descricao||f.nome||""));
+    if(!FORMAS.length) FORMAS=todas;
+  }catch(e){ FORMAS=[]; }
   render();
   await carregarPedidos();
 })();
