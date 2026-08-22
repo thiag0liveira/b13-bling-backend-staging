@@ -187,7 +187,21 @@ async function confirmarMovimento(tipo){
     const r=await fetch(BACKEND+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({tipo,valor,motivo,operador:S.nome,funcionarioId:S.id,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
     if(r.erro) throw new Error(r.erro);
-    fecharModais(); await carregarSessao(); render();
+    await carregarSessao(); render();
+    // guarda o movimento pra impressão e mostra sucesso com botão de imprimir
+    const mov={tipo,valor,motivo,operador:S.nome,em:Date.now()};
+    window._ultimoMovimento=mov;
+    const ehSangria=tipo==="sangria";
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">${ehSangria?'💸':'💰'}</div>
+        <h3>${ehSangria?'Sangria registrada':'Suprimento registrado'}</h3>
+        <div class="ok">${brl(valor)}${motivo?' · '+esc(motivo):''}</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost" style="flex:1" onclick="imprimirMovimento(window._ultimoMovimento)">🖨️ Imprimir</button>
+          <button class="btn" style="flex:1" onclick="fecharModais()">OK</button>
+        </div>
+      </div></div>`;
   }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
@@ -642,6 +656,43 @@ function imprimirComprovante(v){
   w.document.write(html); w.document.close();
 }
 
+// comprovante de sangria/suprimento (letras robustas, igual ao de venda)
+function imprimirMovimento(m){
+  if(!m){ alert("Nenhum movimento pra imprimir."); return; }
+  const ehSangria=m.tipo==="sangria";
+  const titulo=ehSangria?"SANGRIA (RETIRADA)":"SUPRIMENTO (ENTRADA)";
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${titulo}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;color:#000;width:302px;margin:0 auto;padding:10px 8px;font-size:16px;font-weight:700;line-height:1.4}
+      .logo{text-align:center;font-size:30px;font-weight:900;letter-spacing:1px;margin-bottom:2px}
+      .sub{text-align:center;font-size:13px;font-weight:700;margin-bottom:6px}
+      .hr{border:none;border-top:2px dashed #000;margin:8px 0}
+      .tipo{text-align:center;font-size:22px;font-weight:900;margin:6px 0}
+      .val{text-align:center;font-size:34px;font-weight:900;margin:8px 0}
+      .lbl{font-size:12px;font-weight:700;margin-top:6px}
+      .campo{font-size:16px;font-weight:900}
+      .rod{text-align:center;font-size:13px;font-weight:700;margin-top:10px}
+      .ass{margin-top:26px;border-top:1px solid #000;text-align:center;font-size:12px;font-weight:700;padding-top:4px}
+    </style></head><body>
+    <div class="logo">B13 BEBIDAS</div>
+    <div class="sub">Comprovante de Caixa — Atacado</div>
+    <div class="hr"></div>
+    <div class="tipo">${ehSangria?"🔻 ":"🔺 "}${titulo}</div>
+    <div class="val">${brl(m.valor)}</div>
+    <div class="hr"></div>
+    <div class="lbl">OPERADOR</div><div class="campo">${esc(m.operador||S.nome||"—")}</div>
+    <div class="lbl">DATA/HORA</div><div class="campo">${new Date(m.em||Date.now()).toLocaleString("pt-BR")}</div>
+    ${m.motivo?`<div class="lbl">MOTIVO</div><div class="campo">${esc(m.motivo)}</div>`:""}
+    <div class="hr"></div>
+    <div class="rod">${ehSangria?"Valor retirado do caixa":"Valor adicionado ao caixa"}</div>
+    <div class="ass">Assinatura</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+    </body></html>`;
+  const w=window.open("","_blank","width=400,height=560");
+  w.document.write(html); w.document.close();
+}
+
 function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
   const vendas=(movimentos||[]).filter(m=>m.tipo==="venda");
   const outros=(movimentos||[]).filter(m=>m.tipo!=="venda");
@@ -691,6 +742,25 @@ function imprimirRelatorioCaixa(sessao,resumo,movimentos,fechamento){
   w.document.write(gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento)); w.document.close();
 }
 
+// monta o HTML das sangrias/suprimentos pro modal Minhas Vendas
+function htmlMovimentosMinhasVendas(){
+  const movs=(CAIXA.movimentos||[]).filter(m=>m.tipo==="sangria"||m.tipo==="suprimento");
+  if(!movs.length) return "";
+  const linhas=movs.map(m=>{
+    const cor=m.tipo==="sangria"?"#ff8090":"#8fffc0";
+    const rot=m.tipo==="sangria"?"🔻 Sangria":"🔺 Suprimento";
+    const mj=JSON.stringify(m).replace(/'/g,"&#39;");
+    return `<div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div style="flex:1">
+        <div><b style="color:${cor}">${rot}</b> — ${brl(m.valor)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+        ${m.motivo?`<div class="muted" style="font-size:11px">${esc(m.motivo)}</div>`:""}
+      </div>
+      <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirMovimento(${mj})'>🖨️</button>
+    </div>`;
+  }).join("");
+  return `<div style="margin-top:14px"><div class="h" style="font-size:14px;margin-bottom:6px">💸 Sangrias e suprimentos (${movs.length})</div>${linhas}</div>`;
+}
+
 // Minhas Vendas — o operador vê as próprias vendas da sessão do caixa atacado
 async function abrirModalMinhasVendas(){
   if(!CAIXA.aberta){ alert("Abra o caixa pra ver suas vendas."); return; }
@@ -710,6 +780,7 @@ async function abrirModalMinhasVendas(){
             </div>
             <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
           </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
+        ${htmlMovimentosMinhasVendas()}
         <div class="card" style="background:#1c1846;margin:12px 0">
           ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
           <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl(CAIXA.resumo?.totalVendas)}</b></div>
