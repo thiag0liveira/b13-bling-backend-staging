@@ -88,6 +88,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <img src="/logo">
   <div class="t">Caixa Atacado</div>
   <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
+  <button id="pillModo" class="pill" onclick="alternarModoPreco()" style="cursor:pointer;background:#1a2a44;color:#7fd4ff" title="Toque pra alternar entre preço de atacado e varejo">🏷️ Atacado</button>
   <div class="sp"></div>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
@@ -115,6 +116,7 @@ let CLIENTE_NOME="";
 let FORMAS=[];
 let PAGAMENTOS=[];
 let ULTIMO_ITEM_PAINEL=null;   // painel grande: logo ou último produto adicionado
+let MODO_PRECO="atacado";      // 'atacado' (padrão) ou 'varejo' (preço do Bling + lógica de fardo)
 let _timerBusca=null;
 
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -351,14 +353,51 @@ async function abrirPedido(id){
 function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
-function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); render(); }
-function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,Number(v)||1); render(); }
+function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
+function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,Number(v)||1); aplicarPrecoAutomatico(ix); render(); }
 function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
+
+// alterna entre preço de ATACADO (padrão) e VAREJO (preço do Bling + lógica de fardo)
+function alternarModoPreco(){
+  MODO_PRECO = MODO_PRECO==="atacado" ? "varejo" : "atacado";
+  const pill=document.getElementById("pillModo");
+  if(pill){
+    if(MODO_PRECO==="varejo"){ pill.textContent="🛒 Varejo"; pill.style.background="#2a1a3a"; pill.style.color="#ff9fd0"; }
+    else { pill.textContent="🏷️ Atacado"; pill.style.background="#1a2a44"; pill.style.color="#7fd4ff"; }
+  }
+  // avisa que o modo mudou (os itens já no carrinho mantêm o preço; novos seguem o modo)
+  if(CARRINHO.length){
+    const msg=document.getElementById("msgFinalizar");
+    if(msg) msg.innerHTML=`<div class="muted" style="padding:6px 0">Modo de preço agora é <b>${MODO_PRECO==="varejo"?"VAREJO":"ATACADO"}</b>. Os próximos produtos seguem esse preço.</div>`;
+  }
+}
+
+// no modo varejo, se a quantidade bater o mínimo do fardo, troca pro preço de fardo
+function aplicarPrecoAutomatico(ix){
+  const item=CARRINHO[ix]; if(!item) return;
+  if(item.precoEditado) return; // preço editado manualmente (com QR) não é sobrescrito
+  if(item.modoPreco==="varejo" && item.caixaQtd && item.precoFardo!=null && item.quantidade>=item.caixaQtd){
+    item.valor=item.precoFardo; item._usandoFardo=true;
+  } else if(item.modoPreco==="varejo" && item.precoNormal!=null){
+    item.valor=item.precoNormal; item._usandoFardo=false;
+  }
+}
 
 function addProduto(p){
   const item={produtoId:p.produtoId,nome:p.nome,valor:Number(p.preco)||0,imagem:p.imagem||null};
   const ex=CARRINHO.find(i=>Number(i.produtoId)===Number(p.produtoId));
-  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||"",imagem:p.imagem||null,origemPreco:p.origemPreco||"bling"}); }
+  if(ex){ ex.quantidade++; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); }
+  else {
+    const novo={produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||"",imagem:p.imagem||null,
+      origemPreco:p.origemPreco||"bling", modoPreco:MODO_PRECO, precoNormal:Number(p.preco)||0, precoFardo:null, caixaQtd:null};
+    CARRINHO.push(novo);
+    // no modo varejo, busca se o produto tem preço de fardo configurado (aplica por qtd)
+    if(MODO_PRECO==="varejo" && p.codigo){
+      fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json()).then(info=>{
+        if(info&&info.temFardo){ novo.precoFardo=info.precoFardo; novo.caixaQtd=info.caixaQtd; aplicarPrecoAutomatico(CARRINHO.indexOf(novo)); render(); }
+      }).catch(()=>{});
+    }
+  }
   ULTIMO_ITEM_PAINEL=item; // mostra o produto no painel grande
   render();
 }
@@ -392,9 +431,10 @@ function ligarBusca(){
   });
 }
 async function buscarProduto(termo,el,resEl,ehEnter){
+  const q = MODO_PRECO==="atacado" ? "?atacado=1" : ""; // varejo = preço do Bling
   try{
     if(/^\d{6,}$/.test(termo)){
-      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)+"?atacado=1").then(r=>r.json()).catch(()=>null);
+      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)+q).then(r=>r.json()).catch(()=>null);
       if(r&&r.data&&r.data.preco>0){ addProduto({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,codigo:termo,origemPreco:r.data.origemPreco}); el.value=""; return; }
       if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado.</div>`; return; }
     }
@@ -410,7 +450,7 @@ async function buscarProduto(termo,el,resEl,ehEnter){
       </div>`).join("");
     lista.forEach(async(p,ix)=>{
       if(!p.codigo) return;
-      try{ const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)+"?atacado=1").then(r=>r.json());
+      try{ const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)+q).then(r=>r.json());
         if(r?.data){ p._preco=r.data.preco; p._origemPreco=r.data.origemPreco; const e=document.getElementById("pr_"+ix); if(e) e.textContent=brl(r.data.preco); }
       }catch(e){}
     });
@@ -655,7 +695,7 @@ function render(){
         </div>
         <div id="carrinho">${CARRINHO.length?CARRINHO.map((i,ix)=>`
           <div class="item">
-            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.valor)} un${i.origemPreco==="atacado"?' <span style="color:#8fffc0;font-weight:800">ATACADO ✓</span>':(i.precoEditado?' <span style="color:#ffd23f;font-weight:800">EDITADO</span>':'')}</span> <span onclick="pedirQrEditarPreco(${ix})" style="cursor:pointer;color:#7fd4ff;font-size:11px">✏️ preço</span></span>
+            <span class="nome">${esc(i.nome)}<br><span class="muted">${brl(i.valor)} un${i._usandoFardo?' <span style="color:#FF0082;font-weight:800">FARDO ✓</span>':(i.origemPreco==="atacado"?' <span style="color:#8fffc0;font-weight:800">ATACADO ✓</span>':(i.precoEditado?' <span style="color:#ffd23f;font-weight:800">EDITADO</span>':''))}${(i.modoPreco==="varejo"&&i.caixaQtd&&!i._usandoFardo)?` · fardo a partir de ${i.caixaQtd}un`:""}</span> <span onclick="pedirQrEditarPreco(${ix})" style="cursor:pointer;color:#7fd4ff;font-size:11px">✏️ preço</span></span>
             <div class="qtd">
               <button onclick="alterarQtd(${ix},-1)">−</button>
               <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
