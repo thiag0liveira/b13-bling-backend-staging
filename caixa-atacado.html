@@ -64,6 +64,8 @@ if(!window.__b13SemAcesso){
 const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 
 const S=b13GetSession()||{};
+const TIPO_CAIXA="atacado"; // esse caixa é independente do Frente de Caixa
+let SESSAO=null;          // sessão de caixa atacado aberta (null = fechado)
 let PEDIDOS=[];            // pedidos não atendidos (coluna esquerda)
 let CARRINHO=[];           // itens do pedido carregado / venda nova
 let PEDIDO_ATUAL=null;     // pedido carregado (null = venda nova)
@@ -78,12 +80,21 @@ window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; 
 window.totalCarrinho=function(){ return CARRINHO.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0); }
 
 window.render=function(){
+  const aberto=!!SESSAO;
   document.getElementById("app").innerHTML=`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
       <div style="font-weight:900;font-size:20px">🧾 Caixa Atacado</div>
+      <span class="pill" style="background:${aberto?'#0f3a2a':'#3a2030'};color:${aberto?'#8fffc0':'#ffbfce'}">${aberto?'🟢 Caixa aberto':'🔴 Caixa fechado'}</span>
       <span class="pill" style="background:#2a2000;color:#ffd23f">NFC-e desligada por padrão</span>
       <div style="flex:1"></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-ghost btn-sm" onclick="novaVenda()">➕ Nova venda</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')" ${aberto?'':'disabled'}>💸 Sangria</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')" ${aberto?'':'disabled'}>💰 Suprimento</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalCaixasAbertos()">🏪 Caixas Abertos</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalHistorico()">📜 Histórico</button>
+      <button class="btn btn-sm ${aberto?'btn-out':'btn-mag'}" onclick="cliqueAbrirFechar()">${aberto?'🔒 Fechar caixa':'🔓 Abrir caixa'}</button>
     </div>
     <div class="muted" style="margin-bottom:12px">Receba o pagamento de pedidos já criados (pelas vendedoras) ou faça uma venda nova. Ao finalizar, o pedido vai pra <b>Atendido</b>.</div>
     <div class="grid">
@@ -234,6 +245,7 @@ window.carregarFormas=async function(){
 }
 
 window.abrirPagamento=function(){
+  if(!SESSAO){ alert("Abra o caixa atacado antes de receber pagamentos."); return; }
   if(!CARRINHO.length){ alert("Adicione itens primeiro."); return; }
   const total=totalCarrinho();
   window._pagLinhas=[{formaId:FORMAS[0]?.id||"",valor:total}];
@@ -289,9 +301,9 @@ window.confirmarFinalizacao=async function(){
       resp=await fetch(B+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME})}).then(r=>r.json());
     }else{
-      // venda nova: usa o endpoint de venda do PDV, mas sem NFC-e por padrão
+      // venda nova: usa o endpoint de venda do PDV, mas sem NFC-e por padrão e vinculando ao caixa atacado
       resp=await fetch(B+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     fecharModais();
@@ -302,7 +314,7 @@ window.confirmarFinalizacao=async function(){
           <div style="font-size:40px">✅</div>
           <h3>Pedido finalizado!</h3>
           <div class="muted">Total: ${brl(resp.total||total)}.${nfMsg}</div>
-          <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos()">OK</button>
+          <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao()">OK</button>
         </div>
       </div>`;
   }catch(e){
@@ -310,7 +322,164 @@ window.confirmarFinalizacao=async function(){
   }
 }
 
+// ===== CONTROLE DE CAIXA (abertura, sangria, suprimento, fechamento, histórico) =====
+window.carregarSessao=async function(){
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/atual?tipoCaixa="+TIPO_CAIXA+"&funcionarioId="+encodeURIComponent(S.id||"")).then(r=>r.json());
+    SESSAO = j.aberta ? {...j.sessao, resumo:j.resumo, movimentos:j.movimentos} : null;
+  }catch(e){ SESSAO=null; }
+}
+
+window.cliqueAbrirFechar=function(){
+  if(SESSAO) modalFechar(); else modalAbrir();
+}
+
+window.modalAbrir=function(){
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3 style="margin:0 0 10px">🔓 Abrir caixa atacado</h3>
+      <div class="muted" style="margin-bottom:8px">Informe o troco inicial (fundo de caixa).</div>
+      <input id="mTroco" type="number" step="0.01" placeholder="0,00" style="width:100%;font-size:20px;text-align:center" autofocus>
+      <div id="mErro"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-mag" style="flex:1" onclick="confirmarAbrir()">Abrir</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+window.confirmarAbrir=async function(){
+  const trocoInicial=+document.getElementById("mTroco").value||0;
+  try{
+    const r=await fetch(B+"/api/caixa-sessao/abrir",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({trocoInicial,operador:S.nome,funcionarioId:S.id,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    SESSAO={...r.sessao,resumo:r.resumo,movimentos:[]};
+    fecharModais(); render();
+  }catch(e){ const el=document.getElementById("mErro"); if(el) el.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+window.abrirModalMovimento=function(tipo){
+  if(!SESSAO){ alert("Abra o caixa primeiro."); return; }
+  const t=tipo==="sangria"?"💸 Sangria (retirada)":"💰 Suprimento (entrada)";
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3 style="margin:0 0 10px">${t}</h3>
+      <input id="mVal" type="number" step="0.01" placeholder="Valor" style="width:100%;font-size:18px;margin-bottom:8px" autofocus>
+      <input id="mMot" placeholder="Motivo (opcional)" style="width:100%">
+      <div id="mErro"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-mag" style="flex:1" onclick="confirmarMovimento('${tipo}')">Confirmar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+window.confirmarMovimento=async function(tipo){
+  const valor=+document.getElementById("mVal").value||0;
+  const motivo=document.getElementById("mMot").value||"";
+  try{
+    const r=await fetch(B+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo,valor,motivo,operador:S.nome,funcionarioId:S.id,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    fecharModais(); await carregarSessao();
+  }catch(e){ const el=document.getElementById("mErro"); if(el) el.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+window.modalFechar=async function(){
+  await carregarSessao();
+  const r=SESSAO?.resumo||{};
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3 style="margin:0 0 10px">🔒 Fechar caixa — conferência</h3>
+      <div class="card" style="background:#1c1846;margin:8px 0">
+        <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+        <div class="linha"><span>Vendas em dinheiro</span><b>${brl(r.vendasDinheiro)}</b></div>
+        <div class="linha"><span>+ Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
+        <div class="linha"><span>− Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px"><span><b>Esperado na gaveta</b></span><b style="font-size:18px;color:#ffd23f">${brl(r.esperadoGaveta)}</b></div>
+      </div>
+      ${(r.porForma||[]).length?`<div class="card" style="background:#141138;margin:0 0 8px">
+        <div style="font-weight:800;margin-bottom:4px">💳 Por forma de pagamento</div>
+        <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
+        ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+      </div>`:""}
+      <div class="muted" style="margin:6px 0 4px">Quanto tem na gaveta (contado)?</div>
+      <input id="mContado" type="number" step="0.01" placeholder="0,00" style="width:100%;font-size:18px;text-align:center">
+      <input id="mObs" placeholder="Observação (opcional)" style="width:100%;margin-top:8px">
+      <div id="mErro"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1;background:#1f8f5f" onclick="confirmarFechar()">Fechar caixa</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+window.confirmarFechar=async function(){
+  const valorContado=+document.getElementById("mContado").value||0;
+  const observacao=document.getElementById("mObs").value||"";
+  try{
+    const r=await fetch(B+"/api/caixa-sessao/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({valorContado,observacao,operador:S.nome,funcionarioId:S.id,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    SESSAO=null;
+    const f=r.fechamento||{};
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:38px">🔒</div><h3>Caixa fechado!</h3>
+        <div class="card" style="background:#1c1846;margin:12px 0;text-align:left">
+          <div class="linha"><span>Esperado</span><b>${brl(f.esperado)}</b></div>
+          <div class="linha"><span>Contado</span><b>${brl(f.valorContado)}</b></div>
+          <div class="linha"><span>Diferença</span><b style="color:${Math.abs(f.diferenca)<0.01?'#8fffc0':(f.diferenca>0?'#ffd23f':'#ff8090')}">${brl(f.diferenca)}</b></div>
+        </div>
+        <button class="btn btn-mag" style="width:100%" onclick="fecharModais();render()">OK</button>
+      </div></div>`;
+  }catch(e){ const el=document.getElementById("mErro"); if(el) el.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+window.abrirModalCaixasAbertos=async function(){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/abertos?tipoCaixa="+TIPO_CAIXA).then(r=>r.json());
+    const lista=j.data||[];
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+        <h3>🏪 Caixas atacado abertos</h3>
+        ${lista.length?lista.map(s=>`
+          <div class="card" style="background:#1c1846;margin:8px 0">
+            <div style="font-weight:800">👤 ${esc(s.operador||"—")}</div>
+            <div class="muted" style="font-size:12px;margin-bottom:6px">Aberto desde ${new Date(s.abertaEm).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</div>
+            <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
+            ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join(""):""}
+          </div>`).join(""):'<div class="muted">Nenhum caixa atacado aberto.</div>'}
+        <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharModais()">Fechar</button>
+      </div></div>`;
+  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+}
+
+window.abrirModalHistorico=async function(){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/historico").then(r=>r.json());
+    // só as sessões do tipo atacado
+    const lista=(j.data||[]).filter(s=>(s.tipoCaixa||"frente")==="atacado");
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+        <h3>📜 Histórico — Caixa Atacado</h3>
+        ${lista.length?lista.map(s=>`
+          <div class="card" style="background:#1c1846;margin:8px 0">
+            <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${new Date(s.abertaEm).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} → ${new Date(s.fechadaEm).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · 👤 ${esc(s.operador||"—")}</div>
+            <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+            ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join(""):""}
+            <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
+            <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
+            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?'#8fffc0':((s.fechamento?.diferenca||0)>0?'#ffd23f':'#ff8090')}">${brl(s.fechamento?.diferenca)}</b></div>
+          </div>`).join(""):'<div class="muted">Nenhum caixa atacado fechado ainda.</div>'}
+        <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharModais()">Fechar</button>
+      </div></div>`;
+  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+}
+
 ;(async function init(){
+  await carregarSessao();
   render();
   await carregarFormas();
   await carregarPedidos();

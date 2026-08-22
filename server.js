@@ -1874,10 +1874,12 @@ app.get("/api/contatos",rateLimit({janelaMs:60000,max:8,prefixo:"contatos"}),asy
 // ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
 function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
 function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
-function sessaoCaixaAberta(funcionarioId){
+function sessaoCaixaAberta(funcionarioId,tipoCaixa){
   const d=lerCaixaSessoes();
-  if(funcionarioId) return (d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId)||null;
-  return (d.sessoes||[]).find(s=>!s.fechadaEm)||null;
+  const tipo=tipoCaixa||"frente"; // retrocompat: sessões antigas sem tipo contam como "frente"
+  const casaTipo=(s)=>(s.tipoCaixa||"frente")===tipo;
+  if(funcionarioId) return (d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&casaTipo(s))||null;
+  return (d.sessoes||[]).find(s=>!s.fechadaEm&&casaTipo(s))||null;
 }
 // Resumo consolidado de uma sessão: soma vendas por forma, sangrias, suprimentos
 function resumoSessaoCaixa(sessao){
@@ -2036,11 +2038,11 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
 
 
 app.get("/api/caixa-sessao/atual",(req,res)=>{
-  const s=sessaoCaixaAberta(req.query.funcionarioId);
+  const s=sessaoCaixaAberta(req.query.funcionarioId,req.query.tipoCaixa);
   if(!s) return res.json({aberta:false});
   res.json({
     aberta:true,
-    sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,funcionarioId:s.funcionarioId,trocoInicial:s.trocoInicial},
+    sessao:{id:s.id,abertaEm:s.abertaEm,operador:s.operador,funcionarioId:s.funcionarioId,trocoInicial:s.trocoInicial,tipoCaixa:s.tipoCaixa||"frente"},
     resumo:resumoSessaoCaixa(s),
     movimentos:(s.movimentos||[]).slice().sort((a,b)=>b.em-a.em),
   });
@@ -2049,21 +2051,25 @@ app.get("/api/caixa-sessao/atual",(req,res)=>{
 // lista todos os caixas abertos agora (de todo mundo) — pra ver quem está com caixa aberto
 app.get("/api/caixa-sessao/abertos",(req,res)=>{
   const d=lerCaixaSessoes();
-  const abertos=(d.sessoes||[]).filter(s=>!s.fechadaEm);
-  res.json({data:abertos.map(s=>({id:s.id,operador:s.operador,funcionarioId:s.funcionarioId,abertaEm:s.abertaEm,resumo:resumoSessaoCaixa(s)}))});
+  let abertos=(d.sessoes||[]).filter(s=>!s.fechadaEm);
+  // filtro opcional por tipo (frente/atacado)
+  if(req.query.tipoCaixa) abertos=abertos.filter(s=>(s.tipoCaixa||"frente")===req.query.tipoCaixa);
+  res.json({data:abertos.map(s=>({id:s.id,operador:s.operador,funcionarioId:s.funcionarioId,abertaEm:s.abertaEm,tipoCaixa:s.tipoCaixa||"frente",resumo:resumoSessaoCaixa(s)}))});
 });
 
 // abre o caixa informando o troco inicial (fundo de caixa) — vinculado ao funcionário logado
 app.post("/api/caixa-sessao/abrir",(req,res)=>{
-  const {trocoInicial,operador,funcionarioId}=req.body||{};
+  const {trocoInicial,operador,funcionarioId,tipoCaixa}=req.body||{};
+  const tipo=tipoCaixa||"frente";
   if(!funcionarioId) return res.status(400).json({erro:"Sessão não identificada — faça login de novo."});
-  if(sessaoCaixaAberta(funcionarioId)) return res.status(400).json({erro:"Você já tem um caixa aberto. Feche o atual antes de abrir outro."});
+  if(sessaoCaixaAberta(funcionarioId,tipo)) return res.status(400).json({erro:"Você já tem um caixa "+(tipo==="atacado"?"atacado ":"")+"aberto. Feche o atual antes de abrir outro."});
   const d=lerCaixaSessoes();
   const sessao={
     id:"cx"+Date.now()+crypto.randomBytes(3).toString("hex"),
     abertaEm:Date.now(),
     operador:operador||"—",
     funcionarioId,
+    tipoCaixa:tipo,
     trocoInicial:+Number(trocoInicial||0).toFixed(2),
     movimentos:[],
     fechadaEm:null,
@@ -2074,12 +2080,13 @@ app.post("/api/caixa-sessao/abrir",(req,res)=>{
 
 // registra sangria (retirada) ou suprimento (entrada de dinheiro)
 app.post("/api/caixa-sessao/movimento",(req,res)=>{
-  const {tipo,valor,motivo,operador,funcionarioId}=req.body||{};
+  const {tipo,valor,motivo,operador,funcionarioId,tipoCaixa}=req.body||{};
   if(!["sangria","suprimento"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser sangria ou suprimento"});
   const v=+Number(valor||0).toFixed(2);
   if(!(v>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
   const d=lerCaixaSessoes();
-  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+  const tc=tipoCaixa||"frente";
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
   if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
   sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now()});
   salvarCaixaSessoes(d);
@@ -2088,9 +2095,10 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
 
 // fecha o caixa, comparando o contado com o esperado (conferência)
 app.post("/api/caixa-sessao/fechar",(req,res)=>{
-  const {valorContado,observacao,operador,funcionarioId}=req.body||{};
+  const {valorContado,observacao,operador,funcionarioId,tipoCaixa}=req.body||{};
   const d=lerCaixaSessoes();
-  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+  const tc=tipoCaixa||"frente";
+  const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
   if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
   const resumo=resumoSessaoCaixa(sessao);
   const contado=+Number(valorContado||0).toFixed(2);
@@ -2111,7 +2119,7 @@ app.get("/api/caixa-sessao/historico",(req,res)=>{
   const d=lerCaixaSessoes();
   const fechadas=(d.sessoes||[]).filter(s=>s.fechadaEm).sort((a,b)=>b.fechadaEm-a.fechadaEm).slice(0,50);
   res.json({data:fechadas.map(s=>({
-    id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,funcionarioId:s.funcionarioId,
+    id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,funcionarioId:s.funcionarioId,tipoCaixa:s.tipoCaixa||"frente",
     trocoInicial:s.trocoInicial,fechamento:s.fechamento,resumo:s.resumoFinal||resumoSessaoCaixa(s),movimentos:s.movimentos||[],
   }))});
 });
@@ -3053,7 +3061,8 @@ app.post("/api/pdv/venda", async(req,res)=>{
     // vincula a venda à sessão de caixa aberta DESSE funcionário (pra entrar no fechamento/conferência)
     try{
       const dCx=lerCaixaSessoes();
-      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+      const tc=req.body.tipoCaixa||"frente";
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
       if(sessaoAtual){
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
@@ -3174,10 +3183,10 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     pags[String(pedidoId)]={valorPago:pagamentos.reduce((s,p)=>s+Number(p.valor),0),historico};
     salvarJSON(PAG_FILE,pags);
 
-    // 4) vincula à sessão de caixa aberta desse funcionário (entra no fechamento)
+    // 4) vincula à sessão de caixa ATACADO aberta desse funcionário (entra no fechamento)
     try{
       const dCx=lerCaixaSessoes();
-      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId);
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")==="atacado");
       if(sessaoAtual){
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
