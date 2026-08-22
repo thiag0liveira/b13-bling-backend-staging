@@ -88,7 +88,6 @@ document.addEventListener("DOMContentLoaded",function(){
   <img src="/logo">
   <div class="t">Caixa Atacado</div>
   <span id="pillCaixa" class="pill fechado">Caixa fechado</span>
-  <span class="pill nfce">NFC-e desligada por padrão</span>
   <div class="sp"></div>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
@@ -112,6 +111,7 @@ let CARRINHO=[];
 let CLIENTE_NOME="";
 let FORMAS=[];
 let PAGAMENTOS=[];
+let ULTIMO_ITEM_PAINEL=null;   // painel grande: logo ou último produto adicionado
 let _timerBusca=null;
 
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -306,11 +306,12 @@ async function abrirPedido(id){
     CLIENTE_NOME=j.clienteNome||"";
     CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo}));
     PAGAMENTOS=[];
+    ULTIMO_ITEM_PAINEL=null; // volta a logo até bipar um produto
     render();
   }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
 }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); render(); }
@@ -318,9 +319,26 @@ function definirQtd(ix,v){ CARRINHO[ix].quantidade=Math.max(1,Number(v)||1); ren
 function removerItem(ix){ CARRINHO.splice(ix,1); render(); }
 
 function addProduto(p){
+  const item={produtoId:p.produtoId,nome:p.nome,valor:Number(p.preco)||0,imagem:p.imagem||null};
   const ex=CARRINHO.find(i=>Number(i.produtoId)===Number(p.produtoId));
-  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||""}); }
+  if(ex){ ex.quantidade++; } else { CARRINHO.push({produtoId:p.produtoId,nome:p.nome,quantidade:1,valor:Number(p.preco)||0,codigo:p.codigo||"",imagem:p.imagem||null}); }
+  ULTIMO_ITEM_PAINEL=item; // mostra o produto no painel grande
   render();
+}
+
+function htmlLogoGrande(){
+  return `<div style="display:flex;align-items:center;justify-content:center;min-height:340px">
+    <img src="/logo" style="max-height:300px;max-width:90%;object-fit:contain" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:44px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'">
+  </div>`;
+}
+function htmlPainelAdicionado(item){
+  return `<div class="card" style="display:flex;align-items:center;gap:24px;border:2px solid #FF0082;background:#241a4d;min-height:340px">
+      ${item.imagem?`<img src="${esc(item.imagem)}" style="width:240px;height:240px;object-fit:contain;background:#fff;border-radius:14px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:240px;height:240px;background:#241f52;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:90px;flex-shrink:0">📦</div>`}
+      <div style="flex:1">
+        <div style="font-size:28px;font-weight:900">${esc(item.nome)}</div>
+        <div style="font-size:40px;font-weight:900;color:#ffd23f;margin-top:10px">${brl(item.valor)}</div>
+      </div>
+    </div>`;
 }
 
 function ligarBusca(){
@@ -412,8 +430,9 @@ function render(){
       </div>
     </div>
 
-    <!-- COLUNA 1: busca + carrinho -->
+    <!-- COLUNA 1: painel + busca + carrinho -->
     <div>
+      <div id="painelAdicionado" style="min-height:340px;margin-bottom:14px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):htmlLogoGrande()}</div>
       <div class="card">
         ${PEDIDO_ATUAL?`<div style="margin-bottom:10px;padding:10px;background:#12102e;border-radius:10px;border:1px solid #2a2660">
           <div style="display:flex;justify-content:space-between;align-items:baseline">
