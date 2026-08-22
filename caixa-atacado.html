@@ -71,6 +71,7 @@
   .stag{display:inline-block;font-size:9px;font-weight:800;padding:1px 6px;border-radius:10px;background:#2a2660;color:#cfc9f5;margin-top:2px}
   .bloqueio{text-align:center;padding:50px 20px}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 </head>
 <body>
 <script src="/nav.js"></script>
@@ -438,10 +439,15 @@ function ligarBusca(){
 async function buscarProduto(termo,el,resEl,ehEnter){
   const q = MODO_PRECO==="atacado" ? "?atacado=1" : ""; // varejo = preço do Bling
   try{
-    if(/^\d{6,}$/.test(termo)){
+    if(/^\d{4,}$/.test(termo)){
       const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)+q).then(r=>r.json()).catch(()=>null);
       if(r&&r.data&&r.data.preco>0){ addProduto({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,codigo:termo,origemPreco:r.data.origemPreco}); el.value=""; return; }
-      if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado.</div>`; return; }
+      // não é produto → pode ser o código de barras de um PEDIDO do totem (o barcode é o id do pedido)
+      resEl.innerHTML='<div class="muted">verificando se é um pedido…</div>';
+      const achouPedido=await tentarAbrirComoPedido(termo);
+      if(achouPedido){ el.value=""; resEl.innerHTML=""; return; }
+      if(ehEnter){ resEl.innerHTML=`<div class="muted">Código <b>${esc(termo)}</b> não encontrado (nem produto, nem pedido).</div>`; return; }
+      resEl.innerHTML="";
     }
     const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
     const lista=(j.data||[]).slice(0,25);
@@ -460,6 +466,25 @@ async function buscarProduto(termo,el,resEl,ehEnter){
       }catch(e){}
     });
   }catch(e){ resEl.innerHTML='<div class="err">erro na busca</div>'; }
+}
+// tenta abrir um código como pedido (usado quando bipam o barcode do totem na busca)
+async function tentarAbrirComoPedido(codigo){
+  try{
+    const j=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(codigo)).then(r=>r.json());
+    if(!j.achou) return false;
+    if(j.atendido || j.cancelado){
+      document.getElementById("modais").innerHTML=`
+        <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+          <div style="font-size:42px">${j.atendido?'✅':'🚫'}</div>
+          <h3>Pedido #${esc(j.numero)} ${j.atendido?'já finalizado':'cancelado'}</h3>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>, então não pode ser aberto no caixa.</div>
+          <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais()">OK</button>
+        </div></div>`;
+      return true;
+    }
+    abrirPedido(j.id);
+    return true;
+  }catch(e){ return false; }
 }
 function selecionarResultado(ix){
   const p=(window._ultimaBusca||[])[ix]; if(!p) return;
@@ -521,46 +546,81 @@ function movimentoParaComprovante(m){
   return {
     numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
     itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
-    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null,
+    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null, observacao:m.observacao||"",
   };
 }
 function imprimirComprovante(v){
   if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
+  const codBarras=String(v.pedidoId||v.numero||"");
   const linhas=(v.itens||[]).map(i=>`
-    <tr><td>${i.quantidade}x ${esc(i.nome||("Produto "+i.produtoId))}</td><td style="text-align:right">${brl(i.preco*i.quantidade)}</td></tr>`).join("");
-  const pagLinhas=(v.pagamentos||[]).map(p=>`<tr><td>${esc(p.formaNome||"—")}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("");
+    <tr>
+      <td class="q">${i.quantidade}x</td>
+      <td class="n">${esc(i.nome||("Produto "+i.produtoId))}</td>
+      <td class="v">${brl(i.preco*i.quantidade)}</td>
+    </tr>`).join("");
+  const pagLinhas=(v.pagamentos||[]).map(p=>`<tr><td class="pf">${esc(p.formaNome||"—")}</td><td class="pv">${brl(p.valor)}</td></tr>`).join("");
   const subtotal=(v.itens||[]).reduce((s,i)=>s+i.preco*i.quantidade,0);
+  const obs=v.observacao?String(v.observacao).trim():"";
+  // fontes grandes/bold e alto contraste pra ficar bem legível na impressora térmica
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante #${esc(v.numero)}</title>
     <style>
-      body{font-family:monospace;font-size:13px;width:300px;margin:0 auto;padding:10px}
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;color:#000;width:302px;margin:0 auto;padding:10px 8px;font-size:16px;font-weight:700;line-height:1.35}
+      .logo{text-align:center;font-size:30px;font-weight:900;letter-spacing:1px;margin-bottom:2px}
+      .end{text-align:center;font-size:12px;font-weight:700;margin-bottom:6px}
+      .hr{border:none;border-top:2px dashed #000;margin:8px 0}
+      .ped{font-size:14px;font-weight:700}
+      .pednum{font-size:34px;font-weight:900;line-height:1.05}
+      .barcode{text-align:center;margin:8px 0 2px}
+      .barcode svg{max-width:100%}
+      .barcaption{text-align:center;font-size:12px;font-weight:700;margin-bottom:4px}
+      .cli{font-size:15px;font-weight:900;margin:2px 0}
+      .lbl{font-size:12px;font-weight:700;color:#000;margin-top:6px}
       table{width:100%;border-collapse:collapse}
-      td{padding:2px 0}
-      h2,h3{text-align:center;margin:6px 0}
-      hr{border:none;border-top:1px dashed #000;margin:8px 0}
-      .tot{font-size:16px;font-weight:bold}
+      .itens td{padding:5px 0;vertical-align:top;font-size:16px;font-weight:700;border-bottom:1px solid #ccc}
+      .itens td.q{width:38px;font-weight:900}
+      .itens td.n{padding-right:6px}
+      .itens td.v{text-align:right;white-space:nowrap;font-weight:900}
+      .tot{font-size:26px;font-weight:900;display:flex;justify-content:space-between;align-items:baseline;margin:10px 0 4px}
+      .pag td{padding:3px 0;font-size:16px;font-weight:700}
+      .pag td.pv{text-align:right;font-weight:900}
+      .obs{font-size:14px;font-weight:700;border:2px solid #000;border-radius:6px;padding:6px 8px;margin:8px 0}
+      .rod{text-align:center;font-size:14px;font-weight:900;margin-top:8px}
+      .dt{text-align:center;font-size:12px;font-weight:700;margin-top:2px}
     </style></head><body>
-    <h2>B13 Bebidas</h2>
-    <div style="text-align:center">Comprovante de venda — Atacado</div>
-    <hr>
-    <div>Venda: #${esc(v.numero)}</div>
-    <div>Data: ${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
-    <div>Cliente: ${esc(v.cliente?.nome||"Consumidor Final")}</div>
-    <hr>
-    <table>${linhas}</table>
-    <hr>
-    <table>
-      <tr><td>Subtotal</td><td style="text-align:right">${brl(subtotal)}</td></tr>
-      ${v.desconto?`<tr><td>Desconto</td><td style="text-align:right">- ${brl(v.desconto)}</td></tr>`:""}
-      <tr class="tot"><td>Total</td><td style="text-align:right">${brl(v.total)}</td></tr>
-    </table>
-    <hr>
-    <table>${pagLinhas}</table>
-    ${v.nfce?.idNotaFiscal?`<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
-    <hr>
-    <div style="text-align:center">Obrigado pela preferência!</div>
-    <script>window.onload=()=>window.print();<\/script>
+    <div class="logo">B13 BEBIDAS</div>
+    <div class="end">Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH<br>(31) 99971-9888</div>
+    <div class="hr"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div><div class="ped">PEDIDO</div><div class="pednum">#${esc(v.numero)}</div></div>
+    </div>
+    ${codBarras?`<div class="barcode"><svg id="bc"></svg></div><div class="barcaption">Apresente no caixa</div>`:""}
+    <div class="hr"></div>
+    <div class="lbl">CLIENTE</div>
+    <div class="cli">${esc(v.cliente?.nome||"Consumidor Final")}</div>
+    <div class="hr"></div>
+    <div class="lbl">ITENS (${(v.itens||[]).length})</div>
+    <table class="itens">${linhas}</table>
+    <div class="tot"><span>TOTAL</span><span>${brl(v.total)}</span></div>
+    ${v.desconto?`<div style="text-align:right;font-size:13px">desconto: - ${brl(v.desconto)}</div>`:""}
+    <div class="hr"></div>
+    <div class="lbl">PAGAMENTO</div>
+    <table class="pag">${pagLinhas}</table>
+    ${obs?`<div class="obs">Obs: ${esc(obs)}</div>`:""}
+    ${v.nfce?.idNotaFiscal?`<div class="dt">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
+    <div class="hr"></div>
+    <div class="rod">Obrigado pela preferência!</div>
+    <div class="dt">${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"><\/script>
+    <script>
+      function go(){
+        try{ if(window.JsBarcode && ${codBarras?`"${codBarras}"`:"''"}){ JsBarcode("#bc", "${codBarras}", {format:"CODE128", width:2, height:60, fontSize:16, margin:0, displayValue:true}); } }catch(e){}
+        setTimeout(function(){ window.print(); }, 250);
+      }
+      if(document.readyState!=="loading") go(); else window.addEventListener("load", go);
+    <\/script>
     </body></html>`;
-  const w=window.open("","_blank","width=380,height=600");
+  const w=window.open("","_blank","width=400,height=640");
   w.document.write(html); w.document.close();
 }
 
@@ -736,6 +796,8 @@ function render(){
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
         <div class="linha" style="margin-top:10px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
+        <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
+        <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" oninput="window._obsVenda=this.value">${esc(window._obsVenda||'')}</textarea>
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
           <input type="checkbox" id="emitirNfce"> Emitir NFC-e (desligada por padrão)</label>
         <div id="msgFinalizar"></div>
@@ -781,25 +843,27 @@ async function finalizar(){
   if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
+  const observacao=(document.getElementById("obsVenda")?.value||"").trim();
   const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
   try{
     let resp;
     if(PEDIDO_ATUAL){
       resp=await fetch(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME})}).then(r=>r.json());
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao})}).then(r=>r.json());
     }else{
       resp=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     // guarda a venda pra poder reimprimir o comprovante
     ULTIMA_VENDA={
-      numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId,
+      numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
       total:resp.total||total, desconto:0,
       itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
-      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null,
+      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao,
     };
+    window._obsVenda=""; // limpa pra próxima venda
     const nfMsg=emitirNfce?(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":"")):"";
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">

@@ -3088,6 +3088,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       ...(contatoFinal?{contato:{id:Number(contatoFinal)}}:{}),
       ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
+      ...(req.body.observacao&&String(req.body.observacao).trim()?{observacoes:String(req.body.observacao).trim()}:{}),
       parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
     };
 
@@ -3192,6 +3193,21 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
     const num=String(req.params.numero||"").trim();
     if(!num) return res.status(400).json({erro:"informe o número"});
     const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    const responder=(d)=>{
+      const sit=Number(d.situacao?.id||0);
+      if(sit===SIT.ATENDIDO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Atendido"});
+      if(sit===CANCELADO)    return res.json({achou:true, id:d.id, numero:d.numero, cancelado:true, situacaoNome:"Cancelado"});
+      return res.json({achou:true, id:d.id, numero:d.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit)});
+    };
+    // 1) tenta como ID direto do Bling (é o que o código de barras do totem carrega —
+    //    o totem gera o barcode CODE128 com o pedidoId). É a via mais rápida.
+    if(/^\d+$/.test(num)){
+      try{
+        const d=await bling(`/pedidos/vendas/${num}`).then(r=>r?.data);
+        if(d&&d.id) return responder(d);
+      }catch(e){ /* não é um id de pedido — cai pra busca por número */ }
+    }
+    // 2) tenta pelo NÚMERO do pedido (a API v3 não filtra por número, então varre páginas)
     let achado=null;
     for(let pag=1;pag<=30 && !achado;pag++){
       let arr=[];
@@ -3201,12 +3217,9 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
       await sleep(300);
     }
     if(!achado) return res.json({achou:false});
-    const sit=Number(achado.situacao?.id||0);
-    // se já está atendido (ou cancelado), não deixa abrir — só informa
-    if(sit===SIT.ATENDIDO) return res.json({achou:true, id:achado.id, numero:achado.numero, atendido:true, situacaoNome:"Atendido"});
-    if(sit===CANCELADO)    return res.json({achou:true, id:achado.id, numero:achado.numero, cancelado:true, situacaoNome:"Cancelado"});
-    // não atendido: devolve o id pra tela abrir normalmente
-    res.json({achou:true, id:achado.id, numero:achado.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit)});
+    // pega o detalhe (a listagem não traz situação completa em alguns casos)
+    try{ const d=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data); if(d) return responder(d); }catch(e){}
+    return responder(achado);
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
@@ -3239,7 +3252,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
 // pra ATENDIDO, e emite NFC-e só se pedido explicitamente.
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
-    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome}=req.body||{};
+    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao}=req.body||{};
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -3247,6 +3260,26 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     if(Array.isArray(itens)&&itens.length){
       const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})));
       if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações dos itens no Bling: "+(r?.erro||"erro")+". Nada foi finalizado."});
+    }
+
+    // 1b) se veio observação, salva no campo de observações do pedido no Bling
+    //     (o Bling exige o corpo com data/contato/itens no PUT — busca o pedido pra montar)
+    if(observacao && String(observacao).trim()){
+      try{
+        const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        if(ped){
+          const obsAtual=ped.observacoes||"";
+          const nova=obsAtual && !obsAtual.includes(String(observacao).trim())
+            ? obsAtual+"\n"+String(observacao).trim()
+            : (obsAtual||String(observacao).trim());
+          await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
+            data:ped.data,
+            ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
+            itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+            observacoes:nova,
+          })});
+        }
+      }catch(e){ console.error("Falha ao salvar observação (ignorado):",e.message); }
     }
 
     // 2) recalcula o total a partir dos itens finais (ou usa o total enviado)
