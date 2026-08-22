@@ -865,12 +865,18 @@ async function finalizar(){
   const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
   try{
+    // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
+    const comTimeout=(url,opts,ms=60000)=>{
+      const ctrl=new AbortController();
+      const t=setTimeout(()=>ctrl.abort(),ms);
+      return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t));
+    };
     let resp;
     if(PEDIDO_ATUAL){
-      resp=await fetch(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
+      resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao})}).then(r=>r.json());
     }else{
-      resp=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
+      resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
@@ -892,7 +898,14 @@ async function finalizar(){
           <button class="btn" style="flex:1" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
         </div>
       </div></div>`;
-  }catch(e){ btn.disabled=false; btn.textContent="✅ Finalizar e receber"; msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
+  }catch(e){
+    btn.disabled=false; btn.textContent="✅ Finalizar e receber";
+    if(e.name==="AbortError"){
+      msg.innerHTML=`<div class="err">O Bling está demorando muito pra responder. <b>NÃO clique em finalizar de novo ainda</b> — confira em "Minhas Vendas" ou no Bling se o pedido #${esc(PEDIDO_ATUAL?.numero||"")} já foi para Atendido. Se não foi, tente novamente.</div>`;
+    } else {
+      msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`;
+    }
+  }
 }
 
 // ---------------- init ----------------

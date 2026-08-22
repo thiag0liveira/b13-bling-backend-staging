@@ -3285,22 +3285,20 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
-    // 1) se vieram itens (edição), atualiza no Bling antes de finalizar
-    if(Array.isArray(itens)&&itens.length){
-      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})));
-      if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações dos itens no Bling: "+(r?.erro||"erro")+". Nada foi finalizado."});
-    }
-
-    // 1b) se veio observação, salva no campo de observações do pedido no Bling
-    //     (o Bling exige o corpo com data/contato/itens no PUT — busca o pedido pra montar)
-    if(observacao && String(observacao).trim()){
+    // 1) atualiza itens (se vieram) + observação num único PUT. Se não houver itens
+    //    mas houver observação, salva a observação sozinha (PUT leve).
+    const temItens=Array.isArray(itens)&&itens.length;
+    const temObs=observacao&&String(observacao).trim();
+    if(temItens){
+      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), temObs?observacao:null);
+      if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações do pedido no Bling: "+(r?.erro||"erro")+". Nada foi finalizado."});
+    } else if(temObs){
       try{
         const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
         if(ped){
           const obsAtual=ped.observacoes||"";
-          const nova=obsAtual && !obsAtual.includes(String(observacao).trim())
-            ? obsAtual+"\n"+String(observacao).trim()
-            : (obsAtual||String(observacao).trim());
+          const oe=String(observacao).trim();
+          const nova=obsAtual && !obsAtual.includes(oe) ? obsAtual+"\n"+oe : (obsAtual||oe);
           await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
             data:ped.data,
             ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
@@ -3811,7 +3809,7 @@ app.get("/api/buscar-atacado", async (req, res) => {
 // não bater com o total do pedido. Reaproveitado tanto pela edição manual de
 // itens (resolução de pendências) quanto pela confirmação de entrega com
 // ocorrências (Em Rota).
-async function atualizarItensBling(id,itens){
+async function atualizarItensBling(id,itens,obsExtra){
   try{
     const atualJson=await bling(`/pedidos/vendas/${id}`);
     const ped=atualJson?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
@@ -3834,11 +3832,17 @@ async function atualizarItensBling(id,itens){
 
     const tsEdit=new Date().toISOString().slice(0,16).replace('T',' ');
     const obsBase=(ped.observacoes||"").replace(/\s*\|\s*edit\s+[\d\-: ]+$/,"").trim();
+    // se veio observação do caixa, acrescenta ela (sem duplicar) ao texto base
+    let obsFinal=obsBase;
+    if(obsExtra && String(obsExtra).trim()){
+      const oe=String(obsExtra).trim();
+      obsFinal = obsBase && !obsBase.includes(oe) ? obsBase+"\n"+oe : (obsBase||oe);
+    }
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
       itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
-      observacoes:obsBase?obsBase+" | edit "+tsEdit:"edit "+tsEdit,
+      observacoes:obsFinal?obsFinal+" | edit "+tsEdit:"edit "+tsEdit,
     };
     if(ped.parcelas?.length){
       const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
