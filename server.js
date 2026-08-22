@@ -173,7 +173,19 @@ async function blingRaw(path,options={},_tentativa=0){
       return blingRaw(path,options,_tentativa+1);
     }
     if(!r.ok){
-      const motivo=j?.error?.description||j?.error?.message||(Array.isArray(j?.errors)?j.errors.map(x=>x.msg||x.message).join("; "):null)||JSON.stringify(j).slice(0,200);
+      // o Bling 400 costuma trazer o detalhe real (qual campo falhou) em error.fields
+      // ou em error.details — a mensagem de topo é genérica ("problemas na validação")
+      let motivo=j?.error?.description||j?.error?.message||(Array.isArray(j?.errors)?j.errors.map(x=>x.msg||x.message).join("; "):null);
+      const campos=j?.error?.fields||j?.error?.details||j?.fields;
+      if(Array.isArray(campos)&&campos.length){
+        const det=campos.map(f=>{
+          const nome=f.element||f.field||f.campo||f.name||"";
+          const msg=f.msg||f.message||f.descricao||f.description||"";
+          return [nome,msg].filter(Boolean).join(": ");
+        }).filter(Boolean).join(" | ");
+        if(det) motivo=(motivo?motivo+" — ":"")+det;
+      }
+      if(!motivo) motivo=JSON.stringify(j).slice(0,300);
       throw Object.assign(new Error(`Erro Bling ${r.status}: ${motivo}`),{status:r.status,body:j});
     }
     return j;
@@ -3066,10 +3078,14 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const totalPedido=+(totalItens-totalDesconto).toFixed(2);
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    // o Bling exige um contato no pedido — se a venda não tem cliente (nova venda no
+    // caixa), usa o CONSUMIDOR FINAL padrão. Sem isso o Bling recusa com erro 400.
+    let contatoFinal=contatoId?Number(contatoId):null;
+    if(!contatoFinal){ try{ contatoFinal=await getContatoPadrao(); }catch(e){} }
     const payload={
       data: dataHojeBR,
       itens:itensPayload,
-      ...(contatoId?{contato:{id:Number(contatoId)}}:{}),
+      ...(contatoFinal?{contato:{id:Number(contatoFinal)}}:{}),
       ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
       parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
