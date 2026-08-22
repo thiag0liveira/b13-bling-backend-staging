@@ -3285,16 +3285,47 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
-    // 1) atualiza itens (se vieram) + observação num único PUT. Se não houver itens
-    //    mas houver observação, salva a observação sozinha (PUT leve).
+    // 1) Descobre se os itens realmente MUDARAM. Se o operador só está recebendo o
+    //    pagamento (sem editar itens/preços), NÃO reenviamos os itens ao Bling — isso
+    //    evita disparar a validação de estoque do Bling à toa (que barra quantidades
+    //    grandes mesmo em pedido já existente). Só regravamos quando houve edição.
     const temItens=Array.isArray(itens)&&itens.length;
     const temObs=observacao&&String(observacao).trim();
+    let itensMudaram=false;
+    let pedAtual=null;
     if(temItens){
+      try{ pedAtual=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); }catch(e){}
+      if(pedAtual){
+        const orig={};
+        (pedAtual.itens||[]).forEach(i=>{ if(i.produto?.id) orig[String(i.produto.id)]={q:Number(i.quantidade),v:Number(i.valor)}; });
+        // mudou se: quantidade de itens difere, ou algum item novo/removido, ou qtd/preço diferentes
+        if((pedAtual.itens||[]).length!==itens.length){ itensMudaram=true; }
+        else {
+          for(const it of itens){
+            const o=orig[String(it.produtoId)];
+            if(!o || o.q!==Number(it.quantidade) || Math.abs(o.v-Number(it.valor))>0.001){ itensMudaram=true; break; }
+          }
+        }
+      } else {
+        itensMudaram=true; // não conseguiu ler o atual — por segurança tenta salvar
+      }
+    }
+
+    if(temItens && itensMudaram){
       const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), temObs?observacao:null);
-      if(!r?.ok) return res.status(502).json({erro:"Não foi possível salvar as alterações do pedido no Bling: "+(r?.erro||"erro")+". Nada foi finalizado."});
+      if(!r?.ok){
+        let m=r?.erro||"erro";
+        // deixa a mensagem de estoque mais clara e acionável
+        if(/estoque|saldo.*insuficiente/i.test(m)){
+          m="Estoque insuficiente no Bling pra um ou mais produtos deste pedido. "+
+            "Ajuste o estoque no Bling (ou a config de baixa de estoque da situação) e tente de novo. Nada foi finalizado.";
+        }
+        return res.status(502).json({erro:m, estoqueInsuficiente:/estoque|saldo/i.test(String(r?.erro||""))});
+      }
     } else if(temObs){
+      // sem edição de itens: salva só a observação (PUT leve, não mexe em quantidades)
       try{
-        const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        const ped=pedAtual||await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
         if(ped){
           const obsAtual=ped.observacoes||"";
           const oe=String(observacao).trim();
@@ -3335,9 +3366,18 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }
     }catch(e){ console.error("Falha ao vincular ao caixa (ignorado):",e.message); }
 
-    // 5) move pra ATENDIDO
+    // 5) move pra ATENDIDO. Se o Bling barrar por estoque insuficiente, o pagamento
+    //    já foi registrado — avisa o operador pra resolver o estoque e concluir depois.
+    let avisoAtendido=null;
     try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"}); }
-    catch(e){ console.error("Falha ao mover pra Atendido (pagamento registrado, id="+pedidoId+"):",e.message); }
+    catch(e){
+      console.error("Falha ao mover pra Atendido (pagamento registrado, id="+pedidoId+"):",e.message);
+      if(/estoque|saldo/i.test(e.message||"")){
+        avisoAtendido="O pagamento foi registrado, mas o Bling não deixou marcar o pedido como Atendido por estoque insuficiente. Ajuste o estoque no Bling e mude a situação do pedido pra Atendido manualmente.";
+      } else {
+        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra Atendido automaticamente. Verifique no Bling.";
+      }
+    }
 
     // 6) NFC-e só se pedido (padrão desligado nesse caixa)
     let nfce=null;
@@ -3357,7 +3397,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
-    res.json({ok:true,pedidoId,total:totalPedido,nfce});
+    res.json({ok:true,pedidoId,total:totalPedido,nfce,aviso:avisoAtendido});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
