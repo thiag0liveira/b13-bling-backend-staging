@@ -889,10 +889,13 @@ async function finalizar(){
     };
     window._obsVenda=""; // limpa pra próxima venda
     const nfMsg=emitirNfce?(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":"")):"";
+    const reposto=(resp.estoqueReposto||[]);
+    const repMsg=reposto.length?`<div class="muted" style="text-align:left;margin-top:8px;font-size:12px">📦 Estoque reposto pra concluir: ${reposto.map(r=>esc(r.nome||("produto "+r.produtoId))+" (+"+r.faltava+")").join(", ")}</div>`:"";
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
         <div style="font-size:44px">${resp.aviso?'⚠️':'✅'}</div><h3>${resp.aviso?'Pagamento registrado':'Pedido finalizado!'}</h3>
         <div class="ok">Total: ${brl(resp.total||total)}.${nfMsg}</div>
+        ${repMsg}
         ${resp.aviso?`<div class="err" style="text-align:left;margin-top:8px">${esc(resp.aviso)}</div>`:""}
         <div style="display:flex;gap:8px;margin-top:14px">
           <button class="btn btn-ghost" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>

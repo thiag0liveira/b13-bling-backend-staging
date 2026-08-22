@@ -3056,6 +3056,14 @@ app.post("/api/pdv/venda", async(req,res)=>{
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
+    // se a venda vem do caixa atacado, garante estoque (repõe só o que faltar) pra o
+    // Bling não barrar a baixa de estoque na criação/atendimento do pedido.
+    let estoqueReposto=[];
+    if(req.body.tipoCaixa==="atacado"){
+      try{ estoqueReposto=await garantirEstoqueParaItens(itens); }
+      catch(e){ console.error("Falha ao garantir estoque na venda nova (segue):",e.message); }
+    }
+
     // vendedor: usa o vendedor Bling vinculado ao funcionário logado no caixa;
     // se o funcionário não tiver um vendedor configurado, cai pro ID fixo do .env (compatibilidade)
     let vendedorId=null;
@@ -3144,7 +3152,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
-    res.json({ok:true,pedidoId,numero:criado?.data?.numero,total:totalPedido,nfce});
+    res.json({ok:true,pedidoId,numero:criado?.data?.numero,total:totalPedido,nfce,estoqueReposto});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
@@ -3279,11 +3287,66 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
 
 // finaliza um pedido EXISTENTE: ajusta itens (se mudou), registra pagamento, move
 // pra ATENDIDO, e emite NFC-e só se pedido explicitamente.
+// Garante que há estoque suficiente pra cada item da venda. Pra cada produto cujo
+// saldo atual seja MENOR que a quantidade vendida, lança uma ENTRADA de estoque só
+// do que falta (operacao "E" = entrada, soma ao saldo). Assim a finalização não é
+// barrada pelo Bling por saldo insuficiente. Retorna a lista do que foi reposto.
+async function garantirEstoqueParaItens(itens){
+  const reposto=[];
+  if(!Array.isArray(itens)||!itens.length) return reposto;
+  // 1) consulta o saldo atual de todos os produtos de uma vez
+  const ids=[...new Set(itens.map(i=>Number(i.produtoId)).filter(Boolean))];
+  const saldo={};
+  for(let i=0;i<ids.length;i+=40){
+    const bloco=ids.slice(i,i+40);
+    const qs=bloco.map(id=>`idsProdutos[]=${id}`).join("&");
+    try{
+      const r=await bling(`/estoques/saldos?${qs}`);
+      (r?.data||[]).forEach(s=>{ saldo[s.produto?.id]=Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0); });
+    }catch(e){}
+    await sleep(250);
+  }
+  // 2) pra cada item, se falta, lança a entrada do que falta
+  for(const it of itens){
+    const pid=Number(it.produtoId); if(!pid) continue;
+    const qtd=Number(it.quantidade)||0;
+    const atual=Number(saldo[pid] ?? 0);
+    const falta=+(qtd-atual).toFixed(3);
+    if(falta>0){
+      try{
+        await bling(`/estoques`,{method:"POST",body:JSON.stringify({
+          produto:{id:pid},
+          operacao:"E", // entrada — soma ao saldo atual
+          quantidade:falta,
+          observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`,
+        })});
+        reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd});
+        await sleep(300);
+      }catch(e){ console.error("Falha ao repor estoque do produto "+pid+":",e.message); }
+    }
+  }
+  return reposto;
+}
+
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
     const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao}=req.body||{};
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+
+    // 0) GARANTE ESTOQUE: define os itens efetivos da venda (os enviados pela tela,
+    //    ou os do pedido no Bling) e lança entrada do que faltar, pra o Bling não
+    //    barrar a finalização por saldo insuficiente. Repõe só o que falta.
+    let itensParaEstoque = Array.isArray(itens)&&itens.length ? itens : null;
+    if(!itensParaEstoque){
+      try{
+        const p=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        itensParaEstoque=(p?.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:i.quantidade}));
+      }catch(e){ itensParaEstoque=[]; }
+    }
+    let estoqueReposto=[];
+    try{ estoqueReposto=await garantirEstoqueParaItens(itensParaEstoque); }
+    catch(e){ console.error("Falha ao garantir estoque (segue mesmo assim):",e.message); }
 
     // 1) Descobre se os itens realmente MUDARAM. Se o operador só está recebendo o
     //    pagamento (sem editar itens/preços), NÃO reenviamos os itens ao Bling — isso
@@ -3397,7 +3460,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
-    res.json({ok:true,pedidoId,total:totalPedido,nfce,aviso:avisoAtendido});
+    res.json({ok:true,pedidoId,total:totalPedido,nfce,aviso:avisoAtendido,estoqueReposto});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
