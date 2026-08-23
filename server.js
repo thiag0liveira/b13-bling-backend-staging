@@ -3232,8 +3232,29 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
-// DIAGNÓSTICO: mostra exatamente o que o Bling retorna pra um id/número, pra
-// entender por que a busca do caixa acha ou não. Uso: /api/diag/pedido-busca/26671720297
+// DIAGNÓSTICO: lista as situações de pedido de venda cadastradas no Bling (id+nome),
+// e mostra a situação atual de um pedido. Ajuda a conferir se os IDs (SIT.*) batem.
+// Uso: /api/diag/situacoes  ou  /api/diag/situacoes/PEDIDO_ID
+app.get("/api/diag/situacoes/:pedidoId?",async(req,res)=>{
+  const out={sitConfigurado:SIT, situacoesBling:null, pedido:null};
+  try{
+    // o Bling lista as situações por módulo; vendas costuma ser idTipoSituacao=2
+    const r=await bling(`/situacoes/modulos`).catch(()=>null);
+    out.modulos = r?.data ? r.data.map(m=>({id:m.id, nome:m.nome})) : null;
+  }catch(e){ out.erroModulos=e.message; }
+  try{
+    // tenta listar situações do módulo de vendas (id 2 é o padrão de "Vendas")
+    const r=await bling(`/situacoes?idModulo=2`).catch(()=>null);
+    out.situacoesBling = r?.data ? r.data.map(s=>({id:s.id, nome:s.nome})) : null;
+  }catch(e){ out.erroSituacoes=e.message; }
+  if(req.params.pedidoId){
+    try{
+      const d=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data);
+      out.pedido = d ? {id:d.id, numero:d.numero, situacaoId:d.situacao?.id, situacaoNome:d.situacao?.nome} : null;
+    }catch(e){ out.erroPedido=e.message; }
+  }
+  res.json(out);
+});
 app.get("/api/diag/pedido-busca/:cod",async(req,res)=>{
   const cod=String(req.params.cod||"").trim();
   const out={cod, porId:null, porNumeroVarredura:null};
@@ -3326,6 +3347,41 @@ async function garantirEstoqueParaItens(itens){
     }
   }
   return reposto;
+}
+
+// Move um pedido pra ATENDIDO de forma robusta. Alguns fluxos do Bling não deixam
+// pular direto de "Aguardando separação" pra "Atendido" — exigem passar por SEPARADO
+// antes. Esta função tenta direto, confere se mudou de verdade (relendo o pedido), e
+// se não mudou, faz a transição em cascata SEPARADO -> ATENDIDO. Retorna {ok, situacaoFinal, caminho}.
+async function moverPedidoParaAtendido(pedidoId){
+  const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
+  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
+  const caminho=[];
+  let sitAtual=await lerSit();
+  if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"]};
+
+  // tentativa 1: direto pra ATENDIDO
+  try{ await patch(SIT.ATENDIDO); caminho.push("→ Atendido"); }catch(e){ caminho.push("falhou direto: "+e.message); }
+  await sleep(400);
+  let novo=await lerSit();
+  if(novo===SIT.ATENDIDO) return {ok:true, situacaoFinal:novo, caminho};
+
+  // tentativa 2: cascata — passa por SEPARADO e depois ATENDIDO
+  try{
+    if(novo!==SIT.SEPARADO){ await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500); }
+    await patch(SIT.ATENDIDO); caminho.push("→ Atendido (após Separado)"); await sleep(400);
+  }catch(e){ caminho.push("falhou cascata: "+e.message); }
+  novo=await lerSit();
+  if(novo===SIT.ATENDIDO) return {ok:true, situacaoFinal:novo, caminho};
+
+  // tentativa 3: cascata completa — EM_SEP -> SEPARADO -> ATENDIDO
+  try{
+    await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(500);
+    await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500);
+    await patch(SIT.ATENDIDO); caminho.push("→ Atendido (cascata completa)"); await sleep(400);
+  }catch(e){ caminho.push("falhou cascata completa: "+e.message); }
+  novo=await lerSit();
+  return {ok:novo===SIT.ATENDIDO, situacaoFinal:novo, caminho};
 }
 
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
@@ -3429,11 +3485,29 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }
     }catch(e){ console.error("Falha ao vincular ao caixa (ignorado):",e.message); }
 
-    // 5) move pra ATENDIDO. Se o Bling barrar por estoque insuficiente, o pagamento
-    //    já foi registrado — avisa o operador pra resolver o estoque e concluir depois.
+    // 4b) grava as FORMAS DE PAGAMENTO (parcelas) no pedido do Bling, pra o pedido
+    //     ficar com o pagamento correto lá também (não só no controle local).
+    //     Faz antes de mover pra Atendido (Atendido pode travar edição de parcelas).
+    try{
+      const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0)
+        .map(p=>({formaId:Number(p.formaId), valor:+Number(p.valor).toFixed(2)}));
+      if(parcelasBling.length){
+        const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false});
+        if(!rp?.ok) console.error("Não gravou as formas de pagamento no Bling (pedido "+pedidoId+"):", rp?.erro);
+      }
+    }catch(e){ console.error("Falha ao gravar formas de pagamento no Bling (ignorado):",e.message); }
+
+    // 5) move pra ATENDIDO de forma robusta (com cascata Separado->Atendido se o Bling
+    //    exigir, e conferindo se realmente mudou). Se não conseguir, o pagamento já
+    //    ficou registrado — avisa o operador.
     let avisoAtendido=null;
-    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"}); }
-    catch(e){
+    try{
+      const rMov=await moverPedidoParaAtendido(pedidoId);
+      console.log("Transição de status do pedido "+pedidoId+":", JSON.stringify(rMov.caminho));
+      if(!rMov.ok){
+        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra Atendido (ficou na situação "+rMov.situacaoFinal+"). Verifique no Bling.";
+      }
+    }catch(e){
       console.error("Falha ao mover pra Atendido (pagamento registrado, id="+pedidoId+"):",e.message);
       if(/estoque|saldo/i.test(e.message||"")){
         avisoAtendido="O pagamento foi registrado, mas o Bling não deixou marcar o pedido como Atendido por estoque insuficiente. Ajuste o estoque no Bling e mude a situação do pedido pra Atendido manualmente.";
