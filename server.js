@@ -3101,7 +3101,18 @@ app.post("/api/pdv/venda", async(req,res)=>{
       parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
     };
 
-    const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    let criado;
+    try{
+      criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+    }catch(e){
+      // se o vendedor vinculado estiver inativo no Bling, tenta de novo SEM vendedor
+      // (o Bling usa o padrão) pra não travar a venda.
+      if(/vendedor\s*inativo|vendedor.*inativ/i.test(e.message||"") && payload.vendedor){
+        console.warn("Vendedor inativo — recriando venda sem vendedor. id vendedor:",payload.vendedor?.id);
+        delete payload.vendedor;
+        criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+      } else { throw e; }
+    }
     const pedidoId=criado?.data?.id;
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
     // move pro status final correto. Regra: venda nova no VAREJO -> Atendido;
@@ -3487,6 +3498,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
           await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
             data:ped.data,
             ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
+            ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
             itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
             observacoes:nova,
           })});
@@ -3546,6 +3558,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
           await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
             data:ped.data,
             ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
+            ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
             itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
             outrasDespesas:totalDespesas,
           })});
@@ -4076,6 +4089,9 @@ async function atualizarItensBling(id,itens,obsExtra){
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
+      // PRESERVA o vendedor original do pedido (senão o Bling troca/remove o vendedor
+      // no PUT, o que causava "vendedor trocado" e erro "Vendedor inativo").
+      ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
       itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       observacoes:obsFinal?obsFinal+" | edit "+tsEdit:"edit "+tsEdit,
     };
