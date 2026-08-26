@@ -578,15 +578,12 @@ async function confirmarEditarPreco(ix){
 
 // ---------------- pagamento ----------------
 function selecionarForma(id,nome){
-  const ix=PAGAMENTOS.findIndex(p=>String(p.formaId)===String(id));
-  if(ix>=0){ PAGAMENTOS.splice(ix,1); }
-  else{
-    const rest=restante();
-    PAGAMENTOS.push({formaId:id,formaNome:nome,valor:rest>0?rest:0});
-  }
+  // Sempre ADICIONA uma nova linha de pagamento com essa forma.
+  // Pode repetir a mesma forma (ex.: 2 PIX, 2 cartões de crédito).
+  const rest=restante();
+  PAGAMENTOS.push({formaId:id,formaNome:nome,valor:rest>0?rest:0});
   render();
 }
-function adicionarFormaPagamento(){ PAGAMENTOS.push({formaId:"",formaNome:"",valor:0}); render(); }
 
 // ---------------- render principal (visual do frente de caixa) ----------------
 // ---------------- comprovante / minhas vendas (igual ao Frente de Caixa) ----------------
@@ -946,16 +943,16 @@ function render(){
         <h3>💳 Pagamento</h3>
         <div class="formas">${FORMAS.map(f=>{
           const nome=f.descricao||f.nome||("Forma "+f.id);
-          const sel=PAGAMENTOS.some(p=>String(p.formaId)===String(f.id));
-          return `<div class="forma ${sel?"sel":""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g,"\\'")}')">${esc(nome)}</div>`;
+          const qtd=PAGAMENTOS.filter(p=>String(p.formaId)===String(f.id)).length;
+          return `<div class="forma ${qtd?"sel":""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g,"\\'")}')">${esc(nome)}${qtd>1?` <b style="color:#ffd23f">×${qtd}</b>`:""}</div>`;
         }).join("")}</div>
+        <div class="muted" style="font-size:12px;margin:6px 0 2px">Toque na forma para adicionar. Pode repetir a mesma forma (ex.: 2 PIX).</div>
         ${PAGAMENTOS.map((p,ix)=>`
           <div class="pagRow">
             <span style="flex:1">${p.formaNome?esc(p.formaNome):'<span class="muted">escolha a forma acima</span>'}</span>
             <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
-            ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
+            <button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>
           </div>`).join("")}
-        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
         ${OUTRAS_DESPESAS>0?`<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>`:""}
         ${(ehPedidoAtacado()&&valorEmCredito()>0)?`
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
