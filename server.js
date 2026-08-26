@@ -2753,6 +2753,40 @@ app.get("/api/vendedores/busca",requireAdmin,async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
+// DIAGNÓSTICO: mostra os vendedores do Bling (com situação Ativo/Inativo) e como
+// cada funcionário do sistema está vinculado. Uso: /api/diag/vendedores
+app.get("/api/diag/vendedores",async(req,res)=>{
+  const out={vendedorPadraoEnv:process.env.BLING_VENDEDOR_ID||null, vendedoresBling:[], funcionarios:[]};
+  try{
+    // lista os vendedores (pode ter mais de uma página)
+    for(let pag=1;pag<=5;pag++){
+      const r=await bling(`/vendedores?pagina=${pag}&limite=100`).catch(()=>null);
+      const arr=r?.data||[];
+      arr.forEach(v=>out.vendedoresBling.push({
+        id:v.id,
+        nome:v.contato?.nome||v.nome||`Vendedor ${v.id}`,
+        situacao:v.situacao, // "A" ativo, "I" inativo (no Bling)
+        ativo: v.situacao==="A" || v.situacao===1 || v.situacao===true,
+      }));
+      if(arr.length<100) break;
+      await sleep(250);
+    }
+  }catch(e){ out.erroVendedores=e.message; }
+  try{
+    const funcs=lerJSON(FUNC_FILE,{});
+    out.funcionarios=Object.values(funcs).map(f=>({
+      id:f.id, nome:f.nome, login:f.login||"",
+      vendedorBlingId:f.vendedorBlingId||null, vendedorBlingNome:f.vendedorBlingNome||"",
+    }));
+    // marca, pra cada funcionário, se o vendedor vinculado está ativo
+    const porId={}; out.vendedoresBling.forEach(v=>porId[String(v.id)]=v);
+    out.funcionarios.forEach(f=>{
+      if(f.vendedorBlingId){ const v=porId[String(f.vendedorBlingId)]; f.vendedorAtivo = v?v.ativo:null; f.vendedorSituacao=v?v.situacao:"não encontrado"; }
+    });
+  }catch(e){ out.erroFuncionarios=e.message; }
+  res.json(out);
+});
+
 // busca de clientes (nome, cpf/cnpj, telefone) - igual a busca de cliente do Frente de Caixa do Bling
 app.get("/api/pdv/clientes",async(req,res)=>{
   const termo=String(req.query.termo||"").trim();
