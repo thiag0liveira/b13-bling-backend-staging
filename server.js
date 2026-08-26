@@ -3301,6 +3301,8 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
     const responder=(d)=>{
       const sit=Number(d.situacao?.id||0);
       if(sit===SIT.ATENDIDO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Atendido"});
+      // SEPARADO = já pago no caixa (nova regra) — não pode ser aberto/puxado de novo
+      if(sit===SIT.SEPARADO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Separado (já pago no caixa)"});
       if(sit===CANCELADO)    return res.json({achou:true, id:d.id, numero:d.numero, cancelado:true, situacaoNome:"Cancelado"});
       return res.json({achou:true, id:d.id, numero:d.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit)});
     };
