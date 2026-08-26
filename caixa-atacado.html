@@ -591,11 +591,11 @@ function imprimirComprovante(v){
   tmp.style.cssText="position:absolute;left:-9999px;top:-9999px";
   document.body.appendChild(tmp);
   // QR de acompanhamento do pedido
-  try{ new QRCode(tmp,{text:location.origin+"/pedido/"+pedidoId+"/acompanhar",width:180,height:180,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  try{ new QRCode(tmp,{text:location.origin+"/pedido/"+pedidoId+"/acompanhar",width:340,height:340,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
   // código de barras (id do pedido — mesmo que aparece pra bipar no caixa)
   const barCanvas=document.createElement("canvas");
   tmp.appendChild(barCanvas);
-  try{ JsBarcode(barCanvas,pedidoId,{format:"CODE128",width:1.5,height:52,fontSize:12,margin:0}); }catch(e){}
+  try{ JsBarcode(barCanvas,pedidoId,{format:"CODE128",width:2,height:70,fontSize:16,margin:0}); }catch(e){}
   // logo
   const logoImg=new Image(); let logoPronta=false;
   logoImg.onload=()=>{logoPronta=true;}; logoImg.onerror=()=>{logoPronta=false;};
@@ -608,8 +608,17 @@ function imprimirComprovante(v){
     const dataUrl=cv.toDataURL("image/png");
     const w=window.open("","_blank","width=420,height=700");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido #${esc(v.numero||"")}</title>
-      <style>*{margin:0;padding:0}body{text-align:center}img{width:100%;max-width:380px}@media print{img{max-width:100%}}</style></head>
-      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script></body></html>`);
+      <style>
+        *{margin:0;padding:0}
+        body{text-align:center;background:#fff}
+        img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
+        @page{margin:0}
+        @media print{
+          body{margin:0}
+          img{max-width:100%;width:100%}
+        }
+      </style></head>
+      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
     w.document.close();
   },220);
 }
@@ -617,87 +626,86 @@ function imprimirComprovante(v){
 // desenha o comprovante no canvas (mesmo layout do totem, adaptado pra venda paga)
 function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const itensArr=(v.itens||[]);
-  const itemH=40, headerH=120, qrSize=170;
-  const H=940 + itensArr.length*itemH + (v.pagamentos||[]).length*24 + (v.observacao?60:0);
-  const W=560, padd=24;
+  const itemH=54, headerH=136, qrSize=210;
+  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0);
+  const W=580, padd=24;
   const cv=document.createElement("canvas");
-  const dpr=2; cv.width=W*dpr; cv.height=H*dpr;
+  const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline="alphabetic";
 
-  // cabeçalho
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-14);
-  if(logoImg && logoImg.naturalWidth){
-    const logoH=42, logoW=logoImg.naturalWidth*(logoH/logoImg.naturalHeight);
-    try{ ctx.drawImage(logoImg,padd,18,logoW,logoH); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
-  } else { ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
-  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888",padd,headerH-28);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-14,W,5);
+  // cabeçalho (fundo preto pra sair sólido na térmica)
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,W,headerH-14);
+  ctx.fillStyle="#fff"; ctx.font="900 34px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,52);
+  ctx.font="900 15px Arial"; ctx.fillStyle="#fff"; ctx.textAlign="left";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH",padd,headerH-40);
+  ctx.fillText("(31) 99971-9888",padd,headerH-22);
+  ctx.fillStyle="#000"; ctx.fillRect(0,headerH-10,W,4);
 
-  let y=headerH+16;
+  let y=headerH+30;
   // pedido + código de barras
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
-  ctx.font="900 34px Arial"; ctx.fillStyle="#111"; ctx.fillText("#"+(v.numero||"—"),padd,y+40);
-  ctx.font="13px Arial"; ctx.fillStyle="#888"; ctx.fillText(new Date(v.dataHora||Date.now()).toLocaleString("pt-BR"),padd,y+62);
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
+  ctx.font="900 46px Arial"; ctx.fillStyle="#000"; ctx.fillText("#"+(v.numero||"—"),padd,y+46);
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.fillText(new Date(v.dataHora||Date.now()).toLocaleString("pt-BR"),padd,y+72);
   if(barCanvas){
-    const bw=220, bh=barCanvas.height*(bw/barCanvas.width);
-    try{ ctx.drawImage(barCanvas,W-padd-bw,y-6,bw,bh);
-      ctx.font="10px Arial"; ctx.fillStyle="#888"; ctx.textAlign="center";
-      ctx.fillText("Apresente no caixa",W-padd-bw/2,y-6+bh+14);
+    const bw=250, bh=barCanvas.height*(bw/barCanvas.width);
+    try{ ctx.drawImage(barCanvas,W-padd-bw,y-4,bw,bh);
+      ctx.font="900 13px Arial"; ctx.fillStyle="#000"; ctx.textAlign="center";
+      ctx.fillText("Apresente no caixa",W-padd-bw/2,y-4+bh+16);
     }catch(e){}
   }
-  y+=100;
-  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); y+=26;
+  y+=112;
+  ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
 
   // cliente
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
-  ctx.font="900 20px Arial"; ctx.fillStyle="#111"; ctx.fillText(v.cliente?.nome||"Consumidor Final",padd,y+26);
-  y+=44; ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); y+=26;
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
+  ctx.font="900 26px Arial"; ctx.fillStyle="#000"; ctx.fillText(v.cliente?.nome||"Consumidor Final",padd,y+30);
+  y+=52; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
 
   // itens
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y); y+=22;
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888";
-  ctx.textAlign="left"; ctx.fillText("Produto",padd,y);
-  ctx.textAlign="center"; ctx.fillText("Qtd",W-190,y);
-  ctx.textAlign="right"; ctx.fillText("Unit.",W-padd,y);
-  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=itemH-8;
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y); y+=26;
+  ctx.font="900 14px Arial"; ctx.fillStyle="#000";
+  ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
+  ctx.textAlign="center"; ctx.fillText("QTD",W-200,y);
+  ctx.textAlign="right"; ctx.fillText("UNIT.",W-padd,y);
+  y+=10; ctx.fillStyle="#000"; ctx.fillRect(padd,y,W-padd*2,2); y+=itemH-14;
   itensArr.forEach((i,ix)=>{
-    ctx.fillStyle="#111"; ctx.font="15px Arial"; ctx.textAlign="left";
-    let nome=i.nome||("Produto "+i.produtoId); if(nome.length>28) nome=nome.slice(0,27)+"…";
+    ctx.fillStyle="#000"; ctx.font="900 19px Arial"; ctx.textAlign="left";
+    let nome=i.nome||("Produto "+i.produtoId); if(nome.length>26) nome=nome.slice(0,25)+"…";
     ctx.fillText(nome,padd,y);
-    ctx.font="900 17px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="center"; ctx.fillText(String(i.quantidade),W-190,y);
-    ctx.font="13px Arial"; ctx.fillStyle="#333"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
-    if(ix<itensArr.length-1){ ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+16); ctx.lineTo(W-padd,y+16); ctx.stroke(); }
+    ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.textAlign="center"; ctx.fillText(String(i.quantidade),W-200,y);
+    ctx.font="900 17px Arial"; ctx.fillStyle="#000"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
+    if(ix<itensArr.length-1){ ctx.fillStyle="#000"; ctx.fillRect(padd,y+18,W-padd*2,1); }
     y+=itemH;
   });
-  y+=8; ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); y+=42;
+  y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=48;
 
   // total + PAGO
-  ctx.font="900 26px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
-  ctx.textAlign="right"; ctx.font="900 30px Arial"; ctx.fillText(brl(v.total),W-padd,y); y+=32;
-  ctx.textAlign="left"; ctx.font="900 16px Arial"; ctx.fillStyle="#16a34a"; ctx.fillText("✓ PAGO",padd,y); y+=26;
+  ctx.font="900 32px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
+  ctx.textAlign="right"; ctx.font="900 38px Arial"; ctx.fillText(brl(v.total),W-padd,y); y+=40;
+  ctx.textAlign="left"; ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.fillText("✓ PAGO",padd,y); y+=34;
   // formas de pagamento
   (v.pagamentos||[]).forEach(p=>{
-    ctx.font="13px Arial"; ctx.fillStyle="#555"; ctx.textAlign="left"; ctx.fillText(p.formaNome||"—",padd,y);
-    ctx.textAlign="right"; ctx.fillText(brl(p.valor),W-padd,y); y+=22;
+    ctx.font="900 18px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(p.formaNome||"—",padd,y);
+    ctx.textAlign="right"; ctx.fillText(brl(p.valor),W-padd,y); y+=30;
   });
   // observação
   if(v.observacao && String(v.observacao).trim()){
-    y+=6; ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("OBSERVAÇÃO",padd,y); y+=18;
-    ctx.font="14px Arial"; ctx.fillStyle="#111";
-    let obs=String(v.observacao).trim(); if(obs.length>60) obs=obs.slice(0,59)+"…";
-    ctx.fillText(obs,padd,y); y+=22;
+    y+=8; ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("OBSERVAÇÃO",padd,y); y+=24;
+    ctx.font="900 18px Arial"; ctx.fillStyle="#000";
+    let obs=String(v.observacao).trim(); if(obs.length>52) obs=obs.slice(0,51)+"…";
+    ctx.fillText(obs,padd,y); y+=26;
   }
-  y+=8;
+  y+=12;
 
-  // divisor tracejado
-  ctx.strokeStyle="#ccc"; ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); y+=32;
+  // divisor tracejado grosso
+  ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.setLineDash([8,5]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1; y+=36;
 
   // QR
-  if(qrEl){ const qrX=(W-qrSize)/2; try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){} y+=qrSize+22; }
-  ctx.fillStyle="#888"; ctx.font="13px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR para ver o status do pedido",W/2,y); y+=20;
-  ctx.font="900 13px Arial"; ctx.fillStyle="#262366"; ctx.fillText("Obrigado pela preferência!",W/2,y); y+=24;
+  if(qrEl){ const qrX=(W-qrSize)/2; try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){} y+=qrSize+26; }
+  ctx.fillStyle="#000"; ctx.font="900 15px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR para ver o status do pedido",W/2,y); y+=26;
+  ctx.font="900 17px Arial"; ctx.fillStyle="#000"; ctx.fillText("Obrigado pela preferência!",W/2,y); y+=28;
 
   // apara pro tamanho real
   const cvFinal=document.createElement("canvas");
