@@ -263,6 +263,43 @@ async function getContatoPadrao(){
   _contatoPadrao=novo?.data?.id; return _contatoPadrao;
 }
 
+// ------- vendedores ATIVOS (o Bling recusa a venda se o vendedor estiver inativo) -------
+// Mantém uma lista dos vendedores ativos em cache (5 min). Usada para garantir que
+// toda venda saia com um vendedor ATIVO — se o vendedor do operador (ou o padrão da
+// conta) estiver inativo, o Bling barra com "Vendedor inativo". Tirar o vendedor não
+// resolve, porque aí o Bling usa o vendedor padrão da conta, que também pode estar inativo.
+let _vendAtivosCache=null, _vendAtivosEm=0;
+async function listaVendedoresAtivos(){
+  if(_vendAtivosCache && (Date.now()-_vendAtivosEm) < 5*60*1000) return _vendAtivosCache;
+  const ativos=[];
+  try{
+    for(let pag=1;pag<=5;pag++){
+      const r=await bling(`/vendedores?pagina=${pag}&limite=100`).catch(()=>null);
+      const arr=r?.data||[];
+      arr.forEach(v=>{
+        const ativo = v.situacao==="A" || v.situacao===1 || v.situacao===true;
+        if(ativo) ativos.push({id:v.id, nome:v.contato?.nome||v.nome||("Vendedor "+v.id)});
+      });
+      if(arr.length<100) break;
+      await sleep(250);
+    }
+  }catch(e){ console.error("Falha ao listar vendedores ativos:",e.message); }
+  if(ativos.length){ _vendAtivosCache=ativos; _vendAtivosEm=Date.now(); }
+  return ativos;
+}
+// Devolve um ID de vendedor ATIVO. Preferência: o preferido (ex.: vendedor do operador)
+// se ativo -> o padrão do .env se ativo -> o primeiro vendedor ativo encontrado.
+// Se não conseguir listar os vendedores (erro/rede), devolve o preferido sem alterar.
+async function vendedorAtivoId(preferidoId){
+  const ativos=await listaVendedoresAtivos();
+  if(!ativos.length) return preferidoId!=null ? Number(preferidoId) : (Number(process.env.BLING_VENDEDOR_ID)||null);
+  const ok=id=> id!=null && ativos.some(v=>String(v.id)===String(id));
+  if(ok(preferidoId)) return Number(preferidoId);
+  const env=Number(process.env.BLING_VENDEDOR_ID)||null;
+  if(ok(env)) return env;
+  return ativos[0].id;
+}
+
 // ------------------------- OAuth -------------------------
 app.get("/auth",(req,res)=> res.redirect(`${AUTH_URL}?response_type=code&client_id=${BLING_CLIENT_ID}&state=b13${Date.now()}`));
 app.get("/logo",(req,res)=>res.sendFile(path.join(__dirname,"logo.png")));
@@ -3107,6 +3144,9 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(func?.vendedorBlingId) vendedorId=Number(func.vendedorBlingId);
     }
     if(!vendedorId) vendedorId=Number(process.env.BLING_VENDEDOR_ID)||null;
+    // garante que o vendedor enviado esteja ATIVO no Bling (senão a venda é recusada
+    // com "Vendedor inativo"). Se o do operador estiver inativo, troca por um ativo.
+    try{ vendedorId = await vendedorAtivoId(vendedorId); }catch(e){}
 
     const itensPayload=itens.map(i=>({
       produto:{id:Number(i.produtoId)},
@@ -3139,11 +3179,17 @@ app.post("/api/pdv/venda", async(req,res)=>{
     try{
       criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
     }catch(e){
-      // se o vendedor vinculado estiver inativo no Bling, tenta de novo SEM vendedor
-      // (o Bling usa o padrão) pra não travar a venda.
-      if(/vendedor\s*inativo|vendedor.*inativ/i.test(e.message||"") && payload.vendedor){
-        console.warn("Vendedor inativo — recriando venda sem vendedor. id vendedor:",payload.vendedor?.id);
-        delete payload.vendedor;
+      // se ainda assim vier "vendedor inativo", troca por um vendedor ATIVO e tenta de
+      // novo; se não houver nenhum ativo, manda sem vendedor como último recurso.
+      if(/vendedor\s*inativo|vendedor.*inativ/i.test(e.message||"")){
+        let alt=null; try{ alt=await vendedorAtivoId(null); }catch(_){}
+        if(alt && String(alt)!==String(payload.vendedor?.id)){
+          console.warn("Vendedor inativo — trocando por vendedor ativo id:",alt,"(era",payload.vendedor?.id,")");
+          payload.vendedor={id:alt};
+        }else{
+          console.warn("Vendedor inativo e sem ativo disponível — recriando venda sem vendedor.");
+          delete payload.vendedor;
+        }
         criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
       } else { throw e; }
     }
