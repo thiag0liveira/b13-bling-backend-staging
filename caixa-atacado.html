@@ -993,6 +993,18 @@ async function finalizar(){
   const observacao=(document.getElementById("obsVenda")?.value||"").trim();
   const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
+  // Regra de status final no Bling:
+  //  - ATENDIDO: só quando a venda foi CRIADA no caixa (venda nova) E toda no modo VAREJO
+  //    (nenhum item com preço de atacado).
+  //  - SEPARADO: pedido puxado de outro vendedor, ou qualquer venda que usou preço de
+  //    atacado, ou venda nova no modo atacado.
+  const usouAtacado = CARRINHO.some(i => i.modoPreco==="atacado" || i.origemPreco==="atacado");
+  let statusFinal;
+  if(PEDIDO_ATUAL){
+    statusFinal = "separado"; // pedido puxado de outro vendedor -> separado
+  } else {
+    statusFinal = (MODO_PRECO==="varejo" && !usouAtacado) ? "atendido" : "separado";
+  }
   try{
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout=(url,opts,ms=60000)=>{
@@ -1003,10 +1015,10 @@ async function finalizar(){
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao})}).then(r=>r.json());
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     // guarda a venda pra poder reimprimir o comprovante

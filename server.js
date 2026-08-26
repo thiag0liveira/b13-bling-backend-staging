@@ -3103,9 +3103,11 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
     const pedidoId=criado?.data?.id;
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
-    // move pra Atendido depois de criado (igual o fluxo do totem, que já funciona)
-    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"}); }
-    catch(e){ console.error("Falha ao mover pedido pra Atendido (venda ja foi criada, id="+pedidoId+"):",e.message); }
+    // move pro status final correto. Regra: venda nova no VAREJO -> Atendido;
+    // venda nova no atacado (ou statusFinal 'separado') -> Separado. Default Atendido.
+    const statusFinalVenda = req.body.statusFinal==="separado" ? "separado" : "atendido";
+    try{ await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
+    catch(e){ console.error("Falha ao mover pedido pra "+statusFinalVenda+" (venda ja foi criada, id="+pedidoId+"):",e.message); }
 
     // registra localmente (mesmo padrão usado no restante do sistema)
     const pags=lerPag();
@@ -3384,9 +3386,40 @@ async function moverPedidoParaAtendido(pedidoId){
   return {ok:novo===SIT.ATENDIDO, situacaoFinal:novo, caminho};
 }
 
+// Move um pedido pra SEPARADO de forma robusta (com cascata EM_SEP -> SEPARADO se o
+// Bling exigir, e conferindo se realmente mudou). Retorna {ok, situacaoFinal, caminho}.
+async function moverPedidoParaSeparado(pedidoId){
+  const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
+  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
+  const caminho=[];
+  let sitAtual=await lerSit();
+  if(sitAtual===SIT.SEPARADO) return {ok:true, situacaoFinal:SIT.SEPARADO, caminho:["já estava separado"]};
+
+  // tentativa 1: direto pra SEPARADO
+  try{ await patch(SIT.SEPARADO); caminho.push("→ Separado"); }catch(e){ caminho.push("falhou direto: "+e.message); }
+  await sleep(400);
+  let novo=await lerSit();
+  if(novo===SIT.SEPARADO) return {ok:true, situacaoFinal:novo, caminho};
+
+  // tentativa 2: cascata — passa por EM_SEP e depois SEPARADO
+  try{
+    if(novo!==SIT.EM_SEP){ await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(500); }
+    await patch(SIT.SEPARADO); caminho.push("→ Separado (após Em separação)"); await sleep(400);
+  }catch(e){ caminho.push("falhou cascata: "+e.message); }
+  novo=await lerSit();
+  return {ok:novo===SIT.SEPARADO, situacaoFinal:novo, caminho};
+}
+
+// escolhe e executa a transição de status conforme o statusFinal pedido pela tela
+// ('atendido' ou 'separado'). Default: atendido (compatibilidade).
+async function moverPedidoParaStatusFinal(pedidoId, statusFinal){
+  if(statusFinal==="separado") return moverPedidoParaSeparado(pedidoId);
+  return moverPedidoParaAtendido(pedidoId);
+}
+
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
-    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao}=req.body||{};
+    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal}=req.body||{};
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -3497,22 +3530,23 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }
     }catch(e){ console.error("Falha ao gravar formas de pagamento no Bling (ignorado):",e.message); }
 
-    // 5) move pra ATENDIDO de forma robusta (com cascata Separado->Atendido se o Bling
-    //    exigir, e conferindo se realmente mudou). Se não conseguir, o pagamento já
-    //    ficou registrado — avisa o operador.
+    // 5) move pro STATUS FINAL correto (Atendido ou Separado, conforme a regra da tela)
+    //    de forma robusta (com cascata e conferindo se realmente mudou). Se não
+    //    conseguir, o pagamento já ficou registrado — avisa o operador.
+    const alvo = statusFinal==="separado" ? "Separado" : "Atendido";
     let avisoAtendido=null;
     try{
-      const rMov=await moverPedidoParaAtendido(pedidoId);
-      console.log("Transição de status do pedido "+pedidoId+":", JSON.stringify(rMov.caminho));
+      const rMov=await moverPedidoParaStatusFinal(pedidoId, statusFinal);
+      console.log("Transição de status do pedido "+pedidoId+" (alvo "+alvo+"):", JSON.stringify(rMov.caminho));
       if(!rMov.ok){
-        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra Atendido (ficou na situação "+rMov.situacaoFinal+"). Verifique no Bling.";
+        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" (ficou na situação "+rMov.situacaoFinal+"). Verifique no Bling.";
       }
     }catch(e){
-      console.error("Falha ao mover pra Atendido (pagamento registrado, id="+pedidoId+"):",e.message);
+      console.error("Falha ao mover pra "+alvo+" (pagamento registrado, id="+pedidoId+"):",e.message);
       if(/estoque|saldo/i.test(e.message||"")){
-        avisoAtendido="O pagamento foi registrado, mas o Bling não deixou marcar o pedido como Atendido por estoque insuficiente. Ajuste o estoque no Bling e mude a situação do pedido pra Atendido manualmente.";
+        avisoAtendido="O pagamento foi registrado, mas o Bling não deixou mudar o pedido pra "+alvo+" por estoque insuficiente. Ajuste o estoque no Bling e mude a situação manualmente.";
       } else {
-        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra Atendido automaticamente. Verifique no Bling.";
+        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" automaticamente. Verifique no Bling.";
       }
     }
 
