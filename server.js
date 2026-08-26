@@ -3258,18 +3258,21 @@ app.post("/api/pdv/venda", async(req,res)=>{
 // lista os pedidos NÃO ATENDIDOS do sistema (a coluna que fica "escutando")
 app.get("/api/caixa-atacado/pedidos-nao-atendidos",async(req,res)=>{
   try{
-    // varre as páginas de pedidos de venda recentes e filtra os que não estão
-    // em ATENDIDO nem CANCELADO. A listagem traz total/numero/contato/situação.
+    // varre as páginas de pedidos de venda recentes e filtra os que ainda estão
+    // pendentes de pagamento no caixa. Fora: ATENDIDO, CANCELADO e SEPARADO — este
+    // último porque a venda finalizada no caixa atacado agora vai pra SEPARADO, então
+    // não pode reaparecer na lista pra ser puxada de novo.
     const dias=Math.min(Number(req.query.dias||30),120);
     const deData=new Date(Date.now()-dias*24*60*60*1000 - 3*60*60*1000).toISOString().slice(0,10);
     const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    const EXCLUIR=new Set([SIT.ATENDIDO, CANCELADO, SIT.SEPARADO].filter(Boolean).map(Number));
     const lista=[];
     for(let pg=1;pg<=20;pg++){
       const r=await bling(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${deData}`);
       const arr=r?.data||[];
       arr.forEach(p=>{
         const sit=Number(p.situacao?.id||0);
-        if(sit!==SIT.ATENDIDO && sit!==CANCELADO){
+        if(!EXCLUIR.has(sit)){
           lista.push({
             id:p.id, numero:p.numero, total:Number(p.total||0),
             data:p.data, situacaoId:sit, situacaoNome:nomeSituacaoFechamento(sit),
