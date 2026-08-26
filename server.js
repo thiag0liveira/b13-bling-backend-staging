@@ -3097,6 +3097,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
       ...(req.body.observacao&&String(req.body.observacao).trim()?{observacoes:String(req.body.observacao).trim()}:{}),
+      ...(Number(req.body.taxaCredito)>0?{outrasDespesas:+Number(req.body.taxaCredito).toFixed(2)}:{}),
       parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
     };
 
@@ -3303,6 +3304,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       vendedorId:d.vendedor?.id||null, vendedorNome,
       clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
+      outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
       itens,
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
@@ -3419,7 +3421,7 @@ async function moverPedidoParaStatusFinal(pedidoId, statusFinal){
 
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
-    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal}=req.body||{};
+    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase}=req.body||{};
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -3529,6 +3531,28 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
         if(!rp?.ok) console.error("Não gravou as formas de pagamento no Bling (pedido "+pedidoId+"):", rp?.erro);
       }
     }catch(e){ console.error("Falha ao gravar formas de pagamento no Bling (ignorado):",e.message); }
+
+    // 4c) grava OUTRAS DESPESAS (taxa de cartão de crédito) no pedido do Bling. A taxa
+    //     total = a que já existia no pedido + a taxa de crédito adicionada no caixa.
+    let despesasGravadas=null;
+    try{
+      const taxaAdd=Number(taxaCredito||0);
+      const base=Number(outrasDespesasBase||0);
+      const totalDespesas=+(base+taxaAdd).toFixed(2);
+      // só regrava se houver taxa nova a adicionar (evita PUT desnecessário)
+      if(taxaAdd>0){
+        const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        if(ped){
+          await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
+            data:ped.data,
+            ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
+            itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+            outrasDespesas:totalDespesas,
+          })});
+          despesasGravadas=totalDespesas;
+        }
+      }
+    }catch(e){ console.error("Falha ao gravar outras despesas/taxa no Bling (ignorado):",e.message); }
 
     // 5) move pro STATUS FINAL correto (Atendido ou Separado, conforme a regra da tela)
     //    de forma robusta (com cascata e conferindo se realmente mudou). Se não

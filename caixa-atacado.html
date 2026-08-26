@@ -113,6 +113,8 @@ let CAIXA={aberta:false,resumo:{}};
 let ULTIMA_VENDA=null; // guarda a última venda concluída, pra reimprimir o comprovante
 let PEDIDOS=[];          // pedidos não atendidos (coluna extra)
 let PEDIDO_ATUAL=null;   // {id,numero,situacaoNome,vendedorNome,...} — null = venda nova
+let OUTRAS_DESPESAS=0;   // outras despesas que já vieram do pedido do Bling (taxa da vendedora)
+let COBRAR_TAXA_CARTAO=true; // por padrão cobra 3,5% no cartão de crédito (atacado); pode desmarcar
 let CARRINHO=[];
 let CLIENTE_NOME="";
 let FORMAS=[];
@@ -127,7 +129,18 @@ function hora(ms){ if(!ms) return "—"; return new Date(ms).toLocaleString("pt-
 function fecharModais(){ document.getElementById("modais").innerHTML=""; }
 
 function subtotal(){ return CARRINHO.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0); }
-function totalPedido(){ return +subtotal().toFixed(2); }
+// taxa de cartão de crédito: 3,5% do valor pago em cartão de crédito, só em pedido
+// de atacado (algum item de atacado) e quando a cobrança está marcada.
+function ehPedidoAtacado(){ return CARRINHO.some(i=>i.modoPreco==="atacado"||i.origemPreco==="atacado") || (PEDIDO_ATUAL!=null); }
+function valorEmCredito(){
+  return PAGAMENTOS.filter(p=>/cr[eé]dito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+}
+function taxaCartao(){
+  if(!COBRAR_TAXA_CARTAO) return 0;
+  if(!ehPedidoAtacado()) return 0; // varejo não tem taxa
+  return +(valorEmCredito()*0.035).toFixed(2);
+}
+function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+taxaCartao()).toFixed(2); }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
 
@@ -372,14 +385,16 @@ async function abrirPedido(id){
     if(j.erro) throw new Error(j.erro);
     PEDIDO_ATUAL={id:j.id,numero:j.numero,situacaoNome:j.situacaoNome,vendedorNome:j.vendedorNome,contatoId:j.contatoId};
     CLIENTE_NOME=j.clienteNome||"";
-    CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo}));
+    CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo,modoPreco:"atacado"}));
+    OUTRAS_DESPESAS=Number(j.outrasDespesas||0); // puxa a taxa que a vendedora colocou
+    COBRAR_TAXA_CARTAO=true;
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null; // volta a logo até bipar um produto
     render();
   }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
 }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -941,7 +956,14 @@ function render(){
             ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
           </div>`).join("")}
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
-        <div class="linha" style="margin-top:10px"><span>Pago</span><b>${brl(totalPago())}</b></div>
+        ${OUTRAS_DESPESAS>0?`<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>`:""}
+        ${(ehPedidoAtacado()&&valorEmCredito()>0)?`
+          <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
+            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito (3,5%)</span>
+            <b style="color:#ffd23f">${brl(taxaCartao())}</b>
+          </label>`:""}
+        <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
+        <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
         <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
         <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" oninput="window._obsVenda=this.value">${esc(window._obsVenda||'')}</textarea>
@@ -999,6 +1021,7 @@ async function finalizar(){
   //  - SEPARADO: pedido puxado de outro vendedor, ou qualquer venda que usou preço de
   //    atacado, ou venda nova no modo atacado.
   const usouAtacado = CARRINHO.some(i => i.modoPreco==="atacado" || i.origemPreco==="atacado");
+  const taxaCredito = taxaCartao(); // 3,5% do crédito, se aplicável e marcado
   let statusFinal;
   if(PEDIDO_ATUAL){
     statusFinal = "separado"; // pedido puxado de outro vendedor -> separado
@@ -1015,10 +1038,10 @@ async function finalizar(){
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal})}).then(r=>r.json());
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     // guarda a venda pra poder reimprimir o comprovante
