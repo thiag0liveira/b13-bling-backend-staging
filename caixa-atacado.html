@@ -590,6 +590,7 @@ function selecionarForma(id,nome){
 function movimentoParaComprovante(m){
   return {
     numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
+    outrasDespesas:Number(m.outrasDespesas||0),
     itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
     pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null, observacao:m.observacao||"",
   };
@@ -639,7 +640,7 @@ function imprimirComprovante(v){
 function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const itensArr=(v.itens||[]);
   const itemH=54, headerH=136, qrSize=210;
-  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0);
+  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0);
   const W=580, padd=24;
   const cv=document.createElement("canvas");
   const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
@@ -691,7 +692,17 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
     if(ix<itensArr.length-1){ ctx.fillStyle="#000"; ctx.fillRect(padd,y+18,W-padd*2,1); }
     y+=itemH;
   });
-  y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=48;
+  y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=36;
+
+  // subtotal + outras despesas (ex.: taxa de cartão), quando houver
+  const _outras=Number(v.outrasDespesas||0);
+  if(_outras>0.009){
+    const _sub=+(Number(v.total||0)-_outras).toFixed(2);
+    ctx.font="900 20px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("Subtotal",padd,y);
+    ctx.textAlign="right"; ctx.fillText(brl(_sub),W-padd,y); y+=30;
+    ctx.textAlign="left"; ctx.fillText("Outras despesas",padd,y);
+    ctx.textAlign="right"; ctx.fillText(brl(_outras),W-padd,y); y+=34;
+  } else { y+=12; }
 
   // total + PAGO
   ctx.font="900 32px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
@@ -1044,7 +1055,8 @@ async function finalizar(){
     // guarda a venda pra poder reimprimir o comprovante
     ULTIMA_VENDA={
       numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
-      total:resp.total||total, desconto:0,
+      total:total, desconto:0,
+      outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2),
       itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
       pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao,
     };

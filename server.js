@@ -3213,9 +3213,11 @@ app.post("/api/pdv/venda", async(req,res)=>{
       const tc=req.body.tipoCaixa||"frente";
       const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
       if(sessaoAtual){
+        const _outrasNova=+Number(req.body.taxaCredito||0).toFixed(2);
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
-          total:totalPedido, clienteNome:clienteNome||"", desconto:totalDesconto,
+          total:+(totalPedido+_outrasNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
+          outrasDespesas:_outrasNova,
           itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
@@ -3607,9 +3609,11 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       const dCx=lerCaixaSessoes();
       const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")==="atacado");
       if(sessaoAtual){
+        const _outrasFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
-          total:totalPedido, clienteNome:clienteNome||"", origem:"caixa_atacado",
+          total:+(totalPedido+_outrasFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
+          outrasDespesas:_outrasFin,
           itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
