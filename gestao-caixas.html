@@ -64,6 +64,9 @@ window.FILTRO_TIPO="todos"; // todos | frente | atacado
 function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function brl(v){ return (Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function hora(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+window.GESTOR=(typeof b13GetSession==="function")?b13GetSession():null;
+// interpreta número digitado em pt-BR: "1.234,56" ou "150,50" ou "150.50"
+function numBR(s){ s=String(s==null?"":s).trim(); if(!s) return 0; if(s.indexOf(",")>=0){ s=s.replace(/\./g,"").replace(",","."); } return parseFloat(s)||0; }
 window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; }
 
 // selo indicando o tipo do caixa
@@ -113,7 +116,8 @@ window.carregarAbertos=async function(){
           <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
           ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
         </div>`:""}
-        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
+        <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa aberto no momento.</div></div>';
   }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar os caixas abertos.</div>`; }
 }
@@ -174,6 +178,124 @@ window.verMovimentos=async function(id){
         </div>
       </div>`;
   }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+}
+
+// ---- CONFERÊNCIA DE CAIXA: contar por forma + dinheiro na gaveta e comparar ----
+window.conferirCaixa=async function(id){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    const r=j.resumo||{};
+    window._CONF={
+      id,
+      formas:(r.porForma||[]).map(f=>({nome:f.nome,esperado:Number(f.valor)||0})),
+      esperadoGaveta:Number(r.esperadoGaveta||0),
+      esperadoGavetaCalc:Number(r.esperadoGavetaCalc!=null?r.esperadoGavetaCalc:(r.esperadoGaveta||0)),
+      esperadoGavetaManual:(r.esperadoGavetaManual!=null?Number(r.esperadoGavetaManual):null),
+      operador:j.sessao?.operador||"",
+    };
+    renderConferencia();
+  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao abrir a conferência: ${esc(e.message)}</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button></div></div>`; }
+}
+function linhaConf(ix,f){
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700;font-size:13px">${esc(f.nome)}</div>
+      <div class="muted" style="font-size:11px">Esperado: ${brl(f.esperado)}</div>
+    </div>
+    <input id="conf_${ix}" inputmode="decimal" placeholder="Contado" style="width:104px;text-align:right" oninput="recalcConf()">
+    <div id="dif_${ix}" style="width:96px;text-align:right;font-size:12px;font-weight:700;color:#9a95c9">—</div>
+  </div>`;
+}
+window.renderConferencia=function(){
+  const C=window._CONF; if(!C) return;
+  const temManual=C.esperadoGavetaManual!=null;
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🧮 Conferir caixa — ${esc(C.operador||"")}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">Digite quanto tem de verdade em cada forma e o dinheiro na gaveta. A diferença aparece do lado (verde = bateu, amarelo = sobra, vermelho = falta).</div>
+      <div style="font-weight:800;margin-bottom:6px">💳 Formas de pagamento</div>
+      ${C.formas.length?C.formas.map((f,ix)=>linhaConf(ix,f)).join(""):'<div class="muted" style="margin-bottom:8px">Nenhuma venda por forma ainda.</div>'}
+      <div style="border-top:1px solid #2a2660;margin:10px 0;padding-top:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13px">💵 Dinheiro na gaveta</div>
+            <div class="muted" style="font-size:11px">Esperado: <b style="color:#ffd23f">${brl(C.esperadoGaveta)}</b>${temManual?' <span style="color:#ff9fd0">(ajuste manual)</span>':""} · <a href="#" onclick="editarEsperado(event)" style="color:#7fd4ff">editar</a></div>
+            ${temManual?`<div class="muted" style="font-size:10px">Calculado: ${brl(C.esperadoGavetaCalc)}</div>`:""}
+          </div>
+          <input id="conf_gaveta" inputmode="decimal" placeholder="Contado" style="width:104px;text-align:right" oninput="recalcConf()">
+          <div id="dif_gaveta" style="width:96px;text-align:right;font-size:12px;font-weight:700;color:#9a95c9">—</div>
+        </div>
+      </div>
+      <div class="card" style="background:#1c1846;margin:12px 0"><div class="linha"><span><b>Diferença total</b></span><b id="dif_total" style="color:#9a95c9">—</b></div></div>
+      <input id="conf_obs" placeholder="Observação (opcional)" style="width:100%;margin-bottom:10px">
+      <div id="confMsg"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-mag" style="flex:1" onclick="salvarConferencia()">💾 Salvar conferência</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Fechar</button>
+      </div>
+    </div></div>`;
+}
+window.recalcConf=function(){
+  const C=window._CONF; if(!C) return;
+  let total=0;
+  const cor=(dif,vazio)=>vazio?"#9a95c9":(Math.abs(dif)<0.01?"#8fffc0":(dif>0?"#ffd23f":"#ff8090"));
+  C.formas.forEach((f,ix)=>{
+    const campo=document.getElementById("conf_"+ix);
+    const vazio=((campo?.value)||"").trim()==="";
+    const dif=+(numBR(campo?.value)-f.esperado).toFixed(2);
+    if(!vazio) total+=dif;
+    const el=document.getElementById("dif_"+ix);
+    if(el){ el.textContent=vazio?"—":brl(dif); el.style.color=cor(dif,vazio); }
+  });
+  const cg=document.getElementById("conf_gaveta");
+  const gvazio=((cg?.value)||"").trim()==="";
+  const difG=+(numBR(cg?.value)-C.esperadoGaveta).toFixed(2);
+  if(!gvazio) total+=difG;
+  const elg=document.getElementById("dif_gaveta");
+  if(elg){ elg.textContent=gvazio?"—":brl(difG); elg.style.color=cor(difG,gvazio); }
+  const elt=document.getElementById("dif_total");
+  if(elt){ elt.textContent=brl(total); elt.style.color=(Math.abs(total)<0.01?"#8fffc0":(total>0?"#ffd23f":"#ff8090")); }
+}
+window.salvarConferencia=async function(){
+  const C=window._CONF; if(!C) return;
+  const contagem=C.formas.map((f,ix)=>({nome:f.nome,contado:numBR(document.getElementById("conf_"+ix)?.value)}));
+  const contadoGaveta=numBR(document.getElementById("conf_gaveta")?.value);
+  const observacao=(document.getElementById("conf_obs")?.value||"").trim();
+  const msg=document.getElementById("confMsg");
+  try{
+    const r=await fetch(B+"/api/caixa-sessao/"+C.id+"/conferencia",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({contagem,contadoGaveta,observacao,operador:(window.GESTOR&&window.GESTOR.nome)||"",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    const dt=(r.conferencia&&r.conferencia.diferencaTotal)||0;
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">${Math.abs(dt)<0.01?'✅':'⚠️'}</div>
+        <h3>Conferência salva</h3>
+        <div class="${Math.abs(dt)<0.01?'muted':'err'}" style="margin-top:6px">Diferença total: <b>${brl(dt)}</b>${Math.abs(dt)<0.01?' — bateu certinho!':''}</div>
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais()">OK</button>
+      </div></div>`;
+  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+// ---- editar (ajustar) o esperado na gaveta ----
+window.editarEsperado=function(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  const C=window._CONF; if(!C) return;
+  const atual=C.esperadoGavetaManual!=null?C.esperadoGavetaManual:C.esperadoGaveta;
+  const v=prompt("Esperado na gaveta (dinheiro).\nDeixe vazio pra voltar ao calculado ("+brl(C.esperadoGavetaCalc)+"):", String(atual));
+  if(v===null) return; // cancelou
+  const limpar=(String(v).trim()==="");
+  fetch(B+"/api/caixa-sessao/"+C.id+"/esperado",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({esperado:numBR(v),limpar,operador:(window.GESTOR&&window.GESTOR.nome)||"",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json()).then(r=>{
+    if(r.erro){ alert(r.erro); return; }
+    const rr=r.resumo||{};
+    C.esperadoGaveta=Number(rr.esperadoGaveta||0);
+    C.esperadoGavetaCalc=Number(rr.esperadoGavetaCalc!=null?rr.esperadoGavetaCalc:(rr.esperadoGaveta||0));
+    C.esperadoGavetaManual=(rr.esperadoGavetaManual!=null?Number(rr.esperadoGavetaManual):null);
+    renderConferencia();
+    recalcConf();
+  }).catch(e=>alert("Erro: "+e.message));
 }
 
 render();

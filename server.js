@@ -1986,7 +1986,10 @@ function resumoSessaoCaixa(sessao){
   const totalSuprimentos=suprimentos.reduce((s,m)=>s+(Number(m.valor)||0),0);
 
   // o que deveria ter na gaveta agora, só em dinheiro
-  const esperadoGaveta=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
+  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
+  // se um gestor ajustou o esperado manualmente, usa esse valor (mas mantém o calculado visível)
+  const temManual=(sessao.esperadoGavetaManual!==undefined&&sessao.esperadoGavetaManual!==null&&sessao.esperadoGavetaManual!=="");
+  const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
 
   return {
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
@@ -1996,6 +1999,8 @@ function resumoSessaoCaixa(sessao){
     totalSangrias:+totalSangrias.toFixed(2),
     totalSuprimentos:+totalSuprimentos.toFixed(2),
     esperadoGaveta,
+    esperadoGavetaCalc,
+    esperadoGavetaManual:temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):null,
     porForma:Object.entries(porForma).map(([nome,v])=>({nome,valor:+v.valor.toFixed(2),qtd:v.qtd})).sort((a,b)=>b.valor-a.valor),
   };
 }
@@ -2211,11 +2216,58 @@ app.get("/api/caixa-sessao/:id/movimentos",(req,res)=>{
   const s=(d.sessoes||[]).find(x=>x.id===req.params.id);
   if(!s) return res.status(404).json({erro:"sessão não encontrada"});
   res.json({
-    sessao:{id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,trocoInicial:s.trocoInicial},
+    sessao:{id:s.id,abertaEm:s.abertaEm,fechadaEm:s.fechadaEm,operador:s.operador,trocoInicial:s.trocoInicial,tipoCaixa:s.tipoCaixa||"frente"},
     resumo:s.resumoFinal||resumoSessaoCaixa(s),
     fechamento:s.fechamento||null,
+    conferencias:(s.conferencias||[]).slice().sort((a,b)=>b.em-a.em),
     movimentos:(s.movimentos||[]).sort((a,b)=>b.em-a.em),
   });
+});
+
+// AJUSTAR (editar) o esperado na gaveta de uma sessão — ajuste manual do gestor.
+// Mantém o calculado no resumo (esperadoGavetaCalc) pra referência. limpar=true volta ao calculado.
+app.post("/api/caixa-sessao/:id/esperado",(req,res)=>{
+  const {esperado,limpar,operador,funcionarioId,motivo}=req.body||{};
+  const d=lerCaixaSessoes();
+  const s=(d.sessoes||[]).find(x=>x.id===req.params.id);
+  if(!s) return res.status(404).json({erro:"sessão não encontrada"});
+  if(limpar){ delete s.esperadoGavetaManual; }
+  else{
+    const v=Number(esperado);
+    if(!(v>=0)) return res.status(400).json({erro:"informe um valor válido (>= 0)"});
+    s.esperadoGavetaManual=+v.toFixed(2);
+  }
+  s.ajustesEsperado=[...(s.ajustesEsperado||[]),{em:Date.now(),esperado:(limpar?null:s.esperadoGavetaManual),por:operador||"—",funcionarioId:funcionarioId||null,motivo:motivo||"",limpou:!!limpar}];
+  salvarCaixaSessoes(d);
+  res.json({ok:true,resumo:resumoSessaoCaixa(s)});
+});
+
+// SALVAR uma conferência de caixa (contagem por forma + dinheiro na gaveta), com as
+// diferenças calculadas. Não fecha o caixa — é só uma verificação registrada (auditoria).
+app.post("/api/caixa-sessao/:id/conferencia",(req,res)=>{
+  const {contagem,contadoGaveta,observacao,operador,funcionarioId}=req.body||{};
+  const d=lerCaixaSessoes();
+  const s=(d.sessoes||[]).find(x=>x.id===req.params.id);
+  if(!s) return res.status(404).json({erro:"sessão não encontrada"});
+  const resumo=resumoSessaoCaixa(s);
+  const espPorForma={}; (resumo.porForma||[]).forEach(f=>espPorForma[f.nome]=f.valor);
+  const linhas=(Array.isArray(contagem)?contagem:[]).map(c=>{
+    const esperado=+Number(espPorForma[c.nome]||0).toFixed(2);
+    const contado=+Number(c.contado||0).toFixed(2);
+    return {nome:c.nome,esperado,contado,diferenca:+(contado-esperado).toFixed(2)};
+  });
+  const espGav=Number(resumo.esperadoGaveta||0);
+  const contGav=+Number(contadoGaveta||0).toFixed(2);
+  const difGav=+(contGav-espGav).toFixed(2);
+  const conferencia={
+    em:Date.now(), por:operador||"—", funcionarioId:funcionarioId||null,
+    linhas, gaveta:{esperado:+espGav.toFixed(2),contado:contGav,diferenca:difGav},
+    diferencaTotal:+(linhas.reduce((a,l)=>a+l.diferenca,0)+difGav).toFixed(2),
+    observacao:observacao||"",
+  };
+  s.conferencias=[...(s.conferencias||[]),conferencia];
+  salvarCaixaSessoes(d);
+  res.json({ok:true,conferencia});
 });
 
 // ---------------- LISTA DE FARDO (varejo promocional por fardo) ----------------
