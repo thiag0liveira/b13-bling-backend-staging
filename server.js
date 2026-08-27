@@ -685,7 +685,8 @@ app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
   const id="f"+Date.now()+crypto.randomBytes(4).toString("hex");
   // verificar login duplicado
-  if(req.body.login && Object.values(funcs).some(f=>f.login===req.body.login))
+  const _loginNovo=String(req.body.login||"").toLowerCase().trim();
+  if(req.body.login && Object.values(funcs).some(f=>String(f.login||"").toLowerCase().trim()===_loginNovo))
     return res.status(400).json({erro:"Login já em uso por outro funcionário"});
   // código de confirmação (1 letra + 2 números), sem repetir um já existente
   const letras="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -705,7 +706,8 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   if(req.body.nome) f.nome=req.body.nome;
   if(req.body.login){
     const outros=Object.values(lerJSON(FUNC_FILE,{})).filter(x=>x.id!==req.params.id);
-    if(outros.some(x=>x.login===req.body.login)) return res.status(400).json({erro:"Login já em uso"});
+    const _loginEdit=String(req.body.login||"").toLowerCase().trim();
+    if(outros.some(x=>String(x.login||"").toLowerCase().trim()===_loginEdit)) return res.status(400).json({erro:"Login já em uso"});
     f.login=req.body.login;
   }
   if(req.body.nivel) f.nivel=req.body.nivel;
@@ -764,8 +766,10 @@ app.post("/api/funcionarios/login",(req,res)=>{
   const {login,senha,nivel}=req.body||{};
   const funcs=lerJSON(FUNC_FILE,{});
   // busca por login+senha (se tiver login), senão só pela senha (compatibilidade)
+  const loginNorm=String(login||"").toLowerCase().trim();
   const f=Object.values(funcs).find(x=>{
-    const loginOk=login?x.login===login:true;
+    // usuário não diferencia maiúscula/minúscula nem espaços sobrando; a SENHA continua exata
+    const loginOk=login?String(x.login||"").toLowerCase().trim()===loginNorm:true;
     return loginOk&&verificarSenha(senha||"",x.senhaHash)&&x.ativo&&(!nivel||x.nivel===nivel||(x.permissoes||[]).includes(nivel)||x.nivel==="admin");
   });
   if(!f){ registrarFalhaLogin(ip); return res.status(401).json({erro:"Login ou senha incorretos"}); }
