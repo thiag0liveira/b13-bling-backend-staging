@@ -121,6 +121,9 @@ let FORMAS=[];
 let PAGAMENTOS=[];
 let ULTIMO_ITEM_PAINEL=null;   // painel grande: logo ou último produto adicionado
 let MODO_PRECO="atacado";      // 'atacado' (padrão) ou 'varejo' (preço do Bling + lógica de fardo)
+let MODO_EDICAO_PAGAMENTO=false; // true = editando o pagamento de um pedido já finalizado (com QR de gerente/admin)
+let TOKEN_EDICAO="";             // QR autorizador guardado só em memória durante a edição (nunca salvo)
+let AUTORIZADO_POR="";           // nome de quem autorizou (só pra exibir)
 let _timerBusca=null;
 
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -361,16 +364,20 @@ async function buscarPedidoNoBling(numero){
     const j=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(numero)).then(r=>r.json());
     if(j.erro) throw new Error(j.erro);
     if(!j.achou){ if(box) box.innerHTML=`<div class="muted" style="padding:8px">Pedido #${esc(numero)} não encontrado no Bling.<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="window._filtroPed='';pintarPedidos()">Voltar</button></div>`; return; }
-    // já finalizado (atendido) ou cancelado → avisa e NÃO abre
+    // já finalizado (atendido/pago) → pode reabrir com autorização; cancelado → não
     if(j.atendido || j.cancelado){
+      const podeReabrir=!!j.atendido;
       document.getElementById("modais").innerHTML=`
         <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
           <div style="font-size:42px">${j.atendido?'✅':'🚫'}</div>
           <h3>Pedido #${esc(j.numero)} ${j.atendido?'já finalizado':'cancelado'}</h3>
-          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>, então não pode ser aberto no caixa.</div>
-          <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();window._filtroPed='';pintarPedidos()">OK</button>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir?' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.':''}</div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            ${podeReabrir?`<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>`:''}
+            <button class="btn btn-ghost" style="flex:1" onclick="fecharModais();window._filtroPed='';pintarPedidos()">${podeReabrir?'Cancelar':'OK'}</button>
+          </div>
         </div></div>`;
-      if(box) box.innerHTML=`<div class="muted" style="padding:8px">Pedido #${esc(numero)} já finalizado.<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="window._filtroPed='';pintarPedidos()">Voltar</button></div>`;
+      if(box) box.innerHTML=`<div class="muted" style="padding:8px">Pedido #${esc(numero)} ${j.atendido?'já finalizado':'cancelado'}.<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="window._filtroPed='';pintarPedidos()">Voltar</button></div>`;
       return;
     }
     // não atendido → abre normalmente
@@ -394,7 +401,92 @@ async function abrirPedido(id){
   }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
 }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; render(); }
+// ---- reabrir pedido JÁ FINALIZADO pra corrigir a forma de pagamento (só com QR de gerente/admin) ----
+function pedirAutorizacaoReabrir(id,numero){
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🔓 Reabrir pedido #${esc(numero)}</h3>
+      <p class="muted" style="margin-bottom:8px">Reabrir um pedido já finalizado pra corrigir a forma de pagamento precisa da autorização de um gerente, financeiro ou admin. Leia o QR do caixa (ou cole o código).</p>
+      <div class="muted" style="margin-bottom:4px">QR de autorização</div>
+      <input id="qrReabrir" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
+        autocomplete="new-password" name="qr_${Date.now()}" autocorrect="off" autocapitalize="off" spellcheck="false"
+        data-lpignore="true" data-1p-ignore data-form-type="other" autofocus>
+      <div id="qrErroReabrir"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" onclick="confirmarReabrir(${id},'${esc(numero)}')">Reabrir</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+  setTimeout(()=>{ const t=document.getElementById("qrReabrir"); if(t) t.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ev.preventDefault();confirmarReabrir(id,numero);} }); },50);
+}
+async function confirmarReabrir(id,numero){
+  const campo=document.getElementById("qrReabrir");
+  const tokenQr=(campo?.value||"").trim();
+  const erroEl=document.getElementById("qrErroReabrir");
+  if(!tokenQr){ erroEl.innerHTML=`<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
+  try{
+    const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tokenQr})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    // guarda o token só em memória pra reusar no salvamento; limpa o campo na hora
+    TOKEN_EDICAO=tokenQr; AUTORIZADO_POR=r.autorizadoPor||"";
+    if(campo) campo.value="";
+    fecharModais();
+    await abrirPedidoParaEdicao(id);
+  }catch(e){ if(campo) campo.value=""; erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+async function abrirPedidoParaEdicao(id){
+  try{
+    const j=await fetch(BACKEND+"/api/caixa-atacado/pedido/"+id).then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    PEDIDO_ATUAL={id:j.id,numero:j.numero,situacaoNome:j.situacaoNome,vendedorNome:j.vendedorNome,contatoId:j.contatoId};
+    CLIENTE_NOME=j.clienteNome||"";
+    // itens travados (precoEditado) — na edição de pagamento não se mexe nos itens
+    CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo,modoPreco:"atacado",precoEditado:true}));
+    OUTRAS_DESPESAS=Number(j.outrasDespesas||0);
+    COBRAR_TAXA_CARTAO=false; // total já está fechado; não recalcula taxa na edição
+    PAGAMENTOS=[];
+    ULTIMO_ITEM_PAINEL=null;
+    MODO_EDICAO_PAGAMENTO=true;
+    window._filtroPed="";
+    render();
+  }catch(e){ alert("Não foi possível abrir o pedido pra edição: "+e.message); MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; }
+}
+async function salvarEdicaoPagamento(){
+  const btn=document.getElementById("btnFinalizar");
+  const msg=document.getElementById("msgFinalizar");
+  if(!TOKEN_EDICAO){ if(msg) msg.innerHTML=`<div class="err">Autorização perdida. Feche e reabra o pedido com o QR.</div>`; return; }
+  const linhas=PAGAMENTOS.filter(p=>p.formaId&&Number(p.valor)>0);
+  if(!linhas.length){ if(msg) msg.innerHTML=`<div class="err">Informe ao menos uma forma de pagamento.</div>`; return; }
+  const total=totalPedido();
+  const soma=linhas.reduce((s,p)=>s+Number(p.valor),0);
+  if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
+  if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
+  const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
+  try{
+    const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
+    const resp=await comTimeout(BACKEND+"/api/caixa-atacado/editar-pagamento",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr:TOKEN_EDICAO,funcionarioId:S.id})}).then(r=>r.json());
+    if(resp.erro) throw new Error(resp.erro);
+    TOKEN_EDICAO=""; // some com o token após usar
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:44px">✏️</div><h3>Pagamento alterado!</h3>
+        <div class="ok" style="text-align:left;margin-top:8px">Pedido #${esc(resp.numero||PEDIDO_ATUAL.numero)}<br>
+          <span class="muted">De:</span> ${esc(resp.de||"—")}<br>
+          <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
+          <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
+        <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+      </div></div>`;
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent="💾 Salvar novo pagamento"; }
+    if(e.name==="AbortError"){ if(msg) msg.innerHTML=`<div class="err">O Bling está demorando muito. Confira no Bling se a alteração do pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi aplicada antes de tentar de novo.</div>`; }
+    else{ if(msg) msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
+  }
+}
+function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
+
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -852,15 +944,20 @@ async function abrirModalMinhasVendas(){
       <div class="modal" style="max-width:560px">
         <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
         <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
-        ${vendas.length?vendas.map(m=>`
-          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        ${vendas.length?vendas.map(m=>{
+          const alt=!!m.alterado;
+          const histAlt=(alt&&Array.isArray(m.alteracoes))?m.alteracoes.map(a=>`<div style="font-size:11px;color:#ff9aa2;margin-top:3px">✏️ ${esc(a.tipo==="pagamento"?"Pagamento alterado":"Alterado")}: <b>${esc(a.de||"—")}</b> → <b>${esc(a.para||"—")}</b><br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`).join(""):"";
+          return `
+          <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;${alt?"background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;padding:8px;margin:4px 0;":""}">
             <div style="flex:1">
-              <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+              <div><b style="color:${alt?"#ff6b6b":"inherit"}">#${esc(m.numero||m.pedidoId)}${alt?" ✏️ ALTERADO":""}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
               ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
               <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+              ${histAlt}
             </div>
             <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
-          </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
+          </div>`;
+        }).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
         ${htmlMovimentosMinhasVendas()}
         <div class="card" style="background:#1c1846;margin:12px 0">
           ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
@@ -918,6 +1015,7 @@ function render(){
           <div class="muted" style="margin-top:4px">📌 Status: <b style="color:#ffd23f">${esc(PEDIDO_ATUAL.situacaoNome||"—")}</b></div>
           <div class="muted">🧑‍💼 Vendedor: <b style="color:#cfc9f5">${esc(PEDIDO_ATUAL.vendedorNome||"—")}</b></div>
           ${CLIENTE_NOME?`<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>`:''}
+          ${MODO_EDICAO_PAGAMENTO?`<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Editando forma de pagamento</b> (pedido já pago). Autorizado por ${esc(AUTORIZADO_POR||"—")}. Os itens estão travados — escolha a nova forma e salve.</div>`:""}
         </div>`:`<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
         <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -980,7 +1078,7 @@ function render(){
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px"
           ${(!CARRINHO.length||!PAGAMENTOS.length||PAGAMENTOS.some(p=>!p.formaId))?"disabled":""}
-          onclick="finalizar()">✅ Finalizar e receber</button>
+          onclick="finalizar()">${MODO_EDICAO_PAGAMENTO?"💾 Salvar novo pagamento":"✅ Finalizar e receber"}</button>
       </div>
     </div>
 
@@ -1009,6 +1107,7 @@ function render(){
 }
 
 async function finalizar(){
+  if(MODO_EDICAO_PAGAMENTO) return salvarEdicaoPagamento();
   const btn=document.getElementById("btnFinalizar");
   const msg=document.getElementById("msgFinalizar");
   if(!CAIXA.aberta){ alert("Abra o caixa primeiro."); return; }

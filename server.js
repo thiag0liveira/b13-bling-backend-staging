@@ -1932,6 +1932,28 @@ app.get("/api/contatos",rateLimit({janelaMs:60000,max:8,prefixo:"contatos"}),asy
 // ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
 function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
 function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
+// marca um movimento de venda (em QUALQUER sessão, aberta ou fechada) como ALTERADO,
+// troca as formas de pagamento exibidas e guarda o histórico do que mudou — pra o
+// "Minhas Vendas" mostrar o pedido em vermelho com o que aconteceu.
+function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao){
+  try{
+    const idStr=String(pedidoId);
+    const d=lerCaixaSessoes();
+    let achou=false;
+    for(const s of (d.sessoes||[])){
+      for(const m of (s.movimentos||[])){
+        if(m.tipo==="venda" && String(m.pedidoId)===idStr){
+          m.alterado=true;
+          m.alteracoes=[...(m.alteracoes||[]), alteracao];
+          if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
+          achou=true;
+        }
+      }
+    }
+    if(achou) salvarCaixaSessoes(d);
+    return achou;
+  }catch(e){ console.error("[marcarMovimentoAlterado]",e.message); return false; }
+}
 function sessaoCaixaAberta(funcionarioId,tipoCaixa){
   const d=lerCaixaSessoes();
   const tipo=tipoCaixa||"frente"; // retrocompat: sessões antigas sem tipo contam como "frente"
@@ -3091,6 +3113,66 @@ app.post("/api/caixa-atacado/autorizar",(req,res)=>{
   const r=validarTokenQrAtacado(tokenQr);
   if(r.erro) return res.status(401).json({erro:r.erro});
   res.json({ok:true,autorizadoPor:r.funcionario.nome,via:"qr"});
+});
+
+// EDITAR PAGAMENTO de um pedido JÁ FINALIZADO (pago no caixa) — só com autorização
+// de gerente/financeiro/admin (QR). Substitui as formas de pagamento no Bling,
+// atualiza o registro local (statusPagamento) e marca o movimento como ALTERADO no
+// histórico do caixa (vira vermelho, com o que mudou e quem autorizou).
+app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
+  try{
+    const {pedidoId,tokenQr,pagamentos,funcionarioId,numero}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    const auth=validarTokenQrAtacado(tokenQr);
+    if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const linhas=(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p&&p.formaId&&Number(p.valor)>0);
+    if(!linhas.length) return res.status(400).json({erro:"informe ao menos uma forma de pagamento"});
+    const fmt=(v)=>Number(v||0).toFixed(2);
+
+    // pedido atual no Bling (pra total e pra base do "antes")
+    const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const totalPedido=Number(ped.total||0);
+
+    // descrição do pagamento ANTES: usa o histórico local (tem nome+valor); senão, as parcelas do Bling
+    const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
+    let descAntes="";
+    if(antigo&&Array.isArray(antigo.historico)&&antigo.historico.length){
+      descAntes=antigo.historico.map(h=>`${h.formaNome||"?"}: ${fmt(h.valor)}`).join(" · ");
+    }else{
+      descAntes=(ped.parcelas||[]).map(p=>`${p.formaPagamento?.nome||"?"}: ${fmt(p.valor)}`).join(" · ");
+    }
+    descAntes=descAntes||"—";
+
+    // troca as parcelas no Bling (substitui). atualizarParcelasBling sabe destravar
+    // o SEPARADO (via Em Digitação), editar e restaurar a situação.
+    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {});
+    if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
+
+    // atualiza registro local de pagamento (mantém pago)
+    const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado_edit"}));
+    const valorPedido=(antigo&&antigo.valorPedido)?antigo.valorPedido:totalPedido;
+    pags[idStr]={
+      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido, historico,
+      statusPagamento: somaNova>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
+    };
+    salvarJSON(PAG_FILE,pags);
+
+    // marca o movimento no histórico do caixa (vermelho, com o que mudou)
+    const funcs=lerJSON(FUNC_FILE,{});
+    const descDepois=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
+    const alteracao={
+      em:Date.now(), tipo:"pagamento",
+      autorizadoPor:auth.funcionario.nome,
+      por:(funcs[funcionarioId]?.nome)||"—",
+      de:descAntes, para:descDepois,
+    };
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao);
+    addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
+
+    res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 // gera o token/QR do dia pra um funcionário (só se ele for de grupo autorizado).
