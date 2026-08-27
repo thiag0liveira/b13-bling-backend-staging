@@ -368,7 +368,7 @@ async function buscarPedidoNoBling(numero){
     if(j.atendido || j.cancelado){
       const podeReabrir=!!j.atendido;
       document.getElementById("modais").innerHTML=`
-        <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
           <div style="font-size:42px">${j.atendido?'✅':'🚫'}</div>
           <h3>Pedido #${esc(j.numero)} ${j.atendido?'já finalizado':'cancelado'}</h3>
           <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir?' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.':''}</div>
@@ -608,12 +608,16 @@ async function tentarAbrirComoPedido(codigo){
     const j=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(codigo)).then(r=>r.json());
     if(!j.achou) return false;
     if(j.atendido || j.cancelado){
+      const podeReabrir=!!j.atendido;
       document.getElementById("modais").innerHTML=`
-        <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
           <div style="font-size:42px">${j.atendido?'✅':'🚫'}</div>
           <h3>Pedido #${esc(j.numero)} ${j.atendido?'já finalizado':'cancelado'}</h3>
-          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>, então não pode ser aberto no caixa.</div>
-          <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais()">OK</button>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir?' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.':''}</div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            ${podeReabrir?`<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>`:''}
+            <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">${podeReabrir?'Cancelar':'OK'}</button>
+          </div>
         </div></div>`;
       return true;
     }
