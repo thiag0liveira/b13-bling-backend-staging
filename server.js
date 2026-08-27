@@ -1170,6 +1170,11 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
     
     // Se tem pagamento local, verifica divergência com Bling
     if(pagLocal){
+      // registros antigos podem ter sido gravados sem statusPagamento — infere pra não aparecer como "não pago"
+      if(!pagLocal.statusPagamento){
+        const vp=Number(pagLocal.valorPago||0), vped=Number(pagLocal.valorPedido||0);
+        pagLocal.statusPagamento = vped>0 ? (vp>=vped-0.05?"pago":(vp>0?"parcial":"pendente")) : (vp>0?"pago":"pendente");
+      }
       try{
         const rPed=await bling(`/pedidos/vendas/${id}`);
         const ped=rPed?.data||{};
@@ -3208,7 +3213,13 @@ app.post("/api/pdv/venda", async(req,res)=>{
     // registra localmente (mesmo padrão usado no restante do sistema)
     const pags=lerPag();
     const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"pdv_varejo"}));
-    pags[String(pedidoId)]={valorPago:totalPedido,historico};
+    const _outrasPagNova=+Number(req.body.taxaCredito||0).toFixed(2);
+    const _totalPagarNova=+(totalPedido+_outrasPagNova).toFixed(2);
+    const _valorPagoNova=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    pags[String(pedidoId)]={
+      pedidoId:String(pedidoId), valorPago:_valorPagoNova, valorPedido:_totalPagarNova, historico,
+      statusPagamento:_valorPagoNova>=_totalPagarNova-0.05?"pago":(_valorPagoNova>0?"parcial":"pendente"),
+    };
     salvarJSON(PAG_FILE,pags);
 
     // vincula a venda à sessão de caixa aberta DESSE funcionário (pra entrar no fechamento/conferência)
@@ -3605,7 +3616,13 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     // 3) registra o pagamento localmente
     const pags=lerPag();
     const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"}));
-    pags[String(pedidoId)]={valorPago:pagamentos.reduce((s,p)=>s+Number(p.valor),0),historico};
+    const _outrasPagFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
+    const _totalPagarFin=+(totalPedido+_outrasPagFin).toFixed(2);
+    const _valorPagoFin=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    pags[String(pedidoId)]={
+      pedidoId:String(pedidoId), valorPago:_valorPagoFin, valorPedido:_totalPagarFin, historico,
+      statusPagamento:_valorPagoFin>=_totalPagarFin-0.05?"pago":(_valorPagoFin>0?"parcial":"pendente"),
+    };
     salvarJSON(PAG_FILE,pags);
 
     // 4) vincula à sessão de caixa ATACADO aberta desse funcionário (entra no fechamento)
