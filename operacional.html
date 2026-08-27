@@ -22,6 +22,10 @@
   .login{max-width:380px;margin:12vh auto;text-align:center;padding:16px}
   .login input{width:100%;padding:13px;border-radius:10px;border:2px solid #514c96;background:var(--card);color:#fff;font-size:16px;margin-bottom:10px}
   .login input:focus{outline:none;border-color:var(--mag)}
+  .pw-wrap{position:relative;margin-bottom:10px}
+  .pw-wrap input{margin:0 !important;padding-right:46px !important}
+  .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:6px;color:#9a95c9}
+  .pw-eye:hover{color:#fff}
   /* cards de pedido */
   .lista{padding:12px}
   .pcard{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
@@ -85,6 +89,7 @@
 </style>
 </head>
 <body><script>
+function verSenha(btn){var inp=btn.parentNode.querySelector("input");if(!inp)return;if(inp.type==="password"){inp.type="text";btn.textContent="🙈";btn.title="Ocultar senha";}else{inp.type="password";btn.textContent="👁";btn.title="Mostrar senha";}}
   (function(){
     if(!b13RequireLogin()) return;
     const embed=new URLSearchParams(location.search).get("embed");
@@ -223,7 +228,7 @@ function render(){
       <h2 style="margin-bottom:6px">Painel Operacional</h2>
       <p class="muted" style="margin-bottom:16px">Entre com sua senha pessoal</p>
       <input id="loginInp" placeholder="Seu login (usuário)" style="margin-bottom:8px" onkeydown="if(event.key==='Enter')login()">
-      <input id="pwInp" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')login()">
+      <div class="pw-wrap"><input id="pwInp" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')login()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
       <button class="btn btn-mag" style="width:100%" onclick="login()">Entrar</button>
       <div id="pwErr" class="muted" style="margin-top:8px"></div>
     </div>`; return;

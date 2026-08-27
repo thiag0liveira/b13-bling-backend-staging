@@ -100,6 +100,7 @@
 
 <!-- Biblioteca de leitura de QR (html5-qrcode) - carregada só quando precisa -->
 <script>
+function verSenha(btn){var inp=btn.parentNode.querySelector("input");if(!inp)return;if(inp.type==="password"){inp.type="text";btn.textContent="🙈";btn.title="Ocultar senha";}else{inp.type="password";btn.textContent="👁";btn.title="Mostrar senha";}}
 /* ================= B13 MOBILE — CONFERENCIA =================
    Escrito em JS compativel com Chrome 79 (sem ?. sem ?? sem features novas).
 */
@@ -190,7 +191,7 @@ function viewLogin() {
     '<h2>Entrar</h2>' +
     '<div class="muted mt">Acesso à conferência mobile.</div>' +
     '<div class="mt"><div class="lbl">Login</div><input id="inLogin" autocapitalize="off" autocomplete="off"></div>' +
-    '<div class="mt"><div class="lbl">Senha</div><input id="inSenha" type="password" autocomplete="off"></div>' +
+    '<div class="mt"><div class="lbl">Senha</div><div style="position:relative"><input id="inSenha" type="password" autocomplete="off" style="padding-right:44px"><button type="button" onclick="verSenha(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:4px;color:#9a95c9">👁</button></div></div>' +
     '<button class="btn btn-mag" onclick="fazerLogin()">Entrar</button>' +
     '<div id="loginMsg" class="mt center err"></div>' +
     '</div>';

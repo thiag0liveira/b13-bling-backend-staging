@@ -39,12 +39,17 @@
   /* login */
   .login-wrap{max-width:380px;margin:12vh auto;text-align:center;padding:16px}
   .login-wrap input{width:100%;padding:13px;border-radius:10px;border:2px solid #514c96;background:var(--card);color:#fff;font-size:16px;margin-bottom:10px}
+  .pw-wrap{position:relative;margin-bottom:10px}
+  .pw-wrap input{margin:0 !important;padding-right:46px !important}
+  .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:6px;color:#9a95c9}
+  .pw-eye:hover{color:#fff}
   .err{background:#3a2030;color:#ffbfce;border-radius:8px;padding:8px 12px;font-size:13px;}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
+function verSenha(btn){var inp=btn.parentNode.querySelector("input");if(!inp)return;if(inp.type==="password"){inp.type="text";btn.textContent="🙈";btn.title="Ocultar senha";}else{inp.type="password";btn.textContent="👁";btn.title="Mostrar senha";}}
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
 const AGUARDANDO=818795, EM_SEP=817963, VERIFICADO=24, PENDENCIAS=819227;
@@ -107,7 +112,7 @@ function render(){
       <h2 style="margin-bottom:6px">Gerenciamento</h2>
       <p class="muted" style="margin-bottom:16px">Acesso para gerentes e administradores</p>
       <input id="loginInp" placeholder="Login" style="margin-bottom:8px" onkeydown="if(event.key==='Enter')login()">
-      <input id="pwInp" type="password" placeholder="Senha" onkeydown="if(event.key==='Enter')login()">
+      <div class="pw-wrap"><input id="pwInp" type="password" placeholder="Senha" onkeydown="if(event.key==='Enter')login()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
       <button class="btn btn-mag" style="width:100%" onclick="login()">Entrar</button>
       <div id="pwErr" class="muted" style="margin-top:8px"></div>
     </div>`; return;
