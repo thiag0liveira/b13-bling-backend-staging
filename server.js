@@ -3601,27 +3601,25 @@ async function moverPedidoParaAtendido(pedidoId){
   let sitAtual=await lerSit();
   if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"]};
 
-  // tentativa 1: direto pra ATENDIDO
-  try{ await patch(SIT.ATENDIDO); caminho.push("→ Atendido"); }catch(e){ caminho.push("falhou direto: "+e.message); }
-  await sleep(400);
+  // REGRA DO NEGÓCIO: o pedido NÃO pode pular direto pra Atendido — tem que caminhar
+  // SEPARADO -> ATENDIDO. Então sempre garantimos o Separado antes.
+  if(sitAtual!==SIT.SEPARADO){
+    try{ await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500); }
+    catch(e){ caminho.push("falhou → Separado: "+e.message); }
+    let s=await lerSit();
+    // se o Bling não deixou ir direto pra Separado, passa por Em separação antes
+    if(s!==SIT.SEPARADO){
+      try{
+        await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(500);
+        await patch(SIT.SEPARADO); caminho.push("→ Separado (após Em separação)"); await sleep(500);
+      }catch(e){ caminho.push("falhou cascata Separado: "+e.message); }
+    }
+  }
+
+  // agora Separado -> Atendido
+  try{ await patch(SIT.ATENDIDO); caminho.push("→ Atendido (após Separado)"); await sleep(400); }
+  catch(e){ caminho.push("falhou → Atendido: "+e.message); }
   let novo=await lerSit();
-  if(novo===SIT.ATENDIDO) return {ok:true, situacaoFinal:novo, caminho};
-
-  // tentativa 2: cascata — passa por SEPARADO e depois ATENDIDO
-  try{
-    if(novo!==SIT.SEPARADO){ await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500); }
-    await patch(SIT.ATENDIDO); caminho.push("→ Atendido (após Separado)"); await sleep(400);
-  }catch(e){ caminho.push("falhou cascata: "+e.message); }
-  novo=await lerSit();
-  if(novo===SIT.ATENDIDO) return {ok:true, situacaoFinal:novo, caminho};
-
-  // tentativa 3: cascata completa — EM_SEP -> SEPARADO -> ATENDIDO
-  try{
-    await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(500);
-    await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500);
-    await patch(SIT.ATENDIDO); caminho.push("→ Atendido (cascata completa)"); await sleep(400);
-  }catch(e){ caminho.push("falhou cascata completa: "+e.message); }
-  novo=await lerSit();
   return {ok:novo===SIT.ATENDIDO, situacaoFinal:novo, caminho};
 }
 
