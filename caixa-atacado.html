@@ -402,38 +402,54 @@ async function abrirPedido(id){
 }
 
 // ---- reabrir pedido JÁ FINALIZADO pra corrigir a forma de pagamento (só com QR de gerente/admin) ----
-function pedirAutorizacaoReabrir(id,numero){
+// ---- prompt reutilizável de QR de autorização (gerente/financeiro/admin) ----
+function pedirQrAcao(titulo, texto, onConfirm){
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
-      <h3>🔓 Reabrir pedido #${esc(numero)}</h3>
-      <p class="muted" style="margin-bottom:8px">Reabrir um pedido já finalizado pra corrigir a forma de pagamento precisa da autorização de um gerente, financeiro ou admin. Leia o QR do caixa (ou cole o código).</p>
+      <h3>${titulo}</h3>
+      <p class="muted" style="margin-bottom:8px">${texto}</p>
       <div class="muted" style="margin-bottom:4px">QR de autorização</div>
-      <input id="qrReabrir" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
+      <input id="qrAcao" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
         autocomplete="new-password" name="qr_${Date.now()}" autocorrect="off" autocapitalize="off" spellcheck="false"
         data-lpignore="true" data-1p-ignore data-form-type="other" autofocus>
-      <div id="qrErroReabrir"></div>
+      <div id="qrErroAcao"></div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn" style="flex:1" onclick="confirmarReabrir(${id},'${esc(numero)}')">Reabrir</button>
+        <button class="btn" style="flex:1" id="btnQrAcao">Confirmar</button>
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
-  setTimeout(()=>{ const t=document.getElementById("qrReabrir"); if(t) t.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ev.preventDefault();confirmarReabrir(id,numero);} }); },50);
+  const go=async()=>{
+    const campo=document.getElementById("qrAcao");
+    const tokenQr=(campo?.value||"").trim();
+    const erroEl=document.getElementById("qrErroAcao");
+    if(!tokenQr){ if(erroEl) erroEl.innerHTML=`<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
+    await onConfirm(tokenQr, campo, erroEl);
+  };
+  setTimeout(()=>{
+    const t=document.getElementById("qrAcao");
+    if(t) t.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); go(); } });
+    const b=document.getElementById("btnQrAcao");
+    if(b) b.onclick=go;
+  },50);
 }
-async function confirmarReabrir(id,numero){
-  const campo=document.getElementById("qrReabrir");
-  const tokenQr=(campo?.value||"").trim();
-  const erroEl=document.getElementById("qrErroReabrir");
-  if(!tokenQr){ erroEl.innerHTML=`<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
-  try{
-    const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tokenQr})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    // guarda o token só em memória pra reusar no salvamento; limpa o campo na hora
-    TOKEN_EDICAO=tokenQr; AUTORIZADO_POR=r.autorizadoPor||"";
-    if(campo) campo.value="";
-    fecharModais();
-    await abrirPedidoParaEdicao(id);
-  }catch(e){ if(campo) campo.value=""; erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+
+// ---- reabrir pedido finalizado: QR no INÍCIO (só abre com autorização) ----
+function pedirAutorizacaoReabrir(id,numero){
+  pedirQrAcao(
+    `🔓 Reabrir pedido #${esc(numero)}`,
+    "Reabrir um pedido já finalizado precisa da autorização de um gerente, financeiro ou admin. Leia o QR do caixa (ou cole o código).",
+    async (tokenQr, campo, erroEl)=>{
+      try{
+        const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({tokenQr})}).then(r=>r.json());
+        if(r.erro) throw new Error(r.erro);
+        AUTORIZADO_POR=r.autorizadoPor||"";
+        if(campo) campo.value="";
+        fecharModais();
+        await abrirPedidoParaEdicao(id);
+      }catch(e){ if(campo) campo.value=""; if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+    }
+  );
 }
 async function abrirPedidoParaEdicao(id){
   try{
@@ -450,39 +466,70 @@ async function abrirPedidoParaEdicao(id){
     MODO_EDICAO_PAGAMENTO=true;
     window._filtroPed="";
     render();
-  }catch(e){ alert("Não foi possível abrir o pedido pra edição: "+e.message); MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; }
+  }catch(e){ alert("Não foi possível abrir o pedido pra edição: "+e.message); MODO_EDICAO_PAGAMENTO=false; }
 }
-async function salvarEdicaoPagamento(){
-  const btn=document.getElementById("btnFinalizar");
+// ---- salvar novo pagamento: QR de novo no FINAL ----
+function salvarEdicaoPagamento(){
   const msg=document.getElementById("msgFinalizar");
-  if(!TOKEN_EDICAO){ if(msg) msg.innerHTML=`<div class="err">Autorização perdida. Feche e reabra o pedido com o QR.</div>`; return; }
   const linhas=PAGAMENTOS.filter(p=>p.formaId&&Number(p.valor)>0);
   if(!linhas.length){ if(msg) msg.innerHTML=`<div class="err">Informe ao menos uma forma de pagamento.</div>`; return; }
   const total=totalPedido();
   const soma=linhas.reduce((s,p)=>s+Number(p.valor),0);
   if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
-  if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
   const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
-  try{
-    const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
-    const resp=await comTimeout(BACKEND+"/api/caixa-atacado/editar-pagamento",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr:TOKEN_EDICAO,funcionarioId:S.id})}).then(r=>r.json());
-    if(resp.erro) throw new Error(resp.erro);
-    TOKEN_EDICAO=""; // some com o token após usar
-    document.getElementById("modais").innerHTML=`
-      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:44px">✏️</div><h3>Pagamento alterado!</h3>
-        <div class="ok" style="text-align:left;margin-top:8px">Pedido #${esc(resp.numero||PEDIDO_ATUAL.numero)}<br>
-          <span class="muted">De:</span> ${esc(resp.de||"—")}<br>
-          <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
-          <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
-        <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
-      </div></div>`;
-  }catch(e){
-    if(btn){ btn.disabled=false; btn.textContent="💾 Salvar novo pagamento"; }
-    if(e.name==="AbortError"){ if(msg) msg.innerHTML=`<div class="err">O Bling está demorando muito. Confira no Bling se a alteração do pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi aplicada antes de tentar de novo.</div>`; }
-    else{ if(msg) msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`; }
-  }
+  pedirQrAcao(
+    `💾 Confirmar novo pagamento — #${esc(PEDIDO_ATUAL?.numero||"")}`,
+    "Pra salvar a nova forma de pagamento, leia o QR de novo (gerente, financeiro ou admin).",
+    async (tokenQr, campo, erroEl)=>{
+      try{
+        const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
+        const resp=await comTimeout(BACKEND+"/api/caixa-atacado/editar-pagamento",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr,funcionarioId:S.id})}).then(r=>r.json());
+        if(resp.erro) throw new Error(resp.erro);
+        if(campo) campo.value="";
+        document.getElementById("modais").innerHTML=`
+          <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
+            <div style="font-size:44px">✏️</div><h3>Pagamento alterado!</h3>
+            <div class="ok" style="text-align:left;margin-top:8px">Pedido #${esc(resp.numero||PEDIDO_ATUAL.numero)}<br>
+              <span class="muted">De:</span> ${esc(resp.de||"—")}<br>
+              <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
+              <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
+            <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+          </div></div>`;
+      }catch(e){
+        if(campo) campo.value="";
+        if(e.name==="AbortError"){ if(erroEl) erroEl.innerHTML=`<div class="err">O Bling está demorando muito. Confira no Bling se a alteração do pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi aplicada antes de tentar de novo.</div>`; }
+        else{ if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+      }
+    }
+  );
+}
+// ---- cancelar a venda: QR pra confirmar (o QR do início já autorizou reabrir) ----
+function cancelarVenda(){
+  pedirQrAcao(
+    `🚫 Cancelar venda — #${esc(PEDIDO_ATUAL?.numero||"")}`,
+    "Cancelar esta venda marca o pedido como CANCELADO no Bling e tira do total do caixa. Leia o QR pra confirmar (gerente, financeiro ou admin).",
+    async (tokenQr, campo, erroEl)=>{
+      try{
+        const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
+        const resp=await comTimeout(BACKEND+"/api/caixa-atacado/cancelar-venda",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,tokenQr,funcionarioId:S.id})}).then(r=>r.json());
+        if(resp.erro) throw new Error(resp.erro);
+        if(campo) campo.value="";
+        document.getElementById("modais").innerHTML=`
+          <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
+            <div style="font-size:44px">🚫</div><h3>Venda cancelada</h3>
+            <div class="ok" style="text-align:left;margin-top:8px">Pedido #${esc(resp.numero||PEDIDO_ATUAL.numero)} marcado como CANCELADO.<br>
+              <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
+            <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+          </div></div>`;
+      }catch(e){
+        if(campo) campo.value="";
+        if(e.name==="AbortError"){ if(erroEl) erroEl.innerHTML=`<div class="err">O Bling está demorando muito. Confira no Bling se o pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi cancelado antes de tentar de novo.</div>`; }
+        else{ if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+      }
+    }
+  );
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
@@ -949,12 +996,17 @@ async function abrirModalMinhasVendas(){
         <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
         <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
         ${vendas.length?vendas.map(m=>{
-          const alt=!!m.alterado;
-          const histAlt=(alt&&Array.isArray(m.alteracoes))?m.alteracoes.map(a=>`<div style="font-size:11px;color:#ff9aa2;margin-top:3px">✏️ ${esc(a.tipo==="pagamento"?"Pagamento alterado":"Alterado")}: <b>${esc(a.de||"—")}</b> → <b>${esc(a.para||"—")}</b><br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`).join(""):"";
+          const canc=!!m.cancelado;
+          const alt=!!m.alterado||canc;
+          const histAlt=(alt&&Array.isArray(m.alteracoes))?m.alteracoes.map(a=>{
+            if(a.tipo==="cancelamento") return `<div style="font-size:11px;color:#ff9aa2;margin-top:3px">🚫 <b>Venda cancelada</b>${a.motivo?" — "+esc(a.motivo):""}<br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`;
+            return `<div style="font-size:11px;color:#ff9aa2;margin-top:3px">✏️ Pagamento alterado: <b>${esc(a.de||"—")}</b> → <b>${esc(a.para||"—")}</b><br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`;
+          }).join(""):"";
+          const rot=canc?" 🚫 CANCELADA":(m.alterado?" ✏️ ALTERADO":"");
           return `
           <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;${alt?"background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;padding:8px;margin:4px 0;":""}">
             <div style="flex:1">
-              <div><b style="color:${alt?"#ff6b6b":"inherit"}">#${esc(m.numero||m.pedidoId)}${alt?" ✏️ ALTERADO":""}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+              <div><b style="color:${alt?"#ff6b6b":"inherit"};${canc?"text-decoration:line-through":""}">#${esc(m.numero||m.pedidoId)}</b><b style="color:#ff6b6b">${rot}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
               ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
               <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
               ${histAlt}
@@ -1083,6 +1135,7 @@ function render(){
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px"
           ${(!CARRINHO.length||!PAGAMENTOS.length||PAGAMENTOS.some(p=>!p.formaId))?"disabled":""}
           onclick="finalizar()">${MODO_EDICAO_PAGAMENTO?"💾 Salvar novo pagamento":"✅ Finalizar e receber"}</button>
+        ${MODO_EDICAO_PAGAMENTO?`<button class="btn btn-ghost" style="width:100%;margin-top:8px;border:1px solid #6b1f24;color:#ff9aa2" onclick="cancelarVenda()">🚫 Cancelar esta venda</button>`:""}
       </div>
     </div>
 

@@ -1935,7 +1935,7 @@ function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
 // marca um movimento de venda (em QUALQUER sessão, aberta ou fechada) como ALTERADO,
 // troca as formas de pagamento exibidas e guarda o histórico do que mudou — pra o
 // "Minhas Vendas" mostrar o pedido em vermelho com o que aconteceu.
-function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao){
+function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
   try{
     const idStr=String(pedidoId);
     const d=lerCaixaSessoes();
@@ -1944,6 +1944,7 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao){
       for(const m of (s.movimentos||[])){
         if(m.tipo==="venda" && String(m.pedidoId)===idStr){
           m.alterado=true;
+          if(opts.cancelado) m.cancelado=true;
           m.alteracoes=[...(m.alteracoes||[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
           achou=true;
@@ -1964,7 +1965,7 @@ function sessaoCaixaAberta(funcionarioId,tipoCaixa){
 // Resumo consolidado de uma sessão: soma vendas por forma, sangrias, suprimentos
 function resumoSessaoCaixa(sessao){
   const movs=sessao.movimentos||[];
-  const vendas=movs.filter(m=>m.tipo==="venda");
+  const vendas=movs.filter(m=>m.tipo==="venda" && !m.cancelado);
   const sangrias=movs.filter(m=>m.tipo==="sangria");
   const suprimentos=movs.filter(m=>m.tipo==="suprimento");
 
@@ -3172,6 +3173,47 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
 
     res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// CANCELAR uma venda JÁ FINALIZADA — só com autorização de gerente/financeiro/admin (QR).
+// Move o pedido pra CANCELADO no Bling, zera o pagamento local e marca o movimento
+// como CANCELADO no histórico do caixa (some do total, aparece em vermelho).
+app.post("/api/caixa-atacado/cancelar-venda",async(req,res)=>{
+  try{
+    const {pedidoId,tokenQr,funcionarioId,numero,motivo}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    const auth=validarTokenQrAtacado(tokenQr);
+    if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+
+    const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+
+    // move a situação pro Cancelado no Bling
+    try{
+      await bling(`/pedidos/vendas/${pedidoId}/situacoes/${CANCELADO}`,{method:"PATCH"});
+    }catch(e){ return res.status(502).json({erro:"Falha ao cancelar no Bling: "+e.message}); }
+
+    // zera/estorna o pagamento local
+    const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
+    if(antigo){
+      pags[idStr]={...antigo, statusPagamento:"cancelado", valorPago:0, canceladoEm:Date.now()};
+      salvarJSON(PAG_FILE,pags);
+    }
+
+    // marca o movimento como cancelado no histórico do caixa
+    const funcs=lerJSON(FUNC_FILE,{});
+    const alteracao={
+      em:Date.now(), tipo:"cancelamento",
+      autorizadoPor:auth.funcionario.nome,
+      por:(funcs[funcionarioId]?.nome)||"—",
+      motivo:motivo||"",
+    };
+    const achouMov=marcarMovimentoAlterado(idStr, null, alteracao, {cancelado:true});
+    addLog(idStr,"venda_cancelada_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,motivo:motivo||""});
+
+    res.json({ok:true, autorizadoPor:auth.funcionario.nome, numero:numero||ped.numero, movimentoAtualizado:achouMov});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
