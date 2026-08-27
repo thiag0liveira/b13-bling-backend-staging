@@ -16,6 +16,10 @@ h1{font-size:22px;font-weight:900;margin-bottom:4px}
 .field label{display:block;font-size:11px;font-weight:700;color:#9a95c9;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
 .field input{width:100%;padding:13px;border-radius:10px;border:2px solid var(--border);background:#0f0d24;color:#fff;font-size:15px;transition:.15s}
 .field input:focus{outline:none;border-color:var(--mag)}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:46px !important}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:6px;color:#9a95c9}
+.pw-eye:hover{color:#fff}
 .btn{width:100%;padding:14px;border-radius:10px;border:none;background:var(--mag);color:#fff;font-size:16px;font-weight:900;cursor:pointer;margin-top:6px;transition:.15s}
 .btn:hover{opacity:.9}.btn:disabled{opacity:.5}
 .err{background:#3a2030;color:#ffbfce;border-radius:8px;padding:10px 14px;font-size:13px;margin-top:12px;text-align:left}
@@ -31,7 +35,7 @@ h1{font-size:22px;font-weight:900;margin-bottom:4px}
   <h1>B13 Bebidas</h1>
   <div class="sub">Sistema Operacional</div>
   <div class="field"><label>Login</label><input id="loginInp" placeholder="seu.login" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('senhaInp').focus()"></div>
-  <div class="field"><label>Senha</label><input id="senhaInp" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()"></div>
+  <div class="field"><label>Senha</label><div class="pw-wrap"><input id="senhaInp" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div></div>
   <button class="btn" id="btnEntrar" onclick="entrar()">Entrar</button>
   <div id="errMsg"></div>
   <div class="div-or">ou</div>
@@ -41,8 +45,8 @@ h1{font-size:22px;font-weight:900;margin-bottom:4px}
   <div style="font-size:40px;margin-bottom:8px">🔑</div>
   <h1>Crie uma nova senha</h1>
   <div class="sub">Essa é sua primeira vez entrando (ou sua senha foi redefinida). Escolha uma senha nova antes de continuar.</div>
-  <div class="field"><label>Nova senha</label><input id="novaSenhaInp" type="password" placeholder="Nova senha" autocomplete="new-password" oninput="validarSenhaVisual()"></div>
-  <div class="field"><label>Confirmar nova senha</label><input id="confSenhaInp" type="password" placeholder="Repita a nova senha" autocomplete="new-password" onkeydown="if(event.key==='Enter')trocarSenha()"></div>
+  <div class="field"><label>Nova senha</label><div class="pw-wrap"><input id="novaSenhaInp" type="password" placeholder="Nova senha" autocomplete="new-password" oninput="validarSenhaVisual()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div></div>
+  <div class="field"><label>Confirmar nova senha</label><div class="pw-wrap"><input id="confSenhaInp" type="password" placeholder="Repita a nova senha" autocomplete="new-password" onkeydown="if(event.key==='Enter')trocarSenha()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div></div>
   <div id="regrasSenha" style="text-align:left;font-size:12px;color:#9a95c9;margin-bottom:10px;line-height:1.7">
     <div id="regraLen">○ Pelo menos 6 caracteres</div>
     <div id="regraMai">○ Uma letra maiúscula</div>
@@ -53,6 +57,13 @@ h1{font-size:22px;font-weight:900;margin-bottom:4px}
   <div id="errMsgTroca"></div>
 </div>
 <script>
+// mostra/oculta a senha do campo ao lado do olho, pra conferir o que foi digitado
+function verSenha(btn){
+  var inp=btn.parentNode.querySelector("input");
+  if(!inp) return;
+  if(inp.type==="password"){ inp.type="text"; btn.textContent="🙈"; btn.title="Ocultar senha"; }
+  else { inp.type="password"; btn.textContent="👁"; btn.title="Mostrar senha"; }
+}
 const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
 const LOGO="/logo";
 document.getElementById("logoImg").src=LOGO;

@@ -29,6 +29,10 @@
   .mbox h3{margin-bottom:14px}
   .mbox input,.mbox select{width:100%;padding:11px;border-radius:9px;border:1px solid #514c96;background:#0f0d24;color:#fff;font-size:14px;margin-bottom:10px}
   .mbox input:focus,.mbox select:focus{outline:none;border-color:var(--mag)}
+  .pw-wrap{position:relative;margin-bottom:10px}
+  .pw-wrap input{margin-bottom:0 !important;padding-right:44px !important}
+  .pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:6px;color:#9a95c9}
+  .pw-eye:hover{color:#fff}
   .mbox .lbl{font-size:12px;color:#9a95c9;margin-bottom:4px}
   .ok{background:#183a2a;color:#a8f0c8;border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0}
   .err{background:#3a2030;color:#ffbfce;border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0}
@@ -49,6 +53,13 @@
 </style>
 </head>
 <body><script>
+  // mostra/oculta a senha do campo ao lado do olho, pra conferir o que foi digitado
+  function verSenha(btn){
+    var inp=btn.parentNode.querySelector("input");
+    if(!inp) return;
+    if(inp.type==="password"){ inp.type="text"; btn.textContent="🙈"; btn.title="Ocultar senha"; }
+    else { inp.type="password"; btn.textContent="👁"; btn.title="Mostrar senha"; }
+  }
   (function(){
     if(!b13RequireLogin()) return;
     document.addEventListener("DOMContentLoaded",function(){
@@ -90,7 +101,7 @@ function render(){
     app.innerHTML=top+`<div class="login-wrap">
       <div style="font-size:48px;margin-bottom:10px">👥</div>
       <h2 style="margin-bottom:16px">Acesso Administrativo</h2>
-      <input id="pwInp" type="password" placeholder="Senha admin" onkeydown="if(event.key==='Enter')login()">
+      <div class="pw-wrap"><input id="pwInp" type="password" placeholder="Senha admin" onkeydown="if(event.key==='Enter')login()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
       <button class="btn btn-mag" style="width:100%" onclick="login()">Entrar</button>
       <div id="pwErr" class="muted" style="margin-top:8px"></div>
     </div>`; return;
@@ -229,7 +240,7 @@ function abrirNovo(){
   document.getElementById("mbox").innerHTML=`<h3>Novo Funcionário</h3>
     <div class="lbl">Nome</div><input id="fNome" placeholder="Nome completo">
     <div class="lbl">Login (usuário de acesso)</div><input id="fLogin" placeholder="Ex.: joao.silva">
-    <div class="lbl">Senha inicial</div><input id="fSenha" type="password" value="12345">
+    <div class="lbl">Senha inicial</div><div class="pw-wrap"><input id="fSenha" type="password" value="12345"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
     <div class="muted" style="font-size:11px;margin:-6px 0 10px">Senha padrão sugerida: <b>12345</b>. O funcionário será obrigado a criar uma senha própria (maiúscula, minúscula e número) no primeiro acesso.</div>
     ${htmlPermsBlock([])}
     <div class="lbl">Nível (referência)</div>
@@ -300,7 +311,7 @@ function abrirEditar(id){
   document.getElementById("mbox").innerHTML=`<h3>Editar — ${esc(f.nome)}</h3>
     <div class="lbl">Nome</div><input id="fNome" value="${esc(f.nome)}">
     <div class="lbl">Login</div><input id="fLogin" value="${esc(f.login||f.id)}">
-    <div class="lbl">Nova senha (deixe em branco pra manter)</div><input id="fSenha" type="password" placeholder="Nova senha (opcional)">
+    <div class="lbl">Nova senha (deixe em branco pra manter)</div><div class="pw-wrap"><input id="fSenha" type="password" placeholder="Nova senha (opcional)"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
     <div style="margin:-6px 0 10px">
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="resetarSenhaPadrao('${id}')">🔄 Resetar p/ senha padrão (12345)</button>
       ${f.precisaTrocarSenha?'<span class="badge" style="background:#3a2a00;color:#ffd23f;margin-left:6px">🔑 Aguardando troca no próximo login</span>':''}
