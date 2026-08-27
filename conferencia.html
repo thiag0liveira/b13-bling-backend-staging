@@ -190,12 +190,27 @@ async function carregar(silencioso){
   try{
     const sits=[SIT.SEPARADO||821590].filter(Boolean).join(",");
     const url=BACKEND+`/api/pedidos?limite=100&idsSituacoes=${sits}&dataInicial=${periodoIni||calcP("30dias").ini}&dataFinal=${periodoFim||calcP("30dias").fim}`;
-    const r=await fetch(url);
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(),35000);
+    let r;
+    try{ r=await fetch(url,{signal:ctrl.signal}); }
+    finally{ clearTimeout(to); }
     const j=await r.json();
     pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO");
     render();
   }catch(e){
-    if(!silencioso) document.getElementById("app").innerHTML=`<div class="err" style="padding:20px">Erro ao carregar pedidos: ${e.message}</div>`;
+    if(!silencioso){
+      const lento=e.name==="AbortError";
+      const msg=lento
+        ? "A lista está demorando mais que o normal — o Bling pode estar sobrecarregado no momento."
+        : "Erro ao carregar pedidos: "+e.message;
+      document.getElementById("app").innerHTML=`<div style="text-align:center;padding:34px 16px;color:var(--muted)">
+        <div style="font-size:30px;margin-bottom:10px">${lento?"⏳":"⚠️"}</div>
+        <div style="font-size:13px;margin-bottom:16px;line-height:1.5">${msg}</div>
+        <button class="btn btn-mag" onclick="carregar()">↻ Tentar de novo</button>
+        <div class="muted" style="font-size:11px;margin-top:12px">Vou tentar sozinho de novo em alguns segundos.</div>
+      </div>`;
+    }
   }
   // fica "escutando" — atualiza a fila sozinha a cada 30s, sem perder o pedido aberto
   if(_confTimer) clearTimeout(_confTimer);
