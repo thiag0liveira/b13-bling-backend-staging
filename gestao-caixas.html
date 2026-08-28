@@ -380,6 +380,14 @@ window.imprimirRelatorioCaixa=async function(id){
     if(j.erro) throw new Error(j.erro);
     const se=j.sessao||{}, r=j.resumo||{}, fe=j.fechamento, confs=j.conferencias||[];
     const vendas=(j.movimentos||[]).filter(m=>m.tipo==="venda");
+    const sangrias=(j.movimentos||[]).filter(m=>m.tipo==="sangria").sort((a,b)=>b.em-a.em);
+    const suprimentos=(j.movimentos||[]).filter(m=>m.tipo==="suprimento").sort((a,b)=>b.em-a.em);
+    const listaMov=(arr,titulo)=>arr.length?`
+      <h3>${titulo} (${arr.length})</h3>
+      ${arr.map(m=>`<div class="mv">
+        <div class="mv1">${hora(m.em)}${m.operador&&m.operador!=="—"?" · "+esc(m.operador):""}</div>
+        <div class="mv2"><span>${esc(m.motivo||"(sem motivo)")}</span><b>${brl(m.valor)}</b></div>
+      </div>`).join("")}` : "";
     const tipo=(se.tipoCaixa==="atacado")?"Atacado":"Frente";
     const linha=(rot,val,cor)=>`<tr><td>${esc(rot)}</td><td class="v"${cor?` style="color:${cor}"`:""}>${val}</td></tr>`;
     const pf=(r.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
@@ -441,6 +449,8 @@ window.imprimirRelatorioCaixa=async function(id){
         ${fe?linha("Diferença", brl(fe.diferenca), Math.abs(fe.diferenca||0)<0.01?"#0a0":"#c00"):""}
         ${fe&&fe.observacao?linha("Obs. fechamento", esc(fe.observacao)):""}
       </table>
+      ${listaMov(suprimentos,"Suprimentos")}
+      ${listaMov(sangrias,"Sangrias")}
       ${confHtml}
       ${vendasHtml}
       <div class="foot">Emitido em ${new Date().toLocaleString("pt-BR")}</div>
