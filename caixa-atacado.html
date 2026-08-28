@@ -144,6 +144,17 @@ function taxaCartao(){
   return +(valorEmCredito()*0.035).toFixed(2);
 }
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+taxaCartao()).toFixed(2); }
+// monta a nota que vai pra observação do Bling dizendo quanto foi PIX Banco e quanto
+// foi PIX da maquininha (no Bling a forma é a mesma: PIX).
+function notaPix(pags){
+  const arr=Array.isArray(pags)?pags:PAGAMENTOS;
+  const soma=(re)=>arr.filter(p=>/pix/i.test(p.formaNome||"")&&re.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+  const banco=soma(/banco/i), maq=soma(/m[aá]quin/i);
+  const partes=[];
+  if(banco>0.009) partes.push("PIX Banco: "+brl(banco));
+  if(maq>0.009) partes.push("PIX da maquininha: "+brl(maq));
+  return partes.join(" · ");
+}
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
 
@@ -1108,7 +1119,7 @@ function render(){
         <h3>💳 Pagamento</h3>
         <div class="formas">${FORMAS.map(f=>{
           const nome=f.descricao||f.nome||("Forma "+f.id);
-          const qtd=PAGAMENTOS.filter(p=>String(p.formaId)===String(f.id)).length;
+          const qtd=PAGAMENTOS.filter(p=>p.formaNome===nome).length;
           return `<div class="forma ${qtd?"sel":""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g,"\\'")}')">${esc(nome)}${qtd>1?` <b style="color:#ffd23f">×${qtd}</b>`:""}</div>`;
         }).join("")}</div>
         <div class="muted" style="font-size:12px;margin:6px 0 2px">Toque na forma para adicionar. Pode repetir a mesma forma (ex.: 2 PIX).</div>
@@ -1176,8 +1187,10 @@ async function finalizar(){
   if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
-  const observacao=(document.getElementById("obsVenda")?.value||"").trim();
+  const observacaoUsuario=(document.getElementById("obsVenda")?.value||"").trim();
   const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
+  // acrescenta na observação do Bling qual PIX foi (banco/maquininha), se houver
+  const observacao=[observacaoUsuario, notaPix(pagamentos)].filter(Boolean).join(" · ");
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
   // Regra de status final no Bling:
   //  - ATENDIDO: só quando a venda foi CRIADA no caixa (venda nova) E toda no modo VAREJO
@@ -1252,7 +1265,17 @@ async function finalizar(){
     // mesma lógica do Frente de Caixa: mostra pix, dinheiro, débito e crédito à vista;
     // as outras formas (ficha, estorno, etc) ficam escondidas. Se nada casar, mostra todas.
     const padroes=[/pix/i,/dinheiro/i,/d[eé]bito/i,/cr[eé]dito.*vista/i];
-    FORMAS=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||""))&&!/pix.*bling.*conta/i.test(f.descricao||f.nome||""));
+    const filtradas=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||""))&&!/pix.*bling.*conta/i.test(f.descricao||f.nome||""));
+    // PIX vira DUAS opções: "Pix Banco" e "Pix Máquina" — ambas usam o MESMO id do PIX
+    // no Bling (lá grava como PIX); a diferença (banco/maquininha) vai na observação.
+    const pixReal=filtradas.find(f=>/pix/i.test(f.descricao||f.nome||""));
+    const semPix=filtradas.filter(f=>!/pix/i.test(f.descricao||f.nome||""));
+    FORMAS=[];
+    if(pixReal){
+      FORMAS.push({id:pixReal.id, nome:"Pix Banco", pixTipo:"banco"});
+      FORMAS.push({id:pixReal.id, nome:"Pix Máquina", pixTipo:"maquina"});
+    }
+    FORMAS=FORMAS.concat(semPix);
     if(!FORMAS.length) FORMAS=todas;
   }catch(e){ FORMAS=[]; }
   render();
