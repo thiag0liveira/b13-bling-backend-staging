@@ -94,6 +94,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <div class="sp"></div>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
+  <button class="btn btn-ghost btn-sm" onclick="imprimirPorNumero()">🔢 Imprimir por nº do pedido</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalCaixasAbertos()">🏪 Caixas Abertos</button>
@@ -820,6 +821,52 @@ function imprimirComprovante(v){
 }
 
 // desenha o comprovante no canvas (mesmo layout do totem, adaptado pra venda paga)
+// ---- IMPRIMIR SÓ (não abre pra editar): digita o nº do pedido e imprime a nota ----
+function imprimirPorNumero(){
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🔢 Imprimir por nº do pedido</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Digite o número do pedido pra imprimir a nota. Esta opção é só pra imprimir — não abre o pedido pra editar.</p>
+      <input id="numImprimir" inputmode="numeric" placeholder="Número do pedido" autofocus>
+      <div id="numImprimirErro"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" id="btnImprimirNum" onclick="confirmarImprimirNumero()">🖨️ Imprimir</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+  setTimeout(()=>{ const t=document.getElementById("numImprimir"); if(t) t.addEventListener("keydown",ev=>{ if(ev.key==="Enter"){ev.preventDefault();confirmarImprimirNumero();} }); },50);
+}
+async function confirmarImprimirNumero(){
+  const campo=document.getElementById("numImprimir");
+  const numero=(campo?.value||"").trim();
+  const erroEl=document.getElementById("numImprimirErro");
+  const btn=document.getElementById("btnImprimirNum");
+  if(!numero){ if(erroEl) erroEl.innerHTML=`<div class="err">Digite o número do pedido.</div>`; return; }
+  if(btn){ btn.disabled=true; btn.textContent="Buscando…"; }
+  try{
+    // 1) resolve número -> id
+    const b=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(numero)).then(r=>r.json());
+    if(b.erro) throw new Error(b.erro);
+    if(!b.achou) throw new Error("Pedido #"+numero+" não encontrado no Bling.");
+    // 2) carrega o detalhe (itens, total, pagamentos)
+    const j=await fetch(BACKEND+"/api/caixa-atacado/pedido/"+b.id).then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    // 3) monta o comprovante e imprime (SEM abrir pra editar)
+    const v={
+      numero:j.numero||numero, pedidoId:j.id,
+      total:Number(j.total||0), desconto:Number(j.desconto||0),
+      outrasDespesas:Number(j.outrasDespesas||0),
+      itens:(j.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
+      pagamentos:(j.pagamentos||[]).map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor||0)})),
+      cliente:{nome:j.clienteNome||"Consumidor Final"}, dataHora:Date.now(), nfce:null, observacao:j.observacao||"",
+    };
+    fecharModais();
+    imprimirComprovante(v);
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent="🖨️ Imprimir"; }
+    if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+  }
+}
 function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const itensArr=(v.itens||[]);
   const itemH=54, headerH=136, qrSize=210;

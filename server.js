@@ -3588,6 +3588,15 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
     // nome do vendedor que criou o pedido e nome legível do status
     let vendedorNome="Sem vendedor";
     try{ if(d.vendedor?.id) vendedorNome=await nomeVendedor(d.vendedor.id); }catch(e){}
+    // pagamentos pro comprovante: usa o histórico local (tem os nomes certos, ex.: "Pix Banco Inter");
+    // se não houver, cai pras parcelas do Bling.
+    const pagsLocais=lerPag(); const regLocal=pagsLocais[String(d.id)];
+    let pagamentos=[];
+    if(regLocal && Array.isArray(regLocal.historico) && regLocal.historico.length){
+      pagamentos=regLocal.historico.map(h=>({formaNome:h.formaNome||"",valor:Number(h.valor||0)}));
+    }else{
+      pagamentos=(d.parcelas||[]).map(p=>({formaNome:p.formaPagamento?.nome||"",valor:Number(p.valor||0)}));
+    }
     res.json({
       id:d.id, numero:d.numero, situacaoId,
       situacaoNome:nomeSituacaoFechamento(situacaoId),
@@ -3595,6 +3604,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
       outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
+      pagamentos, observacao:d.observacoes||"",
       itens,
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
