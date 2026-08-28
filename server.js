@@ -947,7 +947,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       data:ped.data,
       contato:{id:ped.contato?.id},
       itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
-      observacoes:ped.observacoes||"",
+      observacoes:[String(ped.observacoes||"").trim(), String(opts.obsExtra||"").trim()].filter(Boolean).join("\n"),
       parcelas:parcelasFinais.filter(p=>(Number(p.valor)||0)>0).map(p=>({
         formaPagamento:{id:p.formaId}, dataVencimento:ped.data, valor:+Number(p.valor).toFixed(2),
       })),
@@ -3200,7 +3200,11 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
 
     // troca as parcelas no Bling (substitui). atualizarParcelasBling sabe destravar
     // o SEPARADO (via Em Digitação), editar e restaurar a situação.
-    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {});
+    const funcsNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const descDepoisPre=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
+    const notaObs=`[Alteração ${quando} — ${funcsNome}, autoriz. ${auth.funcionario.nome}] Pagamento: ${descAntes} -> ${descDepoisPre}`;
+    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
     if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
 
     // atualiza registro local de pagamento (mantém pago)
