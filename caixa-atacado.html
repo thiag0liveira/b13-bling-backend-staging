@@ -93,7 +93,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <button id="pillModo" class="pill" onclick="alternarModoPreco()" style="cursor:pointer;background:#1a2a44;color:#7fd4ff" title="Toque pra alternar entre preço de atacado e varejo">🏷️ Atacado</button>
   <div class="sp"></div>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
-  <button class="btn btn-ghost btn-sm" onclick="reimprimirUltima()">🖨️ Reimprimir última venda</button>
+  <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirPorNumero()">🔢 Imprimir por nº do pedido</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
@@ -822,11 +822,6 @@ function imprimirComprovante(v){
 
 // desenha o comprovante no canvas (mesmo layout do totem, adaptado pra venda paga)
 // ---- IMPRIMIR SÓ (não abre pra editar): digita o nº do pedido e imprime a nota ----
-// Reimprimir: se já tem última venda, imprime; se não, abre a busca por número.
-function reimprimirUltima(){
-  if(ULTIMA_VENDA){ imprimirComprovante(ULTIMA_VENDA); return; }
-  imprimirPorNumero();
-}
 function imprimirPorNumero(){
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
