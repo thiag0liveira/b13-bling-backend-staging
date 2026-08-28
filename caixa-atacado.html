@@ -153,34 +153,54 @@ function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+taxaCartao()).toFixe
 function totalPixForma(porForma){ return (porForma||[]).filter(f=>/pix/i.test(f.nome||"")).reduce((s,f)=>s+(Number(f.valor)||0),0); }
 function notaPix(pags){
   const arr=Array.isArray(pags)?pags:PAGAMENTOS;
-  const soma=(re)=>arr.filter(p=>/pix/i.test(p.formaNome||"")&&re.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
-  const banco=soma(/banco/i), maq=soma(/m[aá]quin/i);
   const partes=[];
-  if(banco>0.009){ partes.push("PIX Banco"+(BANCO_PIX_ESCOLHIDO?(" "+BANCO_PIX_ESCOLHIDO):"")+": "+brl(banco)); }
+  // agrupa PIX Banco por banco (usa p.banco, ou extrai do nome "Pix Banco <Banco>")
+  const porBanco={};
+  arr.forEach(p=>{
+    const n=p.formaNome||"";
+    if(/pix/i.test(n)&&/banco/i.test(n)){
+      const banco=(p.banco||n.replace(/.*banco\s*/i,"").trim()||"");
+      porBanco[banco]=(porBanco[banco]||0)+(Number(p.valor)||0);
+    }
+  });
+  Object.entries(porBanco).forEach(([b,v])=>{ if(v>0.009) partes.push("PIX Banco"+(b?(" "+b):"")+": "+brl(v)); });
+  const maq=arr.filter(p=>/pix/i.test(p.formaNome||"")&&/m[aá]quin/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
   if(maq>0.009) partes.push("PIX da maquininha: "+brl(maq));
   return partes.join(" · ");
 }
 // pergunta qual banco recebeu o PIX (padrão pré-selecionado); ao confirmar, finaliza
-function perguntarBancoPix(){
+function perguntarBancosPix(){
   const bancos=(PIX_BANCOS.bancos&&PIX_BANCOS.bancos.length)?PIX_BANCOS.bancos:["Inter","Santander","Itaú"];
   const pad=(PIX_BANCOS.padrao&&bancos.includes(PIX_BANCOS.padrao))?PIX_BANCOS.padrao:bancos[0];
+  // lista as linhas Pix Banco (com o índice real em PAGAMENTOS)
+  const linhas=PAGAMENTOS.map((p,i)=>({p,i})).filter(x=>/pix/i.test(x.p.formaNome||"")&&/banco/i.test(x.p.formaNome||""));
+  const varios=linhas.length>1;
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>🏦 PIX Banco — qual banco?</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:10px">Selecione o banco que recebeu o PIX.</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        ${bancos.map(b=>`<label class="forma" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
-          <input type="radio" name="bancoPix" value="${esc(b)}" ${b===pad?"checked":""}> <span>${esc(b)}</span></label>`).join("")}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn" style="flex:1" onclick="confirmarBancoPix()">Confirmar e finalizar</button>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">${varios?"Escolha o banco de cada PIX Banco.":"Selecione o banco que recebeu o PIX."}</div>
+      ${linhas.map((x,k)=>`
+        <div style="border:1px solid #2a2660;border-radius:10px;padding:10px;margin-bottom:8px">
+          <div style="font-weight:700;margin-bottom:6px">PIX Banco${varios?(" #"+(k+1)):""} — ${brl(x.p.valor)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            ${bancos.map(b=>`<label class="forma" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;padding:6px 10px">
+              <input type="radio" name="bancoPix_${x.i}" value="${esc(b)}" ${b===(x.p.banco||pad)?"checked":""}> <span>${esc(b)}</span></label>`).join("")}
+          </div>
+        </div>`).join("")}
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn" style="flex:1" onclick="confirmarBancosPix()">Confirmar e finalizar</button>
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
 }
-function confirmarBancoPix(){
-  const sel=document.querySelector('input[name="bancoPix"]:checked');
-  BANCO_PIX_ESCOLHIDO = sel ? sel.value : (PIX_BANCOS.padrao||"Inter");
+function confirmarBancosPix(){
+  // aplica o banco escolhido em cada linha Pix Banco
+  PAGAMENTOS.forEach((p,i)=>{
+    if(/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||"")){
+      const sel=document.querySelector(`input[name="bancoPix_${i}"]:checked`);
+      p.banco = sel ? sel.value : (PIX_BANCOS.padrao||"Inter");
+    }
+  });
   fecharModais();
   finalizar();
 }
@@ -1263,16 +1283,16 @@ async function finalizar(){
   const total=totalPedido();
   const soma=linhas.reduce((s,p)=>s+Number(p.valor),0);
   if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
-  // se pagou com "Pix Banco", pergunta qual banco antes de finalizar
-  const temPixBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||""));
-  if(temPixBanco && !BANCO_PIX_ESCOLHIDO){ perguntarBancoPix(); return; }
+  // se pagou com "Pix Banco", pergunta o banco de CADA Pix Banco antes de finalizar
+  const pixBancoSemBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||"")&&!p.banco);
+  if(pixBancoSemBanco){ perguntarBancosPix(); return; }
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
   const observacaoUsuario=(document.getElementById("obsVenda")?.value||"").trim();
   const pagamentos=linhas.map(p=>{
     let nome=p.formaNome;
-    // Pix Banco vira "Pix Banco <Banco>" (ex.: "Pix Banco Inter") pra separar por banco nos resumos
-    if(/pix/i.test(nome||"")&&/banco/i.test(nome||"")&&BANCO_PIX_ESCOLHIDO) nome="Pix Banco "+BANCO_PIX_ESCOLHIDO;
+    // cada Pix Banco vira "Pix Banco <Banco>" com o banco escolhido pra AQUELA linha
+    if(/pix/i.test(nome||"")&&/banco/i.test(nome||"")) nome="Pix Banco "+(p.banco||PIX_BANCOS.padrao||"Inter");
     return {formaId:p.formaId,formaNome:nome,valor:Number(p.valor)};
   });
   // acrescenta na observação do Bling qual PIX foi (banco/maquininha), se houver
