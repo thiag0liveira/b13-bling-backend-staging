@@ -111,6 +111,8 @@ window.carregarAbertos=async function(){
           <div class="muted" style="font-size:12px">🕐 Aberto desde ${hora(s.abertaEm)}</div>
         </div>
         <div class="linha" style="margin-top:8px"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
+        ${Number(s.resumo.totalSuprimentos)>0?`<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>`:""}
+        <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
         <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
         ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
           <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
@@ -132,6 +134,8 @@ window.carregarHistorico=async function(){
         <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")} ${tagTipo(s.tipoCaixa)}</div>
         <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
         ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
+        ${Number(s.resumo.totalSuprimentos)>0?`<div class="linha" style="font-size:12px"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>`:""}
+        <div class="linha" style="font-size:12px"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
         <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
         <div class="linha"><span>Diferença</span>
@@ -170,6 +174,8 @@ window.verMovimentos=async function(id){
               <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
               ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
             </div>`:""}
+            ${Number(j.resumo?.totalSuprimentos)>0?`<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(j.resumo.totalSuprimentos)}</b></div>`:""}
+            <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(j.resumo?.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(j.resumo?.totalSangrias)}</b></div>
             <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
             ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
             <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?'#8fffc0':(j.fechamento.diferenca>0?'#ffd23f':'#ff8090')}">${brl(j.fechamento.diferenca)}</b></div>`:""}
