@@ -124,6 +124,8 @@ let MODO_PRECO="atacado";      // 'atacado' (padrão) ou 'varejo' (preço do Bli
 let MODO_EDICAO_PAGAMENTO=false; // true = editando o pagamento de um pedido já finalizado (com QR de gerente/admin)
 let TOKEN_EDICAO="";             // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR="";           // nome de quem autorizou (só pra exibir)
+let PIX_BANCOS={bancos:["Inter","Santander","Itaú"],padrao:"Inter"}; // editável na Gestão
+let BANCO_PIX_ESCOLHIDO="";       // banco escolhido ao finalizar um PIX Banco
 let _timerBusca=null;
 
 function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -151,9 +153,33 @@ function notaPix(pags){
   const soma=(re)=>arr.filter(p=>/pix/i.test(p.formaNome||"")&&re.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
   const banco=soma(/banco/i), maq=soma(/m[aá]quin/i);
   const partes=[];
-  if(banco>0.009) partes.push("PIX Banco: "+brl(banco));
+  if(banco>0.009){ partes.push("PIX Banco"+(BANCO_PIX_ESCOLHIDO?(" "+BANCO_PIX_ESCOLHIDO):"")+": "+brl(banco)); }
   if(maq>0.009) partes.push("PIX da maquininha: "+brl(maq));
   return partes.join(" · ");
+}
+// pergunta qual banco recebeu o PIX (padrão pré-selecionado); ao confirmar, finaliza
+function perguntarBancoPix(){
+  const bancos=(PIX_BANCOS.bancos&&PIX_BANCOS.bancos.length)?PIX_BANCOS.bancos:["Inter","Santander","Itaú"];
+  const pad=(PIX_BANCOS.padrao&&bancos.includes(PIX_BANCOS.padrao))?PIX_BANCOS.padrao:bancos[0];
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🏦 PIX Banco — qual banco?</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">Selecione o banco que recebeu o PIX.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${bancos.map(b=>`<label class="forma" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0">
+          <input type="radio" name="bancoPix" value="${esc(b)}" ${b===pad?"checked":""}> <span>${esc(b)}</span></label>`).join("")}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" onclick="confirmarBancoPix()">Confirmar e finalizar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+function confirmarBancoPix(){
+  const sel=document.querySelector('input[name="bancoPix"]:checked');
+  BANCO_PIX_ESCOLHIDO = sel ? sel.value : (PIX_BANCOS.padrao||"Inter");
+  fecharModais();
+  finalizar();
 }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
@@ -544,7 +570,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -1185,6 +1211,9 @@ async function finalizar(){
   const total=totalPedido();
   const soma=linhas.reduce((s,p)=>s+Number(p.valor),0);
   if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
+  // se pagou com "Pix Banco", pergunta qual banco antes de finalizar
+  const temPixBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||""));
+  if(temPixBanco && !BANCO_PIX_ESCOLHIDO){ perguntarBancoPix(); return; }
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
   const observacaoUsuario=(document.getElementById("obsVenda")?.value||"").trim();
@@ -1259,6 +1288,7 @@ async function finalizar(){
 // ---------------- init ----------------
 (async function(){
   await carregarSessao();
+  try{ const b=await fetch(BACKEND+"/api/pix-bancos").then(r=>r.json()); if(b&&Array.isArray(b.bancos)&&b.bancos.length) PIX_BANCOS=b; }catch(e){}
   try{
     const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
     const todas=(j.data||[]).filter(f=>f.situacao!=="I");

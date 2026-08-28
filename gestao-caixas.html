@@ -85,6 +85,7 @@ window.render=function(){
     <div class="top"><img src="${LOGO}"><div class="t">🗃️ Gestão de Caixas</div></div>
     <div class="wrap">
       <div class="muted" style="margin-bottom:12px">Acompanhe todos os caixas — Frente de Caixa e Caixa Atacado — os que estão abertos agora e o histórico dos já fechados, com horários, operador e total por forma de pagamento.</div>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
       <div class="toggle">
         <button class="${window.ABA==='abertos'?'on':''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
         <button class="${window.ABA==='historico'?'on':''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
@@ -302,6 +303,67 @@ window.editarEsperado=function(ev){
     renderConferencia();
     recalcConf();
   }).catch(e=>alert("Erro: "+e.message));
+}
+
+// ---- gerenciar os bancos do PIX (nome, padrão, adicionar, excluir) ----
+window.gerenciarBancosPix=async function(){
+  let cfg;
+  try{ cfg=await fetch(B+"/api/pix-bancos").then(r=>r.json()); }catch(e){ cfg={bancos:["Inter","Santander","Itaú"],padrao:"Inter"}; }
+  const bancos=(cfg.bancos||[]).slice();
+  let padraoIx=bancos.indexOf(cfg.padrao); if(padraoIx<0) padraoIx=0;
+  window._BANCOS={bancos, padraoIx};
+  renderBancosPix();
+}
+window.renderBancosPix=function(){
+  const S=window._BANCOS;
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🏦 Bancos do PIX</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">São os bancos que aparecem ao finalizar um <b>PIX Banco</b> no caixa atacado. Marque o padrão (fica pré-selecionado), edite os nomes, adicione ou exclua.</div>
+      <div>
+        ${S.bancos.map((b,ix)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <label title="Padrão" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#ffd23f"><input type="radio" name="bpad" ${ix===S.padraoIx?"checked":""} onclick="window._BANCOS.padraoIx=${ix}">padrão</label>
+          <input value="${esc(b)}" style="flex:1" oninput="window._BANCOS.bancos[${ix}]=this.value">
+          <button class="btn btn-ghost btn-sm" style="color:#ff8090;padding:4px 8px" onclick="removerBanco(${ix})">🗑</button>
+        </div>`).join("")}
+      </div>
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <input id="novoBanco" placeholder="Novo banco" style="flex:1" onkeydown="if(event.key==='Enter')adicionarBanco()">
+        <button class="btn btn-ghost" onclick="adicionarBanco()">+ Adicionar</button>
+      </div>
+      <div id="bancosMsg"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-mag" style="flex:1" onclick="salvarBancosPix()">💾 Salvar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Fechar</button>
+      </div>
+    </div></div>`;
+}
+window.adicionarBanco=function(){
+  const el=document.getElementById("novoBanco");
+  const v=(el?.value||"").trim();
+  if(!v) return;
+  window._BANCOS.bancos.push(v);
+  renderBancosPix();
+}
+window.removerBanco=function(ix){
+  const S=window._BANCOS;
+  S.bancos.splice(ix,1);
+  if(S.padraoIx===ix) S.padraoIx=0;
+  else if(S.padraoIx>ix) S.padraoIx--;
+  if(S.padraoIx<0) S.padraoIx=0;
+  renderBancosPix();
+}
+window.salvarBancosPix=async function(){
+  const S=window._BANCOS;
+  const bancos=(S.bancos||[]).map(x=>String(x||"").trim()).filter(Boolean);
+  const msg=document.getElementById("bancosMsg");
+  if(!bancos.length){ if(msg) msg.innerHTML='<div class="err">Deixe ao menos um banco.</div>'; return; }
+  const padrao=bancos[S.padraoIx]||bancos[0];
+  try{
+    const r=await fetch(B+"/api/pix-bancos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bancos,padrao})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center"><div style="font-size:40px">✅</div><h3>Bancos salvos</h3><div class="muted" style="margin-top:6px">Padrão: <b>${esc(r.padrao)}</b></div><button class="btn btn-mag" style="width:100%;margin-top:12px" onclick="fecharModais()">OK</button></div></div>`;
+  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
 render();

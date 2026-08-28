@@ -42,6 +42,7 @@ const SESSOES_FILE = `${DATA_DIR}/sessoes.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
+const PIX_BANCOS_FILE = `${DATA_DIR}/pix_bancos.json`;
 const LEDGER_FILE = `${DATA_DIR}/ledger-pagamentos.json`;
 const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
@@ -5279,6 +5280,26 @@ app.get("/api/preco-codigo", async (req, res) => {
 app.get("/conferencia",(req,res)=>res.sendFile(path.join(__dirname,"conferencia.html")));
 // Config pública (situações)
 app.get("/api/config",(req,res)=>res.json({SIT}));
+
+// bancos do PIX (pra a pergunta "qual banco?" no caixa atacado) — editáveis na Gestão
+function lerPixBancos(){
+  const d=lerJSON(PIX_BANCOS_FILE,null);
+  let bancos=(d&&Array.isArray(d.bancos))?d.bancos.map(b=>String(b||"").trim()).filter(Boolean):[];
+  if(!bancos.length) bancos=["Inter","Santander","Itaú"];
+  const padrao=(d&&d.padrao&&bancos.includes(d.padrao))?d.padrao:bancos[0];
+  return {bancos,padrao};
+}
+app.get("/api/pix-bancos",(req,res)=>{ res.json(lerPixBancos()); });
+app.post("/api/pix-bancos",(req,res)=>{
+  const {bancos,padrao}=req.body||{};
+  const lista=(Array.isArray(bancos)?bancos:[]).map(b=>String(b||"").trim()).filter(Boolean);
+  const vistos=new Set(); const limpa=[];
+  for(const b of lista){ const k=b.toLowerCase(); if(!vistos.has(k)){ vistos.add(k); limpa.push(b); } }
+  if(!limpa.length) return res.status(400).json({erro:"informe ao menos um banco"});
+  const pad=(padrao&&limpa.includes(padrao))?padrao:limpa[0];
+  salvarJSON(PIX_BANCOS_FILE,{bancos:limpa,padrao:pad});
+  res.json({ok:true,bancos:limpa,padrao:pad});
+});
 // tela INTERNA de gestão da tabela de atacado (renomeada de /tabela pra /tabela-atacado
 // pra liberar o /tabela como link curto do cliente). Precisa de login/permissão.
 app.get("/tabela-atacado",(req,res)=>res.sendFile(path.join(__dirname,"tabela.html")));
