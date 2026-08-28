@@ -148,6 +148,8 @@ function taxaCartao(){
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+taxaCartao()).toFixed(2); }
 // monta a nota que vai pra observação do Bling dizendo quanto foi PIX Banco e quanto
 // foi PIX da maquininha (no Bling a forma é a mesma: PIX).
+// soma tudo que é PIX (banco de qualquer banco + maquininha) a partir do porForma do resumo
+function totalPixForma(porForma){ return (porForma||[]).filter(f=>/pix/i.test(f.nome||"")).reduce((s,f)=>s+(Number(f.valor)||0),0); }
 function notaPix(pags){
   const arr=Array.isArray(pags)?pags:PAGAMENTOS;
   const soma=(re)=>arr.filter(p=>/pix/i.test(p.formaNome||"")&&re.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
@@ -276,6 +278,7 @@ async function modalFechar(){
         <div style="font-weight:800;margin-bottom:4px">💳 Por forma de pagamento</div>
         <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
         ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        ${totalPixForma(r.porForma)>0.009?`<div class="linha" style="border-top:1px dashed #2a2660;margin-top:4px;padding-top:4px;font-size:13px"><span>🔷 <b>Total PIX</b></span><b style="color:#7fd4ff">${brl(totalPixForma(r.porForma))}</b></div>`:""}
       </div>`:""}
       <p class="muted" style="margin:6px 0 4px">Quanto tem na gaveta (contado)?</p>
       <input id="mContado" type="number" step="0.01" placeholder="0,00" style="text-align:center;font-size:18px">
@@ -964,7 +967,8 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
   const linhasOutros=outros.map(m=>`
     <tr><td>${hora(m.em)}</td><td colspan="3">${m.tipo==="sangria"?"💸 Sangria":"💰 Suprimento"}${m.motivo?" — "+esc(m.motivo):""}</td>
     <td style="text-align:right">${brl(m.valor)}</td></tr>`).join("");
-  const linhasForma=(resumo.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("");
+  const linhasForma=(resumo.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("")
+    + (totalPixForma(resumo.porForma)>0.009?`<tr><td><b>Total PIX</b></td><td style="text-align:right"><b>${brl(totalPixForma(resumo.porForma))}</b></td></tr>`:"");
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa atacado</title>
     <style>
       body{font-family:Arial,sans-serif;font-size:13px;max-width:700px;margin:0 auto;padding:16px;color:#000}
@@ -1054,6 +1058,7 @@ async function abrirModalMinhasVendas(){
         ${htmlMovimentosMinhasVendas()}
         <div class="card" style="background:#1c1846;margin:12px 0">
           ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
+          ${totalPixForma(CAIXA.resumo?.porForma)>0.009?`<div class="linha" style="font-size:13px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(CAIXA.resumo?.porForma))}</b></div>`:""}
           <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl(CAIXA.resumo?.totalVendas)}</b></div>
         </div>
         <div style="display:flex;gap:8px">
@@ -1217,7 +1222,12 @@ async function finalizar(){
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
   const observacaoUsuario=(document.getElementById("obsVenda")?.value||"").trim();
-  const pagamentos=linhas.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Number(p.valor)}));
+  const pagamentos=linhas.map(p=>{
+    let nome=p.formaNome;
+    // Pix Banco vira "Pix Banco <Banco>" (ex.: "Pix Banco Inter") pra separar por banco nos resumos
+    if(/pix/i.test(nome||"")&&/banco/i.test(nome||"")&&BANCO_PIX_ESCOLHIDO) nome="Pix Banco "+BANCO_PIX_ESCOLHIDO;
+    return {formaId:p.formaId,formaNome:nome,valor:Number(p.valor)};
+  });
   // acrescenta na observação do Bling qual PIX foi (banco/maquininha), se houver
   const observacao=[observacaoUsuario, notaPix(pagamentos)].filter(Boolean).join(" · ");
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));

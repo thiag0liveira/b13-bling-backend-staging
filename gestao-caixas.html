@@ -67,6 +67,7 @@ function hora(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toLocale
 window.GESTOR=(typeof b13GetSession==="function")?b13GetSession():null;
 // interpreta número digitado em pt-BR: "1.234,56" ou "150,50" ou "150.50"
 function numBR(s){ s=String(s==null?"":s).trim(); if(!s) return 0; if(s.indexOf(",")>=0){ s=s.replace(/\./g,"").replace(",","."); } return parseFloat(s)||0; }
+function totalPixForma(porForma){ return (porForma||[]).filter(f=>/pix/i.test(f.nome||"")).reduce((a,f)=>a+(Number(f.valor)||0),0); }
 window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; }
 
 // selo indicando o tipo do caixa
@@ -118,6 +119,7 @@ window.carregarAbertos=async function(){
         ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
           <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
           ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+          ${totalPixForma(s.resumo.porForma)>0.009?`<div class="linha" style="font-size:12px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>`:""}
         </div>`:""}
         <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
@@ -135,6 +137,7 @@ window.carregarHistorico=async function(){
         <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")} ${tagTipo(s.tipoCaixa)}</div>
         <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
         ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
+        ${totalPixForma(s.resumo.porForma)>0.009?`<div class="linha" style="font-size:12px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>`:""}
         ${Number(s.resumo.totalSuprimentos)>0?`<div class="linha" style="font-size:12px"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>`:""}
         <div class="linha" style="font-size:12px"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
@@ -174,6 +177,7 @@ window.verMovimentos=async function(id){
               <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
               <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
               ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+              ${totalPixForma(j.resumo.porForma)>0.009?`<div class="linha" style="font-size:13px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(j.resumo.porForma))}</b></div>`:""}
             </div>`:""}
             ${Number(j.resumo?.totalSuprimentos)>0?`<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(j.resumo.totalSuprimentos)}</b></div>`:""}
             <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(j.resumo?.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(j.resumo?.totalSangrias)}</b></div>
