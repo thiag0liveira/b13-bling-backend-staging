@@ -555,6 +555,7 @@ function salvarEdicaoPagamento(){
               <span class="muted">De:</span> ${esc(resp.de||"—")}<br>
               <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
               <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
+            ${resp.incluidoNoCaixa?`<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador||"você")}).</div>`:""}
             <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
           </div></div>`;
       }catch(e){

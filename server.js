@@ -3255,7 +3255,29 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao);
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
 
-    res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
+    // se o pedido NÃO estava em nenhum caixa do sistema, entra no caixa (aberto) de quem
+    // está finalizando agora — e avisa isso ao salvar.
+    let incluidoNoCaixa=null;
+    if(!achouMov){
+      const dCx=lerCaixaSessoes();
+      const sAberta=(dCx.sessoes||[]).find(s=>!s.fechadaEm && String(s.funcionarioId)===String(funcionarioId) && (s.tipoCaixa||"")==="atacado")
+        || (dCx.sessoes||[]).find(s=>!s.fechadaEm && String(s.funcionarioId)===String(funcionarioId));
+      if(sAberta){
+        sAberta.movimentos=sAberta.movimentos||[];
+        sAberta.movimentos.push({
+          tipo:"venda", em:Date.now(), pedidoId:idStr, numero:numero||ped.numero,
+          total:+Number(totalPedido).toFixed(2), clienteNome:ped.contato?.nome||"", origem:"caixa_atacado_reaberto",
+          operador:sAberta.operador||"", outrasDespesas:Number(ped.outrasDespesas||0),
+          pagamentos:linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
+          alterado:true, alteracoes:[alteracao],
+        });
+        salvarCaixaSessoes(dCx);
+        incluidoNoCaixa={operador:sAberta.operador||"", sessaoId:sAberta.id};
+        addLog(idStr,"pedido_incluido_no_caixa",funcionarioId,alteracao.por,{caixaDe:sAberta.operador||"",motivo:"pedido não pertencia a nenhum caixa"});
+      }
+    }
+
+    res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
