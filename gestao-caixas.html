@@ -122,6 +122,7 @@ window.carregarAbertos=async function(){
           ${totalPixForma(s.resumo.porForma)>0.009?`<div class="linha" style="font-size:12px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>`:""}
         </div>`:""}
         <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa aberto no momento.</div></div>';
   }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar os caixas abertos.</div>`; }
@@ -145,7 +146,8 @@ window.carregarHistorico=async function(){
         <div class="linha"><span>Diferença</span>
           <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?'#8fffc0':((s.fechamento?.diferenca||0)>0?'#ffd23f':'#ff8090')}">${brl(s.fechamento?.diferenca)}</b></div>
         ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
-        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa fechado ainda.</div></div>';
   }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar o histórico.</div>`; }
 }
@@ -368,6 +370,84 @@ window.salvarBancosPix=async function(){
     if(r.erro) throw new Error(r.erro);
     document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center"><div style="font-size:40px">✅</div><h3>Bancos salvos</h3><div class="muted" style="margin-top:6px">Padrão: <b>${esc(r.padrao)}</b></div><button class="btn btn-mag" style="width:100%;margin-top:12px" onclick="fecharModais()">OK</button></div></div>`;
   }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
+
+// ---- imprime um relatório do caixa (resumo completo, pra impressora comum ou térmica) ----
+window.imprimirRelatorioCaixa=async function(id){
+  try{
+    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    const se=j.sessao||{}, r=j.resumo||{}, fe=j.fechamento, confs=j.conferencias||[];
+    const vendas=(j.movimentos||[]).filter(m=>m.tipo==="venda");
+    const tipo=(se.tipoCaixa==="atacado")?"Atacado":"Frente";
+    const linha=(rot,val,cor)=>`<tr><td>${esc(rot)}</td><td class="v"${cor?` style="color:${cor}"`:""}>${val}</td></tr>`;
+    const pf=(r.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
+    const totPix=totalPixForma(r.porForma);
+    const temManual=(r.esperadoGavetaManual!=null);
+    const confHtml=confs.length?`
+      <h3>Conferências</h3>
+      ${confs.map(c=>`<div class="conf">
+        <div class="ch"><b>${hora(c.em)}</b> — ${esc(c.por||"—")} · Diferença total: <b style="color:${Math.abs(c.diferencaTotal||0)<0.01?'#0a0':'#c00'}">${brl(c.diferencaTotal)}</b></div>
+        ${(c.linhas||[]).map(l=>`<div class="cl">${esc(l.nome)}: esperado ${brl(l.esperado)} · contado ${brl(l.contado)} · dif <b style="color:${Math.abs(l.diferenca)<0.01?'#0a0':'#c00'}">${brl(l.diferenca)}</b></div>`).join("")}
+        <div class="cl">💵 Gaveta: esperado ${brl(c.gaveta?.esperado)} · contado ${brl(c.gaveta?.contado)} · dif <b style="color:${Math.abs(c.gaveta?.diferenca||0)<0.01?'#0a0':'#c00'}">${brl(c.gaveta?.diferenca)}</b></div>
+        ${c.observacao?`<div class="cl obs">Obs: ${esc(c.observacao)}</div>`:""}
+      </div>`).join("")}` : "";
+    const vendasHtml=vendas.length?`
+      <h3>Vendas (${vendas.length})</h3>
+      <table class="mov">${vendas.slice().sort((a,b)=>b.em-a.em).map(m=>`<tr>
+        <td>${hora(m.em)}</td>
+        <td>#${esc(m.numero||m.pedidoId||"")}${m.cancelado?' <span style="color:#c00">CANCELADA</span>':(m.alterado?' <span style="color:#c00">ALTERADO</span>':'')}</td>
+        <td>${esc((m.pagamentos||[]).map(p=>p.formaNome).join(", "))}</td>
+        <td class="v">${brl(m.total)}</td>
+      </tr>`).join("")}</table>` : "";
+    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Caixa #${esc(se.id||"")}</title>
+      <style>
+        *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}
+        body{margin:0;padding:18px;color:#111;font-size:13px}
+        h1{font-size:18px;margin:0 0 2px} h2{font-size:13px;margin:0 0 12px;color:#555;font-weight:600}
+        h3{font-size:13px;margin:16px 0 6px;border-bottom:2px solid #111;padding-bottom:3px}
+        table{width:100%;border-collapse:collapse} td{padding:3px 0;vertical-align:top}
+        td.v{text-align:right;font-weight:700;white-space:nowrap} .q{color:#888;font-weight:400}
+        .tot{border-top:1px solid #111;font-weight:800} .pix td{color:#06c}
+        .conf{border:1px solid #ccc;border-radius:6px;padding:8px;margin-bottom:8px} .ch{margin-bottom:4px}
+        .cl{font-size:12px;color:#333;margin-top:2px} .obs{font-style:italic}
+        table.mov td{font-size:12px;border-bottom:1px solid #eee;padding:4px 6px 4px 0}
+        .foot{margin-top:20px;font-size:11px;color:#888;text-align:center}
+        @media print{body{padding:0}}
+      </style></head><body>
+      <h1>B13 BEBIDAS — Relatório de Caixa</h1>
+      <h2>Caixa ${esc(tipo)} · Operador: ${esc(se.operador||"—")}</h2>
+      <table>
+        ${linha("Abertura", hora(se.abertaEm))}
+        ${linha("Fechamento", se.fechadaEm?hora(se.fechadaEm):"— (ainda aberto)")}
+        ${linha("Troco inicial", brl(r.trocoInicial))}
+      </table>
+      <h3>Vendas por forma de pagamento</h3>
+      <table>
+        <tr><td><b>Vendas (${r.qtdVendas||0})</b></td><td class="v">${brl(r.totalVendas)}</td></tr>
+        ${pf}
+        ${totPix>0.009?`<tr class="pix"><td>🔷 Total PIX</td><td class="v">${brl(totPix)}</td></tr>`:""}
+      </table>
+      <h3>Dinheiro na gaveta</h3>
+      <table>
+        ${Number(r.totalSuprimentos)>0?linha("Suprimentos", brl(r.totalSuprimentos), "#0a0"):""}
+        ${linha("Sangrias", brl(r.totalSangrias), Number(r.totalSangrias)>0?"#c00":"")}
+        <tr class="tot"><td>Esperado na gaveta${temManual?" (ajuste manual)":""}</td><td class="v">${brl(r.esperadoGaveta)}</td></tr>
+        ${temManual?linha("Esperado calculado", brl(r.esperadoGavetaCalc)):""}
+        ${fe?linha("Contado no fechamento", brl(fe.valorContado)):""}
+        ${fe?linha("Diferença", brl(fe.diferenca), Math.abs(fe.diferenca||0)<0.01?"#0a0":"#c00"):""}
+        ${fe&&fe.observacao?linha("Obs. fechamento", esc(fe.observacao)):""}
+      </table>
+      ${confHtml}
+      ${vendasHtml}
+      <div class="foot">Emitido em ${new Date().toLocaleString("pt-BR")}</div>
+    </body></html>`;
+    const w=window.open("","_blank");
+    if(!w){ alert("Libere o pop-up pra imprimir o relatório."); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} }, 350);
+  }catch(e){ alert("Não foi possível gerar o relatório: "+e.message); }
 }
 
 render();
