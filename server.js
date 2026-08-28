@@ -930,7 +930,7 @@ function salvarLedger(o){ salvarJSON(LEDGER_FILE,o); }
 // usa o mesmo desbloqueio via "Em Digitação" já usado pra editar itens.
 async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
-  const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
+  const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
   try{
     const rPed=await bling(`/pedidos/vendas/${id}`);
     const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
@@ -979,7 +979,17 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
         // sempre restaura a situação original, mesmo se o PUT falhar
         await new Promise(r=>setTimeout(r,400));
         for(let t=0;t<3;t++){
-          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); break; }
+          try{
+            if(sitAtual===SIT.ATENDIDO){
+              // não pula direto pra Atendido: caminha Separado -> Atendido
+              await bling(`/pedidos/vendas/${id}/situacoes/${SIT.SEPARADO}`,{method:"PATCH"});
+              await new Promise(r=>setTimeout(r,400));
+              await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
+            }else{
+              await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"});
+            }
+            break;
+          }
           catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
         }
       }

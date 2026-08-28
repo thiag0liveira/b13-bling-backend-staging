@@ -1303,19 +1303,13 @@ async function finalizar(){
   // acrescenta na observação do Bling qual PIX foi (banco/maquininha), se houver
   const observacao=[observacaoUsuario, notaPix(pagamentos)].filter(Boolean).join(" · ");
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
-  // Regra de status final no Bling:
-  //  - ATENDIDO: só quando a venda foi CRIADA no caixa (venda nova) E toda no modo VAREJO
-  //    (nenhum item com preço de atacado).
-  //  - SEPARADO: pedido puxado de outro vendedor, ou qualquer venda que usou preço de
-  //    atacado, ou venda nova no modo atacado.
+  // Regra de status final no Bling (POR ENQUANTO):
+  //  - TODO pedido finalizado no caixa termina em ATENDIDO, caminhando SEPARADO -> ATENDIDO
+  //    (o backend garante o caminho: passa por Separado antes de mover pra Atendido).
+  //  (Regra antiga, guardada caso volte: ATENDIDO só p/ venda nova 100% varejo; resto SEPARADO.)
   const usouAtacado = CARRINHO.some(i => i.modoPreco==="atacado" || i.origemPreco==="atacado");
   const taxaCredito = taxaCartao(); // 3,5% do crédito, se aplicável e marcado
-  let statusFinal;
-  if(PEDIDO_ATUAL){
-    statusFinal = "separado"; // pedido puxado de outro vendedor -> separado
-  } else {
-    statusFinal = (MODO_PRECO==="varejo" && !usouAtacado) ? "atendido" : "separado";
-  }
+  const statusFinal = "atendido";
   try{
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout=(url,opts,ms=60000)=>{
