@@ -887,11 +887,46 @@ async function confirmarImprimirNumero(){
     if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`;
   }
 }
+function quebrarTexto(ctx, texto, maxW, maxLinhas){
+  texto=String(texto||"").trim();
+  if(!texto) return [""];
+  const cabe=(s)=>ctx.measureText(s).width<=maxW;
+  const palavras=texto.split(/\s+/);
+  const linhas=[]; let atual="";
+  for(const p of palavras){
+    const teste=atual?atual+" "+p:p;
+    if(cabe(teste)){ atual=teste; }
+    else {
+      if(atual) linhas.push(atual);
+      if(!cabe(p)){ // palavra maior que a linha: corta em pedaços
+        let resto=p;
+        while(resto.length && !cabe(resto)){
+          let corte=resto;
+          while(corte.length>1 && !cabe(corte)) corte=corte.slice(0,-1);
+          linhas.push(corte); resto=resto.slice(corte.length);
+        }
+        atual=resto;
+      } else { atual=p; }
+    }
+  }
+  if(atual) linhas.push(atual);
+  if(linhas.length<=maxLinhas) return linhas;
+  const cortadas=linhas.slice(0,maxLinhas);
+  let ult=cortadas[maxLinhas-1];
+  while(ult.length>1 && !cabe(ult+"…")) ult=ult.slice(0,-1);
+  cortadas[maxLinhas-1]=ult+"…";
+  return cortadas;
+}
 function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const itensArr=(v.itens||[]);
   const itemH=54, headerH=136, qrSize=210;
-  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0) + (v.operador?40:0);
   const W=580, padd=24;
+  // quebra os nomes de produto em até 2 linhas (mede com um contexto temporário)
+  const _mc=document.createElement("canvas").getContext("2d"); _mc.font="900 19px Arial";
+  const maxNomeW=W-200-padd-16;
+  itensArr.forEach(i=>{ i._nomeLinhas=quebrarTexto(_mc, i.nome||("Produto "+i.produtoId), maxNomeW, 2); });
+  const extraLinhasItens=itensArr.reduce((s,i)=>s+((i._nomeLinhas.length||1)-1),0);
+  const H=1080 + itensArr.length*itemH + extraLinhasItens*24 + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0) + (v.operador?40:0);
   const cv=document.createElement("canvas");
   const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
@@ -939,13 +974,14 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   ctx.textAlign="right"; ctx.fillText("UNIT.",W-padd,y);
   y+=10; ctx.fillStyle="#000"; ctx.fillRect(padd,y,W-padd*2,2); y+=itemH-14;
   itensArr.forEach((i,ix)=>{
+    const linhas=i._nomeLinhas||[String(i.nome||("Produto "+i.produtoId))];
     ctx.fillStyle="#000"; ctx.font="900 19px Arial"; ctx.textAlign="left";
-    let nome=i.nome||("Produto "+i.produtoId); if(nome.length>26) nome=nome.slice(0,25)+"…";
-    ctx.fillText(nome,padd,y);
+    linhas.forEach((ln,li)=>ctx.fillText(ln,padd,y+li*24));
     ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.textAlign="center"; ctx.fillText(String(i.quantidade),W-200,y);
     ctx.font="900 17px Arial"; ctx.fillStyle="#000"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
-    if(ix<itensArr.length-1){ ctx.fillStyle="#000"; ctx.fillRect(padd,y+18,W-padd*2,1); }
-    y+=itemH;
+    const extra=(linhas.length-1)*24;
+    if(ix<itensArr.length-1){ ctx.fillStyle="#000"; ctx.fillRect(padd,y+extra+18,W-padd*2,1); }
+    y+=itemH+extra;
   });
   y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=36;
 
