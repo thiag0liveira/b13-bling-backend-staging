@@ -1936,6 +1936,22 @@ function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
 // marca um movimento de venda (em QUALQUER sessão, aberta ou fechada) como ALTERADO,
 // troca as formas de pagamento exibidas e guarda o histórico do que mudou — pra o
 // "Minhas Vendas" mostrar o pedido em vermelho com o que aconteceu.
+// quem recebeu um pedido no caixa (operador da sessão onde a venda foi lançada) — pra
+// mostrar na nota e facilitar reabrir no caixa da pessoa certa
+function recebidoPorDoPedido(pedidoId){
+  try{
+    const idStr=String(pedidoId);
+    const d=lerCaixaSessoes();
+    for(const s of (d.sessoes||[])){
+      for(const m of (s.movimentos||[])){
+        if(m.tipo==="venda" && String(m.pedidoId)===idStr){
+          return { operador: m.operador || s.operador || "", tipoCaixa: s.tipoCaixa||"", sessaoAberta: !s.fechadaEm };
+        }
+      }
+    }
+  }catch(e){}
+  return { operador:"", tipoCaixa:"", sessaoAberta:null };
+}
 function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
   try{
     const idStr=String(pedidoId);
@@ -3413,7 +3429,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
           total:+(totalPedido+_outrasNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
-          outrasDespesas:_outrasNova,
+          outrasDespesas:_outrasNova, operador:sessaoAtual.operador||"",
           itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
@@ -3609,6 +3625,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
       outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
       pagamentos, observacao:d.observacoes||"",
+      recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
@@ -3823,7 +3840,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
           total:+(totalPedido+_outrasFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
-          outrasDespesas:_outrasFin,
+          outrasDespesas:_outrasFin, operador:sessaoAtual.operador||"",
           itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });

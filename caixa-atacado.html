@@ -796,7 +796,7 @@ function movimentoParaComprovante(m){
     numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
     outrasDespesas:Number(m.outrasDespesas||0),
     itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
-    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null, observacao:m.observacao||"",
+    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null, observacao:m.observacao||"", operador:m.operador||"",
   };
 }
 // imprime o comprovante do pedido no MESMO formato do totem: canvas com logo,
@@ -878,7 +878,7 @@ async function confirmarImprimirNumero(){
       outrasDespesas:Number(j.outrasDespesas||0),
       itens:(j.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
       pagamentos:(j.pagamentos||[]).map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor||0)})),
-      cliente:{nome:j.clienteNome||"Consumidor Final"}, dataHora:Date.now(), nfce:null, observacao:j.observacao||"",
+      cliente:{nome:j.clienteNome||"Consumidor Final"}, dataHora:Date.now(), nfce:null, observacao:j.observacao||"", operador:j.recebidoPor||"",
     };
     fecharModais();
     imprimirComprovante(v);
@@ -890,7 +890,7 @@ async function confirmarImprimirNumero(){
 function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const itensArr=(v.itens||[]);
   const itemH=54, headerH=136, qrSize=210;
-  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0);
+  const H=1080 + itensArr.length*itemH + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0) + (v.operador?40:0);
   const W=580, padd=24;
   const cv=document.createElement("canvas");
   const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
@@ -924,7 +924,12 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   // cliente
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
   ctx.font="900 26px Arial"; ctx.fillStyle="#000"; ctx.fillText(v.cliente?.nome||"Consumidor Final",padd,y+30);
-  y+=52; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
+  y+=52;
+  if(v.operador){
+    ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("RECEBIDO POR",padd,y);
+    ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.fillText(v.operador,padd+180,y); y+=34;
+  }
+  ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
 
   // itens
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y); y+=26;
@@ -1333,7 +1338,7 @@ async function finalizar(){
       total:total, desconto:0,
       outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2),
       itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
-      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao,
+      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao, operador:S.nome||"",
     };
     window._obsVenda=""; // limpa pra próxima venda
     const nfMsg=emitirNfce?(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":"")):"";
