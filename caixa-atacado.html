@@ -115,6 +115,7 @@ let ULTIMA_VENDA=null; // guarda a última venda concluída, pra reimprimir o co
 let PEDIDOS=[];          // pedidos não atendidos (coluna extra)
 let PEDIDO_ATUAL=null;   // {id,numero,situacaoNome,vendedorNome,...} — null = venda nova
 let OUTRAS_DESPESAS=0;   // outras despesas que já vieram do pedido do Bling (taxa da vendedora)
+let FRETE=0;            // valor do frete que veio do pedido do Bling (entrega)
 let COBRAR_TAXA_CARTAO=true; // por padrão cobra 3,5% no cartão de crédito (atacado); pode desmarcar
 let CARRINHO=[];
 let CLIENTE_NOME="";
@@ -146,7 +147,7 @@ function taxaCartao(){
   if(!ehPedidoAtacado()) return 0; // varejo não tem taxa
   return +(valorEmCredito()*0.035).toFixed(2);
 }
-function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+taxaCartao()).toFixed(2); }
+function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).toFixed(2); }
 // monta a nota que vai pra observação do Bling dizendo quanto foi PIX Banco e quanto
 // foi PIX da maquininha (no Bling a forma é a mesma: PIX).
 // soma tudo que é PIX (banco de qualquer banco + maquininha) a partir do porForma do resumo
@@ -455,6 +456,7 @@ async function abrirPedido(id){
     CLIENTE_NOME=j.clienteNome||"";
     CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo,modoPreco:"atacado"}));
     OUTRAS_DESPESAS=Number(j.outrasDespesas||0); // puxa a taxa que a vendedora colocou
+    FRETE=Number(j.frete||0); // puxa o frete do pedido (entrega)
     COBRAR_TAXA_CARTAO=true;
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null; // volta a logo até bipar um produto
@@ -521,6 +523,7 @@ async function abrirPedidoParaEdicao(id){
     // itens travados (precoEditado) — na edição de pagamento não se mexe nos itens
     CARRINHO=(j.itens||[]).map(it=>({produtoId:it.produtoId,nome:it.nome,quantidade:it.quantidade,valor:it.valor,codigo:it.codigo,modoPreco:"atacado",precoEditado:true}));
     OUTRAS_DESPESAS=Number(j.outrasDespesas||0);
+    FRETE=Number(j.frete||0);
     COBRAR_TAXA_CARTAO=false; // total já está fechado; não recalcula taxa na edição
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null;
@@ -595,7 +598,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -796,6 +799,7 @@ function movimentoParaComprovante(m){
   return {
     numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
     outrasDespesas:Number(m.outrasDespesas||0),
+    frete:Number(m.frete||0),
     itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
     pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null, observacao:m.observacao||"", operador:m.operador||"",
   };
@@ -927,7 +931,7 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   const maxNomeW=W-200-padd-16;
   itensArr.forEach(i=>{ i._nomeLinhas=quebrarTexto(_mc, i.nome||("Produto "+i.produtoId), maxNomeW, 2); });
   const extraLinhasItens=itensArr.reduce((s,i)=>s+((i._nomeLinhas.length||1)-1),0);
-  const H=1080 + itensArr.length*itemH + extraLinhasItens*24 + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + (Number(v.outrasDespesas||0)>0?64:0) + (v.operador?40:0);
+  const H=1080 + itensArr.length*itemH + extraLinhasItens*24 + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + ((Number(v.outrasDespesas||0)>0||Number(v.frete||0)>0)?64:0) + (Number(v.outrasDespesas||0)>0&&Number(v.frete||0)>0?30:0) + (v.operador?40:0);
   const cv=document.createElement("canvas");
   const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
   const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
@@ -986,14 +990,16 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   });
   y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=36;
 
-  // subtotal + outras despesas (ex.: taxa de cartão), quando houver
+  // subtotal + outras despesas + frete, quando houver
   const _outras=Number(v.outrasDespesas||0);
-  if(_outras>0.009){
-    const _sub=+(Number(v.total||0)-_outras).toFixed(2);
+  const _frete=Number(v.frete||0);
+  if(_outras>0.009 || _frete>0.009){
+    const _sub=+(Number(v.total||0)-_outras-_frete).toFixed(2);
     ctx.font="900 20px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("Subtotal",padd,y);
     ctx.textAlign="right"; ctx.fillText(brl(_sub),W-padd,y); y+=30;
-    ctx.textAlign="left"; ctx.fillText("Outras despesas",padd,y);
-    ctx.textAlign="right"; ctx.fillText(brl(_outras),W-padd,y); y+=34;
+    if(_outras>0.009){ ctx.textAlign="left"; ctx.fillText("Outras despesas",padd,y); ctx.textAlign="right"; ctx.fillText(brl(_outras),W-padd,y); y+=30; }
+    if(_frete>0.009){ ctx.textAlign="left"; ctx.fillText("Frete",padd,y); ctx.textAlign="right"; ctx.fillText(brl(_frete),W-padd,y); y+=30; }
+    y+=4;
   } else { y+=12; }
 
   // total + PAGO
@@ -1270,6 +1276,7 @@ function render(){
             <button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>
           </div>`).join("")}
         ${OUTRAS_DESPESAS>0?`<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>`:""}
+        ${FRETE>0?`<div class="linha" style="margin-top:10px"><span class="muted">🚚 Frete (do pedido)</span><b style="color:#8fffc0">${brl(FRETE)}</b></div>`:""}
         ${(ehPedidoAtacado()&&valorEmCredito()>0)?`
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito (3,5%)</span>
@@ -1357,7 +1364,7 @@ async function finalizar(){
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS})}).then(r=>r.json());
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito})}).then(r=>r.json());
@@ -1368,6 +1375,7 @@ async function finalizar(){
       numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
       total:total, desconto:0,
       outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2),
+      frete:FRETE,
       itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
       pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao, operador:S.nome||"",
     };

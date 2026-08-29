@@ -3696,6 +3696,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
       outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
+      frete:Number(d.transporte?.frete||0), // valor do frete do pedido (entrega)
       pagamentos, observacao:d.observacoes||"",
       recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
@@ -3812,7 +3813,7 @@ async function moverPedidoParaStatusFinal(pedidoId, statusFinal){
 
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
-    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase}=req.body||{};
+    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase}=req.body||{};
     if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
@@ -3895,7 +3896,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     const pags=lerPag();
     const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"}));
     const _outrasPagFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
-    const _totalPagarFin=+(totalPedido+_outrasPagFin).toFixed(2);
+    const _totalPagarFin=+(totalPedido+_outrasPagFin+Number(freteBase||0)).toFixed(2);
     const _valorPagoFin=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     pags[String(pedidoId)]={
       pedidoId:String(pedidoId), valorPago:_valorPagoFin, valorPedido:_totalPagarFin, historico,
@@ -3909,10 +3910,11 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")==="atacado");
       if(sessaoAtual){
         const _outrasFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
+        const _freteFin=+Number(freteBase||0).toFixed(2);
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
-          total:+(totalPedido+_outrasFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
-          outrasDespesas:_outrasFin, operador:sessaoAtual.operador||"",
+          total:+(totalPedido+_outrasFin+_freteFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
+          outrasDespesas:_outrasFin, frete:_freteFin, operador:sessaoAtual.operador||"",
           itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
