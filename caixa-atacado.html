@@ -126,6 +126,7 @@ let MODO_PRECO="atacado";      // 'atacado' (padrão) ou 'varejo' (preço do Bli
 let MODO_EDICAO_PAGAMENTO=false; // true = editando o pagamento de um pedido já finalizado (com QR de gerente/admin)
 let TOKEN_EDICAO="";             // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR="";           // nome de quem autorizou (só pra exibir)
+let AUTORIZOU_MENOR=null;        // {autorizadoPor, falta} quando um gerente liberou fechar com valor menor
 let PIX_BANCOS={bancos:["Inter","Santander","Itaú"],padrao:"Inter"}; // editável na Gestão
 let BANCO_PIX_ESCOLHIDO="";       // banco escolhido ao finalizar um PIX Banco
 let _timerBusca=null;
@@ -496,6 +497,25 @@ function pedirQrAcao(titulo, texto, onConfirm){
   },50);
 }
 
+// ---- pagamento MENOR que o total: pede QR de gerente/admin pra liberar ----
+function pedirQrValorMenor(falta){
+  pedirQrAcao(
+    `⚠️ Fechar com valor menor`,
+    `O pagamento está <b>${brl(falta)}</b> abaixo do total. Fechar assim precisa da autorização de um gerente, financeiro ou admin. Leia o QR pra liberar.`,
+    async (tokenQr, campo, erroEl)=>{
+      try{
+        const r=await fetch(BACKEND+"/api/caixa-atacado/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({tokenQr})}).then(r=>r.json());
+        if(r.erro) throw new Error(r.erro);
+        AUTORIZOU_MENOR={autorizadoPor:r.autorizadoPor||"—", falta:+Number(falta).toFixed(2)};
+        if(campo) campo.value="";
+        fecharModais();
+        finalizar(); // segue o fechamento já autorizado
+      }catch(e){ if(campo) campo.value=""; if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+    }
+  );
+}
+
 // ---- reabrir pedido finalizado: QR no INÍCIO (só abre com autorização) ----
 function pedirAutorizacaoReabrir(id,numero){
   pedirQrAcao(
@@ -598,7 +618,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -1153,19 +1173,21 @@ async function abrirModalMinhasVendas(){
         <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
         ${vendas.length?vendas.map(m=>{
           const canc=!!m.cancelado;
-          const alt=!!m.alterado||canc;
-          const histAlt=(alt&&Array.isArray(m.alteracoes))?m.alteracoes.map(a=>{
+          const menor=m.valorMenor||null;
+          const alt=!!m.alterado||canc||!!menor;
+          const histAlt=(!!m.alterado&&Array.isArray(m.alteracoes))?m.alteracoes.map(a=>{
             if(a.tipo==="cancelamento") return `<div style="font-size:11px;color:#ff9aa2;margin-top:3px">🚫 <b>Venda cancelada</b>${a.motivo?" — "+esc(a.motivo):""}<br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`;
             return `<div style="font-size:11px;color:#ff9aa2;margin-top:3px">✏️ Pagamento alterado: <b>${esc(a.de||"—")}</b> → <b>${esc(a.para||"—")}</b><br><span class="muted">autorizado por ${esc(a.autorizadoPor||"—")} · ${hora(a.em)}</span></div>`;
           }).join(""):"";
-          const rot=canc?" 🚫 CANCELADA":(m.alterado?" ✏️ ALTERADO":"");
+          const histMenor=menor?`<div style="font-size:11px;color:#ffd23f;margin-top:3px">⚠️ <b>Fechado com valor menor</b> — faltou ${brl(menor.faltou)}<br><span class="muted">autorizado por ${esc(menor.autorizadoPor||"—")}</span></div>`:"";
+          const rot=canc?" 🚫 CANCELADA":(menor?" ⚠️ VALOR MENOR":(m.alterado?" ✏️ ALTERADO":""));
           return `
           <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;${alt?"background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;padding:8px;margin:4px 0;":""}">
             <div style="flex:1">
               <div><b style="color:${alt?"#ff6b6b":"inherit"};${canc?"text-decoration:line-through":""}">#${esc(m.numero||m.pedidoId)}</b><b style="color:#ff6b6b">${rot}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
               ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
               <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
-              ${histAlt}
+              ${histAlt}${histMenor}
             </div>
             <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
           </div>`;
@@ -1332,7 +1354,14 @@ async function finalizar(){
   if(!linhas.length){ msg.innerHTML=`<div class="err">Informe ao menos uma forma de pagamento.</div>`; return; }
   const total=totalPedido();
   const soma=linhas.reduce((s,p)=>s+Number(p.valor),0);
-  if(Math.abs(soma-total)>=0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
+  const dif=+(soma-total).toFixed(2);
+  if(dif < -0.01){
+    // pagou MENOS que o total → só fecha com autorização de gerente/financeiro/admin (QR)
+    if(!AUTORIZOU_MENOR){ pedirQrValorMenor(+(total-soma).toFixed(2)); return; }
+  } else if(dif > 0.01){
+    // pagou MAIS que o total (troco) → confirma
+    if(!confirm(`Recebido ${brl(soma)} para um total de ${brl(total)} (troco ${brl(dif)}). Continuar?`)) return;
+  }
   // se pagou com "Pix Banco", pergunta o banco de CADA Pix Banco antes de finalizar
   const pixBancoSemBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||"")&&!p.banco);
   if(pixBancoSemBanco){ perguntarBancosPix(); return; }
@@ -1345,8 +1374,9 @@ async function finalizar(){
     if(/pix/i.test(nome||"")&&/banco/i.test(nome||"")) nome="Pix Banco "+(p.banco||PIX_BANCOS.padrao||"Inter");
     return {formaId:p.formaId,formaNome:nome,valor:Number(p.valor)};
   });
-  // acrescenta na observação do Bling qual PIX foi (banco/maquininha), se houver
-  const observacao=[observacaoUsuario, notaPix(pagamentos)].filter(Boolean).join(" · ");
+  // acrescenta na observação do Bling qual PIX foi (banco/maquininha), e se fechou com valor menor
+  const notaMenor=AUTORIZOU_MENOR?`[Valor menor: faltou ${brl(AUTORIZOU_MENOR.falta)}, autoriz. ${AUTORIZOU_MENOR.autorizadoPor}]`:"";
+  const observacao=[observacaoUsuario, notaPix(pagamentos), notaMenor].filter(Boolean).join(" · ");
   const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
   // Regra de status final no Bling (POR ENQUANTO):
   //  - TODO pedido finalizado no caixa termina em ATENDIDO, caminhando SEPARADO -> ATENDIDO
@@ -1365,10 +1395,10 @@ async function finalizar(){
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE})}).then(r=>r.json());
+        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     // guarda a venda pra poder reimprimir o comprovante

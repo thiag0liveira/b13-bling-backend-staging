@@ -3519,14 +3519,17 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(sessaoAtual){
         const _outrasNova=+Number(req.body.taxaCredito||0).toFixed(2);
         const _freteNova=+Number(req.body.freteBase||0).toFixed(2);
+        const _menorNova=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
           total:+(totalPedido+_outrasNova+_freteNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
           outrasDespesas:_outrasNova, frete:_freteNova, operador:sessaoAtual.operador||"",
+          ...(_menorNova?{valorMenor:_menorNova}:{}),
           itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
+        if(_menorNova) addLog(String(pedidoId),"fechado_valor_menor",funcionarioId,(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—",{faltou:_menorNova.faltou,autorizadoPor:_menorNova.autorizadoPor});
       }
     }catch(e){ console.error("Falha ao vincular venda à sessão de caixa (ignorado):",e.message); }
 
@@ -3932,14 +3935,17 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       if(sessaoAtual){
         const _outrasFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
         const _freteFin=+Number(freteBase||0).toFixed(2);
+        const _menorFin=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
           total:+(totalPedido+_outrasFin+_freteFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
           outrasDespesas:_outrasFin, frete:_freteFin, operador:sessaoAtual.operador||"",
+          ...(_menorFin?{valorMenor:_menorFin}:{}),
           itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
+        if(_menorFin) addLog(String(pedidoId),"fechado_valor_menor",funcionarioId,(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—",{faltou:_menorFin.faltou,autorizadoPor:_menorFin.autorizadoPor});
       }
     }catch(e){ console.error("Falha ao vincular ao caixa (ignorado):",e.message); }
 
