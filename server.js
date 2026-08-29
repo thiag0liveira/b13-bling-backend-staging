@@ -1972,6 +1972,8 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
         if(m.tipo==="venda" && String(m.pedidoId)===idStr){
           m.alterado=true;
           if(opts.cancelado) m.cancelado=true;
+          if(opts.novoTotal!=null) m.total=+Number(opts.novoTotal).toFixed(2);
+          if(opts.frete!=null) m.frete=+Number(opts.frete).toFixed(2);
           m.alteracoes=[...(m.alteracoes||[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
           achou=true;
@@ -3273,17 +3275,17 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
     if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
 
-    // atualiza registro local de pagamento (mantém pago)
+    // atualiza registro local de pagamento — o total passa a ser o que foi efetivamente recebido
     const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado_edit"}));
-    const valorPedido=(antigo&&antigo.valorPedido)?antigo.valorPedido:totalPedido;
+    const valorPedido=somaNova;
     pags[idStr]={
-      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido, historico,
+      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido, frete:Number(req.body.frete||antigo?.frete||0), historico,
       statusPagamento: somaNova>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
     };
     salvarJSON(PAG_FILE,pags);
 
-    // marca o movimento no histórico do caixa (vermelho, com o que mudou)
+    // marca o movimento no histórico do caixa (vermelho, com o que mudou) e atualiza total/frete
     const funcs=lerJSON(FUNC_FILE,{});
     const descDepois=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
     const alteracao={
@@ -3292,7 +3294,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       por:(funcs[funcionarioId]?.nome)||"—",
       de:descAntes, para:descDepois,
     };
-    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao);
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova, frete:Number(req.body.frete||0)});
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
 
     // se o pedido NÃO estava em nenhum caixa do sistema, entra no caixa (aberto) de quem

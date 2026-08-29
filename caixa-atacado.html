@@ -548,7 +548,7 @@ function salvarEdicaoPagamento(){
       try{
         const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
         const resp=await comTimeout(BACKEND+"/api/caixa-atacado/editar-pagamento",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr,funcionarioId:S.id})}).then(r=>r.json());
+          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr,funcionarioId:S.id,frete:FRETE})}).then(r=>r.json());
         if(resp.erro) throw new Error(resp.erro);
         if(campo) campo.value="";
         document.getElementById("modais").innerHTML=`
