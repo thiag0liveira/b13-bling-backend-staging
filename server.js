@@ -2189,6 +2189,23 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// DIAGNÓSTICO: mostra onde está o frete de um pedido (pra achar o campo certo no Bling)
+app.get("/api/diag/frete/:id",async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data);
+    if(!d) return res.json({erro:"pedido não encontrado"});
+    res.json({
+      id:d.id, numero:d.numero,
+      total:d.total, totalProdutos:d.totalProdutos,
+      outrasDespesas:d.outrasDespesas, desconto:d.desconto,
+      transporteFrete:d.transporte?.frete,
+      transporte:d.transporte||null,
+      diffTotalProdutos:(Number(d.total||0)-Number(d.totalProdutos||0)),
+    });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
+
 
 
 
