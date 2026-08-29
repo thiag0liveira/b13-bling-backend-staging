@@ -2148,6 +2148,46 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
   res.json(resultado);
 });
 
+// DIAGNÓSTICO: pedidos que aparecem em MAIS DE UM caixa hoje (venda duplicada em 2 caixas)
+app.get("/api/diag/pedidos-duplicados",(req,res)=>{
+  try{
+    const hoje=_diaBR();
+    const d=lerCaixaSessoes();
+    const porPedido={}; // pedidoId -> [ocorrências]
+    for(const s of (d.sessoes||[])){
+      for(const m of (s.movimentos||[])){
+        if(m.tipo!=="venda") continue;
+        if(_diaBR(new Date(m.em))!==hoje) continue; // só hoje
+        const pid=String(m.pedidoId||m.numero||"");
+        if(!pid) continue;
+        (porPedido[pid]=porPedido[pid]||[]).push({
+          sessaoId:s.id, operador:s.operador||"—", tipoCaixa:s.tipoCaixa||"frente",
+          sessaoAberta:!s.fechadaEm, numero:m.numero||m.pedidoId, total:m.total,
+          quando:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+          alterado:!!m.alterado, cancelado:!!m.cancelado, origem:m.origem||""
+        });
+      }
+    }
+    // duplicado = mesmo pedido em 2+ SESSÕES distintas
+    const duplicados=[];
+    for(const [pid,ocs] of Object.entries(porPedido)){
+      const sessoes=new Set(ocs.map(o=>o.sessaoId));
+      if(sessoes.size>=2){
+        duplicados.push({ pedidoId:pid, numero:ocs[0].numero, vezes:ocs.length, caixas:ocs });
+      }
+    }
+    duplicados.sort((a,b)=>b.vezes-a.vezes);
+    res.json({
+      data:hoje,
+      totalPedidosDeHoje:Object.keys(porPedido).length,
+      qtdDuplicados:duplicados.length,
+      resumo: duplicados.length? `⚠️ ${duplicados.length} pedido(s) aparecem em mais de um caixa hoje.` : "✅ Nenhum pedido em dois caixas hoje.",
+      duplicados
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+
 
 
 app.get("/api/caixa-sessao/atual",(req,res)=>{
