@@ -3450,6 +3450,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       ...(totalDesconto?{desconto:{valor:totalDesconto,unidade:"REAL"}}:{}),
       ...(req.body.observacao&&String(req.body.observacao).trim()?{observacoes:String(req.body.observacao).trim()}:{}),
       ...(Number(req.body.taxaCredito)>0?{outrasDespesas:+Number(req.body.taxaCredito).toFixed(2)}:{}),
+      ...(Number(req.body.freteBase)>0?{transporte:{frete:+Number(req.body.freteBase).toFixed(2),fretePorConta:0}}:{}),
       parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
     };
 
@@ -3483,7 +3484,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const pags=lerPag();
     const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"pdv_varejo"}));
     const _outrasPagNova=+Number(req.body.taxaCredito||0).toFixed(2);
-    const _totalPagarNova=+(totalPedido+_outrasPagNova).toFixed(2);
+    const _totalPagarNova=+(totalPedido+_outrasPagNova+Number(req.body.freteBase||0)).toFixed(2);
     const _valorPagoNova=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     pags[String(pedidoId)]={
       pedidoId:String(pedidoId), valorPago:_valorPagoNova, valorPedido:_totalPagarNova, historico,
@@ -3498,10 +3499,11 @@ app.post("/api/pdv/venda", async(req,res)=>{
       const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
       if(sessaoAtual){
         const _outrasNova=+Number(req.body.taxaCredito||0).toFixed(2);
+        const _freteNova=+Number(req.body.freteBase||0).toFixed(2);
         sessaoAtual.movimentos.push({
           tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
-          total:+(totalPedido+_outrasNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
-          outrasDespesas:_outrasNova, operador:sessaoAtual.operador||"",
+          total:+(totalPedido+_outrasNova+_freteNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
+          outrasDespesas:_outrasNova, frete:_freteNova, operador:sessaoAtual.operador||"",
           itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });

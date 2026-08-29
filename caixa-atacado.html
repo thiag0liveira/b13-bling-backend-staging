@@ -1276,7 +1276,8 @@ function render(){
             <button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>
           </div>`).join("")}
         ${OUTRAS_DESPESAS>0?`<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>`:""}
-        ${FRETE>0?`<div class="linha" style="margin-top:10px"><span class="muted">🚚 Frete (do pedido)</span><b style="color:#8fffc0">${brl(FRETE)}</b></div>`:""}
+        <div class="linha" style="margin-top:10px;align-items:center"><span class="muted">🚚 Frete${PEDIDO_ATUAL?' (do pedido)':''}</span>
+          <input type="number" step="0.01" min="0" value="${FRETE||''}" placeholder="0,00" style="width:120px;text-align:right" onchange="FRETE=+this.value||0;render()"></div>
         ${(ehPedidoAtacado()&&valorEmCredito()>0)?`
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito (3,5%)</span>
@@ -1367,7 +1368,7 @@ async function finalizar(){
         body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito})}).then(r=>r.json());
+        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE})}).then(r=>r.json());
     }
     if(resp.erro) throw new Error(resp.erro);
     // guarda a venda pra poder reimprimir o comprovante
