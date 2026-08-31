@@ -3587,6 +3587,11 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const statusFinalVenda = req.body.statusFinal==="separado" ? "separado" : "atendido";
     try{ await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
     catch(e){ console.error("Falha ao mover pedido pra "+statusFinalVenda+" (venda ja foi criada, id="+pedidoId+"):",e.message); }
+    // captura o NÚMERO do pedido; se o Bling não devolveu na criação, busca o detalhe (status já assentado)
+    let numeroPedido=criado?.data?.numero||null;
+    if(!numeroPedido){
+      try{ const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); numeroPedido=det?.numero||null; }catch(e){}
+    }
 
     // registra localmente (mesmo padrão usado no restante do sistema)
     const pags=lerPag();
@@ -3610,7 +3615,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
         const _freteNova=+Number(req.body.freteBase||0).toFixed(2);
         const _menorNova=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
         sessaoAtual.movimentos.push({
-          tipo:"venda", em:Date.now(), pedidoId, numero:criado?.data?.numero,
+          tipo:"venda", em:Date.now(), pedidoId, numero:numeroPedido,
           total:+(totalPedido+_outrasNova+_freteNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
           outrasDespesas:_outrasNova, frete:_freteNova, operador:sessaoAtual.operador||"",
           ...(_menorNova?{valorMenor:_menorNova}:{}),
@@ -3645,7 +3650,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
     }
 
-    res.json({ok:true,pedidoId,numero:criado?.data?.numero,total:totalPedido,nfce,estoqueReposto});
+    res.json({ok:true,pedidoId,numero:numeroPedido,total:totalPedido,nfce,estoqueReposto});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 

@@ -1094,45 +1094,50 @@ function imprimirMovimento(m){
 
 function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
   const vendas=(movimentos||[]).filter(m=>m.tipo==="venda");
-  const outros=(movimentos||[]).filter(m=>m.tipo!=="venda");
-  const linhasVendas=vendas.map(m=>`
-    <tr><td>${hora(m.em)}</td><td>#${esc(m.numero||m.pedidoId)}</td><td>${esc(m.clienteNome||"—")}</td>
-    <td>${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join("<br>")}</td>
-    <td style="text-align:right">${brl(m.total)}</td></tr>`).join("");
-  const linhasOutros=outros.map(m=>`
-    <tr><td>${hora(m.em)}</td><td colspan="3">${m.tipo==="sangria"?"💸 Sangria":"💰 Suprimento"}${m.motivo?" — "+esc(m.motivo):""}</td>
-    <td style="text-align:right">${brl(m.valor)}</td></tr>`).join("");
-  const linhasForma=(resumo.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("")
-    + (totalPixForma(resumo.porForma)>0.009?`<tr><td><b>Total PIX</b></td><td style="text-align:right"><b>${brl(totalPixForma(resumo.porForma))}</b></td></tr>`:"");
-  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa atacado</title>
+  const sangrias=(movimentos||[]).filter(m=>m.tipo==="sangria").sort((a,b)=>b.em-a.em);
+  const suprimentos=(movimentos||[]).filter(m=>m.tipo==="suprimento").sort((a,b)=>b.em-a.em);
+  const linhaMov=(arr,titulo)=>arr.length?`<h3>${titulo} (${arr.length})</h3>`+arr.map(m=>`<div class="mv"><div class="mv1">${hora(m.em)}</div><div class="mv2"><span>${esc(m.motivo||"(sem motivo)")}</span><b>${brl(m.valor)}</b></div></div>`).join(""):"";
+  const vendasHtml=vendas.length?vendas.slice().sort((a,b)=>b.em-a.em).map(m=>{
+    const rot=m.cancelado?" CANCELADA":(m.valorMenor?" VALOR MENOR":(m.alterado?" ALTERADO":""));
+    return `<div class="mv"><div class="mv1">${hora(m.em)} · <b>#${esc(m.numero||m.pedidoId)}</b>${rot?`<b> ·${rot}</b>`:""}${m.clienteNome?` · ${esc(m.clienteNome)}`:""}</div>
+      <div class="mv2"><span>${(m.pagamentos||[]).map(p=>esc(p.formaNome)).join(", ")||"—"}</span><b>${brl(m.total)}</b></div></div>`;
+  }).join(""):'<div class="mv">Nenhuma venda.</div>';
+  const linhasForma=(resumo.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("")
+    + (totalPixForma(resumo.porForma)>0.009?`<tr class="pix"><td>Total PIX</td><td class="v">${brl(totalPixForma(resumo.porForma))}</td></tr>`:"");
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatorio de Caixa Atacado</title>
     <style>
-      body{font-family:Arial,sans-serif;font-size:13px;max-width:700px;margin:0 auto;padding:16px;color:#000}
-      table{width:100%;border-collapse:collapse;margin-bottom:14px}
-      th,td{padding:4px 6px;border-bottom:1px solid #ccc;text-align:left}
-      h2,h3{margin:6px 0}.tot{font-size:15px;font-weight:bold}.sec{margin-top:18px}
+      *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{margin:0;padding:10px;color:#000;font-size:15px;font-weight:700;max-width:560px}
+      h2{font-size:18px;margin:0 0 2px;font-weight:800}
+      h3{font-size:15px;margin:14px 0 6px;border-bottom:3px solid #000;padding-bottom:3px;font-weight:800}
+      .cab{font-size:13px;margin-bottom:2px}
+      table{width:100%;border-collapse:collapse} td{padding:4px 0;font-weight:700;color:#000}
+      td.v{text-align:right;font-weight:800;white-space:nowrap} .q{font-weight:700}
+      .pix td{font-weight:800} .tot td{border-top:2px solid #000;font-weight:800}
+      .mv{border-bottom:1px solid #000;padding:5px 0}
+      .mv1{font-size:13px;font-weight:700} .mv2{display:flex;justify-content:space-between;gap:10px;font-size:14px;font-weight:800}
+      @media print{body{padding:0}}
     </style></head><body>
-    <h2>B13 Bebidas — Relatório de Caixa Atacado</h2>
-    <div>Operador: <b>${esc(sessao.operador||"—")}</b></div>
-    <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento?" · Fechado em: "+hora(sessao.fechadaEm||Date.now()):" · (em andamento)"}</div>
-    <div>Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
-    <div class="sec"><h3>Vendas (${vendas.length})</h3>
-    <table><tr><th>Hora</th><th>Nº</th><th>Cliente</th><th>Pagamento</th><th>Total</th></tr>${linhasVendas||"<tr><td colspan=5>Nenhuma venda</td></tr>"}</table></div>
-    <div class="sec"><h3>Sangrias / Suprimentos</h3>
-    <table>${linhasOutros||"<tr><td>Nenhum movimento</td></tr>"}</table></div>
-    <div class="sec"><h3>Totais por forma de pagamento</h3>
-    <table>${linhasForma}</table></div>
-    <div class="sec"><h3>Resumo</h3>
+    <h2>B13 BEBIDAS — Relatorio de Caixa Atacado</h2>
+    <div class="cab">Operador: <b>${esc(sessao.operador||"—")}</b></div>
+    <div class="cab">Aberto: ${hora(sessao.abertaEm)}${fechamento?" · Fechado: "+hora(sessao.fechadaEm||Date.now()):" · (em andamento)"}</div>
+    <div class="cab">Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
+    <h3>Vendas por forma de pagamento</h3>
+    <table><tr><td><b>Vendas (${vendas.length})</b></td><td class="v">${brl(resumo.totalVendas)}</td></tr>${linhasForma}</table>
+    <h3>Dinheiro na gaveta</h3>
     <table>
-      <tr><td>Troco inicial</td><td style="text-align:right">${brl(resumo.trocoInicial)}</td></tr>
-      <tr><td>Vendas em dinheiro</td><td style="text-align:right">${brl(resumo.vendasDinheiro)}</td></tr>
-      <tr><td>+ Suprimentos</td><td style="text-align:right">${brl(resumo.totalSuprimentos)}</td></tr>
-      <tr><td>− Sangrias</td><td style="text-align:right">${brl(resumo.totalSangrias)}</td></tr>
-      <tr class="tot"><td>Esperado na gaveta</td><td style="text-align:right">${brl(resumo.esperadoGaveta)}</td></tr>
-      ${fechamento?`<tr><td>Valor contado</td><td style="text-align:right">${brl(fechamento.valorContado)}</td></tr>
-      <tr class="tot"><td>Diferença</td><td style="text-align:right">${brl(fechamento.diferenca)}</td></tr>
-      ${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
-      <tr><td>Total geral de vendas</td><td style="text-align:right">${brl(resumo.totalVendas)}</td></tr>
-    </table></div>
+      <tr><td>Troco inicial</td><td class="v">${brl(resumo.trocoInicial)}</td></tr>
+      <tr><td>Vendas em dinheiro</td><td class="v">${brl(resumo.vendasDinheiro)}</td></tr>
+      <tr><td>+ Suprimentos</td><td class="v">${brl(resumo.totalSuprimentos)}</td></tr>
+      <tr><td>- Sangrias</td><td class="v">${brl(resumo.totalSangrias)}</td></tr>
+      <tr class="tot"><td>Esperado na gaveta</td><td class="v">${brl(resumo.esperadoGaveta)}</td></tr>
+      ${fechamento?`<tr><td>Valor contado</td><td class="v">${brl(fechamento.valorContado)}</td></tr><tr class="tot"><td>Diferenca</td><td class="v">${brl(fechamento.diferenca)}</td></tr>${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
+    </table>
+    ${linhaMov(suprimentos,"Suprimentos")}
+    ${linhaMov(sangrias,"Sangrias")}
+    <h3>Vendas (${vendas.length})</h3>
+    ${vendasHtml}
+    <div style="margin-top:16px;font-size:12px;text-align:center">Emitido em ${new Date().toLocaleString("pt-BR")}</div>
     <script>window.onload=()=>window.print();<\/script>
     </body></html>`;
   return html;
