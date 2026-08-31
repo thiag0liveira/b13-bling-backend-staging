@@ -1968,6 +1968,7 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
     const d=lerCaixaSessoes();
     let achou=false;
     for(const s of (d.sessoes||[])){
+      let mexeu=false;
       for(const m of (s.movimentos||[])){
         if(m.tipo==="venda" && String(m.pedidoId)===idStr){
           m.alterado=true;
@@ -1976,9 +1977,11 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
           if(opts.frete!=null) m.frete=+Number(opts.frete).toFixed(2);
           m.alteracoes=[...(m.alteracoes||[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
-          achou=true;
+          achou=true; mexeu=true;
         }
       }
+      // se a sessão está FECHADA e tem resumo congelado, recalcula pra refletir a alteração
+      if(mexeu && s.fechadaEm && s.resumoFinal){ try{ s.resumoFinal=resumoSessaoCaixa(s); }catch(e){} }
     }
     if(achou) salvarCaixaSessoes(d);
     return achou;
@@ -3339,6 +3342,52 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
+// GESTÃO: mudar a forma de pagamento de QUALQUER venda (caixa aberto ou fechado).
+// Autorizado pelo login de admin da Gestão de Caixas (sem QR). Registra quem alterou.
+app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
+  try{
+    const {pedidoId,pagamentos,operador,funcionarioId,numero}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    const linhas=(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p&&p.formaId&&Number(p.valor)>0);
+    if(!linhas.length) return res.status(400).json({erro:"informe ao menos uma forma de pagamento"});
+    const fmt=(v)=>Number(v||0).toFixed(2);
+    const quemAlterou=operador||"Gestão";
+
+    const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+
+    const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
+    let descAntes="";
+    if(antigo&&Array.isArray(antigo.historico)&&antigo.historico.length){
+      descAntes=antigo.historico.map(h=>`${h.formaNome||"?"}: ${fmt(h.valor)}`).join(" · ");
+    }else{
+      descAntes=(ped.parcelas||[]).map(p=>`${p.formaPagamento?.nome||"?"}: ${fmt(p.valor)}`).join(" · ");
+    }
+    descAntes=descAntes||"—";
+    const descDepois=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
+
+    const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const notaObs=`[Alteração ${quando} — ${quemAlterou} (Gestão de Caixas)] Pagamento: ${descAntes} -> ${descDepois}`;
+    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
+    if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
+
+    const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"gestao_edit"}));
+    pags[idStr]={
+      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido:somaNova, historico,
+      statusPagamento: somaNova>0?"pago":"pendente",
+    };
+    salvarJSON(PAG_FILE,pags);
+
+    const alteracao={ em:Date.now(), tipo:"pagamento", autorizadoPor:quemAlterou+" (Gestão)", por:quemAlterou, de:descAntes, para:descDepois };
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova});
+    addLog(idStr,"pagamento_editado_gestao",funcionarioId||null,quemAlterou,{de:descAntes,para:descDepois});
+
+    res.json({ok:true, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 
 // CANCELAR uma venda JÁ FINALIZADA — só com autorização de gerente/financeiro/admin (QR).
 // Move o pedido pra CANCELADO no Bling, zera o pagamento local e marca o movimento

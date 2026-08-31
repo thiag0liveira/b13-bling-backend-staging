@@ -164,15 +164,17 @@ window.verMovimentos=async function(id){
   try{
     const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
     const movs=j.movimentos||[];
+    window._GMOVS={id, movs};
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal">
           <h3>📋 Movimentos — ${esc(j.sessao?.operador||"")}</h3>
           <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
-          ${movs.length?movs.map(m=>`
+          ${movs.length?movs.map((m,ix)=>`
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
-              <div>${nomeMovimento(m)}</div>
+              <div>${nomeMovimento(m)}${m.alterado?' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>':''}</div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
+              ${(m.tipo==="venda"&&!m.cancelado)?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>`:''}
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
             ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
@@ -460,6 +462,69 @@ window.imprimirRelatorioCaixa=async function(id){
     w.document.open(); w.document.write(html); w.document.close();
     setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} }, 350);
   }catch(e){ alert("Não foi possível gerar o relatório: "+e.message); }
+}
+
+
+// ---- GESTÃO: mudar a forma de pagamento de uma venda (caixa aberto ou fechado) ----
+window._FORMAS_GESTAO=null;
+async function carregarFormasGestao(){
+  if(window._FORMAS_GESTAO) return window._FORMAS_GESTAO;
+  try{
+    const j=await fetch(B+"/api/formas-pagamento").then(r=>r.json());
+    window._FORMAS_GESTAO=(j.data||[]).filter(f=>f.situacao!=="I").map(f=>({id:f.id,nome:f.nome||f.descricao||("Forma "+f.id)}));
+  }catch(e){ window._FORMAS_GESTAO=[]; }
+  return window._FORMAS_GESTAO;
+}
+window.editarPagamentoVenda=async function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  const formas=await carregarFormasGestao();
+  if(!formas.length){ alert("Não consegui carregar as formas de pagamento."); return; }
+  const acha=(nome)=>{ const f=formas.find(x=>String(x.nome).toLowerCase()===String(nome||"").toLowerCase()) || formas.find(x=>/pix/i.test(x.nome)&&/pix/i.test(nome||"")); return f?f.id:formas[0].id; };
+  const base=(m.pagamentos&&m.pagamentos.length)?m.pagamentos:[{formaNome:"",valor:m.total||0}];
+  window._GEDIT={ pedidoId:m.pedidoId, numero:m.numero||m.pedidoId,
+    linhas:base.map(p=>({formaId:acha(p.formaNome),valor:Number(p.valor)||0})), formas };
+  renderEditorPagamento();
+}
+window.renderEditorPagamento=function(){
+  const E=window._GEDIT; if(!E) return;
+  const opt=(sel)=>E.formas.map(f=>`<option value="${f.id}" ${String(f.id)===String(sel)?"selected":""}>${esc(f.nome)}</option>`).join("");
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>✏️ Mudar forma de pagamento — #${esc(E.numero)}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">Ajuste a forma (e o valor, se precisar) de cada pagamento. A alteração vai pro Bling e fica registrada no histórico (em vermelho).</div>
+      ${E.linhas.map((l,i)=>`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+        <select style="flex:1" onchange="_GEDIT.linhas[${i}].formaId=this.value">${opt(l.formaId)}</select>
+        <input type="number" step="0.01" value="${l.valor}" style="width:100px;text-align:right" onchange="_GEDIT.linhas[${i}].valor=+this.value||0">
+        <button class="btn btn-ghost btn-sm" style="padding:3px 8px;color:#ff8090" onclick="_GEDIT.linhas.splice(${i},1);renderEditorPagamento()">🗑</button>
+      </div>`).join("")}
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:10px" onclick="_GEDIT.linhas.push({formaId:_GEDIT.formas[0].id,valor:0});renderEditorPagamento()">+ Adicionar forma</button>
+      <div id="editMsg"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-mag" style="flex:1" onclick="salvarEditPagamentoGestao()">💾 Salvar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+window.salvarEditPagamentoGestao=async function(){
+  const E=window._GEDIT; if(!E) return;
+  const msg=document.getElementById("editMsg");
+  const linhas=E.linhas.filter(l=>l.formaId&&Number(l.valor)>0).map(l=>{
+    const f=E.formas.find(x=>String(x.id)===String(l.formaId));
+    return {formaId:l.formaId, formaNome:f?f.nome:"", valor:Number(l.valor)};
+  });
+  if(!linhas.length){ if(msg) msg.innerHTML='<div class="err">Informe ao menos uma forma com valor.</div>'; return; }
+  try{
+    const r=await fetch(B+"/api/gestao/editar-pagamento-venda",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pedidoId:E.pedidoId,numero:E.numero,pagamentos:linhas,operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">✅</div><h3>Forma de pagamento alterada</h3>
+        <div class="muted" style="text-align:left;margin-top:8px">Pedido #${esc(r.numero||E.numero)}<br>De: ${esc(r.de||"—")}<br>Para: ${esc(r.para||"—")}</div>
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
+      </div></div>`;
+  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
 render();
