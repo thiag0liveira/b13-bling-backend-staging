@@ -3382,7 +3382,10 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
     const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
     const notaObs=`[Alteração ${quando} — ${quemAlterou} (Gestão de Caixas)] Pagamento: ${descAntes} -> ${descDepois}`;
     const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
-    if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
+    const blingOk=!!rBling.ok;
+    const blingErro=blingOk?"":(rBling.erro||"desconhecido");
+    // segue registrando no histórico do caixa MESMO se o Bling recusar (ex.: estoque insuficiente).
+    // Nesse caso o gestor ajusta o Bling na mão, mas o caixa já reflete a forma correta.
 
     const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"gestao_edit"}));
@@ -3392,11 +3395,11 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
     };
     salvarJSON(PAG_FILE,pags);
 
-    const alteracao={ em:Date.now(), tipo:"pagamento", autorizadoPor:quemAlterou+" (Gestão)", por:quemAlterou, de:descAntes, para:descDepois };
+    const alteracao={ em:Date.now(), tipo:"pagamento", autorizadoPor:quemAlterou+" (Gestão)", por:quemAlterou, de:descAntes, para:descDepois, ...(blingOk?{}:{blingPendente:true, blingErro}) };
     const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova});
-    addLog(idStr,"pagamento_editado_gestao",funcionarioId||null,quemAlterou,{de:descAntes,para:descDepois});
+    addLog(idStr,"pagamento_editado_gestao",funcionarioId||null,quemAlterou,{de:descAntes,para:descDepois,blingOk,blingErro});
 
-    res.json({ok:true, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
+    res.json({ok:true, blingOk, blingErro, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

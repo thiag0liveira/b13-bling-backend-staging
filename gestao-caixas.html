@@ -518,10 +518,14 @@ window.salvarEditPagamentoGestao=async function(){
     const r=await fetch(B+"/api/gestao/editar-pagamento-venda",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({pedidoId:E.pedidoId,numero:E.numero,pagamentos:linhas,operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json());
     if(r.erro) throw new Error(r.erro);
+    const avisoBling = r.blingOk===false
+      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>`
+      : "";
     document.getElementById("modais").innerHTML=`
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">✅</div><h3>Forma de pagamento alterada</h3>
+        <div style="font-size:42px">${r.blingOk===false?"⚠️":"✅"}</div><h3>Forma de pagamento alterada</h3>
         <div class="muted" style="text-align:left;margin-top:8px">Pedido #${esc(r.numero||E.numero)}<br>De: ${esc(r.de||"—")}<br>Para: ${esc(r.para||"—")}</div>
+        ${avisoBling}
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
       </div></div>`;
   }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
