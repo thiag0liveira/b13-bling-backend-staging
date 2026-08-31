@@ -2220,6 +2220,31 @@ app.get("/api/diag/frete/:id",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
 
+// DIAGNÓSTICO: mostra as contas a receber ligadas a um pedido (pra editar a forma sem tocar no estoque)
+app.get("/api/diag/conta-receber/:pedidoId",async(req,res)=>{
+  try{
+    const ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data);
+    if(!ped) return res.json({erro:"pedido não encontrado"});
+    const contatoId=ped.contato?.id;
+    let contas=[];
+    try{
+      const pr=new URLSearchParams({pagina:1,limite:100}); if(contatoId) pr.set("idContato",contatoId);
+      const rc=await bling(`/contas/receber?${pr.toString()}`);
+      contas=(rc.data||[]);
+    }catch(e){ return res.json({erroContas:e.message,body:e.body, pedidoNumero:ped.numero, contatoId}); }
+    let detalhe=null;
+    if(contas[0]?.id){ try{ detalhe=await bling(`/contas/receber/${contas[0].id}`).then(r=>r?.data); }catch(e){} }
+    res.json({
+      pedido:{ id:ped.id, numero:ped.numero, total:ped.total, contatoId, contatoNome:ped.contato?.nome,
+        parcelas:(ped.parcelas||[]).map(p=>({id:p.id, valor:p.valor, formaPagamento:p.formaPagamento})) },
+      qtdContasDoContato: contas.length,
+      contasDoContato: contas.slice(0,20).map(c=>({id:c.id, valor:c.valor, situacao:c.situacao, vencimento:c.vencimento, dataEmissao:c.dataEmissao, formaPagamento:c.formaPagamento, numeroDocumento:c.numeroDocumento})),
+      detalhePrimeiraConta: detalhe,
+    });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
+
 
 
 
