@@ -928,6 +928,30 @@ function salvarLedger(o){ salvarJSON(LEDGER_FILE,o); }
 // pelas formas de pagamento reais usadas no recebimento. Algumas situações
 // (Em Separação, Separado, Em Rota etc) bloqueiam edição direta no Bling —
 // usa o mesmo desbloqueio via "Em Digitação" já usado pra editar itens.
+// tenta destravar o pedido pra edição: testa situações editáveis até uma transição
+// ser ACEITA por este Bling (cada conta tem um fluxo de situações diferente).
+async function _destravarSituacao(id){
+  const cands=[SIT.EM_DIGITACAO, SIT.EM_ABERTO, SIT.VERIFICADO].filter(Boolean);
+  for(const c of cands){
+    try{ await bling(`/pedidos/vendas/${id}/situacoes/${c}`,{method:"PATCH"}); return c; }
+    catch(e){ /* transição não definida pra esta conta — tenta a próxima */ }
+  }
+  return null;
+}
+// restaura a situação original CAMINHANDO até ela (passos intermediários podem falhar
+// se a transição não existir; o importante é o passo final chegar no alvo).
+async function _restaurarSituacao(id, alvo){
+  let caminho;
+  if(alvo===SIT.ATENDIDO) caminho=[SIT.EM_SEP,SIT.SEPARADO,SIT.ATENDIDO];
+  else if(alvo===SIT.SEPARADO) caminho=[SIT.EM_SEP,SIT.SEPARADO];
+  else caminho=[alvo];
+  for(const s of caminho){
+    if(!s) continue;
+    try{ await bling(`/pedidos/vendas/${id}/situacoes/${s}`,{method:"PATCH"}); }
+    catch(e){ /* segue pros próximos passos */ }
+    await new Promise(r=>setTimeout(r,350));
+  }
+}
 async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
   const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
@@ -969,29 +993,17 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       // esse código pra "situação bloqueada", o que fazia falhar silenciosamente
       // (o pagamento ficava salvo aqui no sistema, mas não ia pro Bling)
       if(!precisaUnlock) throw e1;
-      // situação bloqueada — desbloqueia via Em Digitação, edita, depois restaura
-      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+      // situação bloqueada — desbloqueia tentando situações editáveis que este Bling aceite
+      const sitDestravado=await _destravarSituacao(id);
+      if(!sitDestravado) throw e1;
       fezUnlock=true;
       await new Promise(r=>setTimeout(r,400));
       try{
         resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
       }finally{
-        // sempre restaura a situação original, mesmo se o PUT falhar
+        // sempre restaura a situação original (caminhando até ela), mesmo se o PUT falhar
         await new Promise(r=>setTimeout(r,400));
-        for(let t=0;t<3;t++){
-          try{
-            if(sitAtual===SIT.ATENDIDO){
-              // não pula direto pra Atendido: caminha Separado -> Atendido
-              await bling(`/pedidos/vendas/${id}/situacoes/${SIT.SEPARADO}`,{method:"PATCH"});
-              await new Promise(r=>setTimeout(r,400));
-              await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
-            }else{
-              await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"});
-            }
-            break;
-          }
-          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
-        }
+        await _restaurarSituacao(id, sitAtual);
       }
     }
     return {ok:true,resposta:resultado,fezUnlock};
@@ -4706,10 +4718,11 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
     }catch(e1){
       if(e1.status!==400||!precisaUnlock) throw e1;
-      // 400: tenta via Em Digitação
-      console.log("Tentando via Em Digitação para editar itens, sit atual:", sit);
+      // 400: desbloqueia tentando situações editáveis que este Bling aceite
+      console.log("Tentando desbloquear para editar itens, sit atual:", sit);
       try{
-        await blingComRetry(`/pedidos/vendas/${req.params.id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+        const sitDestravado=await _destravarSituacao(req.params.id);
+        if(!sitDestravado) throw e1;
         fezUnlock=true; // marcou que mudou status — DEVE restaurar no finally
         await new Promise(r=>setTimeout(r,400));
         resultado=await blingComRetry(`/pedidos/vendas/${req.params.id}`,{ method:"PUT", body:JSON.stringify(payload) });
@@ -4721,31 +4734,10 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       // SEMPRE restaura o status original se fez unlock — mesmo em caso de erro
       if(fezUnlock){
         await new Promise(r=>setTimeout(r,400));
-        // determina para qual status restaurar
-        // se estava em SEP_PEND, após editar vai para EM_SEP (expedição precisa separar novamente)
+        // se estava em SEP_PEND, após editar vai para EM_SEP (expedição precisa separar de novo)
         const sitRestaurar=sit===SIT.SEP_PEND?SIT.EM_SEP:sit;
-        let restaurado=false;
         console.log("Restaurando status:", sit, "→", sitRestaurar, "pedido:", req.params.id);
-        for(let t=0;t<3;t++){
-          try{
-            await bling(`/pedidos/vendas/${req.params.id}/situacoes/${sitRestaurar}`,{method:"PATCH"});
-            console.log("Status restaurado para", sitRestaurar);
-            restaurado=true; break;
-          }catch(e){
-            console.error("Erro ao restaurar status "+sitRestaurar+" tentativa "+(t+1)+":", e.message);
-            await new Promise(r=>setTimeout(r,600*(t+1)));
-          }
-        }
-        // fallback: AGUARDANDO SEPARAÇÃO
-        if(!restaurado){
-          try{
-            await bling(`/pedidos/vendas/${req.params.id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"});
-            console.log("Status restaurado para AGUARDANDO (fallback)");
-          }catch(e){
-            console.error("Fallback falhou:", e.message);
-            addLog(String(req.params.id),"status_nao_restaurado",null,null,{statusOriginal:sit,statusAtual:SIT_EM_DIGITACAO});
-          }
-        }
+        await _restaurarSituacao(req.params.id, sitRestaurar);
       }
     }
     if(funcionarioId) addLog(String(req.params.id),"itens_editados",funcionarioId,funcionarioNome,{motivo:motivo||"edição manual",qtdItens:itens.length});
