@@ -7816,8 +7816,10 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     const minValor=Number(req.query.minValor||1000);
     const diasAtencao=Number(req.query.diasAtencao||15);
     const diasPerdido=Number(req.query.diasPerdido||30);
+    const mesAgora=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,7);
     const temCacheValido=_cacheApoio && _cacheApoio.dados?.vendedores;
-    const cacheFresco=temCacheValido && (Date.now()-_cacheApoio.em < 24*60*60*1000);
+    const mesmoMes=temCacheValido && _cacheApoio.dados.mesAtual===mesAgora; // vira o mês -> cache velho
+    const cacheFresco=temCacheValido && mesmoMes && (Date.now()-_cacheApoio.em < 24*60*60*1000);
 
     // tem cache fresco e não pediu pra forçar → devolve na hora
     if(cacheFresco && !forcar){
@@ -7825,12 +7827,12 @@ app.get("/api/vendedor/apoio",async(req,res)=>{
     }
     // precisa (re)calcular — dispara em segundo plano e responde na hora
     dispararApoioBackground({minValor,diasAtencao,diasPerdido});
-    if(temCacheValido){
-      // já tem um resultado anterior: mostra ele enquanto o novo é calculado
+    if(temCacheValido && mesmoMes){
+      // já tem um resultado anterior DO MESMO MÊS: mostra ele enquanto o novo é calculado
       return res.json({..._cacheApoio.dados, doCache:true, cacheEm:_cacheApoio.em, computando:true, progresso:_apoioProgresso});
     }
-    // primeira análise de todas, nada pronto ainda
-    return res.json({computando:true, primeira:true, progresso:_apoioProgresso||"Iniciando…"});
+    // primeira análise, ou o mês virou (meta nova): não mostra dados do mês passado
+    return res.json({computando:true, primeira:true, mesAtual:mesAgora, progresso:_apoioProgresso||"Iniciando…"});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
