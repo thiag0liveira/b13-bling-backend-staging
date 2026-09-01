@@ -2408,6 +2408,31 @@ app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
 
+app.get("/api/diag/movimentos-inconsistentes",(req,res)=>{
+  // acha vendas do caixa onde a soma dos itens não bate com o total (descontando outras despesas e frete)
+  try{
+    const dCx=lerCaixaSessoes();
+    const achados=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        const somaItens=+(m.itens||[]).reduce((a,i)=>a+(Number(i.valor)||0)*(Number(i.quantidade)||0),0).toFixed(2);
+        const esperado=+((Number(m.total)||0)-(Number(m.outrasDespesas)||0)-(Number(m.frete)||0)).toFixed(2);
+        const dif=+(somaItens-esperado).toFixed(2);
+        if(Math.abs(dif)>0.10){
+          achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero,
+            em:new Date(m.em).toLocaleString("pt-BR"), total:m.total, outras:m.outrasDespesas||0, frete:m.frete||0,
+            somaItens, esperadoDosItens:esperado, diferenca:dif, alterado:!!m.alterado,
+            itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
+            pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
+        }
+      });
+    });
+    achados.sort((a,b)=>Math.abs(b.diferenca)-Math.abs(a.diferenca));
+    res.json({ qtd:achados.length, achados:achados.slice(0,60) });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/vendas-por-produto/:termo",(req,res)=>{
   // acha vendas do caixa que tenham um produto cujo nome contém o termo (ex: BRAHMA)
   try{
