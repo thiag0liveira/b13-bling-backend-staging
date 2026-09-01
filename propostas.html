@@ -96,8 +96,43 @@ async function carregar(){
     const j=await fetch(B+"/api/atacado/propostas?"+params.toString()).then(r=>r.json());
     LISTA=j.data||[];
     if(!LISTA.length){ box.innerHTML=`<div class="card"><div class="muted">Nenhuma ${FILTRO==='todas'?'proposta/pedido':FILTRO} ainda.</div></div>`; return; }
-    box.innerHTML=LISTA.map(cardProposta).join("");
+    renderLista();
+    carregarSituacoes(); // preenche o status de cada pedido aos poucos
   }catch(e){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro ao carregar.</div>`; }
+}
+
+function renderLista(){
+  const box=document.getElementById("lista");
+  if(!box || !LISTA.length) return;
+  box.innerHTML=LISTA.map(cardProposta).join("");
+}
+
+// busca a situação atual (no Bling) de cada pedido gerado e atualiza o card
+let SITU={}; // {pedidoBlingId: nome | null}
+async function carregarSituacoes(){
+  for(const p of LISTA){
+    if(!p.pedidoBlingId) continue;
+    const k=String(p.pedidoBlingId);
+    if(SITU[k]!==undefined) continue;
+    try{
+      const j=await fetch(B+"/api/atacado/pedido/"+k+"/situacao").then(r=>r.json());
+      SITU[k]= j.erro ? null : (j.situacaoNome||null);
+    }catch(e){ SITU[k]=null; }
+    renderLista();
+  }
+}
+
+function statusPedidoBadge(p){
+  if(!p.pedidoBlingId) return "";
+  const nome=SITU[String(p.pedidoBlingId)];
+  if(nome===undefined) return `<div style="margin-top:4px"><span class="tag" style="background:#241a3a;color:#c9b8ff">⏳ status…</span></div>`;
+  if(nome===null) return `<div style="margin-top:4px"><span class="tag" style="background:#3a0010;color:#ff8090">status indisponível</span></div>`;
+  let bg="#241a3a", fg="#c9b8ff";
+  if(/atendido/i.test(nome)){ bg="#0a2a1a"; fg="#3ce88a"; }
+  else if(/cancelado/i.test(nome)){ bg="#3a0010"; fg="#ff8090"; }
+  else if(/rota|separado|verificado|conferência/i.test(nome)){ bg="#0d2440"; fg="#7fd4ff"; }
+  else if(/aguardando|separação|aberto|digitação/i.test(nome)){ bg="#2a1f00"; fg="#ffd23f"; }
+  return `<div style="margin-top:4px"><span class="tag" style="background:${bg};color:${fg}">${esc(nome)}</span></div>`;
 }
 
 // Sincroniza os pedidos com o Bling: remove do sistema os pedidos que foram
@@ -157,6 +192,7 @@ function cardProposta(p){
       </div>
       <div style="text-align:right">
         ${statusTag(p)}
+        ${statusPedidoBadge(p)}
         <div style="font-size:18px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(p.total)}</div>
       </div>
     </div>

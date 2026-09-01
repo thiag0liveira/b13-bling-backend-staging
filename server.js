@@ -7174,6 +7174,34 @@ async function situacaoAtualBling(pedidoBlingId){
   }
 }
 
+// nome amigável de uma situação, pelos ids que o nosso fluxo usa
+function nomeSituacao(id){
+  const n=Number(id);
+  const mapa={
+    [SIT.EM_ABERTO]:"Em aberto",
+    [SIT.EM_DIGITACAO]:"Em digitação",
+    [SIT.AGUARDANDO]:"Aguardando separação",
+    [SIT.EM_SEP]:"Em separação",
+    [SIT.SEP_PEND]:"Separação pendente",
+    [SIT.SEPARADO]:"Separado",
+    [SIT.CONF_ENTREGA]:"Conferência de entrega",
+    [SIT.VERIFICADO]:"Verificado",
+    [SIT.EM_ROTA]:"Em rota",
+    [SIT.ATENDIDO]:"Atendido",
+    [Number(process.env.SIT_CANCELADO||12)]:"Cancelado",
+  };
+  return mapa[n]||("Situação "+n);
+}
+
+// situação atual (id + nome) de um pedido do Bling — usado na aba Pedidos pra mostrar o status
+app.get("/api/atacado/pedido/:blingId/situacao",async(req,res)=>{
+  try{
+    const a=await situacaoAtualBling(req.params.blingId);
+    if(!a.ok) return res.status(502).json({erro:a.erro});
+    res.json({situacaoId:a.situacaoId, situacaoNome:nomeSituacao(a.situacaoId)});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 // cancela a proposta/pedido. REGRAS:
 // 1) Só dá pra cancelar enquanto o pedido ainda está no status inicial
 //    "AGUARDANDO SEPARAÇÃO (SISTEMA)". Se já entrou no fluxo (em separação,
