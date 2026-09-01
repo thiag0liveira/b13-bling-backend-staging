@@ -1229,6 +1229,40 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
+// LISTA as vendas do CAIXA ATACADO do mês vigente. Produtos e formas já vêm do
+// movimento do caixa — rápido, sem consultar o Bling item a item.
+app.get("/api/nfce/vendas-caixa-atacado",(req,res)=>{
+  try{
+    const now=new Date();
+    const ini=new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const fim=new Date(now.getFullYear(), now.getMonth()+1, 1).getTime();
+    const emitidas=lerNfceEmitidas();
+    const dCx=lerCaixaSessoes();
+    const porPedido={};
+    (dCx.sessoes||[]).forEach(s=>{
+      if((s.tipoCaixa||"frente")!=="atacado") return; // só caixa atacado
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda" || m.cancelado) return;
+        if(!(m.em>=ini && m.em<fim)) return; // mês vigente
+        const pid=String(m.pedidoId);
+        // mesmo pedido pode ter +de 1 movimento (reaberto/editado) — fica o mais recente
+        if(porPedido[pid] && porPedido[pid]._em>=m.em) return;
+        porPedido[pid]={
+          pedidoId:m.pedidoId, numero:m.numero||m.pedidoId,
+          cliente:m.clienteNome||"Consumidor Final",
+          em:m.em, _em:m.em, total:m.total||0,
+          produtos:(m.itens||[]).map(i=>({nome:i.nome||"produto",quantidade:i.quantidade,valor:i.valor})),
+          formas:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—",valor:p.valor})),
+          operador:m.operador||"",
+          jaEmitida: !!emitidas[pid], nfce: emitidas[pid]||null,
+        };
+      });
+    });
+    const vendas=Object.values(porPedido).map(v=>{ delete v._em; return v; }).sort((a,b)=>b.em-a.em);
+    res.json({data:vendas, total:vendas.length, mes:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // DETALHE de um pedido: produtos e formas de pagamento (resolve o nome da forma)
 app.get("/api/nfce/pedido/:id/detalhe",async(req,res)=>{
   try{

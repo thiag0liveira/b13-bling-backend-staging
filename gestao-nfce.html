@@ -53,40 +53,33 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
-let LISTA=[];        // pedidos aguardando separação
-let DETALHES={};     // {pedidoId: {produtos, formas}}
+let LISTA=[];        // vendas do caixa atacado (mês vigente)
 let FILTRO="todos";  // todos | pendentes | emitidas
 let CARREGANDO=false;
+let MES="";
 let S=null;
+let _timer=null;
 
 function badge(p){
   if(p.jaEmitida) return `<span class="tag tag-ok">✅ NFC-e emitida${p.nfce?.numeroNota?" #"+esc(p.nfce.numeroNota):""}</span>`;
   return `<span class="tag tag-pend">⏳ Sem NFC-e</span>`;
 }
 
-function cardPedido(p){
-  const d=DETALHES[p.id];
-  const data=p.data?p.data.split("-").reverse().join("/"):"";
-  let produtosHtml, formasHtml;
-  if(!d){
-    produtosHtml=`<div class="muted">Carregando produtos…</div>`;
-    formasHtml="";
-  }else{
-    produtosHtml=(d.produtos||[]).length
-      ? (d.produtos||[]).map(pr=>`<span class="pill">${esc(pr.quantidade)}x ${esc(pr.nome)}</span>`).join("")
-      : `<span class="muted">Sem produtos.</span>`;
-    formasHtml=`<div class="lin"><div class="muted" style="margin-bottom:4px">Formas de pagamento:</div>`+
-      ((d.formas||[]).length
-        ? (d.formas||[]).map(f=>`<span class="pill">${esc(f.forma)} · ${brl(f.valor)}</span>`).join("")
-        : `<span class="muted">Sem parcelas.</span>`)+`</div>`;
-  }
+function cardVenda(p){
+  const dt=p.em?new Date(p.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+  const produtosHtml=(p.produtos||[]).length
+    ? (p.produtos||[]).map(pr=>`<span class="pill">${esc(pr.quantidade)}x ${esc(pr.nome)}</span>`).join("")
+    : `<span class="muted">Sem produtos.</span>`;
+  const formasHtml=(p.formas||[]).length
+    ? (p.formas||[]).map(f=>`<span class="pill">${esc(f.forma)} · ${brl(f.valor)}</span>`).join("")
+    : `<span class="muted">Sem formas.</span>`;
   const link=p.nfce?.link?`<a class="lk" href="${esc(p.nfce.link)}" target="_blank">ver DANFE</a>`:"";
   const avisoEnvio=(p.nfce&&p.nfce.envioErro)?`<div class="tag tag-pend" style="display:inline-block;margin-top:6px">gerada, mas não transmitida — reenvie no Bling</div>`:"";
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
-        <div style="font-weight:800">#${esc(p.numero||p.id)} · ${esc(p.cliente||"—")}</div>
-        <div class="muted" style="font-size:12px">${data}</div>
+        <div style="font-weight:800">#${esc(p.numero||p.pedidoId)} · ${esc(p.cliente||"—")}</div>
+        <div class="muted" style="font-size:12px">${dt}${p.operador?" · "+esc(p.operador):""}</div>
       </div>
       <div style="text-align:right">
         ${badge(p)}
@@ -94,13 +87,20 @@ function cardPedido(p){
       </div>
     </div>
     <div class="lin"><div class="muted" style="margin-bottom:4px">Produtos:</div>${produtosHtml}</div>
-    ${formasHtml}
+    <div class="lin"><div class="muted" style="margin-bottom:4px">Formas de pagamento:</div>${formasHtml}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
       ${p.jaEmitida
         ? `<span class="tag tag-ok">Emitida em ${p.nfce?.em?new Date(p.nfce.em).toLocaleString("pt-BR"):""}</span> ${link} ${avisoEnvio}`
-        : `<button class="btn btn-grn" onclick="emitir('${p.id}')">🧾 Emitir NFC-e</button>`}
+        : `<button class="btn btn-grn" onclick="emitir('${p.pedidoId}')">🧾 Emitir NFC-e</button>`}
     </div>
   </div>`;
+}
+
+function mesLabel(){
+  if(!MES) return "";
+  const [a,m]=MES.split("-");
+  const nomes=["","janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  return `${nomes[+m]||m} de ${a}`;
 }
 
 function render(){
@@ -117,55 +117,64 @@ function render(){
     </div>
     <div class="wrap">
       <div class="card">
-        <div class="muted" style="margin-bottom:8px">Pedidos aguardando separação (criados pelo totem, site e atacado). ${LISTA.length} pedido(s), ${pend} sem NFC-e.</div>
+        <div style="font-weight:800;margin-bottom:4px">Vendas do caixa atacado — ${esc(mesLabel())}</div>
+        <div class="muted" style="margin-bottom:8px">${LISTA.length} venda(s), ${pend} sem NFC-e. A lista atualiza sozinha conforme novas vendas são feitas.</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <span class="chip ${FILTRO==='todos'?'on':''}" onclick="FILTRO='todos';render()">Todos</span>
           <span class="chip ${FILTRO==='pendentes'?'on':''}" onclick="FILTRO='pendentes';render()">⏳ Sem NFC-e</span>
           <span class="chip ${FILTRO==='emitidas'?'on':''}" onclick="FILTRO='emitidas';render()">✅ Emitidas</span>
         </div>
       </div>
-      ${CARREGANDO?`<div class="card"><div class="muted">Carregando pedidos…</div></div>`:""}
-      ${!CARREGANDO&&!lista.length?`<div class="card"><div class="muted">Nenhum pedido nesse filtro.</div></div>`:""}
-      ${lista.map(cardPedido).join("")}
+      ${CARREGANDO&&!LISTA.length?`<div class="card"><div class="muted">Carregando vendas…</div></div>`:""}
+      ${!CARREGANDO&&!lista.length?`<div class="card"><div class="muted">Nenhuma venda nesse filtro.</div></div>`:""}
+      ${lista.map(cardVenda).join("")}
     </div>`;
 }
 
-async function carregar(){
-  CARREGANDO=true; DETALHES={}; render();
-  try{
-    const j=await fetch(B+"/api/nfce/pedidos-aguardando").then(r=>r.json());
-    LISTA=j.data||[];
-    CARREGANDO=false; render();
-    carregarDetalhesEmSequencia(); // preenche produtos e formas progressivamente
-  }catch(e){
-    CARREGANDO=false; LISTA=[]; render();
-    alert("Erro ao carregar os pedidos. Tente de novo.");
-  }
+// mescla a lista nova preservando o que já está na tela (pra atualizar aos poucos sem "piscar")
+function mesclar(novas){
+  const idx={}; LISTA.forEach((v,i)=>idx[String(v.pedidoId)]=i);
+  let mudou=false;
+  (novas||[]).forEach(nv=>{
+    const k=String(nv.pedidoId);
+    if(idx[k]===undefined){ LISTA.push(nv); mudou=true; }
+    else{
+      const cur=LISTA[idx[k]];
+      if(cur.jaEmitida!==nv.jaEmitida || cur.total!==nv.total || (cur.produtos||[]).length!==(nv.produtos||[]).length){
+        LISTA[idx[k]]=nv; mudou=true;
+      }
+    }
+  });
+  // remove as que sumiram (canceladas)
+  const idsNovas=new Set((novas||[]).map(v=>String(v.pedidoId)));
+  const antes=LISTA.length;
+  LISTA=LISTA.filter(v=>idsNovas.has(String(v.pedidoId)));
+  if(LISTA.length!==antes) mudou=true;
+  LISTA.sort((a,b)=>b.em-a.em);
+  return mudou;
 }
 
-// carrega o detalhe (produtos + formas) de cada pedido, um por vez, atualizando o card
-async function carregarDetalhesEmSequencia(){
-  for(const p of LISTA){
-    if(DETALHES[p.id]) continue;
-    try{
-      const d=await fetch(B+"/api/nfce/pedido/"+p.id+"/detalhe").then(r=>r.json());
-      if(!d.erro){ DETALHES[p.id]={produtos:d.produtos||[],formas:d.formas||[]}; render(); }
-    }catch(e){}
-  }
+async function carregar(){
+  if(!LISTA.length){ CARREGANDO=true; render(); }
+  try{
+    const j=await fetch(B+"/api/nfce/vendas-caixa-atacado").then(r=>r.json());
+    MES=j.mes||MES;
+    const mudou=mesclar(j.data||[]);
+    CARREGANDO=false;
+    if(mudou || !LISTA.length) render();
+  }catch(e){ CARREGANDO=false; render(); }
 }
 
 async function emitir(id){
-  const p=LISTA.find(x=>String(x.id)===String(id));
+  const p=LISTA.find(x=>String(x.pedidoId)===String(id));
   if(!p) return;
-  if(!confirm(`Emitir a NFC-e do pedido #${p.numero||p.id} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.`)) return;
-  // desabilita o botão desse card
+  if(!confirm(`Emitir a NFC-e do pedido #${p.numero||p.pedidoId} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.`)) return;
   const btns=document.querySelectorAll(`button[onclick="emitir('${id}')"]`);
   btns.forEach(b=>{ b.disabled=true; b.textContent="Emitindo…"; });
   try{
     const operador=(S&&S.nome)||"";
     const j=await fetch(B+"/api/nfce/pedido/"+id+"/emitir",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({operador})}).then(r=>r.json());
     if(j.erro){ alert("Não foi possível emitir: "+j.erro); btns.forEach(b=>{ b.disabled=false; b.textContent="🧾 Emitir NFC-e"; }); return; }
-    // marca como emitida na lista
     p.jaEmitida=true; p.nfce=j.nfce;
     if(j.envioErro) alert("A NFC-e foi gerada, mas a transmissão falhou. Ela fica 'Pendente' no Bling — dá pra reenviar por lá.\n\nDetalhe: "+j.envioErro);
     render();
@@ -175,7 +184,12 @@ async function emitir(id){
   }
 }
 
-(function(){ try{ S=(typeof b13GetSession==="function"?b13GetSession():null)||{}; }catch(e){ S={}; } carregar(); })();
+(function(){
+  try{ S=(typeof b13GetSession==="function"?b13GetSession():null)||{}; }catch(e){ S={}; }
+  carregar();
+  // atualiza sozinha a cada 25s (novas vendas entram aos poucos)
+  _timer=setInterval(carregar, 25000);
+})();
 </script>
 </body>
 </html>
