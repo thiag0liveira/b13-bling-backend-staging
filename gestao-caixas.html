@@ -411,6 +411,10 @@ window.imprimirRelatorioCaixa=async function(id){
         <div class="mv2"><span>${esc(m.motivo||"(sem motivo)")}</span><b>${brl(m.valor)}</b></div>
       </div>`).join("")}` : "";
     const tipo=(se.tipoCaixa==="atacado")?"Atacado":"Frente";
+    const fmtDur=(ms)=>{ if(!ms||ms<0) return "—"; const min=Math.floor(ms/60000), h=Math.floor(min/60), mm=min%60; return h>0?`${h}h ${mm}min`:`${mm}min`; };
+    const dur=se.abertaEm?fmtDur((se.fechadaEm||Date.now())-se.abertaEm):"—";
+    const qv=Number(r.qtdVendas||vendas.length||0);
+    const ticket=qv>0?brl((Number(r.totalVendas)||0)/qv):"—";
     const linha=(rot,val,cor)=>`<tr><td>${esc(rot)}</td><td class="v"${cor?` style="color:${cor}"`:""}>${val}</td></tr>`;
     const pf=(r.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
     const totPix=totalPixForma(r.porForma);
@@ -423,11 +427,22 @@ window.imprimirRelatorioCaixa=async function(id){
         <div class="cl">💵 Gaveta: esperado ${brl(c.gaveta?.esperado)} · contado ${brl(c.gaveta?.contado)} · dif <b style="color:${Math.abs(c.gaveta?.diferenca||0)<0.01?'#0a0':'#c00'}">${brl(c.gaveta?.diferenca)}</b></div>
         ${c.observacao?`<div class="cl obs">Obs: ${esc(c.observacao)}</div>`:""}
       </div>`).join("")}` : "";
+    const detAlt=(m)=>{
+      let out="";
+      if(m.clienteNome) out+=`<div class="cl">Cliente: ${esc(m.clienteNome)}</div>`;
+      if(m.valorMenor) out+=`<div class="cl">⚠️ Valor menor: faltou ${brl(m.valorMenor.faltou)} · autoriz. ${esc(m.valorMenor.autorizadoPor||"—")}</div>`;
+      (m.alteracoes||[]).forEach(a=>{
+        if(a.cancelado||a.tipo==="cancelamento") out+=`<div class="cl">🚫 ${a.em?hora(a.em)+" · ":""}Cancelada${a.por?" · por "+esc(a.por):""}</div>`;
+        else out+=`<div class="cl">✏️ ${a.em?hora(a.em)+" · ":""}${esc(a.de||"?")} → ${esc(a.para||"?")}${a.por?" · por "+esc(a.por):""}${a.autorizadoPor&&a.autorizadoPor!==a.por?" · autoriz. "+esc(a.autorizadoPor):""}${a.blingPendente?" · (Bling não atualizado)":""}</div>`;
+      });
+      return out;
+    };
     const vendasHtml=vendas.length?`
       <h3>Vendas (${vendas.length})</h3>
       ${vendas.slice().sort((a,b)=>b.em-a.em).map(m=>`<div class="mv">
         <div class="mv1">${hora(m.em)} · #${esc(m.numero||m.pedidoId||"")}${m.cancelado?' <span class="alt">CANCELADA</span>':(m.alterado?' <span class="alt">ALTERADO</span>':'')}</div>
         <div class="mv2"><span>${esc((m.pagamentos||[]).map(p=>p.formaNome).join(", "))||"—"}</span><b>${brl(m.total)}</b></div>
+        ${detAlt(m)}
       </div>`).join("")}` : "";
     const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Caixa #${esc(se.id||"")}</title>
       <style>
@@ -453,7 +468,9 @@ window.imprimirRelatorioCaixa=async function(id){
       <table>
         ${linha("Abertura", hora(se.abertaEm))}
         ${linha("Fechamento", se.fechadaEm?hora(se.fechadaEm):"— (ainda aberto)")}
+        ${linha("Duração", dur)}
         ${linha("Troco inicial", brl(r.trocoInicial))}
+        ${linha("Ticket médio", ticket)}
       </table>
       <h3>Vendas por forma de pagamento</h3>
       <table>
@@ -470,6 +487,7 @@ window.imprimirRelatorioCaixa=async function(id){
         ${fe?linha("Contado no fechamento", brl(fe.valorContado)):""}
         ${fe?linha("Diferença", brl(fe.diferenca), Math.abs(fe.diferenca||0)<0.01?"#0a0":"#c00"):""}
         ${fe&&fe.observacao?linha("Obs. fechamento", esc(fe.observacao)):""}
+        ${fe&&fe.fechadoPorGestao?linha("Fechado por", "Gestão de Caixas"+(fe.operador&&fe.operador!=="—"?" ("+esc(fe.operador)+")":"")):""}
       </table>
       ${listaMov(suprimentos,"Suprimentos")}
       ${listaMov(sangrias,"Sangrias")}
