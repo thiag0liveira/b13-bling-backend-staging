@@ -57,6 +57,7 @@ const LISTA_FARDO_FILE = `${DATA_DIR}/lista_fardo.json`;
 const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
+const NFCE_EMITIDAS_FILE = `${DATA_DIR}/nfce_emitidas.json`; // {pedidoId:{idNotaFiscal,numero,link,em,por}} — controle de quais pedidos já tiveram NFC-e
 const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
 const ROTAS_CONFIG_FILE = `${DATA_DIR}/rotas_config.json`; // dias de entrega + carros disponíveis
 const ROTAS_DIAS_FILE = `${DATA_DIR}/rotas_dias.json`; // atribuição de pedidos a carros por dia
@@ -424,6 +425,7 @@ window.B13_NAV_LINKS=[
   {href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
   {href:"/lista-fardo",label:"📋 Lista de Fardo",acoes:["acesso_lista_fardo","editar_pedido"]},
   {href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
@@ -1171,6 +1173,84 @@ async function nomeFormaPagamentoId(id){
   }catch(e){}
   return _formaPagCache[id]||`Forma ${id}`;
 }
+
+// ===== GESTÃO DE NFC-e =====
+// Puxa do Bling os pedidos em "Aguardando Separação" (situação criada só pelo nosso
+// sistema: totem, site e atacado) pra emitir a NFC-e depois, em vez de na finalização.
+function lerNfceEmitidas(){ return lerJSON(NFCE_EMITIDAS_FILE,{}); }
+function salvarNfceEmitidas(d){ salvarJSON(NFCE_EMITIDAS_FILE,d); }
+
+// LISTA rápida dos pedidos aguardando separação (dados básicos; produtos e formas
+// são carregados por pedido no /detalhe, pra não travar com dezenas de chamadas)
+app.get("/api/nfce/pedidos-aguardando",async(req,res)=>{
+  try{
+    const sit=SIT.AGUARDANDO;
+    let pedidos=[], pagina=1;
+    for(let i=0;i<5;i++){ // até 500 pedidos
+      const p=new URLSearchParams({pagina:String(pagina), limite:"100"});
+      p.append("idsSituacoes[]", String(sit));
+      const r=await bling(`/pedidos/vendas?${p.toString()}`);
+      const arr=r?.data||[];
+      pedidos=pedidos.concat(arr);
+      if(arr.length<100) break;
+      pagina++; await sleep(150);
+    }
+    const emitidas=lerNfceEmitidas();
+    const lista=pedidos.map(pd=>({
+      id:pd.id, numero:pd.numero,
+      cliente:pd.contato?.nome||"—",
+      data:pd.data||"", total:pd.total||0,
+      jaEmitida: !!emitidas[String(pd.id)],
+      nfce: emitidas[String(pd.id)]||null,
+    })).sort((a,b)=>Number(b.numero||0)-Number(a.numero||0));
+    res.json({data:lista, total:lista.length});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// EMITE a NFC-e de um pedido (mesma chamada usada na finalização: gera + envia).
+// Registra em NFCE_EMITIDAS_FILE pra não emitir duas vezes e mostrar como emitida.
+app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
+  try{
+    const pedidoId=String(req.params.id);
+    const emitidas=lerNfceEmitidas();
+    if(emitidas[pedidoId]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[pedidoId]});
+    // gera a NFC-e a partir do pedido (igual o botão "Gerar NFC-e" do Bling)
+    const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
+    const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
+    if(!idNotaFiscal) return res.status(400).json({erro:"O Bling não retornou o ID da NFC-e gerada.", detalhe:gerado});
+    let link=null, envioErro=null, numeroNota=null;
+    try{
+      await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
+      try{ const det=await bling(`/nfce/${idNotaFiscal}`); link=det?.data?.linkDanfe||det?.data?.linkPDF||null; numeroNota=det?.data?.numero||null; }catch(e){}
+    }catch(e){ envioErro=e.message; } // nota gerada mas não transmitida — fica "Pendente" no Bling, dá pra reenviar
+    const registro={ idNotaFiscal, numeroNota, link, em:Date.now(), por:(req.body?.operador||""), envioErro:envioErro||null };
+    emitidas[pedidoId]=registro; salvarNfceEmitidas(emitidas);
+    res.json({ok:true, pedidoId, nfce:registro, envioErro});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// DETALHE de um pedido: produtos e formas de pagamento (resolve o nome da forma)
+app.get("/api/nfce/pedido/:id/detalhe",async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data);
+    if(!d) return res.status(404).json({erro:"pedido não encontrado"});
+    const produtos=(d.itens||[]).map(it=>({
+      nome: it.descricao||it.produto?.nome||"produto",
+      quantidade: it.quantidade, valor: it.valor,
+    }));
+    const formas=[];
+    for(const pc of (d.parcelas||[])){
+      const nome=await nomeFormaPagamentoId(pc.formaPagamento?.id);
+      formas.push({ forma:nome, valor:pc.valor });
+    }
+    const emitidas=lerNfceEmitidas();
+    res.json({
+      id:d.id, numero:d.numero, cliente:d.contato?.nome||"—", total:d.total||0,
+      produtos, formas,
+      jaEmitida: !!emitidas[String(d.id)], nfce: emitidas[String(d.id)]||null,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
 
 // Busca reversa: acha o ID de uma forma de pagamento pelo nome (ex: "Ficha Financeira")
 let _formaPagIdPorNomeCache={};
@@ -5585,6 +5665,7 @@ app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
 app.get("/venda-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "venda-atacado.html")); });
 app.get("/propostas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "propostas.html")); });
+app.get("/gestao-nfce", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-nfce.html")); });
 app.get("/vendedor", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "vendedor.html")); });
 app.get("/mobile", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "mobile.html")); });
 app.get("/tabela-imagem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "tabela-imagem.html")); });

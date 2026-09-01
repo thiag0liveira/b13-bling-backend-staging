@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Gestão de NFC-e</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--indigo:#181542;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:38px}.top .t{font-weight:900;font-size:17px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-grn{background:#2f9e6b}.btn-ghost{background:#1c1846}
+  .btn:disabled{opacity:.5;cursor:default}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px}
+  .tag-ok{background:#0a2a1a;color:#3ce88a}
+  .tag-pend{background:#2a1f00;color:#ffd23f}
+  .tag-org{background:#0d2440;color:#7fd4ff}
+  .pill{display:inline-block;background:#1c1846;border:1px solid #37327a;border-radius:8px;padding:3px 8px;font-size:11px;font-weight:700;margin:2px 4px 2px 0}
+  .lin{border-top:1px solid #2c2660;margin:10px 0;padding-top:10px}
+  a.lk{color:#7fd4ff;font-size:12px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/gestao-nfce")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/gestao-nfce");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+let LISTA=[];        // pedidos aguardando separação
+let DETALHES={};     // {pedidoId: {produtos, formas}}
+let FILTRO="todos";  // todos | pendentes | emitidas
+let CARREGANDO=false;
+let S=null;
+
+function badge(p){
+  if(p.jaEmitida) return `<span class="tag tag-ok">✅ NFC-e emitida${p.nfce?.numeroNota?" #"+esc(p.nfce.numeroNota):""}</span>`;
+  return `<span class="tag tag-pend">⏳ Sem NFC-e</span>`;
+}
+
+function cardPedido(p){
+  const d=DETALHES[p.id];
+  const data=p.data?p.data.split("-").reverse().join("/"):"";
+  let produtosHtml, formasHtml;
+  if(!d){
+    produtosHtml=`<div class="muted">Carregando produtos…</div>`;
+    formasHtml="";
+  }else{
+    produtosHtml=(d.produtos||[]).length
+      ? (d.produtos||[]).map(pr=>`<span class="pill">${esc(pr.quantidade)}x ${esc(pr.nome)}</span>`).join("")
+      : `<span class="muted">Sem produtos.</span>`;
+    formasHtml=`<div class="lin"><div class="muted" style="margin-bottom:4px">Formas de pagamento:</div>`+
+      ((d.formas||[]).length
+        ? (d.formas||[]).map(f=>`<span class="pill">${esc(f.forma)} · ${brl(f.valor)}</span>`).join("")
+        : `<span class="muted">Sem parcelas.</span>`)+`</div>`;
+  }
+  const link=p.nfce?.link?`<a class="lk" href="${esc(p.nfce.link)}" target="_blank">ver DANFE</a>`:"";
+  const avisoEnvio=(p.nfce&&p.nfce.envioErro)?`<div class="tag tag-pend" style="display:inline-block;margin-top:6px">gerada, mas não transmitida — reenvie no Bling</div>`:"";
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div>
+        <div style="font-weight:800">#${esc(p.numero||p.id)} · ${esc(p.cliente||"—")}</div>
+        <div class="muted" style="font-size:12px">${data}</div>
+      </div>
+      <div style="text-align:right">
+        ${badge(p)}
+        <div style="font-size:18px;font-weight:900;color:#ffd23f;margin-top:4px">${brl(p.total)}</div>
+      </div>
+    </div>
+    <div class="lin"><div class="muted" style="margin-bottom:4px">Produtos:</div>${produtosHtml}</div>
+    ${formasHtml}
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+      ${p.jaEmitida
+        ? `<span class="tag tag-ok">Emitida em ${p.nfce?.em?new Date(p.nfce.em).toLocaleString("pt-BR"):""}</span> ${link} ${avisoEnvio}`
+        : `<button class="btn btn-grn" onclick="emitir('${p.id}')">🧾 Emitir NFC-e</button>`}
+    </div>
+  </div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  let lista=LISTA.slice();
+  if(FILTRO==="pendentes") lista=lista.filter(p=>!p.jaEmitida);
+  else if(FILTRO==="emitidas") lista=lista.filter(p=>p.jaEmitida);
+  const pend=LISTA.filter(p=>!p.jaEmitida).length;
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">🧾 Gestão de NFC-e</div><div class="sp"></div>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="carregar()">🔄 Atualizar</button>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div class="muted" style="margin-bottom:8px">Pedidos aguardando separação (criados pelo totem, site e atacado). ${LISTA.length} pedido(s), ${pend} sem NFC-e.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip ${FILTRO==='todos'?'on':''}" onclick="FILTRO='todos';render()">Todos</span>
+          <span class="chip ${FILTRO==='pendentes'?'on':''}" onclick="FILTRO='pendentes';render()">⏳ Sem NFC-e</span>
+          <span class="chip ${FILTRO==='emitidas'?'on':''}" onclick="FILTRO='emitidas';render()">✅ Emitidas</span>
+        </div>
+      </div>
+      ${CARREGANDO?`<div class="card"><div class="muted">Carregando pedidos…</div></div>`:""}
+      ${!CARREGANDO&&!lista.length?`<div class="card"><div class="muted">Nenhum pedido nesse filtro.</div></div>`:""}
+      ${lista.map(cardPedido).join("")}
+    </div>`;
+}
+
+async function carregar(){
+  CARREGANDO=true; DETALHES={}; render();
+  try{
+    const j=await fetch(B+"/api/nfce/pedidos-aguardando").then(r=>r.json());
+    LISTA=j.data||[];
+    CARREGANDO=false; render();
+    carregarDetalhesEmSequencia(); // preenche produtos e formas progressivamente
+  }catch(e){
+    CARREGANDO=false; LISTA=[]; render();
+    alert("Erro ao carregar os pedidos. Tente de novo.");
+  }
+}
+
+// carrega o detalhe (produtos + formas) de cada pedido, um por vez, atualizando o card
+async function carregarDetalhesEmSequencia(){
+  for(const p of LISTA){
+    if(DETALHES[p.id]) continue;
+    try{
+      const d=await fetch(B+"/api/nfce/pedido/"+p.id+"/detalhe").then(r=>r.json());
+      if(!d.erro){ DETALHES[p.id]={produtos:d.produtos||[],formas:d.formas||[]}; render(); }
+    }catch(e){}
+  }
+}
+
+async function emitir(id){
+  const p=LISTA.find(x=>String(x.id)===String(id));
+  if(!p) return;
+  if(!confirm(`Emitir a NFC-e do pedido #${p.numero||p.id} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.`)) return;
+  // desabilita o botão desse card
+  const btns=document.querySelectorAll(`button[onclick="emitir('${id}')"]`);
+  btns.forEach(b=>{ b.disabled=true; b.textContent="Emitindo…"; });
+  try{
+    const operador=(S&&S.nome)||"";
+    const j=await fetch(B+"/api/nfce/pedido/"+id+"/emitir",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({operador})}).then(r=>r.json());
+    if(j.erro){ alert("Não foi possível emitir: "+j.erro); btns.forEach(b=>{ b.disabled=false; b.textContent="🧾 Emitir NFC-e"; }); return; }
+    // marca como emitida na lista
+    p.jaEmitida=true; p.nfce=j.nfce;
+    if(j.envioErro) alert("A NFC-e foi gerada, mas a transmissão falhou. Ela fica 'Pendente' no Bling — dá pra reenviar por lá.\n\nDetalhe: "+j.envioErro);
+    render();
+  }catch(e){
+    alert("Erro ao emitir. Tente de novo.");
+    btns.forEach(b=>{ b.disabled=false; b.textContent="🧾 Emitir NFC-e"; });
+  }
+}
+
+(function(){ try{ S=(typeof b13GetSession==="function"?b13GetSession():null)||{}; }catch(e){ S={}; } carregar(); })();
+</script>
+</body>
+</html>
