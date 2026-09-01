@@ -4506,7 +4506,7 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
         const props=lerPropostas();
         props[idReg]={
           id:idReg, origem, tipo:"pedido",
-          cliente:{ id:contatoId||null, nome:(nome||cadastro?.nome||"Consumidor Final") },
+          cliente:{ id:contatoId||null, nome:(nome||cadastro?.nome||"Consumidor Final"), telefone:(telefone||"") },
           itens:itensReg,
           total:+(totalItensReg+freteReg).toFixed(2),
           vendedorNome: origem==="site"?"Site":"Totem",

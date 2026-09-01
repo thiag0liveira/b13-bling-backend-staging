@@ -188,7 +188,7 @@ function cardProposta(p){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
         <div style="font-weight:800">${esc(p.cliente?.nome||'—')}</div>
-        <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome||'—')}</div>
+        <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome||'—')}${p.cliente?.telefone?` · 📞 ${esc(p.cliente.telefone)}`:''}</div>
       </div>
       <div style="text-align:right">
         ${statusTag(p)}
@@ -200,6 +200,7 @@ function cardProposta(p){
     ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
+      ${p.cliente?.telefone?`<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>`:''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
       ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
       ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
@@ -337,6 +338,19 @@ async function gerarPedido(id){
 async function excluir(id){
   if(!confirm("Excluir esta proposta do sistema? (só é possível em propostas que ainda não viraram pedido)")) return;
   try{ const j=await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}).then(r=>r.json()); if(j.erro){alert(j.erro);return;} carregar(); }catch(e){}
+}
+
+function enviarSMS(id){
+  const p=LISTA.find(x=>x.id===id);
+  if(!p) return;
+  let tel=soDig(p.cliente?.telefone||"");
+  if(tel.length<10){ alert("Esse cliente não tem telefone válido cadastrado."); return; }
+  const tel55=tel.length<=11?("55"+tel):tel;
+  const ref=p.pedidoBlingId?("pedido #"+p.pedidoBlingNumero):"pedido";
+  const nome=(p.cliente?.nome||"").split(" ")[0]||"";
+  const msg=`Ola${nome?" "+nome:""}! Aqui e da B13 Bebidas. Seu ${ref} ja esta sendo preparado e vai ser enviado. Qualquer duvida, e so chamar!`;
+  // abre o app de mensagens do celular com o texto pronto
+  window.location.href="sms:+"+tel55+"?body="+encodeURIComponent(msg);
 }
 
 async function enviarWhats(id){
