@@ -1915,8 +1915,22 @@ app.get("/api/contatos/:id",async(req,res)=>{
   try{ res.json(await bling(`/contatos/${req.params.id}`)); }
   catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
-app.get("/api/contatos",rateLimit({janelaMs:60000,max:8,prefixo:"contatos"}),async(req,res)=>{
-  try{ const doc=soDigitos(req.query.doc); if(!doc) return res.status(400).json({erro:"?doc=CPF_ou_CNPJ"});
+app.get("/api/contatos",rateLimit({janelaMs:60000,max:12,prefixo:"contatos"}),async(req,res)=>{
+  try{
+    // busca por NOME -> devolve uma LISTA de candidatos pra escolher
+    const nome=(req.query.nome||"").trim();
+    if(nome){
+      if(nome.length<3) return res.status(400).json({erro:"digite ao menos 3 letras"});
+      const d=await bling(`/contatos?pesquisa=${encodeURIComponent(nome)}&limite=20`);
+      const l=d?.data||[];
+      const lista=l.slice(0,20).map(c=>({
+        id:c.id, nome:c.nome||"",
+        documento:soDigitos(c.numeroDocumento)||"",
+        telefone:c.telefone||c.celular||"",
+      }));
+      return res.json({modo:"nome", lista});
+    }
+    const doc=soDigitos(req.query.doc); if(!doc) return res.status(400).json({erro:"?doc=CPF_ou_CNPJ ou ?nome=..."});
     // tenta buscar pelo número do documento
     const d=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`); let l=d?.data||[];
     let a=l.find(c=>soDigitos(c.numeroDocumento)===doc)||null;

@@ -232,13 +232,19 @@ function cardCliente(){
   if(S.editandoCliente) return cardFormCliente();
   // busca inicial
   return `<div class="card">
-    <label>Buscar cliente por CPF / CNPJ</label>
+    <label>Buscar cliente por nome, CPF ou CNPJ</label>
     <div class="row">
-      <input id="docBusca" placeholder="Digite o CPF ou CNPJ" inputmode="numeric" style="flex:3"
+      <input id="docBusca" placeholder="Nome, CPF ou CNPJ" style="flex:3"
         onkeydown="if(event.key==='Enter')buscarCliente()">
       <button class="btn btn-mag" style="flex:1;min-width:100px" onclick="buscarCliente()">🔍 Buscar</button>
     </div>
     <div id="buscaClienteMsg" class="muted" style="margin-top:8px"></div>
+    ${(S.resultadosBusca&&S.resultadosBusca.length)?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+      ${S.resultadosBusca.map(c=>`<button class="btn btn-out" style="text-align:left;padding:10px" onclick="escolherClienteBusca('${c.id}')">
+        <div style="font-weight:800">${esc(c.nome)}</div>
+        <div class="muted" style="font-size:12px">${esc(c.documento||'sem documento')}${c.telefone?' · '+esc(c.telefone):''}</div>
+      </button>`).join("")}
+    </div>`:""}
   </div>`;
 }
 
@@ -272,19 +278,46 @@ function cardFormCliente(){
 }
 
 async function buscarCliente(){
-  const doc=soDig(document.getElementById("docBusca").value);
+  const raw=(document.getElementById("docBusca").value||"").trim();
+  const doc=soDig(raw);
   const msg=document.getElementById("buscaClienteMsg");
-  if(doc.length!==11&&doc.length!==14){ msg.textContent="Digite um CPF (11) ou CNPJ (14 dígitos)."; return; }
-  msg.textContent="Buscando…";
+  const soNumeros=/^[\d.\-\/\s]+$/.test(raw);
+  // 11 ou 14 dígitos -> busca por documento (CPF/CNPJ), igual antes
+  if(soNumeros && (doc.length===11||doc.length===14)){
+    msg.textContent="Buscando…"; S.resultadosBusca=null;
+    try{
+      const j=await fetch(B+"/api/contatos?doc="+doc).then(r=>r.json());
+      if(j.encontrado&&j.contato){
+        S.cliente=j.contato; S.editandoCliente=false; S.analise=null; render(); carregarAnalise();
+      }else{
+        S.cliente={documento:doc, endereco:{uf:"MG"}}; S.editandoCliente=true; render();
+      }
+    }catch(e){ msg.textContent="Erro ao buscar."; }
+    return;
+  }
+  // senão -> busca por NOME (mostra lista pra escolher)
+  if(raw.length<3){ msg.textContent="Digite o CPF/CNPJ completo ou ao menos 3 letras do nome."; return; }
+  msg.textContent="Buscando…"; S.resultadosBusca=null; render();
   try{
-    const j=await fetch(B+"/api/contatos?doc="+doc).then(r=>r.json());
-    if(j.encontrado&&j.contato){
-      S.cliente=j.contato; S.editandoCliente=false; S.analise=null; render(); carregarAnalise();
-    }else{
-      // não existe: abre form pra cadastrar novo já com o documento
-      S.cliente={documento:doc, endereco:{uf:"MG"}}; S.editandoCliente=true; render();
-    }
+    const j=await fetch(B+"/api/contatos?nome="+encodeURIComponent(raw)).then(r=>r.json());
+    const lista=j.lista||[];
+    if(!lista.length){ S.resultadosBusca=null; render(); document.getElementById("buscaClienteMsg").textContent="Nenhum cliente encontrado com esse nome."; return; }
+    S.resultadosBusca=lista; render(); document.getElementById("buscaClienteMsg").textContent=lista.length+" cliente(s) encontrado(s). Toque pra selecionar:";
+    document.getElementById("docBusca").value=raw;
   }catch(e){ msg.textContent="Erro ao buscar."; }
+}
+
+async function escolherClienteBusca(id){
+  try{
+    const r=await fetch(B+"/api/contatos/"+id).then(r=>r.json());
+    const d=r?.data||r;
+    const end=d.endereco?.geral||{};
+    S.cliente={ id:d.id, nome:d.nome||"", documento:soDig(d.numeroDocumento)||"",
+      telefone:d.telefone||d.celular||"", email:d.email||"",
+      endereco:{ cep:end.cep||"", rua:end.endereco||"", numero:end.numero||"",
+        complemento:end.complemento||"", bairro:end.bairro||"", cidade:end.municipio||"", uf:end.uf||"MG" } };
+    S.resultadosBusca=null; S.editandoCliente=false; S.analise=null; render(); carregarAnalise();
+  }catch(e){ const m=document.getElementById("buscaClienteMsg"); if(m) m.textContent="Erro ao carregar o cliente."; }
 }
 
 async function salvarCliente(){
@@ -311,7 +344,7 @@ async function salvarCliente(){
   }catch(e){ alert("Erro ao salvar cliente."); }
 }
 
-function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.itens=[]; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={}; S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; render(); }
+function trocarCliente(){ S.cliente=null; S.editandoCliente=false; S.resultadosBusca=null; S.itens=[]; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={}; S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; render(); }
 
 /* ---------- ANÁLISE DO CLIENTE (Fase 2) ---------- */
 function cardAnalise(){
