@@ -2384,6 +2384,7 @@ app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
         if(String(m.numero)===numero || String(m.pedidoId)===numero){
           movs.push({ sessaoId:s.id, operadorCaixa:s.operador, tipoCaixa:s.tipoCaixa||"frente",
             pedidoId:m.pedidoId, numero:m.numero, total:m.total, em:new Date(m.em).toLocaleString("pt-BR"),
+            itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
             pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})),
             clienteNome:m.clienteNome||"", operador:m.operador||"", alterado:!!m.alterado, cancelado:!!m.cancelado,
             valorMenor:m.valorMenor||null });
@@ -2398,6 +2399,7 @@ app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
       if(achado){
         const d=await bling(`/pedidos/vendas/${achado.id}`).then(x=>x?.data);
         bling1={ id:d.id, numero:d.numero, total:d.total, observacoes:d.observacoes||"",
+          itens:(d.itens||[]).map(it=>({nome:it.descricao||it.produto?.nome||"", quantidade:it.quantidade, valor:it.valor})),
           parcelas:(d.parcelas||[]).map(pc=>({valor:pc.valor, formaId:pc.formaPagamento?.id})),
           situacaoId:d.situacao?.id };
       }
