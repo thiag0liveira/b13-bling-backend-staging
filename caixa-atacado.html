@@ -464,6 +464,7 @@ async function abrirPedido(id){
     COBRAR_TAXA_CARTAO=true;
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null; // volta a logo até bipar um produto
+    window._obsVenda=""; // observação é por venda; não vaza de um pedido pro outro
     render();
   }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
 }
@@ -551,6 +552,7 @@ async function abrirPedidoParaEdicao(id){
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null;
     MODO_EDICAO_PAGAMENTO=true;
+    window._obsVenda=""; // observação é por venda; não vaza de um pedido pro outro
     window._filtroPed="";
     render();
   }catch(e){ alert("Não foi possível abrir o pedido pra edição: "+e.message); MODO_EDICAO_PAGAMENTO=false; }
@@ -621,7 +623,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; window._obsVenda=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
