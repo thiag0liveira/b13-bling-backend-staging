@@ -2408,6 +2408,29 @@ app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
 
+app.get("/api/diag/vendas-por-produto/:termo",(req,res)=>{
+  // acha vendas do caixa que tenham um produto cujo nome contém o termo (ex: BRAHMA)
+  try{
+    const termo=String(req.params.termo||"").toLowerCase();
+    const dCx=lerCaixaSessoes();
+    const achados=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda") return;
+        const casa=(m.itens||[]).some(i=>String(i.nome||"").toLowerCase().includes(termo));
+        if(casa){
+          achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero, total:m.total,
+            em:new Date(m.em).toLocaleString("pt-BR"), alterado:!!m.alterado, cancelado:!!m.cancelado,
+            itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
+            pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
+        }
+      });
+    });
+    achados.sort((a,b)=>String(a.em)<String(b.em)?1:-1);
+    res.json({termo, qtd:achados.length, achados:achados.slice(0,40)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   // acha vendas do caixa cujo total bate com um valor (pra localizar de onde veio a nota)
   try{
