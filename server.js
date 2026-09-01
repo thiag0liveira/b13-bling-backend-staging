@@ -2473,6 +2473,24 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
 });
 
 // fecha o caixa, comparando o contado com o esperado (conferência)
+// fecha um caixa ESPECÍFICO pelo id (usado na Gestão de Caixas pra fechar qualquer caixa,
+// não só o do próprio usuário logado)
+app.post("/api/caixa-sessao/:id/fechar",(req,res)=>{
+  const {valorContado,observacao,operador}=req.body||{};
+  const d=lerCaixaSessoes();
+  const sessao=(d.sessoes||[]).find(s=>String(s.id)===String(req.params.id));
+  if(!sessao) return res.status(404).json({erro:"Caixa não encontrado"});
+  if(sessao.fechadaEm) return res.status(400).json({erro:"Esse caixa já está fechado"});
+  const resumo=resumoSessaoCaixa(sessao);
+  const contado=+Number(valorContado||0).toFixed(2);
+  const diferenca=+(contado-resumo.esperadoGaveta).toFixed(2);
+  sessao.fechadaEm=Date.now();
+  sessao.fechamento={valorContado:contado,esperado:resumo.esperadoGaveta,diferenca,observacao:observacao||"",operador:operador||"—",fechadoPorGestao:true};
+  sessao.resumoFinal=resumo;
+  salvarCaixaSessoes(d);
+  res.json({ok:true,resumo,fechamento:sessao.fechamento});
+});
+
 app.post("/api/caixa-sessao/fechar",(req,res)=>{
   const {valorContado,observacao,operador,funcionarioId,tipoCaixa}=req.body||{};
   const d=lerCaixaSessoes();

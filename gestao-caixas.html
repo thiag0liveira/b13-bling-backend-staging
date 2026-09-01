@@ -246,12 +246,32 @@ window.renderConferencia=function(){
       <div class="card" style="background:#1c1846;margin:12px 0"><div class="linha"><span><b>Diferença total</b></span><b id="dif_total" style="color:#9a95c9">—</b></div></div>
       <input id="conf_obs" placeholder="Observação (opcional)" style="width:100%;margin-bottom:10px">
       <div id="confMsg"></div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
         <button class="btn btn-mag" style="flex:1" onclick="salvarConferencia()">💾 Salvar conferência</button>
-        <button class="btn btn-ghost" onclick="fecharModais()">Fechar</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1;background:#b3341f;color:#fff" onclick="fecharCaixaGestao()">🔒 Fechar caixa</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
 }
+window.fecharCaixaGestao=async function(){
+  const C=window._CONF; if(!C) return;
+  const gav=numBR(document.getElementById("conf_gaveta")?.value||"");
+  const obs=document.getElementById("conf_obs")?.value||"";
+  const msg=document.getElementById("confMsg");
+  if(!confirm(`Fechar o caixa de ${C.operador||"—"}?\n\nDinheiro contado na gaveta: ${gav?brl(gav):"(não informado)"}\n\nDepois de fechado, não dá pra registrar mais vendas nesse caixa.`)) return;
+  try{
+    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
+    const j=await fetch(B+"/api/caixa-sessao/"+C.id+"/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({valorContado:gav||0, observacao:obs, operador:S.nome||"gestão"})}).then(r=>r.json());
+    if(j.erro){ if(msg) msg.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
+    fecharModais();
+    if(typeof carregarAbertos==="function") carregarAbertos();
+    if(typeof carregarHistorico==="function") carregarHistorico();
+  }catch(e){ if(msg) msg.innerHTML=`<div class="err">Erro ao fechar o caixa.</div>`; }
+}
+
 window.recalcConf=function(){
   const C=window._CONF; if(!C) return;
   let total=0;
