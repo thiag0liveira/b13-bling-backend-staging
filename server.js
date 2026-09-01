@@ -1229,6 +1229,45 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
+// DIAGNÓSTICO FISCAL: pra cada produto do pedido, mostra o que o Bling tem de dado
+// fiscal (NCM, origem, CEST, GTIN) e o que está faltando pra emitir NFC-e. Não altera
+// nada — só lê. Os CST/CSOSN de ICMS/PIS/COFINS vêm do grupo de tributação / natureza
+// de operação no Bling (definidos com o contador), então aqui a gente sinaliza os
+// campos-base do produto e devolve o bloco fiscal cru pra conferência.
+app.get("/api/nfce/diagnostico-fiscal/:pedidoId",async(req,res)=>{
+  try{
+    const ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const itens=ped.itens||[];
+    const produtos=[];
+    for(const it of itens){
+      const pid=it.produto?.id;
+      let prod=null;
+      try{ prod=await bling(`/produtos/${pid}`).then(r=>r?.data); }catch(e){}
+      const trib=prod?.tributacao||{};
+      const faltando=[];
+      if(!trib.ncm) faltando.push("NCM");
+      if(trib.origem===undefined||trib.origem===null||trib.origem==="") faltando.push("Origem");
+      produtos.push({
+        id:pid, nome:it.descricao||prod?.nome||"produto",
+        ncm:trib.ncm||null,
+        origem:(trib.origem!==undefined?trib.origem:null),
+        cest:trib.cest||null,
+        gtin:prod?.gtin||prod?.codigo||null,
+        tributacao:trib,   // bloco fiscal cru pra conferência
+        faltando,
+      });
+      await sleep(120);
+    }
+    res.json({
+      pedidoId:ped.id, numero:ped.numero,
+      naturezaOperacao: ped.naturezaOperacao||null,
+      produtos,
+      produtosComPendencia: produtos.filter(p=>p.faltando.length).length,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
 // LISTA as vendas do CAIXA ATACADO do mês vigente. Produtos e formas já vêm do
 // movimento do caixa — rápido, sem consultar o Bling item a item.
 app.get("/api/nfce/vendas-caixa-atacado",(req,res)=>{

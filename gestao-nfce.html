@@ -91,7 +91,8 @@ function cardVenda(p){
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
       ${p.jaEmitida
         ? `<span class="tag tag-ok">Emitida em ${p.nfce?.em?new Date(p.nfce.em).toLocaleString("pt-BR"):""}</span> ${link} ${avisoEnvio}`
-        : `<button class="btn btn-grn" onclick="emitir('${p.pedidoId}')">🧾 Emitir NFC-e</button>`}
+        : `<button class="btn btn-grn" onclick="emitir('${p.pedidoId}')">🧾 Emitir NFC-e</button>
+           <button class="btn btn-ghost" onclick="diagnosticoFiscal('${p.pedidoId}')">🔎 O que falta pra emitir</button>`}
     </div>
   </div>`;
 }
@@ -165,6 +166,43 @@ async function carregar(){
   }catch(e){ CARREGANDO=false; render(); }
 }
 
+async function diagnosticoFiscal(id){
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto";
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:#151233;border:1px solid #2c2660;border-radius:14px;max-width:640px;width:100%;padding:16px;margin-top:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-weight:800">🔎 O que falta pra emitir</div>
+      <button class="btn btn-ghost" onclick="this.closest('div[style*=fixed]')||this.parentElement.parentElement.parentElement.remove()">✕</button>
+    </div>
+    <div id="diagBody"><div class="muted">Consultando o Bling…</div></div>
+  </div>`;
+  ov.querySelector("button").onclick=()=>ov.remove();
+  document.body.appendChild(ov);
+  try{
+    const j=await fetch(B+"/api/nfce/diagnostico-fiscal/"+id).then(r=>r.json());
+    const body=ov.querySelector("#diagBody");
+    if(j.erro){ body.innerHTML=`<div style="color:#ff8090">Erro: ${esc(j.erro)}</div>`; return; }
+    const linhas=(j.produtos||[]).map(pr=>{
+      const falta=(pr.faltando&&pr.faltando.length)
+        ? `<span class="tag tag-pend">falta: ${esc(pr.faltando.join(", "))}</span>`
+        : `<span class="tag tag-ok">cadastro-base ok</span>`;
+      return `<div class="lin"><div style="font-weight:700">${esc(pr.nome)}</div>
+        <div class="muted" style="font-size:12px">NCM: ${esc(pr.ncm||"—")} · Origem: ${pr.origem!=null?esc(pr.origem):"—"} · CEST: ${esc(pr.cest||"—")}</div>
+        <div style="margin-top:4px">${falta}</div></div>`;
+    }).join("");
+    body.innerHTML=`
+      <div class="muted" style="margin-bottom:8px">Pedido #${esc(j.numero||id)} · ${j.produtosComPendencia} produto(s) com pendência de cadastro-base.</div>
+      ${linhas||'<div class="muted">Sem produtos.</div>'}
+      <div class="lin" style="font-size:12px;color:#c9b8ff;line-height:1.5">
+        <b>Importante:</b> além de NCM e Origem no produto, a NFC-e exige os grupos de imposto (ICMS, PIS, COFINS).
+        No <b>Lucro Real</b> isso é definido por <b>grupo de tributação</b> ou pela <b>natureza de operação</b> no Bling, junto com seu contador.
+        Ponto de partida comum pra <b>revenda de bebida</b> (CONFIRME com o contador): ICMS costuma ser <b>CST 60</b> (ST já recolhida na origem) e PIS/COFINS <b>CST 04 ou 06</b> (monofásico).
+        Os valores exatos dependem de cada produto — não saia aplicando sem o contador confirmar.
+      </div>`;
+  }catch(e){ const b=ov.querySelector("#diagBody"); if(b) b.innerHTML=`<div style="color:#ff8090">Erro ao consultar.</div>`; }
+}
+
 async function emitir(id){
   const p=LISTA.find(x=>String(x.pedidoId)===String(id));
   if(!p) return;
@@ -174,7 +212,11 @@ async function emitir(id){
   try{
     const operador=(S&&S.nome)||"";
     const j=await fetch(B+"/api/nfce/pedido/"+id+"/emitir",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({operador})}).then(r=>r.json());
-    if(j.erro){ alert("Não foi possível emitir: "+j.erro); btns.forEach(b=>{ b.disabled=false; b.textContent="🧾 Emitir NFC-e"; }); return; }
+    if(j.erro){
+      const fiscal=/imposto|icms|pis|cofins|validação|validacao|ncm|tributa/i.test(j.erro);
+      alert("Não foi possível emitir: "+j.erro+(fiscal?"\n\nEsse é um erro de cadastro fiscal. Toque em '🔎 O que falta pra emitir' pra ver o que está pendente.":""));
+      btns.forEach(b=>{ b.disabled=false; b.textContent="🧾 Emitir NFC-e"; }); return;
+    }
     p.jaEmitida=true; p.nfce=j.nfce;
     if(j.envioErro) alert("A NFC-e foi gerada, mas a transmissão falhou. Ela fica 'Pendente' no Bling — dá pra reenviar por lá.\n\nDetalhe: "+j.envioErro);
     render();
