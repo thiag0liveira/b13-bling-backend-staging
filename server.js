@@ -4376,6 +4376,47 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
     }
     // nota: condição de pagamento padrão deve ser removida nas configurações do Bling
     // Ajustes → Preferências → Vendas → Condição de pagamento padrão → vazio
+
+    // REGISTRA o pedido na lista de "Propostas & Pedidos" (aba Pedidos), pra os pedidos
+    // do totem e do site caírem junto com os do atacado. É gravação local (rápida) e
+    // nunca quebra a venda. O número, se o Bling não devolver na criação, é buscado
+    // em segundo plano depois de responder.
+    if(pedidoId){
+      try{
+        const origem = (req.body?.origem==="site"||req.body?.origem==="totem") ? req.body.origem : "online";
+        const itensReg=(itens||[]).map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0}));
+        const totalItensReg=+itensReg.reduce((s,i)=>s+i.valor*i.quantidade,0).toFixed(2);
+        const freteReg=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
+        const numeroCriado=pedido?.data?.numero||null;
+        const idReg="ped-"+String(pedidoId);
+        const props=lerPropostas();
+        props[idReg]={
+          id:idReg, origem, tipo:"pedido",
+          cliente:{ id:contatoId||null, nome:(nome||cadastro?.nome||"Consumidor Final") },
+          itens:itensReg,
+          total:+(totalItensReg+freteReg).toFixed(2),
+          vendedorNome: origem==="site"?"Site":"Totem",
+          entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg },
+          observacao:"",
+          status:"pedido_gerado",
+          pedidoBlingId:pedidoId,
+          pedidoBlingNumero: numeroCriado||pedidoId,
+          criadoEm:Date.now(), atualizadoEm:Date.now(),
+        };
+        salvarPropostas(props);
+        // se o número não veio na criação, busca em SEGUNDO PLANO e corrige (não trava a resposta)
+        if(!numeroCriado){
+          (async()=>{
+            try{
+              const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+              const num=det?.numero; if(!num) return;
+              const pp=lerPropostas(); if(pp[idReg]){ pp[idReg].pedidoBlingNumero=num; salvarPropostas(pp); }
+            }catch(e){}
+          })();
+        }
+      }catch(e){ console.error("Falha ao registrar pedido totem/site na lista de propostas (ignorado):",e.message); }
+    }
+
     res.json({ ok: true, contatoId, criouContato, pedido });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
