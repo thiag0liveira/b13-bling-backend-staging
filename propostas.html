@@ -114,14 +114,22 @@ async function sincronizarPedidos(manual){
     const j=await fetch(B+"/api/atacado/propostas/sincronizar-pedidos",{method:"POST"}).then(r=>r.json());
     if(lbl) lbl.textContent="Sincronizar";
     if(j.erro){ if(manual) alert("Erro ao sincronizar: "+j.erro); return; }
-    if(j.removidos>0){
-      carregar(); // atualiza a lista (os fantasmas somem)
+    if(j.removidos>0 || j.adicionados>0){
+      carregar(); // atualiza a lista (fantasmas somem, aguardando separação entram)
       if(manual){
-        const nomes=(j.detalhes||[]).map(d=>`#${d.pedidoBlingNumero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
-        alert(`✅ ${j.removidos} pedido(s) que não existiam mais no Bling foram removidos:\n\n${nomes}`);
+        const partes=[];
+        if(j.adicionados>0){
+          const nomesAdd=(j.detalhesAdicionados||[]).map(d=>`#${d.numero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
+          partes.push(`➕ ${j.adicionados} pedido(s) em Aguardando Separação foram trazidos pra lista:\n${nomesAdd}`);
+        }
+        if(j.removidos>0){
+          const nomes=(j.detalhes||[]).map(d=>`#${d.pedidoBlingNumero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
+          partes.push(`🗑 ${j.removidos} pedido(s) que não existiam mais no Bling foram removidos:\n${nomes}`);
+        }
+        alert("✅ Sincronizado!\n\n"+partes.join("\n\n"));
       }
     }else if(manual){
-      alert(`✅ Tudo certo! Os ${j.verificados} pedido(s) verificados ainda existem no Bling.`);
+      alert(`✅ Tudo certo! ${j.verificados} pedido(s) verificados e nenhum novo em Aguardando Separação pra trazer.`);
     }
   }catch(e){ if(lbl) lbl.textContent="Sincronizar"; if(manual) alert("Erro de conexão ao sincronizar."); }
   finally{ _sincronizando=false; }

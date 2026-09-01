@@ -7032,7 +7032,54 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
       await new Promise(r=>setTimeout(r,150)); // respeita o limite do Bling
     }
     if(removidos.length) salvarPropostas(props);
-    res.json({ok:true, verificados:pedidos.length, removidos:removidos.length, detalhes:removidos});
+
+    // AGORA também PUXA os pedidos em "Aguardando Separação" do Bling que ainda não
+    // estão na lista (status criado só pelo nosso sistema: totem, site e atacado).
+    const jaTem=new Set(Object.values(props).filter(p=>p.pedidoBlingId).map(p=>String(p.pedidoBlingId)));
+    let adicionados=[];
+    try{
+      let pedidosBling=[], pagina=1;
+      for(let i=0;i<5;i++){ // até 500
+        const pp=new URLSearchParams({pagina:String(pagina), limite:"100"});
+        pp.append("idsSituacoes[]", String(SIT.AGUARDANDO));
+        const r=await bling(`/pedidos/vendas?${pp.toString()}`);
+        const arr=r?.data||[];
+        pedidosBling=pedidosBling.concat(arr);
+        if(arr.length<100) break;
+        pagina++; await new Promise(r=>setTimeout(r,150));
+      }
+      const novos=pedidosBling.filter(pd=>!jaTem.has(String(pd.id)));
+      let contDet=0;
+      for(const pd of novos){
+        let itensReg=[], total=pd.total||0, freteReg=0;
+        if(contDet<80){ // busca o detalhe (produtos/frete) só pros novos, com teto pra não estourar o tempo
+          try{
+            const d=await bling(`/pedidos/vendas/${pd.id}`).then(r=>r?.data);
+            itensReg=(d?.itens||[]).map(it=>({produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"produto", quantidade:it.quantidade, valor:it.valor}));
+            freteReg=Number(d?.transporte?.frete)||0;
+            total=d?.total||total;
+            contDet++; await new Promise(r=>setTimeout(r,120));
+          }catch(e){}
+        }
+        const idReg="ped-"+String(pd.id);
+        props[idReg]={
+          id:idReg, origem:"bling", tipo:"pedido",
+          cliente:{ id:pd.contato?.id||null, nome:pd.contato?.nome||"—" },
+          itens:itensReg,
+          total:+Number(total).toFixed(2),
+          vendedorNome: pd.vendedor?.nome||"",
+          entrega:{ tipo: freteReg>0?"entrega":"retirada", taxa:freteReg },
+          observacao:"", status:"pedido_gerado",
+          pedidoBlingId:pd.id, pedidoBlingNumero:pd.numero||pd.id,
+          criadoEm: pd.data? new Date(pd.data+"T12:00:00").getTime() : Date.now(),
+          atualizadoEm:Date.now(),
+        };
+        adicionados.push({numero:pd.numero, cliente:pd.contato?.nome||""});
+      }
+      if(adicionados.length) salvarPropostas(props);
+    }catch(e){ console.error("sincronizar: falha ao puxar aguardando separação (ignorado):",e.message); }
+
+    res.json({ok:true, verificados:pedidos.length, removidos:removidos.length, detalhes:removidos, adicionados:adicionados.length, detalhesAdicionados:adicionados});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
