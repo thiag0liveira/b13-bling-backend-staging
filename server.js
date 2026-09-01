@@ -3587,11 +3587,9 @@ app.post("/api/pdv/venda", async(req,res)=>{
     const statusFinalVenda = req.body.statusFinal==="separado" ? "separado" : "atendido";
     try{ await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
     catch(e){ console.error("Falha ao mover pedido pra "+statusFinalVenda+" (venda ja foi criada, id="+pedidoId+"):",e.message); }
-    // captura o NÚMERO do pedido; se o Bling não devolveu na criação, busca o detalhe (status já assentado)
+    // número do pedido: usa o que o Bling devolveu na criação (se não vier, é buscado
+    // em segundo plano depois de responder — não trava a finalização)
     let numeroPedido=criado?.data?.numero||null;
-    if(!numeroPedido){
-      try{ const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); numeroPedido=det?.numero||null; }catch(e){}
-    }
 
     // registra localmente (mesmo padrão usado no restante do sistema)
     const pags=lerPag();
@@ -3648,6 +3646,22 @@ app.post("/api/pdv/venda", async(req,res)=>{
           }
         }
       }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
+    }
+
+    // se o Bling não devolveu o número na criação, busca em SEGUNDO PLANO (sem travar a resposta)
+    // e preenche o movimento da sessão depois — o comprovante já saiu, isso é só pra relatórios.
+    if(!numeroPedido){
+      (async()=>{
+        try{
+          const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+          const num=det?.numero; if(!num) return;
+          const dCx=lerCaixaSessoes(); let mudou=false;
+          (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+            if(m.tipo==="venda"&&String(m.pedidoId)===String(pedidoId)&&!m.numero){ m.numero=num; mudou=true; }
+          }));
+          if(mudou) salvarCaixaSessoes(dCx);
+        }catch(e){ console.error("Falha ao buscar numero em 2o plano (ignorado):",e.message); }
+      })();
     }
 
     res.json({ok:true,pedidoId,numero:numeroPedido,total:totalPedido,nfce,estoqueReposto});
