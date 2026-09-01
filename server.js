@@ -2372,6 +2372,60 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 });
 
 // DIAGNÓSTICO: mostra onde está o frete de um pedido (pra achar o campo certo no Bling)
+app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
+  try{
+    const numero=String(req.params.numero);
+    // 1) o que o NOSSO caixa registrou pra esse pedido
+    const dCx=lerCaixaSessoes();
+    const movs=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda") return;
+        if(String(m.numero)===numero || String(m.pedidoId)===numero){
+          movs.push({ sessaoId:s.id, operadorCaixa:s.operador, tipoCaixa:s.tipoCaixa||"frente",
+            pedidoId:m.pedidoId, numero:m.numero, total:m.total, em:new Date(m.em).toLocaleString("pt-BR"),
+            pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})),
+            clienteNome:m.clienteNome||"", operador:m.operador||"", alterado:!!m.alterado, cancelado:!!m.cancelado,
+            valorMenor:m.valorMenor||null });
+        }
+      });
+    });
+    // 2) o que está no BLING (busca o pedido pelo numero)
+    let bling1=null;
+    try{
+      const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(numero)}`);
+      const achado=(r?.data||[])[0];
+      if(achado){
+        const d=await bling(`/pedidos/vendas/${achado.id}`).then(x=>x?.data);
+        bling1={ id:d.id, numero:d.numero, total:d.total, observacoes:d.observacoes||"",
+          parcelas:(d.parcelas||[]).map(pc=>({valor:pc.valor, formaId:pc.formaPagamento?.id})),
+          situacaoId:d.situacao?.id };
+      }
+    }catch(e){ bling1={erro:e.message}; }
+    res.json({ numero, caixaRegistrou:movs, bling:bling1 });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
+app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
+  // acha vendas do caixa cujo total bate com um valor (pra localizar de onde veio a nota)
+  try{
+    const alvo=Number(String(req.params.valor).replace(",","."));
+    const dCx=lerCaixaSessoes();
+    const achados=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda") return;
+        if(Math.abs((Number(m.total)||0)-alvo)<0.02){
+          achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero, total:m.total,
+            em:new Date(m.em).toLocaleString("pt-BR"),
+            pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
+        }
+      });
+    });
+    res.json({valor:alvo, achados});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/frete/:id",async(req,res)=>{
   try{
     const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data);
