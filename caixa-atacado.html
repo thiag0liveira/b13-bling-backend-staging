@@ -143,10 +143,13 @@ function ehPedidoAtacado(){ return CARRINHO.some(i=>i.modoPreco==="atacado"||i.o
 function valorEmCredito(){
   return PAGAMENTOS.filter(p=>/cr[eé]dito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
 }
+function valorEmDebito(){
+  return PAGAMENTOS.filter(p=>/d[eé]bito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+}
 function taxaCartao(){
   if(!COBRAR_TAXA_CARTAO) return 0;
   if(!ehPedidoAtacado()) return 0; // varejo não tem taxa
-  return +(valorEmCredito()*0.035).toFixed(2);
+  return +((valorEmCredito()+valorEmDebito())*0.035).toFixed(2);
 }
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).toFixed(2); }
 // monta a nota que vai pra observação do Bling dizendo quanto foi PIX Banco e quanto
@@ -1305,9 +1308,9 @@ function render(){
         ${OUTRAS_DESPESAS>0?`<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>`:""}
         <div class="linha" style="margin-top:10px;align-items:center"><span class="muted">🚚 Frete${PEDIDO_ATUAL?' (do pedido)':''}</span>
           <input type="number" step="0.01" min="0" value="${FRETE||''}" placeholder="0,00" style="width:120px;text-align:right" onchange="FRETE=+this.value||0;render()"></div>
-        ${(ehPedidoAtacado()&&valorEmCredito()>0)?`
+        ${(ehPedidoAtacado()&&(valorEmCredito()+valorEmDebito())>0)?`
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
-            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito (3,5%)</span>
+            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito/débito (3,5%)</span>
             <b style="color:#ffd23f">${brl(taxaCartao())}</b>
           </label>`:""}
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
@@ -1388,7 +1391,7 @@ async function finalizar(){
   //    (o backend garante o caminho: passa por Separado antes de mover pra Atendido).
   //  (Regra antiga, guardada caso volte: ATENDIDO só p/ venda nova 100% varejo; resto SEPARADO.)
   const usouAtacado = CARRINHO.some(i => i.modoPreco==="atacado" || i.origemPreco==="atacado");
-  const taxaCredito = taxaCartao(); // 3,5% do crédito, se aplicável e marcado
+  const taxaCredito = taxaCartao(); // 3,5% do crédito + débito, se aplicável e marcado
   const statusFinal = "atendido";
   try{
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
