@@ -93,6 +93,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <button id="pillModo" class="pill" onclick="alternarModoPreco()" style="cursor:pointer;background:#1a2a44;color:#7fd4ff" title="Toque pra alternar entre preço de atacado e varejo">🏷️ Atacado</button>
   <div class="sp"></div>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMinhasVendas()">🧾 Minhas Vendas</button>
+  <button class="btn btn-ghost btn-sm" onclick="imprimirPedidoAtual()">🧾 Imprimir pedido atual</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirPorNumero()">🔢 Imprimir por nº do pedido</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
@@ -831,6 +832,26 @@ function movimentoParaComprovante(m){
 }
 // imprime o comprovante do pedido no MESMO formato do totem: canvas com logo,
 // número, CÓDIGO DE BARRAS (id do pedido) e QR CODE (acompanhamento), itens e total.
+function imprimirPedidoAtual(){
+  if(!CARRINHO.length){ alert("Não há itens no pedido atual."); return; }
+  const v={
+    numero: PEDIDO_ATUAL?.numero || "",
+    pedidoId: PEDIDO_ATUAL?.id || "",
+    total: totalPedido(),
+    desconto: 0,
+    outrasDespesas: +(OUTRAS_DESPESAS+taxaCartao()).toFixed(2),
+    frete: FRETE,
+    itens: CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
+    pagamentos: (PAGAMENTOS||[]).slice(),
+    cliente:{nome: CLIENTE_NOME||"Consumidor Final"},
+    dataHora: Date.now(),
+    nfce: null,
+    observacao: window._obsVenda||"",
+    operador: (typeof S!=="undefined"&&S&&S.nome)||"",
+  };
+  imprimirComprovante(v);
+}
+
 function imprimirComprovante(v){
   if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
   const pedidoId=String(v.pedidoId||v.numero||"");
