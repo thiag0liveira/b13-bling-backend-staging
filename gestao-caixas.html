@@ -616,16 +616,20 @@ function renderEditorItens(){
 }
 async function buscarItemEditor(){
   const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
-  if(termo.length<2){ const msg=document.getElementById("msgEditorItens"); if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
-  const msg=document.getElementById("msgEditorItens"); if(msg) msg.innerHTML='<div class="muted">Buscando…</div>';
+  const msg=document.getElementById("msgEditorItens");
+  const box=document.getElementById("resBuscaItem");
+  if(termo.length<2){ if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
+  if(msg) msg.innerHTML='<div class="muted">Buscando…</div>';
   try{
     const j=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    if(j&&j.erro) throw new Error(j.erro);
     const lista=(j.data||[]).slice(0,12).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque}));
     window._GITENS.buscas=lista;
-    renderEditorItens();
-    const mm=document.getElementById("msgEditorItens"); if(mm) mm.innerHTML = lista.length?"":'<div class="muted">Nada encontrado.</div>';
-    setTimeout(()=>{ const b=document.getElementById("buscaItemEditor"); if(b){b.value=termo;b.focus();} },20);
-  }catch(e){ const mm=document.getElementById("msgEditorItens"); if(mm) mm.innerHTML='<div class="err">Erro na busca.</div>'; }
+    if(box) box.innerHTML = lista.length
+      ? lista.map((p,k)=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo?' <span class="muted">#'+esc(String(p.codigo))+'</span>':''}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("")
+      : '<div class="muted" style="margin-top:6px">Nada encontrado pra "'+esc(termo)+'".</div>';
+    if(msg) msg.innerHTML="";
+  }catch(e){ if(msg) msg.innerHTML='<div class="err">Erro na busca: '+esc(e.message||"falhou")+'</div>'; }
 }
 window.addItemEditorIdx=async function(k){
   const E=window._GITENS; if(!E) return;
