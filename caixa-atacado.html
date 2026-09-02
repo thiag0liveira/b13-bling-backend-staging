@@ -424,6 +424,15 @@ function agendarBuscaPedido(v){
 }
 
 // busca um pedido pelo número direto no Bling (fora da janela dos recentes)
+function pesquisarPedidoDigitado(){
+  const el=document.querySelector(".pedBusca");
+  const v=((el?el.value:window._filtroPed)||"").trim();
+  if(!v){ pintarPedidos(); return; }
+  window._filtroPed=v;
+  if(/^\d+$/.test(v)){ buscarPedidoNoBling(v); } // sempre re-pesquisa no Bling, mesmo se já estiver na lista
+  else { pintarPedidos(); }
+}
+
 async function buscarPedidoNoBling(numero){
   const box=document.getElementById("pedLista");
   if(box) box.innerHTML=`<div class="muted" style="padding:8px">Procurando #${esc(numero)} no Bling…</div>`;
@@ -1264,7 +1273,10 @@ function render(){
           <h3 style="flex:1;margin:0">📋 Pedidos a receber</h3>
           <button class="btn btn-ghost btn-sm" onclick="carregarPedidos()">🔄</button>
         </div>
-        <input class="pedBusca" placeholder="Filtrar nº ou bipar código do pedido…" oninput="window._filtroPed=this.value;pintarPedidos();agendarBuscaPedido(this.value)" onkeydown="if(event.key==='Enter'){const v=this.value.trim(); if(/^\d+$/.test(v)){const naLista=PEDIDOS.some(p=>String(p.numero||'')===v); if(!naLista) buscarPedidoNoBling(v);}}" value="${esc(window._filtroPed||'')}">
+        <div style="display:flex;gap:6px;align-items:stretch;margin-bottom:8px">
+          <input class="pedBusca" style="flex:1;margin-bottom:0" placeholder="Filtrar nº ou bipar código do pedido…" oninput="window._filtroPed=this.value;pintarPedidos();agendarBuscaPedido(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();pesquisarPedidoDigitado();}" value="${esc(window._filtroPed||'')}">
+          <button class="btn btn-mag btn-sm" style="white-space:nowrap" onclick="pesquisarPedidoDigitado()">🔎 Pesquisar</button>
+        </div>
         <div class="pedLista" id="pedLista"><div class="muted">Carregando…</div></div>
       </div>
     </div>
