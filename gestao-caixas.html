@@ -582,8 +582,8 @@ window.editarItensVenda=function(ix){
     frete:Number(m.frete)||0, buscas:[] };
   renderEditorItens();
 }
-function totalEditorItens(){ const E=window._GITENS; return E?+((E.itens.reduce((s,i)=>s+i.quantidade*i.valor,0))+(E.frete||0)).toFixed(2):0; }
-function renderEditorItens(){
+window.totalEditorItens=function totalEditorItens(){ const E=window._GITENS; return E?+((E.itens.reduce((s,i)=>s+i.quantidade*i.valor,0))+(E.frete||0)).toFixed(2):0; }
+window.renderEditorItens=function renderEditorItens(){
   const E=window._GITENS; if(!E) return;
   const linhas=E.itens.map((i,k)=>`
     <div style="display:flex;gap:6px;align-items:center;border-bottom:1px solid #2a2660;padding:6px 0">
@@ -614,22 +614,27 @@ function renderEditorItens(){
       </div>
     </div></div>`;
 }
-async function buscarItemEditor(){
-  const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
+window.buscarItemEditor=async function buscarItemEditor(){
   const msg=document.getElementById("msgEditorItens");
   const box=document.getElementById("resBuscaItem");
-  if(termo.length<2){ if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
-  if(msg) msg.innerHTML='<div class="muted">Buscando…</div>';
   try{
-    const j=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    if(!window._GITENS){ if(msg) msg.innerHTML='<div class="err">Editor não iniciado — reabra "Editar itens".</div>'; return; }
+    const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
+    if(termo.length<2){ if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
+    if(msg) msg.innerHTML='<div class="muted">Buscando "'+esc(termo)+'"…</div>';
+    const resp=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo));
+    if(!resp.ok){ if(msg) msg.innerHTML='<div class="err">Erro HTTP '+resp.status+' na busca.</div>'; return; }
+    const j=await resp.json();
     if(j&&j.erro) throw new Error(j.erro);
     const lista=(j.data||[]).slice(0,12).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque}));
     window._GITENS.buscas=lista;
     if(box) box.innerHTML = lista.length
       ? lista.map((p,k)=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo?' <span class="muted">#'+esc(String(p.codigo))+'</span>':''}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("")
-      : '<div class="muted" style="margin-top:6px">Nada encontrado pra "'+esc(termo)+'".</div>';
-    if(msg) msg.innerHTML="";
-  }catch(e){ if(msg) msg.innerHTML='<div class="err">Erro na busca: '+esc(e.message||"falhou")+'</div>'; }
+      : "";
+    if(msg) msg.innerHTML = lista.length
+      ? '<div class="muted">'+lista.length+' produto(s) — toque pra adicionar.</div>'
+      : '<div class="muted">Nada encontrado pra "'+esc(termo)+'".</div>';
+  }catch(e){ if(msg) msg.innerHTML='<div class="err">Falha na busca: '+esc(e.message||String(e))+'</div>'; }
 }
 window.addItemEditorIdx=async function(k){
   const E=window._GITENS; if(!E) return;
@@ -641,7 +646,7 @@ window.addItemEditorIdx=async function(k){
   else E.itens.push({produtoId:p.id,nome:p.nome,quantidade:1,valor:preco});
   E.buscas=[]; renderEditorItens();
 }
-async function salvarItensVenda(){
+window.salvarItensVenda=async function salvarItensVenda(){
   const E=window._GITENS; if(!E) return;
   const msg=document.getElementById("msgEditorItens");
   const itens=E.itens.filter(i=>i.produtoId&&i.quantidade>0);
