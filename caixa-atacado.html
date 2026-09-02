@@ -548,6 +548,27 @@ function pedirAutorizacaoReabrir(id,numero){
     }
   );
 }
+async function conferirPedidoContraBling(id){
+  try{
+    const c=await fetch(BACKEND+"/api/caixa-atacado/conferir-bling/"+id).then(r=>r.json());
+    if(!c||!c.ok||!c.difere) return; // bate com o Bling: não incomoda
+    const lin=(txt)=>`<div style="padding:6px 8px;border-bottom:1px solid #2c2660;font-size:13px">${txt}</div>`;
+    let html="";
+    if(c.total&&c.total.difere) html+=lin(`💰 <b>Total</b>: caixa ${brl(c.total.caixa)} × Bling <b>${brl(c.total.bling)}</b>`);
+    (c.itens?.divergentes||[]).forEach(d=>{ html+=lin(`✏️ <b>${esc(d.nome)}</b>: caixa ${d.caixa.quantidade}× ${brl(d.caixa.valor)} × Bling ${d.bling.quantidade}× ${brl(d.bling.valor)}`); });
+    (c.itens?.soNoCaixa||[]).forEach(i=>{ html+=lin(`➕ Só no <b>caixa</b>: ${i.quantidade}× ${esc(i.nome)}`); });
+    (c.itens?.soNoBling||[]).forEach(i=>{ html+=lin(`➖ Só no <b>Bling</b>: ${i.quantidade}× ${esc(i.nome)}`); });
+    if(!html) return;
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg"><div class="modal">
+        <h3 style="color:#ffd23f">⚠️ Este pedido não bate com o Bling</h3>
+        <div class="muted" style="margin:6px 0 10px">O que o caixa registrou está diferente do que está no Bling. O <b>Bling é a fonte certa</b> (estoque/fiscal). Confira antes de mexer:</div>
+        <div style="max-height:50vh;overflow:auto;border:1px solid #2c2660;border-radius:8px">${html}</div>
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais()">Entendi, continuar</button>
+      </div></div>`;
+  }catch(e){}
+}
+
 async function abrirPedidoParaEdicao(id){
   try{
     const j=await fetch(BACKEND+"/api/caixa-atacado/pedido/"+id).then(r=>r.json());
@@ -565,6 +586,7 @@ async function abrirPedidoParaEdicao(id){
     window._obsVenda=""; // observação é por venda; não vaza de um pedido pro outro
     window._filtroPed="";
     render();
+    conferirPedidoContraBling(id); // destaca se o registro do caixa não bate com o Bling
   }catch(e){ alert("Não foi possível abrir o pedido pra edição: "+e.message); MODO_EDICAO_PAGAMENTO=false; }
 }
 // ---- salvar novo pagamento: QR de novo no FINAL ----

@@ -3894,6 +3894,43 @@ app.post("/api/gestao/cancelar-venda",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// CONFERE o registro do caixa contra o Bling (ao reabrir um pedido). Aponta o que está
+// diferente: total, itens (faltando/sobrando/quantidade ou preço) e formas de pagamento.
+app.get("/api/caixa-atacado/conferir-bling/:pedidoId",async(req,res)=>{
+  try{
+    const pid=String(req.params.pedidoId);
+    const d=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data).catch(()=>null);
+    if(!d) return res.json({ok:false, erro:"pedido não encontrado no Bling"});
+    // Bling
+    const itensBling=(d.itens||[]).map(it=>({nome:(it.descricao||it.produto?.nome||"produto").trim(), quantidade:Number(it.quantidade)||0, valor:Number(it.valor)||0}));
+    const totalBling=Number(d.total)||0;
+    const formasBling=[];
+    for(const pc of (d.parcelas||[])){ formasBling.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
+    // Caixa (movimento mais recente desse pedido)
+    const dCx=lerCaixaSessoes(); let mov=null;
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo==="venda" && String(m.pedidoId)===pid && (!mov||m.em>mov.em)) mov=m;
+    }));
+    const itensCaixa=(mov?.itens||[]).map(i=>({nome:(i.nome||"produto").trim(), quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0}));
+    const totalCaixa=mov?Number(mov.total)||0:null;
+    const formasCaixa=(mov?.pagamentos||[]).map(p=>({forma:p.formaNome||"—", valor:Number(p.valor)||0}));
+    // diffs de itens: compara por nome
+    const key=(i)=>i.nome.toLowerCase();
+    const mapB={}; itensBling.forEach(i=>mapB[key(i)]=i);
+    const mapC={}; itensCaixa.forEach(i=>mapC[key(i)]=i);
+    const soNoBling=[], soNoCaixa=[], divergentes=[];
+    Object.values(mapB).forEach(b=>{ const c=mapC[key(b)]; if(!c) soNoBling.push(b); else if(c.quantidade!==b.quantidade||Math.abs(c.valor-b.valor)>0.009) divergentes.push({nome:b.nome, bling:b, caixa:c}); });
+    Object.values(mapC).forEach(c=>{ if(!mapB[key(c)]) soNoCaixa.push(c); });
+    const totalDifere = (totalCaixa!=null) && Math.abs(totalCaixa-totalBling)>0.009;
+    const difere = !!(soNoBling.length||soNoCaixa.length||divergentes.length||totalDifere);
+    res.json({ ok:true, difere, temRegistroCaixa:!!mov,
+      total:{ bling:totalBling, caixa:totalCaixa, difere:totalDifere },
+      itens:{ soNoBling, soNoCaixa, divergentes },
+      formas:{ bling:formasBling, caixa:formasCaixa },
+    });
+  }catch(e){ res.status(e.status||500).json({ok:false, erro:e.message}); }
+});
+
 app.post("/api/caixa-atacado/cancelar-venda",async(req,res)=>{
   try{
     const {pedidoId,tokenQr,funcionarioId,numero,motivo}=req.body||{};
