@@ -3873,6 +3873,27 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
 // CANCELAR uma venda JÁ FINALIZADA — só com autorização de gerente/financeiro/admin (QR).
 // Move o pedido pra CANCELADO no Bling, zera o pagamento local e marca o movimento
 // como CANCELADO no histórico do caixa (some do total, aparece em vermelho).
+// cancela uma venda pela Gestão de Caixas (tela de admin) — move pro Cancelado no Bling,
+// zera o pagamento local e marca o movimento como cancelado. Com trava Bling ok/falhou.
+app.post("/api/gestao/cancelar-venda",async(req,res)=>{
+  try{
+    const {pedidoId, operador, motivo}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    const CANCELADO=Number(process.env.SIT_CANCELADO||12);
+    const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    let blingOk=true, blingErro=null;
+    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${CANCELADO}`,{method:"PATCH"}); }
+    catch(e){ blingOk=false; blingErro=e.message; }
+    const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
+    if(antigo){ pags[idStr]={...antigo, statusPagamento:"cancelado", valorPago:0, canceladoEm:Date.now()}; salvarJSON(PAG_FILE,pags); }
+    const alteracao={ em:Date.now(), tipo:"cancelamento", por:(operador||"Gestão"), autorizadoPor:(operador||"Gestão"), motivo:motivo||"", viaGestao:true, blingPendente:!blingOk };
+    const achouMov=marcarMovimentoAlterado(idStr, null, alteracao, {cancelado:true});
+    addLog(idStr,"venda_cancelada_gestao",null,(operador||"Gestão"),{motivo:motivo||"",blingOk});
+    res.json({ok:true, numero:ped.numero, movimentoAtualizado:achouMov, blingOk, blingErro});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/caixa-atacado/cancelar-venda",async(req,res)=>{
   try{
     const {pedidoId,tokenQr,funcionarioId,numero,motivo}=req.body||{};

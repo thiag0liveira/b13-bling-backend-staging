@@ -174,7 +174,11 @@ window.verMovimentos=async function(id){
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
               <div>${nomeMovimento(m)}${m.alterado?' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>':''}</div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
-              ${(m.tipo==="venda"&&!m.cancelado)?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>`:''}
+              ${(m.tipo==="venda"&&!m.cancelado)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>
+                <button class="btn btn-sm" style="padding:3px 8px;background:#b3341f;color:#fff" onclick="cancelarVendaGestao(${ix})">🚫 Cancelar venda</button>
+              </div>`:''}
+              ${(m.tipo==="venda"&&m.cancelado)?'<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 Venda cancelada</div>':''}
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
             ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
@@ -513,6 +517,28 @@ async function carregarFormasGestao(){
   }catch(e){ window._FORMAS_GESTAO=[]; }
   return window._FORMAS_GESTAO;
 }
+window.cancelarVendaGestao=async function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  const motivo=prompt(`Cancelar a venda #${m.numero||m.pedidoId} (${brl(m.total)})?\n\nIsso move o pedido pra CANCELADO no Bling e tira do total do caixa.\nMotivo (opcional):`);
+  if(motivo===null) return;
+  try{
+    const r=await fetch(B+"/api/gestao/cancelar-venda",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    const avisoBling = r.blingOk===false
+      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Cancele o pedido no Bling manualmente.</div>`
+      : "";
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">${r.blingOk===false?"⚠️":"🚫"}</div><h3>Venda cancelada</h3>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(r.numero||m.numero||m.pedidoId)} cancelado.</div>
+        ${avisoBling}
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
+      </div></div>`;
+  }catch(e){ alert("Erro ao cancelar: "+e.message); }
+}
+
 window.editarPagamentoVenda=async function(ix){
   const G=window._GMOVS; if(!G) return;
   const m=G.movs[ix]; if(!m) return;
