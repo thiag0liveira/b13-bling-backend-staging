@@ -153,9 +153,12 @@ function viewNF(){
       <div style="text-align:center"><div class="muted" style="font-size:10px">qtd</div>
         <input value="${i.quantidade}" inputmode="numeric" style="width:64px;text-align:center" onchange="setQtdNF(${ix},this.value)" ${i.casado?"":"disabled"}></div>
     </div>`).join("")}
-    <button class="btn btn-grn" style="width:100%;margin-top:12px;padding:13px" onclick="darEntrada('fiscal')" ${casados.length&&!NF.jaLancada?"":"disabled"}>
-      ${viaBling?`🗂️ Registrar ${casados.length} item(ns) no histórico`:`📦 Dar entrada de ${casados.length} item(ns)`}
-    </button>
+    ${viaBling?`<div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn btn-grn" style="flex:1;padding:13px" onclick="darEntrada('fiscal',false)" ${casados.length?"":"disabled"}>📦 Dar entrada (soma no Bling)</button>
+        <button class="btn btn-ghost" style="flex:1;padding:13px" onclick="darEntrada('fiscal',true)" ${casados.length?"":"disabled"}>🗂️ Só registrar</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:6px">Use "Dar entrada" pra subir o estoque agora. Use "Só registrar" se o Bling já subiu o estoque dessa nota (pra não dobrar).</div>`
+    :`<button class="btn btn-grn" style="width:100%;margin-top:12px;padding:13px" onclick="darEntrada('fiscal',false)" ${casados.length&&!NF.jaLancada?"":"disabled"}>📦 Dar entrada de ${casados.length} item(ns)</button>`}
     ${NF.itens.some(i=>!i.casado)?`<div class="muted" style="font-size:11px;margin-top:8px">Itens não casados não entram. Cadastre o GTIN/código deles no Bling.</div>`:""}
   </div>`;
 }
@@ -167,7 +170,7 @@ async function puxarPorChave(){
   try{
     const j=await fetch(B+"/api/estoque/nota-por-chave/"+ch).then(r=>r.json());
     if(j.erro){ msg.textContent=j.erro; return; }
-    if(!j.encontrada){ msg.textContent="O Bling ainda não tem essa nota. Se ela é sua, aguarde o Bling importar (manifestação) ou use o XML."; NF=null; render(); return; }
+    if(!j.encontrada){ msg.innerHTML=`O Bling ainda não tem essa nota. <button class="btn btn-mag" style="margin-top:6px" onclick="importarSefaz('${ch}')">⬇️ Importar da SEFAZ</button>`; NF=null; return; }
     NF={ fornecedor:j.fornecedor, numeroNota:j.numero, chave:ch, itens:(j.itens||[]).map(i=>({...i, produtoNome:i.nome})), casados:j.casados, total:j.total, viaBling:true, jaLancada:false };
     msg.textContent="";
     render();
@@ -188,10 +191,20 @@ async function lerXml(){
     NF=j; render();
   }catch(e){ alert("Erro ao ler o XML."); }
 }
+async function importarSefaz(ch){
+  const msg=document.getElementById("chaveMsg");
+  msg.textContent="Importando da SEFAZ (pode levar alguns segundos)…";
+  try{
+    const j=await fetch(B+"/api/nfe/importar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chave:ch})}).then(r=>r.json());
+    if(j.erro){ msg.textContent="Não deu pra importar: "+j.erro; return; }
+    msg.textContent="Importada. Puxando os itens…";
+    setTimeout(()=>{ document.getElementById("chaveIn")&&(document.getElementById("chaveIn").value=ch); puxarPorChave(); }, 1500);
+  }catch(e){ msg.textContent="Erro ao importar da SEFAZ."; }
+}
 function setQtdNF(ix,v){ if(NF&&NF.itens[ix]) NF.itens[ix].quantidade=Math.max(0,parseInt(String(v).replace(/\D/g,""))||0); }
 
 // ---------- DAR ENTRADA ----------
-async function darEntrada(tipo){
+async function darEntrada(tipo,semEstoqueOverride){
   let payload;
   if(tipo==="manual"){
     const itens=CART.filter(i=>Number(i.quantidade)>0).map(i=>({produtoId:i.produtoId, nome:i.nome, quantidade:i.quantidade, custo:i.custo}));
@@ -200,10 +213,10 @@ async function darEntrada(tipo){
     payload={ tipo:"manual", fornecedor:obs, observacao:obs, itens, funcionarioNome:(S&&S.nome)||"" };
   }else{
     const itens=NF.itens.filter(i=>i.casado&&Number(i.quantidade)>0).map(i=>({produtoId:i.produtoId, produtoNome:i.produtoNome, quantidade:i.quantidade, custo:i.custo}));
-    if(!itens.length){ alert("Nenhum item casado pra dar entrada."); return; }
-    payload={ tipo:"fiscal", fornecedor:NF.fornecedor, numeroNota:NF.numeroNota, chaveNfe:NF.chave, itens, funcionarioNome:(S&&S.nome)||"", semEstoque:!!NF.viaBling };
+    if(!itens.length){ alert("Nenhum item casado pra entrada."); return; }
+    payload={ tipo:"fiscal", fornecedor:NF.fornecedor, numeroNota:NF.numeroNota, chaveNfe:NF.chave, itens, funcionarioNome:(S&&S.nome)||"", semEstoque:!!semEstoqueOverride };
   }
-  const acao = (tipo==="fiscal"&&NF.viaBling) ? "Registrar essa nota no histórico (o estoque dela já subiu no Bling)?" : "Dar entrada e SOMAR ao estoque no Bling? Isso não dá pra desfazer com um clique.";
+  const acao = semEstoqueOverride ? "Registrar essa nota no histórico SEM mexer no estoque (o Bling já subiu)?" : "Dar entrada e SOMAR ao estoque no Bling? Isso não dá pra desfazer com um clique.";
   if(!confirm(acao)) return;
   const btns=document.querySelectorAll("button.btn-grn"); btns.forEach(b=>{b.disabled=true;b.textContent="Dando entrada…";});
   try{
