@@ -1212,9 +1212,17 @@ app.get("/api/nfce/pedidos-aguardando",async(req,res)=>{
 // Registra em NFCE_EMITIDAS_FILE pra não emitir duas vezes e mostrar como emitida.
 app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
   try{
-    const pedidoId=String(req.params.id);
+    const idOuNumero=String(req.params.id);
     const emitidas=lerNfceEmitidas();
-    if(emitidas[pedidoId]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[pedidoId]});
+    if(emitidas[idOuNumero]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[idOuNumero]});
+    // RESOLVE o pedido: tenta pelo id interno; se não achar, tenta pelo número.
+    let pedidoId=null;
+    try{ const d=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data); if(d?.id) pedidoId=d.id; }catch(e){}
+    if(!pedidoId){
+      try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`); const a=(r?.data||[])[0]; if(a?.id) pedidoId=a.id; }catch(e){}
+    }
+    if(!pedidoId) return res.status(404).json({erro:`Pedido não encontrado no Bling (id/número ${idOuNumero}). Pode ter sido excluído ou o registro do caixa está com um id diferente.`});
+    if(emitidas[String(pedidoId)]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[String(pedidoId)]});
     // gera a NFC-e a partir do pedido (igual o botão "Gerar NFC-e" do Bling)
     const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
     const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
@@ -1225,7 +1233,9 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
       try{ const det=await bling(`/nfce/${idNotaFiscal}`); link=det?.data?.linkDanfe||det?.data?.linkPDF||null; numeroNota=det?.data?.numero||null; }catch(e){}
     }catch(e){ envioErro=e.message; } // nota gerada mas não transmitida — fica "Pendente" no Bling, dá pra reenviar
     const registro={ idNotaFiscal, numeroNota, link, em:Date.now(), por:(req.body?.operador||""), envioErro:envioErro||null };
-    emitidas[pedidoId]=registro; salvarNfceEmitidas(emitidas);
+    emitidas[String(pedidoId)]=registro;
+    if(String(pedidoId)!==idOuNumero) emitidas[idOuNumero]=registro; // marca pelos dois pra não duplicar
+    salvarNfceEmitidas(emitidas);
     res.json({ok:true, pedidoId, nfce:registro, envioErro});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
