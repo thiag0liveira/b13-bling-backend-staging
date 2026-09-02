@@ -537,7 +537,7 @@ function renderEditorItens(){
       <input type="number" min="0" step="0.01" value="${i.valor}" style="width:74px" onchange="window._GITENS.itens[${k}].valor=Number(this.value)||0;renderEditorItens()">
       <button class="btn btn-sm" style="background:#b3341f;color:#fff;padding:2px 7px" onclick="window._GITENS.itens.splice(${k},1);renderEditorItens()">🗑</button>
     </div>`).join("");
-  const res=(E.buscas||[]).map(p=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditor(${p.id},'${esc(String(p.nome)).replace(/'/g,"\\'")}',${p.preco||0})">➕ ${esc(p.nome)} — ${brl(p.preco||0)}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("");
+  const res=(E.buscas||[]).map((p,k)=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo?' <span class="muted">#'+esc(String(p.codigo))+'</span>':''}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("");
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>📦 Editar itens — #${esc(E.numero)}</h3>
@@ -560,20 +560,25 @@ function renderEditorItens(){
 }
 async function buscarItemEditor(){
   const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
-  if(termo.length<2) return;
+  if(termo.length<2){ const msg=document.getElementById("msgEditorItens"); if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
   const msg=document.getElementById("msgEditorItens"); if(msg) msg.innerHTML='<div class="muted">Buscando…</div>';
   try{
-    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
-    window._GITENS.buscas=(j.data||[]).slice(0,8).map(p=>({id:p.id,nome:p.nome,preco:p.preco,estoque:p.estoque}));
+    const j=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    const lista=(j.data||[]).slice(0,12).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque}));
+    window._GITENS.buscas=lista;
     renderEditorItens();
+    const mm=document.getElementById("msgEditorItens"); if(mm) mm.innerHTML = lista.length?"":'<div class="muted">Nada encontrado.</div>';
     setTimeout(()=>{ const b=document.getElementById("buscaItemEditor"); if(b){b.value=termo;b.focus();} },20);
-  }catch(e){ if(msg) msg.innerHTML='<div class="err">Erro na busca.</div>'; }
+  }catch(e){ const mm=document.getElementById("msgEditorItens"); if(mm) mm.innerHTML='<div class="err">Erro na busca.</div>'; }
 }
-window.addItemEditor=function(id,nome,preco){
+window.addItemEditorIdx=async function(k){
   const E=window._GITENS; if(!E) return;
-  const existe=E.itens.find(i=>String(i.produtoId)===String(id));
+  const p=(E.buscas||[])[k]; if(!p) return;
+  let preco=0;
+  if(p.codigo){ try{ const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json()); if(r&&r.data&&Number(r.data.preco)>0) preco=Number(r.data.preco); }catch(e){} }
+  const existe=E.itens.find(i=>String(i.produtoId)===String(p.id));
   if(existe){ existe.quantidade+=1; }
-  else E.itens.push({produtoId:id,nome,quantidade:1,valor:Number(preco)||0});
+  else E.itens.push({produtoId:p.id,nome:p.nome,quantidade:1,valor:preco});
   E.buscas=[]; renderEditorItens();
 }
 async function salvarItensVenda(){
