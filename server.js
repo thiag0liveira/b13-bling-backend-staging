@@ -3875,6 +3875,59 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
 // como CANCELADO no histórico do caixa (some do total, aparece em vermelho).
 // cancela uma venda pela Gestão de Caixas (tela de admin) — move pro Cancelado no Bling,
 // zera o pagamento local e marca o movimento como cancelado. Com trava Bling ok/falhou.
+// edita os ITENS de uma venda pela Gestão de Caixas. Destrava do Atendido, atualiza no
+// Bling (reaproveitando atualizarItensBling, que recalcula as parcelas), restaura o status,
+// e sempre grava a alteração no HISTÓRICO do caixa. Trava Bling ok/falhou (estoque).
+app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
+  try{
+    const {pedidoId, itens, operador}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    const itensLimpos=(itens||[]).map(i=>({produtoId:Number(i.produtoId),nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})).filter(i=>i.produtoId&&i.quantidade>0);
+    if(!itensLimpos.length) return res.status(400).json({erro:"informe ao menos um item válido (produto e quantidade)"});
+
+    const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const sitOrig=ped.situacao?.id;
+    const obsExtra=`[Itens alterados ${new Date().toISOString().slice(0,16).replace('T',' ')} — ${operador||"Gestão"} (Gestão de Caixas)]`;
+
+    let blingOk=true, blingErro=null, destravou=false;
+    try{
+      if(sitOrig===SIT.ATENDIDO){
+        const d=await _destravarSituacao(pedidoId);
+        if(d){ destravou=true; await sleep(400); }
+        else { blingOk=false; blingErro="não foi possível destravar o pedido Atendido no Bling"; }
+      }
+      if(blingOk){
+        const r=await atualizarItensBling(pedidoId, itensLimpos, obsExtra);
+        if(!r||r.ok===false){ blingOk=false; blingErro=(r&&r.erro)||"falha ao atualizar itens no Bling"; }
+      }
+    }catch(e){ blingOk=false; blingErro=e.message||String(e); }
+    finally{
+      if(destravou){ try{ await _restaurarSituacao(pedidoId, sitOrig); }catch(e){} }
+    }
+
+    const freteAtual=+(ped.transporte?.frete||0);
+    const novoTotal=+((itensLimpos.reduce((s,i)=>s+i.quantidade*i.valor,0))+freteAtual).toFixed(2);
+
+    // grava no movimento do caixa (itens + total) + histórico
+    const dCx=lerCaixaSessoes(); let achou=false; const idStr=String(pedidoId);
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo==="venda" && String(m.pedidoId)===idStr){
+        const antes=(m.itens||[]).map(i=>`${i.quantidade}x ${i.nome}`).join(", ")||"—";
+        const depois=itensLimpos.map(i=>`${i.quantidade}x ${i.nome}`).join(", ");
+        m.itens=itensLimpos.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
+        m.total=novoTotal; m.alterado=true;
+        m.alteracoes=m.alteracoes||[];
+        m.alteracoes.push({em:Date.now(), tipo:"itens", por:(operador||"Gestão"), autorizadoPor:(operador||"Gestão"), de:antes, para:depois, viaGestao:true, blingPendente:!blingOk});
+        achou=true;
+      }
+    }));
+    if(achou) salvarCaixaSessoes(dCx);
+    addLog(idStr,"itens_alterados_gestao",null,(operador||"Gestão"),{blingOk,novoTotal});
+    res.json({ok:true, pedidoId, novoTotal, movimentoAtualizado:achou, blingOk, blingErro});
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
 app.post("/api/gestao/cancelar-venda",async(req,res)=>{
   try{
     const {pedidoId, operador, motivo}=req.body||{};

@@ -176,6 +176,7 @@ window.verMovimentos=async function(id){
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
               ${(m.tipo==="venda"&&!m.cancelado)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>
+                <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarItensVenda(${ix})">📦 Editar itens</button>
                 <button class="btn btn-sm" style="padding:3px 8px;background:#b3341f;color:#fff" onclick="cancelarVendaGestao(${ix})">🚫 Cancelar venda</button>
               </div>`:''}
               ${(m.tipo==="venda"&&m.cancelado)?'<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 Venda cancelada</div>':''}
@@ -517,6 +518,88 @@ async function carregarFormasGestao(){
   }catch(e){ window._FORMAS_GESTAO=[]; }
   return window._FORMAS_GESTAO;
 }
+window.editarItensVenda=function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  window._GITENS={ pedidoId:m.pedidoId, numero:m.numero||m.pedidoId,
+    itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+    frete:Number(m.frete)||0, buscas:[] };
+  renderEditorItens();
+}
+function totalEditorItens(){ const E=window._GITENS; return E?+((E.itens.reduce((s,i)=>s+i.quantidade*i.valor,0))+(E.frete||0)).toFixed(2):0; }
+function renderEditorItens(){
+  const E=window._GITENS; if(!E) return;
+  const linhas=E.itens.map((i,k)=>`
+    <div style="display:flex;gap:6px;align-items:center;border-bottom:1px solid #2a2660;padding:6px 0">
+      <div style="flex:1;font-size:13px">${esc(i.nome||("produto "+i.produtoId))}</div>
+      <input type="number" min="0" step="1" value="${i.quantidade}" style="width:56px" onchange="window._GITENS.itens[${k}].quantidade=Number(this.value)||0;renderEditorItens()">
+      <span class="muted" style="font-size:11px">×</span>
+      <input type="number" min="0" step="0.01" value="${i.valor}" style="width:74px" onchange="window._GITENS.itens[${k}].valor=Number(this.value)||0;renderEditorItens()">
+      <button class="btn btn-sm" style="background:#b3341f;color:#fff;padding:2px 7px" onclick="window._GITENS.itens.splice(${k},1);renderEditorItens()">🗑</button>
+    </div>`).join("");
+  const res=(E.buscas||[]).map(p=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditor(${p.id},'${esc(String(p.nome)).replace(/'/g,"\\'")}',${p.preco||0})">➕ ${esc(p.nome)} — ${brl(p.preco||0)}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("");
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>📦 Editar itens — #${esc(E.numero)}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:6px">O Bling é a fonte de estoque/fiscal. Mudanças aqui vão pro Bling e pro histórico do caixa.</div>
+      <div style="max-height:34vh;overflow:auto">${linhas||'<div class="muted">Sem itens.</div>'}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:800">
+        <span>Total${E.frete?" (com frete "+brl(E.frete)+")":""}</span><span style="color:#ffd23f">${brl(totalEditorItens())}</span>
+      </div>
+      <div style="margin-top:10px">
+        <input id="buscaItemEditor" placeholder="Adicionar produto (nome)…" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarItemEditor();}">
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="buscarItemEditor()">🔎 Buscar produto</button>
+        <div id="resBuscaItem">${res}</div>
+      </div>
+      <div id="msgEditorItens"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-mag" style="flex:1" onclick="salvarItensVenda()">💾 Salvar itens</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+}
+async function buscarItemEditor(){
+  const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
+  if(termo.length<2) return;
+  const msg=document.getElementById("msgEditorItens"); if(msg) msg.innerHTML='<div class="muted">Buscando…</div>';
+  try{
+    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    window._GITENS.buscas=(j.data||[]).slice(0,8).map(p=>({id:p.id,nome:p.nome,preco:p.preco,estoque:p.estoque}));
+    renderEditorItens();
+    setTimeout(()=>{ const b=document.getElementById("buscaItemEditor"); if(b){b.value=termo;b.focus();} },20);
+  }catch(e){ if(msg) msg.innerHTML='<div class="err">Erro na busca.</div>'; }
+}
+window.addItemEditor=function(id,nome,preco){
+  const E=window._GITENS; if(!E) return;
+  const existe=E.itens.find(i=>String(i.produtoId)===String(id));
+  if(existe){ existe.quantidade+=1; }
+  else E.itens.push({produtoId:id,nome,quantidade:1,valor:Number(preco)||0});
+  E.buscas=[]; renderEditorItens();
+}
+async function salvarItensVenda(){
+  const E=window._GITENS; if(!E) return;
+  const msg=document.getElementById("msgEditorItens");
+  const itens=E.itens.filter(i=>i.produtoId&&i.quantidade>0);
+  if(!itens.length){ if(msg) msg.innerHTML='<div class="err">Deixe ao menos um item.</div>'; return; }
+  if(!confirm(`Salvar os itens do pedido #${E.numero}?\n\nNovo total: ${brl(totalEditorItens())}\n\nIsso altera o pedido no Bling (estoque) e registra no histórico do caixa.`)) return;
+  if(msg) msg.innerHTML='<div class="muted">Salvando…</div>';
+  try{
+    const r=await fetch(B+"/api/gestao/editar-itens-venda",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pedidoId:E.pedidoId, itens, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão"})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    const avisoBling = r.blingOk===false
+      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>`
+      : "";
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">${r.blingOk===false?"⚠️":"✅"}</div><h3>Itens atualizados</h3>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(E.numero)} · novo total ${brl(r.novoTotal)}</div>
+        ${avisoBling}
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
+      </div></div>`;
+  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+}
+
 window.cancelarVendaGestao=async function(ix){
   const G=window._GMOVS; if(!G) return;
   const m=G.movs[ix]; if(!m) return;
