@@ -437,6 +437,7 @@ window.B13_NAV_LINKS=[
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
   {href:"/estoque",label:"📦 Ajuste de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
   {href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
   {href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
   {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
@@ -2922,6 +2923,98 @@ app.get("/api/estoque/lista",async(req,res)=>{
     const itens=bloco.map(p=>({...p, estoqueAtual: estoques[p.produtoId] ?? null}));
     res.json({itens, pagina, porPagina, totalProdutos, totalPaginas});
   }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ============ ENTRADA DE ESTOQUE (notas fiscais e não fiscais) ============
+// Dá entrada no estoque do Bling (operação "E" = soma ao saldo) e guarda um
+// registro local (nosso, paralelo) com o histórico das entradas. Assim o estoque
+// do Bling e o nosso ficam em sincronia, e cada nota sobe a quantidade.
+const ENTRADAS_ESTOQUE_FILE = `${DATA_DIR}/entradas_estoque.json`;
+function lerEntradasEstoque(){ return lerJSON(ENTRADAS_ESTOQUE_FILE,{entradas:[]}); }
+function salvarEntradasEstoque(d){ salvarJSON(ENTRADAS_ESTOQUE_FILE,d); }
+
+// lê o XML de uma NF-e e extrai fornecedor, número, chave e itens (código, GTIN, nome, qtd, custo)
+function parseNfeXml(xml){
+  const s=String(xml||"");
+  const chave=(s.match(/Id="NFe(\d{44})"/)||[])[1]||"";
+  const nNF=(s.match(/<nNF>(\d+)<\/nNF>/)||[])[1]||"";
+  const emit=(s.match(/<emit>[\s\S]*?<xNome>([^<]+)<\/xNome>/)||[])[1]||"";
+  const itens=[];
+  const detRe=/<det[^>]*>([\s\S]*?)<\/det>/g; let m;
+  while((m=detRe.exec(s))){
+    const blk=m[1];
+    const g=(re)=>{ const x=blk.match(re); return x?x[1].trim():""; };
+    const cEAN=g(/<cEAN>([^<]*)<\/cEAN>/);
+    itens.push({
+      cProd:g(/<cProd>([^<]*)<\/cProd>/),
+      gtin:(/^\d{8,14}$/.test(cEAN))?cEAN:"",
+      xProd:g(/<xProd>([^<]*)<\/xProd>/),
+      ncm:g(/<NCM>([^<]*)<\/NCM>/),
+      quantidade:parseFloat(g(/<qCom>([^<]*)<\/qCom>/))||0,
+      custo:parseFloat(g(/<vUnCom>([^<]*)<\/vUnCom>/))||0,
+    });
+  }
+  return { chave, numeroNota:nNF, fornecedor:emit, itens };
+}
+
+// lê o XML e tenta casar cada item com um produto do Bling (por GTIN, senão por código)
+app.post("/api/estoque/entrada/parse-xml",async(req,res)=>{
+  try{
+    const xml=req.body?.xml||"";
+    if(!xml||String(xml).length<50) return res.status(400).json({erro:"envie o conteúdo do XML da NF-e"});
+    const nf=parseNfeXml(xml);
+    if(!nf.itens.length) return res.status(400).json({erro:"não encontrei itens nesse XML. Confira se é o XML da NF-e (não o DANFE em PDF)."});
+    const db=lerEntradasEstoque();
+    const jaLancada = nf.chave && (db.entradas||[]).some(e=>e.chaveNfe===nf.chave);
+    const itens=[];
+    for(const it of nf.itens){
+      let prod=null;
+      if(it.gtin){ try{ const r=await bling(`/produtos?gtin=${encodeURIComponent(it.gtin)}&limite=1`); prod=(r?.data||[])[0]||null; }catch(e){} }
+      if(!prod && it.cProd){ try{ const r=await bling(`/produtos?codigo=${encodeURIComponent(it.cProd)}&limite=1`); prod=(r?.data||[])[0]||null; }catch(e){} }
+      itens.push({ ...it, produtoId:prod?.id||null, produtoNome:prod?.nome||"", casado:!!prod });
+      await sleep(120);
+    }
+    res.json({ ...nf, jaLancada, itens, casados:itens.filter(i=>i.casado).length, total:itens.length });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// dá a ENTRADA de fato: sobe o estoque no Bling e grava o registro local
+app.post("/api/estoque/entrada",async(req,res)=>{
+  try{
+    const { tipo, fornecedor, numeroNota, chaveNfe, observacao, itens, funcionarioNome } = req.body||{};
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"envie os itens da entrada"});
+    const db=lerEntradasEstoque();
+    if(chaveNfe && (db.entradas||[]).some(e=>e.chaveNfe===chaveNfe)){
+      return res.status(400).json({erro:"Essa NF-e já teve entrada lançada.", jaLancada:true});
+    }
+    const resultados=[];
+    for(const it of itens){
+      const pid=Number(it.produtoId); const qtd=Number(it.quantidade);
+      if(!pid || !(qtd>0)){ resultados.push({produtoId:it.produtoId||null, nome:it.nome||it.produtoNome||"", ok:false, erro:"produto não casado ou quantidade inválida"}); continue; }
+      try{
+        const corpo={ produto:{id:pid}, operacao:"E", quantidade:qtd,
+          observacoes:`Entrada ${tipo==="fiscal"?("NF "+(numeroNota||"")):"manual"}${fornecedor?(" — "+fornecedor):""}${funcionarioNome?(" ("+funcionarioNome+")"):""}`.slice(0,190) };
+        if(it.custo!=null && !isNaN(Number(it.custo)) && Number(it.custo)>0){ corpo.preco=Number(it.custo); corpo.custo=Number(it.custo); }
+        await bling(`/estoques`,{method:"POST",body:JSON.stringify(corpo)});
+        resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, custo:it.custo||null, ok:true});
+        await sleep(150);
+      }catch(e){ resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, ok:false, erro:e.message}); }
+    }
+    const okCount=resultados.filter(r=>r.ok).length;
+    const registro={ id:"ent-"+Date.now(), em:Date.now(), tipo:tipo||"manual",
+      fornecedor:fornecedor||"", numeroNota:numeroNota||"", chaveNfe:chaveNfe||"",
+      observacao:observacao||"", por:funcionarioNome||"", itens:resultados,
+      sucesso:okCount, falhas:resultados.length-okCount };
+    db.entradas=[registro, ...(db.entradas||[])].slice(0,2000);
+    salvarEntradasEstoque(db);
+    res.json({ok:true, entradaId:registro.id, total:resultados.length, sucesso:okCount, falhas:resultados.length-okCount, resultados});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
+// histórico das entradas
+app.get("/api/estoque/entradas",(req,res)=>{
+  const db=lerEntradasEstoque();
+  res.json({entradas:(db.entradas||[]).slice(0,100)});
 });
 
 // Ajusta (define o saldo absoluto) o estoque de um produto no Bling.
@@ -5827,6 +5920,7 @@ app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
 app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
 app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque.html")); });
+app.get("/entrada-estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entrada-estoque.html")); });
 app.get("/movimentacoes", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "movimentacoes.html")); });
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
 app.get("/funcionarios", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "funcionarios.html")); });

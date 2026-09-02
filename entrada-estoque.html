@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Entrada de Estoque</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:38px}.top .t{font-weight:900;font-size:17px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  input,textarea{background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:14px}
+  input:focus,textarea:focus{outline:none;border-color:var(--mag)}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-grn{background:#2f9e6b}.btn-ghost{background:#1c1846}
+  .btn:disabled{opacity:.5;cursor:default}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px}
+  .tag-ok{background:#0a2a1a;color:#3ce88a}.tag-no{background:#3a0010;color:#ff8090}
+  .lin{border-top:1px solid #2c2660;padding:8px 0}
+  table{width:100%;border-collapse:collapse}
+  .row{display:flex;gap:8px;align-items:center}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){ #b13nav{transform:translateX(0%)!important} button[onclick="b13ToggleNav()"]{display:none!important} body>*:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){margin-left:200px} }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/entrada-estoque")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/entrada-estoque");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+let S=null; try{ S=(typeof b13GetSession==="function"?b13GetSession():null)||{}; }catch(e){ S={}; }
+
+let MODO="manual";       // manual | fiscal | historico
+let CART=[];             // itens a dar entrada (manual)
+let NF=null;             // {fornecedor, numeroNota, chave, itens, jaLancada}
+let HIST=[];
+let BUSCA=[];            // resultados da busca de produto (manual)
+
+function tabs(){
+  return `<div class="row" style="gap:6px;margin-bottom:12px;flex-wrap:wrap">
+    <span class="chip ${MODO==='manual'?'on':''}" onclick="setModo('manual')">✍️ Entrada manual</span>
+    <span class="chip ${MODO==='fiscal'?'on':''}" onclick="setModo('fiscal')">🧾 Nota fiscal (XML)</span>
+    <span class="chip ${MODO==='historico'?'on':''}" onclick="setModo('historico')">🗂️ Histórico</span>
+  </div>`;
+}
+
+// ---------- MANUAL ----------
+function viewManual(){
+  const total=CART.reduce((s,i)=>s+(Number(i.custo)||0)*(Number(i.quantidade)||0),0);
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:8px">Buscar produto</div>
+    <div class="row">
+      <input id="buscaProd" placeholder="Nome do produto" style="flex:1" onkeydown="if(event.key==='Enter')buscarProduto()">
+      <button class="btn btn-mag" onclick="buscarProduto()">🔍</button>
+    </div>
+    <div id="resBusca" style="margin-top:8px"></div>
+  </div>
+  ${CART.length?`<div class="card">
+    <div style="font-weight:800;margin-bottom:8px">Itens da entrada (${CART.length})</div>
+    ${CART.map((i,ix)=>`<div class="lin row" style="gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">${esc(i.nome)}</div>
+        <div class="muted" style="font-size:11px">estoque atual: ${i.estoque!=null?i.estoque:'—'}</div>
+      </div>
+      <div style="text-align:center"><div class="muted" style="font-size:10px">qtd</div>
+        <input value="${i.quantidade}" inputmode="numeric" style="width:64px;text-align:center" onchange="setQtd(${ix},this.value)"></div>
+      <div style="text-align:center"><div class="muted" style="font-size:10px">custo un.</div>
+        <input value="${i.custo}" inputmode="decimal" style="width:80px;text-align:right" onchange="setCusto(${ix},this.value)"></div>
+      <button class="btn btn-ghost" onclick="removerItem(${ix})">🗑</button>
+    </div>`).join("")}
+    <div class="lin row" style="justify-content:space-between"><b>Total da entrada (custo)</b><b style="color:#ffd23f">${brl(total)}</b></div>
+    <input id="obsManual" placeholder="Fornecedor / observação (opcional)" style="width:100%;margin-top:10px">
+    <button class="btn btn-grn" style="width:100%;margin-top:10px;padding:13px" onclick="darEntrada('manual')">📦 Dar entrada (sobe o estoque)</button>
+  </div>`:'<div class="card muted">Busque e adicione produtos pra dar entrada.</div>'}`;
+}
+
+async function buscarProduto(){
+  const q=(document.getElementById("buscaProd").value||"").trim();
+  if(q.length<2){ document.getElementById("resBusca").innerHTML=`<div class="muted">Digite ao menos 2 letras.</div>`; return; }
+  document.getElementById("resBusca").innerHTML=`<div class="muted">Buscando…</div>`;
+  try{
+    const j=await fetch(B+"/api/estoque/buscar-produto?q="+encodeURIComponent(q)).then(r=>r.json());
+    BUSCA=j.data||[];
+    document.getElementById("resBusca").innerHTML=BUSCA.length
+      ? BUSCA.map((p,ix)=>`<button class="btn btn-ghost" style="width:100%;text-align:left;margin-bottom:6px" onclick="addProduto(${ix})">
+          <div style="font-weight:700">${esc(p.nome)}</div>
+          <div class="muted" style="font-size:11px">estoque: ${p.estoque!=null?p.estoque:'—'} · custo/preço base: ${brl(p.preco)}</div></button>`).join("")
+      : `<div class="muted">Nada encontrado.</div>`;
+  }catch(e){ document.getElementById("resBusca").innerHTML=`<div class="muted">Erro na busca.</div>`; }
+}
+function addProduto(ix){
+  const p=BUSCA[ix]; if(!p) return;
+  if(CART.some(c=>c.produtoId===p.id)){ alert("Esse produto já está na lista."); return; }
+  CART.push({produtoId:p.id, nome:p.nome, quantidade:1, custo:+(p.preco||0), estoque:p.estoque});
+  render();
+}
+function setQtd(ix,v){ if(CART[ix]) CART[ix].quantidade=Math.max(0,parseInt(String(v).replace(/\D/g,""))||0); render(); }
+function setCusto(ix,v){ if(CART[ix]) CART[ix].custo=parseFloat(String(v).replace(",","."))||0; render(); }
+function removerItem(ix){ CART.splice(ix,1); render(); }
+
+// ---------- FISCAL (XML) ----------
+function viewFiscal(){
+  return `<div class="card">
+    <div style="font-weight:800;margin-bottom:8px">Nota fiscal — XML</div>
+    <div class="muted" style="margin-bottom:8px">Cole o conteúdo do XML da NF-e de compra, ou selecione o arquivo .xml.</div>
+    <input type="file" accept=".xml,text/xml" onchange="lerArquivoXml(event)" style="margin-bottom:8px;width:100%">
+    <textarea id="xmlIn" rows="4" placeholder="…ou cole o XML aqui" style="width:100%"></textarea>
+    <button class="btn btn-mag" style="width:100%;margin-top:8px" onclick="lerXml()">📄 Ler XML</button>
+  </div>
+  ${NF?viewNF():""}`;
+}
+function viewNF(){
+  const casados=NF.itens.filter(i=>i.casado);
+  return `<div class="card">
+    ${NF.jaLancada?`<div class="tag tag-no" style="display:inline-block;margin-bottom:8px">⚠️ Essa NF-e já teve entrada lançada</div>`:""}
+    <div style="font-weight:800">${esc(NF.fornecedor||"Fornecedor —")}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">NF ${esc(NF.numeroNota||"—")} · ${NF.casados}/${NF.total} itens casados com produtos do Bling</div>
+    ${NF.itens.map((i,ix)=>`<div class="lin row" style="gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px">${esc(i.produtoNome||i.xProd)}</div>
+        <div class="muted" style="font-size:11px">XML: ${esc(i.xProd)} ${i.gtin?("· GTIN "+esc(i.gtin)):""} · custo ${brl(i.custo)}</div>
+        ${i.casado?'<span class="tag tag-ok">casado</span>':'<span class="tag tag-no">não achei no Bling — será ignorado</span>'}
+      </div>
+      <div style="text-align:center"><div class="muted" style="font-size:10px">qtd</div>
+        <input value="${i.quantidade}" inputmode="numeric" style="width:64px;text-align:center" onchange="setQtdNF(${ix},this.value)" ${i.casado?"":"disabled"}></div>
+    </div>`).join("")}
+    <button class="btn btn-grn" style="width:100%;margin-top:12px;padding:13px" onclick="darEntrada('fiscal')" ${casados.length&&!NF.jaLancada?"":"disabled"}>📦 Dar entrada de ${casados.length} item(ns)</button>
+    ${NF.itens.some(i=>!i.casado)?`<div class="muted" style="font-size:11px;margin-top:8px">Itens não casados não sobem o estoque. Cadastre o GTIN/código deles no Bling e leia o XML de novo, ou lance manualmente.</div>`:""}
+  </div>`;
+}
+function lerArquivoXml(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ document.getElementById("xmlIn").value=r.result; };
+  r.readAsText(f);
+}
+async function lerXml(){
+  const xml=(document.getElementById("xmlIn").value||"").trim();
+  if(xml.length<50){ alert("Cole o XML da NF-e ou selecione o arquivo."); return; }
+  try{
+    const j=await fetch(B+"/api/estoque/entrada/parse-xml",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({xml})}).then(r=>r.json());
+    if(j.erro){ alert(j.erro); return; }
+    NF=j; render();
+  }catch(e){ alert("Erro ao ler o XML."); }
+}
+function setQtdNF(ix,v){ if(NF&&NF.itens[ix]) NF.itens[ix].quantidade=Math.max(0,parseInt(String(v).replace(/\D/g,""))||0); }
+
+// ---------- DAR ENTRADA ----------
+async function darEntrada(tipo){
+  let payload;
+  if(tipo==="manual"){
+    const itens=CART.filter(i=>Number(i.quantidade)>0).map(i=>({produtoId:i.produtoId, nome:i.nome, quantidade:i.quantidade, custo:i.custo}));
+    if(!itens.length){ alert("Adicione itens com quantidade."); return; }
+    const obs=(document.getElementById("obsManual")?.value||"").trim();
+    payload={ tipo:"manual", fornecedor:obs, observacao:obs, itens, funcionarioNome:(S&&S.nome)||"" };
+  }else{
+    const itens=NF.itens.filter(i=>i.casado&&Number(i.quantidade)>0).map(i=>({produtoId:i.produtoId, produtoNome:i.produtoNome, quantidade:i.quantidade, custo:i.custo}));
+    if(!itens.length){ alert("Nenhum item casado pra dar entrada."); return; }
+    payload={ tipo:"fiscal", fornecedor:NF.fornecedor, numeroNota:NF.numeroNota, chaveNfe:NF.chave, itens, funcionarioNome:(S&&S.nome)||"" };
+  }
+  if(!confirm("Dar entrada e SOMAR ao estoque no Bling? Isso não dá pra desfazer com um clique.")) return;
+  const btns=document.querySelectorAll("button.btn-grn"); btns.forEach(b=>{b.disabled=true;b.textContent="Dando entrada…";});
+  try{
+    const j=await fetch(B+"/api/estoque/entrada",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(j.erro){ alert("Não foi possível: "+j.erro); render(); return; }
+    alert(`Entrada concluída: ${j.sucesso} item(ns) subiram no estoque${j.falhas?`, ${j.falhas} falharam`:""}.`);
+    CART=[]; NF=null; MODO="historico"; await carregarHist(); render();
+  }catch(e){ alert("Erro ao dar entrada."); render(); }
+}
+
+// ---------- HISTÓRICO ----------
+async function carregarHist(){
+  try{ const j=await fetch(B+"/api/estoque/entradas").then(r=>r.json()); HIST=j.entradas||[]; }catch(e){ HIST=[]; }
+}
+function viewHist(){
+  if(!HIST.length) return '<div class="card muted">Nenhuma entrada ainda.</div>';
+  return HIST.map(e=>`<div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><b>${e.tipo==="fiscal"?"🧾 NF "+esc(e.numeroNota||""):"✍️ Manual"}</b> ${e.fornecedor?"· "+esc(e.fornecedor):""}</div>
+      <div class="muted" style="font-size:12px">${new Date(e.em).toLocaleString("pt-BR")}</div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">${e.sucesso} item(ns) ok${e.falhas?` · ${e.falhas} falha(s)`:""}${e.por?" · "+esc(e.por):""}</div>
+    <div class="lin">${(e.itens||[]).map(i=>`<div style="font-size:12px;${i.ok?'':'color:#ff8090'}">${i.ok?"✓":"✗"} ${esc(i.nome||"")} — ${i.quantidade||"?"} un${i.erro?(" ("+esc(i.erro)+")"):""}</div>`).join("")}</div>
+  </div>`).join("");
+}
+
+function render(){
+  const app=document.getElementById("app");
+  let body="";
+  if(MODO==="manual") body=viewManual();
+  else if(MODO==="fiscal") body=viewFiscal();
+  else body=viewHist();
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">📥 Entrada de Estoque</div><div class="sp"></div>
+    </div>
+    <div class="wrap">${tabs()}${body}</div>`;
+}
+async function setModo(m){ MODO=m; if(m==="historico") await carregarHist(); render(); }
+
+render();
+</script>
+</body>
+</html>
