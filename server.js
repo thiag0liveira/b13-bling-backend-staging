@@ -2978,10 +2978,30 @@ app.post("/api/estoque/entrada/parse-xml",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
+// PUXA a nota de entrada que o Bling já importou, pela chave (44 dígitos do código da DANFE).
+// Serve pro fluxo "bipar a chave -> traz os itens". NÃO mexe no estoque aqui.
+app.get("/api/estoque/nota-por-chave/:chave",async(req,res)=>{
+  try{
+    const ch=String(req.params.chave).replace(/\D/g,"");
+    if(ch.length!==44) return res.status(400).json({erro:"a chave precisa ter 44 dígitos"});
+    let lista=[];
+    try{ const r=await bling(`/notasfiscaisentrada?chaveAcesso=${ch}`); lista=r?.data||[]; }catch(e){}
+    if(!lista.length) return res.json({encontrada:false, chave:ch});
+    const nid=lista[0].id;
+    let d=null; try{ d=await bling(`/notasfiscaisentrada/${nid}`).then(r=>r?.data); }catch(e){}
+    const itens=((d&&d.itens)||[]).map(it=>({
+      produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"",
+      quantidade:it.quantidade, custo:it.valor, casado:!!(it.produto?.id),
+    }));
+    res.json({ encontrada:true, chave:ch, notaId:nid, numero:d?.numero||lista[0].numero||"",
+      fornecedor:d?.contato?.nome||lista[0].contato?.nome||"", itens, casados:itens.filter(i=>i.casado).length, total:itens.length });
+  }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
+});
+
 // dá a ENTRADA de fato: sobe o estoque no Bling e grava o registro local
 app.post("/api/estoque/entrada",async(req,res)=>{
   try{
-    const { tipo, fornecedor, numeroNota, chaveNfe, observacao, itens, funcionarioNome } = req.body||{};
+    const { tipo, fornecedor, numeroNota, chaveNfe, observacao, itens, funcionarioNome, semEstoque } = req.body||{};
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"envie os itens da entrada"});
     const db=lerEntradasEstoque();
     if(chaveNfe && (db.entradas||[]).some(e=>e.chaveNfe===chaveNfe)){
@@ -2991,6 +3011,8 @@ app.post("/api/estoque/entrada",async(req,res)=>{
     for(const it of itens){
       const pid=Number(it.produtoId); const qtd=Number(it.quantidade);
       if(!pid || !(qtd>0)){ resultados.push({produtoId:it.produtoId||null, nome:it.nome||it.produtoNome||"", ok:false, erro:"produto não casado ou quantidade inválida"}); continue; }
+      // semEstoque = a nota já subiu o estoque no Bling (importação); aqui é só registro
+      if(semEstoque){ resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, custo:it.custo||null, ok:true, soRegistro:true}); continue; }
       try{
         const corpo={ produto:{id:pid}, operacao:"E", quantidade:qtd,
           observacoes:`Entrada ${tipo==="fiscal"?("NF "+(numeroNota||"")):"manual"}${fornecedor?(" — "+fornecedor):""}${funcionarioNome?(" ("+funcionarioNome+")"):""}`.slice(0,190) };
@@ -3001,7 +3023,7 @@ app.post("/api/estoque/entrada",async(req,res)=>{
       }catch(e){ resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, ok:false, erro:e.message}); }
     }
     const okCount=resultados.filter(r=>r.ok).length;
-    const registro={ id:"ent-"+Date.now(), em:Date.now(), tipo:tipo||"manual",
+    const registro={ id:"ent-"+Date.now(), em:Date.now(), tipo:tipo||"manual", semEstoque:!!semEstoque,
       fornecedor:fornecedor||"", numeroNota:numeroNota||"", chaveNfe:chaveNfe||"",
       observacao:observacao||"", por:funcionarioNome||"", itens:resultados,
       sucesso:okCount, falhas:resultados.length-okCount };

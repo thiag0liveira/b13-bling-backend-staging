@@ -120,32 +120,58 @@ function removerItem(ix){ CART.splice(ix,1); render(); }
 // ---------- FISCAL (XML) ----------
 function viewFiscal(){
   return `<div class="card">
-    <div style="font-weight:800;margin-bottom:8px">Nota fiscal — XML</div>
-    <div class="muted" style="margin-bottom:8px">Cole o conteúdo do XML da NF-e de compra, ou selecione o arquivo .xml.</div>
+    <div style="font-weight:800;margin-bottom:8px">📷 Bipar a chave da nota (DANFE)</div>
+    <div class="muted" style="margin-bottom:8px">Passe o leitor no código de barras da DANFE (ou digite os 44 dígitos). Puxa a nota que o Bling já importou.</div>
+    <div class="row">
+      <input id="chaveIn" placeholder="Chave de acesso (44 dígitos)" style="flex:1" onkeydown="if(event.key==='Enter')puxarPorChave()">
+      <button class="btn btn-mag" onclick="puxarPorChave()">🔎 Puxar</button>
+    </div>
+    <div id="chaveMsg" class="muted" style="margin-top:6px"></div>
+  </div>
+  <div class="card">
+    <div style="font-weight:800;margin-bottom:8px">📄 Ou colar o XML da NF-e</div>
     <input type="file" accept=".xml,text/xml" onchange="lerArquivoXml(event)" style="margin-bottom:8px;width:100%">
-    <textarea id="xmlIn" rows="4" placeholder="…ou cole o XML aqui" style="width:100%"></textarea>
-    <button class="btn btn-mag" style="width:100%;margin-top:8px" onclick="lerXml()">📄 Ler XML</button>
+    <textarea id="xmlIn" rows="3" placeholder="…cole o XML aqui" style="width:100%"></textarea>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="lerXml()">Ler XML</button>
   </div>
   ${NF?viewNF():""}`;
 }
 function viewNF(){
   const casados=NF.itens.filter(i=>i.casado);
+  const viaBling=NF.viaBling;
   return `<div class="card">
-    ${NF.jaLancada?`<div class="tag tag-no" style="display:inline-block;margin-bottom:8px">⚠️ Essa NF-e já teve entrada lançada</div>`:""}
+    ${NF.jaLancada?`<div class="tag tag-no" style="display:inline-block;margin-bottom:8px">⚠️ Essa NF-e já teve entrada lançada aqui</div>`:""}
     <div style="font-weight:800">${esc(NF.fornecedor||"Fornecedor —")}</div>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">NF ${esc(NF.numeroNota||"—")} · ${NF.casados}/${NF.total} itens casados com produtos do Bling</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">NF ${esc(NF.numeroNota||"—")} · ${NF.casados}/${NF.total} itens casados</div>
+    ${viaBling?`<div class="muted" style="font-size:12px;margin-bottom:8px;color:#7fd4ff">Essa nota o Bling já importou — o estoque dela já subiu no Bling. Aqui é só pra registrar no nosso histórico (não soma de novo).</div>`:""}
     ${NF.itens.map((i,ix)=>`<div class="lin row" style="gap:8px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:13px">${esc(i.produtoNome||i.xProd)}</div>
-        <div class="muted" style="font-size:11px">XML: ${esc(i.xProd)} ${i.gtin?("· GTIN "+esc(i.gtin)):""} · custo ${brl(i.custo)}</div>
+        <div style="font-weight:700;font-size:13px">${esc(i.produtoNome||i.nome||i.xProd)}</div>
+        <div class="muted" style="font-size:11px">${i.xProd?("XML: "+esc(i.xProd)+" · "):""}${i.gtin?("GTIN "+esc(i.gtin)+" · "):""}custo ${brl(i.custo)}</div>
         ${i.casado?'<span class="tag tag-ok">casado</span>':'<span class="tag tag-no">não achei no Bling — será ignorado</span>'}
       </div>
       <div style="text-align:center"><div class="muted" style="font-size:10px">qtd</div>
         <input value="${i.quantidade}" inputmode="numeric" style="width:64px;text-align:center" onchange="setQtdNF(${ix},this.value)" ${i.casado?"":"disabled"}></div>
     </div>`).join("")}
-    <button class="btn btn-grn" style="width:100%;margin-top:12px;padding:13px" onclick="darEntrada('fiscal')" ${casados.length&&!NF.jaLancada?"":"disabled"}>📦 Dar entrada de ${casados.length} item(ns)</button>
-    ${NF.itens.some(i=>!i.casado)?`<div class="muted" style="font-size:11px;margin-top:8px">Itens não casados não sobem o estoque. Cadastre o GTIN/código deles no Bling e leia o XML de novo, ou lance manualmente.</div>`:""}
+    <button class="btn btn-grn" style="width:100%;margin-top:12px;padding:13px" onclick="darEntrada('fiscal')" ${casados.length&&!NF.jaLancada?"":"disabled"}>
+      ${viaBling?`🗂️ Registrar ${casados.length} item(ns) no histórico`:`📦 Dar entrada de ${casados.length} item(ns)`}
+    </button>
+    ${NF.itens.some(i=>!i.casado)?`<div class="muted" style="font-size:11px;margin-top:8px">Itens não casados não entram. Cadastre o GTIN/código deles no Bling.</div>`:""}
   </div>`;
+}
+async function puxarPorChave(){
+  const ch=(document.getElementById("chaveIn").value||"").replace(/\D/g,"");
+  const msg=document.getElementById("chaveMsg");
+  if(ch.length!==44){ msg.textContent="A chave precisa ter 44 dígitos."; return; }
+  msg.textContent="Puxando do Bling…";
+  try{
+    const j=await fetch(B+"/api/estoque/nota-por-chave/"+ch).then(r=>r.json());
+    if(j.erro){ msg.textContent=j.erro; return; }
+    if(!j.encontrada){ msg.textContent="O Bling ainda não tem essa nota. Se ela é sua, aguarde o Bling importar (manifestação) ou use o XML."; NF=null; render(); return; }
+    NF={ fornecedor:j.fornecedor, numeroNota:j.numero, chave:ch, itens:(j.itens||[]).map(i=>({...i, produtoNome:i.nome})), casados:j.casados, total:j.total, viaBling:true, jaLancada:false };
+    msg.textContent="";
+    render();
+  }catch(e){ msg.textContent="Erro ao puxar a nota."; }
 }
 function lerArquivoXml(ev){
   const f=ev.target.files&&ev.target.files[0]; if(!f) return;
@@ -175,9 +201,10 @@ async function darEntrada(tipo){
   }else{
     const itens=NF.itens.filter(i=>i.casado&&Number(i.quantidade)>0).map(i=>({produtoId:i.produtoId, produtoNome:i.produtoNome, quantidade:i.quantidade, custo:i.custo}));
     if(!itens.length){ alert("Nenhum item casado pra dar entrada."); return; }
-    payload={ tipo:"fiscal", fornecedor:NF.fornecedor, numeroNota:NF.numeroNota, chaveNfe:NF.chave, itens, funcionarioNome:(S&&S.nome)||"" };
+    payload={ tipo:"fiscal", fornecedor:NF.fornecedor, numeroNota:NF.numeroNota, chaveNfe:NF.chave, itens, funcionarioNome:(S&&S.nome)||"", semEstoque:!!NF.viaBling };
   }
-  if(!confirm("Dar entrada e SOMAR ao estoque no Bling? Isso não dá pra desfazer com um clique.")) return;
+  const acao = (tipo==="fiscal"&&NF.viaBling) ? "Registrar essa nota no histórico (o estoque dela já subiu no Bling)?" : "Dar entrada e SOMAR ao estoque no Bling? Isso não dá pra desfazer com um clique.";
+  if(!confirm(acao)) return;
   const btns=document.querySelectorAll("button.btn-grn"); btns.forEach(b=>{b.disabled=true;b.textContent="Dando entrada…";});
   try{
     const j=await fetch(B+"/api/estoque/entrada",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
