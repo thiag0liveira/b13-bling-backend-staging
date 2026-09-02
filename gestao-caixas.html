@@ -172,7 +172,10 @@ window.verMovimentos=async function(id){
           <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
           ${movs.length?movs.map((m,ix)=>`
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
-              <div>${nomeMovimento(m)}${m.alterado?' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>':''}</div>
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+                <div style="flex:1">${nomeMovimento(m)}${m.alterado?' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>':''}</div>
+                <button class="btn btn-ghost btn-sm" style="padding:2px 7px" title="Imprimir" onclick="imprimirMovimento(${ix})">🖨️</button>
+              </div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
               ${(m.tipo==="venda"&&!m.cancelado)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>
@@ -518,6 +521,59 @@ async function carregarFormasGestao(){
   }catch(e){ window._FORMAS_GESTAO=[]; }
   return window._FORMAS_GESTAO;
 }
+window.imprimirMovimento=function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  const lin=(a,b)=>`<tr><td>${a}</td><td style="text-align:right;font-weight:800">${b}</td></tr>`;
+  let corpo="";
+  if(m.tipo==="venda"){
+    const itens=(m.itens||[]).map(i=>`<tr><td>${esc(i.nome||("produto "+i.produtoId))}</td><td style="text-align:right;white-space:nowrap">${i.quantidade}× ${brl(i.valor)}</td></tr>`).join("");
+    const formas=(m.pagamentos||[]).map(p=>lin(esc(p.formaNome||"—"),brl(p.valor))).join("");
+    corpo=`
+      <h2>Venda #${esc(m.numero||m.pedidoId||"")}</h2>
+      ${m.clienteNome?`<div>Cliente: <b>${esc(m.clienteNome)}</b></div>`:""}
+      <div>${hora(m.em)}${m.operador?" · "+esc(m.operador):""}</div>
+      <h3>Itens</h3><table>${itens||'<tr><td>—</td></tr>'}</table>
+      <h3>Pagamento</h3><table>${formas||'<tr><td>—</td></tr>'}</table>
+      <table class="tot"><tr><td><b>TOTAL</b></td><td style="text-align:right"><b>${brl(m.total)}</b></td></tr></table>
+      ${m.cancelado?'<div class="canc">🚫 VENDA CANCELADA</div>':""}`;
+  } else {
+    corpo=`
+      <h2>${m.tipo==="sangria"?"Sangria":"Suprimento"}</h2>
+      <div>${hora(m.em)}${m.operador?" · "+esc(m.operador):""}</div>
+      <table class="tot"><tr><td><b>Valor</b></td><td style="text-align:right"><b>${brl(m.valor)}</b></td></tr></table>
+      ${m.motivo?`<div style="margin-top:6px">Motivo: ${esc(m.motivo)}</div>`:""}`;
+  }
+  let hist="";
+  if((m.alteracoes||[]).length){
+    hist=`<h3>Histórico de alterações</h3>`+(m.alteracoes||[]).map(a=>{
+      const q=`${a.por?" · por "+esc(a.por):""}${a.autorizadoPor&&a.autorizadoPor!==a.por?" · autoriz. "+esc(a.autorizadoPor):""}${a.blingPendente?" · (Bling pendente)":""}`;
+      if(a.tipo==="cancelamento"||a.cancelado) return `<div class="h">🚫 ${a.em?hora(a.em)+" · ":""}Cancelada${a.motivo?" — "+esc(a.motivo):""}${q}</div>`;
+      if(a.tipo==="itens") return `<div class="h">📦 ${a.em?hora(a.em)+" · ":""}Itens: ${esc(a.de||"?")} → ${esc(a.para||"?")}${q}</div>`;
+      return `<div class="h">✏️ ${a.em?hora(a.em)+" · ":""}${esc(a.de||"?")} → ${esc(a.para||"?")}${q}</div>`;
+    }).join("");
+  }
+  const w=window.open("","_blank","width=420,height=700");
+  if(!w){ alert("Libere o pop-up pra imprimir."); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Movimento</title>
+    <style>
+      *{font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{margin:0;padding:10px;color:#000;font-weight:700;max-width:560px;font-size:14px}
+      h2{font-size:17px;margin:2px 0} h3{font-size:14px;margin:12px 0 4px;border-bottom:2px solid #000;padding-bottom:2px}
+      table{width:100%;border-collapse:collapse} td{padding:3px 0;font-weight:700}
+      .tot td{border-top:2px solid #000;font-size:16px} .canc{font-weight:900;margin-top:8px}
+      .h{font-size:12px;border-bottom:1px solid #000;padding:4px 0}
+      @media print{body{padding:0}}
+    </style></head><body>
+    <div style="font-weight:900;font-size:16px">B13 BEBIDAS</div>
+    ${corpo}
+    ${hist}
+    <div style="margin-top:14px;font-size:11px;text-align:center">Impresso em ${new Date().toLocaleString("pt-BR")}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
+    </body></html>`);
+  w.document.close();
+}
+
 window.editarItensVenda=function(ix){
   const G=window._GMOVS; if(!G) return;
   const m=G.movs[ix]; if(!m) return;
