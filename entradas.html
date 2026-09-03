@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Entradas (Com NF / Sem papel)</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:36px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}
+  .btn:disabled{opacity:.5}
+  input,select{background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:14px}
+  h3{font-size:15px;margin:0 0 8px}
+  .lin{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #2a2660;padding:6px 0;font-size:13px}
+  .tag{font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px}
+  .tag-ok{background:#0a2a1a;color:#3ce88a}.tag-no{background:#2a1f00;color:#ffd23f}
+  .big{font-size:22px;font-weight:900}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/entradas")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/entradas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const nInt=(v)=>(+v||0).toLocaleString("pt-BR");
+
+let MES = (function(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; })();
+let DADOS=null, TIMER=null, ABA="comNF";
+
+function nomeMes(mes){ const [a,m]=mes.split("-"); const nomes=["","janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]; return `${nomes[+m]||m} de ${a}`; }
+
+function tabela(grupo){
+  if(!grupo||!grupo.itens||!grupo.itens.length) return '<div class="muted">Nenhum produto.</div>';
+  return grupo.itens.map(i=>`<div class="lin">
+    <div style="flex:1">${esc(i.nome)}${i.codigo?` <span class="muted">#${esc(i.codigo)}</span>`:''}</div>
+    <div style="text-align:right;white-space:nowrap"><b>${nInt(i.qtd)}</b> un · <span class="muted">${brl(i.valor)}</span></div>
+  </div>`).join("");
+}
+
+function render(){
+  const app=document.getElementById("app");
+  const calc = DADOS && DADOS.status==="calculando";
+  const pronto = DADOS && DADOS.status==="pronto";
+  const cnf=DADOS?.comNF, sp=DADOS?.semPapel;
+  const grupo = ABA==="comNF"?cnf:sp;
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">📥 Entradas</div><div class="sp"></div>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="recalcular()">🔄 Recalcular</button>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="muted">Mês:</span>
+          <input type="month" value="${MES}" onchange="MES=this.value;carregar(true)">
+        </div>
+        <div class="muted" style="margin-top:8px">Entradas de mercadoria em <b>${esc(nomeMes(MES))}</b>, dos pedidos de compra. "Com NF" = item com nota fiscal vinculada; "Sem papel" = item sem nota.</div>
+        ${calc?`<div class="muted" style="margin-top:8px">⏳ Calculando… ${DADOS.processadas||0}/${DADOS.totalCompras||"?"} pedidos de compra. Isso atualiza sozinho.</div>`:""}
+        ${DADOS&&DADOS.status==="erro"?`<div style="color:#ff8090;margin-top:8px">Erro: ${esc(DADOS.erro||"")}</div>`:""}
+      </div>
+
+      ${pronto?`
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div class="card" style="flex:1;margin:0;cursor:pointer;border-color:${ABA==='comNF'?'var(--mag)':'#2c2660'}" onclick="ABA='comNF';render()">
+          <div class="tag tag-ok">Com NF</div>
+          <div class="big" style="margin-top:6px">${nInt(cnf.totalQtd)}</div>
+          <div class="muted">unidades · ${cnf.skus} produtos</div>
+          <div class="muted">${brl(cnf.totalValor)}</div>
+        </div>
+        <div class="card" style="flex:1;margin:0;cursor:pointer;border-color:${ABA==='semPapel'?'var(--mag)':'#2c2660'}" onclick="ABA='semPapel';render()">
+          <div class="tag tag-no">Sem papel</div>
+          <div class="big" style="margin-top:6px">${nInt(sp.totalQtd)}</div>
+          <div class="muted">unidades · ${sp.skus} produtos</div>
+          <div class="muted">${brl(sp.totalValor)}</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>${ABA==='comNF'?'✅ Com NF':'⚠️ Sem papel'} — produtos que entraram (${nomeMes(MES)})</h3>
+        ${tabela(grupo)}
+      </div>`:""}
+    </div>`;
+}
+
+async function carregar(reset){
+  if(reset){ DADOS=null; render(); }
+  try{
+    const j=await fetch(B+"/api/entradas/mes?mes="+encodeURIComponent(MES)).then(r=>r.json());
+    DADOS=j; render();
+    clearTimeout(TIMER);
+    if(j.status==="calculando") TIMER=setTimeout(()=>carregar(false), 4000); // atualiza enquanto calcula
+  }catch(e){ /* silencioso */ }
+}
+async function recalcular(){
+  try{ await fetch(B+"/api/entradas/mes?recalcular=1&mes="+encodeURIComponent(MES)).then(r=>r.json()); DADOS={status:"calculando",processadas:0,totalCompras:0}; render(); clearTimeout(TIMER); TIMER=setTimeout(()=>carregar(false),3000); }catch(e){}
+}
+
+carregar(true);
+</script>
+</body>
+</html>

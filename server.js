@@ -58,6 +58,7 @@ const LISTAS_EXTRAS_FILE = `${DATA_DIR}/listas_extras.json`;
 const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
 const NFCE_EMITIDAS_FILE = `${DATA_DIR}/nfce_emitidas.json`; // {pedidoId:{idNotaFiscal,numero,link,em,por}} — controle de quais pedidos já tiveram NFC-e
+const ENTRADAS_CACHE_FILE = `${DATA_DIR}/entradas_cache.json`; // {mes:{status,calculadoEm,comNF,semPapel,totalCompras,processadas}} — relatório de entradas por produto
 const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
 const ROTAS_CONFIG_FILE = `${DATA_DIR}/rotas_config.json`; // dias de entrega + carros disponíveis
 const ROTAS_DIAS_FILE = `${DATA_DIR}/rotas_dias.json`; // atribuição de pedidos a carros por dia
@@ -426,6 +427,7 @@ window.B13_NAV_LINKS=[
   {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {href:"/entradas",label:"📥 Entradas (Com NF / Sem papel)",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
   {href:"/lista-fardo",label:"📋 Lista de Fardo",acoes:["acesso_lista_fardo","editar_pedido"]},
   {href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
@@ -6210,6 +6212,84 @@ app.get("/dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/perdas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "perdas.html")); });
 app.get("/venda-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "venda-atacado.html")); });
 app.get("/propostas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "propostas.html")); });
+// ===== RELATÓRIO DE ENTRADAS POR PRODUTO (Com NF x Sem papel) =====
+// Vem dos PEDIDOS DE COMPRA. Cada item tem notaFiscal.id: se != 0 -> entrou COM nota
+// fiscal; se 0 -> entrou SEM papel. Abrir o detalhe de cada compra é pesado, então
+// calcula em SEGUNDO PLANO e guarda em cache por mês.
+function lerEntradasCache(){ return lerJSON(ENTRADAS_CACHE_FILE,{}); }
+function salvarEntradasCache(d){ salvarJSON(ENTRADAS_CACHE_FILE,d); }
+function _mesAtual(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; }
+function _rangeMes(mes){
+  const [a,m]=mes.split("-").map(Number);
+  const ini=`${a}-${String(m).padStart(2,"0")}-01`;
+  const fimD=new Date(a,m,0);
+  const fim=`${fimD.getFullYear()}-${String(fimD.getMonth()+1).padStart(2,"0")}-${String(fimD.getDate()).padStart(2,"0")}`;
+  return {ini,fim};
+}
+let _entradasCalculando={};
+async function calcularEntradasMes(mes){
+  if(_entradasCalculando[mes]) return;
+  _entradasCalculando[mes]=true;
+  const {ini,fim}=_rangeMes(mes);
+  try{
+    // 1) lista os pedidos de compra do mês
+    let compras=[], pagina=1;
+    for(let i=0;i<10;i++){
+      const p=new URLSearchParams({dataInicial:ini, dataFinal:fim, pagina:String(pagina), limite:"100"});
+      const r=await bling(`/pedidos/compras?${p.toString()}`); const arr=r?.data||[];
+      compras=compras.concat(arr); if(arr.length<100) break; pagina++; await sleep(150);
+    }
+    const cache=lerEntradasCache();
+    cache[mes]={ status:"calculando", calculadoEm:Date.now(), comNF:{}, semPapel:{}, totalCompras:compras.length, processadas:0 };
+    salvarEntradasCache(cache);
+    // 2) abre o detalhe de cada compra e soma por produto
+    const comNF={}, semPapel={};
+    let feitas=0;
+    for(const c of compras){
+      try{
+        const d=await bling(`/pedidos/compras/${c.id}`).then(r=>r?.data);
+        (d?.itens||[]).forEach(it=>{
+          const pid=String(it.produto?.id||it.descricao||"?");
+          const comNota=!!(it.notaFiscal && Number(it.notaFiscal.id)>0);
+          const bucket=comNota?comNF:semPapel;
+          if(!bucket[pid]) bucket[pid]={nome:it.descricao||("produto "+pid), codigo:it.produto?.codigo||"", qtd:0, valor:0};
+          bucket[pid].qtd += Number(it.quantidade)||0;
+          bucket[pid].valor += (Number(it.quantidade)||0)*(Number(it.valor)||0);
+        });
+      }catch(e){}
+      feitas++;
+      if(feitas%5===0){ const cc=lerEntradasCache(); if(cc[mes]){ cc[mes].processadas=feitas; salvarEntradasCache(cc); } }
+      await sleep(120);
+    }
+    const cache2=lerEntradasCache();
+    cache2[mes]={ status:"pronto", calculadoEm:Date.now(), comNF, semPapel, totalCompras:compras.length, processadas:feitas };
+    salvarEntradasCache(cache2);
+  }catch(e){
+    const cache=lerEntradasCache();
+    cache[mes]={ ...(cache[mes]||{}), status:"erro", erro:e.message, calculadoEm:Date.now() };
+    salvarEntradasCache(cache);
+  }finally{ _entradasCalculando[mes]=false; }
+}
+
+// devolve o relatório do mês (do cache); calcula em 2º plano se não tiver ou se pedir recalcular
+app.get("/api/entradas/mes",(req,res)=>{
+  const mes=(req.query.mes||_mesAtual());
+  const recalc=req.query.recalcular==="1";
+  const cache=lerEntradasCache();
+  const item=cache[mes];
+  if(recalc || !item){ calcularEntradasMes(mes); return res.json({mes, status:"calculando", processadas:0, totalCompras:(item?.totalCompras||0)}); }
+  if(item.status==="calculando" && !_entradasCalculando[mes]) calcularEntradasMes(mes); // retoma se travou
+  const resumir=(obj)=>{
+    const lista=Object.values(obj||{}).sort((a,b)=>b.qtd-a.qtd);
+    const qtd=lista.reduce((s,x)=>s+x.qtd,0), valor=+lista.reduce((s,x)=>s+x.valor,0).toFixed(2);
+    return {itens:lista, totalQtd:qtd, totalValor:valor, skus:lista.length};
+  };
+  res.json({ mes, status:item.status, calculadoEm:item.calculadoEm, totalCompras:item.totalCompras, processadas:item.processadas,
+    erro:item.erro||null, comNF:resumir(item.comNF), semPapel:resumir(item.semPapel) });
+});
+
+app.get("/entradas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entradas.html")); });
+
 app.get("/gestao-nfce", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-nfce.html")); });
 app.get("/vendedor", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "vendedor.html")); });
 app.get("/mobile", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "mobile.html")); });
