@@ -6261,38 +6261,51 @@ async function calcularEntradasMes(mes){
   if(_entradasCalculando[mes]) return;
   _entradasCalculando[mes]=true;
   const {ini,fim}=_rangeMes(mes);
+  const iniH=`${ini} 00:00:00`, fimH=`${fim} 23:59:59`;
   try{
-    // 1) lista os pedidos de compra do mês
-    let compras=[], pagina=1;
-    for(let i=0;i<10;i++){
-      const p=new URLSearchParams({dataInicial:ini, dataFinal:fim, pagina:String(pagina), limite:"100"});
+    // ===== fontes =====
+    // COM NF: notas fiscais de ENTRADA (/nfe tipo 0) — as notas de compra do fornecedor
+    let notas=[], pag=1;
+    for(let i=0;i<15;i++){
+      const p=new URLSearchParams({tipo:"0", dataEmissaoInicial:iniH, dataEmissaoFinal:fimH, pagina:String(pag), limite:"100"});
+      const r=await bling(`/nfe?${p.toString()}`); const arr=r?.data||[];
+      notas=notas.concat(arr); if(arr.length<100) break; pag++; await sleep(150);
+    }
+    // SEM PAPEL: pedidos de compra do mês (entradas sem nota vinculada)
+    let compras=[]; pag=1;
+    for(let i=0;i<15;i++){
+      const p=new URLSearchParams({dataInicial:ini, dataFinal:fim, pagina:String(pag), limite:"100"});
       const r=await bling(`/pedidos/compras?${p.toString()}`); const arr=r?.data||[];
-      compras=compras.concat(arr); if(arr.length<100) break; pagina++; await sleep(150);
+      compras=compras.concat(arr); if(arr.length<100) break; pag++; await sleep(150);
     }
+    const totalDocs=notas.length+compras.length;
     const cache=lerEntradasCache();
-    cache[mes]={ status:"calculando", calculadoEm:Date.now(), comNF:{}, semPapel:{}, totalCompras:compras.length, processadas:0 };
+    cache[mes]={ status:"calculando", calculadoEm:Date.now(), comNF:{}, semPapel:{}, totalCompras:totalDocs, processadas:0 };
     salvarEntradasCache(cache);
-    // 2) abre o detalhe de cada compra e soma por produto
+
     const comNF={}, semPapel={};
+    const soma=(bucket,it)=>{
+      const pid=String(it.produto?.id||it.descricao||"?");
+      if(!bucket[pid]) bucket[pid]={nome:it.descricao||("produto "+pid), codigo:it.produto?.codigo||"", qtd:0, valor:0};
+      bucket[pid].qtd += Number(it.quantidade)||0;
+      bucket[pid].valor += (Number(it.quantidade)||0)*(Number(it.valor)||0);
+    };
     let feitas=0;
-    for(const c of compras){
-      try{
-        const d=await bling(`/pedidos/compras/${c.id}`).then(r=>r?.data);
-        (d?.itens||[]).forEach(it=>{
-          const pid=String(it.produto?.id||it.descricao||"?");
-          const comNota=!!(it.notaFiscal && Number(it.notaFiscal.id)>0);
-          const bucket=comNota?comNF:semPapel;
-          if(!bucket[pid]) bucket[pid]={nome:it.descricao||("produto "+pid), codigo:it.produto?.codigo||"", qtd:0, valor:0};
-          bucket[pid].qtd += Number(it.quantidade)||0;
-          bucket[pid].valor += (Number(it.quantidade)||0)*(Number(it.valor)||0);
-        });
-      }catch(e){}
-      feitas++;
-      if(feitas%5===0){ const cc=lerEntradasCache(); if(cc[mes]){ cc[mes].processadas=feitas; salvarEntradasCache(cc); } }
-      await sleep(120);
+    const marcarProgresso=()=>{ feitas++; if(feitas%5===0){ const cc=lerEntradasCache(); if(cc[mes]){ cc[mes].processadas=feitas; salvarEntradasCache(cc); } } };
+
+    // COM NF — abre o detalhe de cada nota de entrada e soma os itens
+    for(const n of notas){
+      try{ const d=await bling(`/nfe/${n.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(comNF,it)); }catch(e){}
+      marcarProgresso(); await sleep(120);
     }
+    // SEM PAPEL — abre o detalhe de cada pedido de compra e soma os itens
+    for(const c of compras){
+      try{ const d=await bling(`/pedidos/compras/${c.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(semPapel,it)); }catch(e){}
+      marcarProgresso(); await sleep(120);
+    }
+
     const cache2=lerEntradasCache();
-    cache2[mes]={ status:"pronto", calculadoEm:Date.now(), comNF, semPapel, totalCompras:compras.length, processadas:feitas };
+    cache2[mes]={ status:"pronto", calculadoEm:Date.now(), comNF, semPapel, totalCompras:totalDocs, processadas:feitas, qtdNotas:notas.length, qtdCompras:compras.length };
     salvarEntradasCache(cache2);
   }catch(e){
     const cache=lerEntradasCache();
