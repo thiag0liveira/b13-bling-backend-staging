@@ -2516,6 +2516,16 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/situacoes-compras",async(req,res)=>{
+  try{
+    const mods=await bling(`/situacoes/modulos`).then(r=>r?.data||[]).catch(()=>[]);
+    const mod=(mods||[]).find(m=>/compra/i.test(m.nome||"")) || null;
+    let situacoes=[];
+    if(mod){ try{ situacoes=await bling(`/situacoes/modulos/${mod.id}`).then(r=>r?.data||[]); }catch(e){} }
+    res.json({ modulos:(mods||[]).map(m=>({id:m.id,nome:m.nome})), moduloCompra:mod, situacoes });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
 app.get("/api/diag/compra-detalhe/:id",async(req,res)=>{
   try{
     const d=await bling(`/pedidos/compras/${req.params.id}`).then(r=>r?.data);
