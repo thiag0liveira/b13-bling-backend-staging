@@ -57,10 +57,13 @@ function nomeMes(mes){ const [a,m]=mes.split("-"); const nomes=["","janeiro","fe
 
 function tabela(grupo){
   if(!grupo||!grupo.itens||!grupo.itens.length) return '<div class="muted">Nenhum produto.</div>';
-  return grupo.itens.map(i=>`<div class="lin">
+  return grupo.itens.map(i=>{
+    const unit = (i.qtd>0)? (i.valor/i.qtd) : 0;
+    return `<div class="lin">
     <div style="flex:1">${esc(i.nome)}${i.codigo?` <span class="muted">#${esc(i.codigo)}</span>`:''}</div>
-    <div style="text-align:right;white-space:nowrap"><b>${nInt(i.qtd)}</b> un · <span class="muted">${brl(i.valor)}</span></div>
-  </div>`).join("");
+    <div style="text-align:right;white-space:nowrap"><b>${nInt(i.qtd)}</b> un × <span class="muted">${brl(unit)}</span> · <b>${brl(i.valor)}</b></div>
+  </div>`;
+  }).join("");
 }
 
 function render(){
