@@ -59,6 +59,7 @@ const PROPOSTAS_FILE = `${DATA_DIR}/propostas_atacado.json`;
 const PROSPECCAO_FILE = `${DATA_DIR}/prospeccao.json`; // histórico de contatos + clientes ignorados
 const NFCE_EMITIDAS_FILE = `${DATA_DIR}/nfce_emitidas.json`; // {pedidoId:{idNotaFiscal,numero,link,em,por}} — controle de quais pedidos já tiveram NFC-e
 const ENTRADAS_CACHE_FILE = `${DATA_DIR}/entradas_cache.json`; // {mes:{status,calculadoEm,comNF,semPapel,totalCompras,processadas}} — relatório de entradas por produto
+const AVISOS_FILE = `${DATA_DIR}/avisos.json`; // painel de avisos do sistema (falhas, auto-correções de estoque, divergências) pra conferência
 const METAS_FILE = `${DATA_DIR}/metas.json`; // meta de venda por mês {"2026-08":50000}
 const ROTAS_CONFIG_FILE = `${DATA_DIR}/rotas_config.json`; // dias de entrega + carros disponíveis
 const ROTAS_DIAS_FILE = `${DATA_DIR}/rotas_dias.json`; // atribuição de pedidos a carros por dia
@@ -427,6 +428,7 @@ window.B13_NAV_LINKS=[
   {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/entradas",label:"📥 Entradas (Com NF / Sem papel)",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
   {href:"/lista-fardo",label:"📋 Lista de Fardo",acoes:["acesso_lista_fardo","editar_pedido"]},
@@ -4063,6 +4065,17 @@ app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
     }));
     if(achou) salvarCaixaSessoes(dCx);
     addLog(idStr,"itens_alterados_gestao",null,(operador||"Gestão"),{blingOk,novoTotal});
+    if(!blingOk){
+      registrarAviso({
+        tipo:"edicao_itens_bling_falhou",
+        titulo:`Edição de itens não salva no Bling — pedido #${ped.numero||pedidoId}`,
+        pedidoId, numero:ped.numero||null, operador:(operador||"Gestão"), origem:"Gestão de Caixas",
+        erroBling:blingErro,
+        novoTotal,
+        itensNovos: itensLimpos.map(i=>({nome:i.nome, quantidade:i.quantidade, valor:i.valor})),
+        oQueFazer:`No Bling, abra o pedido #${ped.numero||pedidoId} e deixe os itens assim: `+itensLimpos.map(i=>`${i.quantidade}x ${i.nome}`).join(", ")+`. Novo total ${novoTotal}. O caixa já está com esses itens; falta só replicar no Bling.`,
+      });
+    }
     res.json({ok:true, pedidoId, novoTotal, movimentoAtualizado:achou, blingOk, blingErro});
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
@@ -6351,6 +6364,43 @@ app.get("/api/entradas/mes",(req,res)=>{
   res.json({ mes, status:item.status, calculadoEm:item.calculadoEm, totalCompras:item.totalCompras, processadas:item.processadas,
     erro:item.erro||null, comNF:resumir(item.comNF), semPapel:resumir(item.semPapel) });
 });
+
+// ===== PAINEL DE AVISOS =====
+// Registra eventos que precisam de conferência humana (ex: auto-correção de estoque
+// numa edição, Bling recusou algo, divergência caixa x Bling). Guarda o máximo de
+// detalhe pra dar pra rastrear depois.
+function lerAvisos(){ const d=lerJSON(AVISOS_FILE,{lista:[]}); if(!Array.isArray(d.lista)) d.lista=[]; return d; }
+function salvarAvisos(d){ salvarJSON(AVISOS_FILE,d); }
+function registrarAviso(aviso){
+  try{
+    const d=lerAvisos();
+    const id="av-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
+    d.lista.unshift({ id, em:Date.now(), resolvido:false, ...aviso });
+    if(d.lista.length>500) d.lista=d.lista.slice(0,500); // não cresce infinito
+    salvarAvisos(d);
+    return id;
+  }catch(e){ console.error("Falha ao registrar aviso:",e.message); return null; }
+}
+
+app.get("/api/avisos",(req,res)=>{
+  const incluirResolvidos=req.query.todos==="1";
+  const d=lerAvisos();
+  let lista=d.lista||[];
+  if(!incluirResolvidos) lista=lista.filter(a=>!a.resolvido);
+  res.json({ lista:lista.slice(0,200), naoResolvidos:(d.lista||[]).filter(a=>!a.resolvido).length, total:(d.lista||[]).length });
+});
+app.get("/api/avisos/contagem",(req,res)=>{
+  const d=lerAvisos();
+  res.json({ naoResolvidos:(d.lista||[]).filter(a=>!a.resolvido).length });
+});
+app.post("/api/avisos/:id/resolver",(req,res)=>{
+  const d=lerAvisos(); const a=(d.lista||[]).find(x=>x.id===req.params.id);
+  if(!a) return res.status(404).json({erro:"aviso não encontrado"});
+  a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor=req.body?.por||"";
+  salvarAvisos(d); res.json({ok:true});
+});
+
+app.get("/avisos", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "avisos.html")); });
 
 app.get("/entradas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entradas.html")); });
 

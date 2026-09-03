@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Avisos</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:900px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:36px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .card.warn{border-color:#6b5a1f;background:#1c1633}
+  .muted{color:#9a95c9;font-size:13px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}.btn-grn{background:#2f9e6b}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px;background:#3a2a0a;color:#ffd23f}
+  .kv{font-size:12px;margin-top:4px}.kv b{color:#cfc9f5}
+  pre{white-space:pre-wrap;word-break:break-word;background:#0f0c22;border:1px solid #2c2660;border-radius:8px;padding:8px;font-size:12px;margin-top:6px;color:#e6e2ff}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/avisos")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/avisos");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const dt=(ms)=>ms?new Date(ms).toLocaleString("pt-BR"):"";
+
+let LISTA=[], VER="pendentes", NRES=0;
+
+function card(a){
+  const itens=(a.itensNovos||[]).map(i=>`${i.quantidade}x ${esc(i.nome)}`).join(", ");
+  return `<div class="card warn">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <div style="flex:1">
+        <span class="tag">${esc(a.tipo||"aviso")}</span>
+        <div style="font-weight:800;margin-top:6px">${esc(a.titulo||"Aviso")}</div>
+        <div class="muted">${dt(a.em)}${a.operador?" · "+esc(a.operador):""}${a.origem?" · "+esc(a.origem):""}</div>
+      </div>
+      ${a.resolvido
+        ? `<span class="muted" style="font-size:11px">✅ resolvido ${dt(a.resolvidoEm)}</span>`
+        : `<button class="btn btn-grn" style="padding:6px 10px" onclick="resolver('${a.id}')">✓ Resolvido</button>`}
+    </div>
+    ${a.numero?`<div class="kv"><b>Pedido:</b> #${esc(a.numero)}</div>`:(a.pedidoId?`<div class="kv"><b>Pedido:</b> ${esc(a.pedidoId)}</div>`:"")}
+    ${a.novoTotal!=null?`<div class="kv"><b>Novo total:</b> R$ ${(+a.novoTotal).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>`:""}
+    ${itens?`<div class="kv"><b>Itens:</b> ${itens}</div>`:""}
+    ${a.estoqueAjustado?`<div class="kv" style="color:#ffd23f"><b>Estoque ajustado automaticamente:</b> ${esc(a.estoqueAjustado)}</div>`:""}
+    ${a.erroBling?`<div class="kv" style="color:#ff9a9a"><b>Erro do Bling:</b> ${esc(a.erroBling)}</div>`:""}
+    ${a.oQueFazer?`<pre>👉 ${esc(a.oQueFazer)}</pre>`:""}
+  </div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  const lista=LISTA;
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">🔔 Avisos${NRES>0?` (${NRES})`:""}</div><div class="sp"></div>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="carregar()">🔄</button>
+    </div>
+    <div class="wrap">
+      <div class="card">
+        <div class="muted" style="margin-bottom:8px">Eventos que precisam de conferência (auto-correções de estoque, alterações que o Bling recusou, divergências). Marque como resolvido depois de conferir.</div>
+        <div style="display:flex;gap:6px">
+          <span class="chip ${VER==='pendentes'?'on':''}" onclick="VER='pendentes';carregar()">Pendentes</span>
+          <span class="chip ${VER==='todos'?'on':''}" onclick="VER='todos';carregar()">Todos</span>
+        </div>
+      </div>
+      ${lista.length?lista.map(card).join(""):'<div class="card"><div class="muted">Nenhum aviso'+(VER==='pendentes'?' pendente':'')+'. 🎉</div></div>'}
+    </div>`;
+}
+
+async function carregar(){
+  try{
+    const j=await fetch(B+"/api/avisos"+(VER==='todos'?"?todos=1":"")).then(r=>r.json());
+    LISTA=j.lista||[]; NRES=j.naoResolvidos||0; render();
+  }catch(e){ document.getElementById("app").innerHTML='<div class="wrap"><div class="card" style="color:#ff8090">Erro ao carregar.</div></div>'; }
+}
+async function resolver(id){
+  try{
+    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
+    await fetch(B+"/api/avisos/"+id+"/resolver",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({por:S.nome||""})});
+    carregar();
+  }catch(e){ alert("Erro ao marcar."); }
+}
+carregar();
+</script>
+</body>
+</html>
