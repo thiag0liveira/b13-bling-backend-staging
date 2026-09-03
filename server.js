@@ -2514,6 +2514,30 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/nfe-inspecionar",async(req,res)=>{
+  try{
+    const dias=Number(req.query.dias||90);
+    const hoje=new Date();
+    const de=new Date(hoje.getTime()-dias*86400000);
+    const fmt=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const ini=fmt(de), fim=fmt(hoje);
+    let notas=[], pagina=1, erroBling=null;
+    for(let i=0;i<3;i++){
+      const p=new URLSearchParams({dataEmissaoInicial:ini, dataEmissaoFinal:fim, pagina:String(pagina), limite:"100"});
+      let r; try{ r=await bling(`/nfe?${p.toString()}`); }catch(e){ erroBling=e.message; break; }
+      const arr=r?.data||[]; notas=notas.concat(arr);
+      if(arr.length<100) break; pagina++; await sleep(150);
+    }
+    const porTipo={};
+    notas.forEach(n=>{ const t=String(n.tipo); porTipo[t]=(porTipo[t]||0)+1; });
+    res.json({
+      periodo:{ini,fim,dias}, total:notas.length, erroBling, porTipo,
+      amostra:notas.slice(0,40).map(n=>({ id:n.id, numero:n.numero, tipo:n.tipo, dataEmissao:n.dataEmissao,
+        contato:n.contato?.nome||null, valor:n.valorNota??n.valor??null, situacao:n.situacao })),
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message, body:e.body}); }
+});
+
 app.get("/api/diag/notas-entrada-mes",async(req,res)=>{
   try{
     const now=new Date();
