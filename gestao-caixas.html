@@ -482,6 +482,7 @@ window.imprimirRelatorioCaixa=async function(id){
       </table>
       <h3>Vendas por forma de pagamento</h3>
       <table>
+        <tr><td><b>Valor de abertura (troco)</b></td><td class="v">${brl((se.trocoInicial!=null?se.trocoInicial:r.trocoInicial)||0)}</td></tr>
         <tr><td><b>Vendas (${r.qtdVendas||0})</b></td><td class="v">${brl(r.totalVendas)}</td></tr>
         ${pf}
         ${totPix>0.009?`<tr class="pix"><td>🔷 Total PIX</td><td class="v">${brl(totPix)}</td></tr>`:""}
