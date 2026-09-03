@@ -3897,20 +3897,31 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
 
     // descrição do pagamento ANTES: usa o histórico local (tem nome+valor); senão, as parcelas do Bling
     const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
-    let descAntes="";
+    let antesList=[];
     if(antigo&&Array.isArray(antigo.historico)&&antigo.historico.length){
-      descAntes=antigo.historico.map(h=>`${h.formaNome||"?"}: ${fmt(h.valor)}`).join(" · ");
+      antesList=antigo.historico.map(h=>({formaNome:h.formaNome||"?", valor:Number(h.valor)||0}));
     }else{
-      descAntes=(ped.parcelas||[]).map(p=>`${p.formaPagamento?.nome||"?"}: ${fmt(p.valor)}`).join(" · ");
+      antesList=(ped.parcelas||[]).map(p=>({formaNome:p.formaPagamento?.nome||"?", valor:Number(p.valor)||0}));
     }
-    descAntes=descAntes||"—";
+    let descAntes=antesList.map(p=>`${p.formaNome}: ${fmt(p.valor)}`).join(" · ")||"—";
 
-    // troca as parcelas no Bling (substitui). atualizarParcelasBling sabe destravar
-    // o SEPARADO (via Em Digitação), editar e restaurar a situação.
     const funcsNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
-    const descDepoisPre=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
-    const notaObs=`[Alteração ${quando} — ${funcsNome}, autoriz. ${auth.funcionario.nome}] Pagamento: ${descAntes} -> ${descDepoisPre}`;
+    const depoisList=linhas.map(p=>({formaNome:p.formaNome||"?", valor:Number(p.valor)||0}));
+    const descDepoisPre=depoisList.map(p=>`${p.formaNome}: ${fmt(p.valor)}`).join(" · ")||"—";
+    // diff: o que saiu e o que entrou, por forma
+    const agg={};
+    antesList.forEach(p=>{ agg[p.formaNome]=(agg[p.formaNome]||0)-p.valor; });
+    depoisList.forEach(p=>{ agg[p.formaNome]=(agg[p.formaNome]||0)+p.valor; });
+    const tirou=[], acrescentou=[];
+    Object.entries(agg).forEach(([k,v])=>{ if(v<-0.009) tirou.push(`${k}: ${fmt(-v)}`); else if(v>0.009) acrescentou.push(`${k}: ${fmt(v)}`); });
+    const notaObs=[
+      `[Alteração de pagamento ${quando} — por ${funcsNome}, autoriz. ${auth.funcionario.nome}]`,
+      `Antes: ${descAntes}`,
+      `Depois: ${descDepoisPre}`,
+      `Tirou: ${tirou.length?tirou.join(" · "):"—"}`,
+      `Acrescentou: ${acrescentou.length?acrescentou.join(" · "):"—"}`,
+    ].join("\n");
     const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
     if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
 
