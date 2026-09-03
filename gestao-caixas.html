@@ -477,7 +477,7 @@ window.imprimirRelatorioCaixa=async function(id){
         ${linha("Abertura", hora(se.abertaEm))}
         ${linha("Fechamento", se.fechadaEm?hora(se.fechadaEm):"— (ainda aberto)")}
         ${linha("Duração", dur)}
-        ${linha("Troco inicial", brl(r.trocoInicial))}
+        ${linha("Valor de abertura (troco inicial)", brl((se.trocoInicial!=null?se.trocoInicial:r.trocoInicial)||0))}
         ${linha("Ticket médio", ticket)}
       </table>
       <h3>Vendas por forma de pagamento</h3>
