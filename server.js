@@ -2514,6 +2514,30 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/notas-entrada-mes",async(req,res)=>{
+  try{
+    const now=new Date();
+    const ini=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    const fimD=new Date(now.getFullYear(), now.getMonth()+1, 0);
+    const fim=`${fimD.getFullYear()}-${String(fimD.getMonth()+1).padStart(2,"0")}-${String(fimD.getDate()).padStart(2,"0")}`;
+    let notas=[], pagina=1, erroBling=null;
+    for(let i=0;i<5;i++){
+      const p=new URLSearchParams({tipo:"0", dataEmissaoInicial:ini, dataEmissaoFinal:fim, pagina:String(pagina), limite:"100"});
+      let r;
+      try{ r=await bling(`/nfe?${p.toString()}`); }catch(e){ erroBling=e.message; break; }
+      const arr=r?.data||[];
+      notas=notas.concat(arr);
+      if(arr.length<100) break;
+      pagina++; await sleep(150);
+    }
+    res.json({
+      periodo:{ini,fim}, total:notas.length, erroBling,
+      notas:notas.slice(0,60).map(n=>({ id:n.id, numero:n.numero, serie:n.serie, dataEmissao:n.dataEmissao,
+        contato:n.contato?.nome||null, valor:n.valorNota??n.valor??null, situacao:n.situacao, tipo:n.tipo, chaveAcesso:n.chaveAcesso||null })),
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message, body:e.body}); }
+});
+
 app.get("/api/diag/frete/:id",async(req,res)=>{
   try{
     const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data);
