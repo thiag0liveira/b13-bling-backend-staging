@@ -2514,6 +2514,23 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/compra-detalhe/:id",async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/compras/${req.params.id}`).then(r=>r?.data);
+    if(!d) return res.json({erro:"pedido de compra não encontrado"});
+    // devolve o objeto quase cru pra eu ver onde fica fornecedor e nota fiscal vinculada
+    res.json({
+      id:d.id, numero:d.numero, data:d.data, total:d.total, situacao:d.situacao,
+      fornecedor:d.fornecedor||d.contato||null,
+      notaFiscal:d.notaFiscal||null, chaveAcesso:d.chaveAcesso||d.notaFiscal?.chaveAcesso||null,
+      temNotaVinculada: !!(d.notaFiscal&&(d.notaFiscal.id||d.notaFiscal.numero)),
+      qtdItens:(d.itens||[]).length,
+      chaves: Object.keys(d),   // pra eu ver todos os campos disponíveis
+      _raw: d,
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message, body:e.body}); }
+});
+
 app.get("/api/diag/compras-inspecionar",async(req,res)=>{
   try{
     const dias=Number(req.query.dias||90);
