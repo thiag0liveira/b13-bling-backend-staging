@@ -187,6 +187,7 @@ window.verMovimentos=async function(id){
           <div class="card" style="background:#1c1846;margin:12px 0">
             ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
               <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
+              <div class="linha"><span>Valor de abertura (troco)</span><b>${brl(j.sessao?.trocoInicial||0)}</b></div>
               <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
               ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
               ${totalPixForma(j.resumo.porForma)>0.009?`<div class="linha" style="font-size:13px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(j.resumo.porForma))}</b></div>`:""}
