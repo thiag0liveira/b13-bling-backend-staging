@@ -2651,8 +2651,12 @@ app.get("/api/diag/frete/:id",async(req,res)=>{
 // DIAGNÓSTICO: mostra as contas a receber ligadas a um pedido (pra editar a forma sem tocar no estoque)
 app.get("/api/diag/conta-receber/:pedidoId",async(req,res)=>{
   try{
-    const ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data);
-    if(!ped) return res.json({erro:"pedido não encontrado"});
+    // resolve: tenta como id interno; se não achar, busca pelo número
+    let ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){
+      try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(req.params.pedidoId)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){}
+    }
+    if(!ped) return res.json({erro:"pedido não encontrado (nem por id nem por número)"});
     const contatoId=ped.contato?.id;
     let contas=[];
     try{
