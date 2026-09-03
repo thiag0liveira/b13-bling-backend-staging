@@ -2063,6 +2063,7 @@ app.get("/api/catalogo",async(req,res)=>{
     tab.model.forEach(c=>{
       if(!cats[c.t]) cats[c.t]={nome:c.t,col:c.col,produtos:[]};
       (c.itens||[]).forEach(it=>{
+        if(it.desabilitado) return; // produto marcado como desabilitado na tabela não aparece no totem/site
         const sabores=(it.bling||[]).map(b=>{ const e=est[String(b.codigo)];
           return {codigo:b.codigo, id:(e&&e.id)||b.id||null, nome:b.nome||(e&&e.nome)||"", estoque:e?e.estoque:(b.estoque??null), imagem:(e&&e.imagem)||""}; });
         const estoqueTotal = sabores.length ? sabores.reduce((s,x)=>s+(x.estoque||0),0) : null;
@@ -2072,7 +2073,7 @@ app.get("/api/catalogo",async(req,res)=>{
         cats[c.t].produtos.push({id:prodId,nome:it.nome,obs:it.obs||"",preco:it.preco,un:it.caixa||1,sabores,estoqueTotal,imagem});
       });
     });
-    res.json({categorias:Object.values(cats), meta:tab.meta||{}, atualizadoEm:tab.publicadoEm||null});
+    res.json({categorias:Object.values(cats).filter(c=>c.produtos&&c.produtos.length), meta:tab.meta||{}, atualizadoEm:tab.publicadoEm||null});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
