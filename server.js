@@ -2649,6 +2649,22 @@ app.get("/api/diag/frete/:id",async(req,res)=>{
 });
 
 // DIAGNÓSTICO: mostra as contas a receber ligadas a um pedido (pra editar a forma sem tocar no estoque)
+app.get("/api/diag/estoque-pedido/:pedidoId",async(req,res)=>{
+  try{
+    let ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(req.params.pedidoId)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.json({erro:"pedido não encontrado"});
+    const itens=[];
+    for(const it of (ped.itens||[])){
+      const pid=it.produto?.id; let saldo=null, nome=it.descricao||"";
+      if(pid){ try{ const p=await bling(`/produtos/${pid}`).then(r=>r?.data); saldo=p?.estoque?.saldoVirtualTotal ?? p?.estoque?.saldoFisicoTotal ?? null; nome=p?.nome||nome; }catch(e){} }
+      itens.push({ produtoId:pid, nome, codigo:it.produto?.codigo||"", quantidadeNaVenda:it.quantidade, saldoAtual:saldo, negativo: saldo!=null && saldo<0 });
+      await sleep(120);
+    }
+    res.json({ pedido:{id:ped.id, numero:ped.numero, total:ped.total}, itens, negativos:itens.filter(i=>i.negativo) });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
 app.get("/api/diag/conta-receber/:pedidoId",async(req,res)=>{
   try{
     // resolve: tenta como id interno; se não achar, busca pelo número
