@@ -2514,6 +2514,27 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/compras-inspecionar",async(req,res)=>{
+  try{
+    const dias=Number(req.query.dias||90);
+    const hoje=new Date();
+    const de=new Date(hoje.getTime()-dias*86400000);
+    const fmt=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const ini=fmt(de), fim=fmt(hoje);
+    let compras=[], pagina=1, erroBling=null;
+    for(let i=0;i<3;i++){
+      const p=new URLSearchParams({dataInicial:ini, dataFinal:fim, pagina:String(pagina), limite:"100"});
+      let r; try{ r=await bling(`/pedidos/compras?${p.toString()}`); }catch(e){ erroBling=e.message; break; }
+      const arr=r?.data||[]; compras=compras.concat(arr);
+      if(arr.length<100) break; pagina++; await sleep(150);
+    }
+    res.json({
+      periodo:{ini,fim,dias}, total:compras.length, erroBling,
+      amostra:compras.slice(0,40).map(c=>({ id:c.id, numero:c.numero, data:c.data, fornecedor:c.fornecedor?.nome||c.contato?.nome||null, total:c.total??null, situacao:c.situacao })),
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message, body:e.body}); }
+});
+
 app.get("/api/diag/nfe-inspecionar",async(req,res)=>{
   try{
     const dias=Number(req.query.dias||90);
