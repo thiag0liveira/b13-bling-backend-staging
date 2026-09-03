@@ -211,6 +211,19 @@ function confirmarBancosPix(){
   finalizar();
 }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
+// tira da observação as notas automáticas do sistema, deixando só o texto do usuário
+function limparObs(obs){
+  if(!obs) return "";
+  return String(obs).split("\n")
+    .filter(l=>!/^\s*\[Altera[çc][ãa]o/i.test(l))
+    .map(l=>l.split(" · ").filter(p=>{
+      const t=p.trim();
+      return !(/^PIX da maquininha:/i.test(t) || /^PIX Banco/i.test(t) || /^Total PIX/i.test(t) || /VALOR MENOR/i.test(t));
+    }).join(" · "))
+    .join("\n")
+    .replace(/\s*\|\s*edit\s+[\d-]+\s+[\d:]+/gi,"")
+    .trim();
+}
 function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
 
 // ---------------- sessão de caixa ----------------
@@ -474,7 +487,7 @@ async function abrirPedido(id){
     COBRAR_TAXA_CARTAO=true;
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null; // volta a logo até bipar um produto
-    window._obsVenda=""; // observação é por venda; não vaza de um pedido pro outro
+    window._obsVenda=limparObs(j.observacao||""); // carrega a observação existente do pedido (sem as notas automáticas)
     render();
   }catch(e){ alert("Não foi possível abrir o pedido: "+e.message); }
 }
@@ -583,7 +596,7 @@ async function abrirPedidoParaEdicao(id){
     PAGAMENTOS=[];
     ULTIMO_ITEM_PAINEL=null;
     MODO_EDICAO_PAGAMENTO=true;
-    window._obsVenda=""; // observação é por venda; não vaza de um pedido pro outro
+    window._obsVenda=limparObs(j.observacao||""); // carrega a observação existente do pedido (sem as notas automáticas)
     window._filtroPed="";
     render();
     conferirPedidoContraBling(id); // destaca se o registro do caixa não bate com o Bling
@@ -1373,6 +1386,7 @@ function render(){
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
         <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
+        ${restante()<-0.009?`<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(-restante())}</b></div>`:""}
         <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
         <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" oninput="window._obsVenda=this.value">${esc(window._obsVenda||'')}</textarea>
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
