@@ -2516,6 +2516,26 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.get("/api/diag/probe-entradas",async(req,res)=>{
+  const tries=[
+    "/nfe?tipo=0&dataEmissaoInicial=2026-06-01&dataEmissaoFinal=2026-09-03&limite=100",
+    "/nfe?dataEmissaoInicial=2026-09-01&dataEmissaoFinal=2026-09-03&limite=100",
+    "/notas-fiscais-entrada?limite=100",
+    "/notasfiscais?tipo=0&limite=100",
+    "/estoques/entradas?limite=100",
+  ];
+  const out=[];
+  for(const u of tries){
+    try{
+      const r=await bling(u); const arr=(r&&r.data)||[];
+      out.push({url:u, ok:true, count:Array.isArray(arr)?arr.length:0,
+        amostra:(Array.isArray(arr)?arr:[]).slice(0,5).map(n=>({numero:n.numero, tipo:n.tipo, contato:(n.contato&&n.contato.nome)||(n.fornecedor&&n.fornecedor.nome)||null, data:n.dataEmissao||n.data, valor:n.valorNota??n.valor??null})) });
+    }catch(e){ out.push({url:u, ok:false, status:e.status||null, erro:e.message}); }
+    await sleep(250);
+  }
+  res.json({out});
+});
+
 app.get("/api/diag/situacoes-compras",async(req,res)=>{
   try{
     const mods=await bling(`/situacoes/modulos`).then(r=>r?.data||[]).catch(()=>[]);
