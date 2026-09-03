@@ -192,7 +192,7 @@ window.verMovimentos=async function(id){
               ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
               ${totalPixForma(j.resumo.porForma)>0.009?`<div class="linha" style="font-size:13px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(j.resumo.porForma))}</b></div>`:""}
             </div>`:""}
-            ${Number(j.resumo?.totalSuprimentos)>0?`<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(j.resumo.totalSuprimentos)}</b></div>`:""}
+            <div class="linha"><span>💰 Suprimentos</span><b style="color:${Number(j.resumo?.totalSuprimentos)>0?'#8fffc0':'#9a95c9'}">${brl(j.resumo?.totalSuprimentos)}</b></div>
             <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(j.resumo?.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(j.resumo?.totalSangrias)}</b></div>
             <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
             ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
