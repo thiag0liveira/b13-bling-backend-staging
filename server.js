@@ -2651,6 +2651,55 @@ app.get("/api/diag/frete/:id",async(req,res)=>{
 });
 
 // DIAGNÓSTICO: mostra as contas a receber ligadas a um pedido (pra editar a forma sem tocar no estoque)
+// VERIFICA em lote: vendas recentes do caixa atacado x o que está no Bling (pagamento,
+// total, situação). Aponta as que NÃO bateram, pra achar pedidos editados/concluídos
+// que não foram salvos no Bling.
+app.get("/api/diag/sync-caixa-bling",async(req,res)=>{
+  try{
+    const dias=Number(req.query.dias||3);
+    const soAlterados=req.query.soAlterados==="1";
+    const desde=Date.now()-dias*86400000;
+    const dCx=lerCaixaSessoes();
+    const vendas=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      if((s.tipoCaixa||"frente")!=="atacado") return;
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        if(m.em<desde) return;
+        if(soAlterados&&!m.alterado) return;
+        vendas.push({ sessao:s.operador, pedidoId:m.pedidoId, numero:m.numero, total:Number(m.total)||0,
+          pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—", valor:Number(p.valor)||0})),
+          alterado:!!m.alterado, em:m.em });
+      });
+    });
+    const norm=(s)=>String(s||"").toLowerCase().replace(/pix.*/,"pix").replace(/[^a-z0-9]/g,"");
+    const out=[]; let ok=0;
+    for(const v of vendas.slice(0,80)){
+      let b=null, erro=null;
+      try{ b=await bling(`/pedidos/vendas/${v.pedidoId}`).then(r=>r?.data); }catch(e){ erro=e.message; }
+      if(!b){ out.push({...v, status:"NAO_ENCONTRADO_NO_BLING", erro}); continue; }
+      const parcelas=[];
+      for(const pc of (b.parcelas||[])){ parcelas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
+      const totalBling=Number(b.total)||0;
+      const somaCaixa=+v.pagamentos.reduce((s,p)=>s+p.valor,0).toFixed(2);
+      const somaBling=+parcelas.reduce((s,p)=>s+p.valor,0).toFixed(2);
+      const formasCaixa=v.pagamentos.map(p=>norm(p.forma)).sort().join("|");
+      const formasBling=parcelas.map(p=>norm(p.forma)).sort().join("|");
+      const difTotal=Math.abs(v.total-totalBling)>0.009;
+      const difSoma=Math.abs(somaCaixa-somaBling)>0.009;
+      const difFormas=formasCaixa!==formasBling;
+      const sit=Number(b.situacao?.id||0);
+      const sitNome=nomeSituacao(sit);
+      if(difTotal||difSoma||difFormas){
+        out.push({ ...v, status:"DIVERGENTE", bling:{ total:totalBling, parcelas, situacao:sitNome },
+          motivo:[difTotal?"total":"",difSoma?"soma do pagamento":"",difFormas?"formas de pagamento":""].filter(Boolean).join(", ") });
+      } else { ok++; if(sit!==SIT.ATENDIDO) out.push({ ...v, status:"OK_MAS_SITUACAO", bling:{situacao:sitNome} }); }
+      await sleep(120);
+    }
+    res.json({ dias, soAlterados, verificadas:Math.min(vendas.length,80), totalVendas:vendas.length, batendo:ok, problemas:out.length, lista:out });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
 app.get("/api/diag/estoque-pedido/:pedidoId",async(req,res)=>{
   try{
     let ped=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data).catch(()=>null);
