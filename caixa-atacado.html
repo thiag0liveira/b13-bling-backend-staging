@@ -153,26 +153,16 @@ function taxaCartao(){
   return +((valorEmCredito()+valorEmDebito())*0.035).toFixed(2);
 }
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).toFixed(2); }
-// monta a nota que vai pra observação do Bling dizendo quanto foi PIX Banco e quanto
-// foi PIX da maquininha (no Bling a forma é a mesma: PIX).
+// monta a nota que vai pra observação do Bling: mostra só "PIX: valor" (o banco/maquininha
+// é interno e fica nos registros do caixa, não na nota fiscal).
 // soma tudo que é PIX (banco de qualquer banco + maquininha) a partir do porForma do resumo
 function totalPixForma(porForma){ return (porForma||[]).filter(f=>/pix/i.test(f.nome||"")).reduce((s,f)=>s+(Number(f.valor)||0),0); }
 function notaPix(pags){
   const arr=Array.isArray(pags)?pags:PAGAMENTOS;
-  const partes=[];
-  // agrupa PIX Banco por banco (usa p.banco, ou extrai do nome "Pix Banco <Banco>")
-  const porBanco={};
-  arr.forEach(p=>{
-    const n=p.formaNome||"";
-    if(/pix/i.test(n)&&/banco/i.test(n)){
-      const banco=(p.banco||n.replace(/.*banco\s*/i,"").trim()||"");
-      porBanco[banco]=(porBanco[banco]||0)+(Number(p.valor)||0);
-    }
-  });
-  Object.entries(porBanco).forEach(([b,v])=>{ if(v>0.009) partes.push("PIX Banco"+(b?(" "+b):"")+": "+brl(v)); });
-  const maq=arr.filter(p=>/pix/i.test(p.formaNome||"")&&/m[aá]quin/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
-  if(maq>0.009) partes.push("PIX da maquininha: "+brl(maq));
-  return partes.join(" · ");
+  // na observação da nota, o Pix aparece só como "PIX: valor" (o banco/maquininha é
+  // informação interna e fica nos registros do caixa, não na nota fiscal)
+  const totalPix=arr.filter(p=>/pix/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+  return totalPix>0.009 ? ("PIX: "+brl(totalPix)) : "";
 }
 // pergunta qual banco recebeu o PIX (padrão pré-selecionado); ao confirmar, finaliza
 function perguntarBancosPix(){
@@ -218,7 +208,7 @@ function limparObs(obs){
     .filter(l=>!/^\s*\[Altera[çc][ãa]o/i.test(l))
     .map(l=>l.split(" · ").filter(p=>{
       const t=p.trim();
-      return !(/^PIX da maquininha:/i.test(t) || /^PIX Banco/i.test(t) || /^Total PIX/i.test(t) || /VALOR MENOR/i.test(t));
+      return !(/^PIX da maquininha:/i.test(t) || /^PIX Banco/i.test(t) || /^PIX:\s/i.test(t) || /^Total PIX/i.test(t) || /VALOR MENOR/i.test(t));
     }).join(" · "))
     .join("\n")
     .replace(/\s*\|\s*edit\s+[\d-]+\s+[\d:]+/gi,"")
