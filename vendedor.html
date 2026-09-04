@@ -80,11 +80,70 @@ function render(){
         </div>
         <button class="btn btn-wa" onclick="compartilharTabela()">📱 Compartilhar tabela</button>
       </div>
+      <div class="card">
+        <div style="font-weight:800;margin-bottom:6px">📤 Enviar pedido pro cliente</div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px">Busca o pedido pelo número e manda a notinha pro cliente no WhatsApp (ex.: se ele perdeu).</div>
+        <div style="display:flex;gap:6px">
+          <input id="pedEnvioNum" placeholder="Nº do pedido" inputmode="numeric" style="flex:1;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:14px" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarPedidoEnvio();}" value="${esc(window._pedEnvioNum||'')}">
+          <button class="btn btn-mag" onclick="buscarPedidoEnvio()">🔎 Buscar</button>
+        </div>
+        <div id="pedEnvioBox" style="margin-top:8px">${renderPedidoEnvio()}</div>
+      </div>
       ${ABA==='recuperar'?viewRecuperar():ABA==='precos'?viewPrecos():ABA==='historico'?viewHistorico():ABA==='mapa'?viewMapa():ABA==='prospectar2'?viewProspectar2():viewProspectar()}
     </div>`;
   if(ABA==='recuperar'&&!DADOS&&!carregando) carregar();
   if(ABA==='precos'&&!PRECOS_CATS) carregarPrecos();
   setTimeout(carregarTabInfo,50);
+}
+
+/* ===== ENVIAR PEDIDO PRO CLIENTE ===== */
+let PED_ENVIO=null, PED_ENVIO_MSG="";
+function renderPedidoEnvio(){
+  if(PED_ENVIO_MSG) return `<div class="muted" style="font-size:12px">${esc(PED_ENVIO_MSG)}</div>`;
+  const p=PED_ENVIO; if(!p) return "";
+  const itens=(p.itens||[]).map(i=>`<div style="display:flex;justify-content:space-between;font-size:12px;border-bottom:1px solid #2a2660;padding:3px 0"><span>${i.quantidade}× ${esc(i.nome)}</span><b>${brl(i.quantidade*i.valor)}</b></div>`).join("");
+  const formas=(p.formas||[]).map(f=>`${esc(f.forma)}: ${brl(f.valor)}`).join(" · ");
+  return `<div style="background:#1c1846;border-radius:10px;padding:10px">
+    <div style="font-weight:800">Pedido #${esc(p.numero)} · ${esc(p.cliente?.nome||"—")}</div>
+    <div class="muted" style="font-size:11px">${p.data?p.data.split("-").reverse().join("/"):""} · ${esc(p.situacao||"")}${p.cliente?.telefone?" · 📞 "+esc(p.cliente.telefone):" · <span style='color:#ffd23f'>sem telefone no cadastro</span>"}</div>
+    <div style="margin-top:6px;max-height:160px;overflow:auto">${itens}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px;font-weight:800"><span>Total</span><span style="color:#ffd23f">${brl(p.total)}</span></div>
+    ${formas?`<div class="muted" style="font-size:11px">Pagamento: ${formas}</div>`:""}
+    <button class="btn btn-wa" style="width:100%;margin-top:8px" onclick="enviarPedidoWhats()">📱 Enviar notinha por WhatsApp</button>
+  </div>`;
+}
+async function buscarPedidoEnvio(){
+  const el=document.getElementById("pedEnvioNum"); const n=soDig(el?el.value:"");
+  window._pedEnvioNum=n;
+  if(!n){ PED_ENVIO=null; PED_ENVIO_MSG="Digite o número do pedido."; const b=document.getElementById("pedEnvioBox"); if(b) b.innerHTML=renderPedidoEnvio(); return; }
+  PED_ENVIO=null; PED_ENVIO_MSG="Buscando…"; { const b=document.getElementById("pedEnvioBox"); if(b) b.innerHTML=renderPedidoEnvio(); }
+  try{
+    const j=await fetch(B+"/api/vendedor/pedido-para-envio/"+encodeURIComponent(n)).then(r=>r.json());
+    if(j.erro){ PED_ENVIO_MSG=j.erro; }
+    else { PED_ENVIO=j; PED_ENVIO_MSG=""; }
+  }catch(e){ PED_ENVIO_MSG="Erro ao buscar."; }
+  const b=document.getElementById("pedEnvioBox"); if(b) b.innerHTML=renderPedidoEnvio();
+}
+function enviarPedidoWhats(){
+  const p=PED_ENVIO; if(!p) return;
+  const linhas=[];
+  linhas.push(`*B13 Bebidas* — Pedido #${p.numero}`);
+  if(p.cliente?.nome) linhas.push(`Cliente: ${p.cliente.nome}`);
+  if(p.data) linhas.push(`Data: ${p.data.split("-").reverse().join("/")}`);
+  linhas.push("");
+  linhas.push("*Itens:*");
+  (p.itens||[]).forEach(i=>linhas.push(`${i.quantidade}x ${i.nome} — ${brl(i.valor)} = ${brl(i.quantidade*i.valor)}`));
+  linhas.push("");
+  if(p.desconto>0.009) linhas.push(`Desconto: ${brl(p.desconto)}`);
+  if(p.frete>0.009) linhas.push(`Frete: ${brl(p.frete)}`);
+  linhas.push(`*Total: ${brl(p.total)}*`);
+  if((p.formas||[]).length) linhas.push(`Pagamento: ${(p.formas||[]).map(f=>`${f.forma}: ${brl(f.valor)}`).join(" · ")}`);
+  linhas.push("");
+  linhas.push("Obrigado pela preferência! 🍻");
+  const msg=linhas.join("\n");
+  const tel=soDig(p.cliente?.telefone||"");
+  if(tel.length>=10){ const t55=tel.length<=11?("55"+tel):tel; window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank"); }
+  else { window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); } // sem telefone: abre pra escolher o contato
 }
 
 /* ===== ABA 1: RECUPERAR ===== */

@@ -9297,6 +9297,28 @@ app.post("/api/vendedor/prospeccao2/contatado",(req,res)=>{
 
 
 // telefone de um cliente (pra montar o WhatsApp de recuperação)
+// busca um pedido pelo NÚMERO (ou id) já com telefone do cliente, itens e formas — pra
+// o vendedor mandar a notinha pro cliente pelo WhatsApp
+app.get("/api/vendedor/pedido-para-envio/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    let telefone="", nomeCli=ped.contato?.nome||"";
+    if(ped.contato?.id){ try{ const c=await bling(`/contatos/${ped.contato.id}`).then(r=>r?.data); telefone=c?.celular||c?.telefone||""; nomeCli=c?.nome||nomeCli; }catch(e){} }
+    const formas=[];
+    for(const pc of (ped.parcelas||[])){ formas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
+    res.json({
+      id:ped.id, numero:ped.numero, data:ped.data, total:Number(ped.total)||0,
+      frete:Number(ped.transporte?.frete||0), desconto:Number(ped.desconto?.valor||0),
+      cliente:{ id:ped.contato?.id||null, nome:nomeCli, telefone },
+      itens:(ped.itens||[]).map(it=>({nome:it.descricao||it.produto?.nome||"produto", quantidade:Number(it.quantidade)||0, valor:Number(it.valor)||0})),
+      formas, situacao:nomeSituacao(ped.situacao?.id),
+    });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/vendedor/cliente/:id/contato",async(req,res)=>{
   try{
     const r=await bling(`/contatos/${req.params.id}`);
