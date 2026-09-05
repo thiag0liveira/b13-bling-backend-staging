@@ -199,20 +199,36 @@ async function blingRaw(path,options={},_tentativa=0){
 // tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
 // em digitação atualizando sozinho) somem chamadas e estourem o limite do Bling.
-let _blingFila=Promise.resolve();
 const BLING_INTERVALO_MIN=340; // ms entre quaisquer duas chamadas ao Bling (~2,9/s, o limite documentado é 3/s)
 let _blingUltimaChamada=0;
-function bling(path,options={}){
-  const rodar=async()=>{
-    const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
-    if(espera>0) await new Promise(r=>setTimeout(r,espera));
-    _blingUltimaChamada=Date.now();
-    return blingRaw(path,options);
-  };
-  const resultado=_blingFila.then(rodar,rodar);
-  _blingFila=resultado.catch(()=>{}); // não deixa um erro travar a fila pros próximos
-  return resultado;
+// FILA COM PRIORIDADE: operações do caixa/POS (finalizar venda, editar pagamento,
+// consultar preço na hora) são "alta" e sempre passam na frente. Tarefas de fundo
+// pesadas (Central, Auditoria, Entradas, reconstrução de índice) são "baixa" e só
+// avançam quando não há nada de alta prioridade esperando — assim elas nunca mais
+// deixam o caixa "preso em Processando..." esperando atrás de uma varredura.
+let _filaAlta=[], _filaBaixa=[], _blingProcessando=false;
+function _blingAgendar(){
+  if(_blingProcessando) return;
+  _blingProcessando=true;
+  _blingProcessarProximo();
 }
+async function _blingProcessarProximo(){
+  const item=_filaAlta.shift()||_filaBaixa.shift();
+  if(!item){ _blingProcessando=false; return; }
+  const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
+  if(espera>0) await new Promise(r=>setTimeout(r,espera));
+  _blingUltimaChamada=Date.now();
+  try{ const r=await blingRaw(item.path,item.options); item.resolve(r); }
+  catch(e){ item.reject(e); }
+  _blingProcessarProximo();
+}
+function bling(path,options={},prioridade="alta"){
+  return new Promise((resolve,reject)=>{
+    (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject});
+    _blingAgendar();
+  });
+}
+function blingLento(path,options={}){ return bling(path,options,"baixa"); } // uso: tarefas de fundo (nunca o caixa)
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
 // monta o bloco de endereço de entrega no formato que o Bling realmente usa —
 // descobrimos (endereço sumindo mesmo com o campo certo preenchido) que a seção
@@ -6398,14 +6414,14 @@ async function calcularEntradasMes(mes){
     let notas=[], pag=1;
     for(let i=0;i<15;i++){
       const p=new URLSearchParams({tipo:"0", dataEmissaoInicial:iniH, dataEmissaoFinal:fimH, pagina:String(pag), limite:"100"});
-      const r=await bling(`/nfe?${p.toString()}`); const arr=r?.data||[];
+      const r=await blingLento(`/nfe?${p.toString()}`); const arr=r?.data||[];
       notas=notas.concat(arr); if(arr.length<100) break; pag++; await sleep(150);
     }
     // SEM PAPEL: pedidos de compra do mês (entradas sem nota vinculada)
     let compras=[]; pag=1;
     for(let i=0;i<15;i++){
       const p=new URLSearchParams({dataInicial:ini, dataFinal:fim, pagina:String(pag), limite:"100"});
-      const r=await bling(`/pedidos/compras?${p.toString()}`); const arr=r?.data||[];
+      const r=await blingLento(`/pedidos/compras?${p.toString()}`); const arr=r?.data||[];
       compras=compras.concat(arr); if(arr.length<100) break; pag++; await sleep(150);
     }
     const totalDocs=notas.length+compras.length;
@@ -6425,12 +6441,12 @@ async function calcularEntradasMes(mes){
 
     // COM NF — abre o detalhe de cada nota de entrada e soma os itens
     for(const n of notas){
-      try{ const d=await bling(`/nfe/${n.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(comNF,it)); }catch(e){}
+      try{ const d=await blingLento(`/nfe/${n.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(comNF,it)); }catch(e){}
       marcarProgresso(); await sleep(120);
     }
     // SEM PAPEL — abre o detalhe de cada pedido de compra e soma os itens
     for(const c of compras){
-      try{ const d=await bling(`/pedidos/compras/${c.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(semPapel,it)); }catch(e){}
+      try{ const d=await blingLento(`/pedidos/compras/${c.id}`).then(r=>r?.data); (d?.itens||[]).forEach(it=>soma(semPapel,it)); }catch(e){}
       marcarProgresso(); await sleep(120);
     }
 
@@ -6494,7 +6510,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
     (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||m.em<desde) return; vendas.push({pedidoId:m.pedidoId,numero:m.numero,total:Number(m.total)||0,pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—",valor:Number(p.valor)||0})),em:m.em,operador:m.operador||s.operador}); }); });
     const norm=(s)=>String(s||"").toLowerCase().replace(/pix.*/,"pix").replace(/[^a-z0-9]/g,"");
     for(const v of vendas.slice(0,60)){
-      let b=null; try{ b=await bling(`/pedidos/vendas/${v.pedidoId}`).then(r=>r?.data); }catch(e){}
+      let b=null; try{ b=await blingLento(`/pedidos/vendas/${v.pedidoId}`).then(r=>r?.data); }catch(e){}
       if(!b){ registrarAviso({ tipo:"caixa_bling_nao_encontrado", titulo:`Pedido #${v.numero||v.pedidoId} não encontrado no Bling`, pedidoId:v.pedidoId, numero:v.numero, operador:v.operador, origem:"Auditoria", fingerprint:`nfenc-${v.pedidoId}`, oQueFazer:`Confira se o pedido #${v.numero||v.pedidoId} existe no Bling. Se não existir, a venda foi registrada no caixa mas não foi salva no Bling.` }); achados.caixaBlingDivergente++; continue; }
       const parcelas=[]; for(const pc of (b.parcelas||[])){ parcelas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
       const somaCaixa=+v.pagamentos.reduce((s,p)=>s+p.valor,0).toFixed(2), somaBling=+parcelas.reduce((s,p)=>s+p.valor,0).toFixed(2);
@@ -6589,16 +6605,16 @@ async function _atualizarCentralBling(dia){
   try{
     // notas EMITIDAS no dia (saída) — qtd, valor total, e NFC-e x NF-e se der pra distinguir
     try{
-      const r=await bling(`/nfe?tipo=1&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
+      const r=await blingLento(`/nfe?tipo=1&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
       const arr=r?.data||[];
       out.notasEmitidas={ qtd:arr.length, valor:+arr.reduce((a,n)=>a+(Number(n.valorNota??n.valor)||0),0).toFixed(2),
         porCliente:Object.entries(arr.reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+(Number(n.valorNota??n.valor)||0); return acc; },{})).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor).slice(0,15) };
     }catch(e){ out.notasEmitidas={erro:e.message}; }
     // notas de ENTRADA no dia — qtd, valor, fornecedores, e produtos entrados (abre até 20 notas)
     try{
-      const r=await bling(`/nfe?tipo=0&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
+      const r=await blingLento(`/nfe?tipo=0&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
       const arr=r?.data||[]; const prod={};
-      for(const n of arr.slice(0,20)){ try{ const d=await bling(`/nfe/${n.id}`).then(x=>x?.data); (d?.itens||[]).forEach(it=>{ const k=it.descricao||it.produto?.nome||"produto"; if(!prod[k]) prod[k]={nome:k,qtd:0,valor:0}; prod[k].qtd+=Number(it.quantidade)||0; prod[k].valor+=(Number(it.quantidade)||0)*(Number(it.valor)||0); }); }catch(e){} await sleep(100); }
+      for(const n of arr.slice(0,20)){ try{ const d=await blingLento(`/nfe/${n.id}`).then(x=>x?.data); (d?.itens||[]).forEach(it=>{ const k=it.descricao||it.produto?.nome||"produto"; if(!prod[k]) prod[k]={nome:k,qtd:0,valor:0}; prod[k].qtd+=Number(it.quantidade)||0; prod[k].valor+=(Number(it.quantidade)||0)*(Number(it.valor)||0); }); }catch(e){} await sleep(100); }
       out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
         produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
     }catch(e){ out.entradas={erro:e.message}; }
@@ -6613,12 +6629,12 @@ async function _atualizarCentralBling(dia){
       const caixaAtacadoIds=new Set();
       (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
       let pag=1, lista=[];
-      for(let i=0;i<5;i++){ const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
+      for(let i=0;i<5;i++){ const r=await blingLento(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
       const detalhados=[];
       for(const p of lista.slice(0,200)){
         let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—";
         try{
-          const d=await bling(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
+          const d=await blingLento(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
           if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; }
         }catch(e){}
         const consumidorFinal=contatoId===CONSUMIDOR_FINAL_ID;
@@ -7849,7 +7865,7 @@ async function reconstruirIndiceProdutosBg(){
     //    NÃO traz o gtin nem o preço real — por isso precisamos do detalhe depois)
     const lista=[];
     for(let pg=1;pg<=100;pg++){
-      const r=await bling(`/produtos?pagina=${pg}&limite=100`);
+      const r=await blingLento(`/produtos?pagina=${pg}&limite=100`);
       const arr=r?.data||[]; lista.push(...arr);
       if(arr.length<100) break;
       await sleep(400);
@@ -7862,7 +7878,7 @@ async function reconstruirIndiceProdutosBg(){
     for(let i=0;i<lista.length;i++){
       const p=lista[i];
       let det=p;
-      try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
+      try{ const d=await blingLento(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
       const item={
         produtoId:det.id, nome:det.nome, preco:+(det.preco||0),
         imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
