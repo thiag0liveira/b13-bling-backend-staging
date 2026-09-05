@@ -7120,7 +7120,21 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     //    lista genérica). O índice é montado em segundo plano lendo o gtin real de
     //    cada produto. Cobre tanto código de barras quanto SKU.
     const indice=lerJSON(GTIN_INDEX_FILE,{});
-    if(indice[codigo]) return res.json({data:aplicarAtacado({...indice[codigo]}),origem:"indice"});
+    if(indice[codigo]){
+      const item={...indice[codigo]};
+      // ?vivo=1 (usado só pela tela /preco de consulta) confirma o preço AO VIVO no
+      // Bling na hora do scan, pra nunca precisar clicar em "atualizar índice" só por
+      // causa de mudança de preço. NÃO faz isso por padrão pro caixa/frente de caixa,
+      // pra não deixar o bipar de produtos mais lento numa hora de movimento — lá o
+      // índice (que já se atualiza sozinho a cada 6h) continua sendo a fonte.
+      if(req.query.vivo==="1"){
+        try{
+          const det=await bling(`/produtos/${item.produtoId}`).then(r=>r?.data);
+          if(det){ item.preco=+(det.preco||item.preco||0); item.nome=det.nome||item.nome; }
+        }catch(e){}
+      }
+      return res.json({data:aplicarAtacado(item),origem:"indice"});
+    }
 
     // 2) fallback: SKU (esse filtro do Bling funciona, é busca exata pelo código interno)
     try{
