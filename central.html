@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Central</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:1100px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:36px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px}
+  .card.wide{grid-column:1/-1}
+  .muted{color:#9a95c9;font-size:12px}
+  .h{font-weight:800;font-size:14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .big{font-size:26px;font-weight:900;color:#ffd23f}
+  .lin{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:13px}
+  .lin:last-child{border-bottom:none}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:12px;padding:7px 11px;color:#fff;text-decoration:none;display:inline-block}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}
+  .tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px}
+  .tag-ok{background:#0a2a1a;color:#3ce88a}.tag-warn{background:#3a2a0a;color:#ffd23f}.tag-bad{background:#3a0010;color:#ff8090}
+  .cx{background:#1c1846;border-radius:10px;padding:10px;margin-top:8px}
+  .cx summary{cursor:pointer;font-weight:800;list-style:none}
+  .cx summary::-webkit-details-marker{display:none}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/central")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/central");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
+let D=null, TIMER=null;
+
+function cardCaixas(){
+  const cx=D.caixasAbertos||[];
+  return `<div class="card wide">
+    <div class="h"><span>💵 Caixas abertos (${cx.length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
+    ${cx.length?cx.map(c=>`<details class="cx">
+      <summary>👤 ${esc(c.operador||"—")} <span class="tag ${c.tipoCaixa==='atacado'?'tag-ok':'tag-warn'}">${c.tipoCaixa==='atacado'?'Atacado':'Frente'}</span>
+        <span style="float:right;color:#ffd23f">${brl(c.resumo.totalVendas)}</span><div class="muted" style="font-weight:400">aberto às ${hora(c.abertaEm)} · ${c.resumo.qtdVendas} venda(s)</div></summary>
+      <div style="margin-top:8px">
+        ${(c.resumo.porForma||[]).map(f=>`<div class="lin"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        ${c.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(c.totalPix)}</b></div>`:""}
+        <div class="lin"><span>💰 Suprimentos</span><b>${brl(c.resumo.totalSuprimentos)}</b></div>
+        <div class="lin"><span>💸 Sangrias</span><b>${brl(c.resumo.totalSangrias)}</b></div>
+        <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
+        <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-caixas">Abrir na Gestão de Caixas →</a>
+      </div>
+    </details>`).join(""):'<div class="muted">Nenhum caixa aberto agora.</div>'}
+  </div>`;
+}
+function cardFechamento(){
+  const f=D.fechamentoDia||{};
+  return `<div class="card">
+    <div class="h"><span>📊 Fechamento do dia</span></div>
+    <div class="big">${brl(f.totalVendas)}</div>
+    <div class="muted" style="margin-bottom:8px">${f.qtdVendas||0} venda(s)${f.canceladas?` · ${f.canceladas} cancelada(s)`:""}</div>
+    ${(f.porForma||[]).map(x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`).join("")}
+    ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
+    <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div>
+    <div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>
+  </div>`;
+}
+function cardOperadores(){
+  const f=D.fechamentoDia||{}; const ops=f.porOperador||[];
+  const bv=D.bling?.pedidosHojePorVendedor||[];
+  return `<div class="card">
+    <div class="h"><span>🧑‍💼 Vendas do dia por operador</span></div>
+    ${ops.length?ops.map(o=>`<div class="lin"><span>${esc(o.nome)} <span class="muted">(${o.qtd})</span></span><b>${brl(o.valor)}</b></div>`).join(""):'<div class="muted">Sem vendas hoje.</div>'}
+    <div class="h" style="margin-top:12px"><span>📋 Pedidos criados hoje por vendedor (Bling)</span></div>
+    ${D.bling?.calculando&&!bv.length?'<div class="muted">⏳ Buscando no Bling…</div>':''}
+    ${bv.length?bv.map(v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`).join(""):(!D.bling?.calculando?'<div class="muted">Nenhum pedido hoje.</div>':'')}
+    ${D.bling?.totalPedidosHoje?`<div class="muted" style="margin-top:6px">Total: ${D.bling.totalPedidosHoje} pedido(s)</div>`:""}
+  </div>`;
+}
+function cardNotas(){
+  const b=D.bling||{}; const n=D.nfce||{};
+  return `<div class="card">
+    <div class="h"><span>🧾 Notas do dia</span></div>
+    <div class="lin"><span>NF-e/NFC-e emitidas (Bling)</span><b>${b.notasEmitidasHoje!=null?b.notasEmitidasHoje:'⏳'}</b></div>
+    <div class="lin"><span>NFC-e emitidas pelo sistema</span><b>${n.emitidasHoje||0}</b></div>
+    <div class="lin"><span>Vendas atacado sem NFC-e</span><b style="color:${n.pendentesHoje?'#ffd23f':'#3ce88a'}">${n.pendentesHoje||0}</b></div>
+    <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-nfce">Gestão de NFC-e →</a>
+  </div>`;
+}
+function cardEntradas(){
+  const e=D.bling?.entradasHoje;
+  return `<div class="card">
+    <div class="h"><span>📥 Entradas de hoje</span></div>
+    ${!e?'<div class="muted">⏳ Buscando no Bling…</div>':`
+      <div class="big">${e.qtd}</div><div class="muted" style="margin-bottom:6px">nota(s) de entrada hoje</div>
+      ${(e.fornecedores||[]).length?`<div class="muted">Fornecedores: ${e.fornecedores.map(esc).join(", ")}</div>`:""}`}
+    <a class="btn btn-ghost" style="margin-top:8px" href="/entradas">Entradas do mês →</a>
+  </div>`;
+}
+function cardAvisos(){
+  const a=D.avisos||{};
+  return `<div class="card" style="border-color:${a.pendentes?'#6b5a1f':'#2c2660'}">
+    <div class="h"><span>🔔 Avisos pendentes</span><span class="big" style="color:${a.pendentes?'#ffd23f':'#3ce88a'}">${a.pendentes||0}</span></div>
+    ${(a.ultimos||[]).map(x=>`<div class="lin"><span>${esc(x.titulo)}</span><span class="muted">${hora(x.em)}</span></div>`).join("")||'<div class="muted">Nada pendente. 🎉</div>'}
+    <a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos →</a>
+  </div>`;
+}
+function cardPropostas(){
+  const p=D.propostas||{}; const org=p.porOrigemHoje||{};
+  return `<div class="card">
+    <div class="h"><span>📄 Propostas & Pedidos</span></div>
+    <div class="lin"><span>Propostas em aberto</span><b>${p.abertas||0}</b></div>
+    <div class="lin"><span>Pedidos gerados hoje</span><b>${p.pedidosGeradosHoje||0}</b></div>
+    ${Object.keys(org).length?Object.entries(org).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join(""):""}
+    <a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>
+  </div>`;
+}
+
+function render(){
+  const app=document.getElementById("app");
+  if(!D){ app.innerHTML=`<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">🏠 Central</div></div><div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`; return; }
+  const dt=D.hoje?D.hoje.split("-").reverse().join("/"):"";
+  app.innerHTML=`
+    <div class="top">
+      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
+      <img src="/logo"><div class="t">🏠 Central — ${dt}</div><div class="sp"></div>
+      <span class="muted">${D.bling?.atualizadoEm?"Bling atualizado às "+hora(D.bling.atualizadoEm):"Bling: buscando…"}</span>
+      <button class="btn btn-ghost" onclick="carregar()">🔄</button>
+    </div>
+    <div class="wrap">
+      <div class="grid">
+        ${cardCaixas()}
+        ${cardFechamento()}
+        ${cardOperadores()}
+        ${cardNotas()}
+        ${cardEntradas()}
+        ${cardAvisos()}
+        ${cardPropostas()}
+      </div>
+    </div>`;
+}
+async function carregar(){
+  try{ const j=await fetch(B+"/api/central/resumo").then(r=>r.json()); if(!j.erro) D=j; render(); }catch(e){}
+  clearTimeout(TIMER);
+  // atualiza sozinho: rápido enquanto o Bling ainda está calculando, depois a cada 60s
+  TIMER=setTimeout(carregar, (D&&D.bling&&D.bling.calculando)?5000:60000);
+}
+render(); carregar();
+</script>
+</body>
+</html>

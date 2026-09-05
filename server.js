@@ -428,6 +428,7 @@ window.B13_NAV_LINKS=[
   {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {href:"/central",label:"🏠 Central",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/entradas",label:"📥 Entradas (Com NF / Sem papel)",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
@@ -6459,6 +6460,94 @@ app.post("/api/avisos/:id/resolver",(req,res)=>{
   a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor=req.body?.por||"";
   salvarAvisos(d); res.json({ok:true});
 });
+
+// ===== CENTRAL (página inicial): resumo geral do dia =====
+// Varre o sistema: caixas abertos, fechamento do dia, avisos, NFC-e, notas emitidas,
+// entradas, vendas por operador, propostas/pedidos. Dados locais na hora; dados do
+// Bling (notas, entradas, pedidos por vendedor) em cache de 5 min calculado em 2º plano.
+let _centralBling={ em:0, calculando:false, notasEmitidasHoje:null, entradasHoje:null, pedidosHojePorVendedor:null, erro:null };
+function _hojeISO(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; }
+function _inicioHoje(){ const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime(); }
+async function _atualizarCentralBling(){
+  if(_centralBling.calculando) return;
+  _centralBling.calculando=true;
+  try{
+    const hoje=_hojeISO();
+    // notas EMITIDAS hoje (saída, tipo 1)
+    let emitidas=0; try{ const r=await bling(`/nfe?tipo=1&dataEmissaoInicial=${hoje} 00:00:00&dataEmissaoFinal=${hoje} 23:59:59&limite=100`); emitidas=(r?.data||[]).length; }catch(e){}
+    // notas de ENTRADA hoje (tipo 0) — qtd + valor + fornecedores
+    let entradas={qtd:0, fornecedores:[]}; try{ const r=await bling(`/nfe?tipo=0&dataEmissaoInicial=${hoje} 00:00:00&dataEmissaoFinal=${hoje} 23:59:59&limite=100`); const arr=r?.data||[]; entradas={qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,10)}; }catch(e){}
+    // pedidos de venda criados hoje, por vendedor
+    let porVend={}; let totalPed=0;
+    try{
+      let pag=1;
+      for(let i=0;i<5;i++){
+        const r=await bling(`/pedidos/vendas?dataInicial=${hoje}&dataFinal=${hoje}&pagina=${pag}&limite=100`); const arr=r?.data||[];
+        arr.forEach(p=>{ const v=p.vendedor?.nome||p.vendedor?.id||"(sem vendedor)"; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=Number(p.total)||0; totalPed++; });
+        if(arr.length<100) break; pag++; await sleep(150);
+      }
+    }catch(e){}
+    _centralBling={ em:Date.now(), calculando:false, notasEmitidasHoje:emitidas, entradasHoje:entradas,
+      pedidosHojePorVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor), totalPedidosHoje:totalPed, erro:null };
+  }catch(e){ _centralBling.calculando=false; _centralBling.erro=e.message; }
+}
+
+app.get("/api/central/resumo",(req,res)=>{
+  try{
+    const ini=_inicioHoje();
+    const dCx=lerCaixaSessoes();
+    // caixas ABERTOS
+    const abertos=(dCx.sessoes||[]).filter(s=>!s.fechadaEm).map(s=>{
+      const r=resumoSessaoCaixa(s);
+      return { id:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente", abertaEm:s.abertaEm, resumo:r,
+        totalPix:(r.porForma||[]).filter(f=>/pix/i.test(f.nome)).reduce((a,f)=>a+f.valor,0) };
+    });
+    const totalAbertos=+abertos.reduce((s,c)=>s+(c.resumo.totalVendas||0),0).toFixed(2);
+    // FECHAMENTO DO DIA: todas as sessões com movimento hoje (abertas ou fechadas)
+    const porForma={}, porOperador={}; let totalDia=0, qtdDia=0, sangriasDia=0, suprDia=0, canceladasDia=0;
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.em<ini) return;
+        if(m.tipo==="venda"){
+          if(m.cancelado){ canceladasDia++; return; }
+          totalDia+=Number(m.total)||0; qtdDia++;
+          (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); });
+          const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=Number(m.total)||0;
+        } else if(m.tipo==="sangria") sangriasDia+=Number(m.valor)||0;
+        else if(m.tipo==="suprimento") suprDia+=Number(m.valor)||0;
+      });
+    });
+    const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia, canceladas:canceladasDia,
+      sangrias:+sangriasDia.toFixed(2), suprimentos:+suprDia.toFixed(2),
+      porForma:Object.entries(porForma).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+      totalPix:+Object.entries(porForma).filter(([n])=>/pix/i.test(n)).reduce((a,[,v])=>a+v,0).toFixed(2),
+      porOperador:Object.entries(porOperador).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor) };
+    // NFC-e: emitidas hoje (pela gestão/finalização) e pendentes (vendas atacado hoje sem nfce)
+    const emit=lerNfceEmitidas();
+    const nfceHoje=Object.values(emit).filter(x=>x&&x.em>=ini).length;
+    let pendNfce=0; (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&!m.cancelado&&m.em>=ini&&!emit[String(m.pedidoId)]) pendNfce++; }); });
+    // AVISOS pendentes
+    const av=lerAvisos(); const avPend=(av.lista||[]).filter(a=>!a.resolvido);
+    // PROPOSTAS / PEDIDOS locais
+    const props=lerPropostas(); const pl=Object.values(props||{});
+    const propostasAbertas=pl.filter(p=>!p.pedidoBlingId && p.status!=="cancelada").length;
+    const pedidosGeradosHoje=pl.filter(p=>p.pedidoBlingId && (p.atualizadoEm||p.criadoEm||0)>=ini).length;
+    const pedidosOrigemHoje={}; pl.filter(p=>p.pedidoBlingId&&(p.criadoEm||0)>=ini).forEach(p=>{ const o=p.origem||"atacado"; pedidosOrigemHoje[o]=(pedidosOrigemHoje[o]||0)+1; });
+    // Bling (cache 5 min, em 2º plano)
+    if(Date.now()-_centralBling.em>5*60*1000) _atualizarCentralBling();
+    res.json({
+      hoje:_hojeISO(), geradoEm:Date.now(),
+      caixasAbertos:abertos, totalCaixasAbertos:totalAbertos,
+      fechamentoDia,
+      nfce:{ emitidasHoje:nfceHoje, pendentesHoje:pendNfce },
+      avisos:{ pendentes:avPend.length, ultimos:avPend.slice(0,5).map(a=>({id:a.id,titulo:a.titulo,em:a.em,tipo:a.tipo})) },
+      propostas:{ abertas:propostasAbertas, pedidosGeradosHoje, porOrigemHoje:pedidosOrigemHoje },
+      bling:{ atualizadoEm:_centralBling.em||null, calculando:_centralBling.calculando, notasEmitidasHoje:_centralBling.notasEmitidasHoje, entradasHoje:_centralBling.entradasHoje, pedidosHojePorVendedor:_centralBling.pedidosHojePorVendedor||[], totalPedidosHoje:_centralBling.totalPedidosHoje||0, erro:_centralBling.erro },
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+app.get("/central", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "central.html")); });
 
 app.get("/avisos", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "avisos.html")); });
 
