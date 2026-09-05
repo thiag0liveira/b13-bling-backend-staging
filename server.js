@@ -8314,6 +8314,23 @@ app.get("/api/atacado/pedido/:blingId/situacao",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 
+// diz se o pedido já foi pago (pra Propostas decidir se precisa de autorização pra editar)
+app.get("/api/atacado/pedido/:blingId/status-pagamento",(req,res)=>{
+  const pags=lerPag();
+  const p=pags[String(req.params.blingId)];
+  const status=p?.statusPagamento||"pendente";
+  res.json({ pago: status==="pago"||status==="parcial", statusPagamento:status, valorPago:p?.valorPago||0 });
+});
+
+// autoriza (por QR) a edição de um pedido JÁ PAGO em Propostas — mesmo QR/grupos do
+// caixa atacado (admin, gerente, financeiro, financeiro_atacado)
+app.post("/api/atacado/pedido/:blingId/autorizar-edicao",(req,res)=>{
+  const auth=validarTokenQrAtacado(req.body?.token);
+  if(auth.erro) return res.status(403).json({erro:auth.erro});
+  addLog(String(req.params.blingId),"edicao_pedido_pago_autorizada",null,auth.funcionario.nome,{});
+  res.json({ok:true, autorizadoPor:auth.funcionario.nome});
+});
+
 // cancela a proposta/pedido. REGRAS:
 // 1) Só dá pra cancelar enquanto o pedido ainda está no status inicial
 //    "AGUARDANDO SEPARAÇÃO (SISTEMA)". Se já entrou no fluxo (em separação,

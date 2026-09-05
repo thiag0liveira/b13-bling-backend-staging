@@ -1532,6 +1532,18 @@ async function finalizar(){
   }catch(e){ FORMAS=[]; }
   render();
   await carregarPedidos();
+  // abre um pedido específico automaticamente, se vier ?abrirPedido=NUMERO na URL
+  // (usado por Propostas, pra mandar direto pra edição sem o usuário ter que buscar)
+  try{
+    const p=new URLSearchParams(location.search);
+    const num=p.get("abrirPedido");
+    if(num){
+      history.replaceState(null,"",location.pathname); // limpa a URL pra não reabrir de novo num F5
+      const b=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(num)).then(r=>r.json());
+      if(b.achou) await abrirPedidoParaEdicao(b.id);
+      else alert("Pedido #"+num+" não encontrado no Bling.");
+    }
+  }catch(e){}
 })();
 </script>
 </body>

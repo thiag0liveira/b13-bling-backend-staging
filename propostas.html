@@ -203,10 +203,25 @@ function cardProposta(p){
       ${p.cliente?.telefone?`<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>`:''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
       ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
+      ${p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='editarPedido(${JSON.stringify(p.pedidoBlingId)},${JSON.stringify(p.pedidoBlingNumero)})'>✏️ Editar pedido</button>`:''}
       ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
       ${!p.pedidoBlingId?`<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>`:''}
     </div>
   </div>`;
+}
+
+async function editarPedido(blingId,numero){
+  try{
+    const st=await fetch(B+"/api/atacado/pedido/"+blingId+"/status-pagamento").then(r=>r.json());
+    if(st.pago){
+      const token=prompt(`O pedido #${numero} já foi pago (${st.statusPagamento}).\n\nPra editar, escaneie o QR de autorização (gerente, financeiro ou admin) ou cole o código:`);
+      if(!token) return;
+      const auth=await fetch(B+"/api/atacado/pedido/"+blingId+"/autorizar-edicao",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})}).then(r=>r.json());
+      if(auth.erro){ alert("Não autorizado: "+auth.erro); return; }
+    }
+    // manda pro caixa atacado já abrindo esse pedido pra edição
+    location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero);
+  }catch(e){ alert("Erro ao verificar o pedido."); }
 }
 
 function verImagem(id){
