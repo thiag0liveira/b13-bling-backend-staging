@@ -29,6 +29,13 @@
     .folha.modelo2 .etq2{ height:126mm }
     .folha.modelo2 .etq2:nth-child(4n){ page-break-after:always }
   }
+  /* Modelo 3: 1 produto por folha A4 inteira — mesmo cartão do modelo 2, só ampliado
+     com zoom (mantém o fluxo do layout, ao contrário de transform:scale) */
+  .folha.modelo3{ grid-template-columns:1fr; gap:0 }
+  .folha.modelo3 .etq2{ zoom:2.2; margin:30px auto }
+  @media print{
+    .folha.modelo3 .etq2{ zoom:2.2; margin:0 auto; page-break-after:always }
+  }
 
   .folha{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-items:stretch}
   .etiqueta{background:#fff;color:#181542;border:2px solid #181542;border-radius:6px;overflow:hidden;page-break-inside:avoid;font-family:Arial,Helvetica,sans-serif}
@@ -139,6 +146,7 @@ document.addEventListener("DOMContentLoaded",function(){
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn" onclick="gerarEtiquetas()">🏷 Gerar etiquetas (modelo 1)</button>
       <button class="btn btn-ghost" onclick="gerarEtiquetasModelo2()">🏷 Gerar etiquetas (modelo 2)</button>
+      <button class="btn btn-ghost" onclick="gerarEtiquetasModelo3()">📄 Gerar etiqueta (folha A4 — 1 por página)</button>
       <button class="btn btn-ghost" onclick="window.print()" id="btnImprimir" style="display:none">🖨 Imprimir</button>
     </div>
   </div>
@@ -305,6 +313,69 @@ function partesPreco(v){
   return {i:s[0],c:s[1]};
 }
 
+function montarEtq2(it){
+  if(it.erro) return "";
+  const varejo=partesPreco(it.precoVarejo);
+  const fardo=partesPreco(it.precoFardo);
+  const atacado=partesPreco(it.precoAtacado);
+  const temFardo=it.precoFardo!=null;
+  const temAtacado=it.precoAtacado!=null;
+  const qtdPrecos=1+(temFardo?1:0)+(temAtacado?1:0);
+
+  let corpoHtml;
+  if(qtdPrecos===1){
+    // só o varejo -> mostra bem grande, centralizado no meio do card
+    corpoHtml=`<div class="unico2">
+      <div class="preco2 grande2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+      <div class="lbl2">UND</div>
+      <div class="lblGrande2">UNIDADE</div>
+    </div>`;
+  } else if(qtdPrecos===2){
+    // um em cima (varejo), o outro embaixo (fardo ou atacado) — cada um ocupando a largura toda
+    const seg=temFardo
+      ?{classe:"pack2Full",cor:"rosa2",preco:fardo,label:`ACIMA DE ${it.caixaQtd||"—"} UNIDADES`}
+      :{classe:"atacado2Full",cor:"azul2",preco:atacado,label:"ATACADO"};
+    corpoHtml=`<div class="empilhado2">
+      <div class="unidade2 unidadeEmpilhada2">
+        <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+        <div class="lbl2">UND</div>
+        <div class="lblGrande2">UNIDADE</div>
+      </div>
+      <div class="${seg.classe} ${seg.cor}">
+        <div class="preco2"><span class="cif2">R$</span>${seg.preco.i}<span class="cent2">,${seg.preco.c}</span></div>
+        <div class="lblGrande2">${seg.label}</div>
+      </div>
+    </div>`;
+  } else {
+    // os 3 preços -> layout original (unidade+fardo lado a lado, atacado embaixo)
+    corpoHtml=`<div class="corpo2">
+      <div class="unidade2">
+        <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
+        <div class="lbl2">UND</div>
+        <div class="lblGrande2">UNIDADE</div>
+      </div>
+      <div class="divisor2"></div>
+      <div class="pack2">
+        <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
+        <div class="lbl2">UND</div>
+        <div class="lblGrande2">ACIMA DE ${it.caixaQtd||"—"} UNIDADES</div>
+      </div>
+    </div>
+    <div class="atacado2">
+      <div class="preco2"><span class="cif2">R$</span>${atacado.i}<span class="cent2">,${atacado.c}</span></div>
+      <div class="lblGrande2">ATACADO</div>
+    </div>
+    <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`;
+  }
+
+  return `<div class="etq2">
+    <div class="nome2">${esc(it.nome)}</div>
+    ${it.categoriaNome?`<div class="categoria2">${esc(it.categoriaNome)}</div>`:""}
+    ${corpoHtml}
+    <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
+  </div>`;
+}
+
 async function gerarEtiquetasModelo2(){
   if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
   const folha=document.getElementById("folhaEtiquetas");
@@ -312,68 +383,20 @@ async function gerarEtiquetasModelo2(){
   folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
   try{
     const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
-    folha.innerHTML=(j.data||[]).map(it=>{
-      if(it.erro) return "";
-      const varejo=partesPreco(it.precoVarejo);
-      const fardo=partesPreco(it.precoFardo);
-      const atacado=partesPreco(it.precoAtacado);
-      const temFardo=it.precoFardo!=null;
-      const temAtacado=it.precoAtacado!=null;
-      const qtdPrecos=1+(temFardo?1:0)+(temAtacado?1:0);
+    folha.innerHTML=(j.data||[]).map(montarEtq2).join("");
+    document.getElementById("btnImprimir").style.display="inline-block";
+  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+}
 
-      let corpoHtml;
-      if(qtdPrecos===1){
-        // só o varejo -> mostra bem grande, centralizado no meio do card
-        corpoHtml=`<div class="unico2">
-          <div class="preco2 grande2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
-          <div class="lbl2">UND</div>
-          <div class="lblGrande2">UNIDADE</div>
-        </div>`;
-      } else if(qtdPrecos===2){
-        // um em cima (varejo), o outro embaixo (fardo ou atacado) — cada um ocupando a largura toda
-        const seg=temFardo
-          ?{classe:"pack2Full",cor:"rosa2",preco:fardo,label:`ACIMA DE ${it.caixaQtd||"—"} UNIDADES`}
-          :{classe:"atacado2Full",cor:"azul2",preco:atacado,label:"ATACADO"};
-        corpoHtml=`<div class="empilhado2">
-          <div class="unidade2 unidadeEmpilhada2">
-            <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
-            <div class="lbl2">UND</div>
-            <div class="lblGrande2">UNIDADE</div>
-          </div>
-          <div class="${seg.classe} ${seg.cor}">
-            <div class="preco2"><span class="cif2">R$</span>${seg.preco.i}<span class="cent2">,${seg.preco.c}</span></div>
-            <div class="lblGrande2">${seg.label}</div>
-          </div>
-        </div>`;
-      } else {
-        // os 3 preços -> layout original (unidade+fardo lado a lado, atacado embaixo)
-        corpoHtml=`<div class="corpo2">
-          <div class="unidade2">
-            <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
-            <div class="lbl2">UND</div>
-            <div class="lblGrande2">UNIDADE</div>
-          </div>
-          <div class="divisor2"></div>
-          <div class="pack2">
-            <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
-            <div class="lbl2">UND</div>
-            <div class="lblGrande2">ACIMA DE ${it.caixaQtd||"—"} UNIDADES</div>
-          </div>
-        </div>
-        <div class="atacado2">
-          <div class="preco2"><span class="cif2">R$</span>${atacado.i}<span class="cent2">,${atacado.c}</span></div>
-          <div class="lblGrande2">ATACADO</div>
-        </div>
-        <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`;
-      }
-
-      return `<div class="etq2">
-        <div class="nome2">${esc(it.nome)}</div>
-        ${it.categoriaNome?`<div class="categoria2">${esc(it.categoriaNome)}</div>`:""}
-        ${corpoHtml}
-        <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
-      </div>`;
-    }).join("");
+// Modelo 3: 1 produto por FOLHA A4 inteira (mesmo conteúdo do modelo 2, só bem maior)
+async function gerarEtiquetasModelo3(){
+  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
+  const folha=document.getElementById("folhaEtiquetas");
+  folha.className="folha modelo3";
+  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
+  try{
+    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
+    folha.innerHTML=(j.data||[]).map(montarEtq2).join("");
     document.getElementById("btnImprimir").style.display="inline-block";
   }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
 }
