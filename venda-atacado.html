@@ -76,7 +76,7 @@ const S={
   itens:[],             // {produtoId,nome,valor,quantidade,imagem,origemPreco}
   observacao:"",
   vendedorId:null, vendedorNome:"",
-  buscaProd:"", resultadosProd:[],
+  buscaProd:"", resultadosProd:[], modoBusca:"atacado", // atacado | varejo
   analise:null, carregandoAnalise:false,
   novos:[], carregandoNovos:false, novosSelecionados:{},
   compraSelecionados:{}, minComprados:false, minNovos:false,
@@ -518,10 +518,14 @@ function cardProdutos(){
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <label style="margin:0">Adicionar produto</label>
-      <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px" onclick="toggleModoTabela()">${S.modoTabela?'🔍 Modo busca':'⊞ Modo tabela'}</button>
+      <div style="display:flex;gap:4px">
+        <button class="btn ${!S.modoTabela&&S.modoBusca==='atacado'?'btn-mag':'btn-ghost'}" style="font-size:11px;padding:6px 9px" onclick="mudarModoBusca('atacado')">🏷️ Atacado</button>
+        <button class="btn ${!S.modoTabela&&S.modoBusca==='varejo'?'btn-mag':'btn-ghost'}" style="font-size:11px;padding:6px 9px" onclick="mudarModoBusca('varejo')">🔍 Varejo</button>
+        <button class="btn ${S.modoTabela?'btn-mag':'btn-ghost'}" style="font-size:11px;padding:6px 9px" onclick="toggleModoTabela()">⊞ Tabela</button>
+      </div>
     </div>
     ${S.modoTabela?viewTabela():`
-      <input id="buscaProd" placeholder="Buscar produto pelo nome…" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
+      <input id="buscaProd" placeholder="Buscar produto pelo nome… (${S.modoBusca==='varejo'?'preço de varejo':'preço de atacado'})" value="${esc(S.buscaProd)}" oninput="buscarProdDebounce(this.value)">
       <div id="resultadosProd">${S.resultadosProd.map(prodRow).join("")}</div>`}
     ${S.itens.length?`
       <div style="margin-top:16px;border:2px solid var(--mag);border-radius:12px;padding:12px;background:rgba(255,0,130,.06)">
@@ -530,8 +534,12 @@ function cardProdutos(){
           <div style="font-weight:900;color:#ffd23f;font-size:16px">${brl(total())}</div>
         </div>
         ${S.itens.map(itemRow).join("")}
-      </div>`:'<div style="margin-top:14px;text-align:center;color:#9a95c9;font-size:13px;padding:16px;border:1px dashed #514c96;border-radius:12px">Nenhum item ainda. Busque ou use o modo tabela pra adicionar produtos.</div>'}
+      </div>`:'<div style="margin-top:14px;text-align:center;color:#9a95c9;font-size:13px;padding:16px;border:1px dashed #514c96;border-radius:12px">Nenhum item ainda. Busque (atacado ou varejo) ou use o modo tabela pra adicionar produtos — pode misturar os três no mesmo pedido.</div>'}
   </div>`;
+}
+function mudarModoBusca(m){
+  S.modoTabela=false; S.modoBusca=m;
+  if(S.buscaProd.trim().length>=2) buscarProd(); else render();
 }
 
 /* ---------- MODO TABELA ---------- */
@@ -690,10 +698,11 @@ async function buscarProd(){
   const t=S.buscaProd.trim();
   const meuId=++_prodReqId; // marca esta busca; se uma mais nova disparar antes dela voltar, esta é ignorada
   if(t.length<2){ S.resultadosProd=[]; const cont0=document.getElementById("resultadosProd"); if(cont0) cont0.innerHTML=""; return; }
+  const varejo=S.modoBusca==='varejo';
   try{
-    const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(t)).then(r=>r.json());
+    const j=await fetch(B+(varejo?"/api/buscar?nome=":"/api/buscar-atacado?nome=")+encodeURIComponent(t)).then(r=>r.json());
     if(meuId!==_prodReqId) return; // resposta atrasada de uma busca antiga — ignora, não sobrescreve a busca atual
-    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||"",multiplo:p.multiplo||1,estoque:p.estoque}));
+    S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:varejo?'bling':(p.origemPreco||'bling'),imagem:p.imagem||"",multiplo:varejo?1:(p.multiplo||1),estoque:p.estoque}));
     // preserva o texto digitado sem re-renderizar o input inteiro
     const cont=document.getElementById("resultadosProd");
     if(cont) cont.innerHTML=S.resultadosProd.map(prodRow).join("");
@@ -901,23 +910,15 @@ async function salvar(){
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
       if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
-      // se o Bling não devolveu o número na criação, espera um pouco e confirma
-      // (evita imprimir o id interno gigante em vez do número real do pedido)
-      let numeroReal=g.numero;
-      if(!g.numeroConfirmado){
-        for(let i=0;i<6;i++){
-          await new Promise(r=>setTimeout(r,1000));
-          try{
-            const nj=await fetch(B+"/api/atacado/pedido/"+g.pedidoId+"/numero").then(r=>r.json());
-            if(nj.numero){ numeroReal=nj.numero; break; }
-          }catch(e){}
-        }
-      }
-      S.msg=`✅ Pedido #${numeroReal} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
+      // imprime JÁ (sem esperar), pra não perder o clique do usuário — navegador
+      // bloqueia popup que abre muito tempo depois do clique original. Se o Bling
+      // não confirmou o número na criação, usa o provisório aqui e corrige só o
+      // texto da tela quando o número real chegar (o registro da proposta já é
+      // corrigido pelo servidor em segundo plano).
+      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
         (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
-      // abre pra imprimir a nota, igual no caixa atacado
       const v={
-        numero:numeroReal, pedidoId:g.pedidoId,
+        numero:g.numero, pedidoId:g.pedidoId,
         total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
         itens:S.itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
         pagamentos:[], // pagamento é lançado depois, no caixa atacado
@@ -926,6 +927,21 @@ async function salvar(){
         frete:S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0,
       };
       imprimirComprovante(v);
+      if(!g.numeroConfirmado){
+        (async()=>{
+          for(let i=0;i<6;i++){
+            await new Promise(r=>setTimeout(r,1000));
+            try{
+              const nj=await fetch(B+"/api/atacado/pedido/"+g.pedidoId+"/numero").then(r=>r.json());
+              if(nj.numero&&String(nj.numero)!==String(g.numero)){
+                S.msg=S.msg.replace(`Pedido #${g.numero}`,`Pedido #${nj.numero}`);
+                render();
+              }
+              if(nj.numero) break;
+            }catch(e){}
+          }
+        })();
+      }
     }else{
       S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
     }

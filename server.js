@@ -2000,7 +2000,7 @@ app.get("/api/buscar",async(req,res)=>{
     const indice=lerJSON(GTIN_INDEX_FILE,{});
     Object.values(indice).forEach(p=>{
       if((p.nome||"").toLowerCase().includes(t) || String(p.codigo||"").toLowerCase()===t){
-        porId[p.produtoId]={id:p.produtoId,nome:p.nome,codigo:p.codigo,estoque:null};
+        porId[p.produtoId]={id:p.produtoId,nome:p.nome,codigo:p.codigo,estoque:null,preco:p.preco??null,imagem:p.imagem||null};
       }
     });
 
@@ -2009,7 +2009,10 @@ app.get("/api/buscar",async(req,res)=>{
     //    Filtra pelo termo pra descartar a lista genérica que o Bling devolve.
     try{
       const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`);
-      (d.data||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque?.saldoVirtualTotal ?? null}; });
+      (d.data||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,
+        estoque:p.estoque?.saldoVirtualTotal ?? null,
+        preco: p.preco!=null ? +p.preco : (porId[p.id]?.preco ?? null),
+        imagem: p.imagemURL || p.imagem?.link?.grande || porId[p.id]?.imagem || null }; });
     }catch(e){}
 
     res.json({data:Object.values(porId)});
