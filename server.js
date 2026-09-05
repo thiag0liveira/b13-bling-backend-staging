@@ -6532,16 +6532,12 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       if(!emit[String(m.pedidoId)]){ registrarAviso({ tipo:"nfce_pendente_velha", titulo:`Pedido #${m.numero||m.pedidoId} sem NFC-e há mais de 2 dias`, pedidoId:m.pedidoId, numero:m.numero, origem:"Auditoria", fingerprint:`nfcevelha-${m.pedidoId}`, oQueFazer:`Emite a NFC-e do pedido #${m.numero||m.pedidoId} na Gestão de NFC-e, ou confirma se ela já foi emitida direto no Bling.` }); achados.nfcePendenteVelha++; }
     }); });
   }catch(e){}
-  // 5) pedidos Atendido no Bling que não passaram pelo caixa atacado (usa o cache do dia)
+  // 5) pedidos Atendido no Bling que não passaram pelo caixa atacado — usa a
+  // classificação já pronta (campo p.origem), feita na mesma varredura, sem recalcular
   try{
-    const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
-    const dCx=lerCaixaSessoes(); const caixaAtacadoIds=new Set();
-    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
     if(_centralBling.dia===hojeISO && _centralBling.pedidos && !_centralBling.pedidos.erro){
       (_centralBling.pedidos.lista||[]).forEach(p=>{
-        if(caixaAtacadoIds.has(String(p.id))) return;
-        if(VENDEDORES_VAREJO.test(p.vendedor||"") || p.consumidorFinal) return;
-        if(p.situacaoId!==SIT.ATENDIDO) return;
+        if(p.origem!=="possivel_erro") return;
         registrarAviso({ tipo:"atacado_sem_passar_caixa", titulo:`Pedido #${p.numero} Atendido mas não passou no caixa atacado`, numero:p.numero, origem:"Auditoria", fingerprint:`avejo-${p.id}-${hojeISO}`, oQueFazer:`Pedido #${p.numero} (${p.cliente}, vendedor ${p.vendedor}) está Atendido no Bling mas não tem registro no caixa atacado. Confira se foi cobrado por outro caminho ou se ficou pendente.` });
         achados.atacadoSemPassarCaixa++;
       });
@@ -6606,11 +6602,16 @@ async function _atualizarCentralBling(dia){
       out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
         produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
     }catch(e){ out.entradas={erro:e.message}; }
-    // pedidos de venda do dia: por vendedor, maiores, e em aberto (não atendidos)
-    // IMPORTANTE: usa os MESMOS helpers do Fechamento de Caixa (nomeVendedor,
+    // pedidos de venda do dia: por vendedor, maiores, em aberto, e ORIGEM (Atacado x
+    // Varejo) — tudo na MESMA varredura, pra não duplicar trabalho nem recalcular
+    // depois. Usa os MESMOS helpers do Fechamento de Caixa (nomeVendedor,
     // CONSUMIDOR_FINAL_ID) — busca o DETALHE de cada pedido (a listagem não traz o
     // vendedor de forma confiável), pra as duas telas corresponderem entre si.
     try{
+      const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
+      const dCx=lerCaixaSessoes();
+      const caixaAtacadoIds=new Set();
+      (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
       let pag=1, lista=[];
       for(let i=0;i<5;i++){ const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
       const detalhados=[];
@@ -6620,18 +6621,34 @@ async function _atualizarCentralBling(dia){
           const d=await bling(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
           if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; }
         }catch(e){}
-        detalhados.push({ id:p.id, numero:p.numero, vendedor, cliente, consumidorFinal:contatoId===CONSUMIDOR_FINAL_ID,
-          total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) });
+        const consumidorFinal=contatoId===CONSUMIDOR_FINAL_ID;
+        const situacaoId=Number(p.situacao?.id||0);
+        // correlação com o NOSSO caixa, feita aqui mesmo, uma única vez:
+        const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
+        const vendedorVarejo=VENDEDORES_VAREJO.test(vendedor)||consumidorFinal;
+        let origem;
+        if(noCaixaAtacado) origem="atacado";
+        else if(vendedorVarejo) origem="varejo";
+        else if(situacaoId===SIT.ATENDIDO) origem="possivel_erro"; // Atendido mas não passou no caixa atacado
+        else origem="varejo_pendente"; // ainda não atendido — sem erro por enquanto
+        detalhados.push({ id:p.id, numero:p.numero, vendedor, cliente, consumidorFinal, origem,
+          total:Number(p.total)||0, situacaoId, situacao:nomeSituacao(situacaoId) });
         await sleep(100);
       }
       const porVend={}; const emAberto=[];
       detalhados.forEach(p=>{ const v=p.consumidorFinal?"Consumidor Final (varejo)":p.vendedor; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=p.total;
         if(p.situacaoId!==SIT.ATENDIDO && p.situacaoId!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.cliente, total:p.total, situacao:p.situacao}); });
+      const atacado=detalhados.filter(p=>p.origem==="atacado");
+      const varejo=detalhados.filter(p=>p.origem==="varejo"||p.origem==="varejo_pendente");
+      const possiveisErros=detalhados.filter(p=>p.origem==="possivel_erro").sort((a,b)=>b.total-a.total);
       out.pedidos={ total:detalhados.length, valor:+detalhados.reduce((a,p)=>a+p.total,0).toFixed(2),
         porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
         maiores:detalhados.map(p=>({numero:p.numero,cliente:p.cliente,total:p.total})).sort((a,b)=>b.total-a.total).slice(0,10),
         emAberto:emAberto.sort((a,b)=>b.total-a.total).slice(0,30), qtdEmAberto:emAberto.length,
-        lista:detalhados };
+        lista:detalhados,
+        origem:{ atacado:{qtd:atacado.length, valor:+atacado.reduce((s,p)=>s+p.total,0).toFixed(2)},
+          varejo:{qtd:varejo.length, valor:+varejo.reduce((s,p)=>s+p.total,0).toFixed(2)},
+          possiveisErros, qtdPossiveisErros:possiveisErros.length } };
     }catch(e){ out.pedidos={erro:e.message}; }
   }catch(e){ out.erro=e.message; }
   _centralBling=out;
@@ -6718,31 +6735,10 @@ app.get("/api/central/resumo",(req,res)=>{
 
     if(_centralBling.dia!==dia || Date.now()-_centralBling.em>5*60*1000) _atualizarCentralBling(dia);
 
-    // ===== ORIGEM DOS PEDIDOS: Atacado (passou pelo caixa atacado) x Varejo (não passou) =====
-    // Vendedores tipicamente de varejo — não é erro esses não aparecerem no caixa atacado.
-    const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
-    const caixaAtacadoIds=new Set();
-    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
-    let origemPedidos=null;
-    const listaBling=_centralBling.pedidos&&!_centralBling.pedidos.erro?_centralBling.pedidos.lista:null;
-    if(listaBling){
-      const atacado=[], varejo=[], possiveisErros=[];
-      listaBling.forEach(p=>{
-        const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
-        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || p.consumidorFinal;
-        if(noCaixaAtacado){ atacado.push(p); return; }
-        if(vendedorVarejo){ varejo.push(p); return; }
-        // não passou pelo caixa atacado e o vendedor não é dos típicos de varejo
-        if(p.situacaoId===SIT.ATENDIDO){ possiveisErros.push(p); } // Atendido deveria ter passado no caixa atacado
-        else { varejo.push(p); } // ainda não atendido — provavelmente vai fechar no varejo, sem erro por enquanto
-      });
-      origemPedidos={
-        atacado:{ qtd:atacado.length, valor:+atacado.reduce((s,p)=>s+p.total,0).toFixed(2) },
-        varejo:{ qtd:varejo.length, valor:+varejo.reduce((s,p)=>s+p.total,0).toFixed(2) },
-        possiveisErros:possiveisErros.sort((a,b)=>b.total-a.total),
-        qtdPossiveisErros:possiveisErros.length,
-      };
-    }
+    // ORIGEM DOS PEDIDOS (Atacado x Varejo): já vem PRONTA do cache — a correlação com
+    // o nosso caixa é feita uma única vez, dentro da mesma varredura em
+    // _atualizarCentralBling, e não recalculada aqui a cada carregamento da página.
+    const origemPedidos=(_centralBling.pedidos&&!_centralBling.pedidos.erro)?_centralBling.pedidos.origem:null;
 
     res.json({
       dia, geradoEm:Date.now(),
