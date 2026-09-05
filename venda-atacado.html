@@ -901,11 +901,23 @@ async function salvar(){
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
       if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
-      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
+      // se o Bling não devolveu o número na criação, espera um pouco e confirma
+      // (evita imprimir o id interno gigante em vez do número real do pedido)
+      let numeroReal=g.numero;
+      if(!g.numeroConfirmado){
+        for(let i=0;i<6;i++){
+          await new Promise(r=>setTimeout(r,1000));
+          try{
+            const nj=await fetch(B+"/api/atacado/pedido/"+g.pedidoId+"/numero").then(r=>r.json());
+            if(nj.numero){ numeroReal=nj.numero; break; }
+          }catch(e){}
+        }
+      }
+      S.msg=`✅ Pedido #${numeroReal} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
         (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
       // abre pra imprimir a nota, igual no caixa atacado
       const v={
-        numero:g.numero, pedidoId:g.pedidoId,
+        numero:numeroReal, pedidoId:g.pedidoId,
         total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
         itens:S.itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
         pagamentos:[], // pagamento é lançado depois, no caixa atacado

@@ -8374,6 +8374,15 @@ app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
 });
 
 // gera o pedido de venda no Bling a partir de uma proposta e marca situação "aguardando separação"
+// número confirmado do pedido (usado pela Venda Atacado pra esperar o número real
+// antes de imprimir, quando o Bling não devolveu na criação)
+app.get("/api/atacado/pedido/:blingId/numero",async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
+    res.json({numero:d?.numero||null});
+  }catch(e){ res.json({numero:null}); }
+});
+
 app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
   try{
     const props=lerPropostas();
@@ -8476,7 +8485,9 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       liberarTrava();
       return res.status(400).json({erro:"O Bling não retornou o número do pedido — tente de novo. Se persistir, confira no Bling se o pedido chegou a ser criado antes de gerar outro."});
     }
-    let numero=criado?.data?.numero||pedidoId;
+    let numero=criado?.data?.numero||null;
+    const numeroVeioDoBling=!!numero;
+    if(!numero) numero=pedidoId; // provisório, só pra não travar a resposta — corrigido abaixo em 2º plano
     // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
     if(pedidoId&&prop.vendedorId){
       try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){}
@@ -8506,7 +8517,19 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     prop.gerandoPedidoEm=null;
     prop.atualizadoEm=Date.now();
     props[prop.id]=prop; salvarPropostas(props);
-    res.json({ok:true,pedidoId,numero,agendadoRotaData});
+    // se o Bling não devolveu o número na criação, busca em SEGUNDO PLANO (sem travar
+    // a resposta) e corrige tanto a proposta quanto o comprovante já impresso não dá
+    // pra corrigir, mas o registro fica certo pra próximas consultas/impressões
+    if(!numeroVeioDoBling){
+      (async()=>{
+        try{
+          const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+          const numReal=det?.numero; if(!numReal) return;
+          const pp=lerPropostas(); if(pp[prop.id]){ pp[prop.id].pedidoBlingNumero=numReal; salvarPropostas(pp); }
+        }catch(e){}
+      })();
+    }
+    res.json({ok:true,pedidoId,numero,numeroConfirmado:numeroVeioDoBling,agendadoRotaData});
   }catch(e){
     try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e2){}
     res.status(e.status||500).json({erro:e.message,body:e.body});
