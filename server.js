@@ -6540,7 +6540,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
     if(_centralBling.dia===hojeISO && _centralBling.pedidos && !_centralBling.pedidos.erro){
       (_centralBling.pedidos.lista||[]).forEach(p=>{
         if(caixaAtacadoIds.has(String(p.id))) return;
-        if(VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"")) return;
+        if(VENDEDORES_VAREJO.test(p.vendedor||"") || p.consumidorFinal) return;
         if(p.situacaoId!==SIT.ATENDIDO) return;
         registrarAviso({ tipo:"atacado_sem_passar_caixa", titulo:`Pedido #${p.numero} Atendido mas não passou no caixa atacado`, numero:p.numero, origem:"Auditoria", fingerprint:`avejo-${p.id}-${hojeISO}`, oQueFazer:`Pedido #${p.numero} (${p.cliente}, vendedor ${p.vendedor}) está Atendido no Bling mas não tem registro no caixa atacado. Confira se foi cobrado por outro caminho ou se ficou pendente.` });
         achados.atacadoSemPassarCaixa++;
@@ -6607,23 +6607,25 @@ async function _atualizarCentralBling(dia){
         produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
     }catch(e){ out.entradas={erro:e.message}; }
     // pedidos de venda do dia: por vendedor, maiores, e em aberto (não atendidos)
-    // IMPORTANTE: a LISTAGEM do Bling não traz o vendedor de forma confiável — só o
-    // DETALHE de cada pedido tem o campo vendedor.id certo. Por isso abrimos o detalhe
-    // de cada pedido do dia (roda em 2º plano, então o custo de mais chamadas é ok).
+    // IMPORTANTE: usa os MESMOS helpers do Fechamento de Caixa (nomeVendedor,
+    // CONSUMIDOR_FINAL_ID) — busca o DETALHE de cada pedido (a listagem não traz o
+    // vendedor de forma confiável), pra as duas telas corresponderem entre si.
     try{
-      const mapaVend=await mapaVendedores();
       let pag=1, lista=[];
       for(let i=0;i<5;i++){ const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
-      const nomeVend=(id)=>{ if(id&&mapaVend[String(id)]) return mapaVend[String(id)]; return id?("Vendedor "+id):"(sem vendedor)"; };
       const detalhados=[];
       for(const p of lista.slice(0,200)){
-        let vendId=null;
-        try{ const d=await bling(`/pedidos/vendas/${p.id}`).then(x=>x?.data); vendId=d?.vendedor?.id||null; }catch(e){}
-        detalhados.push({ id:p.id, numero:p.numero, vendedor:nomeVend(vendId), cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) });
+        let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—";
+        try{
+          const d=await bling(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
+          if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; }
+        }catch(e){}
+        detalhados.push({ id:p.id, numero:p.numero, vendedor, cliente, consumidorFinal:contatoId===CONSUMIDOR_FINAL_ID,
+          total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) });
         await sleep(100);
       }
       const porVend={}; const emAberto=[];
-      detalhados.forEach(p=>{ if(!porVend[p.vendedor]) porVend[p.vendedor]={qtd:0,valor:0}; porVend[p.vendedor].qtd++; porVend[p.vendedor].valor+=p.total;
+      detalhados.forEach(p=>{ const v=p.consumidorFinal?"Consumidor Final (varejo)":p.vendedor; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=p.total;
         if(p.situacaoId!==SIT.ATENDIDO && p.situacaoId!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.cliente, total:p.total, situacao:p.situacao}); });
       out.pedidos={ total:detalhados.length, valor:+detalhados.reduce((a,p)=>a+p.total,0).toFixed(2),
         porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
@@ -6727,7 +6729,7 @@ app.get("/api/central/resumo",(req,res)=>{
       const atacado=[], varejo=[], possiveisErros=[];
       listaBling.forEach(p=>{
         const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
-        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"");
+        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || p.consumidorFinal;
         if(noCaixaAtacado){ atacado.push(p); return; }
         if(vendedorVarejo){ varejo.push(p); return; }
         // não passou pelo caixa atacado e o vendedor não é dos típicos de varejo
