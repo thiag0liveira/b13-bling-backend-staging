@@ -4382,7 +4382,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
           total:+(totalPedido+_outrasNova+_freteNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
           outrasDespesas:_outrasNova, frete:_freteNova, operador:sessaoAtual.operador||"",
           ...(_menorNova?{valorMenor:_menorNova}:{}),
-          itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+          itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor),modoPreco:i.modoPreco||null})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
@@ -4814,7 +4814,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
           total:+(totalPedido+_outrasFin+_freteFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
           outrasDespesas:_outrasFin, frete:_freteFin, operador:sessaoAtual.operador||"",
           ...(_menorFin?{valorMenor:_menorFin}:{}),
-          itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
+          itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
         salvarCaixaSessoes(dCx);
@@ -6462,87 +6462,135 @@ app.post("/api/avisos/:id/resolver",(req,res)=>{
 });
 
 // ===== CENTRAL (página inicial): resumo geral do dia =====
-// Varre o sistema: caixas abertos, fechamento do dia, avisos, NFC-e, notas emitidas,
-// entradas, vendas por operador, propostas/pedidos. Dados locais na hora; dados do
-// Bling (notas, entradas, pedidos por vendedor) em cache de 5 min calculado em 2º plano.
-let _centralBling={ em:0, calculando:false, notasEmitidasHoje:null, entradasHoje:null, pedidosHojePorVendedor:null, erro:null };
-function _hojeISO(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; }
-function _inicioHoje(){ const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime(); }
-async function _atualizarCentralBling(){
+// Varre o sistema (caixas abertos E fechados, logs, pagamentos, propostas, avisos, NFC-e)
+// e o Bling (notas, entradas, pedidos por vendedor, pedidos em aberto). Datas SEMPRE no
+// horário de Brasília (o servidor roda em UTC e "virava o dia" às 21h).
+let _centralBling={ em:0, calculando:false, dia:null };
+function _hojeISO(dia){
+  if(dia&&/^\d{4}-\d{2}-\d{2}$/.test(dia)) return dia;
+  const n=new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`;
+}
+function _inicioDia(iso){ return new Date(iso+"T00:00:00-03:00").getTime(); }
+function _fimDia(iso){ return _inicioDia(iso)+86400000; }
+
+async function _atualizarCentralBling(dia){
   if(_centralBling.calculando) return;
   _centralBling.calculando=true;
+  const out={ em:Date.now(), calculando:false, dia, erro:null };
   try{
-    const hoje=_hojeISO();
-    // notas EMITIDAS hoje (saída, tipo 1)
-    let emitidas=0; try{ const r=await bling(`/nfe?tipo=1&dataEmissaoInicial=${hoje} 00:00:00&dataEmissaoFinal=${hoje} 23:59:59&limite=100`); emitidas=(r?.data||[]).length; }catch(e){}
-    // notas de ENTRADA hoje (tipo 0) — qtd + valor + fornecedores
-    let entradas={qtd:0, fornecedores:[]}; try{ const r=await bling(`/nfe?tipo=0&dataEmissaoInicial=${hoje} 00:00:00&dataEmissaoFinal=${hoje} 23:59:59&limite=100`); const arr=r?.data||[]; entradas={qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,10)}; }catch(e){}
-    // pedidos de venda criados hoje, por vendedor
-    let porVend={}; let totalPed=0;
+    // notas EMITIDAS no dia (saída) — qtd, valor total, e NFC-e x NF-e se der pra distinguir
     try{
-      let pag=1;
-      for(let i=0;i<5;i++){
-        const r=await bling(`/pedidos/vendas?dataInicial=${hoje}&dataFinal=${hoje}&pagina=${pag}&limite=100`); const arr=r?.data||[];
-        arr.forEach(p=>{ const v=p.vendedor?.nome||p.vendedor?.id||"(sem vendedor)"; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=Number(p.total)||0; totalPed++; });
-        if(arr.length<100) break; pag++; await sleep(150);
-      }
-    }catch(e){}
-    _centralBling={ em:Date.now(), calculando:false, notasEmitidasHoje:emitidas, entradasHoje:entradas,
-      pedidosHojePorVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor), totalPedidosHoje:totalPed, erro:null };
-  }catch(e){ _centralBling.calculando=false; _centralBling.erro=e.message; }
+      const r=await bling(`/nfe?tipo=1&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
+      const arr=r?.data||[];
+      out.notasEmitidas={ qtd:arr.length, valor:+arr.reduce((a,n)=>a+(Number(n.valorNota??n.valor)||0),0).toFixed(2),
+        porCliente:Object.entries(arr.reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+(Number(n.valorNota??n.valor)||0); return acc; },{})).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor).slice(0,15) };
+    }catch(e){ out.notasEmitidas={erro:e.message}; }
+    // notas de ENTRADA no dia — qtd, valor, fornecedores, e produtos entrados (abre até 20 notas)
+    try{
+      const r=await bling(`/nfe?tipo=0&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
+      const arr=r?.data||[]; const prod={};
+      for(const n of arr.slice(0,20)){ try{ const d=await bling(`/nfe/${n.id}`).then(x=>x?.data); (d?.itens||[]).forEach(it=>{ const k=it.descricao||it.produto?.nome||"produto"; if(!prod[k]) prod[k]={nome:k,qtd:0,valor:0}; prod[k].qtd+=Number(it.quantidade)||0; prod[k].valor+=(Number(it.quantidade)||0)*(Number(it.valor)||0); }); }catch(e){} await sleep(100); }
+      out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
+        produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
+    }catch(e){ out.entradas={erro:e.message}; }
+    // pedidos de venda do dia: por vendedor, maiores, e em aberto (não atendidos)
+    try{
+      let pag=1, lista=[];
+      for(let i=0;i<5;i++){ const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
+      const porVend={}; const emAberto=[];
+      lista.forEach(p=>{ const v=p.vendedor?.nome||p.vendedor?.id||"(sem vendedor)"; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=Number(p.total)||0;
+        const sit=Number(p.situacao?.id||0); if(sit!==SIT.ATENDIDO && sit!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacao:nomeSituacao(sit)}); });
+      out.pedidos={ total:lista.length, valor:+lista.reduce((a,p)=>a+(Number(p.total)||0),0).toFixed(2),
+        porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+        maiores:lista.map(p=>({numero:p.numero,cliente:p.contato?.nome||"—",total:Number(p.total)||0})).sort((a,b)=>b.total-a.total).slice(0,10),
+        emAberto:emAberto.sort((a,b)=>b.total-a.total).slice(0,30), qtdEmAberto:emAberto.length };
+    }catch(e){ out.pedidos={erro:e.message}; }
+  }catch(e){ out.erro=e.message; }
+  _centralBling=out;
 }
 
 app.get("/api/central/resumo",(req,res)=>{
   try{
-    const ini=_inicioHoje();
+    const dia=_hojeISO(req.query.data);
+    const ini=_inicioDia(dia), fim=_fimDia(dia);
+    const noDia=(ms)=>ms>=ini&&ms<fim;
     const dCx=lerCaixaSessoes();
-    // caixas ABERTOS
-    const abertos=(dCx.sessoes||[]).filter(s=>!s.fechadaEm).map(s=>{
-      const r=resumoSessaoCaixa(s);
-      return { id:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente", abertaEm:s.abertaEm, resumo:r,
-        totalPix:(r.porForma||[]).filter(f=>/pix/i.test(f.nome)).reduce((a,f)=>a+f.valor,0) };
-    });
-    const totalAbertos=+abertos.reduce((s,c)=>s+(c.resumo.totalVendas||0),0).toFixed(2);
-    // FECHAMENTO DO DIA: todas as sessões com movimento hoje (abertas ou fechadas)
-    const porForma={}, porOperador={}; let totalDia=0, qtdDia=0, sangriasDia=0, suprDia=0, canceladasDia=0;
+    const rc=(s)=>{ const r=resumoSessaoCaixa(s); return { id:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente", abertaEm:s.abertaEm, fechadaEm:s.fechadaEm||null, resumo:r, totalPix:(r.porForma||[]).filter(f=>/pix/i.test(f.nome)).reduce((a,f)=>a+f.valor,0), fechamento:s.fechamento||null }; };
+    const abertos=(dCx.sessoes||[]).filter(s=>!s.fechadaEm).map(rc);
+    const fechadosDia=(dCx.sessoes||[]).filter(s=>s.fechadaEm && (noDia(s.fechadaEm)||noDia(s.abertaEm))).map(rc);
+
+    // ===== varredura das VENDAS do dia (todos os caixas, abertos e fechados) =====
+    const porForma={}, porOperador={}, clientes={}, produtos={}, porModo={};
+    let totalDia=0, qtdDia=0, sangrias=0, supr=0, canceladas=0, consumidorFinal={qtd:0,valor:0};
+    const vendasDia=[];
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
-        if(m.em<ini) return;
-        if(m.tipo==="venda"){
-          if(m.cancelado){ canceladasDia++; return; }
-          totalDia+=Number(m.total)||0; qtdDia++;
-          (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); });
-          const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=Number(m.total)||0;
-        } else if(m.tipo==="sangria") sangriasDia+=Number(m.valor)||0;
-        else if(m.tipo==="suprimento") suprDia+=Number(m.valor)||0;
+        if(!noDia(m.em)) return;
+        if(m.tipo==="sangria"){ sangrias+=Number(m.valor)||0; return; }
+        if(m.tipo==="suprimento"){ supr+=Number(m.valor)||0; return; }
+        if(m.tipo!=="venda") return;
+        if(m.cancelado){ canceladas++; return; }
+        const tot=Number(m.total)||0; totalDia+=tot; qtdDia++;
+        vendasDia.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"Consumidor Final", total:tot, operador:m.operador||s.operador||"—", em:m.em, tipoCaixa:s.tipoCaixa||"frente", formas:(m.pagamentos||[]).map(p=>p.formaNome).join(", ") });
+        (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); });
+        const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=tot;
+        const cli=(m.clienteNome||"").trim(); if(!cli||/consumidor/i.test(cli)){ consumidorFinal.qtd++; consumidorFinal.valor+=tot; } else { if(!clientes[cli]) clientes[cli]={qtd:0,valor:0}; clientes[cli].qtd++; clientes[cli].valor+=tot; }
+        (m.itens||[]).forEach(i=>{ const k=i.nome||("produto "+i.produtoId); if(!produtos[k]) produtos[k]={nome:k,qtd:0,valor:0}; produtos[k].qtd+=Number(i.quantidade)||0; produtos[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0);
+          const modo=i.modoPreco||"não informado"; if(!porModo[modo]) porModo[modo]={itens:0,unidades:0,valor:0}; porModo[modo].itens++; porModo[modo].unidades+=Number(i.quantidade)||0; porModo[modo].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); });
       });
     });
-    const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia, canceladas:canceladasDia,
-      sangrias:+sangriasDia.toFixed(2), suprimentos:+suprDia.toFixed(2),
-      porForma:Object.entries(porForma).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+    const arr=(o,f)=>Object.entries(o).map(([k,v])=>f(k,v));
+    const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia, canceladas, sangrias:+sangrias.toFixed(2), suprimentos:+supr.toFixed(2),
+      porForma:arr(porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
       totalPix:+Object.entries(porForma).filter(([n])=>/pix/i.test(n)).reduce((a,[,v])=>a+v,0).toFixed(2),
-      porOperador:Object.entries(porOperador).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor) };
-    // NFC-e: emitidas hoje (pela gestão/finalização) e pendentes (vendas atacado hoje sem nfce)
-    const emit=lerNfceEmitidas();
-    const nfceHoje=Object.values(emit).filter(x=>x&&x.em>=ini).length;
-    let pendNfce=0; (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&!m.cancelado&&m.em>=ini&&!emit[String(m.pedidoId)]) pendNfce++; }); });
-    // AVISOS pendentes
+      porOperador:arr(porOperador,(nome,v)=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+      consumidorFinal:{qtd:consumidorFinal.qtd, valor:+consumidorFinal.valor.toFixed(2)},
+      clientes:arr(clientes,(nome,v)=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor).slice(0,25),
+      produtosMaisVendidos:Object.values(produtos).sort((a,b)=>b.qtd-a.qtd).slice(0,20).map(p=>({...p,valor:+p.valor.toFixed(2)})),
+      maioresVendas:vendasDia.sort((a,b)=>b.total-a.total).slice(0,10),
+      porModoPreco:arr(porModo,(modo,v)=>({modo,itens:v.itens,unidades:v.unidades,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+    };
+
+    // ===== AUTORIZAÇÕES e ITENS RETIRADOS (logs do dia) =====
+    const log=lerLog(); const autorizacoes=[]; const retirados={};
+    const evAut=new Set(["fechado_valor_menor","pagamento_editado_caixa","pedido_reaberto","venda_cancelada","venda_cancelada_gestao","itens_retirados","itens_acrescentados","itens_alterados_gestao","pedido_incluido_no_caixa"]);
+    Object.entries(log||{}).forEach(([pid,evs])=>{ (Array.isArray(evs)?evs:[]).forEach(ev=>{
+      const em=ev.em||ev.quando||0; if(!noDia(em)) return;
+      if(evAut.has(ev.evento)){ autorizacoes.push({ pedidoId:pid, evento:ev.evento, em, por:ev.funcionarioNome||ev.funcionario||"—", autorizadoPor:ev.detalhes?.autorizadoPor||"", detalhe:ev.detalhes?.faltou!=null?("faltou "+ev.detalhes.faltou):(ev.detalhes?.de?(ev.detalhes.de+" → "+ev.detalhes.para):"") }); }
+      if(ev.evento==="itens_retirados"){ (ev.detalhes?.itens||[]).forEach(n=>{ retirados[n]=(retirados[n]||0)+1; }); }
+    }); });
+    // itens retirados também pelas alterações de itens gravadas no movimento (de→para)
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ (m.alteracoes||[]).forEach(a=>{ if(a.tipo==="itens"&&noDia(a.em)){ const antes=String(a.de||"").split(", ").filter(Boolean); const depois=new Set(String(a.para||"").split(", ").filter(Boolean)); antes.forEach(x=>{ if(!depois.has(x)){ const nome=x.replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; } }); } }); }));
+    autorizacoes.sort((a,b)=>b.em-a.em);
+
+    // ===== pagamentos NÃO pagos (pedidos do dia com status diferente de pago) =====
+    const pags=lerPag(); const naoPagos=[];
+    Object.entries(pags||{}).forEach(([pid,p])=>{ const em=p.em||p.atualizadoEm||0; if(em&&noDia(em)&&p.statusPagamento&&p.statusPagamento!=="pago"&&p.statusPagamento!=="cancelado") naoPagos.push({pedidoId:pid, status:p.statusPagamento, valorPedido:p.valorPedido||null, valorPago:p.valorPago||0}); });
+
+    // NFC-e, avisos, propostas
+    const emit=lerNfceEmitidas(); const nfceHoje=Object.values(emit).filter(x=>x&&noDia(x.em)).length;
+    let pendNfce=0; (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&!m.cancelado&&noDia(m.em)&&!emit[String(m.pedidoId)]) pendNfce++; }); });
     const av=lerAvisos(); const avPend=(av.lista||[]).filter(a=>!a.resolvido);
-    // PROPOSTAS / PEDIDOS locais
     const props=lerPropostas(); const pl=Object.values(props||{});
-    const propostasAbertas=pl.filter(p=>!p.pedidoBlingId && p.status!=="cancelada").length;
-    const pedidosGeradosHoje=pl.filter(p=>p.pedidoBlingId && (p.atualizadoEm||p.criadoEm||0)>=ini).length;
-    const pedidosOrigemHoje={}; pl.filter(p=>p.pedidoBlingId&&(p.criadoEm||0)>=ini).forEach(p=>{ const o=p.origem||"atacado"; pedidosOrigemHoje[o]=(pedidosOrigemHoje[o]||0)+1; });
-    // Bling (cache 5 min, em 2º plano)
-    if(Date.now()-_centralBling.em>5*60*1000) _atualizarCentralBling();
+    const propostas={ abertas:pl.filter(p=>!p.pedidoBlingId&&p.status!=="cancelada").length, pedidosGeradosDia:pl.filter(p=>p.pedidoBlingId&&noDia(p.criadoEm||0)).length,
+      porOrigemDia:pl.filter(p=>p.pedidoBlingId&&noDia(p.criadoEm||0)).reduce((acc,p)=>{ const o=p.origem||"atacado"; acc[o]=(acc[o]||0)+1; return acc; },{}) };
+    // entradas do mês (cache) — produtos que mais entraram
+    const ec=lerEntradasCache(); const mesKey=dia.slice(0,7); const em=ec[mesKey];
+    const maisEntraram=em&&em.status==="pronto" ? Object.values({...(em.semPapel||{}),...(em.comNF||{})}).sort((a,b)=>b.qtd-a.qtd).slice(0,15) : null;
+
+    if(_centralBling.dia!==dia || Date.now()-_centralBling.em>5*60*1000) _atualizarCentralBling(dia);
     res.json({
-      hoje:_hojeISO(), geradoEm:Date.now(),
-      caixasAbertos:abertos, totalCaixasAbertos:totalAbertos,
-      fechamentoDia,
-      nfce:{ emitidasHoje:nfceHoje, pendentesHoje:pendNfce },
-      avisos:{ pendentes:avPend.length, ultimos:avPend.slice(0,5).map(a=>({id:a.id,titulo:a.titulo,em:a.em,tipo:a.tipo})) },
-      propostas:{ abertas:propostasAbertas, pedidosGeradosHoje, porOrigemHoje:pedidosOrigemHoje },
-      bling:{ atualizadoEm:_centralBling.em||null, calculando:_centralBling.calculando, notasEmitidasHoje:_centralBling.notasEmitidasHoje, entradasHoje:_centralBling.entradasHoje, pedidosHojePorVendedor:_centralBling.pedidosHojePorVendedor||[], totalPedidosHoje:_centralBling.totalPedidosHoje||0, erro:_centralBling.erro },
+      dia, geradoEm:Date.now(),
+      caixasAbertos:abertos, totalCaixasAbertos:+abertos.reduce((s,c)=>s+(c.resumo.totalVendas||0),0).toFixed(2),
+      caixasFechadosDia:fechadosDia,
+      fechamentoDia, autorizacoes:autorizacoes.slice(0,40), qtdAutorizacoes:autorizacoes.length,
+      produtosRetirados:Object.entries(retirados).map(([nome,vezes])=>({nome,vezes})).sort((a,b)=>b.vezes-a.vezes),
+      naoPagos:naoPagos.slice(0,30), qtdNaoPagos:naoPagos.length,
+      nfce:{ emitidasDia:nfceHoje, pendentesDia:pendNfce },
+      avisos:{ pendentes:avPend.length, ultimos:avPend.slice(0,5).map(a=>({id:a.id,titulo:a.titulo,em:a.em})) },
+      propostas, entradasMesTop:maisEntraram, entradasMesStatus:em?em.status:null,
+      bling:{ ..._centralBling, calculando:_centralBling.calculando&&_centralBling.dia===dia },
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

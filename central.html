@@ -53,117 +53,86 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null;
+let D=null, TIMER=null, DIA="";
+const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",pedido_incluido_no_caixa:"Incluído no caixa"};
+const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
+const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
 
-function cardCaixas(){
-  const cx=D.caixasAbertos||[];
-  return `<div class="card wide">
-    <div class="h"><span>💵 Caixas abertos (${cx.length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
-    ${cx.length?cx.map(c=>`<details class="cx">
-      <summary>👤 ${esc(c.operador||"—")} <span class="tag ${c.tipoCaixa==='atacado'?'tag-ok':'tag-warn'}">${c.tipoCaixa==='atacado'?'Atacado':'Frente'}</span>
-        <span style="float:right;color:#ffd23f">${brl(c.resumo.totalVendas)}</span><div class="muted" style="font-weight:400">aberto às ${hora(c.abertaEm)} · ${c.resumo.qtdVendas} venda(s)</div></summary>
-      <div style="margin-top:8px">
-        ${(c.resumo.porForma||[]).map(f=>`<div class="lin"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-        ${c.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(c.totalPix)}</b></div>`:""}
-        <div class="lin"><span>💰 Suprimentos</span><b>${brl(c.resumo.totalSuprimentos)}</b></div>
-        <div class="lin"><span>💸 Sangrias</span><b>${brl(c.resumo.totalSangrias)}</b></div>
-        <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
-        <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-caixas">Abrir na Gestão de Caixas →</a>
-      </div>
-    </details>`).join(""):'<div class="muted">Nenhum caixa aberto agora.</div>'}
-  </div>`;
+function blocoCaixa(c){
+  const fech=c.fechamento?` · fechado ${hora(c.fechadaEm)}${c.fechamento.diferenca!=null?` · dif ${brl(c.fechamento.diferenca)}`:""}`:"";
+  return `<details class="cx"><summary>👤 ${esc(c.operador||"—")} <span class="tag ${c.tipoCaixa==='atacado'?'tag-ok':'tag-warn'}">${c.tipoCaixa==='atacado'?'Atacado':'Frente'}</span>
+    <span style="float:right;color:#ffd23f">${brl(c.resumo.totalVendas)}</span><div class="muted" style="font-weight:400">aberto ${hora(c.abertaEm)}${fech} · ${c.resumo.qtdVendas} venda(s)</div></summary>
+    <div style="margin-top:8px">
+      ${(c.resumo.porForma||[]).map(f=>`<div class="lin"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+      ${c.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(c.totalPix)}</b></div>`:""}
+      <div class="lin"><span>💰 Suprimentos</span><b>${brl(c.resumo.totalSuprimentos)}</b></div>
+      <div class="lin"><span>💸 Sangrias</span><b>${brl(c.resumo.totalSangrias)}</b></div>
+      <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
+    </div></details>`;
 }
-function cardFechamento(){
-  const f=D.fechamentoDia||{};
-  return `<div class="card">
-    <div class="h"><span>📊 Fechamento do dia</span></div>
-    <div class="big">${brl(f.totalVendas)}</div>
-    <div class="muted" style="margin-bottom:8px">${f.qtdVendas||0} venda(s)${f.canceladas?` · ${f.canceladas} cancelada(s)`:""}</div>
-    ${(f.porForma||[]).map(x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`).join("")}
-    ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
-    <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div>
-    <div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>
-  </div>`;
-}
-function cardOperadores(){
-  const f=D.fechamentoDia||{}; const ops=f.porOperador||[];
-  const bv=D.bling?.pedidosHojePorVendedor||[];
-  return `<div class="card">
-    <div class="h"><span>🧑‍💼 Vendas do dia por operador</span></div>
-    ${ops.length?ops.map(o=>`<div class="lin"><span>${esc(o.nome)} <span class="muted">(${o.qtd})</span></span><b>${brl(o.valor)}</b></div>`).join(""):'<div class="muted">Sem vendas hoje.</div>'}
-    <div class="h" style="margin-top:12px"><span>📋 Pedidos criados hoje por vendedor (Bling)</span></div>
-    ${D.bling?.calculando&&!bv.length?'<div class="muted">⏳ Buscando no Bling…</div>':''}
-    ${bv.length?bv.map(v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`).join(""):(!D.bling?.calculando?'<div class="muted">Nenhum pedido hoje.</div>':'')}
-    ${D.bling?.totalPedidosHoje?`<div class="muted" style="margin-top:6px">Total: ${D.bling.totalPedidosHoje} pedido(s)</div>`:""}
-  </div>`;
-}
-function cardNotas(){
-  const b=D.bling||{}; const n=D.nfce||{};
-  return `<div class="card">
-    <div class="h"><span>🧾 Notas do dia</span></div>
-    <div class="lin"><span>NF-e/NFC-e emitidas (Bling)</span><b>${b.notasEmitidasHoje!=null?b.notasEmitidasHoje:'⏳'}</b></div>
-    <div class="lin"><span>NFC-e emitidas pelo sistema</span><b>${n.emitidasHoje||0}</b></div>
-    <div class="lin"><span>Vendas atacado sem NFC-e</span><b style="color:${n.pendentesHoje?'#ffd23f':'#3ce88a'}">${n.pendentesHoje||0}</b></div>
-    <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-nfce">Gestão de NFC-e →</a>
-  </div>`;
-}
-function cardEntradas(){
-  const e=D.bling?.entradasHoje;
-  return `<div class="card">
-    <div class="h"><span>📥 Entradas de hoje</span></div>
-    ${!e?'<div class="muted">⏳ Buscando no Bling…</div>':`
-      <div class="big">${e.qtd}</div><div class="muted" style="margin-bottom:6px">nota(s) de entrada hoje</div>
-      ${(e.fornecedores||[]).length?`<div class="muted">Fornecedores: ${e.fornecedores.map(esc).join(", ")}</div>`:""}`}
-    <a class="btn btn-ghost" style="margin-top:8px" href="/entradas">Entradas do mês →</a>
-  </div>`;
-}
-function cardAvisos(){
-  const a=D.avisos||{};
-  return `<div class="card" style="border-color:${a.pendentes?'#6b5a1f':'#2c2660'}">
-    <div class="h"><span>🔔 Avisos pendentes</span><span class="big" style="color:${a.pendentes?'#ffd23f':'#3ce88a'}">${a.pendentes||0}</span></div>
-    ${(a.ultimos||[]).map(x=>`<div class="lin"><span>${esc(x.titulo)}</span><span class="muted">${hora(x.em)}</span></div>`).join("")||'<div class="muted">Nada pendente. 🎉</div>'}
-    <a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos →</a>
-  </div>`;
-}
-function cardPropostas(){
-  const p=D.propostas||{}; const org=p.porOrigemHoje||{};
-  return `<div class="card">
-    <div class="h"><span>📄 Propostas & Pedidos</span></div>
-    <div class="lin"><span>Propostas em aberto</span><b>${p.abertas||0}</b></div>
-    <div class="lin"><span>Pedidos gerados hoje</span><b>${p.pedidosGeradosHoje||0}</b></div>
-    ${Object.keys(org).length?Object.entries(org).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join(""):""}
-    <a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>
-  </div>`;
-}
-
 function render(){
   const app=document.getElementById("app");
-  if(!D){ app.innerHTML=`<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">🏠 Central</div></div><div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`; return; }
-  const dt=D.hoje?D.hoje.split("-").reverse().join("/"):"";
-  app.innerHTML=`
-    <div class="top">
-      <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
-      <img src="/logo"><div class="t">🏠 Central — ${dt}</div><div class="sp"></div>
-      <span class="muted">${D.bling?.atualizadoEm?"Bling atualizado às "+hora(D.bling.atualizadoEm):"Bling: buscando…"}</span>
-      <button class="btn btn-ghost" onclick="carregar()">🔄</button>
-    </div>
+  const topo=`<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">🏠 Central</div><div class="sp"></div>
+    <input type="date" value="${DIA}" onchange="DIA=this.value;D=null;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px">
+    <button class="btn btn-ghost" onclick="carregar()">🔄</button></div>`;
+  if(!D){ app.innerHTML=topo+`<div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`; return; }
+  const f=D.fechamentoDia||{}, b=D.bling||{};
+  const bl=(x)=>x==null?'<span class="muted">⏳</span>':x;
+  app.innerHTML=topo+`
     <div class="wrap">
+      <div class="muted" style="margin-bottom:10px">${b.em?"Bling atualizado às "+hora(b.em):"Bling: buscando em segundo plano…"}${b.calculando?" ⏳":""}</div>
       <div class="grid">
-        ${cardCaixas()}
-        ${cardFechamento()}
-        ${cardOperadores()}
-        ${cardNotas()}
-        ${cardEntradas()}
-        ${cardAvisos()}
-        ${cardPropostas()}
+        <div class="card wide"><div class="h"><span>💵 Caixas abertos (${(D.caixasAbertos||[]).length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
+          ${(D.caixasAbertos||[]).map(blocoCaixa).join("")||'<div class="muted">Nenhum caixa aberto agora.</div>'}
+          ${(D.caixasFechadosDia||[]).length?`<div class="h" style="margin-top:12px"><span>🔒 Caixas fechados no dia (${D.caixasFechadosDia.length})</span></div>${D.caixasFechadosDia.map(blocoCaixa).join("")}`:""}
+        </div>
+
+        ${card("📊 Fechamento do dia (todos os caixas)",`<div class="big">${brl(f.totalVendas)}</div><div class="muted" style="margin-bottom:8px">${f.qtdVendas||0} venda(s)${f.canceladas?` · ${f.canceladas} cancelada(s)`:""}</div>
+          ${lins(f.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
+          ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
+          <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div><div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>`)}
+
+        ${card("🧑‍💼 Vendas por operador (caixa)",lins(f.porOperador,o=>`<div class="lin"><span>${esc(o.nome)} <span class="muted">(${o.qtd})</span></span><b>${brl(o.valor)}</b></div>`)
+          +`<div class="h" style="margin-top:12px"><span>📋 Pedidos do dia por vendedor (Bling)</span></div>`+(b.pedidos&&!b.pedidos.erro?lins(b.pedidos.porVendedor,v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">Total: ${b.pedidos.total} pedido(s) · ${brl(b.pedidos.valor)}</div>`:'<div class="muted">⏳ Buscando no Bling…</div>'))}
+
+        ${card("🛒 Consumidor Final × Clientes",`<div class="lin"><span>Consumidor Final <span class="muted">(${f.consumidorFinal?.qtd||0})</span></span><b>${brl(f.consumidorFinal?.valor)}</b></div>
+          <div class="h" style="margin-top:10px"><span>Clientes que compraram</span></div>${lins(f.clientes,c=>`<div class="lin"><span>${esc(c.nome)} <span class="muted">(${c.qtd})</span></span><b>${brl(c.valor)}</b></div>`)}`)}
+
+        ${card("🔝 Produtos que mais saíram (caixa)",lins(f.produtosMaisVendidos,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un · <span class="muted">${brl(p.valor)}</span></b></div>`))}
+
+        ${card("💰 Maiores vendas do dia",lins(f.maioresVendas,v=>`<div class="lin"><span>#${esc(v.numero)} ${esc(v.cliente)} <span class="muted">· ${esc(v.operador)}</span></span><b>${brl(v.total)}</b></div>`)
+          +(b.pedidos&&!b.pedidos.erro&&b.pedidos.maiores?.length?`<div class="h" style="margin-top:12px"><span>Maiores pedidos (Bling)</span></div>`+lins(b.pedidos.maiores,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}</span><b>${brl(p.total)}</b></div>`):""))}
+
+        ${card("🏷️ Preço usado nos itens",lins(f.porModoPreco,m=>`<div class="lin"><span>${esc(m.modo)} <span class="muted">(${m.itens} itens · ${m.unidades} un)</span></span><b>${brl(m.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">bling = preço do Bling · atacado = tabela · fardo = preço de fardo · editado = alterado com QR</div>`)}
+
+        ${card("🔐 Autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
+
+        ${card("📦 Produtos retirados de pedidos",`<div class="muted" style="margin-bottom:6px">Possível falta de estoque — confira.</div>`+lins(D.produtosRetirados,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.vezes}x</b></div>`))}
+
+        ${card("⏳ Pedidos em aberto / não pagos",`<div class="lin"><span>Não pagos (caixa)</span><b>${D.qtdNaoPagos||0}</b></div>`+lins(D.naoPagos,p=>`<div class="lin"><span>#${esc(p.pedidoId)} <span class="muted">${esc(p.status)}</span></span><b>${p.valorPedido!=null?brl(p.valorPedido):""}</b></div>`)
+          +(b.pedidos&&!b.pedidos.erro?`<div class="h" style="margin-top:12px"><span>Pedidos do dia não atendidos (Bling): ${b.pedidos.qtdEmAberto||0}</span></div>`+lins(b.pedidos.emAberto,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)} <span class="muted">${esc(p.situacao)}</span></span><b>${brl(p.total)}</b></div>`):""))}
+
+        ${card("🧾 Notas do dia",`<div class="lin"><span>Notas de saída emitidas (Bling)</span><b>${b.notasEmitidas&&!b.notasEmitidas.erro?b.notasEmitidas.qtd+" · "+brl(b.notasEmitidas.valor):bl(null)}</b></div>
+          <div class="lin"><span>NFC-e emitidas pelo sistema</span><b>${D.nfce?.emitidasDia||0}</b></div>
+          <div class="lin"><span>Vendas atacado sem NFC-e</span><b style="color:${D.nfce?.pendentesDia?'#ffd23f':'#3ce88a'}">${D.nfce?.pendentesDia||0}</b></div>
+          ${b.notasEmitidas&&b.notasEmitidas.porCliente?.length?`<div class="h" style="margin-top:10px"><span>Notas por cliente</span></div>`+lins(b.notasEmitidas.porCliente,c=>`<div class="lin"><span>${esc(c.nome)}</span><b>${brl(c.valor)}</b></div>`):""}
+          <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-nfce">Gestão de NFC-e →</a>`)}
+
+        ${card("📥 Entradas de hoje",(b.entradas&&!b.entradas.erro?`<div class="big" style="font-size:20px">${b.entradas.qtd} nota(s)</div>${b.entradas.fornecedores?.length?`<div class="muted">${b.entradas.fornecedores.map(esc).join(", ")}</div>`:""}
+          <div class="h" style="margin-top:10px"><span>Produtos que entraram hoje</span></div>${lins(b.entradas.produtos,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`)}`:'<div class="muted">⏳ Buscando no Bling…</div>')
+          +(D.entradasMesTop?`<div class="h" style="margin-top:12px"><span>Mais entraram no mês</span></div>`+lins(D.entradasMesTop,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`):"")+`<a class="btn btn-ghost" style="margin-top:8px" href="/entradas">Entradas do mês →</a>`)}
+
+        ${card("🔔 Avisos pendentes",lins(D.avisos?.ultimos,x=>`<div class="lin"><span>${esc(x.titulo)}</span><span class="muted">${hora(x.em)}</span></div>`)+`<a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos →</a>`,`<span class="big" style="color:${D.avisos?.pendentes?'#ffd23f':'#3ce88a'}">${D.avisos?.pendentes||0}</span>`)}
+
+        ${card("📄 Propostas & Pedidos",`<div class="lin"><span>Propostas em aberto</span><b>${D.propostas?.abertas||0}</b></div><div class="lin"><span>Pedidos gerados no dia</span><b>${D.propostas?.pedidosGeradosDia||0}</b></div>
+          ${Object.entries(D.propostas?.porOrigemDia||{}).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join("")}<a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>`)}
       </div>
     </div>`;
 }
 async function carregar(){
-  try{ const j=await fetch(B+"/api/central/resumo").then(r=>r.json()); if(!j.erro) D=j; render(); }catch(e){}
+  try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
   clearTimeout(TIMER);
-  // atualiza sozinho: rápido enquanto o Bling ainda está calculando, depois a cada 60s
-  TIMER=setTimeout(carregar, (D&&D.bling&&D.bling.calculando)?5000:60000);
+  TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?5000:60000);
 }
 render(); carregar();
 </script>

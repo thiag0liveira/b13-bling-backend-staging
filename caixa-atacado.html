@@ -1446,7 +1446,8 @@ async function finalizar(){
   // acrescenta na observação do Bling qual PIX foi (banco/maquininha), e se fechou com valor menor
   const notaMenor=AUTORIZOU_MENOR?`[Valor menor: faltou ${brl(AUTORIZOU_MENOR.falta)}, autoriz. ${AUTORIZOU_MENOR.autorizadoPor}]`:"";
   const observacao=[observacaoUsuario, notaPix(pagamentos), notaMenor].filter(Boolean).join(" · ");
-  const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor}));
+  const itens=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor,
+    modoPreco: i._usandoFardo ? "fardo" : (i.origemPreco==="atacado" ? "atacado" : (i.precoEditado ? "editado" : "bling"))}));
   // Regra de status final no Bling (POR ENQUANTO):
   //  - TODO pedido finalizado no caixa termina em ATENDIDO, caminhando SEPARADO -> ATENDIDO
   //    (o backend garante o caminho: passa por Separado antes de mover pra Atendido).
