@@ -78,7 +78,10 @@ function render(){
           <div style="font-weight:800">📋 Tabela de preços</div>
           <div class="muted" id="tabInfo" style="font-size:11px">Verificando…</div>
         </div>
-        <button class="btn btn-wa" onclick="compartilharTabela()">📱 Compartilhar tabela</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-wa" onclick="compartilharTabela()">📱 Compartilhar</button>
+          <button class="btn btn-ghost" onclick="baixarTabela()">⬇️ Baixar</button>
+        </div>
       </div>
       <div class="card">
         <div style="font-weight:800;margin-bottom:6px">📤 Enviar pedido pro cliente</div>
@@ -873,6 +876,15 @@ async function carregarTabInfo(){
     else el.innerHTML='<span style="color:#ffbf00">Ainda não gerada — exporte na tela "Tabela Atacado"</span>';
   }catch(e){ el.textContent=""; }
 }
+async function baixarTabela(){
+  try{
+    const resp=await fetch(B+"/api/tabela/imagem-atual");
+    if(!resp.ok){ alert("A tabela ainda não foi gerada.\n\nVá em 'Tabela Atacado', ajuste os preços e clique em exportar imagem (PNG) — ela fica disponível aqui pra baixar."); return; }
+    const blob=await resp.blob();
+    const a=document.createElement("a"); a.download="tabela-b13.png"; a.href=URL.createObjectURL(blob); a.click();
+  }catch(e){ alert("Erro ao baixar a tabela."); }
+}
+
 async function compartilharTabela(){
   try{
     const resp=await fetch(B+"/api/tabela/imagem-atual");
