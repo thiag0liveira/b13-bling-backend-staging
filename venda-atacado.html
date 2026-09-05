@@ -654,7 +654,7 @@ async function addDaTabela(it){
 
 
 function prodRow(p){
-  const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id));
+  const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id)&&(i.origemPreco||'bling')===(p.origemPreco||'bling'));
   const mult=Math.max(1,parseInt(p.multiplo)||1);
   const est=(p.estoque==null)?null:Number(p.estoque);
   const semEstoquePraFardo=(est!=null&&est<mult);
@@ -676,10 +676,14 @@ function prodRow(p){
 
 function itemRow(i,ix){
   const mult=Math.max(1,parseInt(i.multiplo)||1);
+  // dá pra ter o mesmo produto 2x (uma linha atacado, uma varejo) — mostra o selo
+  // pra não confundir qual é qual
+  const repetido=S.itens.filter(x=>String(x.produtoId)===String(i.produtoId)).length>1;
+  const selo=repetido?`<span class="badge ${i.origemPreco==='atacado'?'badge-at':'badge-bl'}" style="font-size:9px;margin-left:6px">${i.origemPreco==='atacado'?'Atacado':'Varejo'}</span>`:'';
   return `<div class="item" style="background:#151233;border-radius:8px;padding:8px;margin-bottom:4px">
     ${i.imagem?`<img src="${esc(i.imagem)}" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#fff" onerror="this.outerHTML='<div class=&quot;semf&quot; style=&quot;width:48px;height:48px;font-size:20px&quot;>📦</div>'">`:`<div class="semf" style="width:48px;height:48px;font-size:20px">📦</div>`}
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:700">${esc(i.nome)}</div>
+      <div style="font-size:13px;font-weight:700">${esc(i.nome)}${selo}</div>
       <div class="muted" style="font-size:11px">${brl(i.valor)} un${mult>1?` · fardo de ${mult}`:''}${i.estoque!=null?` · estoque ${i.estoque}`:''}</div>
     </div>
     <div class="qtd">
@@ -714,7 +718,7 @@ async function buscarProd(){
 }
 
 async function addItem(p){
-  if(S.itens.some(i=>String(i.produtoId)===String(p.id))) return;
+  if(S.itens.some(i=>String(i.produtoId)===String(p.id)&&(i.origemPreco||'bling')===(p.origemPreco||'bling'))) return;
   const mult=Math.max(1,parseInt(p.multiplo)||1);
   let estoque=(p.estoque==null?null:Number(p.estoque));
   let imagem=p.imagem||"";
