@@ -6540,7 +6540,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
     if(_centralBling.dia===hojeISO && _centralBling.pedidos && !_centralBling.pedidos.erro){
       (_centralBling.pedidos.lista||[]).forEach(p=>{
         if(caixaAtacadoIds.has(String(p.id))) return;
-        if(VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"") || /^\(sem vendedor\)$/.test(p.vendedor||"")) return;
+        if(VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"")) return;
         if(p.situacaoId!==SIT.ATENDIDO) return;
         registrarAviso({ tipo:"atacado_sem_passar_caixa", titulo:`Pedido #${p.numero} Atendido mas não passou no caixa atacado`, numero:p.numero, origem:"Auditoria", fingerprint:`avejo-${p.id}-${hojeISO}`, oQueFazer:`Pedido #${p.numero} (${p.cliente}, vendedor ${p.vendedor}) está Atendido no Bling mas não tem registro no caixa atacado. Confira se foi cobrado por outro caminho ou se ficou pendente.` });
         achados.atacadoSemPassarCaixa++;
@@ -6717,7 +6717,7 @@ app.get("/api/central/resumo",(req,res)=>{
       const atacado=[], varejo=[], possiveisErros=[];
       listaBling.forEach(p=>{
         const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
-        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"") || /^\(sem vendedor\)$/.test(p.vendedor||"");
+        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"");
         if(noCaixaAtacado){ atacado.push(p); return; }
         if(vendedorVarejo){ varejo.push(p); return; }
         // não passou pelo caixa atacado e o vendedor não é dos típicos de varejo
