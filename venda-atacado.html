@@ -83,7 +83,7 @@ const S={
   modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
   tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"",
-  msg:"",
+  msg:"", ultimoComprovante:null,
 };
 
 // resolve vendedor do funcionário logado
@@ -212,7 +212,7 @@ function render(){
       ${S.cliente&&!S.editandoCliente?cardNovos():''}
       ${S.cliente?cardProdutos():''}
       ${S.cliente&&S.itens.length?cardResumo():''}
-      ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}</div>`:''}
+      ${S.msg?`<div class="card" style="border-color:${S.msg.startsWith('✅')?'#2f9e6b':'#e5563f'}">${esc(S.msg)}${S.ultimoComprovante?`<div style="margin-top:8px"><button class="btn btn-ghost" onclick="imprimirComprovante(S.ultimoComprovante)">🖨️ Reimprimir nota</button></div>`:''}</div>`:''}
     </div>`;
   atualizarStatusSalvo();
   if(tbScrollTop!=null){ const tbWrapDepois=document.getElementById("tbListaWrap"); if(tbWrapDepois) tbWrapDepois.scrollTop=tbScrollTop; }
@@ -908,6 +908,14 @@ async function salvar(){
   if(S.tipoEntrega==='entrega'&&(!S.frete||!S.frete.entregaDisponivel)){ alert("Calcule a taxa de entrega (endereço do cliente) ou escolha Retirada."); return; }
   clearTimeout(_autoSaveT); // cancela auto-save pendente
   S.msg=""; S.salvando=true; render();
+  // abre a janela de impressão JÁ, de forma síncrona (dentro do clique) — se deixar
+  // pra abrir só depois dos fetches, o navegador não reconhece mais como ação direta
+  // do usuário e bloqueia o popup silenciosamente. Preenche o conteúdo real depois.
+  let winImpressao=null;
+  if(S.tipo==='pedido'){
+    winImpressao=window.open("","_blank","width=420,height=700");
+    if(winImpressao){ try{ winImpressao.document.write("<!doctype html><html><head><meta charset='utf-8'></head><body style='background:#fff;font-family:Arial;text-align:center;padding-top:120px;color:#333'>Gerando comprovante…</body></html>"); winImpressao.document.close(); }catch(e){} }
+  }
   const payload={
     id:S.rascunhoId, // reaproveita o rascunho (não duplica)
     tipo:S.tipo, status:"aberta",
@@ -922,10 +930,10 @@ async function salvar(){
   };
   try{
     const j=await fetch(B+"/api/atacado/propostas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json());
-    if(j.erro){ alert(j.erro); return; }
+    if(j.erro){ if(winImpressao) try{winImpressao.close();}catch(e){} alert(j.erro); return; }
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
-      if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
+      if(g.erro){ if(winImpressao) try{winImpressao.close();}catch(e){} S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
       // imprime JÁ (sem esperar), pra não perder o clique do usuário — navegador
       // bloqueia popup que abre muito tempo depois do clique original. Se o Bling
       // não confirmou o número na criação, usa o provisório aqui e corrige só o
@@ -942,7 +950,9 @@ async function salvar(){
         observacao:S.observacao||"", operador:FUNC?.nome||"",
         frete:S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0,
       };
-      imprimirComprovante(v);
+      S.ultimoComprovante=v; // guarda pra poder reimprimir manualmente se a impressão falhar
+      try{ imprimirComprovante(v,winImpressao); }
+      catch(e){ S.msg+=` ⚠️ A impressão não abriu automaticamente (${e.message}). Use o botão "🖨️ Reimprimir nota" abaixo.`; }
       if(!g.numeroConfirmado){
         (async()=>{
           for(let i=0;i<6;i++){
@@ -966,12 +976,12 @@ async function salvar(){
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="pedido"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
     S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada="";
-  }catch(e){ alert("Erro ao salvar."); }
+  }catch(e){ if(winImpressao) try{winImpressao.close();}catch(e2){} alert("Erro ao salvar."); }
   finally{ S.salvando=false; render(); }
 }
 
 // ===== impressão do comprovante (mesmo layout/estilo do caixa atacado) =====
-function imprimirComprovante(v){
+function imprimirComprovante(v,winPreAberta){
   if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
   const pedidoId=String(v.pedidoId||v.numero||"");
   const tmp=document.createElement("div");
@@ -991,9 +1001,12 @@ function imprimirComprovante(v){
     const qrCanvas=tmp.querySelector("canvas"); const qrImg=tmp.querySelector("img");
     const cv=desenharComprovante(v, qrCanvas||qrImg, barCanvas, logoPronta?logoImg:null);
     document.body.removeChild(tmp);
-    // abre a imagem numa janela e imprime
+    // usa a janela já aberta (evita bloqueio de popup) se tiver sido passada e ainda
+    // estiver aberta; senão abre uma nova agora (ex.: reimpressão manual pelo botão)
     const dataUrl=cv.toDataURL("image/png");
-    const w=window.open("","_blank","width=420,height=700");
+    let w=(winPreAberta&&!winPreAberta.closed)?winPreAberta:null;
+    if(!w) w=window.open("","_blank","width=420,height=700");
+    if(!w){ alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site e tente 'Reimprimir nota'."); return; }
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido #${esc(v.numero||"")}</title>
       <style>
         *{margin:0;padding:0}
