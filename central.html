@@ -126,6 +126,11 @@ function render(){
 
         ${card("📄 Propostas & Pedidos",`<div class="lin"><span>Propostas em aberto</span><b>${D.propostas?.abertas||0}</b></div><div class="lin"><span>Pedidos gerados no dia</span><b>${D.propostas?.pedidosGeradosDia||0}</b></div>
           ${Object.entries(D.propostas?.porOrigemDia||{}).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join("")}<a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>`)}
+        ${D.origemPedidos?card("🏪 Origem dos pedidos (Atacado × Varejo)",`
+          <div class="lin"><span>Atacado <span class="muted">(passou pelo caixa atacado)</span></span><b>${D.origemPedidos.atacado.qtd} · ${brl(D.origemPedidos.atacado.valor)}</b></div>
+          <div class="lin"><span>Varejo <span class="muted">(não passou pelo caixa atacado)</span></span><b>${D.origemPedidos.varejo.qtd} · ${brl(D.origemPedidos.varejo.valor)}</b></div>
+          ${D.origemPedidos.qtdPossiveisErros?`<div class="h" style="margin-top:10px;color:#ff8090"><span>⚠️ Possível erro — Atendido mas não passou no caixa atacado (${D.origemPedidos.qtdPossiveisErros})</span></div>`+lins(D.origemPedidos.possiveisErros,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)} <span class="muted">· vend. ${esc(p.vendedor)}</span></span><b>${brl(p.total)}</b></div>`):'<div class="muted" style="margin-top:8px">Nenhum pedido do atacado ficou sem passar no caixa. ✅</div>'}
+        `):(b.pedidos&&!b.pedidos.erro?"":card("🏪 Origem dos pedidos (Atacado × Varejo)",'<div class="muted">⏳ Buscando no Bling…</div>'))}
       </div>
     </div>`;
 }

@@ -6504,7 +6504,8 @@ async function _atualizarCentralBling(dia){
       out.pedidos={ total:lista.length, valor:+lista.reduce((a,p)=>a+(Number(p.total)||0),0).toFixed(2),
         porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
         maiores:lista.map(p=>({numero:p.numero,cliente:p.contato?.nome||"—",total:Number(p.total)||0})).sort((a,b)=>b.total-a.total).slice(0,10),
-        emAberto:emAberto.sort((a,b)=>b.total-a.total).slice(0,30), qtdEmAberto:emAberto.length };
+        emAberto:emAberto.sort((a,b)=>b.total-a.total).slice(0,30), qtdEmAberto:emAberto.length,
+        lista:lista.map(p=>({ id:p.id, numero:p.numero, vendedor:p.vendedor?.nome||p.vendedor?.id||"(sem vendedor)", cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) })) };
     }catch(e){ out.pedidos={erro:e.message}; }
   }catch(e){ out.erro=e.message; }
   _centralBling=out;
@@ -6580,6 +6581,33 @@ app.get("/api/central/resumo",(req,res)=>{
     const maisEntraram=em&&em.status==="pronto" ? Object.values({...(em.semPapel||{}),...(em.comNF||{})}).sort((a,b)=>b.qtd-a.qtd).slice(0,15) : null;
 
     if(_centralBling.dia!==dia || Date.now()-_centralBling.em>5*60*1000) _atualizarCentralBling(dia);
+
+    // ===== ORIGEM DOS PEDIDOS: Atacado (passou pelo caixa atacado) x Varejo (não passou) =====
+    // Vendedores tipicamente de varejo — não é erro esses não aparecerem no caixa atacado.
+    const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
+    const caixaAtacadoIds=new Set();
+    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
+    let origemPedidos=null;
+    const listaBling=_centralBling.pedidos&&!_centralBling.pedidos.erro?_centralBling.pedidos.lista:null;
+    if(listaBling){
+      const atacado=[], varejo=[], possiveisErros=[];
+      listaBling.forEach(p=>{
+        const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
+        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"");
+        if(noCaixaAtacado){ atacado.push(p); return; }
+        if(vendedorVarejo){ varejo.push(p); return; }
+        // não passou pelo caixa atacado e o vendedor não é dos típicos de varejo
+        if(p.situacaoId===SIT.ATENDIDO){ possiveisErros.push(p); } // Atendido deveria ter passado no caixa atacado
+        else { varejo.push(p); } // ainda não atendido — provavelmente vai fechar no varejo, sem erro por enquanto
+      });
+      origemPedidos={
+        atacado:{ qtd:atacado.length, valor:+atacado.reduce((s,p)=>s+p.total,0).toFixed(2) },
+        varejo:{ qtd:varejo.length, valor:+varejo.reduce((s,p)=>s+p.total,0).toFixed(2) },
+        possiveisErros:possiveisErros.sort((a,b)=>b.total-a.total),
+        qtdPossiveisErros:possiveisErros.length,
+      };
+    }
+
     res.json({
       dia, geradoEm:Date.now(),
       caixasAbertos:abertos, totalCaixasAbertos:+abertos.reduce((s,c)=>s+(c.resumo.totalVendas||0),0).toFixed(2),
@@ -6590,6 +6618,7 @@ app.get("/api/central/resumo",(req,res)=>{
       nfce:{ emitidasDia:nfceHoje, pendentesDia:pendNfce },
       avisos:{ pendentes:avPend.length, ultimos:avPend.slice(0,5).map(a=>({id:a.id,titulo:a.titulo,em:a.em})) },
       propostas, entradasMesTop:maisEntraram, entradasMesStatus:em?em.status:null,
+      origemPedidos,
       bling:{ ..._centralBling, calculando:_centralBling.calculando&&_centralBling.dia===dia },
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
