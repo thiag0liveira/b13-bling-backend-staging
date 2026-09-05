@@ -91,7 +91,24 @@ function render(){
         ${card("📊 Fechamento do dia (todos os caixas)",`<div class="big">${brl(f.totalVendas)}</div><div class="muted" style="margin-bottom:8px">${f.qtdVendas||0} venda(s)${f.canceladas?` · ${f.canceladas} cancelada(s)`:""}</div>
           ${lins(f.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
           ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
+          <div class="lin" style="font-weight:800"><span>💵 Total em Dinheiro (atacado + varejo)</span><b style="color:#3ce88a">${brl(f.dinheiroTotal)}</b></div>
           <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div><div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>`)}
+
+        ${card("🏪 Atacado × 🛒 Varejo (formas de pagamento)",`
+          <div style="display:flex;gap:16px">
+            <div style="flex:1">
+              <div style="font-weight:800;margin-bottom:4px">🏪 Atacado</div>
+              <div class="big" style="font-size:18px">${brl(f.porTipoCaixa?.atacado?.total)}</div>
+              <div class="muted" style="margin-bottom:6px">${f.porTipoCaixa?.atacado?.qtd||0} venda(s)</div>
+              ${lins(f.porTipoCaixa?.atacado?.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
+            </div>
+            <div style="flex:1">
+              <div style="font-weight:800;margin-bottom:4px">🛒 Varejo</div>
+              <div class="big" style="font-size:18px">${brl(f.porTipoCaixa?.varejo?.total)}</div>
+              <div class="muted" style="margin-bottom:6px">${f.porTipoCaixa?.varejo?.qtd||0} venda(s)</div>
+              ${lins(f.porTipoCaixa?.varejo?.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
+            </div>
+          </div>`)}
 
         ${card("🧑‍💼 Vendas por operador (caixa)",lins(f.porOperador,o=>`<div class="lin"><span>${esc(o.nome)} <span class="muted">(${o.qtd})</span></span><b>${brl(o.valor)}</b></div>`)
           +`<div class="h" style="margin-top:12px"><span>📋 Pedidos do dia por vendedor (Bling)</span></div>`+(b.pedidos&&!b.pedidos.erro?lins(b.pedidos.porVendedor,v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">Total: ${b.pedidos.total} pedido(s) · ${brl(b.pedidos.valor)}</div>`:'<div class="muted">⏳ Buscando no Bling…</div>'))}
