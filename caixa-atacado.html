@@ -153,6 +153,34 @@ function taxaCartao(){
   return +((valorEmCredito()+valorEmDebito())*0.035).toFixed(2);
 }
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).toFixed(2); }
+
+// calcula o valor certo pra cobrar no cartão (crédito/débito) já considerando que a
+// própria taxa de 3,5% incide sobre esse valor — sem isso, o operador digita só o
+// valor do produto e o "Falta" nunca fecha (fica faltando exatamente a taxa).
+// Fórmula: se X = total do que vai no cartão, a taxa é 0,035*X, e o total a receber
+// vira (semTaxa + 0,035*X). Pra fechar (pago == total), X precisa cobrir também os
+// outros pagamentos (dinheiro/pix) já lançados: X = (semTaxa - outros) / 0,965.
+function ajustarCartaoComTaxa(){
+  const semTaxa=+(subtotal()+OUTRAS_DESPESAS+FRETE).toFixed(2);
+  const outros=PAGAMENTOS.filter(p=>!/cr[eé]dito/i.test(p.formaNome||"")&&!/d[eé]bito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+  const linhasCartao=PAGAMENTOS.filter(p=>/cr[eé]dito/i.test(p.formaNome||"")||/d[eé]bito/i.test(p.formaNome||""));
+  if(!linhasCartao.length) return;
+  const novoTotalCartao=+((semTaxa-outros)/0.965).toFixed(2);
+  if(novoTotalCartao<=0){ alert("Os outros pagamentos já cobrem o total — não sobra valor pra cartão."); return; }
+  const atualCartao=linhasCartao.reduce((s,p)=>s+(Number(p.valor)||0),0);
+  if(linhasCartao.length===1){
+    linhasCartao[0].valor=novoTotalCartao;
+  }else{
+    // mais de uma linha de cartão: distribui proporcionalmente ao que já estava em cada uma
+    linhasCartao.forEach((p,idx)=>{
+      const prop=atualCartao>0?(Number(p.valor)||0)/atualCartao:1/linhasCartao.length;
+      p.valor = idx===linhasCartao.length-1
+        ? +(novoTotalCartao-linhasCartao.slice(0,-1).reduce((s,x)=>s+Number(x.valor||0),0)).toFixed(2) // último ajusta a sobra do arredondamento
+        : +(novoTotalCartao*prop).toFixed(2);
+    });
+  }
+  render();
+}
 // monta a nota que vai pra observação do Bling: mostra só "PIX: valor" (o banco/maquininha
 // é interno e fica nos registros do caixa, não na nota fiscal).
 // soma tudo que é PIX (banco de qualquer banco + maquininha) a partir do porForma do resumo
@@ -1372,7 +1400,9 @@ function render(){
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito/débito (3,5%)</span>
             <b style="color:#ffd23f">${brl(taxaCartao())}</b>
-          </label>`:""}
+          </label>
+          ${COBRAR_TAXA_CARTAO&&Math.abs(restante())>0.009?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Ajustar valor do cartão pra fechar com a taxa</button>
+          <div class="muted" style="font-size:11px;margin-top:2px">A taxa soma no total; o valor cobrado no cartão precisa ser um pouco maior que o do produto pra já cobrir a taxa. Este botão calcula certinho.</div>`:""}`:""}
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
         <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
