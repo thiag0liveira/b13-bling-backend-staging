@@ -2654,6 +2654,23 @@ app.get("/api/diag/notas-entrada-mes",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message, body:e.body}); }
 });
 
+app.get("/api/diag/vendedor-pedido/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    // 1) como vem na LISTAGEM (é o que a Central usa)
+    const hoje=_hojeISO();
+    const rl=await bling(`/pedidos/vendas?dataInicial=${hoje}&dataFinal=${hoje}&limite=100`).catch(e=>({erro:e.message}));
+    const naLista=(rl?.data||[]).find(p=>String(p.numero)===n);
+    // 2) como vem no DETALHE do pedido
+    let detalhe=null; try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) detalhe=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){}
+    res.json({
+      numero:n,
+      naListagem:{ encontrado:!!naLista, vendedorCru:naLista?.vendedor||null, contatoNome:naLista?.contato?.nome||null },
+      noDetalhe:{ encontrado:!!detalhe, vendedorCru:detalhe?.vendedor||null, contatoNome:detalhe?.contato?.nome||null },
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/frete/:id",async(req,res)=>{
   try{
     const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data);
@@ -6523,7 +6540,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
     if(_centralBling.dia===hojeISO && _centralBling.pedidos && !_centralBling.pedidos.erro){
       (_centralBling.pedidos.lista||[]).forEach(p=>{
         if(caixaAtacadoIds.has(String(p.id))) return;
-        if(VENDEDORES_VAREJO.test(p.vendedor||"")) return;
+        if(VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"") || /^\(sem vendedor\)$/.test(p.vendedor||"")) return;
         if(p.situacaoId!==SIT.ATENDIDO) return;
         registrarAviso({ tipo:"atacado_sem_passar_caixa", titulo:`Pedido #${p.numero} Atendido mas não passou no caixa atacado`, numero:p.numero, origem:"Auditoria", fingerprint:`avejo-${p.id}-${hojeISO}`, oQueFazer:`Pedido #${p.numero} (${p.cliente}, vendedor ${p.vendedor}) está Atendido no Bling mas não tem registro no caixa atacado. Confira se foi cobrado por outro caminho ou se ficou pendente.` });
         achados.atacadoSemPassarCaixa++;
@@ -6620,6 +6637,7 @@ app.get("/api/central/resumo",(req,res)=>{
 
     // ===== varredura das VENDAS do dia (todos os caixas, abertos e fechados) =====
     const porForma={}, porOperador={}, clientes={}, produtos={}, porModo={};
+    const porTipo={ atacado:{total:0,qtd:0,porForma:{}}, frente:{total:0,qtd:0,porForma:{}} };
     let totalDia=0, qtdDia=0, sangrias=0, supr=0, canceladas=0, consumidorFinal={qtd:0,valor:0};
     const vendasDia=[];
     (dCx.sessoes||[]).forEach(s=>{
@@ -6630,8 +6648,10 @@ app.get("/api/central/resumo",(req,res)=>{
         if(m.tipo!=="venda") return;
         if(m.cancelado){ canceladas++; return; }
         const tot=Number(m.total)||0; totalDia+=tot; qtdDia++;
-        vendasDia.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"Consumidor Final", total:tot, operador:m.operador||s.operador||"—", em:m.em, tipoCaixa:s.tipoCaixa||"frente", formas:(m.pagamentos||[]).map(p=>p.formaNome).join(", ") });
-        (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); });
+        const tipo=(s.tipoCaixa||"frente")==="atacado"?"atacado":"frente";
+        vendasDia.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"Consumidor Final", total:tot, operador:m.operador||s.operador||"—", em:m.em, tipoCaixa:tipo, formas:(m.pagamentos||[]).map(p=>p.formaNome).join(", ") });
+        porTipo[tipo].total+=tot; porTipo[tipo].qtd++;
+        (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); porTipo[tipo].porForma[k]=(porTipo[tipo].porForma[k]||0)+(Number(p.valor)||0); });
         const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=tot;
         const cli=(m.clienteNome||"").trim(); if(!cli||/consumidor/i.test(cli)){ consumidorFinal.qtd++; consumidorFinal.valor+=tot; } else { if(!clientes[cli]) clientes[cli]={qtd:0,valor:0}; clientes[cli].qtd++; clientes[cli].valor+=tot; }
         (m.itens||[]).forEach(i=>{ const k=i.nome||("produto "+i.produtoId); if(!produtos[k]) produtos[k]={nome:k,qtd:0,valor:0}; produtos[k].qtd+=Number(i.quantidade)||0; produtos[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0);
@@ -6639,6 +6659,8 @@ app.get("/api/central/resumo",(req,res)=>{
       });
     });
     const arr=(o,f)=>Object.entries(o).map(([k,v])=>f(k,v));
+    const dinheiroAtacado=+(porTipo.atacado.porForma["Dinheiro"]||0).toFixed(2);
+    const dinheiroVarejo=+(porTipo.frente.porForma["Dinheiro"]||0).toFixed(2);
     const fechamentoDia={ totalVendas:+totalDia.toFixed(2), qtdVendas:qtdDia, canceladas, sangrias:+sangrias.toFixed(2), suprimentos:+supr.toFixed(2),
       porForma:arr(porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
       totalPix:+Object.entries(porForma).filter(([n])=>/pix/i.test(n)).reduce((a,[,v])=>a+v,0).toFixed(2),
@@ -6648,6 +6670,11 @@ app.get("/api/central/resumo",(req,res)=>{
       produtosMaisVendidos:Object.values(produtos).sort((a,b)=>b.qtd-a.qtd).slice(0,20).map(p=>({...p,valor:+p.valor.toFixed(2)})),
       maioresVendas:vendasDia.sort((a,b)=>b.total-a.total).slice(0,10),
       porModoPreco:arr(porModo,(modo,v)=>({modo,itens:v.itens,unidades:v.unidades,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+      porTipoCaixa:{
+        atacado:{ total:+porTipo.atacado.total.toFixed(2), qtd:porTipo.atacado.qtd, porForma:arr(porTipo.atacado.porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor) },
+        varejo:{ total:+porTipo.frente.total.toFixed(2), qtd:porTipo.frente.qtd, porForma:arr(porTipo.frente.porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor) },
+      },
+      dinheiroTotal:+(dinheiroAtacado+dinheiroVarejo).toFixed(2), dinheiroAtacado, dinheiroVarejo,
     };
 
     // ===== AUTORIZAÇÕES e ITENS RETIRADOS (logs do dia) =====
@@ -6690,7 +6717,7 @@ app.get("/api/central/resumo",(req,res)=>{
       const atacado=[], varejo=[], possiveisErros=[];
       listaBling.forEach(p=>{
         const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
-        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"");
+        const vendedorVarejo=VENDEDORES_VAREJO.test(p.vendedor||"") || /consumidor final/i.test(p.cliente||"") || /^\(sem vendedor\)$/.test(p.vendedor||"");
         if(noCaixaAtacado){ atacado.push(p); return; }
         if(vendedorVarejo){ varejo.push(p); return; }
         // não passou pelo caixa atacado e o vendedor não é dos típicos de varejo
