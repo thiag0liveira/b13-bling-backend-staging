@@ -6607,19 +6607,29 @@ async function _atualizarCentralBling(dia){
         produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
     }catch(e){ out.entradas={erro:e.message}; }
     // pedidos de venda do dia: por vendedor, maiores, e em aberto (não atendidos)
+    // IMPORTANTE: a LISTAGEM do Bling não traz o vendedor de forma confiável — só o
+    // DETALHE de cada pedido tem o campo vendedor.id certo. Por isso abrimos o detalhe
+    // de cada pedido do dia (roda em 2º plano, então o custo de mais chamadas é ok).
     try{
       const mapaVend=await mapaVendedores();
       let pag=1, lista=[];
       for(let i=0;i<5;i++){ const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
-      const nomeVend=(p)=>{ const id=p.vendedor?.id; if(id&&mapaVend[String(id)]) return mapaVend[String(id)]; return p.vendedor?.nome || (id?("Vendedor "+id):"(sem vendedor)"); };
+      const nomeVend=(id)=>{ if(id&&mapaVend[String(id)]) return mapaVend[String(id)]; return id?("Vendedor "+id):"(sem vendedor)"; };
+      const detalhados=[];
+      for(const p of lista.slice(0,200)){
+        let vendId=null;
+        try{ const d=await bling(`/pedidos/vendas/${p.id}`).then(x=>x?.data); vendId=d?.vendedor?.id||null; }catch(e){}
+        detalhados.push({ id:p.id, numero:p.numero, vendedor:nomeVend(vendId), cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) });
+        await sleep(100);
+      }
       const porVend={}; const emAberto=[];
-      lista.forEach(p=>{ const v=nomeVend(p); if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=Number(p.total)||0;
-        const sit=Number(p.situacao?.id||0); if(sit!==SIT.ATENDIDO && sit!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacao:nomeSituacao(sit)}); });
-      out.pedidos={ total:lista.length, valor:+lista.reduce((a,p)=>a+(Number(p.total)||0),0).toFixed(2),
+      detalhados.forEach(p=>{ if(!porVend[p.vendedor]) porVend[p.vendedor]={qtd:0,valor:0}; porVend[p.vendedor].qtd++; porVend[p.vendedor].valor+=p.total;
+        if(p.situacaoId!==SIT.ATENDIDO && p.situacaoId!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.cliente, total:p.total, situacao:p.situacao}); });
+      out.pedidos={ total:detalhados.length, valor:+detalhados.reduce((a,p)=>a+p.total,0).toFixed(2),
         porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
-        maiores:lista.map(p=>({numero:p.numero,cliente:p.contato?.nome||"—",total:Number(p.total)||0})).sort((a,b)=>b.total-a.total).slice(0,10),
+        maiores:detalhados.map(p=>({numero:p.numero,cliente:p.cliente,total:p.total})).sort((a,b)=>b.total-a.total).slice(0,10),
         emAberto:emAberto.sort((a,b)=>b.total-a.total).slice(0,30), qtdEmAberto:emAberto.length,
-        lista:lista.map(p=>({ id:p.id, numero:p.numero, vendedor:nomeVend(p), cliente:p.contato?.nome||"—", total:Number(p.total)||0, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)) })) };
+        lista:detalhados };
     }catch(e){ out.pedidos={erro:e.message}; }
   }catch(e){ out.erro=e.message; }
   _centralBling=out;
