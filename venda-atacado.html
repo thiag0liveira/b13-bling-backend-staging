@@ -655,9 +655,11 @@ async function addDaTabela(it){
 
 function prodRow(p){
   const jaTem=S.itens.some(i=>String(i.produtoId)===String(p.id)&&(i.origemPreco||'bling')===(p.origemPreco||'bling'));
+  const jaTemFardo=S.itens.some(i=>String(i.produtoId)===String(p.id)&&i.origemPreco==='fardo');
   const mult=Math.max(1,parseInt(p.multiplo)||1);
   const est=(p.estoque==null)?null:Number(p.estoque);
   const semEstoquePraFardo=(est!=null&&est<mult);
+  const temFardo=p.precoFardo!=null;
   return `<div class="prod">
     ${p.imagem?`<img src="${esc(p.imagem)}">`:`<div class="semf">📦</div>`}
     <div style="flex:1;min-width:0">
@@ -667,10 +669,18 @@ function prodRow(p){
         <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
         ${est!=null?`<span class="muted" style="font-size:11px;margin-left:6px">· estoque: ${est}${mult>1?` (fardo ${mult})`:''}</span>`:''}
       </div>
+      ${temFardo?`<div style="margin-top:4px">
+        <span class="badge" style="background:#FF0082;color:#fff">Fardo (${mult}un)</span>
+        <b style="color:#ffd23f;margin-left:6px">${brl(p.precoFardo)}</b><span class="muted" style="font-size:11px"> /un</span>
+      </div>`:''}
     </div>
-    <button class="btn ${jaTem||semEstoquePraFardo?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem||semEstoquePraFardo?'disabled':''}
-      title="${semEstoquePraFardo?'Estoque insuficiente pra 1 fardo':''}"
-      onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:p.multiplo||1,estoque:p.estoque}).replace(/'/g,"&#39;")})'>${jaTem?'✓':(semEstoquePraFardo?'sem estoque':'+ Add')}</button>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <button class="btn ${jaTem||semEstoquePraFardo?'btn-ghost':'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem||semEstoquePraFardo?'disabled':''}
+        title="${semEstoquePraFardo?'Estoque insuficiente pra 1 fardo':''}"
+        onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.preco,imagem:p.imagem||"",origemPreco:p.origemPreco,multiplo:p.multiplo||1,estoque:p.estoque}).replace(/'/g,"&#39;")})'>${jaTem?'✓':(semEstoquePraFardo?'sem estoque':'+ Add')}</button>
+      ${temFardo?`<button class="btn ${jaTemFardo||semEstoquePraFardo?'btn-ghost':'btn-mag'}" style="font-size:11px;padding:6px 10px" ${jaTemFardo||semEstoquePraFardo?'disabled':''}
+        onclick='addItem(${JSON.stringify({id:p.id,nome:p.nome,preco:p.precoFardo,imagem:p.imagem||"",origemPreco:"fardo",multiplo:p.multiplo||1,estoque:p.estoque}).replace(/'/g,"&#39;")})'>${jaTemFardo?'✓ fardo':'+ Fardo'}</button>`:''}
+    </div>
   </div>`;
 }
 
@@ -679,7 +689,9 @@ function itemRow(i,ix){
   // dá pra ter o mesmo produto 2x (uma linha atacado, uma varejo) — mostra o selo
   // pra não confundir qual é qual
   const repetido=S.itens.filter(x=>String(x.produtoId)===String(i.produtoId)).length>1;
-  const selo=repetido?`<span class="badge ${i.origemPreco==='atacado'?'badge-at':'badge-bl'}" style="font-size:9px;margin-left:6px">${i.origemPreco==='atacado'?'Atacado':'Varejo'}</span>`:'';
+  const seloTxt=i.origemPreco==='atacado'?'Atacado':(i.origemPreco==='fardo'?'Fardo':'Varejo');
+  const seloBg=i.origemPreco==='atacado'?null:(i.origemPreco==='fardo'?'#FF0082':null);
+  const selo=repetido?`<span class="badge ${i.origemPreco==='atacado'?'badge-at':(i.origemPreco==='fardo'?'':'badge-bl')}" style="font-size:9px;margin-left:6px${seloBg?`;background:${seloBg};color:#fff`:''}">${seloTxt}</span>`:'';
   return `<div class="item" style="background:#151233;border-radius:8px;padding:8px;margin-bottom:4px">
     ${i.imagem?`<img src="${esc(i.imagem)}" style="width:48px;height:48px;object-fit:cover;border-radius:8px;background:#fff" onerror="this.outerHTML='<div class=&quot;semf&quot; style=&quot;width:48px;height:48px;font-size:20px&quot;>📦</div>'">`:`<div class="semf" style="width:48px;height:48px;font-size:20px">📦</div>`}
     <div style="flex:1;min-width:0">

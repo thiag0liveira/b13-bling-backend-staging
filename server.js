@@ -5413,14 +5413,16 @@ app.get("/api/buscar-atacado", async (req, res) => {
 
     // aplica o preço de atacado (tabela publicada); se não houver, usa o preço padrão do Bling
     // também traz o "múltiplo" de venda (campo caixa da tabela: soma de N em N unidades)
-    const tab = lerTabela(); const precoPorCod = {}; const caixaPorCod = {};
-    (tab?.model || []).forEach(c => (c.itens || []).forEach(it => (it.bling || []).forEach(b => { precoPorCod[String(b.codigo)] = it.preco; caixaPorCod[String(b.codigo)] = it.caixa||1; })));
+    // e o preço de FARDO (se cadastrado), quando existir pra aquele item da tabela
+    const idxTabela = _indicePrecosTabela();
     lista.forEach(p => {
-      const atacado = precoPorCod[String(p.codigo)];
+      const vinc = idxTabela.porCodigo[String(p.codigo)];
+      const atacado = vinc?.precoAtacado;
       p.precoAtacado = (atacado != null) ? atacado : null;
       p.preco = (atacado != null) ? atacado : (p.precoBling ?? 0);
       p.origemPreco = (atacado != null) ? "atacado" : "bling";
-      p.multiplo = caixaPorCod[String(p.codigo)] || 1; // de quantas em quantas unidades some
+      p.multiplo = vinc?.caixaQtd || 1; // de quantas em quantas unidades some
+      p.precoFardo = vinc?.precoFardo ?? null;
     });
     // busca o estoque AO VIVO dos primeiros resultados (o índice não guarda saldo,
     // que muda toda hora) — limita pra não estourar o rate limit do Bling
@@ -7124,15 +7126,12 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     const anexarAtacadoFardo=(item)=>{
       if(!item) return item;
       try{
-        const idx=indexarVinculosTabela();
-        const vinc = idx[String(item.codigo||"")] || idx[String(codigo)] || idx[String(item.gtin||"")];
+        const idx=_indicePrecosTabela();
+        const vinc = idx.porCodigo[String(item.codigo||"")] || idx.porCodigo[String(codigo)] || idx.porNome[String(item.nome||"").toLowerCase().trim()];
         if(vinc){
-          const pa=Number(vinc.precoAtacado);
-          item.precoAtacado = pa>0 ? pa : null;
+          item.precoAtacado = (vinc.precoAtacado!=null && Number(vinc.precoAtacado)>0) ? Number(vinc.precoAtacado) : null;
           item.caixaQtd = vinc.caixaQtd || null;
-          const fardo=lerListaFardo();
-          const pf=fardo[vinc.itemId]?.preco;
-          item.precoFardo = (pf!=null && Number(pf)>0) ? Number(pf) : null;
+          item.precoFardo = vinc.precoFardo ?? null;
         } else { item.precoAtacado=item.precoAtacado??null; item.precoFardo=item.precoFardo??null; item.caixaQtd=item.caixaQtd??null; }
       }catch(e){ item.precoAtacado=item.precoAtacado??null; item.precoFardo=item.precoFardo??null; item.caixaQtd=item.caixaQtd??null; }
       return item;
