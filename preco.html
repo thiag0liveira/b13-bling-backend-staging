@@ -90,10 +90,24 @@ async function carregarFotosProdutos(){
     const imgs=[];
     (j.categorias||[]).forEach(c=>(c.produtos||[]).forEach(p=>{ if(p.imagem) imgs.push({imagem:p.imagem,nome:p.nome||""}); }));
     for(let i=imgs.length-1;i>0;i--){ const k=Math.floor(Math.random()*(i+1)); [imgs[i],imgs[k]]=[imgs[k],imgs[i]]; } // embaralha
-    FOTOS=imgs.slice(0,60); // tenta passar o maior número possível de produtos com foto
-  }catch(e){ FOTOS=[]; }
+    FOTOS=imgs;
+    // pré-carrega as imagens aos poucos em segundo plano, pra já estarem no cache
+    // do navegador quando entrarem no carrossel (evita picos de rede)
+    let i2=0;
+    const preload=()=>{ if(i2>=FOTOS.length) return; const im=new Image(); im.src=FOTOS[i2].imagem; i2++; setTimeout(preload,300); };
+    preload();
+  }catch(e){ /* mantém as fotos que já tinha, não zera por causa de uma falha passageira */ }
 }
-function duracaoFotos(){ const n=FOTOS.length||1; return Math.max(12000,Math.min(70000,n*2800)); } // devagar: ~2.8s por foto
+const FOTOS_POR_LOTE=10; // mostra poucas de cada vez (mais leve) e avança de lote a cada fase, cobrindo todas antes de repetir
+let idxLoteFoto=0;
+function proximoLoteFotos(){
+  if(!FOTOS.length) return [];
+  const totalLotes=Math.max(1,Math.ceil(FOTOS.length/FOTOS_POR_LOTE));
+  const lote=FOTOS.slice(idxLoteFoto*FOTOS_POR_LOTE,(idxLoteFoto+1)*FOTOS_POR_LOTE);
+  idxLoteFoto=(idxLoteFoto+1)%totalLotes;
+  return lote;
+}
+function duracaoFotos(qtd){ return Math.max(10000,Math.min(35000,(qtd||1)*2800)); } // devagar: ~2.8s por foto
 
 const PASSOS=[
   {pos:"center", modo:"nada", dur:6000},
@@ -104,26 +118,29 @@ const PASSOS=[
   {pos:"center", modo:"fotos"},
   {pos:"center", modo:"nada", dur:5000},
 ];
-let idleAtivo=false, idlePasso=0, idleTimer=null;
+let idleAtivo=false, idlePasso=0, idleTimer=null, idleFaseDur=8000;
 function renderPasso(passo){
   const box=document.getElementById("scanBox"); if(!box) return; // tela ociosa não está mais na tela
   box.className="scanWrap pos-"+passo.pos;
   const area=document.getElementById("carrossel"); if(!area) return;
-  if(passo.modo==="frase"){ area.innerHTML=`<div class="frase">${esc(passo.texto)}</div>`; return; }
+  if(passo.modo==="frase"){ area.innerHTML=`<div class="frase">${esc(passo.texto)}</div>`; idleFaseDur=passo.dur; return; }
   if(passo.modo==="fotos"){
-    if(!FOTOS.length){ area.innerHTML=""; return; }
-    area.innerHTML=`<div class="fotosTrack"><div class="fotosStrip" style="animation-duration:${duracaoFotos()/1000}s">${FOTOS.map(f=>`<div class="card"><img src="${esc(f.imagem)}" onerror="this.parentElement.style.display='none'"><div class="nomeF">${esc(f.nome)}</div></div>`).join("")}</div></div>`;
+    const lote=proximoLoteFotos();
+    if(!lote.length){ area.innerHTML=""; idleFaseDur=8000; return; }
+    idleFaseDur=duracaoFotos(lote.length)+1500;
+    area.innerHTML=`<div class="fotosTrack"><div class="fotosStrip" style="animation-duration:${(idleFaseDur-1500)/1000}s">${lote.map(f=>`<div class="card"><img src="${esc(f.imagem)}" loading="lazy" onerror="this.parentElement.style.display='none'"><div class="nomeF">${esc(f.nome)}</div></div>`).join("")}</div></div>`;
     return;
   }
-  area.innerHTML="";
+  area.innerHTML=""; idleFaseDur=passo.dur;
 }
 function idleTick(){
   if(!idleAtivo) return;
-  const passo=PASSOS[idlePasso%PASSOS.length];
-  renderPasso(passo);
-  idlePasso++;
-  const dur=passo.modo==="fotos" ? duracaoFotos()+1500 : passo.dur; // fotos: só passa da fase depois que der pra ver tudo
-  idleTimer=setTimeout(idleTick,dur);
+  try{
+    const passo=PASSOS[idlePasso%PASSOS.length];
+    renderPasso(passo);
+    idlePasso++;
+  }catch(e){ idleFaseDur=6000; } // nunca deixa um erro isolado travar o carrossel de vez
+  if(idleAtivo) idleTimer=setTimeout(idleTick,idleFaseDur);
 }
 function pararCarrossel(){ idleAtivo=false; clearTimeout(idleTimer); }
 function iniciarCarrossel(){ if(idleAtivo) return; idleAtivo=true; idlePasso=0; idleTick(); }
@@ -134,7 +151,7 @@ function telaIdle(){
     <div style="display:flex;flex-direction:column;align-items:center;width:100%">
       <div id="scanBox" class="scanWrap pos-center"><div class="barcode"></div><div class="laser"></div></div>
       <div class="titulo">Consulte o preço do produto</div>
-      <div class="sub">📷 Escaneie o código de barras (ou digite e aperte Enter)</div>
+      <div class="sub">Escaneie o código de barras</div>
       <div id="carrossel" class="carrossel"></div>
     </div>`;
   iniciarCarrossel();
