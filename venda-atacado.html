@@ -38,6 +38,8 @@
   .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:800}
   .badge-at{background:#0a2a1a;color:#3ce88a}.badge-bl{background:#2a1f00;color:#ffd23f}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
   @media(min-width:900px){
@@ -68,7 +70,7 @@ let FUNC=null;
 try{ if(typeof b13GetSession==="function"){ FUNC=b13GetSession(); } }catch(e){}
 
 const S={
-  tipo:"proposta",      // proposta | pedido
+  tipo:"pedido",      // proposta | pedido
   cliente:null,         // {id,nome,documento,telefone,...}
   editandoCliente:false,
   itens:[],             // {produtoId,nome,valor,quantidade,imagem,origemPreco}
@@ -682,17 +684,24 @@ function itemRow(i,ix){
   </div>`;
 }
 
-let _prodT=null;
-function buscarProdDebounce(v){ S.buscaProd=v; clearTimeout(_prodT); _prodT=setTimeout(buscarProd,350); }
+let _prodT=null, _prodReqId=0;
+function buscarProdDebounce(v){ S.buscaProd=v; clearTimeout(_prodT); _prodT=setTimeout(buscarProd,400); }
 async function buscarProd(){
   const t=S.buscaProd.trim();
-  if(t.length<2){ S.resultadosProd=[]; render(); return; }
+  const meuId=++_prodReqId; // marca esta busca; se uma mais nova disparar antes dela voltar, esta é ignorada
+  if(t.length<2){ S.resultadosProd=[]; const cont0=document.getElementById("resultadosProd"); if(cont0) cont0.innerHTML=""; return; }
   try{
     const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(t)).then(r=>r.json());
+    if(meuId!==_prodReqId) return; // resposta atrasada de uma busca antiga — ignora, não sobrescreve a busca atual
     S.resultadosProd=(j.data||[]).map(p=>({id:p.id,nome:p.nome,preco:p.preco??p.precoBling??0,origemPreco:p.origemPreco||'bling',imagem:p.imagem||"",multiplo:p.multiplo||1,estoque:p.estoque}));
     // preserva o texto digitado sem re-renderizar o input inteiro
-    document.getElementById("resultadosProd").innerHTML=S.resultadosProd.map(prodRow).join("");
-  }catch(e){}
+    const cont=document.getElementById("resultadosProd");
+    if(cont) cont.innerHTML=S.resultadosProd.map(prodRow).join("");
+  }catch(e){
+    if(meuId!==_prodReqId) return;
+    const cont=document.getElementById("resultadosProd");
+    if(cont) cont.innerHTML=`<div class="muted" style="padding:8px">Erro ao buscar — tenta de novo.</div>`;
+  }
 }
 
 async function addItem(p){
@@ -894,17 +903,212 @@ async function salvar(){
       if(g.erro){ S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
       S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
         (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
+      // abre pra imprimir a nota, igual no caixa atacado
+      const v={
+        numero:g.numero, pedidoId:g.pedidoId,
+        total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
+        itens:S.itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
+        pagamentos:[], // pagamento é lançado depois, no caixa atacado
+        cliente:{nome:S.cliente?.nome||"Consumidor Final"}, dataHora:Date.now(), nfce:null,
+        observacao:S.observacao||"", operador:FUNC?.nome||"",
+        frete:S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0,
+      };
+      imprimirComprovante(v);
     }else{
       S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
     }
     // limpa tudo pra próxima venda
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
-    S.buscaProd=""; S.resultadosProd=[]; S.tipo="proposta"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
+    S.buscaProd=""; S.resultadosProd=[]; S.tipo="pedido"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
     S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada="";
   }catch(e){ alert("Erro ao salvar."); }
   finally{ S.salvando=false; render(); }
 }
+
+// ===== impressão do comprovante (mesmo layout/estilo do caixa atacado) =====
+function imprimirComprovante(v){
+  if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
+  const pedidoId=String(v.pedidoId||v.numero||"");
+  const tmp=document.createElement("div");
+  tmp.style.cssText="position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmp);
+  // QR de acompanhamento do pedido
+  try{ new QRCode(tmp,{text:location.origin+"/pedido/"+pedidoId+"/acompanhar",width:340,height:340,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  // código de barras (id do pedido — mesmo que aparece pra bipar no caixa)
+  const barCanvas=document.createElement("canvas");
+  tmp.appendChild(barCanvas);
+  try{ JsBarcode(barCanvas,pedidoId,{format:"CODE128",width:2,height:70,fontSize:16,margin:0}); }catch(e){}
+  // logo
+  const logoImg=new Image(); let logoPronta=false;
+  logoImg.onload=()=>{logoPronta=true;}; logoImg.onerror=()=>{logoPronta=false;};
+  logoImg.src="/logo.png";
+  setTimeout(()=>{
+    const qrCanvas=tmp.querySelector("canvas"); const qrImg=tmp.querySelector("img");
+    const cv=desenharComprovante(v, qrCanvas||qrImg, barCanvas, logoPronta?logoImg:null);
+    document.body.removeChild(tmp);
+    // abre a imagem numa janela e imprime
+    const dataUrl=cv.toDataURL("image/png");
+    const w=window.open("","_blank","width=420,height=700");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido #${esc(v.numero||"")}</title>
+      <style>
+        *{margin:0;padding:0}
+        body{text-align:center;background:#fff}
+        img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
+        @page{margin:0}
+        @media print{
+          body{margin:0}
+          img{max-width:100%;width:100%}
+        }
+      </style></head>
+      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
+    w.document.close();
+  },220);
+}
+
+function quebrarTexto(ctx, texto, maxW, maxLinhas){
+  texto=String(texto||"").trim();
+  if(!texto) return [""];
+  const cabe=(s)=>ctx.measureText(s).width<=maxW;
+  const palavras=texto.split(/\s+/);
+  const linhas=[]; let atual="";
+  for(const p of palavras){
+    const teste=atual?atual+" "+p:p;
+    if(cabe(teste)){ atual=teste; }
+    else {
+      if(atual) linhas.push(atual);
+      if(!cabe(p)){ // palavra maior que a linha: corta em pedaços
+        let resto=p;
+        while(resto.length && !cabe(resto)){
+          let corte=resto;
+          while(corte.length>1 && !cabe(corte)) corte=corte.slice(0,-1);
+          linhas.push(corte); resto=resto.slice(corte.length);
+        }
+        atual=resto;
+      } else { atual=p; }
+    }
+  }
+  if(atual) linhas.push(atual);
+  if(linhas.length<=maxLinhas) return linhas;
+  const cortadas=linhas.slice(0,maxLinhas);
+  let ult=cortadas[maxLinhas-1];
+  while(ult.length>1 && !cabe(ult+"…")) ult=ult.slice(0,-1);
+  cortadas[maxLinhas-1]=ult+"…";
+  return cortadas;
+}
+function desenharComprovante(v, qrEl, barCanvas, logoImg){
+  const itensArr=(v.itens||[]);
+  const itemH=54, headerH=136, qrSize=210;
+  const W=580, padd=24;
+  // quebra os nomes de produto em até 2 linhas (mede com um contexto temporário)
+  const _mc=document.createElement("canvas").getContext("2d"); _mc.font="900 19px Arial";
+  const maxNomeW=W-200-padd-16;
+  itensArr.forEach(i=>{ i._nomeLinhas=quebrarTexto(_mc, i.nome||("Produto "+i.produtoId), maxNomeW, 2); });
+  const extraLinhasItens=itensArr.reduce((s,i)=>s+((i._nomeLinhas.length||1)-1),0);
+  const H=1080 + itensArr.length*itemH + extraLinhasItens*24 + (v.pagamentos||[]).length*32 + (v.observacao?80:0) + ((Number(v.outrasDespesas||0)>0||Number(v.frete||0)>0)?64:0) + (Number(v.outrasDespesas||0)>0&&Number(v.frete||0)>0?30:0) + (v.operador?40:0);
+  const cv=document.createElement("canvas");
+  const dpr=3; cv.width=W*dpr; cv.height=H*dpr; // resolução alta = impressão nítida
+  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline="alphabetic";
+
+  // cabeçalho (fundo preto pra sair sólido na térmica)
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,W,headerH-14);
+  ctx.fillStyle="#fff"; ctx.font="900 34px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,52);
+  ctx.font="900 15px Arial"; ctx.fillStyle="#fff"; ctx.textAlign="left";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH",padd,headerH-40);
+  ctx.fillText("(31) 99971-9888",padd,headerH-22);
+  ctx.fillStyle="#000"; ctx.fillRect(0,headerH-10,W,4);
+
+  let y=headerH+30;
+  // pedido + código de barras
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
+  ctx.font="900 46px Arial"; ctx.fillStyle="#000"; ctx.fillText("#"+(v.numero||"—"),padd,y+46);
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.fillText(new Date(v.dataHora||Date.now()).toLocaleString("pt-BR"),padd,y+72);
+  if(barCanvas){
+    const bw=250, bh=barCanvas.height*(bw/barCanvas.width);
+    try{ ctx.drawImage(barCanvas,W-padd-bw,y-4,bw,bh);
+      ctx.font="900 13px Arial"; ctx.fillStyle="#000"; ctx.textAlign="center";
+      ctx.fillText("Apresente no caixa",W-padd-bw/2,y-4+bh+16);
+    }catch(e){}
+  }
+  y+=112;
+  ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
+
+  // cliente
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
+  ctx.font="900 26px Arial"; ctx.fillStyle="#000"; ctx.fillText(v.cliente?.nome||"Consumidor Final",padd,y+30);
+  y+=52;
+  if(v.operador){
+    ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("RECEBIDO POR",padd,y);
+    ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.fillText(v.operador,padd+180,y); y+=34;
+  }
+  ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=32;
+
+  // itens
+  ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y); y+=26;
+  ctx.font="900 14px Arial"; ctx.fillStyle="#000";
+  ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
+  ctx.textAlign="center"; ctx.fillText("QTD",W-200,y);
+  ctx.textAlign="right"; ctx.fillText("UNIT.",W-padd,y);
+  y+=10; ctx.fillStyle="#000"; ctx.fillRect(padd,y,W-padd*2,2); y+=itemH-14;
+  itensArr.forEach((i,ix)=>{
+    const linhas=i._nomeLinhas||[String(i.nome||("Produto "+i.produtoId))];
+    ctx.fillStyle="#000"; ctx.font="900 19px Arial"; ctx.textAlign="left";
+    linhas.forEach((ln,li)=>ctx.fillText(ln,padd,y+li*24));
+    ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.textAlign="center"; ctx.fillText(String(i.quantidade),W-200,y);
+    ctx.font="900 17px Arial"; ctx.fillStyle="#000"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
+    const extra=(linhas.length-1)*24;
+    if(ix<itensArr.length-1){ ctx.fillStyle="#000"; ctx.fillRect(padd,y+extra+18,W-padd*2,1); }
+    y+=itemH+extra;
+  });
+  y+=8; ctx.fillStyle="#000"; ctx.fillRect(0,y,W,2); y+=36;
+
+  // subtotal + outras despesas + frete, quando houver
+  const _outras=Number(v.outrasDespesas||0);
+  const _frete=Number(v.frete||0);
+  if(_outras>0.009 || _frete>0.009){
+    const _sub=+(Number(v.total||0)-_outras-_frete).toFixed(2);
+    ctx.font="900 20px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("Subtotal",padd,y);
+    ctx.textAlign="right"; ctx.fillText(brl(_sub),W-padd,y); y+=30;
+    if(_outras>0.009){ ctx.textAlign="left"; ctx.fillText("Outras despesas",padd,y); ctx.textAlign="right"; ctx.fillText(brl(_outras),W-padd,y); y+=30; }
+    if(_frete>0.009){ ctx.textAlign="left"; ctx.fillText("Frete",padd,y); ctx.textAlign="right"; ctx.fillText(brl(_frete),W-padd,y); y+=30; }
+    y+=4;
+  } else { y+=12; }
+
+  // total + PAGO
+  ctx.font="900 32px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
+  ctx.textAlign="right"; ctx.font="900 38px Arial"; ctx.fillText(brl(v.total),W-padd,y); y+=40;
+  ctx.textAlign="left"; ctx.font="900 22px Arial"; ctx.fillStyle="#000"; ctx.fillText("✓ PAGO",padd,y); y+=34;
+  // formas de pagamento
+  (v.pagamentos||[]).forEach(p=>{
+    ctx.font="900 18px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(p.formaNome||"—",padd,y);
+    ctx.textAlign="right"; ctx.fillText(brl(p.valor),W-padd,y); y+=30;
+  });
+  // observação
+  if(v.observacao && String(v.observacao).trim()){
+    y+=8; ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("OBSERVAÇÃO",padd,y); y+=24;
+    ctx.font="900 18px Arial"; ctx.fillStyle="#000";
+    let obs=String(v.observacao).trim(); if(obs.length>52) obs=obs.slice(0,51)+"…";
+    ctx.fillText(obs,padd,y); y+=26;
+  }
+  y+=12;
+
+  // divisor tracejado grosso
+  ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.setLineDash([8,5]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth=1; y+=36;
+
+  // QR
+  if(qrEl){ const qrX=(W-qrSize)/2; try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){} y+=qrSize+26; }
+  ctx.fillStyle="#000"; ctx.font="900 15px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR para ver o status do pedido",W/2,y); y+=26;
+  ctx.font="900 17px Arial"; ctx.fillStyle="#000"; ctx.fillText("Obrigado pela preferência!",W/2,y); y+=28;
+
+  // apara pro tamanho real
+  const cvFinal=document.createElement("canvas");
+  cvFinal.width=W*dpr; cvFinal.height=Math.round(y*dpr);
+  cvFinal.getContext("2d").drawImage(cv,0,0);
+  return cvFinal;
+}
+
 
 render();
 </script>
