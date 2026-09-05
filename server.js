@@ -6453,6 +6453,7 @@ function salvarAvisos(d){ salvarJSON(AVISOS_FILE,d); }
 function registrarAviso(aviso){
   try{
     const d=lerAvisos();
+    if(aviso.fingerprint && (d.lista||[]).some(a=>a.fingerprint===aviso.fingerprint)) return null; // já existe, não duplica
     const id="av-"+Date.now()+"-"+Math.random().toString(36).slice(2,7);
     d.lista.unshift({ id, em:Date.now(), resolvido:false, ...aviso });
     if(d.lista.length>500) d.lista=d.lista.slice(0,500); // não cresce infinito
@@ -6460,6 +6461,82 @@ function registrarAviso(aviso){
     return id;
   }catch(e){ console.error("Falha ao registrar aviso:",e.message); return null; }
 }
+
+// ===== AUDITORIA GERAL: roda todos os testes de consistência numa passada só e =====
+// registra os problemas achados no painel de Avisos (com dedupe por fingerprint, pra
+// não repetir o mesmo aviso toda vez que rodar). Cobre: caixa x Bling divergente,
+// pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
+// pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
+async function rodarAuditoriaGeral(diasCaixaBling=1){
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, nfcePendenteVelha:0, atacadoSemPassarCaixa:0 };
+  const hojeISO=_hojeISO();
+  // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
+  try{
+    const desde=Date.now()-diasCaixaBling*86400000;
+    const dCx=lerCaixaSessoes(); const vendas=[];
+    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||m.em<desde) return; vendas.push({pedidoId:m.pedidoId,numero:m.numero,total:Number(m.total)||0,pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—",valor:Number(p.valor)||0})),em:m.em,operador:m.operador||s.operador}); }); });
+    const norm=(s)=>String(s||"").toLowerCase().replace(/pix.*/,"pix").replace(/[^a-z0-9]/g,"");
+    for(const v of vendas.slice(0,60)){
+      let b=null; try{ b=await bling(`/pedidos/vendas/${v.pedidoId}`).then(r=>r?.data); }catch(e){}
+      if(!b){ registrarAviso({ tipo:"caixa_bling_nao_encontrado", titulo:`Pedido #${v.numero||v.pedidoId} não encontrado no Bling`, pedidoId:v.pedidoId, numero:v.numero, operador:v.operador, origem:"Auditoria", fingerprint:`nfenc-${v.pedidoId}`, oQueFazer:`Confira se o pedido #${v.numero||v.pedidoId} existe no Bling. Se não existir, a venda foi registrada no caixa mas não foi salva no Bling.` }); achados.caixaBlingDivergente++; continue; }
+      const parcelas=[]; for(const pc of (b.parcelas||[])){ parcelas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
+      const somaCaixa=+v.pagamentos.reduce((s,p)=>s+p.valor,0).toFixed(2), somaBling=+parcelas.reduce((s,p)=>s+p.valor,0).toFixed(2);
+      const formasCaixa=v.pagamentos.map(p=>norm(p.forma)).sort().join("|"), formasBling=parcelas.map(p=>norm(p.forma)).sort().join("|");
+      if(Math.abs(v.total-(Number(b.total)||0))>0.009 || Math.abs(somaCaixa-somaBling)>0.009 || formasCaixa!==formasBling){
+        registrarAviso({ tipo:"caixa_bling_divergente", titulo:`Pedido #${v.numero||v.pedidoId} diferente entre caixa e Bling`, pedidoId:v.pedidoId, numero:v.numero, operador:v.operador, origem:"Auditoria",
+          fingerprint:`div-${v.pedidoId}-${hojeISO}`, erroBling:`Caixa: ${somaCaixa} (${v.pagamentos.map(p=>p.forma).join(", ")}) — Bling: ${somaBling} (${parcelas.map(p=>p.forma).join(", ")})`,
+          oQueFazer:`Confira o pedido #${v.numero||v.pedidoId} no Bling e ajuste pra bater com o caixa, ou vice-versa.` });
+        achados.caixaBlingDivergente++;
+      }
+      await sleep(100);
+    }
+  }catch(e){}
+  // 2) pedidos duplicados em 2+ caixas (sessões diferentes) HOJE — reabertura/edição na
+  // mesma sessão é normal e não conta como duplicado
+  try{
+    const ini=_inicioDia(hojeISO), fim=_fimDia(hojeISO);
+    const dCx=lerCaixaSessoes(); const porPedido={};
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.em<ini||m.em>=fim) return; const pid=String(m.pedidoId||m.numero||""); if(!pid) return; if(!porPedido[pid]) porPedido[pid]=new Map(); porPedido[pid].set(s.id,{operador:s.operador}); }));
+    Object.entries(porPedido).forEach(([pid,mapa])=>{ if(mapa.size>1){ const ops=[...mapa.values()].map(o=>o.operador).join(", "); registrarAviso({ tipo:"pedido_duplicado_caixas", titulo:`Pedido ${pid} aparece em ${mapa.size} caixas diferentes`, pedidoId:pid, origem:"Auditoria", fingerprint:`dup-${pid}-${hojeISO}`, oQueFazer:`Confira o pedido ${pid}: ele foi registrado em caixas diferentes hoje (${ops}). Pode estar contando a venda 2x no fechamento.` }); achados.pedidosDuplicados++; } });
+  }catch(e){}
+  // 3) caixa aberto há mais de 15h (provável esquecimento)
+  try{
+    const dCx=lerCaixaSessoes(); const limite=Date.now()-15*3600*1000;
+    (dCx.sessoes||[]).filter(s=>!s.fechadaEm && s.abertaEm<limite).forEach(s=>{
+      registrarAviso({ tipo:"caixa_esquecido_aberto", titulo:`Caixa de ${s.operador||"—"} aberto há mais de 15h`, origem:"Auditoria", fingerprint:`esq-${s.id}`, oQueFazer:`O caixa de ${s.operador||"—"} (${s.tipoCaixa||"frente"}) está aberto desde ${new Date(s.abertaEm).toLocaleString("pt-BR")}. Confira se foi esquecido e feche pela Gestão de Caixas.` });
+      achados.caixaEsquecidoAberto++;
+    });
+  }catch(e){}
+  // 4) NFC-e pendente há mais de 2 dias (vendas do atacado sem nota, antigas)
+  try{
+    const dCx=lerCaixaSessoes(); const emit=lerNfceEmitidas(); const limite=Date.now()-2*86400000;
+    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{
+      if(m.tipo!=="venda"||m.cancelado||m.em>limite) return;
+      if(!emit[String(m.pedidoId)]){ registrarAviso({ tipo:"nfce_pendente_velha", titulo:`Pedido #${m.numero||m.pedidoId} sem NFC-e há mais de 2 dias`, pedidoId:m.pedidoId, numero:m.numero, origem:"Auditoria", fingerprint:`nfcevelha-${m.pedidoId}`, oQueFazer:`Emite a NFC-e do pedido #${m.numero||m.pedidoId} na Gestão de NFC-e, ou confirma se ela já foi emitida direto no Bling.` }); achados.nfcePendenteVelha++; }
+    }); });
+  }catch(e){}
+  // 5) pedidos Atendido no Bling que não passaram pelo caixa atacado (usa o cache do dia)
+  try{
+    const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
+    const dCx=lerCaixaSessoes(); const caixaAtacadoIds=new Set();
+    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
+    if(_centralBling.dia===hojeISO && _centralBling.pedidos && !_centralBling.pedidos.erro){
+      (_centralBling.pedidos.lista||[]).forEach(p=>{
+        if(caixaAtacadoIds.has(String(p.id))) return;
+        if(VENDEDORES_VAREJO.test(p.vendedor||"")) return;
+        if(p.situacaoId!==SIT.ATENDIDO) return;
+        registrarAviso({ tipo:"atacado_sem_passar_caixa", titulo:`Pedido #${p.numero} Atendido mas não passou no caixa atacado`, numero:p.numero, origem:"Auditoria", fingerprint:`avejo-${p.id}-${hojeISO}`, oQueFazer:`Pedido #${p.numero} (${p.cliente}, vendedor ${p.vendedor}) está Atendido no Bling mas não tem registro no caixa atacado. Confira se foi cobrado por outro caminho ou se ficou pendente.` });
+        achados.atacadoSemPassarCaixa++;
+      });
+    }
+  }catch(e){}
+  return achados;
+}
+
+app.get("/api/auditoria/rodar",async(req,res)=>{
+  try{ const achados=await rodarAuditoriaGeral(Number(req.query.dias||1)); res.json({ok:true, achados, em:Date.now()}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
 
 app.get("/api/avisos",(req,res)=>{
   const incluirResolvidos=req.query.todos==="1";
@@ -9556,3 +9633,12 @@ app.get("/api/vendedor/top-produto",async(req,res)=>{
 });
 
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
+
+// auditoria geral roda sozinha a cada 30 min (além de poder ser disparada manualmente
+// em /api/auditoria/rodar). Espera 1 min após o boot pra não competir com o startup.
+let _auditoriaRodando=false;
+setTimeout(()=>{
+  const rodar=async()=>{ if(_auditoriaRodando) return; _auditoriaRodando=true; try{ await rodarAuditoriaGeral(1); }catch(e){ console.error("Auditoria automática falhou:",e.message); } _auditoriaRodando=false; };
+  rodar();
+  setInterval(rodar, 30*60*1000);
+}, 60*1000);

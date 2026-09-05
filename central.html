@@ -74,6 +74,7 @@ function render(){
   const app=document.getElementById("app");
   const topo=`<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">🏠 Central</div><div class="sp"></div>
     <input type="date" value="${DIA}" onchange="DIA=this.value;D=null;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px">
+    <button class="btn btn-ghost" onclick="rodarAuditoria()">🔎 Rodar auditoria</button>
     <button class="btn btn-ghost" onclick="carregar()">🔄</button></div>`;
   if(!D){ app.innerHTML=topo+`<div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`; return; }
   const f=D.fechamentoDia||{}, b=D.bling||{};
@@ -133,6 +134,17 @@ function render(){
         `):(b.pedidos&&!b.pedidos.erro?"":card("🏪 Origem dos pedidos (Atacado × Varejo)",'<div class="muted">⏳ Buscando no Bling…</div>'))}
       </div>
     </div>`;
+}
+async function rodarAuditoria(){
+  const btn=[...document.querySelectorAll("button")].find(b=>b.textContent.includes("Rodar auditoria"));
+  if(btn){ btn.disabled=true; btn.textContent="⏳ Auditando…"; }
+  try{
+    const j=await fetch(B+"/api/auditoria/rodar?dias=2").then(r=>r.json());
+    const a=j.achados||{}; const total=Object.values(a).reduce((s,v)=>s+v,0);
+    alert(total?`Auditoria concluída: ${total} coisa(s) nova(s) encontrada(s). Veja em Avisos.`:"Auditoria concluída: nada de novo encontrado. 🎉");
+    carregar();
+  }catch(e){ alert("Erro ao rodar a auditoria."); }
+  if(btn){ btn.disabled=false; btn.textContent="🔎 Rodar auditoria"; }
 }
 async function carregar(){
   try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
