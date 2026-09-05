@@ -7116,6 +7116,25 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     if(!codigo) return res.status(400).json({erro:"informe o código"});
     const querAtacado = req.query.atacado==="1"||req.query.atacado==="true";
 
+    // anexa precoAtacado/precoFardo/caixaQtd (SEM mexer no preço de varejo) — usado
+    // pela tela /preco pra mostrar os três preços juntos, mesma fonte da /etiqueta
+    const anexarAtacadoFardo=(item)=>{
+      if(!item) return item;
+      try{
+        const idx=indexarVinculosTabela();
+        const vinc = idx[String(item.codigo||"")] || idx[String(codigo)] || idx[String(item.gtin||"")];
+        if(vinc){
+          const pa=Number(vinc.precoAtacado);
+          item.precoAtacado = pa>0 ? pa : null;
+          item.caixaQtd = vinc.caixaQtd || null;
+          const fardo=lerListaFardo();
+          const pf=fardo[vinc.itemId]?.preco;
+          item.precoFardo = (pf!=null && Number(pf)>0) ? Number(pf) : null;
+        } else { item.precoAtacado=item.precoAtacado??null; item.precoFardo=item.precoFardo??null; item.caixaQtd=item.caixaQtd??null; }
+      }catch(e){ item.precoAtacado=item.precoAtacado??null; item.precoFardo=item.precoFardo??null; item.caixaQtd=item.caixaQtd??null; }
+      return item;
+    };
+
     // aplica o preço de ATACADO da tabela quando o caixa atacado pedir. Se o produto
     // não tiver preço de atacado cadastrado, mantém o preço que veio do Bling.
     const aplicarAtacado=(item)=>{
@@ -7149,7 +7168,7 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
           if(det){ item.preco=+(det.preco||item.preco||0); item.nome=det.nome||item.nome; }
         }catch(e){}
       }
-      return res.json({data:aplicarAtacado(item),origem:"indice"});
+      return res.json({data:aplicarAtacado(anexarAtacadoFardo(item)),origem:"indice"});
     }
 
     // 2) fallback: SKU (esse filtro do Bling funciona, é busca exata pelo código interno)
@@ -7159,10 +7178,10 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
       if(p && String(p.codigo||"")===codigo){
         let det=p;
         try{ const d=await bling(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
-        return res.json({data:aplicarAtacado({
+        return res.json({data:aplicarAtacado(anexarAtacadoFardo({
           produtoId:det.id,nome:det.nome,preco:+(det.preco||0),
           imagem:det.imagemURL||det.imagem?.link?.grande||null,codigo:det.codigo||"",gtin:det.gtin||""
-        }),origem:"sku"});
+        })),origem:"sku"});
       }
     }catch(e){}
 
