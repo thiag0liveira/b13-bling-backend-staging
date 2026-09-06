@@ -128,6 +128,9 @@ let MODO_EDICAO_PAGAMENTO=false; // true = editando o pagamento de um pedido já
 let TOKEN_EDICAO="";             // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR="";           // nome de quem autorizou (só pra exibir)
 let AUTORIZOU_MENOR=null;        // {autorizadoPor, falta} quando um gerente liberou fechar com valor menor
+let FINALIZANDO=false;           // trava global: NUNCA duas finalizações ao mesmo tempo (clique duplo, modal, Enter)
+let OP_ID=null;                  // id único da tentativa de finalização (idempotência no servidor)
+function gerarOpId(){ return "op-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10); }
 let PIX_BANCOS={bancos:["Inter","Santander","Itaú"],padrao:"Inter"}; // editável na Gestão
 let BANCO_PIX_ESCOLHIDO="";       // banco escolhido ao finalizar um PIX Banco
 let _timerBusca=null;
@@ -633,23 +636,35 @@ function salvarEdicaoPagamento(){
     `💾 Confirmar novo pagamento — #${esc(PEDIDO_ATUAL?.numero||"")}`,
     "Pra salvar a nova forma de pagamento, leia o QR de novo (gerente, financeiro ou admin).",
     async (tokenQr, campo, erroEl)=>{
+      if(FINALIZANDO) return; // trava contra clique duplo no "Confirmar"
+      FINALIZANDO=true;
       try{
-        const comTimeout=(url,opts,ms=60000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
+        const comTimeout=(url,opts,ms=90000)=>{ const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),ms); return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t)); };
+        // manda TAMBÉM os itens do carrinho: na reabertura dá pra retirar/alterar produto,
+        // e o servidor compara com o Bling, grava, e registra o histórico do que mudou
+        const itensEd=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||"atacado"}));
         const resp=await comTimeout(BACKEND+"/api/caixa-atacado/editar-pagamento",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,tokenQr,funcionarioId:S.id,frete:FRETE})}).then(r=>r.json());
+          body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,pagamentos,itens:itensEd,tokenQr,funcionarioId:S.id,frete:FRETE})}).then(r=>r.json());
         if(resp.erro) throw new Error(resp.erro);
         if(campo) campo.value="";
+        FINALIZANDO=false;
+        const ia=resp.itensAlterados;
+        const iaMsg=ia&&(ia.retirados?.length||ia.acrescentados?.length||ia.alterados?.length)?`<div style="margin-top:8px;padding:8px;background:#1c1846;border-radius:8px;font-size:12px;text-align:left">✏️ <b>Itens:</b>${ia.retirados?.length?" retirou "+esc(ia.retirados.join(", "))+".":""}${ia.acrescentados?.length?" acrescentou "+esc(ia.acrescentados.join(", "))+".":""}${ia.alterados?.length?" alterou "+esc(ia.alterados.join(", "))+".":""}</div>`:"";
+        const rep=(resp.estoqueReposto||[]);
+        const repMsg=rep.length?`<div class="muted" style="text-align:left;margin-top:6px;font-size:12px">📦 Estoque reposto pra concluir: ${rep.map(r=>esc(r.nome||("produto "+r.produtoId))+" (+"+r.faltava+")").join(", ")}</div>`:"";
         document.getElementById("modais").innerHTML=`
           <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
-            <div style="font-size:44px">✏️</div><h3>Pagamento alterado!</h3>
+            <div style="font-size:44px">✏️</div><h3>Pedido alterado!</h3>
             <div class="ok" style="text-align:left;margin-top:8px">Pedido #${esc(resp.numero||PEDIDO_ATUAL.numero)}<br>
-              <span class="muted">De:</span> ${esc(resp.de||"—")}<br>
+              <span class="muted">Pagamento de:</span> ${esc(resp.de||"—")}<br>
               <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
               <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
+            ${iaMsg}${repMsg}
             ${resp.incluidoNoCaixa?`<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador||"você")}).</div>`:""}
             <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
           </div></div>`;
       }catch(e){
+        FINALIZANDO=false;
         if(campo) campo.value="";
         if(e.name==="AbortError"){ if(erroEl) erroEl.innerHTML=`<div class="err">O Bling está demorando muito. Confira no Bling se a alteração do pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi aplicada antes de tentar de novo.</div>`; }
         else{ if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
@@ -686,7 +701,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; window._obsVenda=""; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; FINALIZANDO=false; OP_ID=null; window._obsVenda=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -1346,7 +1361,7 @@ function render(){
           <div class="muted" style="margin-top:4px">📌 Status: <b style="color:#ffd23f">${esc(PEDIDO_ATUAL.situacaoNome||"—")}</b></div>
           <div class="muted">🧑‍💼 Vendedor: <b style="color:#cfc9f5">${esc(PEDIDO_ATUAL.vendedorNome||"—")}</b></div>
           ${CLIENTE_NOME?`<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>`:''}
-          ${MODO_EDICAO_PAGAMENTO?`<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Editando forma de pagamento</b> (pedido já pago). Autorizado por ${esc(AUTORIZADO_POR||"—")}. Os itens estão travados — escolha a nova forma e salve.</div>`:""}
+          ${MODO_EDICAO_PAGAMENTO?`<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR||"—")}. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>`:""}
         </div>`:`<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
         <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -1443,8 +1458,60 @@ function render(){
   pintarPedidos();
 }
 
+// ---- modal de sucesso da finalização (usado na resposta direta E quando a
+// resposta chega pelo polling, depois de um timeout) ----
+function mostrarSucessoFinalizacao(resp, ctx){
+  const {total, itens, pagamentos, observacao, taxaCredito, emitirNfce}=ctx;
+  ULTIMA_VENDA={
+    numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
+    total:total, desconto:0, outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2), frete:FRETE,
+    itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
+    pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao, operador:S.nome||"",
+  };
+  window._obsVenda="";
+  OP_ID=null; FINALIZANDO=false;
+  const nfMsg=emitirNfce?(resp.nfce?.pendente?" NFC-e sendo emitida em segundo plano (veja em Gestão de NFC-e).":(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":""))):"";
+  const reposto=(resp.estoqueReposto||[]);
+  const repMsg=reposto.length?`<div class="muted" style="text-align:left;margin-top:8px;font-size:12px">📦 Estoque reposto pra concluir: ${reposto.map(r=>esc(r.nome||("produto "+r.produtoId))+" (+"+r.faltava+")").join(", ")}</div>`:"";
+  const ja=resp.jaEstavaNoCaixa;
+  const jaMsg=ja?`<div style="margin-top:8px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido <b>já tinha sido finalizado</b>${ja.operador?" no caixa de "+esc(ja.operador):""}${ja.quando?" às "+new Date(ja.quando).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):""}. O registro foi <b>atualizado lá</b> — não foi criado outro. Confira se o cliente não pagou duas vezes.</div>`:"";
+  const ia=resp.itensAlterados;
+  const iaMsg=ia&&(ia.retirados?.length||ia.acrescentados?.length||ia.alterados?.length)?`<div class="muted" style="text-align:left;margin-top:8px;font-size:12px">✏️ Itens alterados:${ia.retirados?.length?" <b>retirou</b> "+esc(ia.retirados.join(", "))+".":""}${ia.acrescentados?.length?" <b>acrescentou</b> "+esc(ia.acrescentados.join(", "))+".":""}${ia.alterados?.length?" <b>alterou</b> "+esc(ia.alterados.join(", "))+".":""}</div>`:"";
+  const repetidoMsg=resp.repetido?`<div class="muted" style="font-size:12px;margin-top:6px">(essa venda já tinha sido concluída — nada foi feito de novo)</div>`:"";
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this){fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render);}"><div class="modal" style="text-align:center">
+      <div style="font-size:44px">${resp.aviso?'⚠️':'✅'}</div><h3>${resp.aviso?'Pagamento registrado':'Pedido finalizado!'}</h3>
+      <div class="ok">Total: ${brl(resp.total||total)}.${nfMsg}</div>
+      ${repetidoMsg}${repMsg}${jaMsg}${iaMsg}
+      ${resp.aviso?`<div class="err" style="text-align:left;margin-top:8px">${esc(resp.aviso)}</div>`:""}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-ghost" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir</button>
+        <button class="btn" style="flex:1" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
+      </div>
+    </div></div>`;
+  if(!resp.repetido) setTimeout(()=>{ try{ imprimirComprovante(ULTIMA_VENDA); }catch(e){} }, 300);
+}
+// ---- espera a conclusão no servidor (quando a resposta demorou) — NÃO deixa o
+// operador clicar de novo; consulta o status a cada 3s por até 5 min ----
+async function aguardarConclusaoFinalizacao(opId, ctx, msgEl){
+  const inicio=Date.now();
+  while(Date.now()-inicio<5*60*1000){
+    await new Promise(r=>setTimeout(r,3000));
+    let st=null;
+    try{ st=await fetch(BACKEND+"/api/caixa-atacado/finalizar/status/"+encodeURIComponent(opId)).then(r=>r.json()); }catch(e){ continue; }
+    if(st.status==="ok"&&st.resposta){ if(msgEl) msgEl.innerHTML=""; mostrarSucessoFinalizacao(st.resposta, ctx); return true; }
+    if(st.status==="erro"){ FINALIZANDO=false; const btn=document.getElementById("btnFinalizar"); if(btn){ btn.disabled=false; btn.textContent="✅ Finalizar e receber"; } if(msgEl) msgEl.innerHTML=`<div class="err">Não concluiu: ${esc(st.erro||"erro")}. Pode tentar de novo.</div>`; return false; }
+    const seg=Math.round((Date.now()-inicio)/1000);
+    if(msgEl) msgEl.innerHTML=`<div class="muted" style="padding:8px">⏳ Ainda processando no Bling (${seg}s)… <b>não feche e não clique de novo</b> — vou avisar quando concluir.</div>`;
+  }
+  FINALIZANDO=false; const btn=document.getElementById("btnFinalizar"); if(btn){ btn.disabled=false; btn.textContent="✅ Finalizar e receber"; }
+  if(msgEl) msgEl.innerHTML=`<div class="err">Passou de 5 min sem confirmação. Confira em "Minhas Vendas" ou no Bling se o pedido #${esc(PEDIDO_ATUAL?.numero||"")} foi finalizado antes de tentar de novo.</div>`;
+  return false;
+}
+
 async function finalizar(){
   if(MODO_EDICAO_PAGAMENTO) return salvarEdicaoPagamento();
+  if(FINALIZANDO) return; // trava global contra clique duplo / Enter / modal
   const btn=document.getElementById("btnFinalizar");
   const msg=document.getElementById("msgFinalizar");
   if(!CAIXA.aberta){ alert("Abra o caixa primeiro."); return; }
@@ -1464,6 +1531,8 @@ async function finalizar(){
   // se pagou com "Pix Banco", pergunta o banco de CADA Pix Banco antes de finalizar
   const pixBancoSemBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||"")&&!p.banco);
   if(pixBancoSemBanco){ perguntarBancosPix(); return; }
+  FINALIZANDO=true;
+  if(!OP_ID) OP_ID=gerarOpId(); // mesma tentativa mantém o mesmo opId (retry idempotente)
   btn.disabled=true; btn.textContent="Processando…";
   const emitirNfce=document.getElementById("emitirNfce").checked;
   const observacaoUsuario=(document.getElementById("obsVenda")?.value||"").trim();
@@ -1487,53 +1556,41 @@ async function finalizar(){
   const statusFinal = "atendido";
   try{
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
-    const comTimeout=(url,opts,ms=60000)=>{
+    const comTimeout=(url,opts,ms=90000)=>{
       const ctrl=new AbortController();
       const t=setTimeout(()=>ctrl.abort(),ms);
       return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t));
     };
+    const ctx={total, itens, pagamentos, observacao, taxaCredito, emitirNfce};
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
+    }
+    if(resp.emAndamento){
+      // já está sendo processada (outra aba/clique) — espera a conclusão em vez de repetir
+      msg.innerHTML=`<div class="muted" style="padding:8px">⏳ Essa venda já está sendo processada… aguardando a conclusão.</div>`;
+      await aguardarConclusaoFinalizacao(resp.opId||OP_ID, ctx, msg);
+      return;
     }
     if(resp.erro) throw new Error(resp.erro);
-    // guarda a venda pra poder reimprimir o comprovante
-    ULTIMA_VENDA={
-      numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
-      total:total, desconto:0,
-      outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2),
-      frete:FRETE,
-      itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
-      pagamentos, cliente:{nome:CLIENTE_NOME||"Consumidor Final"}, dataHora:Date.now(), nfce:resp.nfce||null, observacao, operador:S.nome||"",
-    };
-    window._obsVenda=""; // limpa pra próxima venda
-    const nfMsg=emitirNfce?(resp.nfce?.ok?" NFC-e emitida.":(resp.nfce?.erro?" (NFC-e falhou)":"")):"";
-    const reposto=(resp.estoqueReposto||[]);
-    const repMsg=reposto.length?`<div class="muted" style="text-align:left;margin-top:8px;font-size:12px">📦 Estoque reposto pra concluir: ${reposto.map(r=>esc(r.nome||("produto "+r.produtoId))+" (+"+r.faltava+")").join(", ")}</div>`:"";
-    document.getElementById("modais").innerHTML=`
-      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:44px">${resp.aviso?'⚠️':'✅'}</div><h3>${resp.aviso?'Pagamento registrado':'Pedido finalizado!'}</h3>
-        <div class="ok">Total: ${brl(resp.total||total)}.${nfMsg}</div>
-        ${repMsg}
-        ${resp.aviso?`<div class="err" style="text-align:left;margin-top:8px">${esc(resp.aviso)}</div>`:""}
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-ghost" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir</button>
-          <button class="btn" style="flex:1" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
-        </div>
-      </div></div>`;
-    // imprime o comprovante do pedido automaticamente (formato totem: barcode + QR)
-    setTimeout(()=>{ try{ imprimirComprovante(ULTIMA_VENDA); }catch(e){} }, 300);
+    mostrarSucessoFinalizacao(resp, ctx);
+    return;
   }catch(e){
-    btn.disabled=false; btn.textContent="✅ Finalizar e receber";
-    if(e.name==="AbortError"){
-      msg.innerHTML=`<div class="err">O Bling está demorando muito pra responder. <b>NÃO clique em finalizar de novo ainda</b> — confira em "Minhas Vendas" ou no Bling se o pedido #${esc(PEDIDO_ATUAL?.numero||"")} já foi para Atendido. Se não foi, tente novamente.</div>`;
-    } else {
-      msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`;
+    if(e.name==="AbortError"||/failed to fetch|network/i.test(e.message||"")){
+      // a resposta demorou/caiu, mas o servidor pode ter concluído: NÃO libera o botão —
+      // fica consultando o status até saber (evita o operador finalizar de novo e duplicar)
+      msg.innerHTML=`<div class="muted" style="padding:8px">⏳ O Bling está demorando… <b>não clique de novo</b>. Estou acompanhando a conclusão.</div>`;
+      await aguardarConclusaoFinalizacao(OP_ID,{total, itens, pagamentos, observacao, taxaCredito, emitirNfce},msg);
+      return;
     }
+    // erro definitivo do servidor: libera pra corrigir e tentar de novo (nova tentativa = novo opId)
+    FINALIZANDO=false; OP_ID=null;
+    btn.disabled=false; btn.textContent="✅ Finalizar e receber";
+    msg.innerHTML=`<div class="err">Erro: ${esc(e.message)}</div>`;
   }
 }
 
