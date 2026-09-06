@@ -81,6 +81,7 @@ const SIT = {
   VERIFICADO:   Number(process.env.SIT_VERIFICADO   || 24),
   EM_ROTA:      Number(process.env.SIT_EM_ROTA      || 820085),
   ATENDIDO:     Number(process.env.SIT_ATENDIDO     || 9),
+  CANCELADO:    Number(process.env.SIT_CANCELADO    || 12),
 };
 
 const app = express();
@@ -6919,42 +6920,77 @@ async function _atualizarCentralBling(dia){
       out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
         produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
     }catch(e){ out.entradas={erro:e.message}; }
-    // pedidos de venda do dia: por vendedor, maiores, em aberto, e ORIGEM (Atacado x
-    // Varejo) — tudo na MESMA varredura, pra não duplicar trabalho nem recalcular
-    // depois. Usa os MESMOS helpers do Fechamento de Caixa (nomeVendedor,
-    // CONSUMIDOR_FINAL_ID) — busca o DETALHE de cada pedido (a listagem não traz o
-    // vendedor de forma confiável), pra as duas telas corresponderem entre si.
+    // pedidos de venda do dia: varre igual ao Fechamento de Caixa (mesma fonte e mesmos
+    // helpers), classifica Atacado x Varejo e DEDUPLICA contra o nosso caixa numa
+    // passada só. Regras:
+    //  - Consumidor Final (por ID do contato) => sempre VAREJO
+    //  - pedido presente no caixa atacado => ATACADO
+    //  - vendedor de varejo (Jéssica/Andreia) => VAREJO
+    //  - Atendido, não é varejo e não passou no caixa => POSSÍVEL ERRO
+    // Também detecta duplicidade cruzando os DOIS lados (nosso caixa e o Bling).
     try{
       const VENDEDORES_VAREJO=/j[ée]ssica|andr[ée]ia/i;
       const dCx=lerCaixaSessoes();
-      const caixaAtacadoIds=new Set();
-      (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")==="atacado") (s.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) caixaAtacadoIds.add(String(m.pedidoId)); }); });
+      // índice do NOSSO caixa: pedidoId -> lançamentos ativos (pra dedupe e p/ origem)
+      const noCaixa={};
+      (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado||!m.pedidoId) return;
+        const k=String(m.pedidoId);
+        (noCaixa[k]=noCaixa[k]||[]).push({sessaoId:s.id,operador:s.operador||"",tipoCaixa:s.tipoCaixa||"frente",em:m.em,total:Number(m.total)||0,numero:m.numero});
+      }));
       let pag=1, lista=[];
-      for(let i=0;i<5;i++){ const r=await blingLento(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`); const arr=r?.data||[]; lista=lista.concat(arr); if(arr.length<100) break; pag++; await sleep(150); }
+      for(let i=0;i<10;i++){
+        const r=await blingLento(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`);
+        const arr=r?.data||[]; lista=lista.concat(arr);
+        if(arr.length<100) break; pag++; await sleep(150);
+      }
+      // DEDUPE do lado do Bling: a listagem pode repetir o mesmo pedido entre páginas
+      const vistos=new Set(); const duplicadosBling=[];
+      lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)){ duplicadosBling.push(p.numero); return false; } vistos.add(k); return true; });
+
       const detalhados=[];
-      for(const p of lista.slice(0,200)){
-        let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—";
+      for(const p of lista.slice(0,250)){
+        let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—", totalDet=Number(p.total)||0;
         try{
           const d=await blingLento(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
-          if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; }
+          if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; totalDet=Number(d.total ?? p.total)||0; }
         }catch(e){}
-        const consumidorFinal=contatoId===CONSUMIDOR_FINAL_ID;
+        const consumidorFinal = contatoId===CONSUMIDOR_FINAL_ID || /consumidor\s*final/i.test(cliente||"");
         const situacaoId=Number(p.situacao?.id||0);
-        // correlação com o NOSSO caixa, feita aqui mesmo, uma única vez:
-        const noCaixaAtacado=caixaAtacadoIds.has(String(p.id));
-        const vendedorVarejo=VENDEDORES_VAREJO.test(vendedor)||consumidorFinal;
+        const lancs=noCaixa[String(p.id)]||[];
+        const noCaixaAtacado=lancs.some(l=>l.tipoCaixa==="atacado");
         let origem;
-        if(noCaixaAtacado) origem="atacado";
-        else if(vendedorVarejo) origem="varejo";
-        else if(situacaoId===SIT.ATENDIDO) origem="possivel_erro"; // Atendido mas não passou no caixa atacado
-        else origem="varejo_pendente"; // ainda não atendido — sem erro por enquanto
+        if(consumidorFinal) origem="varejo";                       // Consumidor Final SEMPRE varejo
+        else if(noCaixaAtacado) origem="atacado";
+        else if(VENDEDORES_VAREJO.test(vendedor)) origem="varejo";
+        else if(situacaoId===SIT.ATENDIDO) origem="possivel_erro"; // Atendido e não passou no caixa
+        else origem="varejo_pendente";
         detalhados.push({ id:p.id, numero:p.numero, vendedor, cliente, consumidorFinal, origem,
-          total:Number(p.total)||0, situacaoId, situacao:nomeSituacao(situacaoId) });
-        await sleep(100);
+          total:totalDet, situacaoId, situacao:nomeSituacao(situacaoId),
+          lancamentosNoCaixa:lancs.length, caixas:lancs.map(l=>l.operador) });
+        await sleep(80);
       }
+
+      // DUPLICIDADES (cruzando os dois lados)
+      const dupNoCaixa=detalhados.filter(p=>p.lancamentosNoCaixa>1)
+        .map(p=>({numero:p.numero,pedidoId:p.id,cliente:p.cliente,totalBling:p.total,vezes:p.lancamentosNoCaixa,
+          caixas:(noCaixa[String(p.id)]||[]).map(l=>({operador:l.operador,quando:new Date(l.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),total:l.total})),
+          somaNoCaixa:+(noCaixa[String(p.id)]||[]).reduce((a,l)=>a+l.total,0).toFixed(2)}));
+      // no caixa mas o pedido não apareceu no Bling deste dia (pedido de outro dia ou sumiu)
+      const idsBling=new Set(detalhados.map(d=>String(d.id)));
+      const iniDia=_inicioDia(dia), fimDia=_fimDia(dia);
+      const soNoCaixa=[];
+      Object.entries(noCaixa).forEach(([pid,lancs])=>{
+        const doDia=lancs.filter(l=>l.em>=iniDia&&l.em<fimDia);
+        if(doDia.length&&!idsBling.has(pid)) soNoCaixa.push({pedidoId:pid,numero:doDia[0].numero,operador:doDia[0].operador,total:doDia[0].total});
+      });
+
       const porVend={}; const emAberto=[];
-      detalhados.forEach(p=>{ const v=p.consumidorFinal?"Consumidor Final (varejo)":p.vendedor; if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=p.total;
-        if(p.situacaoId!==SIT.ATENDIDO && p.situacaoId!==Number(process.env.SIT_CANCELADO||12)) emAberto.push({numero:p.numero, cliente:p.cliente, total:p.total, situacao:p.situacao}); });
+      detalhados.forEach(p=>{
+        const v=p.consumidorFinal?"Consumidor Final (varejo)":p.vendedor;
+        if(!porVend[v]) porVend[v]={qtd:0,valor:0}; porVend[v].qtd++; porVend[v].valor+=p.total;
+        if(p.situacaoId!==SIT.ATENDIDO && p.situacaoId!==SIT.CANCELADO) emAberto.push({numero:p.numero, cliente:p.cliente, total:p.total, situacao:p.situacao});
+      });
       const atacado=detalhados.filter(p=>p.origem==="atacado");
       const varejo=detalhados.filter(p=>p.origem==="varejo"||p.origem==="varejo_pendente");
       const possiveisErros=detalhados.filter(p=>p.origem==="possivel_erro").sort((a,b)=>b.total-a.total);
@@ -6965,7 +7001,10 @@ async function _atualizarCentralBling(dia){
         lista:detalhados,
         origem:{ atacado:{qtd:atacado.length, valor:+atacado.reduce((s,p)=>s+p.total,0).toFixed(2)},
           varejo:{qtd:varejo.length, valor:+varejo.reduce((s,p)=>s+p.total,0).toFixed(2)},
-          possiveisErros, qtdPossiveisErros:possiveisErros.length } };
+          possiveisErros, qtdPossiveisErros:possiveisErros.length },
+        duplicidades:{ noCaixa:dupNoCaixa, qtdNoCaixa:dupNoCaixa.length,
+          soNoCaixa, qtdSoNoCaixa:soNoCaixa.length,
+          repetidosNaListagemBling:duplicadosBling, qtdRepetidosBling:duplicadosBling.length } };
     }catch(e){ out.pedidos={erro:e.message}; }
   }catch(e){ out.erro=e.message; }
   _centralBling=out;
