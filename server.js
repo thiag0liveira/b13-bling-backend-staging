@@ -7263,7 +7263,23 @@ app.get("/api/estoque/produtos",async(req,res)=>{
         base.push({produtoId:p.produtoId,codigo:String(p.codigo||""),nome:p.nome||"",nomeTabela:vinc?.itemNome||"",sabor:"",variacoes:0,categoria:vinc?.categoria||"",caixaQtd:vinc?.caixaQtd||1});
       });
     }
-    if(filtro) base=base.filter(p=>(p.nome||"").toLowerCase().includes(filtro)||(p.nomeTabela||"").toLowerCase().includes(filtro)||p.codigo.toLowerCase()===filtro);
+    if(filtro){
+      base=base.filter(p=>(p.nome||"").toLowerCase().includes(filtro)||(p.nomeTabela||"").toLowerCase().includes(filtro)||p.codigo.toLowerCase()===filtro);
+      // produto recém-cadastrado ainda não está no índice local (ele só se refaz a cada
+      // 6h) — então, ao buscar, consulta TAMBÉM o Bling e acrescenta o que faltar
+      try{
+        const r=await bling(`/produtos?nome=${encodeURIComponent(filtro)}&limite=50`);
+        const jaTem=new Set(base.map(p=>String(p.produtoId)));
+        (r?.data||[]).forEach(p=>{
+          if(!p.id||jaTem.has(String(p.id))) return;
+          if(!(p.nome||"").toLowerCase().includes(filtro)) return; // descarta a lista genérica do Bling
+          const vinc=idx.porCodigo[String(p.codigo||"")];
+          base.push({ produtoId:p.id, codigo:String(p.codigo||""), nome:p.nome||"",
+            nomeTabela:vinc?.itemNome||"", sabor:"", variacoes:0,
+            categoria:vinc?.categoria||"", caixaQtd:vinc?.caixaQtd||1, novoNoBling:true });
+        });
+      }catch(e){}
+    }
     base.sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"")
       ||(a.nomeTabela||a.nome||"").localeCompare(b.nomeTabela||b.nome||"")
       ||(a.nome||"").localeCompare(b.nome||""));

@@ -107,6 +107,7 @@ function subExib(p){
   const partes=['#'+esc(p.codigo)];
   if(p.caixaQtd>1) partes.push('fardo '+p.caixaQtd);
   if(p.variacoes>1) partes.push('<span style="color:#ffd23f">'+p.variacoes+' sabores</span>');
+  if(p.novoNoBling) partes.push('<span style="color:#3ce88a">novo no Bling</span>');
   return partes.join(' · ');
 }
 // FÍSICO do depósito escolhido — é com esse que a contagem se compara
@@ -207,6 +208,13 @@ function barraHtml(n){
     '<button class="btn btn-grn" '+((!n||SALVANDO)?"disabled":"")+' onclick="revisarLancamento()">'+(SALVANDO?"Salvando…":"💾 Revisar e salvar")+'</button>';
 }
 function limparEdicao(){ EDIT={}; render(); }
+async function atualizarIndice(){
+  if(!confirm("Reconstruir o índice de produtos?\n\nIsso lê todos os produtos do Bling e pode levar alguns minutos — roda em segundo plano, você pode continuar usando.")) return;
+  try{
+    const j=await fetch(B+"/api/indice-produtos/reconstruir",{method:"POST"}).then(function(r){return r.json();});
+    alert(j.ja?"Já está sendo reconstruído — aguarde alguns minutos e recarregue.":"Reconstrução iniciada. Em alguns minutos, recarregue a página.");
+  }catch(e){ alert("Não consegui iniciar: "+e.message); }
+}
 function render(){
   const app=document.getElementById("app");
   const topo='<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">📦 Estoque</div><div class="sp"></div></div>';
@@ -238,8 +246,10 @@ function render(){
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
         '<input placeholder="Buscar produto…" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value" onkeydown="if(event.key===\'Enter\'){PAGINA=1;carregarProdutos()}" style="flex:1;min-width:180px">'+
         '<button class="btn btn-ghost" onclick="PAGINA=1;carregarProdutos()">🔎 Buscar</button>'+
+        '<button class="btn btn-ghost" title="Produto que você acabou de cadastrar não aparece na lista? Atualize o índice." onclick="atualizarIndice()">🔄 Atualizar índice</button>'+
         '<label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(SO_TABELA?"checked":"")+' onchange="SO_TABELA=this.checked;PAGINA=1;carregarProdutos()"> só produtos da tabela</label>'+
       '</div>'+
+      '<div class="muted" style="margin-bottom:8px">Cadastrou um produto agora? Ele aparece ao <b>buscar pelo nome</b> (a busca consulta o Bling direto). Pra ele entrar na lista completa, use “Atualizar índice”.</div>'+
       '<div class="abas">'+
         '<span class="aba '+(ABA==="lista"?"on":"")+'" onclick="ABA=\'lista\';render()">📋 Lista</span>'+
         '<span class="aba '+(ABA==="tabela"?"on":"")+'" onclick="ABA=\'tabela\';render()">⊞ Tabela</span>'+
