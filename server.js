@@ -2456,6 +2456,75 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // DIAGNÓSTICO: mostra onde está o frete de um pedido (pra achar o campo certo no Bling)
 // investiga um pedido específico: todas as ocorrências no caixa (com dados completos),
 // o pedido/parcelas reais no Bling, e se o fechamento daquela sessão está contando 2x
+// COMPARA Central x Fechamento de Caixa no mesmo dia e mostra POR QUE divergem,
+// listando os pedidos que cada lado inclui/exclui. Também lista todos os pedidos
+// de Consumidor Final. Uso: ?data=AAAA-MM-DD (padrão: hoje, horário de Brasília)
+app.get("/api/diag/central-vs-fechamento",async(req,res)=>{
+  try{
+    const dia=_hojeISO(req.query.data);
+    // 1) busca a lista de pedidos do dia (mesma origem das duas telas)
+    let lista=[], pag=1;
+    for(let i=0;i<10;i++){
+      const r=await bling(`/pedidos/vendas?dataInicial=${dia}&dataFinal=${dia}&pagina=${pag}&limite=100`);
+      const arr=r?.data||[]; lista=lista.concat(arr);
+      if(arr.length<100) break; pag++;
+    }
+    // dedupe (a listagem do Bling pode repetir entre páginas)
+    const vistos=new Set(); const repetidosNaListagem=[];
+    lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)){ repetidosNaListagem.push(p.numero); return false; } vistos.add(k); return true; });
+
+    const detalhes=[];
+    for(const p of lista){
+      let d=null; try{ d=await bling(`/pedidos/vendas/${p.id}`).then(r=>r?.data); }catch(e){}
+      const contatoId=d?.contato?.id||p.contato?.id||null;
+      const nome=d?.contato?.nome||p.contato?.nome||"—";
+      const sit=Number(p.situacao?.id||0);
+      detalhes.push({ id:p.id, numero:p.numero, cliente:nome, contatoId,
+        consumidorFinal: contatoId===CONSUMIDOR_FINAL_ID || /consumidor\s*final/i.test(nome),
+        situacaoId:sit, situacao:nomeSituacao(sit), cancelado:sit===SIT.CANCELADO,
+        totalListagem:+Number(p.total||0).toFixed(2),
+        totalDetalhe: d? +Number(d.total||0).toFixed(2) : null,
+        divergeTotal: d ? Math.abs(Number(d.total||0)-Number(p.total||0))>0.01 : null });
+      await sleep(80);
+    }
+    // 2) como cada tela conta
+    const naoCancelados=detalhes.filter(p=>!p.cancelado);
+    const somaDetalhe=+naoCancelados.reduce((a,p)=>a+(p.totalDetalhe??p.totalListagem),0).toFixed(2);
+    const somaListagem=+naoCancelados.reduce((a,p)=>a+p.totalListagem,0).toFixed(2);
+    // Central limita a 250 pedidos; fechamento não limita
+    const limiteCentral=250;
+    const forasDoLimiteCentral=detalhes.slice(limiteCentral).map(p=>({numero:p.numero,cliente:p.cliente,total:p.totalDetalhe??p.totalListagem}));
+    // 3) caixa local do dia (o que a Central mostra em "fechamento do dia")
+    const ini=_inicioDia(dia), fim=_fimDia(dia);
+    const dCx=lerCaixaSessoes(); let totalCaixa=0, qtdCaixa=0; const pedidosNoCaixa=new Set();
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo!=="venda"||m.cancelado||m.em<ini||m.em>=fim) return;
+      totalCaixa+=Number(m.total)||0; qtdCaixa++; if(m.pedidoId) pedidosNoCaixa.add(String(m.pedidoId));
+    }));
+    const cf=detalhes.filter(p=>p.consumidorFinal&&!p.cancelado);
+    res.json({
+      dia,
+      pedidosNoBling:detalhes.length,
+      cancelados:detalhes.filter(p=>p.cancelado).length,
+      repetidosNaListagem,
+      explicacao:"Se 'somaPorDetalhe' e 'somaPorListagem' divergem, é porque a listagem do Bling fica desatualizada após edições — o Fechamento e a Central usam o DETALHE. 'fechamentoDoCaixaLocal' é o total dos caixas do nosso sistema (só o que passou por um caixa), por isso é naturalmente menor que o total do Bling (que inclui pedidos de outros canais/não finalizados no caixa).",
+      totais:{
+        somaPorDetalhe:somaDetalhe,
+        somaPorListagem:somaListagem,
+        diferencaEntreOsDois:+(somaDetalhe-somaListagem).toFixed(2),
+        fechamentoDoCaixaLocal:+totalCaixa.toFixed(2), qtdVendasNoCaixa:qtdCaixa,
+        pedidosDoBlingQueNaoPassaramNoCaixa:naoCancelados.filter(p=>!pedidosNoCaixa.has(String(p.id))).length,
+      },
+      limiteCentral:{ aplica:detalhes.length>limiteCentral, quantosFicamDeFora:forasDoLimiteCentral.length, pedidos:forasDoLimiteCentral },
+      totaisQueDivergemEntreListagemEDetalhe: detalhes.filter(p=>p.divergeTotal).map(p=>({numero:p.numero,cliente:p.cliente,listagem:p.totalListagem,detalhe:p.totalDetalhe})),
+      consumidorFinal:{ qtd:cf.length, total:+cf.reduce((a,p)=>a+(p.totalDetalhe??p.totalListagem),0).toFixed(2),
+        pedidos:cf.map(p=>({numero:p.numero,cliente:p.cliente,total:p.totalDetalhe??p.totalListagem,situacao:p.situacao,passouNoCaixa:pedidosNoCaixa.has(String(p.id))})) },
+      pedidosDoBlingForaDoCaixa: naoCancelados.filter(p=>!pedidosNoCaixa.has(String(p.id)))
+        .map(p=>({numero:p.numero,cliente:p.cliente,total:p.totalDetalhe??p.totalListagem,situacao:p.situacao,consumidorFinal:p.consumidorFinal})),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/investigar-duplicado/:pedidoId",async(req,res)=>{
   try{
     const idBusca=String(req.params.pedidoId);
