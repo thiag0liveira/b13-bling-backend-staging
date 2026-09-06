@@ -2453,6 +2453,50 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 });
 
 // DIAGNÓSTICO: mostra onde está o frete de um pedido (pra achar o campo certo no Bling)
+// investiga um pedido específico: todas as ocorrências no caixa (com dados completos),
+// o pedido/parcelas reais no Bling, e se o fechamento daquela sessão está contando 2x
+app.get("/api/diag/investigar-duplicado/:pedidoId",async(req,res)=>{
+  try{
+    const idBusca=String(req.params.pedidoId);
+    const dCx=lerCaixaSessoes();
+    const ocorrencias=[];
+    for(const s of (dCx.sessoes||[])){
+      for(const m of (s.movimentos||[])){
+        if(m.tipo==="venda" && (String(m.pedidoId)===idBusca || String(m.numero)===idBusca)){
+          ocorrencias.push({ sessaoId:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente",
+            sessaoFechada:!!s.fechadaEm, pedidoId:m.pedidoId, numero:m.numero, total:m.total,
+            em:m.em, quando:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+            cancelado:!!m.cancelado, alterado:!!m.alterado, pagamentos:m.pagamentos||[], alteracoes:m.alteracoes||[] });
+        }
+      }
+    }
+    // pedido real no Bling
+    let bling=null;
+    const pid=ocorrencias[0]?.pedidoId||idBusca;
+    try{
+      const ped=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data);
+      if(ped) bling={ id:ped.id, numero:ped.numero, total:ped.total, situacao:nomeSituacao(ped.situacao?.id),
+        parcelas:(ped.parcelas||[]).map(p=>({forma:p.formaPagamento?.nome||p.formaPagamento?.id,valor:p.valor})),
+        observacoes:ped.observacoes||"" };
+    }catch(e){ bling={erro:e.message}; }
+    // pra cada sessão envolvida, recalcula o fechamento AGORA (mostra se está contando 2x)
+    const sessoesEnvolvidas=[...new Set(ocorrencias.map(o=>o.sessaoId))];
+    const fechamentos=sessoesEnvolvidas.map(sid=>{
+      const s=(dCx.sessoes||[]).find(x=>x.id===sid);
+      const r=resumoSessaoCaixa(s);
+      const vendasDessePedido=(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado&&(String(m.pedidoId)===idBusca||String(m.numero)===idBusca));
+      return { sessaoId:sid, operador:s.operador, fechadaEm:s.fechadaEm||null,
+        totalVendasDoCaixaAgora:r.totalVendas, resumoFinalGuardado:s.resumoFinal?.totalVendas??null,
+        quantasVezesEssePedidoConta:vendasDessePedido.length,
+        somaSoDessePedidoNoFechamento:+vendasDessePedido.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2) };
+    });
+    res.json({ pedidoId:pid, ocorrenciasNoCaixa:ocorrencias.length, ocorrencias, bling, fechamentosAfetados:fechamentos,
+      diagnostico: ocorrencias.filter(o=>!o.cancelado).length>1
+        ? `Esse pedido está lançado ${ocorrencias.filter(o=>!o.cancelado).length}x ATIVO no caixa. O Bling tem 1 pagamento real de ${bling?.total}. O fechamento está contando a diferença a mais.`
+        : "Só 1 lançamento ativo — não está duplicado no caixa agora." });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
   try{
     const numero=String(req.params.numero);
