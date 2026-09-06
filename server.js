@@ -7217,7 +7217,8 @@ app.get("/api/central/resumo",(req,res)=>{
 app.get("/api/estoque/depositos",async(req,res)=>{
   try{
     const r=await bling(`/depositos`);
-    const deps=(r?.data||[]).map(d=>({id:d.id,descricao:d.descricao||d.nome||("Depósito "+d.id),padrao:!!d.padrao,situacao:d.situacao}));
+    const deps=(r?.data||[]).map(d=>({id:d.id,descricao:d.descricao||d.nome||("Depósito "+d.id),padrao:!!d.padrao,situacao:d.situacao,
+      desconsiderarSaldo:!!d.desconsiderarSaldo})); // true = o Bling NÃO soma esse depósito no saldo total do produto
     res.json({data:deps});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });

@@ -184,6 +184,7 @@ function render(){
       (ERRO_DEP?'<div class="warn">'+esc(ERRO_DEP)+'<br><br>Se o seu plano do Bling não tiver múltiplos depósitos, me avise que eu adapto o painel pra trabalhar sem essa escolha.</div>':'<div class="muted">Um instante.</div>')+'</div></div>';
     return;
   }
+  const depAtual=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
   const explic=MODO==="balanco"
     ?"Você digita <b>quanto tem de verdade</b>; o sistema calcula a diferença e lança entrada ou saída sozinho. É o mais seguro pra contagem."
     :(MODO==="entrada"?"Você digita <b>quanto chegou</b>; soma ao saldo atual.":"Você digita <b>quanto saiu</b>; subtrai do saldo atual.");
@@ -191,7 +192,7 @@ function render(){
     '<div class="card"><div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:200px"><div class="muted" style="margin-bottom:4px">1) Depósito que você vai atualizar</div>'+
         '<select style="width:100%" onchange="DEP=this.value;EDIT={};PAGINA=1;carregarProdutos()">'+
-        DEPOSITOS.map(function(d){return '<option value="'+esc(d.id)+'" '+(String(d.id)===String(DEP)?"selected":"")+'>'+esc(d.descricao)+(d.padrao?" (padrão)":"")+'</option>';}).join("")+
+        DEPOSITOS.map(function(d){return '<option value="'+esc(d.id)+'" '+(String(d.id)===String(DEP)?"selected":"")+'>'+esc(d.descricao)+(d.padrao?" (padrão)":"")+(d.desconsiderarSaldo?" — não conta no total":"")+'</option>';}).join("")+
         '</select></div>'+
       '<div style="min-width:210px"><div class="muted" style="margin-bottom:4px">2) Tipo de lançamento</div>'+
         '<select style="width:100%" onchange="MODO=this.value;render()">'+
@@ -199,7 +200,9 @@ function render(){
         '<option value="entrada"'+(MODO==="entrada"?" selected":"")+'>Entrada — somar ao saldo</option>'+
         '<option value="saida"'+(MODO==="saida"?" selected":"")+'>Saída — subtrair do saldo</option>'+
         '</select></div></div>'+
-      '<div class="muted" style="margin-top:8px">'+explic+'</div></div>'+
+      '<div class="muted" style="margin-top:8px">'+explic+'</div>'+
+      (depAtual&&depAtual.desconsiderarSaldo?'<div class="warn" style="margin-top:8px">⚠️ O depósito <b>'+esc(depAtual.descricao)+'</b> está marcado no Bling como <b>“desconsiderar saldo”</b>: o que estiver aqui <b>não</b> entra no saldo total do produto (o que o caixa e o site enxergam). Ajustar aqui é seguro, mas não muda o disponível pra venda.</div>':'')+
+      '</div>'+
     '<div class="card">'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
         '<input placeholder="Buscar produto…" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value" onkeydown="if(event.key===\'Enter\'){PAGINA=1;carregarProdutos()}" style="flex:1;min-width:180px">'+
