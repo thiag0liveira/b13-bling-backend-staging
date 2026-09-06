@@ -4298,6 +4298,32 @@ app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
 
+// CANCELA SÓ O REGISTRO LOCAL de um lançamento — NÃO mexe no Bling. Uso: corrigir
+// duplicidade histórica no caixa quando o Bling já está correto (1 pedido só) e um dos
+// lançamentos locais é sobra de um bug antigo (ex: reabertura que criava lançamento novo
+// em vez de atualizar). Identifica o lançamento exato por sessaoId+em+pedidoId, pra não
+// arriscar cancelar o errado. Recalcula o fechamento se a sessão já estava fechada.
+app.post("/api/gestao/cancelar-lancamento-local",(req,res)=>{
+  try{
+    const {sessaoId, em, pedidoId, operador, motivo}=req.body||{};
+    if(!sessaoId||!em||!pedidoId) return res.status(400).json({erro:"informe sessaoId, em e pedidoId"});
+    const dCx=lerCaixaSessoes();
+    const s=(dCx.sessoes||[]).find(x=>x.id===sessaoId);
+    if(!s) return res.status(404).json({erro:"sessão não encontrada"});
+    const mov=(s.movimentos||[]).find(m=>m.tipo==="venda"&&String(m.pedidoId)===String(pedidoId)&&Number(m.em)===Number(em));
+    if(!mov) return res.status(404).json({erro:"lançamento não encontrado (confira sessaoId/em/pedidoId)"});
+    if(mov.cancelado) return res.status(400).json({erro:"esse lançamento já está cancelado"});
+    const totalAntes=+(resumoSessaoCaixa(s).totalVendas||0).toFixed(2);
+    mov.cancelado=true;
+    mov.alteracoes=[...(mov.alteracoes||[]),{ em:Date.now(), tipo:"cancelamento_local_duplicado", por:operador||"Gestão", motivo:motivo||"", blingTocado:false }];
+    if(s.fechadaEm&&s.resumoFinal){ try{ s.resumoFinal=resumoSessaoCaixa(s); }catch(e){} }
+    salvarCaixaSessoes(dCx);
+    const totalDepois=+(resumoSessaoCaixa(s).totalVendas||0).toFixed(2);
+    addLog(String(pedidoId),"venda_cancelada_local_duplicado",null,operador||"Gestão",{motivo:motivo||"",sessaoId,em,valorRemovido:+(totalAntes-totalDepois).toFixed(2)});
+    res.json({ok:true, totalVendasAntes:totalAntes, totalVendasDepois:totalDepois, diferenca:+(totalAntes-totalDepois).toFixed(2)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/gestao/cancelar-venda",async(req,res)=>{
   try{
     const {pedidoId, operador, motivo}=req.body||{};
