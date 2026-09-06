@@ -7287,6 +7287,17 @@ app.get("/api/estoque/produtos",async(req,res)=>{
     const pagina=Math.max(1,Number(req.query.pagina||1));
     const total=base.length;
     const pagBase=base.slice((pagina-1)*limite, pagina*limite);
+    // COMPLETA os nomes que faltam: se o produto não está no índice local (recém-
+    // cadastrado, ou índice desatualizado), o nome do Bling — que é onde está o SABOR —
+    // não foi encontrado. Busca o detalhe só desses (normalmente poucos).
+    const semNomeBling=pagBase.filter(p=>p.variacoes>1 && (!p.sabor || p.sabor===p.nomeTabela));
+    for(const p of semNomeBling.slice(0,40)){
+      try{
+        const d=await bling(`/produtos/${p.produtoId}`).then(r=>r?.data);
+        if(d?.nome){ p.nome=d.nome; p.sabor=d.nome; p.nomeResolvidoAgora=true; }
+      }catch(e){}
+      await sleep(150);
+    }
     // saldos em blocos de 40
     const ids=pagBase.map(p=>Number(p.produtoId)).filter(Boolean);
     const saldos={};

@@ -98,8 +98,11 @@ async function carregarProdutos(){
 // nome pra exibir: quando o item da tabela agrupa vários sabores, destaca o sabor
 // (nome completo do Bling) pra não errar qual variação está sendo atualizada
 function nomeExib(p){
-  if(p.sabor&&p.nomeTabela&&p.sabor!==p.nomeTabela){
-    return esc(p.nomeTabela)+' <span style="color:#3ce88a">· '+esc(p.sabor)+'</span>';
+  const sabor=(p.sabor&&p.sabor!==p.nomeTabela)?p.sabor:((p.nome&&p.nome!==p.nomeTabela)?p.nome:"");
+  if(sabor&&p.nomeTabela) return esc(p.nomeTabela)+' <span style="color:#3ce88a">· '+esc(sabor)+'</span>';
+  if(p.variacoes>1&&!sabor){
+    // item tem vários sabores mas o nome do Bling não veio — identifica pelo código
+    return esc(p.nomeTabela||p.nome||"")+' <span style="color:#ffd23f">· cód. '+esc(p.codigo)+'</span>';
   }
   return esc(p.nome||p.nomeTabela||"");
 }
@@ -168,7 +171,7 @@ function abaTabelaHtml(){
   const linhas=PRODUTOS.map(function(p){
     const s=saldoDe(p);
     return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nomeTabela||p.nome)+'</td>'+
-      '<td'+(p.sabor?' style="color:#3ce88a;font-weight:700"':' class="muted"')+'>'+esc(p.sabor||"—")+'</td>'+
+      '<td'+(p.sabor?' style="color:#3ce88a;font-weight:700"':' class="muted"')+'>'+esc((p.sabor&&p.sabor!==p.nomeTabela)?p.sabor:((p.nome&&p.nome!==p.nomeTabela)?p.nome:(p.variacoes>1?("cód. "+p.codigo):"—")))+'</td>'+
       '<td class="muted">#'+esc(p.codigo)+'</td>'+
       '<td style="text-align:right;color:'+(s==null?'#9a95c9':(s<=0?'#ff8090':'#ffd23f'))+';font-weight:800">'+(s==null?'—':s)+'</td>'+
       '<td style="text-align:right" class="muted">'+(virtualDe(p)==null?'—':virtualDe(p))+'</td>'+
