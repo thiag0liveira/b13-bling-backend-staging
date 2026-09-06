@@ -3184,7 +3184,7 @@ function _indicePrecosTabela(){
     return (v!=null && Number(v)>0)?Number(v):null;
   };
   (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
-    const info={itemId:it.id, categoria:cat.t||"", precoAtacado:it.preco??null,
+    const info={itemId:it.id, categoria:cat.t||"", itemNome:it.nome||"", precoAtacado:it.preco??null,
       precoFardo: precoFardoDe(it.id), caixaQtd:it.caixa||null};
     (it.bling||[]).forEach(b=>{
       if(b.codigo) porCodigo[String(b.codigo)]=info;
@@ -7234,22 +7234,39 @@ app.get("/api/estoque/produtos",async(req,res)=>{
     const idx=_indicePrecosTabela();
     const tab=lerTabela();
     let base=[];
+    // índice local: tem o nome COMPLETO do produto no Bling (com o sabor/variação),
+    // que é o que interessa pra saber qual atualizar quando o item da tabela agrupa
+    // vários sabores (ex: "Red Bull" -> Tradicional, Tropical, Melancia...)
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    const nomeBlingPorId={}, nomeBlingPorCodigo={};
+    Object.values(indice).forEach(p=>{ if(p.produtoId) nomeBlingPorId[String(p.produtoId)]=p.nome||""; if(p.codigo) nomeBlingPorCodigo[String(p.codigo)]=p.nome||""; });
     if(soTabela){
       (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>{
-        (it.bling||[]).forEach(b=>{ if(b.id) base.push({produtoId:b.id,codigo:String(b.codigo||""),nome:it.nome||b.nome||"",categoria:c.t||"",caixaQtd:it.caixa||1}); });
+        const variacoes=(it.bling||[]).filter(b=>b.id);
+        const temVarios=variacoes.length>1; // item da tabela com mais de um sabor
+        variacoes.forEach(b=>{
+          const nomeBling = nomeBlingPorId[String(b.id)] || b.nome || nomeBlingPorCodigo[String(b.codigo||"")] || "";
+          base.push({ produtoId:b.id, codigo:String(b.codigo||""),
+            nome: nomeBling || it.nome || "",            // nome do Bling (com o sabor)
+            nomeTabela: it.nome||"",                      // nome agrupado da tabela
+            sabor: temVarios ? (nomeBling||b.nome||"") : "", // destaca o sabor quando há mais de um
+            variacoes: temVarios ? variacoes.length : 0,
+            categoria:c.t||"", caixaQtd:it.caixa||1 });
+        });
       }));
     } else {
-      const indice=lerJSON(GTIN_INDEX_FILE,{});
       const vistos=new Set();
       Object.values(indice).forEach(p=>{
         if(!p.produtoId||vistos.has(String(p.produtoId))) return;
         vistos.add(String(p.produtoId));
         const vinc=idx.porCodigo[String(p.codigo||"")];
-        base.push({produtoId:p.produtoId,codigo:String(p.codigo||""),nome:p.nome||"",categoria:vinc?.categoriaNome||"",caixaQtd:vinc?.caixaQtd||1});
+        base.push({produtoId:p.produtoId,codigo:String(p.codigo||""),nome:p.nome||"",nomeTabela:vinc?.itemNome||"",sabor:"",variacoes:0,categoria:vinc?.categoria||"",caixaQtd:vinc?.caixaQtd||1});
       });
     }
-    if(filtro) base=base.filter(p=>p.nome.toLowerCase().includes(filtro)||p.codigo.toLowerCase()===filtro);
-    base.sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"")||a.nome.localeCompare(b.nome));
+    if(filtro) base=base.filter(p=>(p.nome||"").toLowerCase().includes(filtro)||(p.nomeTabela||"").toLowerCase().includes(filtro)||p.codigo.toLowerCase()===filtro);
+    base.sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"")
+      ||(a.nomeTabela||a.nome||"").localeCompare(b.nomeTabela||b.nome||"")
+      ||(a.nome||"").localeCompare(b.nome||""));
     const limite=Math.min(Number(req.query.limite||400),800);
     const pagina=Math.max(1,Number(req.query.pagina||1));
     const total=base.length;

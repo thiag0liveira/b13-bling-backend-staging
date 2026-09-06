@@ -95,6 +95,20 @@ async function carregarProdutos(){
   }catch(e){ PRODUTOS=[]; alert("Erro ao carregar produtos: "+e.message); }
   CARREGANDO=false; render();
 }
+// nome pra exibir: quando o item da tabela agrupa vários sabores, destaca o sabor
+// (nome completo do Bling) pra não errar qual variação está sendo atualizada
+function nomeExib(p){
+  if(p.sabor&&p.nomeTabela&&p.sabor!==p.nomeTabela){
+    return esc(p.nomeTabela)+' <span style="color:#3ce88a">· '+esc(p.sabor)+'</span>';
+  }
+  return esc(p.nome||p.nomeTabela||"");
+}
+function subExib(p){
+  const partes=['#'+esc(p.codigo)];
+  if(p.caixaQtd>1) partes.push('fardo '+p.caixaQtd);
+  if(p.variacoes>1) partes.push('<span style="color:#ffd23f">'+p.variacoes+' sabores</span>');
+  return partes.join(' · ');
+}
 // FÍSICO do depósito escolhido — é com esse que a contagem se compara
 function saldoDe(p){
   if(!p.saldo) return null;
@@ -142,7 +156,7 @@ function abaListaHtml(){
     if(p.categoria&&p.categoria!==catAtual){ catAtual=p.categoria; html+='<div class="catHead">'+esc(catAtual)+'</div>'; }
     const s=saldoDe(p);
     html+='<div class="lin">'+
-      '<div class="nm">'+esc(p.nome)+'<small>#'+esc(p.codigo)+(p.caixaQtd>1?' · fardo '+p.caixaQtd:'')+'</small></div>'+
+      '<div class="nm">'+nomeExib(p)+'<small>'+subExib(p)+'</small></div>'+
       celulaSaldo(p)+
       '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
       '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
@@ -152,14 +166,16 @@ function abaListaHtml(){
 function abaTabelaHtml(){
   const linhas=PRODUTOS.map(function(p){
     const s=saldoDe(p);
-    return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nome)+'</td><td class="muted">#'+esc(p.codigo)+'</td>'+
+    return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nomeTabela||p.nome)+'</td>'+
+      '<td'+(p.sabor?' style="color:#3ce88a;font-weight:700"':' class="muted"')+'>'+esc(p.sabor||"—")+'</td>'+
+      '<td class="muted">#'+esc(p.codigo)+'</td>'+
       '<td style="text-align:right;color:'+(s==null?'#9a95c9':(s<=0?'#ff8090':'#ffd23f'))+';font-weight:800">'+(s==null?'—':s)+'</td>'+
       '<td style="text-align:right" class="muted">'+(virtualDe(p)==null?'—':virtualDe(p))+'</td>'+
       '<td style="text-align:right"><input type="number" step="0.001" inputmode="decimal" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></td>'+
       '<td class="dif" id="dif_'+p.produtoId+'" style="text-align:right"></td></tr>';
   }).join("");
-  return '<div style="max-height:60vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Produto</th><th>Código</th><th style="text-align:right">Físico</th><th style="text-align:right">Disponível</th><th style="text-align:right">'+(MODO==='balanco'?'Contado':'Qtd')+'</th><th style="text-align:right">Dif.</th></tr></thead><tbody>'+
-    (linhas||'<tr><td colspan="7" class="muted">Nenhum produto.</td></tr>')+'</tbody></table></div>';
+  return '<div style="max-height:60vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Produto</th><th>Sabor</th><th>Código</th><th style="text-align:right">Físico</th><th style="text-align:right">Disponível</th><th style="text-align:right">'+(MODO==='balanco'?'Contado':'Qtd')+'</th><th style="text-align:right">Dif.</th></tr></thead><tbody>'+
+    (linhas||'<tr><td colspan="8" class="muted">Nenhum produto.</td></tr>')+'</tbody></table></div>';
 }
 function abaConferenciaHtml(){
   const negativos=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s<0;});
@@ -169,7 +185,7 @@ function abaConferenciaHtml(){
     return '<div class="catHead" style="background:'+cor+'">'+titulo+' ('+lista.length+')</div>'+
       (lista.length?lista.map(function(p){
         const s=saldoDe(p);
-        return '<div class="lin"><div class="nm">'+esc(p.nome)+'<small>#'+esc(p.codigo)+'</small></div>'+
+        return '<div class="lin"><div class="nm">'+nomeExib(p)+'<small>'+subExib(p)+'</small></div>'+
           celulaSaldo(p)+
           '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
           '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
@@ -246,7 +262,7 @@ function revisarLancamento(){
   const linhas=itens.map(function(p){
     const v=num(EDIT[p.produtoId]); const s=saldoDe(p); const d=difDe(p);
     const desc=MODO==="balanco"?('tem '+(s==null?"?":s)+' → vai ficar '+v):(MODO==="entrada"?('entrada de '+v):('saída de '+v));
-    return '<div class="lin"><div class="nm">'+esc(p.nome)+'<small>'+desc+'</small></div><div class="dif">'+
+    return '<div class="lin"><div class="nm">'+nomeExib(p)+'<small>'+desc+'</small></div><div class="dif">'+
       (d>0?'<span style="color:#3ce88a">+'+d+'</span>':'<span style="color:#ff8090">'+d+'</span>')+'</div></div>';
   }).join("");
   document.getElementById("modais").innerHTML=
