@@ -7264,14 +7264,18 @@ app.get("/api/estoque/produtos",async(req,res)=>{
         const r=await bling(`/estoques/saldos?${qs}`);
         (r?.data||[]).forEach(s=>{
           const pid=s.produto?.id; if(!pid) return;
-          let saldoDep=null;
+          // o Bling devolve, por depósito, saldoFisico (o que está na prateleira) e
+          // saldoVirtual (físico menos o que já foi vendido e ainda não saiu).
+          // A CONTAGEM se compara com o FÍSICO; o virtual é o disponível pra venda.
+          let saldoDep=null, virtualDep=null;
           if(depositoId&&Array.isArray(s.depositos)){
             const d=s.depositos.find(x=>String(x.id||x.deposito?.id)===String(depositoId));
-            if(d) saldoDep=Number(d.saldoFisico ?? d.saldo ?? d.saldoVirtual ?? 0);
+            if(d){ saldoDep=Number(d.saldoFisico ?? d.saldo ?? 0); virtualDep=Number(d.saldoVirtual ?? saldoDep); }
           }
           saldos[pid]={ total:Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0),
-            fisicoTotal:Number(s.saldoFisicoTotal ?? 0), noDeposito:saldoDep,
-            depositos:Array.isArray(s.depositos)?s.depositos.map(x=>({id:x.id||x.deposito?.id,nome:x.deposito?.descricao||x.descricao||"",saldo:Number(x.saldoFisico ?? x.saldo ?? 0)})):[] };
+            fisicoTotal:Number(s.saldoFisicoTotal ?? 0), virtualTotal:Number(s.saldoVirtualTotal ?? 0),
+            noDeposito:saldoDep, virtualNoDeposito:virtualDep,
+            depositos:Array.isArray(s.depositos)?s.depositos.map(x=>({id:x.id||x.deposito?.id,nome:x.deposito?.descricao||x.descricao||"",saldo:Number(x.saldoFisico ?? x.saldo ?? 0),virtual:Number(x.saldoVirtual ?? 0)})):[] };
         });
       }catch(e){}
       await sleep(200);
@@ -7302,7 +7306,8 @@ app.post("/api/estoque/lancar",async(req,res)=>{
           const r=await bling(`/estoques/saldos?${qs}`);
           (r?.data||[]).forEach(s=>{
             const pid=s.produto?.id; if(!pid) return;
-            let v=Number(s.saldoFisicoTotal ?? s.saldoVirtualTotal ?? 0);
+            // balanço se compara com o saldo FÍSICO do depósito (o que está na prateleira)
+            let v=Number(s.saldoFisicoTotal ?? 0);
             if(Array.isArray(s.depositos)){
               const d=s.depositos.find(x=>String(x.id||x.deposito?.id)===String(depositoId));
               if(d) v=Number(d.saldoFisico ?? d.saldo ?? v);
