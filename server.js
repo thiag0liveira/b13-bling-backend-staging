@@ -998,9 +998,10 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
   const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
   try{
-    const rPed=await bling(`/pedidos/vendas/${id}`);
+    const rPed=opts.ped?{data:opts.ped}:await bling(`/pedidos/vendas/${id}`);
     const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
     const sitAtual=ped.situacao?.id;
+    if(sitAtual===SIT.CANCELADO) return {ok:false,erro:"Pedido Cancelado não pode ser editado."};
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sitAtual);
     // modo "somar": mantém as parcelas que já existem no pedido no Bling e
     // acrescenta as novas (usado em pagamento adicional) — em vez de substituir
@@ -1024,8 +1025,12 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     };
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    // preserva desconto e outras despesas (senão o PUT zera no Bling)
+    if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+    if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
+    else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
 
-    let resultado, fezUnlock=false;
+    let resultado, fezUnlock=false, restauracao=null;
     try{
       resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     }catch(e1){
@@ -1043,12 +1048,18 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       try{
         resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
       }finally{
-        // sempre restaura a situação original (caminhando até ela), mesmo se o PUT falhar
+        // sempre restaura a situação original (caminhando até ela), mesmo se o PUT falhar.
+        // Atendido/Separado: com retry (o Bling pode reclamar de estoque na re-baixa).
         await new Promise(r=>setTimeout(r,400));
-        await _restaurarSituacao(id, sitAtual);
+        if(sitAtual===SIT.ATENDIDO||sitAtual===SIT.SEPARADO){
+          const itensEst=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:i.quantidade}));
+          restauracao=await _restaurarSituacaoComRetry(id, sitAtual, itensEst);
+        } else {
+          await _restaurarSituacao(id, sitAtual);
+        }
       }
     }
-    return {ok:true,resposta:resultado,fezUnlock};
+    return {ok:true,resposta:resultado,fezUnlock,restauracao};
   }catch(e){ console.error("[atualizarParcelasBling] falhou pedido",id,"status",e.status,"body:",JSON.stringify(e.body||{})); return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
@@ -2208,7 +2219,8 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
           if(opts.cancelado) m.cancelado=true;
           if(opts.novoTotal!=null) m.total=+Number(opts.novoTotal).toFixed(2);
           if(opts.frete!=null) m.frete=+Number(opts.frete).toFixed(2);
-          m.alteracoes=[...(m.alteracoes||[]), alteracao];
+          if(Array.isArray(opts.itens)&&opts.itens.length) m.itens=opts.itens;
+          m.alteracoes=[...(m.alteracoes||[]), ...(Array.isArray(opts.alteracoesExtra)?opts.alteracoesExtra:[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
           achou=true; mexeu=true;
         }
@@ -4012,7 +4024,13 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     // pedido atual no Bling (pra total e pra base do "antes")
     const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
     if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    if(Number(ped.situacao?.id||0)===SIT.CANCELADO) return res.status(400).json({erro:"Este pedido está CANCELADO no Bling."});
     const totalPedido=Number(ped.total||0);
+    // itens que a tela mandou (reabertura pode RETIRAR/alterar produto) — compara com o Bling
+    const itensBling=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+    const itensNovos=(Array.isArray(req.body.itens)&&req.body.itens.length)?req.body.itens.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor),modoPreco:i.modoPreco||null})):null;
+    const diffItensEd=itensNovos?diffItens(itensBling,itensNovos):{mudou:false,retirados:[],acrescentados:[],alterados:[],de:"",para:""};
+    const itensMudaramEd=diffItensEd.mudou;
 
     // descrição do pagamento ANTES: usa o histórico local (tem nome+valor); senão, as parcelas do Bling
     const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
@@ -4041,8 +4059,27 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       `Tirou: ${tirou.length?tirou.join(" · "):"—"}`,
       `Acrescentou: ${acrescentou.length?acrescentou.join(" · "):"—"}`,
     ].join("\n");
-    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
-    if(!rBling.ok) return res.status(502).json({erro:"Falha ao atualizar no Bling: "+(rBling.erro||"desconhecido")});
+    const parcelasEd=linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId}));
+    let rBling, estoqueRepostoEd=[];
+    if(itensMudaramEd){
+      // itens mudaram: grava itens + parcelas + histórico num único PUT (destrava Atendido se preciso)
+      const blocoItens=blocoHistoricoItens(diffItensEd, funcsNome, auth.funcionario.nome);
+      rBling=await atualizarItensBling(pedidoId, itensNovos.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), notaObs+"\n"+blocoItens, {ped, parcelas:parcelasEd, outrasDespesas:ped.outrasDespesas!=null?Number(ped.outrasDespesas):null, itensParaEstoque:itensNovos});
+      if(rBling?.reposto?.length) estoqueRepostoEd=rBling.reposto;
+    } else {
+      rBling=await atualizarParcelasBling(pedidoId, parcelasEd, {obsExtra:notaObs, ped});
+      if(rBling?.restauracao?.reposto?.length) estoqueRepostoEd=rBling.restauracao.reposto;
+    }
+    if(!rBling.ok){
+      let m=rBling.erro||"desconhecido";
+      if(/estoque|saldo/i.test(m)) m="o Bling barrou por estoque insuficiente, mesmo após tentar repor. Nada foi alterado. Confira o estoque no Bling e tente de novo.";
+      registrarAviso({tipo:"edicao_caixa_bling_falhou",titulo:`Pedido #${numero||ped.numero}: alteração no caixa não salva no Bling`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",erroBling:rBling.erro||"",fingerprint:`edcx-${idStr}-${Date.now()}`,
+        oQueFazer:`Tentou alterar o pedido #${numero||ped.numero} (${itensMudaramEd?"itens e ":""}pagamento) e o Bling recusou. ${itensMudaramEd?"Itens pretendidos: "+diffItensEd.para+". ":""}Pagamento pretendido: ${descDepoisPre}.`});
+      return res.status(502).json({erro:"Falha ao atualizar no Bling: "+m});
+    }
+    if(estoqueRepostoEd.length){
+      registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${numero||ped.numero}: estoque reposto automaticamente (reabertura)`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`repo-ed-${idStr}-${Date.now()}`,estoqueAjustado:estoqueRepostoEd.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),oQueFazer:"Confira no Bling se o saldo desses produtos está certo."});
+    }
 
     // atualiza registro local de pagamento — o total passa a ser o que foi efetivamente recebido
     const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
@@ -4063,8 +4100,12 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       por:(funcs[funcionarioId]?.nome)||"—",
       de:descAntes, para:descDepois,
     };
-    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova, frete:Number(req.body.frete||0)});
+    const altItens=itensMudaramEd?[{em:Date.now(),tipo:"itens",por:alteracao.por,autorizadoPor:auth.funcionario.nome,de:diffItensEd.de,para:diffItensEd.para,
+      retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),
+      alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`)}]:[];
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens});
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
+    if(itensMudaramEd) registrarHistoricoItens(idStr, diffItensEd, funcionarioId, alteracao.por, auth.funcionario.nome);
 
     // se o pedido NÃO estava em nenhum caixa do sistema, entra no caixa (aberto) de quem
     // está finalizando agora — e avisa isso ao salvar.
@@ -4080,7 +4121,8 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
           total:+Number(totalPedido).toFixed(2), clienteNome:ped.contato?.nome||"", origem:"caixa_atacado_reaberto",
           operador:sAberta.operador||"", outrasDespesas:Number(ped.outrasDespesas||0),
           pagamentos:linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
-          alterado:true, alteracoes:[alteracao],
+          itens:(itensNovos||itensBling).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
+          alterado:true, alteracoes:[...altItens,alteracao],
         });
         salvarCaixaSessoes(dCx);
         incluidoNoCaixa={operador:sAberta.operador||"", sessaoId:sAberta.id};
@@ -4088,7 +4130,9 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       }
     }
 
-    res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa});
+    res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
+      itensAlterados:itensMudaramEd?{retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null,
+      estoqueReposto:estoqueRepostoEd});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -4341,7 +4385,17 @@ app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
+const _opsVendaNovaEmAndamento=new Set();
 app.post("/api/pdv/venda", async(req,res)=>{
+  const opId=req.body?.opId?String(req.body.opId):null;
+  // idempotência: a mesma tentativa (retry/clique duplo/F5) NÃO cria um segundo pedido no Bling
+  if(opId){
+    const op=opFinalizarGet(opId);
+    if(op?.status==="ok") return res.json({...op.resposta, repetido:true});
+    if(op?.status==="em_andamento" && _opsVendaNovaEmAndamento.has(opId)) return res.status(202).json({emAndamento:true,opId});
+    _opsVendaNovaEmAndamento.add(opId);
+    opFinalizarSet(opId,{status:"em_andamento"});
+  }
   try{
     const {itens,contatoId,clienteNome,desconto,pagamentos,emitirNfce,funcionarioId}=req.body||{};
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
@@ -4460,7 +4514,11 @@ app.post("/api/pdv/venda", async(req,res)=>{
     }catch(e){ console.error("Falha ao vincular venda à sessão de caixa (ignorado):",e.message); }
 
     let nfce=null;
-    if(emitirNfce){
+    if(emitirNfce && (req.body.tipoCaixa||"")==="atacado"){
+      // caixa ATACADO: NFC-e em segundo plano (não segura a resposta; SEFAZ pode demorar)
+      emitirNfceEmSegundoPlano(pedidoId, numeroPedido, (lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"");
+      nfce={pendente:true};
+    } else if(emitirNfce){
       try{
         // gera a NFC-e puxando os dados direto do pedido (igual o botão "Gerar NFC-e" do Bling faz)
         const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
@@ -4498,8 +4556,13 @@ app.post("/api/pdv/venda", async(req,res)=>{
       })();
     }
 
-    res.json({ok:true,pedidoId,numero:numeroPedido,total:totalPedido,nfce,estoqueReposto});
-  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+    const respostaVenda={ok:true,pedidoId,numero:numeroPedido,total:totalPedido,nfce,estoqueReposto};
+    if(opId) opFinalizarSet(opId,{status:"ok",resposta:respostaVenda,pedidoId:String(pedidoId)});
+    res.json(respostaVenda);
+  }catch(e){
+    if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
+    res.status(e.status||500).json({erro:e.message,detalhe:e.body});
+  }finally{ if(opId) _opsVendaNovaEmAndamento.delete(opId); }
 });
 
 // ==================== CAIXA ATACADO ====================
@@ -4717,33 +4780,176 @@ async function garantirEstoqueParaItens(itens){
 // pular direto de "Aguardando separação" pra "Atendido" — exigem passar por SEPARADO
 // antes. Esta função tenta direto, confere se mudou de verdade (relendo o pedido), e
 // se não mudou, faz a transição em cascata SEPARADO -> ATENDIDO. Retorna {ok, situacaoFinal, caminho}.
-async function moverPedidoParaAtendido(pedidoId){
-  const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
-  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
-  const caminho=[];
-  let sitAtual=await lerSit();
-  if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"]};
+// ===================== FINALIZAÇÃO SEGURA (caixa atacado) =====================
+// Anti-duplicidade + anti-travamento:
+//  - opId (idempotência): a tela manda um id único por tentativa; se a mesma tentativa
+//    chegar 2x (retry, clique duplo, F5), o servidor devolve o resultado já pronto
+//    em vez de finalizar de novo.
+//  - trava por pedido: duas finalizações do MESMO pedido ao mesmo tempo -> a 2ª espera.
+//  - registrarVendaNoCaixa: se o pedido já tem um lançamento ativo em QUALQUER caixa,
+//    ATUALIZA esse lançamento (com histórico) em vez de criar outro.
+const OPS_FINALIZAR_FILE=`${DATA_DIR}/ops_finalizar.json`;
+function lerOpsFinalizar(){
+  const d=lerJSON(OPS_FINALIZAR_FILE,{}); const lim=Date.now()-48*3600*1000; let mudou=false;
+  for(const k of Object.keys(d)){ if((d[k].em||0)<lim){ delete d[k]; mudou=true; } }
+  if(mudou) salvarJSON(OPS_FINALIZAR_FILE,d);
+  return d;
+}
+function opFinalizarGet(opId){ if(!opId) return null; return lerOpsFinalizar()[String(opId)]||null; }
+function opFinalizarSet(opId,val){ if(!opId) return; const d=lerOpsFinalizar(); const k=String(opId); d[k]={...(d[k]||{em:Date.now()}),...val,atualizadoEm:Date.now()}; salvarJSON(OPS_FINALIZAR_FILE,d); }
+const _pedidosEmFinalizacao=new Map(); // pedidoId -> {opId, desde}
 
-  // REGRA DO NEGÓCIO: o pedido NÃO pode pular direto pra Atendido — tem que caminhar
-  // SEPARADO -> ATENDIDO. Então sempre garantimos o Separado antes.
-  if(sitAtual!==SIT.SEPARADO){
-    try{ await patch(SIT.SEPARADO); caminho.push("→ Separado"); await sleep(500); }
-    catch(e){ caminho.push("falhou → Separado: "+e.message); }
-    let s=await lerSit();
-    // se o Bling não deixou ir direto pra Separado, passa por Em separação antes
-    if(s!==SIT.SEPARADO){
-      try{
-        await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(500);
-        await patch(SIT.SEPARADO); caminho.push("→ Separado (após Em separação)"); await sleep(500);
-      }catch(e){ caminho.push("falhou cascata Separado: "+e.message); }
+const _fmtItem=(i)=>`${Number(i.quantidade)}x ${i.nome||("produto "+i.produtoId)}`;
+// compara itens (antes x depois) por produtoId -> {mudou, retirados, acrescentados, alterados, de, para}
+function diffItens(antes, depois){
+  const A={}, D={};
+  (antes||[]).forEach(i=>{ if(i.produtoId) A[String(i.produtoId)]={...i,quantidade:Number(i.quantidade),valor:Number(i.valor)}; });
+  (depois||[]).forEach(i=>{ if(i.produtoId) D[String(i.produtoId)]={...i,quantidade:Number(i.quantidade),valor:Number(i.valor)}; });
+  const retirados=[], acrescentados=[], alterados=[];
+  for(const k of Object.keys(A)){ if(!D[k]) retirados.push({produtoId:k,nome:A[k].nome||"",quantidade:A[k].quantidade,valor:A[k].valor}); }
+  for(const k of Object.keys(D)){
+    if(!A[k]){ acrescentados.push({produtoId:k,nome:D[k].nome||"",quantidade:D[k].quantidade,valor:D[k].valor}); continue; }
+    const a=A[k], d=D[k];
+    if(a.quantidade!==d.quantidade || Math.abs(a.valor-d.valor)>0.001){
+      alterados.push({produtoId:k,nome:d.nome||a.nome||"",de:{quantidade:a.quantidade,valor:a.valor},para:{quantidade:d.quantidade,valor:d.valor}});
     }
   }
+  const mudou=retirados.length>0||acrescentados.length>0||alterados.length>0;
+  return { mudou, retirados, acrescentados, alterados,
+    de:(antes||[]).map(_fmtItem).join(", "), para:(depois||[]).map(_fmtItem).join(", ") };
+}
+// texto legível (vai na observação do Bling) do que mudou nos itens
+function blocoHistoricoItens(diff, quem, autorizadoPor){
+  const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const fmt=(v)=>Number(v||0).toFixed(2);
+  return [
+    `[Alteração de itens ${quando} — por ${quem||"—"}${autorizadoPor?", autoriz. "+autorizadoPor:""}]`,
+    `Retirou: ${diff.retirados.length?diff.retirados.map(_fmtItem).join(" · "):"—"}`,
+    `Acrescentou: ${diff.acrescentados.length?diff.acrescentados.map(_fmtItem).join(" · "):"—"}`,
+    `Alterou: ${diff.alterados.length?diff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`).join(" · "):"—"}`,
+  ].join("\n");
+}
+// grava o histórico de itens no log do pedido (Central e Gestão de Caixas leem daqui)
+function registrarHistoricoItens(pedidoId, diff, funcionarioId, funcNome, autorizadoPor){
+  try{
+    const id=String(pedidoId);
+    addLog(id,"itens_alterados_caixa",funcionarioId,funcNome,{autorizadoPor:autorizadoPor||"",de:diff.de,para:diff.para,
+      retirados:diff.retirados.map(_fmtItem),acrescentados:diff.acrescentados.map(_fmtItem),
+      alterados:diff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)});
+    if(diff.retirados.length) addLog(id,"itens_retirados",funcionarioId,funcNome,{itens:diff.retirados.map(i=>i.nome||("produto "+i.produtoId)),detalhe:diff.retirados.map(_fmtItem)});
+    if(diff.acrescentados.length) addLog(id,"itens_acrescentados",funcionarioId,funcNome,{itens:diff.acrescentados.map(i=>i.nome||("produto "+i.produtoId))});
+  }catch(e){}
+}
+// registra (ou ATUALIZA, se já existir) a venda no caixa — nunca cria 2 lançamentos
+// ativos pro mesmo pedido, em nenhum caixa
+function registrarVendaNoCaixa(dCx, sessaoAlvo, mov, opts={}){
+  const idStr=String(mov.pedidoId||"");
+  const fmt=(v)=>Number(v||0).toFixed(2);
+  const descPag=(m)=>`total ${fmt(m.total)} · ${(m.pagamentos||[]).map(p=>`${p.formaNome}: ${fmt(p.valor)}`).join(" · ")||"—"}`;
+  if(idStr){
+    for(const s of (dCx.sessoes||[])){
+      const ex=(s.movimentos||[]).find(m=>m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===idStr);
+      if(!ex) continue;
+      const alts=[];
+      if(opts.itensDiff&&opts.itensDiff.mudou){
+        alts.push({em:Date.now(),tipo:"itens",por:opts.por||mov.operador||"",autorizadoPor:opts.autorizadoPor||"",de:opts.itensDiff.de,para:opts.itensDiff.para,
+          retirados:opts.itensDiff.retirados.map(_fmtItem),acrescentados:opts.itensDiff.acrescentados.map(_fmtItem),
+          alterados:opts.itensDiff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`)});
+      }
+      const antesPag=descPag(ex), depoisPag=descPag(mov);
+      if(antesPag!==depoisPag) alts.push({em:Date.now(),tipo:"refinalizado",por:opts.por||mov.operador||"",de:antesPag,para:depoisPag,
+        caixaOriginal:s.operador||"",caixaAgora:sessaoAlvo?.operador||""});
+      Object.assign(ex,{ total:mov.total, itens:mov.itens, pagamentos:mov.pagamentos, outrasDespesas:mov.outrasDespesas, frete:mov.frete,
+        clienteNome:mov.clienteNome||ex.clienteNome, alterado:true, alteracoes:[...(ex.alteracoes||[]),...alts], ultimaFinalizacaoEm:Date.now(),
+        ...(mov.valorMenor?{valorMenor:mov.valorMenor}:{}) });
+      if(s.fechadaEm&&s.resumoFinal){ try{ s.resumoFinal=resumoSessaoCaixa(s); }catch(e){} }
+      return { duplicadoEvitado:true, sessao:s, movimento:ex, mesmaSessao:sessaoAlvo&&s.id===sessaoAlvo.id };
+    }
+  }
+  sessaoAlvo.movimentos=sessaoAlvo.movimentos||[];
+  sessaoAlvo.movimentos.push(mov);
+  return { duplicadoEvitado:false, sessao:sessaoAlvo, movimento:mov, mesmaSessao:true };
+}
+// NFC-e em SEGUNDO PLANO: não segura a resposta do caixa (SEFAZ pode demorar).
+// Resultado vai pro registro de NFC-e emitidas (Gestão de NFC-e); falha vira Aviso.
+function emitirNfceEmSegundoPlano(pedidoId, numero, operador){
+  (async()=>{
+    try{
+      const emitidas=lerNfceEmitidas();
+      if(emitidas[String(pedidoId)]) return;
+      const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
+      const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
+      if(!idNotaFiscal) throw new Error("Bling não retornou o ID da NFC-e");
+      let link=null, envioErro=null, numeroNota=null;
+      try{
+        await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
+        try{ const det=await bling(`/nfce/${idNotaFiscal}`); link=det?.data?.linkDanfe||det?.data?.linkPDF||null; numeroNota=det?.data?.numero||null; }catch(e){}
+      }catch(e){ envioErro=e.message; }
+      const em2=lerNfceEmitidas();
+      em2[String(pedidoId)]={ idNotaFiscal, numeroNota, link, em:Date.now(), por:operador||"", envioErro:envioErro||null, origem:"caixa_atacado_auto" };
+      salvarNfceEmitidas(em2);
+      if(envioErro) registrarAviso({tipo:"nfce_nao_transmitida",titulo:`NFC-e do pedido #${numero||pedidoId} gerada mas não transmitida`,pedidoId:String(pedidoId),numero,operador,origem:"Caixa Atacado",erroBling:envioErro,fingerprint:`nfce-env-${pedidoId}`,oQueFazer:`Abra a Gestão de NFC-e (ou o Bling) e reenvie a NFC-e do pedido #${numero||pedidoId}.`});
+    }catch(e){
+      registrarAviso({tipo:"nfce_falhou",titulo:`NFC-e do pedido #${numero||pedidoId} não foi emitida`,pedidoId:String(pedidoId),numero,operador,origem:"Caixa Atacado",erroBling:e.message,fingerprint:`nfce-falha-${pedidoId}`,oQueFazer:`A venda foi concluída normalmente; só a NFC-e falhou. Emita pela Gestão de NFC-e (botão "O que falta pra emitir" ajuda a ver o problema fiscal).`});
+    }
+  })();
+}
+// restaura a situação de um pedido depois de uma edição, com RETRY quando o Bling
+// reclama de estoque (ele estorna o estoque ao destravar e pode demorar pra
+// processar antes de aceitar a re-baixa). Se mesmo assim faltar, repõe o que falta.
+async function _restaurarSituacaoComRetry(id, alvo, itensParaEstoque){
+  const patch=(s)=>bling(`/pedidos/vendas/${id}/situacoes/${s}`,{method:"PATCH"});
+  const caminho = alvo===SIT.ATENDIDO?[SIT.EM_SEP,SIT.SEPARADO,SIT.ATENDIDO] : alvo===SIT.SEPARADO?[SIT.EM_SEP,SIT.SEPARADO] : [alvo];
+  for(const s of caminho.slice(0,-1)){ if(!s) continue; try{ await patch(s); }catch(e){} await sleep(350); }
+  const final=caminho[caminho.length-1];
+  const esperas=[400,2000,4000,6000];
+  let reposto=[], ultimoErro=null;
+  for(let t=0;t<esperas.length;t++){
+    await sleep(esperas[t]);
+    try{ await patch(final); return {ok:true, reposto, tentativas:t+1}; }
+    catch(e){
+      ultimoErro=e;
+      const ehEstoque=/estoque|saldo/i.test(e.message||"")||/estoque|saldo/i.test(JSON.stringify(e.body||{}));
+      if(ehEstoque && itensParaEstoque && !reposto.length && t>=1){ try{ reposto=await garantirEstoqueParaItens(itensParaEstoque); }catch(e2){} }
+    }
+  }
+  return {ok:false, erro:ultimoErro?.message, reposto};
+}
 
-  // agora Separado -> Atendido
-  try{ await patch(SIT.ATENDIDO); caminho.push("→ Atendido (após Separado)"); await sleep(400); }
-  catch(e){ caminho.push("falhou → Atendido: "+e.message); }
-  let novo=await lerSit();
-  return {ok:novo===SIT.ATENDIDO, situacaoFinal:novo, caminho};
+// Move um pedido pra ATENDIDO (caminhando por Separado), com o mínimo de chamadas e
+// retry pra estoque. opts.sitConhecida evita 1 GET; opts.itensParaEstoque permite repor.
+async function moverPedidoParaAtendido(pedidoId, opts={}){
+  const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
+  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
+  const caminho=[]; let reposto=[];
+  let sitAtual=opts.sitConhecida?Number(opts.sitConhecida):await lerSit();
+  if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"], reposto};
+  // REGRA DO NEGÓCIO: sempre passa por SEPARADO antes de ATENDIDO
+  if(sitAtual!==SIT.SEPARADO){
+    try{ await patch(SIT.SEPARADO); caminho.push("→ Separado"); }
+    catch(e){
+      caminho.push("falhou → Separado: "+e.message);
+      try{ await patch(SIT.EM_SEP); caminho.push("→ Em separação"); await sleep(400); await patch(SIT.SEPARADO); caminho.push("→ Separado (após Em separação)"); }
+      catch(e2){ caminho.push("falhou cascata Separado: "+e2.message); }
+    }
+    await sleep(400);
+  }
+  const esperas=[0,2000,4000];
+  let ok=false;
+  for(let t=0;t<esperas.length&&!ok;t++){
+    if(esperas[t]) await sleep(esperas[t]);
+    try{ await patch(SIT.ATENDIDO); caminho.push("→ Atendido"); ok=true; }
+    catch(e){
+      caminho.push("falhou → Atendido: "+e.message);
+      const ehEstoque=/estoque|saldo/i.test(e.message||"")||/estoque|saldo/i.test(JSON.stringify(e.body||{}));
+      if(ehEstoque && opts.itensParaEstoque && !reposto.length){
+        try{ reposto=await garantirEstoqueParaItens(opts.itensParaEstoque); if(reposto.length) caminho.push("estoque reposto: "+reposto.map(r=>(r.nome||r.produtoId)+" +"+r.faltava).join(", ")); }catch(e2){}
+      }
+    }
+  }
+  await sleep(300);
+  const novo=await lerSit();
+  return {ok:novo===SIT.ATENDIDO, situacaoFinal:novo, caminho, reposto};
 }
 
 // Move um pedido pra SEPARADO de forma robusta (com cascata EM_SEP -> SEPARADO se o
@@ -4777,195 +4983,150 @@ async function moverPedidoParaStatusFinal(pedidoId, statusFinal){
   return moverPedidoParaAtendido(pedidoId);
 }
 
+// status de uma finalização (a tela consulta aqui quando a resposta demora — em vez
+// de desistir e o operador clicar de novo)
+app.get("/api/caixa-atacado/finalizar/status/:opId",(req,res)=>{
+  const op=opFinalizarGet(req.params.opId);
+  if(!op) return res.json({status:"desconhecido"});
+  if(op.status==="em_andamento" && op.pedidoId && !_pedidosEmFinalizacao.has(String(op.pedidoId)) && (Date.now()-(op.atualizadoEm||op.em||0))>3*60*1000){
+    return res.json({status:"erro",erro:"A finalização foi interrompida (servidor reiniciou?). Confira no Bling e, se preciso, finalize de novo."});
+  }
+  res.json({status:op.status, resposta:op.resposta||null, erro:op.erro||null});
+});
+
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
+  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase}=req.body||{};
+  const opId=req.body?.opId?String(req.body.opId):null;
+  if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
+  if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+  const chave=String(pedidoId);
+  // ---- idempotência: mesma tentativa chegando 2x devolve o resultado pronto ----
+  if(opId){
+    const op=opFinalizarGet(opId);
+    if(op?.status==="ok") return res.json({...op.resposta, repetido:true});
+    if(op?.status==="em_andamento" && _pedidosEmFinalizacao.has(chave)) return res.status(202).json({emAndamento:true,opId});
+  }
+  // ---- trava por pedido: nunca 2 finalizações do mesmo pedido ao mesmo tempo ----
+  if(_pedidosEmFinalizacao.has(chave)){
+    const em=_pedidosEmFinalizacao.get(chave);
+    return res.status(409).json({emAndamento:true, opId:em.opId||null, erro:"Este pedido já está sendo finalizado. Aguarde a conclusão."});
+  }
+  _pedidosEmFinalizacao.set(chave,{opId,desde:Date.now()});
+  if(opId) opFinalizarSet(opId,{status:"em_andamento",pedidoId:chave});
   try{
-    const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase}=req.body||{};
-    if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
-    if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
-
-    // 0) GARANTE ESTOQUE: define os itens efetivos da venda (os enviados pela tela,
-    //    ou os do pedido no Bling) e lança entrada do que faltar, pra o Bling não
-    //    barrar a finalização por saldo insuficiente. Repõe só o que falta.
-    let itensParaEstoque = Array.isArray(itens)&&itens.length ? itens : null;
-    if(!itensParaEstoque){
-      try{
-        const p=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
-        itensParaEstoque=(p?.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:i.quantidade}));
-      }catch(e){ itensParaEstoque=[]; }
-    }
-    let estoqueReposto=[];
-    try{ estoqueReposto=await garantirEstoqueParaItens(itensParaEstoque); }
-    catch(e){ console.error("Falha ao garantir estoque (segue mesmo assim):",e.message); }
-
-    // 1) Descobre se os itens realmente MUDARAM. Se o operador só está recebendo o
-    //    pagamento (sem editar itens/preços), NÃO reenviamos os itens ao Bling — isso
-    //    evita disparar a validação de estoque do Bling à toa (que barra quantidades
-    //    grandes mesmo em pedido já existente). Só regravamos quando houve edição.
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     const temItens=Array.isArray(itens)&&itens.length;
     const temObs=observacao&&String(observacao).trim();
-    let itensMudaram=false;
-    let pedAtual=null;
-    if(temItens){
-      try{ pedAtual=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); }catch(e){}
-      if(pedAtual){
-        const orig={};
-        (pedAtual.itens||[]).forEach(i=>{ if(i.produto?.id) orig[String(i.produto.id)]={q:Number(i.quantidade),v:Number(i.valor)}; });
-        // mudou se: quantidade de itens difere, ou algum item novo/removido, ou qtd/preço diferentes
-        if((pedAtual.itens||[]).length!==itens.length){ itensMudaram=true; }
-        else {
-          for(const it of itens){
-            const o=orig[String(it.produtoId)];
-            if(!o || o.q!==Number(it.quantidade) || Math.abs(o.v-Number(it.valor))>0.001){ itensMudaram=true; break; }
-          }
-        }
-      } else {
-        itensMudaram=true; // não conseguiu ler o atual — por segurança tenta salvar
-      }
-    }
 
-    if(temItens && itensMudaram){
-      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), temObs?observacao:null);
+    // 1) lê o pedido UMA vez (todo o resto reaproveita)
+    let ped=null; try{ ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); }catch(e){}
+    if(!ped) throw Object.assign(new Error("Pedido não encontrado no Bling."),{status:404});
+    const sitInicial=Number(ped.situacao?.id||0);
+    if(sitInicial===SIT.CANCELADO) throw Object.assign(new Error("Este pedido está CANCELADO no Bling e não pode ser finalizado."),{status:400});
+    const itensBling=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+    const itensEfetivos=temItens?itens:itensBling;
+
+    // 2) o que mudou nos itens (pra histórico) — e se precisa regravar
+    const diff=temItens?diffItens(itensBling,itens):{mudou:false,retirados:[],acrescentados:[],alterados:[],de:"",para:""};
+    const itensMudaram=diff.mudou;
+
+    // 3) estoque: 1 chamada de saldos + entrada só do que faltar (barato)
+    let estoqueReposto=[];
+    try{ estoqueReposto=await garantirEstoqueParaItens(itensEfetivos); }catch(e){ console.error("garantirEstoque:",e.message); }
+
+    // 4) parcelas, despesas e observação
+    const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0).map(p=>({formaId:Number(p.formaId),valor:+Number(p.valor).toFixed(2)}));
+    const taxaAdd=Number(taxaCredito||0);
+    const despesasTotal=+(Number(outrasDespesasBase||0)+taxaAdd).toFixed(2);
+    const outrasDespesasFinal = taxaAdd>0 ? despesasTotal : (ped.outrasDespesas!=null?Number(ped.outrasDespesas):null);
+    const blocos=[]; if(temObs) blocos.push(String(observacao).trim()); if(itensMudaram) blocos.push(blocoHistoricoItens(diff,funcNome,null));
+    const obsExtra=blocos.length?blocos.join("\n"):null;
+
+    // 5) grava no Bling em UM PUT (itens+parcelas+obs+despesas), destravando se preciso
+    let avisoBling=null, sitDepoisPut=sitInicial;
+    if(itensMudaram){
+      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
       if(!r?.ok){
         let m=r?.erro||"erro";
-        // deixa a mensagem de estoque mais clara e acionável
-        if(/estoque|saldo.*insuficiente/i.test(m)){
-          m="Estoque insuficiente no Bling pra um ou mais produtos deste pedido. "+
-            "Ajuste o estoque no Bling (ou a config de baixa de estoque da situação) e tente de novo. Nada foi finalizado.";
-        }
-        return res.status(502).json({erro:m, estoqueInsuficiente:/estoque|saldo/i.test(String(r?.erro||""))});
+        if(/estoque|saldo/i.test(m)) m="O Bling barrou por estoque insuficiente em um ou mais produtos, mesmo após tentar repor. NADA foi finalizado. Confira o estoque no Bling e tente de novo.";
+        throw Object.assign(new Error("Não consegui salvar as alterações no Bling: "+m),{status:502});
       }
-    } else if(temObs){
-      // sem edição de itens: salva só a observação (PUT leve, não mexe em quantidades)
-      try{
-        const ped=pedAtual||await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
-        if(ped){
-          const obsAtual=ped.observacoes||"";
-          const oe=String(observacao).trim();
-          const nova=obsAtual && !obsAtual.includes(oe) ? obsAtual+"\n"+oe : (obsAtual||oe);
-          await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
-            data:ped.data,
-            ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
-            ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
-            itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
-            observacoes:nova,
-          })});
-        }
-      }catch(e){ console.error("Falha ao salvar observação (ignorado):",e.message); }
+      if(r.reposto?.length) estoqueReposto=[...estoqueReposto,...r.reposto];
+      sitDepoisPut=r.situacaoFinal||sitInicial;
+    } else if(parcelasBling.length){
+      const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
+      if(!rp?.ok){
+        avisoBling="As formas de pagamento não foram gravadas no Bling ("+(rp?.erro||"erro")+"). O caixa registrou a venda; confira o pedido no Bling.";
+        registrarAviso({tipo:"pagamento_nao_gravado_bling",titulo:`Pedido #${ped.numero||pedidoId}: formas de pagamento não gravadas no Bling`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:rp?.erro||"",fingerprint:`pagbling-${chave}-${Date.now()}`,oQueFazer:`No Bling, abra o pedido #${ped.numero||pedidoId} e confira as formas de pagamento: ${pagamentos.map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(", ")}.`});
+      } else if(rp.restauracao?.reposto?.length){ estoqueReposto=[...estoqueReposto,...rp.restauracao.reposto]; }
     }
 
-    // 2) recalcula o total a partir dos itens finais (ou usa o total enviado)
-    const totalPedido = Array.isArray(itens)&&itens.length
-      ? +itens.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0).toFixed(2)
-      : +Number(req.body.total||0).toFixed(2);
-
-    // 3) registra o pagamento localmente
+    // 6) registros locais (pagamento + caixa, sem duplicar)
+    const totalItens=+itensEfetivos.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0).toFixed(2);
+    const _outras=despesasTotal, _frete=+Number(freteBase||0).toFixed(2);
+    const totalPagar=+(totalItens+_outras+_frete).toFixed(2);
+    const valorPago=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     const pags=lerPag();
-    const historico=pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"}));
-    const _outrasPagFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
-    const _totalPagarFin=+(totalPedido+_outrasPagFin+Number(freteBase||0)).toFixed(2);
-    const _valorPagoFin=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
-    pags[String(pedidoId)]={
-      pedidoId:String(pedidoId), valorPago:_valorPagoFin, valorPedido:_totalPagarFin, historico,
-      statusPagamento:_valorPagoFin>=_totalPagarFin-0.05?"pago":(_valorPagoFin>0?"parcial":"pendente"),
-    };
+    pags[chave]={ pedidoId:chave, valorPago, valorPedido:totalPagar,
+      historico:pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"})),
+      statusPagamento:valorPago>=totalPagar-0.05?"pago":(valorPago>0?"parcial":"pendente") };
     salvarJSON(PAG_FILE,pags);
-
-    // 4) vincula à sessão de caixa ATACADO aberta desse funcionário (entra no fechamento)
+    let jaEstavaNoCaixa=null;
     try{
       const dCx=lerCaixaSessoes();
-      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")==="atacado");
+      const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&String(s.funcionarioId)===String(funcionarioId)&&(s.tipoCaixa||"frente")==="atacado");
       if(sessaoAtual){
-        const _outrasFin=+(Number(outrasDespesasBase||0)+Number(taxaCredito||0)).toFixed(2);
-        const _freteFin=+Number(freteBase||0).toFixed(2);
-        const _menorFin=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
-        sessaoAtual.movimentos.push({
-          tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||null,
-          total:+(totalPedido+_outrasFin+_freteFin).toFixed(2), clienteNome:clienteNome||"", origem:"caixa_atacado",
-          outrasDespesas:_outrasFin, frete:_freteFin, operador:sessaoAtual.operador||"",
-          ...(_menorFin?{valorMenor:_menorFin}:{}),
-          itens:(Array.isArray(itens)?itens:[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
-          pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
-        });
+        const _menor=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
+        const mov={ tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||ped.numero||null,
+          total:totalPagar, clienteNome:clienteNome||ped.contato?.nome||"", origem:"caixa_atacado",
+          outrasDespesas:_outras, frete:_frete, operador:sessaoAtual.operador||"",
+          ...(_menor?{valorMenor:_menor}:{}),
+          itens:itensEfetivos.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
+          pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})) };
+        const reg=registrarVendaNoCaixa(dCx, sessaoAtual, mov, {itensDiff:itensMudaram?diff:null, por:funcNome});
         salvarCaixaSessoes(dCx);
-        if(_menorFin) addLog(String(pedidoId),"fechado_valor_menor",funcionarioId,(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—",{faltou:_menorFin.faltou,autorizadoPor:_menorFin.autorizadoPor});
+        if(reg.duplicadoEvitado) jaEstavaNoCaixa={operador:reg.sessao.operador||"", quando:reg.movimento.em, mesmaSessao:!!reg.mesmaSessao};
+        if(_menor) addLog(chave,"fechado_valor_menor",funcionarioId,funcNome,{faltou:_menor.faltou,autorizadoPor:_menor.autorizadoPor});
+      } else {
+        avisoBling=(avisoBling?avisoBling+" ":"")+"Você não tem um caixa ATACADO aberto — a venda foi salva no Bling e no pagamento, mas não entrou em nenhum caixa.";
       }
-    }catch(e){ console.error("Falha ao vincular ao caixa (ignorado):",e.message); }
+    }catch(e){ console.error("Falha ao vincular ao caixa:",e.message); }
+    if(itensMudaram) registrarHistoricoItens(chave, diff, funcionarioId, funcNome, null);
 
-    // 4b) grava as FORMAS DE PAGAMENTO (parcelas) no pedido do Bling, pra o pedido
-    //     ficar com o pagamento correto lá também (não só no controle local).
-    //     Faz antes de mover pra Atendido (Atendido pode travar edição de parcelas).
-    try{
-      const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0)
-        .map(p=>({formaId:Number(p.formaId), valor:+Number(p.valor).toFixed(2)}));
-      if(parcelasBling.length){
-        const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false});
-        if(!rp?.ok) console.error("Não gravou as formas de pagamento no Bling (pedido "+pedidoId+"):", rp?.erro);
-      }
-    }catch(e){ console.error("Falha ao gravar formas de pagamento no Bling (ignorado):",e.message); }
-
-    // 4c) grava OUTRAS DESPESAS (taxa de cartão de crédito) no pedido do Bling. A taxa
-    //     total = a que já existia no pedido + a taxa de crédito adicionada no caixa.
-    let despesasGravadas=null;
-    try{
-      const taxaAdd=Number(taxaCredito||0);
-      const base=Number(outrasDespesasBase||0);
-      const totalDespesas=+(base+taxaAdd).toFixed(2);
-      // só regrava se houver taxa nova a adicionar (evita PUT desnecessário)
-      if(taxaAdd>0){
-        const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
-        if(ped){
-          await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify({
-            data:ped.data,
-            ...(ped.contato?.id?{contato:{id:ped.contato.id}}:{}),
-            ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
-            itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
-            outrasDespesas:totalDespesas,
-          })});
-          despesasGravadas=totalDespesas;
-        }
-      }
-    }catch(e){ console.error("Falha ao gravar outras despesas/taxa no Bling (ignorado):",e.message); }
-
-    // 5) move pro STATUS FINAL correto (Atendido ou Separado, conforme a regra da tela)
-    //    de forma robusta (com cascata e conferindo se realmente mudou). Se não
-    //    conseguir, o pagamento já ficou registrado — avisa o operador.
-    const alvo = statusFinal==="separado" ? "Separado" : "Atendido";
+    // 7) situação final (Atendido, passando por Separado)
+    const alvo=statusFinal==="separado"?"Separado":"Atendido";
     let avisoAtendido=null;
     try{
-      const rMov=await moverPedidoParaStatusFinal(pedidoId, statusFinal);
-      console.log("Transição de status do pedido "+pedidoId+" (alvo "+alvo+"):", JSON.stringify(rMov.caminho));
+      const rMov=statusFinal==="separado"
+        ? await moverPedidoParaSeparado(pedidoId)
+        : await moverPedidoParaAtendido(pedidoId,{sitConhecida:sitDepoisPut, itensParaEstoque:itensEfetivos});
+      console.log("Transição do pedido "+pedidoId+" (alvo "+alvo+"):",JSON.stringify(rMov.caminho));
+      if(rMov.reposto?.length) estoqueReposto=[...estoqueReposto,...rMov.reposto];
       if(!rMov.ok){
-        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" (ficou na situação "+rMov.situacaoFinal+"). Verifique no Bling.";
+        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" (ficou em "+nomeSituacao(rMov.situacaoFinal)+"). Verifique no Bling.";
+        registrarAviso({tipo:"situacao_nao_movida",titulo:`Pedido #${ped.numero||pedidoId} não foi pra ${alvo}`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:(rMov.caminho||[]).join(" | "),fingerprint:`sit-${chave}-${Date.now()}`,oQueFazer:`Abra o pedido #${ped.numero||pedidoId} no Bling e mude a situação pra ${alvo} manualmente.`});
       }
-    }catch(e){
-      console.error("Falha ao mover pra "+alvo+" (pagamento registrado, id="+pedidoId+"):",e.message);
-      if(/estoque|saldo/i.test(e.message||"")){
-        avisoAtendido="O pagamento foi registrado, mas o Bling não deixou mudar o pedido pra "+alvo+" por estoque insuficiente. Ajuste o estoque no Bling e mude a situação manualmente.";
-      } else {
-        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" automaticamente. Verifique no Bling.";
-      }
+    }catch(e){ avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" ("+e.message+"). Verifique no Bling."; }
+
+    if(estoqueReposto.length){
+      registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${ped.numero||pedidoId}: estoque reposto automaticamente`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",
+        fingerprint:`repo-${chave}-${_hojeISO()}`, estoqueAjustado:estoqueReposto.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),
+        oQueFazer:"A entrada de estoque foi lançada só pra o Bling deixar concluir a venda. Confira no Bling se o saldo desses produtos está certo."});
     }
 
-    // 6) NFC-e só se pedido (padrão desligado nesse caixa)
+    // 8) NFC-e em SEGUNDO PLANO (não segura o caixa)
     let nfce=null;
-    if(emitirNfce){
-      try{
-        const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
-        const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
-        if(!idNotaFiscal){ nfce={erro:"Bling não retornou o ID da NFC-e",detalhe:gerado}; }
-        else{
-          try{
-            const enviado=await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
-            let linkDanfe=null;
-            try{ const det=await bling(`/nfce/${idNotaFiscal}`); linkDanfe=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
-            nfce={ok:true,idNotaFiscal,linkDanfe};
-          }catch(e){ nfce={ok:true,idNotaFiscal,erroEnvio:e.message}; }
-        }
-      }catch(e){ nfce={erro:e.message,detalhe:e.body}; }
-    }
+    if(emitirNfce){ emitirNfceEmSegundoPlano(pedidoId, ped.numero, funcNome); nfce={pendente:true}; }
 
-    res.json({ok:true,pedidoId,total:totalPedido,nfce,aviso:avisoAtendido,estoqueReposto});
-  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+    const resposta={ ok:true, pedidoId, numero:ped.numero||null, total:totalItens, nfce,
+      aviso:[avisoAtendido,avisoBling].filter(Boolean).join(" ")||null, estoqueReposto, jaEstavaNoCaixa,
+      itensAlterados:itensMudaram?{retirados:diff.retirados.map(_fmtItem),acrescentados:diff.acrescentados.map(_fmtItem),alterados:diff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null };
+    if(opId) opFinalizarSet(opId,{status:"ok",resposta});
+    res.json(resposta);
+  }catch(e){
+    if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
+    res.status(e.status||500).json({erro:e.message,detalhe:e.body});
+  }finally{ _pedidosEmFinalizacao.delete(chave); }
 });
 
 app.post("/api/pedido",async(req,res)=>{
@@ -5459,12 +5620,15 @@ app.get("/api/buscar-atacado", async (req, res) => {
 // não bater com o total do pedido. Reaproveitado tanto pela edição manual de
 // itens (resolução de pendências) quanto pela confirmação de entrega com
 // ocorrências (Em Rota).
-async function atualizarItensBling(id,itens,obsExtra){
+async function atualizarItensBling(id,itens,obsExtra,opts={}){
   try{
-    const atualJson=await bling(`/pedidos/vendas/${id}`);
+    // opts.ped: pedido já lido pelo chamador (evita 1 GET). opts.parcelas: [{formaId,valor}]
+    // grava as formas de pagamento no MESMO PUT. opts.outrasDespesas: valor a gravar.
+    // opts.itensParaEstoque: pra repor estoque se o Bling barrar a re-baixa ao restaurar.
+    const atualJson=opts.ped?{data:opts.ped}:await bling(`/pedidos/vendas/${id}`);
     const ped=atualJson?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
     const sit=ped.situacao?.id;
-    if(sit===9||sit===12) return {ok:false,erro:"Pedido Atendido/Cancelado não pode ser editado."};
+    if(sit===12) return {ok:false,erro:"Pedido Cancelado não pode ser editado."};
 
     const blingComRetry=async(url,opts={},tentativas=3,delayMs=1200)=>{
       for(let t=0;t<tentativas;t++){
@@ -5477,7 +5641,7 @@ async function atualizarItensBling(id,itens,obsExtra){
     };
 
     const SIT_EM_DIGITACAO=21;
-    const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA];
+    const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sit);
 
     const tsEdit=new Date().toISOString().slice(0,16).replace('T',' ');
@@ -5497,10 +5661,16 @@ async function atualizarItensBling(id,itens,obsExtra){
       itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       observacoes:obsFinal?obsFinal+" | edit "+tsEdit:"edit "+tsEdit,
     };
-    if(ped.parcelas?.length){
+    // preserva desconto e outras despesas (senão o PUT zera no Bling)
+    if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+    if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
+    else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+    if(Array.isArray(opts.parcelas)&&opts.parcelas.length){
+      payload.parcelas=opts.parcelas.filter(p=>p.formaId&&(Number(p.valor)||0)>0).map(p=>({formaPagamento:{id:Number(p.formaId)},dataVencimento:ped.data,valor:+Number(p.valor).toFixed(2)}));
+    } else if(ped.parcelas?.length){
       const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
       const freteAtual=+(ped.transporte?.frete||0);
-      const novoTotal=+(novoTotalItens+freteAtual).toFixed(2);
+      const novoTotal=+(novoTotalItens+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
       const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
       const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
       payload.parcelas=ped.parcelas.map(p=>({
@@ -5524,7 +5694,7 @@ async function atualizarItensBling(id,itens,obsExtra){
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
 
-    let resultado, fezUnlock=false;
+    let resultado, fezUnlock=false, _ultimaRestauracao=null;
     try{
       await new Promise(r=>setTimeout(r,200));
       resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
@@ -5540,17 +5710,23 @@ async function atualizarItensBling(id,itens,obsExtra){
       if(fezUnlock){
         await new Promise(r=>setTimeout(r,400));
         const sitRestaurar=sit===SIT.SEP_PEND?SIT.EM_SEP:sit;
-        let restaurado=false;
-        for(let t=0;t<3;t++){
-          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitRestaurar}`,{method:"PATCH"}); restaurado=true; break; }
-          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
-        }
-        if(!restaurado){
-          try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
+        if(sitRestaurar===SIT.ATENDIDO||sitRestaurar===SIT.SEPARADO){
+          const rr=await _restaurarSituacaoComRetry(id, sitRestaurar, opts.itensParaEstoque||itens);
+          _ultimaRestauracao={ok:rr.ok, reposto:rr.reposto||[], erro:rr.erro, situacaoFinal:rr.ok?sitRestaurar:null};
+          if(!rr.ok){ try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){} }
+        } else {
+          let restaurado=false;
+          for(let t=0;t<3;t++){
+            try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitRestaurar}`,{method:"PATCH"}); restaurado=true; break; }
+            catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
+          }
+          if(!restaurado){ try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){} }
+          _ultimaRestauracao={ok:restaurado, reposto:[], situacaoFinal:restaurado?sitRestaurar:null};
         }
       }
     }
-    return {ok:true,resultado};
+    const rest=_ultimaRestauracao||{ok:true,reposto:[],situacaoFinal:sit};
+    return {ok:true,resultado,fezUnlock,restaurouOk:rest.ok,situacaoFinal:rest.situacaoFinal||sit,reposto:rest.reposto||[],erroRestaurar:rest.erro||null};
   }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
@@ -5600,10 +5776,16 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
     // são editados (ex: resolução de pendências), mesmo sem mexer no pagamento.
     // Ajusta o valor proporcionalmente pro novo total (itens podem ter mudado),
     // senão o Bling rejeita com 400 por causa da soma das parcelas não bater.
-    if(ped.parcelas?.length){
+    // preserva desconto e outras despesas (senão o PUT zera no Bling)
+    if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+    if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
+    else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+    if(Array.isArray(opts.parcelas)&&opts.parcelas.length){
+      payload.parcelas=opts.parcelas.filter(p=>p.formaId&&(Number(p.valor)||0)>0).map(p=>({formaPagamento:{id:Number(p.formaId)},dataVencimento:ped.data,valor:+Number(p.valor).toFixed(2)}));
+    } else if(ped.parcelas?.length){
       const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
       const freteAtual=+(ped.transporte?.frete||0);
-      const novoTotal=+(novoTotalItens+freteAtual).toFixed(2);
+      const novoTotal=+(novoTotalItens+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
       const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
       const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
       payload.parcelas=ped.parcelas.map(p=>({
@@ -6765,14 +6947,16 @@ app.get("/api/central/resumo",(req,res)=>{
 
     // ===== AUTORIZAÇÕES e ITENS RETIRADOS (logs do dia) =====
     const log=lerLog(); const autorizacoes=[]; const retirados={};
-    const evAut=new Set(["fechado_valor_menor","pagamento_editado_caixa","pedido_reaberto","venda_cancelada","venda_cancelada_gestao","itens_retirados","itens_acrescentados","itens_alterados_gestao","pedido_incluido_no_caixa"]);
+    const evAut=new Set(["fechado_valor_menor","pagamento_editado_caixa","pedido_reaberto","venda_cancelada","venda_cancelada_gestao","itens_retirados","itens_acrescentados","itens_alterados_gestao","itens_alterados_caixa","pedido_incluido_no_caixa"]);
     Object.entries(log||{}).forEach(([pid,evs])=>{ (Array.isArray(evs)?evs:[]).forEach(ev=>{
       const em=ev.em||ev.quando||0; if(!noDia(em)) return;
-      if(evAut.has(ev.evento)){ autorizacoes.push({ pedidoId:pid, evento:ev.evento, em, por:ev.funcionarioNome||ev.funcionario||"—", autorizadoPor:ev.detalhes?.autorizadoPor||"", detalhe:ev.detalhes?.faltou!=null?("faltou "+ev.detalhes.faltou):(ev.detalhes?.de?(ev.detalhes.de+" → "+ev.detalhes.para):"") }); }
+      if(evAut.has(ev.evento)){ const d=ev.detalhes||{}; const det=d.faltou!=null?("faltou "+d.faltou):(Array.isArray(d.retirados)&&d.retirados.length?("retirou "+d.retirados.join(", ")+(d.acrescentados?.length?" · acrescentou "+d.acrescentados.join(", "):"")+(d.alterados?.length?" · alterou "+d.alterados.join(", "):"")):(Array.isArray(d.itens)?d.itens.join(", "):(d.de?(d.de+" → "+d.para):""))); autorizacoes.push({ pedidoId:pid, evento:ev.evento, em, por:ev.funcionarioNome||ev.funcionario||"—", autorizadoPor:d.autorizadoPor||"", detalhe:det }); }
       if(ev.evento==="itens_retirados"){ (ev.detalhes?.itens||[]).forEach(n=>{ retirados[n]=(retirados[n]||0)+1; }); }
     }); });
     // itens retirados também pelas alterações de itens gravadas no movimento (de→para)
-    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ (m.alteracoes||[]).forEach(a=>{ if(a.tipo==="itens"&&noDia(a.em)){ const antes=String(a.de||"").split(", ").filter(Boolean); const depois=new Set(String(a.para||"").split(", ").filter(Boolean)); antes.forEach(x=>{ if(!depois.has(x)){ const nome=x.replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; } }); } }); }));
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ (m.alteracoes||[]).forEach(a=>{ if(a.tipo==="itens"&&noDia(a.em)){
+      if(Array.isArray(a.retirados)){ a.retirados.forEach(x=>{ const nome=String(x).replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; }); return; } // formato novo (estruturado)
+      const antes=String(a.de||"").split(", ").filter(Boolean); const depois=new Set(String(a.para||"").split(", ").filter(Boolean)); antes.forEach(x=>{ if(!depois.has(x)){ const nome=x.replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; } }); } }); }));
     autorizacoes.sort((a,b)=>b.em-a.em);
 
     // ===== pagamentos NÃO pagos (pedidos do dia com status diferente de pago) =====
