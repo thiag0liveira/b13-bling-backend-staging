@@ -157,9 +157,17 @@ async function confirmarAbertura(){
   }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
 }
 
-function abrirModalMovimento(tipo){
+let _FUNCS_MOV=null;
+async function carregarFuncionariosMov(){
+  if(_FUNCS_MOV) return _FUNCS_MOV;
+  try{ const j=await fetch(BACKEND+"/api/funcionarios").then(r=>r.json()); _FUNCS_MOV=(j.data||[]).filter(f=>f.ativo!==false); }catch(e){ _FUNCS_MOV=[]; }
+  return _FUNCS_MOV;
+}
+async function abrirModalMovimento(tipo){
   if(!CAIXA.aberta) return alert("Abra o caixa antes de registrar "+(tipo==="sangria"?"uma sangria":"um suprimento")+".");
   const ehSangria=tipo==="sangria";
+  // lista de quem pode receber/entregar — SEM o próprio operador do caixa
+  const funcs=(await carregarFuncionariosMov()).filter(f=>String(f.id)!==String(funcionarioIdAtual()));
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
@@ -167,6 +175,11 @@ function abrirModalMovimento(tipo){
         <p class="muted" style="margin-bottom:12px">${ehSangria?"Retirada de dinheiro da gaveta (ex: depósito, pagamento de despesa).":"Entrada de dinheiro na gaveta (ex: reforço de troco)."}</p>
         <div class="muted" style="margin-bottom:4px">Valor (R$)</div>
         <input type="number" step="0.01" min="0.01" id="mValor" style="width:100%;font-size:18px;text-align:right" autofocus>
+        <div class="muted" style="margin:10px 0 4px">${ehSangria?"Quem está <b>retirando</b> o dinheiro?":"Quem está <b>entregando</b> o dinheiro?"}</div>
+        <select id="mResp" style="width:100%">
+          <option value="">— selecione —</option>
+          ${funcs.map(f=>`<option value="${esc(f.id)}">${esc(f.nome)}</option>`).join("")}
+        </select>
         <div class="muted" style="margin:10px 0 4px">Motivo</div>
         <input type="text" id="mMotivo" placeholder="${ehSangria?"ex: depósito bancário":"ex: reforço de troco"}" style="width:100%">
         <div id="mErro"></div>
@@ -181,10 +194,12 @@ function abrirModalMovimento(tipo){
 async function confirmarMovimento(tipo){
   const valor=+document.getElementById("mValor").value||0;
   const motivo=document.getElementById("mMotivo").value.trim();
+  const responsavelId=document.getElementById("mResp")?.value||"";
   if(!(valor>0)){ document.getElementById("mErro").innerHTML=`<div class="err">Informe um valor maior que zero.</div>`; return; }
+  if(!responsavelId){ document.getElementById("mErro").innerHTML=`<div class="err">Selecione ${tipo==="sangria"?"quem está retirando":"quem está entregando"} o dinheiro.</div>`; return; }
   try{
     const r=await fetch(BACKEND+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
+      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual(),funcionarioId:funcionarioIdAtual(),responsavelId})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao registrar");
     fecharModais(); carregarCaixa();
@@ -301,8 +316,8 @@ async function abrirModalCaixasAbertos(){
 
 function nomeMovimento(m){
   if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>`;
-  if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
-  if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}`;
+  if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>`:""}`;
+  if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>`:""}`;
   return esc(m.tipo);
 }
 

@@ -2917,17 +2917,25 @@ app.post("/api/caixa-sessao/abrir",(req,res)=>{
 
 // registra sangria (retirada) ou suprimento (entrada de dinheiro)
 app.post("/api/caixa-sessao/movimento",(req,res)=>{
-  const {tipo,valor,motivo,operador,funcionarioId,tipoCaixa}=req.body||{};
+  const {tipo,valor,motivo,operador,funcionarioId,tipoCaixa,responsavelId}=req.body||{};
   if(!["sangria","suprimento"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser sangria ou suprimento"});
   const v=+Number(valor||0).toFixed(2);
   if(!(v>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
+  // quem RECEBEU a sangria / ENTREGOU o suprimento (outra pessoa, não o operador do caixa)
+  if(!responsavelId) return res.status(400).json({erro:tipo==="sangria"?"informe quem está retirando o dinheiro":"informe quem está entregando o dinheiro"});
+  const funcs=lerJSON(FUNC_FILE,{});
+  const resp=funcs[responsavelId];
+  if(!resp) return res.status(400).json({erro:"funcionário responsável não encontrado"});
+  if(String(responsavelId)===String(funcionarioId)) return res.status(400).json({erro:"o responsável tem que ser outra pessoa, não o próprio operador do caixa"});
   const d=lerCaixaSessoes();
   const tc=tipoCaixa||"frente";
   const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
   if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
-  sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now()});
+  sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now(),
+    responsavelId:String(responsavelId), responsavelNome:resp.nome||""});
   salvarCaixaSessoes(d);
-  res.json({ok:true,resumo:resumoSessaoCaixa(sessao)});
+  addLog("caixa-"+sessao.id, tipo==="sangria"?"sangria":"suprimento", funcionarioId, operador||"—", {valor:v,motivo:motivo||"",responsavel:resp.nome||""});
+  res.json({ok:true,resumo:resumoSessaoCaixa(sessao),responsavelNome:resp.nome||""});
 });
 
 // fecha o caixa, comparando o contado com o esperado (conferência)
