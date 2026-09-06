@@ -2389,38 +2389,53 @@ app.get("/api/diag/caixas-bling", async(req,res)=>{
 // DIAGNÓSTICO: pedidos que aparecem em MAIS DE UM caixa hoje (venda duplicada em 2 caixas)
 app.get("/api/diag/pedidos-duplicados",(req,res)=>{
   try{
-    const hoje=_diaBR();
+    // ?dias=N limita a janela (padrão: TUDO). ?dias=1 = só hoje.
+    const dias=req.query.dias?Number(req.query.dias):null;
+    const desde=dias?(Date.now()-dias*86400000):0;
     const d=lerCaixaSessoes();
     const porPedido={}; // pedidoId -> [ocorrências]
     for(const s of (d.sessoes||[])){
       for(const m of (s.movimentos||[])){
         if(m.tipo!=="venda") continue;
-        if(_diaBR(new Date(m.em))!==hoje) continue; // só hoje
+        if(m.em<desde) continue;
         const pid=String(m.pedidoId||m.numero||"");
         if(!pid) continue;
         (porPedido[pid]=porPedido[pid]||[]).push({
           sessaoId:s.id, operador:s.operador||"—", tipoCaixa:s.tipoCaixa||"frente",
-          sessaoAberta:!s.fechadaEm, numero:m.numero||m.pedidoId, total:m.total,
+          sessaoAberta:!s.fechadaEm, numero:m.numero||m.pedidoId, total:m.total, em:m.em,
           quando:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
           alterado:!!m.alterado, cancelado:!!m.cancelado, origem:m.origem||""
         });
       }
     }
-    // duplicado = mesmo pedido em 2+ SESSÕES distintas
-    const duplicados=[];
+    // Dois tipos de duplicidade:
+    //  A) EM CAIXAS DIFERENTES  -> grave: a venda pode estar contando 2x no fechamento
+    //  B) NA MESMA SESSÃO       -> suspeito: normalmente é reabertura/edição do pedido,
+    //     mas se as duas linhas estiverem ativas (nenhuma cancelada) pode ser duplicidade real
+    const emCaixasDiferentes=[], naMesmaSessao=[];
     for(const [pid,ocs] of Object.entries(porPedido)){
-      const sessoes=new Set(ocs.map(o=>o.sessaoId));
+      const ativas=ocs.filter(o=>!o.cancelado);
+      const sessoes=new Set(ativas.map(o=>o.sessaoId));
       if(sessoes.size>=2){
-        duplicados.push({ pedidoId:pid, numero:ocs[0].numero, vezes:ocs.length, caixas:ocs });
+        emCaixasDiferentes.push({ pedidoId:pid, numero:ativas[0]?.numero, vezes:ativas.length,
+          somaTotais:+ativas.reduce((a,o)=>a+(Number(o.total)||0),0).toFixed(2), caixas:ocs });
+      } else if(ativas.length>=2){
+        naMesmaSessao.push({ pedidoId:pid, numero:ativas[0]?.numero, vezes:ativas.length,
+          somaTotais:+ativas.reduce((a,o)=>a+(Number(o.total)||0),0).toFixed(2), caixas:ocs });
       }
     }
-    duplicados.sort((a,b)=>b.vezes-a.vezes);
+    emCaixasDiferentes.sort((a,b)=>b.vezes-a.vezes);
+    naMesmaSessao.sort((a,b)=>b.vezes-a.vezes);
     res.json({
-      data:hoje,
-      totalPedidosDeHoje:Object.keys(porPedido).length,
-      qtdDuplicados:duplicados.length,
-      resumo: duplicados.length? `⚠️ ${duplicados.length} pedido(s) aparecem em mais de um caixa hoje.` : "✅ Nenhum pedido em dois caixas hoje.",
-      duplicados
+      janela: dias?`últimos ${dias} dia(s)`:"todo o histórico",
+      totalPedidosAnalisados:Object.keys(porPedido).length,
+      qtdEmCaixasDiferentes:emCaixasDiferentes.length,
+      qtdNaMesmaSessao:naMesmaSessao.length,
+      resumo: emCaixasDiferentes.length
+        ? `⚠️ ${emCaixasDiferentes.length} pedido(s) registrados em CAIXAS DIFERENTES (pode contar 2x no fechamento).`
+        : (naMesmaSessao.length? `✅ Nenhum em caixas diferentes. ${naMesmaSessao.length} com 2+ lançamentos na mesma sessão (normalmente reabertura/edição — confira).` : "✅ Nenhuma duplicidade encontrada."),
+      emCaixasDiferentes,
+      naMesmaSessao
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -6529,13 +6544,34 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       await sleep(100);
     }
   }catch(e){}
-  // 2) pedidos duplicados em 2+ caixas (sessões diferentes) HOJE — reabertura/edição na
-  // mesma sessão é normal e não conta como duplicado
+  // 2) pedidos duplicados: mesmo pedido registrado em CAIXAS DIFERENTES (grave — pode
+  // contar 2x no fechamento) ou 2+ vezes ATIVAS na mesma sessão (suspeito). Varre os
+  // últimos 30 dias, não só hoje, pra pegar casos antigos que passaram batido.
   try{
-    const ini=_inicioDia(hojeISO), fim=_fimDia(hojeISO);
+    const desde=Date.now()-30*86400000;
     const dCx=lerCaixaSessoes(); const porPedido={};
-    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.em<ini||m.em>=fim) return; const pid=String(m.pedidoId||m.numero||""); if(!pid) return; if(!porPedido[pid]) porPedido[pid]=new Map(); porPedido[pid].set(s.id,{operador:s.operador}); }));
-    Object.entries(porPedido).forEach(([pid,mapa])=>{ if(mapa.size>1){ const ops=[...mapa.values()].map(o=>o.operador).join(", "); registrarAviso({ tipo:"pedido_duplicado_caixas", titulo:`Pedido ${pid} aparece em ${mapa.size} caixas diferentes`, pedidoId:pid, origem:"Auditoria", fingerprint:`dup-${pid}-${hojeISO}`, oQueFazer:`Confira o pedido ${pid}: ele foi registrado em caixas diferentes hoje (${ops}). Pode estar contando a venda 2x no fechamento.` }); achados.pedidosDuplicados++; } });
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo!=="venda"||m.cancelado||m.em<desde) return;
+      const pid=String(m.pedidoId||m.numero||""); if(!pid) return;
+      (porPedido[pid]=porPedido[pid]||[]).push({sessaoId:s.id,operador:s.operador||"—",total:m.total,em:m.em,numero:m.numero||pid});
+    }));
+    Object.entries(porPedido).forEach(([pid,ocs])=>{
+      const sessoes=new Set(ocs.map(o=>o.sessaoId));
+      const num=ocs[0]?.numero||pid;
+      const quando=ocs.map(o=>new Date(o.em).toLocaleDateString("pt-BR",{timeZone:"America/Sao_Paulo"}));
+      if(sessoes.size>=2){
+        const ops=[...new Set(ocs.map(o=>o.operador))].join(", ");
+        registrarAviso({ tipo:"pedido_duplicado_caixas", titulo:`Pedido #${num} registrado em ${sessoes.size} caixas diferentes`, pedidoId:pid, numero:num, origem:"Auditoria",
+          fingerprint:`dup-caixas-${pid}`,
+          oQueFazer:`O pedido #${num} foi lançado em caixas diferentes (${ops}) em ${[...new Set(quando)].join(", ")}. Pode estar contando a venda 2x no fechamento — confira e cancele o lançamento errado pela Gestão de Caixas.` });
+        achados.pedidosDuplicados++;
+      } else if(ocs.length>=2){
+        registrarAviso({ tipo:"pedido_duplicado_sessao", titulo:`Pedido #${num} lançado ${ocs.length}x no mesmo caixa`, pedidoId:pid, numero:num, origem:"Auditoria",
+          fingerprint:`dup-sessao-${pid}-${ocs.length}`,
+          oQueFazer:`O pedido #${num} tem ${ocs.length} lançamentos ativos no caixa de ${ocs[0].operador} (${[...new Set(quando)].join(", ")}). Se não foi reabertura/edição, um deles é duplicado — cancele o lançamento errado pela Gestão de Caixas.` });
+        achados.pedidosDuplicados++;
+      }
+    });
   }catch(e){}
   // 3) caixa aberto há mais de 15h (provável esquecimento)
   try{
