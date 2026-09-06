@@ -69,6 +69,7 @@ const num=(v)=>(v==null||v==="")?null:Number(String(v).replace(",","."));
 
 let DEPOSITOS=[], DEP=null, ABA="lista", PRODUTOS=[], TOTAL=0, PAGINA=1, BUSCA="", SO_TABELA=true;
 let EDIT={};
+let SO_COM_ESTOQUE=false; // mostra só o que tem saldo lançado (> 0) no depósito escolhido
 let MODO="balanco";
 let CARREGANDO=false, SALVANDO=false, ERRO_DEP="";
 
@@ -154,9 +155,14 @@ function atualizarBarra(){
   const b=document.getElementById("barraAcao"); if(!b) return;
   b.innerHTML=barraHtml(pendentes().length);
 }
+// aplica o filtro "só com estoque lançado" (saldo físico > 0 no depósito escolhido)
+function produtosVisiveis(){
+  if(!SO_COM_ESTOQUE) return PRODUTOS;
+  return PRODUTOS.filter(function(p){ const s=saldoDe(p); return s!=null && s>0; });
+}
 function abaListaHtml(){
   let html="", catAtual=null;
-  PRODUTOS.forEach(p=>{
+  produtosVisiveis().forEach(p=>{
     if(p.categoria&&p.categoria!==catAtual){ catAtual=p.categoria; html+='<div class="catHead">'+esc(catAtual)+'</div>'; }
     const s=saldoDe(p);
     html+='<div class="lin">'+
@@ -165,10 +171,10 @@ function abaListaHtml(){
       '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
       '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
   });
-  return html||'<div class="muted" style="padding:12px">Nenhum produto'+(BUSCA?' com "'+esc(BUSCA)+'"':'')+'.</div>';
+  return html||'<div class="muted" style="padding:12px">Nenhum produto'+(SO_COM_ESTOQUE?' com estoque lançado':'')+(BUSCA?' com "'+esc(BUSCA)+'"':'')+'.</div>';
 }
 function abaTabelaHtml(){
-  const linhas=PRODUTOS.map(function(p){
+  const linhas=produtosVisiveis().map(function(p){
     const s=saldoDe(p);
     return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nomeTabela||p.nome)+'</td>'+
       '<td'+(p.sabor?' style="color:#3ce88a;font-weight:700"':' class="muted"')+'>'+esc((p.sabor&&p.sabor!==p.nomeTabela)?p.sabor:((p.nome&&p.nome!==p.nomeTabela)?p.nome:(p.variacoes>1?("cód. "+p.codigo):"—")))+'</td>'+
@@ -183,7 +189,7 @@ function abaTabelaHtml(){
 }
 function abaConferenciaHtml(){
   const negativos=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s<0;});
-  const zerados=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s===0;});
+  const zerados=SO_COM_ESTOQUE?[]:PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s===0;});
   const mexidos=pendentes();
   function bloco(titulo,lista,cor,vazio){
     return '<div class="catHead" style="background:'+cor+'">'+titulo+' ('+lista.length+')</div>'+
@@ -251,6 +257,7 @@ function render(){
         '<button class="btn btn-ghost" onclick="PAGINA=1;carregarProdutos()">🔎 Buscar</button>'+
         '<button class="btn btn-ghost" title="Produto que você acabou de cadastrar não aparece na lista? Atualize o índice." onclick="atualizarIndice()">🔄 Atualizar índice</button>'+
         '<label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(SO_TABELA?"checked":"")+' onchange="SO_TABELA=this.checked;PAGINA=1;carregarProdutos()"> só produtos da tabela</label>'+
+        '<button class="btn '+(SO_COM_ESTOQUE?"btn-mag":"btn-ghost")+'" onclick="SO_COM_ESTOQUE=!SO_COM_ESTOQUE;render()">'+(SO_COM_ESTOQUE?"✓ Só com estoque":"📦 Só com estoque")+'</button>'+
       '</div>'+
       '<div class="muted" style="margin-bottom:8px">Cadastrou um produto agora? Ele aparece ao <b>buscar pelo nome</b> (a busca consulta o Bling direto). Pra ele entrar na lista completa, use “Atualizar índice”.</div>'+
       '<div class="abas">'+
@@ -260,13 +267,14 @@ function render(){
       '</div>'+
       (CARREGANDO?'<div class="muted" style="padding:14px">Carregando saldos…</div>'
         :(ABA==="tabela"?abaTabelaHtml():(ABA==="conferencia"?abaConferenciaHtml():abaListaHtml())))+
+      (SO_COM_ESTOQUE?'<div class="muted" style="margin-top:8px">Mostrando '+produtosVisiveis().length+' de '+PRODUTOS.length+' produtos desta página (só os com saldo lançado).</div>':'')+
       (TOTAL>PRODUTOS.length?'<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'+
         '<button class="btn btn-ghost" '+(PAGINA<=1?"disabled":"")+' onclick="PAGINA--;carregarProdutos()">← anterior</button>'+
         '<span class="muted">'+((PAGINA-1)*400+1)+'–'+((PAGINA-1)*400+PRODUTOS.length)+' de '+TOTAL+'</span>'+
         '<button class="btn btn-ghost" '+((PAGINA*400>=TOTAL)?"disabled":"")+' onclick="PAGINA++;carregarProdutos()">próxima →</button></div>':"")+
     '</div></div>'+
     '<div class="bar" id="barraAcao">'+barraHtml(pendentes().length)+'</div>';
-  PRODUTOS.forEach(function(p){ if(EDIT[p.produtoId]!=null) setVal(p.produtoId,EDIT[p.produtoId]); });
+  produtosVisiveis().forEach(function(p){ if(EDIT[p.produtoId]!=null) setVal(p.produtoId,EDIT[p.produtoId]); });
 }
 function revisarLancamento(){
   const itens=pendentes();
