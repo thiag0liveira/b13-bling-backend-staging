@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Estoque</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:1200px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:20;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag);flex-wrap:wrap}
+  .top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:#9a95c9;font-size:12px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}.btn-grn{background:#2f9e6b}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  input,select{background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:14px}
+  .abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .aba{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 15px;font-size:13px;font-weight:700;cursor:pointer;color:#fff}
+  .aba.on{background:var(--mag);border-color:var(--mag)}
+  .lin{display:flex;align-items:center;gap:10px;border-bottom:1px solid #2a2660;padding:8px 0}
+  .lin:last-child{border-bottom:none}
+  .nm{flex:1;min-width:0;font-size:13px}
+  .nm small{display:block;color:#9a95c9;font-size:11px}
+  .sal{width:80px;text-align:right;font-weight:800;font-size:13px}
+  .qtd{width:110px}
+  .qtd input{width:100%;text-align:right;padding:7px}
+  .dif{width:75px;text-align:right;font-size:12px;font-weight:800}
+  .catHead{background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;margin:12px 0 4px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#262366;font-size:11px;padding:6px;text-align:left;position:sticky;top:0}
+  td{border-bottom:1px solid #2a2660;padding:5px 6px;font-size:12px}
+  td input{width:90px;text-align:right;padding:5px}
+  .bar{position:sticky;bottom:0;background:#1a1640;border-top:2px solid var(--mag);padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:15}
+  .pill{background:#1c1846;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700}
+  .warn{background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;color:#ffd23f;font-size:12px}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:560px;width:100%;max-height:85vh;overflow:auto}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/estoque")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/estoque");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<div id="modais"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const num=(v)=>(v==null||v==="")?null:Number(String(v).replace(",","."));
+
+let DEPOSITOS=[], DEP=null, ABA="lista", PRODUTOS=[], TOTAL=0, PAGINA=1, BUSCA="", SO_TABELA=true;
+let EDIT={};
+let MODO="balanco";
+let CARREGANDO=false, SALVANDO=false, ERRO_DEP="";
+
+async function carregarDepositos(){
+  try{
+    const j=await fetch(B+"/api/estoque/depositos").then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    DEPOSITOS=j.data||[];
+    if(!DEPOSITOS.length) ERRO_DEP="O Bling não retornou nenhum depósito.";
+    const padrao=DEPOSITOS.find(d=>d.padrao)||DEPOSITOS[0];
+    if(padrao&&!DEP) DEP=String(padrao.id);
+  }catch(e){ DEPOSITOS=[]; ERRO_DEP=e.message; }
+  render();
+}
+async function carregarProdutos(){
+  if(!DEP) return;
+  CARREGANDO=true; render();
+  try{
+    const p=new URLSearchParams({depositoId:DEP,pagina:PAGINA,limite:400,soTabela:SO_TABELA?"1":"0"});
+    if(BUSCA.trim().length>=2) p.set("q",BUSCA.trim());
+    const j=await fetch(B+"/api/estoque/produtos?"+p.toString()).then(r=>r.json());
+    if(j.erro) throw new Error(j.erro);
+    PRODUTOS=j.data||[]; TOTAL=j.total||0;
+  }catch(e){ PRODUTOS=[]; alert("Erro ao carregar produtos: "+e.message); }
+  CARREGANDO=false; render();
+}
+function saldoDe(p){
+  if(!p.saldo) return null;
+  return (p.saldo.noDeposito!=null)?p.saldo.noDeposito:p.saldo.fisicoTotal;
+}
+function pendentes(){
+  return PRODUTOS.filter(p=>{
+    const v=num(EDIT[p.produtoId]); if(v==null||!isFinite(v)) return false;
+    if(MODO==="balanco") return Math.abs(v-(saldoDe(p)??0))>0.0005;
+    return v>0;
+  });
+}
+function difDe(p){
+  const v=num(EDIT[p.produtoId]); if(v==null||!isFinite(v)) return null;
+  if(MODO==="balanco") return +(v-(saldoDe(p)??0)).toFixed(3);
+  return MODO==="entrada"?v:-v;
+}
+function setVal(pid,v){
+  if(v==="") delete EDIT[pid]; else EDIT[pid]=v;
+  const el=document.getElementById("dif_"+pid);
+  const p=PRODUTOS.find(x=>String(x.produtoId)===String(pid));
+  if(el&&p){ const d=difDe(p); el.innerHTML=(d==null||d===0)?"":(d>0?'<span style="color:#3ce88a">+'+d+'</span>':'<span style="color:#ff8090">'+d+'</span>'); }
+  atualizarBarra();
+}
+function atualizarBarra(){
+  const b=document.getElementById("barraAcao"); if(!b) return;
+  b.innerHTML=barraHtml(pendentes().length);
+}
+function abaListaHtml(){
+  let html="", catAtual=null;
+  PRODUTOS.forEach(p=>{
+    if(p.categoria&&p.categoria!==catAtual){ catAtual=p.categoria; html+='<div class="catHead">'+esc(catAtual)+'</div>'; }
+    const s=saldoDe(p);
+    html+='<div class="lin">'+
+      '<div class="nm">'+esc(p.nome)+'<small>#'+esc(p.codigo)+(p.caixaQtd>1?' · fardo '+p.caixaQtd:'')+'</small></div>'+
+      '<div class="sal" style="color:'+(s==null?'#9a95c9':(s<=0?'#ff8090':'#ffd23f'))+'">'+(s==null?'—':s)+'</div>'+
+      '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
+      '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
+  });
+  return html||'<div class="muted" style="padding:12px">Nenhum produto'+(BUSCA?' com "'+esc(BUSCA)+'"':'')+'.</div>';
+}
+function abaTabelaHtml(){
+  const linhas=PRODUTOS.map(function(p){
+    const s=saldoDe(p);
+    return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nome)+'</td><td class="muted">#'+esc(p.codigo)+'</td>'+
+      '<td style="text-align:right;color:'+(s==null?'#9a95c9':(s<=0?'#ff8090':'#ffd23f'))+';font-weight:800">'+(s==null?'—':s)+'</td>'+
+      '<td style="text-align:right"><input type="number" step="0.001" inputmode="decimal" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></td>'+
+      '<td class="dif" id="dif_'+p.produtoId+'" style="text-align:right"></td></tr>';
+  }).join("");
+  return '<div style="max-height:60vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Produto</th><th>Código</th><th style="text-align:right">Saldo</th><th style="text-align:right">'+(MODO==='balanco'?'Contado':'Qtd')+'</th><th style="text-align:right">Dif.</th></tr></thead><tbody>'+
+    (linhas||'<tr><td colspan="6" class="muted">Nenhum produto.</td></tr>')+'</tbody></table></div>';
+}
+function abaConferenciaHtml(){
+  const negativos=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s<0;});
+  const zerados=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s===0;});
+  const mexidos=pendentes();
+  function bloco(titulo,lista,cor,vazio){
+    return '<div class="catHead" style="background:'+cor+'">'+titulo+' ('+lista.length+')</div>'+
+      (lista.length?lista.map(function(p){
+        const s=saldoDe(p);
+        return '<div class="lin"><div class="nm">'+esc(p.nome)+'<small>#'+esc(p.codigo)+'</small></div>'+
+          '<div class="sal" style="color:'+(s<0?'#ff8090':'#ffd23f')+'">'+(s==null?'—':s)+'</div>'+
+          '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
+          '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
+      }).join(""):'<div class="muted" style="padding:8px">'+vazio+'</div>');
+  }
+  return '<div class="muted" style="margin-bottom:8px">Foco no que precisa de atenção: negativos, zerados e o que você já digitou.</div>'+
+    bloco("⚠️ Saldo negativo",negativos,"#5a1020","Nenhum negativo. 👍")+
+    bloco("⭕ Zerados",zerados,"#3a2a0a","Nenhum zerado.")+
+    bloco("✏️ Alterados agora",mexidos,"#123a2a","Você ainda não digitou nada.");
+}
+function barraHtml(n){
+  const dep=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
+  const nomeDep=dep?dep.descricao:"—";
+  return '<span class="pill">📦 '+esc(nomeDep)+'</span>'+
+    '<span class="pill">'+(MODO==="balanco"?"Balanço":(MODO==="entrada"?"Entrada":"Saída"))+'</span>'+
+    '<span class="pill" style="background:'+(n?'#123a2a':'#1c1846')+'">'+n+' pra lançar</span>'+
+    '<div style="flex:1"></div>'+
+    (n?'<button class="btn btn-ghost" onclick="limparEdicao()">Limpar</button>':'')+
+    '<button class="btn btn-grn" '+((!n||SALVANDO)?"disabled":"")+' onclick="revisarLancamento()">'+(SALVANDO?"Salvando…":"💾 Revisar e salvar")+'</button>';
+}
+function limparEdicao(){ EDIT={}; render(); }
+function render(){
+  const app=document.getElementById("app");
+  const topo='<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">📦 Estoque</div><div class="sp"></div></div>';
+  if(!DEPOSITOS.length){
+    app.innerHTML=topo+'<div class="wrap"><div class="card"><div style="font-weight:800;margin-bottom:6px">'+(ERRO_DEP?"Não consegui listar os depósitos":"Carregando depósitos…")+'</div>'+
+      (ERRO_DEP?'<div class="warn">'+esc(ERRO_DEP)+'<br><br>Se o seu plano do Bling não tiver múltiplos depósitos, me avise que eu adapto o painel pra trabalhar sem essa escolha.</div>':'<div class="muted">Um instante.</div>')+'</div></div>';
+    return;
+  }
+  const explic=MODO==="balanco"
+    ?"Você digita <b>quanto tem de verdade</b>; o sistema calcula a diferença e lança entrada ou saída sozinho. É o mais seguro pra contagem."
+    :(MODO==="entrada"?"Você digita <b>quanto chegou</b>; soma ao saldo atual.":"Você digita <b>quanto saiu</b>; subtrai do saldo atual.");
+  app.innerHTML=topo+'<div class="wrap">'+
+    '<div class="card"><div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:200px"><div class="muted" style="margin-bottom:4px">1) Depósito que você vai atualizar</div>'+
+        '<select style="width:100%" onchange="DEP=this.value;EDIT={};PAGINA=1;carregarProdutos()">'+
+        DEPOSITOS.map(function(d){return '<option value="'+esc(d.id)+'" '+(String(d.id)===String(DEP)?"selected":"")+'>'+esc(d.descricao)+(d.padrao?" (padrão)":"")+'</option>';}).join("")+
+        '</select></div>'+
+      '<div style="min-width:210px"><div class="muted" style="margin-bottom:4px">2) Tipo de lançamento</div>'+
+        '<select style="width:100%" onchange="MODO=this.value;render()">'+
+        '<option value="balanco"'+(MODO==="balanco"?" selected":"")+'>Balanço — digito o saldo final</option>'+
+        '<option value="entrada"'+(MODO==="entrada"?" selected":"")+'>Entrada — somar ao saldo</option>'+
+        '<option value="saida"'+(MODO==="saida"?" selected":"")+'>Saída — subtrair do saldo</option>'+
+        '</select></div></div>'+
+      '<div class="muted" style="margin-top:8px">'+explic+'</div></div>'+
+    '<div class="card">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
+        '<input placeholder="Buscar produto…" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value" onkeydown="if(event.key===\'Enter\'){PAGINA=1;carregarProdutos()}" style="flex:1;min-width:180px">'+
+        '<button class="btn btn-ghost" onclick="PAGINA=1;carregarProdutos()">🔎 Buscar</button>'+
+        '<label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(SO_TABELA?"checked":"")+' onchange="SO_TABELA=this.checked;PAGINA=1;carregarProdutos()"> só produtos da tabela</label>'+
+      '</div>'+
+      '<div class="abas">'+
+        '<span class="aba '+(ABA==="lista"?"on":"")+'" onclick="ABA=\'lista\';render()">📋 Lista</span>'+
+        '<span class="aba '+(ABA==="tabela"?"on":"")+'" onclick="ABA=\'tabela\';render()">⊞ Tabela</span>'+
+        '<span class="aba '+(ABA==="conferencia"?"on":"")+'" onclick="ABA=\'conferencia\';render()">🎯 Conferência</span>'+
+      '</div>'+
+      (CARREGANDO?'<div class="muted" style="padding:14px">Carregando saldos…</div>'
+        :(ABA==="tabela"?abaTabelaHtml():(ABA==="conferencia"?abaConferenciaHtml():abaListaHtml())))+
+      (TOTAL>PRODUTOS.length?'<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'+
+        '<button class="btn btn-ghost" '+(PAGINA<=1?"disabled":"")+' onclick="PAGINA--;carregarProdutos()">← anterior</button>'+
+        '<span class="muted">'+((PAGINA-1)*400+1)+'–'+((PAGINA-1)*400+PRODUTOS.length)+' de '+TOTAL+'</span>'+
+        '<button class="btn btn-ghost" '+((PAGINA*400>=TOTAL)?"disabled":"")+' onclick="PAGINA++;carregarProdutos()">próxima →</button></div>':"")+
+    '</div></div>'+
+    '<div class="bar" id="barraAcao">'+barraHtml(pendentes().length)+'</div>';
+  PRODUTOS.forEach(function(p){ if(EDIT[p.produtoId]!=null) setVal(p.produtoId,EDIT[p.produtoId]); });
+}
+function revisarLancamento(){
+  const itens=pendentes();
+  if(!itens.length) return;
+  const dep=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
+  const linhas=itens.map(function(p){
+    const v=num(EDIT[p.produtoId]); const s=saldoDe(p); const d=difDe(p);
+    const desc=MODO==="balanco"?('tem '+(s==null?"?":s)+' → vai ficar '+v):(MODO==="entrada"?('entrada de '+v):('saída de '+v));
+    return '<div class="lin"><div class="nm">'+esc(p.nome)+'<small>'+desc+'</small></div><div class="dif">'+
+      (d>0?'<span style="color:#3ce88a">+'+d+'</span>':'<span style="color:#ff8090">'+d+'</span>')+'</div></div>';
+  }).join("");
+  document.getElementById("modais").innerHTML=
+    '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">'+
+    '<h3 style="margin-bottom:4px">Confirmar lançamento</h3>'+
+    '<div class="muted" style="margin-bottom:10px">Depósito <b>'+esc(dep?dep.descricao:"—")+'</b> · '+itens.length+' produto(s) · '+(MODO==="balanco"?"balanço":(MODO==="entrada"?"entrada":"saída"))+'</div>'+
+    '<div class="warn" style="margin-bottom:10px">Isso altera o estoque no Bling de verdade. Confira antes.</div>'+
+    '<div style="max-height:40vh;overflow:auto">'+linhas+'</div>'+
+    '<div style="margin-top:10px"><div class="muted" style="margin-bottom:4px">Observação (vai junto no lançamento)</div>'+
+    '<input id="obsEstoque" style="width:100%" placeholder="ex: contagem do dia"></div>'+
+    '<div id="errEstoque"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+    '<button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Voltar</button>'+
+    '<button class="btn btn-grn" style="flex:1" id="btnConfEstoque" onclick="salvarLancamento()">Confirmar e lançar</button>'+
+    '</div></div></div>';
+}
+function fecharModal(){ document.getElementById("modais").innerHTML=""; }
+async function salvarLancamento(){
+  if(SALVANDO) return;
+  const itens=pendentes(); if(!itens.length) return;
+  SALVANDO=true;
+  const btn=document.getElementById("btnConfEstoque");
+  if(btn){ btn.disabled=true; btn.textContent="Lançando…"; }
+  const obsEl=document.getElementById("obsEstoque");
+  const observacao=(obsEl?obsEl.value:"").trim();
+  try{
+    const body={ depositoId:DEP, modo:MODO, observacao, funcionarioId:S.id,
+      itens:itens.map(function(p){ return {produtoId:p.produtoId,nome:p.nome,quantidade:num(EDIT[p.produtoId])}; }) };
+    const j=await fetch(B+"/api/estoque/lancar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    const falhas=(j.resultados||[]).filter(function(r){return !r.ok;});
+    document.getElementById("modais").innerHTML=
+      '<div class="modalBg" onclick="if(event.target===this){fecharModal();}"><div class="modal" style="text-align:center">'+
+      '<div style="font-size:44px">'+(falhas.length?"⚠️":"✅")+'</div><h3>'+j.aplicados+' lançamento(s) aplicado(s)</h3>'+
+      (falhas.length?'<div class="warn" style="text-align:left;margin-top:10px">'+falhas.length+' falharam:<br>'+falhas.map(function(f){return '• '+esc(f.nome||f.produtoId)+': '+esc(f.erro||"");}).join("<br>")+'</div>':'<div class="muted" style="margin-top:6px">Estoque atualizado no Bling.</div>')+
+      '<button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModal();EDIT={};carregarProdutos()">OK</button></div></div>';
+  }catch(e){
+    const el=document.getElementById("errEstoque");
+    if(el) el.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: '+esc(e.message)+'</div>';
+    if(btn){ btn.disabled=false; btn.textContent="Confirmar e lançar"; }
+  }
+  SALVANDO=false;
+}
+render();
+carregarDepositos().then(function(){ if(DEP) carregarProdutos(); });
+</script>
+</body>
+</html>

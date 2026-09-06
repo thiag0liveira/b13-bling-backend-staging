@@ -476,7 +476,8 @@ window.B13_NAV_LINKS=[
   {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["acesso_perdas","ver_dashboard"]},
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
-  {href:"/estoque",label:"📦 Ajuste de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {href:"/estoque-simples",label:"📦 Ajuste rápido (1 produto)",acoes:["acesso_estoque","editar_pedido","admin"]},
   {href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
   {href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
   {href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
@@ -2459,6 +2460,33 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // COMPARA Central x Fechamento de Caixa no mesmo dia e mostra POR QUE divergem,
 // listando os pedidos que cada lado inclui/exclui. Também lista todos os pedidos
 // de Consumidor Final. Uso: ?data=AAAA-MM-DD (padrão: hoje, horário de Brasília)
+// DIAGNÓSTICO: descobre como o SEU Bling expõe depósitos e saldos por depósito.
+// Nada aqui grava nada — é só leitura, pra montar o painel de estoque com segurança.
+app.get("/api/diag/depositos",async(req,res)=>{
+  const out={};
+  // 1) endpoint de depósitos
+  try{ const r=await bling(`/depositos`); out.get_depositos={ok:true,qtd:(r?.data||[]).length,data:r?.data||[]}; }
+  catch(e){ out.get_depositos={ok:false,status:e.status,erro:e.message,body:e.body}; }
+  // 2) saldos de um produto de exemplo — mostra se vem quebrado por depósito
+  try{
+    const pid=req.query.produtoId;
+    if(pid){
+      const r=await bling(`/estoques/saldos?idsProdutos[]=${pid}`);
+      out.saldos_do_produto={ok:true,data:r?.data||[]};
+      try{ const r2=await bling(`/produtos/${pid}`); out.produto_estoque_bruto=r2?.data?.estoque||null; }catch(e){}
+    } else out.saldos_do_produto={dica:"passe ?produtoId=ID pra ver o saldo por depósito de um produto"};
+  }catch(e){ out.saldos_do_produto={ok:false,erro:e.message,body:e.body}; }
+  // 3) saldos filtrando por depósito (se houver depósito informado)
+  try{
+    const dep=req.query.depositoId, pid=req.query.produtoId;
+    if(dep&&pid){
+      const r=await bling(`/estoques/saldos?idsProdutos[]=${pid}&idDeposito=${dep}`);
+      out.saldos_filtrando_deposito={ok:true,data:r?.data||[]};
+    }
+  }catch(e){ out.saldos_filtrando_deposito={ok:false,erro:e.message,body:e.body}; }
+  res.json(out);
+});
+
 app.get("/api/diag/central-vs-fechamento",async(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
@@ -6676,7 +6704,8 @@ app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas-extras.html")); });
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
 app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
-app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque.html")); });
+app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque-painel.html")); });
+app.get("/estoque-simples", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque-simples.html")); });
 app.get("/entrada-estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entrada-estoque.html")); });
 app.get("/movimentacoes", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "movimentacoes.html")); });
 app.get("/gerenciamento", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gerenciamento.html")); });
@@ -7181,6 +7210,144 @@ app.get("/api/central/resumo",(req,res)=>{
       bling:{ ..._centralBling, calculando:_centralBling.calculando&&_centralBling.dia===dia },
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ===================== PAINEL DE ESTOQUE =====================
+// Lista depósitos (pra escolher antes de mexer em qualquer coisa)
+app.get("/api/estoque/depositos",async(req,res)=>{
+  try{
+    const r=await bling(`/depositos`);
+    const deps=(r?.data||[]).map(d=>({id:d.id,descricao:d.descricao||d.nome||("Depósito "+d.id),padrao:!!d.padrao,situacao:d.situacao}));
+    res.json({data:deps});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+
+// Lista produtos com saldo (no depósito escolhido), já organizados como a tabela de preços.
+// Usa o índice local pra nome/código (rápido) e busca os saldos no Bling em blocos.
+app.get("/api/estoque/produtos",async(req,res)=>{
+  try{
+    const depositoId=req.query.depositoId?String(req.query.depositoId):null;
+    const filtro=(req.query.q||"").toLowerCase().trim();
+    const soTabela=req.query.soTabela==="1";
+    // base de produtos: a tabela publicada (organizada por categoria) ou o índice completo
+    const idx=_indicePrecosTabela();
+    const tab=lerTabela();
+    let base=[];
+    if(soTabela){
+      (tab?.model||[]).forEach(c=>(c.itens||[]).forEach(it=>{
+        (it.bling||[]).forEach(b=>{ if(b.id) base.push({produtoId:b.id,codigo:String(b.codigo||""),nome:it.nome||b.nome||"",categoria:c.t||"",caixaQtd:it.caixa||1}); });
+      }));
+    } else {
+      const indice=lerJSON(GTIN_INDEX_FILE,{});
+      const vistos=new Set();
+      Object.values(indice).forEach(p=>{
+        if(!p.produtoId||vistos.has(String(p.produtoId))) return;
+        vistos.add(String(p.produtoId));
+        const vinc=idx.porCodigo[String(p.codigo||"")];
+        base.push({produtoId:p.produtoId,codigo:String(p.codigo||""),nome:p.nome||"",categoria:vinc?.categoriaNome||"",caixaQtd:vinc?.caixaQtd||1});
+      });
+    }
+    if(filtro) base=base.filter(p=>p.nome.toLowerCase().includes(filtro)||p.codigo.toLowerCase()===filtro);
+    base.sort((a,b)=>(a.categoria||"").localeCompare(b.categoria||"")||a.nome.localeCompare(b.nome));
+    const limite=Math.min(Number(req.query.limite||400),800);
+    const pagina=Math.max(1,Number(req.query.pagina||1));
+    const total=base.length;
+    const pagBase=base.slice((pagina-1)*limite, pagina*limite);
+    // saldos em blocos de 40
+    const ids=pagBase.map(p=>Number(p.produtoId)).filter(Boolean);
+    const saldos={};
+    for(let i=0;i<ids.length;i+=40){
+      const bloco=ids.slice(i,i+40);
+      const qs=bloco.map(id=>`idsProdutos[]=${id}`).join("&")+(depositoId?`&idDeposito=${depositoId}`:"");
+      try{
+        const r=await bling(`/estoques/saldos?${qs}`);
+        (r?.data||[]).forEach(s=>{
+          const pid=s.produto?.id; if(!pid) return;
+          let saldoDep=null;
+          if(depositoId&&Array.isArray(s.depositos)){
+            const d=s.depositos.find(x=>String(x.id||x.deposito?.id)===String(depositoId));
+            if(d) saldoDep=Number(d.saldoFisico ?? d.saldo ?? d.saldoVirtual ?? 0);
+          }
+          saldos[pid]={ total:Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0),
+            fisicoTotal:Number(s.saldoFisicoTotal ?? 0), noDeposito:saldoDep,
+            depositos:Array.isArray(s.depositos)?s.depositos.map(x=>({id:x.id||x.deposito?.id,nome:x.deposito?.descricao||x.descricao||"",saldo:Number(x.saldoFisico ?? x.saldo ?? 0)})):[] };
+        });
+      }catch(e){}
+      await sleep(200);
+    }
+    res.json({ total, pagina, limite, depositoId,
+      data: pagBase.map(p=>({ ...p, saldo: saldos[p.produtoId] || null })) });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
+// LANÇA a atualização de estoque. Aceita vários produtos numa tacada.
+// modo "balanco": define o saldo final (calcula a diferença e lança E ou S)
+// modo "entrada"/"saida": lança a quantidade informada direto
+app.post("/api/estoque/lancar",async(req,res)=>{
+  try{
+    const {depositoId, modo, itens, observacao, funcionarioId}=req.body||{};
+    if(!depositoId) return res.status(400).json({erro:"escolha o depósito antes de lançar"});
+    if(!["balanco","entrada","saida"].includes(modo)) return res.status(400).json({erro:"modo deve ser balanco, entrada ou saida"});
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"nenhum produto informado"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    // saldo atual (necessário pro balanço) — busca em blocos
+    const ids=[...new Set(itens.map(i=>Number(i.produtoId)).filter(Boolean))];
+    const saldoAtual={};
+    if(modo==="balanco"){
+      for(let i=0;i<ids.length;i+=40){
+        const bloco=ids.slice(i,i+40);
+        const qs=bloco.map(id=>`idsProdutos[]=${id}`).join("&")+`&idDeposito=${depositoId}`;
+        try{
+          const r=await bling(`/estoques/saldos?${qs}`);
+          (r?.data||[]).forEach(s=>{
+            const pid=s.produto?.id; if(!pid) return;
+            let v=Number(s.saldoFisicoTotal ?? s.saldoVirtualTotal ?? 0);
+            if(Array.isArray(s.depositos)){
+              const d=s.depositos.find(x=>String(x.id||x.deposito?.id)===String(depositoId));
+              if(d) v=Number(d.saldoFisico ?? d.saldo ?? v);
+            }
+            saldoAtual[pid]=v;
+          });
+        }catch(e){}
+        await sleep(200);
+      }
+    }
+    const resultados=[];
+    for(const it of itens){
+      const pid=Number(it.produtoId); if(!pid) continue;
+      const qtdInformada=Number(it.quantidade);
+      if(!isFinite(qtdInformada)){ resultados.push({produtoId:pid,nome:it.nome||"",ok:false,erro:"quantidade inválida"}); continue; }
+      let operacao, quantidade, antes=saldoAtual[pid]??null;
+      if(modo==="balanco"){
+        const dif=+(qtdInformada-(antes??0)).toFixed(3);
+        if(Math.abs(dif)<0.0005){ resultados.push({produtoId:pid,nome:it.nome||"",ok:true,semMudanca:true,antes,depois:qtdInformada}); continue; }
+        operacao = dif>0?"E":"S";
+        quantidade = Math.abs(dif);
+      } else {
+        if(qtdInformada<=0){ resultados.push({produtoId:pid,nome:it.nome||"",ok:false,erro:"quantidade tem que ser maior que zero"}); continue; }
+        operacao = modo==="entrada"?"E":"S";
+        quantidade = qtdInformada;
+      }
+      try{
+        await bling(`/estoques`,{method:"POST",body:JSON.stringify({
+          produto:{id:pid},
+          deposito:{id:Number(depositoId)},
+          operacao, quantidade,
+          precoCusto: it.precoCusto!=null?Number(it.precoCusto):undefined,
+          observacoes:(observacao||`Ajuste pelo painel de estoque (${modo}) — por ${funcNome}`).slice(0,300),
+        })});
+        resultados.push({produtoId:pid,nome:it.nome||"",ok:true,operacao,quantidade,antes,
+          depois: modo==="balanco"?qtdInformada:(antes!=null?+(antes+(operacao==="E"?quantidade:-quantidade)).toFixed(3):null)});
+      }catch(e){ resultados.push({produtoId:pid,nome:it.nome||"",ok:false,erro:e.message,detalhe:e.body}); }
+      await sleep(320);
+    }
+    const okN=resultados.filter(r=>r.ok).length, falhas=resultados.filter(r=>!r.ok);
+    addLog("estoque-"+depositoId,"estoque_ajustado",funcionarioId,funcNome,{modo,qtdProdutos:itens.length,ok:okN,falhas:falhas.length});
+    if(falhas.length) registrarAviso({tipo:"estoque_lancamento_falhou",titulo:`Ajuste de estoque: ${falhas.length} produto(s) falharam`,origem:"Painel de Estoque",operador:funcNome,
+      fingerprint:`estq-${Date.now()}`, erroBling:falhas.slice(0,5).map(f=>`${f.nome||f.produtoId}: ${f.erro}`).join(" | "),
+      oQueFazer:`Confira no Bling o estoque de: ${falhas.map(f=>f.nome||f.produtoId).join(", ")}.`});
+    res.json({ok:true, aplicados:okN, falhas:falhas.length, resultados});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 
 app.get("/central", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "central.html")); });
