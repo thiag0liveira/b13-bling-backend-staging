@@ -183,7 +183,11 @@ window.verMovimentos=async function(id){
                 <button class="btn btn-sm" style="padding:3px 8px;background:#b3341f;color:#fff" onclick="cancelarVendaGestao(${ix})">🚫 Cancelar venda</button>
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px;border:1px solid #6b5a1f;color:#ffd23f" title="Use quando o Bling já está correto e este lançamento é uma sobra duplicada (não mexe no Bling)" onclick="cancelarSoLocalGestao(${ix})">🗑️ Cancelar só no caixa (duplicado)</button>
               </div>`:''}
-              ${(m.tipo==="venda"&&m.cancelado)?'<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 Venda cancelada</div>':''}
+              ${(m.tipo==="venda"&&m.cancelado)?(()=>{
+                const c=(m.alteracoes||[]).slice().reverse().find(a=>a.tipo==="cancelamento_local_duplicado"||a.tipo==="cancelamento");
+                const soLocal=c&&c.tipo==="cancelamento_local_duplicado";
+                return `<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 ${soLocal?"Cancelado só no caixa (duplicado) — Bling não alterado":"Venda cancelada"}${c?.por?` · por ${esc(c.por)}`:""}${c?.em?` · ${hora(c.em)}`:""}${c?.motivo?`<br><span class="muted">motivo: ${esc(c.motivo)}</span>`:""}<br><span class="muted">não conta no total do caixa</span></div>`;
+              })():''}
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
             ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
@@ -696,23 +700,67 @@ window.cancelarVendaGestao=async function(ix){
 }
 // cancela SÓ o registro local (não mexe no Bling) — pra quando o Bling já está certo
 // (1 pedido só) e este lançamento é sobra de uma duplicidade antiga
-window.cancelarSoLocalGestao=async function(ix){
+window.cancelarSoLocalGestao=function(ix){
   const G=window._GMOVS; if(!G) return;
   const m=G.movs[ix]; if(!m) return;
-  const motivo=prompt(`Cancelar SÓ o registro local da venda #${m.numero||m.pedidoId} (${brl(m.total)})?\n\nIsso NÃO mexe no Bling — use só quando o pedido no Bling já está correto e este lançamento é uma sobra duplicada (ex: reabertura antiga que criou um segundo registro).\n\nMotivo (obrigatório, ex: "duplicado — confirmado 1 pagamento no Bling"):`);
-  if(!motivo) return;
+  const quando=new Date(m.em).toLocaleString("pt-BR");
+  const pags=(m.pagamentos||[]).map(p=>`${esc(p.formaNome||"—")}: ${brl(p.valor)}`).join(" · ")||"—";
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🗑️ Cancelar só no caixa (duplicado)</h3>
+      <div style="background:#1c1846;border-radius:10px;padding:10px;margin:10px 0;font-size:13px">
+        <div><b>Pedido #${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">Lançado em ${esc(quando)}</div>
+        <div class="muted" style="font-size:12px">Pagamento: ${pags}</div>
+      </div>
+      <div style="padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;font-size:12px;color:#ffd23f">
+        ⚠️ Confira se é <b>este</b> o lançamento duplicado (o outro do mesmo pedido continua valendo).
+        O Bling <b>não</b> será alterado — só o registro do caixa.
+      </div>
+      <div style="margin-top:10px">
+        <label class="muted" style="font-size:12px">Motivo (obrigatório)</label>
+        <input id="motivoCancLocal" placeholder="Ex: duplicado — confirmado 1 pagamento no Bling" style="width:100%">
+      </div>
+      <div id="errCancLocal"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Voltar</button>
+        <button class="btn" id="btnCancLocal" style="flex:1;background:#b3341f;color:#fff" onclick="confirmarCancelarSoLocal(${ix})">Cancelar este registro</button>
+      </div>
+    </div></div>`;
+  setTimeout(()=>document.getElementById("motivoCancLocal")?.focus(),50);
+}
+window.confirmarCancelarSoLocal=async function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  const motivo=(document.getElementById("motivoCancLocal")?.value||"").trim();
+  const err=document.getElementById("errCancLocal");
+  if(!motivo){ if(err) err.innerHTML=`<div style="color:#ff8090;font-size:12px;margin-top:8px">Escreva o motivo pra continuar.</div>`; return; }
+  const btn=document.getElementById("btnCancLocal");
+  if(btn){ btn.disabled=true; btn.textContent="Cancelando…"; }
+  if(err) err.innerHTML="";
   try{
     const r=await fetch(B+"/api/gestao/cancelar-lancamento-local",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({sessaoId:G.id, em:m.em, pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(r=>r.json());
+      body:JSON.stringify({sessaoId:G.id, em:m.em, pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(async r=>{
+        const j=await r.json().catch(()=>({erro:"resposta inválida do servidor"}));
+        if(!r.ok) throw new Error(j.erro||("erro "+r.status));
+        return j;
+      });
     if(r.erro) throw new Error(r.erro);
     document.getElementById("modais").innerHTML=`
-      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">🗑️</div><h3>Registro local cancelado</h3>
-        <div class="muted" style="margin-top:8px">Pedido #${esc(m.numero||m.pedidoId)} — o Bling não foi tocado.</div>
-        <div class="ok" style="margin-top:8px">Total do caixa: ${brl(r.totalVendasAntes)} → <b>${brl(r.totalVendasDepois)}</b> (−${brl(r.diferenca)})</div>
-        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
+      <div class="modalBg" onclick="fecharModais();verMovimentos('${esc(G.id)}')"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">✅</div><h3>Registro cancelado</h3>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(m.numero||m.pedidoId)} — o Bling <b>não</b> foi alterado.</div>
+        <div style="background:#0a2a1a;border:1px solid #1f6b45;border-radius:10px;padding:10px;margin-top:10px">
+          <div style="font-size:13px">Total de vendas deste caixa</div>
+          <div style="font-size:15px;margin-top:4px">${brl(r.totalVendasAntes)} → <b style="color:#3ce88a">${brl(r.totalVendasDepois)}</b></div>
+          <div class="muted" style="font-size:12px;margin-top:2px">removido: ${brl(r.diferenca)}</div>
+        </div>
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();verMovimentos('${esc(G.id)}')">OK, ver os movimentos</button>
       </div></div>`;
-  }catch(e){ alert("Erro ao cancelar: "+e.message); }
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent="Cancelar este registro"; }
+    if(err) err.innerHTML=`<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: ${esc(e.message)}</div>`;
+  }
 }
 
 window.editarPagamentoVenda=async function(ix){
