@@ -2471,14 +2471,14 @@ app.get("/api/diag/investigar-duplicado/:pedidoId",async(req,res)=>{
       }
     }
     // pedido real no Bling
-    let bling=null;
+    let pedidoBling=null;
     const pid=ocorrencias[0]?.pedidoId||idBusca;
     try{
       const ped=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data);
-      if(ped) bling={ id:ped.id, numero:ped.numero, total:ped.total, situacao:nomeSituacao(ped.situacao?.id),
+      if(ped) pedidoBling={ id:ped.id, numero:ped.numero, total:ped.total, situacao:nomeSituacao(ped.situacao?.id),
         parcelas:(ped.parcelas||[]).map(p=>({forma:p.formaPagamento?.nome||p.formaPagamento?.id,valor:p.valor})),
         observacoes:ped.observacoes||"" };
-    }catch(e){ bling={erro:e.message}; }
+    }catch(e){ pedidoBling={erro:e.message}; }
     // pra cada sessão envolvida, recalcula o fechamento AGORA (mostra se está contando 2x)
     const sessoesEnvolvidas=[...new Set(ocorrencias.map(o=>o.sessaoId))];
     const fechamentos=sessoesEnvolvidas.map(sid=>{
@@ -2490,9 +2490,9 @@ app.get("/api/diag/investigar-duplicado/:pedidoId",async(req,res)=>{
         quantasVezesEssePedidoConta:vendasDessePedido.length,
         somaSoDessePedidoNoFechamento:+vendasDessePedido.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2) };
     });
-    res.json({ pedidoId:pid, ocorrenciasNoCaixa:ocorrencias.length, ocorrencias, bling, fechamentosAfetados:fechamentos,
+    res.json({ pedidoId:pid, ocorrenciasNoCaixa:ocorrencias.length, ocorrencias, bling:pedidoBling, fechamentosAfetados:fechamentos,
       diagnostico: ocorrencias.filter(o=>!o.cancelado).length>1
-        ? `Esse pedido está lançado ${ocorrencias.filter(o=>!o.cancelado).length}x ATIVO no caixa. O Bling tem 1 pagamento real de ${bling?.total}. O fechamento está contando a diferença a mais.`
+        ? `Esse pedido está lançado ${ocorrencias.filter(o=>!o.cancelado).length}x ATIVO no caixa. O Bling tem 1 pagamento real de ${pedidoBling?.total}. O fechamento está contando a diferença a mais.`
         : "Só 1 lançamento ativo — não está duplicado no caixa agora." });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
