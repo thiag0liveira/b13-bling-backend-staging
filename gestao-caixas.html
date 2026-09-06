@@ -181,6 +181,7 @@ window.verMovimentos=async function(id){
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarItensVenda(${ix})">📦 Editar itens</button>
                 <button class="btn btn-sm" style="padding:3px 8px;background:#b3341f;color:#fff" onclick="cancelarVendaGestao(${ix})">🚫 Cancelar venda</button>
+                <button class="btn btn-ghost btn-sm" style="padding:3px 8px;border:1px solid #6b5a1f;color:#ffd23f" title="Use quando o Bling já está correto e este lançamento é uma sobra duplicada (não mexe no Bling)" onclick="cancelarSoLocalGestao(${ix})">🗑️ Cancelar só no caixa (duplicado)</button>
               </div>`:''}
               ${(m.tipo==="venda"&&m.cancelado)?'<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 Venda cancelada</div>':''}
             </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
@@ -689,6 +690,26 @@ window.cancelarVendaGestao=async function(ix){
         <div style="font-size:42px">${r.blingOk===false?"⚠️":"🚫"}</div><h3>Venda cancelada</h3>
         <div class="muted" style="margin-top:8px">Pedido #${esc(r.numero||m.numero||m.pedidoId)} cancelado.</div>
         ${avisoBling}
+        <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
+      </div></div>`;
+  }catch(e){ alert("Erro ao cancelar: "+e.message); }
+}
+// cancela SÓ o registro local (não mexe no Bling) — pra quando o Bling já está certo
+// (1 pedido só) e este lançamento é sobra de uma duplicidade antiga
+window.cancelarSoLocalGestao=async function(ix){
+  const G=window._GMOVS; if(!G) return;
+  const m=G.movs[ix]; if(!m) return;
+  const motivo=prompt(`Cancelar SÓ o registro local da venda #${m.numero||m.pedidoId} (${brl(m.total)})?\n\nIsso NÃO mexe no Bling — use só quando o pedido no Bling já está correto e este lançamento é uma sobra duplicada (ex: reabertura antiga que criou um segundo registro).\n\nMotivo (obrigatório, ex: "duplicado — confirmado 1 pagamento no Bling"):`);
+  if(!motivo) return;
+  try{
+    const r=await fetch(B+"/api/gestao/cancelar-lancamento-local",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({sessaoId:G.id, em:m.em, pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(r=>r.json());
+    if(r.erro) throw new Error(r.erro);
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
+        <div style="font-size:42px">🗑️</div><h3>Registro local cancelado</h3>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(m.numero||m.pedidoId)} — o Bling não foi tocado.</div>
+        <div class="ok" style="margin-top:8px">Total do caixa: ${brl(r.totalVendasAntes)} → <b>${brl(r.totalVendasDepois)}</b> (−${brl(r.diferenca)})</div>
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
       </div></div>`;
   }catch(e){ alert("Erro ao cancelar: "+e.message); }
