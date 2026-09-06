@@ -658,7 +658,9 @@ function ligarBusca(){
 
 // executa a busca de um produto. ehEnter=true veio do leitor (Enter) — nesse caso,
 // se for numérico, trata como código de barras com prioridade.
+let _buscaReqId=0;
 async function buscarProduto(termo, el, resEl, ehEnter){
+  const meuId=++_buscaReqId; // resposta atrasada de uma busca antiga não sobrescreve a atual
   try{
     if(/^\d{6,}$/.test(termo)){
       const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
@@ -670,18 +672,21 @@ async function buscarProduto(termo, el, resEl, ehEnter){
       if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado. Verifique se o GTIN está cadastrado no Bling, ou busque pelo nome.</div>`; return; }
     }
     const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
+    if(meuId!==_buscaReqId) return; // já tem busca mais nova — ignora esta
     const lista=(j.data||[]).slice(0,25);
     if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+    // /api/buscar já traz preco e imagem — usa direto (antes disparava 25 requisições extras por busca)
+    lista.forEach(p=>{ if(p.preco!=null&&Number(p.preco)>0) p._preco=Number(p.preco); if(p.imagem) p._imagem=p.imagem; });
     window._ultimaBusca=lista;
     resEl.innerHTML=lista.map((p,ix)=>`
       <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
-        <div class="semimg">📦</div>
+        ${p._imagem?`<img src="${esc(p._imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`:`<div class="semimg">📦</div>`}
         <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
-        <div class="preco" id="pr_${ix}">—</div>
+        <div class="preco" id="pr_${ix}">${p._preco?brl(p._preco):"—"}</div>
       </div>`).join("");
-    // busca preço e imagem de cada resultado em paralelo, atualizando conforme chega
+    // só pros que vieram SEM preço: confirma um a um (raro)
     lista.forEach(async(p,ix)=>{
-      if(!p.codigo) return;
+      if(!p.codigo||p._preco) return;
       try{
         const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
         if(r?.data){
@@ -696,7 +701,7 @@ async function buscarProduto(termo, el, resEl, ehEnter){
         }
       }catch(e){}
     });
-  }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
+  }catch(e){ if(meuId===_buscaReqId) resEl.innerHTML=`<div class="muted">erro na busca — tenta de novo</div>`; }
 }
 
 async function selecionarResultado(ix){
@@ -736,13 +741,16 @@ async function _adicionarAoCarrinhoInterno(p){
   p.produtoId=Number(p.produtoId);
   const exAntes=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
   const qtdDesejada=(exAntes?exAntes.quantidade:0)+1;
-  // confere o estoque ao vivo antes de adicionar/aumentar
-  let estoqueAtual=0;
-  try{ estoqueAtual=(await fetch(BACKEND+"/api/pdv/estoque/"+p.produtoId).then(r=>r.json())).estoque||0; }catch(e){}
-  if(qtdDesejada>estoqueAtual){
+  // confere o estoque ao vivo antes de adicionar/aumentar. Se o Bling não responder
+  // (fora do ar/lento), NÃO bloqueia a venda por "sem estoque" — segue com estoque
+  // desconhecido (antes, falha de rede virava 0 e travava o caixa pedindo autorização)
+  let estoqueAtual=null;
+  try{ const r=await fetch(BACKEND+"/api/pdv/estoque/"+p.produtoId); const j=await r.json(); if(r.ok&&j.erro==null) estoqueAtual=Number(j.estoque)||0; }catch(e){}
+  if(estoqueAtual!=null && qtdDesejada>estoqueAtual){
     pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual);
     return;
   }
+  if(estoqueAtual==null){ estoqueAtual=Number.POSITIVE_INFINITY; const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="muted" style="font-size:12px">⚠️ Não consegui conferir o estoque de "${esc(p.nome)}" no Bling agora — adicionado sem conferência.</div>`; }
   // reconfere o carrinho aqui (depois do await), caso outra adição do MESMO produto
   // já tenha rodado enquanto esse fetch estava em andamento
   const ex=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
@@ -991,8 +999,8 @@ function render(){
           <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar</label>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
-          ${(!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
-          onclick="finalizarVenda()">✅ Finalizar Venda</button>
+          ${(FINALIZANDO||!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
+          onclick="finalizarVenda()">${FINALIZANDO?"Processando…":"✅ Finalizar Venda"}</button>
       </div>
     </div>
 
@@ -1001,7 +1009,7 @@ function render(){
         <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
         <div class="linha"><span>Desconto (R$)</span>
           <div style="display:flex;gap:6px;align-items:center">
-            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} oninput="render()">
+            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} onchange="render()">
             ${DESCONTO_DESBLOQUEADO?"":`<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
           </div></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
@@ -1025,15 +1033,51 @@ function render(){
   ligarBusca();
 }
 
+let FINALIZANDO=false, OP_ID=null;
+function gerarOpId(){ return "op-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10); }
+function mostrarSucessoVenda(j, ctx){
+  const {itensVenda, descontoVenda, pagamentosEnviados, clienteFinal}=ctx;
+  ULTIMA_VENDA={ numero:j.numero||j.pedidoId, pedidoId:j.pedidoId, total:j.total, desconto:descontoVenda,
+    itens:itensVenda, pagamentos:pagamentosEnviados, cliente:clienteFinal, nfce:j.nfce, dataHora:Date.now() };
+  CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; CLIENTE_SELECIONADO=null;
+  FINALIZANDO=false; OP_ID=null;
+  limparPainelAdicionado();
+  carregarCaixa().then(()=>{
+    const m=document.getElementById("msgFinalizar");
+    if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}${j.repetido?' <span class="muted" style="font-size:12px">(já tinha sido concluída — nada foi feito de novo)</span>':''}
+      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?.erroEnvio?`<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>`:(j.nfce?.pendente?"<br><span class=\"muted\" style=\"font-size:12px\">NFCe sendo emitida em segundo plano</span>":(j.nfce?"<br>NFCe emitida":"")))}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
+        ${j.nfce?.linkDanfe?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="window.open('${esc(j.nfce.linkDanfe)}','_blank')">🧾 Imprimir NFCe</button>`:""}
+      </div></div>`;
+  });
+}
+async function aguardarConclusaoVenda(opId, ctx){
+  const inicio=Date.now();
+  while(Date.now()-inicio<5*60*1000){
+    await new Promise(r=>setTimeout(r,3000));
+    let st=null;
+    try{ st=await fetch(BACKEND+"/api/caixa-atacado/finalizar/status/"+encodeURIComponent(opId)).then(r=>r.json()); }catch(e){ continue; }
+    if(st.status==="ok"&&st.resposta){ mostrarSucessoVenda(st.resposta, ctx); return; }
+    if(st.status==="erro"){ FINALIZANDO=false; OP_ID=null; render(); const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="err">Não concluiu: ${esc(st.erro||"erro")}. Pode tentar de novo.</div>`; return; }
+    const m=document.getElementById("msgFinalizar"); const seg=Math.round((Date.now()-inicio)/1000);
+    if(m) m.innerHTML=`<div class="muted" style="padding:8px">⏳ Ainda processando no Bling (${seg}s)… <b>não feche e não clique de novo</b>.</div>`;
+  }
+  FINALIZANDO=false; render();
+  const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="err">Passou de 5 min sem confirmação. Confira em "Minhas Vendas" ou no Bling antes de tentar de novo.</div>`;
+}
 async function finalizarVenda(){
+  if(FINALIZANDO) return; // trava global (clique duplo / Enter)
   const msg=document.getElementById("msgFinalizar");
   const btn=document.getElementById("btnFinalizar");
+  FINALIZANDO=true; if(!OP_ID) OP_ID=gerarOpId();
   msg.innerHTML=""; btn.disabled=true; btn.textContent="Processando…";
   const clienteFinal=(CLIENTE_SELECIONADO||CONSUMIDOR_FINAL)||null;
   const itensVenda=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco}));
   const descontoVenda=descontoAtual();
   try{
     const body={
+      opId:OP_ID,
       itens:itensVenda.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.preco})),
       desconto:descontoVenda,
       pagamentos:(()=>{
@@ -1052,24 +1096,24 @@ async function finalizarVenda(){
       contatoId:clienteFinal?.id||null,
       clienteNome:clienteFinal?.nome||"",
     };
-    const r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const j=await r.json();
+    const ctx={itensVenda, descontoVenda, pagamentosEnviados:body.pagamentos, clienteFinal};
+    const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(),90000);
+    let r, j;
+    try{
+      r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
+      j=await r.json();
+    }finally{ clearTimeout(tm); }
+    if(j.emAndamento){ msg.innerHTML=`<div class="muted" style="padding:8px">⏳ Essa venda já está sendo processada… aguardando.</div>`; await aguardarConclusaoVenda(j.opId||OP_ID, ctx); return; }
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
-    ULTIMA_VENDA={
-      numero:j.numero||j.pedidoId, pedidoId:j.pedidoId, total:j.total, desconto:descontoVenda,
-      itens:itensVenda, pagamentos:body.pagamentos, cliente:clienteFinal, nfce:j.nfce, dataHora:Date.now(),
-    };
-    CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; CLIENTE_SELECIONADO=null;
-    limparPainelAdicionado();
-    await carregarCaixa();
-    const m=document.getElementById("msgFinalizar");
-    if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}
-      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?.erroEnvio?`<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>`:(j.nfce?"<br>NFCe emitida":""))}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
-        ${j.nfce?.linkDanfe?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="window.open('${esc(j.nfce.linkDanfe)}','_blank')">🧾 Imprimir NFCe</button>`:""}
-      </div></div>`;
+    mostrarSucessoVenda(j, ctx);
   }catch(e){
+    if(e.name==="AbortError"||/failed to fetch|network/i.test(e.message||"")){
+      // demorou/caiu a rede, mas o servidor pode ter concluído: acompanha em vez de liberar o botão
+      msg.innerHTML=`<div class="muted" style="padding:8px">⏳ O Bling está demorando… <b>não clique de novo</b>. Acompanhando a conclusão.</div>`;
+      await aguardarConclusaoVenda(OP_ID,{itensVenda, descontoVenda, pagamentosEnviados:[], clienteFinal});
+      return;
+    }
+    FINALIZANDO=false; OP_ID=null;
     render();
     const m=document.getElementById("msgFinalizar");
     if(m) m.innerHTML=`<div class="err">${esc(e.message)}</div>`;

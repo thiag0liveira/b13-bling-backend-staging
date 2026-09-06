@@ -136,9 +136,17 @@ function agendarAutoSave(){
   _autoSaveT=setTimeout(salvarRascunho,2500); // salva 2.5s depois da última mudança
   if(S.tipoEntrega==='entrega') freteAutoAtacado(); // total mudou — recalcula a taxa
 }
+let _rascunhoEmVoo=null, _rascunhoPendente=false;
 async function salvarRascunho(){
   // só salva se já tem cliente e ao menos um item (senão não há o que guardar)
   if(!S.cliente?.id || !S.itens.length) return;
+  // se já tem um auto-save em andamento, espera ele terminar e salva de novo depois —
+  // dois POSTs simultâneos SEM id criavam DUAS propostas (rascunho duplicado/fantasma)
+  if(_rascunhoEmVoo){ _rascunhoPendente=true; return; }
+  _rascunhoEmVoo=(async()=>{ await _salvarRascunhoInterno(); })().finally(()=>{ _rascunhoEmVoo=null; if(_rascunhoPendente){ _rascunhoPendente=false; salvarRascunho(); } });
+  return _rascunhoEmVoo;
+}
+async function _salvarRascunhoInterno(){
   S.salvandoRascunho=true; atualizarStatusSalvo();
   try{
     const payload={
@@ -556,11 +564,20 @@ function viewTabela(){
   if(!S.tabelaCompleta) return `<div class="muted">Carregando tabela…</div>`;
   const model=S.tabelaCompleta.model||[];
   if(!model.length) return `<div class="muted">Tabela não publicada. Publique em Tabela Atacado.</div>`;
-  const filtro=(S.buscaTabela||"").toLowerCase();
+  return `
+    <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="filtrarTabela(this.value)">
+    <div id="tbListaWrap" style="margin-top:8px;max-height:60vh;overflow-y:auto">${listaTabelaHtml()}</div>`;
+}
+// só a LISTA da tabela (sem o input) — assim o filtro atualiza a lista sem recriar
+// o campo de busca, e o cursor não volta pro início a cada letra
+function listaTabelaHtml(){
+  const model=S.tabelaCompleta?.model||[];
+  const filtro=(S.buscaTabela||"").toLowerCase().trim();
   const cats=model.map(c=>{
     const itens=(c.itens||[]).filter(i=>i.preco>0 && (!filtro||(i.nome||"").toLowerCase().includes(filtro)));
     return {titulo:c.t||"",itens};
   }).filter(c=>c.itens.length);
+  if(!cats.length) return `<div class="muted" style="padding:10px">Nenhum produto com "${esc(S.buscaTabela||"")}".</div>`;
   // 2 colunas de categorias lado a lado (mais fácil de achar o produto do que
   // rolando uma lista só) — divide as categorias filtradas ao meio
   const meio=Math.ceil(cats.length/2);
@@ -569,14 +586,13 @@ function viewTabela(){
           <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
           ${c.itens.map((it,ix)=>tbItemRow(it, c.titulo+"|"+ix+"|"+it.nome)).join("")}
         </div>`).join("");
-  return `
-    <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="S.buscaTabela=this.value;render();document.getElementById('buscaTabela')?.focus()">
-    <div id="tbListaWrap" style="margin-top:8px;max-height:60vh;overflow-y:auto">
-      <div class="tb2col">
-        <div>${renderColuna(cats.slice(0,meio))}</div>
-        <div>${renderColuna(cats.slice(meio))}</div>
-      </div>
-    </div>`;
+  return `<div class="tb2col"><div>${renderColuna(cats.slice(0,meio))}</div><div>${renderColuna(cats.slice(meio))}</div></div>`;
+}
+let _tbFiltroT=null;
+function filtrarTabela(v){
+  S.buscaTabela=v;
+  clearTimeout(_tbFiltroT);
+  _tbFiltroT=setTimeout(()=>{ const w=document.getElementById("tbListaWrap"); if(w) w.innerHTML=listaTabelaHtml(); },120);
 }
 
 function tbItemRow(it, chaveUnica){
@@ -906,8 +922,9 @@ async function salvar(){
   if(!S.cliente?.id){ alert("Selecione um cliente cadastrado."); return; }
   if(!S.itens.length){ alert("Adicione ao menos um item."); return; }
   if(S.tipoEntrega==='entrega'&&(!S.frete||!S.frete.entregaDisponivel)){ alert("Calcule a taxa de entrega (endereço do cliente) ou escolha Retirada."); return; }
-  clearTimeout(_autoSaveT); // cancela auto-save pendente
+  clearTimeout(_autoSaveT); _rascunhoPendente=false; // cancela auto-save pendente
   S.msg=""; S.salvando=true; render();
+  if(_rascunhoEmVoo){ try{ await _rascunhoEmVoo; }catch(e){} } // espera o rascunho em voo (pra reaproveitar o id, sem duplicar)
   // abre a janela de impressão JÁ, de forma síncrona (dentro do clique) — se deixar
   // pra abrir só depois dos fetches, o navegador não reconhece mais como ação direta
   // do usuário e bloqueia o popup silenciosamente. Preenche o conteúdo real depois.

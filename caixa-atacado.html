@@ -1428,8 +1428,8 @@ function render(){
           <input type="checkbox" id="emitirNfce"> Emitir NFC-e (desligada por padrão)</label>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px"
-          ${(!CARRINHO.length||!PAGAMENTOS.length||PAGAMENTOS.some(p=>!p.formaId))?"disabled":""}
-          onclick="finalizar()">${MODO_EDICAO_PAGAMENTO?"💾 Salvar novo pagamento":"✅ Finalizar e receber"}</button>
+          ${(FINALIZANDO||!CARRINHO.length||!PAGAMENTOS.length||PAGAMENTOS.some(p=>!p.formaId))?"disabled":""}
+          onclick="finalizar()">${FINALIZANDO?"Processando…":(MODO_EDICAO_PAGAMENTO?"💾 Salvar novo pagamento":"✅ Finalizar e receber")}</button>
         ${MODO_EDICAO_PAGAMENTO?`<button class="btn btn-ghost" style="width:100%;margin-top:8px;border:1px solid #6b1f24;color:#ff9aa2" onclick="cancelarVenda()">🚫 Cancelar esta venda</button>`:""}
       </div>
     </div>
