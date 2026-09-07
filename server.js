@@ -7161,10 +7161,18 @@ async function _atualizarCentralBling(dia){
 
       const detalhados=[];
       for(const p of lista.slice(0,250)){
-        let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—", totalDet=Number(p.total)||0;
+        let vendedor="(sem vendedor)", contatoId=p.contato?.id||null, cliente=p.contato?.nome||"—", totalDet=Number(p.total)||0, parcelas=[];
         try{
           const d=await blingLento(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
-          if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId; cliente=d.contato?.nome||cliente; totalDet=Number(d.total ?? p.total)||0; }
+          if(d){
+            vendedor=await nomeVendedor(d.vendedor?.id||null); contatoId=d.contato?.id||contatoId;
+            cliente=d.contato?.nome||cliente; totalDet=Number(d.total ?? p.total)||0;
+            // formas de pagamento do próprio Bling (é como o varejo/PDV registra —
+            // esse dinheiro não passa pelos nossos caixas)
+            for(const pc of (d.parcelas||[])){
+              parcelas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0});
+            }
+          }
         }catch(e){}
         const consumidorFinal = contatoId===CONSUMIDOR_FINAL_ID || /consumidor\s*final/i.test(cliente||"");
         const situacaoId=Number(p.situacao?.id||0);
@@ -7177,7 +7185,7 @@ async function _atualizarCentralBling(dia){
         else if(situacaoId===SIT.ATENDIDO) origem="possivel_erro"; // Atendido e não passou no caixa
         else origem="varejo_pendente";
         detalhados.push({ id:p.id, numero:p.numero, vendedor, cliente, consumidorFinal, origem,
-          total:totalDet, situacaoId, situacao:nomeSituacao(situacaoId),
+          total:totalDet, situacaoId, situacao:nomeSituacao(situacaoId), parcelas,
           lancamentosNoCaixa:lancs.length, caixas:lancs.map(l=>l.operador) });
         await sleep(80);
       }
@@ -7205,6 +7213,15 @@ async function _atualizarCentralBling(dia){
       const atacado=detalhados.filter(p=>p.origem==="atacado");
       const varejo=detalhados.filter(p=>p.origem==="varejo"||p.origem==="varejo_pendente");
       const possiveisErros=detalhados.filter(p=>p.origem==="possivel_erro").sort((a,b)=>b.total-a.total);
+      // formas de pagamento por origem, vindas do BLING (cobre o varejo/PDV, que não
+      // passa pelos nossos caixas — era por isso que a Central mostrava Varejo zerado)
+      const somaFormas=(lista)=>{
+        const m={};
+        lista.forEach(p=>(p.parcelas||[]).forEach(pc=>{ const k=pc.forma||"—"; m[k]=(m[k]||0)+pc.valor; }));
+        return Object.entries(m).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor);
+      };
+      const soAtendidos=(l)=>l.filter(p=>p.situacaoId===SIT.ATENDIDO); // só o que foi efetivamente pago
+      const atacadoAt=soAtendidos(atacado), varejoAt=soAtendidos(varejo);
       out.pedidos={ total:detalhados.length, valor:+detalhados.reduce((a,p)=>a+p.total,0).toFixed(2),
         porVendedor:Object.entries(porVend).map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
         maiores:detalhados.map(p=>({numero:p.numero,cliente:p.cliente,total:p.total})).sort((a,b)=>b.total-a.total).slice(0,10),
@@ -7213,6 +7230,13 @@ async function _atualizarCentralBling(dia){
         origem:{ atacado:{qtd:atacado.length, valor:+atacado.reduce((s,p)=>s+p.total,0).toFixed(2)},
           varejo:{qtd:varejo.length, valor:+varejo.reduce((s,p)=>s+p.total,0).toFixed(2)},
           possiveisErros, qtdPossiveisErros:possiveisErros.length },
+        // fechamento por origem, direto do Bling (só pedidos Atendidos = pagos)
+        fechamentoBling:{
+          atacado:{ qtd:atacadoAt.length, valor:+atacadoAt.reduce((s,p)=>s+p.total,0).toFixed(2), porForma:somaFormas(atacadoAt) },
+          varejo:{ qtd:varejoAt.length, valor:+varejoAt.reduce((s,p)=>s+p.total,0).toFixed(2), porForma:somaFormas(varejoAt) },
+          porVendedorVarejo:Object.entries(varejoAt.reduce((acc,p)=>{ const v=p.vendedor||"—"; if(!acc[v]) acc[v]={qtd:0,valor:0}; acc[v].qtd++; acc[v].valor+=p.total; return acc; },{}))
+            .map(([nome,v])=>({nome,qtd:v.qtd,valor:+v.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+        },
         duplicidades:{ noCaixa:dupNoCaixa, qtdNoCaixa:dupNoCaixa.length,
           soNoCaixa, qtdSoNoCaixa:soNoCaixa.length,
           repetidosNaListagemBling:duplicadosBling, qtdRepetidosBling:duplicadosBling.length } };
