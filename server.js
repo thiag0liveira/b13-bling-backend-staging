@@ -7400,6 +7400,7 @@ async function _atualizarSituacoesOnline(ids){
   }catch(e){}
   _sitOnlineRodando=false;
 }
+function _turnosEntrega(){ try{ return lerJSON(`${DATA_DIR}/turnos_entrega.json`,{}); }catch(e){ return {}; } }
 app.get("/api/pedidos-online",(req,res)=>{
   try{
     const dias=Math.min(Number(req.query.dias||3),30);
@@ -7410,7 +7411,9 @@ app.get("/api/pedidos-online",(req,res)=>{
         && (req.query.origem==="online" ? (p.origem==="totem"||p.origem==="site") : true))
       .map(p=>{
         const sit=_sitOnline[String(p.pedidoBlingId)]||null;
+        const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
         return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
+          agendamento: ag?{data:ag.data,turno:ag.turno,por:ag.por}:null,
           criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
           vendedor:p.vendedorNome||p.funcionarioNome||"", // vendedor do pedido (ou quem digitou)
           cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
@@ -7481,6 +7484,104 @@ app.post("/api/pedidos-online/:blingId/cancelar",async(req,res)=>{
     res.json({ok:true,numero:d.numero});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
+
+// ===== AGENDAR ENTREGA (a partir da tela de Pedidos) =====
+// Coloca o pedido no Gerenciamento de Rota no dia escolhido, com o TURNO
+// (manhã/tarde). Fica em "_semCarro" — pronto pra entrar na distribuição.
+const TURNOS_ENTREGA_FILE=`${DATA_DIR}/turnos_entrega.json`; // pedidoId -> {data,turno,por,em}
+app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
+  try{
+    const id=Number(req.params.blingId);
+    const {data,turno,funcionarioId}=req.body||{};
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(data||""))) return res.status(400).json({erro:"escolha o dia da entrega"});
+    if(!["manha","tarde"].includes(turno)) return res.status(400).json({erro:"escolha o turno (manhã ou tarde)"});
+    // confere se o pedido existe e ainda pode ser agendado
+    let ped=null; try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    if(Number(ped.situacao?.id)===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado não pode ser agendado"});
+    // tira de qualquer outro dia antes de agendar no novo (evita duplicar na rota)
+    removerPedidoDeTodasRotas(id);
+    const rotas=lerRotasDias();
+    if(!rotas[data]) rotas[data]={};
+    if(!rotas[data]["_semCarro"]) rotas[data]["_semCarro"]={pedidoIds:[]};
+    if(!rotas[data]["_semCarro"].pedidoIds.includes(id)) rotas[data]["_semCarro"].pedidoIds.push(id);
+    salvarRotasDias(rotas);
+    const turnos=lerJSON(TURNOS_ENTREGA_FILE,{});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    turnos[String(id)]={data,turno,por:funcNome,em:Date.now(),numero:ped.numero};
+    salvarJSON(TURNOS_ENTREGA_FILE,turnos);
+    addLog(String(id),"entrega_agendada",funcionarioId,funcNome,{data,turno,numero:ped.numero});
+    res.json({ok:true,data,turno,numero:ped.numero});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
+  try{
+    const id=Number(req.params.blingId);
+    removerPedidoDeTodasRotas(id);
+    const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); delete turnos[String(id)]; salvarJSON(TURNOS_ENTREGA_FILE,turnos);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// onde cada pedido está agendado (dia + turno), pra tela mostrar
+app.get("/api/pedidos-online/agendamentos",(req,res)=>{
+  try{ res.json({data:lerJSON(TURNOS_ENTREGA_FILE,{})}); }catch(e){ res.json({data:{}}); }
+});
+// TROCA entrega <-> retirada e grava o frete no pedido do Bling
+app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const {tipo,endereco,frete,funcionarioId}=req.body||{};
+    if(!["entrega","retirada"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser entrega ou retirada"});
+    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    if(Number(ped.situacao?.id)===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    const taxa=tipo==="entrega"?+Number(frete||0).toFixed(2):0;
+    const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const nota=`[${quando} — ${funcNome}] Alterado para ${tipo.toUpperCase()}${tipo==="entrega"?` — ${endereco||"(sem endereço)"} · frete ${taxa.toFixed(2)}`:""}`;
+    const payload={
+      data:ped.data, contato:{id:ped.contato?.id},
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
+      transporte:{ frete:taxa, ...(tipo==="entrega"&&endereco?{enderecoEntrega:{endereco:String(endereco).slice(0,180)}}:{}) },
+    };
+    if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
+    if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+    // preserva as parcelas, ajustando o total quando o frete muda
+    if(ped.parcelas?.length){
+      const totalItens=(ped.itens||[]).reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+      const novoTotal=+(totalItens+taxa-Number(payload.desconto?.valor||0)).toFixed(2);
+      const somaAtual=ped.parcelas.reduce((s,p)=>s+Number(p.valor||0),0);
+      payload.parcelas=ped.parcelas.map((p,ix)=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,
+        valor: ix===ped.parcelas.length-1
+          ? +(novoTotal-ped.parcelas.slice(0,-1).reduce((s,x)=>s+ +( (somaAtual? (Number(x.valor)/somaAtual*novoTotal):0).toFixed(2) ),0)).toFixed(2)
+          : +(somaAtual? (Number(p.valor)/somaAtual*novoTotal):0).toFixed(2) }));
+    }
+    const r=await atualizarComDestrave(id, payload, Number(ped.situacao?.id||0));
+    if(!r.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(r.erro||"erro")});
+    if(tipo==="retirada"){ removerPedidoDeTodasRotas(Number(id)); const t=lerJSON(TURNOS_ENTREGA_FILE,{}); delete t[String(id)]; salvarJSON(TURNOS_ENTREGA_FILE,t); }
+    addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa});
+    res.json({ok:true,tipo,frete:taxa});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+// PUT no pedido destravando a situação quando necessário (reusa a lógica já testada)
+async function atualizarComDestrave(id, payload, sitAtual){
+  const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
+  const precisa=BLOQ.includes(Number(sitAtual));
+  try{
+    if(precisa){ try{ await bling(`/pedidos/vendas/${id}/situacoes/21`,{method:"PATCH"}); await sleep(350); }catch(e){} }
+    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    return {ok:true};
+  }catch(e){ return {ok:false,erro:e.message}; }
+  finally{
+    if(precisa){
+      await sleep(400);
+      if(Number(sitAtual)===SIT.ATENDIDO||Number(sitAtual)===SIT.SEPARADO){ await _restaurarSituacaoComRetry(id,Number(sitAtual),(payload.itens||[]).map(i=>({produtoId:i.produto?.id,quantidade:i.quantidade}))); }
+      else { try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); }catch(e){} }
+    }
+  }
+}
 
 app.get("/pedidos-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedidos-online.html")); });
 
@@ -10138,11 +10239,19 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     // então descarta os menores ANTES de ler o detalhe pesado — a não ser que o
     // pedido já esteja agendado na rota (esse sempre precisa aparecer). Ajustável
     // por ?valorMin= (0 desliga o filtro e volta a ler todos).
-    const valorMin=req.query.valorMin!=null?Number(req.query.valorMin):1000;
-    const jaAgendado=(id)=>!!acharCarroDoPedido(id);
-    const candidatos = valorMin>0
-      ? unicos.filter(p=> Number(p.total||0)>=valorMin || jaAgendado(p.id))
-      : unicos;
+    // PADRÃO: só os pedidos ENVIADOS pra rota (agendados pela vendedora na tela de
+    // Pedidos, com dia e turno) — era o que fazia aparecer pedido de retirada junto
+    // e sumir entrega de valor baixo, porque o filtro antigo era só por valor.
+    // ?todos=1 volta ao comportamento antigo (todos acima de ?valorMin=, padrão 1000).
+    const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+    const jaAgendado=(id)=>!!acharCarroDoPedido(id)||!!turnosAg[String(id)];
+    let candidatos;
+    if(req.query.todos==="1"){
+      const valorMin=req.query.valorMin!=null?Number(req.query.valorMin):1000;
+      candidatos = valorMin>0 ? unicos.filter(p=> Number(p.total||0)>=valorMin || jaAgendado(p.id)) : unicos;
+    } else {
+      candidatos = unicos.filter(p=>jaAgendado(p.id));
+    }
 
     const detalhados=[];
     for(let i=0;i<candidatos.length;i++){
@@ -10192,6 +10301,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           itens:(det.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
+          agendamento:(lerJSON(`${DATA_DIR}/turnos_entrega.json`,{})[String(det.id)]||null), // dia+turno que a vendedora escolheu
         });
       }catch(e){}
       if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling

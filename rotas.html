@@ -737,6 +737,7 @@ function htmlPedidoCard(p, modo){
         <div class="num">Pedido ${esc(p.numero)}</div>
         <div class="cli">${esc(p.clienteNome)}</div>
         <div class="vend">Vendedor: ${esc(p.vendedorNome)}</div>
+        ${p.agendamento?`<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/"))} · ${p.agendamento.turno==="manha"?"MANHÃ":"TARDE"}</span>${p.agendamento.por?`<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>`:""}</div>`:""}
       </div>
       <div class="vals">
         <div><b>${brl(p.total)}</b></div>

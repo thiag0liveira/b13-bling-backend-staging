@@ -122,11 +122,14 @@ function cardPedido(p){
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
     '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
+    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":"TARDE")+'</span></div>':'')+
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
+    '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
+    (p.tipo==="entrega"&&!p.cancelado?'<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>':'')+
     '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
     (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
   '</div>';
@@ -320,6 +323,120 @@ async function salvarEditarAguardando(id){
     if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
     fechar(); carregar();
   }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }
+}
+
+/* ===== AGENDAR ENTREGA (dia + turno) ===== */
+function abrirAgendar(id){
+  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
+  const hoje=new Date(); const d0=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate());
+  const dias=[];
+  for(let i=0;i<10;i++){ const d=new Date(d0.getTime()+i*86400000);
+    const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    const nome=i===0?"Hoje":(i===1?"Amanhã":d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}));
+    dias.push({iso,nome});
+  }
+  const at=p.agendamento||{};
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
+    '<h3>📅 Agendar entrega — pedido '+esc(p.numero)+'</h3>'+
+    '<div class="muted" style="margin:6px 0 10px">'+esc(p.cliente)+(p.endereco?' · 📍 '+esc(p.endereco):'')+'</div>'+
+    '<div class="muted" style="margin-bottom:4px">Dia da entrega</div>'+
+    '<select id="agDia" style="width:100%;margin-bottom:10px">'+
+      dias.map(function(d){return '<option value="'+d.iso+'"'+(at.data===d.iso?" selected":"")+'>'+d.nome+' ('+d.iso.split("-").reverse().slice(0,2).join("/")+')</option>';}).join("")+
+    '</select>'+
+    '<div class="muted" style="margin-bottom:4px">Turno</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"'+(at.turno!=="tarde"?" checked":"")+'> ☀️ Manhã</label>'+
+      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"'+(at.turno==="tarde"?" checked":"")+'> 🌇 Tarde</label>'+
+    '</div>'+
+    '<div id="errAg"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      (p.agendamento?'<button class="btn btn-red" style="margin:0" onclick="desagendar('+id+')">Desagendar</button>':'')+
+      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>'+
+      '<button class="btn btn-mag" style="margin:0" id="btnAg" onclick="salvarAgendamento('+id+')">Salvar</button>'+
+    '</div></div></div>';
+}
+async function salvarAgendamento(id){
+  const data=(document.getElementById("agDia")||{}).value||"";
+  const el=document.querySelector('input[name="agTurno"]:checked');
+  const turno=el?el.value:"manha";
+  const btn=document.getElementById("btnAg"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
+  try{
+    const j=await fetch(B+"/api/pedidos-online/"+id+"/agendar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({data,turno,funcionarioId:S.id})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    fechar(); carregar();
+  }catch(e){
+    const err=document.getElementById("errAg");
+    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
+    if(btn){ btn.disabled=false; btn.textContent="Salvar"; }
+  }
+}
+async function desagendar(id){
+  try{ await fetch(B+"/api/pedidos-online/"+id+"/desagendar-entrega",{method:"POST"}); fechar(); carregar(); }
+  catch(e){ alert("Erro ao desagendar."); }
+}
+
+/* ===== TROCAR ENTREGA <-> RETIRADA (com cálculo de frete) ===== */
+function abrirTipoEntrega(id){
+  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
+    '<h3>🛵 Entrega / Retirada — pedido '+esc(p.numero)+'</h3>'+
+    '<div class="muted" style="margin:6px 0 10px">Hoje: <b>'+(p.tipo==="entrega"?"Entrega":"Retirada")+'</b>'+(p.frete>0?' · frete '+brl(p.frete):'')+'</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="retirada"'+(p.tipo!=="entrega"?" checked":"")+' onchange="mostrarCamposEntrega()"> 🏪 Retirada</label>'+
+      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="entrega"'+(p.tipo==="entrega"?" checked":"")+' onchange="mostrarCamposEntrega()"> 🛵 Entrega</label>'+
+    '</div>'+
+    '<div id="camposEntrega" style="display:'+(p.tipo==="entrega"?"block":"none")+'">'+
+      '<div class="muted" style="margin-bottom:4px">Endereço de entrega</div>'+
+      '<input id="teEnd" value="'+esc(p.endereco||"")+'" placeholder="Rua, número, bairro, cidade">'+
+      '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
+        '<div style="flex:1"><div class="muted" style="margin-bottom:4px">Frete (R$)</div><input id="teFrete" type="number" step="0.01" value="'+(Number(p.frete)||0)+'"></div>'+
+        '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="calcularFretePedido('+id+')">🧮 Calcular</button>'+
+      '</div>'+
+      '<div id="infoFrete" class="muted" style="font-size:11px;margin-top:4px"></div>'+
+    '</div>'+
+    '<div id="errTE"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>'+
+      '<button class="btn btn-mag" style="margin:0" id="btnTE" onclick="salvarTipoEntrega('+id+')">Salvar no Bling</button>'+
+    '</div></div></div>';
+}
+function mostrarCamposEntrega(){
+  const el=document.querySelector('input[name="teTipo"]:checked');
+  const box=document.getElementById("camposEntrega");
+  if(box) box.style.display=(el&&el.value==="entrega")?"block":"none";
+}
+async function calcularFretePedido(id){
+  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+  const end=(document.getElementById("teEnd")||{}).value||"";
+  const info=document.getElementById("infoFrete");
+  if(!end.trim()){ if(info) info.innerHTML='<span style="color:#ff8090">Preencha o endereço primeiro.</span>'; return; }
+  if(info) info.textContent="Calculando…";
+  try{
+    const j=await fetch(B+"/api/frete?endereco="+encodeURIComponent(end)+"&valor="+(Number(p?.total)||0)).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    if(!j.entregaDisponivel){ if(info) info.innerHTML='<span style="color:#ffd23f">'+esc(j.motivo||"Entrega não disponível")+'</span>'; return; }
+    const f=document.getElementById("teFrete"); if(f) f.value=j.taxa;
+    if(info) info.innerHTML='✅ '+j.km+' km'+(j.gratis?' · frete grátis':' · R$ '+j.porKm+'/km')+' → '+brl(j.taxa);
+  }catch(e){ if(info) info.innerHTML='<span style="color:#ff8090">'+esc(e.message)+'</span>'; }
+}
+async function salvarTipoEntrega(id){
+  const el=document.querySelector('input[name="teTipo"]:checked');
+  const tipo=el?el.value:"retirada";
+  const endereco=(document.getElementById("teEnd")||{}).value||"";
+  const frete=Number((document.getElementById("teFrete")||{}).value||0);
+  const btn=document.getElementById("btnTE"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
+  try{
+    if(tipo==="entrega"&&!endereco.trim()) throw new Error("Informe o endereço da entrega.");
+    const j=await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo,endereco,frete,funcionarioId:S.id})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    fechar(); carregar();
+  }catch(e){
+    const err=document.getElementById("errTE");
+    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
+    if(btn){ btn.disabled=false; btn.textContent="Salvar no Bling"; }
+  }
 }
 
 render();
