@@ -56,33 +56,38 @@ const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const soDig=(s)=>String(s??"").replace(/\D/g,"");
 
-let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=3, ULTIMO_VISTO=0;
+let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=3, VISTO_ATE=0, SIT_CARREGANDO=false;
 
-async function carregar(forcar){
-  CARREGANDO=true; render();
+async function carregar(silencioso){
+  if(!silencioso){ CARREGANDO=true; render(); }
   try{
-    const j=await fetch(B+"/api/pedidos-online?dias="+DIAS+(forcar?"&forcar=1":"")).then(r=>r.json());
+    const j=await fetch(B+"/api/pedidos-online?dias="+DIAS).then(r=>r.json());
     if(j.erro) throw new Error(j.erro);
-    PEDIDOS=j.data||[];
-    try{ const n=await fetch(B+"/api/pedidos-online/novos/"+encodeURIComponent(S.id)).then(r=>r.json()); ULTIMO_VISTO=Number(n.ultimoNumero||0)-(Number(n.novos||0)); }catch(e){}
-  }catch(e){ alert("Erro ao carregar: "+e.message); }
+    PEDIDOS=j.data||[]; SIT_CARREGANDO=!!j.situacoesCarregando;
+    try{
+      const n=await fetch(B+"/api/pedidos-online/novos/"+encodeURIComponent(S.id)).then(r=>r.json());
+      VISTO_ATE=Number(n.vistoAte||0); // tudo criado depois disso é "novo" pra este usuário
+    }catch(e){}
+  }catch(e){ if(!silencioso) alert("Erro ao carregar: "+e.message); }
   CARREGANDO=false; render();
+  // as situações vêm em 2º plano — recarrega em silêncio até completar
+  if(SIT_CARREGANDO) setTimeout(function(){ carregar(true); }, 4000);
 }
 function visiveis(){
   if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega");
   if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada");
   if(FILTRO==="todos") return PEDIDOS;
-  return PEDIDOS.filter(p=>p.situacao!=="Cancelado"&&p.situacaoId!==12);
+  return PEDIDOS.filter(p=>!p.cancelado);
 }
 function cardPedido(p){
-  const ehNovo=Number(p.numero||0)>ULTIMO_VISTO;
+  const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
   const tel=soDig(p.telefone);
   return '<div class="card'+(ehNovo?' novo':'')+'">'+
     '<div style="display:flex;justify-content:space-between;align-items:center">'+
       '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
       (ehNovo?'<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>':'')+
     '</div>'+
-    '<div class="sit">'+esc((p.situacao||"").toUpperCase())+'</div>'+
+    '<div class="sit"'+(p.situacao==="carregando…"?' style="background:#2a2660;color:#9a95c9"':'')+'>'+esc((p.situacao||"").toUpperCase())+'</div>'+
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
     '<div class="muted" style="margin-top:6px">'+esc(p.cliente)+(p.data?' · '+esc(p.data.split("-").reverse().slice(0,2).join("/")):"")+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
@@ -92,7 +97,7 @@ function cardPedido(p){
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     '<button class="btn btn-mag" onclick="editarPedido('+p.id+',\''+esc(p.numero)+'\')">✏️ Editar</button>'+
     (tel.length>=10?'<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(p.cliente)+'\')">💬 WhatsApp</button>':'<button class="btn btn-ghost" disabled title="sem telefone">💬 sem telefone</button>')+
-    (p.situacaoId!==12&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
+    (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
   '</div>';
 }
 function render(){
@@ -100,9 +105,9 @@ function render(){
   const lista=visiveis();
   const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega").length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada").length;
   app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos Totem/Site</div><div style="flex:1"></div>'+
-      '<select onchange="DIAS=this.value;carregar(true)" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
+      '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
       [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
-      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar(true)">🔄</button>'+
+      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>'+
     '<div class="wrap">'+
       '<div class="abas">'+
@@ -111,7 +116,7 @@ function render(){
         '<span class="aba '+(FILTRO==="retirada"?"on":"")+'" onclick="FILTRO=\'retirada\';render()">🏪 Retirada ('+nRet+')</span>'+
         '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">Todos ('+PEDIDOS.length+')</span>'+
       '</div>'+
-      (CARREGANDO?'<div class="muted" style="padding:16px">Carregando pedidos do Bling… (pode levar alguns segundos)</div>'
+      (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>'
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
           :'<div class="card"><div class="muted">Nenhum pedido do totem/site nesse período.</div></div>'))+
     '</div>';
@@ -153,7 +158,7 @@ async function confirmarCancelar(id){
     const j=await fetch(B+"/api/pedidos-online/"+id+"/cancelar",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({motivo,funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
-    fechar(); carregar(true);
+    fechar(); carregar();
   }catch(e){
     const el=document.getElementById("errCanc");
     if(el) el.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
@@ -167,7 +172,7 @@ async function marcarVistos(){
 }
 render();
 carregar();
-setInterval(function(){ if(!CARREGANDO) carregar(); }, 90000);
+setInterval(function(){ if(!CARREGANDO) carregar(true); }, 60000);
 </script>
 </body>
 </html>

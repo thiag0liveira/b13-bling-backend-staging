@@ -7266,82 +7266,83 @@ app.get("/api/central/resumo",(req,res)=>{
 // ===================== PAINEL DE ESTOQUE =====================
 // Lista depósitos (pra escolher antes de mexer em qualquer coisa)
 // ===================== PEDIDOS ONLINE (totem / site) =====================
-// Identifica pelos pedidos criados pelo /api/finalizar (observação "Pedido via Totem/App B13")
-// e traz o que a tela precisa: entrega x retirada, telefone, itens e situação atual.
-const _ONLINE_MARCA=/pedido via totem\/app b13/i;
-let _cacheOnline={em:0, dados:null, calculando:false};
-async function _buscarPedidosOnline(dias){
-  const ini=new Date(Date.now()-dias*86400000);
-  const di=`${ini.getFullYear()}-${String(ini.getMonth()+1).padStart(2,"0")}-${String(ini.getDate()).padStart(2,"0")}`;
-  const df=_hojeISO();
-  let lista=[], pag=1;
-  for(let i=0;i<10;i++){
-    const r=await bling(`/pedidos/vendas?dataInicial=${di}&dataFinal=${df}&pagina=${pag}&limite=100`);
-    const arr=r?.data||[]; lista=lista.concat(arr);
-    if(arr.length<100) break; pag++; await sleep(120);
-  }
-  const vistos=new Set(); lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)) return false; vistos.add(k); return true; });
-  const out=[];
-  for(const p of lista){
-    let d=null; try{ d=await bling(`/pedidos/vendas/${p.id}`).then(r=>r?.data); }catch(e){}
-    const obs=String(d?.observacoes||"");
-    if(!_ONLINE_MARCA.test(obs)) continue;                       // não é do totem/site
-    const ehEntrega=/ENTREGA\s*—/i.test(obs)||Number(d?.transporte?.frete||0)>0;
-    const mTel=obs.match(/\(([^)]*)\)\s*\./);
-    const mEnd=obs.match(/ENTREGA\s*—\s*([^(]+)/i);
-    const sit=Number(d?.situacao?.id||p.situacao?.id||0);
-    let telefone=(mTel&&mTel[1]&&mTel[1].trim()!=="-")?mTel[1].trim():"";
-    if(!telefone&&d?.contato?.id){ try{ const c=await bling(`/contatos/${d.contato.id}`).then(r=>r?.data); telefone=c?.celular||c?.telefone||""; }catch(e){} }
-    out.push({
-      id:p.id, numero:p.numero, data:p.data, criadoEm:d?.dataSaida||p.data,
-      cliente:d?.contato?.nome||p.contato?.nome||"—", telefone,
-      total:Number(d?.total ?? p.total ?? 0),
-      frete:Number(d?.transporte?.frete||0),
-      tipo: ehEntrega?"entrega":"retirada",
-      endereco: mEnd?mEnd[1].trim():"",
-      situacaoId:sit, situacao:nomeSituacao(sit),
-      origem: /app b13/i.test(obs)?"totem/site":"online",
-      itens:(d?.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
-      observacoes:obs,
-    });
-    await sleep(80);
-  }
-  out.sort((a,b)=>String(b.data||"").localeCompare(String(a.data||""))||Number(b.numero||0)-Number(a.numero||0));
-  return out;
-}
-app.get("/api/pedidos-online",async(req,res)=>{
+// Lê do REGISTRO LOCAL que o /api/finalizar já grava a cada pedido do totem/site
+// (tem cliente, telefone, itens, total e entrega/retirada). É instantâneo — antes
+// eu varria o Bling abrindo o detalhe de TODOS os pedidos do período, o que levava
+// minutos e a tela ficava só carregando. A situação atual de cada pedido é buscada
+// no Bling em SEGUNDO PLANO e vai sendo preenchida (cache de 60s).
+let _sitOnline={};        // pedidoBlingId -> {situacaoId, situacao, em}
+let _sitOnlineRodando=false;
+async function _atualizarSituacoesOnline(ids){
+  if(_sitOnlineRodando) return;
+  _sitOnlineRodando=true;
   try{
-    const dias=Math.min(Number(req.query.dias||3),15);
-    const forcar=req.query.forcar==="1";
-    if(!forcar && _cacheOnline.dados && (Date.now()-_cacheOnline.em)<60*1000) return res.json({data:_cacheOnline.dados,doCache:true,em:_cacheOnline.em});
-    if(_cacheOnline.calculando && _cacheOnline.dados) return res.json({data:_cacheOnline.dados,doCache:true,em:_cacheOnline.em});
-    _cacheOnline.calculando=true;
-    const dados=await _buscarPedidosOnline(dias);
-    _cacheOnline={em:Date.now(),dados,calculando:false};
-    res.json({data:dados,em:_cacheOnline.em});
-  }catch(e){ _cacheOnline.calculando=false; res.status(e.status||500).json({erro:e.message}); }
+    for(const id of ids){
+      const c=_sitOnline[String(id)];
+      if(c && (Date.now()-c.em)<60*1000) continue;
+      try{
+        const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        const sit=Number(d?.situacao?.id||0);
+        _sitOnline[String(id)]={situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now()};
+      }catch(e){ _sitOnline[String(id)]={situacaoId:0, situacao:"—", em:Date.now()}; }
+      await sleep(120);
+    }
+  }catch(e){}
+  _sitOnlineRodando=false;
+}
+app.get("/api/pedidos-online",(req,res)=>{
+  try{
+    const dias=Math.min(Number(req.query.dias||3),30);
+    const desde=Date.now()-dias*86400000;
+    const props=lerPropostas();
+    const lista=Object.values(props||{})
+      .filter(p=>p && (p.origem==="totem"||p.origem==="site") && (p.criadoEm||0)>=desde)
+      .map(p=>{
+        const sit=_sitOnline[String(p.pedidoBlingId)]||null;
+        return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
+          criadoEm:p.criadoEm||0, origem:p.origem,
+          cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
+          total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
+          tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
+          endereco:p.entrega?.endereco||"",
+          itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+          situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
+          cancelado: sit?sit.situacaoId===SIT.CANCELADO:false };
+      })
+      .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+    // dispara a atualização das situações em 2º plano (não segura a resposta)
+    _atualizarSituacoesOnline(lista.slice(0,120).map(p=>p.id));
+    res.json({data:lista, situacoesCarregando:_sitOnlineRodando});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // contagem de NOVOS pedidos online por usuário (cada um tem seu "já vi até aqui")
 const VISTOS_ONLINE_FILE=`${DATA_DIR}/pedidos_online_vistos.json`;
+function _listaOnlineSimples(dias){
+  const desde=Date.now()-(dias||3)*86400000;
+  const props=lerPropostas();
+  return Object.values(props||{})
+    .filter(p=>p && (p.origem==="totem"||p.origem==="site") && (p.criadoEm||0)>=desde)
+    .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+}
 app.get("/api/pedidos-online/novos/:funcionarioId",(req,res)=>{
   try{
     const vistos=lerJSON(VISTOS_ONLINE_FILE,{});
-    const marca=vistos[String(req.params.funcionarioId)]||{ultimoNumero:0,em:0};
-    const lista=_cacheOnline.dados||[];
-    const novos=lista.filter(p=>Number(p.numero||0)>Number(marca.ultimoNumero||0));
-    res.json({ novos:novos.length, ultimoNumero:lista.length?Math.max(...lista.map(p=>Number(p.numero)||0)):0,
-      pedidos:novos.slice(0,10).map(p=>({numero:p.numero,cliente:p.cliente,total:p.total,tipo:p.tipo})),
-      atualizadoEm:_cacheOnline.em });
+    const marca=vistos[String(req.params.funcionarioId)]||{ultimoEm:0};
+    const lista=_listaOnlineSimples(3);
+    const novos=lista.filter(p=>(p.criadoEm||0)>Number(marca.ultimoEm||0));
+    res.json({ novos:novos.length, vistoAte:Number(marca.ultimoEm||0),
+      ultimoEm: lista.length?Math.max(...lista.map(p=>p.criadoEm||0)):0,
+      pedidos:novos.slice(0,10).map(p=>({numero:p.pedidoBlingNumero||p.pedidoBlingId,cliente:p.cliente?.nome||"",total:Number(p.total)||0,tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada"})) });
   }catch(e){ res.json({novos:0}); }
 });
 app.post("/api/pedidos-online/marcar-visto/:funcionarioId",(req,res)=>{
   try{
     const vistos=lerJSON(VISTOS_ONLINE_FILE,{});
-    const lista=_cacheOnline.dados||[];
-    const maior=lista.length?Math.max(...lista.map(p=>Number(p.numero)||0)):Number(req.body?.ultimoNumero||0);
-    vistos[String(req.params.funcionarioId)]={ultimoNumero:maior,em:Date.now()};
+    const lista=_listaOnlineSimples(3);
+    const maior=lista.length?Math.max(...lista.map(p=>p.criadoEm||0)):Date.now();
+    vistos[String(req.params.funcionarioId)]={ultimoEm:maior,em:Date.now()};
     salvarJSON(VISTOS_ONLINE_FILE,vistos);
-    res.json({ok:true,ultimoNumero:maior});
+    res.json({ok:true,ultimoEm:maior});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // cancela um pedido online (totem/site) direto pelo id do Bling
@@ -7356,7 +7357,7 @@ app.post("/api/pedidos-online/:blingId/cancelar",async(req,res)=>{
     await bling(`/pedidos/vendas/${id}/situacoes/${SIT.CANCELADO}`,{method:"PATCH"});
     const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
     addLog(String(id),"pedido_online_cancelado",req.body?.funcionarioId,funcNome,{motivo:req.body?.motivo||"",numero:d.numero});
-    _cacheOnline.em=0; // força recarregar a lista
+    _sitOnline[String(id)]={situacaoId:SIT.CANCELADO, situacao:"Cancelado", em:Date.now()};
     res.json({ok:true,numero:d.numero});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
