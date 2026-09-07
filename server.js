@@ -537,25 +537,52 @@ async function b13ChecarNovosPedidos(){
 }
 function b13AbrirNovosPedidos(){
   const j=window._b13Novos||{novos:0,pedidos:[]};
-  const linhas=(j.pedidos||[]).map(p=>\`<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #2a2660;padding:6px 0;font-size:13px"><span>#\${p.numero} \${p.cliente||""} <span style="color:#9a95c9;font-size:11px">\${p.tipo==="entrega"?"🛵 entrega":"🏪 retirada"}</span></span><b>R$ \${(Number(p.total)||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</b></div>\`).join("")||'<div style="color:#9a95c9">Nenhum novo.</div>';
+  const fmtHora=(ms)=>{ if(!ms) return ""; const d=new Date(Number(ms)); const hj=new Date();
+    const hh=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+    return d.toDateString()===hj.toDateString()?("hoje "+hh):(d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+hh); };
+  const corSit=(s)=>{ const t=String(s||"").toLowerCase();
+    if(t.indexOf("aguardando")>=0) return "#ffe600";
+    if(t.indexOf("separa")>=0) return "#29ABE2";
+    if(t.indexOf("atendido")>=0) return "#3ce88a";
+    if(t.indexOf("cancel")>=0) return "#ff8090";
+    return "#9a95c9"; };
+  const linhas=(j.pedidos||[]).map(p=>{
+    const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":("🧑‍💼 "+(p.vendedor||"Atacado")));
+    return \`<div style="border-bottom:1px solid #2a2660;padding:8px 0">
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:13px">
+        <span><b>#\${p.numero}</b> \${p.cliente||""}</span>
+        <b>R$ \${(Number(p.total)||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</b>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#9a95c9;margin-top:3px">
+        <span>\${org} · \${p.tipo==="entrega"?"🛵 entrega":"🏪 retirada"}</span>
+        <span>\${fmtHora(p.criadoEm)}</span>
+      </div>
+      <div style="margin-top:4px"><span style="background:\${corSit(p.situacao)};color:#000;border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px">\${String(p.situacao||"—").toUpperCase()}</span></div>
+    </div>\`;
+  }).join("")||'<div style="color:#9a95c9">Nenhum novo.</div>';
   document.getElementById("b13qrModal").innerHTML=\`
     <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this)document.getElementById('b13qrModal').innerHTML=''">
-      <div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:420px;width:100%">
-        <div style="font-weight:900;font-size:16px;margin-bottom:8px">🔔 \${j.novos} novo(s) pedido(s)</div>
-        <div style="max-height:50vh;overflow:auto">\${linhas}</div>
+      <div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:440px;width:100%;max-height:80vh;overflow:auto">
+        <div style="font-weight:900;font-size:16px;margin-bottom:2px">🔔 \${j.novos} novo(s) pedido(s)</div>
+        <div style="color:#9a95c9;font-size:11px;margin-bottom:10px">Marcados como vistos automaticamente.</div>
+        <div>\${linhas}</div>
         <div style="display:flex;gap:8px;margin-top:14px">
-          <button onclick="b13MarcarPedidosVistos()" style="flex:1;padding:10px;border:none;border-radius:10px;background:#1c1846;color:#fff;font-weight:800;cursor:pointer">Marcar como vistos</button>
+          <button onclick="document.getElementById('b13qrModal').innerHTML=''" style="flex:1;padding:10px;border:none;border-radius:10px;background:#1c1846;color:#fff;font-weight:800;cursor:pointer">Fechar</button>
           <button onclick="location.href='/pedidos-online'" style="flex:1;padding:10px;border:none;border-radius:10px;background:#FF0082;color:#fff;font-weight:800;cursor:pointer">Ver todos</button>
         </div>
       </div>
     </div>\`;
+  // abrir JÁ conta como visto — não precisa clicar em nada
+  b13MarcarPedidosVistos(true);
 }
-async function b13MarcarPedidosVistos(){
+async function b13MarcarPedidosVistos(manterModal){
   const f=b13GetSession(); if(!f) return;
   try{ await fetch(B13_BACKEND+"/api/pedidos-online/marcar-visto/"+encodeURIComponent(f.id),{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); }catch(e){}
-  document.getElementById("b13qrModal").innerHTML="";
+  if(!manterModal) document.getElementById("b13qrModal").innerHTML="";
+  const el=document.getElementById("b13sino"); if(el) el.style.display="none"; // zera o contador na hora
   b13ChecarNovosPedidos();
 }
+
 function b13IniciarSino(){
   const f=b13GetSession(); if(!f) return;
   const gruposSino=["admin","gerente","lider_caixa","financeiro","financeiro_atacado","separacao","conferencia"];
@@ -7367,9 +7394,17 @@ app.get("/api/pedidos-online/novos/:funcionarioId",(req,res)=>{
     const marca=vistos[String(req.params.funcionarioId)]||{ultimoEm:0};
     const lista=_listaOnlineSimples(3);
     const novos=lista.filter(p=>(p.criadoEm||0)>Number(marca.ultimoEm||0));
+    // busca a situação atual dos novos em 2º plano, pra o sino poder mostrá-la
+    if(novos.length) _atualizarSituacoesOnline(novos.slice(0,10).map(p=>p.pedidoBlingId));
     res.json({ novos:novos.length, vistoAte:Number(marca.ultimoEm||0),
       ultimoEm: lista.length?Math.max(...lista.map(p=>p.criadoEm||0)):0,
-      pedidos:novos.slice(0,10).map(p=>({numero:p.pedidoBlingNumero||p.pedidoBlingId,cliente:p.cliente?.nome||"",total:Number(p.total)||0,tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada"})) });
+      pedidos:novos.slice(0,10).map(p=>{
+        const sit=_sitOnline[String(p.pedidoBlingId)]||null;
+        return {numero:p.pedidoBlingNumero||p.pedidoBlingId, cliente:p.cliente?.nome||"", total:Number(p.total)||0,
+          tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada", criadoEm:p.criadoEm||0,
+          situacao: sit?sit.situacao:"—", situacaoId: sit?sit.situacaoId:null,
+          origem:p.origem||"", vendedor:p.vendedorNome||p.funcionarioNome||""};
+      }) });
   }catch(e){ res.json({novos:0}); }
 });
 app.post("/api/pedidos-online/marcar-visto/:funcionarioId",(req,res)=>{
