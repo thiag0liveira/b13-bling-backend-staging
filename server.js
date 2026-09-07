@@ -7494,7 +7494,7 @@ app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
     const id=Number(req.params.blingId);
     const {data,turno,funcionarioId}=req.body||{};
     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(data||""))) return res.status(400).json({erro:"escolha o dia da entrega"});
-    if(!["manha","tarde"].includes(turno)) return res.status(400).json({erro:"escolha o turno (manhã ou tarde)"});
+    const turnoOk=["manha","tarde","qualquer"].includes(turno)?turno:"qualquer"; // padrão: qualquer horário
     // confere se o pedido existe e ainda pode ser agendado
     let ped=null; try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
@@ -7508,10 +7508,10 @@ app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
     salvarRotasDias(rotas);
     const turnos=lerJSON(TURNOS_ENTREGA_FILE,{});
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
-    turnos[String(id)]={data,turno,por:funcNome,em:Date.now(),numero:ped.numero};
+    turnos[String(id)]={data,turno:turnoOk,por:funcNome,em:Date.now(),numero:ped.numero};
     salvarJSON(TURNOS_ENTREGA_FILE,turnos);
-    addLog(String(id),"entrega_agendada",funcionarioId,funcNome,{data,turno,numero:ped.numero});
-    res.json({ok:true,data,turno,numero:ped.numero});
+    addLog(String(id),"entrega_agendada",funcionarioId,funcNome,{data,turno:turnoOk,numero:ped.numero});
+    res.json({ok:true,data,turno:turnoOk,numero:ped.numero});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
@@ -9235,7 +9235,7 @@ app.post("/api/atacado/propostas",(req,res)=>{
     const totalItens=+(b.itens||[]).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
     const entrega=b.entrega&&b.entrega.tipo==="entrega"
       ? {tipo:"entrega",endereco:b.entrega.endereco||"",km:b.entrega.km||0,taxa:Number(b.entrega.taxa)||0,
-         dataDesejada:b.entrega.dataDesejada||null, turno:(b.entrega.turno==="tarde"?"tarde":(b.entrega.turno==="manha"?"manha":null))}
+         dataDesejada:b.entrega.dataDesejada||null, turno:(["manha","tarde","qualquer"].includes(b.entrega.turno)?b.entrega.turno:"qualquer")}
       : {tipo:"retirada"};
     const registro={
       id,
@@ -9511,7 +9511,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         try{
           const tf=`${DATA_DIR}/turnos_entrega.json`;
           const turnos=lerJSON(tf,{});
-          turnos[String(pedidoId)]={data, turno:(entregaProp.turno==="tarde"?"tarde":"manha"), por:prop.funcionarioNome||prop.vendedorNome||"—", em:Date.now(), numero};
+          turnos[String(pedidoId)]={data, turno:(["manha","tarde"].includes(entregaProp.turno)?entregaProp.turno:"qualquer"), por:prop.funcionarioNome||prop.vendedorNome||"—", em:Date.now(), numero};
           salvarJSON(tf,turnos);
         }catch(e){}
         agendadoRotaData=data;

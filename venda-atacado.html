@@ -84,7 +84,7 @@ const S={
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
-  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"", turnoEntrega:"manha",
+  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"", turnoEntrega:"qualquer",
   msg:"", ultimoComprovante:null,
 };
 
@@ -165,7 +165,7 @@ async function _salvarRascunhoInterno(){
       cliente:S.cliente, itens:S.itens, observacao:S.observacao,
       vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
       entrega:S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel
-        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"manha"):null}
+        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null}
         :{tipo:"retirada"},
       funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
     };
@@ -820,8 +820,9 @@ function cardResumo(){
       <input type="date" value="${S.dataEntregaDesejada}" onchange="S.dataEntregaDesejada=this.value;agendarAutoSave();render()" style="margin-bottom:6px">
       ${S.dataEntregaDesejada?`
         <label style="font-size:12px">Turno</label>
-        <div style="display:flex;gap:8px;margin-bottom:4px">
-          <span class="chipDia ${S.turnoEntrega!=='tarde'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='manha';agendarAutoSave();render()">☀️ Manhã</span>
+        <div style="display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+          <span class="chipDia ${(!S.turnoEntrega||S.turnoEntrega==='qualquer')?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='qualquer';agendarAutoSave();render()">🕐 Qualquer horário</span>
+          <span class="chipDia ${S.turnoEntrega==='manha'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='manha';agendarAutoSave();render()">☀️ Manhã</span>
           <span class="chipDia ${S.turnoEntrega==='tarde'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='tarde';agendarAutoSave();render()">🌇 Tarde</span>
         </div>
         <div class="muted" style="font-size:11px">✅ Ao finalizar, o pedido já entra no Gerenciamento de Rota nesse dia e turno.</div>
@@ -963,7 +964,7 @@ async function salvar(){
     observacao:S.observacao,
     vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
     entrega:S.tipoEntrega==='entrega'
-      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"manha"):null}
+      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null}
       :{tipo:"retirada"},
     funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
   };
@@ -979,7 +980,7 @@ async function salvar(){
       // texto da tela quando o número real chegar (o registro da proposta já é
       // corrigido pelo servidor em segundo plano).
       S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
-        (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} (${S.turnoEntrega==='tarde'?'tarde':'manhã'}) no Gerenciamento de Rota.`:'');
+        (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} (${S.turnoEntrega==='tarde'?'tarde':(S.turnoEntrega==='manha'?'manhã':'qualquer horário')}) no Gerenciamento de Rota.`:'');
       const v={
         numero:g.numero, pedidoId:g.pedidoId,
         total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
@@ -1014,7 +1015,7 @@ async function salvar(){
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="pedido"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
-    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada=""; S.turnoEntrega="manha";
+    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada=""; S.turnoEntrega="qualquer";
   }catch(e){ if(winImpressao) try{winImpressao.close();}catch(e2){} alert("Erro ao salvar."); }
   finally{ S.salvando=false; render(); }
 }

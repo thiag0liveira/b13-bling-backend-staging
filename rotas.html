@@ -623,7 +623,7 @@ function render(){
 
   // ---- agendados pra esse dia, mas ainda sem carro definido ----
   const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean)
-    .sort((a,b)=>{ const t=x=>x.agendamento?.turno==="tarde"?1:0; return t(a)-t(b); }); // manhã primeiro
+    .sort((a,b)=>{ const ord=x=>x.agendamento?.turno==="manha"?0:(x.agendamento?.turno==="tarde"?1:2); return ord(a)-ord(b); }); // manhã, tarde, depois qualquer horário
   if(semCarro.length){
     h+=`<div class="card" style="border-color:#FF0082">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -746,7 +746,7 @@ function htmlPedidoCard(p, modo){
         <div class="num">Pedido ${esc(p.numero)}</div>
         <div class="cli">${esc(p.clienteNome)}</div>
         <div class="vend">Vendedor: ${esc(p.vendedorNome)}</div>
-        ${p.agendamento?`<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/"))} · ${p.agendamento.turno==="manha"?"MANHÃ":"TARDE"}</span>${p.agendamento.por?`<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>`:""}</div>`:""}
+        ${p.agendamento?`<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/"))} · ${p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO")}</span>${p.agendamento.por?`<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>`:""}</div>`:""}
       </div>
       <div class="vals">
         <div><b>${brl(p.total)}</b></div>

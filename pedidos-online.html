@@ -122,7 +122,7 @@ function cardPedido(p){
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
     '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
-    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":"TARDE")+'</span></div>':'')+
+    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO"))+'</span></div>':'')+
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
@@ -344,9 +344,10 @@ function abrirAgendar(id){
       dias.map(function(d){return '<option value="'+d.iso+'"'+(at.data===d.iso?" selected":"")+'>'+d.nome+' ('+d.iso.split("-").reverse().slice(0,2).join("/")+')</option>';}).join("")+
     '</select>'+
     '<div class="muted" style="margin-bottom:4px">Turno</div>'+
-    '<div style="display:flex;gap:8px">'+
-      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"'+(at.turno!=="tarde"?" checked":"")+'> ☀️ Manhã</label>'+
-      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"'+(at.turno==="tarde"?" checked":"")+'> 🌇 Tarde</label>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      '<label style="flex:1;min-width:100px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="qualquer"'+((!at.turno||at.turno==="qualquer")?" checked":"")+'> 🕐 Qualquer horário</label>'+
+      '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"'+(at.turno==="manha"?" checked":"")+'> ☀️ Manhã</label>'+
+      '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"'+(at.turno==="tarde"?" checked":"")+'> 🌇 Tarde</label>'+
     '</div>'+
     '<div id="errAg"></div>'+
     '<div style="display:flex;gap:8px;margin-top:14px">'+
@@ -358,7 +359,7 @@ function abrirAgendar(id){
 async function salvarAgendamento(id){
   const data=(document.getElementById("agDia")||{}).value||"";
   const el=document.querySelector('input[name="agTurno"]:checked');
-  const turno=el?el.value:"manha";
+  const turno=el?el.value:"qualquer";
   const btn=document.getElementById("btnAg"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
   try{
     const j=await fetch(B+"/api/pedidos-online/"+id+"/agendar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
