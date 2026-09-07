@@ -453,39 +453,74 @@ function b13Logout(){ b13ClearSession(); location.href="/login"; }
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
 window.B13_NAV_LINKS=[
-  {href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
-  {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
-  {href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
-  {href:"/caixa-diario",label:"📅 Relatório Diário",acoes:["acesso_caixa_diario","receber_pagamento"]},
-  {href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
-  {href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
-  {href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
-  {href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
-  {href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  // grupo:"" (ou ausente) = link solto no topo. Os demais viram seções recolhíveis.
   {href:"/central",label:"🏠 Central",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {href:"/entradas",label:"📥 Entradas (Com NF / Sem papel)",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
-  {href:"/lista-fardo",label:"📋 Lista de Fardo",acoes:["acesso_lista_fardo","editar_pedido"]},
-  {href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
-  {href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
-  {href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
-  {href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
-  {href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
-  {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["acesso_perdas","ver_dashboard"]},
-  {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
-  {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
-  {href:"/pedidos-online",label:"🛒 Pedidos Totem/Site",acoes:["ver_aguardando","acesso_propostas","editar_pedido","admin"]},
-  {href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {href:"/estoque-simples",label:"📦 Ajuste rápido (1 produto)",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
-  {href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
-  {href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
-  {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
-  {href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
+  {href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
+  {href:"/pedidos-online",label:"🛒 Pedidos",acoes:["ver_aguardando","acesso_propostas","editar_pedido","admin"]},
+  {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
+
+  {grupo:"Vendas & Caixa",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
+  {grupo:"Vendas & Caixa",href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
+  {grupo:"Vendas & Caixa",href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
+  {grupo:"Vendas & Caixa",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
+  {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
+  {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+
+  {grupo:"Estoque",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {grupo:"Estoque",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
+  {grupo:"Estoque",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"Estoque",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
+
+  {grupo:"Listas & Imagens",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
+  {grupo:"Listas & Imagens",href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
+  {grupo:"Listas & Imagens",href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
+  {grupo:"Listas & Imagens",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
+  {grupo:"Listas & Imagens",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
+  {grupo:"Listas & Imagens",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
+
+  {grupo:"Logística",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
+  {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
+  {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+
+  {grupo:"Gestão",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
+  {grupo:"Gestão",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
+  {grupo:"Gestão",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
+  {grupo:"Gestão",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
+  {grupo:"Gestão",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
 ];
+
+// monta o menu: links soltos no topo e o resto em seções recolhíveis (a seção da
+// página atual já abre aberta; o estado fica salvo por usuário no navegador)
+function b13NavHtml(links,ativo){
+  const item=(l)=>\`<a href="\${l.href}" style="display:flex;align-items:center;gap:8px;padding:10px 14px;color:\${l.href===ativo?'#fff':'#cfc9f5'};text-decoration:none;font-weight:700;font-size:13px;border-left:3px solid \${l.href===ativo?'#FF0082':'transparent'};background:\${l.href===ativo?'rgba(255,0,130,.1)':'transparent'}">\${l.label}</a>\`;
+  const soltos=links.filter(l=>!l.grupo);
+  const grupos=[];
+  links.filter(l=>l.grupo).forEach(l=>{ let g=grupos.find(x=>x.nome===l.grupo); if(!g){ g={nome:l.grupo,itens:[]}; grupos.push(g); } g.itens.push(l); });
+  let abertos={};
+  try{ abertos=JSON.parse(localStorage.getItem("b13navAbertos")||"{}"); }catch(e){}
+  return soltos.map(item).join("")+grupos.map(g=>{
+    const temAtivo=g.itens.some(l=>l.href===ativo);
+    const aberto=temAtivo||abertos[g.nome]===true;
+    return \`<div>
+      <div onclick="b13ToggleGrupo('\${g.nome}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;margin-top:4px;color:#9a95c9;font-size:11px;font-weight:900;text-transform:uppercase;cursor:pointer;letter-spacing:.5px">
+        <span>\${g.nome}</span><span id="b13gseta-\${g.nome.replace(/[^a-zA-Z]/g,'')}" style="font-size:10px">\${aberto?'▾':'▸'}</span>
+      </div>
+      <div id="b13grupo-\${g.nome.replace(/[^a-zA-Z]/g,'')}" style="display:\${aberto?'block':'none'}">\${g.itens.map(item).join("")}</div>
+    </div>\`;
+  }).join("");
+}
+function b13ToggleGrupo(nome){
+  const k=nome.replace(/[^a-zA-Z]/g,'');
+  const el=document.getElementById("b13grupo-"+k), seta=document.getElementById("b13gseta-"+k);
+  if(!el) return;
+  const abrir=el.style.display==="none";
+  el.style.display=abrir?"block":"none";
+  if(seta) seta.textContent=abrir?"▾":"▸";
+  try{ const a=JSON.parse(localStorage.getItem("b13navAbertos")||"{}"); a[nome]=abrir; localStorage.setItem("b13navAbertos",JSON.stringify(a)); }catch(e){}
+}
 
 // ---- sino de novos pedidos do totem/site (a marca "já vi" é POR USUÁRIO) ----
 let _b13SinoTimer=null;
@@ -555,7 +590,7 @@ function b13RenderNav(ativo){
       <div style="font-size:11px;color:#9a95c9">\${f.nivel}</div>
     </div>
     <nav style="flex:1;padding:8px 0;overflow-y:auto">
-      \${links.map(l=>\`<a href="\${l.href}" style="display:flex;align-items:center;gap:8px;padding:11px 14px;color:\${l.href===ativo?'#fff':'#cfc9f5'};text-decoration:none;font-weight:700;font-size:13px;border-left:3px solid \${l.href===ativo?'#FF0082':'transparent'};background:\${l.href===ativo?'rgba(255,0,130,.1)':'transparent'}">\${l.label}</a>\`).join('')}
+      \${b13NavHtml(links,ativo)}
     </nav>
     <div style="padding:10px 12px;border-top:1px solid rgba(255,0,130,.3)">
       <button onclick="b13Logout()" style="width:100%;padding:8px;border:1px solid #514c96;border-radius:8px;background:transparent;color:#9a95c9;cursor:pointer;font-size:12px">Sair</button>
@@ -7296,11 +7331,13 @@ app.get("/api/pedidos-online",(req,res)=>{
     const desde=Date.now()-dias*86400000;
     const props=lerPropostas();
     const lista=Object.values(props||{})
-      .filter(p=>p && (p.origem==="totem"||p.origem==="site") && (p.criadoEm||0)>=desde)
+      .filter(p=>p && p.pedidoBlingId && (p.criadoEm||0)>=desde
+        && (req.query.origem==="online" ? (p.origem==="totem"||p.origem==="site") : true))
       .map(p=>{
         const sit=_sitOnline[String(p.pedidoBlingId)]||null;
         return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
-          criadoEm:p.criadoEm||0, origem:p.origem,
+          criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
+          vendedor:p.vendedorNome||"", 
           cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
           total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
           tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
@@ -7321,7 +7358,7 @@ function _listaOnlineSimples(dias){
   const desde=Date.now()-(dias||3)*86400000;
   const props=lerPropostas();
   return Object.values(props||{})
-    .filter(p=>p && (p.origem==="totem"||p.origem==="site") && (p.criadoEm||0)>=desde)
+    .filter(p=>p && (p.origem==="totem"||p.origem==="site") && (p.criadoEm||0)>=desde) // sino: só totem/site
     .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
 }
 app.get("/api/pedidos-online/novos/:funcionarioId",(req,res)=>{

@@ -15,6 +15,10 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px}
   .card.novo{border-color:#3ce88a;box-shadow:0 0 0 1px rgba(60,232,138,.3)}
+  .card.aguard{border-color:#ffe600;box-shadow:0 0 0 1px rgba(255,230,0,.25)}
+  .modal .it{display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:6px 0}
+  .modal .it input{width:70px;text-align:right;padding:5px}
+  .rm{background:none;border:none;color:#ff8090;cursor:pointer;font-size:15px}
   .muted{color:#9a95c9;font-size:12px}
   .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 12px;color:#fff;width:100%;margin-top:6px}
   .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}.btn-wa{background:#1f8f4e}.btn-red{background:transparent;border:1px solid #b3341f;color:#ff8f7a}
@@ -73,16 +77,24 @@ async function carregar(silencioso){
   // as situações vêm em 2º plano — recarrega em silêncio até completar
   if(SIT_CARREGANDO) setTimeout(function(){ carregar(true); }, 4000);
 }
+const AGUARDANDO=(typeof B13_SIT!=="undefined"&&B13_SIT.AGUARDANDO)?B13_SIT.AGUARDANDO:818795;
+function ehAguardando(p){ return Number(p.situacaoId)===Number(AGUARDANDO); }
 function visiveis(){
-  if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega");
-  if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada");
+  if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega"&&!p.cancelado);
+  if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada"&&!p.cancelado);
+  if(FILTRO==="online") return PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&!p.cancelado);
+  if(FILTRO==="atacado") return PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&!p.cancelado);
   if(FILTRO==="todos") return PEDIDOS;
-  return PEDIDOS.filter(p=>!p.cancelado);
+  // padrão: aguardando separação primeiro (é o que precisa de ação)
+  return PEDIDOS.filter(p=>ehAguardando(p));
 }
 function cardPedido(p){
   const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
   const tel=soDig(p.telefone);
-  return '<div class="card'+(ehNovo?' novo':'')+'">'+
+  const aguard=ehAguardando(p);
+  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Venda Atacado"));
+  return '<div class="card'+(ehNovo?' novo':'')+(aguard?' aguard':'')+'">'+
+    '<div class="muted" style="font-size:11px;margin-bottom:2px">'+esc(org)+'</div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center">'+
       '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
       (ehNovo?'<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>':'')+
@@ -95,7 +107,7 @@ function cardPedido(p){
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
-    '<button class="btn btn-mag" onclick="editarPedido('+p.id+',\''+esc(p.numero)+'\')">✏️ Editar</button>'+
+    (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
     (tel.length>=10?'<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(p.cliente)+'\')">💬 WhatsApp</button>':'<button class="btn btn-ghost" disabled title="sem telefone">💬 sem telefone</button>')+
     (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
   '</div>';
@@ -103,15 +115,20 @@ function cardPedido(p){
 function render(){
   const app=document.getElementById("app");
   const lista=visiveis();
-  const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega").length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada").length;
-  app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos Totem/Site</div><div style="flex:1"></div>'+
+  const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega"&&!p.cancelado).length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada"&&!p.cancelado).length;
+  const nAgu=PEDIDOS.filter(ehAguardando).length;
+  const nOnline=PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&!p.cancelado).length;
+  const nAtac=PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&!p.cancelado).length;
+  app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>'+
       '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
       [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>'+
     '<div class="wrap">'+
       '<div class="abas">'+
-        '<span class="aba '+(FILTRO==="ativos"?"on":"")+'" onclick="FILTRO=\'ativos\';render()">Ativos</span>'+
+        '<span class="aba '+(FILTRO==="ativos"?"on":"")+'" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação ('+nAgu+')</span>'+
+        '<span class="aba '+(FILTRO==="online"?"on":"")+'" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site ('+nOnline+')</span>'+
+        '<span class="aba '+(FILTRO==="atacado"?"on":"")+'" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado ('+nAtac+')</span>'+
         '<span class="aba '+(FILTRO==="entrega"?"on":"")+'" onclick="FILTRO=\'entrega\';render()">🛵 Entrega ('+nEnt+')</span>'+
         '<span class="aba '+(FILTRO==="retirada"?"on":"")+'" onclick="FILTRO=\'retirada\';render()">🏪 Retirada ('+nRet+')</span>'+
         '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">Todos ('+PEDIDOS.length+')</span>'+
@@ -133,7 +150,7 @@ function verDetalhe(id){
     '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
 }
 function fechar(){ document.getElementById("modais").innerHTML=""; }
-function editarPedido(id,numero){ location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero); }
+function editarNoCaixa(numero){ location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero); }
 function whats(tel,numero,cliente){
   const t55=tel.length<=11?("55"+tel):tel;
   const msg="Olá"+(cliente?", "+cliente:"")+"! Sobre o seu pedido #"+numero+" na B13 Bebidas: ";
@@ -170,6 +187,95 @@ async function marcarVistos(){
   if(typeof b13ChecarNovosPedidos==="function") b13ChecarNovosPedidos();
   carregar();
 }
+/* ===== EDIÇÃO DO PEDIDO (mesma lógica do /operacional: altera itens direto no Bling) ===== */
+function edSetMsg(h){ const el=document.getElementById("edMsg"); if(el) el.innerHTML=h; }
+function totalEdit(){ return (window.itensEdit||[]).filter(i=>!i._removido).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+async function editarPedidoAguardando(id){
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" id="mbox"><div class="muted">Carregando pedido…</div></div></div>';
+  try{
+    const r=await fetch(B+"/api/pedidos/"+id).then(r=>r.json());
+    const ped=r.data||r;
+    if(!ped||!ped.itens){ document.getElementById("mbox").innerHTML='<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>'; return; }
+    window.pedidoEditOrig=ped; window.pedidoEditId=id;
+    window.itensEdit=(ped.itens||[]).map(i=>({ produtoId:i.produto?.id, descricao:i.descricao||i.produto?.nome||"",
+      quantidade:i.quantidade, quantidadeOriginal:i.quantidade, valor:i.valor, _removido:false, _novo:false }));
+    renderEditarAguardando(id);
+  }catch(e){ document.getElementById("mbox").innerHTML='<div style="color:#ff8090">Erro ao carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>'; }
+}
+function renderEditarAguardando(id){
+  const rows=(window.itensEdit||[]).map((item,ix)=>linhaItemEdit(item,ix,id)).join("");
+  document.getElementById("mbox").innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<h3>✏️ Pedido '+esc(window.pedidoEditOrig?.numero||id)+'</h3>'+
+      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>'+
+    '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens. Ao salvar, altera também no Bling.</div>'+
+    '<div style="max-height:42vh;overflow:auto">'+rows+'</div>'+
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">'+
+      '<span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">'+brl(totalEdit())+'</b></div>'+
+    '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px">'+
+      '<div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>'+
+      '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,'+id+')">'+
+      '<div id="resBuscaEd"></div></div>'+
+    '<div id="edMsg" style="margin-top:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:10px">'+
+      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Cancelar</button>'+
+      '<button class="btn btn-mag" style="margin:0" onclick="salvarEditarAguardando('+id+')">💾 Salvar no Bling</button></div>';
+}
+function linhaItemEdit(item,ix,id){
+  if(item._removido){
+    return '<div class="it" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">'+esc(item.descricao)+'</div>'+
+      '<button class="btn btn-ghost" style="width:auto;margin:0;padding:4px 8px;font-size:11px" onclick="restaurarItemEdit('+ix+','+id+')">desfazer</button></div>';
+  }
+  return '<div class="it"><div style="flex:1;min-width:0;font-size:13px">'+esc(item.descricao)+
+    '<div class="muted" style="font-size:11px">'+brl(item.valor)+' un'+(item._novo?' · <span style="color:#3ce88a">novo</span>':'')+'</div></div>'+
+    '<input type="number" min="1" step="1" value="'+item.quantidade+'" onchange="mudarQtdEdit('+ix+',this.value,'+id+')">'+
+    '<button class="rm" onclick="removerItemEdit('+ix+','+id+')">🗑</button></div>';
+}
+function mudarQtdEdit(ix,v,id){
+  const q=Math.max(1,parseInt(v)||1);
+  window.itensEdit[ix].quantidade=q;
+  const t=document.getElementById("edTotal"); if(t) t.textContent=brl(totalEdit());
+}
+function removerItemEdit(ix,id){ window.itensEdit[ix]._removido=true; renderEditarAguardando(id); }
+function restaurarItemEdit(ix,id){ window.itensEdit[ix]._removido=false; renderEditarAguardando(id); }
+let _edBuscaT=null;
+function buscarNovoItemEdit(q,id){
+  clearTimeout(_edBuscaT);
+  _edBuscaT=setTimeout(async function(){
+    const termo=(q||"").trim();
+    const box=document.getElementById("resBuscaEd"); if(!box) return;
+    if(termo.length<2){ box.innerHTML=""; return; }
+    try{
+      const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
+      const lista=(j.data||[]).slice(0,8);
+      box.innerHTML=lista.length?lista.map(function(r){
+        return '<div class="it" style="cursor:pointer" onclick=\'addItemEdit('+JSON.stringify({id:r.id,nome:r.nome,preco:r.preco??r.precoBling??0}).replace(/'/g,"&#39;")+','+id+')\'>'+
+          '<div style="flex:1;font-size:13px">'+esc(r.nome)+'<div class="muted" style="font-size:11px">'+brl(r.preco??r.precoBling??0)+'</div></div><span style="color:#3ce88a">+</span></div>';
+      }).join(""):'<div class="muted" style="padding:6px">nada encontrado</div>';
+    }catch(e){ box.innerHTML='<div class="muted" style="padding:6px">erro na busca</div>'; }
+  },350);
+}
+function addItemEdit(r,id){
+  const ja=window.itensEdit.find(function(i){return String(i.produtoId)===String(r.id)&&!i._removido;});
+  if(ja){ ja.quantidade+=1; }
+  else window.itensEdit.push({produtoId:r.id,descricao:r.nome,quantidade:1,quantidadeOriginal:0,valor:Number(r.preco)||0,_removido:false,_novo:true});
+  const b=document.getElementById("buscaNovoItemEd"); if(b) b.value="";
+  const box=document.getElementById("resBuscaEd"); if(box) box.innerHTML="";
+  renderEditarAguardando(id);
+}
+async function salvarEditarAguardando(id){
+  const itens=(window.itensEdit||[]).filter(i=>!i._removido).map(i=>({produtoId:i.produtoId,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+  if(!itens.length){ edSetMsg('<div style="color:#ff8090">O pedido precisa ter ao menos 1 item.</div>'); return; }
+  edSetMsg('<div class="muted">Salvando no Bling…</div>');
+  try{
+    const j=await fetch(B+"/api/pedidos/"+id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({itens, funcionarioNome:(S.nome||"")})}).then(r=>r.json());
+    if(j.erro){ edSetMsg('<div style="color:#ff8090">❌ '+esc(j.erro)+'</div>'); return; }
+    if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
+    fechar(); carregar();
+  }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }
+}
+
 render();
 carregar();
 setInterval(function(){ if(!CARREGANDO) carregar(true); }, 60000);
