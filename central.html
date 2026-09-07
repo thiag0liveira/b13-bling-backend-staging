@@ -114,6 +114,50 @@ function render(){
           <div class="lin" style="font-weight:800;margin-top:8px;border-top:1px solid #2a2660"><span>Total do dia (atacado + varejo)</span><b style="color:#ffd23f">${brl(b.pedidos.fechamentoBling.atacado.valor+b.pedidos.fechamentoBling.varejo.valor)}</b></div>
           `):card("🏪 Atacado × 🛒 Varejo","<div class=\"muted\">⏳ Buscando no Bling…</div>")}
 
+        ${(b.pedidos&&b.pedidos.fechamentoBling)?card("🔝 Produtos que mais saíram (do Bling)",`
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <div style="flex:1;min-width:190px">
+              <div style="font-weight:800;margin-bottom:6px">🏪 Atacado</div>
+              ${lins(b.pedidos.fechamentoBling.produtosAtacado,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un <span class="muted">${brl(p.valor)}</span></b></div>`)}
+            </div>
+            <div style="flex:1;min-width:190px">
+              <div style="font-weight:800;margin-bottom:6px">🛒 Varejo</div>
+              ${lins(b.pedidos.fechamentoBling.produtosVarejo,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un <span class="muted">${brl(p.valor)}</span></b></div>`)}
+            </div>
+          </div>`):""}
+
+        ${(b.pedidos&&b.pedidos.fechamentoBling)?card("📦 Situação dos pedidos do dia",`
+          <div class="lin"><span>✅ Pagos (Atendido)</span><b style="color:#3ce88a">${b.pedidos.fechamentoBling.qtdPago} · ${brl(b.pedidos.fechamentoBling.totalPago)}</b></div>
+          <div class="lin"><span>⏳ Ainda não pagos</span><b style="color:${b.pedidos.fechamentoBling.naoPagos.qtd?'#ffd23f':'#9a95c9'}">${b.pedidos.fechamentoBling.naoPagos.qtd} · ${brl(b.pedidos.fechamentoBling.naoPagos.valor)}</b></div>
+          <div class="h" style="margin-top:10px"><span>Por status</span></div>
+          ${lins(b.pedidos.fechamentoBling.porStatus,x=>`<div class="lin"><span>${esc(x.nome)} <span class="muted">(${x.qtd})</span></span><b>${brl(x.valor)}</b></div>`)}
+          ${b.pedidos.fechamentoBling.naoPagos.qtd?`<div class="h" style="margin-top:10px;color:#ffd23f"><span>Pedidos não pagos</span></div>`+lins(b.pedidos.fechamentoBling.naoPagos.pedidos,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)} <span class="muted">${esc(p.situacao)}</span></span><b>${brl(p.total)}</b></div>`):""}`):""}
+
+        ${(b.pedidos&&b.pedidos.fechamentoBling)?card("👥 Clientes atendidos (do Bling)",
+          lins(b.pedidos.fechamentoBling.clientes,c=>`<div class="lin"><span>${esc(c.nome)} <span class="muted">(${c.qtd})</span></span><b>${brl(c.valor)}</b></div>`)):""}
+
+        ${(b.pedidos&&b.pedidos.fechamentoBling)?card("🧑‍💼 Vendedores (pedidos pagos)",`
+          <div style="font-weight:800;margin-bottom:4px">🏪 Atacado</div>
+          ${lins(b.pedidos.fechamentoBling.porVendedorAtacado,v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`)}
+          <div style="font-weight:800;margin:10px 0 4px">🛒 Varejo</div>
+          ${lins(b.pedidos.fechamentoBling.porVendedorVarejo,v=>`<div class="lin"><span>${esc(v.nome)} <span class="muted">(${v.qtd})</span></span><b>${brl(v.valor)}</b></div>`)}`):""}
+
+        ${card("🔝 Produtos e clientes (nossos caixas)",`
+          <div class="muted" style="margin-bottom:6px">Só o que passou pelo caixa do sistema.</div>
+          ${lins(f.produtosMaisVendidos,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un <span class="muted">${brl(p.valor)}</span></b></div>`)}
+          <div class="h" style="margin-top:10px"><span>Consumidor Final × clientes</span></div>
+          <div class="lin"><span>Consumidor Final <span class="muted">(${f.consumidorFinal?.qtd||0})</span></span><b>${brl(f.consumidorFinal?.valor)}</b></div>
+          ${lins(f.clientes,c=>`<div class="lin"><span>${esc(c.nome)} <span class="muted">(${c.qtd})</span></span><b>${brl(c.valor)}</b></div>`)}`)}
+
+        ${card("💰 Maiores vendas do dia",lins(f.maioresVendas,v=>`<div class="lin"><span>#${esc(v.numero)} ${esc(v.cliente)} <span class="muted">· ${esc(v.operador)}</span></span><b>${brl(v.total)}</b></div>`)
+          +(b.pedidos&&!b.pedidos.erro&&b.pedidos.maiores?.length?`<div class="h" style="margin-top:10px"><span>Maiores pedidos (Bling)</span></div>`+lins(b.pedidos.maiores,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}</span><b>${brl(p.total)}</b></div>`):""))}
+
+        ${card("🏷️ Preço usado nos itens",lins(f.porModoPreco,m=>`<div class="lin"><span>${esc(m.modo)} <span class="muted">(${m.itens} itens · ${m.unidades} un)</span></span><b>${brl(m.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">bling = preço do Bling · atacado = tabela · fardo = preço de fardo · editado = alterado com QR</div>`)}
+
+        ${card("🔐 Autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
+
+        ${card("📦 Produtos retirados de pedidos",`<div class="muted" style="margin-bottom:6px">Possível falta de estoque — confira.</div>`+lins(D.produtosRetirados,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.vezes}x</b></div>`))}
+
         ${card("💵 Nossos caixas (o que passou pelo sistema)",`
           <div class="muted" style="margin-bottom:8px">Só o que foi lançado nos caixas do sistema. O varejo/PDV do Bling não entra aqui.</div>
           <div style="display:flex;gap:16px;flex-wrap:wrap">
@@ -130,6 +174,23 @@ function render(){
               ${lins(f.porTipoCaixa?.varejo?.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
             </div>
           </div>`)}
+
+        ${card("🧑‍💼 Operadores de caixa (sistema)",lins(f.porOperador,o=>`<div class="lin"><span>${esc(o.nome)} <span class="muted">(${o.qtd})</span></span><b>${brl(o.valor)}</b></div>`))}
+
+        ${card("🧾 Notas do dia",`<div class="lin"><span>Notas de saída emitidas (Bling)</span><b>${b.notasEmitidas&&!b.notasEmitidas.erro?b.notasEmitidas.qtd+" · "+brl(b.notasEmitidas.valor):'<span class="muted">⏳</span>'}</b></div>
+          <div class="lin"><span>NFC-e emitidas pelo sistema</span><b>${D.nfce?.emitidasDia||0}</b></div>
+          <div class="lin"><span>Vendas atacado sem NFC-e</span><b style="color:${D.nfce?.pendentesDia?'#ffd23f':'#3ce88a'}">${D.nfce?.pendentesDia||0}</b></div>
+          ${b.notasEmitidas&&b.notasEmitidas.porCliente?.length?`<div class="h" style="margin-top:10px"><span>Notas por cliente</span></div>`+lins(b.notasEmitidas.porCliente,c=>`<div class="lin"><span>${esc(c.nome)}</span><b>${brl(c.valor)}</b></div>`):""}
+          <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-nfce">Gestão de NFC-e →</a>`)}
+
+        ${card("📥 Entradas de hoje",(b.entradas&&!b.entradas.erro?`<div class="big" style="font-size:20px">${b.entradas.qtd} nota(s)</div>${b.entradas.fornecedores?.length?`<div class="muted">${b.entradas.fornecedores.map(esc).join(", ")}</div>`:""}
+          <div class="h" style="margin-top:10px"><span>Produtos que entraram hoje</span></div>${lins(b.entradas.produtos,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`)}`:'<div class="muted">⏳ Buscando no Bling…</div>')
+          +(D.entradasMesTop?`<div class="h" style="margin-top:12px"><span>Mais entraram no mês</span></div>`+lins(D.entradasMesTop,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`):"")+`<a class="btn btn-ghost" style="margin-top:8px" href="/entradas">Entradas do mês →</a>`)}
+
+        ${card("🔔 Avisos pendentes",lins(D.avisos?.ultimos,x=>`<div class="lin"><span>${esc(x.titulo)}</span><span class="muted">${hora(x.em)}</span></div>`)+`<a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos →</a>`,`<span class="big" style="color:${D.avisos?.pendentes?'#ffd23f':'#3ce88a'}">${D.avisos?.pendentes||0}</span>`)}
+
+        ${card("📄 Propostas & Pedidos",`<div class="lin"><span>Propostas em aberto</span><b>${D.propostas?.abertas||0}</b></div><div class="lin"><span>Pedidos gerados no dia</span><b>${D.propostas?.pedidosGeradosDia||0}</b></div>
+          ${Object.entries(D.propostas?.porOrigemDia||{}).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join("")}<a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>`)}
 
         ${(b.pedidos&&b.pedidos.duplicidades&&(b.pedidos.duplicidades.qtdNoCaixa||b.pedidos.duplicidades.qtdSoNoCaixa||b.pedidos.duplicidades.qtdRepetidosBling))?card("🔁 Duplicidades encontradas",`
           <div class="muted" style="font-size:12px;margin-bottom:8px">Cruzamento do nosso caixa com o Bling.</div>
