@@ -150,11 +150,19 @@ function valorEmCredito(){
 function valorEmDebito(){
   return PAGAMENTOS.filter(p=>/d[eé]bito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
 }
+const TAXA_CARTAO=0.035; // 3,5% — repassada ao cliente no atacado
+// O valor lançado no cartão JÁ INCLUI a taxa (é o que o cliente passa na maquininha).
+// Então a taxa é EXTRAÍDA dele, não somada por cima: taxa = V - V/1,035.
+// Isso evita o efeito circular (taxa sobre taxa) que fazia o valor subir ao confirmar.
 function taxaCartao(){
   if(!COBRAR_TAXA_CARTAO) return 0;
   if(!ehPedidoAtacado()) return 0; // varejo não tem taxa
-  return +((valorEmCredito()+valorEmDebito())*0.035).toFixed(2);
+  const noCartao=valorEmCredito()+valorEmDebito();
+  return +(noCartao*TAXA_CARTAO/(1+TAXA_CARTAO)).toFixed(2);
 }
+// quanto cobrar no cartão pra pagar uma parte do pedido: parte + 3,5% dela
+function comTaxa(valorProduto){ return +(Number(valorProduto||0)*(1+TAXA_CARTAO)).toFixed(2); }
+function ehFormaCartao(nome){ return /cr[eé]dito/i.test(nome||"")||/d[eé]bito/i.test(nome||""); }
 function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).toFixed(2); }
 
 // calcula o valor certo pra cobrar no cartão (crédito/débito) já considerando que a
@@ -164,11 +172,12 @@ function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).
 // vira (semTaxa + 0,035*X). Pra fechar (pago == total), X precisa cobrir também os
 // outros pagamentos (dinheiro/pix) já lançados: X = (semTaxa - outros) / 0,965.
 function ajustarCartaoComTaxa(){
-  const semTaxa=+(subtotal()+OUTRAS_DESPESAS+FRETE).toFixed(2);
-  const outros=PAGAMENTOS.filter(p=>!/cr[eé]dito/i.test(p.formaNome||"")&&!/d[eé]bito/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
-  const linhasCartao=PAGAMENTOS.filter(p=>/cr[eé]dito/i.test(p.formaNome||"")||/d[eé]bito/i.test(p.formaNome||""));
+  const semTaxa=totalSemTaxa();
+  const outros=PAGAMENTOS.filter(p=>!ehFormaCartao(p.formaNome)).reduce((s,p)=>s+(Number(p.valor)||0),0);
+  const linhasCartao=PAGAMENTOS.filter(p=>ehFormaCartao(p.formaNome));
   if(!linhasCartao.length) return;
-  const novoTotalCartao=+((semTaxa-outros)/0.965).toFixed(2);
+  // parte do pedido que vai no cartão + 3,5% dela (a taxa fica embutida no valor cobrado)
+  const novoTotalCartao=comTaxa(+(semTaxa-outros).toFixed(2));
   if(novoTotalCartao<=0){ alert("Os outros pagamentos já cobrem o total — não sobra valor pra cartão."); return; }
   const atualCartao=linhasCartao.reduce((s,p)=>s+(Number(p.valor)||0),0);
   if(linhasCartao.length===1){
@@ -908,9 +917,29 @@ async function confirmarEditarPreco(ix){
 function selecionarForma(id,nome){
   // Sempre ADICIONA uma nova linha de pagamento com essa forma.
   // Pode repetir a mesma forma (ex.: 2 PIX, 2 cartões de crédito).
-  const rest=restante();
-  PAGAMENTOS.push({formaId:id,formaNome:nome,valor:rest>0?rest:0});
+  // Se for CARTÃO com taxa, já preenche o valor certo a cobrar na maquininha:
+  // a parte do pedido que falta + os 3,5% dela — assim fecha exato de primeira.
+  let valor;
+  if(ehFormaCartao(nome)&&COBRAR_TAXA_CARTAO&&ehPedidoAtacado()){
+    const faltaProduto=+(totalSemTaxa()-totalPagoProduto()).toFixed(2); // o que falta, sem taxa
+    valor = faltaProduto>0 ? comTaxa(faltaProduto) : 0;
+  } else {
+    const rest=restante();
+    valor = rest>0?rest:0;
+  }
+  PAGAMENTOS.push({formaId:id,formaNome:nome,valor});
   render();
+}
+// total do pedido SEM a taxa (é a base sobre a qual a taxa é calculada)
+function totalSemTaxa(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE).toFixed(2); }
+// quanto do PRODUTO já está coberto: pagamentos que não são cartão entram cheios;
+// os de cartão entram sem a taxa embutida (V/1,035)
+function totalPagoProduto(){
+  return +PAGAMENTOS.reduce((s,p)=>{
+    const v=Number(p.valor)||0;
+    if(ehFormaCartao(p.formaNome)&&COBRAR_TAXA_CARTAO&&ehPedidoAtacado()) return s+v/(1+TAXA_CARTAO);
+    return s+v;
+  },0).toFixed(2);
 }
 
 // ---------------- render principal (visual do frente de caixa) ----------------
@@ -1433,8 +1462,8 @@ function render(){
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito/débito (3,5%)</span>
             <b style="color:#ffd23f">${brl(taxaCartao())}</b>
           </label>
-          ${COBRAR_TAXA_CARTAO&&Math.abs(restante())>0.009?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Ajustar valor do cartão pra fechar com a taxa</button>
-          <div class="muted" style="font-size:11px;margin-top:2px">A taxa soma no total; o valor cobrado no cartão precisa ser um pouco maior que o do produto pra já cobrir a taxa. Este botão calcula certinho.</div>`:""}`:""}
+          <div class="muted" style="font-size:11px;margin-top:2px">O valor do cartão já sai com a taxa embutida (é o que passa na maquininha). A taxa mostrada é a parte dele que corresponde aos 3,5%.</div>
+          ${COBRAR_TAXA_CARTAO&&Math.abs(restante())>0.009?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Recalcular valor do cartão</button>`:""}`:""}
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
         <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
