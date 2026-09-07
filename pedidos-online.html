@@ -127,7 +127,7 @@ function cardPedido(p){
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
-    (tel.length>=10?'<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(p.cliente)+'\')">💬 WhatsApp</button>':'<button class="btn btn-ghost" disabled title="sem telefone">💬 sem telefone</button>')+
+    '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
     (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
   '</div>';
 }
@@ -174,10 +174,33 @@ function verDetalhe(id){
 }
 function fechar(){ document.getElementById("modais").innerHTML=""; }
 function editarNoCaixa(numero){ location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero); }
-function whats(tel,numero,cliente){
-  const t55=tel.length<=11?("55"+tel):tel;
-  const msg="Olá"+(cliente?", "+cliente:"")+"! Sobre o seu pedido #"+numero+" na B13 Bebidas: ";
-  window.open("https://wa.me/"+t55+"?text="+encodeURIComponent(msg),"_blank");
+// mesma mensagem do /operacional: pedido completo com itens e total
+async function whats(tel,numero,cliente,id){
+  try{
+    // busca o pedido no Bling pra montar a mensagem com os itens e o total reais
+    let ped=null;
+    try{ const j=await fetch(B+"/api/pedidos/"+id).then(r=>r.json()); ped=j.data||j; }catch(e){}
+    // telefone: usa o do registro; se não tiver, busca igual o operacional faz
+    let t=soDig(tel||"");
+    if(!t&&ped){
+      t=soDig(ped.contato?.celular||ped.contato?.telefone||ped.contato?.fone||"");
+      if(!t&&ped.contato?.id){
+        try{ const jc=await fetch(B+"/api/contatos/"+ped.contato.id).then(r=>r.json()); const c=jc.data||jc;
+          t=soDig(c?.celular||c?.telefone||c?.fone||""); }catch(e){}
+      }
+      if(!t&&ped.observacoes){ const m=String(ped.observacoes).match(/\((\d[\d\s().-]{7,})\)/); if(m) t=soDig(m[1]); }
+    }
+    const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+    const nome=(ped?.contato?.nome)||cliente||"";
+    const itens=(ped?.itens?.length?ped.itens.map(function(i){return "- "+(i.descricao||i.produto?.nome||"Produto")+": "+i.quantidade+" un";})
+      :((p?.itens)||[]).map(function(i){return "- "+i.nome+": "+i.quantidade+" un";})).join("\n");
+    const total=Number(ped?.total ?? p?.total ?? 0);
+    const msg="Olá"+(nome?" "+nome:"")+"! Seu pedido *"+(ped?.numero||numero)+"* foi recebido na B13 Bebidas. ✅\n\n"+
+      "*Itens do pedido:*\n"+itens+"\n\n*Total: "+brl(total)+"*\n\nEm breve entraremos em contato! 😊";
+    if(!t){ alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa."); window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); return; }
+    const num=t.startsWith("55")?t:("55"+t);
+    window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank");
+  }catch(e){ alert("Erro ao montar a mensagem do pedido."); }
 }
 function cancelar(id,numero){
   document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
