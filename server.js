@@ -476,6 +476,7 @@ window.B13_NAV_LINKS=[
   {href:"/perdas",label:"📉 Perdas (danif./não entregue)",acoes:["acesso_perdas","ver_dashboard"]},
   {href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+  {href:"/pedidos-online",label:"🛒 Pedidos Totem/Site",acoes:["ver_aguardando","acesso_propostas","editar_pedido","admin"]},
   {href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque","editar_pedido","admin"]},
   {href:"/estoque-simples",label:"📦 Ajuste rápido (1 produto)",acoes:["acesso_estoque","editar_pedido","admin"]},
   {href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
@@ -485,6 +486,50 @@ window.B13_NAV_LINKS=[
   {href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
   {href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
 ];
+
+// ---- sino de novos pedidos do totem/site (a marca "já vi" é POR USUÁRIO) ----
+let _b13SinoTimer=null;
+async function b13ChecarNovosPedidos(){
+  const f=b13GetSession(); if(!f) return;
+  try{
+    const j=await fetch(B13_BACKEND+"/api/pedidos-online/novos/"+encodeURIComponent(f.id)).then(r=>r.json());
+    const el=document.getElementById("b13sino"), bd=document.getElementById("b13sinoBadge");
+    if(!el||!bd) return;
+    window._b13Novos=j;
+    if(j.novos>0){ el.style.display="block"; bd.textContent=j.novos>99?"99+":j.novos; }
+    else { el.style.display="none"; }
+  }catch(e){}
+}
+function b13AbrirNovosPedidos(){
+  const j=window._b13Novos||{novos:0,pedidos:[]};
+  const linhas=(j.pedidos||[]).map(p=>\`<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #2a2660;padding:6px 0;font-size:13px"><span>#\${p.numero} \${p.cliente||""} <span style="color:#9a95c9;font-size:11px">\${p.tipo==="entrega"?"🛵 entrega":"🏪 retirada"}</span></span><b>R$ \${(Number(p.total)||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</b></div>\`).join("")||'<div style="color:#9a95c9">Nenhum novo.</div>';
+  document.getElementById("b13qrModal").innerHTML=\`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this)document.getElementById('b13qrModal').innerHTML=''">
+      <div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:420px;width:100%">
+        <div style="font-weight:900;font-size:16px;margin-bottom:8px">🔔 \${j.novos} novo(s) pedido(s)</div>
+        <div style="max-height:50vh;overflow:auto">\${linhas}</div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button onclick="b13MarcarPedidosVistos()" style="flex:1;padding:10px;border:none;border-radius:10px;background:#1c1846;color:#fff;font-weight:800;cursor:pointer">Marcar como vistos</button>
+          <button onclick="location.href='/pedidos-online'" style="flex:1;padding:10px;border:none;border-radius:10px;background:#FF0082;color:#fff;font-weight:800;cursor:pointer">Ver todos</button>
+        </div>
+      </div>
+    </div>\`;
+}
+async function b13MarcarPedidosVistos(){
+  const f=b13GetSession(); if(!f) return;
+  try{ await fetch(B13_BACKEND+"/api/pedidos-online/marcar-visto/"+encodeURIComponent(f.id),{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); }catch(e){}
+  document.getElementById("b13qrModal").innerHTML="";
+  b13ChecarNovosPedidos();
+}
+function b13IniciarSino(){
+  const f=b13GetSession(); if(!f) return;
+  const gruposSino=["admin","gerente","lider_caixa","financeiro","financeiro_atacado","separacao","conferencia"];
+  const pode=gruposSino.includes(f.nivel)||(f.permissoes||[]).some(p=>gruposSino.includes(p))||b13Pode("ver_aguardando");
+  if(!pode) return;
+  b13ChecarNovosPedidos();
+  clearInterval(_b13SinoTimer);
+  _b13SinoTimer=setInterval(b13ChecarNovosPedidos,60000);
+}
 
 function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
@@ -498,7 +543,11 @@ function b13RenderNav(ativo){
 
   return \`<style>body{padding-top:44px !important}@media(min-width:900px){#b13topbar{left:200px}}</style>
     <div id="b13topbar" style="position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:10px;padding:0 12px 0 52px;z-index:98">
-      <div style="flex:1;text-align:right;font-size:13px;color:#fff;font-weight:700">\${nomeTopo} <span style="color:#9a95c9;font-weight:400;font-size:11px">· \${f.nivel}</span></div>
+      <div style="flex:1"></div>
+      <div id="b13sino" onclick="b13AbrirNovosPedidos()" title="Novos pedidos do totem/site" style="position:relative;cursor:pointer;font-size:18px;display:none;padding:2px 6px">🔔
+        <span id="b13sinoBadge" style="position:absolute;top:-4px;right:-4px;background:#FF0082;color:#fff;border-radius:10px;font-size:10px;font-weight:900;padding:1px 5px;min-width:16px;text-align:center">0</span>
+      </div>
+      <div style="text-align:right;font-size:13px;color:#fff;font-weight:700">\${nomeTopo} <span style="color:#9a95c9;font-weight:400;font-size:11px">· \${f.nivel}</span></div>
     </div>
     <div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s">
     <div style="padding:14px 12px;border-bottom:1px solid rgba(255,0,130,.3)">
@@ -516,6 +565,8 @@ function b13RenderNav(ativo){
   <div id="b13navOverlay" onclick="b13ToggleNav()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99"></div>
   <div id="b13qrModal"></div>\`;
 }
+// dispara o sino automaticamente assim que a barra existir na tela
+setTimeout(function(){ try{ if(document.getElementById("b13sino")) b13IniciarSino(); }catch(e){} }, 800);
 
 // mostra o QR do caixa do próprio usuário logado (em qualquer página). Só funciona
 // pra quem pode autorizar (o backend valida). O QR fica embaçado até revelar.
@@ -7214,6 +7265,104 @@ app.get("/api/central/resumo",(req,res)=>{
 
 // ===================== PAINEL DE ESTOQUE =====================
 // Lista depósitos (pra escolher antes de mexer em qualquer coisa)
+// ===================== PEDIDOS ONLINE (totem / site) =====================
+// Identifica pelos pedidos criados pelo /api/finalizar (observação "Pedido via Totem/App B13")
+// e traz o que a tela precisa: entrega x retirada, telefone, itens e situação atual.
+const _ONLINE_MARCA=/pedido via totem\/app b13/i;
+let _cacheOnline={em:0, dados:null, calculando:false};
+async function _buscarPedidosOnline(dias){
+  const ini=new Date(Date.now()-dias*86400000);
+  const di=`${ini.getFullYear()}-${String(ini.getMonth()+1).padStart(2,"0")}-${String(ini.getDate()).padStart(2,"0")}`;
+  const df=_hojeISO();
+  let lista=[], pag=1;
+  for(let i=0;i<10;i++){
+    const r=await bling(`/pedidos/vendas?dataInicial=${di}&dataFinal=${df}&pagina=${pag}&limite=100`);
+    const arr=r?.data||[]; lista=lista.concat(arr);
+    if(arr.length<100) break; pag++; await sleep(120);
+  }
+  const vistos=new Set(); lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)) return false; vistos.add(k); return true; });
+  const out=[];
+  for(const p of lista){
+    let d=null; try{ d=await bling(`/pedidos/vendas/${p.id}`).then(r=>r?.data); }catch(e){}
+    const obs=String(d?.observacoes||"");
+    if(!_ONLINE_MARCA.test(obs)) continue;                       // não é do totem/site
+    const ehEntrega=/ENTREGA\s*—/i.test(obs)||Number(d?.transporte?.frete||0)>0;
+    const mTel=obs.match(/\(([^)]*)\)\s*\./);
+    const mEnd=obs.match(/ENTREGA\s*—\s*([^(]+)/i);
+    const sit=Number(d?.situacao?.id||p.situacao?.id||0);
+    let telefone=(mTel&&mTel[1]&&mTel[1].trim()!=="-")?mTel[1].trim():"";
+    if(!telefone&&d?.contato?.id){ try{ const c=await bling(`/contatos/${d.contato.id}`).then(r=>r?.data); telefone=c?.celular||c?.telefone||""; }catch(e){} }
+    out.push({
+      id:p.id, numero:p.numero, data:p.data, criadoEm:d?.dataSaida||p.data,
+      cliente:d?.contato?.nome||p.contato?.nome||"—", telefone,
+      total:Number(d?.total ?? p.total ?? 0),
+      frete:Number(d?.transporte?.frete||0),
+      tipo: ehEntrega?"entrega":"retirada",
+      endereco: mEnd?mEnd[1].trim():"",
+      situacaoId:sit, situacao:nomeSituacao(sit),
+      origem: /app b13/i.test(obs)?"totem/site":"online",
+      itens:(d?.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+      observacoes:obs,
+    });
+    await sleep(80);
+  }
+  out.sort((a,b)=>String(b.data||"").localeCompare(String(a.data||""))||Number(b.numero||0)-Number(a.numero||0));
+  return out;
+}
+app.get("/api/pedidos-online",async(req,res)=>{
+  try{
+    const dias=Math.min(Number(req.query.dias||3),15);
+    const forcar=req.query.forcar==="1";
+    if(!forcar && _cacheOnline.dados && (Date.now()-_cacheOnline.em)<60*1000) return res.json({data:_cacheOnline.dados,doCache:true,em:_cacheOnline.em});
+    if(_cacheOnline.calculando && _cacheOnline.dados) return res.json({data:_cacheOnline.dados,doCache:true,em:_cacheOnline.em});
+    _cacheOnline.calculando=true;
+    const dados=await _buscarPedidosOnline(dias);
+    _cacheOnline={em:Date.now(),dados,calculando:false};
+    res.json({data:dados,em:_cacheOnline.em});
+  }catch(e){ _cacheOnline.calculando=false; res.status(e.status||500).json({erro:e.message}); }
+});
+// contagem de NOVOS pedidos online por usuário (cada um tem seu "já vi até aqui")
+const VISTOS_ONLINE_FILE=`${DATA_DIR}/pedidos_online_vistos.json`;
+app.get("/api/pedidos-online/novos/:funcionarioId",(req,res)=>{
+  try{
+    const vistos=lerJSON(VISTOS_ONLINE_FILE,{});
+    const marca=vistos[String(req.params.funcionarioId)]||{ultimoNumero:0,em:0};
+    const lista=_cacheOnline.dados||[];
+    const novos=lista.filter(p=>Number(p.numero||0)>Number(marca.ultimoNumero||0));
+    res.json({ novos:novos.length, ultimoNumero:lista.length?Math.max(...lista.map(p=>Number(p.numero)||0)):0,
+      pedidos:novos.slice(0,10).map(p=>({numero:p.numero,cliente:p.cliente,total:p.total,tipo:p.tipo})),
+      atualizadoEm:_cacheOnline.em });
+  }catch(e){ res.json({novos:0}); }
+});
+app.post("/api/pedidos-online/marcar-visto/:funcionarioId",(req,res)=>{
+  try{
+    const vistos=lerJSON(VISTOS_ONLINE_FILE,{});
+    const lista=_cacheOnline.dados||[];
+    const maior=lista.length?Math.max(...lista.map(p=>Number(p.numero)||0)):Number(req.body?.ultimoNumero||0);
+    vistos[String(req.params.funcionarioId)]={ultimoNumero:maior,em:Date.now()};
+    salvarJSON(VISTOS_ONLINE_FILE,vistos);
+    res.json({ok:true,ultimoNumero:maior});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// cancela um pedido online (totem/site) direto pelo id do Bling
+app.post("/api/pedidos-online/:blingId/cancelar",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!d) return res.status(404).json({erro:"pedido não encontrado"});
+    const sit=Number(d.situacao?.id||0);
+    if(sit===SIT.CANCELADO) return res.status(400).json({erro:"esse pedido já está cancelado"});
+    if(sit===SIT.ATENDIDO) return res.status(400).json({erro:"pedido já ATENDIDO (foi pago/entregue) — cancele pela Gestão de Caixas"});
+    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.CANCELADO}`,{method:"PATCH"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
+    addLog(String(id),"pedido_online_cancelado",req.body?.funcionarioId,funcNome,{motivo:req.body?.motivo||"",numero:d.numero});
+    _cacheOnline.em=0; // força recarregar a lista
+    res.json({ok:true,numero:d.numero});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
+app.get("/pedidos-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedidos-online.html")); });
+
 app.get("/api/estoque/depositos",async(req,res)=>{
   try{
     const r=await bling(`/depositos`);
