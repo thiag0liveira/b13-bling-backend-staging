@@ -7337,7 +7337,7 @@ app.get("/api/pedidos-online",(req,res)=>{
         const sit=_sitOnline[String(p.pedidoBlingId)]||null;
         return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
           criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
-          vendedor:p.vendedorNome||"", 
+          vendedor:p.vendedorNome||p.funcionarioNome||"", // vendedor do pedido (ou quem digitou)
           cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
           total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
           tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",

@@ -59,6 +59,15 @@ const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const soDig=(s)=>String(s??"").replace(/\D/g,"");
+// data/hora de criação do pedido (o backend manda em criadoEm)
+function dataHora(ms){
+  if(!ms) return "";
+  const d=new Date(Number(ms));
+  const hoje=new Date();
+  const mesmoDia=d.toDateString()===hoje.toDateString();
+  const hh=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+  return mesmoDia ? ("hoje "+hh) : (d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+hh);
+}
 
 let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=3, VISTO_ATE=0, SIT_CARREGANDO=false;
 
@@ -99,16 +108,19 @@ function cardPedido(p){
   const tel=soDig(p.telefone);
   const aguard=ehAguardando(p);
   const concluido=ehAtendido(p)||p.cancelado;
-  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Venda Atacado"));
+  const ehOnline=(p.origem==="totem"||p.origem==="site");
+  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 <b style=\"color:#cfc9f5\">"+esc(p.vendedor||"Venda Atacado")+"</b>");
   return '<div class="card'+(ehNovo?' novo':'')+(aguard?' aguard':'')+'"'+(concluido?' style="opacity:.65"':'')+'>'+
-    '<div class="muted" style="font-size:11px;margin-bottom:2px">'+esc(org)+'</div>'+
+    '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">'+
+      '<span class="muted" style="font-size:11px">'+org+'</span>'+
+      '<span class="muted" style="font-size:11px">🕐 '+esc(dataHora(p.criadoEm))+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center">'+
       '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
       (ehNovo?'<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>':'')+
     '</div>'+
     '<div class="sit"'+(p.situacao==="carregando…"?' style="background:#2a2660;color:#9a95c9"':'')+'>'+esc((p.situacao||"").toUpperCase())+'</div>'+
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
-    '<div class="muted" style="margin-top:6px">'+esc(p.cliente)+(p.data?' · '+esc(p.data.split("-").reverse().slice(0,2).join("/")):"")+'</div>'+
+    '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
@@ -152,7 +164,8 @@ function verDetalhe(id){
   const p=PEDIDOS.find(function(x){return x.id===id;}); if(!p) return;
   document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
     '<h3>Pedido '+esc(p.numero)+'</h3>'+
-    '<div class="muted" style="margin:4px 0 10px">'+esc(p.cliente)+' · '+(p.tipo==="entrega"?"🛵 Entrega":"🏪 Retirada")+'</div>'+
+    '<div class="muted" style="margin:4px 0 10px">'+esc(p.cliente)+' · '+(p.tipo==="entrega"?"🛵 Entrega":"🏪 Retirada")+
+      '<br>🕐 criado em '+esc(dataHora(p.criadoEm))+((p.origem!=="totem"&&p.origem!=="site")?' · vendedor: '+esc(p.vendedor||"—"):' · '+(p.origem==="totem"?"Totem":"Site"))+'</div>'+
     (p.endereco?'<div class="muted" style="margin-bottom:8px">📍 '+esc(p.endereco)+'</div>':'')+
     (p.itens||[]).map(function(i){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid #2a2660;padding:5px 0;font-size:13px"><span>'+i.quantidade+'x '+esc(i.nome)+'</span><b>'+brl(i.quantidade*i.valor)+'</b></div>';}).join("")+
     (p.frete>0?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Frete</span><b>'+brl(p.frete)+'</b></div>':'')+
