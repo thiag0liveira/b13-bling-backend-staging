@@ -10262,6 +10262,23 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     } else {
       candidatos = unicos.filter(p=>jaAgendado(p.id));
     }
+    // GARANTIA: todo pedido agendado PRECISA aparecer, mesmo que não tenha vindo na
+    // busca por situação (ex.: está "Em separação"/"Conferido", que não estão na lista
+    // de situações, ou foi criado fora da janela de datas). Sem isso, o pedido
+    // agendado simplesmente sumia da rota.
+    const idsCandidatos=new Set(candidatos.map(p=>Number(p.id)));
+    const faltando=[...new Set([...idsAgendados, ...Object.keys(turnosAg).map(Number)])]
+      .filter(id=>id && !idsCandidatos.has(Number(id)));
+    for(const id of faltando){
+      try{
+        const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        if(!d) continue;
+        const sit=Number(d.situacao?.id||0);
+        if(sit===SIT.CANCELADO) continue; // cancelado não entra
+        candidatos.push(d);
+      }catch(e){}
+      await sleep(120);
+    }
 
     const detalhados=[];
     for(let i=0;i<candidatos.length;i++){

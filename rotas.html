@@ -131,6 +131,14 @@ async function carregarTudo(){
       S.atribuicoes[c.id]={viagens};
     });
     S.atribuicoes["_semCarro"]={pedidoIds:(salvo["_semCarro"]?.pedidoIds)||[]};
+    // pedidos agendados PRA ESTE DIA (com dia/turno escolhidos na venda ou na tela de
+    // Pedidos) entram automaticamente em "aguardando carro" — só falta escolher o carro
+    (S.pedidos||[]).forEach(p=>{
+      if(p.agendamento && p.agendamento.data===S.data && !p.carroAtribuido){
+        const jaEmCarro=Object.keys(S.atribuicoes).some(cid=>cid!=="_semCarro"&&(S.atribuicoes[cid].viagens||[]).some(v=>(v.pedidoIds||[]).includes(p.id)));
+        if(!jaEmCarro && !S.atribuicoes["_semCarro"].pedidoIds.includes(p.id)) S.atribuicoes["_semCarro"].pedidoIds.push(p.id);
+      }
+    });
     S.resultadoRota={};
     // resumo geral: quantos pedidos já tem em cada dia + quais pedidos já
     // estão agendados em OUTRO dia (pra não aparecerem como "disponíveis" aqui)
@@ -614,7 +622,8 @@ function render(){
   </div>`;
 
   // ---- agendados pra esse dia, mas ainda sem carro definido ----
-  const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
+  const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean)
+    .sort((a,b)=>{ const t=x=>x.agendamento?.turno==="tarde"?1:0; return t(a)-t(b); }); // manhã primeiro
   if(semCarro.length){
     h+=`<div class="card" style="border-color:#FF0082">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
