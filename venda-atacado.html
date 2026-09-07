@@ -37,6 +37,8 @@
   .qtd input{width:52px;text-align:center;padding:6px}
   .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:800}
   .badge-at{background:#0a2a1a;color:#3ce88a}.badge-bl{background:#2a1f00;color:#ffd23f}
+  .chipDia{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;display:inline-block}
+  .chipDia.on{background:#FF0082;border-color:#FF0082}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -82,7 +84,7 @@ const S={
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
-  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"",
+  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"", turnoEntrega:"manha",
   msg:"", ultimoComprovante:null,
 };
 
@@ -95,6 +97,15 @@ const S={
   }
 })();
 
+// próximos dias pra escolher rapidinho (mesma ideia da tela de Pedidos)
+function proximosDias(){
+  const h=new Date(); const d0=new Date(h.getFullYear(),h.getMonth(),h.getDate()); const out=[];
+  for(let i=0;i<7;i++){ const d=new Date(d0.getTime()+i*86400000);
+    const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    out.push({iso, nome: i===0?"Hoje":(i===1?"Amanhã":d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}))});
+  }
+  return out;
+}
 function total(){ return S.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
 function totalComFrete(){ return total()+(S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel?Number(S.frete.taxa)||0:0); }
 
@@ -154,7 +165,7 @@ async function _salvarRascunhoInterno(){
       cliente:S.cliente, itens:S.itens, observacao:S.observacao,
       vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
       entrega:S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel
-        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null}
+        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"manha"):null}
         :{tipo:"retirada"},
       funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
     };
@@ -801,9 +812,20 @@ function cardResumo(){
       <div class="muted" style="font-size:12px;margin-bottom:4px">${esc(enderecoClienteTexto()||'—')}</div>
       ${S.freteMsg?`<div class="muted" style="font-size:12px;${S.freteMsg.startsWith('Erro')||S.freteMsg.includes('incompleto')||S.freteMsg.includes('Não foi possível')?'color:#ff8090':''}">${esc(S.freteMsg)}</div>`:''}
       ${S.frete&&S.frete.entregaDisponivel?`<div style="font-size:12px;color:#3ce88a;margin-bottom:4px">Distância ${S.frete.km} km · ${S.frete.gratis?'Frete GRÁTIS':`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:''}
-      <label style="margin-top:8px;font-size:12px">Dia desejado da entrega (opcional)</label>
-      <input type="date" value="${S.dataEntregaDesejada}" oninput="S.dataEntregaDesejada=this.value;agendarAutoSave()" style="margin-bottom:4px">
-      <div class="muted" style="font-size:11px">Fica salvo junto do pedido pra facilitar organizar no Gerenciamento de Rota depois.</div>
+      <label style="margin-top:10px;font-size:12px">📅 Agendar entrega para</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        ${proximosDias().map(d=>`<span class="chipDia ${S.dataEntregaDesejada===d.iso?'on':''}" onclick="S.dataEntregaDesejada='${d.iso}';agendarAutoSave();render()">${esc(d.nome)}</span>`).join("")}
+        <span class="chipDia ${!S.dataEntregaDesejada?'on':''}" onclick="S.dataEntregaDesejada='';S.turnoEntrega='';agendarAutoSave();render()">sem data</span>
+      </div>
+      <input type="date" value="${S.dataEntregaDesejada}" onchange="S.dataEntregaDesejada=this.value;agendarAutoSave();render()" style="margin-bottom:6px">
+      ${S.dataEntregaDesejada?`
+        <label style="font-size:12px">Turno</label>
+        <div style="display:flex;gap:8px;margin-bottom:4px">
+          <span class="chipDia ${S.turnoEntrega!=='tarde'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='manha';agendarAutoSave();render()">☀️ Manhã</span>
+          <span class="chipDia ${S.turnoEntrega==='tarde'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='tarde';agendarAutoSave();render()">🌇 Tarde</span>
+        </div>
+        <div class="muted" style="font-size:11px">✅ Ao finalizar, o pedido já entra no Gerenciamento de Rota nesse dia e turno.</div>
+      `:`<div class="muted" style="font-size:11px">Sem data, o pedido não entra na rota — dá pra agendar depois na tela de Pedidos.</div>`}
     `:''}
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px">
@@ -941,7 +963,7 @@ async function salvar(){
     observacao:S.observacao,
     vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
     entrega:S.tipoEntrega==='entrega'
-      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null}
+      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"manha"):null}
       :{tipo:"retirada"},
     funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
   };
@@ -957,7 +979,7 @@ async function salvar(){
       // texto da tela quando o número real chegar (o registro da proposta já é
       // corrigido pelo servidor em segundo plano).
       S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
-        (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} no Gerenciamento de Rota.`:'');
+        (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} (${S.turnoEntrega==='tarde'?'tarde':'manhã'}) no Gerenciamento de Rota.`:'');
       const v={
         numero:g.numero, pedidoId:g.pedidoId,
         total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
@@ -992,7 +1014,7 @@ async function salvar(){
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="pedido"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
-    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada="";
+    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada=""; S.turnoEntrega="manha";
   }catch(e){ if(winImpressao) try{winImpressao.close();}catch(e2){} alert("Erro ao salvar."); }
   finally{ S.salvando=false; render(); }
 }

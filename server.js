@@ -9233,7 +9233,10 @@ app.post("/api/atacado/propostas",(req,res)=>{
     const id=b.id||("prop_"+Date.now()+"_"+Math.random().toString(36).slice(2,7));
     const agora=Date.now();
     const totalItens=+(b.itens||[]).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
-    const entrega=b.entrega&&b.entrega.tipo==="entrega"?{tipo:"entrega",endereco:b.entrega.endereco||"",km:b.entrega.km||0,taxa:Number(b.entrega.taxa)||0}:{tipo:"retirada"};
+    const entrega=b.entrega&&b.entrega.tipo==="entrega"
+      ? {tipo:"entrega",endereco:b.entrega.endereco||"",km:b.entrega.km||0,taxa:Number(b.entrega.taxa)||0,
+         dataDesejada:b.entrega.dataDesejada||null, turno:(b.entrega.turno==="tarde"?"tarde":(b.entrega.turno==="manha"?"manha":null))}
+      : {tipo:"retirada"};
     const registro={
       id,
       tipo:b.tipo||"proposta",           // "proposta" | "pedido"
@@ -9504,6 +9507,13 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         if(!rotas[data]["_semCarro"]) rotas[data]["_semCarro"]={pedidoIds:[]};
         if(!rotas[data]["_semCarro"].pedidoIds.includes(pedidoId)) rotas[data]["_semCarro"].pedidoIds.push(pedidoId);
         salvarRotasDias(rotas);
+        // grava também o TURNO escolhido pela vendedora (aparece na rota e na tela de Pedidos)
+        try{
+          const tf=`${DATA_DIR}/turnos_entrega.json`;
+          const turnos=lerJSON(tf,{});
+          turnos[String(pedidoId)]={data, turno:(entregaProp.turno==="tarde"?"tarde":"manha"), por:prop.funcionarioNome||prop.vendedorNome||"—", em:Date.now(), numero};
+          salvarJSON(tf,turnos);
+        }catch(e){}
         agendadoRotaData=data;
       }catch(e){ console.error("[atacado] falhou ao agendar pedido",pedidoId,"no Gerenciamento de Rota:",e.message); }
     }
