@@ -79,21 +79,28 @@ async function carregar(silencioso){
 }
 const AGUARDANDO=(typeof B13_SIT!=="undefined"&&B13_SIT.AGUARDANDO)?B13_SIT.AGUARDANDO:818795;
 function ehAguardando(p){ return Number(p.situacaoId)===Number(AGUARDANDO); }
+const ATENDIDO=9;
+function ehAtendido(p){ return Number(p.situacaoId)===ATENDIDO; }
+// pedido já concluído (Atendido) ou cancelado não precisa de ação — fica escondido
+// por padrão. A aba "Todos os status" mostra tudo.
+function ehEmAndamento(p){ return !p.cancelado && !ehAtendido(p); }
 function visiveis(){
-  if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega"&&!p.cancelado);
-  if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada"&&!p.cancelado);
-  if(FILTRO==="online") return PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&!p.cancelado);
-  if(FILTRO==="atacado") return PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&!p.cancelado);
-  if(FILTRO==="todos") return PEDIDOS;
-  // padrão: aguardando separação primeiro (é o que precisa de ação)
+  if(FILTRO==="todos") return PEDIDOS; // única aba que mostra Atendidos e Cancelados
+  if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p));
+  if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p));
+  if(FILTRO==="online") return PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p));
+  if(FILTRO==="atacado") return PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p));
+  if(FILTRO==="andamento") return PEDIDOS.filter(ehEmAndamento);
+  // padrão: aguardando separação (é o que precisa de ação)
   return PEDIDOS.filter(p=>ehAguardando(p));
 }
 function cardPedido(p){
   const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
   const tel=soDig(p.telefone);
   const aguard=ehAguardando(p);
+  const concluido=ehAtendido(p)||p.cancelado;
   const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Venda Atacado"));
-  return '<div class="card'+(ehNovo?' novo':'')+(aguard?' aguard':'')+'">'+
+  return '<div class="card'+(ehNovo?' novo':'')+(aguard?' aguard':'')+'"'+(concluido?' style="opacity:.65"':'')+'>'+
     '<div class="muted" style="font-size:11px;margin-bottom:2px">'+esc(org)+'</div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center">'+
       '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
@@ -115,10 +122,12 @@ function cardPedido(p){
 function render(){
   const app=document.getElementById("app");
   const lista=visiveis();
-  const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega"&&!p.cancelado).length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada"&&!p.cancelado).length;
+  const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p)).length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p)).length;
   const nAgu=PEDIDOS.filter(ehAguardando).length;
-  const nOnline=PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&!p.cancelado).length;
-  const nAtac=PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&!p.cancelado).length;
+  const nOnline=PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p)).length;
+  const nAtac=PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p)).length;
+  const nAnd=PEDIDOS.filter(ehEmAndamento).length;
+  const nConc=PEDIDOS.filter(p=>ehAtendido(p)||p.cancelado).length;
   app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>'+
       '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
       [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
@@ -131,7 +140,8 @@ function render(){
         '<span class="aba '+(FILTRO==="atacado"?"on":"")+'" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado ('+nAtac+')</span>'+
         '<span class="aba '+(FILTRO==="entrega"?"on":"")+'" onclick="FILTRO=\'entrega\';render()">🛵 Entrega ('+nEnt+')</span>'+
         '<span class="aba '+(FILTRO==="retirada"?"on":"")+'" onclick="FILTRO=\'retirada\';render()">🏪 Retirada ('+nRet+')</span>'+
-        '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">Todos ('+PEDIDOS.length+')</span>'+
+        '<span class="aba '+(FILTRO==="andamento"?"on":"")+'" onclick="FILTRO=\'andamento\';render()">📋 Em andamento ('+nAnd+')</span>'+
+        '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status ('+PEDIDOS.length+')'+(nConc?' <span style="opacity:.7">· '+nConc+' concluídos</span>':'')+'</span>'+
       '</div>'+
       (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>'
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
