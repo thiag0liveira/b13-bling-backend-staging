@@ -1446,6 +1446,27 @@ app.get("/api/nfce/diagnostico-fiscal/:pedidoId",async(req,res)=>{
 
 // LISTA as vendas do CAIXA ATACADO do mês vigente. Produtos e formas já vêm do
 // movimento do caixa — rápido, sem consultar o Bling item a item.
+// NFC-e realmente emitidas no Bling (endpoint /nfce) — usado pra cruzar com as vendas
+// e saber o que de fato tem nota, inclusive as emitidas direto no PDV do varejo.
+app.get("/api/nfce/emitidas-bling",async(req,res)=>{
+  try{
+    const dias=Math.min(Number(req.query.dias||7),31);
+    const ini=new Date(Date.now()-dias*86400000);
+    const di=`${ini.getFullYear()}-${String(ini.getMonth()+1).padStart(2,"0")}-${String(ini.getDate()).padStart(2,"0")}`;
+    const df=_hojeISO();
+    let arr=[], pag=1;
+    for(let i=0;i<10;i++){
+      const r=await bling(`/nfce?dataEmissaoInicial=${di} 00:00:00&dataEmissaoFinal=${df} 23:59:59&pagina=${pag}&limite=100`);
+      const d=r?.data||[]; arr=arr.concat(d);
+      if(d.length<100) break; pag++; await sleep(150);
+    }
+    const notas=arr.map(n=>({ id:n.id, numero:n.numero, serie:n.serie, dataEmissao:n.dataEmissao,
+      situacao:Number(n.situacao), autorizada:Number(n.situacao)===5,
+      cliente:n.contato?.nome||"—", valor:Number(n.valorNota??n.valor??0) }));
+    res.json({ dias, total:notas.length, autorizadas:notas.filter(n=>n.autorizada).length, data:notas });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/nfce/vendas-caixa-atacado",(req,res)=>{
   try{
     const now=new Date();
@@ -2590,7 +2611,8 @@ app.get("/api/diag/nfce-listar",async(req,res)=>{
     try{
       const r=await bling(path);
       const arr=r?.data||[];
-      out[nome]={ok:true, qtd:arr.length, amostra:arr.slice(0,3).map(n=>({id:n.id,numero:n.numero,serie:n.serie,dataEmissao:n.dataEmissao,situacao:n.situacao,valor:n.valorNota??n.valor,contato:n.contato?.nome,tipo:n.tipo}))};
+      out[nome]={ok:true, qtd:arr.length, amostra:arr.slice(0,3).map(n=>({id:n.id,numero:n.numero,serie:n.serie,dataEmissao:n.dataEmissao,situacao:n.situacao,valor:n.valorNota??n.valor,contato:n.contato?.nome,tipo:n.tipo})),
+        camposCrus:arr[0]?Object.keys(arr[0]):[], primeiraNotaCrua:arr[0]||null};
     }catch(e){ out[nome]={ok:false,status:e.status,erro:e.message}; }
     await sleep(200);
   }
@@ -7138,12 +7160,49 @@ async function _atualizarCentralBling(dia){
   _centralBling.calculando=true;
   const out={ em:Date.now(), calculando:false, dia, erro:null };
   try{
-    // notas EMITIDAS no dia (saída) — qtd, valor total, e NFC-e x NF-e se der pra distinguir
+    // notas EMITIDAS no dia. IMPORTANTE: NFC-e fica em /nfce (o /nfe?tipo=1 devolve 0 —
+    // era por isso que a Central não mostrava as notas do varejo/PDV). Busca as duas.
     try{
-      const r=await blingLento(`/nfe?tipo=1&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
-      const arr=r?.data||[];
-      out.notasEmitidas={ qtd:arr.length, valor:+arr.reduce((a,n)=>a+(Number(n.valorNota??n.valor)||0),0).toFixed(2),
-        porCliente:Object.entries(arr.reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+(Number(n.valorNota??n.valor)||0); return acc; },{})).map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor).slice(0,15) };
+      const pegaValor=(n)=>Number(n.valorNota ?? n.valor ?? n.totalNota ?? n.total ?? 0);
+      const buscarTudo=async(base)=>{
+        let arr=[], pag=1;
+        for(let i=0;i<8;i++){
+          const r=await blingLento(`${base}&pagina=${pag}&limite=100`);
+          const d=r?.data||[]; arr=arr.concat(d);
+          if(d.length<100) break; pag++; await sleep(150);
+        }
+        return arr;
+      };
+      const janela=`dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59`;
+      let nfce=[], nfe=[];
+      try{ nfce=await buscarTudo(`/nfce?${janela}`); }catch(e){}
+      try{ nfe=await buscarTudo(`/nfe?tipo=1&${janela}`); }catch(e){}
+      // situação 5 = Autorizada (as canceladas/denegadas não contam no faturamento)
+      const autorizadas=(l)=>l.filter(n=>Number(n.situacao)===5);
+      const nfceOk=autorizadas(nfce), nfeOk=autorizadas(nfe);
+      // a listagem do Bling não traz o valor da nota — busca o detalhe (em blocos,
+      // pra não travar) só das autorizadas do dia
+      const somaComDetalhe=async(lista)=>{
+        let soma=0, semValor=0;
+        for(const n of lista.slice(0,150)){
+          let v=pegaValor(n);
+          if(!v){
+            try{ const d=await blingLento(`/nfce/${n.id}`).then(r=>r?.data); v=pegaValor(d||{}); }catch(e){}
+            await sleep(60);
+          }
+          if(v) soma+=v; else semValor++;
+        }
+        return {soma:+soma.toFixed(2), semValor};
+      };
+      const sNfce=await somaComDetalhe(nfceOk);
+      const sNfe=nfeOk.length?{soma:+nfeOk.reduce((a,n)=>a+pegaValor(n),0).toFixed(2),semValor:0}:{soma:0,semValor:0};
+      out.notasEmitidas={
+        qtd:nfceOk.length+nfeOk.length, valor:+(sNfce.soma+sNfe.soma).toFixed(2),
+        nfce:{qtd:nfceOk.length, valor:sNfce.soma, canceladas:nfce.length-nfceOk.length},
+        nfe:{qtd:nfeOk.length, valor:sNfe.soma},
+        semValor:sNfce.semValor,
+        porCliente:Object.entries([...nfceOk,...nfeOk].reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+pegaValor(n); return acc; },{}))
+          .map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,15) };
     }catch(e){ out.notasEmitidas={erro:e.message}; }
     // notas de ENTRADA no dia — qtd, valor, fornecedores, e produtos entrados (abre até 20 notas)
     try{
