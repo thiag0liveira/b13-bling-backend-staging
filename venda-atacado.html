@@ -84,7 +84,7 @@ const S={
   compraSelecionados:{}, minComprados:false, minNovos:false,
   modoTabela:false, tabelaCompleta:null, buscaTabela:"", tbAbertos:{},
   rascunhoId:null, salvandoRascunho:false, ultimoSalvo:null,
-  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"", turnoEntrega:"qualquer",
+  tipoEntrega:"retirada", frete:null, freteMsg:"", dataEntregaDesejada:"", turnoEntrega:"qualquer", obsEntrega:"",
   msg:"", ultimoComprovante:null,
 };
 
@@ -165,7 +165,7 @@ async function _salvarRascunhoInterno(){
       cliente:S.cliente, itens:S.itens, observacao:S.observacao,
       vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
       entrega:S.tipoEntrega==='entrega'&&S.frete&&S.frete.entregaDisponivel
-        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null}
+        ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null,obsEntrega:S.obsEntrega||""}
         :{tipo:"retirada"},
       funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
     };
@@ -819,13 +819,15 @@ function cardResumo(){
       </div>
       <input type="date" value="${S.dataEntregaDesejada}" onchange="S.dataEntregaDesejada=this.value;agendarAutoSave();render()" style="margin-bottom:6px">
       ${S.dataEntregaDesejada?`
-        <label style="font-size:12px">Turno</label>
+        <label style="font-size:12px">Turno <span class="muted">(informativo)</span></label>
         <div style="display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap">
           <span class="chipDia ${(!S.turnoEntrega||S.turnoEntrega==='qualquer')?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='qualquer';agendarAutoSave();render()">🕐 Qualquer horário</span>
           <span class="chipDia ${S.turnoEntrega==='manha'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='manha';agendarAutoSave();render()">☀️ Manhã</span>
           <span class="chipDia ${S.turnoEntrega==='tarde'?'on':''}" style="flex:1;text-align:center" onclick="S.turnoEntrega='tarde';agendarAutoSave();render()">🌇 Tarde</span>
         </div>
-        <div class="muted" style="font-size:11px">✅ Ao finalizar, o pedido já entra no Gerenciamento de Rota nesse dia e turno.</div>
+        <label style="font-size:12px;margin-top:6px">Observação da entrega <span class="muted">(só pro nosso sistema)</span></label>
+        <input value="${esc(S.obsEntrega||'')}" placeholder="ex: entregar até 11h · ligar antes · portão azul" oninput="S.obsEntrega=this.value;agendarAutoSave()" style="margin-bottom:4px">
+        <div class="muted" style="font-size:11px">✅ Ao finalizar, o pedido já entra no Gerenciamento de Rota nesse dia, com essa observação.</div>
       `:`<div class="muted" style="font-size:11px">Sem data, o pedido não entra na rota — dá pra agendar depois na tela de Pedidos.</div>`}
     `:''}
 
@@ -964,7 +966,7 @@ async function salvar(){
     observacao:S.observacao,
     vendedorId:S.vendedorId, vendedorNome:S.vendedorNome,
     entrega:S.tipoEntrega==='entrega'
-      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null}
+      ?{tipo:"entrega",endereco:enderecoClienteTexto(),km:S.frete.km,taxa:S.frete.taxa,dataDesejada:S.dataEntregaDesejada||null,turno:S.dataEntregaDesejada?(S.turnoEntrega||"qualquer"):null,obsEntrega:S.obsEntrega||""}
       :{tipo:"retirada"},
     funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome,
   };
@@ -1015,7 +1017,7 @@ async function salvar(){
     S.cliente=null; S.editandoCliente=false; S.itens=[]; S.observacao="";
     S.buscaProd=""; S.resultadosProd=[]; S.tipo="pedido"; S.analise=null; S.novosSelecionados={}; S.compraSelecionados={};
     S.rascunhoId=null; S.ultimoSalvo=null;
-    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada=""; S.turnoEntrega="qualquer";
+    S.tipoEntrega="retirada"; S.frete=null; S.freteMsg=""; S.dataEntregaDesejada=""; S.turnoEntrega="qualquer"; S.obsEntrega="";
   }catch(e){ if(winImpressao) try{winImpressao.close();}catch(e2){} alert("Erro ao salvar."); }
   finally{ S.salvando=false; render(); }
 }

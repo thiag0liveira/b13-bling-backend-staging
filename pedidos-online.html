@@ -122,7 +122,8 @@ function cardPedido(p){
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
     '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
-    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO"))+'</span></div>':'')+
+    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO"))+'</span></div>'+
+      (p.agendamento.obsEntrega?'<div class="muted" style="font-size:11px;margin-top:3px">📝 '+esc(p.agendamento.obsEntrega)+'</div>':''):'')+
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
@@ -343,12 +344,14 @@ function abrirAgendar(id){
     '<select id="agDia" style="width:100%;margin-bottom:10px">'+
       dias.map(function(d){return '<option value="'+d.iso+'"'+(at.data===d.iso?" selected":"")+'>'+d.nome+' ('+d.iso.split("-").reverse().slice(0,2).join("/")+')</option>';}).join("")+
     '</select>'+
-    '<div class="muted" style="margin-bottom:4px">Turno</div>'+
+    '<div class="muted" style="margin-bottom:4px">Turno <span style="opacity:.7">(informativo — o que foi combinado com o cliente)</span></div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
       '<label style="flex:1;min-width:100px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="qualquer"'+((!at.turno||at.turno==="qualquer")?" checked":"")+'> 🕐 Qualquer horário</label>'+
       '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"'+(at.turno==="manha"?" checked":"")+'> ☀️ Manhã</label>'+
       '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"'+(at.turno==="tarde"?" checked":"")+'> 🌇 Tarde</label>'+
     '</div>'+
+    '<div class="muted" style="margin:10px 0 4px">Observação da entrega <span style="opacity:.7">(só pro nosso sistema — não vai pro cliente)</span></div>'+
+    '<textarea id="agObs" rows="2" style="width:100%;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:13px" placeholder="ex: entregar até 11h · ligar antes · portão azul">'+esc(at.obsEntrega||"")+'</textarea>'+
     '<div id="errAg"></div>'+
     '<div style="display:flex;gap:8px;margin-top:14px">'+
       (p.agendamento?'<button class="btn btn-red" style="margin:0" onclick="desagendar('+id+')">Desagendar</button>':'')+
@@ -363,7 +366,7 @@ async function salvarAgendamento(id){
   const btn=document.getElementById("btnAg"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
   try{
     const j=await fetch(B+"/api/pedidos-online/"+id+"/agendar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({data,turno,funcionarioId:S.id})}).then(function(r){return r.json();});
+      body:JSON.stringify({data,turno,obsEntrega:(document.getElementById("agObs")||{}).value||"",funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
     fechar(); carregar();
   }catch(e){
