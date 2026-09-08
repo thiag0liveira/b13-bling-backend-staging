@@ -976,15 +976,25 @@ async function salvar(){
     if(S.tipo==='pedido'){
       const g=await fetch(B+"/api/atacado/propostas/"+j.data.id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
       if(g.erro){ if(winImpressao) try{winImpressao.close();}catch(e){} S.msg="⚠️ Salvo, mas não gerou o pedido: "+g.erro; return; }
-      // imprime JÁ (sem esperar), pra não perder o clique do usuário — navegador
-      // bloqueia popup que abre muito tempo depois do clique original. Se o Bling
-      // não confirmou o número na criação, usa o provisório aqui e corrige só o
-      // texto da tela quando o número real chegar (o registro da proposta já é
-      // corrigido pelo servidor em segundo plano).
-      S.msg=`✅ Pedido #${g.numero} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
+      // A janela de impressão JÁ está aberta (abri no clique), então dá pra esperar o
+      // NÚMERO REAL do pedido sem risco de o navegador bloquear o popup. Sem isso, a
+      // nota saía com o ID interno gigante (#26816688585) em vez do número (#54894).
+      let numeroReal=g.numero, confirmado=!!g.numeroConfirmado;
+      if(!confirmado){
+        if(winImpressao){ try{ winImpressao.document.body.innerHTML="<div style='font-family:Arial;text-align:center;padding-top:120px;color:#333'>Confirmando o número do pedido…</div>"; }catch(e){} }
+        for(let i=0;i<8;i++){
+          await new Promise(r=>setTimeout(r,800));
+          try{
+            const nj=await fetch(B+"/api/atacado/pedido/"+g.pedidoId+"/numero").then(r=>r.json());
+            if(nj.numero){ numeroReal=nj.numero; confirmado=true; break; }
+          }catch(e){}
+        }
+      }
+      S.msg=`✅ Pedido #${numeroReal} criado (aguardando separação)! Você pode enviá-lo por WhatsApp na tela de Propostas.`+
         (g.agendadoRotaData?` 📅 Já agendado pra ${g.agendadoRotaData.split('-').reverse().join('/')} (${S.turnoEntrega==='tarde'?'tarde':(S.turnoEntrega==='manha'?'manhã':'qualquer horário')}) no Gerenciamento de Rota.`:'');
+      if(!confirmado) S.msg+=" ⚠️ O Bling ainda não confirmou o número — a nota saiu com o código interno.";
       const v={
-        numero:g.numero, pedidoId:g.pedidoId,
+        numero:numeroReal, pedidoId:g.pedidoId, numeroConfirmado:confirmado,
         total:+(total()+(S.tipoEntrega==='entrega'?Number(S.frete?.taxa||0):0)).toFixed(2),
         itens:S.itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
         pagamentos:[], // pagamento é lançado depois, no caixa atacado
@@ -995,21 +1005,6 @@ async function salvar(){
       S.ultimoComprovante=v; // guarda pra poder reimprimir manualmente se a impressão falhar
       try{ imprimirComprovante(v,winImpressao); }
       catch(e){ S.msg+=` ⚠️ A impressão não abriu automaticamente (${e.message}). Use o botão "🖨️ Reimprimir nota" abaixo.`; }
-      if(!g.numeroConfirmado){
-        (async()=>{
-          for(let i=0;i<6;i++){
-            await new Promise(r=>setTimeout(r,1000));
-            try{
-              const nj=await fetch(B+"/api/atacado/pedido/"+g.pedidoId+"/numero").then(r=>r.json());
-              if(nj.numero&&String(nj.numero)!==String(g.numero)){
-                S.msg=S.msg.replace(`Pedido #${g.numero}`,`Pedido #${nj.numero}`);
-                render();
-              }
-              if(nj.numero) break;
-            }catch(e){}
-          }
-        })();
-      }
     }else{
       S.msg=`✅ Proposta salva! Veja em "Propostas" pra enviar por WhatsApp ou gerar o pedido quando aprovada.`;
     }
@@ -1122,7 +1117,11 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   let y=headerH+30;
   // pedido + código de barras
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
+  // se o Bling não confirmou o número, o que temos é o código interno — deixa claro
+  // na nota, em vez de parecer um número de pedido esquisito
+  const ehId=(v.numeroConfirmado===false)||String(v.numero||"").length>=10;
   ctx.font="900 46px Arial"; ctx.fillStyle="#000"; ctx.fillText("#"+(v.numero||"—"),padd,y+46);
+  if(ehId){ ctx.font="700 15px Arial"; ctx.fillText("(código interno — nº do pedido em confirmação)",padd,y+68); }
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.fillText(new Date(v.dataHora||Date.now()).toLocaleString("pt-BR"),padd,y+72);
   if(barCanvas){
     const bw=250, bh=barCanvas.height*(bw/barCanvas.width);

@@ -1125,7 +1125,11 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
   let y=headerH+30;
   // pedido + código de barras
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
+  // se o Bling não confirmou o número, o que temos é o código interno — deixa claro
+  // na nota, em vez de parecer um número de pedido esquisito
+  const ehId=(v.numeroConfirmado===false)||String(v.numero||"").length>=10;
   ctx.font="900 46px Arial"; ctx.fillStyle="#000"; ctx.fillText("#"+(v.numero||"—"),padd,y+46);
+  if(ehId){ ctx.font="700 15px Arial"; ctx.fillText("(código interno — nº do pedido em confirmação)",padd,y+68); }
   ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.fillText(new Date(v.dataHora||Date.now()).toLocaleString("pt-BR"),padd,y+72);
   if(barCanvas){
     const bw=250, bh=barCanvas.height*(bw/barCanvas.width);
