@@ -2710,6 +2710,84 @@ app.get("/api/diag/central-vs-fechamento",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// CONFERÊNCIA COMPLETA de um pedido: compara sistema x Bling (total, itens, pagamento),
+// mostra o que foi RETIRADO/ACRESCENTADO/ALTERADO com quem fez e quando, aponta os
+// produtos que provavelmente saíram por falta de estoque (conferindo o saldo atual) e
+// traz todo o histórico de pagamento. Uso: /api/diag/conferir-pedido/54894
+app.get("/api/diag/conferir-pedido/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    // acha no Bling (por id ou número)
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const pid=String(ped.id);
+    const itensBling=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+    const totalBling=Number(ped.total)||0;
+    const parcelasBling=[];
+    for(const pc of (ped.parcelas||[])) parcelasBling.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0});
+
+    // lado do SISTEMA (movimento no caixa)
+    const dCx=lerCaixaSessoes(); let mov=null, sessao=null;
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===pid){ mov=m; sessao=s; }
+    }));
+    const itensSistema=(mov?.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+    const totalSistema=Number(mov?.total||0);
+
+    // DIVERGÊNCIA
+    const difTotal=+(totalSistema-totalBling).toFixed(2);
+    const diff=mov?diffItens(itensSistema,itensBling):null; // sistema -> bling
+
+    // HISTÓRICO de alterações (do movimento e do log)
+    const log=lerLog()[pid]||[];
+    const historicoItens=log.filter(e=>["itens_alterados_caixa","itens_retirados","itens_acrescentados","itens_alterados_gestao"].includes(e.evento))
+      .map(e=>({evento:e.evento, em:e.em, quando:new Date(e.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+        por:e.funcionarioNome||"—", autorizadoPor:e.detalhes?.autorizadoPor||"", detalhes:e.detalhes||{}}));
+    const historicoPagamento=log.filter(e=>["pagamento_editado_caixa","fechado_valor_menor","pedido_reaberto"].includes(e.evento))
+      .map(e=>({evento:e.evento, em:e.em, quando:new Date(e.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+        por:e.funcionarioNome||"—", autorizadoPor:e.detalhes?.autorizadoPor||"", de:e.detalhes?.de||"", para:e.detalhes?.para||""}));
+    const alteracoesMov=(mov?.alteracoes||[]).map(a=>({...a, quando:new Date(a.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}));
+
+    // PRODUTOS QUE SAÍRAM: junta os retirados registrados no histórico e o diff atual,
+    // e confere o SALDO de cada um (pra confirmar se saiu por falta de estoque)
+    const nomesRetirados=new Set();
+    historicoItens.forEach(h=>{ (h.detalhes?.retirados||h.detalhes?.itens||[]).forEach(x=>nomesRetirados.add(String(x).replace(/^\d+x\s*/,"").trim())); });
+    (diff?.retirados||[]).forEach(i=>nomesRetirados.add(i.nome));
+    alteracoesMov.forEach(a=>{ (a.retirados||[]).forEach(x=>nomesRetirados.add(String(x).replace(/^\d+x\s*/,"").trim())); });
+    const idsParaSaldo=[...new Set([...(diff?.retirados||[]).map(i=>i.produtoId), ...itensSistema.map(i=>i.produtoId)])].filter(Boolean);
+    const saldos={};
+    for(let i=0;i<idsParaSaldo.length;i+=40){
+      const bloco=idsParaSaldo.slice(i,i+40);
+      try{
+        const r=await bling(`/estoques/saldos?${bloco.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+        (r?.data||[]).forEach(x=>{ saldos[x.produto?.id]={fisico:Number(x.saldoFisicoTotal??0), disponivel:Number(x.saldoVirtualTotal??0)}; });
+      }catch(e){}
+      await sleep(150);
+    }
+    const provavelFaltaEstoque=(diff?.retirados||[]).map(i=>({...i, saldoAtual:saldos[i.produtoId]||null,
+      semEstoque: saldos[i.produtoId] ? saldos[i.produtoId].disponivel<=0 : null }));
+
+    res.json({
+      pedido:{ id:ped.id, numero:ped.numero, situacao:nomeSituacao(ped.situacao?.id), cliente:ped.contato?.nome||"—" },
+      divergencia:{ totalSistema, totalBling, diferenca:difTotal, bate:Math.abs(difTotal)<0.01,
+        explicacao: Math.abs(difTotal)<0.01 ? "Sistema e Bling estão iguais."
+          : `O caixa registrou ${totalSistema.toFixed(2)} e o Bling tem ${totalBling.toFixed(2)} (diferença de ${difTotal.toFixed(2)}). Veja 'itensQueDiferem' pra saber quais produtos explicam isso.` },
+      itensQueDiferem: diff?{ retirados:diff.retirados, acrescentados:diff.acrescentados, alterados:diff.alterados,
+        obs:"'retirados' = está no caixa mas NÃO no Bling. 'acrescentados' = está no Bling mas não no caixa." }:"pedido não encontrado em nenhum caixa",
+      provavelFaltaEstoque,
+      produtosRetiradosNoHistorico:[...nomesRetirados],
+      itensSistema, itensBling,
+      pagamento:{ noSistema:(mov?.pagamentos||[]), noBling:parcelasBling,
+        somaSistema:+(mov?.pagamentos||[]).reduce((s,p)=>s+Number(p.valor||0),0).toFixed(2),
+        somaBling:+parcelasBling.reduce((s,p)=>s+p.valor,0).toFixed(2) },
+      historicoItens, historicoPagamento, alteracoesMovimento:alteracoesMov,
+      caixa: mov?{ operador:mov.operador||sessao?.operador, sessaoFechada:!!sessao?.fechadaEm, quando:new Date(mov.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}), alterado:!!mov.alterado }:null,
+      observacoesBling: ped.observacoes||"",
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/investigar-duplicado/:pedidoId",async(req,res)=>{
   try{
     const idBusca=String(req.params.pedidoId);
