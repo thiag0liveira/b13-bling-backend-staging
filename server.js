@@ -3989,7 +3989,49 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       salvarJSON(`${DATA_DIR}/movimentacoes_pedido.json`,movs);
     }catch(e){}
 
-    res.json({ok:true, novoTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao)});
+    // ===== SINCRONIZA O NOSSO SISTEMA (antes só salvava no Bling) =====
+    // Sem isso, o caixa e a proposta ficavam com os itens/total ANTIGOS, gerando
+    // divergência entre sistema e Bling.
+    const itensNovos=itens.map(i=>({produtoId:i.produtoId, nome:(ped.itens||[]).find(x=>String(x.produto?.id)===String(i.produtoId))?.descricao||i.nome||"",
+      quantidade:Number(i.quantidade), valor:Number(i.valor)}));
+    const diffEd=diffItens((ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})), itensNovos);
+    const sincronizado={caixa:false, proposta:false};
+    // 1) movimento no caixa (se o pedido já passou por algum)
+    try{
+      const dCx=lerCaixaSessoes(); let achou=false;
+      (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado||String(m.pedidoId)!==String(id)) return;
+        m.itens=itensNovos;
+        m.total=+Number(novoTotal).toFixed(2);
+        m.alterado=true;
+        m.alteracoes=[...(m.alteracoes||[]),{em:Date.now(),tipo:"itens",por:funcionarioNome||"—",origem:"edição pela tela de Pedidos",
+          de:diffEd.de, para:diffEd.para,
+          retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
+          alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x → ${a.para.quantidade}x`)}];
+        if(sx.fechadaEm&&sx.resumoFinal){ try{ sx.resumoFinal=resumoSessaoCaixa(sx); }catch(e){} }
+        achou=true;
+      }));
+      if(achou){ salvarCaixaSessoes(dCx); sincronizado.caixa=true; }
+    }catch(e){}
+    // 2) proposta que originou o pedido
+    try{
+      const props=lerPropostas(); let achouP=false;
+      Object.values(props||{}).forEach(p=>{
+        if(String(p.pedidoBlingId)!==String(id)) return;
+        p.itens=itensNovos;
+        p.total=+(Number(novoTotal)).toFixed(2);
+        p.atualizadoEm=Date.now();
+        p.historicoEdicoes=[...(p.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:diffEd.de,para:diffEd.para,origem:"pedido editado"}];
+        achouP=true;
+      });
+      if(achouP){ salvarPropostas(props); sincronizado.proposta=true; }
+    }catch(e){}
+    // 3) histórico do pedido (aparece na Central e na conferência)
+    if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
+
+    res.json({ok:true, novoTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+      itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
+        alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 

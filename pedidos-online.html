@@ -321,8 +321,17 @@ async function salvarEditarAguardando(id){
     const j=await fetch(B+"/api/pedidos/"+id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({itens, funcionarioNome:(S.nome||"")})}).then(r=>r.json());
     if(j.erro){ edSetMsg('<div style="color:#ff8090">❌ '+esc(j.erro)+'</div>'); return; }
+    const sinc=j.sincronizado||{};
+    const onde=["Bling"]; if(sinc.caixa) onde.push("caixa"); if(sinc.proposta) onde.push("proposta");
+    const ia=j.itensAlterados||{};
+    const resumo=[
+      ia.retirados&&ia.retirados.length?"retirou "+ia.retirados.join(", "):"",
+      ia.acrescentados&&ia.acrescentados.length?"acrescentou "+ia.acrescentados.join(", "):"",
+      ia.alterados&&ia.alterados.length?"alterou "+ia.alterados.join(", "):"",
+    ].filter(Boolean).join(" · ");
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: '+onde.join(" + ")+(resumo?"<br><span style=\"color:#9a95c9\">"+esc(resumo)+"</span>":"")+'</div>');
     if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
-    fechar(); carregar();
+    setTimeout(function(){ fechar(); carregar(); },1200);
   }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }
 }
 
