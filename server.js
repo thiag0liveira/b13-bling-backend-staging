@@ -1024,17 +1024,18 @@ app.get("/api/mesa/funcionarios",(req,res)=>{
   try{
     const funcs=lerJSON(FUNC_FILE,{});
     const mesa=lerMesa();
-    const podeSeparar=(f)=>{
-      const p=f.permissoes||[f.nivel];
-      return p.includes("admin")||p.includes("expedicao")||p.includes("gerente")
-        ||p.some(x=>["ver_separacao","separar","acesso_expedicao"].includes(x))
-        ||f.nivel==="expedicao";
+    // SOMENTE o grupo expedição — nem admin, nem gerente, nem quem só tem alguma
+    // permissão avulsa de separação: a mesa é dos separadores.
+    const ehExpedicao=(f)=>{
+      const p=f.permissoes||[];
+      return f.nivel==="expedicao" || p.includes("expedicao");
     };
     const lista=Object.entries(funcs)
-      .filter(([id,f])=>f&&f.ativo!==false&&podeSeparar(f))
+      .filter(([id,f])=>f&&f.ativo!==false&&ehExpedicao(f))
       .map(([id,f])=>({id, nome:f.nome||"—", nivel:f.nivel||"", ativoNaMesa:mesa.ativos.includes(String(id))}))
       .sort((a,b)=>a.nome.localeCompare(b.nome));
-    res.json({data:lista, ativos:mesa.ativos});
+    res.json({data:lista, ativos:mesa.ativos,
+      ...(lista.length?{}:{aviso:"Nenhum funcionário no grupo expedição. Em Funcionários, defina o nível/permissão 'expedicao' para quem vai separar."})});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{

@@ -224,7 +224,7 @@ function render(){
   const barra=FUNCS.map(function(f){
     const on=ATIVOS.includes(String(f.id));
     return '<div class="fBtn '+(on?"on":"")+'" onclick="toggleFunc(\''+esc(f.id)+'\')"><span class="pt"></span>'+esc(f.nome)+'</div>';
-  }).join("")||'<div style="color:#9a95c9;font-size:13px">Nenhum funcionário da expedição cadastrado.</div>';
+  }).join("")||'<div style="color:#ffd23f;font-size:13px;padding:6px">Nenhum funcionário no grupo <b>expedição</b>. Defina o nível/permissão "expedicao" em Funcionários para quem vai separar.</div>';
 
   const livres=ATIVOS.filter(id=>!MESAS[id]||!MESAS[id].pedido).length;
   const fila=FILA.map(function(p,ix){
