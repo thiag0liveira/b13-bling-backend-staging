@@ -2510,9 +2510,29 @@ function resumoSessaoCaixa(sessao){
   // POR FORMA: o dinheiro entra LÍQUIDO (o que o cliente entregou menos o troco que
   // voltou pra ele). Antes entrava o valor bruto entregue, o que inflava o total de
   // vendas e o dinheiro do relatório em todo pedido que teve troco.
+  //
+  // RECONCILIAÇÃO de vendas antigas (feitas antes do registro de troco/taxa existir):
+  // quando o recebido passa do valor do pedido, a sobra é
+  //   a) a TAXA do cartão (bate com 3,5% do valor do pedido) -> não é troco, o total
+  //      do pedido é que estava sem a taxa; ou
+  //   b) TROCO não lançado (cliente arredondou o dinheiro) -> desconta do dinheiro.
+  // Sem isso o caixa "sobrava" e nunca fechava.
+  const TAXA_CT=0.035;
+  const trocoEfetivo=(v)=>{
+    const reg=Number(v.troco)||0;
+    if(reg>0.009) return reg;                       // troco já registrado: usa ele
+    const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
+    const sobra=+(pago-(Number(v.total)||0)).toFixed(2);
+    if(sobra<0.02) return 0;
+    const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+    const taxaEsperada=+((Number(v.total)||0)*TAXA_CT).toFixed(2);
+    if(emCartao>0.009 && Math.abs(sobra-taxaEsperada)<0.05) return 0; // é a taxa, não troco
+    const emDinheiro=(v.pagamentos||[]).filter(p=>/dinheiro/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+    return +Math.min(sobra,emDinheiro).toFixed(2);   // troco não lançado
+  };
   const porForma={};
   vendas.forEach(v=>{
-    let trocoRestante=Number(v.troco)||0;
+    let trocoRestante=trocoEfetivo(v);
     (v.pagamentos||[]).forEach(p=>{
       const nome=p.formaNome||"Não identificada";
       let valor=Number(p.valor)||0;
@@ -2534,7 +2554,8 @@ function resumoSessaoCaixa(sessao){
   const totalSangrias=sangrias.reduce((s,m)=>s+(Number(m.valor)||0),0);
   const totalSuprimentos=suprimentos.reduce((s,m)=>s+(Number(m.valor)||0),0);
   // troco já foi descontado do dinheiro em porForma (acima) — aqui é só pra relatório
-  const trocoDevolvido=vendas.reduce((a,m)=>a+(Number(m.troco)||0),0);
+  const trocoDevolvido=vendas.reduce((a,m)=>a+trocoEfetivo(m),0);
+  const trocoNaoLancado=vendas.reduce((a,m)=>a+((Number(m.troco)||0)>0.009?0:trocoEfetivo(m)),0);
 
   // CARTÃO: quanto foi cobrado e quanto disso é a taxa de 3,5% repassada ao cliente.
   // Não entra na gaveta (não é dinheiro), mas o relatório precisa mostrar, porque a
@@ -2553,13 +2574,14 @@ function resumoSessaoCaixa(sessao){
   return {
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
     totalTroco:+totalTroco.toFixed(2),
-    vendasComTroco:vendas.filter(m=>Number(m.troco)>0.009).length,
+    vendasComTroco:vendas.filter(m=>trocoEfetivo(m)>0.009).length,
     qtdVendas:vendas.length,
     totalVendas:+totalVendas.toFixed(2),          // soma do que foi RECEBIDO (por forma, líquido)
     totalPedidos:+vendas.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2), // soma do VALOR dos pedidos
     diferencaRecebidoPedidos:+(totalVendas-vendas.reduce((a,m)=>a+(Number(m.total)||0),0)).toFixed(2),
     vendasDinheiro:+vendasDinheiro.toFixed(2),
     trocoDevolvido:+trocoDevolvido.toFixed(2),
+    trocoNaoLancado:+trocoNaoLancado.toFixed(2), // sobra tratada como troco (vendas antigas)
     vendasCartao:+vendasCartao.toFixed(2),
     taxaCartaoEmbutida,
     liquidoCartao:+(vendasCartao-taxaCartaoEmbutida).toFixed(2),
