@@ -2507,12 +2507,22 @@ function resumoSessaoCaixa(sessao){
   const sangrias=movs.filter(m=>m.tipo==="sangria");
   const suprimentos=movs.filter(m=>m.tipo==="suprimento");
 
+  // POR FORMA: o dinheiro entra LÍQUIDO (o que o cliente entregou menos o troco que
+  // voltou pra ele). Antes entrava o valor bruto entregue, o que inflava o total de
+  // vendas e o dinheiro do relatório em todo pedido que teve troco.
   const porForma={};
   vendas.forEach(v=>{
+    let trocoRestante=Number(v.troco)||0;
     (v.pagamentos||[]).forEach(p=>{
       const nome=p.formaNome||"Não identificada";
+      let valor=Number(p.valor)||0;
+      if(trocoRestante>0.009 && /dinheiro/i.test(nome)){
+        const desconta=Math.min(valor,trocoRestante);
+        valor=+(valor-desconta).toFixed(2);
+        trocoRestante=+(trocoRestante-desconta).toFixed(2);
+      }
       if(!porForma[nome]) porForma[nome]={valor:0,qtd:0};
-      porForma[nome].valor+=Number(p.valor)||0;
+      porForma[nome].valor+=valor;
       porForma[nome].qtd++;
     });
   });
@@ -2523,8 +2533,7 @@ function resumoSessaoCaixa(sessao){
   const totalVendas=Object.values(porForma).reduce((s,v)=>s+v.valor,0);
   const totalSangrias=sangrias.reduce((s,m)=>s+(Number(m.valor)||0),0);
   const totalSuprimentos=suprimentos.reduce((s,m)=>s+(Number(m.valor)||0),0);
-  // TROCO devolvido ao cliente: sai da gaveta, então precisa ser descontado do
-  // esperado (sem isso o caixa sempre "faltava" o valor dos trocos ao conferir)
+  // troco já foi descontado do dinheiro em porForma (acima) — aqui é só pra relatório
   const trocoDevolvido=vendas.reduce((a,m)=>a+(Number(m.troco)||0),0);
 
   // CARTÃO: quanto foi cobrado e quanto disso é a taxa de 3,5% repassada ao cliente.
@@ -2534,8 +2543,8 @@ function resumoSessaoCaixa(sessao){
   const vendasCartao=Object.entries(porForma).filter(([n])=>ehCartao(n)).reduce((s,[,v])=>s+v.valor,0);
   const taxaCartaoEmbutida=+(vendasCartao*TAXA/(1+TAXA)).toFixed(2);
 
-  // o que deveria ter na gaveta agora, só em dinheiro (já descontando os trocos)
-  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias-trocoDevolvido).toFixed(2);
+  // o que deveria ter na gaveta agora (vendasDinheiro já é líquido de troco)
+  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
   // se um gestor ajustou o esperado manualmente, usa esse valor (mas mantém o calculado visível)
   const temManual=(sessao.esperadoGavetaManual!==undefined&&sessao.esperadoGavetaManual!==null&&sessao.esperadoGavetaManual!=="");
   const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
@@ -2546,7 +2555,9 @@ function resumoSessaoCaixa(sessao){
     totalTroco:+totalTroco.toFixed(2),
     vendasComTroco:vendas.filter(m=>Number(m.troco)>0.009).length,
     qtdVendas:vendas.length,
-    totalVendas:+totalVendas.toFixed(2),
+    totalVendas:+totalVendas.toFixed(2),          // soma do que foi RECEBIDO (por forma, líquido)
+    totalPedidos:+vendas.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2), // soma do VALOR dos pedidos
+    diferencaRecebidoPedidos:+(totalVendas-vendas.reduce((a,m)=>a+(Number(m.total)||0),0)).toFixed(2),
     vendasDinheiro:+vendasDinheiro.toFixed(2),
     trocoDevolvido:+trocoDevolvido.toFixed(2),
     vendasCartao:+vendasCartao.toFixed(2),
@@ -2743,6 +2754,69 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // que é NF-e — as NFC-e do PDV/varejo ficam em outro lugar). Só leitura.
 // DIAGNÓSTICO (só leitura): mostra o que existe HOJE de estoque e financeiro num
 // pedido já Atendido — pra saber exatamente o que precisa ser estornado antes de editar.
+// AUDITORIA DOS CAIXAS: confere venda por venda se o que foi RECEBIDO bate com o
+// VALOR DO PEDIDO, recalcula o esperado na gaveta e aponta exatamente onde não fecha.
+// Uso: /api/diag/auditar-caixas  (ou ?data=AAAA-MM-DD)
+app.get("/api/diag/auditar-caixas",(req,res)=>{
+  try{
+    const dia=_hojeISO(req.query.data);
+    const ini=_inicioDia(dia), fim=_fimDia(dia);
+    const dCx=lerCaixaSessoes();
+    const sessoes=(dCx.sessoes||[]).filter(s=>{
+      const ab=Number(s.abertaEm||0);
+      return (ab>=ini&&ab<fim) || (!s.fechadaEm) || (Number(s.fechadaEm||0)>=ini&&Number(s.fechadaEm||0)<fim);
+    });
+    const out=sessoes.map(s=>{
+      const r=resumoSessaoCaixa(s);
+      const vendas=(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado);
+      // venda a venda: recebido x valor do pedido
+      const problemas=[];
+      vendas.forEach(m=>{
+        const pago=(m.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
+        const troco=Number(m.troco)||0;
+        const liquido=+(pago-troco).toFixed(2);
+        const total=Number(m.total)||0;
+        const dif=+(liquido-total).toFixed(2);
+        if(Math.abs(dif)>0.02){
+          problemas.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"",
+            valorPedido:total, recebidoLiquido:liquido, pagoBruto:+pago.toFixed(2), troco,
+            diferenca:dif,
+            provavel: dif>0
+              ? (troco>0?"recebeu a mais — troco pode estar errado":"recebeu MAIS que o pedido (digitação a maior ou troco não lançado)")
+              : (m.valorMenor?"pagou menos — autorizado por "+(m.valorMenor.autorizadoPor||"?"):"recebeu MENOS que o pedido (falta pagamento?)"),
+            valorMenorAutorizado:m.valorMenor||null });
+        }
+      });
+      const somaPedidos=+vendas.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2);
+      const somaRecebidoLiq=+vendas.reduce((a,m)=>a+((m.pagamentos||[]).reduce((x,p)=>x+(Number(p.valor)||0),0)-(Number(m.troco)||0)),0).toFixed(2);
+      const conf=(s.conferencias||[]).slice(-1)[0]||null;
+      return {
+        sessaoId:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente",
+        abertaEm:new Date(s.abertaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+        fechada:!!s.fechadaEm,
+        resumo:{ trocoInicial:r.trocoInicial, qtdVendas:r.qtdVendas,
+          totalRecebido:r.totalVendas, totalPedidos:r.totalPedidos,
+          diferencaRecebidoPedidos:r.diferencaRecebidoPedidos,
+          dinheiroLiquido:r.vendasDinheiro, trocoDevolvido:r.trocoDevolvido,
+          cartao:r.vendasCartao, taxaCartaoEmbutida:r.taxaCartaoEmbutida, liquidoCartao:r.liquidoCartao,
+          suprimentos:r.totalSuprimentos, sangrias:r.totalSangrias,
+          esperadoGaveta:r.esperadoGaveta, esperadoCalculado:r.esperadoGavetaCalc,
+          esperadoAjustadoManualmente:r.esperadoGavetaManual },
+        conferenciaFinal: conf?{contado:conf.contado,diferenca:conf.diferenca,em:new Date(conf.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}:null,
+        confereRecebidoXPedidos: Math.abs(somaRecebidoLiq-somaPedidos)<0.02,
+        vendasComProblema:problemas.length, problemas,
+        formula:`gaveta = ${r.trocoInicial} (inicial) + ${r.vendasDinheiro} (dinheiro líquido) + ${r.totalSuprimentos} (suprimentos) − ${r.totalSangrias} (sangrias) = ${r.esperadoGavetaCalc}`,
+      };
+    });
+    res.json({ dia, caixas:out.length, data:out,
+      resumoGeral:{
+        totalRecebido:+out.reduce((a,c)=>a+c.resumo.totalRecebido,0).toFixed(2),
+        totalPedidos:+out.reduce((a,c)=>a+c.resumo.totalPedidos,0).toFixed(2),
+        vendasComProblema:out.reduce((a,c)=>a+c.vendasComProblema,0),
+        caixasQueNaoBatem:out.filter(c=>!c.confereRecebidoXPedidos).length } });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/estorno-pedido/:numero",async(req,res)=>{
   try{
     const n=String(req.params.numero).trim();
