@@ -117,6 +117,8 @@ function render(){
           ${lins(f.porForma,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`)}
           ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
           <div class="lin" style="font-weight:800"><span>💵 Dinheiro (nossos caixas)</span><b style="color:#3ce88a">${brl(f.dinheiroTotal)}</b></div>
+          ${f.troco&&f.troco.total>0.009?`<div class="lin"><span>💸 Troco dado <span class="muted">(${f.troco.qtd} venda(s))</span></span><b style="color:#8fffc0">− ${brl(f.troco.total)}</b></div>
+          <div class="lin" style="font-weight:800"><span>💵 Dinheiro líquido na gaveta</span><b style="color:#3ce88a">${brl(f.dinheiroTotal-f.troco.total)}</b></div>`:""}
           <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div><div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>`)}
 
         ${META&&!META.erro?card("🎯 Meta do mês (atacado)",`
@@ -250,6 +252,12 @@ function render(){
         ${card("🏷️ Preço usado nos itens",lins(f.porModoPreco,m=>`<div class="lin"><span>${esc(m.modo)} <span class="muted">(${m.itens} itens · ${m.unidades} un)</span></span><b>${brl(m.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">bling = preço do Bling · atacado = tabela · fardo = preço de fardo · editado = alterado com QR</div>`)}
 
         ${card("🔐 Autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
+
+        ${(f.troco&&f.troco.qtd)?card("💸 Vendas com troco (saída de dinheiro)",`
+          <div class="big" style="font-size:20px">${brl(f.troco.total)}</div>
+          <div class="muted" style="margin-bottom:8px">${f.troco.qtd} venda(s) tiveram troco hoje</div>
+          ${lins(f.troco.vendas,v=>`<div class="lin"><span>#${esc(v.numero)} ${esc(v.cliente)}<div class="muted" style="font-size:11px">${esc(v.operador)} · ${hora(v.em)} · venda ${brl(v.total)}</div></span><b style="color:#8fffc0">${brl(v.troco)}</b></div>`)}
+          <div class="muted" style="font-size:11px;margin-top:6px">Troco sai da gaveta — já descontado do "Dinheiro líquido" no fechamento.</div>`):""}
 
         ${card("📦 Produtos retirados de pedidos",`
           <div class="muted" style="margin-bottom:8px">Produtos tirados ao <b>reabrir o pedido no caixa atacado</b> (normalmente por não ter no estoque na hora de separar).</div>

@@ -2477,8 +2477,11 @@ function resumoSessaoCaixa(sessao){
   const temManual=(sessao.esperadoGavetaManual!==undefined&&sessao.esperadoGavetaManual!==null&&sessao.esperadoGavetaManual!=="");
   const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
 
+  const totalTroco=vendas.reduce((a,m)=>a+(Number(m.troco)||0),0);
   return {
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
+    totalTroco:+totalTroco.toFixed(2),
+    vendasComTroco:vendas.filter(m=>Number(m.troco)>0.009).length,
     qtdVendas:vendas.length,
     totalVendas:+totalVendas.toFixed(2),
     vendasDinheiro:+vendasDinheiro.toFixed(2),
@@ -4989,6 +4992,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
           total:+(totalPedido+_outrasNova+_freteNova).toFixed(2), clienteNome:clienteNome||"", desconto:totalDesconto,
           outrasDespesas:_outrasNova, frete:_freteNova, operador:sessaoAtual.operador||"",
           ...(_menorNova?{valorMenor:_menorNova}:{}),
+          ...(Number(req.body.troco)>0.009?{troco:+Number(req.body.troco).toFixed(2)}:{}), // saída de dinheiro da gaveta
           itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor),modoPreco:i.modoPreco||null})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
         });
@@ -5479,7 +5483,7 @@ app.get("/api/caixa-atacado/finalizar/status/:opId",(req,res)=>{
 });
 
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
-  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase}=req.body||{};
+  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco}=req.body||{};
   const opId=req.body?.opId?String(req.body.opId):null;
   if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
   if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
@@ -5565,6 +5569,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
           total:totalPagar, clienteNome:clienteNome||ped.contato?.nome||"", origem:"caixa_atacado",
           outrasDespesas:_outras, frete:_frete, operador:sessaoAtual.operador||"",
           ...(_menor?{valorMenor:_menor}:{}),
+          ...(Number(troco)>0.009?{troco:+Number(troco).toFixed(2)}:{}), // saída de dinheiro da gaveta
           itens:itensEfetivos.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})) };
         const reg=registrarVendaNoCaixa(dCx, sessaoAtual, mov, {itensDiff:itensMudaram?diff:null, por:funcNome});
@@ -7662,6 +7667,7 @@ app.get("/api/central/resumo",(req,res)=>{
     const porForma={}, porOperador={}, clientes={}, produtos={}, porModo={};
     const porTipo={ atacado:{total:0,qtd:0,porForma:{}}, frente:{total:0,qtd:0,porForma:{}} };
     let totalDia=0, qtdDia=0, sangrias=0, supr=0, canceladas=0, consumidorFinal={qtd:0,valor:0};
+    let totalTrocoDia=0; const vendasComTroco=[];
     const vendasDia=[];
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
@@ -7674,6 +7680,7 @@ app.get("/api/central/resumo",(req,res)=>{
         const tipo=(s.tipoCaixa||"frente")==="atacado"?"atacado":"frente";
         vendasDia.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"Consumidor Final", total:tot, operador:m.operador||s.operador||"—", em:m.em, tipoCaixa:tipo, formas:(m.pagamentos||[]).map(p=>p.formaNome).join(", ") });
         porTipo[tipo].total+=tot; porTipo[tipo].qtd++;
+        if(Number(m.troco)>0.009){ totalTrocoDia+=Number(m.troco); vendasComTroco.push({numero:m.numero||m.pedidoId, cliente:m.clienteNome||"", troco:+Number(m.troco).toFixed(2), total:tot, operador:m.operador||s.operador||"", em:m.em}); }
         (m.pagamentos||[]).forEach(p=>{ const k=p.formaNome||"—"; porForma[k]=(porForma[k]||0)+(Number(p.valor)||0); porTipo[tipo].porForma[k]=(porTipo[tipo].porForma[k]||0)+(Number(p.valor)||0); });
         const op=m.operador||s.operador||"—"; if(!porOperador[op]) porOperador[op]={qtd:0,valor:0}; porOperador[op].qtd++; porOperador[op].valor+=tot;
         const cli=(m.clienteNome||"").trim(); if(!cli||/consumidor/i.test(cli)){ consumidorFinal.qtd++; consumidorFinal.valor+=tot; } else { if(!clientes[cli]) clientes[cli]={qtd:0,valor:0}; clientes[cli].qtd++; clientes[cli].valor+=tot; }
@@ -7698,6 +7705,8 @@ app.get("/api/central/resumo",(req,res)=>{
         varejo:{ total:+porTipo.frente.total.toFixed(2), qtd:porTipo.frente.qtd, porForma:arr(porTipo.frente.porForma,(nome,valor)=>({nome,valor:+valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor) },
       },
       dinheiroTotal:+(dinheiroAtacado+dinheiroVarejo).toFixed(2), dinheiroAtacado, dinheiroVarejo,
+      troco:{ total:+totalTrocoDia.toFixed(2), qtd:vendasComTroco.length,
+        vendas:vendasComTroco.sort((a,b)=>b.troco-a.troco).slice(0,20) },
     };
 
     // ===== AUTORIZAÇÕES e ITENS RETIRADOS (logs do dia) =====

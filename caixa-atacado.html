@@ -241,6 +241,8 @@ function confirmarBancosPix(){
   finalizar();
 }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
+// troco = quanto o cliente entregou a mais do que o total (saída de dinheiro da gaveta)
+function trocoAtual(){ const r=restante(); return r<-0.009 ? +(-r).toFixed(2) : 0; }
 // tira da observação as notas automáticas do sistema, deixando só o texto do usuário
 function limparObs(obs){
   if(!obs) return "";
@@ -356,6 +358,7 @@ async function modalFechar(){
       <h3>🔒 Fechar caixa — conferência</h3>
       <div class="card" style="background:#12102e">
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+        ${r.totalTroco>0.009?`<div class="linha"><span>💸 Troco dado (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.totalTroco)}</b></div>`:""}
         <div class="linha"><span>Vendas em dinheiro</span><b>${brl(r.vendasDinheiro)}</b></div>
         <div class="linha"><span>+ Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
         <div class="linha"><span>− Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
@@ -1180,6 +1183,11 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
     ctx.font="900 18px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(p.formaNome||"—",padd,y);
     ctx.textAlign="right"; ctx.fillText(brl(p.valor),W-padd,y); y+=30;
   });
+  // TROCO — quanto voltou pro cliente (saída de dinheiro da gaveta)
+  if(Number(v.troco)>0.009){
+    y+=4; ctx.font="900 24px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("TROCO",padd,y);
+    ctx.textAlign="right"; ctx.font="900 26px Arial"; ctx.fillText(brl(v.troco),W-padd,y); y+=34;
+  }
   // observação
   if(v.observacao && String(v.observacao).trim()){
     y+=8; ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("OBSERVAÇÃO",padd,y); y+=24;
@@ -1276,6 +1284,7 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
     <h3>Dinheiro na gaveta</h3>
     <table>
       <tr><td>Troco inicial</td><td class="v">${brl(resumo.trocoInicial)}</td></tr>
+      ${resumo.totalTroco>0.009?`<tr><td>Troco dado (${resumo.vendasComTroco} venda(s))</td><td class="v">- ${brl(resumo.totalTroco)}</td></tr>`:""}
       <tr><td>Vendas em dinheiro</td><td class="v">${brl(resumo.vendasDinheiro)}</td></tr>
       <tr><td>+ Suprimentos</td><td class="v">${brl(resumo.totalSuprimentos)}</td></tr>
       <tr><td>- Sangrias</td><td class="v">${brl(resumo.totalSangrias)}</td></tr>
@@ -1489,6 +1498,7 @@ function render(){
       <div class="card">
         <h3>📊 Resumo do caixa</h3>
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
+        ${r.totalTroco>0.009?`<div class="linha"><span>💸 Troco dado (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.totalTroco)}</b></div>`:""}
         <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
         <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
         <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
@@ -1509,6 +1519,7 @@ function render(){
 function mostrarSucessoFinalizacao(resp, ctx){
   const {total, itens, pagamentos, observacao, taxaCredito, emitirNfce}=ctx;
   ULTIMA_VENDA={
+    troco: ctx.troco||0,
     numero:resp.numero||PEDIDO_ATUAL?.numero||resp.pedidoId, pedidoId:resp.pedidoId||PEDIDO_ATUAL?.id,
     total:total, desconto:0, outrasDespesas:+(OUTRAS_DESPESAS+taxaCredito).toFixed(2), frete:FRETE,
     itens:itens.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.valor})),
@@ -1607,14 +1618,14 @@ async function finalizar(){
       const t=setTimeout(()=>ctrl.abort(),ms);
       return fetch(url,{...opts,signal:ctrl.signal}).finally(()=>clearTimeout(t));
     };
-    const ctx={total, itens, pagamentos, observacao, taxaCredito, emitirNfce};
+    const ctx={total, itens, pagamentos, observacao, taxaCredito, emitirNfce, troco:trocoAtual()};
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({opId:OP_ID,pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,troco:trocoAtual()})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({opId:OP_ID,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,troco:trocoAtual()})}).then(r=>r.json());
     }
     if(resp.emAndamento){
       // já está sendo processada (outra aba/clique) — espera a conclusão em vez de repetir

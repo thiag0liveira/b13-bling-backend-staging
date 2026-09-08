@@ -153,7 +153,7 @@ window.carregarHistorico=async function(){
 }
 
 window.nomeMovimento=function(m){
-  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>`;
+  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}${Number(m.troco)>0.009?` · <span style="color:#8fffc0;font-weight:800">💵 troco ${brl(m.troco)}</span>`:""}</div>`;
   if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>`:""}`;
   if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>`:""}`;
   return esc(m.tipo);

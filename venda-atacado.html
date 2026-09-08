@@ -1184,6 +1184,11 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg){
     ctx.font="900 18px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText(p.formaNome||"—",padd,y);
     ctx.textAlign="right"; ctx.fillText(brl(p.valor),W-padd,y); y+=30;
   });
+  // TROCO — quanto voltou pro cliente (saída de dinheiro da gaveta)
+  if(Number(v.troco)>0.009){
+    y+=4; ctx.font="900 24px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("TROCO",padd,y);
+    ctx.textAlign="right"; ctx.font="900 26px Arial"; ctx.fillText(brl(v.troco),W-padd,y); y+=34;
+  }
   // observação
   if(v.observacao && String(v.observacao).trim()){
     y+=8; ctx.font="900 15px Arial"; ctx.fillStyle="#000"; ctx.textAlign="left"; ctx.fillText("OBSERVAÇÃO",padd,y); y+=24;
