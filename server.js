@@ -2575,6 +2575,28 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // de Consumidor Final. Uso: ?data=AAAA-MM-DD (padrão: hoje, horário de Brasília)
 // DIAGNÓSTICO: descobre como o SEU Bling expõe depósitos e saldos por depósito.
 // Nada aqui grava nada — é só leitura, pra montar o painel de estoque com segurança.
+// DIAGNÓSTICO: descobre como listar as NFC-e emitidas (a Central usava /nfe?tipo=1,
+// que é NF-e — as NFC-e do PDV/varejo ficam em outro lugar). Só leitura.
+app.get("/api/diag/nfce-listar",async(req,res)=>{
+  const dia=_hojeISO(req.query.data);
+  const out={dia};
+  const tentativas=[
+    ["/nfce (com data)", `/nfce?dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=10`],
+    ["/nfce (sem filtro)", `/nfce?limite=5`],
+    ["/nfe tipo=1 (NF-e saída)", `/nfe?tipo=1&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=10`],
+    ["/notas-fiscais-consumidor", `/notas-fiscais-consumidor?limite=5`],
+  ];
+  for(const [nome,path] of tentativas){
+    try{
+      const r=await bling(path);
+      const arr=r?.data||[];
+      out[nome]={ok:true, qtd:arr.length, amostra:arr.slice(0,3).map(n=>({id:n.id,numero:n.numero,serie:n.serie,dataEmissao:n.dataEmissao,situacao:n.situacao,valor:n.valorNota??n.valor,contato:n.contato?.nome,tipo:n.tipo}))};
+    }catch(e){ out[nome]={ok:false,status:e.status,erro:e.message}; }
+    await sleep(200);
+  }
+  res.json(out);
+});
+
 app.get("/api/diag/depositos",async(req,res)=>{
   const out={};
   // 1) endpoint de depósitos
