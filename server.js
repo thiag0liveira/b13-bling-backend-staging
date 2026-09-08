@@ -9780,6 +9780,31 @@ app.get("/api/atacado/pedido/:blingId/numero",async(req,res)=>{
   }catch(e){ res.json({numero:null}); }
 });
 
+// EDITAR os itens de uma PROPOSTA (ainda não virou pedido no Bling — é registro local)
+app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+(prop.pedidoBlingNumero||prop.pedidoBlingId)+" — edite pelo pedido"});
+    const {itens,funcionarioNome}=req.body||{};
+    if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"a proposta precisa ter ao menos 1 item"});
+    for(const i of itens){
+      if(!i.produtoId) return res.status(400).json({erro:"todos os itens precisam de produto"});
+      if(!(Number(i.quantidade)>0)) return res.status(400).json({erro:"quantidade inválida em algum item"});
+    }
+    const antes=(prop.itens||[]).map(i=>`${Number(i.quantidade)}x ${i.nome||i.produtoId}`).join(", ");
+    prop.itens=itens.map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor)}));
+    const totalItens=prop.itens.reduce((s,i)=>s+i.quantidade*i.valor,0);
+    prop.total=+(totalItens+(prop.entrega?.tipo==="entrega"?Number(prop.entrega.taxa||0):0)).toFixed(2);
+    prop.atualizadoEm=Date.now();
+    const depois=prop.itens.map(i=>`${i.quantidade}x ${i.nome||i.produtoId}`).join(", ");
+    prop.historicoEdicoes=[...(prop.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:antes,para:depois}];
+    props[prop.id]=prop; salvarPropostas(props);
+    res.json({ok:true, total:prop.total, itens:prop.itens});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
   try{
     const props=lerPropostas();

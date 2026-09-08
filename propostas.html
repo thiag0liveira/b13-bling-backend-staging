@@ -208,6 +208,7 @@ function cardProposta(p){
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
       ${p.cliente?.telefone?`<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>`:''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
+      ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-mag" onclick='editarProposta(${JSON.stringify(p.id)})'>✏️ Editar</button>`:''}
       ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
       ${p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='editarPedido(${JSON.stringify(p.pedidoBlingId)},${JSON.stringify(p.pedidoBlingNumero)})'>✏️ Editar pedido</button>`:''}
       ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
@@ -226,6 +227,15 @@ function fecharModalEd(){ modaisEl().innerHTML=""; }
 function edMsg(h){ const el=document.getElementById("edMsgProp"); if(el) el.innerHTML=h; }
 function totalEd(){ return (window.itensEd||[]).filter(i=>!i._rm).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
 
+// edita uma PROPOSTA (ainda não virou pedido) — mesmo modal, mas salva no registro local
+function editarProposta(propId){
+  const p=LISTA.find(x=>x.id===propId);
+  if(!p){ alert("Proposta não encontrada."); return; }
+  window.pedEd={propostaId:propId, numero:"(proposta) "+(p.cliente?.nome||""), ehProposta:true};
+  window.itensEd=(p.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor), _rm:false, _novo:false}));
+  modaisEl().innerHTML='<div class="modalBg"><div class="modalEd" id="boxEd"></div></div>';
+  renderEdicao();
+}
 async function editarPedido(blingId,numero){
   try{
     // pedido já pago exige autorização (mesma regra de antes)
@@ -257,9 +267,9 @@ function renderEdicao(){
   }).join("");
   document.getElementById("boxEd").innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-      '<h3 style="margin:0">✏️ Pedido '+esc(window.pedEd.numero)+'</h3>'+
+      '<h3 style="margin:0">✏️ '+(window.pedEd.ehProposta?"Proposta":"Pedido")+' '+esc(window.pedEd.numero)+'</h3>'+
       '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>'+
-    '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. Ao salvar, atualiza no Bling.</div>'+
+    '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. '+(window.pedEd.ehProposta?"A proposta é atualizada aqui no sistema (ainda não existe no Bling).":"Ao salvar, atualiza no Bling.")+'</div>'+
     '<div style="max-height:40vh;overflow:auto">'+rows+'</div>'+
     '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">'+
       '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">'+brl(totalEd())+'</b></div>'+
@@ -270,7 +280,7 @@ function renderEdicao(){
     '<div id="edMsgProp" style="margin-top:8px"></div>'+
     '<div style="display:flex;gap:8px;margin-top:12px">'+
       '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>'+
-      '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 Salvar no Bling</button></div>';
+      '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 '+(window.pedEd.ehProposta?"Salvar proposta":"Salvar no Bling")+'</button></div>';
 }
 function mudarQtdEd(ix,v){ window.itensEd[ix].quantidade=Math.max(1,parseInt(v)||1); const t=document.getElementById("edTotalProp"); if(t) t.textContent=brl(totalEd()); }
 function removerItemEd(ix){ window.itensEd[ix]._rm=true; renderEdicao(); }
@@ -302,11 +312,15 @@ function addItemEd(r){
   renderEdicao();
 }
 async function salvarEdicao(){
-  const itens=(window.itensEd||[]).filter(i=>!i._rm).map(i=>({produtoId:i.produtoId,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
-  if(!itens.length){ edMsg('<div style="color:#ff8090;font-size:12px">O pedido precisa ter ao menos 1 item.</div>'); return; }
-  edMsg('<div class="muted" style="font-size:12px">Salvando no Bling…</div>');
+  const ehProp=!!(window.pedEd&&window.pedEd.ehProposta);
+  const itens=(window.itensEd||[]).filter(i=>!i._rm).map(i=>({produtoId:i.produtoId,nome:i.descricao,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+  if(!itens.length){ edMsg('<div style="color:#ff8090;font-size:12px">Precisa ter ao menos 1 item.</div>'); return; }
+  edMsg('<div class="muted" style="font-size:12px">'+(ehProp?"Salvando a proposta…":"Salvando no Bling…")+'</div>');
   try{
-    const j=await fetch(B+"/api/pedidos/"+window.pedEd.id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
+    const url=ehProp
+      ? B+"/api/atacado/propostas/"+encodeURIComponent(window.pedEd.propostaId)+"/editar-itens"
+      : B+"/api/pedidos/"+window.pedEd.id+"/editar-itens";
+    const j=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({itens, funcionarioNome:(typeof b13GetSession==="function"?((b13GetSession()||{}).nome||""):"")})}).then(r=>r.json());
     if(j.erro){ edMsg('<div style="color:#ff8090;font-size:12px">❌ '+esc(j.erro)+'</div>'); return; }
     if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
