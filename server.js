@@ -454,10 +454,10 @@ function b13Logout(){ b13ClearSession(); location.href="/login"; }
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
 window.B13_NAV_LINKS=[
   // grupo:"" (ou ausente) = link solto no topo. Os demais viram seções recolhíveis.
-  {href:"/central",label:"🏠 Central",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {href:"/central",label:"🏠 Central",acoes:["acesso_central"]},
+  {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
   {href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
-  {href:"/pedidos-online",label:"🛒 Pedidos",acoes:["ver_aguardando","acesso_propostas","editar_pedido","admin"]},
+  {href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
   {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
 
   {grupo:"Vendas & Caixa",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
@@ -466,12 +466,12 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
-  {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
 
-  {grupo:"Estoque",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {grupo:"Estoque",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_estoque","editar_pedido","admin"]},
-  {grupo:"Estoque",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"Estoque",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
+  {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
+  {grupo:"Estoque",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
+  {grupo:"Estoque",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
   {grupo:"Estoque",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
 
   {grupo:"Listas & Imagens",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
@@ -10945,6 +10945,43 @@ app.get("/api/vendedor/top-produto",async(req,res)=>{
     res.json({data:top});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
+// MIGRAÇÃO (roda uma vez): cada aba do menu passou a ter uma permissão EXCLUSIVA.
+// Antes, várias abas compartilhavam a mesma ação (ex: acesso_propostas valia pra
+// Central, Avisos, Propostas, Gestão de NFC-e e Entradas) — por isso marcar uma
+// marcava várias. Aqui converto o acesso que cada funcionário JÁ TINHA em permissões
+// explícitas por aba, pra ninguém perder acesso na virada.
+function migrarPermissoesPorAba(){
+  try{
+    const marcaFile=`${DATA_DIR}/_migracao_perms_v2.json`;
+    if(fs.existsSync(marcaFile)) return;
+    const funcs=lerJSON(FUNC_FILE,{});
+    const links=[
+      // (href, ação própria nova, ações que ANTES davam acesso a essa aba)
+      ["/central","acesso_central",["acesso_propostas","receber_pagamento","editar_pedido"]],
+      ["/avisos","acesso_avisos",["acesso_propostas","receber_pagamento","editar_pedido"]],
+      ["/pedidos-online","acesso_pedidos_online",["ver_aguardando","acesso_propostas","editar_pedido"]],
+      ["/gestao-nfce","acesso_gestao_nfce",["acesso_propostas","receber_pagamento","editar_pedido"]],
+      ["/estoque","acesso_estoque_painel",["acesso_estoque","editar_pedido"]],
+      ["/entrada-estoque","acesso_entrada_estoque",["acesso_estoque","editar_pedido"]],
+      ["/entradas","acesso_entradas_nf",["acesso_propostas","receber_pagamento","editar_pedido"]],
+    ];
+    let mudou=0;
+    Object.values(funcs).forEach(f=>{
+      if(!f||!Array.isArray(f.permissoes)) return;
+      if(f.permissoes.includes("admin")) return; // admin já vê tudo
+      links.forEach(([href,propria,antigas])=>{
+        if(f.permissoes.includes(propria)) return;
+        const tinhaAcesso=antigas.some(a=>b13PodeComPermissoes(a,f.permissoes));
+        if(tinhaAcesso){ f.permissoes.push(propria); mudou++; }
+      });
+    });
+    if(mudou) salvarJSON(FUNC_FILE,funcs);
+    salvarJSON(marcaFile,{em:Date.now(),permissoesAdicionadas:mudou});
+    console.log(`[migração] permissões por aba: ${mudou} permissão(ões) preservadas`);
+  }catch(e){ console.error("[migração] falhou:",e.message); }
+}
+migrarPermissoesPorAba();
 
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 

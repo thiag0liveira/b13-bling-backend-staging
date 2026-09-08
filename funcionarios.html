@@ -174,12 +174,16 @@ function abaLiberada(tab){
 // em ações próprias explícitas de cada aba. Assim, quando a tela passa a controlar
 // por aba, o que aparece marcado = o que está salvo, sem sumir acesso que ele já
 // tinha. Roda uma vez ao abrir a edição.
+// Converte acesso ANTIGO (por nível) em ação própria da aba — mas SÓ pras abas que
+// ainda dependem de capacidade compartilhada. Abas com permissão exclusiva (as novas)
+// não entram aqui de propósito: tela nova nasce sem acesso pra todos, só admin vê,
+// e você libera manualmente pra quem precisar.
 function normalizarPermsParaAbas(){
   if(PERMS_ATUAL.includes("admin")) return;
   if(typeof b13PodeComPermissoes!=="function") return;
   (window.B13_NAV_LINKS||[]).forEach(tab=>{
     const propria=acaoPropriaDe(tab);
-    // se ele já acessa essa aba (por qualquer via) mas não tem a ação própria, adiciona
+    if(tab.acoes.length<=1) return; // aba com permissão exclusiva: não herda nada
     const acessaAgora=tab.acoes.some(a=>b13PodeComPermissoes(a,PERMS_ATUAL));
     if(acessaAgora && !PERMS_ATUAL.includes(propria)) PERMS_ATUAL.push(propria);
   });
@@ -196,7 +200,7 @@ function htmlPermsBlock(checked){
       </label>
       <div id="fAbasLista"></div>
     </div>
-    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Cada aba agora tem sua própria permissão — marcar/desmarcar uma não afeta as outras.</div>`;
+    <div class="muted" style="font-size:11px;margin:-6px 0 10px">Cada aba tem sua própria permissão — marcar/desmarcar uma não afeta as outras. <b>Tela nova criada no sistema começa sem acesso pra todo mundo</b> (só admin vê) até você liberar aqui.</div>`;
 }
 function renderAbasLista(){
   const box=document.getElementById("fAbasLista"); if(!box) return;
