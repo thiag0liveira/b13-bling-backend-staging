@@ -221,6 +221,12 @@ function render(){
           <div class="lin"><span>🧾 NFC-e (consumidor)</span><b>${b.notasEmitidas.nfce?.qtd||0} · ${brl(b.notasEmitidas.nfce?.valor)}</b></div>
           ${b.notasEmitidas.nfce?.canceladas?`<div class="lin"><span class="muted">· canceladas/denegadas</span><b class="muted">${b.notasEmitidas.nfce.canceladas}</b></div>`:""}
           <div class="lin"><span>📄 NF-e (saída)</span><b>${b.notasEmitidas.nfe?.qtd||0} · ${brl(b.notasEmitidas.nfe?.valor)}</b></div>
+          ${b.notasEmitidas.qtdComProblema?`
+            <div class="h" style="margin-top:10px;color:#ff8090"><span>⚠️ Notas que não foram autorizadas (${b.notasEmitidas.qtdComProblema})</span></div>
+            ${lins(b.notasEmitidas.comProblema,n=>`<div class="lin"><span>nº ${esc(n.numero)}${n.serie?"/"+esc(n.serie):""} <span class="muted">${esc(n.cliente)}</span></span><b style="color:${n.situacaoId===2?'#9a95c9':'#ff8090'}">${esc(n.situacao)}</b></div>`)}
+            <div class="muted" style="font-size:11px;margin-top:4px">Rejeitada/Denegada precisa de correção fiscal. Pendente/Aguardando pode ser só transmissão travada — reenvie pelo Bling.</div>
+          `:'<div class="muted" style="margin-top:8px;color:#3ce88a">✅ Todas as notas do dia foram autorizadas.</div>'}
+          ${b.notasEmitidas.porSituacao?.length>1?`<div class="h" style="margin-top:10px"><span>Por situação</span></div>`+lins(b.notasEmitidas.porSituacao,x=>`<div class="lin"><span>${esc(x.nome)}</span><b>${x.qtd}</b></div>`):""}
         `:'<div class="lin"><span>Notas emitidas (Bling)</span><b><span class="muted">⏳</span></b></div>'}
           <div class="lin"><span>NFC-e emitidas pelo sistema</span><b>${D.nfce?.emitidasDia||0}</b></div>
           <div class="lin"><span>Vendas atacado sem NFC-e</span><b style="color:${D.nfce?.pendentesDia?'#ffd23f':'#3ce88a'}">${D.nfce?.pendentesDia||0}</b></div>

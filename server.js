@@ -7177,8 +7177,11 @@ async function _atualizarCentralBling(dia){
       let nfce=[], nfe=[];
       try{ nfce=await buscarTudo(`/nfce?${janela}`); }catch(e){}
       try{ nfe=await buscarTudo(`/nfe?tipo=1&${janela}`); }catch(e){}
-      // situação 5 = Autorizada (as canceladas/denegadas não contam no faturamento)
+      // situação 5 = Autorizada (as canceladas/denegadas não contam no faturamento).
+      // As demais indicam problema (rejeitada, denegada, pendente de transmissão...).
       const autorizadas=(l)=>l.filter(n=>Number(n.situacao)===5);
+      const nomeSitNota=(c)=>({1:"Pendente",2:"Cancelada",3:"Aguardando recibo",4:"Rejeitada",5:"Autorizada",
+        6:"Emitida DANFE",7:"Registrada",8:"Aguardando protocolo",9:"Denegada",10:"Consultando situação",11:"Bloqueada"})[Number(c)]||("Situação "+c);
       const nfceOk=autorizadas(nfce), nfeOk=autorizadas(nfe);
       // a listagem do Bling não traz o valor da nota — busca o detalhe (em blocos,
       // pra não travar) só das autorizadas do dia
@@ -7201,6 +7204,14 @@ async function _atualizarCentralBling(dia){
         nfce:{qtd:nfceOk.length, valor:sNfce.soma, canceladas:nfce.length-nfceOk.length},
         nfe:{qtd:nfeOk.length, valor:sNfe.soma},
         semValor:sNfce.semValor,
+        // quebra por situação e as que NÃO ficaram autorizadas (precisam de atenção)
+        porSituacao:Object.entries([...nfce,...nfe].reduce((acc,n)=>{ const k=nomeSitNota(n.situacao); acc[k]=(acc[k]||0)+1; return acc; },{}))
+          .map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd),
+        comProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5)
+          .map(n=>({numero:n.numero, serie:n.serie, situacao:nomeSitNota(n.situacao), situacaoId:Number(n.situacao),
+            cliente:n.contato?.nome||"—", dataEmissao:n.dataEmissao, id:n.id}))
+          .sort((a,b)=>String(b.dataEmissao||"").localeCompare(String(a.dataEmissao||""))).slice(0,20),
+        qtdComProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5).length,
         porCliente:Object.entries([...nfceOk,...nfeOk].reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+pegaValor(n); return acc; },{}))
           .map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,15) };
     }catch(e){ out.notasEmitidas={erro:e.message}; }
