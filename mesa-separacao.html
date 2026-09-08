@@ -65,6 +65,29 @@ const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
 let FUNCS=[], ATIVOS=[], FILA=[], LOCKS={};
+let IDS_FILA=null; // ids já vistos — pra detectar pedido NOVO e avisar com som
+
+// bipe gerado no próprio navegador (sem depender de arquivo de áudio)
+let _audioCtx=null;
+function bipe(){
+  try{
+    _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==="suspended") _audioCtx.resume();
+    // dois toques curtos, agudos — audível no galpão sem ser irritante
+    [0,0.22].forEach(function(atraso,i){
+      const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+      o.type="sine"; o.frequency.value=i?1180:880;
+      g.gain.setValueAtTime(0.0001,_audioCtx.currentTime+atraso);
+      g.gain.exponentialRampToValueAtTime(0.5,_audioCtx.currentTime+atraso+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,_audioCtx.currentTime+atraso+0.18);
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.start(_audioCtx.currentTime+atraso); o.stop(_audioCtx.currentTime+atraso+0.2);
+    });
+  }catch(e){}
+}
+// navegador só deixa tocar som depois de uma interação — o primeiro toque libera
+function liberarSom(){ try{ _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)(); if(_audioCtx.state==="suspended") _audioCtx.resume(); SOM_LIBERADO=true; render(); }catch(e){} }
+let SOM_LIBERADO=false, SOM_LIGADO=true, PISCA=false;
 // trabalho de cada separador: funcionarioId -> {pedido, itens:[...], carregando}
 let MESAS={};
 let TIMER=null, CARREGANDO=false;
@@ -81,7 +104,18 @@ async function carregar(silent){
     // com o ID cru de alguém que saiu do grupo ou foi excluído
     const idsValidos=new Set(FUNCS.map(x=>String(x.id)));
     ATIVOS=(e.ativos||[]).map(a=>String(a.id)).filter(id=>idsValidos.has(id));
-    FILA=e.fila||[]; LOCKS=e.locks||{};
+    LOCKS=e.locks||{};
+    const nova=e.fila||[];
+    // pedido NOVO na fila -> bipe + piscada (só depois da 1ª carga, pra não tocar ao abrir)
+    if(IDS_FILA){
+      const novos=nova.filter(p=>!IDS_FILA.has(String(p.id)));
+      if(novos.length){
+        if(SOM_LIGADO&&SOM_LIBERADO) bipe();
+        PISCA=true; setTimeout(function(){ PISCA=false; render(); },4000);
+      }
+    }
+    IDS_FILA=new Set(nova.map(p=>String(p.id)));
+    FILA=nova;
   }catch(err){}
   CARREGANDO=false; render();
 }
@@ -167,7 +201,7 @@ async function concluir(funcId){
     .map(c=>({descricao:c.descricao,produtoId:c.produtoId,quantidade:c.quantidade,temQtd:c.temQtd||0,falta:Math.max(0,c.quantidade-(c.temQtd||0))}))
     .filter(x=>x.falta>0);
   if(faltas.length){
-    if(!confirm("Concluir com "+faltas.length+" item(ns) com falta?\n\n"+faltas.map(x=>x.descricao+": tem "+x.temQtd+" de "+x.quantidade).join("\n")+"\n\nO pedido vai pra SEPARADO C/ PENDÊNCIAS.")) return;
+    if(!confirm("Concluir com "+faltas.length+" item(ns) com falta?\n\n"+faltas.map(x=>x.descricao+": encontrou "+x.temQtd+" de "+x.quantidade).join("\n")+"\n\nO pedido vai pra SEPARADO C/ PENDÊNCIAS.")) return;
   }
   const num=m.pedido.numero||m.pedido.id;
   MESAS[funcId].salvando=true; render();
@@ -199,14 +233,14 @@ function colunaHtml(funcId){
     const cx=(c.un>1)?" ("+(c.quantidade/c.un).toFixed(c.quantidade%c.un?1:0)+" cx)":"";
     return '<div class="it '+cls+'">'+
       '<div class="itNome">'+esc(c.descricao)+'</div>'+
-      '<div class="itQtd">'+c.quantidade+' un'+cx+(c.confirmado&&c.estado==="falta"?' · <span style="color:#ff8090">tem '+(c.temQtd||0)+'</span>':'')+'</div>'+
+      '<div class="itQtd">'+c.quantidade+' un'+cx+(c.confirmado&&c.estado==="falta"?' · <span style="color:#ff8090">encontrou '+(c.temQtd||0)+'</span>':'')+'</div>'+
       '<div class="bts">'+
-        '<button class="b bok" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'tem\')">✓ Tem tudo</button>'+
+        '<button class="b bok" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'tem\')">✓ Encontrou tudo</button>'+
         '<button class="b bfa" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'falta\')">Falta</button>'+
       '</div>'+
       (c.confirmado&&c.estado==="falta"?'<div class="bts">'+
         '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',-1)">−</button>'+
-        '<button class="b bgh" style="flex:2">tem '+(c.temQtd||0)+' de '+c.quantidade+'</button>'+
+        '<button class="b bgh" style="flex:2">encontrou '+(c.temQtd||0)+' de '+c.quantidade+'</button>'+
         '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',1)">+</button>'+
       '</div>':'')+
     '</div>';
@@ -249,8 +283,11 @@ function render(){
   app.innerHTML=
     '<div class="barraFunc">'+barra+'<div style="flex:1"></div>'+
       '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">'+ATIVOS.length+' ativo(s) · '+livres+' livre(s)</div>'+
+      (SOM_LIBERADO
+        ? '<div class="fBtn '+(SOM_LIGADO?"on":"")+'" onclick="SOM_LIGADO=!SOM_LIGADO;render()" style="min-height:44px">'+(SOM_LIGADO?"🔔":"🔕")+'</div>'
+        : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>')+
       '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>'+
-    '<div class="filaWrap"><div class="filaTit">Fila de separação — ordem de confirmação ('+FILA.length+')</div>'+
+    '<div class="filaWrap"'+(PISCA?' style="background:#123a2a;border-bottom-color:#3ce88a"':'')+'><div class="filaTit">Fila de separação — ordem de confirmação ('+FILA.length+')'+(PISCA?' <span style="color:#3ce88a">· PEDIDO NOVO!</span>':'')+'</div>'+
       '<div class="fila">'+fila+'</div></div>'+
     '<div class="colunas">'+cols+'</div>';
 }
