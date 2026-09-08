@@ -7291,6 +7291,69 @@ async function _atualizarCentralBling(dia){
   _centralBling=out;
 }
 
+// ===== ENTREGAS AGENDADAS (acompanhamento por dia) =====
+// Junta: o agendamento (dia/turno/observação), o pedido (cliente, valor, frete) e o
+// que o CAIXA ATACADO já registrou (se foi pago e como). Tudo local = instantâneo.
+app.get("/api/central/entregas",(req,res)=>{
+  try{
+    const turnos=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+    const props=lerPropostas();
+    const porPedido={}; // pedidoBlingId -> proposta (tem cliente, total, entrega)
+    Object.values(props||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
+    // o que o caixa atacado já cobrou de cada pedido
+    const dCx=lerCaixaSessoes(); const noCaixa={};
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo!=="venda"||m.cancelado||!m.pedidoId) return;
+      noCaixa[String(m.pedidoId)]={ total:Number(m.total)||0, em:m.em, operador:m.operador||s.operador||"",
+        formas:(m.pagamentos||[]).map(x=>`${x.formaNome}: ${Number(x.valor).toFixed(2)}`).join(" · ") };
+    }));
+    const pags=lerPag();
+    const dias={};
+    Object.entries(turnos).forEach(([pid,ag])=>{
+      if(!ag||!ag.data) return;
+      const prop=porPedido[pid]||null;
+      const cx=noCaixa[pid]||null;
+      const pg=pags[pid]||null;
+      const sit=_sitOnline[pid]||null;
+      const total=Number(prop?.total ?? cx?.total ?? 0);
+      const frete=Number(prop?.entrega?.taxa||0);
+      const item={
+        pedidoId:pid, numero:ag.numero||prop?.pedidoBlingNumero||pid,
+        cliente:prop?.cliente?.nome||"—",
+        endereco:prop?.entrega?.endereco||"",
+        turno:ag.turno||"qualquer", obsEntrega:ag.obsEntrega||"", agendadoPor:ag.por||"",
+        total, frete,
+        pago: !!cx || pg?.statusPagamento==="pago",
+        pagoNoCaixa: cx?{valor:cx.total,quando:cx.em,operador:cx.operador,formas:cx.formas}:null,
+        situacao: sit?sit.situacao:null,
+        cancelado: sit?sit.situacaoId===SIT.CANCELADO:false,
+      };
+      if(!dias[ag.data]) dias[ag.data]={data:ag.data, pedidos:[], total:0, frete:0, qtdPagos:0, totalPago:0, manha:0, tarde:0, qualquer:0};
+      const d=dias[ag.data];
+      if(item.cancelado) return; // cancelado não entra no acompanhamento
+      d.pedidos.push(item);
+      d.total+=item.total; d.frete+=item.frete;
+      if(item.pago){ d.qtdPagos++; d.totalPago+=item.total; }
+      d[item.turno==="manha"?"manha":(item.turno==="tarde"?"tarde":"qualquer")]++;
+    });
+    const lista=Object.values(dias).map(d=>({
+      ...d, total:+d.total.toFixed(2), frete:+d.frete.toFixed(2), totalPago:+d.totalPago.toFixed(2),
+      qtd:d.pedidos.length, aReceber:+(d.total-d.totalPago).toFixed(2),
+      pedidos:d.pedidos.sort((a,b)=>{ const o=x=>x.turno==="manha"?0:(x.turno==="tarde"?1:2); return o(a)-o(b)||b.total-a.total; }),
+    })).sort((a,b)=>a.data.localeCompare(b.data));
+    // atualiza a situação desses pedidos em 2º plano (pra próxima consulta já ter)
+    const idsSemSit=Object.keys(turnos).filter(id=>!_sitOnline[id]).slice(0,40);
+    if(idsSemSit.length) _atualizarSituacoesOnline(idsSemSit);
+    const hoje=_hojeISO();
+    res.json({ hoje, dias:lista,
+      resumo:{ diasComEntrega:lista.length,
+        totalPedidos:lista.reduce((s,d)=>s+d.qtd,0),
+        totalValor:+lista.reduce((s,d)=>s+d.total,0).toFixed(2),
+        totalFrete:+lista.reduce((s,d)=>s+d.frete,0).toFixed(2),
+        aReceber:+lista.reduce((s,d)=>s+d.aReceber,0).toFixed(2) } });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/central/resumo",(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
