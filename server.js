@@ -482,6 +482,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Listas & Imagens",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
 
   {grupo:"Logística",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
+  {grupo:"Logística",href:"/mesa-separacao",label:"🖥️ Mesa de Separação",acoes:["acesso_mesa_separacao"]},
   {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
 
@@ -1012,6 +1013,70 @@ app.patch("/api/separacoes/:id",(req,res)=>{
 });
 
 app.get("/api/separacoes",(req,res)=>{ res.json({data:limparLocksExpirados()}); });
+
+// ===================== MESA DE SEPARAÇÃO (multi-operador) =====================
+// Tela pra monitor touch: vários separadores trabalhando ao mesmo tempo, cada um
+// numa coluna. Guarda quem está ATIVO na mesa (independente de login).
+const MESA_FILE=`${DATA_DIR}/mesa_separacao.json`; // {ativos:[funcionarioId], em}
+function lerMesa(){ const d=lerJSON(MESA_FILE,{ativos:[]}); if(!Array.isArray(d.ativos)) d.ativos=[]; return d; }
+// funcionários que podem separar (grupo expedição / com permissão de separação)
+app.get("/api/mesa/funcionarios",(req,res)=>{
+  try{
+    const funcs=lerJSON(FUNC_FILE,{});
+    const mesa=lerMesa();
+    const podeSeparar=(f)=>{
+      const p=f.permissoes||[f.nivel];
+      return p.includes("admin")||p.includes("expedicao")||p.includes("gerente")
+        ||p.some(x=>["ver_separacao","separar","acesso_expedicao"].includes(x))
+        ||f.nivel==="expedicao";
+    };
+    const lista=Object.entries(funcs)
+      .filter(([id,f])=>f&&f.ativo!==false&&podeSeparar(f))
+      .map(([id,f])=>({id, nome:f.nome||"—", nivel:f.nivel||"", ativoNaMesa:mesa.ativos.includes(String(id))}))
+      .sort((a,b)=>a.nome.localeCompare(b.nome));
+    res.json({data:lista, ativos:mesa.ativos});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{
+  try{
+    const id=String(req.params.funcionarioId);
+    const mesa=lerMesa();
+    const i=mesa.ativos.indexOf(id);
+    if(i>=0) mesa.ativos.splice(i,1); else mesa.ativos.push(id);
+    mesa.em=Date.now();
+    salvarJSON(MESA_FILE,mesa);
+    res.json({ok:true, ativo:i<0, ativos:mesa.ativos});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// estado da mesa: fila de pedidos na ORDEM DE CONFIRMAÇÃO + quem está com o quê
+app.get("/api/mesa/estado",async(req,res)=>{
+  try{
+    const mesa=lerMesa();
+    const funcs=lerJSON(FUNC_FILE,{});
+    const locks=limparLocksExpirados();
+    // pedidos aguardando separação (mesma fila da expedição), do mais antigo pro mais novo
+    const n=new Date(Date.now()-3*60*60*1000);
+    const hoje=n.toISOString().slice(0,10);
+    const ini=new Date(n-30*86400000).toISOString().slice(0,10);
+    const params=new URLSearchParams({pagina:1,limite:100,dataInicial:ini,dataFinal:hoje});
+    [SIT.AGUARDANDO,SIT.EM_SEP].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
+    let pedidos=[];
+    try{ const r=await bling(`/pedidos/vendas?${params.toString()}`); pedidos=r?.data||[]; }catch(e){}
+    // ordem de confirmação = ordem em que entraram na fila (número do pedido)
+    pedidos.sort((a,b)=>(Number(a.numero)||a.id)-(Number(b.numero)||b.id));
+    const emSeparacao={}; // funcionarioId -> pedido
+    Object.values(locks||{}).forEach(l=>{ if(l&&l.funcionarioId) emSeparacao[String(l.funcionarioId)]={pedidoId:l.pedidoId, desde:l.em||l.desde||null, nome:l.funcionarioNome||""}; });
+    res.json({
+      ativos: mesa.ativos.map(id=>({ id, nome:(funcs[id]?.nome)||"—", separando: emSeparacao[String(id)]||null })),
+      fila: pedidos.map(p=>({ id:p.id, numero:p.numero, cliente:p.contato?.nome||"—", total:Number(p.total)||0,
+        data:p.data, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)),
+        emSeparacaoPor: Object.values(locks||{}).find(l=>String(l.pedidoId)===String(p.id))?.funcionarioNome || null })),
+      locks,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/mesa-separacao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "mesa-separacao.html")); });
+
 
 // Painel de acompanhamento (monitor de TV): junta os pedidos por situação com
 // quem está separando (locks). Divide em 4 grupos pra tela.

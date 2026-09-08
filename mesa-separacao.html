@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Mesa de Separação</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;-webkit-tap-highlight-color:transparent}
+  :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--bd:#2c2660}
+  body{background:var(--bg);color:#fff;overflow:hidden;height:100vh}
+  #app{display:flex;flex-direction:column;height:100vh}
+  /* 1) LINHA DOS FUNCIONÁRIOS */
+  .barraFunc{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:8px 10px;display:flex;align-items:center;gap:8px;overflow-x:auto;flex-shrink:0}
+  .barraFunc::-webkit-scrollbar{height:6px}
+  .fBtn{background:#1c1846;border:2px solid #514c96;border-radius:12px;padding:10px 16px;font-size:15px;font-weight:800;cursor:pointer;color:#cfc9f5;white-space:nowrap;min-height:52px;display:flex;align-items:center;gap:8px}
+  .fBtn.on{background:#2f9e6b;border-color:#3ce88a;color:#fff}
+  .fBtn .pt{width:10px;height:10px;border-radius:50%;background:#514c96}
+  .fBtn.on .pt{background:#9cffc9}
+  /* 2) FILA HORIZONTAL DE PEDIDOS */
+  .filaWrap{background:#12102b;border-bottom:2px solid var(--bd);padding:8px 10px;flex-shrink:0}
+  .filaTit{font-size:12px;color:#9a95c9;font-weight:800;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+  .fila{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+  .fila::-webkit-scrollbar{height:8px}
+  .fila::-webkit-scrollbar-thumb{background:#514c96;border-radius:4px}
+  .pCard{background:var(--card);border:2px solid var(--bd);border-radius:12px;padding:9px 12px;min-width:165px;cursor:pointer;flex-shrink:0}
+  .pCard.ocupado{opacity:.45;border-color:#514c96}
+  .pCard .ord{background:var(--mag);color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:1px 7px;display:inline-block}
+  .pCard .num{font-size:17px;font-weight:900;margin-top:3px}
+  .pCard .cli{font-size:11px;color:#9a95c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pCard .vlr{font-size:13px;font-weight:800;color:#ffd23f;margin-top:2px}
+  .pCard .quem{font-size:10px;color:#3ce88a;margin-top:2px;font-weight:800}
+  /* 3) COLUNAS DOS SEPARADORES */
+  .colunas{flex:1;display:flex;gap:8px;padding:8px;overflow-x:auto;overflow-y:hidden}
+  .col{background:var(--card);border:2px solid var(--bd);border-radius:14px;display:flex;flex-direction:column;min-width:300px;flex:1;overflow:hidden}
+  .col.trabalhando{border-color:#3ce88a}
+  .colTop{background:#1c1846;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-shrink:0}
+  .colNome{font-size:15px;font-weight:900}
+  .colBody{flex:1;overflow-y:auto;padding:8px}
+  .vazio{color:#9a95c9;font-size:13px;text-align:center;padding:20px 10px}
+  .it{background:#1c1846;border-radius:10px;padding:8px;margin-bottom:6px;border-left:5px solid #514c96}
+  .it.ok{border-left-color:#3ce88a;background:#12291f}
+  .it.falta{border-left-color:#ff8090;background:#2a1218}
+  .itNome{font-size:14px;font-weight:800;line-height:1.25}
+  .itQtd{font-size:12px;color:#ffd23f;font-weight:800;margin-top:2px}
+  .bts{display:flex;gap:6px;margin-top:6px}
+  .b{flex:1;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:900;cursor:pointer;color:#fff;min-height:44px}
+  .bok{background:#2f9e6b}.bfa{background:#b3341f}.bgh{background:#332d66}
+  .colFoot{padding:8px;border-top:1px solid var(--bd);flex-shrink:0}
+  .bFim{width:100%;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:900;cursor:pointer;color:#fff;background:var(--mag);min-height:50px}
+  .bFim:disabled{opacity:.4}
+  .prog{height:6px;background:#0f0c22;border-radius:3px;overflow:hidden;margin-top:6px}
+  .prog i{display:block;height:100%;background:#3ce88a}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+  .modal{background:var(--card);border:2px solid var(--bd);border-radius:16px;padding:18px;max-width:440px;width:100%}
+  .modal h3{margin-bottom:10px}
+  .modal input{width:100%;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:12px;font-size:16px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modais"></div>
+<script>
+const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+let FUNCS=[], ATIVOS=[], FILA=[], LOCKS={};
+// trabalho de cada separador: funcionarioId -> {pedido, itens:[...], carregando}
+let MESAS={};
+let TIMER=null, CARREGANDO=false;
+
+async function carregar(silent){
+  if(!silent) CARREGANDO=true, render();
+  try{
+    const [f,e]=await Promise.all([
+      fetch(B+"/api/mesa/funcionarios").then(r=>r.json()),
+      fetch(B+"/api/mesa/estado").then(r=>r.json()),
+    ]);
+    FUNCS=f.data||[]; ATIVOS=(e.ativos||[]).map(a=>a.id);
+    FILA=e.fila||[]; LOCKS=e.locks||{};
+  }catch(err){}
+  CARREGANDO=false; render();
+}
+async function toggleFunc(id){
+  try{
+    await fetch(B+"/api/mesa/toggle/"+encodeURIComponent(id),{method:"POST"});
+    if(MESAS[id]&&MESAS[id].pedido) await liberar(id,true); // ao desativar, solta o pedido
+    delete MESAS[id];
+    await carregar(true);
+  }catch(e){}
+}
+function ehOcupado(pedidoId){
+  return Object.values(LOCKS||{}).some(l=>String(l.pedidoId)===String(pedidoId))
+      || Object.values(MESAS).some(m=>m.pedido&&String(m.pedido.id)===String(pedidoId));
+}
+// abre um pedido numa coluna: pergunta pra qual separador se houver mais de um livre
+function abrirPedido(pedidoId){
+  const livres=ATIVOS.filter(id=>!MESAS[id]||!MESAS[id].pedido);
+  if(!livres.length){ alert("Todos os separadores ativos já estão com um pedido. Conclua um antes de abrir outro."); return; }
+  if(ehOcupado(pedidoId)){ alert("Esse pedido já está sendo separado."); return; }
+  if(livres.length===1) return carregarPedidoNaMesa(livres[0],pedidoId);
+  const p=FILA.find(x=>String(x.id)===String(pedidoId));
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">'+
+    '<h3>Pedido '+esc(p?p.numero:pedidoId)+'</h3><div style="color:#9a95c9;margin-bottom:12px">Quem vai separar?</div>'+
+    livres.map(function(id){ const f=FUNCS.find(x=>String(x.id)===String(id));
+      return '<button class="bFim" style="background:#2f9e6b;margin-bottom:8px" onclick="fecharModal();carregarPedidoNaMesa(\''+esc(id)+'\','+pedidoId+')">'+esc(f?f.nome:id)+'</button>';
+    }).join("")+
+    '<button class="bFim" style="background:#332d66" onclick="fecharModal()">Cancelar</button></div></div>';
+}
+function fecharModal(){ document.getElementById("modais").innerHTML=""; }
+
+async function carregarPedidoNaMesa(funcId,pedidoId){
+  const f=FUNCS.find(x=>String(x.id)===String(funcId));
+  MESAS[funcId]={carregando:true}; render();
+  try{
+    // pega o lock em nome desse separador
+    const rl=await fetch(B+"/api/separacoes",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pedidoId,funcionarioId:funcId,funcionarioNome:f?f.nome:"",tipo:"separacao"})});
+    const jl=await rl.json().catch(()=>({}));
+    if(!rl.ok&&!jl.ok){ alert("Esse pedido já está com outra pessoa."); delete MESAS[funcId]; carregar(true); return; }
+    const j=await fetch(B+"/api/expedicao/pedido/"+pedidoId).then(r=>r.json());
+    if(j.erro){ alert("Erro ao abrir: "+j.erro); delete MESAS[funcId]; render(); return; }
+    MESAS[funcId]={
+      carregando:false, pedido:j.pedido,
+      itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
+        un:i.un||1, estado:"", temQtd:0, confirmado:false})),
+    };
+    // heartbeat pra segurar o lock enquanto separa
+    MESAS[funcId]._hb=setInterval(function(){
+      fetch(B+"/api/separacoes/"+pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:funcId})}).catch(()=>{});
+    },2*60*1000);
+  }catch(e){ alert("Erro ao abrir o pedido."); delete MESAS[funcId]; }
+  render(); carregar(true);
+}
+function marcar(funcId,ix,estado){
+  const m=MESAS[funcId]; if(!m||!m.itens) return;
+  const c=m.itens[ix];
+  if(estado==="tem"){ c.estado="tem"; c.temQtd=c.quantidade; c.confirmado=true; }
+  else { c.estado="falta"; c.confirmado=true; if(c.temQtd>=c.quantidade) c.temQtd=0; }
+  render();
+}
+function ajustarQtd(funcId,ix,delta){
+  const c=MESAS[funcId].itens[ix];
+  const passo=c.un||1;
+  c.temQtd=Math.max(0,Math.min(c.quantidade,(c.temQtd||0)+delta*passo));
+  c.estado=c.temQtd>=c.quantidade?"tem":"falta"; c.confirmado=true;
+  render();
+}
+async function liberar(funcId,silencioso){
+  const m=MESAS[funcId];
+  if(m&&m.pedido){
+    if(m._hb) clearInterval(m._hb);
+    try{ await fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:funcId,tipo:"separacao"})}); }catch(e){}
+  }
+  delete MESAS[funcId];
+  if(!silencioso){ render(); carregar(true); }
+}
+async function concluir(funcId){
+  const m=MESAS[funcId]; if(!m||!m.pedido) return;
+  const f=FUNCS.find(x=>String(x.id)===String(funcId));
+  const faltas=m.itens.filter(c=>c.estado==="falta"&&c.confirmado)
+    .map(c=>({descricao:c.descricao,produtoId:c.produtoId,quantidade:c.quantidade,temQtd:c.temQtd||0,falta:Math.max(0,c.quantidade-(c.temQtd||0))}))
+    .filter(x=>x.falta>0);
+  if(faltas.length){
+    if(!confirm("Concluir com "+faltas.length+" item(ns) com falta?\n\n"+faltas.map(x=>x.descricao+": tem "+x.temQtd+" de "+x.quantidade).join("\n")+"\n\nO pedido vai pra SEPARADO C/ PENDÊNCIAS.")) return;
+  }
+  const num=m.pedido.numero||m.pedido.id;
+  MESAS[funcId].salvando=true; render();
+  try{
+    const r=await fetch(B+"/api/fluxo/"+m.pedido.id+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({faltas,funcionarioId:funcId,funcionarioNome:f?f.nome:""})});
+    const j=await r.json();
+    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
+    if(m._hb) clearInterval(m._hb);
+    fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
+    delete MESAS[funcId];
+    render(); carregar(true);
+  }catch(e){ MESAS[funcId].salvando=false; alert("Erro ao concluir o pedido "+num+": "+e.message); render(); }
+}
+
+function colunaHtml(funcId){
+  const f=FUNCS.find(x=>String(x.id)===String(funcId));
+  const m=MESAS[funcId];
+  const nome=f?f.nome:funcId;
+  if(!m||!m.pedido){
+    return '<div class="col"><div class="colTop"><div class="colNome">'+esc(nome)+'</div><span style="font-size:11px;color:#9a95c9">livre</span></div>'+
+      '<div class="colBody"><div class="vazio">'+(m&&m.carregando?"Abrindo pedido…":"Toque num pedido da fila<br>para começar a separar")+'</div></div></div>';
+  }
+  const total=m.itens.length, feitos=m.itens.filter(c=>c.confirmado).length;
+  const pct=total?Math.round(feitos/total*100):0;
+  const itens=m.itens.map(function(c,ix){
+    const cls=c.confirmado?(c.estado==="tem"?"ok":"falta"):"";
+    const cx=(c.un>1)?" ("+(c.quantidade/c.un).toFixed(c.quantidade%c.un?1:0)+" cx)":"";
+    return '<div class="it '+cls+'">'+
+      '<div class="itNome">'+esc(c.descricao)+'</div>'+
+      '<div class="itQtd">'+c.quantidade+' un'+cx+(c.confirmado&&c.estado==="falta"?' · <span style="color:#ff8090">tem '+(c.temQtd||0)+'</span>':'')+'</div>'+
+      '<div class="bts">'+
+        '<button class="b bok" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'tem\')">✓ Tem tudo</button>'+
+        '<button class="b bfa" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'falta\')">Falta</button>'+
+      '</div>'+
+      (c.confirmado&&c.estado==="falta"?'<div class="bts">'+
+        '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',-1)">−</button>'+
+        '<button class="b bgh" style="flex:2">tem '+(c.temQtd||0)+' de '+c.quantidade+'</button>'+
+        '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',1)">+</button>'+
+      '</div>':'')+
+    '</div>';
+  }).join("");
+  return '<div class="col trabalhando">'+
+    '<div class="colTop"><div><div class="colNome">'+esc(nome)+'</div>'+
+      '<div style="font-size:12px;color:#ffd23f;font-weight:800">Pedido '+esc(m.pedido.numero||m.pedido.id)+'</div>'+
+      '<div style="font-size:11px;color:#9a95c9">'+esc(m.pedido.contato?.nome||"")+'</div></div>'+
+      '<button class="b bgh" style="flex:none;padding:8px 12px" onclick="liberar(\''+esc(funcId)+'\')">✕</button></div>'+
+    '<div class="colBody">'+itens+'</div>'+
+    '<div class="colFoot">'+
+      '<div style="font-size:11px;color:#9a95c9">'+feitos+' de '+total+' conferidos</div>'+
+      '<div class="prog"><i style="width:'+pct+'%"></i></div>'+
+      '<button class="bFim" style="margin-top:8px" '+(feitos<total||m.salvando?"disabled":"")+' onclick="concluir(\''+esc(funcId)+'\')">'+(m.salvando?"Salvando…":"✅ Concluir separação")+'</button>'+
+    '</div></div>';
+}
+
+function render(){
+  const app=document.getElementById("app");
+  const barra=FUNCS.map(function(f){
+    const on=ATIVOS.includes(String(f.id));
+    return '<div class="fBtn '+(on?"on":"")+'" onclick="toggleFunc(\''+esc(f.id)+'\')"><span class="pt"></span>'+esc(f.nome)+'</div>';
+  }).join("")||'<div style="color:#9a95c9;font-size:13px">Nenhum funcionário da expedição cadastrado.</div>';
+
+  const livres=ATIVOS.filter(id=>!MESAS[id]||!MESAS[id].pedido).length;
+  const fila=FILA.map(function(p,ix){
+    const ocupado=ehOcupado(p.id);
+    return '<div class="pCard '+(ocupado?"ocupado":"")+'" onclick="'+(ocupado?"":"abrirPedido("+p.id+")")+'">'+
+      '<span class="ord">'+(ix+1)+'º</span>'+
+      '<div class="num">'+esc(p.numero)+'</div>'+
+      '<div class="cli">'+esc(p.cliente)+'</div>'+
+      '<div class="vlr">'+brl(p.total)+'</div>'+
+      (ocupado?'<div class="quem">separando…</div>':'')+
+    '</div>';
+  }).join("")||'<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido aguardando separação. 🎉</div>';
+
+  const cols=ATIVOS.length?ATIVOS.map(colunaHtml).join(""):
+    '<div class="col"><div class="colBody"><div class="vazio">Ative os separadores na barra de cima<br>para começar</div></div></div>';
+
+  app.innerHTML=
+    '<div class="barraFunc">'+barra+'<div style="flex:1"></div>'+
+      '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">'+ATIVOS.length+' ativo(s) · '+livres+' livre(s)</div>'+
+      '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>'+
+    '<div class="filaWrap"><div class="filaTit">Fila de separação — ordem de confirmação ('+FILA.length+')</div>'+
+      '<div class="fila">'+fila+'</div></div>'+
+    '<div class="colunas">'+cols+'</div>';
+}
+
+render();
+carregar();
+TIMER=setInterval(function(){ if(!CARREGANDO) carregar(true); },15000);
+</script>
+</body>
+</html>
