@@ -621,6 +621,25 @@ function render(){
     ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p,"disponivel")).join(""):'<div class="muted">Nenhum pedido aguardando agendamento — ou já estão todos num dia.</div>'}
   </div>`;
 
+  // ---- conferência de pagamento: o que vai/foi entregar sem estar recebido ----
+  const todosDoDia=(S.pedidos||[]).filter(p=>p.agendamento&&p.agendamento.data===S.data);
+  const naoPagos=todosDoDia.filter(p=>p.pagamento&&!p.pagamento.pago);
+  if(todosDoDia.length){
+    h+=`<div class="card" style="border-color:${naoPagos.length?'#b3341f':'#2f9e6b'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:900">${naoPagos.length?'⚠️':'✅'} Conferência de pagamento — ${dataLabel(S.data)}</div>
+        <div style="font-size:13px">${todosDoDia.length-naoPagos.length} recebido(s) · <b style="color:${naoPagos.length?'#ff8f7a':'#3ce88a'}">${naoPagos.length} sem receber</b></div>
+      </div>
+      ${naoPagos.length?`<div style="margin-top:8px">
+        <div class="muted" style="font-size:12px;margin-bottom:6px">Esses pedidos estão agendados pra entrega e <b>não passaram por nenhum caixa</b>. Confira antes de sair:</div>
+        ${naoPagos.map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding:5px 0;font-size:12px">
+          <span>Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}${p.pagamento.parcial?` <span style="color:#ffd23f">(parcial)</span>`:""}</span>
+          <b style="color:#ff8f7a">${brl(p.total)}</b></div>`).join("")}
+        <div style="text-align:right;margin-top:6px;font-weight:900;color:#ff8f7a">Total sem receber: ${brl(naoPagos.reduce((s,p)=>s+(p.total||0),0))}</div>
+      </div>`:'<div class="muted" style="margin-top:6px;font-size:12px">Todas as entregas deste dia já foram recebidas em caixa.</div>'}
+    </div>`;
+  }
+
   // ---- agendados pra esse dia, mas ainda sem carro definido ----
   const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean)
     .sort((a,b)=>{ const ord=x=>x.agendamento?.turno==="manha"?0:(x.agendamento?.turno==="tarde"?1:2); return ord(a)-ord(b); }); // manhã, tarde, depois qualquer horário
@@ -748,6 +767,9 @@ function htmlPedidoCard(p, modo){
         <div class="vend">Vendedor: ${esc(p.vendedorNome)}</div>
         ${p.agendamento?`<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/"))} · ${p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO")}</span>${p.agendamento.por?`<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>`:""}</div>
         ${p.agendamento.obsEntrega?`<div style="margin-top:3px;background:#2a2410;border:1px solid #6b5f1f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ffd23f">📝 ${esc(p.agendamento.obsEntrega)}</div>`:""}`:""}
+        ${p.pagamento?(p.pagamento.pago
+          ? `<div style="margin-top:3px;font-size:11px;color:#3ce88a">✅ Recebido${p.pagamento.ondeFoiPago?" — "+esc(p.pagamento.ondeFoiPago):""}${p.pagamento.operador?" ("+esc(p.pagamento.operador)+")":""}${p.pagamento.formas?" · "+esc(p.pagamento.formas):""}</div>`
+          : `<div style="margin-top:3px;background:#3a0010;border:1px solid #b3341f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ff8f7a;font-weight:700">⚠️ NÃO RECEBIDO em nenhum caixa${p.pagamento.parcial?` — parcial: ${brl(p.pagamento.valorPago)} de ${brl(p.pagamento.valorPedido)}`:""}</div>`):""}
       </div>
       <div class="vals">
         <div><b>${brl(p.total)}</b></div>
@@ -778,7 +800,8 @@ function htmlStopItem(ped,ix,infoExtra,botoes){
       <div class="ordn">${ix+1}</div>
       <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp?'▲':'▼'} ${ped.itens?.length||0} itens</span>
         ${ped.agendamento?.turno&&ped.agendamento.turno!=="qualquer"?`<span style="background:#29ABE2;color:#000;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:5px">${ped.agendamento.turno==="manha"?"MANHÃ":"TARDE"}</span>`:""}
-        ${ped.agendamento?.obsEntrega?`<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>`:""}</div>
+        ${ped.agendamento?.obsEntrega?`<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>`:""}
+        ${ped.pagamento&&!ped.pagamento.pago?`<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>`:""}</div>
       ${infoExtra?`<div class="km">${infoExtra}</div>`:''}
       <div onclick="event.stopPropagation()" style="display:flex;gap:4px">${botoes}</div>
     </div>

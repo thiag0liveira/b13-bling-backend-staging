@@ -7037,7 +7037,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, nfcePendenteVelha:0, atacadoSemPassarCaixa:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, nfcePendenteVelha:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -7105,6 +7105,38 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       if(!emit[String(m.pedidoId)]){ registrarAviso({ tipo:"nfce_pendente_velha", titulo:`Pedido #${m.numero||m.pedidoId} sem NFC-e há mais de 2 dias`, pedidoId:m.pedidoId, numero:m.numero, origem:"Auditoria", fingerprint:`nfcevelha-${m.pedidoId}`, oQueFazer:`Emite a NFC-e do pedido #${m.numero||m.pedidoId} na Gestão de NFC-e, ou confirma se ela já foi emitida direto no Bling.` }); achados.nfcePendenteVelha++; }
     }); });
   }catch(e){}
+  // 4.5) ENTREGA AGENDADA SEM PAGAMENTO: pedido que já passou do dia da entrega
+  // (ou é de hoje) e ainda não foi recebido em nenhum caixa. É o caso mais caro:
+  // a mercadoria sai e ninguém cobrou.
+  try{
+    const turnos=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+    const props=lerPropostas(); const porPedido={};
+    Object.values(props||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
+    const hojeIni=_inicioDia(hojeISO);
+    Object.entries(turnos).forEach(([pid,ag])=>{
+      if(!ag||!ag.data) return;
+      const iniDia=_inicioDia(ag.data);
+      if(iniDia>hojeIni) return;                       // entrega futura: ainda não é problema
+      if(iniDia<hojeIni-30*86400000) return;           // muito antiga: não fica repetindo
+      const sit=_sitOnline[pid];
+      if(sit&&sit.situacaoId===SIT.CANCELADO) return;  // cancelado não conta
+      const pag=_pagamentoDoPedido(pid);
+      if(pag.pago) return;
+      const prop=porPedido[pid]||null;
+      const numero=ag.numero||prop?.pedidoBlingNumero||pid;
+      const total=Number(prop?.total||0);
+      const cliente=prop?.cliente?.nome||"—";
+      const ehHoje=iniDia===hojeIni;
+      registrarAviso({ tipo:"entrega_sem_pagamento",
+        titulo:`Entrega ${ehHoje?"de hoje":"de "+ag.data.split("-").reverse().join("/")} sem pagamento — pedido #${numero}`,
+        pedidoId:pid, numero, origem:"Gerenciamento de Rota",
+        fingerprint:`entrsempag-${pid}-${ag.data}`,
+        novoTotal:total,
+        oQueFazer:`O pedido #${numero} (${cliente}${total?`, ${total.toFixed(2)}`:""}) está agendado pra entrega em ${ag.data.split("-").reverse().join("/")} e ainda NÃO foi recebido em nenhum caixa${pag.parcial?` (pago parcial: ${Number(pag.valorPago||0).toFixed(2)} de ${Number(pag.valorPedido||0).toFixed(2)})`:""}. Confira se foi cobrado antes de sair pra entrega.` });
+      achados.entregaSemPagamento=(achados.entregaSemPagamento||0)+1;
+    });
+  }catch(e){}
+
   // 5) pedidos Atendido no Bling que não passaram pelo caixa atacado — usa a
   // classificação já pronta (campo p.origem), feita na mesma varredura, sem recalcular
   try{
@@ -10339,6 +10371,58 @@ function estimarPesoPedido(itens){
 
 // Lista pedidos elegíveis pra entrega (tipo entrega, ainda não atendidos/cancelados)
 // com os dados já prontos pra tela: cliente, vendedor, valor, frete, itens, peso.
+// Descobre se um pedido JÁ FOI RECEBIDO em algum caixa (atacado ou frente) e como.
+// Serve pra rota saber o que sai pra entrega sem estar pago.
+function _pagamentoDoPedido(pedidoId){
+  const id=String(pedidoId);
+  const dCx=lerCaixaSessoes();
+  for(const s of (dCx.sessoes||[])){
+    for(const m of (s.movimentos||[])){
+      if(m.tipo!=="venda"||m.cancelado||String(m.pedidoId)!==id) continue;
+      return { pago:true, ondeFoiPago:(s.tipoCaixa||"frente")==="atacado"?"Caixa Atacado":"Frente de Caixa",
+        operador:m.operador||s.operador||"", quando:m.em, valor:Number(m.total)||0,
+        formas:(m.pagamentos||[]).map(x=>`${x.formaNome}: ${Number(x.valor).toFixed(2)}`).join(" · "),
+        sessaoFechada:!!s.fechadaEm };
+    }
+  }
+  const pg=lerPag()[id];
+  if(pg&&pg.statusPagamento==="pago") return { pago:true, ondeFoiPago:"registro de pagamento", valor:Number(pg.valorPago)||0, formas:(pg.historico||[]).map(h=>`${h.formaNome}: ${Number(h.valor).toFixed(2)}`).join(" · ") };
+  if(pg&&pg.statusPagamento==="parcial") return { pago:false, parcial:true, valorPago:Number(pg.valorPago)||0, valorPedido:Number(pg.valorPedido)||0 };
+  return { pago:false };
+}
+// CONFERÊNCIA DE PAGAMENTO dos pedidos agendados num dia (ou período): diz quais
+// já foram recebidos em caixa e quais NÃO — inclui dias passados, pra achar
+// entrega que saiu e nunca foi cobrada.
+app.get("/api/rotas/conferir-pagamentos",(req,res)=>{
+  try{
+    const ate=_hojeISO(req.query.data);
+    const diasTras=Math.min(Number(req.query.dias||7),60);
+    const limite=_inicioDia(ate)-((diasTras-1)*86400000);
+    const turnos=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+    const props=lerPropostas(); const porPedido={};
+    Object.values(props||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
+    const itens=[];
+    Object.entries(turnos).forEach(([pid,ag])=>{
+      if(!ag||!ag.data) return;
+      const ini=_inicioDia(ag.data);
+      if(ini<limite||ini>_inicioDia(ate)) return; // fora da janela
+      const sit=_sitOnline[pid]||null;
+      if(sit&&sit.situacaoId===SIT.CANCELADO) return;
+      const prop=porPedido[pid]||null;
+      const pag=_pagamentoDoPedido(pid);
+      itens.push({ pedidoId:pid, numero:ag.numero||prop?.pedidoBlingNumero||pid,
+        data:ag.data, turno:ag.turno||"qualquer", obsEntrega:ag.obsEntrega||"",
+        cliente:prop?.cliente?.nome||"—", total:Number(prop?.total||0),
+        situacao:sit?sit.situacao:null, ...pag });
+    });
+    const semPagar=itens.filter(i=>!i.pago).sort((a,b)=>a.data.localeCompare(b.data));
+    res.json({ ate, dias:diasTras, total:itens.length,
+      pagos:itens.filter(i=>i.pago).length, semPagar:semPagar.length,
+      valorSemPagar:+semPagar.reduce((s,i)=>s+i.total,0).toFixed(2),
+      pendentes:semPagar, todos:itens });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
   try{
     const dataAlvo=req.query.data||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
@@ -10487,6 +10571,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
           agendamento:(lerJSON(`${DATA_DIR}/turnos_entrega.json`,{})[String(det.id)]||null), // dia+turno que a vendedora escolheu
+          pagamento:_pagamentoDoPedido(det.id), // já foi recebido em algum caixa?
         });
       }catch(e){}
       if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling

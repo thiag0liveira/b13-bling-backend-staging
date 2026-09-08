@@ -30,6 +30,10 @@
   .pillE{background:#1c1846;border-radius:20px;padding:5px 11px;font-size:12px;font-weight:700}
   .chipT{font-size:9px;font-weight:900;padding:2px 6px;border-radius:5px;margin-left:5px}
   .chipT.tm{background:#ffe600;color:#000}.chipT.tt{background:#29ABE2;color:#000}.chipT.tq{background:#2a2660;color:#9a95c9}
+  .colunas{display:flex;gap:12px;align-items:flex-start}
+  .colAvisos{width:290px;flex-shrink:0;position:sticky;top:56px}
+  .colunas .grid{flex:1;min-width:0}
+  @media(max-width:1000px){ .colunas{flex-direction:column} .colAvisos{width:100%;position:static} }
 </style>
 <script src="/nav.js"></script>
 <style>
@@ -56,7 +60,7 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null;
+let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null;
 const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",pedido_incluido_no_caixa:"Incluído no caixa"};
 const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
 const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
@@ -82,9 +86,26 @@ function render(){
   if(!D){ app.innerHTML=topo+`<div class="wrap"><div class="card"><div class="muted">Carregando…</div></div></div>`; return; }
   const f=D.fechamentoDia||{}, b=D.bling||{};
   const bl=(x)=>x==null?'<span class="muted">⏳</span>':x;
+  const nAv=(AVISOS&&AVISOS.naoResolvidos)||0;
   app.innerHTML=topo+`
     <div class="wrap">
       <div class="muted" style="margin-bottom:10px">${b.em?"Bling atualizado às "+hora(b.em):"Bling: buscando em segundo plano…"}${b.calculando?" ⏳":""}</div>
+      <div class="colunas">
+      <div class="colAvisos">
+        <div class="card" style="border-color:${nAv?'#6b5a1f':'#2c2660'}">
+          <div class="h"><span>🔔 Avisos</span><span class="big" style="color:${nAv?'#ffd23f':'#3ce88a'}">${nAv}</span></div>
+          ${nAv?`<div style="max-height:72vh;overflow:auto">${(AVISOS.lista||[]).map(a=>`
+            <div style="border-bottom:1px solid #2a2660;padding:8px 0">
+              <div style="font-size:12px;font-weight:800">${esc(a.titulo||"Aviso")}</div>
+              <div class="muted" style="font-size:10px;margin-top:2px">${hora(a.em)}${a.origem?" · "+esc(a.origem):""}${a.operador?" · "+esc(a.operador):""}</div>
+              ${a.oQueFazer?`<div class="muted" style="font-size:11px;margin-top:4px">👉 ${esc(a.oQueFazer)}</div>`:""}
+              ${a.erroBling?`<div style="font-size:10px;color:#ff8090;margin-top:2px">${esc(a.erroBling)}</div>`:""}
+              <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;margin-top:5px" onclick="resolverAviso('${esc(a.id)}')">✓ Resolvido</button>
+            </div>`).join("")}</div>`
+            :'<div class="muted">Nada pendente. 🎉</div>'}
+          <a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos / histórico →</a>
+        </div>
+      </div>
       <div class="grid">
         <div class="card wide"><div class="h"><span>💵 Caixas abertos (${(D.caixasAbertos||[]).length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
           ${(D.caixasAbertos||[]).map(blocoCaixa).join("")||'<div class="muted">Nenhum caixa aberto agora.</div>'}
@@ -237,8 +258,6 @@ function render(){
           <div class="h" style="margin-top:10px"><span>Produtos que entraram hoje</span></div>${lins(b.entradas.produtos,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`)}`:'<div class="muted">⏳ Buscando no Bling…</div>')
           +(D.entradasMesTop?`<div class="h" style="margin-top:12px"><span>Mais entraram no mês</span></div>`+lins(D.entradasMesTop,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.qtd} un</b></div>`):"")+`<a class="btn btn-ghost" style="margin-top:8px" href="/entradas">Entradas do mês →</a>`)}
 
-        ${card("🔔 Avisos pendentes",lins(D.avisos?.ultimos,x=>`<div class="lin"><span>${esc(x.titulo)}</span><span class="muted">${hora(x.em)}</span></div>`)+`<a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos →</a>`,`<span class="big" style="color:${D.avisos?.pendentes?'#ffd23f':'#3ce88a'}">${D.avisos?.pendentes||0}</span>`)}
-
         ${card("📄 Propostas & Pedidos",`<div class="lin"><span>Propostas em aberto</span><b>${D.propostas?.abertas||0}</b></div><div class="lin"><span>Pedidos gerados no dia</span><b>${D.propostas?.pedidosGeradosDia||0}</b></div>
           ${Object.entries(D.propostas?.porOrigemDia||{}).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join("")}<a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>`)}
 
@@ -257,7 +276,16 @@ function render(){
           ${D.origemPedidos.qtdPossiveisErros?`<div class="h" style="margin-top:10px;color:#ff8090"><span>⚠️ Possível erro — Atendido mas não passou no caixa atacado (${D.origemPedidos.qtdPossiveisErros})</span></div>`+lins(D.origemPedidos.possiveisErros,p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)} <span class="muted">· vend. ${esc(p.vendedor)}</span></span><b>${brl(p.total)}</b></div>`):'<div class="muted" style="margin-top:8px">Nenhum pedido do atacado ficou sem passar no caixa. ✅</div>'}
         `):(b.pedidos&&!b.pedidos.erro?"":card("🏪 Origem dos pedidos (Atacado × Varejo)",'<div class="muted">⏳ Buscando no Bling…</div>'))}
       </div>
+      </div>
     </div>`;
+}
+async function resolverAviso(id){
+  try{
+    await fetch(B+"/api/avisos/"+id+"/resolver",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({por:(typeof b13GetSession==="function"?((b13GetSession()||{}).nome||""):"")})});
+    const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro) AVISOS=a;
+    render();
+  }catch(e){}
 }
 async function rodarAuditoria(){
   const btn=[...document.querySelectorAll("button")].find(b=>b.textContent.includes("Rodar auditoria"));
@@ -273,6 +301,7 @@ async function rodarAuditoria(){
 async function carregar(){
   try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
   try{ const e=await fetch(B+"/api/central/entregas").then(r=>r.json()); if(!e.erro){ ENTREGAS=e; render(); } }catch(e){}
+  try{ const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro){ AVISOS=a; render(); } }catch(e){}
   clearTimeout(TIMER);
   TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?5000:60000);
 }
