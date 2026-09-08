@@ -52,6 +52,8 @@
   .tabsel button{padding:8px 14px;border-radius:999px;background:#1c1846;color:#cfc9f5;border:2px solid transparent;font-weight:700;font-size:12px;cursor:pointer}
   .tabsel button.on{border-color:var(--mag);color:#fff}
   .warn{background:#3a2a00;color:#ffd23f;border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:12px}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px}
+  .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:520px;width:100%;max-height:86vh;overflow:auto}
 </style>
 <script src="/nav.js"></script>
 <style>
@@ -76,6 +78,7 @@
   })();
 </script>
 <div id="app"></div>
+<div id="modais"></div>
 <script>
 const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
@@ -240,10 +243,72 @@ function desagendar(pedidoId){
 // tentando SEMPRE o menor custo possível nessa ordem de preferência:
 // 1) tudo numa viagem só de 1 carro; 2) mais viagens do MESMO carro (o carro
 // pode rodar várias vezes entre 10h e 19h); 3) só aí parte pra outro carro.
+// ---- MOVER um pedido pra outra viagem / outro carro (ou de volta pra fila) ----
+function abrirMoverPedido(carroIdAtual,vixAtual,pedidoId){
+  const ped=pedidoPorId(pedidoId);
+  const carros=S.config.carros||[];
+  let ops="";
+  carros.forEach(c=>{
+    const viagens=(S.atribuicoes[c.id]?.viagens)||[];
+    viagens.forEach((v,vi)=>{
+      const atual=(String(c.id)===String(carroIdAtual)&&vi===vixAtual);
+      const qtd=(v.pedidoIds||[]).length;
+      const pesoV=(v.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean).reduce((a,p)=>a+(p.pesoEstimadoKg||0),0);
+      const cabe=pesoV+(ped?.pesoEstimadoKg||0) <= (c.pesoSugeridoKg||99999)*1.2;
+      ops+=`<button class="btn ${atual?'btn-ghost':'btn-mag'}" style="width:100%;margin-bottom:6px;text-align:left" ${atual?'disabled':''}
+        onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'${c.id}',${vi})">
+        ${esc(c.nome||c.id)} — viagem ${vi+1} <span style="opacity:.8;font-size:11px">(${qtd} parada${qtd!==1?'s':''}, ${Math.round(pesoV)}kg${atual?' · atual':(cabe?'':' · ⚠️ passa do peso')})</span></button>`;
+    });
+    // opção de criar uma viagem nova nesse carro
+    ops+=`<button class="btn btn-ghost" style="width:100%;margin-bottom:10px;text-align:left;border:1px dashed #514c96"
+      onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'${c.id}',-1)">
+      ➕ ${esc(c.nome||c.id)} — <b>nova viagem</b></button>`;
+  });
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModaisRota()"><div class="modal" style="max-width:460px">
+      <h3>🔀 Mover pedido ${esc(ped?ped.numero:pedidoId)}</h3>
+      <div class="muted" style="font-size:12px;margin:4px 0 10px">${esc(ped?ped.clienteNome:"")}${ped?.pesoEstimadoKg?` · ${ped.pesoEstimadoKg}kg`:""}${ped?.agendamento?.turno&&ped.agendamento.turno!=="qualquer"?` · <b>${ped.agendamento.turno==="manha"?"manhã":"tarde"}</b>`:""}</div>
+      <div style="max-height:50vh;overflow:auto">${ops||'<div class="muted">Nenhum carro configurado.</div>'}</div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'_semCarro',0)">↩️ Voltar pra "aguardando carro"</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="fecharModaisRota()">Cancelar</button>
+    </div></div>`;
+}
+function fecharModaisRota(){ const el=document.getElementById("modais"); if(el) el.innerHTML=""; }
+function moverPedidoPara(carroOrigem,vixOrigem,pedidoId,carroDestino,vixDestino){
+  // tira da origem
+  if(carroOrigem==="_semCarro"){
+    S.atribuicoes["_semCarro"].pedidoIds=(S.atribuicoes["_semCarro"].pedidoIds||[]).filter(id=>id!==pedidoId);
+  }else{
+    const v=S.atribuicoes[carroOrigem]?.viagens?.[vixOrigem];
+    if(v) v.pedidoIds=(v.pedidoIds||[]).filter(id=>id!==pedidoId);
+    if(v) v.resultado=null; // rota calculada deixa de valer
+  }
+  // coloca no destino
+  if(carroDestino==="_semCarro"){
+    S.atribuicoes["_semCarro"]=S.atribuicoes["_semCarro"]||{pedidoIds:[]};
+    if(!S.atribuicoes["_semCarro"].pedidoIds.includes(pedidoId)) S.atribuicoes["_semCarro"].pedidoIds.push(pedidoId);
+  }else{
+    S.atribuicoes[carroDestino]=S.atribuicoes[carroDestino]||{viagens:[]};
+    let vi=vixDestino;
+    if(vi<0||!S.atribuicoes[carroDestino].viagens[vi]){
+      S.atribuicoes[carroDestino].viagens.push({pedidoIds:[],resultado:null});
+      vi=S.atribuicoes[carroDestino].viagens.length-1;
+    }
+    const dest=S.atribuicoes[carroDestino].viagens[vi];
+    if(!dest.pedidoIds.includes(pedidoId)) dest.pedidoIds.push(pedidoId);
+    dest.resultado=null;
+  }
+  fecharModaisRota();
+  salvarDia();
+  render();
+}
+
 async function sugerirCarrosParaSemCarro(){
   const pendentes=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
   if(!pendentes.length){ alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro."); return; }
-  let pool=pendentes.filter(p=>p.lat&&p.lng);
+  // manhã primeiro, depois tarde, e os flexíveis por último (encaixam onde sobrar)
+  const ordTurno=(p)=>{ const t=p.agendamento?.turno; return t==="manha"?0:(t==="tarde"?1:2); };
+  let pool=pendentes.filter(p=>p.lat&&p.lng).sort((a,b)=>ordTurno(a)-ordTurno(b));
   const semCoord=pendentes.filter(p=>!p.lat||!p.lng);
   const carros=S.config.carros||[];
 
@@ -257,6 +322,12 @@ async function sugerirCarrosParaSemCarro(){
     if(!confirm(`⚠️ ${pesadosDemais.length} pedido(s) sozinho(s) já passam do que qualquer carro configurado aguenta numa viagem: ${lista}.\n\nVai precisar de 2 carros juntos nessa entrega, ou fazer 2 viagens até esse cliente — isso não é feito automaticamente aqui.\n\nContinuar distribuindo o resto mesmo assim?`)) return;
   }
 
+  // TURNO: entregas de manhã e de tarde não devem se misturar na mesma viagem —
+  // "qualquer horário" é flexível e entra pra completar qualquer uma delas.
+  const turnoDe=(p)=>p.agendamento?.turno||"qualquer";
+  const turnoViagem=(lista)=>{ const t=lista.map(turnoDe).find(x=>x==="manha"||x==="tarde"); return t||"qualquer"; };
+  const compativel=(p,lista)=>{ const tv=turnoViagem(lista), tp=turnoDe(p); return tv==="qualquer"||tp==="qualquer"||tp===tv; };
+
   const semente=(lista)=>{ let s=lista[0], d=-1; lista.forEach(p=>{ const dd=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(dd>d){ d=dd; s=p; } }); return s; };
   const montaViagem=(carro, poolAtual, alvoQtd)=>{
     const sem=semente(poolAtual);
@@ -264,6 +335,7 @@ async function sugerirCarrosParaSemCarro(){
     const escolhidos=[]; let pesoAcum=0;
     for(const p of candidatos){
       if(escolhidos.length>=alvoQtd) break;
+      if(!compativel(p,escolhidos)) continue; // não mistura manhã com tarde
       const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
       if(pesoTeste>(carro.pesoSugeridoKg||99999)*1.2 && escolhidos.length>0) continue;
       escolhidos.push(p); pesoAcum=pesoTeste;
@@ -279,7 +351,8 @@ async function sugerirCarrosParaSemCarro(){
     if(!pool.length) break;
     const pesoTotalPool=pool.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
     const capQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
-    if(pesoTotalPool<=(carro.pesoSugeridoKg||99999)*1.2 && pool.length<=capQtd){
+    const temManha=pool.some(p=>turnoDe(p)==="manha"), temTarde=pool.some(p=>turnoDe(p)==="tarde");
+    if(!(temManha&&temTarde) && pesoTotalPool<=(carro.pesoSugeridoKg||99999)*1.2 && pool.length<=capQtd){
       const viagemIx=escolherOuCriarViagem(carro.id,0);
       pool.forEach(p=>{
         S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
@@ -847,7 +920,12 @@ function htmlViagemBox(carro,vix,cap){
   const totalViagens=(S.atribuicoes[carro.id]?.viagens||[]).length;
   return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix+1} <span class="muted">(${ids.length} entrega${ids.length!==1?'s':''} · ${pesoViagem} kg)</span></div>
+      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix+1} <span class="muted">(${ids.length} entrega${ids.length!==1?'s':''} · ${pesoViagem} kg)</span>${(()=>{
+        const ts=[...new Set(ids.map(id=>pedidoPorId(id)?.agendamento?.turno).filter(t=>t==="manha"||t==="tarde"))];
+        if(!ts.length) return '';
+        const misto=ts.length>1;
+        return `<span style="background:${misto?'#b3341f':(ts[0]==="manha"?'#ffe600':'#29ABE2')};color:${misto?'#fff':'#000'};border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px;margin-left:6px">${misto?'⚠️ MANHÃ + TARDE':(ts[0]==="manha"?'☀️ MANHÃ':'🌇 TARDE')}</span>`;
+      })()}</div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave]?"disabled":""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave]?"Calculando…":"🧭 Sugerir rota"}</button>
         ${totalViagens>1?`<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>`:''}
@@ -859,11 +937,13 @@ function htmlViagemBox(carro,vix,cap){
       (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
         const ped=pedidoPorId(p.id);
         return htmlStopItem(ped,ix,`${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`,
-          `<button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
+          `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
+           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
       }).join("")
       :pedidosViagemArr.map((p,ix)=>htmlStopItem(p,ix,null,
           `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
+           <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
            <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`
         )).join(""))}
     ${resultado?`<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin+ids.length*(S.config.tempoParadaMin||15)} min</b> no total (com as ${ids.length} parada${ids.length!==1?'s':''})</span></div>
