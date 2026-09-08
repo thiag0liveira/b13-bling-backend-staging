@@ -957,7 +957,12 @@ function textoReciboImpressao(){
   return l.join("\n");
 }
 function imprimir(){
-  document.getElementById("recibo").innerHTML=`<h2>B13 BEBIDAS — Pedido Atacado</h2><pre style="font-size:14px;white-space:pre-wrap">${esc(textoReciboImpressao())}</pre>`;
+  const r=S.resultado||{};
+  const nped=r.pedido?.data?.numero||r.pedido?.data?.id||"";
+  document.getElementById("recibo").innerHTML=
+    `<h2 style="margin-bottom:2px">B13 BEBIDAS — Pedido Atacado</h2>`+
+    (nped?`<div style="font-weight:900;font-size:20px;margin-bottom:6px">Pedido #${esc(nped)}</div>`:"")+
+    `<pre style="font-size:14px;white-space:pre-wrap">${esc(textoReciboImpressao())}</pre>`;
   window.print();
 }
 

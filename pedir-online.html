@@ -989,8 +989,34 @@ function resumoTexto(){
   return l.join("\n");
 }
 function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURIComponent(resumoTexto()),"_blank"); }
+// texto da NOTA IMPRESSA — começa pelo número do pedido no Bling (o resumoTexto()
+// é o do WhatsApp e não trazia o número, então a notinha saía sem ele)
+function textoNotaImpressao(){
+  const r=S.resultado||{};
+  const pedidoId=r.pedido?.data?.id||"";
+  const nped=r.pedido?.data?.numero||pedidoId||"";
+  const l=[nped?`Pedido #${nped}`:"Pedido (aguardando registro)", new Date().toLocaleString("pt-BR"), ""];
+  l.push(`Cliente: ${S.nome}`); l.push(`Telefone: ${S.telefone}`);
+  if(soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
+  l.push(""); l.push("Itens:");
+  itens().forEach(i=> l.push(`${pack(i.qtd,i.un)} ${i.nomeProduto}${i.sabor&&i.sabor!==i.nomeProduto?` (${i.sabor})`:""} = ${brl(i.preco*i.qtd)}`));
+  l.push(""); l.push(`Subtotal: ${brl(subtotal())}`);
+  if(S.entrega==='entrega'&&S.frete){ l.push(`Entrega: ${S.endereco}`); l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}`); }
+  else l.push("Retirada na loja");
+  l.push(`TOTAL: ${brl(totalFinal())}`);
+  l.push(""); l.push("Obrigado pela preferência!");
+  return l.join("\n");
+}
 function imprimir(){
-  document.getElementById("recibo").innerHTML=`<h2>B13 BEBIDAS — Pedido Atacado</h2><pre style="font-size:14px;white-space:pre-wrap">${esc(resumoTexto())}</pre>`;
+  const r=S.resultado||{};
+  const pedidoId=r.pedido?.data?.id||"";
+  const nped=r.pedido?.data?.numero||pedidoId||"";
+  document.getElementById("recibo").innerHTML=
+    `<h2 style="margin-bottom:2px">B13 BEBIDAS — Pedido Atacado</h2>`+
+    (nped?`<div style="font-weight:900;font-size:20px;margin-bottom:6px">Pedido #${esc(nped)}</div>`:"")+
+    `<pre style="font-size:14px;white-space:pre-wrap">${esc(textoNotaImpressao())}</pre>`+
+    (pedidoId?`<div style="text-align:center;margin-top:8px"><svg id="barcodeImp"></svg><div style="font-size:10px;font-weight:700">Apresente no caixa</div></div>`:"");
+  if(pedidoId){ try{ JsBarcode("#barcodeImp",String(pedidoId),{format:"CODE128",width:1.5,height:38,fontSize:10,margin:0}); }catch(e){} }
   window.print();
 }
 
