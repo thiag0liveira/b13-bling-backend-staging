@@ -171,6 +171,18 @@ function totalPedido(){ return +(subtotal()+OUTRAS_DESPESAS+FRETE+taxaCartao()).
 // Fórmula: se X = total do que vai no cartão, a taxa é 0,035*X, e o total a receber
 // vira (semTaxa + 0,035*X). Pra fechar (pago == total), X precisa cobrir também os
 // outros pagamentos (dinheiro/pix) já lançados: X = (semTaxa - outros) / 0,965.
+// liga/desliga a taxa e JÁ corrige o valor lançado no cartão: com a taxa ligada o
+// valor cobrado inclui os 3,5%; desligada, volta ao valor do produto. Sem isso, ao
+// desmarcar sobrava a taxa no cartão e a tela mostrava "troco" num pagamento em cartão.
+function alternarTaxaCartao(ligada){
+  COBRAR_TAXA_CARTAO=!!ligada;
+  const linhasCartao=PAGAMENTOS.filter(p=>ehFormaCartao(p.formaNome));
+  if(linhasCartao.length){
+    const fator=ligada?(1+TAXA_CARTAO):(1/(1+TAXA_CARTAO));
+    linhasCartao.forEach(p=>{ p.valor=+(Number(p.valor||0)*fator).toFixed(2); });
+  }
+  render();
+}
 function ajustarCartaoComTaxa(){
   const semTaxa=totalSemTaxa();
   const outros=PAGAMENTOS.filter(p=>!ehFormaCartao(p.formaNome)).reduce((s,p)=>s+(Number(p.valor)||0),0);
@@ -241,8 +253,24 @@ function confirmarBancosPix(){
   finalizar();
 }
 function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
-// troco = quanto o cliente entregou a mais do que o total (saída de dinheiro da gaveta)
-function trocoAtual(){ const r=restante(); return r<-0.009 ? +(-r).toFixed(2) : 0; }
+// TROCO só existe em DINHEIRO — cartão e pix não devolvem troco (se o valor do
+// cartão passou do total, é erro de digitação, não troco).
+function valorEmDinheiro(){
+  return PAGAMENTOS.filter(p=>/dinheiro/i.test(p.formaNome||"")).reduce((s,p)=>s+(Number(p.valor)||0),0);
+}
+function trocoAtual(){
+  const sobra=-restante();                 // quanto passou do total
+  if(sobra<0.009) return 0;
+  const dinheiro=valorEmDinheiro();
+  if(dinheiro<0.009) return 0;             // sobrou, mas não tem dinheiro: não é troco
+  return +Math.min(sobra,dinheiro).toFixed(2); // nunca devolve mais do que veio em dinheiro
+}
+// sobra que NÃO é troco (ex.: cartão digitado a mais) — isso é erro, precisa avisar
+function sobraSemDinheiro(){
+  const sobra=-restante();
+  if(sobra<0.009) return 0;
+  return +(sobra-trocoAtual()).toFixed(2);
+}
 // tira da observação as notas automáticas do sistema, deixando só o texto do usuário
 function limparObs(obs){
   if(!obs) return "";
@@ -1476,7 +1504,7 @@ function render(){
           <input type="number" step="0.01" min="0" value="${FRETE||''}" placeholder="0,00" style="width:120px;text-align:right" onchange="FRETE=+this.value||0;render()"></div>
         ${(ehPedidoAtacado()&&(valorEmCredito()+valorEmDebito())>0)?`
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
-            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="COBRAR_TAXA_CARTAO=this.checked;render()"> Taxa cartão crédito/débito (3,5%)</span>
+            <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO?'checked':''} onchange="alternarTaxaCartao(this.checked)"> Taxa cartão crédito/débito (3,5%)</span>
             <b style="color:#ffd23f">${brl(taxaCartao())}</b>
           </label>
           <div class="muted" style="font-size:11px;margin-top:2px">O valor do cartão já sai com a taxa embutida (é o que passa na maquininha). A taxa mostrada é a parte dele que corresponde aos 3,5%.</div>
@@ -1484,7 +1512,8 @@ function render(){
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
         <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b style="color:${restante()>0.009?'#ff8090':'#8fffc0'}">${brl(Math.max(0,restante()))}</b></div>
-        ${restante()<-0.009?`<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(-restante())}</b></div>`:""}
+        ${trocoAtual()>0.009?`<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(trocoAtual())}</b></div>`:""}
+        ${sobraSemDinheiro()>0.009?`<div class="linha" style="margin-top:2px;background:#3a0010;border-radius:8px;padding:6px"><span style="color:#ff8f7a">⚠️ Passou ${brl(sobraSemDinheiro())} do total (cartão/pix não dá troco)</span><b style="color:#ff8f7a">corrija</b></div>`:""}
         <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
         <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" oninput="window._obsVenda=this.value">${esc(window._obsVenda||'')}</textarea>
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
