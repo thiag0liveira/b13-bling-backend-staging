@@ -116,8 +116,40 @@ async function carregar(silent){
     }
     IDS_FILA=new Set(nova.map(p=>String(p.id)));
     FILA=nova;
+    await restaurarMesas();
   }catch(err){}
   CARREGANDO=false; render();
+}
+// O trabalho fica na memória do navegador; se der F5 (ou a tela recarregar), as
+// colunas se perdem MAS o lock continua no servidor — o pedido ficava travado, sem
+// aparecer pra ninguém. Aqui a tela se reconecta: todo separador ativo que tem lock
+// tem o pedido recarregado na coluna dele automaticamente.
+let _restaurando=false;
+async function restaurarMesas(){
+  if(_restaurando) return;
+  const pendentes=ATIVOS.filter(function(id){
+    if(MESAS[id]&&(MESAS[id].pedido||MESAS[id].carregando)) return false;
+    return Object.values(LOCKS||{}).some(l=>String(l.funcionarioId)===String(id));
+  });
+  if(!pendentes.length) return;
+  _restaurando=true;
+  for(const id of pendentes){
+    const lock=Object.values(LOCKS||{}).find(l=>String(l.funcionarioId)===String(id));
+    if(!lock) continue;
+    MESAS[id]={carregando:true}; render();
+    try{
+      const j=await fetch(B+"/api/expedicao/pedido/"+lock.pedidoId).then(r=>r.json());
+      if(j.erro||!j.pedido){ await liberar(id,true); continue; }
+      MESAS[id]={ carregando:false, pedido:j.pedido, restaurado:true,
+        itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
+          un:i.un||1, estado:"", temQtd:0, confirmado:false})) };
+      MESAS[id]._hb=setInterval(function(){
+        fetch(B+"/api/separacoes/"+lock.pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:id})}).catch(()=>{});
+      },2*60*1000);
+    }catch(e){ delete MESAS[id]; }
+  }
+  _restaurando=false;
+  render();
 }
 async function toggleFunc(id){
   try{
@@ -126,6 +158,23 @@ async function toggleFunc(id){
     delete MESAS[id];
     await carregar(true);
   }catch(e){}
+}
+function quemSepara(pedidoId){
+  const l=Object.values(LOCKS||{}).find(x=>String(x.pedidoId)===String(pedidoId));
+  return l?(l.funcionarioNome||"separando…"):null;
+}
+// pedido com lock de alguém que NÃO está ativo na mesa (saiu, desativou, etc.):
+// fica travado sem aparecer em coluna nenhuma — deixa destravar manualmente
+function travadoSemDono(pedidoId){
+  const l=Object.values(LOCKS||{}).find(x=>String(x.pedidoId)===String(pedidoId));
+  if(!l) return false;
+  if(Object.values(MESAS).some(m=>m.pedido&&String(m.pedido.id)===String(pedidoId))) return false;
+  return !ATIVOS.includes(String(l.funcionarioId));
+}
+async function destravar(pedidoId){
+  if(!confirm("Destravar o pedido "+pedidoId+"?\n\nEle volta pra fila e qualquer separador poderá pegar.")) return;
+  try{ await fetch(B+"/api/separacoes/"+pedidoId,{method:"DELETE"}); }catch(e){}
+  carregar(true);
 }
 function ehOcupado(pedidoId){
   return Object.values(LOCKS||{}).some(l=>String(l.pedidoId)===String(pedidoId))
@@ -250,7 +299,7 @@ function colunaHtml(funcId){
       '<div style="font-size:12px;color:#ffd23f;font-weight:800">Pedido '+esc(m.pedido.numero||m.pedido.id)+'</div>'+
       '<div style="font-size:11px;color:#9a95c9">'+esc(m.pedido.contato?.nome||"")+'</div></div>'+
       '<button class="b bgh" style="flex:none;padding:8px 12px" onclick="liberar(\''+esc(funcId)+'\')">✕</button></div>'+
-    '<div class="colBody">'+itens+'</div>'+
+    '<div class="colBody">'+(m.restaurado?'<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:7px;font-size:12px;color:#ffd23f;margin-bottom:6px">↻ Pedido recuperado após recarregar a tela — confira os itens de novo.</div>':'')+itens+'</div>'+
     '<div class="colFoot">'+
       '<div style="font-size:11px;color:#9a95c9">'+feitos+' de '+total+' conferidos</div>'+
       '<div class="prog"><i style="width:'+pct+'%"></i></div>'+
@@ -273,7 +322,8 @@ function render(){
       '<div class="num">'+esc(p.numero)+'</div>'+
       '<div class="cli">'+esc(p.cliente)+'</div>'+
       '<div class="vlr">'+brl(p.total)+'</div>'+
-      (ocupado?'<div class="quem">separando…</div>':'')+
+      (ocupado?'<div class="quem">'+esc(quemSepara(p.id)||"separando…")+'</div>':'')+
+      (travadoSemDono(p.id)?'<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar('+p.id+')">🔓 Destravar</button>':'')+
     '</div>';
   }).join("")||'<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido aguardando separação. 🎉</div>';
 
