@@ -679,6 +679,10 @@ function salvarEdicaoPagamento(){
         FINALIZANDO=false;
         const ia=resp.itensAlterados;
         const iaMsg=ia&&(ia.retirados?.length||ia.acrescentados?.length||ia.alterados?.length)?`<div style="margin-top:8px;padding:8px;background:#1c1846;border-radius:8px;font-size:12px;text-align:left">✏️ <b>Itens:</b>${ia.retirados?.length?" retirou "+esc(ia.retirados.join(", "))+".":""}${ia.acrescentados?.length?" acrescentou "+esc(ia.acrescentados.join(", "))+".":""}${ia.alterados?.length?" alterou "+esc(ia.alterados.join(", "))+".":""}</div>`:"";
+        const est=resp.estoque;
+        const estMsg=est?(est.estornadoERelancado
+          ?'<div class="muted" style="font-size:12px;margin-top:6px;color:#8fffc0">📦 '+esc(est.msg)+'</div>'
+          :'<div style="margin-top:8px;padding:8px;background:#3a0010;border:1px solid #b3341f;border-radius:8px;font-size:12px;color:#ff8f7a">'+esc(est.msg)+'</div>'):'';
         const rep=(resp.estoqueReposto||[]);
         const repMsg=rep.length?`<div class="muted" style="text-align:left;margin-top:6px;font-size:12px">📦 Estoque reposto pra concluir: ${rep.map(r=>esc(r.nome||("produto "+r.produtoId))+" (+"+r.faltava+")").join(", ")}</div>`:"";
         document.getElementById("modais").innerHTML=`
@@ -688,7 +692,7 @@ function salvarEdicaoPagamento(){
               <span class="muted">Pagamento de:</span> ${esc(resp.de||"—")}<br>
               <span class="muted">Para:</span> ${esc(resp.para||"—")}<br>
               <span class="muted">Autorizado por:</span> ${esc(resp.autorizadoPor||AUTORIZADO_POR||"—")}</div>
-            ${iaMsg}${repMsg}
+            ${iaMsg}${estMsg}${repMsg}
             ${resp.incluidoNoCaixa?`<div style="margin-top:10px;padding:8px;background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;color:#ffd23f;font-size:12px;text-align:left">⚠️ Este pedido não estava em nenhum caixa do sistema. Foi <b>incluído no caixa atual</b> (${esc(resp.incluidoNoCaixa.operador||"você")}).</div>`:""}
             <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
           </div></div>`;
@@ -1416,7 +1420,7 @@ function render(){
           <div class="muted" style="margin-top:4px">📌 Status: <b style="color:#ffd23f">${esc(PEDIDO_ATUAL.situacaoNome||"—")}</b></div>
           <div class="muted">🧑‍💼 Vendedor: <b style="color:#cfc9f5">${esc(PEDIDO_ATUAL.vendedorNome||"—")}</b></div>
           ${CLIENTE_NOME?`<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>`:''}
-          ${MODO_EDICAO_PAGAMENTO?`<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR||"—")}. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>`:""}
+          ${MODO_EDICAO_PAGAMENTO?`<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR||"—")}. Como ele já foi finalizado, ao salvar o sistema <b>estorna o estoque, aplica as mudanças e lança de novo</b> automaticamente. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>`:""}
         </div>`:`<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
         <div style="display:flex;gap:8px;margin-bottom:12px">

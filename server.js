@@ -4570,6 +4570,12 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
         oQueFazer:`Tentou alterar o pedido #${numero||ped.numero} (${itensMudaramEd?"itens e ":""}pagamento) e o Bling recusou. ${itensMudaramEd?"Itens pretendidos: "+diffItensEd.para+". ":""}Pagamento pretendido: ${descDepoisPre}.`});
       return res.status(502).json({erro:"Falha ao atualizar no Bling: "+m});
     }
+    // se o pedido estava ATENDIDO, o destrave ESTORNOU o estoque — confere se o Bling
+    // relançou ao voltar (senão o estoque fica sobrando e vira Aviso)
+    let relancamento=null;
+    if(Number(ped.situacao?.id)===SIT.ATENDIDO){
+      relancamento=await verificarRelancamento(pedidoId, SIT.ATENDIDO, {operador:funcsNome, origem:"Caixa Atacado (reabertura)"});
+    }
     if(estoqueRepostoEd.length){
       registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${numero||ped.numero}: estoque reposto automaticamente (reabertura)`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`repo-ed-${idStr}-${Date.now()}`,estoqueAjustado:estoqueRepostoEd.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),oQueFazer:"Confira no Bling se o saldo desses produtos está certo."});
     }
@@ -4625,7 +4631,11 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
 
     res.json({ok:true, autorizadoPor:auth.funcionario.nome, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov, incluidoNoCaixa,
       itensAlterados:itensMudaramEd?{retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null,
-      estoqueReposto:estoqueRepostoEd});
+      estoqueReposto:estoqueRepostoEd,
+      estoque: relancamento ? (relancamento.ok
+        ? {estornadoERelancado:true, msg:"Estoque estornado e relançado com os itens novos."}
+        : {estornadoERelancado:false, situacao:relancamento.situacao, msg:"⚠️ O estoque foi ESTORNADO mas não voltou a ser baixado (pedido ficou em "+(relancamento.situacao||"?")+"). Ajuste no Bling — veja em Avisos."})
+        : null});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -5417,6 +5427,27 @@ function emitirNfceEmSegundoPlano(pedidoId, numero, operador){
 // restaura a situação de um pedido depois de uma edição, com RETRY quando o Bling
 // reclama de estoque (ele estorna o estoque ao destravar e pode demorar pra
 // processar antes de aceitar a re-baixa). Se mesmo assim faltar, repõe o que falta.
+// Confere, DEPOIS de editar um pedido que estava Atendido, se ele voltou pro estado
+// certo — ou seja, se o Bling relançou o estoque. Se não voltou, o estoque ficou
+// ESTORNADO e não baixado de novo: isso vira Aviso, porque é diferença real de estoque.
+async function verificarRelancamento(id, alvo, ctx){
+  try{
+    await sleep(800);
+    const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    const sit=Number(d?.situacao?.id||0);
+    if(sit===Number(alvo)) return {ok:true, situacao:nomeSituacao(sit)};
+    registrarAviso({
+      tipo:"estoque_nao_relancado",
+      titulo:`Pedido #${d?.numero||id}: estoque NÃO foi relançado`,
+      pedidoId:String(id), numero:d?.numero, operador:ctx?.operador||"", origem:ctx?.origem||"Caixa Atacado",
+      fingerprint:`relanc-${id}-${Date.now()}`,
+      erroBling:`Deveria estar em ${nomeSituacao(alvo)} e está em ${nomeSituacao(sit)}`,
+      oQueFazer:`Ao editar, o Bling ESTORNOU o estoque do pedido #${d?.numero||id} e não conseguiu baixar de novo (o pedido ficou em "${nomeSituacao(sit)}"). O estoque desses produtos está MAIOR do que deveria. Abra o pedido no Bling e mude a situação pra ${nomeSituacao(alvo)} — isso relança a baixa.`,
+    });
+    return {ok:false, situacao:nomeSituacao(sit), situacaoId:sit};
+  }catch(e){ return {ok:false, erro:e.message}; }
+}
+
 async function _restaurarSituacaoComRetry(id, alvo, itensParaEstoque){
   const patch=(s)=>bling(`/pedidos/vendas/${id}/situacoes/${s}`,{method:"PATCH"});
   const caminho = alvo===SIT.ATENDIDO?[SIT.EM_SEP,SIT.SEPARADO,SIT.ATENDIDO] : alvo===SIT.SEPARADO?[SIT.EM_SEP,SIT.SEPARADO] : [alvo];
@@ -5573,6 +5604,9 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       }
       if(r.reposto?.length) estoqueReposto=[...estoqueReposto,...r.reposto];
       sitDepoisPut=r.situacaoFinal||sitInicial;
+      // pedido que já estava Atendido teve o estoque estornado no destrave —
+      // confere se voltou a ser baixado
+      if(sitInicial===SIT.ATENDIDO) await verificarRelancamento(pedidoId, SIT.ATENDIDO, {operador:funcNome, origem:"Caixa Atacado"});
     } else if(parcelasBling.length){
       const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
       if(!rp?.ok){
