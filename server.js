@@ -7490,6 +7490,31 @@ async function _atualizarCentralBling(dia){
 // ===== ENTREGAS AGENDADAS (acompanhamento por dia) =====
 // Junta: o agendamento (dia/turno/observação), o pedido (cliente, valor, frete) e o
 // que o CAIXA ATACADO já registrou (se foi pago e como). Tudo local = instantâneo.
+// confere o SALDO ATUAL dos produtos que foram retirados de pedidos — pra confirmar
+// se saíram mesmo por falta de estoque (ou se o estoque já foi reposto)
+app.get("/api/central/retirados-estoque",async(req,res)=>{
+  try{
+    const nomes=String(req.query.nomes||"").split("|").map(x=>x.trim()).filter(Boolean).slice(0,25);
+    if(!nomes.length) return res.json({data:[]});
+    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    const porNome={};
+    Object.values(indice).forEach(p=>{ if(p.nome) porNome[String(p.nome).toLowerCase().trim()]=p.produtoId; });
+    const alvos=nomes.map(n=>({nome:n, produtoId:porNome[n.toLowerCase().trim()]||null}));
+    const ids=alvos.map(a=>a.produtoId).filter(Boolean);
+    const saldos={};
+    for(let i=0;i<ids.length;i+=40){
+      const bloco=ids.slice(i,i+40);
+      try{
+        const r=await bling(`/estoques/saldos?${bloco.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+        (r?.data||[]).forEach(x=>{ saldos[x.produto?.id]={fisico:Number(x.saldoFisicoTotal??0), disponivel:Number(x.saldoVirtualTotal??0)}; });
+      }catch(e){}
+      await sleep(180);
+    }
+    res.json({ data: alvos.map(a=>({ ...a, saldo:a.produtoId?(saldos[a.produtoId]||null):null,
+      semEstoque: a.produtoId&&saldos[a.produtoId] ? saldos[a.produtoId].disponivel<=0 : null })) });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/central/entregas",(req,res)=>{
   try{
     const turnos=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
@@ -7611,9 +7636,26 @@ app.get("/api/central/resumo",(req,res)=>{
       if(ev.evento==="itens_retirados"){ (ev.detalhes?.itens||[]).forEach(n=>{ retirados[n]=(retirados[n]||0)+1; }); }
     }); });
     // itens retirados também pelas alterações de itens gravadas no movimento (de→para)
+    // RETIRADOS: acontece quando o pedido é REABERTO no caixa atacado (já pago) e o
+    // produto sai por não ter estoque. Guarda também de qual pedido, quem tirou e quando.
+    const detRetirados={}; // nome -> {vezes, unidades, ocorrencias:[{pedido,por,em}]}
+    const addRetirado=(txt,ctx)=>{
+      const t=String(txt||"").trim(); if(!t) return;
+      const m2=t.match(/^(\d+(?:[.,]\d+)?)x\s*(.+)$/);
+      const qtd=m2?Number(String(m2[1]).replace(",",".")):0;
+      const nome=(m2?m2[2]:t).trim();
+      if(!nome) return;
+      retirados[nome]=(retirados[nome]||0)+1;
+      if(!detRetirados[nome]) detRetirados[nome]={nome,vezes:0,unidades:0,ocorrencias:[]};
+      const d=detRetirados[nome];
+      d.vezes++; d.unidades+=qtd;
+      if(d.ocorrencias.length<8) d.ocorrencias.push(ctx);
+    };
     (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ (m.alteracoes||[]).forEach(a=>{ if(a.tipo==="itens"&&noDia(a.em)){
-      if(Array.isArray(a.retirados)){ a.retirados.forEach(x=>{ const nome=String(x).replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; }); return; } // formato novo (estruturado)
-      const antes=String(a.de||"").split(", ").filter(Boolean); const depois=new Set(String(a.para||"").split(", ").filter(Boolean)); antes.forEach(x=>{ if(!depois.has(x)){ const nome=x.replace(/^\d+x\s*/,""); retirados[nome]=(retirados[nome]||0)+1; } }); } }); }));
+      const ctx={pedido:m.numero||m.pedidoId, pedidoId:m.pedidoId, por:a.por||m.operador||s.operador||"", autorizadoPor:a.autorizadoPor||"", em:a.em};
+      if(Array.isArray(a.retirados)){ a.retirados.forEach(x=>addRetirado(x,ctx)); return; } // formato novo (estruturado)
+      const antes=String(a.de||"").split(", ").filter(Boolean); const depois=new Set(String(a.para||"").split(", ").filter(Boolean));
+      antes.forEach(x=>{ if(!depois.has(x)) addRetirado(x,ctx); }); } }); }));
     autorizacoes.sort((a,b)=>b.em-a.em);
 
     // ===== pagamentos NÃO pagos (pedidos do dia com status diferente de pago) =====
@@ -7643,7 +7685,7 @@ app.get("/api/central/resumo",(req,res)=>{
       caixasAbertos:abertos, totalCaixasAbertos:+abertos.reduce((s,c)=>s+(c.resumo.totalVendas||0),0).toFixed(2),
       caixasFechadosDia:fechadosDia,
       fechamentoDia, autorizacoes:autorizacoes.slice(0,40), qtdAutorizacoes:autorizacoes.length,
-      produtosRetirados:Object.entries(retirados).map(([nome,vezes])=>({nome,vezes})).sort((a,b)=>b.vezes-a.vezes),
+      produtosRetirados:Object.values(detRetirados).map(d=>({...d, unidades:+d.unidades.toFixed(3)})).sort((a,b)=>b.vezes-a.vezes),
       naoPagos:naoPagos.slice(0,30), qtdNaoPagos:naoPagos.length,
       nfce:{ emitidasDia:nfceHoje, pendentesDia:pendNfce },
       avisos:{ pendentes:avPend.length, ultimos:avPend.slice(0,5).map(a=>({id:a.id,titulo:a.titulo,em:a.em})) },

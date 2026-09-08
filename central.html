@@ -60,7 +60,7 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null;
+let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null;
 const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",pedido_incluido_no_caixa:"Incluído no caixa"};
 const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
 const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
@@ -251,7 +251,24 @@ function render(){
 
         ${card("🔐 Autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
 
-        ${card("📦 Produtos retirados de pedidos",`<div class="muted" style="margin-bottom:6px">Possível falta de estoque — confira.</div>`+lins(D.produtosRetirados,p=>`<div class="lin"><span>${esc(p.nome)}</span><b>${p.vezes}x</b></div>`))}
+        ${card("📦 Produtos retirados de pedidos",`
+          <div class="muted" style="margin-bottom:8px">Produtos tirados ao <b>reabrir o pedido no caixa atacado</b> (normalmente por não ter no estoque na hora de separar).</div>
+          ${(D.produtosRetirados||[]).length?`
+            ${(D.produtosRetirados||[]).map(p=>{
+              const est=(RETIRADOS_EST||{})[p.nome];
+              const selo=est===undefined?'':(est&&est.saldo?(est.semEstoque
+                ?`<span class="chipT" style="background:#3a0010;color:#ff8090">sem estoque (${est.saldo.disponivel})</span>`
+                :`<span class="chipT" style="background:#0a2a1a;color:#3ce88a">tem ${est.saldo.disponivel}</span>`):'');
+              return `<div class="lin" style="align-items:flex-start">
+                <div style="flex:1;min-width:0">
+                  <span style="font-size:13px">${esc(p.nome)}</span> ${selo}
+                  <div class="muted" style="font-size:11px">${(p.ocorrencias||[]).map(o=>`#${esc(o.pedido)}${o.por?" · "+esc(o.por):""}${o.em?" · "+hora(o.em):""}`).join(" | ")}</div>
+                </div>
+                <b>${p.vezes}x${p.unidades?` <span class="muted">(${p.unidades} un)</span>`:""}</b>
+              </div>`;
+            }).join("")}
+            <button class="btn btn-ghost" style="margin-top:8px" onclick="conferirEstoqueRetirados()">${RETIRADOS_EST?"🔄 Conferir estoque de novo":"📦 Conferir estoque desses produtos"}</button>
+          `:'<div class="muted">Nenhum produto retirado hoje. ✅</div>'}`)}
 
         ${card("💵 Nossos caixas (o que passou pelo sistema)",`
           <div class="muted" style="margin-bottom:8px">Só o que foi lançado nos caixas do sistema. O varejo/PDV do Bling não entra aqui.</div>
@@ -323,6 +340,15 @@ async function limparAvisos(){
     const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro) AVISOS=a;
     render();
   }catch(e){ alert("Erro ao limpar os avisos."); }
+}
+async function conferirEstoqueRetirados(){
+  const nomes=(D.produtosRetirados||[]).map(p=>p.nome);
+  if(!nomes.length) return;
+  try{
+    const j=await fetch(B+"/api/central/retirados-estoque?nomes="+encodeURIComponent(nomes.join("|"))).then(r=>r.json());
+    RETIRADOS_EST={}; (j.data||[]).forEach(x=>{ RETIRADOS_EST[x.nome]=x; });
+    render();
+  }catch(e){ alert("Não consegui conferir o estoque agora."); }
 }
 async function resolverAviso(id){
   try{
