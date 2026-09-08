@@ -1255,9 +1255,13 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       contato:{id:ped.contato?.id},
       itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
       observacoes:[String(ped.observacoes||"").trim(), String(opts.obsExtra||"").trim()].filter(Boolean).join("\n"),
-      parcelas:parcelasFinais.filter(p=>(Number(p.valor)||0)>0).map(p=>({
-        formaPagamento:{id:p.formaId}, dataVencimento:ped.data, valor:+Number(p.valor).toFixed(2),
-      })),
+      // se veio lista vazia (ex.: só gravando a taxa em "outras despesas"), PRESERVA
+      // as parcelas que já estão no pedido — enviar vazio apagaria o pagamento no Bling
+      parcelas:(parcelasFinais.filter(p=>(Number(p.valor)||0)>0).length
+        ? parcelasFinais.filter(p=>(Number(p.valor)||0)>0).map(p=>({
+            formaPagamento:{id:p.formaId}, dataVencimento:ped.data, valor:+Number(p.valor).toFixed(2) }))
+        : (ped.parcelas||[]).map(p=>({
+            formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data, valor:+Number(p.valor||0).toFixed(2) }))),
     };
     if(ped.transporte) payload.transporte={
       fretePorConta:ped.transporte.fretePorConta??0, frete:ped.transporte.frete||0,
@@ -5818,6 +5822,30 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
         avisoBling="As formas de pagamento não foram gravadas no Bling ("+(rp?.erro||"erro")+"). O caixa registrou a venda; confira o pedido no Bling.";
         registrarAviso({tipo:"pagamento_nao_gravado_bling",titulo:`Pedido #${ped.numero||pedidoId}: formas de pagamento não gravadas no Bling`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:rp?.erro||"",fingerprint:`pagbling-${chave}-${Date.now()}`,oQueFazer:`No Bling, abra o pedido #${ped.numero||pedidoId} e confira as formas de pagamento: ${pagamentos.map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(", ")}.`});
       } else if(rp.restauracao?.reposto?.length){ estoqueReposto=[...estoqueReposto,...rp.restauracao.reposto]; }
+    } else if(taxaAdd>0.009){
+      // sem itens alterados e sem parcelas pra gravar, mas HÁ taxa: ainda assim
+      // precisa gravar "outras despesas" no Bling, senão o total de lá fica sem a taxa
+      const rt=await atualizarParcelasBling(pedidoId, [], {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
+      if(!rt?.ok) avisoBling=(avisoBling?avisoBling+" ":"")+"A taxa do cartão não foi gravada no Bling ("+(rt?.erro||"erro")+").";
+    }
+
+    // CONFERE se a taxa entrou em "outras despesas" no Bling — o total de lá tem que
+    // bater com itens + despesas + frete. Se não bater, o pedido fica no Bling sem a
+    // taxa (foi o que aconteceu no #54940) e o caixa não fecha: vira Aviso.
+    if(taxaAdd>0.009){
+      try{
+        await sleep(600);
+        const conf=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        const desp=Number(conf?.outrasDespesas||0);
+        if(Math.abs(desp-despesasTotal)>0.05){
+          registrarAviso({ tipo:"taxa_cartao_nao_gravada",
+            titulo:`Pedido #${ped.numero||pedidoId}: taxa do cartão não entrou no Bling`,
+            pedidoId:chave, numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
+            fingerprint:`taxa-${chave}`,
+            erroBling:`Outras despesas no Bling: ${desp.toFixed(2)} · esperado: ${despesasTotal.toFixed(2)}`,
+            oQueFazer:`A taxa de ${taxaAdd.toFixed(2)} deveria estar em "Outras despesas" do pedido #${ped.numero||pedidoId} no Bling, mas lá está ${desp.toFixed(2)}. Ajuste no Bling pra o total do pedido bater com o que foi cobrado.` });
+        }
+      }catch(e){}
     }
 
     // 6) registros locais (pagamento + caixa, sem duplicar)
