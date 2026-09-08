@@ -76,7 +76,11 @@ async function carregar(silent){
       fetch(B+"/api/mesa/funcionarios").then(r=>r.json()),
       fetch(B+"/api/mesa/estado").then(r=>r.json()),
     ]);
-    FUNCS=f.data||[]; ATIVOS=(e.ativos||[]).map(a=>a.id);
+    FUNCS=f.data||[];
+    // só entra na mesa quem está na lista de funcionários da expedição — evita coluna
+    // com o ID cru de alguém que saiu do grupo ou foi excluído
+    const idsValidos=new Set(FUNCS.map(x=>String(x.id)));
+    ATIVOS=(e.ativos||[]).map(a=>String(a.id)).filter(id=>idsValidos.has(id));
     FILA=e.fila||[]; LOCKS=e.locks||{};
   }catch(err){}
   CARREGANDO=false; render();
@@ -181,8 +185,9 @@ async function concluir(funcId){
 
 function colunaHtml(funcId){
   const f=FUNCS.find(x=>String(x.id)===String(funcId));
+  if(!f) return ""; // funcionário não é mais da expedição: não renderiza a coluna
   const m=MESAS[funcId];
-  const nome=f?f.nome:funcId;
+  const nome=f.nome;
   if(!m||!m.pedido){
     return '<div class="col"><div class="colTop"><div class="colNome">'+esc(nome)+'</div><span style="font-size:11px;color:#9a95c9">livre</span></div>'+
       '<div class="colBody"><div class="vazio">'+(m&&m.carregando?"Abrindo pedido…":"Toque num pedido da fila<br>para começar a separar")+'</div></div></div>';

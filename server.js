@@ -1019,19 +1019,24 @@ app.get("/api/separacoes",(req,res)=>{ res.json({data:limparLocksExpirados()}); 
 // numa coluna. Guarda quem está ATIVO na mesa (independente de login).
 const MESA_FILE=`${DATA_DIR}/mesa_separacao.json`; // {ativos:[funcionarioId], em}
 function lerMesa(){ const d=lerJSON(MESA_FILE,{ativos:[]}); if(!Array.isArray(d.ativos)) d.ativos=[]; return d; }
+// SOMENTE o grupo expedição — nem admin, nem gerente, nem permissão avulsa de separação
+function _ehExpedicao(f){ if(!f||f.ativo===false) return false; const p=f.permissoes||[]; return f.nivel==="expedicao"||p.includes("expedicao"); }
+// remove da mesa quem não é mais da expedição (ou foi excluído) — senão sobra uma
+// coluna com o ID cru de alguém que não existe mais na lista
+function lerMesaValidada(){
+  const mesa=lerMesa();
+  const funcs=lerJSON(FUNC_FILE,{});
+  const validos=mesa.ativos.filter(id=>_ehExpedicao(funcs[id]));
+  if(validos.length!==mesa.ativos.length){ mesa.ativos=validos; mesa.em=Date.now(); salvarJSON(MESA_FILE,mesa); }
+  return mesa;
+}
 // funcionários que podem separar (grupo expedição / com permissão de separação)
 app.get("/api/mesa/funcionarios",(req,res)=>{
   try{
     const funcs=lerJSON(FUNC_FILE,{});
     const mesa=lerMesa();
-    // SOMENTE o grupo expedição — nem admin, nem gerente, nem quem só tem alguma
-    // permissão avulsa de separação: a mesa é dos separadores.
-    const ehExpedicao=(f)=>{
-      const p=f.permissoes||[];
-      return f.nivel==="expedicao" || p.includes("expedicao");
-    };
     const lista=Object.entries(funcs)
-      .filter(([id,f])=>f&&f.ativo!==false&&ehExpedicao(f))
+      .filter(([id,f])=>_ehExpedicao(f))
       .map(([id,f])=>({id, nome:f.nome||"—", nivel:f.nivel||"", ativoNaMesa:mesa.ativos.includes(String(id))}))
       .sort((a,b)=>a.nome.localeCompare(b.nome));
     res.json({data:lista, ativos:mesa.ativos,
@@ -1041,7 +1046,9 @@ app.get("/api/mesa/funcionarios",(req,res)=>{
 app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{
   try{
     const id=String(req.params.funcionarioId);
-    const mesa=lerMesa();
+    const funcs=lerJSON(FUNC_FILE,{});
+    if(!_ehExpedicao(funcs[id])) return res.status(400).json({erro:"esse funcionário não é do grupo expedição"});
+    const mesa=lerMesaValidada();
     const i=mesa.ativos.indexOf(id);
     if(i>=0) mesa.ativos.splice(i,1); else mesa.ativos.push(id);
     mesa.em=Date.now();
@@ -1052,7 +1059,7 @@ app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{
 // estado da mesa: fila de pedidos na ORDEM DE CONFIRMAÇÃO + quem está com o quê
 app.get("/api/mesa/estado",async(req,res)=>{
   try{
-    const mesa=lerMesa();
+    const mesa=lerMesaValidada();
     const funcs=lerJSON(FUNC_FILE,{});
     const locks=limparLocksExpirados();
     // pedidos aguardando separação (mesma fila da expedição), do mais antigo pro mais novo
@@ -1068,7 +1075,7 @@ app.get("/api/mesa/estado",async(req,res)=>{
     const emSeparacao={}; // funcionarioId -> pedido
     Object.values(locks||{}).forEach(l=>{ if(l&&l.funcionarioId) emSeparacao[String(l.funcionarioId)]={pedidoId:l.pedidoId, desde:l.em||l.desde||null, nome:l.funcionarioNome||""}; });
     res.json({
-      ativos: mesa.ativos.map(id=>({ id, nome:(funcs[id]?.nome)||"—", separando: emSeparacao[String(id)]||null })),
+      ativos: mesa.ativos.filter(id=>funcs[id]).map(id=>({ id, nome:funcs[id].nome||"—", separando: emSeparacao[String(id)]||null })),
       fila: pedidos.map(p=>({ id:p.id, numero:p.numero, cliente:p.contato?.nome||"—", total:Number(p.total)||0,
         data:p.data, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)),
         emSeparacaoPor: Object.values(locks||{}).find(l=>String(l.pedidoId)===String(p.id))?.funcionarioNome || null })),
