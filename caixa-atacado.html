@@ -128,6 +128,7 @@ let MODO_EDICAO_PAGAMENTO=false; // true = editando o pagamento de um pedido já
 let TOKEN_EDICAO="";             // QR autorizador guardado só em memória durante a edição (nunca salvo)
 let AUTORIZADO_POR="";           // nome de quem autorizou (só pra exibir)
 let AUTORIZOU_MENOR=null;        // {autorizadoPor, falta} quando um gerente liberou fechar com valor menor
+let DESTINO_PEDIDO=null;         // "pronto" (cliente já levou) | "separacao" (vai separar)
 let FINALIZANDO=false;           // trava global: NUNCA duas finalizações ao mesmo tempo (clique duplo, modal, Enter)
 let OP_ID=null;                  // id único da tentativa de finalização (idempotência no servidor)
 function gerarOpId(){ return "op-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10); }
@@ -762,7 +763,7 @@ function cancelarVenda(){
 }
 function sairEdicao(){ MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; novaVenda(); }
 
-function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; FINALIZANDO=false; OP_ID=null; window._obsVenda=""; render(); }
+function novaVenda(){ PEDIDO_ATUAL=null; CLIENTE_NOME=""; CARRINHO=[]; PAGAMENTOS=[]; ULTIMO_ITEM_PAINEL=null; OUTRAS_DESPESAS=0; FRETE=0; COBRAR_TAXA_CARTAO=true; MODO_EDICAO_PAGAMENTO=false; TOKEN_EDICAO=""; AUTORIZADO_POR=""; BANCO_PIX_ESCOLHIDO=""; AUTORIZOU_MENOR=null; FINALIZANDO=false; OP_ID=null; DESTINO_PEDIDO=null; window._obsVenda=""; render(); }
 
 // ---------------- busca de produto / carrinho ----------------
 function alterarQtd(ix,d){ CARRINHO[ix].quantidade=Math.max(1,Number(CARRINHO[ix].quantidade)+d); aplicarPrecoAutomatico(ix); render(); }
@@ -1603,6 +1604,23 @@ async function aguardarConclusaoFinalizacao(opId, ctx, msgEl){
   return false;
 }
 
+// depois de receber: o cliente já está com a mercadoria, ou o pedido vai pra separação?
+function perguntarDestinoPedido(){
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>📦 O que fazer com o pedido?</h3>
+      <div class="muted" style="margin:8px 0 14px">Pagamento conferido. Agora diga o destino:</div>
+      <button class="btn" style="width:100%;padding:16px;background:#2f9e6b;margin-bottom:10px;text-align:left"
+        onclick="DESTINO_PEDIDO='pronto';fecharModais();finalizar()">
+        ✅ <b>Cliente já levou / já separou</b>
+        <div style="font-size:11px;opacity:.85;font-weight:400;margin-top:2px">Pedido vai direto pra Atendido</div></button>
+      <button class="btn" style="width:100%;padding:16px;background:#29ABE2;color:#000;text-align:left"
+        onclick="DESTINO_PEDIDO='separacao';fecharModais();finalizar()">
+        📦 <b>Mandar pra separação</b>
+        <div style="font-size:11px;opacity:.85;font-weight:400;margin-top:2px">Vai pra Em separação e entra na fila da Mesa e do Painel</div></button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="fecharModais()">Cancelar</button>
+    </div></div>`;
+}
 async function finalizar(){
   if(MODO_EDICAO_PAGAMENTO) return salvarEdicaoPagamento();
   if(FINALIZANDO) return; // trava global contra clique duplo / Enter / modal
@@ -1625,6 +1643,8 @@ async function finalizar(){
   // se pagou com "Pix Banco", pergunta o banco de CADA Pix Banco antes de finalizar
   const pixBancoSemBanco=PAGAMENTOS.some(p=>/pix/i.test(p.formaNome||"")&&/banco/i.test(p.formaNome||"")&&!p.banco);
   if(pixBancoSemBanco){ perguntarBancosPix(); return; }
+  // ATACADO: pergunta o destino do pedido — cliente já levou, ou vai pra separação?
+  if(ehPedidoAtacado() && !DESTINO_PEDIDO){ perguntarDestinoPedido(); return; }
   FINALIZANDO=true;
   if(!OP_ID) OP_ID=gerarOpId(); // mesma tentativa mantém o mesmo opId (retry idempotente)
   btn.disabled=true; btn.textContent="Processando…";
@@ -1647,7 +1667,9 @@ async function finalizar(){
   //  (Regra antiga, guardada caso volte: ATENDIDO só p/ venda nova 100% varejo; resto SEPARADO.)
   const usouAtacado = CARRINHO.some(i => i.modoPreco==="atacado" || i.origemPreco==="atacado");
   const taxaCredito = taxaCartao(); // 3,5% do crédito + débito, se aplicável e marcado
-  const statusFinal = "atendido";
+  // "separacao" deixa o pedido EM SEPARAÇÃO (entra na fila da Mesa e do Painel);
+  // "pronto" segue direto pra Atendido, como antes
+  const statusFinal = DESTINO_PEDIDO==="separacao" ? "separacao" : "atendido";
   try{
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout=(url,opts,ms=90000)=>{

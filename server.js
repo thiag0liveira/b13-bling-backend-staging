@@ -1134,12 +1134,25 @@ app.get("/api/painel-pedidos", async(req,res)=>{
     const params=new URLSearchParams({pagina:1,limite:100});
     [SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
     const r=await bling(`/pedidos/vendas?${params.toString()}`);
-    const pedidos=r.data||[];
+    let pedidos=r.data||[];
+    // SÓ os pedidos que NÓS mandamos pra separação (pelo caixa atacado ou pela tela
+    // de Pedidos). Antes vinha tudo que estivesse nessas situações no Bling, inclusive
+    // pedido que ninguém enviou. ?todos=1 mostra tudo, se precisar conferir.
+    const filaSep=lerFilaSep();
+    if(req.query.todos!=="1"){
+      pedidos=pedidos.filter(p=>filaSep[String(p.id)]);
+    }
+    pedidos.sort((a,b)=>{ // ordem de envio pra separação
+      const ea=filaSep[String(a.id)]?.em ?? 9e15, eb=filaSep[String(b.id)]?.em ?? 9e15;
+      return ea-eb;
+    });
 
     const aguardando=[], separando=[], pendencia=[], separado=[];
     for(const p of pedidos){
       const sit=p.situacao?.id;
-      const base={numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",total:p.total||0};
+      const env=filaSep[String(p.id)]||null;
+      const base={numero:p.numero,id:p.id,cliente:p.contato?.nome||"—",total:p.total||0,
+        tipoSeparacao:env?env.tipo:null, enviadoEm:env?env.em:null};
       if(sit===SIT.SEPARADO){ separado.push(base); }
       else if(sit===SIT.SEP_PEND){ pendencia.push(base); }
       else if(sit===SIT.EM_SEP){
@@ -5730,10 +5743,21 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     if(itensMudaram) registrarHistoricoItens(chave, diff, funcionarioId, funcNome, null);
 
     // 7) situação final (Atendido, passando por Separado)
-    const alvo=statusFinal==="separado"?"Separado":"Atendido";
+    // destino escolhido no caixa: "separacao" = pago, mas ainda vai ser separado
+    // (entra na fila da Mesa e no Painel); os outros seguem como antes
+    const alvo=statusFinal==="separacao"?"Em separação":(statusFinal==="separado"?"Separado":"Atendido");
     let avisoAtendido=null;
     try{
-      const rMov=statusFinal==="separado"
+      const rMov=statusFinal==="separacao"
+        ? await (async()=>{
+            try{
+              await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+              registrarNaFilaSeparacao(pedidoId, (req.body.tipoSeparacao==="entrega"?"entrega":"retirada"), funcNome, ped.numero);
+              addLog(String(pedidoId),"enviado_separacao",funcionarioId,funcNome,{origem:"caixa atacado (pago)",numero:ped.numero});
+              return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
+            }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
+          })()
+        : statusFinal==="separado"
         ? await moverPedidoParaSeparado(pedidoId)
         : await moverPedidoParaAtendido(pedidoId,{sitConhecida:sitDepoisPut, itensParaEstoque:itensEfetivos});
       console.log("Transição do pedido "+pedidoId+" (alvo "+alvo+"):",JSON.stringify(rMov.caminho));

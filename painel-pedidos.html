@@ -86,25 +86,25 @@ function pedHtml(p,tipo){
   if(tipo==="pendencia") return `
     <div class="ped ped-pend">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
       <span class="aviso">COMPARECER AO CAIXA DO ATACADO!</span>
     </div>`;
   if(tipo==="separado") return `
     <div class="ped ped-pronto">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
       <span class="extra">PRONTO PARA RETIRADA</span>
     </div>`;
   if(tipo==="separando") return `
     <div class="ped">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
       <span class="extra">👤 ${esc(p.funcionario)}</span>
     </div>`;
   return `
     <div class="ped">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
     </div>`;
 }
 
