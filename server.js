@@ -8081,6 +8081,40 @@ app.get("/api/pedidos-online/agendamentos",(req,res)=>{
   try{ res.json({data:lerJSON(TURNOS_ENTREGA_FILE,{})}); }catch(e){ res.json({data:{}}); }
 });
 // TROCA entrega <-> retirada e grava o frete no pedido do Bling
+// endereço ATUAL do cliente no Bling (cadastro) + o que está no pedido — pra a tela
+// de Entrega/Retirada não trabalhar com endereço desatualizado
+app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
+  try{
+    const ped=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const montar=(e)=>{
+      if(!e) return "";
+      const l=[e.endereco||e.logradouro||"", e.numero?("nº "+e.numero):"", e.complemento||"", e.bairro||"",
+        [e.municipio||e.cidade||"", e.uf||e.estado||""].filter(Boolean).join("/"), e.cep?("CEP "+e.cep):""];
+      return l.filter(x=>String(x).trim()).join(", ");
+    };
+    // 1) endereço que já está no pedido (entrega)
+    const noPedido=montar(ped.transporte?.etiqueta)||montar(ped.transporte?.enderecoEntrega)||"";
+    // 2) cadastro atual do cliente
+    let doCadastro="", entregaCadastro="", cliente=ped.contato?.nome||"";
+    if(ped.contato?.id){
+      try{
+        const c=await bling(`/contatos/${ped.contato.id}`).then(r=>r?.data);
+        cliente=c?.nome||cliente;
+        doCadastro=montar(c?.endereco?.geral||c?.endereco);
+        entregaCadastro=montar(c?.endereco?.cobranca)||"";
+      }catch(e){}
+    }
+    // 3) o que o totem/site gravou na observação
+    let daObservacao="";
+    const m=String(ped.observacoes||"").match(/ENTREGA\s*—\s*([^(\n]+)/i);
+    if(m) daObservacao=m[1].trim();
+    res.json({ cliente, noPedido, doCadastro, entregaCadastro, daObservacao,
+      sugerido: noPedido||daObservacao||doCadastro||"",
+      divergente: !!(noPedido&&doCadastro&&noPedido.replace(/\s+/g," ").toLowerCase()!==doCadastro.replace(/\s+/g," ").toLowerCase()) });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
   try{
     const id=req.params.blingId;

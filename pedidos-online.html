@@ -402,8 +402,12 @@ async function desagendar(id){
 }
 
 /* ===== TROCAR ENTREGA <-> RETIRADA (com cálculo de frete) ===== */
-function abrirTipoEntrega(id){
+async function abrirTipoEntrega(id){
   const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
+  // busca o endereço ATUAL no Bling (cadastro do cliente + o que está no pedido),
+  // pra não trabalhar com endereço velho salvo no nosso registro
+  let end=null;
+  try{ end=await fetch(B+"/api/pedidos-online/"+id+"/endereco").then(r=>r.json()); }catch(e){}
   document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
     '<h3>🛵 Entrega / Retirada — pedido '+esc(p.numero)+'</h3>'+
     '<div class="muted" style="margin:6px 0 10px">Hoje: <b>'+(p.tipo==="entrega"?"Entrega":"Retirada")+'</b>'+(p.frete>0?' · frete '+brl(p.frete):'')+'</div>'+
@@ -412,8 +416,13 @@ function abrirTipoEntrega(id){
       '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="entrega"'+(p.tipo==="entrega"?" checked":"")+' onchange="mostrarCamposEntrega()"> 🛵 Entrega</label>'+
     '</div>'+
     '<div id="camposEntrega" style="display:'+(p.tipo==="entrega"?"block":"none")+'">'+
-      '<div class="muted" style="margin-bottom:4px">Endereço de entrega</div>'+
-      '<input id="teEnd" value="'+esc(p.endereco||"")+'" placeholder="Rua, número, bairro, cidade">'+
+      '<div class="muted" style="margin-bottom:4px">Endereço de entrega <span style="opacity:.7">(do Bling)</span></div>'+
+      '<input id="teEnd" value="'+esc((end&&end.sugerido)||p.endereco||"")+'" placeholder="Rua, número, bairro, cidade">'+
+      (end?'<div class="muted" style="font-size:11px;margin-top:4px">'+
+        (end.doCadastro?'🏠 Cadastro do cliente: <a href="#" onclick="usarEndereco(event,\''+esc(String(end.doCadastro).replace(/'/g,""))+'\')" style="color:#29ABE2">'+esc(end.doCadastro)+'</a><br>':'')+
+        (end.noPedido&&end.noPedido!==end.doCadastro?'📦 No pedido: <a href="#" onclick="usarEndereco(event,\''+esc(String(end.noPedido).replace(/'/g,""))+'\')" style="color:#29ABE2">'+esc(end.noPedido)+'</a><br>':'')+
+        (end.divergente?'<span style="color:#ffd23f">⚠️ O endereço do pedido está diferente do cadastro — confira qual é o certo.</span>':'')+
+      '</div>':'')+
       '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
         '<div style="flex:1"><div class="muted" style="margin-bottom:4px">Frete (R$)</div><input id="teFrete" type="number" step="0.01" value="'+(Number(p.frete)||0)+'"></div>'+
         '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="calcularFretePedido('+id+')">🧮 Calcular</button>'+
@@ -426,6 +435,7 @@ function abrirTipoEntrega(id){
       '<button class="btn btn-mag" style="margin:0" id="btnTE" onclick="salvarTipoEntrega('+id+')">Salvar no Bling</button>'+
     '</div></div></div>';
 }
+function usarEndereco(ev,txt){ if(ev) ev.preventDefault(); const el=document.getElementById("teEnd"); if(el) el.value=txt; }
 function mostrarCamposEntrega(){
   const el=document.querySelector('input[name="teTipo"]:checked');
   const box=document.getElementById("camposEntrega");
