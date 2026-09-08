@@ -2783,6 +2783,35 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // AUDITORIA DOS CAIXAS: confere venda por venda se o que foi RECEBIDO bate com o
 // VALOR DO PEDIDO, recalcula o esperado na gaveta e aponta exatamente onde não fecha.
 // Uso: /api/diag/auditar-caixas  (ou ?data=AAAA-MM-DD)
+// TESTE REAL: grava a taxa em "outras despesas" de um pedido e confere se entrou.
+// Uso: /api/diag/testar-taxa/54940?taxa=1.81  (sem ?taxa= só MOSTRA o estado atual)
+app.get("/api/diag/testar-taxa/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const somaItens=+(ped.itens||[]).reduce((a,i)=>a+Number(i.quantidade)*Number(i.valor),0).toFixed(2);
+    const antes={ numero:ped.numero, situacao:nomeSituacao(ped.situacao?.id),
+      outrasDespesas:Number(ped.outrasDespesas||0), frete:Number(ped.transporte?.frete||0),
+      desconto:Number(ped.desconto?.valor||0), somaItens, total:Number(ped.total||0),
+      confereTotal: Math.abs(Number(ped.total||0)-(somaItens+Number(ped.outrasDespesas||0)+Number(ped.transporte?.frete||0)-Number(ped.desconto?.valor||0)))<0.02,
+      parcelas:(ped.parcelas||[]).map(p=>({forma:p.formaPagamento?.id,valor:p.valor})) };
+    if(req.query.taxa==null) return res.json({antes, dica:"passe ?taxa=VALOR pra gravar essa taxa em outras despesas e conferir"});
+    const taxa=+Number(req.query.taxa).toFixed(2);
+    const r=await atualizarParcelasBling(ped.id, [], {ped, outrasDespesas:taxa});
+    await sleep(900);
+    const dep=await bling(`/pedidos/vendas/${ped.id}`).then(x=>x?.data);
+    const somaItens2=+(dep.itens||[]).reduce((a,i)=>a+Number(i.quantidade)*Number(i.valor),0).toFixed(2);
+    const depois={ outrasDespesas:Number(dep.outrasDespesas||0), total:Number(dep.total||0),
+      somaItens:somaItens2, parcelas:(dep.parcelas||[]).map(p=>({forma:p.formaPagamento?.id,valor:p.valor})) };
+    res.json({ antes, gravacao:{ok:r.ok, erro:r.erro||null, taxaEnviada:taxa}, depois,
+      taxaEntrou: Math.abs(depois.outrasDespesas-taxa)<0.02,
+      parcelasPreservadas: (antes.parcelas||[]).length===(depois.parcelas||[]).length,
+      totalBate: Math.abs(depois.total-(somaItens2+depois.outrasDespesas))<0.05 });
+  }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
+});
+
 app.get("/api/diag/auditar-caixas",(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
