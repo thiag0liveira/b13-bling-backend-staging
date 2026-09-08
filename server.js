@@ -8083,6 +8083,25 @@ app.get("/api/pedidos-online/agendamentos",(req,res)=>{
 // TROCA entrega <-> retirada e grava o frete no pedido do Bling
 // endereço ATUAL do cliente no Bling (cadastro) + o que está no pedido — pra a tela
 // de Entrega/Retirada não trabalhar com endereço desatualizado
+// restaura o agendamento que foi apagado ao mudar pra retirada (correção de engano)
+app.post("/api/pedidos-online/:blingId/restaurar-agendamento",(req,res)=>{
+  try{
+    const id=String(req.params.blingId);
+    const hist=lerJSON(`${DATA_DIR}/agendamentos_removidos.json`,{});
+    const ag=hist[id];
+    if(!ag) return res.status(404).json({erro:"não há agendamento anterior guardado pra este pedido"});
+    const rotas=lerRotasDias();
+    if(!rotas[ag.data]) rotas[ag.data]={};
+    if(!rotas[ag.data]["_semCarro"]) rotas[ag.data]["_semCarro"]={pedidoIds:[]};
+    if(!rotas[ag.data]["_semCarro"].pedidoIds.includes(Number(id))) rotas[ag.data]["_semCarro"].pedidoIds.push(Number(id));
+    salvarRotasDias(rotas);
+    const t=lerJSON(TURNOS_ENTREGA_FILE,{});
+    t[id]={data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por,em:Date.now(),numero:ag.numero};
+    salvarJSON(TURNOS_ENTREGA_FILE,t);
+    res.json({ok:true, data:ag.data, turno:ag.turno});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
   try{
     const ped=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
@@ -8148,9 +8167,35 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     }
     const r=await atualizarComDestrave(id, payload, Number(ped.situacao?.id||0));
     if(!r.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(r.erro||"erro")});
-    if(tipo==="retirada"){ removerPedidoDeTodasRotas(Number(id)); const t=lerJSON(TURNOS_ENTREGA_FILE,{}); delete t[String(id)]; salvarJSON(TURNOS_ENTREGA_FILE,t); }
+    // guarda o agendamento antes de apagar — se foi engano, dá pra restaurar
+    let agendamentoAnterior=null;
+    if(tipo==="retirada"){
+      const t=lerJSON(TURNOS_ENTREGA_FILE,{});
+      agendamentoAnterior=t[String(id)]||null;
+      if(agendamentoAnterior){
+        const hist=lerJSON(`${DATA_DIR}/agendamentos_removidos.json`,{});
+        hist[String(id)]={...agendamentoAnterior, removidoEm:Date.now(), removidoPor:funcNome};
+        salvarJSON(`${DATA_DIR}/agendamentos_removidos.json`,hist);
+      }
+      removerPedidoDeTodasRotas(Number(id)); delete t[String(id)]; salvarJSON(TURNOS_ENTREGA_FILE,t);
+    }
+    // ATUALIZA O REGISTRO LOCAL (a proposta) — sem isso a tela continuava mostrando
+    // o tipo antigo, porque o card lê a entrega do nosso registro, não do Bling
+    try{
+      const props=lerPropostas(); let mudou=false;
+      Object.values(props||{}).forEach(p=>{
+        if(String(p.pedidoBlingId)!==String(id)) return;
+        p.entrega = tipo==="entrega"
+          ? {...(p.entrega||{}), tipo:"entrega", endereco:endereco||p.entrega?.endereco||"", taxa}
+          : {tipo:"retirada"};
+        const totalItens=(p.itens||[]).reduce((a,i)=>a+Number(i.quantidade||0)*Number(i.valor||0),0);
+        p.total=+(totalItens+(tipo==="entrega"?taxa:0)).toFixed(2);
+        p.atualizadoEm=Date.now(); mudou=true;
+      });
+      if(mudou) salvarPropostas(props);
+    }catch(e){}
     addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa});
-    res.json({ok:true,tipo,frete:taxa});
+    res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 // PUT no pedido destravando a situação quando necessário (reusa a lógica já testada)

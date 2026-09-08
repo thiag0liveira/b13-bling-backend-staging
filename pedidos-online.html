@@ -131,7 +131,9 @@ function cardPedido(p){
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
     '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
-    (p.tipo==="entrega"&&!p.cancelado?'<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>':'')+
+    (!p.cancelado?(p.tipo==="entrega"
+      ? '<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>'
+      : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada('+p.id+')">📅 Agendar entrega</button>'):'')+
     '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
     (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
   '</div>';
@@ -348,6 +350,20 @@ async function salvarEditarAguardando(id){
 }
 
 /* ===== AGENDAR ENTREGA (dia + turno) ===== */
+// pedido marcado como RETIRADA não tem entrega pra agendar — explica e oferece
+// voltar pra entrega (com a opção de restaurar o agendamento que existia antes)
+function avisarRetirada(id){
+  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
+    '<h3>📅 Agendar entrega — pedido '+esc(p?p.numero:id)+'</h3>'+
+    '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;margin:10px 0;font-size:13px;color:#ffd23f">'+
+      'Este pedido está como <b>🏪 RETIRADA</b>, por isso não há entrega pra agendar.<br><br>'+
+      'Se foi engano, mude pra <b>Entrega</b> primeiro (o endereço e o frete são pedidos lá).</div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Fechar</button>'+
+      '<button class="btn btn-mag" style="margin:0" onclick="fechar();abrirTipoEntrega('+id+')">🛵 Mudar pra Entrega</button>'+
+    '</div></div></div>';
+}
 function abrirAgendar(id){
   const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
   const hoje=new Date(); const d0=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate());
@@ -395,6 +411,17 @@ async function salvarAgendamento(id){
     if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
     if(btn){ btn.disabled=false; btn.textContent="Salvar"; }
   }
+}
+// desfaz a mudança pra retirada: volta pra entrega e restaura o agendamento anterior
+async function desfazerRetirada(id){
+  try{
+    const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+    await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo:"entrega",endereco:(p&&p.endereco)||"",frete:(p&&p.frete)||0,funcionarioId:S.id})});
+    const r=await fetch(B+"/api/pedidos-online/"+id+"/restaurar-agendamento",{method:"POST"}).then(function(x){return x.json();});
+    fechar(); carregar();
+    if(r.erro) alert("Voltou pra entrega, mas não consegui restaurar o agendamento: "+r.erro);
+  }catch(e){ alert("Erro ao desfazer."); }
 }
 async function desagendar(id){
   try{ await fetch(B+"/api/pedidos-online/"+id+"/desagendar-entrega",{method:"POST"}); fechar(); carregar(); }
@@ -466,6 +493,20 @@ async function salvarTipoEntrega(id){
     const j=await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({tipo,endereco,frete,funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
+    // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
+    if(tipo==="retirada"&&j.agendamentoRemovido){
+      const ag=j.agendamentoRemovido;
+      document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this){fechar();carregar();}"><div class="modal">'+
+        '<div style="font-size:40px;text-align:center">⚠️</div>'+
+        '<h3 style="text-align:center">Virou retirada</h3>'+
+        '<div class="muted" style="margin:8px 0;font-size:13px">O agendamento de entrega que existia foi removido da rota:<br>'+
+          '<b style="color:#fff">'+esc(ag.data.split("-").reverse().join("/"))+' · '+(ag.turno==="manha"?"manhã":(ag.turno==="tarde"?"tarde":"qualquer horário"))+'</b></div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px">'+
+          '<button class="btn btn-mag" style="margin:0;flex:1" onclick="desfazerRetirada('+id+')">↩️ Foi engano, desfazer</button>'+
+          '<button class="btn btn-ghost" style="margin:0" onclick="fechar();carregar()">OK</button>'+
+        '</div></div></div>';
+      return;
+    }
     fechar(); carregar();
   }catch(e){
     const err=document.getElementById("errTE");
