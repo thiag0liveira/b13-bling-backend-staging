@@ -60,7 +60,7 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null;
+let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null;
 const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",pedido_incluido_no_caixa:"Incluído no caixa"};
 const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
 const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
@@ -118,6 +118,21 @@ function render(){
           ${f.totalPix>0.009?`<div class="lin"><span>🔷 Total PIX</span><b>${brl(f.totalPix)}</b></div>`:""}
           <div class="lin" style="font-weight:800"><span>💵 Dinheiro (nossos caixas)</span><b style="color:#3ce88a">${brl(f.dinheiroTotal)}</b></div>
           <div class="lin"><span>💰 Suprimentos</span><b>${brl(f.suprimentos)}</b></div><div class="lin"><span>💸 Sangrias</span><b>${brl(f.sangrias)}</b></div>`)}
+
+        ${META&&!META.erro?card("🎯 Meta do mês (atacado)",`
+          ${META.meta>0?`
+            <div class="big">${brl(META.vendidoAtendido??META.vendido)}</div>
+            <div class="muted" style="margin-bottom:8px">de ${brl(META.meta)} · <b style="color:${(META.pctMetaAtendido??META.pctMeta)>=100?'#3ce88a':((META.pctMetaAtendido??META.pctMeta)>=70?'#ffd23f':'#ff8090')}">${META.pctMetaAtendido??META.pctMeta}%</b></div>
+            <div style="background:#0f0c22;border-radius:10px;height:12px;overflow:hidden;margin-bottom:10px">
+              <div style="height:100%;width:${Math.min(100,META.pctMetaAtendido??META.pctMeta)}%;background:${(META.pctMetaAtendido??META.pctMeta)>=100?'#3ce88a':'var(--mag)'}"></div>
+            </div>
+            <div class="lin"><span>Falta pra meta</span><b style="color:${(META.faltaAtendido??META.falta)>0?'#ffd23f':'#3ce88a'}">${brl(META.faltaAtendido??META.falta)}</b></div>
+            <div class="lin"><span>Dias úteis restantes</span><b>${META.diasUteisRestantes}</b></div>
+            <div class="lin"><span>Precisa vender por dia</span><b style="color:#ffd23f">${brl(META.idealPorDiaRestanteAtendido??META.idealPorDiaRestante)}</b></div>
+            <div class="lin"><span>Média por dia útil</span><b>${brl(META.mediaDiariaAtendido??META.mediaDiaria)}</b></div>
+            <div class="muted" style="font-size:11px;margin-top:6px">Só pedidos Atendidos (pagos). Dia ${META.diaAtual} de ${META.ultimoDia}.</div>
+          `:'<div class="muted">Nenhuma meta definida para este mês. Defina em Apoio ao Vendedor.</div>'}
+          <a class="btn btn-ghost" style="margin-top:8px" href="/vendedor">Apoio ao Vendedor →</a>`):""}
 
         ${(b.pedidos&&b.pedidos.fechamentoBling)?card("🏪 Atacado × 🛒 Varejo (formas de pagamento)",`
           <div class="muted" style="margin-bottom:8px">Direto do Bling — inclui o varejo/PDV, que não passa pelos nossos caixas. Só pedidos Atendidos (pagos).</div>
@@ -313,6 +328,7 @@ async function carregar(){
   try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
   try{ const e=await fetch(B+"/api/central/entregas").then(r=>r.json()); if(!e.erro){ ENTREGAS=e; render(); } }catch(e){}
   try{ const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro){ AVISOS=a; render(); } }catch(e){}
+  try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
   clearTimeout(TIMER);
   TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?5000:60000);
 }
