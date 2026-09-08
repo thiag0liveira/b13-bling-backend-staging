@@ -350,7 +350,7 @@ async function carregar(){
   try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
   try{ const ap=await fetch(B+"/api/vendedor/apoio").then(r=>r.json()); if(!ap.erro&&ap.vendedores){ APOIO=ap; render(); } }catch(e){}
   clearTimeout(TIMER);
-  TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?5000:60000);
+  TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?8000:60000);
 }
 render(); carregar();
 </script>

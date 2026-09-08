@@ -7280,71 +7280,11 @@ function _fimDia(iso){ return _inicioDia(iso)+86400000; }
 async function _atualizarCentralBling(dia){
   if(_centralBling.calculando) return;
   _centralBling.calculando=true;
-  const out={ em:Date.now(), calculando:false, dia, erro:null };
+  const out={ em:Date.now(), calculando:true, dia, erro:null };
+  // publica parcialmente: antes o resultado só aparecia no FIM da varredura (que leva
+  // minutos), então o card do varejo ficava sem dado. Agora cada etapa que termina já vai pra tela.
+  const publicar=()=>{ _centralBling={...out, calculando:true}; };
   try{
-    // notas EMITIDAS no dia. IMPORTANTE: NFC-e fica em /nfce (o /nfe?tipo=1 devolve 0 —
-    // era por isso que a Central não mostrava as notas do varejo/PDV). Busca as duas.
-    try{
-      const pegaValor=(n)=>Number(n.valorNota ?? n.valor ?? n.totalNota ?? n.total ?? 0);
-      const buscarTudo=async(base)=>{
-        let arr=[], pag=1;
-        for(let i=0;i<8;i++){
-          const r=await blingLento(`${base}&pagina=${pag}&limite=100`);
-          const d=r?.data||[]; arr=arr.concat(d);
-          if(d.length<100) break; pag++; await sleep(150);
-        }
-        return arr;
-      };
-      const janela=`dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59`;
-      let nfce=[], nfe=[];
-      try{ nfce=await buscarTudo(`/nfce?${janela}`); }catch(e){}
-      try{ nfe=await buscarTudo(`/nfe?tipo=1&${janela}`); }catch(e){}
-      // situação 5 = Autorizada (as canceladas/denegadas não contam no faturamento).
-      // As demais indicam problema (rejeitada, denegada, pendente de transmissão...).
-      const autorizadas=(l)=>l.filter(n=>Number(n.situacao)===5);
-      const nomeSitNota=(c)=>({1:"Pendente",2:"Cancelada",3:"Aguardando recibo",4:"Rejeitada",5:"Autorizada",
-        6:"Emitida DANFE",7:"Registrada",8:"Aguardando protocolo",9:"Denegada",10:"Consultando situação",11:"Bloqueada"})[Number(c)]||("Situação "+c);
-      const nfceOk=autorizadas(nfce), nfeOk=autorizadas(nfe);
-      // a listagem do Bling não traz o valor da nota — busca o detalhe (em blocos,
-      // pra não travar) só das autorizadas do dia
-      const somaComDetalhe=async(lista)=>{
-        let soma=0, semValor=0;
-        for(const n of lista.slice(0,150)){
-          let v=pegaValor(n);
-          if(!v){
-            try{ const d=await blingLento(`/nfce/${n.id}`).then(r=>r?.data); v=pegaValor(d||{}); }catch(e){}
-            await sleep(60);
-          }
-          if(v) soma+=v; else semValor++;
-        }
-        return {soma:+soma.toFixed(2), semValor};
-      };
-      const sNfce=await somaComDetalhe(nfceOk);
-      const sNfe=nfeOk.length?{soma:+nfeOk.reduce((a,n)=>a+pegaValor(n),0).toFixed(2),semValor:0}:{soma:0,semValor:0};
-      out.notasEmitidas={
-        qtd:nfceOk.length+nfeOk.length, valor:+(sNfce.soma+sNfe.soma).toFixed(2),
-        nfce:{qtd:nfceOk.length, valor:sNfce.soma, canceladas:nfce.length-nfceOk.length},
-        nfe:{qtd:nfeOk.length, valor:sNfe.soma},
-        semValor:sNfce.semValor,
-        // quebra por situação e as que NÃO ficaram autorizadas (precisam de atenção)
-        porSituacao:Object.entries([...nfce,...nfe].reduce((acc,n)=>{ const k=nomeSitNota(n.situacao); acc[k]=(acc[k]||0)+1; return acc; },{}))
-          .map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd),
-        comProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5)
-          .map(n=>({numero:n.numero, serie:n.serie, situacao:nomeSitNota(n.situacao), situacaoId:Number(n.situacao),
-            cliente:n.contato?.nome||"—", dataEmissao:n.dataEmissao, id:n.id}))
-          .sort((a,b)=>String(b.dataEmissao||"").localeCompare(String(a.dataEmissao||""))).slice(0,20),
-        qtdComProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5).length,
-        porCliente:Object.entries([...nfceOk,...nfeOk].reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+pegaValor(n); return acc; },{}))
-          .map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,15) };
-    }catch(e){ out.notasEmitidas={erro:e.message}; }
-    // notas de ENTRADA no dia — qtd, valor, fornecedores, e produtos entrados (abre até 20 notas)
-    try{
-      const r=await blingLento(`/nfe?tipo=0&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
-      const arr=r?.data||[]; const prod={};
-      for(const n of arr.slice(0,20)){ try{ const d=await blingLento(`/nfe/${n.id}`).then(x=>x?.data); (d?.itens||[]).forEach(it=>{ const k=it.descricao||it.produto?.nome||"produto"; if(!prod[k]) prod[k]={nome:k,qtd:0,valor:0}; prod[k].qtd+=Number(it.quantidade)||0; prod[k].valor+=(Number(it.quantidade)||0)*(Number(it.valor)||0); }); }catch(e){} await sleep(100); }
-      out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
-        produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
-    }catch(e){ out.entradas={erro:e.message}; }
     // pedidos de venda do dia: varre igual ao Fechamento de Caixa (mesma fonte e mesmos
     // helpers), classifica Atacado x Varejo e DEDUPLICA contra o nosso caixa numa
     // passada só. Regras:
@@ -7479,7 +7419,74 @@ async function _atualizarCentralBling(dia){
           soNoCaixa, qtdSoNoCaixa:soNoCaixa.length,
           repetidosNaListagemBling:duplicadosBling, qtdRepetidosBling:duplicadosBling.length } };
     }catch(e){ out.pedidos={erro:e.message}; }
+    publicar(); // publica o que já ficou pronto (não espera a varredura toda)
+    // notas EMITIDAS no dia. IMPORTANTE: NFC-e fica em /nfce (o /nfe?tipo=1 devolve 0 —
+    // era por isso que a Central não mostrava as notas do varejo/PDV). Busca as duas.
+    try{
+      const pegaValor=(n)=>Number(n.valorNota ?? n.valor ?? n.totalNota ?? n.total ?? 0);
+      const buscarTudo=async(base)=>{
+        let arr=[], pag=1;
+        for(let i=0;i<8;i++){
+          const r=await blingLento(`${base}&pagina=${pag}&limite=100`);
+          const d=r?.data||[]; arr=arr.concat(d);
+          if(d.length<100) break; pag++; await sleep(150);
+        }
+        return arr;
+      };
+      const janela=`dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59`;
+      let nfce=[], nfe=[];
+      try{ nfce=await buscarTudo(`/nfce?${janela}`); }catch(e){}
+      try{ nfe=await buscarTudo(`/nfe?tipo=1&${janela}`); }catch(e){}
+      // situação 5 = Autorizada (as canceladas/denegadas não contam no faturamento).
+      // As demais indicam problema (rejeitada, denegada, pendente de transmissão...).
+      const autorizadas=(l)=>l.filter(n=>Number(n.situacao)===5);
+      const nomeSitNota=(c)=>({1:"Pendente",2:"Cancelada",3:"Aguardando recibo",4:"Rejeitada",5:"Autorizada",
+        6:"Emitida DANFE",7:"Registrada",8:"Aguardando protocolo",9:"Denegada",10:"Consultando situação",11:"Bloqueada"})[Number(c)]||("Situação "+c);
+      const nfceOk=autorizadas(nfce), nfeOk=autorizadas(nfe);
+      // a listagem do Bling não traz o valor da nota — busca o detalhe (em blocos,
+      // pra não travar) só das autorizadas do dia
+      const somaComDetalhe=async(lista)=>{
+        let soma=0, semValor=0;
+        for(const n of lista.slice(0,60)){ // teto pra não alongar demais a varredura
+          let v=pegaValor(n);
+          if(!v){
+            try{ const d=await blingLento(`/nfce/${n.id}`).then(r=>r?.data); v=pegaValor(d||{}); }catch(e){}
+            await sleep(60);
+          }
+          if(v) soma+=v; else semValor++;
+        }
+        return {soma:+soma.toFixed(2), semValor};
+      };
+      const sNfce=await somaComDetalhe(nfceOk);
+      const sNfe=nfeOk.length?{soma:+nfeOk.reduce((a,n)=>a+pegaValor(n),0).toFixed(2),semValor:0}:{soma:0,semValor:0};
+      out.notasEmitidas={
+        qtd:nfceOk.length+nfeOk.length, valor:+(sNfce.soma+sNfe.soma).toFixed(2),
+        nfce:{qtd:nfceOk.length, valor:sNfce.soma, canceladas:nfce.length-nfceOk.length},
+        nfe:{qtd:nfeOk.length, valor:sNfe.soma},
+        semValor:sNfce.semValor,
+        // quebra por situação e as que NÃO ficaram autorizadas (precisam de atenção)
+        porSituacao:Object.entries([...nfce,...nfe].reduce((acc,n)=>{ const k=nomeSitNota(n.situacao); acc[k]=(acc[k]||0)+1; return acc; },{}))
+          .map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd),
+        comProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5)
+          .map(n=>({numero:n.numero, serie:n.serie, situacao:nomeSitNota(n.situacao), situacaoId:Number(n.situacao),
+            cliente:n.contato?.nome||"—", dataEmissao:n.dataEmissao, id:n.id}))
+          .sort((a,b)=>String(b.dataEmissao||"").localeCompare(String(a.dataEmissao||""))).slice(0,20),
+        qtdComProblema:[...nfce,...nfe].filter(n=>Number(n.situacao)!==5).length,
+        porCliente:Object.entries([...nfceOk,...nfeOk].reduce((acc,n)=>{ const k=n.contato?.nome||"—"; acc[k]=(acc[k]||0)+pegaValor(n); return acc; },{}))
+          .map(([nome,valor])=>({nome,valor:+valor.toFixed(2)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,15) };
+    }catch(e){ out.notasEmitidas={erro:e.message}; }
+    publicar(); // publica o que já ficou pronto (não espera a varredura toda)
+    // notas de ENTRADA no dia — qtd, valor, fornecedores, e produtos entrados (abre até 20 notas)
+    try{
+      const r=await blingLento(`/nfe?tipo=0&dataEmissaoInicial=${dia} 00:00:00&dataEmissaoFinal=${dia} 23:59:59&limite=100`);
+      const arr=r?.data||[]; const prod={};
+      for(const n of arr.slice(0,20)){ try{ const d=await blingLento(`/nfe/${n.id}`).then(x=>x?.data); (d?.itens||[]).forEach(it=>{ const k=it.descricao||it.produto?.nome||"produto"; if(!prod[k]) prod[k]={nome:k,qtd:0,valor:0}; prod[k].qtd+=Number(it.quantidade)||0; prod[k].valor+=(Number(it.quantidade)||0)*(Number(it.valor)||0); }); }catch(e){} await sleep(100); }
+      out.entradas={ qtd:arr.length, fornecedores:[...new Set(arr.map(n=>n.contato?.nome).filter(Boolean))].slice(0,12),
+        produtos:Object.values(prod).sort((a,b)=>b.qtd-a.qtd).slice(0,15).map(p=>({...p,valor:+p.valor.toFixed(2)})) };
+    }catch(e){ out.entradas={erro:e.message}; }
+    publicar(); // publica o que já ficou pronto (não espera a varredura toda)
   }catch(e){ out.erro=e.message; }
+  out.calculando=false;
   _centralBling=out;
 }
 
