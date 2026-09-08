@@ -7167,6 +7167,18 @@ app.get("/api/avisos/contagem",(req,res)=>{
   const d=lerAvisos();
   res.json({ naoResolvidos:(d.lista||[]).filter(a=>!a.resolvido).length });
 });
+// marca TODOS os avisos pendentes como resolvidos de uma vez
+app.post("/api/avisos/resolver-todos",(req,res)=>{
+  try{
+    const d=lerAvisos();
+    const por=req.body?.por||"";
+    let n=0;
+    (d.lista||[]).forEach(a=>{ if(!a.resolvido){ a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor=por; a.resolvidoEmLote=true; n++; } });
+    salvarAvisos(d);
+    res.json({ok:true, resolvidos:n});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/avisos/:id/resolver",(req,res)=>{
   const d=lerAvisos(); const a=(d.lista||[]).find(x=>x.id===req.params.id);
   if(!a) return res.status(404).json({erro:"aviso não encontrado"});

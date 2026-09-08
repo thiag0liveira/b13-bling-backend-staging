@@ -103,7 +103,8 @@ function render(){
               <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px;margin-top:5px" onclick="resolverAviso('${esc(a.id)}')">✓ Resolvido</button>
             </div>`).join("")}</div>`
             :'<div class="muted">Nada pendente. 🎉</div>'}
-          <a class="btn btn-ghost" style="margin-top:8px" href="/avisos">Ver todos / histórico →</a>
+          ${nAv?`<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="limparAvisos()">🧹 Limpar todos (${nAv})</button>`:""}
+          <a class="btn btn-ghost" style="margin-top:6px" href="/avisos">Ver todos / histórico →</a>
         </div>
       </div>
       <div class="grid">
@@ -278,6 +279,16 @@ function render(){
       </div>
       </div>
     </div>`;
+}
+async function limparAvisos(){
+  const n=(AVISOS&&AVISOS.naoResolvidos)||0;
+  if(!confirm(`Marcar os ${n} aviso(s) pendentes como resolvidos?\n\nEles saem da lista, mas ficam no histórico (em Avisos → Todos). Novos avisos continuam aparecendo normalmente.`)) return;
+  try{
+    await fetch(B+"/api/avisos/resolver-todos",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({por:(typeof b13GetSession==="function"?((b13GetSession()||{}).nome||""):"")})});
+    const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro) AVISOS=a;
+    render();
+  }catch(e){ alert("Erro ao limpar os avisos."); }
 }
 async function resolverAviso(id){
   try{

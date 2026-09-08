@@ -84,9 +84,11 @@ function render(){
     <div class="wrap">
       <div class="card">
         <div class="muted" style="margin-bottom:8px">Eventos que precisam de conferência (auto-correções de estoque, alterações que o Bling recusou, divergências). Marque como resolvido depois de conferir.</div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <span class="chip ${VER==='pendentes'?'on':''}" onclick="VER='pendentes';carregar()">Pendentes</span>
           <span class="chip ${VER==='todos'?'on':''}" onclick="VER='todos';carregar()">Todos</span>
+          <div style="flex:1"></div>
+          ${NRES?`<button class="btn btn-ghost" onclick="limparAvisos()">🧹 Limpar todos (${NRES})</button>`:""}
         </div>
       </div>
       ${lista.length?lista.map(card).join(""):'<div class="card"><div class="muted">Nenhum aviso'+(VER==='pendentes'?' pendente':'')+'. 🎉</div></div>'}
@@ -98,6 +100,14 @@ async function carregar(){
     const j=await fetch(B+"/api/avisos"+(VER==='todos'?"?todos=1":"")).then(r=>r.json());
     LISTA=j.lista||[]; NRES=j.naoResolvidos||0; render();
   }catch(e){ document.getElementById("app").innerHTML='<div class="wrap"><div class="card" style="color:#ff8090">Erro ao carregar.</div></div>'; }
+}
+async function limparAvisos(){
+  if(!confirm(`Marcar os ${NRES} aviso(s) pendentes como resolvidos?\n\nEles saem da lista de pendentes, mas continuam no histórico (aba "Todos").`)) return;
+  try{
+    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
+    await fetch(B+"/api/avisos/resolver-todos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({por:S.nome||""})});
+    carregar();
+  }catch(e){ alert("Erro ao limpar."); }
 }
 async function resolver(id){
   try{
