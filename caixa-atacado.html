@@ -387,7 +387,10 @@ async function modalFechar(){
       <h3>🔒 Fechar caixa — conferência</h3>
       <div class="card" style="background:#12102e">
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
-        ${r.totalTroco>0.009?`<div class="linha"><span>💸 Troco dado (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.totalTroco)}</b></div>`:""}
+        ${r.trocoDevolvido>0.009?`<div class="linha"><span>💸 Troco devolvido (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.trocoDevolvido)}</b></div>`:""}
+        ${r.vendasCartao>0.009?`<div class="linha"><span>💳 Cartão (com taxa)</span><b>${brl(r.vendasCartao)}</b></div>
+        <div class="linha"><span class="muted" style="font-size:12px">· taxa 3,5% embutida</span><b class="muted" style="font-size:12px">${brl(r.taxaCartaoEmbutida)}</b></div>
+        <div class="linha"><span class="muted" style="font-size:12px">· líquido a receber da maquininha</span><b class="muted" style="font-size:12px">${brl(r.liquidoCartao)}</b></div>`:""}
         <div class="linha"><span>Vendas em dinheiro</span><b>${brl(r.vendasDinheiro)}</b></div>
         <div class="linha"><span>+ Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
         <div class="linha"><span>− Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
@@ -1321,7 +1324,10 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
     <h3>Dinheiro na gaveta</h3>
     <table>
       <tr><td>Troco inicial</td><td class="v">${brl(resumo.trocoInicial)}</td></tr>
-      ${resumo.totalTroco>0.009?`<tr><td>Troco dado (${resumo.vendasComTroco} venda(s))</td><td class="v">- ${brl(resumo.totalTroco)}</td></tr>`:""}
+      ${resumo.trocoDevolvido>0.009?`<tr><td>Troco devolvido (${resumo.vendasComTroco} venda(s))</td><td class="v">- ${brl(resumo.trocoDevolvido)}</td></tr>`:""}
+      ${resumo.vendasCartao>0.009?`<tr><td>Cartão (com taxa 3,5%)</td><td class="v">${brl(resumo.vendasCartao)}</td></tr>
+      <tr><td>&nbsp;&nbsp;· taxa embutida</td><td class="v">${brl(resumo.taxaCartaoEmbutida)}</td></tr>
+      <tr><td>&nbsp;&nbsp;· líquido da maquininha</td><td class="v">${brl(resumo.liquidoCartao)}</td></tr>`:""}
       <tr><td>Vendas em dinheiro</td><td class="v">${brl(resumo.vendasDinheiro)}</td></tr>
       <tr><td>+ Suprimentos</td><td class="v">${brl(resumo.totalSuprimentos)}</td></tr>
       <tr><td>- Sangrias</td><td class="v">${brl(resumo.totalSangrias)}</td></tr>
@@ -1536,7 +1542,10 @@ function render(){
       <div class="card">
         <h3>📊 Resumo do caixa</h3>
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
-        ${r.totalTroco>0.009?`<div class="linha"><span>💸 Troco dado (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.totalTroco)}</b></div>`:""}
+        ${r.trocoDevolvido>0.009?`<div class="linha"><span>💸 Troco devolvido (${r.vendasComTroco})</span><b style="color:#8fffc0">− ${brl(r.trocoDevolvido)}</b></div>`:""}
+        ${r.vendasCartao>0.009?`<div class="linha"><span>💳 Cartão (com taxa)</span><b>${brl(r.vendasCartao)}</b></div>
+        <div class="linha"><span class="muted" style="font-size:12px">· taxa 3,5% embutida</span><b class="muted" style="font-size:12px">${brl(r.taxaCartaoEmbutida)}</b></div>
+        <div class="linha"><span class="muted" style="font-size:12px">· líquido a receber da maquininha</span><b class="muted" style="font-size:12px">${brl(r.liquidoCartao)}</b></div>`:""}
         <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
         <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
         <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>

@@ -2518,13 +2518,24 @@ function resumoSessaoCaixa(sessao){
   });
 
   const ehDinheiro=(nome)=>String(nome||"").toLowerCase().includes("dinheiro");
+  const ehCartao=(nome)=>/cr[eé]dito|d[eé]bito/i.test(String(nome||""));
   const vendasDinheiro=Object.entries(porForma).filter(([n])=>ehDinheiro(n)).reduce((s,[,v])=>s+v.valor,0);
   const totalVendas=Object.values(porForma).reduce((s,v)=>s+v.valor,0);
   const totalSangrias=sangrias.reduce((s,m)=>s+(Number(m.valor)||0),0);
   const totalSuprimentos=suprimentos.reduce((s,m)=>s+(Number(m.valor)||0),0);
+  // TROCO devolvido ao cliente: sai da gaveta, então precisa ser descontado do
+  // esperado (sem isso o caixa sempre "faltava" o valor dos trocos ao conferir)
+  const trocoDevolvido=vendas.reduce((a,m)=>a+(Number(m.troco)||0),0);
 
-  // o que deveria ter na gaveta agora, só em dinheiro
-  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
+  // CARTÃO: quanto foi cobrado e quanto disso é a taxa de 3,5% repassada ao cliente.
+  // Não entra na gaveta (não é dinheiro), mas o relatório precisa mostrar, porque a
+  // adquirente desconta essa taxa no repasse.
+  const TAXA=0.035;
+  const vendasCartao=Object.entries(porForma).filter(([n])=>ehCartao(n)).reduce((s,[,v])=>s+v.valor,0);
+  const taxaCartaoEmbutida=+(vendasCartao*TAXA/(1+TAXA)).toFixed(2);
+
+  // o que deveria ter na gaveta agora, só em dinheiro (já descontando os trocos)
+  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias-trocoDevolvido).toFixed(2);
   // se um gestor ajustou o esperado manualmente, usa esse valor (mas mantém o calculado visível)
   const temManual=(sessao.esperadoGavetaManual!==undefined&&sessao.esperadoGavetaManual!==null&&sessao.esperadoGavetaManual!=="");
   const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
@@ -2537,6 +2548,10 @@ function resumoSessaoCaixa(sessao){
     qtdVendas:vendas.length,
     totalVendas:+totalVendas.toFixed(2),
     vendasDinheiro:+vendasDinheiro.toFixed(2),
+    trocoDevolvido:+trocoDevolvido.toFixed(2),
+    vendasCartao:+vendasCartao.toFixed(2),
+    taxaCartaoEmbutida,
+    liquidoCartao:+(vendasCartao-taxaCartaoEmbutida).toFixed(2),
     totalSangrias:+totalSangrias.toFixed(2),
     totalSuprimentos:+totalSuprimentos.toFixed(2),
     esperadoGaveta,
