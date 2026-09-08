@@ -2674,6 +2674,38 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // Nada aqui grava nada — é só leitura, pra montar o painel de estoque com segurança.
 // DIAGNÓSTICO: descobre como listar as NFC-e emitidas (a Central usava /nfe?tipo=1,
 // que é NF-e — as NFC-e do PDV/varejo ficam em outro lugar). Só leitura.
+// DIAGNÓSTICO (só leitura): mostra o que existe HOJE de estoque e financeiro num
+// pedido já Atendido — pra saber exatamente o que precisa ser estornado antes de editar.
+app.get("/api/diag/estorno-pedido/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const sit=Number(ped.situacao?.id||0);
+    const out={ pedido:{id:ped.id,numero:ped.numero,situacao:nomeSituacao(sit),situacaoId:sit,total:ped.total},
+      estoqueLancado: sit===SIT.ATENDIDO, // Atendido = o Bling já baixou o estoque
+      itens:(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao,quantidade:i.quantidade})) };
+    // contas a receber ligadas a esse pedido
+    try{
+      const r=await bling(`/contas/receber?idsSituacoes[]=1&idsSituacoes[]=2&idsSituacoes[]=3&limite=100`);
+      const todas=r?.data||[];
+      const doPedido=todas.filter(c=>String(c.numeroDocumento||"")===String(ped.numero)||String(c.vinculo?.id||"")===String(ped.id));
+      out.contasReceber={ ok:true, encontradas:doPedido.length,
+        amostraGeral:todas.slice(0,3).map(c=>({id:c.id,situacao:c.situacao,valor:c.valor,vencimento:c.vencimento,numeroDocumento:c.numeroDocumento,contato:c.contato?.nome,vinculo:c.vinculo})),
+        doPedido:doPedido.map(c=>({id:c.id,situacao:c.situacao,valor:c.valor,vencimento:c.vencimento})) };
+    }catch(e){ out.contasReceber={ok:false,status:e.status,erro:e.message}; }
+    // testa se a API deixa excluir/baixar conta (sem executar nada)
+    out.endpointsFinanceiro={};
+    for(const p of ["/contas/receber","/contas/receber/baixar"]){
+      try{ await bling(p+"?limite=1"); out.endpointsFinanceiro[p]="existe (GET ok)"; }
+      catch(e){ out.endpointsFinanceiro[p]="status "+(e.status||"?")+": "+e.message; }
+      await sleep(150);
+    }
+    res.json(out);
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/nfce-listar",async(req,res)=>{
   const dia=_hojeISO(req.query.data);
   const out={dia};
