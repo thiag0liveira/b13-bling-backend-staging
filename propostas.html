@@ -15,6 +15,12 @@
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;margin-bottom:12px}
   .muted{color:#9a95c9;font-size:13px}
   .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
+  .modalEd{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:540px;width:100%;max-height:88vh;overflow:auto}
+  .modalEd input{background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:14px;width:100%}
+  .itEd{display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:7px 0}
+  .itEd input{width:72px;text-align:right;padding:6px}
+  .rmEd{background:none;border:none;color:#ff8090;cursor:pointer;font-size:16px}
   .btn-mag{background:var(--mag)}.btn-grn{background:#2f9e6b}.btn-ghost{background:#1c1846}.btn-wa{background:#25d366;color:#0a2a1a}
   .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
   .chip.on{background:var(--mag);border-color:var(--mag)}
@@ -210,8 +216,19 @@ function cardProposta(p){
   </div>`;
 }
 
+// ---- EDIÇÃO DO PEDIDO, direto aqui em Propostas (não manda mais pro caixa) ----
+function modaisEl(){
+  let el=document.getElementById("modaisProp");
+  if(!el){ el=document.createElement("div"); el.id="modaisProp"; document.body.appendChild(el); }
+  return el;
+}
+function fecharModalEd(){ modaisEl().innerHTML=""; }
+function edMsg(h){ const el=document.getElementById("edMsgProp"); if(el) el.innerHTML=h; }
+function totalEd(){ return (window.itensEd||[]).filter(i=>!i._rm).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+
 async function editarPedido(blingId,numero){
   try{
+    // pedido já pago exige autorização (mesma regra de antes)
     const st=await fetch(B+"/api/atacado/pedido/"+blingId+"/status-pagamento").then(r=>r.json());
     if(st.pago){
       const token=prompt(`O pedido #${numero} já foi pago (${st.statusPagamento}).\n\nPra editar, escaneie o QR de autorização (gerente, financeiro ou admin) ou cole o código:`);
@@ -219,9 +236,83 @@ async function editarPedido(blingId,numero){
       const auth=await fetch(B+"/api/atacado/pedido/"+blingId+"/autorizar-edicao",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})}).then(r=>r.json());
       if(auth.erro){ alert("Não autorizado: "+auth.erro); return; }
     }
-    // manda pro caixa atacado já abrindo esse pedido pra edição
-    location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero);
-  }catch(e){ alert("Erro ao verificar o pedido."); }
+    modaisEl().innerHTML='<div class="modalBg"><div class="modalEd" id="boxEd"><div class="muted">Carregando pedido…</div></div></div>';
+    const r=await fetch(B+"/api/pedidos/"+blingId).then(r=>r.json());
+    const ped=r.data||r;
+    if(!ped||!ped.itens){ document.getElementById("boxEd").innerHTML='<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" style="margin-top:10px" onclick="fecharModalEd()">Fechar</button>'; return; }
+    window.pedEd={id:blingId,numero:ped.numero||numero};
+    window.itensEd=(ped.itens||[]).map(i=>({produtoId:i.produto?.id, descricao:i.descricao||i.produto?.nome||"",
+      quantidade:Number(i.quantidade), valor:Number(i.valor), _rm:false, _novo:false}));
+    renderEdicao();
+  }catch(e){ alert("Erro ao abrir o pedido."); }
+}
+function renderEdicao(){
+  const rows=(window.itensEd||[]).map((it,ix)=>{
+    if(it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">'+esc(it.descricao)+'</div>'+
+      '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd('+ix+')">desfazer</button></div>';
+    return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">'+esc(it.descricao)+
+      '<div class="muted" style="font-size:11px">'+brl(it.valor)+' un'+(it._novo?' · <span style="color:#3ce88a">novo</span>':'')+'</div></div>'+
+      '<input type="number" min="1" step="1" value="'+it.quantidade+'" onchange="mudarQtdEd('+ix+',this.value)">'+
+      '<button class="rmEd" onclick="removerItemEd('+ix+')">🗑</button></div>';
+  }).join("");
+  document.getElementById("boxEd").innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<h3 style="margin:0">✏️ Pedido '+esc(window.pedEd.numero)+'</h3>'+
+      '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>'+
+    '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. Ao salvar, atualiza no Bling.</div>'+
+    '<div style="max-height:40vh;overflow:auto">'+rows+'</div>'+
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">'+
+      '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">'+brl(totalEd())+'</b></div>'+
+    '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">'+
+      '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>'+
+      '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">'+
+      '<div id="resEdProp"></div></div>'+
+    '<div id="edMsgProp" style="margin-top:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>'+
+      '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 Salvar no Bling</button></div>';
+}
+function mudarQtdEd(ix,v){ window.itensEd[ix].quantidade=Math.max(1,parseInt(v)||1); const t=document.getElementById("edTotalProp"); if(t) t.textContent=brl(totalEd()); }
+function removerItemEd(ix){ window.itensEd[ix]._rm=true; renderEdicao(); }
+function restaurarItemEd(ix){ window.itensEd[ix]._rm=false; renderEdicao(); }
+let _edBuscaT=null;
+function buscarItemEd(q){
+  clearTimeout(_edBuscaT);
+  _edBuscaT=setTimeout(async function(){
+    const termo=(q||"").trim(); const box=document.getElementById("resEdProp"); if(!box) return;
+    if(termo.length<2){ box.innerHTML=""; return; }
+    try{
+      const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
+      const lista=(j.data||[]).slice(0,8);
+      box.innerHTML=lista.length?lista.map(function(r){
+        const o={id:r.id,nome:r.nome,preco:r.preco??r.precoBling??0};
+        return '<div class="itEd" style="cursor:pointer" onclick=\'addItemEd('+JSON.stringify(o).replace(/'/g,"&#39;")+')\'>'+
+          '<div style="flex:1;font-size:13px">'+esc(r.nome)+'<div class="muted" style="font-size:11px">'+brl(o.preco)+'</div></div>'+
+          '<span style="color:#3ce88a;font-size:18px">+</span></div>';
+      }).join(""):'<div class="muted" style="padding:6px;font-size:12px">nada encontrado</div>';
+    }catch(e){ box.innerHTML='<div class="muted" style="padding:6px;font-size:12px">erro na busca</div>'; }
+  },350);
+}
+function addItemEd(r){
+  const ja=window.itensEd.find(i=>String(i.produtoId)===String(r.id)&&!i._rm);
+  if(ja) ja.quantidade+=1;
+  else window.itensEd.push({produtoId:r.id,descricao:r.nome,quantidade:1,valor:Number(r.preco)||0,_rm:false,_novo:true});
+  const b=document.getElementById("buscaEdProp"); if(b) b.value="";
+  const box=document.getElementById("resEdProp"); if(box) box.innerHTML="";
+  renderEdicao();
+}
+async function salvarEdicao(){
+  const itens=(window.itensEd||[]).filter(i=>!i._rm).map(i=>({produtoId:i.produtoId,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+  if(!itens.length){ edMsg('<div style="color:#ff8090;font-size:12px">O pedido precisa ter ao menos 1 item.</div>'); return; }
+  edMsg('<div class="muted" style="font-size:12px">Salvando no Bling…</div>');
+  try{
+    const j=await fetch(B+"/api/pedidos/"+window.pedEd.id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({itens, funcionarioNome:(typeof b13GetSession==="function"?((b13GetSession()||{}).nome||""):"")})}).then(r=>r.json());
+    if(j.erro){ edMsg('<div style="color:#ff8090;font-size:12px">❌ '+esc(j.erro)+'</div>'); return; }
+    if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
+    fecharModalEd();
+    if(typeof carregar==="function") carregar();
+  }catch(e){ edMsg('<div style="color:#ff8090;font-size:12px">Erro de conexão. Nada foi alterado.</div>'); }
 }
 
 function verImagem(id){
