@@ -7115,7 +7115,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, nfcePendenteVelha:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -7175,14 +7175,11 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       achados.caixaEsquecidoAberto++;
     });
   }catch(e){}
-  // 4) NFC-e pendente há mais de 2 dias (vendas do atacado sem nota, antigas)
-  try{
-    const dCx=lerCaixaSessoes(); const emit=lerNfceEmitidas(); const limite=Date.now()-2*86400000;
-    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{
-      if(m.tipo!=="venda"||m.cancelado||m.em>limite) return;
-      if(!emit[String(m.pedidoId)]){ registrarAviso({ tipo:"nfce_pendente_velha", titulo:`Pedido #${m.numero||m.pedidoId} sem NFC-e há mais de 2 dias`, pedidoId:m.pedidoId, numero:m.numero, origem:"Auditoria", fingerprint:`nfcevelha-${m.pedidoId}`, oQueFazer:`Emite a NFC-e do pedido #${m.numero||m.pedidoId} na Gestão de NFC-e, ou confirma se ela já foi emitida direto no Bling.` }); achados.nfcePendenteVelha++; }
-    }); });
-  }catch(e){}
+  // (removido) o aviso de "venda sem NFC-e há X dias" saía pra toda venda do atacado
+  // sem nota emitida PELO SISTEMA — mas muitas são emitidas direto no Bling, então era
+  // ruído. Agora só avisa quando a emissão é TENTADA e FALHA (nfce_falhou /
+  // nfce_nao_transmitida, gerados na finalização da venda).
+
   // 4.5) ENTREGA AGENDADA SEM PAGAMENTO: pedido que já passou do dia da entrega
   // (ou é de hoje) e ainda não foi recebido em nenhum caixa. É o caso mais caro:
   // a mercadoria sai e ninguém cobrou.
@@ -11164,6 +11161,20 @@ function migrarPermissoesPorAba(){
   }catch(e){ console.error("[migração] falhou:",e.message); }
 }
 migrarPermissoesPorAba();
+
+// limpeza única: resolve os avisos antigos de "venda sem NFC-e" (esse aviso foi
+// removido — agora só avisamos quando a emissão é tentada e falha)
+(function limparAvisosNfcePendente(){
+  try{
+    const marca=`${DATA_DIR}/_limpeza_avisos_nfce.json`;
+    if(fs.existsSync(marca)) return;
+    const d=lerAvisos(); let n=0;
+    (d.lista||[]).forEach(a=>{ if(!a.resolvido && a.tipo==="nfce_pendente_velha"){ a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor="sistema (aviso descontinuado)"; n++; } });
+    if(n) salvarAvisos(d);
+    salvarJSON(marca,{em:Date.now(),resolvidos:n});
+    if(n) console.log(`[limpeza] ${n} aviso(s) de NFC-e pendente resolvidos (aviso descontinuado)`);
+  }catch(e){}
+})();
 
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 
