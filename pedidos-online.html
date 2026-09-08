@@ -124,6 +124,7 @@ function cardPedido(p){
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
     (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO"))+'</span></div>'+
       (p.agendamento.obsEntrega?'<div class="muted" style="font-size:11px;margin-top:3px">📝 '+esc(p.agendamento.obsEntrega)+'</div>':''):'')+
+    (p.teveRetirada?'<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>':'')+
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
@@ -199,8 +200,19 @@ async function whats(tel,numero,cliente,id){
     const itens=(ped?.itens?.length?ped.itens.map(function(i){return "- "+(i.descricao||i.produto?.nome||"Produto")+": "+i.quantidade+" un";})
       :((p?.itens)||[]).map(function(i){return "- "+i.nome+": "+i.quantidade+" un";})).join("\n");
     const total=Number(ped?.total ?? p?.total ?? 0);
+    // o que foi retirado/alterado na edição — o cliente precisa saber o que saiu
+    let alt=null;
+    try{ alt=await fetch(B+"/api/pedidos-online/"+id+"/alteracoes").then(r=>r.json()); }catch(e){}
+    let blocoAlt="";
+    if(alt&&alt.teveAlteracao){
+      const partes=[];
+      if(alt.retirados&&alt.retirados.length) partes.push("❌ *Retirado(s) do pedido:*\n"+alt.retirados.map(x=>"- "+x).join("\n"));
+      if(alt.acrescentados&&alt.acrescentados.length) partes.push("➕ *Acrescentado(s):*\n"+alt.acrescentados.map(x=>"- "+x).join("\n"));
+      if(alt.alterados&&alt.alterados.length) partes.push("🔄 *Quantidade alterada:*\n"+alt.alterados.map(x=>"- "+x).join("\n"));
+      blocoAlt="\n\n"+partes.join("\n\n")+"\n_(o valor abaixo já está atualizado)_";
+    }
     const msg="Olá"+(nome?" "+nome:"")+"! Seu pedido *"+(ped?.numero||numero)+"* foi recebido na B13 Bebidas. ✅\n\n"+
-      "*Itens do pedido:*\n"+itens+"\n\n*Total: "+brl(total)+"*\n\nEm breve entraremos em contato! 😊";
+      "*Itens do pedido:*\n"+itens+blocoAlt+"\n\n*Total: "+brl(total)+"*\n\nEm breve entraremos em contato! 😊";
     if(!t){ alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa."); window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); return; }
     const num=t.startsWith("55")?t:("55"+t);
     window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank");

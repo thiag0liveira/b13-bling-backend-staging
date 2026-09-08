@@ -7925,8 +7925,15 @@ app.get("/api/pedidos-online",(req,res)=>{
       .map(p=>{
         const sit=_sitOnline[String(p.pedidoBlingId)]||null;
         const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
+        // teve item retirado na edição? (pra marcar no card e avisar antes do WhatsApp)
+        let teveRetirada=false;
+        try{
+          const lg=lerLog()[String(p.pedidoBlingId)]||[];
+          teveRetirada=lg.some(e=>e.evento==="itens_retirados"||(e.detalhes&&Array.isArray(e.detalhes.retirados)&&e.detalhes.retirados.length));
+        }catch(e){}
         return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
           agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+          teveRetirada,
           criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
           vendedor:p.vendedorNome||p.funcionarioNome||"", // vendedor do pedido (ou quem digitou)
           cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
@@ -8037,6 +8044,39 @@ app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // onde cada pedido está agendado (dia + turno), pra tela mostrar
+// histórico do que foi RETIRADO/alterado num pedido — usado na mensagem de WhatsApp
+// pro cliente saber o que saiu (ex.: produto que faltou no estoque)
+app.get("/api/pedidos-online/:blingId/alteracoes",(req,res)=>{
+  try{
+    const id=String(req.params.blingId);
+    const log=lerLog()[id]||[];
+    const retirados=[], acrescentados=[], alterados=[];
+    log.filter(e=>["itens_alterados_caixa","itens_retirados","itens_acrescentados","itens_alterados_gestao"].includes(e.evento))
+      .sort((a,b)=>(a.em||0)-(b.em||0))
+      .forEach(e=>{
+        const d=e.detalhes||{};
+        (d.retirados||(e.evento==="itens_retirados"?(d.detalhe||d.itens||[]):[])).forEach(x=>{ const t=String(x); if(!retirados.includes(t)) retirados.push(t); });
+        (d.acrescentados||(e.evento==="itens_acrescentados"?(d.itens||[]):[])).forEach(x=>{ const t=String(x); if(!acrescentados.includes(t)) acrescentados.push(t); });
+        (d.alterados||[]).forEach(x=>{ const t=String(x); if(!alterados.includes(t)) alterados.push(t); });
+      });
+    // também o que está registrado no movimento do caixa (formato estruturado)
+    try{
+      const dCx=lerCaixaSessoes();
+      (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{
+        if(String(m.pedidoId)!==id) return;
+        (m.alteracoes||[]).forEach(a=>{
+          if(a.tipo!=="itens") return;
+          (a.retirados||[]).forEach(x=>{ const t=String(x); if(!retirados.includes(t)) retirados.push(t); });
+          (a.acrescentados||[]).forEach(x=>{ const t=String(x); if(!acrescentados.includes(t)) acrescentados.push(t); });
+          (a.alterados||[]).forEach(x=>{ const t=String(x); if(!alterados.includes(t)) alterados.push(t); });
+        });
+      }));
+    }catch(e){}
+    res.json({ pedidoId:id, teveAlteracao:!!(retirados.length||acrescentados.length||alterados.length),
+      retirados, acrescentados, alterados });
+  }catch(e){ res.json({retirados:[],acrescentados:[],alterados:[],teveAlteracao:false}); }
+});
+
 app.get("/api/pedidos-online/agendamentos",(req,res)=>{
   try{ res.json({data:lerJSON(TURNOS_ENTREGA_FILE,{})}); }catch(e){ res.json({data:{}}); }
 });
