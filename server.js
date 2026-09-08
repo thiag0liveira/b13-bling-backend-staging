@@ -1072,6 +1072,21 @@ app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{
 // estado da mesa: fila de pedidos na ORDEM DE CONFIRMAÇÃO + quem está com o quê
 // ENVIA o pedido pra separação (Em separação no Bling) e entra na fila da mesa,
 // marcando se é pra RETIRAR ou pra ENTREGA
+// tira um pedido da fila da mesa (sem mexer na situação no Bling)
+app.post("/api/mesa/remover-da-fila/:blingId",(req,res)=>{
+  try{
+    const f=lerFilaSep(); const id=String(req.params.blingId);
+    if(!f[id]) return res.json({ok:true,jaEstava:true});
+    delete f[id]; salvarJSON(FILA_SEP_FILE,f);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// limpa a fila inteira (recomeçar do zero)
+app.post("/api/mesa/limpar-fila",(req,res)=>{
+  try{ const f=lerFilaSep(); const n=Object.keys(f).length; salvarJSON(FILA_SEP_FILE,{}); res.json({ok:true,removidos:n}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/mesa/enviar-separacao/:blingId",async(req,res)=>{
   try{
     const id=req.params.blingId;
@@ -1105,9 +1120,24 @@ app.get("/api/mesa/estado",async(req,res)=>{
     [SIT.AGUARDANDO,SIT.EM_SEP].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
     let pedidos=[];
     try{ const r=await bling(`/pedidos/vendas?${params.toString()}`); pedidos=r?.data||[]; }catch(e){}
-    // ORDEM: quem foi enviado pra separação primeiro aparece primeiro. Pedido que
-    // ainda não tem registro de envio (fluxo antigo) entra depois, pelo número.
+    // SÓ os pedidos que foram ENVIADOS pra separação (pelo caixa atacado ou pela tela
+    // de Pedidos). Antes vinha tudo que estivesse em Aguardando/Em separação no Bling,
+    // inclusive pedido que ninguém mandou — a mesa ficava cheia de coisa que não era
+    // pra separar. ?todos=1 mostra tudo, se precisar conferir.
     const fila=lerFilaSep();
+    if(req.query.todos!=="1") pedidos=pedidos.filter(p=>fila[String(p.id)]);
+    // limpeza: pedido que já saiu de Aguardando/Em separação (foi separado, atendido
+    // ou cancelado) não precisa mais ficar na fila
+    try{
+      const idsAtivos=new Set(pedidos.map(p=>String(p.id)));
+      let mudou=false;
+      Object.keys(fila).forEach(id=>{
+        const antigo=(Date.now()-(fila[id].em||0))>7*86400000; // fila velha demais
+        if(!idsAtivos.has(id)&&antigo){ delete fila[id]; mudou=true; }
+      });
+      if(mudou) salvarJSON(FILA_SEP_FILE,fila);
+    }catch(e){}
+    // ORDEM: quem foi enviado primeiro aparece primeiro
     const posDe=(p)=>{ const r=fila[String(p.id)]; return r? r.em : (9e15+(Number(p.numero)||0)); };
     pedidos.sort((a,b)=>posDe(a)-posDe(b));
     const emSeparacao={}; // funcionarioId -> pedido

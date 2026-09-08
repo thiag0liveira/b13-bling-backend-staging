@@ -163,6 +163,12 @@ async function restaurarMesas(){
   _restaurando=false;
   render();
 }
+async function tirarDaFila(pedidoId){
+  const p=FILA.find(function(x){return String(x.id)===String(pedidoId);});
+  if(!confirm("Tirar o pedido "+(p?p.numero:pedidoId)+" da fila da mesa?\n\nEle continua com a situação atual no Bling — só sai daqui.")) return;
+  try{ await fetch(B+"/api/mesa/remover-da-fila/"+pedidoId,{method:"POST"}); carregar(true); }
+  catch(e){ alert("Erro ao tirar da fila."); }
+}
 async function toggleFunc(id){
   try{
     await fetch(B+"/api/mesa/toggle/"+encodeURIComponent(id),{method:"POST"});
@@ -337,9 +343,10 @@ function render(){
       (p.envio?'<div style="font-size:10px;font-weight:900;margin-top:2px;color:'+(p.envio.tipo==="entrega"?"#29ABE2":"#3ce88a")+'">'+(p.envio.tipo==="entrega"?"🛵 ENTREGA":"📦 RETIRADA")+'</div>'+
         '<div class="muted" style="font-size:9px">enviado '+new Date(p.envio.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+
       (ocupado?'<div class="quem">'+esc(quemSepara(p.id)||"separando…")+'</div>':'')+
+      (!ocupado?'<button onclick="event.stopPropagation();tirarDaFila('+p.id+')" style="margin-top:5px;background:none;border:none;color:#6b6699;font-size:10px;cursor:pointer;padding:2px">✕ tirar da fila</button>':'')+
       (travadoSemDono(p.id)?'<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar('+p.id+')">🔓 Destravar</button>':'')+
     '</div>';
-  }).join("")||'<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido aguardando separação. 🎉</div>';
+  }).join("")||'<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido enviado pra separação. 🎉<br><span style="font-size:11px">Os pedidos aparecem aqui quando alguém manda pra separação no caixa atacado ou na tela de Pedidos.</span></div>';
 
   const cols=ATIVOS.length?ATIVOS.map(colunaHtml).join(""):
     '<div class="col"><div class="colBody"><div class="vazio">Ative os separadores na barra de cima<br>para começar</div></div></div>';
