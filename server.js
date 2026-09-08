@@ -1018,6 +1018,19 @@ app.get("/api/separacoes",(req,res)=>{ res.json({data:limparLocksExpirados()}); 
 // Tela pra monitor touch: vários separadores trabalhando ao mesmo tempo, cada um
 // numa coluna. Guarda quem está ATIVO na mesa (independente de login).
 const MESA_FILE=`${DATA_DIR}/mesa_separacao.json`; // {ativos:[funcionarioId], em}
+// ORDEM DA FILA: vale o momento em que o pedido foi ENVIADO pra separação — não a
+// ordem de criação do pedido. Aqui fica pedidoId -> {em, tipo:retirada|entrega, por}
+const FILA_SEP_FILE=`${DATA_DIR}/fila_separacao.json`;
+function lerFilaSep(){ return lerJSON(FILA_SEP_FILE,{}); }
+function registrarNaFilaSeparacao(pedidoId,tipo,por,numero){
+  try{
+    const f=lerFilaSep();
+    const id=String(pedidoId);
+    if(!f[id]) f[id]={em:Date.now(), tipo:tipo||"retirada", por:por||"", numero:numero||null};
+    else { f[id].tipo=tipo||f[id].tipo; } // reenvio mantém a posição original na fila
+    salvarJSON(FILA_SEP_FILE,f);
+  }catch(e){}
+}
 function lerMesa(){ const d=lerJSON(MESA_FILE,{ativos:[]}); if(!Array.isArray(d.ativos)) d.ativos=[]; return d; }
 // SOMENTE o grupo expedição — nem admin, nem gerente, nem permissão avulsa de separação
 function _ehExpedicao(f){ if(!f||f.ativo===false) return false; const p=f.permissoes||[]; return f.nivel==="expedicao"||p.includes("expedicao"); }
@@ -1057,6 +1070,28 @@ app.post("/api/mesa/toggle/:funcionarioId",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // estado da mesa: fila de pedidos na ORDEM DE CONFIRMAÇÃO + quem está com o quê
+// ENVIA o pedido pra separação (Em separação no Bling) e entra na fila da mesa,
+// marcando se é pra RETIRAR ou pra ENTREGA
+app.post("/api/mesa/enviar-separacao/:blingId",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const {tipo,funcionarioId}=req.body||{};
+    if(!["retirada","entrega"].includes(tipo)) return res.status(400).json({erro:"informe se é pra retirada ou entrega"});
+    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const sit=Number(ped.situacao?.id||0);
+    if(sit===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    if(sit!==SIT.EM_SEP){
+      try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"}); }
+      catch(e){ return res.status(502).json({erro:"Não consegui mudar pra Em separação: "+e.message}); }
+    }
+    registrarNaFilaSeparacao(id,tipo,funcNome,ped.numero);
+    addLog(String(id),"enviado_separacao",funcionarioId,funcNome,{tipo,numero:ped.numero});
+    res.json({ok:true, numero:ped.numero, tipo});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/mesa/estado",async(req,res)=>{
   try{
     const mesa=lerMesaValidada();
@@ -1070,14 +1105,18 @@ app.get("/api/mesa/estado",async(req,res)=>{
     [SIT.AGUARDANDO,SIT.EM_SEP].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
     let pedidos=[];
     try{ const r=await bling(`/pedidos/vendas?${params.toString()}`); pedidos=r?.data||[]; }catch(e){}
-    // ordem de confirmação = ordem em que entraram na fila (número do pedido)
-    pedidos.sort((a,b)=>(Number(a.numero)||a.id)-(Number(b.numero)||b.id));
+    // ORDEM: quem foi enviado pra separação primeiro aparece primeiro. Pedido que
+    // ainda não tem registro de envio (fluxo antigo) entra depois, pelo número.
+    const fila=lerFilaSep();
+    const posDe=(p)=>{ const r=fila[String(p.id)]; return r? r.em : (9e15+(Number(p.numero)||0)); };
+    pedidos.sort((a,b)=>posDe(a)-posDe(b));
     const emSeparacao={}; // funcionarioId -> pedido
     Object.values(locks||{}).forEach(l=>{ if(l&&l.funcionarioId) emSeparacao[String(l.funcionarioId)]={pedidoId:l.pedidoId, desde:l.em||l.desde||null, nome:l.funcionarioNome||""}; });
     res.json({
       ativos: mesa.ativos.filter(id=>funcs[id]).map(id=>({ id, nome:funcs[id].nome||"—", separando: emSeparacao[String(id)]||null })),
       fila: pedidos.map(p=>({ id:p.id, numero:p.numero, cliente:p.contato?.nome||"—", total:Number(p.total)||0,
         data:p.data, situacaoId:Number(p.situacao?.id||0), situacao:nomeSituacao(Number(p.situacao?.id||0)),
+        envio: fila[String(p.id)]||null,
         emSeparacaoPor: Object.values(locks||{}).find(l=>String(l.pedidoId)===String(p.id))?.funcionarioNome || null })),
       locks,
     });

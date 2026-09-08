@@ -334,6 +334,8 @@ function render(){
       '<div class="num">'+esc(p.numero)+'</div>'+
       '<div class="cli">'+esc(p.cliente)+'</div>'+
       '<div class="vlr">'+brl(p.total)+'</div>'+
+      (p.envio?'<div style="font-size:10px;font-weight:900;margin-top:2px;color:'+(p.envio.tipo==="entrega"?"#29ABE2":"#3ce88a")+'">'+(p.envio.tipo==="entrega"?"🛵 ENTREGA":"📦 RETIRADA")+'</div>'+
+        '<div class="muted" style="font-size:9px">enviado '+new Date(p.envio.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+
       (ocupado?'<div class="quem">'+esc(quemSepara(p.id)||"separando…")+'</div>':'')+
       (travadoSemDono(p.id)?'<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar('+p.id+')">🔓 Destravar</button>':'')+
     '</div>';
@@ -350,7 +352,7 @@ function render(){
         : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>')+
       '<div class="fBtn" onclick="toggleTelaCheia()" style="min-height:44px" title="Tela cheia">'+(TELA_CHEIA?"🡼 Sair":"⛶ Tela cheia")+'</div>'+
       '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>'+
-    '<div class="filaWrap"'+(PISCA?' style="background:#123a2a;border-bottom-color:#3ce88a"':'')+'><div class="filaTit">Fila de separação — ordem de confirmação ('+FILA.length+')'+(PISCA?' <span style="color:#3ce88a">· PEDIDO NOVO!</span>':'')+'</div>'+
+    '<div class="filaWrap"'+(PISCA?' style="background:#123a2a;border-bottom-color:#3ce88a"':'')+'><div class="filaTit">Fila de separação — ordem de envio ('+FILA.length+')'+(PISCA?' <span style="color:#3ce88a">· PEDIDO NOVO!</span>':'')+'</div>'+
       '<div class="fila">'+fila+'</div></div>'+
     '<div class="colunas">'+cols+'</div>';
 }

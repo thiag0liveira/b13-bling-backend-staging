@@ -128,6 +128,10 @@ function cardPedido(p){
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
+    (aguard?'<div style="display:flex;gap:6px;margin-top:6px">'+
+      '<button class="btn btn-wa" style="flex:1;margin:0;font-size:12px" onclick="enviarSeparacao('+p.id+',\'retirada\')">📦 Separar p/ RETIRAR</button>'+
+      '<button class="btn" style="flex:1;margin:0;font-size:12px;background:#29ABE2;color:#000" onclick="enviarSeparacao('+p.id+',\'entrega\')">🛵 Separar p/ ENTREGA</button>'+
+    '</div>':'')+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
     '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
@@ -166,6 +170,17 @@ function render(){
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
           :'<div class="card"><div class="muted">Nenhum pedido do totem/site nesse período.</div></div>'))+
     '</div>';
+}
+// manda o pedido pra separação (Em separação) e pra fila da mesa, na ordem de envio
+async function enviarSeparacao(id,tipo){
+  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+  if(!confirm("Enviar o pedido "+(p?p.numero:id)+" pra separação ("+(tipo==="entrega"?"ENTREGA":"RETIRADA")+")?")) return;
+  try{
+    const j=await fetch(B+"/api/mesa/enviar-separacao/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo,funcionarioId:S.id})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    carregar();
+  }catch(e){ alert("Erro: "+e.message); }
 }
 function verDetalhe(id){
   const p=PEDIDOS.find(function(x){return x.id===id;}); if(!p) return;
@@ -300,8 +315,18 @@ function mudarQtdEdit(ix,v,id){
   window.itensEdit[ix].quantidade=q;
   const t=document.getElementById("edTotal"); if(t) t.textContent=brl(totalEdit());
 }
-function removerItemEdit(ix,id){ window.itensEdit[ix]._removido=true; renderEditarAguardando(id); }
-function restaurarItemEdit(ix,id){ window.itensEdit[ix]._removido=false; renderEditarAguardando(id); }
+// preserva a posição da rolagem ao redesenhar (antes voltava tudo pro topo a cada
+// item removido, e em pedido grande era preciso rolar de novo toda vez)
+function _comScroll(id,fn){
+  const box=document.querySelector("#mbox div[style*='overflow:auto']");
+  const y=box?box.scrollTop:0;
+  fn();
+  renderEditarAguardando(id);
+  const novo=document.querySelector("#mbox div[style*='overflow:auto']");
+  if(novo) novo.scrollTop=y;
+}
+function removerItemEdit(ix,id){ _comScroll(id,function(){ window.itensEdit[ix]._removido=true; }); }
+function restaurarItemEdit(ix,id){ _comScroll(id,function(){ window.itensEdit[ix]._removido=false; }); }
 let _edBuscaT=null;
 function buscarNovoItemEdit(q,id){
   clearTimeout(_edBuscaT);
