@@ -84,6 +84,43 @@ const SIT = {
   CANCELADO:    Number(process.env.SIT_CANCELADO    || 12),
 };
 
+// Nomes das situações vêm do Bling (módulo Pedido de Venda) e ficam em cache. Sem
+// isso, situação criada por você no Bling aparecia como "Situação 806183" nas telas.
+let _situacoesBling={}, _situacoesBlingEm=0, _situacoesTentativas=[];
+async function carregarSituacoesBling(forcar){
+  if(!forcar && Object.keys(_situacoesBling).length && (Date.now()-_situacoesBlingEm)<6*3600*1000) return _situacoesBling;
+  // O Bling expõe as situações POR MÓDULO: primeiro descobre o id do módulo de
+  // Vendas (98310 na conta atual, mas busca em vez de fixar) e depois lista as dele.
+  let idModuloVendas=98310;
+  try{
+    const rm=await bling("/situacoes/modulos");
+    const mods=rm?.data||[];
+    const venda=mods.find(m=>/venda/i.test(m?.nome||"")&&!/compra/i.test(m?.nome||""));
+    if(venda?.id) idModuloVendas=venda.id;
+  }catch(e){}
+  const achou={}; _situacoesTentativas=[];
+  const caminhos=[
+    `/situacoes/modulos/${idModuloVendas}`,
+    `/situacoes/modulos/${idModuloVendas}/situacoes`,
+    `/situacoes?idModulo=${idModuloVendas}`,
+    `/situacoes/${idModuloVendas}`,
+  ];
+  for(const path of caminhos){
+    try{
+      const r=await bling(path);
+      const arr=Array.isArray(r?.data)?r.data:(Array.isArray(r?.data?.situacoes)?r.data.situacoes:[]);
+      arr.forEach(x=>{ if(x?.id&&(x.nome||x.descricao)) achou[String(x.id)]=x.nome||x.descricao; });
+      _situacoesTentativas.push({path, ok:true, qtd:arr.length});
+      if(Object.keys(achou).length) break;
+    }catch(e){ _situacoesTentativas.push({path, ok:false, erro:(e.message||"").slice(0,90)}); }
+    await sleep(150);
+  }
+  if(Object.keys(achou).length){ _situacoesBling={..._situacoesBling,...achou}; _situacoesBlingEm=Date.now(); }
+  return _situacoesBling;
+}
+// adia a 1ª carga: no boot os tokens do Bling ainda não estão prontos
+setTimeout(()=>{ carregarSituacoesBling().catch(()=>{}); }, 15000);
+
 const app = express();
 const _iniciadoEm=new Date().toISOString();
 app.get("/api/versao-deploy",(req,res)=>res.json({iniciadoEm:_iniciadoEm,agora:new Date().toISOString(),marcador:"nfce-fix-itens-data-v1"}));
@@ -5450,25 +5487,35 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
 // e mostra a situação atual de um pedido. Ajuda a conferir se os IDs (SIT.*) batem.
 // Uso: /api/diag/situacoes  ou  /api/diag/situacoes/PEDIDO_ID
 app.get("/api/diag/situacoes/:pedidoId?",async(req,res)=>{
-  const out={sitConfigurado:SIT, situacoesBling:null, pedido:null};
+  // ÚNICO diagnóstico de situações (antes havia 3 rotas concorrendo pelo mesmo
+  // endereço — esta, com parâmetro opcional, capturava /api/diag/situacoes e usava
+  // idModulo=2, que não existe nesta conta; o módulo de Vendas aqui é o 98310).
+  const out={sitConfigurado:SIT};
   try{
-    // o Bling lista as situações por módulo; vendas costuma ser idTipoSituacao=2
-    const r=await bling(`/situacoes/modulos`).catch(()=>null);
-    out.modulos = r?.data ? r.data.map(m=>({id:m.id, nome:m.nome})) : null;
-  }catch(e){ out.erroModulos=e.message; }
-  try{
-    // tenta listar situações do módulo de vendas (id 2 é o padrão de "Vendas")
-    const r=await bling(`/situacoes?idModulo=2`).catch(()=>null);
-    out.situacoesBling = r?.data ? r.data.map(s=>({id:s.id, nome:s.nome})) : null;
+    const mapa=await carregarSituacoesBling(req.query.forcar==="1");
+    out.situacoesBling=Object.entries(mapa).map(([id,nome])=>({id:Number(id),nome}))
+      .sort((a,b)=>String(a.nome).localeCompare(String(b.nome)));
+    out.qtdSituacoes=out.situacoesBling.length;
+    out.tentativas=_situacoesTentativas;
+    // marca quais estão em uso no fluxo do sistema e quais estão de fora
+    const emUso=new Set(Object.values(SIT).map(Number));
+    out.foraDoFluxo=out.situacoesBling.filter(x=>!emUso.has(Number(x.id)));
+    if(req.query.id) out.procurado=mapa[String(req.query.id)]||"não encontrado no Bling";
   }catch(e){ out.erroSituacoes=e.message; }
+  try{
+    const rm=await bling(`/situacoes/modulos`).catch(()=>null);
+    out.modulos = rm?.data ? rm.data.map(m=>({id:m.id, nome:m.nome})) : null;
+  }catch(e){ out.erroModulos=e.message; }
   if(req.params.pedidoId){
     try{
       const d=await bling(`/pedidos/vendas/${req.params.pedidoId}`).then(r=>r?.data);
-      out.pedido = d ? {id:d.id, numero:d.numero, situacaoId:d.situacao?.id, situacaoNome:d.situacao?.nome} : null;
+      out.pedido = d ? {id:d.id, numero:d.numero, situacaoId:d.situacao?.id,
+        situacaoNome:d.situacao?.nome||nomeSituacao(d.situacao?.id)} : null;
     }catch(e){ out.erroPedido=e.message; }
   }
   res.json(out);
 });
+
 app.get("/api/diag/pedido-busca/:cod",async(req,res)=>{
   const cod=String(req.params.cod||"").trim();
   const out={cod, porId:null, porNumeroVarredura:null};
@@ -10183,52 +10230,8 @@ async function situacaoAtualBling(pedidoBlingId){
 }
 
 // nome amigável de uma situação, pelos ids que o nosso fluxo usa
-// Nomes das situações vêm do Bling (módulo Pedido de Venda) e ficam em cache. Sem
-// isso, situação criada por você no Bling aparecia como "Situação 806183" nas telas.
-let _situacoesBling={}, _situacoesBlingEm=0, _situacoesTentativas=[];
-async function carregarSituacoesBling(forcar){
-  if(!forcar && Object.keys(_situacoesBling).length && (Date.now()-_situacoesBlingEm)<6*3600*1000) return _situacoesBling;
-  // O Bling expõe as situações POR MÓDULO: primeiro descobre o id do módulo de
-  // Vendas (98310 na conta atual, mas busca em vez de fixar) e depois lista as dele.
-  let idModuloVendas=98310;
-  try{
-    const rm=await bling("/situacoes/modulos");
-    const mods=rm?.data||[];
-    const venda=mods.find(m=>/venda/i.test(m?.nome||"")&&!/compra/i.test(m?.nome||""));
-    if(venda?.id) idModuloVendas=venda.id;
-  }catch(e){}
-  const achou={}; _situacoesTentativas=[];
-  const caminhos=[
-    `/situacoes/modulos/${idModuloVendas}`,
-    `/situacoes/modulos/${idModuloVendas}/situacoes`,
-    `/situacoes?idModulo=${idModuloVendas}`,
-    `/situacoes/${idModuloVendas}`,
-  ];
-  for(const path of caminhos){
-    try{
-      const r=await bling(path);
-      const arr=Array.isArray(r?.data)?r.data:(Array.isArray(r?.data?.situacoes)?r.data.situacoes:[]);
-      arr.forEach(x=>{ if(x?.id&&(x.nome||x.descricao)) achou[String(x.id)]=x.nome||x.descricao; });
-      _situacoesTentativas.push({path, ok:true, qtd:arr.length});
-      if(Object.keys(achou).length) break;
-    }catch(e){ _situacoesTentativas.push({path, ok:false, erro:(e.message||"").slice(0,90)}); }
-    await sleep(150);
-  }
-  if(Object.keys(achou).length){ _situacoesBling={..._situacoesBling,...achou}; _situacoesBlingEm=Date.now(); }
-  return _situacoesBling;
-}
-carregarSituacoesBling().catch(()=>{});
-app.get("/api/diag/situacoes",async(req,res)=>{
-  try{
-    const mapa=await carregarSituacoesBling(req.query.forcar==="1");
-    res.json({ conhecidasNoSistema:{
-        AGUARDANDO:SIT.AGUARDANDO, EM_SEP:SIT.EM_SEP, SEP_PEND:SIT.SEP_PEND, SEPARADO:SIT.SEPARADO,
-        CONF_ENTREGA:SIT.CONF_ENTREGA, EM_ROTA:SIT.EM_ROTA, ATENDIDO:SIT.ATENDIDO, CANCELADO:SIT.CANCELADO,
-        EM_ABERTO:SIT.EM_ABERTO, EM_DIGITACAO:21 },
-      doBling:mapa, qtdDoBling:Object.keys(mapa).length, tentativas:_situacoesTentativas,
-      procurado: req.query.id? (mapa[String(req.query.id)]||"não encontrado no Bling") : undefined });
-  }catch(e){ res.status(500).json({erro:e.message}); }
-});
+
+
 
 function nomeSituacao(id){
   const n=Number(id);
