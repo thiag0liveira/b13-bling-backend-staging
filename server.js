@@ -6408,12 +6408,55 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       // classifica erroneamente como pago um pedido recém-criado, ainda não pago
       addLog(String(pedidoId),"pedido_criado_totem",null,"Totem",{nome,telefone,tipoEntrega:entrega?.tipo});
     }
-    // mover para status AGUARDANDO SEPARAÇÃO após criação
-    if(pedidoId && process.env.BLING_SITUACAO_ID){
+    // GRAVA O REGISTRO LOCAL PRIMEIRO (é rápido e local): se algo falhar depois — como
+    // a mudança de situação, que depende do Bling — o pedido já existe no sistema e
+    // aparece na tela. Antes o registro vinha DEPOIS e, quando o Bling travava, o
+    // pedido sumia da tela mesmo existindo lá (caso do 55142).
+    if(pedidoId){
       try{
-        await new Promise(r=>setTimeout(r,400));
-        await bling(`/pedidos/vendas/${pedidoId}/situacoes/${Number(process.env.BLING_SITUACAO_ID)}`,{method:"PATCH"});
-      }catch(e){ console.log("Erro ao mover status:", e.message); }
+        const origemReg=(req.body?.origem==="site"||req.body?.origem==="totem")?req.body.origem:"online";
+        const itensReg=(itens||[]).map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0}));
+        const totalItensReg=+itensReg.reduce((s2,i)=>s2+i.valor*i.quantidade,0).toFixed(2);
+        const freteReg=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
+        const idReg="ped-"+String(pedidoId);
+        const props0=lerPropostas();
+        if(!props0[idReg]){
+          props0[idReg]={
+            id:idReg, origem:origemReg, tipo:"pedido",
+            cliente:{ id:contatoId||null, nome:(nome||cadastro?.nome||"Consumidor Final"), telefone:(telefone||"") },
+            itens:itensReg, total:+(totalItensReg+freteReg).toFixed(2),
+            vendedorNome: origemReg==="site"?"Site":"Totem",
+            entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg, endereco:entrega?.endereco||"" },
+            observacao:"", status:"pedido_gerado",
+            pedidoBlingId:pedidoId, pedidoBlingNumero: pedido?.data?.numero||pedidoId,
+            criadoEm:Date.now(), atualizadoEm:Date.now(),
+          };
+          salvarPropostas(props0);
+        }
+      }catch(e){ console.error("[totem] falha ao gravar registro local:",e.message); }
+    }
+
+    // mover para AGUARDANDO SEPARAÇÃO após criação. Antes isso só acontecia se a
+    // variável BLING_SITUACAO_ID estivesse definida — sem ela o pedido ficava "Em
+    // aberto" e não entrava no fluxo. Agora usa SIT.AGUARDANDO como padrão, tenta
+    // de novo se falhar e AVISA quando não consegue.
+    if(pedidoId){
+      const alvoSit=Number(process.env.BLING_SITUACAO_ID||SIT.AGUARDANDO);
+      let moveu=false;
+      for(let t=0;t<3&&!moveu;t++){
+        await new Promise(r=>setTimeout(r,400*(t+1)));
+        const rs=await mudarSituacaoPedido(pedidoId, alvoSit);
+        moveu=rs.ok;
+        if(!moveu) console.log("[totem] tentativa "+(t+1)+" de mover status falhou:", rs.erro);
+      }
+      if(!moveu){
+        registrarAviso({tipo:"pedido_sem_situacao_inicial",
+          titulo:`Pedido #${pedido?.data?.numero||pedidoId} ficou fora do fluxo (Em aberto)`,
+          pedidoId:String(pedidoId), numero:pedido?.data?.numero,
+          origem:(req.body?.origem==="site"?"Site":"Totem"),
+          fingerprint:`sitini-${pedidoId}`,
+          oQueFazer:`O pedido foi criado mas não foi pra "Aguardando separação", então não entra na fila. Na tela de Pedidos, busque o número e use "🔀 Mover status" pra colocá-lo em Aguardando separação.`});
+      }
     }
     // nota: condição de pagamento padrão deve ser removida nas configurações do Bling
     // Ajustes → Preferências → Vendas → Condição de pagamento padrão → vazio
