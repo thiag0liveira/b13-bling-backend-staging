@@ -2885,6 +2885,42 @@ app.get("/api/diag/pedidos-duplicados",(req,res)=>{
 // Uso: /api/diag/auditar-caixas  (ou ?data=AAAA-MM-DD)
 // TESTE REAL: grava a taxa em "outras despesas" de um pedido e confere se entrou.
 // Uso: /api/diag/testar-taxa/54940?taxa=1.81  (sem ?taxa= só MOSTRA o estado atual)
+// Descobre, na prática, PRA QUAIS situações o Bling deixa mover um pedido a partir
+// da situação atual dele. Só leitura: testa e desfaz na hora se mudar.
+app.get("/api/diag/transicoes/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const origem=Number(ped.situacao?.id||0);
+    if(req.query.testar!=="1"){
+      return res.json({ pedido:{numero:ped.numero, situacao:nomeSituacao(origem), situacaoId:origem},
+        aviso:"Passe ?testar=1 pra descobrir os destinos aceitos. ATENÇÃO: ele MUDA a situação do pedido durante o teste e volta pra original no fim." });
+    }
+    const mapa=await carregarSituacoesBling();
+    const destinos=Object.keys(mapa).map(Number).filter(x=>x&&x!==origem&&x!==SIT.CANCELADO);
+    const aceitos=[], recusados=[];
+    for(const d of destinos){
+      try{
+        await bling(`/pedidos/vendas/${ped.id}/situacoes/${d}`,{method:"PATCH"});
+        aceitos.push({id:d, nome:mapa[String(d)]||nomeSituacao(d)});
+        await sleep(400);
+        try{ await bling(`/pedidos/vendas/${ped.id}/situacoes/${origem}`,{method:"PATCH"}); }catch(e){}
+        await sleep(400);
+      }catch(e){
+        const t=((e.message||"")+JSON.stringify(e.body||{})).toLowerCase();
+        recusados.push({id:d, nome:mapa[String(d)]||nomeSituacao(d), motivo: t.includes("transi")?"sem transição no fluxo":(e.message||"").slice(0,80)});
+        await sleep(250);
+      }
+    }
+    const fim=await bling(`/pedidos/vendas/${ped.id}`).then(r=>Number(r?.data?.situacao?.id)).catch(()=>0);
+    res.json({ pedido:{numero:ped.numero}, origem:{id:origem,nome:nomeSituacao(origem)},
+      voltouParaOriginal: fim===origem, situacaoAoFim:nomeSituacao(fim),
+      aceitos, recusados });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/testar-taxa/:numero",async(req,res)=>{
   try{
     const n=String(req.params.numero).trim();
@@ -10505,7 +10541,7 @@ async function situacaoAtualBling(pedidoBlingId){
 // Muda a situação do pedido tratando o caso "já está nessa situação": o Bling
 // devolve 400 ("A venda possui a mesma situação"), que NÃO é erro — o pedido já
 // está onde queremos. Antes isso quebrava a conclusão da separação com um alerta.
-async function mudarSituacaoPedido(id, novaSit){
+async function mudarSituacaoPedido(id, novaSit, _viaIntermediaria){
   try{
     await bling(`/pedidos/vendas/${id}/situacoes/${novaSit}`,{method:"PATCH"});
     return {ok:true, mudou:true};
@@ -10517,6 +10553,24 @@ async function mudarSituacaoPedido(id, novaSit){
       const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
       if(Number(d?.situacao?.id)===Number(novaSit)) return {ok:true, mudou:false, jaEstava:true};
     }catch(e2){}
+    // "Não há transições definidas": o Bling tem um FLUXO configurado e não aceita ir
+    // direto da situação atual pra essa. Tenta passar por uma situação-ponte que
+    // costuma aceitar transição pra qualquer outra (Em digitação / Em aberto).
+    const semTransicao=txt.includes("transi")&&(txt.includes("não há")||txt.includes("nao ha")||txt.includes("definidas"));
+    if(semTransicao && !_viaIntermediaria){
+      for(const ponte of [21, SIT.EM_ABERTO]){   // 21 = Em digitação
+        if(!ponte||Number(ponte)===Number(novaSit)) continue;
+        try{
+          await bling(`/pedidos/vendas/${id}/situacoes/${ponte}`,{method:"PATCH"});
+          await sleep(500);
+          const r2=await mudarSituacaoPedido(id, novaSit, true);
+          if(r2.ok) return {...r2, viaPonte:nomeSituacao(ponte)};
+        }catch(e3){}
+        await sleep(300);
+      }
+      return {ok:false, semTransicao:true,
+        erro:`O Bling não permite ir de "${nomeSituacao((await bling(`/pedidos/vendas/${id}`).then(r=>Number(r?.data?.situacao?.id)).catch(()=>0))||0)}" para "${nomeSituacao(novaSit)}" — não há transição configurada no fluxo de situações do Bling (Configurações > Situações). Ajuste lá ou mude a situação manualmente.`};
+    }
     return {ok:false, erro:e.message, status:e.status, body:e.body};
   }
 }
