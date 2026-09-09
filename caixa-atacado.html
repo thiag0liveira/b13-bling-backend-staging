@@ -1529,6 +1529,7 @@ function render(){
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px"
           ${(FINALIZANDO||!CARRINHO.length||!PAGAMENTOS.length||PAGAMENTOS.some(p=>!p.formaId))?"disabled":""}
           onclick="finalizar()">${FINALIZANDO?"Processando…":(MODO_EDICAO_PAGAMENTO?"💾 Salvar novo pagamento":"✅ Finalizar e receber")}</button>
+        ${(!MODO_EDICAO_PAGAMENTO&&PEDIDO_ATUAL&&ehPedidoAtacado())?`<button class="btn btn-ghost" style="width:100%;margin-top:6px;border:1px solid #6b5f1f;color:#ffd23f" onclick="venderAPrazo()">🧾 Vender a prazo (não entra no caixa)</button>`:""}
         ${MODO_EDICAO_PAGAMENTO?`<button class="btn btn-ghost" style="width:100%;margin-top:8px;border:1px solid #6b1f24;color:#ff9aa2" onclick="cancelarVenda()">🚫 Cancelar esta venda</button>`:""}
       </div>
     </div>
@@ -1614,6 +1615,42 @@ async function aguardarConclusaoFinalizacao(opId, ctx, msgEl){
 }
 
 // depois de receber: o cliente já está com a mercadoria, ou o pedido vai pra separação?
+// VENDA A PRAZO: o cliente leva sem pagar agora. Não entra dinheiro no caixa —
+// o pedido vai pra situação PRAZO e fica registrado quem autorizou e o vencimento.
+function venderAPrazo(){
+  if(!PEDIDO_ATUAL){ alert("Abra um pedido primeiro."); return; }
+  pedirQrAcao(`🧾 Vender a prazo — pedido ${esc(PEDIDO_ATUAL.numero||"")}`,
+    `<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;margin-bottom:10px;font-size:13px;color:#ffd23f">
+       O cliente leva a mercadoria <b>sem pagar agora</b>. Nada entra no caixa.<br>
+       O pedido vai pra <b>PRAZO</b> e o pagamento é cobrado depois, aqui no caixa atacado.
+     </div>
+     <div class="muted" style="font-size:12px;margin-bottom:4px">Prazo (dias)</div>
+     <input id="prazoDias" type="number" min="1" max="60" value="7" style="width:100%;margin-bottom:8px">
+     <div class="muted" style="font-size:12px;margin-bottom:4px">Observação (opcional)</div>
+     <input id="prazoObs" placeholder="ex: combinado com o dono" style="width:100%">`,
+    async (tokenQr, campo, erroEl)=>{
+      try{
+        const dias=Number((document.getElementById("prazoDias")||{}).value||7);
+        const observacao=(document.getElementById("prazoObs")||{}).value||"";
+        const r=await fetch(BACKEND+"/api/atacado/pedido/"+PEDIDO_ATUAL.id+"/vender-a-prazo",{method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({token:tokenQr,funcionarioId:S.id,observacao,dias})}).then(r=>r.json());
+        if(r.erro) throw new Error(r.erro);
+        if(campo) campo.value="";
+        document.getElementById("modais").innerHTML=`
+          <div class="modalBg" onclick="if(event.target===this){fecharModais();novaVenda();carregarPedidos();}"><div class="modal" style="text-align:center">
+            <div style="font-size:44px">🧾</div><h3>Venda a prazo registrada</h3>
+            <div class="ok" style="text-align:left;margin-top:8px">
+              Pedido #${esc(r.numero)} — ${brl(r.total)}<br>
+              <span class="muted">Autorizado por:</span> ${esc(r.autorizadoPor)}<br>
+              <span class="muted">Registrado em:</span> ${esc(r.em)}<br>
+              <span class="muted">Vence em:</span> <b>${esc(r.venceEm)}</b> (${r.dias} dias)</div>
+            <div class="muted" style="font-size:12px;margin-top:8px">Não entrou dinheiro no caixa. O pedido aparece em "Vendas a prazo" na Central.</div>
+            <button class="btn" style="width:100%;margin-top:14px" onclick="fecharModais();novaVenda();carregarPedidos()">OK</button>
+          </div></div>`;
+      }catch(e){ if(campo) campo.value=""; if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+    });
+}
 function perguntarDestinoPedido(){
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">

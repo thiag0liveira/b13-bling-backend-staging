@@ -5982,6 +5982,11 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
           itens:itensEfetivos.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})) };
         const reg=registrarVendaNoCaixa(dCx, sessaoAtual, mov, {itensDiff:itensMudaram?diff:null, por:funcNome});
+      // era venda a prazo e agora foi paga: baixa o registro
+      try{
+        const vp=lerVendasPrazo();
+        if(vp[chave]&&!vp[chave].pago){ vp[chave].pago=true; vp[chave].pagoEm=Date.now(); vp[chave].pagoPor=funcNome; salvarJSON(PRAZO_FILE,vp); }
+      }catch(e){}
         salvarCaixaSessoes(dCx);
         if(reg.duplicadoEvitado) jaEstavaNoCaixa={operador:reg.sessao.operador||"", quando:reg.movimento.em, mesmaSessao:!!reg.mesmaSessao};
         if(_menor) addLog(chave,"fechado_valor_menor",funcionarioId,funcNome,{faltou:_menor.faltou,autorizadoPor:_menor.autorizadoPor});
@@ -7613,7 +7618,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -7708,6 +7713,25 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
         novoTotal:total,
         oQueFazer:`O pedido #${numero} (${cliente}${total?`, ${total.toFixed(2)}`:""}) está agendado pra entrega em ${ag.data.split("-").reverse().join("/")} e ainda NÃO foi recebido em nenhum caixa${pag.parcial?` (pago parcial: ${Number(pag.valorPago||0).toFixed(2)} de ${Number(pag.valorPedido||0).toFixed(2)})`:""}. Confira se foi cobrado antes de sair pra entrega.` });
       achados.entregaSemPagamento=(achados.entregaSemPagamento||0)+1;
+    });
+  }catch(e){}
+
+  // 4.6) VENDA A PRAZO VENCIDA: passou do prazo combinado e o cliente não pagou
+  try{
+    const reg=lerVendasPrazo();
+    Object.entries(reg).forEach(([pid,r])=>{
+      if(!r||r.pago) return;
+      if(Date.now()<=Number(r.venceEm||0)) return;
+      const sit=_sitOnline[pid];
+      if(sit&&sit.situacaoId!==SIT.PRAZO) return;   // já saiu de PRAZO (foi pago)
+      const diasAtraso=Math.floor((Date.now()-Number(r.venceEm))/86400000);
+      registrarAviso({ tipo:"prazo_vencido",
+        titulo:`Venda a prazo vencida — pedido #${r.numero||pid} (${diasAtraso}d de atraso)`,
+        pedidoId:pid, numero:r.numero, operador:r.operador||"", origem:"Vendas a prazo",
+        fingerprint:`prazo-${pid}-${Math.floor(diasAtraso/3)}`,   // reavisa a cada 3 dias
+        novoTotal:Number(r.total)||0,
+        oQueFazer:`${r.cliente||"Cliente"} levou o pedido #${r.numero||pid} (${Number(r.total||0).toFixed(2)}) a prazo em ${new Date(r.em).toLocaleDateString("pt-BR")}, autorizado por ${r.autorizadoPor||"—"}, e o prazo venceu em ${new Date(r.venceEm).toLocaleDateString("pt-BR")}. Cobre o pagamento no caixa atacado.` });
+      achados.prazoVencido=(achados.prazoVencido||0)+1;
     });
   }catch(e){}
 
@@ -8017,6 +8041,51 @@ app.get("/api/central/retirados-estoque",async(req,res)=>{
 // VENDAS A PRAZO (situação "PRAZO" no Bling): mercadoria já entregue/retirada e o
 // cliente paga depois no caixa atacado. Ficavam invisíveis no sistema.
 let _cachePrazo={em:0,dados:null,calculando:false};
+// ===== VENDA A PRAZO (fiado) =====
+// O pedido sai SEM entrar dinheiro no caixa: vira situação PRAZO no Bling e fica
+// registrado quem autorizou, quando, e o vencimento (7 dias por padrão).
+const PRAZO_FILE=`${DATA_DIR}/vendas_prazo.json`; // pedidoId -> {em, venceEm, autorizadoPor, operador, total, cliente}
+function lerVendasPrazo(){ return lerJSON(PRAZO_FILE,{}); }
+app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const {token,funcionarioId,observacao,dias}=req.body||{};
+    const auth=validarTokenQrAtacado(token);           // exige QR de gerente/financeiro/admin
+    if(auth.erro) return res.status(403).json({erro:auth.erro});
+    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const sit=Number(ped.situacao?.id||0);
+    if(sit===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
+    if(sit===SIT.PRAZO) return res.status(400).json({erro:"esse pedido já está a prazo"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    const prazoDias=Math.max(1,Math.min(Number(dias||7),60));
+    const agora=Date.now(), venceEm=agora+prazoDias*86400000;
+    const quando=new Date(agora).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
+    // registra na observação do Bling (fica visível pra quem abrir o pedido lá)
+    try{
+      const nota=`[VENDA A PRAZO ${quando}] Autorizado por ${auth.funcionario.nome} · operador ${funcNome} · vence em ${new Date(venceEm).toLocaleDateString("pt-BR")}${observacao?" · "+String(observacao).slice(0,120):""}`;
+      await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
+        data:ped.data, contato:{id:ped.contato?.id},
+        itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+        observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
+        ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
+        ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
+        ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
+      })});
+    }catch(e){}
+    try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.PRAZO}`,{method:"PATCH"}); }
+    catch(e){ return res.status(502).json({erro:"Não consegui mudar o pedido pra PRAZO no Bling: "+e.message}); }
+    const reg=lerVendasPrazo();
+    reg[String(id)]={ em:agora, venceEm, dias:prazoDias, autorizadoPor:auth.funcionario.nome, operador:funcNome,
+      total:Number(ped.total)||0, cliente:ped.contato?.nome||"", numero:ped.numero, observacao:observacao||"", pago:false };
+    salvarJSON(PRAZO_FILE,reg);
+    addLog(String(id),"venda_a_prazo",funcionarioId,funcNome,{autorizadoPor:auth.funcionario.nome,venceEm:new Date(venceEm).toLocaleDateString("pt-BR"),total:ped.total,numero:ped.numero});
+    _sitOnline[String(id)]={situacaoId:SIT.PRAZO, situacao:"PRAZO", em:Date.now()};
+    res.json({ ok:true, numero:ped.numero, autorizadoPor:auth.funcionario.nome,
+      em:quando, venceEm:new Date(venceEm).toLocaleDateString("pt-BR"), dias:prazoDias, total:Number(ped.total)||0 });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/central/prazo",async(req,res)=>{
   try{
     if(_cachePrazo.dados && (Date.now()-_cachePrazo.em)<5*60*1000 && req.query.forcar!=="1")
@@ -8042,7 +8111,12 @@ app.get("/api/central/prazo",async(req,res)=>{
       }catch(e){}
       const dt=p.data? new Date(p.data+"T12:00:00") : null;
       const dias=dt? Math.max(0,Math.round((hojeIni-_inicioDia(p.data))/86400000)) : null;
-      pedidos.push({ id:p.id, numero:p.numero, cliente:contato, vendedor, total, data:p.data, diasEmAberto:dias });
+      const reg=lerVendasPrazo()[String(p.id)]||null;
+      const venceEm=reg?.venceEm||null;
+      pedidos.push({ id:p.id, numero:p.numero, cliente:contato, vendedor, total, data:p.data, diasEmAberto:dias,
+        enviadoEm:reg?.em||null, venceEm, autorizadoPor:reg?.autorizadoPor||null, operador:reg?.operador||null,
+        vencido: venceEm? Date.now()>venceEm : (dias!=null&&dias>7),
+        diasParaVencer: venceEm? Math.ceil((venceEm-Date.now())/86400000) : null });
       await sleep(70);
     }
     pedidos.sort((a,b)=>(b.diasEmAberto??0)-(a.diasEmAberto??0));
@@ -8053,6 +8127,9 @@ app.get("/api/central/prazo",async(req,res)=>{
       total:+pedidos.reduce((a,p)=>a+p.total,0).toFixed(2),
       pedidos,
       porCliente:Object.values(porCliente).map(c=>({...c,valor:+c.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+      vencidos:{ qtd:pedidos.filter(p=>p.vencido).length,
+        valor:+pedidos.filter(p=>p.vencido).reduce((a,p)=>a+p.total,0).toFixed(2),
+        lista:pedidos.filter(p=>p.vencido).slice(0,20) },
       vencendo:{ ate7:pedidos.filter(p=>(p.diasEmAberto||0)<=7).length,
         de8a15:pedidos.filter(p=>(p.diasEmAberto||0)>7&&(p.diasEmAberto||0)<=15).length,
         mais15:pedidos.filter(p=>(p.diasEmAberto||0)>15).length,
