@@ -175,6 +175,11 @@ function cardPedido(p){
 }
 function render(){
   const app=document.getElementById("app");
+  // guarda o estado do campo de busca — o auto-refresh recriava o input e apagava
+  // o que estava sendo digitado (parecia que a busca disparava sozinha)
+  const _b=document.getElementById("buscaPed");
+  const _foco=_b&&document.activeElement===_b;
+  const _sel=_foco?[_b.selectionStart,_b.selectionEnd]:null;
   const lista=visiveis();
   const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p)).length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p)).length;
   const nAgu=PEDIDOS.filter(ehAguardando).length;
@@ -185,7 +190,7 @@ function render(){
   app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>'+
       '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
       [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
-      '<input id="buscaPed" placeholder="🔎 nº do pedido" value="'+esc(window._buscaTxt||"")+'" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">'+
+      '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="'+esc(window._buscaTxt||"")+'" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">'+(BUSCANDO?"…":"Buscar")+'</button>'+
       (BUSCA_RES?'<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>':'')+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
@@ -229,6 +234,8 @@ function render(){
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
           :'<div class="card"><div class="muted">Nenhum pedido do totem/site nesse período.</div></div>'))+
     '</div>';
+  // devolve o foco e a posição do cursor pra quem estava digitando
+  if(_foco){ const n=document.getElementById("buscaPed"); if(n){ n.focus(); try{ n.setSelectionRange(_sel[0],_sel[1]); }catch(e){} } }
 }
 // manda o pedido pra separação (Em separação) e pra fila da mesa, na ordem de envio
 async function enviarSeparacao(id,tipo){
@@ -704,7 +711,12 @@ async function avisarCliente(id,tipo){
 
 render();
 carregar();
-setInterval(function(){ if(!CARREGANDO) carregar(true); }, 60000);
+setInterval(function(){
+  // não recarrega enquanto a pessoa está digitando na busca (evita perder o texto)
+  const b=document.getElementById("buscaPed");
+  if(b&&document.activeElement===b&&b.value.trim()) return;
+  if(!CARREGANDO) carregar(true);
+}, 60000);
 </script>
 </body>
 </html>
