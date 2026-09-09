@@ -13,16 +13,22 @@
   .top img{height:32px}.top .t{font-weight:900;font-size:16px}
   .wrap{padding:14px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-  /* layout em duas áreas: pedidos (2 fileiras) + coluna das entregas agendadas */
-  .areas{display:flex;gap:12px;align-items:flex-start}
-  .areaPed{flex:1;min-width:0}
-  .areaEnt{width:300px;flex-shrink:0}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  /* GRUPOS em faixas horizontais: cada tipo de pedido numa linha própria */
+  .faixa{border-left:5px solid #514c96;background:#12102b;border-radius:0 14px 14px 0;
+         padding:10px 12px;margin-bottom:16px;box-shadow:0 2px 0 rgba(0,0,0,.35)}
+  .faixaTit{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:900;
+            text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .faixaQtd{color:#000;border-radius:20px;font-size:11px;font-weight:900;padding:1px 9px}
+  .faixaCards{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
+  .faixaCards::-webkit-scrollbar{height:8px}
+  .faixaCards::-webkit-scrollbar-thumb{background:#514c96;border-radius:4px}
+  .faixaCards > .card{flex:0 0 250px;margin:0}
+  .faixaCards > .card:not(.mini){flex:0 0 300px}
   .card.mini{padding:8px 10px;cursor:pointer}
   .card.mini:hover{border-color:#514c96}
   .sitMini{font-size:9px;font-weight:900;padding:2px 6px;border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
   .colTitulo{font-size:12px;font-weight:900;color:#9a95c9;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-  @media(max-width:1100px){ .areas{flex-direction:column} .areaEnt{width:100%} .grid2{grid-template-columns:1fr} }
+  @media(max-width:700px){ .faixaCards > .card{flex:0 0 210px} }
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px}
   .card.novo{border-color:#3ce88a;box-shadow:0 0 0 1px rgba(60,232,138,.3)}
   .card.aguard{border-color:#ffe600;box-shadow:0 0 0 1px rgba(255,230,0,.25)}
@@ -279,24 +285,37 @@ function render(){
         }).join("")+'</div>':'')+
       (BUSCA_RES?'<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "'+esc(window._buscaTxt||"")+'" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>':'')+
       (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>':(function(){
-        // separa em duas áreas: pedidos normais (2 fileiras) e os agendados PRA ENTREGAR
-        const paraEntregar=lista.filter(function(p){ return p.agendamento && !p.cancelado; });
-        const normais=lista.filter(function(p){ return !(p.agendamento && !p.cancelado); });
         if(!lista.length) return '<div class="card"><div class="muted">Nenhum pedido nesse período.</div></div>';
-        return '<div class="areas">'+
-          '<div class="areaPed">'+
-            '<div class="colTitulo">📋 Pedidos ('+normais.length+')</div>'+
-            (normais.length?'<div class="grid2">'+normais.map(cardPedido).join("")+'</div>'
-              :'<div class="card"><div class="muted">Nada por aqui.</div></div>')+
-          '</div>'+
-          '<div class="areaEnt">'+
-            '<div class="colTitulo" style="color:#29ABE2">🛵 Pedidos para entregar ('+paraEntregar.length+')</div>'+
-            (paraEntregar.length
-              ? paraEntregar.sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })
-                  .map(cardPedido).join("")
-              : '<div class="card"><div class="muted" style="font-size:12px">Nenhuma entrega agendada.<br>Use "📅 Agendar entrega" num pedido de entrega.</div></div>')+
-          '</div>'+
-        '</div>';
+        // GRUPOS em faixas horizontais: cada tipo de pedido numa LINHA própria,
+        // com os pedidos em sequência e rolagem lateral dentro da faixa
+        const jaUsado=new Set();
+        const pegar=function(fn){
+          const r=lista.filter(function(p){ return !jaUsado.has(p.id) && fn(p); });
+          r.forEach(function(p){ jaUsado.add(p.id); });
+          return r;
+        };
+        const grupos=[
+          {nome:"⚠️ Com pendência — resolver", cor:"#ff3b3b", itens:pegar(ehPendencia)},
+          {nome:"🛵 Para entregar (agendados)", cor:"#29ABE2",
+           itens:pegar(function(p){ return p.agendamento && !p.cancelado; })
+                 .sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })},
+          {nome:"⏳ Aguardando separação", cor:"#ffe600", itens:pegar(ehAguardando)},
+          {nome:"📦 Em separação / separados", cor:"#7fd4ff",
+           itens:pegar(function(p){ return /separa|conferid/i.test(String(p.situacao||"")); })},
+          {nome:"🧾 A prazo", cor:"#ffa53b", itens:pegar(function(p){ return /prazo/i.test(String(p.situacao||"")); })},
+          {nome:"✅ Concluídos", cor:"#2f9e6b", itens:pegar(function(p){ return ehAtendido(p); })},
+          {nome:"🚫 Cancelados", cor:"#8a7a1f", itens:pegar(function(p){ return p.cancelado; })},
+          {nome:"📋 Outros", cor:"#9a95c9", itens:pegar(function(){ return true; })},
+        ].filter(function(g){ return g.itens.length; });
+        return grupos.map(function(g){
+          return '<div class="faixa" style="border-left-color:'+g.cor+'">'+
+            '<div class="faixaTit" style="color:'+g.cor+'">'+
+              '<span>'+g.nome+'</span>'+
+              '<span class="faixaQtd" style="background:'+g.cor+'">'+g.itens.length+'</span>'+
+            '</div>'+
+            '<div class="faixaCards">'+g.itens.map(cardPedido).join("")+'</div>'+
+          '</div>';
+        }).join("");
       })())+
     '</div>';
   // devolve o foco e a posição do cursor pra quem estava digitando
