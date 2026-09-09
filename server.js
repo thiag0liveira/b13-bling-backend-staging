@@ -2895,8 +2895,18 @@ app.get("/api/diag/transicoes/:numero",async(req,res)=>{
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     const origem=Number(ped.situacao?.id||0);
     if(req.query.testar!=="1"){
+      // tenta descobrir as transições SEM alterar nada: alguns endpoints do Bling
+      // trazem o fluxo configurado junto da situação
+      const sondagem={};
+      for(const p of [`/situacoes/${origem}`, `/situacoes/${origem}/transicoes`,
+                      `/situacoes/modulos/98310/${origem}`, `/situacoes/modulos/98310`]){
+        try{ const r=await bling(p); sondagem[p]={ok:true, amostra:JSON.stringify(r?.data||r).slice(0,600)}; }
+        catch(e){ sondagem[p]={ok:false, erro:(e.message||"").slice(0,90)}; }
+        await sleep(200);
+      }
       return res.json({ pedido:{numero:ped.numero, situacao:nomeSituacao(origem), situacaoId:origem},
-        aviso:"Passe ?testar=1 pra descobrir os destinos aceitos. ATENÇÃO: ele MUDA a situação do pedido durante o teste e volta pra original no fim." });
+        sondagemSemAlterar:sondagem,
+        aviso:"Se a sondagem acima não mostrar as transições, use ?testar=1 — mas SÓ em pedido de teste, porque ele muda a situação durante a verificação (e devolve à original no fim)." });
     }
     const mapa=await carregarSituacoesBling();
     const destinos=Object.keys(mapa).map(Number).filter(x=>x&&x!==origem&&x!==SIT.CANCELADO);
