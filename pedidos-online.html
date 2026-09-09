@@ -575,7 +575,9 @@ async function salvarEditarAguardando(id){
       ia.acrescentados&&ia.acrescentados.length?"acrescentou "+ia.acrescentados.join(", "):"",
       ia.alterados&&ia.alterados.length?"alterou "+ia.alterados.join(", "):"",
     ].filter(Boolean).join(" · ");
-    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: '+onde.join(" + ")+(resumo?"<br><span style=\"color:#9a95c9\">"+esc(resumo)+"</span>":"")+'</div>');
+    const totalMsg=j.novoTotal!=null?'<br><span style="color:#ffd23f">Novo total: '+brl(j.novoTotal)+'</span>':'';
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: '+onde.join(" + ")+totalMsg+(resumo?"<br><span style=\"color:#9a95c9\">"+esc(resumo)+"</span>":"")+'</div>');
+    if(j.alertaTotal) alert("⚠️ "+j.alertaTotal);
     if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
     setTimeout(function(){ fechar(); carregar(); },1200);
   }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }

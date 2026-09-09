@@ -4295,6 +4295,29 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     if(ped.transporte) payload.transporte=ped.transporte;
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
+    // PRESERVA desconto e outras despesas (a taxa do cartão fica aqui) — sem isso o
+    // PUT ZERAVA os dois, e o total do pedido saía errado depois de qualquer edição
+    if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+    if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+    // AJUSTA AS PARCELAS pro novo total. Era isso que fazia "mudar a quantidade e o
+    // preço continuar o mesmo": os itens mudavam, mas as parcelas (o quanto o cliente
+    // deve/pagou) continuavam com o valor antigo.
+    const totalItensNovo=itens.reduce((a,i)=>a+Number(i.quantidade)*Number(i.valor),0);
+    const freteAtual=Number(ped.transporte?.frete||0);
+    const totalCalc=+(totalItensNovo+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
+    if(ped.parcelas?.length){
+      const somaAntiga=ped.parcelas.reduce((a,p)=>a+(Number(p.valor)||0),0);
+      if(somaAntiga>0){
+        let acumulado=0;
+        payload.parcelas=ped.parcelas.map((p,ix)=>{
+          const ehUltima=ix===ped.parcelas.length-1;
+          const v=ehUltima ? +(totalCalc-acumulado).toFixed(2)
+                           : +((Number(p.valor)/somaAntiga)*totalCalc).toFixed(2);
+          acumulado=+(acumulado+v).toFixed(2);
+          return { formaPagamento:{id:p.formaPagamento?.id}, dataVencimento:p.dataVencimento||ped.data, valor:v };
+        }).filter(p=>p.valor>0);
+      }
+    }
 
     // aplica no Bling PRIMEIRO — se falhar, aborta sem mexer em nada aqui
     try{
@@ -4304,8 +4327,20 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     }
 
     let pedNovo;
-    try{ pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    try{ await sleep(500); pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     const novoTotal=+(pedNovo?.total||0);
+    // confere se o Bling gravou o total certo — se não bater, avisa em vez de deixar
+    // passar uma divergência silenciosa entre o que a tela mostra e o que está lá
+    let alertaTotal=null;
+    if(pedNovo && Math.abs(novoTotal-totalCalc)>0.05){
+      alertaTotal=`O total no Bling ficou ${novoTotal.toFixed(2)} e o esperado era ${totalCalc.toFixed(2)}. Confira o pedido no Bling.`;
+      registrarAviso({tipo:"total_divergente_apos_edicao",
+        titulo:`Pedido #${ped.numero||id}: total no Bling não bateu após a edição`,
+        pedidoId:String(id), numero:ped.numero, operador:funcionarioNome||"", origem:"Edição de pedido",
+        fingerprint:`totaldiv-${id}-${Date.now()}`,
+        erroBling:`Bling: ${novoTotal.toFixed(2)} · esperado: ${totalCalc.toFixed(2)}`,
+        oQueFazer:`Depois de alterar os itens do pedido #${ped.numero||id}, o total no Bling ficou diferente do calculado. Abra o pedido no Bling e confira itens, desconto, frete e outras despesas.`});
+    }
 
     // avisa se algum produto REMOVIDO está sem estoque no Bling
     const avisosEstoque=[];
@@ -4344,7 +4379,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{
         if(m.tipo!=="venda"||m.cancelado||String(m.pedidoId)!==String(id)) return;
         m.itens=itensNovos;
-        m.total=+Number(novoTotal).toFixed(2);
+        m.total=+Number(novoTotal||totalCalc).toFixed(2);
         m.alterado=true;
         m.alteracoes=[...(m.alteracoes||[]),{em:Date.now(),tipo:"itens",por:funcionarioNome||"—",origem:"edição pela tela de Pedidos",
           de:diffEd.de, para:diffEd.para,
@@ -4361,7 +4396,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       Object.values(props||{}).forEach(p=>{
         if(String(p.pedidoBlingId)!==String(id)) return;
         p.itens=itensNovos;
-        p.total=+(Number(novoTotal)).toFixed(2);
+        p.total=+(Number(novoTotal||totalCalc)).toFixed(2);
         p.atualizadoEm=Date.now();
         p.historicoEdicoes=[...(p.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:diffEd.de,para:diffEd.para,origem:"pedido editado"}];
         achouP=true;
@@ -4371,7 +4406,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // 3) histórico do pedido (aparece na Central e na conferência)
     if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
 
-    res.json({ok:true, novoTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+    res.json({ok:true, novoTotal, totalCalculado:totalCalc, alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
