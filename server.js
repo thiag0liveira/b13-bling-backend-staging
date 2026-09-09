@@ -1061,6 +1061,24 @@ const MESA_FILE=`${DATA_DIR}/mesa_separacao.json`; // {ativos:[funcionarioId], e
 // ordem de criação do pedido. Aqui fica pedidoId -> {em, tipo:retirada|entrega, por}
 const FILA_SEP_FILE=`${DATA_DIR}/fila_separacao.json`;
 function lerFilaSep(){ return lerJSON(FILA_SEP_FILE,{}); }
+// Deduz se o pedido é ENTREGA ou RETIRADA a partir do que o sistema já sabe.
+// Serve pra todos os caminhos que mandam pra separação (tela de Pedidos, caixa
+// atacado e venda nova), pra o selo da separação nunca sair diferente do pedido.
+function _tipoEntregaDoPedido(pedidoId, ped){
+  const id=String(pedidoId);
+  try{
+    const props=lerPropostas();
+    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===id);
+    if(prop?.entrega?.tipo) return prop.entrega.tipo==="entrega"?"entrega":"retirada";
+  }catch(e){}
+  try{ const ent=lerJSON(ENTREGAS_FILE,{})[id]; if(ent?.tipo) return ent.tipo; }catch(e){}
+  try{ if(_turnosEntrega()[id]) return "entrega"; }catch(e){}
+  if(ped){
+    if(Number(ped.transporte?.frete||0)>0) return "entrega";
+    if(/ENTREGA\s*—/i.test(String(ped.observacoes||""))) return "entrega";
+  }
+  return "retirada";
+}
 function registrarNaFilaSeparacao(pedidoId,tipo,por,numero){
   try{
     const f=lerFilaSep();
@@ -1129,10 +1147,14 @@ app.post("/api/mesa/limpar-fila",(req,res)=>{
 app.post("/api/mesa/enviar-separacao/:blingId",async(req,res)=>{
   try{
     const id=req.params.blingId;
-    const {tipo,funcionarioId}=req.body||{};
-    if(!["retirada","entrega"].includes(tipo)) return res.status(400).json({erro:"informe se é pra retirada ou entrega"});
+    const {funcionarioId}=req.body||{};
     const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    // O tipo (entrega/retirada) é DEDUZIDO do próprio pedido — antes o operador tinha
+    // que escolher em dois botões, e podia marcar diferente do que o pedido realmente
+    // é, gerando divergência entre a etiqueta da separação e o pedido.
+    const tipo=(req.body?.tipo==="entrega"||req.body?.tipo==="retirada")
+      ? req.body.tipo : _tipoEntregaDoPedido(id, ped);
     const sit=Number(ped.situacao?.id||0);
     if(sit===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
@@ -5438,7 +5460,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(statusFinalVenda==="separacao"){
         { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
         const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
-        registrarNaFilaSeparacao(pedidoId,(req.body.tipoSeparacao==="entrega"?"entrega":"retirada"),fn,criado?.data?.numero||null);
+        registrarNaFilaSeparacao(pedidoId,_tipoEntregaDoPedido(pedidoId,criado?.data),fn,criado?.data?.numero||null);
         addLog(String(pedidoId),"enviado_separacao",funcionarioId,fn,{origem:"venda nova (caixa)",});
       } else {
         await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda);
@@ -6152,7 +6174,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
         ? await (async()=>{
             try{
               { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
-              registrarNaFilaSeparacao(pedidoId, (req.body.tipoSeparacao==="entrega"?"entrega":"retirada"), funcNome, ped.numero);
+              registrarNaFilaSeparacao(pedidoId, _tipoEntregaDoPedido(pedidoId,ped), funcNome, ped.numero);
               addLog(String(pedidoId),"enviado_separacao",funcionarioId,funcNome,{origem:"caixa atacado (pago)",numero:ped.numero});
               return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
             }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
@@ -8807,7 +8829,7 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero,autorizadoPor:auth.funcionario.nome});
     // mantém a fila da mesa coerente
-    if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,"retirada",funcNome,ped.numero);
+    if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,_tipoEntregaDoPedido(id,ped),funcNome,ped.numero);
     if(alvo===SIT.ATENDIDO||alvo===SIT.CANCELADO){ try{ const fq=lerFilaSep(); delete fq[String(id)]; salvarJSON(FILA_SEP_FILE,fq); }catch(e){} }
     _sitOnline[String(id)]={situacaoId:alvo, situacao:nomeSituacao(alvo), em:Date.now()};
     res.json({ok:true, de:nomeSituacao(de), para:nomeSituacao(alvo), numero:ped.numero, autorizadoPor:auth.funcionario.nome});
@@ -9010,6 +9032,11 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     if(!r.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(r.erro||"erro")});
     // guarda o agendamento antes de apagar — se foi engano, dá pra restaurar
     let agendamentoAnterior=null;
+    // se o pedido já está na fila de separação, o selo dela acompanha a mudança
+    try{
+      const fq=lerFilaSep();
+      if(fq[String(id)]){ fq[String(id)].tipo=tipo; salvarJSON(FILA_SEP_FILE,fq); }
+    }catch(e){}
     if(tipo==="retirada"){
       const t=lerJSON(TURNOS_ENTREGA_FILE,{});
       agendamentoAnterior=t[String(id)]||null;
