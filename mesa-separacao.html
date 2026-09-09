@@ -341,6 +341,11 @@ function colunaHtml(funcId){
 
 function render(){
   const app=document.getElementById("app");
+  // guarda a rolagem de cada coluna — ao marcar um item o render recriava tudo e a
+  // lista voltava pro topo, fazendo o separador perder o lugar no pedido
+  const _scroll={};
+  document.querySelectorAll(".colBody").forEach(function(el,i){ _scroll[i]=el.scrollTop; });
+  const _filaScroll=(document.querySelector(".fila")||{}).scrollLeft||0;
   const barra=FUNCS.map(function(f){
     const on=ATIVOS.includes(String(f.id));
     return '<div class="fBtn '+(on?"on":"")+'" onclick="toggleFunc(\''+esc(f.id)+'\')"><span class="pt"></span>'+esc(f.nome)+'</div>';
@@ -376,6 +381,9 @@ function render(){
     '<div class="filaWrap"'+(PISCA?' style="background:#123a2a;border-bottom-color:#3ce88a"':'')+'><div class="filaTit">Fila de separação — ordem de envio ('+FILA.length+')'+(PISCA?' <span style="color:#3ce88a">· PEDIDO NOVO!</span>':'')+'</div>'+
       '<div class="fila">'+fila+'</div></div>'+
     '<div class="colunas">'+cols+'</div>';
+  // devolve cada coluna pra onde estava
+  document.querySelectorAll(".colBody").forEach(function(el,i){ if(_scroll[i]!=null) el.scrollTop=_scroll[i]; });
+  const f=document.querySelector(".fila"); if(f&&_filaScroll) f.scrollLeft=_filaScroll;
 }
 
 render();

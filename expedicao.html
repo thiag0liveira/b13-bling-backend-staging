@@ -105,6 +105,10 @@ function header(){
 
 function render(){
   const app=document.getElementById("app");
+  // preserva a rolagem: ao marcar um item a tela era redesenhada e voltava pro topo,
+  // fazendo o separador perder o lugar em pedido grande
+  const _scDoc=window.scrollY||document.documentElement.scrollTop||0;
+  setTimeout(function(){ if(_scDoc) window.scrollTo(0,_scDoc); },0);
   if(!FUNC){
     // tenta usar sessão compartilhada de novo (ex: acabou de logar em outra aba)
     const sess=typeof b13GetSession==="function"?b13GetSession():null;

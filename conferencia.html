@@ -340,6 +340,10 @@ function renderConferencia(){
   const todos=feitos===itensConf.length;
   const temPend=itensConf.some(i=>i._teveFalta);
   const app=document.getElementById("detCol")||document.getElementById("app");
+  // guarda onde a conferência estava: ao marcar um item a lista era redesenhada e
+  // voltava pro topo, fazendo o conferente perder o lugar no pedido
+  const _sc=app?app.scrollTop:0;
+  const _scDoc=window.scrollY||document.documentElement.scrollTop||0;
 
   const linhas=itensConf.map((c,ix)=>`
     <div class="it ${c.confirmado?'ok':''} ${c._teveFalta&&!c.confirmado?'pend':''}"
@@ -382,6 +386,9 @@ function renderConferencia(){
         </div>`}
     </div>
     <div style="height:80px"></div>`;
+  // devolve a rolagem pro ponto em que estava
+  if(app&&_sc) app.scrollTop=_sc;
+  if(_scDoc) window.scrollTo(0,_scDoc);
 }
 
 function confirmarItem(ix){
