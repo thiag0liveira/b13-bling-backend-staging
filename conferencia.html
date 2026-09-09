@@ -84,6 +84,25 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 .split{display:grid;grid-template-columns:1fr;gap:14px}
 @media(min-width:860px){ .split{grid-template-columns:320px 1fr;align-items:start} .split .fila-col{position:sticky;top:60px;max-height:calc(100vh - 76px);overflow:auto} }
 </style>
+<style>
+  /* etiqueta impressa após a conferência — mesmo formato da expedição */
+  @media print{
+    body *{visibility:hidden}
+    #etiquetaPrint,#etiquetaPrint *{visibility:visible}
+    #etiquetaPrint{position:absolute;left:0;top:0;width:280px;padding:10px;text-align:center;color:#000;font-family:Arial,sans-serif}
+    #etiquetaPrint .logo{height:28px;margin-bottom:6px}
+    #etiquetaPrint .numero{font-size:26px;font-weight:900;letter-spacing:1px}
+    #etiquetaPrint .cliente{font-size:15px;font-weight:700;margin-top:2px;word-break:break-word}
+    #etiquetaPrint .tipo{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:800;color:#fff}
+    #etiquetaPrint .tipo.entrega{background:#00aaff}
+    #etiquetaPrint .tipo.retirada{background:#2f9e6b}
+    #etiquetaPrint .linha{border-top:1px dashed #999;margin:8px 0}
+    #etiquetaPrint .conf{font-size:11px;color:#333;margin-top:4px}
+    #etiquetaPrint .qr{margin-top:10px}
+    #etiquetaPrint .qr div{font-size:10px;color:#555;margin-top:3px}
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
@@ -463,6 +482,19 @@ async function confirmarConferencia(){
       body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipoEntrega:tipoSel})});
     const j=await r.json();
     if(r.ok&&!j.erro){
+      // pergunta se quer imprimir a etiqueta do pedido conferido
+      const num=sel.numero||id, cli=(sel.contato&&sel.contato.nome)||sel.clienteNome||"", ehEnt=(tipoSel!=="retirada");
+      document.getElementById("modais")||document.body;
+      const cx=document.getElementById("msgModal");
+      if(cx){
+        cx.innerHTML='<div style="color:#3ce88a;font-weight:800;margin-bottom:8px">✅ Pedido '+esc(num)+' conferido!</div>'+
+          '<div style="display:flex;gap:8px">'+
+            '<button class="btn btn-mag" style="flex:1" onclick="imprimirEtiquetaConf('+id+',\''+esc(String(num))+'\',\''+encodeURIComponent(cli)+'\','+(!!ehEnt)+',\''+esc(FUNC.nome||"")+'\')">🖨️ Imprimir etiqueta</button>'+
+            '<button class="btn btn-ghost" style="flex:1" onclick="fecharModal();sel=null;itensConf=[];carregar()">Não imprimir</button>'+
+          '</div>';
+        const bc=document.getElementById("btnConfirmar"); if(bc) bc.style.display="none";
+        return;
+      }
       fecharModal();
       sel=null; itensConf=[];
       await carregar();
@@ -476,6 +508,28 @@ async function confirmarConferencia(){
   }
 }
 
+// Imprime a etiqueta do pedido conferido. SÍNCRONA de propósito: window.print() só
+// funciona quando disparado direto do clique — se esperar um fetch antes, o navegador
+// ignora sem erro (mesmo problema já visto no totem e na venda atacado).
+function imprimirEtiquetaConf(id,numero,clienteCod,ehEntrega,conferentePor){
+  const cliente=decodeURIComponent(clienteCod||"");
+  const box=document.getElementById("etiquetaPrint");
+  if(!box) return;
+  const qrTexto=window.location.origin+"/pedido/"+id+"/acompanhar";
+  const agora=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  box.style.display="";
+  box.innerHTML=
+    '<img class="logo" src="/logo">'+
+    '<div class="numero">#'+(numero||id)+'</div>'+
+    '<div class="cliente">'+esc(cliente)+'</div>'+
+    '<div class="tipo '+(ehEntrega?"entrega":"retirada")+'">'+(ehEntrega?"🛵 ENTREGA":"🏪 RETIRADA")+'</div>'+
+    '<div class="conf">Conferido em '+agora+(conferentePor?" · "+esc(conferentePor):"")+'</div>'+
+    '<div class="linha"></div>'+
+    '<div class="qr" id="qrConfPrint"><div>Escaneie pra ver o status do pedido</div></div>';
+  try{ new QRCode(document.getElementById("qrConfPrint"),{text:qrTexto,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  window.print();
+}
+
 // Utils
 function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function brl(n){ return Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
@@ -483,5 +537,6 @@ function dataBR(d){ if(!d) return "—"; const p=String(d).split("-"); return p.
 
 init();
 </script>
+<div id="etiquetaPrint" style="display:none"></div>
 </body>
 </html>
