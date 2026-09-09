@@ -1841,6 +1841,19 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,pagamento}=req.body||{};
     const id=String(req.params.id);
+    // CONFERE O ESTADO ATUAL antes de agir: a tela pode estar mostrando uma situação
+    // antiga (outra pessoa já mexeu, ou mudaram no Bling). Sem isso, o botão agia
+    // sobre estado velho e podia reenviar pra separação um pedido já separado/atendido.
+    try{
+      const atual=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+      const sitA=Number(atual?.situacao?.id||0);
+      if(sitA===SIT.CANCELADO) return res.status(409).json({erro:"Este pedido está CANCELADO no Bling.",situacaoAtual:"Cancelado"});
+      if(sitA===SIT.ATENDIDO) return res.status(409).json({erro:"Este pedido já está ATENDIDO (concluído) — não dá pra mandar pra separação de novo.",situacaoAtual:"Atendido"});
+      if([SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA].includes(sitA)){
+        return res.status(409).json({erro:`Este pedido já está em "${nomeSituacao(sitA)}" — alguém já mandou pra separação. Atualize a tela.`,
+          jaEnviado:true, situacaoAtual:nomeSituacao(sitA)});
+      }
+    }catch(e){}
     // pedido de RETIRADA precisa sempre receber o pagamento antes de separar —
     // não existe "retirar sem pagar". Se não veio pagamento junto, bloqueia.
     if(!pagamento?.valor){
@@ -4457,7 +4470,7 @@ app.post("/api/pedidos/:id/cancelar",async(req,res)=>{
     }
     // cancela no Bling PRIMEIRO — se falhar, aborta sem mexer em nada
     try{
-      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_CANCELADO}`,{method:"PATCH"});
+      { const rc=await mudarSituacaoPedido(id, SIT_CANCELADO); if(!rc.ok) throw Object.assign(new Error(rc.erro||"não consegui cancelar no Bling"),{status:502}); }
     }catch(e){
       return res.status(502).json({erro:"Não foi possível cancelar o pedido no Bling: "+(e.message||"erro de conexão")+". Nada foi alterado — tente de novo."});
     }
@@ -5232,7 +5245,7 @@ app.post("/api/gestao/cancelar-venda",async(req,res)=>{
     const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data).catch(()=>null);
     if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
     let blingOk=true, blingErro=null;
-    try{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${CANCELADO}`,{method:"PATCH"}); }
+    try{ const rc=await mudarSituacaoPedido(pedidoId, CANCELADO); if(!rc.ok) throw new Error(rc.erro||"falha ao cancelar"); }
     catch(e){ blingOk=false; blingErro=e.message; }
     const pags=lerPag(); const idStr=String(pedidoId); const antigo=pags[idStr]||null;
     if(antigo){ pags[idStr]={...antigo, statusPagamento:"cancelado", valorPago:0, canceladoEm:Date.now()}; salvarJSON(PAG_FILE,pags); }
@@ -5293,7 +5306,7 @@ app.post("/api/caixa-atacado/cancelar-venda",async(req,res)=>{
 
     // move a situação pro Cancelado no Bling
     try{
-      await bling(`/pedidos/vendas/${pedidoId}/situacoes/${CANCELADO}`,{method:"PATCH"});
+      { const rc=await mudarSituacaoPedido(pedidoId, CANCELADO); if(!rc.ok) throw Object.assign(new Error(rc.erro||"não consegui cancelar no Bling"),{status:502}); }
     }catch(e){ return res.status(502).json({erro:"Falha ao cancelar no Bling: "+e.message}); }
 
     // zera/estorna o pagamento local
@@ -6686,7 +6699,9 @@ app.patch("/api/pedidos/:id/situacao", async (req, res) => {
   try {
     const idSituacao = Number(req.body?.idSituacao);
     if (!idSituacao) return res.status(400).json({ erro: "idSituacao obrigatório" });
-    res.json(await bling(`/pedidos/vendas/${req.params.id}/situacoes/${idSituacao}`, { method: "PATCH" }));
+    { const rs=await mudarSituacaoPedido(req.params.id, idSituacao);
+      if(!rs.ok) return res.status(502).json({erro:rs.erro||"o Bling recusou a mudança de situação"});
+      return res.json({ok:true, jaEstava:!!rs.jaEstava, viaPonte:rs.viaPonte||null}); }
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
 
@@ -8647,7 +8662,7 @@ app.post("/api/pedidos-online/:blingId/cancelar",async(req,res)=>{
     const sit=Number(d.situacao?.id||0);
     if(sit===SIT.CANCELADO) return res.status(400).json({erro:"esse pedido já está cancelado"});
     if(sit===SIT.ATENDIDO) return res.status(400).json({erro:"pedido já ATENDIDO (foi pago/entregue) — cancele pela Gestão de Caixas"});
-    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.CANCELADO}`,{method:"PATCH"});
+    { const rc=await mudarSituacaoPedido(id, SIT.CANCELADO); if(!rc.ok) return res.status(502).json({erro:rc.erro||"não consegui cancelar no Bling"}); }
     const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
     addLog(String(id),"pedido_online_cancelado",req.body?.funcionarioId,funcNome,{motivo:req.body?.motivo||"",numero:d.numero});
     _sitOnline[String(id)]={situacaoId:SIT.CANCELADO, situacao:"Cancelado", em:Date.now()};

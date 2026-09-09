@@ -372,9 +372,15 @@ async function enviarSeparacao(id){
   if(!confirm("Mandar o pedido "+(p?p.numero:id)+" pra separação?\n\nEle está como "+tipo+
     (p&&p.agendamento?" agendada para "+p.agendamento.data.split("-").reverse().join("/"):"")+".")) return;
   try{
-    const j=await fetch(B+"/api/mesa/enviar-separacao/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
+    const r=await fetch(B+"/api/mesa/enviar-separacao/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:S.id})});
+    const j=await r.json();
+    if(j.erro){
+      alert(j.erro);
+      // conflito de estado: recarrega pra tela refletir a situação real
+      if(r.status===409||j.jaEnviado) carregar();
+      return;
+    }
     carregar();
   }catch(e){ alert("Erro: "+e.message); }
 }

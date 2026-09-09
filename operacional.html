@@ -1954,7 +1954,12 @@ async function enviarSep(id,comPagamento){
     const r=await fetch(B+"/api/fluxo/"+id+"/enviar-separacao",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome})});
     const j=await r.json();
     if(r.ok&&j.ok){ await carregar(); }
-    else showMsg(id,`<div class="err">${esc(j.erro||"Erro")}</div>`);
+    else {
+      showMsg(id,`<div class="err">${esc(j.erro||"Erro")}</div>`);
+      // conflito de estado (outra pessoa já mexeu): atualiza a tela pra mostrar a
+      // situação real, senão o operador continua vendo o estado antigo
+      if(r.status===409||j.jaEnviado||j.jaConcluido) setTimeout(()=>carregar(),1200);
+    }
   }catch(e){ showMsg(id,`<div class="err">Erro de conexão</div>`); }
 }
 
