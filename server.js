@@ -12249,9 +12249,31 @@ app.get("/api/vendedor/top-produto",async(req,res)=>{
 // Central, Avisos, Propostas, Gestão de NFC-e e Entradas) — por isso marcar uma
 // marcava várias. Aqui converto o acesso que cada funcionário JÁ TINHA em permissões
 // explícitas por aba, pra ninguém perder acesso na virada.
+// Mesma regra do nav.js, mas no SERVIDOR. A função do nav.js só existe dentro do
+// código enviado ao navegador — usá-la aqui fazia a migração falhar com
+// "b13PodeComPermissoes is not defined", e nenhuma permissão era preservada.
+function _podeNoServidor(acao, perms){
+  const n=perms||[];
+  if(n.includes("admin")) return true;
+  if(n.includes(acao)) return true;
+  const mapa={
+    ver_aguardando:["financeiro_atacado","vendedor","gerente"],
+    receber_pagamento:["financeiro_atacado"],
+    enviar_separacao:["financeiro_atacado","vendedor","gerente"],
+    ver_separacao:["expedicao","gerente"],
+    ver_pend:["conferente","gerente"],
+    ver_separado:["conferente","gerente"],
+    conferir:["conferente","gerente"],
+    editar_pedido:["gerente"],
+    ver_dashboard:["gerente"],
+    ver_funcionarios:["admin"],
+    ver_listas:["gerente","admin"],
+  };
+  return (mapa[acao]||[]).some(x=>n.includes(x));
+}
 function migrarPermissoesPorAba(){
   try{
-    const marcaFile=`${DATA_DIR}/_migracao_perms_v2.json`;
+    const marcaFile=`${DATA_DIR}/_migracao_perms_v3.json`;
     if(fs.existsSync(marcaFile)) return;
     const funcs=lerJSON(FUNC_FILE,{});
     const links=[
@@ -12270,7 +12292,7 @@ function migrarPermissoesPorAba(){
       if(f.permissoes.includes("admin")) return; // admin já vê tudo
       links.forEach(([href,propria,antigas])=>{
         if(f.permissoes.includes(propria)) return;
-        const tinhaAcesso=antigas.some(a=>b13PodeComPermissoes(a,f.permissoes));
+        const tinhaAcesso=antigas.some(a=>_podeNoServidor(a,f.permissoes));
         if(tinhaAcesso){ f.permissoes.push(propria); mudou++; }
       });
     });
@@ -12279,7 +12301,7 @@ function migrarPermissoesPorAba(){
     console.log(`[migração] permissões por aba: ${mudou} permissão(ões) preservadas`);
   }catch(e){ console.error("[migração] falhou:",e.message); }
 }
-migrarPermissoesPorAba();
+setTimeout(()=>{ try{ migrarPermissoesPorAba(); }catch(e){ console.error("[migração] erro:",e.message); } }, 3000);
 
 // limpeza única: resolve os avisos antigos de "venda sem NFC-e" (esse aviso foi
 // removido — agora só avisamos quando a emissão é tentada e falha)
