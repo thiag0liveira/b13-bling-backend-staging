@@ -8633,6 +8633,52 @@ app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
 // pro cliente saber o que saiu (ex.: produto que faltou no estoque)
 // BUSCA um pedido pelo número (ou id) direto no Bling, no mesmo formato da lista —
 // pra achar pedido que saiu da tela (foi pra separação, atendido, etc.)
+// ADOTA um pedido que existe no Bling mas NÃO está no nosso registro (ex.: o registro
+// falhou quando o sistema estava lento, ou o pedido foi criado/alterado direto no
+// Bling). Cria o registro local a partir do próprio pedido, e ele volta pra tela.
+app.post("/api/pedidos-online/adotar/:termo",async(req,res)=>{
+  try{
+    const t=String(req.params.termo).trim();
+    let ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const props=lerPropostas();
+    const jaTem=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(ped.id));
+    if(jaTem) return res.json({ok:true, jaEstava:true, numero:ped.numero, propostaId:jaTem.id});
+    const obs=String(ped.observacoes||"");
+    const ehTotem=/pedido via totem\/app b13/i.test(obs);
+    const ehEntrega=/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
+    const mEnd=obs.match(/ENTREGA\s*—\s*([^(\n]+)/i);
+    const mTel=obs.match(/\(([^)]*)\)\s*\./);
+    let telefone=(mTel&&mTel[1]&&mTel[1].trim()!=="-")?mTel[1].trim():"";
+    if(!telefone&&ped.contato?.id){ try{ const c=await bling(`/contatos/${ped.contato.id}`).then(r=>r?.data); telefone=c?.celular||c?.telefone||""; }catch(e){} }
+    const id="prop_adot_"+ped.id;
+    // usa a data do pedido como criação (pra ele aparecer no período certo da tela)
+    const criadoEm = ped.data ? new Date(ped.data+"T12:00:00").getTime() : Date.now();
+    props[id]={
+      id, tipo:"atacado", status:"aberta",
+      origem: ehTotem ? (/app b13/i.test(obs)?"totem":"site") : "atacado",
+      cliente:{ id:ped.contato?.id||null, nome:ped.contato?.nome||"—", telefone },
+      itens:(ped.itens||[]).map(i=>({produtoId:i.produto?.id, nome:i.descricao||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0})),
+      entrega: ehEntrega ? {tipo:"entrega", endereco:(mEnd?mEnd[1].trim():""), taxa:Number(ped.transporte?.frete||0)} : {tipo:"retirada"},
+      observacao:"", vendedorId:ped.vendedor?.id||null,
+      vendedorNome: await nomeVendedor(ped.vendedor?.id||null),
+      funcionarioId:req.body?.funcionarioId||null,
+      funcionarioNome:(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"",
+      total:Number(ped.total)||0,
+      criadoEm, atualizadoEm:Date.now(),
+      pedidoBlingId:ped.id, pedidoBlingNumero:ped.numero,
+      adotado:true, adotadoEm:Date.now(),
+    };
+    salvarPropostas(props);
+    const sit=Number(ped.situacao?.id||0);
+    _sitOnline[String(ped.id)]={situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now()};
+    addLog(String(ped.id),"pedido_adotado",req.body?.funcionarioId,props[id].funcionarioNome,{numero:ped.numero});
+    res.json({ ok:true, numero:ped.numero, cliente:ped.contato?.nome||"", total:Number(ped.total)||0,
+      situacao:nomeSituacao(sit), origem:props[id].origem, tipo:props[id].entrega.tipo });
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+
 app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
