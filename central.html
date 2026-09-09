@@ -60,7 +60,7 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null;
+let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null, PRAZO=null;
 const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",pedido_incluido_no_caixa:"Incluído no caixa"};
 const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
 const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
@@ -174,6 +174,20 @@ function render(){
           </div>
           <div class="lin" style="font-weight:800;margin-top:8px;border-top:1px solid #2a2660"><span>Total do dia (atacado + varejo)</span><b style="color:#ffd23f">${brl(b.pedidos.fechamentoBling.atacado.valor+b.pedidos.fechamentoBling.varejo.valor)}</b></div>
           `):card("🏪 Atacado × 🛒 Varejo","<div class=\"muted\">⏳ Buscando no Bling…</div>")}
+
+        ${PRAZO&&PRAZO.qtd?card("🧾 Vendas a prazo em aberto",`
+          <div class="big" style="color:#ffd23f">${brl(PRAZO.total)}</div>
+          <div class="muted" style="margin-bottom:8px">${PRAZO.qtd} pedido(s) entregues aguardando pagamento no caixa</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="pillE">até 7 dias: ${PRAZO.vencendo.ate7}</span>
+            <span class="pillE" style="background:#3a2a0a;color:#ffd23f">8 a 15: ${PRAZO.vencendo.de8a15}</span>
+            ${PRAZO.vencendo.mais15?`<span class="pillE" style="background:#3a0010;color:#ff8090">+15 dias: ${PRAZO.vencendo.mais15} · ${brl(PRAZO.vencendo.valorMais15)}</span>`:""}
+          </div>
+          <div class="h"><span>Por cliente</span></div>
+          ${lins(PRAZO.porCliente.slice(0,12),c=>`<div class="lin"><span>${esc(c.nome)} <span class="muted">(${c.qtd})</span>${c.maisAntigo>15?` <span style="color:#ff8090;font-size:11px">${c.maisAntigo}d</span>`:(c.maisAntigo>7?` <span style="color:#ffd23f;font-size:11px">${c.maisAntigo}d</span>`:"")}</span><b>${brl(c.valor)}</b></div>`)}
+          <div class="h" style="margin-top:10px"><span>Pedidos mais antigos</span></div>
+          ${lins(PRAZO.pedidos.slice(0,12),p=>`<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}<div class="muted" style="font-size:11px">${esc(p.vendedor||"—")} · ${p.data?esc(p.data.split("-").reverse().join("/")):""}${p.diasEmAberto!=null?` · <span style="color:${p.diasEmAberto>15?'#ff8090':(p.diasEmAberto>7?'#ffd23f':'#9a95c9')}">${p.diasEmAberto} dia(s)</span>`:""}</div></span><b>${brl(p.total)}</b></div>`)}
+          <div class="muted" style="font-size:11px;margin-top:6px">Mercadoria já entregue/retirada. O cliente paga depois no caixa atacado.</div>`):""}
 
         ${ENTREGAS&&ENTREGAS.dias&&ENTREGAS.dias.length?card("🛵 Entregas agendadas",`
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
@@ -381,6 +395,7 @@ async function carregar(){
   try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
   try{ const e=await fetch(B+"/api/central/entregas").then(r=>r.json()); if(!e.erro){ ENTREGAS=e; render(); } }catch(e){}
   try{ const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro){ AVISOS=a; render(); } }catch(e){}
+  try{ const pz=await fetch(B+"/api/central/prazo").then(r=>r.json()); if(!pz.erro){ PRAZO=pz; render(); } }catch(e){}
   try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
   try{ const ap=await fetch(B+"/api/vendedor/apoio").then(r=>r.json()); if(!ap.erro&&ap.vendedores){ APOIO=ap; render(); } }catch(e){}
   clearTimeout(TIMER);

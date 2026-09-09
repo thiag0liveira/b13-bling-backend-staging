@@ -82,6 +82,8 @@ const SIT = {
   EM_ROTA:      Number(process.env.SIT_EM_ROTA      || 820085),
   ATENDIDO:     Number(process.env.SIT_ATENDIDO     || 9),
   CANCELADO:    Number(process.env.SIT_CANCELADO    || 12),
+  // PRAZO: venda fiada — a mercadoria JÁ SAIU e o cliente paga depois, no caixa atacado
+  PRAZO:        Number(process.env.SIT_PRAZO        || 806183),
 };
 
 // Nomes das situações vêm do Bling (módulo Pedido de Venda) e ficam em cache. Sem
@@ -7691,6 +7693,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       if(iniDia<hojeIni-30*86400000) return;           // muito antiga: não fica repetindo
       const sit=_sitOnline[pid];
       if(sit&&sit.situacaoId===SIT.CANCELADO) return;  // cancelado não conta
+      if(sit&&sit.situacaoId===SIT.PRAZO) return;      // venda a prazo: pagar depois é o combinado
       const pag=_pagamentoDoPedido(pid);
       if(pag.pago) return;
       const prop=porPedido[pid]||null;
@@ -8009,6 +8012,54 @@ app.get("/api/central/retirados-estoque",async(req,res)=>{
     res.json({ data: alvos.map(a=>({ ...a, saldo:a.produtoId?(saldos[a.produtoId]||null):null,
       semEstoque: a.produtoId&&saldos[a.produtoId] ? saldos[a.produtoId].disponivel<=0 : null })) });
   }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// VENDAS A PRAZO (situação "PRAZO" no Bling): mercadoria já entregue/retirada e o
+// cliente paga depois no caixa atacado. Ficavam invisíveis no sistema.
+let _cachePrazo={em:0,dados:null,calculando:false};
+app.get("/api/central/prazo",async(req,res)=>{
+  try{
+    if(_cachePrazo.dados && (Date.now()-_cachePrazo.em)<5*60*1000 && req.query.forcar!=="1")
+      return res.json({..._cachePrazo.dados, doCache:true});
+    if(_cachePrazo.calculando && _cachePrazo.dados) return res.json({..._cachePrazo.dados, doCache:true});
+    _cachePrazo.calculando=true;
+    let lista=[], pag=1;
+    for(let i=0;i<10;i++){
+      const p=new URLSearchParams({pagina:pag,limite:100});
+      p.append("idsSituacoes[]",SIT.PRAZO);
+      const r=await blingLento(`/pedidos/vendas?${p.toString()}`);
+      const arr=r?.data||[]; lista=lista.concat(arr);
+      if(arr.length<100) break; pag++; await sleep(150);
+    }
+    const vistos=new Set(); lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)) return false; vistos.add(k); return true; });
+    const hojeIni=_inicioDia(_hojeISO());
+    const pedidos=[];
+    for(const p of lista.slice(0,200)){
+      let vendedor="", contato=p.contato?.nome||"—", total=Number(p.total)||0;
+      try{
+        const d=await blingLento(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
+        if(d){ vendedor=await nomeVendedor(d.vendedor?.id||null); contato=d.contato?.nome||contato; total=Number(d.total ?? p.total)||0; }
+      }catch(e){}
+      const dt=p.data? new Date(p.data+"T12:00:00") : null;
+      const dias=dt? Math.max(0,Math.round((hojeIni-_inicioDia(p.data))/86400000)) : null;
+      pedidos.push({ id:p.id, numero:p.numero, cliente:contato, vendedor, total, data:p.data, diasEmAberto:dias });
+      await sleep(70);
+    }
+    pedidos.sort((a,b)=>(b.diasEmAberto??0)-(a.diasEmAberto??0));
+    const porCliente={};
+    pedidos.forEach(p=>{ const k=p.cliente||"—"; if(!porCliente[k]) porCliente[k]={nome:k,qtd:0,valor:0,maisAntigo:0};
+      porCliente[k].qtd++; porCliente[k].valor+=p.total; porCliente[k].maisAntigo=Math.max(porCliente[k].maisAntigo,p.diasEmAberto||0); });
+    const dados={ em:Date.now(), qtd:pedidos.length,
+      total:+pedidos.reduce((a,p)=>a+p.total,0).toFixed(2),
+      pedidos,
+      porCliente:Object.values(porCliente).map(c=>({...c,valor:+c.valor.toFixed(2)})).sort((a,b)=>b.valor-a.valor),
+      vencendo:{ ate7:pedidos.filter(p=>(p.diasEmAberto||0)<=7).length,
+        de8a15:pedidos.filter(p=>(p.diasEmAberto||0)>7&&(p.diasEmAberto||0)<=15).length,
+        mais15:pedidos.filter(p=>(p.diasEmAberto||0)>15).length,
+        valorMais15:+pedidos.filter(p=>(p.diasEmAberto||0)>15).reduce((a,p)=>a+p.total,0).toFixed(2) } };
+    _cachePrazo={em:Date.now(),dados,calculando:false};
+    res.json(dados);
+  }catch(e){ _cachePrazo.calculando=false; res.status(500).json({erro:e.message}); }
 });
 
 app.get("/api/central/entregas",(req,res)=>{
