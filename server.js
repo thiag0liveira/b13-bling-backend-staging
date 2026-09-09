@@ -8459,6 +8459,8 @@ app.get("/api/pedidos-online",(req,res)=>{
         return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
           agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
           teveRetirada,
+          ok: !!lerPedidosOk()[String(p.pedidoBlingId)],
+          okPor: lerPedidosOk()[String(p.pedidoBlingId)]?.por||null,
           criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
           vendedor:p.vendedorNome||p.funcionarioNome||"", // vendedor do pedido (ou quem digitou)
           cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
@@ -8628,6 +8630,24 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
 // PEDIDOS SEPARADOS SEM PAGAMENTO: foram mandados pra separação direto da tela de
 // Pedidos (sem passar pelo caixa) e ainda não foram pagos. Precisam de rastreio até
 // alguém receber. "Ficha financeira" NÃO conta como pagamento.
+// "OK" — o pedido já foi resolvido/conferido por alguém e sai da linha de novos,
+// indo pra linha CONFIRMADOS. É só organização da tela, não muda nada no Bling.
+const OK_PEDIDOS_FILE=`${DATA_DIR}/pedidos_ok.json`;
+function lerPedidosOk(){ const d=lerJSON(OK_PEDIDOS_FILE,{}); const lim=Date.now()-30*86400000;
+  let mudou=false; for(const k of Object.keys(d)){ if((d[k]?.em||0)<lim){ delete d[k]; mudou=true; } }
+  if(mudou) salvarJSON(OK_PEDIDOS_FILE,d); return d; }
+app.post("/api/pedidos-online/:blingId/ok",(req,res)=>{
+  try{
+    const id=String(req.params.blingId);
+    const d=lerPedidosOk();
+    const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
+    if(d[id]){ delete d[id]; salvarJSON(OK_PEDIDOS_FILE,d); return res.json({ok:true, marcado:false}); }
+    d[id]={em:Date.now(), por:funcNome};
+    salvarJSON(OK_PEDIDOS_FILE,d);
+    res.json({ok:true, marcado:true, por:funcNome});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/pedidos-online/aguardando-pagamento",async(req,res)=>{
   try{
     const fila=lerFilaSep();

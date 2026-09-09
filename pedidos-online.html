@@ -17,7 +17,10 @@
   .faixa{border-left:5px solid #514c96;background:#12102b;border-radius:0 14px 14px 0;
          padding:10px 12px;margin-bottom:16px;box-shadow:0 2px 0 rgba(0,0,0,.35)}
   .faixaTit{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:900;
-            text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+            text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;cursor:pointer;user-select:none}
+  .faixa.fechada{padding:8px 12px;margin-bottom:8px;opacity:.85}
+  .faixa.fechada .faixaTit{margin-bottom:0}
+  .faixaCards{flex-wrap:wrap}
   .faixaQtd{color:#000;border-radius:20px;font-size:11px;font-weight:900;padding:1px 9px}
   .faixaCards{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;align-items:flex-start}
   .faixaCards::-webkit-scrollbar{height:8px}
@@ -96,6 +99,16 @@ function dataHora(ms){
 let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=7, VISTO_ATE=0, SIT_CARREGANDO=false;
 let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[], AGUARD_PAG=null;
 let EXPANDIDO={};  // pedidoId -> true (card aberto com todos os botões)
+// faixas recolhíveis — por padrão só "Novos pedidos" fica aberta
+let FAIXAS_ABERTAS=(function(){
+  try{ const g=JSON.parse(localStorage.getItem("b13pedFaixas")||"null"); if(g) return g; }catch(e){}
+  return {novos:true};
+})();
+function alternarFaixa(k){
+  FAIXAS_ABERTAS[k]=!FAIXAS_ABERTAS[k];
+  try{ localStorage.setItem("b13pedFaixas",JSON.stringify(FAIXAS_ABERTAS)); }catch(e){}
+  render();
+}
 function alternar(id){ EXPANDIDO[id]=!EXPANDIDO[id]; render(); }
 function ehPendencia(p){ return /pend[êe]ncia/i.test(String(p.situacao||"")); }
 
@@ -145,6 +158,8 @@ function cardMini(p){
   const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Atacado"));
   const cor=(function(){
     if(pend) return null;
+    if(p.ok) return {bg:"#0f2a1c",bd:"#2f9e6b"};              // OK: verde
+    if(p.agendamento&&!p.cancelado) return {bg:"#0f2233",bd:"#29ABE2"}; // agendado: azul
     if(p.cancelado) return {bg:"#3a3210",bd:"#8a7a1f"};
     if(ehAtendido(p)) return {bg:"#12291f",bd:"#2f9e6b"};
     if(aguard) return {bg:"#2a2410",bd:"#ffe600"};
@@ -169,6 +184,7 @@ function cardMini(p){
       '<span style="font-size:10px;color:#9a95c9">'+(p.tipo==="entrega"?"🛵 entrega":"🏪 retirada")+(p.agendamento?" · 📅 "+esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/")):"")+'</span>'+
       '<span style="font-size:10px;color:#6b6699">▼ abrir</span>'+
     '</div>'+
+    (p.ok?'<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ OK'+(p.okPor?" · "+esc(p.okPor):"")+'</div>':'')+
   '</div>';
 }
 function cardPedido(p){
@@ -216,6 +232,7 @@ function cardPedido(p){
       '<button class="btn btn-wa" style="flex:1;margin:0;font-size:12px" onclick="enviarSeparacao('+p.id+',\'retirada\')">📦 Separar p/ RETIRAR</button>'+
       '<button class="btn" style="flex:1;margin:0;font-size:12px;background:#29ABE2;color:#000" onclick="enviarSeparacao('+p.id+',\'entrega\')">🛵 Separar p/ ENTREGA</button>'+
     '</div>':'')+
+    '<button class="btn '+(p.ok?"btn-ghost":"btn-grn")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ OK (resolvido)")+'</button>'+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
@@ -295,25 +312,29 @@ function render(){
           return r;
         };
         const grupos=[
-          {nome:"⚠️ Com pendência — resolver", cor:"#ff3b3b", itens:pegar(ehPendencia)},
-          {nome:"🛵 Para entregar (agendados)", cor:"#29ABE2",
+          // pendência sempre em primeiro, e só aparece quando existe
+          {k:"pend", nome:"⚠️ Pedidos com pendências", cor:"#ff3b3b", itens:pegar(ehPendencia), sempreAberta:true},
+          {k:"novos", nome:"🆕 Novos pedidos", cor:"#ffe600",
+           itens:pegar(function(p){ return !p.ok && !p.cancelado && !ehAtendido(p) && !/prazo/i.test(String(p.situacao||"")) && !p.agendamento; })},
+          {k:"entrega", nome:"🛵 Para entrega (agendados)", cor:"#29ABE2",
            itens:pegar(function(p){ return p.agendamento && !p.cancelado; })
                  .sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })},
-          {nome:"⏳ Aguardando separação", cor:"#ffe600", itens:pegar(ehAguardando)},
-          {nome:"📦 Em separação / separados", cor:"#7fd4ff",
-           itens:pegar(function(p){ return /separa|conferid/i.test(String(p.situacao||"")); })},
-          {nome:"🧾 A prazo", cor:"#ffa53b", itens:pegar(function(p){ return /prazo/i.test(String(p.situacao||"")); })},
-          {nome:"✅ Concluídos", cor:"#2f9e6b", itens:pegar(function(p){ return ehAtendido(p); })},
-          {nome:"🚫 Cancelados", cor:"#8a7a1f", itens:pegar(function(p){ return p.cancelado; })},
-          {nome:"📋 Outros", cor:"#9a95c9", itens:pegar(function(){ return true; })},
+          {k:"confirmados", nome:"✅ Confirmados", cor:"#2f9e6b",
+           itens:pegar(function(p){ return p.ok || ehAtendido(p); })},
+          {k:"prazo", nome:"🧾 Prazo", cor:"#ffa53b", itens:pegar(function(p){ return /prazo/i.test(String(p.situacao||"")); })},
+          {k:"cancel", nome:"🚫 Cancelados", cor:"#8a7a1f", itens:pegar(function(p){ return p.cancelado; })},
+          {k:"outros", nome:"📋 Outros", cor:"#9a95c9", itens:pegar(function(){ return true; })},
         ].filter(function(g){ return g.itens.length; });
         return grupos.map(function(g){
-          return '<div class="faixa" style="border-left-color:'+g.cor+'">'+
-            '<div class="faixaTit" style="color:'+g.cor+'">'+
+          const aberta=g.sempreAberta||FAIXAS_ABERTAS[g.k];
+          return '<div class="faixa'+(aberta?"":" fechada")+'" style="border-left-color:'+g.cor+'">'+
+            '<div class="faixaTit" style="color:'+g.cor+'" onclick="alternarFaixa(\''+g.k+'\')">'+
+              '<span style="font-size:12px">'+(aberta?"▾":"▸")+'</span>'+
               '<span>'+g.nome+'</span>'+
               '<span class="faixaQtd" style="background:'+g.cor+'">'+g.itens.length+'</span>'+
+              (aberta?'':'<span class="muted" style="font-size:10px;font-weight:400;text-transform:none">clique pra abrir</span>')+
             '</div>'+
-            '<div class="faixaCards">'+g.itens.map(cardPedido).join("")+'</div>'+
+            (aberta?'<div class="faixaCards">'+g.itens.map(cardPedido).join("")+'</div>':'')+
           '</div>';
         }).join("");
       })())+
@@ -330,6 +351,16 @@ async function enviarSeparacao(id,tipo){
       body:JSON.stringify({tipo,funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
     carregar();
+  }catch(e){ alert("Erro: "+e.message); }
+}
+async function marcarOk(id){
+  try{
+    const j=await fetch(B+"/api/pedidos-online/"+id+"/ok",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:S.id})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
+    if(p){ p.ok=j.marcado; p.okPor=j.por||null; }
+    render();
   }catch(e){ alert("Erro: "+e.message); }
 }
 async function verDetalhe(id){
