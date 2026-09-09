@@ -8636,6 +8636,46 @@ app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
 // ADOTA um pedido que existe no Bling mas NÃO está no nosso registro (ex.: o registro
 // falhou quando o sistema estava lento, ou o pedido foi criado/alterado direto no
 // Bling). Cria o registro local a partir do próprio pedido, e ele volta pra tela.
+// Explica POR QUE um pedido não está aparecendo em /pedidos e o que fazer.
+app.get("/api/diag/por-que-nao-aparece/:numero",async(req,res)=>{
+  try{
+    const t=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.json({existeNoBling:false, conclusao:"Esse pedido não existe no Bling."});
+    const sit=Number(ped.situacao?.id||0);
+    const props=lerPropostas();
+    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(ped.id))||null;
+    const ok=!!lerPedidosOk()[String(ped.id)];
+    const ag=_turnosEntrega()[String(ped.id)]||null;
+    const diasNaTela=7; // padrão da tela
+    const dentroDoPeriodo = prop ? ((Date.now()-(prop.criadoEm||0)) <= diasNaTela*86400000) : null;
+    const motivos=[], solucoes=[];
+    if(!prop){
+      motivos.push("Não existe registro local deste pedido — a lista da tela é montada a partir do registro do sistema, não do Bling.");
+      solucoes.push("Na tela de Pedidos, busque pelo número e clique em '📥 Trazer pra lista'.");
+    } else {
+      if(!dentroDoPeriodo) { motivos.push(`O registro é de ${new Date(prop.criadoEm).toLocaleDateString("pt-BR")}, fora do período mostrado (${diasNaTela} dias).`); solucoes.push("Aumente o período no seletor do topo (7/15 dias)."); }
+      if(ok) { motivos.push("O pedido está marcado como OK — ele fica na faixa CONFIRMADOS, não em Novos."); solucoes.push("Abra o pedido e clique em '↩️ Tirar o OK' se ele ainda precisa de ação."); }
+      if(ag) { motivos.push(`Tem entrega agendada para ${ag.data} — fica na faixa PARA ENTREGA, não em Novos.`); }
+    }
+    if(sit===SIT.CANCELADO){ motivos.push("Está CANCELADO no Bling — só aparece na aba 'Todos os status'."); }
+    else if(sit===SIT.ATENDIDO){ motivos.push("Está ATENDIDO no Bling — fica na faixa CONFIRMADOS."); solucoes.push("Se ele ainda precisa ser separado, use a busca + '🔀 Mover status' pra voltar pra Aguardando separação."); }
+    else if(sit===SIT.PRAZO){ motivos.push("Está como PRAZO — fica na faixa PRAZO."); }
+    else if([SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA].includes(sit)){
+      motivos.push(`Está como "${nomeSituacao(sit)}" — fica na faixa EM ANDAMENTO, não em Novos (Novos = só Aguardando separação).`);
+    }
+    res.json({
+      pedido:{ id:ped.id, numero:ped.numero, cliente:ped.contato?.nome||"—", total:Number(ped.total)||0,
+        situacao:nomeSituacao(sit), situacaoId:sit, data:ped.data },
+      registroLocal: prop? { existe:true, origem:prop.origem, criadoEm:new Date(prop.criadoEm).toLocaleString("pt-BR"), dentroDoPeriodo, adotado:!!prop.adotado } : {existe:false},
+      marcadoOk:ok, agendamento:ag||null,
+      motivos: motivos.length?motivos:["Ele deveria estar aparecendo. Verifique a aba/filtro selecionado na tela."],
+      oQueFazer: solucoes.length?solucoes:["Confira a aba selecionada (Aguardando separação x Todos os status) e o período."],
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.post("/api/pedidos-online/adotar/:termo",async(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
