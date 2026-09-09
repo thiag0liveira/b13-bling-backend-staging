@@ -13,6 +13,16 @@
   .top img{height:32px}.top .t{font-weight:900;font-size:16px}
   .wrap{padding:14px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  /* layout em duas áreas: pedidos (2 fileiras) + coluna das entregas agendadas */
+  .areas{display:flex;gap:12px;align-items:flex-start}
+  .areaPed{flex:1;min-width:0}
+  .areaEnt{width:300px;flex-shrink:0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .card.mini{padding:8px 10px;cursor:pointer}
+  .card.mini:hover{border-color:#514c96}
+  .sitMini{font-size:9px;font-weight:900;padding:2px 6px;border-radius:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+  .colTitulo{font-size:12px;font-weight:900;color:#9a95c9;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  @media(max-width:1100px){ .areas{flex-direction:column} .areaEnt{width:100%} .grid2{grid-template-columns:1fr} }
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px}
   .card.novo{border-color:#3ce88a;box-shadow:0 0 0 1px rgba(60,232,138,.3)}
   .card.aguard{border-color:#ffe600;box-shadow:0 0 0 1px rgba(255,230,0,.25)}
@@ -79,6 +89,8 @@ function dataHora(ms){
 
 let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=7, VISTO_ATE=0, SIT_CARREGANDO=false;
 let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[], AGUARD_PAG=null;
+let EXPANDIDO={};  // pedidoId -> true (card aberto com todos os botões)
+function alternar(id){ EXPANDIDO[id]=!EXPANDIDO[id]; render(); }
 function ehPendencia(p){ return /pend[êe]ncia/i.test(String(p.situacao||"")); }
 
 async function carregar(silencioso){
@@ -119,7 +131,42 @@ function visiveis(){
   // padrão: aguardando separação (é o que precisa de ação)
   return ordenar(PEDIDOS.filter(p=>ehAguardando(p)||ehPendencia(p)));
 }
+// versão MINIMIZADA do card: só o essencial. Clicar abre o card completo.
+function cardMini(p){
+  const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
+  const aguard=ehAguardando(p);
+  const pend=ehPendencia(p);
+  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Atacado"));
+  const cor=(function(){
+    if(pend) return null;
+    if(p.cancelado) return {bg:"#3a3210",bd:"#8a7a1f"};
+    if(ehAtendido(p)) return {bg:"#12291f",bd:"#2f9e6b"};
+    if(aguard) return {bg:"#2a2410",bd:"#ffe600"};
+    const t=String(p.situacao||"").toLowerCase();
+    if(t.indexOf("separa")>=0) return {bg:"#0f2233",bd:"#29ABE2"};
+    if(t.indexOf("rota")>=0) return {bg:"#251438",bd:"#9b5de5"};
+    return null;
+  })();
+  const est=pend?"":(cor?'background:'+cor.bg+';border-color:'+cor.bd+';':'');
+  return '<div class="card mini'+(pend?' pend':'')+(ehNovo?' novo':'')+'" style="'+est+'" onclick="alternar('+p.id+')">'+
+    '<div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">'+
+      '<span style="font-size:11px;font-weight:900;color:#9a95c9">'+esc(org)+'</span>'+
+      '<span style="font-size:10px;color:#9a95c9">'+esc(dataHora(p.criadoEm))+'</span>'+
+    '</div>'+
+    '<div style="font-weight:900;font-size:14px;margin-top:2px">#'+esc(p.numero)+'</div>'+
+    '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.cliente)+'</div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">'+
+      '<span class="sitMini" style="background:'+(pend?"#ff3b3b":(cor?cor.bd:"#2a2660"))+';color:'+((p.cancelado||aguard)&&!pend?"#000":"#fff")+'">'+esc((p.situacao||"—").toUpperCase().slice(0,22))+'</span>'+
+      '<b style="color:#ffd23f;font-size:13px;white-space:nowrap">'+brl(p.total)+'</b>'+
+    '</div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">'+
+      '<span style="font-size:10px;color:#9a95c9">'+(p.tipo==="entrega"?"🛵 entrega":"🏪 retirada")+(p.agendamento?" · 📅 "+esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/")):"")+'</span>'+
+      '<span style="font-size:10px;color:#6b6699">▼ abrir</span>'+
+    '</div>'+
+  '</div>';
+}
 function cardPedido(p){
+  if(!EXPANDIDO[p.id]) return cardMini(p);
   const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
   const tel=soDig(p.telefone);
   const aguard=ehAguardando(p);
@@ -140,6 +187,7 @@ function cardPedido(p){
   const estiloCard=pend?'':((corStatus?'background:'+corStatus.bg+';border-color:'+corStatus.bd+';':'')+(concluido?'opacity:.8;':''));
   return '<div class="card'+(ehNovo?' novo':'')+(pend?' pend':'')+'"'+(estiloCard?' style="'+estiloCard+'"':'')+'>'+
     (pend?'<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>':'')+
+    '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar('+p.id+')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>'+
     '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">'+
       '<span class="muted" style="font-size:11px">'+org+'</span>'+
       '<span class="muted" style="font-size:11px">🕐 '+esc(dataHora(p.criadoEm))+'</span></div>'+
@@ -230,9 +278,26 @@ function render(){
           '</div>';
         }).join("")+'</div>':'')+
       (BUSCA_RES?'<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "'+esc(window._buscaTxt||"")+'" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>':'')+
-      (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>'
-        :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
-          :'<div class="card"><div class="muted">Nenhum pedido do totem/site nesse período.</div></div>'))+
+      (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>':(function(){
+        // separa em duas áreas: pedidos normais (2 fileiras) e os agendados PRA ENTREGAR
+        const paraEntregar=lista.filter(function(p){ return p.agendamento && !p.cancelado; });
+        const normais=lista.filter(function(p){ return !(p.agendamento && !p.cancelado); });
+        if(!lista.length) return '<div class="card"><div class="muted">Nenhum pedido nesse período.</div></div>';
+        return '<div class="areas">'+
+          '<div class="areaPed">'+
+            '<div class="colTitulo">📋 Pedidos ('+normais.length+')</div>'+
+            (normais.length?'<div class="grid2">'+normais.map(cardPedido).join("")+'</div>'
+              :'<div class="card"><div class="muted">Nada por aqui.</div></div>')+
+          '</div>'+
+          '<div class="areaEnt">'+
+            '<div class="colTitulo" style="color:#29ABE2">🛵 Pedidos para entregar ('+paraEntregar.length+')</div>'+
+            (paraEntregar.length
+              ? paraEntregar.sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })
+                  .map(cardPedido).join("")
+              : '<div class="card"><div class="muted" style="font-size:12px">Nenhuma entrega agendada.<br>Use "📅 Agendar entrega" num pedido de entrega.</div></div>')+
+          '</div>'+
+        '</div>';
+      })())+
     '</div>';
   // devolve o foco e a posição do cursor pra quem estava digitando
   if(_foco){ const n=document.getElementById("buscaPed"); if(n){ n.focus(); try{ n.setSelectionRange(_sel[0],_sel[1]); }catch(e){} } }
