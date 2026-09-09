@@ -1157,7 +1157,7 @@ app.get("/api/mesa/estado",async(req,res)=>{
     const params=new URLSearchParams({pagina:1,limite:100,dataInicial:ini,dataFinal:hoje});
     [SIT.AGUARDANDO,SIT.EM_SEP].filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
     let pedidos=[];
-    try{ const r=await bling(`/pedidos/vendas?${params.toString()}`); pedidos=r?.data||[]; }catch(e){}
+    try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); pedidos=r?.data||[]; }catch(e){}
     // SÓ os pedidos que foram ENVIADOS pra separação (pelo caixa atacado ou pela tela
     // de Pedidos). Antes vinha tudo que estivesse em Aguardando/Em separação no Bling,
     // inclusive pedido que ninguém mandou — a mesa ficava cheia de coisa que não era
@@ -8248,7 +8248,7 @@ app.get("/api/central/prazo",async(req,res)=>{
     const vistos=new Set(); lista=lista.filter(p=>{ const k=String(p.id); if(vistos.has(k)) return false; vistos.add(k); return true; });
     const hojeIni=_inicioDia(_hojeISO());
     const pedidos=[];
-    for(const p of lista.slice(0,200)){
+    for(const p of lista.slice(0,80)){
       let vendedor="", contato=p.contato?.nome||"—", total=Number(p.total)||0;
       try{
         const d=await blingLento(`/pedidos/vendas/${p.id}`).then(x=>x?.data);
@@ -8487,7 +8487,7 @@ async function _atualizarSituacoesOnline(ids){
       const c=_sitOnline[String(id)];
       if(c && (Date.now()-c.em)<60*1000) continue;
       try{
-        const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        const d=await blingLento(`/pedidos/vendas/${id}`).then(r=>r?.data);
         const sit=Number(d?.situacao?.id||0);
         _sitOnline[String(id)]={situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now()};
       }catch(e){ _sitOnline[String(id)]={situacaoId:0, situacao:"—", em:Date.now()}; }
@@ -8706,16 +8706,23 @@ app.post("/api/pedidos-online/:blingId/ok",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+let _cacheAguardPag={em:0,dados:null,calculando:false};
 app.get("/api/pedidos-online/aguardando-pagamento",async(req,res)=>{
   try{
+    // CACHE de 2 min: a tela chama isso a cada carregamento e ele consulta o Bling
+    // pedido a pedido — sem cache, saturava a fila e travava o caixa
+    if(_cacheAguardPag.dados && (Date.now()-_cacheAguardPag.em)<120000 && req.query.forcar!=="1")
+      return res.json({..._cacheAguardPag.dados, doCache:true});
+    if(_cacheAguardPag.calculando) return res.json(_cacheAguardPag.dados||{qtd:0,total:0,data:[],calculando:true});
+    _cacheAguardPag.calculando=true;
     const fila=lerFilaSep();
     const ids=Object.keys(fila);
     const vp=lerVendasPrazo();
     const out=[];
-    for(const id of ids.slice(0,80)){
+    for(const id of ids.slice(0,40)){
       let sit=_sitOnline[id];
       if(!sit){
-        try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        try{ const d=await blingLento(`/pedidos/vendas/${id}`).then(r=>r?.data);
           sit={situacaoId:Number(d?.situacao?.id||0), situacao:nomeSituacao(Number(d?.situacao?.id||0)), em:Date.now()};
           _sitOnline[id]=sit;
         }catch(e){ continue; }
@@ -8737,8 +8744,10 @@ app.get("/api/pedidos-online/aguardando-pagamento",async(req,res)=>{
         comPendencia:Number(sit.situacaoId)===SIT.SEP_PEND });
     }
     out.sort((a,b)=>(a.enviadoEm||0)-(b.enviadoEm||0));
-    res.json({ qtd:out.length, total:+out.reduce((a,p)=>a+p.total,0).toFixed(2), data:out });
-  }catch(e){ res.status(500).json({erro:e.message}); }
+    const resp={ qtd:out.length, total:+out.reduce((a,p)=>a+p.total,0).toFixed(2), data:out };
+    _cacheAguardPag={em:Date.now(), dados:resp, calculando:false};
+    res.json(resp);
+  }catch(e){ _cacheAguardPag.calculando=false; res.status(500).json({erro:e.message}); }
 });
 
 app.get("/api/pedidos-online/situacoes-disponiveis",async(req,res)=>{

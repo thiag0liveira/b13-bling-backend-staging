@@ -393,11 +393,16 @@ async function rodarAuditoria(){
 }
 async function carregar(){
   try{ const j=await fetch(B+"/api/central/resumo"+(DIA?"?data="+DIA:"")).then(r=>r.json()); if(!j.erro){ D=j; if(!DIA) DIA=j.dia; } render(); }catch(e){}
+  // dados locais primeiro (rápidos), depois os que consultam o Bling — e só uma vez
+  // por carregamento, pra não competir com o caixa na fila do Bling
   try{ const e=await fetch(B+"/api/central/entregas").then(r=>r.json()); if(!e.erro){ ENTREGAS=e; render(); } }catch(e){}
   try{ const a=await fetch(B+"/api/avisos").then(r=>r.json()); if(!a.erro){ AVISOS=a; render(); } }catch(e){}
-  try{ const pz=await fetch(B+"/api/central/prazo").then(r=>r.json()); if(!pz.erro){ PRAZO=pz; render(); } }catch(e){}
-  try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
-  try{ const ap=await fetch(B+"/api/vendedor/apoio").then(r=>r.json()); if(!ap.erro&&ap.vendedores){ APOIO=ap; render(); } }catch(e){}
+  if(!window._pesadosEm || (Date.now()-window._pesadosEm)>300000){
+    window._pesadosEm=Date.now();
+    try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
+    try{ const pz=await fetch(B+"/api/central/prazo").then(r=>r.json()); if(!pz.erro){ PRAZO=pz; render(); } }catch(e){}
+    try{ const ap=await fetch(B+"/api/vendedor/apoio").then(r=>r.json()); if(!ap.erro&&ap.vendedores){ APOIO=ap; render(); } }catch(e){}
+  }
   clearTimeout(TIMER);
   TIMER=setTimeout(carregar,(D&&D.bling&&D.bling.calculando)?8000:60000);
 }

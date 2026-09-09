@@ -127,7 +127,10 @@ async function carregar(silencioso){
       VISTO_ATE=Number(n.vistoAte||0); // tudo criado depois disso é "novo" pra este usuário
     }catch(e){}
   }catch(e){ if(!silencioso) alert("Erro ao carregar: "+e.message); }
-  try{ const ap=await fetch(B+"/api/pedidos-online/aguardando-pagamento").then(r=>r.json()); if(!ap.erro) AGUARD_PAG=ap; }catch(e){}
+  // só busca a faixa de "aguardando pagamento" a cada 3 min (é consulta pesada)
+  if(!AGUARD_PAG || (Date.now()-(window._apEm||0))>180000){
+    try{ const ap=await fetch(B+"/api/pedidos-online/aguardando-pagamento").then(r=>r.json()); if(!ap.erro){ AGUARD_PAG=ap; window._apEm=Date.now(); } }catch(e){}
+  }
   CARREGANDO=false; render();
   // as situações vêm em 2º plano — recarrega em silêncio até completar
   if(SIT_CARREGANDO) setTimeout(function(){ carregar(true); }, 4000);
