@@ -322,8 +322,23 @@ function render(){
         const grupos=[
           // pendência sempre em primeiro, e só aparece quando existe
           {k:"pend", nome:"⚠️ Pedidos com pendências", cor:"#ff3b3b", itens:pegar(ehPendencia), sempreAberta:true},
+          // NOVO = ainda em "Aguardando separação" (o status com que o pedido nasce).
+          // Pedido que já entrou no fluxo (em separação, separado, em rota) NÃO é novo:
+          // vai pra faixa "Em andamento". Antes tudo caía em "Novos", inclusive o que
+          // já estava sendo separado.
           {k:"novos", nome:"🆕 Novos pedidos", cor:"#ffe600",
-           itens:pegar(function(p){ return !p.ok && !p.cancelado && !ehAtendido(p) && !/prazo/i.test(String(p.situacao||"")) && !p.agendamento; })},
+           itens:pegar(function(p){
+             if(p.ok||p.cancelado||ehAtendido(p)||p.agendamento) return false;
+             if(/prazo/i.test(String(p.situacao||""))) return false;
+             const st=String(p.situacao||"");
+             // sem situação ainda (carregando) também conta como novo
+             return ehAguardando(p) || !st || st==="carregando…" || /aguardando/i.test(st);
+           })},
+          {k:"andamento", nome:"🔄 Em andamento (separação/rota)", cor:"#7fd4ff",
+           itens:pegar(function(p){
+             if(p.ok||p.cancelado||ehAtendido(p)) return false;
+             return /separa|conferid|rota|entrega/i.test(String(p.situacao||""));
+           })},
           {k:"entrega", nome:"🛵 Para entrega (agendados)", cor:"#29ABE2",
            itens:pegar(function(p){ return p.agendamento && !p.cancelado; })
                  .sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })},
