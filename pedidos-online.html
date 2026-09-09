@@ -108,9 +108,20 @@ function cardPedido(p){
   const tel=soDig(p.telefone);
   const aguard=ehAguardando(p);
   const concluido=ehAtendido(p)||p.cancelado;
+  // cor de fundo por status — bate o olho e já sabe em que pé está o pedido
+  const corStatus=(function(){
+    if(p.cancelado) return {bg:"#3a3210",bd:"#8a7a1f",txt:"#ffe600"};        // cancelado: amarelo
+    if(ehAtendido(p)) return {bg:"#12291f",bd:"#2f9e6b",txt:"#8fffc0"};      // atendido: verde claro
+    if(aguard) return {bg:"#2a2410",bd:"#ffe600",txt:"#ffe600"};             // aguardando separação
+    const t=String(p.situacao||"").toLowerCase();
+    if(t.indexOf("separa")>=0) return {bg:"#0f2233",bd:"#29ABE2",txt:"#7fd4ff"}; // em separação/separado
+    if(t.indexOf("rota")>=0||t.indexOf("entrega")>=0) return {bg:"#251438",bd:"#9b5de5",txt:"#d0a9ff"};
+    return null;
+  })();
   const ehOnline=(p.origem==="totem"||p.origem==="site");
   const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 <b style=\"color:#cfc9f5\">"+esc(p.vendedor||"Venda Atacado")+"</b>");
-  return '<div class="card'+(ehNovo?' novo':'')+(aguard?' aguard':'')+'"'+(concluido?' style="opacity:.65"':'')+'>'+
+  const estiloCard=(corStatus?'background:'+corStatus.bg+';border-color:'+corStatus.bd+';':'')+(concluido?'opacity:.8;':'');
+  return '<div class="card'+(ehNovo?' novo':'')+'"'+(estiloCard?' style="'+estiloCard+'"':'')+'>'+
     '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">'+
       '<span class="muted" style="font-size:11px">'+org+'</span>'+
       '<span class="muted" style="font-size:11px">🕐 '+esc(dataHora(p.criadoEm))+'</span></div>'+
@@ -118,7 +129,8 @@ function cardPedido(p){
       '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
       (ehNovo?'<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>':'')+
     '</div>'+
-    '<div class="sit"'+(p.situacao==="carregando…"?' style="background:#2a2660;color:#9a95c9"':'')+'>'+esc((p.situacao||"").toUpperCase())+'</div>'+
+    '<div class="sit"'+(p.situacao==="carregando…"?' style="background:#2a2660;color:#9a95c9"'
+      :(corStatus?' style="background:'+corStatus.bd+';color:'+(p.cancelado||aguard?"#000":"#fff")+'"':''))+'>'+esc((p.situacao||"").toUpperCase())+'</div>'+
     '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
     '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
     (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
@@ -157,6 +169,12 @@ function render(){
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>'+
     '<div class="wrap">'+
+      '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">'+
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>'+
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>'+
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>'+
+        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>'+
+      '</div>'+
       '<div class="abas">'+
         '<span class="aba '+(FILTRO==="ativos"?"on":"")+'" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação ('+nAgu+')</span>'+
         '<span class="aba '+(FILTRO==="online"?"on":"")+'" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site ('+nOnline+')</span>'+
