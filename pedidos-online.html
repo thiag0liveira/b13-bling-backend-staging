@@ -78,7 +78,7 @@ function dataHora(ms){
 }
 
 let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=7, VISTO_ATE=0, SIT_CARREGANDO=false;
-let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[];
+let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[], AGUARD_PAG=null;
 function ehPendencia(p){ return /pend[êe]ncia/i.test(String(p.situacao||"")); }
 
 async function carregar(silencioso){
@@ -92,6 +92,7 @@ async function carregar(silencioso){
       VISTO_ATE=Number(n.vistoAte||0); // tudo criado depois disso é "novo" pra este usuário
     }catch(e){}
   }catch(e){ if(!silencioso) alert("Erro ao carregar: "+e.message); }
+  try{ const ap=await fetch(B+"/api/pedidos-online/aguardando-pagamento").then(r=>r.json()); if(!ap.erro) AGUARD_PAG=ap; }catch(e){}
   CARREGANDO=false; render();
   // as situações vêm em 2º plano — recarrega em silêncio até completar
   if(SIT_CARREGANDO) setTimeout(function(){ carregar(true); }, 4000);
@@ -205,6 +206,24 @@ function render(){
         '<span class="aba '+(FILTRO==="andamento"?"on":"")+'" onclick="FILTRO=\'andamento\';render()">📋 Em andamento ('+nAnd+')</span>'+
         '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status ('+PEDIDOS.length+')'+(nConc?' <span style="opacity:.7">· '+nConc+' concluídos</span>':'')+'</span>'+
       '</div>'+
+      ((AGUARD_PAG&&AGUARD_PAG.qtd)?'<div class="card" style="border-color:#b3341f;margin-bottom:12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
+          '<b style="font-size:14px">💰 Separados aguardando pagamento ('+AGUARD_PAG.qtd+')</b>'+
+          '<b style="color:#ff8f7a">'+brl(AGUARD_PAG.total)+'</b></div>'+
+        '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>'+
+        AGUARD_PAG.data.map(function(a){
+          const tel=soDig(a.telefone);
+          return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">'+
+            '<span style="flex:1;min-width:0">'+
+              '<b>#'+esc(a.numero)+'</b> '+esc(a.cliente)+
+              ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:'+(a.tipo==="entrega"?"#29ABE2;color:#000":"#2f9e6b;color:#fff")+'">'+(a.tipo==="entrega"?"ENTREGA":"RETIRA")+'</span>'+
+              (a.comPendencia?' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>':'')+
+              '<div class="muted" style="font-size:10px">'+esc(a.situacao||"")+(a.por?" · enviado por "+esc(a.por):"")+'</div>'+
+            '</span>'+
+            '<b style="white-space:nowrap">'+brl(a.total)+'</b>'+
+            (a.pronto?'<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente('+a.id+',\''+(a.tipo==="entrega"?"entrega":"retirada")+'\')">💬 avisar</button>':'')+
+          '</div>';
+        }).join("")+'</div>':'')+
       (BUSCA_RES?'<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "'+esc(window._buscaTxt||"")+'" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>':'')+
       (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>'
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
@@ -627,6 +646,25 @@ async function moverStatus(id,situacaoId){
     fechar();
     if(BUSCA_RES) buscarPedido(); else carregar();
   }catch(e){ if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>'; }
+}
+
+/* ===== AVISAR O CLIENTE (pedido separado, aguardando pagamento) ===== */
+async function avisarCliente(id,tipo){
+  const a=(AGUARD_PAG&&AGUARD_PAG.data||[]).find(function(x){return String(x.id)===String(id);});
+  if(!a) return;
+  let tel=soDig(a.telefone), ped=null;
+  try{ const j=await fetch(B+"/api/pedidos/"+id).then(r=>r.json()); ped=j.data||j; }catch(e){}
+  if(!tel&&ped){
+    tel=soDig(ped.contato?.celular||ped.contato?.telefone||"");
+    if(!tel&&ped.contato?.id){ try{ const jc=await fetch(B+"/api/contatos/"+ped.contato.id).then(r=>r.json()); const c=jc.data||jc; tel=soDig(c?.celular||c?.telefone||""); }catch(e){} }
+  }
+  const nome=(ped?.contato?.nome)||a.cliente||"";
+  const total=Number(ped?.total ?? a.total ?? 0);
+  const msg = tipo==="entrega"
+    ? "Olá"+(nome?" "+nome:"")+"! Seu pedido *"+a.numero+"* está separado e *sai para entrega*. 🛵\n\n*Total: "+brl(total)+"*\n\nO pagamento será feito na entrega. Qualquer coisa é só chamar aqui! 😊"
+    : "Olá"+(nome?" "+nome:"")+"! Seu pedido *"+a.numero+"* já está separado e *disponível para retirada*. 🏪\n\n*Total: "+brl(total)+"*\n\nEstamos na Av. Brigadeiro Eduardo Gomes, 1868 — Glória, BH. Te esperamos! 😊";
+  if(!tel){ alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta."); window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); return; }
+  window.open("https://wa.me/"+(tel.startsWith("55")?tel:("55"+tel))+"?text="+encodeURIComponent(msg),"_blank");
 }
 
 render();

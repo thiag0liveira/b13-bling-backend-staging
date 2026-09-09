@@ -1943,12 +1943,41 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,tipoEntrega}=req.body||{}; const id=String(req.params.id);
     const pags=lerPag(); const pag=pags[id]||null;
-    const pago=pag&&pag.statusPagamento==="pago";
+    // PAGAMENTO: vale o que passou por um CAIXA (Ficha financeira do Bling não conta
+    // como pagamento). Venda a PRAZO é exceção: foi autorizada, pode seguir.
+    const noCaixa=_pagamentoDoPedido(id);
+    const pago=noCaixa.pago || (pag&&pag.statusPagamento==="pago");
+    let ped=null; try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    const ehPrazo=Number(ped?.situacao?.id||0)===SIT.PRAZO;
+    if(!pago && !ehPrazo){
+      return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
+        semPagamento:true, numero:ped?.numero||null });
+    }
     const novoSit=tipoEntrega==="retirada"?SIT.ATENDIDO:SIT.EM_ROTA;
     if(!novoSit) return res.status(400).json({erro:"Status EM_ROTA ou ATENDIDO não configurado."});
+    // PEDIDO A PRAZO: não muda a situação (tem que continuar em PRAZO até ser pago) —
+    // só registra na observação do Bling que foi conferido, com data e hora.
+    if(ehPrazo){
+      const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
+      const nota=`[CONFERIDO ${quando}] Conferido por ${funcionarioNome||"—"} — todos os produtos conferidos. Pedido segue A PRAZO (aguardando pagamento).`;
+      try{
+        await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
+          data:ped.data, contato:{id:ped.contato?.id},
+          itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+          observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
+          ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
+          ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
+          ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
+        })});
+      }catch(e){}
+      liberarLock(id,funcionarioId,funcionarioNome,"conferido");
+      addLog(id,`conferido_prazo`,funcionarioId,funcionarioNome,{tipoEntrega,observacao:nota});
+      return res.json({ok:true, aPrazo:true, situacao:SIT.PRAZO, pago:false,
+        msg:"Conferido e registrado na observação do pedido. Ele continua como PRAZO até o cliente pagar." });
+    }
     await bling(`/pedidos/vendas/${id}/situacoes/${novoSit}`,{method:"PATCH"});
     liberarLock(id,funcionarioId,funcionarioNome,"conferido");
-    addLog(id,`conferido_${tipoEntrega||"entrega"}`,funcionarioId,funcionarioNome,{pago,valorPago:pag?.valorPago||0,tipoEntrega,novoSit});
+    addLog(id,`conferido_${tipoEntrega||"entrega"}`,funcionarioId,funcionarioNome,{pago,valorPago:pag?.valorPago||0,tipoEntrega,novoSit,ondeFoiPago:noCaixa.ondeFoiPago||null});
     res.json({ok:true,situacao:novoSit,pago,valorPago:pag?.valorPago||0,valorPedido:pag?.valorPedido||0,tipoEntrega});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
@@ -8536,6 +8565,44 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 // situações que o operador pode escolher na tela
+// PEDIDOS SEPARADOS SEM PAGAMENTO: foram mandados pra separação direto da tela de
+// Pedidos (sem passar pelo caixa) e ainda não foram pagos. Precisam de rastreio até
+// alguém receber. "Ficha financeira" NÃO conta como pagamento.
+app.get("/api/pedidos-online/aguardando-pagamento",async(req,res)=>{
+  try{
+    const fila=lerFilaSep();
+    const ids=Object.keys(fila);
+    const vp=lerVendasPrazo();
+    const out=[];
+    for(const id of ids.slice(0,80)){
+      let sit=_sitOnline[id];
+      if(!sit){
+        try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+          sit={situacaoId:Number(d?.situacao?.id||0), situacao:nomeSituacao(Number(d?.situacao?.id||0)), em:Date.now()};
+          _sitOnline[id]=sit;
+        }catch(e){ continue; }
+        await sleep(90);
+      }
+      if([SIT.CANCELADO,SIT.ATENDIDO].includes(Number(sit.situacaoId))) continue;
+      const pag=_pagamentoDoPedido(id);
+      if(pag.pago) continue;                       // já recebido em caixa
+      if(Number(sit.situacaoId)===SIT.PRAZO) continue; // a prazo tem acompanhamento próprio
+      const f=fila[id]||{};
+      const props=lerPropostas();
+      const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id))||null;
+      out.push({ id, numero:f.numero||prop?.pedidoBlingNumero||id,
+        cliente:prop?.cliente?.nome||"—", telefone:prop?.cliente?.telefone||"",
+        total:Number(prop?.total)||0, tipo:f.tipo||"retirada",
+        situacaoId:Number(sit.situacaoId), situacao:sit.situacao,
+        enviadoEm:f.em||null, por:f.por||"",
+        pronto:[SIT.SEPARADO,SIT.CONF_ENTREGA].includes(Number(sit.situacaoId)),
+        comPendencia:Number(sit.situacaoId)===SIT.SEP_PEND });
+    }
+    out.sort((a,b)=>(a.enviadoEm||0)-(b.enviadoEm||0));
+    res.json({ qtd:out.length, total:+out.reduce((a,p)=>a+p.total,0).toFixed(2), data:out });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/pedidos-online/situacoes-disponiveis",async(req,res)=>{
   try{
     const mapa=await carregarSituacoesBling();
