@@ -241,16 +241,38 @@ async function enviarSeparacao(id,tipo){
     carregar();
   }catch(e){ alert("Erro: "+e.message); }
 }
-function verDetalhe(id){
-  const p=PEDIDOS.find(function(x){return x.id===id;}); if(!p) return;
+async function verDetalhe(id){
+  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);}); if(!p) return;
+  // busca o histórico de alterações — o que foi retirado/acrescentado/alterado
+  let alt=null;
+  try{ alt=await fetch(B+"/api/pedidos-online/"+id+"/alteracoes").then(r=>r.json()); }catch(e){}
   document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
     '<h3>Pedido '+esc(p.numero)+'</h3>'+
     '<div class="muted" style="margin:4px 0 10px">'+esc(p.cliente)+' · '+(p.tipo==="entrega"?"🛵 Entrega":"🏪 Retirada")+
       '<br>🕐 criado em '+esc(dataHora(p.criadoEm))+((p.origem!=="totem"&&p.origem!=="site")?' · vendedor: '+esc(p.vendedor||"—"):' · '+(p.origem==="totem"?"Totem":"Site"))+'</div>'+
     (p.endereco?'<div class="muted" style="margin-bottom:8px">📍 '+esc(p.endereco)+'</div>':'')+
+    '<div style="font-weight:800;font-size:13px;margin:6px 0 4px">📦 Itens atuais</div>'+
     (p.itens||[]).map(function(i){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid #2a2660;padding:5px 0;font-size:13px"><span>'+i.quantidade+'x '+esc(i.nome)+'</span><b>'+brl(i.quantidade*i.valor)+'</b></div>';}).join("")+
     (p.frete>0?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Frete</span><b>'+brl(p.frete)+'</b></div>':'')+
     '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:900"><span>Total</span><span style="color:#ffd23f">'+brl(p.total)+'</span></div>'+
+    // ---- o que mudou no pedido (retirado / acrescentado / alterado) ----
+    ((alt&&alt.teveAlteracao)?
+      '<div style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px">'+
+        '<div style="font-weight:800;font-size:13px;margin-bottom:6px">✏️ Alterações no pedido</div>'+
+        ((alt.retirados||[]).length?'<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px;margin-bottom:6px">'+
+          '<div style="color:#ff8f7a;font-weight:800;font-size:12px;margin-bottom:4px">❌ Retirado(s)</div>'+
+          alt.retirados.map(function(x){return '<div style="font-size:12px;color:#ffb0b0">• '+esc(x)+'</div>';}).join("")+
+        '</div>':'')+
+        ((alt.acrescentados||[]).length?'<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px;margin-bottom:6px">'+
+          '<div style="color:#3ce88a;font-weight:800;font-size:12px;margin-bottom:4px">➕ Acrescentado(s)</div>'+
+          alt.acrescentados.map(function(x){return '<div style="font-size:12px;color:#8fffc0">• '+esc(x)+'</div>';}).join("")+
+        '</div>':'')+
+        ((alt.alterados||[]).length?'<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px">'+
+          '<div style="color:#ffd23f;font-weight:800;font-size:12px;margin-bottom:4px">🔄 Quantidade alterada</div>'+
+          alt.alterados.map(function(x){return '<div style="font-size:12px;color:#ffe89a">• '+esc(x)+'</div>';}).join("")+
+        '</div>':'')+
+      '</div>'
+      :'<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>')+
     '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
 }
 function fechar(){ document.getElementById("modais").innerHTML=""; }
