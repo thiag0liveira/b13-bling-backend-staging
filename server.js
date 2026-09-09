@@ -1882,6 +1882,19 @@ app.post("/api/fluxo/:id/separacao-concluida",async(req,res)=>{
     const temFalta=faltas&&faltas.length>0;
     const novoSit=temFalta?SIT.SEP_PEND:SIT.SEPARADO;
     if(!novoSit) return res.status(400).json({erro:"Status SEPARADO/SEP_PEND não configurado. Configure SIT_SEPARADO e SIT_SEP_PEND no Railway."});
+    // O pedido ainda está EM SEPARAÇÃO? Se já saiu (outra pessoa concluiu, ou foi
+    // movido no Bling), concluir de novo é o que gerava o erro "mesma situação" —
+    // e pior, sobrescreveria o resultado de quem separou antes.
+    try{
+      const atual=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+      const sitAtual=Number(atual?.situacao?.id||0);
+      const emSeparacao=[SIT.EM_SEP,SIT.AGUARDANDO].includes(sitAtual);
+      if(!emSeparacao){
+        return res.status(409).json({
+          erro:`Este pedido não está mais em separação (está como "${nomeSituacao(sitAtual)}"). Provavelmente outra pessoa já concluiu — confira antes de separar de novo.`,
+          jaConcluido:true, situacaoAtual:nomeSituacao(sitAtual), situacaoId:sitAtual, numero:atual?.numero });
+      }
+    }catch(e){}
     // registra pendências
     if(temFalta){
       const pend=lerPend();

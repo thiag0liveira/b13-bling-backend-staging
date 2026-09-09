@@ -152,6 +152,12 @@ async function restaurarMesas(){
     try{
       const j=await fetch(B+"/api/expedicao/pedido/"+lock.pedidoId).then(r=>r.json());
       if(j.erro||!j.pedido){ await liberar(id,true); continue; }
+      // só recoloca na coluna se o pedido AINDA está em separação — se já foi
+      // separado/atendido/cancelado, o lock ficou órfão e deve ser solto
+      const sitAtual=Number(j.pedido?.situacao?.id||0);
+      const aindaSepara=FILA.some(function(p){return String(p.id)===String(lock.pedidoId);})
+        || (j.pedido?.situacao?.nome||"").toLowerCase().indexOf("separa")>=0;
+      if(sitAtual && !aindaSepara){ await liberar(id,true); continue; }
       MESAS[id]={ carregando:false, pedido:j.pedido, restaurado:true,
         itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
           un:i.un||1, estado:"", temQtd:0, confirmado:false})) };
@@ -276,8 +282,15 @@ async function concluir(funcId){
     const r=await fetch(B+"/api/fluxo/"+m.pedido.id+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({faltas,funcionarioId:funcId,funcionarioNome:f?f.nome:""})});
     const j=await r.json();
+    if(j&&j.jaConcluido){
+      alert("Pedido "+num+": "+j.erro);
+      if(m._hb) clearInterval(m._hb);
+      fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
+      delete MESAS[funcId];
+      render(); carregar(true);
+      return;
+    }
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
-    // se o pedido já estava na situação, o Bling recusa mas está tudo certo — segue
     if(m._hb) clearInterval(m._hb);
     fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
     delete MESAS[funcId];
