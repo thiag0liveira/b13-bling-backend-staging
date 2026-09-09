@@ -8546,9 +8546,12 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
 app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
   try{
     const id=req.params.blingId;
-    const {situacaoId,funcionarioId}=req.body||{};
+    const {situacaoId,funcionarioId,token}=req.body||{};
     const alvo=Number(situacaoId);
     if(!alvo) return res.status(400).json({erro:"informe a situação"});
+    // mover status é ação sensível (tira/põe pedido no fluxo): exige QR de autorização
+    const auth=validarTokenQrAtacado(token);
+    if(auth.erro) return res.status(403).json({erro:auth.erro});
     const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     const de=Number(ped.situacao?.id||0);
@@ -8556,12 +8559,12 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
     try{ await bling(`/pedidos/vendas/${id}/situacoes/${alvo}`,{method:"PATCH"}); }
     catch(e){ return res.status(502).json({erro:"O Bling recusou a mudança: "+e.message}); }
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
-    addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero});
+    addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero,autorizadoPor:auth.funcionario.nome});
     // mantém a fila da mesa coerente
     if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,"retirada",funcNome,ped.numero);
     if(alvo===SIT.ATENDIDO||alvo===SIT.CANCELADO){ try{ const fq=lerFilaSep(); delete fq[String(id)]; salvarJSON(FILA_SEP_FILE,fq); }catch(e){} }
     _sitOnline[String(id)]={situacaoId:alvo, situacao:nomeSituacao(alvo), em:Date.now()};
-    res.json({ok:true, de:nomeSituacao(de), para:nomeSituacao(alvo), numero:ped.numero});
+    res.json({ok:true, de:nomeSituacao(de), para:nomeSituacao(alvo), numero:ped.numero, autorizadoPor:auth.funcionario.nome});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 // situações que o operador pode escolher na tela

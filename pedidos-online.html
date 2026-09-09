@@ -163,7 +163,7 @@ function cardPedido(p){
       '<button class="btn" style="flex:1;margin:0;font-size:12px;background:#29ABE2;color:#000" onclick="enviarSeparacao('+p.id+',\'entrega\')">🛵 Separar p/ ENTREGA</button>'+
     '</div>':'')+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
-    '<button class="btn btn-ghost" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status</button>'+
+    (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
     '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
     (!p.cancelado?(p.tipo==="entrega"
@@ -632,20 +632,33 @@ async function abrirMoverStatus(id){
   document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
     '<h3>🔀 Mover status — pedido '+esc(p.numero)+'</h3>'+
     '<div class="muted" style="margin:6px 0 10px">'+esc(p.cliente)+' · agora em <b style="color:#fff">'+esc(p.situacao||"—")+'</b></div>'+
-    '<div style="max-height:52vh;overflow:auto">'+(ops||'<div class="muted">Não consegui carregar as situações.</div>')+'</div>'+
+    '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px;font-size:12px;color:#ffd23f;margin-bottom:10px">'+
+      'Mudar o status tira ou põe o pedido no fluxo. Precisa do <b>QR de autorização</b> (gerente, financeiro ou admin).</div>'+
+    '<div class="muted" style="font-size:12px;margin-bottom:4px">QR de autorização</div>'+
+    '<input id="qrMover" type="password" placeholder="Bipe o QR ou cole o código" autocomplete="new-password" style="width:100%;margin-bottom:10px">'+
+    '<div class="muted" style="font-size:12px;margin-bottom:4px">Mover para:</div>'+
+    '<div style="max-height:42vh;overflow:auto">'+(ops||'<div class="muted">Não consegui carregar as situações.</div>')+'</div>'+
     '<div id="errMv"></div>'+
     '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Cancelar</button></div></div>';
+  setTimeout(function(){ const q=document.getElementById("qrMover"); if(q) q.focus(); },60);
 }
 async function moverStatus(id,situacaoId){
   const err=document.getElementById("errMv");
+  const qr=document.getElementById("qrMover");
+  const token=(qr?qr.value:"").trim();
+  if(!token){ if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">Bipe o QR de autorização primeiro.</div>'; if(qr) qr.focus(); return; }
   if(err) err.innerHTML='<div class="muted" style="font-size:12px;margin-top:8px">Alterando no Bling…</div>';
   try{
     const j=await fetch(B+"/api/pedidos-online/"+id+"/situacao",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({situacaoId,funcionarioId:S.id})}).then(function(r){return r.json();});
+      body:JSON.stringify({situacaoId,funcionarioId:S.id,token})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
     fechar();
+    alert("Pedido "+j.numero+": "+j.de+" → "+j.para+"\nAutorizado por "+(j.autorizadoPor||"—"));
     if(BUSCA_RES) buscarPedido(); else carregar();
-  }catch(e){ if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>'; }
+  }catch(e){
+    if(qr) qr.value="";
+    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
+  }
 }
 
 /* ===== AVISAR O CLIENTE (pedido separado, aguardando pagamento) ===== */
