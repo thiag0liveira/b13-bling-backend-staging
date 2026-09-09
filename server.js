@@ -1137,8 +1137,7 @@ app.post("/api/mesa/enviar-separacao/:blingId",async(req,res)=>{
     if(sit===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     if(sit!==SIT.EM_SEP){
-      try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"}); }
-      catch(e){ return res.status(502).json({erro:"Não consegui mudar pra Em separação: "+e.message}); }
+      { const r=await mudarSituacaoPedido(id, SIT.EM_SEP); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar pra Em separação: "+(r.erro||"erro")}); }
     }
     registrarNaFilaSeparacao(id,tipo,funcNome,ped.numero);
     addLog(String(id),"enviado_separacao",funcionarioId,funcNome,{tipo,numero:ped.numero});
@@ -1870,7 +1869,7 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
       await atualizarParcelasBling(id,parcelas.map(pc=>({valor:pc.valor,formaId:pc.formaId})));
     }
     // muda status no Bling
-    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+    { const r=await mudarSituacaoPedido(id, SIT.EM_SEP); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(r.erro||"erro")}); }
     addLog(id, pagamento?.valor?"enviado_separacao_pago":"separar_para_entregar", funcionarioId, funcionarioNome, pagamento?{valor:pagamento.valor,formaNome:pagamento.formaNome}:{});
     res.json({ok:true});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
@@ -1891,11 +1890,12 @@ app.post("/api/fluxo/:id/separacao-concluida",async(req,res)=>{
       salvarPend(pend);
       if(texto) try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({data:ped.data,contato:{id:ped.contato?.id},itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto})}); }catch(e){}
     }
-    await bling(`/pedidos/vendas/${id}/situacoes/${novoSit}`,{method:"PATCH"});
+    const rSit=await mudarSituacaoPedido(id, novoSit);
+    if(!rSit.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(rSit.erro||"erro")});
     addLog(id, temFalta?"separacao_com_falta":"separacao_completa", req.body?.funcionarioId, req.body?.funcionarioNome, temFalta?{faltas}:{});
     // libera o lock ao concluir separação
     liberarLock(id, req.body?.funcionarioId, req.body?.funcionarioNome, "separacao_concluida");
-    res.json({ok:true,situacao:novoSit,temFalta});
+    res.json({ok:true,situacao:novoSit,temFalta,jaEstava:!!rSit.jaEstava});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
@@ -1912,7 +1912,7 @@ app.post("/api/fluxo/:id/acrescimo",async(req,res)=>{
     if(itensRetirados?.length) addLog(id,"itens_retirados",funcionarioId,funcionarioNome,{itens:itensRetirados.map(i=>i.descricao)});
     addLog(id,"voltou_separacao",funcionarioId,funcionarioNome,{motivo:"acréscimo/retirada"});
     // volta pra em separação
-    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+    { const r=await mudarSituacaoPedido(id, SIT.EM_SEP); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(r.erro||"erro")}); }
     // atualiza pagamento: recalcula diferença
     const pags=lerPag();
     if(pags[id]){
@@ -1930,7 +1930,7 @@ app.post("/api/fluxo/:id/seguir-sem-pendencias",async(req,res)=>{
   try{
     const id=String(req.params.id); const {funcionarioId,funcionarioNome}=req.body||{};
     if(!SIT.SEPARADO) return res.status(400).json({erro:"Status SEPARADO não configurado"});
-    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.SEPARADO}`,{method:"PATCH"});
+    { const r=await mudarSituacaoPedido(id, SIT.SEPARADO); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(r.erro||"erro")}); }
     const pend=lerPend(); if(pend[id]){pend[id].status="resolvido";salvarPend(pend);}
     liberarLock(id,funcionarioId,funcionarioNome,"seguiu_sem_pendencias");
     addLog(id,"seguiu_sem_pendencias",funcionarioId,funcionarioNome,{});
@@ -1975,7 +1975,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
       return res.json({ok:true, aPrazo:true, situacao:SIT.PRAZO, pago:false,
         msg:"Conferido e registrado na observação do pedido. Ele continua como PRAZO até o cliente pagar." });
     }
-    await bling(`/pedidos/vendas/${id}/situacoes/${novoSit}`,{method:"PATCH"});
+    { const r=await mudarSituacaoPedido(id, novoSit); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(r.erro||"erro")}); }
     liberarLock(id,funcionarioId,funcionarioNome,"conferido");
     addLog(id,`conferido_${tipoEntrega||"entrega"}`,funcionarioId,funcionarioNome,{pago,valorPago:pag?.valorPago||0,tipoEntrega,novoSit,ondeFoiPago:noCaixa.ondeFoiPago||null});
     res.json({ok:true,situacao:novoSit,pago,valorPago:pag?.valorPago||0,valorPedido:pag?.valorPedido||0,tipoEntrega});
@@ -2104,7 +2104,7 @@ app.post("/api/fluxo/:id/confirmar-entrega",async(req,res)=>{
       const resObs=await acrescentarObservacaoBling(id,nota);
       if(!resObs.ok) avisoObsBling=`⚠️ Entrega confirmada, mas não foi possível gravar a observação no Bling: ${detalheErroBling(resObs)}.`;
     }
-    await bling(`/pedidos/vendas/${id}/situacoes/${SIT.ATENDIDO}`,{method:"PATCH"});
+    { const r=await mudarSituacaoPedido(id, SIT.ATENDIDO); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(r.erro||"erro")}); }
     liberarLock(id,funcionarioId,funcionarioNome,"entrega_confirmada");
     addLog(id,"entrega_confirmada",funcionarioId,funcionarioNome,{});
     res.json({ok:true,avisoObsBling,avisoItensBling,avisoAgendamento});
@@ -5333,7 +5333,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       : (req.body.statusFinal==="separado" ? "separado" : "atendido");
     try{
       if(statusFinalVenda==="separacao"){
-        await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+        { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
         const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
         registrarNaFilaSeparacao(pedidoId,(req.body.tipoSeparacao==="entrega"?"entrega":"retirada"),fn,criado?.data?.numero||null);
         addLog(String(pedidoId),"enviado_separacao",funcionarioId,fn,{origem:"venda nova (caixa)",});
@@ -5797,7 +5797,7 @@ async function verificarRelancamento(id, alvo, ctx){
 }
 
 async function _restaurarSituacaoComRetry(id, alvo, itensParaEstoque){
-  const patch=(s)=>bling(`/pedidos/vendas/${id}/situacoes/${s}`,{method:"PATCH"});
+  const patch=async(sx)=>{ const r=await mudarSituacaoPedido(id, sx); if(!r.ok) throw new Error(r.erro||"falha"); };
   const caminho = alvo===SIT.ATENDIDO?[SIT.EM_SEP,SIT.SEPARADO,SIT.ATENDIDO] : alvo===SIT.SEPARADO?[SIT.EM_SEP,SIT.SEPARADO] : [alvo];
   for(const s of caminho.slice(0,-1)){ if(!s) continue; try{ await patch(s); }catch(e){} await sleep(350); }
   const final=caminho[caminho.length-1];
@@ -5819,7 +5819,7 @@ async function _restaurarSituacaoComRetry(id, alvo, itensParaEstoque){
 // retry pra estoque. opts.sitConhecida evita 1 GET; opts.itensParaEstoque permite repor.
 async function moverPedidoParaAtendido(pedidoId, opts={}){
   const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
-  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
+  const patch=async(sitId)=>{ const r=await mudarSituacaoPedido(pedidoId, sitId); if(!r.ok) throw new Error(r.erro||"falha"); };
   const caminho=[]; let reposto=[];
   let sitAtual=opts.sitConhecida?Number(opts.sitConhecida):await lerSit();
   if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"], reposto};
@@ -5855,7 +5855,7 @@ async function moverPedidoParaAtendido(pedidoId, opts={}){
 // Bling exigir, e conferindo se realmente mudou). Retorna {ok, situacaoFinal, caminho}.
 async function moverPedidoParaSeparado(pedidoId){
   const lerSit=async()=>{ try{ const d=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); return Number(d?.situacao?.id||0); }catch(e){ return 0; } };
-  const patch=async(sitId)=>{ await bling(`/pedidos/vendas/${pedidoId}/situacoes/${sitId}`,{method:"PATCH"}); };
+  const patch=async(sitId)=>{ const r=await mudarSituacaoPedido(pedidoId, sitId); if(!r.ok) throw new Error(r.erro||"falha"); };
   const caminho=[];
   let sitAtual=await lerSit();
   if(sitAtual===SIT.SEPARADO) return {ok:true, situacaoFinal:SIT.SEPARADO, caminho:["já estava separado"]};
@@ -6034,7 +6034,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       const rMov=statusFinal==="separacao"
         ? await (async()=>{
             try{
-              await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+              { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
               registrarNaFilaSeparacao(pedidoId, (req.body.tipoSeparacao==="entrega"?"entrega":"retirada"), funcNome, ped.numero);
               addLog(String(pedidoId),"enviado_separacao",funcionarioId,funcNome,{origem:"caixa atacado (pago)",numero:ped.numero});
               return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
@@ -8102,8 +8102,7 @@ app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
         ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
       })});
     }catch(e){}
-    try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.PRAZO}`,{method:"PATCH"}); }
-    catch(e){ return res.status(502).json({erro:"Não consegui mudar o pedido pra PRAZO no Bling: "+e.message}); }
+    { const r=await mudarSituacaoPedido(id, SIT.PRAZO); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar o pedido pra PRAZO no Bling: "+(r.erro||"erro")}); }
     const reg=lerVendasPrazo();
     reg[String(id)]={ em:agora, venceEm, dias:prazoDias, autorizadoPor:auth.funcionario.nome, operador:funcNome,
       total:Number(ped.total)||0, cliente:ped.contato?.nome||"", numero:ped.numero, observacao:observacao||"", pago:false };
@@ -8556,8 +8555,7 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     const de=Number(ped.situacao?.id||0);
     if(de===alvo) return res.json({ok:true, jaEstava:true, situacao:nomeSituacao(alvo)});
-    try{ await bling(`/pedidos/vendas/${id}/situacoes/${alvo}`,{method:"PATCH"}); }
-    catch(e){ return res.status(502).json({erro:"O Bling recusou a mudança: "+e.message}); }
+    { const r=await mudarSituacaoPedido(id, alvo); if(!r.ok) return res.status(502).json({erro:"O Bling recusou a mudança: "+(r.erro||"erro")}); }
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero,autorizadoPor:auth.funcionario.nome});
     // mantém a fila da mesa coerente
@@ -10490,6 +10488,25 @@ async function situacaoAtualBling(pedidoBlingId){
 // nome amigável de uma situação, pelos ids que o nosso fluxo usa
 
 
+
+// Muda a situação do pedido tratando o caso "já está nessa situação": o Bling
+// devolve 400 ("A venda possui a mesma situação"), que NÃO é erro — o pedido já
+// está onde queremos. Antes isso quebrava a conclusão da separação com um alerta.
+async function mudarSituacaoPedido(id, novaSit){
+  try{
+    await bling(`/pedidos/vendas/${id}/situacoes/${novaSit}`,{method:"PATCH"});
+    return {ok:true, mudou:true};
+  }catch(e){
+    const txt=((e.message||"")+" "+JSON.stringify(e.body||{})).toLowerCase();
+    if(txt.includes("mesma situa")||txt.includes("same situation")) return {ok:true, mudou:false, jaEstava:true};
+    // confere no pedido: se já está na situação desejada, também é sucesso
+    try{
+      const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+      if(Number(d?.situacao?.id)===Number(novaSit)) return {ok:true, mudou:false, jaEstava:true};
+    }catch(e2){}
+    return {ok:false, erro:e.message, status:e.status, body:e.body};
+  }
+}
 
 function nomeSituacao(id){
   const n=Number(id);

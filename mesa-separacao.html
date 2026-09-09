@@ -277,6 +277,7 @@ async function concluir(funcId){
       body:JSON.stringify({faltas,funcionarioId:funcId,funcionarioNome:f?f.nome:""})});
     const j=await r.json();
     if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
+    // se o pedido já estava na situação, o Bling recusa mas está tudo certo — segue
     if(m._hb) clearInterval(m._hb);
     fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
     delete MESAS[funcId];
