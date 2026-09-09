@@ -10199,18 +10199,26 @@ async function situacaoAtualBling(pedidoBlingId){
 let _situacoesBling={}, _situacoesBlingEm=0;
 async function carregarSituacoesBling(forcar){
   if(!forcar && Object.keys(_situacoesBling).length && (Date.now()-_situacoesBlingEm)<6*3600*1000) return _situacoesBling;
-  for(const path of ["/situacoes/modulos/98310","/situacoes/modulos","/situacoes"]){
+  // O Bling expõe as situações POR MÓDULO: primeiro descobre o id do módulo de
+  // Vendas (98310 na conta atual, mas busca em vez de fixar) e depois lista as dele.
+  let idModuloVendas=98310;
+  try{
+    const rm=await bling("/situacoes/modulos");
+    const mods=rm?.data||[];
+    const venda=mods.find(m=>/venda/i.test(m?.nome||"")&&!/compra/i.test(m?.nome||""));
+    if(venda?.id) idModuloVendas=venda.id;
+  }catch(e){}
+  const achou={};
+  for(const path of [`/situacoes/modulos/${idModuloVendas}`, `/situacoes/modulos/${idModuloVendas}/situacoes`]){
     try{
       const r=await bling(path);
-      const arr=r?.data||[];
-      if(Array.isArray(arr)&&arr.length){
-        const achou={};
-        arr.forEach(x=>{ if(x?.id&&(x.nome||x.descricao)) achou[String(x.id)]=x.nome||x.descricao; });
-        if(Object.keys(achou).length){ _situacoesBling={..._situacoesBling,...achou}; _situacoesBlingEm=Date.now(); break; }
-      }
+      const arr=Array.isArray(r?.data)?r.data:(Array.isArray(r?.data?.situacoes)?r.data.situacoes:[]);
+      arr.forEach(x=>{ if(x?.id&&(x.nome||x.descricao)) achou[String(x.id)]=x.nome||x.descricao; });
+      if(Object.keys(achou).length) break;
     }catch(e){}
     await sleep(150);
   }
+  if(Object.keys(achou).length){ _situacoesBling={..._situacoesBling,...achou}; _situacoesBlingEm=Date.now(); }
   return _situacoesBling;
 }
 carregarSituacoesBling().catch(()=>{});
@@ -10221,7 +10229,7 @@ app.get("/api/diag/situacoes",async(req,res)=>{
         AGUARDANDO:SIT.AGUARDANDO, EM_SEP:SIT.EM_SEP, SEP_PEND:SIT.SEP_PEND, SEPARADO:SIT.SEPARADO,
         CONF_ENTREGA:SIT.CONF_ENTREGA, EM_ROTA:SIT.EM_ROTA, ATENDIDO:SIT.ATENDIDO, CANCELADO:SIT.CANCELADO,
         EM_ABERTO:SIT.EM_ABERTO, EM_DIGITACAO:21 },
-      doBling:mapa,
+      doBling:mapa, qtdDoBling:Object.keys(mapa).length,
       procurado: req.query.id? (mapa[String(req.query.id)]||"não encontrado no Bling") : undefined });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
