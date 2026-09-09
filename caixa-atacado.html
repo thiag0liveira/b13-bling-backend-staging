@@ -1783,16 +1783,50 @@ async function finalizar(){
   await carregarPedidos();
   // abre um pedido específico automaticamente, se vier ?abrirPedido=NUMERO na URL
   // (usado por Propostas, pra mandar direto pra edição sem o usuário ter que buscar)
+  // (o try vazio de antes engolia qualquer erro, então quando algo falhava o pedido
+  // simplesmente não abria e ninguém sabia por quê — agora cada passo dá retorno)
   try{
     const p=new URLSearchParams(location.search);
     const num=p.get("abrirPedido");
     if(num){
-      history.replaceState(null,"",location.pathname); // limpa a URL pra não reabrir de novo num F5
-      const b=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(num)).then(r=>r.json());
-      if(b.achou) await abrirPedidoParaEdicao(b.id);
-      else alert("Pedido #"+num+" não encontrado no Bling.");
+      history.replaceState(null,"",location.pathname); // limpa a URL pra não reabrir num F5
+      if(!CAIXA.aberta){
+        alert("Abra o seu caixa primeiro.\n\nO pedido #"+num+" não pôde ser aberto porque não há caixa aberto pra você.");
+      } else {
+        const msg=document.getElementById("msgFinalizar");
+        if(msg) msg.innerHTML='<div class="muted">Abrindo o pedido #'+esc(num)+'…</div>';
+        setTimeout(function(){ const m2=document.getElementById("msgFinalizar"); if(m2&&/Abrindo o pedido/.test(m2.innerHTML)) m2.innerHTML=""; },6000);
+        let b=null;
+        try{ b=await fetch(BACKEND+"/api/caixa-atacado/buscar-pedido/"+encodeURIComponent(num)).then(r=>r.json()); }
+        catch(e){ alert("Não consegui consultar o pedido #"+num+": "+e.message); }
+        if(b&&b.achou){
+          if(b.cancelado){
+            alert("O pedido #"+num+" está CANCELADO no Bling e não pode ser aberto.");
+          } else if(b.atendido){
+            // já finalizado/pago: abrir significa EDITAR pagamento — pede autorização,
+            // igual ao fluxo normal de reabertura (antes só não abria, sem explicação)
+            pedirQrAcao(`✏️ Reabrir pedido #${esc(num)}`,
+              `Este pedido está como <b>${esc(b.situacaoNome||"finalizado")}</b>. Pra reabrir e alterar itens ou pagamento, leia o QR de autorização (gerente, financeiro ou admin).`,
+              async (tokenQr, campo, erroEl)=>{
+                try{
+                  const a=await fetch(BACKEND+"/api/atacado/pedido/"+b.id+"/autorizar-edicao",{method:"POST",
+                    headers:{"Content-Type":"application/json"},body:JSON.stringify({token:tokenQr})}).then(r=>r.json());
+                  if(a.erro) throw new Error(a.erro);
+                  AUTORIZADO_POR=a.autorizadoPor||"";
+                  fecharModais();
+                  await abrirPedidoParaEdicao(b.id);
+                }catch(e){ if(campo) campo.value=""; if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+              });
+          } else {
+            await abrirPedidoParaEdicao(b.id);
+            if(!PEDIDO_ATUAL) alert("O pedido #"+num+" foi encontrado, mas não abriu. Tente pela lista à esquerda.");
+          }
+        } else if(b){
+          alert("Pedido #"+num+" não encontrado no Bling"+(b.erro?" ("+b.erro+")":"")+".");
+        }
+      }
     }
-  }catch(e){}
+  }catch(e){ alert("Erro ao abrir o pedido automaticamente: "+e.message); }
 })();
 </script>
 </body>
