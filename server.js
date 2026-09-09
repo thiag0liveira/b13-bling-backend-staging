@@ -5269,8 +5269,21 @@ app.post("/api/pdv/venda", async(req,res)=>{
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
     // move pro status final correto. Regra: venda nova no VAREJO -> Atendido;
     // venda nova no atacado (ou statusFinal 'separado') -> Separado. Default Atendido.
-    const statusFinalVenda = req.body.statusFinal==="separado" ? "separado" : "atendido";
-    try{ await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
+    // "separacao" = o caixa mandou o pedido pra separação (Em separação + fila da Mesa).
+    // BUG corrigido: esse destino não era tratado aqui, então venda NOVA criada com
+    // "Mandar pra separação" caía no default e ia direto pra ATENDIDO.
+    const statusFinalVenda = req.body.statusFinal==="separacao" ? "separacao"
+      : (req.body.statusFinal==="separado" ? "separado" : "atendido");
+    try{
+      if(statusFinalVenda==="separacao"){
+        await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.EM_SEP}`,{method:"PATCH"});
+        const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
+        registrarNaFilaSeparacao(pedidoId,(req.body.tipoSeparacao==="entrega"?"entrega":"retirada"),fn,criado?.data?.numero||null);
+        addLog(String(pedidoId),"enviado_separacao",funcionarioId,fn,{origem:"venda nova (caixa)",});
+      } else {
+        await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda);
+      }
+    }
     catch(e){ console.error("Falha ao mover pedido pra "+statusFinalVenda+" (venda ja foi criada, id="+pedidoId+"):",e.message); }
     // número do pedido: usa o que o Bling devolveu na criação (se não vier, é buscado
     // em segundo plano depois de responder — não trava a finalização)
