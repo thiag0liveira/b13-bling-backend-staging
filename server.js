@@ -5395,7 +5395,16 @@ app.post("/api/pdv/venda", async(req,res)=>{
       ...(req.body.observacao&&String(req.body.observacao).trim()?{observacoes:String(req.body.observacao).trim()}:{}),
       ...(Number(req.body.taxaCredito)>0?{outrasDespesas:+Number(req.body.taxaCredito).toFixed(2)}:{}),
       ...(Number(req.body.freteBase)>0?{transporte:{frete:+Number(req.body.freteBase).toFixed(2),fretePorConta:0}}:{}),
-      parcelas: pagamentos.map(p=>({valor:+Number(p.valor).toFixed(2),dataVencimento:dataHojeBR,formaPagamento:{id:Number(p.formaId)}})),
+      // desconta o TROCO da parcela em dinheiro: o Bling exige que a soma das
+      // parcelas seja exatamente o total da venda (mesmo motivo do caixa atacado)
+      parcelas: (function(){
+        let t=Number(req.body.troco)||0;
+        return pagamentos.map(p=>{
+          let v=Number(p.valor)||0;
+          if(t>0.0049 && /dinheiro/i.test(p.formaNome||"")){ const d=Math.min(v,t); v=+(v-d).toFixed(2); t=+(t-d).toFixed(2); }
+          return {valor:+v.toFixed(2), dataVencimento:dataHojeBR, formaPagamento:{id:Number(p.formaId)}};
+        }).filter(p=>p.valor>0);
+      })(),
     };
 
     let criado;
@@ -6028,7 +6037,21 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     try{ estoqueReposto=await garantirEstoqueParaItens(itensEfetivos); }catch(e){ console.error("garantirEstoque:",e.message); }
 
     // 4) parcelas, despesas e observação
-    const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0).map(p=>({formaId:Number(p.formaId),valor:+Number(p.valor).toFixed(2)}));
+    // PARCELAS PRO BLING: o Bling exige que a soma das parcelas seja EXATAMENTE o
+    // total da venda. Quando há TROCO, o cliente entrega mais do que o pedido vale
+    // (ex.: paga 2.670 numa venda de 2.669,64 e leva 0,36 de volta) — mandar o valor
+    // entregue fazia o Bling recusar com "o somatório das parcelas difere do total".
+    // Então o troco é descontado da parcela em dinheiro.
+    let _trocoPend=Number(troco)||0;
+    const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0).map(p=>{
+      let v=Number(p.valor)||0;
+      if(_trocoPend>0.0049 && /dinheiro/i.test(p.formaNome||"")){
+        const desc=Math.min(v,_trocoPend);
+        v=+(v-desc).toFixed(2);
+        _trocoPend=+(_trocoPend-desc).toFixed(2);
+      }
+      return {formaId:Number(p.formaId), valor:+v.toFixed(2)};
+    }).filter(p=>p.valor>0);
     const taxaAdd=Number(taxaCredito||0);
     const despesasTotal=+(Number(outrasDespesasBase||0)+taxaAdd).toFixed(2);
     const outrasDespesasFinal = taxaAdd>0 ? despesasTotal : (ped.outrasDespesas!=null?Number(ped.outrasDespesas):null);
