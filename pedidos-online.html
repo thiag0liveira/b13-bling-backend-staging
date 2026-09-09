@@ -236,7 +236,7 @@ function cardPedido(p){
       '<button class="btn btn-wa" style="flex:1;margin:0;font-size:12px" onclick="enviarSeparacao('+p.id+',\'retirada\')">📦 Separar p/ RETIRAR</button>'+
       '<button class="btn" style="flex:1;margin:0;font-size:12px;background:#29ABE2;color:#000" onclick="enviarSeparacao('+p.id+',\'entrega\')">🛵 Separar p/ ENTREGA</button>'+
     '</div>':'')+
-    '<button class="btn '+(p.ok?"btn-okOff":"btn-ok")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ Marcar como OK")+'</button>'+
+    '<button class="btn '+(p.ok?"btn-okOff":"btn-ok")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ OK")+'</button>'+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
