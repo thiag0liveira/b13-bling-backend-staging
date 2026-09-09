@@ -16,6 +16,14 @@
   .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px}
   .card.novo{border-color:#3ce88a;box-shadow:0 0 0 1px rgba(60,232,138,.3)}
   .card.aguard{border-color:#ffe600;box-shadow:0 0 0 1px rgba(255,230,0,.25)}
+  /* pedido com PENDÊNCIA: pisca alternando vermelho e laranja pra não passar batido */
+  .card.pend{animation:piscaPend 1.1s infinite}
+  @keyframes piscaPend{
+    0%,49%{background:#3a0010;border-color:#ff3b3b;box-shadow:0 0 14px rgba(255,59,59,.5)}
+    50%,100%{background:#3a2410;border-color:#ff9c3b;box-shadow:0 0 14px rgba(255,156,59,.5)}
+  }
+  .selPend{background:#ff3b3b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 8px;animation:piscaTxt 1.1s infinite}
+  @keyframes piscaTxt{0%,49%{background:#ff3b3b}50%,100%{background:#ff9c3b;color:#000}}
   .modal .it{display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:6px 0}
   .modal .it input{width:70px;text-align:right;padding:5px}
   .rm{background:none;border:none;color:#ff8090;cursor:pointer;font-size:15px}
@@ -70,6 +78,8 @@ function dataHora(ms){
 }
 
 let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=7, VISTO_ATE=0, SIT_CARREGANDO=false;
+let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[];
+function ehPendencia(p){ return /pend[êe]ncia/i.test(String(p.situacao||"")); }
 
 async function carregar(silencioso){
   if(!silencioso){ CARREGANDO=true; render(); }
@@ -93,15 +103,20 @@ function ehAtendido(p){ return Number(p.situacaoId)===ATENDIDO; }
 // pedido já concluído (Atendido) ou cancelado não precisa de ação — fica escondido
 // por padrão. A aba "Todos os status" mostra tudo.
 function ehEmAndamento(p){ return !p.cancelado && !ehAtendido(p); }
+function ordenar(lista){
+  // pedido com PENDÊNCIA vai pro topo — é o que trava a entrega e precisa de ação
+  return lista.slice().sort((a,b)=>(ehPendencia(b)?1:0)-(ehPendencia(a)?1:0));
+}
 function visiveis(){
-  if(FILTRO==="todos") return PEDIDOS; // única aba que mostra Atendidos e Cancelados
-  if(FILTRO==="entrega") return PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p));
-  if(FILTRO==="retirada") return PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p));
-  if(FILTRO==="online") return PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p));
-  if(FILTRO==="atacado") return PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p));
-  if(FILTRO==="andamento") return PEDIDOS.filter(ehEmAndamento);
+  if(BUSCA_RES) return BUSCA_RES;      // resultado da busca tem prioridade
+  if(FILTRO==="todos") return ordenar(PEDIDOS); // única aba que mostra Atendidos e Cancelados
+  if(FILTRO==="entrega") return ordenar(PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p)));
+  if(FILTRO==="retirada") return ordenar(PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p)));
+  if(FILTRO==="online") return ordenar(PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p)));
+  if(FILTRO==="atacado") return ordenar(PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p)));
+  if(FILTRO==="andamento") return ordenar(PEDIDOS.filter(ehEmAndamento));
   // padrão: aguardando separação (é o que precisa de ação)
-  return PEDIDOS.filter(p=>ehAguardando(p));
+  return ordenar(PEDIDOS.filter(p=>ehAguardando(p)||ehPendencia(p)));
 }
 function cardPedido(p){
   const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
@@ -120,8 +135,10 @@ function cardPedido(p){
   })();
   const ehOnline=(p.origem==="totem"||p.origem==="site");
   const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 <b style=\"color:#cfc9f5\">"+esc(p.vendedor||"Venda Atacado")+"</b>");
-  const estiloCard=(corStatus?'background:'+corStatus.bg+';border-color:'+corStatus.bd+';':'')+(concluido?'opacity:.8;':'');
-  return '<div class="card'+(ehNovo?' novo':'')+'"'+(estiloCard?' style="'+estiloCard+'"':'')+'>'+
+  const pend=ehPendencia(p);
+  const estiloCard=pend?'':((corStatus?'background:'+corStatus.bg+';border-color:'+corStatus.bd+';':'')+(concluido?'opacity:.8;':''));
+  return '<div class="card'+(ehNovo?' novo':'')+(pend?' pend':'')+'"'+(estiloCard?' style="'+estiloCard+'"':'')+'>'+
+    (pend?'<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>':'')+
     '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">'+
       '<span class="muted" style="font-size:11px">'+org+'</span>'+
       '<span class="muted" style="font-size:11px">🕐 '+esc(dataHora(p.criadoEm))+'</span></div>'+
@@ -145,6 +162,7 @@ function cardPedido(p){
       '<button class="btn" style="flex:1;margin:0;font-size:12px;background:#29ABE2;color:#000" onclick="enviarSeparacao('+p.id+',\'entrega\')">🛵 Separar p/ ENTREGA</button>'+
     '</div>':'')+
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
+    '<button class="btn btn-ghost" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status</button>'+
     (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
     '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
     (!p.cancelado?(p.tipo==="entrega"
@@ -166,6 +184,9 @@ function render(){
   app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>'+
       '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
       [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
+      '<input id="buscaPed" placeholder="🔎 nº do pedido" value="'+esc(window._buscaTxt||"")+'" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">'+
+      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">'+(BUSCANDO?"…":"Buscar")+'</button>'+
+      (BUSCA_RES?'<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>':'')+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
       '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>'+
     '<div class="wrap">'+
@@ -184,6 +205,7 @@ function render(){
         '<span class="aba '+(FILTRO==="andamento"?"on":"")+'" onclick="FILTRO=\'andamento\';render()">📋 Em andamento ('+nAnd+')</span>'+
         '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status ('+PEDIDOS.length+')'+(nConc?' <span style="opacity:.7">· '+nConc+' concluídos</span>':'')+'</span>'+
       '</div>'+
+      (BUSCA_RES?'<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "'+esc(window._buscaTxt||"")+'" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>':'')+
       (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>'
         :(lista.length?'<div class="grid">'+lista.map(cardPedido).join("")+'</div>'
           :'<div class="card"><div class="muted">Nenhum pedido do totem/site nesse período.</div></div>'))+
@@ -556,6 +578,55 @@ async function salvarTipoEntrega(id){
     if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
     if(btn){ btn.disabled=false; btn.textContent="Salvar no Bling"; }
   }
+}
+
+/* ===== BUSCA DE PEDIDO (acha até o que saiu da tela) ===== */
+async function buscarPedido(){
+  const el=document.getElementById("buscaPed");
+  const termo=(el?el.value:"").trim();
+  window._buscaTxt=termo;
+  if(!termo){ limparBusca(); return; }
+  // se já está na lista carregada, mostra na hora
+  const local=PEDIDOS.filter(p=>String(p.numero)===termo||String(p.id)===termo);
+  if(local.length){ BUSCA_RES=local; render(); return; }
+  BUSCANDO=true; render();
+  try{
+    const j=await fetch(B+"/api/pedidos-online/buscar/"+encodeURIComponent(termo)).then(r=>r.json());
+    if(j.naoEncontrado||!(j.data||[]).length){ BUSCA_RES=[]; alert("Pedido "+termo+" não encontrado no Bling."); }
+    else BUSCA_RES=j.data;
+  }catch(e){ alert("Erro na busca: "+e.message); }
+  BUSCANDO=false; render();
+}
+function limparBusca(){ BUSCA_RES=null; window._buscaTxt=""; render(); }
+
+/* ===== MOVER O STATUS DO PEDIDO ===== */
+async function abrirMoverStatus(id){
+  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);}); if(!p) return;
+  if(!SITUACOES.length){
+    try{ const j=await fetch(B+"/api/pedidos-online/situacoes-disponiveis").then(r=>r.json()); SITUACOES=j.data||[]; }catch(e){}
+  }
+  const ops=SITUACOES.map(function(sx){
+    const atual=Number(sx.id)===Number(p.situacaoId);
+    return '<button class="btn '+(atual?"btn-ghost":"btn-mag")+'" style="width:100%;margin-bottom:6px;text-align:left" '+(atual?"disabled":"")+
+      ' onclick="moverStatus('+id+','+sx.id+')">'+esc(sx.nome)+(atual?' <span style="font-size:11px;opacity:.8">(atual)</span>':'')+'</button>';
+  }).join("");
+  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
+    '<h3>🔀 Mover status — pedido '+esc(p.numero)+'</h3>'+
+    '<div class="muted" style="margin:6px 0 10px">'+esc(p.cliente)+' · agora em <b style="color:#fff">'+esc(p.situacao||"—")+'</b></div>'+
+    '<div style="max-height:52vh;overflow:auto">'+(ops||'<div class="muted">Não consegui carregar as situações.</div>')+'</div>'+
+    '<div id="errMv"></div>'+
+    '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Cancelar</button></div></div>';
+}
+async function moverStatus(id,situacaoId){
+  const err=document.getElementById("errMv");
+  if(err) err.innerHTML='<div class="muted" style="font-size:12px;margin-top:8px">Alterando no Bling…</div>';
+  try{
+    const j=await fetch(B+"/api/pedidos-online/"+id+"/situacao",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({situacaoId,funcionarioId:S.id})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    fechar();
+    if(BUSCA_RES) buscarPedido(); else carregar();
+  }catch(e){ if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>'; }
 }
 
 render();

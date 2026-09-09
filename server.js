@@ -8407,6 +8407,66 @@ app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
 // onde cada pedido está agendado (dia + turno), pra tela mostrar
 // histórico do que foi RETIRADO/alterado num pedido — usado na mensagem de WhatsApp
 // pro cliente saber o que saiu (ex.: produto que faltou no estoque)
+// BUSCA um pedido pelo número (ou id) direto no Bling, no mesmo formato da lista —
+// pra achar pedido que saiu da tela (foi pra separação, atendido, etc.)
+app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
+  try{
+    const t=String(req.params.termo).trim();
+    if(!t) return res.json({data:[]});
+    let ped=null;
+    try{ ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data); }catch(e){}
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.json({data:[], naoEncontrado:true});
+    const props=lerPropostas();
+    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(ped.id))||null;
+    const ag=_turnosEntrega()[String(ped.id)]||null;
+    const sit=Number(ped.situacao?.id||0);
+    const obs=String(ped.observacoes||"");
+    const ehEntrega=(prop?.entrega?.tipo==="entrega")||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
+    res.json({ data:[{
+      id:ped.id, numero:ped.numero, criadoEm:prop?.criadoEm||null,
+      origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||await nomeVendedor(ped.vendedor?.id||null),
+      cliente:ped.contato?.nome||"—", telefone:prop?.cliente?.telefone||"",
+      total:Number(ped.total)||0, frete:Number(ped.transporte?.frete||0),
+      tipo: ehEntrega?"entrega":"retirada",
+      endereco:prop?.entrega?.endereco||"",
+      itens:(ped.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+      situacaoId:sit, situacao:nomeSituacao(sit), cancelado:sit===SIT.CANCELADO,
+      agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+      buscado:true }] });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// MOVE o pedido pra outra situação (o operador escolhe na tela)
+app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const {situacaoId,funcionarioId}=req.body||{};
+    const alvo=Number(situacaoId);
+    if(!alvo) return res.status(400).json({erro:"informe a situação"});
+    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const de=Number(ped.situacao?.id||0);
+    if(de===alvo) return res.json({ok:true, jaEstava:true, situacao:nomeSituacao(alvo)});
+    try{ await bling(`/pedidos/vendas/${id}/situacoes/${alvo}`,{method:"PATCH"}); }
+    catch(e){ return res.status(502).json({erro:"O Bling recusou a mudança: "+e.message}); }
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero});
+    // mantém a fila da mesa coerente
+    if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,"retirada",funcNome,ped.numero);
+    if(alvo===SIT.ATENDIDO||alvo===SIT.CANCELADO){ try{ const fq=lerFilaSep(); delete fq[String(id)]; salvarJSON(FILA_SEP_FILE,fq); }catch(e){} }
+    _sitOnline[String(id)]={situacaoId:alvo, situacao:nomeSituacao(alvo), em:Date.now()};
+    res.json({ok:true, de:nomeSituacao(de), para:nomeSituacao(alvo), numero:ped.numero});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+// situações que o operador pode escolher na tela
+app.get("/api/pedidos-online/situacoes-disponiveis",async(req,res)=>{
+  try{
+    const mapa=await carregarSituacoesBling();
+    const ordem=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,SIT.CANCELADO];
+    res.json({ data: ordem.filter(Boolean).map(id=>({id, nome:mapa[String(id)]||nomeSituacao(id)})) });
+  }catch(e){ res.json({data:[]}); }
+});
+
 app.get("/api/pedidos-online/:blingId/alteracoes",(req,res)=>{
   try{
     const id=String(req.params.blingId);
