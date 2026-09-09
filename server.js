@@ -6781,7 +6781,7 @@ function nomeSituacaoFechamento(id){
     [SIT.SEPARADO]:"Separado", [SIT.EM_ROTA]:"Em Rota", [SIT.ATENDIDO]:"Atendido",
     21:"Em digitação", 6:"Em aberto", 12:"Cancelado",
   };
-  return nomes[id]||`Situação ${id}`;
+  return nomes[id]||_situacoesBling[String(id)]||`Situação ${id}`;
 }
 
 // Mesma lógica do GET /api/pagamentos/:id, mas reaproveitando um pedido (ped) e
@@ -9443,7 +9443,7 @@ function nomeSituacaoStatus(id){
     12:"Cancelado",
     6:"Em aberto",
   };
-  return nomes[id]||null;
+  return nomes[id]||_situacoesBling[String(id)]||null;
 }
 
 function etapaIndex(sit){
@@ -10194,6 +10194,38 @@ async function situacaoAtualBling(pedidoBlingId){
 }
 
 // nome amigável de uma situação, pelos ids que o nosso fluxo usa
+// Nomes das situações vêm do Bling (módulo Pedido de Venda) e ficam em cache. Sem
+// isso, situação criada por você no Bling aparecia como "Situação 806183" nas telas.
+let _situacoesBling={}, _situacoesBlingEm=0;
+async function carregarSituacoesBling(forcar){
+  if(!forcar && Object.keys(_situacoesBling).length && (Date.now()-_situacoesBlingEm)<6*3600*1000) return _situacoesBling;
+  for(const path of ["/situacoes/modulos/98310","/situacoes/modulos","/situacoes"]){
+    try{
+      const r=await bling(path);
+      const arr=r?.data||[];
+      if(Array.isArray(arr)&&arr.length){
+        const achou={};
+        arr.forEach(x=>{ if(x?.id&&(x.nome||x.descricao)) achou[String(x.id)]=x.nome||x.descricao; });
+        if(Object.keys(achou).length){ _situacoesBling={..._situacoesBling,...achou}; _situacoesBlingEm=Date.now(); break; }
+      }
+    }catch(e){}
+    await sleep(150);
+  }
+  return _situacoesBling;
+}
+carregarSituacoesBling().catch(()=>{});
+app.get("/api/diag/situacoes",async(req,res)=>{
+  try{
+    const mapa=await carregarSituacoesBling(req.query.forcar==="1");
+    res.json({ conhecidasNoSistema:{
+        AGUARDANDO:SIT.AGUARDANDO, EM_SEP:SIT.EM_SEP, SEP_PEND:SIT.SEP_PEND, SEPARADO:SIT.SEPARADO,
+        CONF_ENTREGA:SIT.CONF_ENTREGA, EM_ROTA:SIT.EM_ROTA, ATENDIDO:SIT.ATENDIDO, CANCELADO:SIT.CANCELADO,
+        EM_ABERTO:SIT.EM_ABERTO, EM_DIGITACAO:21 },
+      doBling:mapa,
+      procurado: req.query.id? (mapa[String(req.query.id)]||"não encontrado no Bling") : undefined });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 function nomeSituacao(id){
   const n=Number(id);
   const mapa={
@@ -10209,7 +10241,7 @@ function nomeSituacao(id){
     [SIT.ATENDIDO]:"Atendido",
     [Number(process.env.SIT_CANCELADO||12)]:"Cancelado",
   };
-  return mapa[n]||("Situação "+n);
+  return mapa[n]||_situacoesBling[String(n)]||("Situação "+n);
 }
 
 // situação atual (id + nome) de um pedido do Bling — usado na aba Pedidos pra mostrar o status
