@@ -241,7 +241,9 @@ function cardPedido(p){
     '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
     (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
     (p.buscado?'<button class="btn btn-ok" onclick="adotarPedido('+p.id+',\''+esc(String(p.numero))+'\')">📥 Trazer pra lista</button>':'')+
-    (aguard?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">✏️ Editar</button>':'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
+    ((aguard||pend)?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">'+(pend?"🛠️ Resolver pendência (editar itens)":"✏️ Editar")+'</button>'
+      :'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
+    (pend?'<button class="btn btn-ok" onclick="resolverPendencia('+p.id+')">✅ Pendência resolvida (mandar p/ Separado)</button>':'')+
     '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
     (!p.cancelado?(p.tipo==="entrega"
       ? '<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>'
@@ -324,13 +326,17 @@ function render(){
           // Pedido que já entrou no fluxo (em separação, separado, em rota) NÃO é novo:
           // vai pra faixa "Em andamento". Antes tudo caía em "Novos", inclusive o que
           // já estava sendo separado.
+          // NOVO = pedido criado no sistema que ainda NÃO entrou no fluxo. Inclui
+          // "Aguardando separação", mas também "Em aberto"/"Em digitação" — situações
+          // em que o pedido pode ficar quando a mudança inicial falha (Bling lento).
+          // Assim nenhum pedido criado por nós fica invisível na tela.
           {k:"novos", nome:"🆕 Novos pedidos", cor:"#ffe600",
            itens:pegar(function(p){
              if(p.ok||p.cancelado||ehAtendido(p)||p.agendamento) return false;
-             if(/prazo/i.test(String(p.situacao||""))) return false;
              const st=String(p.situacao||"");
-             // sem situação ainda (carregando) também conta como novo
-             return ehAguardando(p) || !st || st==="carregando…" || /aguardando/i.test(st);
+             if(/prazo/i.test(st)) return false;
+             if(/separa|conferid|rota/i.test(st)) return false;  // já entrou no fluxo
+             return true;                                        // o resto é novo
            })},
           {k:"andamento", nome:"🔄 Em andamento (separação/rota)", cor:"#7fd4ff",
            itens:pegar(function(p){
@@ -395,6 +401,18 @@ async function adotarPedido(id,numero){
     if(j.jaEstava) alert("Esse pedido já estava no sistema.");
     else alert("✅ Pedido "+j.numero+" trazido pra lista.\n"+(j.cliente||"")+" · "+brl(j.total)+"\nSituação: "+(j.situacao||"—"));
     limparBusca(); carregar();
+  }catch(e){ alert("Erro: "+e.message); }
+}
+// depois de ajustar os itens/valor, o pedido sai de "Separado c/ Pendências" e vai
+// pra "Separado", liberando a conferência
+async function resolverPendencia(id){
+  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
+  if(!confirm("Marcar a pendência do pedido "+(p?p.numero:id)+" como RESOLVIDA?\n\nO pedido vai pra SEPARADO e fica liberado pra conferência.\n\nSe ainda falta ajustar item ou valor, faça isso antes em 'Resolver pendência (editar itens)'.")) return;
+  try{
+    const j=await fetch(B+"/api/fluxo/"+id+"/seguir-sem-pendencias",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:S.id,funcionarioNome:S.nome})}).then(function(r){return r.json();});
+    if(j.erro) throw new Error(j.erro);
+    carregar();
   }catch(e){ alert("Erro: "+e.message); }
 }
 async function marcarOk(id){

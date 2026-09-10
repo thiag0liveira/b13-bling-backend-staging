@@ -4314,8 +4314,14 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }
     catch(e){ return res.status(502).json({erro:"Não foi possível ler o pedido no Bling: "+(e.message||"erro")+". Nada foi alterado."}); }
     if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
-    if(Number(ped.situacao?.id)!==SIT.AGUARDANDO){
-      return res.status(400).json({erro:"Este pedido já saiu de 'Aguardando separação'. Não é mais possível editar os itens por aqui."});
+    // PENDÊNCIA: pedido em "Separado c/ Pendências" PRECISA poder ser editado — é
+    // exatamente aí que se retira o item que faltou, ajusta quantidade ou corrige o
+    // valor. Antes só "Aguardando separação" era aceito, então a pendência ficava
+    // travada e a única saída era mexer direto no Bling.
+    const _sitEd=Number(ped.situacao?.id);
+    const _editaveis=[SIT.AGUARDANDO, SIT.SEP_PEND, SIT.EM_SEP, SIT.EM_ABERTO, 21];
+    if(!_editaveis.includes(_sitEd)){
+      return res.status(400).json({erro:`Este pedido está como "${nomeSituacao(_sitEd)}" e não pode ter os itens editados por aqui. Se já foi separado ou pago, use o caixa atacado (com autorização).`});
     }
     const itensAntes=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade}));
     const idsDepois=new Set(itens.map(i=>Number(i.produtoId)));
@@ -11073,8 +11079,22 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     if(pedidoId&&prop.vendedorId){
       try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){}
     }
-    // move pra "aguardando separação" (mesmo status do fluxo do totem)
-    try{ await new Promise(r=>setTimeout(r,350)); await bling(`/pedidos/vendas/${pedidoId}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){}
+    // move pra "aguardando separação" (mesmo status do fluxo do totem). Antes era UMA
+    // tentativa e o erro era engolido — se falhasse, o pedido ficava "Em aberto",
+    // fora do fluxo e sem aparecer como novo na tela de Pedidos.
+    {
+      let moveu=false;
+      for(let t=0;t<3&&!moveu;t++){
+        await new Promise(r=>setTimeout(r,350*(t+1)));
+        const rs=await mudarSituacaoPedido(pedidoId, SIT.AGUARDANDO);
+        moveu=rs.ok;
+      }
+      if(!moveu) registrarAviso({tipo:"pedido_sem_situacao_inicial",
+        titulo:`Pedido #${numero||pedidoId} ficou fora do fluxo (não foi pra Aguardando separação)`,
+        pedidoId:String(pedidoId), numero, origem:"Venda Atacado", operador:prop.funcionarioNome||"",
+        fingerprint:`sitini-${pedidoId}`,
+        oQueFazer:`O pedido foi criado mas não entrou em "Aguardando separação". Na tela de Pedidos, busque o número e use "🔀 Mover status".`});
+    }
     addLog(String(pedidoId),"pedido_criado_atacado",prop.funcionarioId,prop.funcionarioNome,{proposta:prop.id});
 
     // se o vendedor já marcou um dia desejado de entrega, agenda o pedido
