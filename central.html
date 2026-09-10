@@ -61,7 +61,13 @@ const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
 let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null, PRAZO=null;
-const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",pedido_incluido_no_caixa:"Incluído no caixa"};
+const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",itens_editados:"Itens editados",
+  pedido_incluido_no_caixa:"Incluído no caixa",
+  situacao_alterada:"🔀 Status alterado",venda_a_prazo:"🧾 Venda a prazo",pedido_online_cancelado:"🚫 Cancelado (Pedidos)",
+  tipo_entrega_alterado:"🛵 Entrega/Retirada",entrega_agendada:"📅 Entrega agendada",enviado_separacao:"📦 Enviado p/ separação",
+  pedido_adotado:"📥 Trazido pra lista",seguiu_sem_pendencias:"✅ Pendência resolvida",voltou_separacao:"↩️ Voltou p/ separação",
+  pagamento_editado_gestao:"Pagamento editado (gestão)",pagamento_resetado:"Pagamento resetado",estorno_registrado:"Estorno",
+  estoque_ajustado:"📦 Estoque ajustado",venda_cancelada_caixa:"Venda cancelada (caixa)",venda_cancelada_local_duplicado:"Cancelado só no caixa"};
 const lins=(arr,f)=>(arr&&arr.length)?arr.map(f).join(""):'<div class="muted">—</div>';
 const card=(titulo,corpo,extra)=>`<div class="card">${titulo?`<div class="h"><span>${titulo}</span>${extra||""}</div>`:""}${corpo}</div>`;
 
@@ -265,7 +271,7 @@ function render(){
 
         ${card("🏷️ Preço usado nos itens",lins(f.porModoPreco,m=>`<div class="lin"><span>${esc(m.modo)} <span class="muted">(${m.itens} itens · ${m.unidades} un)</span></span><b>${brl(m.valor)}</b></div>`)+`<div class="muted" style="margin-top:6px">bling = preço do Bling · atacado = tabela · fardo = preço de fardo · editado = alterado com QR</div>`)}
 
-        ${card("🔐 Autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
+        ${card("🔐 Ações e autorizações do dia",`<div class="big" style="font-size:20px">${D.qtdAutorizacoes||0}</div>`+lins(D.autorizacoes,a=>`<div class="lin"><span>${hora(a.em)} · <b>${esc(nEv[a.evento]||a.evento)}</b> #${esc(a.pedidoId)}${a.detalhe?` <span class="muted">${esc(a.detalhe)}</span>`:""}</span><span class="muted">${esc(a.por)}${a.autorizadoPor?" / aut. "+esc(a.autorizadoPor):""}</span></div>`))}
 
         ${(f.troco&&f.troco.qtd)?card("💸 Vendas com troco (saída de dinheiro)",`
           <div class="big" style="font-size:20px">${brl(f.troco.total)}</div>

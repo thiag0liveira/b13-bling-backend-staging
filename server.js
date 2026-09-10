@@ -8512,10 +8512,29 @@ app.get("/api/central/resumo",(req,res)=>{
 
     // ===== AUTORIZAÇÕES e ITENS RETIRADOS (logs do dia) =====
     const log=lerLog(); const autorizacoes=[]; const retirados={};
-    const evAut=new Set(["fechado_valor_menor","pagamento_editado_caixa","pedido_reaberto","venda_cancelada","venda_cancelada_gestao","itens_retirados","itens_acrescentados","itens_alterados_gestao","itens_alterados_caixa","pedido_incluido_no_caixa"]);
+    // Ações que precisam ficar visíveis na Central. Faltavam as feitas na tela de
+    // PEDIDOS e no fluxo novo (mover status, venda a prazo, cancelamento por lá,
+    // troca de entrega/retirada, envio pra separação, adoção de pedido...), que
+    // aconteciam sem aparecer em lugar nenhum do painel.
+    const evAut=new Set(["fechado_valor_menor","pagamento_editado_caixa","pedido_reaberto",
+      "venda_cancelada","venda_cancelada_gestao","venda_cancelada_caixa","venda_cancelada_local_duplicado",
+      "itens_retirados","itens_acrescentados","itens_alterados_gestao","itens_alterados_caixa","itens_editados",
+      "pedido_incluido_no_caixa",
+      // novos (tela de Pedidos / fluxo)
+      "situacao_alterada","venda_a_prazo","pedido_online_cancelado","tipo_entrega_alterado",
+      "entrega_agendada","enviado_separacao","pedido_adotado","seguiu_sem_pendencias","voltou_separacao",
+      "pagamento_editado_gestao","pagamento_resetado","estorno_registrado","estoque_ajustado"]);
     Object.entries(log||{}).forEach(([pid,evs])=>{ (Array.isArray(evs)?evs:[]).forEach(ev=>{
       const em=ev.em||ev.quando||0; if(!noDia(em)) return;
-      if(evAut.has(ev.evento)){ const d=ev.detalhes||{}; const det=d.faltou!=null?("faltou "+d.faltou):(Array.isArray(d.retirados)&&d.retirados.length?("retirou "+d.retirados.join(", ")+(d.acrescentados?.length?" · acrescentou "+d.acrescentados.join(", "):"")+(d.alterados?.length?" · alterou "+d.alterados.join(", "):"")):(Array.isArray(d.itens)?d.itens.join(", "):(d.de?(d.de+" → "+d.para):""))); autorizacoes.push({ pedidoId:pid, evento:ev.evento, em, por:ev.funcionarioNome||ev.funcionario||"—", autorizadoPor:d.autorizadoPor||"", detalhe:det }); }
+      if(evAut.has(ev.evento)){ const d=ev.detalhes||{};
+        const detNovo =
+          ev.evento==="situacao_alterada" ? `${d.de||"?"} → ${d.para||"?"}` :
+          ev.evento==="venda_a_prazo" ? `vence ${d.venceEm||"?"}${d.total?` · ${Number(d.total).toFixed(2)}`:""}` :
+          ev.evento==="tipo_entrega_alterado" ? `${d.tipo||""}${d.frete?` · frete ${Number(d.frete).toFixed(2)}`:""}` :
+          ev.evento==="entrega_agendada" ? `${d.data||""}${d.turno?" · "+d.turno:""}` :
+          ev.evento==="enviado_separacao" ? `${d.tipo||""}${d.origem?" · "+d.origem:""}` :
+          ev.evento==="estoque_ajustado" ? `${d.modo||""} · ${d.qtdProdutos||0} produto(s)` : null;
+        const det=detNovo!=null?detNovo:(d.faltou!=null?("faltou "+d.faltou):(Array.isArray(d.retirados)&&d.retirados.length?("retirou "+d.retirados.join(", ")+(d.acrescentados?.length?" · acrescentou "+d.acrescentados.join(", "):"")+(d.alterados?.length?" · alterou "+d.alterados.join(", "):"")):(Array.isArray(d.itens)?d.itens.join(", "):(d.de?(d.de+" → "+d.para):"")))); autorizacoes.push({ pedidoId:pid, evento:ev.evento, em, por:ev.funcionarioNome||ev.funcionario||"—", autorizadoPor:d.autorizadoPor||"", detalhe:det }); }
       if(ev.evento==="itens_retirados"){ (ev.detalhes?.itens||[]).forEach(n=>{ retirados[n]=(retirados[n]||0)+1; }); }
     }); });
     // itens retirados também pelas alterações de itens gravadas no movimento (de→para)
