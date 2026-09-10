@@ -303,6 +303,38 @@ function moverPedidoPara(carroOrigem,vixOrigem,pedidoId,carroDestino,vixDestino)
   render();
 }
 
+// manda o pedido pra separação direto da rota — ele entra na fila da Mesa/Painel
+// como ENTREGA (já que está numa rota)
+async function mandarSeparar(pedidoId,numero){
+  if(!confirm("Mandar o pedido "+numero+" pra separação?\n\nEle vai pra EM SEPARAÇÃO e entra na fila da Mesa como ENTREGA.")) return;
+  try{
+    const S2=(typeof b13GetSession==="function"?b13GetSession():null)||{};
+    const r=await fetch(B+"/api/mesa/enviar-separacao/"+pedidoId,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({tipo:"entrega",funcionarioId:S2.id})});
+    const j=await r.json();
+    if(j.erro) throw new Error(j.erro);
+    await carregarTudo();
+  }catch(e){ alert("Erro: "+e.message); }
+}
+// manda TODOS os pedidos de uma viagem pra separação de uma vez
+async function mandarSepararViagem(carroId,vix){
+  const v=S.atribuicoes[carroId]?.viagens?.[vix]; if(!v) return;
+  const peds=(v.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(p=>p&&p.podeMandarSeparar);
+  if(!peds.length){ alert("Todos os pedidos dessa viagem já estão em separação (ou adiante)."); return; }
+  if(!confirm("Mandar "+peds.length+" pedido(s) desta viagem pra separação?\n\n"+peds.map(p=>"#"+p.numero+" — "+p.clienteNome).join("\n"))) return;
+  const S2=(typeof b13GetSession==="function"?b13GetSession():null)||{};
+  let ok=0, falhas=[];
+  for(const p of peds){
+    try{
+      const r=await fetch(B+"/api/mesa/enviar-separacao/"+p.id,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({tipo:"entrega",funcionarioId:S2.id})});
+      const j=await r.json();
+      if(j.erro) falhas.push("#"+p.numero+": "+j.erro); else ok++;
+    }catch(e){ falhas.push("#"+p.numero+": "+e.message); }
+  }
+  alert(ok+" enviado(s) pra separação."+(falhas.length?"\n\nFalhas:\n"+falhas.join("\n"):""));
+  await carregarTudo();
+}
 async function sugerirCarrosParaSemCarro(){
   const pendentes=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
   if(!pendentes.length){ alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro."); return; }
@@ -874,9 +906,12 @@ function htmlStopItem(ped,ix,infoExtra,botoes){
       <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp?'▲':'▼'} ${ped.itens?.length||0} itens</span>
         ${ped.agendamento?.turno&&ped.agendamento.turno!=="qualquer"?`<span style="background:#29ABE2;color:#000;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:5px">${ped.agendamento.turno==="manha"?"MANHÃ":"TARDE"}</span>`:""}
         ${ped.agendamento?.obsEntrega?`<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>`:""}
-        ${ped.pagamento&&!ped.pagamento.pago?`<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>`:""}</div>
+        ${ped.pagamento&&!ped.pagamento.pago?`<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>`:""}
+        ${ped.jaEmSeparacao?`<span style="background:#0f2233;color:#7fd4ff;border:1px solid #29ABE2;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📦 ${esc(String(ped.situacao||"").toUpperCase())}</span>`:""}</div>
       ${infoExtra?`<div class="km">${infoExtra}</div>`:''}
-      <div onclick="event.stopPropagation()" style="display:flex;gap:4px">${botoes}</div>
+      <div onclick="event.stopPropagation()" style="display:flex;gap:4px">
+        ${ped.podeMandarSeparar?`<button class="iconbtn" style="background:#1f8f4e;color:#fff;font-size:11px;padding:3px 8px" onclick="mandarSeparar(${ped.id},'${esc(ped.numero)}')" title="Mandar pra separação">📦 Separar</button>`:""}
+        ${botoes}</div>
     </div>
     ${exp?`<div style="padding:6px 12px 10px 40px;border-top:1px solid var(--border)">
       <div class="muted" style="font-size:11px;margin-bottom:4px">💰 ${brl(ped.total)} · Frete ${brl(ped.frete)} · ⚖️ ${ped.pesoEstimadoKg}kg (estim.) · 📍 ${esc(ped.endereco||"—")}</div>
@@ -920,7 +955,8 @@ function htmlViagemBox(carro,vix,cap){
   const totalViagens=(S.atribuicoes[carro.id]?.viagens||[]).length;
   return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix+1} <span class="muted">(${ids.length} entrega${ids.length!==1?'s':''} · ${pesoViagem} kg)</span>${(()=>{
+      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix+1} <span class="muted">(${ids.length} entrega${ids.length!==1?'s':''} · ${pesoViagem} kg)</span>
+        ${ids.some(id=>pedidoPorId(id)?.podeMandarSeparar)?`<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;background:#1f8f4e" onclick="mandarSepararViagem('${carro.id}',${vix})">📦 Separar viagem inteira</button>`:""}${(()=>{
         const ts=[...new Set(ids.map(id=>pedidoPorId(id)?.agendamento?.turno).filter(t=>t==="manha"||t==="tarde"))];
         if(!ts.length) return '';
         const misto=ts.length>1;

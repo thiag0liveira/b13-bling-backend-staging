@@ -12155,7 +12155,11 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
           agendamento:(lerJSON(`${DATA_DIR}/turnos_entrega.json`,{})[String(det.id)]||null), // dia+turno que a vendedora escolheu
-          pagamento:_pagamentoDoPedido(det.id), // já foi recebido em algum caixa?
+          pagamento:_pagamentoDoPedido(det.id, det.numero), // já foi recebido em algum caixa?
+          situacaoId:Number(det.situacao?.id||0), situacao:nomeSituacao(Number(det.situacao?.id||0)),
+          // pode mandar pra separação? (ainda não entrou no fluxo de separação)
+          podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(Number(det.situacao?.id||0)),
+          jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND].includes(Number(det.situacao?.id||0)),
         });
       }catch(e){}
       if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling
