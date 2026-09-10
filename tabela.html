@@ -119,7 +119,7 @@
     <label class="sw"><input type="checkbox" id="editToggle" onchange="toggleEdit()"> Modo edição</label>
     <label class="sw"><input type="checkbox" id="bindToggle" onchange="toggleBind()"> Vínculo Bling</label>
     <button class="btn btn-out" id="btnEstoque" onclick="atualizarEstoque()">📦 Atualizar estoque</button>
-    <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)</button>
+    <button class="btn btn-mag" onclick="exportPNG()">📷 Imagem (PNG)<span id="syncTabela" style="font-size:12px;color:#9a95c9;margin-right:8px"></span></button>
     <button class="btn btn-grn" onclick="publicarTabelaVendedor()" style="background:#00aa66">🎯 Disponibilizar p/ vendedores</button>
     <button class="btn btn-mag" onclick="exportPDF()">📄 Gerar PDF</button>
     <button class="btn btn-mag" onclick="enviarImagem()">📤 Enviar</button>
@@ -236,6 +236,9 @@ let MODEL, META;
 let ESTOQUE_ATUAL={};   // {produtoId: saldo} atualizado do Bling
 let ESTOQUE_CARREGADO=false;
 function load(){
+  // localStorage é só um cache local — o que vale é o servidor (carregado logo abaixo
+  // em carregarDoServidor). Antes a tabela vivia SÓ no navegador, então cada PC tinha
+  // a sua versão e as quantidades apareciam diferentes em cada máquina.
   try{
     const raw = localStorage.getItem("b13tabela");
     if(raw){ const o=JSON.parse(raw); MODEL=o.model; META=o.meta; }
@@ -253,7 +256,52 @@ function load(){
   if(!META.entrega) META.entrega = { origem:"AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG", maxKm:23, minEntrega:1000, faixas:[{min:1000,porKm:3.60},{min:2300,porKm:2.80},{min:2600,porKm:2.50},{min:3000,porKm:0}] };
   const bu=document.getElementById("backendUrl"); if(bu) bu.value=META.backend;
 }
-function save(){ try{ localStorage.setItem("b13tabela", JSON.stringify({model:MODEL,meta:META})); }catch(e){} }
+let _salvandoServidor=null, _pendenteSalvar=false;
+function save(){
+  try{ localStorage.setItem("b13tabela", JSON.stringify({model:MODEL,meta:META})); }catch(e){}
+  salvarNoServidor();   // <- o que faz a tabela ser a MESMA em todos os PCs
+}
+// grava no servidor com agrupamento (não dispara uma requisição por tecla digitada)
+function salvarNoServidor(){
+  _pendenteSalvar=true;
+  if(_salvandoServidor) return;
+  _salvandoServidor=setTimeout(async function(){
+    _salvandoServidor=null;
+    if(!_pendenteSalvar) return;
+    _pendenteSalvar=false;
+    marcarSync("salvando");
+    try{
+      const r=await fetch((META.backend||BACKEND_PADRAO)+"/api/tabela",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,meta:META})});
+      const j=await r.json();
+      marcarSync(j&&j.ok?"ok":"erro");
+    }catch(e){ marcarSync("erro"); }
+  },1500);
+}
+function marcarSync(estado){
+  const el=document.getElementById("syncTabela"); if(!el) return;
+  if(estado==="salvando"){ el.textContent="⏳ salvando…"; el.style.color="#9a95c9"; }
+  else if(estado==="ok"){ el.textContent="☁️ salvo pra todos os PCs"; el.style.color="#3ce88a"; }
+  else { el.textContent="⚠️ não salvou no servidor"; el.style.color="#ff8090"; }
+}
+// busca a versão do servidor ao abrir — é ela que vale
+async function carregarDoServidor(){
+  try{
+    const r=await fetch((META.backend||BACKEND_PADRAO)+"/api/tabela");
+    const j=await r.json();
+    if(j&&Array.isArray(j.model)&&j.model.length){
+      MODEL=j.model;
+      META=Object.assign({},META,j.meta||{});
+      MODEL.forEach(c=>c.itens.forEach(it=>{ if(it.caixa==null) it.caixa=1; if(!Array.isArray(it.bling)) it.bling=[]; }));
+      try{ localStorage.setItem("b13tabela", JSON.stringify({model:MODEL,meta:META})); }catch(e){}
+      render();
+      marcarSync("ok");
+    } else {
+      // servidor ainda não tem tabela: publica a que este PC tem, pra virar a oficial
+      salvarNoServidor();
+    }
+  }catch(e){ marcarSync("erro"); }
+}
 
 // ------------------- RENDER -------------------
 const fmt = (v)=> Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -683,7 +731,7 @@ function carregarJSON(ev){
   r.readAsText(f);
 }
 
-load(); render();
+load(); render(); carregarDoServidor();
 </script>
 </body>
 </html>
