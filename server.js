@@ -4887,6 +4887,39 @@ app.get("/api/diag/etiqueta-por-nome",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// Acha na Tabela Atacado e na Lista de Fardo qualquer item cujo NOME bata com o
+// termo buscado — útil quando não se tem o id interno, só o nome do produto.
+app.get("/api/diag/etiqueta-por-nome",(req,res)=>{
+  try{
+    const termo=String(req.query.nome||"").toLowerCase().trim();
+    if(!termo) return res.status(400).json({erro:"informe ?nome="});
+    const tab=lerTabela();
+    const fardo=lerListaFardo();
+    const achadosTabela=[];
+    (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
+      if(String(it.nome||"").toLowerCase().includes(termo)){
+        achadosTabela.push({itemId:it.id, nome:it.nome, categoria:cat.t||"", preco:it.preco, caixa:it.caixa,
+          bling:it.bling||[], precoFardo:fardo[it.id]?.preco??null});
+      }
+    }));
+    const achadosFardoAvulso=Object.entries(fardo)
+      .filter(([id,f])=>f?.origem==="avulso"&&String(f.nome||"").toLowerCase().includes(termo))
+      .map(([id,f])=>({itemId:id, nome:f.nome, produtoId:f.produtoId, preco:f.preco}));
+    // agrupa por produtoId do Bling — se dois itens da tabela usam o MESMO produto
+    // do Bling, o sistema usa sempre o primeiro que encontrar, e a etiqueta do
+    // segundo sai com o preço do primeiro. É a causa mais comum desse tipo de erro.
+    const porProdutoBling={};
+    achadosTabela.forEach(a=>(a.bling||[]).forEach(b=>{
+      const k=String(b.id); if(!porProdutoBling[k]) porProdutoBling[k]=[];
+      porProdutoBling[k].push({itemId:a.itemId, nome:a.nome, preco:a.preco});
+    }));
+    const conflitos=Object.entries(porProdutoBling).filter(([k,v])=>v.length>1).map(([produtoIdBling,itens])=>({produtoIdBling,itens}));
+    res.json({ termo, achadosNaTabelaAtacado:achadosTabela, achadosAvulsosNaListaFardo:achadosFardoAvulso,
+      conflitos, temConflito:conflitos.length>0,
+      aviso: conflitos.length? "⚠️ Mais de 1 item da Tabela Atacado aponta pro MESMO produto do Bling — a etiqueta de um deles vai sair com o preço do outro." : null });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/etiqueta/:id",(req,res)=>{
   try{
     const id=req.params.id;
