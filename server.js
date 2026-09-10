@@ -8589,8 +8589,16 @@ app.get("/api/pedidos-online",(req,res)=>{
     const desde=Date.now()-dias*86400000;
     const props=lerPropostas();
     const lista=Object.values(props||{})
-      .filter(p=>p && p.pedidoBlingId && (p.criadoEm||0)>=desde
-        && (req.query.origem==="online" ? (p.origem==="totem"||p.origem==="site") : true))
+      // Só as origens que criam pedido PRA SER FINALIZADO DEPOIS: venda atacado,
+      // totem e site. Venda feita direto no caixa atacado já sai com destino
+      // definido (Atendido ou Em separação) e não precisa aparecer aqui.
+      .filter(p=>{
+        if(!p||!p.pedidoBlingId||(p.criadoEm||0)<desde) return false;
+        const o=String(p.origem||"atacado");
+        if(o==="caixa"||o==="caixa_atacado"||o==="pdv") return false;
+        if(req.query.origem==="online") return o==="totem"||o==="site";
+        return true;
+      })
       .map(p=>{
         const sit=_sitOnline[String(p.pedidoBlingId)]||null;
         const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
