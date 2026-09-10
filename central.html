@@ -335,12 +335,26 @@ function render(){
         ${card("📄 Propostas & Pedidos",`<div class="lin"><span>Propostas em aberto</span><b>${D.propostas?.abertas||0}</b></div><div class="lin"><span>Pedidos gerados no dia</span><b>${D.propostas?.pedidosGeradosDia||0}</b></div>
           ${Object.entries(D.propostas?.porOrigemDia||{}).map(([o,q])=>`<div class="lin"><span>· ${esc(o)}</span><b>${q}</b></div>`).join("")}<a class="btn btn-ghost" style="margin-top:8px" href="/propostas">Abrir →</a>`)}
 
-        ${(b.pedidos&&b.pedidos.duplicidades&&(b.pedidos.duplicidades.qtdNoCaixa||b.pedidos.duplicidades.qtdSoNoCaixa||b.pedidos.duplicidades.qtdRepetidosBling))?card("🔁 Duplicidades encontradas",`
+        ${(b.pedidos&&b.pedidos.duplicidades&&(b.pedidos.duplicidades.qtdNoCaixa||b.pedidos.duplicidades.qtdSoNoCaixa||b.pedidos.duplicidades.qtdRepetidosBling))?card("🔁 Conferência caixa × Bling",`
           <div class="muted" style="font-size:12px;margin-bottom:8px">Cruzamento do nosso caixa com o Bling.</div>
           ${b.pedidos.duplicidades.qtdNoCaixa?`<div class="h" style="color:#ff8090"><span>Mesmo pedido lançado 2x+ no caixa (${b.pedidos.duplicidades.qtdNoCaixa})</span></div>`
             +lins(b.pedidos.duplicidades.noCaixa,d=>`<div class="lin"><span>#${esc(d.numero)} ${esc(d.cliente)}<div class="muted" style="font-size:11px">${d.vezes}x no caixa (${esc(d.caixas.map(c=>c.operador).join(", "))}) · soma ${brl(d.somaNoCaixa)} · Bling ${brl(d.totalBling)}</div></span><b style="color:#ff8090">+${brl(d.somaNoCaixa-d.totalBling)}</b></div>`):""}
-          ${b.pedidos.duplicidades.qtdSoNoCaixa?`<div class="h" style="margin-top:10px;color:#ffd23f"><span>No caixa mas não achado no Bling do dia (${b.pedidos.duplicidades.qtdSoNoCaixa})</span></div>`
-            +lins(b.pedidos.duplicidades.soNoCaixa,d=>`<div class="lin"><span>#${esc(d.numero||d.pedidoId)} <span class="muted">${esc(d.operador)}</span></span><b>${brl(d.total)}</b></div>`):""}
+          ${(function(){
+            const cls=b.pedidos.duplicidades.soNoCaixaClassificado||[];
+            if(!b.pedidos.duplicidades.qtdSoNoCaixa) return "";
+            if(!cls.length) return `<div class="h" style="margin-top:10px;color:#9a95c9"><span>Pagos no caixa e não achados no Bling do dia (${b.pedidos.duplicidades.qtdSoNoCaixa}) — ⏳ classificando…</span></div>`
+              +lins(b.pedidos.duplicidades.soNoCaixa,d=>`<div class="lin"><span>#${esc(d.numero||d.pedidoId)} <span class="muted">${esc(d.operador)}</span></span><b>${brl(d.total)}</b></div>`);
+            const normais=cls.filter(x=>x.tipo==="normal");
+            const problemas=cls.filter(x=>x.tipo==="problema");
+            const verificar=cls.filter(x=>x.tipo==="verificar");
+            return (problemas.length?`<div class="h" style="margin-top:10px;color:#ff8090"><span>⚠️ Pagamento no caixa com problema no pedido (${problemas.length})</span></div>`
+                +lins(problemas,d=>`<div class="lin"><span>#${esc(d.numero||d.pedidoId)} <span class="muted">${esc(d.operador)}</span><div class="muted" style="font-size:11px">${esc(d.motivo||"")}</div></span><b style="color:#ff8090">${brl(d.total)}</b></div>`):"")
+              +(verificar.length?`<div class="h" style="margin-top:10px;color:#ffd23f"><span>Conferir (${verificar.length})</span></div>`
+                +lins(verificar,d=>`<div class="lin"><span>#${esc(d.numero||d.pedidoId)} <span class="muted">${esc(d.operador)}</span><div class="muted" style="font-size:11px">${esc(d.motivo||"")}</div></span><b>${brl(d.total)}</b></div>`):"")
+              +(normais.length?`<div class="h" style="margin-top:10px;color:#8fffc0"><span>✅ Pagamentos de pedidos de outros dias (${normais.length}) — normal</span></div>`
+                +lins(normais,d=>`<div class="lin"><span>#${esc(d.numero||d.pedidoId)} <span class="muted">${esc(d.operador)}</span><div class="muted" style="font-size:11px">${esc(d.motivo||"")}</div></span><b class="muted">${brl(d.total)}</b></div>`)
+                +`<div class="muted" style="font-size:11px;margin-top:4px">Venda a prazo (ou pedido antigo pago hoje): o pedido é de outro dia, então não aparece na busca do Bling deste dia. Não é divergência.</div>`:"");
+          })()}
           ${b.pedidos.duplicidades.qtdRepetidosBling?`<div class="muted" style="margin-top:8px;font-size:12px">Repetidos na listagem do Bling (ignorados): ${esc(b.pedidos.duplicidades.repetidosNaListagemBling.join(", "))}</div>`:""}
           <a class="btn btn-ghost" style="margin-top:8px" href="/gestao-caixas">Corrigir na Gestão de Caixas →</a>`):""}
 

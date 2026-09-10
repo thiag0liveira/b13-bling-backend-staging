@@ -8108,7 +8108,7 @@ async function _atualizarCentralBling(dia){
       const soNoCaixa=[];
       Object.entries(noCaixa).forEach(([pid,lancs])=>{
         const doDia=lancs.filter(l=>l.em>=iniDia&&l.em<fimDia);
-        if(doDia.length&&!idsBling.has(pid)) soNoCaixa.push({pedidoId:pid,numero:doDia[0].numero,operador:doDia[0].operador,total:doDia[0].total});
+        if(doDia.length&&!idsBling.has(pid)) soNoCaixa.push({pedidoId:pid,numero:doDia[0].numero,operador:doDia[0].operador,total:doDia[0].total,em:doDia[0].em});
       });
 
       const porVend={}; const emAberto=[];
@@ -8169,7 +8169,31 @@ async function _atualizarCentralBling(dia){
         },
         duplicidades:{ noCaixa:dupNoCaixa, qtdNoCaixa:dupNoCaixa.length,
           soNoCaixa, qtdSoNoCaixa:soNoCaixa.length,
+          // classificação feita depois (abaixo), pra separar o que é normal do que é problema
+          soNoCaixaClassificado:[],
           repetidosNaListagemBling:duplicadosBling, qtdRepetidosBling:duplicadosBling.length } };
+      // CLASSIFICA os "só no caixa": pedido criado em OUTRO DIA e pago hoje é normal
+      // (venda a prazo, ou pedido antigo que o cliente veio pagar) — não é divergência.
+      // Só é problema se o pedido não existir mais ou tiver sido cancelado.
+      try{
+        const cls=[];
+        for(const item of (out.pedidos?.duplicidades?.soNoCaixa||[]).slice(0,25)){
+          let d=null; try{ d=await blingLento(`/pedidos/vendas/${item.pedidoId}`).then(r=>r?.data); }catch(e){}
+          if(!d){ cls.push({...item, tipo:"problema", motivo:"Pedido não encontrado no Bling (pode ter sido excluído lá)."}); continue; }
+          const sitP=Number(d.situacao?.id||0);
+          const dataPed=String(d.data||"").slice(0,10);
+          if(sitP===SIT.CANCELADO){ cls.push({...item, tipo:"problema", numero:d.numero, motivo:"Pedido CANCELADO no Bling, mas o pagamento está no caixa."}); continue; }
+          if(dataPed && dataPed!==dia){
+            cls.push({...item, tipo:"normal", numero:d.numero, dataPedido:dataPed, situacao:nomeSituacao(sitP),
+              motivo:`Pedido de ${dataPed.split("-").reverse().join("/")} pago hoje — normal em venda a prazo.`});
+          } else {
+            cls.push({...item, tipo:"verificar", numero:d.numero, situacao:nomeSituacao(sitP),
+              motivo:"Pedido é de hoje mas não veio na busca do Bling — vale conferir."});
+          }
+          await sleep(80);
+        }
+        if(out.pedidos?.duplicidades) out.pedidos.duplicidades.soNoCaixaClassificado=cls;
+      }catch(e){}
     }catch(e){ out.pedidos={erro:e.message}; }
     publicar(); // publica o que já ficou pronto (não espera a varredura toda)
     // notas EMITIDAS no dia. IMPORTANTE: NFC-e fica em /nfce (o /nfe?tipo=1 devolve 0 —
