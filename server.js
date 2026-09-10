@@ -9322,7 +9322,10 @@ async function atualizarComDestrave(id, payload, sitAtual){
   const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
   const precisa=BLOQ.includes(Number(sitAtual));
   try{
-    if(precisa){ try{ await bling(`/pedidos/vendas/${id}/situacoes/21`,{method:"PATCH"}); await sleep(350); }catch(e){} }
+    // usa o helper seguro (trata "mesma situação" e "sem transição definida" via
+    // situação-ponte) — antes chamava o Bling direto e um erro aqui derrubava a
+    // troca de Entrega/Retirada inteira, mesmo o pedido estando na situação certa
+    if(precisa){ await mudarSituacaoPedido(id, 21); await sleep(350); }
     await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     return {ok:true};
   }catch(e){ return {ok:false,erro:e.message}; }
@@ -9330,7 +9333,7 @@ async function atualizarComDestrave(id, payload, sitAtual){
     if(precisa){
       await sleep(400);
       if(Number(sitAtual)===SIT.ATENDIDO||Number(sitAtual)===SIT.SEPARADO){ await _restaurarSituacaoComRetry(id,Number(sitAtual),(payload.itens||[]).map(i=>({produtoId:i.produto?.id,quantidade:i.quantidade}))); }
-      else { try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); }catch(e){} }
+      else { await mudarSituacaoPedido(id, sitAtual); }
     }
   }
 }
