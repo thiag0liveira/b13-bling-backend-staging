@@ -172,6 +172,7 @@ async function abrirModalMovimento(tipo){
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>${ehSangria?"💸 Sangria (retirada)":"💰 Suprimento (entrada)"}</h3>
+        ${ehSangria?`<div class="muted" style="font-size:12px;margin-bottom:6px">Dinheiro em caixa agora: <b style="color:#3ce88a">${brl((CAIXA.resumo&&(CAIXA.resumo.esperadoGaveta??CAIXA.resumo.esperadoGavetaCalc))||0)}</b> — é o máximo que dá pra retirar.</div>`:""}
         <p class="muted" style="margin-bottom:12px">${ehSangria?"Retirada de dinheiro da gaveta (ex: depósito, pagamento de despesa).":"Entrada de dinheiro na gaveta (ex: reforço de troco)."}</p>
         <div class="muted" style="margin-bottom:4px">Valor (R$)</div>
         <input type="number" step="0.01" min="0.01" id="mValor" style="width:100%;font-size:18px;text-align:right" autofocus>

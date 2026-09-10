@@ -336,6 +336,7 @@ async function abrirModalMovimento(tipo){
   document.getElementById("modais").innerHTML=`
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>${t}</h3>
+      ${ehSangria?`<div class="muted" style="font-size:12px;margin-bottom:6px">Dinheiro em caixa agora: <b style="color:#3ce88a">${brl((CAIXA.resumo&&(CAIXA.resumo.esperadoGaveta??CAIXA.resumo.esperadoGavetaCalc))||0)}</b> — é o máximo que dá pra retirar.</div>`:""}
       <input id="mVal" type="number" step="0.01" placeholder="Valor" style="margin-bottom:8px" autofocus>
       <div class="muted" style="font-size:12px;margin-bottom:4px">${ehSangria?"Quem está <b>retirando</b> o dinheiro?":"Quem está <b>entregando</b> o dinheiro?"}</div>
       <select id="mResp" style="width:100%;margin-bottom:8px">
