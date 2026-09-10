@@ -160,7 +160,7 @@ async function restaurarMesas(){
       if(sitAtual && !aindaSepara){ await liberar(id,true); continue; }
       MESAS[id]={ carregando:false, pedido:j.pedido, restaurado:true,
         itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
-          un:i.un||1, estado:"", temQtd:0, confirmado:false})) };
+          un:i.un||1, imagem:i.imagem||"", estado:"", temQtd:0, confirmado:false})) };
       MESAS[id]._hb=setInterval(function(){
         fetch(B+"/api/separacoes/"+lock.pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:id})}).catch(()=>{});
       },2*60*1000);
@@ -234,7 +234,7 @@ async function carregarPedidoNaMesa(funcId,pedidoId){
     MESAS[funcId]={
       carregando:false, pedido:j.pedido,
       itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
-        un:i.un||1, estado:"", temQtd:0, confirmado:false})),
+        un:i.un||1, imagem:i.imagem||"", estado:"", temQtd:0, confirmado:false})),
     };
     // heartbeat pra segurar o lock enquanto separa
     MESAS[funcId]._hb=setInterval(function(){
@@ -312,7 +312,9 @@ function colunaHtml(funcId){
   const itens=m.itens.map(function(c,ix){
     const cls=c.confirmado?(c.estado==="tem"?"ok":"falta"):"";
     const cx=(c.un>1)?" ("+(c.quantidade/c.un).toFixed(c.quantidade%c.un?1:0)+" cx)":"";
-    return '<div class="it '+cls+'">'+
+    return '<div class="it '+cls+'" style="display:flex;gap:8px">'+
+      (c.imagem?'<img src="'+esc(c.imagem)+'" onerror="this.style.display=\'none\'" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">':'')+
+      '<div style="flex:1;min-width:0">'+
       '<div class="itNome">'+esc(c.descricao)+'</div>'+
       '<div class="itQtd">'+c.quantidade+' un'+cx+(c.confirmado&&c.estado==="falta"?' · <span style="color:#ff8090">encontrou '+(c.temQtd||0)+'</span>':'')+'</div>'+
       '<div class="bts">'+
@@ -324,7 +326,7 @@ function colunaHtml(funcId){
         '<button class="b bgh" style="flex:2">encontrou '+(c.temQtd||0)+' de '+c.quantidade+'</button>'+
         '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',1)">+</button>'+
       '</div>':'')+
-    '</div>';
+      '</div></div>';
   }).join("");
   return '<div class="col trabalhando">'+
     '<div class="colTop"><div><div class="colNome">'+esc(nome)+'</div>'+
