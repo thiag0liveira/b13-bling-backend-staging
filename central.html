@@ -274,7 +274,7 @@ function render(){
           <div class="muted" style="font-size:11px;margin-top:6px">Troco sai da gaveta — já descontado do "Dinheiro líquido" no fechamento.</div>`):""}
 
         ${card("📦 Produtos retirados de pedidos",`
-          <div class="muted" style="margin-bottom:8px">Produtos tirados ao <b>reabrir o pedido no caixa atacado</b> (normalmente por não ter no estoque na hora de separar).</div>
+          <div class="muted" style="margin-bottom:8px">Produtos tirados de pedidos hoje — na tela de <b>Pedidos</b>, ao reabrir no <b>caixa atacado</b> ou pela gestão (normalmente por falta de estoque na separação).</div>
           ${(D.produtosRetirados||[]).length?`
             ${(D.produtosRetirados||[]).map(p=>{
               const est=(RETIRADOS_EST||{})[p.nome];

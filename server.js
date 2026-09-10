@@ -8522,8 +8522,13 @@ app.get("/api/central/resumo",(req,res)=>{
     // RETIRADOS: acontece quando o pedido é REABERTO no caixa atacado (já pago) e o
     // produto sai por não ter estoque. Guarda também de qual pedido, quem tirou e quando.
     const detRetirados={}; // nome -> {vezes, unidades, ocorrencias:[{pedido,por,em}]}
+    const _jaContado=new Set();
     const addRetirado=(txt,ctx)=>{
       const t=String(txt||"").trim(); if(!t) return;
+      // a mesma retirada pode estar em mais de uma fonte (log + caixa) — conta uma vez
+      const chave=`${ctx?.pedidoId||""}|${t}|${Math.floor((ctx?.em||0)/60000)}`;
+      if(_jaContado.has(chave)) return;
+      _jaContado.add(chave);
       const m2=t.match(/^(\d+(?:[.,]\d+)?)x\s*(.+)$/);
       const qtd=m2?Number(String(m2[1]).replace(",",".")):0;
       const nome=(m2?m2[2]:t).trim();
@@ -8534,6 +8539,37 @@ app.get("/api/central/resumo",(req,res)=>{
       d.vezes++; d.unidades+=qtd;
       if(d.ocorrencias.length<8) d.ocorrencias.push(ctx);
     };
+    // FONTE 2: retiradas feitas pela tela de PEDIDOS (editar itens) e pela gestão —
+    // elas gravam no LOG do pedido, não no movimento do caixa. Sem isso, o card só
+    // enxergava as retiradas feitas ao reabrir o pedido no caixa atacado.
+    try{
+      const log=lerLog();
+      Object.entries(log).forEach(([pid,evs])=>{
+        (evs||[]).forEach(ev=>{
+          if(!noDia(ev.em)) return;
+          const d=ev.detalhes||{};
+          const ctx={pedido:d.numero||pid, pedidoId:pid, por:ev.funcionarioNome||ev.funcionario||"", autorizadoPor:d.autorizadoPor||"", em:ev.em};
+          if(ev.evento==="itens_retirados"){
+            const lista=(d.detalhe&&d.detalhe.length)?d.detalhe:(d.itens||[]);
+            lista.forEach(x=>addRetirado(x,ctx));
+          } else if(Array.isArray(d.retirados)&&d.retirados.length){
+            d.retirados.forEach(x=>addRetirado(x,ctx));
+          }
+        });
+      });
+    }catch(e){}
+    // FONTE 3: registro de movimentações de pedido (edição pelo operacional/caixa)
+    try{
+      const movs=lerJSON(`${DATA_DIR}/movimentacoes_pedido.json`,{});
+      Object.values(movs||{}).forEach(mv=>{
+        if(!mv||!noDia(mv.em)) return;
+        (mv.removidos||[]).forEach(r=>{
+          const txt=(Number(r.quantidade)?`${r.quantidade}x `:"")+(r.descricao||"");
+          addRetirado(txt,{pedido:mv.numero||mv.pedidoId, pedidoId:mv.pedidoId, por:mv.por||"", em:mv.em});
+        });
+      });
+    }catch(e){}
+    // FONTE 1: retiradas registradas no movimento do caixa (reabertura no caixa atacado)
     (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{ (m.alteracoes||[]).forEach(a=>{ if(a.tipo==="itens"&&noDia(a.em)){
       const ctx={pedido:m.numero||m.pedidoId, pedidoId:m.pedidoId, por:a.por||m.operador||s.operador||"", autorizadoPor:a.autorizadoPor||"", em:a.em};
       if(Array.isArray(a.retirados)){ a.retirados.forEach(x=>addRetirado(x,ctx)); return; } // formato novo (estruturado)
