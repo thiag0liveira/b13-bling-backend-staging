@@ -1364,9 +1364,34 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
     else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
 
+    // PUT com tratamento de "saldo insuficiente": quando o Bling recusa por estoque,
+    // repõe automaticamente o que falta (entrada de estoque só da diferença) e tenta
+    // de novo. Antes esse erro fazia o pagamento ficar registrado no caixa mas NÃO no
+    // Bling, com o aviso vermelho "As formas de pagamento não foram gravadas".
+    const ehErroEstoque=(e)=>/saldo.*insuficiente|estoque.*insuficiente|integrar o estoque/i.test((e?.message||"")+" "+JSON.stringify(e?.body||{}));
+    let estoqueRepostoAqui=[];
+    const putComReposicao=async()=>{
+      try{ return await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }
+      catch(e){
+        if(!ehErroEstoque(e)) throw e;
+        const itensEst=(payload.itens||[]).map(i=>({produtoId:i.produto?.id,quantidade:i.quantidade,nome:""}));
+        try{ estoqueRepostoAqui=await garantirEstoqueParaItens(itensEst); }catch(e2){}
+        if(!estoqueRepostoAqui.length) throw e;      // não conseguiu repor: erro real
+        // avisa QUAIS produtos estavam negativos — a causa está no estoque do Bling
+        try{
+          registrarAviso({tipo:"estoque_reposto_auto",
+            titulo:`Pedido #${ped.numero||id}: estoque reposto automaticamente pra gravar o pagamento`,
+            pedidoId:String(id), numero:ped.numero, origem:"Caixa",
+            fingerprint:`repos-parc-${id}-${Date.now()}`,
+            oQueFazer:`O Bling barrou o pagamento por saldo insuficiente. O sistema repôs: ${estoqueRepostoAqui.map(r=>`${r.nome||r.produtoId} (faltavam ${r.faltava}, saldo era ${r.saldoAntes})`).join("; ")}. Confira o estoque desses produtos no Bling — provavelmente estão negativos por alguma venda/ajuste anterior.`});
+        }catch(e3){}
+        await new Promise(r=>setTimeout(r,500));
+        return await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)}); // 2ª tentativa
+      }
+    };
     let resultado, fezUnlock=false, restauracao=null;
     try{
-      resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+      resultado=await putComReposicao();
     }catch(e1){
       // qualquer erro na 1ª tentativa, se o pedido estava numa situação bloqueada,
       // tenta o caminho de desbloquear/editar/restaurar — antes só tentava quando
@@ -1380,7 +1405,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       fezUnlock=true;
       await new Promise(r=>setTimeout(r,400));
       try{
-        resultado=await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+        resultado=await putComReposicao();
       }finally{
         // sempre restaura a situação original (caminhando até ela), mesmo se o PUT falhar.
         // Atendido/Separado: com retry (o Bling pode reclamar de estoque na re-baixa).
@@ -1393,7 +1418,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
         }
       }
     }
-    return {ok:true,resposta:resultado,fezUnlock,restauracao};
+    return {ok:true,resposta:resultado,fezUnlock,restauracao,estoqueReposto:estoqueRepostoAqui};
   }catch(e){ console.error("[atualizarParcelasBling] falhou pedido",id,"status",e.status,"body:",JSON.stringify(e.body||{})); return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
@@ -6126,6 +6151,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       if(sitInicial===SIT.ATENDIDO) await verificarRelancamento(pedidoId, SIT.ATENDIDO, {operador:funcNome, origem:"Caixa Atacado"});
     } else if(parcelasBling.length){
       const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
+      if(rp?.estoqueReposto?.length) estoqueReposto=[...estoqueReposto,...rp.estoqueReposto];
       if(!rp?.ok){
         avisoBling="As formas de pagamento não foram gravadas no Bling ("+(rp?.erro||"erro")+"). O caixa registrou a venda; confira o pedido no Bling.";
         registrarAviso({tipo:"pagamento_nao_gravado_bling",titulo:`Pedido #${ped.numero||pedidoId}: formas de pagamento não gravadas no Bling`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:rp?.erro||"",fingerprint:`pagbling-${chave}-${Date.now()}`,oQueFazer:`No Bling, abra o pedido #${ped.numero||pedidoId} e confira as formas de pagamento: ${pagamentos.map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(", ")}.`});
