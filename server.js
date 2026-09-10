@@ -4861,6 +4861,61 @@ app.put("/api/lista-fardo/:itemId",(req,res)=>{
 });
 
 // etiqueta de preço: pra cada item pedido, traz Atacado + Fardo + Varejo (preço ao vivo do Bling)
+// DIAGNÓSTICO da etiqueta de um item — mostra exatamente de onde vem cada dado, pra
+// achar por que um preço saiu errado (nome batendo com outro produto, vinculo errado
+// com o avulso, etc).
+// Acha o item da Tabela Atacado pelo NOME (pra achar o id sem precisar sabê-lo)
+app.get("/api/diag/etiqueta-por-nome",(req,res)=>{
+  try{
+    const termo=String(req.query.nome||"").toLowerCase().trim();
+    if(!termo) return res.status(400).json({erro:"informe ?nome="});
+    const tab=lerTabela();
+    const fardo=lerListaFardo();
+    const achados=[];
+    (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
+      if(String(it.nome||"").toLowerCase().includes(termo)){
+        achados.push({ id:it.id, nome:it.nome, categoria:cat.t, preco:it.preco, caixa:it.caixa||null,
+          precoFardo:fardo[it.id]?.preco??null, bling:it.bling||[] });
+      }
+    }));
+    Object.entries(fardo).forEach(([id,f])=>{
+      if(f?.origem==="avulso" && String(f.nome||"").toLowerCase().includes(termo) && !achados.some(a=>String(a.id)===String(id))){
+        achados.push({ id, nome:f.nome, categoria:"(avulso)", preco:null, precoFardo:f.preco??null, produtoIdBling:f.produtoId });
+      }
+    });
+    res.json({termo, encontrados:achados.length, itens:achados});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+app.get("/api/diag/etiqueta/:id",(req,res)=>{
+  try{
+    const id=req.params.id;
+    const tab=lerTabela();
+    const fardo=lerListaFardo();
+    const itensPorId={};
+    (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{ itensPorId[it.id]={...it,categoriaNome:cat.t||""}; }));
+    const it=itensPorId[id]||null;
+    const avulso=fardo[id]?.origem==="avulso"?fardo[id]:null;
+    const vinculado = avulso&&avulso.produtoId
+      ? (tab?.model||[]).flatMap(cat=>(cat.itens||[]).map(x=>({...x,categoriaNome:cat.t||""})))
+          .filter(x=>(x.bling||[]).some(b=>String(b.id)===String(avulso.produtoId)))
+      : [];
+    res.json({
+      itemIdBuscado:id,
+      naTabelaAtacado: it,
+      naListaFardoComoAvulso: avulso,
+      // se mais de 1 item da tabela usa o mesmo produtoId do Bling, aí está o
+      // problema: o sistema pega o PRIMEIRO que achar, que pode ser outro
+      vinculadosPeloMesmoProdutoBling: vinculado,
+      qtdVinculados: vinculado.length,
+      avisoSeMultiplos: vinculado.length>1
+        ? "⚠️ HÁ MAIS DE 1 ITEM na Tabela Atacado usando o mesmo produto do Bling — o sistema usa o primeiro, que pode não ser o certo. Veja 'vinculadosPeloMesmoProdutoBling'."
+        : null,
+      precoFardoParaEsteId: fardo[id]?.preco ?? null,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/etiquetas",async(req,res)=>{
   const ids=String(req.query.itens||"").split(",").map(s=>s.trim()).filter(Boolean);
   if(!ids.length) return res.status(400).json({erro:"informe ?itens=id1,id2,..."});
