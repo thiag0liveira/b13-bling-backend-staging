@@ -8005,7 +8005,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0, pedidosPresosDigitacao:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -8069,6 +8069,37 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
   // sem nota emitida PELO SISTEMA — mas muitas são emitidas direto no Bling, então era
   // ruído. Agora só avisa quando a emissão é TENTADA e FALHA (nfce_falhou /
   // nfce_nao_transmitida, gerados na finalização da venda).
+
+  // 0) PEDIDOS PRESOS EM "EM DIGITAÇÃO": nunca saíram do rascunho (a mudança
+  // automática pra Aguardando separação falhou na criação). Ficam invisíveis e
+  // travados pra qualquer ação de status. Corrige sozinho, sem precisar de ninguém
+  // notar e rodar comando manual (foi o caso dos pedidos 55142 e 55309).
+  try{
+    const props=lerPropostas();
+    const candidatos=Object.values(props||{})
+      .filter(p=>p && p.pedidoBlingId && (Date.now()-(p.criadoEm||0))<15*86400000) // até 15 dias
+      .slice(0,60);
+    for(const prop of candidatos){
+      let d=null; try{ d=await blingLento(`/pedidos/vendas/${prop.pedidoBlingId}`).then(r=>r?.data); }catch(e){}
+      if(!d || Number(d.situacao?.id)!==21) continue; // 21 = Em digitação
+      const r=await mudarSituacaoPedido(prop.pedidoBlingId, SIT.AGUARDANDO);
+      if(r.ok){
+        registrarAviso({tipo:"pedido_resgatado_digitacao",
+          titulo:`Pedido #${d.numero||prop.pedidoBlingId} estava preso em "Em digitação" — corrigido automaticamente`,
+          pedidoId:String(prop.pedidoBlingId), numero:d.numero, origem:"Auditoria",
+          fingerprint:`digresgate-${prop.pedidoBlingId}`,
+          oQueFazer:`O pedido #${d.numero||prop.pedidoBlingId} nunca tinha saído do rascunho no Bling. A auditoria moveu ele pra "Aguardando separação" automaticamente — já deve estar disponível em Pedidos.`});
+      } else {
+        registrarAviso({tipo:"pedido_preso_em_digitacao",
+          titulo:`Pedido #${d.numero||prop.pedidoBlingId} preso em "Em digitação" — não consegui corrigir sozinho`,
+          pedidoId:String(prop.pedidoBlingId), numero:d.numero, origem:"Auditoria",
+          fingerprint:`digitacao-${prop.pedidoBlingId}`, erroBling:r.erro||"",
+          oQueFazer:`Abra o pedido #${d.numero||prop.pedidoBlingId} direto no Bling e mude a situação manualmente pra "Aguardando separação".`});
+      }
+      achados.pedidosPresosDigitacao=(achados.pedidosPresosDigitacao||0)+1;
+      await sleep(100);
+    }
+  }catch(e){}
 
   // 4.5) ENTREGA AGENDADA SEM PAGAMENTO: pedido que já passou do dia da entrega
   // (ou é de hoje) e ainda não foi recebido em nenhum caixa. É o caso mais caro:
