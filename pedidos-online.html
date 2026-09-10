@@ -114,7 +114,14 @@ function alternarFaixa(k){
   render();
 }
 function alternar(id){ EXPANDIDO[id]=!EXPANDIDO[id]; render(); }
-function ehPendencia(p){ return /pend[êe]ncia/i.test(String(p.situacao||"")); }
+// Detecta pela SITUAÇÃO (id) — o nome varia conforme a origem ("Separado c/
+// Pendências", "SEPARADO C/ PENDÊNCIAS", "Separação pendente"), e a busca por texto
+// deixava passar algumas variações, fazendo o pedido sumir da faixa de pendências.
+const SEP_PEND=(typeof B13_SIT!=="undefined"&&B13_SIT.SEP_PEND)?B13_SIT.SEP_PEND:819227;
+function ehPendencia(p){
+  if(Number(p.situacaoId)===Number(SEP_PEND)) return true;
+  return /pend[êe]nc|pendente/i.test(String(p.situacao||""));
+}
 
 async function carregar(silencioso){
   if(!silencioso){ CARREGANDO=true; render(); }

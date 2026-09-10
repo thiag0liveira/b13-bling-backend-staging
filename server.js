@@ -10958,7 +10958,7 @@ function nomeSituacao(id){
     [SIT.EM_DIGITACAO]:"Em digitação",
     [SIT.AGUARDANDO]:"Aguardando separação",
     [SIT.EM_SEP]:"Em separação",
-    [SIT.SEP_PEND]:"Separação pendente",
+    [SIT.SEP_PEND]:"Separado c/ Pendências",
     [SIT.SEPARADO]:"Separado",
     [SIT.CONF_ENTREGA]:"Conferência de entrega",
     [SIT.VERIFICADO]:"Verificado",
