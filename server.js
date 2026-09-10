@@ -4865,6 +4865,22 @@ app.put("/api/lista-fardo/:itemId",(req,res)=>{
 // achar por que um preço saiu errado (nome batendo com outro produto, vinculo errado
 // com o avulso, etc).
 // Acha o item da Tabela Atacado pelo NOME (pra achar o id sem precisar sabê-lo)
+// Move um pedido preso em "Em digitação" pra "Aguardando separação" — sem precisar
+// editar itens/entrega. Uso: POST /api/diag/resgatar-digitacao/55309
+app.post("/api/diag/resgatar-digitacao/:numero",async(req,res)=>{
+  try{
+    const n=String(req.params.numero).trim();
+    let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    const sit=Number(ped.situacao?.id||0);
+    if(sit!==21) return res.json({ok:true, jaEstava:true, situacao:nomeSituacao(sit), msg:"Este pedido não está em Em digitação — nada a fazer."});
+    const r=await mudarSituacaoPedido(ped.id, SIT.AGUARDANDO);
+    if(!r.ok) return res.status(502).json({erro:r.erro||"o Bling recusou a mudança", pedido:ped.numero});
+    res.json({ok:true, numero:ped.numero, para:nomeSituacao(SIT.AGUARDANDO), viaPonte:r.viaPonte||null});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/etiqueta-por-nome",(req,res)=>{
   try{
     const termo=String(req.query.nome||"").toLowerCase().trim();
@@ -9279,8 +9295,24 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
           ? +(novoTotal-ped.parcelas.slice(0,-1).reduce((s,x)=>s+ +( (somaAtual? (Number(x.valor)/somaAtual*novoTotal):0).toFixed(2) ),0)).toFixed(2)
           : +(somaAtual? (Number(p.valor)/somaAtual*novoTotal):0).toFixed(2) }));
     }
-    const r=await atualizarComDestrave(id, payload, Number(ped.situacao?.id||0));
+    const sitOrig=Number(ped.situacao?.id||0);
+    const r=await atualizarComDestrave(id, payload, sitOrig);
     if(!r.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(r.erro||"erro")});
+    // Pedido ainda em "Em digitação" (21) = nunca saiu do rascunho — geralmente porque
+    // a mudança automática pra "Aguardando separação" falhou na criação (mesmo bug já
+    // visto no pedido 55142). Como ficou preso ANTES do início do fluxo, aproveita esta
+    // edição bem-sucedida pra trazê-lo de volta pro fluxo normal.
+    if(sitOrig===21){
+      const rs=await mudarSituacaoPedido(id, SIT.AGUARDANDO);
+      if(!rs.ok){
+        registrarAviso({tipo:"pedido_preso_em_digitacao",
+          titulo:`Pedido #${ped.numero||id} continua preso em "Em digitação"`,
+          pedidoId:String(id), numero:ped.numero, origem:"Pedidos (tipo entrega)",
+          fingerprint:`digitacao-${id}`,
+          erroBling:rs.erro||"",
+          oQueFazer:`O pedido #${ped.numero||id} nunca saiu do rascunho no Bling. Tentamos mover pra "Aguardando separação" e não conseguimos (${rs.erro||"erro"}). Abra o pedido direto no Bling e mude a situação manualmente.`});
+      }
+    }
     // guarda o agendamento antes de apagar — se foi engano, dá pra restaurar
     let agendamentoAnterior=null;
     // se o pedido já está na fila de separação, o selo dela acompanha a mudança
