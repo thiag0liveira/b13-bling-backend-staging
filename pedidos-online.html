@@ -235,21 +235,29 @@ function cardPedido(p){
     (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
     '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
     '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
-    (aguard?'<button class="btn btn-wa" onclick="enviarSeparacao('+p.id+')">📦 Mandar p/ separação'+
-      ' <span style="font-size:10px;opacity:.85">('+(p.tipo==="entrega"?"entrega":"retirada")+')</span></button>':'')+
-    '<button class="btn '+(p.ok?"btn-okOff":"btn-ok")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ OK")+'</button>'+
-    '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
-    (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
-    (p.buscado?'<button class="btn btn-ok" onclick="adotarPedido('+p.id+',\''+esc(String(p.numero))+'\')">📥 Trazer pra lista</button>':'')+
-    ((aguard||pend)?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">'+(pend?"🛠️ Resolver pendência (editar itens)":"✏️ Editar")+'</button>'
-      :'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
-    (pend?'<button class="btn btn-ok" onclick="resolverPendencia('+p.id+')">✅ Pendência resolvida (mandar p/ Separado)</button>':'')+
-    '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
-    (!p.cancelado?(p.tipo==="entrega"
-      ? '<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>'
-      : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada('+p.id+')">📅 Agendar entrega</button>'):'')+
-    '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
-    (!p.cancelado&&p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')+
+    // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
+    // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
+    (p.cancelado
+      ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>'+
+        '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
+        (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')
+      :
+      (aguard?'<button class="btn btn-wa" onclick="enviarSeparacao('+p.id+')">📦 Mandar p/ separação'+
+        ' <span style="font-size:10px;opacity:.85">('+(p.tipo==="entrega"?"entrega":"retirada")+')</span></button>':'')+
+      '<button class="btn '+(p.ok?"btn-okOff":"btn-ok")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ OK")+'</button>'+
+      '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
+      (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
+      (p.buscado?'<button class="btn btn-ok" onclick="adotarPedido('+p.id+',\''+esc(String(p.numero))+'\')">📥 Trazer pra lista</button>':'')+
+      ((aguard||pend)?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">'+(pend?"🛠️ Resolver pendência (editar itens)":"✏️ Editar")+'</button>'
+        :'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
+      (pend?'<button class="btn btn-ok" onclick="resolverPendencia('+p.id+')">✅ Pendência resolvida (mandar p/ Separado)</button>':'')+
+      '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
+      (p.tipo==="entrega"
+        ? '<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>'
+        : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada('+p.id+')">📅 Agendar entrega</button>')+
+      '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
+      (p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')
+    )+
   '</div>';
 }
 function render(){

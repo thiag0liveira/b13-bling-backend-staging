@@ -8877,6 +8877,10 @@ function lerPedidosOk(){ const d=lerJSON(OK_PEDIDOS_FILE,{}); const lim=Date.now
 app.post("/api/pedidos-online/:blingId/ok",(req,res)=>{
   try{
     const id=String(req.params.blingId);
+    // pedido cancelado não recebe OK (nem por chamada direta à API)
+    const sitOk=_sitOnline[id];
+    if(sitOk && Number(sitOk.situacaoId)===SIT.CANCELADO)
+      return res.status(400).json({erro:"pedido cancelado não pode ser marcado como OK"});
     const d=lerPedidosOk();
     const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
     if(d[id]){ delete d[id]; salvarJSON(OK_PEDIDOS_FILE,d); return res.json({ok:true, marcado:false}); }
