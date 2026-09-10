@@ -3018,6 +3018,62 @@ app.get("/api/diag/testar-taxa/:numero",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message,body:e.body}); }
 });
 
+// Auditoria de UMA sessão de caixa — usada tanto pela auditoria por dia quanto pelo
+// botão "Conferir com o Bling" na Gestão de Caixas (inclusive caixa já fechado).
+function _auditarSessaoCaixa(s){
+  const r=resumoSessaoCaixa(s);
+  const vendas=(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado);
+  const problemas=[];
+  vendas.forEach(m=>{
+    const pago=(m.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
+    const troco=Number(m.troco)||0;
+    const liquido=+(pago-troco).toFixed(2);
+    const total=Number(m.total)||0;
+    const dif=+(liquido-total).toFixed(2);
+    if(Math.abs(dif)>0.02){
+      problemas.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"",
+        valorPedido:total, recebidoLiquido:liquido, pagoBruto:+pago.toFixed(2), troco,
+        diferenca:dif,
+        provavel: dif>0
+          ? (troco>0?"recebeu a mais — troco pode estar errado":"recebeu MAIS que o pedido (digitação a maior ou troco não lançado)")
+          : (m.valorMenor?"pagou menos — autorizado por "+(m.valorMenor.autorizadoPor||"?"):"recebeu MENOS que o pedido (falta pagamento?)"),
+        valorMenorAutorizado:m.valorMenor||null });
+    }
+  });
+  const somaPedidos=+vendas.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2);
+  const somaRecebidoLiq=+vendas.reduce((a,m)=>a+((m.pagamentos||[]).reduce((x,p)=>x+(Number(p.valor)||0),0)-(Number(m.troco)||0)),0).toFixed(2);
+  const conf=(s.conferencias||[]).slice(-1)[0]||null;
+  return {
+    sessaoId:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente",
+    abertaEm:new Date(s.abertaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+    fechadaEm: s.fechadaEm?new Date(s.fechadaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null,
+    fechada:!!s.fechadaEm,
+    resumo:{ trocoInicial:r.trocoInicial, qtdVendas:r.qtdVendas,
+      totalRecebido:r.totalVendas, totalPedidos:r.totalPedidos,
+      diferencaRecebidoPedidos:r.diferencaRecebidoPedidos,
+      dinheiroLiquido:r.vendasDinheiro, trocoDevolvido:r.trocoDevolvido,
+      cartao:r.vendasCartao, taxaCartaoEmbutida:r.taxaCartaoEmbutida, liquidoCartao:r.liquidoCartao,
+      suprimentos:r.totalSuprimentos, sangrias:r.totalSangrias,
+      esperadoGaveta:r.esperadoGaveta, esperadoCalculado:r.esperadoGavetaCalc,
+      esperadoAjustadoManualmente:r.esperadoGavetaManual },
+    conferenciaFinal: conf?{contado:conf.contado,diferenca:conf.diferenca,em:new Date(conf.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}:null,
+    confereRecebidoXPedidos: Math.abs(somaRecebidoLiq-somaPedidos)<0.02,
+    vendasComProblema:problemas.length, problemas,
+    formula:`gaveta = ${r.trocoInicial} (inicial) + ${r.vendasDinheiro} (dinheiro líquido) + ${r.totalSuprimentos} (suprimentos) − ${r.totalSangrias} (sangrias) = ${r.esperadoGavetaCalc}`,
+  };
+}
+
+// Conferência (caixa × Bling) de UM caixa específico, aberto ou já fechado —
+// usada pelo botão "🔍 Conferir com o Bling" na Gestão de Caixas.
+app.get("/api/diag/auditar-sessao/:sessaoId",(req,res)=>{
+  try{
+    const dCx=lerCaixaSessoes();
+    const s=(dCx.sessoes||[]).find(x=>String(x.id)===String(req.params.sessaoId));
+    if(!s) return res.status(404).json({erro:"sessão de caixa não encontrada"});
+    res.json(_auditarSessaoCaixa(s));
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/auditar-caixas",(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
@@ -3027,48 +3083,7 @@ app.get("/api/diag/auditar-caixas",(req,res)=>{
       const ab=Number(s.abertaEm||0);
       return (ab>=ini&&ab<fim) || (!s.fechadaEm) || (Number(s.fechadaEm||0)>=ini&&Number(s.fechadaEm||0)<fim);
     });
-    const out=sessoes.map(s=>{
-      const r=resumoSessaoCaixa(s);
-      const vendas=(s.movimentos||[]).filter(m=>m.tipo==="venda"&&!m.cancelado);
-      // venda a venda: recebido x valor do pedido
-      const problemas=[];
-      vendas.forEach(m=>{
-        const pago=(m.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
-        const troco=Number(m.troco)||0;
-        const liquido=+(pago-troco).toFixed(2);
-        const total=Number(m.total)||0;
-        const dif=+(liquido-total).toFixed(2);
-        if(Math.abs(dif)>0.02){
-          problemas.push({ numero:m.numero||m.pedidoId, cliente:m.clienteNome||"",
-            valorPedido:total, recebidoLiquido:liquido, pagoBruto:+pago.toFixed(2), troco,
-            diferenca:dif,
-            provavel: dif>0
-              ? (troco>0?"recebeu a mais — troco pode estar errado":"recebeu MAIS que o pedido (digitação a maior ou troco não lançado)")
-              : (m.valorMenor?"pagou menos — autorizado por "+(m.valorMenor.autorizadoPor||"?"):"recebeu MENOS que o pedido (falta pagamento?)"),
-            valorMenorAutorizado:m.valorMenor||null });
-        }
-      });
-      const somaPedidos=+vendas.reduce((a,m)=>a+(Number(m.total)||0),0).toFixed(2);
-      const somaRecebidoLiq=+vendas.reduce((a,m)=>a+((m.pagamentos||[]).reduce((x,p)=>x+(Number(p.valor)||0),0)-(Number(m.troco)||0)),0).toFixed(2);
-      const conf=(s.conferencias||[]).slice(-1)[0]||null;
-      return {
-        sessaoId:s.id, operador:s.operador, tipoCaixa:s.tipoCaixa||"frente",
-        abertaEm:new Date(s.abertaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
-        fechada:!!s.fechadaEm,
-        resumo:{ trocoInicial:r.trocoInicial, qtdVendas:r.qtdVendas,
-          totalRecebido:r.totalVendas, totalPedidos:r.totalPedidos,
-          diferencaRecebidoPedidos:r.diferencaRecebidoPedidos,
-          dinheiroLiquido:r.vendasDinheiro, trocoDevolvido:r.trocoDevolvido,
-          cartao:r.vendasCartao, taxaCartaoEmbutida:r.taxaCartaoEmbutida, liquidoCartao:r.liquidoCartao,
-          suprimentos:r.totalSuprimentos, sangrias:r.totalSangrias,
-          esperadoGaveta:r.esperadoGaveta, esperadoCalculado:r.esperadoGavetaCalc,
-          esperadoAjustadoManualmente:r.esperadoGavetaManual },
-        conferenciaFinal: conf?{contado:conf.contado,diferenca:conf.diferenca,em:new Date(conf.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}:null,
-        confereRecebidoXPedidos: Math.abs(somaRecebidoLiq-somaPedidos)<0.02,
-        vendasComProblema:problemas.length, problemas,
-        formula:`gaveta = ${r.trocoInicial} (inicial) + ${r.vendasDinheiro} (dinheiro líquido) + ${r.totalSuprimentos} (suprimentos) − ${r.totalSangrias} (sangrias) = ${r.esperadoGavetaCalc}`,
-      };
-    });
+    const out=sessoes.map(_auditarSessaoCaixa);
     res.json({ dia, caixas:out.length, data:out,
       resumoGeral:{
         totalRecebido:+out.reduce((a,c)=>a+c.resumo.totalRecebido,0).toFixed(2),

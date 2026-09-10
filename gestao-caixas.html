@@ -123,6 +123,7 @@ window.carregarAbertos=async function(){
         </div>`:""}
         <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;border:1px solid #29ABE2;color:#7fd4ff" onclick="conferirComBling('${s.id}')">🔍 Conferir com o Bling</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa aberto no momento.</div></div>';
   }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar os caixas abertos.</div>`; }
@@ -148,6 +149,7 @@ window.carregarHistorico=async function(){
         ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;border:1px solid #29ABE2;color:#7fd4ff" onclick="conferirComBling('${s.id}')">🔍 Conferir com o Bling</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa fechado ainda.</div></div>';
   }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar o histórico.</div>`; }
 }
@@ -824,3 +826,39 @@ render();
 </script>
 </body>
 </html>
+<script>function fecharModal(){ const el=document.getElementById('modais'); if(el) el.innerHTML=''; }
+
+// Roda a conferência caixa x Bling deste caixa (aberto ou já fechado) e mostra num
+// modal — venda a venda, aponta o que não bate e o motivo provável.
+window.conferirComBling=async function(sessaoId){
+  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal" style="max-width:560px"><div class="muted">Conferindo com o Bling…</div></div></div>`;
+  try{
+    const c=await fetch(B+"/api/diag/auditar-sessao/"+sessaoId).then(r=>r.json());
+    if(c.erro) throw new Error(c.erro);
+    const r=c.resumo;
+    const cor=c.confereRecebidoXPedidos?"#3ce88a":"#ff8090";
+    const linhas=(c.problemas||[]).map(p=>`
+      <div style="border-bottom:1px solid #2a2660;padding:7px 0;font-size:12px">
+        <div><b>#${esc(p.numero)}</b> ${esc(p.cliente||"")} — <span style="color:${p.diferenca>0?'#ffd23f':'#ff8090'}">${p.diferenca>0?"+":""}${brl(p.diferenca)}</span></div>
+        <div class="muted" style="font-size:11px">pedido ${brl(p.valorPedido)} · recebido líquido ${brl(p.recebidoLiquido)}${p.troco?" · troco "+brl(p.troco):""}</div>
+        <div class="muted" style="font-size:11px">${esc(p.provavel||"")}</div>
+      </div>`).join("");
+    document.getElementById("modais").innerHTML=`
+      <div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal" style="max-width:560px;max-height:86vh;overflow:auto">
+        <h3>🔍 Conferência com o Bling — ${esc(c.operador||"—")}</h3>
+        <div class="muted" style="font-size:12px;margin-bottom:10px">${esc(c.abertaEm||"")}${c.fechadaEm?" até "+esc(c.fechadaEm):" (aberto)"}</div>
+        <div style="background:${c.confereRecebidoXPedidos?'#0a2a1a':'#3a0010'};border:1px solid ${cor};border-radius:10px;padding:10px;margin-bottom:10px">
+          <b style="color:${cor}">${c.confereRecebidoXPedidos?"✅ Recebido bate com o valor dos pedidos":"⚠️ "+c.vendasComProblema+" venda(s) não batem"}</b>
+        </div>
+        <div class="linha"><span>Total recebido</span><b>${brl(r.totalRecebido)}</b></div>
+        <div class="linha"><span>Total dos pedidos</span><b>${brl(r.totalPedidos)}</b></div>
+        ${Math.abs(r.diferencaRecebidoPedidos)>0.02?`<div class="linha"><span>Diferença</span><b style="color:#ffd23f">${brl(r.diferencaRecebidoPedidos)}</b></div>`:""}
+        <div class="muted" style="font-size:11px;margin:8px 0">${esc(c.formula||"")}</div>
+        ${linhas?`<div style="margin-top:10px"><b style="font-size:13px">Vendas com diferença</b>${linhas}</div>`:""}
+        <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="fecharModal()">Fechar</button>
+      </div></div>`;
+  }catch(e){
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModal()"><div class="modal"><div class="err">Erro: ${esc(e.message)}</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModal()">Fechar</button></div></div>`;
+  }
+};
+</script>
