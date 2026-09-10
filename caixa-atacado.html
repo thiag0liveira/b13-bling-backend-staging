@@ -559,6 +559,28 @@ async function buscarPedidoNoBling(numero){
 
 async function abrirPedido(id){
   try{
+    // SEGURANÇA: pedido que JÁ FOI RECEBIDO (pago) ou que já saiu pra separação não
+    // pode ser reaberto direto — exige QR de autorização. Antes essa checagem só
+    // existia no caminho vindo de Propostas, então clicar no pedido pela lista do
+    // caixa reabria sem pedir nada.
+    let st=null;
+    try{ st=await fetch(BACKEND+"/api/atacado/pedido/"+id+"/status-pagamento").then(r=>r.json()); }catch(e){}
+    const precisaAut = st && (st.pago || st.statusPagamento==="pago" || st.statusPagamento==="parcial" || st.jaSaiuDoFluxoInicial);
+    if(precisaAut && !AUTORIZADO_POR){
+      pedirQrAcao(`🔓 Reabrir pedido #${esc(String(id))}`,
+        `Este pedido <b>já foi recebido</b>${st.statusPagamento==="parcial"?" (pagamento parcial)":""}${st.situacaoNome?` e está como <b>${esc(st.situacaoNome)}</b>`:""}. Pra reabrir e alterar itens ou pagamento, leia o QR de autorização (gerente, financeiro ou admin).`,
+        async (tokenQr, campo, erroEl)=>{
+          try{
+            const a=await fetch(BACKEND+"/api/atacado/pedido/"+id+"/autorizar-edicao",{method:"POST",
+              headers:{"Content-Type":"application/json"},body:JSON.stringify({token:tokenQr})}).then(r=>r.json());
+            if(a.erro) throw new Error(a.erro);
+            AUTORIZADO_POR=a.autorizadoPor||"";
+            fecharModais();
+            await abrirPedido(id);   // agora abre, já autorizado
+          }catch(e){ if(campo) campo.value=""; if(erroEl) erroEl.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+        });
+      return;
+    }
     const j=await fetch(BACKEND+"/api/caixa-atacado/pedido/"+id).then(r=>r.json());
     if(j.erro) throw new Error(j.erro);
     PEDIDO_ATUAL={id:j.id,numero:j.numero,situacaoNome:j.situacaoNome,vendedorNome:j.vendedorNome,contatoId:j.contatoId};
@@ -1727,10 +1749,10 @@ async function finalizar(){
     let resp;
     if(PEDIDO_ATUAL){
       resp=await comTimeout(BACKEND+"/api/caixa-atacado/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({opId:OP_ID,pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,troco:trocoAtual()})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,pedidoId:PEDIDO_ATUAL.id,numero:PEDIDO_ATUAL.numero,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,observacao,statusFinal,taxaCredito,outrasDespesasBase:OUTRAS_DESPESAS,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,autorizadoPor:AUTORIZADO_POR||null,troco:trocoAtual()})}).then(r=>r.json());
     }else{
       resp=await comTimeout(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({opId:OP_ID,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,troco:trocoAtual()})}).then(r=>r.json());
+        body:JSON.stringify({opId:OP_ID,itens,pagamentos,emitirNfce,funcionarioId:S.id,clienteNome:CLIENTE_NOME,tipoCaixa:TIPO_CAIXA,observacao,statusFinal,taxaCredito,freteBase:FRETE,autorizouMenor:AUTORIZOU_MENOR,autorizadoPor:AUTORIZADO_POR||null,troco:trocoAtual()})}).then(r=>r.json());
     }
     if(resp.emAndamento){
       // já está sendo processada (outra aba/clique) — espera a conclusão em vez de repetir

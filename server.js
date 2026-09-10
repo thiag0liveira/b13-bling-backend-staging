@@ -6038,7 +6038,18 @@ app.get("/api/caixa-atacado/finalizar/status/:opId",(req,res)=>{
 });
 
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
-  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco}=req.body||{};
+  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco,autorizadoPor}=req.body||{};
+  // TRAVA DE SEGURANÇA no servidor: pedido que já foi recebido em caixa só pode ser
+  // refinalizado com autorização. Não basta a tela pedir o QR — se a checagem da tela
+  // falhar (ou alguém chamar a API direto), o servidor recusa.
+  try{
+    if(pedidoId && !autorizadoPor){
+      const jaPago=_pagamentoDoPedido(pedidoId);
+      if(jaPago.pago){
+        return res.status(403).json({erro:`Este pedido já foi recebido em ${jaPago.ondeFoiPago||"caixa"}${jaPago.operador?" por "+jaPago.operador:""}. Pra reabrir e alterar, é preciso autorização (QR de gerente, financeiro ou admin).`, precisaAutorizacao:true, jaPago:true});
+      }
+    }
+  }catch(e){}
   const opId=req.body?.opId?String(req.body.opId):null;
   if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
   if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
@@ -10968,11 +10979,24 @@ app.get("/api/atacado/pedido/:blingId/situacao",async(req,res)=>{
 });
 
 // diz se o pedido já foi pago (pra Propostas decidir se precisa de autorização pra editar)
-app.get("/api/atacado/pedido/:blingId/status-pagamento",(req,res)=>{
+app.get("/api/atacado/pedido/:blingId/status-pagamento",async(req,res)=>{
   const pags=lerPag();
   const p=pags[String(req.params.blingId)];
   const status=p?.statusPagamento||"pendente";
-  res.json({ pago: status==="pago"||status==="parcial", statusPagamento:status, valorPago:p?.valorPago||0 });
+  // informa também se o pedido JÁ SAIU do início do fluxo (foi pra separação, está
+  // separado, em rota ou atendido). Nesses casos reabrir no caixa também exige
+  // autorização — antes só o pagamento registrado era considerado, e um pedido pago
+  // que já tinha ido pra expedição abria sem pedir nada.
+  let situacaoNome=null, jaSaiuDoFluxoInicial=false, pagoNoCaixa=false;
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
+    const sit=Number(d?.situacao?.id||0);
+    situacaoNome=nomeSituacao(sit);
+    jaSaiuDoFluxoInicial=[SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO].includes(sit);
+  }catch(e){}
+  try{ pagoNoCaixa=!!_pagamentoDoPedido(req.params.blingId).pago; }catch(e){}
+  res.json({ pago: status==="pago"||status==="parcial"||pagoNoCaixa, statusPagamento:status,
+    valorPago:p?.valorPago||0, situacaoNome, jaSaiuDoFluxoInicial, pagoNoCaixa });
 });
 
 // autoriza (por QR) a edição de um pedido JÁ PAGO em Propostas — mesmo QR/grupos do
