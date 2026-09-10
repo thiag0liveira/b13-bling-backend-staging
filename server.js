@@ -4874,7 +4874,7 @@ app.post("/api/diag/resgatar-digitacao/:numero",async(req,res)=>{
     if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     const sit=Number(ped.situacao?.id||0);
-    if(sit!==21) return res.json({ok:true, jaEstava:true, situacao:nomeSituacao(sit), msg:"Este pedido não está em Em digitação — nada a fazer."});
+    if(sit!==21 && sit!==SIT.EM_ABERTO) return res.json({ok:true, jaEstava:true, situacao:nomeSituacao(sit), msg:"Este pedido não está em Em digitação/Em aberto — nada a fazer."});
     const r=await mudarSituacaoPedido(ped.id, SIT.AGUARDANDO);
     if(!r.ok) return res.status(502).json({erro:r.erro||"o Bling recusou a mudança", pedido:ped.numero});
     res.json({ok:true, numero:ped.numero, para:nomeSituacao(SIT.AGUARDANDO), viaPonte:r.viaPonte||null});
@@ -8081,7 +8081,8 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
       .slice(0,60);
     for(const prop of candidatos){
       let d=null; try{ d=await blingLento(`/pedidos/vendas/${prop.pedidoBlingId}`).then(r=>r?.data); }catch(e){}
-      if(!d || Number(d.situacao?.id)!==21) continue; // 21 = Em digitação
+      const sitP=Number(d?.situacao?.id||0);
+      if(!d || (sitP!==21 && sitP!==SIT.EM_ABERTO)) continue; // 21=Em digitação, EM_ABERTO=Em aberto — ambos "nunca entrou no fluxo"
       const r=await mudarSituacaoPedido(prop.pedidoBlingId, SIT.AGUARDANDO);
       if(r.ok){
         registrarAviso({tipo:"pedido_resgatado_digitacao",
@@ -9333,15 +9334,16 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     // a mudança automática pra "Aguardando separação" falhou na criação (mesmo bug já
     // visto no pedido 55142). Como ficou preso ANTES do início do fluxo, aproveita esta
     // edição bem-sucedida pra trazê-lo de volta pro fluxo normal.
-    if(sitOrig===21){
+    if(sitOrig===21||sitOrig===SIT.EM_ABERTO){
+      const nomeOrig=sitOrig===21?"Em digitação":"Em aberto";
       const rs=await mudarSituacaoPedido(id, SIT.AGUARDANDO);
       if(!rs.ok){
         registrarAviso({tipo:"pedido_preso_em_digitacao",
-          titulo:`Pedido #${ped.numero||id} continua preso em "Em digitação"`,
+          titulo:`Pedido #${ped.numero||id} continua preso em "${nomeOrig}"`,
           pedidoId:String(id), numero:ped.numero, origem:"Pedidos (tipo entrega)",
           fingerprint:`digitacao-${id}`,
           erroBling:rs.erro||"",
-          oQueFazer:`O pedido #${ped.numero||id} nunca saiu do rascunho no Bling. Tentamos mover pra "Aguardando separação" e não conseguimos (${rs.erro||"erro"}). Abra o pedido direto no Bling e mude a situação manualmente.`});
+          oQueFazer:`O pedido #${ped.numero||id} nunca saiu de "${nomeOrig}" no Bling. Tentamos mover pra "Aguardando separação" e não conseguimos (${rs.erro||"erro"}). Abra o pedido direto no Bling e mude a situação manualmente.`});
       }
     }
     // guarda o agendamento antes de apagar — se foi engano, dá pra restaurar
@@ -9382,8 +9384,11 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
 });
 // PUT no pedido destravando a situação quando necessário (reusa a lógica já testada)
 async function atualizarComDestrave(id, payload, sitAtual){
-  const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
-  const precisa=BLOQ.includes(Number(sitAtual));
+  // "Em aberto" (6) entrou na lista: pedidos que nunca saíram do estado inicial
+  // (55338) também precisam do destrave — o Bling pode ignorar silenciosamente a
+  // edição de transporte/parcelas nessa situação, sem devolver erro nenhum.
+  const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.EM_ABERTO];
+  const precisa=BLOQ.includes(Number(sitAtual)) && Number(sitAtual)!==21; // já em Em digitação não precisa destravar de novo
   try{
     // usa o helper seguro (trata "mesma situação" e "sem transição definida" via
     // situação-ponte) — antes chamava o Bling direto e um erro aqui derrubava a
