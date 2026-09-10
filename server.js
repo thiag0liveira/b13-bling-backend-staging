@@ -3065,6 +3065,32 @@ function _auditarSessaoCaixa(s){
 
 // Conferência (caixa × Bling) de UM caixa específico, aberto ou já fechado —
 // usada pelo botão "🔍 Conferir com o Bling" na Gestão de Caixas.
+// Lista todos os pagamentos em PIX registrados no caixa (todas as sessões) num dia,
+// pra conciliar com o extrato bancário item a item. Uso: /api/diag/pix-do-dia?data=2026-09-10
+app.get("/api/diag/pix-do-dia",(req,res)=>{
+  try{
+    const dia=_hojeISO(req.query.data);
+    const ini=_inicioDia(dia), fim=_fimDia(dia);
+    const dCx=lerCaixaSessoes();
+    const lista=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        if(m.em<ini||m.em>=fim) return;
+        (m.pagamentos||[]).forEach(p=>{
+          if(!/pix/i.test(p.formaNome||"")) return;
+          lista.push({ valor:+Number(p.valor).toFixed(2), formaNome:p.formaNome,
+            numero:m.numero||m.pedidoId, cliente:m.clienteNome||"",
+            operador:m.operador||s.operador||"", tipoCaixa:s.tipoCaixa||"frente",
+            hora:new Date(m.em).toLocaleTimeString("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit"}) });
+        });
+      });
+    });
+    lista.sort((a,b)=>b.valor-a.valor);
+    res.json({ dia, qtd:lista.length, total:+lista.reduce((a,x)=>a+x.valor,0).toFixed(2), data:lista });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/auditar-sessao/:sessaoId",(req,res)=>{
   try{
     const dCx=lerCaixaSessoes();
