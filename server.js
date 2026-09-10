@@ -6044,7 +6044,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   // falhar (ou alguém chamar a API direto), o servidor recusa.
   try{
     if(pedidoId && !autorizadoPor){
-      const jaPago=_pagamentoDoPedido(pedidoId);
+      const jaPago=_pagamentoDoPedido(pedidoId, req.body?.numero);
       if(jaPago.pago){
         return res.status(403).json({erro:`Este pedido já foi recebido em ${jaPago.ondeFoiPago||"caixa"}${jaPago.operador?" por "+jaPago.operador:""}. Pra reabrir e alterar, é preciso autorização (QR de gerente, financeiro ou admin).`, precisaAutorizacao:true, jaPago:true});
       }
@@ -10987,16 +10987,25 @@ app.get("/api/atacado/pedido/:blingId/status-pagamento",async(req,res)=>{
   // separado, em rota ou atendido). Nesses casos reabrir no caixa também exige
   // autorização — antes só o pagamento registrado era considerado, e um pedido pago
   // que já tinha ido pra expedição abria sem pedir nada.
-  let situacaoNome=null, jaSaiuDoFluxoInicial=false, pagoNoCaixa=false;
+  let situacaoNome=null, jaSaiuDoFluxoInicial=false, pagoNoCaixa=false, numeroDoPedido=null;
   try{
     const d=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
+    numeroDoPedido=d?.numero||null;
     const sit=Number(d?.situacao?.id||0);
     situacaoNome=nomeSituacao(sit);
     jaSaiuDoFluxoInicial=[SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO].includes(sit);
   }catch(e){}
-  try{ pagoNoCaixa=!!_pagamentoDoPedido(req.params.blingId).pago; }catch(e){}
-  res.json({ pago: status==="pago"||status==="parcial"||pagoNoCaixa, statusPagamento:status,
-    valorPago:p?.valorPago||0, situacaoNome, jaSaiuDoFluxoInicial, pagoNoCaixa });
+  let recebido=null;
+  try{ recebido=_pagamentoDoPedido(req.params.blingId, numeroDoPedido); pagoNoCaixa=!!recebido.pago; }catch(e){}
+  // A REGRA É: já foi RECEBIDO em algum caixa? Se sim, reabrir exige autorização —
+  // independente da situação em que o pedido esteja no Bling (o status varia, mas o
+  // recebimento não volta atrás).
+  res.json({ pago: pagoNoCaixa || status==="pago" || status==="parcial",
+    recebido: pagoNoCaixa,
+    ondeFoiPago: recebido?.ondeFoiPago||null, operadorRecebeu: recebido?.operador||null,
+    quandoRecebeu: recebido?.quando||null, valorRecebido: recebido?.valor||0,
+    statusPagamento:status, valorPago:p?.valorPago||0,
+    situacaoNome, jaSaiuDoFluxoInicial, pagoNoCaixa });
 });
 
 // autoriza (por QR) a edição de um pedido JÁ PAGO em Propostas — mesmo QR/grupos do
@@ -11901,12 +11910,19 @@ function estimarPesoPedido(itens){
 // com os dados já prontos pra tela: cliente, vendedor, valor, frete, itens, peso.
 // Descobre se um pedido JÁ FOI RECEBIDO em algum caixa (atacado ou frente) e como.
 // Serve pra rota saber o que sai pra entrega sem estar pago.
-function _pagamentoDoPedido(pedidoId){
+function _pagamentoDoPedido(pedidoId, numeroPedido){
   const id=String(pedidoId);
+  const num=numeroPedido!=null?String(numeroPedido):null;
   const dCx=lerCaixaSessoes();
+  // RECEBIDO É RECEBIDO: procura em TODOS os caixas (atacado e frente, abertos e
+  // fechados), casando por id OU por número do pedido — o registro antigo às vezes
+  // guardou só o número, e sem isso um pedido recebido passava como "não recebido".
   for(const s of (dCx.sessoes||[])){
     for(const m of (s.movimentos||[])){
-      if(m.tipo!=="venda"||m.cancelado||String(m.pedidoId)!==id) continue;
+      if(m.tipo!=="venda"||m.cancelado) continue;
+      const bateId = String(m.pedidoId||"")===id;
+      const bateNum = num && String(m.numero||"")===num;
+      if(!bateId && !bateNum) continue;
       return { pago:true, ondeFoiPago:(s.tipoCaixa||"frente")==="atacado"?"Caixa Atacado":"Frente de Caixa",
         operador:m.operador||s.operador||"", quando:m.em, valor:Number(m.total)||0,
         formas:(m.pagamentos||[]).map(x=>`${x.formaNome}: ${Number(x.valor).toFixed(2)}`).join(" · "),

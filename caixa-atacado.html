@@ -565,10 +565,17 @@ async function abrirPedido(id){
     // caixa reabria sem pedir nada.
     let st=null;
     try{ st=await fetch(BACKEND+"/api/atacado/pedido/"+id+"/status-pagamento").then(r=>r.json()); }catch(e){}
-    const precisaAut = st && (st.pago || st.statusPagamento==="pago" || st.statusPagamento==="parcial" || st.jaSaiuDoFluxoInicial);
+    // A REGRA É UMA SÓ: o pedido já foi RECEBIDO em algum caixa? Então só reabre com
+    // autorização — não importa em que status ele esteja agora.
+    const precisaAut = st && (st.recebido || st.pago || st.statusPagamento==="pago" || st.statusPagamento==="parcial");
     if(precisaAut && !AUTORIZADO_POR){
+      const ondeQuem = st.ondeFoiPago
+        ? `no <b>${esc(st.ondeFoiPago)}</b>${st.operadorRecebeu?` por <b>${esc(st.operadorRecebeu)}</b>`:""}${st.quandoRecebeu?` em ${esc(st.quandoRecebeu)}`:""}`
+        : "";
       pedirQrAcao(`🔓 Reabrir pedido #${esc(String(id))}`,
-        `Este pedido <b>já foi recebido</b>${st.statusPagamento==="parcial"?" (pagamento parcial)":""}${st.situacaoNome?` e está como <b>${esc(st.situacaoNome)}</b>`:""}. Pra reabrir e alterar itens ou pagamento, leia o QR de autorização (gerente, financeiro ou admin).`,
+        `Este pedido <b>já foi recebido</b>${ondeQuem?" "+ondeQuem:""}${st.valorRecebido?` — ${brl(st.valorRecebido)}`:""}${st.statusPagamento==="parcial"?" (pagamento parcial)":""}.<br>
+         ${st.situacaoNome?`Situação atual: <b>${esc(st.situacaoNome)}</b>.<br>`:""}
+         Pra reabrir e alterar itens ou pagamento, leia o QR de autorização (gerente, financeiro ou admin).`,
         async (tokenQr, campo, erroEl)=>{
           try{
             const a=await fetch(BACKEND+"/api/atacado/pedido/"+id+"/autorizar-edicao",{method:"POST",
