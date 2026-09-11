@@ -7941,6 +7941,9 @@ app.get("/expedicao", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa.html")); });
 app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
 app.get("/gestao-caixas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-caixas.html")); });
+// Consulta de precos PUBLICA — sem login, sem nav.js, pra compartilhar o link com
+// qualquer pessoa (mesma ideia do Apoio ao Vendedor, so preco, sem enviar WhatsApp direto)
+app.get("/consulta-precos", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "consulta-precos.html")); });
 app.get("/caixa-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-atacado.html")); });
 app.get("/frente-caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "frente-caixa.html")); });
 app.get("/lista-fardo", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "lista-fardo.html")); });
