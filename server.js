@@ -5288,9 +5288,18 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     }
     if(!rBling.ok){
       let m=rBling.erro||"desconhecido";
-      if(/estoque|saldo/i.test(m)) m="o Bling barrou por estoque insuficiente, mesmo após tentar repor. Nada foi alterado. Confira o estoque no Bling e tente de novo.";
+      let produtosSemEstoqueEd=[];
+      if(/estoque|saldo/i.test(m)){
+        try{ produtosSemEstoqueEd=await _identificarProdutosSemEstoque(itensMudaramEd?itensNovos:itensNovos); }catch(e){}
+        const listaProdEd=produtosSemEstoqueEd.map(p=>`${p.nome} (precisa ${p.quantidade}, tem ${p.saldoAtual})`).join("; ");
+        m=produtosSemEstoqueEd.length
+          ? `Estoque insuficiente em: ${listaProdEd}. Tentamos repor e não foi possível. Nada foi alterado.`
+          : "o Bling barrou por estoque insuficiente, mesmo após tentar repor. Nada foi alterado. Confira o estoque no Bling e tente de novo.";
+      }
       registrarAviso({tipo:"edicao_caixa_bling_falhou",titulo:`Pedido #${numero||ped.numero}: alteração no caixa não salva no Bling`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",erroBling:rBling.erro||"",fingerprint:`edcx-${idStr}-${Date.now()}`,
-        oQueFazer:`Tentou alterar o pedido #${numero||ped.numero} (${itensMudaramEd?"itens e ":""}pagamento) e o Bling recusou. ${itensMudaramEd?"Itens pretendidos: "+diffItensEd.para+". ":""}Pagamento pretendido: ${descDepoisPre}.`});
+        oQueFazer:produtosSemEstoqueEd.length
+          ? `A alteração do pedido #${numero||ped.numero} travou por falta de estoque em: ${produtosSemEstoqueEd.map(p=>p.nome).join(", ")}. Ajuste o estoque no Bling e tente de novo.`
+          : `Tentou alterar o pedido #${numero||ped.numero} (${itensMudaramEd?"itens e ":""}pagamento) e o Bling recusou. ${itensMudaramEd?"Itens pretendidos: "+diffItensEd.para+". ":""}Pagamento pretendido: ${descDepoisPre}.`});
       return res.status(502).json({erro:"Falha ao atualizar no Bling: "+m});
     }
     // se o pedido estava ATENDIDO, o destrave ESTORNOU o estoque — confere se o Bling
@@ -6024,6 +6033,32 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
 // saldo atual seja MENOR que a quantidade vendida, lança uma ENTRADA de estoque só
 // do que falta (operacao "E" = entrada, soma ao saldo). Assim a finalização não é
 // barrada pelo Bling por saldo insuficiente. Retorna a lista do que foi reposto.
+// Descobre, consultando o Bling NA HORA, quais itens de uma venda ainda estão com
+// saldo insuficiente — usado quando o Bling recusa por estoque mas não diz qual
+// produto é (a mensagem genérica do Bling não identifica o item).
+async function _identificarProdutosSemEstoque(itens){
+  const ids=[...new Set((itens||[]).map(i=>Number(i.produtoId)).filter(Boolean))];
+  if(!ids.length) return [];
+  const saldo={};
+  for(let i=0;i<ids.length;i+=40){
+    const bloco=ids.slice(i,i+40);
+    try{
+      const r=await bling(`/estoques/saldos?${bloco.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+      (r?.data||[]).forEach(s=>{ saldo[s.produto?.id]=Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0); });
+    }catch(e){}
+    await sleep(150);
+  }
+  const faltantes=[];
+  (itens||[]).forEach(it=>{
+    const pid=Number(it.produtoId); if(!pid) return;
+    const qtd=Number(it.quantidade)||0;
+    const atual=Number(saldo[pid]??0);
+    const falta=+(qtd-atual).toFixed(3);
+    if(falta>0) faltantes.push({produtoId:pid, nome:it.nome||("produto "+pid), quantidade:qtd, saldoAtual:atual, falta});
+  });
+  return faltantes;
+}
+
 async function garantirEstoqueParaItens(itens){
   const reposto=[];
   if(!Array.isArray(itens)||!itens.length) return reposto;
@@ -6376,10 +6411,37 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     // 5) grava no Bling em UM PUT (itens+parcelas+obs+despesas), destravando se preciso
     let avisoBling=null, sitDepoisPut=sitInicial;
     if(itensMudaram){
-      const r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
+      let r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
+      // Se falhou por ESTOQUE: identifica o(s) produto(s) exato(s) (o Bling não diz
+      // qual é), tenta repor de novo (a reposição anterior pode ter falhado só num
+      // item, ou o saldo mudou entre a checagem e o PUT) e tenta salvar mais 1 vez
+      // antes de desistir — em vez de travar direto sem dizer o produto.
+      let produtosSemEstoque=[];
+      if(!r?.ok && /estoque|saldo/i.test(r?.erro||"")){
+        produtosSemEstoque=await _identificarProdutosSemEstoque(itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,nome:(itensEfetivos.find(x=>String(x.produtoId)===String(i.produtoId))?.nome)||""})));
+        if(produtosSemEstoque.length){
+          try{ const rep2=await garantirEstoqueParaItens(produtosSemEstoque.map(p=>({produtoId:p.produtoId,quantidade:p.quantidade,nome:p.nome})));
+            if(rep2.length) estoqueReposto=[...estoqueReposto,...rep2]; }catch(e){}
+          await sleep(500);
+          r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
+        }
+      }
       if(!r?.ok){
         let m=r?.erro||"erro";
-        if(/estoque|saldo/i.test(m)) m="O Bling barrou por estoque insuficiente em um ou mais produtos, mesmo após tentar repor. NADA foi finalizado. Confira o estoque no Bling e tente de novo.";
+        if(/estoque|saldo/i.test(m)){
+          if(!produtosSemEstoque.length){ try{ produtosSemEstoque=await _identificarProdutosSemEstoque(itensEfetivos); }catch(e){} }
+          const listaProd=produtosSemEstoque.map(p=>`${p.nome} (precisa ${p.quantidade}, tem ${p.saldoAtual})`).join("; ");
+          m=produtosSemEstoque.length
+            ? `Estoque insuficiente em: ${listaProd}. Tentamos repor automaticamente e não foi possível. NADA foi finalizado.`
+            : "O Bling barrou por estoque insuficiente em um ou mais produtos, mesmo após tentar repor. NADA foi finalizado. Confira o estoque no Bling e tente de novo.";
+          registrarAviso({ tipo:"estoque_insuficiente_venda",
+            titulo:`Pedido #${ped.numero||pedidoId}: estoque insuficiente travou a venda`,
+            pedidoId:String(pedidoId), numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
+            fingerprint:`estoqinsuf-${pedidoId}-${Date.now()}`,
+            oQueFazer: produtosSemEstoque.length
+              ? `A venda do pedido #${ped.numero||pedidoId} travou porque estes produtos estão com saldo insuficiente no Bling: ${listaProd}. Ajuste o estoque desses produtos no Bling e peça pra reabrir/finalizar de novo.`
+              : `A venda do pedido #${ped.numero||pedidoId} travou por estoque insuficiente, mas não foi possível identificar qual produto. Confira o pedido no Bling.` });
+        }
         throw Object.assign(new Error("Não consegui salvar as alterações no Bling: "+m),{status:502});
       }
       if(r.reposto?.length) estoqueReposto=[...estoqueReposto,...r.reposto];
