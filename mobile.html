@@ -69,6 +69,18 @@
 </style>
 </head>
 <body>
+<script>
+  // se algum script travar (navegador antigo), mostra o erro em vez de tela parada
+  window.onerror=function(msg){
+    try{
+      var b=document.body;
+      var d=document.createElement("div");
+      d.style.cssText="position:fixed;top:0;left:0;right:0;background:#3a0010;color:#ffb0b0;padding:12px;font:13px Arial;z-index:99999";
+      d.innerHTML="Erro nesta versão de navegador: <b>"+String(msg)+"</b><br>Tente atualizar o navegador do aparelho.";
+      b.appendChild(d);
+    }catch(e){}
+  };
+</script>
 <script src="/nav.js"></script>
 <div class="top">
   <img src="/logo" alt="B13" style="height:26px" onerror="this.style.display='none'">
@@ -197,6 +209,14 @@ function carregarFunc() {
       }
     } catch (e) {}
   }
+  if (!f) {
+    // fallback pro COOKIE — em Android/WebView restrito (Chrome 79 do aparelho) os
+    // storages podem estar bloqueados, e a sessao so existe no cookie
+    try {
+      var m = document.cookie.match(/b13sess=([^;]+)/);
+      if (m) { var f3 = JSON.parse(decodeURIComponent(m[1])); if (f3 && f3.id) f = f3; }
+    } catch (e) {}
+  }
   if (!f) return false;
   if (!podeUsarMobile()) {
     FUNC = f;
@@ -273,9 +293,10 @@ function fazerLogin() {
     var f = j && j.funcionario ? j.funcionario : j;
     if (f && f.id) {
       FUNC = f;
-      try {
-        sessionStorage.setItem("b13sess", JSON.stringify(f));
-      } catch (e) {}
+      var _txt = JSON.stringify(f);
+      try { sessionStorage.setItem("b13sess", _txt); } catch (e) {}
+      try { localStorage.setItem("b13sess", _txt); } catch (e) {}
+      try { document.cookie = "b13sess=" + encodeURIComponent(_txt) + ";path=/;max-age=43200"; } catch (e) {}
       if (!podeUsarMobile()) {
         SEM_ACESSO = true;
         render();
@@ -424,7 +445,18 @@ function buscarDigitado() {
 var _scanner = null;
 function abrirScanner() {
   var box = el("scanBox");
-  box.innerHTML = '<div class="card"><div id="reader"></div>' + '<div class="row mt">' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flip180\')">🔄 Inverter (180°)</button>' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flipH\')">↔️ Espelhar</button>' + '</div>' + '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button>' + '<div class="muted center mt">Aponte para o QR code da nota.</div></div>';
+  // camera precisa de HTTPS e da API mediaDevices — em navegador muito antigo ou sem
+  // permissao, avisa e ja oferece digitar o numero na mao, em vez de travar
+  var temCamera = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? true : false;
+  if (!temCamera) {
+    box.innerHTML = '<div class="card"><div class="err" style="margin-bottom:10px">Este aparelho/navegador não permite usar a câmera aqui.</div>' +
+      '<div class="muted mb">Digite o número do pedido:</div>' +
+      '<input id="pedidoManual" inputmode="numeric" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+      '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
+      '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
+    return;
+  }
+  box.innerHTML = '<div class="card"><div id="reader"></div>' + '<div class="row mt">' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flip180\')">🔄 Inverter (180°)</button>' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flipH\')">↔️ Espelhar</button>' + '</div>' + '<button class="btn btn-ghost mt" onclick="digitarNumeroManual()" style="width:100%">⌨️ Digitar número em vez de escanear</button>' + '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button>' + '<div class="muted center mt">Aponte para o QR code da nota.</div></div>';
   // carrega a lib de QR sob demanda
   if (window.Html5Qrcode) {
     iniciarScanner();
@@ -437,6 +469,22 @@ function abrirScanner() {
     box.innerHTML = '<div class="card err">Não consegui carregar o leitor. Verifique a internet.</div>';
   };
   document.body.appendChild(s);
+}
+function digitarNumeroManual() {
+  pararScanner();
+  var box = el("scanBox");
+  box.innerHTML = '<div class="card"><div class="muted mb">Digite o número do pedido:</div>' +
+    '<input id="pedidoManual" inputmode="numeric" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+    '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
+    '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
+  var inp = el("pedidoManual"); if (inp) inp.focus();
+}
+function abrirPedidoManual() {
+  var inp = el("pedidoManual");
+  var num = inp ? String(inp.value || "").replace(/\D/g, "") : "";
+  if (!num) { if (inp) inp.focus(); return; }
+  el("scanBox").innerHTML = "";
+  abrirPedido(num);
 }
 function toggleFlipScanner(classe) {
   var reader = el("reader");
