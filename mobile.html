@@ -85,6 +85,7 @@
 <div class="top">
   <img src="/logo" alt="B13" style="height:26px" onerror="this.style.display='none'">
   <div class="sp"></div>
+  <button id="btnFull" onclick="toggleTelaCheia()" title="Tela cheia" style="background:#1c1846;border:1px solid #514c96;color:#fff;border-radius:8px;padding:6px 10px;font-size:16px;cursor:pointer;margin-right:8px">⛶</button>
   <div id="funcNome" class="muted"></div>
 </div>
 <div class="wrap" id="app"></div>
@@ -229,6 +230,22 @@ function carregarFunc() {
 }
 
 /* ================= RENDER ================= */
+function toggleTelaCheia() {
+  var d = document.documentElement;
+  try {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (d.requestFullscreen) d.requestFullscreen();
+      else if (d.webkitRequestFullscreen) d.webkitRequestFullscreen();
+      var b = document.getElementById("btnFull"); if (b) b.textContent = "🗕";
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      var b2 = document.getElementById("btnFull"); if (b2) b2.textContent = "⛶";
+    }
+  } catch (e) {
+    alert("Este navegador não permite tela cheia. Use o menu do navegador (três pontos) → Tela cheia.");
+  }
+}
 function render() {
   if (FUNC && el("funcNome")) el("funcNome").textContent = FUNC.nome || "";
   var app = el("app");
