@@ -3067,6 +3067,28 @@ function _auditarSessaoCaixa(s){
 // usada pelo botão "🔍 Conferir com o Bling" na Gestão de Caixas.
 // Lista todos os pagamentos em PIX registrados no caixa (todas as sessões) num dia,
 // pra conciliar com o extrato bancário item a item. Uso: /api/diag/pix-do-dia?data=2026-09-10
+// Lê a OBSERVAÇÃO de uma lista de pedidos direto no Bling — útil pra achar anotações
+// sobre qual banco/PIX foi usado, quando o pagamento no caixa não bate com o extrato.
+// Uso: /api/diag/observacoes-pedidos?numeros=55238,55273,55258,55026,55028
+app.get("/api/diag/observacoes-pedidos",async(req,res)=>{
+  try{
+    const numeros=String(req.query.numeros||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,40);
+    if(!numeros.length) return res.status(400).json({erro:"informe ?numeros=54444,54445"});
+    const out=[];
+    for(const n of numeros){
+      let ped=await bling(`/pedidos/vendas/${n}`).then(r=>r?.data).catch(()=>null);
+      if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(n)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+      if(!ped){ out.push({numero:n, encontrado:false}); continue; }
+      const obs=String(ped.observacoes||"");
+      out.push({ numero:ped.numero, cliente:ped.contato?.nome||"—", total:Number(ped.total)||0,
+        observacoes:obs, mencionaPix: /pix/i.test(obs),
+        parcelas:(ped.parcelas||[]).map(p=>({valor:p.valor, formaId:p.formaPagamento?.id})) });
+      await sleep(100);
+    }
+    res.json({ data:out });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/pix-do-dia",(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
