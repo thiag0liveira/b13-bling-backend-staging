@@ -207,7 +207,10 @@ function setPeriodoConf(tipo, ini, fim){
 let _confTimer=null;
 async function carregar(silencioso){
   try{
-    const sits=[SIT.SEPARADO||821590].filter(Boolean).join(",");
+    // PRAZO tambem precisa aparecer aqui: pedido vendido a prazo continua PRAZO
+    // ate ser pago, mas ainda precisa ser conferido antes de sair. Sem isso ele
+    // nunca aparecia na lista (o backend ja aceitava conferir, so a tela nao mostrava).
+    const sits=[SIT.SEPARADO||821590, SIT.PRAZO].filter(Boolean).join(",");
     const url=BACKEND+`/api/pedidos?limite=100&idsSituacoes=${sits}&dataInicial=${periodoIni||calcP("30dias").ini}&dataFinal=${periodoFim||calcP("30dias").fim}`;
     const ctrl=new AbortController();
     const to=setTimeout(()=>ctrl.abort(),35000);
@@ -215,7 +218,7 @@ async function carregar(silencioso){
     try{ r=await fetch(url,{signal:ctrl.signal}); }
     finally{ clearTimeout(to); }
     const j=await r.json();
-    pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO");
+    pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO"||p.situacao?.id===SIT.PRAZO);
     render();
   }catch(e){
     if(!silencioso){
@@ -300,7 +303,14 @@ async function abrirPedido(id){
     ]);
     sel=rPed.data||rPed;
     sel._pag=rPag.data||null;
-    sel._pago=sel._pag&&sel._pag.statusPagamento==="pago";
+    // "pago" precisa ser a MESMA regra que o servidor usa pra liberar a conferência
+    // (recebido em QUALQUER caixa, atacado ou frente) — o registro antigo (/api/pagamentos)
+    // é so um cache e podia divergir, mostrando "pago"/"não pago" errado na tela.
+    try{
+      const rRec=await fetch(BACKEND+"/api/atacado/pedido/"+id+"/status-pagamento").then(r=>r.json());
+      sel._pago = !!(rRec.recebido || rRec.pago || (sel._pag&&sel._pag.statusPagamento==="pago"));
+      sel._ondeFoiPago=rRec.ondeFoiPago||null; sel._operadorRecebeu=rRec.operadorRecebeu||null;
+    }catch(e){ sel._pago=sel._pag&&sel._pag.statusPagamento==="pago"; }
     // tipo de entrega já definido lá no totem — não deixa escolher de novo aqui
     const entregaInfo=(rEnt.data||{})[String(sel.id)]||null;
     const freteCalc=+(((sel.total||0)-(sel.totalProdutos||0))).toFixed(2);
@@ -433,7 +443,7 @@ function abrirModal(){
   const ps=document.getElementById("pagStatus");
   if(pago){
     ps.style.background="#0a2a1a"; ps.style.border="1px solid #2f9e6b"; ps.style.color="#a8f0c8";
-    ps.innerHTML=`✅ Pago: <b>${brl(valorPago)}</b> de ${brl(total)}`;
+    ps.innerHTML=`✅ Pago: <b>${brl(valorPago||total)}</b>${sel._ondeFoiPago?` — ${esc(sel._ondeFoiPago)}${sel._operadorRecebeu?" ("+esc(sel._operadorRecebeu)+")":""}`:""}`;
   } else {
     ps.style.background="#2a0a00"; ps.style.border="1px solid #ff8c00"; ps.style.color="#ffd23f";
     ps.innerHTML=`⚠️ Não pago — Total: <b>${brl(total)}</b><br><span style="font-size:11px">Retirada bloqueada até pagamento</span>`;
@@ -441,12 +451,16 @@ function abrirModal(){
   // tipo já definido lá no totem — não dá pra escolher aqui, só confirma
   tipoSel=sel._tipoEntrega;
   const tf=document.getElementById("tipoFixo");
-  tf.innerHTML=tipoSel==="entrega"?"🚚 ENTREGA":"🏪 RETIRADA";
-  // retirada só é liberada se já estiver pago
+  const ehPrazoSel=sel.situacao?.id===SIT.PRAZO;
+  tf.innerHTML=ehPrazoSel?"🧾 PRAZO":(tipoSel==="entrega"?"🚚 ENTREGA":"🏪 RETIRADA");
+  // NENHUM pedido pode ser conferido sem pagamento — vale pra entrega e retirada
+  // igual (antes só bloqueava retirada, e entrega sem pagar so falhava depois, no
+  // servidor, dando uma mensagem tardia em vez de bloquear na hora). PRAZO é a
+  // única exceção: foi autorizado, pode seguir sem estar pago ainda.
   const btnConf=document.getElementById("btnConfirmar");
-  if(tipoSel==="retirada"&&!pago){
+  if(!pago&&!ehPrazoSel){
     btnConf.disabled=true;
-    document.getElementById("msgModal").innerHTML=`<span class="err">Pedido de retirada precisa estar pago antes de confirmar.</span>`;
+    document.getElementById("msgModal").innerHTML=`<span class="err">Este pedido ainda não foi pago em nenhum caixa — não pode ser conferido.</span>`;
   } else {
     btnConf.disabled=false;
   }
