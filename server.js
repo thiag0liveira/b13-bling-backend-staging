@@ -529,6 +529,7 @@ window.B13_NAV_LINKS=[
 
   {grupo:"Logística",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
   {grupo:"Logística",href:"/mesa-separacao",label:"🖥️ Mesa de Separação",acoes:["acesso_mesa_separacao"]},
+  {grupo:"Logística",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
 
@@ -3095,6 +3096,48 @@ function _extrairEstornoDaObs(obs){
   if(!valor||valor<=0) return null;
   return { valor, forma:(m[2]||"").toUpperCase()||null, trechoOriginal:m[0] };
 }
+// PAINEL DE COMPROVANTES: lista os pedidos que tem foto/video de conferencia, lendo
+// do log de cada pedido (evento comprovante_conferencia). So leitura.
+app.get("/api/comprovantes/lista",(req,res)=>{
+  try{
+    const dias=Math.min(Number(req.query.dias||15),90);
+    const desde=Date.now()-dias*86400000;
+    const tipoFiltro=(req.query.tipo||"").toString(); // "foto" | "video" | ""
+    const log=lerLog();
+    const porPedido={};
+    Object.entries(log||{}).forEach(([pid,evs])=>{
+      (evs||[]).forEach(ev=>{
+        if(!/comprovante/i.test(ev.evento||"")) return;
+        const d=ev.detalhes||{};
+        if(!d.url) return;
+        if((ev.em||0)<desde) return;
+        const tipo=d.tipo||( /\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto");
+        if(tipoFiltro && tipo!==tipoFiltro) return;
+        if(!porPedido[pid]) porPedido[pid]={pedidoId:pid, comprovantes:[], ultimoEm:0};
+        porPedido[pid].comprovantes.push({ url:d.url, tipo, em:ev.em,
+          quando:new Date(ev.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+          por:ev.funcionarioNome||ev.funcionario||"" });
+        if((ev.em||0)>porPedido[pid].ultimoEm) porPedido[pid].ultimoEm=ev.em;
+      });
+    });
+    // enriquece com numero/cliente do registro local (rapido, sem bater no Bling)
+    const props=lerPropostas();
+    const porBling={};
+    Object.values(props||{}).forEach(p=>{ if(p.pedidoBlingId) porBling[String(p.pedidoBlingId)]=p; });
+    const lista=Object.values(porPedido).map(x=>{
+      const prop=porBling[String(x.pedidoId)]||null;
+      return { ...x, numero:prop?prop.pedidoBlingNumero||x.pedidoId:x.pedidoId,
+        cliente:prop&&prop.cliente?prop.cliente.nome:"",
+        qtd:x.comprovantes.length,
+        temVideo:x.comprovantes.some(c=>c.tipo==="video"),
+        temFoto:x.comprovantes.some(c=>c.tipo==="foto") };
+    }).sort((a,b)=>b.ultimoEm-a.ultimoEm);
+    res.json({ dias, qtd:lista.length,
+      totalArquivos:lista.reduce((a,x)=>a+x.qtd,0), data:lista });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/comprovantes-painel", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "comprovantes-painel.html")); });
+
 app.get("/api/central/estornos",async(req,res)=>{
   try{
     const props=lerPropostas();

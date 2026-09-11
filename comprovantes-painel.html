@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Comprovantes de Conferência</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233}
+  body{background:var(--bg);color:#fff;min-height:100vh}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid #2c2660;border-radius:14px;padding:14px;margin-top:14px}
+  .muted{color:#9a95c9}
+  .btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:13px;padding:8px 12px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:14px}
+  .pc{background:var(--card);border:1px solid #2c2660;border-radius:12px;overflow:hidden}
+  .pc .mid{background:#000;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+  .pc .mid img,.pc .mid video{width:100%;height:100%;object-fit:cover}
+  .pc .play{position:absolute;font-size:44px;color:#fff;text-shadow:0 2px 8px #000;pointer-events:none}
+  .pc .info{padding:10px}
+  .pc .num{font-weight:900;font-size:15px}
+  .pc .cli{font-size:12px;color:#9a95c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc .badge{display:inline-block;font-size:10px;font-weight:900;padding:1px 7px;border-radius:5px;margin-right:4px}
+  .lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;flex-direction:column}
+  .lb.on{display:flex}
+  .lb img,.lb video{max-width:96vw;max-height:82vh;border-radius:8px}
+  .lb .cap{color:#fff;margin-top:10px;text-align:center;font-size:13px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > .wrap{ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/comprovantes-painel")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      var nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/comprovantes-painel");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div class="wrap" id="app"></div>
+<div class="lb" id="lightbox" onclick="fecharLb(event)"></div>
+<script>
+var B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+var DADOS=null, FILTRO="", DIAS=15, BUSCA="";
+
+function carregar(){
+  var app=document.getElementById("app");
+  app.innerHTML='<div class="card"><div class="muted">Carregando comprovantes…</div></div>';
+  fetch(B+"/api/comprovantes/lista?dias="+DIAS+(FILTRO?"&tipo="+FILTRO:"")).then(function(r){return r.json();}).then(function(j){
+    DADOS=j; render();
+  }).catch(function(){ app.innerHTML='<div class="card"><div class="muted">Erro ao carregar.</div></div>'; });
+}
+
+function render(){
+  var app=document.getElementById("app");
+  if(!DADOS){ carregar(); return; }
+  var lista=(DADOS.data||[]);
+  if(BUSCA){ var b=BUSCA.toLowerCase(); lista=lista.filter(function(p){ return String(p.numero).indexOf(b)>=0 || (p.cliente||"").toLowerCase().indexOf(b)>=0; }); }
+  var cards=lista.map(function(p){
+    var c=p.comprovantes[0]; // capa = mais recente
+    var ehVideo=c.tipo==="video";
+    var mid=ehVideo
+      ? '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'video\',\''+esc(String(p.numero))+'\')"><video src="'+B+esc(c.url)+'#t=0.1" preload="metadata" muted></video><span class="play">▶</span></div>'
+      : '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'foto\',\''+esc(String(p.numero))+'\')"><img src="'+B+esc(c.url)+'" loading="lazy"></div>';
+    return '<div class="pc">'+mid+
+      '<div class="info">'+
+        '<div class="num">#'+esc(p.numero)+'</div>'+
+        '<div class="cli">'+esc(p.cliente||"—")+'</div>'+
+        '<div style="margin-top:6px">'+
+          (p.temFoto?'<span class="badge" style="background:#2f9e6b">📷 foto</span>':'')+
+          (p.temVideo?'<span class="badge" style="background:#b3341f">🎥 vídeo</span>':'')+
+          (p.qtd>1?'<span class="badge" style="background:#514c96">'+p.qtd+' arquivos</span>':'')+
+        '</div>'+
+        '<div class="muted" style="font-size:11px;margin-top:5px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div>'+
+        (p.qtd>1?'<button class="btn btn-ghost" style="width:100%;margin-top:8px;font-size:11px" onclick="verTodos('+p.pedidoId+')">Ver os '+p.qtd+'</button>':'')+
+      '</div></div>';
+  }).join("");
+
+  app.innerHTML=
+    '<div class="card" style="margin-top:0">'+
+      '<div style="font-weight:900;font-size:18px">📸 Comprovantes de Conferência</div>'+
+      '<div class="muted" style="font-size:12px;margin-top:4px">Fotos e vídeos tirados na conferência de cada pedido. Toque pra ampliar.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">'+
+        '<input placeholder="🔎 nº do pedido ou cliente" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value;render()" style="flex:1;min-width:160px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px">'+
+        '<span class="chip '+(FILTRO===""?"on":"")+'" onclick="FILTRO=\'\';carregar()">Tudo</span>'+
+        '<span class="chip '+(FILTRO==="foto"?"on":"")+'" onclick="FILTRO=\'foto\';carregar()">📷 Fotos</span>'+
+        '<span class="chip '+(FILTRO==="video"?"on":"")+'" onclick="FILTRO=\'video\';carregar()">🎥 Vídeos</span>'+
+        '<select onchange="DIAS=this.value;carregar()" style="background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px">'+
+          '<option value="7" '+(DIAS==7?"selected":"")+'>7 dias</option>'+
+          '<option value="15" '+(DIAS==15?"selected":"")+'>15 dias</option>'+
+          '<option value="30" '+(DIAS==30?"selected":"")+'>30 dias</option>'+
+          '<option value="90" '+(DIAS==90?"selected":"")+'>90 dias</option>'+
+        '</select>'+
+      '</div>'+
+      '<div class="muted" style="font-size:12px;margin-top:8px">'+lista.length+' pedido(s) · '+(DADOS.totalArquivos||0)+' arquivo(s)</div>'+
+    '</div>'+
+    (lista.length?'<div class="grid">'+cards+'</div>':'<div class="card"><div class="muted">Nenhum comprovante no período.</div></div>');
+}
+
+function abrirLb(url,tipo,numero){
+  var lb=document.getElementById("lightbox");
+  lb.innerHTML=(tipo==="video"
+    ? '<video src="'+B+esc(url)+'" controls autoplay playsinline></video>'
+    : '<img src="'+B+esc(url)+'">')+
+    '<div class="cap">Pedido #'+esc(numero)+' — <a href="'+B+esc(url)+'" target="_blank" style="color:#7fd4ff">abrir original</a></div>';
+  lb.classList.add("on");
+}
+function fecharLb(ev){ if(ev.target.id==="lightbox"||ev.target.className==="cap"){ var lb=document.getElementById("lightbox"); lb.classList.remove("on"); lb.innerHTML=""; } }
+
+function verTodos(pedidoId){
+  var p=(DADOS.data||[]).filter(function(x){return String(x.pedidoId)===String(pedidoId);})[0];
+  if(!p) return;
+  var lb=document.getElementById("lightbox");
+  lb.innerHTML='<div style="max-width:96vw;max-height:88vh;overflow:auto"><div style="color:#fff;font-weight:900;margin-bottom:10px">Pedido #'+esc(p.numero)+' — '+p.qtd+' arquivos</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">'+
+    p.comprovantes.map(function(c){
+      var m=c.tipo==="video"?'<video src="'+B+esc(c.url)+'" controls playsinline style="width:100%;border-radius:8px"></video>':'<img src="'+B+esc(c.url)+'" style="width:100%;border-radius:8px">';
+      return '<div>'+m+'<div style="color:#9a95c9;font-size:11px;margin-top:3px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div></div>';
+    }).join("")+'</div></div>';
+  lb.classList.add("on");
+}
+
+carregar();
+</script>
+</body>
+</html>
