@@ -333,7 +333,7 @@ function fazerLogin() {
 
 /* --- INICIO: buscar pedido por numero ou escanear --- */
 function viewInicio() {
-  return '<div class="card center">' + '<h2>Conferência</h2>' + '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' + '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' + '<div class="divider"></div>' + '<div class="lbl">Ou digite/leia o número/ID do pedido</div>' + '<div class="row mt">' + '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724" autofocus onkeypress="onInPedidoKey(event)" oninput="onInPedidoInput()"></div>' + '</div>' + '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' + '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' + '</div>' + '<div id="scanBox"></div>' + filaHtml();
+  return '<div class="card center">' + '<h2>Conferência</h2>' + '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' + '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' + '<div class="divider"></div>' + '<div class="lbl">Ou digite/leia o número/ID do pedido</div>' + '<div class="row mt">' + '<div class="col"><input id="inPedido" inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_num" placeholder="Ex: 48724" autofocus onkeypress="onInPedidoKey(event)" oninput="onInPedidoInput()"></div>' + '</div>' + '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' + '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' + '</div>' + '<div id="scanBox"></div>' + filaHtml();
 }
 
 /* --- FILA: mesma lista de "aguardando conferência" que tem em /conferencia --- */
@@ -468,7 +468,7 @@ function abrirScanner() {
   if (!temCamera) {
     box.innerHTML = '<div class="card"><div class="err" style="margin-bottom:10px">Este aparelho/navegador não permite usar a câmera aqui.</div>' +
       '<div class="muted mb">Digite o número do pedido:</div>' +
-      '<input id="pedidoManual" inputmode="numeric" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+      '<input id="pedidoManual" inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
       '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
       '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
     return;
@@ -491,7 +491,7 @@ function digitarNumeroManual() {
   pararScanner();
   var box = el("scanBox");
   box.innerHTML = '<div class="card"><div class="muted mb">Digite o número do pedido:</div>' +
-    '<input id="pedidoManual" inputmode="numeric" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+    '<input id="pedidoManual" inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
     '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
     '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
   var inp = el("pedidoManual"); if (inp) inp.focus();
