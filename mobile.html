@@ -86,7 +86,7 @@
   <img src="/logo" alt="B13" style="height:26px" onerror="this.style.display='none'">
   <div class="sp"></div>
   <button id="btnFull" onclick="toggleTelaCheia()" title="Tela cheia" style="background:#1c1846;border:1px solid #514c96;color:#fff;border-radius:8px;padding:6px 10px;font-size:16px;cursor:pointer;margin-right:8px">⛶</button>
-  <div id="funcNome" class="muted"></div>
+  <div id="funcNome" class="muted" onclick="confirmarSairMobile()" style="cursor:pointer"></div>
 </div>
 <div class="wrap" id="app"></div>
 
@@ -247,7 +247,8 @@ function toggleTelaCheia() {
   }
 }
 function render() {
-  if (FUNC && el("funcNome")) el("funcNome").textContent = FUNC.nome || "";
+  if (FUNC && el("funcNome")) el("funcNome").innerHTML = (FUNC.nome ? esc(FUNC.nome) + ' ' : '') + '<span style="opacity:.7">⏻ sair</span>';
+  else if (el("funcNome")) el("funcNome").innerHTML = "";
   var app = el("app");
   if (!FUNC) {
     app.innerHTML = viewLogin();
@@ -270,13 +271,14 @@ function render() {
 function viewSemAcesso() {
   return '<div class="card center">' + '<div style="font-size:40px;margin-bottom:10px">🚫</div>' + '<h2>Acesso negado</h2>' + '<div class="muted mt">Olá, ' + esc(FUNC ? FUNC.nome : "") + '. Seu usuário não tem permissão de Conferência — quem acessa o /mobile precisa ter acesso liberado à aba Conferência.</div>' + '<button class="btn btn-ghost mt" onclick="sairMobile()">Sair</button>' + '</div>';
 }
+function confirmarSairMobile() {
+  if (!FUNC) return;
+  if (confirm("Sair da conta de " + (FUNC.nome || "") + "?")) sairMobile();
+}
 function sairMobile() {
-  try {
-    sessionStorage.removeItem("b13sess");
-  } catch (e) {}
-  try {
-    localStorage.removeItem("b13sess");
-  } catch (e) {}
+  try { sessionStorage.removeItem("b13sess"); } catch (e) {}
+  try { localStorage.removeItem("b13sess"); } catch (e) {}
+  try { document.cookie = "b13sess=;path=/;max-age=0"; } catch (e) {}
   FUNC = null;
   SEM_ACESSO = false;
   TELA = "inicio";
