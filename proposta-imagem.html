@@ -28,109 +28,181 @@
   <div class="muted" id="msg">Gerando imagem…</div>
   <canvas id="cv"></canvas>
 </div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const params=new URLSearchParams(location.search);
-const ID=params.get("id");
-
-async function carregar(){
-  if(!ID){ document.getElementById("msg").textContent="Proposta não informada."; return; }
-  try{
-    const j=await fetch(B+"/api/atacado/propostas/"+ID).then(r=>r.json());
-    if(j.erro||!j.data){ document.getElementById("msg").textContent="Proposta não encontrada."; return; }
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+const params = new URLSearchParams(location.search);
+const ID = params.get("id");
+async function carregar() {
+  if (!ID) {
+    document.getElementById("msg").textContent = "Proposta não informada.";
+    return;
+  }
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + ID).then(r => r.json());
+    if (j.erro || !j.data) {
+      document.getElementById("msg").textContent = "Proposta não encontrada.";
+      return;
+    }
     desenhar(j.data);
-    document.getElementById("msg").style.display="none";
-  }catch(e){ document.getElementById("msg").textContent="Erro ao carregar."; }
+    document.getElementById("msg").style.display = "none";
+  } catch (e) {
+    document.getElementById("msg").textContent = "Erro ao carregar.";
+  }
 }
-
-function desenhar(p){
-  const itens=p.itens||[];
-  const W=680, padd=28;
-  const headerH=120, itemH=40, footerH=90;
-  const H=headerH + itens.length*itemH + footerH + 30;
-  const cv=document.getElementById("cv");
-  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px";
-  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
+function desenhar(p) {
+  var _p$cliente;
+  const itens = p.itens || [];
+  const W = 680,
+    padd = 28;
+  const headerH = 120,
+    itemH = 40,
+    footerH = 90;
+  const H = headerH + itens.length * itemH + footerH + 30;
+  const cv = document.getElementById("cv");
+  const dpr = 2;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  cv.style.width = W + "px";
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
 
   // fundo
-  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, W, H);
   // cabeçalho
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-24);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-24,W,6);
-  ctx.fillStyle="#fff"; ctx.font="900 28px Arial"; ctx.textAlign="left";
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(0, 0, W, headerH - 24);
+  ctx.fillStyle = "#FF0082";
+  ctx.fillRect(0, headerH - 24, W, 6);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 28px Arial";
+  ctx.textAlign = "left";
   ctx.fillText("B13 BEBIDAS", padd, 42);
-  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f";
-  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):(p.tipo==='pedido'?"Pedido de Venda":"Proposta Comercial");
+  ctx.font = "700 16px Arial";
+  ctx.fillStyle = "#ffd23f";
+  const tipoTxt = p.pedidoBlingId ? "Pedido #" + p.pedidoBlingNumero : p.tipo === 'pedido' ? "Pedido de Venda" : "Proposta Comercial";
   ctx.fillText(tipoTxt, padd, 68);
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5";
-  ctx.fillText("Cliente: "+(p.cliente?.nome||"—"), padd, 90);
-  ctx.textAlign="right";
-  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
-  ctx.fillText(data, W-padd, 42);
-  if(p.vendedorNome){ ctx.fillText("Vendedor: "+p.vendedorNome, W-padd, 90); }
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.fillText("Cliente: " + (((_p$cliente = p.cliente) === null || _p$cliente === void 0 ? void 0 : _p$cliente.nome) || "—"), padd, 90);
+  ctx.textAlign = "right";
+  const data = p.criadoEm ? new Date(p.criadoEm).toLocaleDateString("pt-BR") : "";
+  ctx.fillText(data, W - padd, 42);
+  if (p.vendedorNome) {
+    ctx.fillText("Vendedor: " + p.vendedorNome, W - padd, 90);
+  }
 
   // itens
-  let y=headerH;
-  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left";
-  ctx.fillText("PRODUTO", padd, y); ctx.textAlign="center"; ctx.fillText("QTD", W-260, y);
-  ctx.textAlign="right"; ctx.fillText("UNIT.", W-140, y); ctx.fillText("TOTAL", W-padd, y);
-  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
-
-  itens.forEach(i=>{
-    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
-    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
-    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
-    ctx.fillText(nome, padd, y+itemH/2);
-    ctx.textAlign="center"; ctx.fillText(String(qtd), W-260, y+itemH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un), W-140, y+itemH/2);
-    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd), W-padd, y+itemH/2);
-    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
-    y+=itemH;
+  let y = headerH;
+  ctx.font = "700 12px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "center";
+  ctx.fillText("QTD", W - 260, y);
+  ctx.textAlign = "right";
+  ctx.fillText("UNIT.", W - 140, y);
+  ctx.fillText("TOTAL", W - padd, y);
+  y += 10;
+  ctx.strokeStyle = "#ddd";
+  ctx.beginPath();
+  ctx.moveTo(padd, y);
+  ctx.lineTo(W - padd, y);
+  ctx.stroke();
+  y += 6;
+  itens.forEach(i => {
+    const qtd = Number(i.quantidade) || 1,
+      un = Number(i.valor) || 0;
+    ctx.fillStyle = "#111";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "left";
+    let nome = i.nome || "";
+    if (nome.length > 34) nome = nome.slice(0, 33) + "…";
+    ctx.fillText(nome, padd, y + itemH / 2);
+    ctx.textAlign = "center";
+    ctx.fillText(String(qtd), W - 260, y + itemH / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#555";
+    ctx.fillText(brl(un), W - 140, y + itemH / 2);
+    ctx.fillStyle = "#111";
+    ctx.font = "700 14px Arial";
+    ctx.fillText(brl(un * qtd), W - padd, y + itemH / 2);
+    ctx.strokeStyle = "#eee";
+    ctx.beginPath();
+    ctx.moveTo(padd, y + itemH);
+    ctx.lineTo(W - padd, y + itemH);
+    ctx.stroke();
+    y += itemH;
   });
 
   // total
-  y+=10;
-  ctx.fillStyle="#262366"; ctx.fillRect(W-280,y,280-padd+padd,44); // faixa do total
-  ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
-  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left";
-  ctx.fillText("TOTAL", padd+12, y+28);
-  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial";
-  ctx.fillText(brl(p.total), W-padd-12, y+29);
-  y+=44;
+  y += 10;
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(W - 280, y, 280 - padd + padd, 44); // faixa do total
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(padd, y, W - padd * 2, 44);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 18px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd + 12, y + 28);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffd23f";
+  ctx.font = "900 22px Arial";
+  ctx.fillText(brl(p.total), W - padd - 12, y + 29);
+  y += 44;
 
   // observação
-  if(p.observacao){
-    y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left";
-    ctx.fillText("Obs: "+p.observacao.slice(0,70), padd, y);
+  if (p.observacao) {
+    y += 24;
+    ctx.fillStyle = "#555";
+    ctx.font = "13px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("Obs: " + p.observacao.slice(0, 70), padd, y);
   }
   // rodapé
-  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center";
-  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W/2, H-16);
+  ctx.fillStyle = "#9a95c9";
+  ctx.font = "12px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, H - 16);
 }
-
-function baixar(){
-  const cv=document.getElementById("cv");
-  const a=document.createElement("a");
-  a.download="proposta-b13-"+(ID||"")+".png";
-  a.href=cv.toDataURL("image/png"); a.click();
+function baixar() {
+  const cv = document.getElementById("cv");
+  const a = document.createElement("a");
+  a.download = "proposta-b13-" + (ID || "") + ".png";
+  a.href = cv.toDataURL("image/png");
+  a.click();
 }
-
-async function compartilhar(){
-  const cv=document.getElementById("cv");
+async function compartilhar() {
+  const cv = document.getElementById("cv");
   let blob;
-  try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }
-  catch(e){ alert("Não consegui gerar a imagem. Use 'Baixar'."); return; }
-  const file=new File([blob],"proposta-b13.png",{type:"image/png"});
-  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file],title:"Proposta B13"}); return; }
-    catch(e){ if(e&&e.name==="AbortError") return; }
+  try {
+    blob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(), "image/png"));
+  } catch (e) {
+    alert("Não consegui gerar a imagem. Use 'Baixar'.");
+    return;
+  }
+  const file = new File([blob], "proposta-b13.png", {
+    type: "image/png"
+  });
+  if (navigator.share && navigator.canShare && navigator.canShare({
+    files: [file]
+  })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: "Proposta B13"
+      });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+    }
   }
   baixar();
   alert("Seu aparelho não permite enviar direto. A imagem foi baixada — abra o WhatsApp e anexe. 📎");
 }
-
-carregar();
-</script>
+carregar();</script>
 </body>
 </html>

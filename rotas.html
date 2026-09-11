@@ -79,19 +79,26 @@
 </script>
 <div id="app"></div>
 <div id="modais"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const brl=(v)=>"R$ "+Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const DIAS_SEMANA=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
-function hojeBR(){ return new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10); }
-function dataLabel(iso){
-  const d=new Date(iso+"T12:00:00");
-  return d.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"2-digit"});
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const FUNC = typeof b13GetSession === "function" ? b13GetSession() : null;
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + Number(v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+function hojeBR() {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
-
-const S={
+function dataLabel(iso) {
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit"
+  });
+}
+const S = {
   data: hojeBR(),
   config: null,
   pedidos: [],
@@ -99,144 +106,194 @@ const S={
   carregando: true,
   editandoConfig: false,
   expandido: {},
-  atribuicoes: {}, // carroId -> {pedidoIds:[...]}
-  resultadoRota: {}, // carroId -> {distanciaTotalKm,duracaoTotalMin,paradasOrdenadas}
-  calculando: {}, // carroId -> bool
+  atribuicoes: {},
+  // carroId -> {pedidoIds:[...]}
+  resultadoRota: {},
+  // carroId -> {distanciaTotalKm,duracaoTotalMin,paradasOrdenadas}
+  calculando: {},
+  // carroId -> bool
   carroMapaAtivo: null,
   salvando: false,
   msg: "",
-  diasResumo: {}, // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
-  diasDetalhe: {}, // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
-  idsUsadosOutrosDias: {}, // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
-  verVisaoGeral: false,
+  diasResumo: {},
+  // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
+  diasDetalhe: {},
+  // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
+  idsUsadosOutrosDias: {},
+  // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
+  verVisaoGeral: false
 };
-
-async function carregarTudo(){
-  S.carregando=true; render();
-  try{
-    const j=await fetch(B+"/api/rotas/pedidos-entrega?data="+S.data).then(r=>r.json());
-    S.pedidos=j.data||[];
-    S.config=j.config;
-    S.lojaCoord=j.lojaCoord;
+async function carregarTudo() {
+  S.carregando = true;
+  render();
+  try {
+    var _salvo$_semCarro;
+    const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + S.data).then(r => r.json());
+    S.pedidos = j.data || [];
+    S.config = j.config;
+    S.lojaCoord = j.lojaCoord;
     // reconstrói atribuições a partir do que já veio salvo. Cada carro agora
     // pode ter VÁRIAS viagens no mesmo dia (o carro pode sair, voltar, recarregar
     // e sair de novo) — mantém compatibilidade com o formato antigo (um carro =
     // uma lista só de pedidoIds), tratando como "viagem única" nesse caso.
-    const rDia=await fetch(B+"/api/rotas/dia?data="+S.data).then(r=>r.json());
-    const salvo=rDia.data||{};
-    S.atribuicoes={};
-    (S.config.carros||[]).forEach(c=>{
-      const d=salvo[c.id];
+    const rDia = await fetch(B + "/api/rotas/dia?data=" + S.data).then(r => r.json());
+    const salvo = rDia.data || {};
+    S.atribuicoes = {};
+    (S.config.carros || []).forEach(c => {
+      var _d$viagens, _d$pedidoIds;
+      const d = salvo[c.id];
       let viagens;
-      if(d?.viagens?.length) viagens=d.viagens.map(v=>({pedidoIds:v.pedidoIds||[]}));
-      else if(d?.pedidoIds?.length) viagens=[{pedidoIds:d.pedidoIds}]; // formato antigo
-      else viagens=[{pedidoIds:[]}];
-      S.atribuicoes[c.id]={viagens};
+      if (d !== null && d !== void 0 && (_d$viagens = d.viagens) !== null && _d$viagens !== void 0 && _d$viagens.length) viagens = d.viagens.map(v => ({
+        pedidoIds: v.pedidoIds || []
+      }));else if (d !== null && d !== void 0 && (_d$pedidoIds = d.pedidoIds) !== null && _d$pedidoIds !== void 0 && _d$pedidoIds.length) viagens = [{
+        pedidoIds: d.pedidoIds
+      }]; // formato antigo
+      else viagens = [{
+        pedidoIds: []
+      }];
+      S.atribuicoes[c.id] = {
+        viagens
+      };
     });
-    S.atribuicoes["_semCarro"]={pedidoIds:(salvo["_semCarro"]?.pedidoIds)||[]};
+    S.atribuicoes["_semCarro"] = {
+      pedidoIds: ((_salvo$_semCarro = salvo["_semCarro"]) === null || _salvo$_semCarro === void 0 ? void 0 : _salvo$_semCarro.pedidoIds) || []
+    };
     // pedidos agendados PRA ESTE DIA (com dia/turno escolhidos na venda ou na tela de
     // Pedidos) entram automaticamente em "aguardando carro" — só falta escolher o carro
-    (S.pedidos||[]).forEach(p=>{
-      if(p.agendamento && p.agendamento.data===S.data && !p.carroAtribuido){
-        const jaEmCarro=Object.keys(S.atribuicoes).some(cid=>cid!=="_semCarro"&&(S.atribuicoes[cid].viagens||[]).some(v=>(v.pedidoIds||[]).includes(p.id)));
-        if(!jaEmCarro && !S.atribuicoes["_semCarro"].pedidoIds.includes(p.id)) S.atribuicoes["_semCarro"].pedidoIds.push(p.id);
+    (S.pedidos || []).forEach(p => {
+      if (p.agendamento && p.agendamento.data === S.data && !p.carroAtribuido) {
+        const jaEmCarro = Object.keys(S.atribuicoes).some(cid => cid !== "_semCarro" && (S.atribuicoes[cid].viagens || []).some(v => (v.pedidoIds || []).includes(p.id)));
+        if (!jaEmCarro && !S.atribuicoes["_semCarro"].pedidoIds.includes(p.id)) S.atribuicoes["_semCarro"].pedidoIds.push(p.id);
       }
     });
-    S.resultadoRota={};
+    S.resultadoRota = {};
     // resumo geral: quantos pedidos já tem em cada dia + quais pedidos já
     // estão agendados em OUTRO dia (pra não aparecerem como "disponíveis" aqui)
-    const rResumo=await fetch(B+"/api/rotas/dias-resumo").then(r=>r.json());
-    S.diasResumo=rResumo.porDia||{};
-    S.diasDetalhe=rResumo.detalheDias||{};
-    S.idsUsadosOutrosDias={};
-    Object.entries(rResumo.idsUsados||{}).forEach(([pid,data])=>{ if(data!==S.data) S.idsUsadosOutrosDias[pid]=data; });
-  }catch(e){ S.msg="Erro ao carregar: "+e.message; }
-  S.carregando=false; render();
+    const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
+    S.diasResumo = rResumo.porDia || {};
+    S.diasDetalhe = rResumo.detalheDias || {};
+    S.idsUsadosOutrosDias = {};
+    Object.entries(rResumo.idsUsados || {}).forEach(([pid, data]) => {
+      if (data !== S.data) S.idsUsadosOutrosDias[pid] = data;
+    });
+  } catch (e) {
+    S.msg = "Erro ao carregar: " + e.message;
+  }
+  S.carregando = false;
+  render();
 }
-
-function pedidosDisponiveis(){
-  const usados=new Set();
-  Object.entries(S.atribuicoes).forEach(([carroId,a])=>{
-    if(carroId==="_semCarro"){ (a.pedidoIds||[]).forEach(id=>usados.add(id)); return; }
-    (a.viagens||[]).forEach(v=>(v.pedidoIds||[]).forEach(id=>usados.add(id)));
+function pedidosDisponiveis() {
+  const usados = new Set();
+  Object.entries(S.atribuicoes).forEach(([carroId, a]) => {
+    if (carroId === "_semCarro") {
+      (a.pedidoIds || []).forEach(id => usados.add(id));
+      return;
+    }
+    (a.viagens || []).forEach(v => (v.pedidoIds || []).forEach(id => usados.add(id)));
   });
-  return S.pedidos.filter(p=>!usados.has(p.id) && !S.idsUsadosOutrosDias[p.id]);
+  return S.pedidos.filter(p => !usados.has(p.id) && !S.idsUsadosOutrosDias[p.id]);
 }
-function pedidoPorId(id){ return S.pedidos.find(p=>p.id===id); }
-function pedidosCarroAtual(carroId){ // todas as viagens desse carro juntas
-  return (S.atribuicoes[carroId]?.viagens||[]).flatMap(v=>(v.pedidoIds||[]).map(id=>pedidoPorId(id))).filter(Boolean);
+function pedidoPorId(id) {
+  return S.pedidos.find(p => p.id === id);
 }
-function pedidosViagem(carroId,vix){
-  return ((S.atribuicoes[carroId]?.viagens||[])[vix]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
+function pedidosCarroAtual(carroId) {
+  var _S$atribuicoes$carroI;
+  // todas as viagens desse carro juntas
+  return (((_S$atribuicoes$carroI = S.atribuicoes[carroId]) === null || _S$atribuicoes$carroI === void 0 ? void 0 : _S$atribuicoes$carroI.viagens) || []).flatMap(v => (v.pedidoIds || []).map(id => pedidoPorId(id))).filter(Boolean);
+}
+function pedidosViagem(carroId, vix) {
+  var _vix, _S$atribuicoes$carroI2;
+  return (((_vix = (((_S$atribuicoes$carroI2 = S.atribuicoes[carroId]) === null || _S$atribuicoes$carroI2 === void 0 ? void 0 : _S$atribuicoes$carroI2.viagens) || [])[vix]) === null || _vix === void 0 ? void 0 : _vix.pedidoIds) || []).map(id => pedidoPorId(id)).filter(Boolean);
 }
 
 // ---------- capacidade / horário ----------
-function minutosDoDia(hhmm){ const [h,m]=(hhmm||"10:00").split(":").map(Number); return h*60+(m||0); }
-function janelaMin(carro){ return Math.max(0, minutosDoDia(carro.horaFimJanela||"19:00")-minutosDoDia(carro.horaSaida)); }
+function minutosDoDia(hhmm) {
+  const [h, m] = (hhmm || "10:00").split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+function janelaMin(carro) {
+  return Math.max(0, minutosDoDia(carro.horaFimJanela || "19:00") - minutosDoDia(carro.horaSaida));
+}
 // estimativa (antes de calcular a rota de verdade): quantas paradas dá pra
 // fazer numa ÚNICA viagem, usando o tempo médio de trajeto + parada configurados
-function capacidadeEstimada(carro){
-  const porParada=(S.config.tempoTrajetoMin||12)+(S.config.tempoParadaMin||15);
-  return Math.max(0, Math.floor(janelaMin(carro)/porParada));
+function capacidadeEstimada(carro) {
+  const porParada = (S.config.tempoTrajetoMin || 12) + (S.config.tempoParadaMin || 15);
+  return Math.max(0, Math.floor(janelaMin(carro) / porParada));
 }
 // tempo estimado (ou real, se já calculou a rota) de UMA viagem específica
-function tempoViagemMin(carroId,vix){
-  const ids=(S.atribuicoes[carroId]?.viagens||[])[vix]?.pedidoIds||[];
-  if(!ids.length) return 0;
-  const resultado=(S.resultadoRota[carroId]||[])[vix];
-  if(resultado) return resultado.duracaoTotalMin+ids.length*(S.config.tempoParadaMin||15);
-  return ids.length*((S.config.tempoTrajetoMin||12)+(S.config.tempoParadaMin||15));
+function tempoViagemMin(carroId, vix) {
+  var _vix2, _S$atribuicoes$carroI3;
+  const ids = ((_vix2 = (((_S$atribuicoes$carroI3 = S.atribuicoes[carroId]) === null || _S$atribuicoes$carroI3 === void 0 ? void 0 : _S$atribuicoes$carroI3.viagens) || [])[vix]) === null || _vix2 === void 0 ? void 0 : _vix2.pedidoIds) || [];
+  if (!ids.length) return 0;
+  const resultado = (S.resultadoRota[carroId] || [])[vix];
+  if (resultado) return resultado.duracaoTotalMin + ids.length * (S.config.tempoParadaMin || 15);
+  return ids.length * ((S.config.tempoTrajetoMin || 12) + (S.config.tempoParadaMin || 15));
 }
 // soma o tempo de TODAS as viagens desse carro no dia + tempo de recarga entre
 // elas (voltar na loja, carregar de novo, sair) — e compara com a janela do carro
-function riscoCarro(carro){
-  const todasViagens=S.atribuicoes[carro.id]?.viagens||[];
-  let usado=0, qtdViagensComPedido=0;
-  todasViagens.forEach((v,ix)=>{
-    if(!(v.pedidoIds||[]).length) return;
-    usado+=tempoViagemMin(carro.id, ix);
+function riscoCarro(carro) {
+  var _S$atribuicoes$carro$;
+  const todasViagens = ((_S$atribuicoes$carro$ = S.atribuicoes[carro.id]) === null || _S$atribuicoes$carro$ === void 0 ? void 0 : _S$atribuicoes$carro$.viagens) || [];
+  let usado = 0,
+    qtdViagensComPedido = 0;
+  todasViagens.forEach((v, ix) => {
+    if (!(v.pedidoIds || []).length) return;
+    usado += tempoViagemMin(carro.id, ix);
     qtdViagensComPedido++;
   });
-  if(qtdViagensComPedido>1) usado+=(qtdViagensComPedido-1)*(S.config.tempoRecargaMin||20);
-  const jan=janelaMin(carro);
-  return { usado, jan, risco: usado>jan, qtdViagens: qtdViagensComPedido };
+  if (qtdViagensComPedido > 1) usado += (qtdViagensComPedido - 1) * (S.config.tempoRecargaMin || 20);
+  const jan = janelaMin(carro);
+  return {
+    usado,
+    jan,
+    risco: usado > jan,
+    qtdViagens: qtdViagensComPedido
+  };
 }
 
 // escolhe em qual viagem desse carro um pedido deve entrar: tenta a ÚLTIMA
 // viagem existente (se ainda tiver espaço de peso/quantidade pra uma viagem
 // só); se não couber, cria uma viagem NOVA nesse mesmo carro — só parte pra
 // outro carro se quem chamou decidir isso (essa função nunca troca de carro)
-function escolherOuCriarViagem(carroId, pesoNovoPedido){
-  const carro=S.config.carros.find(c=>c.id===carroId);
-  const bucket=S.atribuicoes[carroId];
-  if(!bucket.viagens.length) bucket.viagens.push({pedidoIds:[]});
-  const ultimaIx=bucket.viagens.length-1;
-  const ultima=bucket.viagens[ultimaIx];
-  if(!ultima.pedidoIds.length) return ultimaIx; // última viagem ainda vazia, usa ela
-  const pesoUltima=ultima.pedidoIds.reduce((s,id)=>s+(pedidoPorId(id)?.pesoEstimadoKg||0),0);
-  const capQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
-  const cabeNaUltima=(pesoUltima+pesoNovoPedido)<=(carro.pesoSugeridoKg||99999)*1.2 && ultima.pedidoIds.length<capQtd;
-  if(cabeNaUltima) return ultimaIx;
-  bucket.viagens.push({pedidoIds:[]}); // não coube na última — abre uma viagem nova nesse mesmo carro
-  return bucket.viagens.length-1;
+function escolherOuCriarViagem(carroId, pesoNovoPedido) {
+  const carro = S.config.carros.find(c => c.id === carroId);
+  const bucket = S.atribuicoes[carroId];
+  if (!bucket.viagens.length) bucket.viagens.push({
+    pedidoIds: []
+  });
+  const ultimaIx = bucket.viagens.length - 1;
+  const ultima = bucket.viagens[ultimaIx];
+  if (!ultima.pedidoIds.length) return ultimaIx; // última viagem ainda vazia, usa ela
+  const pesoUltima = ultima.pedidoIds.reduce((s, id) => {
+    var _pedidoPorId;
+    return s + (((_pedidoPorId = pedidoPorId(id)) === null || _pedidoPorId === void 0 ? void 0 : _pedidoPorId.pesoEstimadoKg) || 0);
+  }, 0);
+  const capQtd = Math.min(carro.limiteEntregas || 99, capacidadeEstimada(carro) || 99);
+  const cabeNaUltima = pesoUltima + pesoNovoPedido <= (carro.pesoSugeridoKg || 99999) * 1.2 && ultima.pedidoIds.length < capQtd;
+  if (cabeNaUltima) return ultimaIx;
+  bucket.viagens.push({
+    pedidoIds: []
+  }); // não coube na última — abre uma viagem nova nesse mesmo carro
+  return bucket.viagens.length - 1;
 }
-
-function mudarDia(delta){
-  const d=new Date(S.data+"T12:00:00");
-  d.setDate(d.getDate()+delta);
-  S.data=d.toISOString().slice(0,10);
-  S.resultadoRota={}; S.carroMapaAtivo=null;
+function mudarDia(delta) {
+  const d = new Date(S.data + "T12:00:00");
+  d.setDate(d.getDate() + delta);
+  S.data = d.toISOString().slice(0, 10);
+  S.resultadoRota = {};
+  S.carroMapaAtivo = null;
   carregarTudo();
 }
-
-function toggleExpandido(id){ S.expandido[id]=!S.expandido[id]; render(); }
-
-function agendarSemCarro(pedidoId){
+function toggleExpandido(id) {
+  S.expandido[id] = !S.expandido[id];
+  render();
+}
+function agendarSemCarro(pedidoId) {
   S.atribuicoes["_semCarro"].pedidoIds.push(pedidoId);
   render();
 }
-function desagendar(pedidoId){
-  S.atribuicoes["_semCarro"].pedidoIds=(S.atribuicoes["_semCarro"].pedidoIds||[]).filter(id=>id!==pedidoId);
+function desagendar(pedidoId) {
+  S.atribuicoes["_semCarro"].pedidoIds = (S.atribuicoes["_semCarro"].pedidoIds || []).filter(id => id !== pedidoId);
   render();
 }
 // pega os pedidos já agendados pro dia (mas ainda sem carro) e distribui,
@@ -244,59 +301,72 @@ function desagendar(pedidoId){
 // 1) tudo numa viagem só de 1 carro; 2) mais viagens do MESMO carro (o carro
 // pode rodar várias vezes entre 10h e 19h); 3) só aí parte pra outro carro.
 // ---- MOVER um pedido pra outra viagem / outro carro (ou de volta pra fila) ----
-function abrirMoverPedido(carroIdAtual,vixAtual,pedidoId){
-  const ped=pedidoPorId(pedidoId);
-  const carros=S.config.carros||[];
-  let ops="";
-  carros.forEach(c=>{
-    const viagens=(S.atribuicoes[c.id]?.viagens)||[];
-    viagens.forEach((v,vi)=>{
-      const atual=(String(c.id)===String(carroIdAtual)&&vi===vixAtual);
-      const qtd=(v.pedidoIds||[]).length;
-      const pesoV=(v.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean).reduce((a,p)=>a+(p.pesoEstimadoKg||0),0);
-      const cabe=pesoV+(ped?.pesoEstimadoKg||0) <= (c.pesoSugeridoKg||99999)*1.2;
-      ops+=`<button class="btn ${atual?'btn-ghost':'btn-mag'}" style="width:100%;margin-bottom:6px;text-align:left" ${atual?'disabled':''}
+function abrirMoverPedido(carroIdAtual, vixAtual, pedidoId) {
+  var _ped$agendamento;
+  const ped = pedidoPorId(pedidoId);
+  const carros = S.config.carros || [];
+  let ops = "";
+  carros.forEach(c => {
+    var _S$atribuicoes$c$id;
+    const viagens = ((_S$atribuicoes$c$id = S.atribuicoes[c.id]) === null || _S$atribuicoes$c$id === void 0 ? void 0 : _S$atribuicoes$c$id.viagens) || [];
+    viagens.forEach((v, vi) => {
+      const atual = String(c.id) === String(carroIdAtual) && vi === vixAtual;
+      const qtd = (v.pedidoIds || []).length;
+      const pesoV = (v.pedidoIds || []).map(id => pedidoPorId(id)).filter(Boolean).reduce((a, p) => a + (p.pesoEstimadoKg || 0), 0);
+      const cabe = pesoV + ((ped === null || ped === void 0 ? void 0 : ped.pesoEstimadoKg) || 0) <= (c.pesoSugeridoKg || 99999) * 1.2;
+      ops += `<button class="btn ${atual ? 'btn-ghost' : 'btn-mag'}" style="width:100%;margin-bottom:6px;text-align:left" ${atual ? 'disabled' : ''}
         onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'${c.id}',${vi})">
-        ${esc(c.nome||c.id)} — viagem ${vi+1} <span style="opacity:.8;font-size:11px">(${qtd} parada${qtd!==1?'s':''}, ${Math.round(pesoV)}kg${atual?' · atual':(cabe?'':' · ⚠️ passa do peso')})</span></button>`;
+        ${esc(c.nome || c.id)} — viagem ${vi + 1} <span style="opacity:.8;font-size:11px">(${qtd} parada${qtd !== 1 ? 's' : ''}, ${Math.round(pesoV)}kg${atual ? ' · atual' : cabe ? '' : ' · ⚠️ passa do peso'})</span></button>`;
     });
     // opção de criar uma viagem nova nesse carro
-    ops+=`<button class="btn btn-ghost" style="width:100%;margin-bottom:10px;text-align:left;border:1px dashed #514c96"
+    ops += `<button class="btn btn-ghost" style="width:100%;margin-bottom:10px;text-align:left;border:1px dashed #514c96"
       onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'${c.id}',-1)">
-      ➕ ${esc(c.nome||c.id)} — <b>nova viagem</b></button>`;
+      ➕ ${esc(c.nome || c.id)} — <b>nova viagem</b></button>`;
   });
-  document.getElementById("modais").innerHTML=`
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModaisRota()"><div class="modal" style="max-width:460px">
-      <h3>🔀 Mover pedido ${esc(ped?ped.numero:pedidoId)}</h3>
-      <div class="muted" style="font-size:12px;margin:4px 0 10px">${esc(ped?ped.clienteNome:"")}${ped?.pesoEstimadoKg?` · ${ped.pesoEstimadoKg}kg`:""}${ped?.agendamento?.turno&&ped.agendamento.turno!=="qualquer"?` · <b>${ped.agendamento.turno==="manha"?"manhã":"tarde"}</b>`:""}</div>
-      <div style="max-height:50vh;overflow:auto">${ops||'<div class="muted">Nenhum carro configurado.</div>'}</div>
+      <h3>🔀 Mover pedido ${esc(ped ? ped.numero : pedidoId)}</h3>
+      <div class="muted" style="font-size:12px;margin:4px 0 10px">${esc(ped ? ped.clienteNome : "")}${ped !== null && ped !== void 0 && ped.pesoEstimadoKg ? ` · ${ped.pesoEstimadoKg}kg` : ""}${ped !== null && ped !== void 0 && (_ped$agendamento = ped.agendamento) !== null && _ped$agendamento !== void 0 && _ped$agendamento.turno && ped.agendamento.turno !== "qualquer" ? ` · <b>${ped.agendamento.turno === "manha" ? "manhã" : "tarde"}</b>` : ""}</div>
+      <div style="max-height:50vh;overflow:auto">${ops || '<div class="muted">Nenhum carro configurado.</div>'}</div>
       <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="moverPedidoPara('${carroIdAtual}',${vixAtual},${pedidoId},'_semCarro',0)">↩️ Voltar pra "aguardando carro"</button>
       <button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="fecharModaisRota()">Cancelar</button>
     </div></div>`;
 }
-function fecharModaisRota(){ const el=document.getElementById("modais"); if(el) el.innerHTML=""; }
-function moverPedidoPara(carroOrigem,vixOrigem,pedidoId,carroDestino,vixDestino){
+function fecharModaisRota() {
+  const el = document.getElementById("modais");
+  if (el) el.innerHTML = "";
+}
+function moverPedidoPara(carroOrigem, vixOrigem, pedidoId, carroDestino, vixDestino) {
   // tira da origem
-  if(carroOrigem==="_semCarro"){
-    S.atribuicoes["_semCarro"].pedidoIds=(S.atribuicoes["_semCarro"].pedidoIds||[]).filter(id=>id!==pedidoId);
-  }else{
-    const v=S.atribuicoes[carroOrigem]?.viagens?.[vixOrigem];
-    if(v) v.pedidoIds=(v.pedidoIds||[]).filter(id=>id!==pedidoId);
-    if(v) v.resultado=null; // rota calculada deixa de valer
+  if (carroOrigem === "_semCarro") {
+    S.atribuicoes["_semCarro"].pedidoIds = (S.atribuicoes["_semCarro"].pedidoIds || []).filter(id => id !== pedidoId);
+  } else {
+    var _S$atribuicoes$carroO;
+    const v = (_S$atribuicoes$carroO = S.atribuicoes[carroOrigem]) === null || _S$atribuicoes$carroO === void 0 || (_S$atribuicoes$carroO = _S$atribuicoes$carroO.viagens) === null || _S$atribuicoes$carroO === void 0 ? void 0 : _S$atribuicoes$carroO[vixOrigem];
+    if (v) v.pedidoIds = (v.pedidoIds || []).filter(id => id !== pedidoId);
+    if (v) v.resultado = null; // rota calculada deixa de valer
   }
   // coloca no destino
-  if(carroDestino==="_semCarro"){
-    S.atribuicoes["_semCarro"]=S.atribuicoes["_semCarro"]||{pedidoIds:[]};
-    if(!S.atribuicoes["_semCarro"].pedidoIds.includes(pedidoId)) S.atribuicoes["_semCarro"].pedidoIds.push(pedidoId);
-  }else{
-    S.atribuicoes[carroDestino]=S.atribuicoes[carroDestino]||{viagens:[]};
-    let vi=vixDestino;
-    if(vi<0||!S.atribuicoes[carroDestino].viagens[vi]){
-      S.atribuicoes[carroDestino].viagens.push({pedidoIds:[],resultado:null});
-      vi=S.atribuicoes[carroDestino].viagens.length-1;
+  if (carroDestino === "_semCarro") {
+    S.atribuicoes["_semCarro"] = S.atribuicoes["_semCarro"] || {
+      pedidoIds: []
+    };
+    if (!S.atribuicoes["_semCarro"].pedidoIds.includes(pedidoId)) S.atribuicoes["_semCarro"].pedidoIds.push(pedidoId);
+  } else {
+    S.atribuicoes[carroDestino] = S.atribuicoes[carroDestino] || {
+      viagens: []
+    };
+    let vi = vixDestino;
+    if (vi < 0 || !S.atribuicoes[carroDestino].viagens[vi]) {
+      S.atribuicoes[carroDestino].viagens.push({
+        pedidoIds: [],
+        resultado: null
+      });
+      vi = S.atribuicoes[carroDestino].viagens.length - 1;
     }
-    const dest=S.atribuicoes[carroDestino].viagens[vi];
-    if(!dest.pedidoIds.includes(pedidoId)) dest.pedidoIds.push(pedidoId);
-    dest.resultado=null;
+    const dest = S.atribuicoes[carroDestino].viagens[vi];
+    if (!dest.pedidoIds.includes(pedidoId)) dest.pedidoIds.push(pedidoId);
+    dest.resultado = null;
   }
   fecharModaisRota();
   salvarDia();
@@ -305,260 +375,376 @@ function moverPedidoPara(carroOrigem,vixOrigem,pedidoId,carroDestino,vixDestino)
 
 // manda o pedido pra separação direto da rota — ele entra na fila da Mesa/Painel
 // como ENTREGA (já que está numa rota)
-async function mandarSeparar(pedidoId,numero){
-  if(!confirm("Mandar o pedido "+numero+" pra separação?\n\nEle vai pra EM SEPARAÇÃO e entra na fila da Mesa como ENTREGA.")) return;
-  try{
-    const S2=(typeof b13GetSession==="function"?b13GetSession():null)||{};
-    const r=await fetch(B+"/api/mesa/enviar-separacao/"+pedidoId,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo:"entrega",funcionarioId:S2.id})});
-    const j=await r.json();
-    if(j.erro) throw new Error(j.erro);
+async function mandarSeparar(pedidoId, numero) {
+  if (!confirm("Mandar o pedido " + numero + " pra separação?\n\nEle vai pra EM SEPARAÇÃO e entra na fila da Mesa como ENTREGA.")) return;
+  try {
+    const S2 = (typeof b13GetSession === "function" ? b13GetSession() : null) || {};
+    const r = await fetch(B + "/api/mesa/enviar-separacao/" + pedidoId, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tipo: "entrega",
+        funcionarioId: S2.id
+      })
+    });
+    const j = await r.json();
+    if (j.erro) throw new Error(j.erro);
     await carregarTudo();
-  }catch(e){ alert("Erro: "+e.message); }
+  } catch (e) {
+    alert("Erro: " + e.message);
+  }
 }
 // manda TODOS os pedidos de uma viagem pra separação de uma vez
-async function mandarSepararViagem(carroId,vix){
-  const v=S.atribuicoes[carroId]?.viagens?.[vix]; if(!v) return;
-  const peds=(v.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(p=>p&&p.podeMandarSeparar);
-  if(!peds.length){ alert("Todos os pedidos dessa viagem já estão em separação (ou adiante)."); return; }
-  if(!confirm("Mandar "+peds.length+" pedido(s) desta viagem pra separação?\n\n"+peds.map(p=>"#"+p.numero+" — "+p.clienteNome).join("\n"))) return;
-  const S2=(typeof b13GetSession==="function"?b13GetSession():null)||{};
-  let ok=0, falhas=[];
-  for(const p of peds){
-    try{
-      const r=await fetch(B+"/api/mesa/enviar-separacao/"+p.id,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({tipo:"entrega",funcionarioId:S2.id})});
-      const j=await r.json();
-      if(j.erro) falhas.push("#"+p.numero+": "+j.erro); else ok++;
-    }catch(e){ falhas.push("#"+p.numero+": "+e.message); }
+async function mandarSepararViagem(carroId, vix) {
+  var _S$atribuicoes$carroI4;
+  const v = (_S$atribuicoes$carroI4 = S.atribuicoes[carroId]) === null || _S$atribuicoes$carroI4 === void 0 || (_S$atribuicoes$carroI4 = _S$atribuicoes$carroI4.viagens) === null || _S$atribuicoes$carroI4 === void 0 ? void 0 : _S$atribuicoes$carroI4[vix];
+  if (!v) return;
+  const peds = (v.pedidoIds || []).map(id => pedidoPorId(id)).filter(p => p && p.podeMandarSeparar);
+  if (!peds.length) {
+    alert("Todos os pedidos dessa viagem já estão em separação (ou adiante).");
+    return;
   }
-  alert(ok+" enviado(s) pra separação."+(falhas.length?"\n\nFalhas:\n"+falhas.join("\n"):""));
+  if (!confirm("Mandar " + peds.length + " pedido(s) desta viagem pra separação?\n\n" + peds.map(p => "#" + p.numero + " — " + p.clienteNome).join("\n"))) return;
+  const S2 = (typeof b13GetSession === "function" ? b13GetSession() : null) || {};
+  let ok = 0,
+    falhas = [];
+  for (const p of peds) {
+    try {
+      const r = await fetch(B + "/api/mesa/enviar-separacao/" + p.id, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tipo: "entrega",
+          funcionarioId: S2.id
+        })
+      });
+      const j = await r.json();
+      if (j.erro) falhas.push("#" + p.numero + ": " + j.erro);else ok++;
+    } catch (e) {
+      falhas.push("#" + p.numero + ": " + e.message);
+    }
+  }
+  alert(ok + " enviado(s) pra separação." + (falhas.length ? "\n\nFalhas:\n" + falhas.join("\n") : ""));
   await carregarTudo();
 }
-async function sugerirCarrosParaSemCarro(){
-  const pendentes=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean);
-  if(!pendentes.length){ alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro."); return; }
+async function sugerirCarrosParaSemCarro() {
+  var _S$atribuicoes$_semCa, _S$atribuicoes$_semCa2;
+  const pendentes = (((_S$atribuicoes$_semCa = S.atribuicoes["_semCarro"]) === null || _S$atribuicoes$_semCa === void 0 ? void 0 : _S$atribuicoes$_semCa.pedidoIds) || []).map(id => pedidoPorId(id)).filter(Boolean);
+  if (!pendentes.length) {
+    alert("Nenhum pedido agendado pra esse dia ainda. Agende alguns primeiro.");
+    return;
+  }
   // manhã primeiro, depois tarde, e os flexíveis por último (encaixam onde sobrar)
-  const ordTurno=(p)=>{ const t=p.agendamento?.turno; return t==="manha"?0:(t==="tarde"?1:2); };
-  let pool=pendentes.filter(p=>p.lat&&p.lng).sort((a,b)=>ordTurno(a)-ordTurno(b));
-  const semCoord=pendentes.filter(p=>!p.lat||!p.lng);
-  const carros=S.config.carros||[];
+  const ordTurno = p => {
+    var _p$agendamento;
+    const t = (_p$agendamento = p.agendamento) === null || _p$agendamento === void 0 ? void 0 : _p$agendamento.turno;
+    return t === "manha" ? 0 : t === "tarde" ? 1 : 2;
+  };
+  let pool = pendentes.filter(p => p.lat && p.lng).sort((a, b) => ordTurno(a) - ordTurno(b));
+  const semCoord = pendentes.filter(p => !p.lat || !p.lng);
+  const carros = S.config.carros || [];
 
   // avisa se algum pedido sozinho já é mais pesado do que QUALQUER carro
   // configurado aguenta numa viagem só — nesse caso não tem como caber num
   // veículo só, precisa de 2 carros juntos ou 2 viagens até esse cliente
-  const maiorCapacidadeKg=Math.max(0,...carros.map(c=>(c.pesoSugeridoKg||0)*1.2));
-  const pesadosDemais=pendentes.filter(p=>(p.pesoEstimadoKg||0)>maiorCapacidadeKg);
-  if(pesadosDemais.length){
-    const lista=pesadosDemais.map(p=>`Pedido ${p.numero} (${p.pesoEstimadoKg}kg)`).join(", ");
-    if(!confirm(`⚠️ ${pesadosDemais.length} pedido(s) sozinho(s) já passam do que qualquer carro configurado aguenta numa viagem: ${lista}.\n\nVai precisar de 2 carros juntos nessa entrega, ou fazer 2 viagens até esse cliente — isso não é feito automaticamente aqui.\n\nContinuar distribuindo o resto mesmo assim?`)) return;
+  const maiorCapacidadeKg = Math.max(0, ...carros.map(c => (c.pesoSugeridoKg || 0) * 1.2));
+  const pesadosDemais = pendentes.filter(p => (p.pesoEstimadoKg || 0) > maiorCapacidadeKg);
+  if (pesadosDemais.length) {
+    const lista = pesadosDemais.map(p => `Pedido ${p.numero} (${p.pesoEstimadoKg}kg)`).join(", ");
+    if (!confirm(`⚠️ ${pesadosDemais.length} pedido(s) sozinho(s) já passam do que qualquer carro configurado aguenta numa viagem: ${lista}.\n\nVai precisar de 2 carros juntos nessa entrega, ou fazer 2 viagens até esse cliente — isso não é feito automaticamente aqui.\n\nContinuar distribuindo o resto mesmo assim?`)) return;
   }
 
   // TURNO: entregas de manhã e de tarde não devem se misturar na mesma viagem —
   // "qualquer horário" é flexível e entra pra completar qualquer uma delas.
-  const turnoDe=(p)=>p.agendamento?.turno||"qualquer";
-  const turnoViagem=(lista)=>{ const t=lista.map(turnoDe).find(x=>x==="manha"||x==="tarde"); return t||"qualquer"; };
-  const compativel=(p,lista)=>{ const tv=turnoViagem(lista), tp=turnoDe(p); return tv==="qualquer"||tp==="qualquer"||tp===tv; };
-
-  const semente=(lista)=>{ let s=lista[0], d=-1; lista.forEach(p=>{ const dd=distanciaRetaKm(S.lojaCoord||{lat:-19.917,lng:-43.934},p); if(dd>d){ d=dd; s=p; } }); return s; };
-  const montaViagem=(carro, poolAtual, alvoQtd)=>{
-    const sem=semente(poolAtual);
-    const candidatos=poolAtual.slice().sort((a,b)=>distanciaRetaKm(sem,a)-distanciaRetaKm(sem,b));
-    const escolhidos=[]; let pesoAcum=0;
-    for(const p of candidatos){
-      if(escolhidos.length>=alvoQtd) break;
-      if(!compativel(p,escolhidos)) continue; // não mistura manhã com tarde
-      const pesoTeste=pesoAcum+(p.pesoEstimadoKg||0);
-      if(pesoTeste>(carro.pesoSugeridoKg||99999)*1.2 && escolhidos.length>0) continue;
-      escolhidos.push(p); pesoAcum=pesoTeste;
+  const turnoDe = p => {
+    var _p$agendamento2;
+    return ((_p$agendamento2 = p.agendamento) === null || _p$agendamento2 === void 0 ? void 0 : _p$agendamento2.turno) || "qualquer";
+  };
+  const turnoViagem = lista => {
+    const t = lista.map(turnoDe).find(x => x === "manha" || x === "tarde");
+    return t || "qualquer";
+  };
+  const compativel = (p, lista) => {
+    const tv = turnoViagem(lista),
+      tp = turnoDe(p);
+    return tv === "qualquer" || tp === "qualquer" || tp === tv;
+  };
+  const semente = lista => {
+    let s = lista[0],
+      d = -1;
+    lista.forEach(p => {
+      const dd = distanciaRetaKm(S.lojaCoord || {
+        lat: -19.917,
+        lng: -43.934
+      }, p);
+      if (dd > d) {
+        d = dd;
+        s = p;
+      }
+    });
+    return s;
+  };
+  const montaViagem = (carro, poolAtual, alvoQtd) => {
+    const sem = semente(poolAtual);
+    const candidatos = poolAtual.slice().sort((a, b) => distanciaRetaKm(sem, a) - distanciaRetaKm(sem, b));
+    const escolhidos = [];
+    let pesoAcum = 0;
+    for (const p of candidatos) {
+      if (escolhidos.length >= alvoQtd) break;
+      if (!compativel(p, escolhidos)) continue; // não mistura manhã com tarde
+      const pesoTeste = pesoAcum + (p.pesoEstimadoKg || 0);
+      if (pesoTeste > (carro.pesoSugeridoKg || 99999) * 1.2 && escolhidos.length > 0) continue;
+      escolhidos.push(p);
+      pesoAcum = pesoTeste;
     }
     return escolhidos;
   };
-
-  const carrosPorCapacidade=carros.slice().sort((a,b)=>(b.pesoSugeridoKg||0)-(a.pesoSugeridoKg||0));
-  const usados=new Set();
+  const carrosPorCapacidade = carros.slice().sort((a, b) => (b.pesoSugeridoKg || 0) - (a.pesoSugeridoKg || 0));
+  const usados = new Set();
 
   // fase 1: tenta colocar TUDO numa viagem só de 1 carro (o de maior capacidade)
-  for(const carro of carrosPorCapacidade){
-    if(!pool.length) break;
-    const pesoTotalPool=pool.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
-    const capQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
-    const temManha=pool.some(p=>turnoDe(p)==="manha"), temTarde=pool.some(p=>turnoDe(p)==="tarde");
-    if(!(temManha&&temTarde) && pesoTotalPool<=(carro.pesoSugeridoKg||99999)*1.2 && pool.length<=capQtd){
-      const viagemIx=escolherOuCriarViagem(carro.id,0);
-      pool.forEach(p=>{
-        S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
+  for (const carro of carrosPorCapacidade) {
+    if (!pool.length) break;
+    const pesoTotalPool = pool.reduce((s, p) => s + (p.pesoEstimadoKg || 0), 0);
+    const capQtd = Math.min(carro.limiteEntregas || 99, capacidadeEstimada(carro) || 99);
+    const temManha = pool.some(p => turnoDe(p) === "manha"),
+      temTarde = pool.some(p => turnoDe(p) === "tarde");
+    if (!(temManha && temTarde) && pesoTotalPool <= (carro.pesoSugeridoKg || 99999) * 1.2 && pool.length <= capQtd) {
+      const viagemIx = escolherOuCriarViagem(carro.id, 0);
+      pool.forEach(p => {
+        S.atribuicoes["_semCarro"].pedidoIds = S.atribuicoes["_semCarro"].pedidoIds.filter(id => id !== p.id);
         S.atribuicoes[carro.id].viagens[viagemIx].pedidoIds.push(p.id);
       });
       usados.add(carro.id);
-      pool=[];
+      pool = [];
       break;
     }
   }
 
   // fase 2: não coube numa viagem só — tenta MAIS VIAGENS DO MESMO CARRO antes
   // de espalhar pra outro veículo (carro/viagem/km rodando é sempre custo)
-  if(pool.length){
-    for(const carro of carros){
-      while(pool.length){
-        const capQtd=Math.min(carro.limiteEntregas||99, capacidadeEstimada(carro)||99);
-        const risco=riscoCarro(carro);
-        const tempoRecargaSeAplica=risco.qtdViagens>0?(S.config.tempoRecargaMin||20):0;
-        const tempoEstimadoNovaViagem=Math.min(pool.length,capQtd)*((S.config.tempoTrajetoMin||12)+(S.config.tempoParadaMin||15));
-        if(risco.usado+tempoRecargaSeAplica+tempoEstimadoNovaViagem>risco.jan) break; // esse carro já não tem mais tempo sobrando no dia
-        const escolhidos=montaViagem(carro,pool,capQtd);
-        if(!escolhidos.length) break;
-        const pesoEscolhidos=escolhidos.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0);
-        const viagemIx=escolherOuCriarViagem(carro.id,pesoEscolhidos);
+  if (pool.length) {
+    for (const carro of carros) {
+      while (pool.length) {
+        const capQtd = Math.min(carro.limiteEntregas || 99, capacidadeEstimada(carro) || 99);
+        const risco = riscoCarro(carro);
+        const tempoRecargaSeAplica = risco.qtdViagens > 0 ? S.config.tempoRecargaMin || 20 : 0;
+        const tempoEstimadoNovaViagem = Math.min(pool.length, capQtd) * ((S.config.tempoTrajetoMin || 12) + (S.config.tempoParadaMin || 15));
+        if (risco.usado + tempoRecargaSeAplica + tempoEstimadoNovaViagem > risco.jan) break; // esse carro já não tem mais tempo sobrando no dia
+        const escolhidos = montaViagem(carro, pool, capQtd);
+        if (!escolhidos.length) break;
+        const pesoEscolhidos = escolhidos.reduce((s, p) => s + (p.pesoEstimadoKg || 0), 0);
+        const viagemIx = escolherOuCriarViagem(carro.id, pesoEscolhidos);
         // essa viagem tem que começar vazia (senão estaria misturando com pedidos de outra leva) — se a última não estava vazia, já criou uma nova em escolherOuCriarViagem
-        escolhidos.forEach(p=>{
-          S.atribuicoes["_semCarro"].pedidoIds=S.atribuicoes["_semCarro"].pedidoIds.filter(id=>id!==p.id);
+        escolhidos.forEach(p => {
+          S.atribuicoes["_semCarro"].pedidoIds = S.atribuicoes["_semCarro"].pedidoIds.filter(id => id !== p.id);
           S.atribuicoes[carro.id].viagens[viagemIx].pedidoIds.push(p.id);
         });
         usados.add(carro.id);
-        pool=pool.filter(p=>!escolhidos.some(e=>e.id===p.id));
+        pool = pool.filter(p => !escolhidos.some(e => e.id === p.id));
       }
-      if(!pool.length) break;
+      if (!pool.length) break;
     }
   }
-
   render();
-  const nomesUsados=[...usados].map(id=>S.config.carros.find(c=>c.id===id)?.nome).filter(Boolean);
-  const totalViagensCriadas=[...usados].reduce((s,id)=>s+(S.atribuicoes[id].viagens.filter(v=>v.pedidoIds.length).length),0);
-  const sobrouSemCoord=semCoord.length;
-  const sobrouNaoCoube=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).length-sobrouSemCoord;
-  let msg = usados.size<=1
-    ? `✅ Esses pedidos cabem em só 1 veículo (${nomesUsados[0]||"—"}${totalViagensCriadas>1?`, em ${totalViagensCriadas} viagens no dia`:''}) — menos carro/viagem/km rodando = menos custo.`
-    : `🚚 Não coube tudo num carro só — vai precisar de ${usados.size} veículos: ${nomesUsados.join(", ")}.`;
-  if(sobrouNaoCoube>0) msg+=` ⚠️ ${sobrouNaoCoube} pedido(s) não coube(ram) em nenhum carro/viagem sem estourar peso ou horário — precisa de outro veículo ou ajustar manualmente.`;
-  if(sobrouSemCoord>0) msg+=` ⚠️ ${sobrouSemCoord} pedido(s) sem coordenada identificada ficou(aram) de fora.`;
-  S.msg=msg;
-  for(const carroId of usados){
-    const viagens=S.atribuicoes[carroId].viagens;
-    for(let vix=0;vix<viagens.length;vix++){ if(viagens[vix].pedidoIds.length) await sugerirRota(carroId,vix); }
+  const nomesUsados = [...usados].map(id => {
+    var _S$config$carros$find;
+    return (_S$config$carros$find = S.config.carros.find(c => c.id === id)) === null || _S$config$carros$find === void 0 ? void 0 : _S$config$carros$find.nome;
+  }).filter(Boolean);
+  const totalViagensCriadas = [...usados].reduce((s, id) => s + S.atribuicoes[id].viagens.filter(v => v.pedidoIds.length).length, 0);
+  const sobrouSemCoord = semCoord.length;
+  const sobrouNaoCoube = (((_S$atribuicoes$_semCa2 = S.atribuicoes["_semCarro"]) === null || _S$atribuicoes$_semCa2 === void 0 ? void 0 : _S$atribuicoes$_semCa2.pedidoIds) || []).length - sobrouSemCoord;
+  let msg = usados.size <= 1 ? `✅ Esses pedidos cabem em só 1 veículo (${nomesUsados[0] || "—"}${totalViagensCriadas > 1 ? `, em ${totalViagensCriadas} viagens no dia` : ''}) — menos carro/viagem/km rodando = menos custo.` : `🚚 Não coube tudo num carro só — vai precisar de ${usados.size} veículos: ${nomesUsados.join(", ")}.`;
+  if (sobrouNaoCoube > 0) msg += ` ⚠️ ${sobrouNaoCoube} pedido(s) não coube(ram) em nenhum carro/viagem sem estourar peso ou horário — precisa de outro veículo ou ajustar manualmente.`;
+  if (sobrouSemCoord > 0) msg += ` ⚠️ ${sobrouSemCoord} pedido(s) sem coordenada identificada ficou(aram) de fora.`;
+  S.msg = msg;
+  for (const carroId of usados) {
+    const viagens = S.atribuicoes[carroId].viagens;
+    for (let vix = 0; vix < viagens.length; vix++) {
+      if (viagens[vix].pedidoIds.length) await sugerirRota(carroId, vix);
+    }
   }
 }
-
-function atribuirCarro(pedidoId,carroId){
-  if(!carroId) return;
-  const carro=(S.config.carros||[]).find(c=>c.id===carroId);
-  const pedido=pedidoPorId(pedidoId);
-  if(carro && pedido){
-    const tetoEsseCarro=(carro.pesoSugeridoKg||99999)*1.2;
-    if((pedido.pesoEstimadoKg||0)>tetoEsseCarro){
-      const maiorCapacidadeKg=Math.max(0,...(S.config.carros||[]).map(c=>(c.pesoSugeridoKg||0)*1.2));
-      if((pedido.pesoEstimadoKg||0)>maiorCapacidadeKg){
-        if(!confirm(`⚠️ Esse pedido sozinho (${pedido.pesoEstimadoKg}kg) já passa do que QUALQUER carro configurado aguenta numa viagem. Provavelmente vai precisar de 2 carros juntos, ou 2 viagens até esse cliente.\n\nAtribuir mesmo assim?`)) return;
+function atribuirCarro(pedidoId, carroId) {
+  if (!carroId) return;
+  const carro = (S.config.carros || []).find(c => c.id === carroId);
+  const pedido = pedidoPorId(pedidoId);
+  if (carro && pedido) {
+    const tetoEsseCarro = (carro.pesoSugeridoKg || 99999) * 1.2;
+    if ((pedido.pesoEstimadoKg || 0) > tetoEsseCarro) {
+      const maiorCapacidadeKg = Math.max(0, ...(S.config.carros || []).map(c => (c.pesoSugeridoKg || 0) * 1.2));
+      if ((pedido.pesoEstimadoKg || 0) > maiorCapacidadeKg) {
+        if (!confirm(`⚠️ Esse pedido sozinho (${pedido.pesoEstimadoKg}kg) já passa do que QUALQUER carro configurado aguenta numa viagem. Provavelmente vai precisar de 2 carros juntos, ou 2 viagens até esse cliente.\n\nAtribuir mesmo assim?`)) return;
       } else {
-        if(!confirm(`⚠️ Esse pedido (${pedido.pesoEstimadoKg}kg) sozinho já passa da capacidade do ${carro.nome} (${carro.pesoSugeridoKg}kg) numa viagem. Talvez caiba melhor num carro maior.\n\nAtribuir mesmo assim?`)) return;
+        if (!confirm(`⚠️ Esse pedido (${pedido.pesoEstimadoKg}kg) sozinho já passa da capacidade do ${carro.nome} (${carro.pesoSugeridoKg}kg) numa viagem. Talvez caiba melhor num carro maior.\n\nAtribuir mesmo assim?`)) return;
       }
     }
   }
   removerDeTodasAtribuicoes(pedidoId);
-  const viagemIx=escolherOuCriarViagem(carroId, pedido?.pesoEstimadoKg||0);
-  if(viagemIx>0 && S.atribuicoes[carroId].viagens[viagemIx].pedidoIds.length===0){
-    const risco=riscoCarro(carro);
-    const tempoExtra=(S.config.tempoRecargaMin||20)+((S.config.tempoTrajetoMin||12)+(S.config.tempoParadaMin||15));
-    if(risco.usado+tempoExtra>risco.jan){
-      if(!confirm(`⚠️ Esse carro provavelmente já não tem mais tempo sobrando no dia (${Math.round(risco.usado)} de ${risco.jan} min já usados) — essa seria a ${viagemIx+1}ª viagem, com risco de não dar tempo.\n\nColocar esse pedido nessa viagem mesmo assim?`)) return;
+  const viagemIx = escolherOuCriarViagem(carroId, (pedido === null || pedido === void 0 ? void 0 : pedido.pesoEstimadoKg) || 0);
+  if (viagemIx > 0 && S.atribuicoes[carroId].viagens[viagemIx].pedidoIds.length === 0) {
+    const risco = riscoCarro(carro);
+    const tempoExtra = (S.config.tempoRecargaMin || 20) + ((S.config.tempoTrajetoMin || 12) + (S.config.tempoParadaMin || 15));
+    if (risco.usado + tempoExtra > risco.jan) {
+      if (!confirm(`⚠️ Esse carro provavelmente já não tem mais tempo sobrando no dia (${Math.round(risco.usado)} de ${risco.jan} min já usados) — essa seria a ${viagemIx + 1}ª viagem, com risco de não dar tempo.\n\nColocar esse pedido nessa viagem mesmo assim?`)) return;
     }
   }
   S.atribuicoes[carroId].viagens[viagemIx].pedidoIds.push(pedidoId);
-  delete_resultadoViagem(carroId,viagemIx);
+  delete_resultadoViagem(carroId, viagemIx);
   render();
 }
-function removerDeTodasAtribuicoes(pedidoId){
-  Object.entries(S.atribuicoes).forEach(([carroId,a])=>{
-    if(carroId==="_semCarro"){ a.pedidoIds=(a.pedidoIds||[]).filter(id=>id!==pedidoId); return; }
-    (a.viagens||[]).forEach(v=>{ v.pedidoIds=(v.pedidoIds||[]).filter(id=>id!==pedidoId); });
+function removerDeTodasAtribuicoes(pedidoId) {
+  Object.entries(S.atribuicoes).forEach(([carroId, a]) => {
+    if (carroId === "_semCarro") {
+      a.pedidoIds = (a.pedidoIds || []).filter(id => id !== pedidoId);
+      return;
+    }
+    (a.viagens || []).forEach(v => {
+      v.pedidoIds = (v.pedidoIds || []).filter(id => id !== pedidoId);
+    });
   });
 }
-function delete_resultadoViagem(carroId,vix){
-  if(S.resultadoRota[carroId]) S.resultadoRota[carroId][vix]=null;
+function delete_resultadoViagem(carroId, vix) {
+  if (S.resultadoRota[carroId]) S.resultadoRota[carroId][vix] = null;
 }
-function removerDoCarreo(carroId,vix,pedidoId){
-  S.atribuicoes[carroId].viagens[vix].pedidoIds=(S.atribuicoes[carroId].viagens[vix].pedidoIds||[]).filter(id=>id!==pedidoId);
-  delete_resultadoViagem(carroId,vix);
+function removerDoCarreo(carroId, vix, pedidoId) {
+  S.atribuicoes[carroId].viagens[vix].pedidoIds = (S.atribuicoes[carroId].viagens[vix].pedidoIds || []).filter(id => id !== pedidoId);
+  delete_resultadoViagem(carroId, vix);
   render();
 }
-function moverNaLista(carroId,vix,ix,delta){
-  const arr=S.atribuicoes[carroId].viagens[vix].pedidoIds;
-  const novo=ix+delta; if(novo<0||novo>=arr.length) return;
-  [arr[ix],arr[novo]]=[arr[novo],arr[ix]];
-  delete_resultadoViagem(carroId,vix);
+function moverNaLista(carroId, vix, ix, delta) {
+  const arr = S.atribuicoes[carroId].viagens[vix].pedidoIds;
+  const novo = ix + delta;
+  if (novo < 0 || novo >= arr.length) return;
+  [arr[ix], arr[novo]] = [arr[novo], arr[ix]];
+  delete_resultadoViagem(carroId, vix);
   render();
 }
-function adicionarViagem(carroId){
-  S.atribuicoes[carroId].viagens.push({pedidoIds:[]});
+function adicionarViagem(carroId) {
+  S.atribuicoes[carroId].viagens.push({
+    pedidoIds: []
+  });
   render();
 }
-function removerViagem(carroId,vix){
-  if(S.atribuicoes[carroId].viagens.length<=1){ alert("Esse carro precisa ter pelo menos 1 viagem — pra remover de vez, tire os pedidos dela."); return; }
-  const ids=S.atribuicoes[carroId].viagens[vix].pedidoIds||[];
-  if(ids.length && !confirm(`Essa viagem tem ${ids.length} pedido(s). Removê-la também tira esses pedidos do carro (eles voltam pra "aguardando carro"). Continuar?`)) return;
-  ids.forEach(id=>{ S.atribuicoes["_semCarro"].pedidoIds.push(id); });
-  S.atribuicoes[carroId].viagens.splice(vix,1);
-  if(S.resultadoRota[carroId]) S.resultadoRota[carroId].splice(vix,1);
+function removerViagem(carroId, vix) {
+  if (S.atribuicoes[carroId].viagens.length <= 1) {
+    alert("Esse carro precisa ter pelo menos 1 viagem — pra remover de vez, tire os pedidos dela.");
+    return;
+  }
+  const ids = S.atribuicoes[carroId].viagens[vix].pedidoIds || [];
+  if (ids.length && !confirm(`Essa viagem tem ${ids.length} pedido(s). Removê-la também tira esses pedidos do carro (eles voltam pra "aguardando carro"). Continuar?`)) return;
+  ids.forEach(id => {
+    S.atribuicoes["_semCarro"].pedidoIds.push(id);
+  });
+  S.atribuicoes[carroId].viagens.splice(vix, 1);
+  if (S.resultadoRota[carroId]) S.resultadoRota[carroId].splice(vix, 1);
   render();
 }
-
-async function atualizarResumoDias(){
-  try{
-    const rResumo=await fetch(B+"/api/rotas/dias-resumo").then(r=>r.json());
-    S.diasResumo=rResumo.porDia||{};
-    S.diasDetalhe=rResumo.detalheDias||{};
-  }catch(e){}
+async function atualizarResumoDias() {
+  try {
+    const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
+    S.diasResumo = rResumo.porDia || {};
+    S.diasDetalhe = rResumo.detalheDias || {};
+  } catch (e) {}
 }
-async function toggleVisaoGeral(){
-  const ligando=!S.verVisaoGeral;
-  if(ligando) await atualizarResumoDias(); // busca fresco, senão mostra dado desatualizado
-  S.verVisaoGeral=ligando;
+async function toggleVisaoGeral() {
+  const ligando = !S.verVisaoGeral;
+  if (ligando) await atualizarResumoDias(); // busca fresco, senão mostra dado desatualizado
+  S.verVisaoGeral = ligando;
   render();
 }
-
-async function salvarDia(){
-  S.salvando=true; render();
-  try{
-    await fetch(B+"/api/rotas/dia",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({data:S.data,carros:S.atribuicoes})});
-    S.msg="✅ Salvo!";
+async function salvarDia() {
+  S.salvando = true;
+  render();
+  try {
+    await fetch(B + "/api/rotas/dia", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        data: S.data,
+        carros: S.atribuicoes
+      })
+    });
+    S.msg = "✅ Salvo!";
     await atualizarResumoDias(); // sem isso, a Visão geral ficava mostrando o resumo de antes de salvar
-  }catch(e){ S.msg="Erro ao salvar: "+e.message; }
-  S.salvando=false; render();
-  setTimeout(()=>{ S.msg=""; render(); },2500);
+  } catch (e) {
+    S.msg = "Erro ao salvar: " + e.message;
+  }
+  S.salvando = false;
+  render();
+  setTimeout(() => {
+    S.msg = "";
+    render();
+  }, 2500);
 }
-
-async function sugerirRota(carroId,vix){
-  vix=vix||0;
-  const ids=(S.atribuicoes[carroId]?.viagens||[])[vix]?.pedidoIds||[];
-  if(ids.length<1){ alert("Adicione pelo menos 1 pedido a essa viagem."); return; }
-  const paradas=ids.map(id=>{ const p=pedidoPorId(id); return {id, endereco:p?.endereco||""}; }).filter(p=>p.endereco);
-  if(!paradas.length){ alert("Nenhum pedido dessa viagem tem endereço de entrega cadastrado."); return; }
-  const chave=carroId+"_"+vix;
-  S.calculando[chave]=true; render();
-  try{
-    const j=await fetch(B+"/api/rotas/calcular",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({paradas})}).then(r=>r.json());
-    if(!j.ok){ alert(j.erro||"Erro ao calcular rota"); S.calculando[chave]=false; render(); return; }
-    if(!S.resultadoRota[carroId]) S.resultadoRota[carroId]=[];
-    S.resultadoRota[carroId][vix]=j;
+async function sugerirRota(carroId, vix) {
+  var _vix3, _S$atribuicoes$carroI5;
+  vix = vix || 0;
+  const ids = ((_vix3 = (((_S$atribuicoes$carroI5 = S.atribuicoes[carroId]) === null || _S$atribuicoes$carroI5 === void 0 ? void 0 : _S$atribuicoes$carroI5.viagens) || [])[vix]) === null || _vix3 === void 0 ? void 0 : _vix3.pedidoIds) || [];
+  if (ids.length < 1) {
+    alert("Adicione pelo menos 1 pedido a essa viagem.");
+    return;
+  }
+  const paradas = ids.map(id => {
+    const p = pedidoPorId(id);
+    return {
+      id,
+      endereco: (p === null || p === void 0 ? void 0 : p.endereco) || ""
+    };
+  }).filter(p => p.endereco);
+  if (!paradas.length) {
+    alert("Nenhum pedido dessa viagem tem endereço de entrega cadastrado.");
+    return;
+  }
+  const chave = carroId + "_" + vix;
+  S.calculando[chave] = true;
+  render();
+  try {
+    const j = await fetch(B + "/api/rotas/calcular", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        paradas
+      })
+    }).then(r => r.json());
+    if (!j.ok) {
+      alert(j.erro || "Erro ao calcular rota");
+      S.calculando[chave] = false;
+      render();
+      return;
+    }
+    if (!S.resultadoRota[carroId]) S.resultadoRota[carroId] = [];
+    S.resultadoRota[carroId][vix] = j;
     // reordena a lista de pedidoIds dessa viagem conforme a rota otimizada
-    S.atribuicoes[carroId].viagens[vix].pedidoIds=j.paradasOrdenadas.map(p=>p.id);
-    S.carroMapaAtivo=chave;
-  }catch(e){ alert("Erro: "+e.message); }
-  S.calculando[chave]=false; render();
-  setTimeout(()=>desenharMapa(carroId,vix),100);
+    S.atribuicoes[carroId].viagens[vix].pedidoIds = j.paradasOrdenadas.map(p => p.id);
+    S.carroMapaAtivo = chave;
+  } catch (e) {
+    alert("Erro: " + e.message);
+  }
+  S.calculando[chave] = false;
+  render();
+  setTimeout(() => desenharMapa(carroId, vix), 100);
 }
 
 // distância em linha reta (km) — usada só pra AGRUPAR entregas próximas antes
 // de mandar pro Google calcular a rota de verdade (esse cálculo é local, não
 // gasta chamada de API)
-function distanciaRetaKm(a,b){
-  const R=6371;
-  const dLat=(b.lat-a.lat)*Math.PI/180, dLng=(b.lng-a.lng)*Math.PI/180;
-  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
-  const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLng/2)**2;
-  return 2*R*Math.asin(Math.sqrt(h));
+function distanciaRetaKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180,
+    dLng = (b.lng - a.lng) * Math.PI / 180;
+  const la1 = a.lat * Math.PI / 180,
+    la2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 // Distribui os pedidos disponíveis entre as rotas configuradas, tentando
@@ -567,243 +753,340 @@ function distanciaRetaKm(a,b){
 // se precisar fechar a quantidade), e (3) proximidade geográfica — não adianta
 // o peso encaixar se as entregas forem espalhadas longe uma da outra, então
 // agrupa por perto primeiro (rotas mais rápidas) e só depois verifica peso.
-async function sugerirDistribuicaoDia(){
-  if(!confirm("Isso vai agendar todos os pedidos disponíveis pra esse dia e já sugerir o(s) carro(s)/viagens necessários. Continuar?")) return;
-  const disponiveis=pedidosDisponiveis();
-  if(!disponiveis.length){ alert("Não há pedidos disponíveis pra agendar."); return; }
-  disponiveis.forEach(p=>S.atribuicoes["_semCarro"].pedidoIds.push(p.id));
+async function sugerirDistribuicaoDia() {
+  if (!confirm("Isso vai agendar todos os pedidos disponíveis pra esse dia e já sugerir o(s) carro(s)/viagens necessários. Continuar?")) return;
+  const disponiveis = pedidosDisponiveis();
+  if (!disponiveis.length) {
+    alert("Não há pedidos disponíveis pra agendar.");
+    return;
+  }
+  disponiveis.forEach(p => S.atribuicoes["_semCarro"].pedidoIds.push(p.id));
   render();
   await sugerirCarrosParaSemCarro();
 }
 
 // ---------- decodifica o polyline do Google (formato padrão de encoding) ----------
-function decodePolyline(str){
-  let index=0,lat=0,lng=0,coords=[];
-  while(index<str.length){
-    let b,shift=0,result=0;
-    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
-    lat+=(result&1)?~(result>>1):(result>>1);
-    shift=0; result=0;
-    do{ b=str.charCodeAt(index++)-63; result|=(b&0x1f)<<shift; shift+=5; }while(b>=0x20);
-    lng+=(result&1)?~(result>>1):(result>>1);
-    coords.push([lat/1e5,lng/1e5]);
+function decodePolyline(str) {
+  let index = 0,
+    lat = 0,
+    lng = 0,
+    coords = [];
+  while (index < str.length) {
+    let b,
+      shift = 0,
+      result = 0;
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+    shift = 0;
+    result = 0;
+    do {
+      b = str.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+    coords.push([lat / 1e5, lng / 1e5]);
   }
   return coords;
 }
-
-let _leafletCarregado=false;
-function carregarLeaflet(){
-  return new Promise(res=>{
-    if(_leafletCarregado||window.L){ _leafletCarregado=true; res(); return; }
-    const css=document.createElement("link"); css.rel="stylesheet"; css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
-    const js=document.createElement("script"); js.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload=()=>{_leafletCarregado=true;res();}; document.head.appendChild(js);
+let _leafletCarregado = false;
+function carregarLeaflet() {
+  return new Promise(res => {
+    if (_leafletCarregado || window.L) {
+      _leafletCarregado = true;
+      res();
+      return;
+    }
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(css);
+    const js = document.createElement("script");
+    js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.onload = () => {
+      _leafletCarregado = true;
+      res();
+    };
+    document.head.appendChild(js);
   });
 }
-let _mapaLeaflet=null;
-async function desenharMapa(carroId,vix){
-  vix=vix||0;
-  const box=document.getElementById("mapaRota"); if(!box) return;
+let _mapaLeaflet = null;
+async function desenharMapa(carroId, vix) {
+  vix = vix || 0;
+  const box = document.getElementById("mapaRota");
+  if (!box) return;
   await carregarLeaflet();
-  const resultado=(S.resultadoRota[carroId]||[])[vix]; if(!resultado) return;
-  if(_mapaLeaflet){ _mapaLeaflet.remove(); _mapaLeaflet=null; }
-  const centro=S.lojaCoord||{lat:-19.917,lng:-43.934};
-  _mapaLeaflet=L.map("mapaRota").setView([centro.lat,centro.lng],12);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(_mapaLeaflet);
-  const pontos=[[centro.lat,centro.lng]];
-  L.marker([centro.lat,centro.lng]).addTo(_mapaLeaflet).bindPopup("🏪 B13 Bebidas (saída/volta)");
-  resultado.paradasOrdenadas.forEach((p,ix)=>{
-    const ped=pedidoPorId(p.id);
-    if(ped?.lat&&ped?.lng){
-      pontos.push([ped.lat,ped.lng]);
-      L.marker([ped.lat,ped.lng]).addTo(_mapaLeaflet).bindPopup(`${ix+1}º — Pedido ${ped.numero}<br>${esc(ped.clienteNome)}`);
+  const resultado = (S.resultadoRota[carroId] || [])[vix];
+  if (!resultado) return;
+  if (_mapaLeaflet) {
+    _mapaLeaflet.remove();
+    _mapaLeaflet = null;
+  }
+  const centro = S.lojaCoord || {
+    lat: -19.917,
+    lng: -43.934
+  };
+  _mapaLeaflet = L.map("mapaRota").setView([centro.lat, centro.lng], 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+  }).addTo(_mapaLeaflet);
+  const pontos = [[centro.lat, centro.lng]];
+  L.marker([centro.lat, centro.lng]).addTo(_mapaLeaflet).bindPopup("🏪 B13 Bebidas (saída/volta)");
+  resultado.paradasOrdenadas.forEach((p, ix) => {
+    const ped = pedidoPorId(p.id);
+    if (ped !== null && ped !== void 0 && ped.lat && ped !== null && ped !== void 0 && ped.lng) {
+      pontos.push([ped.lat, ped.lng]);
+      L.marker([ped.lat, ped.lng]).addTo(_mapaLeaflet).bindPopup(`${ix + 1}º — Pedido ${ped.numero}<br>${esc(ped.clienteNome)}`);
     }
   });
-  if(resultado.polyline){
-    const linha=decodePolyline(resultado.polyline);
-    L.polyline(linha,{color:"#FF0082",weight:4}).addTo(_mapaLeaflet);
-    if(linha.length) _mapaLeaflet.fitBounds(linha);
-  } else if(pontos.length>1){
+  if (resultado.polyline) {
+    const linha = decodePolyline(resultado.polyline);
+    L.polyline(linha, {
+      color: "#FF0082",
+      weight: 4
+    }).addTo(_mapaLeaflet);
+    if (linha.length) _mapaLeaflet.fitBounds(linha);
+  } else if (pontos.length > 1) {
     _mapaLeaflet.fitBounds(pontos);
   }
 }
 
 // ---------- CONFIG ----------
-function abrirConfig(){ S.editandoConfig=true; render(); }
-function fecharConfig(){ S.editandoConfig=false; render(); }
-function toggleDiaConfig(ix){ S.config.diasEntrega[ix]=!S.config.diasEntrega[ix]; render(); }
-function addCarroConfig(){ S.config.carros.push({id:"carro"+Date.now(),nome:"Rota "+(S.config.carros.length+1),limiteEntregas:10,pesoSugeridoKg:200,horaSaida:"10:00",horaFimJanela:"19:00"}); render(); }
-function removerCarroConfig(ix){ S.config.carros.splice(ix,1); render(); }
-async function salvarConfig(){
-  await fetch(B+"/api/rotas/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(S.config)});
-  S.editandoConfig=false;
+function abrirConfig() {
+  S.editandoConfig = true;
+  render();
+}
+function fecharConfig() {
+  S.editandoConfig = false;
+  render();
+}
+function toggleDiaConfig(ix) {
+  S.config.diasEntrega[ix] = !S.config.diasEntrega[ix];
+  render();
+}
+function addCarroConfig() {
+  S.config.carros.push({
+    id: "carro" + Date.now(),
+    nome: "Rota " + (S.config.carros.length + 1),
+    limiteEntregas: 10,
+    pesoSugeridoKg: 200,
+    horaSaida: "10:00",
+    horaFimJanela: "19:00"
+  });
+  render();
+}
+function removerCarroConfig(ix) {
+  S.config.carros.splice(ix, 1);
+  render();
+}
+async function salvarConfig() {
+  await fetch(B + "/api/rotas/config", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(S.config)
+  });
+  S.editandoConfig = false;
   await carregarTudo();
 }
 
 // visão de várias colunas de dias lado a lado — mostra, pra cada dia de
 // entrega dos próximos ~10 dias, quantas entregas tem e quais pedidos estão
 // em cada carro. Ajuda a ver a semana toda de uma vez sem ficar trocando de dia.
-function htmlVisaoGeral(){
-  const dias=[];
-  const base=new Date(S.data+"T12:00:00");
-  for(let i=-1;i<=9;i++){
-    const d=new Date(base); d.setDate(d.getDate()+i);
-    if(!S.config.diasEntrega[d.getDay()]) continue;
-    dias.push({iso:d.toISOString().slice(0,10), label:d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"})});
+function htmlVisaoGeral() {
+  const dias = [];
+  const base = new Date(S.data + "T12:00:00");
+  for (let i = -1; i <= 9; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    if (!S.config.diasEntrega[d.getDay()]) continue;
+    dias.push({
+      iso: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit"
+      })
+    });
   }
   return `<div class="card">
     <div style="font-weight:900;margin-bottom:10px">📊 Visão geral — próximos dias de entrega</div>
     <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">
-      ${dias.map(d=>{
-        const detalhe=S.diasDetalhe[d.iso]||{};
-        const totalDia=Object.values(detalhe).reduce((s,ids)=>s+ids.length,0);
-        const semCarroQtd=(detalhe["_semCarro"]||[]).length;
-        return `<div style="flex:0 0 220px;background:#181433;border:2px solid ${d.iso===S.data?'#FF0082':'#2c2660'};border-radius:12px;padding:10px">
+      ${dias.map(d => {
+    const detalhe = S.diasDetalhe[d.iso] || {};
+    const totalDia = Object.values(detalhe).reduce((s, ids) => s + ids.length, 0);
+    const semCarroQtd = (detalhe["_semCarro"] || []).length;
+    return `<div style="flex:0 0 220px;background:#181433;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};border-radius:12px;padding:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="text-transform:capitalize;font-weight:900;font-size:13px">${d.label}</div>
             <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px" onclick="S.data='${d.iso}';S.verVisaoGeral=false;carregarTudo()">Abrir</button>
           </div>
-          ${!totalDia?'<div class="muted" style="font-size:12px">Nenhum pedido agendado.</div>':`
+          ${!totalDia ? '<div class="muted" style="font-size:12px">Nenhum pedido agendado.</div>' : `
             <div class="muted" style="font-size:11px;margin-bottom:6px">${totalDia} entrega(s) no total</div>
-            ${(S.config.carros||[]).filter(c=>detalhe[c.id]?.length).map(c=>`
+            ${(S.config.carros || []).filter(c => {
+      var _detalhe$c$id;
+      return (_detalhe$c$id = detalhe[c.id]) === null || _detalhe$c$id === void 0 ? void 0 : _detalhe$c$id.length;
+    }).map(c => `
               <div style="margin-bottom:8px">
                 <div style="font-weight:800;font-size:11px;color:#ffd23f">🚚 ${esc(c.nome)} (${detalhe[c.id].length})</div>
-                ${detalhe[c.id].slice(0,6).map(id=>{ const p=pedidoPorId(id); return `<div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${p?('Pedido '+esc(p.numero)+' — '+esc(p.clienteNome)):('#'+id)}</div>`; }).join("")}
-                ${detalhe[c.id].length>6?`<div class="muted" style="font-size:10px">+${detalhe[c.id].length-6} mais…</div>`:''}
+                ${detalhe[c.id].slice(0, 6).map(id => {
+      const p = pedidoPorId(id);
+      return `<div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${p ? 'Pedido ' + esc(p.numero) + ' — ' + esc(p.clienteNome) : '#' + id}</div>`;
+    }).join("")}
+                ${detalhe[c.id].length > 6 ? `<div class="muted" style="font-size:10px">+${detalhe[c.id].length - 6} mais…</div>` : ''}
               </div>`).join("")}
-            ${semCarroQtd?`<div style="font-size:11px;color:#ff8090;font-weight:700">🗓️ ${semCarroQtd} aguardando carro</div>`:''}
+            ${semCarroQtd ? `<div style="font-size:11px;color:#ff8090;font-weight:700">🗓️ ${semCarroQtd} aguardando carro</div>` : ''}
           `}
         </div>`;
-      }).join("")}
+  }).join("")}
     </div>
   </div>`;
 }
-
-function render(){
-  const app=document.getElementById("app");
-  if(S.carregando){ app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="muted">Carregando pedidos de entrega…</div></div>`; return; }
-  if(!S.config){
-    app.innerHTML=`<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="warn">${esc(S.msg||"Não foi possível carregar. Verifique a conexão com o Bling e tente de novo.")}</div><button class="btn btn-mag" onclick="carregarTudo()">↻ Tentar de novo</button></div>`;
+function render() {
+  var _S$atribuicoes$_semCa3;
+  const app = document.getElementById("app");
+  if (S.carregando) {
+    app.innerHTML = `<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="muted">Carregando pedidos de entrega…</div></div>`;
     return;
   }
-
-  const diaIx=new Date(S.data+"T12:00:00").getDay();
-  const diaHabilitado=S.config.diasEntrega[diaIx];
-
-  let h=`<div class="topbar">
+  if (!S.config) {
+    app.innerHTML = `<div class="topbar"><div class="pg">🗺️ Gerenciamento de Rota</div></div><div class="content"><div class="warn">${esc(S.msg || "Não foi possível carregar. Verifique a conexão com o Bling e tente de novo.")}</div><button class="btn btn-mag" onclick="carregarTudo()">↻ Tentar de novo</button></div>`;
+    return;
+  }
+  const diaIx = new Date(S.data + "T12:00:00").getDay();
+  const diaHabilitado = S.config.diasEntrega[diaIx];
+  let h = `<div class="topbar">
     <div class="pg">🗺️ Gerenciamento de Rota</div>
     <div style="flex:1"></div>
-    <button class="btn btn-ghost" onclick="toggleVisaoGeral()">${S.verVisaoGeral?'📋 Ver dia a dia':'📊 Visão geral da semana'}</button>
+    <button class="btn btn-ghost" onclick="toggleVisaoGeral()">${S.verVisaoGeral ? '📋 Ver dia a dia' : '📊 Visão geral da semana'}</button>
     <button class="btn btn-ghost" onclick="abrirConfig()">⚙️ Configurar</button>
   </div>
   <div class="content">`;
-
-  if(S.msg) h+=`<div class="warn">${esc(S.msg)}</div>`;
-
-  if(S.verVisaoGeral){ h+=htmlVisaoGeral(); h+="</div>"; app.innerHTML=h; return; }
+  if (S.msg) h += `<div class="warn">${esc(S.msg)}</div>`;
+  if (S.verVisaoGeral) {
+    h += htmlVisaoGeral();
+    h += "</div>";
+    app.innerHTML = h;
+    return;
+  }
 
   // seletor de dia
-  h+=`<div class="card" style="display:flex;align-items:center;gap:10px">
+  h += `<div class="card" style="display:flex;align-items:center;gap:10px">
     <button class="btn btn-ghost" onclick="mudarDia(-1)">← Dia anterior</button>
     <div style="flex:1;text-align:center">
       <div style="font-weight:900;font-size:16px;text-transform:capitalize">${dataLabel(S.data)}</div>
-      ${!diaHabilitado?'<div class="muted" style="color:#ff8090">⚠️ Esse dia não está configurado como dia de entrega</div>':''}
+      ${!diaHabilitado ? '<div class="muted" style="color:#ff8090">⚠️ Esse dia não está configurado como dia de entrega</div>' : ''}
     </div>
     <button class="btn btn-ghost" onclick="mudarDia(1)">Próximo dia →</button>
   </div>`;
-
-  h+=htmlResumoDias();
-
-  if(S.editandoConfig) h+=htmlConfig();
+  h += htmlResumoDias();
+  if (S.editandoConfig) h += htmlConfig();
 
   // ---- pedidos disponíveis (ainda sem dia nenhum) ----
-  const disponiveis=pedidosDisponiveis();
-  h+=`<div class="card">
+  const disponiveis = pedidosDisponiveis();
+  h += `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-weight:900">⏳ Aguardando agendamento (${disponiveis.length})</div>
-      ${disponiveis.length?`<button class="btn btn-ghost" onclick="sugerirDistribuicaoDia()">⚡ Já dividir tudo em carros (automático)</button>`:''}
+      ${disponiveis.length ? `<button class="btn btn-ghost" onclick="sugerirDistribuicaoDia()">⚡ Já dividir tudo em carros (automático)</button>` : ''}
     </div>
     <div class="muted" style="font-size:11px;margin:-4px 0 10px">Primeiro agenda o pedido pra esse dia — o carro você decide depois (manual ou com sugestão automática).</div>
-    ${disponiveis.length?disponiveis.map(p=>htmlPedidoCard(p,"disponivel")).join(""):'<div class="muted">Nenhum pedido aguardando agendamento — ou já estão todos num dia.</div>'}
+    ${disponiveis.length ? disponiveis.map(p => htmlPedidoCard(p, "disponivel")).join("") : '<div class="muted">Nenhum pedido aguardando agendamento — ou já estão todos num dia.</div>'}
   </div>`;
 
   // ---- conferência de pagamento: o que vai/foi entregar sem estar recebido ----
-  const todosDoDia=(S.pedidos||[]).filter(p=>p.agendamento&&p.agendamento.data===S.data);
-  const naoPagos=todosDoDia.filter(p=>p.pagamento&&!p.pagamento.pago);
-  if(todosDoDia.length){
-    h+=`<div class="card" style="border-color:${naoPagos.length?'#b3341f':'#2f9e6b'}">
+  const todosDoDia = (S.pedidos || []).filter(p => p.agendamento && p.agendamento.data === S.data);
+  const naoPagos = todosDoDia.filter(p => p.pagamento && !p.pagamento.pago);
+  if (todosDoDia.length) {
+    h += `<div class="card" style="border-color:${naoPagos.length ? '#b3341f' : '#2f9e6b'}">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <div style="font-weight:900">${naoPagos.length?'⚠️':'✅'} Conferência de pagamento — ${dataLabel(S.data)}</div>
-        <div style="font-size:13px">${todosDoDia.length-naoPagos.length} recebido(s) · <b style="color:${naoPagos.length?'#ff8f7a':'#3ce88a'}">${naoPagos.length} sem receber</b></div>
+        <div style="font-weight:900">${naoPagos.length ? '⚠️' : '✅'} Conferência de pagamento — ${dataLabel(S.data)}</div>
+        <div style="font-size:13px">${todosDoDia.length - naoPagos.length} recebido(s) · <b style="color:${naoPagos.length ? '#ff8f7a' : '#3ce88a'}">${naoPagos.length} sem receber</b></div>
       </div>
-      ${naoPagos.length?`<div style="margin-top:8px">
+      ${naoPagos.length ? `<div style="margin-top:8px">
         <div class="muted" style="font-size:12px;margin-bottom:6px">Esses pedidos estão agendados pra entrega e <b>não passaram por nenhum caixa</b>. Confira antes de sair:</div>
-        ${naoPagos.map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding:5px 0;font-size:12px">
-          <span>Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}${p.pagamento.parcial?` <span style="color:#ffd23f">(parcial)</span>`:""}</span>
+        ${naoPagos.map(p => `<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding:5px 0;font-size:12px">
+          <span>Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}${p.pagamento.parcial ? ` <span style="color:#ffd23f">(parcial)</span>` : ""}</span>
           <b style="color:#ff8f7a">${brl(p.total)}</b></div>`).join("")}
-        <div style="text-align:right;margin-top:6px;font-weight:900;color:#ff8f7a">Total sem receber: ${brl(naoPagos.reduce((s,p)=>s+(p.total||0),0))}</div>
-      </div>`:'<div class="muted" style="margin-top:6px;font-size:12px">Todas as entregas deste dia já foram recebidas em caixa.</div>'}
+        <div style="text-align:right;margin-top:6px;font-weight:900;color:#ff8f7a">Total sem receber: ${brl(naoPagos.reduce((s, p) => s + (p.total || 0), 0))}</div>
+      </div>` : '<div class="muted" style="margin-top:6px;font-size:12px">Todas as entregas deste dia já foram recebidas em caixa.</div>'}
     </div>`;
   }
 
   // ---- agendados pra esse dia, mas ainda sem carro definido ----
-  const semCarro=(S.atribuicoes["_semCarro"]?.pedidoIds||[]).map(id=>pedidoPorId(id)).filter(Boolean)
-    .sort((a,b)=>{ const ord=x=>x.agendamento?.turno==="manha"?0:(x.agendamento?.turno==="tarde"?1:2); return ord(a)-ord(b); }); // manhã, tarde, depois qualquer horário
-  if(semCarro.length){
-    h+=`<div class="card" style="border-color:#FF0082">
+  const semCarro = (((_S$atribuicoes$_semCa3 = S.atribuicoes["_semCarro"]) === null || _S$atribuicoes$_semCa3 === void 0 ? void 0 : _S$atribuicoes$_semCa3.pedidoIds) || []).map(id => pedidoPorId(id)).filter(Boolean).sort((a, b) => {
+    const ord = x => {
+      var _x$agendamento, _x$agendamento2;
+      return ((_x$agendamento = x.agendamento) === null || _x$agendamento === void 0 ? void 0 : _x$agendamento.turno) === "manha" ? 0 : ((_x$agendamento2 = x.agendamento) === null || _x$agendamento2 === void 0 ? void 0 : _x$agendamento2.turno) === "tarde" ? 1 : 2;
+    };
+    return ord(a) - ord(b);
+  }); // manhã, tarde, depois qualquer horário
+  if (semCarro.length) {
+    h += `<div class="card" style="border-color:#FF0082">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
         <div style="font-weight:900">🗓️ Agendados pra ${dataLabel(S.data)}, aguardando carro (${semCarro.length})</div>
         <button class="btn btn-mag" onclick="sugerirCarrosParaSemCarro()">🚚 Sugerir carro(s) pra esses pedidos</button>
       </div>
-      ${semCarro.map(p=>htmlPedidoCard(p,"semCarro")).join("")}
+      ${semCarro.map(p => htmlPedidoCard(p, "semCarro")).join("")}
     </div>`;
   }
 
   // ---- carros ----
-  (S.config.carros||[]).forEach(carro=>{
-    h+=htmlCarroBox(carro);
+  (S.config.carros || []).forEach(carro => {
+    h += htmlCarroBox(carro);
   });
-
-  h+=`<button class="btn btn-mag" style="width:100%;padding:14px;font-size:15px" ${S.salvando?"disabled":""} onclick="salvarDia()">${S.salvando?"Salvando…":"💾 Salvar plano do dia"}</button>`;
-
-  h+=`</div>`;
-  app.innerHTML=h;
-  if(S.carroMapaAtivo){
-    const [mapCarroId,mapVix]=S.carroMapaAtivo.split("_");
-    if((S.resultadoRota[mapCarroId]||[])[Number(mapVix)]) setTimeout(()=>desenharMapa(mapCarroId,Number(mapVix)),50);
+  h += `<button class="btn btn-mag" style="width:100%;padding:14px;font-size:15px" ${S.salvando ? "disabled" : ""} onclick="salvarDia()">${S.salvando ? "Salvando…" : "💾 Salvar plano do dia"}</button>`;
+  h += `</div>`;
+  app.innerHTML = h;
+  if (S.carroMapaAtivo) {
+    const [mapCarroId, mapVix] = S.carroMapaAtivo.split("_");
+    if ((S.resultadoRota[mapCarroId] || [])[Number(mapVix)]) setTimeout(() => desenharMapa(mapCarroId, Number(mapVix)), 50);
   }
 }
 
 // mostra quantos pedidos já estão agendados nos próximos dias de entrega —
 // pra ter a visão geral de "quantos pedidos é de cada dia" antes de mexer em
 // carro/rota. Clicar num dia pula direto pra ele.
-function htmlResumoDias(){
-  const dias=[];
-  const base=new Date(S.data+"T12:00:00");
-  for(let i=-2;i<=10;i++){
-    const d=new Date(base); d.setDate(d.getDate()+i);
-    const iso=d.toISOString().slice(0,10);
-    if(!S.config.diasEntrega[d.getDay()]) continue;
-    dias.push({iso, label:d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}), qtd:S.diasResumo[iso]||0});
+function htmlResumoDias() {
+  const dias = [];
+  const base = new Date(S.data + "T12:00:00");
+  for (let i = -2; i <= 10; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    if (!S.config.diasEntrega[d.getDay()]) continue;
+    dias.push({
+      iso,
+      label: d.toLocaleDateString("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "2-digit"
+      }),
+      qtd: S.diasResumo[iso] || 0
+    });
   }
-  if(!dias.length) return "";
+  if (!dias.length) return "";
   return `<div class="card">
     <div style="font-weight:900;margin-bottom:8px">📅 Pedidos já agendados por dia</div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-      ${dias.map(d=>`<button onclick="S.data='${d.iso}';carregarTudo()" style="flex:0 0 auto;min-width:78px;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso===S.data?'#FF0082':'#2c2660'};background:${d.iso===S.data?'rgba(255,0,130,.12)':'#181433'};color:#fff;cursor:pointer;text-align:center">
+      ${dias.map(d => `<button onclick="S.data='${d.iso}';carregarTudo()" style="flex:0 0 auto;min-width:78px;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};background:${d.iso === S.data ? 'rgba(255,0,130,.12)' : '#181433'};color:#fff;cursor:pointer;text-align:center">
         <div style="font-size:11px;color:#9a95c9;text-transform:capitalize">${d.label}</div>
-        <div style="font-size:18px;font-weight:900;${d.qtd>0?'color:#3ce88a':'color:#514c96'}">${d.qtd}</div>
+        <div style="font-size:18px;font-weight:900;${d.qtd > 0 ? 'color:#3ce88a' : 'color:#514c96'}">${d.qtd}</div>
       </button>`).join("")}
     </div>
   </div>`;
 }
-
-function htmlConfig(){
-  const c=S.config;
+function htmlConfig() {
+  const c = S.config;
   return `<div class="card">
     <div style="font-weight:900;margin-bottom:10px">⚙️ Configuração de entregas</div>
     <div class="lbl">Dias em que fazemos entrega</div>
     <div class="diasgrid">
-      ${DIAS_SEMANA.map((d,ix)=>`<div class="diachip ${c.diasEntrega[ix]?'on':''}" onclick="toggleDiaConfig(${ix})">${d}</div>`).join("")}
+      ${DIAS_SEMANA.map((d, ix) => `<div class="diachip ${c.diasEntrega[ix] ? 'on' : ''}" onclick="toggleDiaConfig(${ix})">${d}</div>`).join("")}
     </div>
 
     <div class="lbl">Horário de funcionamento das rotas</div>
@@ -815,30 +1098,30 @@ function htmlConfig(){
 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
       <span class="muted">Tempo médio de trajeto entre paradas <span style="color:#ffb84d">(só estimativa inicial — o real vem dos endereços)</span></span>
-      <input type="number" min="1" value="${c.tempoTrajetoMin||12}" oninput="S.config.tempoTrajetoMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
+      <input type="number" min="1" value="${c.tempoTrajetoMin || 12}" oninput="S.config.tempoTrajetoMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <span class="muted">Tempo parado em cada entrega (descarregar + entregar) <span style="color:#7fd4ff">(esse sempre é somado — o Google não calcula)</span></span>
-      <input type="number" min="1" value="${c.tempoParadaMin||15}" oninput="S.config.tempoParadaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
+      <input type="number" min="1" value="${c.tempoParadaMin || 15}" oninput="S.config.tempoParadaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <span class="muted">Tempo pra voltar na loja, recarregar e sair de novo (entre 1 viagem e outra do mesmo carro)</span>
-      <input type="number" min="1" value="${c.tempoRecargaMin||20}" oninput="S.config.tempoRecargaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
+      <input type="number" min="1" value="${c.tempoRecargaMin || 20}" oninput="S.config.tempoRecargaMin=Number(this.value)" style="width:60px"> <span class="muted">min</span>
     </div>
     <div class="muted" style="font-size:11px;margin:-6px 0 12px">O sistema usa isso pra estimar quantas entregas cada rota consegue fazer no horário disponível, se um carro pode fazer mais de 1 viagem no mesmo dia, e avisa quando o total corre risco de não dar tempo. Depois que você calcula a rota, o tempo de trajeto passa a ser o real.</div>
 
     <div class="lbl">Rotas/carros disponíveis</div>
-    ${c.carros.map((carro,ix)=>`
+    ${c.carros.map((carro, ix) => `
       <div class="carrorow" style="flex-wrap:wrap">
         <input type="text" value="${esc(carro.nome)}" oninput="S.config.carros[${ix}].nome=this.value" placeholder="Nome da rota/carro">
         <input type="number" value="${carro.limiteEntregas}" min="1" style="width:56px" oninput="S.config.carros[${ix}].limiteEntregas=Number(this.value)" title="Quantidade de entregas dessa rota">
         <span class="muted" style="white-space:nowrap">entregas</span>
-        <input type="number" value="${carro.pesoSugeridoKg||200}" min="1" style="width:70px" oninput="S.config.carros[${ix}].pesoSugeridoKg=Number(this.value)" title="Peso sugerido (kg)">
+        <input type="number" value="${carro.pesoSugeridoKg || 200}" min="1" style="width:70px" oninput="S.config.carros[${ix}].pesoSugeridoKg=Number(this.value)" title="Peso sugerido (kg)">
         <span class="muted" style="white-space:nowrap">kg sugeridos</span>
         <span class="muted" style="white-space:nowrap">· sai às</span>
-        <input type="time" value="${carro.horaSaida||'10:00'}" oninput="S.config.carros[${ix}].horaSaida=this.value" style="width:100px">
+        <input type="time" value="${carro.horaSaida || '10:00'}" oninput="S.config.carros[${ix}].horaSaida=this.value" style="width:100px">
         <span class="muted" style="white-space:nowrap">· volta até</span>
-        <input type="time" value="${carro.horaFimJanela||'19:00'}" oninput="S.config.carros[${ix}].horaFimJanela=this.value" style="width:100px">
+        <input type="time" value="${carro.horaFimJanela || '19:00'}" oninput="S.config.carros[${ix}].horaFimJanela=this.value" style="width:100px">
         <button class="iconbtn" onclick="removerCarroConfig(${ix})" title="Remover">✕</button>
       </div>`).join("")}
     <div class="muted" style="font-size:11px;margin:-2px 0 8px">"Entregas" é quantas paradas essa rota deve ter no dia. "Kg sugeridos" é o peso ideal pra essa rota — o sistema tenta chegar perto disso, mas pode passar um pouco se precisar pra fechar a quantidade de entregas.</div>
@@ -849,18 +1132,16 @@ function htmlConfig(){
     </div>
   </div>`;
 }
-
-function htmlPedidoCard(p, modo){
+function htmlPedidoCard(p, modo) {
   modo = modo || "disponivel"; // "disponivel" | "semCarro"
-  const exp=!!S.expandido[p.id];
-  const opcoesCarro=(S.config.carros||[]).map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join("");
-  const faixa = modo==="disponivel"
-    ? `<div style="background:#3a2a00;color:#ffd23f;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">⏳ Aguardando agendamento</div>`
-    : `<div style="background:#0f3a24;color:#3ce88a;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">🗓️ Agendado pra ${dataLabel(S.data)} — aguardando carro</div>`;
-  const diaCurto=new Date(S.data+"T12:00:00").toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
-  const acao = modo==="disponivel"
-    ? `<button class="btn btn-mag" style="flex:1" onclick="agendarSemCarro(${p.id})">📅 Agendar pra ${diaCurto}</button>`
-    : `<select id="selCarro-${p.id}" style="flex:1;min-width:120px">${opcoesCarro}</select>
+  const exp = !!S.expandido[p.id];
+  const opcoesCarro = (S.config.carros || []).map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join("");
+  const faixa = modo === "disponivel" ? `<div style="background:#3a2a00;color:#ffd23f;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">⏳ Aguardando agendamento</div>` : `<div style="background:#0f3a24;color:#3ce88a;font-size:11px;font-weight:800;padding:3px 10px;border-radius:6px 6px 0 0;margin:-12px -12px 10px">🗓️ Agendado pra ${dataLabel(S.data)} — aguardando carro</div>`;
+  const diaCurto = new Date(S.data + "T12:00:00").toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit"
+  });
+  const acao = modo === "disponivel" ? `<button class="btn btn-mag" style="flex:1" onclick="agendarSemCarro(${p.id})">📅 Agendar pra ${diaCurto}</button>` : `<select id="selCarro-${p.id}" style="flex:1;min-width:120px">${opcoesCarro}</select>
        <button class="btn btn-mag" style="padding:6px 12px;font-size:11px" onclick="atribuirCarro(${p.id},document.getElementById('selCarro-${p.id}').value)">Atribuir →</button>
        <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="desagendar(${p.id})" title="Tirar do dia">↩</button>`;
   return `<div class="pedcard">
@@ -870,11 +1151,9 @@ function htmlPedidoCard(p, modo){
         <div class="num">Pedido ${esc(p.numero)}</div>
         <div class="cli">${esc(p.clienteNome)}</div>
         <div class="vend">Vendedor: ${esc(p.vendedorNome)}</div>
-        ${p.agendamento?`<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/"))} · ${p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO")}</span>${p.agendamento.por?`<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>`:""}</div>
-        ${p.agendamento.obsEntrega?`<div style="margin-top:3px;background:#2a2410;border:1px solid #6b5f1f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ffd23f">📝 ${esc(p.agendamento.obsEntrega)}</div>`:""}`:""}
-        ${p.pagamento?(p.pagamento.pago
-          ? `<div style="margin-top:3px;font-size:11px;color:#3ce88a">✅ Recebido${p.pagamento.ondeFoiPago?" — "+esc(p.pagamento.ondeFoiPago):""}${p.pagamento.operador?" ("+esc(p.pagamento.operador)+")":""}${p.pagamento.formas?" · "+esc(p.pagamento.formas):""}</div>`
-          : `<div style="margin-top:3px;background:#3a0010;border:1px solid #b3341f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ff8f7a;font-weight:700">⚠️ NÃO RECEBIDO em nenhum caixa${p.pagamento.parcial?` — parcial: ${brl(p.pagamento.valorPago)} de ${brl(p.pagamento.valorPedido)}`:""}</div>`):""}
+        ${p.agendamento ? `<div style="margin-top:3px"><span style="background:#2f9e6b;color:#fff;border-radius:6px;font-size:10px;font-weight:900;padding:2px 7px">📅 ${esc(p.agendamento.data.split("-").reverse().slice(0, 2).join("/"))} · ${p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO"}</span>${p.agendamento.por ? `<span class="muted" style="font-size:10px;margin-left:5px">enviado por ${esc(p.agendamento.por)}</span>` : ""}</div>
+        ${p.agendamento.obsEntrega ? `<div style="margin-top:3px;background:#2a2410;border:1px solid #6b5f1f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ffd23f">📝 ${esc(p.agendamento.obsEntrega)}</div>` : ""}` : ""}
+        ${p.pagamento ? p.pagamento.pago ? `<div style="margin-top:3px;font-size:11px;color:#3ce88a">✅ Recebido${p.pagamento.ondeFoiPago ? " — " + esc(p.pagamento.ondeFoiPago) : ""}${p.pagamento.operador ? " (" + esc(p.pagamento.operador) + ")" : ""}${p.pagamento.formas ? " · " + esc(p.pagamento.formas) : ""}</div>` : `<div style="margin-top:3px;background:#3a0010;border:1px solid #b3341f;border-radius:6px;padding:5px 7px;font-size:11px;color:#ff8f7a;font-weight:700">⚠️ NÃO RECEBIDO em nenhum caixa${p.pagamento.parcial ? ` — parcial: ${brl(p.pagamento.valorPago)} de ${brl(p.pagamento.valorPedido)}` : ""}</div>` : ""}
       </div>
       <div class="vals">
         <div><b>${brl(p.total)}</b></div>
@@ -882,113 +1161,115 @@ function htmlPedidoCard(p, modo){
         <div class="muted">⚖️ ${p.pesoEstimadoKg} kg (estim.)</div>
       </div>
     </div>
-    ${p.semEndereco
-      ? `<div style="margin-top:6px;background:#3a1a00;border:1px solid #ff8c00;border-radius:6px;padding:6px 8px;font-size:11px;color:#ffb84d">⚠️ Sem endereço de entrega no pedido nem no cadastro do cliente. Adicione o endereço no Bling pra calcular a rota.</div>`
-      : `<div class="muted" style="margin-top:6px">📍 ${esc(p.endereco||"endereço não identificado")}${p.enderecoOrigem==="cliente"?` <span style="color:#7fd4ff">(do cadastro do cliente)</span>`:""}</div>`}
+    ${p.semEndereco ? `<div style="margin-top:6px;background:#3a1a00;border:1px solid #ff8c00;border-radius:6px;padding:6px 8px;font-size:11px;color:#ffb84d">⚠️ Sem endereço de entrega no pedido nem no cadastro do cliente. Adicione o endereço no Bling pra calcular a rota.</div>` : `<div class="muted" style="margin-top:6px">📍 ${esc(p.endereco || "endereço não identificado")}${p.enderecoOrigem === "cliente" ? ` <span style="color:#7fd4ff">(do cadastro do cliente)</span>` : ""}</div>`}
     <div class="assignrow">
-      <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="toggleExpandido(${p.id})">${exp?"▲ Ocultar itens":"▼ Ver itens ("+p.itens.length+")"}</button>
+      <button class="btn btn-ghost" style="padding:6px 10px;font-size:11px" onclick="toggleExpandido(${p.id})">${exp ? "▲ Ocultar itens" : "▼ Ver itens (" + p.itens.length + ")"}</button>
       ${acao}
     </div>
-    <div class="itenslist ${exp?'on':''}">
-      ${p.itens.map(i=>`<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")}
+    <div class="itenslist ${exp ? 'on' : ''}">
+      ${p.itens.map(i => `<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")}
     </div>
   </div>`;
 }
 
 // linha de uma parada (usada tanto antes quanto depois de calcular a rota) —
 // sempre dá pra expandir e ver os produtos do pedido, clicando no nome
-function htmlStopItem(ped,ix,infoExtra,botoes){
-  if(!ped) return `<div class="stopitem"><div class="ordn">${ix+1}</div><div class="nm">Pedido não encontrado</div></div>`;
-  const exp=!!S.expandido[ped.id];
+function htmlStopItem(ped, ix, infoExtra, botoes) {
+  var _ped$itens, _ped$agendamento2, _ped$agendamento3, _ped$agendamento4;
+  if (!ped) return `<div class="stopitem"><div class="ordn">${ix + 1}</div><div class="nm">Pedido não encontrado</div></div>`;
+  const exp = !!S.expandido[ped.id];
   return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">
     <div class="stopitem" style="border:none;margin-bottom:0;cursor:pointer" onclick="toggleExpandido(${ped.id});event.stopPropagation()">
-      <div class="ordn">${ix+1}</div>
-      <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp?'▲':'▼'} ${ped.itens?.length||0} itens</span>
-        ${ped.agendamento?.turno&&ped.agendamento.turno!=="qualquer"?`<span style="background:#29ABE2;color:#000;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:5px">${ped.agendamento.turno==="manha"?"MANHÃ":"TARDE"}</span>`:""}
-        ${ped.agendamento?.obsEntrega?`<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>`:""}
-        ${ped.pagamento&&!ped.pagamento.pago?`<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>`:""}
-        ${ped.jaEmSeparacao?`<span style="background:#0f2233;color:#7fd4ff;border:1px solid #29ABE2;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📦 ${esc(String(ped.situacao||"").toUpperCase())}</span>`:""}</div>
-      ${infoExtra?`<div class="km">${infoExtra}</div>`:''}
+      <div class="ordn">${ix + 1}</div>
+      <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp ? '▲' : '▼'} ${((_ped$itens = ped.itens) === null || _ped$itens === void 0 ? void 0 : _ped$itens.length) || 0} itens</span>
+        ${(_ped$agendamento2 = ped.agendamento) !== null && _ped$agendamento2 !== void 0 && _ped$agendamento2.turno && ped.agendamento.turno !== "qualquer" ? `<span style="background:#29ABE2;color:#000;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:5px">${ped.agendamento.turno === "manha" ? "MANHÃ" : "TARDE"}</span>` : ""}
+        ${(_ped$agendamento3 = ped.agendamento) !== null && _ped$agendamento3 !== void 0 && _ped$agendamento3.obsEntrega ? `<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>` : ""}
+        ${ped.pagamento && !ped.pagamento.pago ? `<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>` : ""}
+        ${ped.jaEmSeparacao ? `<span style="background:#0f2233;color:#7fd4ff;border:1px solid #29ABE2;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📦 ${esc(String(ped.situacao || "").toUpperCase())}</span>` : ""}</div>
+      ${infoExtra ? `<div class="km">${infoExtra}</div>` : ''}
       <div onclick="event.stopPropagation()" style="display:flex;gap:4px">
-        ${ped.podeMandarSeparar?`<button class="iconbtn" style="background:#1f8f4e;color:#fff;font-size:11px;padding:3px 8px" onclick="mandarSeparar(${ped.id},'${esc(ped.numero)}')" title="Mandar pra separação">📦 Separar</button>`:""}
+        ${ped.podeMandarSeparar ? `<button class="iconbtn" style="background:#1f8f4e;color:#fff;font-size:11px;padding:3px 8px" onclick="mandarSeparar(${ped.id},'${esc(ped.numero)}')" title="Mandar pra separação">📦 Separar</button>` : ""}
         ${botoes}</div>
     </div>
-    ${exp?`<div style="padding:6px 12px 10px 40px;border-top:1px solid var(--border)">
-      <div class="muted" style="font-size:11px;margin-bottom:4px">💰 ${brl(ped.total)} · Frete ${brl(ped.frete)} · ⚖️ ${ped.pesoEstimadoKg}kg (estim.) · 📍 ${esc(ped.endereco||"—")}</div>
-      ${ped.agendamento?.obsEntrega?`<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:6px;padding:6px 8px;font-size:11px;color:#ffd23f;margin-bottom:6px">📝 ${esc(ped.agendamento.obsEntrega)}${ped.agendamento.turno&&ped.agendamento.turno!=="qualquer"?` · <b>${ped.agendamento.turno==="manha"?"manhã":"tarde"}</b>`:""}</div>`:""}
-      ${(ped.itens||[]).map(i=>`<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("")||'<div class="muted" style="font-size:11px">Sem itens carregados.</div>'}
-    </div>`:''}
+    ${exp ? `<div style="padding:6px 12px 10px 40px;border-top:1px solid var(--border)">
+      <div class="muted" style="font-size:11px;margin-bottom:4px">💰 ${brl(ped.total)} · Frete ${brl(ped.frete)} · ⚖️ ${ped.pesoEstimadoKg}kg (estim.) · 📍 ${esc(ped.endereco || "—")}</div>
+      ${(_ped$agendamento4 = ped.agendamento) !== null && _ped$agendamento4 !== void 0 && _ped$agendamento4.obsEntrega ? `<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:6px;padding:6px 8px;font-size:11px;color:#ffd23f;margin-bottom:6px">📝 ${esc(ped.agendamento.obsEntrega)}${ped.agendamento.turno && ped.agendamento.turno !== "qualquer" ? ` · <b>${ped.agendamento.turno === "manha" ? "manhã" : "tarde"}</b>` : ""}</div>` : ""}
+      ${(ped.itens || []).map(i => `<div class="itemrow"><span>${esc(i.descricao)}</span><span>${i.quantidade}x ${brl(i.valor)}</span></div>`).join("") || '<div class="muted" style="font-size:11px">Sem itens carregados.</div>'}
+    </div>` : ''}
   </div>`;
 }
-
-function htmlCarroBox(carro){
-  const viagens=S.atribuicoes[carro.id]?.viagens||[{pedidoIds:[]}];
-  const todosPedidos=pedidosCarroAtual(carro.id);
-  const pesoTotalCarro=+todosPedidos.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0).toFixed(1);
-  const valorTotalCarro=todosPedidos.reduce((s,p)=>s+(p.total||0),0);
-  const risco=riscoCarro(carro);
-  const cap=capacidadeEstimada(carro);
+function htmlCarroBox(carro) {
+  var _S$atribuicoes$carro$2;
+  const viagens = ((_S$atribuicoes$carro$2 = S.atribuicoes[carro.id]) === null || _S$atribuicoes$carro$2 === void 0 ? void 0 : _S$atribuicoes$carro$2.viagens) || [{
+    pedidoIds: []
+  }];
+  const todosPedidos = pedidosCarroAtual(carro.id);
+  const pesoTotalCarro = +todosPedidos.reduce((s, p) => s + (p.pesoEstimadoKg || 0), 0).toFixed(1);
+  const valorTotalCarro = todosPedidos.reduce((s, p) => s + (p.total || 0), 0);
+  const risco = riscoCarro(carro);
+  const cap = capacidadeEstimada(carro);
   return `<div class="carrobox">
     <div class="head">
-      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${todosPedidos.length} entrega${todosPedidos.length!==1?'s':''} no total · ${risco.qtdViagens||1} ${(risco.qtdViagens||1)!==1?'viagens':'viagem'} · ${carro.horaSaida||'10:00'}–${carro.horaFimJanela||'19:00'})</span></div>
+      <div class="nm">🚚 ${esc(carro.nome)} <span class="muted">(${todosPedidos.length} entrega${todosPedidos.length !== 1 ? 's' : ''} no total · ${risco.qtdViagens || 1} ${(risco.qtdViagens || 1) !== 1 ? 'viagens' : 'viagem'} · ${carro.horaSaida || '10:00'}–${carro.horaFimJanela || '19:00'})</span></div>
       <button class="btn btn-ghost" onclick="adicionarViagem('${carro.id}')">+ Nova viagem</button>
     </div>
-    ${risco.risco?`<div class="warn">🔴 Atenção: somando ${risco.qtdViagens>1?`as ${risco.qtdViagens} viagens desse carro (com o tempo de recarga entre elas)`:'a viagem'}, dá ${Math.round(risco.usado)} min — provavelmente não cabe na janela disponível (${risco.jan} min, ${carro.horaSaida}–${carro.horaFimJanela}). Considere tirar alguma entrega, usar outro carro, ou ajustar o horário.</div>`:''}
-    ${viagens.map((v,vix)=>htmlViagemBox(carro,vix,cap)).join("")}
+    ${risco.risco ? `<div class="warn">🔴 Atenção: somando ${risco.qtdViagens > 1 ? `as ${risco.qtdViagens} viagens desse carro (com o tempo de recarga entre elas)` : 'a viagem'}, dá ${Math.round(risco.usado)} min — provavelmente não cabe na janela disponível (${risco.jan} min, ${carro.horaSaida}–${carro.horaFimJanela}). Considere tirar alguma entrega, usar outro carro, ou ajustar o horário.</div>` : ''}
+    ${viagens.map((v, vix) => htmlViagemBox(carro, vix, cap)).join("")}
     <div class="resumo" style="border-top:1px solid var(--border);padding-top:8px;margin-top:2px">
       <span>💰 Total do carro: <b>${brl(valorTotalCarro)}</b></span>
-      <span>⚖️ Peso total: <b style="${pesoTotalCarro>(carro.pesoSugeridoKg||99999)*(risco.qtdViagens||1)?'color:#ffd23f':''}">${pesoTotalCarro} kg</b></span>
-      <span>⏱️ Tempo usado no dia: <b style="${risco.risco?'color:#ff8090':''}">${Math.round(risco.usado)} min</b> <span class="muted">/ ${risco.jan} min disponíveis</span></span>
+      <span>⚖️ Peso total: <b style="${pesoTotalCarro > (carro.pesoSugeridoKg || 99999) * (risco.qtdViagens || 1) ? 'color:#ffd23f' : ''}">${pesoTotalCarro} kg</b></span>
+      <span>⏱️ Tempo usado no dia: <b style="${risco.risco ? 'color:#ff8090' : ''}">${Math.round(risco.usado)} min</b> <span class="muted">/ ${risco.jan} min disponíveis</span></span>
     </div>
   </div>`;
 }
-
-function htmlViagemBox(carro,vix,cap){
-  const viagem=(S.atribuicoes[carro.id]?.viagens||[])[vix]||{pedidoIds:[]};
-  const ids=viagem.pedidoIds||[];
-  const pedidosViagemArr=ids.map(id=>pedidoPorId(id)).filter(Boolean);
-  const pesoViagem=+pedidosViagemArr.reduce((s,p)=>s+(p.pesoEstimadoKg||0),0).toFixed(1);
-  const resultado=(S.resultadoRota[carro.id]||[])[vix];
-  const chave=carro.id+"_"+vix;
-  const acimaCapacidade=ids.length>cap;
-  const acimaPeso=pesoViagem>(carro.pesoSugeridoKg||99999)*1.2;
-  const totalViagens=(S.atribuicoes[carro.id]?.viagens||[]).length;
+function htmlViagemBox(carro, vix, cap) {
+  var _S$atribuicoes$carro$3, _S$atribuicoes$carro$4;
+  const viagem = (((_S$atribuicoes$carro$3 = S.atribuicoes[carro.id]) === null || _S$atribuicoes$carro$3 === void 0 ? void 0 : _S$atribuicoes$carro$3.viagens) || [])[vix] || {
+    pedidoIds: []
+  };
+  const ids = viagem.pedidoIds || [];
+  const pedidosViagemArr = ids.map(id => pedidoPorId(id)).filter(Boolean);
+  const pesoViagem = +pedidosViagemArr.reduce((s, p) => s + (p.pesoEstimadoKg || 0), 0).toFixed(1);
+  const resultado = (S.resultadoRota[carro.id] || [])[vix];
+  const chave = carro.id + "_" + vix;
+  const acimaCapacidade = ids.length > cap;
+  const acimaPeso = pesoViagem > (carro.pesoSugeridoKg || 99999) * 1.2;
+  const totalViagens = (((_S$atribuicoes$carro$4 = S.atribuicoes[carro.id]) === null || _S$atribuicoes$carro$4 === void 0 ? void 0 : _S$atribuicoes$carro$4.viagens) || []).length;
   return `<div style="background:#0f0d24;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix+1} <span class="muted">(${ids.length} entrega${ids.length!==1?'s':''} · ${pesoViagem} kg)</span>
-        ${ids.some(id=>pedidoPorId(id)?.podeMandarSeparar)?`<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;background:#1f8f4e" onclick="mandarSepararViagem('${carro.id}',${vix})">📦 Separar viagem inteira</button>`:""}${(()=>{
-        const ts=[...new Set(ids.map(id=>pedidoPorId(id)?.agendamento?.turno).filter(t=>t==="manha"||t==="tarde"))];
-        if(!ts.length) return '';
-        const misto=ts.length>1;
-        return `<span style="background:${misto?'#b3341f':(ts[0]==="manha"?'#ffe600':'#29ABE2')};color:${misto?'#fff':'#000'};border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px;margin-left:6px">${misto?'⚠️ MANHÃ + TARDE':(ts[0]==="manha"?'☀️ MANHÃ':'🌇 TARDE')}</span>`;
-      })()}</div>
+      <div style="font-weight:800;font-size:13px">🚗 Viagem ${vix + 1} <span class="muted">(${ids.length} entrega${ids.length !== 1 ? 's' : ''} · ${pesoViagem} kg)</span>
+        ${ids.some(id => {
+    var _pedidoPorId2;
+    return (_pedidoPorId2 = pedidoPorId(id)) === null || _pedidoPorId2 === void 0 ? void 0 : _pedidoPorId2.podeMandarSeparar;
+  }) ? `<button class="btn" style="font-size:10px;padding:3px 8px;margin-left:8px;background:#1f8f4e" onclick="mandarSepararViagem('${carro.id}',${vix})">📦 Separar viagem inteira</button>` : ""}${(() => {
+    const ts = [...new Set(ids.map(id => {
+      var _pedidoPorId3;
+      return (_pedidoPorId3 = pedidoPorId(id)) === null || _pedidoPorId3 === void 0 || (_pedidoPorId3 = _pedidoPorId3.agendamento) === null || _pedidoPorId3 === void 0 ? void 0 : _pedidoPorId3.turno;
+    }).filter(t => t === "manha" || t === "tarde"))];
+    if (!ts.length) return '';
+    const misto = ts.length > 1;
+    return `<span style="background:${misto ? '#b3341f' : ts[0] === "manha" ? '#ffe600' : '#29ABE2'};color:${misto ? '#fff' : '#000'};border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px;margin-left:6px">${misto ? '⚠️ MANHÃ + TARDE' : ts[0] === "manha" ? '☀️ MANHÃ' : '🌇 TARDE'}</span>`;
+  })()}</div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave]?"disabled":""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave]?"Calculando…":"🧭 Sugerir rota"}</button>
-        ${totalViagens>1?`<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>`:''}
+        <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave] ? "disabled" : ""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave] ? "Calculando…" : "🧭 Sugerir rota"}</button>
+        ${totalViagens > 1 ? `<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>` : ''}
       </div>
     </div>
-    ${acimaCapacidade?`<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ ${ids.length} entregas é mais do que a estimativa de capacidade por viagem (~${cap}).</div>`:''}
-    ${acimaPeso?`<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ Peso dessa viagem acima do sugerido (+20%) pra esse carro.</div>`:''}
-    ${!ids.length?'<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>':
-      (resultado?resultado.paradasOrdenadas.map((p,ix)=>{
-        const ped=pedidoPorId(p.id);
-        return htmlStopItem(ped,ix,`${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`,
-          `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
+    ${acimaCapacidade ? `<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ ${ids.length} entregas é mais do que a estimativa de capacidade por viagem (~${cap}).</div>` : ''}
+    ${acimaPeso ? `<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ Peso dessa viagem acima do sugerido (+20%) pra esse carro.</div>` : ''}
+    ${!ids.length ? '<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>' : resultado ? resultado.paradasOrdenadas.map((p, ix) => {
+    const ped = pedidoPorId(p.id);
+    return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
            <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
-      }).join("")
-      :pedidosViagemArr.map((p,ix)=>htmlStopItem(p,ix,null,
-          `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
+  }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
            <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
-           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`
-        )).join(""))}
-    ${resultado?`<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin+ids.length*(S.config.tempoParadaMin||15)} min</b> no total (com as ${ids.length} parada${ids.length!==1?'s':''})</span></div>
-    <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo===chave?'Mapa aberto abaixo':'Ver rota no mapa'}</button>
-    ${S.carroMapaAtivo===chave?`<div id="mapaRota"></div>`:''}`:''}
+           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`)).join("")}
+    ${resultado ? `<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin + ids.length * (S.config.tempoParadaMin || 15)} min</b> no total (com as ${ids.length} parada${ids.length !== 1 ? 's' : ''})</span></div>
+    <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo === chave ? 'Mapa aberto abaixo' : 'Ver rota no mapa'}</button>
+    ${S.carroMapaAtivo === chave ? `<div id="mapaRota"></div>` : ''}` : ''}
   </div>`;
 }
-
-carregarTudo();
-</script>
+carregarTudo();</script>
 </body>
 </html>

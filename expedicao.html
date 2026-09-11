@@ -76,75 +76,106 @@
 </script>
 <div id="app"></div>
 <div id="etiquetaPrint" style="position:absolute;left:-9999px;top:-9999px"></div>
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="/logo";
-const FILA=817963, SEPARADO=821590, PENDENCIA=819227, VERIFICADO=24;
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const LOGO = "/logo";
+const FILA = 817963,
+  SEPARADO = 821590,
+  PENDENCIA = 819227,
+  VERIFICADO = 24;
+let FUNC = typeof b13GetSession === "function" ? b13GetSession() : null; // funcionário logado (sessão compartilhada)
 
-let FUNC=(typeof b13GetSession==="function")?b13GetSession():null; // funcionário logado (sessão compartilhada)
-
-function sairFunc(){ if(typeof b13Logout==="function") b13Logout(); }
-
-let S={ logado:true, tela:"fila", pedidos:[], sel:null, conf:[], telefone:"", sugestao:"", faltas:[], msg:"", carregando:false, soVisualizacao:false, _heartbeat:null, _seps:{}, sucesso:null };
-let timer=null;
-
-const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const esc=(s)=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const soDig=(s)=>(s||"").toString().replace(/\D/g,"");
-const dataBR=(d)=>{ if(!d)return""; const p=String(d).slice(0,10).split("-"); return p.length===3?`${p[2]}/${p[1]}`:d; };
-
-function header(){
+function sairFunc() {
+  if (typeof b13Logout === "function") b13Logout();
+}
+let S = {
+  logado: true,
+  tela: "fila",
+  pedidos: [],
+  sel: null,
+  conf: [],
+  telefone: "",
+  sugestao: "",
+  faltas: [],
+  msg: "",
+  carregando: false,
+  soVisualizacao: false,
+  _heartbeat: null,
+  _seps: {},
+  sucesso: null
+};
+let timer = null;
+const brl = v => Number(v || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const esc = s => (s || "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const soDig = s => (s || "").toString().replace(/\D/g, "");
+const dataBR = d => {
+  if (!d) return "";
+  const p = String(d).slice(0, 10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}` : d;
+};
+function header() {
   return `<div class="top"><img src="${LOGO}"><div class="t">Expedição</div><div class="sp"></div>
-  ${FUNC?`<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>`:""}
-  ${S.sel?`<button class="btn btn-out" onclick="fecharPedido()">Fechar pedido</button>`:""}
+  ${FUNC ? `<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>` : ""}
+  ${S.sel ? `<button class="btn btn-out" onclick="fecharPedido()">Fechar pedido</button>` : ""}
   <button class="btn btn-out" onclick="carregarFila()">↻</button>
   <a href="/operacional" class="btn btn-ghost" style="text-decoration:none">⚙️</a>
   <button class="btn btn-ghost" onclick="sairFunc()">Sair</button>
   </div>`;
 }
-
-function render(){
-  const app=document.getElementById("app");
+function render() {
+  const app = document.getElementById("app");
   // preserva a rolagem: ao marcar um item a tela era redesenhada e voltava pro topo,
   // fazendo o separador perder o lugar em pedido grande
-  const _scDoc=window.scrollY||document.documentElement.scrollTop||0;
-  setTimeout(function(){ if(_scDoc) window.scrollTo(0,_scDoc); },0);
-  if(!FUNC){
+  const _scDoc = window.scrollY || document.documentElement.scrollTop || 0;
+  setTimeout(function () {
+    if (_scDoc) window.scrollTo(0, _scDoc);
+  }, 0);
+  if (!FUNC) {
     // tenta usar sessão compartilhada de novo (ex: acabou de logar em outra aba)
-    const sess=typeof b13GetSession==="function"?b13GetSession():null;
-    if(sess){ FUNC=sess; iniciarFila(); return; }
-    location.href="/login?next="+encodeURIComponent(location.pathname);
+    const sess = typeof b13GetSession === "function" ? b13GetSession() : null;
+    if (sess) {
+      FUNC = sess;
+      iniciarFila();
+      return;
+    }
+    location.href = "/login?next=" + encodeURIComponent(location.pathname);
     return;
   }
   telaPrincipal(app);
 }
 
 // -------- FILA --------
-function telaPrincipal(app){
-  app.innerHTML=header()+`<div class="wrap"><div class="split">
+function telaPrincipal(app) {
+  app.innerHTML = header() + `<div class="wrap"><div class="split">
     <div class="fila-col">${filaColuna()}</div>
     <div class="det-col">${detalheColuna()}</div>
   </div></div>`;
 }
-function filaColuna(){
-  const lista = S.carregando && !S.pedidos.length ? `<div class="muted">Carregando…</div>`
-    : (S.pedidos.length ? S.pedidos.map((p,ix)=>{
-        const sep=(S._seps||{})[String(p.id)];
-        const meu=sep&&sep.funcionarioId===FUNC?.id;
-        const outro=sep&&!meu;
-        return `<div class="card" style="${S.sel&&S.sel.id===p.id?'border-color:var(--mag)':''}"><div class="pos">${ix+1}</div>
+function filaColuna() {
+  const lista = S.carregando && !S.pedidos.length ? `<div class="muted">Carregando…</div>` : S.pedidos.length ? S.pedidos.map((p, ix) => {
+    var _FUNC, _p$contato;
+    const sep = (S._seps || {})[String(p.id)];
+    const meu = sep && sep.funcionarioId === ((_FUNC = FUNC) === null || _FUNC === void 0 ? void 0 : _FUNC.id);
+    const outro = sep && !meu;
+    return `<div class="card" style="${S.sel && S.sel.id === p.id ? 'border-color:var(--mag)' : ''}"><div class="pos">${ix + 1}</div>
         <div class="info">
-          <div class="n">Pedido ${esc(p.numero||p.id)}</div>
-          <div class="c">${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
-          ${sep?`<div style="font-size:10px;color:${meu?'#2f9e6b':'#00aaff'};margin-top:2px">${meu?'✅ Você está separando':'🔧 '+esc(sep.funcionarioNome)}</div>`:''}
+          <div class="n">Pedido ${esc(p.numero || p.id)}</div>
+          <div class="c">${esc(((_p$contato = p.contato) === null || _p$contato === void 0 ? void 0 : _p$contato.nome) || "—")} · ${dataBR(p.data)}</div>
+          ${sep ? `<div style="font-size:10px;color:${meu ? '#2f9e6b' : '#00aaff'};margin-top:2px">${meu ? '✅ Você está separando' : '🔧 ' + esc(sep.funcionarioNome)}</div>` : ''}
         </div>
-        <button class="btn ${meu?'btn-grn':outro?'btn-yellow':'btn-mag'}" onclick="separar(${p.id})">
-          ${meu?'Separando':outro?'👁 Ver':'Separar'}</button></div>`;
-      }).join("")
-      : `<div class="ok">Nenhum pedido em separação. 👍</div>`);
+        <button class="btn ${meu ? 'btn-grn' : outro ? 'btn-yellow' : 'btn-mag'}" onclick="separar(${p.id})">
+          ${meu ? 'Separando' : outro ? '👁 Ver' : 'Separar'}</button></div>`;
+  }).join("") : `<div class="ok">Nenhum pedido em separação. 👍</div>`;
   return `<div class="colhead">Fila de separação <span class="muted">(${S.pedidos.length})</span></div>${lista}`;
 }
-function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; return `${q} un (${Number.isInteger(cx)?cx:cx.toFixed(1)} cx)`; }
+function cxTxt(un, q) {
+  un = un || 1;
+  if (un === 1) return `${q} un`;
+  const cx = q / un;
+  return `${q} un (${Number.isInteger(cx) ? cx : cx.toFixed(1)} cx)`;
+}
 // Gera a etiqueta com os dados que já temos em mãos (sem esperar nenhuma
 // resposta de rede) e chama window.print() na mesma execução do clique.
 // IMPORTANTE: manter isso síncrono — em vários navegadores (especialmente
@@ -152,83 +183,86 @@ function cxTxt(un,q){ un=un||1; if(un===1) return `${q} un`; const cx=q/un; retu
 // clique; se esperar um fetch/iframe carregar antes (assíncrono), o navegador
 // não associa mais o print ao gesto do usuário e simplesmente não faz nada,
 // sem erro nenhum (mesmo problema já visto no totem).
-function imprimirEtiqueta(id,numero,clienteNomeCod,ehEntrega){
-  const clienteNome=decodeURIComponent(clienteNomeCod||"");
-  const box=document.getElementById("etiquetaPrint");
-  const qrTexto=window.location.origin+"/pedido/"+id+"/acompanhar";
-  box.innerHTML=`
+function imprimirEtiqueta(id, numero, clienteNomeCod, ehEntrega) {
+  const clienteNome = decodeURIComponent(clienteNomeCod || "");
+  const box = document.getElementById("etiquetaPrint");
+  const qrTexto = window.location.origin + "/pedido/" + id + "/acompanhar";
+  box.innerHTML = `
     <img class="logo" src="/logo">
-    <div class="numero">#${numero||id}</div>
-    <div class="cliente">${(clienteNome||"").replace(/</g,"&lt;")}</div>
-    <div class="tipo ${ehEntrega?"entrega":"retirada"}">${ehEntrega?"🛵 ENTREGA":"🏪 RETIRADA"}</div>
+    <div class="numero">#${numero || id}</div>
+    <div class="cliente">${(clienteNome || "").replace(/</g, "&lt;")}</div>
+    <div class="tipo ${ehEntrega ? "entrega" : "retirada"}">${ehEntrega ? "🛵 ENTREGA" : "🏪 RETIRADA"}</div>
     <div class="linha"></div>
     <div class="qr" id="qrEtiquetaPrint"><div>Escaneie pra ver status do pedido</div></div>`;
-  try{ new QRCode(document.getElementById("qrEtiquetaPrint"),{text:qrTexto,width:150,height:150,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  try {
+    new QRCode(document.getElementById("qrEtiquetaPrint"), {
+      text: qrTexto,
+      width: 150,
+      height: 150,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch (e) {}
   window.print();
 }
-function detalheColuna(){
-  const p=S.sel;
-  if(!p){
-    if(S.sucesso){
-      const s=S.sucesso;
+function detalheColuna() {
+  var _S$_acrescimos, _S$_acrescimos2, _S$_itensRemovidosLog, _S$_itensRemovidosLog2, _p$contato2;
+  const p = S.sel;
+  if (!p) {
+    if (S.sucesso) {
+      const s = S.sucesso;
       return `<div class="colhead">Conferência</div>
       <div class="card" style="flex-direction:column;align-items:stretch;text-align:center;padding:24px">
-        <div style="font-size:40px;margin-bottom:8px">${s.comFalta?"⚠️":"✅"}</div>
-        <div style="font-weight:900;font-size:16px;margin-bottom:4px">Pedido ${esc(s.numero)} ${s.comFalta?"marcado como SEPARADO C/ PENDÊNCIAS":"concluído — SEPARADO"}</div>
-        <div class="muted" style="margin-bottom:16px">${s.comFalta?"Foi salvo com item(ns) em falta.":"Todos os itens foram separados."}</div>
+        <div style="font-size:40px;margin-bottom:8px">${s.comFalta ? "⚠️" : "✅"}</div>
+        <div style="font-weight:900;font-size:16px;margin-bottom:4px">Pedido ${esc(s.numero)} ${s.comFalta ? "marcado como SEPARADO C/ PENDÊNCIAS" : "concluído — SEPARADO"}</div>
+        <div class="muted" style="margin-bottom:16px">${s.comFalta ? "Foi salvo com item(ns) em falta." : "Todos os itens foram separados."}</div>
         <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-mag" onclick="imprimirEtiqueta(${s.id},'${esc(s.numero)}','${encodeURIComponent(s.clienteNome||"")}',${!!s.ehEntrega})">🖨️ Imprimir etiqueta</button>
+          <button class="btn btn-mag" onclick="imprimirEtiqueta(${s.id},'${esc(s.numero)}','${encodeURIComponent(s.clienteNome || "")}',${!!s.ehEntrega})">🖨️ Imprimir etiqueta</button>
           <button class="btn btn-ghost" onclick="S.sucesso=null;render()">Continuar</button>
         </div>
       </div>`;
     }
     return `<div class="colhead">Conferência</div><div class="muted">Selecione um pedido na fila ao lado para começar a separar.</div>`;
   }
-  S.sucesso=null;
+  S.sucesso = null;
   // aviso de pendências anteriores
-  const detalheItensTxt=(S._itensRemovidosDetalhado||[]).map(i=>
-    i.tipo==="reduzido" ? `➖ ${esc(i.descricao)}: tirar ${i.quantidadeRemover} un (de ${i.quantidadeOriginal} pra ${i.quantidadeNova})`
-    : i.tipo==="adicionado" ? `➕ ${esc(i.descricao)}: adicionar ${i.quantidadeNova} un`
-    : `🗑 ${esc(i.descricao)}: remover todo (${i.quantidadeOriginal} un)`
-  ).join("<br>");
-  const avisoHistorico=S._tevePendencia?`<div style="background:#2a0818;border:1px solid #d400ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
+  const detalheItensTxt = (S._itensRemovidosDetalhado || []).map(i => i.tipo === "reduzido" ? `➖ ${esc(i.descricao)}: tirar ${i.quantidadeRemover} un (de ${i.quantidadeOriginal} pra ${i.quantidadeNova})` : i.tipo === "adicionado" ? `➕ ${esc(i.descricao)}: adicionar ${i.quantidadeNova} un` : `🗑 ${esc(i.descricao)}: remover todo (${i.quantidadeOriginal} un)`).join("<br>");
+  const avisoHistorico = S._tevePendencia ? `<div style="background:#2a0818;border:1px solid #d400ff;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
     ⚠️ Pedido com histórico de pendências — itens marcados em roxo tiveram falta anteriormente
-    ${S._acrescimos?.itensNovos?.length?`<br>➕ Acrescentado: ${S._acrescimos.itensNovos.map(i=>i.descricao).join(", ")}`:""}
-    ${S._acrescimos?.itensRetirados?.length?`<br>➖ Retirado: ${S._acrescimos.itensRetirados.map(i=>i.descricao).join(", ")}`:""}
-    ${detalheItensTxt?`<br><b style="color:#ff8090">🔧 Ajuste na conferência:</b><br>${detalheItensTxt}`:(S._itensRemovidosLog?.length?`<br><b style="color:#ff8090">🗑 Removido na conferência: ${S._itensRemovidosLog.join(", ")}</b>`:"")}
-  </div>`:"";
-  const avisoVoltouSep=S._itensRemovidosLog?.length?`<div style="background:#1a0010;border:1px solid #FF0082;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
+    ${(_S$_acrescimos = S._acrescimos) !== null && _S$_acrescimos !== void 0 && (_S$_acrescimos = _S$_acrescimos.itensNovos) !== null && _S$_acrescimos !== void 0 && _S$_acrescimos.length ? `<br>➕ Acrescentado: ${S._acrescimos.itensNovos.map(i => i.descricao).join(", ")}` : ""}
+    ${(_S$_acrescimos2 = S._acrescimos) !== null && _S$_acrescimos2 !== void 0 && (_S$_acrescimos2 = _S$_acrescimos2.itensRetirados) !== null && _S$_acrescimos2 !== void 0 && _S$_acrescimos2.length ? `<br>➖ Retirado: ${S._acrescimos.itensRetirados.map(i => i.descricao).join(", ")}` : ""}
+    ${detalheItensTxt ? `<br><b style="color:#ff8090">🔧 Ajuste na conferência:</b><br>${detalheItensTxt}` : (_S$_itensRemovidosLog = S._itensRemovidosLog) !== null && _S$_itensRemovidosLog !== void 0 && _S$_itensRemovidosLog.length ? `<br><b style="color:#ff8090">🗑 Removido na conferência: ${S._itensRemovidosLog.join(", ")}</b>` : ""}
+  </div>` : "";
+  const avisoVoltouSep = (_S$_itensRemovidosLog2 = S._itensRemovidosLog) !== null && _S$_itensRemovidosLog2 !== void 0 && _S$_itensRemovidosLog2.length ? `<div style="background:#1a0010;border:1px solid #FF0082;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#ffbfce">
     🔄 Este pedido voltou da conferência com alterações — ajuste a separação:<br>
-    ${detalheItensTxt?`<b>${detalheItensTxt.replace(/<br>/g,"</b><br><b>")}</b>`:`<b>🗑 Removidos: ${S._itensRemovidosLog.join(", ")}</b>`}<br>
+    ${detalheItensTxt ? `<b>${detalheItensTxt.replace(/<br>/g, "</b><br><b>")}</b>` : `<b>🗑 Removidos: ${S._itensRemovidosLog.join(", ")}</b>`}<br>
     <span style="color:#9a95c9">Confira a quantidade certa antes de finalizar.</span>
-  </div>`:"";
-  const itens=avisoVoltouSep+avisoHistorico+S.conf.map((c,ix)=>{
-    const falta = c.estado==='falta' ? Math.max(0, c.quantidade - c.temQtd) : 0;
-    const bordaFalta=c._teveFalta?"border-left:3px solid #d400ff":""; 
-    const bgFalta=c._teveFalta&&c.estado===""?"background:#1a0820":"";
-    const tagFalta=c._teveFalta?`<span style="font-size:10px;background:#3a0020;color:#ffbfce;border-radius:4px;padding:1px 5px;margin-left:4px">⚠️ faltou ${c._faltaQtd}</span>`:"";
-    const tagAcr=c._acrescido?`<span style="font-size:10px;background:#0a2a1a;color:#a8f0c8;border-radius:4px;padding:1px 5px;margin-left:4px">➕</span>`:"";
-    const tagRet=c._retirado?`<span style="font-size:10px;background:#2a1a0a;color:#ffd23f;border-radius:4px;padding:1px 5px;margin-left:4px">➖</span>`:"";
-    return `<div class="it ${c.estado==='tem'||(c.estado==='falta'&&falta===0)?'tem':(c.estado==='falta'?'falta':'')}" style="${bordaFalta};${bgFalta}">
+  </div>` : "";
+  const itens = avisoVoltouSep + avisoHistorico + S.conf.map((c, ix) => {
+    var _c$estoque;
+    const falta = c.estado === 'falta' ? Math.max(0, c.quantidade - c.temQtd) : 0;
+    const bordaFalta = c._teveFalta ? "border-left:3px solid #d400ff" : "";
+    const bgFalta = c._teveFalta && c.estado === "" ? "background:#1a0820" : "";
+    const tagFalta = c._teveFalta ? `<span style="font-size:10px;background:#3a0020;color:#ffbfce;border-radius:4px;padding:1px 5px;margin-left:4px">⚠️ faltou ${c._faltaQtd}</span>` : "";
+    const tagAcr = c._acrescido ? `<span style="font-size:10px;background:#0a2a1a;color:#a8f0c8;border-radius:4px;padding:1px 5px;margin-left:4px">➕</span>` : "";
+    const tagRet = c._retirado ? `<span style="font-size:10px;background:#2a1a0a;color:#ffd23f;border-radius:4px;padding:1px 5px;margin-left:4px">➖</span>` : "";
+    return `<div class="it ${c.estado === 'tem' || c.estado === 'falta' && falta === 0 ? 'tem' : c.estado === 'falta' ? 'falta' : ''}" style="${bordaFalta};${bgFalta}">
       <div style="display:flex;gap:10px">
-        ${c.imagem?`<img src="${esc(c.imagem)}" onerror="this.remove()" style="width:56px;height:56px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">`:""}
+        ${c.imagem ? `<img src="${esc(c.imagem)}" onerror="this.remove()" style="width:56px;height:56px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">` : ""}
         <div style="flex:1"><div class="nm">${esc(c.descricao)}${tagFalta}${tagAcr}${tagRet}</div>
-          <div class="muted">pedido: ${cxTxt(c.un,c.quantidade)} · estoque: ${c.estoque??"?"}</div></div>
+          <div class="muted">pedido: ${cxTxt(c.un, c.quantidade)} · estoque: ${(_c$estoque = c.estoque) !== null && _c$estoque !== void 0 ? _c$estoque : "?"}</div></div>
       </div>
       <div class="acts">
-        <button class="btn ${c.estado==='tem'?'btn-grn':'btn-ghost'}" onclick="marcar(${ix},'tem')">✅ OK</button>
-        <button class="btn ${c.estado==='falta'?'btn-red':'btn-ghost'}" onclick="marcar(${ix},'falta')">✗ Falta</button>
+        <button class="btn ${c.estado === 'tem' ? 'btn-grn' : 'btn-ghost'}" onclick="marcar(${ix},'tem')">✅ OK</button>
+        <button class="btn ${c.estado === 'falta' ? 'btn-red' : 'btn-ghost'}" onclick="marcar(${ix},'falta')">✗ Falta</button>
       </div>
-      ${c.estado==='falta'?(c.confirmado?
-        `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;background:#3a1020;border-radius:8px;font-size:12px">
-          <span style="color:#ff8090">✗ Falta ${falta} un${c.temQtd>0?` · tem ${c.temQtd} un`:' · não tem nada'}</span>
+      ${c.estado === 'falta' ? c.confirmado ? `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;background:#3a1020;border-radius:8px;font-size:12px">
+          <span style="color:#ff8090">✗ Falta ${falta} un${c.temQtd > 0 ? ` · tem ${c.temQtd} un` : ' · não tem nada'}</span>
           <button onclick="S.conf[${ix}].confirmado=false;render()" style="background:none;border:none;color:#9a95c9;cursor:pointer;font-size:11px;margin-left:auto">editar</button>
-        </div>`
-        :`<div class="faltabox">
+        </div>` : `<div class="faltabox">
         <div style="width:100%" class="muted">Quantas unidades TEM? (o resto vira falta)</div>
-        <button class="btn btn-ghost" onclick="addCx(${ix},1)">${c.un>1?"+1 cx":"+1 un"}</button>
-        <button class="btn btn-ghost" onclick="addCx(${ix},5)">${c.un>1?"+5 cx":"+5 un"}</button>
-        <button class="btn btn-ghost" onclick="addCx(${ix},10)">${c.un>1?"+10 cx":"+10 un"}</button>
+        <button class="btn btn-ghost" onclick="addCx(${ix},1)">${c.un > 1 ? "+1 cx" : "+1 un"}</button>
+        <button class="btn btn-ghost" onclick="addCx(${ix},5)">${c.un > 1 ? "+5 cx" : "+5 un"}</button>
+        <button class="btn btn-ghost" onclick="addCx(${ix},10)">${c.un > 1 ? "+10 cx" : "+10 un"}</button>
         <div style="display:flex;align-items:center;gap:6px;width:100%;margin-top:6px">
           <span class="muted">Tem (un):</span><input type="number" min="0" max="${c.quantidade}" value="${c.temQtd}" style="width:70px" onchange="setTem(${ix},this.value)">
           <span class="muted">→ falta ${falta} un</span></div>
@@ -236,182 +270,381 @@ function detalheColuna(){
           <button class="btn btn-red" style="flex:1" onclick="semNada(${ix})">Não tem nada ✓</button>
           <button class="btn btn-grn" style="flex:1" onclick="confirmarFalta(${ix})">Confirmar falta ✓</button>
         </div>
-      </div>`):""}
+      </div>` : ""}
     </div>`;
   }).join("");
-  const feitos=S.conf.filter(c=>c.estado==="tem"||(c.estado==="falta"&&c.confirmado)).length; const todos=feitos===S.conf.length;
+  const feitos = S.conf.filter(c => c.estado === "tem" || c.estado === "falta" && c.confirmado).length;
+  const todos = feitos === S.conf.length;
   return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
       <div>
-        <div class="colhead" style="margin:0">Pedido ${esc(p.numero||p.id)}</div>
-        <div class="cli" style="margin-top:4px">👤 ${esc(p.contato?.nome||"—")}</div>
-        ${S._tevePendencia?`<div style="font-size:10px;color:#d400ff;margin-top:3px">⚠️ teve pendências</div>`:""}
+        <div class="colhead" style="margin:0">Pedido ${esc(p.numero || p.id)}</div>
+        <div class="cli" style="margin-top:4px">👤 ${esc(((_p$contato2 = p.contato) === null || _p$contato2 === void 0 ? void 0 : _p$contato2.nome) || "—")}</div>
+        ${S._tevePendencia ? `<div style="font-size:10px;color:#d400ff;margin-top:3px">⚠️ teve pendências</div>` : ""}
       </div>
-      ${S.soVisualizacao?`<div style="background:#1c1846;border-radius:8px;padding:8px;font-size:12px;color:#9a95c9;text-align:center">👁 Modo visualização — outro funcionário está separando</div>`:
-    `<button class="btn btn-mag" ${todos?"":"disabled"} onclick="concluir()">Concluir (${feitos}/${S.conf.length})</button>`}
+      ${S.soVisualizacao ? `<div style="background:#1c1846;border-radius:8px;padding:8px;font-size:12px;color:#9a95c9;text-align:center">👁 Modo visualização — outro funcionário está separando</div>` : `<button class="btn btn-mag" ${todos ? "" : "disabled"} onclick="concluir()">Concluir (${feitos}/${S.conf.length})</button>`}
     </div>${itens}
-    ${S.soVisualizacao?
-      `<div style="background:#1c1846;border-radius:8px;padding:10px;font-size:12px;color:#9a95c9;text-align:center;margin-top:10px">
+    ${S.soVisualizacao ? `<div style="background:#1c1846;border-radius:8px;padding:10px;font-size:12px;color:#9a95c9;text-align:center;margin-top:10px">
         👁 Modo visualização<br>
         <button class="btn btn-yellow" style="margin-top:8px;width:100%" onclick="assumirPedido()">⚡ Assumir este pedido</button>
-      </div>`:
-      `<button class="btn btn-mag" style="width:100%;margin-top:10px" ${todos?"":"disabled"} onclick="concluir()">Concluir separação (${feitos}/${S.conf.length})</button>`
-    }
-    ${S.msg?`<div class="muted" style="margin-top:8px">${esc(S.msg)}</div>`:""}`;
+      </div>` : `<button class="btn btn-mag" style="width:100%;margin-top:10px" ${todos ? "" : "disabled"} onclick="concluir()">Concluir separação (${feitos}/${S.conf.length})</button>`}
+    ${S.msg ? `<div class="muted" style="margin-top:8px">${esc(S.msg)}</div>` : ""}`;
 }
 
 // -------- ações --------
-function pararTimer(){ if(timer){ clearInterval(timer); timer=null; } }
-function iniciarFila(){ carregarFila(); pararTimer(); timer=setInterval(()=>carregarFila(true),10000); }
-function voltarFila(){
-  if(S.sel&&FUNC&&!S.soVisualizacao){
-    fetch(BACKEND+"/api/separacoes/"+S.sel.id,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao"})}).catch(()=>{});
+function pararTimer() {
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
   }
-  if(S._heartbeat){ clearInterval(S._heartbeat); S._heartbeat=null; }
-  S.sel=null; S.conf=[]; S.msg=""; S.soVisualizacao=false; S._tevePendencia=false; S._faltas=[]; S._itensRemovidosLog=[]; S._itensRemovidosDetalhado=[];
-  S._seps={}; // força recarregar locks
+}
+function iniciarFila() {
+  carregarFila();
+  pararTimer();
+  timer = setInterval(() => carregarFila(true), 10000);
+}
+function voltarFila() {
+  if (S.sel && FUNC && !S.soVisualizacao) {
+    fetch(BACKEND + "/api/separacoes/" + S.sel.id, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: FUNC.id,
+        funcionarioNome: FUNC.nome,
+        tipo: "separacao"
+      })
+    }).catch(() => {});
+  }
+  if (S._heartbeat) {
+    clearInterval(S._heartbeat);
+    S._heartbeat = null;
+  }
+  S.sel = null;
+  S.conf = [];
+  S.msg = "";
+  S.soVisualizacao = false;
+  S._tevePendencia = false;
+  S._faltas = [];
+  S._itensRemovidosLog = [];
+  S._itensRemovidosDetalhado = [];
+  S._seps = {}; // força recarregar locks
   carregarFila();
 }
-function fecharPedido(){ S.sel=null; S.conf=[]; S.msg=""; render(); }
-
-async function carregarFila(silent){
-  if(!silent){ S.carregando=true; render(); }
-  try{
-    const [rPed,rSep]=await Promise.all([
-      (()=>{ const n=new Date(Date.now()-3*60*60*1000); const h=n.toISOString().slice(0,10); const ini=new Date(n-30*86400000).toISOString().slice(0,10); return fetch(BACKEND+`/api/pedidos?limite=100&idsSituacoes=${FILA}&dataInicial=${ini}&dataFinal=${h}`).then(r=>r.json()); })(),
-      fetch(BACKEND+"/api/separacoes").then(r=>r.json()),
-    ]);
-    const arr=(rPed.data||[]).slice().sort((a,b)=>(a.numero||a.id)-(b.numero||b.id));
-    S.pedidos=arr;
-    S._seps=rSep.data||{};
-  }catch(e){ if(!silent) S.msg="Erro ao carregar a fila."; }
-  S.carregando=false; render();
-}
-
-async function separar(id){
-  // se já tem um pedido aberto com lock, libera antes de abrir o novo
-  if(FUNC && !S.soVisualizacao){
-    const meuLock=Object.values(S._seps||{}).find(l=>l.funcionarioId===FUNC.id && String(l.pedidoId)!==String(id));
-    if(meuLock){
-      // libera o lock do pedido anterior automaticamente
-      await fetch(BACKEND+"/api/separacoes/"+meuLock.pedidoId,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao"})}).catch(()=>{});
-      if(S._heartbeat){ clearInterval(S._heartbeat); S._heartbeat=null; }
-    }
-  }
-  S.msg=""; document.getElementById("app").innerHTML=header()+`<div class="wrap"><div class="muted">Abrindo pedido…</div></div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/expedicao/pedido/"+id); const j=await r.json();
-    if(j.erro){ S.msg="Erro: "+j.erro; render(); return; }
-    // tenta pegar o lock do pedido
-    if(FUNC){
-      const rLock=await fetch(BACKEND+"/api/separacoes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pedidoId:j.pedido.id,funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao"})});
-      if(rLock.status===409){
-        const jl=await rLock.json();
-        const min=Math.floor((Date.now()-jl.lock.ultimaAtividade)/60000);
-        S.msg=`🔒 ${jl.lock.funcionarioNome} está separando este pedido (há ${min}min). Só é possível visualizar.`;
-        S.soVisualizacao=true;
-      } else { S.soVisualizacao=false; }
-    }
-    S.sel=j.pedido;
-    // busca pendências anteriores e log para destacar itens com histórico de falta
-    let _faltas=[], _acrs=null, _logPed=[];
-    try{
-      const [rPend,rAcr,rLog]=await Promise.all([
-        fetch(BACKEND+"/api/pendencias").then(r=>r.json()),
-        fetch(BACKEND+"/api/acrescimos").then(r=>r.json()),
-        fetch(BACKEND+"/api/log/"+j.pedido.id).then(r=>r.json()),
-      ]);
-      const pendAnterior=(rPend.data||[]).find(x=>String(x.pedidoId)===String(j.pedido.id));
-      _faltas=pendAnterior?.faltas||[];
-      const acrData=rAcr.data||[]; _acrs=acrData.find?.(x=>String(x.pedidoId)===String(j.pedido.id));
-      _logPed=rLog.data||[];
-    }catch(e){}
-    const teveSeparacaoComFalta=_logPed.some(e=>e.evento==="separacao_com_falta");
-    S._tevePendencia=teveSeparacaoComFalta;
-    // itens removidos na resolução de pendências
-    const evRemovidos=_logPed.filter(e=>e.evento==="itens_removidos_conferencia"||e.evento==="itens_retirados");
-    S._itensRemovidosLog=evRemovidos.flatMap(e=>e.detalhes?.itens||[]);
-    S._itensRemovidosDetalhado=evRemovidos.flatMap(e=>e.detalhes?.itensDetalhado||[]);
-    S._faltas=_faltas;
-    S._acrescimos=_acrs;
-    S.conf=(j.itens||[]).map(i=>{
-      const falta=_faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&f.produtoId===i.produtoId));
-      const acrescido=_acrs?.itensNovos?.find(a=>a.descricao===i.descricao);
-      const retirado=_acrs?.itensRetirados?.find(a=>a.descricao===i.descricao);
-      return {produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade, un:i.un||1,
-        estoque:i.estoque, imagem:i.imagem, estado:"", temQtd:0, confirmado:false,
-        _teveFalta:!!falta, _faltaQtd:falta?.falta||0, _acrescido:!!acrescido, _retirado:!!retirado};
-    });
-    S.telefone=getTelefone(j.pedido);
-    // heartbeat a cada 2 minutos pra manter o lock
-    if(S._heartbeat) clearInterval(S._heartbeat);
-    if(!S.soVisualizacao && FUNC) S._heartbeat=setInterval(()=>{
-      fetch(BACKEND+"/api/separacoes/"+j.pedido.id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id})}).catch(()=>{});
-    },2*60*1000);
-    // mantém a fila atualizando ao lado
-  }catch(e){ S.msg="Erro ao abrir o pedido."; }
+function fecharPedido() {
+  S.sel = null;
+  S.conf = [];
+  S.msg = "";
   render();
 }
-function getTelefone(p){
-  let t=p.contato?.celular||p.contato?.telefone||"";
-  if(!t && p.observacoes){ const m=p.observacoes.match(/\(([\d()\s-]{8,})\)/); if(m) t=m[1]; }
+async function carregarFila(silent) {
+  if (!silent) {
+    S.carregando = true;
+    render();
+  }
+  try {
+    const [rPed, rSep] = await Promise.all([(() => {
+      const n = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const h = n.toISOString().slice(0, 10);
+      const ini = new Date(n - 30 * 86400000).toISOString().slice(0, 10);
+      return fetch(BACKEND + `/api/pedidos?limite=100&idsSituacoes=${FILA}&dataInicial=${ini}&dataFinal=${h}`).then(r => r.json());
+    })(), fetch(BACKEND + "/api/separacoes").then(r => r.json())]);
+    const arr = (rPed.data || []).slice().sort((a, b) => (a.numero || a.id) - (b.numero || b.id));
+    S.pedidos = arr;
+    S._seps = rSep.data || {};
+  } catch (e) {
+    if (!silent) S.msg = "Erro ao carregar a fila.";
+  }
+  S.carregando = false;
+  render();
+}
+async function separar(id) {
+  // se já tem um pedido aberto com lock, libera antes de abrir o novo
+  if (FUNC && !S.soVisualizacao) {
+    const meuLock = Object.values(S._seps || {}).find(l => l.funcionarioId === FUNC.id && String(l.pedidoId) !== String(id));
+    if (meuLock) {
+      // libera o lock do pedido anterior automaticamente
+      await fetch(BACKEND + "/api/separacoes/" + meuLock.pedidoId, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          funcionarioId: FUNC.id,
+          funcionarioNome: FUNC.nome,
+          tipo: "separacao"
+        })
+      }).catch(() => {});
+      if (S._heartbeat) {
+        clearInterval(S._heartbeat);
+        S._heartbeat = null;
+      }
+    }
+  }
+  S.msg = "";
+  document.getElementById("app").innerHTML = header() + `<div class="wrap"><div class="muted">Abrindo pedido…</div></div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/expedicao/pedido/" + id);
+    const j = await r.json();
+    if (j.erro) {
+      S.msg = "Erro: " + j.erro;
+      render();
+      return;
+    }
+    // tenta pegar o lock do pedido
+    if (FUNC) {
+      const rLock = await fetch(BACKEND + "/api/separacoes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          pedidoId: j.pedido.id,
+          funcionarioId: FUNC.id,
+          funcionarioNome: FUNC.nome,
+          tipo: "separacao"
+        })
+      });
+      if (rLock.status === 409) {
+        const jl = await rLock.json();
+        const min = Math.floor((Date.now() - jl.lock.ultimaAtividade) / 60000);
+        S.msg = `🔒 ${jl.lock.funcionarioNome} está separando este pedido (há ${min}min). Só é possível visualizar.`;
+        S.soVisualizacao = true;
+      } else {
+        S.soVisualizacao = false;
+      }
+    }
+    S.sel = j.pedido;
+    // busca pendências anteriores e log para destacar itens com histórico de falta
+    let _faltas = [],
+      _acrs = null,
+      _logPed = [];
+    try {
+      var _acrData$find;
+      const [rPend, rAcr, rLog] = await Promise.all([fetch(BACKEND + "/api/pendencias").then(r => r.json()), fetch(BACKEND + "/api/acrescimos").then(r => r.json()), fetch(BACKEND + "/api/log/" + j.pedido.id).then(r => r.json())]);
+      const pendAnterior = (rPend.data || []).find(x => String(x.pedidoId) === String(j.pedido.id));
+      _faltas = (pendAnterior === null || pendAnterior === void 0 ? void 0 : pendAnterior.faltas) || [];
+      const acrData = rAcr.data || [];
+      _acrs = (_acrData$find = acrData.find) === null || _acrData$find === void 0 ? void 0 : _acrData$find.call(acrData, x => String(x.pedidoId) === String(j.pedido.id));
+      _logPed = rLog.data || [];
+    } catch (e) {}
+    const teveSeparacaoComFalta = _logPed.some(e => e.evento === "separacao_com_falta");
+    S._tevePendencia = teveSeparacaoComFalta;
+    // itens removidos na resolução de pendências
+    const evRemovidos = _logPed.filter(e => e.evento === "itens_removidos_conferencia" || e.evento === "itens_retirados");
+    S._itensRemovidosLog = evRemovidos.flatMap(e => {
+      var _e$detalhes;
+      return ((_e$detalhes = e.detalhes) === null || _e$detalhes === void 0 ? void 0 : _e$detalhes.itens) || [];
+    });
+    S._itensRemovidosDetalhado = evRemovidos.flatMap(e => {
+      var _e$detalhes2;
+      return ((_e$detalhes2 = e.detalhes) === null || _e$detalhes2 === void 0 ? void 0 : _e$detalhes2.itensDetalhado) || [];
+    });
+    S._faltas = _faltas;
+    S._acrescimos = _acrs;
+    S.conf = (j.itens || []).map(i => {
+      var _acrs2, _acrs3;
+      const falta = _faltas.find(f => f.descricao === i.descricao || f.produtoId && f.produtoId === i.produtoId);
+      const acrescido = (_acrs2 = _acrs) === null || _acrs2 === void 0 || (_acrs2 = _acrs2.itensNovos) === null || _acrs2 === void 0 ? void 0 : _acrs2.find(a => a.descricao === i.descricao);
+      const retirado = (_acrs3 = _acrs) === null || _acrs3 === void 0 || (_acrs3 = _acrs3.itensRetirados) === null || _acrs3 === void 0 ? void 0 : _acrs3.find(a => a.descricao === i.descricao);
+      return {
+        produtoId: i.produtoId,
+        descricao: i.descricao,
+        quantidade: i.quantidade,
+        un: i.un || 1,
+        estoque: i.estoque,
+        imagem: i.imagem,
+        estado: "",
+        temQtd: 0,
+        confirmado: false,
+        _teveFalta: !!falta,
+        _faltaQtd: (falta === null || falta === void 0 ? void 0 : falta.falta) || 0,
+        _acrescido: !!acrescido,
+        _retirado: !!retirado
+      };
+    });
+    S.telefone = getTelefone(j.pedido);
+    // heartbeat a cada 2 minutos pra manter o lock
+    if (S._heartbeat) clearInterval(S._heartbeat);
+    if (!S.soVisualizacao && FUNC) S._heartbeat = setInterval(() => {
+      fetch(BACKEND + "/api/separacoes/" + j.pedido.id, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          funcionarioId: FUNC.id
+        })
+      }).catch(() => {});
+    }, 2 * 60 * 1000);
+    // mantém a fila atualizando ao lado
+  } catch (e) {
+    S.msg = "Erro ao abrir o pedido.";
+  }
+  render();
+}
+function getTelefone(p) {
+  var _p$contato3, _p$contato4;
+  let t = ((_p$contato3 = p.contato) === null || _p$contato3 === void 0 ? void 0 : _p$contato3.celular) || ((_p$contato4 = p.contato) === null || _p$contato4 === void 0 ? void 0 : _p$contato4.telefone) || "";
+  if (!t && p.observacoes) {
+    const m = p.observacoes.match(/\(([\d()\s-]{8,})\)/);
+    if (m) t = m[1];
+  }
   return soDig(t);
 }
-function marcar(ix,estado){ const c=S.conf[ix]; if(estado==='tem'){ c.estado='tem'; c.temQtd=c.quantidade; c.confirmado=true; } else { c.estado='falta'; c.confirmado=false; if(c.temQtd>=c.quantidade) c.temQtd=0; } render(); }
-function confirmarFalta(ix){ const c=S.conf[ix]; if((c.temQtd||0)>=c.quantidade){ c.estado='tem'; } c.confirmado=true; render(); }
-function semNada(ix){ const c=S.conf[ix]; c.temQtd=0; c.confirmado=true; render(); }
-function addCx(ix,ncx){ const c=S.conf[ix]; c.temQtd=Math.min(c.quantidade, (c.temQtd||0)+ncx*(c.un||1)); if(c.temQtd>=c.quantidade){ c.estado='tem'; c.confirmado=true; } render(); }
-function setTem(ix,v){ const c=S.conf[ix]; let q=parseInt(v)||0; if(q<0)q=0; if(q>c.quantidade)q=c.quantidade; c.temQtd=q; if(q>=c.quantidade){ c.estado='tem'; c.confirmado=true; } render(); }
-
-async function assumirPedido(){
-  if(!FUNC||!S.sel) return;
-  if(!confirm("Assumir este pedido? O funcionário anterior será notificado no log.")) return;
-  try{
-    const r=await fetch(BACKEND+"/api/separacoes",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId:S.sel.id,funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,tipo:"separacao",assumir:true})});
-    if(r.ok){ S.soVisualizacao=false;
-      S._heartbeat=setInterval(()=>{ fetch(BACKEND+"/api/separacoes/"+S.sel.id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:FUNC.id})}).catch(()=>{}); },2*60*1000);
+function marcar(ix, estado) {
+  const c = S.conf[ix];
+  if (estado === 'tem') {
+    c.estado = 'tem';
+    c.temQtd = c.quantidade;
+    c.confirmado = true;
+  } else {
+    c.estado = 'falta';
+    c.confirmado = false;
+    if (c.temQtd >= c.quantidade) c.temQtd = 0;
+  }
+  render();
+}
+function confirmarFalta(ix) {
+  const c = S.conf[ix];
+  if ((c.temQtd || 0) >= c.quantidade) {
+    c.estado = 'tem';
+  }
+  c.confirmado = true;
+  render();
+}
+function semNada(ix) {
+  const c = S.conf[ix];
+  c.temQtd = 0;
+  c.confirmado = true;
+  render();
+}
+function addCx(ix, ncx) {
+  const c = S.conf[ix];
+  c.temQtd = Math.min(c.quantidade, (c.temQtd || 0) + ncx * (c.un || 1));
+  if (c.temQtd >= c.quantidade) {
+    c.estado = 'tem';
+    c.confirmado = true;
+  }
+  render();
+}
+function setTem(ix, v) {
+  const c = S.conf[ix];
+  let q = parseInt(v) || 0;
+  if (q < 0) q = 0;
+  if (q > c.quantidade) q = c.quantidade;
+  c.temQtd = q;
+  if (q >= c.quantidade) {
+    c.estado = 'tem';
+    c.confirmado = true;
+  }
+  render();
+}
+async function assumirPedido() {
+  if (!FUNC || !S.sel) return;
+  if (!confirm("Assumir este pedido? O funcionário anterior será notificado no log.")) return;
+  try {
+    const r = await fetch(BACKEND + "/api/separacoes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        pedidoId: S.sel.id,
+        funcionarioId: FUNC.id,
+        funcionarioNome: FUNC.nome,
+        tipo: "separacao",
+        assumir: true
+      })
+    });
+    if (r.ok) {
+      S.soVisualizacao = false;
+      S._heartbeat = setInterval(() => {
+        fetch(BACKEND + "/api/separacoes/" + S.sel.id, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            funcionarioId: FUNC.id
+          })
+        }).catch(() => {});
+      }, 2 * 60 * 1000);
       render();
     }
-  }catch(e){}
+  } catch (e) {}
 }
-
-async function concluir(){
-  const faltas=S.conf
-    .filter(c=>c.estado==='falta' && c.confirmado)
-    .map(c=>({descricao:c.descricao, produtoId:c.produtoId, quantidade:c.quantidade, temQtd:c.temQtd||0, falta:Math.max(0,c.quantidade-(c.temQtd||0))}))
-    .filter(f=>f.falta>0);
+async function concluir() {
+  const faltas = S.conf.filter(c => c.estado === 'falta' && c.confirmado).map(c => ({
+    descricao: c.descricao,
+    produtoId: c.produtoId,
+    quantidade: c.quantidade,
+    temQtd: c.temQtd || 0,
+    falta: Math.max(0, c.quantidade - (c.temQtd || 0))
+  })).filter(f => f.falta > 0);
   console.log("Faltas ao concluir:", JSON.stringify(faltas));
   // confirma antes de concluir se tiver faltas
-  if(faltas.length>0){
-    const lista=faltas.map(f=>f.descricao+": tem "+f.temQtd+" de "+f.quantidade).join("\n");
-    if(!confirm("Concluir com "+faltas.length+" item(ns) com falta?\n\n"+lista+"\n\nO pedido ira para SEPARADO C/ PENDENCIAS.")) return;
+  if (faltas.length > 0) {
+    const lista = faltas.map(f => f.descricao + ": tem " + f.temQtd + " de " + f.quantidade).join("\n");
+    if (!confirm("Concluir com " + faltas.length + " item(ns) com falta?\n\n" + lista + "\n\nO pedido ira para SEPARADO C/ PENDENCIAS.")) return;
   }
-  S.msg="Salvando…"; render();
-  try{
-    const idConcluido=S.sel.id, numeroConcluido=S.sel.numero||S.sel.id;
-    const clienteNomeConcluido=S.sel.contato?.nome||"";
-    const freteCalcConcluido=+(((S.sel.total||0)-(S.sel.totalProdutos||0))).toFixed(2);
-    const ehEntregaConcluido=freteCalcConcluido>0.01;
-    const r=await fetch(BACKEND+"/api/fluxo/"+idConcluido+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({faltas, funcionarioId:FUNC?.id, funcionarioNome:FUNC?.nome})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
-    fetch(BACKEND+"/api/separacoes/"+idConcluido,{method:"DELETE"}).catch(()=>{});
-    // tela inline de sucesso (em vez de confirm()+window.open, que o navegador bloqueia)
-    S.sel=null; S.conf=[];
-    S.sucesso={id:idConcluido, numero:numeroConcluido, comFalta:faltas.length>0, clienteNome:clienteNomeConcluido, ehEntrega:ehEntregaConcluido};
-    await carregarFila();
-  }catch(e){ S.msg="Erro ao concluir: "+e.message; render(); }
-}
-async function mudaSit(id,idSit){
-  const r=await fetch(BACKEND+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:idSit})});
-  const j=await r.json(); if(!r.ok||j.erro) throw new Error(j.erro||"situação");
-}
-
-if(!window.__b13SemAcesso){
+  S.msg = "Salvando…";
   render();
-  if(FUNC) iniciarFila();
+  try {
+    var _S$sel$contato, _FUNC2, _FUNC3;
+    const idConcluido = S.sel.id,
+      numeroConcluido = S.sel.numero || S.sel.id;
+    const clienteNomeConcluido = ((_S$sel$contato = S.sel.contato) === null || _S$sel$contato === void 0 ? void 0 : _S$sel$contato.nome) || "";
+    const freteCalcConcluido = +((S.sel.total || 0) - (S.sel.totalProdutos || 0)).toFixed(2);
+    const ehEntregaConcluido = freteCalcConcluido > 0.01;
+    const r = await fetch(BACKEND + "/api/fluxo/" + idConcluido + "/separacao-concluida", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        faltas,
+        funcionarioId: (_FUNC2 = FUNC) === null || _FUNC2 === void 0 ? void 0 : _FUNC2.id,
+        funcionarioNome: (_FUNC3 = FUNC) === null || _FUNC3 === void 0 ? void 0 : _FUNC3.nome
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao concluir");
+    fetch(BACKEND + "/api/separacoes/" + idConcluido, {
+      method: "DELETE"
+    }).catch(() => {});
+    // tela inline de sucesso (em vez de confirm()+window.open, que o navegador bloqueia)
+    S.sel = null;
+    S.conf = [];
+    S.sucesso = {
+      id: idConcluido,
+      numero: numeroConcluido,
+      comFalta: faltas.length > 0,
+      clienteNome: clienteNomeConcluido,
+      ehEntrega: ehEntregaConcluido
+    };
+    await carregarFila();
+  } catch (e) {
+    S.msg = "Erro ao concluir: " + e.message;
+    render();
+  }
 }
-</script>
+async function mudaSit(id, idSit) {
+  const r = await fetch(BACKEND + "/api/pedidos/" + id + "/situacao", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      idSituacao: idSit
+    })
+  });
+  const j = await r.json();
+  if (!r.ok || j.erro) throw new Error(j.erro || "situação");
+}
+if (!window.__b13SemAcesso) {
+  render();
+  if (FUNC) iniciarFila();
+}</script>
 </body>
 </html>

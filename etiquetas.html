@@ -156,186 +156,255 @@ document.addEventListener("DOMContentLoaded",function(){
   <div id="folhaEtiquetas" class="folha"></div>
 </div>
 
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-function brl(n){ return n==null?"—":(Number(n)).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-
-let TODOS=[];
-let SELECIONADOS=new Set();
-
-async function carregar(){
-  try{
-    const j=await fetch(BACKEND+"/api/lista-fardo").then(r=>r.json());
-    TODOS=j.data||[];
-  }catch(e){ TODOS=[]; }
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+function brl(n) {
+  return n == null ? "—" : Number(n).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
+let TODOS = [];
+let SELECIONADOS = new Set();
+async function carregar() {
+  try {
+    const j = await fetch(BACKEND + "/api/lista-fardo").then(r => r.json());
+    TODOS = j.data || [];
+  } catch (e) {
+    TODOS = [];
+  }
   renderCategorias();
   renderLista();
 }
-
-async function atualizarLista(){
-  const div=document.getElementById("lista");
-  if(div) div.innerHTML=`<div class="muted">Atualizando…</div>`;
+async function atualizarLista() {
+  const div = document.getElementById("lista");
+  if (div) div.innerHTML = `<div class="muted">Atualizando…</div>`;
   await carregar();
 }
 
 // força a reconstrução do índice de produtos (preços de varejo) — útil logo depois
 // de cadastrar/alterar um produto no Bling, sem esperar a atualização automática
-function atualizarProdutosVarejo(){
-  const btn=document.getElementById("btnVarejo");
-  const box=document.getElementById("statusVarejo");
-  if(btn) btn.disabled=true;
-  box.innerHTML=`<div class="card" style="margin-top:10px"><div class="muted">Iniciando atualização dos produtos…</div>
+function atualizarProdutosVarejo() {
+  const btn = document.getElementById("btnVarejo");
+  const box = document.getElementById("statusVarejo");
+  if (btn) btn.disabled = true;
+  box.innerHTML = `<div class="card" style="margin-top:10px"><div class="muted">Iniciando atualização dos produtos…</div>
     <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96;margin-top:8px"><div id="barVarejo" style="height:100%;width:5%;background:linear-gradient(90deg,#FF0082,#ff5fae);transition:width .3s"></div></div></div>`;
-  const es=new EventSource(BACKEND+"/api/preco/reconstruir-indice");
-  es.onmessage=(ev)=>{
-    const d=JSON.parse(ev.data);
-    const bar=document.getElementById("barVarejo");
-    const txt=box.querySelector(".muted");
-    if(d.tipo==="status"&&txt) txt.textContent=d.mensagem;
-    else if(d.tipo==="total"&&txt) txt.textContent=`0 de ${d.total} produtos…`;
-    else if(d.tipo==="progresso"){ if(txt) txt.textContent=`${d.atual} de ${d.total} produtos… ${d.nome||""}`; if(bar) bar.style.width=Math.round((d.atual/d.total)*100)+"%"; }
-    else if(d.tipo==="done"){
-      es.close(); if(btn) btn.disabled=false; if(bar) bar.style.width="100%";
-      box.innerHTML=`<div class="card" style="margin-top:10px"><div class="muted">✅ Produtos atualizados: ${d.qtdProdutos} produto(s). A busca já reflete os preços/produtos mais novos.</div></div>`;
+  const es = new EventSource(BACKEND + "/api/preco/reconstruir-indice");
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    const bar = document.getElementById("barVarejo");
+    const txt = box.querySelector(".muted");
+    if (d.tipo === "status" && txt) txt.textContent = d.mensagem;else if (d.tipo === "total" && txt) txt.textContent = `0 de ${d.total} produtos…`;else if (d.tipo === "progresso") {
+      if (txt) txt.textContent = `${d.atual} de ${d.total} produtos… ${d.nome || ""}`;
+      if (bar) bar.style.width = Math.round(d.atual / d.total * 100) + "%";
+    } else if (d.tipo === "done") {
+      es.close();
+      if (btn) btn.disabled = false;
+      if (bar) bar.style.width = "100%";
+      box.innerHTML = `<div class="card" style="margin-top:10px"><div class="muted">✅ Produtos atualizados: ${d.qtdProdutos} produto(s). A busca já reflete os preços/produtos mais novos.</div></div>`;
       atualizarLista();
-      setTimeout(()=>{ box.innerHTML=""; },8000);
-    } else if(d.tipo==="erro"){ es.close(); if(btn) btn.disabled=false; box.innerHTML=`<div class="card" style="margin-top:10px"><div style="color:#ff8090">Erro: ${esc(d.erro)}</div></div>`; }
+      setTimeout(() => {
+        box.innerHTML = "";
+      }, 8000);
+    } else if (d.tipo === "erro") {
+      es.close();
+      if (btn) btn.disabled = false;
+      box.innerHTML = `<div class="card" style="margin-top:10px"><div style="color:#ff8090">Erro: ${esc(d.erro)}</div></div>`;
+    }
   };
-  es.onerror=()=>{ es.close(); if(btn) btn.disabled=false; };
+  es.onerror = () => {
+    es.close();
+    if (btn) btn.disabled = false;
+  };
 }
-
-let _buscaBlingT=null;
-function buscarBlingDebounce(){ clearTimeout(_buscaBlingT); _buscaBlingT=setTimeout(buscarBling,350); }
-
-async function buscarBling(){
-  const termo=document.getElementById("buscaBling").value.trim();
-  const box=document.getElementById("resultadosBling");
-  if(termo.length<2){ box.innerHTML=""; return; }
-  box.innerHTML=`<div class="muted">Buscando…</div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
-    const lista=j.data||[];
-    box.innerHTML=lista.length?lista.map(p=>`
+let _buscaBlingT = null;
+function buscarBlingDebounce() {
+  clearTimeout(_buscaBlingT);
+  _buscaBlingT = setTimeout(buscarBling, 350);
+}
+async function buscarBling() {
+  const termo = document.getElementById("buscaBling").value.trim();
+  const box = document.getElementById("resultadosBling");
+  if (termo.length < 2) {
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = `<div class="muted">Buscando…</div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/buscar?nome=" + encodeURIComponent(termo)).then(r => r.json());
+    const lista = j.data || [];
+    box.innerHTML = lista.length ? lista.map(p => `
       <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2660">
-        <span style="flex:1;font-size:13px">${esc(p.nome)} <span class="muted">(cód. ${esc(p.codigo||"—")})</span></span>
-        <button class="btn btn-sm" onclick='adicionarAvulsoBling(${JSON.stringify({id:p.id,nome:p.nome}).replace(/'/g,"&#39;")})'>+ Adicionar</button>
-      </div>`).join(""):`<div class="muted">Nenhum produto encontrado no Bling.</div>`;
-  }catch(e){ box.innerHTML=`<div class="muted">Erro na busca.</div>`; }
+        <span style="flex:1;font-size:13px">${esc(p.nome)} <span class="muted">(cód. ${esc(p.codigo || "—")})</span></span>
+        <button class="btn btn-sm" onclick='adicionarAvulsoBling(${JSON.stringify({
+      id: p.id,
+      nome: p.nome
+    }).replace(/'/g, "&#39;")})'>+ Adicionar</button>
+      </div>`).join("") : `<div class="muted">Nenhum produto encontrado no Bling.</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="muted">Erro na busca.</div>`;
+  }
 }
-
-async function adicionarAvulsoBling(p){
-  try{
-    const j=await fetch(BACKEND+"/api/lista-fardo/associar-avulso",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({produtoId:p.id,nome:p.nome})}).then(r=>r.json());
-    if(j.erro){ alert(j.erro); return; }
+async function adicionarAvulsoBling(p) {
+  try {
+    const j = await fetch(BACKEND + "/api/lista-fardo/associar-avulso", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        produtoId: p.id,
+        nome: p.nome
+      })
+    }).then(r => r.json());
+    if (j.erro) {
+      alert(j.erro);
+      return;
+    }
     await carregar(); // recarrega a lista (já vem com esse item novo)
     SELECIONADOS.add(j.itemId);
-    renderCategorias(); renderLista();
-    document.getElementById("buscaBling").value="";
-    document.getElementById("resultadosBling").innerHTML=`<div class="muted">✅ "${esc(p.nome)}" adicionado à seleção (sem preço de atacado/fardo — só varejo).</div>`;
-  }catch(e){ alert("Erro ao adicionar produto."); }
+    renderCategorias();
+    renderLista();
+    document.getElementById("buscaBling").value = "";
+    document.getElementById("resultadosBling").innerHTML = `<div class="muted">✅ "${esc(p.nome)}" adicionado à seleção (sem preço de atacado/fardo — só varejo).</div>`;
+  } catch (e) {
+    alert("Erro ao adicionar produto.");
+  }
 }
-
-function categoriasUnicas(){
-  return [...new Set(TODOS.map(i=>i.categoriaNome||"(sem categoria)"))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+function categoriasUnicas() {
+  return [...new Set(TODOS.map(i => i.categoriaNome || "(sem categoria)"))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
-
-function renderCategorias(){
-  const box=document.getElementById("categorias");
-  if(!box) return;
-  const cats=categoriasUnicas();
-  if(!cats.length){ box.innerHTML=""; return; }
-  box.innerHTML=cats.map(cat=>{
-    const itensCat=TODOS.filter(i=>(i.categoriaNome||"(sem categoria)")===cat);
-    const todosMarcados=itensCat.length>0 && itensCat.every(i=>SELECIONADOS.has(i.itemId));
-    return `<button class="btn ${todosMarcados?"":"btn-ghost"}" style="font-size:11px;padding:6px 10px"
-      onclick="toggleCategoria('${esc(cat).replace(/'/g,"&#39;")}')">${todosMarcados?"✓ ":""}${esc(cat)} <span style="opacity:.7">(${itensCat.length})</span></button>`;
+function renderCategorias() {
+  const box = document.getElementById("categorias");
+  if (!box) return;
+  const cats = categoriasUnicas();
+  if (!cats.length) {
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = cats.map(cat => {
+    const itensCat = TODOS.filter(i => (i.categoriaNome || "(sem categoria)") === cat);
+    const todosMarcados = itensCat.length > 0 && itensCat.every(i => SELECIONADOS.has(i.itemId));
+    return `<button class="btn ${todosMarcados ? "" : "btn-ghost"}" style="font-size:11px;padding:6px 10px"
+      onclick="toggleCategoria('${esc(cat).replace(/'/g, "&#39;")}')">${todosMarcados ? "✓ " : ""}${esc(cat)} <span style="opacity:.7">(${itensCat.length})</span></button>`;
   }).join("");
 }
-
-function toggleCategoria(cat){
-  const itensCat=TODOS.filter(i=>(i.categoriaNome||"(sem categoria)")===cat);
-  const todosMarcados=itensCat.length>0 && itensCat.every(i=>SELECIONADOS.has(i.itemId));
-  itensCat.forEach(i=> todosMarcados?SELECIONADOS.delete(i.itemId):SELECIONADOS.add(i.itemId));
+function toggleCategoria(cat) {
+  const itensCat = TODOS.filter(i => (i.categoriaNome || "(sem categoria)") === cat);
+  const todosMarcados = itensCat.length > 0 && itensCat.every(i => SELECIONADOS.has(i.itemId));
+  itensCat.forEach(i => todosMarcados ? SELECIONADOS.delete(i.itemId) : SELECIONADOS.add(i.itemId));
   renderCategorias();
   renderLista();
 }
-
-function renderLista(){
-  const termo=(document.getElementById("filtro").value||"").toLowerCase();
-  const box=document.getElementById("lista");
-  const filtrados=TODOS.filter(i=>i.itemNome.toLowerCase().includes(termo));
-  if(!filtrados.length){ box.innerHTML=`<div class="muted">Nenhum produto encontrado.</div>`; return; }
-  box.innerHTML=filtrados.map(i=>`
+function renderLista() {
+  const termo = (document.getElementById("filtro").value || "").toLowerCase();
+  const box = document.getElementById("lista");
+  const filtrados = TODOS.filter(i => i.itemNome.toLowerCase().includes(termo));
+  if (!filtrados.length) {
+    box.innerHTML = `<div class="muted">Nenhum produto encontrado.</div>`;
+    return;
+  }
+  box.innerHTML = filtrados.map(i => `
     <label class="linha">
-      <input type="checkbox" ${SELECIONADOS.has(i.itemId)?"checked":""} onchange="toggleSel('${i.itemId}',this.checked)">
+      <input type="checkbox" ${SELECIONADOS.has(i.itemId) ? "checked" : ""} onchange="toggleSel('${i.itemId}',this.checked)">
       <span style="flex:1">${esc(i.itemNome)}</span>
-      <span class="muted">Atacado ${brl(i.precoAtacado)}${i.precoFardo!=null?" · Fardo "+brl(i.precoFardo):""}</span>
+      <span class="muted">Atacado ${brl(i.precoAtacado)}${i.precoFardo != null ? " · Fardo " + brl(i.precoFardo) : ""}</span>
     </label>`).join("");
 }
-
-function toggleSel(id,marcado){ if(marcado) SELECIONADOS.add(id); else SELECIONADOS.delete(id); renderCategorias(); }
-
-function fmtPreco(v){
-  if(v==null) return "—";
-  return Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+function toggleSel(id, marcado) {
+  if (marcado) SELECIONADOS.add(id);else SELECIONADOS.delete(id);
+  renderCategorias();
 }
-function hojeFmt(){ const d=new Date(); return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear(); }
-
-async function gerarEtiquetas(){
-  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
-  const folha=document.getElementById("folhaEtiquetas");
-  folha.className="folha";
-  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
-    folha.innerHTML=(j.data||[]).map(it=>{
-      if(it.erro) return "";
-      const temFardo=it.precoFardo!=null;
-      const temAtacado=it.precoAtacado!=null;
-      const secoes=[];
+function fmtPreco(v) {
+  if (v == null) return "—";
+  return Number(v).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+function hojeFmt() {
+  const d = new Date();
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+}
+async function gerarEtiquetas() {
+  if (!SELECIONADOS.size) {
+    alert("Selecione ao menos um produto.");
+    return;
+  }
+  const folha = document.getElementById("folhaEtiquetas");
+  folha.className = "folha";
+  folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    folha.innerHTML = (j.data || []).map(it => {
+      if (it.erro) return "";
+      const temFardo = it.precoFardo != null;
+      const temAtacado = it.precoAtacado != null;
+      const secoes = [];
       secoes.push(`<div class="secao preta"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
-      if(temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
-      if(temAtacado) secoes.push(`<div class="secao branca"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
+      if (temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
+      if (temAtacado) secoes.push(`<div class="secao branca"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
       return `<div class="etiqueta">
         <div class="nome">${esc(it.nome)}</div>
         <div class="secoes">${secoes.join("")}</div>
-        <div class="rodape"><span class="categoria">${esc(it.categoriaNome||"")}</span><span>${hojeFmt()}</span></div>
+        <div class="rodape"><span class="categoria">${esc(it.categoriaNome || "")}</span><span>${hojeFmt()}</span></div>
       </div>`;
     }).join("");
-    document.getElementById("btnImprimir").style.display="inline-block";
-  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+    document.getElementById("btnImprimir").style.display = "inline-block";
+  } catch (e) {
+    folha.innerHTML = `<div class="muted">Erro ao gerar etiquetas.</div>`;
+  }
 }
-
-function partesPreco(v){
-  if(v==null) return {i:"—",c:""};
-  const s=Number(v).toFixed(2).split(".");
-  return {i:s[0],c:s[1]};
+function partesPreco(v) {
+  if (v == null) return {
+    i: "—",
+    c: ""
+  };
+  const s = Number(v).toFixed(2).split(".");
+  return {
+    i: s[0],
+    c: s[1]
+  };
 }
-
-function montarEtq2(it){
-  if(it.erro) return "";
-  const varejo=partesPreco(it.precoVarejo);
-  const fardo=partesPreco(it.precoFardo);
-  const atacado=partesPreco(it.precoAtacado);
-  const temFardo=it.precoFardo!=null;
-  const temAtacado=it.precoAtacado!=null;
-  const qtdPrecos=1+(temFardo?1:0)+(temAtacado?1:0);
-
+function montarEtq2(it) {
+  if (it.erro) return "";
+  const varejo = partesPreco(it.precoVarejo);
+  const fardo = partesPreco(it.precoFardo);
+  const atacado = partesPreco(it.precoAtacado);
+  const temFardo = it.precoFardo != null;
+  const temAtacado = it.precoAtacado != null;
+  const qtdPrecos = 1 + (temFardo ? 1 : 0) + (temAtacado ? 1 : 0);
   let corpoHtml;
-  if(qtdPrecos===1){
+  if (qtdPrecos === 1) {
     // só o varejo -> mostra bem grande, centralizado no meio do card
-    corpoHtml=`<div class="unico2">
+    corpoHtml = `<div class="unico2">
       <div class="preco2 grande2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
       <div class="lbl2">UND</div>
       <div class="lblGrande2">UNIDADE</div>
     </div>`;
-  } else if(qtdPrecos===2){
+  } else if (qtdPrecos === 2) {
     // um em cima (varejo), o outro embaixo (fardo ou atacado) — cada um ocupando a largura toda
-    const seg=temFardo
-      ?{classe:"pack2Full",cor:"rosa2",preco:fardo,label:`ACIMA DE ${it.caixaQtd||"—"} UNIDADES`}
-      :{classe:"atacado2Full",cor:"azul2",preco:atacado,label:"ATACADO"};
-    corpoHtml=`<div class="empilhado2">
+    const seg = temFardo ? {
+      classe: "pack2Full",
+      cor: "rosa2",
+      preco: fardo,
+      label: `ACIMA DE ${it.caixaQtd || "—"} UNIDADES`
+    } : {
+      classe: "atacado2Full",
+      cor: "azul2",
+      preco: atacado,
+      label: "ATACADO"
+    };
+    corpoHtml = `<div class="empilhado2">
       <div class="unidade2 unidadeEmpilhada2">
         <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
         <div class="lbl2">UND</div>
@@ -348,7 +417,7 @@ function montarEtq2(it){
     </div>`;
   } else {
     // os 3 preços -> layout original (unidade+fardo lado a lado, atacado embaixo)
-    corpoHtml=`<div class="corpo2">
+    corpoHtml = `<div class="corpo2">
       <div class="unidade2">
         <div class="preco2"><span class="cif2">R$</span>${varejo.i}<span class="cent2">,${varejo.c}</span></div>
         <div class="lbl2">UND</div>
@@ -358,7 +427,7 @@ function montarEtq2(it){
       <div class="pack2">
         <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
         <div class="lbl2">UND</div>
-        <div class="lblGrande2">ACIMA DE ${it.caixaQtd||"—"} UNIDADES</div>
+        <div class="lblGrande2">ACIMA DE ${it.caixaQtd || "—"} UNIDADES</div>
       </div>
     </div>
     <div class="atacado2">
@@ -367,41 +436,47 @@ function montarEtq2(it){
     </div>
     <div class="obs2">VALORES DE ATACADO SUJEITO A TAXA DO CARTÃO</div>`;
   }
-
   return `<div class="etq2">
     <div class="nome2">${esc(it.nome)}</div>
-    ${it.categoriaNome?`<div class="categoria2">${esc(it.categoriaNome)}</div>`:""}
+    ${it.categoriaNome ? `<div class="categoria2">${esc(it.categoriaNome)}</div>` : ""}
     ${corpoHtml}
     <div class="rodapeLogo"><img src="/logo" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:16px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'"></div>
   </div>`;
 }
-
-async function gerarEtiquetasModelo2(){
-  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
-  const folha=document.getElementById("folhaEtiquetas");
-  folha.className="folha modelo2";
-  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
-    folha.innerHTML=(j.data||[]).map(montarEtq2).join("");
-    document.getElementById("btnImprimir").style.display="inline-block";
-  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+async function gerarEtiquetasModelo2() {
+  if (!SELECIONADOS.size) {
+    alert("Selecione ao menos um produto.");
+    return;
+  }
+  const folha = document.getElementById("folhaEtiquetas");
+  folha.className = "folha modelo2";
+  folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    folha.innerHTML = (j.data || []).map(montarEtq2).join("");
+    document.getElementById("btnImprimir").style.display = "inline-block";
+  } catch (e) {
+    folha.innerHTML = `<div class="muted">Erro ao gerar etiquetas.</div>`;
+  }
 }
 
 // Modelo 3: 1 produto por FOLHA A4 inteira (mesmo conteúdo do modelo 2, só bem maior)
-async function gerarEtiquetasModelo3(){
-  if(!SELECIONADOS.size){ alert("Selecione ao menos um produto."); return; }
-  const folha=document.getElementById("folhaEtiquetas");
-  folha.className="folha modelo3";
-  folha.innerHTML=`<div class="muted noprint">Gerando…</div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/etiquetas?itens="+[...SELECIONADOS].join(",")).then(r=>r.json());
-    folha.innerHTML=(j.data||[]).map(montarEtq2).join("");
-    document.getElementById("btnImprimir").style.display="inline-block";
-  }catch(e){ folha.innerHTML=`<div class="muted">Erro ao gerar etiquetas.</div>`; }
+async function gerarEtiquetasModelo3() {
+  if (!SELECIONADOS.size) {
+    alert("Selecione ao menos um produto.");
+    return;
+  }
+  const folha = document.getElementById("folhaEtiquetas");
+  folha.className = "folha modelo3";
+  folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    folha.innerHTML = (j.data || []).map(montarEtq2).join("");
+    document.getElementById("btnImprimir").style.display = "inline-block";
+  } catch (e) {
+    folha.innerHTML = `<div class="muted">Erro ao gerar etiquetas.</div>`;
+  }
 }
-
-carregar();
-</script>
+carregar();</script>
 </body>
 </html>

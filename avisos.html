@@ -43,80 +43,100 @@
   })();
 </script>
 <div id="app"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const dt=(ms)=>ms?new Date(ms).toLocaleString("pt-BR"):"";
-
-let LISTA=[], VER="pendentes", NRES=0;
-
-function card(a){
-  const itens=(a.itensNovos||[]).map(i=>`${i.quantidade}x ${esc(i.nome)}`).join(", ");
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const dt = ms => ms ? new Date(ms).toLocaleString("pt-BR") : "";
+let LISTA = [],
+  VER = "pendentes",
+  NRES = 0;
+function card(a) {
+  const itens = (a.itensNovos || []).map(i => `${i.quantidade}x ${esc(i.nome)}`).join(", ");
   return `<div class="card warn">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
       <div style="flex:1">
-        <span class="tag">${esc(a.tipo||"aviso")}</span>
-        <div style="font-weight:800;margin-top:6px">${esc(a.titulo||"Aviso")}</div>
-        <div class="muted">${dt(a.em)}${a.operador?" · "+esc(a.operador):""}${a.origem?" · "+esc(a.origem):""}</div>
+        <span class="tag">${esc(a.tipo || "aviso")}</span>
+        <div style="font-weight:800;margin-top:6px">${esc(a.titulo || "Aviso")}</div>
+        <div class="muted">${dt(a.em)}${a.operador ? " · " + esc(a.operador) : ""}${a.origem ? " · " + esc(a.origem) : ""}</div>
       </div>
-      ${a.resolvido
-        ? `<span class="muted" style="font-size:11px">✅ resolvido ${dt(a.resolvidoEm)}</span>`
-        : `<button class="btn btn-grn" style="padding:6px 10px" onclick="resolver('${a.id}')">✓ Resolvido</button>`}
+      ${a.resolvido ? `<span class="muted" style="font-size:11px">✅ resolvido ${dt(a.resolvidoEm)}</span>` : `<button class="btn btn-grn" style="padding:6px 10px" onclick="resolver('${a.id}')">✓ Resolvido</button>`}
     </div>
-    ${a.numero?`<div class="kv"><b>Pedido:</b> #${esc(a.numero)}</div>`:(a.pedidoId?`<div class="kv"><b>Pedido:</b> ${esc(a.pedidoId)}</div>`:"")}
-    ${a.novoTotal!=null?`<div class="kv"><b>Novo total:</b> R$ ${(+a.novoTotal).toLocaleString("pt-BR",{minimumFractionDigits:2})}</div>`:""}
-    ${itens?`<div class="kv"><b>Itens:</b> ${itens}</div>`:""}
-    ${a.estoqueAjustado?`<div class="kv" style="color:#ffd23f"><b>Estoque ajustado automaticamente:</b> ${esc(a.estoqueAjustado)}</div>`:""}
-    ${a.erroBling?`<div class="kv" style="color:#ff9a9a"><b>Erro do Bling:</b> ${esc(a.erroBling)}</div>`:""}
-    ${a.oQueFazer?`<pre>👉 ${esc(a.oQueFazer)}</pre>`:""}
+    ${a.numero ? `<div class="kv"><b>Pedido:</b> #${esc(a.numero)}</div>` : a.pedidoId ? `<div class="kv"><b>Pedido:</b> ${esc(a.pedidoId)}</div>` : ""}
+    ${a.novoTotal != null ? `<div class="kv"><b>Novo total:</b> R$ ${(+a.novoTotal).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2
+  })}</div>` : ""}
+    ${itens ? `<div class="kv"><b>Itens:</b> ${itens}</div>` : ""}
+    ${a.estoqueAjustado ? `<div class="kv" style="color:#ffd23f"><b>Estoque ajustado automaticamente:</b> ${esc(a.estoqueAjustado)}</div>` : ""}
+    ${a.erroBling ? `<div class="kv" style="color:#ff9a9a"><b>Erro do Bling:</b> ${esc(a.erroBling)}</div>` : ""}
+    ${a.oQueFazer ? `<pre>👉 ${esc(a.oQueFazer)}</pre>` : ""}
   </div>`;
 }
-
-function render(){
-  const app=document.getElementById("app");
-  const lista=LISTA;
-  app.innerHTML=`
+function render() {
+  const app = document.getElementById("app");
+  const lista = LISTA;
+  app.innerHTML = `
     <div class="top">
       <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
-      <img src="/logo"><div class="t">🔔 Avisos${NRES>0?` (${NRES})`:""}</div><div class="sp"></div>
+      <img src="/logo"><div class="t">🔔 Avisos${NRES > 0 ? ` (${NRES})` : ""}</div><div class="sp"></div>
       <button class="btn btn-ghost" style="font-size:12px" onclick="carregar()">🔄</button>
     </div>
     <div class="wrap">
       <div class="card">
         <div class="muted" style="margin-bottom:8px">Eventos que precisam de conferência (auto-correções de estoque, alterações que o Bling recusou, divergências). Marque como resolvido depois de conferir.</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span class="chip ${VER==='pendentes'?'on':''}" onclick="VER='pendentes';carregar()">Pendentes</span>
-          <span class="chip ${VER==='todos'?'on':''}" onclick="VER='todos';carregar()">Todos</span>
+          <span class="chip ${VER === 'pendentes' ? 'on' : ''}" onclick="VER='pendentes';carregar()">Pendentes</span>
+          <span class="chip ${VER === 'todos' ? 'on' : ''}" onclick="VER='todos';carregar()">Todos</span>
           <div style="flex:1"></div>
-          ${NRES?`<button class="btn btn-ghost" onclick="limparAvisos()">🧹 Limpar todos (${NRES})</button>`:""}
+          ${NRES ? `<button class="btn btn-ghost" onclick="limparAvisos()">🧹 Limpar todos (${NRES})</button>` : ""}
         </div>
       </div>
-      ${lista.length?lista.map(card).join(""):'<div class="card"><div class="muted">Nenhum aviso'+(VER==='pendentes'?' pendente':'')+'. 🎉</div></div>'}
+      ${lista.length ? lista.map(card).join("") : '<div class="card"><div class="muted">Nenhum aviso' + (VER === 'pendentes' ? ' pendente' : '') + '. 🎉</div></div>'}
     </div>`;
 }
-
-async function carregar(){
-  try{
-    const j=await fetch(B+"/api/avisos"+(VER==='todos'?"?todos=1":"")).then(r=>r.json());
-    LISTA=j.lista||[]; NRES=j.naoResolvidos||0; render();
-  }catch(e){ document.getElementById("app").innerHTML='<div class="wrap"><div class="card" style="color:#ff8090">Erro ao carregar.</div></div>'; }
+async function carregar() {
+  try {
+    const j = await fetch(B + "/api/avisos" + (VER === 'todos' ? "?todos=1" : "")).then(r => r.json());
+    LISTA = j.lista || [];
+    NRES = j.naoResolvidos || 0;
+    render();
+  } catch (e) {
+    document.getElementById("app").innerHTML = '<div class="wrap"><div class="card" style="color:#ff8090">Erro ao carregar.</div></div>';
+  }
 }
-async function limparAvisos(){
-  if(!confirm(`Marcar os ${NRES} aviso(s) pendentes como resolvidos?\n\nEles saem da lista de pendentes, mas continuam no histórico (aba "Todos").`)) return;
-  try{
-    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
-    await fetch(B+"/api/avisos/resolver-todos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({por:S.nome||""})});
+async function limparAvisos() {
+  if (!confirm(`Marcar os ${NRES} aviso(s) pendentes como resolvidos?\n\nEles saem da lista de pendentes, mas continuam no histórico (aba "Todos").`)) return;
+  try {
+    const S = (typeof b13GetSession === "function" ? b13GetSession() : {}) || {};
+    await fetch(B + "/api/avisos/resolver-todos", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        por: S.nome || ""
+      })
+    });
     carregar();
-  }catch(e){ alert("Erro ao limpar."); }
+  } catch (e) {
+    alert("Erro ao limpar.");
+  }
 }
-async function resolver(id){
-  try{
-    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
-    await fetch(B+"/api/avisos/"+id+"/resolver",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({por:S.nome||""})});
+async function resolver(id) {
+  try {
+    const S = (typeof b13GetSession === "function" ? b13GetSession() : {}) || {};
+    await fetch(B + "/api/avisos/" + id + "/resolver", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        por: S.nome || ""
+      })
+    });
     carregar();
-  }catch(e){ alert("Erro ao marcar."); }
+  } catch (e) {
+    alert("Erro ao marcar.");
+  }
 }
-carregar();
-</script>
+carregar();</script>
 </body>
 </html>

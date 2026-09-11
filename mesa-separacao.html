@@ -59,338 +59,467 @@
 <body>
 <div id="app"></div>
 <div id="modais"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-
-let FUNCS=[], ATIVOS=[], FILA=[], LOCKS={};
-let IDS_FILA=null; // ids já vistos — pra detectar pedido NOVO e avisar com som
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+let FUNCS = [],
+  ATIVOS = [],
+  FILA = [],
+  LOCKS = {};
+let IDS_FILA = null; // ids já vistos — pra detectar pedido NOVO e avisar com som
 
 // bipe gerado no próprio navegador (sem depender de arquivo de áudio)
-let _audioCtx=null;
-function bipe(){
-  try{
-    _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)();
-    if(_audioCtx.state==="suspended") _audioCtx.resume();
+let _audioCtx = null;
+function bipe() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
     // dois toques curtos, agudos — audível no galpão sem ser irritante
-    [0,0.22].forEach(function(atraso,i){
-      const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
-      o.type="sine"; o.frequency.value=i?1180:880;
-      g.gain.setValueAtTime(0.0001,_audioCtx.currentTime+atraso);
-      g.gain.exponentialRampToValueAtTime(0.5,_audioCtx.currentTime+atraso+0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001,_audioCtx.currentTime+atraso+0.18);
-      o.connect(g); g.connect(_audioCtx.destination);
-      o.start(_audioCtx.currentTime+atraso); o.stop(_audioCtx.currentTime+atraso+0.2);
+    [0, 0.22].forEach(function (atraso, i) {
+      const o = _audioCtx.createOscillator(),
+        g = _audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = i ? 1180 : 880;
+      g.gain.setValueAtTime(0.0001, _audioCtx.currentTime + atraso);
+      g.gain.exponentialRampToValueAtTime(0.5, _audioCtx.currentTime + atraso + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, _audioCtx.currentTime + atraso + 0.18);
+      o.connect(g);
+      g.connect(_audioCtx.destination);
+      o.start(_audioCtx.currentTime + atraso);
+      o.stop(_audioCtx.currentTime + atraso + 0.2);
     });
-  }catch(e){}
+  } catch (e) {}
 }
 // navegador só deixa tocar som depois de uma interação — o primeiro toque libera
-function liberarSom(){ try{ _audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)(); if(_audioCtx.state==="suspended") _audioCtx.resume(); SOM_LIBERADO=true; render(); }catch(e){} }
-let SOM_LIBERADO=false, SOM_LIGADO=true, PISCA=false, TELA_CHEIA=false;
-// tela cheia — no monitor touch some a barra do navegador e sobra tela pras colunas
-function toggleTelaCheia(){
-  try{
-    if(!document.fullscreenElement){
-      (document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen).call(document.documentElement);
-    }else{
-      (document.exitFullscreen||document.webkitExitFullscreen).call(document);
-    }
-  }catch(e){ alert("Este navegador não deixou entrar em tela cheia."); }
+function liberarSom() {
+  try {
+    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+    SOM_LIBERADO = true;
+    render();
+  } catch (e) {}
 }
-document.addEventListener("fullscreenchange",function(){ TELA_CHEIA=!!document.fullscreenElement; render(); });
-document.addEventListener("webkitfullscreenchange",function(){ TELA_CHEIA=!!document.webkitFullscreenElement; render(); });
+let SOM_LIBERADO = false,
+  SOM_LIGADO = true,
+  PISCA = false,
+  TELA_CHEIA = false;
+// tela cheia — no monitor touch some a barra do navegador e sobra tela pras colunas
+function toggleTelaCheia() {
+  try {
+    if (!document.fullscreenElement) {
+      (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen).call(document.documentElement);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    }
+  } catch (e) {
+    alert("Este navegador não deixou entrar em tela cheia.");
+  }
+}
+document.addEventListener("fullscreenchange", function () {
+  TELA_CHEIA = !!document.fullscreenElement;
+  render();
+});
+document.addEventListener("webkitfullscreenchange", function () {
+  TELA_CHEIA = !!document.webkitFullscreenElement;
+  render();
+});
 // trabalho de cada separador: funcionarioId -> {pedido, itens:[...], carregando}
-let MESAS={};
-let TIMER=null, CARREGANDO=false;
-
-async function carregar(silent){
-  if(!silent) CARREGANDO=true, render();
-  try{
-    const [f,e]=await Promise.all([
-      fetch(B+"/api/mesa/funcionarios").then(r=>r.json()),
-      fetch(B+"/api/mesa/estado").then(r=>r.json()),
-    ]);
-    FUNCS=f.data||[];
+let MESAS = {};
+let TIMER = null,
+  CARREGANDO = false;
+async function carregar(silent) {
+  if (!silent) CARREGANDO = true, render();
+  try {
+    const [f, e] = await Promise.all([fetch(B + "/api/mesa/funcionarios").then(r => r.json()), fetch(B + "/api/mesa/estado").then(r => r.json())]);
+    FUNCS = f.data || [];
     // só entra na mesa quem está na lista de funcionários da expedição — evita coluna
     // com o ID cru de alguém que saiu do grupo ou foi excluído
-    const idsValidos=new Set(FUNCS.map(x=>String(x.id)));
-    ATIVOS=(e.ativos||[]).map(a=>String(a.id)).filter(id=>idsValidos.has(id));
-    LOCKS=e.locks||{};
-    const nova=e.fila||[];
+    const idsValidos = new Set(FUNCS.map(x => String(x.id)));
+    ATIVOS = (e.ativos || []).map(a => String(a.id)).filter(id => idsValidos.has(id));
+    LOCKS = e.locks || {};
+    const nova = e.fila || [];
     // pedido NOVO na fila -> bipe + piscada (só depois da 1ª carga, pra não tocar ao abrir)
-    if(IDS_FILA){
-      const novos=nova.filter(p=>!IDS_FILA.has(String(p.id)));
-      if(novos.length){
-        if(SOM_LIGADO&&SOM_LIBERADO) bipe();
-        PISCA=true; setTimeout(function(){ PISCA=false; render(); },4000);
+    if (IDS_FILA) {
+      const novos = nova.filter(p => !IDS_FILA.has(String(p.id)));
+      if (novos.length) {
+        if (SOM_LIGADO && SOM_LIBERADO) bipe();
+        PISCA = true;
+        setTimeout(function () {
+          PISCA = false;
+          render();
+        }, 4000);
       }
     }
-    IDS_FILA=new Set(nova.map(p=>String(p.id)));
-    FILA=nova;
+    IDS_FILA = new Set(nova.map(p => String(p.id)));
+    FILA = nova;
     await restaurarMesas();
-  }catch(err){}
-  CARREGANDO=false; render();
+  } catch (err) {}
+  CARREGANDO = false;
+  render();
 }
 // O trabalho fica na memória do navegador; se der F5 (ou a tela recarregar), as
 // colunas se perdem MAS o lock continua no servidor — o pedido ficava travado, sem
 // aparecer pra ninguém. Aqui a tela se reconecta: todo separador ativo que tem lock
 // tem o pedido recarregado na coluna dele automaticamente.
-let _restaurando=false;
-async function restaurarMesas(){
-  if(_restaurando) return;
-  const pendentes=ATIVOS.filter(function(id){
-    if(MESAS[id]&&(MESAS[id].pedido||MESAS[id].carregando)) return false;
-    return Object.values(LOCKS||{}).some(l=>String(l.funcionarioId)===String(id));
+let _restaurando = false;
+async function restaurarMesas() {
+  if (_restaurando) return;
+  const pendentes = ATIVOS.filter(function (id) {
+    if (MESAS[id] && (MESAS[id].pedido || MESAS[id].carregando)) return false;
+    return Object.values(LOCKS || {}).some(l => String(l.funcionarioId) === String(id));
   });
-  if(!pendentes.length) return;
-  _restaurando=true;
-  for(const id of pendentes){
-    const lock=Object.values(LOCKS||{}).find(l=>String(l.funcionarioId)===String(id));
-    if(!lock) continue;
-    MESAS[id]={carregando:true}; render();
-    try{
-      const j=await fetch(B+"/api/expedicao/pedido/"+lock.pedidoId).then(r=>r.json());
-      if(j.erro||!j.pedido){ await liberar(id,true); continue; }
+  if (!pendentes.length) return;
+  _restaurando = true;
+  for (const id of pendentes) {
+    const lock = Object.values(LOCKS || {}).find(l => String(l.funcionarioId) === String(id));
+    if (!lock) continue;
+    MESAS[id] = {
+      carregando: true
+    };
+    render();
+    try {
+      var _j$pedido, _j$pedido2;
+      const j = await fetch(B + "/api/expedicao/pedido/" + lock.pedidoId).then(r => r.json());
+      if (j.erro || !j.pedido) {
+        await liberar(id, true);
+        continue;
+      }
       // só recoloca na coluna se o pedido AINDA está em separação — se já foi
       // separado/atendido/cancelado, o lock ficou órfão e deve ser solto
-      const sitAtual=Number(j.pedido?.situacao?.id||0);
-      const aindaSepara=FILA.some(function(p){return String(p.id)===String(lock.pedidoId);})
-        || (j.pedido?.situacao?.nome||"").toLowerCase().indexOf("separa")>=0;
-      if(sitAtual && !aindaSepara){ await liberar(id,true); continue; }
-      MESAS[id]={ carregando:false, pedido:j.pedido, restaurado:true,
-        itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
-          un:i.un||1, imagem:i.imagem||"", estado:"", temQtd:0, confirmado:false})) };
-      MESAS[id]._hb=setInterval(function(){
-        fetch(B+"/api/separacoes/"+lock.pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:id})}).catch(()=>{});
-      },2*60*1000);
-    }catch(e){ delete MESAS[id]; }
+      const sitAtual = Number(((_j$pedido = j.pedido) === null || _j$pedido === void 0 || (_j$pedido = _j$pedido.situacao) === null || _j$pedido === void 0 ? void 0 : _j$pedido.id) || 0);
+      const aindaSepara = FILA.some(function (p) {
+        return String(p.id) === String(lock.pedidoId);
+      }) || (((_j$pedido2 = j.pedido) === null || _j$pedido2 === void 0 || (_j$pedido2 = _j$pedido2.situacao) === null || _j$pedido2 === void 0 ? void 0 : _j$pedido2.nome) || "").toLowerCase().indexOf("separa") >= 0;
+      if (sitAtual && !aindaSepara) {
+        await liberar(id, true);
+        continue;
+      }
+      MESAS[id] = {
+        carregando: false,
+        pedido: j.pedido,
+        restaurado: true,
+        itens: (j.itens || []).map(i => ({
+          produtoId: i.produtoId,
+          descricao: i.descricao,
+          quantidade: i.quantidade,
+          un: i.un || 1,
+          imagem: i.imagem || "",
+          estado: "",
+          temQtd: 0,
+          confirmado: false
+        }))
+      };
+      MESAS[id]._hb = setInterval(function () {
+        fetch(B + "/api/separacoes/" + lock.pedidoId, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            funcionarioId: id
+          })
+        }).catch(() => {});
+      }, 2 * 60 * 1000);
+    } catch (e) {
+      delete MESAS[id];
+    }
   }
-  _restaurando=false;
+  _restaurando = false;
   render();
 }
-async function tirarDaFila(pedidoId){
-  const p=FILA.find(function(x){return String(x.id)===String(pedidoId);});
-  if(!confirm("Tirar o pedido "+(p?p.numero:pedidoId)+" da fila da mesa?\n\nEle continua com a situação atual no Bling — só sai daqui.")) return;
-  try{ await fetch(B+"/api/mesa/remover-da-fila/"+pedidoId,{method:"POST"}); carregar(true); }
-  catch(e){ alert("Erro ao tirar da fila."); }
+async function tirarDaFila(pedidoId) {
+  const p = FILA.find(function (x) {
+    return String(x.id) === String(pedidoId);
+  });
+  if (!confirm("Tirar o pedido " + (p ? p.numero : pedidoId) + " da fila da mesa?\n\nEle continua com a situação atual no Bling — só sai daqui.")) return;
+  try {
+    await fetch(B + "/api/mesa/remover-da-fila/" + pedidoId, {
+      method: "POST"
+    });
+    carregar(true);
+  } catch (e) {
+    alert("Erro ao tirar da fila.");
+  }
 }
-async function toggleFunc(id){
-  try{
-    await fetch(B+"/api/mesa/toggle/"+encodeURIComponent(id),{method:"POST"});
-    if(MESAS[id]&&MESAS[id].pedido) await liberar(id,true); // ao desativar, solta o pedido
+async function toggleFunc(id) {
+  try {
+    await fetch(B + "/api/mesa/toggle/" + encodeURIComponent(id), {
+      method: "POST"
+    });
+    if (MESAS[id] && MESAS[id].pedido) await liberar(id, true); // ao desativar, solta o pedido
     delete MESAS[id];
     await carregar(true);
-  }catch(e){}
+  } catch (e) {}
 }
-function quemSepara(pedidoId){
-  const l=Object.values(LOCKS||{}).find(x=>String(x.pedidoId)===String(pedidoId));
-  return l?(l.funcionarioNome||"separando…"):null;
+function quemSepara(pedidoId) {
+  const l = Object.values(LOCKS || {}).find(x => String(x.pedidoId) === String(pedidoId));
+  return l ? l.funcionarioNome || "separando…" : null;
 }
 // pedido com lock de alguém que NÃO está ativo na mesa (saiu, desativou, etc.):
 // fica travado sem aparecer em coluna nenhuma — deixa destravar manualmente
-function travadoSemDono(pedidoId){
-  const l=Object.values(LOCKS||{}).find(x=>String(x.pedidoId)===String(pedidoId));
-  if(!l) return false;
-  if(Object.values(MESAS).some(m=>m.pedido&&String(m.pedido.id)===String(pedidoId))) return false;
+function travadoSemDono(pedidoId) {
+  const l = Object.values(LOCKS || {}).find(x => String(x.pedidoId) === String(pedidoId));
+  if (!l) return false;
+  if (Object.values(MESAS).some(m => m.pedido && String(m.pedido.id) === String(pedidoId))) return false;
   return !ATIVOS.includes(String(l.funcionarioId));
 }
-async function destravar(pedidoId){
-  if(!confirm("Destravar o pedido "+pedidoId+"?\n\nEle volta pra fila e qualquer separador poderá pegar.")) return;
-  try{ await fetch(B+"/api/separacoes/"+pedidoId,{method:"DELETE"}); }catch(e){}
+async function destravar(pedidoId) {
+  if (!confirm("Destravar o pedido " + pedidoId + "?\n\nEle volta pra fila e qualquer separador poderá pegar.")) return;
+  try {
+    await fetch(B + "/api/separacoes/" + pedidoId, {
+      method: "DELETE"
+    });
+  } catch (e) {}
   carregar(true);
 }
-function ehOcupado(pedidoId){
-  return Object.values(LOCKS||{}).some(l=>String(l.pedidoId)===String(pedidoId))
-      || Object.values(MESAS).some(m=>m.pedido&&String(m.pedido.id)===String(pedidoId));
+function ehOcupado(pedidoId) {
+  return Object.values(LOCKS || {}).some(l => String(l.pedidoId) === String(pedidoId)) || Object.values(MESAS).some(m => m.pedido && String(m.pedido.id) === String(pedidoId));
 }
 // abre um pedido numa coluna: pergunta pra qual separador se houver mais de um livre
-function abrirPedido(pedidoId){
-  const livres=ATIVOS.filter(id=>!MESAS[id]||!MESAS[id].pedido);
-  if(!livres.length){ alert("Todos os separadores ativos já estão com um pedido. Conclua um antes de abrir outro."); return; }
-  if(ehOcupado(pedidoId)){ alert("Esse pedido já está sendo separado."); return; }
-  if(livres.length===1) return carregarPedidoNaMesa(livres[0],pedidoId);
-  const p=FILA.find(x=>String(x.id)===String(pedidoId));
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">'+
-    '<h3>Pedido '+esc(p?p.numero:pedidoId)+'</h3><div style="color:#9a95c9;margin-bottom:12px">Quem vai separar?</div>'+
-    livres.map(function(id){ const f=FUNCS.find(x=>String(x.id)===String(id));
-      return '<button class="bFim" style="background:#2f9e6b;margin-bottom:8px" onclick="fecharModal();carregarPedidoNaMesa(\''+esc(id)+'\','+pedidoId+')">'+esc(f?f.nome:id)+'</button>';
-    }).join("")+
-    '<button class="bFim" style="background:#332d66" onclick="fecharModal()">Cancelar</button></div></div>';
+function abrirPedido(pedidoId) {
+  const livres = ATIVOS.filter(id => !MESAS[id] || !MESAS[id].pedido);
+  if (!livres.length) {
+    alert("Todos os separadores ativos já estão com um pedido. Conclua um antes de abrir outro.");
+    return;
+  }
+  if (ehOcupado(pedidoId)) {
+    alert("Esse pedido já está sendo separado.");
+    return;
+  }
+  if (livres.length === 1) return carregarPedidoNaMesa(livres[0], pedidoId);
+  const p = FILA.find(x => String(x.id) === String(pedidoId));
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">' + '<h3>Pedido ' + esc(p ? p.numero : pedidoId) + '</h3><div style="color:#9a95c9;margin-bottom:12px">Quem vai separar?</div>' + livres.map(function (id) {
+    const f = FUNCS.find(x => String(x.id) === String(id));
+    return '<button class="bFim" style="background:#2f9e6b;margin-bottom:8px" onclick="fecharModal();carregarPedidoNaMesa(\'' + esc(id) + '\',' + pedidoId + ')">' + esc(f ? f.nome : id) + '</button>';
+  }).join("") + '<button class="bFim" style="background:#332d66" onclick="fecharModal()">Cancelar</button></div></div>';
 }
-function fecharModal(){ document.getElementById("modais").innerHTML=""; }
-
-async function carregarPedidoNaMesa(funcId,pedidoId){
-  const f=FUNCS.find(x=>String(x.id)===String(funcId));
-  MESAS[funcId]={carregando:true}; render();
-  try{
+function fecharModal() {
+  document.getElementById("modais").innerHTML = "";
+}
+async function carregarPedidoNaMesa(funcId, pedidoId) {
+  const f = FUNCS.find(x => String(x.id) === String(funcId));
+  MESAS[funcId] = {
+    carregando: true
+  };
+  render();
+  try {
     // pega o lock em nome desse separador
-    const rl=await fetch(B+"/api/separacoes",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId,funcionarioId:funcId,funcionarioNome:f?f.nome:"",tipo:"separacao"})});
-    const jl=await rl.json().catch(()=>({}));
-    if(!rl.ok&&!jl.ok){ alert("Esse pedido já está com outra pessoa."); delete MESAS[funcId]; carregar(true); return; }
-    const j=await fetch(B+"/api/expedicao/pedido/"+pedidoId).then(r=>r.json());
-    if(j.erro){ alert("Erro ao abrir: "+j.erro); delete MESAS[funcId]; render(); return; }
-    MESAS[funcId]={
-      carregando:false, pedido:j.pedido,
-      itens:(j.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.descricao, quantidade:i.quantidade,
-        un:i.un||1, imagem:i.imagem||"", estado:"", temQtd:0, confirmado:false})),
-    };
-    // heartbeat pra segurar o lock enquanto separa
-    MESAS[funcId]._hb=setInterval(function(){
-      fetch(B+"/api/separacoes/"+pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({funcionarioId:funcId})}).catch(()=>{});
-    },2*60*1000);
-  }catch(e){ alert("Erro ao abrir o pedido."); delete MESAS[funcId]; }
-  render(); carregar(true);
-}
-function marcar(funcId,ix,estado){
-  const m=MESAS[funcId]; if(!m||!m.itens) return;
-  const c=m.itens[ix];
-  if(estado==="tem"){ c.estado="tem"; c.temQtd=c.quantidade; c.confirmado=true; }
-  else { c.estado="falta"; c.confirmado=true; if(c.temQtd>=c.quantidade) c.temQtd=0; }
-  render();
-}
-function ajustarQtd(funcId,ix,delta){
-  const c=MESAS[funcId].itens[ix];
-  const passo=c.un||1;
-  c.temQtd=Math.max(0,Math.min(c.quantidade,(c.temQtd||0)+delta*passo));
-  c.estado=c.temQtd>=c.quantidade?"tem":"falta"; c.confirmado=true;
-  render();
-}
-async function liberar(funcId,silencioso){
-  const m=MESAS[funcId];
-  if(m&&m.pedido){
-    if(m._hb) clearInterval(m._hb);
-    try{ await fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:funcId,tipo:"separacao"})}); }catch(e){}
-  }
-  delete MESAS[funcId];
-  if(!silencioso){ render(); carregar(true); }
-}
-async function concluir(funcId){
-  const m=MESAS[funcId]; if(!m||!m.pedido) return;
-  const f=FUNCS.find(x=>String(x.id)===String(funcId));
-  const faltas=m.itens.filter(c=>c.estado==="falta"&&c.confirmado)
-    .map(c=>({descricao:c.descricao,produtoId:c.produtoId,quantidade:c.quantidade,temQtd:c.temQtd||0,falta:Math.max(0,c.quantidade-(c.temQtd||0))}))
-    .filter(x=>x.falta>0);
-  if(faltas.length){
-    if(!confirm("Concluir com "+faltas.length+" item(ns) com falta?\n\n"+faltas.map(x=>x.descricao+": encontrou "+x.temQtd+" de "+x.quantidade).join("\n")+"\n\nO pedido vai pra SEPARADO C/ PENDÊNCIAS.")) return;
-  }
-  const num=m.pedido.numero||m.pedido.id;
-  MESAS[funcId].salvando=true; render();
-  try{
-    const r=await fetch(B+"/api/fluxo/"+m.pedido.id+"/separacao-concluida",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({faltas,funcionarioId:funcId,funcionarioNome:f?f.nome:""})});
-    const j=await r.json();
-    if(j&&j.jaConcluido){
-      alert("Pedido "+num+": "+j.erro);
-      if(m._hb) clearInterval(m._hb);
-      fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
+    const rl = await fetch(B + "/api/separacoes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        pedidoId,
+        funcionarioId: funcId,
+        funcionarioNome: f ? f.nome : "",
+        tipo: "separacao"
+      })
+    });
+    const jl = await rl.json().catch(() => ({}));
+    if (!rl.ok && !jl.ok) {
+      alert("Esse pedido já está com outra pessoa.");
       delete MESAS[funcId];
-      render(); carregar(true);
+      carregar(true);
       return;
     }
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao concluir");
-    if(m._hb) clearInterval(m._hb);
-    fetch(B+"/api/separacoes/"+m.pedido.id,{method:"DELETE"}).catch(()=>{});
+    const j = await fetch(B + "/api/expedicao/pedido/" + pedidoId).then(r => r.json());
+    if (j.erro) {
+      alert("Erro ao abrir: " + j.erro);
+      delete MESAS[funcId];
+      render();
+      return;
+    }
+    MESAS[funcId] = {
+      carregando: false,
+      pedido: j.pedido,
+      itens: (j.itens || []).map(i => ({
+        produtoId: i.produtoId,
+        descricao: i.descricao,
+        quantidade: i.quantidade,
+        un: i.un || 1,
+        imagem: i.imagem || "",
+        estado: "",
+        temQtd: 0,
+        confirmado: false
+      }))
+    };
+    // heartbeat pra segurar o lock enquanto separa
+    MESAS[funcId]._hb = setInterval(function () {
+      fetch(B + "/api/separacoes/" + pedidoId, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          funcionarioId: funcId
+        })
+      }).catch(() => {});
+    }, 2 * 60 * 1000);
+  } catch (e) {
+    alert("Erro ao abrir o pedido.");
     delete MESAS[funcId];
-    render(); carregar(true);
-  }catch(e){ MESAS[funcId].salvando=false; alert("Erro ao concluir o pedido "+num+": "+e.message); render(); }
-}
-
-function colunaHtml(funcId){
-  const f=FUNCS.find(x=>String(x.id)===String(funcId));
-  if(!f) return ""; // funcionário não é mais da expedição: não renderiza a coluna
-  const m=MESAS[funcId];
-  const nome=f.nome;
-  if(!m||!m.pedido){
-    return '<div class="col"><div class="colTop"><div class="colNome">'+esc(nome)+'</div><span style="font-size:11px;color:#9a95c9">livre</span></div>'+
-      '<div class="colBody"><div class="vazio">'+(m&&m.carregando?"Abrindo pedido…":"Toque num pedido da fila<br>para começar a separar")+'</div></div></div>';
   }
-  const total=m.itens.length, feitos=m.itens.filter(c=>c.confirmado).length;
-  const pct=total?Math.round(feitos/total*100):0;
-  const itens=m.itens.map(function(c,ix){
-    const cls=c.confirmado?(c.estado==="tem"?"ok":"falta"):"";
-    const cx=(c.un>1)?" ("+(c.quantidade/c.un).toFixed(c.quantidade%c.un?1:0)+" cx)":"";
-    return '<div class="it '+cls+'" style="display:flex;gap:8px">'+
-      (c.imagem?'<img src="'+esc(c.imagem)+'" onerror="this.style.display=\'none\'" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">':'')+
-      '<div style="flex:1;min-width:0">'+
-      '<div class="itNome">'+esc(c.descricao)+'</div>'+
-      '<div class="itQtd">'+c.quantidade+' un'+cx+(c.confirmado&&c.estado==="falta"?' · <span style="color:#ff8090">encontrou '+(c.temQtd||0)+'</span>':'')+'</div>'+
-      '<div class="bts">'+
-        '<button class="b bok" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'tem\')">✓ Encontrou tudo</button>'+
-        '<button class="b bfa" onclick="marcar(\''+esc(funcId)+'\','+ix+',\'falta\')">Falta</button>'+
-      '</div>'+
-      (c.confirmado&&c.estado==="falta"?'<div class="bts">'+
-        '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',-1)">−</button>'+
-        '<button class="b bgh" style="flex:2">encontrou '+(c.temQtd||0)+' de '+c.quantidade+'</button>'+
-        '<button class="b bgh" onclick="ajustarQtd(\''+esc(funcId)+'\','+ix+',1)">+</button>'+
-      '</div>':'')+
-      '</div></div>';
-  }).join("");
-  return '<div class="col trabalhando">'+
-    '<div class="colTop"><div><div class="colNome">'+esc(nome)+'</div>'+
-      '<div style="font-size:12px;color:#ffd23f;font-weight:800">Pedido '+esc(m.pedido.numero||m.pedido.id)+'</div>'+
-      '<div style="font-size:11px;color:#9a95c9">'+esc(m.pedido.contato?.nome||"")+'</div></div>'+
-      '<button class="b bgh" style="flex:none;padding:8px 12px" onclick="liberar(\''+esc(funcId)+'\')">✕</button></div>'+
-    '<div class="colBody">'+(m.restaurado?'<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:7px;font-size:12px;color:#ffd23f;margin-bottom:6px">↻ Pedido recuperado após recarregar a tela — confira os itens de novo.</div>':'')+itens+'</div>'+
-    '<div class="colFoot">'+
-      '<div style="font-size:11px;color:#9a95c9">'+feitos+' de '+total+' conferidos</div>'+
-      '<div class="prog"><i style="width:'+pct+'%"></i></div>'+
-      '<button class="bFim" style="margin-top:8px" '+(feitos<total||m.salvando?"disabled":"")+' onclick="concluir(\''+esc(funcId)+'\')">'+(m.salvando?"Salvando…":"✅ Concluir separação")+'</button>'+
-    '</div></div>';
+  render();
+  carregar(true);
 }
-
-function render(){
-  const app=document.getElementById("app");
+function marcar(funcId, ix, estado) {
+  const m = MESAS[funcId];
+  if (!m || !m.itens) return;
+  const c = m.itens[ix];
+  if (estado === "tem") {
+    c.estado = "tem";
+    c.temQtd = c.quantidade;
+    c.confirmado = true;
+  } else {
+    c.estado = "falta";
+    c.confirmado = true;
+    if (c.temQtd >= c.quantidade) c.temQtd = 0;
+  }
+  render();
+}
+function ajustarQtd(funcId, ix, delta) {
+  const c = MESAS[funcId].itens[ix];
+  const passo = c.un || 1;
+  c.temQtd = Math.max(0, Math.min(c.quantidade, (c.temQtd || 0) + delta * passo));
+  c.estado = c.temQtd >= c.quantidade ? "tem" : "falta";
+  c.confirmado = true;
+  render();
+}
+async function liberar(funcId, silencioso) {
+  const m = MESAS[funcId];
+  if (m && m.pedido) {
+    if (m._hb) clearInterval(m._hb);
+    try {
+      await fetch(B + "/api/separacoes/" + m.pedido.id, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          funcionarioId: funcId,
+          tipo: "separacao"
+        })
+      });
+    } catch (e) {}
+  }
+  delete MESAS[funcId];
+  if (!silencioso) {
+    render();
+    carregar(true);
+  }
+}
+async function concluir(funcId) {
+  const m = MESAS[funcId];
+  if (!m || !m.pedido) return;
+  const f = FUNCS.find(x => String(x.id) === String(funcId));
+  const faltas = m.itens.filter(c => c.estado === "falta" && c.confirmado).map(c => ({
+    descricao: c.descricao,
+    produtoId: c.produtoId,
+    quantidade: c.quantidade,
+    temQtd: c.temQtd || 0,
+    falta: Math.max(0, c.quantidade - (c.temQtd || 0))
+  })).filter(x => x.falta > 0);
+  if (faltas.length) {
+    if (!confirm("Concluir com " + faltas.length + " item(ns) com falta?\n\n" + faltas.map(x => x.descricao + ": encontrou " + x.temQtd + " de " + x.quantidade).join("\n") + "\n\nO pedido vai pra SEPARADO C/ PENDÊNCIAS.")) return;
+  }
+  const num = m.pedido.numero || m.pedido.id;
+  MESAS[funcId].salvando = true;
+  render();
+  try {
+    const r = await fetch(B + "/api/fluxo/" + m.pedido.id + "/separacao-concluida", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        faltas,
+        funcionarioId: funcId,
+        funcionarioNome: f ? f.nome : ""
+      })
+    });
+    const j = await r.json();
+    if (j && j.jaConcluido) {
+      alert("Pedido " + num + ": " + j.erro);
+      if (m._hb) clearInterval(m._hb);
+      fetch(B + "/api/separacoes/" + m.pedido.id, {
+        method: "DELETE"
+      }).catch(() => {});
+      delete MESAS[funcId];
+      render();
+      carregar(true);
+      return;
+    }
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao concluir");
+    if (m._hb) clearInterval(m._hb);
+    fetch(B + "/api/separacoes/" + m.pedido.id, {
+      method: "DELETE"
+    }).catch(() => {});
+    delete MESAS[funcId];
+    render();
+    carregar(true);
+  } catch (e) {
+    MESAS[funcId].salvando = false;
+    alert("Erro ao concluir o pedido " + num + ": " + e.message);
+    render();
+  }
+}
+function colunaHtml(funcId) {
+  var _m$pedido$contato;
+  const f = FUNCS.find(x => String(x.id) === String(funcId));
+  if (!f) return ""; // funcionário não é mais da expedição: não renderiza a coluna
+  const m = MESAS[funcId];
+  const nome = f.nome;
+  if (!m || !m.pedido) {
+    return '<div class="col"><div class="colTop"><div class="colNome">' + esc(nome) + '</div><span style="font-size:11px;color:#9a95c9">livre</span></div>' + '<div class="colBody"><div class="vazio">' + (m && m.carregando ? "Abrindo pedido…" : "Toque num pedido da fila<br>para começar a separar") + '</div></div></div>';
+  }
+  const total = m.itens.length,
+    feitos = m.itens.filter(c => c.confirmado).length;
+  const pct = total ? Math.round(feitos / total * 100) : 0;
+  const itens = m.itens.map(function (c, ix) {
+    const cls = c.confirmado ? c.estado === "tem" ? "ok" : "falta" : "";
+    const cx = c.un > 1 ? " (" + (c.quantidade / c.un).toFixed(c.quantidade % c.un ? 1 : 0) + " cx)" : "";
+    return '<div class="it ' + cls + '" style="display:flex;gap:8px">' + (c.imagem ? '<img src="' + esc(c.imagem) + '" onerror="this.style.display=\'none\'" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">' : '') + '<div style="flex:1;min-width:0">' + '<div class="itNome">' + esc(c.descricao) + '</div>' + '<div class="itQtd">' + c.quantidade + ' un' + cx + (c.confirmado && c.estado === "falta" ? ' · <span style="color:#ff8090">encontrou ' + (c.temQtd || 0) + '</span>' : '') + '</div>' + '<div class="bts">' + '<button class="b bok" onclick="marcar(\'' + esc(funcId) + '\',' + ix + ',\'tem\')">✓ Encontrou tudo</button>' + '<button class="b bfa" onclick="marcar(\'' + esc(funcId) + '\',' + ix + ',\'falta\')">Falta</button>' + '</div>' + (c.confirmado && c.estado === "falta" ? '<div class="bts">' + '<button class="b bgh" onclick="ajustarQtd(\'' + esc(funcId) + '\',' + ix + ',-1)">−</button>' + '<button class="b bgh" style="flex:2">encontrou ' + (c.temQtd || 0) + ' de ' + c.quantidade + '</button>' + '<button class="b bgh" onclick="ajustarQtd(\'' + esc(funcId) + '\',' + ix + ',1)">+</button>' + '</div>' : '') + '</div></div>';
+  }).join("");
+  return '<div class="col trabalhando">' + '<div class="colTop"><div><div class="colNome">' + esc(nome) + '</div>' + '<div style="font-size:12px;color:#ffd23f;font-weight:800">Pedido ' + esc(m.pedido.numero || m.pedido.id) + '</div>' + '<div style="font-size:11px;color:#9a95c9">' + esc(((_m$pedido$contato = m.pedido.contato) === null || _m$pedido$contato === void 0 ? void 0 : _m$pedido$contato.nome) || "") + '</div></div>' + '<button class="b bgh" style="flex:none;padding:8px 12px" onclick="liberar(\'' + esc(funcId) + '\')">✕</button></div>' + '<div class="colBody">' + (m.restaurado ? '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:7px;font-size:12px;color:#ffd23f;margin-bottom:6px">↻ Pedido recuperado após recarregar a tela — confira os itens de novo.</div>' : '') + itens + '</div>' + '<div class="colFoot">' + '<div style="font-size:11px;color:#9a95c9">' + feitos + ' de ' + total + ' conferidos</div>' + '<div class="prog"><i style="width:' + pct + '%"></i></div>' + '<button class="bFim" style="margin-top:8px" ' + (feitos < total || m.salvando ? "disabled" : "") + ' onclick="concluir(\'' + esc(funcId) + '\')">' + (m.salvando ? "Salvando…" : "✅ Concluir separação") + '</button>' + '</div></div>';
+}
+function render() {
+  const app = document.getElementById("app");
   // guarda a rolagem de cada coluna — ao marcar um item o render recriava tudo e a
   // lista voltava pro topo, fazendo o separador perder o lugar no pedido
-  const _scroll={};
-  document.querySelectorAll(".colBody").forEach(function(el,i){ _scroll[i]=el.scrollTop; });
-  const _filaScroll=(document.querySelector(".fila")||{}).scrollLeft||0;
-  const barra=FUNCS.map(function(f){
-    const on=ATIVOS.includes(String(f.id));
-    return '<div class="fBtn '+(on?"on":"")+'" onclick="toggleFunc(\''+esc(f.id)+'\')"><span class="pt"></span>'+esc(f.nome)+'</div>';
-  }).join("")||'<div style="color:#ffd23f;font-size:13px;padding:6px">Nenhum funcionário no grupo <b>expedição</b>. Defina o nível/permissão "expedicao" em Funcionários para quem vai separar.</div>';
-
-  const livres=ATIVOS.filter(id=>!MESAS[id]||!MESAS[id].pedido).length;
-  const fila=FILA.map(function(p,ix){
-    const ocupado=ehOcupado(p.id);
-    return '<div class="pCard '+(ocupado?"ocupado":"")+'" onclick="'+(ocupado?"":"abrirPedido("+p.id+")")+'">'+
-      '<span class="ord">'+(ix+1)+'º</span>'+
-      '<div class="num">'+esc(p.numero)+'</div>'+
-      '<div class="cli">'+esc(p.cliente)+'</div>'+
-      '<div class="vlr">'+brl(p.total)+'</div>'+
-      (p.envio?'<div style="font-size:10px;font-weight:900;margin-top:2px;color:'+(p.envio.tipo==="entrega"?"#29ABE2":"#3ce88a")+'">'+(p.envio.tipo==="entrega"?"🛵 ENTREGA":"📦 RETIRADA")+'</div>'+
-        '<div class="muted" style="font-size:9px">enviado '+new Date(p.envio.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})+'</div>':'')+
-      (ocupado?'<div class="quem">'+esc(quemSepara(p.id)||"separando…")+'</div>':'')+
-      (!ocupado?'<button onclick="event.stopPropagation();tirarDaFila('+p.id+')" style="margin-top:5px;background:none;border:none;color:#6b6699;font-size:10px;cursor:pointer;padding:2px">✕ tirar da fila</button>':'')+
-      (travadoSemDono(p.id)?'<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar('+p.id+')">🔓 Destravar</button>':'')+
-    '</div>';
-  }).join("")||'<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido enviado pra separação. 🎉<br><span style="font-size:11px">Os pedidos aparecem aqui quando alguém manda pra separação no caixa atacado ou na tela de Pedidos.</span></div>';
-
-  const cols=ATIVOS.length?ATIVOS.map(colunaHtml).join(""):
-    '<div class="col"><div class="colBody"><div class="vazio">Ative os separadores na barra de cima<br>para começar</div></div></div>';
-
-  app.innerHTML=
-    '<div class="barraFunc">'+barra+'<div style="flex:1"></div>'+
-      '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">'+ATIVOS.length+' ativo(s) · '+livres+' livre(s)</div>'+
-      (SOM_LIBERADO
-        ? '<div class="fBtn '+(SOM_LIGADO?"on":"")+'" onclick="SOM_LIGADO=!SOM_LIGADO;render()" style="min-height:44px">'+(SOM_LIGADO?"🔔":"🔕")+'</div>'
-        : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>')+
-      '<div class="fBtn" onclick="toggleTelaCheia()" style="min-height:44px" title="Tela cheia">'+(TELA_CHEIA?"🡼 Sair":"⛶ Tela cheia")+'</div>'+
-      '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>'+
-    '<div class="filaWrap"'+(PISCA?' style="background:#123a2a;border-bottom-color:#3ce88a"':'')+'><div class="filaTit">Fila de separação — ordem de envio ('+FILA.length+')'+(PISCA?' <span style="color:#3ce88a">· PEDIDO NOVO!</span>':'')+'</div>'+
-      '<div class="fila">'+fila+'</div></div>'+
-    '<div class="colunas">'+cols+'</div>';
+  const _scroll = {};
+  document.querySelectorAll(".colBody").forEach(function (el, i) {
+    _scroll[i] = el.scrollTop;
+  });
+  const _filaScroll = (document.querySelector(".fila") || {}).scrollLeft || 0;
+  const barra = FUNCS.map(function (f) {
+    const on = ATIVOS.includes(String(f.id));
+    return '<div class="fBtn ' + (on ? "on" : "") + '" onclick="toggleFunc(\'' + esc(f.id) + '\')"><span class="pt"></span>' + esc(f.nome) + '</div>';
+  }).join("") || '<div style="color:#ffd23f;font-size:13px;padding:6px">Nenhum funcionário no grupo <b>expedição</b>. Defina o nível/permissão "expedicao" em Funcionários para quem vai separar.</div>';
+  const livres = ATIVOS.filter(id => !MESAS[id] || !MESAS[id].pedido).length;
+  const fila = FILA.map(function (p, ix) {
+    const ocupado = ehOcupado(p.id);
+    return '<div class="pCard ' + (ocupado ? "ocupado" : "") + '" onclick="' + (ocupado ? "" : "abrirPedido(" + p.id + ")") + '">' + '<span class="ord">' + (ix + 1) + 'º</span>' + '<div class="num">' + esc(p.numero) + '</div>' + '<div class="cli">' + esc(p.cliente) + '</div>' + '<div class="vlr">' + brl(p.total) + '</div>' + (p.envio ? '<div style="font-size:10px;font-weight:900;margin-top:2px;color:' + (p.envio.tipo === "entrega" ? "#29ABE2" : "#3ce88a") + '">' + (p.envio.tipo === "entrega" ? "🛵 ENTREGA" : "📦 RETIRADA") + '</div>' + '<div class="muted" style="font-size:9px">enviado ' + new Date(p.envio.em).toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    }) + '</div>' : '') + (ocupado ? '<div class="quem">' + esc(quemSepara(p.id) || "separando…") + '</div>' : '') + (!ocupado ? '<button onclick="event.stopPropagation();tirarDaFila(' + p.id + ')" style="margin-top:5px;background:none;border:none;color:#6b6699;font-size:10px;cursor:pointer;padding:2px">✕ tirar da fila</button>' : '') + (travadoSemDono(p.id) ? '<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar(' + p.id + ')">🔓 Destravar</button>' : '') + '</div>';
+  }).join("") || '<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido enviado pra separação. 🎉<br><span style="font-size:11px">Os pedidos aparecem aqui quando alguém manda pra separação no caixa atacado ou na tela de Pedidos.</span></div>';
+  const cols = ATIVOS.length ? ATIVOS.map(colunaHtml).join("") : '<div class="col"><div class="colBody"><div class="vazio">Ative os separadores na barra de cima<br>para começar</div></div></div>';
+  app.innerHTML = '<div class="barraFunc">' + barra + '<div style="flex:1"></div>' + '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">' + ATIVOS.length + ' ativo(s) · ' + livres + ' livre(s)</div>' + (SOM_LIBERADO ? '<div class="fBtn ' + (SOM_LIGADO ? "on" : "") + '" onclick="SOM_LIGADO=!SOM_LIGADO;render()" style="min-height:44px">' + (SOM_LIGADO ? "🔔" : "🔕") + '</div>' : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>') + '<div class="fBtn" onclick="toggleTelaCheia()" style="min-height:44px" title="Tela cheia">' + (TELA_CHEIA ? "🡼 Sair" : "⛶ Tela cheia") + '</div>' + '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>' + '<div class="filaWrap"' + (PISCA ? ' style="background:#123a2a;border-bottom-color:#3ce88a"' : '') + '><div class="filaTit">Fila de separação — ordem de envio (' + FILA.length + ')' + (PISCA ? ' <span style="color:#3ce88a">· PEDIDO NOVO!</span>' : '') + '</div>' + '<div class="fila">' + fila + '</div></div>' + '<div class="colunas">' + cols + '</div>';
   // devolve cada coluna pra onde estava
-  document.querySelectorAll(".colBody").forEach(function(el,i){ if(_scroll[i]!=null) el.scrollTop=_scroll[i]; });
-  const f=document.querySelector(".fila"); if(f&&_filaScroll) f.scrollLeft=_filaScroll;
+  document.querySelectorAll(".colBody").forEach(function (el, i) {
+    if (_scroll[i] != null) el.scrollTop = _scroll[i];
+  });
+  const f = document.querySelector(".fila");
+  if (f && _filaScroll) f.scrollLeft = _filaScroll;
 }
-
 render();
 carregar();
-TIMER=setInterval(function(){ if(!CARREGANDO) carregar(true); },30000);
-</script>
+TIMER = setInterval(function () {
+  if (!CARREGANDO) carregar(true);
+}, 30000);</script>
 </body>
 </html>

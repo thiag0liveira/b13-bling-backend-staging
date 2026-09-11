@@ -99,22 +99,48 @@
 </div>
 
 <!-- Biblioteca de leitura de QR (html5-qrcode) - carregada só quando precisa -->
-<script>
-function verSenha(btn){var inp=btn.parentNode.querySelector("input");if(!inp)return;if(inp.type==="password"){inp.type="text";btn.textContent="🙈";btn.title="Ocultar senha";}else{inp.type="password";btn.textContent="👁";btn.title="Mostrar senha";}}
+<script>function verSenha(btn) {
+  var inp = btn.parentNode.querySelector("input");
+  if (!inp) return;
+  if (inp.type === "password") {
+    inp.type = "text";
+    btn.textContent = "🙈";
+    btn.title = "Ocultar senha";
+  } else {
+    inp.type = "password";
+    btn.textContent = "👁";
+    btn.title = "Mostrar senha";
+  }
+}
 /* ================= B13 MOBILE — CONFERENCIA =================
    Escrito em JS compativel com Chrome 79 (sem ?. sem ?? sem features novas).
 */
-var BACKEND = (location.protocol.indexOf("http") === 0) ? "" : "https://b13-bling-backend-production.up.railway.app";
+var BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
 
 /* --- Situacoes (status) do Bling --- */
 var SIT = {
-  AGUARDANDO: 818795, EM_SEP: 817963, SEPARADO: 821590, SEP_PEND: 819227,
-  CONF_ENTREGA: 821611, VERIFICADO: 24, EM_ROTA: 820085, ATENDIDO: 9, CANCELADO: 12
+  AGUARDANDO: 818795,
+  EM_SEP: 817963,
+  SEPARADO: 821590,
+  SEP_PEND: 819227,
+  CONF_ENTREGA: 821611,
+  VERIFICADO: 24,
+  EM_ROTA: 820085,
+  ATENDIDO: 9,
+  CANCELADO: 12
 };
 var SIT_NOME = {};
-SIT_NOME[818795] = "Aguardando"; SIT_NOME[817963] = "Em separação"; SIT_NOME[821590] = "Separado";
-SIT_NOME[819227] = "Separado c/ pendência"; SIT_NOME[821611] = "Conferir entrega"; SIT_NOME[24] = "Verificado";
-SIT_NOME[820085] = "Em rota"; SIT_NOME[9] = "Atendido"; SIT_NOME[12] = "Cancelado"; SIT_NOME[21] = "Em digitação"; SIT_NOME[6] = "Em aberto";
+SIT_NOME[818795] = "Aguardando";
+SIT_NOME[817963] = "Em separação";
+SIT_NOME[821590] = "Separado";
+SIT_NOME[819227] = "Separado c/ pendência";
+SIT_NOME[821611] = "Conferir entrega";
+SIT_NOME[24] = "Verificado";
+SIT_NOME[820085] = "Em rota";
+SIT_NOME[9] = "Atendido";
+SIT_NOME[12] = "Cancelado";
+SIT_NOME[21] = "Em digitação";
+SIT_NOME[6] = "Em aberto";
 
 /* --- Estado --- */
 var FUNC = null;
@@ -123,15 +149,26 @@ var PEDIDO = null;
 var ITENS = [];
 var carregando = false;
 var FILA = [];
-var filaPeriodoIni = null, filaPeriodoFim = null, filaPeriodoAtivo = "semana";
+var filaPeriodoIni = null,
+  filaPeriodoFim = null,
+  filaPeriodoAtivo = "semana";
 var _filaTimer = null;
 var SEM_ACESSO = false; // logou, mas nao tem permissao de /conferencia
 
 /* --- Utils compativeis --- */
-function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
-function brl(n) { var v = Number(n) || 0; return "R$ " + v.toFixed(2).replace(".", ","); }
-function el(id) { return document.getElementById(id); }
-function getSit(p) { return p && p.situacao && p.situacao.id ? Number(p.situacao.id) : 0; }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function brl(n) {
+  var v = Number(n) || 0;
+  return "R$ " + v.toFixed(2).replace(".", ",");
+}
+function el(id) {
+  return document.getElementById(id);
+}
+function getSit(p) {
+  return p && p.situacao && p.situacao.id ? Number(p.situacao.id) : 0;
+}
 
 /* --- Acesso: quem pode usar o /mobile e quem tem acesso a /conferencia --- */
 function podeUsarMobile() {
@@ -146,17 +183,28 @@ function carregarFunc() {
   var f = null;
   try {
     var s = sessionStorage.getItem("b13sess");
-    if (s) { var f1 = JSON.parse(s); if (f1 && f1.id) f = f1; }
+    if (s) {
+      var f1 = JSON.parse(s);
+      if (f1 && f1.id) f = f1;
+    }
   } catch (e) {}
   if (!f) {
     try {
       var l = localStorage.getItem("b13sess");
-      if (l) { var f2 = JSON.parse(l); if (f2 && f2.id) f = f2; }
+      if (l) {
+        var f2 = JSON.parse(l);
+        if (f2 && f2.id) f = f2;
+      }
     } catch (e) {}
   }
   if (!f) return false;
-  if (!podeUsarMobile()) { FUNC = f; SEM_ACESSO = true; return true; }
-  FUNC = f; SEM_ACESSO = false;
+  if (!podeUsarMobile()) {
+    FUNC = f;
+    SEM_ACESSO = true;
+    return true;
+  }
+  FUNC = f;
+  SEM_ACESSO = false;
   return true;
 }
 
@@ -164,91 +212,120 @@ function carregarFunc() {
 function render() {
   if (FUNC && el("funcNome")) el("funcNome").textContent = FUNC.nome || "";
   var app = el("app");
-  if (!FUNC) { app.innerHTML = viewLogin(); return; }
-  if (SEM_ACESSO) { app.innerHTML = viewSemAcesso(); return; }
-  if (TELA === "inicio") { app.innerHTML = viewInicio(); return; }
-  if (TELA === "pedido") { app.innerHTML = viewPedido(); return; }
+  if (!FUNC) {
+    app.innerHTML = viewLogin();
+    return;
+  }
+  if (SEM_ACESSO) {
+    app.innerHTML = viewSemAcesso();
+    return;
+  }
+  if (TELA === "inicio") {
+    app.innerHTML = viewInicio();
+    return;
+  }
+  if (TELA === "pedido") {
+    app.innerHTML = viewPedido();
+    return;
+  }
   app.innerHTML = viewInicio();
 }
 function viewSemAcesso() {
-  return '<div class="card center">' +
-    '<div style="font-size:40px;margin-bottom:10px">🚫</div>' +
-    '<h2>Acesso negado</h2>' +
-    '<div class="muted mt">Olá, ' + esc(FUNC ? FUNC.nome : "") + '. Seu usuário não tem permissão de Conferência — quem acessa o /mobile precisa ter acesso liberado à aba Conferência.</div>' +
-    '<button class="btn btn-ghost mt" onclick="sairMobile()">Sair</button>' +
-    '</div>';
+  return '<div class="card center">' + '<div style="font-size:40px;margin-bottom:10px">🚫</div>' + '<h2>Acesso negado</h2>' + '<div class="muted mt">Olá, ' + esc(FUNC ? FUNC.nome : "") + '. Seu usuário não tem permissão de Conferência — quem acessa o /mobile precisa ter acesso liberado à aba Conferência.</div>' + '<button class="btn btn-ghost mt" onclick="sairMobile()">Sair</button>' + '</div>';
 }
 function sairMobile() {
-  try { sessionStorage.removeItem("b13sess"); } catch (e) {}
-  try { localStorage.removeItem("b13sess"); } catch (e) {}
-  FUNC = null; SEM_ACESSO = false; TELA = "inicio";
+  try {
+    sessionStorage.removeItem("b13sess");
+  } catch (e) {}
+  try {
+    localStorage.removeItem("b13sess");
+  } catch (e) {}
+  FUNC = null;
+  SEM_ACESSO = false;
+  TELA = "inicio";
   render();
 }
 
 /* --- LOGIN --- */
 function viewLogin() {
-  return '<div class="card">' +
-    '<h2>Entrar</h2>' +
-    '<div class="muted mt">Acesso à conferência mobile.</div>' +
-    '<div class="mt"><div class="lbl">Login</div><input id="inLogin" autocapitalize="off" autocomplete="off"></div>' +
-    '<div class="mt"><div class="lbl">Senha</div><div style="position:relative"><input id="inSenha" type="password" autocomplete="off" style="padding-right:44px"><button type="button" onclick="verSenha(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:4px;color:#9a95c9">👁</button></div></div>' +
-    '<button class="btn btn-mag" onclick="fazerLogin()">Entrar</button>' +
-    '<div id="loginMsg" class="mt center err"></div>' +
-    '</div>';
+  return '<div class="card">' + '<h2>Entrar</h2>' + '<div class="muted mt">Acesso à conferência mobile.</div>' + '<div class="mt"><div class="lbl">Login</div><input id="inLogin" autocapitalize="off" autocomplete="off"></div>' + '<div class="mt"><div class="lbl">Senha</div><div style="position:relative"><input id="inSenha" type="password" autocomplete="off" style="padding-right:44px"><button type="button" onclick="verSenha(this)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:20px;line-height:1;padding:4px;color:#9a95c9">👁</button></div></div>' + '<button class="btn btn-mag" onclick="fazerLogin()">Entrar</button>' + '<div id="loginMsg" class="mt center err"></div>' + '</div>';
 }
 function fazerLogin() {
   var login = el("inLogin").value.trim();
   var senha = el("inSenha").value;
-  if (!login || !senha) { el("loginMsg").textContent = "Preencha login e senha."; return; }
+  if (!login || !senha) {
+    el("loginMsg").textContent = "Preencha login e senha.";
+    return;
+  }
   el("loginMsg").innerHTML = '<span class="spinner"></span>';
   fetch(BACKEND + "/api/funcionarios/login", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: login, senha: senha })
-  }).then(function (r) { return r.json(); }).then(function (j) {
-    var f = (j && j.funcionario) ? j.funcionario : j;
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      login: login,
+      senha: senha
+    })
+  }).then(function (r) {
+    return r.json();
+  }).then(function (j) {
+    var f = j && j.funcionario ? j.funcionario : j;
     if (f && f.id) {
       FUNC = f;
-      try { sessionStorage.setItem("b13sess", JSON.stringify(f)); } catch (e) {}
+      try {
+        sessionStorage.setItem("b13sess", JSON.stringify(f));
+      } catch (e) {}
       if (!podeUsarMobile()) {
-        SEM_ACESSO = true; render(); return;
+        SEM_ACESSO = true;
+        render();
+        return;
       }
       SEM_ACESSO = false;
-      TELA = "inicio"; render();
+      TELA = "inicio";
+      render();
       carregarFila();
     } else {
-      el("loginMsg").textContent = (j && j.erro) ? j.erro : "Login ou senha inválidos.";
+      el("loginMsg").textContent = j && j.erro ? j.erro : "Login ou senha inválidos.";
     }
-  }).catch(function () { el("loginMsg").textContent = "Erro de conexão."; });
+  }).catch(function () {
+    el("loginMsg").textContent = "Erro de conexão.";
+  });
 }
 
 /* --- INICIO: buscar pedido por numero ou escanear --- */
 function viewInicio() {
-  return '<div class="card center">' +
-    '<h2>Conferência</h2>' +
-    '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' +
-    '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' +
-    '<div class="divider"></div>' +
-    '<div class="lbl">Ou digite/leia o número/ID do pedido</div>' +
-    '<div class="row mt">' +
-      '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724" autofocus onkeypress="onInPedidoKey(event)" oninput="onInPedidoInput()"></div>' +
-    '</div>' +
-    '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' +
-    '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' +
-    '</div>' +
-    '<div id="scanBox"></div>' +
-    filaHtml();
+  return '<div class="card center">' + '<h2>Conferência</h2>' + '<div class="muted mt">Escaneie o QR da nota ou digite o número do pedido.</div>' + '<button class="btn btn-mag mt" onclick="abrirScanner()">📷 Escanear QR da nota</button>' + '<div class="divider"></div>' + '<div class="lbl">Ou digite/leia o número/ID do pedido</div>' + '<div class="row mt">' + '<div class="col"><input id="inPedido" inputmode="numeric" placeholder="Ex: 48724" autofocus onkeypress="onInPedidoKey(event)" oninput="onInPedidoInput()"></div>' + '</div>' + '<button class="btn btn-ghost mt" onclick="buscarDigitado()">Buscar pedido</button>' + '<div class="muted mt" style="font-size:12px">Leitor a laser: basta apontar — a busca abre sozinha.</div>' + '</div>' + '<div id="scanBox"></div>' + filaHtml();
 }
 
 /* --- FILA: mesma lista de "aguardando conferência" que tem em /conferencia --- */
 function calcPeriodoMob(tipo) {
-  var n = new Date(); n.setHours(n.getHours() - 3); // fuso Brasil
+  var n = new Date();
+  n.setHours(n.getHours() - 3); // fuso Brasil
   var h = n.toISOString().slice(0, 10);
-  function d(x) { return new Date(n - x * 86400000).toISOString().slice(0, 10); }
-  if (tipo === "hoje") return { ini: h, fim: h };
-  if (tipo === "ontem") return { ini: d(1), fim: d(1) };
-  if (tipo === "semana") return { ini: d(6), fim: h };
-  if (tipo === "mes") return { ini: h.slice(0, 8) + "01", fim: h };
-  return { ini: d(29), fim: h };
+  function d(x) {
+    return new Date(n - x * 86400000).toISOString().slice(0, 10);
+  }
+  if (tipo === "hoje") return {
+    ini: h,
+    fim: h
+  };
+  if (tipo === "ontem") return {
+    ini: d(1),
+    fim: d(1)
+  };
+  if (tipo === "semana") return {
+    ini: d(6),
+    fim: h
+  };
+  if (tipo === "mes") return {
+    ini: h.slice(0, 8) + "01",
+    fim: h
+  };
+  return {
+    ini: d(29),
+    fim: h
+  };
 }
 function setPeriodoMob(tipo) {
   filaPeriodoAtivo = tipo;
@@ -256,10 +333,13 @@ function setPeriodoMob(tipo) {
 }
 function carregarFila(silencioso) {
   var p = calcPeriodoMob(filaPeriodoAtivo);
-  filaPeriodoIni = p.ini; filaPeriodoFim = p.fim;
+  filaPeriodoIni = p.ini;
+  filaPeriodoFim = p.fim;
   var url = BACKEND + "/api/pedidos?limite=100&idsSituacoes=" + SIT.SEPARADO + "&dataInicial=" + p.ini + "&dataFinal=" + p.fim;
-  fetch(url).then(function (r) { return r.json(); }).then(function (j) {
-    var lista = (j && j.data) ? j.data : [];
+  fetch(url).then(function (r) {
+    return r.json();
+  }).then(function (j) {
+    var lista = j && j.data ? j.data : [];
     FILA = [];
     for (var i = 0; i < lista.length; i++) {
       var pp = lista[i];
@@ -268,17 +348,20 @@ function carregarFila(silencioso) {
     }
     if (TELA === "inicio" && FUNC) render();
   }).catch(function () {
-    if (!silencioso) { /* falha silenciosa: fica sem lista, mas nao trava a tela */ }
+    if (!silencioso) {/* falha silenciosa: fica sem lista, mas nao trava a tela */}
   });
   if (_filaTimer) clearTimeout(_filaTimer);
-  _filaTimer = setTimeout(function () { carregarFila(true); }, 30000);
+  _filaTimer = setTimeout(function () {
+    carregarFila(true);
+  }, 30000);
 }
 function filaHtml() {
   var barHtml = '<div class="card">';
   barHtml += '<div class="lbl mt" style="margin-bottom:8px">Aguardando conferência</div>';
   var periodos = [["hoje", "Hoje"], ["ontem", "Ontem"], ["semana", "Semana"], ["mes", "Mês"], ["30dias", "30 dias"]];
   for (var pi = 0; pi < periodos.length; pi++) {
-    var k = periodos[pi][0], lbl = periodos[pi][1];
+    var k = periodos[pi][0],
+      lbl = periodos[pi][1];
     barHtml += '<button class="periodo-btn' + (filaPeriodoAtivo === k ? " ativo" : "") + '" onclick="setPeriodoMob(\'' + k + '\')">' + lbl + '</button>';
   }
   if (!FILA.length) {
@@ -291,7 +374,7 @@ function filaHtml() {
   barHtml += '</div>';
   for (var i = 0; i < FILA.length; i++) {
     var p = FILA[i];
-    var cliente = (p.contato && p.contato.nome) ? p.contato.nome : "—";
+    var cliente = p.contato && p.contato.nome ? p.contato.nome : "—";
     barHtml += '<div class="fila-item" onclick="abrirPedido(' + p.id + ')">';
     barHtml += '<div class="fi-num">Pedido ' + esc(p.numero || p.id) + '</div>';
     barHtml += '<div class="fi-cli">👤 ' + esc(cliente) + '</div>';
@@ -307,7 +390,10 @@ function filaHtml() {
 var _inTimer = null;
 function onInPedidoKey(e) {
   var code = e.keyCode || e.which;
-  if (code === 13) { e.preventDefault && e.preventDefault(); buscarDigitado(); }
+  if (code === 13) {
+    e.preventDefault && e.preventDefault();
+    buscarDigitado();
+  }
 }
 function onInPedidoInput() {
   if (_inTimer) clearTimeout(_inTimer);
@@ -326,7 +412,10 @@ function buscarDigitado() {
   if (!campo) return;
   var v = campo.value.trim();
   if (!v) return;
-  if (_inTimer) { clearTimeout(_inTimer); _inTimer = null; }
+  if (_inTimer) {
+    clearTimeout(_inTimer);
+    _inTimer = null;
+  }
   var id = extrairIdDoQr(v) || v;
   abrirPedido(id);
 }
@@ -335,19 +424,18 @@ function buscarDigitado() {
 var _scanner = null;
 function abrirScanner() {
   var box = el("scanBox");
-  box.innerHTML = '<div class="card"><div id="reader"></div>' +
-    '<div class="row mt">' +
-      '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flip180\')">🔄 Inverter (180°)</button>' +
-      '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flipH\')">↔️ Espelhar</button>' +
-    '</div>' +
-    '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button>' +
-    '<div class="muted center mt">Aponte para o QR code da nota.</div></div>';
+  box.innerHTML = '<div class="card"><div id="reader"></div>' + '<div class="row mt">' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flip180\')">🔄 Inverter (180°)</button>' + '<button class="btn btn-out" style="flex:1" onclick="toggleFlipScanner(\'flipH\')">↔️ Espelhar</button>' + '</div>' + '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button>' + '<div class="muted center mt">Aponte para o QR code da nota.</div></div>';
   // carrega a lib de QR sob demanda
-  if (window.Html5Qrcode) { iniciarScanner(); return; }
+  if (window.Html5Qrcode) {
+    iniciarScanner();
+    return;
+  }
   var s = document.createElement("script");
   s.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
   s.onload = iniciarScanner;
-  s.onerror = function () { box.innerHTML = '<div class="card err">Não consegui carregar o leitor. Verifique a internet.</div>'; };
+  s.onerror = function () {
+    box.innerHTML = '<div class="card err">Não consegui carregar o leitor. Verifique a internet.</div>';
+  };
   document.body.appendChild(s);
 }
 function toggleFlipScanner(classe) {
@@ -364,35 +452,46 @@ function iniciarScanner() {
         for (var i = 0; i < cameras.length; i++) {
           var lbl = (cameras[i].label || "").toLowerCase();
           if (lbl.indexOf("back") >= 0 || lbl.indexOf("traseira") >= 0 || lbl.indexOf("rear") >= 0 || lbl.indexOf("environment") >= 0) {
-            camId = cameras[i].id; break;
+            camId = cameras[i].id;
+            break;
           }
         }
         // sem label reconhecivel: heuristica — quando ha mais de uma camera, a traseira costuma vir por ultimo
         if (!camId && cameras.length > 1) camId = cameras[cameras.length - 1].id;
         if (!camId) camId = cameras[0].id;
       }
-      iniciarComConfig(camId || { facingMode: { exact: "environment" } });
+      iniciarComConfig(camId || {
+        facingMode: {
+          exact: "environment"
+        }
+      });
     }).catch(function () {
-      iniciarComConfig({ facingMode: { exact: "environment" } });
+      iniciarComConfig({
+        facingMode: {
+          exact: "environment"
+        }
+      });
     });
   } catch (e) {
     el("scanBox").innerHTML = '<div class="card err">Leitor não suportado neste aparelho. Use o campo de digitar o número.</div>';
   }
 }
 function iniciarComConfig(config) {
-  _scanner.start(
-    config,
-    { fps: 10, qrbox: 250 },
-    function (texto) { onQrLido(texto); },
-    function () {}
-  ).catch(function (e) {
+  _scanner.start(config, {
+    fps: 10,
+    qrbox: 250
+  }, function (texto) {
+    onQrLido(texto);
+  }, function () {}).catch(function (e) {
     // se falhou com deviceId ou facingMode exato, tenta o modo mais generico como ultimo recurso
-    _scanner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      function (texto) { onQrLido(texto); },
-      function () {}
-    ).catch(function (e2) {
+    _scanner.start({
+      facingMode: "environment"
+    }, {
+      fps: 10,
+      qrbox: 250
+    }, function (texto) {
+      onQrLido(texto);
+    }, function () {}).catch(function (e2) {
       el("scanBox").innerHTML = '<div class="card err">Não consegui abrir a câmera: ' + esc(e2 && e2.message ? e2.message : e2) + '<br><br>Use o campo de digitar o número.</div>';
     });
   });
@@ -403,7 +502,13 @@ function fecharScanner() {
 }
 function pararScanner() {
   if (_scanner) {
-    try { _scanner.stop().then(function () { try { _scanner.clear(); } catch (e) {} }); } catch (e) {}
+    try {
+      _scanner.stop().then(function () {
+        try {
+          _scanner.clear();
+        } catch (e) {}
+      });
+    } catch (e) {}
     _scanner = null;
   }
 }
@@ -412,8 +517,9 @@ function onQrLido(texto) {
   el("scanBox").innerHTML = "";
   // o QR pode ser uma URL tipo .../conferencia?pedido=ID ou .../pedido/ID/... ou só o ID
   var id = extrairIdDoQr(texto);
-  if (id) abrirPedido(id);
-  else { el("scanBox").innerHTML = '<div class="card err">QR não reconhecido: ' + esc(texto) + '</div>'; }
+  if (id) abrirPedido(id);else {
+    el("scanBox").innerHTML = '<div class="card err">QR não reconhecido: ' + esc(texto) + '</div>';
+  }
 }
 function extrairIdDoQr(texto) {
   if (!texto) return null;
@@ -432,60 +538,83 @@ function extrairIdDoQr(texto) {
 
 /* --- ABRIR PEDIDO --- */
 function abrirPedido(id) {
-  TELA = "pedido"; PEDIDO = null; ITENS = []; carregando = true;
+  TELA = "pedido";
+  PEDIDO = null;
+  ITENS = [];
+  carregando = true;
   render();
   el("app").innerHTML = '<div class="card center"><span class="spinner"></span><div class="mt muted">Carregando pedido…</div></div>';
-
   var idStr = String(id);
-  var got = { ped: null, pend: null, pag: null };
-
-  fetch(BACKEND + "/api/pedidos/" + idStr).then(function (r) { return r.json(); }).then(function (jPed) {
-    got.ped = (jPed && jPed.data) ? jPed.data : jPed;
-    return fetch(BACKEND + "/api/pendencias/" + idStr).then(function (r) { return r.json(); }).then(function (jp) {
+  var got = {
+    ped: null,
+    pend: null,
+    pag: null
+  };
+  fetch(BACKEND + "/api/pedidos/" + idStr).then(function (r) {
+    return r.json();
+  }).then(function (jPed) {
+    got.ped = jPed && jPed.data ? jPed.data : jPed;
+    return fetch(BACKEND + "/api/pendencias/" + idStr).then(function (r) {
+      return r.json();
+    }).then(function (jp) {
       got.pend = jp && jp.data ? jp.data : null;
     }).catch(function () {});
   }).then(function () {
-    return fetch(BACKEND + "/api/pagamentos/" + idStr).then(function (r) { return r.json(); }).then(function (jpg) {
+    return fetch(BACKEND + "/api/pagamentos/" + idStr).then(function (r) {
+      return r.json();
+    }).then(function (jpg) {
       got.pag = jpg && jpg.data ? jpg.data : null;
     }).catch(function () {});
   }).then(function () {
-    return fetch(BACKEND + "/api/catalogo").then(function (r) { return r.json(); }).then(function (jc) {
+    return fetch(BACKEND + "/api/catalogo").then(function (r) {
+      return r.json();
+    }).then(function (jc) {
       var estMap = {};
-      var cats = (jc && jc.categorias) ? jc.categorias : [];
+      var cats = jc && jc.categorias ? jc.categorias : [];
       for (var c = 0; c < cats.length; c++) {
         var prods = cats[c].produtos || [];
         for (var p = 0; p < prods.length; p++) {
           var sabs = prods[p].sabores || [];
           for (var s = 0; s < sabs.length; s++) {
-            if (sabs[s].codigo) estMap[String(sabs[s].codigo)] = { imagem: sabs[s].imagem || "" };
+            if (sabs[s].codigo) estMap[String(sabs[s].codigo)] = {
+              imagem: sabs[s].imagem || ""
+            };
           }
         }
       }
       got.estMap = estMap;
-    }).catch(function () { got.estMap = {}; });
+    }).catch(function () {
+      got.estMap = {};
+    });
   }).then(function () {
-    if (!got.ped || (!got.ped.id && !got.ped.numero)) {
+    if (!got.ped || !got.ped.id && !got.ped.numero) {
       el("app").innerHTML = '<div class="card err">Pedido não encontrado.<br><br><button class="btn btn-ghost" onclick="voltarInicio()">← Voltar</button></div>';
-      carregando = false; return;
+      carregando = false;
+      return;
     }
     PEDIDO = got.ped;
     PEDIDO._pag = got.pag;
     PEDIDO._pago = !!(got.pag && got.pag.statusPagamento === "pago");
-    var frete0 = Number(((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0)));
+    var frete0 = Number((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0));
     PEDIDO._tipoEntrega = frete0 > 0.01 ? "entrega" : "retirada";
-    var faltas = (got.pend && got.pend.faltas) ? got.pend.faltas : [];
+    var faltas = got.pend && got.pend.faltas ? got.pend.faltas : [];
     var itensPed = PEDIDO.itens || [];
     var estMap = got.estMap || {};
     ITENS = [];
     for (var i = 0; i < itensPed.length; i++) {
       var it = itensPed[i];
-      var desc = it.descricao || (it.produto && it.produto.nome) || "";
-      var codigo = (it.produto && it.produto.codigo) || it.codigo || "";
+      var desc = it.descricao || it.produto && it.produto.nome || "";
+      var codigo = it.produto && it.produto.codigo || it.codigo || "";
       var estItem = estMap[String(codigo)] || {};
-      var imagem = (it.produto && it.produto.imageThumbnail) || estItem.imagem || "";
-      var teveFalta = false, faltaQtd = 0;
+      var imagem = it.produto && it.produto.imageThumbnail || estItem.imagem || "";
+      var teveFalta = false,
+        faltaQtd = 0;
       for (var f = 0; f < faltas.length; f++) {
-        if (faltas[f].descricao === desc) { teveFalta = true; faltaQtd = faltas[f].falta || 0; break; }
+        if (faltas[f].descricao === desc) {
+          teveFalta = true;
+          faltaQtd = faltas[f].falta || 0;
+          break;
+        }
       }
       ITENS.push({
         descricao: desc,
@@ -501,8 +630,15 @@ function abrirPedido(id) {
     render();
     // registra abertura (nao bloqueia)
     fetch(BACKEND + "/api/log/" + idStr, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evento: "pedido_aberto_conferencia_mobile", funcionarioId: FUNC.id, funcionarioNome: FUNC.nome })
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        evento: "pedido_aberto_conferencia_mobile",
+        funcionarioId: FUNC.id,
+        funcionarioNome: FUNC.nome
+      })
     }).catch(function () {});
   }).catch(function (e) {
     el("app").innerHTML = '<div class="card err">Erro ao carregar: ' + esc(e && e.message ? e.message : e) + '<br><br><button class="btn btn-ghost" onclick="voltarInicio()">← Voltar</button></div>';
@@ -515,18 +651,16 @@ function viewPedido() {
   if (!PEDIDO) return '<div class="card">Carregando…</div>';
   var p = PEDIDO;
   var sit = getSit(p);
-  var sitNome = SIT_NOME[sit] || ("Status " + sit);
-  var cliente = (p.contato && p.contato.nome) ? p.contato.nome : "—";
+  var sitNome = SIT_NOME[sit] || "Status " + sit;
+  var cliente = p.contato && p.contato.nome ? p.contato.nome : "—";
   var numero = p.numero || p.id;
   var tipoEntrega = "";
-  var frete = Number(((p.total || 0) - (p.totalProdutos || 0)));
+  var frete = Number((p.total || 0) - (p.totalProdutos || 0));
   tipoEntrega = frete > 0.01 ? "🛵 Entrega" : "🏪 Retirada";
 
   // tag de status colorida
   var tagClasse = "tag-wait";
-  if (sit === SIT.ATENDIDO || sit === SIT.VERIFICADO) tagClasse = "tag-ok";
-  else if (sit === SIT.SEP_PEND) tagClasse = "tag-pend";
-
+  if (sit === SIT.ATENDIDO || sit === SIT.VERIFICADO) tagClasse = "tag-ok";else if (sit === SIT.SEP_PEND) tagClasse = "tag-pend";
   var h = "";
   h += '<div class="card">';
   h += '<div class="row"><div class="col"><h2>Pedido ' + esc(numero) + '</h2></div>';
@@ -539,14 +673,18 @@ function viewPedido() {
   h += '</div>';
   // pagamento
   h += '<div class="mt"><div class="lbl">Pagamento</div>';
-  if (p._pago) h += '<span class="tag tag-ok">✓ Pago</span>';
-  else h += '<span class="tag tag-pend">Não consta pagamento</span>';
+  if (p._pago) h += '<span class="tag tag-ok">✓ Pago</span>';else h += '<span class="tag tag-pend">Não consta pagamento</span>';
   h += '</div>';
   h += '</div>';
 
   // pendências (se separado com pendência)
   var temFalta = false;
-  for (var i = 0; i < ITENS.length; i++) { if (ITENS[i].teveFalta) { temFalta = true; break; } }
+  for (var i = 0; i < ITENS.length; i++) {
+    if (ITENS[i].teveFalta) {
+      temFalta = true;
+      break;
+    }
+  }
   if (temFalta) {
     h += '<div class="pend-warn">⚠️ Este pedido teve pendências — itens marcados com PEND tiveram falta anteriormente. Confira com atenção.</div>';
   }
@@ -573,12 +711,10 @@ function viewPedido() {
   h += '</div>';
 
   // botão de conferir (só habilita se for status que permite)
-  var podeConferir = (sit === SIT.SEPARADO || sit === SIT.SEP_PEND);
+  var podeConferir = sit === SIT.SEPARADO || sit === SIT.SEP_PEND;
   if (podeConferir) {
-    var todos = (confCount === ITENS.length && ITENS.length > 0);
-    var txtBtn = todos
-      ? (PEDIDO._tipoEntrega === "entrega" ? "✅ Pedido conferido! Liberar para entrega" : "✅ PEDIDO CONFERIDO — Finalizar")
-      : "Confirmar mesmo com itens não marcados";
+    var todos = confCount === ITENS.length && ITENS.length > 0;
+    var txtBtn = todos ? PEDIDO._tipoEntrega === "entrega" ? "✅ Pedido conferido! Liberar para entrega" : "✅ PEDIDO CONFERIDO — Finalizar" : "Confirmar mesmo com itens não marcados";
     h += '<button class="btn ' + (todos ? "btn-grn" : "btn-out") + '" onclick="' + (todos ? "abrirModalMob()" : "confirmarConferencia()") + '">' + txtBtn + '</button>';
   } else {
     h += '<div class="card muted center">Este pedido está como "' + esc(sitNome) + '" — a conferência é feita quando está "Separado".</div>';
@@ -586,9 +722,11 @@ function viewPedido() {
   h += '<div id="confMsg" class="mt center"></div>';
   return h;
 }
-
 function toggleItem(ix) {
-  if (ITENS[ix]) { ITENS[ix].confirmado = !ITENS[ix].confirmado; render(); }
+  if (ITENS[ix]) {
+    ITENS[ix].confirmado = !ITENS[ix].confirmado;
+    render();
+  }
 }
 
 /* --- Modal de finalização (igual /conferencia): status pagamento + foto/vídeo opcional --- */
@@ -603,14 +741,18 @@ function abrirModalMob() {
   if (tituloEl) tituloEl.textContent = PEDIDO._tipoEntrega === "entrega" ? "✅ Liberar para entrega" : "✅ Pedido Conferido";
   var pago = !!PEDIDO._pago;
   var pag = PEDIDO._pag;
-  var valorPago = (pag && pag.valorPago) || 0;
+  var valorPago = pag && pag.valorPago || 0;
   var total = PEDIDO.total || 0;
   var ps = el("pagStatusMob");
   if (pago) {
-    ps.style.background = "#0f3a24"; ps.style.border = "1px solid #2f9e6b"; ps.style.color = "#3ce88a";
+    ps.style.background = "#0f3a24";
+    ps.style.border = "1px solid #2f9e6b";
+    ps.style.color = "#3ce88a";
     ps.innerHTML = "✅ Pago: <b>" + brl(valorPago) + "</b> de " + brl(total);
   } else {
-    ps.style.background = "#3a2a00"; ps.style.border = "1px solid #ff8c00"; ps.style.color = "#ffd23f";
+    ps.style.background = "#3a2a00";
+    ps.style.border = "1px solid #ff8c00";
+    ps.style.color = "#ffd23f";
     ps.innerHTML = "⚠️ Não pago — Total: <b>" + brl(total) + "</b><br><span style=\"font-size:11px\">Retirada bloqueada até pagamento</span>";
   }
   var tipoSel = PEDIDO._tipoEntrega;
@@ -630,10 +772,16 @@ function fecharModalMob() {
 function carregarFotoMob(input) {
   var file = input.files && input.files[0];
   if (!file) return;
-  if (file.size > LIMITE_COMPROVANTE) { el("fotoPreviewMob").innerHTML = '<span class="err">Foto muito grande. Tente novamente.</span>'; return; }
+  if (file.size > LIMITE_COMPROVANTE) {
+    el("fotoPreviewMob").innerHTML = '<span class="err">Foto muito grande. Tente novamente.</span>';
+    return;
+  }
   var reader = new FileReader();
   reader.onload = function (e) {
-    comprovanteMob = { dataUrl: e.target.result, tipo: "foto" };
+    comprovanteMob = {
+      dataUrl: e.target.result,
+      tipo: "foto"
+    };
     el("fotoPreviewMob").innerHTML = '<img src="' + comprovanteMob.dataUrl + '" style="max-width:100%;max-height:180px;border-radius:8px">';
   };
   reader.readAsDataURL(file);
@@ -641,17 +789,24 @@ function carregarFotoMob(input) {
 function carregarVideoMob(input) {
   var file = input.files && input.files[0];
   if (!file) return;
-  if (file.size > LIMITE_COMPROVANTE) { el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande — grave um trecho mais curto.</span>'; return; }
+  if (file.size > LIMITE_COMPROVANTE) {
+    el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande — grave um trecho mais curto.</span>';
+    return;
+  }
   el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Carregando vídeo…';
   var reader = new FileReader();
   reader.onload = function (e) {
-    comprovanteMob = { dataUrl: e.target.result, tipo: "video" };
+    comprovanteMob = {
+      dataUrl: e.target.result,
+      tipo: "video"
+    };
     el("fotoPreviewMob").innerHTML = '<video src="' + comprovanteMob.dataUrl + '" controls style="max-width:100%;max-height:200px;border-radius:8px"></video>';
   };
-  reader.onerror = function () { el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui carregar o vídeo.</span>'; };
+  reader.onerror = function () {
+    el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui carregar o vídeo.</span>';
+  };
   reader.readAsDataURL(file);
 }
-
 function confirmarConferencia() {
   if (!PEDIDO) return;
   var id = String(PEDIDO.id);
@@ -660,37 +815,59 @@ function confirmarConferencia() {
   var btn = el("btnConfirmarMob");
   if (btn) btn.disabled = true;
   msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
-
-  var passo = comprovanteMob
-    ? fetch(BACKEND + "/api/comprovante/" + id, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataUrl: comprovanteMob.dataUrl, tipo: comprovanteMob.tipo, evento: (comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia"), funcionarioId: FUNC.id, funcionarioNome: FUNC.nome })
-      }).catch(function () {})
-    : Promise.resolve();
-
+  var passo = comprovanteMob ? fetch(BACKEND + "/api/comprovante/" + id, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      dataUrl: comprovanteMob.dataUrl,
+      tipo: comprovanteMob.tipo,
+      evento: comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia",
+      funcionarioId: FUNC.id,
+      funcionarioNome: FUNC.nome
+    })
+  }).catch(function () {}) : Promise.resolve();
   passo.then(function () {
     return fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ funcionarioId: FUNC.id, funcionarioNome: FUNC.nome, tipoEntrega: tipoEntrega })
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: FUNC.id,
+        funcionarioNome: FUNC.nome,
+        tipoEntrega: tipoEntrega
+      })
     });
-  }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-    .then(function (res) {
-      if (res.ok && !res.j.erro) {
-        msgEl.innerHTML = '<span class="ok">✓ Conferência registrada!</span>';
-        setTimeout(function () { fecharModalMob(); voltarInicio(); }, 1200);
-      } else {
-        msgEl.innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
-        if (btn) btn.disabled = false;
-      }
-    }).catch(function () {
-      msgEl.innerHTML = '<span class="err">Erro de conexão</span>';
+  }).then(function (r) {
+    return r.json().then(function (j) {
+      return {
+        ok: r.ok,
+        j: j
+      };
+    });
+  }).then(function (res) {
+    if (res.ok && !res.j.erro) {
+      msgEl.innerHTML = '<span class="ok">✓ Conferência registrada!</span>';
+      setTimeout(function () {
+        fecharModalMob();
+        voltarInicio();
+      }, 1200);
+    } else {
+      msgEl.innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
       if (btn) btn.disabled = false;
-    });
+    }
+  }).catch(function () {
+    msgEl.innerHTML = '<span class="err">Erro de conexão</span>';
+    if (btn) btn.disabled = false;
+  });
 }
-
 function voltarInicio() {
   pararScanner();
-  TELA = "inicio"; PEDIDO = null; ITENS = [];
+  TELA = "inicio";
+  PEDIDO = null;
+  ITENS = [];
   render();
   carregarFila(true);
 }
@@ -698,7 +875,6 @@ function voltarInicio() {
 /* --- INICIO --- */
 carregarFunc();
 render();
-if (FUNC && !SEM_ACESSO) carregarFila();
-</script>
+if (FUNC && !SEM_ACESSO) carregarFila();</script>
 </body>
 </html>

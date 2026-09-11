@@ -153,120 +153,179 @@
   <div class="mbox" id="modalBox"></div>
 </div>
 
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="/logo";
-const VERIFICADO=24, PENDENCIA=819227;
-
-let logado=false, secAtual="dash", situacoes=[], mapSit={}, filtro=null, pedidos=[], pendencias=[], selPed=null, editItens=[], editavel=true, msg="";
-let emDigDados=null, emDigFiltro=[], emDigTimer=null, emDigModo="vendedor";
-
-function renderEmDigitacao(){
-  const d=emDigDados||{total:0,porVendedor:{},recentes:[]};
-  const box=document.getElementById("listaEmDigitacao");
-  if(!d.total){ box.innerHTML=`<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`; return; }
-
-  const nomesVendedores=Object.keys(d.porVendedor).sort();
-  const chipsVendedor=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-    ${nomesVendedores.map(n=>{
-      const ativo=emDigFiltro.length===0||emDigFiltro.includes(n);
-      return `<div class="fchip ${emDigFiltro.includes(n)?'on':''}" onclick="toggleFiltroVendedorDig('${esc(n).replace(/'/g,"\\'")}')" style="${ativo?'':'opacity:.45'}">${esc(n)} (${d.porVendedor[n].length})</div>`;
-    }).join("")}
-    ${emDigFiltro.length?`<div class="fchip" onclick="emDigFiltro=[];renderEmDigitacao()">✕ Limpar filtro</div>`:""}
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const LOGO = "/logo";
+const VERIFICADO = 24,
+  PENDENCIA = 819227;
+let logado = false,
+  secAtual = "dash",
+  situacoes = [],
+  mapSit = {},
+  filtro = null,
+  pedidos = [],
+  pendencias = [],
+  selPed = null,
+  editItens = [],
+  editavel = true,
+  msg = "";
+let emDigDados = null,
+  emDigFiltro = [],
+  emDigTimer = null,
+  emDigModo = "vendedor";
+function renderEmDigitacao() {
+  const d = emDigDados || {
+    total: 0,
+    porVendedor: {},
+    recentes: []
+  };
+  const box = document.getElementById("listaEmDigitacao");
+  if (!d.total) {
+    box.innerHTML = `<div class="ok">Nenhum pedido em digitação no momento 🎉</div>`;
+    return;
+  }
+  const nomesVendedores = Object.keys(d.porVendedor).sort();
+  const chipsVendedor = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+    ${nomesVendedores.map(n => {
+    const ativo = emDigFiltro.length === 0 || emDigFiltro.includes(n);
+    return `<div class="fchip ${emDigFiltro.includes(n) ? 'on' : ''}" onclick="toggleFiltroVendedorDig('${esc(n).replace(/'/g, "\\'")}')" style="${ativo ? '' : 'opacity:.45'}">${esc(n)} (${d.porVendedor[n].length})</div>`;
+  }).join("")}
+    ${emDigFiltro.length ? `<div class="fchip" onclick="emDigFiltro=[];renderEmDigitacao()">✕ Limpar filtro</div>` : ""}
   </div>`;
-
-  const modoToggle=`<div style="display:flex;gap:6px;margin-bottom:12px">
-    <div class="fchip ${emDigModo==='vendedor'?'on':''}" onclick="emDigModo='vendedor';renderEmDigitacao()">🧑‍💼 Agrupado por vendedor</div>
-    <div class="fchip ${emDigModo==='recentes'?'on':''}" onclick="emDigModo='recentes';renderEmDigitacao()">🕐 Últimos editados</div>
+  const modoToggle = `<div style="display:flex;gap:6px;margin-bottom:12px">
+    <div class="fchip ${emDigModo === 'vendedor' ? 'on' : ''}" onclick="emDigModo='vendedor';renderEmDigitacao()">🧑‍💼 Agrupado por vendedor</div>
+    <div class="fchip ${emDigModo === 'recentes' ? 'on' : ''}" onclick="emDigModo='recentes';renderEmDigitacao()">🕐 Últimos editados</div>
   </div>`;
-
-  function cardPedidoDig(p){
+  function cardPedidoDig(p) {
     return `<div class="pcard" style="flex-direction:column;align-items:stretch;cursor:default">
       <div style="display:flex;justify-content:space-between;width:100%;cursor:pointer" onclick="abrirPedido(${p.id})">
-        <div class="info"><div class="n">Pedido ${esc(p.numero||p.id)}</div><div class="c">${esc(p.cliente)} · ${dataBR(p.data)} ${p.desdeHora?`· detectado às ${esc(p.desdeHora)}`:""}${emDigModo==="recentes"?` · <b>${esc(p.vendedor)}</b>`:""}</div></div>
+        <div class="info"><div class="n">Pedido ${esc(p.numero || p.id)}</div><div class="c">${esc(p.cliente)} · ${dataBR(p.data)} ${p.desdeHora ? `· detectado às ${esc(p.desdeHora)}` : ""}${emDigModo === "recentes" ? ` · <b>${esc(p.vendedor)}</b>` : ""}</div></div>
         <div style="text-align:right"><div style="font-weight:900;color:#ffd23f">${brl(p.total)}</div></div>
       </div>
       <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);width:100%">
-        ${(p.itens||[]).map(i=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#9a95c9);padding:2px 0">
-          <span>${esc(i.descricao)} <b>x${i.quantidade}</b></span><span>${brl((i.valor||0)*(i.quantidade||1))}</span></div>`).join("")||`<div class="muted" style="font-size:11px">Sem itens</div>`}
+        ${(p.itens || []).map(i => `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#9a95c9);padding:2px 0">
+          <span>${esc(i.descricao)} <b>x${i.quantidade}</b></span><span>${brl((i.valor || 0) * (i.quantidade || 1))}</span></div>`).join("") || `<div class="muted" style="font-size:11px">Sem itens</div>`}
         <button class="btn btn-ghost" style="width:100%;margin-top:6px;font-size:11px;padding:6px" onclick="abrirPedido(${p.id})">✏️ Abrir e editar</button>
       </div>
     </div>`;
   }
-
   let conteudo;
-  if(emDigModo==="recentes"){
-    const lista=(d.recentes||[]).filter(p=>emDigFiltro.length===0||emDigFiltro.includes(p.vendedor));
-    conteudo=lista.map(cardPedidoDig).join("")||`<div class="muted">Nenhum pedido com esse filtro.</div>`;
+  if (emDigModo === "recentes") {
+    const lista = (d.recentes || []).filter(p => emDigFiltro.length === 0 || emDigFiltro.includes(p.vendedor));
+    conteudo = lista.map(cardPedidoDig).join("") || `<div class="muted">Nenhum pedido com esse filtro.</div>`;
   } else {
-    const vendedoresParaMostrar=nomesVendedores.filter(n=>emDigFiltro.length===0||emDigFiltro.includes(n));
-    conteudo=vendedoresParaMostrar.map(nome=>{
-      const peds=d.porVendedor[nome];
+    const vendedoresParaMostrar = nomesVendedores.filter(n => emDigFiltro.length === 0 || emDigFiltro.includes(n));
+    conteudo = vendedoresParaMostrar.map(nome => {
+      const peds = d.porVendedor[nome];
       return `<div style="margin-bottom:16px">
         <div style="font-weight:900;font-size:15px;margin-bottom:6px">🧑‍💼 ${esc(nome)} <span class="muted" style="font-weight:400">(${peds.length})</span></div>
         ${peds.map(cardPedidoDig).join("")}
       </div>`;
     }).join("");
   }
-
-  box.innerHTML=`<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total · atualiza sozinho a cada 45s</div>${modoToggle}${chipsVendedor}${conteudo}`;
+  box.innerHTML = `<div class="muted" style="margin-bottom:10px">${d.total} pedido(s) em digitação no total · atualiza sozinho a cada 45s</div>${modoToggle}${chipsVendedor}${conteudo}`;
 }
-try{ if(typeof b13GetSession==="function" && b13GetSession()) logado=true; }catch(e){}
-
-function sair(){ logado=false; if(typeof b13ClearSession==="function") b13ClearSession(); location.href="/login"; }
-function mostrarApp(){ ir("dash"); }
-function ir(sec){
-  secAtual=sec;
-  if(sec!=="emdigitacao"&&emDigTimer){ clearTimeout(emDigTimer); emDigTimer=null; }
-  document.querySelectorAll(".sec").forEach(s=>s.style.display="none");
-  const s=document.getElementById("sec-"+sec); if(s) s.style.display="block";
-  const titles={"dash":"Dashboard","pedidos":"Pedidos de Venda","pendencias":"Pendências","nfe":"Entrada de NF-e","emdigitacao":"Em Digitação (por vendedor)"};
-  const pg=document.getElementById("pgTitle"); if(pg) pg.textContent=titles[sec]||sec;
-  if(sec==="pedidos") carregarPedidos();
-  if(sec==="pendencias") carregarPend();
-  if(sec==="dash") carregarDash();
-  if(sec==="emdigitacao") carregarEmDigitacao();
+try {
+  if (typeof b13GetSession === "function" && b13GetSession()) logado = true;
+} catch (e) {}
+function sair() {
+  logado = false;
+  if (typeof b13ClearSession === "function") b13ClearSession();
+  location.href = "/login";
 }
-function atualizar(){
-  if(secAtual==="pedidos") carregarPedidos();
-  else if(secAtual==="pendencias") carregarPend();
-  else if(secAtual==="dash") carregarDash();
+function mostrarApp() {
+  ir("dash");
 }
-if(logado){ mostrarApp(); iniciar(); } else { location.href="/login?next=/gestao"; }
-
-const brl=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const soDig=s=>(s||"").replace(/\D/g,"");
-const dataBR=d=>{ if(!d)return""; const p=String(d).slice(0,10).split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; };
-function corSit(id){ return mapSit[id]?.cor||"#cbcbcb"; }
-function nomeSit(id){ return mapSit[id]?.nome||("Sit."+id); }
+function ir(sec) {
+  secAtual = sec;
+  if (sec !== "emdigitacao" && emDigTimer) {
+    clearTimeout(emDigTimer);
+    emDigTimer = null;
+  }
+  document.querySelectorAll(".sec").forEach(s => s.style.display = "none");
+  const s = document.getElementById("sec-" + sec);
+  if (s) s.style.display = "block";
+  const titles = {
+    "dash": "Dashboard",
+    "pedidos": "Pedidos de Venda",
+    "pendencias": "Pendências",
+    "nfe": "Entrada de NF-e",
+    "emdigitacao": "Em Digitação (por vendedor)"
+  };
+  const pg = document.getElementById("pgTitle");
+  if (pg) pg.textContent = titles[sec] || sec;
+  if (sec === "pedidos") carregarPedidos();
+  if (sec === "pendencias") carregarPend();
+  if (sec === "dash") carregarDash();
+  if (sec === "emdigitacao") carregarEmDigitacao();
+}
+function atualizar() {
+  if (secAtual === "pedidos") carregarPedidos();else if (secAtual === "pendencias") carregarPend();else if (secAtual === "dash") carregarDash();
+}
+if (logado) {
+  mostrarApp();
+  iniciar();
+} else {
+  location.href = "/login?next=/gestao";
+}
+const brl = v => Number(v || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const esc = s => (s || "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const soDig = s => (s || "").replace(/\D/g, "");
+const dataBR = d => {
+  if (!d) return "";
+  const p = String(d).slice(0, 10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : d;
+};
+function corSit(id) {
+  var _mapSit$id;
+  return ((_mapSit$id = mapSit[id]) === null || _mapSit$id === void 0 ? void 0 : _mapSit$id.cor) || "#cbcbcb";
+}
+function nomeSit(id) {
+  var _mapSit$id2;
+  return ((_mapSit$id2 = mapSit[id]) === null || _mapSit$id2 === void 0 ? void 0 : _mapSit$id2.nome) || "Sit." + id;
+}
 
 // inicia
-document.getElementById("logoImg").src=LOGO;
-
-
-async function iniciar(){
-  try{
-    const r=await fetch(BACKEND+"/api/situacoes?modulo=98310"); const j=await r.json();
-    situacoes=(j.data||[]).map(s=>({id:s.id,nome:s.nome,cor:s.cor||"#cbcbcb"}));
-    mapSit={}; situacoes.forEach(s=>mapSit[s.id]=s);
-  }catch(e){}
+document.getElementById("logoImg").src = LOGO;
+async function iniciar() {
+  try {
+    const r = await fetch(BACKEND + "/api/situacoes?modulo=98310");
+    const j = await r.json();
+    situacoes = (j.data || []).map(s => ({
+      id: s.id,
+      nome: s.nome,
+      cor: s.cor || "#cbcbcb"
+    }));
+    mapSit = {};
+    situacoes.forEach(s => mapSit[s.id] = s);
+  } catch (e) {}
   carregarDash();
 }
 
 // ---- DASHBOARD ----
-async function carregarDash(){
-  document.getElementById("dashCards").innerHTML=`<div class="muted">Carregando…</div>`;
-  try{
-    const [rPed, rPend] = await Promise.all([
-      (()=>{ const n=new Date(Date.now()-3*60*60*1000); const h=n.toISOString().slice(0,10); const ini=new Date(n-30*86400000).toISOString().slice(0,10); return fetch(BACKEND+`/api/pedidos?todos=1&dataInicial=${ini}&dataFinal=${h}`).then(r=>r.json()); })(),
-      fetch(BACKEND+"/api/pendencias").then(r=>r.json())
-    ]);
-    pedidos=rPed.data||[]; pendencias=rPend.data||[];
-    const aguard=pedidos.filter(p=>p.situacao?.id===818795).length;
-    const emSep=pedidos.filter(p=>p.situacao?.id===817963).length;
-    const pend=pendencias.length;
-    document.getElementById("dashCards").innerHTML=`
+async function carregarDash() {
+  document.getElementById("dashCards").innerHTML = `<div class="muted">Carregando…</div>`;
+  try {
+    const [rPed, rPend] = await Promise.all([(() => {
+      const n = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      const h = n.toISOString().slice(0, 10);
+      const ini = new Date(n - 30 * 86400000).toISOString().slice(0, 10);
+      return fetch(BACKEND + `/api/pedidos?todos=1&dataInicial=${ini}&dataFinal=${h}`).then(r => r.json());
+    })(), fetch(BACKEND + "/api/pendencias").then(r => r.json())]);
+    pedidos = rPed.data || [];
+    pendencias = rPend.data || [];
+    const aguard = pedidos.filter(p => {
+      var _p$situacao;
+      return ((_p$situacao = p.situacao) === null || _p$situacao === void 0 ? void 0 : _p$situacao.id) === 818795;
+    }).length;
+    const emSep = pedidos.filter(p => {
+      var _p$situacao2;
+      return ((_p$situacao2 = p.situacao) === null || _p$situacao2 === void 0 ? void 0 : _p$situacao2.id) === 817963;
+    }).length;
+    const pend = pendencias.length;
+    document.getElementById("dashCards").innerHTML = `
       <a class="card" onclick="ir('pedidos')">
         <div class="ic">📦</div><div class="ct">${pedidos.length}</div><div class="lb">Pedidos hoje</div></a>
       <a class="card" onclick="ir('pedidos')">
@@ -274,152 +333,241 @@ async function carregarDash(){
       <a class="card" onclick="ir('pedidos')">
         <div class="ic">🚚</div><div class="ct">${emSep}</div><div class="lb">Em separação</div></a>
       <a class="card" onclick="ir('pendencias')">
-        <div class="ic">⚠️</div><div class="ct" style="${pend>0?'color:#ff8090':''}">${pend}</div><div class="lb">Pendências abertas</div></a>`;
+        <div class="ic">⚠️</div><div class="ct" style="${pend > 0 ? 'color:#ff8090' : ''}">${pend}</div><div class="lb">Pendências abertas</div></a>`;
     // últimos pedidos
-    document.getElementById("dashPedidos").innerHTML=pedidos.slice(0,5).map(p=>`
+    document.getElementById("dashPedidos").innerHTML = pedidos.slice(0, 5).map(p => {
+      var _p$contato, _p$situacao3, _p$situacao4;
+      return `
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span>Pedido ${esc(p.numero||p.id)} · ${esc(p.contato?.nome||"—")}</span>
-        <span class="badge" style="background:${corSit(p.situacao?.id)}">${esc(nomeSit(p.situacao?.id))}</span>
-      </div>`).join("")||`<div class="muted">Nenhum pedido</div>`;
-    document.getElementById("dashPend").innerHTML=pendencias.slice(0,5).map(p=>`
+        <span>Pedido ${esc(p.numero || p.id)} · ${esc(((_p$contato = p.contato) === null || _p$contato === void 0 ? void 0 : _p$contato.nome) || "—")}</span>
+        <span class="badge" style="background:${corSit((_p$situacao3 = p.situacao) === null || _p$situacao3 === void 0 ? void 0 : _p$situacao3.id)}">${esc(nomeSit((_p$situacao4 = p.situacao) === null || _p$situacao4 === void 0 ? void 0 : _p$situacao4.id))}</span>
+      </div>`;
+    }).join("") || `<div class="muted">Nenhum pedido</div>`;
+    document.getElementById("dashPend").innerHTML = pendencias.slice(0, 5).map(p => `
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span>Pedido ${esc(p.numero||p.pedidoId)} · ${esc(p.cliente||"—")}</span>
-        <span style="color:#ff8090">${(p.faltas||[]).length} item(ns)</span>
-      </div>`).join("")||`<div class="ok">Nenhuma pendência! 🎉</div>`;
-  }catch(e){ document.getElementById("dashCards").innerHTML=`<div class="err">Erro ao carregar dashboard</div>`; }
+        <span>Pedido ${esc(p.numero || p.pedidoId)} · ${esc(p.cliente || "—")}</span>
+        <span style="color:#ff8090">${(p.faltas || []).length} item(ns)</span>
+      </div>`).join("") || `<div class="ok">Nenhuma pendência! 🎉</div>`;
+  } catch (e) {
+    document.getElementById("dashCards").innerHTML = `<div class="err">Erro ao carregar dashboard</div>`;
+  }
 }
 
 // ---- PEDIDOS ----
-async function carregarPedidos(){
-  document.getElementById("listaPedidos").innerHTML=`<div class="muted">Carregando…</div>`;
-  try{
-    const _n=new Date(Date.now()-3*60*60*1000); const _br=_n.toISOString().slice(0,10); const _ini=new Date(_n-30*86400000).toISOString().slice(0,10); let u=BACKEND+`/api/pedidos?todos=1&dataInicial=${_ini}&dataFinal=${_br}`; if(filtro!==null) u+="&idsSituacoes="+filtro;
-    const r=await fetch(u); const j=await r.json(); pedidos=j.data||[];
-    const chips=`<div class="fchip ${filtro===null?'on':''}" onclick="setFiltro(null)">Todos</div>`+
-      situacoes.map(s=>`<div class="fchip ${filtro===s.id?'on':''}" onclick="setFiltro(${s.id})" style="${filtro===s.id?`background:${s.cor};color:#111`:''}">${esc(s.nome)}</div>`).join("");
-    document.getElementById("filtros").innerHTML=chips;
-    document.getElementById("listaPedidos").innerHTML=pedidos.length
-      ? pedidos.map(p=>`<div class="pcard" onclick="abrirPedido(${p.id})">
-          <div class="info"><div class="n">Pedido ${esc(p.numero||p.id)}</div><div class="c">${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div></div>
+async function carregarPedidos() {
+  document.getElementById("listaPedidos").innerHTML = `<div class="muted">Carregando…</div>`;
+  try {
+    const _n = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    const _br = _n.toISOString().slice(0, 10);
+    const _ini = new Date(_n - 30 * 86400000).toISOString().slice(0, 10);
+    let u = BACKEND + `/api/pedidos?todos=1&dataInicial=${_ini}&dataFinal=${_br}`;
+    if (filtro !== null) u += "&idsSituacoes=" + filtro;
+    const r = await fetch(u);
+    const j = await r.json();
+    pedidos = j.data || [];
+    const chips = `<div class="fchip ${filtro === null ? 'on' : ''}" onclick="setFiltro(null)">Todos</div>` + situacoes.map(s => `<div class="fchip ${filtro === s.id ? 'on' : ''}" onclick="setFiltro(${s.id})" style="${filtro === s.id ? `background:${s.cor};color:#111` : ''}">${esc(s.nome)}</div>`).join("");
+    document.getElementById("filtros").innerHTML = chips;
+    document.getElementById("listaPedidos").innerHTML = pedidos.length ? pedidos.map(p => {
+      var _p$contato2, _p$situacao5, _p$situacao6;
+      return `<div class="pcard" onclick="abrirPedido(${p.id})">
+          <div class="info"><div class="n">Pedido ${esc(p.numero || p.id)}</div><div class="c">${esc(((_p$contato2 = p.contato) === null || _p$contato2 === void 0 ? void 0 : _p$contato2.nome) || "—")} · ${dataBR(p.data)}</div></div>
           <div style="text-align:right"><div style="font-weight:900;color:#ffd23f">${brl(p.total)}</div>
-          <span class="badge" style="background:${corSit(p.situacao?.id)}">${esc(nomeSit(p.situacao?.id))}</span></div></div>`).join("")
-      : `<div class="muted">Nenhum pedido neste filtro.</div>`;
-  }catch(e){ document.getElementById("listaPedidos").innerHTML=`<div class="err">Erro ao carregar pedidos</div>`; }
+          <span class="badge" style="background:${corSit((_p$situacao5 = p.situacao) === null || _p$situacao5 === void 0 ? void 0 : _p$situacao5.id)}">${esc(nomeSit((_p$situacao6 = p.situacao) === null || _p$situacao6 === void 0 ? void 0 : _p$situacao6.id))}</span></div></div>`;
+    }).join("") : `<div class="muted">Nenhum pedido neste filtro.</div>`;
+  } catch (e) {
+    document.getElementById("listaPedidos").innerHTML = `<div class="err">Erro ao carregar pedidos</div>`;
+  }
 }
-function setFiltro(id){ filtro=id; carregarPedidos(); }
+function setFiltro(id) {
+  filtro = id;
+  carregarPedidos();
+}
 
 // ---- EM DIGITAÇÃO (por vendedor, com itens visíveis e atualização automática) ----
-async function carregarEmDigitacao(mostrarCarregando=true){
-  if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/em-digitacao"); const j=await r.json();
-    emDigDados=j.data||{total:0,porVendedor:{}};
+async function carregarEmDigitacao(mostrarCarregando = true) {
+  if (mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML = `<div class="muted">Buscando pedidos em digitação (pode levar alguns segundos, verifica um por um)…</div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/em-digitacao");
+    const j = await r.json();
+    emDigDados = j.data || {
+      total: 0,
+      porVendedor: {}
+    };
     renderEmDigitacao();
-  }catch(e){ if(mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML=`<div class="err">Erro ao carregar</div>`; }
+  } catch (e) {
+    if (mostrarCarregando) document.getElementById("listaEmDigitacao").innerHTML = `<div class="err">Erro ao carregar</div>`;
+  }
   // fica "escutando" o Bling — atualiza sozinho a cada 45s enquanto a tela estiver aberta
-  if(emDigTimer) clearTimeout(emDigTimer);
-  if(secAtual==="emdigitacao") emDigTimer=setTimeout(()=>carregarEmDigitacao(false),45000);
+  if (emDigTimer) clearTimeout(emDigTimer);
+  if (secAtual === "emdigitacao") emDigTimer = setTimeout(() => carregarEmDigitacao(false), 45000);
 }
-
-function toggleFiltroVendedorDig(nome){
-  const ix=emDigFiltro.indexOf(nome);
-  if(ix>=0) emDigFiltro.splice(ix,1); else emDigFiltro.push(nome);
+function toggleFiltroVendedorDig(nome) {
+  const ix = emDigFiltro.indexOf(nome);
+  if (ix >= 0) emDigFiltro.splice(ix, 1);else emDigFiltro.push(nome);
   renderEmDigitacao();
 }
-
-async function abrirPedido(id){
-  document.getElementById("modal").style.display="flex";
-  document.getElementById("modalBox").innerHTML=`<div class="muted">Carregando…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/pedidos/"+id); const j=await r.json(); selPed=j.data||j;
-    editItens=(selPed.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"Produto",quantidade:i.quantidade||1,valor:i.valor||0}));
-    editavel=!(selPed.situacao?.id===9||selPed.situacao?.id===12);
+async function abrirPedido(id) {
+  document.getElementById("modal").style.display = "flex";
+  document.getElementById("modalBox").innerHTML = `<div class="muted">Carregando…</div>`;
+  try {
+    var _selPed$situacao, _selPed$situacao2;
+    const r = await fetch(BACKEND + "/api/pedidos/" + id);
+    const j = await r.json();
+    selPed = j.data || j;
+    editItens = (selPed.itens || []).map(i => {
+      var _i$produto, _i$produto2;
+      return {
+        produtoId: (_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.id,
+        descricao: i.descricao || ((_i$produto2 = i.produto) === null || _i$produto2 === void 0 ? void 0 : _i$produto2.nome) || "Produto",
+        quantidade: i.quantidade || 1,
+        valor: i.valor || 0
+      };
+    });
+    editavel = !(((_selPed$situacao = selPed.situacao) === null || _selPed$situacao === void 0 ? void 0 : _selPed$situacao.id) === 9 || ((_selPed$situacao2 = selPed.situacao) === null || _selPed$situacao2 === void 0 ? void 0 : _selPed$situacao2.id) === 12);
     renderModal();
-  }catch(e){ document.getElementById("modalBox").innerHTML=`<div class="err">Erro ao abrir pedido</div>`; }
+  } catch (e) {
+    document.getElementById("modalBox").innerHTML = `<div class="err">Erro ao abrir pedido</div>`;
+  }
 }
-function renderModal(){
-  const p=selPed; const ed=editavel;
-  const itens=editItens.map((i,ix)=>`<div class="item-row">
+function renderModal() {
+  var _p$contato3, _p$situacao8, _p$situacao9;
+  const p = selPed;
+  const ed = editavel;
+  const itens = editItens.map((i, ix) => `<div class="item-row">
     <span style="flex:1">${esc(i.descricao)}</span>
-    ${ed?`<input type="number" min="1" value="${i.quantidade}" style="width:60px;padding:4px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff" onchange="editItens[${ix}].quantidade=+this.value">`:`<span class="muted">x${i.quantidade}</span>`}
-    <b style="width:86px;text-align:right">${brl((i.valor||0)*(i.quantidade||0))}</b>
-    ${ed?`<button onclick="editItens.splice(${ix},1);renderModal()" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:16px">🗑</button>`:""}</div>`).join("");
-  const total=editItens.reduce((s,i)=>s+(i.valor||0)*(i.quantidade||0),0);
-  const opcoes=situacoes.map(s=>`<option value="${s.id}" ${p.situacao?.id===s.id?"selected":""}>${esc(s.nome)}</option>`).join("");
-  document.getElementById("modalBox").innerHTML=`
+    ${ed ? `<input type="number" min="1" value="${i.quantidade}" style="width:60px;padding:4px;background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff" onchange="editItens[${ix}].quantidade=+this.value">` : `<span class="muted">x${i.quantidade}</span>`}
+    <b style="width:86px;text-align:right">${brl((i.valor || 0) * (i.quantidade || 0))}</b>
+    ${ed ? `<button onclick="editItens.splice(${ix},1);renderModal()" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:16px">🗑</button>` : ""}</div>`).join("");
+  const total = editItens.reduce((s, i) => s + (i.valor || 0) * (i.quantidade || 0), 0);
+  const opcoes = situacoes.map(s => {
+    var _p$situacao7;
+    return `<option value="${s.id}" ${((_p$situacao7 = p.situacao) === null || _p$situacao7 === void 0 ? void 0 : _p$situacao7.id) === s.id ? "selected" : ""}>${esc(s.nome)}</option>`;
+  }).join("");
+  document.getElementById("modalBox").innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h3>Pedido ${esc(p.numero||p.id)}</h3><button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
-    <div class="muted" style="margin-bottom:10px">${esc(p.contato?.nome||"—")} · ${dataBR(p.data)} · <span class="badge" style="background:${corSit(p.situacao?.id)}">${esc(nomeSit(p.situacao?.id))}</span></div>
-    ${p.observacoes?`<div class="lbl">Observação</div><div style="margin-bottom:10px;font-size:13px">${esc(p.observacoes)}</div>`:""}
+      <h3>Pedido ${esc(p.numero || p.id)}</h3><button class="btn btn-ghost" onclick="fecharModal()">✕</button></div>
+    <div class="muted" style="margin-bottom:10px">${esc(((_p$contato3 = p.contato) === null || _p$contato3 === void 0 ? void 0 : _p$contato3.nome) || "—")} · ${dataBR(p.data)} · <span class="badge" style="background:${corSit((_p$situacao8 = p.situacao) === null || _p$situacao8 === void 0 ? void 0 : _p$situacao8.id)}">${esc(nomeSit((_p$situacao9 = p.situacao) === null || _p$situacao9 === void 0 ? void 0 : _p$situacao9.id))}</span></div>
+    ${p.observacoes ? `<div class="lbl">Observação</div><div style="margin-bottom:10px;font-size:13px">${esc(p.observacoes)}</div>` : ""}
     <div class="lbl">Itens</div>${itens}
     <div class="item-row" style="border:none"><b>Total</b><b style="color:#ffd23f">${brl(total)}</b></div>
-    ${ed?`<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="addProdModal()">+ Adicionar produto</button>`:""}
+    ${ed ? `<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="addProdModal()">+ Adicionar produto</button>` : ""}
     <div id="addProdBox"></div>
-    ${ed?`<button class="btn btn-mag" style="width:100%;margin-top:10px" onclick="salvarItens()">💾 Salvar itens</button>`:""}
+    ${ed ? `<button class="btn btn-mag" style="width:100%;margin-top:10px" onclick="salvarItens()">💾 Salvar itens</button>` : ""}
     <div class="lbl" style="margin-top:14px">Mudar situação</div>
     <div style="display:flex;gap:8px;margin-top:6px">
       <select id="novaSit" style="flex:1;padding:10px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">${opcoes}</select>
       <button class="btn btn-out" onclick="mudarSit()">Aplicar</button></div>
     <div id="modalMsg"></div>`;
 }
-function fecharModal(){ document.getElementById("modal").style.display="none"; selPed=null; editItens=[]; }
-function addProdModal(){
-  document.getElementById("addProdBox").innerHTML=`<input placeholder="buscar produto..." style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;margin-top:8px" oninput="buscarProdModal(this.value)"><div id="resProd"></div>`;
+function fecharModal() {
+  document.getElementById("modal").style.display = "none";
+  selPed = null;
+  editItens = [];
+}
+function addProdModal() {
+  document.getElementById("addProdBox").innerHTML = `<input placeholder="buscar produto..." style="width:100%;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;margin-top:8px" oninput="buscarProdModal(this.value)"><div id="resProd"></div>`;
 }
 let _bt;
-function buscarProdModal(term){
-  clearTimeout(_bt); if((term||"").trim().length<2){document.getElementById("resProd").innerHTML="";return;}
-  _bt=setTimeout(async()=>{
-    try{
-      const r=await fetch(BACKEND+"/api/buscar-atacado?nome="+encodeURIComponent(term.trim()));
-      const j=await r.json(); const lista=j.data||[];
-      const box=document.getElementById("resProd"); if(!box)return;
-      box.innerHTML="";
-      lista.forEach(prod=>{
-        const btn=document.createElement("button");
-        btn.className="btn btn-ghost"; btn.style="display:block;width:100%;text-align:left;margin-top:4px;font-size:12px";
-        btn.innerHTML=`${esc(prod.nome)} <span class="muted">#${esc(prod.codigo)} · est ${prod.estoque??'?'} · ${brl(prod.preco)}</span>`;
-        btn.addEventListener("click",()=>{
-          editItens.push({produtoId:prod.id,descricao:prod.nome,quantidade:1,valor:prod.preco||0});
+function buscarProdModal(term) {
+  clearTimeout(_bt);
+  if ((term || "").trim().length < 2) {
+    document.getElementById("resProd").innerHTML = "";
+    return;
+  }
+  _bt = setTimeout(async () => {
+    try {
+      const r = await fetch(BACKEND + "/api/buscar-atacado?nome=" + encodeURIComponent(term.trim()));
+      const j = await r.json();
+      const lista = j.data || [];
+      const box = document.getElementById("resProd");
+      if (!box) return;
+      box.innerHTML = "";
+      lista.forEach(prod => {
+        var _prod$estoque;
+        const btn = document.createElement("button");
+        btn.className = "btn btn-ghost";
+        btn.style = "display:block;width:100%;text-align:left;margin-top:4px;font-size:12px";
+        btn.innerHTML = `${esc(prod.nome)} <span class="muted">#${esc(prod.codigo)} · est ${(_prod$estoque = prod.estoque) !== null && _prod$estoque !== void 0 ? _prod$estoque : '?'} · ${brl(prod.preco)}</span>`;
+        btn.addEventListener("click", () => {
+          editItens.push({
+            produtoId: prod.id,
+            descricao: prod.nome,
+            quantidade: 1,
+            valor: prod.preco || 0
+          });
           renderModal();
         });
         box.appendChild(btn);
       });
-    }catch(e){}
-  },400);
+    } catch (e) {}
+  }, 400);
 }
-async function salvarItens(){
-  document.getElementById("modalMsg").innerHTML=`<div class="muted">Salvando…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/pedidos/"+selPed.id+"/itens",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({itens:editItens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor}))})});
-    const j=await r.json();
-    if(r.ok&&!j.erro) document.getElementById("modalMsg").innerHTML=`<div class="ok">✅ Itens salvos!</div>`;
-    else document.getElementById("modalMsg").innerHTML=`<div class="err">Falha: ${esc(j.erro||"erro")}</div>`;
-  }catch(e){ document.getElementById("modalMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
+async function salvarItens() {
+  document.getElementById("modalMsg").innerHTML = `<div class="muted">Salvando…</div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/pedidos/" + selPed.id + "/itens", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        itens: editItens.map(i => ({
+          produtoId: i.produtoId,
+          quantidade: i.quantidade,
+          valor: i.valor
+        }))
+      })
+    });
+    const j = await r.json();
+    if (r.ok && !j.erro) document.getElementById("modalMsg").innerHTML = `<div class="ok">✅ Itens salvos!</div>`;else document.getElementById("modalMsg").innerHTML = `<div class="err">Falha: ${esc(j.erro || "erro")}</div>`;
+  } catch (e) {
+    document.getElementById("modalMsg").innerHTML = `<div class="err">Erro de conexão</div>`;
+  }
 }
-async function mudarSit(){
-  const id=Number(document.getElementById("novaSit").value);
-  document.getElementById("modalMsg").innerHTML=`<div class="muted">Alterando…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/pedidos/"+selPed.id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:id})});
-    const j=await r.json();
-    if(r.ok&&!j.erro){ if(selPed.situacao)selPed.situacao.id=id; else selPed.situacao={id}; renderModal(); carregarPedidos(); document.getElementById("modalMsg").innerHTML=`<div class="ok">✅ Situação alterada!</div>`; }
-    else document.getElementById("modalMsg").innerHTML=`<div class="err">Falha: ${esc(j.erro||"erro")}</div>`;
-  }catch(e){ document.getElementById("modalMsg").innerHTML=`<div class="err">Erro de conexão</div>`; }
+async function mudarSit() {
+  const id = Number(document.getElementById("novaSit").value);
+  document.getElementById("modalMsg").innerHTML = `<div class="muted">Alterando…</div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/pedidos/" + selPed.id + "/situacao", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        idSituacao: id
+      })
+    });
+    const j = await r.json();
+    if (r.ok && !j.erro) {
+      if (selPed.situacao) selPed.situacao.id = id;else selPed.situacao = {
+        id
+      };
+      renderModal();
+      carregarPedidos();
+      document.getElementById("modalMsg").innerHTML = `<div class="ok">✅ Situação alterada!</div>`;
+    } else document.getElementById("modalMsg").innerHTML = `<div class="err">Falha: ${esc(j.erro || "erro")}</div>`;
+  } catch (e) {
+    document.getElementById("modalMsg").innerHTML = `<div class="err">Erro de conexão</div>`;
+  }
 }
 
 // ---- PENDÊNCIAS ----
-async function carregarPend(){
-  document.getElementById("listaPend").innerHTML=`<div class="muted">Carregando…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/pendencias"); const j=await r.json(); pendencias=j.data||[];
-    if(!pendencias.length){ document.getElementById("listaPend").innerHTML=`<div class="ok">✅ Nenhuma pendência aberta!</div>`; return; }
-    document.getElementById("listaPend").innerHTML=pendencias.map((p,ix)=>`
+async function carregarPend() {
+  document.getElementById("listaPend").innerHTML = `<div class="muted">Carregando…</div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/pendencias");
+    const j = await r.json();
+    pendencias = j.data || [];
+    if (!pendencias.length) {
+      document.getElementById("listaPend").innerHTML = `<div class="ok">✅ Nenhuma pendência aberta!</div>`;
+      return;
+    }
+    document.getElementById("listaPend").innerHTML = pendencias.map((p, ix) => `
       <div class="pend-card">
-        <div class="ph"><div><div class="pn">Pedido ${esc(p.numero||p.pedidoId)} — ${esc(p.cliente||"—")}</div>
-          <div class="pc">${(p.faltas||[]).length} item(ns) faltando</div></div></div>
-        <div>${(p.faltas||[]).map(f=>`<div class="falta-item">• ${esc(f.descricao)} — faltou ${f.falta} de ${f.quantidade}</div>`).join("")}</div>
-        <textarea rows="3" placeholder="Sugestão / observação para o cliente..." onchange="pendencias[${ix}].sugestao=this.value">${esc(p.sugestao||"")}</textarea>
+        <div class="ph"><div><div class="pn">Pedido ${esc(p.numero || p.pedidoId)} — ${esc(p.cliente || "—")}</div>
+          <div class="pc">${(p.faltas || []).length} item(ns) faltando</div></div></div>
+        <div>${(p.faltas || []).map(f => `<div class="falta-item">• ${esc(f.descricao)} — faltou ${f.falta} de ${f.quantidade}</div>`).join("")}</div>
+        <textarea rows="3" placeholder="Sugestão / observação para o cliente..." onchange="pendencias[${ix}].sugestao=this.value">${esc(p.sugestao || "")}</textarea>
         <div class="acts">
           <button class="btn btn-mag" onclick="enviarWhats(${ix})">🟢 WhatsApp</button>
           <button class="btn btn-ghost" onclick="salvarSug(${ix})">💾 Salvar sugestão</button>
@@ -427,54 +575,107 @@ async function carregarPend(){
         </div>
         <div id="pmsg-${ix}"></div>
       </div>`).join("");
-  }catch(e){ document.getElementById("listaPend").innerHTML=`<div class="err">Erro ao carregar pendências</div>`; }
+  } catch (e) {
+    document.getElementById("listaPend").innerHTML = `<div class="err">Erro ao carregar pendências</div>`;
+  }
 }
-function montarMsg(p){
-  const itens=(p.faltas||[]).map(f=>`- ${f.descricao} (faltou ${f.falta}/${f.quantidade})`).join("\n");
-  return `Olá${p.cliente?" "+p.cliente:""}! Sobre seu pedido ${p.numero||p.pedidoId} na B13 Bebidas:\n\nInfelizmente faltou:\n${itens}\n\n${p.sugestao||"Podemos sugerir alternativas. Como prefere seguir?"}`;
+function montarMsg(p) {
+  const itens = (p.faltas || []).map(f => `- ${f.descricao} (faltou ${f.falta}/${f.quantidade})`).join("\n");
+  return `Olá${p.cliente ? " " + p.cliente : ""}! Sobre seu pedido ${p.numero || p.pedidoId} na B13 Bebidas:\n\nInfelizmente faltou:\n${itens}\n\n${p.sugestao || "Podemos sugerir alternativas. Como prefere seguir?"}`;
 }
-function enviarWhats(ix){
-  const p=pendencias[ix]; const t=soDig(p.telefone||""); if(!t){ alert("Telefone não encontrado nesta pendência."); return; }
-  const num=t.length>11&&t.startsWith("55")?t:"55"+t;
-  window.open(`https://wa.me/${num}?text=`+encodeURIComponent(montarMsg(p)),"_blank");
+function enviarWhats(ix) {
+  const p = pendencias[ix];
+  const t = soDig(p.telefone || "");
+  if (!t) {
+    alert("Telefone não encontrado nesta pendência.");
+    return;
+  }
+  const num = t.length > 11 && t.startsWith("55") ? t : "55" + t;
+  window.open(`https://wa.me/${num}?text=` + encodeURIComponent(montarMsg(p)), "_blank");
 }
-async function salvarSug(ix){
-  const p=pendencias[ix];
-  try{ await fetch(BACKEND+"/api/pendencias/"+p.pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({sugestao:p.sugestao})}); document.getElementById("pmsg-"+ix).innerHTML=`<div class="ok" style="margin-top:6px">✅ Sugestão salva!</div>`; }
-  catch(e){ document.getElementById("pmsg-"+ix).innerHTML=`<div class="err">Erro ao salvar</div>`; }
+async function salvarSug(ix) {
+  const p = pendencias[ix];
+  try {
+    await fetch(BACKEND + "/api/pendencias/" + p.pedidoId, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        sugestao: p.sugestao
+      })
+    });
+    document.getElementById("pmsg-" + ix).innerHTML = `<div class="ok" style="margin-top:6px">✅ Sugestão salva!</div>`;
+  } catch (e) {
+    document.getElementById("pmsg-" + ix).innerHTML = `<div class="err">Erro ao salvar</div>`;
+  }
 }
-async function resolverPend(ix){
-  const p=pendencias[ix];
-  if(!confirm(`Marcar pedido ${p.numero||p.pedidoId} como Resolvido e mudar para Verificado?`)) return;
-  try{
-    await fetch(BACKEND+"/api/pedidos/"+p.pedidoId+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:VERIFICADO})});
-    await fetch(BACKEND+"/api/pendencias/"+p.pedidoId,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"resolvido"})});
+async function resolverPend(ix) {
+  const p = pendencias[ix];
+  if (!confirm(`Marcar pedido ${p.numero || p.pedidoId} como Resolvido e mudar para Verificado?`)) return;
+  try {
+    await fetch(BACKEND + "/api/pedidos/" + p.pedidoId + "/situacao", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        idSituacao: VERIFICADO
+      })
+    });
+    await fetch(BACKEND + "/api/pendencias/" + p.pedidoId, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        status: "resolvido"
+      })
+    });
     carregarPend();
-  }catch(e){ document.getElementById("pmsg-"+ix).innerHTML=`<div class="err">Erro ao resolver</div>`; }
+  } catch (e) {
+    document.getElementById("pmsg-" + ix).innerHTML = `<div class="err">Erro ao resolver</div>`;
+  }
 }
 
 // ---- NF-e ----
-function onNfeInput(v){
-  const ch=soDig(v); const ok=ch.length===44;
-  document.getElementById("nfeStatus").innerHTML=ch.length?`<div class="muted">${ch.length}/44 dígitos ${ok?"✅":""}</div>`:"";
-  document.getElementById("nfeBtn").disabled=!ok;
+function onNfeInput(v) {
+  const ch = soDig(v);
+  const ok = ch.length === 44;
+  document.getElementById("nfeStatus").innerHTML = ch.length ? `<div class="muted">${ch.length}/44 dígitos ${ok ? "✅" : ""}</div>` : "";
+  document.getElementById("nfeBtn").disabled = !ok;
 }
-async function importarNfe(){
-  const ch=soDig(document.getElementById("nfeInput").value);
-  if(ch.length!==44){ alert("Chave precisa ter 44 dígitos."); return; }
-  document.getElementById("nfeResult").innerHTML=`<div class="muted">Importando… (consultando SEFAZ via Bling)</div>`;
-  document.getElementById("nfeBtn").disabled=true;
-  try{
-    const r=await fetch(BACKEND+"/api/nfe/importar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chave:ch})});
-    const j=await r.json();
-    if(r.ok&&j.ok){
-      const n=j.nota; const itens=(n?.itens||n?.produtos||[]);
-      document.getElementById("nfeResult").innerHTML=`<div class="ok">✅ Nota importada no Bling!<br><small>Acesse Estoque → Notas fiscais de entrada para lançar o estoque.</small></div>
-        ${itens.length?`<div style="margin-top:12px;font-weight:800">Itens da nota:</div>`+itens.map(i=>`<div class="nfe-item"><span>${esc(i.descricao||i.nome||"Produto")}</span><span class="muted">${i.quantidade||1} × ${brl(i.valorUnitario||i.valor||0)}</span></div>`).join(""):""}`; }
-    else{ document.getElementById("nfeResult").innerHTML=`<div class="err">Erro: ${esc(j.erro||"falha")}${j.body?`<br><small>${esc(JSON.stringify(j.body))}</small>`:""}</div>`; }
-  }catch(e){ document.getElementById("nfeResult").innerHTML=`<div class="err">Erro de conexão</div>`; }
-  document.getElementById("nfeBtn").disabled=false;
-}
-</script>
+async function importarNfe() {
+  const ch = soDig(document.getElementById("nfeInput").value);
+  if (ch.length !== 44) {
+    alert("Chave precisa ter 44 dígitos.");
+    return;
+  }
+  document.getElementById("nfeResult").innerHTML = `<div class="muted">Importando… (consultando SEFAZ via Bling)</div>`;
+  document.getElementById("nfeBtn").disabled = true;
+  try {
+    const r = await fetch(BACKEND + "/api/nfe/importar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        chave: ch
+      })
+    });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      const n = j.nota;
+      const itens = (n === null || n === void 0 ? void 0 : n.itens) || (n === null || n === void 0 ? void 0 : n.produtos) || [];
+      document.getElementById("nfeResult").innerHTML = `<div class="ok">✅ Nota importada no Bling!<br><small>Acesse Estoque → Notas fiscais de entrada para lançar o estoque.</small></div>
+        ${itens.length ? `<div style="margin-top:12px;font-weight:800">Itens da nota:</div>` + itens.map(i => `<div class="nfe-item"><span>${esc(i.descricao || i.nome || "Produto")}</span><span class="muted">${i.quantidade || 1} × ${brl(i.valorUnitario || i.valor || 0)}</span></div>`).join("") : ""}`;
+    } else {
+      document.getElementById("nfeResult").innerHTML = `<div class="err">Erro: ${esc(j.erro || "falha")}${j.body ? `<br><small>${esc(JSON.stringify(j.body))}</small>` : ""}</div>`;
+    }
+  } catch (e) {
+    document.getElementById("nfeResult").innerHTML = `<div class="err">Erro de conexão</div>`;
+  }
+  document.getElementById("nfeBtn").disabled = false;
+}</script>
 </body>
 </html>

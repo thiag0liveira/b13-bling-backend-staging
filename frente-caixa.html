@@ -90,47 +90,85 @@ document.addEventListener("DOMContentLoaded",function(){
 <div id="conteudo"></div>
 <div id="modais"></div>
 
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function hora(ms){ return new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}); }
-function operadorAtual(){ try{ return (b13GetSession()||{}).nome||"—"; }catch(e){ return "—"; } }
-function funcionarioIdAtual(){ try{ return (b13GetSession()||{}).id||""; }catch(e){ return ""; } }
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+function brl(n) {
+  return (Number(n) || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
+function hora(ms) {
+  return new Date(ms).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo"
+  });
+}
+function operadorAtual() {
+  try {
+    return (b13GetSession() || {}).nome || "—";
+  } catch (e) {
+    return "—";
+  }
+}
+function funcionarioIdAtual() {
+  try {
+    return (b13GetSession() || {}).id || "";
+  } catch (e) {
+    return "";
+  }
+}
+let CAIXA = {
+  aberta: false,
+  sessao: null,
+  resumo: null
+};
+let CARRINHO = [];
+let FORMAS = [];
+let PAGAMENTOS = [{
+  formaId: null,
+  formaNome: "",
+  valor: 0
+}];
+let CONSUMIDOR_FINAL = null; // {id,nome} — cliente padrão quando ninguém é selecionado
+let CLIENTE_SELECIONADO = null; // {id,nome} — se o operador escolher um cliente específico
+let _timerPainelAdicionado = null;
+let ULTIMA_VENDA = null; // guarda a última venda concluída, pra reimprimir o comprovante
 
-let CAIXA={aberta:false,sessao:null,resumo:null};
-let CARRINHO=[];
-let FORMAS=[];
-let PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}];
-let CONSUMIDOR_FINAL=null; // {id,nome} — cliente padrão quando ninguém é selecionado
-let CLIENTE_SELECIONADO=null; // {id,nome} — se o operador escolher um cliente específico
-let _timerPainelAdicionado=null;
-let ULTIMA_VENDA=null; // guarda a última venda concluída, pra reimprimir o comprovante
-
-async function carregarConsumidorFinal(){
-  try{
-    const j=await fetch(BACKEND+"/api/pdv/consumidor-final").then(r=>r.json());
-    CONSUMIDOR_FINAL=j.data;
-  }catch(e){ CONSUMIDOR_FINAL=null; }
+async function carregarConsumidorFinal() {
+  try {
+    const j = await fetch(BACKEND + "/api/pdv/consumidor-final").then(r => r.json());
+    CONSUMIDOR_FINAL = j.data;
+  } catch (e) {
+    CONSUMIDOR_FINAL = null;
+  }
 }
 
 // ---------------- sessão de caixa ----------------
-async function carregarCaixa(){
-  try{
-    const j=await fetch(BACKEND+"/api/caixa-sessao/atual?funcionarioId="+encodeURIComponent(funcionarioIdAtual())).then(r=>r.json());
-    CAIXA=j;
-  }catch(e){ CAIXA={aberta:false}; }
+async function carregarCaixa() {
+  try {
+    const j = await fetch(BACKEND + "/api/caixa-sessao/atual?funcionarioId=" + encodeURIComponent(funcionarioIdAtual())).then(r => r.json());
+    CAIXA = j;
+  } catch (e) {
+    CAIXA = {
+      aberta: false
+    };
+  }
   render();
 }
-
-function cliqueAbrirFechar(){
-  if(CAIXA.aberta) pedirAutorizacao(abrirModalFechamento);
-  else abrirModalCaixa();
+function cliqueAbrirFechar() {
+  if (CAIXA.aberta) pedirAutorizacao(abrirModalFechamento);else abrirModalCaixa();
 }
-
-function abrirModalCaixa(){
-  if(CAIXA.aberta) return abrirModalFechamento();
-  document.getElementById("modais").innerHTML=`
+function abrirModalCaixa() {
+  if (CAIXA.aberta) return abrirModalFechamento();
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔓 Abrir caixa</h3>
@@ -145,44 +183,60 @@ function abrirModalCaixa(){
       </div>
     </div>`;
 }
-
-async function confirmarAbertura(){
-  const trocoInicial=+document.getElementById("mTroco").value||0;
-  try{
-    const r=await fetch(BACKEND+"/api/caixa-sessao/abrir",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({trocoInicial,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao abrir caixa");
-    fecharModais(); carregarCaixa();
-  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+async function confirmarAbertura() {
+  const trocoInicial = +document.getElementById("mTroco").value || 0;
+  try {
+    const r = await fetch(BACKEND + "/api/caixa-sessao/abrir", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trocoInicial,
+        operador: operadorAtual(),
+        funcionarioId: funcionarioIdAtual()
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao abrir caixa");
+    fecharModais();
+    carregarCaixa();
+  } catch (e) {
+    document.getElementById("mErro").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
 }
-
-let _FUNCS_MOV=null;
-async function carregarFuncionariosMov(){
-  if(_FUNCS_MOV) return _FUNCS_MOV;
-  try{ const j=await fetch(BACKEND+"/api/funcionarios").then(r=>r.json()); _FUNCS_MOV=(j.data||[]).filter(f=>f.ativo!==false); }catch(e){ _FUNCS_MOV=[]; }
+let _FUNCS_MOV = null;
+async function carregarFuncionariosMov() {
+  if (_FUNCS_MOV) return _FUNCS_MOV;
+  try {
+    const j = await fetch(BACKEND + "/api/funcionarios").then(r => r.json());
+    _FUNCS_MOV = (j.data || []).filter(f => f.ativo !== false);
+  } catch (e) {
+    _FUNCS_MOV = [];
+  }
   return _FUNCS_MOV;
 }
-async function abrirModalMovimento(tipo){
-  if(!CAIXA.aberta) return alert("Abra o caixa antes de registrar "+(tipo==="sangria"?"uma sangria":"um suprimento")+".");
-  const ehSangria=tipo==="sangria";
+async function abrirModalMovimento(tipo) {
+  var _CAIXA$resumo$esperad;
+  if (!CAIXA.aberta) return alert("Abra o caixa antes de registrar " + (tipo === "sangria" ? "uma sangria" : "um suprimento") + ".");
+  const ehSangria = tipo === "sangria";
   // lista de quem pode receber/entregar — SEM o próprio operador do caixa
-  const funcs=(await carregarFuncionariosMov()).filter(f=>String(f.id)!==String(funcionarioIdAtual()));
-  document.getElementById("modais").innerHTML=`
+  const funcs = (await carregarFuncionariosMov()).filter(f => String(f.id) !== String(funcionarioIdAtual()));
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
-        <h3>${ehSangria?"💸 Sangria (retirada)":"💰 Suprimento (entrada)"}</h3>
-        ${ehSangria?`<div class="muted" style="font-size:12px;margin-bottom:6px">Dinheiro em caixa agora: <b style="color:#3ce88a">${brl((CAIXA.resumo&&(CAIXA.resumo.esperadoGaveta??CAIXA.resumo.esperadoGavetaCalc))||0)}</b> — é o máximo que dá pra retirar.</div>`:""}
-        <p class="muted" style="margin-bottom:12px">${ehSangria?"Retirada de dinheiro da gaveta (ex: depósito, pagamento de despesa).":"Entrada de dinheiro na gaveta (ex: reforço de troco)."}</p>
+        <h3>${ehSangria ? "💸 Sangria (retirada)" : "💰 Suprimento (entrada)"}</h3>
+        ${ehSangria ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Dinheiro em caixa agora: <b style="color:#3ce88a">${brl(CAIXA.resumo && ((_CAIXA$resumo$esperad = CAIXA.resumo.esperadoGaveta) !== null && _CAIXA$resumo$esperad !== void 0 ? _CAIXA$resumo$esperad : CAIXA.resumo.esperadoGavetaCalc) || 0)}</b> — é o máximo que dá pra retirar.</div>` : ""}
+        <p class="muted" style="margin-bottom:12px">${ehSangria ? "Retirada de dinheiro da gaveta (ex: depósito, pagamento de despesa)." : "Entrada de dinheiro na gaveta (ex: reforço de troco)."}</p>
         <div class="muted" style="margin-bottom:4px">Valor (R$)</div>
         <input type="number" step="0.01" min="0.01" id="mValor" style="width:100%;font-size:18px;text-align:right" autofocus>
-        <div class="muted" style="margin:10px 0 4px">${ehSangria?"Quem está <b>retirando</b> o dinheiro?":"Quem está <b>entregando</b> o dinheiro?"}</div>
+        <div class="muted" style="margin:10px 0 4px">${ehSangria ? "Quem está <b>retirando</b> o dinheiro?" : "Quem está <b>entregando</b> o dinheiro?"}</div>
         <select id="mResp" style="width:100%">
           <option value="">— selecione —</option>
-          ${funcs.map(f=>`<option value="${esc(f.id)}">${esc(f.nome)}</option>`).join("")}
+          ${funcs.map(f => `<option value="${esc(f.id)}">${esc(f.nome)}</option>`).join("")}
         </select>
         <div class="muted" style="margin:10px 0 4px">Motivo</div>
-        <input type="text" id="mMotivo" placeholder="${ehSangria?"ex: depósito bancário":"ex: reforço de troco"}" style="width:100%">
+        <input type="text" id="mMotivo" placeholder="${ehSangria ? "ex: depósito bancário" : "ex: reforço de troco"}" style="width:100%">
         <div id="mErro"></div>
         <div style="display:flex;gap:8px;margin-top:16px">
           <button class="btn" style="flex:1" onclick="confirmarMovimento('${tipo}')">Registrar</button>
@@ -191,25 +245,45 @@ async function abrirModalMovimento(tipo){
       </div>
     </div>`;
 }
-
-async function confirmarMovimento(tipo){
-  const valor=+document.getElementById("mValor").value||0;
-  const motivo=document.getElementById("mMotivo").value.trim();
-  const responsavelId=document.getElementById("mResp")?.value||"";
-  if(!(valor>0)){ document.getElementById("mErro").innerHTML=`<div class="err">Informe um valor maior que zero.</div>`; return; }
-  if(!responsavelId){ document.getElementById("mErro").innerHTML=`<div class="err">Selecione ${tipo==="sangria"?"quem está retirando":"quem está entregando"} o dinheiro.</div>`; return; }
-  try{
-    const r=await fetch(BACKEND+"/api/caixa-sessao/movimento",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo,valor,motivo,operador:operadorAtual(),funcionarioId:funcionarioIdAtual(),responsavelId})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao registrar");
-    fecharModais(); carregarCaixa();
-  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+async function confirmarMovimento(tipo) {
+  var _document$getElementB;
+  const valor = +document.getElementById("mValor").value || 0;
+  const motivo = document.getElementById("mMotivo").value.trim();
+  const responsavelId = ((_document$getElementB = document.getElementById("mResp")) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.value) || "";
+  if (!(valor > 0)) {
+    document.getElementById("mErro").innerHTML = `<div class="err">Informe um valor maior que zero.</div>`;
+    return;
+  }
+  if (!responsavelId) {
+    document.getElementById("mErro").innerHTML = `<div class="err">Selecione ${tipo === "sangria" ? "quem está retirando" : "quem está entregando"} o dinheiro.</div>`;
+    return;
+  }
+  try {
+    const r = await fetch(BACKEND + "/api/caixa-sessao/movimento", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tipo,
+        valor,
+        motivo,
+        operador: operadorAtual(),
+        funcionarioId: funcionarioIdAtual(),
+        responsavelId
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao registrar");
+    fecharModais();
+    carregarCaixa();
+  } catch (e) {
+    document.getElementById("mErro").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
 }
-
-function abrirModalFechamento(){
-  const r=CAIXA.resumo||{};
-  document.getElementById("modais").innerHTML=`
+function abrirModalFechamento() {
+  const r = CAIXA.resumo || {};
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔒 Fechar caixa — conferência</h3>
@@ -224,8 +298,8 @@ function abrirModalFechamento(){
         </div>
         <div class="card" style="background:#141138;margin:0 0 12px">
           <div style="font-weight:800;margin-bottom:6px">💳 Total por forma de pagamento</div>
-          <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
-          ${(r.porForma||[]).length?r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):'<div class="muted" style="font-size:12px">Nenhuma venda ainda.</div>'}
+          <div class="linha"><span>Vendas (${r.qtdVendas || 0})</span><b>${brl(r.totalVendas)}</b></div>
+          ${(r.porForma || []).length ? r.porForma.map(f => `<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("") : '<div class="muted" style="font-size:12px">Nenhuma venda ainda.</div>'}
         </div>
         <div class="muted" style="margin-bottom:4px">Valor contado na gaveta (R$)</div>
         <input type="number" step="0.01" min="0" id="mContado" style="width:100%;font-size:20px;text-align:right" oninput="calcularDiferenca()" autofocus>
@@ -241,28 +315,41 @@ function abrirModalFechamento(){
       </div>
     </div>`;
 }
-
-function calcularDiferenca(){
-  const contado=+document.getElementById("mContado").value||0;
-  const esperado=(CAIXA.resumo||{}).esperadoGaveta||0;
-  const dif=+(contado-esperado).toFixed(2);
-  const el=document.getElementById("mDif");
-  if(Math.abs(dif)<0.01){ el.innerHTML=`<span style="color:#8fffc0">✅ Caixa bate certinho</span>`; }
-  else if(dif>0){ el.innerHTML=`<span style="color:#ffd23f">▲ Sobra de ${brl(dif)}</span>`; }
-  else { el.innerHTML=`<span style="color:#ff8090">▼ Falta ${brl(-dif)}</span>`; }
+function calcularDiferenca() {
+  const contado = +document.getElementById("mContado").value || 0;
+  const esperado = (CAIXA.resumo || {}).esperadoGaveta || 0;
+  const dif = +(contado - esperado).toFixed(2);
+  const el = document.getElementById("mDif");
+  if (Math.abs(dif) < 0.01) {
+    el.innerHTML = `<span style="color:#8fffc0">✅ Caixa bate certinho</span>`;
+  } else if (dif > 0) {
+    el.innerHTML = `<span style="color:#ffd23f">▲ Sobra de ${brl(dif)}</span>`;
+  } else {
+    el.innerHTML = `<span style="color:#ff8090">▼ Falta ${brl(-dif)}</span>`;
+  }
 }
-
-async function confirmarFechamento(){
-  const valorContado=+document.getElementById("mContado").value||0;
-  const observacao=document.getElementById("mObs").value.trim();
-  try{
-    const r=await fetch(BACKEND+"/api/caixa-sessao/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valorContado,observacao,operador:operadorAtual(),funcionarioId:funcionarioIdAtual()})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao fechar caixa");
-    const f=j.fechamento;
-    window._ultimoFechamento=j;
-    document.getElementById("modais").innerHTML=`
+async function confirmarFechamento() {
+  const valorContado = +document.getElementById("mContado").value || 0;
+  const observacao = document.getElementById("mObs").value.trim();
+  try {
+    var _j$resumo;
+    const r = await fetch(BACKEND + "/api/caixa-sessao/fechar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        valorContado,
+        observacao,
+        operador: operadorAtual(),
+        funcionarioId: funcionarioIdAtual()
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao fechar caixa");
+    const f = j.fechamento;
+    window._ultimoFechamento = j;
+    document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="if(event.target===this){fecharModais();carregarCaixa();}">
         <div class="modal" style="text-align:center">
           <h3>✅ Caixa fechado</h3>
@@ -271,82 +358,84 @@ async function confirmarFechamento(){
             <div class="linha"><span>Contado</span><b>${brl(f.valorContado)}</b></div>
             <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px">
               <span>Diferença</span>
-              <b style="color:${Math.abs(f.diferenca)<0.01?"#8fffc0":(f.diferenca>0?"#ffd23f":"#ff8090")}">${brl(f.diferenca)}</b>
+              <b style="color:${Math.abs(f.diferenca) < 0.01 ? "#8fffc0" : f.diferenca > 0 ? "#ffd23f" : "#ff8090"}">${brl(f.diferenca)}</b>
             </div>
           </div>
-          ${(j.resumo?.porForma||[]).length?`<div class="card" style="background:#141138;margin:0 0 14px;text-align:left">
+          ${(((_j$resumo = j.resumo) === null || _j$resumo === void 0 ? void 0 : _j$resumo.porForma) || []).length ? `<div class="card" style="background:#141138;margin:0 0 14px;text-align:left">
             <div style="font-weight:800;margin-bottom:6px">💳 Total por forma de pagamento</div>
-            <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
-            ${j.resumo.porForma.map(fp=>`<div class="linha" style="font-size:13px"><span>${esc(fp.nome)} <span class="muted">(${fp.qtd}x)</span></span><b>${brl(fp.valor)}</b></div>`).join("")}
-          </div>`:""}
+            <div class="linha"><span>Vendas (${j.resumo.qtdVendas || 0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+            ${j.resumo.porForma.map(fp => `<div class="linha" style="font-size:13px"><span>${esc(fp.nome)} <span class="muted">(${fp.qtd}x)</span></span><b>${brl(fp.valor)}</b></div>`).join("")}
+          </div>` : ""}
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(window._ultimoFechamento.sessao,window._ultimoFechamento.resumo,window._ultimoFechamento.movimentos,window._ultimoFechamento.fechamento)">🖨️ Imprimir relatório</button>
             <button class="btn" style="flex:1" onclick="fecharModais();carregarCaixa()">OK</button>
           </div>
         </div>
       </div>`;
-  }catch(e){ document.getElementById("mErro").innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+  } catch (e) {
+    document.getElementById("mErro").innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
 }
-
-async function abrirModalCaixasAbertos(){
-  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/caixa-sessao/abertos").then(r=>r.json());
-    const lista=j.data||[];
-    document.getElementById("modais").innerHTML=`
+async function abrirModalCaixasAbertos() {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/caixa-sessao/abertos").then(r => r.json());
+    const lista = j.data || [];
+    document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal" style="max-width:560px">
           <h3>🏪 Caixas abertos agora</h3>
-          ${lista.length?lista.map(s=>`
+          ${lista.length ? lista.map(s => `
             <div class="card" style="background:#1c1846;margin:10px 0">
-              <div style="font-weight:800;margin-bottom:4px">👤 ${esc(s.operador||"—")}</div>
+              <div style="font-weight:800;margin-bottom:4px">👤 ${esc(s.operador || "—")}</div>
               <div class="muted" style="font-size:12px;margin-bottom:6px">Aberto desde ${hora(s.abertaEm)}</div>
               <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
               <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
-              ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+              ${(s.resumo.porForma || []).length ? `<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
                 <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
-                ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-              </div>`:""}
+                ${s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+              </div>` : ""}
               <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver histórico completo</button>
-            </div>`).join(""):'<div class="muted">Nenhum caixa aberto no momento.</div>'}
+            </div>`).join("") : '<div class="muted">Nenhum caixa aberto no momento.</div>'}
           <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
         </div>
       </div>`;
-  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+  } catch (e) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`;
+  }
 }
-
-function nomeMovimento(m){
-  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>`;
-  if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>`:""}`;
-  if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>`:""}`;
+function nomeMovimento(m) {
+  if (m.tipo === "venda") return `🛒 Venda #${esc(m.numero || m.pedidoId)} — ${brl(m.total)}${m.clienteNome ? ` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>` : ""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos || []).map(p => esc(p.formaNome) + ": " + brl(p.valor)).join(" · ")}</div>`;
+  if (m.tipo === "sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>` : ""}`;
+  if (m.tipo === "suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>` : ""}`;
   return esc(m.tipo);
 }
-
-async function verMovimentosSessao(id){
-  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
-    const movs=j.movimentos||[];
-    window._sessaoInspecionada=j;
-    document.getElementById("modais").innerHTML=`
+async function verMovimentosSessao(id) {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try {
+    var _j$sessao, _j$sessao2, _j$sessao3, _j$sessao4, _j$resumo2, _j$resumo3;
+    const j = await fetch(BACKEND + "/api/caixa-sessao/" + id + "/movimentos").then(r => r.json());
+    const movs = j.movimentos || [];
+    window._sessaoInspecionada = j;
+    document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal" style="max-width:560px">
-          <h3>📋 Movimentos — ${esc(j.sessao?.operador||"")}</h3>
-          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
-          ${movs.length?movs.map(m=>`
+          <h3>📋 Movimentos — ${esc(((_j$sessao = j.sessao) === null || _j$sessao === void 0 ? void 0 : _j$sessao.operador) || "")}</h3>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl((_j$sessao2 = j.sessao) === null || _j$sessao2 === void 0 ? void 0 : _j$sessao2.trocoInicial)} · Aberto: ${hora((_j$sessao3 = j.sessao) === null || _j$sessao3 === void 0 ? void 0 : _j$sessao3.abertaEm)}${(_j$sessao4 = j.sessao) !== null && _j$sessao4 !== void 0 && _j$sessao4.fechadaEm ? " · Fechado: " + hora(j.sessao.fechadaEm) : ""}</div>
+          ${movs.length ? movs.map(m => `
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
               <div>${nomeMovimento(m)}</div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
-            </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
+            </div>`).join("") : '<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
-            ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
+            ${(((_j$resumo2 = j.resumo) === null || _j$resumo2 === void 0 ? void 0 : _j$resumo2.porForma) || []).length ? `<div style="margin-bottom:8px">
               <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
-              <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
-              ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-            </div>`:""}
-            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
-            ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
-            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?"#8fffc0":(j.fechamento.diferenca>0?"#ffd23f":"#ff8090")}">${brl(j.fechamento.diferenca)}</b></div>`:""}
+              <div class="linha"><span>Vendas (${j.resumo.qtdVendas || 0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+              ${j.resumo.porForma.map(f => `<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+            </div>` : ""}
+            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl((_j$resumo3 = j.resumo) === null || _j$resumo3 === void 0 ? void 0 : _j$resumo3.esperadoGaveta)}</b></div>
+            ${j.fechamento ? `<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
+            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca) < 0.01 ? "#8fffc0" : j.fechamento.diferenca > 0 ? "#ffd23f" : "#ff8090"}">${brl(j.fechamento.diferenca)}</b></div>` : ""}
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(window._sessaoInspecionada.sessao,window._sessaoInspecionada.resumo,window._sessaoInspecionada.movimentos,window._sessaoInspecionada.fechamento)">🖨️ Imprimir</button>
@@ -354,56 +443,80 @@ async function verMovimentosSessao(id){
           </div>
         </div>
       </div>`;
-  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
+  } catch (e) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`;
+  }
 }
-
-async function abrirModalHistorico(){
-  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
-  try{
-    const j=await fetch(BACKEND+"/api/caixa-sessao/historico").then(r=>r.json());
-    const lista=j.data||[];
-    document.getElementById("modais").innerHTML=`
+async function abrirModalHistorico() {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+  try {
+    const j = await fetch(BACKEND + "/api/caixa-sessao/historico").then(r => r.json());
+    const lista = j.data || [];
+    document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal" style="max-width:560px">
           <h3>📜 Histórico de caixas</h3>
-          ${lista.length?lista.map(s=>`
+          ${lista.length ? lista.map(s => {
+      var _s$fechamento, _s$fechamento2, _s$fechamento3, _s$fechamento4, _s$fechamento5, _s$fechamento6;
+      return `
             <div class="card" style="background:#1c1846;margin:10px 0">
               <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">
-                🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")}
+                🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador || "—")}
               </div>
               <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
-              ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
-              <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
-              <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
+              ${(s.resumo.porForma || []).length ? s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("") : ""}
+              <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl((_s$fechamento = s.fechamento) === null || _s$fechamento === void 0 ? void 0 : _s$fechamento.esperado)}</b></div>
+              <div class="linha"><span>Contado</span><b>${brl((_s$fechamento2 = s.fechamento) === null || _s$fechamento2 === void 0 ? void 0 : _s$fechamento2.valorContado)}</b></div>
               <div class="linha"><span>Diferença</span>
-                <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?"#8fffc0":((s.fechamento?.diferenca||0)>0?"#ffd23f":"#ff8090")}">${brl(s.fechamento?.diferenca)}</b></div>
-              ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
+                <b style="color:${Math.abs(((_s$fechamento3 = s.fechamento) === null || _s$fechamento3 === void 0 ? void 0 : _s$fechamento3.diferenca) || 0) < 0.01 ? "#8fffc0" : (((_s$fechamento4 = s.fechamento) === null || _s$fechamento4 === void 0 ? void 0 : _s$fechamento4.diferenca) || 0) > 0 ? "#ffd23f" : "#ff8090"}">${brl((_s$fechamento5 = s.fechamento) === null || _s$fechamento5 === void 0 ? void 0 : _s$fechamento5.diferenca)}</b></div>
+              ${(_s$fechamento6 = s.fechamento) !== null && _s$fechamento6 !== void 0 && _s$fechamento6.observacao ? `<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>` : ""}
               <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentosSessao('${s.id}')">📋 Ver histórico completo</button>
-            </div>`).join(""):'<div class="muted">Nenhum caixa fechado ainda.</div>'}
+            </div>`;
+    }).join("") : '<div class="muted">Nenhum caixa fechado ainda.</div>'}
           <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
         </div>
       </div>`;
-  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar histórico</div></div></div>`; }
+  } catch (e) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar histórico</div></div></div>`;
+  }
 }
-
-function fecharModais(){ document.getElementById("modais").innerHTML=""; }
+function fecharModais() {
+  document.getElementById("modais").innerHTML = "";
+}
 
 // ---------------- impressão: comprovante da venda ----------------
 // converte um movimento de venda (vindo do backend) pro formato que imprimirComprovante espera
-function movimentoParaComprovante(m){
+function movimentoParaComprovante(m) {
   return {
-    numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, total:m.total, desconto:m.desconto||0,
-    itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||("Produto "+i.produtoId),quantidade:i.quantidade,preco:i.valor})),
-    pagamentos:m.pagamentos||[], cliente:{nome:m.clienteNome||"Consumidor Final"}, dataHora:m.em, nfce:null,
+    numero: m.numero || m.pedidoId,
+    pedidoId: m.pedidoId,
+    total: m.total,
+    desconto: m.desconto || 0,
+    itens: (m.itens || []).map(i => ({
+      produtoId: i.produtoId,
+      nome: i.nome || "Produto " + i.produtoId,
+      quantidade: i.quantidade,
+      preco: i.valor
+    })),
+    pagamentos: m.pagamentos || [],
+    cliente: {
+      nome: m.clienteNome || "Consumidor Final"
+    },
+    dataHora: m.em,
+    nfce: null
   };
 }
-function imprimirComprovante(v){
-  if(!v){ alert("Nenhuma venda pra reimprimir ainda."); return; }
-  const linhas=v.itens.map(i=>`
-    <tr><td>${i.quantidade}x ${esc(i.nome||("Produto "+i.produtoId))}</td><td style="text-align:right">${brl(i.preco*i.quantidade)}</td></tr>`).join("");
-  const pagLinhas=v.pagamentos.map(p=>`<tr><td>${esc(p.formaNome||"—")}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("");
-  const subtotal=v.itens.reduce((s,i)=>s+i.preco*i.quantidade,0);
-  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante #${esc(v.numero)}</title>
+function imprimirComprovante(v) {
+  var _v$cliente, _v$nfce;
+  if (!v) {
+    alert("Nenhuma venda pra reimprimir ainda.");
+    return;
+  }
+  const linhas = v.itens.map(i => `
+    <tr><td>${i.quantidade}x ${esc(i.nome || "Produto " + i.produtoId)}</td><td style="text-align:right">${brl(i.preco * i.quantidade)}</td></tr>`).join("");
+  const pagLinhas = v.pagamentos.map(p => `<tr><td>${esc(p.formaNome || "—")}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("");
+  const subtotal = v.itens.reduce((s, i) => s + i.preco * i.quantidade, 0);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Comprovante #${esc(v.numero)}</title>
     <style>
       body{font-family:monospace;font-size:13px;width:300px;margin:0 auto;padding:10px}
       table{width:100%;border-collapse:collapse}
@@ -417,47 +530,48 @@ function imprimirComprovante(v){
     <hr>
     <div>Venda: #${esc(v.numero)}</div>
     <div>Data: ${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
-    <div>Cliente: ${esc(v.cliente?.nome||"Consumidor Final")}</div>
+    <div>Cliente: ${esc(((_v$cliente = v.cliente) === null || _v$cliente === void 0 ? void 0 : _v$cliente.nome) || "Consumidor Final")}</div>
     <hr>
     <table>${linhas}</table>
     <hr>
     <table>
       <tr><td>Subtotal</td><td style="text-align:right">${brl(subtotal)}</td></tr>
-      ${v.desconto?`<tr><td>Desconto</td><td style="text-align:right">- ${brl(v.desconto)}</td></tr>`:""}
+      ${v.desconto ? `<tr><td>Desconto</td><td style="text-align:right">- ${brl(v.desconto)}</td></tr>` : ""}
       <tr class="tot"><td>Total</td><td style="text-align:right">${brl(v.total)}</td></tr>
     </table>
     <hr>
     <table>${pagLinhas}</table>
-    ${v.nfce?.idNotaFiscal?`<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio?"gerada (pendente de transmissão)":"emitida"}</div>`:""}
+    ${(_v$nfce = v.nfce) !== null && _v$nfce !== void 0 && _v$nfce.idNotaFiscal ? `<hr><div style="text-align:center">NFC-e ${v.nfce.erroEnvio ? "gerada (pendente de transmissão)" : "emitida"}</div>` : ""}
     <hr>
     <div style="text-align:center">Obrigado pela preferência!</div>
     <script>window.onload=()=>window.print();<\/script>
     </body></html>`;
-  const w=window.open("","_blank","width=380,height=600");
-  w.document.write(html); w.document.close();
+  const w = window.open("", "_blank", "width=380,height=600");
+  w.document.write(html);
+  w.document.close();
 }
 
 // ---------------- relatório de acompanhamento/fechamento de caixa (imprimível) ----------------
-function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
-  const vendas=(movimentos||[]).filter(m=>m.tipo==="venda");
-  const outros=(movimentos||[]).filter(m=>m.tipo!=="venda");
-  const linhasVendas=vendas.map(m=>`
+function gerarHtmlRelatorioCaixa(sessao, resumo, movimentos, fechamento) {
+  const vendas = (movimentos || []).filter(m => m.tipo === "venda");
+  const outros = (movimentos || []).filter(m => m.tipo !== "venda");
+  const linhasVendas = vendas.map(m => `
     <tr>
       <td>${hora(m.em)}</td>
-      <td>#${esc(m.numero||m.pedidoId)}</td>
-      <td>${esc(m.clienteNome||"—")}</td>
-      <td>${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join("<br>")}</td>
+      <td>#${esc(m.numero || m.pedidoId)}</td>
+      <td>${esc(m.clienteNome || "—")}</td>
+      <td>${(m.pagamentos || []).map(p => esc(p.formaNome) + ": " + brl(p.valor)).join("<br>")}</td>
       <td style="text-align:right">${brl(m.total)}</td>
     </tr>`).join("");
-  const linhasOutros=outros.map(m=>`
+  const linhasOutros = outros.map(m => `
     <tr>
       <td>${hora(m.em)}</td>
-      <td colspan="3">${m.tipo==="sangria"?"💸 Sangria":"💰 Suprimento"}${m.motivo?" — "+esc(m.motivo):""}</td>
+      <td colspan="3">${m.tipo === "sangria" ? "💸 Sangria" : "💰 Suprimento"}${m.motivo ? " — " + esc(m.motivo) : ""}</td>
       <td style="text-align:right">${brl(m.valor)}</td>
     </tr>`).join("");
-  const linhasForma=(resumo.porForma||[]).map(f=>`
+  const linhasForma = (resumo.porForma || []).map(f => `
     <tr><td>${esc(f.nome)} (${f.qtd})</td><td style="text-align:right">${brl(f.valor)}</td></tr>`).join("");
-  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de caixa</title>
     <style>
       body{font-family:Arial,sans-serif;font-size:13px;max-width:700px;margin:0 auto;padding:16px;color:#000}
       table{width:100%;border-collapse:collapse;margin-bottom:14px}
@@ -467,15 +581,15 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
       .sec{margin-top:18px}
     </style></head><body>
     <h2>B13 Bebidas — Relatório de Caixa</h2>
-    <div>Operador: <b>${esc(sessao.operador||"—")}</b></div>
-    <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento?" · Fechado em: "+hora(sessao.fechadaEm||Date.now()):" · (em andamento)"}</div>
+    <div>Operador: <b>${esc(sessao.operador || "—")}</b></div>
+    <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento ? " · Fechado em: " + hora(sessao.fechadaEm || Date.now()) : " · (em andamento)"}</div>
     <div>Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
 
     <div class="sec"><h3>Vendas (${vendas.length})</h3>
-    <table><tr><th>Hora</th><th>Nº</th><th>Cliente</th><th>Pagamento</th><th>Total</th></tr>${linhasVendas||"<tr><td colspan=5>Nenhuma venda</td></tr>"}</table></div>
+    <table><tr><th>Hora</th><th>Nº</th><th>Cliente</th><th>Pagamento</th><th>Total</th></tr>${linhasVendas || "<tr><td colspan=5>Nenhuma venda</td></tr>"}</table></div>
 
     <div class="sec"><h3>Sangrias / Suprimentos</h3>
-    <table>${linhasOutros||"<tr><td>Nenhum movimento</td></tr>"}</table></div>
+    <table>${linhasOutros || "<tr><td>Nenhum movimento</td></tr>"}</table></div>
 
     <div class="sec"><h3>Totais por forma de pagamento</h3>
     <table>${linhasForma}</table></div>
@@ -487,42 +601,47 @@ function gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento){
       <tr><td>+ Suprimentos</td><td style="text-align:right">${brl(resumo.totalSuprimentos)}</td></tr>
       <tr><td>− Sangrias</td><td style="text-align:right">${brl(resumo.totalSangrias)}</td></tr>
       <tr class="tot"><td>Esperado na gaveta</td><td style="text-align:right">${brl(resumo.esperadoGaveta)}</td></tr>
-      ${fechamento?`
+      ${fechamento ? `
       <tr><td>Valor contado</td><td style="text-align:right">${brl(fechamento.valorContado)}</td></tr>
       <tr class="tot"><td>Diferença</td><td style="text-align:right">${brl(fechamento.diferenca)}</td></tr>
-      ${fechamento.observacao?`<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>`:""}`:""}
+      ${fechamento.observacao ? `<tr><td colspan="2">Obs: ${esc(fechamento.observacao)}</td></tr>` : ""}` : ""}
       <tr><td>Total geral de vendas</td><td style="text-align:right">${brl(resumo.totalVendas)}</td></tr>
     </table></div>
     <script>window.onload=()=>window.print();<\/script>
     </body></html>`;
   return html;
 }
-function imprimirRelatorioCaixa(sessao,resumo,movimentos,fechamento){
-  const w=window.open("","_blank","width=800,height=900");
-  w.document.write(gerarHtmlRelatorioCaixa(sessao,resumo,movimentos,fechamento)); w.document.close();
+function imprimirRelatorioCaixa(sessao, resumo, movimentos, fechamento) {
+  const w = window.open("", "_blank", "width=800,height=900");
+  w.document.write(gerarHtmlRelatorioCaixa(sessao, resumo, movimentos, fechamento));
+  w.document.close();
 }
 
 // ---------------- Minhas Vendas (o operador vê as próprias vendas da sessão, sem precisar de autorização) ----------------
-function abrirModalMinhasVendas(){
-  if(!CAIXA.aberta){ alert("Abra o caixa pra ver suas vendas."); return; }
-  const vendas=(CAIXA.movimentos||[]).filter(m=>m.tipo==="venda");
-  document.getElementById("modais").innerHTML=`
+function abrirModalMinhasVendas() {
+  var _CAIXA$sessao, _CAIXA$sessao2, _CAIXA$resumo, _CAIXA$resumo2;
+  if (!CAIXA.aberta) {
+    alert("Abra o caixa pra ver suas vendas.");
+    return;
+  }
+  const vendas = (CAIXA.movimentos || []).filter(m => m.tipo === "venda");
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal" style="max-width:560px">
-        <h3>🧾 Minhas vendas — ${esc(CAIXA.sessao?.operador||"")}</h3>
-        <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora(CAIXA.sessao?.abertaEm)}</div>
-        ${vendas.length?vendas.map(m=>`
+        <h3>🧾 Minhas vendas — ${esc(((_CAIXA$sessao = CAIXA.sessao) === null || _CAIXA$sessao === void 0 ? void 0 : _CAIXA$sessao.operador) || "")}</h3>
+        <div class="muted" style="margin-bottom:8px">Desde a abertura do caixa às ${hora((_CAIXA$sessao2 = CAIXA.sessao) === null || _CAIXA$sessao2 === void 0 ? void 0 : _CAIXA$sessao2.abertaEm)}</div>
+        ${vendas.length ? vendas.map(m => `
           <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
             <div style="flex:1">
-              <div><b>#${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
-              ${m.clienteNome?`<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>`:""}
-              <div style="font-size:12px;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}</div>
+              <div><b>#${esc(m.numero || m.pedidoId)}</b> — ${brl(m.total)} <span class="muted" style="font-size:11px">· ${hora(m.em)}</span></div>
+              ${m.clienteNome ? `<div class="muted" style="font-size:11px">Cliente: ${esc(m.clienteNome)}</div>` : ""}
+              <div style="font-size:12px;margin-top:2px">${(m.pagamentos || []).map(p => esc(p.formaNome) + ": " + brl(p.valor)).join(" · ")}</div>
             </div>
-            <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g,"&#39;")}))'>🖨️</button>
-          </div>`).join(""):'<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
+            <button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" title="Reimprimir comprovante" onclick='imprimirComprovante(movimentoParaComprovante(${JSON.stringify(m).replace(/'/g, "&#39;")}))'>🖨️</button>
+          </div>`).join("") : '<div class="muted">Nenhuma venda ainda nesse caixa.</div>'}
         <div class="card" style="background:#1c1846;margin:12px 0">
-          ${(CAIXA.resumo?.porForma||[]).map(f=>`<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
-          <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl(CAIXA.resumo?.totalVendas)}</b></div>
+          ${(((_CAIXA$resumo = CAIXA.resumo) === null || _CAIXA$resumo === void 0 ? void 0 : _CAIXA$resumo.porForma) || []).map(f => `<div class="linha"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("")}
+          <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:6px"><span><b>Total vendido</b></span><b style="color:#ffd23f">${brl((_CAIXA$resumo2 = CAIXA.resumo) === null || _CAIXA$resumo2 === void 0 ? void 0 : _CAIXA$resumo2.totalVendas)}</b></div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" style="flex:1" onclick="imprimirRelatorioCaixa(CAIXA.sessao,CAIXA.resumo,CAIXA.movimentos,null)">🖨️ Imprimir</button>
@@ -533,71 +652,85 @@ function abrirModalMinhasVendas(){
 }
 
 // ---------------- formas de pagamento ----------------
-async function carregarFormas(){
-  try{
-    const j=await fetch(BACKEND+"/api/formas-pagamento").then(r=>r.json());
-    const todas=(j.data||[]).filter(f=>f.situacao!=="I");
+async function carregarFormas() {
+  try {
+    const j = await fetch(BACKEND + "/api/formas-pagamento").then(r => r.json());
+    const todas = (j.data || []).filter(f => f.situacao !== "I");
     // mostra pix, dinheiro, e credito/debito de cada bandeira (nao filtra so uma) —
     // as outras formas (ficha financeira, estorno, etc) ficam escondidas
-    const padroes=[/pix/i,/dinheiro/i,/d[eé]bito/i,/cr[eé]dito.*vista/i];
-    FORMAS=todas.filter(f=>padroes.some(p=>p.test(f.descricao||f.nome||""))&&!/pix.*bling.*conta/i.test(f.descricao||f.nome||""));
-    if(!FORMAS.length) FORMAS=todas;
-  }catch(e){ FORMAS=[]; }
+    const padroes = [/pix/i, /dinheiro/i, /d[eé]bito/i, /cr[eé]dito.*vista/i];
+    FORMAS = todas.filter(f => padroes.some(p => p.test(f.descricao || f.nome || "")) && !/pix.*bling.*conta/i.test(f.descricao || f.nome || ""));
+    if (!FORMAS.length) FORMAS = todas;
+  } catch (e) {
+    FORMAS = [];
+  }
   render();
 }
-
-function selecionarForma(formaId,formaNome){
-  const idx=PAGAMENTOS.findIndex(p=>!p.formaId);
-  const alvo=idx>=0?idx:PAGAMENTOS.length-1;
-  PAGAMENTOS[alvo].formaId=formaId;
-  PAGAMENTOS[alvo].formaNome=formaNome;
-  if(!PAGAMENTOS[alvo].valor) PAGAMENTOS[alvo].valor=Math.max(0,restante());
+function selecionarForma(formaId, formaNome) {
+  const idx = PAGAMENTOS.findIndex(p => !p.formaId);
+  const alvo = idx >= 0 ? idx : PAGAMENTOS.length - 1;
+  PAGAMENTOS[alvo].formaId = formaId;
+  PAGAMENTOS[alvo].formaNome = formaNome;
+  if (!PAGAMENTOS[alvo].valor) PAGAMENTOS[alvo].valor = Math.max(0, restante());
   render();
 }
-
-function adicionarFormaPagamento(){ PAGAMENTOS.push({formaId:null,formaNome:"",valor:0}); render(); }
+function adicionarFormaPagamento() {
+  PAGAMENTOS.push({
+    formaId: null,
+    formaNome: "",
+    valor: 0
+  });
+  render();
+}
 
 // ---------------- busca de produto ----------------
-let _timerBusca=null;
+let _timerBusca = null;
 // ---------------- cliente ----------------
-function abrirBuscaCliente(){
-  document.getElementById("buscaClienteBox").innerHTML=`
+function abrirBuscaCliente() {
+  document.getElementById("buscaClienteBox").innerHTML = `
     <input type="text" id="inputBuscaCliente" placeholder="Nome, CPF/CNPJ ou telefone…" style="width:100%;margin-top:8px" oninput="buscarClientes(this.value)" autofocus>
     <div class="res" id="resBuscaCliente"></div>`;
   document.getElementById("inputBuscaCliente").focus();
 }
-
-let _timerBuscaCliente=null;
-function buscarClientes(termo){
+let _timerBuscaCliente = null;
+function buscarClientes(termo) {
   clearTimeout(_timerBuscaCliente);
-  const resEl=document.getElementById("resBuscaCliente");
-  if(!termo||termo.trim().length<2){ resEl.innerHTML=""; return; }
-  resEl.innerHTML=`<div class="muted">buscando…</div>`;
-  _timerBuscaCliente=setTimeout(async()=>{
-    try{
-      const j=await fetch(BACKEND+"/api/pdv/clientes?termo="+encodeURIComponent(termo)).then(r=>r.json());
-      const lista=j.data||[];
-      if(!lista.length){ resEl.innerHTML=`<div class="muted">nenhum cliente encontrado</div>`; return; }
-      resEl.innerHTML=lista.map(c=>`
+  const resEl = document.getElementById("resBuscaCliente");
+  if (!termo || termo.trim().length < 2) {
+    resEl.innerHTML = "";
+    return;
+  }
+  resEl.innerHTML = `<div class="muted">buscando…</div>`;
+  _timerBuscaCliente = setTimeout(async () => {
+    try {
+      const j = await fetch(BACKEND + "/api/pdv/clientes?termo=" + encodeURIComponent(termo)).then(r => r.json());
+      const lista = j.data || [];
+      if (!lista.length) {
+        resEl.innerHTML = `<div class="muted">nenhum cliente encontrado</div>`;
+        return;
+      }
+      resEl.innerHTML = lista.map(c => `
         <div class="resitem" onclick='selecionarCliente(${c.id},${JSON.stringify(c.nome)})'>
-          <div class="info"><div class="nome">${esc(c.nome)}</div><div class="meta">${esc(c.numeroDocumento||c.telefone||"")}</div></div>
+          <div class="info"><div class="nome">${esc(c.nome)}</div><div class="meta">${esc(c.numeroDocumento || c.telefone || "")}</div></div>
         </div>`).join("");
-    }catch(e){ resEl.innerHTML=`<div class="muted">erro na busca</div>`; }
-  },350);
+    } catch (e) {
+      resEl.innerHTML = `<div class="muted">erro na busca</div>`;
+    }
+  }, 350);
 }
-
-function selecionarCliente(id,nome){
-  CLIENTE_SELECIONADO={id,nome};
+function selecionarCliente(id, nome) {
+  CLIENTE_SELECIONADO = {
+    id,
+    nome
+  };
   render();
 }
-
-function limparCliente(){
-  CLIENTE_SELECIONADO=null;
+function limparCliente() {
+  CLIENTE_SELECIONADO = null;
   render();
 }
-
-function abrirCpfNota(){
-  document.getElementById("cpfNotaBox").innerHTML=`
+function abrirCpfNota() {
+  document.getElementById("cpfNotaBox").innerHTML = `
     <div style="margin-top:8px">
       <input type="text" id="inputCpfNota" placeholder="CPF ou CNPJ do cliente" style="width:100%" maxlength="18">
       <input type="text" id="inputNomeCpfNota" placeholder="Nome (opcional, só se for cliente novo)" style="width:100%;margin-top:6px">
@@ -606,199 +739,271 @@ function abrirCpfNota(){
     </div>`;
   document.getElementById("inputCpfNota").focus();
 }
-
-async function confirmarCpfNota(){
-  const documento=document.getElementById("inputCpfNota").value.trim();
-  const nome=document.getElementById("inputNomeCpfNota").value.trim();
-  const msg=document.getElementById("cpfNotaMsg");
-  const doc=documento.replace(/\D/g,"");
-  if(doc.length!==11&&doc.length!==14){ msg.innerHTML=`<div class="err">CPF deve ter 11 dígitos (ou CNPJ 14).</div>`; return; }
-  msg.innerHTML=`<div class="muted">Verificando…</div>`;
-  try{
-    const r=await fetch(BACKEND+"/api/pdv/cliente-por-cpf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({documento:doc,nome})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao buscar/criar cliente");
-    CLIENTE_SELECIONADO={id:j.id,nome:j.nome};
+async function confirmarCpfNota() {
+  const documento = document.getElementById("inputCpfNota").value.trim();
+  const nome = document.getElementById("inputNomeCpfNota").value.trim();
+  const msg = document.getElementById("cpfNotaMsg");
+  const doc = documento.replace(/\D/g, "");
+  if (doc.length !== 11 && doc.length !== 14) {
+    msg.innerHTML = `<div class="err">CPF deve ter 11 dígitos (ou CNPJ 14).</div>`;
+    return;
+  }
+  msg.innerHTML = `<div class="muted">Verificando…</div>`;
+  try {
+    const r = await fetch(BACKEND + "/api/pdv/cliente-por-cpf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        documento: doc,
+        nome
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao buscar/criar cliente");
+    CLIENTE_SELECIONADO = {
+      id: j.id,
+      nome: j.nome
+    };
     render();
-  }catch(e){ msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
+  } catch (e) {
+    msg.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+  }
 }
 
 // ---------------- painel grande (feedback ao adicionar produto) ----------------
-let ULTIMO_ITEM_PAINEL=null; // sobrevive a re-renders da tela, até trocar de item ou limpar
-function htmlLogoGrande(){
+let ULTIMO_ITEM_PAINEL = null; // sobrevive a re-renders da tela, até trocar de item ou limpar
+function htmlLogoGrande() {
   return `<div style="display:flex;align-items:center;justify-content:center;min-height:400px">
     <img src="/logo" style="max-height:320px;max-width:90%;object-fit:contain" onerror="this.outerHTML='<span style=&quot;color:#fff;font-weight:900;font-size:48px;letter-spacing:1px&quot;>B13 BEBIDAS</span>'">
   </div>`;
 }
-function htmlPainelAdicionado(item){
+function htmlPainelAdicionado(item) {
   return `<div class="card" style="display:flex;align-items:center;gap:28px;border:2px solid var(--mag,#FF0082);background:#241a4d;min-height:400px">
-      ${item.imagem?`<img src="${esc(item.imagem)}" style="width:280px;height:280px;object-fit:contain;background:#fff;border-radius:14px;flex-shrink:0" onerror="this.style.display='none'">`:`<div style="width:280px;height:280px;background:#241f52;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:100px;flex-shrink:0">📦</div>`}
+      ${item.imagem ? `<img src="${esc(item.imagem)}" style="width:280px;height:280px;object-fit:contain;background:#fff;border-radius:14px;flex-shrink:0" onerror="this.style.display='none'">` : `<div style="width:280px;height:280px;background:#241f52;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:100px;flex-shrink:0">📦</div>`}
       <div style="flex:1">
         <div style="font-size:32px;font-weight:900">${esc(item.nome)}</div>
         <div style="font-size:44px;font-weight:900;color:#ffd23f;margin-top:10px">${brl(item.preco)}</div>
       </div>
     </div>`;
 }
-function mostrarPainelAdicionado(item){
-  ULTIMO_ITEM_PAINEL=item;
-  const box=document.getElementById("painelAdicionado");
-  if(box) box.innerHTML=htmlPainelAdicionado(item);
+function mostrarPainelAdicionado(item) {
+  ULTIMO_ITEM_PAINEL = item;
+  const box = document.getElementById("painelAdicionado");
+  if (box) box.innerHTML = htmlPainelAdicionado(item);
 }
-function limparPainelAdicionado(){
-  ULTIMO_ITEM_PAINEL=null;
-  const box=document.getElementById("painelAdicionado");
-  if(box) box.innerHTML=htmlLogoGrande();
+function limparPainelAdicionado() {
+  ULTIMO_ITEM_PAINEL = null;
+  const box = document.getElementById("painelAdicionado");
+  if (box) box.innerHTML = htmlLogoGrande();
 }
-
-function ligarBusca(){
-  const el=document.getElementById("busca"); if(!el) return;
+function ligarBusca() {
+  const el = document.getElementById("busca");
+  if (!el) return;
   // quando o leitor de código de barras termina, ele dá ENTER. Nesse caso,
   // dispara a busca na hora (sem esperar o timer), tratando como código de barras.
-  el.addEventListener("keydown",function(ev){
-    if(ev.key==="Enter"){
+  el.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") {
       ev.preventDefault();
       clearTimeout(_timerBusca);
-      const termo=this.value.trim();
-      if(termo) buscarProduto(termo, el, document.getElementById("resBusca"), true);
+      const termo = this.value.trim();
+      if (termo) buscarProduto(termo, el, document.getElementById("resBusca"), true);
     }
   });
-  el.addEventListener("input",function(){
+  el.addEventListener("input", function () {
     clearTimeout(_timerBusca);
-    const termo=this.value.trim();
-    const resEl=document.getElementById("resBusca");
-    if(termo.length<2){ resEl.innerHTML=""; return; }
-    resEl.innerHTML=`<div class="muted">buscando…</div>`;
-    _timerBusca=setTimeout(()=>buscarProduto(termo, el, resEl, false),350);
+    const termo = this.value.trim();
+    const resEl = document.getElementById("resBusca");
+    if (termo.length < 2) {
+      resEl.innerHTML = "";
+      return;
+    }
+    resEl.innerHTML = `<div class="muted">buscando…</div>`;
+    _timerBusca = setTimeout(() => buscarProduto(termo, el, resEl, false), 350);
   });
 }
 
 // executa a busca de um produto. ehEnter=true veio do leitor (Enter) — nesse caso,
 // se for numérico, trata como código de barras com prioridade.
-let _buscaReqId=0;
-async function buscarProduto(termo, el, resEl, ehEnter){
-  const meuId=++_buscaReqId; // resposta atrasada de uma busca antiga não sobrescreve a atual
-  try{
-    if(/^\d{6,}$/.test(termo)){
-      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(termo)).then(r=>r.json()).catch(()=>null);
-      if(r&&r.data&&r.data.preco>0){
-        adicionarAoCarrinho({produtoId:r.data.produtoId,nome:r.data.nome,preco:r.data.preco,imagem:r.data.imagem,codigo:termo});
-        resEl.innerHTML=""; el.value=""; return;
+let _buscaReqId = 0;
+async function buscarProduto(termo, el, resEl, ehEnter) {
+  const meuId = ++_buscaReqId; // resposta atrasada de uma busca antiga não sobrescreve a atual
+  try {
+    if (/^\d{6,}$/.test(termo)) {
+      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(termo)).then(r => r.json()).catch(() => null);
+      if (r && r.data && r.data.preco > 0) {
+        adicionarAoCarrinho({
+          produtoId: r.data.produtoId,
+          nome: r.data.nome,
+          preco: r.data.preco,
+          imagem: r.data.imagem,
+          codigo: termo
+        });
+        resEl.innerHTML = "";
+        el.value = "";
+        return;
       }
       // se leu por código de barras e NÃO achou, avisa (em vez de cair na busca por nome silenciosamente)
-      if(ehEnter){ resEl.innerHTML=`<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado. Verifique se o GTIN está cadastrado no Bling, ou busque pelo nome.</div>`; return; }
+      if (ehEnter) {
+        resEl.innerHTML = `<div class="muted">Código de barras <b>${esc(termo)}</b> não encontrado. Verifique se o GTIN está cadastrado no Bling, ou busque pelo nome.</div>`;
+        return;
+      }
     }
-    const j=await fetch(BACKEND+"/api/buscar?nome="+encodeURIComponent(termo)).then(r=>r.json());
-    if(meuId!==_buscaReqId) return; // já tem busca mais nova — ignora esta
-    const lista=(j.data||[]).slice(0,25);
-    if(!lista.length){ resEl.innerHTML=`<div class="muted">nada encontrado</div>`; return; }
+    const j = await fetch(BACKEND + "/api/buscar?nome=" + encodeURIComponent(termo)).then(r => r.json());
+    if (meuId !== _buscaReqId) return; // já tem busca mais nova — ignora esta
+    const lista = (j.data || []).slice(0, 25);
+    if (!lista.length) {
+      resEl.innerHTML = `<div class="muted">nada encontrado</div>`;
+      return;
+    }
     // /api/buscar já traz preco e imagem — usa direto (antes disparava 25 requisições extras por busca)
-    lista.forEach(p=>{ if(p.preco!=null&&Number(p.preco)>0) p._preco=Number(p.preco); if(p.imagem) p._imagem=p.imagem; });
-    window._ultimaBusca=lista;
-    resEl.innerHTML=lista.map((p,ix)=>`
+    lista.forEach(p => {
+      if (p.preco != null && Number(p.preco) > 0) p._preco = Number(p.preco);
+      if (p.imagem) p._imagem = p.imagem;
+    });
+    window._ultimaBusca = lista;
+    resEl.innerHTML = lista.map((p, ix) => {
+      var _p$estoque;
+      return `
       <div class="resitem" onclick="selecionarResultado(${ix})" id="rb_${ix}">
-        ${p._imagem?`<img src="${esc(p._imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`:`<div class="semimg">📦</div>`}
-        <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo||""))} · estoque ${p.estoque??"?"}</div></div>
-        <div class="preco" id="pr_${ix}">${p._preco?brl(p._preco):"—"}</div>
-      </div>`).join("");
+        ${p._imagem ? `<img src="${esc(p._imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">` : `<div class="semimg">📦</div>`}
+        <div class="info"><div class="nome">${esc(p.nome)}</div><div class="meta">#${esc(String(p.codigo || ""))} · estoque ${(_p$estoque = p.estoque) !== null && _p$estoque !== void 0 ? _p$estoque : "?"}</div></div>
+        <div class="preco" id="pr_${ix}">${p._preco ? brl(p._preco) : "—"}</div>
+      </div>`;
+    }).join("");
     // só pros que vieram SEM preço: confirma um a um (raro)
-    lista.forEach(async(p,ix)=>{
-      if(!p.codigo||p._preco) return;
-      try{
-        const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
-        if(r?.data){
-          p._preco=r.data.preco; p._imagem=r.data.imagem;
-          const prEl=document.getElementById("pr_"+ix);
-          if(prEl) prEl.textContent=brl(r.data.preco);
-          const cardEl=document.getElementById("rb_"+ix);
-          if(cardEl&&r.data.imagem){
-            const ph=cardEl.querySelector(".semimg");
-            if(ph) ph.outerHTML=`<img src="${esc(r.data.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`;
+    lista.forEach(async (p, ix) => {
+      if (!p.codigo || p._preco) return;
+      try {
+        const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo)).then(r => r.json());
+        if (r !== null && r !== void 0 && r.data) {
+          p._preco = r.data.preco;
+          p._imagem = r.data.imagem;
+          const prEl = document.getElementById("pr_" + ix);
+          if (prEl) prEl.textContent = brl(r.data.preco);
+          const cardEl = document.getElementById("rb_" + ix);
+          if (cardEl && r.data.imagem) {
+            const ph = cardEl.querySelector(".semimg");
+            if (ph) ph.outerHTML = `<img src="${esc(r.data.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`;
           }
         }
-      }catch(e){}
+      } catch (e) {}
     });
-  }catch(e){ if(meuId===_buscaReqId) resEl.innerHTML=`<div class="muted">erro na busca — tenta de novo</div>`; }
-}
-
-async function selecionarResultado(ix){
-  const p=window._ultimaBusca[ix];
-  const cardEl=document.getElementById("rb_"+ix);
-  // se o preço ainda não chegou (carregando em segundo plano), busca agora e espera antes de adicionar
-  if(p._preco==null&&p.codigo){
-    if(cardEl) cardEl.style.opacity=".5";
-    try{
-      const r=await fetch(BACKEND+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json());
-      if(r?.data){ p._preco=r.data.preco; p._imagem=r.data.imagem; }
-    }catch(e){}
-    if(cardEl) cardEl.style.opacity="1";
+  } catch (e) {
+    if (meuId === _buscaReqId) resEl.innerHTML = `<div class="muted">erro na busca — tenta de novo</div>`;
   }
-  if(!(p._preco>0)){
+}
+async function selecionarResultado(ix) {
+  const p = window._ultimaBusca[ix];
+  const cardEl = document.getElementById("rb_" + ix);
+  // se o preço ainda não chegou (carregando em segundo plano), busca agora e espera antes de adicionar
+  if (p._preco == null && p.codigo) {
+    if (cardEl) cardEl.style.opacity = ".5";
+    try {
+      const r = await fetch(BACKEND + "/api/preco/gtin/" + encodeURIComponent(p.codigo)).then(r => r.json());
+      if (r !== null && r !== void 0 && r.data) {
+        p._preco = r.data.preco;
+        p._imagem = r.data.imagem;
+      }
+    } catch (e) {}
+    if (cardEl) cardEl.style.opacity = "1";
+  }
+  if (!(p._preco > 0)) {
     alert("Não foi possível confirmar o preço desse produto. Tenta buscar de novo.");
     return;
   }
-  adicionarAoCarrinho({produtoId:p.id,nome:p.nome,preco:p._preco,imagem:p._imagem||null,codigo:p.codigo||""});
-  document.getElementById("resBusca").innerHTML="";
-  const b=document.getElementById("busca"); if(b){ b.value=""; b.focus(); }
+  adicionarAoCarrinho({
+    produtoId: p.id,
+    nome: p.nome,
+    preco: p._preco,
+    imagem: p._imagem || null,
+    codigo: p.codigo || ""
+  });
+  document.getElementById("resBusca").innerHTML = "";
+  const b = document.getElementById("busca");
+  if (b) {
+    b.value = "";
+    b.focus();
+  }
 }
 
 // serializa as chamadas (evita duas leituras rápidas do mesmo produto criarem 2 linhas
 // em vez de somar a quantidade, já que a checagem de estoque é assíncrona)
-let _filaAdicionar=Promise.resolve();
-function adicionarAoCarrinho(p){
-  const proxima=_filaAdicionar.then(()=>_adicionarAoCarrinhoInterno(p));
-  _filaAdicionar=proxima.catch(()=>{});
+let _filaAdicionar = Promise.resolve();
+function adicionarAoCarrinho(p) {
+  const proxima = _filaAdicionar.then(() => _adicionarAoCarrinhoInterno(p));
+  _filaAdicionar = proxima.catch(() => {});
   return proxima;
 }
-async function _adicionarAoCarrinhoInterno(p){
-  if(!(Number(p.preco)>0)){
+async function _adicionarAoCarrinhoInterno(p) {
+  if (!(Number(p.preco) > 0)) {
     alert("Esse produto não tem preço confirmado. Não é permitido adicionar sem preço.");
     return;
   }
-  p.produtoId=Number(p.produtoId);
-  const exAntes=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
-  const qtdDesejada=(exAntes?exAntes.quantidade:0)+1;
+  p.produtoId = Number(p.produtoId);
+  const exAntes = CARRINHO.find(i => Number(i.produtoId) === p.produtoId);
+  const qtdDesejada = (exAntes ? exAntes.quantidade : 0) + 1;
   // confere o estoque ao vivo antes de adicionar/aumentar. Se o Bling não responder
   // (fora do ar/lento), NÃO bloqueia a venda por "sem estoque" — segue com estoque
   // desconhecido (antes, falha de rede virava 0 e travava o caixa pedindo autorização)
-  let estoqueAtual=null;
-  try{ const r=await fetch(BACKEND+"/api/pdv/estoque/"+p.produtoId); const j=await r.json(); if(r.ok&&j.erro==null) estoqueAtual=Number(j.estoque)||0; }catch(e){}
-  if(estoqueAtual!=null && qtdDesejada>estoqueAtual){
-    pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual);
+  let estoqueAtual = null;
+  try {
+    const r = await fetch(BACKEND + "/api/pdv/estoque/" + p.produtoId);
+    const j = await r.json();
+    if (r.ok && j.erro == null) estoqueAtual = Number(j.estoque) || 0;
+  } catch (e) {}
+  if (estoqueAtual != null && qtdDesejada > estoqueAtual) {
+    pedirAutorizacaoEstoque(p, qtdDesejada, estoqueAtual);
     return;
   }
-  if(estoqueAtual==null){ estoqueAtual=Number.POSITIVE_INFINITY; const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="muted" style="font-size:12px">⚠️ Não consegui conferir o estoque de "${esc(p.nome)}" no Bling agora — adicionado sem conferência.</div>`; }
+  if (estoqueAtual == null) {
+    estoqueAtual = Number.POSITIVE_INFINITY;
+    const m = document.getElementById("msgFinalizar");
+    if (m) m.innerHTML = `<div class="muted" style="font-size:12px">⚠️ Não consegui conferir o estoque de "${esc(p.nome)}" no Bling agora — adicionado sem conferência.</div>`;
+  }
   // reconfere o carrinho aqui (depois do await), caso outra adição do MESMO produto
   // já tenha rodado enquanto esse fetch estava em andamento
-  const ex=CARRINHO.find(i=>Number(i.produtoId)===p.produtoId);
-  efetivarAdicao(p,ex,ex?ex.quantidade+1:1,estoqueAtual);
+  const ex = CARRINHO.find(i => Number(i.produtoId) === p.produtoId);
+  efetivarAdicao(p, ex, ex ? ex.quantidade + 1 : 1, estoqueAtual);
 }
-
-function efetivarAdicao(p,ex,qtdDesejada,estoqueAtual){
-  if(ex){
-    ex.quantidade=qtdDesejada; ex.estoque=estoqueAtual; aplicarPrecoAutomatico(CARRINHO.indexOf(ex)); render();
+function efetivarAdicao(p, ex, qtdDesejada, estoqueAtual) {
+  if (ex) {
+    ex.quantidade = qtdDesejada;
+    ex.estoque = estoqueAtual;
+    aplicarPrecoAutomatico(CARRINHO.indexOf(ex));
+    render();
     mostrarPainelAdicionado(ex);
     return;
   }
-  const item={...p,quantidade:qtdDesejada,estoque:estoqueAtual,precoNormal:p.preco,precoFardo:null,caixaQtd:null};
+  const item = {
+    ...p,
+    quantidade: qtdDesejada,
+    estoque: estoqueAtual,
+    precoNormal: p.preco,
+    precoFardo: null,
+    caixaQtd: null
+  };
   CARRINHO.push(item);
   render();
   mostrarPainelAdicionado(item);
   // busca em segundo plano se esse produto tem preço de fardo configurado
-  if(p.codigo){
-    fetch(BACKEND+"/api/pdv/info-fardo/"+encodeURIComponent(p.codigo)).then(r=>r.json()).then(info=>{
-      if(info.temFardo){
-        item.precoFardo=info.precoFardo; item.caixaQtd=info.caixaQtd;
+  if (p.codigo) {
+    fetch(BACKEND + "/api/pdv/info-fardo/" + encodeURIComponent(p.codigo)).then(r => r.json()).then(info => {
+      if (info.temFardo) {
+        item.precoFardo = info.precoFardo;
+        item.caixaQtd = info.caixaQtd;
         aplicarPrecoAutomatico(CARRINHO.indexOf(item));
         render();
       }
-    }).catch(()=>{});
+    }).catch(() => {});
   }
 }
 
 // produto sem estoque suficiente — pede autorização e, se aprovado, ajusta o estoque no
 // Bling pra quantidade que o funcionário está tentando vender (ex: contagem desatualizada)
-function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
-  document.getElementById("modais").innerHTML=`
+function pedirAutorizacaoEstoque(p, qtdDesejada, estoqueAtual) {
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>⚠️ Sem estoque no sistema</h3>
@@ -812,55 +1017,94 @@ function pedirAutorizacaoEstoque(p,qtdDesejada,estoqueAtual){
         </div>
       </div>
     </div>`;
-  window._itemEstoquePendente=p;
+  window._itemEstoquePendente = p;
 }
-
-function continuarAutorizacaoEstoque(){
-  const qtdDesejada=Math.max(1,+document.getElementById("qtdAjusteEstoque").value||1);
-  const p=window._itemEstoquePendente;
-  pedirAutorizacao(async(autorizadoPor,idDigitado,senhaDigitada,tokenQr)=>{
-    try{
-      const r=await fetch(BACKEND+"/api/pdv/ajustar-estoque",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({tokenQr,produtoId:p.produtoId,quantidade:qtdDesejada})});
-      const j=await r.json();
-      if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao ajustar estoque no Bling");
-      const ex=CARRINHO.find(i=>i.produtoId===p.produtoId);
-      efetivarAdicao(p,ex,qtdDesejada,qtdDesejada);
-    }catch(e){ alert("Não foi possível ajustar o estoque: "+e.message); }
-  },`Autorizando ajuste de estoque pra ${qtdDesejada} unidade(s).`);
+function continuarAutorizacaoEstoque() {
+  const qtdDesejada = Math.max(1, +document.getElementById("qtdAjusteEstoque").value || 1);
+  const p = window._itemEstoquePendente;
+  pedirAutorizacao(async (autorizadoPor, idDigitado, senhaDigitada, tokenQr) => {
+    try {
+      const r = await fetch(BACKEND + "/api/pdv/ajustar-estoque", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tokenQr,
+          produtoId: p.produtoId,
+          quantidade: qtdDesejada
+        })
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao ajustar estoque no Bling");
+      const ex = CARRINHO.find(i => i.produtoId === p.produtoId);
+      efetivarAdicao(p, ex, qtdDesejada, qtdDesejada);
+    } catch (e) {
+      alert("Não foi possível ajustar o estoque: " + e.message);
+    }
+  }, `Autorizando ajuste de estoque pra ${qtdDesejada} unidade(s).`);
 }
 
 // se a quantidade bater o minimo do fardo (configurado na Tabela Atacado), troca o preço
 // automaticamente pro preço de fardo; produtos sem fardo configurado nunca mudam de preço
-function aplicarPrecoAutomatico(ix){
-  const item=CARRINHO[ix]; if(!item) return;
-  if(item.caixaQtd&&item.precoFardo!=null&&item.quantidade>=item.caixaQtd){
-    item.preco=item.precoFardo; item._usandoFardo=true;
+function aplicarPrecoAutomatico(ix) {
+  const item = CARRINHO[ix];
+  if (!item) return;
+  if (item.caixaQtd && item.precoFardo != null && item.quantidade >= item.caixaQtd) {
+    item.preco = item.precoFardo;
+    item._usandoFardo = true;
   } else {
-    item.preco=item.precoNormal; item._usandoFardo=false;
+    item.preco = item.precoNormal;
+    item._usandoFardo = false;
   }
 }
-
-function subtotal(){ return CARRINHO.reduce((s,i)=>s+i.preco*i.quantidade,0); }
-function descontoAtual(){ return Number(document.getElementById("desconto")?.value||0); }
-function totalPedido(){ return Math.max(0,subtotal()-descontoAtual()); }
-function totalPago(){ return PAGAMENTOS.reduce((s,p)=>s+(Number(p.valor)||0),0); }
-function restante(){ return +(totalPedido()-totalPago()).toFixed(2); }
-function somaNaoDinheiro(){ return PAGAMENTOS.filter(p=>!(p.formaNome||"").toLowerCase().includes("dinheiro")).reduce((s,p)=>s+(Number(p.valor)||0),0); }
-function alterarQtd(ix,d){
-  const item=CARRINHO[ix];
-  const nova=Math.max(1,item.quantidade+d);
-  if(d>0&&nova>item.estoque){ pedirAutorizacaoEstoque(item,nova,item.estoque); return; }
-  item.quantidade=nova; aplicarPrecoAutomatico(ix); render();
+function subtotal() {
+  return CARRINHO.reduce((s, i) => s + i.preco * i.quantidade, 0);
 }
-function definirQtd(ix,v){
-  const item=CARRINHO[ix];
-  const nova=Math.max(1,+v||1);
-  if(nova>item.estoque){ pedirAutorizacaoEstoque(item,nova,item.estoque); render(); return; }
-  item.quantidade=nova; aplicarPrecoAutomatico(ix); render();
+function descontoAtual() {
+  var _document$getElementB2;
+  return Number(((_document$getElementB2 = document.getElementById("desconto")) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || 0);
 }
-function removerItem(ix){
-  pedirAutorizacao(()=>{ CARRINHO.splice(ix,1); render(); });
+function totalPedido() {
+  return Math.max(0, subtotal() - descontoAtual());
+}
+function totalPago() {
+  return PAGAMENTOS.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+}
+function restante() {
+  return +(totalPedido() - totalPago()).toFixed(2);
+}
+function somaNaoDinheiro() {
+  return PAGAMENTOS.filter(p => !(p.formaNome || "").toLowerCase().includes("dinheiro")).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+}
+function alterarQtd(ix, d) {
+  const item = CARRINHO[ix];
+  const nova = Math.max(1, item.quantidade + d);
+  if (d > 0 && nova > item.estoque) {
+    pedirAutorizacaoEstoque(item, nova, item.estoque);
+    return;
+  }
+  item.quantidade = nova;
+  aplicarPrecoAutomatico(ix);
+  render();
+}
+function definirQtd(ix, v) {
+  const item = CARRINHO[ix];
+  const nova = Math.max(1, +v || 1);
+  if (nova > item.estoque) {
+    pedirAutorizacaoEstoque(item, nova, item.estoque);
+    render();
+    return;
+  }
+  item.quantidade = nova;
+  aplicarPrecoAutomatico(ix);
+  render();
+}
+function removerItem(ix) {
+  pedirAutorizacao(() => {
+    CARRINHO.splice(ix, 1);
+    render();
+  });
 }
 
 // ---------------- autorização especial (remover item / aplicar desconto) ----------------
@@ -868,14 +1112,14 @@ function removerItem(ix){
 // dele) e o caixa lê com o leitor de código de barras/QR. O leitor funciona como
 // teclado: "digita" o token no campo e dá Enter. O campo é do tipo senha pra
 // ninguém ver o código na tela.
-let DESCONTO_DESBLOQUEADO=false;
-function pedirAutorizacao(aoAutorizar,mensagemExtra){
-  window._aoAutorizarCallback=aoAutorizar;
-  document.getElementById("modais").innerHTML=`
+let DESCONTO_DESBLOQUEADO = false;
+function pedirAutorizacao(aoAutorizar, mensagemExtra) {
+  window._aoAutorizarCallback = aoAutorizar;
+  document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()">
       <div class="modal">
         <h3>🔒 Autorização necessária</h3>
-        <p class="muted" style="margin-bottom:12px">${mensagemExtra?esc(mensagemExtra):"Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
+        <p class="muted" style="margin-bottom:12px">${mensagemExtra ? esc(mensagemExtra) : "Essa ação exige autorização de um gerente, líder de caixa ou admin."}</p>
         <div style="text-align:center;margin:8px 0 14px">
           <div style="font-size:40px;line-height:1">📷</div>
           <div class="muted" style="font-size:13px;margin-top:6px">Passe o <b>QR code do dia</b> do gerente no leitor.<br><span style="font-size:11px">Sem leitor? Cole o código copiado e toque em Confirmar.</span></div>
@@ -889,52 +1133,79 @@ function pedirAutorizacao(aoAutorizar,mensagemExtra){
       </div>
     </div>`;
   // mantém o foco no campo pra o leitor sempre digitar ali
-  setTimeout(()=>{ const el=document.getElementById("autQr"); if(el) el.focus(); },60);
+  setTimeout(() => {
+    const el = document.getElementById("autQr");
+    if (el) el.focus();
+  }, 60);
 }
-
-async function confirmarAutorizacao(){
-  const tokenQr=document.getElementById("autQr").value.trim();
-  if(!tokenQr) return;
-  try{
-    const r=await fetch(BACKEND+"/api/pdv/autorizar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({tokenQr})});
-    const j=await r.json();
-    if(!r.ok||j.erro) throw new Error(j.erro||"Autorização inválida");
+async function confirmarAutorizacao() {
+  const tokenQr = document.getElementById("autQr").value.trim();
+  if (!tokenQr) return;
+  try {
+    const r = await fetch(BACKEND + "/api/pdv/autorizar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tokenQr
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || "Autorização inválida");
     fecharModais();
-    if(window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor,null,null,tokenQr);
-  }catch(e){
-    const el=document.getElementById("autErro"); if(el) el.innerHTML=`<div class="err">${esc(e.message)}</div>`;
-    const inp=document.getElementById("autQr"); if(inp){ inp.value=""; inp.focus(); }
+    if (window._aoAutorizarCallback) window._aoAutorizarCallback(j.autorizadoPor, null, null, tokenQr);
+  } catch (e) {
+    const el = document.getElementById("autErro");
+    if (el) el.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    const inp = document.getElementById("autQr");
+    if (inp) {
+      inp.value = "";
+      inp.focus();
+    }
   }
 }
-
-function autorizarDesconto(){
-  pedirAutorizacao(()=>{
-    DESCONTO_DESBLOQUEADO=true;
+function autorizarDesconto() {
+  pedirAutorizacao(() => {
+    DESCONTO_DESBLOQUEADO = true;
     render();
-    setTimeout(()=>{ const el=document.getElementById("desconto"); if(el) el.focus(); },50);
+    setTimeout(() => {
+      const el = document.getElementById("desconto");
+      if (el) el.focus();
+    }, 50);
   });
 }
-function limparCarrinho(){
-  if(!CARRINHO.length) return;
-  pedirAutorizacao(()=>{ CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; limparPainelAdicionado(); render(); },"Cancelar a venda e limpar o carrinho exige autorização.");
+function limparCarrinho() {
+  if (!CARRINHO.length) return;
+  pedirAutorizacao(() => {
+    CARRINHO = [];
+    PAGAMENTOS = [{
+      formaId: null,
+      formaNome: "",
+      valor: 0
+    }];
+    DESCONTO_DESBLOQUEADO = false;
+    limparPainelAdicionado();
+    render();
+  }, "Cancelar a venda e limpar o carrinho exige autorização.");
 }
 
 // ---------------- render ----------------
-function render(){
-  const pill=document.getElementById("pillCaixa");
-  const btnAF=document.getElementById("btnAbrirFechar");
-  if(CAIXA.aberta){
-    pill.className="pill aberto";
-    pill.textContent="Caixa aberto · "+brl((CAIXA.resumo||{}).esperadoGaveta);
-    btnAF.textContent="🔒 Fechar caixa";
+function render() {
+  const pill = document.getElementById("pillCaixa");
+  const btnAF = document.getElementById("btnAbrirFechar");
+  if (CAIXA.aberta) {
+    pill.className = "pill aberto";
+    pill.textContent = "Caixa aberto · " + brl((CAIXA.resumo || {}).esperadoGaveta);
+    btnAF.textContent = "🔒 Fechar caixa";
   } else {
-    pill.className="pill fechado"; pill.textContent="Caixa fechado";
-    btnAF.textContent="🔓 Abrir caixa";
+    pill.className = "pill fechado";
+    pill.textContent = "Caixa fechado";
+    btnAF.textContent = "🔓 Abrir caixa";
   }
-
-  const cont=document.getElementById("conteudo");
-  if(!CAIXA.aberta){
-    cont.innerHTML=`<div class="bloqueio">
+  const cont = document.getElementById("conteudo");
+  if (!CAIXA.aberta) {
+    cont.innerHTML = `<div class="bloqueio">
       <div style="font-size:52px;margin-bottom:14px">🔒</div>
       <h2 style="margin-bottom:8px">Caixa fechado</h2>
       <p class="muted" style="margin-bottom:18px">Abra o caixa informando o troco inicial pra começar a vender.</p>
@@ -942,13 +1213,12 @@ function render(){
     </div>`;
     return;
   }
-
-  const r=CAIXA.resumo||{};
-  const descAtual=descontoAtual();
-  const clienteAtual=CLIENTE_SELECIONADO||CONSUMIDOR_FINAL;
-  cont.innerHTML=`<div class="wrap">
+  const r = CAIXA.resumo || {};
+  const descAtual = descontoAtual();
+  const clienteAtual = CLIENTE_SELECIONADO || CONSUMIDOR_FINAL;
+  cont.innerHTML = `<div class="wrap">
     <div>
-      <div id="painelAdicionado" style="min-height:400px">${ULTIMO_ITEM_PAINEL?htmlPainelAdicionado(ULTIMO_ITEM_PAINEL):htmlLogoGrande()}</div>
+      <div id="painelAdicionado" style="min-height:400px">${ULTIMO_ITEM_PAINEL ? htmlPainelAdicionado(ULTIMO_ITEM_PAINEL) : htmlLogoGrande()}</div>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">🔍 Buscar produto (nome ou código de barras)</div>
         <input id="busca" class="busca" placeholder="Bipa o código ou digita o nome…" autofocus>
@@ -957,20 +1227,20 @@ function render(){
       <div class="card">
         <div style="display:flex;align-items:center;margin-bottom:8px">
           <h3 style="flex:1;margin:0">🛒 Carrinho (${CARRINHO.length})</h3>
-          ${CARRINHO.length?`<button class="btn btn-ghost btn-sm" onclick="limparCarrinho()">Cancelar venda</button>`:""}
+          ${CARRINHO.length ? `<button class="btn btn-ghost btn-sm" onclick="limparCarrinho()">Cancelar venda</button>` : ""}
         </div>
-        <div id="carrinho">${CARRINHO.length?CARRINHO.map((i,ix)=>`
+        <div id="carrinho">${CARRINHO.length ? CARRINHO.map((i, ix) => `
           <div class="item">
-            ${i.imagem?`<img src="${esc(i.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">`:`<div class="semimg">📦</div>`}
-            <span class="nome">${esc(i.nome)}${i._usandoFardo?' <span style="color:#FF0082;font-weight:800;font-size:10px">FARDO ✓</span>':''}<br><span class="muted">${brl(i.preco)} un${i.caixaQtd?` · fardo a partir de ${i.caixaQtd}un`:""}</span></span>
+            ${i.imagem ? `<img src="${esc(i.imagem)}" onerror="this.outerHTML='<div class=&quot;semimg&quot;>📦</div>'">` : `<div class="semimg">📦</div>`}
+            <span class="nome">${esc(i.nome)}${i._usandoFardo ? ' <span style="color:#FF0082;font-weight:800;font-size:10px">FARDO ✓</span>' : ''}<br><span class="muted">${brl(i.preco)} un${i.caixaQtd ? ` · fardo a partir de ${i.caixaQtd}un` : ""}</span></span>
             <div class="qtd">
               <button onclick="alterarQtd(${ix},-1)">−</button>
               <input value="${i.quantidade}" onchange="definirQtd(${ix},this.value)">
               <button onclick="alterarQtd(${ix},1)">+</button>
             </div>
-            <span class="subtotal">${brl(i.preco*i.quantidade)}</span>
+            <span class="subtotal">${brl(i.preco * i.quantidade)}</span>
             <button class="rm" onclick="removerItem(${ix})">🗑</button>
-          </div>`).join(""):'<div class="muted">Nenhum item ainda.</div>'}</div>
+          </div>`).join("") : '<div class="muted">Nenhum item ainda.</div>'}</div>
       </div>
     </div>
 
@@ -978,8 +1248,8 @@ function render(){
       <div class="card">
         <div class="muted" style="margin-bottom:6px">👤 Cliente</div>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="flex:1;font-weight:800">${clienteAtual?esc(clienteAtual.nome):"Consumidor Final"}</span>
-          ${CLIENTE_SELECIONADO?`<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>`:`
+          <span style="flex:1;font-weight:800">${clienteAtual ? esc(clienteAtual.nome) : "Consumidor Final"}</span>
+          ${CLIENTE_SELECIONADO ? `<button class="btn btn-ghost btn-sm" onclick="limparCliente()">✕ Remover</button>` : `
             <button class="btn btn-ghost btn-sm" onclick="abrirBuscaCliente()">🔍 Buscar cliente</button>
             <button class="btn btn-ghost btn-sm" onclick="abrirCpfNota()">🧾 CPF na nota</button>
           `}
@@ -990,33 +1260,33 @@ function render(){
 
       <div class="card">
         <h3>💳 Pagamento</h3>
-        <div class="formas">${FORMAS.map(f=>{
-          const nome=f.descricao||f.nome||("Forma "+f.id);
-          const sel=PAGAMENTOS.some(p=>String(p.formaId)===String(f.id));
-          return `<div class="forma ${sel?"sel":""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g,"\\'")}')">${esc(nome)}</div>`;
-        }).join("")}</div>
-        ${PAGAMENTOS.map((p,ix)=>`
+        <div class="formas">${FORMAS.map(f => {
+    const nome = f.descricao || f.nome || "Forma " + f.id;
+    const sel = PAGAMENTOS.some(p => String(p.formaId) === String(f.id));
+    return `<div class="forma ${sel ? "sel" : ""}" onclick="selecionarForma(${f.id},'${esc(nome).replace(/'/g, "\\'")}')">${esc(nome)}</div>`;
+  }).join("")}</div>
+        ${PAGAMENTOS.map((p, ix) => `
           <div class="pagRow">
-            <span style="flex:1">${p.formaNome?esc(p.formaNome):'<span class="muted">escolha a forma acima</span>'}</span>
+            <span style="flex:1">${p.formaNome ? esc(p.formaNome) : '<span class="muted">escolha a forma acima</span>'}</span>
             <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
-            ${PAGAMENTOS.length>1?`<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>`:""}
+            ${PAGAMENTOS.length > 1 ? `<button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>` : ""}
           </div>`).join("")}
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="adicionarFormaPagamento()">+ Dividir com outra forma</button>
         <div class="linha" style="margin-top:10px"><span>Pago</span><b>${brl(totalPago())}</b></div>
-        ${(()=>{
-          const rest=restante();
-          const ehDin=PAGAMENTOS.some(p=>(p.formaNome||"").toLowerCase().includes("dinheiro"));
-          if(rest<-0.009&&ehDin) return `<div class="linha"><span>Troco</span><b style="color:#8fffc0;font-size:18px">${brl(-rest)}</b></div>`;
-          if(rest>0.009) return `<div class="linha"><span>Falta</span><b style="color:#ff8090">${brl(rest)}</b></div>`;
-          return `<div class="linha"><span>Falta</span><b style="color:#8fffc0">${brl(0)}</b></div>`;
-        })()}
-        ${somaNaoDinheiro()>totalPedido()+0.009?`<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>`:""}
+        ${(() => {
+    const rest = restante();
+    const ehDin = PAGAMENTOS.some(p => (p.formaNome || "").toLowerCase().includes("dinheiro"));
+    if (rest < -0.009 && ehDin) return `<div class="linha"><span>Troco</span><b style="color:#8fffc0;font-size:18px">${brl(-rest)}</b></div>`;
+    if (rest > 0.009) return `<div class="linha"><span>Falta</span><b style="color:#ff8090">${brl(rest)}</b></div>`;
+    return `<div class="linha"><span>Falta</span><b style="color:#8fffc0">${brl(0)}</b></div>`;
+  })()}
+        ${somaNaoDinheiro() > totalPedido() + 0.009 ? `<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>` : ""}
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
           <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar</label>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
-          ${(FINALIZANDO||!CARRINHO.length||PAGAMENTOS.some(p=>!p.formaId)||restante()>0.009||somaNaoDinheiro()>totalPedido()+0.009)?"disabled":""}
-          onclick="finalizarVenda()">${FINALIZANDO?"Processando…":"✅ Finalizar Venda"}</button>
+          ${FINALIZANDO || !CARRINHO.length || PAGAMENTOS.some(p => !p.formaId) || restante() > 0.009 || somaNaoDinheiro() > totalPedido() + 0.009 ? "disabled" : ""}
+          onclick="finalizarVenda()">${FINALIZANDO ? "Processando…" : "✅ Finalizar Venda"}</button>
       </div>
     </div>
 
@@ -1025,8 +1295,8 @@ function render(){
         <div class="linha"><span>Subtotal</span><b>${brl(subtotal())}</b></div>
         <div class="linha"><span>Desconto (R$)</span>
           <div style="display:flex;gap:6px;align-items:center">
-            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO?"":"disabled"} onchange="render()">
-            ${DESCONTO_DESBLOQUEADO?"":`<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
+            <input id="desconto" type="number" min="0" step="0.01" value="${descAtual}" style="width:100px;text-align:right" ${DESCONTO_DESBLOQUEADO ? "" : "disabled"} onchange="render()">
+            ${DESCONTO_DESBLOQUEADO ? "" : `<button class="btn btn-ghost btn-sm" onclick="autorizarDesconto()">🔒</button>`}
           </div></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:10px;margin-top:6px">
           <span>Total</span><span class="total">${brl(totalPedido())}</span></div>
@@ -1034,111 +1304,194 @@ function render(){
       <div class="card">
         <h3>📊 Resumo do caixa</h3>
         <div class="linha"><span>Troco inicial</span><b>${brl(r.trocoInicial)}</b></div>
-        <div class="linha"><span>Vendas (${r.qtdVendas||0})</span><b>${brl(r.totalVendas)}</b></div>
+        <div class="linha"><span>Vendas (${r.qtdVendas || 0})</span><b>${brl(r.totalVendas)}</b></div>
         <div class="linha"><span>Suprimentos</span><b style="color:#8fffc0">${brl(r.totalSuprimentos)}</b></div>
         <div class="linha"><span>Sangrias</span><b style="color:#ff8090">${brl(r.totalSangrias)}</b></div>
         <div class="linha" style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">
           <span><b>Esperado na gaveta</b></span><b style="color:#ffd23f">${brl(r.esperadoGaveta)}</b></div>
-        ${(r.porForma||[]).length?`<div style="margin-top:10px">
+        ${(r.porForma || []).length ? `<div style="margin-top:10px">
           <div class="muted" style="margin-bottom:4px">Por forma de pagamento</div>
-          ${r.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-        </div>`:""}
+          ${r.porForma.map(f => `<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+        </div>` : ""}
       </div>
     </div>
   </div>`;
   ligarBusca();
 }
-
-let FINALIZANDO=false, OP_ID=null;
-function gerarOpId(){ return "op-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,10); }
-function mostrarSucessoVenda(j, ctx){
-  const {itensVenda, descontoVenda, pagamentosEnviados, clienteFinal}=ctx;
-  ULTIMA_VENDA={ numero:j.numero||j.pedidoId, pedidoId:j.pedidoId, total:j.total, desconto:descontoVenda,
-    itens:itensVenda, pagamentos:pagamentosEnviados, cliente:clienteFinal, nfce:j.nfce, dataHora:Date.now() };
-  CARRINHO=[]; PAGAMENTOS=[{formaId:null,formaNome:"",valor:0}]; DESCONTO_DESBLOQUEADO=false; CLIENTE_SELECIONADO=null;
-  FINALIZANDO=false; OP_ID=null;
+let FINALIZANDO = false,
+  OP_ID = null;
+function gerarOpId() {
+  return "op-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+}
+function mostrarSucessoVenda(j, ctx) {
+  const {
+    itensVenda,
+    descontoVenda,
+    pagamentosEnviados,
+    clienteFinal
+  } = ctx;
+  ULTIMA_VENDA = {
+    numero: j.numero || j.pedidoId,
+    pedidoId: j.pedidoId,
+    total: j.total,
+    desconto: descontoVenda,
+    itens: itensVenda,
+    pagamentos: pagamentosEnviados,
+    cliente: clienteFinal,
+    nfce: j.nfce,
+    dataHora: Date.now()
+  };
+  CARRINHO = [];
+  PAGAMENTOS = [{
+    formaId: null,
+    formaNome: "",
+    valor: 0
+  }];
+  DESCONTO_DESBLOQUEADO = false;
+  CLIENTE_SELECIONADO = null;
+  FINALIZANDO = false;
+  OP_ID = null;
   limparPainelAdicionado();
-  carregarCaixa().then(()=>{
-    const m=document.getElementById("msgFinalizar");
-    if(m) m.innerHTML=`<div class="ok">✅ Venda #${esc(j.numero||j.pedidoId)} — ${brl(j.total)}${j.repetido?' <span class="muted" style="font-size:12px">(já tinha sido concluída — nada foi feito de novo)</span>':''}
-      ${j.nfce?.erro?`<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>`:(j.nfce?.erroEnvio?`<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>`:(j.nfce?.pendente?"<br><span class=\"muted\" style=\"font-size:12px\">NFCe sendo emitida em segundo plano</span>":(j.nfce?"<br>NFCe emitida":"")))}
+  carregarCaixa().then(() => {
+    var _j$nfce, _j$nfce2, _j$nfce3, _j$nfce4;
+    const m = document.getElementById("msgFinalizar");
+    if (m) m.innerHTML = `<div class="ok">✅ Venda #${esc(j.numero || j.pedidoId)} — ${brl(j.total)}${j.repetido ? ' <span class="muted" style="font-size:12px">(já tinha sido concluída — nada foi feito de novo)</span>' : ''}
+      ${(_j$nfce = j.nfce) !== null && _j$nfce !== void 0 && _j$nfce.erro ? `<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>` : (_j$nfce2 = j.nfce) !== null && _j$nfce2 !== void 0 && _j$nfce2.erroEnvio ? `<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>` : (_j$nfce3 = j.nfce) !== null && _j$nfce3 !== void 0 && _j$nfce3.pendente ? "<br><span class=\"muted\" style=\"font-size:12px\">NFCe sendo emitida em segundo plano</span>" : j.nfce ? "<br>NFCe emitida" : ""}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
-        ${j.nfce?.linkDanfe?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="window.open('${esc(j.nfce.linkDanfe)}','_blank')">🧾 Imprimir NFCe</button>`:""}
+        ${(_j$nfce4 = j.nfce) !== null && _j$nfce4 !== void 0 && _j$nfce4.linkDanfe ? `<button class="btn btn-ghost btn-sm" style="flex:1" onclick="window.open('${esc(j.nfce.linkDanfe)}','_blank')">🧾 Imprimir NFCe</button>` : ""}
       </div></div>`;
   });
 }
-async function aguardarConclusaoVenda(opId, ctx){
-  const inicio=Date.now();
-  while(Date.now()-inicio<5*60*1000){
-    await new Promise(r=>setTimeout(r,3000));
-    let st=null;
-    try{ st=await fetch(BACKEND+"/api/caixa-atacado/finalizar/status/"+encodeURIComponent(opId)).then(r=>r.json()); }catch(e){ continue; }
-    if(st.status==="ok"&&st.resposta){ mostrarSucessoVenda(st.resposta, ctx); return; }
-    if(st.status==="erro"){ FINALIZANDO=false; OP_ID=null; render(); const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="err">Não concluiu: ${esc(st.erro||"erro")}. Pode tentar de novo.</div>`; return; }
-    const m=document.getElementById("msgFinalizar"); const seg=Math.round((Date.now()-inicio)/1000);
-    if(m) m.innerHTML=`<div class="muted" style="padding:8px">⏳ Ainda processando no Bling (${seg}s)… <b>não feche e não clique de novo</b>.</div>`;
-  }
-  FINALIZANDO=false; render();
-  const m=document.getElementById("msgFinalizar"); if(m) m.innerHTML=`<div class="err">Passou de 5 min sem confirmação. Confira em "Minhas Vendas" ou no Bling antes de tentar de novo.</div>`;
-}
-async function finalizarVenda(){
-  if(FINALIZANDO) return; // trava global (clique duplo / Enter)
-  const msg=document.getElementById("msgFinalizar");
-  const btn=document.getElementById("btnFinalizar");
-  FINALIZANDO=true; if(!OP_ID) OP_ID=gerarOpId();
-  msg.innerHTML=""; btn.disabled=true; btn.textContent="Processando…";
-  const clienteFinal=(CLIENTE_SELECIONADO||CONSUMIDOR_FINAL)||null;
-  const itensVenda=CARRINHO.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,preco:i.preco}));
-  const descontoVenda=descontoAtual();
-  try{
-    const body={
-      opId:OP_ID,
-      itens:itensVenda.map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:i.quantidade,valor:i.preco})),
-      desconto:descontoVenda,
-      pagamentos:(()=>{
-        const total=totalPedido();
-        const naoDinheiro=PAGAMENTOS.filter(p=>p.formaId&&!(p.formaNome||"").toLowerCase().includes("dinheiro"));
-        const dinheiro=PAGAMENTOS.filter(p=>p.formaId&&(p.formaNome||"").toLowerCase().includes("dinheiro"));
-        const somaNaoDin=naoDinheiro.reduce((s,p)=>s+(Number(p.valor)||0),0);
-        const faltaParaDinheiro=Math.max(0,+(total-somaNaoDin).toFixed(2));
-        return [
-          ...naoDinheiro.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:+Number(p.valor).toFixed(2)})),
-          ...dinheiro.map(p=>({formaId:p.formaId,formaNome:p.formaNome,valor:Math.min(+Number(p.valor).toFixed(2),faltaParaDinheiro)})),
-        ];
-      })(),
-      emitirNfce:document.getElementById("emitirNfce").checked,
-      funcionarioId:funcionarioIdAtual(),
-      contatoId:clienteFinal?.id||null,
-      clienteNome:clienteFinal?.nome||"",
-    };
-    const ctx={itensVenda, descontoVenda, pagamentosEnviados:body.pagamentos, clienteFinal};
-    const ctrl=new AbortController(); const tm=setTimeout(()=>ctrl.abort(),90000);
-    let r, j;
-    try{
-      r=await fetch(BACKEND+"/api/pdv/venda",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
-      j=await r.json();
-    }finally{ clearTimeout(tm); }
-    if(j.emAndamento){ msg.innerHTML=`<div class="muted" style="padding:8px">⏳ Essa venda já está sendo processada… aguardando.</div>`; await aguardarConclusaoVenda(j.opId||OP_ID, ctx); return; }
-    if(!r.ok||j.erro) throw new Error(j.erro||"Erro ao finalizar venda");
-    mostrarSucessoVenda(j, ctx);
-  }catch(e){
-    if(e.name==="AbortError"||/failed to fetch|network/i.test(e.message||"")){
-      // demorou/caiu a rede, mas o servidor pode ter concluído: acompanha em vez de liberar o botão
-      msg.innerHTML=`<div class="muted" style="padding:8px">⏳ O Bling está demorando… <b>não clique de novo</b>. Acompanhando a conclusão.</div>`;
-      await aguardarConclusaoVenda(OP_ID,{itensVenda, descontoVenda, pagamentosEnviados:[], clienteFinal});
+async function aguardarConclusaoVenda(opId, ctx) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < 5 * 60 * 1000) {
+    await new Promise(r => setTimeout(r, 3000));
+    let st = null;
+    try {
+      st = await fetch(BACKEND + "/api/caixa-atacado/finalizar/status/" + encodeURIComponent(opId)).then(r => r.json());
+    } catch (e) {
+      continue;
+    }
+    if (st.status === "ok" && st.resposta) {
+      mostrarSucessoVenda(st.resposta, ctx);
       return;
     }
-    FINALIZANDO=false; OP_ID=null;
+    if (st.status === "erro") {
+      FINALIZANDO = false;
+      OP_ID = null;
+      render();
+      const m = document.getElementById("msgFinalizar");
+      if (m) m.innerHTML = `<div class="err">Não concluiu: ${esc(st.erro || "erro")}. Pode tentar de novo.</div>`;
+      return;
+    }
+    const m = document.getElementById("msgFinalizar");
+    const seg = Math.round((Date.now() - inicio) / 1000);
+    if (m) m.innerHTML = `<div class="muted" style="padding:8px">⏳ Ainda processando no Bling (${seg}s)… <b>não feche e não clique de novo</b>.</div>`;
+  }
+  FINALIZANDO = false;
+  render();
+  const m = document.getElementById("msgFinalizar");
+  if (m) m.innerHTML = `<div class="err">Passou de 5 min sem confirmação. Confira em "Minhas Vendas" ou no Bling antes de tentar de novo.</div>`;
+}
+async function finalizarVenda() {
+  if (FINALIZANDO) return; // trava global (clique duplo / Enter)
+  const msg = document.getElementById("msgFinalizar");
+  const btn = document.getElementById("btnFinalizar");
+  FINALIZANDO = true;
+  if (!OP_ID) OP_ID = gerarOpId();
+  msg.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Processando…";
+  const clienteFinal = CLIENTE_SELECIONADO || CONSUMIDOR_FINAL || null;
+  const itensVenda = CARRINHO.map(i => ({
+    produtoId: i.produtoId,
+    nome: i.nome,
+    quantidade: i.quantidade,
+    preco: i.preco
+  }));
+  const descontoVenda = descontoAtual();
+  try {
+    const body = {
+      opId: OP_ID,
+      itens: itensVenda.map(i => ({
+        produtoId: i.produtoId,
+        nome: i.nome,
+        quantidade: i.quantidade,
+        valor: i.preco
+      })),
+      desconto: descontoVenda,
+      pagamentos: (() => {
+        const total = totalPedido();
+        const naoDinheiro = PAGAMENTOS.filter(p => p.formaId && !(p.formaNome || "").toLowerCase().includes("dinheiro"));
+        const dinheiro = PAGAMENTOS.filter(p => p.formaId && (p.formaNome || "").toLowerCase().includes("dinheiro"));
+        const somaNaoDin = naoDinheiro.reduce((s, p) => s + (Number(p.valor) || 0), 0);
+        const faltaParaDinheiro = Math.max(0, +(total - somaNaoDin).toFixed(2));
+        return [...naoDinheiro.map(p => ({
+          formaId: p.formaId,
+          formaNome: p.formaNome,
+          valor: +Number(p.valor).toFixed(2)
+        })), ...dinheiro.map(p => ({
+          formaId: p.formaId,
+          formaNome: p.formaNome,
+          valor: Math.min(+Number(p.valor).toFixed(2), faltaParaDinheiro)
+        }))];
+      })(),
+      emitirNfce: document.getElementById("emitirNfce").checked,
+      funcionarioId: funcionarioIdAtual(),
+      contatoId: (clienteFinal === null || clienteFinal === void 0 ? void 0 : clienteFinal.id) || null,
+      clienteNome: (clienteFinal === null || clienteFinal === void 0 ? void 0 : clienteFinal.nome) || ""
+    };
+    const ctx = {
+      itensVenda,
+      descontoVenda,
+      pagamentosEnviados: body.pagamentos,
+      clienteFinal
+    };
+    const ctrl = new AbortController();
+    const tm = setTimeout(() => ctrl.abort(), 90000);
+    let r, j;
+    try {
+      r = await fetch(BACKEND + "/api/pdv/venda", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body),
+        signal: ctrl.signal
+      });
+      j = await r.json();
+    } finally {
+      clearTimeout(tm);
+    }
+    if (j.emAndamento) {
+      msg.innerHTML = `<div class="muted" style="padding:8px">⏳ Essa venda já está sendo processada… aguardando.</div>`;
+      await aguardarConclusaoVenda(j.opId || OP_ID, ctx);
+      return;
+    }
+    if (!r.ok || j.erro) throw new Error(j.erro || "Erro ao finalizar venda");
+    mostrarSucessoVenda(j, ctx);
+  } catch (e) {
+    if (e.name === "AbortError" || /failed to fetch|network/i.test(e.message || "")) {
+      // demorou/caiu a rede, mas o servidor pode ter concluído: acompanha em vez de liberar o botão
+      msg.innerHTML = `<div class="muted" style="padding:8px">⏳ O Bling está demorando… <b>não clique de novo</b>. Acompanhando a conclusão.</div>`;
+      await aguardarConclusaoVenda(OP_ID, {
+        itensVenda,
+        descontoVenda,
+        pagamentosEnviados: [],
+        clienteFinal
+      });
+      return;
+    }
+    FINALIZANDO = false;
+    OP_ID = null;
     render();
-    const m=document.getElementById("msgFinalizar");
-    if(m) m.innerHTML=`<div class="err">${esc(e.message)}</div>`;
+    const m = document.getElementById("msgFinalizar");
+    if (m) m.innerHTML = `<div class="err">${esc(e.message)}</div>`;
   }
 }
-
 carregarFormas();
 carregarCaixa();
-carregarConsumidorFinal();
-</script>
+carregarConsumidorFinal();</script>
 </body>
 </html>

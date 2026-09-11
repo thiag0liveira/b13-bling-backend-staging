@@ -84,838 +84,1105 @@
 </script>
 <div id="app"></div>
 <div id="modais"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const soDig=(s)=>String(s??"").replace(/\D/g,"");
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const S = (typeof b13GetSession === "function" ? b13GetSession() : {}) || {};
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+const soDig = s => String(s !== null && s !== void 0 ? s : "").replace(/\D/g, "");
 // data/hora de criação do pedido (o backend manda em criadoEm)
-function dataHora(ms){
-  if(!ms) return "";
-  const d=new Date(Number(ms));
-  const hoje=new Date();
-  const mesmoDia=d.toDateString()===hoje.toDateString();
-  const hh=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-  return mesmoDia ? ("hoje "+hh) : (d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+hh);
+function dataHora(ms) {
+  if (!ms) return "";
+  const d = new Date(Number(ms));
+  const hoje = new Date();
+  const mesmoDia = d.toDateString() === hoje.toDateString();
+  const hh = d.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+  return mesmoDia ? "hoje " + hh : d.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit"
+  }) + " " + hh;
 }
-
-let PEDIDOS=[], FILTRO="ativos", CARREGANDO=false, DIAS=7, VISTO_ATE=0, SIT_CARREGANDO=false;
-let BUSCA_RES=null, BUSCANDO=false, SITUACOES=[], AGUARD_PAG=null;
-let EXPANDIDO={};  // pedidoId -> true (card aberto com todos os botões)
+let PEDIDOS = [],
+  FILTRO = "ativos",
+  CARREGANDO = false,
+  DIAS = 7,
+  VISTO_ATE = 0,
+  SIT_CARREGANDO = false;
+let BUSCA_RES = null,
+  BUSCANDO = false,
+  SITUACOES = [],
+  AGUARD_PAG = null;
+let EXPANDIDO = {}; // pedidoId -> true (card aberto com todos os botões)
 // faixas recolhíveis — por padrão só "Novos pedidos" fica aberta
-let FAIXAS_ABERTAS=(function(){
-  try{ const g=JSON.parse(localStorage.getItem("b13pedFaixas")||"null"); if(g) return g; }catch(e){}
-  return {novos:true};
-})();
-function alternarFaixa(k){
-  FAIXAS_ABERTAS[k]=!FAIXAS_ABERTAS[k];
-  try{ localStorage.setItem("b13pedFaixas",JSON.stringify(FAIXAS_ABERTAS)); }catch(e){}
+let FAIXAS_ABERTAS = function () {
+  try {
+    const g = JSON.parse(localStorage.getItem("b13pedFaixas") || "null");
+    if (g) return g;
+  } catch (e) {}
+  return {
+    novos: true
+  };
+}();
+function alternarFaixa(k) {
+  FAIXAS_ABERTAS[k] = !FAIXAS_ABERTAS[k];
+  try {
+    localStorage.setItem("b13pedFaixas", JSON.stringify(FAIXAS_ABERTAS));
+  } catch (e) {}
   render();
 }
-function alternar(id){ EXPANDIDO[id]=!EXPANDIDO[id]; render(); }
+function alternar(id) {
+  EXPANDIDO[id] = !EXPANDIDO[id];
+  render();
+}
 // Detecta pela SITUAÇÃO (id) — o nome varia conforme a origem ("Separado c/
 // Pendências", "SEPARADO C/ PENDÊNCIAS", "Separação pendente"), e a busca por texto
 // deixava passar algumas variações, fazendo o pedido sumir da faixa de pendências.
-const SEP_PEND=(typeof B13_SIT!=="undefined"&&B13_SIT.SEP_PEND)?B13_SIT.SEP_PEND:819227;
-function ehPendencia(p){
-  if(Number(p.situacaoId)===Number(SEP_PEND)) return true;
-  return /pend[êe]nc|pendente/i.test(String(p.situacao||""));
+const SEP_PEND = typeof B13_SIT !== "undefined" && B13_SIT.SEP_PEND ? B13_SIT.SEP_PEND : 819227;
+function ehPendencia(p) {
+  if (Number(p.situacaoId) === Number(SEP_PEND)) return true;
+  return /pend[êe]nc|pendente/i.test(String(p.situacao || ""));
 }
-
-async function carregar(silencioso){
-  if(!silencioso){ CARREGANDO=true; render(); }
-  try{
-    const j=await fetch(B+"/api/pedidos-online?dias="+DIAS).then(r=>r.json());
-    if(j.erro) throw new Error(j.erro);
-    PEDIDOS=j.data||[]; SIT_CARREGANDO=!!j.situacoesCarregando;
-    try{
-      const n=await fetch(B+"/api/pedidos-online/novos/"+encodeURIComponent(S.id)).then(r=>r.json());
-      VISTO_ATE=Number(n.vistoAte||0); // tudo criado depois disso é "novo" pra este usuário
-    }catch(e){}
-  }catch(e){ if(!silencioso) alert("Erro ao carregar: "+e.message); }
-  // só busca a faixa de "aguardando pagamento" a cada 3 min (é consulta pesada)
-  if(!AGUARD_PAG || (Date.now()-(window._apEm||0))>180000){
-    try{ const ap=await fetch(B+"/api/pedidos-online/aguardando-pagamento").then(r=>r.json()); if(!ap.erro){ AGUARD_PAG=ap; window._apEm=Date.now(); } }catch(e){}
+async function carregar(silencioso) {
+  if (!silencioso) {
+    CARREGANDO = true;
+    render();
   }
-  CARREGANDO=false; render();
+  try {
+    const j = await fetch(B + "/api/pedidos-online?dias=" + DIAS).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    PEDIDOS = j.data || [];
+    SIT_CARREGANDO = !!j.situacoesCarregando;
+    try {
+      const n = await fetch(B + "/api/pedidos-online/novos/" + encodeURIComponent(S.id)).then(r => r.json());
+      VISTO_ATE = Number(n.vistoAte || 0); // tudo criado depois disso é "novo" pra este usuário
+    } catch (e) {}
+  } catch (e) {
+    if (!silencioso) alert("Erro ao carregar: " + e.message);
+  }
+  // só busca a faixa de "aguardando pagamento" a cada 3 min (é consulta pesada)
+  if (!AGUARD_PAG || Date.now() - (window._apEm || 0) > 180000) {
+    try {
+      const ap = await fetch(B + "/api/pedidos-online/aguardando-pagamento").then(r => r.json());
+      if (!ap.erro) {
+        AGUARD_PAG = ap;
+        window._apEm = Date.now();
+      }
+    } catch (e) {}
+  }
+  CARREGANDO = false;
+  render();
   // as situações vêm em 2º plano — recarrega em silêncio até completar
-  if(SIT_CARREGANDO) setTimeout(function(){ carregar(true); }, 4000);
+  if (SIT_CARREGANDO) setTimeout(function () {
+    carregar(true);
+  }, 4000);
 }
-const AGUARDANDO=(typeof B13_SIT!=="undefined"&&B13_SIT.AGUARDANDO)?B13_SIT.AGUARDANDO:818795;
-function ehAguardando(p){ return Number(p.situacaoId)===Number(AGUARDANDO); }
-const ATENDIDO=9;
-function ehAtendido(p){ return Number(p.situacaoId)===ATENDIDO; }
+const AGUARDANDO = typeof B13_SIT !== "undefined" && B13_SIT.AGUARDANDO ? B13_SIT.AGUARDANDO : 818795;
+function ehAguardando(p) {
+  return Number(p.situacaoId) === Number(AGUARDANDO);
+}
+const ATENDIDO = 9;
+function ehAtendido(p) {
+  return Number(p.situacaoId) === ATENDIDO;
+}
 // pedido já concluído (Atendido) ou cancelado não precisa de ação — fica escondido
 // por padrão. A aba "Todos os status" mostra tudo.
-function ehEmAndamento(p){ return !p.cancelado && !ehAtendido(p); }
-function ordenar(lista){
-  // pedido com PENDÊNCIA vai pro topo — é o que trava a entrega e precisa de ação
-  return lista.slice().sort((a,b)=>(ehPendencia(b)?1:0)-(ehPendencia(a)?1:0));
+function ehEmAndamento(p) {
+  return !p.cancelado && !ehAtendido(p);
 }
-function visiveis(){
-  if(BUSCA_RES) return BUSCA_RES;      // resultado da busca tem prioridade
-  if(FILTRO==="todos") return ordenar(PEDIDOS); // única aba que mostra Atendidos e Cancelados
-  if(FILTRO==="entrega") return ordenar(PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p)));
-  if(FILTRO==="retirada") return ordenar(PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p)));
-  if(FILTRO==="online") return ordenar(PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p)));
-  if(FILTRO==="atacado") return ordenar(PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p)));
-  if(FILTRO==="andamento") return ordenar(PEDIDOS.filter(ehEmAndamento));
+function ordenar(lista) {
+  // pedido com PENDÊNCIA vai pro topo — é o que trava a entrega e precisa de ação
+  return lista.slice().sort((a, b) => (ehPendencia(b) ? 1 : 0) - (ehPendencia(a) ? 1 : 0));
+}
+function visiveis() {
+  if (BUSCA_RES) return BUSCA_RES; // resultado da busca tem prioridade
+  if (FILTRO === "todos") return ordenar(PEDIDOS); // única aba que mostra Atendidos e Cancelados
+  if (FILTRO === "entrega") return ordenar(PEDIDOS.filter(p => p.tipo === "entrega" && ehEmAndamento(p)));
+  if (FILTRO === "retirada") return ordenar(PEDIDOS.filter(p => p.tipo === "retirada" && ehEmAndamento(p)));
+  if (FILTRO === "online") return ordenar(PEDIDOS.filter(p => (p.origem === "totem" || p.origem === "site") && ehEmAndamento(p)));
+  if (FILTRO === "atacado") return ordenar(PEDIDOS.filter(p => p.origem !== "totem" && p.origem !== "site" && ehEmAndamento(p)));
+  if (FILTRO === "andamento") return ordenar(PEDIDOS.filter(ehEmAndamento));
   // padrão: aguardando separação (é o que precisa de ação)
-  return ordenar(PEDIDOS.filter(p=>ehAguardando(p)||ehPendencia(p)));
+  return ordenar(PEDIDOS.filter(p => ehAguardando(p) || ehPendencia(p)));
 }
 // versão MINIMIZADA do card: só o essencial. Clicar abre o card completo.
-function cardMini(p){
-  const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
-  const aguard=ehAguardando(p);
-  const pend=ehPendencia(p);
-  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 "+(p.vendedor||"Atacado"));
-  const cor=(function(){
-    if(pend) return null;
-    if(p.ok) return {bg:"#0f2a1c",bd:"#2f9e6b"};              // OK: verde
-    if(p.agendamento&&!p.cancelado) return {bg:"#0f2233",bd:"#29ABE2"}; // agendado: azul
-    if(p.cancelado) return {bg:"#3a3210",bd:"#8a7a1f"};
-    if(ehAtendido(p)) return {bg:"#12291f",bd:"#2f9e6b"};
-    if(aguard) return {bg:"#2a2410",bd:"#ffe600"};
-    const t=String(p.situacao||"").toLowerCase();
-    if(t.indexOf("separa")>=0) return {bg:"#0f2233",bd:"#29ABE2"};
-    if(t.indexOf("rota")>=0) return {bg:"#251438",bd:"#9b5de5"};
+function cardMini(p) {
+  const ehNovo = Number(p.criadoEm || 0) > VISTO_ATE;
+  const aguard = ehAguardando(p);
+  const pend = ehPendencia(p);
+  const org = p.origem === "totem" ? "🖥️ Totem" : p.origem === "site" ? "🌐 Site" : "🧑‍💼 " + (p.vendedor || "Atacado");
+  const cor = function () {
+    if (pend) return null;
+    if (p.ok) return {
+      bg: "#0f2a1c",
+      bd: "#2f9e6b"
+    }; // OK: verde
+    if (p.agendamento && !p.cancelado) return {
+      bg: "#0f2233",
+      bd: "#29ABE2"
+    }; // agendado: azul
+    if (p.cancelado) return {
+      bg: "#3a3210",
+      bd: "#8a7a1f"
+    };
+    if (ehAtendido(p)) return {
+      bg: "#12291f",
+      bd: "#2f9e6b"
+    };
+    if (aguard) return {
+      bg: "#2a2410",
+      bd: "#ffe600"
+    };
+    const t = String(p.situacao || "").toLowerCase();
+    if (t.indexOf("separa") >= 0) return {
+      bg: "#0f2233",
+      bd: "#29ABE2"
+    };
+    if (t.indexOf("rota") >= 0) return {
+      bg: "#251438",
+      bd: "#9b5de5"
+    };
     return null;
-  })();
-  const est=pend?"":(cor?'background:'+cor.bg+';border-color:'+cor.bd+';':'');
-  return '<div class="card mini'+(pend?' pend':'')+(ehNovo?' novo':'')+'" style="'+est+'" onclick="alternar('+p.id+')">'+
-    '<div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">'+
-      '<span style="font-size:11px;font-weight:900;color:#9a95c9">'+esc(org)+'</span>'+
-      '<span style="font-size:10px;color:#9a95c9">'+esc(dataHora(p.criadoEm))+'</span>'+
-    '</div>'+
-    '<div style="font-weight:900;font-size:14px;margin-top:2px">#'+esc(p.numero)+'</div>'+
-    '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.cliente)+'</div>'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">'+
-      '<span class="sitMini" style="background:'+(pend?"#ff3b3b":(cor?cor.bd:"#2a2660"))+';color:'+((p.cancelado||aguard)&&!pend?"#000":"#fff")+'">'+esc((p.situacao||"—").toUpperCase().slice(0,22))+'</span>'+
-      '<b style="color:#ffd23f;font-size:13px;white-space:nowrap">'+brl(p.total)+'</b>'+
-    '</div>'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">'+
-      '<span style="font-size:10px;color:#9a95c9">'+(p.tipo==="entrega"?"🛵 entrega":"🏪 retirada")+(p.agendamento?" · 📅 "+esc(p.agendamento.data.split("-").reverse().slice(0,2).join("/")):"")+'</span>'+
-      '<span style="font-size:10px;color:#6b6699">▼ abrir</span>'+
-    '</div>'+
-    (p.ok?'<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ OK'+(p.okPor?" · "+esc(p.okPor):"")+'</div>':'')+
-  '</div>';
+  }();
+  const est = pend ? "" : cor ? 'background:' + cor.bg + ';border-color:' + cor.bd + ';' : '';
+  return '<div class="card mini' + (pend ? ' pend' : '') + (ehNovo ? ' novo' : '') + '" style="' + est + '" onclick="alternar(' + p.id + ')">' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">' + '<span style="font-size:11px;font-weight:900;color:#9a95c9">' + esc(org) + '</span>' + '<span style="font-size:10px;color:#9a95c9">' + esc(dataHora(p.criadoEm)) + '</span>' + '</div>' + '<div style="font-weight:900;font-size:14px;margin-top:2px">#' + esc(p.numero) + '</div>' + '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.cliente) + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">' + '<span class="sitMini" style="background:' + (pend ? "#ff3b3b" : cor ? cor.bd : "#2a2660") + ';color:' + ((p.cancelado || aguard) && !pend ? "#000" : "#fff") + '">' + esc((p.situacao || "—").toUpperCase().slice(0, 22)) + '</span>' + '<b style="color:#ffd23f;font-size:13px;white-space:nowrap">' + brl(p.total) + '</b>' + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">' + '<span style="font-size:10px;color:#9a95c9">' + (p.tipo === "entrega" ? "🛵 entrega" : "🏪 retirada") + (p.agendamento ? " · 📅 " + esc(p.agendamento.data.split("-").reverse().slice(0, 2).join("/")) : "") + '</span>' + '<span style="font-size:10px;color:#6b6699">▼ abrir</span>' + '</div>' + (p.ok ? '<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ OK' + (p.okPor ? " · " + esc(p.okPor) : "") + '</div>' : '') + '</div>';
 }
-function cardPedido(p){
-  if(!EXPANDIDO[p.id]) return cardMini(p);
-  const ehNovo=Number(p.criadoEm||0)>VISTO_ATE;
-  const tel=soDig(p.telefone);
-  const aguard=ehAguardando(p);
-  const concluido=ehAtendido(p)||p.cancelado;
+function cardPedido(p) {
+  if (!EXPANDIDO[p.id]) return cardMini(p);
+  const ehNovo = Number(p.criadoEm || 0) > VISTO_ATE;
+  const tel = soDig(p.telefone);
+  const aguard = ehAguardando(p);
+  const concluido = ehAtendido(p) || p.cancelado;
   // cor de fundo por status — bate o olho e já sabe em que pé está o pedido
-  const corStatus=(function(){
-    if(p.cancelado) return {bg:"#3a3210",bd:"#8a7a1f",txt:"#ffe600"};        // cancelado: amarelo
-    if(ehAtendido(p)) return {bg:"#12291f",bd:"#2f9e6b",txt:"#8fffc0"};      // atendido: verde claro
-    if(aguard) return {bg:"#2a2410",bd:"#ffe600",txt:"#ffe600"};             // aguardando separação
-    const t=String(p.situacao||"").toLowerCase();
-    if(t.indexOf("separa")>=0) return {bg:"#0f2233",bd:"#29ABE2",txt:"#7fd4ff"}; // em separação/separado
-    if(t.indexOf("rota")>=0||t.indexOf("entrega")>=0) return {bg:"#251438",bd:"#9b5de5",txt:"#d0a9ff"};
+  const corStatus = function () {
+    if (p.cancelado) return {
+      bg: "#3a3210",
+      bd: "#8a7a1f",
+      txt: "#ffe600"
+    }; // cancelado: amarelo
+    if (ehAtendido(p)) return {
+      bg: "#12291f",
+      bd: "#2f9e6b",
+      txt: "#8fffc0"
+    }; // atendido: verde claro
+    if (aguard) return {
+      bg: "#2a2410",
+      bd: "#ffe600",
+      txt: "#ffe600"
+    }; // aguardando separação
+    const t = String(p.situacao || "").toLowerCase();
+    if (t.indexOf("separa") >= 0) return {
+      bg: "#0f2233",
+      bd: "#29ABE2",
+      txt: "#7fd4ff"
+    }; // em separação/separado
+    if (t.indexOf("rota") >= 0 || t.indexOf("entrega") >= 0) return {
+      bg: "#251438",
+      bd: "#9b5de5",
+      txt: "#d0a9ff"
+    };
     return null;
-  })();
-  const ehOnline=(p.origem==="totem"||p.origem==="site");
-  const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":"🧑‍💼 <b style=\"color:#cfc9f5\">"+esc(p.vendedor||"Venda Atacado")+"</b>");
-  const pend=ehPendencia(p);
-  const estiloCard=pend?'':((corStatus?'background:'+corStatus.bg+';border-color:'+corStatus.bd+';':'')+(concluido?'opacity:.8;':''));
-  return '<div class="card'+(ehNovo?' novo':'')+(pend?' pend':'')+'"'+(estiloCard?' style="'+estiloCard+'"':'')+'>'+
-    (pend?'<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>':'')+
-    '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar('+p.id+')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>'+
-    '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">'+
-      '<span class="muted" style="font-size:11px">'+org+'</span>'+
-      '<span class="muted" style="font-size:11px">🕐 '+esc(dataHora(p.criadoEm))+'</span></div>'+
-    '<div style="display:flex;justify-content:space-between;align-items:center">'+
-      '<div style="font-weight:900;font-size:15px">Pedido '+esc(p.numero)+'</div>'+
-      (ehNovo?'<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>':'')+
-    '</div>'+
-    '<div class="sit"'+(p.situacao==="carregando…"?' style="background:#2a2660;color:#9a95c9"'
-      :(corStatus?' style="background:'+corStatus.bd+';color:'+(p.cancelado||aguard?"#000":"#fff")+'"':''))+'>'+esc((p.situacao||"").toUpperCase())+'</div>'+
-    '<div><span class="chip '+(p.tipo==="entrega"?"ent":"ret")+'">'+(p.tipo==="entrega"?"🛵 ENTREGA":"🏪 RETIRADA")+'</span></div>'+
-    '<div class="muted" style="margin-top:6px">👤 '+esc(p.cliente)+'</div>'+
-    (p.tipo==="entrega"&&p.endereco?'<div class="muted" style="font-size:11px;margin-top:2px">📍 '+esc(p.endereco)+'</div>':'')+
-    (p.agendamento?'<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 '+esc(p.agendamento.data.split("-").reverse().join("/"))+' · '+(p.agendamento.turno==="manha"?"MANHÃ":(p.agendamento.turno==="tarde"?"TARDE":"QUALQUER HORÁRIO"))+'</span></div>'+
-      (p.agendamento.obsEntrega?'<div class="muted" style="font-size:11px;margin-top:3px">📝 '+esc(p.agendamento.obsEntrega)+'</div>':''):'')+
-    (p.teveRetirada?'<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>':'')+
-    (p.frete>0?'<div class="muted" style="font-size:11px">frete '+brl(p.frete)+'</div>':'')+
-    '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">'+brl(p.total)+'</div>'+
-    '<div class="muted" style="font-size:11px;margin-top:4px">'+(p.itens||[]).length+' item(ns) · '+esc((p.itens||[]).slice(0,2).map(i=>i.quantidade+"x "+i.nome).join(", "))+((p.itens||[]).length>2?"…":"")+'</div>'+
-    // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
-    // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
-    (p.cancelado
-      ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>'+
-        '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
-        (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')
-      :
-      (aguard?'<button class="btn btn-wa" onclick="enviarSeparacao('+p.id+')">📦 Mandar p/ separação'+
-        ' <span style="font-size:10px;opacity:.85">('+(p.tipo==="entrega"?"entrega":"retirada")+')</span></button>':'')+
-      '<button class="btn '+(p.ok?"btn-okOff":"btn-ok")+'" onclick="marcarOk('+p.id+')">'+(p.ok?"↩️ Tirar o OK":"✅ OK")+'</button>'+
-      '<button class="btn btn-ghost" onclick="verDetalhe('+p.id+')">👁️ Ver itens</button>'+
-      (p.buscado?'<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus('+p.id+')">🔀 Mover status (com QR)</button>':'')+
-      (p.buscado?'<button class="btn btn-ok" onclick="adotarPedido('+p.id+',\''+esc(String(p.numero))+'\')">📥 Trazer pra lista</button>':'')+
-      ((aguard||pend)?'<button class="btn btn-mag" onclick="editarPedidoAguardando('+p.id+')">'+(pend?"🛠️ Resolver pendência (editar itens)":"✏️ Editar")+'</button>'
-        :'<button class="btn btn-ghost" onclick="editarNoCaixa(\''+esc(p.numero)+'\')">✏️ Editar no caixa</button>')+
-      (pend?'<button class="btn btn-ok" onclick="resolverPendencia('+p.id+')">✅ Pendência resolvida (mandar p/ Separado)</button>':'')+
-      '<button class="btn btn-ghost" onclick="abrirTipoEntrega('+p.id+')">🛵 Entrega / Retirada</button>'+
-      (p.tipo==="entrega"
-        ? '<button class="btn '+(p.agendamento?"btn-ghost":"btn-mag")+'" onclick="abrirAgendar('+p.id+')">📅 '+(p.agendamento?"Reagendar entrega":"Agendar entrega")+'</button>'
-        : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada('+p.id+')">📅 Agendar entrega</button>')+
-      '<button class="btn btn-wa" onclick="whats(\''+tel+'\',\''+esc(p.numero)+'\',\''+esc(String(p.cliente).replace(/'/g,""))+'\','+p.id+')">💬 WhatsApp</button>'+
-      (p.situacaoId!==9?'<button class="btn btn-red" onclick="cancelar('+p.id+',\''+esc(p.numero)+'\')">🚫 Cancelar</button>':'')
-    )+
-  '</div>';
+  }();
+  const ehOnline = p.origem === "totem" || p.origem === "site";
+  const org = p.origem === "totem" ? "🖥️ Totem" : p.origem === "site" ? "🌐 Site" : "🧑‍💼 <b style=\"color:#cfc9f5\">" + esc(p.vendedor || "Venda Atacado") + "</b>";
+  const pend = ehPendencia(p);
+  const estiloCard = pend ? '' : (corStatus ? 'background:' + corStatus.bg + ';border-color:' + corStatus.bd + ';' : '') + (concluido ? 'opacity:.8;' : '');
+  return '<div class="card' + (ehNovo ? ' novo' : '') + (pend ? ' pend' : '') + '"' + (estiloCard ? ' style="' + estiloCard + '"' : '') + '>' + (pend ? '<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>' : '') + '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar(' + p.id + ')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">' + '<span class="muted" style="font-size:11px">' + org + '</span>' + '<span class="muted" style="font-size:11px">🕐 ' + esc(dataHora(p.criadoEm)) + '</span></div>' + '<div style="display:flex;justify-content:space-between;align-items:center">' + '<div style="font-weight:900;font-size:15px">Pedido ' + esc(p.numero) + '</div>' + (ehNovo ? '<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>' : '') + '</div>' + '<div class="sit"' + (p.situacao === "carregando…" ? ' style="background:#2a2660;color:#9a95c9"' : corStatus ? ' style="background:' + corStatus.bd + ';color:' + (p.cancelado || aguard ? "#000" : "#fff") + '"' : '') + '>' + esc((p.situacao || "").toUpperCase()) + '</div>' + '<div><span class="chip ' + (p.tipo === "entrega" ? "ent" : "ret") + '">' + (p.tipo === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA") + '</span></div>' + '<div class="muted" style="margin-top:6px">👤 ' + esc(p.cliente) + '</div>' + (p.tipo === "entrega" && p.endereco ? '<div class="muted" style="font-size:11px;margin-top:2px">📍 ' + esc(p.endereco) + '</div>' : '') + (p.agendamento ? '<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 ' + esc(p.agendamento.data.split("-").reverse().join("/")) + ' · ' + (p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO") + '</span></div>' + (p.agendamento.obsEntrega ? '<div class="muted" style="font-size:11px;margin-top:3px">📝 ' + esc(p.agendamento.obsEntrega) + '</div>' : '') : '') + (p.teveRetirada ? '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>' : '') + (p.frete > 0 ? '<div class="muted" style="font-size:11px">frete ' + brl(p.frete) + '</div>' : '') + '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">' + brl(p.total) + '</div>' + '<div class="muted" style="font-size:11px;margin-top:4px">' + (p.itens || []).length + ' item(ns) · ' + esc((p.itens || []).slice(0, 2).map(i => i.quantidade + "x " + i.nome).join(", ")) + ((p.itens || []).length > 2 ? "…" : "") + '</div>' + (
+  // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
+  // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
+  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + '<button class="btn ' + (p.ok ? "btn-okOff" : "btn-ok") + '" onclick="marcarOk(' + p.id + ')">' + (p.ok ? "↩️ Tirar o OK" : "✅ OK") + '</button>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendência resolvida (mandar p/ Separado)</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
 }
-function render(){
-  const app=document.getElementById("app");
+function render() {
+  const app = document.getElementById("app");
   // guarda o estado do campo de busca — o auto-refresh recriava o input e apagava
   // o que estava sendo digitado (parecia que a busca disparava sozinha)
-  const _b=document.getElementById("buscaPed");
-  const _foco=_b&&document.activeElement===_b;
-  const _sel=_foco?[_b.selectionStart,_b.selectionEnd]:null;
-  const lista=visiveis();
-  const nEnt=PEDIDOS.filter(p=>p.tipo==="entrega"&&ehEmAndamento(p)).length, nRet=PEDIDOS.filter(p=>p.tipo==="retirada"&&ehEmAndamento(p)).length;
-  const nAgu=PEDIDOS.filter(ehAguardando).length;
-  const nOnline=PEDIDOS.filter(p=>(p.origem==="totem"||p.origem==="site")&&ehEmAndamento(p)).length;
-  const nAtac=PEDIDOS.filter(p=>p.origem!=="totem"&&p.origem!=="site"&&ehEmAndamento(p)).length;
-  const nAnd=PEDIDOS.filter(ehEmAndamento).length;
-  const nConc=PEDIDOS.filter(p=>ehAtendido(p)||p.cancelado).length;
-  app.innerHTML='<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>'+
-      '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">'+
-      [1,3,7,15].map(function(d){return '<option value="'+d+'"'+(String(d)===String(DIAS)?" selected":"")+'>'+(d===1?"hoje":d+" dias")+'</option>';}).join("")+'</select>'+
-      '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="'+esc(window._buscaTxt||"")+'" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">'+
-      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">'+(BUSCANDO?"…":"Buscar")+'</button>'+
-      (BUSCA_RES?'<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>':'')+
-      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>'+
-      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>'+
-    '<div class="wrap">'+
-      '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">'+
-        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>'+
-        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>'+
-        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>'+
-        '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>'+
-      '</div>'+
-      '<div class="abas">'+
-        '<span class="aba '+(FILTRO==="ativos"?"on":"")+'" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação ('+nAgu+')</span>'+
-        '<span class="aba '+(FILTRO==="online"?"on":"")+'" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site ('+nOnline+')</span>'+
-        '<span class="aba '+(FILTRO==="atacado"?"on":"")+'" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado ('+nAtac+')</span>'+
-        '<span class="aba '+(FILTRO==="entrega"?"on":"")+'" onclick="FILTRO=\'entrega\';render()">🛵 Entrega ('+nEnt+')</span>'+
-        '<span class="aba '+(FILTRO==="retirada"?"on":"")+'" onclick="FILTRO=\'retirada\';render()">🏪 Retirada ('+nRet+')</span>'+
-        '<span class="aba '+(FILTRO==="andamento"?"on":"")+'" onclick="FILTRO=\'andamento\';render()">📋 Em andamento ('+nAnd+')</span>'+
-        '<span class="aba '+(FILTRO==="todos"?"on":"")+'" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status ('+PEDIDOS.length+')'+(nConc?' <span style="opacity:.7">· '+nConc+' concluídos</span>':'')+'</span>'+
-      '</div>'+
-      ((AGUARD_PAG&&AGUARD_PAG.qtd)?'<div class="card" style="border-color:#b3341f;margin-bottom:12px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
-          '<b style="font-size:14px">💰 Separados aguardando pagamento ('+AGUARD_PAG.qtd+')</b>'+
-          '<b style="color:#ff8f7a">'+brl(AGUARD_PAG.total)+'</b></div>'+
-        '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>'+
-        AGUARD_PAG.data.map(function(a){
-          const tel=soDig(a.telefone);
-          return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">'+
-            '<span style="flex:1;min-width:0">'+
-              '<b>#'+esc(a.numero)+'</b> '+esc(a.cliente)+
-              ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:'+(a.tipo==="entrega"?"#29ABE2;color:#000":"#2f9e6b;color:#fff")+'">'+(a.tipo==="entrega"?"ENTREGA":"RETIRA")+'</span>'+
-              (a.comPendencia?' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>':'')+
-              '<div class="muted" style="font-size:10px">'+esc(a.situacao||"")+(a.por?" · enviado por "+esc(a.por):"")+'</div>'+
-            '</span>'+
-            '<b style="white-space:nowrap">'+brl(a.total)+'</b>'+
-            (a.pronto?'<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente('+a.id+',\''+(a.tipo==="entrega"?"entrega":"retirada")+'\')">💬 avisar</button>':'')+
-          '</div>';
-        }).join("")+'</div>':'')+
-      (BUSCA_RES?'<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "'+esc(window._buscaTxt||"")+'" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>':'')+
-      (CARREGANDO?'<div class="muted" style="padding:16px">Carregando…</div>':(function(){
-        if(!lista.length) return '<div class="card"><div class="muted">Nenhum pedido nesse período.</div></div>';
-        // GRUPOS em faixas horizontais: cada tipo de pedido numa LINHA própria,
-        // com os pedidos em sequência e rolagem lateral dentro da faixa
-        const jaUsado=new Set();
-        const pegar=function(fn){
-          const r=lista.filter(function(p){ return !jaUsado.has(p.id) && fn(p); });
-          r.forEach(function(p){ jaUsado.add(p.id); });
-          return r;
-        };
-        const grupos=[
-          // pendência sempre em primeiro, e só aparece quando existe
-          {k:"pend", nome:"⚠️ Pedidos com pendências", cor:"#ff3b3b", itens:pegar(ehPendencia), sempreAberta:true},
-          // NOVO = ainda em "Aguardando separação" (o status com que o pedido nasce).
-          // Pedido que já entrou no fluxo (em separação, separado, em rota) NÃO é novo:
-          // vai pra faixa "Em andamento". Antes tudo caía em "Novos", inclusive o que
-          // já estava sendo separado.
-          // NOVO = pedido criado no sistema que ainda NÃO entrou no fluxo. Inclui
-          // "Aguardando separação", mas também "Em aberto"/"Em digitação" — situações
-          // em que o pedido pode ficar quando a mudança inicial falha (Bling lento).
-          // Assim nenhum pedido criado por nós fica invisível na tela.
-          {k:"novos", nome:"🆕 Novos pedidos", cor:"#ffe600",
-           itens:pegar(function(p){
-             if(p.ok||p.cancelado||ehAtendido(p)||p.agendamento) return false;
-             const st=String(p.situacao||"");
-             if(/prazo/i.test(st)) return false;
-             if(/separa|conferid|rota/i.test(st)) return false;  // já entrou no fluxo
-             return true;                                        // o resto é novo
-           })},
-          {k:"andamento", nome:"🔄 Em andamento (separação/rota)", cor:"#7fd4ff",
-           itens:pegar(function(p){
-             if(p.ok||p.cancelado||ehAtendido(p)) return false;
-             return /separa|conferid|rota|entrega/i.test(String(p.situacao||""));
-           })},
-          {k:"entrega", nome:"🛵 Para entrega (agendados)", cor:"#29ABE2",
-           itens:pegar(function(p){ return p.agendamento && !p.cancelado; })
-                 .sort(function(a,b){ return String(a.agendamento.data).localeCompare(String(b.agendamento.data)); })},
-          {k:"confirmados", nome:"✅ Confirmados", cor:"#2f9e6b",
-           itens:pegar(function(p){ return p.ok || ehAtendido(p); })},
-          {k:"prazo", nome:"🧾 Prazo", cor:"#ffa53b", itens:pegar(function(p){ return /prazo/i.test(String(p.situacao||"")); })},
-          {k:"cancel", nome:"🚫 Cancelados", cor:"#8a7a1f", itens:pegar(function(p){ return p.cancelado; })},
-          {k:"outros", nome:"📋 Outros", cor:"#9a95c9", itens:pegar(function(){ return true; })},
-        ].filter(function(g){ return g.itens.length; });
-        return grupos.map(function(g){
-          const aberta=g.sempreAberta||FAIXAS_ABERTAS[g.k];
-          return '<div class="faixa'+(aberta?"":" fechada")+'" style="border-left-color:'+g.cor+'">'+
-            '<div class="faixaTit" style="color:'+g.cor+'" onclick="alternarFaixa(\''+g.k+'\')">'+
-              '<span style="font-size:12px">'+(aberta?"▾":"▸")+'</span>'+
-              '<span>'+g.nome+'</span>'+
-              '<span class="faixaQtd" style="background:'+g.cor+'">'+g.itens.length+'</span>'+
-              (aberta?'':'<span class="muted" style="font-size:10px;font-weight:400;text-transform:none">clique pra abrir</span>')+
-            '</div>'+
-            (aberta?'<div class="faixaCards">'+g.itens.map(cardPedido).join("")+'</div>':'')+
-          '</div>';
-        }).join("");
-      })())+
-    '</div>';
+  const _b = document.getElementById("buscaPed");
+  const _foco = _b && document.activeElement === _b;
+  const _sel = _foco ? [_b.selectionStart, _b.selectionEnd] : null;
+  const lista = visiveis();
+  const nEnt = PEDIDOS.filter(p => p.tipo === "entrega" && ehEmAndamento(p)).length,
+    nRet = PEDIDOS.filter(p => p.tipo === "retirada" && ehEmAndamento(p)).length;
+  const nAgu = PEDIDOS.filter(ehAguardando).length;
+  const nOnline = PEDIDOS.filter(p => (p.origem === "totem" || p.origem === "site") && ehEmAndamento(p)).length;
+  const nAtac = PEDIDOS.filter(p => p.origem !== "totem" && p.origem !== "site" && ehEmAndamento(p)).length;
+  const nAnd = PEDIDOS.filter(ehEmAndamento).length;
+  const nConc = PEDIDOS.filter(p => ehAtendido(p) || p.cancelado).length;
+  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>' + '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">' + [1, 3, 7, 15].map(function (d) {
+    return '<option value="' + d + '"' + (String(d) === String(DIAS) ? " selected" : "") + '>' + (d === 1 ? "hoje" : d + " dias") + '</option>';
+  }).join("") + '</select>' + '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.length + ')' + (nConc ? ' <span style="opacity:.7">· ' + nConc + ' concluídos</span>' : '') + '</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
+    const tel = soDig(a.telefone);
+    return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">' + '<span style="flex:1;min-width:0">' + '<b>#' + esc(a.numero) + '</b> ' + esc(a.cliente) + ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:' + (a.tipo === "entrega" ? "#29ABE2;color:#000" : "#2f9e6b;color:#fff") + '">' + (a.tipo === "entrega" ? "ENTREGA" : "RETIRA") + '</span>' + (a.comPendencia ? ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>' : '') + '<div class="muted" style="font-size:10px">' + esc(a.situacao || "") + (a.por ? " · enviado por " + esc(a.por) : "") + '</div>' + '</span>' + '<b style="white-space:nowrap">' + brl(a.total) + '</b>' + (a.pronto ? '<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente(' + a.id + ',\'' + (a.tipo === "entrega" ? "entrega" : "retirada") + '\')">💬 avisar</button>' : '') + '</div>';
+  }).join("") + '</div>' : '') + (BUSCA_RES ? '<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "' + esc(window._buscaTxt || "") + '" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>' : '') + (CARREGANDO ? '<div class="muted" style="padding:16px">Carregando…</div>' : function () {
+    if (!lista.length) return '<div class="card"><div class="muted">Nenhum pedido nesse período.</div></div>';
+    // GRUPOS em faixas horizontais: cada tipo de pedido numa LINHA própria,
+    // com os pedidos em sequência e rolagem lateral dentro da faixa
+    const jaUsado = new Set();
+    const pegar = function (fn) {
+      const r = lista.filter(function (p) {
+        return !jaUsado.has(p.id) && fn(p);
+      });
+      r.forEach(function (p) {
+        jaUsado.add(p.id);
+      });
+      return r;
+    };
+    const grupos = [
+    // pendência sempre em primeiro, e só aparece quando existe
+    {
+      k: "pend",
+      nome: "⚠️ Pedidos com pendências",
+      cor: "#ff3b3b",
+      itens: pegar(ehPendencia),
+      sempreAberta: true
+    },
+    // NOVO = ainda em "Aguardando separação" (o status com que o pedido nasce).
+    // Pedido que já entrou no fluxo (em separação, separado, em rota) NÃO é novo:
+    // vai pra faixa "Em andamento". Antes tudo caía em "Novos", inclusive o que
+    // já estava sendo separado.
+    // NOVO = pedido criado no sistema que ainda NÃO entrou no fluxo. Inclui
+    // "Aguardando separação", mas também "Em aberto"/"Em digitação" — situações
+    // em que o pedido pode ficar quando a mudança inicial falha (Bling lento).
+    // Assim nenhum pedido criado por nós fica invisível na tela.
+    {
+      k: "novos",
+      nome: "🆕 Novos pedidos",
+      cor: "#ffe600",
+      itens: pegar(function (p) {
+        if (p.ok || p.cancelado || ehAtendido(p) || p.agendamento) return false;
+        const st = String(p.situacao || "");
+        if (/prazo/i.test(st)) return false;
+        if (/separa|conferid|rota/i.test(st)) return false; // já entrou no fluxo
+        return true; // o resto é novo
+      })
+    }, {
+      k: "andamento",
+      nome: "🔄 Em andamento (separação/rota)",
+      cor: "#7fd4ff",
+      itens: pegar(function (p) {
+        if (p.ok || p.cancelado || ehAtendido(p)) return false;
+        return /separa|conferid|rota|entrega/i.test(String(p.situacao || ""));
+      })
+    }, {
+      k: "entrega",
+      nome: "🛵 Para entrega (agendados)",
+      cor: "#29ABE2",
+      itens: pegar(function (p) {
+        return p.agendamento && !p.cancelado;
+      }).sort(function (a, b) {
+        return String(a.agendamento.data).localeCompare(String(b.agendamento.data));
+      })
+    }, {
+      k: "confirmados",
+      nome: "✅ Confirmados",
+      cor: "#2f9e6b",
+      itens: pegar(function (p) {
+        return p.ok || ehAtendido(p);
+      })
+    }, {
+      k: "prazo",
+      nome: "🧾 Prazo",
+      cor: "#ffa53b",
+      itens: pegar(function (p) {
+        return /prazo/i.test(String(p.situacao || ""));
+      })
+    }, {
+      k: "cancel",
+      nome: "🚫 Cancelados",
+      cor: "#8a7a1f",
+      itens: pegar(function (p) {
+        return p.cancelado;
+      })
+    }, {
+      k: "outros",
+      nome: "📋 Outros",
+      cor: "#9a95c9",
+      itens: pegar(function () {
+        return true;
+      })
+    }].filter(function (g) {
+      return g.itens.length;
+    });
+    return grupos.map(function (g) {
+      const aberta = g.sempreAberta || FAIXAS_ABERTAS[g.k];
+      return '<div class="faixa' + (aberta ? "" : " fechada") + '" style="border-left-color:' + g.cor + '">' + '<div class="faixaTit" style="color:' + g.cor + '" onclick="alternarFaixa(\'' + g.k + '\')">' + '<span style="font-size:12px">' + (aberta ? "▾" : "▸") + '</span>' + '<span>' + g.nome + '</span>' + '<span class="faixaQtd" style="background:' + g.cor + '">' + g.itens.length + '</span>' + (aberta ? '' : '<span class="muted" style="font-size:10px;font-weight:400;text-transform:none">clique pra abrir</span>') + '</div>' + (aberta ? '<div class="faixaCards">' + g.itens.map(cardPedido).join("") + '</div>' : '') + '</div>';
+    }).join("");
+  }()) + '</div>';
   // devolve o foco e a posição do cursor pra quem estava digitando
-  if(_foco){ const n=document.getElementById("buscaPed"); if(n){ n.focus(); try{ n.setSelectionRange(_sel[0],_sel[1]); }catch(e){} } }
+  if (_foco) {
+    const n = document.getElementById("buscaPed");
+    if (n) {
+      n.focus();
+      try {
+        n.setSelectionRange(_sel[0], _sel[1]);
+      } catch (e) {}
+    }
+  }
 }
 // manda o pedido pra separação (Em separação) e pra fila da mesa, na ordem de envio
 // UM botão só: o tipo (entrega/retirada) vem do próprio pedido, não da escolha do
 // operador — assim a etiqueta da separação nunca sai diferente do que o pedido é.
-async function enviarSeparacao(id){
-  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
-  const tipo=p&&p.tipo==="entrega"?"ENTREGA":"RETIRADA";
-  if(!confirm("Mandar o pedido "+(p?p.numero:id)+" pra separação?\n\nEle está como "+tipo+
-    (p&&p.agendamento?" agendada para "+p.agendamento.data.split("-").reverse().join("/"):"")+".")) return;
-  try{
-    const r=await fetch(B+"/api/mesa/enviar-separacao/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:S.id})});
-    const j=await r.json();
-    if(j.erro){
+async function enviarSeparacao(id) {
+  const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+    return String(x.id) === String(id);
+  });
+  const tipo = p && p.tipo === "entrega" ? "ENTREGA" : "RETIRADA";
+  if (!confirm("Mandar o pedido " + (p ? p.numero : id) + " pra separação?\n\nEle está como " + tipo + (p && p.agendamento ? " agendada para " + p.agendamento.data.split("-").reverse().join("/") : "") + ".")) return;
+  try {
+    const r = await fetch(B + "/api/mesa/enviar-separacao/" + id, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: S.id
+      })
+    });
+    const j = await r.json();
+    if (j.erro) {
       alert(j.erro);
       // conflito de estado: recarrega pra tela refletir a situação real
-      if(r.status===409||j.jaEnviado) recarregarAtual();
+      if (r.status === 409 || j.jaEnviado) recarregarAtual();
       return;
     }
     recarregarAtual();
-  }catch(e){ alert("Erro: "+e.message); }
+  } catch (e) {
+    alert("Erro: " + e.message);
+  }
 }
 // traz pro nosso sistema um pedido que só existe no Bling (registro local perdido
 // ou pedido alterado direto lá) — depois disso ele aparece normalmente na lista
-async function adotarPedido(id,numero){
-  if(!confirm("Trazer o pedido "+numero+" pra lista do sistema?\n\nEle será registrado aqui com os dados do Bling e passará a aparecer normalmente na tela.")) return;
-  try{
-    const j=await fetch(B+"/api/pedidos-online/adotar/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    if(j.jaEstava) alert("Esse pedido já estava no sistema.");
-    else alert("✅ Pedido "+j.numero+" trazido pra lista.\n"+(j.cliente||"")+" · "+brl(j.total)+"\nSituação: "+(j.situacao||"—"));
-    limparBusca(); carregar();
-  }catch(e){ alert("Erro: "+e.message); }
+async function adotarPedido(id, numero) {
+  if (!confirm("Trazer o pedido " + numero + " pra lista do sistema?\n\nEle será registrado aqui com os dados do Bling e passará a aparecer normalmente na tela.")) return;
+  try {
+    const j = await fetch(B + "/api/pedidos-online/adotar/" + id, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: S.id
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    if (j.jaEstava) alert("Esse pedido já estava no sistema.");else alert("✅ Pedido " + j.numero + " trazido pra lista.\n" + (j.cliente || "") + " · " + brl(j.total) + "\nSituação: " + (j.situacao || "—"));
+    limparBusca();
+    carregar();
+  } catch (e) {
+    alert("Erro: " + e.message);
+  }
 }
 // depois de ajustar os itens/valor, o pedido sai de "Separado c/ Pendências" e vai
 // pra "Separado", liberando a conferência
-async function resolverPendencia(id){
-  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
-  if(!confirm("Marcar a pendência do pedido "+(p?p.numero:id)+" como RESOLVIDA?\n\nO pedido vai pra SEPARADO e fica liberado pra conferência.\n\nSe ainda falta ajustar item ou valor, faça isso antes em 'Resolver pendência (editar itens)'.")) return;
-  try{
-    const j=await fetch(B+"/api/fluxo/"+id+"/seguir-sem-pendencias",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:S.id,funcionarioNome:S.nome})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
+async function resolverPendencia(id) {
+  const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!confirm("Marcar a pendência do pedido " + (p ? p.numero : id) + " como RESOLVIDA?\n\nO pedido vai pra SEPARADO e fica liberado pra conferência.\n\nSe ainda falta ajustar item ou valor, faça isso antes em 'Resolver pendência (editar itens)'.")) return;
+  try {
+    const j = await fetch(B + "/api/fluxo/" + id + "/seguir-sem-pendencias", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: S.id,
+        funcionarioNome: S.nome
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
     recarregarAtual();
-  }catch(e){ alert("Erro: "+e.message); }
-}
-async function marcarOk(id){
-  try{
-    const j=await fetch(B+"/api/pedidos-online/"+id+"/ok",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
-    if(p){ p.ok=j.marcado; p.okPor=j.por||null; }
-    render();
-  }catch(e){ alert("Erro: "+e.message); }
-}
-async function verDetalhe(id){
-  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);}); if(!p) return;
-  // busca o histórico de alterações — o que foi retirado/acrescentado/alterado
-  let alt=null;
-  try{ alt=await fetch(B+"/api/pedidos-online/"+id+"/alteracoes").then(r=>r.json()); }catch(e){}
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>Pedido '+esc(p.numero)+'</h3>'+
-    '<div class="muted" style="margin:4px 0 10px">'+esc(p.cliente)+' · '+(p.tipo==="entrega"?"🛵 Entrega":"🏪 Retirada")+
-      '<br>🕐 criado em '+esc(dataHora(p.criadoEm))+((p.origem!=="totem"&&p.origem!=="site")?' · vendedor: '+esc(p.vendedor||"—"):' · '+(p.origem==="totem"?"Totem":"Site"))+'</div>'+
-    (p.endereco?'<div class="muted" style="margin-bottom:8px">📍 '+esc(p.endereco)+'</div>':'')+
-    '<div style="font-weight:800;font-size:13px;margin:6px 0 4px">📦 Itens atuais</div>'+
-    (p.itens||[]).map(function(i){return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid #2a2660;padding:5px 0;font-size:13px"><span>'+i.quantidade+'x '+esc(i.nome)+'</span><b>'+brl(i.quantidade*i.valor)+'</b></div>';}).join("")+
-    (p.frete>0?'<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Frete</span><b>'+brl(p.frete)+'</b></div>':'')+
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:900"><span>Total</span><span style="color:#ffd23f">'+brl(p.total)+'</span></div>'+
-    // ---- o que mudou no pedido (retirado / acrescentado / alterado) ----
-    ((alt&&alt.teveAlteracao)?
-      '<div style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px">'+
-        '<div style="font-weight:800;font-size:13px;margin-bottom:6px">✏️ Alterações no pedido</div>'+
-        ((alt.retirados||[]).length?'<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px;margin-bottom:6px">'+
-          '<div style="color:#ff8f7a;font-weight:800;font-size:12px;margin-bottom:4px">❌ Retirado(s)</div>'+
-          alt.retirados.map(function(x){return '<div style="font-size:12px;color:#ffb0b0">• '+esc(x)+'</div>';}).join("")+
-        '</div>':'')+
-        ((alt.acrescentados||[]).length?'<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px;margin-bottom:6px">'+
-          '<div style="color:#3ce88a;font-weight:800;font-size:12px;margin-bottom:4px">➕ Acrescentado(s)</div>'+
-          alt.acrescentados.map(function(x){return '<div style="font-size:12px;color:#8fffc0">• '+esc(x)+'</div>';}).join("")+
-        '</div>':'')+
-        ((alt.alterados||[]).length?'<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px">'+
-          '<div style="color:#ffd23f;font-weight:800;font-size:12px;margin-bottom:4px">🔄 Quantidade alterada</div>'+
-          alt.alterados.map(function(x){return '<div style="font-size:12px;color:#ffe89a">• '+esc(x)+'</div>';}).join("")+
-        '</div>':'')+
-      '</div>'
-      :'<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>')+
-    '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
-}
-function fechar(){ document.getElementById("modais").innerHTML=""; }
-function editarNoCaixa(numero){ location.href="/caixa-atacado?abrirPedido="+encodeURIComponent(numero); }
-// mesma mensagem do /operacional: pedido completo com itens e total
-async function whats(tel,numero,cliente,id){
-  try{
-    // busca o pedido no Bling pra montar a mensagem com os itens e o total reais
-    let ped=null;
-    try{ const j=await fetch(B+"/api/pedidos/"+id).then(r=>r.json()); ped=j.data||j; }catch(e){}
-    // telefone: usa o do registro; se não tiver, busca igual o operacional faz
-    let t=soDig(tel||"");
-    if(!t&&ped){
-      t=soDig(ped.contato?.celular||ped.contato?.telefone||ped.contato?.fone||"");
-      if(!t&&ped.contato?.id){
-        try{ const jc=await fetch(B+"/api/contatos/"+ped.contato.id).then(r=>r.json()); const c=jc.data||jc;
-          t=soDig(c?.celular||c?.telefone||c?.fone||""); }catch(e){}
-      }
-      if(!t&&ped.observacoes){ const m=String(ped.observacoes).match(/\((\d[\d\s().-]{7,})\)/); if(m) t=soDig(m[1]); }
-    }
-    const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
-    const nome=(ped?.contato?.nome)||cliente||"";
-    const itens=(ped?.itens?.length?ped.itens.map(function(i){return "- "+(i.descricao||i.produto?.nome||"Produto")+": "+i.quantidade+" un";})
-      :((p?.itens)||[]).map(function(i){return "- "+i.nome+": "+i.quantidade+" un";})).join("\n");
-    const total=Number(ped?.total ?? p?.total ?? 0);
-    // o que foi retirado/alterado na edição — o cliente precisa saber o que saiu
-    let alt=null;
-    try{ alt=await fetch(B+"/api/pedidos-online/"+id+"/alteracoes").then(r=>r.json()); }catch(e){}
-    let blocoAlt="";
-    if(alt&&alt.teveAlteracao){
-      const partes=[];
-      if(alt.retirados&&alt.retirados.length) partes.push("❌ *Retirado(s) do pedido:*\n"+alt.retirados.map(x=>"- "+x).join("\n"));
-      if(alt.acrescentados&&alt.acrescentados.length) partes.push("➕ *Acrescentado(s):*\n"+alt.acrescentados.map(x=>"- "+x).join("\n"));
-      if(alt.alterados&&alt.alterados.length) partes.push("🔄 *Quantidade alterada:*\n"+alt.alterados.map(x=>"- "+x).join("\n"));
-      blocoAlt="\n\n"+partes.join("\n\n")+"\n_(o valor abaixo já está atualizado)_";
-    }
-    const msg="Olá"+(nome?" "+nome:"")+"! Seu pedido *"+(ped?.numero||numero)+"* foi recebido na B13 Bebidas. ✅\n\n"+
-      "*Itens do pedido:*\n"+itens+blocoAlt+"\n\n*Total: "+brl(total)+"*\n\nEm breve entraremos em contato! 😊";
-    if(!t){ alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa."); window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); return; }
-    const num=t.startsWith("55")?t:("55"+t);
-    window.open("https://wa.me/"+num+"?text="+encodeURIComponent(msg),"_blank");
-  }catch(e){ alert("Erro ao montar a mensagem do pedido."); }
-}
-function cancelar(id,numero){
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>🚫 Cancelar pedido '+esc(numero)+'</h3>'+
-    '<div class="muted" style="margin:8px 0">O pedido será marcado como <b>Cancelado</b> no Bling.</div>'+
-    '<input id="motivoCanc" placeholder="Motivo (ex: cliente desistiu)">'+
-    '<div id="errCanc"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:12px">'+
-    '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>'+
-    '<button class="btn btn-red" id="btnCanc" style="margin:0" onclick="confirmarCancelar('+id+')">Confirmar</button>'+
-    '</div></div></div>';
-}
-async function confirmarCancelar(id){
-  const btn=document.getElementById("btnCanc");
-  const motivo=(document.getElementById("motivoCanc")||{}).value||"";
-  if(btn){ btn.disabled=true; btn.textContent="Cancelando…"; }
-  try{
-    const j=await fetch(B+"/api/pedidos-online/"+id+"/cancelar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({motivo,funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    fechar(); recarregarAtual();
-  }catch(e){
-    const el=document.getElementById("errCanc");
-    if(el) el.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
-    if(btn){ btn.disabled=false; btn.textContent="Confirmar"; }
+  } catch (e) {
+    alert("Erro: " + e.message);
   }
 }
-async function marcarVistos(){
-  try{ await fetch(B+"/api/pedidos-online/marcar-visto/"+encodeURIComponent(S.id),{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); }catch(e){}
-  if(typeof b13ChecarNovosPedidos==="function") b13ChecarNovosPedidos();
+async function marcarOk(id) {
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/ok", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: S.id
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+      return String(x.id) === String(id);
+    });
+    if (p) {
+      p.ok = j.marcado;
+      p.okPor = j.por || null;
+    }
+    render();
+  } catch (e) {
+    alert("Erro: " + e.message);
+  }
+}
+async function verDetalhe(id) {
+  const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!p) return;
+  // busca o histórico de alterações — o que foi retirado/acrescentado/alterado
+  let alt = null;
+  try {
+    alt = await fetch(B + "/api/pedidos-online/" + id + "/alteracoes").then(r => r.json());
+  } catch (e) {}
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>Pedido ' + esc(p.numero) + '</h3>' + '<div class="muted" style="margin:4px 0 10px">' + esc(p.cliente) + ' · ' + (p.tipo === "entrega" ? "🛵 Entrega" : "🏪 Retirada") + '<br>🕐 criado em ' + esc(dataHora(p.criadoEm)) + (p.origem !== "totem" && p.origem !== "site" ? ' · vendedor: ' + esc(p.vendedor || "—") : ' · ' + (p.origem === "totem" ? "Totem" : "Site")) + '</div>' + (p.endereco ? '<div class="muted" style="margin-bottom:8px">📍 ' + esc(p.endereco) + '</div>' : '') + '<div style="font-weight:800;font-size:13px;margin:6px 0 4px">📦 Itens atuais</div>' + (p.itens || []).map(function (i) {
+    return '<div style="display:flex;justify-content:space-between;border-bottom:1px solid #2a2660;padding:5px 0;font-size:13px"><span>' + i.quantidade + 'x ' + esc(i.nome) + '</span><b>' + brl(i.quantidade * i.valor) + '</b></div>';
+  }).join("") + (p.frete > 0 ? '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>Frete</span><b>' + brl(p.frete) + '</b></div>' : '') + '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:900"><span>Total</span><span style="color:#ffd23f">' + brl(p.total) + '</span></div>' + (
+  // ---- o que mudou no pedido (retirado / acrescentado / alterado) ----
+  alt && alt.teveAlteracao ? '<div style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px">' + '<div style="font-weight:800;font-size:13px;margin-bottom:6px">✏️ Alterações no pedido</div>' + ((alt.retirados || []).length ? '<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px;margin-bottom:6px">' + '<div style="color:#ff8f7a;font-weight:800;font-size:12px;margin-bottom:4px">❌ Retirado(s)</div>' + alt.retirados.map(function (x) {
+    return '<div style="font-size:12px;color:#ffb0b0">• ' + esc(x) + '</div>';
+  }).join("") + '</div>' : '') + ((alt.acrescentados || []).length ? '<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px;margin-bottom:6px">' + '<div style="color:#3ce88a;font-weight:800;font-size:12px;margin-bottom:4px">➕ Acrescentado(s)</div>' + alt.acrescentados.map(function (x) {
+    return '<div style="font-size:12px;color:#8fffc0">• ' + esc(x) + '</div>';
+  }).join("") + '</div>' : '') + ((alt.alterados || []).length ? '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px">' + '<div style="color:#ffd23f;font-weight:800;font-size:12px;margin-bottom:4px">🔄 Quantidade alterada</div>' + alt.alterados.map(function (x) {
+    return '<div style="font-size:12px;color:#ffe89a">• ' + esc(x) + '</div>';
+  }).join("") + '</div>' : '') + '</div>' : '<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>') + '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
+}
+function fechar() {
+  document.getElementById("modais").innerHTML = "";
+}
+function editarNoCaixa(numero) {
+  location.href = "/caixa-atacado?abrirPedido=" + encodeURIComponent(numero);
+}
+// mesma mensagem do /operacional: pedido completo com itens e total
+async function whats(tel, numero, cliente, id) {
+  try {
+    var _ped, _ped2, _ref, _ped$total, _ped3, _ped4;
+    // busca o pedido no Bling pra montar a mensagem com os itens e o total reais
+    let ped = null;
+    try {
+      const j = await fetch(B + "/api/pedidos/" + id).then(r => r.json());
+      ped = j.data || j;
+    } catch (e) {}
+    // telefone: usa o do registro; se não tiver, busca igual o operacional faz
+    let t = soDig(tel || "");
+    if (!t && ped) {
+      var _ped$contato, _ped$contato2, _ped$contato3, _ped$contato4;
+      t = soDig(((_ped$contato = ped.contato) === null || _ped$contato === void 0 ? void 0 : _ped$contato.celular) || ((_ped$contato2 = ped.contato) === null || _ped$contato2 === void 0 ? void 0 : _ped$contato2.telefone) || ((_ped$contato3 = ped.contato) === null || _ped$contato3 === void 0 ? void 0 : _ped$contato3.fone) || "");
+      if (!t && (_ped$contato4 = ped.contato) !== null && _ped$contato4 !== void 0 && _ped$contato4.id) {
+        try {
+          const jc = await fetch(B + "/api/contatos/" + ped.contato.id).then(r => r.json());
+          const c = jc.data || jc;
+          t = soDig((c === null || c === void 0 ? void 0 : c.celular) || (c === null || c === void 0 ? void 0 : c.telefone) || (c === null || c === void 0 ? void 0 : c.fone) || "");
+        } catch (e) {}
+      }
+      if (!t && ped.observacoes) {
+        const m = String(ped.observacoes).match(/\((\d[\d\s().-]{7,})\)/);
+        if (m) t = soDig(m[1]);
+      }
+    }
+    const p = PEDIDOS.find(function (x) {
+      return String(x.id) === String(id);
+    });
+    const nome = ((_ped = ped) === null || _ped === void 0 || (_ped = _ped.contato) === null || _ped === void 0 ? void 0 : _ped.nome) || cliente || "";
+    const itens = ((_ped2 = ped) !== null && _ped2 !== void 0 && (_ped2 = _ped2.itens) !== null && _ped2 !== void 0 && _ped2.length ? ped.itens.map(function (i) {
+      var _i$produto;
+      return "- " + (i.descricao || ((_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.nome) || "Produto") + ": " + i.quantidade + " un";
+    }) : ((p === null || p === void 0 ? void 0 : p.itens) || []).map(function (i) {
+      return "- " + i.nome + ": " + i.quantidade + " un";
+    })).join("\n");
+    const total = Number((_ref = (_ped$total = (_ped3 = ped) === null || _ped3 === void 0 ? void 0 : _ped3.total) !== null && _ped$total !== void 0 ? _ped$total : p === null || p === void 0 ? void 0 : p.total) !== null && _ref !== void 0 ? _ref : 0);
+    // o que foi retirado/alterado na edição — o cliente precisa saber o que saiu
+    let alt = null;
+    try {
+      alt = await fetch(B + "/api/pedidos-online/" + id + "/alteracoes").then(r => r.json());
+    } catch (e) {}
+    let blocoAlt = "";
+    if (alt && alt.teveAlteracao) {
+      const partes = [];
+      if (alt.retirados && alt.retirados.length) partes.push("❌ *Retirado(s) do pedido:*\n" + alt.retirados.map(x => "- " + x).join("\n"));
+      if (alt.acrescentados && alt.acrescentados.length) partes.push("➕ *Acrescentado(s):*\n" + alt.acrescentados.map(x => "- " + x).join("\n"));
+      if (alt.alterados && alt.alterados.length) partes.push("🔄 *Quantidade alterada:*\n" + alt.alterados.map(x => "- " + x).join("\n"));
+      blocoAlt = "\n\n" + partes.join("\n\n") + "\n_(o valor abaixo já está atualizado)_";
+    }
+    const msg = "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + (((_ped4 = ped) === null || _ped4 === void 0 ? void 0 : _ped4.numero) || numero) + "* foi recebido na B13 Bebidas. ✅\n\n" + "*Itens do pedido:*\n" + itens + blocoAlt + "\n\n*Total: " + brl(total) + "*\n\nEm breve entraremos em contato! 😊";
+    if (!t) {
+      alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa.");
+      window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
+      return;
+    }
+    const num = t.startsWith("55") ? t : "55" + t;
+    window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(msg), "_blank");
+  } catch (e) {
+    alert("Erro ao montar a mensagem do pedido.");
+  }
+}
+function cancelar(id, numero) {
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>🚫 Cancelar pedido ' + esc(numero) + '</h3>' + '<div class="muted" style="margin:8px 0">O pedido será marcado como <b>Cancelado</b> no Bling.</div>' + '<input id="motivoCanc" placeholder="Motivo (ex: cliente desistiu)">' + '<div id="errCanc"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>' + '<button class="btn btn-red" id="btnCanc" style="margin:0" onclick="confirmarCancelar(' + id + ')">Confirmar</button>' + '</div></div></div>';
+}
+async function confirmarCancelar(id) {
+  const btn = document.getElementById("btnCanc");
+  const motivo = (document.getElementById("motivoCanc") || {}).value || "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Cancelando…";
+  }
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/cancelar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        motivo,
+        funcionarioId: S.id
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    fechar();
+    recarregarAtual();
+  } catch (e) {
+    const el = document.getElementById("errCanc");
+    if (el) el.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Confirmar";
+    }
+  }
+}
+async function marcarVistos() {
+  try {
+    await fetch(B + "/api/pedidos-online/marcar-visto/" + encodeURIComponent(S.id), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: "{}"
+    });
+  } catch (e) {}
+  if (typeof b13ChecarNovosPedidos === "function") b13ChecarNovosPedidos();
   carregar();
 }
 /* ===== EDIÇÃO DO PEDIDO (mesma lógica do /operacional: altera itens direto no Bling) ===== */
-function edSetMsg(h){ const el=document.getElementById("edMsg"); if(el) el.innerHTML=h; }
-function totalEdit(){ return (window.itensEdit||[]).filter(i=>!i._removido).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
-async function editarPedidoAguardando(id){
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" id="mbox"><div class="muted">Carregando pedido…</div></div></div>';
-  try{
-    const r=await fetch(B+"/api/pedidos/"+id).then(r=>r.json());
-    const ped=r.data||r;
-    if(!ped||!ped.itens){ document.getElementById("mbox").innerHTML='<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>'; return; }
-    window.pedidoEditOrig=ped; window.pedidoEditId=id;
-    window.itensEdit=(ped.itens||[]).map(i=>({ produtoId:i.produto?.id, descricao:i.descricao||i.produto?.nome||"",
-      quantidade:i.quantidade, quantidadeOriginal:i.quantidade, valor:i.valor, _removido:false, _novo:false }));
+function edSetMsg(h) {
+  const el = document.getElementById("edMsg");
+  if (el) el.innerHTML = h;
+}
+function totalEdit() {
+  return (window.itensEdit || []).filter(i => !i._removido).reduce((s, i) => s + Number(i.valor || 0) * Number(i.quantidade || 0), 0);
+}
+async function editarPedidoAguardando(id) {
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" id="mbox"><div class="muted">Carregando pedido…</div></div></div>';
+  try {
+    const r = await fetch(B + "/api/pedidos/" + id).then(r => r.json());
+    const ped = r.data || r;
+    if (!ped || !ped.itens) {
+      document.getElementById("mbox").innerHTML = '<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>';
+      return;
+    }
+    window.pedidoEditOrig = ped;
+    window.pedidoEditId = id;
+    window.itensEdit = (ped.itens || []).map(i => {
+      var _i$produto2, _i$produto3;
+      return {
+        produtoId: (_i$produto2 = i.produto) === null || _i$produto2 === void 0 ? void 0 : _i$produto2.id,
+        descricao: i.descricao || ((_i$produto3 = i.produto) === null || _i$produto3 === void 0 ? void 0 : _i$produto3.nome) || "",
+        quantidade: i.quantidade,
+        quantidadeOriginal: i.quantidade,
+        valor: i.valor,
+        _removido: false,
+        _novo: false
+      };
+    });
     renderEditarAguardando(id);
-  }catch(e){ document.getElementById("mbox").innerHTML='<div style="color:#ff8090">Erro ao carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>'; }
-}
-function renderEditarAguardando(id){
-  const rows=(window.itensEdit||[]).map((item,ix)=>linhaItemEdit(item,ix,id)).join("");
-  document.getElementById("mbox").innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-      '<h3>✏️ Pedido '+esc(window.pedidoEditOrig?.numero||id)+'</h3>'+
-      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>'+
-    '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens. Ao salvar, altera também no Bling.</div>'+
-    '<div style="max-height:42vh;overflow:auto">'+rows+'</div>'+
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">'+
-      '<span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">'+brl(totalEdit())+'</b></div>'+
-    '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px">'+
-      '<div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>'+
-      '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,'+id+')">'+
-      '<div id="resBuscaEd"></div></div>'+
-    '<div id="edMsg" style="margin-top:8px"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:10px">'+
-      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Cancelar</button>'+
-      '<button class="btn btn-mag" style="margin:0" onclick="salvarEditarAguardando('+id+')">💾 Salvar no Bling</button></div>';
-}
-function linhaItemEdit(item,ix,id){
-  if(item._removido){
-    return '<div class="it" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">'+esc(item.descricao)+'</div>'+
-      '<button class="btn btn-ghost" style="width:auto;margin:0;padding:4px 8px;font-size:11px" onclick="restaurarItemEdit('+ix+','+id+')">desfazer</button></div>';
+  } catch (e) {
+    document.getElementById("mbox").innerHTML = '<div style="color:#ff8090">Erro ao carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>';
   }
-  return '<div class="it"><div style="flex:1;min-width:0;font-size:13px">'+esc(item.descricao)+
-    '<div class="muted" style="font-size:11px">'+brl(item.valor)+' un'+(item._novo?' · <span style="color:#3ce88a">novo</span>':'')+'</div></div>'+
-    '<input type="number" min="1" step="1" value="'+item.quantidade+'" onchange="mudarQtdEdit('+ix+',this.value,'+id+')">'+
-    '<button class="rm" onclick="removerItemEdit('+ix+','+id+')">🗑</button></div>';
 }
-function mudarQtdEdit(ix,v,id){
-  const q=Math.max(1,parseInt(v)||1);
-  window.itensEdit[ix].quantidade=q;
-  const t=document.getElementById("edTotal"); if(t) t.textContent=brl(totalEdit());
+function renderEditarAguardando(id) {
+  var _window$pedidoEditOri;
+  const rows = (window.itensEdit || []).map((item, ix) => linhaItemEdit(item, ix, id)).join("");
+  document.getElementById("mbox").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3>✏️ Pedido ' + esc(((_window$pedidoEditOri = window.pedidoEditOrig) === null || _window$pedidoEditOri === void 0 ? void 0 : _window$pedidoEditOri.numero) || id) + '</h3>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' + '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens. Ao salvar, altera também no Bling.</div>' + '<div style="max-height:42vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' + '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px">' + '<div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>' + '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,' + id + ')">' + '<div id="resBuscaEd"></div></div>' + '<div id="edMsg" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:10px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Cancelar</button>' + '<button class="btn btn-mag" style="margin:0" onclick="salvarEditarAguardando(' + id + ')">💾 Salvar no Bling</button></div>';
+}
+function linhaItemEdit(item, ix, id) {
+  if (item._removido) {
+    return '<div class="it" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">' + esc(item.descricao) + '</div>' + '<button class="btn btn-ghost" style="width:auto;margin:0;padding:4px 8px;font-size:11px" onclick="restaurarItemEdit(' + ix + ',' + id + ')">desfazer</button></div>';
+  }
+  return '<div class="it"><div style="flex:1;min-width:0;font-size:13px">' + esc(item.descricao) + '<div class="muted" style="font-size:11px">' + brl(item.valor) + ' un' + (item._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + item.quantidade + '" onchange="mudarQtdEdit(' + ix + ',this.value,' + id + ')">' + '<button class="rm" onclick="removerItemEdit(' + ix + ',' + id + ')">🗑</button></div>';
+}
+function mudarQtdEdit(ix, v, id) {
+  const q = Math.max(1, parseInt(v) || 1);
+  window.itensEdit[ix].quantidade = q;
+  const t = document.getElementById("edTotal");
+  if (t) t.textContent = brl(totalEdit());
 }
 // preserva a posição da rolagem ao redesenhar (antes voltava tudo pro topo a cada
 // item removido, e em pedido grande era preciso rolar de novo toda vez)
-function _comScroll(id,fn){
-  const box=document.querySelector("#mbox div[style*='overflow:auto']");
-  const y=box?box.scrollTop:0;
+function _comScroll(id, fn) {
+  const box = document.querySelector("#mbox div[style*='overflow:auto']");
+  const y = box ? box.scrollTop : 0;
   fn();
   renderEditarAguardando(id);
-  const novo=document.querySelector("#mbox div[style*='overflow:auto']");
-  if(novo) novo.scrollTop=y;
+  const novo = document.querySelector("#mbox div[style*='overflow:auto']");
+  if (novo) novo.scrollTop = y;
 }
-function removerItemEdit(ix,id){ _comScroll(id,function(){ window.itensEdit[ix]._removido=true; }); }
-function restaurarItemEdit(ix,id){ _comScroll(id,function(){ window.itensEdit[ix]._removido=false; }); }
-let _edBuscaT=null;
-function buscarNovoItemEdit(q,id){
+function removerItemEdit(ix, id) {
+  _comScroll(id, function () {
+    window.itensEdit[ix]._removido = true;
+  });
+}
+function restaurarItemEdit(ix, id) {
+  _comScroll(id, function () {
+    window.itensEdit[ix]._removido = false;
+  });
+}
+let _edBuscaT = null;
+function buscarNovoItemEdit(q, id) {
   clearTimeout(_edBuscaT);
-  _edBuscaT=setTimeout(async function(){
-    const termo=(q||"").trim();
-    const box=document.getElementById("resBuscaEd"); if(!box) return;
-    if(termo.length<2){ box.innerHTML=""; return; }
-    try{
-      const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
-      const lista=(j.data||[]).slice(0,8);
-      box.innerHTML=lista.length?lista.map(function(r){
-        return '<div class="it" style="cursor:pointer" onclick=\'addItemEdit('+JSON.stringify({id:r.id,nome:r.nome,preco:r.preco??r.precoBling??0}).replace(/'/g,"&#39;")+','+id+')\'>'+
-          '<div style="flex:1;font-size:13px">'+esc(r.nome)+'<div class="muted" style="font-size:11px">'+brl(r.preco??r.precoBling??0)+'</div></div><span style="color:#3ce88a">+</span></div>';
-      }).join(""):'<div class="muted" style="padding:6px">nada encontrado</div>';
-    }catch(e){ box.innerHTML='<div class="muted" style="padding:6px">erro na busca</div>'; }
-  },350);
+  _edBuscaT = setTimeout(async function () {
+    const termo = (q || "").trim();
+    const box = document.getElementById("resBuscaEd");
+    if (!box) return;
+    if (termo.length < 2) {
+      box.innerHTML = "";
+      return;
+    }
+    try {
+      const j = await fetch(B + "/api/buscar-atacado?nome=" + encodeURIComponent(termo)).then(r => r.json());
+      const lista = (j.data || []).slice(0, 8);
+      box.innerHTML = lista.length ? lista.map(function (r) {
+        var _ref2, _r$preco, _ref3, _r$preco2;
+        return '<div class="it" style="cursor:pointer" onclick=\'addItemEdit(' + JSON.stringify({
+          id: r.id,
+          nome: r.nome,
+          preco: (_ref2 = (_r$preco = r.preco) !== null && _r$preco !== void 0 ? _r$preco : r.precoBling) !== null && _ref2 !== void 0 ? _ref2 : 0
+        }).replace(/'/g, "&#39;") + ',' + id + ')\'>' + '<div style="flex:1;font-size:13px">' + esc(r.nome) + '<div class="muted" style="font-size:11px">' + brl((_ref3 = (_r$preco2 = r.preco) !== null && _r$preco2 !== void 0 ? _r$preco2 : r.precoBling) !== null && _ref3 !== void 0 ? _ref3 : 0) + '</div></div><span style="color:#3ce88a">+</span></div>';
+      }).join("") : '<div class="muted" style="padding:6px">nada encontrado</div>';
+    } catch (e) {
+      box.innerHTML = '<div class="muted" style="padding:6px">erro na busca</div>';
+    }
+  }, 350);
 }
-function addItemEdit(r,id){
-  const ja=window.itensEdit.find(function(i){return String(i.produtoId)===String(r.id)&&!i._removido;});
-  if(ja){ ja.quantidade+=1; }
-  else window.itensEdit.push({produtoId:r.id,descricao:r.nome,quantidade:1,quantidadeOriginal:0,valor:Number(r.preco)||0,_removido:false,_novo:true});
-  const b=document.getElementById("buscaNovoItemEd"); if(b) b.value="";
-  const box=document.getElementById("resBuscaEd"); if(box) box.innerHTML="";
+function addItemEdit(r, id) {
+  const ja = window.itensEdit.find(function (i) {
+    return String(i.produtoId) === String(r.id) && !i._removido;
+  });
+  if (ja) {
+    ja.quantidade += 1;
+  } else window.itensEdit.push({
+    produtoId: r.id,
+    descricao: r.nome,
+    quantidade: 1,
+    quantidadeOriginal: 0,
+    valor: Number(r.preco) || 0,
+    _removido: false,
+    _novo: true
+  });
+  const b = document.getElementById("buscaNovoItemEd");
+  if (b) b.value = "";
+  const box = document.getElementById("resBuscaEd");
+  if (box) box.innerHTML = "";
   renderEditarAguardando(id);
 }
-async function salvarEditarAguardando(id){
-  const itens=(window.itensEdit||[]).filter(i=>!i._removido).map(i=>({produtoId:i.produtoId,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
-  if(!itens.length){ edSetMsg('<div style="color:#ff8090">O pedido precisa ter ao menos 1 item.</div>'); return; }
+async function salvarEditarAguardando(id) {
+  const itens = (window.itensEdit || []).filter(i => !i._removido).map(i => ({
+    produtoId: i.produtoId,
+    quantidade: Number(i.quantidade),
+    valor: Number(i.valor)
+  }));
+  if (!itens.length) {
+    edSetMsg('<div style="color:#ff8090">O pedido precisa ter ao menos 1 item.</div>');
+    return;
+  }
   edSetMsg('<div class="muted">Salvando no Bling…</div>');
-  try{
-    const j=await fetch(B+"/api/pedidos/"+id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({itens, funcionarioNome:(S.nome||"")})}).then(r=>r.json());
-    if(j.erro){ edSetMsg('<div style="color:#ff8090">❌ '+esc(j.erro)+'</div>'); return; }
-    const sinc=j.sincronizado||{};
-    const onde=["Bling"]; if(sinc.caixa) onde.push("caixa"); if(sinc.proposta) onde.push("proposta");
-    const ia=j.itensAlterados||{};
-    const resumo=[
-      ia.retirados&&ia.retirados.length?"retirou "+ia.retirados.join(", "):"",
-      ia.acrescentados&&ia.acrescentados.length?"acrescentou "+ia.acrescentados.join(", "):"",
-      ia.alterados&&ia.alterados.length?"alterou "+ia.alterados.join(", "):"",
-    ].filter(Boolean).join(" · ");
-    const totalMsg=j.novoTotal!=null?'<br><span style="color:#ffd23f">Novo total: '+brl(j.novoTotal)+'</span>':'';
-    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: '+onde.join(" + ")+totalMsg+(resumo?"<br><span style=\"color:#9a95c9\">"+esc(resumo)+"</span>":"")+'</div>');
-    if(j.alertaTotal) alert("⚠️ "+j.alertaTotal);
-    if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
-    setTimeout(function(){ fechar(); recarregarAtual(); },1200);
-  }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }
+  try {
+    const j = await fetch(B + "/api/pedidos/" + id + "/editar-itens", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        itens,
+        funcionarioNome: S.nome || ""
+      })
+    }).then(r => r.json());
+    if (j.erro) {
+      edSetMsg('<div style="color:#ff8090">❌ ' + esc(j.erro) + '</div>');
+      return;
+    }
+    const sinc = j.sincronizado || {};
+    const onde = ["Bling"];
+    if (sinc.caixa) onde.push("caixa");
+    if (sinc.proposta) onde.push("proposta");
+    const ia = j.itensAlterados || {};
+    const resumo = [ia.retirados && ia.retirados.length ? "retirou " + ia.retirados.join(", ") : "", ia.acrescentados && ia.acrescentados.length ? "acrescentou " + ia.acrescentados.join(", ") : "", ia.alterados && ia.alterados.length ? "alterou " + ia.alterados.join(", ") : ""].filter(Boolean).join(" · ");
+    const totalMsg = j.novoTotal != null ? '<br><span style="color:#ffd23f">Novo total: ' + brl(j.novoTotal) + '</span>' : '';
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
+    if (j.alertaTotal) alert("⚠️ " + j.alertaTotal);
+    if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
+    setTimeout(function () {
+      fechar();
+      recarregarAtual();
+    }, 1200);
+  } catch (e) {
+    edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>');
+  }
 }
 
 /* ===== AGENDAR ENTREGA (dia + turno) ===== */
 // pedido marcado como RETIRADA não tem entrega pra agendar — explica e oferece
 // voltar pra entrega (com a opção de restaurar o agendamento que existia antes)
-function avisarRetirada(id){
-  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>📅 Agendar entrega — pedido '+esc(p?p.numero:id)+'</h3>'+
-    '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;margin:10px 0;font-size:13px;color:#ffd23f">'+
-      'Este pedido está como <b>🏪 RETIRADA</b>, por isso não há entrega pra agendar.<br><br>'+
-      'Se foi engano, mude pra <b>Entrega</b> primeiro (o endereço e o frete são pedidos lá).</div>'+
-    '<div style="display:flex;gap:8px;margin-top:12px">'+
-      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Fechar</button>'+
-      '<button class="btn btn-mag" style="margin:0" onclick="fechar();abrirTipoEntrega('+id+')">🛵 Mudar pra Entrega</button>'+
-    '</div></div></div>';
+function avisarRetirada(id) {
+  const p = PEDIDOS.find(function (x) {
+    return String(x.id) === String(id);
+  });
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>📅 Agendar entrega — pedido ' + esc(p ? p.numero : id) + '</h3>' + '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;margin:10px 0;font-size:13px;color:#ffd23f">' + 'Este pedido está como <b>🏪 RETIRADA</b>, por isso não há entrega pra agendar.<br><br>' + 'Se foi engano, mude pra <b>Entrega</b> primeiro (o endereço e o frete são pedidos lá).</div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Fechar</button>' + '<button class="btn btn-mag" style="margin:0" onclick="fechar();abrirTipoEntrega(' + id + ')">🛵 Mudar pra Entrega</button>' + '</div></div></div>';
 }
-function abrirAgendar(id){
-  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
-  const hoje=new Date(); const d0=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate());
-  const dias=[];
-  for(let i=0;i<10;i++){ const d=new Date(d0.getTime()+i*86400000);
-    const iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-    const nome=i===0?"Hoje":(i===1?"Amanhã":d.toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"2-digit"}));
-    dias.push({iso,nome});
+function abrirAgendar(id) {
+  const p = PEDIDOS.find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!p) return;
+  const hoje = new Date();
+  const d0 = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const dias = [];
+  for (let i = 0; i < 10; i++) {
+    const d = new Date(d0.getTime() + i * 86400000);
+    const iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const nome = i === 0 ? "Hoje" : i === 1 ? "Amanhã" : d.toLocaleDateString("pt-BR", {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit"
+    });
+    dias.push({
+      iso,
+      nome
+    });
   }
-  const at=p.agendamento||{};
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>📅 Agendar entrega — pedido '+esc(p.numero)+'</h3>'+
-    '<div class="muted" style="margin:6px 0 10px">'+esc(p.cliente)+(p.endereco?' · 📍 '+esc(p.endereco):'')+'</div>'+
-    '<div class="muted" style="margin-bottom:4px">Dia da entrega</div>'+
-    '<select id="agDia" style="width:100%;margin-bottom:10px">'+
-      dias.map(function(d){return '<option value="'+d.iso+'"'+(at.data===d.iso?" selected":"")+'>'+d.nome+' ('+d.iso.split("-").reverse().slice(0,2).join("/")+')</option>';}).join("")+
-    '</select>'+
-    '<div class="muted" style="margin-bottom:4px">Turno <span style="opacity:.7">(informativo — o que foi combinado com o cliente)</span></div>'+
-    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-      '<label style="flex:1;min-width:100px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="qualquer"'+((!at.turno||at.turno==="qualquer")?" checked":"")+'> 🕐 Qualquer horário</label>'+
-      '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"'+(at.turno==="manha"?" checked":"")+'> ☀️ Manhã</label>'+
-      '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"'+(at.turno==="tarde"?" checked":"")+'> 🌇 Tarde</label>'+
-    '</div>'+
-    '<div class="muted" style="margin:10px 0 4px">Observação da entrega <span style="opacity:.7">(só pro nosso sistema — não vai pro cliente)</span></div>'+
-    '<textarea id="agObs" rows="2" style="width:100%;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:13px" placeholder="ex: entregar até 11h · ligar antes · portão azul">'+esc(at.obsEntrega||"")+'</textarea>'+
-    '<div id="errAg"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:14px">'+
-      (p.agendamento?'<button class="btn btn-red" style="margin:0" onclick="desagendar('+id+')">Desagendar</button>':'')+
-      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>'+
-      '<button class="btn btn-mag" style="margin:0" id="btnAg" onclick="salvarAgendamento('+id+')">Salvar</button>'+
-    '</div></div></div>';
+  const at = p.agendamento || {};
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>📅 Agendar entrega — pedido ' + esc(p.numero) + '</h3>' + '<div class="muted" style="margin:6px 0 10px">' + esc(p.cliente) + (p.endereco ? ' · 📍 ' + esc(p.endereco) : '') + '</div>' + '<div class="muted" style="margin-bottom:4px">Dia da entrega</div>' + '<select id="agDia" style="width:100%;margin-bottom:10px">' + dias.map(function (d) {
+    return '<option value="' + d.iso + '"' + (at.data === d.iso ? " selected" : "") + '>' + d.nome + ' (' + d.iso.split("-").reverse().slice(0, 2).join("/") + ')</option>';
+  }).join("") + '</select>' + '<div class="muted" style="margin-bottom:4px">Turno <span style="opacity:.7">(informativo — o que foi combinado com o cliente)</span></div>' + '<div style="display:flex;gap:6px;flex-wrap:wrap">' + '<label style="flex:1;min-width:100px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="qualquer"' + (!at.turno || at.turno === "qualquer" ? " checked" : "") + '> 🕐 Qualquer horário</label>' + '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="manha"' + (at.turno === "manha" ? " checked" : "") + '> ☀️ Manhã</label>' + '<label style="flex:1;min-width:90px;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="agTurno" value="tarde"' + (at.turno === "tarde" ? " checked" : "") + '> 🌇 Tarde</label>' + '</div>' + '<div class="muted" style="margin:10px 0 4px">Observação da entrega <span style="opacity:.7">(só pro nosso sistema — não vai pro cliente)</span></div>' + '<textarea id="agObs" rows="2" style="width:100%;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:13px" placeholder="ex: entregar até 11h · ligar antes · portão azul">' + esc(at.obsEntrega || "") + '</textarea>' + '<div id="errAg"></div>' + '<div style="display:flex;gap:8px;margin-top:14px">' + (p.agendamento ? '<button class="btn btn-red" style="margin:0" onclick="desagendar(' + id + ')">Desagendar</button>' : '') + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>' + '<button class="btn btn-mag" style="margin:0" id="btnAg" onclick="salvarAgendamento(' + id + ')">Salvar</button>' + '</div></div></div>';
 }
-async function salvarAgendamento(id){
-  const data=(document.getElementById("agDia")||{}).value||"";
-  const el=document.querySelector('input[name="agTurno"]:checked');
-  const turno=el?el.value:"qualquer";
-  const btn=document.getElementById("btnAg"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
-  try{
-    const j=await fetch(B+"/api/pedidos-online/"+id+"/agendar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({data,turno,obsEntrega:(document.getElementById("agObs")||{}).value||"",funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    fechar(); recarregarAtual();
-  }catch(e){
-    const err=document.getElementById("errAg");
-    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
-    if(btn){ btn.disabled=false; btn.textContent="Salvar"; }
+async function salvarAgendamento(id) {
+  const data = (document.getElementById("agDia") || {}).value || "";
+  const el = document.querySelector('input[name="agTurno"]:checked');
+  const turno = el ? el.value : "qualquer";
+  const btn = document.getElementById("btnAg");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Salvando…";
+  }
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/agendar-entrega", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        data,
+        turno,
+        obsEntrega: (document.getElementById("agObs") || {}).value || "",
+        funcionarioId: S.id
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    fechar();
+    recarregarAtual();
+  } catch (e) {
+    const err = document.getElementById("errAg");
+    if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Salvar";
+    }
   }
 }
 // desfaz a mudança pra retirada: volta pra entrega e restaura o agendamento anterior
-async function desfazerRetirada(id){
-  try{
-    const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
-    await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo:"entrega",endereco:(p&&p.endereco)||"",frete:(p&&p.frete)||0,funcionarioId:S.id})});
-    const r=await fetch(B+"/api/pedidos-online/"+id+"/restaurar-agendamento",{method:"POST"}).then(function(x){return x.json();});
-    fechar(); recarregarAtual();
-    if(r.erro) alert("Voltou pra entrega, mas não consegui restaurar o agendamento: "+r.erro);
-  }catch(e){ alert("Erro ao desfazer."); }
+async function desfazerRetirada(id) {
+  try {
+    const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+      return String(x.id) === String(id);
+    });
+    await fetch(B + "/api/pedidos-online/" + id + "/tipo-entrega", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tipo: "entrega",
+        endereco: p && p.endereco || "",
+        frete: p && p.frete || 0,
+        funcionarioId: S.id
+      })
+    });
+    const r = await fetch(B + "/api/pedidos-online/" + id + "/restaurar-agendamento", {
+      method: "POST"
+    }).then(function (x) {
+      return x.json();
+    });
+    fechar();
+    recarregarAtual();
+    if (r.erro) alert("Voltou pra entrega, mas não consegui restaurar o agendamento: " + r.erro);
+  } catch (e) {
+    alert("Erro ao desfazer.");
+  }
 }
-async function desagendar(id){
-  try{ await fetch(B+"/api/pedidos-online/"+id+"/desagendar-entrega",{method:"POST"}); fechar(); recarregarAtual(); }
-  catch(e){ alert("Erro ao desagendar."); }
+async function desagendar(id) {
+  try {
+    await fetch(B + "/api/pedidos-online/" + id + "/desagendar-entrega", {
+      method: "POST"
+    });
+    fechar();
+    recarregarAtual();
+  } catch (e) {
+    alert("Erro ao desagendar.");
+  }
 }
 
 /* ===== TROCAR ENTREGA <-> RETIRADA (com cálculo de frete) ===== */
-async function abrirTipoEntrega(id){
-  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);}); if(!p) return;
+async function abrirTipoEntrega(id) {
+  const p = PEDIDOS.find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!p) return;
   // busca o endereço ATUAL no Bling (cadastro do cliente + o que está no pedido),
   // pra não trabalhar com endereço velho salvo no nosso registro
-  let end=null;
-  try{ end=await fetch(B+"/api/pedidos-online/"+id+"/endereco").then(r=>r.json()); }catch(e){}
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>🛵 Entrega / Retirada — pedido '+esc(p.numero)+'</h3>'+
-    '<div class="muted" style="margin:6px 0 10px">Hoje: <b>'+(p.tipo==="entrega"?"Entrega":"Retirada")+'</b>'+(p.frete>0?' · frete '+brl(p.frete):'')+'</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:10px">'+
-      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="retirada"'+(p.tipo!=="entrega"?" checked":"")+' onchange="mostrarCamposEntrega()"> 🏪 Retirada</label>'+
-      '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="entrega"'+(p.tipo==="entrega"?" checked":"")+' onchange="mostrarCamposEntrega()"> 🛵 Entrega</label>'+
-    '</div>'+
-    '<div id="camposEntrega" style="display:'+(p.tipo==="entrega"?"block":"none")+'">'+
-      '<div class="muted" style="margin-bottom:4px">Endereço de entrega <span style="opacity:.7">(do Bling)</span></div>'+
-      '<input id="teEnd" value="'+esc((end&&end.sugerido)||p.endereco||"")+'" placeholder="Rua, número, bairro, cidade">'+
-      (end?'<div class="muted" style="font-size:11px;margin-top:4px">'+
-        (end.doCadastro?'🏠 Cadastro do cliente: <a href="#" onclick="usarEndereco(event,\''+esc(String(end.doCadastro).replace(/'/g,""))+'\')" style="color:#29ABE2">'+esc(end.doCadastro)+'</a><br>':'')+
-        (end.noPedido&&end.noPedido!==end.doCadastro?'📦 No pedido: <a href="#" onclick="usarEndereco(event,\''+esc(String(end.noPedido).replace(/'/g,""))+'\')" style="color:#29ABE2">'+esc(end.noPedido)+'</a><br>':'')+
-        (end.divergente?'<span style="color:#ffd23f">⚠️ O endereço do pedido está diferente do cadastro — confira qual é o certo.</span>':'')+
-      '</div>':'')+
-      '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">'+
-        '<div style="flex:1"><div class="muted" style="margin-bottom:4px">Frete (R$)</div><input id="teFrete" type="number" step="0.01" value="'+(Number(p.frete)||0)+'"></div>'+
-        '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="calcularFretePedido('+id+')">🧮 Calcular</button>'+
-      '</div>'+
-      '<div id="infoFrete" class="muted" style="font-size:11px;margin-top:4px"></div>'+
-    '</div>'+
-    '<div id="errTE"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:14px">'+
-      '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>'+
-      '<button class="btn btn-mag" style="margin:0" id="btnTE" onclick="salvarTipoEntrega('+id+')">Salvar no Bling</button>'+
-    '</div></div></div>';
+  let end = null;
+  try {
+    end = await fetch(B + "/api/pedidos-online/" + id + "/endereco").then(r => r.json());
+  } catch (e) {}
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>🛵 Entrega / Retirada — pedido ' + esc(p.numero) + '</h3>' + '<div class="muted" style="margin:6px 0 10px">Hoje: <b>' + (p.tipo === "entrega" ? "Entrega" : "Retirada") + '</b>' + (p.frete > 0 ? ' · frete ' + brl(p.frete) : '') + '</div>' + '<div style="display:flex;gap:8px;margin-bottom:10px">' + '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="retirada"' + (p.tipo !== "entrega" ? " checked" : "") + ' onchange="mostrarCamposEntrega()"> 🏪 Retirada</label>' + '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="entrega"' + (p.tipo === "entrega" ? " checked" : "") + ' onchange="mostrarCamposEntrega()"> 🛵 Entrega</label>' + '</div>' + '<div id="camposEntrega" style="display:' + (p.tipo === "entrega" ? "block" : "none") + '">' + '<div class="muted" style="margin-bottom:4px">Endereço de entrega <span style="opacity:.7">(do Bling)</span></div>' + '<input id="teEnd" value="' + esc(end && end.sugerido || p.endereco || "") + '" placeholder="Rua, número, bairro, cidade">' + (end ? '<div class="muted" style="font-size:11px;margin-top:4px">' + (end.doCadastro ? '🏠 Cadastro do cliente: <a href="#" onclick="usarEndereco(event,\'' + esc(String(end.doCadastro).replace(/'/g, "")) + '\')" style="color:#29ABE2">' + esc(end.doCadastro) + '</a><br>' : '') + (end.noPedido && end.noPedido !== end.doCadastro ? '📦 No pedido: <a href="#" onclick="usarEndereco(event,\'' + esc(String(end.noPedido).replace(/'/g, "")) + '\')" style="color:#29ABE2">' + esc(end.noPedido) + '</a><br>' : '') + (end.divergente ? '<span style="color:#ffd23f">⚠️ O endereço do pedido está diferente do cadastro — confira qual é o certo.</span>' : '') + '</div>' : '') + '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">' + '<div style="flex:1"><div class="muted" style="margin-bottom:4px">Frete (R$)</div><input id="teFrete" type="number" step="0.01" value="' + (Number(p.frete) || 0) + '"></div>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="calcularFretePedido(' + id + ')">🧮 Calcular</button>' + '</div>' + '<div id="infoFrete" class="muted" style="font-size:11px;margin-top:4px"></div>' + '</div>' + '<div id="errTE"></div>' + '<div style="display:flex;gap:8px;margin-top:14px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>' + '<button class="btn btn-mag" style="margin:0" id="btnTE" onclick="salvarTipoEntrega(' + id + ')">Salvar no Bling</button>' + '</div></div></div>';
 }
-function usarEndereco(ev,txt){ if(ev) ev.preventDefault(); const el=document.getElementById("teEnd"); if(el) el.value=txt; }
-function mostrarCamposEntrega(){
-  const el=document.querySelector('input[name="teTipo"]:checked');
-  const box=document.getElementById("camposEntrega");
-  if(box) box.style.display=(el&&el.value==="entrega")?"block":"none";
+function usarEndereco(ev, txt) {
+  if (ev) ev.preventDefault();
+  const el = document.getElementById("teEnd");
+  if (el) el.value = txt;
 }
-async function calcularFretePedido(id){
-  const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
-  const end=(document.getElementById("teEnd")||{}).value||"";
-  const info=document.getElementById("infoFrete");
-  if(!end.trim()){ if(info) info.innerHTML='<span style="color:#ff8090">Preencha o endereço primeiro.</span>'; return; }
-  if(info) info.textContent="Calculando…";
-  try{
-    const j=await fetch(B+"/api/frete?endereco="+encodeURIComponent(end)+"&valor="+(Number(p?.total)||0)).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    if(!j.entregaDisponivel){ if(info) info.innerHTML='<span style="color:#ffd23f">'+esc(j.motivo||"Entrega não disponível")+'</span>'; return; }
-    const f=document.getElementById("teFrete"); if(f) f.value=j.taxa;
-    if(info) info.innerHTML='✅ '+j.km+' km'+(j.gratis?' · frete grátis':' · R$ '+j.porKm+'/km')+' → '+brl(j.taxa);
-  }catch(e){ if(info) info.innerHTML='<span style="color:#ff8090">'+esc(e.message)+'</span>'; }
+function mostrarCamposEntrega() {
+  const el = document.querySelector('input[name="teTipo"]:checked');
+  const box = document.getElementById("camposEntrega");
+  if (box) box.style.display = el && el.value === "entrega" ? "block" : "none";
 }
-async function salvarTipoEntrega(id){
-  const el=document.querySelector('input[name="teTipo"]:checked');
-  const tipo=el?el.value:"retirada";
-  const endereco=(document.getElementById("teEnd")||{}).value||"";
-  const frete=Number((document.getElementById("teFrete")||{}).value||0);
-  const btn=document.getElementById("btnTE"); if(btn){ btn.disabled=true; btn.textContent="Salvando…"; }
-  try{
-    if(tipo==="entrega"&&!endereco.trim()) throw new Error("Informe o endereço da entrega.");
-    const j=await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo,endereco,frete,funcionarioId:S.id})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
-    if(tipo==="retirada"&&j.agendamentoRemovido){
-      const ag=j.agendamentoRemovido;
-      document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this){fechar();recarregarAtual();}"><div class="modal">'+
-        '<div style="font-size:40px;text-align:center">⚠️</div>'+
-        '<h3 style="text-align:center">Virou retirada</h3>'+
-        '<div class="muted" style="margin:8px 0;font-size:13px">O agendamento de entrega que existia foi removido da rota:<br>'+
-          '<b style="color:#fff">'+esc(ag.data.split("-").reverse().join("/"))+' · '+(ag.turno==="manha"?"manhã":(ag.turno==="tarde"?"tarde":"qualquer horário"))+'</b></div>'+
-        '<div style="display:flex;gap:8px;margin-top:12px">'+
-          '<button class="btn btn-mag" style="margin:0;flex:1" onclick="desfazerRetirada('+id+')">↩️ Foi engano, desfazer</button>'+
-          '<button class="btn btn-ghost" style="margin:0" onclick="fechar();recarregarAtual()">OK</button>'+
-        '</div></div></div>';
+async function calcularFretePedido(id) {
+  const p = PEDIDOS.find(function (x) {
+    return String(x.id) === String(id);
+  });
+  const end = (document.getElementById("teEnd") || {}).value || "";
+  const info = document.getElementById("infoFrete");
+  if (!end.trim()) {
+    if (info) info.innerHTML = '<span style="color:#ff8090">Preencha o endereço primeiro.</span>';
+    return;
+  }
+  if (info) info.textContent = "Calculando…";
+  try {
+    const j = await fetch(B + "/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + (Number(p === null || p === void 0 ? void 0 : p.total) || 0)).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    if (!j.entregaDisponivel) {
+      if (info) info.innerHTML = '<span style="color:#ffd23f">' + esc(j.motivo || "Entrega não disponível") + '</span>';
       return;
     }
-    fechar(); recarregarAtual();
-  }catch(e){
-    const err=document.getElementById("errTE");
-    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
-    if(btn){ btn.disabled=false; btn.textContent="Salvar no Bling"; }
+    const f = document.getElementById("teFrete");
+    if (f) f.value = j.taxa;
+    if (info) info.innerHTML = '✅ ' + j.km + ' km' + (j.gratis ? ' · frete grátis' : ' · R$ ' + j.porKm + '/km') + ' → ' + brl(j.taxa);
+  } catch (e) {
+    if (info) info.innerHTML = '<span style="color:#ff8090">' + esc(e.message) + '</span>';
+  }
+}
+async function salvarTipoEntrega(id) {
+  const el = document.querySelector('input[name="teTipo"]:checked');
+  const tipo = el ? el.value : "retirada";
+  const endereco = (document.getElementById("teEnd") || {}).value || "";
+  const frete = Number((document.getElementById("teFrete") || {}).value || 0);
+  const btn = document.getElementById("btnTE");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Salvando…";
+  }
+  try {
+    if (tipo === "entrega" && !endereco.trim()) throw new Error("Informe o endereço da entrega.");
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/tipo-entrega", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        tipo,
+        endereco,
+        frete,
+        funcionarioId: S.id
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
+    if (tipo === "retirada" && j.agendamentoRemovido) {
+      const ag = j.agendamentoRemovido;
+      document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this){fechar();recarregarAtual();}"><div class="modal">' + '<div style="font-size:40px;text-align:center">⚠️</div>' + '<h3 style="text-align:center">Virou retirada</h3>' + '<div class="muted" style="margin:8px 0;font-size:13px">O agendamento de entrega que existia foi removido da rota:<br>' + '<b style="color:#fff">' + esc(ag.data.split("-").reverse().join("/")) + ' · ' + (ag.turno === "manha" ? "manhã" : ag.turno === "tarde" ? "tarde" : "qualquer horário") + '</b></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-mag" style="margin:0;flex:1" onclick="desfazerRetirada(' + id + ')">↩️ Foi engano, desfazer</button>' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar();recarregarAtual()">OK</button>' + '</div></div></div>';
+      return;
+    }
+    fechar();
+    recarregarAtual();
+  } catch (e) {
+    const err = document.getElementById("errTE");
+    if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Salvar no Bling";
+    }
   }
 }
 
 /* ===== BUSCA DE PEDIDO (acha até o que saiu da tela) ===== */
-async function buscarPedido(){
-  const el=document.getElementById("buscaPed");
-  const termo=(el?el.value:"").trim();
-  window._buscaTxt=termo;
-  if(!termo){ limparBusca(); return; }
+async function buscarPedido() {
+  const el = document.getElementById("buscaPed");
+  const termo = (el ? el.value : "").trim();
+  window._buscaTxt = termo;
+  if (!termo) {
+    limparBusca();
+    return;
+  }
   // se já está na lista carregada, mostra na hora
-  const local=PEDIDOS.filter(p=>String(p.numero)===termo||String(p.id)===termo);
-  if(local.length){ BUSCA_RES=local; render(); return; }
-  BUSCANDO=true; render();
-  try{
-    const j=await fetch(B+"/api/pedidos-online/buscar/"+encodeURIComponent(termo)).then(r=>r.json());
-    if(j.naoEncontrado||!(j.data||[]).length){ BUSCA_RES=[]; alert("Pedido "+termo+" não encontrado no Bling."); }
-    else BUSCA_RES=j.data;
-  }catch(e){ alert("Erro na busca: "+e.message); }
-  BUSCANDO=false; render();
+  const local = PEDIDOS.filter(p => String(p.numero) === termo || String(p.id) === termo);
+  if (local.length) {
+    BUSCA_RES = local;
+    render();
+    return;
+  }
+  BUSCANDO = true;
+  render();
+  try {
+    const j = await fetch(B + "/api/pedidos-online/buscar/" + encodeURIComponent(termo)).then(r => r.json());
+    if (j.naoEncontrado || !(j.data || []).length) {
+      BUSCA_RES = [];
+      alert("Pedido " + termo + " não encontrado no Bling.");
+    } else BUSCA_RES = j.data;
+  } catch (e) {
+    alert("Erro na busca: " + e.message);
+  }
+  BUSCANDO = false;
+  render();
 }
-function limparBusca(){ BUSCA_RES=null; window._buscaTxt=""; render(); }
+function limparBusca() {
+  BUSCA_RES = null;
+  window._buscaTxt = "";
+  render();
+}
 // Recarrega o pedido/lista certos depois de qualquer alteração. Antes, ações feitas
 // a partir de um pedido ACHADO PELA BUSCA chamavam sempre carregar() (a lista
 // normal) — o card da busca ficava com o tipo/status ANTIGO na tela, mesmo com a
 // mudança já salva no servidor.
-function recarregarAtual(){ if(BUSCA_RES) buscarPedido(); else carregar(); }
+function recarregarAtual() {
+  if (BUSCA_RES) buscarPedido();else carregar();
+}
 
 /* ===== MOVER O STATUS DO PEDIDO ===== */
-async function abrirMoverStatus(id){
-  const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);}); if(!p) return;
-  if(!SITUACOES.length){
-    try{ const j=await fetch(B+"/api/pedidos-online/situacoes-disponiveis").then(r=>r.json()); SITUACOES=j.data||[]; }catch(e){}
+async function abrirMoverStatus(id) {
+  const p = (BUSCA_RES || PEDIDOS).find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!p) return;
+  if (!SITUACOES.length) {
+    try {
+      const j = await fetch(B + "/api/pedidos-online/situacoes-disponiveis").then(r => r.json());
+      SITUACOES = j.data || [];
+    } catch (e) {}
   }
-  const ops=SITUACOES.map(function(sx){
-    const atual=Number(sx.id)===Number(p.situacaoId);
-    return '<button class="btn '+(atual?"btn-ghost":"btn-mag")+'" style="width:100%;margin-bottom:6px;text-align:left" '+(atual?"disabled":"")+
-      ' onclick="moverStatus('+id+','+sx.id+')">'+esc(sx.nome)+(atual?' <span style="font-size:11px;opacity:.8">(atual)</span>':'')+'</button>';
+  const ops = SITUACOES.map(function (sx) {
+    const atual = Number(sx.id) === Number(p.situacaoId);
+    return '<button class="btn ' + (atual ? "btn-ghost" : "btn-mag") + '" style="width:100%;margin-bottom:6px;text-align:left" ' + (atual ? "disabled" : "") + ' onclick="moverStatus(' + id + ',' + sx.id + ')">' + esc(sx.nome) + (atual ? ' <span style="font-size:11px;opacity:.8">(atual)</span>' : '') + '</button>';
   }).join("");
-  document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">'+
-    '<h3>🔀 Mover status — pedido '+esc(p.numero)+'</h3>'+
-    '<div class="muted" style="margin:6px 0 10px">'+esc(p.cliente)+' · agora em <b style="color:#fff">'+esc(p.situacao||"—")+'</b></div>'+
-    '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px;font-size:12px;color:#ffd23f;margin-bottom:10px">'+
-      'Mudar o status tira ou põe o pedido no fluxo. Precisa do <b>QR de autorização</b> (gerente, financeiro ou admin).</div>'+
-    '<div class="muted" style="font-size:12px;margin-bottom:4px">QR de autorização</div>'+
-    '<input id="qrMover" type="password" placeholder="Bipe o QR ou cole o código" autocomplete="new-password" style="width:100%;margin-bottom:10px">'+
-    '<div class="muted" style="font-size:12px;margin-bottom:4px">Mover para:</div>'+
-    '<div style="max-height:42vh;overflow:auto">'+(ops||'<div class="muted">Não consegui carregar as situações.</div>')+'</div>'+
-    '<div id="errMv"></div>'+
-    '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Cancelar</button></div></div>';
-  setTimeout(function(){ const q=document.getElementById("qrMover"); if(q) q.focus(); },60);
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>🔀 Mover status — pedido ' + esc(p.numero) + '</h3>' + '<div class="muted" style="margin:6px 0 10px">' + esc(p.cliente) + ' · agora em <b style="color:#fff">' + esc(p.situacao || "—") + '</b></div>' + '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px;font-size:12px;color:#ffd23f;margin-bottom:10px">' + 'Mudar o status tira ou põe o pedido no fluxo. Precisa do <b>QR de autorização</b> (gerente, financeiro ou admin).</div>' + '<div class="muted" style="font-size:12px;margin-bottom:4px">QR de autorização</div>' + '<input id="qrMover" type="password" placeholder="Bipe o QR ou cole o código" autocomplete="new-password" style="width:100%;margin-bottom:10px">' + '<div class="muted" style="font-size:12px;margin-bottom:4px">Mover para:</div>' + '<div style="max-height:42vh;overflow:auto">' + (ops || '<div class="muted">Não consegui carregar as situações.</div>') + '</div>' + '<div id="errMv"></div>' + '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Cancelar</button></div></div>';
+  setTimeout(function () {
+    const q = document.getElementById("qrMover");
+    if (q) q.focus();
+  }, 60);
 }
-async function moverStatus(id,situacaoId){
-  const err=document.getElementById("errMv");
-  const qr=document.getElementById("qrMover");
-  const token=(qr?qr.value:"").trim();
-  if(!token){ if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">Bipe o QR de autorização primeiro.</div>'; if(qr) qr.focus(); return; }
-  if(err) err.innerHTML='<div class="muted" style="font-size:12px;margin-top:8px">Alterando no Bling…</div>';
-  try{
-    const j=await fetch(B+"/api/pedidos-online/"+id+"/situacao",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({situacaoId,funcionarioId:S.id,token})}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
+async function moverStatus(id, situacaoId) {
+  const err = document.getElementById("errMv");
+  const qr = document.getElementById("qrMover");
+  const token = (qr ? qr.value : "").trim();
+  if (!token) {
+    if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">Bipe o QR de autorização primeiro.</div>';
+    if (qr) qr.focus();
+    return;
+  }
+  if (err) err.innerHTML = '<div class="muted" style="font-size:12px;margin-top:8px">Alterando no Bling…</div>';
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/situacao", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        situacaoId,
+        funcionarioId: S.id,
+        token
+      })
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
     fechar();
-    alert("Pedido "+j.numero+": "+j.de+" → "+j.para+"\nAutorizado por "+(j.autorizadoPor||"—"));
-    if(BUSCA_RES) buscarPedido(); else carregar();
-  }catch(e){
-    if(qr) qr.value="";
-    if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
+    alert("Pedido " + j.numero + ": " + j.de + " → " + j.para + "\nAutorizado por " + (j.autorizadoPor || "—"));
+    if (BUSCA_RES) buscarPedido();else carregar();
+  } catch (e) {
+    if (qr) qr.value = "";
+    if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
   }
 }
 
 /* ===== AVISAR O CLIENTE (pedido separado, aguardando pagamento) ===== */
-async function avisarCliente(id,tipo){
-  const a=(AGUARD_PAG&&AGUARD_PAG.data||[]).find(function(x){return String(x.id)===String(id);});
-  if(!a) return;
-  let tel=soDig(a.telefone), ped=null;
-  try{ const j=await fetch(B+"/api/pedidos/"+id).then(r=>r.json()); ped=j.data||j; }catch(e){}
-  if(!tel&&ped){
-    tel=soDig(ped.contato?.celular||ped.contato?.telefone||"");
-    if(!tel&&ped.contato?.id){ try{ const jc=await fetch(B+"/api/contatos/"+ped.contato.id).then(r=>r.json()); const c=jc.data||jc; tel=soDig(c?.celular||c?.telefone||""); }catch(e){} }
+async function avisarCliente(id, tipo) {
+  var _ped5, _ref4, _ped$total2, _ped6;
+  const a = (AGUARD_PAG && AGUARD_PAG.data || []).find(function (x) {
+    return String(x.id) === String(id);
+  });
+  if (!a) return;
+  let tel = soDig(a.telefone),
+    ped = null;
+  try {
+    const j = await fetch(B + "/api/pedidos/" + id).then(r => r.json());
+    ped = j.data || j;
+  } catch (e) {}
+  if (!tel && ped) {
+    var _ped$contato5, _ped$contato6, _ped$contato7;
+    tel = soDig(((_ped$contato5 = ped.contato) === null || _ped$contato5 === void 0 ? void 0 : _ped$contato5.celular) || ((_ped$contato6 = ped.contato) === null || _ped$contato6 === void 0 ? void 0 : _ped$contato6.telefone) || "");
+    if (!tel && (_ped$contato7 = ped.contato) !== null && _ped$contato7 !== void 0 && _ped$contato7.id) {
+      try {
+        const jc = await fetch(B + "/api/contatos/" + ped.contato.id).then(r => r.json());
+        const c = jc.data || jc;
+        tel = soDig((c === null || c === void 0 ? void 0 : c.celular) || (c === null || c === void 0 ? void 0 : c.telefone) || "");
+      } catch (e) {}
+    }
   }
-  const nome=(ped?.contato?.nome)||a.cliente||"";
-  const total=Number(ped?.total ?? a.total ?? 0);
-  const msg = tipo==="entrega"
-    ? "Olá"+(nome?" "+nome:"")+"! Seu pedido *"+a.numero+"* está separado e *sai para entrega*. 🛵\n\n*Total: "+brl(total)+"*\n\nO pagamento será feito na entrega. Qualquer coisa é só chamar aqui! 😊"
-    : "Olá"+(nome?" "+nome:"")+"! Seu pedido *"+a.numero+"* já está separado e *disponível para retirada*. 🏪\n\n*Total: "+brl(total)+"*\n\nEstamos na Av. Brigadeiro Eduardo Gomes, 1868 — Glória, BH. Te esperamos! 😊";
-  if(!tel){ alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta."); window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); return; }
-  window.open("https://wa.me/"+(tel.startsWith("55")?tel:("55"+tel))+"?text="+encodeURIComponent(msg),"_blank");
+  const nome = ((_ped5 = ped) === null || _ped5 === void 0 || (_ped5 = _ped5.contato) === null || _ped5 === void 0 ? void 0 : _ped5.nome) || a.cliente || "";
+  const total = Number((_ref4 = (_ped$total2 = (_ped6 = ped) === null || _ped6 === void 0 ? void 0 : _ped6.total) !== null && _ped$total2 !== void 0 ? _ped$total2 : a.total) !== null && _ref4 !== void 0 ? _ref4 : 0);
+  const msg = tipo === "entrega" ? "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + a.numero + "* está separado e *sai para entrega*. 🛵\n\n*Total: " + brl(total) + "*\n\nO pagamento será feito na entrega. Qualquer coisa é só chamar aqui! 😊" : "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + a.numero + "* já está separado e *disponível para retirada*. 🏪\n\n*Total: " + brl(total) + "*\n\nEstamos na Av. Brigadeiro Eduardo Gomes, 1868 — Glória, BH. Te esperamos! 😊";
+  if (!tel) {
+    alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta.");
+    window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
+    return;
+  }
+  window.open("https://wa.me/" + (tel.startsWith("55") ? tel : "55" + tel) + "?text=" + encodeURIComponent(msg), "_blank");
 }
-
 render();
 carregar();
-setInterval(function(){
+setInterval(function () {
   // não recarrega enquanto a pessoa está digitando na busca (evita perder o texto)
-  const b=document.getElementById("buscaPed");
-  if(b&&document.activeElement===b&&b.value.trim()) return;
-  if(!CARREGANDO) carregar(true);
-}, 60000);
-</script>
+  const b = document.getElementById("buscaPed");
+  if (b && document.activeElement === b && b.value.trim()) return;
+  if (!CARREGANDO) carregar(true);
+}, 60000);</script>
 </body>
 </html>

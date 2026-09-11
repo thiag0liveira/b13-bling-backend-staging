@@ -49,18 +49,18 @@
   })();
 </script>
 <div id="app"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const soDig=(s)=>String(s??"").replace(/\D/g,"");
-
-let FILTRO="todas";
-let LISTA=[];
-
-function render(){
-  const app=document.getElementById("app");
-  app.innerHTML=`
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+const soDig = s => String(s !== null && s !== void 0 ? s : "").replace(/\D/g, "");
+let FILTRO = "todas";
+let LISTA = [];
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = `
     <div class="top">
       <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
       <img src="/logo"><div class="t">📄 Propostas & Pedidos Atacado</div><div class="sp"></div>
@@ -69,9 +69,9 @@ function render(){
     <div class="wrap">
       <div class="card">
         <div id="filtroChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <span class="chip ${FILTRO==='todas'?'on':''}" onclick="mudarFiltro('todas')">Todas</span>
-          <span class="chip ${FILTRO==='proposta'?'on':''}" onclick="mudarFiltro('proposta')">📄 Propostas</span>
-          <span class="chip ${FILTRO==='pedido'?'on':''}" onclick="mudarFiltro('pedido')">🛒 Pedidos</span>
+          <span class="chip ${FILTRO === 'todas' ? 'on' : ''}" onclick="mudarFiltro('todas')">Todas</span>
+          <span class="chip ${FILTRO === 'proposta' ? 'on' : ''}" onclick="mudarFiltro('proposta')">📄 Propostas</span>
+          <span class="chip ${FILTRO === 'pedido' ? 'on' : ''}" onclick="mudarFiltro('pedido')">🛒 Pedidos</span>
           <span style="flex:1"></span>
           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="sincronizarPedidos(true)" title="Verifica no Bling e remove pedidos que foram excluídos lá">🔄 <span id="syncLabel">Sincronizar</span></button>
         </div>
@@ -81,63 +81,77 @@ function render(){
   carregar();
   // ao abrir a tela, verifica em segundo plano se algum pedido foi excluído no
   // Bling e limpa os fantasmas (silencioso — só recarrega a lista se removeu algo)
-  setTimeout(()=>sincronizarPedidos(false), 1200);
+  setTimeout(() => sincronizarPedidos(false), 1200);
 }
 
 // troca o filtro. Reconstrói a tela inteira (render) a partir do FILTRO atual,
 // então os botões de cima SEMPRE refletem o que está selecionado — sem depender
 // de mexer na classe na mão, que podia dessincronizar.
-function mudarFiltro(f){
-  if(FILTRO===f) return;
-  FILTRO=f;
+function mudarFiltro(f) {
+  if (FILTRO === f) return;
+  FILTRO = f;
   render();
 }
-
-async function carregar(){
-  const box=document.getElementById("lista");
-  if(!box) return;
-  const params=new URLSearchParams();
-  if(FILTRO==='proposta'||FILTRO==='pedido') params.set("tipo",FILTRO);
-  try{
-    const j=await fetch(B+"/api/atacado/propostas?"+params.toString()).then(r=>r.json());
-    LISTA=j.data||[];
-    if(!LISTA.length){ box.innerHTML=`<div class="card"><div class="muted">Nenhuma ${FILTRO==='todas'?'proposta/pedido':FILTRO} ainda.</div></div>`; return; }
+async function carregar() {
+  const box = document.getElementById("lista");
+  if (!box) return;
+  const params = new URLSearchParams();
+  if (FILTRO === 'proposta' || FILTRO === 'pedido') params.set("tipo", FILTRO);
+  try {
+    const j = await fetch(B + "/api/atacado/propostas?" + params.toString()).then(r => r.json());
+    LISTA = j.data || [];
+    if (!LISTA.length) {
+      box.innerHTML = `<div class="card"><div class="muted">Nenhuma ${FILTRO === 'todas' ? 'proposta/pedido' : FILTRO} ainda.</div></div>`;
+      return;
+    }
     renderLista();
     carregarSituacoes(); // preenche o status de cada pedido aos poucos
-  }catch(e){ box.innerHTML=`<div class="card" style="color:#ff8090">Erro ao carregar.</div>`; }
+  } catch (e) {
+    box.innerHTML = `<div class="card" style="color:#ff8090">Erro ao carregar.</div>`;
+  }
 }
-
-function renderLista(){
-  const box=document.getElementById("lista");
-  if(!box || !LISTA.length) return;
-  box.innerHTML=LISTA.map(cardProposta).join("");
+function renderLista() {
+  const box = document.getElementById("lista");
+  if (!box || !LISTA.length) return;
+  box.innerHTML = LISTA.map(cardProposta).join("");
 }
 
 // busca a situação atual (no Bling) de cada pedido gerado e atualiza o card
-let SITU={}; // {pedidoBlingId: nome | null}
-async function carregarSituacoes(){
-  for(const p of LISTA){
-    if(!p.pedidoBlingId) continue;
-    const k=String(p.pedidoBlingId);
-    if(SITU[k]!==undefined) continue;
-    try{
-      const j=await fetch(B+"/api/atacado/pedido/"+k+"/situacao").then(r=>r.json());
-      SITU[k]= j.erro ? null : (j.situacaoNome||null);
-    }catch(e){ SITU[k]=null; }
+let SITU = {}; // {pedidoBlingId: nome | null}
+async function carregarSituacoes() {
+  for (const p of LISTA) {
+    if (!p.pedidoBlingId) continue;
+    const k = String(p.pedidoBlingId);
+    if (SITU[k] !== undefined) continue;
+    try {
+      const j = await fetch(B + "/api/atacado/pedido/" + k + "/situacao").then(r => r.json());
+      SITU[k] = j.erro ? null : j.situacaoNome || null;
+    } catch (e) {
+      SITU[k] = null;
+    }
     renderLista();
   }
 }
-
-function statusPedidoBadge(p){
-  if(!p.pedidoBlingId) return "";
-  const nome=SITU[String(p.pedidoBlingId)];
-  if(nome===undefined) return `<div style="margin-top:4px"><span class="tag" style="background:#241a3a;color:#c9b8ff">⏳ status…</span></div>`;
-  if(nome===null) return `<div style="margin-top:4px"><span class="tag" style="background:#3a0010;color:#ff8090">status indisponível</span></div>`;
-  let bg="#241a3a", fg="#c9b8ff";
-  if(/atendido/i.test(nome)){ bg="#0a2a1a"; fg="#3ce88a"; }
-  else if(/cancelado/i.test(nome)){ bg="#3a0010"; fg="#ff8090"; }
-  else if(/rota|separado|verificado|conferência/i.test(nome)){ bg="#0d2440"; fg="#7fd4ff"; }
-  else if(/aguardando|separação|aberto|digitação/i.test(nome)){ bg="#2a1f00"; fg="#ffd23f"; }
+function statusPedidoBadge(p) {
+  if (!p.pedidoBlingId) return "";
+  const nome = SITU[String(p.pedidoBlingId)];
+  if (nome === undefined) return `<div style="margin-top:4px"><span class="tag" style="background:#241a3a;color:#c9b8ff">⏳ status…</span></div>`;
+  if (nome === null) return `<div style="margin-top:4px"><span class="tag" style="background:#3a0010;color:#ff8090">status indisponível</span></div>`;
+  let bg = "#241a3a",
+    fg = "#c9b8ff";
+  if (/atendido/i.test(nome)) {
+    bg = "#0a2a1a";
+    fg = "#3ce88a";
+  } else if (/cancelado/i.test(nome)) {
+    bg = "#3a0010";
+    fg = "#ff8090";
+  } else if (/rota|separado|verificado|conferência/i.test(nome)) {
+    bg = "#0d2440";
+    fg = "#7fd4ff";
+  } else if (/aguardando|separação|aberto|digitação/i.test(nome)) {
+    bg = "#2a1f00";
+    fg = "#ffd23f";
+  }
   return `<div style="margin-top:4px"><span class="tag" style="background:${bg};color:${fg}">${esc(nome)}</span></div>`;
 }
 
@@ -145,56 +159,70 @@ function statusPedidoBadge(p){
 // excluídos no Bling (o pedido é espelho do Bling). Propostas não são tocadas.
 // manual=true → chamado pelo botão (mostra aviso do resultado).
 // manual=false → disparo silencioso ao abrir a tela (só recarrega se removeu algo).
-let _sincronizando=false;
-async function sincronizarPedidos(manual){
-  if(_sincronizando) return;
-  _sincronizando=true;
-  const lbl=document.getElementById("syncLabel");
-  if(lbl && manual) lbl.textContent="Verificando…";
-  try{
-    const j=await fetch(B+"/api/atacado/propostas/sincronizar-pedidos",{method:"POST"}).then(r=>r.json());
-    if(lbl) lbl.textContent="Sincronizar";
-    if(j.erro){ if(manual) alert("Erro ao sincronizar: "+j.erro); return; }
-    if(j.removidos>0 || j.adicionados>0){
+let _sincronizando = false;
+async function sincronizarPedidos(manual) {
+  if (_sincronizando) return;
+  _sincronizando = true;
+  const lbl = document.getElementById("syncLabel");
+  if (lbl && manual) lbl.textContent = "Verificando…";
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/sincronizar-pedidos", {
+      method: "POST"
+    }).then(r => r.json());
+    if (lbl) lbl.textContent = "Sincronizar";
+    if (j.erro) {
+      if (manual) alert("Erro ao sincronizar: " + j.erro);
+      return;
+    }
+    if (j.removidos > 0 || j.adicionados > 0) {
       carregar(); // atualiza a lista (fantasmas somem, aguardando separação entram)
-      if(manual){
-        const partes=[];
-        if(j.adicionados>0){
-          const nomesAdd=(j.detalhesAdicionados||[]).map(d=>`#${d.numero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
+      if (manual) {
+        const partes = [];
+        if (j.adicionados > 0) {
+          const nomesAdd = (j.detalhesAdicionados || []).map(d => `#${d.numero || '?'}${d.cliente ? ' (' + d.cliente + ')' : ''}`).join(", ");
           partes.push(`➕ ${j.adicionados} pedido(s) em Aguardando Separação foram trazidos pra lista:\n${nomesAdd}`);
         }
-        if(j.removidos>0){
-          const nomes=(j.detalhes||[]).map(d=>`#${d.pedidoBlingNumero||'?'}${d.cliente?' ('+d.cliente+')':''}`).join(", ");
+        if (j.removidos > 0) {
+          const nomes = (j.detalhes || []).map(d => `#${d.pedidoBlingNumero || '?'}${d.cliente ? ' (' + d.cliente + ')' : ''}`).join(", ");
           partes.push(`🗑 ${j.removidos} pedido(s) que não existiam mais no Bling foram removidos:\n${nomes}`);
         }
-        alert("✅ Sincronizado!\n\n"+partes.join("\n\n"));
+        alert("✅ Sincronizado!\n\n" + partes.join("\n\n"));
       }
-    }else if(manual){
+    } else if (manual) {
       alert(`✅ Tudo certo! ${j.verificados} pedido(s) verificados e nenhum novo em Aguardando Separação pra trazer.`);
     }
-  }catch(e){ if(lbl) lbl.textContent="Sincronizar"; if(manual) alert("Erro de conexão ao sincronizar."); }
-  finally{ _sincronizando=false; }
+  } catch (e) {
+    if (lbl) lbl.textContent = "Sincronizar";
+    if (manual) alert("Erro de conexão ao sincronizar.");
+  } finally {
+    _sincronizando = false;
+  }
 }
-
-function statusTag(p){
+function statusTag(p) {
   // só é "Pedido" de verdade quando existe o pedido no Bling (pedidoBlingId).
   // Um item marcado como tipo "pedido" mas SEM pedidoBlingId é uma venda direta
   // cujo pedido não chegou a ser gerado no Bling (deu erro) — nesse caso ele
   // continua sendo tratado como PROPOSTA (fica na aba Propostas, mostra os
   // botões de proposta e pode tentar gerar de novo).
-  if(p.pedidoBlingId) return `<span class="tag tag-ger">Pedido #${esc(p.pedidoBlingNumero)} gerado</span>`;
-  if(p.tipo==='pedido') return `<span class="tag tag-prop">⚠️ Proposta (pedido não gerado)</span>`;
+  if (p.pedidoBlingId) return `<span class="tag tag-ger">Pedido #${esc(p.pedidoBlingNumero)} gerado</span>`;
+  if (p.tipo === 'pedido') return `<span class="tag tag-prop">⚠️ Proposta (pedido não gerado)</span>`;
   return `<span class="tag tag-prop">Proposta</span>`;
 }
-
-function cardProposta(p){
-  const data=p.criadoEm?new Date(p.criadoEm).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
-  const itensTxt=(p.itens||[]).map(i=>`${i.quantidade}x ${i.nome}`).join(", ");
+function cardProposta(p) {
+  var _p$cliente, _p$cliente2, _p$cliente3;
+  const data = p.criadoEm ? new Date(p.criadoEm).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }) : "";
+  const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}`).join(", ");
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
-        <div style="font-weight:800">${esc(p.cliente?.nome||'—')}</div>
-        <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome||'—')}${p.cliente?.telefone?` · 📞 ${esc(p.cliente.telefone)}`:''}</div>
+        <div style="font-weight:800">${esc(((_p$cliente = p.cliente) === null || _p$cliente === void 0 ? void 0 : _p$cliente.nome) || '—')}</div>
+        <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome || '—')}${(_p$cliente2 = p.cliente) !== null && _p$cliente2 !== void 0 && _p$cliente2.telefone ? ` · 📞 ${esc(p.cliente.telefone)}` : ''}</div>
       </div>
       <div style="text-align:right">
         ${statusTag(p)}
@@ -203,143 +231,229 @@ function cardProposta(p){
       </div>
     </div>
     <div class="muted" style="font-size:12px;margin:8px 0;line-height:1.4">${esc(itensTxt)}</div>
-    ${p.observacao?`<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>`:''}
+    ${p.observacao ? `<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
-      ${p.cliente?.telefone?`<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>`:''}
+      ${(_p$cliente3 = p.cliente) !== null && _p$cliente3 !== void 0 && _p$cliente3.telefone ? `<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>` : ''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
-      ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-mag" onclick='editarProposta(${JSON.stringify(p.id)})'>✏️ Editar</button>`:''}
-      ${!p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>`:''}
-      ${p.pedidoBlingId&&p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='editarPedido(${JSON.stringify(p.pedidoBlingId)},${JSON.stringify(p.pedidoBlingNumero)})'>✏️ Editar pedido</button>`:''}
-      ${p.status!=='cancelada'?`<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>`:'<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
-      ${!p.pedidoBlingId?`<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>`:''}
+      ${!p.pedidoBlingId && p.status !== 'cancelada' ? `<button class="btn btn-mag" onclick='editarProposta(${JSON.stringify(p.id)})'>✏️ Editar</button>` : ''}
+      ${!p.pedidoBlingId && p.status !== 'cancelada' ? `<button class="btn btn-grn" onclick='gerarPedido(${JSON.stringify(p.id)})'>✅ Gerar pedido</button>` : ''}
+      ${p.pedidoBlingId && p.status !== 'cancelada' ? `<button class="btn btn-ghost" onclick='editarPedido(${JSON.stringify(p.pedidoBlingId)},${JSON.stringify(p.pedidoBlingNumero)})'>✏️ Editar pedido</button>` : ''}
+      ${p.status !== 'cancelada' ? `<button class="btn btn-ghost" onclick='cancelar(${JSON.stringify(p.id)})'>🚫 Cancelar</button>` : '<span class="tag" style="background:#3a0010;color:#ff8090;align-self:center">Cancelada</span>'}
+      ${!p.pedidoBlingId ? `<button class="btn btn-ghost" onclick='excluir(${JSON.stringify(p.id)})'>🗑 Excluir</button>` : ''}
     </div>
   </div>`;
 }
 
 // ---- EDIÇÃO DO PEDIDO, direto aqui em Propostas (não manda mais pro caixa) ----
-function modaisEl(){
-  let el=document.getElementById("modaisProp");
-  if(!el){ el=document.createElement("div"); el.id="modaisProp"; document.body.appendChild(el); }
+function modaisEl() {
+  let el = document.getElementById("modaisProp");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "modaisProp";
+    document.body.appendChild(el);
+  }
   return el;
 }
-function fecharModalEd(){ modaisEl().innerHTML=""; }
-function edMsg(h){ const el=document.getElementById("edMsgProp"); if(el) el.innerHTML=h; }
-function totalEd(){ return (window.itensEd||[]).filter(i=>!i._rm).reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0); }
+function fecharModalEd() {
+  modaisEl().innerHTML = "";
+}
+function edMsg(h) {
+  const el = document.getElementById("edMsgProp");
+  if (el) el.innerHTML = h;
+}
+function totalEd() {
+  return (window.itensEd || []).filter(i => !i._rm).reduce((s, i) => s + Number(i.valor || 0) * Number(i.quantidade || 0), 0);
+}
 
 // edita uma PROPOSTA (ainda não virou pedido) — mesmo modal, mas salva no registro local
-function editarProposta(propId){
-  const p=LISTA.find(x=>x.id===propId);
-  if(!p){ alert("Proposta não encontrada."); return; }
-  window.pedEd={propostaId:propId, numero:"(proposta) "+(p.cliente?.nome||""), ehProposta:true};
-  window.itensEd=(p.itens||[]).map(i=>({produtoId:i.produtoId, descricao:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor), _rm:false, _novo:false}));
-  modaisEl().innerHTML='<div class="modalBg"><div class="modalEd" id="boxEd"></div></div>';
+function editarProposta(propId) {
+  var _p$cliente4;
+  const p = LISTA.find(x => x.id === propId);
+  if (!p) {
+    alert("Proposta não encontrada.");
+    return;
+  }
+  window.pedEd = {
+    propostaId: propId,
+    numero: "(proposta) " + (((_p$cliente4 = p.cliente) === null || _p$cliente4 === void 0 ? void 0 : _p$cliente4.nome) || ""),
+    ehProposta: true
+  };
+  window.itensEd = (p.itens || []).map(i => ({
+    produtoId: i.produtoId,
+    descricao: i.nome || "",
+    quantidade: Number(i.quantidade),
+    valor: Number(i.valor),
+    _rm: false,
+    _novo: false
+  }));
+  modaisEl().innerHTML = '<div class="modalBg"><div class="modalEd" id="boxEd"></div></div>';
   renderEdicao();
 }
-async function editarPedido(blingId,numero){
-  try{
+async function editarPedido(blingId, numero) {
+  try {
     // pedido já pago exige autorização (mesma regra de antes)
-    const st=await fetch(B+"/api/atacado/pedido/"+blingId+"/status-pagamento").then(r=>r.json());
-    if(st.pago){
-      const token=prompt(`O pedido #${numero} já foi pago (${st.statusPagamento}).\n\nPra editar, escaneie o QR de autorização (gerente, financeiro ou admin) ou cole o código:`);
-      if(!token) return;
-      const auth=await fetch(B+"/api/atacado/pedido/"+blingId+"/autorizar-edicao",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})}).then(r=>r.json());
-      if(auth.erro){ alert("Não autorizado: "+auth.erro); return; }
+    const st = await fetch(B + "/api/atacado/pedido/" + blingId + "/status-pagamento").then(r => r.json());
+    if (st.pago) {
+      const token = prompt(`O pedido #${numero} já foi pago (${st.statusPagamento}).\n\nPra editar, escaneie o QR de autorização (gerente, financeiro ou admin) ou cole o código:`);
+      if (!token) return;
+      const auth = await fetch(B + "/api/atacado/pedido/" + blingId + "/autorizar-edicao", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          token
+        })
+      }).then(r => r.json());
+      if (auth.erro) {
+        alert("Não autorizado: " + auth.erro);
+        return;
+      }
     }
-    modaisEl().innerHTML='<div class="modalBg"><div class="modalEd" id="boxEd"><div class="muted">Carregando pedido…</div></div></div>';
-    const r=await fetch(B+"/api/pedidos/"+blingId).then(r=>r.json());
-    const ped=r.data||r;
-    if(!ped||!ped.itens){ document.getElementById("boxEd").innerHTML='<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" style="margin-top:10px" onclick="fecharModalEd()">Fechar</button>'; return; }
-    window.pedEd={id:blingId,numero:ped.numero||numero};
-    window.itensEd=(ped.itens||[]).map(i=>({produtoId:i.produto?.id, descricao:i.descricao||i.produto?.nome||"",
-      quantidade:Number(i.quantidade), valor:Number(i.valor), _rm:false, _novo:false}));
+    modaisEl().innerHTML = '<div class="modalBg"><div class="modalEd" id="boxEd"><div class="muted">Carregando pedido…</div></div></div>';
+    const r = await fetch(B + "/api/pedidos/" + blingId).then(r => r.json());
+    const ped = r.data || r;
+    if (!ped || !ped.itens) {
+      document.getElementById("boxEd").innerHTML = '<div style="color:#ff8090">Não consegui carregar o pedido.</div><button class="btn btn-ghost" style="margin-top:10px" onclick="fecharModalEd()">Fechar</button>';
+      return;
+    }
+    window.pedEd = {
+      id: blingId,
+      numero: ped.numero || numero
+    };
+    window.itensEd = (ped.itens || []).map(i => {
+      var _i$produto, _i$produto2;
+      return {
+        produtoId: (_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.id,
+        descricao: i.descricao || ((_i$produto2 = i.produto) === null || _i$produto2 === void 0 ? void 0 : _i$produto2.nome) || "",
+        quantidade: Number(i.quantidade),
+        valor: Number(i.valor),
+        _rm: false,
+        _novo: false
+      };
+    });
     renderEdicao();
-  }catch(e){ alert("Erro ao abrir o pedido."); }
+  } catch (e) {
+    alert("Erro ao abrir o pedido.");
+  }
 }
-function renderEdicao(){
-  const rows=(window.itensEd||[]).map((it,ix)=>{
-    if(it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">'+esc(it.descricao)+'</div>'+
-      '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd('+ix+')">desfazer</button></div>';
-    return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">'+esc(it.descricao)+
-      '<div class="muted" style="font-size:11px">'+brl(it.valor)+' un'+(it._novo?' · <span style="color:#3ce88a">novo</span>':'')+'</div></div>'+
-      '<input type="number" min="1" step="1" value="'+it.quantidade+'" onchange="mudarQtdEd('+ix+',this.value)">'+
-      '<button class="rmEd" onclick="removerItemEd('+ix+')">🗑</button></div>';
+function renderEdicao() {
+  const rows = (window.itensEd || []).map((it, ix) => {
+    if (it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">' + esc(it.descricao) + '</div>' + '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd(' + ix + ')">desfazer</button></div>';
+    return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">' + esc(it.descricao) + '<div class="muted" style="font-size:11px">' + brl(it.valor) + ' un' + (it._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + it.quantidade + '" onchange="mudarQtdEd(' + ix + ',this.value)">' + '<button class="rmEd" onclick="removerItemEd(' + ix + ')">🗑</button></div>';
   }).join("");
-  document.getElementById("boxEd").innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-      '<h3 style="margin:0">✏️ '+(window.pedEd.ehProposta?"Proposta":"Pedido")+' '+esc(window.pedEd.numero)+'</h3>'+
-      '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>'+
-    '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. '+(window.pedEd.ehProposta?"A proposta é atualizada aqui no sistema (ainda não existe no Bling).":"Ao salvar, atualiza no Bling.")+'</div>'+
-    '<div style="max-height:40vh;overflow:auto">'+rows+'</div>'+
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">'+
-      '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">'+brl(totalEd())+'</b></div>'+
-    '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">'+
-      '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>'+
-      '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">'+
-      '<div id="resEdProp"></div></div>'+
-    '<div id="edMsgProp" style="margin-top:8px"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:12px">'+
-      '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>'+
-      '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 '+(window.pedEd.ehProposta?"Salvar proposta":"Salvar no Bling")+'</button></div>';
+  document.getElementById("boxEd").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3 style="margin:0">✏️ ' + (window.pedEd.ehProposta ? "Proposta" : "Pedido") + ' ' + esc(window.pedEd.numero) + '</h3>' + '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>' + '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. ' + (window.pedEd.ehProposta ? "A proposta é atualizada aqui no sistema (ainda não existe no Bling)." : "Ao salvar, atualiza no Bling.") + '</div>' + '<div style="max-height:40vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">' + brl(totalEd()) + '</b></div>' + '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">' + '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>' + '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">' + '<div id="resEdProp"></div></div>' + '<div id="edMsgProp" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>' + '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 ' + (window.pedEd.ehProposta ? "Salvar proposta" : "Salvar no Bling") + '</button></div>';
 }
-function mudarQtdEd(ix,v){ window.itensEd[ix].quantidade=Math.max(1,parseInt(v)||1); const t=document.getElementById("edTotalProp"); if(t) t.textContent=brl(totalEd()); }
-function removerItemEd(ix){ window.itensEd[ix]._rm=true; renderEdicao(); }
-function restaurarItemEd(ix){ window.itensEd[ix]._rm=false; renderEdicao(); }
-let _edBuscaT=null;
-function buscarItemEd(q){
-  clearTimeout(_edBuscaT);
-  _edBuscaT=setTimeout(async function(){
-    const termo=(q||"").trim(); const box=document.getElementById("resEdProp"); if(!box) return;
-    if(termo.length<2){ box.innerHTML=""; return; }
-    try{
-      const j=await fetch(B+"/api/buscar-atacado?nome="+encodeURIComponent(termo)).then(r=>r.json());
-      const lista=(j.data||[]).slice(0,8);
-      box.innerHTML=lista.length?lista.map(function(r){
-        const o={id:r.id,nome:r.nome,preco:r.preco??r.precoBling??0};
-        return '<div class="itEd" style="cursor:pointer" onclick=\'addItemEd('+JSON.stringify(o).replace(/'/g,"&#39;")+')\'>'+
-          '<div style="flex:1;font-size:13px">'+esc(r.nome)+'<div class="muted" style="font-size:11px">'+brl(o.preco)+'</div></div>'+
-          '<span style="color:#3ce88a;font-size:18px">+</span></div>';
-      }).join(""):'<div class="muted" style="padding:6px;font-size:12px">nada encontrado</div>';
-    }catch(e){ box.innerHTML='<div class="muted" style="padding:6px;font-size:12px">erro na busca</div>'; }
-  },350);
+function mudarQtdEd(ix, v) {
+  window.itensEd[ix].quantidade = Math.max(1, parseInt(v) || 1);
+  const t = document.getElementById("edTotalProp");
+  if (t) t.textContent = brl(totalEd());
 }
-function addItemEd(r){
-  const ja=window.itensEd.find(i=>String(i.produtoId)===String(r.id)&&!i._rm);
-  if(ja) ja.quantidade+=1;
-  else window.itensEd.push({produtoId:r.id,descricao:r.nome,quantidade:1,valor:Number(r.preco)||0,_rm:false,_novo:true});
-  const b=document.getElementById("buscaEdProp"); if(b) b.value="";
-  const box=document.getElementById("resEdProp"); if(box) box.innerHTML="";
+function removerItemEd(ix) {
+  window.itensEd[ix]._rm = true;
   renderEdicao();
 }
-async function salvarEdicao(){
-  const ehProp=!!(window.pedEd&&window.pedEd.ehProposta);
-  const itens=(window.itensEd||[]).filter(i=>!i._rm).map(i=>({produtoId:i.produtoId,nome:i.descricao,quantidade:Number(i.quantidade),valor:Number(i.valor)}));
-  if(!itens.length){ edMsg('<div style="color:#ff8090;font-size:12px">Precisa ter ao menos 1 item.</div>'); return; }
-  edMsg('<div class="muted" style="font-size:12px">'+(ehProp?"Salvando a proposta…":"Salvando no Bling…")+'</div>');
-  try{
-    const url=ehProp
-      ? B+"/api/atacado/propostas/"+encodeURIComponent(window.pedEd.propostaId)+"/editar-itens"
-      : B+"/api/pedidos/"+window.pedEd.id+"/editar-itens";
-    const j=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({itens, funcionarioNome:(typeof b13GetSession==="function"?((b13GetSession()||{}).nome||""):"")})}).then(r=>r.json());
-    if(j.erro){ edMsg('<div style="color:#ff8090;font-size:12px">❌ '+esc(j.erro)+'</div>'); return; }
-    if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
-    fecharModalEd();
-    if(typeof carregar==="function") carregar();
-  }catch(e){ edMsg('<div style="color:#ff8090;font-size:12px">Erro de conexão. Nada foi alterado.</div>'); }
+function restaurarItemEd(ix) {
+  window.itensEd[ix]._rm = false;
+  renderEdicao();
 }
-
-function verImagem(id){
-  const p=LISTA.find(x=>x.id===id);
-  if(!p){ alert("Proposta não encontrada."); return; }
-  const ov=document.createElement("div");
-  ov.id="modalImg";
-  ov.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px";
-  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
-  ov.innerHTML=`
+let _edBuscaT = null;
+function buscarItemEd(q) {
+  clearTimeout(_edBuscaT);
+  _edBuscaT = setTimeout(async function () {
+    const termo = (q || "").trim();
+    const box = document.getElementById("resEdProp");
+    if (!box) return;
+    if (termo.length < 2) {
+      box.innerHTML = "";
+      return;
+    }
+    try {
+      const j = await fetch(B + "/api/buscar-atacado?nome=" + encodeURIComponent(termo)).then(r => r.json());
+      const lista = (j.data || []).slice(0, 8);
+      box.innerHTML = lista.length ? lista.map(function (r) {
+        var _ref, _r$preco;
+        const o = {
+          id: r.id,
+          nome: r.nome,
+          preco: (_ref = (_r$preco = r.preco) !== null && _r$preco !== void 0 ? _r$preco : r.precoBling) !== null && _ref !== void 0 ? _ref : 0
+        };
+        return '<div class="itEd" style="cursor:pointer" onclick=\'addItemEd(' + JSON.stringify(o).replace(/'/g, "&#39;") + ')\'>' + '<div style="flex:1;font-size:13px">' + esc(r.nome) + '<div class="muted" style="font-size:11px">' + brl(o.preco) + '</div></div>' + '<span style="color:#3ce88a;font-size:18px">+</span></div>';
+      }).join("") : '<div class="muted" style="padding:6px;font-size:12px">nada encontrado</div>';
+    } catch (e) {
+      box.innerHTML = '<div class="muted" style="padding:6px;font-size:12px">erro na busca</div>';
+    }
+  }, 350);
+}
+function addItemEd(r) {
+  const ja = window.itensEd.find(i => String(i.produtoId) === String(r.id) && !i._rm);
+  if (ja) ja.quantidade += 1;else window.itensEd.push({
+    produtoId: r.id,
+    descricao: r.nome,
+    quantidade: 1,
+    valor: Number(r.preco) || 0,
+    _rm: false,
+    _novo: true
+  });
+  const b = document.getElementById("buscaEdProp");
+  if (b) b.value = "";
+  const box = document.getElementById("resEdProp");
+  if (box) box.innerHTML = "";
+  renderEdicao();
+}
+async function salvarEdicao() {
+  const ehProp = !!(window.pedEd && window.pedEd.ehProposta);
+  const itens = (window.itensEd || []).filter(i => !i._rm).map(i => ({
+    produtoId: i.produtoId,
+    nome: i.descricao,
+    quantidade: Number(i.quantidade),
+    valor: Number(i.valor)
+  }));
+  if (!itens.length) {
+    edMsg('<div style="color:#ff8090;font-size:12px">Precisa ter ao menos 1 item.</div>');
+    return;
+  }
+  edMsg('<div class="muted" style="font-size:12px">' + (ehProp ? "Salvando a proposta…" : "Salvando no Bling…") + '</div>');
+  try {
+    const url = ehProp ? B + "/api/atacado/propostas/" + encodeURIComponent(window.pedEd.propostaId) + "/editar-itens" : B + "/api/pedidos/" + window.pedEd.id + "/editar-itens";
+    const j = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        itens,
+        funcionarioNome: typeof b13GetSession === "function" ? (b13GetSession() || {}).nome || "" : ""
+      })
+    }).then(r => r.json());
+    if (j.erro) {
+      edMsg('<div style="color:#ff8090;font-size:12px">❌ ' + esc(j.erro) + '</div>');
+      return;
+    }
+    if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
+    fecharModalEd();
+    if (typeof carregar === "function") carregar();
+  } catch (e) {
+    edMsg('<div style="color:#ff8090;font-size:12px">Erro de conexão. Nada foi alterado.</div>');
+  }
+}
+function verImagem(id) {
+  const p = LISTA.find(x => x.id === id);
+  if (!p) {
+    alert("Proposta não encontrada.");
+    return;
+  }
+  const ov = document.createElement("div");
+  ov.id = "modalImg";
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px";
+  ov.onclick = e => {
+    if (e.target === ov) ov.remove();
+  };
+  ov.innerHTML = `
     <div style="background:#151233;border:1px solid #2c2660;border-radius:14px;max-width:720px;width:100%;max-height:92vh;overflow:auto;padding:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-weight:800">🖼️ ${p.pedidoBlingId?('Pedido #'+p.pedidoBlingNumero):('Proposta')}</div>
+        <div style="font-weight:800">🖼️ ${p.pedidoBlingId ? 'Pedido #' + p.pedidoBlingNumero : 'Proposta'}</div>
         <button class="btn btn-ghost" style="padding:6px 12px" onclick="document.getElementById('modalImg').remove()">✕ Fechar</button>
       </div>
       <canvas id="cvNota" style="max-width:100%;height:auto;border-radius:10px;border:1px solid #2c2660;background:#fff"></canvas>
@@ -351,219 +465,443 @@ function verImagem(id){
   document.body.appendChild(ov);
   desenharNota(p);
 }
-
-let _logoImg=null;
-function desenharNota(p){
+let _logoImg = null;
+function desenharNota(p) {
+  var _p$cliente5;
   // carrega a logo uma vez; quando pronta, redesenha
-  if(!_logoImg){
-    _logoImg=new Image();
-    _logoImg.crossOrigin="anonymous";
-    _logoImg.onload=()=>desenharNota(p);
-    _logoImg.onerror=()=>{ _logoImg={erro:true}; desenharNota(p); };
-    _logoImg.src="/logo";
-    if(!_logoImg.complete) return; // espera carregar
+  if (!_logoImg) {
+    _logoImg = new Image();
+    _logoImg.crossOrigin = "anonymous";
+    _logoImg.onload = () => desenharNota(p);
+    _logoImg.onerror = () => {
+      _logoImg = {
+        erro: true
+      };
+      desenharNota(p);
+    };
+    _logoImg.src = "/logo";
+    if (!_logoImg.complete) return; // espera carregar
   }
-  const itens=p.itens||[];
-  const W=680, padd=28, headerH=150, itemH=40, footerH=90;
-  const H=headerH+itens.length*itemH+footerH+30;
-  const cv=document.getElementById("cvNota");
-  if(!cv) return;
-  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%";
-  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
-  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  const itens = p.itens || [];
+  const W = 680,
+    padd = 28,
+    headerH = 150,
+    itemH = 40,
+    footerH = 90;
+  const H = headerH + itens.length * itemH + footerH + 30;
+  const cv = document.getElementById("cvNota");
+  if (!cv) return;
+  const dpr = 2;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  cv.style.width = "100%";
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, W, H);
   // faixa azul do cabeçalho (mais alta pra caber logo + tipo + cliente)
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-18);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-18,W,5);
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(0, 0, W, headerH - 18);
+  ctx.fillStyle = "#FF0082";
+  ctx.fillRect(0, headerH - 18, W, 5);
   // logo no topo esquerdo
-  if(_logoImg && !_logoImg.erro && _logoImg.naturalWidth){
-    const alturaLogo=40;
-    const larguraLogo=_logoImg.naturalWidth*(alturaLogo/_logoImg.naturalHeight);
-    try{ ctx.drawImage(_logoImg,padd,20,Math.min(larguraLogo,200),alturaLogo); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
-  }else{
-    ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48);
+  if (_logoImg && !_logoImg.erro && _logoImg.naturalWidth) {
+    const alturaLogo = 40;
+    const larguraLogo = _logoImg.naturalWidth * (alturaLogo / _logoImg.naturalHeight);
+    try {
+      ctx.drawImage(_logoImg, padd, 20, Math.min(larguraLogo, 200), alturaLogo);
+    } catch (e) {
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 26px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText("B13 BEBIDAS", padd, 48);
+    }
+  } else {
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 26px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("B13 BEBIDAS", padd, 48);
   }
   // data no topo direito
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="right";
-  const data=p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"";
-  ctx.fillText(data,W-padd,40);
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.textAlign = "right";
+  const data = p.criadoEm ? new Date(p.criadoEm).toLocaleDateString("pt-BR") : "";
+  ctx.fillText(data, W - padd, 40);
   // tipo (proposta/pedido) abaixo da logo
-  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
-  const tipoTxt=p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):("Proposta Comercial");
-  ctx.fillText(tipoTxt,padd,84);
+  ctx.font = "700 16px Arial";
+  ctx.fillStyle = "#ffd23f";
+  ctx.textAlign = "left";
+  const tipoTxt = p.pedidoBlingId ? "Pedido #" + p.pedidoBlingNumero : "Proposta Comercial";
+  ctx.fillText(tipoTxt, padd, 84);
   // cliente e vendedor na mesma linha, dentro da faixa
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
-  let nomeCli=p.cliente?.nome||"—"; if(nomeCli.length>36) nomeCli=nomeCli.slice(0,35)+"…";
-  ctx.fillText("Cliente: "+nomeCli,padd,110);
-  if(p.vendedorNome){ ctx.textAlign="right"; ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,110); }
-  // cabeçalho da tabela (abaixo da faixa)
-  let y=headerH+14;
-  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
-  ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
-  ctx.textAlign="right"; ctx.fillText("UNIT.",W-140,y); ctx.fillText("TOTAL",W-padd,y);
-  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
-  itens.forEach(i=>{
-    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
-    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
-    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
-    ctx.fillText(nome,padd,y+itemH/2);
-    ctx.textAlign="center"; ctx.fillText(String(qtd),W-260,y+itemH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un),W-140,y+itemH/2);
-    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd),W-padd,y+itemH/2);
-    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
-    y+=itemH;
-  });
-  y+=10; ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
-  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+12,y+28);
-  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial"; ctx.fillText(brl(p.total),W-padd-12,y+29);
-  y+=44;
-  if(p.observacao){ y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText("Obs: "+p.observacao.slice(0,70),padd,y); }
-  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center"; ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻",W/2,H-16);
-}
-
-function baixarImg(){
-  const cv=document.getElementById("cvNota"); if(!cv) return;
-  const a=document.createElement("a"); a.download="nota-b13.png"; a.href=cv.toDataURL("image/png"); a.click();
-}
-async function compartilharImg(){
-  const cv=document.getElementById("cvNota"); if(!cv) return;
-  let blob; try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }catch(e){ baixarImg(); return; }
-  const file=new File([blob],"nota-b13.png",{type:"image/png"});
-  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file],title:"Nota B13"}); return; }catch(e){ if(e&&e.name==="AbortError") return; }
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.textAlign = "left";
+  let nomeCli = ((_p$cliente5 = p.cliente) === null || _p$cliente5 === void 0 ? void 0 : _p$cliente5.nome) || "—";
+  if (nomeCli.length > 36) nomeCli = nomeCli.slice(0, 35) + "…";
+  ctx.fillText("Cliente: " + nomeCli, padd, 110);
+  if (p.vendedorNome) {
+    ctx.textAlign = "right";
+    ctx.fillText("Vendedor: " + p.vendedorNome, W - padd, 110);
   }
-  baixarImg(); alert("Imagem baixada — anexe no WhatsApp. 📎");
+  // cabeçalho da tabela (abaixo da faixa)
+  let y = headerH + 14;
+  ctx.font = "700 12px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "center";
+  ctx.fillText("QTD", W - 260, y);
+  ctx.textAlign = "right";
+  ctx.fillText("UNIT.", W - 140, y);
+  ctx.fillText("TOTAL", W - padd, y);
+  y += 10;
+  ctx.strokeStyle = "#ddd";
+  ctx.beginPath();
+  ctx.moveTo(padd, y);
+  ctx.lineTo(W - padd, y);
+  ctx.stroke();
+  y += 6;
+  itens.forEach(i => {
+    const qtd = Number(i.quantidade) || 1,
+      un = Number(i.valor) || 0;
+    ctx.fillStyle = "#111";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "left";
+    let nome = i.nome || "";
+    if (nome.length > 34) nome = nome.slice(0, 33) + "…";
+    ctx.fillText(nome, padd, y + itemH / 2);
+    ctx.textAlign = "center";
+    ctx.fillText(String(qtd), W - 260, y + itemH / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#555";
+    ctx.fillText(brl(un), W - 140, y + itemH / 2);
+    ctx.fillStyle = "#111";
+    ctx.font = "700 14px Arial";
+    ctx.fillText(brl(un * qtd), W - padd, y + itemH / 2);
+    ctx.strokeStyle = "#eee";
+    ctx.beginPath();
+    ctx.moveTo(padd, y + itemH);
+    ctx.lineTo(W - padd, y + itemH);
+    ctx.stroke();
+    y += itemH;
+  });
+  y += 10;
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(padd, y, W - padd * 2, 44);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 18px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd + 12, y + 28);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffd23f";
+  ctx.font = "900 22px Arial";
+  ctx.fillText(brl(p.total), W - padd - 12, y + 29);
+  y += 44;
+  if (p.observacao) {
+    y += 24;
+    ctx.fillStyle = "#555";
+    ctx.font = "13px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("Obs: " + p.observacao.slice(0, 70), padd, y);
+  }
+  ctx.fillStyle = "#9a95c9";
+  ctx.font = "12px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, H - 16);
 }
-
-async function cancelar(id){
-  if(!confirm("Cancelar? Só é possível cancelar enquanto o pedido ainda está em 'Aguardando separação' — se já entrou no fluxo (separação, rota, entrega), não dá mais pra cancelar por aqui. Se tiver pedido no Bling, ele também será cancelado lá (se não conseguir no Bling, nada muda). Não pode ser desfeito.")) return;
-  try{
-    const j=await fetch(B+"/api/atacado/propostas/"+id+"/cancelar",{method:"POST"}).then(r=>r.json());
-    if(j.erro){ alert("❌ "+j.erro); return; }
-    if(j.jaEstava){ alert("Este já estava cancelado."); }
-    else if(j.tiradoDaRota){ alert("✅ Cancelado. Esse pedido também foi tirado do Gerenciamento de Rota onde estava agendado."); }
+function baixarImg() {
+  const cv = document.getElementById("cvNota");
+  if (!cv) return;
+  const a = document.createElement("a");
+  a.download = "nota-b13.png";
+  a.href = cv.toDataURL("image/png");
+  a.click();
+}
+async function compartilharImg() {
+  const cv = document.getElementById("cvNota");
+  if (!cv) return;
+  let blob;
+  try {
+    blob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(), "image/png"));
+  } catch (e) {
+    baixarImg();
+    return;
+  }
+  const file = new File([blob], "nota-b13.png", {
+    type: "image/png"
+  });
+  if (navigator.share && navigator.canShare && navigator.canShare({
+    files: [file]
+  })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: "Nota B13"
+      });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+    }
+  }
+  baixarImg();
+  alert("Imagem baixada — anexe no WhatsApp. 📎");
+}
+async function cancelar(id) {
+  if (!confirm("Cancelar? Só é possível cancelar enquanto o pedido ainda está em 'Aguardando separação' — se já entrou no fluxo (separação, rota, entrega), não dá mais pra cancelar por aqui. Se tiver pedido no Bling, ele também será cancelado lá (se não conseguir no Bling, nada muda). Não pode ser desfeito.")) return;
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + id + "/cancelar", {
+      method: "POST"
+    }).then(r => r.json());
+    if (j.erro) {
+      alert("❌ " + j.erro);
+      return;
+    }
+    if (j.jaEstava) {
+      alert("Este já estava cancelado.");
+    } else if (j.tiradoDaRota) {
+      alert("✅ Cancelado. Esse pedido também foi tirado do Gerenciamento de Rota onde estava agendado.");
+    }
     carregar();
-  }catch(e){ alert("Erro de conexão ao cancelar. Nada foi alterado — tente de novo."); }
+  } catch (e) {
+    alert("Erro de conexão ao cancelar. Nada foi alterado — tente de novo.");
+  }
 }
-
-async function gerarPedido(id){
-  if(!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
-  try{
-    const j=await fetch(B+"/api/atacado/propostas/"+id+"/gerar-pedido",{method:"POST"}).then(r=>r.json());
-    if(j.erro){ alert("❌ Não foi possível gerar o pedido no Bling:\n\n"+j.erro+"\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo."); return; }
-    alert("Pedido #"+j.numero+" criado (aguardando separação)!");
+async function gerarPedido(id) {
+  if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
+      method: "POST"
+    }).then(r => r.json());
+    if (j.erro) {
+      alert("❌ Não foi possível gerar o pedido no Bling:\n\n" + j.erro + "\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo.");
+      return;
+    }
+    alert("Pedido #" + j.numero + " criado (aguardando separação)!");
     carregar();
-  }catch(e){ alert("Erro de conexão ao gerar o pedido. Ela continua como proposta — tente de novo."); }
+  } catch (e) {
+    alert("Erro de conexão ao gerar o pedido. Ela continua como proposta — tente de novo.");
+  }
 }
-
-async function excluir(id){
-  if(!confirm("Excluir esta proposta do sistema? (só é possível em propostas que ainda não viraram pedido)")) return;
-  try{ const j=await fetch(B+"/api/atacado/propostas/"+id,{method:"DELETE"}).then(r=>r.json()); if(j.erro){alert(j.erro);return;} carregar(); }catch(e){}
+async function excluir(id) {
+  if (!confirm("Excluir esta proposta do sistema? (só é possível em propostas que ainda não viraram pedido)")) return;
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + id, {
+      method: "DELETE"
+    }).then(r => r.json());
+    if (j.erro) {
+      alert(j.erro);
+      return;
+    }
+    carregar();
+  } catch (e) {}
 }
-
-function enviarSMS(id){
-  const p=LISTA.find(x=>x.id===id);
-  if(!p) return;
-  let tel=soDig(p.cliente?.telefone||"");
-  if(tel.length<10){ alert("Esse cliente não tem telefone válido cadastrado."); return; }
-  const tel55=tel.length<=11?("55"+tel):tel;
-  const ref=p.pedidoBlingId?("pedido #"+p.pedidoBlingNumero):"pedido";
-  const nome=(p.cliente?.nome||"").split(" ")[0]||"";
-  const msg=`Ola${nome?" "+nome:""}! Aqui e da B13 Bebidas. Seu ${ref} ja esta sendo preparado e vai ser enviado. Qualquer duvida, e so chamar!`;
+function enviarSMS(id) {
+  var _p$cliente6, _p$cliente7;
+  const p = LISTA.find(x => x.id === id);
+  if (!p) return;
+  let tel = soDig(((_p$cliente6 = p.cliente) === null || _p$cliente6 === void 0 ? void 0 : _p$cliente6.telefone) || "");
+  if (tel.length < 10) {
+    alert("Esse cliente não tem telefone válido cadastrado.");
+    return;
+  }
+  const tel55 = tel.length <= 11 ? "55" + tel : tel;
+  const ref = p.pedidoBlingId ? "pedido #" + p.pedidoBlingNumero : "pedido";
+  const nome = (((_p$cliente7 = p.cliente) === null || _p$cliente7 === void 0 ? void 0 : _p$cliente7.nome) || "").split(" ")[0] || "";
+  const msg = `Ola${nome ? " " + nome : ""}! Aqui e da B13 Bebidas. Seu ${ref} ja esta sendo preparado e vai ser enviado. Qualquer duvida, e so chamar!`;
   // abre o app de mensagens do celular com o texto pronto
-  window.location.href="sms:+"+tel55+"?body="+encodeURIComponent(msg);
+  window.location.href = "sms:+" + tel55 + "?body=" + encodeURIComponent(msg);
 }
-
-async function enviarWhats(id){
-  const p=LISTA.find(x=>x.id===id);
-  if(!p) return;
+async function enviarWhats(id) {
+  var _p$cliente8, _p$cliente9;
+  const p = LISTA.find(x => x.id === id);
+  if (!p) return;
   // monta o texto (vai como legenda da imagem, ou como fallback se não der pra mandar imagem)
-  const itens=(p.itens||[]).map(i=>{
-    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
-    return qtd>1?`• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un*qtd)}`:`• ${i.nome} — ${brl(un)}`;
+  const itens = (p.itens || []).map(i => {
+    const qtd = Number(i.quantidade) || 1,
+      un = Number(i.valor) || 0;
+    return qtd > 1 ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un * qtd)}` : `• ${i.nome} — ${brl(un)}`;
   }).join("\n");
-  const titulo=p.pedidoBlingId?`*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*`:("*Proposta comercial — B13 Bebidas*");
-  const msg=`${titulo}\n\nOlá, ${p.cliente?.nome||''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao?`\n\n${p.observacao}`:''}`;
+  const titulo = p.pedidoBlingId ? `*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*` : "*Proposta comercial — B13 Bebidas*";
+  const msg = `${titulo}\n\nOlá, ${((_p$cliente8 = p.cliente) === null || _p$cliente8 === void 0 ? void 0 : _p$cliente8.nome) || ''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao ? `\n\n${p.observacao}` : ''}`;
 
   // gera a imagem da nota num canvas oculto e tenta compartilhar (com a imagem)
-  const cv=document.createElement("canvas");
-  cv.style.display="none"; document.body.appendChild(cv);
-  await desenharNotaEm(cv,p);
-  let blob=null;
-  try{ blob=await new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(),"image/png")); }catch(e){}
+  const cv = document.createElement("canvas");
+  cv.style.display = "none";
+  document.body.appendChild(cv);
+  await desenharNotaEm(cv, p);
+  let blob = null;
+  try {
+    blob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(), "image/png"));
+  } catch (e) {}
   cv.remove();
 
   // compartilhamento nativo com a imagem (funciona no celular)
-  if(blob && navigator.share && navigator.canShare){
-    const file=new File([blob],"nota-b13.png",{type:"image/png"});
-    if(navigator.canShare({files:[file]})){
-      try{ await navigator.share({files:[file],text:msg}); return; }
-      catch(e){ if(e&&e.name==="AbortError") return; }
+  if (blob && navigator.share && navigator.canShare) {
+    const file = new File([blob], "nota-b13.png", {
+      type: "image/png"
+    });
+    if (navigator.canShare({
+      files: [file]
+    })) {
+      try {
+        await navigator.share({
+          files: [file],
+          text: msg
+        });
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
     }
   }
   // fallback (computador ou sem suporte a compartilhar arquivo): abre o modal da imagem
   // pra baixar/compartilhar manualmente, já com o texto no WhatsApp
   verImagem(id);
-  let tel=soDig(p.cliente?.telefone||"");
-  if(tel.length>=10){
-    const tel55=tel.length<=11?("55"+tel):tel;
-    setTimeout(()=>window.open("https://wa.me/"+tel55+"?text="+encodeURIComponent(msg),"_blank"),300);
+  let tel = soDig(((_p$cliente9 = p.cliente) === null || _p$cliente9 === void 0 ? void 0 : _p$cliente9.telefone) || "");
+  if (tel.length >= 10) {
+    const tel55 = tel.length <= 11 ? "55" + tel : tel;
+    setTimeout(() => window.open("https://wa.me/" + tel55 + "?text=" + encodeURIComponent(msg), "_blank"), 300);
   }
 }
 
 // desenha a nota num canvas específico (reaproveitável pro compartilhamento)
-async function desenharNotaEm(cv,p){
+async function desenharNotaEm(cv, p) {
+  var _p$cliente0;
   // garante a logo carregada
-  if(!_logoImg||(!_logoImg.erro&&!_logoImg.naturalWidth)){
-    await new Promise((res)=>{
-      _logoImg=new Image(); _logoImg.crossOrigin="anonymous";
-      _logoImg.onload=res; _logoImg.onerror=()=>{ _logoImg={erro:true}; res(); }; _logoImg.src="/logo";
+  if (!_logoImg || !_logoImg.erro && !_logoImg.naturalWidth) {
+    await new Promise(res => {
+      _logoImg = new Image();
+      _logoImg.crossOrigin = "anonymous";
+      _logoImg.onload = res;
+      _logoImg.onerror = () => {
+        _logoImg = {
+          erro: true
+        };
+        res();
+      };
+      _logoImg.src = "/logo";
     });
   }
-  const itens=p.itens||[];
-  const W=680, padd=28, headerH=150, itemH=40, footerH=90;
-  const H=headerH+itens.length*itemH+footerH+30;
-  const dpr=2; cv.width=W*dpr; cv.height=H*dpr;
-  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
-  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-18);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-18,W,5);
-  if(_logoImg && !_logoImg.erro && _logoImg.naturalWidth){
-    const aL=40, lL=_logoImg.naturalWidth*(aL/_logoImg.naturalHeight);
-    try{ ctx.drawImage(_logoImg,padd,20,Math.min(lL,200),aL); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
-  }else{ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="right";
-  ctx.fillText(p.criadoEm?new Date(p.criadoEm).toLocaleDateString("pt-BR"):"",W-padd,40);
-  ctx.font="700 16px Arial"; ctx.fillStyle="#ffd23f"; ctx.textAlign="left";
-  ctx.fillText(p.pedidoBlingId?("Pedido #"+p.pedidoBlingNumero):("Proposta Comercial"),padd,84);
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
-  let nc=p.cliente?.nome||"—"; if(nc.length>36) nc=nc.slice(0,35)+"…";
-  ctx.fillText("Cliente: "+nc,padd,110);
-  if(p.vendedorNome){ ctx.textAlign="right"; ctx.fillText("Vendedor: "+p.vendedorNome,W-padd,110); }
-  let y=headerH+14;
-  ctx.font="700 12px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PRODUTO",padd,y);
-  ctx.textAlign="center"; ctx.fillText("QTD",W-260,y);
-  ctx.textAlign="right"; ctx.fillText("UNIT.",W-140,y); ctx.fillText("TOTAL",W-padd,y);
-  y+=10; ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke(); y+=6;
-  itens.forEach(i=>{
-    const qtd=Number(i.quantidade)||1, un=Number(i.valor)||0;
-    ctx.fillStyle="#111"; ctx.font="14px Arial"; ctx.textAlign="left";
-    let nome=i.nome||""; if(nome.length>34) nome=nome.slice(0,33)+"…";
-    ctx.fillText(nome,padd,y+itemH/2);
-    ctx.textAlign="center"; ctx.fillText(String(qtd),W-260,y+itemH/2);
-    ctx.textAlign="right"; ctx.fillStyle="#555"; ctx.fillText(brl(un),W-140,y+itemH/2);
-    ctx.fillStyle="#111"; ctx.font="700 14px Arial"; ctx.fillText(brl(un*qtd),W-padd,y+itemH/2);
-    ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+itemH); ctx.lineTo(W-padd,y+itemH); ctx.stroke();
-    y+=itemH;
+  const itens = p.itens || [];
+  const W = 680,
+    padd = 28,
+    headerH = 150,
+    itemH = 40,
+    footerH = 90;
+  const H = headerH + itens.length * itemH + footerH + 30;
+  const dpr = 2;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(0, 0, W, headerH - 18);
+  ctx.fillStyle = "#FF0082";
+  ctx.fillRect(0, headerH - 18, W, 5);
+  if (_logoImg && !_logoImg.erro && _logoImg.naturalWidth) {
+    const aL = 40,
+      lL = _logoImg.naturalWidth * (aL / _logoImg.naturalHeight);
+    try {
+      ctx.drawImage(_logoImg, padd, 20, Math.min(lL, 200), aL);
+    } catch (e) {
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 26px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText("B13 BEBIDAS", padd, 48);
+    }
+  } else {
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 26px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("B13 BEBIDAS", padd, 48);
+  }
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.textAlign = "right";
+  ctx.fillText(p.criadoEm ? new Date(p.criadoEm).toLocaleDateString("pt-BR") : "", W - padd, 40);
+  ctx.font = "700 16px Arial";
+  ctx.fillStyle = "#ffd23f";
+  ctx.textAlign = "left";
+  ctx.fillText(p.pedidoBlingId ? "Pedido #" + p.pedidoBlingNumero : "Proposta Comercial", padd, 84);
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.textAlign = "left";
+  let nc = ((_p$cliente0 = p.cliente) === null || _p$cliente0 === void 0 ? void 0 : _p$cliente0.nome) || "—";
+  if (nc.length > 36) nc = nc.slice(0, 35) + "…";
+  ctx.fillText("Cliente: " + nc, padd, 110);
+  if (p.vendedorNome) {
+    ctx.textAlign = "right";
+    ctx.fillText("Vendedor: " + p.vendedorNome, W - padd, 110);
+  }
+  let y = headerH + 14;
+  ctx.font = "700 12px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "center";
+  ctx.fillText("QTD", W - 260, y);
+  ctx.textAlign = "right";
+  ctx.fillText("UNIT.", W - 140, y);
+  ctx.fillText("TOTAL", W - padd, y);
+  y += 10;
+  ctx.strokeStyle = "#ddd";
+  ctx.beginPath();
+  ctx.moveTo(padd, y);
+  ctx.lineTo(W - padd, y);
+  ctx.stroke();
+  y += 6;
+  itens.forEach(i => {
+    const qtd = Number(i.quantidade) || 1,
+      un = Number(i.valor) || 0;
+    ctx.fillStyle = "#111";
+    ctx.font = "14px Arial";
+    ctx.textAlign = "left";
+    let nome = i.nome || "";
+    if (nome.length > 34) nome = nome.slice(0, 33) + "…";
+    ctx.fillText(nome, padd, y + itemH / 2);
+    ctx.textAlign = "center";
+    ctx.fillText(String(qtd), W - 260, y + itemH / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#555";
+    ctx.fillText(brl(un), W - 140, y + itemH / 2);
+    ctx.fillStyle = "#111";
+    ctx.font = "700 14px Arial";
+    ctx.fillText(brl(un * qtd), W - padd, y + itemH / 2);
+    ctx.strokeStyle = "#eee";
+    ctx.beginPath();
+    ctx.moveTo(padd, y + itemH);
+    ctx.lineTo(W - padd, y + itemH);
+    ctx.stroke();
+    y += itemH;
   });
-  y+=10; ctx.fillStyle="#262366"; ctx.fillRect(padd,y,W-padd*2,44);
-  ctx.fillStyle="#fff"; ctx.font="900 18px Arial"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd+12,y+28);
-  ctx.textAlign="right"; ctx.fillStyle="#ffd23f"; ctx.font="900 22px Arial"; ctx.fillText(brl(p.total),W-padd-12,y+29);
-  y+=44;
-  if(p.observacao){ y+=24; ctx.fillStyle="#555"; ctx.font="13px Arial"; ctx.textAlign="left"; ctx.fillText("Obs: "+p.observacao.slice(0,70),padd,y); }
-  ctx.fillStyle="#9a95c9"; ctx.font="12px Arial"; ctx.textAlign="center"; ctx.fillText("B13 Bebidas · Obrigado pela preferência!",W/2,H-16);
+  y += 10;
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(padd, y, W - padd * 2, 44);
+  ctx.fillStyle = "#fff";
+  ctx.font = "900 18px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd + 12, y + 28);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffd23f";
+  ctx.font = "900 22px Arial";
+  ctx.fillText(brl(p.total), W - padd - 12, y + 29);
+  y += 44;
+  if (p.observacao) {
+    y += 24;
+    ctx.fillStyle = "#555";
+    ctx.font = "13px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("Obs: " + p.observacao.slice(0, 70), padd, y);
+  }
+  ctx.fillStyle = "#9a95c9";
+  ctx.font = "12px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência!", W / 2, H - 16);
 }
-
-render();
-</script>
+render();</script>
 </body>
 </html>

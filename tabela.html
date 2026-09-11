@@ -191,254 +191,503 @@
     </div>
   </div>
 
-<script>
-// ------------------- DADOS PADRÃO (da sua TABELA_OFICIAL) -------------------
-const DEFAULT = [
-  {col:1,t:"LATÃO 473ML",i:[["ANTÁRTICA",3.79],["AMSTEL",4.19],["AMSTEL ULTRA",5.09],["BRAHMA",3.89],["BOHEMIA",3.79],["BG - BAIXA GASTRONOMIA",3.89],["BUDWEISER",4.19],["CORONA",5.89],["HEINEKEN",5.49],["SPATEN",4.69],["ITAIPAVA",3.05],["PETRA",3.39],["IMPERIO PILSEN",3.49],["ORIGINAL",4.99],["STELLA ARTOIS",4.99],["STELLA PURE GOLD",5.89],["PURO MALTE",3.09],["KAISER",3.45],["SKOL",3.69],["EISENBAHN",4.09],["LAUT PILSEN",3.79]]},
-  {col:1,t:"LONG NECK",i:[["IMPERIO ULTRA 275ML",4.39],["HEINEKEN 330ML",5.69],["HEINEKEN ZERO 330ML",5.79],["CORONA 330ML",6.49],["CORONA CERO 330ML",6.49],["SMIRNOFF ICE 275ML",4.89],["SKOL BEATS RED MIX",5.69],["SKOL BEATS GREEN MIX",5.59],["SKOL BEATS GT",5.39],["SKOL BEATS SENSE",5.49],["SPATEN",4.59],["STELLA ARTOIS",5.59],["STELLA PURE GOLD",6.29],["BUDWEISER",4.49]]},
-  {col:1,t:"GARRAFA 600ML",i:[["ORIGINAL RETORNÁVEL",7.59],["BRAHMA RETORNÁVEL",6.49],["HEINEKEN RETORNÁVEL",9.19],["HEINEKEN DESCARTÁVEL",11.59],["STELLA 600ML DESC.",8.29]]},
-  {col:1,t:"CERVEJAS ZERO",i:[["BRAHMA ZERO 473ML",4.69],["BRAHMA ZERO LATA 350ML",3.69],["CORONA CERO LONG 330ML",6.59],["HEINEKEN ZERO 350ML",4.99]]},
-  {col:1,t:"OUTRAS CERVEJAS",i:[["CARACU 350ML LT",4.69],["BRAHMA MALZBIER 350ML",4.89],["ORIGINAL LITRINHO DESC",3.19],["ITAIPAVA 550ML",3.59],["BRAHMA 550ML",4.59]]},
-  {col:1,t:"REFRIGERANTE PET",i:[["COCA COLA 2L ORIGINAL",9.29],["COCA COLA 2L ZERO",9.29],["GUARANÁ 2L",7.09],["SUKITA SABORES 2L",5.39],["FANTA LARANJA 2L",7.39],["SPRITE 2L",7.39],["GUARAPAN 2L",5.89],["MATE COURO 1L",3.89],["H2O 500ML",3.79],["H2O 1,5L",6.49],["KUAT 2L",5.39]]},
-  {col:1,t:"REFRIGERANTE 200ML",i:[["COCA COLA ORIGINAL",1.69],["COCA COLA ZERO",1.69],["FANTA LARANJA",1.69],["GUARANÁ",1.39],["GUARANÁ ZERO",1.39],["PEPSI",1.39],["SUKITA LARANJA",1.39]]},
-
-  {col:2,t:"BEBIDA MISTA",i:[["ABRACADABRA 1L","11.90","PET"],["BANG BANG 473ML",4.99],["BEATS GT LATA 269ML",3.69],["BEATS SENSE LATA 269ML",3.99],["BEATS GT LATA 473ML",6.89],["BEATS RED MIX LATA 269ML",3.99],["BEATS GREEN MIX LT 269ML",3.89],["BEATS TROPICAL LT 269ML",3.79],["BUSCA BRISA 1L",25.90],["COROTE 500ML","3.79","SABORES"],["EQUILIBRISTA 355ML",5.99],["ICE SYN 300ML","2.49","SABORES"],["MANSÃO MAROMBA 1L","11.90","PET"],["MASCATE 362ML",7.50],["OUSADIA 350ML",3.09],["SABOR DO SABOR 1L INVICTUS",7.99],["SMIRNOFF ICE LATA 269ML",3.79],["XEQUE MATE 473ML",8.99],["XEQUE MATE 362ML",7.50],["XÁ DE CANA 355ML",4.99]]},
-  {col:2,t:"ÁGUA",i:[["SANTISSIMA S/ GÁS 500ML",0.85],["SANTISSIMA C/ GÁS 500ML",1.49],["SANTISSIMA S/ GÁS 1,5L",1.89],["IGARAPÉ C/ GÁS 500ML",1.59],["IGARAPÉ C/ GÁS 1,5L",3.09]]},
-  {col:2,t:"SUCOS / ISOTONICOS",i:[["SUCO TIAL 250ML",2.49],["SUCO DEL VALLE 290ML LATA",3.69],["SUCO TIAL 1L","5.19","CONSULTAR SABORES"],["GATORADE 500ML",4.39]]},
-  {col:2,t:"LICOR",i:[["AMARULA ETHI. COFFEE","99.90","KIT C/ COPO"],["AMARULA TRADICIONAL",104.90],["BALLENA COCO C/ TEQ.",109.90],["BALLENA MORANGO",119.90],["BALLENA CHOCOLATE",109.90],["BEM CASADO 1L","38.90","SABORES"],["BEM CASADO 275ML","14.90","SABORES"],["DON LUIZ 750ML",69.90],["LICOR 43 700ML",129.90]]},
-  {col:2,t:"VINHO / ESPUMANTE",i:[["CHANDON BRUT 750ML",79.90],["MATEUS",44.90],["CASILLERO DEL DIABO",39.90],["VINHO PERIQUITA C/ TAÇA",59.90],["PERGOLA TINTO SUAVE 1L",19.90],["PERGOLA TINTO SECO 1L",19.90],["PERGOLA BRANCO SUAVE 1L",19.80],["CONCHO Y TORO","23.90","SABORES"],["CANTINA DA SERRA 750ML",5.89],["CAMPO LARGO",12.49],["CASA PERINI",39.99]]},
-  {col:2,t:"REFRIGERANTE 350ML",i:[["COCA COLA ORIGINAL",3.49],["COCA COLA ZERO",3.49],["GUARANÁ ZERO",2.75],["GUARANÁ",2.75],["FANTA UVA",3.39],["FANTA LARANJA",3.39],["SPRITE",3.39]]},
-
-  {col:3,t:"WHISKY",i:[["RED LABEL 1L",69.90],["RED LABEL 750ML",54.90],["BALLANTINES SUNSHINE 750ML",59.90],["BALLANTINES 1L",64.90],["BUCHANANS 1L",144.90],["BLACK LABEL 500ML",69.90],["BLACK LABEL 1L",142.90],["BLACK FIRE 1L",14.90],["BLACK JOKER 980ML",16.90],["CHIVAS 1L",114.90],["GOLD LABEL 750ML",209.90],["MANSÃO MAROMBA 750ML","19.90","VIDRO"],["JACK DANIEL'S 07 1L",112.90],["JACK DANIEL'S HONEY 1L",117.90],["JACK DANIEL'S APPLE 1L",117.90],["JACK DANIEL'S BLACKBERRY 1L",179.90],["JACK JAMES 900ML","20.90","SABORES"],["OLD PAR 1L",119.90],["WHITE HORSE 1L",53.90]]},
-  {col:3,t:"GIN",i:[["BEEFEATER BLACKBERRY",77.90],["BEEFEATER PINK",69.90],["BEEFEATER TRADICIONAL",69.90],["GORDONS 750ML",52.90],["GORDONS PINK 750ML",58.90],["GIN INTENCION 900ML","11.90","SABORES"],["GIN INVICTUS 900ML","14.90","SABORES"],["GIN MIX 900ML","13.50","SABORES"],["ROCKS 1L","25.50","CONSULTAR SABORES"],["THEROS 1L",27.90],["SEAGERS 1L",32.90],["MANSÃO MAROMBA 750ML","14.90","VIDRO"],["TANQUERAY 750ML",84.90],["TANQUERAY ROYALE",89.90]]},
-  {col:3,t:"VODKA",i:[["ABSOLUT 1L",69.90],["SMIRNOFF 1,750ML",46.90],["SMIRNOFF 998ML",28.90],["CIROC BLUE",129.90],["ORLOFF 1L",23.90],["MANSÃO MAROMBA","16.90","VIDRO"]]},
-  {col:3,t:"CONHAQUE / APERITIVOS / TEQUILA",i:[["APEROL 750ML",40.90],["CAMPARI 998ML",48.90],["DREHER 900ML",19.15],["JOSÉ CUERVO GOLD",109.90],["PARATUDO",13.90],["PRESIDENTE MEL 900ML",15.69],["PRESIDENTE 900ML",12.90],["TEQUILA TEQPAR 1L",17.90]]},
-  {col:3,t:"RUM / COQUETEL",i:[["CATUABA SELVAGEM 900ML",13.90],["CATUABA SELVAGEM 300ML",3.69],["CANELINHA DA ROCHA 900ML",11.90],["CANELINHA DA ROCHA 275ML",2.85],["MONTILLA CARTA BRANCA",26.90],["MONTILLA CARTA CRISTAL",24.90],["MONTILLA CARTA OURO",26.90]]},
-  {col:3,t:"CACHAÇA",i:[["CACHAÇA 51",11.80],["SALINAS 1L",41.90],["SALINAS BALSAMO 1L",41.90],["FERREIRA 600ML",29.90],["SELETA OURO 1L",41.90]]},
-
-  {col:4,t:"ENERGÉTICO",i:[["RED BULL 250ML SABORES",7.49],["JACK POWER SABORES 2L",4.89],["NATIVI 2L",4.69],["MONSTER 473ML","7.99","SABORES"],["BALY 2L SABORES",7.99],["BALY 473ML SABORES",3.49],["RED BULL 473ML SABORES",12.90]]},
-  {col:4,t:"CHOPP DE VINHO",i:[["HALLER 350ML",6.49],["PINK MOON 600ML PET",6.59]]},
-  {col:4,t:"ÁGUA DE COCO",i:[["ÁGUA DE COCO TIAL 1L",9.90],["CAMPO LARGO 900ML",9.90]]},
-  {col:4,t:"OUTROS",i:[["CARVÃO IMPERIO 3KG",9.90],["CARVÃO IMPERIO 10KG",34.90],["GELO COCO LEVE CX C/30UN","2.20","CONSULTAR SABORES"],["GELOTIMO CX C/30UN","1.79","CONSULTAR SABORES"],["LOOPY AÇAI 60G",2.30]]},
-  {col:4,t:"BOMBONIERE",i:[["TRIDENT CX C/21",38.90],["HALL'S CX C/21",24.80],["GULÃO 120g",3.35],["PIRULITO POP MANIA C/50","11.90","PEQUENO"],["PIRULITO POP MANIA MAXXI","14.90","C/24UN"],["PIRULITO CHERRY POP C/50",15.90],["TRENTO CX C/16UN","34.90","SABORES"],["SUFLAIR CX C/20UN",102.00],["KINDER BUENO CX C/15UN",95.90]]},
-  {col:4,t:"DESCARTÁVEIS",i:[["CAIXA COPO 770ML ULTRA","169.90","500 UNIDADES"],["COPO 700ML PCT 25UN",9.90],["COPO 500ML PCT 50UN",14.50],["COPO 400ML PCT 50UN",8.80],["COPO 300ML PCT 50UN",7.60],["COPO 200ML PCT 100UN",5.99],["SACO DE LIXO 200L 90x110",69.90],["SACO DE LIXO 100L 75x105",54.90],["SACOLA PLÁSTICA 5KG",54.90],["CANUDO 5MM STRAWP. TRAD 100UN",6.50],["CANUDO 6MM MEXEDOR DRINK 100UN",8.50],["CANUDO 6MM STRAWP. FLEX 100UN",7.50]]},
-  {col:4,t:"TABACARIA",i:[["SEDA HEMP 100% ORGANIC","23.50","CX 25x33UN"],["SEDA ZOMO ALFAFA -VERDE","79.90","CX 50UN"],["SEDA ZOMO NATURAL - MARROM","29.90","CX 25UN"],["SEDA ZOMO PERFECT - BLACK","56.90","CX 50UN"],["ISQUEIRO BIC C/12 UN GRANDE",50.90]]},
-];
+<script>// ------------------- DADOS PADRÃO (da sua TABELA_OFICIAL) -------------------
+const DEFAULT = [{
+  col: 1,
+  t: "LATÃO 473ML",
+  i: [["ANTÁRTICA", 3.79], ["AMSTEL", 4.19], ["AMSTEL ULTRA", 5.09], ["BRAHMA", 3.89], ["BOHEMIA", 3.79], ["BG - BAIXA GASTRONOMIA", 3.89], ["BUDWEISER", 4.19], ["CORONA", 5.89], ["HEINEKEN", 5.49], ["SPATEN", 4.69], ["ITAIPAVA", 3.05], ["PETRA", 3.39], ["IMPERIO PILSEN", 3.49], ["ORIGINAL", 4.99], ["STELLA ARTOIS", 4.99], ["STELLA PURE GOLD", 5.89], ["PURO MALTE", 3.09], ["KAISER", 3.45], ["SKOL", 3.69], ["EISENBAHN", 4.09], ["LAUT PILSEN", 3.79]]
+}, {
+  col: 1,
+  t: "LONG NECK",
+  i: [["IMPERIO ULTRA 275ML", 4.39], ["HEINEKEN 330ML", 5.69], ["HEINEKEN ZERO 330ML", 5.79], ["CORONA 330ML", 6.49], ["CORONA CERO 330ML", 6.49], ["SMIRNOFF ICE 275ML", 4.89], ["SKOL BEATS RED MIX", 5.69], ["SKOL BEATS GREEN MIX", 5.59], ["SKOL BEATS GT", 5.39], ["SKOL BEATS SENSE", 5.49], ["SPATEN", 4.59], ["STELLA ARTOIS", 5.59], ["STELLA PURE GOLD", 6.29], ["BUDWEISER", 4.49]]
+}, {
+  col: 1,
+  t: "GARRAFA 600ML",
+  i: [["ORIGINAL RETORNÁVEL", 7.59], ["BRAHMA RETORNÁVEL", 6.49], ["HEINEKEN RETORNÁVEL", 9.19], ["HEINEKEN DESCARTÁVEL", 11.59], ["STELLA 600ML DESC.", 8.29]]
+}, {
+  col: 1,
+  t: "CERVEJAS ZERO",
+  i: [["BRAHMA ZERO 473ML", 4.69], ["BRAHMA ZERO LATA 350ML", 3.69], ["CORONA CERO LONG 330ML", 6.59], ["HEINEKEN ZERO 350ML", 4.99]]
+}, {
+  col: 1,
+  t: "OUTRAS CERVEJAS",
+  i: [["CARACU 350ML LT", 4.69], ["BRAHMA MALZBIER 350ML", 4.89], ["ORIGINAL LITRINHO DESC", 3.19], ["ITAIPAVA 550ML", 3.59], ["BRAHMA 550ML", 4.59]]
+}, {
+  col: 1,
+  t: "REFRIGERANTE PET",
+  i: [["COCA COLA 2L ORIGINAL", 9.29], ["COCA COLA 2L ZERO", 9.29], ["GUARANÁ 2L", 7.09], ["SUKITA SABORES 2L", 5.39], ["FANTA LARANJA 2L", 7.39], ["SPRITE 2L", 7.39], ["GUARAPAN 2L", 5.89], ["MATE COURO 1L", 3.89], ["H2O 500ML", 3.79], ["H2O 1,5L", 6.49], ["KUAT 2L", 5.39]]
+}, {
+  col: 1,
+  t: "REFRIGERANTE 200ML",
+  i: [["COCA COLA ORIGINAL", 1.69], ["COCA COLA ZERO", 1.69], ["FANTA LARANJA", 1.69], ["GUARANÁ", 1.39], ["GUARANÁ ZERO", 1.39], ["PEPSI", 1.39], ["SUKITA LARANJA", 1.39]]
+}, {
+  col: 2,
+  t: "BEBIDA MISTA",
+  i: [["ABRACADABRA 1L", "11.90", "PET"], ["BANG BANG 473ML", 4.99], ["BEATS GT LATA 269ML", 3.69], ["BEATS SENSE LATA 269ML", 3.99], ["BEATS GT LATA 473ML", 6.89], ["BEATS RED MIX LATA 269ML", 3.99], ["BEATS GREEN MIX LT 269ML", 3.89], ["BEATS TROPICAL LT 269ML", 3.79], ["BUSCA BRISA 1L", 25.90], ["COROTE 500ML", "3.79", "SABORES"], ["EQUILIBRISTA 355ML", 5.99], ["ICE SYN 300ML", "2.49", "SABORES"], ["MANSÃO MAROMBA 1L", "11.90", "PET"], ["MASCATE 362ML", 7.50], ["OUSADIA 350ML", 3.09], ["SABOR DO SABOR 1L INVICTUS", 7.99], ["SMIRNOFF ICE LATA 269ML", 3.79], ["XEQUE MATE 473ML", 8.99], ["XEQUE MATE 362ML", 7.50], ["XÁ DE CANA 355ML", 4.99]]
+}, {
+  col: 2,
+  t: "ÁGUA",
+  i: [["SANTISSIMA S/ GÁS 500ML", 0.85], ["SANTISSIMA C/ GÁS 500ML", 1.49], ["SANTISSIMA S/ GÁS 1,5L", 1.89], ["IGARAPÉ C/ GÁS 500ML", 1.59], ["IGARAPÉ C/ GÁS 1,5L", 3.09]]
+}, {
+  col: 2,
+  t: "SUCOS / ISOTONICOS",
+  i: [["SUCO TIAL 250ML", 2.49], ["SUCO DEL VALLE 290ML LATA", 3.69], ["SUCO TIAL 1L", "5.19", "CONSULTAR SABORES"], ["GATORADE 500ML", 4.39]]
+}, {
+  col: 2,
+  t: "LICOR",
+  i: [["AMARULA ETHI. COFFEE", "99.90", "KIT C/ COPO"], ["AMARULA TRADICIONAL", 104.90], ["BALLENA COCO C/ TEQ.", 109.90], ["BALLENA MORANGO", 119.90], ["BALLENA CHOCOLATE", 109.90], ["BEM CASADO 1L", "38.90", "SABORES"], ["BEM CASADO 275ML", "14.90", "SABORES"], ["DON LUIZ 750ML", 69.90], ["LICOR 43 700ML", 129.90]]
+}, {
+  col: 2,
+  t: "VINHO / ESPUMANTE",
+  i: [["CHANDON BRUT 750ML", 79.90], ["MATEUS", 44.90], ["CASILLERO DEL DIABO", 39.90], ["VINHO PERIQUITA C/ TAÇA", 59.90], ["PERGOLA TINTO SUAVE 1L", 19.90], ["PERGOLA TINTO SECO 1L", 19.90], ["PERGOLA BRANCO SUAVE 1L", 19.80], ["CONCHO Y TORO", "23.90", "SABORES"], ["CANTINA DA SERRA 750ML", 5.89], ["CAMPO LARGO", 12.49], ["CASA PERINI", 39.99]]
+}, {
+  col: 2,
+  t: "REFRIGERANTE 350ML",
+  i: [["COCA COLA ORIGINAL", 3.49], ["COCA COLA ZERO", 3.49], ["GUARANÁ ZERO", 2.75], ["GUARANÁ", 2.75], ["FANTA UVA", 3.39], ["FANTA LARANJA", 3.39], ["SPRITE", 3.39]]
+}, {
+  col: 3,
+  t: "WHISKY",
+  i: [["RED LABEL 1L", 69.90], ["RED LABEL 750ML", 54.90], ["BALLANTINES SUNSHINE 750ML", 59.90], ["BALLANTINES 1L", 64.90], ["BUCHANANS 1L", 144.90], ["BLACK LABEL 500ML", 69.90], ["BLACK LABEL 1L", 142.90], ["BLACK FIRE 1L", 14.90], ["BLACK JOKER 980ML", 16.90], ["CHIVAS 1L", 114.90], ["GOLD LABEL 750ML", 209.90], ["MANSÃO MAROMBA 750ML", "19.90", "VIDRO"], ["JACK DANIEL'S 07 1L", 112.90], ["JACK DANIEL'S HONEY 1L", 117.90], ["JACK DANIEL'S APPLE 1L", 117.90], ["JACK DANIEL'S BLACKBERRY 1L", 179.90], ["JACK JAMES 900ML", "20.90", "SABORES"], ["OLD PAR 1L", 119.90], ["WHITE HORSE 1L", 53.90]]
+}, {
+  col: 3,
+  t: "GIN",
+  i: [["BEEFEATER BLACKBERRY", 77.90], ["BEEFEATER PINK", 69.90], ["BEEFEATER TRADICIONAL", 69.90], ["GORDONS 750ML", 52.90], ["GORDONS PINK 750ML", 58.90], ["GIN INTENCION 900ML", "11.90", "SABORES"], ["GIN INVICTUS 900ML", "14.90", "SABORES"], ["GIN MIX 900ML", "13.50", "SABORES"], ["ROCKS 1L", "25.50", "CONSULTAR SABORES"], ["THEROS 1L", 27.90], ["SEAGERS 1L", 32.90], ["MANSÃO MAROMBA 750ML", "14.90", "VIDRO"], ["TANQUERAY 750ML", 84.90], ["TANQUERAY ROYALE", 89.90]]
+}, {
+  col: 3,
+  t: "VODKA",
+  i: [["ABSOLUT 1L", 69.90], ["SMIRNOFF 1,750ML", 46.90], ["SMIRNOFF 998ML", 28.90], ["CIROC BLUE", 129.90], ["ORLOFF 1L", 23.90], ["MANSÃO MAROMBA", "16.90", "VIDRO"]]
+}, {
+  col: 3,
+  t: "CONHAQUE / APERITIVOS / TEQUILA",
+  i: [["APEROL 750ML", 40.90], ["CAMPARI 998ML", 48.90], ["DREHER 900ML", 19.15], ["JOSÉ CUERVO GOLD", 109.90], ["PARATUDO", 13.90], ["PRESIDENTE MEL 900ML", 15.69], ["PRESIDENTE 900ML", 12.90], ["TEQUILA TEQPAR 1L", 17.90]]
+}, {
+  col: 3,
+  t: "RUM / COQUETEL",
+  i: [["CATUABA SELVAGEM 900ML", 13.90], ["CATUABA SELVAGEM 300ML", 3.69], ["CANELINHA DA ROCHA 900ML", 11.90], ["CANELINHA DA ROCHA 275ML", 2.85], ["MONTILLA CARTA BRANCA", 26.90], ["MONTILLA CARTA CRISTAL", 24.90], ["MONTILLA CARTA OURO", 26.90]]
+}, {
+  col: 3,
+  t: "CACHAÇA",
+  i: [["CACHAÇA 51", 11.80], ["SALINAS 1L", 41.90], ["SALINAS BALSAMO 1L", 41.90], ["FERREIRA 600ML", 29.90], ["SELETA OURO 1L", 41.90]]
+}, {
+  col: 4,
+  t: "ENERGÉTICO",
+  i: [["RED BULL 250ML SABORES", 7.49], ["JACK POWER SABORES 2L", 4.89], ["NATIVI 2L", 4.69], ["MONSTER 473ML", "7.99", "SABORES"], ["BALY 2L SABORES", 7.99], ["BALY 473ML SABORES", 3.49], ["RED BULL 473ML SABORES", 12.90]]
+}, {
+  col: 4,
+  t: "CHOPP DE VINHO",
+  i: [["HALLER 350ML", 6.49], ["PINK MOON 600ML PET", 6.59]]
+}, {
+  col: 4,
+  t: "ÁGUA DE COCO",
+  i: [["ÁGUA DE COCO TIAL 1L", 9.90], ["CAMPO LARGO 900ML", 9.90]]
+}, {
+  col: 4,
+  t: "OUTROS",
+  i: [["CARVÃO IMPERIO 3KG", 9.90], ["CARVÃO IMPERIO 10KG", 34.90], ["GELO COCO LEVE CX C/30UN", "2.20", "CONSULTAR SABORES"], ["GELOTIMO CX C/30UN", "1.79", "CONSULTAR SABORES"], ["LOOPY AÇAI 60G", 2.30]]
+}, {
+  col: 4,
+  t: "BOMBONIERE",
+  i: [["TRIDENT CX C/21", 38.90], ["HALL'S CX C/21", 24.80], ["GULÃO 120g", 3.35], ["PIRULITO POP MANIA C/50", "11.90", "PEQUENO"], ["PIRULITO POP MANIA MAXXI", "14.90", "C/24UN"], ["PIRULITO CHERRY POP C/50", 15.90], ["TRENTO CX C/16UN", "34.90", "SABORES"], ["SUFLAIR CX C/20UN", 102.00], ["KINDER BUENO CX C/15UN", 95.90]]
+}, {
+  col: 4,
+  t: "DESCARTÁVEIS",
+  i: [["CAIXA COPO 770ML ULTRA", "169.90", "500 UNIDADES"], ["COPO 700ML PCT 25UN", 9.90], ["COPO 500ML PCT 50UN", 14.50], ["COPO 400ML PCT 50UN", 8.80], ["COPO 300ML PCT 50UN", 7.60], ["COPO 200ML PCT 100UN", 5.99], ["SACO DE LIXO 200L 90x110", 69.90], ["SACO DE LIXO 100L 75x105", 54.90], ["SACOLA PLÁSTICA 5KG", 54.90], ["CANUDO 5MM STRAWP. TRAD 100UN", 6.50], ["CANUDO 6MM MEXEDOR DRINK 100UN", 8.50], ["CANUDO 6MM STRAWP. FLEX 100UN", 7.50]]
+}, {
+  col: 4,
+  t: "TABACARIA",
+  i: [["SEDA HEMP 100% ORGANIC", "23.50", "CX 25x33UN"], ["SEDA ZOMO ALFAFA -VERDE", "79.90", "CX 50UN"], ["SEDA ZOMO NATURAL - MARROM", "29.90", "CX 25UN"], ["SEDA ZOMO PERFECT - BLACK", "56.90", "CX 50UN"], ["ISQUEIRO BIC C/12 UN GRANDE", 50.90]]
+}];
 
 // ------------------- MODELO (com ids) + PERSISTÊNCIA -------------------
 // IDs únicos de verdade (nunca repetem entre sessões) — antes era só um contador
 // que reiniciava a cada carregamento da página, podendo colidir com IDs salvos
 // de sessões anteriores e bagunçar qual item era atualizado na tela
-const nid = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-const BACKEND_PADRAO = (location.protocol.indexOf("http")===0) ? "" : "https://b13-bling-backend-production.up.railway.app";
-function fromDefault(){ return DEFAULT.map(c=>({id:nid(),col:c.col,t:c.t,itens:c.i.map(([nome,preco,obs])=>({id:nid(),nome,preco:Number(preco),obs:obs||"",caixa:1,bling:[]}))})); }
+const nid = () => "x" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const BACKEND_PADRAO = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+function fromDefault() {
+  return DEFAULT.map(c => ({
+    id: nid(),
+    col: c.col,
+    t: c.t,
+    itens: c.i.map(([nome, preco, obs]) => ({
+      id: nid(),
+      nome,
+      preco: Number(preco),
+      obs: obs || "",
+      caixa: 1,
+      bling: []
+    }))
+  }));
+}
 let MODEL, META;
-let ESTOQUE_ATUAL={};   // {produtoId: saldo} atualizado do Bling
-let ESTOQUE_CARREGADO=false;
-function load(){
+let ESTOQUE_ATUAL = {}; // {produtoId: saldo} atualizado do Bling
+let ESTOQUE_CARREGADO = false;
+function load() {
   // localStorage é só um cache local — o que vale é o servidor (carregado logo abaixo
   // em carregarDoServidor). Antes a tabela vivia SÓ no navegador, então cada PC tinha
   // a sua versão e as quantidades apareciam diferentes em cada máquina.
-  try{
+  try {
     const raw = localStorage.getItem("b13tabela");
-    if(raw){ const o=JSON.parse(raw); MODEL=o.model; META=o.meta; }
-  }catch(e){}
-  if(!MODEL){
+    if (raw) {
+      const o = JSON.parse(raw);
+      MODEL = o.model;
+      META = o.meta;
+    }
+  } catch (e) {}
+  if (!MODEL) {
     MODEL = fromDefault();
-    MODEL.forEach(c=> c.itens.sort((a,b)=> a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'})));
-    META = { data:"11/07", endereco:"AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA - BH",
-             foot1:"PREÇOS PARA ATACADO E SOMENTE PAGAMENTO EM PIX OU DINHEIRO (ACIMA R$600,00)",
-             foot2:"LISTA SUJEITA A ALTERAÇÃO DE VALORES ANTES DA DATA E SEM AVISO PRÉVIO" };
+    MODEL.forEach(c => c.itens.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', {
+      sensitivity: 'base'
+    })));
+    META = {
+      data: "11/07",
+      endereco: "AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA - BH",
+      foot1: "PREÇOS PARA ATACADO E SOMENTE PAGAMENTO EM PIX OU DINHEIRO (ACIMA R$600,00)",
+      foot2: "LISTA SUJEITA A ALTERAÇÃO DE VALORES ANTES DA DATA E SEM AVISO PRÉVIO"
+    };
   }
   // garante os campos novos e o backend padrão
-  MODEL.forEach(c=>c.itens.forEach(it=>{ if(it.caixa==null) it.caixa=1; if(!Array.isArray(it.bling)) it.bling=[]; }));
-  if(!META.backend) META.backend = BACKEND_PADRAO;
-  if(!META.entrega) META.entrega = { origem:"AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG", maxKm:23, minEntrega:1000, faixas:[{min:1000,porKm:3.60},{min:2300,porKm:2.80},{min:2600,porKm:2.50},{min:3000,porKm:0}] };
-  const bu=document.getElementById("backendUrl"); if(bu) bu.value=META.backend;
+  MODEL.forEach(c => c.itens.forEach(it => {
+    if (it.caixa == null) it.caixa = 1;
+    if (!Array.isArray(it.bling)) it.bling = [];
+  }));
+  if (!META.backend) META.backend = BACKEND_PADRAO;
+  if (!META.entrega) META.entrega = {
+    origem: "AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG",
+    maxKm: 23,
+    minEntrega: 1000,
+    faixas: [{
+      min: 1000,
+      porKm: 3.60
+    }, {
+      min: 2300,
+      porKm: 2.80
+    }, {
+      min: 2600,
+      porKm: 2.50
+    }, {
+      min: 3000,
+      porKm: 0
+    }]
+  };
+  const bu = document.getElementById("backendUrl");
+  if (bu) bu.value = META.backend;
 }
-let _salvandoServidor=null, _pendenteSalvar=false;
-function save(){
-  try{ localStorage.setItem("b13tabela", JSON.stringify({model:MODEL,meta:META})); }catch(e){}
-  salvarNoServidor();   // <- o que faz a tabela ser a MESMA em todos os PCs
+let _salvandoServidor = null,
+  _pendenteSalvar = false;
+function save() {
+  try {
+    localStorage.setItem("b13tabela", JSON.stringify({
+      model: MODEL,
+      meta: META
+    }));
+  } catch (e) {}
+  salvarNoServidor(); // <- o que faz a tabela ser a MESMA em todos os PCs
 }
 // grava no servidor com agrupamento (não dispara uma requisição por tecla digitada)
-function salvarNoServidor(){
-  _pendenteSalvar=true;
-  if(_salvandoServidor) return;
-  _salvandoServidor=setTimeout(async function(){
-    _salvandoServidor=null;
-    if(!_pendenteSalvar) return;
-    _pendenteSalvar=false;
+function salvarNoServidor() {
+  _pendenteSalvar = true;
+  if (_salvandoServidor) return;
+  _salvandoServidor = setTimeout(async function () {
+    _salvandoServidor = null;
+    if (!_pendenteSalvar) return;
+    _pendenteSalvar = false;
     marcarSync("salvando");
-    try{
-      const r=await fetch((META.backend||BACKEND_PADRAO)+"/api/tabela",{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,meta:META})});
-      const j=await r.json();
-      marcarSync(j&&j.ok?"ok":"erro");
-    }catch(e){ marcarSync("erro"); }
-  },1500);
+    try {
+      const r = await fetch((META.backend || BACKEND_PADRAO) + "/api/tabela", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          meta: META
+        })
+      });
+      const j = await r.json();
+      marcarSync(j && j.ok ? "ok" : "erro");
+    } catch (e) {
+      marcarSync("erro");
+    }
+  }, 1500);
 }
-function marcarSync(estado){
-  const el=document.getElementById("syncTabela"); if(!el) return;
-  if(estado==="salvando"){ el.textContent="⏳ salvando…"; el.style.color="#9a95c9"; }
-  else if(estado==="ok"){ el.textContent="☁️ salvo pra todos os PCs"; el.style.color="#3ce88a"; }
-  else { el.textContent="⚠️ não salvou no servidor"; el.style.color="#ff8090"; }
+function marcarSync(estado) {
+  const el = document.getElementById("syncTabela");
+  if (!el) return;
+  if (estado === "salvando") {
+    el.textContent = "⏳ salvando…";
+    el.style.color = "#9a95c9";
+  } else if (estado === "ok") {
+    el.textContent = "☁️ salvo pra todos os PCs";
+    el.style.color = "#3ce88a";
+  } else {
+    el.textContent = "⚠️ não salvou no servidor";
+    el.style.color = "#ff8090";
+  }
 }
 // busca a versão do servidor ao abrir — é ela que vale
-async function carregarDoServidor(){
-  try{
-    const r=await fetch((META.backend||BACKEND_PADRAO)+"/api/tabela");
-    const j=await r.json();
-    if(j&&Array.isArray(j.model)&&j.model.length){
-      MODEL=j.model;
-      META=Object.assign({},META,j.meta||{});
-      MODEL.forEach(c=>c.itens.forEach(it=>{ if(it.caixa==null) it.caixa=1; if(!Array.isArray(it.bling)) it.bling=[]; }));
-      try{ localStorage.setItem("b13tabela", JSON.stringify({model:MODEL,meta:META})); }catch(e){}
+async function carregarDoServidor() {
+  try {
+    const r = await fetch((META.backend || BACKEND_PADRAO) + "/api/tabela");
+    const j = await r.json();
+    if (j && Array.isArray(j.model) && j.model.length) {
+      MODEL = j.model;
+      META = Object.assign({}, META, j.meta || {});
+      MODEL.forEach(c => c.itens.forEach(it => {
+        if (it.caixa == null) it.caixa = 1;
+        if (!Array.isArray(it.bling)) it.bling = [];
+      }));
+      try {
+        localStorage.setItem("b13tabela", JSON.stringify({
+          model: MODEL,
+          meta: META
+        }));
+      } catch (e) {}
       render();
       marcarSync("ok");
     } else {
       // servidor ainda não tem tabela: publica a que este PC tem, pra virar a oficial
       salvarNoServidor();
     }
-  }catch(e){ marcarSync("erro"); }
+  } catch (e) {
+    marcarSync("erro");
+  }
 }
 
 // ------------------- RENDER -------------------
-const fmt = (v)=> Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-function catIndex(id){ return MODEL.findIndex(c=>c.id===id); }
-function render(){
+const fmt = v => Number(v).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+function catIndex(id) {
+  return MODEL.findIndex(c => c.id === id);
+}
+function render() {
   // metadados nos campos fixos
   document.querySelector('[data-field="data"]').innerText = META.data;
   document.querySelector('[data-field="endereco"]').innerText = META.endereco;
   document.querySelector('[data-field="foot1"]').innerText = META.foot1;
   document.querySelector('[data-field="foot2"]').innerText = META.foot2;
-
-  const colDivs=[1,2,3,4].map(()=>{ const d=document.createElement("div"); d.className="col"; return d; });
-  MODEL.forEach((cat)=>{
-    const box=document.createElement("div"); box.className="cat";
+  const colDivs = [1, 2, 3, 4].map(() => {
+    const d = document.createElement("div");
+    d.className = "col";
+    return d;
+  });
+  MODEL.forEach(cat => {
+    const box = document.createElement("div");
+    box.className = "cat";
     // cabeçalho
-    const h=document.createElement("div"); h.className="cat-h";
-    h.innerHTML=`<span contenteditable="true" oninput="edCat('${cat.id}',this.innerText)">${cat.t}</span>`+
-      `<button class="xbtn" data-edit data-html2canvas-ignore="true" title="Excluir categoria" onclick="delCat('${cat.id}')">✕</button>`+
-      `<div class="catctl" data-edit data-html2canvas-ignore="true">`+
-        `<button class="mvbtn" title="Subir" onclick="moveCat('${cat.id}',-1)">▲</button>`+
-        `<button class="mvbtn" title="Descer" onclick="moveCat('${cat.id}',1)">▼</button>`+
-        `Coluna <select onchange="setCol('${cat.id}',this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${cat.col==n?"selected":""}>${n}</option>`).join("")}</select>`+
-      `</div>`;
+    const h = document.createElement("div");
+    h.className = "cat-h";
+    h.innerHTML = `<span contenteditable="true" oninput="edCat('${cat.id}',this.innerText)">${cat.t}</span>` + `<button class="xbtn" data-edit data-html2canvas-ignore="true" title="Excluir categoria" onclick="delCat('${cat.id}')">✕</button>` + `<div class="catctl" data-edit data-html2canvas-ignore="true">` + `<button class="mvbtn" title="Subir" onclick="moveCat('${cat.id}',-1)">▲</button>` + `<button class="mvbtn" title="Descer" onclick="moveCat('${cat.id}',1)">▼</button>` + `Coluna <select onchange="setCol('${cat.id}',this.value)">${[1, 2, 3, 4].map(n => `<option value="${n}" ${cat.col == n ? "selected" : ""}>${n}</option>`).join("")}</select>` + `</div>`;
     box.appendChild(h);
     // itens
-    cat.itens.forEach((it)=>{
+    cat.itens.forEach(it => {
       // estoque total dos produtos vinculados (soma dos vínculos)
-      const estTotal=(it.bling||[]).reduce((s,b)=>s+(ESTOQUE_ATUAL[b.id]!=null?ESTOQUE_ATUAL[b.id]:(b.estoque!=null?b.estoque:0)),0);
-      const temVinculo=(it.bling||[]).length>0;
-      const semEstoque=temVinculo && ESTOQUE_CARREGADO && estTotal<=0;
-      const desab=!!it.desabilitado;
-      const off=desab||semEstoque; // apagado na tela E fora da exportação
-      const row=document.createElement("div"); row.className="item"+(off?" off":"");
-      if(off) row.setAttribute("data-html2canvas-ignore","true"); // não entra na imagem/PDF
-      row.innerHTML=
-        `<div class="nm">`+
-          `<button class="offbtn" data-edit data-html2canvas-ignore="true" title="${desab?'Reativar produto':'Desabilitar (sem excluir o vínculo)'}" onclick="toggleDesab('${cat.id}','${it.id}')">${desab?'🚫':'✅'}</button>`+
-          `<span contenteditable="true" oninput="edIt('${cat.id}','${it.id}','nome',this.innerText)">${it.nome}</span>`+
-          `${semEstoque?'<span class="offtag semest">SEM ESTOQUE</span>':''}${desab?'<span class="offtag desab">DESABILITADO</span>':''}`+
-          ` <small contenteditable="true" oninput="edIt('${cat.id}','${it.id}','obs',this.innerText)">${it.obs||""}</small></div>`+
-        `<div class="pr">`+
-          `<span class="cxwrap" data-html2canvas-ignore="true">un:<input class="cxin" type="number" min="1" value="${it.caixa||1}" onchange="edCaixa('${cat.id}','${it.id}',this.value)"></span> `+
-          `R$ <span contenteditable="true" oninput="edPreco('${cat.id}','${it.id}',this.innerText)">${fmt(it.preco)}</span>`+
-          `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',-1)">▲</button>`+
-          `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',1)">▼</button>`+
-          `<button class="xbtn" data-edit data-html2canvas-ignore="true" onclick="delIt('${cat.id}','${it.id}')">✕</button></div>`;
+      const estTotal = (it.bling || []).reduce((s, b) => s + (ESTOQUE_ATUAL[b.id] != null ? ESTOQUE_ATUAL[b.id] : b.estoque != null ? b.estoque : 0), 0);
+      const temVinculo = (it.bling || []).length > 0;
+      const semEstoque = temVinculo && ESTOQUE_CARREGADO && estTotal <= 0;
+      const desab = !!it.desabilitado;
+      const off = desab || semEstoque; // apagado na tela E fora da exportação
+      const row = document.createElement("div");
+      row.className = "item" + (off ? " off" : "");
+      if (off) row.setAttribute("data-html2canvas-ignore", "true"); // não entra na imagem/PDF
+      row.innerHTML = `<div class="nm">` + `<button class="offbtn" data-edit data-html2canvas-ignore="true" title="${desab ? 'Reativar produto' : 'Desabilitar (sem excluir o vínculo)'}" onclick="toggleDesab('${cat.id}','${it.id}')">${desab ? '🚫' : '✅'}</button>` + `<span contenteditable="true" oninput="edIt('${cat.id}','${it.id}','nome',this.innerText)">${it.nome}</span>` + `${semEstoque ? '<span class="offtag semest">SEM ESTOQUE</span>' : ''}${desab ? '<span class="offtag desab">DESABILITADO</span>' : ''}` + ` <small contenteditable="true" oninput="edIt('${cat.id}','${it.id}','obs',this.innerText)">${it.obs || ""}</small></div>` + `<div class="pr">` + `<span class="cxwrap" data-html2canvas-ignore="true">un:<input class="cxin" type="number" min="1" value="${it.caixa || 1}" onchange="edCaixa('${cat.id}','${it.id}',this.value)"></span> ` + `R$ <span contenteditable="true" oninput="edPreco('${cat.id}','${it.id}',this.innerText)">${fmt(it.preco)}</span>` + `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',-1)">▲</button>` + `<button class="mvbtn" data-edit data-html2canvas-ignore="true" onclick="moveIt('${cat.id}','${it.id}',1)">▼</button>` + `<button class="xbtn" data-edit data-html2canvas-ignore="true" onclick="delIt('${cat.id}','${it.id}')">✕</button></div>`;
       box.appendChild(row);
-      const vb=document.createElement("div"); vb.className="vbind"; vb.setAttribute("data-html2canvas-ignore","true");
-      vb.innerHTML=`<div class="lbl">Vínculo Bling — busque e clique nos produtos/sabores:</div>`+
-        `<div class="chips" id="chips_${it.id}">${chipsHTML(cat.id,it)}</div>`+
-        `<input class="busca" placeholder="buscar no Bling...">`+
-        `<div class="res" id="res_${it.id}"></div>`;
+      const vb = document.createElement("div");
+      vb.className = "vbind";
+      vb.setAttribute("data-html2canvas-ignore", "true");
+      vb.innerHTML = `<div class="lbl">Vínculo Bling — busque e clique nos produtos/sabores:</div>` + `<div class="chips" id="chips_${it.id}">${chipsHTML(cat.id, it)}</div>` + `<input class="busca" placeholder="buscar no Bling...">` + `<div class="res" id="res_${it.id}"></div>`;
       // captura referências locais — imunes ao render()
-      (function(catId, itId, inputEl, resEl){
+      (function (catId, itId, inputEl, resEl) {
         let timer;
-        let ultimaLista=[]; // guarda os produtos da última busca, pra achar pelo índice no clique
-        inputEl.addEventListener("input", function(){
+        let ultimaLista = []; // guarda os produtos da última busca, pra achar pelo índice no clique
+        inputEl.addEventListener("input", function () {
           clearTimeout(timer);
-          const term=(this.value||"").trim();
-          if(term.length<2){ resEl.innerHTML=""; return; }
-          resEl.innerHTML="<div class='resload'>buscando…</div>";
-          timer=setTimeout(async()=>{
-            try{
-              const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/buscar?nome="+encodeURIComponent(term);
-              const r=await fetch(url); const j=await r.json(); const lista=j.data||[];
-              ultimaLista=lista;
-              resEl.innerHTML="";
-              if(!lista.length){ resEl.innerHTML="<div class='resload'>nada encontrado</div>"; return; }
-              resEl.innerHTML=lista.map((prod,ix)=>
-                `<button type="button" class="resitem" data-ix="${ix}">${esc(prod.nome)} <small>#${esc(String(prod.codigo))} · est ${prod.estoque??"?"}</small></button>`
-              ).join("");
-            }catch(e){ resEl.innerHTML="<div class='resload'>erro ao buscar</div>"; }
-          },400);
+          const term = (this.value || "").trim();
+          if (term.length < 2) {
+            resEl.innerHTML = "";
+            return;
+          }
+          resEl.innerHTML = "<div class='resload'>buscando…</div>";
+          timer = setTimeout(async () => {
+            try {
+              const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/buscar?nome=" + encodeURIComponent(term);
+              const r = await fetch(url);
+              const j = await r.json();
+              const lista = j.data || [];
+              ultimaLista = lista;
+              resEl.innerHTML = "";
+              if (!lista.length) {
+                resEl.innerHTML = "<div class='resload'>nada encontrado</div>";
+                return;
+              }
+              resEl.innerHTML = lista.map((prod, ix) => {
+                var _prod$estoque;
+                return `<button type="button" class="resitem" data-ix="${ix}">${esc(prod.nome)} <small>#${esc(String(prod.codigo))} · est ${(_prod$estoque = prod.estoque) !== null && _prod$estoque !== void 0 ? _prod$estoque : "?"}</small></button>`;
+              }).join("");
+            } catch (e) {
+              resEl.innerHTML = "<div class='resload'>erro ao buscar</div>";
+            }
+          }, 400);
         });
         // um único listener no container (delegação) — mais robusto do que um por botão
-        resEl.addEventListener("click", function(ev){
-          const btn=ev.target.closest(".resitem"); if(!btn||!resEl.contains(btn)) return;
-          const prod=ultimaLista[Number(btn.dataset.ix)]; if(!prod) return;
-          const ci=catIndex(catId); const c=MODEL[ci];
-          const it=c&&c.itens.find(x=>x.id===itId); if(!it) return;
-          if(!Array.isArray(it.bling)) it.bling=[];
-          if(!it.bling.some(b=>String(b.codigo)===String(prod.codigo)))
-            it.bling.push({codigo:prod.codigo,id:prod.id,nome:prod.nome,estoque:prod.estoque});
+        resEl.addEventListener("click", function (ev) {
+          const btn = ev.target.closest(".resitem");
+          if (!btn || !resEl.contains(btn)) return;
+          const prod = ultimaLista[Number(btn.dataset.ix)];
+          if (!prod) return;
+          const ci = catIndex(catId);
+          const c = MODEL[ci];
+          const it = c && c.itens.find(x => x.id === itId);
+          if (!it) return;
+          if (!Array.isArray(it.bling)) it.bling = [];
+          if (!it.bling.some(b => String(b.codigo) === String(prod.codigo))) it.bling.push({
+            codigo: prod.codigo,
+            id: prod.id,
+            nome: prod.nome,
+            estoque: prod.estoque
+          });
           save();
           // atualiza só os chips desse item — evita reconstruir a tela toda
           // (que perdia edições em andamento e podia dar impressão de "mudar de lugar")
-          const ch=document.getElementById("chips_"+itId); if(ch) ch.innerHTML=chipsHTML(catId,it);
-          resEl.innerHTML=""; inputEl.value="";
+          const ch = document.getElementById("chips_" + itId);
+          if (ch) ch.innerHTML = chipsHTML(catId, it);
+          resEl.innerHTML = "";
+          inputEl.value = "";
         });
       })(cat.id, it.id, vb.querySelector("input.busca"), vb.querySelector(".res"));
       box.appendChild(vb);
     });
     // adicionar produto
-    const add=document.createElement("button"); add.className="addbtn"; add.setAttribute("data-edit",""); add.setAttribute("data-html2canvas-ignore","true");
-    add.textContent="+ Produto"; add.onclick=()=>addItem(cat.id);
+    const add = document.createElement("button");
+    add.className = "addbtn";
+    add.setAttribute("data-edit", "");
+    add.setAttribute("data-html2canvas-ignore", "true");
+    add.textContent = "+ Produto";
+    add.onclick = () => addItem(cat.id);
     box.appendChild(add);
-
-    colDivs[cat.col-1].appendChild(box);
+    colDivs[cat.col - 1].appendChild(box);
   });
-  const cont=document.getElementById("cols"); cont.innerHTML=""; colDivs.forEach(d=>cont.appendChild(d));
+  const cont = document.getElementById("cols");
+  cont.innerHTML = "";
+  colDivs.forEach(d => cont.appendChild(d));
 }
 
 // ------------------- EDIÇÕES -------------------
-function edCat(id,v){ const c=MODEL[catIndex(id)]; if(c){ c.t=v; save(); } }
-function edIt(cid,iid,campo,v){ const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid); if(it){ it[campo]=v; save(); } }
-function edPreco(cid,iid,v){ const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid); if(it){ it.preco=parseFloat(v.replace(/\./g,"").replace(",","."))||0; save(); } }
-function delCat(id){ if(!confirm("Excluir esta categoria e todos os seus produtos?"))return; MODEL.splice(catIndex(id),1); save(); render(); }
-function delIt(cid,iid){ const c=MODEL[catIndex(cid)]; c.itens=c.itens.filter(x=>x.id!==iid); save(); render(); }
-function addItem(cid){ const c=MODEL[catIndex(cid)]; c.itens.push({id:nid(),nome:"NOVO PRODUTO",preco:0,obs:""}); save(); render(); }
-function addCategoria(){ MODEL.push({id:nid(),col:1,t:"NOVA CATEGORIA",itens:[]}); save(); render(); }
-function setCol(id,v){ MODEL[catIndex(id)].col=Number(v); save(); render(); }
-function moveCat(id,dir){ const i=catIndex(id); const j=i+dir; if(j<0||j>=MODEL.length)return; [MODEL[i],MODEL[j]]=[MODEL[j],MODEL[i]]; save(); render(); }
-function moveIt(cid,iid,dir){ const c=MODEL[catIndex(cid)]; const i=c.itens.findIndex(x=>x.id===iid); const j=i+dir; if(j<0||j>=c.itens.length)return; [c.itens[i],c.itens[j]]=[c.itens[j],c.itens[i]]; save(); render(); }
+function edCat(id, v) {
+  const c = MODEL[catIndex(id)];
+  if (c) {
+    c.t = v;
+    save();
+  }
+}
+function edIt(cid, iid, campo, v) {
+  const c = MODEL[catIndex(cid)];
+  const it = c && c.itens.find(x => x.id === iid);
+  if (it) {
+    it[campo] = v;
+    save();
+  }
+}
+function edPreco(cid, iid, v) {
+  const c = MODEL[catIndex(cid)];
+  const it = c && c.itens.find(x => x.id === iid);
+  if (it) {
+    it.preco = parseFloat(v.replace(/\./g, "").replace(",", ".")) || 0;
+    save();
+  }
+}
+function delCat(id) {
+  if (!confirm("Excluir esta categoria e todos os seus produtos?")) return;
+  MODEL.splice(catIndex(id), 1);
+  save();
+  render();
+}
+function delIt(cid, iid) {
+  const c = MODEL[catIndex(cid)];
+  c.itens = c.itens.filter(x => x.id !== iid);
+  save();
+  render();
+}
+function addItem(cid) {
+  const c = MODEL[catIndex(cid)];
+  c.itens.push({
+    id: nid(),
+    nome: "NOVO PRODUTO",
+    preco: 0,
+    obs: ""
+  });
+  save();
+  render();
+}
+function addCategoria() {
+  MODEL.push({
+    id: nid(),
+    col: 1,
+    t: "NOVA CATEGORIA",
+    itens: []
+  });
+  save();
+  render();
+}
+function setCol(id, v) {
+  MODEL[catIndex(id)].col = Number(v);
+  save();
+  render();
+}
+function moveCat(id, dir) {
+  const i = catIndex(id);
+  const j = i + dir;
+  if (j < 0 || j >= MODEL.length) return;
+  [MODEL[i], MODEL[j]] = [MODEL[j], MODEL[i]];
+  save();
+  render();
+}
+function moveIt(cid, iid, dir) {
+  const c = MODEL[catIndex(cid)];
+  const i = c.itens.findIndex(x => x.id === iid);
+  const j = i + dir;
+  if (j < 0 || j >= c.itens.length) return;
+  [c.itens[i], c.itens[j]] = [c.itens[j], c.itens[i]];
+  save();
+  render();
+}
 
 // metadados (data/endereço/rodapé)
-document.querySelectorAll("[data-field]").forEach(el=>{
-  el.addEventListener("input",()=>{ META[el.dataset.field]=el.innerText; save(); });
+document.querySelectorAll("[data-field]").forEach(el => {
+  el.addEventListener("input", () => {
+    META[el.dataset.field] = el.innerText;
+    save();
+  });
 });
-
-function toggleEdit(){ document.body.classList.toggle("editing", document.getElementById("editToggle").checked); }
-function toggleBind(){ document.body.classList.toggle("binding", document.getElementById("bindToggle").checked); }
-function setBackend(v){ META.backend=(v||"").trim(); save(); }
-
-let _faixasTmp=[];
-function abrirEntrega(){
-  const e=META.entrega||{};
-  document.getElementById("e_origem").value=e.origem||"";
-  document.getElementById("e_maxkm").value=e.maxKm??23;
-  document.getElementById("e_min").value=e.minEntrega??1000;
-  _faixasTmp=JSON.parse(JSON.stringify(e.faixas||[]));
-  renderFaixas();
-  document.getElementById("modalEntrega").style.display="flex";
+function toggleEdit() {
+  document.body.classList.toggle("editing", document.getElementById("editToggle").checked);
 }
-function fecharEntrega(){ document.getElementById("modalEntrega").style.display="none"; }
-function renderFaixas(){
-  const box=document.getElementById("e_faixas");
-  box.innerHTML=_faixasTmp.map((f,ix)=>`<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+function toggleBind() {
+  document.body.classList.toggle("binding", document.getElementById("bindToggle").checked);
+}
+function setBackend(v) {
+  META.backend = (v || "").trim();
+  save();
+}
+let _faixasTmp = [];
+function abrirEntrega() {
+  var _e$maxKm, _e$minEntrega;
+  const e = META.entrega || {};
+  document.getElementById("e_origem").value = e.origem || "";
+  document.getElementById("e_maxkm").value = (_e$maxKm = e.maxKm) !== null && _e$maxKm !== void 0 ? _e$maxKm : 23;
+  document.getElementById("e_min").value = (_e$minEntrega = e.minEntrega) !== null && _e$minEntrega !== void 0 ? _e$minEntrega : 1000;
+  _faixasTmp = JSON.parse(JSON.stringify(e.faixas || []));
+  renderFaixas();
+  document.getElementById("modalEntrega").style.display = "flex";
+}
+function fecharEntrega() {
+  document.getElementById("modalEntrega").style.display = "none";
+}
+function renderFaixas() {
+  const box = document.getElementById("e_faixas");
+  box.innerHTML = _faixasTmp.map((f, ix) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
     <span style="font-size:12px;color:#cfc9f5">acima de R$</span>
     <input type="number" value="${f.min}" onchange="_faixasTmp[${ix}].min=parseFloat(this.value)||0" style="width:90px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
     <span style="font-size:12px;color:#cfc9f5">→ R$</span>
@@ -447,111 +696,197 @@ function renderFaixas(){
     <button onclick="_faixasTmp.splice(${ix},1);renderFaixas()" style="background:none;border:none;color:#e5563f;cursor:pointer;font-size:14px">✕</button>
   </div>`).join("");
 }
-function addFaixa(){ _faixasTmp.push({min:0,porKm:0}); renderFaixas(); }
-function salvarEntrega(){
-  META.entrega={
-    origem:document.getElementById("e_origem").value.trim(),
-    maxKm:parseFloat(document.getElementById("e_maxkm").value)||23,
-    minEntrega:parseFloat(document.getElementById("e_min").value)||0,
-    faixas:_faixasTmp.slice().sort((a,b)=>a.min-b.min),
+function addFaixa() {
+  _faixasTmp.push({
+    min: 0,
+    porKm: 0
+  });
+  renderFaixas();
+}
+function salvarEntrega() {
+  META.entrega = {
+    origem: document.getElementById("e_origem").value.trim(),
+    maxKm: parseFloat(document.getElementById("e_maxkm").value) || 23,
+    minEntrega: parseFloat(document.getElementById("e_min").value) || 0,
+    faixas: _faixasTmp.slice().sort((a, b) => a.min - b.min)
   };
-  save(); fecharEntrega();
+  save();
+  fecharEntrega();
   alert("Configuração de entrega salva! Clique em 📤 Publicar para o sistema para aplicar no totem.");
 }
-async function publicar(){
-  const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela";
-  if(!confirm("Publicar a tabela atual para o sistema (totem)?")) return;
-  try{
-    const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:MODEL,meta:META})});
-    const j=await r.json().catch(()=>({}));
-    if(r.ok){ alert("✅ Tabela publicada! O totem já vai ler os novos dados.\nProdutos publicados: "+(j.produtos??"?")); }
-    else{ alert("Falha ao publicar: "+(j.erro||r.status)); }
-  }catch(e){ alert("Erro ao publicar (o backend está online e conectado?): "+e.message); }
+async function publicar() {
+  const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela";
+  if (!confirm("Publicar a tabela atual para o sistema (totem)?")) return;
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        meta: META
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      var _j$produtos;
+      alert("✅ Tabela publicada! O totem já vai ler os novos dados.\nProdutos publicados: " + ((_j$produtos = j.produtos) !== null && _j$produtos !== void 0 ? _j$produtos : "?"));
+    } else {
+      alert("Falha ao publicar: " + (j.erro || r.status));
+    }
+  } catch (e) {
+    alert("Erro ao publicar (o backend está online e conectado?): " + e.message);
+  }
 }
-function edCaixa(cid,iid,v){ const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid); if(it){ it.caixa=Math.max(1,parseInt(v)||1); save(); } }
+function edCaixa(cid, iid, v) {
+  const c = MODEL[catIndex(cid)];
+  const it = c && c.itens.find(x => x.id === iid);
+  if (it) {
+    it.caixa = Math.max(1, parseInt(v) || 1);
+    save();
+  }
+}
 
 // desabilita/reativa um produto sem excluir o vínculo
-function toggleDesab(cid,iid){
-  const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid);
-  if(it){ it.desabilitado=!it.desabilitado; save(); render(); }
+function toggleDesab(cid, iid) {
+  const c = MODEL[catIndex(cid)];
+  const it = c && c.itens.find(x => x.id === iid);
+  if (it) {
+    it.desabilitado = !it.desabilitado;
+    save();
+    render();
+  }
 }
 
 // busca o estoque atual de todos os produtos vinculados no Bling
-async function atualizarEstoque(){
-  const btn=document.getElementById("btnEstoque");
-  if(btn){ btn.textContent="⏳ Buscando estoque…"; btn.disabled=true; }
-  const ids=[];
-  MODEL.forEach(c=>c.itens.forEach(it=>(it.bling||[]).forEach(b=>{ if(b.id) ids.push(b.id); })));
-  try{
-    const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/estoques";
-    const j=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})}).then(r=>r.json());
-    ESTOQUE_ATUAL=j.estoques||{};
-    ESTOQUE_CARREGADO=true;
+async function atualizarEstoque() {
+  const btn = document.getElementById("btnEstoque");
+  if (btn) {
+    btn.textContent = "⏳ Buscando estoque…";
+    btn.disabled = true;
+  }
+  const ids = [];
+  MODEL.forEach(c => c.itens.forEach(it => (it.bling || []).forEach(b => {
+    if (b.id) ids.push(b.id);
+  })));
+  try {
+    const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela/estoques";
+    const j = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        ids
+      })
+    }).then(r => r.json());
+    ESTOQUE_ATUAL = j.estoques || {};
+    ESTOQUE_CARREGADO = true;
     render();
-  }catch(e){ alert("Erro ao buscar estoque."); }
-  if(btn){ btn.textContent="📦 Atualizar estoque"; btn.disabled=false; }
+  } catch (e) {
+    alert("Erro ao buscar estoque.");
+  }
+  if (btn) {
+    btn.textContent = "📦 Atualizar estoque";
+    btn.disabled = false;
+  }
 }
-
-function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function chipsHTML(cid,it){
-  return (it.bling||[]).map(b=>`<span class="chip">#${esc(b.codigo)} <small>${esc(b.nome||"")}${b.estoque!=null?` · est ${b.estoque}`:""}</small><button onclick="rmBling('${cid}','${it.id}','${esc(b.codigo)}')">✕</button></span>`).join("") || `<span style="font-size:10px;color:#7d78b0">nenhum vínculo ainda</span>`;
+function esc(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-const _timers={};
+function chipsHTML(cid, it) {
+  return (it.bling || []).map(b => `<span class="chip">#${esc(b.codigo)} <small>${esc(b.nome || "")}${b.estoque != null ? ` · est ${b.estoque}` : ""}</small><button onclick="rmBling('${cid}','${it.id}','${esc(b.codigo)}')">✕</button></span>`).join("") || `<span style="font-size:10px;color:#7d78b0">nenhum vínculo ainda</span>`;
+}
+const _timers = {};
 // busca produtos no Bling e exibe na div de resultados do item
-function rmBling(cid,iid,codigo){
-  const c=MODEL[catIndex(cid)]; const it=c&&c.itens.find(x=>x.id===iid); if(!it) return;
-  it.bling=it.bling.filter(b=>String(b.codigo)!==String(codigo)); save();
-  const ch=document.getElementById("chips_"+iid); if(ch) ch.innerHTML=chipsHTML(cid,it);
+function rmBling(cid, iid, codigo) {
+  const c = MODEL[catIndex(cid)];
+  const it = c && c.itens.find(x => x.id === iid);
+  if (!it) return;
+  it.bling = it.bling.filter(b => String(b.codigo) !== String(codigo));
+  save();
+  const ch = document.getElementById("chips_" + iid);
+  if (ch) ch.innerHTML = chipsHTML(cid, it);
 }
 
 // ------------------- EXPORTAÇÕES -------------------
-function sortAll(){ MODEL.forEach(c=> c.itens.sort((a,b)=> a.nome.localeCompare(b.nome,'pt-BR',{sensitivity:'base'}))); save(); render(); }
-
-async function verificarVinculos(){
-  const backend=(META.backend||BACKEND_PADRAO).replace(/\/$/,"");
-  const todos=[];
-  MODEL.forEach(c=>c.itens.forEach(it=>(it.bling||[]).forEach(b=>todos.push({cid:c.id,iid:it.id,codigo:b.codigo,nomeProduto:it.nome}))));
-  if(!todos.length){ alert("Nenhum vínculo encontrado na tabela."); return; }
+function sortAll() {
+  MODEL.forEach(c => c.itens.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', {
+    sensitivity: 'base'
+  })));
+  save();
+  render();
+}
+async function verificarVinculos() {
+  const backend = (META.backend || BACKEND_PADRAO).replace(/\/$/, "");
+  const todos = [];
+  MODEL.forEach(c => c.itens.forEach(it => (it.bling || []).forEach(b => todos.push({
+    cid: c.id,
+    iid: it.id,
+    codigo: b.codigo,
+    nomeProduto: it.nome
+  }))));
+  if (!todos.length) {
+    alert("Nenhum vínculo encontrado na tabela.");
+    return;
+  }
 
   // busca SKU específico (para remover 25 e 26 rapidamente)
-  const skuBusca=prompt(`Há ${todos.length} vínculos na tabela.\n\nDigite um SKU para localizar e remover (ex: 25), ou deixe em branco para verificar TODOS contra o Bling:`,"");
-  if(skuBusca===null) return;
-
-  if(skuBusca.trim()){
-    const achados=todos.filter(v=>String(v.codigo)===String(skuBusca.trim()));
-    if(!achados.length){ alert(`SKU #${skuBusca} não encontrado em nenhum vínculo.`); return; }
-    const lista=achados.map(v=>`• ${v.nomeProduto} → #${v.codigo}`).join("\n");
-    if(!confirm(`SKU #${skuBusca} encontrado em:\n\n${lista}\n\nRemover esses vínculos?`)) return;
-    achados.forEach(v=>{
-      const c=MODEL[catIndex(v.cid)]; if(!c) return;
-      const it=c.itens.find(x=>x.id===v.iid); if(!it) return;
-      it.bling=(it.bling||[]).filter(b=>String(b.codigo)!==String(v.codigo));
+  const skuBusca = prompt(`Há ${todos.length} vínculos na tabela.\n\nDigite um SKU para localizar e remover (ex: 25), ou deixe em branco para verificar TODOS contra o Bling:`, "");
+  if (skuBusca === null) return;
+  if (skuBusca.trim()) {
+    const achados = todos.filter(v => String(v.codigo) === String(skuBusca.trim()));
+    if (!achados.length) {
+      alert(`SKU #${skuBusca} não encontrado em nenhum vínculo.`);
+      return;
+    }
+    const lista = achados.map(v => `• ${v.nomeProduto} → #${v.codigo}`).join("\n");
+    if (!confirm(`SKU #${skuBusca} encontrado em:\n\n${lista}\n\nRemover esses vínculos?`)) return;
+    achados.forEach(v => {
+      const c = MODEL[catIndex(v.cid)];
+      if (!c) return;
+      const it = c.itens.find(x => x.id === v.iid);
+      if (!it) return;
+      it.bling = (it.bling || []).filter(b => String(b.codigo) !== String(v.codigo));
     });
-    save(); render();
+    save();
+    render();
     alert(`✅ Vínculo(s) com SKU #${skuBusca} removido(s)!`);
     return;
   }
 
   // verificação completa contra o Bling
-  if(!confirm(`Verificar ${todos.length} vínculo(s) contra o Bling?\nIsso pode demorar alguns segundos.`)) return;
-  const invalidos=[];
-  for(const v of todos){
-    try{
-      const r=await fetch(`${backend}/api/raw?path=/produtos?codigo=${encodeURIComponent(v.codigo)}&limite=1`);
-      const j=await r.json();
-      const lista=j.data||[];
-      if(!lista.some(p=>String(p.codigo)===String(v.codigo))) invalidos.push(v);
-    }catch(e){ invalidos.push({...v, erro:true}); }
+  if (!confirm(`Verificar ${todos.length} vínculo(s) contra o Bling?\nIsso pode demorar alguns segundos.`)) return;
+  const invalidos = [];
+  for (const v of todos) {
+    try {
+      const r = await fetch(`${backend}/api/raw?path=/produtos?codigo=${encodeURIComponent(v.codigo)}&limite=1`);
+      const j = await r.json();
+      const lista = j.data || [];
+      if (!lista.some(p => String(p.codigo) === String(v.codigo))) invalidos.push(v);
+    } catch (e) {
+      invalidos.push({
+        ...v,
+        erro: true
+      });
+    }
   }
-  if(!invalidos.length){ alert(`✅ Todos os ${todos.length} vínculos são válidos no Bling!`); return; }
-  const nomes=invalidos.map(v=>`• #${v.codigo} — ${v.nomeProduto}`).join("\n");
-  if(!confirm(`⚠️ ${invalidos.length} inválido(s):\n\n${nomes}\n\nRemover automaticamente?`)) return;
-  invalidos.forEach(v=>{
-    const c=MODEL[catIndex(v.cid)]; if(!c) return;
-    const it=c.itens.find(x=>x.id===v.iid); if(!it) return;
-    it.bling=(it.bling||[]).filter(b=>String(b.codigo)!==String(v.codigo));
+  if (!invalidos.length) {
+    alert(`✅ Todos os ${todos.length} vínculos são válidos no Bling!`);
+    return;
+  }
+  const nomes = invalidos.map(v => `• #${v.codigo} — ${v.nomeProduto}`).join("\n");
+  if (!confirm(`⚠️ ${invalidos.length} inválido(s):\n\n${nomes}\n\nRemover automaticamente?`)) return;
+  invalidos.forEach(v => {
+    const c = MODEL[catIndex(v.cid)];
+    if (!c) return;
+    const it = c.itens.find(x => x.id === v.iid);
+    if (!it) return;
+    it.bling = (it.bling || []).filter(b => String(b.codigo) !== String(v.codigo));
   });
-  save(); render();
+  save();
+  render();
   alert(`✅ ${invalidos.length} vínculo(s) removido(s)!`);
 }
 
@@ -561,177 +896,289 @@ async function verificarVinculos(){
 // funciona certo não importa quantos produtos/categorias tiver, sem precisar
 // travar num número fixo de pixels que só serve pra uma quantidade de itens.
 const RATIO_ALVO_POSTER = 0.5246;
-function calibrarLarguraPoster(targetRatio){
+function calibrarLarguraPoster(targetRatio) {
   targetRatio = targetRatio || RATIO_ALVO_POSTER;
-  const poster=document.getElementById("poster");
-  const larguraOriginal=poster.style.width;
-  let lo=380, hi=2200, melhorW=poster.offsetWidth, melhorDiff=Infinity;
-  for(let i=0;i<16;i++){
-    const meio=Math.round((lo+hi)/2);
-    poster.style.width=meio+"px";
-    const h=poster.offsetHeight; // força o reflow e lê a altura real com essa largura
-    const ratio=meio/h;
-    const diff=Math.abs(ratio-targetRatio);
-    if(diff<melhorDiff){ melhorDiff=diff; melhorW=meio; }
-    if(ratio>targetRatio) hi=meio; else lo=meio; // ratio cresce com a largura, então dá pra buscar por bisseção
+  const poster = document.getElementById("poster");
+  const larguraOriginal = poster.style.width;
+  let lo = 380,
+    hi = 2200,
+    melhorW = poster.offsetWidth,
+    melhorDiff = Infinity;
+  for (let i = 0; i < 16; i++) {
+    const meio = Math.round((lo + hi) / 2);
+    poster.style.width = meio + "px";
+    const h = poster.offsetHeight; // força o reflow e lê a altura real com essa largura
+    const ratio = meio / h;
+    const diff = Math.abs(ratio - targetRatio);
+    if (diff < melhorDiff) {
+      melhorDiff = diff;
+      melhorW = meio;
+    }
+    if (ratio > targetRatio) hi = meio;else lo = meio; // ratio cresce com a largura, então dá pra buscar por bisseção
   }
-  poster.style.width=melhorW+"px";
+  poster.style.width = melhorW + "px";
   void poster.offsetHeight; // garante que o layout final foi aplicado antes de capturar
   return larguraOriginal;
 }
-function restaurarLarguraPoster(larguraOriginal){
-  document.getElementById("poster").style.width=larguraOriginal||"";
+function restaurarLarguraPoster(larguraOriginal) {
+  document.getElementById("poster").style.width = larguraOriginal || "";
 }
 
 // gera a imagem da tabela e salva no servidor pra os vendedores acessarem no Apoio ao Vendedor
-function publicarTabelaVendedor(){
-  const antesEdit=document.body.classList.contains("editing");
+function publicarTabelaVendedor() {
+  const antesEdit = document.body.classList.contains("editing");
   // garante que a tabela saia limpa (sem controles de edição)
-  document.body.classList.remove("editing","binding");
-  const larguraOriginal=calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+  document.body.classList.remove("editing", "binding");
+  const larguraOriginal = calibrarLarguraPoster();
+  html2canvas(document.getElementById("poster"), {
+    scale: 2,
+    backgroundColor: "#262366",
+    useCORS: true
+  }).then(canvas => {
     restaurarLarguraPoster(larguraOriginal);
-    const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
-    fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:canvas.toDataURL("image/png")})})
-      .then(r=>r.json())
-      .then(j=>{ if(j.ok) alert("✅ Tabela disponibilizada!\n\nOs vendedores já podem compartilhá-la no 'Apoio ao Vendedor' → botão 'Compartilhar tabela'."); else alert("Erro ao disponibilizar: "+(j.erro||"tente de novo")); })
-      .catch(()=>alert("Erro ao enviar. Verifique a conexão."));
-  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
+    const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela/salvar-imagem";
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        imagem: canvas.toDataURL("image/png")
+      })
+    }).then(r => r.json()).then(j => {
+      if (j.ok) alert("✅ Tabela disponibilizada!\n\nOs vendedores já podem compartilhá-la no 'Apoio ao Vendedor' → botão 'Compartilhar tabela'.");else alert("Erro ao disponibilizar: " + (j.erro || "tente de novo"));
+    }).catch(() => alert("Erro ao enviar. Verifique a conexão."));
+  }).catch(() => restaurarLarguraPoster(larguraOriginal));
 }
-
-function enviarImagem(){
-  const larguraOriginal=calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+function enviarImagem() {
+  const larguraOriginal = calibrarLarguraPoster();
+  html2canvas(document.getElementById("poster"), {
+    scale: 2,
+    backgroundColor: "#262366",
+    useCORS: true
+  }).then(canvas => {
     restaurarLarguraPoster(larguraOriginal);
     // salva no servidor pra ficar disponível no Apoio ao Vendedor
-    try{
-      const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
-      fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:canvas.toDataURL("image/png")})});
-    }catch(e){}
-    canvas.toBlob(async (blob)=>{
-      const file=new File([blob],"tabela_precos_b13.png",{type:"image/png"});
-      if(navigator.canShare && navigator.canShare({files:[file]})){
-        try{ await navigator.share({files:[file], title:"Tabela de Preços B13", text:"Tabela de preços B13 Bebidas"}); }catch(e){}
+    try {
+      const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela/salvar-imagem";
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          imagem: canvas.toDataURL("image/png")
+        })
+      });
+    } catch (e) {}
+    canvas.toBlob(async blob => {
+      const file = new File([blob], "tabela_precos_b13.png", {
+        type: "image/png"
+      });
+      if (navigator.canShare && navigator.canShare({
+        files: [file]
+      })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: "Tabela de Preços B13",
+            text: "Tabela de preços B13 Bebidas"
+          });
+        } catch (e) {}
       } else {
-        const a=document.createElement("a"); a.download=file.name; a.href=URL.createObjectURL(blob); a.click();
+        const a = document.createElement("a");
+        a.download = file.name;
+        a.href = URL.createObjectURL(blob);
+        a.click();
         alert("Este dispositivo não permite compartilhar direto. A imagem foi baixada — anexe no WhatsApp manualmente.\n\nNo celular, o botão Enviar abre o WhatsApp direto.");
       }
-    },"image/png");
-  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
+    }, "image/png");
+  }).catch(() => restaurarLarguraPoster(larguraOriginal));
 }
-
-function exportPDF(){
-  const larguraOriginal=calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+function exportPDF() {
+  const larguraOriginal = calibrarLarguraPoster();
+  html2canvas(document.getElementById("poster"), {
+    scale: 2,
+    backgroundColor: "#262366",
+    useCORS: true
+  }).then(canvas => {
     restaurarLarguraPoster(larguraOriginal);
-    const {jsPDF}=window.jspdf;
-    const imgData=canvas.toDataURL("image/png");
-    const imgRatio=canvas.width/canvas.height;
+    const {
+      jsPDF
+    } = window.jspdf;
+    const imgData = canvas.toDataURL("image/png");
+    const imgRatio = canvas.width / canvas.height;
     // cria a página do PDF com o MESMO formato/proporção da imagem (não um A4
     // fixo) — assim ela preenche 100% da folha sem esticar/distorcer nada
-    const pageWmm=297; // largura de referência
-    const pageHmm=pageWmm/imgRatio;
-    const doc=new jsPDF({unit:"mm",format:[pageWmm,pageHmm]});
-    doc.addImage(imgData,"PNG",0,0,pageWmm,pageHmm);
+    const pageWmm = 297; // largura de referência
+    const pageHmm = pageWmm / imgRatio;
+    const doc = new jsPDF({
+      unit: "mm",
+      format: [pageWmm, pageHmm]
+    });
+    doc.addImage(imgData, "PNG", 0, 0, pageWmm, pageHmm);
     doc.save("tabela_precos_b13.pdf");
-  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
+  }).catch(() => restaurarLarguraPoster(larguraOriginal));
 }
-
-function exportPNG(){
-  const larguraOriginal=calibrarLarguraPoster();
-  html2canvas(document.getElementById("poster"),{scale:2,backgroundColor:"#262366",useCORS:true}).then(canvas=>{
+function exportPNG() {
+  const larguraOriginal = calibrarLarguraPoster();
+  html2canvas(document.getElementById("poster"), {
+    scale: 2,
+    backgroundColor: "#262366",
+    useCORS: true
+  }).then(canvas => {
     restaurarLarguraPoster(larguraOriginal);
-    const dataUrl=canvas.toDataURL("image/png");
-    const a=document.createElement("a"); a.download="tabela_precos_b13.png"; a.href=dataUrl; a.click();
+    const dataUrl = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.download = "tabela_precos_b13.png";
+    a.href = dataUrl;
+    a.click();
     // salva no servidor pra ficar disponível no Apoio ao Vendedor
-    try{
-      const url=(META.backend||BACKEND_PADRAO).replace(/\/$/,"")+"/api/tabela/salvar-imagem";
-      fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imagem:dataUrl})});
-    }catch(e){}
-  }).catch(()=>restaurarLarguraPoster(larguraOriginal));
+    try {
+      const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela/salvar-imagem";
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          imagem: dataUrl
+        })
+      });
+    } catch (e) {}
+  }).catch(() => restaurarLarguraPoster(larguraOriginal));
 }
-function modoVisu(on){
+function modoVisu(on) {
   document.body.classList.toggle("viewonly", on);
-  document.querySelectorAll('#poster [contenteditable]').forEach(el=> el.setAttribute("contenteditable", on?"false":"true"));
-  if(on){ document.getElementById("editToggle").checked=false; document.getElementById("bindToggle").checked=false; document.body.classList.remove("editing","binding"); }
+  document.querySelectorAll('#poster [contenteditable]').forEach(el => el.setAttribute("contenteditable", on ? "false" : "true"));
+  if (on) {
+    document.getElementById("editToggle").checked = false;
+    document.getElementById("bindToggle").checked = false;
+    document.body.classList.remove("editing", "binding");
+  }
 }
-async function exportVarejo(){
-  const nomeLista=prompt("Nome EXATO da lista de preços no Bling:","VAREJO");
-  if(nomeLista===null) return;
-  const backend=(META.backend||BACKEND_PADRAO).replace(/\/$/,"");
+async function exportVarejo() {
+  const nomeLista = prompt("Nome EXATO da lista de preços no Bling:", "VAREJO");
+  if (nomeLista === null) return;
+  const backend = (META.backend || BACKEND_PADRAO).replace(/\/$/, "");
 
   // coleta todos os vínculos
-  const vincs=[];
-  MODEL.forEach(c=>c.itens.forEach(it=>(it.bling||[]).forEach(b=>vincs.push({codigo:b.codigo,nomeProduto:it.nome}))));
-  if(!vincs.length){ alert("Nenhum produto vinculado encontrado."); return; }
-
+  const vincs = [];
+  MODEL.forEach(c => c.itens.forEach(it => (it.bling || []).forEach(b => vincs.push({
+    codigo: b.codigo,
+    nomeProduto: it.nome
+  }))));
+  if (!vincs.length) {
+    alert("Nenhum produto vinculado encontrado.");
+    return;
+  }
   alert(`Buscando preço de varejo de ${vincs.length} produto(s) no Bling…\nIsso pode levar alguns segundos.`);
-
-  const linhas=[["Nome lista","SKU","Nome produto","Preço"]];
-  const semPreco=[];
-  for(const v of vincs){
-    try{
-      const r=await fetch(`${backend}/api/raw?path=/produtos?codigo=${encodeURIComponent(v.codigo)}&limite=1`);
-      const j=await r.json(); const prod=(j.data||[])[0];
-      if(prod && prod.preco>0){
-        const preco=Number(prod.preco).toFixed(2).replace(".",",");
-        linhas.push([nomeLista, v.codigo, prod.nome||v.nomeProduto, preco]);
+  const linhas = [["Nome lista", "SKU", "Nome produto", "Preço"]];
+  const semPreco = [];
+  for (const v of vincs) {
+    try {
+      const r = await fetch(`${backend}/api/raw?path=/produtos?codigo=${encodeURIComponent(v.codigo)}&limite=1`);
+      const j = await r.json();
+      const prod = (j.data || [])[0];
+      if (prod && prod.preco > 0) {
+        const preco = Number(prod.preco).toFixed(2).replace(".", ",");
+        linhas.push([nomeLista, v.codigo, prod.nome || v.nomeProduto, preco]);
       } else {
         semPreco.push(`#${v.codigo} — ${v.nomeProduto}`);
       }
-    }catch(e){ semPreco.push(`#${v.codigo} — ${v.nomeProduto} (erro)`); }
+    } catch (e) {
+      semPreco.push(`#${v.codigo} — ${v.nomeProduto} (erro)`);
+    }
   }
-
-  if(linhas.length<=1){ alert("Nenhum produto com preço de varejo encontrado no Bling."); return; }
-
-  const csv=linhas.map(l=>l.map(c=>`"${(c||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.download="lista_varejo_bling.csv"; a.href=URL.createObjectURL(blob); a.click();
-
-  let msg=`✅ CSV VAREJO gerado com ${linhas.length-1} produto(s).\n\nNo Bling: Configurações → Importações de Dados → Importar Lista de Preço → anexe este arquivo.`;
-  if(semPreco.length) msg+=`\n\n⚠️ ${semPreco.length} produto(s) sem preço no Bling:\n${semPreco.slice(0,8).join("\n")}${semPreco.length>8?"...":""}`;
+  if (linhas.length <= 1) {
+    alert("Nenhum produto com preço de varejo encontrado no Bling.");
+    return;
+  }
+  const csv = linhas.map(l => l.map(c => `"${(c || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff" + csv], {
+    type: "text/csv;charset=utf-8"
+  });
+  const a = document.createElement("a");
+  a.download = "lista_varejo_bling.csv";
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  let msg = `✅ CSV VAREJO gerado com ${linhas.length - 1} produto(s).\n\nNo Bling: Configurações → Importações de Dados → Importar Lista de Preço → anexe este arquivo.`;
+  if (semPreco.length) msg += `\n\n⚠️ ${semPreco.length} produto(s) sem preço no Bling:\n${semPreco.slice(0, 8).join("\n")}${semPreco.length > 8 ? "..." : ""}`;
   alert(msg);
 }
-
-function exportBling(){
+function exportBling() {
   const nomeLista = prompt("Nome EXATO da lista de preços no Bling:", "ATACADO");
-  if(nomeLista===null) return;
-
-  const semVinculo=[], linhas=[["Nome lista","SKU","Nome produto","Preço"]];
-  MODEL.forEach(c=>c.itens.forEach(it=>{
-    if(!it.bling||!it.bling.length){ semVinculo.push(it.nome); return; }
-    const preco=Number(it.preco).toFixed(2).replace(".",",");
-    (it.bling||[]).forEach(b=> linhas.push([nomeLista, b.codigo, b.nome||it.nome, preco]) );
+  if (nomeLista === null) return;
+  const semVinculo = [],
+    linhas = [["Nome lista", "SKU", "Nome produto", "Preço"]];
+  MODEL.forEach(c => c.itens.forEach(it => {
+    if (!it.bling || !it.bling.length) {
+      semVinculo.push(it.nome);
+      return;
+    }
+    const preco = Number(it.preco).toFixed(2).replace(".", ",");
+    (it.bling || []).forEach(b => linhas.push([nomeLista, b.codigo, b.nome || it.nome, preco]));
   }));
-
-  if(linhas.length<=1){ alert("Nenhum produto vinculado encontrado. Verifique os vínculos na ferramenta."); return; }
-
-  const csv=linhas.map(l=>l.map(c=>`"${(c||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.download="lista_precos_bling.csv"; a.href=URL.createObjectURL(blob); a.click();
-
-  let msg=`✅ CSV gerado com ${linhas.length-1} produto(s).\n\nNo Bling: Configurações → Importações de Dados → Importar Lista de Preço → anexe este arquivo.\n⚠️ A lista precisa ser do tipo "Customizada" para aceitar preços.`;
-  if(semVinculo.length) msg+=`\n\n⚠️ ${semVinculo.length} produto(s) SEM VÍNCULO ignorados:\n${semVinculo.slice(0,10).join(", ")}${semVinculo.length>10?"...":""}`;
+  if (linhas.length <= 1) {
+    alert("Nenhum produto vinculado encontrado. Verifique os vínculos na ferramenta.");
+    return;
+  }
+  const csv = linhas.map(l => l.map(c => `"${(c || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff" + csv], {
+    type: "text/csv;charset=utf-8"
+  });
+  const a = document.createElement("a");
+  a.download = "lista_precos_bling.csv";
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  let msg = `✅ CSV gerado com ${linhas.length - 1} produto(s).\n\nNo Bling: Configurações → Importações de Dados → Importar Lista de Preço → anexe este arquivo.\n⚠️ A lista precisa ser do tipo "Customizada" para aceitar preços.`;
+  if (semVinculo.length) msg += `\n\n⚠️ ${semVinculo.length} produto(s) SEM VÍNCULO ignorados:\n${semVinculo.slice(0, 10).join(", ")}${semVinculo.length > 10 ? "..." : ""}`;
   alert(msg);
 }
-function exportCSV(){
-  const linhas=[["categoria","produto","observacao","preco_atacado","qtd_caixa","codigos_bling"]];
-  MODEL.forEach(c=>c.itens.forEach(it=> linhas.push([c.t,it.nome,it.obs,String(it.preco).replace(".",","),String(it.caixa||1),(it.bling||[]).map(b=>b.codigo).join(";")]) ));
-  const csv=linhas.map(l=>l.map(c=>`"${(c||"").replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.download="precos_atacado_b13.csv"; a.href=URL.createObjectURL(blob); a.click();
+function exportCSV() {
+  const linhas = [["categoria", "produto", "observacao", "preco_atacado", "qtd_caixa", "codigos_bling"]];
+  MODEL.forEach(c => c.itens.forEach(it => linhas.push([c.t, it.nome, it.obs, String(it.preco).replace(".", ","), String(it.caixa || 1), (it.bling || []).map(b => b.codigo).join(";")])));
+  const csv = linhas.map(l => l.map(c => `"${(c || "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff" + csv], {
+    type: "text/csv;charset=utf-8"
+  });
+  const a = document.createElement("a");
+  a.download = "precos_atacado_b13.csv";
+  a.href = URL.createObjectURL(blob);
+  a.click();
 }
-function salvarJSON(){
-  const blob=new Blob([JSON.stringify({model:MODEL,meta:META},null,2)],{type:"application/json"});
-  const a=document.createElement("a"); a.download="tabela_b13_backup.json"; a.href=URL.createObjectURL(blob); a.click();
+function salvarJSON() {
+  const blob = new Blob([JSON.stringify({
+    model: MODEL,
+    meta: META
+  }, null, 2)], {
+    type: "application/json"
+  });
+  const a = document.createElement("a");
+  a.download = "tabela_b13_backup.json";
+  a.href = URL.createObjectURL(blob);
+  a.click();
 }
-function carregarJSON(ev){
-  const f=ev.target.files[0]; if(!f)return; const r=new FileReader();
-  r.onload=()=>{ try{ const o=JSON.parse(r.result); MODEL=o.model; META=o.meta; save(); render(); alert("Dados carregados!"); }catch(e){ alert("Arquivo inválido."); } };
+function carregarJSON(ev) {
+  const f = ev.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const o = JSON.parse(r.result);
+      MODEL = o.model;
+      META = o.meta;
+      save();
+      render();
+      alert("Dados carregados!");
+    } catch (e) {
+      alert("Arquivo inválido.");
+    }
+  };
   r.readAsText(f);
 }
-
-load(); render(); carregarDoServidor();
-</script>
+load();
+render();
+carregarDoServidor();</script>
 </body>
 </html>

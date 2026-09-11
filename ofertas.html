@@ -131,109 +131,167 @@
   onmouseout="this.style.opacity=.5;this.style.background='rgba(0,0,0,.25)';this.style.color='rgba(255,255,255,.35)'"
   title="Gravar vídeo da tela">🎥</button>
 
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-
-let PRODUTOS=[];
-async function carregarProdutos(){
-  try{
-    const j=await fetch(BACKEND+"/api/catalogo").then(r=>r.json());
-    const todos=[];
-    (j.categorias||[]).forEach(c=>{
-      (c.produtos||[]).forEach(p=>{
-        const imagem=p.imagem||(p.sabores||[]).find(s=>s.imagem)?.imagem;
-        if(imagem&&p.preco>0) todos.push({nome:p.nome,preco:p.preco,imagem,categoria:c.t||c.nome||""});
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+function brl(n) {
+  return (Number(n) || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
+let PRODUTOS = [];
+async function carregarProdutos() {
+  try {
+    const j = await fetch(BACKEND + "/api/catalogo").then(r => r.json());
+    const todos = [];
+    (j.categorias || []).forEach(c => {
+      (c.produtos || []).forEach(p => {
+        var _find;
+        const imagem = p.imagem || ((_find = (p.sabores || []).find(s => s.imagem)) === null || _find === void 0 ? void 0 : _find.imagem);
+        if (imagem && p.preco > 0) todos.push({
+          nome: p.nome,
+          preco: p.preco,
+          imagem,
+          categoria: c.t || c.nome || ""
+        });
       });
     });
-    PRODUTOS=todos;
-  }catch(e){ PRODUTOS=[]; }
+    PRODUTOS = todos;
+  } catch (e) {
+    PRODUTOS = [];
+  }
 }
-
-function cardHtml(p){
-  const cat=(p.categoria||"").toLowerCase();
-  const SUFIXOS_POR_CATEGORIA=[
-    {chave:"latao 473ml",sufixo:"473ml"},
-    {chave:"latão 473ml",sufixo:"473ml"},
-    {chave:"refrigerante 200ml",sufixo:"200ml"},
-    {chave:"refrigerante 350ml",sufixo:"350ml"},
-  ];
-  const match=SUFIXOS_POR_CATEGORIA.find(x=>cat.includes(x.chave));
-  const nomeExibido=match?`${p.nome} ${match.sufixo}`:p.nome;
+function cardHtml(p) {
+  const cat = (p.categoria || "").toLowerCase();
+  const SUFIXOS_POR_CATEGORIA = [{
+    chave: "latao 473ml",
+    sufixo: "473ml"
+  }, {
+    chave: "latão 473ml",
+    sufixo: "473ml"
+  }, {
+    chave: "refrigerante 200ml",
+    sufixo: "200ml"
+  }, {
+    chave: "refrigerante 350ml",
+    sufixo: "350ml"
+  }];
+  const match = SUFIXOS_POR_CATEGORIA.find(x => cat.includes(x.chave));
+  const nomeExibido = match ? `${p.nome} ${match.sufixo}` : p.nome;
   return `<div class="card"><div class="inner">
     <div class="nomeTag">${esc(nomeExibido.toUpperCase())}</div>
     <div class="imgBox"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
-    <div class="precoTag">R$ ${brl(p.preco).replace("R$","").trim()}</div>
+    <div class="precoTag">R$ ${brl(p.preco).replace("R$", "").trim()}</div>
   </div></div>`;
 }
-
-let _grupoAtivo=0;
-function montarGrupos(){
-  const grid=document.getElementById("grid");
-  if(!PRODUTOS.length){ grid.innerHTML=`<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:20px">Carregando ofertas…</div>`; return; }
+let _grupoAtivo = 0;
+function montarGrupos() {
+  const grid = document.getElementById("grid");
+  if (!PRODUTOS.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:20px">Carregando ofertas…</div>`;
+    return;
+  }
   // embaralha e divide em grupos de 8
-  const lista=[...PRODUTOS];
-  for(let i=lista.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [lista[i],lista[j]]=[lista[j],lista[i]]; }
-  const grupos=[];
-  for(let i=0;i<lista.length;i+=9) grupos.push(lista.slice(i,i+9));
-  grid.innerHTML=grupos.map((g,i)=>`<div class="grupo ${i===0?'ativo':''}" data-i="${i}">${g.map(cardHtml).join("")}</div>`).join("");
-  _grupoAtivo=0;
-  if(grupos.length>1){
-    setInterval(()=>{
-      const els=document.querySelectorAll(".grupo");
-      if(!els.length) return;
-      const prox=(_grupoAtivo+1)%els.length;
+  const lista = [...PRODUTOS];
+  for (let i = lista.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+  }
+  const grupos = [];
+  for (let i = 0; i < lista.length; i += 9) grupos.push(lista.slice(i, i + 9));
+  grid.innerHTML = grupos.map((g, i) => `<div class="grupo ${i === 0 ? 'ativo' : ''}" data-i="${i}">${g.map(cardHtml).join("")}</div>`).join("");
+  _grupoAtivo = 0;
+  if (grupos.length > 1) {
+    setInterval(() => {
+      const els = document.querySelectorAll(".grupo");
+      if (!els.length) return;
+      const prox = (_grupoAtivo + 1) % els.length;
       els[_grupoAtivo].classList.remove("ativo");
       // pausa de 1s com a tela sem nenhum produto, revelando o fundo, antes de mostrar o proximo grupo
-      setTimeout(()=>{ els[prox].classList.add("ativo"); },1000);
-      _grupoAtivo=prox;
-    },9000);
+      setTimeout(() => {
+        els[prox].classList.add("ativo");
+      }, 1000);
+      _grupoAtivo = prox;
+    }, 9000);
   }
 }
-
-async function iniciar(){
+async function iniciar() {
   await carregarProdutos();
   montarGrupos();
 }
 iniciar();
 // atualiza a lista de produtos a cada 10 minutos (preço/estoque podem mudar)
-setInterval(async()=>{ await carregarProdutos(); }, 10*60*1000);
-
-let _gravador=null, _chunksGravacao=[];
-async function alternarGravacao(){
-  const btn=document.getElementById("btnGravar");
-  if(_gravador&&_gravador.state==="recording"){ _gravador.stop(); return; }
-  try{
-    const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:30},audio:false});
-    _chunksGravacao=[];
-    const candidatos=[
-      {mime:"video/mp4;codecs=avc1",ext:"mp4"},
-      {mime:"video/mp4",ext:"mp4"},
-      {mime:"video/webm;codecs=vp9",ext:"webm"},
-      {mime:"video/webm",ext:"webm"},
-    ];
-    const escolhido=candidatos.find(c=>MediaRecorder.isTypeSupported(c.mime))||{mime:"",ext:"webm"};
-    _gravador=new MediaRecorder(stream,escolhido.mime?{mimeType:escolhido.mime}:{});
-    _gravador.ondataavailable=(e)=>{ if(e.data.size>0) _chunksGravacao.push(e.data); };
-    _gravador.onstop=()=>{
-      stream.getTracks().forEach(t=>t.stop());
-      const blob=new Blob(_chunksGravacao,{type:escolhido.mime||"video/webm"});
-      const a=document.createElement("a");
-      a.download="b13_ofertas."+escolhido.ext;
-      a.href=URL.createObjectURL(blob);
+setInterval(async () => {
+  await carregarProdutos();
+}, 10 * 60 * 1000);
+let _gravador = null,
+  _chunksGravacao = [];
+async function alternarGravacao() {
+  const btn = document.getElementById("btnGravar");
+  if (_gravador && _gravador.state === "recording") {
+    _gravador.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: 30
+      },
+      audio: false
+    });
+    _chunksGravacao = [];
+    const candidatos = [{
+      mime: "video/mp4;codecs=avc1",
+      ext: "mp4"
+    }, {
+      mime: "video/mp4",
+      ext: "mp4"
+    }, {
+      mime: "video/webm;codecs=vp9",
+      ext: "webm"
+    }, {
+      mime: "video/webm",
+      ext: "webm"
+    }];
+    const escolhido = candidatos.find(c => MediaRecorder.isTypeSupported(c.mime)) || {
+      mime: "",
+      ext: "webm"
+    };
+    _gravador = new MediaRecorder(stream, escolhido.mime ? {
+      mimeType: escolhido.mime
+    } : {});
+    _gravador.ondataavailable = e => {
+      if (e.data.size > 0) _chunksGravacao.push(e.data);
+    };
+    _gravador.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(_chunksGravacao, {
+        type: escolhido.mime || "video/webm"
+      });
+      const a = document.createElement("a");
+      a.download = "b13_ofertas." + escolhido.ext;
+      a.href = URL.createObjectURL(blob);
       a.click();
-      btn.textContent="🎥";
-      btn.style.background="rgba(0,0,0,.25)";
+      btn.textContent = "🎥";
+      btn.style.background = "rgba(0,0,0,.25)";
     };
     // se o usuário parar de compartilhar pelo próprio navegador, encerra a gravação também
-    stream.getVideoTracks()[0].onended=()=>{ if(_gravador&&_gravador.state==="recording") _gravador.stop(); };
+    stream.getVideoTracks()[0].onended = () => {
+      if (_gravador && _gravador.state === "recording") _gravador.stop();
+    };
     _gravador.start();
-    btn.textContent="⏹";
-    btn.style.background="rgba(150,0,0,.4)";
-  }catch(e){ /* usuário cancelou a seleção de tela */ }
-}
-</script>
+    btn.textContent = "⏹";
+    btn.style.background = "rgba(150,0,0,.4)";
+  } catch (e) {/* usuário cancelou a seleção de tela */}
+}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 async function exportarImagem(){

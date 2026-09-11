@@ -109,87 +109,100 @@ header h1{font-size:16px;font-weight:900;color:#fff;flex:1}
   <div id="lista"></div>
 </div>
 
-<script>
-const B=window.location.origin;
-let produtos=[], salvos={}, selecionados={};
-let pagAtual=0; const POR_PAG=20;
-
-function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-
-function carregar(){
-  const ev=new EventSource(B+"/api/imagens/sem-foto/progresso");
-  ev.onmessage=function(e){
-    const d=JSON.parse(e.data);
-    if(d.tipo==="total"){
-      document.getElementById("pTotal").textContent=d.total;
-      document.getElementById("progressNum").textContent="0 / "+d.total;
-    }
-    else if(d.tipo==="progresso"){
-      const pct=Math.round((d.atual/d.total)*100);
-      document.getElementById("progressBar").style.width=pct+"%";
-      document.getElementById("progressPct").textContent=pct+"%";
-      document.getElementById("progressLabel").textContent="Verificando "+d.atual+" de "+d.total;
-      document.getElementById("progressNum").textContent=d.atual+" / "+d.total;
-      document.getElementById("progressProduto").textContent=d.nome||"";
-      document.getElementById("pTotal").textContent=d.atual;
-    }
-    else if(d.tipo==="sem_foto"){
+<script>const B = window.location.origin;
+let produtos = [],
+  salvos = {},
+  selecionados = {};
+let pagAtual = 0;
+const POR_PAG = 20;
+function esc(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function carregar() {
+  const ev = new EventSource(B + "/api/imagens/sem-foto/progresso");
+  ev.onmessage = function (e) {
+    const d = JSON.parse(e.data);
+    if (d.tipo === "total") {
+      document.getElementById("pTotal").textContent = d.total;
+      document.getElementById("progressNum").textContent = "0 / " + d.total;
+    } else if (d.tipo === "progresso") {
+      const pct = Math.round(d.atual / d.total * 100);
+      document.getElementById("progressBar").style.width = pct + "%";
+      document.getElementById("progressPct").textContent = pct + "%";
+      document.getElementById("progressLabel").textContent = "Verificando " + d.atual + " de " + d.total;
+      document.getElementById("progressNum").textContent = d.atual + " / " + d.total;
+      document.getElementById("progressProduto").textContent = d.nome || "";
+      document.getElementById("pTotal").textContent = d.atual;
+    } else if (d.tipo === "sem_foto") {
       produtos.push(d.item);
-      document.getElementById("pSemFoto").textContent=produtos.length;
-      const cats=[...new Set(produtos.map(p=>p.categoria).filter(Boolean))];
-      const sel=document.getElementById("filtroCat");
-      const vals=[...sel.options].map(o=>o.value);
-      cats.forEach(c=>{ if(!vals.includes(c)){ const o=document.createElement("option"); o.value=o.textContent=c; sel.appendChild(o); }});
-      document.getElementById("filterBar").style.display="flex";
+      document.getElementById("pSemFoto").textContent = produtos.length;
+      const cats = [...new Set(produtos.map(p => p.categoria).filter(Boolean))];
+      const sel = document.getElementById("filtroCat");
+      const vals = [...sel.options].map(o => o.value);
+      cats.forEach(c => {
+        if (!vals.includes(c)) {
+          const o = document.createElement("option");
+          o.value = o.textContent = c;
+          sel.appendChild(o);
+        }
+      });
+      document.getElementById("filterBar").style.display = "flex";
       // só adiciona card se está na primeira página
-      if(produtos.length<=POR_PAG) adicionarCard(d.item);
+      if (produtos.length <= POR_PAG) adicionarCard(d.item);
       // atualiza navegação
       renderPaginacao();
-    }
-    else if(d.tipo==="fim"){
+    } else if (d.tipo === "fim") {
       ev.close();
-      document.getElementById("progressBar").style.width="100%";
-      document.getElementById("progressPct").textContent="100%";
-      document.getElementById("progressTitulo").textContent=`✅ Concluído — ${produtos.length} produto(s) sem foto`;
-      document.getElementById("progressLabel").textContent="Concluído!";
-      document.getElementById("progressProduto").textContent="";
-      if(!produtos.length) document.getElementById("lista").innerHTML='<div class="loading">🎉 Todos os produtos têm imagem!</div>';
-    }
-    else if(d.tipo==="erro"){
+      document.getElementById("progressBar").style.width = "100%";
+      document.getElementById("progressPct").textContent = "100%";
+      document.getElementById("progressTitulo").textContent = `✅ Concluído — ${produtos.length} produto(s) sem foto`;
+      document.getElementById("progressLabel").textContent = "Concluído!";
+      document.getElementById("progressProduto").textContent = "";
+      if (!produtos.length) document.getElementById("lista").innerHTML = '<div class="loading">🎉 Todos os produtos têm imagem!</div>';
+    } else if (d.tipo === "erro") {
       ev.close();
-      document.getElementById("progressTitulo").textContent="❌ Erro: "+d.msg;
+      document.getElementById("progressTitulo").textContent = "❌ Erro: " + d.msg;
     }
   };
-  ev.onerror=function(){ ev.close(); document.getElementById("progressLabel").textContent="Conexão interrompida. Recarregue a página."; };
+  ev.onerror = function () {
+    ev.close();
+    document.getElementById("progressLabel").textContent = "Conexão interrompida. Recarregue a página.";
+  };
 }
 
 // Fila de busca para não sobrecarregar
-const filaBusca=[];
-let buscandoAtual=false;
-
-function enfileirarBusca(id, nome){
-  filaBusca.push({id,nome});
-  if(!buscandoAtual) processarFila();
+const filaBusca = [];
+let buscandoAtual = false;
+function enfileirarBusca(id, nome) {
+  filaBusca.push({
+    id,
+    nome
+  });
+  if (!buscandoAtual) processarFila();
 }
-
-async function processarFila(){
-  if(!filaBusca.length){ buscandoAtual=false; return; }
-  buscandoAtual=true;
-  const {id,nome}=filaBusca.shift();
-  await buscarImagens(id,nome);
-  await new Promise(r=>setTimeout(r,800)); // delay entre buscas
+async function processarFila() {
+  if (!filaBusca.length) {
+    buscandoAtual = false;
+    return;
+  }
+  buscandoAtual = true;
+  const {
+    id,
+    nome
+  } = filaBusca.shift();
+  await buscarImagens(id, nome);
+  await new Promise(r => setTimeout(r, 800)); // delay entre buscas
   processarFila();
 }
-
-function adicionarCard(prod){
-  const div=document.createElement("div");
-  div.className="prod-row";
-  div.id="row_"+prod.id;
-  div.innerHTML=`
+function adicionarCard(prod) {
+  const div = document.createElement("div");
+  div.className = "prod-row";
+  div.id = "row_" + prod.id;
+  div.innerHTML = `
     <div class="prod-info">
       <div class="prod-nome">${esc(prod.nome)}</div>
-      <div class="prod-cat">${esc(prod.categoria||"—")}</div>
-      <div class="prod-cod">ID: ${prod.id} · Cód: ${esc(prod.codigo||"—")}</div>
+      <div class="prod-cat">${esc(prod.categoria || "—")}</div>
+      <div class="prod-cod">ID: ${prod.id} · Cód: ${esc(prod.codigo || "—")}</div>
     </div>
     <div class="prod-imgs" id="imgs_${prod.id}">
       <div class="imgs-loading" style="color:#514c96;font-size:10px">⏳ aguardando…</div>
@@ -200,120 +213,116 @@ function adicionarCard(prod){
   document.getElementById("lista").appendChild(div);
   enfileirarBusca(prod.id, prod.nome);
 }
-
-async function buscarImagens(id, nome){
-  const cont=document.getElementById("imgs_"+id);
-  if(!cont) return;
-  cont.innerHTML=`<div class="imgs-loading"><span class="spinner"></span>Buscando…</div>`;
-  try{
-    const r=await fetch(B+"/api/imagens/buscar?nome="+encodeURIComponent(nome));
-    const j=await r.json();
-    const imgs=(j.data||[]).filter(Boolean).slice(0,4);
-    if(!imgs.length){
-      cont.innerHTML=`<div class="no-imgs">Nenhuma imagem encontrada</div>
-        <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(nome+' supermercado')}" target="_blank"
+async function buscarImagens(id, nome) {
+  const cont = document.getElementById("imgs_" + id);
+  if (!cont) return;
+  cont.innerHTML = `<div class="imgs-loading"><span class="spinner"></span>Buscando…</div>`;
+  try {
+    const r = await fetch(B + "/api/imagens/buscar?nome=" + encodeURIComponent(nome));
+    const j = await r.json();
+    const imgs = (j.data || []).filter(Boolean).slice(0, 4);
+    if (!imgs.length) {
+      cont.innerHTML = `<div class="no-imgs">Nenhuma imagem encontrada</div>
+        <a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(nome + ' supermercado')}" target="_blank"
           style="font-size:10px;color:#9090ff;white-space:nowrap">🔍 Google</a>`;
       return;
     }
-    cont.innerHTML=imgs.map((url,i)=>`
-      <div class="img-opt" id="opt_${id}_${i}" onclick="selecionar('${id}',${i},'${url.replace(/'/g,"\\'")}')">
+    cont.innerHTML = imgs.map((url, i) => `
+      <div class="img-opt" id="opt_${id}_${i}" onclick="selecionar('${id}',${i},'${url.replace(/'/g, "\\'")}')">
         <img src="${url}" onerror="this.parentElement.style.display='none'" loading="lazy">
         <div class="ck">✓</div>
-      </div>`).join("")+
-      `<a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(nome+' supermercado')}" target="_blank"
+      </div>`).join("") + `<a href="https://www.google.com/search?tbm=isch&q=${encodeURIComponent(nome + ' supermercado')}" target="_blank"
         title="Ver mais no Google" style="font-size:16px;text-decoration:none;padding:4px">🔍</a>`;
-  }catch(e){
-    cont.innerHTML=`<div class="no-imgs">Erro ao buscar</div>`;
+  } catch (e) {
+    cont.innerHTML = `<div class="no-imgs">Erro ao buscar</div>`;
   }
 }
-
-function selecionar(prodId, idx, url){
+function selecionar(prodId, idx, url) {
+  var _produtos$find;
   // deseleciona outros do mesmo produto
-  document.querySelectorAll(`[id^="opt_${prodId}_"]`).forEach(el=>el.classList.remove("sel"));
+  document.querySelectorAll(`[id^="opt_${prodId}_"]`).forEach(el => el.classList.remove("sel"));
   document.getElementById(`opt_${prodId}_${idx}`).classList.add("sel");
-  selecionados[prodId]=url;
+  selecionados[prodId] = url;
   // mostra botão salvar
-  const act=document.getElementById("act_"+prodId);
-  act.innerHTML=`
+  const act = document.getElementById("act_" + prodId);
+  act.innerHTML = `
     <button class="btn btn-grn" onclick="salvar('${prodId}')">✅ Salvar</button>
-    <button class="btn btn-ghost btn-sm" onclick="buscarImagens('${prodId}','${esc(produtos.find(p=>p.id==prodId)?.nome||"")}')">🔄</button>`;
+    <button class="btn btn-ghost btn-sm" onclick="buscarImagens('${prodId}','${esc(((_produtos$find = produtos.find(p => p.id == prodId)) === null || _produtos$find === void 0 ? void 0 : _produtos$find.nome) || "")}')">🔄</button>`;
 }
-
-async function salvar(prodId){
-  const url=selecionados[prodId];
-  const prod=produtos.find(p=>p.id==prodId);
-  if(!url||!prod) return;
+async function salvar(prodId) {
+  const url = selecionados[prodId];
+  const prod = produtos.find(p => p.id == prodId);
+  if (!url || !prod) return;
   // Copia URL e abre Bling — API v3 não suporta salvar imagens externas
-  await navigator.clipboard.writeText(url).catch(()=>{});
-  window.open(`https://www.bling.com.br/produtos.php#edit/${prod.id}`,"_blank");
-  const act=document.getElementById("act_"+prodId);
-  act.innerHTML=`<div style="background:#1a1040;border:1px solid #514c96;border-radius:6px;padding:6px 8px;font-size:10px;color:#cfc9f5;max-width:180px">
+  await navigator.clipboard.writeText(url).catch(() => {});
+  window.open(`https://www.bling.com.br/produtos.php#edit/${prod.id}`, "_blank");
+  const act = document.getElementById("act_" + prodId);
+  act.innerHTML = `<div style="background:#1a1040;border:1px solid #514c96;border-radius:6px;padding:6px 8px;font-size:10px;color:#cfc9f5;max-width:180px">
     ✅ URL copiada!<br>Cole no Bling que abriu.<br>
     <button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:10px" onclick="marcarSalvo('${prodId}')">✓ Já colei no Bling</button>
   </div>`;
 }
-
-function marcarSalvo(prodId){
-  const url=selecionados[prodId];
-  salvos[prodId]=url||true;
-  document.getElementById("pSalvos").textContent=Object.keys(salvos).length;
-  document.getElementById("pSemFoto").textContent=produtos.filter(p=>!salvos[p.id]).length;
-  const row=document.getElementById("row_"+prodId);
-  if(row){ row.style.opacity=".4"; row.style.pointerEvents="none"; }
-  const act=document.getElementById("act_"+prodId);
-  act.innerHTML=`<span class="saved-tag">✓ Salvo</span>`;
+function marcarSalvo(prodId) {
+  const url = selecionados[prodId];
+  salvos[prodId] = url || true;
+  document.getElementById("pSalvos").textContent = Object.keys(salvos).length;
+  document.getElementById("pSemFoto").textContent = produtos.filter(p => !salvos[p.id]).length;
+  const row = document.getElementById("row_" + prodId);
+  if (row) {
+    row.style.opacity = ".4";
+    row.style.pointerEvents = "none";
+  }
+  const act = document.getElementById("act_" + prodId);
+  act.innerHTML = `<span class="saved-tag">✓ Salvo</span>`;
 }
-
-function filtrar(){
-  pagAtual=0;
+function filtrar() {
+  pagAtual = 0;
   renderPagina();
 }
-
-function renderPagina(){
-  const q=document.getElementById("busca").value.toLowerCase();
-  const cat=document.getElementById("filtroCat").value;
-  const filtrados=produtos.filter(p=>(!q||p.nome.toLowerCase().includes(q))&&(!cat||p.categoria===cat));
-  const inicio=pagAtual*POR_PAG;
-  const pag=filtrados.slice(inicio,inicio+POR_PAG);
-  const lista=document.getElementById("lista");
-  lista.innerHTML="";
-  pag.forEach(p=>adicionarCard(p));
+function renderPagina() {
+  const q = document.getElementById("busca").value.toLowerCase();
+  const cat = document.getElementById("filtroCat").value;
+  const filtrados = produtos.filter(p => (!q || p.nome.toLowerCase().includes(q)) && (!cat || p.categoria === cat));
+  const inicio = pagAtual * POR_PAG;
+  const pag = filtrados.slice(inicio, inicio + POR_PAG);
+  const lista = document.getElementById("lista");
+  lista.innerHTML = "";
+  pag.forEach(p => adicionarCard(p));
   renderPaginacao(filtrados.length);
 }
-
-function renderPaginacao(total){
-  const q=document.getElementById("busca").value.toLowerCase();
-  const cat=document.getElementById("filtroCat").value;
-  const filtrados=total!==undefined?total:produtos.filter(p=>(!q||p.nome.toLowerCase().includes(q))&&(!cat||p.categoria===cat)).length;
-  const totalPags=Math.ceil(filtrados/POR_PAG);
-  let nav=document.getElementById("navPag");
-  if(!nav){
-    nav=document.createElement("div");
-    nav.id="navPag";
-    nav.style.cssText="display:flex;gap:8px;align-items:center;justify-content:center;padding:16px;flex-wrap:wrap";
+function renderPaginacao(total) {
+  const q = document.getElementById("busca").value.toLowerCase();
+  const cat = document.getElementById("filtroCat").value;
+  const filtrados = total !== undefined ? total : produtos.filter(p => (!q || p.nome.toLowerCase().includes(q)) && (!cat || p.categoria === cat)).length;
+  const totalPags = Math.ceil(filtrados / POR_PAG);
+  let nav = document.getElementById("navPag");
+  if (!nav) {
+    nav = document.createElement("div");
+    nav.id = "navPag";
+    nav.style.cssText = "display:flex;gap:8px;align-items:center;justify-content:center;padding:16px;flex-wrap:wrap";
     document.getElementById("lista").after(nav);
   }
-  if(totalPags<=1){ nav.innerHTML=""; return; }
-  const inicio=pagAtual*POR_PAG+1;
-  const fim=Math.min((pagAtual+1)*POR_PAG,filtrados);
-  nav.innerHTML=`
-    <button class="btn btn-ghost btn-sm" onclick="irPag(${pagAtual-1})" ${pagAtual===0?"disabled":""}>← Anterior</button>
+  if (totalPags <= 1) {
+    nav.innerHTML = "";
+    return;
+  }
+  const inicio = pagAtual * POR_PAG + 1;
+  const fim = Math.min((pagAtual + 1) * POR_PAG, filtrados);
+  nav.innerHTML = `
+    <button class="btn btn-ghost btn-sm" onclick="irPag(${pagAtual - 1})" ${pagAtual === 0 ? "disabled" : ""}>← Anterior</button>
     <span style="font-size:12px;color:var(--muted)">${inicio}–${fim} de ${filtrados}</span>
-    <button class="btn btn-ghost btn-sm" onclick="irPag(${pagAtual+1})" ${pagAtual>=totalPags-1?"disabled":""}>Próxima →</button>`;
+    <button class="btn btn-ghost btn-sm" onclick="irPag(${pagAtual + 1})" ${pagAtual >= totalPags - 1 ? "disabled" : ""}>Próxima →</button>`;
 }
-
-function irPag(p){
-  const q=document.getElementById("busca").value.toLowerCase();
-  const cat=document.getElementById("filtroCat").value;
-  const filtrados=produtos.filter(x=>(!q||x.nome.toLowerCase().includes(q))&&(!cat||x.categoria===cat));
-  const totalPags=Math.ceil(filtrados.length/POR_PAG);
-  if(p<0||p>=totalPags) return;
-  pagAtual=p;
+function irPag(p) {
+  const q = document.getElementById("busca").value.toLowerCase();
+  const cat = document.getElementById("filtroCat").value;
+  const filtrados = produtos.filter(x => (!q || x.nome.toLowerCase().includes(q)) && (!cat || x.categoria === cat));
+  const totalPags = Math.ceil(filtrados.length / POR_PAG);
+  if (p < 0 || p >= totalPags) return;
+  pagAtual = p;
   renderPagina();
-  window.scrollTo(0,0);
+  window.scrollTo(0, 0);
 }
-
-carregar();
-</script>
+carregar();</script>
 </body>
 </html>

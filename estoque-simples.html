@@ -92,72 +92,106 @@ document.addEventListener("DOMContentLoaded",function(){
   </div>
 </div>
 
-<script>
-const B="";
-let PAGINA=1, TOTAL_PAGINAS=1, CARREGANDO=false;
-
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function sessNome(){ try{ return (JSON.parse(localStorage.getItem("b13sess")||"{}").nome)||""; }catch(e){ return ""; } }
-function msg(txt,tipo){ document.getElementById("msg").innerHTML = txt?`<div class="${tipo||'ok'}">${esc(txt)}</div>`:""; if(txt) setTimeout(()=>{ const m=document.getElementById("msg"); if(m) m.innerHTML=""; },4000); }
-
-let MOVS_CARREGADO=false;
-function trocarAba(aba){
-  document.getElementById("secao-estoque").style.display = aba==="estoque"?"block":"none";
-  document.getElementById("secao-movs").style.display = aba==="movs"?"block":"none";
-  document.getElementById("secao-parado").style.display = aba==="parado"?"block":"none";
-  document.getElementById("aba-estoque").classList.toggle("on", aba==="estoque");
-  document.getElementById("aba-movs").classList.toggle("on", aba==="movs");
-  document.getElementById("aba-parado").classList.toggle("on", aba==="parado");
-  if(aba==="movs" && !MOVS_CARREGADO){ carregarMovs(); }
-  if(aba==="parado" && !PARADO_CARREGADO){ carregarParado(); }
+<script>const B = "";
+let PAGINA = 1,
+  TOTAL_PAGINAS = 1,
+  CARREGANDO = false;
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
+function sessNome() {
+  try {
+    return JSON.parse(localStorage.getItem("b13sess") || "{}").nome || "";
+  } catch (e) {
+    return "";
+  }
+}
+function msg(txt, tipo) {
+  document.getElementById("msg").innerHTML = txt ? `<div class="${tipo || 'ok'}">${esc(txt)}</div>` : "";
+  if (txt) setTimeout(() => {
+    const m = document.getElementById("msg");
+    if (m) m.innerHTML = "";
+  }, 4000);
+}
+let MOVS_CARREGADO = false;
+function trocarAba(aba) {
+  document.getElementById("secao-estoque").style.display = aba === "estoque" ? "block" : "none";
+  document.getElementById("secao-movs").style.display = aba === "movs" ? "block" : "none";
+  document.getElementById("secao-parado").style.display = aba === "parado" ? "block" : "none";
+  document.getElementById("aba-estoque").classList.toggle("on", aba === "estoque");
+  document.getElementById("aba-movs").classList.toggle("on", aba === "movs");
+  document.getElementById("aba-parado").classList.toggle("on", aba === "parado");
+  if (aba === "movs" && !MOVS_CARREGADO) {
+    carregarMovs();
+  }
+  if (aba === "parado" && !PARADO_CARREGADO) {
+    carregarParado();
+  }
 }
 
 // ---- Estoque parado (roda em segundo plano no backend; aqui faz polling) ----
-let PARADO_CARREGADO=false, _pollParado=null;
-async function carregarParado(){
-  PARADO_CARREGADO=true;
-  const box=document.getElementById("listaParado");
-  box.innerHTML=`<div class="muted">Carregando…</div>`;
+let PARADO_CARREGADO = false,
+  _pollParado = null;
+async function carregarParado() {
+  PARADO_CARREGADO = true;
+  const box = document.getElementById("listaParado");
+  box.innerHTML = `<div class="muted">Carregando…</div>`;
   await buscarParado();
 }
-async function buscarParado(){
-  try{
-    const j=await fetch(B+"/api/estoque/parado?meses=3").then(r=>r.json());
-    const box=document.getElementById("listaParado");
-    if(j.erro){ box.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
+async function buscarParado() {
+  try {
+    const j = await fetch(B + "/api/estoque/parado?meses=3").then(r => r.json());
+    const box = document.getElementById("listaParado");
+    if (j.erro) {
+      box.innerHTML = `<div class="err">${esc(j.erro)}</div>`;
+      return;
+    }
     // ainda calculando pela primeira vez (nada em cache)
-    if(j.primeira && j.computando){
-      box.innerHTML=`<div class="muted">🔎 Montando a análise pela primeira vez… ${esc(j.progresso||"")}<br><small>Isso varre as vendas dos últimos 3 meses no Bling e pode levar alguns minutos. Pode deixar aberto — atualiza sozinho.</small></div>`;
+    if (j.primeira && j.computando) {
+      box.innerHTML = `<div class="muted">🔎 Montando a análise pela primeira vez… ${esc(j.progresso || "")}<br><small>Isso varre as vendas dos últimos 3 meses no Bling e pode levar alguns minutos. Pode deixar aberto — atualiza sozinho.</small></div>`;
       agendarPollParado();
       return;
     }
     // tem resultado (pode estar recalculando em segundo plano)
     renderParado(j);
-    if(j.computando){ agendarPollParado(); }
-    else if(_pollParado){ clearTimeout(_pollParado); _pollParado=null; }
-  }catch(e){
-    document.getElementById("listaParado").innerHTML=`<div class="err">Erro ao carregar. Tente de novo.</div>`;
+    if (j.computando) {
+      agendarPollParado();
+    } else if (_pollParado) {
+      clearTimeout(_pollParado);
+      _pollParado = null;
+    }
+  } catch (e) {
+    document.getElementById("listaParado").innerHTML = `<div class="err">Erro ao carregar. Tente de novo.</div>`;
   }
 }
-function agendarPollParado(){
-  if(_pollParado) clearTimeout(_pollParado);
-  _pollParado=setTimeout(buscarParado, 12000);
+function agendarPollParado() {
+  if (_pollParado) clearTimeout(_pollParado);
+  _pollParado = setTimeout(buscarParado, 12000);
 }
-function renderParado(j){
-  const box=document.getElementById("listaParado");
-  document.getElementById("parMeses").textContent=j.meses||3;
-  const lista=j.produtos||[];
-  const topo=`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">
-    <div><div class="muted" style="font-size:11px">produtos parados</div><div style="font-size:20px;font-weight:900;color:#ffd23f">${j.totalParados||0}</div></div>
-    <div><div class="muted" style="font-size:11px">valor parado em estoque</div><div style="font-size:20px;font-weight:900;color:#ff8090">${brl(j.valorTotalParado||0)}</div></div>
-    ${j.computando?`<div style="align-self:center"><span class="muted" style="font-size:11px">🔄 atualizando… ${esc(j.progresso||"")}</span></div>`:""}
+function renderParado(j) {
+  const box = document.getElementById("listaParado");
+  document.getElementById("parMeses").textContent = j.meses || 3;
+  const lista = j.produtos || [];
+  const topo = `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">
+    <div><div class="muted" style="font-size:11px">produtos parados</div><div style="font-size:20px;font-weight:900;color:#ffd23f">${j.totalParados || 0}</div></div>
+    <div><div class="muted" style="font-size:11px">valor parado em estoque</div><div style="font-size:20px;font-weight:900;color:#ff8090">${brl(j.valorTotalParado || 0)}</div></div>
+    ${j.computando ? `<div style="align-self:center"><span class="muted" style="font-size:11px">🔄 atualizando… ${esc(j.progresso || "")}</span></div>` : ""}
   </div>`;
-  if(!lista.length){ box.innerHTML=topo+`<div class="muted">Nenhum produto parado encontrado. 🎉</div>`; return; }
-  box.innerHTML=topo+lista.map(p=>`
+  if (!lista.length) {
+    box.innerHTML = topo + `<div class="muted">Nenhum produto parado encontrado. 🎉</div>`;
+    return;
+  }
+  box.innerHTML = topo + lista.map(p => `
     <div class="prod" style="cursor:pointer" onclick="irAjustarProduto(${p.produtoId})">
       <div class="nm">
         <div style="font-weight:700">${esc(p.nome)}</div>
-        <div class="cat">${esc(p.categoria||"")}${p.codigo?` · cód ${esc(p.codigo)}`:''}</div>
+        <div class="cat">${esc(p.categoria || "")}${p.codigo ? ` · cód ${esc(p.codigo)}` : ''}</div>
       </div>
       <div class="est">
         <div class="lbl">em estoque</div>
@@ -165,103 +199,141 @@ function renderParado(j){
       </div>
       <div class="est" style="min-width:90px">
         <div class="lbl">valor parado</div>
-        <div class="val" style="color:#ff8090;font-size:16px">${brl(p.valorParado||0)}</div>
+        <div class="val" style="color:#ff8090;font-size:16px">${brl(p.valorParado || 0)}</div>
       </div>
     </div>`).join("");
 }
-function irAjustarProduto(produtoId){
+function irAjustarProduto(produtoId) {
   // vai pra aba de ajuste — o usuário procura o produto lá pra zerar/corrigir
   trocarAba('estoque');
-  msg("Procure o produto na lista pra ajustar o estoque. (Produto #"+produtoId+")","ok");
+  msg("Procure o produto na lista pra ajustar o estoque. (Produto #" + produtoId + ")", "ok");
 }
-function brl(v){ return "R$ "+(Number(v)||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-
-async function carregarMovs(){
-  MOVS_CARREGADO=true;
-  const box=document.getElementById("listaMovs");
-  box.innerHTML=`<div class="muted">Carregando…</div>`;
-  try{
-    const j=await fetch(B+"/api/movimentacoes?dias=30").then(r=>r.json());
-    const linhas=j.data||[];
-    if(!linhas.length){ box.innerHTML=`<div class="muted">Nenhum produto retirado ou faltando nos últimos 30 dias. 🎉</div>`; return; }
-    box.innerHTML=linhas.map(m=>{
-      const dt=m.em?new Date(m.em).toLocaleDateString("pt-BR")+" "+new Date(m.em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-      const ehRet=m.tipo==="retirado";
+function brl(v) {
+  return "R$ " + (Number(v) || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+async function carregarMovs() {
+  MOVS_CARREGADO = true;
+  const box = document.getElementById("listaMovs");
+  box.innerHTML = `<div class="muted">Carregando…</div>`;
+  try {
+    const j = await fetch(B + "/api/movimentacoes?dias=30").then(r => r.json());
+    const linhas = j.data || [];
+    if (!linhas.length) {
+      box.innerHTML = `<div class="muted">Nenhum produto retirado ou faltando nos últimos 30 dias. 🎉</div>`;
+      return;
+    }
+    box.innerHTML = linhas.map(m => {
+      const dt = m.em ? new Date(m.em).toLocaleDateString("pt-BR") + " " + new Date(m.em).toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit"
+      }) : "";
+      const ehRet = m.tipo === "retirado";
       return `<div class="mov">
-        <span class="tag ${ehRet?'ret':'falta'}">${ehRet?'RETIRADO':'FALTOU NA SEPARAÇÃO'}</span>
+        <span class="tag ${ehRet ? 'ret' : 'falta'}">${ehRet ? 'RETIRADO' : 'FALTOU NA SEPARAÇÃO'}</span>
         <div style="flex:1;min-width:150px">
-          <div style="font-weight:700">${esc(m.descricao||'—')}${m.quantidade?` <span class="muted">x${m.quantidade}</span>`:''}</div>
-          <div class="muted" style="font-size:11px">Pedido #${esc(m.pedidoNumero||m.pedidoId||'?')}${m.cliente?` · ${esc(m.cliente)}`:''}${m.por?` · por ${esc(m.por)}`:''}${m.statusPendencia?` · pendência: ${esc(m.statusPendencia)}`:''}</div>
+          <div style="font-weight:700">${esc(m.descricao || '—')}${m.quantidade ? ` <span class="muted">x${m.quantidade}</span>` : ''}</div>
+          <div class="muted" style="font-size:11px">Pedido #${esc(m.pedidoNumero || m.pedidoId || '?')}${m.cliente ? ` · ${esc(m.cliente)}` : ''}${m.por ? ` · por ${esc(m.por)}` : ''}${m.statusPendencia ? ` · pendência: ${esc(m.statusPendencia)}` : ''}</div>
         </div>
         <div class="muted" style="font-size:11px">${dt}</div>
       </div>`;
     }).join("");
-  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar.</div>`; }
-}
-
-async function carregar(pg){
-  if(CARREGANDO) return;
-  CARREGANDO=true;
-  PAGINA=pg;
-  document.getElementById("lista").innerHTML=`<div class="muted">Carregando estoque da página ${pg}… (lendo do Bling)</div>`;
-  document.getElementById("paginacao").innerHTML="";
-  try{
-    const j=await fetch(B+"/api/estoque/lista?pagina="+pg).then(r=>r.json());
-    if(j.erro){ document.getElementById("lista").innerHTML=`<div class="err">${esc(j.erro)}</div>`; CARREGANDO=false; return; }
-    TOTAL_PAGINAS=j.totalPaginas||1;
-    render(j);
-  }catch(e){
-    document.getElementById("lista").innerHTML=`<div class="err">Erro ao carregar. Tente de novo.</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="err">Erro ao carregar.</div>`;
   }
-  CARREGANDO=false;
 }
-
-function render(j){
-  const itens=j.itens||[];
-  if(!itens.length){ document.getElementById("lista").innerHTML=`<div class="muted">Nenhum produto nessa página.</div>`; return; }
-  document.getElementById("lista").innerHTML=itens.map(p=>`
+async function carregar(pg) {
+  if (CARREGANDO) return;
+  CARREGANDO = true;
+  PAGINA = pg;
+  document.getElementById("lista").innerHTML = `<div class="muted">Carregando estoque da página ${pg}… (lendo do Bling)</div>`;
+  document.getElementById("paginacao").innerHTML = "";
+  try {
+    const j = await fetch(B + "/api/estoque/lista?pagina=" + pg).then(r => r.json());
+    if (j.erro) {
+      document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro)}</div>`;
+      CARREGANDO = false;
+      return;
+    }
+    TOTAL_PAGINAS = j.totalPaginas || 1;
+    render(j);
+  } catch (e) {
+    document.getElementById("lista").innerHTML = `<div class="err">Erro ao carregar. Tente de novo.</div>`;
+  }
+  CARREGANDO = false;
+}
+function render(j) {
+  const itens = j.itens || [];
+  if (!itens.length) {
+    document.getElementById("lista").innerHTML = `<div class="muted">Nenhum produto nessa página.</div>`;
+    return;
+  }
+  document.getElementById("lista").innerHTML = itens.map(p => `
     <div class="prod" id="prod-${p.produtoId}">
       <div class="nm">
         <div style="font-weight:700">${esc(p.nome)}</div>
-        <div class="cat">${esc(p.categoria)}${p.codigo?` · cód ${esc(p.codigo)}`:''}</div>
+        <div class="cat">${esc(p.categoria)}${p.codigo ? ` · cód ${esc(p.codigo)}` : ''}</div>
       </div>
       <div class="est">
         <div class="lbl">estoque atual</div>
-        <div class="val" id="atual-${p.produtoId}">${p.estoqueAtual!==null?p.estoqueAtual:'—'}</div>
+        <div class="val" id="atual-${p.produtoId}">${p.estoqueAtual !== null ? p.estoqueAtual : '—'}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
         <input type="number" id="novo-${p.produtoId}" placeholder="novo total" min="0" step="1">
         <button class="btn btn-grn" style="padding:8px 12px" onclick="salvar(${p.produtoId})">Salvar</button>
       </div>
     </div>`).join("");
-  const ini=(j.pagina-1)*j.porPagina+1;
-  const fim=Math.min(j.pagina*j.porPagina, j.totalProdutos);
-  document.getElementById("paginacao").innerHTML=`
-    <button onclick="carregar(${j.pagina-1})" ${j.pagina<=1?'disabled':''}>← Anterior</button>
+  const ini = (j.pagina - 1) * j.porPagina + 1;
+  const fim = Math.min(j.pagina * j.porPagina, j.totalProdutos);
+  document.getElementById("paginacao").innerHTML = `
+    <button onclick="carregar(${j.pagina - 1})" ${j.pagina <= 1 ? 'disabled' : ''}>← Anterior</button>
     <span class="muted">${ini}–${fim} de ${j.totalProdutos} · página ${j.pagina}/${j.totalPaginas}</span>
-    <button onclick="carregar(${j.pagina+1})" ${j.pagina>=j.totalPaginas?'disabled':''}>Próxima →</button>`;
+    <button onclick="carregar(${j.pagina + 1})" ${j.pagina >= j.totalPaginas ? 'disabled' : ''}>Próxima →</button>`;
 }
-
-async function salvar(produtoId){
-  const inp=document.getElementById("novo-"+produtoId);
-  const val=inp.value.trim();
-  if(val===""){ msg("Digite o novo total antes de salvar.","warn"); return; }
-  const novo=Number(val);
-  if(isNaN(novo)||novo<0){ msg("Total inválido.","err"); return; }
-  const atualEl=document.getElementById("atual-"+produtoId);
-  const btn=inp.nextElementSibling;
-  btn.disabled=true; btn.textContent="Salvando…";
-  try{
-    const j=await fetch(B+"/api/estoque/ajustar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({produtoId,novoTotal:novo,funcionarioNome:sessNome()})}).then(r=>r.json());
-    if(j.erro){ msg("Erro ao ajustar: "+j.erro,"err"); btn.disabled=false; btn.textContent="Salvar"; return; }
-    atualEl.textContent=novo;
-    inp.value="";
-    msg("✅ Estoque atualizado.","ok");
-  }catch(e){ msg("Erro de conexão ao salvar.","err"); }
-  btn.disabled=false; btn.textContent="Salvar";
-}
-</script>
+async function salvar(produtoId) {
+  const inp = document.getElementById("novo-" + produtoId);
+  const val = inp.value.trim();
+  if (val === "") {
+    msg("Digite o novo total antes de salvar.", "warn");
+    return;
+  }
+  const novo = Number(val);
+  if (isNaN(novo) || novo < 0) {
+    msg("Total inválido.", "err");
+    return;
+  }
+  const atualEl = document.getElementById("atual-" + produtoId);
+  const btn = inp.nextElementSibling;
+  btn.disabled = true;
+  btn.textContent = "Salvando…";
+  try {
+    const j = await fetch(B + "/api/estoque/ajustar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        produtoId,
+        novoTotal: novo,
+        funcionarioNome: sessNome()
+      })
+    }).then(r => r.json());
+    if (j.erro) {
+      msg("Erro ao ajustar: " + j.erro, "err");
+      btn.disabled = false;
+      btn.textContent = "Salvar";
+      return;
+    }
+    atualEl.textContent = novo;
+    inp.value = "";
+    msg("✅ Estoque atualizado.", "ok");
+  } catch (e) {
+    msg("Erro de conexão ao salvar.", "err");
+  }
+  btn.disabled = false;
+  btn.textContent = "Salvar";
+}</script>
 </body>
 </html>

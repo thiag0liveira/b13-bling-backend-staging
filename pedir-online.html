@@ -166,179 +166,315 @@
 <div id="app"></div>
 <div style="position:fixed;bottom:4px;right:6px;font-size:11px;color:#8f8ac0;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:6px;z-index:9999;pointer-events:none">v2026.08.11-d</div>
 <div id="recibo"></div>
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app"; // hospedado: mesmo servidor; local: Railway
-const LOGO="/logo";
-const WHATS="5531999719888";
-const MIN_ID=100, MIN_ANON=600;
-
-let CAT=null, META={}, ERRO=null;
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app"; // hospedado: mesmo servidor; local: Railway
+const LOGO = "/logo";
+const WHATS = "5531999719888";
+const MIN_ID = 100,
+  MIN_ANON = 600;
+let CAT = null,
+  META = {},
+  ERRO = null;
 let S = novoEstado();
-function novoEstado(){ return { etapa:"inicio", modo:"catalogo", doc:"", identificado:false, docNome:null, docInfo:null, docChecado:false, catAtiva:0, busca:"", expandido:null,
-  carrinho:{}, nome:"", telefone:"", email:"", confDoc:false, entrega:"", endereco:"", end:{cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""}, cepMsg:"", frete:null, freteMsg:"", enviando:false, resultado:null }; }
-
-const brl=(v)=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const soDig=(s)=>String(s??"").replace(/\D/g,"");
-function validaCPF(c){ c=soDig(c); if(c.length!==11||/^(\d)\1+$/.test(c))return false; let s=0; for(let i=0;i<9;i++)s+=+c[i]*(10-i); let d1=11-(s%11); if(d1>=10)d1=0; if(d1!==+c[9])return false; s=0; for(let i=0;i<10;i++)s+=+c[i]*(11-i); let d2=11-(s%11); if(d2>=10)d2=0; return d2===+c[10]; }
-function validaCNPJ(c){ c=soDig(c); if(c.length!==14||/^(\d)\1+$/.test(c))return false; const calc=(x)=>{let n=0,p=x-7; for(let i=x;i>=1;i--){n+=+c[x-i]*p--; if(p<2)p=9;} const r=11-(n%11); return r>9?0:r;}; return calc(12)===+c[12]&&calc(13)===+c[13]; }
-function docValido(d){ d=soDig(d); return d.length===11?validaCPF(d):d.length===14?validaCNPJ(d):false; }
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+function novoEstado() {
+  return {
+    etapa: "inicio",
+    modo: "catalogo",
+    doc: "",
+    identificado: false,
+    docNome: null,
+    docInfo: null,
+    docChecado: false,
+    catAtiva: 0,
+    busca: "",
+    expandido: null,
+    carrinho: {},
+    nome: "",
+    telefone: "",
+    email: "",
+    confDoc: false,
+    entrega: "",
+    endereco: "",
+    end: {
+      cep: "",
+      rua: "",
+      numero: "",
+      complemento: "",
+      bairro: "",
+      cidade: "",
+      uf: ""
+    },
+    cepMsg: "",
+    frete: null,
+    freteMsg: "",
+    enviando: false,
+    resultado: null
+  };
+}
+const brl = v => Number(v || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const soDig = s => String(s !== null && s !== void 0 ? s : "").replace(/\D/g, "");
+function validaCPF(c) {
+  c = soDig(c);
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  let s = 0;
+  for (let i = 0; i < 9; i++) s += +c[i] * (10 - i);
+  let d1 = 11 - s % 11;
+  if (d1 >= 10) d1 = 0;
+  if (d1 !== +c[9]) return false;
+  s = 0;
+  for (let i = 0; i < 10; i++) s += +c[i] * (11 - i);
+  let d2 = 11 - s % 11;
+  if (d2 >= 10) d2 = 0;
+  return d2 === +c[10];
+}
+function validaCNPJ(c) {
+  c = soDig(c);
+  if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
+  const calc = x => {
+    let n = 0,
+      p = x - 7;
+    for (let i = x; i >= 1; i--) {
+      n += +c[x - i] * p--;
+      if (p < 2) p = 9;
+    }
+    const r = 11 - n % 11;
+    return r > 9 ? 0 : r;
+  };
+  return calc(12) === +c[12] && calc(13) === +c[13];
+}
+function docValido(d) {
+  d = soDig(d);
+  return d.length === 11 ? validaCPF(d) : d.length === 14 ? validaCNPJ(d) : false;
+}
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 // alerta com o visual do app, em vez do alertaBonito() feio/genérico do navegador
-function alertaBonito(msg){
-  let old=document.getElementById("alertaBonitoOverlay");
-  if(old) old.remove();
-  const div=document.createElement("div");
-  div.id="alertaBonitoOverlay";
-  div.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;animation:alertaFundo .15s ease-out";
-  div.onclick=(e)=>{ if(e.target===div) div.remove(); };
-  div.innerHTML=`
+function alertaBonito(msg) {
+  let old = document.getElementById("alertaBonitoOverlay");
+  if (old) old.remove();
+  const div = document.createElement("div");
+  div.id = "alertaBonitoOverlay";
+  div.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;animation:alertaFundo .15s ease-out";
+  div.onclick = e => {
+    if (e.target === div) div.remove();
+  };
+  div.innerHTML = `
     <div style="background:#181542;border:2px solid var(--mag,#FF0082);border-radius:22px;padding:36px 30px;max-width:520px;width:100%;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.55);animation:alertaPop .25s ease-out">
       <div style="font-size:52px;margin-bottom:12px">⚠️</div>
       <div style="font-size:20px;font-weight:700;color:#fff;white-space:pre-line;line-height:1.5">${esc(msg)}</div>
       <button style="margin-top:26px;background:var(--mag,#FF0082);color:#fff;border:none;border-radius:16px;padding:18px 32px;font-size:19px;font-weight:900;cursor:pointer;width:100%">OK, entendi</button>
     </div>`;
-  div.querySelector("button").onclick=()=>div.remove();
+  div.querySelector("button").onclick = () => div.remove();
   document.body.appendChild(div);
 }
-function maxUnid(estoque,un){ un=un||1; return Math.floor((estoque||0)/un)*un; }
-
-async function carregarCatalogo(){
-  try{
-    const r=await fetch(BACKEND+"/api/catalogo"); const j=await r.json();
-    CAT=j.categorias||[]; META=j.meta||{}; ERRO=null;
-  }catch(e){ ERRO="Não consegui carregar o catálogo. Verifique a conexão."; }
+function maxUnid(estoque, un) {
+  un = un || 1;
+  return Math.floor((estoque || 0) / un) * un;
+}
+async function carregarCatalogo() {
+  try {
+    const r = await fetch(BACKEND + "/api/catalogo");
+    const j = await r.json();
+    CAT = j.categorias || [];
+    META = j.meta || {};
+    ERRO = null;
+  } catch (e) {
+    ERRO = "Não consegui carregar o catálogo. Verifique a conexão.";
+  }
   render();
 }
 
 // ------- helpers de produto/sabor -------
-function ordenarSabores(sabores){
-  return [...sabores].sort((a,b)=>{
-    const tA=/(tradicional|original)/i.test(a.nome)?1:0;
-    const tB=/(tradicional|original)/i.test(b.nome)?1:0;
-    if(tB!==tA) return tB-tA; // tradicional/original primeiro
-    return (b.estoque||0)-(a.estoque||0); // depois por maior estoque
+function ordenarSabores(sabores) {
+  return [...sabores].sort((a, b) => {
+    const tA = /(tradicional|original)/i.test(a.nome) ? 1 : 0;
+    const tB = /(tradicional|original)/i.test(b.nome) ? 1 : 0;
+    if (tB !== tA) return tB - tA; // tradicional/original primeiro
+    return (b.estoque || 0) - (a.estoque || 0); // depois por maior estoque
   });
 }
-function saboresDisp(p){ return ordenarSabores((p.sabores||[]).filter(s=>maxUnid(s.estoque,p.un)>0)); }
-function produtoDisp(p){ return saboresDisp(p).length>0; }
-function todosProdutos(){ const arr=[]; (CAT||[]).forEach(c=>c.produtos.forEach(p=>arr.push({...p,cat:c.nome}))); return arr; }
+function saboresDisp(p) {
+  return ordenarSabores((p.sabores || []).filter(s => maxUnid(s.estoque, p.un) > 0));
+}
+function produtoDisp(p) {
+  return saboresDisp(p).length > 0;
+}
+function todosProdutos() {
+  const arr = [];
+  (CAT || []).forEach(c => c.produtos.forEach(p => arr.push({
+    ...p,
+    cat: c.nome
+  })));
+  return arr;
+}
 
 // ------- carrinho -------
-function addItem(prod, sabor){
-  const cap=maxUnid(sabor.estoque, prod.un);
-  if(cap<=0) return;
-  const key=String(sabor.codigo);
-  const at=S.carrinho[key];
-  const nova=(at?at.qtd:0)+prod.un;
-  if(nova>cap){ if(!at){ S.carrinho[key]={codigo:sabor.codigo,id:sabor.id,nomeProduto:prod.nome,sabor:sabor.nome,preco:prod.preco,un:prod.un,estoque:sabor.estoque,imagem:(sabor.imagem||prod.imagem||''),qtd:cap}; } render(); return; }
-  S.carrinho[key]={codigo:sabor.codigo,id:sabor.id,nomeProduto:prod.nome,sabor:sabor.nome,preco:prod.preco,un:prod.un,estoque:sabor.estoque,imagem:(sabor.imagem||prod.imagem||''),qtd:nova};
+function addItem(prod, sabor) {
+  const cap = maxUnid(sabor.estoque, prod.un);
+  if (cap <= 0) return;
+  const key = String(sabor.codigo);
+  const at = S.carrinho[key];
+  const nova = (at ? at.qtd : 0) + prod.un;
+  if (nova > cap) {
+    if (!at) {
+      S.carrinho[key] = {
+        codigo: sabor.codigo,
+        id: sabor.id,
+        nomeProduto: prod.nome,
+        sabor: sabor.nome,
+        preco: prod.preco,
+        un: prod.un,
+        estoque: sabor.estoque,
+        imagem: sabor.imagem || prod.imagem || '',
+        qtd: cap
+      };
+    }
+    render();
+    return;
+  }
+  S.carrinho[key] = {
+    codigo: sabor.codigo,
+    id: sabor.id,
+    nomeProduto: prod.nome,
+    sabor: sabor.nome,
+    preco: prod.preco,
+    un: prod.un,
+    estoque: sabor.estoque,
+    imagem: sabor.imagem || prod.imagem || '',
+    qtd: nova
+  };
   render();
 }
-function mudaQtd(key,delta){
-  const it=S.carrinho[key]; if(!it) return;
-  const cap=maxUnid(it.estoque,it.un);
-  let q=it.qtd+delta*it.un;
-  if(q<=0){ delete S.carrinho[key]; render(); return; }
-  if(q>cap) q=cap;
-  it.qtd=q; render();
+function mudaQtd(key, delta) {
+  const it = S.carrinho[key];
+  if (!it) return;
+  const cap = maxUnid(it.estoque, it.un);
+  let q = it.qtd + delta * it.un;
+  if (q <= 0) {
+    delete S.carrinho[key];
+    render();
+    return;
+  }
+  if (q > cap) q = cap;
+  it.qtd = q;
+  render();
 }
-function removeItem(key){ delete S.carrinho[key]; render(); }
-function itens(){ return Object.entries(S.carrinho).map(([k,v])=>({key:k,...v})); }
-function subtotal(){ return itens().reduce((s,i)=>s+i.preco*i.qtd,0); }
-function contagem(){ return itens().length; }
-function minAtual(){ return S.docChecado ? (S.docNome?MIN_ID:MIN_ANON) : null; }
+function removeItem(key) {
+  delete S.carrinho[key];
+  render();
+}
+function itens() {
+  return Object.entries(S.carrinho).map(([k, v]) => ({
+    key: k,
+    ...v
+  }));
+}
+function subtotal() {
+  return itens().reduce((s, i) => s + i.preco * i.qtd, 0);
+}
+function contagem() {
+  return itens().length;
+}
+function minAtual() {
+  return S.docChecado ? S.docNome ? MIN_ID : MIN_ANON : null;
+}
 
 // ================= RENDER =================
-function header(showCart){
-  const modoBtn = S.etapa==="catalogo"
-    ? `<button class="btn modobtn" onclick="S.modo=S.modo==='tabela'?'catalogo':'tabela';S.expandido=null;render()">
-        ${S.modo==="tabela"
-          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/></svg><span>Catálogo</span>`
-          : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 5h16M4 10h16M4 15h16M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Tabela</span>`}
-      </button>`
-    : "";
+function header(showCart) {
+  const modoBtn = S.etapa === "catalogo" ? `<button class="btn modobtn" onclick="S.modo=S.modo==='tabela'?'catalogo':'tabela';S.expandido=null;render()">
+        ${S.modo === "tabela" ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/></svg><span>Catálogo</span>` : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex-shrink:0"><path d="M4 5h16M4 10h16M4 15h16M4 20h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Tabela</span>`}
+      </button>` : "";
   // nome do cliente identificado — mostrado no topo até finalizar o pedido
-  const nomeTopo = (S.identificado && (S.docNome||S.nome).trim() && S.etapa!=="inicio" && S.etapa!=="sucesso") ? (S.docNome||S.nome).trim() : "";
-  const clienteBadge = nomeTopo
-    ? `<div style="display:flex;align-items:center;gap:6px;margin-left:8px">
+  const nomeTopo = S.identificado && (S.docNome || S.nome).trim() && S.etapa !== "inicio" && S.etapa !== "sucesso" ? (S.docNome || S.nome).trim() : "";
+  const clienteBadge = nomeTopo ? `<div style="display:flex;align-items:center;gap:6px;margin-left:8px">
         <div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#ffd23f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="${esc(nomeTopo)}">👤 ${esc(nomeTopo)}</div>
         <button onclick="if(confirm('Sair do cadastro e digitar outro CPF/CNPJ? Seu carrinho será mantido.'))sairDoCadastro()" title="Sair / trocar CPF ou CNPJ" style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:5px 9px;font-size:12px;color:#9a95c9;cursor:pointer">🚪</button>
-      </div>`
-    : "";
+      </div>` : "";
   return `<div class="top"><img src="${LOGO}"><div class="t">PEDIDO ATACADO</div>${clienteBadge}<div class="sp"></div>
     ${modoBtn}
-    ${showCart?`<button class="cartbtn" onclick="irCarrinho()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.2a1 1 0 0 0 1-.8L21 8H6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="20" r="1.4" fill="#fff"/><circle cx="17.5" cy="20" r="1.4" fill="#fff"/></svg>${contagem()>0?`<span class="cnt">${contagem()}</span>`:""}</button>`:""}</div>`;
+    ${showCart ? `<button class="cartbtn" onclick="irCarrinho()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="vertical-align:middle"><path d="M3 4h2l2.4 12.3a1 1 0 0 0 1 .7h8.2a1 1 0 0 0 1-.8L21 8H6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="20" r="1.4" fill="#fff"/><circle cx="17.5" cy="20" r="1.4" fill="#fff"/></svg>${contagem() > 0 ? `<span class="cnt">${contagem()}</span>` : ""}</button>` : ""}</div>`;
 }
-function render(){
-  const app=document.getElementById("app");
-  if(ERRO){ app.innerHTML=header(false)+`<div class="wrap"><div class="warn">${ERRO}</div><button class="btn btn-mag big" onclick="carregarCatalogo()">Tentar de novo</button></div>`; return; }
-  if(!CAT){ app.innerHTML=header(false)+`<div class="center" style="padding-top:8vh">
+function render() {
+  const app = document.getElementById("app");
+  if (ERRO) {
+    app.innerHTML = header(false) + `<div class="wrap"><div class="warn">${ERRO}</div><button class="btn btn-mag big" onclick="carregarCatalogo()">Tentar de novo</button></div>`;
+    return;
+  }
+  if (!CAT) {
+    app.innerHTML = header(false) + `<div class="center" style="padding-top:8vh">
     <div style="margin-bottom:20px">
       <div style="width:60px;height:60px;border:5px solid #2c2660;border-top-color:var(--mag);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div>
     </div>
     <div style="font-weight:800;font-size:18px;margin-bottom:8px">Carregando catálogo…</div>
     <div style="color:#9a95c9;font-size:13px">Buscando produtos e estoque ao vivo</div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
-  </div>`; return; }
-  if(S.etapa==="splash") return telaSplash(app);
-  if(S.etapa==="inicio") return telaInicio(app);
-  if(S.etapa==="catalogo") return S.modo==="tabela" ? telaTabela(app) : telaCatalogo(app);
-  if(S.etapa==="carrinho") return telaCarrinho(app);
-  if(S.etapa==="checkout") return telaCheckout(app);
-  if(S.etapa==="sucesso") return telaSucesso(app);
+  </div>`;
+    return;
+  }
+  if (S.etapa === "splash") return telaSplash(app);
+  if (S.etapa === "inicio") return telaInicio(app);
+  if (S.etapa === "catalogo") return S.modo === "tabela" ? telaTabela(app) : telaCatalogo(app);
+  if (S.etapa === "carrinho") return telaCarrinho(app);
+  if (S.etapa === "checkout") return telaCheckout(app);
+  if (S.etapa === "sucesso") return telaSucesso(app);
 }
-
-let _splashTimer=null;
-function produtosDestaque(){
-  const vistos=new Set(); const itens=[];
-  todosProdutos().forEach(p=>{
-    saboresDisp(p).forEach(s=>{
-      if(!vistos.has(s.id)){
+let _splashTimer = null;
+function produtosDestaque() {
+  const vistos = new Set();
+  const itens = [];
+  todosProdutos().forEach(p => {
+    saboresDisp(p).forEach(s => {
+      if (!vistos.has(s.id)) {
         vistos.add(s.id);
-        itens.push({imagem:s.imagem,nome:s.nome||p.nome,preco:p.preco});
+        itens.push({
+          imagem: s.imagem,
+          nome: s.nome || p.nome,
+          preco: p.preco
+        });
       }
     });
   });
-  for(let i=itens.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [itens[i],itens[j]]=[itens[j],itens[i]]; }
+  for (let i = itens.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [itens[i], itens[j]] = [itens[j], itens[i]];
+  }
   // pool bem maior, pra demorar bastante até repetir produto
-  return itens.filter(i=>i.imagem).slice(0,60);
+  return itens.filter(i => i.imagem).slice(0, 60);
 }
-
-function cardProdutoHtml(it){
+function cardProdutoHtml(it) {
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:12px;flex:1;min-width:0;max-width:220px">
     <div style="background:#fff;border-radius:20px;padding:16px;box-shadow:0 16px 40px rgba(0,0,0,.4)">
       <img src="${it.imagem}" style="width:180px;height:180px;object-fit:contain;display:block">
     </div>
     <div style="background:linear-gradient(90deg,#FF0082,#ff4fa8);border-radius:10px;padding:7px 16px;font-weight:900;font-size:14px;width:220px;min-height:54px;display:flex;align-items:center;justify-content:center;text-align:center;box-shadow:0 6px 16px rgba(255,0,130,.3)">
-      ${esc((it.nome||"").toUpperCase())}
+      ${esc((it.nome || "").toUpperCase())}
     </div>
     <div style="background:#181542;border:2px solid #FF0082;border-radius:10px;padding:5px 20px;font-weight:900;font-size:27px;color:#ffd23f;box-shadow:0 6px 18px rgba(0,0,0,.35)">
       ${brl(it.preco)}
     </div>
   </div>`;
 }
-
-let INSTAGRAM_POSTS=[];
-async function carregarInstagramPosts(){
-  try{
-    const j=await fetch(BACKEND+"/api/instagram/posts").then(r=>r.json());
-    INSTAGRAM_POSTS=(j.data||[]).filter(p=>p.imagem);
-  }catch(e){ INSTAGRAM_POSTS=[]; }
+let INSTAGRAM_POSTS = [];
+async function carregarInstagramPosts() {
+  try {
+    const j = await fetch(BACKEND + "/api/instagram/posts").then(r => r.json());
+    INSTAGRAM_POSTS = (j.data || []).filter(p => p.imagem);
+  } catch (e) {
+    INSTAGRAM_POSTS = [];
+  }
   // se ainda estiver na tela splash, redesenha pra já usar os posts recém-carregados
-  if(S.etapa==="splash") render();
+  if (S.etapa === "splash") render();
 }
-
-let _instagramIdx=0;
-function cardInstagramHtml(){
-  if(INSTAGRAM_POSTS.length){
-    const post=INSTAGRAM_POSTS[_instagramIdx%INSTAGRAM_POSTS.length];
+let _instagramIdx = 0;
+function cardInstagramHtml() {
+  if (INSTAGRAM_POSTS.length) {
+    const post = INSTAGRAM_POSTS[_instagramIdx % INSTAGRAM_POSTS.length];
     _instagramIdx++;
-    const ehVideo=post.tipo==="VIDEO"&&post.video;
-    const midiaHtml=ehVideo
-      ? `<video src="${esc(post.video)}" poster="${esc(post.imagem)}" playsinline
-          style="width:520px;height:920px;max-width:70vw;max-height:100%;object-fit:cover;display:block;border-radius:18px;background:#000"></video>`
-      : `<img src="${esc(post.imagem)}" style="width:480px;height:480px;max-width:70vw;object-fit:cover;display:block;border-radius:18px">`;
+    const ehVideo = post.tipo === "VIDEO" && post.video;
+    const midiaHtml = ehVideo ? `<video src="${esc(post.video)}" poster="${esc(post.imagem)}" playsinline
+          style="width:520px;height:920px;max-width:70vw;max-height:100%;object-fit:cover;display:block;border-radius:18px;background:#000"></video>` : `<img src="${esc(post.imagem)}" style="width:480px;height:480px;max-width:70vw;object-fit:cover;display:block;border-radius:18px">`;
     return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;width:100%">
       <div style="position:relative;border-radius:22px;overflow:hidden;box-shadow:0 20px 50px rgba(238,42,123,.35);border:3px solid transparent;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);padding:4px">
         ${midiaHtml}
@@ -347,7 +483,7 @@ function cardInstagramHtml(){
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ee2a7b" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="6"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.3" cy="6.7" r="1.1" fill="#ee2a7b" stroke="none"/></svg>
         <span style="font-size:22px;font-weight:900;background:linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7);-webkit-background-clip:text;background-clip:text;color:transparent">@b13_bebidas</span>
       </div>
-      ${post.legenda?`<div style="color:#e8e5ff;font-size:14px;max-width:420px;text-align:center;line-height:1.4">${esc(post.legenda)}</div>`:""}
+      ${post.legenda ? `<div style="color:#e8e5ff;font-size:14px;max-width:420px;text-align:center;line-height:1.4">${esc(post.legenda)}</div>` : ""}
     </div>`;
   }
   return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;width:100%">
@@ -359,28 +495,33 @@ function cardInstagramHtml(){
     <div style="color:#cfc9f5;font-size:15px">Ofertas, novidades e bastidores todo dia 🍻</div>
   </div>`;
 }
-
-function telaSplash(app){
-  const itens=produtosDestaque();
+function telaSplash(app) {
+  const itens = produtosDestaque();
   // monta os "slides": grupos de 3 produtos, com um card de Instagram a cada 4 rotações
-  const grupos=[];
-  for(let i=0;i<itens.length;i+=3) grupos.push(itens.slice(i,i+3));
-  const slides=[];
-  grupos.forEach((g,i)=>{
-    slides.push({tipo:"produtos",itens:g});
-    if((i+1)%4===0) slides.push({tipo:"instagram"});
+  const grupos = [];
+  for (let i = 0; i < itens.length; i += 3) grupos.push(itens.slice(i, i + 3));
+  const slides = [];
+  grupos.forEach((g, i) => {
+    slides.push({
+      tipo: "produtos",
+      itens: g
+    });
+    if ((i + 1) % 4 === 0) slides.push({
+      tipo: "instagram"
+    });
   });
-  if(!slides.length) slides.push({tipo:"produtos",itens:[]});
-
-  const slidesHtml=slides.map((sl,i)=>`
+  if (!slides.length) slides.push({
+    tipo: "produtos",
+    itens: []
+  });
+  const slidesHtml = slides.map((sl, i) => `
     <div class="slideCard" data-i="${i}" style="
       position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;
-      opacity:${i===0?1:0};transition:opacity 1.2s ease-in-out;padding:10px 24px">
-      ${sl.tipo==="instagram"?cardInstagramHtml():`<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
+      opacity:${i === 0 ? 1 : 0};transition:opacity 1.2s ease-in-out;padding:10px 24px">
+      ${sl.tipo === "instagram" ? cardInstagramHtml() : `<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
     </div>
   `).join("");
-
-  app.innerHTML=`
+  app.innerHTML = `
   <div onclick="if(_splashTimer)clearTimeout(_splashTimer);document.querySelectorAll('.slideCard video').forEach(v=>{try{v.pause()}catch(e){}});const m=document.getElementById('musicaFundo');if(m)m.pause();S.etapa='inicio';render()" style="
     position:fixed;inset:0;display:flex;flex-direction:column;
     cursor:pointer;overflow:hidden;text-align:center;
@@ -393,7 +534,7 @@ function telaSplash(app){
       <div style="font-size:16px;font-weight:900;letter-spacing:2px;color:#cfc9f5">ATACADO DE BEBIDAS · OFERTAS</div>
     </div>
 
-    <div style="position:relative;flex:1 1 auto;width:100%;z-index:1;min-height:0">${itens.length?slidesHtml:`
+    <div style="position:relative;flex:1 1 auto;width:100%;z-index:1;min-height:0">${itens.length ? slidesHtml : `
       <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:18px;padding:0 30px">Monte seu pedido no atacado direto aqui</div>`}</div>
 
     <div id="tocarComecar" style="
@@ -415,66 +556,72 @@ function telaSplash(app){
 
   // carrossel — produtos trocam no tempo; vídeo do Instagram toca inteiro (com
   // áudio) e só aí avança; nunca mais de um vídeo tocando ao mesmo tempo
-  if(_splashTimer) clearTimeout(_splashTimer);
-  _splashAtual=0;
-  if(slides.length>1){
+  if (_splashTimer) clearTimeout(_splashTimer);
+  _splashAtual = 0;
+  if (slides.length > 1) {
     tocarSlideAtual();
     agendarProximoSlideSplash();
   }
 }
-
-let _splashAtual=0;
-function tocarSlideAtual(){
-  const els=document.querySelectorAll(".slideCard");
-  const atualEl=els[_splashAtual];
-  const video=atualEl?.querySelector("video");
-  const musica=document.getElementById("musicaFundo");
-  if(video){
+let _splashAtual = 0;
+function tocarSlideAtual() {
+  const els = document.querySelectorAll(".slideCard");
+  const atualEl = els[_splashAtual];
+  const video = atualEl === null || atualEl === void 0 ? void 0 : atualEl.querySelector("video");
+  const musica = document.getElementById("musicaFundo");
+  if (video) {
     // é post do Instagram (tem áudio próprio) — pausa a música de fundo
-    if(musica) musica.pause();
-    video.currentTime=0;
-    video.muted=false;
-    const p=video.play();
-    if(p&&p.catch) p.catch(()=>{ video.muted=true; video.play().catch(()=>{}); });
-  } else if(musica){
+    if (musica) musica.pause();
+    video.currentTime = 0;
+    video.muted = false;
+    const p = video.play();
+    if (p && p.catch) p.catch(() => {
+      video.muted = true;
+      video.play().catch(() => {});
+    });
+  } else if (musica) {
     // slide de produtos — toca a música de fundo baixinho
-    musica.volume=0.12;
-    musica.play().catch(()=>{});
+    musica.volume = 0.12;
+    musica.play().catch(() => {});
   }
 }
-
-function agendarProximoSlideSplash(){
-  if(_splashTimer) clearTimeout(_splashTimer);
-  const els=document.querySelectorAll(".slideCard");
-  if(!els.length) return;
-  const atualEl=els[_splashAtual];
-  const video=atualEl?.querySelector("video");
-  if(video){
-    const aoTerminar=()=>{ video.removeEventListener("ended",aoTerminar); avancarSlideSplash(); };
-    video.addEventListener("ended",aoTerminar);
+function agendarProximoSlideSplash() {
+  if (_splashTimer) clearTimeout(_splashTimer);
+  const els = document.querySelectorAll(".slideCard");
+  if (!els.length) return;
+  const atualEl = els[_splashAtual];
+  const video = atualEl === null || atualEl === void 0 ? void 0 : atualEl.querySelector("video");
+  if (video) {
+    const aoTerminar = () => {
+      video.removeEventListener("ended", aoTerminar);
+      avancarSlideSplash();
+    };
+    video.addEventListener("ended", aoTerminar);
     // segurança: se o vídeo travar/der erro e nunca disparar "ended", avança mesmo assim
-    _splashTimer=setTimeout(avancarSlideSplash,90000);
+    _splashTimer = setTimeout(avancarSlideSplash, 90000);
   } else {
-    _splashTimer=setTimeout(avancarSlideSplash,5000);
+    _splashTimer = setTimeout(avancarSlideSplash, 5000);
   }
 }
-
-function avancarSlideSplash(){
-  const els=document.querySelectorAll(".slideCard");
-  if(!els.length) return;
-  const atualEl=els[_splashAtual];
-  const videoSaindo=atualEl.querySelector("video");
-  if(videoSaindo){ try{ videoSaindo.pause(); }catch(e){} }
-  const prox=(_splashAtual+1)%els.length;
-  atualEl.style.opacity=0;
-  els[prox].style.opacity=1;
-  _splashAtual=prox;
+function avancarSlideSplash() {
+  const els = document.querySelectorAll(".slideCard");
+  if (!els.length) return;
+  const atualEl = els[_splashAtual];
+  const videoSaindo = atualEl.querySelector("video");
+  if (videoSaindo) {
+    try {
+      videoSaindo.pause();
+    } catch (e) {}
+  }
+  const prox = (_splashAtual + 1) % els.length;
+  atualEl.style.opacity = 0;
+  els[prox].style.opacity = 1;
+  _splashAtual = prox;
   tocarSlideAtual();
   agendarProximoSlideSplash();
 }
-
-function telaInicio(app){
-  app.innerHTML=header(false)+`<div class="center">
+function telaInicio(app) {
+  app.innerHTML = header(false) + `<div class="center">
     <img src="${LOGO}" style="height:70px;margin-bottom:10px">
     <h1>Bem-vindo!</h1>
     <div class="sub">Para começar seu pedido no atacado, identifique-se com CPF ou CNPJ.</div>
@@ -488,379 +635,508 @@ function telaInicio(app){
     <div class="muted" style="margin-top:14px">Pedido mínimo: ${brl(MIN_ID)} com cadastro · ${brl(MIN_ANON)} sem cadastro</div>
   </div>`;
 }
-async function identificar(){
-  const d=soDig(S.doc);
-  if(!docValido(d)){ alertaBonito("CPF ou CNPJ inválido. Confira os números."); return; }
+async function identificar() {
+  const d = soDig(S.doc);
+  if (!docValido(d)) {
+    alertaBonito("CPF ou CNPJ inválido. Confira os números.");
+    return;
+  }
   // sempre limpa os dados de uma consulta anterior antes de checar de novo —
   // senão, ao trocar de CPF/CNPJ nessa tela, o endereço/nome do cliente
   // ANTERIOR ficava preso (checarDoc só preenche campos vazios)
-  S.docNome=null; S.docInfo=null; S.docChecado=false;
-  S.nome=""; S.telefone=""; S.email="";
-  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
-  S.identificado=true; S.doc=d;
+  S.docNome = null;
+  S.docInfo = null;
+  S.docChecado = false;
+  S.nome = "";
+  S.telefone = "";
+  S.email = "";
+  S.end = {
+    cep: "",
+    rua: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    uf: ""
+  };
+  S.identificado = true;
+  S.doc = d;
   await checarDoc();
-  S.etapa="catalogo"; S.catAtiva=0; render();
+  S.etapa = "catalogo";
+  S.catAtiva = 0;
+  render();
 }
-function semIdentificacao(){ S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false; S.etapa="catalogo"; S.catAtiva=0; render(); }
+function semIdentificacao() {
+  S.identificado = false;
+  S.doc = "";
+  S.docNome = null;
+  S.docInfo = null;
+  S.docChecado = false;
+  S.etapa = "catalogo";
+  S.catAtiva = 0;
+  render();
+}
 // "Sair do cadastro" — limpa tudo (documento, nome, endereço) e volta pro
 // campo de CPF/CNPJ em branco, pra digitar outro do zero
-function sairDoCadastro(){
-  S.identificado=false; S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false;
-  S.nome=""; S.telefone=""; S.email="";
-  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
-  S.etapa="inicio"; render();
-  setTimeout(()=>{ const el=document.getElementById("docInput"); if(el) el.focus(); },50);
+function sairDoCadastro() {
+  S.identificado = false;
+  S.doc = "";
+  S.docNome = null;
+  S.docInfo = null;
+  S.docChecado = false;
+  S.nome = "";
+  S.telefone = "";
+  S.email = "";
+  S.end = {
+    cep: "",
+    rua: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    uf: ""
+  };
+  S.etapa = "inicio";
+  render();
+  setTimeout(() => {
+    const el = document.getElementById("docInput");
+    if (el) el.focus();
+  }, 50);
 }
 // chamado a cada tecla no campo de CPF/CNPJ do checkout — se já tinha um
 // cliente identificado antes e o número mudou, limpa os dados que vieram
 // daquela busca (nome, telefone, email, endereço), pra não ficar com o
 // endereço/nome do cliente ANTERIOR quando troca pra outro documento
-function mudarDoc(valor){
+function mudarDoc(valor) {
   const tinhaIdentificado = S.docChecado && S.docNome;
-  S.doc=valor; S.docChecado=false;
-  if(tinhaIdentificado){
+  S.doc = valor;
+  S.docChecado = false;
+  if (tinhaIdentificado) {
     // só re-renderiza (e refoca) no momento em que realmente limpa os dados —
     // não em toda tecla digitada, senão perderia o foco do campo a cada letra
-    S.docNome=null; S.docInfo=null;
-    S.nome=""; S.telefone=""; S.email="";
-    S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
+    S.docNome = null;
+    S.docInfo = null;
+    S.nome = "";
+    S.telefone = "";
+    S.email = "";
+    S.end = {
+      cep: "",
+      rua: "",
+      numero: "",
+      complemento: "",
+      bairro: "",
+      cidade: "",
+      uf: ""
+    };
     render();
-    const el=document.getElementById("docInputCheckout"); if(el){ el.focus(); el.setSelectionRange(valor.length,valor.length); }
+    const el = document.getElementById("docInputCheckout");
+    if (el) {
+      el.focus();
+      el.setSelectionRange(valor.length, valor.length);
+    }
   }
 }
-async function checarDoc(){
-  const d=soDig(S.doc);
-  if(d.length!==11 && d.length!==14){ S.docNome=null; S.docChecado=false; render(); return; }
-  try{
-    const r=await fetch(BACKEND+"/api/contatos?doc="+d);
-    const j=await r.json();
-    if(j.encontrado && j.contato){
-      const c=j.contato;
-      S.docNome = c.nome||"Cliente cadastrado";
+async function checarDoc() {
+  const d = soDig(S.doc);
+  if (d.length !== 11 && d.length !== 14) {
+    S.docNome = null;
+    S.docChecado = false;
+    render();
+    return;
+  }
+  try {
+    const r = await fetch(BACKEND + "/api/contatos?doc=" + d);
+    const j = await r.json();
+    if (j.encontrado && j.contato) {
+      const c = j.contato;
+      S.docNome = c.nome || "Cliente cadastrado";
       S.docInfo = c; // guarda dados completos para exibir
       // pré-preenche os campos com dados do cadastro — só os que o cliente ainda
       // não mexeu, pra não sobrescrever o que ele já digitou enquanto essa busca
       // (assíncrona) estava em andamento
-      if(c.nome && !S.nome.trim()) S.nome=c.nome;
-      if((c.celular||c.telefone) && !S.telefone.trim()) S.telefone=c.celular||c.telefone;
-      if(c.email && !S.email.trim()) S.email=c.email;
+      if (c.nome && !S.nome.trim()) S.nome = c.nome;
+      if ((c.celular || c.telefone) && !S.telefone.trim()) S.telefone = c.celular || c.telefone;
+      if (c.email && !S.email.trim()) S.email = c.email;
       // endereço
-      const end=c.endereco||{};
-      if(end.cep && !S.end.cep.trim()) S.end.cep=end.cep;
-      if(end.rua && !S.end.rua.trim()) S.end.rua=end.rua;
-      if(end.numero && !S.end.numero.trim()) S.end.numero=end.numero;
-      if(end.complemento && !S.end.complemento.trim()) S.end.complemento=end.complemento;
-      if(end.bairro && !S.end.bairro.trim()) S.end.bairro=end.bairro;
-      if(end.cidade && !S.end.cidade.trim()) S.end.cidade=end.cidade;
-      if(end.uf && !S.end.uf.trim()) S.end.uf=end.uf;
+      const end = c.endereco || {};
+      if (end.cep && !S.end.cep.trim()) S.end.cep = end.cep;
+      if (end.rua && !S.end.rua.trim()) S.end.rua = end.rua;
+      if (end.numero && !S.end.numero.trim()) S.end.numero = end.numero;
+      if (end.complemento && !S.end.complemento.trim()) S.end.complemento = end.complemento;
+      if (end.bairro && !S.end.bairro.trim()) S.end.bairro = end.bairro;
+      if (end.cidade && !S.end.cidade.trim()) S.end.cidade = end.cidade;
+      if (end.uf && !S.end.uf.trim()) S.end.uf = end.uf;
     } else {
-      S.docNome=null;
+      S.docNome = null;
     }
-    S.docChecado=true;
-  }catch(e){ S.docChecado=false; }
+    S.docChecado = true;
+  } catch (e) {
+    S.docChecado = false;
+  }
   render();
 }
 
 // ---- MODO TABELA embutido ----
-function telaTabela(app){
-  if(!CAT){ app.innerHTML=header(true)+`<div class="wrap"><div class="muted">Carregando…</div></div>`; return; }
-  const cols={1:[],2:[],3:[],4:[]};
-  CAT.forEach(c=>{ const col=Math.min(4,Math.max(1,c.col||1)); cols[col].push(c); });
-  const tabela=`<style>.tb-mob{display:none}.tb-desk{display:grid}</style><div class="tb-wrap" style="margin-top:10px"><div class="tb-desk" id="tabelaGrid" style="grid-template-columns:repeat(4,minmax(140px,1fr));background:linear-gradient(180deg,#2b2870,#262366);border:2px solid var(--mag);border-radius:10px;overflow:hidden">
-    ${[1,2,3,4].map(n=>`<div style="border-right:${n<4?'2px solid var(--mag)':'none'}">
-      ${cols[n].filter(c=>(c.produtos||[]).some(p=>saboresDisp(p).length>0)).map(tbCatHTML).join("")}
+function telaTabela(app) {
+  if (!CAT) {
+    app.innerHTML = header(true) + `<div class="wrap"><div class="muted">Carregando…</div></div>`;
+    return;
+  }
+  const cols = {
+    1: [],
+    2: [],
+    3: [],
+    4: []
+  };
+  CAT.forEach(c => {
+    const col = Math.min(4, Math.max(1, c.col || 1));
+    cols[col].push(c);
+  });
+  const tabela = `<style>.tb-mob{display:none}.tb-desk{display:grid}</style><div class="tb-wrap" style="margin-top:10px"><div class="tb-desk" id="tabelaGrid" style="grid-template-columns:repeat(4,minmax(140px,1fr));background:linear-gradient(180deg,#2b2870,#262366);border:2px solid var(--mag);border-radius:10px;overflow:hidden">
+    ${[1, 2, 3, 4].map(n => `<div style="border-right:${n < 4 ? '2px solid var(--mag)' : 'none'}">
+      ${cols[n].filter(c => (c.produtos || []).some(p => saboresDisp(p).length > 0)).map(tbCatHTML).join("")}
     </div>`).join("")}
   </div>`;
-  app.innerHTML=header(true)+`<div class="wrap">${tabela}<div style="height:80px"></div></div>`+barra();
+  app.innerHTML = header(true) + `<div class="wrap">${tabela}<div style="height:80px"></div></div>` + barra();
 }
-function tbCatHTML(cat){
-  const prods=(cat.produtos||[]).filter(p=>saboresDisp(p).length>0);
-  if(!prods.length)return"";
-  return`<div style="border-bottom:1px solid rgba(255,0,130,.3)">
+function tbCatHTML(cat) {
+  const prods = (cat.produtos || []).filter(p => saboresDisp(p).length > 0);
+  if (!prods.length) return "";
+  return `<div style="border-bottom:1px solid rgba(255,0,130,.3)">
     <div style="background:#141031;text-align:center;font-weight:900;font-size:11px;padding:5px 4px;letter-spacing:.5px;border-bottom:1px solid var(--mag);text-transform:uppercase">${esc(cat.nome)}</div>
     ${prods.map(tbProdRow).join("")}
   </div>`;
 }
-function tbProdRow(p){
-  const multi=(p.sabores||[]).length>1;
-  const cxLabel=p.un>1?` · cx=${brl(p.preco*p.un)}`:""; const cxSpan=p.un>1?`<span style="color:rgba(255,255,255,.4);font-size:9px">${cxLabel}</span>`:"";
-  const rowStyle=`display:flex;align-items:center;gap:4px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05);min-height:34px;overflow:hidden`;
-  if(!multi){
-    const s=saboresDisp(p)[0]||(p.sabores||[])[0]; if(!s)return"";
-    const key=String(s.codigo),noCart=S.carrinho[key];
-    return`<div style="${rowStyle}">
+function tbProdRow(p) {
+  const multi = (p.sabores || []).length > 1;
+  const cxLabel = p.un > 1 ? ` · cx=${brl(p.preco * p.un)}` : "";
+  const cxSpan = p.un > 1 ? `<span style="color:rgba(255,255,255,.4);font-size:9px">${cxLabel}</span>` : "";
+  const rowStyle = `display:flex;align-items:center;gap:4px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.05);min-height:34px;overflow:hidden`;
+  if (!multi) {
+    const s = saboresDisp(p)[0] || (p.sabores || [])[0];
+    if (!s) return "";
+    const key = String(s.codigo),
+      noCart = S.carrinho[key];
+    return `<div style="${rowStyle}">
       <div style="flex:1;min-width:0;overflow:hidden"><div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.nome)}">${esc(p.nome)}</div>
         <div style="font-size:10px;color:#F2C94C;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${brl(p.preco)}<span style="color:rgba(255,255,255,.4);font-size:9px">/un</span>${cxSpan}</div></div>
-      <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;width:72px;justify-content:flex-end">${noCart
-        ?`<button style="width:22px;height:22px;border-radius:5px;border:none;background:var(--mag);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick="mudaQtd('${key}',-1)">−</button>
-           <div style="font-size:10px;font-weight:900;min-width:28px;text-align:center;line-height:1.3">${p.un>1?`${noCart.qtd/p.un}cx<br><span style="color:#9a95c9;font-size:9px">${noCart.qtd}un</span>`:`${noCart.qtd}un`}</div>
-           <button style="width:22px;height:22px;border-radius:5px;border:none;background:var(--mag);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick="mudaQtd('${key}',1)">+</button>`
-        :`<button style="width:22px;height:22px;border-radius:5px;border:1px solid var(--mag);background:rgba(255,0,130,.2);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick='addSingle("${p.id}")'>+</button>`}
+      <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;width:72px;justify-content:flex-end">${noCart ? `<button style="width:22px;height:22px;border-radius:5px;border:none;background:var(--mag);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick="mudaQtd('${key}',-1)">−</button>
+           <div style="font-size:10px;font-weight:900;min-width:28px;text-align:center;line-height:1.3">${p.un > 1 ? `${noCart.qtd / p.un}cx<br><span style="color:#9a95c9;font-size:9px">${noCart.qtd}un</span>` : `${noCart.qtd}un`}</div>
+           <button style="width:22px;height:22px;border-radius:5px;border:none;background:var(--mag);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick="mudaQtd('${key}',1)">+</button>` : `<button style="width:22px;height:22px;border-radius:5px;border:1px solid var(--mag);background:rgba(255,0,130,.2);color:#fff;font-size:15px;font-weight:900;cursor:pointer" onclick='addSingle("${p.id}")'>+</button>`}
       </div></div>`;
   }
   // multi-sabor: somatória + botão que abre modal de sabores (expandido inline)
-  const totalCx=(p.sabores||[]).reduce((s,sb)=>{const it=S.carrinho[String(sb.codigo)];return s+(it?it.qtd/p.un:0);},0);
-  const aberto=S.expandido===p.id;
-  const sabesHTML=aberto?`<div style="background:rgba(0,0,0,.25);padding:4px 6px 6px">${
-    [...(p.sabores||[])].sort((a,b)=>{const ta=/(tradicional|original)/i.test(a.nome)?1:0,tb=/(tradicional|original)/i.test(b.nome)?1:0;return tb-ta||(b.estoque||0)-(a.estoque||0);})
-    .map(s=>{
-      const cap=maxUnid(s.estoque,p.un),key=String(s.codigo),noCart=S.carrinho[key];
-      const nm=s.nome.replace(p.nome,"").trim().replace(/^[-–,\s]+/,"").trim()||s.nome;
-      if(!cap)return`<div style="display:flex;align-items:center;gap:6px;padding:3px 0;opacity:.45;font-size:10px">
-        ${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0">`:""}<span style="flex:1">${esc(nm)}</span><span style="color:#ff9db0;font-size:9px">sem estoque</span></div>`;
-      return`<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:10px">
-        ${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0">`:""}<span style="flex:1">${esc(nm)}</span>
-        <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;width:66px;justify-content:flex-end">${noCart
-          ?`<button style="width:20px;height:20px;border-radius:4px;border:none;background:var(--mag);color:#fff;font-size:13px;cursor:pointer" onclick="mudaQtd('${key}',-1)">−</button>
-             <span style="font-size:10px;font-weight:900;min-width:24px;text-align:center">${p.un>1?`${noCart.qtd/p.un}cx`:`${noCart.qtd}un`}</span>
-             <button style="width:20px;height:20px;border-radius:4px;border:none;background:var(--mag);color:#fff;font-size:13px;cursor:pointer" onclick="mudaQtd('${key}',1)">+</button>`
-          :`<button style="width:20px;height:20px;border-radius:4px;border:1px solid var(--mag);background:rgba(255,0,130,.2);color:#fff;font-size:13px;cursor:pointer" onclick='addFlav("${p.id}","${key}")'>+</button>`}
+  const totalCx = (p.sabores || []).reduce((s, sb) => {
+    const it = S.carrinho[String(sb.codigo)];
+    return s + (it ? it.qtd / p.un : 0);
+  }, 0);
+  const aberto = S.expandido === p.id;
+  const sabesHTML = aberto ? `<div style="background:rgba(0,0,0,.25);padding:4px 6px 6px">${[...(p.sabores || [])].sort((a, b) => {
+    const ta = /(tradicional|original)/i.test(a.nome) ? 1 : 0,
+      tb = /(tradicional|original)/i.test(b.nome) ? 1 : 0;
+    return tb - ta || (b.estoque || 0) - (a.estoque || 0);
+  }).map(s => {
+    const cap = maxUnid(s.estoque, p.un),
+      key = String(s.codigo),
+      noCart = S.carrinho[key];
+    const nm = s.nome.replace(p.nome, "").trim().replace(/^[-–,\s]+/, "").trim() || s.nome;
+    if (!cap) return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;opacity:.45;font-size:10px">
+        ${s.imagem ? `<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0">` : ""}<span style="flex:1">${esc(nm)}</span><span style="color:#ff9db0;font-size:9px">sem estoque</span></div>`;
+    return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:10px">
+        ${s.imagem ? `<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:28px;height:28px;object-fit:contain;background:#fff;border-radius:4px;flex-shrink:0">` : ""}<span style="flex:1">${esc(nm)}</span>
+        <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;width:66px;justify-content:flex-end">${noCart ? `<button style="width:20px;height:20px;border-radius:4px;border:none;background:var(--mag);color:#fff;font-size:13px;cursor:pointer" onclick="mudaQtd('${key}',-1)">−</button>
+             <span style="font-size:10px;font-weight:900;min-width:24px;text-align:center">${p.un > 1 ? `${noCart.qtd / p.un}cx` : `${noCart.qtd}un`}</span>
+             <button style="width:20px;height:20px;border-radius:4px;border:none;background:var(--mag);color:#fff;font-size:13px;cursor:pointer" onclick="mudaQtd('${key}',1)">+</button>` : `<button style="width:20px;height:20px;border-radius:4px;border:1px solid var(--mag);background:rgba(255,0,130,.2);color:#fff;font-size:13px;cursor:pointer" onclick='addFlav("${p.id}","${key}")'>+</button>`}
         </div></div>`;
-    }).join("")}
-  </div>`:"";
-  return`<div>
+  }).join("")}
+  </div>` : "";
+  return `<div>
     <div style="${rowStyle}">
       <div style="flex:1;min-width:0;overflow:hidden"><div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.nome)}">${esc(p.nome)}</div>
         <div style="font-size:10px;color:#F2C94C;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${brl(p.preco)}<span style="color:rgba(255,255,255,.4);font-size:9px">/un</span>${cxSpan}</div></div>
       <div style="display:flex;align-items:center;gap:3px;flex-shrink:0;width:72px;justify-content:flex-end">
-        ${totalCx>0?`<div style="text-align:right"><span style="font-size:10px;font-weight:900;color:#ffd23f">${p.un>1?`${totalCx}cx`:`${totalCx*p.un}un`}</span>${p.un>1?`<br><span style="color:#9a95c9;font-size:9px">${totalCx*p.un}un</span>`:``}</div>`:""}
-        <button style="width:22px;height:22px;border-radius:5px;border:1px solid var(--mag);background:${aberto?'var(--mag)':'rgba(255,0,130,.2)'};color:#fff;font-size:13px;font-weight:900;cursor:pointer" onclick="S.expandido=S.expandido==='${p.id}'?null:'${p.id}';render()">${aberto?"−":"+"}</button>
+        ${totalCx > 0 ? `<div style="text-align:right"><span style="font-size:10px;font-weight:900;color:#ffd23f">${p.un > 1 ? `${totalCx}cx` : `${totalCx * p.un}un`}</span>${p.un > 1 ? `<br><span style="color:#9a95c9;font-size:9px">${totalCx * p.un}un</span>` : ``}</div>` : ""}
+        <button style="width:22px;height:22px;border-radius:5px;border:1px solid var(--mag);background:${aberto ? 'var(--mag)' : 'rgba(255,0,130,.2)'};color:#fff;font-size:13px;font-weight:900;cursor:pointer" onclick="S.expandido=S.expandido==='${p.id}'?null:'${p.id}';render()">${aberto ? "−" : "+"}</button>
       </div>
     </div>${sabesHTML}</div>`;
 }
 // ---- FIM MODO TABELA ----
 
-function maskFone(v){
-  const d=soDig(v||""); if(d.length<8) return v||"";
-  const meio="*".repeat(Math.max(d.length-6,3));
-  return `(${d.slice(0,2)}) ${meio}-${d.slice(-4)}`;
+function maskFone(v) {
+  const d = soDig(v || "");
+  if (d.length < 8) return v || "";
+  const meio = "*".repeat(Math.max(d.length - 6, 3));
+  return `(${d.slice(0, 2)}) ${meio}-${d.slice(-4)}`;
 }
-function maskEmail(v){
-  if(!v||!v.includes("@")) return v||"";
-  const [u,dom]=v.split("@");
-  const visivel=u.slice(0,Math.min(2,u.length));
-  return `${visivel}${"*".repeat(Math.max(u.length-2,3))}@${dom}`;
+function maskEmail(v) {
+  if (!v || !v.includes("@")) return v || "";
+  const [u, dom] = v.split("@");
+  const visivel = u.slice(0, Math.min(2, u.length));
+  return `${visivel}${"*".repeat(Math.max(u.length - 2, 3))}@${dom}`;
 }
-function maskEndereco(end){
-  if(!end) return "";
+function maskEndereco(end) {
+  if (!end) return "";
   // mostra só bairro/cidade — rua e número completos não aparecem na confirmação
-  return [end.bairro,end.cidade].filter(Boolean).join(" — ");
+  return [end.bairro, end.cidade].filter(Boolean).join(" — ");
 }
-
-function cardCliente(){
-  if(!S.docChecado||!S.docNome||!S.docInfo) return "";
-  const c=S.docInfo;
+function cardCliente() {
+  var _c$endereco;
+  if (!S.docChecado || !S.docNome || !S.docInfo) return "";
+  const c = S.docInfo;
   return `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:12px;margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="font-weight:900;color:#a8f0c8">✅ Cliente encontrado</div>
       <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="sairCadastro()">↩ Sair / trocar</button>
     </div>
-    <div style="font-size:14px;font-weight:700">${esc(c.nome||"")}</div>
-    ${c.celular||c.telefone?`<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(maskFone(c.celular||c.telefone))}</div>`:""}
-    ${c.email?`<div style="font-size:12px;color:#9a95c9">✉️ ${esc(maskEmail(c.email))}</div>`:""}
-    ${c.endereco?.rua?`<div style="font-size:12px;color:#9a95c9">📍 ${esc(maskEndereco(c.endereco))}</div>`:""}
+    <div style="font-size:14px;font-weight:700">${esc(c.nome || "")}</div>
+    ${c.celular || c.telefone ? `<div style="font-size:12px;color:#9a95c9;margin-top:2px">📱 ${esc(maskFone(c.celular || c.telefone))}</div>` : ""}
+    ${c.email ? `<div style="font-size:12px;color:#9a95c9">✉️ ${esc(maskEmail(c.email))}</div>` : ""}
+    ${(_c$endereco = c.endereco) !== null && _c$endereco !== void 0 && _c$endereco.rua ? `<div style="font-size:12px;color:#9a95c9">📍 ${esc(maskEndereco(c.endereco))}</div>` : ""}
     <div style="font-size:11px;color:#514c96;margin-top:4px">Dados protegidos — confira só os campos abaixo</div>
   </div>`;
 }
 // zera tudo que veio de um CPF/CNPJ identificado, pra digitar outro do zero —
 // evita o problema de ficar com nome/telefone/endereço do cliente ANTERIOR
 // quando só o número do documento é trocado
-function sairCadastro(){
-  S.doc=""; S.docNome=null; S.docInfo=null; S.docChecado=false;
-  S.nome=""; S.telefone=""; S.email="";
-  S.end={cep:"",rua:"",numero:"",complemento:"",bairro:"",cidade:"",uf:""};
+function sairCadastro() {
+  S.doc = "";
+  S.docNome = null;
+  S.docInfo = null;
+  S.docChecado = false;
+  S.nome = "";
+  S.telefone = "";
+  S.email = "";
+  S.end = {
+    cep: "",
+    rua: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    uf: ""
+  };
   render();
-  setTimeout(()=>{ const el=document.getElementById("docInputCheckout")||document.getElementById("docInput"); if(el) el.focus(); },50);
+  setTimeout(() => {
+    const el = document.getElementById("docInputCheckout") || document.getElementById("docInput");
+    if (el) el.focus();
+  }, 50);
 }
-
-function mudarCategoria(i){
-  S.busca=''; S.catAtiva=i; S.expandido=null;
+function mudarCategoria(i) {
+  S.busca = '';
+  S.catAtiva = i;
+  S.expandido = null;
   // guarda a posição do scroll horizontal da barra de categorias
-  const catsEl=document.querySelector('.cats');
-  const scrollX=catsEl?catsEl.scrollLeft:0;
+  const catsEl = document.querySelector('.cats');
+  const scrollX = catsEl ? catsEl.scrollLeft : 0;
   render();
   // restaura a posição horizontal das categorias (pra não voltar ao início)
-  const novaCats=document.querySelector('.cats');
-  if(novaCats) novaCats.scrollLeft=scrollX;
+  const novaCats = document.querySelector('.cats');
+  if (novaCats) novaCats.scrollLeft = scrollX;
 }
-
-function telaCatalogo(app){
-  const busca=S.busca.trim().toLowerCase();
+function telaCatalogo(app) {
+  const busca = S.busca.trim().toLowerCase();
   let lista, titulo;
-  if(busca){
-    lista=todosProdutos().filter(p=>p.nome.toLowerCase().includes(busca));
-    titulo=`Busca: "${esc(S.busca)}"`;
-  }else{
-    const c=CAT[S.catAtiva]||CAT[0];
-    lista=(c?c.produtos:[]).filter(produtoDisp); // esconde esgotados na navegação
-    titulo=c?c.nome:"";
+  if (busca) {
+    lista = todosProdutos().filter(p => p.nome.toLowerCase().includes(busca));
+    titulo = `Busca: "${esc(S.busca)}"`;
+  } else {
+    const c = CAT[S.catAtiva] || CAT[0];
+    lista = (c ? c.produtos : []).filter(produtoDisp); // esconde esgotados na navegação
+    titulo = c ? c.nome : "";
   }
-  const cats=CAT.map((c,i)=>`<div class="cat ${!busca&&i===S.catAtiva?"on":""}" onclick="mudarCategoria(${i})">${esc(c.nome)}</div>`).join("");
-  const side=CAT.map((c,i)=>`<div class="scat ${!busca&&i===S.catAtiva?"on":""}" onclick="mudarCategoria(${i})">${esc(c.nome)}</div>`).join("");
-  const cards=lista.map(p=>cardProduto(p,busca)).join("") || `<div class="muted">Nenhum produto encontrado.</div>`;
-
+  const cats = CAT.map((c, i) => `<div class="cat ${!busca && i === S.catAtiva ? "on" : ""}" onclick="mudarCategoria(${i})">${esc(c.nome)}</div>`).join("");
+  const side = CAT.map((c, i) => `<div class="scat ${!busca && i === S.catAtiva ? "on" : ""}" onclick="mudarCategoria(${i})">${esc(c.nome)}</div>`).join("");
+  const cards = lista.map(p => cardProduto(p, busca)).join("") || `<div class="muted">Nenhum produto encontrado.</div>`;
   const boasVindas = ""; // removido — cardCliente() já mostra essa info
-  app.innerHTML=header(true)+ boasVindas +
-    `<div class="searchbar"><input autocomplete="off" placeholder="🔎 Buscar produto (ex.: heineken, gin, coca)" value="${esc(S.busca)}" oninput="S.busca=this.value;S.expandido=null;render()">${S.busca?`<button class="clr" onclick="S.busca='';render()">✕</button>`:""}</div>
+  app.innerHTML = header(true) + boasVindas + `<div class="searchbar"><input autocomplete="off" placeholder="🔎 Buscar produto (ex.: heineken, gin, coca)" value="${esc(S.busca)}" oninput="S.busca=this.value;S.expandido=null;render()">${S.busca ? `<button class="clr" onclick="S.busca='';render()">✕</button>` : ""}</div>
      <div class="cats">${cats}</div>
      <div class="wrap"><div class="layout">
        <div class="side">${side}</div>
        <div style="flex:1;min-width:0"><div id="produtos-lista" style="font-weight:800;margin:2px 0 10px">${esc(titulo)}</div><div class="grid">${cards}</div></div>
-     </div></div>`
-    + barra();
+     </div></div>` + barra();
 }
-
-function cardProduto(p,busca){
-  const disp=saboresDisp(p);
-  const multi=(p.sabores||[]).length>1;
-  const esgotado=disp.length===0;
-  const precoCx = p.preco*(p.un||1);
-  const cxTxt = (p.un>1)?`<div class="cx">caixa c/ ${p.un} = ${brl(precoCx)}</div>`:``;
-  let acao="";
-  if(esgotado){
-    acao=`<div class="tag">SEM ESTOQUE</div>`;
-  }else if(multi){
-    const aberto=S.expandido===p.id;
-    acao=`<div class="addrow"><button class="btn btn-mag" onclick="toggleFlav('${p.id}')">${aberto?"Fechar sabores":"Escolher sabor"}</button></div>`;
-    if(aberto){
-      const fonte = busca ? ordenarSabores(p.sabores||[]) : disp;
-      acao+=`<div class="flavs">`+fonte.map(s=>{
-        const cap=maxUnid(s.estoque,p.un); const key=String(s.codigo); const noCart=S.carrinho[key];
-        if(cap<=0) return `<div class="flav esg"><div class="flavtop"><span class="flavnm">${esc(s.nome)}</span></div><span class="tag" style="flex-shrink:0">sem estoque</span></div>`;
+function cardProduto(p, busca) {
+  const disp = saboresDisp(p);
+  const multi = (p.sabores || []).length > 1;
+  const esgotado = disp.length === 0;
+  const precoCx = p.preco * (p.un || 1);
+  const cxTxt = p.un > 1 ? `<div class="cx">caixa c/ ${p.un} = ${brl(precoCx)}</div>` : ``;
+  let acao = "";
+  if (esgotado) {
+    acao = `<div class="tag">SEM ESTOQUE</div>`;
+  } else if (multi) {
+    const aberto = S.expandido === p.id;
+    acao = `<div class="addrow"><button class="btn btn-mag" onclick="toggleFlav('${p.id}')">${aberto ? "Fechar sabores" : "Escolher sabor"}</button></div>`;
+    if (aberto) {
+      const fonte = busca ? ordenarSabores(p.sabores || []) : disp;
+      acao += `<div class="flavs">` + fonte.map(s => {
+        const cap = maxUnid(s.estoque, p.un);
+        const key = String(s.codigo);
+        const noCart = S.carrinho[key];
+        if (cap <= 0) return `<div class="flav esg"><div class="flavtop"><span class="flavnm">${esc(s.nome)}</span></div><span class="tag" style="flex-shrink:0">sem estoque</span></div>`;
         return `<div class="flav">
-          <div class="flavtop">${s.imagem?`<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:34px;height:34px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">`:""}<span class="flavnm">${esc(s.nome)}</span></div>
-          <div class="flavacao">`+
-          (noCart? stepperMini(key) : `<button onclick='addFlav("${p.id}","${key}")'>+ ${p.un>1?"caixa":"add"}</button>`)+`</div>
+          <div class="flavtop">${s.imagem ? `<img src="${esc(s.imagem)}" onerror="this.remove()" style="width:34px;height:34px;object-fit:contain;background:#fff;border-radius:6px;flex-shrink:0">` : ""}<span class="flavnm">${esc(s.nome)}</span></div>
+          <div class="flavacao">` + (noCart ? stepperMini(key) : `<button onclick='addFlav("${p.id}","${key}")'>+ ${p.un > 1 ? "caixa" : "add"}</button>`) + `</div>
         </div>`;
-      }).join("")+`</div>`;
+      }).join("") + `</div>`;
     }
-  }else{
-    const s=disp[0]||(p.sabores||[])[0];
-    const key=s?String(s.codigo):null;
-    const noCart=key&&S.carrinho[key];
-    acao=`<div class="addrow">`+(noCart?stepper(key):`<button class="btn btn-mag" onclick='addSingle("${p.id}")'>+ Adicionar</button>`)+`</div>`;
+  } else {
+    const s = disp[0] || (p.sabores || [])[0];
+    const key = s ? String(s.codigo) : null;
+    const noCart = key && S.carrinho[key];
+    acao = `<div class="addrow">` + (noCart ? stepper(key) : `<button class="btn btn-mag" onclick='addSingle("${p.id}")'>+ Adicionar</button>`) + `</div>`;
   }
   const estTxt = ``;
-  return `<div class="card ${esgotado?"esg":""}">
-    ${p.imagem?`<img class="pimg" src="${esc(p.imagem)}" onerror="this.remove()">`:""}
-    <div class="nm">${esc(p.nome)} ${p.obs?`<span class="obs">${esc(p.obs)}</span>`:""}</div>
+  return `<div class="card ${esgotado ? "esg" : ""}">
+    ${p.imagem ? `<img class="pimg" src="${esc(p.imagem)}" onerror="this.remove()">` : ""}
+    <div class="nm">${esc(p.nome)} ${p.obs ? `<span class="obs">${esc(p.obs)}</span>` : ""}</div>
     <div class="pr">${brl(p.preco)} <span class="cx">/un</span></div>${cxTxt}${estTxt}
     ${acao}</div>`;
 }
-function pack(qtd,un){ un=un||1; return un===1 ? `${qtd} un` : `${qtd/un} cx (${qtd} un)`; }
-function stepper(key){ const it=S.carrinho[key]; const lbl = it.un===1 ? `${it.qtd} un` : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd/it.un} cx</small>`; return `<div class="step"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`; }
-function stepperMini(key){
-  const it=S.carrinho[key];
-  const lbl = it.un===1
-    ? `${it.qtd} un`
-    : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd/it.un} cx</small>`;
+function pack(qtd, un) {
+  un = un || 1;
+  return un === 1 ? `${qtd} un` : `${qtd / un} cx (${qtd} un)`;
+}
+function stepper(key) {
+  const it = S.carrinho[key];
+  const lbl = it.un === 1 ? `${it.qtd} un` : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd / it.un} cx</small>`;
+  return `<div class="step"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
+}
+function stepperMini(key) {
+  const it = S.carrinho[key];
+  const lbl = it.un === 1 ? `${it.qtd} un` : `${it.qtd} un<br><small style="color:#b9b4e6">${it.qtd / it.un} cx</small>`;
   return `<div class="step stepmini"><button onclick="mudaQtd('${key}',-1)">−</button><div class="q">${lbl}</div><button onclick="mudaQtd('${key}',1)">+</button></div>`;
 }
-
-function findProd(id){ for(const c of CAT){ const p=c.produtos.find(x=>String(x.id)===String(id)); if(p) return p; } return null; }
-function toggleFlav(id){ S.expandido = S.expandido===id?null:id; render(); }
-function addSingle(id){ const p=findProd(id); const s=saboresDisp(p)[0]||(p.sabores||[])[0]; if(s) addItem(p,s); }
-function addFlav(id,codigo){ const p=findProd(id); const s=(p.sabores||[]).find(x=>String(x.codigo)===String(codigo)); if(s) addItem(p,s); }
-
-function barra(){
-  if(contagem()===0) return "";
+function findProd(id) {
+  for (const c of CAT) {
+    const p = c.produtos.find(x => String(x.id) === String(id));
+    if (p) return p;
+  }
+  return null;
+}
+function toggleFlav(id) {
+  S.expandido = S.expandido === id ? null : id;
+  render();
+}
+function addSingle(id) {
+  const p = findProd(id);
+  const s = saboresDisp(p)[0] || (p.sabores || [])[0];
+  if (s) addItem(p, s);
+}
+function addFlav(id, codigo) {
+  const p = findProd(id);
+  const s = (p.sabores || []).find(x => String(x.codigo) === String(codigo));
+  if (s) addItem(p, s);
+}
+function barra() {
+  if (contagem() === 0) return "";
   return `<div class="bar"><div class="barbox"><div class="tot">${brl(subtotal())}<br><small class="muted">${contagem()} item(ns)</small></div>
     <button class="btn btn-mag" onclick="irCarrinho()">Ver carrinho →</button></div></div>`;
 }
-
-function irCarrinho(){ if(contagem()===0){alertaBonito("Seu carrinho está vazio.");return;} S.etapa="carrinho"; render(); }
-function telaCarrinho(app){
-  const lines=itens().map(i=>`<div class="line">${i.imagem?`<img src="${esc(i.imagem)}" onerror="this.remove()" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">`:""}<div class="info"><div style="font-weight:800">${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` — ${esc(i.sabor)}`:""}</div>
-     <div class="muted">${brl(i.preco)}/un · ${pack(i.qtd,i.un)} = <b style="color:#ffd23f">${brl(i.preco*i.qtd)}</b></div>
-     <div class="step" style="margin-top:6px"><button onclick="mudaQtd('${i.key}',-1)">−</button><div class="q">${i.un===1?`${i.qtd} un`:`${i.qtd/i.un} cx`}</div><button onclick="mudaQtd('${i.key}',1)">+</button></div></div>
+function irCarrinho() {
+  if (contagem() === 0) {
+    alertaBonito("Seu carrinho está vazio.");
+    return;
+  }
+  S.etapa = "carrinho";
+  render();
+}
+function telaCarrinho(app) {
+  const lines = itens().map(i => `<div class="line">${i.imagem ? `<img src="${esc(i.imagem)}" onerror="this.remove()" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:8px;flex-shrink:0">` : ""}<div class="info"><div style="font-weight:800">${esc(i.nomeProduto)}${i.sabor && i.sabor !== i.nomeProduto ? ` — ${esc(i.sabor)}` : ""}</div>
+     <div class="muted">${brl(i.preco)}/un · ${pack(i.qtd, i.un)} = <b style="color:#ffd23f">${brl(i.preco * i.qtd)}</b></div>
+     <div class="step" style="margin-top:6px"><button onclick="mudaQtd('${i.key}',-1)">−</button><div class="q">${i.un === 1 ? `${i.qtd} un` : `${i.qtd / i.un} cx`}</div><button onclick="mudaQtd('${i.key}',1)">+</button></div></div>
      <button class="rm" onclick="removeItem('${i.key}')">🗑</button></div>`).join("");
-  const min=minAtual();
-  const falta=(min!=null)&&subtotal()<min;
-  const infoMin=(min==null)
-    ? `<div class="muted" style="margin:8px 0">Pedido mínimo: ${brl(MIN_ID)} com cadastro · ${brl(MIN_ANON)} sem cadastro. Informe seu CPF/CNPJ no próximo passo.</div>`
-    : (falta?`<div class="warn">Pedido mínimo de ${brl(min)}${S.docNome?" (com cadastro)":" (sem cadastro)"}. Faltam ${brl(min-subtotal())}.</div>`:"");
-  app.innerHTML=header(false)+`<div class="wrap"><h1 style="font-size:22px">Seu carrinho</h1>
-    ${lines||'<div class="muted">Carrinho vazio.</div>'}
+  const min = minAtual();
+  const falta = min != null && subtotal() < min;
+  const infoMin = min == null ? `<div class="muted" style="margin:8px 0">Pedido mínimo: ${brl(MIN_ID)} com cadastro · ${brl(MIN_ANON)} sem cadastro. Informe seu CPF/CNPJ no próximo passo.</div>` : falta ? `<div class="warn">Pedido mínimo de ${brl(min)}${S.docNome ? " (com cadastro)" : " (sem cadastro)"}. Faltam ${brl(min - subtotal())}.</div>` : "";
+  app.innerHTML = header(false) + `<div class="wrap"><h1 style="font-size:22px">Seu carrinho</h1>
+    ${lines || '<div class="muted">Carrinho vazio.</div>'}
     ${infoMin}
     <div style="height:90px"></div></div>
     <div class="bar"><div class="barbox"><div class="tot">${brl(subtotal())}</div>
       <button class="btn btn-out" onclick="S.etapa='catalogo';render()">+ Itens</button>
-      <button class="btn btn-mag" ${falta?"disabled":""} onclick="irCheckout()">Continuar</button></div></div>`;
+      <button class="btn btn-mag" ${falta ? "disabled" : ""} onclick="irCheckout()">Continuar</button></div></div>`;
 }
-
-function irCheckout(){ const m=minAtual(); if(m!=null && subtotal()<m){alertaBonito("Abaixo do mínimo.");return;} S.etapa="checkout"; render(); }
-function enderecoObrig(){ return S.docChecado || S.entrega==='entrega'; }
-function enderecoTexto(){ const e=S.end; if(!e.rua) return ""; return `${e.rua}, ${e.numero||"s/n"}${e.complemento?" "+e.complemento:""} - ${e.bairro}, ${e.cidade} - ${e.uf}, CEP ${e.cep}`; }
-function endValido(){ const e=S.end; return soDig(e.cep).length===8 && e.rua.trim() && e.numero.trim() && e.bairro.trim() && e.cidade.trim() && e.uf.trim(); }
-
-function telaCheckout(app){
-  const podeEntrega = subtotal()>=(META.entrega?.minEntrega ?? 1000);
+function irCheckout() {
+  const m = minAtual();
+  if (m != null && subtotal() < m) {
+    alertaBonito("Abaixo do mínimo.");
+    return;
+  }
+  S.etapa = "checkout";
+  render();
+}
+function enderecoObrig() {
+  return S.docChecado || S.entrega === 'entrega';
+}
+function enderecoTexto() {
+  const e = S.end;
+  if (!e.rua) return "";
+  return `${e.rua}, ${e.numero || "s/n"}${e.complemento ? " " + e.complemento : ""} - ${e.bairro}, ${e.cidade} - ${e.uf}, CEP ${e.cep}`;
+}
+function endValido() {
+  const e = S.end;
+  return soDig(e.cep).length === 8 && e.rua.trim() && e.numero.trim() && e.bairro.trim() && e.cidade.trim() && e.uf.trim();
+}
+function telaCheckout(app) {
+  var _META$entrega$minEntr, _META$entrega, _META$entrega$minEntr2, _META$entrega2, _META$entrega$minEntr3, _META$entrega3;
+  const podeEntrega = subtotal() >= ((_META$entrega$minEntr = (_META$entrega = META.entrega) === null || _META$entrega === void 0 ? void 0 : _META$entrega.minEntrega) !== null && _META$entrega$minEntr !== void 0 ? _META$entrega$minEntr : 1000);
   const novo = S.docChecado && !S.docNome;
   const mostraEndereco = enderecoObrig();
-  app.innerHTML=header(false)+`<div class="wrap"><h1 style="font-size:22px">Finalizar pedido</h1>
+  app.innerHTML = header(false) + `<div class="wrap"><h1 style="font-size:22px">Finalizar pedido</h1>
     <div class="muted">Subtotal: <b style="color:#ffd23f">${brl(subtotal())}</b></div>
 
     <div style="font-weight:800;margin-top:14px">Identificação (obrigatória)</div>
     <input autocomplete="off" id="docInputCheckout" placeholder="CPF ou CNPJ*" inputmode="numeric" value="${esc(S.doc)}" oninput="mudarDoc(this.value)" onblur="checarDoc()">
     ${cardCliente()}
-    ${S.docChecado
-      ? (S.docNome
-          ? ``
-          : `<div class="warn">🆕 Novo cliente — preencha os dados abaixo para criar o cadastro.</div>`)
-      : (soDig(S.doc).length>=11 ? `<button class="btn btn-out" style="width:100%" onclick="checarDoc()">Verificar cadastro</button>` : "")}
+    ${S.docChecado ? S.docNome ? `` : `<div class="warn">🆕 Novo cliente — preencha os dados abaixo para criar o cadastro.</div>` : soDig(S.doc).length >= 11 ? `<button class="btn btn-out" style="width:100%" onclick="checarDoc()">Verificar cadastro</button>` : ""}
 
-    ${(()=>{
-      const temNome=!!S.nome.trim();
-      const temFone=!!S.telefone.trim();
-      const temEnd=S.end.rua.trim()&&S.end.cidade.trim()&&S.end.uf.trim();
-      const faltaCampos=S.docNome&&(!temFone||!temEnd);
-      return `
-        ${faltaCampos?`<div style="background:#2a1a00;border:1px solid #ffd23f;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px">
+    ${(() => {
+    const temNome = !!S.nome.trim();
+    const temFone = !!S.telefone.trim();
+    const temEnd = S.end.rua.trim() && S.end.cidade.trim() && S.end.uf.trim();
+    const faltaCampos = S.docNome && (!temFone || !temEnd);
+    return `
+        ${faltaCampos ? `<div style="background:#2a1a00;border:1px solid #ffd23f;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px">
           ⚠️ Complete os dados abaixo para finalizar:
-          ${!temFone?'<br>📱 Telefone obrigatório':''}
-          ${!temEnd?'<br>📍 Endereço obrigatório':''}
-        </div>`:''}
-        ${S.docNome
-          ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">${esc(S.nome)}</div>`
-          : `<input autocomplete="off" placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value" style="${!temNome?'border-color:#ffd23f':''}">`
-        }
-        ${S.docNome&&temFone
-          ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">📱 ${esc(maskFone(S.telefone))}</div>`
-          : `<input autocomplete="off" placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value" style="${!temFone?'border-color:#ffd23f':''}">`
-        }
-        ${novo?`<input autocomplete="off" placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">`:''}
+          ${!temFone ? '<br>📱 Telefone obrigatório' : ''}
+          ${!temEnd ? '<br>📍 Endereço obrigatório' : ''}
+        </div>` : ''}
+        ${S.docNome ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">${esc(S.nome)}</div>` : `<input autocomplete="off" placeholder="Nome completo*" value="${esc(S.nome)}" oninput="S.nome=this.value" style="${!temNome ? 'border-color:#ffd23f' : ''}">`}
+        ${S.docNome && temFone ? `<div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#cfc9f5">📱 ${esc(maskFone(S.telefone))}</div>` : `<input autocomplete="off" placeholder="Celular / WhatsApp*" inputmode="tel" value="${esc(S.telefone)}" oninput="S.telefone=this.value" style="${!temFone ? 'border-color:#ffd23f' : ''}">`}
+        ${novo ? `<input autocomplete="off" placeholder="E-mail (opcional)" inputmode="email" value="${esc(S.email)}" oninput="S.email=this.value">` : ''}
       `;
-    })()}
-    ${(enderecoObrig()||!S.end.rua)?blocoEndereco(novo,S.docNome&&endValido()):""}
+  })()}
+    ${enderecoObrig() || !S.end.rua ? blocoEndereco(novo, S.docNome && endValido()) : ""}
 
     <div style="font-weight:800;margin-top:14px">Como quer receber?</div>
     <div class="radio">
-      <label class="${S.entrega==='retirada'?'on':''}" onclick="S.entrega='retirada';S.frete=null;render()">🏪 Retirada<br><small class="muted">grátis</small></label>
-      <label class="${S.entrega==='entrega'?'on':''} ${podeEntrega?'':'esg'}" onclick="${podeEntrega?"S.entrega='entrega';render();freteAuto()":"alertaBonito('Entrega disponível a partir de '+'"+brl(META.entrega?.minEntrega??1000)+"'+'. Abaixo disso, só retirada.')"}">🛵 Entrega<br><small class="muted">${podeEntrega?"taxa automática":"a partir de "+brl(META.entrega?.minEntrega??1000)}</small></label>
+      <label class="${S.entrega === 'retirada' ? 'on' : ''}" onclick="S.entrega='retirada';S.frete=null;render()">🏪 Retirada<br><small class="muted">grátis</small></label>
+      <label class="${S.entrega === 'entrega' ? 'on' : ''} ${podeEntrega ? '' : 'esg'}" onclick="${podeEntrega ? "S.entrega='entrega';render();freteAuto()" : "alertaBonito('Entrega disponível a partir de '+'" + brl((_META$entrega$minEntr2 = (_META$entrega2 = META.entrega) === null || _META$entrega2 === void 0 ? void 0 : _META$entrega2.minEntrega) !== null && _META$entrega$minEntr2 !== void 0 ? _META$entrega$minEntr2 : 1000) + "'+'. Abaixo disso, só retirada.')"}">🛵 Entrega<br><small class="muted">${podeEntrega ? "taxa automática" : "a partir de " + brl((_META$entrega$minEntr3 = (_META$entrega3 = META.entrega) === null || _META$entrega3 === void 0 ? void 0 : _META$entrega3.minEntrega) !== null && _META$entrega$minEntr3 !== void 0 ? _META$entrega$minEntr3 : 1000)}</small></label>
     </div>
-    ${S.entrega==='entrega'?blocoFrete():""}
-    ${S.entrega==='retirada'?`<div class="ok">Retirada na loja — sem taxa.</div>`:""}
+    ${S.entrega === 'entrega' ? blocoFrete() : ""}
+    ${S.entrega === 'retirada' ? `<div class="ok">Retirada na loja — sem taxa.</div>` : ""}
 
     <div style="height:120px"></div></div>
     <div class="bar"><div class="barbox" style="flex-wrap:wrap;gap:8px">
       <button class="btn btn-ghost" onclick="S.etapa='catalogo';render()" style="flex:1">+ Adicionar itens</button>
-      <div style="display:flex;align-items:center;gap:8px;flex:2"><div class="tot" style="flex:1">${brl(totalFinal())}<br><small class="muted">${S.entrega==='entrega'&&S.frete?`inclui frete ${brl(S.frete.taxa)}`:"total"}</small></div>
-      <button class="btn btn-mag" onclick="finalizar()" ${S.enviando?"disabled":""}>${S.enviando?"Enviando…":"Finalizar pedido"}</button></div>
+      <div style="display:flex;align-items:center;gap:8px;flex:2"><div class="tot" style="flex:1">${brl(totalFinal())}<br><small class="muted">${S.entrega === 'entrega' && S.frete ? `inclui frete ${brl(S.frete.taxa)}` : "total"}</small></div>
+      <button class="btn btn-mag" onclick="finalizar()" ${S.enviando ? "disabled" : ""}>${S.enviando ? "Enviando…" : "Finalizar pedido"}</button></div>
     </div></div>`;
 }
-function blocoEndereco(novo,bloqueado){
-  const e=S.end;
-  const tituloEnd=novo?"Endereco (para cadastro)":(!e.rua?"Endereco obrigatorio":"Endereco");
-  if(bloqueado){
+function blocoEndereco(novo, bloqueado) {
+  const e = S.end;
+  const tituloEnd = novo ? "Endereco (para cadastro)" : !e.rua ? "Endereco obrigatorio" : "Endereco";
+  if (bloqueado) {
     return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <div style="background:#151233;border:1px solid #514c96;border-radius:10px;padding:12px;font-size:13px;color:#cfc9f5">
-      📍 ${esc(e.rua)}, ${esc(e.numero)}${e.complemento?" "+esc(e.complemento):""} — ${esc(e.bairro)}, ${esc(e.cidade)}/${esc(e.uf)} · CEP ${esc(e.cep)}
+      📍 ${esc(e.rua)}, ${esc(e.numero)}${e.complemento ? " " + esc(e.complemento) : ""} — ${esc(e.bairro)}, ${esc(e.cidade)}/${esc(e.uf)} · CEP ${esc(e.cep)}
     </div>
     <div style="font-size:11px;color:#514c96">Endereço completo do cadastro será usado na entrega — não editável aqui. Pra corrigir, procure um atendente.</div>`;
   }
   return `<div style="font-weight:800;margin-top:14px">${tituloEnd}</div>
     <input autocomplete="off" placeholder="CEP*" inputmode="numeric" value="${esc(e.cep)}" oninput="S.end.cep=this.value" onblur="buscarCep()">
-    ${S.cepMsg?`<div class="muted">${esc(S.cepMsg)}</div>`:""}
+    ${S.cepMsg ? `<div class="muted">${esc(S.cepMsg)}</div>` : ""}
     <input autocomplete="off" placeholder="Rua / logradouro*" value="${esc(e.rua)}" oninput="S.end.rua=this.value;freteAuto()">
     <div style="display:flex;gap:8px">
       <input autocomplete="off" placeholder="Número*" inputmode="numeric" style="flex:1" value="${esc(e.numero)}" oninput="S.end.numero=this.value;freteAuto()">
@@ -872,182 +1148,311 @@ function blocoEndereco(novo,bloqueado){
       <input autocomplete="off" placeholder="UF*" style="flex:1" maxlength="2" value="${esc(e.uf)}" oninput="S.end.uf=this.value.toUpperCase();freteAuto()">
     </div>`;
 }
-function blocoFrete(){
-  return `${S.freteMsg?`<div class="${S.freteMsg==='Calculando…'?'muted':'warn'}" style="margin-top:8px">${esc(S.freteMsg)}</div>`:""}
-    ${S.frete&&S.frete.entregaDisponivel?`<div class="ok" style="margin-top:8px">Distância ${S.frete.km} km · ${S.frete.gratis?"Frete GRÁTIS":`Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>`:""}
-    ${(!S.frete&&!S.freteMsg)?`<div class="muted" style="margin-top:8px;font-size:12px">Preencha o endereço (CEP e número) — a taxa é calculada automaticamente.</div>`:""}`;
+function blocoFrete() {
+  return `${S.freteMsg ? `<div class="${S.freteMsg === 'Calculando…' ? 'muted' : 'warn'}" style="margin-top:8px">${esc(S.freteMsg)}</div>` : ""}
+    ${S.frete && S.frete.entregaDisponivel ? `<div class="ok" style="margin-top:8px">Distância ${S.frete.km} km · ${S.frete.gratis ? "Frete GRÁTIS" : `Taxa ${brl(S.frete.taxa)} (${brl(S.frete.porKm)}/km)`}</div>` : ""}
+    ${!S.frete && !S.freteMsg ? `<div class="muted" style="margin-top:8px;font-size:12px">Preencha o endereço (CEP e número) — a taxa é calculada automaticamente.</div>` : ""}`;
 }
-function totalFinal(){ let t=subtotal(); if(S.entrega==='entrega'&&S.frete&&S.frete.entregaDisponivel) t+=Number(S.frete.taxa||0); return t; }
-
-async function buscarCep(){
-  const cep=soDig(S.end.cep);
-  if(cep.length!==8) return;
-  S.cepMsg="Buscando CEP…"; render();
-  try{
-    const r=await fetch(`https://viacep.com.br/ws/${cep}/json/`); const j=await r.json();
-    if(j.erro){ S.cepMsg="CEP não encontrado. Preencha manualmente."; }
-    else{ S.end.rua=j.logradouro||S.end.rua; S.end.bairro=j.bairro||S.end.bairro; S.end.cidade=j.localidade||S.end.cidade; S.end.uf=j.uf||S.end.uf; S.cepMsg=""; }
-  }catch(e){ S.cepMsg="Não consegui buscar o CEP. Preencha manualmente."; }
+function totalFinal() {
+  let t = subtotal();
+  if (S.entrega === 'entrega' && S.frete && S.frete.entregaDisponivel) t += Number(S.frete.taxa || 0);
+  return t;
+}
+async function buscarCep() {
+  const cep = soDig(S.end.cep);
+  if (cep.length !== 8) return;
+  S.cepMsg = "Buscando CEP…";
+  render();
+  try {
+    const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const j = await r.json();
+    if (j.erro) {
+      S.cepMsg = "CEP não encontrado. Preencha manualmente.";
+    } else {
+      S.end.rua = j.logradouro || S.end.rua;
+      S.end.bairro = j.bairro || S.end.bairro;
+      S.end.cidade = j.localidade || S.end.cidade;
+      S.end.uf = j.uf || S.end.uf;
+      S.cepMsg = "";
+    }
+  } catch (e) {
+    S.cepMsg = "Não consegui buscar o CEP. Preencha manualmente.";
+  }
   render();
   freteAuto(); // se já tiver número, calcula; senão espera o número
 }
-
-async function calcularFrete(){
-  const txt=enderecoTexto();
-  if(!txt){ alertaBonito("Preencha o endereço (CEP, rua, número) para calcular a entrega."); return; }
-  S.freteMsg="Calculando…"; S.frete=null; render();
-  try{
-    const u=BACKEND+"/api/frete?endereco="+encodeURIComponent(txt)+"&valor="+subtotal();
-    const r=await fetch(u); const j=await r.json();
-    if(j.entregaDisponivel){ S.frete=j; S.freteMsg=""; }
-    else{ S.frete=null; S.freteMsg=j.motivo||"Não foi possível calcular a entrega."; }
-  }catch(e){ S.freteMsg="Erro ao calcular. Tente de novo."; }
+async function calcularFrete() {
+  const txt = enderecoTexto();
+  if (!txt) {
+    alertaBonito("Preencha o endereço (CEP, rua, número) para calcular a entrega.");
+    return;
+  }
+  S.freteMsg = "Calculando…";
+  S.frete = null;
+  render();
+  try {
+    const u = BACKEND + "/api/frete?endereco=" + encodeURIComponent(txt) + "&valor=" + subtotal();
+    const r = await fetch(u);
+    const j = await r.json();
+    if (j.entregaDisponivel) {
+      S.frete = j;
+      S.freteMsg = "";
+    } else {
+      S.frete = null;
+      S.freteMsg = j.motivo || "Não foi possível calcular a entrega.";
+    }
+  } catch (e) {
+    S.freteMsg = "Erro ao calcular. Tente de novo.";
+  }
   render();
 }
 
 // calcula o frete automaticamente quando o endereço fica completo (com debounce)
-let _freteTimer=null;
-function freteAuto(){
-  if(S.entrega!=='entrega') return;
+let _freteTimer = null;
+function freteAuto() {
+  if (S.entrega !== 'entrega') return;
   clearTimeout(_freteTimer);
-  _freteTimer=setTimeout(()=>{
+  _freteTimer = setTimeout(() => {
     // só calcula se tiver o mínimo do endereço: rua, número, bairro, cidade, uf
-    const e=S.end;
-    if(e.rua && e.numero && e.bairro && e.cidade && e.uf && e.uf.length===2){
+    const e = S.end;
+    if (e.rua && e.numero && e.bairro && e.cidade && e.uf && e.uf.length === 2) {
       calcularFreteSilencioso();
     }
   }, 700);
 }
-async function calcularFreteSilencioso(){
-  const txt=enderecoTexto();
-  if(!txt) return;
-  S.freteMsg="Calculando…"; render();
-  try{
-    const u=BACKEND+"/api/frete?endereco="+encodeURIComponent(txt)+"&valor="+subtotal();
-    const r=await fetch(u); const j=await r.json();
-    if(j.entregaDisponivel){ S.frete=j; S.freteMsg=""; }
-    else{ S.frete=null; S.freteMsg=j.motivo||"Não foi possível calcular a entrega."; }
-  }catch(e){ S.freteMsg=""; }
+async function calcularFreteSilencioso() {
+  const txt = enderecoTexto();
+  if (!txt) return;
+  S.freteMsg = "Calculando…";
+  render();
+  try {
+    const u = BACKEND + "/api/frete?endereco=" + encodeURIComponent(txt) + "&valor=" + subtotal();
+    const r = await fetch(u);
+    const j = await r.json();
+    if (j.entregaDisponivel) {
+      S.frete = j;
+      S.freteMsg = "";
+    } else {
+      S.frete = null;
+      S.freteMsg = j.motivo || "Não foi possível calcular a entrega.";
+    }
+  } catch (e) {
+    S.freteMsg = "";
+  }
   render();
 }
-
-async function finalizar(){
-  const _erros=[];
-  if(!S.nome.trim()) _erros.push("Nome completo");
-  if(!S.telefone.trim()) _erros.push("Celular / WhatsApp");
-  if(!S.end.rua.trim()) _erros.push("Endereço (Rua)");
-  if(!S.end.cidade.trim()) _erros.push("Cidade");
-  if(!S.end.uf.trim()) _erros.push("UF (estado)");
-  if(_erros.length){ alertaBonito("Preencha os campos obrigatórios:\n- "+_erros.join("\n- ")); return; }
-  const dd=soDig(S.doc);
-  if(!docValido(dd)){ alertaBonito("CPF ou CNPJ inválido. Confira os números para finalizar."); return; }
-  S.doc=dd;
-  if(!S.docChecado) await checarDoc();
+async function finalizar() {
+  const _erros = [];
+  if (!S.nome.trim()) _erros.push("Nome completo");
+  if (!S.telefone.trim()) _erros.push("Celular / WhatsApp");
+  if (!S.end.rua.trim()) _erros.push("Endereço (Rua)");
+  if (!S.end.cidade.trim()) _erros.push("Cidade");
+  if (!S.end.uf.trim()) _erros.push("UF (estado)");
+  if (_erros.length) {
+    alertaBonito("Preencha os campos obrigatórios:\n- " + _erros.join("\n- "));
+    return;
+  }
+  const dd = soDig(S.doc);
+  if (!docValido(dd)) {
+    alertaBonito("CPF ou CNPJ inválido. Confira os números para finalizar.");
+    return;
+  }
+  S.doc = dd;
+  if (!S.docChecado) await checarDoc();
   const novo = !S.docNome;
-  const min = S.docNome?MIN_ID:MIN_ANON;
-  if(subtotal()<min){ alertaBonito(`Pedido mínimo de ${brl(min)} ${S.docNome?"(cliente com cadastro)":"(sem cadastro — para mínimo de "+brl(MIN_ID)+", use um CPF/CNPJ já cadastrado)"}. Faltam ${brl(min-subtotal())}.`); return; }
-  if(!S.entrega){ alertaBonito("Escolha Retirada ou Entrega."); return; }
-  if(novo && !S.email.trim()){ alertaBonito("Informe o e-mail para o cadastro."); return; }
-  if(novo && !/^\S+@\S+\.\S+$/.test(S.email.trim())){ alertaBonito("Informe um e-mail válido (ex.: nome@email.com)."); return; }
-  if((novo || S.entrega==='entrega') && !endValido()){ alertaBonito("Preencha o endereço completo: CEP, rua, número, bairro, cidade e UF."); return; }
-  if(S.entrega==='entrega' && (!S.frete || !S.frete.entregaDisponivel)){ alertaBonito("Calcule a taxa de entrega (ou escolha Retirada)."); return; }
-
-  const entrega = S.entrega==='entrega'
-    ? {tipo:'entrega', endereco:enderecoTexto(), taxa:S.frete.taxa}
-    : {tipo:'retirada'};
-  const cadastro = { endereco:{ cep:soDig(S.end.cep), rua:S.end.rua, numero:S.end.numero, complemento:S.end.complemento, bairro:S.end.bairro, cidade:S.end.cidade, uf:S.end.uf } };
-
-  S.enviando=true; render();
-  try{
-    const itensPed=itens().map(i=>({produtoId:i.id, quantidade:i.qtd, valor:i.preco, nome:[i.nomeProduto,i.sabor].filter(Boolean).join(" ")}));
-    const r=await fetch(BACKEND+"/api/finalizar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({documento:S.doc||"", nome:S.nome, email:S.email, telefone:S.telefone, itens:itensPed, entrega, origem:"site",
-      cadastro:{
-        endereco:{
-          rua:S.end.rua, numero:S.end.numero, complemento:S.end.complemento,
-          bairro:S.end.bairro, cidade:S.end.cidade, uf:S.end.uf, cep:S.end.cep
+  const min = S.docNome ? MIN_ID : MIN_ANON;
+  if (subtotal() < min) {
+    alertaBonito(`Pedido mínimo de ${brl(min)} ${S.docNome ? "(cliente com cadastro)" : "(sem cadastro — para mínimo de " + brl(MIN_ID) + ", use um CPF/CNPJ já cadastrado)"}. Faltam ${brl(min - subtotal())}.`);
+    return;
+  }
+  if (!S.entrega) {
+    alertaBonito("Escolha Retirada ou Entrega.");
+    return;
+  }
+  if (novo && !S.email.trim()) {
+    alertaBonito("Informe o e-mail para o cadastro.");
+    return;
+  }
+  if (novo && !/^\S+@\S+\.\S+$/.test(S.email.trim())) {
+    alertaBonito("Informe um e-mail válido (ex.: nome@email.com).");
+    return;
+  }
+  if ((novo || S.entrega === 'entrega') && !endValido()) {
+    alertaBonito("Preencha o endereço completo: CEP, rua, número, bairro, cidade e UF.");
+    return;
+  }
+  if (S.entrega === 'entrega' && (!S.frete || !S.frete.entregaDisponivel)) {
+    alertaBonito("Calcule a taxa de entrega (ou escolha Retirada).");
+    return;
+  }
+  const entrega = S.entrega === 'entrega' ? {
+    tipo: 'entrega',
+    endereco: enderecoTexto(),
+    taxa: S.frete.taxa
+  } : {
+    tipo: 'retirada'
+  };
+  const cadastro = {
+    endereco: {
+      cep: soDig(S.end.cep),
+      rua: S.end.rua,
+      numero: S.end.numero,
+      complemento: S.end.complemento,
+      bairro: S.end.bairro,
+      cidade: S.end.cidade,
+      uf: S.end.uf
+    }
+  };
+  S.enviando = true;
+  render();
+  try {
+    const itensPed = itens().map(i => ({
+      produtoId: i.id,
+      quantidade: i.qtd,
+      valor: i.preco,
+      nome: [i.nomeProduto, i.sabor].filter(Boolean).join(" ")
+    }));
+    const r = await fetch(BACKEND + "/api/finalizar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        documento: S.doc || "",
+        nome: S.nome,
+        email: S.email,
+        telefone: S.telefone,
+        itens: itensPed,
+        entrega,
+        origem: "site",
+        cadastro: {
+          endereco: {
+            rua: S.end.rua,
+            numero: S.end.numero,
+            complemento: S.end.complemento,
+            bairro: S.end.bairro,
+            cidade: S.end.cidade,
+            uf: S.end.uf,
+            cep: S.end.cep
+          }
         }
-      }
-    })});
-    const j=await r.json();
-    if(r.ok && j.ok){ S.resultado={bling:true, pedido:j.pedido, entrega}; }
-    else{ S.resultado={bling:false, erro:(j.erro||"erro"), detalhe:(j.body||j.detalhe), entrega}; }
-  }catch(e){ S.resultado={bling:false, erro:"conexão", entrega}; }
-  S.enviando=false; S.etapa="sucesso"; render();
+      })
+    });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      S.resultado = {
+        bling: true,
+        pedido: j.pedido,
+        entrega
+      };
+    } else {
+      S.resultado = {
+        bling: false,
+        erro: j.erro || "erro",
+        detalhe: j.body || j.detalhe,
+        entrega
+      };
+    }
+  } catch (e) {
+    S.resultado = {
+      bling: false,
+      erro: "conexão",
+      entrega
+    };
+  }
+  S.enviando = false;
+  S.etapa = "sucesso";
+  render();
 }
-
-function resumoTexto(){
-  let l=["*PEDIDO ATACADO - B13 BEBIDAS*",""];
-  l.push(`Cliente: ${S.nome}`); l.push(`Telefone: ${S.telefone}`);
-  if(soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
-  l.push(""); l.push("*Itens:*");
-  itens().forEach(i=> l.push(`• ${i.nomeProduto}${i.sabor&&i.sabor!==i.nomeProduto?` (${i.sabor})`:""} — ${pack(i.qtd,i.un)} = ${brl(i.preco*i.qtd)}`));
-  l.push(""); l.push(`Subtotal: ${brl(subtotal())}`);
-  if(S.entrega==='entrega'&&S.frete){ l.push(`Entrega: ${S.endereco}`); l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}`); }
-  else l.push("Retirada na loja");
+function resumoTexto() {
+  let l = ["*PEDIDO ATACADO - B13 BEBIDAS*", ""];
+  l.push(`Cliente: ${S.nome}`);
+  l.push(`Telefone: ${S.telefone}`);
+  if (soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
+  l.push("");
+  l.push("*Itens:*");
+  itens().forEach(i => l.push(`• ${i.nomeProduto}${i.sabor && i.sabor !== i.nomeProduto ? ` (${i.sabor})` : ""} — ${pack(i.qtd, i.un)} = ${brl(i.preco * i.qtd)}`));
+  l.push("");
+  l.push(`Subtotal: ${brl(subtotal())}`);
+  if (S.entrega === 'entrega' && S.frete) {
+    l.push(`Entrega: ${S.endereco}`);
+    l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis ? "GRÁTIS" : brl(S.frete.taxa)}`);
+  } else l.push("Retirada na loja");
   l.push(`*TOTAL: ${brl(totalFinal())}*`);
   return l.join("\n");
 }
-function abrirWhatsApp(){ window.open(`https://wa.me/${WHATS}?text=`+encodeURIComponent(resumoTexto()),"_blank"); }
+function abrirWhatsApp() {
+  window.open(`https://wa.me/${WHATS}?text=` + encodeURIComponent(resumoTexto()), "_blank");
+}
 // texto da NOTA IMPRESSA — começa pelo número do pedido no Bling (o resumoTexto()
 // é o do WhatsApp e não trazia o número, então a notinha saía sem ele)
-function textoNotaImpressao(){
-  const r=S.resultado||{};
-  const pedidoId=r.pedido?.data?.id||"";
-  const nped=r.pedido?.data?.numero||pedidoId||"";
-  const l=[nped?`Pedido #${nped}`:"Pedido (aguardando registro)", new Date().toLocaleString("pt-BR"), ""];
-  l.push(`Cliente: ${S.nome}`); l.push(`Telefone: ${S.telefone}`);
-  if(soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
-  l.push(""); l.push("Itens:");
-  itens().forEach(i=> l.push(`${pack(i.qtd,i.un)} ${i.nomeProduto}${i.sabor&&i.sabor!==i.nomeProduto?` (${i.sabor})`:""} = ${brl(i.preco*i.qtd)}`));
-  l.push(""); l.push(`Subtotal: ${brl(subtotal())}`);
-  if(S.entrega==='entrega'&&S.frete){ l.push(`Entrega: ${S.endereco}`); l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}`); }
-  else l.push("Retirada na loja");
+function textoNotaImpressao() {
+  var _r$pedido, _r$pedido2;
+  const r = S.resultado || {};
+  const pedidoId = ((_r$pedido = r.pedido) === null || _r$pedido === void 0 || (_r$pedido = _r$pedido.data) === null || _r$pedido === void 0 ? void 0 : _r$pedido.id) || "";
+  const nped = ((_r$pedido2 = r.pedido) === null || _r$pedido2 === void 0 || (_r$pedido2 = _r$pedido2.data) === null || _r$pedido2 === void 0 ? void 0 : _r$pedido2.numero) || pedidoId || "";
+  const l = [nped ? `Pedido #${nped}` : "Pedido (aguardando registro)", new Date().toLocaleString("pt-BR"), ""];
+  l.push(`Cliente: ${S.nome}`);
+  l.push(`Telefone: ${S.telefone}`);
+  if (soDig(S.doc)) l.push(`CPF/CNPJ: ${S.doc}`);
+  l.push("");
+  l.push("Itens:");
+  itens().forEach(i => l.push(`${pack(i.qtd, i.un)} ${i.nomeProduto}${i.sabor && i.sabor !== i.nomeProduto ? ` (${i.sabor})` : ""} = ${brl(i.preco * i.qtd)}`));
+  l.push("");
+  l.push(`Subtotal: ${brl(subtotal())}`);
+  if (S.entrega === 'entrega' && S.frete) {
+    l.push(`Entrega: ${S.endereco}`);
+    l.push(`Taxa entrega (${S.frete.km} km): ${S.frete.gratis ? "GRÁTIS" : brl(S.frete.taxa)}`);
+  } else l.push("Retirada na loja");
   l.push(`TOTAL: ${brl(totalFinal())}`);
-  l.push(""); l.push("Obrigado pela preferência!");
+  l.push("");
+  l.push("Obrigado pela preferência!");
   return l.join("\n");
 }
-function imprimir(){
-  const r=S.resultado||{};
-  const pedidoId=r.pedido?.data?.id||"";
-  const nped=r.pedido?.data?.numero||pedidoId||"";
-  document.getElementById("recibo").innerHTML=
-    `<h2 style="margin-bottom:2px">B13 BEBIDAS — Pedido Atacado</h2>`+
-    (nped?`<div style="font-weight:900;font-size:20px;margin-bottom:6px">Pedido #${esc(nped)}</div>`:"")+
-    `<pre style="font-size:14px;white-space:pre-wrap">${esc(textoNotaImpressao())}</pre>`+
-    (pedidoId?`<div style="text-align:center;margin-top:8px"><svg id="barcodeImp"></svg><div style="font-size:10px;font-weight:700">Apresente no caixa</div></div>`:"");
-  if(pedidoId){ try{ JsBarcode("#barcodeImp",String(pedidoId),{format:"CODE128",width:1.5,height:38,fontSize:10,margin:0}); }catch(e){} }
+function imprimir() {
+  var _r$pedido3, _r$pedido4;
+  const r = S.resultado || {};
+  const pedidoId = ((_r$pedido3 = r.pedido) === null || _r$pedido3 === void 0 || (_r$pedido3 = _r$pedido3.data) === null || _r$pedido3 === void 0 ? void 0 : _r$pedido3.id) || "";
+  const nped = ((_r$pedido4 = r.pedido) === null || _r$pedido4 === void 0 || (_r$pedido4 = _r$pedido4.data) === null || _r$pedido4 === void 0 ? void 0 : _r$pedido4.numero) || pedidoId || "";
+  document.getElementById("recibo").innerHTML = `<h2 style="margin-bottom:2px">B13 BEBIDAS — Pedido Atacado</h2>` + (nped ? `<div style="font-weight:900;font-size:20px;margin-bottom:6px">Pedido #${esc(nped)}</div>` : "") + `<pre style="font-size:14px;white-space:pre-wrap">${esc(textoNotaImpressao())}</pre>` + (pedidoId ? `<div style="text-align:center;margin-top:8px"><svg id="barcodeImp"></svg><div style="font-size:10px;font-weight:700">Apresente no caixa</div></div>` : "");
+  if (pedidoId) {
+    try {
+      JsBarcode("#barcodeImp", String(pedidoId), {
+        format: "CODE128",
+        width: 1.5,
+        height: 38,
+        fontSize: 10,
+        margin: 0
+      });
+    } catch (e) {}
+  }
   window.print();
 }
-
-function telaSucesso(app){
-  const r=S.resultado||{};
-  const pedidoId=r.pedido?.data?.id;
-  const nped=r.pedido?.data?.numero || pedidoId || null;
-  const listaItens=itens().map(i=>`
+function telaSucesso(app) {
+  var _r$pedido5, _r$pedido6, _r$entrega;
+  const r = S.resultado || {};
+  const pedidoId = (_r$pedido5 = r.pedido) === null || _r$pedido5 === void 0 || (_r$pedido5 = _r$pedido5.data) === null || _r$pedido5 === void 0 ? void 0 : _r$pedido5.id;
+  const nped = ((_r$pedido6 = r.pedido) === null || _r$pedido6 === void 0 || (_r$pedido6 = _r$pedido6.data) === null || _r$pedido6 === void 0 ? void 0 : _r$pedido6.numero) || pedidoId || null;
+  const listaItens = itens().map(i => `
     <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="flex:1">
-        <div style="font-weight:700">${esc(i.nomeProduto)}${i.sabor&&i.sabor!==i.nomeProduto?` <span style="color:#9a95c9;font-weight:400">(${esc(i.sabor)})</span>`:""}</div>
-        <div style="color:#9a95c9;font-size:11px">${esc(pack(i.qtd,i.un))}</div>
+        <div style="font-weight:700">${esc(i.nomeProduto)}${i.sabor && i.sabor !== i.nomeProduto ? ` <span style="color:#9a95c9;font-weight:400">(${esc(i.sabor)})</span>` : ""}</div>
+        <div style="color:#9a95c9;font-size:11px">${esc(pack(i.qtd, i.un))}</div>
       </div>
-      <div style="font-weight:700">${brl(i.preco*i.qtd)}</div>
+      <div style="font-weight:700">${brl(i.preco * i.qtd)}</div>
     </div>`).join("");
-
-  let statusBling = r.bling
-    ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:10px 14px;font-size:13px;color:#a8f0c8;text-align:center">✅ Pedido registrado no sistema</div>`
-    : `<div style="background:#2a0a00;border:1px solid #e5563f;border-radius:10px;padding:10px 14px;font-size:13px;color:#ff8090">⚠️ Não foi possível gerar no Bling (${esc(r.erro||"erro")}).${r.detalhe?`<br><small style="word-break:break-word;opacity:.8">${esc(JSON.stringify(r.detalhe))}</small>`:""}<br>A loja recebeu pelo WhatsApp.</div>`;
-
-  app.innerHTML=header(false)+`
+  let statusBling = r.bling ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:10px;padding:10px 14px;font-size:13px;color:#a8f0c8;text-align:center">✅ Pedido registrado no sistema</div>` : `<div style="background:#2a0a00;border:1px solid #e5563f;border-radius:10px;padding:10px 14px;font-size:13px;color:#ff8090">⚠️ Não foi possível gerar no Bling (${esc(r.erro || "erro")}).${r.detalhe ? `<br><small style="word-break:break-word;opacity:.8">${esc(JSON.stringify(r.detalhe))}</small>` : ""}<br>A loja recebeu pelo WhatsApp.</div>`;
+  app.innerHTML = header(false) + `
   <div style="max-width:480px;margin:0 auto;padding:20px 16px 40px">
     <div style="text-align:center;margin-bottom:18px">
       <div style="width:64px;height:64px;border-radius:50%;background:#0a2a1a;border:2px solid #2f9e6b;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 10px">✅</div>
       <div style="font-size:22px;font-weight:900">Pedido finalizado!</div>
-      <div style="color:#9a95c9;font-size:13px;margin-top:2px">${r.entrega?.tipo==='entrega'?"Entrega a combinar":"Retirada na loja"}</div>
+      <div style="color:#9a95c9;font-size:13px;margin-top:2px">${((_r$entrega = r.entrega) === null || _r$entrega === void 0 ? void 0 : _r$entrega.tipo) === 'entrega' ? "Entrega a combinar" : "Retirada na loja"}</div>
     </div>
 
     <div style="background:#151233;border:1px solid #514c96;border-radius:14px;overflow:hidden;margin-bottom:14px">
       <div style="background:#262366;padding:14px 18px;display:flex;justify-content:space-between;align-items:center">
-        <div style="font-weight:900;font-size:20px">${nped?("#"+nped):"Pedido recebido"}</div>
+        <div style="font-weight:900;font-size:20px">${nped ? "#" + nped : "Pedido recebido"}</div>
         <div style="font-size:11px;color:#cfc9f5">${new Date().toLocaleDateString("pt-BR")}</div>
       </div>
       <div style="padding:14px 18px">
@@ -1058,7 +1463,7 @@ function telaSucesso(app){
         <div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:4px;font-size:13px">
           <span style="color:#9a95c9">Subtotal</span><span>${brl(subtotal())}</span>
         </div>
-        ${S.entrega==='entrega'&&S.frete?`<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#9a95c9">Entrega (${S.frete.km} km)</span><span>${S.frete.gratis?"GRÁTIS":brl(S.frete.taxa)}</span></div>`:`<div style="font-size:13px;color:#9a95c9">Retirada na loja</div>`}
+        ${S.entrega === 'entrega' && S.frete ? `<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#9a95c9">Entrega (${S.frete.km} km)</span><span>${S.frete.gratis ? "GRÁTIS" : brl(S.frete.taxa)}</span></div>` : `<div style="font-size:13px;color:#9a95c9">Retirada na loja</div>`}
         <div style="display:flex;justify-content:space-between;font-size:20px;font-weight:900;color:#FF0082;margin-top:8px;padding-top:8px;border-top:1px solid #2a2660">
           <span>TOTAL</span><span>${brl(totalFinal())}</span>
         </div>
@@ -1070,181 +1475,304 @@ function telaSucesso(app){
     <div id="notaImgArea" style="text-align:center;margin-top:14px"></div>
 
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      ${pedidoId?`<button class="btn btn-mag big" onclick="baixarNotaImagem()">⬇️ Baixar pedido</button>`:`<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
+      ${pedidoId ? `<button class="btn btn-mag big" onclick="baixarNotaImagem()">⬇️ Baixar pedido</button>` : `<button class="btn btn-ghost big" onclick="imprimir()">🖨️ Imprimir</button>`}
       <button class="btn btn-out big" onclick="abrirWhatsApp()">🟢 Enviar no WhatsApp (opcional)</button>
       <button class="btn btn-ghost big" onclick="recomecar(false)">Novo pedido</button>
     </div>
   </div>`;
-  if(pedidoId) gerarImagemNota(pedidoId, nped);
+  if (pedidoId) gerarImagemNota(pedidoId, nped);
 }
 
 // gera a imagem da nota (com código de barras + QR, igual a nota impressa da loja)
 // num canvas, mostra ela na própria tela de sucesso e deixa pronta pro "Baixar pedido"
-let _cvNotaOnline=null;
-function gerarImagemNota(pedidoId, numero){
-  const area=document.getElementById("notaImgArea");
-  if(area) area.innerHTML=`<div class="muted" style="font-size:12px">Gerando nota…</div>`;
-  const tmp=document.createElement("div");
-  tmp.style.cssText="position:absolute;left:-9999px;top:-9999px";
+let _cvNotaOnline = null;
+function gerarImagemNota(pedidoId, numero) {
+  const area = document.getElementById("notaImgArea");
+  if (area) area.innerHTML = `<div class="muted" style="font-size:12px">Gerando nota…</div>`;
+  const tmp = document.createElement("div");
+  tmp.style.cssText = "position:absolute;left:-9999px;top:-9999px";
   document.body.appendChild(tmp);
   // QR (acompanhamento do pedido) — a lib qrcodejs desenha num canvas local, sem CORS
-  try{ new QRCode(tmp,{text:window.location.origin+"/pedido/"+pedidoId+"/acompanhar",width:180,height:180,correctLevel:QRCode.CorrectLevel.M}); }catch(e){}
+  try {
+    new QRCode(tmp, {
+      text: window.location.origin + "/pedido/" + pedidoId + "/acompanhar",
+      width: 180,
+      height: 180,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch (e) {}
   // código de barras (mesmo número apresentado no caixa da loja)
-  const barCanvas=document.createElement("canvas");
+  const barCanvas = document.createElement("canvas");
   tmp.appendChild(barCanvas);
-  try{ JsBarcode(barCanvas,String(pedidoId),{format:"CODE128",width:1.5,height:52,fontSize:12,margin:0}); }catch(e){}
+  try {
+    JsBarcode(barCanvas, String(pedidoId), {
+      format: "CODE128",
+      width: 1.5,
+      height: 52,
+      fontSize: 12,
+      margin: 0
+    });
+  } catch (e) {}
   // logo de verdade (mesmo domínio, sem problema de CORS pro canvas)
-  const logoImg=new Image();
-  let logoPronta=false;
-  logoImg.onload=()=>{ logoPronta=true; };
-  logoImg.onerror=()=>{ logoPronta=false; };
-  logoImg.src=LOGO;
-  setTimeout(()=>{
-    const qrCanvas=tmp.querySelector("canvas"); // 1º canvas do container = o do QRCode.js (o barCanvas foi anexado depois dele)
-    const qrImg=tmp.querySelector("img"); // fallback, caso a lib use <img> em vez de <canvas>
-    desenharNotaOnline(numero, qrCanvas||qrImg, barCanvas, logoPronta?logoImg:null);
+  const logoImg = new Image();
+  let logoPronta = false;
+  logoImg.onload = () => {
+    logoPronta = true;
+  };
+  logoImg.onerror = () => {
+    logoPronta = false;
+  };
+  logoImg.src = LOGO;
+  setTimeout(() => {
+    const qrCanvas = tmp.querySelector("canvas"); // 1º canvas do container = o do QRCode.js (o barCanvas foi anexado depois dele)
+    const qrImg = tmp.querySelector("img"); // fallback, caso a lib use <img> em vez de <canvas>
+    desenharNotaOnline(numero, qrCanvas || qrImg, barCanvas, logoPronta ? logoImg : null);
     document.body.removeChild(tmp);
-  },200); // pequena espera pra QR/barcode/logo terminarem de carregar
+  }, 200); // pequena espera pra QR/barcode/logo terminarem de carregar
 }
-function desenharNotaOnline(numero, qrEl, barCanvas, logoImg){
-  const itensArr=itens();
-  const itemHeadH=26, itemH=40, headerH=120, qrSize=170;
+function desenharNotaOnline(numero, qrEl, barCanvas, logoImg) {
+  const itensArr = itens();
+  const itemHeadH = 26,
+    itemH = 40,
+    headerH = 120,
+    qrSize = 170;
   // margem generosa de propósito (já erramos essa conta 2x) — melhor sobrar
   // espaço em branco no rodapé do que cortar conteúdo
-  const H=900 + itensArr.length*itemH;
-  const W=560, padd=24;
-  const cv=document.createElement("canvas");
-  const dpr=2; cv.width=W*dpr; cv.height=H*dpr; cv.style.width="100%"; cv.style.maxWidth="420px"; cv.style.borderRadius="12px";
-  const ctx=cv.getContext("2d"); ctx.scale(dpr,dpr);
-  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  const H = 900 + itensArr.length * itemH;
+  const W = 560,
+    padd = 24;
+  const cv = document.createElement("canvas");
+  const dpr = 2;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  cv.style.width = "100%";
+  cv.style.maxWidth = "420px";
+  cv.style.borderRadius = "12px";
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, W, H);
 
   // ---- cabeçalho (logo + endereço) ----
-  ctx.fillStyle="#262366"; ctx.fillRect(0,0,W,headerH-14);
-  if(logoImg && logoImg.naturalWidth){
-    const logoH=42, logoW=logoImg.naturalWidth*(logoH/logoImg.naturalHeight);
-    try{ ctx.drawImage(logoImg,padd,18,logoW,logoH); }catch(e){ ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48); }
+  ctx.fillStyle = "#262366";
+  ctx.fillRect(0, 0, W, headerH - 14);
+  if (logoImg && logoImg.naturalWidth) {
+    const logoH = 42,
+      logoW = logoImg.naturalWidth * (logoH / logoImg.naturalHeight);
+    try {
+      ctx.drawImage(logoImg, padd, 18, logoW, logoH);
+    } catch (e) {
+      ctx.fillStyle = "#fff";
+      ctx.font = "900 26px Arial";
+      ctx.textAlign = "left";
+      ctx.fillText("B13 BEBIDAS", padd, 48);
+    }
   } else {
-    ctx.fillStyle="#fff"; ctx.font="900 26px Arial"; ctx.textAlign="left"; ctx.fillText("B13 BEBIDAS",padd,48);
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 26px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("B13 BEBIDAS", padd, 48);
   }
-  ctx.font="13px Arial"; ctx.fillStyle="#cfc9f5"; ctx.textAlign="left";
-  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888",padd,headerH-28);
-  ctx.fillStyle="#FF0082"; ctx.fillRect(0,headerH-14,W,5);
-
-  let y=headerH+16;
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#cfc9f5";
+  ctx.textAlign = "left";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH · (31) 99971-9888", padd, headerH - 28);
+  ctx.fillStyle = "#FF0082";
+  ctx.fillRect(0, headerH - 14, W, 5);
+  let y = headerH + 16;
   // ---- pedido + codigo de barras ----
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("PEDIDO",padd,y);
-  ctx.font="900 34px Arial"; ctx.fillStyle="#111"; ctx.fillText("#"+(numero||"—"),padd,y+40);
-  ctx.font="13px Arial"; ctx.fillStyle="#888"; ctx.fillText(new Date().toLocaleDateString("pt-BR"),padd,y+62);
-  if(barCanvas){
-    const bw=220, bh=barCanvas.height*(bw/barCanvas.width);
-    try{ ctx.drawImage(barCanvas,W-padd-bw,y-6,bw,bh);
-      ctx.font="10px Arial"; ctx.fillStyle="#888"; ctx.textAlign="center";
-      ctx.fillText("Apresente no caixa",W-padd-bw/2,y-6+bh+14);
-    }catch(e){}
+  ctx.font = "700 11px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("PEDIDO", padd, y);
+  ctx.font = "900 34px Arial";
+  ctx.fillStyle = "#111";
+  ctx.fillText("#" + (numero || "—"), padd, y + 40);
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "#888";
+  ctx.fillText(new Date().toLocaleDateString("pt-BR"), padd, y + 62);
+  if (barCanvas) {
+    const bw = 220,
+      bh = barCanvas.height * (bw / barCanvas.width);
+    try {
+      ctx.drawImage(barCanvas, W - padd - bw, y - 6, bw, bh);
+      ctx.font = "10px Arial";
+      ctx.fillStyle = "#888";
+      ctx.textAlign = "center";
+      ctx.fillText("Apresente no caixa", W - padd - bw / 2, y - 6 + bh + 14);
+    } catch (e) {}
   }
-  y+=100;
-  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-  y+=26;
+  y += 100;
+  ctx.strokeStyle = "#e5e5e5";
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(W, y);
+  ctx.stroke();
+  y += 26;
 
   // ---- cliente ----
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.textAlign="left"; ctx.fillText("CLIENTE",padd,y);
-  ctx.font="900 20px Arial"; ctx.fillStyle="#111"; ctx.fillText(S.nome||"—",padd,y+26);
-  y+=44;
-  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-  y+=26;
+  ctx.font = "700 11px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("CLIENTE", padd, y);
+  ctx.font = "900 20px Arial";
+  ctx.fillStyle = "#111";
+  ctx.fillText(S.nome || "—", padd, y + 26);
+  y += 44;
+  ctx.strokeStyle = "#e5e5e5";
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(W, y);
+  ctx.stroke();
+  y += 26;
 
   // ---- itens ----
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888"; ctx.fillText(`ITENS (${itensArr.length})`,padd,y);
-  y+=22;
-  ctx.font="700 11px Arial"; ctx.fillStyle="#888";
-  ctx.textAlign="left"; ctx.fillText("Produto",padd,y);
-  ctx.textAlign="center"; ctx.fillText("Qtd",W-190,y);
-  ctx.textAlign="right"; ctx.fillText("Unit.",W-padd,y);
-  y+=10;
-  ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(padd,y); ctx.lineTo(W-padd,y); ctx.stroke();
-  y+=itemH-8;
-  itensArr.forEach((i,ix)=>{
-    ctx.fillStyle="#111"; ctx.font="15px Arial"; ctx.textAlign="left";
-    let nome=(i.nomeProduto||"")+(i.sabor&&i.sabor!==i.nomeProduto?" ("+i.sabor+")":"");
-    if(nome.length>28) nome=nome.slice(0,27)+"…";
-    ctx.fillText(nome,padd,y);
-    ctx.font="900 17px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="center"; ctx.fillText(String(i.qtd),W-190,y);
-    ctx.font="13px Arial"; ctx.fillStyle="#333"; ctx.textAlign="right"; ctx.fillText(brl(i.preco),W-padd,y);
-    if(ix<itensArr.length-1){ ctx.strokeStyle="#eee"; ctx.beginPath(); ctx.moveTo(padd,y+16); ctx.lineTo(W-padd,y+16); ctx.stroke(); }
-    y+=itemH;
+  ctx.font = "700 11px Arial";
+  ctx.fillStyle = "#888";
+  ctx.fillText(`ITENS (${itensArr.length})`, padd, y);
+  y += 22;
+  ctx.font = "700 11px Arial";
+  ctx.fillStyle = "#888";
+  ctx.textAlign = "left";
+  ctx.fillText("Produto", padd, y);
+  ctx.textAlign = "center";
+  ctx.fillText("Qtd", W - 190, y);
+  ctx.textAlign = "right";
+  ctx.fillText("Unit.", W - padd, y);
+  y += 10;
+  ctx.strokeStyle = "#ddd";
+  ctx.beginPath();
+  ctx.moveTo(padd, y);
+  ctx.lineTo(W - padd, y);
+  ctx.stroke();
+  y += itemH - 8;
+  itensArr.forEach((i, ix) => {
+    ctx.fillStyle = "#111";
+    ctx.font = "15px Arial";
+    ctx.textAlign = "left";
+    let nome = (i.nomeProduto || "") + (i.sabor && i.sabor !== i.nomeProduto ? " (" + i.sabor + ")" : "");
+    if (nome.length > 28) nome = nome.slice(0, 27) + "…";
+    ctx.fillText(nome, padd, y);
+    ctx.font = "900 17px Arial";
+    ctx.fillStyle = "#262366";
+    ctx.textAlign = "center";
+    ctx.fillText(String(i.qtd), W - 190, y);
+    ctx.font = "13px Arial";
+    ctx.fillStyle = "#333";
+    ctx.textAlign = "right";
+    ctx.fillText(brl(i.preco), W - padd, y);
+    if (ix < itensArr.length - 1) {
+      ctx.strokeStyle = "#eee";
+      ctx.beginPath();
+      ctx.moveTo(padd, y + 16);
+      ctx.lineTo(W - padd, y + 16);
+      ctx.stroke();
+    }
+    y += itemH;
   });
-  y+=8;
-  ctx.strokeStyle="#e5e5e5"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-  y+=42;
+  y += 8;
+  ctx.strokeStyle = "#e5e5e5";
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(W, y);
+  ctx.stroke();
+  y += 42;
 
   // ---- total + status de pagamento ----
-  ctx.font="900 26px Arial"; ctx.fillStyle="#262366"; ctx.textAlign="left"; ctx.fillText("TOTAL",padd,y);
-  ctx.textAlign="right"; ctx.font="900 30px Arial"; ctx.fillText(brl(totalFinal()),W-padd,y);
-  y+=34;
-  ctx.textAlign="left"; ctx.font="900 16px Arial"; ctx.fillStyle="#dc2626";
-  ctx.fillText("⏳ AGUARDANDO PAGAMENTO",padd,y);
-  y+=30;
+  ctx.font = "900 26px Arial";
+  ctx.fillStyle = "#262366";
+  ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd, y);
+  ctx.textAlign = "right";
+  ctx.font = "900 30px Arial";
+  ctx.fillText(brl(totalFinal()), W - padd, y);
+  y += 34;
+  ctx.textAlign = "left";
+  ctx.font = "900 16px Arial";
+  ctx.fillStyle = "#dc2626";
+  ctx.fillText("⏳ AGUARDANDO PAGAMENTO", padd, y);
+  y += 30;
 
   // ---- divisor tracejado ----
-  ctx.strokeStyle="#ccc"; ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]);
-  y+=32;
+  ctx.strokeStyle = "#ccc";
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(W, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  y += 32;
 
   // ---- QR ----
-  if(qrEl){
-    const qrX=(W-qrSize)/2;
-    try{ ctx.drawImage(qrEl,qrX,y,qrSize,qrSize); }catch(e){}
-    y+=qrSize+22;
+  if (qrEl) {
+    const qrX = (W - qrSize) / 2;
+    try {
+      ctx.drawImage(qrEl, qrX, y, qrSize, qrSize);
+    } catch (e) {}
+    y += qrSize + 22;
   }
-  ctx.fillStyle="#888"; ctx.font="13px Arial"; ctx.textAlign="center"; ctx.fillText("Leia o QR para ver status do pedido",W/2,y);
-  y+=24; // margem final
+  ctx.fillStyle = "#888";
+  ctx.font = "13px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("Leia o QR para ver status do pedido", W / 2, y);
+  y += 24; // margem final
 
   // aparar o canvas pro tamanho real do conteúdo (desenhamos com folga de
   // propósito acima, pra nunca cortar; agora cortamos o espaço em branco sobrando)
-  const cvFinal=document.createElement("canvas");
-  cvFinal.width=W*dpr; cvFinal.height=Math.round(y*dpr);
-  cvFinal.style.width="100%"; cvFinal.style.maxWidth="420px"; cvFinal.style.borderRadius="12px";
-  cvFinal.getContext("2d").drawImage(cv,0,0);
-
-  _cvNotaOnline=cvFinal;
-  const area=document.getElementById("notaImgArea");
-  if(area){ area.innerHTML=""; area.appendChild(cvFinal); }
+  const cvFinal = document.createElement("canvas");
+  cvFinal.width = W * dpr;
+  cvFinal.height = Math.round(y * dpr);
+  cvFinal.style.width = "100%";
+  cvFinal.style.maxWidth = "420px";
+  cvFinal.style.borderRadius = "12px";
+  cvFinal.getContext("2d").drawImage(cv, 0, 0);
+  _cvNotaOnline = cvFinal;
+  const area = document.getElementById("notaImgArea");
+  if (area) {
+    area.innerHTML = "";
+    area.appendChild(cvFinal);
+  }
 }
-function baixarNotaImagem(){
-  if(!_cvNotaOnline){ alertaBonito("A nota ainda está sendo gerada, aguarde um instante e tente de novo."); return; }
-  const a=document.createElement("a");
-  a.download="pedido-b13.png";
-  a.href=_cvNotaOnline.toDataURL("image/png");
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+function baixarNotaImagem() {
+  if (!_cvNotaOnline) {
+    alertaBonito("A nota ainda está sendo gerada, aguarde um instante e tente de novo.");
+    return;
+  }
+  const a = document.createElement("a");
+  a.download = "pedido-b13.png";
+  a.href = _cvNotaOnline.toDataURL("image/png");
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
-
-function recomecar(perguntar){
-  if(perguntar && contagem()>0 && !confirm("Recomeçar? O carrinho será esvaziado.")) return;
-  S=novoEstado(); render();
+function recomecar(perguntar) {
+  if (perguntar && contagem() > 0 && !confirm("Recomeçar? O carrinho será esvaziado.")) return;
+  S = novoEstado();
+  render();
 }
 
 // (temporizador de inatividade removido — o cliente usa o próprio celular, não faz
 // sentido esvaziar o pedido sozinho por inatividade)
 
 // carrega carrinho salvo pelo modo tabela ou parâmetro de modo
-try{
-  const params=new URLSearchParams(location.search);
-  if(params.get("modo")==="tabela"){
+try {
+  const params = new URLSearchParams(location.search);
+  if (params.get("modo") === "tabela") {
     // link direto pro modo tabela (pra mandar pro cliente): já pula a tela de
     // boas-vindas e cai direto na tabela de preços, sem deixar de funcionar no
     // modo normal (que continua começando na tela inicial).
-    S.modo="tabela";
-    S.etapa="catalogo";
+    S.modo = "tabela";
+    S.etapa = "catalogo";
   }
-  const saved=sessionStorage.getItem("b13cart");
-  if(saved && params.get("carrinho")==="1"){
-    const cart=JSON.parse(saved); sessionStorage.removeItem("b13cart");
+  const saved = sessionStorage.getItem("b13cart");
+  if (saved && params.get("carrinho") === "1") {
+    const cart = JSON.parse(saved);
+    sessionStorage.removeItem("b13cart");
     Object.assign(S.carrinho, cart);
-    S.etapa="carrinho";
+    S.etapa = "carrinho";
   }
-}catch(e){}
-
+} catch (e) {}
 carregarCatalogo();
-carregarInstagramPosts();
-</script>
+carregarInstagramPosts();</script>
 </body>
 </html>

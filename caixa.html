@@ -51,61 +51,123 @@
   })();
 </script>
 <div id="app"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="/logo";
-const FUNC=(typeof b13GetSession==="function")?b13GetSession():null;
-const SIT={AGUARDANDO:818795,EM_SEP:817963,SEPARADO:821590,SEP_PEND:819227,EM_ROTA:820085,ATENDIDO:9};
-let formasPag=[];
-let S={view:"scan",pedido:null,pag:null,busca:"",msg:"",carregando:false};
-function fmtLocalCx(d){ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
-let F={dataInicial:fmtLocalCx(new Date()),dataFinal:fmtLocalCx(new Date()),carregando:false,relatorio:null,erro:"",progresso:{atual:0,total:0,mensagem:""},statusExpandido:null,vendedorSelecionado:null,rapido:false};
-
-function fechamentoPreset(tipo){
-  const hoje=new Date(); const y=hoje.getFullYear(), m=hoje.getMonth();
-  if(tipo==="hoje"){ F.dataInicial=fmtLocalCx(hoje); F.dataFinal=fmtLocalCx(hoje); }
-  else if(tipo==="mes"){ F.dataInicial=fmtLocalCx(new Date(y,m,1)); F.dataFinal=fmtLocalCx(hoje); }
-  else if(tipo==="mesAnterior"){ F.dataInicial=fmtLocalCx(new Date(y,m-1,1)); F.dataFinal=fmtLocalCx(new Date(y,m,0)); }
-  else if(tipo==="q1"){ F.dataInicial=fmtLocalCx(new Date(y,m,1)); F.dataFinal=fmtLocalCx(new Date(y,m,15)); }
-  else if(tipo==="q2"){ F.dataInicial=fmtLocalCx(new Date(y,m,16)); F.dataFinal=fmtLocalCx(new Date(y,m+1,0)); }
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const LOGO = "/logo";
+const FUNC = typeof b13GetSession === "function" ? b13GetSession() : null;
+const SIT = {
+  AGUARDANDO: 818795,
+  EM_SEP: 817963,
+  SEPARADO: 821590,
+  SEP_PEND: 819227,
+  EM_ROTA: 820085,
+  ATENDIDO: 9
+};
+let formasPag = [];
+let S = {
+  view: "scan",
+  pedido: null,
+  pag: null,
+  busca: "",
+  msg: "",
+  carregando: false
+};
+function fmtLocalCx(d) {
+  const y = d.getFullYear(),
+    m = String(d.getMonth() + 1).padStart(2, "0"),
+    day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+let F = {
+  dataInicial: fmtLocalCx(new Date()),
+  dataFinal: fmtLocalCx(new Date()),
+  carregando: false,
+  relatorio: null,
+  erro: "",
+  progresso: {
+    atual: 0,
+    total: 0,
+    mensagem: ""
+  },
+  statusExpandido: null,
+  vendedorSelecionado: null,
+  rapido: false
+};
+function fechamentoPreset(tipo) {
+  const hoje = new Date();
+  const y = hoje.getFullYear(),
+    m = hoje.getMonth();
+  if (tipo === "hoje") {
+    F.dataInicial = fmtLocalCx(hoje);
+    F.dataFinal = fmtLocalCx(hoje);
+  } else if (tipo === "mes") {
+    F.dataInicial = fmtLocalCx(new Date(y, m, 1));
+    F.dataFinal = fmtLocalCx(hoje);
+  } else if (tipo === "mesAnterior") {
+    F.dataInicial = fmtLocalCx(new Date(y, m - 1, 1));
+    F.dataFinal = fmtLocalCx(new Date(y, m, 0));
+  } else if (tipo === "q1") {
+    F.dataInicial = fmtLocalCx(new Date(y, m, 1));
+    F.dataFinal = fmtLocalCx(new Date(y, m, 15));
+  } else if (tipo === "q2") {
+    F.dataInicial = fmtLocalCx(new Date(y, m, 16));
+    F.dataFinal = fmtLocalCx(new Date(y, m + 1, 0));
+  }
   buscarFechamento();
 }
-
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function fmtForma(f){ return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento?` (venc. ${esc(f.vencimento)})`:''}`; }
-function toggleMenuLateral(){ document.body.classList.toggle("menu-oculto"); }
-function toggleTelaInteira(){
-  const btn=document.getElementById("btnTelaInteira");
-  if(!document.fullscreenElement){
-    (document.documentElement.requestFullscreen?document.documentElement.requestFullscreen():Promise.reject()).catch(()=>{});
-  }else{
-    (document.exitFullscreen?document.exitFullscreen():Promise.reject()).catch(()=>{});
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
+function brl(n) {
+  return (Number(n) || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+function fmtForma(f) {
+  return `${esc(f.nome)} ${brl(f.valor)}${f.vencimento ? ` (venc. ${esc(f.vencimento)})` : ''}`;
+}
+function toggleMenuLateral() {
+  document.body.classList.toggle("menu-oculto");
+}
+function toggleTelaInteira() {
+  const btn = document.getElementById("btnTelaInteira");
+  if (!document.fullscreenElement) {
+    (document.documentElement.requestFullscreen ? document.documentElement.requestFullscreen() : Promise.reject()).catch(() => {});
+  } else {
+    (document.exitFullscreen ? document.exitFullscreen() : Promise.reject()).catch(() => {});
   }
 }
-document.addEventListener("fullscreenchange",()=>{
-  const btn=document.getElementById("btnTelaInteira");
-  if(btn) btn.textContent=document.fullscreenElement?"⛶ Sair da tela inteira":"⛶ Tela inteira";
+document.addEventListener("fullscreenchange", () => {
+  const btn = document.getElementById("btnTelaInteira");
+  if (btn) btn.textContent = document.fullscreenElement ? "⛶ Sair da tela inteira" : "⛶ Tela inteira";
 });
-
-function header(){
-  const botaoNav=S.view==="scan"
-    ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>`
-    : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
+function header() {
+  const botaoNav = S.view === "scan" ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>` : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
   return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
   ${botaoNav}
-  ${FUNC?`<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>`:""}
+  ${FUNC ? `<span style="color:#9a95c9;font-size:12px">👤 ${esc(FUNC.nome)}</span>` : ""}
   <button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="if(typeof b13Logout==='function')b13Logout()">Sair</button>
   </div>`;
 }
-
-function render(){
-  const app=document.getElementById("app");
-  if(S.view==="fechamento"){ renderFechamento(app); return; }
-  if(S.view==="formasPag"){ renderFormasPagamento(app); return; }
-  if(!S.pedido){
+function render() {
+  const app = document.getElementById("app");
+  if (S.view === "fechamento") {
+    renderFechamento(app);
+    return;
+  }
+  if (S.view === "formasPag") {
+    renderFormasPagamento(app);
+    return;
+  }
+  if (!S.pedido) {
     document.getElementById("app").classList.add("full");
-    app.innerHTML=header()+`
+    app.innerHTML = header() + `
       <div style="max-width:720px;margin:0 auto;padding:16px 16px 0">
         <div class="scan-box" style="padding:16px">
           <div style="display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap">
@@ -115,8 +177,8 @@ function render(){
           <input id="scanInput" placeholder="Código do pedido…" autofocus
             onkeydown="if(event.key==='Enter'){buscarPedido(this.value); this.value='';}"
             style="font-size:20px;text-align:center;letter-spacing:1px;margin-top:10px">
-          ${S.carregando?`<div class="muted" style="text-align:center;margin-top:8px">Buscando pedido…</div>`:""}
-          ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+          ${S.carregando ? `<div class="muted" style="text-align:center;margin-top:8px">Buscando pedido…</div>` : ""}
+          ${S.msg ? `<div class="err">${esc(S.msg)}</div>` : ""}
         </div>
       </div>
 
@@ -129,116 +191,160 @@ function render(){
         </div>
         <iframe src="/operacional?embed=caixa" style="width:100%;height:calc(100vh - 260px);min-height:520px;border:1px solid #2a2660;border-radius:12px;background:#0b0920"></iframe>
       </div>`;
-    const inp=document.getElementById("scanInput"); if(inp) inp.focus();
+    const inp = document.getElementById("scanInput");
+    if (inp) inp.focus();
     return;
   }
   document.getElementById("app").classList.remove("full");
   renderPedido(app);
 }
-
-async function buscarPedido(valor){
-  valor=(valor||"").trim(); if(!valor) return;
-  S.msg=""; S.carregando=true; render();
-  try{
-    const r=await fetch(B+"/api/pedidos/"+encodeURIComponent(valor));
-    const j=await r.json();
-    const ped=j?.data;
-    if(!r.ok || !ped){ S.carregando=false; S.msg="Pedido não encontrado. Confira o código e tente de novo."; render(); return; }
-    const sit=ped.situacao?.id;
-    if(sit!==SIT.AGUARDANDO){
-      S.carregando=false;
-      const nomes={[SIT.EM_SEP]:"Em Separação",[SIT.SEPARADO]:"Separado",[SIT.SEP_PEND]:"Separado c/ Pendências",[SIT.EM_ROTA]:"Em Rota",[SIT.ATENDIDO]:"Atendido"};
-      S.msg=`Pedido #${ped.numero||valor} já está em "${nomes[sit]||sit}" — não está mais aguardando recebimento.`;
-      render(); return;
+async function buscarPedido(valor) {
+  valor = (valor || "").trim();
+  if (!valor) return;
+  S.msg = "";
+  S.carregando = true;
+  render();
+  try {
+    var _ped$situacao, _rFormas$data;
+    const r = await fetch(B + "/api/pedidos/" + encodeURIComponent(valor));
+    const j = await r.json();
+    const ped = j === null || j === void 0 ? void 0 : j.data;
+    if (!r.ok || !ped) {
+      S.carregando = false;
+      S.msg = "Pedido não encontrado. Confira o código e tente de novo.";
+      render();
+      return;
     }
-    const [rPag,rEnt,rFormas]=await Promise.all([
-      fetch(B+"/api/pagamentos/"+ped.id).then(r=>r.json()).catch(()=>null),
-      fetch(B+"/api/entregas").then(r=>r.json()).catch(()=>({data:{}})),
-      formasPag.length?Promise.resolve({data:formasPag}):fetch(B+"/api/formas-pagamento").then(r=>r.json()).catch(()=>({data:[]})),
-    ]);
-    if(rFormas?.data?.length) formasPag=rFormas.data;
-    S.pedido=ped; S.pag=rPag?.data||null; S.entregaInfo=(rEnt?.data||{})[String(ped.id)]||null;
-    S.carregando=false; S.msg="";
+    const sit = (_ped$situacao = ped.situacao) === null || _ped$situacao === void 0 ? void 0 : _ped$situacao.id;
+    if (sit !== SIT.AGUARDANDO) {
+      S.carregando = false;
+      const nomes = {
+        [SIT.EM_SEP]: "Em Separação",
+        [SIT.SEPARADO]: "Separado",
+        [SIT.SEP_PEND]: "Separado c/ Pendências",
+        [SIT.EM_ROTA]: "Em Rota",
+        [SIT.ATENDIDO]: "Atendido"
+      };
+      S.msg = `Pedido #${ped.numero || valor} já está em "${nomes[sit] || sit}" — não está mais aguardando recebimento.`;
+      render();
+      return;
+    }
+    const [rPag, rEnt, rFormas] = await Promise.all([fetch(B + "/api/pagamentos/" + ped.id).then(r => r.json()).catch(() => null), fetch(B + "/api/entregas").then(r => r.json()).catch(() => ({
+      data: {}
+    })), formasPag.length ? Promise.resolve({
+      data: formasPag
+    }) : fetch(B + "/api/formas-pagamento").then(r => r.json()).catch(() => ({
+      data: []
+    }))]);
+    if (rFormas !== null && rFormas !== void 0 && (_rFormas$data = rFormas.data) !== null && _rFormas$data !== void 0 && _rFormas$data.length) formasPag = rFormas.data;
+    S.pedido = ped;
+    S.pag = (rPag === null || rPag === void 0 ? void 0 : rPag.data) || null;
+    S.entregaInfo = ((rEnt === null || rEnt === void 0 ? void 0 : rEnt.data) || {})[String(ped.id)] || null;
+    S.carregando = false;
+    S.msg = "";
     render();
-  }catch(e){ S.carregando=false; S.msg="Erro de conexão ao buscar pedido."; render(); }
+  } catch (e) {
+    S.carregando = false;
+    S.msg = "Erro de conexão ao buscar pedido.";
+    render();
+  }
 }
-
-function voltarBusca(){ S={pedido:null,pag:null,busca:"",msg:"",carregando:false}; render(); }
-
-function renderPedido(app){
-  const ped=S.pedido; const pag=S.pag;
-  const pago=pag?.statusPagamento==="pago";
-  const total=+(ped.total||ped.totalProdutos||0);
-  const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
-  const ehEntrega=S.entregaInfo?S.entregaInfo.tipo==="entrega":freteCalc>0.01;
-  const freteVal=S.entregaInfo?(S.entregaInfo.freteOriginal||0):freteCalc;
-  const temFrete=ehEntrega&&freteVal>0.01;
-
-  const itensHtml=(ped.itens||[]).map(i=>`
+function voltarBusca() {
+  S = {
+    pedido: null,
+    pag: null,
+    busca: "",
+    msg: "",
+    carregando: false
+  };
+  render();
+}
+function renderPedido(app) {
+  var _ped$contato;
+  const ped = S.pedido;
+  const pag = S.pag;
+  const pago = (pag === null || pag === void 0 ? void 0 : pag.statusPagamento) === "pago";
+  const total = +(ped.total || ped.totalProdutos || 0);
+  const freteCalc = +((ped.total || 0) - (ped.totalProdutos || 0)).toFixed(2);
+  const ehEntrega = S.entregaInfo ? S.entregaInfo.tipo === "entrega" : freteCalc > 0.01;
+  const freteVal = S.entregaInfo ? S.entregaInfo.freteOriginal || 0 : freteCalc;
+  const temFrete = ehEntrega && freteVal > 0.01;
+  const itensHtml = (ped.itens || []).map(i => {
+    var _i$produto;
+    return `
     <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
-      <span style="flex:1">${esc(i.descricao||i.produto?.nome||"")} <span class="muted">x${i.quantidade}</span></span>
-      <span>${brl((i.valor||0)*i.quantidade)}</span>
-    </div>`).join("");
-
-  app.innerHTML=header()+`<div class="wrap">
+      <span style="flex:1">${esc(i.descricao || ((_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.nome) || "")} <span class="muted">x${i.quantidade}</span></span>
+      <span>${brl((i.valor || 0) * i.quantidade)}</span>
+    </div>`;
+  }).join("");
+  app.innerHTML = header() + `<div class="wrap">
     <button class="btn btn-ghost" style="margin-bottom:12px" onclick="voltarBusca()">← Escanear outro pedido</button>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:20px;font-weight:900">#${esc(ped.numero||ped.id)}</div>
+        <div style="font-size:20px;font-weight:900">#${esc(ped.numero || ped.id)}</div>
         <div style="display:flex;align-items:center;gap:8px">
-          ${!pago?`<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="abrirEdicao()">✏️ Editar</button>`:''}
-          <div class="muted">${ped.data?new Date(ped.data).toLocaleDateString("pt-BR"):""}</div>
+          ${!pago ? `<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="abrirEdicao()">✏️ Editar</button>` : ''}
+          <div class="muted">${ped.data ? new Date(ped.data).toLocaleDateString("pt-BR") : ""}</div>
         </div>
       </div>
-      <div style="font-weight:700;margin-bottom:8px">${esc(ped.contato?.nome||"—")}</div>
-      ${ehEntrega?`<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:8px">🛵 Entrega${temFrete?` — frete ${brl(freteVal)}`:" — frete grátis"}</div>`:""}
+      <div style="font-weight:700;margin-bottom:8px">${esc(((_ped$contato = ped.contato) === null || _ped$contato === void 0 ? void 0 : _ped$contato.nome) || "—")}</div>
+      ${ehEntrega ? `<div style="font-size:11px;color:#00aaff;background:#0d2a3a;border:1px solid #00aaff44;border-radius:5px;padding:2px 7px;display:inline-block;margin-bottom:8px">🛵 Entrega${temFrete ? ` — frete ${brl(freteVal)}` : " — frete grátis"}</div>` : ""}
       <div style="max-height:30vh;overflow:auto;margin-bottom:8px">${itensHtml}</div>
       <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:900;padding-top:8px;border-top:1px solid #2a2660">
         <span>TOTAL</span><span>${brl(total)}</span>
       </div>
     </div>
-    ${pago?`<div class="ok">✅ Este pedido já está pago (${brl(pag.valorPago)}).</div>`:""}
-    ${S.msg?`<div class="err">${esc(S.msg)}</div>`:""}
+    ${pago ? `<div class="ok">✅ Este pedido já está pago (${brl(pag.valorPago)}).</div>` : ""}
+    ${S.msg ? `<div class="err">${esc(S.msg)}</div>` : ""}
     <div id="caixaAcao"></div>
-    ${!pago?`
+    ${!pago ? `
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
       <button class="btn btn-grn" style="padding:16px" onclick="iniciarRecebimentoCaixa('receber')">💰 RECEBER E SEPARAR</button>
       <button class="btn btn-blue" style="padding:16px" onclick="iniciarRecebimentoCaixa('clienteSeparou')">💰 SÓ RECEBER (SEPARAÇÃO PELO CLIENTE)</button>
-    </div>`:`
+    </div>` : `
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="voltarBusca()">Escanear próximo pedido</button>`}
   </div>`;
 }
 
 // --------- EDIÇÃO DO PEDIDO (adicionar/remover produtos antes de receber/separar) ---------
-let EDIT=null; // {itens:[{produtoId,nome,quantidade,valor}], busca:"", resultados:[], salvando:false, msg:""}
+let EDIT = null; // {itens:[{produtoId,nome,quantidade,valor}], busca:"", resultados:[], salvando:false, msg:""}
 
-function abrirEdicao(){
-  const ped=S.pedido;
-  EDIT={
-    itens:(ped.itens||[]).map(i=>({
-      produtoId:i.produto?.id||i.produtoId,
-      nome:i.descricao||i.produto?.nome||"",
-      quantidade:Number(i.quantidade)||1,
-      valor:Number(i.valor)||0,
-    })),
-    busca:"", resultados:[], buscando:false, salvando:false, msg:"",
+function abrirEdicao() {
+  const ped = S.pedido;
+  EDIT = {
+    itens: (ped.itens || []).map(i => {
+      var _i$produto2, _i$produto3;
+      return {
+        produtoId: ((_i$produto2 = i.produto) === null || _i$produto2 === void 0 ? void 0 : _i$produto2.id) || i.produtoId,
+        nome: i.descricao || ((_i$produto3 = i.produto) === null || _i$produto3 === void 0 ? void 0 : _i$produto3.nome) || "",
+        quantidade: Number(i.quantidade) || 1,
+        valor: Number(i.valor) || 0
+      };
+    }),
+    busca: "",
+    resultados: [],
+    buscando: false,
+    salvando: false,
+    msg: ""
   };
   renderEdicao();
 }
-function fecharEdicao(){ EDIT=null; render(); }
-
-function renderEdicao(){
-  const app=document.getElementById("app");
-  const totalItens=EDIT.itens.reduce((s,i)=>s+i.quantidade*i.valor,0);
-  app.innerHTML=header()+`<div class="wrap">
+function fecharEdicao() {
+  EDIT = null;
+  render();
+}
+function renderEdicao() {
+  const app = document.getElementById("app");
+  const totalItens = EDIT.itens.reduce((s, i) => s + i.quantidade * i.valor, 0);
+  app.innerHTML = header() + `<div class="wrap">
     <button class="btn btn-ghost" style="margin-bottom:12px" onclick="fecharEdicao()">← Voltar sem salvar</button>
     <div class="card">
-      <div style="font-weight:900;font-size:16px;margin-bottom:4px">✏️ Editar pedido #${esc(S.pedido.numero||S.pedido.id)}</div>
+      <div style="font-weight:900;font-size:16px;margin-bottom:4px">✏️ Editar pedido #${esc(S.pedido.numero || S.pedido.id)}</div>
       <div class="muted" style="margin-bottom:12px">Ajuste os itens que identificou ao pedido chegar. Ao salvar, a alteração é aplicada também no Bling. Só dá pra editar enquanto o pedido está em "Aguardando separação".</div>
-      ${EDIT.msg?`<div class="${EDIT.msg.startsWith('✅')?'ok':'err'}">${esc(EDIT.msg)}</div>`:""}
+      ${EDIT.msg ? `<div class="${EDIT.msg.startsWith('✅') ? 'ok' : 'err'}">${esc(EDIT.msg)}</div>` : ""}
 
       <div style="font-weight:800;margin:6px 0">Itens do pedido</div>
-      ${EDIT.itens.length?EDIT.itens.map((it,ix)=>`
+      ${EDIT.itens.length ? EDIT.itens.map((it, ix) => `
         <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#1c1846;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">
           <div style="flex:1;min-width:120px">
             <div style="font-weight:700;font-size:13px">${esc(it.nome)}</div>
@@ -249,9 +355,9 @@ function renderEdicao(){
             <span style="min-width:32px;text-align:center;font-weight:800">${it.quantidade}</span>
             <button class="btn btn-ghost" style="padding:4px 10px" onclick="editQtd(${ix},1)">+</button>
           </div>
-          <div style="font-weight:800;min-width:70px;text-align:right">${brl(it.valor*it.quantidade)}</div>
+          <div style="font-weight:800;min-width:70px;text-align:right">${brl(it.valor * it.quantidade)}</div>
           <button class="rm" style="background:#3a0010;border:1px solid #ff4466;color:#ff8090;border-radius:5px;padding:5px 9px;cursor:pointer" onclick="editRemover(${ix})">✕</button>
-        </div>`).join(""):'<div class="muted">Nenhum item — adicione ao menos um.</div>'}
+        </div>`).join("") : '<div class="muted">Nenhum item — adicione ao menos um.</div>'}
 
       <div style="display:flex;justify-content:space-between;font-weight:900;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">
         <span>Total dos itens</span><span>${brl(totalItens)}</span>
@@ -262,204 +368,336 @@ function renderEdicao(){
         <input id="editBusca" type="text" placeholder="Buscar produto (nome)…" value="${esc(EDIT.busca)}"
           style="flex:1;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px"
           oninput="EDIT.busca=this.value" onkeydown="if(event.key==='Enter')buscarEdicao()">
-        <button class="btn btn-mag" onclick="buscarEdicao()" ${EDIT.buscando?'disabled':''}>${EDIT.buscando?'Buscando…':'Buscar'}</button>
+        <button class="btn btn-mag" onclick="buscarEdicao()" ${EDIT.buscando ? 'disabled' : ''}>${EDIT.buscando ? 'Buscando…' : 'Buscar'}</button>
       </div>
       <div id="editResultados">${renderResultadosEdicao()}</div>
 
-      <button class="btn btn-grn" style="width:100%;padding:14px;margin-top:16px" onclick="salvarEdicao()" ${EDIT.salvando?'disabled':''}>
-        ${EDIT.salvando?'Salvando no Bling…':'💾 Salvar alterações'}
+      <button class="btn btn-grn" style="width:100%;padding:14px;margin-top:16px" onclick="salvarEdicao()" ${EDIT.salvando ? 'disabled' : ''}>
+        ${EDIT.salvando ? 'Salvando no Bling…' : '💾 Salvar alterações'}
       </button>
     </div>
   </div>`;
 }
-
-function renderResultadosEdicao(){
-  if(!EDIT.resultados.length) return "";
-  return `<div style="margin-top:8px">`+EDIT.resultados.map(r=>{
-    const semEst=r.estoque!=null && r.estoque<=0;
+function renderResultadosEdicao() {
+  if (!EDIT.resultados.length) return "";
+  return `<div style="margin-top:8px">` + EDIT.resultados.map(r => {
+    const semEst = r.estoque != null && r.estoque <= 0;
     return `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:#0f0d24;border:1px solid #2a2660;border-radius:8px;margin-bottom:5px">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px">${esc(r.nome)}</div>
-        <div class="muted">${brl(r.preco)}${r.precoAtacado?' (atacado)':''} · estoque: ${r.estoque!=null?r.estoque:'—'}${semEst?' ⚠️':''}</div>
+        <div class="muted">${brl(r.preco)}${r.precoAtacado ? ' (atacado)' : ''} · estoque: ${r.estoque != null ? r.estoque : '—'}${semEst ? ' ⚠️' : ''}</div>
       </div>
-      <button class="btn btn-grn" style="padding:6px 12px" onclick='editAdicionar(${JSON.stringify(r).replace(/'/g,"&#39;")})'>+ Add</button>
+      <button class="btn btn-grn" style="padding:6px 12px" onclick='editAdicionar(${JSON.stringify(r).replace(/'/g, "&#39;")})'>+ Add</button>
     </div>`;
-  }).join("")+`</div>`;
+  }).join("") + `</div>`;
 }
-
-function editQtd(ix,delta){
-  EDIT.itens[ix].quantidade=Math.max(1,EDIT.itens[ix].quantidade+delta);
+function editQtd(ix, delta) {
+  EDIT.itens[ix].quantidade = Math.max(1, EDIT.itens[ix].quantidade + delta);
   renderEdicao();
 }
-function editRemover(ix){
-  EDIT.itens.splice(ix,1);
+function editRemover(ix) {
+  EDIT.itens.splice(ix, 1);
   renderEdicao();
 }
-function editAdicionar(prod){
-  const existe=EDIT.itens.find(i=>String(i.produtoId)===String(prod.id));
-  if(existe){ existe.quantidade++; }
-  else EDIT.itens.push({produtoId:prod.id,nome:prod.nome,quantidade:1,valor:Number(prod.preco)||0});
-  EDIT.msg="";
+function editAdicionar(prod) {
+  const existe = EDIT.itens.find(i => String(i.produtoId) === String(prod.id));
+  if (existe) {
+    existe.quantidade++;
+  } else EDIT.itens.push({
+    produtoId: prod.id,
+    nome: prod.nome,
+    quantidade: 1,
+    valor: Number(prod.preco) || 0
+  });
+  EDIT.msg = "";
   renderEdicao();
 }
-async function buscarEdicao(){
-  const q=(EDIT.busca||"").trim();
-  if(q.length<2){ EDIT.msg="Digite ao menos 2 letras pra buscar."; renderEdicao(); return; }
-  EDIT.buscando=true; EDIT.msg=""; renderEdicao();
-  try{
-    const j=await fetch(B+"/api/estoque/buscar-produto?q="+encodeURIComponent(q)).then(r=>r.json());
-    EDIT.resultados=j.data||[];
-    if(!EDIT.resultados.length) EDIT.msg="Nenhum produto encontrado.";
-  }catch(e){ EDIT.msg="Erro ao buscar produto."; }
-  EDIT.buscando=false; renderEdicao();
+async function buscarEdicao() {
+  const q = (EDIT.busca || "").trim();
+  if (q.length < 2) {
+    EDIT.msg = "Digite ao menos 2 letras pra buscar.";
+    renderEdicao();
+    return;
+  }
+  EDIT.buscando = true;
+  EDIT.msg = "";
+  renderEdicao();
+  try {
+    const j = await fetch(B + "/api/estoque/buscar-produto?q=" + encodeURIComponent(q)).then(r => r.json());
+    EDIT.resultados = j.data || [];
+    if (!EDIT.resultados.length) EDIT.msg = "Nenhum produto encontrado.";
+  } catch (e) {
+    EDIT.msg = "Erro ao buscar produto.";
+  }
+  EDIT.buscando = false;
+  renderEdicao();
 }
-async function salvarEdicao(){
-  if(!EDIT.itens.length){ EDIT.msg="O pedido precisa ter ao menos 1 item."; renderEdicao(); return; }
-  if(!confirm("Salvar as alterações? Isso vai alterar os itens do pedido também no Bling.")) return;
-  EDIT.salvando=true; EDIT.msg=""; renderEdicao();
-  try{
-    const j=await fetch(B+"/api/pedidos/"+S.pedido.id+"/editar-itens",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({itens:EDIT.itens, funcionarioNome:FUNC?.nome||""})}).then(r=>r.json());
-    if(j.erro){ EDIT.msg="❌ "+j.erro; EDIT.salvando=false; renderEdicao(); return; }
+async function salvarEdicao() {
+  if (!EDIT.itens.length) {
+    EDIT.msg = "O pedido precisa ter ao menos 1 item.";
+    renderEdicao();
+    return;
+  }
+  if (!confirm("Salvar as alterações? Isso vai alterar os itens do pedido também no Bling.")) return;
+  EDIT.salvando = true;
+  EDIT.msg = "";
+  renderEdicao();
+  try {
+    const j = await fetch(B + "/api/pedidos/" + S.pedido.id + "/editar-itens", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        itens: EDIT.itens,
+        funcionarioNome: (FUNC === null || FUNC === void 0 ? void 0 : FUNC.nome) || ""
+      })
+    }).then(r => r.json());
+    if (j.erro) {
+      EDIT.msg = "❌ " + j.erro;
+      EDIT.salvando = false;
+      renderEdicao();
+      return;
+    }
     // avisa se algum item REMOVIDO está sem estoque
-    if(j.avisosEstoque && j.avisosEstoque.length){
-      alert("⚠️ Atenção:\n\n"+j.avisosEstoque.join("\n"));
+    if (j.avisosEstoque && j.avisosEstoque.length) {
+      alert("⚠️ Atenção:\n\n" + j.avisosEstoque.join("\n"));
     }
     // recarrega o pedido atualizado e volta pra tela normal
-    EDIT=null;
-    await buscarPedido(String(S.pedido.numero||S.pedido.id));
-  }catch(e){ EDIT.msg="Erro de conexão ao salvar. Nada foi alterado."; EDIT.salvando=false; renderEdicao(); }
+    EDIT = null;
+    await buscarPedido(String(S.pedido.numero || S.pedido.id));
+  } catch (e) {
+    EDIT.msg = "Erro de conexão ao salvar. Nada foi alterado.";
+    EDIT.salvando = false;
+    renderEdicao();
+  }
 }
-
-async function iniciarRecebimentoCaixa(modo){
-  const ped=S.pedido; const total=+(ped.total||ped.totalProdutos||0);
-  const freteCalc=+(((ped.total||0)-(ped.totalProdutos||0))).toFixed(2);
-  const ehEntrega=S.entregaInfo?S.entregaInfo.tipo==="entrega":freteCalc>0.01;
-  const freteVal=S.entregaInfo?(S.entregaInfo.freteOriginal||0):freteCalc;
-  const temFrete=ehEntrega&&freteVal>0.01;
-
-  if(!temFrete) return abrirPagamentoCaixa(total,modo);
-
-  const ok=confirm(
-    `Este pedido foi criado como ENTREGA (frete de ${brl(freteVal)}).\n\n`+
-    `Como o cliente está retirando no caixa, o frete será removido do pedido `+
-    `(atualizado no Bling e registrado na observação) e o valor cobrado será ${brl(total-freteVal)}.\n\n`+
-    `Confirma?`
-  );
-  if(!ok) return;
-  document.getElementById("caixaAcao").innerHTML=`<div class="muted">Removendo frete do pedido…</div>`;
-  try{
-    const r=await fetch(B+"/api/fluxo/"+ped.id+"/converter-retirada",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
-    const j=await r.json();
-    if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao remover frete")}</div>`; return; }
-    document.getElementById("caixaAcao").innerHTML="";
-    abrirPagamentoCaixa(j.total??(total-freteVal),modo);
-  }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão ao remover frete</div>`; }
+async function iniciarRecebimentoCaixa(modo) {
+  const ped = S.pedido;
+  const total = +(ped.total || ped.totalProdutos || 0);
+  const freteCalc = +((ped.total || 0) - (ped.totalProdutos || 0)).toFixed(2);
+  const ehEntrega = S.entregaInfo ? S.entregaInfo.tipo === "entrega" : freteCalc > 0.01;
+  const freteVal = S.entregaInfo ? S.entregaInfo.freteOriginal || 0 : freteCalc;
+  const temFrete = ehEntrega && freteVal > 0.01;
+  if (!temFrete) return abrirPagamentoCaixa(total, modo);
+  const ok = confirm(`Este pedido foi criado como ENTREGA (frete de ${brl(freteVal)}).\n\n` + `Como o cliente está retirando no caixa, o frete será removido do pedido ` + `(atualizado no Bling e registrado na observação) e o valor cobrado será ${brl(total - freteVal)}.\n\n` + `Confirma?`);
+  if (!ok) return;
+  document.getElementById("caixaAcao").innerHTML = `<div class="muted">Removendo frete do pedido…</div>`;
+  try {
+    var _j$total;
+    const r = await fetch(B + "/api/fluxo/" + ped.id + "/converter-retirada", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        funcionarioId: FUNC === null || FUNC === void 0 ? void 0 : FUNC.id,
+        funcionarioNome: FUNC === null || FUNC === void 0 ? void 0 : FUNC.nome
+      })
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) {
+      document.getElementById("caixaAcao").innerHTML = `<div class="err">${esc(j.erro || "Erro ao remover frete")}</div>`;
+      return;
+    }
+    document.getElementById("caixaAcao").innerHTML = "";
+    abrirPagamentoCaixa((_j$total = j.total) !== null && _j$total !== void 0 ? _j$total : total - freteVal, modo);
+  } catch (e) {
+    document.getElementById("caixaAcao").innerHTML = `<div class="err">Erro de conexão ao remover frete</div>`;
+  }
 }
-
-let _parcelasCaixa=[];
-
-function abrirPagamentoCaixa(total,modo){
-  window._caixaTotal=total; window._caixaModo=modo;
-  _parcelasCaixa=[{valor:Number(total).toFixed(2),formaId:formasPag[0]?.id||"",formaNome:formasPag[0]?.nome||""}];
+let _parcelasCaixa = [];
+function abrirPagamentoCaixa(total, modo) {
+  var _formasPag$, _formasPag$2;
+  window._caixaTotal = total;
+  window._caixaModo = modo;
+  _parcelasCaixa = [{
+    valor: Number(total).toFixed(2),
+    formaId: ((_formasPag$ = formasPag[0]) === null || _formasPag$ === void 0 ? void 0 : _formasPag$.id) || "",
+    formaNome: ((_formasPag$2 = formasPag[0]) === null || _formasPag$2 === void 0 ? void 0 : _formasPag$2.nome) || ""
+  }];
   renderModalPagamentoCaixa();
 }
-
-function renderModalPagamentoCaixa(){
-  const total=window._caixaTotal;
-  const soma=_parcelasCaixa.reduce((s,p)=>s+parseFloat(p.valor||0),0);
-  const diff=+(Number(total)-soma).toFixed(2);
-  const rows=_parcelasCaixa.map((p,ix)=>`
+function renderModalPagamentoCaixa() {
+  const total = window._caixaTotal;
+  const soma = _parcelasCaixa.reduce((s, p) => s + parseFloat(p.valor || 0), 0);
+  const diff = +(Number(total) - soma).toFixed(2);
+  const rows = _parcelasCaixa.map((p, ix) => `
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix+1}</span>
+      <span style="font-size:11px;color:#9a95c9;min-width:16px">${ix + 1}</span>
       <input type="number" step="0.01" min="0" value="${p.valor}" style="width:100px;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:13px"
         onchange="_parcelasCaixa[${ix}].valor=Math.max(0,parseFloat(this.value)||0);renderModalPagamentoCaixa()">
       <select style="flex:1;padding:8px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;font-size:12px"
         onchange="_parcelasCaixa[${ix}].formaId=this.value;_parcelasCaixa[${ix}].formaNome=this.options[this.selectedIndex].text">
-        ${formasPag.map(f=>`<option value="${f.id}" ${f.id==p.formaId?'selected':''}>${esc(f.nome||f.id)}</option>`).join("")}
+        ${formasPag.map(f => `<option value="${f.id}" ${f.id == p.formaId ? 'selected' : ''}>${esc(f.nome || f.id)}</option>`).join("")}
       </select>
-      ${_parcelasCaixa.length>1?`<button onclick="_parcelasCaixa.splice(${ix},1);renderModalPagamentoCaixa()" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>`:""}
+      ${_parcelasCaixa.length > 1 ? `<button onclick="_parcelasCaixa.splice(${ix},1);renderModalPagamentoCaixa()" style="background:none;border:none;color:#ff8090;cursor:pointer;font-size:18px">✕</button>` : ""}
     </div>`).join("");
-  document.getElementById("caixaAcao").innerHTML=`
+  document.getElementById("caixaAcao").innerHTML = `
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">💰 Registrar pagamento — total ${brl(total)}</div>
       ${rows}
       <button class="btn btn-ghost" style="width:100%;margin-bottom:10px;font-size:12px"
-        onclick="_parcelasCaixa.push({valor:'${diff>0?diff.toFixed(2):'0.00'}',formaId:formasPag[0]?.id||'',formaNome:formasPag[0]?.nome||''});renderModalPagamentoCaixa()">
-        + Dividir em outra forma de pagamento ${diff>0?`(falta ${brl(diff)})`:''}</button>
+        onclick="_parcelasCaixa.push({valor:'${diff > 0 ? diff.toFixed(2) : '0.00'}',formaId:(formasPag[0]||{}).id||'',formaNome:(formasPag[0]||{}).nome||''});renderModalPagamentoCaixa()">
+        + Dividir em outra forma de pagamento ${diff > 0 ? `(falta ${brl(diff)})` : ''}</button>
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-bottom:10px;font-size:13px">
         <span>Total informado:</span>
-        <b style="color:${Math.abs(diff)<0.01?'#2f9e6b':diff<0?'#e5563f':'#ffd23f'}">${brl(soma)} ${Math.abs(diff)<0.01?'✅':diff>0?`(falta ${brl(diff)})`:'(passou do total)'}</b>
+        <b style="color:${Math.abs(diff) < 0.01 ? '#2f9e6b' : diff < 0 ? '#e5563f' : '#ffd23f'}">${brl(soma)} ${Math.abs(diff) < 0.01 ? '✅' : diff > 0 ? `(falta ${brl(diff)})` : '(passou do total)'}</b>
       </div>
       <button class="btn btn-grn" style="width:100%" onclick="confirmarPagamentoCaixa()">✅ Confirmar recebimento</button>
     </div>`;
 }
-
-async function confirmarPagamentoCaixa(){
-  const ped=S.pedido; const total=window._caixaTotal; const modo=window._caixaModo;
-  const soma=+_parcelasCaixa.reduce((s,p)=>s+parseFloat(p.valor||0),0).toFixed(2);
-  const diff=+(Number(total)-soma).toFixed(2);
-  if(Math.abs(diff)>0.01){
-    document.getElementById("caixaAcao").innerHTML+=`<div class="err">Valor informado (${brl(soma)}) não bate com o total (${brl(total)}). Corrija antes de confirmar.</div>`;
+async function confirmarPagamentoCaixa() {
+  const ped = S.pedido;
+  const total = window._caixaTotal;
+  const modo = window._caixaModo;
+  const soma = +_parcelasCaixa.reduce((s, p) => s + parseFloat(p.valor || 0), 0).toFixed(2);
+  const diff = +(Number(total) - soma).toFixed(2);
+  if (Math.abs(diff) > 0.01) {
+    document.getElementById("caixaAcao").innerHTML += `<div class="err">Valor informado (${brl(soma)}) não bate com o total (${brl(total)}). Corrija antes de confirmar.</div>`;
     return;
   }
-  document.getElementById("caixaAcao").innerHTML=`<div class="muted">Processando…</div>`;
-  try{
-    if(modo==="clienteSeparou"){
+  document.getElementById("caixaAcao").innerHTML = `<div class="muted">Processando…</div>`;
+  try {
+    if (modo === "clienteSeparou") {
+      var _parcelasCaixa$, _parcelasCaixa$2;
       // registra pagamento (com todas as parcelas) e move direto pra SEPARADO
-      await fetch(B+"/api/pagamentos/"+ped.id,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({valor:total,formaId:_parcelasCaixa[0]?.formaId,formaNome:_parcelasCaixa[0]?.formaNome,parcelas:_parcelasCaixa,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,substituir:true,valorEsperado:total})});
-      const r=await fetch(B+"/api/pedidos/"+ped.id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({idSituacao:SIT.SEPARADO,funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome})});
-      const j=await r.json();
-      if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao mover para Separado")}</div>`; return; }
+      await fetch(B + "/api/pagamentos/" + ped.id, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          valor: total,
+          formaId: (_parcelasCaixa$ = _parcelasCaixa[0]) === null || _parcelasCaixa$ === void 0 ? void 0 : _parcelasCaixa$.formaId,
+          formaNome: (_parcelasCaixa$2 = _parcelasCaixa[0]) === null || _parcelasCaixa$2 === void 0 ? void 0 : _parcelasCaixa$2.formaNome,
+          parcelas: _parcelasCaixa,
+          funcionarioId: FUNC === null || FUNC === void 0 ? void 0 : FUNC.id,
+          funcionarioNome: FUNC === null || FUNC === void 0 ? void 0 : FUNC.nome,
+          substituir: true,
+          valorEsperado: total
+        })
+      });
+      const r = await fetch(B + "/api/pedidos/" + ped.id + "/situacao", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          idSituacao: SIT.SEPARADO,
+          funcionarioId: FUNC === null || FUNC === void 0 ? void 0 : FUNC.id,
+          funcionarioNome: FUNC === null || FUNC === void 0 ? void 0 : FUNC.nome
+        })
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) {
+        document.getElementById("caixaAcao").innerHTML = `<div class="err">${esc(j.erro || "Erro ao mover para Separado")}</div>`;
+        return;
+      }
     } else {
-      const r=await fetch(B+"/api/fluxo/"+ped.id+"/enviar-separacao",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({funcionarioId:FUNC?.id,funcionarioNome:FUNC?.nome,pagamento:{valor:total,parcelas:_parcelasCaixa,formaId:_parcelasCaixa[0]?.formaId,formaNome:_parcelasCaixa[0]?.formaNome}})});
-      const j=await r.json();
-      if(!r.ok||j.erro){ document.getElementById("caixaAcao").innerHTML=`<div class="err">${esc(j.erro||"Erro ao enviar para separação")}</div>`; return; }
+      var _parcelasCaixa$3, _parcelasCaixa$4;
+      const r = await fetch(B + "/api/fluxo/" + ped.id + "/enviar-separacao", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          funcionarioId: FUNC === null || FUNC === void 0 ? void 0 : FUNC.id,
+          funcionarioNome: FUNC === null || FUNC === void 0 ? void 0 : FUNC.nome,
+          pagamento: {
+            valor: total,
+            parcelas: _parcelasCaixa,
+            formaId: (_parcelasCaixa$3 = _parcelasCaixa[0]) === null || _parcelasCaixa$3 === void 0 ? void 0 : _parcelasCaixa$3.formaId,
+            formaNome: (_parcelasCaixa$4 = _parcelasCaixa[0]) === null || _parcelasCaixa$4 === void 0 ? void 0 : _parcelasCaixa$4.formaNome
+          }
+        })
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) {
+        document.getElementById("caixaAcao").innerHTML = `<div class="err">${esc(j.erro || "Erro ao enviar para separação")}</div>`;
+        return;
+      }
     }
-    document.getElementById("caixaAcao").innerHTML=`<div class="ok">✅ Pedido #${esc(ped.numero||ped.id)} recebido com sucesso!</div>`;
-    setTimeout(voltarBusca,1400);
-  }catch(e){ document.getElementById("caixaAcao").innerHTML=`<div class="err">Erro de conexão</div>`; }
+    document.getElementById("caixaAcao").innerHTML = `<div class="ok">✅ Pedido #${esc(ped.numero || ped.id)} recebido com sucesso!</div>`;
+    setTimeout(voltarBusca, 1400);
+  } catch (e) {
+    document.getElementById("caixaAcao").innerHTML = `<div class="err">Erro de conexão</div>`;
+  }
 }
 
 // --------- Fechamento de Caixa ---------
-function irFechamento(){ S.view="fechamento"; render(); if(!F.relatorio) buscarFechamento(); }
-
-async function buscarFechamento(_tentativa=0){
-  F.carregando=true; F.erro=""; F.progresso={atual:0,total:0,mensagem:_tentativa?`Reconectando (tentativa ${_tentativa+1})…`:"Iniciando…"}; render();
-  let recebeuDone=false;
-  try{
-    const p=new URLSearchParams({dataInicial:F.dataInicial,dataFinal:F.dataFinal});
-    if(F.rapido) p.set("rapido","1");
-    const es=new EventSource(B+"/api/fechamento-caixa/progresso?"+p.toString());
-    es.onmessage=(ev)=>{
-      const d=JSON.parse(ev.data);
-      if(d.tipo==="status"){ F.progresso.mensagem=d.mensagem; render(); }
-      else if(d.tipo==="total"){ F.progresso.total=d.total; F.progresso.mensagem=d.total?`0 de ${d.total} pedidos processados`:"Nenhum pedido nesse dia"; render(); }
-      else if(d.tipo==="progresso"){ F.progresso.atual=d.atual; F.progresso.total=d.total; F.progresso.mensagem=`${d.atual} de ${d.total} pedidos processados (#${d.pedido})`; render(); }
-      else if(d.tipo==="done"){ recebeuDone=true; F.relatorio=d.relatorio; F.carregando=false; es.close(); render(); }
-      else if(d.tipo==="erro"){ recebeuDone=true; F.erro=d.erro||"Erro ao gerar fechamento"; F.carregando=false; es.close(); render(); }
-    };
-    es.onerror=()=>{
-      es.close();
-      if(recebeuDone) return; // já tinha terminado normalmente, ignora
-      if(_tentativa<2){
-        // conexão caiu no meio — tenta de novo automaticamente (até 2x) do zero
-        setTimeout(()=>buscarFechamento(_tentativa+1),1500);
-      } else {
-        F.erro="Conexão perdida ao gerar fechamento, mesmo após tentar de novo. Tenta um período menor, ou tenta de novo mais tarde.";
-        F.carregando=false; render();
+function irFechamento() {
+  S.view = "fechamento";
+  render();
+  if (!F.relatorio) buscarFechamento();
+}
+async function buscarFechamento(_tentativa = 0) {
+  F.carregando = true;
+  F.erro = "";
+  F.progresso = {
+    atual: 0,
+    total: 0,
+    mensagem: _tentativa ? `Reconectando (tentativa ${_tentativa + 1})…` : "Iniciando…"
+  };
+  render();
+  let recebeuDone = false;
+  try {
+    const p = new URLSearchParams({
+      dataInicial: F.dataInicial,
+      dataFinal: F.dataFinal
+    });
+    if (F.rapido) p.set("rapido", "1");
+    const es = new EventSource(B + "/api/fechamento-caixa/progresso?" + p.toString());
+    es.onmessage = ev => {
+      const d = JSON.parse(ev.data);
+      if (d.tipo === "status") {
+        F.progresso.mensagem = d.mensagem;
+        render();
+      } else if (d.tipo === "total") {
+        F.progresso.total = d.total;
+        F.progresso.mensagem = d.total ? `0 de ${d.total} pedidos processados` : "Nenhum pedido nesse dia";
+        render();
+      } else if (d.tipo === "progresso") {
+        F.progresso.atual = d.atual;
+        F.progresso.total = d.total;
+        F.progresso.mensagem = `${d.atual} de ${d.total} pedidos processados (#${d.pedido})`;
+        render();
+      } else if (d.tipo === "done") {
+        recebeuDone = true;
+        F.relatorio = d.relatorio;
+        F.carregando = false;
+        es.close();
+        render();
+      } else if (d.tipo === "erro") {
+        recebeuDone = true;
+        F.erro = d.erro || "Erro ao gerar fechamento";
+        F.carregando = false;
+        es.close();
+        render();
       }
     };
-  }catch(e){ F.carregando=false; F.erro="Erro de conexão"; render(); }
+    es.onerror = () => {
+      es.close();
+      if (recebeuDone) return; // já tinha terminado normalmente, ignora
+      if (_tentativa < 2) {
+        // conexão caiu no meio — tenta de novo automaticamente (até 2x) do zero
+        setTimeout(() => buscarFechamento(_tentativa + 1), 1500);
+      } else {
+        F.erro = "Conexão perdida ao gerar fechamento, mesmo após tentar de novo. Tenta um período menor, ou tenta de novo mais tarde.";
+        F.carregando = false;
+        render();
+      }
+    };
+  } catch (e) {
+    F.carregando = false;
+    F.erro = "Erro de conexão";
+    render();
+  }
 }
-
-function renderFechamento(app){
-  const rel=F.relatorio;
-  app.innerHTML=header()+`<div class="wrap">
+function renderFechamento(app) {
+  var _F$progresso, _F$progresso2, _F$progresso3;
+  const rel = F.relatorio;
+  app.innerHTML = header() + `<div class="wrap">
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
       <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('hoje')">Hoje</button>
       <button class="btn btn-ghost" style="font-size:12px;padding:8px 12px" onclick="fechamentoPreset('mes')">Mês atual</button>
@@ -479,25 +717,24 @@ function renderFechamento(app){
       <button class="btn btn-mag" style="padding:14px 20px" onclick="buscarFechamento()">🔎 Gerar fechamento</button>
     </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#9a95c9;margin-bottom:16px;cursor:pointer">
-      <input type="checkbox" ${F.rapido?"checked":""} onchange="F.rapido=this.checked" style="width:auto">
+      <input type="checkbox" ${F.rapido ? "checked" : ""} onchange="F.rapido=this.checked" style="width:auto">
       Busca rápida (sem vendedor nem conferência fina de pagamento no Bling — muito mais rápida pra períodos grandes)
     </label>
-    ${F.carregando?`
+    ${F.carregando ? `
     <div class="card">
-      <div style="margin-bottom:8px;font-size:13px">${esc(F.progresso?.mensagem||"Processando…")}</div>
+      <div style="margin-bottom:8px;font-size:13px">${esc(((_F$progresso = F.progresso) === null || _F$progresso === void 0 ? void 0 : _F$progresso.mensagem) || "Processando…")}</div>
       <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96">
-        <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${F.progresso?.total?Math.round((F.progresso.atual/F.progresso.total)*100):5}%;transition:width .3s"></div>
+        <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${(_F$progresso2 = F.progresso) !== null && _F$progresso2 !== void 0 && _F$progresso2.total ? Math.round(F.progresso.atual / F.progresso.total * 100) : 5}%;transition:width .3s"></div>
       </div>
-      <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${F.progresso?.total?Math.round((F.progresso.atual/F.progresso.total)*100)+"%":"Buscando pedidos…"}</div>
-    </div>`:""}
-    ${F.erro?`<div class="err">${esc(F.erro)}</div>`:""}
-    ${rel&&!F.carregando?renderRelatorio(rel):""}
+      <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${(_F$progresso3 = F.progresso) !== null && _F$progresso3 !== void 0 && _F$progresso3.total ? Math.round(F.progresso.atual / F.progresso.total * 100) + "%" : "Buscando pedidos…"}</div>
+    </div>` : ""}
+    ${F.erro ? `<div class="err">${esc(F.erro)}</div>` : ""}
+    ${rel && !F.carregando ? renderRelatorio(rel) : ""}
   </div>`;
 }
-
-function renderFormasPagamento(app){
-  const hoje=new Date().toISOString().slice(0,10);
-  app.innerHTML=header()+`<div class="wrap">
+function renderFormasPagamento(app) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  app.innerHTML = header() + `<div class="wrap">
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">💳 Formas de pagamento recebidas</div>
       <div class="muted" style="font-size:12px;margin-bottom:10px">
@@ -530,46 +767,59 @@ function renderFormasPagamento(app){
     </div>
   </div>`;
 }
-
-function fpMudarModo(){
-  const modo=document.querySelector('input[name="fpModo"]:checked').value;
-  document.getElementById("fpDiaUnico").style.display=modo==="dia"?"block":"none";
-  document.getElementById("fpPeriodoDe").style.display=modo==="periodo"?"block":"none";
-  document.getElementById("fpPeriodoAte").style.display=modo==="periodo"?"block":"none";
+function fpMudarModo() {
+  const modo = document.querySelector('input[name="fpModo"]:checked').value;
+  document.getElementById("fpDiaUnico").style.display = modo === "dia" ? "block" : "none";
+  document.getElementById("fpPeriodoDe").style.display = modo === "periodo" ? "block" : "none";
+  document.getElementById("fpPeriodoAte").style.display = modo === "periodo" ? "block" : "none";
 }
-
-async function buscarFormasPorData(){
-  const modo=document.querySelector('input[name="fpModo"]:checked').value;
-  let dataInicial,dataFinal;
-  if(modo==="dia"){
-    const data=document.getElementById("fpData").value;
-    if(!data){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha uma data.</div>`; return; }
-    dataInicial=data; dataFinal=data;
+async function buscarFormasPorData() {
+  const modo = document.querySelector('input[name="fpModo"]:checked').value;
+  let dataInicial, dataFinal;
+  if (modo === "dia") {
+    const data = document.getElementById("fpData").value;
+    if (!data) {
+      document.getElementById("fpResultado").innerHTML = `<div class="err">Escolha uma data.</div>`;
+      return;
+    }
+    dataInicial = data;
+    dataFinal = data;
   } else {
-    dataInicial=document.getElementById("fpDataIni").value;
-    dataFinal=document.getElementById("fpDataFim").value;
-    if(!dataInicial||!dataFinal){ document.getElementById("fpResultado").innerHTML=`<div class="err">Escolha o período.</div>`; return; }
+    dataInicial = document.getElementById("fpDataIni").value;
+    dataFinal = document.getElementById("fpDataFim").value;
+    if (!dataInicial || !dataFinal) {
+      document.getElementById("fpResultado").innerHTML = `<div class="err">Escolha o período.</div>`;
+      return;
+    }
   }
-  const box=document.getElementById("fpResultado");
-  box.innerHTML=`<div class="muted">Iniciando…</div>`;
-  const es=new EventSource(B+"/api/fechamento-por-pagamento?"+new URLSearchParams({dataInicial,dataFinal}).toString());
-  es.onmessage=(ev)=>{
-    const d=JSON.parse(ev.data);
-    const barra=(msg,atual,total)=>`
+  const box = document.getElementById("fpResultado");
+  box.innerHTML = `<div class="muted">Iniciando…</div>`;
+  const es = new EventSource(B + "/api/fechamento-por-pagamento?" + new URLSearchParams({
+    dataInicial,
+    dataFinal
+  }).toString());
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    const barra = (msg, atual, total) => `
       <div class="card">
         <div style="margin-bottom:8px;font-size:13px">${esc(msg)}</div>
         <div style="background:#0a0918;border-radius:8px;height:14px;overflow:hidden;border:1px solid #514c96">
-          <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${total?Math.round((atual/total)*100):5}%;transition:width .3s"></div>
+          <div style="height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);width:${total ? Math.round(atual / total * 100) : 5}%;transition:width .3s"></div>
         </div>
-        <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${total?Math.round((atual/total)*100)+"%":"Buscando pedidos…"}</div>
+        <div class="muted" style="text-align:center;margin-top:6px;font-size:11px">${total ? Math.round(atual / total * 100) + "%" : "Buscando pedidos…"}</div>
       </div>`;
-    if(d.tipo==="status"){ box.innerHTML=barra(d.mensagem,0,0); }
-    else if(d.tipo==="total"){ box.innerHTML=barra(`0 de ${d.total} pedidos verificados no Bling`,0,d.total); }
-    else if(d.tipo==="progresso"){ box.innerHTML=barra(`${d.atual} de ${d.total} pedidos verificados no Bling`,d.atual,d.total); }
-    else if(d.tipo==="progresso2"){ box.innerHTML=barra(`Buscando detalhes: ${d.atual} de ${d.total}`,d.atual,d.total); }
-    else if(d.tipo==="done"){
-      recebeuDone=true; es.close();
-      box.innerHTML=`
+    if (d.tipo === "status") {
+      box.innerHTML = barra(d.mensagem, 0, 0);
+    } else if (d.tipo === "total") {
+      box.innerHTML = barra(`0 de ${d.total} pedidos verificados no Bling`, 0, d.total);
+    } else if (d.tipo === "progresso") {
+      box.innerHTML = barra(`${d.atual} de ${d.total} pedidos verificados no Bling`, d.atual, d.total);
+    } else if (d.tipo === "progresso2") {
+      box.innerHTML = barra(`Buscando detalhes: ${d.atual} de ${d.total}`, d.atual, d.total);
+    } else if (d.tipo === "done") {
+      recebeuDone = true;
+      es.close();
+      box.innerHTML = `
         <div class="muted" style="font-size:12px;margin-bottom:10px">Pagamentos recebidos entre ${d.dataInicial} e ${d.dataFinal}</div>
         <div class="card" style="text-align:center;margin-bottom:14px">
           <div class="muted">Total recebido</div>
@@ -578,70 +828,78 @@ async function buscarFormasPorData(){
         </div>
         <div class="card">
           <div style="font-weight:800;margin-bottom:6px">Por forma de pagamento</div>
-          ${d.formasPagamento.length?d.formasPagamento.map(f=>`
+          ${d.formasPagamento.length ? d.formasPagamento.map(f => `
             <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
               <span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span>
               <b>${brl(f.valor)}</b>
-            </div>`).join(""):'<div class="muted" style="margin:0">Nenhum pagamento no período.</div>'}
+            </div>`).join("") : '<div class="muted" style="margin:0">Nenhum pagamento no período.</div>'}
         </div>
-        ${d.pedidos.length?`
+        ${d.pedidos.length ? `
         <div class="card" style="margin-top:10px">
           <div style="font-weight:800;margin-bottom:6px">Pedidos (mostrados como se fossem do dia do pagamento)</div>
-          ${d.pedidos.map(p=>`
+          ${d.pedidos.map(p => `
             <div style="padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
               #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)} · criado em ${p.data})</span>
               <span style="float:right;font-weight:700;color:#2f9e6b">${brl(p.valorRecebidoNoPeriodo)}</span>
             </div>`).join("")}
-        </div>`:""}
+        </div>` : ""}
       `;
+    } else if (d.tipo === "erro") {
+      recebeuDone = true;
+      es.close();
+      box.innerHTML = `<div class="err">${esc(d.erro)}</div>`;
     }
-    else if(d.tipo==="erro"){ recebeuDone=true; es.close(); box.innerHTML=`<div class="err">${esc(d.erro)}</div>`; }
   };
-  let recebeuDone=false;
-  es.onerror=()=>{
+  let recebeuDone = false;
+  es.onerror = () => {
     es.close();
-    if(!recebeuDone){
-      box.innerHTML+=`<div class="err" style="margin-top:10px">⚠️ A conexão caiu antes de terminar (comum em buscas longas). Tenta um período menor, ou clica em Consultar de novo.</div>`;
+    if (!recebeuDone) {
+      box.innerHTML += `<div class="err" style="margin-top:10px">⚠️ A conexão caiu antes de terminar (comum em buscas longas). Tenta um período menor, ou clica em Consultar de novo.</div>`;
     }
   };
 }
-
-function toggleStatusExpandido(nome){
-  F.statusExpandido=(F.statusExpandido===nome)?null:nome;
+function toggleStatusExpandido(nome) {
+  F.statusExpandido = F.statusExpandido === nome ? null : nome;
   render();
 }
-
-function renderDetalheVendedor(rel,nome){
-  const v=rel.porVendedor[nome];
-  const pedidosVend=rel.pedidos.filter(p=>p.vendedor===nome);
-  const naoPagosVend=pedidosVend.filter(p=>!p.pago);
-  const pagosVend=pedidosVend.filter(p=>p.pago);
+function renderDetalheVendedor(rel, nome) {
+  const v = rel.porVendedor[nome];
+  const pedidosVend = rel.pedidos.filter(p => p.vendedor === nome);
+  const naoPagosVend = pedidosVend.filter(p => !p.pago);
+  const pagosVend = pedidosVend.filter(p => p.pago);
 
   // status desse vendedor
-  const statusVend={};
-  pedidosVend.forEach(p=>{ if(!statusVend[p.situacao]) statusVend[p.situacao]={qtd:0,total:0}; statusVend[p.situacao].qtd++; statusVend[p.situacao].total+=p.total; });
-  const statusVendRows=Object.entries(statusVend).sort((a,b)=>b[1].total-a[1].total)
-    .map(([sn,sv])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(sn)} (${sv.qtd})</span><span>${brl(sv.total)}</span></div>`).join("");
+  const statusVend = {};
+  pedidosVend.forEach(p => {
+    if (!statusVend[p.situacao]) statusVend[p.situacao] = {
+      qtd: 0,
+      total: 0
+    };
+    statusVend[p.situacao].qtd++;
+    statusVend[p.situacao].total += p.total;
+  });
+  const statusVendRows = Object.entries(statusVend).sort((a, b) => b[1].total - a[1].total).map(([sn, sv]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(sn)} (${sv.qtd})</span><span>${brl(sv.total)}</span></div>`).join("");
 
   // formas de pagamento recebidas por esse vendedor
-  const formaVendRows=Object.entries(v.porFormaPagamento||{}).sort((a,b)=>b[1]-a[1])
-    .map(([fn,fv])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(fn)}</span><span style="font-weight:700">${brl(fv)}</span></div>`).join("");
+  const formaVendRows = Object.entries(v.porFormaPagamento || {}).sort((a, b) => b[1] - a[1]).map(([fn, fv]) => `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span>${esc(fn)}</span><span style="font-weight:700">${brl(fv)}</span></div>`).join("");
 
   // clientes atendidos, com detalhe de prazo se tiver pendência
-  const clienteVendRows=Object.entries(v.porCliente||{}).sort((a,b)=>b[1].total-a[1].total)
-    .map(([cn,cv])=>{
-      const pedidosCliente=pedidosVend.filter(p=>p.cliente===cn);
-      const naoPagosCliente=pedidosCliente.filter(p=>!p.pago);
-      const prazoInfo=naoPagosCliente.map(p=>`#${esc(p.numero)}: ${p.formasPrevisto?.length?p.formasPrevisto.map(fmtForma).join(", "):"sem forma registrada"} — total ${brl(p.total)}`).join("<br>");
-      return `<div style="padding:6px 0;border-bottom:1px solid #201d4a">
+  const clienteVendRows = Object.entries(v.porCliente || {}).sort((a, b) => b[1].total - a[1].total).map(([cn, cv]) => {
+    const pedidosCliente = pedidosVend.filter(p => p.cliente === cn);
+    const naoPagosCliente = pedidosCliente.filter(p => !p.pago);
+    const prazoInfo = naoPagosCliente.map(p => {
+      var _p$formasPrevisto;
+      return `#${esc(p.numero)}: ${(_p$formasPrevisto = p.formasPrevisto) !== null && _p$formasPrevisto !== void 0 && _p$formasPrevisto.length ? p.formasPrevisto.map(fmtForma).join(", ") : "sem forma registrada"} — total ${brl(p.total)}`;
+    }).join("<br>");
+    return `<div style="padding:6px 0;border-bottom:1px solid #201d4a">
         <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>${esc(cn)}</span><span>${brl(cv.total)}</span></div>
-        <div class="muted" style="font-size:11px">${cv.qtd} pedido(s)${naoPagosCliente.length?` · ${naoPagosCliente.length} não pago(s)`:""}</div>
-        ${naoPagosCliente.length?`<div style="font-size:11px;color:#ffd23f;margin-top:2px">⏳ ${prazoInfo}</div>`:""}
+        <div class="muted" style="font-size:11px">${cv.qtd} pedido(s)${naoPagosCliente.length ? ` · ${naoPagosCliente.length} não pago(s)` : ""}</div>
+        ${naoPagosCliente.length ? `<div style="font-size:11px;color:#ffd23f;margin-top:2px">⏳ ${prazoInfo}</div>` : ""}
       </div>`;
-    }).join("");
+  }).join("");
 
   // pedidos não pagos desse vendedor (sem nenhuma forma de pagamento registrada)
-  const naoPagosVendRows=naoPagosVend.map(p=>`
+  const naoPagosVendRows = naoPagosVend.map(p => `
     <div style="padding:5px 0;border-bottom:1px solid #201d4a;font-size:12px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)})</span></span>
@@ -651,8 +909,11 @@ function renderDetalheVendedor(rel,nome){
     </div>`).join("");
 
   // pedidos pagos desse vendedor, mas com parcela a prazo (vencimento futuro)
-  const pagosAPrazoVend=pedidosVend.filter(p=>p.pago&&p.formasPrevisto?.length);
-  const pagosAPrazoVendRows=pagosAPrazoVend.map(p=>`
+  const pagosAPrazoVend = pedidosVend.filter(p => {
+    var _p$formasPrevisto2;
+    return p.pago && ((_p$formasPrevisto2 = p.formasPrevisto) === null || _p$formasPrevisto2 === void 0 ? void 0 : _p$formasPrevisto2.length);
+  });
+  const pagosAPrazoVendRows = pagosAPrazoVend.map(p => `
     <div style="padding:5px 0;border-bottom:1px solid #201d4a;font-size:12px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)})</span></span>
@@ -662,17 +923,16 @@ function renderDetalheVendedor(rel,nome){
     </div>`).join("");
 
   // todos os pedidos desse vendedor
-  const todosVendRows=pedidosVend.map(p=>`
+  const todosVendRows = pedidosVend.map(p => `
     <tr style="border-bottom:1px solid #201d4a">
       <td style="padding:5px 4px">#${esc(p.numero)}</td>
-      <td style="padding:5px 4px">${p.data?esc(p.data.split('-').reverse().join('/')):''}</td>
+      <td style="padding:5px 4px">${p.data ? esc(p.data.split('-').reverse().join('/')) : ''}</td>
       <td style="padding:5px 4px">${esc(p.cliente)}</td>
       <td style="padding:5px 4px">${esc(p.situacao)}</td>
       <td style="padding:5px 4px;text-align:right">${brl(p.total)}</td>
-      <td style="padding:5px 4px;text-align:center">${p.pago?"✅":"🔴"}</td>
-      <td style="padding:5px 4px;font-size:11px">${p.pago?(p.formasPagamento||[]).map(fmtForma).join("<br>"):(p.formasPrevisto||[]).map(fmtForma).join("<br>")||"—"}</td>
+      <td style="padding:5px 4px;text-align:center">${p.pago ? "✅" : "🔴"}</td>
+      <td style="padding:5px 4px;font-size:11px">${p.pago ? (p.formasPagamento || []).map(fmtForma).join("<br>") : (p.formasPrevisto || []).map(fmtForma).join("<br>") || "—"}</td>
     </tr>`).join("");
-
   return `<div class="card" style="border:1px solid #FF0082">
     <div style="font-weight:900;font-size:16px;margin-bottom:2px">🧑‍💼 ${esc(nome)}</div>
     <div class="muted" style="margin-bottom:10px">${v.qtd} pedido(s) no dia</div>
@@ -681,23 +941,23 @@ function renderDetalheVendedor(rel,nome){
       <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Total</div><div style="font-weight:800">${brl(v.total)}</div></div>
       <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Pago</div><div style="font-weight:800;color:#a8f0c8">${brl(v.pago)}</div></div>
       <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Não pago</div><div style="font-weight:800;color:#ff8090">${brl(v.naoPago)}</div></div>
-      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Clientes</div><div style="font-weight:800">${Object.keys(v.porCliente||{}).length}</div></div>
+      <div style="background:#0f0d24;border-radius:8px;padding:8px;text-align:center"><div class="muted" style="font-size:10px">Clientes</div><div style="font-weight:800">${Object.keys(v.porCliente || {}).length}</div></div>
     </div>
 
     <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:10px 0 4px">📦 Por status</div>
-    ${statusVendRows||'<div class="muted" style="font-size:12px">—</div>'}
+    ${statusVendRows || '<div class="muted" style="font-size:12px">—</div>'}
 
     <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">💳 Formas de pagamento recebidas</div>
-    ${formaVendRows||'<div class="muted" style="font-size:12px">Nenhum pagamento identificado</div>'}
+    ${formaVendRows || '<div class="muted" style="font-size:12px">Nenhum pagamento identificado</div>'}
 
-    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">👤 Clientes atendidos (${Object.keys(v.porCliente||{}).length})</div>
-    ${clienteVendRows||'<div class="muted" style="font-size:12px">—</div>'}
+    <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">👤 Clientes atendidos (${Object.keys(v.porCliente || {}).length})</div>
+    ${clienteVendRows || '<div class="muted" style="font-size:12px">—</div>'}
 
     <div style="font-size:11px;color:#ff8090;text-transform:uppercase;font-weight:700;margin:14px 0 4px">🔴 Pedidos não pagos (${naoPagosVend.length})</div>
-    ${naoPagosVendRows||'<div class="ok" style="margin:0;font-size:12px">Tudo pago ✅</div>'}
+    ${naoPagosVendRows || '<div class="ok" style="margin:0;font-size:12px">Tudo pago ✅</div>'}
 
     <div style="font-size:11px;color:#ffd23f;text-transform:uppercase;font-weight:700;margin:14px 0 4px">📅 Pagos com parcela futura (${pagosAPrazoVend.length})</div>
-    ${pagosAPrazoVendRows||'<div class="muted" style="margin:0;font-size:12px">Nenhum</div>'}
+    ${pagosAPrazoVendRows || '<div class="muted" style="margin:0;font-size:12px">Nenhum</div>'}
 
     <div style="font-size:11px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin:14px 0 4px">📋 Todos os pedidos de ${esc(nome)}</div>
     <div style="overflow-x:auto">
@@ -708,101 +968,94 @@ function renderDetalheVendedor(rel,nome){
     </div>
   </div>`;
 }
-
-function renderRelatorio(rel){
-  const nomesVendedores=Object.keys(rel.porVendedor).sort();
-  const seletorVendedor=`
+function renderRelatorio(rel) {
+  const nomesVendedores = Object.keys(rel.porVendedor).sort();
+  const seletorVendedor = `
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">🔎 Fechamento detalhado por vendedor</div>
       <select onchange="F.vendedorSelecionado=this.value||null;render()" style="margin-bottom:4px">
         <option value="">— Ver fechamento geral do dia —</option>
-        ${nomesVendedores.map(n=>`<option value="${esc(n)}" ${F.vendedorSelecionado===n?"selected":""}>${esc(n)}</option>`).join("")}
+        ${nomesVendedores.map(n => `<option value="${esc(n)}" ${F.vendedorSelecionado === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
       </select>
     </div>
   `;
 
   // se um vendedor estiver selecionado, mostra SÓ as informações dele
-  if(F.vendedorSelecionado&&rel.porVendedor[F.vendedorSelecionado]){
-    return seletorVendedor+renderDetalheVendedor(rel,F.vendedorSelecionado);
+  if (F.vendedorSelecionado && rel.porVendedor[F.vendedorSelecionado]) {
+    return seletorVendedor + renderDetalheVendedor(rel, F.vendedorSelecionado);
   }
-
-  const statusRows=Object.entries(rel.porStatus).sort((a,b)=>b[1].total-a[1].total)
-    .map(([nome,v])=>{
-      const expandido=F.statusExpandido===nome;
-      const pedidosDoStatus=expandido?rel.pedidos.filter(p=>p.situacao===nome):[];
-      const listaPedidos=pedidosDoStatus.map(p=>`
+  const statusRows = Object.entries(rel.porStatus).sort((a, b) => b[1].total - a[1].total).map(([nome, v]) => {
+    const expandido = F.statusExpandido === nome;
+    const pedidosDoStatus = expandido ? rel.pedidos.filter(p => p.situacao === nome) : [];
+    const listaPedidos = pedidosDoStatus.map(p => `
         <div style="display:flex;justify-content:space-between;padding:5px 8px;font-size:12px;border-bottom:1px solid #201d4a">
           <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)})</span></span>
-          <span>${p.pago?"✅":"🔴"} ${brl(p.total)}</span>
+          <span>${p.pago ? "✅" : "🔴"} ${brl(p.total)}</span>
         </div>`).join("");
-      return `<div style="border-bottom:1px solid #2a2660">
-        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;cursor:pointer" onclick="toggleStatusExpandido('${esc(nome).replace(/'/g,"\\'")}')">
-          <span>${expandido?"▼":"▶"} ${esc(nome)} <span class="muted">(${v.qtd})</span></span><span style="font-weight:700">${brl(v.total)}</span>
+    return `<div style="border-bottom:1px solid #2a2660">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;cursor:pointer" onclick="toggleStatusExpandido('${esc(nome).replace(/'/g, "\\'")}')">
+          <span>${expandido ? "▼" : "▶"} ${esc(nome)} <span class="muted">(${v.qtd})</span></span><span style="font-weight:700">${brl(v.total)}</span>
         </div>
-        ${expandido?`<div style="background:#0f0d24;border-radius:8px;margin-bottom:6px">${listaPedidos||'<div class="muted" style="padding:6px 8px;font-size:12px">Nenhum pedido</div>'}</div>`:""}
+        ${expandido ? `<div style="background:#0f0d24;border-radius:8px;margin-bottom:6px">${listaPedidos || '<div class="muted" style="padding:6px 8px;font-size:12px">Nenhum pedido</div>'}</div>` : ""}
       </div>`;
-    }).join("");
-
-  const formaRows=Object.entries(rel.porFormaPagamento).sort((a,b)=>b[1]-a[1])
-    .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+  }).join("");
+  const formaRows = Object.entries(rel.porFormaPagamento).sort((a, b) => b[1] - a[1]).map(([nome, v]) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <span>${esc(nome)}</span><span style="font-weight:700">${brl(v)}</span></div>`).join("");
-
-  const clienteRows=Object.entries(rel.porCliente).sort((a,b)=>b[1].total-a[1].total)
-    .map(([nome,v])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
-      <span>${esc(nome)} <span class="muted">(${v.qtd} venda${v.qtd>1?'s':''})</span></span><span style="font-weight:700">${brl(v.total)}</span></div>`).join("");
-
-  const vendedorBlocos=Object.entries(rel.porVendedor).sort((a,b)=>b[1].total-a[1].total)
-    .map(([nome,v])=>{
-      const formaVend=Object.entries(v.porFormaPagamento||{}).sort((a,b)=>b[1]-a[1])
-        .map(([fn,fv])=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:#cfc9f5"><span>${esc(fn)}</span><span>${brl(fv)}</span></div>`).join("");
-      const clienteVend=Object.entries(v.porCliente||{}).sort((a,b)=>b[1].total-a[1].total)
-        .map(([cn,cv])=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:#cfc9f5"><span>${esc(cn)} <span class="muted">(${cv.qtd})</span></span><span>${brl(cv.total)}</span></div>`).join("");
-      return `<div style="padding:10px 0;border-bottom:1px solid #2a2660">
+  const clienteRows = Object.entries(rel.porCliente).sort((a, b) => b[1].total - a[1].total).map(([nome, v]) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
+      <span>${esc(nome)} <span class="muted">(${v.qtd} venda${v.qtd > 1 ? 's' : ''})</span></span><span style="font-weight:700">${brl(v.total)}</span></div>`).join("");
+  const vendedorBlocos = Object.entries(rel.porVendedor).sort((a, b) => b[1].total - a[1].total).map(([nome, v]) => {
+    const formaVend = Object.entries(v.porFormaPagamento || {}).sort((a, b) => b[1] - a[1]).map(([fn, fv]) => `<div style="display:flex;justify-content:space-between;font-size:11px;color:#cfc9f5"><span>${esc(fn)}</span><span>${brl(fv)}</span></div>`).join("");
+    const clienteVend = Object.entries(v.porCliente || {}).sort((a, b) => b[1].total - a[1].total).map(([cn, cv]) => `<div style="display:flex;justify-content:space-between;font-size:11px;color:#cfc9f5"><span>${esc(cn)} <span class="muted">(${cv.qtd})</span></span><span>${brl(cv.total)}</span></div>`).join("");
+    return `<div style="padding:10px 0;border-bottom:1px solid #2a2660">
         <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800"><span>${esc(nome)}</span><span>${brl(v.total)}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9;margin-bottom:6px"><span>${v.qtd} pedido(s)</span><span>✅ ${brl(v.pago)} · 🔴 ${brl(v.naoPago)}</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div><div style="font-size:10px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:2px">Formas de pagamento</div>${formaVend||'<div class="muted" style="font-size:11px">—</div>'}</div>
-          <div><div style="font-size:10px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:2px">Clientes atendidos</div>${clienteVend||'<div class="muted" style="font-size:11px">—</div>'}</div>
+          <div><div style="font-size:10px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:2px">Formas de pagamento</div>${formaVend || '<div class="muted" style="font-size:11px">—</div>'}</div>
+          <div><div style="font-size:10px;color:#9a95c9;text-transform:uppercase;font-weight:700;margin-bottom:2px">Clientes atendidos</div>${clienteVend || '<div class="muted" style="font-size:11px">—</div>'}</div>
         </div>
       </div>`;
-    }).join("");
-
-  const naoPagos=rel.pedidos.filter(p=>!p.pago);
-  const naoPagosRows=naoPagos.map(p=>`
+  }).join("");
+  const naoPagos = rel.pedidos.filter(p => !p.pago);
+  const naoPagosRows = naoPagos.map(p => {
+    var _p$formasPagamento;
+    return `
     <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#ff8090">${brl(p.total)}</span>
       </div>
-      ${p.parcial
-        ? `<div style="font-size:11px;margin-top:2px;color:#ffd23f">⚠️ Pago parcial: ${brl(p.valorPago)} de ${brl(p.total)} · <b>falta ${brl(p.falta)}</b>${p.formasPagamento?.length?` <span class="muted">(${p.formasPagamento.map(fmtForma).join(", ")})</span>`:""}</div>`
-        : `<div class="muted" style="font-size:11px;margin-top:2px">${p.fichaFinanceira?'🗂️ Ficha Financeira (pedido do totem, sem pagamento real ainda)':'Nenhuma forma de pagamento registrada'}</div>`}
-    </div>`).join("");
+      ${p.parcial ? `<div style="font-size:11px;margin-top:2px;color:#ffd23f">⚠️ Pago parcial: ${brl(p.valorPago)} de ${brl(p.total)} · <b>falta ${brl(p.falta)}</b>${(_p$formasPagamento = p.formasPagamento) !== null && _p$formasPagamento !== void 0 && _p$formasPagamento.length ? ` <span class="muted">(${p.formasPagamento.map(fmtForma).join(", ")})</span>` : ""}</div>` : `<div class="muted" style="font-size:11px;margin-top:2px">${p.fichaFinanceira ? '🗂️ Ficha Financeira (pedido do totem, sem pagamento real ainda)' : 'Nenhuma forma de pagamento registrada'}</div>`}
+    </div>`;
+  }).join("");
 
   // pagou a MAIS que o total (comum quando uma pendência é resolvida removendo
   // itens do pedido depois que ele já foi pago no valor cheio) — precisa devolver
   // o excedente pro cliente, mesmo o pedido contando como "pago" no fechamento
-  const precisamEstorno=rel.pedidos.filter(p=>p.precisaEstorno);
-  const precisamEstornoRows=precisamEstorno.map(p=>`
+  const precisamEstorno = rel.pedidos.filter(p => p.precisaEstorno);
+  const precisamEstornoRows = precisamEstorno.map(p => {
+    var _p$formasPagamento2;
+    return `
     <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#ff8090">devolver ${brl(p.excedente)}</span>
       </div>
-      <div style="font-size:11px;margin-top:2px;color:#9a95c9">Pagou ${brl(p.valorPago)} · total atual do pedido ${brl(p.total)}${p.formasPagamento?.length?` · <span class="muted">(${p.formasPagamento.map(fmtForma).join(", ")})</span>`:""}</div>
-    </div>`).join("");
-
-  const fichaFinanceiraPedidos=rel.pedidos.filter(p=>p.fichaFinanceira);
-  const fichaFinanceiraRows=fichaFinanceiraPedidos.map(p=>`
+      <div style="font-size:11px;margin-top:2px;color:#9a95c9">Pagou ${brl(p.valorPago)} · total atual do pedido ${brl(p.total)}${(_p$formasPagamento2 = p.formasPagamento) !== null && _p$formasPagamento2 !== void 0 && _p$formasPagamento2.length ? ` · <span class="muted">(${p.formasPagamento.map(fmtForma).join(", ")})</span>` : ""}</div>
+    </div>`;
+  }).join("");
+  const fichaFinanceiraPedidos = rel.pedidos.filter(p => p.fichaFinanceira);
+  const fichaFinanceiraRows = fichaFinanceiraPedidos.map(p => `
     <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
         <span style="font-weight:700;color:#00aaff">${brl(p.total)}</span>
       </div>
     </div>`).join("");
-
-  const pagosAPrazo=rel.pedidos.filter(p=>p.pago&&p.formasPrevisto?.length);
-  const pagosAPrazoRows=pagosAPrazo.map(p=>`
+  const pagosAPrazo = rel.pedidos.filter(p => {
+    var _p$formasPrevisto3;
+    return p.pago && ((_p$formasPrevisto3 = p.formasPrevisto) === null || _p$formasPrevisto3 === void 0 ? void 0 : _p$formasPrevisto3.length);
+  });
+  const pagosAPrazoRows = pagosAPrazo.map(p => `
     <div style="padding:6px 0;border-bottom:1px solid #2a2660;font-size:13px">
       <div style="display:flex;justify-content:space-between">
         <span>#${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.vendedor)} · ${esc(p.situacao)})</span></span>
@@ -810,46 +1063,47 @@ function renderRelatorio(rel){
       </div>
       <div style="font-size:11px;color:#ffd23f;margin-top:2px">📅 Previsto: ${p.formasPrevisto.map(fmtForma).join(", ")}</div>
     </div>`).join("");
-
-  const pedidosRows=rel.pedidos.map(p=>`
+  const pedidosRows = rel.pedidos.map(p => {
+    var _p$formasPrevisto4;
+    return `
     <tr style="border-bottom:1px solid #2a2660">
       <td style="padding:6px 4px">#${esc(p.numero)}</td>
       <td style="padding:6px 4px">${esc(p.cliente)}</td>
       <td style="padding:6px 4px">${esc(p.vendedor)}</td>
       <td style="padding:6px 4px">${esc(p.situacao)}</td>
       <td style="padding:6px 4px;text-align:right">${brl(p.total)}</td>
-      <td style="padding:6px 4px;text-align:center">${p.pago?(p.formasPrevisto?.length?"✅📅":"✅"):"🔴"}${p.doBling?'<span title="Verificado direto no Bling" style="font-size:9px;color:#9a95c9"> (Bling)</span>':''}</td>
-    </tr>`).join("");
-
+      <td style="padding:6px 4px;text-align:center">${p.pago ? (_p$formasPrevisto4 = p.formasPrevisto) !== null && _p$formasPrevisto4 !== void 0 && _p$formasPrevisto4.length ? "✅📅" : "✅" : "🔴"}${p.doBling ? '<span title="Verificado direto no Bling" style="font-size:9px;color:#9a95c9"> (Bling)</span>' : ''}</td>
+    </tr>`;
+  }).join("");
   return `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px">
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pedidos</div><div style="font-size:22px;font-weight:900">${rel.totalPedidos}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Total (sem cancelados)</div><div style="font-size:22px;font-weight:900">${brl(rel.totalGeral)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Pago</div><div style="font-size:22px;font-weight:900;color:#a8f0c8">${brl(rel.totalPago)}</div></div>
       <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Não pago</div><div style="font-size:22px;font-weight:900;color:#ff8090">${brl(rel.totalNaoPago)}</div></div>
-      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Cancelados</div><div style="font-size:22px;font-weight:900;color:#9a95c9">${brl(rel.totalCancelados||0)}</div><div class="muted" style="font-size:11px">${rel.qtdCancelados||0} pedido(s)</div></div>
-      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Previsto (data diferente)</div><div style="font-size:22px;font-weight:900;color:#ffd23f">${brl(rel.totalPrevisto||0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrevisto||0} pedido(s) — já contam no Pago</div></div>
-      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">🗂️ Ficha Financeira</div><div style="font-size:22px;font-weight:900;color:#00aaff">${brl(rel.totalFichaFinanceira||0)}</div><div class="muted" style="font-size:11px">${rel.qtdFichaFinanceira||0} pedido(s) do totem sem pagamento real ainda</div></div>
-      ${(rel.qtdParciais||0)>0?`<div class="card" style="text-align:center;margin-bottom:0"><div class="muted">⚠️ Pagos parciais</div><div style="font-size:22px;font-weight:900;color:#ffd23f">falta ${brl(rel.totalFaltaParciais||0)}</div><div class="muted" style="font-size:11px">${rel.qtdParciais} pedido(s) pagos só em parte</div></div>`:""}
-      ${(rel.qtdPrecisamEstorno||0)>0?`<div class="card" style="text-align:center;margin-bottom:0;border:1px solid #ff4466"><div class="muted">🔴 Precisam de estorno</div><div style="font-size:22px;font-weight:900;color:#ff8090">devolver ${brl(rel.totalExcedenteEstorno||0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrecisamEstorno} pedido(s) pagos a mais que o total atual</div></div>`:""}
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Cancelados</div><div style="font-size:22px;font-weight:900;color:#9a95c9">${brl(rel.totalCancelados || 0)}</div><div class="muted" style="font-size:11px">${rel.qtdCancelados || 0} pedido(s)</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">Previsto (data diferente)</div><div style="font-size:22px;font-weight:900;color:#ffd23f">${brl(rel.totalPrevisto || 0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrevisto || 0} pedido(s) — já contam no Pago</div></div>
+      <div class="card" style="text-align:center;margin-bottom:0"><div class="muted">🗂️ Ficha Financeira</div><div style="font-size:22px;font-weight:900;color:#00aaff">${brl(rel.totalFichaFinanceira || 0)}</div><div class="muted" style="font-size:11px">${rel.qtdFichaFinanceira || 0} pedido(s) do totem sem pagamento real ainda</div></div>
+      ${(rel.qtdParciais || 0) > 0 ? `<div class="card" style="text-align:center;margin-bottom:0"><div class="muted">⚠️ Pagos parciais</div><div style="font-size:22px;font-weight:900;color:#ffd23f">falta ${brl(rel.totalFaltaParciais || 0)}</div><div class="muted" style="font-size:11px">${rel.qtdParciais} pedido(s) pagos só em parte</div></div>` : ""}
+      ${(rel.qtdPrecisamEstorno || 0) > 0 ? `<div class="card" style="text-align:center;margin-bottom:0;border:1px solid #ff4466"><div class="muted">🔴 Precisam de estorno</div><div style="font-size:22px;font-weight:900;color:#ff8090">devolver ${brl(rel.totalExcedenteEstorno || 0)}</div><div class="muted" style="font-size:11px">${rel.qtdPrecisamEstorno} pedido(s) pagos a mais que o total atual</div></div>` : ""}
     </div>
 
     ${seletorVendedor}
 
-    <div class="card"><div style="font-weight:800;margin-bottom:6px">📦 Por status</div>${statusRows||'<div class="muted">Sem dados</div>'}</div>
-    <div class="card"><div style="font-weight:800;margin-bottom:6px">💳 Por forma de pagamento (geral)</div>${formaRows||'<div class="muted">Nenhum pagamento identificado nesse dia</div>'}</div>
-    <div class="card"><div style="font-weight:800;margin-bottom:6px">👤 Por cliente</div>${clienteRows||'<div class="muted">Sem dados</div>'}</div>
-    <div class="card"><div style="font-weight:800;margin-bottom:6px">🧑‍💼 Por vendedor (detalhado)</div>${vendedorBlocos||'<div class="muted">Sem dados</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">📦 Por status</div>${statusRows || '<div class="muted">Sem dados</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">💳 Por forma de pagamento (geral)</div>${formaRows || '<div class="muted">Nenhum pagamento identificado nesse dia</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">👤 Por cliente</div>${clienteRows || '<div class="muted">Sem dados</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px">🧑‍💼 Por vendedor (detalhado)</div>${vendedorBlocos || '<div class="muted">Sem dados</div>'}</div>
 
-    ${precisamEstorno.length?`<div class="card" style="border:1px solid #ff4466">
+    ${precisamEstorno.length ? `<div class="card" style="border:1px solid #ff4466">
       <div style="font-weight:800;margin-bottom:2px;color:#ff8090">🔴 Precisam de estorno (${precisamEstorno.length})</div>
       <div class="muted" style="font-size:12px;margin-bottom:6px">Pedidos onde o valor pago é maior que o total atual — geralmente porque uma pendência foi resolvida removendo item(ns) depois do pagamento cheio. É preciso devolver a diferença pro cliente.</div>
       ${precisamEstornoRows}
-    </div>`:""}
+    </div>` : ""}
 
-    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Pedidos não pagos (${naoPagos.length})</div>${naoPagosRows||'<div class="ok" style="margin:0">Tudo pago nesse dia ✅</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#ff8090">🔴 Pedidos não pagos (${naoPagos.length})</div>${naoPagosRows || '<div class="ok" style="margin:0">Tudo pago nesse dia ✅</div>'}</div>
 
-    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#00aaff">🗂️ Ficha Financeira — pedidos do totem sem pagamento real (${fichaFinanceiraPedidos.length})</div>${fichaFinanceiraRows||'<div class="muted" style="margin:0">Nenhum</div>'}</div>
+    <div class="card"><div style="font-weight:800;margin-bottom:6px;color:#00aaff">🗂️ Ficha Financeira — pedidos do totem sem pagamento real (${fichaFinanceiraPedidos.length})</div>${fichaFinanceiraRows || '<div class="muted" style="margin:0">Nenhum</div>'}</div>
 
     <div class="card">
       <div style="font-weight:800;margin-bottom:8px">📋 Todos os pedidos do dia</div>
@@ -861,8 +1115,6 @@ function renderRelatorio(rel){
       </div>
     </div>`;
 }
-
-if(!window.__b13SemAcesso) render();
-</script>
+if (!window.__b13SemAcesso) render();</script>
 </body>
 </html>

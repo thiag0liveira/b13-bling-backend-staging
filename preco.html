@@ -75,86 +75,153 @@
   <button onclick="reconstruirIndice()">🔄 Atualizar índice de produtos</button>
 </div>
 <input id="entrada" autofocus>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-let buffer="";
-let timerReset=null;
-
-function brl(n){ return (Number(n)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+let buffer = "";
+let timerReset = null;
+function brl(n) {
+  return (Number(n) || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+function esc(s) {
+  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[c]);
+}
 
 // ---- carrossel da tela ociosa: a animação de escanear NUNCA some (só muda de
 // tamanho/posição) — ao redor dela alternam frases e fotos de produtos, pra deixar
 // claro o tempo todo que o terminal é pra ler preço.
-const FRASES=[
-  "SE PRECISA DE PRODUTOS PARA REVENDA, PROCURE NOSSO BALCÃO DO ATACADO",
-  "CONSULTE NOSSA TABELA DE ATACADO",
-];
-let FOTOS=[];
-async function carregarFotosProdutos(){
-  try{
-    const j=await fetch(B+"/api/catalogo").then(r=>r.json());
-    const imgs=[];
-    (j.categorias||[]).forEach(c=>(c.produtos||[]).forEach(p=>{ if(p.imagem) imgs.push({imagem:p.imagem,nome:p.nome||""}); }));
-    for(let i=imgs.length-1;i>0;i--){ const k=Math.floor(Math.random()*(i+1)); [imgs[i],imgs[k]]=[imgs[k],imgs[i]]; } // embaralha
-    FOTOS=imgs;
+const FRASES = ["SE PRECISA DE PRODUTOS PARA REVENDA, PROCURE NOSSO BALCÃO DO ATACADO", "CONSULTE NOSSA TABELA DE ATACADO"];
+let FOTOS = [];
+async function carregarFotosProdutos() {
+  try {
+    const j = await fetch(B + "/api/catalogo").then(r => r.json());
+    const imgs = [];
+    (j.categorias || []).forEach(c => (c.produtos || []).forEach(p => {
+      if (p.imagem) imgs.push({
+        imagem: p.imagem,
+        nome: p.nome || ""
+      });
+    }));
+    for (let i = imgs.length - 1; i > 0; i--) {
+      const k = Math.floor(Math.random() * (i + 1));
+      [imgs[i], imgs[k]] = [imgs[k], imgs[i]];
+    } // embaralha
+    FOTOS = imgs;
     // pré-carrega as imagens aos poucos em segundo plano, pra já estarem no cache
     // do navegador quando entrarem no carrossel (evita picos de rede)
-    let i2=0;
-    const preload=()=>{ if(i2>=FOTOS.length) return; const im=new Image(); im.src=FOTOS[i2].imagem; i2++; setTimeout(preload,300); };
+    let i2 = 0;
+    const preload = () => {
+      if (i2 >= FOTOS.length) return;
+      const im = new Image();
+      im.src = FOTOS[i2].imagem;
+      i2++;
+      setTimeout(preload, 300);
+    };
     preload();
-  }catch(e){ /* mantém as fotos que já tinha, não zera por causa de uma falha passageira */ }
+  } catch (e) {/* mantém as fotos que já tinha, não zera por causa de uma falha passageira */}
 }
-const FOTOS_POR_LOTE=10; // mostra poucas de cada vez (mais leve) e avança de lote a cada fase, cobrindo todas antes de repetir
-let idxLoteFoto=0;
-function proximoLoteFotos(){
-  if(!FOTOS.length) return [];
-  const totalLotes=Math.max(1,Math.ceil(FOTOS.length/FOTOS_POR_LOTE));
-  const lote=FOTOS.slice(idxLoteFoto*FOTOS_POR_LOTE,(idxLoteFoto+1)*FOTOS_POR_LOTE);
-  idxLoteFoto=(idxLoteFoto+1)%totalLotes;
+const FOTOS_POR_LOTE = 10; // mostra poucas de cada vez (mais leve) e avança de lote a cada fase, cobrindo todas antes de repetir
+let idxLoteFoto = 0;
+function proximoLoteFotos() {
+  if (!FOTOS.length) return [];
+  const totalLotes = Math.max(1, Math.ceil(FOTOS.length / FOTOS_POR_LOTE));
+  const lote = FOTOS.slice(idxLoteFoto * FOTOS_POR_LOTE, (idxLoteFoto + 1) * FOTOS_POR_LOTE);
+  idxLoteFoto = (idxLoteFoto + 1) % totalLotes;
   return lote;
 }
-function duracaoFotos(qtd){ return Math.max(10000,Math.min(35000,(qtd||1)*2800)); } // devagar: ~2.8s por foto
+function duracaoFotos(qtd) {
+  return Math.max(10000, Math.min(35000, (qtd || 1) * 2800));
+} // devagar: ~2.8s por foto
 
-const PASSOS=[
-  {pos:"center", modo:"nada", dur:6000},
-  {pos:"top", modo:"frase", texto:FRASES[0], dur:8000},
-  {pos:"center", modo:"fotos"},
-  {pos:"center", modo:"nada", dur:5000},
-  {pos:"top", modo:"frase", texto:FRASES[1], dur:8000},
-  {pos:"center", modo:"fotos"},
-  {pos:"center", modo:"nada", dur:5000},
-];
-let idleAtivo=false, idlePasso=0, idleTimer=null, idleFaseDur=8000;
-function renderPasso(passo){
-  const box=document.getElementById("scanBox"); if(!box) return; // tela ociosa não está mais na tela
-  box.className="scanWrap pos-"+passo.pos;
-  const area=document.getElementById("carrossel"); if(!area) return;
-  if(passo.modo==="frase"){ area.innerHTML=`<div class="frase">${esc(passo.texto)}</div>`; idleFaseDur=passo.dur; return; }
-  if(passo.modo==="fotos"){
-    const lote=proximoLoteFotos();
-    if(!lote.length){ area.innerHTML=""; idleFaseDur=8000; return; }
-    idleFaseDur=duracaoFotos(lote.length)+1500;
-    area.innerHTML=`<div class="fotosTrack"><div class="fotosStrip" style="animation-duration:${(idleFaseDur-1500)/1000}s">${lote.map(f=>`<div class="card"><img src="${esc(f.imagem)}" loading="lazy" onerror="this.parentElement.style.display='none'"><div class="nomeF">${esc(f.nome)}</div></div>`).join("")}</div></div>`;
+const PASSOS = [{
+  pos: "center",
+  modo: "nada",
+  dur: 6000
+}, {
+  pos: "top",
+  modo: "frase",
+  texto: FRASES[0],
+  dur: 8000
+}, {
+  pos: "center",
+  modo: "fotos"
+}, {
+  pos: "center",
+  modo: "nada",
+  dur: 5000
+}, {
+  pos: "top",
+  modo: "frase",
+  texto: FRASES[1],
+  dur: 8000
+}, {
+  pos: "center",
+  modo: "fotos"
+}, {
+  pos: "center",
+  modo: "nada",
+  dur: 5000
+}];
+let idleAtivo = false,
+  idlePasso = 0,
+  idleTimer = null,
+  idleFaseDur = 8000;
+function renderPasso(passo) {
+  const box = document.getElementById("scanBox");
+  if (!box) return; // tela ociosa não está mais na tela
+  box.className = "scanWrap pos-" + passo.pos;
+  const area = document.getElementById("carrossel");
+  if (!area) return;
+  if (passo.modo === "frase") {
+    area.innerHTML = `<div class="frase">${esc(passo.texto)}</div>`;
+    idleFaseDur = passo.dur;
     return;
   }
-  area.innerHTML=""; idleFaseDur=passo.dur;
+  if (passo.modo === "fotos") {
+    const lote = proximoLoteFotos();
+    if (!lote.length) {
+      area.innerHTML = "";
+      idleFaseDur = 8000;
+      return;
+    }
+    idleFaseDur = duracaoFotos(lote.length) + 1500;
+    area.innerHTML = `<div class="fotosTrack"><div class="fotosStrip" style="animation-duration:${(idleFaseDur - 1500) / 1000}s">${lote.map(f => `<div class="card"><img src="${esc(f.imagem)}" loading="lazy" onerror="this.parentElement.style.display='none'"><div class="nomeF">${esc(f.nome)}</div></div>`).join("")}</div></div>`;
+    return;
+  }
+  area.innerHTML = "";
+  idleFaseDur = passo.dur;
 }
-function idleTick(){
-  if(!idleAtivo) return;
-  try{
-    const passo=PASSOS[idlePasso%PASSOS.length];
+function idleTick() {
+  if (!idleAtivo) return;
+  try {
+    const passo = PASSOS[idlePasso % PASSOS.length];
     renderPasso(passo);
     idlePasso++;
-  }catch(e){ idleFaseDur=6000; } // nunca deixa um erro isolado travar o carrossel de vez
-  if(idleAtivo) idleTimer=setTimeout(idleTick,idleFaseDur);
+  } catch (e) {
+    idleFaseDur = 6000;
+  } // nunca deixa um erro isolado travar o carrossel de vez
+  if (idleAtivo) idleTimer = setTimeout(idleTick, idleFaseDur);
 }
-function pararCarrossel(){ idleAtivo=false; clearTimeout(idleTimer); }
-function iniciarCarrossel(){ if(idleAtivo) return; idleAtivo=true; idlePasso=0; idleTick(); }
-
-function telaIdle(){
+function pararCarrossel() {
+  idleAtivo = false;
+  clearTimeout(idleTimer);
+}
+function iniciarCarrossel() {
+  if (idleAtivo) return;
+  idleAtivo = true;
+  idlePasso = 0;
+  idleTick();
+}
+function telaIdle() {
   pararCarrossel();
-  document.getElementById("app").innerHTML=`
+  document.getElementById("app").innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;width:100%">
       <div id="scanBox" class="scanWrap pos-center"><div class="barcode"></div><div class="laser"></div></div>
       <div class="titulo">Consulte o preço do produto</div>
@@ -163,89 +230,100 @@ function telaIdle(){
     </div>`;
   iniciarCarrossel();
 }
-
-async function buscarPreco(codigo){
+async function buscarPreco(codigo) {
   pararCarrossel();
-  document.getElementById("app").innerHTML=`<div class="sub" style="font-size:16px">Buscando…</div>`;
-  try{
-    const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(codigo)+"?vivo=1");
-    const j=await r.json();
-    if(j.data){
-      const p=j.data;
-      const extras=[];
-      if(p.precoFardo!=null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div><div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd?`<div class="obs">a partir de ${p.caixaQtd} un.</div>`:""}</div>`);
-      if(p.precoAtacado!=null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div><div class="val">${brl(p.precoAtacado)}</div></div>`);
-      document.getElementById("app").innerHTML=`
+  document.getElementById("app").innerHTML = `<div class="sub" style="font-size:16px">Buscando…</div>`;
+  try {
+    const r = await fetch(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?vivo=1");
+    const j = await r.json();
+    if (j.data) {
+      const p = j.data;
+      const extras = [];
+      if (p.precoFardo != null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div><div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd ? `<div class="obs">a partir de ${p.caixaQtd} un.</div>` : ""}</div>`);
+      if (p.precoAtacado != null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div><div class="val">${brl(p.precoAtacado)}</div></div>`);
+      document.getElementById("app").innerHTML = `
         <div class="resultado">
-          ${p.imagem?`<img src="${esc(p.imagem)}" onerror="this.style.display='none'">`:""}
+          ${p.imagem ? `<img src="${esc(p.imagem)}" onerror="this.style.display='none'">` : ""}
           <div class="nome">${esc(p.nome)}</div>
           <div class="preco">${brl(p.preco)}<small>VAREJO — preço unitário</small></div>
-          ${extras.length?`<div class="maisPrecos">${extras.join("")}</div>`:""}
+          ${extras.length ? `<div class="maisPrecos">${extras.join("")}</div>` : ""}
         </div>`;
     } else {
-      document.getElementById("app").innerHTML=`
+      document.getElementById("app").innerHTML = `
         <div class="naoachou">
           <div class="ico">❓</div>
           <div class="msg">Produto não encontrado</div>
           <div class="cod">Código: ${esc(codigo)}</div>
         </div>`;
     }
-  }catch(e){
-    document.getElementById("app").innerHTML=`
+  } catch (e) {
+    document.getElementById("app").innerHTML = `
       <div class="naoachou">
         <div class="ico">⚠️</div>
         <div class="msg">Erro ao consultar</div>
       </div>`;
   }
-  if(timerReset) clearTimeout(timerReset);
-  timerReset=setTimeout(telaIdle,6000);
+  if (timerReset) clearTimeout(timerReset);
+  timerReset = setTimeout(telaIdle, 6000);
 }
-
-const input=document.getElementById("entrada");
-function manterFoco(){ input.focus(); }
-input.addEventListener("keydown",(e)=>{
-  if(e.key==="Enter"){
-    const v=input.value.trim(); input.value="";
-    if(v) buscarPreco(v);
+const input = document.getElementById("entrada");
+function manterFoco() {
+  input.focus();
+}
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const v = input.value.trim();
+    input.value = "";
+    if (v) buscarPreco(v);
   }
 });
-document.addEventListener("click",manterFoco);
-setInterval(manterFoco,1500);
-
-async function carregarIndiceInfo(){
-  try{
-    const j=await fetch(B+"/api/preco/indice-info").then(r=>r.json());
-    const info=document.getElementById("indiceInfo");
-    if(!j.qtd){ info.textContent="⚠️ Índice vazio — clique em Atualizar"; return; }
-    const dt=j.atualizadoEm?new Date(j.atualizadoEm).toLocaleString("pt-BR"):"";
-    info.textContent=`${j.qtd} códigos indexados · atualizado em ${dt}`;
-  }catch(e){}
+document.addEventListener("click", manterFoco);
+setInterval(manterFoco, 1500);
+async function carregarIndiceInfo() {
+  try {
+    const j = await fetch(B + "/api/preco/indice-info").then(r => r.json());
+    const info = document.getElementById("indiceInfo");
+    if (!j.qtd) {
+      info.textContent = "⚠️ Índice vazio — clique em Atualizar";
+      return;
+    }
+    const dt = j.atualizadoEm ? new Date(j.atualizadoEm).toLocaleString("pt-BR") : "";
+    info.textContent = `${j.qtd} códigos indexados · atualizado em ${dt}`;
+  } catch (e) {}
 }
-
-function reconstruirIndice(){
-  if(!confirm("Isso vai reconstruir o índice de todos os produtos — pode levar alguns minutos. Continuar?")) return;
+function reconstruirIndice() {
+  if (!confirm("Isso vai reconstruir o índice de todos os produtos — pode levar alguns minutos. Continuar?")) return;
   pararCarrossel();
-  document.getElementById("app").innerHTML=`
+  document.getElementById("app").innerHTML = `
     <div class="titulo">Atualizando índice de produtos…</div>
     <div class="sub" id="progTxt">Iniciando…</div>
     <div class="barraProg"><div class="fill" id="progFill" style="width:5%"></div></div>`;
-  const es=new EventSource(B+"/api/preco/reconstruir-indice");
-  es.onmessage=(ev)=>{
-    const d=JSON.parse(ev.data);
-    const txt=document.getElementById("progTxt"); const fill=document.getElementById("progFill");
-    if(d.tipo==="status"&&txt) txt.textContent=d.mensagem;
-    else if(d.tipo==="total"&&txt) txt.textContent=`0 de ${d.total} produtos`;
-    else if(d.tipo==="progresso"&&txt){ txt.textContent=`${d.atual} de ${d.total} — ${d.nome}`; if(fill) fill.style.width=Math.round(d.atual/d.total*100)+"%"; }
-    else if(d.tipo==="done"){ es.close(); telaIdle(); carregarIndiceInfo(); alert(`✅ Índice atualizado! ${d.qtdProdutos} produtos, ${d.qtdCodigos} códigos.`); }
-    else if(d.tipo==="erro"){ es.close(); telaIdle(); alert("Erro ao atualizar índice: "+d.erro); }
+  const es = new EventSource(B + "/api/preco/reconstruir-indice");
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    const txt = document.getElementById("progTxt");
+    const fill = document.getElementById("progFill");
+    if (d.tipo === "status" && txt) txt.textContent = d.mensagem;else if (d.tipo === "total" && txt) txt.textContent = `0 de ${d.total} produtos`;else if (d.tipo === "progresso" && txt) {
+      txt.textContent = `${d.atual} de ${d.total} — ${d.nome}`;
+      if (fill) fill.style.width = Math.round(d.atual / d.total * 100) + "%";
+    } else if (d.tipo === "done") {
+      es.close();
+      telaIdle();
+      carregarIndiceInfo();
+      alert(`✅ Índice atualizado! ${d.qtdProdutos} produtos, ${d.qtdCodigos} códigos.`);
+    } else if (d.tipo === "erro") {
+      es.close();
+      telaIdle();
+      alert("Erro ao atualizar índice: " + d.erro);
+    }
   };
-  es.onerror=()=>{ es.close(); };
+  es.onerror = () => {
+    es.close();
+  };
 }
-
 telaIdle();
 carregarIndiceInfo();
 carregarFotosProdutos();
-setInterval(carregarFotosProdutos, 30*60*1000); // atualiza a lista de fotos a cada 30 min
-</script>
+setInterval(carregarFotosProdutos, 30 * 60 * 1000); // atualiza a lista de fotos a cada 30 min</script>
 </body>
 </html>

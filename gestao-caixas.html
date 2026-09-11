@@ -53,184 +53,229 @@
 </script>
 <div id="app"></div>
 <div id="modais"></div>
-<script>
-if(!window.__b13SemAcesso){
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="https://i.imgur.com/nBQ2Ck2.png";
+<script>if (!window.__b13SemAcesso) {
+  const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+  const LOGO = "https://i.imgur.com/nBQ2Ck2.png";
+  window.ABA = "abertos";
+  window.FILTRO_TIPO = "todos"; // todos | frente | atacado
 
-window.ABA="abertos";
-window.FILTRO_TIPO="todos"; // todos | frente | atacado
+  function esc(s) {
+    return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[c]);
+  }
+  function brl(v) {
+    return (Number(v) || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL"
+    });
+  }
+  function hora(ts) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    return d.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+  window.GESTOR = typeof b13GetSession === "function" ? b13GetSession() : null;
+  // interpreta número digitado em pt-BR: "1.234,56" ou "150,50" ou "150.50"
+  function numBR(s) {
+    s = String(s == null ? "" : s).trim();
+    if (!s) return 0;
+    if (s.indexOf(",") >= 0) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    }
+    return parseFloat(s) || 0;
+  }
+  function totalPixForma(porForma) {
+    return (porForma || []).filter(f => /pix/i.test(f.nome || "")).reduce((a, f) => a + (Number(f.valor) || 0), 0);
+  }
+  window.fecharModais = function () {
+    document.getElementById("modais").innerHTML = "";
+  };
 
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function brl(v){ return (Number(v)||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
-function hora(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
-window.GESTOR=(typeof b13GetSession==="function")?b13GetSession():null;
-// interpreta número digitado em pt-BR: "1.234,56" ou "150,50" ou "150.50"
-function numBR(s){ s=String(s==null?"":s).trim(); if(!s) return 0; if(s.indexOf(",")>=0){ s=s.replace(/\./g,"").replace(",","."); } return parseFloat(s)||0; }
-function totalPixForma(porForma){ return (porForma||[]).filter(f=>/pix/i.test(f.nome||"")).reduce((a,f)=>a+(Number(f.valor)||0),0); }
-window.fecharModais=function(){ document.getElementById("modais").innerHTML=""; }
-
-// selo indicando o tipo do caixa
-function tagTipo(t){
-  const at=(t||"frente")==="atacado";
-  return `<span style="display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:${at?'#1a2a44':'#2a1a3a'};color:${at?'#7fd4ff':'#ff9fd0'}">${at?'🧾 Atacado':'🛒 Frente'}</span>`;
-}
-// aplica o filtro de tipo na lista vinda do backend
-function filtrarTipo(lista){
-  if(window.FILTRO_TIPO==="todos") return lista;
-  return lista.filter(s=>(s.tipoCaixa||"frente")===window.FILTRO_TIPO);
-}
-
-window.render=function(){
-  document.getElementById("app").innerHTML=`
+  // selo indicando o tipo do caixa
+  function tagTipo(t) {
+    const at = (t || "frente") === "atacado";
+    return `<span style="display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:${at ? '#1a2a44' : '#2a1a3a'};color:${at ? '#7fd4ff' : '#ff9fd0'}">${at ? '🧾 Atacado' : '🛒 Frente'}</span>`;
+  }
+  // aplica o filtro de tipo na lista vinda do backend
+  function filtrarTipo(lista) {
+    if (window.FILTRO_TIPO === "todos") return lista;
+    return lista.filter(s => (s.tipoCaixa || "frente") === window.FILTRO_TIPO);
+  }
+  window.render = function () {
+    document.getElementById("app").innerHTML = `
     <div class="top"><img src="${LOGO}"><div class="t">🗃️ Gestão de Caixas</div></div>
     <div class="wrap">
       <div class="muted" style="margin-bottom:12px">Acompanhe todos os caixas — Frente de Caixa e Caixa Atacado — os que estão abertos agora e o histórico dos já fechados, com horários, operador e total por forma de pagamento.</div>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
       <div class="toggle">
-        <button class="${window.ABA==='abertos'?'on':''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
-        <button class="${window.ABA==='historico'?'on':''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
+        <button class="${window.ABA === 'abertos' ? 'on' : ''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
+        <button class="${window.ABA === 'historico' ? 'on' : ''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
       </div>
       <div class="toggle" style="margin-top:-6px">
-        <button class="${window.FILTRO_TIPO==='todos'?'on':''}" onclick="window.FILTRO_TIPO='todos';render()">Todos</button>
-        <button class="${window.FILTRO_TIPO==='frente'?'on':''}" onclick="window.FILTRO_TIPO='frente';render()">🛒 Frente</button>
-        <button class="${window.FILTRO_TIPO==='atacado'?'on':''}" onclick="window.FILTRO_TIPO='atacado';render()">🧾 Atacado</button>
+        <button class="${window.FILTRO_TIPO === 'todos' ? 'on' : ''}" onclick="window.FILTRO_TIPO='todos';render()">Todos</button>
+        <button class="${window.FILTRO_TIPO === 'frente' ? 'on' : ''}" onclick="window.FILTRO_TIPO='frente';render()">🛒 Frente</button>
+        <button class="${window.FILTRO_TIPO === 'atacado' ? 'on' : ''}" onclick="window.FILTRO_TIPO='atacado';render()">🧾 Atacado</button>
       </div>
       <div id="conteudo"><div class="muted">Carregando…</div></div>
     </div>`;
-  if(window.ABA==="abertos") carregarAbertos(); else carregarHistorico();
-}
-
-window.carregarAbertos=async function(){
-  const box=document.getElementById("conteudo");
-  try{
-    const j=await fetch(B+"/api/caixa-sessao/abertos").then(r=>r.json());
-    const lista=filtrarTipo(j.data||[]);
-    box.innerHTML = lista.length ? lista.map(s=>`
+    if (window.ABA === "abertos") carregarAbertos();else carregarHistorico();
+  };
+  window.carregarAbertos = async function () {
+    const box = document.getElementById("conteudo");
+    try {
+      const j = await fetch(B + "/api/caixa-sessao/abertos").then(r => r.json());
+      const lista = filtrarTipo(j.data || []);
+      box.innerHTML = lista.length ? lista.map(s => `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
-          <div style="font-weight:800">👤 ${esc(s.operador||"—")} ${tagTipo(s.tipoCaixa)}</div>
+          <div style="font-weight:800">👤 ${esc(s.operador || "—")} ${tagTipo(s.tipoCaixa)}</div>
           <div class="muted" style="font-size:12px">🕐 Aberto desde ${hora(s.abertaEm)}</div>
         </div>
         <div class="linha" style="margin-top:8px"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
-        ${Number(s.resumo.totalSuprimentos)>0?`<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>`:""}
-        <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
+        ${Number(s.resumo.totalSuprimentos) > 0 ? `<div class="linha"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>` : ""}
+        <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias) > 0 ? '#ff8090' : '#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
         <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(s.resumo.esperadoGaveta)}</b></div>
-        ${(s.resumo.porForma||[]).length?`<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+        ${(s.resumo.porForma || []).length ? `<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
           <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
-          ${s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-          ${totalPixForma(s.resumo.porForma)>0.009?`<div class="linha" style="font-size:12px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>`:""}
-        </div>`:""}
+          ${s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+          ${totalPixForma(s.resumo.porForma) > 0.009 ? `<div class="linha" style="font-size:12px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>` : ""}
+        </div>` : ""}
         <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;border:1px solid #29ABE2;color:#7fd4ff" onclick="conferirComBling('${s.id}')">🔍 Conferir com o Bling</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
       </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa aberto no momento.</div></div>';
-  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar os caixas abertos.</div>`; }
-}
-
-window.carregarHistorico=async function(){
-  const box=document.getElementById("conteudo");
-  try{
-    const j=await fetch(B+"/api/caixa-sessao/historico").then(r=>r.json());
-    const lista=filtrarTipo(j.data||[]);
-    box.innerHTML = lista.length ? lista.map(s=>`
+    } catch (e) {
+      box.innerHTML = `<div class="err">Erro ao carregar os caixas abertos.</div>`;
+    }
+  };
+  window.carregarHistorico = async function () {
+    const box = document.getElementById("conteudo");
+    try {
+      const j = await fetch(B + "/api/caixa-sessao/historico").then(r => r.json());
+      const lista = filtrarTipo(j.data || []);
+      box.innerHTML = lista.length ? lista.map(s => {
+        var _s$fechamento, _s$fechamento2, _s$fechamento3, _s$fechamento4, _s$fechamento5, _s$fechamento6;
+        return `
       <div class="card">
-        <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador||"—")} ${tagTipo(s.tipoCaixa)}</div>
+        <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador || "—")} ${tagTipo(s.tipoCaixa)}</div>
         <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
-        ${(s.resumo.porForma||[]).length?s.resumo.porForma.map(f=>`<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join(""):""}
-        ${totalPixForma(s.resumo.porForma)>0.009?`<div class="linha" style="font-size:12px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>`:""}
-        ${Number(s.resumo.totalSuprimentos)>0?`<div class="linha" style="font-size:12px"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>`:""}
-        <div class="linha" style="font-size:12px"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
-        <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl(s.fechamento?.esperado)}</b></div>
-        <div class="linha"><span>Contado</span><b>${brl(s.fechamento?.valorContado)}</b></div>
+        ${(s.resumo.porForma || []).length ? s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("") : ""}
+        ${totalPixForma(s.resumo.porForma) > 0.009 ? `<div class="linha" style="font-size:12px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>` : ""}
+        ${Number(s.resumo.totalSuprimentos) > 0 ? `<div class="linha" style="font-size:12px"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>` : ""}
+        <div class="linha" style="font-size:12px"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias) > 0 ? '#ff8090' : '#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
+        <div class="linha" style="border-top:1px solid #2a2660;padding-top:6px;margin-top:4px"><span>Esperado</span><b>${brl((_s$fechamento = s.fechamento) === null || _s$fechamento === void 0 ? void 0 : _s$fechamento.esperado)}</b></div>
+        <div class="linha"><span>Contado</span><b>${brl((_s$fechamento2 = s.fechamento) === null || _s$fechamento2 === void 0 ? void 0 : _s$fechamento2.valorContado)}</b></div>
         <div class="linha"><span>Diferença</span>
-          <b style="color:${Math.abs(s.fechamento?.diferenca||0)<0.01?'#8fffc0':((s.fechamento?.diferenca||0)>0?'#ffd23f':'#ff8090')}">${brl(s.fechamento?.diferenca)}</b></div>
-        ${s.fechamento?.observacao?`<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>`:""}
+          <b style="color:${Math.abs(((_s$fechamento3 = s.fechamento) === null || _s$fechamento3 === void 0 ? void 0 : _s$fechamento3.diferenca) || 0) < 0.01 ? '#8fffc0' : (((_s$fechamento4 = s.fechamento) === null || _s$fechamento4 === void 0 ? void 0 : _s$fechamento4.diferenca) || 0) > 0 ? '#ffd23f' : '#ff8090'}">${brl((_s$fechamento5 = s.fechamento) === null || _s$fechamento5 === void 0 ? void 0 : _s$fechamento5.diferenca)}</b></div>
+        ${(_s$fechamento6 = s.fechamento) !== null && _s$fechamento6 !== void 0 && _s$fechamento6.observacao ? `<div class="muted" style="margin-top:6px">obs: ${esc(s.fechamento.observacao)}</div>` : ""}
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="verMovimentos('${s.id}')">📋 Ver histórico completo</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;border:1px solid #29ABE2;color:#7fd4ff" onclick="conferirComBling('${s.id}')">🔍 Conferir com o Bling</button>
-      </div>`).join("") : '<div class="card"><div class="muted">Nenhum caixa fechado ainda.</div></div>';
-  }catch(e){ box.innerHTML=`<div class="err">Erro ao carregar o histórico.</div>`; }
-}
-
-window.nomeMovimento=function(m){
-  if(m.tipo==="venda") return `🛒 Venda #${esc(m.numero||m.pedidoId)} — ${brl(m.total)}${m.clienteNome?` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>`:""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos||[]).map(p=>esc(p.formaNome)+": "+brl(p.valor)).join(" · ")}${Number(m.troco)>0.009?` · <span style="color:#8fffc0;font-weight:800">💵 troco ${brl(m.troco)}</span>`:""}</div>`;
-  if(m.tipo==="sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>`:""}`;
-  if(m.tipo==="suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo?" ("+esc(m.motivo)+")":""}${m.responsavelNome?`<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>`:""}`;
-  return esc(m.tipo);
-}
-
-window.verMovimentos=async function(id){
-  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
-  try{
-    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
-    const movs=j.movimentos||[];
-    window._GMOVS={id, movs};
-    document.getElementById("modais").innerHTML=`
+      </div>`;
+      }).join("") : '<div class="card"><div class="muted">Nenhum caixa fechado ainda.</div></div>';
+    } catch (e) {
+      box.innerHTML = `<div class="err">Erro ao carregar o histórico.</div>`;
+    }
+  };
+  window.nomeMovimento = function (m) {
+    if (m.tipo === "venda") return `🛒 Venda #${esc(m.numero || m.pedidoId)} — ${brl(m.total)}${m.clienteNome ? ` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>` : ""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos || []).map(p => esc(p.formaNome) + ": " + brl(p.valor)).join(" · ")}${Number(m.troco) > 0.009 ? ` · <span style="color:#8fffc0;font-weight:800">💵 troco ${brl(m.troco)}</span>` : ""}</div>`;
+    if (m.tipo === "sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>` : ""}`;
+    if (m.tipo === "suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>` : ""}`;
+    return esc(m.tipo);
+  };
+  window.verMovimentos = async function (id) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+    try {
+      var _j$sessao, _j$sessao2, _j$sessao3, _j$sessao4, _j$resumo, _j$sessao5, _j$resumo2, _j$resumo3, _j$resumo4, _j$resumo5, _j$resumo6;
+      const j = await fetch(B + "/api/caixa-sessao/" + id + "/movimentos").then(r => r.json());
+      const movs = j.movimentos || [];
+      window._GMOVS = {
+        id,
+        movs
+      };
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="if(event.target===this)fecharModais()">
         <div class="modal">
-          <h3>📋 Movimentos — ${esc(j.sessao?.operador||"")}</h3>
-          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl(j.sessao?.trocoInicial)} · Aberto: ${hora(j.sessao?.abertaEm)}${j.sessao?.fechadaEm?" · Fechado: "+hora(j.sessao.fechadaEm):""}</div>
-          ${movs.length?movs.map((m,ix)=>`
+          <h3>📋 Movimentos — ${esc(((_j$sessao = j.sessao) === null || _j$sessao === void 0 ? void 0 : _j$sessao.operador) || "")}</h3>
+          <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl((_j$sessao2 = j.sessao) === null || _j$sessao2 === void 0 ? void 0 : _j$sessao2.trocoInicial)} · Aberto: ${hora((_j$sessao3 = j.sessao) === null || _j$sessao3 === void 0 ? void 0 : _j$sessao3.abertaEm)}${(_j$sessao4 = j.sessao) !== null && _j$sessao4 !== void 0 && _j$sessao4.fechadaEm ? " · Fechado: " + hora(j.sessao.fechadaEm) : ""}</div>
+          ${movs.length ? movs.map((m, ix) => `
             <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-                <div style="flex:1">${nomeMovimento(m)}${m.alterado?' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>':''}</div>
+                <div style="flex:1">${nomeMovimento(m)}${m.alterado ? ' <span style="color:#ff8090;font-size:11px">✏️ alterado</span>' : ''}</div>
                 <button class="btn btn-ghost btn-sm" style="padding:2px 7px" title="Imprimir" onclick="imprimirMovimento(${ix})">🖨️</button>
               </div>
               <div class="muted" style="font-size:11px">${hora(m.em)}</div>
-              ${(m.tipo==="venda"&&!m.cancelado)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+              ${m.tipo === "venda" && !m.cancelado ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarPagamentoVenda(${ix})">✏️ Mudar forma de pagamento</button>
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px" onclick="editarItensVenda(${ix})">📦 Editar itens</button>
                 <button class="btn btn-sm" style="padding:3px 8px;background:#b3341f;color:#fff" onclick="cancelarVendaGestao(${ix})">🚫 Cancelar venda</button>
                 <button class="btn btn-ghost btn-sm" style="padding:3px 8px;border:1px solid #6b5a1f;color:#ffd23f" title="Use quando o Bling já está correto e este lançamento é uma sobra duplicada (não mexe no Bling)" onclick="cancelarSoLocalGestao(${ix})">🗑️ Cancelar só no caixa (duplicado)</button>
-              </div>`:''}
-              ${(m.tipo==="venda"&&m.cancelado)?(()=>{
-                const c=(m.alteracoes||[]).slice().reverse().find(a=>a.tipo==="cancelamento_local_duplicado"||a.tipo==="cancelamento");
-                const soLocal=c&&c.tipo==="cancelamento_local_duplicado";
-                return `<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 ${soLocal?"Cancelado só no caixa (duplicado) — Bling não alterado":"Venda cancelada"}${c?.por?` · por ${esc(c.por)}`:""}${c?.em?` · ${hora(c.em)}`:""}${c?.motivo?`<br><span class="muted">motivo: ${esc(c.motivo)}</span>`:""}<br><span class="muted">não conta no total do caixa</span></div>`;
-              })():''}
-            </div>`).join(""):'<div class="muted">Nenhum movimento ainda.</div>'}
+              </div>` : ''}
+              ${m.tipo === "venda" && m.cancelado ? (() => {
+        const c = (m.alteracoes || []).slice().reverse().find(a => a.tipo === "cancelamento_local_duplicado" || a.tipo === "cancelamento");
+        const soLocal = c && c.tipo === "cancelamento_local_duplicado";
+        return `<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 ${soLocal ? "Cancelado só no caixa (duplicado) — Bling não alterado" : "Venda cancelada"}${c !== null && c !== void 0 && c.por ? ` · por ${esc(c.por)}` : ""}${c !== null && c !== void 0 && c.em ? ` · ${hora(c.em)}` : ""}${c !== null && c !== void 0 && c.motivo ? `<br><span class="muted">motivo: ${esc(c.motivo)}</span>` : ""}<br><span class="muted">não conta no total do caixa</span></div>`;
+      })() : ''}
+            </div>`).join("") : '<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
-            ${(j.resumo?.porForma||[]).length?`<div style="margin-bottom:8px">
+            ${(((_j$resumo = j.resumo) === null || _j$resumo === void 0 ? void 0 : _j$resumo.porForma) || []).length ? `<div style="margin-bottom:8px">
               <div style="font-weight:800;margin-bottom:4px">💳 Total por forma de pagamento</div>
-              <div class="linha"><span>Valor de abertura (troco)</span><b>${brl(j.sessao?.trocoInicial||0)}</b></div>
-              <div class="linha"><span>Vendas (${j.resumo.qtdVendas||0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
-              ${j.resumo.porForma.map(f=>`<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
-              ${totalPixForma(j.resumo.porForma)>0.009?`<div class="linha" style="font-size:13px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(j.resumo.porForma))}</b></div>`:""}
-            </div>`:""}
-            <div class="linha"><span>💰 Suprimentos</span><b style="color:${Number(j.resumo?.totalSuprimentos)>0?'#8fffc0':'#9a95c9'}">${brl(j.resumo?.totalSuprimentos)}</b></div>
-            <div class="linha"><span>💸 Sangrias</span><b style="color:${Number(j.resumo?.totalSangrias)>0?'#ff8090':'#9a95c9'}">${brl(j.resumo?.totalSangrias)}</b></div>
-            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(j.resumo?.esperadoGaveta)}</b></div>
-            ${j.fechamento?`<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
-            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca)<0.01?'#8fffc0':(j.fechamento.diferenca>0?'#ffd23f':'#ff8090')}">${brl(j.fechamento.diferenca)}</b></div>`:""}
+              <div class="linha"><span>Valor de abertura (troco)</span><b>${brl(((_j$sessao5 = j.sessao) === null || _j$sessao5 === void 0 ? void 0 : _j$sessao5.trocoInicial) || 0)}</b></div>
+              <div class="linha"><span>Vendas (${j.resumo.qtdVendas || 0})</span><b>${brl(j.resumo.totalVendas)}</b></div>
+              ${j.resumo.porForma.map(f => `<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
+              ${totalPixForma(j.resumo.porForma) > 0.009 ? `<div class="linha" style="font-size:13px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(j.resumo.porForma))}</b></div>` : ""}
+            </div>` : ""}
+            <div class="linha"><span>💰 Suprimentos</span><b style="color:${Number((_j$resumo2 = j.resumo) === null || _j$resumo2 === void 0 ? void 0 : _j$resumo2.totalSuprimentos) > 0 ? '#8fffc0' : '#9a95c9'}">${brl((_j$resumo3 = j.resumo) === null || _j$resumo3 === void 0 ? void 0 : _j$resumo3.totalSuprimentos)}</b></div>
+            <div class="linha"><span>💸 Sangrias</span><b style="color:${Number((_j$resumo4 = j.resumo) === null || _j$resumo4 === void 0 ? void 0 : _j$resumo4.totalSangrias) > 0 ? '#ff8090' : '#9a95c9'}">${brl((_j$resumo5 = j.resumo) === null || _j$resumo5 === void 0 ? void 0 : _j$resumo5.totalSangrias)}</b></div>
+            <div class="linha"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl((_j$resumo6 = j.resumo) === null || _j$resumo6 === void 0 ? void 0 : _j$resumo6.esperadoGaveta)}</b></div>
+            ${j.fechamento ? `<div class="linha"><span>Contado</span><b>${brl(j.fechamento.valorContado)}</b></div>
+            <div class="linha"><span>Diferença</span><b style="color:${Math.abs(j.fechamento.diferenca) < 0.01 ? '#8fffc0' : j.fechamento.diferenca > 0 ? '#ffd23f' : '#ff8090'}">${brl(j.fechamento.diferenca)}</b></div>` : ""}
           </div>
           <button class="btn btn-ghost" style="width:100%" onclick="fecharModais()">Fechar</button>
         </div>
       </div>`;
-  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`; }
-}
+    } catch (e) {
+      document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`;
+    }
+  };
 
-// ---- CONFERÊNCIA DE CAIXA: contar por forma + dinheiro na gaveta e comparar ----
-window.conferirCaixa=async function(id){
-  document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
-  try{
-    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
-    if(j.erro) throw new Error(j.erro);
-    const r=j.resumo||{};
-    window._CONF={
-      id,
-      formas:(r.porForma||[]).map(f=>({nome:f.nome,esperado:Number(f.valor)||0})),
-      esperadoGaveta:Number(r.esperadoGaveta||0),
-      esperadoGavetaCalc:Number(r.esperadoGavetaCalc!=null?r.esperadoGavetaCalc:(r.esperadoGaveta||0)),
-      esperadoGavetaManual:(r.esperadoGavetaManual!=null?Number(r.esperadoGavetaManual):null),
-      operador:j.sessao?.operador||"",
-    };
-    renderConferencia();
-  }catch(e){ document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao abrir a conferência: ${esc(e.message)}</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button></div></div>`; }
-}
-function linhaConf(ix,f){
-  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+  // ---- CONFERÊNCIA DE CAIXA: contar por forma + dinheiro na gaveta e comparar ----
+  window.conferirCaixa = async function (id) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
+    try {
+      var _j$sessao6;
+      const j = await fetch(B + "/api/caixa-sessao/" + id + "/movimentos").then(r => r.json());
+      if (j.erro) throw new Error(j.erro);
+      const r = j.resumo || {};
+      window._CONF = {
+        id,
+        formas: (r.porForma || []).map(f => ({
+          nome: f.nome,
+          esperado: Number(f.valor) || 0
+        })),
+        esperadoGaveta: Number(r.esperadoGaveta || 0),
+        esperadoGavetaCalc: Number(r.esperadoGavetaCalc != null ? r.esperadoGavetaCalc : r.esperadoGaveta || 0),
+        esperadoGavetaManual: r.esperadoGavetaManual != null ? Number(r.esperadoGavetaManual) : null,
+        operador: ((_j$sessao6 = j.sessao) === null || _j$sessao6 === void 0 ? void 0 : _j$sessao6.operador) || ""
+      };
+      renderConferencia();
+    } catch (e) {
+      document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao abrir a conferência: ${esc(e.message)}</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button></div></div>`;
+    }
+  };
+  function linhaConf(ix, f) {
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
     <div style="flex:1;min-width:0">
       <div style="font-weight:700;font-size:13px">${esc(f.nome)}</div>
       <div class="muted" style="font-size:11px">Esperado: ${brl(f.esperado)}</div>
@@ -238,22 +283,23 @@ function linhaConf(ix,f){
     <input id="conf_${ix}" inputmode="decimal" placeholder="Contado" style="width:104px;text-align:right" oninput="recalcConf()">
     <div id="dif_${ix}" style="width:96px;text-align:right;font-size:12px;font-weight:700;color:#9a95c9">—</div>
   </div>`;
-}
-window.renderConferencia=function(){
-  const C=window._CONF; if(!C) return;
-  const temManual=C.esperadoGavetaManual!=null;
-  document.getElementById("modais").innerHTML=`
+  }
+  window.renderConferencia = function () {
+    const C = window._CONF;
+    if (!C) return;
+    const temManual = C.esperadoGavetaManual != null;
+    document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
-      <h3>🧮 Conferir caixa — ${esc(C.operador||"")}</h3>
+      <h3>🧮 Conferir caixa — ${esc(C.operador || "")}</h3>
       <div class="muted" style="font-size:12px;margin-bottom:10px">Digite quanto tem de verdade em cada forma e o dinheiro na gaveta. A diferença aparece do lado (verde = bateu, amarelo = sobra, vermelho = falta).</div>
       <div style="font-weight:800;margin-bottom:6px">💳 Formas de pagamento</div>
-      ${C.formas.length?C.formas.map((f,ix)=>linhaConf(ix,f)).join(""):'<div class="muted" style="margin-bottom:8px">Nenhuma venda por forma ainda.</div>'}
+      ${C.formas.length ? C.formas.map((f, ix) => linhaConf(ix, f)).join("") : '<div class="muted" style="margin-bottom:8px">Nenhuma venda por forma ainda.</div>'}
       <div style="border-top:1px solid #2a2660;margin:10px 0;padding-top:10px">
         <div style="display:flex;align-items:center;gap:8px">
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:13px">💵 Dinheiro na gaveta</div>
-            <div class="muted" style="font-size:11px">Esperado: <b style="color:#ffd23f">${brl(C.esperadoGaveta)}</b>${temManual?' <span style="color:#ff9fd0">(ajuste manual)</span>':""} · <a href="#" onclick="editarEsperado(event)" style="color:#7fd4ff">editar</a></div>
-            ${temManual?`<div class="muted" style="font-size:10px">Calculado: ${brl(C.esperadoGavetaCalc)}</div>`:""}
+            <div class="muted" style="font-size:11px">Esperado: <b style="color:#ffd23f">${brl(C.esperadoGaveta)}</b>${temManual ? ' <span style="color:#ff9fd0">(ajuste manual)</span>' : ""} · <a href="#" onclick="editarEsperado(event)" style="color:#7fd4ff">editar</a></div>
+            ${temManual ? `<div class="muted" style="font-size:10px">Calculado: ${brl(C.esperadoGavetaCalc)}</div>` : ""}
           </div>
           <input id="conf_gaveta" inputmode="decimal" placeholder="Contado" style="width:104px;text-align:right" oninput="recalcConf()">
           <div id="dif_gaveta" style="width:96px;text-align:right;font-size:12px;font-weight:700;color:#9a95c9">—</div>
@@ -270,103 +316,174 @@ window.renderConferencia=function(){
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
-}
-window.fecharCaixaGestao=async function(){
-  const C=window._CONF; if(!C) return;
-  const gav=numBR(document.getElementById("conf_gaveta")?.value||"");
-  const obs=document.getElementById("conf_obs")?.value||"";
-  const msg=document.getElementById("confMsg");
-  if(!confirm(`Fechar o caixa de ${C.operador||"—"}?\n\nDinheiro contado na gaveta: ${gav?brl(gav):"(não informado)"}\n\nDepois de fechado, não dá pra registrar mais vendas nesse caixa.`)) return;
-  try{
-    const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
-    const j=await fetch(B+"/api/caixa-sessao/"+C.id+"/fechar",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({valorContado:gav||0, observacao:obs, operador:S.nome||"gestão"})}).then(r=>r.json());
-    if(j.erro){ if(msg) msg.innerHTML=`<div class="err">${esc(j.erro)}</div>`; return; }
-    fecharModais();
-    if(typeof carregarAbertos==="function") carregarAbertos();
-    if(typeof carregarHistorico==="function") carregarHistorico();
-  }catch(e){ if(msg) msg.innerHTML=`<div class="err">Erro ao fechar o caixa.</div>`; }
-}
-
-window.recalcConf=function(){
-  const C=window._CONF; if(!C) return;
-  let total=0;
-  const cor=(dif,vazio)=>vazio?"#9a95c9":(Math.abs(dif)<0.01?"#8fffc0":(dif>0?"#ffd23f":"#ff8090"));
-  C.formas.forEach((f,ix)=>{
-    const campo=document.getElementById("conf_"+ix);
-    const vazio=((campo?.value)||"").trim()==="";
-    const dif=+(numBR(campo?.value)-f.esperado).toFixed(2);
-    if(!vazio) total+=dif;
-    const el=document.getElementById("dif_"+ix);
-    if(el){ el.textContent=vazio?"—":brl(dif); el.style.color=cor(dif,vazio); }
-  });
-  const cg=document.getElementById("conf_gaveta");
-  const gvazio=((cg?.value)||"").trim()==="";
-  const difG=+(numBR(cg?.value)-C.esperadoGaveta).toFixed(2);
-  if(!gvazio) total+=difG;
-  const elg=document.getElementById("dif_gaveta");
-  if(elg){ elg.textContent=gvazio?"—":brl(difG); elg.style.color=cor(difG,gvazio); }
-  const elt=document.getElementById("dif_total");
-  if(elt){ elt.textContent=brl(total); elt.style.color=(Math.abs(total)<0.01?"#8fffc0":(total>0?"#ffd23f":"#ff8090")); }
-}
-window.salvarConferencia=async function(){
-  const C=window._CONF; if(!C) return;
-  const contagem=C.formas.map((f,ix)=>({nome:f.nome,contado:numBR(document.getElementById("conf_"+ix)?.value)}));
-  const contadoGaveta=numBR(document.getElementById("conf_gaveta")?.value);
-  const observacao=(document.getElementById("conf_obs")?.value||"").trim();
-  const msg=document.getElementById("confMsg");
-  try{
-    const r=await fetch(B+"/api/caixa-sessao/"+C.id+"/conferencia",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contagem,contadoGaveta,observacao,operador:(window.GESTOR&&window.GESTOR.nome)||"",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    const dt=(r.conferencia&&r.conferencia.diferencaTotal)||0;
-    document.getElementById("modais").innerHTML=`
+  };
+  window.fecharCaixaGestao = async function () {
+    var _document$getElementB, _document$getElementB2;
+    const C = window._CONF;
+    if (!C) return;
+    const gav = numBR(((_document$getElementB = document.getElementById("conf_gaveta")) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.value) || "");
+    const obs = ((_document$getElementB2 = document.getElementById("conf_obs")) === null || _document$getElementB2 === void 0 ? void 0 : _document$getElementB2.value) || "";
+    const msg = document.getElementById("confMsg");
+    if (!confirm(`Fechar o caixa de ${C.operador || "—"}?\n\nDinheiro contado na gaveta: ${gav ? brl(gav) : "(não informado)"}\n\nDepois de fechado, não dá pra registrar mais vendas nesse caixa.`)) return;
+    try {
+      const S = (typeof b13GetSession === "function" ? b13GetSession() : {}) || {};
+      const j = await fetch(B + "/api/caixa-sessao/" + C.id + "/fechar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          valorContado: gav || 0,
+          observacao: obs,
+          operador: S.nome || "gestão"
+        })
+      }).then(r => r.json());
+      if (j.erro) {
+        if (msg) msg.innerHTML = `<div class="err">${esc(j.erro)}</div>`;
+        return;
+      }
+      fecharModais();
+      if (typeof carregarAbertos === "function") carregarAbertos();
+      if (typeof carregarHistorico === "function") carregarHistorico();
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="err">Erro ao fechar o caixa.</div>`;
+    }
+  };
+  window.recalcConf = function () {
+    const C = window._CONF;
+    if (!C) return;
+    let total = 0;
+    const cor = (dif, vazio) => vazio ? "#9a95c9" : Math.abs(dif) < 0.01 ? "#8fffc0" : dif > 0 ? "#ffd23f" : "#ff8090";
+    C.formas.forEach((f, ix) => {
+      const campo = document.getElementById("conf_" + ix);
+      const vazio = ((campo === null || campo === void 0 ? void 0 : campo.value) || "").trim() === "";
+      const dif = +(numBR(campo === null || campo === void 0 ? void 0 : campo.value) - f.esperado).toFixed(2);
+      if (!vazio) total += dif;
+      const el = document.getElementById("dif_" + ix);
+      if (el) {
+        el.textContent = vazio ? "—" : brl(dif);
+        el.style.color = cor(dif, vazio);
+      }
+    });
+    const cg = document.getElementById("conf_gaveta");
+    const gvazio = ((cg === null || cg === void 0 ? void 0 : cg.value) || "").trim() === "";
+    const difG = +(numBR(cg === null || cg === void 0 ? void 0 : cg.value) - C.esperadoGaveta).toFixed(2);
+    if (!gvazio) total += difG;
+    const elg = document.getElementById("dif_gaveta");
+    if (elg) {
+      elg.textContent = gvazio ? "—" : brl(difG);
+      elg.style.color = cor(difG, gvazio);
+    }
+    const elt = document.getElementById("dif_total");
+    if (elt) {
+      elt.textContent = brl(total);
+      elt.style.color = Math.abs(total) < 0.01 ? "#8fffc0" : total > 0 ? "#ffd23f" : "#ff8090";
+    }
+  };
+  window.salvarConferencia = async function () {
+    var _document$getElementB4, _document$getElementB5;
+    const C = window._CONF;
+    if (!C) return;
+    const contagem = C.formas.map((f, ix) => {
+      var _document$getElementB3;
+      return {
+        nome: f.nome,
+        contado: numBR((_document$getElementB3 = document.getElementById("conf_" + ix)) === null || _document$getElementB3 === void 0 ? void 0 : _document$getElementB3.value)
+      };
+    });
+    const contadoGaveta = numBR((_document$getElementB4 = document.getElementById("conf_gaveta")) === null || _document$getElementB4 === void 0 ? void 0 : _document$getElementB4.value);
+    const observacao = (((_document$getElementB5 = document.getElementById("conf_obs")) === null || _document$getElementB5 === void 0 ? void 0 : _document$getElementB5.value) || "").trim();
+    const msg = document.getElementById("confMsg");
+    try {
+      const r = await fetch(B + "/api/caixa-sessao/" + C.id + "/conferencia", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contagem,
+          contadoGaveta,
+          observacao,
+          operador: window.GESTOR && window.GESTOR.nome || "",
+          funcionarioId: window.GESTOR && window.GESTOR.id || ""
+        })
+      }).then(r => r.json());
+      if (r.erro) throw new Error(r.erro);
+      const dt = r.conferencia && r.conferencia.diferencaTotal || 0;
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">${Math.abs(dt)<0.01?'✅':'⚠️'}</div>
+        <div style="font-size:42px">${Math.abs(dt) < 0.01 ? '✅' : '⚠️'}</div>
         <h3>Conferência salva</h3>
-        <div class="${Math.abs(dt)<0.01?'muted':'err'}" style="margin-top:6px">Diferença total: <b>${brl(dt)}</b>${Math.abs(dt)<0.01?' — bateu certinho!':''}</div>
+        <div class="${Math.abs(dt) < 0.01 ? 'muted' : 'err'}" style="margin-top:6px">Diferença total: <b>${brl(dt)}</b>${Math.abs(dt) < 0.01 ? ' — bateu certinho!' : ''}</div>
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais()">OK</button>
       </div></div>`;
-  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
-}
-// ---- editar (ajustar) o esperado na gaveta ----
-window.editarEsperado=function(ev){
-  if(ev&&ev.preventDefault) ev.preventDefault();
-  const C=window._CONF; if(!C) return;
-  const atual=C.esperadoGavetaManual!=null?C.esperadoGavetaManual:C.esperadoGaveta;
-  const v=prompt("Esperado na gaveta (dinheiro).\nDeixe vazio pra voltar ao calculado ("+brl(C.esperadoGavetaCalc)+"):", String(atual));
-  if(v===null) return; // cancelou
-  const limpar=(String(v).trim()==="");
-  fetch(B+"/api/caixa-sessao/"+C.id+"/esperado",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({esperado:numBR(v),limpar,operador:(window.GESTOR&&window.GESTOR.nome)||"",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json()).then(r=>{
-    if(r.erro){ alert(r.erro); return; }
-    const rr=r.resumo||{};
-    C.esperadoGaveta=Number(rr.esperadoGaveta||0);
-    C.esperadoGavetaCalc=Number(rr.esperadoGavetaCalc!=null?rr.esperadoGavetaCalc:(rr.esperadoGaveta||0));
-    C.esperadoGavetaManual=(rr.esperadoGavetaManual!=null?Number(rr.esperadoGavetaManual):null);
-    renderConferencia();
-    recalcConf();
-  }).catch(e=>alert("Erro: "+e.message));
-}
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    }
+  };
+  // ---- editar (ajustar) o esperado na gaveta ----
+  window.editarEsperado = function (ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    const C = window._CONF;
+    if (!C) return;
+    const atual = C.esperadoGavetaManual != null ? C.esperadoGavetaManual : C.esperadoGaveta;
+    const v = prompt("Esperado na gaveta (dinheiro).\nDeixe vazio pra voltar ao calculado (" + brl(C.esperadoGavetaCalc) + "):", String(atual));
+    if (v === null) return; // cancelou
+    const limpar = String(v).trim() === "";
+    fetch(B + "/api/caixa-sessao/" + C.id + "/esperado", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        esperado: numBR(v),
+        limpar,
+        operador: window.GESTOR && window.GESTOR.nome || "",
+        funcionarioId: window.GESTOR && window.GESTOR.id || ""
+      })
+    }).then(r => r.json()).then(r => {
+      if (r.erro) {
+        alert(r.erro);
+        return;
+      }
+      const rr = r.resumo || {};
+      C.esperadoGaveta = Number(rr.esperadoGaveta || 0);
+      C.esperadoGavetaCalc = Number(rr.esperadoGavetaCalc != null ? rr.esperadoGavetaCalc : rr.esperadoGaveta || 0);
+      C.esperadoGavetaManual = rr.esperadoGavetaManual != null ? Number(rr.esperadoGavetaManual) : null;
+      renderConferencia();
+      recalcConf();
+    }).catch(e => alert("Erro: " + e.message));
+  };
 
-// ---- gerenciar os bancos do PIX (nome, padrão, adicionar, excluir) ----
-window.gerenciarBancosPix=async function(){
-  let cfg;
-  try{ cfg=await fetch(B+"/api/pix-bancos").then(r=>r.json()); }catch(e){ cfg={bancos:["Inter","Santander","Itaú"],padrao:"Inter"}; }
-  const bancos=(cfg.bancos||[]).slice();
-  let padraoIx=bancos.indexOf(cfg.padrao); if(padraoIx<0) padraoIx=0;
-  window._BANCOS={bancos, padraoIx};
-  renderBancosPix();
-}
-window.renderBancosPix=function(){
-  const S=window._BANCOS;
-  document.getElementById("modais").innerHTML=`
+  // ---- gerenciar os bancos do PIX (nome, padrão, adicionar, excluir) ----
+  window.gerenciarBancosPix = async function () {
+    let cfg;
+    try {
+      cfg = await fetch(B + "/api/pix-bancos").then(r => r.json());
+    } catch (e) {
+      cfg = {
+        bancos: ["Inter", "Santander", "Itaú"],
+        padrao: "Inter"
+      };
+    }
+    const bancos = (cfg.bancos || []).slice();
+    let padraoIx = bancos.indexOf(cfg.padrao);
+    if (padraoIx < 0) padraoIx = 0;
+    window._BANCOS = {
+      bancos,
+      padraoIx
+    };
+    renderBancosPix();
+  };
+  window.renderBancosPix = function () {
+    const S = window._BANCOS;
+    document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>🏦 Bancos do PIX</h3>
       <div class="muted" style="font-size:12px;margin-bottom:10px">São os bancos que aparecem ao finalizar um <b>PIX Banco</b> no caixa atacado. Marque o padrão (fica pré-selecionado), edite os nomes, adicione ou exclua.</div>
       <div>
-        ${S.bancos.map((b,ix)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <label title="Padrão" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#ffd23f"><input type="radio" name="bpad" ${ix===S.padraoIx?"checked":""} onclick="window._BANCOS.padraoIx=${ix}">padrão</label>
+        ${S.bancos.map((b, ix) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <label title="Padrão" style="display:flex;align-items:center;gap:4px;font-size:11px;color:#ffd23f"><input type="radio" name="bpad" ${ix === S.padraoIx ? "checked" : ""} onclick="window._BANCOS.padraoIx=${ix}">padrão</label>
           <input value="${esc(b)}" style="flex:1" oninput="window._BANCOS.bancos[${ix}]=this.value">
           <button class="btn btn-ghost btn-sm" style="color:#ff8090;padding:4px 8px" onclick="removerBanco(${ix})">🗑</button>
         </div>`).join("")}
@@ -381,86 +498,109 @@ window.renderBancosPix=function(){
         <button class="btn btn-ghost" onclick="fecharModais()">Fechar</button>
       </div>
     </div></div>`;
-}
-window.adicionarBanco=function(){
-  const el=document.getElementById("novoBanco");
-  const v=(el?.value||"").trim();
-  if(!v) return;
-  window._BANCOS.bancos.push(v);
-  renderBancosPix();
-}
-window.removerBanco=function(ix){
-  const S=window._BANCOS;
-  S.bancos.splice(ix,1);
-  if(S.padraoIx===ix) S.padraoIx=0;
-  else if(S.padraoIx>ix) S.padraoIx--;
-  if(S.padraoIx<0) S.padraoIx=0;
-  renderBancosPix();
-}
-window.salvarBancosPix=async function(){
-  const S=window._BANCOS;
-  const bancos=(S.bancos||[]).map(x=>String(x||"").trim()).filter(Boolean);
-  const msg=document.getElementById("bancosMsg");
-  if(!bancos.length){ if(msg) msg.innerHTML='<div class="err">Deixe ao menos um banco.</div>'; return; }
-  const padrao=bancos[S.padraoIx]||bancos[0];
-  try{
-    const r=await fetch(B+"/api/pix-bancos",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bancos,padrao})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center"><div style="font-size:40px">✅</div><h3>Bancos salvos</h3><div class="muted" style="margin-top:6px">Padrão: <b>${esc(r.padrao)}</b></div><button class="btn btn-mag" style="width:100%;margin-top:12px" onclick="fecharModais()">OK</button></div></div>`;
-  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
-}
+  };
+  window.adicionarBanco = function () {
+    const el = document.getElementById("novoBanco");
+    const v = ((el === null || el === void 0 ? void 0 : el.value) || "").trim();
+    if (!v) return;
+    window._BANCOS.bancos.push(v);
+    renderBancosPix();
+  };
+  window.removerBanco = function (ix) {
+    const S = window._BANCOS;
+    S.bancos.splice(ix, 1);
+    if (S.padraoIx === ix) S.padraoIx = 0;else if (S.padraoIx > ix) S.padraoIx--;
+    if (S.padraoIx < 0) S.padraoIx = 0;
+    renderBancosPix();
+  };
+  window.salvarBancosPix = async function () {
+    const S = window._BANCOS;
+    const bancos = (S.bancos || []).map(x => String(x || "").trim()).filter(Boolean);
+    const msg = document.getElementById("bancosMsg");
+    if (!bancos.length) {
+      if (msg) msg.innerHTML = '<div class="err">Deixe ao menos um banco.</div>';
+      return;
+    }
+    const padrao = bancos[S.padraoIx] || bancos[0];
+    try {
+      const r = await fetch(B + "/api/pix-bancos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          bancos,
+          padrao
+        })
+      }).then(r => r.json());
+      if (r.erro) throw new Error(r.erro);
+      document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center"><div style="font-size:40px">✅</div><h3>Bancos salvos</h3><div class="muted" style="margin-top:6px">Padrão: <b>${esc(r.padrao)}</b></div><button class="btn btn-mag" style="width:100%;margin-top:12px" onclick="fecharModais()">OK</button></div></div>`;
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    }
+  };
 
-
-// ---- imprime um relatório do caixa (resumo completo, pra impressora comum ou térmica) ----
-window.imprimirRelatorioCaixa=async function(id){
-  try{
-    const j=await fetch(B+"/api/caixa-sessao/"+id+"/movimentos").then(r=>r.json());
-    if(j.erro) throw new Error(j.erro);
-    const se=j.sessao||{}, r=j.resumo||{}, fe=j.fechamento, confs=j.conferencias||[];
-    const vendas=(j.movimentos||[]).filter(m=>m.tipo==="venda");
-    const sangrias=(j.movimentos||[]).filter(m=>m.tipo==="sangria").sort((a,b)=>b.em-a.em);
-    const suprimentos=(j.movimentos||[]).filter(m=>m.tipo==="suprimento").sort((a,b)=>b.em-a.em);
-    const listaMov=(arr,titulo)=>arr.length?`
+  // ---- imprime um relatório do caixa (resumo completo, pra impressora comum ou térmica) ----
+  window.imprimirRelatorioCaixa = async function (id) {
+    try {
+      const j = await fetch(B + "/api/caixa-sessao/" + id + "/movimentos").then(r => r.json());
+      if (j.erro) throw new Error(j.erro);
+      const se = j.sessao || {},
+        r = j.resumo || {},
+        fe = j.fechamento,
+        confs = j.conferencias || [];
+      const vendas = (j.movimentos || []).filter(m => m.tipo === "venda");
+      const sangrias = (j.movimentos || []).filter(m => m.tipo === "sangria").sort((a, b) => b.em - a.em);
+      const suprimentos = (j.movimentos || []).filter(m => m.tipo === "suprimento").sort((a, b) => b.em - a.em);
+      const listaMov = (arr, titulo) => arr.length ? `
       <h3>${titulo} (${arr.length})</h3>
-      ${arr.map(m=>`<div class="mv">
-        <div class="mv1">${hora(m.em)}${m.operador&&m.operador!=="—"?" · "+esc(m.operador):""}</div>
-        <div class="mv2"><span>${esc(m.motivo||"(sem motivo)")}</span><b>${brl(m.valor)}</b></div>
+      ${arr.map(m => `<div class="mv">
+        <div class="mv1">${hora(m.em)}${m.operador && m.operador !== "—" ? " · " + esc(m.operador) : ""}</div>
+        <div class="mv2"><span>${esc(m.motivo || "(sem motivo)")}</span><b>${brl(m.valor)}</b></div>
       </div>`).join("")}` : "";
-    const tipo=(se.tipoCaixa==="atacado")?"Atacado":"Frente";
-    const fmtDur=(ms)=>{ if(!ms||ms<0) return "—"; const min=Math.floor(ms/60000), h=Math.floor(min/60), mm=min%60; return h>0?`${h}h ${mm}min`:`${mm}min`; };
-    const dur=se.abertaEm?fmtDur((se.fechadaEm||Date.now())-se.abertaEm):"—";
-    const qv=Number(r.qtdVendas||vendas.length||0);
-    const ticket=qv>0?brl((Number(r.totalVendas)||0)/qv):"—";
-    const linha=(rot,val,cor)=>`<tr><td>${esc(rot)}</td><td class="v"${cor?` style="color:${cor}"`:""}>${val}</td></tr>`;
-    const pf=(r.porForma||[]).map(f=>`<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
-    const totPix=totalPixForma(r.porForma);
-    const temManual=(r.esperadoGavetaManual!=null);
-    const confHtml=confs.length?`
+      const tipo = se.tipoCaixa === "atacado" ? "Atacado" : "Frente";
+      const fmtDur = ms => {
+        if (!ms || ms < 0) return "—";
+        const min = Math.floor(ms / 60000),
+          h = Math.floor(min / 60),
+          mm = min % 60;
+        return h > 0 ? `${h}h ${mm}min` : `${mm}min`;
+      };
+      const dur = se.abertaEm ? fmtDur((se.fechadaEm || Date.now()) - se.abertaEm) : "—";
+      const qv = Number(r.qtdVendas || vendas.length || 0);
+      const ticket = qv > 0 ? brl((Number(r.totalVendas) || 0) / qv) : "—";
+      const linha = (rot, val, cor) => `<tr><td>${esc(rot)}</td><td class="v"${cor ? ` style="color:${cor}"` : ""}>${val}</td></tr>`;
+      const pf = (r.porForma || []).map(f => `<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
+      const totPix = totalPixForma(r.porForma);
+      const temManual = r.esperadoGavetaManual != null;
+      const confHtml = confs.length ? `
       <h3>Conferências</h3>
-      ${confs.map(c=>`<div class="conf">
-        <div class="ch"><b>${hora(c.em)}</b> — ${esc(c.por||"—")} · Diferença total: <b style="color:${Math.abs(c.diferencaTotal||0)<0.01?'#0a0':'#c00'}">${brl(c.diferencaTotal)}</b></div>
-        ${(c.linhas||[]).map(l=>`<div class="cl">${esc(l.nome)}: esperado ${brl(l.esperado)} · contado ${brl(l.contado)} · dif <b style="color:${Math.abs(l.diferenca)<0.01?'#0a0':'#c00'}">${brl(l.diferenca)}</b></div>`).join("")}
-        <div class="cl">💵 Gaveta: esperado ${brl(c.gaveta?.esperado)} · contado ${brl(c.gaveta?.contado)} · dif <b style="color:${Math.abs(c.gaveta?.diferenca||0)<0.01?'#0a0':'#c00'}">${brl(c.gaveta?.diferenca)}</b></div>
-        ${c.observacao?`<div class="cl obs">Obs: ${esc(c.observacao)}</div>`:""}
-      </div>`).join("")}` : "";
-    const detAlt=(m)=>{
-      let out="";
-      if(m.clienteNome) out+=`<div class="cl">Cliente: ${esc(m.clienteNome)}</div>`;
-      if(m.valorMenor) out+=`<div class="cl">⚠️ Valor menor: faltou ${brl(m.valorMenor.faltou)} · autoriz. ${esc(m.valorMenor.autorizadoPor||"—")}</div>`;
-      (m.alteracoes||[]).forEach(a=>{
-        if(a.cancelado||a.tipo==="cancelamento") out+=`<div class="cl">🚫 ${a.em?hora(a.em)+" · ":""}Cancelada${a.por?" · por "+esc(a.por):""}</div>`;
-        else out+=`<div class="cl">✏️ ${a.em?hora(a.em)+" · ":""}${esc(a.de||"?")} → ${esc(a.para||"?")}${a.por?" · por "+esc(a.por):""}${a.autorizadoPor&&a.autorizadoPor!==a.por?" · autoriz. "+esc(a.autorizadoPor):""}${a.blingPendente?" · (Bling não atualizado)":""}</div>`;
-      });
-      return out;
-    };
-    const vendasHtml=vendas.length?`
+      ${confs.map(c => {
+        var _c$gaveta, _c$gaveta2, _c$gaveta3, _c$gaveta4;
+        return `<div class="conf">
+        <div class="ch"><b>${hora(c.em)}</b> — ${esc(c.por || "—")} · Diferença total: <b style="color:${Math.abs(c.diferencaTotal || 0) < 0.01 ? '#0a0' : '#c00'}">${brl(c.diferencaTotal)}</b></div>
+        ${(c.linhas || []).map(l => `<div class="cl">${esc(l.nome)}: esperado ${brl(l.esperado)} · contado ${brl(l.contado)} · dif <b style="color:${Math.abs(l.diferenca) < 0.01 ? '#0a0' : '#c00'}">${brl(l.diferenca)}</b></div>`).join("")}
+        <div class="cl">💵 Gaveta: esperado ${brl((_c$gaveta = c.gaveta) === null || _c$gaveta === void 0 ? void 0 : _c$gaveta.esperado)} · contado ${brl((_c$gaveta2 = c.gaveta) === null || _c$gaveta2 === void 0 ? void 0 : _c$gaveta2.contado)} · dif <b style="color:${Math.abs(((_c$gaveta3 = c.gaveta) === null || _c$gaveta3 === void 0 ? void 0 : _c$gaveta3.diferenca) || 0) < 0.01 ? '#0a0' : '#c00'}">${brl((_c$gaveta4 = c.gaveta) === null || _c$gaveta4 === void 0 ? void 0 : _c$gaveta4.diferenca)}</b></div>
+        ${c.observacao ? `<div class="cl obs">Obs: ${esc(c.observacao)}</div>` : ""}
+      </div>`;
+      }).join("")}` : "";
+      const detAlt = m => {
+        let out = "";
+        if (m.clienteNome) out += `<div class="cl">Cliente: ${esc(m.clienteNome)}</div>`;
+        if (m.valorMenor) out += `<div class="cl">⚠️ Valor menor: faltou ${brl(m.valorMenor.faltou)} · autoriz. ${esc(m.valorMenor.autorizadoPor || "—")}</div>`;
+        (m.alteracoes || []).forEach(a => {
+          if (a.cancelado || a.tipo === "cancelamento") out += `<div class="cl">🚫 ${a.em ? hora(a.em) + " · " : ""}Cancelada${a.por ? " · por " + esc(a.por) : ""}</div>`;else out += `<div class="cl">✏️ ${a.em ? hora(a.em) + " · " : ""}${esc(a.de || "?")} → ${esc(a.para || "?")}${a.por ? " · por " + esc(a.por) : ""}${a.autorizadoPor && a.autorizadoPor !== a.por ? " · autoriz. " + esc(a.autorizadoPor) : ""}${a.blingPendente ? " · (Bling não atualizado)" : ""}</div>`;
+        });
+        return out;
+      };
+      const vendasHtml = vendas.length ? `
       <h3>Vendas (${vendas.length})</h3>
-      ${vendas.slice().sort((a,b)=>b.em-a.em).map(m=>`<div class="mv">
-        <div class="mv1">${hora(m.em)} · #${esc(m.numero||m.pedidoId||"")}${m.cancelado?' <span class="alt">CANCELADA</span>':(m.alterado?' <span class="alt">ALTERADO</span>':'')}</div>
-        <div class="mv2"><span>${esc((m.pagamentos||[]).map(p=>p.formaNome).join(", "))||"—"}</span><b>${brl(m.total)}</b></div>
+      ${vendas.slice().sort((a, b) => b.em - a.em).map(m => `<div class="mv">
+        <div class="mv1">${hora(m.em)} · #${esc(m.numero || m.pedidoId || "")}${m.cancelado ? ' <span class="alt">CANCELADA</span>' : m.alterado ? ' <span class="alt">ALTERADO</span>' : ''}</div>
+        <div class="mv2"><span>${esc((m.pagamentos || []).map(p => p.formaNome).join(", ")) || "—"}</span><b>${brl(m.total)}</b></div>
         ${detAlt(m)}
       </div>`).join("")}` : "";
-    const html=`<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Caixa #${esc(se.id||"")}</title>
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatório de Caixa #${esc(se.id || "")}</title>
       <style>
         *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
         body{margin:0;padding:10px;color:#000;font-size:15px;font-weight:700}
@@ -480,91 +620,112 @@ window.imprimirRelatorioCaixa=async function(id){
         @media print{body{padding:0}}
       </style></head><body>
       <h1>B13 BEBIDAS — Relatório de Caixa</h1>
-      <h2>Caixa ${esc(tipo)} · Operador: ${esc(se.operador||"—")}</h2>
+      <h2>Caixa ${esc(tipo)} · Operador: ${esc(se.operador || "—")}</h2>
       <table>
         ${linha("Abertura", hora(se.abertaEm))}
-        ${linha("Fechamento", se.fechadaEm?hora(se.fechadaEm):"— (ainda aberto)")}
+        ${linha("Fechamento", se.fechadaEm ? hora(se.fechadaEm) : "— (ainda aberto)")}
         ${linha("Duração", dur)}
-        ${linha("Valor de abertura (troco inicial)", brl((se.trocoInicial!=null?se.trocoInicial:r.trocoInicial)||0))}
+        ${linha("Valor de abertura (troco inicial)", brl((se.trocoInicial != null ? se.trocoInicial : r.trocoInicial) || 0))}
         ${linha("Ticket médio", ticket)}
       </table>
       <h3>Vendas por forma de pagamento</h3>
       <table>
-        <tr><td><b>Valor de abertura (troco)</b></td><td class="v">${brl((se.trocoInicial!=null?se.trocoInicial:r.trocoInicial)||0)}</td></tr>
-        <tr><td><b>Vendas (${r.qtdVendas||0})</b></td><td class="v">${brl(r.totalVendas)}</td></tr>
+        <tr><td><b>Valor de abertura (troco)</b></td><td class="v">${brl((se.trocoInicial != null ? se.trocoInicial : r.trocoInicial) || 0)}</td></tr>
+        <tr><td><b>Vendas (${r.qtdVendas || 0})</b></td><td class="v">${brl(r.totalVendas)}</td></tr>
         ${pf}
-        ${totPix>0.009?`<tr class="pix"><td>🔷 Total PIX</td><td class="v">${brl(totPix)}</td></tr>`:""}
+        ${totPix > 0.009 ? `<tr class="pix"><td>🔷 Total PIX</td><td class="v">${brl(totPix)}</td></tr>` : ""}
       </table>
       <h3>Dinheiro na gaveta</h3>
       <table>
-        ${Number(r.totalSuprimentos)>0?linha("Suprimentos", brl(r.totalSuprimentos), "#0a0"):""}
-        ${linha("Sangrias", brl(r.totalSangrias), Number(r.totalSangrias)>0?"#c00":"")}
-        <tr class="tot"><td>Esperado na gaveta${temManual?" (ajuste manual)":""}</td><td class="v">${brl(r.esperadoGaveta)}</td></tr>
-        ${temManual?linha("Esperado calculado", brl(r.esperadoGavetaCalc)):""}
-        ${fe?linha("Contado no fechamento", brl(fe.valorContado)):""}
-        ${fe?linha("Diferença", brl(fe.diferenca), Math.abs(fe.diferenca||0)<0.01?"#0a0":"#c00"):""}
-        ${fe&&fe.observacao?linha("Obs. fechamento", esc(fe.observacao)):""}
-        ${fe&&fe.fechadoPorGestao?linha("Fechado por", "Gestão de Caixas"+(fe.operador&&fe.operador!=="—"?" ("+esc(fe.operador)+")":"")):""}
+        ${Number(r.totalSuprimentos) > 0 ? linha("Suprimentos", brl(r.totalSuprimentos), "#0a0") : ""}
+        ${linha("Sangrias", brl(r.totalSangrias), Number(r.totalSangrias) > 0 ? "#c00" : "")}
+        <tr class="tot"><td>Esperado na gaveta${temManual ? " (ajuste manual)" : ""}</td><td class="v">${brl(r.esperadoGaveta)}</td></tr>
+        ${temManual ? linha("Esperado calculado", brl(r.esperadoGavetaCalc)) : ""}
+        ${fe ? linha("Contado no fechamento", brl(fe.valorContado)) : ""}
+        ${fe ? linha("Diferença", brl(fe.diferenca), Math.abs(fe.diferenca || 0) < 0.01 ? "#0a0" : "#c00") : ""}
+        ${fe && fe.observacao ? linha("Obs. fechamento", esc(fe.observacao)) : ""}
+        ${fe && fe.fechadoPorGestao ? linha("Fechado por", "Gestão de Caixas" + (fe.operador && fe.operador !== "—" ? " (" + esc(fe.operador) + ")" : "")) : ""}
       </table>
-      ${listaMov(suprimentos,"Suprimentos")}
-      ${listaMov(sangrias,"Sangrias")}
+      ${listaMov(suprimentos, "Suprimentos")}
+      ${listaMov(sangrias, "Sangrias")}
       ${confHtml}
       ${vendasHtml}
       <div class="foot">Emitido em ${new Date().toLocaleString("pt-BR")}</div>
     </body></html>`;
-    const w=window.open("","_blank");
-    if(!w){ alert("Libere o pop-up pra imprimir o relatório."); return; }
-    w.document.open(); w.document.write(html); w.document.close();
-    setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} }, 350);
-  }catch(e){ alert("Não foi possível gerar o relatório: "+e.message); }
-}
+      const w = window.open("", "_blank");
+      if (!w) {
+        alert("Libere o pop-up pra imprimir o relatório.");
+        return;
+      }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => {
+        try {
+          w.focus();
+          w.print();
+        } catch (e) {}
+      }, 350);
+    } catch (e) {
+      alert("Não foi possível gerar o relatório: " + e.message);
+    }
+  };
 
-
-// ---- GESTÃO: mudar a forma de pagamento de uma venda (caixa aberto ou fechado) ----
-window._FORMAS_GESTAO=null;
-async function carregarFormasGestao(){
-  if(window._FORMAS_GESTAO) return window._FORMAS_GESTAO;
-  try{
-    const j=await fetch(B+"/api/formas-pagamento").then(r=>r.json());
-    window._FORMAS_GESTAO=(j.data||[]).filter(f=>f.situacao!=="I").map(f=>({id:f.id,nome:f.nome||f.descricao||("Forma "+f.id)}));
-  }catch(e){ window._FORMAS_GESTAO=[]; }
-  return window._FORMAS_GESTAO;
-}
-window.imprimirMovimento=function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  const lin=(a,b)=>`<tr><td>${a}</td><td style="text-align:right;font-weight:800">${b}</td></tr>`;
-  let corpo="";
-  if(m.tipo==="venda"){
-    const itens=(m.itens||[]).map(i=>`<tr><td>${esc(i.nome||("produto "+i.produtoId))}</td><td style="text-align:right;white-space:nowrap">${i.quantidade}× ${brl(i.valor)}</td></tr>`).join("");
-    const formas=(m.pagamentos||[]).map(p=>lin(esc(p.formaNome||"—"),brl(p.valor))).join("");
-    corpo=`
-      <h2>Venda #${esc(m.numero||m.pedidoId||"")}</h2>
-      ${m.clienteNome?`<div>Cliente: <b>${esc(m.clienteNome)}</b></div>`:""}
-      <div>${hora(m.em)}${m.operador?" · "+esc(m.operador):""}</div>
-      <h3>Itens</h3><table>${itens||'<tr><td>—</td></tr>'}</table>
-      <h3>Pagamento</h3><table>${formas||'<tr><td>—</td></tr>'}</table>
+  // ---- GESTÃO: mudar a forma de pagamento de uma venda (caixa aberto ou fechado) ----
+  window._FORMAS_GESTAO = null;
+  async function carregarFormasGestao() {
+    if (window._FORMAS_GESTAO) return window._FORMAS_GESTAO;
+    try {
+      const j = await fetch(B + "/api/formas-pagamento").then(r => r.json());
+      window._FORMAS_GESTAO = (j.data || []).filter(f => f.situacao !== "I").map(f => ({
+        id: f.id,
+        nome: f.nome || f.descricao || "Forma " + f.id
+      }));
+    } catch (e) {
+      window._FORMAS_GESTAO = [];
+    }
+    return window._FORMAS_GESTAO;
+  }
+  window.imprimirMovimento = function (ix) {
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    const lin = (a, b) => `<tr><td>${a}</td><td style="text-align:right;font-weight:800">${b}</td></tr>`;
+    let corpo = "";
+    if (m.tipo === "venda") {
+      const itens = (m.itens || []).map(i => `<tr><td>${esc(i.nome || "produto " + i.produtoId)}</td><td style="text-align:right;white-space:nowrap">${i.quantidade}× ${brl(i.valor)}</td></tr>`).join("");
+      const formas = (m.pagamentos || []).map(p => lin(esc(p.formaNome || "—"), brl(p.valor))).join("");
+      corpo = `
+      <h2>Venda #${esc(m.numero || m.pedidoId || "")}</h2>
+      ${m.clienteNome ? `<div>Cliente: <b>${esc(m.clienteNome)}</b></div>` : ""}
+      <div>${hora(m.em)}${m.operador ? " · " + esc(m.operador) : ""}</div>
+      <h3>Itens</h3><table>${itens || '<tr><td>—</td></tr>'}</table>
+      <h3>Pagamento</h3><table>${formas || '<tr><td>—</td></tr>'}</table>
       <table class="tot"><tr><td><b>TOTAL</b></td><td style="text-align:right"><b>${brl(m.total)}</b></td></tr></table>
-      ${m.cancelado?'<div class="canc">🚫 VENDA CANCELADA</div>':""}`;
-  } else {
-    corpo=`
-      <h2>${m.tipo==="sangria"?"Sangria":"Suprimento"}</h2>
-      <div>${hora(m.em)}${m.operador?" · "+esc(m.operador):""}</div>
+      ${m.cancelado ? '<div class="canc">🚫 VENDA CANCELADA</div>' : ""}`;
+    } else {
+      corpo = `
+      <h2>${m.tipo === "sangria" ? "Sangria" : "Suprimento"}</h2>
+      <div>${hora(m.em)}${m.operador ? " · " + esc(m.operador) : ""}</div>
       <table class="tot"><tr><td><b>Valor</b></td><td style="text-align:right"><b>${brl(m.valor)}</b></td></tr></table>
-      ${m.motivo?`<div style="margin-top:6px">Motivo: ${esc(m.motivo)}</div>`:""}`;
-  }
-  let hist="";
-  if((m.alteracoes||[]).length){
-    hist=`<h3>Histórico de alterações</h3>`+(m.alteracoes||[]).map(a=>{
-      const q=`${a.por?" · por "+esc(a.por):""}${a.autorizadoPor&&a.autorizadoPor!==a.por?" · autoriz. "+esc(a.autorizadoPor):""}${a.blingPendente?" · (Bling pendente)":""}`;
-      if(a.tipo==="cancelamento"||a.cancelado) return `<div class="h">🚫 ${a.em?hora(a.em)+" · ":""}Cancelada${a.motivo?" — "+esc(a.motivo):""}${q}</div>`;
-      if(a.tipo==="itens") return `<div class="h">📦 ${a.em?hora(a.em)+" · ":""}Itens: ${esc(a.de||"?")} → ${esc(a.para||"?")}${q}</div>`;
-      return `<div class="h">✏️ ${a.em?hora(a.em)+" · ":""}${esc(a.de||"?")} → ${esc(a.para||"?")}${q}</div>`;
-    }).join("");
-  }
-  const w=window.open("","_blank","width=420,height=700");
-  if(!w){ alert("Libere o pop-up pra imprimir."); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Movimento</title>
+      ${m.motivo ? `<div style="margin-top:6px">Motivo: ${esc(m.motivo)}</div>` : ""}`;
+    }
+    let hist = "";
+    if ((m.alteracoes || []).length) {
+      hist = `<h3>Histórico de alterações</h3>` + (m.alteracoes || []).map(a => {
+        const q = `${a.por ? " · por " + esc(a.por) : ""}${a.autorizadoPor && a.autorizadoPor !== a.por ? " · autoriz. " + esc(a.autorizadoPor) : ""}${a.blingPendente ? " · (Bling pendente)" : ""}`;
+        if (a.tipo === "cancelamento" || a.cancelado) return `<div class="h">🚫 ${a.em ? hora(a.em) + " · " : ""}Cancelada${a.motivo ? " — " + esc(a.motivo) : ""}${q}</div>`;
+        if (a.tipo === "itens") return `<div class="h">📦 ${a.em ? hora(a.em) + " · " : ""}Itens: ${esc(a.de || "?")} → ${esc(a.para || "?")}${q}</div>`;
+        return `<div class="h">✏️ ${a.em ? hora(a.em) + " · " : ""}${esc(a.de || "?")} → ${esc(a.para || "?")}${q}</div>`;
+      }).join("");
+    }
+    const w = window.open("", "_blank", "width=420,height=700");
+    if (!w) {
+      alert("Libere o pop-up pra imprimir.");
+      return;
+    }
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Movimento</title>
     <style>
       *{font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
       body{margin:0;padding:10px;color:#000;font-weight:700;max-width:560px;font-size:14px}
@@ -580,36 +741,50 @@ window.imprimirMovimento=function(ix){
     <div style="margin-top:14px;font-size:11px;text-align:center">Impresso em ${new Date().toLocaleString("pt-BR")}</div>
     <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
     </body></html>`);
-  w.document.close();
-}
-
-window.editarItensVenda=function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  window._GITENS={ pedidoId:m.pedidoId, numero:m.numero||m.pedidoId,
-    itens:(m.itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome,quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
-    frete:Number(m.frete)||0, buscas:[] };
-  renderEditorItens();
-}
-window.totalEditorItens=function totalEditorItens(){ const E=window._GITENS; return E?+((E.itens.reduce((s,i)=>s+i.quantidade*i.valor,0))+(E.frete||0)).toFixed(2):0; }
-window.renderEditorItens=function renderEditorItens(){
-  const E=window._GITENS; if(!E) return;
-  const linhas=E.itens.map((i,k)=>`
+    w.document.close();
+  };
+  window.editarItensVenda = function (ix) {
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    window._GITENS = {
+      pedidoId: m.pedidoId,
+      numero: m.numero || m.pedidoId,
+      itens: (m.itens || []).map(i => ({
+        produtoId: i.produtoId,
+        nome: i.nome,
+        quantidade: Number(i.quantidade) || 0,
+        valor: Number(i.valor) || 0
+      })),
+      frete: Number(m.frete) || 0,
+      buscas: []
+    };
+    renderEditorItens();
+  };
+  window.totalEditorItens = function totalEditorItens() {
+    const E = window._GITENS;
+    return E ? +(E.itens.reduce((s, i) => s + i.quantidade * i.valor, 0) + (E.frete || 0)).toFixed(2) : 0;
+  };
+  window.renderEditorItens = function renderEditorItens() {
+    const E = window._GITENS;
+    if (!E) return;
+    const linhas = E.itens.map((i, k) => `
     <div style="display:flex;gap:6px;align-items:center;border-bottom:1px solid #2a2660;padding:6px 0">
-      <div style="flex:1;font-size:13px">${esc(i.nome||("produto "+i.produtoId))}</div>
+      <div style="flex:1;font-size:13px">${esc(i.nome || "produto " + i.produtoId)}</div>
       <input type="number" min="0" step="1" value="${i.quantidade}" style="width:56px" onchange="window._GITENS.itens[${k}].quantidade=Number(this.value)||0;renderEditorItens()">
       <span class="muted" style="font-size:11px">×</span>
       <input type="number" min="0" step="0.01" value="${i.valor}" style="width:74px" onchange="window._GITENS.itens[${k}].valor=Number(this.value)||0;renderEditorItens()">
       <button class="btn btn-sm" style="background:#b3341f;color:#fff;padding:2px 7px" onclick="window._GITENS.itens.splice(${k},1);renderEditorItens()">🗑</button>
     </div>`).join("");
-  const res=(E.buscas||[]).map((p,k)=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo?' <span class="muted">#'+esc(String(p.codigo))+'</span>':''}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("");
-  document.getElementById("modais").innerHTML=`
+    const res = (E.buscas || []).map((p, k) => `<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo ? ' <span class="muted">#' + esc(String(p.codigo)) + '</span>' : ''}${p.estoque != null ? ' · est ' + p.estoque : ''}</button>`).join("");
+    document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>📦 Editar itens — #${esc(E.numero)}</h3>
       <div class="muted" style="font-size:12px;margin-bottom:6px">O Bling é a fonte de estoque/fiscal. Mudanças aqui vão pro Bling e pro histórico do caixa.</div>
-      <div style="max-height:34vh;overflow:auto">${linhas||'<div class="muted">Sem itens.</div>'}</div>
+      <div style="max-height:34vh;overflow:auto">${linhas || '<div class="muted">Sem itens.</div>'}</div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:800">
-        <span>Total${E.frete?" (com frete "+brl(E.frete)+")":""}</span><span style="color:#ffd23f">${brl(totalEditorItens())}</span>
+        <span>Total${E.frete ? " (com frete " + brl(E.frete) + ")" : ""}</span><span style="color:#ffd23f">${brl(totalEditorItens())}</span>
       </div>
       <div style="margin-top:10px">
         <input id="buscaItemEditor" placeholder="Adicionar produto (nome)…" onkeydown="if(event.key==='Enter'){event.preventDefault();buscarItemEditor();}">
@@ -622,96 +797,148 @@ window.renderEditorItens=function renderEditorItens(){
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
-}
-window.buscarItemEditor=async function buscarItemEditor(){
-  const msg=document.getElementById("msgEditorItens");
-  const box=document.getElementById("resBuscaItem");
-  try{
-    if(!window._GITENS){ if(msg) msg.innerHTML='<div class="err">Editor não iniciado — reabra "Editar itens".</div>'; return; }
-    const el=document.getElementById("buscaItemEditor"); const termo=(el?el.value:"").trim();
-    if(termo.length<2){ if(msg) msg.innerHTML='<div class="muted">Digite ao menos 2 letras.</div>'; return; }
-    if(msg) msg.innerHTML='<div class="muted">Buscando "'+esc(termo)+'"…</div>';
-    const resp=await fetch(B+"/api/buscar?nome="+encodeURIComponent(termo));
-    if(!resp.ok){ if(msg) msg.innerHTML='<div class="err">Erro HTTP '+resp.status+' na busca.</div>'; return; }
-    const j=await resp.json();
-    if(j&&j.erro) throw new Error(j.erro);
-    const lista=(j.data||[]).slice(0,12).map(p=>({id:p.id,nome:p.nome,codigo:p.codigo,estoque:p.estoque}));
-    window._GITENS.buscas=lista;
-    if(box) box.innerHTML = lista.length
-      ? lista.map((p,k)=>`<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo?' <span class="muted">#'+esc(String(p.codigo))+'</span>':''}${p.estoque!=null?' · est '+p.estoque:''}</button>`).join("")
-      : "";
-    if(msg) msg.innerHTML = lista.length
-      ? '<div class="muted">'+lista.length+' produto(s) — toque pra adicionar.</div>'
-      : '<div class="muted">Nada encontrado pra "'+esc(termo)+'".</div>';
-  }catch(e){ if(msg) msg.innerHTML='<div class="err">Falha na busca: '+esc(e.message||String(e))+'</div>'; }
-}
-window.addItemEditorIdx=async function(k){
-  const E=window._GITENS; if(!E) return;
-  const p=(E.buscas||[])[k]; if(!p) return;
-  let preco=0;
-  if(p.codigo){ try{ const r=await fetch(B+"/api/preco/gtin/"+encodeURIComponent(p.codigo)).then(r=>r.json()); if(r&&r.data&&Number(r.data.preco)>0) preco=Number(r.data.preco); }catch(e){} }
-  const existe=E.itens.find(i=>String(i.produtoId)===String(p.id));
-  if(existe){ existe.quantidade+=1; }
-  else E.itens.push({produtoId:p.id,nome:p.nome,quantidade:1,valor:preco});
-  E.buscas=[]; renderEditorItens();
-}
-window.salvarItensVenda=async function salvarItensVenda(){
-  const E=window._GITENS; if(!E) return;
-  const msg=document.getElementById("msgEditorItens");
-  const itens=E.itens.filter(i=>i.produtoId&&i.quantidade>0);
-  if(!itens.length){ if(msg) msg.innerHTML='<div class="err">Deixe ao menos um item.</div>'; return; }
-  if(!confirm(`Salvar os itens do pedido #${E.numero}?\n\nNovo total: ${brl(totalEditorItens())}\n\nIsso altera o pedido no Bling (estoque) e registra no histórico do caixa.`)) return;
-  if(msg) msg.innerHTML='<div class="muted">Salvando…</div>';
-  try{
-    const r=await fetch(B+"/api/gestao/editar-itens-venda",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId:E.pedidoId, itens, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão"})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    const avisoBling = r.blingOk===false
-      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>`
-      : "";
-    document.getElementById("modais").innerHTML=`
+  };
+  window.buscarItemEditor = async function buscarItemEditor() {
+    const msg = document.getElementById("msgEditorItens");
+    const box = document.getElementById("resBuscaItem");
+    try {
+      if (!window._GITENS) {
+        if (msg) msg.innerHTML = '<div class="err">Editor não iniciado — reabra "Editar itens".</div>';
+        return;
+      }
+      const el = document.getElementById("buscaItemEditor");
+      const termo = (el ? el.value : "").trim();
+      if (termo.length < 2) {
+        if (msg) msg.innerHTML = '<div class="muted">Digite ao menos 2 letras.</div>';
+        return;
+      }
+      if (msg) msg.innerHTML = '<div class="muted">Buscando "' + esc(termo) + '"…</div>';
+      const resp = await fetch(B + "/api/buscar?nome=" + encodeURIComponent(termo));
+      if (!resp.ok) {
+        if (msg) msg.innerHTML = '<div class="err">Erro HTTP ' + resp.status + ' na busca.</div>';
+        return;
+      }
+      const j = await resp.json();
+      if (j && j.erro) throw new Error(j.erro);
+      const lista = (j.data || []).slice(0, 12).map(p => ({
+        id: p.id,
+        nome: p.nome,
+        codigo: p.codigo,
+        estoque: p.estoque
+      }));
+      window._GITENS.buscas = lista;
+      if (box) box.innerHTML = lista.length ? lista.map((p, k) => `<button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;margin-top:4px" onclick="addItemEditorIdx(${k})">➕ ${esc(p.nome)}${p.codigo ? ' <span class="muted">#' + esc(String(p.codigo)) + '</span>' : ''}${p.estoque != null ? ' · est ' + p.estoque : ''}</button>`).join("") : "";
+      if (msg) msg.innerHTML = lista.length ? '<div class="muted">' + lista.length + ' produto(s) — toque pra adicionar.</div>' : '<div class="muted">Nada encontrado pra "' + esc(termo) + '".</div>';
+    } catch (e) {
+      if (msg) msg.innerHTML = '<div class="err">Falha na busca: ' + esc(e.message || String(e)) + '</div>';
+    }
+  };
+  window.addItemEditorIdx = async function (k) {
+    const E = window._GITENS;
+    if (!E) return;
+    const p = (E.buscas || [])[k];
+    if (!p) return;
+    let preco = 0;
+    if (p.codigo) {
+      try {
+        const r = await fetch(B + "/api/preco/gtin/" + encodeURIComponent(p.codigo)).then(r => r.json());
+        if (r && r.data && Number(r.data.preco) > 0) preco = Number(r.data.preco);
+      } catch (e) {}
+    }
+    const existe = E.itens.find(i => String(i.produtoId) === String(p.id));
+    if (existe) {
+      existe.quantidade += 1;
+    } else E.itens.push({
+      produtoId: p.id,
+      nome: p.nome,
+      quantidade: 1,
+      valor: preco
+    });
+    E.buscas = [];
+    renderEditorItens();
+  };
+  window.salvarItensVenda = async function salvarItensVenda() {
+    const E = window._GITENS;
+    if (!E) return;
+    const msg = document.getElementById("msgEditorItens");
+    const itens = E.itens.filter(i => i.produtoId && i.quantidade > 0);
+    if (!itens.length) {
+      if (msg) msg.innerHTML = '<div class="err">Deixe ao menos um item.</div>';
+      return;
+    }
+    if (!confirm(`Salvar os itens do pedido #${E.numero}?\n\nNovo total: ${brl(totalEditorItens())}\n\nIsso altera o pedido no Bling (estoque) e registra no histórico do caixa.`)) return;
+    if (msg) msg.innerHTML = '<div class="muted">Salvando…</div>';
+    try {
+      const r = await fetch(B + "/api/gestao/editar-itens-venda", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          pedidoId: E.pedidoId,
+          itens,
+          operador: window.GESTOR && window.GESTOR.nome || "Gestão"
+        })
+      }).then(r => r.json());
+      if (r.erro) throw new Error(r.erro);
+      const avisoBling = r.blingOk === false ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro || "erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>` : "";
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">${r.blingOk===false?"⚠️":"✅"}</div><h3>Itens atualizados</h3>
+        <div style="font-size:42px">${r.blingOk === false ? "⚠️" : "✅"}</div><h3>Itens atualizados</h3>
         <div class="muted" style="margin-top:8px">Pedido #${esc(E.numero)} · novo total ${brl(r.novoTotal)}</div>
         ${avisoBling}
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
       </div></div>`;
-  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
-}
-
-window.cancelarVendaGestao=async function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  const motivo=prompt(`Cancelar a venda #${m.numero||m.pedidoId} (${brl(m.total)})?\n\nIsso move o pedido pra CANCELADO no Bling e tira do total do caixa.\nMotivo (opcional):`);
-  if(motivo===null) return;
-  try{
-    const r=await fetch(B+"/api/gestao/cancelar-venda",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    const avisoBling = r.blingOk===false
-      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Cancele o pedido no Bling manualmente.</div>`
-      : "";
-    document.getElementById("modais").innerHTML=`
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    }
+  };
+  window.cancelarVendaGestao = async function (ix) {
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    const motivo = prompt(`Cancelar a venda #${m.numero || m.pedidoId} (${brl(m.total)})?\n\nIsso move o pedido pra CANCELADO no Bling e tira do total do caixa.\nMotivo (opcional):`);
+    if (motivo === null) return;
+    try {
+      const r = await fetch(B + "/api/gestao/cancelar-venda", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          pedidoId: m.pedidoId,
+          operador: window.GESTOR && window.GESTOR.nome || "Gestão",
+          motivo
+        })
+      }).then(r => r.json());
+      if (r.erro) throw new Error(r.erro);
+      const avisoBling = r.blingOk === false ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro || "erro")}.<br>Cancele o pedido no Bling manualmente.</div>` : "";
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">${r.blingOk===false?"⚠️":"🚫"}</div><h3>Venda cancelada</h3>
-        <div class="muted" style="margin-top:8px">Pedido #${esc(r.numero||m.numero||m.pedidoId)} cancelado.</div>
+        <div style="font-size:42px">${r.blingOk === false ? "⚠️" : "🚫"}</div><h3>Venda cancelada</h3>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(r.numero || m.numero || m.pedidoId)} cancelado.</div>
         ${avisoBling}
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
       </div></div>`;
-  }catch(e){ alert("Erro ao cancelar: "+e.message); }
-}
-// cancela SÓ o registro local (não mexe no Bling) — pra quando o Bling já está certo
-// (1 pedido só) e este lançamento é sobra de uma duplicidade antiga
-window.cancelarSoLocalGestao=function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  const quando=new Date(m.em).toLocaleString("pt-BR");
-  const pags=(m.pagamentos||[]).map(p=>`${esc(p.formaNome||"—")}: ${brl(p.valor)}`).join(" · ")||"—";
-  document.getElementById("modais").innerHTML=`
+    } catch (e) {
+      alert("Erro ao cancelar: " + e.message);
+    }
+  };
+  // cancela SÓ o registro local (não mexe no Bling) — pra quando o Bling já está certo
+  // (1 pedido só) e este lançamento é sobra de uma duplicidade antiga
+  window.cancelarSoLocalGestao = function (ix) {
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    const quando = new Date(m.em).toLocaleString("pt-BR");
+    const pags = (m.pagamentos || []).map(p => `${esc(p.formaNome || "—")}: ${brl(p.valor)}`).join(" · ") || "—";
+    document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>🗑️ Cancelar só no caixa (duplicado)</h3>
       <div style="background:#1c1846;border-radius:10px;padding:10px;margin:10px 0;font-size:13px">
-        <div><b>Pedido #${esc(m.numero||m.pedidoId)}</b> — ${brl(m.total)}</div>
+        <div><b>Pedido #${esc(m.numero || m.pedidoId)}</b> — ${brl(m.total)}</div>
         <div class="muted" style="font-size:12px;margin-top:4px">Lançado em ${esc(quando)}</div>
         <div class="muted" style="font-size:12px">Pagamento: ${pags}</div>
       </div>
@@ -729,29 +956,54 @@ window.cancelarSoLocalGestao=function(ix){
         <button class="btn" id="btnCancLocal" style="flex:1;background:#b3341f;color:#fff" onclick="confirmarCancelarSoLocal(${ix})">Cancelar este registro</button>
       </div>
     </div></div>`;
-  setTimeout(()=>document.getElementById("motivoCancLocal")?.focus(),50);
-}
-window.confirmarCancelarSoLocal=async function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  const motivo=(document.getElementById("motivoCancLocal")?.value||"").trim();
-  const err=document.getElementById("errCancLocal");
-  if(!motivo){ if(err) err.innerHTML=`<div style="color:#ff8090;font-size:12px;margin-top:8px">Escreva o motivo pra continuar.</div>`; return; }
-  const btn=document.getElementById("btnCancLocal");
-  if(btn){ btn.disabled=true; btn.textContent="Cancelando…"; }
-  if(err) err.innerHTML="";
-  try{
-    const r=await fetch(B+"/api/gestao/cancelar-lancamento-local",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({sessaoId:G.id, em:m.em, pedidoId:m.pedidoId, operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão", motivo})}).then(async r=>{
-        const j=await r.json().catch(()=>({erro:"resposta inválida do servidor"}));
-        if(!r.ok) throw new Error(j.erro||("erro "+r.status));
+    setTimeout(() => {
+      var _document$getElementB6;
+      return (_document$getElementB6 = document.getElementById("motivoCancLocal")) === null || _document$getElementB6 === void 0 ? void 0 : _document$getElementB6.focus();
+    }, 50);
+  };
+  window.confirmarCancelarSoLocal = async function (ix) {
+    var _document$getElementB7;
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    const motivo = (((_document$getElementB7 = document.getElementById("motivoCancLocal")) === null || _document$getElementB7 === void 0 ? void 0 : _document$getElementB7.value) || "").trim();
+    const err = document.getElementById("errCancLocal");
+    if (!motivo) {
+      if (err) err.innerHTML = `<div style="color:#ff8090;font-size:12px;margin-top:8px">Escreva o motivo pra continuar.</div>`;
+      return;
+    }
+    const btn = document.getElementById("btnCancLocal");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Cancelando…";
+    }
+    if (err) err.innerHTML = "";
+    try {
+      const r = await fetch(B + "/api/gestao/cancelar-lancamento-local", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sessaoId: G.id,
+          em: m.em,
+          pedidoId: m.pedidoId,
+          operador: window.GESTOR && window.GESTOR.nome || "Gestão",
+          motivo
+        })
+      }).then(async r => {
+        const j = await r.json().catch(() => ({
+          erro: "resposta inválida do servidor"
+        }));
+        if (!r.ok) throw new Error(j.erro || "erro " + r.status);
         return j;
       });
-    if(r.erro) throw new Error(r.erro);
-    document.getElementById("modais").innerHTML=`
+      if (r.erro) throw new Error(r.erro);
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="fecharModais();verMovimentos('${esc(G.id)}')"><div class="modal" style="text-align:center">
         <div style="font-size:42px">✅</div><h3>Registro cancelado</h3>
-        <div class="muted" style="margin-top:8px">Pedido #${esc(m.numero||m.pedidoId)} — o Bling <b>não</b> foi alterado.</div>
+        <div class="muted" style="margin-top:8px">Pedido #${esc(m.numero || m.pedidoId)} — o Bling <b>não</b> foi alterado.</div>
         <div style="background:#0a2a1a;border:1px solid #1f6b45;border-radius:10px;padding:10px;margin-top:10px">
           <div style="font-size:13px">Total de vendas deste caixa</div>
           <div style="font-size:15px;margin-top:4px">${brl(r.totalVendasAntes)} → <b style="color:#3ce88a">${brl(r.totalVendasDepois)}</b></div>
@@ -759,31 +1011,52 @@ window.confirmarCancelarSoLocal=async function(ix){
         </div>
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();verMovimentos('${esc(G.id)}')">OK, ver os movimentos</button>
       </div></div>`;
-  }catch(e){
-    if(btn){ btn.disabled=false; btn.textContent="Cancelar este registro"; }
-    if(err) err.innerHTML=`<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: ${esc(e.message)}</div>`;
-  }
-}
-
-window.editarPagamentoVenda=async function(ix){
-  const G=window._GMOVS; if(!G) return;
-  const m=G.movs[ix]; if(!m) return;
-  const formas=await carregarFormasGestao();
-  if(!formas.length){ alert("Não consegui carregar as formas de pagamento."); return; }
-  const acha=(nome)=>{ const f=formas.find(x=>String(x.nome).toLowerCase()===String(nome||"").toLowerCase()) || formas.find(x=>/pix/i.test(x.nome)&&/pix/i.test(nome||"")); return f?f.id:formas[0].id; };
-  const base=(m.pagamentos&&m.pagamentos.length)?m.pagamentos:[{formaNome:"",valor:m.total||0}];
-  window._GEDIT={ pedidoId:m.pedidoId, numero:m.numero||m.pedidoId,
-    linhas:base.map(p=>({formaId:acha(p.formaNome),valor:Number(p.valor)||0})), formas };
-  renderEditorPagamento();
-}
-window.renderEditorPagamento=function(){
-  const E=window._GEDIT; if(!E) return;
-  const opt=(sel)=>E.formas.map(f=>`<option value="${f.id}" ${String(f.id)===String(sel)?"selected":""}>${esc(f.nome)}</option>`).join("");
-  document.getElementById("modais").innerHTML=`
+    } catch (e) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Cancelar este registro";
+      }
+      if (err) err.innerHTML = `<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: ${esc(e.message)}</div>`;
+    }
+  };
+  window.editarPagamentoVenda = async function (ix) {
+    const G = window._GMOVS;
+    if (!G) return;
+    const m = G.movs[ix];
+    if (!m) return;
+    const formas = await carregarFormasGestao();
+    if (!formas.length) {
+      alert("Não consegui carregar as formas de pagamento.");
+      return;
+    }
+    const acha = nome => {
+      const f = formas.find(x => String(x.nome).toLowerCase() === String(nome || "").toLowerCase()) || formas.find(x => /pix/i.test(x.nome) && /pix/i.test(nome || ""));
+      return f ? f.id : formas[0].id;
+    };
+    const base = m.pagamentos && m.pagamentos.length ? m.pagamentos : [{
+      formaNome: "",
+      valor: m.total || 0
+    }];
+    window._GEDIT = {
+      pedidoId: m.pedidoId,
+      numero: m.numero || m.pedidoId,
+      linhas: base.map(p => ({
+        formaId: acha(p.formaNome),
+        valor: Number(p.valor) || 0
+      })),
+      formas
+    };
+    renderEditorPagamento();
+  };
+  window.renderEditorPagamento = function () {
+    const E = window._GEDIT;
+    if (!E) return;
+    const opt = sel => E.formas.map(f => `<option value="${f.id}" ${String(f.id) === String(sel) ? "selected" : ""}>${esc(f.nome)}</option>`).join("");
+    document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>✏️ Mudar forma de pagamento — #${esc(E.numero)}</h3>
       <div class="muted" style="font-size:12px;margin-bottom:10px">Ajuste a forma (e o valor, se precisar) de cada pagamento. A alteração vai pro Bling e fica registrada no histórico (em vermelho).</div>
-      ${E.linhas.map((l,i)=>`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
+      ${E.linhas.map((l, i) => `<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">
         <select style="flex:1" onchange="_GEDIT.linhas[${i}].formaId=this.value">${opt(l.formaId)}</select>
         <input type="number" step="0.01" value="${l.valor}" style="width:100px;text-align:right" onchange="_GEDIT.linhas[${i}].valor=+this.value||0">
         <button class="btn btn-ghost btn-sm" style="padding:3px 8px;color:#ff8090" onclick="_GEDIT.linhas.splice(${i},1);renderEditorPagamento()">🗑</button>
@@ -795,35 +1068,52 @@ window.renderEditorPagamento=function(){
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
-}
-window.salvarEditPagamentoGestao=async function(){
-  const E=window._GEDIT; if(!E) return;
-  const msg=document.getElementById("editMsg");
-  const linhas=E.linhas.filter(l=>l.formaId&&Number(l.valor)>0).map(l=>{
-    const f=E.formas.find(x=>String(x.id)===String(l.formaId));
-    return {formaId:l.formaId, formaNome:f?f.nome:"", valor:Number(l.valor)};
-  });
-  if(!linhas.length){ if(msg) msg.innerHTML='<div class="err">Informe ao menos uma forma com valor.</div>'; return; }
-  try{
-    const r=await fetch(B+"/api/gestao/editar-pagamento-venda",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({pedidoId:E.pedidoId,numero:E.numero,pagamentos:linhas,operador:(window.GESTOR&&window.GESTOR.nome)||"Gestão",funcionarioId:(window.GESTOR&&window.GESTOR.id)||""})}).then(r=>r.json());
-    if(r.erro) throw new Error(r.erro);
-    const avisoBling = r.blingOk===false
-      ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro||"erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>`
-      : "";
-    document.getElementById("modais").innerHTML=`
+  };
+  window.salvarEditPagamentoGestao = async function () {
+    const E = window._GEDIT;
+    if (!E) return;
+    const msg = document.getElementById("editMsg");
+    const linhas = E.linhas.filter(l => l.formaId && Number(l.valor) > 0).map(l => {
+      const f = E.formas.find(x => String(x.id) === String(l.formaId));
+      return {
+        formaId: l.formaId,
+        formaNome: f ? f.nome : "",
+        valor: Number(l.valor)
+      };
+    });
+    if (!linhas.length) {
+      if (msg) msg.innerHTML = '<div class="err">Informe ao menos uma forma com valor.</div>';
+      return;
+    }
+    try {
+      const r = await fetch(B + "/api/gestao/editar-pagamento-venda", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          pedidoId: E.pedidoId,
+          numero: E.numero,
+          pagamentos: linhas,
+          operador: window.GESTOR && window.GESTOR.nome || "Gestão",
+          funcionarioId: window.GESTOR && window.GESTOR.id || ""
+        })
+      }).then(r => r.json());
+      if (r.erro) throw new Error(r.erro);
+      const avisoBling = r.blingOk === false ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro || "erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>` : "";
+      document.getElementById("modais").innerHTML = `
       <div class="modalBg" onclick="fecharModais()"><div class="modal" style="text-align:center">
-        <div style="font-size:42px">${r.blingOk===false?"⚠️":"✅"}</div><h3>Forma de pagamento alterada</h3>
-        <div class="muted" style="text-align:left;margin-top:8px">Pedido #${esc(r.numero||E.numero)}<br>De: ${esc(r.de||"—")}<br>Para: ${esc(r.para||"—")}</div>
+        <div style="font-size:42px">${r.blingOk === false ? "⚠️" : "✅"}</div><h3>Forma de pagamento alterada</h3>
+        <div class="muted" style="text-align:left;margin-top:8px">Pedido #${esc(r.numero || E.numero)}<br>De: ${esc(r.de || "—")}<br>Para: ${esc(r.para || "—")}</div>
         ${avisoBling}
         <button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModais();render()">OK</button>
       </div></div>`;
-  }catch(e){ if(msg) msg.innerHTML=`<div class="err">${esc(e.message)}</div>`; }
-}
-
-render();
-}
-</script>
+    } catch (e) {
+      if (msg) msg.innerHTML = `<div class="err">${esc(e.message)}</div>`;
+    }
+  };
+  render();
+}</script>
 </body>
 </html>
 <script>function fecharModal(){ const el=document.getElementById('modais'); if(el) el.innerHTML=''; }

@@ -48,66 +48,128 @@
 </head>
 <body>
 <div id="app"></div>
-<script>
-function verSenha(btn){var inp=btn.parentNode.querySelector("input");if(!inp)return;if(inp.type==="password"){inp.type="text";btn.textContent="🙈";btn.title="Ocultar senha";}else{inp.type="password";btn.textContent="👁";btn.title="Mostrar senha";}}
-const B=location.protocol.indexOf("http")===0?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="/logo";
-const AGUARDANDO=818795, EM_SEP=817963, VERIFICADO=24, PENDENCIAS=819227;
-const brl=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const dataBR=d=>{if(!d)return"";const p=String(d).slice(0,10).split("-");return p.length===3?`${p[2]}/${p[1]}`:d;};
-const tempo=ms=>{const m=Math.floor(ms/60000);return m<60?`${m}min`:`${Math.floor(m/60)}h${m%60}min`;};
-
-let logado=false, func=null, pedidos=[], seps={}, acrs=[], mapSit={}, timer=null;
-try{ if(typeof b13GetSession==="function"){ const sess=b13GetSession(); if(sess){logado=true;func=sess;} } }catch(e){}
-
-async function login(){
-  const senha=document.getElementById("pwInp").value;
-  try{
-    const r=await fetch(B+"/api/funcionarios/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login:document.getElementById("loginInp")?.value?.trim()||"",senha,nivel:"gerente"})});
-    const j=await r.json();
-    if(r.ok&&j.ok){ logado=true; func=j.funcionario; try{if(typeof b13SetSession==="function") b13SetSession(func);}catch(e){}
+<script>function verSenha(btn) {
+  var inp = btn.parentNode.querySelector("input");
+  if (!inp) return;
+  if (inp.type === "password") {
+    inp.type = "text";
+    btn.textContent = "🙈";
+    btn.title = "Ocultar senha";
+  } else {
+    inp.type = "password";
+    btn.textContent = "👁";
+    btn.title = "Mostrar senha";
+  }
+}
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const LOGO = "/logo";
+const AGUARDANDO = 818795,
+  EM_SEP = 817963,
+  VERIFICADO = 24,
+  PENDENCIAS = 819227;
+const brl = v => Number(v || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const esc = s => (s || "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const dataBR = d => {
+  if (!d) return "";
+  const p = String(d).slice(0, 10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}` : d;
+};
+const tempo = ms => {
+  const m = Math.floor(ms / 60000);
+  return m < 60 ? `${m}min` : `${Math.floor(m / 60)}h${m % 60}min`;
+};
+let logado = false,
+  func = null,
+  pedidos = [],
+  seps = {},
+  acrs = [],
+  mapSit = {},
+  timer = null;
+try {
+  if (typeof b13GetSession === "function") {
+    const sess = b13GetSession();
+    if (sess) {
+      logado = true;
+      func = sess;
+    }
+  }
+} catch (e) {}
+async function login() {
+  const senha = document.getElementById("pwInp").value;
+  try {
+    var _document$getElementB;
+    const r = await fetch(B + "/api/funcionarios/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        login: ((_document$getElementB = document.getElementById("loginInp")) === null || _document$getElementB === void 0 || (_document$getElementB = _document$getElementB.value) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.trim()) || "",
+        senha,
+        nivel: "gerente"
+      })
+    });
+    const j = await r.json();
+    if (r.ok && j.ok) {
+      logado = true;
+      func = j.funcionario;
+      try {
+        if (typeof b13SetSession === "function") b13SetSession(func);
+      } catch (e) {}
       iniciar();
-    } else { document.getElementById("pwErr").textContent=j.erro||"Senha incorreta."; }
-  }catch(e){ document.getElementById("pwErr").textContent="Erro de conexão."; }
+    } else {
+      document.getElementById("pwErr").textContent = j.erro || "Senha incorreta.";
+    }
+  } catch (e) {
+    document.getElementById("pwErr").textContent = "Erro de conexão.";
+  }
 }
-function sair(){ logado=false; func=null; if(typeof b13ClearSession==="function") b13ClearSession(); if(timer)clearInterval(timer); location.href="/login"; }
-
-async function iniciar(){
+function sair() {
+  logado = false;
+  func = null;
+  if (typeof b13ClearSession === "function") b13ClearSession();
+  if (timer) clearInterval(timer);
+  location.href = "/login";
+}
+async function iniciar() {
   // carregar situações
-  try{ const r=await fetch(B+"/api/situacoes?modulo=98310"); const j=await r.json();
-    mapSit={}; (j.data||[]).forEach(s=>mapSit[s.id]={nome:s.nome,cor:s.cor||"#cbcbcb"}); }catch(e){}
+  try {
+    const r = await fetch(B + "/api/situacoes?modulo=98310");
+    const j = await r.json();
+    mapSit = {};
+    (j.data || []).forEach(s => mapSit[s.id] = {
+      nome: s.nome,
+      cor: s.cor || "#cbcbcb"
+    });
+  } catch (e) {}
   await carregar();
-  if(timer) clearInterval(timer);
-  timer=setInterval(carregar, 8000); // atualiza a cada 8s
+  if (timer) clearInterval(timer);
+  timer = setInterval(carregar, 8000); // atualiza a cada 8s
 }
-
-async function carregar(){
-  try{
-    const [rPed,rSep,rAcr]=await Promise.all([
-      fetch(B+"/api/pedidos?limite=200").then(r=>r.json()),
-      fetch(B+"/api/separacoes").then(r=>r.json()),
-      fetch(B+"/api/acrescimos").then(r=>r.json()),
-    ]);
-    pedidos=rPed.data||[];
-    seps=rSep.data||{};
-    acrs=rAcr.data||[];
-  }catch(e){}
+async function carregar() {
+  try {
+    const [rPed, rSep, rAcr] = await Promise.all([fetch(B + "/api/pedidos?limite=200").then(r => r.json()), fetch(B + "/api/separacoes").then(r => r.json()), fetch(B + "/api/acrescimos").then(r => r.json())]);
+    pedidos = rPed.data || [];
+    seps = rSep.data || {};
+    acrs = rAcr.data || [];
+  } catch (e) {}
   render();
 }
-
-function render(){
-  const app=document.getElementById("app");
-  const top=`<div class="top"><img src="${LOGO}" onerror="this.style.display='none'">
+function render() {
+  var _func;
+  const app = document.getElementById("app");
+  const top = `<div class="top"><img src="${LOGO}" onerror="this.style.display='none'">
     <div class="t">Gerenciamento</div><div class="sp"></div>
-    ${logado?`<span class="muted">👤 ${esc(func?.nome||"")}</span>
+    ${logado ? `<span class="muted">👤 ${esc(((_func = func) === null || _func === void 0 ? void 0 : _func.nome) || "")}</span>
       <a href="/funcionarios" class="btn btn-ghost" style="text-decoration:none">👥 Funcionários</a>
       <a href="/gestao" class="btn btn-out" style="text-decoration:none">← Gestão</a>
-      <button class="btn btn-ghost" onclick="sair()">Sair</button>`:""}
+      <button class="btn btn-ghost" onclick="sair()">Sair</button>` : ""}
   </div>`;
-
-  if(!logado){
-    app.innerHTML=top+`<div class="login-wrap">
+  if (!logado) {
+    app.innerHTML = top + `<div class="login-wrap">
       <div style="font-size:48px;margin-bottom:10px">🏭</div>
       <h2 style="margin-bottom:6px">Gerenciamento</h2>
       <p class="muted" style="margin-bottom:16px">Acesso para gerentes e administradores</p>
@@ -115,81 +177,115 @@ function render(){
       <div class="pw-wrap"><input id="pwInp" type="password" placeholder="Senha" onkeydown="if(event.key==='Enter')login()"><button type="button" class="pw-eye" title="Mostrar senha" onclick="verSenha(this)">👁</button></div>
       <button class="btn btn-mag" style="width:100%" onclick="login()">Entrar</button>
       <div id="pwErr" class="muted" style="margin-top:8px"></div>
-    </div>`; return;
+    </div>`;
+    return;
   }
 
   // separar pedidos por coluna
-  const aguardando=pedidos.filter(p=>p.situacao?.id===AGUARDANDO);
-  const emSep=pedidos.filter(p=>p.situacao?.id===EM_SEP);
-  const pendentes=pedidos.filter(p=>p.situacao?.id===PENDENCIAS);
-  const verificados=pedidos.filter(p=>p.situacao?.id===VERIFICADO).slice(0,10);
-  const acrsMap={}; acrs.filter(a=>a.status==="pendente").forEach(a=>acrsMap[String(a.pedidoId)]=a);
-
-  app.innerHTML=top+`<div class="kanban">
-    ${coluna("⏳ Aguardando separação",aguardando,"aguardando",acrsMap)}
-    ${coluna("🔄 Em separação",emSep,"em_sep",acrsMap)}
-    ${coluna("⚠️ Pendências",pendentes,"pendencias",acrsMap)}
-    ${coluna("✅ Verificados",verificados,"verificados",acrsMap)}
+  const aguardando = pedidos.filter(p => {
+    var _p$situacao;
+    return ((_p$situacao = p.situacao) === null || _p$situacao === void 0 ? void 0 : _p$situacao.id) === AGUARDANDO;
+  });
+  const emSep = pedidos.filter(p => {
+    var _p$situacao2;
+    return ((_p$situacao2 = p.situacao) === null || _p$situacao2 === void 0 ? void 0 : _p$situacao2.id) === EM_SEP;
+  });
+  const pendentes = pedidos.filter(p => {
+    var _p$situacao3;
+    return ((_p$situacao3 = p.situacao) === null || _p$situacao3 === void 0 ? void 0 : _p$situacao3.id) === PENDENCIAS;
+  });
+  const verificados = pedidos.filter(p => {
+    var _p$situacao4;
+    return ((_p$situacao4 = p.situacao) === null || _p$situacao4 === void 0 ? void 0 : _p$situacao4.id) === VERIFICADO;
+  }).slice(0, 10);
+  const acrsMap = {};
+  acrs.filter(a => a.status === "pendente").forEach(a => acrsMap[String(a.pedidoId)] = a);
+  app.innerHTML = top + `<div class="kanban">
+    ${coluna("⏳ Aguardando separação", aguardando, "aguardando", acrsMap)}
+    ${coluna("🔄 Em separação", emSep, "em_sep", acrsMap)}
+    ${coluna("⚠️ Pendências", pendentes, "pendencias", acrsMap)}
+    ${coluna("✅ Verificados", verificados, "verificados", acrsMap)}
   </div>`;
   // setar imagem logo
-  document.querySelectorAll(".top img").forEach(i=>i.src=LOGO);
+  document.querySelectorAll(".top img").forEach(i => i.src = LOGO);
 }
-
-function coluna(titulo,lista,tipo,acrsMap){
-  const cards=lista.map(p=>{
-    const sep=seps[String(p.id)];
-    const acr=acrsMap[String(p.id)];
-    const tempoSep=sep?tempo(Date.now()-sep.inicio):"";
-    return `<div class="pcard ${acr?'acrescimo':''}">
-      <div class="num">Pedido ${esc(p.numero||p.id)}</div>
-      <div class="cli">${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
+function coluna(titulo, lista, tipo, acrsMap) {
+  const cards = lista.map(p => {
+    var _p$contato;
+    const sep = seps[String(p.id)];
+    const acr = acrsMap[String(p.id)];
+    const tempoSep = sep ? tempo(Date.now() - sep.inicio) : "";
+    return `<div class="pcard ${acr ? 'acrescimo' : ''}">
+      <div class="num">Pedido ${esc(p.numero || p.id)}</div>
+      <div class="cli">${esc(((_p$contato = p.contato) === null || _p$contato === void 0 ? void 0 : _p$contato.nome) || "—")} · ${dataBR(p.data)}</div>
       <div class="tot">${brl(p.total)}</div>
-      ${sep?`<div class="sep">🔧 ${esc(sep.funcionarioNome)} · ${tempoSep}</div>`:""}
-      ${acr?`<div class="new-badge">🆕 Acréscimo</div>
-        <div class="acr-itens">${(acr.itensNovos||[]).map(i=>`+ ${esc(i.descricao)} x${i.quantidade}`).join("<br>")}</div>`:""}
-      ${botoesCard(p,tipo,acr)}
+      ${sep ? `<div class="sep">🔧 ${esc(sep.funcionarioNome)} · ${tempoSep}</div>` : ""}
+      ${acr ? `<div class="new-badge">🆕 Acréscimo</div>
+        <div class="acr-itens">${(acr.itensNovos || []).map(i => `+ ${esc(i.descricao)} x${i.quantidade}`).join("<br>")}</div>` : ""}
+      ${botoesCard(p, tipo, acr)}
     </div>`;
-  }).join("")||`<div class="muted" style="padding:12px;text-align:center">Nenhum pedido</div>`;
+  }).join("") || `<div class="muted" style="padding:12px;text-align:center">Nenhum pedido</div>`;
   return `<div class="col">
     <div class="col-head">${titulo}<span class="cnt">${lista.length}</span></div>
     <div class="col-body">${cards}</div>
   </div>`;
 }
-
-function botoesCard(p,tipo,acr){
-  if(tipo==="aguardando") return `<button class="btn btn-grn" style="width:100%;margin-top:4px" onclick="enviarSep(${p.id})">▶ Enviar pra separação</button>`;
-  if(tipo==="em_sep") return `<button class="btn btn-ghost" style="width:100%;margin-top:4px;font-size:11px" onclick="verPedido(${p.id})">Ver detalhes</button>`;
-  if(tipo==="pendencias") return `<div style="display:flex;gap:6px;margin-top:4px">
+function botoesCard(p, tipo, acr) {
+  if (tipo === "aguardando") return `<button class="btn btn-grn" style="width:100%;margin-top:4px" onclick="enviarSep(${p.id})">▶ Enviar pra separação</button>`;
+  if (tipo === "em_sep") return `<button class="btn btn-ghost" style="width:100%;margin-top:4px;font-size:11px" onclick="verPedido(${p.id})">Ver detalhes</button>`;
+  if (tipo === "pendencias") return `<div style="display:flex;gap:6px;margin-top:4px">
     <button class="btn btn-yellow" style="flex:1;font-size:11px" onclick="verPedido(${p.id})">Ver</button>
     <button class="btn btn-grn" style="flex:1;font-size:11px" onclick="resolverPend(${p.id})">✅ Resolver</button>
   </div>`;
-  if(tipo==="verificados") return `<div class="muted" style="margin-top:4px">✅ Concluído</div>`;
+  if (tipo === "verificados") return `<div class="muted" style="margin-top:4px">✅ Concluído</div>`;
   return "";
 }
-
-async function enviarSep(id){
-  try{
-    await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:EM_SEP})});
+async function enviarSep(id) {
+  try {
+    await fetch(B + "/api/pedidos/" + id + "/situacao", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        idSituacao: EM_SEP
+      })
+    });
     await carregar();
-  }catch(e){ alert("Erro ao enviar pra separação"); }
+  } catch (e) {
+    alert("Erro ao enviar pra separação");
+  }
 }
-
-async function resolverPend(id){
-  if(!confirm("Marcar como Verificado?")) return;
-  try{
-    await fetch(B+"/api/pedidos/"+id+"/situacao",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({idSituacao:VERIFICADO})});
-    await fetch(B+"/api/pendencias/"+id,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status:"resolvido"})});
+async function resolverPend(id) {
+  if (!confirm("Marcar como Verificado?")) return;
+  try {
+    await fetch(B + "/api/pedidos/" + id + "/situacao", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        idSituacao: VERIFICADO
+      })
+    });
+    await fetch(B + "/api/pendencias/" + id, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        status: "resolvido"
+      })
+    });
     await carregar();
-  }catch(e){}
+  } catch (e) {}
 }
-
-async function verPedido(id){
-  window.open("/gestao#pedido-"+id,"_blank");
+async function verPedido(id) {
+  window.open("/gestao#pedido-" + id, "_blank");
 }
 
 // init
-document.getElementById("app").innerHTML=`<div class="top"><img src="${LOGO}"></div>`;
-if(logado) iniciar(); else render();
-</script>
+document.getElementById("app").innerHTML = `<div class="top"><img src="${LOGO}"></div>`;
+if (logado) iniciar();else render();</script>
 </body>
 </html>

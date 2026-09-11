@@ -83,73 +83,110 @@
 <div id="modal" style="display:none" class="modal" onclick="if(event.target===this)fecharModal()">
   <div class="mbox" id="mbox"></div>
 </div>
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const LOGO="/logo";
-document.getElementById("logoImg").src=LOGO;
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const LOGO = "/logo";
+document.getElementById("logoImg").src = LOGO;
 
 // ---- estado ----
-let LISTAS=[], ABA=0, buscaTimer=null, buscaRes=[], msg="";
-const nid=(()=>{ let i=Date.now(); return ()=>"n"+(i++); })();
-const brl=v=>Number(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const esc=s=>(s||"").toString().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-
-function novaLista(nome){ return {id:nid(),nome:nome||"NOVA LISTA",itens:[]}; }
-function novoItem(){ return {id:nid(),codigo:"",nomeProd:"",nomeBling:"",qtdCx:1,preco:0,precoBling:0,tipo:"lista"}; }
+let LISTAS = [],
+  ABA = 0,
+  buscaTimer = null,
+  buscaRes = [],
+  msg = "";
+const nid = (() => {
+  let i = Date.now();
+  return () => "n" + i++;
+})();
+const brl = v => Number(v || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const esc = s => (s || "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function novaLista(nome) {
+  return {
+    id: nid(),
+    nome: nome || "NOVA LISTA",
+    itens: []
+  };
+}
+function novoItem() {
+  return {
+    id: nid(),
+    codigo: "",
+    nomeProd: "",
+    nomeBling: "",
+    qtdCx: 1,
+    preco: 0,
+    precoBling: 0,
+    tipo: "lista"
+  };
+}
 // tipo: "lista" = só lista de preços | "kit" = criar kit/fardo no Bling
 
 // ---- persistência ----
-function salvar(){ try{ localStorage.setItem("b13listas",JSON.stringify(LISTAS)); }catch(e){} render(); }
-function carregar(){ try{ const d=localStorage.getItem("b13listas"); if(d) LISTAS=JSON.parse(d); }catch(e){} if(!LISTAS.length) LISTAS=[novaLista("VAREJO")]; }
+function salvar() {
+  try {
+    localStorage.setItem("b13listas", JSON.stringify(LISTAS));
+  } catch (e) {}
+  render();
+}
+function carregar() {
+  try {
+    const d = localStorage.getItem("b13listas");
+    if (d) LISTAS = JSON.parse(d);
+  } catch (e) {}
+  if (!LISTAS.length) LISTAS = [novaLista("VAREJO")];
+}
 
 // ---- render principal ----
-function render(){
+function render() {
   renderTabs();
-  const lista=LISTAS[ABA];
-  if(!lista){ document.getElementById("toolbar").innerHTML=""; document.getElementById("wrap").innerHTML=""; return; }
+  const lista = LISTAS[ABA];
+  if (!lista) {
+    document.getElementById("toolbar").innerHTML = "";
+    document.getElementById("wrap").innerHTML = "";
+    return;
+  }
   renderToolbar(lista);
   renderWrap(lista);
 }
-
-function renderTabs(){
-  const tabs=document.getElementById("tabs");
-  tabs.innerHTML=LISTAS.map((l,i)=>`<div class="tab ${i===ABA?'on':''}" onclick="ABA=${i};render()">${esc(l.nome)}</div>`).join("")+
-    `<div class="tab-add" onclick="addLista()" title="Nova lista">＋</div>`;
+function renderTabs() {
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = LISTAS.map((l, i) => `<div class="tab ${i === ABA ? 'on' : ''}" onclick="ABA=${i};render()">${esc(l.nome)}</div>`).join("") + `<div class="tab-add" onclick="addLista()" title="Nova lista">＋</div>`;
 }
-
-function renderToolbar(lista){
-  document.getElementById("toolbar").innerHTML=`
+function renderToolbar(lista) {
+  document.getElementById("toolbar").innerHTML = `
     <input class="lnome" value="${esc(lista.nome)}" onchange="lista.nome=this.value;salvar()" title="Nome da lista">
     <button class="btn btn-out" onclick="abrirBusca()">🔍 Adicionar produto</button>
     <button class="btn btn-out" onclick="exportCSV()">📄 Exportar CSV (Bling)</button>
     <button class="btn btn-grn" onclick="criarKits()">⚙️ Criar kits no Bling</button>
     <button class="btn btn-red" style="margin-left:auto" onclick="deletarLista()">🗑 Excluir lista</button>
     <div id="toolMsg" style="width:100%">${msg}</div>`;
-  msg="";
+  msg = "";
 }
-
-function renderWrap(lista){
-  const itens=lista.itens;
-  if(!itens.length){
-    document.getElementById("wrap").innerHTML=`<div class="muted" style="padding:20px;text-align:center">
+function renderWrap(lista) {
+  const itens = lista.itens;
+  if (!itens.length) {
+    document.getElementById("wrap").innerHTML = `<div class="muted" style="padding:20px;text-align:center">
       Nenhum produto nesta lista.<br><br>
       <button class="btn btn-mag" onclick="abrirBusca()">+ Adicionar produto</button>
       <button class="btn btn-ghost" style="margin-left:8px" onclick="importarTabela()">📥 Importar da tabela</button>
-    </div>`; return;
+    </div>`;
+    return;
   }
-  const rows=itens.map((it,ix)=>`<tr>
-    <td><div style="font-weight:700">${esc(it.nomeProd)}</div><div class="muted">${it.codigo?`#${esc(it.codigo)}`:""}</div></td>
-    <td><span class="chip">${it.tipo==="kit"?"📦 Kit/Fardo":"📋 Lista"}</span>
+  const rows = itens.map((it, ix) => `<tr>
+    <td><div style="font-weight:700">${esc(it.nomeProd)}</div><div class="muted">${it.codigo ? `#${esc(it.codigo)}` : ""}</div></td>
+    <td><span class="chip">${it.tipo === "kit" ? "📦 Kit/Fardo" : "📋 Lista"}</span>
       <select style="background:#0f0d24;border:1px solid #514c96;border-radius:6px;color:#fff;padding:4px;font-size:11px;margin-top:3px" onchange="it.tipo=this.value;salvar()">
-        <option value="lista" ${it.tipo==="lista"?"selected":""}>Lista de preços</option>
-        <option value="kit" ${it.tipo==="kit"?"selected":""}>Kit/Fardo</option>
+        <option value="lista" ${it.tipo === "lista" ? "selected" : ""}>Lista de preços</option>
+        <option value="kit" ${it.tipo === "kit" ? "selected" : ""}>Kit/Fardo</option>
       </select></td>
     <td><input type="number" min="1" value="${it.qtdCx}" onchange="it.qtdCx=+this.value;it.preco=+(it.precoBling*it.qtdCx).toFixed(2);salvar()" title="Unidades por caixa/fardo"></td>
     <td><input type="number" min="0" step="0.01" value="${it.preco}" onchange="it.preco=+this.value;salvar()" title="Preço nesta lista"></td>
-    <td class="muted">${it.precoBling?brl(it.precoBling):"-"}</td>
+    <td class="muted">${it.precoBling ? brl(it.precoBling) : "-"}</td>
     <td><button class="btn btn-red" style="padding:5px 9px;font-size:12px" onclick="removerItem(${ix})">✕</button></td>
   </tr>`).join("");
-  document.getElementById("wrap").innerHTML=`
+  document.getElementById("wrap").innerHTML = `
     <table class="ptable">
       <thead><tr>
         <th>Produto</th><th>Tipo</th><th>Qtd/cx</th><th>Preço lista</th><th>Preço Bling</th><th></th>
@@ -162,151 +199,260 @@ function renderWrap(lista){
 }
 
 // ---- ações ----
-function addLista(){ const n=prompt("Nome da nova lista:","NOVA LISTA"); if(!n)return; LISTAS.push(novaLista(n)); ABA=LISTAS.length-1; salvar(); }
-function deletarLista(){ if(LISTAS.length<=1){alert("Precisa ter ao menos uma lista.");return;} if(!confirm(`Excluir a lista "${LISTAS[ABA].nome}"?`))return; LISTAS.splice(ABA,1); ABA=Math.max(0,ABA-1); salvar(); }
-function removerItem(ix){ LISTAS[ABA].itens.splice(ix,1); salvar(); }
+function addLista() {
+  const n = prompt("Nome da nova lista:", "NOVA LISTA");
+  if (!n) return;
+  LISTAS.push(novaLista(n));
+  ABA = LISTAS.length - 1;
+  salvar();
+}
+function deletarLista() {
+  if (LISTAS.length <= 1) {
+    alert("Precisa ter ao menos uma lista.");
+    return;
+  }
+  if (!confirm(`Excluir a lista "${LISTAS[ABA].nome}"?`)) return;
+  LISTAS.splice(ABA, 1);
+  ABA = Math.max(0, ABA - 1);
+  salvar();
+}
+function removerItem(ix) {
+  LISTAS[ABA].itens.splice(ix, 1);
+  salvar();
+}
 
 // ---- busca de produto ----
-function abrirBusca(){
-  document.getElementById("modal").style.display="flex";
-  document.getElementById("mbox").innerHTML=`<h3>Adicionar produto</h3>
+function abrirBusca() {
+  document.getElementById("modal").style.display = "flex";
+  document.getElementById("mbox").innerHTML = `<h3>Adicionar produto</h3>
     <input id="buscaInp" placeholder="buscar produto no Bling..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff;font-size:14px;margin-bottom:10px" oninput="buscarProd(this.value)">
     <div id="buscaRes"><div class="muted">Digite para buscar…</div></div>
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModal()">Fechar</button>`;
-  setTimeout(()=>document.getElementById("buscaInp")?.focus(),100);
+  setTimeout(() => {
+    var _document$getElementB;
+    return (_document$getElementB = document.getElementById("buscaInp")) === null || _document$getElementB === void 0 ? void 0 : _document$getElementB.focus();
+  }, 100);
 }
-function fecharModal(){ document.getElementById("modal").style.display="none"; }
-
-function buscarProd(term){
+function fecharModal() {
+  document.getElementById("modal").style.display = "none";
+}
+function buscarProd(term) {
   clearTimeout(buscaTimer);
-  const box=document.getElementById("buscaRes"); if(!box)return;
-  if((term||"").trim().length<2){ box.innerHTML="<div class='muted'>Digite ao menos 2 letras…</div>"; return; }
-  box.innerHTML="<div class='muted'>Buscando…</div>";
-  buscaTimer=setTimeout(async()=>{
-    try{
-      const r=await fetch(`${BACKEND}/api/buscar-atacado?nome=${encodeURIComponent(term.trim())}`);
-      const j=await r.json(); const lista=j.data||[];
-      const b=document.getElementById("buscaRes"); if(!b)return;
-      if(!lista.length){ b.innerHTML="<div class='muted'>Nenhum resultado.</div>"; return; }
-      b.innerHTML="";
-      lista.forEach(p=>{
-        const div=document.createElement("div"); div.className="res-item";
-        div.innerHTML=`<div><b>${esc(p.nome)}</b><br><span class="muted">#${esc(p.codigo)} · est ${p.estoque??'?'} · ${brl(p.precoBling||p.preco||0)}</span></div>`;
-        const btn=document.createElement("button"); btn.className="btn btn-mag"; btn.style.flexShrink="0";
-        btn.textContent="+ Adicionar"; btn.addEventListener("click",()=>{ addItem(p); });
-        div.appendChild(btn); b.appendChild(div);
+  const box = document.getElementById("buscaRes");
+  if (!box) return;
+  if ((term || "").trim().length < 2) {
+    box.innerHTML = "<div class='muted'>Digite ao menos 2 letras…</div>";
+    return;
+  }
+  box.innerHTML = "<div class='muted'>Buscando…</div>";
+  buscaTimer = setTimeout(async () => {
+    try {
+      const r = await fetch(`${BACKEND}/api/buscar-atacado?nome=${encodeURIComponent(term.trim())}`);
+      const j = await r.json();
+      const lista = j.data || [];
+      const b = document.getElementById("buscaRes");
+      if (!b) return;
+      if (!lista.length) {
+        b.innerHTML = "<div class='muted'>Nenhum resultado.</div>";
+        return;
+      }
+      b.innerHTML = "";
+      lista.forEach(p => {
+        var _p$estoque;
+        const div = document.createElement("div");
+        div.className = "res-item";
+        div.innerHTML = `<div><b>${esc(p.nome)}</b><br><span class="muted">#${esc(p.codigo)} · est ${(_p$estoque = p.estoque) !== null && _p$estoque !== void 0 ? _p$estoque : '?'} · ${brl(p.precoBling || p.preco || 0)}</span></div>`;
+        const btn = document.createElement("button");
+        btn.className = "btn btn-mag";
+        btn.style.flexShrink = "0";
+        btn.textContent = "+ Adicionar";
+        btn.addEventListener("click", () => {
+          addItem(p);
+        });
+        div.appendChild(btn);
+        b.appendChild(div);
       });
-    }catch(e){ const b=document.getElementById("buscaRes"); if(b) b.innerHTML="<div class='muted'>Erro ao buscar.</div>"; }
-  },400);
+    } catch (e) {
+      const b = document.getElementById("buscaRes");
+      if (b) b.innerHTML = "<div class='muted'>Erro ao buscar.</div>";
+    }
+  }, 400);
 }
-
-function addItem(p){
-  const lista=LISTAS[ABA]; if(!lista)return;
-  if(lista.itens.some(it=>it.codigo===String(p.codigo))){ alert("Este produto já está na lista."); return; }
-  lista.itens.push({id:nid(),codigo:String(p.codigo),nomeProd:p.nome,nomeBling:p.nome,qtdCx:1,preco:+(p.precoBling||p.preco||0).toFixed(2),precoBling:+(p.precoBling||p.preco||0),tipo:"lista"});
+function addItem(p) {
+  const lista = LISTAS[ABA];
+  if (!lista) return;
+  if (lista.itens.some(it => it.codigo === String(p.codigo))) {
+    alert("Este produto já está na lista.");
+    return;
+  }
+  lista.itens.push({
+    id: nid(),
+    codigo: String(p.codigo),
+    nomeProd: p.nome,
+    nomeBling: p.nome,
+    qtdCx: 1,
+    preco: +(p.precoBling || p.preco || 0).toFixed(2),
+    precoBling: +(p.precoBling || p.preco || 0),
+    tipo: "lista"
+  });
   salvar();
   // feedback visual
-  const btn=event.target; if(btn){ btn.textContent="✅"; btn.disabled=true; }
+  const btn = event.target;
+  if (btn) {
+    btn.textContent = "✅";
+    btn.disabled = true;
+  }
 }
 
 // ---- importar da tabela publicada ----
-async function importarTabela(){
-  if(!confirm("Importar todos os produtos da tabela de preços publicada para esta lista?\nProdutos já existentes serão ignorados.\n\nVai buscar o preço real de cada produto no Bling (pode demorar).")) return;
-  try{
-    const r=await fetch(`${BACKEND}/api/catalogo`); const j=await r.json();
-    const lista=LISTAS[ABA]; let skip=0;
-    const novos=[];
-    (j.categorias||[]).forEach(c=>(c.produtos||[]).forEach(p=>{
-      (p.sabores||[]).forEach(s=>{
-        if(lista.itens.some(it=>it.codigo===String(s.codigo))){ skip++; return; }
-        novos.push({id:nid(),codigo:String(s.codigo),nomeProd:s.nome||p.nome,nomeBling:s.nome||p.nome,qtdCx:p.un||1,preco:+p.preco.toFixed(2),precoBling:0,tipo:"lista"});
+async function importarTabela() {
+  if (!confirm("Importar todos os produtos da tabela de preços publicada para esta lista?\nProdutos já existentes serão ignorados.\n\nVai buscar o preço real de cada produto no Bling (pode demorar).")) return;
+  try {
+    const r = await fetch(`${BACKEND}/api/catalogo`);
+    const j = await r.json();
+    const lista = LISTAS[ABA];
+    let skip = 0;
+    const novos = [];
+    (j.categorias || []).forEach(c => (c.produtos || []).forEach(p => {
+      (p.sabores || []).forEach(s => {
+        if (lista.itens.some(it => it.codigo === String(s.codigo))) {
+          skip++;
+          return;
+        }
+        novos.push({
+          id: nid(),
+          codigo: String(s.codigo),
+          nomeProd: s.nome || p.nome,
+          nomeBling: s.nome || p.nome,
+          qtdCx: p.un || 1,
+          preco: +p.preco.toFixed(2),
+          precoBling: 0,
+          tipo: "lista"
+        });
       });
     }));
-    if(!novos.length){ msg=`<div class="ok">Nenhum produto novo. ${skip} já existiam.</div>`; render(); return; }
+    if (!novos.length) {
+      msg = `<div class="ok">Nenhum produto novo. ${skip} já existiam.</div>`;
+      render();
+      return;
+    }
 
     // mostra progresso na tela em tempo real
-    const total=novos.length;
-    const mostrarProg=(i)=>{
-      document.getElementById("toolMsg").innerHTML=
-        `<div style="background:#1c1846;border-radius:8px;padding:8px 12px;font-size:12px;margin-top:4px">
+    const total = novos.length;
+    const mostrarProg = i => {
+      document.getElementById("toolMsg").innerHTML = `<div style="background:#1c1846;border-radius:8px;padding:8px 12px;font-size:12px;margin-top:4px">
           ⏳ Buscando preços no Bling… <b>${i}/${total}</b>
           <div style="background:#0f0d24;border-radius:4px;height:6px;margin-top:6px">
-            <div style="background:var(--mag);height:6px;border-radius:4px;width:${Math.round(i/total*100)}%;transition:.3s"></div>
+            <div style="background:var(--mag);height:6px;border-radius:4px;width:${Math.round(i / total * 100)}%;transition:.3s"></div>
           </div>
         </div>`;
     };
-
     mostrarProg(0);
-    for(let i=0;i<novos.length;i++){
-      const it=novos[i];
-      try{
+    for (let i = 0; i < novos.length; i++) {
+      const it = novos[i];
+      try {
         // busca pelo código exato — retorna precoBling (preço do cadastro do Bling)
-        const r2=await fetch(`${BACKEND}/api/preco-codigo?codigo=${encodeURIComponent(it.codigo)}`);
-        const j2=await r2.json();
-        if(j2.preco>0) it.precoBling=+Number(j2.preco).toFixed(2);
-      }catch(e){}
-      mostrarProg(i+1);
-      if(i>0 && i%3===0) await new Promise(r=>setTimeout(r,400));
+        const r2 = await fetch(`${BACKEND}/api/preco-codigo?codigo=${encodeURIComponent(it.codigo)}`);
+        const j2 = await r2.json();
+        if (j2.preco > 0) it.precoBling = +Number(j2.preco).toFixed(2);
+      } catch (e) {}
+      mostrarProg(i + 1);
+      if (i > 0 && i % 3 === 0) await new Promise(r => setTimeout(r, 400));
     }
-
     lista.itens.push(...novos);
-    msg=`<div class="ok">✅ ${novos.length} produto(s) importado(s) com preço do Bling!${skip?` ${skip} já existiam.`:""}</div>`;
+    msg = `<div class="ok">✅ ${novos.length} produto(s) importado(s) com preço do Bling!${skip ? ` ${skip} já existiam.` : ""}</div>`;
     salvar();
-  }catch(e){ msg=`<div class="err">Erro: ${e.message}</div>`; render(); }
+  } catch (e) {
+    msg = `<div class="err">Erro: ${e.message}</div>`;
+    render();
+  }
 }
 
 // ---- exportar CSV ----
-function exportCSV(){
-  const lista=LISTAS[ABA]; if(!lista?.itens.length){ alert("Lista vazia."); return; }
-  const linhas=[["Nome lista","SKU","Nome produto","Preço"]];
-  lista.itens.forEach(it=>{
-    if(!it.codigo){ return; }
-    linhas.push([lista.nome, it.codigo, it.nomeBling||it.nomeProd, Number(it.preco).toFixed(2).replace(".",",")]);
+function exportCSV() {
+  const lista = LISTAS[ABA];
+  if (!(lista !== null && lista !== void 0 && lista.itens.length)) {
+    alert("Lista vazia.");
+    return;
+  }
+  const linhas = [["Nome lista", "SKU", "Nome produto", "Preço"]];
+  lista.itens.forEach(it => {
+    if (!it.codigo) {
+      return;
+    }
+    linhas.push([lista.nome, it.codigo, it.nomeBling || it.nomeProd, Number(it.preco).toFixed(2).replace(".", ",")]);
   });
-  if(linhas.length<=1){ alert("Nenhum produto com código vinculado."); return; }
-  const csv=linhas.map(l=>l.map(c=>`"${(c||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a"); a.download=`lista_${lista.nome.replace(/\s+/g,"_")}.csv`; a.href=URL.createObjectURL(blob); a.click();
-  msg=`<div class="ok">✅ CSV exportado com ${linhas.length-1} produto(s).</div>`;
+  if (linhas.length <= 1) {
+    alert("Nenhum produto com código vinculado.");
+    return;
+  }
+  const csv = linhas.map(l => l.map(c => `"${(c || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff" + csv], {
+    type: "text/csv;charset=utf-8"
+  });
+  const a = document.createElement("a");
+  a.download = `lista_${lista.nome.replace(/\s+/g, "_")}.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  msg = `<div class="ok">✅ CSV exportado com ${linhas.length - 1} produto(s).</div>`;
   render();
 }
 
 // ---- criar kits no Bling ----
-async function criarKits(){
-  const lista=LISTAS[ABA];
-  const kits=lista?.itens.filter(it=>it.tipo==="kit"&&it.codigo&&it.qtdCx>1);
-  if(!kits?.length){ alert("Nenhum item marcado como 'Kit/Fardo' com quantidade > 1.\nMude o tipo do produto para 'Kit/Fardo' e defina a quantidade por caixa."); return; }
-  if(!confirm(`Criar ${kits.length} kit(s)/fardo(s) no Bling?\n\n${kits.map(k=>`• ${k.nomeProd} C/${k.qtdCx}`).join("\n")}`)) return;
-
-  document.getElementById("modal").style.display="flex";
-  document.getElementById("mbox").innerHTML=`<h3>⚙️ Criando kits no Bling…</h3><div id="kitLog"></div>`;
-
-  const log=document.getElementById("kitLog");
-  let ok=0, erros=0;
-  for(const kit of kits){
-    const nomeKit=`${kit.nomeProd} C/${kit.qtdCx}`;
-    log.innerHTML+=`<div class="muted">Criando ${esc(nomeKit)}…</div>`;
-    try{
+async function criarKits() {
+  const lista = LISTAS[ABA];
+  const kits = lista === null || lista === void 0 ? void 0 : lista.itens.filter(it => it.tipo === "kit" && it.codigo && it.qtdCx > 1);
+  if (!(kits !== null && kits !== void 0 && kits.length)) {
+    alert("Nenhum item marcado como 'Kit/Fardo' com quantidade > 1.\nMude o tipo do produto para 'Kit/Fardo' e defina a quantidade por caixa.");
+    return;
+  }
+  if (!confirm(`Criar ${kits.length} kit(s)/fardo(s) no Bling?\n\n${kits.map(k => `• ${k.nomeProd} C/${k.qtdCx}`).join("\n")}`)) return;
+  document.getElementById("modal").style.display = "flex";
+  document.getElementById("mbox").innerHTML = `<h3>⚙️ Criando kits no Bling…</h3><div id="kitLog"></div>`;
+  const log = document.getElementById("kitLog");
+  let ok = 0,
+    erros = 0;
+  for (const kit of kits) {
+    const nomeKit = `${kit.nomeProd} C/${kit.qtdCx}`;
+    log.innerHTML += `<div class="muted">Criando ${esc(nomeKit)}…</div>`;
+    try {
       // 1) criar o produto pai (kit)
-      const rProd=await fetch(`${BACKEND}/api/raw`,{method:"GET"}); // só pra testar conexão
-      const resProd=await fetch(`${BACKEND}/api/raw?path=/produtos`,{method:"GET"});
+      const rProd = await fetch(`${BACKEND}/api/raw`, {
+        method: "GET"
+      }); // só pra testar conexão
+      const resProd = await fetch(`${BACKEND}/api/raw?path=/produtos`, {
+        method: "GET"
+      });
       // POST produto kit
-      const bodyProd={nome:nomeKit,codigo:`KIT-${kit.codigo}-${kit.qtdCx}`,preco:+kit.preco.toFixed(2),tipo:"K",situacao:"A"};
-      const rK=await fetch(`${BACKEND}/api/raw?path=/produtos`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyProd)});
+      const bodyProd = {
+        nome: nomeKit,
+        codigo: `KIT-${kit.codigo}-${kit.qtdCx}`,
+        preco: +kit.preco.toFixed(2),
+        tipo: "K",
+        situacao: "A"
+      };
+      const rK = await fetch(`${BACKEND}/api/raw?path=/produtos`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(bodyProd)
+      });
       // Note: /api/raw só faz GET — vou usar endpoint dedicado
       throw new Error("Use o endpoint dedicado (ver aviso abaixo)");
-    }catch(e){
+    } catch (e) {
       erros++;
-      log.innerHTML+=`<div class="err">✗ ${esc(nomeKit)}: ${esc(e.message)}</div>`;
+      log.innerHTML += `<div class="err">✗ ${esc(nomeKit)}: ${esc(e.message)}</div>`;
     }
   }
-  log.innerHTML+=`<hr style="border-color:var(--border);margin:10px 0"><div>${ok} criado(s) · ${erros} erro(s)</div>
+  log.innerHTML += `<hr style="border-color:var(--border);margin:10px 0"><div>${ok} criado(s) · ${erros} erro(s)</div>
     <div class="err" style="margin-top:8px">⚠️ A criação de kits via API v3 do Bling requer endpoint dedicado no backend. Vou implementar na próxima etapa.</div>
     <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModal()">Fechar</button>`;
 }
 
 // ---- init ----
-carregar(); ABA=0; render();
-</script>
+carregar();
+ABA = 0;
+render();</script>
 </body>
 </html>

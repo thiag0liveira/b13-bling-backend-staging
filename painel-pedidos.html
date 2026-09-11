@@ -71,74 +71,79 @@
   </div>
 </div>
 
-<script>
-const BACKEND=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-
-function relogio(){
-  const el=document.getElementById("hora");
-  if(el) el.textContent=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+<script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+function relogio() {
+  const el = document.getElementById("hora");
+  if (el) el.textContent = new Date().toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
-setInterval(relogio,1000); relogio();
-
-function pedHtml(p,tipo){
-  if(tipo==="pendencia") return `
+setInterval(relogio, 1000);
+relogio();
+function pedHtml(p, tipo) {
+  if (tipo === "pendencia") return `
     <div class="ped ped-pend">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao ? ` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao === "entrega" ? "#29ABE2" : "#2f9e6b"};color:${p.tipoSeparacao === "entrega" ? "#000" : "#fff"}">${p.tipoSeparacao === "entrega" ? "ENTREGA" : "RETIRA"}</span>` : ""}</span>
       <span class="aviso">COMPARECER AO CAIXA DO ATACADO!</span>
     </div>`;
-  if(tipo==="separado") return `
+  if (tipo === "separado") return `
     <div class="ped ped-pronto">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao ? ` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao === "entrega" ? "#29ABE2" : "#2f9e6b"};color:${p.tipoSeparacao === "entrega" ? "#000" : "#fff"}">${p.tipoSeparacao === "entrega" ? "ENTREGA" : "RETIRA"}</span>` : ""}</span>
       <span class="extra">PRONTO PARA RETIRADA</span>
     </div>`;
-  if(tipo==="separando") return `
+  if (tipo === "separando") return `
     <div class="ped">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao ? ` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao === "entrega" ? "#29ABE2" : "#2f9e6b"};color:${p.tipoSeparacao === "entrega" ? "#000" : "#fff"}">${p.tipoSeparacao === "entrega" ? "ENTREGA" : "RETIRA"}</span>` : ""}</span>
       <span class="extra">👤 ${esc(p.funcionario)}</span>
     </div>`;
   return `
     <div class="ped">
       <span class="num">#${esc(p.numero)}</span>
-      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao?` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao==="entrega"?"#29ABE2":"#2f9e6b"};color:${p.tipoSeparacao==="entrega"?"#000":"#fff"}">${p.tipoSeparacao==="entrega"?"ENTREGA":"RETIRA"}</span>`:""}</span>
+      <span class="cli">${esc(p.cliente)}${p.tipoSeparacao ? ` <span style="font-size:.55em;font-weight:900;padding:2px 6px;border-radius:5px;background:${p.tipoSeparacao === "entrega" ? "#29ABE2" : "#2f9e6b"};color:${p.tipoSeparacao === "entrega" ? "#000" : "#fff"}">${p.tipoSeparacao === "entrega" ? "ENTREGA" : "RETIRA"}</span>` : ""}</span>
     </div>`;
 }
-
-function preenche(id,lista,tipo){
-  const box=document.getElementById(id);
-  const cont=document.getElementById("c-"+id);
-  if(cont) cont.textContent="("+lista.length+")";
-  if(!lista.length){ box.innerHTML=`<div class="vazio">Nenhum pedido</div>`; return; }
-  box.innerHTML=lista.map(p=>pedHtml(p,tipo)).join("");
+function preenche(id, lista, tipo) {
+  const box = document.getElementById(id);
+  const cont = document.getElementById("c-" + id);
+  if (cont) cont.textContent = "(" + lista.length + ")";
+  if (!lista.length) {
+    box.innerHTML = `<div class="vazio">Nenhum pedido</div>`;
+    return;
+  }
+  box.innerHTML = lista.map(p => pedHtml(p, tipo)).join("");
 }
-
-async function atualizar(){
-  try{
-    const j=await fetch(BACKEND+"/api/painel-pedidos").then(r=>r.json());
-    if(j.erro) return;
-    preenche("aguardando",j.aguardando||[],"aguardando");
-    preenche("separando",j.separando||[],"separando");
-    preenche("pendencia",j.pendencia||[],"pendencia");
-    preenche("separado",j.separado||[],"separado");
-  }catch(e){ /* mantém a última tela em caso de falha momentânea */ }
+async function atualizar() {
+  try {
+    const j = await fetch(BACKEND + "/api/painel-pedidos").then(r => r.json());
+    if (j.erro) return;
+    preenche("aguardando", j.aguardando || [], "aguardando");
+    preenche("separando", j.separando || [], "separando");
+    preenche("pendencia", j.pendencia || [], "pendencia");
+    preenche("separado", j.separado || [], "separado");
+  } catch (e) {/* mantém a última tela em caso de falha momentânea */}
 }
-
 atualizar();
-setInterval(atualizar,10000); // atualiza a cada 10s
+setInterval(atualizar, 10000); // atualiza a cada 10s
 
 // botão "Menu" só aparece quando o mouse se mexe (some depois de 3s parado) —
 // mantém a tela limpa pra usar como monitor, mas dá um jeito de voltar
-let _mouseTimer=null;
-document.addEventListener("mousemove",()=>{
-  const b=document.getElementById("btnVoltar");
-  if(b) b.style.display="inline";
+let _mouseTimer = null;
+document.addEventListener("mousemove", () => {
+  const b = document.getElementById("btnVoltar");
+  if (b) b.style.display = "inline";
   clearTimeout(_mouseTimer);
-  _mouseTimer=setTimeout(()=>{ if(b) b.style.display="none"; },3000);
-});
-</script>
+  _mouseTimer = setTimeout(() => {
+    if (b) b.style.display = "none";
+  }, 3000);
+});</script>
 </body>
 </html>

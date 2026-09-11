@@ -61,274 +61,293 @@
 </script>
 <div id="app"></div>
 <div id="modais"></div>
-<script>
-const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
-const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-const num=(v)=>(v==null||v==="")?null:Number(String(v).replace(",","."));
-
-let DEPOSITOS=[], DEP=null, ABA="lista", PRODUTOS=[], TOTAL=0, PAGINA=1, BUSCA="", SO_TABELA=true;
-let EDIT={};
-let SO_COM_ESTOQUE=false; // mostra só o que tem saldo lançado (> 0) no depósito escolhido
-let MODO="balanco";
-let CARREGANDO=false, SALVANDO=false, ERRO_DEP="";
-
-async function carregarDepositos(){
-  try{
-    const j=await fetch(B+"/api/estoque/depositos").then(r=>r.json());
-    if(j.erro) throw new Error(j.erro);
-    DEPOSITOS=j.data||[];
-    if(!DEPOSITOS.length) ERRO_DEP="O Bling não retornou nenhum depósito.";
-    const padrao=DEPOSITOS.find(d=>d.padrao)||DEPOSITOS[0];
-    if(padrao&&!DEP) DEP=String(padrao.id);
-  }catch(e){ DEPOSITOS=[]; ERRO_DEP=e.message; }
+<script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const S = (typeof b13GetSession === "function" ? b13GetSession() : {}) || {};
+const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const num = v => v == null || v === "" ? null : Number(String(v).replace(",", "."));
+let DEPOSITOS = [],
+  DEP = null,
+  ABA = "lista",
+  PRODUTOS = [],
+  TOTAL = 0,
+  PAGINA = 1,
+  BUSCA = "",
+  SO_TABELA = true;
+let EDIT = {};
+let SO_COM_ESTOQUE = false; // mostra só o que tem saldo lançado (> 0) no depósito escolhido
+let MODO = "balanco";
+let CARREGANDO = false,
+  SALVANDO = false,
+  ERRO_DEP = "";
+async function carregarDepositos() {
+  try {
+    const j = await fetch(B + "/api/estoque/depositos").then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    DEPOSITOS = j.data || [];
+    if (!DEPOSITOS.length) ERRO_DEP = "O Bling não retornou nenhum depósito.";
+    const padrao = DEPOSITOS.find(d => d.padrao) || DEPOSITOS[0];
+    if (padrao && !DEP) DEP = String(padrao.id);
+  } catch (e) {
+    DEPOSITOS = [];
+    ERRO_DEP = e.message;
+  }
   render();
 }
-async function carregarProdutos(){
-  if(!DEP) return;
-  CARREGANDO=true; render();
-  try{
-    const p=new URLSearchParams({depositoId:DEP,pagina:PAGINA,limite:400,soTabela:SO_TABELA?"1":"0"});
-    if(BUSCA.trim().length>=2) p.set("q",BUSCA.trim());
-    const j=await fetch(B+"/api/estoque/produtos?"+p.toString()).then(r=>r.json());
-    if(j.erro) throw new Error(j.erro);
-    PRODUTOS=j.data||[]; TOTAL=j.total||0;
-  }catch(e){ PRODUTOS=[]; alert("Erro ao carregar produtos: "+e.message); }
-  CARREGANDO=false; render();
+async function carregarProdutos() {
+  if (!DEP) return;
+  CARREGANDO = true;
+  render();
+  try {
+    const p = new URLSearchParams({
+      depositoId: DEP,
+      pagina: PAGINA,
+      limite: 400,
+      soTabela: SO_TABELA ? "1" : "0"
+    });
+    if (BUSCA.trim().length >= 2) p.set("q", BUSCA.trim());
+    const j = await fetch(B + "/api/estoque/produtos?" + p.toString()).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    PRODUTOS = j.data || [];
+    TOTAL = j.total || 0;
+  } catch (e) {
+    PRODUTOS = [];
+    alert("Erro ao carregar produtos: " + e.message);
+  }
+  CARREGANDO = false;
+  render();
 }
 // nome pra exibir: quando o item da tabela agrupa vários sabores, destaca o sabor
 // (nome completo do Bling) pra não errar qual variação está sendo atualizada
-function nomeExib(p){
-  const sabor=(p.sabor&&p.sabor!==p.nomeTabela)?p.sabor:((p.nome&&p.nome!==p.nomeTabela)?p.nome:"");
-  if(sabor&&p.nomeTabela) return esc(p.nomeTabela)+' <span style="color:#3ce88a">· '+esc(sabor)+'</span>';
-  if(p.variacoes>1&&!sabor){
+function nomeExib(p) {
+  const sabor = p.sabor && p.sabor !== p.nomeTabela ? p.sabor : p.nome && p.nome !== p.nomeTabela ? p.nome : "";
+  if (sabor && p.nomeTabela) return esc(p.nomeTabela) + ' <span style="color:#3ce88a">· ' + esc(sabor) + '</span>';
+  if (p.variacoes > 1 && !sabor) {
     // item tem vários sabores mas o nome do Bling não veio — identifica pelo código
-    return esc(p.nomeTabela||p.nome||"")+' <span style="color:#ffd23f">· cód. '+esc(p.codigo)+'</span>';
+    return esc(p.nomeTabela || p.nome || "") + ' <span style="color:#ffd23f">· cód. ' + esc(p.codigo) + '</span>';
   }
-  return esc(p.nome||p.nomeTabela||"");
+  return esc(p.nome || p.nomeTabela || "");
 }
-function subExib(p){
-  const partes=['#'+esc(p.codigo)];
-  if(p.caixaQtd>1) partes.push('fardo '+p.caixaQtd);
-  if(p.variacoes>1) partes.push('<span style="color:#ffd23f">'+p.variacoes+' sabores</span>');
-  if(p.novoNoBling) partes.push('<span style="color:#3ce88a">novo no Bling</span>');
+function subExib(p) {
+  const partes = ['#' + esc(p.codigo)];
+  if (p.caixaQtd > 1) partes.push('fardo ' + p.caixaQtd);
+  if (p.variacoes > 1) partes.push('<span style="color:#ffd23f">' + p.variacoes + ' sabores</span>');
+  if (p.novoNoBling) partes.push('<span style="color:#3ce88a">novo no Bling</span>');
   return partes.join(' · ');
 }
 // FÍSICO do depósito escolhido — é com esse que a contagem se compara
-function saldoDe(p){
-  if(!p.saldo) return null;
-  return (p.saldo.noDeposito!=null)?p.saldo.noDeposito:p.saldo.fisicoTotal;
+function saldoDe(p) {
+  if (!p.saldo) return null;
+  return p.saldo.noDeposito != null ? p.saldo.noDeposito : p.saldo.fisicoTotal;
 }
 // VIRTUAL = físico menos o que já foi vendido e ainda não saiu (é o disponível pra venda)
-function virtualDe(p){
-  if(!p.saldo) return null;
-  return (p.saldo.virtualNoDeposito!=null)?p.saldo.virtualNoDeposito:p.saldo.virtualTotal;
+function virtualDe(p) {
+  if (!p.saldo) return null;
+  return p.saldo.virtualNoDeposito != null ? p.saldo.virtualNoDeposito : p.saldo.virtualTotal;
 }
 // mostra o físico e, quando diferente, o virtual embaixo
-function celulaSaldo(p){
-  const f=saldoDe(p), v=virtualDe(p);
-  if(f==null) return '<div class="sal" style="color:#9a95c9">—</div>';
-  const cor=f<=0?'#ff8090':'#ffd23f';
-  const dif=(v!=null&&Math.abs(v-f)>0.0005);
-  return '<div class="sal" style="color:'+cor+'">'+f+(dif?'<small style="display:block;color:#9a95c9;font-size:10px;font-weight:400">disp. '+v+'</small>':'')+'</div>';
+function celulaSaldo(p) {
+  const f = saldoDe(p),
+    v = virtualDe(p);
+  if (f == null) return '<div class="sal" style="color:#9a95c9">—</div>';
+  const cor = f <= 0 ? '#ff8090' : '#ffd23f';
+  const dif = v != null && Math.abs(v - f) > 0.0005;
+  return '<div class="sal" style="color:' + cor + '">' + f + (dif ? '<small style="display:block;color:#9a95c9;font-size:10px;font-weight:400">disp. ' + v + '</small>' : '') + '</div>';
 }
-function pendentes(){
-  return PRODUTOS.filter(p=>{
-    const v=num(EDIT[p.produtoId]); if(v==null||!isFinite(v)) return false;
-    if(MODO==="balanco") return Math.abs(v-(saldoDe(p)??0))>0.0005;
-    return v>0;
+function pendentes() {
+  return PRODUTOS.filter(p => {
+    var _saldoDe;
+    const v = num(EDIT[p.produtoId]);
+    if (v == null || !isFinite(v)) return false;
+    if (MODO === "balanco") return Math.abs(v - ((_saldoDe = saldoDe(p)) !== null && _saldoDe !== void 0 ? _saldoDe : 0)) > 0.0005;
+    return v > 0;
   });
 }
-function difDe(p){
-  const v=num(EDIT[p.produtoId]); if(v==null||!isFinite(v)) return null;
-  if(MODO==="balanco") return +(v-(saldoDe(p)??0)).toFixed(3);
-  return MODO==="entrada"?v:-v;
+function difDe(p) {
+  var _saldoDe2;
+  const v = num(EDIT[p.produtoId]);
+  if (v == null || !isFinite(v)) return null;
+  if (MODO === "balanco") return +(v - ((_saldoDe2 = saldoDe(p)) !== null && _saldoDe2 !== void 0 ? _saldoDe2 : 0)).toFixed(3);
+  return MODO === "entrada" ? v : -v;
 }
-function setVal(pid,v){
-  if(v==="") delete EDIT[pid]; else EDIT[pid]=v;
-  const el=document.getElementById("dif_"+pid);
-  const p=PRODUTOS.find(x=>String(x.produtoId)===String(pid));
-  if(el&&p){ const d=difDe(p); el.innerHTML=(d==null||d===0)?"":(d>0?'<span style="color:#3ce88a">+'+d+'</span>':'<span style="color:#ff8090">'+d+'</span>'); }
+function setVal(pid, v) {
+  if (v === "") delete EDIT[pid];else EDIT[pid] = v;
+  const el = document.getElementById("dif_" + pid);
+  const p = PRODUTOS.find(x => String(x.produtoId) === String(pid));
+  if (el && p) {
+    const d = difDe(p);
+    el.innerHTML = d == null || d === 0 ? "" : d > 0 ? '<span style="color:#3ce88a">+' + d + '</span>' : '<span style="color:#ff8090">' + d + '</span>';
+  }
   atualizarBarra();
 }
-function atualizarBarra(){
-  const b=document.getElementById("barraAcao"); if(!b) return;
-  b.innerHTML=barraHtml(pendentes().length);
+function atualizarBarra() {
+  const b = document.getElementById("barraAcao");
+  if (!b) return;
+  b.innerHTML = barraHtml(pendentes().length);
 }
 // aplica o filtro "só com estoque lançado" (saldo físico > 0 no depósito escolhido)
-function produtosVisiveis(){
-  if(!SO_COM_ESTOQUE) return PRODUTOS;
-  return PRODUTOS.filter(function(p){ const s=saldoDe(p); return s!=null && s>0; });
-}
-function abaListaHtml(){
-  let html="", catAtual=null;
-  produtosVisiveis().forEach(p=>{
-    if(p.categoria&&p.categoria!==catAtual){ catAtual=p.categoria; html+='<div class="catHead">'+esc(catAtual)+'</div>'; }
-    const s=saldoDe(p);
-    html+='<div class="lin">'+
-      '<div class="nm">'+nomeExib(p)+'<small>'+subExib(p)+'</small></div>'+
-      celulaSaldo(p)+
-      '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
-      '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
+function produtosVisiveis() {
+  if (!SO_COM_ESTOQUE) return PRODUTOS;
+  return PRODUTOS.filter(function (p) {
+    const s = saldoDe(p);
+    return s != null && s > 0;
   });
-  return html||'<div class="muted" style="padding:12px">Nenhum produto'+(SO_COM_ESTOQUE?' com estoque lançado':'')+(BUSCA?' com "'+esc(BUSCA)+'"':'')+'.</div>';
 }
-function abaTabelaHtml(){
-  const linhas=produtosVisiveis().map(function(p){
-    const s=saldoDe(p);
-    return '<tr><td>'+esc(p.categoria||"—")+'</td><td>'+esc(p.nomeTabela||p.nome)+'</td>'+
-      '<td'+(p.sabor?' style="color:#3ce88a;font-weight:700"':' class="muted"')+'>'+esc((p.sabor&&p.sabor!==p.nomeTabela)?p.sabor:((p.nome&&p.nome!==p.nomeTabela)?p.nome:(p.variacoes>1?("cód. "+p.codigo):"—")))+'</td>'+
-      '<td class="muted">#'+esc(p.codigo)+'</td>'+
-      '<td style="text-align:right;color:'+(s==null?'#9a95c9':(s<=0?'#ff8090':'#ffd23f'))+';font-weight:800">'+(s==null?'—':s)+'</td>'+
-      '<td style="text-align:right" class="muted">'+(virtualDe(p)==null?'—':virtualDe(p))+'</td>'+
-      '<td style="text-align:right"><input type="number" step="0.001" inputmode="decimal" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></td>'+
-      '<td class="dif" id="dif_'+p.produtoId+'" style="text-align:right"></td></tr>';
+function abaListaHtml() {
+  let html = "",
+    catAtual = null;
+  produtosVisiveis().forEach(p => {
+    var _EDIT$p$produtoId;
+    if (p.categoria && p.categoria !== catAtual) {
+      catAtual = p.categoria;
+      html += '<div class="catHead">' + esc(catAtual) + '</div>';
+    }
+    const s = saldoDe(p);
+    html += '<div class="lin">' + '<div class="nm">' + nomeExib(p) + '<small>' + subExib(p) + '</small></div>' + celulaSaldo(p) + '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="' + (MODO === 'balanco' ? 'contado' : 'qtd') + '" value="' + esc((_EDIT$p$produtoId = EDIT[p.produtoId]) !== null && _EDIT$p$produtoId !== void 0 ? _EDIT$p$produtoId : "") + '" oninput="setVal(\'' + p.produtoId + '\',this.value)"></div>' + '<div class="dif" id="dif_' + p.produtoId + '"></div></div>';
+  });
+  return html || '<div class="muted" style="padding:12px">Nenhum produto' + (SO_COM_ESTOQUE ? ' com estoque lançado' : '') + (BUSCA ? ' com "' + esc(BUSCA) + '"' : '') + '.</div>';
+}
+function abaTabelaHtml() {
+  const linhas = produtosVisiveis().map(function (p) {
+    var _EDIT$p$produtoId2;
+    const s = saldoDe(p);
+    return '<tr><td>' + esc(p.categoria || "—") + '</td><td>' + esc(p.nomeTabela || p.nome) + '</td>' + '<td' + (p.sabor ? ' style="color:#3ce88a;font-weight:700"' : ' class="muted"') + '>' + esc(p.sabor && p.sabor !== p.nomeTabela ? p.sabor : p.nome && p.nome !== p.nomeTabela ? p.nome : p.variacoes > 1 ? "cód. " + p.codigo : "—") + '</td>' + '<td class="muted">#' + esc(p.codigo) + '</td>' + '<td style="text-align:right;color:' + (s == null ? '#9a95c9' : s <= 0 ? '#ff8090' : '#ffd23f') + ';font-weight:800">' + (s == null ? '—' : s) + '</td>' + '<td style="text-align:right" class="muted">' + (virtualDe(p) == null ? '—' : virtualDe(p)) + '</td>' + '<td style="text-align:right"><input type="number" step="0.001" inputmode="decimal" value="' + esc((_EDIT$p$produtoId2 = EDIT[p.produtoId]) !== null && _EDIT$p$produtoId2 !== void 0 ? _EDIT$p$produtoId2 : "") + '" oninput="setVal(\'' + p.produtoId + '\',this.value)"></td>' + '<td class="dif" id="dif_' + p.produtoId + '" style="text-align:right"></td></tr>';
   }).join("");
-  return '<div style="max-height:60vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Produto</th><th>Sabor</th><th>Código</th><th style="text-align:right">Físico</th><th style="text-align:right">Disponível</th><th style="text-align:right">'+(MODO==='balanco'?'Contado':'Qtd')+'</th><th style="text-align:right">Dif.</th></tr></thead><tbody>'+
-    (linhas||'<tr><td colspan="8" class="muted">Nenhum produto.</td></tr>')+'</tbody></table></div>';
+  return '<div style="max-height:60vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Produto</th><th>Sabor</th><th>Código</th><th style="text-align:right">Físico</th><th style="text-align:right">Disponível</th><th style="text-align:right">' + (MODO === 'balanco' ? 'Contado' : 'Qtd') + '</th><th style="text-align:right">Dif.</th></tr></thead><tbody>' + (linhas || '<tr><td colspan="8" class="muted">Nenhum produto.</td></tr>') + '</tbody></table></div>';
 }
-function abaConferenciaHtml(){
-  const negativos=PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s<0;});
-  const zerados=SO_COM_ESTOQUE?[]:PRODUTOS.filter(function(p){const s=saldoDe(p); return s!=null&&s===0;});
-  const mexidos=pendentes();
-  function bloco(titulo,lista,cor,vazio){
-    return '<div class="catHead" style="background:'+cor+'">'+titulo+' ('+lista.length+')</div>'+
-      (lista.length?lista.map(function(p){
-        const s=saldoDe(p);
-        return '<div class="lin"><div class="nm">'+nomeExib(p)+'<small>'+subExib(p)+'</small></div>'+
-          celulaSaldo(p)+
-          '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="'+(MODO==='balanco'?'contado':'qtd')+'" value="'+esc(EDIT[p.produtoId]??"")+'" oninput="setVal(\''+p.produtoId+'\',this.value)"></div>'+
-          '<div class="dif" id="dif_'+p.produtoId+'"></div></div>';
-      }).join(""):'<div class="muted" style="padding:8px">'+vazio+'</div>');
+function abaConferenciaHtml() {
+  const negativos = PRODUTOS.filter(function (p) {
+    const s = saldoDe(p);
+    return s != null && s < 0;
+  });
+  const zerados = SO_COM_ESTOQUE ? [] : PRODUTOS.filter(function (p) {
+    const s = saldoDe(p);
+    return s != null && s === 0;
+  });
+  const mexidos = pendentes();
+  function bloco(titulo, lista, cor, vazio) {
+    return '<div class="catHead" style="background:' + cor + '">' + titulo + ' (' + lista.length + ')</div>' + (lista.length ? lista.map(function (p) {
+      var _EDIT$p$produtoId3;
+      const s = saldoDe(p);
+      return '<div class="lin"><div class="nm">' + nomeExib(p) + '<small>' + subExib(p) + '</small></div>' + celulaSaldo(p) + '<div class="qtd"><input type="number" step="0.001" inputmode="decimal" placeholder="' + (MODO === 'balanco' ? 'contado' : 'qtd') + '" value="' + esc((_EDIT$p$produtoId3 = EDIT[p.produtoId]) !== null && _EDIT$p$produtoId3 !== void 0 ? _EDIT$p$produtoId3 : "") + '" oninput="setVal(\'' + p.produtoId + '\',this.value)"></div>' + '<div class="dif" id="dif_' + p.produtoId + '"></div></div>';
+    }).join("") : '<div class="muted" style="padding:8px">' + vazio + '</div>');
   }
-  return '<div class="muted" style="margin-bottom:8px">Foco no que precisa de atenção: negativos, zerados e o que você já digitou.</div>'+
-    bloco("⚠️ Saldo negativo",negativos,"#5a1020","Nenhum negativo. 👍")+
-    bloco("⭕ Zerados",zerados,"#3a2a0a","Nenhum zerado.")+
-    bloco("✏️ Alterados agora",mexidos,"#123a2a","Você ainda não digitou nada.");
+  return '<div class="muted" style="margin-bottom:8px">Foco no que precisa de atenção: negativos, zerados e o que você já digitou.</div>' + bloco("⚠️ Saldo negativo", negativos, "#5a1020", "Nenhum negativo. 👍") + bloco("⭕ Zerados", zerados, "#3a2a0a", "Nenhum zerado.") + bloco("✏️ Alterados agora", mexidos, "#123a2a", "Você ainda não digitou nada.");
 }
-function barraHtml(n){
-  const dep=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
-  const nomeDep=dep?dep.descricao:"—";
-  return '<span class="pill">📦 '+esc(nomeDep)+'</span>'+
-    '<span class="pill">'+(MODO==="balanco"?"Balanço":(MODO==="entrada"?"Entrada":"Saída"))+'</span>'+
-    '<span class="pill" style="background:'+(n?'#123a2a':'#1c1846')+'">'+n+' pra lançar</span>'+
-    '<div style="flex:1"></div>'+
-    (n?'<button class="btn btn-ghost" onclick="limparEdicao()">Limpar</button>':'')+
-    '<button class="btn btn-grn" '+((!n||SALVANDO)?"disabled":"")+' onclick="revisarLancamento()">'+(SALVANDO?"Salvando…":"💾 Revisar e salvar")+'</button>';
+function barraHtml(n) {
+  const dep = DEPOSITOS.find(function (d) {
+    return String(d.id) === String(DEP);
+  });
+  const nomeDep = dep ? dep.descricao : "—";
+  return '<span class="pill">📦 ' + esc(nomeDep) + '</span>' + '<span class="pill">' + (MODO === "balanco" ? "Balanço" : MODO === "entrada" ? "Entrada" : "Saída") + '</span>' + '<span class="pill" style="background:' + (n ? '#123a2a' : '#1c1846') + '">' + n + ' pra lançar</span>' + '<div style="flex:1"></div>' + (n ? '<button class="btn btn-ghost" onclick="limparEdicao()">Limpar</button>' : '') + '<button class="btn btn-grn" ' + (!n || SALVANDO ? "disabled" : "") + ' onclick="revisarLancamento()">' + (SALVANDO ? "Salvando…" : "💾 Revisar e salvar") + '</button>';
 }
-function limparEdicao(){ EDIT={}; render(); }
-async function atualizarIndice(){
-  if(!confirm("Reconstruir o índice de produtos?\n\nIsso lê todos os produtos do Bling e pode levar alguns minutos — roda em segundo plano, você pode continuar usando.")) return;
-  try{
-    const j=await fetch(B+"/api/indice-produtos/reconstruir",{method:"POST"}).then(function(r){return r.json();});
-    alert(j.ja?"Já está sendo reconstruído — aguarde alguns minutos e recarregue.":"Reconstrução iniciada. Em alguns minutos, recarregue a página.");
-  }catch(e){ alert("Não consegui iniciar: "+e.message); }
+function limparEdicao() {
+  EDIT = {};
+  render();
 }
-function render(){
-  const app=document.getElementById("app");
-  const topo='<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">📦 Estoque</div><div class="sp"></div></div>';
-  if(!DEPOSITOS.length){
-    app.innerHTML=topo+'<div class="wrap"><div class="card"><div style="font-weight:800;margin-bottom:6px">'+(ERRO_DEP?"Não consegui listar os depósitos":"Carregando depósitos…")+'</div>'+
-      (ERRO_DEP?'<div class="warn">'+esc(ERRO_DEP)+'<br><br>Se o seu plano do Bling não tiver múltiplos depósitos, me avise que eu adapto o painel pra trabalhar sem essa escolha.</div>':'<div class="muted">Um instante.</div>')+'</div></div>';
+async function atualizarIndice() {
+  if (!confirm("Reconstruir o índice de produtos?\n\nIsso lê todos os produtos do Bling e pode levar alguns minutos — roda em segundo plano, você pode continuar usando.")) return;
+  try {
+    const j = await fetch(B + "/api/indice-produtos/reconstruir", {
+      method: "POST"
+    }).then(function (r) {
+      return r.json();
+    });
+    alert(j.ja ? "Já está sendo reconstruído — aguarde alguns minutos e recarregue." : "Reconstrução iniciada. Em alguns minutos, recarregue a página.");
+  } catch (e) {
+    alert("Não consegui iniciar: " + e.message);
+  }
+}
+function render() {
+  const app = document.getElementById("app");
+  const topo = '<div class="top"><button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button><img src="/logo"><div class="t">📦 Estoque</div><div class="sp"></div></div>';
+  if (!DEPOSITOS.length) {
+    app.innerHTML = topo + '<div class="wrap"><div class="card"><div style="font-weight:800;margin-bottom:6px">' + (ERRO_DEP ? "Não consegui listar os depósitos" : "Carregando depósitos…") + '</div>' + (ERRO_DEP ? '<div class="warn">' + esc(ERRO_DEP) + '<br><br>Se o seu plano do Bling não tiver múltiplos depósitos, me avise que eu adapto o painel pra trabalhar sem essa escolha.</div>' : '<div class="muted">Um instante.</div>') + '</div></div>';
     return;
   }
-  const depAtual=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
-  const explic=MODO==="balanco"
-    ?"Você digita <b>quanto tem de verdade</b>; o sistema calcula a diferença e lança entrada ou saída sozinho. É o mais seguro pra contagem."
-    :(MODO==="entrada"?"Você digita <b>quanto chegou</b>; soma ao saldo atual.":"Você digita <b>quanto saiu</b>; subtrai do saldo atual.");
-  app.innerHTML=topo+'<div class="wrap">'+
-    '<div class="card"><div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">'+
-      '<div style="flex:1;min-width:200px"><div class="muted" style="margin-bottom:4px">1) Depósito que você vai atualizar</div>'+
-        '<select style="width:100%" onchange="DEP=this.value;EDIT={};PAGINA=1;carregarProdutos()">'+
-        DEPOSITOS.map(function(d){return '<option value="'+esc(d.id)+'" '+(String(d.id)===String(DEP)?"selected":"")+'>'+esc(d.descricao)+(d.padrao?" (padrão)":"")+(d.desconsiderarSaldo?" — não conta no total":"")+'</option>';}).join("")+
-        '</select></div>'+
-      '<div style="min-width:210px"><div class="muted" style="margin-bottom:4px">2) Tipo de lançamento</div>'+
-        '<select style="width:100%" onchange="MODO=this.value;render()">'+
-        '<option value="balanco"'+(MODO==="balanco"?" selected":"")+'>Balanço — digito o saldo final</option>'+
-        '<option value="entrada"'+(MODO==="entrada"?" selected":"")+'>Entrada — somar ao saldo</option>'+
-        '<option value="saida"'+(MODO==="saida"?" selected":"")+'>Saída — subtrair do saldo</option>'+
-        '</select></div></div>'+
-      '<div class="muted" style="margin-top:8px">'+explic+' O número grande é o <b>físico</b> (o que está na prateleira — é com ele que a contagem bate); "disp." é o disponível pra venda (físico menos o já vendido e não separado).</div>'+
-      (depAtual&&depAtual.desconsiderarSaldo?'<div class="warn" style="margin-top:8px">⚠️ O depósito <b>'+esc(depAtual.descricao)+'</b> está marcado no Bling como <b>“desconsiderar saldo”</b>: o que estiver aqui <b>não</b> entra no saldo total do produto (o que o caixa e o site enxergam). Ajustar aqui é seguro, mas não muda o disponível pra venda.</div>':'')+
-      '</div>'+
-    '<div class="card">'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">'+
-        '<input placeholder="Buscar produto…" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value" onkeydown="if(event.key===\'Enter\'){PAGINA=1;carregarProdutos()}" style="flex:1;min-width:180px">'+
-        '<button class="btn btn-ghost" onclick="PAGINA=1;carregarProdutos()">🔎 Buscar</button>'+
-        '<button class="btn btn-ghost" title="Produto que você acabou de cadastrar não aparece na lista? Atualize o índice." onclick="atualizarIndice()">🔄 Atualizar índice</button>'+
-        '<label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(SO_TABELA?"checked":"")+' onchange="SO_TABELA=this.checked;PAGINA=1;carregarProdutos()"> só produtos da tabela</label>'+
-        '<button class="btn '+(SO_COM_ESTOQUE?"btn-mag":"btn-ghost")+'" onclick="SO_COM_ESTOQUE=!SO_COM_ESTOQUE;render()">'+(SO_COM_ESTOQUE?"✓ Só com estoque":"📦 Só com estoque")+'</button>'+
-      '</div>'+
-      '<div class="muted" style="margin-bottom:8px">Cadastrou um produto agora? Ele aparece ao <b>buscar pelo nome</b> (a busca consulta o Bling direto). Pra ele entrar na lista completa, use “Atualizar índice”.</div>'+
-      '<div class="abas">'+
-        '<span class="aba '+(ABA==="lista"?"on":"")+'" onclick="ABA=\'lista\';render()">📋 Lista</span>'+
-        '<span class="aba '+(ABA==="tabela"?"on":"")+'" onclick="ABA=\'tabela\';render()">⊞ Tabela</span>'+
-        '<span class="aba '+(ABA==="conferencia"?"on":"")+'" onclick="ABA=\'conferencia\';render()">🎯 Conferência</span>'+
-      '</div>'+
-      (CARREGANDO?'<div class="muted" style="padding:14px">Carregando saldos…</div>'
-        :(ABA==="tabela"?abaTabelaHtml():(ABA==="conferencia"?abaConferenciaHtml():abaListaHtml())))+
-      (SO_COM_ESTOQUE?'<div class="muted" style="margin-top:8px">Mostrando '+produtosVisiveis().length+' de '+PRODUTOS.length+' produtos desta página (só os com saldo lançado).</div>':'')+
-      (TOTAL>PRODUTOS.length?'<div style="display:flex;gap:8px;align-items:center;margin-top:10px">'+
-        '<button class="btn btn-ghost" '+(PAGINA<=1?"disabled":"")+' onclick="PAGINA--;carregarProdutos()">← anterior</button>'+
-        '<span class="muted">'+((PAGINA-1)*400+1)+'–'+((PAGINA-1)*400+PRODUTOS.length)+' de '+TOTAL+'</span>'+
-        '<button class="btn btn-ghost" '+((PAGINA*400>=TOTAL)?"disabled":"")+' onclick="PAGINA++;carregarProdutos()">próxima →</button></div>':"")+
-    '</div></div>'+
-    '<div class="bar" id="barraAcao">'+barraHtml(pendentes().length)+'</div>';
-  produtosVisiveis().forEach(function(p){ if(EDIT[p.produtoId]!=null) setVal(p.produtoId,EDIT[p.produtoId]); });
+  const depAtual = DEPOSITOS.find(function (d) {
+    return String(d.id) === String(DEP);
+  });
+  const explic = MODO === "balanco" ? "Você digita <b>quanto tem de verdade</b>; o sistema calcula a diferença e lança entrada ou saída sozinho. É o mais seguro pra contagem." : MODO === "entrada" ? "Você digita <b>quanto chegou</b>; soma ao saldo atual." : "Você digita <b>quanto saiu</b>; subtrai do saldo atual.";
+  app.innerHTML = topo + '<div class="wrap">' + '<div class="card"><div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">' + '<div style="flex:1;min-width:200px"><div class="muted" style="margin-bottom:4px">1) Depósito que você vai atualizar</div>' + '<select style="width:100%" onchange="DEP=this.value;EDIT={};PAGINA=1;carregarProdutos()">' + DEPOSITOS.map(function (d) {
+    return '<option value="' + esc(d.id) + '" ' + (String(d.id) === String(DEP) ? "selected" : "") + '>' + esc(d.descricao) + (d.padrao ? " (padrão)" : "") + (d.desconsiderarSaldo ? " — não conta no total" : "") + '</option>';
+  }).join("") + '</select></div>' + '<div style="min-width:210px"><div class="muted" style="margin-bottom:4px">2) Tipo de lançamento</div>' + '<select style="width:100%" onchange="MODO=this.value;render()">' + '<option value="balanco"' + (MODO === "balanco" ? " selected" : "") + '>Balanço — digito o saldo final</option>' + '<option value="entrada"' + (MODO === "entrada" ? " selected" : "") + '>Entrada — somar ao saldo</option>' + '<option value="saida"' + (MODO === "saida" ? " selected" : "") + '>Saída — subtrair do saldo</option>' + '</select></div></div>' + '<div class="muted" style="margin-top:8px">' + explic + ' O número grande é o <b>físico</b> (o que está na prateleira — é com ele que a contagem bate); "disp." é o disponível pra venda (físico menos o já vendido e não separado).</div>' + (depAtual && depAtual.desconsiderarSaldo ? '<div class="warn" style="margin-top:8px">⚠️ O depósito <b>' + esc(depAtual.descricao) + '</b> está marcado no Bling como <b>“desconsiderar saldo”</b>: o que estiver aqui <b>não</b> entra no saldo total do produto (o que o caixa e o site enxergam). Ajustar aqui é seguro, mas não muda o disponível pra venda.</div>' : '') + '</div>' + '<div class="card">' + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' + '<input placeholder="Buscar produto…" value="' + esc(BUSCA) + '" oninput="BUSCA=this.value" onkeydown="if(event.key===\'Enter\'){PAGINA=1;carregarProdutos()}" style="flex:1;min-width:180px">' + '<button class="btn btn-ghost" onclick="PAGINA=1;carregarProdutos()">🔎 Buscar</button>' + '<button class="btn btn-ghost" title="Produto que você acabou de cadastrar não aparece na lista? Atualize o índice." onclick="atualizarIndice()">🔄 Atualizar índice</button>' + '<label class="muted" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (SO_TABELA ? "checked" : "") + ' onchange="SO_TABELA=this.checked;PAGINA=1;carregarProdutos()"> só produtos da tabela</label>' + '<button class="btn ' + (SO_COM_ESTOQUE ? "btn-mag" : "btn-ghost") + '" onclick="SO_COM_ESTOQUE=!SO_COM_ESTOQUE;render()">' + (SO_COM_ESTOQUE ? "✓ Só com estoque" : "📦 Só com estoque") + '</button>' + '</div>' + '<div class="muted" style="margin-bottom:8px">Cadastrou um produto agora? Ele aparece ao <b>buscar pelo nome</b> (a busca consulta o Bling direto). Pra ele entrar na lista completa, use “Atualizar índice”.</div>' + '<div class="abas">' + '<span class="aba ' + (ABA === "lista" ? "on" : "") + '" onclick="ABA=\'lista\';render()">📋 Lista</span>' + '<span class="aba ' + (ABA === "tabela" ? "on" : "") + '" onclick="ABA=\'tabela\';render()">⊞ Tabela</span>' + '<span class="aba ' + (ABA === "conferencia" ? "on" : "") + '" onclick="ABA=\'conferencia\';render()">🎯 Conferência</span>' + '</div>' + (CARREGANDO ? '<div class="muted" style="padding:14px">Carregando saldos…</div>' : ABA === "tabela" ? abaTabelaHtml() : ABA === "conferencia" ? abaConferenciaHtml() : abaListaHtml()) + (SO_COM_ESTOQUE ? '<div class="muted" style="margin-top:8px">Mostrando ' + produtosVisiveis().length + ' de ' + PRODUTOS.length + ' produtos desta página (só os com saldo lançado).</div>' : '') + (TOTAL > PRODUTOS.length ? '<div style="display:flex;gap:8px;align-items:center;margin-top:10px">' + '<button class="btn btn-ghost" ' + (PAGINA <= 1 ? "disabled" : "") + ' onclick="PAGINA--;carregarProdutos()">← anterior</button>' + '<span class="muted">' + ((PAGINA - 1) * 400 + 1) + '–' + ((PAGINA - 1) * 400 + PRODUTOS.length) + ' de ' + TOTAL + '</span>' + '<button class="btn btn-ghost" ' + (PAGINA * 400 >= TOTAL ? "disabled" : "") + ' onclick="PAGINA++;carregarProdutos()">próxima →</button></div>' : "") + '</div></div>' + '<div class="bar" id="barraAcao">' + barraHtml(pendentes().length) + '</div>';
+  produtosVisiveis().forEach(function (p) {
+    if (EDIT[p.produtoId] != null) setVal(p.produtoId, EDIT[p.produtoId]);
+  });
 }
-function revisarLancamento(){
-  const itens=pendentes();
-  if(!itens.length) return;
-  const dep=DEPOSITOS.find(function(d){return String(d.id)===String(DEP);});
-  const linhas=itens.map(function(p){
-    const v=num(EDIT[p.produtoId]); const s=saldoDe(p); const d=difDe(p);
-    const desc=MODO==="balanco"?('tem '+(s==null?"?":s)+' → vai ficar '+v):(MODO==="entrada"?('entrada de '+v):('saída de '+v));
-    return '<div class="lin"><div class="nm">'+nomeExib(p)+'<small>'+desc+'</small></div><div class="dif">'+
-      (d>0?'<span style="color:#3ce88a">+'+d+'</span>':'<span style="color:#ff8090">'+d+'</span>')+'</div></div>';
+function revisarLancamento() {
+  const itens = pendentes();
+  if (!itens.length) return;
+  const dep = DEPOSITOS.find(function (d) {
+    return String(d.id) === String(DEP);
+  });
+  const linhas = itens.map(function (p) {
+    const v = num(EDIT[p.produtoId]);
+    const s = saldoDe(p);
+    const d = difDe(p);
+    const desc = MODO === "balanco" ? 'tem ' + (s == null ? "?" : s) + ' → vai ficar ' + v : MODO === "entrada" ? 'entrada de ' + v : 'saída de ' + v;
+    return '<div class="lin"><div class="nm">' + nomeExib(p) + '<small>' + desc + '</small></div><div class="dif">' + (d > 0 ? '<span style="color:#3ce88a">+' + d + '</span>' : '<span style="color:#ff8090">' + d + '</span>') + '</div></div>';
   }).join("");
-  document.getElementById("modais").innerHTML=
-    '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">'+
-    '<h3 style="margin-bottom:4px">Confirmar lançamento</h3>'+
-    '<div class="muted" style="margin-bottom:10px">Depósito <b>'+esc(dep?dep.descricao:"—")+'</b> · '+itens.length+' produto(s) · '+(MODO==="balanco"?"balanço":(MODO==="entrada"?"entrada":"saída"))+'</div>'+
-    '<div class="warn" style="margin-bottom:10px">Isso altera o estoque no Bling de verdade. Confira antes.</div>'+
-    '<div style="max-height:40vh;overflow:auto">'+linhas+'</div>'+
-    '<div style="margin-top:10px"><div class="muted" style="margin-bottom:4px">Observação (vai junto no lançamento)</div>'+
-    '<input id="obsEstoque" style="width:100%" placeholder="ex: contagem do dia"></div>'+
-    '<div id="errEstoque"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:14px">'+
-    '<button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Voltar</button>'+
-    '<button class="btn btn-grn" style="flex:1" id="btnConfEstoque" onclick="salvarLancamento()">Confirmar e lançar</button>'+
-    '</div></div></div>';
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal">' + '<h3 style="margin-bottom:4px">Confirmar lançamento</h3>' + '<div class="muted" style="margin-bottom:10px">Depósito <b>' + esc(dep ? dep.descricao : "—") + '</b> · ' + itens.length + ' produto(s) · ' + (MODO === "balanco" ? "balanço" : MODO === "entrada" ? "entrada" : "saída") + '</div>' + '<div class="warn" style="margin-bottom:10px">Isso altera o estoque no Bling de verdade. Confira antes.</div>' + '<div style="max-height:40vh;overflow:auto">' + linhas + '</div>' + '<div style="margin-top:10px"><div class="muted" style="margin-bottom:4px">Observação (vai junto no lançamento)</div>' + '<input id="obsEstoque" style="width:100%" placeholder="ex: contagem do dia"></div>' + '<div id="errEstoque"></div>' + '<div style="display:flex;gap:8px;margin-top:14px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModal()">Voltar</button>' + '<button class="btn btn-grn" style="flex:1" id="btnConfEstoque" onclick="salvarLancamento()">Confirmar e lançar</button>' + '</div></div></div>';
 }
-function fecharModal(){ document.getElementById("modais").innerHTML=""; }
-async function salvarLancamento(){
-  if(SALVANDO) return;
-  const itens=pendentes(); if(!itens.length) return;
-  SALVANDO=true;
-  const btn=document.getElementById("btnConfEstoque");
-  if(btn){ btn.disabled=true; btn.textContent="Lançando…"; }
-  const obsEl=document.getElementById("obsEstoque");
-  const observacao=(obsEl?obsEl.value:"").trim();
-  try{
-    const body={ depositoId:DEP, modo:MODO, observacao, funcionarioId:S.id,
-      itens:itens.map(function(p){ return {produtoId:p.produtoId,nome:p.nome,quantidade:num(EDIT[p.produtoId])}; }) };
-    const j=await fetch(B+"/api/estoque/lancar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(function(r){return r.json();});
-    if(j.erro) throw new Error(j.erro);
-    const falhas=(j.resultados||[]).filter(function(r){return !r.ok;});
-    document.getElementById("modais").innerHTML=
-      '<div class="modalBg" onclick="if(event.target===this){fecharModal();}"><div class="modal" style="text-align:center">'+
-      '<div style="font-size:44px">'+(falhas.length?"⚠️":"✅")+'</div><h3>'+j.aplicados+' lançamento(s) aplicado(s)</h3>'+
-      (falhas.length?'<div class="warn" style="text-align:left;margin-top:10px">'+falhas.length+' falharam:<br>'+falhas.map(function(f){return '• '+esc(f.nome||f.produtoId)+': '+esc(f.erro||"");}).join("<br>")+'</div>':'<div class="muted" style="margin-top:6px">Estoque atualizado no Bling.</div>')+
-      '<button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModal();EDIT={};carregarProdutos()">OK</button></div></div>';
-  }catch(e){
-    const el=document.getElementById("errEstoque");
-    if(el) el.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: '+esc(e.message)+'</div>';
-    if(btn){ btn.disabled=false; btn.textContent="Confirmar e lançar"; }
+function fecharModal() {
+  document.getElementById("modais").innerHTML = "";
+}
+async function salvarLancamento() {
+  if (SALVANDO) return;
+  const itens = pendentes();
+  if (!itens.length) return;
+  SALVANDO = true;
+  const btn = document.getElementById("btnConfEstoque");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Lançando…";
   }
-  SALVANDO=false;
+  const obsEl = document.getElementById("obsEstoque");
+  const observacao = (obsEl ? obsEl.value : "").trim();
+  try {
+    const body = {
+      depositoId: DEP,
+      modo: MODO,
+      observacao,
+      funcionarioId: S.id,
+      itens: itens.map(function (p) {
+        return {
+          produtoId: p.produtoId,
+          nome: p.nome,
+          quantidade: num(EDIT[p.produtoId])
+        };
+      })
+    };
+    const j = await fetch(B + "/api/estoque/lancar", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json();
+    });
+    if (j.erro) throw new Error(j.erro);
+    const falhas = (j.resultados || []).filter(function (r) {
+      return !r.ok;
+    });
+    document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this){fecharModal();}"><div class="modal" style="text-align:center">' + '<div style="font-size:44px">' + (falhas.length ? "⚠️" : "✅") + '</div><h3>' + j.aplicados + ' lançamento(s) aplicado(s)</h3>' + (falhas.length ? '<div class="warn" style="text-align:left;margin-top:10px">' + falhas.length + ' falharam:<br>' + falhas.map(function (f) {
+      return '• ' + esc(f.nome || f.produtoId) + ': ' + esc(f.erro || "");
+    }).join("<br>") + '</div>' : '<div class="muted" style="margin-top:6px">Estoque atualizado no Bling.</div>') + '<button class="btn btn-mag" style="width:100%;margin-top:14px" onclick="fecharModal();EDIT={};carregarProdutos()">OK</button></div></div>';
+  } catch (e) {
+    const el = document.getElementById("errEstoque");
+    if (el) el.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">Não deu certo: ' + esc(e.message) + '</div>';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Confirmar e lançar";
+    }
+  }
+  SALVANDO = false;
 }
 render();
-carregarDepositos().then(function(){ if(DEP) carregarProdutos(); });
-</script>
+carregarDepositos().then(function () {
+  if (DEP) carregarProdutos();
+});</script>
 </body>
 </html>
