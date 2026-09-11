@@ -428,7 +428,14 @@ app.get("/nav.js",(req,res)=>{
 const B13_BACKEND="${process.env.RAILWAY_PUBLIC_DOMAIN?'https://'+process.env.RAILWAY_PUBLIC_DOMAIN:''}";
 const B13_SIT={AGUARDANDO:${SIT.AGUARDANDO},EM_SEP:${SIT.EM_SEP},SEP_PEND:${SIT.SEP_PEND},SEPARADO:${SIT.SEPARADO},CONF_ENTREGA:${SIT.CONF_ENTREGA},VERIFICADO:${SIT.VERIFICADO}};
 
-function b13GetSession(){ try{ const s=sessionStorage.getItem("b13sess")||localStorage.getItem("b13sess"); if(s){ sessionStorage.setItem("b13sess",s); return JSON.parse(s); } return null; }catch(e){ return null; } }
+function b13GetSession(){ try{
+  var s=null;
+  try{ s=sessionStorage.getItem("b13sess"); }catch(e){}
+  if(!s){ try{ s=localStorage.getItem("b13sess"); }catch(e){} }
+  if(!s){ try{ var m=document.cookie.match(/b13sess=([^;]+)/); if(m) s=decodeURIComponent(m[1]); }catch(e){} }
+  if(s){ try{ sessionStorage.setItem("b13sess",s); }catch(e){} return JSON.parse(s); }
+  return null;
+}catch(e){ return null; } }
 function b13SetSession(f){ try{ sessionStorage.setItem("b13sess",JSON.stringify(f)); }catch(e){} }
 function b13ClearSession(){ try{ sessionStorage.removeItem("b13sess"); }catch(e){} }
 function b13Pode(acao){

@@ -69,8 +69,30 @@ const LOGO="/logo";
 document.getElementById("logoImg").src=LOGO;
 
 // se já tem sessão, redireciona
-try{ const s=sessionStorage.getItem("b13sess"); if(s){ const f=JSON.parse(s); if(f && f.id) { irPara(f); } } }catch(e){}
+try{
+  var s=null;
+  try{ s=sessionStorage.getItem("b13sess"); }catch(e){}
+  if(!s){ try{ s=localStorage.getItem("b13sess"); }catch(e){} }
+  if(!s){ try{ var m=document.cookie.match(/b13sess=([^;]+)/); if(m) s=decodeURIComponent(m[1]); }catch(e){} }
+  if(s){ const f=JSON.parse(s); if(f && f.id) { irPara(f); } }
+}catch(e){}
 
+// Salva a sessao de forma robusta: alguns Android/WebView restritos bloqueiam
+// sessionStorage (modo privado, dados de site desativados), e ai o login "dava certo"
+// no servidor mas nao guardava nada — o app voltava pro login. Agora tenta os tres:
+// sessionStorage, localStorage e cookie.
+function salvarSessaoResiliente(func){
+  const txt=JSON.stringify(func);
+  var ok=false;
+  try{ sessionStorage.setItem("b13sess",txt); ok=true; }catch(e){}
+  try{ localStorage.setItem("b13sess",txt); ok=true; }catch(e){}
+  try{ document.cookie="b13sess="+encodeURIComponent(txt)+";path=/;max-age=43200"; ok=true; }catch(e){}
+  if(!ok){
+    var err=document.getElementById("errMsg");
+    if(err) err.innerHTML='<div class="err">Seu navegador está bloqueando o armazenamento de dados. Ative os dados/cookies do site nas configurações do navegador e tente de novo.</div>';
+  }
+  return ok;
+}
 function irPara(f){
   const next=new URLSearchParams(location.search).get("next");
   if(next&&next.startsWith("/")&&next!=="/login") { location.href=next; return; }
@@ -97,7 +119,7 @@ async function entrar(){
     const r=await fetch(B+"/api/funcionarios/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login,senha})});
     const j=await r.json();
     if(r.ok&&j.ok){
-      sessionStorage.setItem("b13sess",JSON.stringify(j.funcionario));
+      salvarSessaoResiliente(j.funcionario);
       if(j.funcionario.precisaTrocarSenha){
         _senhaAtualDigitada=senha; _funcPendente=j.funcionario;
         document.querySelector(".box").style.display="none";
@@ -134,7 +156,7 @@ async function trocarSenha(){
   if(nova!==conf){ err.innerHTML=`<div class="err">As senhas não conferem.</div>`; return; }
   btn.disabled=true; btn.textContent="Salvando…"; err.innerHTML="";
   try{
-    const r=await fetch(B+"/api/funcionarios/trocar-senha",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":_funcPendente?.token||""},body:JSON.stringify({senhaAtual:_senhaAtualDigitada,novaSenha:nova})});
+    const r=await fetch(B+"/api/funcionarios/trocar-senha",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":(_funcPendente&&_funcPendente.token)||""},body:JSON.stringify({senhaAtual:_senhaAtualDigitada,novaSenha:nova})});
     const j=await r.json();
     if(r.ok&&j.ok){
       const f={..._funcPendente,precisaTrocarSenha:false};
