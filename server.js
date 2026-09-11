@@ -3944,20 +3944,8 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
   const tc=tipoCaixa||"frente";
   const sessao=(d.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
   if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
-  // SANGRIA NÃO PODE DEIXAR A GAVETA NEGATIVA: só dá pra retirar o que existe em
-  // dinheiro (troco inicial + dinheiro recebido + suprimentos - sangrias anteriores).
-  // Antes só se checava "valor > 0", então uma sangria maior que o dinheiro em caixa
-  // passava e o esperado ficava negativo. Vale pros dois caixas (atacado e varejo),
-  // que usam este mesmo endpoint.
-  if(tipo==="sangria"){
-    const r=resumoSessaoCaixa(sessao);
-    const disponivel=+Number(r.esperadoGaveta ?? r.esperadoGavetaCalc ?? 0).toFixed(2);
-    if(v>disponivel+0.009){
-      return res.status(400).json({
-        erro:`Sangria de ${v.toFixed(2)} é maior que o dinheiro em caixa (${disponivel.toFixed(2)}). Só é possível retirar até ${disponivel.toFixed(2)}.`,
-        disponivel, solicitado:v });
-    }
-  }
+  // Sangria pode ser MAIOR que o dinheiro em caixa (a pedido) — nao trava mais nisso;
+  // o caixa apenas fica negativo no esperado, o que e permitido.
   sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now(),
     responsavelId:String(responsavelId), responsavelNome:resp.nome||""});
   salvarCaixaSessoes(d);
