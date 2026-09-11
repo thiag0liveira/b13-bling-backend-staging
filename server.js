@@ -3070,6 +3070,62 @@ function _auditarSessaoCaixa(s){
 // Lê a OBSERVAÇÃO de uma lista de pedidos direto no Bling — útil pra achar anotações
 // sobre qual banco/PIX foi usado, quando o pagamento no caixa não bate com o extrato.
 // Uso: /api/diag/observacoes-pedidos?numeros=55238,55273,55258,55026,55028
+// ===== ESTORNOS PENDENTES (detectados na OBSERVAÇÃO do pedido) =====
+// Quando um item é retirado de um pedido JÁ PAGO (falta de estoque na separação), o
+// valor cai e vira dinheiro a devolver ao cliente. Isso ficava só numa anotação de
+// texto livre na observação — fácil de escrever e esquecer de executar. Agora o
+// sistema procura essa anotação sozinho e mantém como pendência visível.
+const ESTORNOS_RESOLVIDOS_FILE=`${DATA_DIR}/estornos_resolvidos.json`;
+function lerEstornosResolvidos(){ return lerJSON(ESTORNOS_RESOLVIDOS_FILE,{}); }
+function _extrairEstornoDaObs(obs){
+  const texto=String(obs||"");
+  // "ESTORNO DE R$ 752,56 NO PIX" / "ESTORNO DE $752,56" / variações de grafia
+  const m=texto.match(/ESTORNO\s*(?:DE)?\s*R?\$?\s*([\d.,]+)\s*(?:NO\s*)?(PIX|DINHEIRO|CART[ÃA]O)?/i);
+  if(!m) return null;
+  const valorTxt=m[1].replace(/\.(?=\d{3}(?:\D|$))/g,"").replace(",",".");
+  const valor=+parseFloat(valorTxt).toFixed(2);
+  if(!valor||valor<=0) return null;
+  return { valor, forma:(m[2]||"").toUpperCase()||null, trechoOriginal:m[0] };
+}
+app.get("/api/central/estornos",async(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const resolvidos=lerEstornosResolvidos();
+    const candidatos=Object.values(props||{})
+      .filter(p=>p&&p.pedidoBlingId&&(Date.now()-(p.criadoEm||0))<30*86400000)
+      .slice(0,120);
+    const achados=[];
+    for(const prop of candidatos){
+      const id=String(prop.pedidoBlingId);
+      if(resolvidos[id]) continue;   // já marcado como resolvido
+      let obs=""; let numero=prop.pedidoBlingNumero;
+      try{
+        const d=await blingLento(`/pedidos/vendas/${prop.pedidoBlingId}`).then(r=>r?.data);
+        obs=d?.observacoes||""; numero=d?.numero||numero;
+      }catch(e){ continue; }
+      const est=_extrairEstornoDaObs(obs);
+      if(!est) continue;
+      achados.push({ pedidoId:id, numero, cliente:prop.cliente?.nome||"—",
+        valor:est.valor, forma:est.forma, trecho:est.trechoOriginal,
+        observacaoCompleta:obs, criadoEm:prop.criadoEm });
+      await sleep(70);
+    }
+    achados.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+    res.json({ qtd:achados.length, total:+achados.reduce((a,x)=>a+x.valor,0).toFixed(2), data:achados });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/central/estornos/:pedidoId/resolver",(req,res)=>{
+  try{
+    const id=String(req.params.pedidoId);
+    const d=lerEstornosResolvidos();
+    const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
+    d[id]={em:Date.now(), por:funcNome};
+    salvarJSON(ESTORNOS_RESOLVIDOS_FILE,d);
+    addLog(id,"estorno_registrado",req.body?.funcionarioId,funcNome,{});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/observacoes-pedidos",async(req,res)=>{
   try{
     const numeros=String(req.query.numeros||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,40);
@@ -8068,7 +8124,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0, pedidosPresosDigitacao:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0, pedidosPresosDigitacao:0, estornosPendentes:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -8196,6 +8252,31 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
         oQueFazer:`O pedido #${numero} (${cliente}${total?`, ${total.toFixed(2)}`:""}) está agendado pra entrega em ${ag.data.split("-").reverse().join("/")} e ainda NÃO foi recebido em nenhum caixa${pag.parcial?` (pago parcial: ${Number(pag.valorPago||0).toFixed(2)} de ${Number(pag.valorPedido||0).toFixed(2)})`:""}. Confira se foi cobrado antes de sair pra entrega.` });
       achados.entregaSemPagamento=(achados.entregaSemPagamento||0)+1;
     });
+  }catch(e){}
+
+  // 4.55) ESTORNO PENDENTE: item retirado de pedido já pago gerou anotação de
+  // estorno na observação, mas ninguém marcou como resolvido ainda.
+  try{
+    const props=lerPropostas();
+    const resolvidos=lerEstornosResolvidos();
+    const candidatos=Object.values(props||{})
+      .filter(p=>p&&p.pedidoBlingId&&(Date.now()-(p.criadoEm||0))<30*86400000)
+      .slice(0,80);
+    for(const prop of candidatos){
+      const id=String(prop.pedidoBlingId);
+      if(resolvidos[id]) continue;
+      let obs=""; let numero=prop.pedidoBlingNumero;
+      try{ const d=await blingLento(`/pedidos/vendas/${prop.pedidoBlingId}`).then(r=>r?.data); obs=d?.observacoes||""; numero=d?.numero||numero; }catch(e){ continue; }
+      const est=_extrairEstornoDaObs(obs);
+      if(!est) continue;
+      registrarAviso({ tipo:"estorno_pendente",
+        titulo:`Estorno pendente — pedido #${numero} (${est.forma||"valor"} ${est.valor.toFixed(2)})`,
+        pedidoId:id, numero, origem:"Observação do pedido",
+        fingerprint:`estorno-${id}`,
+        oQueFazer:`A observação do pedido #${numero} (${prop.cliente?.nome||"—"}) registra um estorno de ${est.valor.toFixed(2)}${est.forma?" via "+est.forma:""} que ainda não foi marcado como feito. Confira se o dinheiro já foi devolvido ao cliente e marque como resolvido na Central.`});
+      achados.estornosPendentes=(achados.estornosPendentes||0)+1;
+      await sleep(70);
+    }
   }catch(e){}
 
   // 4.6) VENDA A PRAZO VENCIDA: passou do prazo combinado e o cliente não pagou

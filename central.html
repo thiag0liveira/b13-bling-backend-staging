@@ -60,7 +60,7 @@ const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-pr
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const hora=(ms)=>ms?new Date(ms).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"";
-let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null, PRAZO=null;
+let D=null, TIMER=null, DIA="", ENTREGAS=null, ENTREGA_ABERTA=null, AVISOS=null, META=null, APOIO=null, RETIRADOS_EST=null, PRAZO=null, ESTORNOS=null;
 const nEv={fechado_valor_menor:"Valor menor",pagamento_editado_caixa:"Pagamento editado",pedido_reaberto:"Pedido reaberto",venda_cancelada:"Venda cancelada",venda_cancelada_gestao:"Cancelada (gestão)",itens_retirados:"Itens retirados",itens_acrescentados:"Itens acrescentados",itens_alterados_gestao:"Itens alterados (gestão)",itens_alterados_caixa:"Itens alterados (caixa)",itens_editados:"Itens editados",
   pedido_incluido_no_caixa:"Incluído no caixa",
   situacao_alterada:"🔀 Status alterado",venda_a_prazo:"🧾 Venda a prazo",pedido_online_cancelado:"🚫 Cancelado (Pedidos)",
@@ -180,6 +180,18 @@ function render(){
           </div>
           <div class="lin" style="font-weight:800;margin-top:8px;border-top:1px solid #2a2660"><span>Total do dia (atacado + varejo)</span><b style="color:#ffd23f">${brl(b.pedidos.fechamentoBling.atacado.valor+b.pedidos.fechamentoBling.varejo.valor)}</b></div>
           `):card("🏪 Atacado × 🛒 Varejo","<div class=\"muted\">⏳ Buscando no Bling…</div>")}
+
+        ${ESTORNOS&&ESTORNOS.qtd?card("↩️ Estornos pendentes",`
+          <div class="big" style="color:#ff8f7a">${brl(ESTORNOS.total)}</div>
+          <div class="muted" style="margin-bottom:8px">${ESTORNOS.qtd} pedido(s) com estorno anotado na observação, ainda não marcado como feito</div>
+          ${lins(ESTORNOS.data,e=>`<div class="lin" style="align-items:flex-start">
+            <span style="flex:1;min-width:0">#${esc(e.numero)} ${esc(e.cliente)}${e.forma?` <span class="muted" style="font-size:11px">(${esc(e.forma)})</span>`:""}
+              <div class="muted" style="font-size:11px;margin-top:2px">"${esc(e.trecho)}"</div></span>
+            <div style="text-align:right;flex-shrink:0">
+              <b style="color:#ff8f7a;display:block">${brl(e.valor)}</b>
+              <button class="btn btn-ok" style="font-size:10px;padding:3px 8px;margin-top:4px" onclick="resolverEstorno('${e.pedidoId}')">✓ Já devolvi</button>
+            </div></div>`)}
+          <div class="muted" style="font-size:11px;margin-top:6px">Detectado automaticamente na observação do pedido (quando um item é retirado após pago).</div>`):""}
 
         ${PRAZO&&PRAZO.qtd?card("🧾 Vendas a prazo em aberto",`
           <div class="big" style="color:#ffd23f">${brl(PRAZO.total)}</div>
@@ -392,6 +404,15 @@ async function conferirEstoqueRetirados(){
     render();
   }catch(e){ alert("Não consegui conferir o estoque agora."); }
 }
+async function resolverEstorno(pedidoId){
+  if(!confirm("Marcar este estorno como JÁ DEVOLVIDO ao cliente?")) return;
+  try{
+    await fetch(B+"/api/central/estornos/"+pedidoId+"/resolver",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({funcionarioId:(typeof b13GetSession==="function"?((b13GetSession()||{}).id||""):"")})});
+    const es=await fetch(B+"/api/central/estornos").then(r=>r.json()); if(!es.erro) ESTORNOS=es;
+    render();
+  }catch(e){ alert("Erro ao marcar."); }
+}
 async function resolverAviso(id){
   try{
     await fetch(B+"/api/avisos/"+id+"/resolver",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -421,6 +442,7 @@ async function carregar(){
     window._pesadosEm=Date.now();
     try{ const m=await fetch(B+"/api/vendedor/meta-acompanhamento").then(r=>r.json()); if(!m.erro){ META=m; render(); } }catch(e){}
     try{ const pz=await fetch(B+"/api/central/prazo").then(r=>r.json()); if(!pz.erro){ PRAZO=pz; render(); } }catch(e){}
+    try{ const es=await fetch(B+"/api/central/estornos").then(r=>r.json()); if(!es.erro){ ESTORNOS=es; render(); } }catch(e){}
     try{ const ap=await fetch(B+"/api/vendedor/apoio").then(r=>r.json()); if(!ap.erro&&ap.vendedores){ APOIO=ap; render(); } }catch(e){}
   }
   clearTimeout(TIMER);
