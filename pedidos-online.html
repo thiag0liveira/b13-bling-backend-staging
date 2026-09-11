@@ -399,10 +399,10 @@ async function enviarSeparacao(id){
     if(j.erro){
       alert(j.erro);
       // conflito de estado: recarrega pra tela refletir a situação real
-      if(r.status===409||j.jaEnviado) carregar();
+      if(r.status===409||j.jaEnviado) recarregarAtual();
       return;
     }
-    carregar();
+    recarregarAtual();
   }catch(e){ alert("Erro: "+e.message); }
 }
 // traz pro nosso sistema um pedido que só existe no Bling (registro local perdido
@@ -427,7 +427,7 @@ async function resolverPendencia(id){
     const j=await fetch(B+"/api/fluxo/"+id+"/seguir-sem-pendencias",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({funcionarioId:S.id,funcionarioNome:S.nome})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
-    carregar();
+    recarregarAtual();
   }catch(e){ alert("Erro: "+e.message); }
 }
 async function marcarOk(id){
@@ -534,7 +534,7 @@ async function confirmarCancelar(id){
     const j=await fetch(B+"/api/pedidos-online/"+id+"/cancelar",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({motivo,funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
-    fechar(); carregar();
+    fechar(); recarregarAtual();
   }catch(e){
     const el=document.getElementById("errCanc");
     if(el) el.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
@@ -652,7 +652,7 @@ async function salvarEditarAguardando(id){
     edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: '+onde.join(" + ")+totalMsg+(resumo?"<br><span style=\"color:#9a95c9\">"+esc(resumo)+"</span>":"")+'</div>');
     if(j.alertaTotal) alert("⚠️ "+j.alertaTotal);
     if(j.avisosEstoque&&j.avisosEstoque.length) alert("⚠️ Atenção:\n"+j.avisosEstoque.join("\n"));
-    setTimeout(function(){ fechar(); carregar(); },1200);
+    setTimeout(function(){ fechar(); recarregarAtual(); },1200);
   }catch(e){ edSetMsg('<div style="color:#ff8090">Erro de conexão. Nada foi alterado.</div>'); }
 }
 
@@ -712,7 +712,7 @@ async function salvarAgendamento(id){
     const j=await fetch(B+"/api/pedidos-online/"+id+"/agendar-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({data,turno,obsEntrega:(document.getElementById("agObs")||{}).value||"",funcionarioId:S.id})}).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
-    fechar(); carregar();
+    fechar(); recarregarAtual();
   }catch(e){
     const err=document.getElementById("errAg");
     if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
@@ -722,16 +722,16 @@ async function salvarAgendamento(id){
 // desfaz a mudança pra retirada: volta pra entrega e restaura o agendamento anterior
 async function desfazerRetirada(id){
   try{
-    const p=PEDIDOS.find(function(x){return String(x.id)===String(id);});
+    const p=(BUSCA_RES||PEDIDOS).find(function(x){return String(x.id)===String(id);});
     await fetch(B+"/api/pedidos-online/"+id+"/tipo-entrega",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({tipo:"entrega",endereco:(p&&p.endereco)||"",frete:(p&&p.frete)||0,funcionarioId:S.id})});
     const r=await fetch(B+"/api/pedidos-online/"+id+"/restaurar-agendamento",{method:"POST"}).then(function(x){return x.json();});
-    fechar(); carregar();
+    fechar(); recarregarAtual();
     if(r.erro) alert("Voltou pra entrega, mas não consegui restaurar o agendamento: "+r.erro);
   }catch(e){ alert("Erro ao desfazer."); }
 }
 async function desagendar(id){
-  try{ await fetch(B+"/api/pedidos-online/"+id+"/desagendar-entrega",{method:"POST"}); fechar(); carregar(); }
+  try{ await fetch(B+"/api/pedidos-online/"+id+"/desagendar-entrega",{method:"POST"}); fechar(); recarregarAtual(); }
   catch(e){ alert("Erro ao desagendar."); }
 }
 
@@ -803,18 +803,18 @@ async function salvarTipoEntrega(id){
     // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
     if(tipo==="retirada"&&j.agendamentoRemovido){
       const ag=j.agendamentoRemovido;
-      document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this){fechar();carregar();}"><div class="modal">'+
+      document.getElementById("modais").innerHTML='<div class="modalBg" onclick="if(event.target===this){fechar();recarregarAtual();}"><div class="modal">'+
         '<div style="font-size:40px;text-align:center">⚠️</div>'+
         '<h3 style="text-align:center">Virou retirada</h3>'+
         '<div class="muted" style="margin:8px 0;font-size:13px">O agendamento de entrega que existia foi removido da rota:<br>'+
           '<b style="color:#fff">'+esc(ag.data.split("-").reverse().join("/"))+' · '+(ag.turno==="manha"?"manhã":(ag.turno==="tarde"?"tarde":"qualquer horário"))+'</b></div>'+
         '<div style="display:flex;gap:8px;margin-top:12px">'+
           '<button class="btn btn-mag" style="margin:0;flex:1" onclick="desfazerRetirada('+id+')">↩️ Foi engano, desfazer</button>'+
-          '<button class="btn btn-ghost" style="margin:0" onclick="fechar();carregar()">OK</button>'+
+          '<button class="btn btn-ghost" style="margin:0" onclick="fechar();recarregarAtual()">OK</button>'+
         '</div></div></div>';
       return;
     }
-    fechar(); carregar();
+    fechar(); recarregarAtual();
   }catch(e){
     const err=document.getElementById("errTE");
     if(err) err.innerHTML='<div style="color:#ff8090;font-size:12px;margin-top:8px">'+esc(e.message)+'</div>';
@@ -840,6 +840,11 @@ async function buscarPedido(){
   BUSCANDO=false; render();
 }
 function limparBusca(){ BUSCA_RES=null; window._buscaTxt=""; render(); }
+// Recarrega o pedido/lista certos depois de qualquer alteração. Antes, ações feitas
+// a partir de um pedido ACHADO PELA BUSCA chamavam sempre carregar() (a lista
+// normal) — o card da busca ficava com o tipo/status ANTIGO na tela, mesmo com a
+// mudança já salva no servidor.
+function recarregarAtual(){ if(BUSCA_RES) buscarPedido(); else carregar(); }
 
 /* ===== MOVER O STATUS DO PEDIDO ===== */
 async function abrirMoverStatus(id){
