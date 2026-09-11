@@ -528,6 +528,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Gestão",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
   {grupo:"Gestão",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
   {grupo:"Gestão",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
+  {grupo:"Gestão",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
   {grupo:"Gestão",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {grupo:"Gestão",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
 ];
@@ -7941,9 +7942,8 @@ app.get("/expedicao", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa.html")); });
 app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
 app.get("/gestao-caixas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-caixas.html")); });
-// Consulta de precos PUBLICA — sem login, sem nav.js, pra compartilhar o link com
-// qualquer pessoa (mesma ideia do Apoio ao Vendedor, so preco, sem enviar WhatsApp direto)
-app.get("/consulta-precos", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "consulta-precos.html")); });
+// Apoio ao Marketing — consulta de precos, com login (mesmo padrao das outras telas)
+app.get("/apoio-marketing", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "apoio-marketing.html")); });
 app.get("/caixa-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-atacado.html")); });
 app.get("/frente-caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "frente-caixa.html")); });
 app.get("/lista-fardo", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "lista-fardo.html")); });

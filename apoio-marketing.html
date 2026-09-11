@@ -3,32 +3,42 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>B13 Bebidas — Consulta de Preços</title>
+<title>B13 — Apoio ao Marketing</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233}
   body{background:var(--bg);color:#fff;min-height:100vh}
   .wrap{max-width:640px;margin:0 auto;padding:16px}
-  .topo{background:linear-gradient(135deg,#2b0a3d,#1a0a2e);padding:20px 16px;text-align:center;border-bottom:2px solid var(--mag)}
-  .topo h1{font-size:19px;font-weight:900}
-  .topo .sub{color:#c9a9d9;font-size:12px;margin-top:4px}
   .card{background:var(--card);border:1px solid #2c2660;border-radius:14px;padding:16px;margin-top:14px}
   .muted{color:#9a95c9}
-  input,select{background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:15px}
+  input,select,textarea{background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px 12px;font-size:15px;font-family:inherit}
   .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:14px;padding:11px 16px;color:#fff}
   .btn-mag{background:var(--mag)}
   .btn-ghost{background:#1c1846}
-  textarea{width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:12px;font-size:14px;font-family:inherit;line-height:1.5;resize:vertical}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(#b13topbar){ margin-left:200px }
+  }
 </style>
 </head>
-<body>
-<div class="topo">
-  <h1>🏷️ B13 Bebidas — Consulta de Preços</h1>
-  <div class="sub">Página pública, sem login. Busque um produto e copie os preços.</div>
-</div>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/apoio-marketing")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/apoio-marketing");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
 <div class="wrap" id="app"></div>
 <script>
 const B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+const S=(typeof b13GetSession==="function"?b13GetSession():{})||{};
 const esc=(s)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const brl=(v)=>"R$ "+(+v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -45,9 +55,14 @@ function render(){
   if(!PRECOS_CATS){ app.innerHTML=`<div class="card"><div class="muted">Carregando…</div></div>`; return; }
   const selCount=precosSel.length;
   app.innerHTML=`
+  <div class="card" style="margin-top:0">
+    <div style="font-weight:900;font-size:18px">🏷️ Apoio ao Marketing — Consulta de Preços</div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Busque um produto ou categoria, selecione o que precisar e copie o texto pronto pra usar.</div>
+  </div>
+
   <div class="card">
     <div style="font-weight:800;margin-bottom:2px">🔎 Pesquisar produto</div>
-    <div class="muted" style="font-size:12px;margin-bottom:10px">Traz o preço de atacado, unidade e fardo (quando existir). Selecione um ou mais produtos pra montar o texto de resposta embaixo.</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Traz o preço de atacado, unidade e fardo (quando existir).</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <input id="precosBuscaInp" placeholder="🔎 Buscar produto (ex.: heineken, coca)…" value="${esc(precosBusca)}" onkeydown="if(event.key==='Enter')fazerBuscaPrecos()" oninput="precosBusca=this.value" style="flex:1;min-width:180px">
       <button class="btn btn-mag" onclick="fazerBuscaPrecos()">Buscar</button>
@@ -72,9 +87,9 @@ function render(){
       ${selCount?`<button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="limparPrecosSel()">Limpar</button>`:''}
     </div>
     ${selCount?`
-      <textarea id="precosTexto" readonly style="min-height:${Math.min(320,90+selCount*38)}px">${esc(montarTextoPrecos())}</textarea>
+      <textarea id="precosTexto" readonly style="width:100%;min-height:${Math.min(320,90+selCount*38)}px;line-height:1.5;resize:vertical">${esc(montarTextoPrecos())}</textarea>
       <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="copiarPrecos()">📋 Copiar texto</button>
-      <div class="muted" style="font-size:11px;margin-top:6px;text-align:center">Cole no WhatsApp ou onde precisar.</div>
+      <div class="muted" style="font-size:11px;margin-top:6px;text-align:center">Cole no WhatsApp, Instagram ou onde precisar.</div>
     `:'<div class="muted" style="font-size:13px">Selecione produtos pra ver o texto aqui.</div>'}
   </div>
   <div class="muted" style="text-align:center;font-size:11px;margin:16px 0">B13 Bebidas · preços sujeitos a alteração</div>`;
