@@ -120,7 +120,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
     if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); return; }
     try{
       const f=JSON.parse(sess);
-      if(!f?.id){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); return; }
+      if(!(f&&f.id)){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); return; }
       sessionStorage.setItem("b13sess",sess);
     }catch(e){ location.href="/login"; return; }
     document.addEventListener("DOMContentLoaded",function(){
@@ -138,7 +138,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 </div>
 
 <div class="wrap" id="app">
-  <div style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando…</div>
+  <div id="loadingMsg" style="text-align:center;padding:40px;color:var(--muted)"><span class="spinner"></span><br><br>Carregando…</div>
 </div>
 
 <!-- Modal conferir -->
@@ -218,7 +218,7 @@ async function carregar(silencioso){
     try{ r=await fetch(url,{signal:ctrl.signal}); }
     finally{ clearTimeout(to); }
     const j=await r.json();
-    pedidos=(j.data||[]).filter(p=>p.situacao?.id===SIT.SEPARADO||p.situacao?.id===821590||p.situacao?.nome==="SEPARADO"||p.situacao?.id===SIT.PRAZO);
+    pedidos=(j.data||[]).filter(p=>(p.situacao&&p.situacao.id)===SIT.SEPARADO||(p.situacao&&p.situacao.id)===821590||(p.situacao&&p.situacao.nome)==="SEPARADO"||(p.situacao&&p.situacao.id)===SIT.PRAZO);
     render();
   }catch(e){
     if(!silencioso){
@@ -270,7 +270,7 @@ function filaHtml(){
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
             <div class="fi-num">Pedido ${p.numero||p.id}</div>
-            <div class="fi-cli">👤 ${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
+            <div class="fi-cli">👤 ${esc((p.contato&&p.contato.nome)||"—")} · ${dataBR(p.data)}</div>
             <div class="fi-total">${brl(p.total||0)}</div>
           </div>
           <span class="fi-badge badge-sep">SEPARADO</span>
@@ -317,7 +317,7 @@ async function abrirPedido(id){
     sel._tipoEntrega=entregaInfo?entregaInfo.tipo:(freteCalc>0.01?"entrega":"retirada");
     const logItems=rLog.data||[];
     const pend=rPend.data;
-    const faltas=pend?.faltas||[];
+    const faltas=(pend&&pend.faltas)||[];
 
     // monta itens com info de pendência anterior
     // busca mapa de estoque para pegar imagens
@@ -335,20 +335,20 @@ async function abrirPedido(id){
     }catch(e){}
 
     itensConf=(sel.itens||[]).map(i=>{
-      const falta=faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&f.produtoId===i.produto?.id));
+      const falta=faltas.find(f=>f.descricao===i.descricao||(f.produtoId&&f.produtoId===(i.produto&&i.produto.id)));
       // tenta pegar imagem do produto
-      const codigo=i.produto?.codigo||i.codigo||"";
+      const codigo=(i.produto&&i.produto.codigo)||i.codigo||"";
       const estItem=estMap[String(codigo)]||{};
-      const imagem=i.produto?.imageThumbnail||estItem.imagem||"";
+      const imagem=(i.produto&&i.produto.imageThumbnail)||estItem.imagem||"";
       return {
-        produtoId:i.produto?.id,
-        descricao:i.descricao||i.produto?.nome||"",
+        produtoId:(i.produto&&i.produto.id),
+        descricao:i.descricao||(i.produto&&i.produto.nome)||"",
         quantidade:i.quantidade,
         valor:i.valor,
         imagem,
         confirmado:false,
         _teveFalta:!!falta,
-        _faltaQtd:falta?.falta||0,
+        _faltaQtd:(falta&&falta.falta)||0,
       };
     });
 
@@ -395,10 +395,10 @@ function renderConferencia(){
       <div class="conf-header">
         <div class="conf-info">
           <h2>Pedido ${p.numero||p.id}</h2>
-          <div class="cli">👤 ${esc(p.contato?.nome||"—")} · ${dataBR(p.data)}</div>
+          <div class="cli">👤 ${esc((p.contato&&p.contato.nome)||"—")} · ${dataBR(p.data)}</div>
           <div class="total">${brl(p.total||0)}</div>
           ${p._pago
-            ?`<div style="font-size:11px;color:#a8f0c8;margin-top:3px">✅ Pago: ${brl(p._pag?.valorPago||0)}</div>`
+            ?`<div style="font-size:11px;color:#a8f0c8;margin-top:3px">✅ Pago: ${brl((p._pag&&p._pag.valorPago)||0)}</div>`
             :`<div style="font-size:11px;color:#ffd23f;margin-top:3px">⚠️ Não pago</div>`}
         </div>
         <button class="btn btn-ghost btn-sm" onclick="sel=null;itensConf=[];render()">← Fila</button>
@@ -438,7 +438,7 @@ function abrirModal(){
   // mostra status de pagamento
   const pag=sel._pag;
   const pago=sel._pago;
-  const valorPago=pag?.valorPago||0;
+  const valorPago=(pag&&pag.valorPago)||0;
   const total=sel.total||0;
   const ps=document.getElementById("pagStatus");
   if(pago){
@@ -451,7 +451,7 @@ function abrirModal(){
   // tipo já definido lá no totem — não dá pra escolher aqui, só confirma
   tipoSel=sel._tipoEntrega;
   const tf=document.getElementById("tipoFixo");
-  const ehPrazoSel=sel.situacao?.id===SIT.PRAZO;
+  const ehPrazoSel=(sel.situacao&&sel.situacao.id)===SIT.PRAZO;
   tf.innerHTML=ehPrazoSel?"🧾 PRAZO":(tipoSel==="entrega"?"🚚 ENTREGA":"🏪 RETIRADA");
   // NENHUM pedido pode ser conferido sem pagamento — vale pra entrega e retirada
   // igual (antes só bloqueava retirada, e entrega sem pagar so falhava depois, no
