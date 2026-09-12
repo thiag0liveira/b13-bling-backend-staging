@@ -905,16 +905,16 @@ function comprimirVideo(file, cb) {
     v.muted = true; v.playsInline = true; v.preload = "auto";
     v.src = URL.createObjectURL(file);
     v.onloadedmetadata = function () {
-      var alvoL = 480;
+      var alvoL = 720;
       var escala = v.videoWidth > alvoL ? alvoL / v.videoWidth : 1;
       var w = Math.round(v.videoWidth * escala), h = Math.round(v.videoHeight * escala);
       if (!w || !h) { return cb(null, "sem dimensao"); }
       var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
       var ctx = cv.getContext("2d");
-      var stream = cv.captureStream(15); // 15fps
-      var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm";
+      var stream = cv.captureStream(24); // 24fps
+      var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : (MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm");
       var rec;
-      try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 800000 }); }
+      try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2000000 }); }
       catch (e) { return cb(null, "recorder"); }
       var chunks = [];
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
