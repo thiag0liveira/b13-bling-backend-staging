@@ -2415,9 +2415,9 @@ function perguntarDestinoPedido() {
       <h3>📦 O que fazer com o pedido?</h3>
       <div class="muted" style="margin:8px 0 14px">Pagamento conferido. Agora diga o destino:</div>
       <button class="btn" style="width:100%;padding:16px;background:#2f9e6b;margin-bottom:10px;text-align:left"
-        onclick="DESTINO_PEDIDO='pronto';fecharModais();finalizar()">
+        onclick="DESTINO_PEDIDO='separado';fecharModais();finalizar()">
         ✅ <b>Cliente já levou / já separou</b>
-        <div style="font-size:11px;opacity:.85;font-weight:400;margin-top:2px">Pedido vai direto pra Atendido</div></button>
+        <div style="font-size:11px;opacity:.85;font-weight:400;margin-top:2px">Pedido vai pra Separado</div></button>
       <button class="btn" style="width:100%;padding:16px;background:#29ABE2;color:#000;text-align:left"
         onclick="DESTINO_PEDIDO='separacao';fecharModais();finalizar()">
         📦 <b>Mandar pra separação</b>
@@ -2502,7 +2502,7 @@ async function finalizar() {
   const taxaCredito = taxaCartao(); // 3,5% do crédito + débito, se aplicável e marcado
   // "separacao" deixa o pedido EM SEPARAÇÃO (entra na fila da Mesa e do Painel);
   // "pronto" segue direto pra Atendido, como antes
-  const statusFinal = DESTINO_PEDIDO === "separacao" ? "separacao" : "atendido";
+  const statusFinal = DESTINO_PEDIDO === "separacao" ? "separacao" : "separado";
   try {
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout = (url, opts, ms = 90000) => {
