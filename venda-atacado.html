@@ -609,7 +609,7 @@ function cardAnalise() {
           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="S.minComprados=!S.minComprados;render()">${S.minComprados ? '▼ Expandir' : '▲ Minimizar'}</button>
         </div>
       </div>
-      ${S.minComprados ? '' : `<div style="display:flex;flex-direction:column;gap:2px">${sugestoes.map(compraRow).join("")}</div>`}
+      ${S.minComprados ? '' : `<div style="display:flex;flex-wrap:wrap;gap:8px">${sugestoes.map(compraRow).join("")}</div>`}
       ` : ''}
   </div>`;
 }
@@ -618,7 +618,7 @@ function compraRow(s) {
   const sel = !!S.compraSelecionados[s.produtoId];
   const jaTem = S.itens.some(i => String(i.produtoId) === String(s.produtoId));
   const origem = s.origemPreco === 'atacado' ? 'Atacado' : 'Bling';
-  return `<div class="prod" style="${sel ? 'background:rgba(37,211,102,.12);border-radius:8px' : ''}">
+  return `<div class="prod" style="flex:1 1 240px;max-width:300px;border:1px solid #23204f;border-radius:10px;background:${sel ? 'rgba(37,211,102,.12)' : '#0f0d24'}">
     <div onclick="toggleCompra('${s.produtoId}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
       <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel ? '✓' : ''}</div>
       ${s.imagem ? `<img src="${esc(s.imagem)}" style="width:38px;height:38px">` : `<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
@@ -698,7 +698,7 @@ function cardNovos() {
     </div>
     ${S.minNovos ? '' : `
     <div class="muted" style="font-size:12px;margin-bottom:8px">Selecione pra sugerir ao cliente por WhatsApp, ou toque no + pra adicionar ao pedido.</div>
-    <div style="display:flex;flex-direction:column;gap:2px">
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
       ${S.novos.map(novoRow).join("")}
     </div>`}
   </div>`;
@@ -706,7 +706,7 @@ function cardNovos() {
 function novoRow(p) {
   const sel = !!S.novosSelecionados[p.id];
   const jaTem = S.itens.some(i => String(i.produtoId) === String(p.id));
-  return `<div class="prod" style="${sel ? 'background:rgba(37,211,102,.12);border-radius:8px' : ''}">
+  return `<div class="prod" style="flex:1 1 240px;max-width:300px;border:1px solid #23204f;border-radius:10px;background:${sel ? 'rgba(37,211,102,.12)' : '#0f0d24'}">
     <div onclick="toggleNovo('${p.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
       <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel ? '✓' : ''}</div>
       ${p.imagem ? `<img src="${esc(p.imagem)}" style="width:38px;height:38px">` : `<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
