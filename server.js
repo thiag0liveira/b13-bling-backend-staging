@@ -3126,7 +3126,7 @@ app.get("/api/diag/comprovante/:pedido",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
-app.get("/api/comprovantes/lista",(req,res)=>{
+app.get("/api/comprovantes/lista",async(req,res)=>{
   try{
     const dias=Math.min(Number(req.query.dias||15),90);
     const desde=Date.now()-dias*86400000;
@@ -3149,18 +3149,32 @@ app.get("/api/comprovantes/lista",(req,res)=>{
         if((ev.em||0)>porPedido[pid].ultimoEm) porPedido[pid].ultimoEm=ev.em;
       });
     });
-    // enriquece com numero/cliente do registro local (rapido, sem bater no Bling)
+    // enriquece com numero/cliente. Primeiro tenta o registro local (rapido); pro que
+    // nao estiver la, busca o NUMERO e o CLIENTE direto no Bling (assim nunca aparece
+    // so o id interno gigante no painel).
     const props=lerPropostas();
     const porBling={};
     Object.values(props||{}).forEach(p=>{ if(p.pedidoBlingId) porBling[String(p.pedidoBlingId)]=p; });
-    const lista=Object.values(porPedido).map(x=>{
+    let lista=Object.values(porPedido).map(x=>{
       const prop=porBling[String(x.pedidoId)]||null;
-      return { ...x, numero:prop?prop.pedidoBlingNumero||x.pedidoId:x.pedidoId,
-        cliente:prop&&prop.cliente?prop.cliente.nome:"",
+      return { ...x,
+        numero: prop ? (prop.pedidoBlingNumero||null) : null,
+        cliente: prop&&prop.cliente ? (prop.cliente.nome||"") : "",
         qtd:x.comprovantes.length,
         temVideo:x.comprovantes.some(c=>c.tipo==="video"),
         temFoto:x.comprovantes.some(c=>c.tipo==="foto") };
     }).sort((a,b)=>b.ultimoEm-a.ultimoEm);
+    // completa no Bling o que faltou (numero ou cliente), limitando pra nao pesar
+    const faltando=lista.filter(x=>!x.numero||!x.cliente).slice(0,40);
+    for(const x of faltando){
+      try{
+        const d=await blingLento(`/pedidos/vendas/${x.pedidoId}`).then(r=>r?.data);
+        if(d){ if(!x.numero) x.numero=d.numero; if(!x.cliente) x.cliente=(d.contato&&d.contato.nome)||""; }
+      }catch(e){}
+      await sleep(60);
+    }
+    // pro que ainda nao achou numero, usa o id como ultimo recurso
+    lista.forEach(x=>{ if(!x.numero) x.numero=x.pedidoId; if(!x.cliente) x.cliente=""; });
     res.json({ dias, qtd:lista.length,
       totalArquivos:lista.reduce((a,x)=>a+x.qtd,0), data:lista });
   }catch(e){ res.status(500).json({erro:e.message}); }

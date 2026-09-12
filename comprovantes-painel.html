@@ -73,12 +73,12 @@ function render(){
     var c=p.comprovantes[0]; // capa = mais recente
     var ehVideo=c.tipo==="video";
     var mid=ehVideo
-      ? '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'video\',\''+esc(String(p.numero))+'\')"><video src="'+B+esc(c.url)+'#t=0.1" preload="metadata" muted></video><span class="play">▶</span></div>'
-      : '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'foto\',\''+esc(String(p.numero))+'\')"><img src="'+B+esc(c.url)+'" loading="lazy"></div>';
+      ? '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'video\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"><video src="'+B+esc(c.url)+'#t=0.1" preload="metadata" muted></video><span class="play">▶</span></div>'
+      : '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'foto\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"><img src="'+B+esc(c.url)+'" loading="lazy"></div>';
     return '<div class="pc">'+mid+
       '<div class="info">'+
-        '<div class="num">#'+esc(p.numero)+'</div>'+
-        '<div class="cli">'+esc(p.cliente||"—")+'</div>'+
+        '<div class="num">Pedido #'+esc(p.numero)+'</div>'+
+        '<div class="cli">'+esc(p.cliente||"cliente não identificado")+'</div>'+
         '<div style="margin-top:6px">'+
           (p.temFoto?'<span class="badge" style="background:#2f9e6b">📷 foto</span>':'')+
           (p.temVideo?'<span class="badge" style="background:#b3341f">🎥 vídeo</span>':'')+
@@ -110,12 +110,12 @@ function render(){
     (lista.length?'<div class="grid">'+cards+'</div>':'<div class="card"><div class="muted">Nenhum comprovante no período.</div></div>');
 }
 
-function abrirLb(url,tipo,numero){
+function abrirLb(url,tipo,numero,cliente){
   var lb=document.getElementById("lightbox");
   lb.innerHTML=(tipo==="video"
     ? '<video src="'+B+esc(url)+'" controls autoplay playsinline></video>'
     : '<img src="'+B+esc(url)+'">')+
-    '<div class="cap">Pedido #'+esc(numero)+' — <a href="'+B+esc(url)+'" target="_blank" style="color:#7fd4ff">abrir original</a></div>';
+    '<div class="cap">Pedido #'+esc(numero)+(cliente?' — '+esc(cliente):'')+' — <a href="'+B+esc(url)+'" target="_blank" style="color:#7fd4ff">abrir original</a></div>';
   lb.classList.add("on");
 }
 function fecharLb(ev){ if(ev.target.id==="lightbox"||ev.target.className==="cap"){ var lb=document.getElementById("lightbox"); lb.classList.remove("on"); lb.innerHTML=""; } }
@@ -124,7 +124,7 @@ function verTodos(pedidoId){
   var p=(DADOS.data||[]).filter(function(x){return String(x.pedidoId)===String(pedidoId);})[0];
   if(!p) return;
   var lb=document.getElementById("lightbox");
-  lb.innerHTML='<div style="max-width:96vw;max-height:88vh;overflow:auto"><div style="color:#fff;font-weight:900;margin-bottom:10px">Pedido #'+esc(p.numero)+' — '+p.qtd+' arquivos</div>'+
+  lb.innerHTML='<div style="max-width:96vw;max-height:88vh;overflow:auto"><div style="color:#fff;font-weight:900;margin-bottom:10px">Pedido #'+esc(p.numero)+(p.cliente?' — '+esc(p.cliente):'')+' · '+p.qtd+' arquivos</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">'+
     p.comprovantes.map(function(c){
       var m=c.tipo==="video"?'<video src="'+B+esc(c.url)+'" controls playsinline style="width:100%;border-radius:8px"></video>':'<img src="'+B+esc(c.url)+'" style="width:100%;border-radius:8px">';
