@@ -398,7 +398,7 @@ function extPorMime(mime) {
   if (mime.indexOf("webp") >= 0) return "webp";
   return "jpg";
 }
-app.post("/api/comprovante/:id", express.json({ limit: "25mb" }), (req, res) => {
+app.post("/api/comprovante/:id", express.json({ limit: "60mb" }), (req, res) => {
   try {
     const { dataUrl, tipo, funcionarioId, funcionarioNome, evento } = req.body || {};
     if (!dataUrl || typeof dataUrl !== "string") return res.status(400).json({ erro: "dataUrl obrigatório" });
@@ -3107,7 +3107,8 @@ app.get("/api/comprovantes/lista",(req,res)=>{
     const porPedido={};
     Object.entries(log||{}).forEach(([pid,evs])=>{
       (evs||[]).forEach(ev=>{
-        if(!/comprovante/i.test(ev.evento||"")) return;
+        if(!/comprovante|_conferencia/i.test(ev.evento||"")) return;
+        if(/conferido|separacao|situacao/i.test(ev.evento||"")) return; // não são comprovantes
         const d=ev.detalhes||{};
         if(!d.url) return;
         if((ev.em||0)<desde) return;

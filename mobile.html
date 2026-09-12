@@ -856,23 +856,74 @@ function carregarFotoMob(input) {
 function carregarVideoMob(input) {
   var file = input.files && input.files[0];
   if (!file) return;
-  if (file.size > LIMITE_COMPROVANTE) {
-    el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande — grave um trecho mais curto.</span>';
-    return;
-  }
-  el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Carregando vídeo…';
+  el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Processando vídeo (baixa resolução)…';
+  comprimirVideo(file, function (blob, err) {
+    if (err || !blob) {
+      // não deu pra comprimir: usa o original SE couber no limite
+      if (file.size > LIMITE_COMPROVANTE) {
+        el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande e este aparelho não comprime. Grave um trecho mais curto (uns 10s).</span>';
+        return;
+      }
+      lerVideoParaEnvio(file);
+      return;
+    }
+    lerVideoParaEnvio(blob);
+  });
+}
+function lerVideoParaEnvio(blob) {
   var reader = new FileReader();
   reader.onload = function (e) {
-    comprovanteMob = {
-      dataUrl: e.target.result,
-      tipo: "video"
-    };
-    el("fotoPreviewMob").innerHTML = '<video src="' + comprovanteMob.dataUrl + '" controls style="max-width:100%;max-height:200px;border-radius:8px"></video>';
+    comprovanteMob = { dataUrl: e.target.result, tipo: "video" };
+    var kb = Math.round((comprovanteMob.dataUrl.length * 0.75) / 1024);
+    el("fotoPreviewMob").innerHTML = '<video src="' + comprovanteMob.dataUrl + '" controls style="max-width:100%;max-height:200px;border-radius:8px"></video><div class="muted" style="font-size:11px;margin-top:4px">~' + kb + ' KB</div>';
   };
   reader.onerror = function () {
-    el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui carregar o vídeo.</span>';
+    el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui preparar o vídeo.</span>';
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(blob);
+}
+// Recomprime o video pra 480px de largura, ~800kbps, usando canvas+MediaRecorder.
+// Roda no navegador; se nao houver suporte, chama o callback com erro pra usar o original.
+function comprimirVideo(file, cb) {
+  try {
+    if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
+      return cb(null, "sem suporte");
+    }
+    var v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto";
+    v.src = URL.createObjectURL(file);
+    v.onloadedmetadata = function () {
+      var alvoL = 480;
+      var escala = v.videoWidth > alvoL ? alvoL / v.videoWidth : 1;
+      var w = Math.round(v.videoWidth * escala), h = Math.round(v.videoHeight * escala);
+      if (!w || !h) { return cb(null, "sem dimensao"); }
+      var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      var ctx = cv.getContext("2d");
+      var stream = cv.captureStream(15); // 15fps
+      var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm";
+      var rec;
+      try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 800000 }); }
+      catch (e) { return cb(null, "recorder"); }
+      var chunks = [];
+      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+      rec.onstop = function () {
+        try { URL.revokeObjectURL(v.src); } catch (e) {}
+        cb(new Blob(chunks, { type: "video/webm" }), null);
+      };
+      var desenhar = function () {
+        if (v.paused || v.ended) return;
+        ctx.drawImage(v, 0, 0, w, h);
+        requestAnimationFrame(desenhar);
+      };
+      v.onplay = function () { desenhar(); };
+      v.onended = function () { try { rec.stop(); } catch (e) {} };
+      rec.start();
+      v.play().catch(function () { cb(null, "play"); });
+      // trava de seguranca: no maximo 30s de gravacao
+      setTimeout(function () { if (rec.state === "recording") { try { v.pause(); rec.stop(); } catch (e) {} } }, 30000);
+    };
+    v.onerror = function () { cb(null, "load"); };
+  } catch (e) { cb(null, e.message); }
 }
 function confirmarConferencia() {
   if (!PEDIDO) return;
@@ -882,11 +933,11 @@ function confirmarConferencia() {
   var btn = el("btnConfirmarMob");
   if (btn) btn.disabled = true;
   msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
+  // envia o comprovante e CONFIRMA que salvou — antes o erro era engolido
+  // (.catch vazio), entao um video que falhasse no envio sumia sem ninguem saber
   var passo = comprovanteMob ? fetch(BACKEND + "/api/comprovante/" + id, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       dataUrl: comprovanteMob.dataUrl,
       tipo: comprovanteMob.tipo,
@@ -894,7 +945,12 @@ function confirmarConferencia() {
       funcionarioId: FUNC.id,
       funcionarioNome: FUNC.nome
     })
-  }).catch(function () {}) : Promise.resolve();
+  }).then(function (r) {
+    return r.json().then(function (jc) {
+      if (!r.ok || jc.erro) throw new Error(jc.erro || "falha ao salvar o comprovante");
+      return jc;
+    });
+  }) : Promise.resolve();
   passo.then(function () {
     return fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
       method: "POST",

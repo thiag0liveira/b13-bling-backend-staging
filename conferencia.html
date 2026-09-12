@@ -485,10 +485,15 @@ async function confirmarConferencia(){
   document.getElementById("msgModal").textContent="Finalizando…";
   const id=String(sel.id);
   try{
-    // salva foto no log se tirou
+    // salva foto como COMPROVANTE (vira arquivo + entra no painel). Antes ia pro log
+    // como texto base64 gigante em detalhes.foto, sem url — o painel nunca achava.
     if(fotoBase64){
-      await fetch(BACKEND+"/api/log/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({evento:"foto_conferencia",funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,detalhes:{foto:fotoBase64}})}).catch(()=>{});
+      try{
+        const rc=await fetch(BACKEND+"/api/comprovante/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({dataUrl:fotoBase64,tipo:"foto",evento:"foto_conferencia",funcionarioId:FUNC.id,funcionarioNome:FUNC.nome})});
+        const jc=await rc.json().catch(()=>({}));
+        if(!rc.ok||jc.erro){ if(!confirm("A foto não foi salva ("+(jc.erro||"erro")+"). Concluir a conferência mesmo assim?")) { document.getElementById("msgModal").textContent=""; return; } }
+      }catch(e){ if(!confirm("A foto não foi salva (erro de conexão). Concluir mesmo assim?")){ document.getElementById("msgModal").textContent=""; return; } }
     }
     // confirma
     const r=await fetch(BACKEND+"/api/fluxo/"+id+"/conferido",{method:"POST",
