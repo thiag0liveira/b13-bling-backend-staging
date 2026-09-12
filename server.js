@@ -4584,7 +4584,35 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // preço continuar o mesmo": os itens mudavam, mas as parcelas (o quanto o cliente
     // deve/pagou) continuavam com o valor antigo.
     const totalItensNovo=itens.reduce((a,i)=>a+Number(i.quantidade)*Number(i.valor),0);
-    const freteAtual=Number(ped.transporte?.frete||0);
+    // RECALCULA O FRETE: como o valor por km depende da FAIXA de valor da compra
+    // (compra maior = frete menor/grátis), retirar produto pode mudar a faixa e o
+    // frete. Usa o km salvo no registro local (a distância não muda) com o novo total.
+    let freteAtual=Number(ped.transporte?.frete||0);
+    let freteRecalculado=false;
+    try{
+      const props0=lerPropostas();
+      const prop0=Object.values(props0||{}).find(p=>String(p.pedidoBlingId)===String(id));
+      const ehEntrega = prop0 ? (prop0.entrega&&prop0.entrega.tipo==="entrega") : (freteAtual>0);
+      const km = prop0&&prop0.entrega ? Number(prop0.entrega.km||0) : 0;
+      if(ehEntrega && km>0){
+        const cfg=configEntrega();
+        if(totalItensNovo < cfg.minEntrega){
+          // caiu abaixo do minimo de entrega — mantem o frete atual e sinaliza
+          // (nao vira retirada automaticamente; quem edita decide)
+        } else {
+          const faixa=porKmPara(totalItensNovo, cfg.faixas);
+          const porKm=faixa?Number(faixa.porKm):0;
+          const novoFrete=Math.round(porKm*km*100)/100;
+          if(Math.abs(novoFrete-freteAtual)>0.009){
+            freteAtual=novoFrete;
+            freteRecalculado=true;
+            // atualiza o transporte que vai pro Bling
+            payload.transporte = payload.transporte || (ped.transporte?JSON.parse(JSON.stringify(ped.transporte)):{});
+            payload.transporte.frete = novoFrete;
+          }
+        }
+      }
+    }catch(e){}
     const totalCalc=+(totalItensNovo+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
     if(ped.parcelas?.length){
       const somaAntiga=ped.parcelas.reduce((a,p)=>a+(Number(p.valor)||0),0);
@@ -4678,6 +4706,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         if(String(p.pedidoBlingId)!==String(id)) return;
         p.itens=itensNovos;
         p.total=+(Number(novoTotal||totalCalc)).toFixed(2);
+        if(freteRecalculado && p.entrega && p.entrega.tipo==="entrega") p.entrega.taxa=+Number(freteAtual).toFixed(2);
         p.atualizadoEm=Date.now();
         p.historicoEdicoes=[...(p.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:diffEd.de,para:diffEd.para,origem:"pedido editado"}];
         achouP=true;
@@ -4687,7 +4716,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // 3) histórico do pedido (aparece na Central e na conferência)
     if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
 
-    res.json({ok:true, novoTotal, totalCalculado:totalCalc, alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
@@ -9498,7 +9527,7 @@ app.get("/api/pedidos-online/situacoes-disponiveis",async(req,res)=>{
   }catch(e){ res.json({data:[]}); }
 });
 
-app.get("/api/pedidos-online/:blingId/alteracoes",(req,res)=>{
+app.get("/api/pedidos-online/:blingId/alteracoes",async(req,res)=>{
   try{
     const id=String(req.params.blingId);
     const log=lerLog()[id]||[];
@@ -9524,8 +9553,16 @@ app.get("/api/pedidos-online/:blingId/alteracoes",(req,res)=>{
         });
       }));
     }catch(e){}
+    // frete atual do pedido — pra mensagem do WhatsApp mostrar (so quando e entrega)
+    let frete=0, ehEntrega=false;
+    try{
+      const props=lerPropostas();
+      const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===id);
+      if(prop&&prop.entrega&&prop.entrega.tipo==="entrega"){ ehEntrega=true; frete=Number(prop.entrega.taxa||0); }
+      if(!ehEntrega){ try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); const f=Number(d?.transporte?.frete||0); if(f>0){ ehEntrega=true; frete=f; } }catch(e){} }
+    }catch(e){}
     res.json({ pedidoId:id, teveAlteracao:!!(retirados.length||acrescentados.length||alterados.length),
-      retirados, acrescentados, alterados });
+      retirados, acrescentados, alterados, ehEntrega, frete:+Number(frete).toFixed(2) });
   }catch(e){ res.json({retirados:[],acrescentados:[],alterados:[],teveAlteracao:false}); }
 });
 

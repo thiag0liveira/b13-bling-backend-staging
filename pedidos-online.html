@@ -608,7 +608,10 @@ async function whats(tel, numero, cliente, id) {
       if (alt.alterados && alt.alterados.length) partes.push("🔄 *Quantidade alterada:*\n" + alt.alterados.map(x => "- " + x).join("\n"));
       blocoAlt = "\n\n" + partes.join("\n\n") + "\n_(o valor abaixo já está atualizado)_";
     }
-    const msg = "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + (((_ped4 = ped) === null || _ped4 === void 0 ? void 0 : _ped4.numero) || numero) + "* foi recebido na B13 Bebidas. ✅\n\n" + "*Itens do pedido:*\n" + itens + blocoAlt + "\n\n*Total: " + brl(total) + "*\n\nEm breve entraremos em contato! 😊";
+    // frete: quando é entrega, mostra o valor na mensagem (só o valor, sem dizer que foi recalculado)
+    var blocoFrete = "";
+    if (alt && alt.ehEntrega && Number(alt.frete) > 0) blocoFrete = "\n*Frete: " + brl(alt.frete) + "*";
+    const msg = "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + (((_ped4 = ped) === null || _ped4 === void 0 ? void 0 : _ped4.numero) || numero) + "* foi recebido na B13 Bebidas. ✅\n\n" + "*Itens do pedido:*\n" + itens + blocoAlt + blocoFrete + "\n\n*Total: " + brl(total) + "*\n\nEm breve entraremos em contato! 😊";
     if (!t) {
       alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa.");
       window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
@@ -822,7 +825,8 @@ async function salvarEditarAguardando(id) {
     const ia = j.itensAlterados || {};
     const resumo = [ia.retirados && ia.retirados.length ? "retirou " + ia.retirados.join(", ") : "", ia.acrescentados && ia.acrescentados.length ? "acrescentou " + ia.acrescentados.join(", ") : "", ia.alterados && ia.alterados.length ? "alterou " + ia.alterados.join(", ") : ""].filter(Boolean).join(" · ");
     const totalMsg = j.novoTotal != null ? '<br><span style="color:#ffd23f">Novo total: ' + brl(j.novoTotal) + '</span>' : '';
-    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
+    const freteMsg = j.freteRecalculado ? '<br><span style="color:#29ABE2">🛵 Frete recalculado: ' + brl(j.novoFrete) + '</span>' : '';
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
     if (j.alertaTotal) alert("⚠️ " + j.alertaTotal);
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
     setTimeout(function () {
