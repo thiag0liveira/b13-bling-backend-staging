@@ -830,10 +830,10 @@ function viewTabela() {
   const model = S.tabelaCompleta.model || [];
   if (!model.length) return `<div class="muted">Tabela não publicada. Publique em Tabela Atacado.</div>`;
   const cats = model.map(c => c.t || "").filter(Boolean);
-  const chip = (nome, ativo) => `<button class="btn ${ativo ? 'btn-mag' : 'btn-ghost'}" style="font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0" onclick='selecionarCategoriaTabela(${JSON.stringify(nome).replace(/'/g, "&#39;")})'>${esc(nome || "Todas")}</button>`;
+  const chip = (nome, ativo) => `<button class="btn ${ativo ? 'btn-mag' : 'btn-ghost'}" style="font-size:11px;padding:5px 10px;white-space:nowrap" onclick='selecionarCategoriaTabela(${JSON.stringify(nome).replace(/'/g, "&#39;")})'>${esc(nome || "Todas")}</button>`;
   return `
     <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="filtrarTabela(this.value)">
-    <div style="display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px">${[chip("", !S.categoriaTabela)].concat(cats.map(c => chip(c, S.categoriaTabela === c))).join("")}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${[chip("", !S.categoriaTabela)].concat(cats.map(c => chip(c, S.categoriaTabela === c))).join("")}</div>
     <div id="tbListaWrap" style="margin-top:8px;max-height:60vh;overflow-y:auto">${listaTabelaHtml()}</div>`;
 }
 function selecionarCategoriaTabela(nome) {
