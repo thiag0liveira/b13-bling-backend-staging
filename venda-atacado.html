@@ -102,6 +102,7 @@ const S = {
   modoTabela: false,
   tabelaCompleta: null,
   buscaTabela: "",
+  categoriaTabela: "",
   tbAbertos: {},
   rascunhoId: null,
   salvandoRascunho: false,
@@ -828,9 +829,16 @@ function viewTabela() {
   if (!S.tabelaCompleta) return `<div class="muted">Carregando tabela…</div>`;
   const model = S.tabelaCompleta.model || [];
   if (!model.length) return `<div class="muted">Tabela não publicada. Publique em Tabela Atacado.</div>`;
+  const cats = model.map(c => c.t || "").filter(Boolean);
+  const chip = (nome, ativo) => `<button class="btn ${ativo ? 'btn-mag' : 'btn-ghost'}" style="font-size:11px;padding:5px 10px;white-space:nowrap;flex-shrink:0" onclick='selecionarCategoriaTabela(${JSON.stringify(nome).replace(/'/g, "&#39;")})'>${esc(nome || "Todas")}</button>`;
   return `
     <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="filtrarTabela(this.value)">
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px">${[chip("", !S.categoriaTabela)].concat(cats.map(c => chip(c, S.categoriaTabela === c))).join("")}</div>
     <div id="tbListaWrap" style="margin-top:8px;max-height:60vh;overflow-y:auto">${listaTabelaHtml()}</div>`;
+}
+function selecionarCategoriaTabela(nome) {
+  S.categoriaTabela = nome || "";
+  render();
 }
 // só a LISTA da tabela (sem o input) — assim o filtro atualiza a lista sem recriar
 // o campo de busca, e o cursor não volta pro início a cada letra
@@ -838,7 +846,8 @@ function listaTabelaHtml() {
   var _S$tabelaCompleta;
   const model = ((_S$tabelaCompleta = S.tabelaCompleta) === null || _S$tabelaCompleta === void 0 ? void 0 : _S$tabelaCompleta.model) || [];
   const filtro = (S.buscaTabela || "").toLowerCase().trim();
-  const cats = model.map(c => {
+  const catSel = S.categoriaTabela || "";
+  const cats = model.filter(c => !catSel || (c.t || "") === catSel).map(c => {
     const itens = (c.itens || []).filter(i => i.preco > 0 && (!filtro || (i.nome || "").toLowerCase().includes(filtro)));
     return {
       titulo: c.t || "",
@@ -847,13 +856,15 @@ function listaTabelaHtml() {
   }).filter(c => c.itens.length);
   if (!cats.length) return `<div class="muted" style="padding:10px">Nenhum produto com "${esc(S.buscaTabela || "")}".</div>`;
   // 2 colunas de categorias lado a lado (mais fácil de achar o produto do que
-  // rolando uma lista só) — divide as categorias filtradas ao meio
-  const meio = Math.ceil(cats.length / 2);
+  // rolando uma lista só) — divide as categorias filtradas ao meio. Com uma
+  // categoria só selecionada, usa 1 coluna (não faz sentido dividir 1 categoria em 2)
   const renderColuna = lista => lista.map(c => `
         <div style="margin-bottom:10px">
           <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
           ${c.itens.map((it, ix) => tbItemRow(it, c.titulo + "|" + ix + "|" + it.nome)).join("")}
         </div>`).join("");
+  if (cats.length === 1) return renderColuna(cats);
+  const meio = Math.ceil(cats.length / 2);
   return `<div class="tb2col"><div>${renderColuna(cats.slice(0, meio))}</div><div>${renderColuna(cats.slice(meio))}</div></div>`;
 }
 let _tbFiltroT = null;
