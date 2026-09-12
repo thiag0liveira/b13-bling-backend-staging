@@ -4588,7 +4588,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // (compra maior = frete menor/grátis), retirar produto pode mudar a faixa e o
     // frete. Usa o km salvo no registro local (a distância não muda) com o novo total.
     let freteAtual=Number(ped.transporte?.frete||0);
-    let freteRecalculado=false;
+    let freteRecalculado=false, abaixoMinimoEntrega=false, minimoEntrega=0;
     try{
       const props0=lerPropostas();
       const prop0=Object.values(props0||{}).find(p=>String(p.pedidoBlingId)===String(id));
@@ -4597,8 +4597,10 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       if(ehEntrega && km>0){
         const cfg=configEntrega();
         if(totalItensNovo < cfg.minEntrega){
-          // caiu abaixo do minimo de entrega — mantem o frete atual e sinaliza
-          // (nao vira retirada automaticamente; quem edita decide)
+          // caiu abaixo do minimo de entrega — sinaliza pra tela avisar. Nao vira
+          // retirada automaticamente; quem edita decide. Registra tambem um Aviso.
+          abaixoMinimoEntrega = true;
+          minimoEntrega = cfg.minEntrega;
         } else {
           const faixa=porKmPara(totalItensNovo, cfg.faixas);
           const porKm=faixa?Number(faixa.porKm):0;
@@ -4716,7 +4718,14 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // 3) histórico do pedido (aparece na Central e na conferência)
     if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
 
-    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+    if(abaixoMinimoEntrega){
+      registrarAviso({tipo:"pedido_entrega_abaixo_minimo",
+        titulo:`Pedido #${ped.numero||id}: entrega ficou abaixo do mínimo (${(+minimoEntrega).toFixed(2)})`,
+        pedidoId:String(id), numero:ped.numero, operador:funcionarioNome||"", origem:"Edição de pedido",
+        fingerprint:`abaixomin-${id}-${Date.now()}`,
+        oQueFazer:`Depois de retirar itens, o pedido #${ped.numero||id} ficou em ${totalItensNovo.toFixed(2)}, abaixo do mínimo de ${(+minimoEntrega).toFixed(2)} pra entrega. Confirme com o cliente se mantém a entrega (com frete) ou passa pra retirada.`});
+    }
+    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }

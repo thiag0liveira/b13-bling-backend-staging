@@ -711,6 +711,7 @@ function renderEditarAguardando(id) {
   var _window$pedidoEditOri;
   const rows = (window.itensEdit || []).map((item, ix) => linhaItemEdit(item, ix, id)).join("");
   document.getElementById("mbox").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3>✏️ Pedido ' + esc(((_window$pedidoEditOri = window.pedidoEditOrig) === null || _window$pedidoEditOri === void 0 ? void 0 : _window$pedidoEditOri.numero) || id) + '</h3>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' + '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens. Ao salvar, altera também no Bling.</div>' + '<div style="max-height:42vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' + '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px">' + '<div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>' + '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,' + id + ')">' + '<div id="resBuscaEd"></div></div>' + '<div id="edMsg" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:10px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Cancelar</button>' + '<button class="btn btn-mag" style="margin:0" onclick="salvarEditarAguardando(' + id + ')">💾 Salvar no Bling</button></div>';
+  if (typeof atualizarTotalEdit === "function") atualizarTotalEdit();
 }
 function linhaItemEdit(item, ix, id) {
   if (item._removido) {
@@ -721,8 +722,29 @@ function linhaItemEdit(item, ix, id) {
 function mudarQtdEdit(ix, v, id) {
   const q = Math.max(1, parseInt(v) || 1);
   window.itensEdit[ix].quantidade = q;
+  atualizarTotalEdit();
+}
+// atualiza o total ao vivo e avisa quando pedido de ENTREGA cai abaixo do minimo
+function atualizarTotalEdit() {
   const t = document.getElementById("edTotal");
-  if (t) t.textContent = brl(totalEdit());
+  const tot = totalEdit();
+  if (t) t.textContent = brl(tot);
+  var p = window.pedidoEditOrig || {};
+  var ehEntrega = (p._tipoEntrega === "entrega") || (Number(p.frete || 0) > 0) || (p.transporte && Number(p.transporte.frete || 0) > 0);
+  var MIN = 1000; // minimo pra entrega
+  var w = document.getElementById("edMinWarn");
+  if (ehEntrega && tot < MIN) {
+    if (!w) {
+      w = document.createElement("div");
+      w.id = "edMinWarn";
+      w.style.cssText = "background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px;margin-top:8px;font-size:12px;color:#ff8f7a;font-weight:700";
+      var tp = document.getElementById("edTotal");
+      if (tp && tp.parentNode && tp.parentNode.parentNode) tp.parentNode.parentNode.insertBefore(w, tp.parentNode.nextSibling);
+    }
+    w.innerHTML = "⚠️ Este pedido é ENTREGA e ficou em " + brl(tot) + ", abaixo do mínimo de " + brl(MIN) + ". Confirme com o cliente se mantém a entrega ou passa pra retirada.";
+  } else if (w) {
+    w.parentNode.removeChild(w);
+  }
 }
 // preserva a posição da rolagem ao redesenhar (antes voltava tudo pro topo a cada
 // item removido, e em pedido grande era preciso rolar de novo toda vez)
@@ -826,7 +848,11 @@ async function salvarEditarAguardando(id) {
     const resumo = [ia.retirados && ia.retirados.length ? "retirou " + ia.retirados.join(", ") : "", ia.acrescentados && ia.acrescentados.length ? "acrescentou " + ia.acrescentados.join(", ") : "", ia.alterados && ia.alterados.length ? "alterou " + ia.alterados.join(", ") : ""].filter(Boolean).join(" · ");
     const totalMsg = j.novoTotal != null ? '<br><span style="color:#ffd23f">Novo total: ' + brl(j.novoTotal) + '</span>' : '';
     const freteMsg = j.freteRecalculado ? '<br><span style="color:#29ABE2">🛵 Frete recalculado: ' + brl(j.novoFrete) + '</span>' : '';
-    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
+    if (j.abaixoMinimoEntrega) {
+      alert("⚠️ ATENÇÃO: depois de retirar itens, o pedido ficou em " + brl(j.totalItensNovo) + ", ABAIXO do mínimo de " + brl(j.minimoEntrega) + " para entrega.\n\nConfirme com o cliente se mantém a entrega (com frete) ou passa para retirada.");
+    }
+    const minMsg = j.abaixoMinimoEntrega ? '<br><span style="color:#ff8f7a;font-weight:800">⚠️ Abaixo do mínimo de ' + brl(j.minimoEntrega) + ' pra entrega</span>' : '';
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + minMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
     if (j.alertaTotal) alert("⚠️ " + j.alertaTotal);
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
     setTimeout(function () {
