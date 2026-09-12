@@ -3098,6 +3098,34 @@ function _extrairEstornoDaObs(obs){
 }
 // PAINEL DE COMPROVANTES: lista os pedidos que tem foto/video de conferencia, lendo
 // do log de cada pedido (evento comprovante_conferencia). So leitura.
+// Diagnostico: mostra TUDO que esta no log de um pedido relacionado a comprovante,
+// pra saber se o video/foto foi salvo (e com qual evento/url). Uso pelo numero ou id.
+app.get("/api/diag/comprovante/:pedido",(req,res)=>{
+  try{
+    const t=String(req.params.pedido).trim();
+    // resolve numero -> id pelo registro local
+    let id=t;
+    try{
+      const props=lerPropostas();
+      const p=Object.values(props||{}).find(x=>String(x.pedidoBlingNumero)===t||String(x.pedidoBlingId)===t);
+      if(p&&p.pedidoBlingId) id=String(p.pedidoBlingId);
+    }catch(e){}
+    const log=lerLog()[id]||[];
+    const eventos=log.map(ev=>({evento:ev.evento, em:new Date(ev.em||0).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
+      por:ev.funcionarioNome||"", detalhes:ev.detalhes||{}}));
+    const comprovantes=eventos.filter(e=>/comprovante|_conferencia/i.test(e.evento||"")&&!/conferido|separacao|situacao/i.test(e.evento||""));
+    // lista arquivos no disco que começam com esse id
+    let arquivosNoDisco=[];
+    try{ arquivosNoDisco=fs.readdirSync(COMPROVANTES_DIR).filter(n=>n.indexOf(id+"_")===0); }catch(e){}
+    res.json({ pedidoIdUsado:id, totalEventosNoLog:eventos.length,
+      comprovantesNoLog:comprovantes, qtdComprovantesNoLog:comprovantes.length,
+      arquivosNoDisco, qtdArquivosNoDisco:arquivosNoDisco.length,
+      dica: comprovantes.length===0 && arquivosNoDisco.length>0
+        ? "Há arquivo no disco mas NADA no log — o comprovante foi salvo como arquivo mas o registro no log falhou."
+        : (comprovantes.length===0 ? "Nenhum comprovante registrado pra este pedido." : "OK: comprovante registrado.") });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/comprovantes/lista",(req,res)=>{
   try{
     const dias=Math.min(Number(req.query.dias||15),90);

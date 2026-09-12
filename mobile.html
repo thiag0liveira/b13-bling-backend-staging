@@ -857,7 +857,19 @@ function carregarVideoMob(input) {
   var file = input.files && input.files[0];
   if (!file) return;
   el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Processando vídeo (baixa resolução)…';
+  var _respondeu = false;
+  var _timeout = setTimeout(function () {
+    if (_respondeu) return;
+    _respondeu = true;
+    // compressão travou/demorou demais: cai pro original se couber
+    if (file.size > LIMITE_COMPROVANTE) {
+      el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande. Grave um trecho mais curto (uns 10s).</span>';
+    } else { lerVideoParaEnvio(file); }
+  }, 25000);
   comprimirVideo(file, function (blob, err) {
+    if (_respondeu) return;
+    _respondeu = true;
+    clearTimeout(_timeout);
     if (err || !blob) {
       // não deu pra comprimir: usa o original SE couber no limite
       if (file.size > LIMITE_COMPROVANTE) {
