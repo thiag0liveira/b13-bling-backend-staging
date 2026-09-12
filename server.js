@@ -387,6 +387,47 @@ app.use("/promo", express.static(path.join(__dirname, "promo"))); // imagens pro
 
 // ---- Comprovantes de conferência (foto/vídeo) — salvos como arquivo real no volume, nunca em base64 no JSON de log ----
 const COMPROVANTES_DIR = `${DATA_DIR}/comprovantes`;
+// ===== GESTÃO DE ARMAZENAMENTO DOS COMPROVANTES =====
+// Vídeo/foto de conferência acumulam no volume do Railway (que tem limite). Aqui
+// mantemos isso sob controle por DOIS critérios: idade (mais de N dias) e teto de
+// espaço (se passar do limite, apaga do mais antigo até caber). Configurável por env.
+const COMPROV_DIAS_MANTER = Number(process.env.COMPROV_DIAS_MANTER || 60);      // guarda 60 dias
+const COMPROV_LIMITE_MB  = Number(process.env.COMPROV_LIMITE_MB  || 2048);      // teto 2 GB
+function _statComprovantes(){
+  let arquivos=[], totalBytes=0;
+  try{
+    fs.readdirSync(COMPROVANTES_DIR).forEach(nome=>{
+      try{ const st=fs.statSync(`${COMPROVANTES_DIR}/${nome}`); if(st.isFile()){ arquivos.push({nome, bytes:st.size, mtime:st.mtimeMs}); totalBytes+=st.size; } }catch(e){}
+    });
+  }catch(e){}
+  arquivos.sort((a,b)=>a.mtime-b.mtime); // mais antigo primeiro
+  return {arquivos, totalBytes};
+}
+function limparComprovantesAntigos(){
+  try{
+    const {arquivos}=_statComprovantes();
+    const limite=Date.now()-COMPROV_DIAS_MANTER*86400000;
+    let apagados=0, bytesLiberados=0;
+    // 1) por IDADE
+    arquivos.forEach(a=>{
+      if(a.mtime<limite){ try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; a._del=true; }catch(e){} }
+    });
+    // 2) por ESPAÇO: se ainda estiver acima do teto, apaga do mais antigo até caber
+    const tetoBytes=COMPROV_LIMITE_MB*1024*1024;
+    let restante=_statComprovantes();
+    if(restante.totalBytes>tetoBytes){
+      for(const a of restante.arquivos){
+        if(restante.totalBytes<=tetoBytes) break;
+        try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; restante.totalBytes-=a.bytes; }catch(e){}
+      }
+    }
+    if(apagados) console.log(`[comprovantes] limpeza: ${apagados} arquivo(s), ${(bytesLiberados/1048576).toFixed(1)} MB liberados`);
+    return {apagados, bytesLiberados};
+  }catch(e){ return {apagados:0, bytesLiberados:0, erro:e.message}; }
+}
+// roda no boot (depois de 1 min) e a cada 12h
+setTimeout(limparComprovantesAntigos, 60000);
+setInterval(limparComprovantesAntigos, 12*60*60*1000);
 try { fs.mkdirSync(COMPROVANTES_DIR, { recursive: true }); } catch (e) {}
 app.use("/comprovantes", express.static(COMPROVANTES_DIR));
 function extPorMime(mime) {
@@ -3124,6 +3165,29 @@ app.get("/api/diag/comprovante/:pedido",(req,res)=>{
         ? "Há arquivo no disco mas NADA no log — o comprovante foi salvo como arquivo mas o registro no log falhou."
         : (comprovantes.length===0 ? "Nenhum comprovante registrado pra este pedido." : "OK: comprovante registrado.") });
   }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// uso de armazenamento dos comprovantes — quanto ocupa, quantos arquivos, e a
+// politica de limpeza atual. Serve pro painel mostrar e pra rodar limpeza manual.
+app.get("/api/comprovantes/uso",(req,res)=>{
+  try{
+    const {arquivos,totalBytes}=_statComprovantes();
+    const tetoBytes=COMPROV_LIMITE_MB*1024*1024;
+    let videos=0, fotos=0, bytesVideo=0, bytesFoto=0;
+    arquivos.forEach(a=>{ if(/\.(mp4|mov|webm|3gp)$/i.test(a.nome)){ videos++; bytesVideo+=a.bytes; } else { fotos++; bytesFoto+=a.bytes; } });
+    const maisAntigo=arquivos[0]?new Date(arquivos[0].mtime).toLocaleDateString("pt-BR"):null;
+    res.json({
+      totalArquivos:arquivos.length, videos, fotos,
+      totalMB:+(totalBytes/1048576).toFixed(1),
+      videoMB:+(bytesVideo/1048576).toFixed(1), fotoMB:+(bytesFoto/1048576).toFixed(1),
+      limiteMB:COMPROV_LIMITE_MB, pctUsado:+(totalBytes/tetoBytes*100).toFixed(1),
+      diasManter:COMPROV_DIAS_MANTER, maisAntigo,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/comprovantes/limpar-agora",(req,res)=>{
+  try{ const r=limparComprovantesAntigos(); res.json({ok:true, apagados:r.apagados, mbLiberados:+(r.bytesLiberados/1048576).toFixed(1)}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 app.get("/api/comprovantes/lista",async(req,res)=>{

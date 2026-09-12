@@ -54,13 +54,14 @@
 var B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
-var DADOS=null, FILTRO="", DIAS=15, BUSCA="";
+var DADOS=null, FILTRO="", DIAS=15, BUSCA="", USO=null;
 
 function carregar(){
   var app=document.getElementById("app");
   app.innerHTML='<div class="card"><div class="muted">Carregando comprovantes…</div></div>';
   fetch(B+"/api/comprovantes/lista?dias="+DIAS+(FILTRO?"&tipo="+FILTRO:"")).then(function(r){return r.json();}).then(function(j){
     DADOS=j; render();
+    fetch(B+"/api/comprovantes/uso").then(function(r){return r.json();}).then(function(u){ if(!u.erro){ USO=u; render(); } }).catch(function(){});
   }).catch(function(){ app.innerHTML='<div class="card"><div class="muted">Erro ao carregar.</div></div>'; });
 }
 
@@ -106,6 +107,11 @@ function render(){
         '</select>'+
       '</div>'+
       '<div class="muted" style="font-size:12px;margin-top:8px">'+lista.length+' pedido(s) · '+(DADOS.totalArquivos||0)+' arquivo(s)</div>'+
+      (USO?'<div style="margin-top:8px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9"><span>Armazenamento: '+USO.totalMB+' MB de '+USO.limiteMB+' MB</span><span>'+USO.pctUsado+'%</span></div>'+
+        '<div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:3px"><div style="height:100%;width:'+Math.min(100,USO.pctUsado)+'%;background:'+(USO.pctUsado>85?"#ff3b3b":(USO.pctUsado>60?"#ffd23f":"#3ce88a"))+'"></div></div>'+
+        '<div style="font-size:10px;color:#6b6699;margin-top:3px">'+USO.videos+' vídeos ('+USO.videoMB+' MB) · '+USO.fotos+' fotos ('+USO.fotoMB+' MB) · guarda '+USO.diasManter+' dias'+(USO.maisAntigo?' · mais antigo: '+USO.maisAntigo:'')+'</div>'+
+      '</div>':'')+
     '</div>'+
     (lista.length?'<div class="grid">'+cards+'</div>':'<div class="card"><div class="muted">Nenhum comprovante no período.</div></div>');
 }
