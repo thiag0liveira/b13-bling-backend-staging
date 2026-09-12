@@ -7273,6 +7273,8 @@ app.get("/api/buscar-atacado", async (req, res) => {
       try{
         const r=await bling(`/produtos/${p.id}`);
         p.estoque=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+        // aproveita a MESMA chamada pra trazer a imagem do produto (quando tiver)
+        p.imagem=extrairImagemProduto(r?.data)||"";
       }catch(e){ p.estoque=null; }
     }));
     res.json({ data: lista });
