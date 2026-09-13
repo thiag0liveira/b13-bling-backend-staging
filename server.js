@@ -3403,6 +3403,77 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// Confere uma LISTA de pedidos contra os caixas de um dia: quais estao la, quais nao
+// estao, e quais tem DINHEIRO entre as formas de pagamento.
+// Uso: /api/gestao/conferir-lista?data=2026-09-12&numeros=55670,55707,...
+app.get("/api/gestao/conferir-lista",(req,res)=>{
+  try{
+    const dia=_hojeISO(req.query.data);
+    const ini=_inicioDia(dia), fim=_fimDia(dia);
+    const numeros=String(req.query.numeros||"").split(",").map(x=>x.trim()).filter(Boolean);
+    if(!numeros.length) return res.status(400).json({erro:"informe ?numeros=1,2,3"});
+    const dCx=lerCaixaSessoes();
+    // indexa TODOS os lancamentos de venda do dia (por numero e por pedidoId)
+    const porChave={};
+    (dCx.sessoes||[]).forEach(sx=>{
+      const abEmDia=(Number(sx.abertaEm||0)>=ini&&Number(sx.abertaEm||0)<fim);
+      const fcEmDia=(Number(sx.fechadaEm||0)>=ini&&Number(sx.fechadaEm||0)<fim);
+      if(!abEmDia&&!fcEmDia&&sx.fechadaEm) return; // sessao de outro dia
+      (sx.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda") return;
+        if(Number(m.em||0)<ini||Number(m.em||0)>=fim) return;
+        const reg={ sessaoId:sx.id, operador:sx.operador||"—", tipoCaixa:sx.tipoCaixa||"frente",
+          numero:m.numero||m.pedidoId, pedidoId:m.pedidoId, cliente:m.clienteNome||"",
+          total:Number(m.total)||0, cancelado:!!m.cancelado, troco:Number(m.troco)||0,
+          pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"", valor:Number(p.valor)||0})),
+          hora:m.em?new Date(m.em).toLocaleTimeString("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit"}):null };
+        [String(m.numero||""),String(m.pedidoId||"")].filter(Boolean).forEach(k=>{
+          if(!porChave[k]) porChave[k]=[]; porChave[k].push(reg);
+        });
+      });
+    });
+    const ehDinheiro=(nome)=> /dinheiro|especie|espécie/i.test(String(nome||""));
+    const resultado=numeros.map(n=>{
+      const regs=(porChave[n]||[]).filter(r=>!r.cancelado);
+      const cancelados=(porChave[n]||[]).filter(r=>r.cancelado);
+      if(!regs.length){
+        return { numero:n, noCaixa:false, temDinheiro:false,
+          obs: cancelados.length? `só lançamento CANCELADO (${cancelados.length})` : "não encontrado nos caixas deste dia" };
+      }
+      const formas=[]; let valorDinheiro=0;
+      regs.forEach(r=>r.pagamentos.forEach(p=>{ formas.push(`${p.forma}: ${p.valor.toFixed(2)}`); if(ehDinheiro(p.forma)) valorDinheiro+=p.valor; }));
+      const trocoTotal=regs.reduce((a,r)=>a+r.troco,0);
+      return { numero:n, noCaixa:true, qtdLancamentos:regs.length,
+        temDinheiro: valorDinheiro>0,
+        valorDinheiro:+valorDinheiro.toFixed(2), troco:+trocoTotal.toFixed(2),
+        dinheiroLiquido:+(valorDinheiro-trocoTotal).toFixed(2),
+        total:+regs.reduce((a,r)=>a+r.total,0).toFixed(2),
+        operador:regs[0].operador, tipoCaixa:regs[0].tipoCaixa, hora:regs[0].hora,
+        cliente:regs[0].cliente, formas:formas.join(" · "),
+        duplicado: regs.length>1 };
+    });
+    const comDinheiro=resultado.filter(r=>r.temDinheiro);
+    const semDinheiro=resultado.filter(r=>r.noCaixa&&!r.temDinheiro);
+    const naoEncontrados=resultado.filter(r=>!r.noCaixa);
+    res.json({
+      dia, totalConsultado:numeros.length,
+      resumo:{
+        noCaixa: resultado.filter(r=>r.noCaixa).length,
+        naoEncontrados: naoEncontrados.length,
+        comDinheiro: comDinheiro.length,
+        semDinheiro: semDinheiro.length,
+        somaDinheiro:+comDinheiro.reduce((a,r)=>a+r.valorDinheiro,0).toFixed(2),
+        somaDinheiroLiquido:+comDinheiro.reduce((a,r)=>a+r.dinheiroLiquido,0).toFixed(2),
+        duplicados: resultado.filter(r=>r.duplicado).map(r=>r.numero),
+      },
+      COM_DINHEIRO: comDinheiro.map(r=>({numero:r.numero, dinheiro:r.valorDinheiro, troco:r.troco, liquido:r.dinheiroLiquido, operador:r.operador, hora:r.hora, cliente:r.cliente, formas:r.formas})),
+      SEM_DINHEIRO: semDinheiro.map(r=>({numero:r.numero, total:r.total, operador:r.operador, hora:r.hora, cliente:r.cliente, formas:r.formas})),
+      NAO_ENCONTRADOS: naoEncontrados.map(r=>({numero:r.numero, obs:r.obs})),
+      detalhe: resultado,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
