@@ -62,6 +62,8 @@
   .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
   .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:520px;width:100%;max-height:85vh;overflow:auto}
   input,textarea{background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px;font-size:14px;width:100%}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid #514c96;border-top-color:#29ABE2;border-radius:50%;animation:girar .8s linear infinite}
+  @keyframes girar{to{transform:rotate(360deg)}}
 </style>
 <script src="/nav.js"></script>
 <style>
@@ -115,6 +117,29 @@ let PEDIDOS = [],
   PERIODO_FIM = "",
   VISTO_ATE = 0,
   SIT_CARREGANDO = false;
+let PEDIDOS_LOCAL = [], BLING_PRONTO = false, BLING_PROGRESSO = 0, _blingTentativas = 0;
+// busca os pedidos do Bling em segundo plano e vai juntando aos locais conforme chegam
+async function buscarBlingProgressivo(qp) {
+  try {
+    const b = await fetch(B + "/api/pedidos-online?fase=bling" + (qp ? "&" + qp : "")).then(function (r) { return r.json(); });
+    BLING_PRONTO = !!b.pronto;
+    BLING_PROGRESSO = Number(b.progresso || 0);
+    // junta locais + bling (sem duplicar por id)
+    var ids = {};
+    PEDIDOS_LOCAL.forEach(function (p) { ids[String(p.id)] = true; });
+    var extras = (b.data || []).filter(function (p) { return !ids[String(p.id)]; });
+    PEDIDOS = PEDIDOS_LOCAL.concat(extras);
+    render();
+    _blingTentativas++;
+    if (!BLING_PRONTO && _blingTentativas < 40) {
+      setTimeout(function () { buscarBlingProgressivo(qp); }, 2000); // repuxa até completar
+    } else {
+      SIT_CARREGANDO = false;
+      _blingTentativas = 0;
+      render();
+    }
+  } catch (e) { SIT_CARREGANDO = false; }
+}
 let BUSCA_RES = null,
   BUSCANDO = false,
   SITUACOES = [],
@@ -156,12 +181,17 @@ async function carregar(silencioso) {
   }
   try {
     var qp = (PERIODO_INI && PERIODO_FIM) ? ("ini=" + PERIODO_INI + "&fim=" + PERIODO_FIM) : "";
-    const j = await fetch(B + "/api/pedidos-online" + (qp ? "?" + qp : "")).then(r => r.json());
-    // guarda o periodo que o backend usou (pra mostrar no seletor)
+    // FASE 1 (instantânea): registro local. Mostra na hora.
+    const j = await fetch(B + "/api/pedidos-online?fase=local" + (qp ? "&" + qp : "")).then(r => r.json());
     if (j.periodo) { if (!PERIODO_INI) PERIODO_INI = j.periodo.ini; if (!PERIODO_FIM) PERIODO_FIM = j.periodo.fim; }
     if (j.erro) throw new Error(j.erro);
-    PEDIDOS = j.data || [];
-    SIT_CARREGANDO = !!j.situacoesCarregando;
+    PEDIDOS_LOCAL = j.data || [];
+    PEDIDOS = PEDIDOS_LOCAL.slice();
+    SIT_CARREGANDO = true;
+    CARREGANDO = false;
+    render(); // já mostra os locais
+    // FASE 2 (segundo plano): pedidos do Bling, vão chegando de hoje pra trás
+    buscarBlingProgressivo(qp);
     try {
       const n = await fetch(B + "/api/pedidos-online/novos/" + encodeURIComponent(S.id)).then(r => r.json());
       VISTO_ATE = Number(n.vistoAte || 0); // tudo criado depois disso é "novo" pra este usuário
@@ -336,7 +366,7 @@ function render() {
     '<button class="btn btn-ghost" style="width:auto;margin:0 0 0 6px;font-size:11px;padding:6px 10px" onclick="PERIODO_INI=\'\';PERIODO_FIM=\'\';carregar()">📅 Semana atual</button>' + '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.length + ')' + (nConc ? ' <span style="opacity:.7">· ' + nConc + ' concluídos</span>' : '') + '</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
     const tel = soDig(a.telefone);
     return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">' + '<span style="flex:1;min-width:0">' + '<b>#' + esc(a.numero) + '</b> ' + esc(a.cliente) + ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:' + (a.tipo === "entrega" ? "#29ABE2;color:#000" : "#2f9e6b;color:#fff") + '">' + (a.tipo === "entrega" ? "ENTREGA" : "RETIRA") + '</span>' + (a.comPendencia ? ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>' : '') + '<div class="muted" style="font-size:10px">' + esc(a.situacao || "") + (a.por ? " · enviado por " + esc(a.por) : "") + '</div>' + '</span>' + '<b style="white-space:nowrap">' + brl(a.total) + '</b>' + (a.pronto ? '<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente(' + a.id + ',\'' + (a.tipo === "entrega" ? "entrega" : "retirada") + '\')">💬 avisar</button>' : '') + '</div>';
-  }).join("") + '</div>' : '') + (BUSCA_RES ? '<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "' + esc(window._buscaTxt || "") + '" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>' : '') + (CARREGANDO ? '<div class="muted" style="padding:16px">Carregando…</div>' : function () {
+  }).join("") + '</div>' : '') + (BUSCA_RES ? '<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "' + esc(window._buscaTxt || "") + '" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>' : '') + ((!BUSCA_RES && SIT_CARREGANDO && !BLING_PRONTO) ? '<div style="background:#1c1846;border:1px solid #37327a;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:#9a95c9;display:flex;align-items:center;gap:8px"><span class="spin"></span> Carregando pedidos do Bling… ' + BLING_PROGRESSO + '%</div>' : '') + (CARREGANDO ? '<div class="muted" style="padding:16px">Carregando…</div>' : function () {
     if (!lista.length) return '<div class="card"><div class="muted">Nenhum pedido nesse período.</div></div>';
     // GRUPOS em faixas horizontais: cada tipo de pedido numa LINHA própria,
     // com os pedidos em sequência e rolagem lateral dentro da faixa

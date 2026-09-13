@@ -9253,6 +9253,68 @@ function _semanaDe(refISO){
   return { ini:seg, fim:dom, iniISO:seg.toISOString().slice(0,10), fimISO:dom.toISOString().slice(0,10) };
 }
 
+// monta o objeto de card a partir de um pedido cru do Bling
+function _montarPedidoDoBling(b){
+  const bid=String(b.id);
+  const sitId=Number(b.situacao?.id||0);
+  _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now()};
+  const ag=_turnosEntrega()[bid]||null;
+  const okReg=lerPedidosOk()[bid]||null;
+  return { id:b.id, numero:b.numero||b.id,
+    agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+    teveRetirada:false,
+    ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
+    criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
+    origem:"bling", noSistema:false,
+    vendedor:"", cliente:b.contato?.nome||"—", telefone:"",
+    total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
+    tipo:(Number(b.transporte?.frete||0)>0)?"entrega":"retirada",
+    endereco:"", itens:[],
+    situacaoId:sitId, situacao:nomeSituacao(sitId),
+    cancelado:sitId===SIT.CANCELADO };
+}
+// Cache dos pedidos do Bling por janela de datas. A busca roda em SEGUNDO PLANO,
+// varrendo de HOJE pra trás (dia a dia), pra os pedidos recentes aparecerem primeiro.
+const _cacheBlingPedidos={}; // "iniISO_fimISO" -> {pedidos, pronto, progresso, em, rodando}
+function _carregarBlingPedidosBg(iniISO, fimISO, chave){
+  const c=_cacheBlingPedidos[chave];
+  // reaproveita cache fresco (2 min)
+  if(c && c.pronto && (Date.now()-c.em)<120000) return;
+  if(c && c.rodando) return;
+  _cacheBlingPedidos[chave]={pedidos:(c&&c.pedidos)||[], pronto:false, progresso:0, em:Date.now(), rodando:true};
+  (async()=>{
+    try{
+      const sitInteresse=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
+      const ehConsumidorFinal=(nome)=> /consumidor\s*final/i.test(String(nome||""));
+      // lista de dias de HOJE (ou fim) pra trás até o início
+      const dias=[];
+      let d=new Date(fimISO+"T12:00:00"); const dIni=new Date(iniISO+"T12:00:00");
+      while(d>=dIni){ dias.push(d.toISOString().slice(0,10)); d=new Date(d.getTime()-86400000); }
+      const acc={}; (_cacheBlingPedidos[chave].pedidos||[]).forEach(p=>{ acc[String(p.id)]=p; });
+      for(let di=0; di<dias.length; di++){
+        const dia=dias[di];
+        let pag=1;
+        for(let i=0;i<4;i++){
+          const params=new URLSearchParams({pagina:pag,limite:100,dataInicial:dia,dataFinal:dia});
+          sitInteresse.filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
+          let arr=[];
+          try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+          for(const b of arr){ if(ehConsumidorFinal(b.contato?.nome)) continue; acc[String(b.id)]=_montarPedidoDoBling(b); }
+          if(arr.length<100) break; pag++; await sleep(120);
+        }
+        // publica o parcial a cada dia processado (a tela vai mostrando)
+        _cacheBlingPedidos[chave].pedidos=Object.values(acc).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+        _cacheBlingPedidos[chave].progresso=Math.round((di+1)/dias.length*100);
+        _cacheBlingPedidos[chave].em=Date.now();
+        await sleep(80);
+      }
+      _cacheBlingPedidos[chave].pronto=true;
+      _cacheBlingPedidos[chave].rodando=false;
+      _cacheBlingPedidos[chave].em=Date.now();
+    }catch(e){ if(_cacheBlingPedidos[chave]) _cacheBlingPedidos[chave].rodando=false; }
+  })();
+}
+
 app.get("/api/pedidos-online",async(req,res)=>{
   try{
     // PERÍODO: por padrão a SEMANA atual (segunda a domingo), mas editável por
@@ -9304,8 +9366,28 @@ app.get("/api/pedidos-online",async(req,res)=>{
       porBlingId[String(p.pedidoBlingId)]=montarDoLocal(p);
     });
 
-    // 2) pedidos do BLING no período que NÃO estão no registro local (criados só no
-    // Bling). Traz os nao-consumidor-final. Situacoes que interessam ao acompanhamento.
+    // 2) pedidos do BLING no período que NÃO estão no registro local. Roda em SEGUNDO
+    // PLANO (cache), pra tela não travar. A fase "local" retorna na hora só o registro
+    // local; a fase "bling" retorna o cache do Bling (que uma tarefa de fundo preenche
+    // de HOJE pra trás). Sem ?fase= o comportamento é o completo (compat).
+    const fase=String(req.query.fase||"completo");
+    const chaveCache=`${iniISO}_${fimISO}`;
+    if(fase==="local"){
+      const lista=Object.values(porBlingId).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+      _atualizarSituacoesOnline(lista.slice(0,60).map(p=>p.id));
+      // dispara a busca do Bling em segundo plano (não espera)
+      _carregarBlingPedidosBg(iniISO, fimISO, chaveCache);
+      return res.json({data:lista, fase:"local", blingPronto:_cacheBlingPedidos[chaveCache]?.pronto||false,
+        periodo:{ini:iniISO, fim:fimISO}});
+    }
+    if(fase==="bling"){
+      const cache=_cacheBlingPedidos[chaveCache];
+      if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveCache); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
+      // devolve os do Bling que NÃO estão no local
+      const doBling=(cache.pedidos||[]).filter(b=>!porBlingId[String(b.id)]);
+      return res.json({data:doBling, fase:"bling", pronto:cache.pronto, progresso:cache.progresso||0, periodo:{ini:iniISO, fim:fimISO}});
+    }
+    // modo completo (compat): faz tudo síncrono como antes
     try{
       const sitInteresse=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
       let pag=1;
@@ -9316,33 +9398,15 @@ app.get("/api/pedidos-online",async(req,res)=>{
         try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); arr=r?.data||[]; }catch(e){ break; }
         for(const b of arr){
           const bid=String(b.id);
-          if(porBlingId[bid]) continue; // já veio do local
+          if(porBlingId[bid]) continue;
           const nomeCli=b.contato?.nome||"";
           if(ehConsumidorFinal(nomeCli)) continue;
-          const sitId=Number(b.situacao?.id||0);
-          _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now()};
-          const ag=_turnosEntrega()[bid]||null;
-          const okReg=lerPedidosOk()[bid]||null;
-          porBlingId[bid]={ id:b.id, numero:b.numero||b.id,
-            agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-            teveRetirada:false,
-            ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
-            criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
-            origem:"bling", noSistema:false,   // <- criado SÓ no Bling
-            vendedor:"", cliente:nomeCli||"—", telefone:"",
-            total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
-            tipo:(Number(b.transporte?.frete||0)>0)?"entrega":"retirada",
-            endereco:"", itens:[],
-            situacaoId:sitId, situacao:nomeSituacao(sitId),
-            cancelado:sitId===SIT.CANCELADO };
+          porBlingId[bid]=_montarPedidoDoBling(b);
         }
         if(arr.length<100) break; pag++; await sleep(120);
       }
     }catch(e){}
-
-    const lista=Object.values(porBlingId)
-      .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
-    // dispara a atualização das situações em 2º plano (não segura a resposta)
+    const lista=Object.values(porBlingId).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
     _atualizarSituacoesOnline(lista.slice(0,120).map(p=>p.id));
     res.json({data:lista, situacoesCarregando:_sitOnlineRodando, periodo:{ini:iniISO, fim:fimISO}});
   }catch(e){ res.status(500).json({erro:e.message}); }
