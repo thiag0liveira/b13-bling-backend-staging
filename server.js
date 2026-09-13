@@ -3451,13 +3451,27 @@ app.get("/api/gestao/conferir-lista",(req,res)=>{
         valorDinheiro:+valorDinheiro.toFixed(2), troco:+trocoTotal.toFixed(2),
         dinheiroLiquido:+(valorDinheiro-trocoTotal).toFixed(2),
         total:+regs.reduce((a,r)=>a+r.total,0).toFixed(2),
-        operador:regs[0].operador, tipoCaixa:regs[0].tipoCaixa, hora:regs[0].hora,
+        sessaoId:regs[0].sessaoId, operador:regs[0].operador, tipoCaixa:regs[0].tipoCaixa, hora:regs[0].hora,
         cliente:regs[0].cliente, formas:formas.join(" · "),
         duplicado: regs.length>1 };
     });
     const comDinheiro=resultado.filter(r=>r.temDinheiro);
     const semDinheiro=resultado.filter(r=>r.noCaixa&&!r.temDinheiro);
     const naoEncontrados=resultado.filter(r=>!r.noCaixa);
+    // AGRUPA POR CAIXA: quantos pedidos e quanto dinheiro em cada sessão
+    const porCaixa={};
+    resultado.filter(r=>r.noCaixa).forEach(r=>{
+      const k=r.sessaoId||"?";
+      if(!porCaixa[k]) porCaixa[k]={ sessaoId:k, operador:r.operador, tipoCaixa:r.tipoCaixa,
+        qtdPedidos:0, dinheiro:0, troco:0, liquido:0, total:0, numeros:[] };
+      const c=porCaixa[k];
+      c.qtdPedidos++; c.dinheiro+=r.valorDinheiro||0; c.troco+=r.troco||0;
+      c.liquido+=r.dinheiroLiquido||0; c.total+=r.total||0; c.numeros.push(r.numero);
+    });
+    const caixas=Object.values(porCaixa).map(c=>({...c,
+      dinheiro:+c.dinheiro.toFixed(2), troco:+c.troco.toFixed(2),
+      liquido:+c.liquido.toFixed(2), total:+c.total.toFixed(2)}))
+      .sort((a,b)=>b.dinheiro-a.dinheiro);
     res.json({
       dia, totalConsultado:numeros.length,
       resumo:{
@@ -3469,6 +3483,7 @@ app.get("/api/gestao/conferir-lista",(req,res)=>{
         somaDinheiroLiquido:+comDinheiro.reduce((a,r)=>a+r.dinheiroLiquido,0).toFixed(2),
         duplicados: resultado.filter(r=>r.duplicado).map(r=>r.numero),
       },
+      POR_CAIXA: caixas,
       COM_DINHEIRO: comDinheiro.map(r=>({numero:r.numero, dinheiro:r.valorDinheiro, troco:r.troco, liquido:r.dinheiroLiquido, operador:r.operador, hora:r.hora, cliente:r.cliente, formas:r.formas})),
       SEM_DINHEIRO: semDinheiro.map(r=>({numero:r.numero, total:r.total, operador:r.operador, hora:r.hora, cliente:r.cliente, formas:r.formas})),
       NAO_ENCONTRADOS: naoEncontrados.map(r=>({numero:r.numero, obs:r.obs})),

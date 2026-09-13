@@ -85,8 +85,32 @@ function render(lista,resumo,qtd){
   function linha(p){
     if(!p.noCaixa) return '<tr class="alerta"><td class="num">'+esc(p.numero)+'</td><td colspan="4"><span class="pill" style="background:#b3341f">NÃO ESTÁ NO CAIXA</span> <span class="muted">'+esc(p.obs||"")+'</span></td></tr>';
     if(!p.temDinheiro) return '<tr class="alerta"><td class="num">'+esc(p.numero)+'</td><td>'+esc(p.cliente||"")+'</td><td><span class="pill" style="background:#8a7a1f">SEM DINHEIRO</span></td><td>'+brl(p.total)+'</td><td class="muted">'+esc(p.formas||"")+'</td></tr>';
-    return '<tr class="ok"><td class="num">'+esc(p.numero)+'</td><td>'+esc(p.cliente||"")+'</td><td><b style="color:#3ce88a">'+brl(p.valorDinheiro)+'</b>'+(p.troco>0.009?'<div class="muted" style="font-size:10px">troco '+brl(p.troco)+'</div>':'')+'</td><td>'+brl(p.total)+'</td><td class="muted" style="font-size:11px">'+esc(p.hora||"")+' · '+esc(p.formas||"")+'</td></tr>';
+    return '<tr class="ok"><td class="num">'+esc(p.numero)+'</td><td>'+esc(p.cliente||"")+'</td><td><b style="color:#3ce88a">'+brl(p.valorDinheiro)+'</b>'+(p.troco>0.009?'<div class="muted" style="font-size:10px">troco '+brl(p.troco)+'</div>':'')+'</td><td>'+brl(p.total)+'</td><td class="muted" style="font-size:11px">'+esc(p.operador||"")+' · '+esc(p.hora||"")+'<br>'+esc(p.formas||"")+'</td></tr>';
   }
+  // agrupa por caixa (a partir do detalhe, juntando todos os blocos enviados)
+  var porCaixa={};
+  lista.filter(function(p){return p.noCaixa;}).forEach(function(p){
+    var k=p.sessaoId||"?";
+    if(!porCaixa[k]) porCaixa[k]={operador:p.operador,tipoCaixa:p.tipoCaixa,qtd:0,dinheiro:0,troco:0,liquido:0,total:0,numeros:[]};
+    var c=porCaixa[k];
+    c.qtd++; c.dinheiro+=p.valorDinheiro||0; c.troco+=p.troco||0; c.liquido+=p.dinheiroLiquido||0;
+    c.total+=p.total||0; c.numeros.push(p.numero);
+  });
+  var caixas=Object.keys(porCaixa).map(function(k){ var c=porCaixa[k]; c.sessaoId=k; return c; })
+    .sort(function(a,b){return b.dinheiro-a.dinheiro;});
+  var blocoCaixas = caixas.length? '<div class="card">'+
+    '<div style="font-weight:900;margin-bottom:8px">🗃️ Total por caixa ('+caixas.length+')</div>'+
+    caixas.map(function(c){
+      return '<div style="background:#1c1846;border-radius:10px;padding:10px;margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
+          '<b>👤 '+esc(c.operador)+' <span class="pill" style="background:'+(c.tipoCaixa==="atacado"?"#5a2a6b":"#2a4a6b")+'">'+(c.tipoCaixa==="atacado"?"ATACADO":"FRENTE")+'</span></b>'+
+          '<b style="color:#3ce88a;font-size:16px">'+brl(c.liquido)+'</b>'+
+        '</div>'+
+        '<div class="muted" style="font-size:12px;margin-top:4px">'+c.qtd+' pedido(s) · dinheiro '+brl(c.dinheiro)+(c.troco>0.009?' · troco '+brl(c.troco):'')+' · total vendido '+brl(c.total)+'</div>'+
+        '<div class="muted" style="font-size:11px;margin-top:4px;word-break:break-all">'+c.numeros.join(", ")+'</div>'+
+      '</div>';
+    }).join("")+'</div>' : '';
+
   document.getElementById("res").innerHTML=
     '<div class="card">'+
       '<div class="tot">'+
@@ -96,6 +120,7 @@ function render(lista,resumo,qtd){
         '<div><span class="muted" style="font-size:11px">Dinheiro (líquido)</span><b style="color:#ffd23f">'+brl(resumo.somaLiquido)+'</b></div>'+
       '</div>'+
     '</div>'+
+    blocoCaixas+
     (problemas.length?
       '<div class="card" style="border-color:#b3341f">'+
         '<div style="font-weight:900;color:#ff8090;margin-bottom:6px">⚠️ Precisam de atenção ('+problemas.length+')</div>'+
@@ -119,6 +144,12 @@ function copiarResumo(){
   t+="Total dinheiro (liquido): "+brl(d.resumo.somaLiquido)+"\n";
   t+="Com dinheiro: "+d.resumo.comDinheiro+" | Precisam atencao: "+prob.length+"\n\n";
   if(prob.length){ t+="PRECISAM ATENCAO:\n"+prob.map(function(p){ return "- "+p.numero+" "+(p.noCaixa?"(sem dinheiro)":"(nao esta no caixa)"); }).join("\n")+"\n\n"; }
+  var pc={};
+  d.lista.filter(function(p){return p.noCaixa;}).forEach(function(p){
+    var k=(p.operador||"?")+" ("+(p.tipoCaixa==="atacado"?"atacado":"frente")+")";
+    if(!pc[k]) pc[k]={qtd:0,liq:0}; pc[k].qtd++; pc[k].liq+=p.dinheiroLiquido||0;
+  });
+  t+="POR CAIXA:\n"+Object.keys(pc).map(function(k){ return "- "+k+": "+pc[k].qtd+" pedidos | "+brl(pc[k].liq); }).join("\n")+"\n\n";
   t+="CONFERIDOS:\n"+d.lista.filter(function(p){return p.noCaixa&&p.temDinheiro;})
     .map(function(p){ return "- "+p.numero+" "+(p.cliente||"")+" | dinheiro "+brl(p.valorDinheiro); }).join("\n");
   try{ navigator.clipboard.writeText(t); alert("Resumo copiado!"); }catch(e){ alert("Não consegui copiar."); }
