@@ -33,6 +33,11 @@
   .qtd{display:flex;align-items:center;gap:6px}
   .tb2col{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
   @media (max-width:560px){ .tb2col{grid-template-columns:1fr} }
+  .scrollx{display:flex;flex-wrap:nowrap;gap:8px;overflow-x:auto;overflow-y:hidden;padding-bottom:10px}
+  .scrollx::-webkit-scrollbar{height:8px}
+  .scrollx::-webkit-scrollbar-track{background:#1c1846;border-radius:4px}
+  .scrollx::-webkit-scrollbar-thumb{background:var(--mag);border-radius:4px}
+  .scrollx{scrollbar-width:thin;scrollbar-color:var(--mag) #1c1846}
   .qtd button{width:32px;height:32px;border-radius:8px;border:none;background:#1c1846;color:#fff;font-size:18px;font-weight:900;cursor:pointer}
   .qtd input{width:52px;text-align:center;padding:6px}
   .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:800}
@@ -102,6 +107,7 @@ const S = {
   modoTabela: false,
   tabelaCompleta: null,
   buscaTabela: "",
+  categoriaTabela: "",
   tbAbertos: {},
   rascunhoId: null,
   salvandoRascunho: false,
@@ -608,7 +614,7 @@ function cardAnalise() {
           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="S.minComprados=!S.minComprados;render()">${S.minComprados ? '▼ Expandir' : '▲ Minimizar'}</button>
         </div>
       </div>
-      ${S.minComprados ? '' : `<div style="display:flex;flex-direction:column;gap:2px">${sugestoes.map(compraRow).join("")}</div>`}
+      ${S.minComprados ? '' : `<div class="scrollx">${sugestoes.map(compraRow).join("")}</div>`}
       ` : ''}
   </div>`;
 }
@@ -617,20 +623,18 @@ function compraRow(s) {
   const sel = !!S.compraSelecionados[s.produtoId];
   const jaTem = S.itens.some(i => String(i.produtoId) === String(s.produtoId));
   const origem = s.origemPreco === 'atacado' ? 'Atacado' : 'Bling';
-  return `<div class="prod" style="${sel ? 'background:rgba(37,211,102,.12);border-radius:8px' : ''}">
-    <div onclick="toggleCompra('${s.produtoId}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-      <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel ? '✓' : ''}</div>
-      ${s.imagem ? `<img src="${esc(s.imagem)}" style="width:38px;height:38px">` : `<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700">${esc(s.nome)}</div>
-        <div style="margin-top:2px">
-          <span class="badge ${s.origemPreco === 'atacado' ? 'badge-at' : 'badge-bl'}">${origem}</span>
-          <b style="color:#ffd23f;margin-left:6px">${brl(s.preco)}</b>
-          <span class="muted" style="font-size:11px;margin-left:6px">(${s.emPedidos || s.vezes} de ${((_S$analise = S.analise) === null || _S$analise === void 0 ? void 0 : _S$analise.pedidosAnalisados) || '?'} pedidos)</span>
-        </div>
+  return `<div class="prod" style="flex:0 0 108px;width:108px;flex-direction:column;align-items:stretch;gap:4px;padding:6px;border:1px solid #23204f;border-radius:10px;background:${sel ? 'rgba(37,211,102,.12)' : '#0f0d24'};position:relative">
+    <div onclick="toggleCompra('${s.produtoId}')" style="cursor:pointer;text-align:center">
+      <div style="position:absolute;top:4px;left:4px;width:16px;height:16px;border-radius:4px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;font-size:10px;color:#0a2a1a;font-weight:900;z-index:1">${sel ? '✓' : ''}</div>
+      ${s.imagem ? `<img src="${esc(s.imagem)}" style="width:56px;height:56px;margin:0 auto">` : `<div class="semf" style="width:56px;height:56px;font-size:16px;margin:0 auto">📦</div>`}
+      <div style="font-size:11px;font-weight:700;margin-top:4px;line-height:1.2;max-height:2.4em;overflow:hidden">${esc(s.nome)}</div>
+      <div style="margin-top:2px">
+        <span class="badge ${s.origemPreco === 'atacado' ? 'badge-at' : 'badge-bl'}" style="font-size:9px;padding:1px 4px">${origem}</span>
+        <b style="color:#ffd23f;font-size:11px;display:block;margin-top:2px">${brl(s.preco)}</b>
+        <span class="muted" style="font-size:9px">${s.emPedidos || s.vezes}/${((_S$analise = S.analise) === null || _S$analise === void 0 ? void 0 : _S$analise.pedidosAnalisados) || '?'} pedidos</span>
       </div>
     </div>
-    <button class="btn ${jaTem ? 'btn-ghost' : 'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem ? 'disabled' : ''}
+    <button class="btn ${jaTem ? 'btn-ghost' : 'btn-mag'}" style="font-size:10px;padding:5px 6px;width:100%" ${jaTem ? 'disabled' : ''}
       onclick='addSugestao(${JSON.stringify({
     id: s.produtoId,
     nome: s.nome
@@ -697,7 +701,7 @@ function cardNovos() {
     </div>
     ${S.minNovos ? '' : `
     <div class="muted" style="font-size:12px;margin-bottom:8px">Selecione pra sugerir ao cliente por WhatsApp, ou toque no + pra adicionar ao pedido.</div>
-    <div style="display:flex;flex-direction:column;gap:2px">
+    <div class="scrollx">
       ${S.novos.map(novoRow).join("")}
     </div>`}
   </div>`;
@@ -705,19 +709,17 @@ function cardNovos() {
 function novoRow(p) {
   const sel = !!S.novosSelecionados[p.id];
   const jaTem = S.itens.some(i => String(i.produtoId) === String(p.id));
-  return `<div class="prod" style="${sel ? 'background:rgba(37,211,102,.12);border-radius:8px' : ''}">
-    <div onclick="toggleNovo('${p.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-      <div style="width:22px;height:22px;border-radius:5px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;color:#0a2a1a;font-weight:900">${sel ? '✓' : ''}</div>
-      ${p.imagem ? `<img src="${esc(p.imagem)}" style="width:38px;height:38px">` : `<div class="semf" style="width:38px;height:38px;font-size:18px">📦</div>`}
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700">${esc(p.nome)}</div>
-        <div style="margin-top:2px">
-          <span class="badge ${p.naTabelaAtacado ? 'badge-at' : 'badge-bl'}">${p.naTabelaAtacado ? 'Atacado' : 'Bling'}</span>
-          <b style="color:#ffd23f;margin-left:6px">${brl(p.preco)}</b>
-        </div>
+  return `<div class="prod" style="flex:0 0 108px;width:108px;flex-direction:column;align-items:stretch;gap:4px;padding:6px;border:1px solid #23204f;border-radius:10px;background:${sel ? 'rgba(37,211,102,.12)' : '#0f0d24'};position:relative">
+    <div onclick="toggleNovo('${p.id}')" style="cursor:pointer;text-align:center">
+      <div style="position:absolute;top:4px;left:4px;width:16px;height:16px;border-radius:4px;border:2px solid ${sel ? '#25d366' : '#514c96'};background:${sel ? '#25d366' : 'transparent'};display:flex;align-items:center;justify-content:center;font-size:10px;color:#0a2a1a;font-weight:900;z-index:1">${sel ? '✓' : ''}</div>
+      ${p.imagem ? `<img src="${esc(p.imagem)}" style="width:56px;height:56px;margin:0 auto">` : `<div class="semf" style="width:56px;height:56px;font-size:16px;margin:0 auto">📦</div>`}
+      <div style="font-size:11px;font-weight:700;margin-top:4px;line-height:1.2;max-height:2.4em;overflow:hidden">${esc(p.nome)}</div>
+      <div style="margin-top:2px">
+        <span class="badge ${p.naTabelaAtacado ? 'badge-at' : 'badge-bl'}" style="font-size:9px;padding:1px 4px">${p.naTabelaAtacado ? 'Atacado' : 'Bling'}</span>
+        <b style="color:#ffd23f;font-size:11px;display:block;margin-top:2px">${brl(p.preco)}</b>
       </div>
     </div>
-    <button class="btn ${jaTem ? 'btn-ghost' : 'btn-mag'}" style="font-size:12px;padding:8px 12px" ${jaTem ? 'disabled' : ''}
+    <button class="btn ${jaTem ? 'btn-ghost' : 'btn-mag'}" style="font-size:10px;padding:5px 6px;width:100%" ${jaTem ? 'disabled' : ''}
       onclick='addSugestao(${JSON.stringify({
     id: p.id,
     nome: p.nome
@@ -828,9 +830,16 @@ function viewTabela() {
   if (!S.tabelaCompleta) return `<div class="muted">Carregando tabela…</div>`;
   const model = S.tabelaCompleta.model || [];
   if (!model.length) return `<div class="muted">Tabela não publicada. Publique em Tabela Atacado.</div>`;
+  const cats = model.map(c => c.t || "").filter(Boolean);
+  const chip = (nome, ativo) => `<button class="btn ${ativo ? 'btn-mag' : 'btn-ghost'}" style="font-size:11px;padding:5px 10px;white-space:nowrap" onclick='selecionarCategoriaTabela(${JSON.stringify(nome).replace(/'/g, "&#39;")})'>${esc(nome || "Todas")}</button>`;
   return `
     <input id="buscaTabela" placeholder="Filtrar na tabela…" value="${esc(S.buscaTabela)}" oninput="filtrarTabela(this.value)">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${[chip("", !S.categoriaTabela)].concat(cats.map(c => chip(c, S.categoriaTabela === c))).join("")}</div>
     <div id="tbListaWrap" style="margin-top:8px;max-height:60vh;overflow-y:auto">${listaTabelaHtml()}</div>`;
+}
+function selecionarCategoriaTabela(nome) {
+  S.categoriaTabela = nome || "";
+  render();
 }
 // só a LISTA da tabela (sem o input) — assim o filtro atualiza a lista sem recriar
 // o campo de busca, e o cursor não volta pro início a cada letra
@@ -838,7 +847,8 @@ function listaTabelaHtml() {
   var _S$tabelaCompleta;
   const model = ((_S$tabelaCompleta = S.tabelaCompleta) === null || _S$tabelaCompleta === void 0 ? void 0 : _S$tabelaCompleta.model) || [];
   const filtro = (S.buscaTabela || "").toLowerCase().trim();
-  const cats = model.map(c => {
+  const catSel = S.categoriaTabela || "";
+  const cats = model.filter(c => !catSel || (c.t || "") === catSel).map(c => {
     const itens = (c.itens || []).filter(i => i.preco > 0 && (!filtro || (i.nome || "").toLowerCase().includes(filtro)));
     return {
       titulo: c.t || "",
@@ -847,13 +857,15 @@ function listaTabelaHtml() {
   }).filter(c => c.itens.length);
   if (!cats.length) return `<div class="muted" style="padding:10px">Nenhum produto com "${esc(S.buscaTabela || "")}".</div>`;
   // 2 colunas de categorias lado a lado (mais fácil de achar o produto do que
-  // rolando uma lista só) — divide as categorias filtradas ao meio
-  const meio = Math.ceil(cats.length / 2);
+  // rolando uma lista só) — divide as categorias filtradas ao meio. Com uma
+  // categoria só selecionada, usa 1 coluna (não faz sentido dividir 1 categoria em 2)
   const renderColuna = lista => lista.map(c => `
         <div style="margin-bottom:10px">
           <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
           ${c.itens.map((it, ix) => tbItemRow(it, c.titulo + "|" + ix + "|" + it.nome)).join("")}
         </div>`).join("");
+  if (cats.length === 1) return renderColuna(cats);
+  const meio = Math.ceil(cats.length / 2);
   return `<div class="tb2col"><div>${renderColuna(cats.slice(0, meio))}</div><div>${renderColuna(cats.slice(meio))}</div></div>`;
 }
 let _tbFiltroT = null;
@@ -1761,7 +1773,7 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
     ctx.font = "900 15px Arial";
     ctx.fillStyle = "#000";
     ctx.textAlign = "left";
-    ctx.fillText("RECEBIDO POR", padd, y);
+    ctx.fillText("MONTADO POR", padd, y);
     ctx.font = "900 22px Arial";
     ctx.fillStyle = "#000";
     ctx.fillText(v.operador, padd + 180, y);

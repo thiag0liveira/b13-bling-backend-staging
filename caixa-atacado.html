@@ -1482,7 +1482,8 @@ function imprimirPedidoAtual() {
     dataHora: Date.now(),
     nfce: null,
     observacao: window._obsVenda || "",
-    operador: typeof S !== "undefined" && S && S.nome || ""
+    operador: typeof S !== "undefined" && S && S.nome || "",
+    montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
   };
   imprimirComprovante(v);
 }
@@ -1618,7 +1619,8 @@ async function confirmarImprimirNumero() {
       dataHora: Date.now(),
       nfce: null,
       observacao: j.observacao || "",
-      operador: j.recebidoPor || ""
+      operador: j.recebidoPor || "",
+      montadoPor: j.vendedorNome && j.vendedorNome !== "Sem vendedor" ? j.vendedorNome : ""
     };
     fecharModais();
     imprimirComprovante(v);
@@ -1682,7 +1684,7 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
     i._nomeLinhas = quebrarTexto(_mc, i.nome || "Produto " + i.produtoId, maxNomeW, 2);
   });
   const extraLinhasItens = itensArr.reduce((s, i) => s + ((i._nomeLinhas.length || 1) - 1), 0);
-  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0);
+  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0);
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr;
@@ -1751,6 +1753,16 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   ctx.fillStyle = "#000";
   ctx.fillText(((_v$cliente = v.cliente) === null || _v$cliente === void 0 ? void 0 : _v$cliente.nome) || "Consumidor Final", padd, y + 30);
   y += 52;
+  if (v.montadoPor) {
+    ctx.font = "900 15px Arial";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "left";
+    ctx.fillText("MONTADO POR", padd, y);
+    ctx.font = "900 22px Arial";
+    ctx.fillStyle = "#000";
+    ctx.fillText(v.montadoPor, padd + 180, y);
+    y += 34;
+  }
   if (v.operador) {
     ctx.font = "900 15px Arial";
     ctx.fillStyle = "#000";
@@ -2285,7 +2297,8 @@ function mostrarSucessoFinalizacao(resp, ctx) {
     dataHora: Date.now(),
     nfce: resp.nfce || null,
     observacao,
-    operador: S.nome || ""
+    operador: S.nome || "",
+    montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
   };
   window._obsVenda = "";
   OP_ID = null;

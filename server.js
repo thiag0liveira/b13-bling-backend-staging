@@ -11291,7 +11291,7 @@ app.get("/api/atacado/produtos-novos",async(req,res)=>{
     for(const p of topN){
       let imagem=p.imagem||"";
       if(!imagem){
-        try{ const d=await bling(`/produtos/${p.id}`); imagem=d?.data?.imagemURL||""; await new Promise(r=>setTimeout(r,120)); }catch(e){}
+        try{ const d=await bling(`/produtos/${p.id}`); imagem=extrairImagemProduto(d?.data); await new Promise(r=>setTimeout(r,120)); }catch(e){}
       }
       const naTabela=codsTabela.has(String(p.codigo));
       // usa o preço de ATACADO por padrão quando o produto já tem um cadastrado
@@ -11364,20 +11364,29 @@ app.get("/api/atacado/cliente/:id/analise",async(req,res)=>{
     })));
     const indiceProd=lerJSON(GTIN_INDEX_FILE,{});
     const idxPorProdId={}; Object.values(indiceProd).forEach(p=>{ if(p.produtoId) idxPorProdId[String(p.produtoId)]=p; });
-    maisComprados=maisComprados.map(m=>{
+    let maisCompradosArr=[];
+    for(const m of maisComprados){
       const idx=idxPorProdId[String(m.produtoId)];
       const info=infoPorProdId[String(m.produtoId)]||(idx?infoPorCod[String(idx.codigo)]:null);
       const precoBling=idx?+(idx.preco||0):0;
-      return {
+      let imagem=idx?.imagem||"";
+      // o índice de GTIN às vezes não tem a imagem (produto cadastrado sem passar por
+      // lá) — busca no detalhe do Bling como reserva, já que são no máximo 10 produtos
+      if(!imagem){
+        try{ const rp=await bling(`/produtos/${m.produtoId}`); imagem=extrairImagemProduto(rp?.data); }catch(e){}
+        await new Promise(r=>setTimeout(r,120));
+      }
+      maisCompradosArr.push({
         ...m,
-        imagem:idx?.imagem||"",
+        imagem,
         codigo:idx?.codigo||"",
         precoAtacado:info?info.precoAtacado:null,
         multiplo:info?info.multiplo:1,
         preco:info?info.precoAtacado:precoBling,
         origemPreco:info?"atacado":"bling",
-      };
-    });
+      });
+    }
+    maisComprados=maisCompradosArr;
 
     res.json({
       qtdPedidos, totalGasto, media, ultimaCompra,
