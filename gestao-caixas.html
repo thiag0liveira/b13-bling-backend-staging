@@ -1192,7 +1192,8 @@ window.buscarPedidoNosCaixas = async function(){
     }).join("");
     document.getElementById("modais").innerHTML =
       '<div class="modalBg" onclick="if(event.target===this)_fecharModalBusca()"><div class="modal" style="max-width:520px;max-height:88vh;overflow:auto">'+
-        '<h3>Pedido '+_esc(j.numero)+' — '+j.qtdLancamentos+' lançamento(s)</h3>'+
+        '<h3>Pedido '+_esc(j.numeroRealDoPedido||j.numero)+' — '+j.qtdLancamentos+' lançamento(s)</h3>'+
+        (j.dica?'<div style="background:#0f2233;border:1px solid #29ABE2;border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px;color:#7fd4ff">💡 '+_esc(j.dica)+'</div>':'')+
         (j.aviso?'<div style="background:'+(j.duplicado?"#3a0010":"#1c1846")+';border:1px solid '+(j.duplicado?"#b3341f":"#37327a")+';border-radius:8px;padding:8px;margin:8px 0;font-size:12px;color:'+(j.duplicado?"#ff8f7a":"#9a95c9")+'">'+_esc(j.aviso)+'</div>':'')+
         '<div class="muted" style="font-size:12px;margin-bottom:8px">'+j.lancamentosAtivos+' ativo(s) · '+j.lancamentosCancelados+' cancelado(s)'+(j.lancamentosAtivos>0?' · soma ativos '+_brl(j.somaAtivos):'')+'</div>'+
         linhas+

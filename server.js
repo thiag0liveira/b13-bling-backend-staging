@@ -3428,9 +3428,11 @@ app.get("/api/gestao/conferir-lista",(req,res)=>{
           total:Number(m.total)||0, cancelado:!!m.cancelado, troco:Number(m.troco)||0,
           pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"", valor:Number(p.valor)||0})),
           hora:m.em?new Date(m.em).toLocaleTimeString("pt-BR",{timeZone:"America/Sao_Paulo",hour:"2-digit",minute:"2-digit"}):null };
-        [String(m.numero||""),String(m.pedidoId||"")].filter(Boolean).forEach(k=>{
-          if(!porChave[k]) porChave[k]=[]; porChave[k].push(reg);
-        });
+        const chaves=[String(m.numero||""),String(m.pedidoId||"")].filter(Boolean);
+        // indexa tambem PREFIXOS do id (7+ digitos), pro caso da nota ter cortado o numero
+        const pid=String(m.pedidoId||"");
+        for(let L=7; L<pid.length; L++) chaves.push(pid.slice(0,L));
+        chaves.forEach(k=>{ if(!porChave[k]) porChave[k]=[]; if(porChave[k].indexOf(reg)<0) porChave[k].push(reg); });
       });
     });
     const ehDinheiro=(nome)=> /dinheiro|especie|espécie/i.test(String(nome||""));
@@ -3481,10 +3483,18 @@ app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
     if(!t) return res.status(400).json({erro:"informe o número do pedido"});
     const dCx=lerCaixaSessoes();
     const achados=[];
+    // casa por numero exato, por id exato, OU por PREFIXO do id — a nota as vezes
+    // imprime o id do Bling cortado (ex.: 26854279 em vez de 26854279xxx)
+    const bate=(m)=>{
+      const num=String(m.numero||""), pid=String(m.pedidoId||"");
+      if(num===t||pid===t) return true;
+      if(t.length>=7 && pid.indexOf(t)===0) return true;   // prefixo do id
+      return false;
+    };
     (dCx.sessoes||[]).forEach(sx=>{
       (sx.movimentos||[]).forEach(m=>{
         if(m.tipo!=="venda") return;
-        if(String(m.numero||"")!==t && String(m.pedidoId||"")!==t) return;
+        if(!bate(m)) return;
         achados.push({
           sessaoId:sx.id, operador:sx.operador||"—", tipoCaixa:sx.tipoCaixa||"frente",
           caixaFechado:!!sx.fechadaEm,
@@ -3502,10 +3512,15 @@ app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
       });
     });
     achados.sort((a,b)=>(a.em||0)-(b.em||0));
+    const porPrefixo = achados.length>0 && achados.every(a=>String(a.numero)!==t && String(a.pedidoId)!==t);
     const ativos=achados.filter(a=>!a.cancelado);
     const somaAtivos=+ativos.reduce((s,a)=>s+a.total,0).toFixed(2);
     res.json({
       numero:t, encontrado:achados.length>0, qtdLancamentos:achados.length,
+      achadoPorPrefixoDoId: porPrefixo,
+      numeroRealDoPedido: achados.length? achados[0].numero : null,
+      idCompletoDoBling: achados.length? achados[0].pedidoId : null,
+      dica: porPrefixo? `O código ${t} é o id do Bling cortado. O pedido é o número ${achados[0].numero} (id completo ${achados[0].pedidoId}).` : null,
       lancamentosAtivos:ativos.length, lancamentosCancelados:achados.length-ativos.length,
       somaAtivos,
       duplicado: ativos.length>1,
