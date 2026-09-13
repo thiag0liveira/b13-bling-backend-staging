@@ -3380,6 +3380,14 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
         observacoes:String(ped.observacoes||"").slice(0,300) } : {naoEncontradoNoBling:true},
       temRegistroLocal: !!achou,
       veioPorApi: ped?_veioPorApi(ped):null,
+      pistasDeOrigem: ped?{
+        observacao:String(ped.observacoes||""),
+        temPadraoDeObservacaoNossa: /·\s*[A-ZÇÃÕÁÉÍÓÚ ]{3,}:\s*R\$/i.test(String(ped.observacoes||"")),
+        vendedorId: ped.vendedor?.id||null,
+        vendedorEhFuncionarioNosso: (()=>{ try{ const fs2=lerJSON(FUNC_FILE,{});
+          const m=Object.values(fs2||{}).find(fx=>String(fx.vendedorBlingId||fx.idVendedorBling||"")===String(ped.vendedor?.id||""));
+          return m?(m.nome||true):false; }catch(e){ return "erro"; } })(),
+      }:null,
       achadoPor: porId?"pelo id do Bling":(porNum?"pelo numero (mas o pedidoBlingId nao bate!)":null),
       registroLocal: achou ? { id:achou.id, origem:achou.origem, pedidoBlingId:achou.pedidoBlingId,
         pedidoBlingNumero:achou.pedidoBlingNumero, cliente:achou.cliente?.nome,
@@ -9379,6 +9387,17 @@ function _veioPorApi(b){
   if(/ENTREGA\s*—.*CEP/i.test(obs)) return true;               // venda atacado (entrega)
   if(/\[VENDA A PRAZO/i.test(obs)) return true;                // fluxo nosso
   if(/\|\s*edit\s+[\d\-: ]+$/i.test(obs)) return true;        // editado pelo nosso sistema
+  // o nosso sistema tambem GRAVA a forma de pagamento na observacao neste formato:
+  // "· PIX: R$ 1.299,52" / "· DINHEIRO: R$ ..." — e um padrao so nosso
+  if(/·\s*[A-ZÇÃÕÁÉÍÓÚ ]{3,}:\s*R\$/i.test(obs)) return true;
+  // e envia o VENDEDOR no pedido; se tem vendedor de um funcionario nosso, veio daqui
+  try{
+    if(b.vendedor && b.vendedor.id){
+      const funcs=lerJSON(FUNC_FILE,{});
+      const bate=Object.values(funcs||{}).some(fx=>String(fx.vendedorBlingId||fx.idVendedorBling||"")===String(b.vendedor.id));
+      if(bate) return true;
+    }
+  }catch(e){}
   return null; // null = não dá pra saber (não afirmamos que foi digitado no Bling)
 }
 
