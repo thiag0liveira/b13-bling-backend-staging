@@ -3330,6 +3330,48 @@ app.get("/api/diag/pix-do-dia",(req,res)=>{
 // Acha em quais CAIXAS um pedido (por número ou id) foi lançado — pra rastrear pedido
 // duplicado ou saber onde ele foi recebido. Retorna todos os lançamentos, ativos e
 // cancelados, em qualquer sessão (aberta ou fechada).
+// Investiga se um pedido tem registro local (proposta) ou nao — pra entender por que
+// apareceu como "so no Bling". Cruza pelo NUMERO e pelo ID, e mostra o que achar.
+app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
+  try{
+    const t=String(req.params.termo).trim();
+    // resolve numero -> id via Bling
+    let ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    const idBling=ped?String(ped.id):null;
+    const numBling=ped?String(ped.numero):t;
+    const props=lerPropostas();
+    // procura por pedidoBlingId (id) OU pedidoBlingNumero (numero)
+    const porId = idBling ? Object.values(props||{}).find(p=>String(p.pedidoBlingId)===idBling) : null;
+    const porNum = Object.values(props||{}).find(p=>String(p.pedidoBlingNumero)===numBling);
+    // procura tambem no log (eventos que so o nosso sistema gera na criacao)
+    let eventosCriacao=[];
+    if(idBling){
+      const log=lerLog()[idBling]||[];
+      eventosCriacao=log.filter(e=>/criado|proposta|pedido_gerado|totem|online/i.test(e.evento||""))
+        .map(e=>({evento:e.evento, em:new Date(e.em||0).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}), por:e.funcionarioNome||""}));
+    }
+    const achou = porId||porNum||null;
+    res.json({
+      pedido: ped?{ id:ped.id, numero:ped.numero, cliente:ped.contato?.nome||"—",
+        situacao:nomeSituacao(Number(ped.situacao?.id||0)), data:ped.data,
+        observacoes:String(ped.observacoes||"").slice(0,300) } : {naoEncontradoNoBling:true},
+      temRegistroLocal: !!achou,
+      achadoPor: porId?"pelo id do Bling":(porNum?"pelo numero (mas o pedidoBlingId nao bate!)":null),
+      registroLocal: achou ? { id:achou.id, origem:achou.origem, pedidoBlingId:achou.pedidoBlingId,
+        pedidoBlingNumero:achou.pedidoBlingNumero, cliente:achou.cliente?.nome,
+        criadoEm: achou.criadoEm?new Date(achou.criadoEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null,
+        vendedor:achou.vendedorNome||achou.funcionarioNome } : null,
+      eventosDeCriacaoNoLog: eventosCriacao,
+      conclusao: achou
+        ? (porId ? "TEM registro local — não deveria aparecer como 'só no Bling'. Se aparece, o cache de finalizados pode estar desatualizado."
+                 : "Tem uma proposta com o mesmo NÚMERO, mas o pedidoBlingId gravado nela é diferente do id atual do pedido no Bling — por isso o cruzamento (que é por id) falha e ele aparece como 'só no Bling'.")
+        : (eventosCriacao.length ? "Não tem proposta salva, MAS o log tem eventos de criação pelo nosso sistema — o registro da proposta pode ter falhado na hora (Bling lento), embora o pedido tenha sido criado por nós."
+                                 : "Nenhum registro local nem evento de criação — pelo que consta, foi criado direto no Bling."),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
