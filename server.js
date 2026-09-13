@@ -9664,8 +9664,12 @@ app.get("/api/pedidos-online",async(req,res)=>{
     if(fase==="bling"){
       const cache=_cacheBlingPedidos[chaveCache];
       if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveCache); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
-      // devolve os do Bling que NÃO estão no local
-      const doBling=(cache.pedidos||[]).filter(b=>!porBlingId[String(b.id)]);
+      // devolve os do Bling que NÃO estão no local. Filtra por id E por NÚMERO — se o
+      // registro local gravou um pedidoBlingId diferente do id real (pedido recriado no
+      // Bling, p.ex.), o mesmo pedido apareceria DUAS vezes na tela.
+      const numerosLocais={};
+      Object.values(porBlingId).forEach(p=>{ if(p.numero!=null) numerosLocais[String(p.numero)]=true; });
+      const doBling=(cache.pedidos||[]).filter(b=>!porBlingId[String(b.id)] && !numerosLocais[String(b.numero)]);
       return res.json({data:doBling, fase:"bling", pronto:cache.pronto, progresso:cache.progresso||0, periodo:{ini:iniISO, fim:fimISO}});
     }
     // modo completo (compat): faz tudo síncrono como antes
@@ -9677,9 +9681,12 @@ app.get("/api/pedidos-online",async(req,res)=>{
         sitInteresse.filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
         let arr=[];
         try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+        const numsLocais={};
+        Object.values(porBlingId).forEach(p=>{ if(p.numero!=null) numsLocais[String(p.numero)]=true; });
         for(const b of arr){
           const bid=String(b.id);
           if(porBlingId[bid]) continue;
+          if(numsLocais[String(b.numero)]) continue;   // mesmo número já veio do local
           const nomeCli=b.contato?.nome||"";
           if(ehConsumidorFinal(nomeCli)) continue;
           porBlingId[bid]=_montarPedidoDoBling(b);

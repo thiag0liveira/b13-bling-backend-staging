@@ -125,9 +125,16 @@ async function buscarBlingProgressivo(qp) {
     BLING_PRONTO = !!b.pronto;
     BLING_PROGRESSO = Number(b.progresso || 0);
     // junta locais + bling (sem duplicar por id)
-    var ids = {};
-    PEDIDOS_LOCAL.forEach(function (p) { ids[String(p.id)] = true; });
-    var extras = (b.data || []).filter(function (p) { return !ids[String(p.id)]; });
+    // dedup por ID e por NÚMERO — o mesmo pedido pode ter id diferente entre o
+    // registro local e o Bling, e aí apareceria duplicado na tela
+    var ids = {}, numeros = {};
+    PEDIDOS_LOCAL.forEach(function (p) {
+      ids[String(p.id)] = true;
+      if (p.numero != null) numeros[String(p.numero)] = true;
+    });
+    var extras = (b.data || []).filter(function (p) {
+      return !ids[String(p.id)] && !numeros[String(p.numero)];
+    });
     PEDIDOS = PEDIDOS_LOCAL.concat(extras);
     render();
     _blingTentativas++;
