@@ -111,6 +111,8 @@ let PEDIDOS = [],
   FILTRO = "ativos",
   CARREGANDO = false,
   DIAS = 7,
+  PERIODO_INI = "",
+  PERIODO_FIM = "",
   VISTO_ATE = 0,
   SIT_CARREGANDO = false;
 let BUSCA_RES = null,
@@ -153,7 +155,10 @@ async function carregar(silencioso) {
     render();
   }
   try {
-    const j = await fetch(B + "/api/pedidos-online?dias=" + DIAS).then(r => r.json());
+    var qp = (PERIODO_INI && PERIODO_FIM) ? ("ini=" + PERIODO_INI + "&fim=" + PERIODO_FIM) : "";
+    const j = await fetch(B + "/api/pedidos-online" + (qp ? "?" + qp : "")).then(r => r.json());
+    // guarda o periodo que o backend usou (pra mostrar no seletor)
+    if (j.periodo) { if (!PERIODO_INI) PERIODO_INI = j.periodo.ini; if (!PERIODO_FIM) PERIODO_FIM = j.periodo.fim; }
     if (j.erro) throw new Error(j.erro);
     PEDIDOS = j.data || [];
     SIT_CARREGANDO = !!j.situacoesCarregando;
@@ -210,6 +215,11 @@ function visiveis() {
   return ordenar(PEDIDOS.filter(p => ehAguardando(p) || ehPendencia(p)));
 }
 // versão MINIMIZADA do card: só o essencial. Clicar abre o card completo.
+function ehDiaDaEntrega(p) {
+  if (!p.agendamento || !p.agendamento.data) return false;
+  var hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  return p.agendamento.data === hoje;
+}
 function cardMini(p) {
   const ehNovo = Number(p.criadoEm || 0) > VISTO_ATE;
   const aguard = ehAguardando(p);
@@ -221,10 +231,13 @@ function cardMini(p) {
       bg: "#0f2a1c",
       bd: "#2f9e6b"
     }; // OK: verde
-    if (p.agendamento && !p.cancelado) return {
+    if (p.agendamento && !p.cancelado) return ehDiaDaEntrega(p) ? {
+      bg: "#3a1a00",
+      bd: "#ff8c00"
+    } : {
       bg: "#0f2233",
       bd: "#29ABE2"
-    }; // agendado: azul
+    }; // agendado: azul; HOJE é dia da entrega: laranja
     if (p.cancelado) return {
       bg: "#3a3210",
       bd: "#8a7a1f"
@@ -249,7 +262,7 @@ function cardMini(p) {
     return null;
   }();
   const est = pend ? "" : cor ? 'background:' + cor.bg + ';border-color:' + cor.bd + ';' : '';
-  return '<div class="card mini' + (pend ? ' pend' : '') + (ehNovo ? ' novo' : '') + '" style="' + est + '" onclick="alternar(' + p.id + ')">' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">' + '<span style="font-size:11px;font-weight:900;color:#9a95c9">' + esc(org) + '</span>' + '<span style="font-size:10px;color:#9a95c9">' + esc(dataHora(p.criadoEm)) + '</span>' + '</div>' + '<div style="font-weight:900;font-size:14px;margin-top:2px">#' + esc(p.numero) + '</div>' + '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.cliente) + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">' + '<span class="sitMini" style="background:' + (pend ? "#ff3b3b" : cor ? cor.bd : "#2a2660") + ';color:' + ((p.cancelado || aguard) && !pend ? "#000" : "#fff") + '">' + esc((p.situacao || "—").toUpperCase().slice(0, 22)) + '</span>' + '<b style="color:#ffd23f;font-size:13px;white-space:nowrap">' + brl(p.total) + '</b>' + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">' + '<span style="font-size:10px;color:#9a95c9">' + (p.tipo === "entrega" ? "🛵 entrega" : "🏪 retirada") + (p.agendamento ? " · 📅 " + esc(p.agendamento.data.split("-").reverse().slice(0, 2).join("/")) : "") + '</span>' + '<span style="font-size:10px;color:#6b6699">▼ abrir</span>' + '</div>' + (p.ok ? '<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ OK' + (p.okPor ? " · " + esc(p.okPor) : "") + '</div>' : '') + '</div>';
+  return '<div class="card mini' + (pend ? ' pend' : '') + (ehNovo ? ' novo' : '') + '" style="' + est + '" onclick="alternar(' + p.id + ')">' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start">' + '<span style="font-size:11px;font-weight:900;color:#9a95c9">' + esc(org) + '</span>' + '<span style="font-size:10px;color:#9a95c9">' + esc(dataHora(p.criadoEm)) + '</span>' + '</div>' + '<div style="font-weight:900;font-size:14px;margin-top:2px">#' + esc(p.numero) + (p.noSistema === false ? ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#5a3a1a;color:#ffb86b">só Bling</span>' : '') + '</div>' + '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.cliente) + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">' + '<span class="sitMini" style="background:' + (pend ? "#ff3b3b" : cor ? cor.bd : "#2a2660") + ';color:' + ((p.cancelado || aguard) && !pend ? "#000" : "#fff") + '">' + esc((p.situacao || "—").toUpperCase().slice(0, 22)) + '</span>' + '<b style="color:#ffd23f;font-size:13px;white-space:nowrap">' + brl(p.total) + '</b>' + '</div>' + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">' + '<span style="font-size:10px;color:#9a95c9">' + (p.tipo === "entrega" ? "🛵 entrega" : "🏪 retirada") + (p.agendamento ? " · 📅 " + esc(p.agendamento.data.split("-").reverse().slice(0, 2).join("/")) : "") + '</span>' + '<span style="font-size:10px;color:#6b6699">▼ abrir</span>' + '</div>' + (p.ok ? '<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ OK' + (p.okPor ? " · " + esc(p.okPor) : "") + '</div>' : '') + '</div>';
 }
 function cardPedido(p) {
   if (!EXPANDIDO[p.id]) return cardMini(p);
@@ -259,6 +272,11 @@ function cardPedido(p) {
   const concluido = ehAtendido(p) || p.cancelado;
   // cor de fundo por status — bate o olho e já sabe em que pé está o pedido
   const corStatus = function () {
+    if (p.agendamento && !p.cancelado && !ehAtendido(p) && ehDiaDaEntrega(p)) return {
+      bg: "#3a1a00",
+      bd: "#ff8c00",
+      txt: "#ffb86b"
+    }; // HOJE é o dia da entrega: laranja em destaque
     if (p.cancelado) return {
       bg: "#3a3210",
       bd: "#8a7a1f",
@@ -291,10 +309,10 @@ function cardPedido(p) {
   const org = p.origem === "totem" ? "🖥️ Totem" : p.origem === "site" ? "🌐 Site" : "🧑‍💼 <b style=\"color:#cfc9f5\">" + esc(p.vendedor || "Venda Atacado") + "</b>";
   const pend = ehPendencia(p);
   const estiloCard = pend ? '' : (corStatus ? 'background:' + corStatus.bg + ';border-color:' + corStatus.bd + ';' : '') + (concluido ? 'opacity:.8;' : '');
-  return '<div class="card' + (ehNovo ? ' novo' : '') + (pend ? ' pend' : '') + '"' + (estiloCard ? ' style="' + estiloCard + '"' : '') + '>' + (pend ? '<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>' : '') + '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar(' + p.id + ')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">' + '<span class="muted" style="font-size:11px">' + org + '</span>' + '<span class="muted" style="font-size:11px">🕐 ' + esc(dataHora(p.criadoEm)) + '</span></div>' + '<div style="display:flex;justify-content:space-between;align-items:center">' + '<div style="font-weight:900;font-size:15px">Pedido ' + esc(p.numero) + '</div>' + (ehNovo ? '<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>' : '') + '</div>' + '<div class="sit"' + (p.situacao === "carregando…" ? ' style="background:#2a2660;color:#9a95c9"' : corStatus ? ' style="background:' + corStatus.bd + ';color:' + (p.cancelado || aguard ? "#000" : "#fff") + '"' : '') + '>' + esc((p.situacao || "").toUpperCase()) + '</div>' + '<div><span class="chip ' + (p.tipo === "entrega" ? "ent" : "ret") + '">' + (p.tipo === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA") + '</span></div>' + '<div class="muted" style="margin-top:6px">👤 ' + esc(p.cliente) + '</div>' + (p.tipo === "entrega" && p.endereco ? '<div class="muted" style="font-size:11px;margin-top:2px">📍 ' + esc(p.endereco) + '</div>' : '') + (p.agendamento ? '<div style="margin-top:4px"><span class="chip" style="background:#2f9e6b;color:#fff">📅 ' + esc(p.agendamento.data.split("-").reverse().join("/")) + ' · ' + (p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO") + '</span></div>' + (p.agendamento.obsEntrega ? '<div class="muted" style="font-size:11px;margin-top:3px">📝 ' + esc(p.agendamento.obsEntrega) + '</div>' : '') : '') + (p.teveRetirada ? '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>' : '') + (p.frete > 0 ? '<div class="muted" style="font-size:11px">frete ' + brl(p.frete) + '</div>' : '') + '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">' + brl(p.total) + '</div>' + '<div class="muted" style="font-size:11px;margin-top:4px">' + (p.itens || []).length + ' item(ns) · ' + esc((p.itens || []).slice(0, 2).map(i => i.quantidade + "x " + i.nome).join(", ")) + ((p.itens || []).length > 2 ? "…" : "") + '</div>' + (
+  return '<div class="card' + (ehNovo ? ' novo' : '') + (pend ? ' pend' : '') + '"' + (estiloCard ? ' style="' + estiloCard + '"' : '') + '>' + (pend ? '<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>' : '') + '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar(' + p.id + ')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">' + '<span class="muted" style="font-size:11px">' + org + '</span>' + '<span class="muted" style="font-size:11px">🕐 ' + esc(dataHora(p.criadoEm)) + '</span></div>' + '<div style="display:flex;justify-content:space-between;align-items:center">' + '<div style="font-weight:900;font-size:15px">Pedido ' + esc(p.numero) + '</div>' + (p.noSistema === false ? '<span class="chip" style="background:#5a3a1a;color:#ffb86b">🔗 só no Bling</span>' : (ehNovo ? '<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>' : '')) + '</div>' + '<div class="sit"' + (p.situacao === "carregando…" ? ' style="background:#2a2660;color:#9a95c9"' : corStatus ? ' style="background:' + corStatus.bd + ';color:' + (p.cancelado || aguard ? "#000" : "#fff") + '"' : '') + '>' + esc((p.situacao || "").toUpperCase()) + '</div>' + '<div><span class="chip ' + (p.tipo === "entrega" ? "ent" : "ret") + '">' + (p.tipo === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA") + '</span></div>' + '<div class="muted" style="margin-top:6px">👤 ' + esc(p.cliente) + '</div>' + (p.tipo === "entrega" && p.endereco ? '<div class="muted" style="font-size:11px;margin-top:2px">📍 ' + esc(p.endereco) + '</div>' : '') + (p.agendamento ? '<div style="margin-top:4px"><span class="chip" style="background:' + (ehDiaDaEntrega(p) ? "#ff8c00" : "#2f9e6b") + ';color:#fff">' + (ehDiaDaEntrega(p) ? "🔥 ENTREGA HOJE · " : "📅 ") + esc(p.agendamento.data.split("-").reverse().join("/")) + ' · ' + (p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO") + '</span></div>' + (p.agendamento.obsEntrega ? '<div class="muted" style="font-size:11px;margin-top:3px">📝 ' + esc(p.agendamento.obsEntrega) + '</div>' : '') : '') + (p.teveRetirada ? '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>' : '') + (p.frete > 0 ? '<div class="muted" style="font-size:11px">frete ' + brl(p.frete) + '</div>' : '') + '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">' + brl(p.total) + '</div>' + '<div class="muted" style="font-size:11px;margin-top:4px">' + (p.itens || []).length + ' item(ns) · ' + esc((p.itens || []).slice(0, 2).map(i => i.quantidade + "x " + i.nome).join(", ")) + ((p.itens || []).length > 2 ? "…" : "") + '</div>' + (
   // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
   // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
-  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + '<button class="btn ' + (p.ok ? "btn-okOff" : "btn-ok") + '" onclick="marcarOk(' + p.id + ')">' + (p.ok ? "↩️ Tirar o OK" : "✅ OK") + '</button>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendência resolvida (mandar p/ Separado)</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
+  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + ((aguard && !p.agendamento) ? '<button class="btn ' + (p.okStatus === "confirmado" ? "btn-ok" : (p.okStatus === "negociando" ? "" : "btn-okOff")) + '" style="' + (p.okStatus === "negociando" ? "background:#c77dff;color:#1a0a2e" : "") + '" onclick="ciclarNegoc(' + p.id + ')">' + (p.okStatus === "confirmado" ? "✅ Confirmado" : (p.okStatus === "negociando" ? "🤝 Negociando" : "🤝 Negociando / Confirmado")) + '</button>' : '') + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendência resolvida (mandar p/ Separado)</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + (ehAtendido(p) ? '<button class="btn btn-ghost" style="border:1px solid #4a8f6b;color:#8fffc0" onclick="verFilmagem(' + p.id + ',\'' + esc(String(p.numero)) + '\')">🎥 Ver filmagem da conferência</button>' : '') + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
 }
 function render() {
   const app = document.getElementById("app");
@@ -311,9 +329,11 @@ function render() {
   const nAtac = PEDIDOS.filter(p => p.origem !== "totem" && p.origem !== "site" && ehEmAndamento(p)).length;
   const nAnd = PEDIDOS.filter(ehEmAndamento).length;
   const nConc = PEDIDOS.filter(p => ehAtendido(p) || p.cancelado).length;
-  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>' + '<select onchange="DIAS=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px">' + [1, 3, 7, 15].map(function (d) {
-    return '<option value="' + d + '"' + (String(d) === String(DIAS) ? " selected" : "") + '>' + (d === 1 ? "hoje" : d + " dias") + '</option>';
-  }).join("") + '</select>' + '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.length + ')' + (nConc ? ' <span style="opacity:.7">· ' + nConc + ' concluídos</span>' : '') + '</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
+  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>' + '<span style="font-size:11px;color:#9a95c9;margin-right:4px">de</span>' +
+    '<input type="date" value="' + esc(PERIODO_INI) + '" onchange="PERIODO_INI=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px;font-size:12px">' +
+    '<span style="font-size:11px;color:#9a95c9;margin:0 4px">até</span>' +
+    '<input type="date" value="' + esc(PERIODO_FIM) + '" onchange="PERIODO_FIM=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px;font-size:12px">' +
+    '<button class="btn btn-ghost" style="width:auto;margin:0 0 0 6px;font-size:11px;padding:6px 10px" onclick="PERIODO_INI=\'\';PERIODO_FIM=\'\';carregar()">📅 Semana atual</button>' + '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.length + ')' + (nConc ? ' <span style="opacity:.7">· ' + nConc + ' concluídos</span>' : '') + '</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
     const tel = soDig(a.telefone);
     return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">' + '<span style="flex:1;min-width:0">' + '<b>#' + esc(a.numero) + '</b> ' + esc(a.cliente) + ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:' + (a.tipo === "entrega" ? "#29ABE2;color:#000" : "#2f9e6b;color:#fff") + '">' + (a.tipo === "entrega" ? "ENTREGA" : "RETIRA") + '</span>' + (a.comPendencia ? ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>' : '') + '<div class="muted" style="font-size:10px">' + esc(a.situacao || "") + (a.por ? " · enviado por " + esc(a.por) : "") + '</div>' + '</span>' + '<b style="white-space:nowrap">' + brl(a.total) + '</b>' + (a.pronto ? '<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente(' + a.id + ',\'' + (a.tipo === "entrega" ? "entrega" : "retirada") + '\')">💬 avisar</button>' : '') + '</div>';
   }).join("") + '</div>' : '') + (BUSCA_RES ? '<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "' + esc(window._buscaTxt || "") + '" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>' : '') + (CARREGANDO ? '<div class="muted" style="padding:16px">Carregando…</div>' : function () {
@@ -331,81 +351,99 @@ function render() {
       return r;
     };
     const grupos = [
-    // pendência sempre em primeiro, e só aparece quando existe
+    // 1) SEPARADO COM PENDENCIAS — sempre PRIMEIRO quando houver, e aberto
     {
       k: "pend",
-      nome: "⚠️ Pedidos com pendências",
+      nome: "⚠️ Separado com pendências",
       cor: "#ff3b3b",
       itens: pegar(ehPendencia),
       sempreAberta: true
     },
-    // NOVO = ainda em "Aguardando separação" (o status com que o pedido nasce).
-    // Pedido que já entrou no fluxo (em separação, separado, em rota) NÃO é novo:
-    // vai pra faixa "Em andamento". Antes tudo caía em "Novos", inclusive o que
-    // já estava sendo separado.
-    // NOVO = pedido criado no sistema que ainda NÃO entrou no fluxo. Inclui
-    // "Aguardando separação", mas também "Em aberto"/"Em digitação" — situações
-    // em que o pedido pode ficar quando a mudança inicial falha (Bling lento).
-    // Assim nenhum pedido criado por nós fica invisível na tela.
+    // 2) ENTREGA AGENDADA — pedido com agendamento (nao cancelado). No dia da entrega
+    // o card fica destacado (cor muda no card, ver cardPedido)
     {
-      k: "novos",
-      nome: "🆕 Novos pedidos",
-      cor: "#ffe600",
-      itens: pegar(function (p) {
-        if (p.ok || p.cancelado || ehAtendido(p) || p.agendamento) return false;
-        const st = String(p.situacao || "");
-        if (/prazo/i.test(st)) return false;
-        if (/separa|conferid|rota/i.test(st)) return false; // já entrou no fluxo
-        return true; // o resto é novo
-      })
-    }, {
-      k: "andamento",
-      nome: "🔄 Em andamento (separação/rota)",
-      cor: "#7fd4ff",
-      itens: pegar(function (p) {
-        if (p.ok || p.cancelado || ehAtendido(p)) return false;
-        return /separa|conferid|rota|entrega/i.test(String(p.situacao || ""));
-      })
-    }, {
       k: "entrega",
-      nome: "🛵 Para entrega (agendados)",
+      nome: "🛵 Entrega agendada",
       cor: "#29ABE2",
       itens: pegar(function (p) {
-        return p.agendamento && !p.cancelado;
+        return p.agendamento && !p.cancelado && !ehAtendido(p);
       }).sort(function (a, b) {
         return String(a.agendamento.data).localeCompare(String(b.agendamento.data));
       })
-    }, {
-      k: "confirmados",
-      nome: "✅ Confirmados",
+    },
+    // 3) EM SEPARACAO — pedido enviado pra separacao (mas ainda nao separado)
+    {
+      k: "emsep",
+      nome: "📦 Em separação",
+      cor: "#7fd4ff",
+      itens: pegar(function (p) {
+        if (p.cancelado || ehAtendido(p)) return false;
+        var st = String(p.situacao || "");
+        return /em separa/i.test(st) || Number(p.situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.EM_SEP : 817963);
+      })
+    },
+    // 4) SEPARADOS — separacao concluida (Separado / Conferido)
+    {
+      k: "separados",
+      nome: "✅ Separados",
       cor: "#2f9e6b",
       itens: pegar(function (p) {
-        return p.ok || ehAtendido(p);
+        if (p.cancelado || ehAtendido(p)) return false;
+        var st = String(p.situacao || "");
+        return (/separad/i.test(st) && !/pend/i.test(st)) || /conferid|rota/i.test(st) ||
+          Number(p.situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.SEPARADO : 821590);
       })
-    }, {
+    },
+    // 5) NEGOCIANDO / CONFIRMADO — pedido que teve interacao (marcado na mao), mas
+    // ainda nao entrou nos outros status. So do nosso sistema.
+    {
+      k: "negoc",
+      nome: "🤝 Negociando / Confirmado (aguardando cliente)",
+      cor: "#c77dff",
+      itens: pegar(function (p) {
+        return p.ok && !p.cancelado && !ehAtendido(p);
+      })
+    },
+    // 6) PRAZO
+    {
       k: "prazo",
       nome: "🧾 Prazo",
       cor: "#ffa53b",
       itens: pegar(function (p) {
         return /prazo/i.test(String(p.situacao || ""));
       })
-    }, {
+    },
+    // 7) FINALIZADOS (Atendido) — considerados concluidos; mostra link pra filmagem
+    {
+      k: "finalizados",
+      nome: "🏁 Finalizados",
+      cor: "#4a8f6b",
+      itens: pegar(function (p) {
+        return ehAtendido(p) && !p.cancelado;
+      })
+    },
+    // 8) CANCELADOS
+    {
       k: "cancel",
       nome: "🚫 Cancelados",
       cor: "#8a7a1f",
       itens: pegar(function (p) {
         return p.cancelado;
       })
-    }, {
-      k: "outros",
-      nome: "📋 Outros",
-      cor: "#9a95c9",
+    },
+    // 9) PEDIDOS AGUARDANDO — MANDAR PARA OUTRO STATUS. Tudo que sobrou (nao caiu em
+    // nenhuma linha acima). Aqui e onde aparece o botao NEGOCIANDO/CONFIRMADO.
+    {
+      k: "aguardando",
+      nome: "⏳ Pedidos aguardando — mandar para outro status",
+      cor: "#ffe600",
+      sempreAberta: true,
       itens: pegar(function () {
         return true;
       })
     }].filter(function (g) {
       return g.itens.length;
-    });
+    })
     return grupos.map(function (g) {
       const aberta = g.sempreAberta || FAIXAS_ABERTAS[g.k];
       return '<div class="faixa' + (aberta ? "" : " fechada") + '" style="border-left-color:' + g.cor + '">' + '<div class="faixaTit" style="color:' + g.cor + '" onclick="alternarFaixa(\'' + g.k + '\')">' + '<span style="font-size:12px">' + (aberta ? "▾" : "▸") + '</span>' + '<span>' + g.nome + '</span>' + '<span class="faixaQtd" style="background:' + g.cor + '">' + g.itens.length + '</span>' + (aberta ? '' : '<span class="muted" style="font-size:10px;font-weight:400;text-transform:none">clique pra abrir</span>') + '</div>' + (aberta ? '<div class="faixaCards">' + g.itens.map(cardPedido).join("") + '</div>' : '') + '</div>';
@@ -502,6 +540,31 @@ async function resolverPendencia(id) {
   } catch (e) {
     alert("Erro: " + e.message);
   }
+}
+async function verFilmagem(id, numero) {
+  try {
+    const j = await fetch(B + "/api/diag/comprovante/" + numero).then(function (r) { return r.json(); });
+    const c = (j.comprovantesNoLog || []);
+    if (!c.length) { alert("Este pedido não tem filmagem/foto de conferência."); return; }
+    var html = c.map(function (x) {
+      var url = B + (x.detalhes && x.detalhes.url ? x.detalhes.url : "");
+      var ehVideo = /\.(mp4|mov|webm|3gp)$/i.test(url) || (x.detalhes && x.detalhes.tipo === "video");
+      return ehVideo ? '<video src="' + url + '" controls playsinline style="width:100%;border-radius:8px;margin-bottom:8px"></video>' : '<img src="' + url + '" style="width:100%;border-radius:8px;margin-bottom:8px">';
+    }).join("");
+    document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" style="max-width:520px;max-height:88vh;overflow:auto"><h3>🎥 Conferência do pedido ' + esc(numero) + '</h3>' + html + '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Fechar</button></div></div>';
+  } catch (e) { alert("Erro ao buscar a filmagem: " + e.message); }
+}
+async function ciclarNegoc(id) {
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/ok", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ funcionarioId: S.id })
+    }).then(function (r) { return r.json(); });
+    if (j.erro) throw new Error(j.erro);
+    const p = (BUSCA_RES || PEDIDOS).find(function (x) { return String(x.id) === String(id); });
+    if (p) { p.ok = j.marcado; p.okStatus = j.status || null; p.okPor = j.por || null; }
+    recarregarAtual();
+  } catch (e) { alert("Erro: " + e.message); }
 }
 async function marcarOk(id) {
   try {

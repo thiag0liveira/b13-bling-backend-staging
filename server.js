@@ -9243,50 +9243,108 @@ async function _atualizarSituacoesOnline(ids){
   _sitOnlineRodando=false;
 }
 function _turnosEntrega(){ try{ return lerJSON(`${DATA_DIR}/turnos_entrega.json`,{}); }catch(e){ return {}; } }
-app.get("/api/pedidos-online",(req,res)=>{
+// helper: início da semana (segunda 00:00) e fim (domingo 23:59) a partir de uma data
+function _semanaDe(refISO){
+  const base = refISO ? new Date(refISO+"T12:00:00") : new Date(Date.now()-3*3600*1000);
+  const dow = base.getDay(); // 0=dom,1=seg...
+  const diffSeg = (dow===0? -6 : 1-dow); // volta até segunda
+  const seg = new Date(base); seg.setDate(base.getDate()+diffSeg); seg.setHours(0,0,0,0);
+  const dom = new Date(seg); dom.setDate(seg.getDate()+6); dom.setHours(23,59,59,999);
+  return { ini:seg, fim:dom, iniISO:seg.toISOString().slice(0,10), fimISO:dom.toISOString().slice(0,10) };
+}
+
+app.get("/api/pedidos-online",async(req,res)=>{
   try{
-    const dias=Math.min(Number(req.query.dias||3),30);
-    const desde=Date.now()-dias*86400000;
+    // PERÍODO: por padrão a SEMANA atual (segunda a domingo), mas editável por
+    // ?ini=AAAA-MM-DD&fim=AAAA-MM-DD (ou ?dias=N pro modo antigo, se vier).
+    let iniData, fimData, iniISO, fimISO;
+    if(req.query.ini && req.query.fim){
+      iniISO=String(req.query.ini); fimISO=String(req.query.fim);
+      iniData=new Date(iniISO+"T00:00:00"); fimData=new Date(fimISO+"T23:59:59");
+    } else if(req.query.dias){
+      const dias=Math.min(Number(req.query.dias),60);
+      fimData=new Date(); iniData=new Date(Date.now()-dias*86400000);
+      iniISO=iniData.toISOString().slice(0,10); fimISO=fimData.toISOString().slice(0,10);
+    } else {
+      const sem=_semanaDe(req.query.ref); iniData=sem.ini; fimData=sem.fim; iniISO=sem.iniISO; fimISO=sem.fimISO;
+    }
+    const desde=iniData.getTime();
+    const ateMs=fimData.getTime();
+
     const props=lerPropostas();
-    const lista=Object.values(props||{})
-      // Só as origens que criam pedido PRA SER FINALIZADO DEPOIS: venda atacado,
-      // totem e site. Venda feita direto no caixa atacado já sai com destino
-      // definido (Atendido ou Em separação) e não precisa aparecer aqui.
-      .filter(p=>{
-        if(!p||!p.pedidoBlingId||(p.criadoEm||0)<desde) return false;
-        const o=String(p.origem||"atacado");
-        if(o==="caixa"||o==="caixa_atacado"||o==="pdv") return false;
-        if(req.query.origem==="online") return o==="totem"||o==="site";
-        return true;
-      })
-      .map(p=>{
-        const sit=_sitOnline[String(p.pedidoBlingId)]||null;
-        const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
-        // teve item retirado na edição? (pra marcar no card e avisar antes do WhatsApp)
-        let teveRetirada=false;
-        try{
-          const lg=lerLog()[String(p.pedidoBlingId)]||[];
-          teveRetirada=lg.some(e=>e.evento==="itens_retirados"||(e.detalhes&&Array.isArray(e.detalhes.retirados)&&e.detalhes.retirados.length));
-        }catch(e){}
-        return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
-          agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-          teveRetirada,
-          ok: !!lerPedidosOk()[String(p.pedidoBlingId)],
-          okPor: lerPedidosOk()[String(p.pedidoBlingId)]?.por||null,
-          criadoEm:p.criadoEm||0, origem:p.origem||"atacado",
-          vendedor:p.vendedorNome||p.funcionarioNome||"", // vendedor do pedido (ou quem digitou)
-          cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
-          total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
-          tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
-          endereco:p.entrega?.endereco||"",
-          itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
-          situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
-          cancelado: sit?sit.situacaoId===SIT.CANCELADO:false };
-      })
+    // 1) pedidos do REGISTRO LOCAL (venda atacado, totem, site) no período
+    const porBlingId={}; // pedidoBlingId -> objeto do card
+    const ehConsumidorFinal=(nome)=> /consumidor\s*final/i.test(String(nome||""));
+    const montarDoLocal=(p)=>{
+      const sit=_sitOnline[String(p.pedidoBlingId)]||null;
+      const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
+      let teveRetirada=false;
+      try{ const lg=lerLog()[String(p.pedidoBlingId)]||[];
+        teveRetirada=lg.some(e=>e.evento==="itens_retirados"||(e.detalhes&&Array.isArray(e.detalhes.retirados)&&e.detalhes.retirados.length)); }catch(e){}
+      const okReg=lerPedidosOk()[String(p.pedidoBlingId)]||null;
+      return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
+        agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+        teveRetirada,
+        ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
+        criadoEm:p.criadoEm||0, origem:p.origem||"atacado", noSistema:true,
+        vendedor:p.vendedorNome||p.funcionarioNome||"",
+        cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
+        total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
+        tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
+        endereco:p.entrega?.endereco||"",
+        itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+        situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
+        cancelado: sit?sit.situacaoId===SIT.CANCELADO:false };
+    };
+    Object.values(props||{}).forEach(p=>{
+      if(!p||!p.pedidoBlingId||(p.criadoEm||0)<desde||(p.criadoEm||0)>ateMs) return;
+      const o=String(p.origem||"atacado");
+      if(o==="caixa"||o==="caixa_atacado"||o==="pdv") return;
+      if(ehConsumidorFinal(p.cliente?.nome)) return; // pedido de consumidor final nao entra
+      porBlingId[String(p.pedidoBlingId)]=montarDoLocal(p);
+    });
+
+    // 2) pedidos do BLING no período que NÃO estão no registro local (criados só no
+    // Bling). Traz os nao-consumidor-final. Situacoes que interessam ao acompanhamento.
+    try{
+      const sitInteresse=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
+      let pag=1;
+      for(let i=0;i<6;i++){
+        const params=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO});
+        sitInteresse.filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
+        let arr=[];
+        try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); arr=r?.data||[]; }catch(e){ break; }
+        for(const b of arr){
+          const bid=String(b.id);
+          if(porBlingId[bid]) continue; // já veio do local
+          const nomeCli=b.contato?.nome||"";
+          if(ehConsumidorFinal(nomeCli)) continue;
+          const sitId=Number(b.situacao?.id||0);
+          _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now()};
+          const ag=_turnosEntrega()[bid]||null;
+          const okReg=lerPedidosOk()[bid]||null;
+          porBlingId[bid]={ id:b.id, numero:b.numero||b.id,
+            agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+            teveRetirada:false,
+            ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
+            criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
+            origem:"bling", noSistema:false,   // <- criado SÓ no Bling
+            vendedor:"", cliente:nomeCli||"—", telefone:"",
+            total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
+            tipo:(Number(b.transporte?.frete||0)>0)?"entrega":"retirada",
+            endereco:"", itens:[],
+            situacaoId:sitId, situacao:nomeSituacao(sitId),
+            cancelado:sitId===SIT.CANCELADO };
+        }
+        if(arr.length<100) break; pag++; await sleep(120);
+      }
+    }catch(e){}
+
+    const lista=Object.values(porBlingId)
       .sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
     // dispara a atualização das situações em 2º plano (não segura a resposta)
     _atualizarSituacoesOnline(lista.slice(0,120).map(p=>p.id));
-    res.json({data:lista, situacoesCarregando:_sitOnlineRodando});
+    res.json({data:lista, situacoesCarregando:_sitOnlineRodando, periodo:{ini:iniISO, fim:fimISO}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // contagem de NOVOS pedidos online por usuário (cada um tem seu "já vi até aqui")
@@ -9543,10 +9601,25 @@ app.post("/api/pedidos-online/:blingId/ok",(req,res)=>{
       return res.status(400).json({erro:"pedido cancelado não pode ser marcado como OK"});
     const d=lerPedidosOk();
     const funcNome=(lerJSON(FUNC_FILE,{})[req.body?.funcionarioId]?.nome)||"—";
-    if(d[id]){ delete d[id]; salvarJSON(OK_PEDIDOS_FILE,d); return res.json({ok:true, marcado:false}); }
-    d[id]={em:Date.now(), por:funcNome};
+    // status: "negociando" ou "confirmado" (era so um marcador simples). Ciclo ao
+    // tocar: (nada) -> negociando -> confirmado -> (limpa). Move o pedido pra linha
+    // NEGOCIANDO/CONFIRMADO. So faz sentido em pedido AGUARDANDO (a tela controla isso).
+    const alvo=(req.body?.status==="negociando"||req.body?.status==="confirmado")?req.body.status:null;
+    if(alvo){
+      d[id]={em:Date.now(), por:funcNome, status:alvo};
+      salvarJSON(OK_PEDIDOS_FILE,d);
+      return res.json({ok:true, marcado:true, status:alvo, por:funcNome});
+    }
+    // sem status explicito = alterna o ciclo
+    const atual=d[id]?d[id].status||"confirmado":null;
+    let novo;
+    if(!atual) novo="negociando";
+    else if(atual==="negociando") novo="confirmado";
+    else novo=null; // limpa
+    if(!novo){ delete d[id]; salvarJSON(OK_PEDIDOS_FILE,d); return res.json({ok:true, marcado:false}); }
+    d[id]={em:Date.now(), por:funcNome, status:novo};
     salvarJSON(OK_PEDIDOS_FILE,d);
-    res.json({ok:true, marcado:true, por:funcNome});
+    res.json({ok:true, marcado:true, status:novo, por:funcNome});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
