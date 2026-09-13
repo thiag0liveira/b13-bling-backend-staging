@@ -3413,6 +3413,63 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
 // Acha registros "ped-<id>" (criados pela sincronização, origem bling) cujo pedido na
 // verdade FOI criado pelo nosso fluxo — o log tem o evento de criação. Nesses casos o
 // card mostra dados do Bling em vez dos nossos. Com ?executar=1, corrige a origem.
+// Compara os registros locais com o BLING (itens, total, frete) e mostra o que diverge.
+// O Bling é a fonte da verdade aqui — o registro local pode ter ficado com dados
+// incompletos (a sincronização só busca o detalhe dos primeiros pedidos) ou antigos
+// (o pedido foi editado depois). Com ?executar=1, atualiza os registros divergentes.
+// Filtra por ?numeros=A,B,C ou, sem filtro, varre os últimos ?dias=N (padrão 30).
+app.get("/api/diag/conferir-registros",async(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const filtro=String(req.query.numeros||"").split(",").map(x=>x.trim()).filter(Boolean);
+    const dias=Math.min(Number(req.query.dias||30),90);
+    const desde=Date.now()-dias*86400000;
+    let alvos=Object.values(props||{}).filter(p=>p&&p.pedidoBlingId);
+    if(filtro.length) alvos=alvos.filter(p=>filtro.includes(String(p.pedidoBlingNumero))||filtro.includes(String(p.pedidoBlingId)));
+    else alvos=alvos.filter(p=>(p.criadoEm||0)>=desde);
+    alvos=alvos.slice(0,60);
+    const divergentes=[], iguais=[];
+    for(const p of alvos){
+      let d=null;
+      try{ d=await blingLento(`/pedidos/vendas/${p.pedidoBlingId}`).then(r=>r?.data); }catch(e){}
+      if(!d){ divergentes.push({numero:p.pedidoBlingNumero, problema:"não encontrado no Bling"}); continue; }
+      const totalBling=+Number(d.total||0).toFixed(2);
+      const totalLocal=+Number(p.total||0).toFixed(2);
+      const freteBling=+Number(d.transporte?.frete||0).toFixed(2);
+      const freteLocal=+Number(p.entrega?.taxa||0).toFixed(2);
+      const itensBling=(d.itens||[]).map(it=>({produtoId:it.produto?.id||null, nome:it.descricao||"", quantidade:Number(it.quantidade)||0, valor:Number(it.valor)||0}));
+      const qtdLocal=(p.itens||[]).length, qtdBling=itensBling.length;
+      const difTotal=+(totalLocal-totalBling).toFixed(2);
+      const difFrete=+(freteLocal-freteBling).toFixed(2);
+      const diverge = Math.abs(difTotal)>0.009 || Math.abs(difFrete)>0.009 || qtdLocal!==qtdBling;
+      const reg={ numero:p.pedidoBlingNumero, registroId:p.id, cliente:p.cliente?.nome||"—",
+        totalLocal, totalBling, diferencaTotal:difTotal,
+        freteLocal, freteBling,
+        itensLocal:qtdLocal, itensBling:qtdBling,
+        motivo: qtdLocal===0? "registro local sem itens" :
+                (qtdLocal!==qtdBling? "quantidade de itens diferente" :
+                (Math.abs(difTotal)>0.009? "valor total diferente" : "frete diferente")) };
+      if(diverge) divergentes.push(reg); else iguais.push(reg.numero);
+      if(req.query.executar==="1" && diverge){
+        p.itens=itensBling.map(i=>({produtoId:i.produtoId, nome:i.nome, quantidade:i.quantidade, valor:i.valor}));
+        p.total=totalBling;
+        if(!p.entrega) p.entrega={};
+        p.entrega.taxa=freteBling;
+        if(freteBling>0) p.entrega.tipo="entrega";
+        p.ressincronizadoEm=Date.now();
+      }
+      await sleep(90);
+    }
+    if(req.query.executar==="1" && divergentes.length){
+      salvarPropostas(props);
+      return res.json({ok:true, executado:true, atualizados:divergentes.length, detalhe:divergentes});
+    }
+    res.json({ conferidos:alvos.length, divergentes:divergentes.length, iguais:iguais.length,
+      detalhe:divergentes,
+      comoCorrigir: divergentes.length? "Abra esta URL com &executar=1 pra atualizar os registros com os dados atuais do Bling." : null });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/registros-orfaos",(req,res)=>{
   try{
     const props=lerPropostas();
@@ -11929,16 +11986,22 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
       const novos=pedidosBling.filter(pd=>!jaTem.has(String(pd.id)) && !jaTemNumero.has(String(pd.numero)));
       let contDet=0;
       for(const pd of novos){
-        let itensReg=[], total=pd.total||0, freteReg=0;
+        let itensReg=[], total=pd.total||0, freteReg=0, detalheOk=false;
         if(contDet<80){ // busca o detalhe (produtos/frete) só pros novos, com teto pra não estourar o tempo
           try{
             const d=await bling(`/pedidos/vendas/${pd.id}`).then(r=>r?.data);
             itensReg=(d?.itens||[]).map(it=>({produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"produto", quantidade:it.quantidade, valor:it.valor}));
             freteReg=Number(d?.transporte?.frete)||0;
             total=d?.total||total;
+            detalheOk=true;
             contDet++; await new Promise(r=>setTimeout(r,120));
           }catch(e){}
         }
+        // NÃO cria registro sem os itens: um registro incompleto fica divergindo do
+        // Bling (produtos e valor diferentes) e vira fonte de confusão na tela. Melhor
+        // deixar o pedido sem registro local — ele continua aparecendo via Bling — e
+        // ser criado na próxima passada, quando houver orçamento de detalhe.
+        if(!detalheOk) continue;
         const idReg="ped-"+String(pd.id);
         props[idReg]={
           id:idReg, origem:"bling", tipo:"pedido",
