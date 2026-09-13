@@ -1158,42 +1158,48 @@ window.conferirComBling=async function(sessaoId){
   }
 };
 
+// helpers proprios: esta funcao vive fora do bloco onde B/esc/brl sao declarados
+// (const dentro de if{...} nao vaza pro escopo global), entao definimos aqui.
+var _B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+function _esc(x){ return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _brl(v){ return "R$ " + (Number(v)||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function _fecharModalBusca(){ var el=document.getElementById("modais"); if(el) el.innerHTML=""; }
 window.buscarPedidoNosCaixas = async function(){
   var inp = document.getElementById("buscaPedCx");
   var num = inp ? String(inp.value||"").replace(/\D/g,"") : "";
   if(!num) { if(inp) inp.focus(); return; }
   document.getElementById("modais").innerHTML = '<div class="modalBg"><div class="modal"><div class="muted">Buscando o pedido '+num+' nos caixas…</div></div></div>';
   try{
-    var j = await fetch(B + "/api/gestao/buscar-pedido/" + num).then(function(r){return r.json();});
+    var j = await fetch(_B + "/api/gestao/buscar-pedido/" + num).then(function(r){return r.json();});
     if(j.erro) throw new Error(j.erro);
     if(!j.encontrado){
-      document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal"><h3>Pedido '+esc(num)+'</h3><div class="muted" style="margin:10px 0">Não encontrado em nenhum caixa (nem aberto nem fechado).</div><button class="btn btn-ghost" style="width:100%" onclick="fecharModal()">Fechar</button></div></div>';
+      document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)_fecharModalBusca()"><div class="modal"><h3>Pedido '+_esc(num)+'</h3><div class="muted" style="margin:10px 0">Não encontrado em nenhum caixa (nem aberto nem fechado).</div><button class="btn btn-ghost" style="width:100%" onclick="_fecharModalBusca()">Fechar</button></div></div>';
       return;
     }
     var linhas = j.lancamentos.map(function(l){
       var cor = l.cancelado ? "#8a7a1f" : "#2f9e6b";
       return '<div style="border:1px solid '+(l.cancelado?"#5a4a1f":"#2c5a44")+';border-radius:10px;padding:10px;margin-bottom:8px;background:'+(l.cancelado?"#2a2410":"#0f2a1c")+'">'+
         '<div style="display:flex;justify-content:space-between;align-items:center">'+
-          '<b style="color:'+cor+'">'+(l.cancelado?"🚫 CANCELADO":"✅ ATIVO")+' · '+esc(l.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa")+'</b>'+
-          '<b style="color:#ffd23f">'+brl(l.total)+'</b>'+
+          '<b style="color:'+cor+'">'+(l.cancelado?"🚫 CANCELADO":"✅ ATIVO")+' · '+_esc(l.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa")+'</b>'+
+          '<b style="color:#ffd23f">'+_brl(l.total)+'</b>'+
         '</div>'+
-        '<div style="font-size:13px;margin-top:4px">Operador: <b>'+esc(l.operador)+'</b> · '+(l.caixaFechado?"caixa FECHADO":"caixa ABERTO")+'</div>'+
-        '<div class="muted" style="font-size:11px;margin-top:2px">'+(l.quando?"lançado "+esc(l.quando):"")+(l.cliente?" · "+esc(l.cliente):"")+'</div>'+
-        (l.formas?'<div class="muted" style="font-size:11px;margin-top:2px">'+esc(l.formas)+(l.troco>0.009?" · troco "+brl(l.troco):"")+'</div>':'')+
-        (l.cancelado&&l.motivoCancelamento?'<div class="muted" style="font-size:11px;margin-top:2px">motivo: '+esc(l.motivoCancelamento)+'</div>':'')+
-        '<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="fecharModal();abrirCaixaPorId(\''+esc(l.sessaoId)+'\')">Abrir esse caixa</button>'+
+        '<div style="font-size:13px;margin-top:4px">Operador: <b>'+_esc(l.operador)+'</b> · '+(l.caixaFechado?"caixa FECHADO":"caixa ABERTO")+'</div>'+
+        '<div class="muted" style="font-size:11px;margin-top:2px">'+(l.quando?"lançado "+_esc(l.quando):"")+(l.cliente?" · "+_esc(l.cliente):"")+'</div>'+
+        (l.formas?'<div class="muted" style="font-size:11px;margin-top:2px">'+_esc(l.formas)+(l.troco>0.009?" · troco "+_brl(l.troco):"")+'</div>':'')+
+        (l.cancelado&&l.motivoCancelamento?'<div class="muted" style="font-size:11px;margin-top:2px">motivo: '+_esc(l.motivoCancelamento)+'</div>':'')+
+        '<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="_fecharModalBusca();abrirCaixaPorId(\''+_esc(l.sessaoId)+'\')">Abrir esse caixa</button>'+
       '</div>';
     }).join("");
     document.getElementById("modais").innerHTML =
-      '<div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal" style="max-width:520px;max-height:88vh;overflow:auto">'+
-        '<h3>Pedido '+esc(j.numero)+' — '+j.qtdLancamentos+' lançamento(s)</h3>'+
-        (j.aviso?'<div style="background:'+(j.duplicado?"#3a0010":"#1c1846")+';border:1px solid '+(j.duplicado?"#b3341f":"#37327a")+';border-radius:8px;padding:8px;margin:8px 0;font-size:12px;color:'+(j.duplicado?"#ff8f7a":"#9a95c9")+'">'+esc(j.aviso)+'</div>':'')+
-        '<div class="muted" style="font-size:12px;margin-bottom:8px">'+j.lancamentosAtivos+' ativo(s) · '+j.lancamentosCancelados+' cancelado(s)'+(j.lancamentosAtivos>0?' · soma ativos '+brl(j.somaAtivos):'')+'</div>'+
+      '<div class="modalBg" onclick="if(event.target===this)_fecharModalBusca()"><div class="modal" style="max-width:520px;max-height:88vh;overflow:auto">'+
+        '<h3>Pedido '+_esc(j.numero)+' — '+j.qtdLancamentos+' lançamento(s)</h3>'+
+        (j.aviso?'<div style="background:'+(j.duplicado?"#3a0010":"#1c1846")+';border:1px solid '+(j.duplicado?"#b3341f":"#37327a")+';border-radius:8px;padding:8px;margin:8px 0;font-size:12px;color:'+(j.duplicado?"#ff8f7a":"#9a95c9")+'">'+_esc(j.aviso)+'</div>':'')+
+        '<div class="muted" style="font-size:12px;margin-bottom:8px">'+j.lancamentosAtivos+' ativo(s) · '+j.lancamentosCancelados+' cancelado(s)'+(j.lancamentosAtivos>0?' · soma ativos '+_brl(j.somaAtivos):'')+'</div>'+
         linhas+
-        '<button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="fecharModal()">Fechar</button>'+
+        '<button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="_fecharModalBusca()">Fechar</button>'+
       '</div></div>';
   }catch(e){
-    document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="fecharModal()"><div class="modal"><div class="err">Erro: '+esc(e.message)+'</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModal()">Fechar</button></div></div>';
+    document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="_fecharModalBusca()"><div class="modal"><div class="err">Erro: '+_esc(e.message)+'</div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="_fecharModalBusca()">Fechar</button></div></div>';
   }
 };
 // abre a sessao de caixa especifica (se a tela ja tiver funcao pra isso, usa; senao rola até ela)
