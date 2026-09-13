@@ -3410,6 +3410,43 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
 // Acha (e opcionalmente remove) registros locais DUPLICADOS do mesmo pedido — o caso
 // do "ped-<id>" com origem bling criado pela sincronização quando já existia o registro
 // da venda atacado. Só remove com ?executar=1, e sempre mantém o registro ORIGINAL.
+// Acha registros "ped-<id>" (criados pela sincronização, origem bling) cujo pedido na
+// verdade FOI criado pelo nosso fluxo — o log tem o evento de criação. Nesses casos o
+// card mostra dados do Bling em vez dos nossos. Com ?executar=1, corrige a origem.
+app.get("/api/diag/registros-orfaos",(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const log=lerLog();
+    const achados=[];
+    Object.values(props||{}).forEach(p=>{
+      if(!p||String(p.origem||"")!=="bling") return;
+      const evs=log[String(p.pedidoBlingId)]||[];
+      const criacao=evs.find(e=>/pedido_criado_atacado|pedido_criado|proposta/i.test(e.evento||""));
+      if(!criacao) return;
+      achados.push({ registroId:p.id, numero:p.pedidoBlingNumero, pedidoBlingId:p.pedidoBlingId,
+        cliente:p.cliente?.nome||"—", origemAtual:p.origem,
+        eventoDeCriacao:criacao.evento, por:criacao.funcionarioNome||"",
+        quando: criacao.em?new Date(criacao.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null });
+    });
+    if(req.query.executar==="1" && achados.length){
+      let corrigidos=0;
+      achados.forEach(a=>{
+        const p=props[a.registroId];
+        if(!p) return;
+        p.origem="atacado";              // veio do nosso fluxo
+        if(!p.vendedorNome && a.por) p.vendedorNome=a.por;
+        p.corrigidoEm=Date.now();
+        corrigidos++;
+      });
+      salvarPropostas(props);
+      return res.json({ok:true, executado:true, corrigidos, detalhe:achados});
+    }
+    res.json({ qtd:achados.length, detalhe:achados,
+      explicacao: achados.length? "Estes pedidos foram criados pelo nosso sistema (o log comprova), mas o registro local ficou marcado como origem 'bling' porque a sincronização criou o registro antes do vínculo ser gravado. Por isso os dados exibidos vêm do Bling e divergem." : null,
+      comoCorrigir: achados.length? "Abra esta URL com ?executar=1 pra marcar a origem correta." : null });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/duplicados-locais",(req,res)=>{
   try{
     const props=lerPropostas();
@@ -12272,6 +12309,19 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       return res.status(400).json({erro:"O Bling não retornou o número do pedido — tente de novo. Se persistir, confira no Bling se o pedido chegou a ser criado antes de gerar outro."});
     }
     let numero=criado?.data?.numero||null;
+    // GRAVA O VÍNCULO NA HORA, logo após o Bling responder. Antes isso só acontecia no
+    // fim do fluxo (depois de até 3 tentativas de mudar a situação, ~2s ou mais), e
+    // nessa janela a rotina de sincronização podia varrer o Bling, não achar o vínculo
+    // e criar um registro duplicado "ped-<id>" com origem bling — foi o que aconteceu
+    // com o pedido 55812, cujos dados passaram a vir do Bling em vez do nosso fluxo.
+    try{
+      const ppIni=lerPropostas();
+      if(ppIni[prop.id]){
+        ppIni[prop.id].pedidoBlingId=pedidoId;
+        ppIni[prop.id].pedidoBlingNumero=numero||pedidoId;
+        salvarPropostas(ppIni);
+      }
+    }catch(e){}
     const numeroVeioDoBling=!!numero;
     if(!numero) numero=pedidoId; // provisório, só pra não travar a resposta — corrigido abaixo em 2º plano
     // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
