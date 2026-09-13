@@ -473,7 +473,17 @@ function render() {
       })
     }].filter(function (g) {
       return g.itens.length;
-    })
+    });
+    // ORDEM DE EXIBIÇÃO: 'pend' (se houver) primeiro, depois 'aguardando' (pedidos que
+    // precisam de acao), e o resto na ordem natural. O pegar() acima consome na ordem
+    // de montagem (por isso 'aguardando' e montado por ultimo, pra so pegar o que sobra),
+    // mas aqui reordenamos so pra mostrar.
+    var ordemExib = ["pend", "aguardando", "entrega", "emsep", "separados", "negoc", "prazo", "finalizados", "cancel"];
+    grupos.sort(function (a, b) {
+      var ia = ordemExib.indexOf(a.k); if (ia < 0) ia = 99;
+      var ib = ordemExib.indexOf(b.k); if (ib < 0) ib = 99;
+      return ia - ib;
+    });
     return grupos.map(function (g) {
       const aberta = g.sempreAberta || FAIXAS_ABERTAS[g.k];
       return '<div class="faixa' + (aberta ? "" : " fechada") + '" style="border-left-color:' + g.cor + '">' + '<div class="faixaTit" style="color:' + g.cor + '" onclick="alternarFaixa(\'' + g.k + '\')">' + '<span style="font-size:12px">' + (aberta ? "▾" : "▸") + '</span>' + '<span>' + g.nome + '</span>' + '<span class="faixaQtd" style="background:' + g.cor + '">' + g.itens.length + '</span>' + (aberta ? '' : '<span class="muted" style="font-size:10px;font-weight:400;text-transform:none">clique pra abrir</span>') + '</div>' + (aberta ? '<div class="faixaCards">' + g.itens.map(cardPedido).join("") + '</div>' : '') + '</div>';
