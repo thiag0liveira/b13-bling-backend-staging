@@ -578,6 +578,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Gestão",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
   {grupo:"Gestão",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
   {grupo:"Gestão",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
+  {grupo:"Gestão",href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
   {grupo:"Gestão",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {grupo:"Gestão",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
 ];
@@ -8379,6 +8380,7 @@ app.get("/caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, m
 app.get("/caixa-diario", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-diario.html")); });
 app.get("/gestao-caixas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao-caixas.html")); });
 // Apoio ao Marketing — consulta de precos, com login (mesmo padrao das outras telas)
+app.get("/conferir-lista", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "conferir-lista.html")); });
 app.get("/apoio-marketing", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "apoio-marketing.html")); });
 app.get("/caixa-atacado", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "caixa-atacado.html")); });
 app.get("/frente-caixa", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "frente-caixa.html")); });

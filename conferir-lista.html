@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>B13 — Conferir lista de pedidos</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233}
+  body{background:var(--bg);color:#fff;min-height:100vh}
+  .wrap{max-width:900px;margin:0 auto;padding:16px}
+  .card{background:var(--card);border:1px solid #2c2660;border-radius:12px;padding:14px;margin-top:12px}
+  .muted{color:#9a95c9}
+  textarea,input{width:100%;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:10px;font-size:14px;font-family:inherit}
+  .btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:14px;padding:11px 16px;color:#fff}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:7px 6px;color:#9a95c9;font-size:11px;text-transform:uppercase;border-bottom:1px solid #2c2660}
+  td{padding:8px 6px;border-bottom:1px solid #221e4a}
+  tr.ok td{background:rgba(47,158,107,.07)}
+  tr.alerta td{background:rgba(255,59,59,.10)}
+  .pill{display:inline-block;font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px}
+  .num{font-weight:900;font-size:14px}
+  .tot{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .tot > div{flex:1;min-width:120px;background:#1c1846;border-radius:10px;padding:10px;text-align:center}
+  .tot b{display:block;font-size:19px;margin-top:2px}
+  @media(max-width:620px){ th:nth-child(5),td:nth-child(5){display:none} }
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      var nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/conferir-lista");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div class="wrap">
+  <div class="card" style="margin-top:0">
+    <div style="font-weight:900;font-size:18px">🧾 Conferir lista de pedidos</div>
+    <div class="muted" style="font-size:12px;margin:4px 0 10px">Cole os números dos pedidos (separados por vírgula, espaço ou um por linha) e escolha o dia. Mostra quais estão no caixa, quais têm dinheiro e o que precisa de atenção.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <span class="muted" style="font-size:12px">Dia:</span>
+      <input type="date" id="dia" style="width:auto">
+      <button class="btn btn-mag" onclick="conferir()">Conferir</button>
+    </div>
+    <textarea id="nums" rows="4" placeholder="55670, 55707, 55677…"></textarea>
+  </div>
+  <div id="res"></div>
+</div>
+<script>
+var B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
+function esc(x){return String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function brl(v){return "R$ "+(Number(v)||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});}
+(function(){ var d=new Date(Date.now()-3*3600*1000); document.getElementById("dia").value=d.toISOString().slice(0,10); })();
+
+async function conferir(){
+  var raw=document.getElementById("nums").value||"";
+  var nums=raw.split(/[\s,;]+/).map(function(x){return x.trim();}).filter(Boolean);
+  if(!nums.length){ alert("Cole os números dos pedidos."); return; }
+  var dia=document.getElementById("dia").value;
+  var res=document.getElementById("res");
+  res.innerHTML='<div class="card"><div class="muted">Conferindo '+nums.length+' pedido(s)…</div></div>';
+  try{
+    // manda em blocos de 30 pra URL não estourar (foi o que truncou antes)
+    var todos=[], resumo={comDinheiro:0,semDinheiro:0,naoEncontrados:0,somaDinheiro:0,somaLiquido:0};
+    for(var i=0;i<nums.length;i+=30){
+      var bloco=nums.slice(i,i+30);
+      var j=await fetch(B+"/api/gestao/conferir-lista?data="+dia+"&numeros="+encodeURIComponent(bloco.join(","))).then(function(r){return r.json();});
+      if(j.erro) throw new Error(j.erro);
+      todos=todos.concat(j.detalhe||[]);
+      resumo.comDinheiro+=j.resumo.comDinheiro; resumo.semDinheiro+=j.resumo.semDinheiro;
+      resumo.naoEncontrados+=j.resumo.naoEncontrados;
+      resumo.somaDinheiro+=j.resumo.somaDinheiro; resumo.somaLiquido+=j.resumo.somaDinheiroLiquido;
+    }
+    render(todos,resumo,nums.length);
+  }catch(e){ res.innerHTML='<div class="card"><div style="color:#ff8090">Erro: '+esc(e.message)+'</div></div>'; }
+}
+
+function render(lista,resumo,qtd){
+  var problemas=lista.filter(function(p){ return !p.noCaixa || !p.temDinheiro; });
+  var ok=lista.filter(function(p){ return p.noCaixa && p.temDinheiro; });
+  function linha(p){
+    if(!p.noCaixa) return '<tr class="alerta"><td class="num">'+esc(p.numero)+'</td><td colspan="4"><span class="pill" style="background:#b3341f">NÃO ESTÁ NO CAIXA</span> <span class="muted">'+esc(p.obs||"")+'</span></td></tr>';
+    if(!p.temDinheiro) return '<tr class="alerta"><td class="num">'+esc(p.numero)+'</td><td>'+esc(p.cliente||"")+'</td><td><span class="pill" style="background:#8a7a1f">SEM DINHEIRO</span></td><td>'+brl(p.total)+'</td><td class="muted">'+esc(p.formas||"")+'</td></tr>';
+    return '<tr class="ok"><td class="num">'+esc(p.numero)+'</td><td>'+esc(p.cliente||"")+'</td><td><b style="color:#3ce88a">'+brl(p.valorDinheiro)+'</b>'+(p.troco>0.009?'<div class="muted" style="font-size:10px">troco '+brl(p.troco)+'</div>':'')+'</td><td>'+brl(p.total)+'</td><td class="muted" style="font-size:11px">'+esc(p.hora||"")+' · '+esc(p.formas||"")+'</td></tr>';
+  }
+  document.getElementById("res").innerHTML=
+    '<div class="card">'+
+      '<div class="tot">'+
+        '<div><span class="muted" style="font-size:11px">Conferidos</span><b>'+qtd+'</b></div>'+
+        '<div><span class="muted" style="font-size:11px">Com dinheiro</span><b style="color:#3ce88a">'+resumo.comDinheiro+'</b></div>'+
+        '<div><span class="muted" style="font-size:11px">Precisam atenção</span><b style="color:'+(problemas.length?"#ff8090":"#3ce88a")+'">'+problemas.length+'</b></div>'+
+        '<div><span class="muted" style="font-size:11px">Dinheiro (líquido)</span><b style="color:#ffd23f">'+brl(resumo.somaLiquido)+'</b></div>'+
+      '</div>'+
+    '</div>'+
+    (problemas.length?
+      '<div class="card" style="border-color:#b3341f">'+
+        '<div style="font-weight:900;color:#ff8090;margin-bottom:6px">⚠️ Precisam de atenção ('+problemas.length+')</div>'+
+        '<table><thead><tr><th>Pedido</th><th>Cliente</th><th>Situação</th><th>Total</th><th>Formas</th></tr></thead><tbody>'+
+        problemas.map(linha).join("")+'</tbody></table>'+
+      '</div>':
+      '<div class="card" style="border-color:#2f9e6b"><div style="color:#3ce88a;font-weight:900">✅ Todos os pedidos estão no caixa e com dinheiro</div></div>')+
+    '<div class="card">'+
+      '<div style="font-weight:900;margin-bottom:6px">Pedidos conferidos ('+ok.length+')</div>'+
+      '<table><thead><tr><th>Pedido</th><th>Cliente</th><th>Dinheiro</th><th>Total</th><th>Detalhe</th></tr></thead><tbody>'+
+      ok.map(linha).join("")+'</tbody></table>'+
+      '<button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="copiarResumo()">📋 Copiar resumo</button>'+
+    '</div>';
+  window._ultimo={lista:lista,resumo:resumo};
+}
+
+function copiarResumo(){
+  var d=window._ultimo; if(!d) return;
+  var t="CONFERENCIA DE PEDIDOS\n\n";
+  var prob=d.lista.filter(function(p){return !p.noCaixa||!p.temDinheiro;});
+  t+="Total dinheiro (liquido): "+brl(d.resumo.somaLiquido)+"\n";
+  t+="Com dinheiro: "+d.resumo.comDinheiro+" | Precisam atencao: "+prob.length+"\n\n";
+  if(prob.length){ t+="PRECISAM ATENCAO:\n"+prob.map(function(p){ return "- "+p.numero+" "+(p.noCaixa?"(sem dinheiro)":"(nao esta no caixa)"); }).join("\n")+"\n\n"; }
+  t+="CONFERIDOS:\n"+d.lista.filter(function(p){return p.noCaixa&&p.temDinheiro;})
+    .map(function(p){ return "- "+p.numero+" "+(p.cliente||"")+" | dinheiro "+brl(p.valorDinheiro); }).join("\n");
+  try{ navigator.clipboard.writeText(t); alert("Resumo copiado!"); }catch(e){ alert("Não consegui copiar."); }
+}
+</script>
+</body>
+</html>
