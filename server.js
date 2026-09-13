@@ -3379,6 +3379,7 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
         situacao:nomeSituacao(Number(ped.situacao?.id||0)), data:ped.data,
         observacoes:String(ped.observacoes||"").slice(0,300) } : {naoEncontradoNoBling:true},
       temRegistroLocal: !!achou,
+      veioPorApi: ped?_veioPorApi(ped):null,
       achadoPor: porId?"pelo id do Bling":(porNum?"pelo numero (mas o pedidoBlingId nao bate!)":null),
       registroLocal: achou ? { id:achou.id, origem:achou.origem, pedidoBlingId:achou.pedidoBlingId,
         pedidoBlingNumero:achou.pedidoBlingNumero, cliente:achou.cliente?.nome,
@@ -9362,6 +9363,21 @@ function _semanaDe(refISO){
   return { ini:seg, fim:dom, iniISO:seg.toISOString().slice(0,10), fimISO:dom.toISOString().slice(0,10) };
 }
 
+// Detecta se o pedido foi IMPORTADO POR API (integração) — no Bling isso aparece como
+// "Importado de: API" no rodapé do pedido. Um pedido com essa marca veio de um sistema
+// externo (o nosso), mesmo que o registro local tenha falhado; sem ela, foi digitado
+// direto no painel do Bling.
+function _veioPorApi(b){
+  if(!b) return null;
+  // o Bling expõe isso em campos como loja/integracao/numeroPedidoLoja. Consideramos
+  // "veio por API" quando há qualquer indício de origem externa.
+  if(b.numeroPedidoLoja || b.numeroPedidoCompra) return true;
+  if(b.loja && (b.loja.id || b.loja.nome)) return true;
+  if(b.integracao) return true;
+  if(b.origem && /api|integra/i.test(String(b.origem))) return true;
+  return false;
+}
+
 // monta o objeto de card a partir de um pedido cru do Bling
 function _montarPedidoDoBling(b){
   const bid=String(b.id);
@@ -9374,7 +9390,7 @@ function _montarPedidoDoBling(b){
     teveRetirada:false,
     ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
     criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
-    origem:"bling", noSistema:false,
+    origem:"bling", noSistema:false, veioPorApi:_veioPorApi(b),
     vendedor:"", cliente:b.contato?.nome||"—", telefone:"",
     total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
     tipo:(Number(b.transporte?.frete||0)>0)?"entrega":"retirada",
