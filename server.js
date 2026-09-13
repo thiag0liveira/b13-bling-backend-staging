@@ -9369,13 +9369,17 @@ function _semanaDe(refISO){
 // direto no painel do Bling.
 function _veioPorApi(b){
   if(!b) return null;
-  // o Bling expõe isso em campos como loja/integracao/numeroPedidoLoja. Consideramos
-  // "veio por API" quando há qualquer indício de origem externa.
-  if(b.numeroPedidoLoja || b.numeroPedidoCompra) return true;
-  if(b.loja && (b.loja.id || b.loja.nome)) return true;
-  if(b.integracao) return true;
-  if(b.origem && /api|integra/i.test(String(b.origem))) return true;
-  return false;
+  // A API v3 do Bling NÃO expõe o "Importado de: API" que aparece na interface dele
+  // (conferido no pedido 55931: loja.id=0, numeroLoja="", intermediador vazio — nenhum
+  // campo indica a origem). Então não dá pra afirmar pela API se veio por integração.
+  // Em vez de chutar, usamos o que É confiável: o padrão da OBSERVAÇÃO que o nosso
+  // sistema escreve ao criar o pedido.
+  const obs=String(b.observacoes||"");
+  if(/Pedido via Totem\/App B13/i.test(obs)) return true;      // totem/site
+  if(/ENTREGA\s*—.*CEP/i.test(obs)) return true;               // venda atacado (entrega)
+  if(/\[VENDA A PRAZO/i.test(obs)) return true;                // fluxo nosso
+  if(/\|\s*edit\s+[\d\-: ]+$/i.test(obs)) return true;        // editado pelo nosso sistema
+  return null; // null = não dá pra saber (não afirmamos que foi digitado no Bling)
 }
 
 // monta o objeto de card a partir de um pedido cru do Bling
