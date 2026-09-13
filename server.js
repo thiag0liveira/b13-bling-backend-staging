@@ -3327,6 +3327,51 @@ app.get("/api/diag/pix-do-dia",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// Acha em quais CAIXAS um pedido (por número ou id) foi lançado — pra rastrear pedido
+// duplicado ou saber onde ele foi recebido. Retorna todos os lançamentos, ativos e
+// cancelados, em qualquer sessão (aberta ou fechada).
+app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
+  try{
+    const t=String(req.params.termo).trim();
+    if(!t) return res.status(400).json({erro:"informe o número do pedido"});
+    const dCx=lerCaixaSessoes();
+    const achados=[];
+    (dCx.sessoes||[]).forEach(sx=>{
+      (sx.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda") return;
+        if(String(m.numero||"")!==t && String(m.pedidoId||"")!==t) return;
+        achados.push({
+          sessaoId:sx.id, operador:sx.operador||"—", tipoCaixa:sx.tipoCaixa||"frente",
+          caixaFechado:!!sx.fechadaEm,
+          abertaEm:sx.abertaEm?new Date(sx.abertaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null,
+          fechadaEm:sx.fechadaEm?new Date(sx.fechadaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null,
+          numero:m.numero||m.pedidoId, pedidoId:m.pedidoId,
+          cliente:m.clienteNome||"", total:Number(m.total)||0,
+          cancelado:!!m.cancelado, motivoCancelamento:m.motivoCancelamento||null,
+          troco:Number(m.troco)||0,
+          formas:(m.pagamentos||[]).map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(" · "),
+          alterado:!!m.alterado,
+          quando:m.em?new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null,
+          em:m.em||0,
+        });
+      });
+    });
+    achados.sort((a,b)=>(a.em||0)-(b.em||0));
+    const ativos=achados.filter(a=>!a.cancelado);
+    const somaAtivos=+ativos.reduce((s,a)=>s+a.total,0).toFixed(2);
+    res.json({
+      numero:t, encontrado:achados.length>0, qtdLancamentos:achados.length,
+      lancamentosAtivos:ativos.length, lancamentosCancelados:achados.length-ativos.length,
+      somaAtivos,
+      duplicado: ativos.length>1,
+      aviso: ativos.length>1
+        ? `⚠️ Este pedido tem ${ativos.length} lançamentos ATIVOS em caixas diferentes (soma ${somaAtivos.toFixed(2)}). Provável duplicidade — confira contra o Bling.`
+        : (achados.length===0 ? "Pedido não encontrado em nenhum caixa." : null),
+      lancamentos:achados,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/auditar-sessao/:sessaoId",(req,res)=>{
   try{
     const dCx=lerCaixaSessoes();
