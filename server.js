@@ -3332,6 +3332,28 @@ app.get("/api/diag/pix-do-dia",(req,res)=>{
 // cancelados, em qualquer sessão (aberta ou fechada).
 // Investiga se um pedido tem registro local (proposta) ou nao — pra entender por que
 // apareceu como "so no Bling". Cruza pelo NUMERO e pelo ID, e mostra o que achar.
+// Mostra o JSON CRU do pedido no Bling — pra descobrir quais campos indicam a origem
+// (ex.: "importado de API", loja, integracao). Uso: /api/diag/pedido-cru/55931
+app.get("/api/diag/pedido-cru/:termo",async(req,res)=>{
+  try{
+    const t=String(req.params.termo).trim();
+    let ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data).catch(()=>null);
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    // destaca os campos que costumam indicar origem
+    const possiveisOrigem={};
+    ["loja","origem","integracao","canalVenda","numeroLoja","numeroPedidoLoja","intermediador","tipoIntegracao","idIntegracao"].forEach(k=>{
+      if(ped[k]!==undefined) possiveisOrigem[k]=ped[k];
+    });
+    res.json({
+      numero:ped.numero, id:ped.id,
+      camposDeOrigemEncontrados:possiveisOrigem,
+      chavesDoPedido:Object.keys(ped),
+      jsonCompleto:ped,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
