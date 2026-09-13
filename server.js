@@ -9274,11 +9274,16 @@ function _montarPedidoDoBling(b){
     cancelado:sitId===SIT.CANCELADO };
 }
 // Cache dos pedidos do Bling por janela de datas. A busca roda em SEGUNDO PLANO,
-// varrendo de HOJE pra trás (dia a dia), pra os pedidos recentes aparecerem primeiro.
+// varrendo de HOJE pra trás (dia a dia). Pedidos FINALIZADOS (Atendido/Cancelado) são
+// guardados EM DISCO — não mudam mais de status, então não precisam ser lidos de novo:
+// a busca pula os dias já totalmente finalizados, o que a torna muito mais rápida em
+// períodos com muitos pedidos antigos.
 const _cacheBlingPedidos={}; // "iniISO_fimISO" -> {pedidos, pronto, progresso, em, rodando}
+const PEDIDOS_FINALIZADOS_FILE=`${DATA_DIR}/pedidos_bling_finalizados.json`;
+function lerPedidosFinalizados(){ return lerJSON(PEDIDOS_FINALIZADOS_FILE,{porDia:{}, diasCompletos:{}}); }
+function _ehFinalizado(sitId){ return Number(sitId)===SIT.ATENDIDO || Number(sitId)===SIT.CANCELADO; }
 function _carregarBlingPedidosBg(iniISO, fimISO, chave){
   const c=_cacheBlingPedidos[chave];
-  // reaproveita cache fresco (2 min)
   if(c && c.pronto && (Date.now()-c.em)<120000) return;
   if(c && c.rodando) return;
   _cacheBlingPedidos[chave]={pedidos:(c&&c.pedidos)||[], pronto:false, progresso:0, em:Date.now(), rodando:true};
@@ -9286,28 +9291,53 @@ function _carregarBlingPedidosBg(iniISO, fimISO, chave){
     try{
       const sitInteresse=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
       const ehConsumidorFinal=(nome)=> /consumidor\s*final/i.test(String(nome||""));
-      // lista de dias de HOJE (ou fim) pra trás até o início
+      const fin=lerPedidosFinalizados();
+      const hojeISO=new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
       const dias=[];
       let d=new Date(fimISO+"T12:00:00"); const dIni=new Date(iniISO+"T12:00:00");
       while(d>=dIni){ dias.push(d.toISOString().slice(0,10)); d=new Date(d.getTime()-86400000); }
-      const acc={}; (_cacheBlingPedidos[chave].pedidos||[]).forEach(p=>{ acc[String(p.id)]=p; });
+      const acc={};
+      (_cacheBlingPedidos[chave].pedidos||[]).forEach(p=>{ acc[String(p.id)]=p; });
+      // 1) injeta na hora os finalizados já guardados em disco (não relê no Bling)
+      dias.forEach(dia=>{ (fin.porDia[dia]||[]).forEach(p=>{ acc[String(p.id)]=p; }); });
+      _cacheBlingPedidos[chave].pedidos=Object.values(acc).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+
+      let mudouDisco=false;
       for(let di=0; di<dias.length; di++){
         const dia=dias[di];
-        let pag=1;
+        // PULA dias já marcados como completos (todos finalizados) — exceto HOJE, que
+        // sempre relê (pode ter pedido novo) e ONTEM (pode ter fechado algo recente).
+        const ehRecente = (dia===hojeISO) || (dia>=new Date(Date.now()-3*3600*1000-2*86400000).toISOString().slice(0,10));
+        if(fin.diasCompletos[dia] && !ehRecente){
+          _cacheBlingPedidos[chave].progresso=Math.round((di+1)/dias.length*100);
+          continue;
+        }
+        let pag=1; const doDia=[]; let todosFinalizados=true, houvePedido=false;
         for(let i=0;i<4;i++){
           const params=new URLSearchParams({pagina:pag,limite:100,dataInicial:dia,dataFinal:dia});
           sitInteresse.filter(Boolean).forEach(id=>params.append("idsSituacoes[]",id));
           let arr=[];
           try{ const r=await blingLento(`/pedidos/vendas?${params.toString()}`); arr=r?.data||[]; }catch(e){ break; }
-          for(const b of arr){ if(ehConsumidorFinal(b.contato?.nome)) continue; acc[String(b.id)]=_montarPedidoDoBling(b); }
+          for(const b of arr){
+            if(ehConsumidorFinal(b.contato?.nome)) continue;
+            houvePedido=true;
+            const card=_montarPedidoDoBling(b);
+            acc[String(b.id)]=card;
+            if(_ehFinalizado(card.situacaoId)) doDia.push(card); else todosFinalizados=false;
+          }
           if(arr.length<100) break; pag++; await sleep(120);
         }
-        // publica o parcial a cada dia processado (a tela vai mostrando)
+        // guarda os finalizados desse dia em disco
+        if(doDia.length){ fin.porDia[dia]=doDia; mudouDisco=true; }
+        // marca o dia como completo se TODOS os pedidos dele já finalizaram e não é recente
+        if(houvePedido && todosFinalizados && !ehRecente){ fin.diasCompletos[dia]=true; mudouDisco=true; }
+        else if(fin.diasCompletos[dia] && !todosFinalizados){ delete fin.diasCompletos[dia]; mudouDisco=true; }
         _cacheBlingPedidos[chave].pedidos=Object.values(acc).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
         _cacheBlingPedidos[chave].progresso=Math.round((di+1)/dias.length*100);
         _cacheBlingPedidos[chave].em=Date.now();
-        await sleep(80);
+        await sleep(60);
       }
+      if(mudouDisco){ try{ salvarJSON(PEDIDOS_FINALIZADOS_FILE, fin); }catch(e){} }
       _cacheBlingPedidos[chave].pronto=true;
       _cacheBlingPedidos[chave].rodando=false;
       _cacheBlingPedidos[chave].em=Date.now();
