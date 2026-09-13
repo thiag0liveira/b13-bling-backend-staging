@@ -3407,6 +3407,40 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
 // Confere uma LISTA de pedidos contra os caixas de um dia: quais estao la, quais nao
 // estao, e quais tem DINHEIRO entre as formas de pagamento.
 // Uso: /api/gestao/conferir-lista?data=2026-09-12&numeros=55670,55707,...
+// Acha (e opcionalmente remove) registros locais DUPLICADOS do mesmo pedido — o caso
+// do "ped-<id>" com origem bling criado pela sincronização quando já existia o registro
+// da venda atacado. Só remove com ?executar=1, e sempre mantém o registro ORIGINAL.
+app.get("/api/diag/duplicados-locais",(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const porNumero={};
+    Object.values(props||{}).forEach(p=>{
+      if(!p||!p.pedidoBlingNumero) return;
+      const k=String(p.pedidoBlingNumero);
+      if(!porNumero[k]) porNumero[k]=[];
+      porNumero[k].push(p);
+    });
+    const dups=Object.entries(porNumero).filter(([k,arr])=>arr.length>1).map(([numero,arr])=>{
+      // o "bom" é o que NÃO tem origem bling (veio do nosso fluxo); se todos forem
+      // bling, fica o mais antigo
+      const doSistema=arr.filter(p=>String(p.origem||"")!=="bling");
+      const manter=(doSistema.length?doSistema:arr).sort((a,b)=>(a.criadoEm||0)-(b.criadoEm||0))[0];
+      const remover=arr.filter(p=>p.id!==manter.id);
+      return { numero, qtd:arr.length,
+        manter:{id:manter.id, origem:manter.origem, criadoEm:manter.criadoEm?new Date(manter.criadoEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null},
+        remover:remover.map(p=>({id:p.id, origem:p.origem, criadoEm:p.criadoEm?new Date(p.criadoEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):null})) };
+    });
+    if(req.query.executar==="1" && dups.length){
+      let removidos=0;
+      dups.forEach(d=>d.remover.forEach(r=>{ if(props[r.id]){ delete props[r.id]; removidos++; } }));
+      salvarPropostas(props);
+      return res.json({ok:true, executado:true, pedidosAfetados:dups.length, registrosRemovidos:removidos, detalhe:dups});
+    }
+    res.json({ qtdPedidosDuplicados:dups.length, detalhe:dups,
+      comoLimpar: dups.length? "Abra esta mesma URL com ?executar=1 no final pra remover os registros duplicados (mantém o original)." : null });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/gestao/conferir-lista",(req,res)=>{
   try{
     const dia=_hojeISO(req.query.data);
@@ -11836,7 +11870,13 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
 
     // AGORA também PUXA os pedidos em "Aguardando Separação" do Bling que ainda não
     // estão na lista (status criado só pelo nosso sistema: totem, site e atacado).
+    // considera "já tem" por ID **e por NÚMERO** — um registro da venda atacado pode
+    // ainda não ter o pedidoBlingId gravado quando esta sincronização roda (a gravação
+    // do id acontece logo depois de criar no Bling). Olhando só o id, o pedido era
+    // tratado como novo e ganhava um registro duplicado "ped-<id>" com origem "bling",
+    // fazendo o mesmo pedido aparecer DUAS vezes na tela (foi o caso do 55812).
     const jaTem=new Set(Object.values(props).filter(p=>p.pedidoBlingId).map(p=>String(p.pedidoBlingId)));
+    const jaTemNumero=new Set(Object.values(props).filter(p=>p.pedidoBlingNumero).map(p=>String(p.pedidoBlingNumero)));
     let adicionados=[];
     try{
       let pedidosBling=[], pagina=1;
@@ -11849,7 +11889,7 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
         if(arr.length<100) break;
         pagina++; await new Promise(r=>setTimeout(r,150));
       }
-      const novos=pedidosBling.filter(pd=>!jaTem.has(String(pd.id)));
+      const novos=pedidosBling.filter(pd=>!jaTem.has(String(pd.id)) && !jaTemNumero.has(String(pd.numero)));
       let contDet=0;
       for(const pd of novos){
         let itensReg=[], total=pd.total||0, freteReg=0;
