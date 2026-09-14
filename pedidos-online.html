@@ -723,6 +723,21 @@ async function verDetalhe(id) {
     return String(x.id) === String(id);
   });
   if (!p) return;
+  // pedidos "sem registro no sistema" (vieram só da listagem do Bling) chegam com
+  // itens:[] de propósito — buscar o detalhe de TODOS pesaria na fila do Bling.
+  // Busca sob demanda só quando o usuário realmente abre o pedido.
+  if ((!p.itens || !p.itens.length) && !p._itensCarregados) {
+    document.getElementById("modais").innerHTML = '<div class="modalBg"><div class="modal"><div class="muted center">Carregando itens…</div></div></div>';
+    try {
+      const j = await fetch(B + "/api/pedidos/" + id).then(r => r.json());
+      const itensBling = (j.data || j)?.itens || [];
+      p.itens = itensBling.map(function (i) {
+        return { nome: i.descricao || (i.produto && i.produto.nome) || "Produto", quantidade: Number(i.quantidade) || 0, valor: Number(i.valor) || 0 };
+      });
+    } catch (e) {}
+    p._itensCarregados = true;
+    render(); // atualiza a contagem "N item(ns)" no card, agora que já buscou
+  }
   // busca o histórico de alterações — o que foi retirado/acrescentado/alterado
   let alt = null;
   try {
