@@ -69,12 +69,22 @@ const LOGO="/logo";
 document.getElementById("logoImg").src=LOGO;
 
 // se já tem sessão, redireciona
+// Se veio de um LOGOUT (?saiu=1), não tenta entrar de novo — e ainda garante que as
+// três fontes estão limpas. Sem isso, um resto de sessão fazia o login reentrar
+// automaticamente e parecia que o sistema não deslogava.
 try{
-  var s=null;
-  try{ s=sessionStorage.getItem("b13sess"); }catch(e){}
-  if(!s){ try{ s=localStorage.getItem("b13sess"); }catch(e){} }
-  if(!s){ try{ var m=document.cookie.match(/b13sess=([^;]+)/); if(m) s=decodeURIComponent(m[1]); }catch(e){} }
-  if(s){ const f=JSON.parse(s); if(f && f.id) { irPara(f); } }
+  var _saiu = location.search.indexOf("saiu=1") >= 0;
+  if(_saiu){
+    try{ sessionStorage.removeItem("b13sess"); }catch(e){}
+    try{ localStorage.removeItem("b13sess"); }catch(e){}
+    try{ document.cookie="b13sess=;path=/;max-age=0"; }catch(e){}
+  } else {
+    var s=null;
+    try{ s=sessionStorage.getItem("b13sess"); }catch(e){}
+    if(!s){ try{ s=localStorage.getItem("b13sess"); }catch(e){} }
+    if(!s){ try{ var m=document.cookie.match(/b13sess=([^;]+)/); if(m) s=decodeURIComponent(m[1]); }catch(e){} }
+    if(s){ const f=JSON.parse(s); if(f && f.id) { irPara(f); } }
+  }
 }catch(e){}
 
 // Salva a sessao de forma robusta: alguns Android/WebView restritos bloqueiam

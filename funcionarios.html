@@ -517,9 +517,11 @@ async function salvarEditar(id) {
       // sessão expirou — avisa e manda pro login (não perde o trabalho por um erro genérico)
       document.getElementById("fMsg").innerHTML = `<div class="err">Sua sessão expirou. Você vai ser levado pro login pra entrar de novo.</div>`;
       setTimeout(() => {
-        try {
-          localStorage.removeItem("b13sess");
-        } catch (e) {}
+        // limpa as TRÊS fontes (senão o login reentra sozinho com a sessão expirada)
+        try { if (typeof b13ClearSession === "function") b13ClearSession(); } catch (e) {}
+        try { sessionStorage.removeItem("b13sess"); } catch (e) {}
+        try { localStorage.removeItem("b13sess"); } catch (e) {}
+        try { document.cookie = "b13sess=;path=/;max-age=0"; } catch (e) {}
         location.href = "/login?next=" + encodeURIComponent(location.pathname);
       }, 1800);
     } else document.getElementById("fMsg").innerHTML = `<div class="err">${esc(j.erro || "Erro")}</div>`;

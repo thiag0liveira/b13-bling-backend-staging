@@ -477,8 +477,21 @@ function b13GetSession(){ try{
   if(s){ try{ sessionStorage.setItem("b13sess",s); }catch(e){} return JSON.parse(s); }
   return null;
 }catch(e){ return null; } }
-function b13SetSession(f){ try{ sessionStorage.setItem("b13sess",JSON.stringify(f)); }catch(e){} }
-function b13ClearSession(){ try{ sessionStorage.removeItem("b13sess"); }catch(e){} }
+function b13SetSession(f){
+  var t=JSON.stringify(f);
+  try{ sessionStorage.setItem("b13sess",t); }catch(e){}
+  try{ localStorage.setItem("b13sess",t); }catch(e){}
+  try{ document.cookie="b13sess="+encodeURIComponent(t)+";path=/;max-age=43200"; }catch(e){}
+}
+// LIMPA AS TRES FONTES. O b13GetSession le de sessionStorage, localStorage E cookie —
+// se o logout apagasse so uma (como fazia), a tela de login achava a sessao nas outras
+// e ENTRAVA DE NOVO sozinho, dando a impressao de que nao deslogava.
+function b13ClearSession(){
+  try{ sessionStorage.removeItem("b13sess"); }catch(e){}
+  try{ localStorage.removeItem("b13sess"); }catch(e){}
+  try{ document.cookie="b13sess=;path=/;max-age=0"; }catch(e){}
+  try{ document.cookie="b13sess=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT"; }catch(e){}
+}
 function b13Pode(acao){
   const f=b13GetSession(); if(!f) return false;
   const n=f.permissoes||[f.nivel];
@@ -535,7 +548,7 @@ function b13BloquearSeSemAcesso(href){
   window.__b13SemAcesso=true;
   return false;
 }
-function b13Logout(){ b13ClearSession(); location.href="/login"; }
+function b13Logout(){ b13ClearSession(); location.href="/login?saiu=1"; }
 
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
