@@ -281,7 +281,61 @@ async function _blingProcessarProximo(){
   catch(e){ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro"); item.reject(e); }
   _blingProcessarProximo();
 }
+// ===== CACHE DE PRODUTO =====
+// /produtos/:id era metade de todas as chamadas ao Bling (79 de 156 numa medição com
+// o sistema quase parado). Nome, imagem, preço e código de um produto praticamente não
+// mudam durante o expediente; o estoque muda, mas tolera alguns segundos de atraso.
+// Guardar isso em memória tira a maior pressão da fila, que é o que deixava tudo lento.
+const _cacheProduto={};            // id -> {em, dados}
+const CACHE_PRODUTO_MS=90000;      // 90s
+const _cacheProdutoEmVoo={};       // evita buscar o MESMO produto 2x ao mesmo tempo
+function _invalidarProduto(id){ try{ delete _cacheProduto[String(id)]; }catch(e){} }
+function _limparCacheProduto(){ try{
+  const agora=Date.now();
+  Object.keys(_cacheProduto).forEach(k=>{ if(agora-_cacheProduto[k].em>CACHE_PRODUTO_MS*4) delete _cacheProduto[k]; });
+}catch(e){} }
+setInterval(_limparCacheProduto, 10*60*1000);
+
 function bling(path,options={},prioridade="alta"){
+  // só cacheia LEITURA simples de produto (GET /produtos/<id>, sem query)
+  const metodo=String(options.method||"GET").toUpperCase();
+  const mProd=/^\/produtos\/(\d+)$/.exec(String(path));
+  if(mProd && metodo==="GET"){
+    const id=mProd[1];
+    const c=_cacheProduto[id];
+    if(c && (Date.now()-c.em)<CACHE_PRODUTO_MS){
+      try{ _metricas.cacheHits=(_metricas.cacheHits||0)+1; }catch(e){}
+      return Promise.resolve(c.dados);
+    }
+    // já há uma busca desse produto em andamento: aproveita a mesma
+    if(_cacheProdutoEmVoo[id]) return _cacheProdutoEmVoo[id];
+    const p=new Promise((resolve,reject)=>{
+      _filaAlta.push({path,options,enfileiradoEm:Date.now(),
+        resolve:(r)=>{ try{ _cacheProduto[id]={em:Date.now(), dados:r}; }catch(e){} delete _cacheProdutoEmVoo[id]; resolve(r); },
+        reject:(e)=>{ delete _cacheProdutoEmVoo[id]; reject(e); }});
+      _blingAgendar();
+    });
+    _cacheProdutoEmVoo[id]=p;
+    return p;
+  }
+  // qualquer escrita em produto invalida o cache daquele produto
+  if(mProd && metodo!=="GET") _invalidarProduto(mProd[1]);
+  // LANÇAMENTO DE ESTOQUE muda o saldo: invalida o produto envolvido na hora, pra não
+  // servir saldo velho depois de repor/baixar estoque
+  if(/^\/estoques\b/.test(String(path)) && metodo!=="GET"){
+    try{
+      const corpo=JSON.parse(options.body||"{}");
+      const pid=corpo?.produto?.id||corpo?.produtoId||null;
+      if(pid) _invalidarProduto(pid);
+    }catch(e){}
+  }
+  // criar/alterar PEDIDO baixa estoque dos itens: invalida todos os produtos do pedido
+  if(/^\/pedidos\/vendas/.test(String(path)) && metodo!=="GET"){
+    try{
+      const corpo=JSON.parse(options.body||"{}");
+      (corpo.itens||[]).forEach(it=>{ const pid=it?.produto?.id; if(pid) _invalidarProduto(pid); });
+    }catch(e){}
+  }
   return new Promise((resolve,reject)=>{
     (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject,enfileiradoEm:Date.now()});
     _blingAgendar();
@@ -10139,6 +10193,8 @@ app.get("/api/diag/saude",(req,res)=>{
       servidor:{ ligadoHaMin:upMin, memoriaUsadaMB:Math.round(mem.heapUsed/1048576), memoriaTotalMB:Math.round(mem.rss/1048576) },
       bling:{
         chamadasDesdeOBoot:_metricas.total, chamadasPorMinuto:chamadasPorMin,
+        chamadasEconomizadasPeloCache:_metricas.cacheHits||0,
+        produtosNoCache:Object.keys(_cacheProduto||{}).length,
         limiteDoBlingPorMinuto:"~176 (3 por segundo)",
         bateuNoLimite429:_metricas.err429, erros:_metricas.erros,
         esperaMediaNaFilaMs:esperaMedia, esperaMaximaMs:_metricas.esperaMaxMs,
