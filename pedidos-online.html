@@ -110,7 +110,7 @@ function dataHora(ms) {
   }) + " " + hh;
 }
 let PEDIDOS = [],
-  FILTRO = "ativos",
+  FILTRO = "todos",
   CARREGANDO = false,
   DIAS = 7,
   PERIODO_INI = "",
@@ -258,7 +258,10 @@ function ordenar(lista) {
 }
 function visiveis() {
   if (BUSCA_RES) return BUSCA_RES; // resultado da busca tem prioridade
-  if (FILTRO === "todos") return ordenar(PEDIDOS); // única aba que mostra Atendidos e Cancelados
+  // ATENDIDOS têm aba própria e NÃO aparecem nas outras — são pedidos concluídos e só
+  // poluíam a lista de quem precisa agir
+  if (FILTRO === "atendidos") return ordenar(PEDIDOS.filter(p => ehAtendido(p) && !p.cancelado));
+  if (FILTRO === "todos") return ordenar(PEDIDOS.filter(p => !ehAtendido(p)));
   if (FILTRO === "entrega") return ordenar(PEDIDOS.filter(p => p.tipo === "entrega" && ehEmAndamento(p)));
   if (FILTRO === "retirada") return ordenar(PEDIDOS.filter(p => p.tipo === "retirada" && ehEmAndamento(p)));
   if (FILTRO === "online") return ordenar(PEDIDOS.filter(p => (p.origem === "totem" || p.origem === "site") && ehEmAndamento(p)));
@@ -399,11 +402,7 @@ function render() {
   const nAtac = PEDIDOS.filter(p => p.origem !== "totem" && p.origem !== "site" && ehEmAndamento(p)).length;
   const nAnd = PEDIDOS.filter(ehEmAndamento).length;
   const nConc = PEDIDOS.filter(p => ehAtendido(p) || p.cancelado).length;
-  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>' + '<span style="font-size:11px;color:#9a95c9;margin-right:4px">de</span>' +
-    '<input type="date" value="' + esc(PERIODO_INI) + '" onchange="PERIODO_INI=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px;font-size:12px">' +
-    '<span style="font-size:11px;color:#9a95c9;margin:0 4px">até</span>' +
-    '<input type="date" value="' + esc(PERIODO_FIM) + '" onchange="PERIODO_FIM=this.value;carregar()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px;font-size:12px">' +
-    '<button class="btn btn-ghost" style="width:auto;margin:0 0 0 6px;font-size:11px;padding:6px 10px" onclick="PERIODO_INI=\'\';PERIODO_FIM=\'\';carregar()">📅 Semana atual</button>' + '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.length + ')' + (nConc ? ' <span style="opacity:.7">· ' + nConc + ' concluídos</span>' : '') + '</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
+  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🛒 Pedidos</div><div style="flex:1"></div>' +  '<input id="buscaPed" placeholder="🔎 nº do pedido" inputmode="numeric" value="' + esc(window._buscaTxt || "") + '" oninput="window._buscaTxt=this.value" onkeydown="if(event.key===\'Enter\')buscarPedido()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px;width:130px">' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="buscarPedido()">' + (BUSCANDO ? "…" : "Buscar") + '</button>' + (BUSCA_RES ? '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="limparBusca()">✕ limpar</button>' : '') + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="carregar()">🔄</button>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="marcarVistos()">✓ Marcar vistos</button></div>' + '<div class="wrap">' + '<div class="muted" style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap">' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#ffe600;vertical-align:middle"></span> aguardando</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#29ABE2;vertical-align:middle"></span> em separação</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#2f9e6b;vertical-align:middle"></span> atendido</span>' + '<span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#8a7a1f;vertical-align:middle"></span> cancelado</span>' + '</div>' + '<div class="abas">' + '<span class="aba ' + (FILTRO === "ativos" ? "on" : "") + '" onclick="FILTRO=\'ativos\';render()">⏳ Aguardando separação (' + nAgu + ')</span>' + '<span class="aba ' + (FILTRO === "online" ? "on" : "") + '" onclick="FILTRO=\'online\';render()">🖥️ Totem/Site (' + nOnline + ')</span>' + '<span class="aba ' + (FILTRO === "atacado" ? "on" : "") + '" onclick="FILTRO=\'atacado\';render()">🧑‍💼 Venda Atacado (' + nAtac + ')</span>' + '<span class="aba ' + (FILTRO === "entrega" ? "on" : "") + '" onclick="FILTRO=\'entrega\';render()">🛵 Entrega (' + nEnt + ')</span>' + '<span class="aba ' + (FILTRO === "retirada" ? "on" : "") + '" onclick="FILTRO=\'retirada\';render()">🏪 Retirada (' + nRet + ')</span>' + '<span class="aba ' + (FILTRO === "andamento" ? "on" : "") + '" onclick="FILTRO=\'andamento\';render()">📋 Em andamento (' + nAnd + ')</span>' + '<span class="aba ' + (FILTRO === "todos" ? "on" : "") + '" onclick="FILTRO=\'todos\';render()">🗂️ Todos os status (' + PEDIDOS.filter(function (p) { return !ehAtendido(p); }).length + ')</span>' + '<span class="aba ' + (FILTRO === "atendidos" ? "on" : "") + '" onclick="FILTRO=\'atendidos\';render()" style="border-color:#2f9e6b">🏁 Atendidos (' + PEDIDOS.filter(function (p) { return ehAtendido(p) && !p.cancelado; }).length + ')</span>' + '</div>' + (AGUARD_PAG && AGUARD_PAG.qtd ? '<div class="card" style="border-color:#b3341f;margin-bottom:12px">' + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' + '<b style="font-size:14px">💰 Separados aguardando pagamento (' + AGUARD_PAG.qtd + ')</b>' + '<b style="color:#ff8f7a">' + brl(AGUARD_PAG.total) + '</b></div>' + '<div class="muted" style="font-size:11px;margin:4px 0 8px">Foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>' + AGUARD_PAG.data.map(function (a) {
     const tel = soDig(a.telefone);
     return '<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid #2a2660;padding:5px 0;font-size:12px">' + '<span style="flex:1;min-width:0">' + '<b>#' + esc(a.numero) + '</b> ' + esc(a.cliente) + ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:' + (a.tipo === "entrega" ? "#29ABE2;color:#000" : "#2f9e6b;color:#fff") + '">' + (a.tipo === "entrega" ? "ENTREGA" : "RETIRA") + '</span>' + (a.comPendencia ? ' <span style="font-size:9px;font-weight:900;padding:1px 5px;border-radius:4px;background:#ff3b3b">PENDÊNCIA</span>' : '') + '<div class="muted" style="font-size:10px">' + esc(a.situacao || "") + (a.por ? " · enviado por " + esc(a.por) : "") + '</div>' + '</span>' + '<b style="white-space:nowrap">' + brl(a.total) + '</b>' + (a.pronto ? '<button class="btn btn-wa" style="width:auto;margin:0;padding:5px 9px;font-size:11px" onclick="avisarCliente(' + a.id + ',\'' + (a.tipo === "entrega" ? "entrega" : "retirada") + '\')">💬 avisar</button>' : '') + '</div>';
   }).join("") + '</div>' : '') + (BUSCA_RES ? '<div class="muted" style="margin-bottom:8px">🔎 Resultado da busca por "' + esc(window._buscaTxt || "") + '" — <a href="#" onclick="limparBusca();return false" style="color:#29ABE2">ver a lista normal</a></div>' : '') + ((!BUSCA_RES && SIT_CARREGANDO && !BLING_PRONTO) ? '<div id="progBling" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:#9a95c9;display:flex;align-items:center;gap:8px"><span class="spin"></span> Carregando pedidos do Bling… <span class="pctBling">' + BLING_PROGRESSO + '%</span></div>' : '') + (CARREGANDO ? '<div class="muted" style="padding:16px">Carregando…</div>' : function () {
@@ -420,7 +419,7 @@ function render() {
       });
       return r;
     };
-    const grupos = [
+    let grupos = [
     // 1) SEPARADO COM PENDENCIAS — sempre PRIMEIRO quando houver, e aberto
     {
       k: "pend",
@@ -524,7 +523,17 @@ function render() {
     // precisam de acao), e o resto na ordem natural. O pegar() acima consome na ordem
     // de montagem (por isso 'aguardando' e montado por ultimo, pra so pegar o que sobra),
     // mas aqui reordenamos so pra mostrar.
-    var ordemExib = ["pend", "aguardando", "entrega", "emsep", "separados", "negoc", "prazo", "finalizados", "cancel"];
+    // na aba ATENDIDOS, uma faixa única (não faz sentido dividir pedidos concluídos)
+    if (FILTRO === "atendidos") {
+      grupos = [{
+        k: "atendidos",
+        nome: "🏁 Atendidos — pedidos concluídos",
+        cor: "#2f9e6b",
+        itens: ordenar(PEDIDOS.filter(function (p) { return ehAtendido(p) && !p.cancelado; })),
+        sempreAberta: true
+      }].filter(function (g) { return g.itens.length; });
+    }
+    var ordemExib = ["pend", "aguardando", "entrega", "emsep", "separados", "negoc", "prazo", "cancel"];
     grupos.sort(function (a, b) {
       var ia = ordemExib.indexOf(a.k); if (ia < 0) ia = 99;
       var ib = ordemExib.indexOf(b.k); if (ib < 0) ib = 99;
