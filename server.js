@@ -264,22 +264,37 @@ function _registrarMetrica(path, esperouMs, duracaoMs, erro){
   _metricas.ultimas.unshift({path:chave, esperouMs, duracaoMs, em:Date.now(), erro:erro||null});
   if(_metricas.ultimas.length>40) _metricas.ultimas.pop();
 }
+// ANTES: essa função esperava a chamada anterior TERMINAR (~700ms de resposta do
+// Bling) antes de sequer começar a próxima, respeitando só o intervalo de 340ms como
+// se fosse o tempo TOTAL entre chamadas. Resultado: throughput real ficava perto de
+// 1/s, bem abaixo do limite de ~3/s do Bling, e qualquer rajada (varredura de fundo)
+// enchia a fila e gerava esperas de minutos mesmo com poucas chamadas/min no total.
+// AGORA: até BLING_MAX_CONCORRENTE chamadas correm ao mesmo tempo; o intervalo
+// mínimo passa a valer entre o INÍCIO de uma chamada e o início da próxima, não entre
+// o início de uma e o fim da anterior.
+const BLING_MAX_CONCORRENTE=3;
+let _blingEmVoo=0;
 function _blingAgendar(){
   if(_blingProcessando) return;
   _blingProcessando=true;
-  _blingProcessarProximo();
+  _blingTentarDespachar();
 }
-async function _blingProcessarProximo(){
-  const item=_filaAlta.shift()||_filaBaixa.shift();
-  if(!item){ _blingProcessando=false; return; }
-  const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
-  if(espera>0) await new Promise(r=>setTimeout(r,espera));
-  _blingUltimaChamada=Date.now();
-  const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
-  const t0=Date.now();
-  try{ const r=await blingRaw(item.path,item.options); _registrarMetrica(item.path,esperouMs,Date.now()-t0,null); item.resolve(r); }
-  catch(e){ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro"); item.reject(e); }
-  _blingProcessarProximo();
+async function _blingTentarDespachar(){
+  while(_blingEmVoo<BLING_MAX_CONCORRENTE){
+    const item=_filaAlta.shift()||_filaBaixa.shift();
+    if(!item) break;
+    const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
+    if(espera>0) await new Promise(r=>setTimeout(r,espera));
+    _blingUltimaChamada=Date.now();
+    _blingEmVoo++;
+    const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
+    const t0=Date.now();
+    blingRaw(item.path,item.options)
+      .then(r=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,null); item.resolve(r); })
+      .catch(e=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro"); item.reject(e); })
+      .finally(()=>{ _blingEmVoo--; _blingTentarDespachar(); });
+  }
+  if(_filaAlta.length===0 && _filaBaixa.length===0 && _blingEmVoo===0) _blingProcessando=false;
 }
 // ===== CACHE DE PRODUTO =====
 // /produtos/:id era metade de todas as chamadas ao Bling (79 de 156 numa medição com
