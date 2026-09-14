@@ -1307,11 +1307,15 @@ function imprimir() {
 // monta a nota completa (com código de barras/QR) ESCONDIDA na própria tela e já
 // dispara o print — tudo dentro do mesmo clique do usuário (por isso não trava,
 // diferente de abrir uma página nova e imprimir sozinho depois que ela carregar)
-function imprimirNotaLocal() {
+async function imprimirNotaLocal() {
   try {
     var _r$pedido5, _r$pedido6;
     const r = S.resultado || {};
-    const pedidoId = ((_r$pedido5 = r.pedido) === null || _r$pedido5 === void 0 || (_r$pedido5 = _r$pedido5.data) === null || _r$pedido5 === void 0 ? void 0 : _r$pedido5.id) || "";
+    let pedidoId = ((_r$pedido5 = r.pedido) === null || _r$pedido5 === void 0 || (_r$pedido5 = _r$pedido5.data) === null || _r$pedido5 === void 0 ? void 0 : _r$pedido5.id) || "";
+    // Se o Bling não devolveu o id na criação (acontece quando ele está lento), ainda
+    // assim imprimimos a nota COMPLETA: o QR aponta pro acompanhamento pelo NÚMERO do
+    // pedido, que é o que o cliente e o caixa usam. Antes, sem id, caía numa nota
+    // simples sem QR nenhum.
     const numero = ((_r$pedido6 = r.pedido) === null || _r$pedido6 === void 0 || (_r$pedido6 = _r$pedido6.data) === null || _r$pedido6 === void 0 ? void 0 : _r$pedido6.numero) || pedidoId || "";
     const itensHtml = itens().map(i => `
     <tr><td>${esc(pack(i.qtd, i.un))} ${esc(i.nomeProduto)}${i.sabor && i.sabor !== i.nomeProduto ? ` (${esc(i.sabor)})` : ""}</td>
@@ -1322,7 +1326,7 @@ function imprimirNotaLocal() {
     <hr>
     <div style="font-weight:900;font-size:17px">Pedido #${esc(numero)}</div>
     <div style="font-size:11px;font-weight:700">${new Date().toLocaleString("pt-BR")}</div>
-    ${pedidoId ? `<div style="text-align:center;margin:6px 0"><svg id="barcodeLocal"></svg><div style="font-size:9px;font-weight:700;color:#000">Apresente no caixa</div></div>` : ""}
+    ${(pedidoId || numero) ? `<div style="text-align:center;margin:6px 0"><svg id="barcodeLocal"></svg><div style="font-size:9px;font-weight:700;color:#000">Apresente no caixa</div></div>` : ""}
     <hr>
     <div style="font-size:11px;font-weight:700">CLIENTE</div>
     <div style="font-weight:900;font-size:14px">${esc(S.nome)}</div>
@@ -1331,13 +1335,13 @@ function imprimirNotaLocal() {
     <hr>
     <div style="font-weight:900;font-size:16px;display:flex;justify-content:space-between"><span>TOTAL</span><span>${brl(totalFinal())}</span></div>
     <div style="text-align:center;font-size:11px;font-weight:700;margin-top:4px">${S.entrega === "entrega" ? "Entrega" : "Retirada na loja"}</div>
-    ${pedidoId ? `<hr><div style="text-align:center;margin-top:6px">
+    ${(pedidoId || numero) ? `<hr><div style="text-align:center;margin-top:6px">
       <div id="qrLocal" style="display:inline-block"></div>
       <div style="font-size:9px;font-weight:700;color:#000">Leia o QR pra ver status do pedido</div>
     </div>` : ""}`;
-    if (pedidoId) {
+    if (pedidoId || numero) {
       try {
-        JsBarcode("#barcodeLocal", String(pedidoId), {
+        JsBarcode("#barcodeLocal", String(pedidoId || numero), {
           format: "CODE128",
           width: 1.5,
           height: 38,
@@ -1347,7 +1351,7 @@ function imprimirNotaLocal() {
       } catch (e) {}
       try {
         new QRCode(document.getElementById("qrLocal"), {
-          text: window.location.origin + "/pedido/" + pedidoId + "/status",
+          text: window.location.origin + "/pedido/" + (pedidoId || numero) + "/status",
           width: 140,
           height: 140,
           correctLevel: QRCode.CorrectLevel.M
@@ -1413,7 +1417,7 @@ function telaSucesso(app) {
     ${statusBling}
 
     <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
-      ${pedidoId ? `<button class="btn btn-mag big" onclick="pausarContadorSucesso();imprimirNotaLocal()">🖨️ Imprimir nota (com código pro caixa)</button>` : `<button class="btn btn-ghost big" onclick="pausarContadorSucesso();imprimir()">🖨️ Imprimir</button>`}
+      <button class="btn btn-mag big" onclick="pausarContadorSucesso();imprimirNotaLocal()">🖨️ Imprimir nota (com código pro caixa)</button>
       <button class="btn btn-ghost big" onclick="recomecar(false)">Novo pedido</button>
     </div>
   </div>`;
