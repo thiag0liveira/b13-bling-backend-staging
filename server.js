@@ -7060,11 +7060,17 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
 
     // 7) situação final (Atendido, passando por Separado)
     // destino escolhido no caixa: "separacao" = pago, mas ainda vai ser separado
-    // (entra na fila da Mesa e no Painel); os outros seguem como antes
-    const alvo=statusFinal==="separacao"?"Em separação":(statusFinal==="separado"?"Separado":"Atendido");
+    // (entra na fila da Mesa e no Painel); os outros seguem como antes.
+    // EXCEÇÃO — VENDA A PRAZO: se o pedido estava em PRAZO, a mercadoria JÁ FOI
+    // entregue e o que faltava era só o pagamento. Ao receber, ele fecha direto em
+    // ATENDIDO, não volta pra Separado nem pra separação.
+    const eraPrazo = Number(sitInicial)===SIT.PRAZO;
+    let statusFinalEfetivo = statusFinal;
+    if(eraPrazo) statusFinalEfetivo = "atendido";
+    const alvo=statusFinalEfetivo==="separacao"?"Em separação":(statusFinalEfetivo==="separado"?"Separado":"Atendido");
     let avisoAtendido=null;
     try{
-      const rMov=statusFinal==="separacao"
+      const rMov=statusFinalEfetivo==="separacao"
         ? await (async()=>{
             try{
               { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
@@ -7073,7 +7079,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
               return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
             }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
           })()
-        : statusFinal==="separado"
+        : statusFinalEfetivo==="separado"
         ? await moverPedidoParaSeparado(pedidoId)
         : await moverPedidoParaAtendido(pedidoId,{sitConhecida:sitDepoisPut, itensParaEstoque:itensEfetivos});
       console.log("Transição do pedido "+pedidoId+" (alvo "+alvo+"):",JSON.stringify(rMov.caminho));
@@ -7417,7 +7423,7 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       }catch(e){ console.error("Falha ao registrar pedido totem/site na lista de propostas (ignorado):",e.message); }
     }
 
-    res.json({ ok: true, contatoId, criouContato, pedido });
+    res.json({ eraPrazoRecebido:eraPrazo, ok: true, contatoId, criouContato, pedido });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
 

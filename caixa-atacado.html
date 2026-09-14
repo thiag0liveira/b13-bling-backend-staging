@@ -2318,6 +2318,7 @@ function mostrarSucessoFinalizacao(resp, ctx) {
     <div class="modalBg" onclick="if(event.target===this){fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render);}"><div class="modal" style="text-align:center">
       <div style="font-size:44px">${resp.aviso ? '⚠️' : '✅'}</div><h3>${resp.aviso ? 'Pagamento registrado' : 'Pedido finalizado!'}</h3>
       <div class="ok">Total: ${brl(resp.total || total)}.${nfMsg}</div>
+      ${resp.eraPrazoRecebido ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px;margin-top:8px;font-size:12px;color:#a8f0c8">🧾 Venda a prazo quitada — o pedido foi para <b>ATENDIDO</b> (a mercadoria já tinha saído).</div>` : ""}
       ${repetidoMsg}${repMsg}${jaMsg}${iaMsg}
       ${resp.aviso ? `<div class="err" style="text-align:left;margin-top:8px">${esc(resp.aviso)}</div>` : ""}
       <div style="display:flex;gap:8px;margin-top:14px">
