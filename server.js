@@ -542,6 +542,33 @@ app.get("/nav.js",(req,res)=>{
 const B13_BACKEND="${process.env.RAILWAY_PUBLIC_DOMAIN?'https://'+process.env.RAILWAY_PUBLIC_DOMAIN:''}";
 const B13_SIT={AGUARDANDO:${SIT.AGUARDANDO},EM_SEP:${SIT.EM_SEP},SEP_PEND:${SIT.SEP_PEND},SEPARADO:${SIT.SEPARADO},CONF_ENTREGA:${SIT.CONF_ENTREGA},VERIFICADO:${SIT.VERIFICADO}};
 
+// Quando o servidor está reiniciando (deploy) ou o Railway devolve erro de gateway, a
+// resposta vem como TEXTO ("upstream error"), e o .json() das telas quebrava com a
+// mensagem críptica "Unexpected token 'u'". Aqui trocamos isso por um erro claro.
+(function(){
+  if(window.__b13FetchPatch) return;
+  window.__b13FetchPatch=true;
+  var _fetch=window.fetch;
+  window.fetch=function(){
+    return _fetch.apply(this, arguments).then(function(resp){
+      var _json=resp.json.bind(resp);
+      resp.json=function(){
+        return resp.clone().text().then(function(txt){
+          try{ return JSON.parse(txt); }
+          catch(e){
+            var t=String(txt||"").slice(0,120);
+            if(/upstream|bad gateway|502|503|504|timeout/i.test(t) || resp.status>=502){
+              throw new Error("O servidor está reiniciando ou fora do ar por instantes. Aguarde uns segundos e tente de novo.");
+            }
+            throw new Error("Resposta inesperada do servidor"+(t?" ("+t+")":"")+".");
+          }
+        });
+      };
+      return resp;
+    });
+  };
+})();
+
 function b13GetSession(){ try{
   var s=null;
   try{ s=sessionStorage.getItem("b13sess"); }catch(e){}
