@@ -75,7 +75,8 @@ let D = null,
   APOIO = null,
   RETIRADOS_EST = null,
   PRAZO = null,
-  ESTORNOS = null;
+  ESTORNOS = null,
+  SEMPAG = null;
 const nEv = {
   fechado_valor_menor: "Valor menor",
   pagamento_editado_caixa: "Pagamento editado",
@@ -219,6 +220,12 @@ function render() {
           </div>
           <div class="lin" style="font-weight:800;margin-top:8px;border-top:1px solid #2a2660"><span>Total do dia (atacado + varejo)</span><b style="color:#ffd23f">${brl(b.pedidos.fechamentoBling.atacado.valor + b.pedidos.fechamentoBling.varejo.valor)}</b></div>
           `) : card("🏪 Atacado × 🛒 Varejo", "<div class=\"muted\">⏳ Buscando no Bling…</div>")}
+
+        ${SEMPAG && SEMPAG.qtd ? card("⚠️ Separados sem pagamento", `
+          <div class="big" style="color:#ff8f7a">${brl(SEMPAG.total)}</div>
+          <div class="muted" style="margin-bottom:8px">${SEMPAG.qtd} pedido(s) foram pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber.</div>
+          ${lins(SEMPAG.data, p => `<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente || "")}<div class="muted" style="font-size:11px">${esc(p.situacao || "")}${p.vendedor ? " · " + esc(p.vendedor) : ""}</div></span><b style="color:#ff8f7a">${brl(p.total)}</b></div>`)}
+          <a href="/pedidos-online" style="display:block;text-align:center;margin-top:8px;background:#1c1846;color:#fff;text-decoration:none;padding:8px;border-radius:8px;font-size:12px">Abrir tela de Pedidos →</a>`) : ""}
 
         ${ESTORNOS && ESTORNOS.qtd ? card("↩️ Estornos pendentes", `
           <div class="big" style="color:#ff8f7a">${brl(ESTORNOS.total)}</div>
@@ -545,6 +552,13 @@ async function carregar() {
       const es = await fetch(B + "/api/central/estornos").then(r => r.json());
       if (!es.erro) {
         ESTORNOS = es;
+        render();
+      }
+    } catch (e) {}
+    try {
+      const sp = await fetch(B + "/api/pedidos-online/aguardando-pagamento").then(r => r.json());
+      if (!sp.erro) {
+        SEMPAG = sp;
         render();
       }
     } catch (e) {}
