@@ -240,7 +240,7 @@ async function blingRaw(path,options={},_tentativa=0){
 // tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
 // em digitação atualizando sozinho) somem chamadas e estourem o limite do Bling.
-const BLING_INTERVALO_MIN=340; // ms entre quaisquer duas chamadas ao Bling (~2,9/s, o limite documentado é 3/s)
+const BLING_INTERVALO_MIN=400; // ms entre quaisquer duas chamadas ao Bling (2,5/s, com folga do limite de 3/s)
 let _blingUltimaChamada=0;
 // FILA COM PRIORIDADE: operações do caixa/POS (finalizar venda, editar pagamento,
 // consultar preço na hora) são "alta" e sempre passam na frente. Tarefas de fundo
@@ -279,13 +279,25 @@ function _blingAgendar(){
   _blingProcessando=true;
   _blingTentarDespachar();
 }
+// Reserva a "vez" de forma atômica: com várias chamadas concorrentes tentando
+// despachar ao mesmo tempo (uma para cada requisição em voo que termina), o
+// intervalo mínimo tinha que ser CONFERIDO DE NOVO depois de cada espera — senão
+// duas chamadas podiam calcular a mesma folga, esperar, e disparar juntas (foi o que
+// causou os 429). Aqui o laço reconfere o intervalo a cada acordar; o trecho entre
+// a conferência e o `_blingUltimaChamada=Date.now()` não tem nenhum `await`, então
+// nada mais roda no meio — a reserva é atômica.
+async function _blingReservarVez(){
+  while(true){
+    const espera=_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now();
+    if(espera<=0){ _blingUltimaChamada=Date.now(); return; }
+    await new Promise(r=>setTimeout(r,espera));
+  }
+}
 async function _blingTentarDespachar(){
   while(_blingEmVoo<BLING_MAX_CONCORRENTE){
     const item=_filaAlta.shift()||_filaBaixa.shift();
     if(!item) break;
-    const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
-    if(espera>0) await new Promise(r=>setTimeout(r,espera));
-    _blingUltimaChamada=Date.now();
+    await _blingReservarVez();
     _blingEmVoo++;
     const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
     const t0=Date.now();
