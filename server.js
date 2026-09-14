@@ -9703,6 +9703,15 @@ const _cacheBlingPedidos={}; // "iniISO_fimISO" -> {pedidos, pronto, progresso, 
 const PEDIDOS_FINALIZADOS_FILE=`${DATA_DIR}/pedidos_bling_finalizados.json`;
 function lerPedidosFinalizados(){ return lerJSON(PEDIDOS_FINALIZADOS_FILE,{porDia:{}, diasCompletos:{}}); }
 function _ehFinalizado(sitId){ return Number(sitId)===SIT.ATENDIDO || Number(sitId)===SIT.CANCELADO; }
+// Quando o usuário faz uma busca, a varredura de fundo dá passagem — senão a busca
+// fica atrás dela na fila do Bling e demora muito pra responder.
+let _buscaEmAndamento=0;
+function _marcarBusca(){ _buscaEmAndamento=Date.now(); }
+function _temBuscaRecente(){ return (Date.now()-_buscaEmAndamento)<8000; }
+async function _cederSeHouverBusca(){
+  let voltas=0;
+  while(_temBuscaRecente() && voltas<40){ await sleep(500); voltas++; }
+}
 function _carregarBlingPedidosBg(iniISO, fimISO, chave){
   const c=_cacheBlingPedidos[chave];
   if(c && c.pronto && (Date.now()-c.em)<120000) return;
@@ -9725,6 +9734,7 @@ function _carregarBlingPedidosBg(iniISO, fimISO, chave){
 
       let mudouDisco=false;
       for(let di=0; di<dias.length; di++){
+        await _cederSeHouverBusca();   // usuário buscando: espera pra não atrasar ele
         const dia=dias[di];
         // PULA dias já marcados como completos (todos finalizados) — exceto HOJE, que
         // sempre relê (pode ter pedido novo) e ONTEM (pode ter fechado algo recente).
@@ -10053,12 +10063,33 @@ app.post("/api/pedidos-online/adotar/:termo",async(req,res)=>{
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 
+// cache curto da busca: repetir o mesmo número (ou apertar Enter de novo) não refaz
+// as chamadas ao Bling
+const _cacheBusca={};
 app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
     if(!t) return res.json({data:[]});
+    _marcarBusca();   // avisa a varredura de fundo pra dar passagem
+    const cc=_cacheBusca[t];
+    if(cc && (Date.now()-cc.em)<60000) return res.json({...cc.resp, doCache:true});
+
     let ped=null;
-    try{ ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data); }catch(e){}
+    // 1) ATALHO LOCAL: se o número já está no registro local, pega o id direto e faz
+    // UMA só chamada ao Bling, em vez de tentar id → buscar por número → detalhe.
+    let idConhecido=null;
+    try{
+      const props0=lerPropostas();
+      const achado=Object.values(props0||{}).find(p=>String(p.pedidoBlingNumero)===t||String(p.pedidoBlingId)===t);
+      if(achado&&achado.pedidoBlingId) idConhecido=String(achado.pedidoBlingId);
+    }catch(e){}
+    // 2) se não sabemos o id e o termo parece NÚMERO de pedido (curto), vai direto na
+    // busca por número — tentar como id primeiro é uma chamada que quase sempre falha
+    const pareceId = t.length>=10;
+    try{
+      if(idConhecido)      ped=await bling(`/pedidos/vendas/${idConhecido}`).then(r=>r?.data);
+      else if(pareceId)    ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data);
+    }catch(e){}
     if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
     if(!ped) return res.json({data:[], naoEncontrado:true});
     const props=lerPropostas();
@@ -10067,7 +10098,7 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
     const sit=Number(ped.situacao?.id||0);
     const obs=String(ped.observacoes||"");
     const ehEntrega=(prop?.entrega?.tipo==="entrega")||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
-    res.json({ data:[{
+    const _resp={ data:[{
       id:ped.id, numero:ped.numero, criadoEm:prop?.criadoEm||null,
       origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||await nomeVendedor(ped.vendedor?.id||null),
       cliente:ped.contato?.nome||"—", telefone:prop?.cliente?.telefone||"",
@@ -10077,7 +10108,11 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
       itens:(ped.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
       situacaoId:sit, situacao:nomeSituacao(sit), cancelado:sit===SIT.CANCELADO,
       agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-      buscado:true }] });
+      buscado:true }] };
+    _cacheBusca[t]={em:Date.now(), resp:_resp};
+    // limpa o cache quando cresce demais
+    try{ const ks=Object.keys(_cacheBusca); if(ks.length>200) ks.slice(0,100).forEach(k=>delete _cacheBusca[k]); }catch(e){}
+    res.json(_resp);
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // MOVE o pedido pra outra situação (o operador escolhe na tela)
