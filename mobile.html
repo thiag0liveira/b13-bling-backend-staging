@@ -493,7 +493,7 @@ function abrirScanner() {
   if (!temCamera) {
     box.innerHTML = '<div class="card"><div class="err" style="margin-bottom:10px">Este aparelho/navegador não permite usar a câmera aqui.</div>' +
       '<div class="muted mb">Digite o número do pedido:</div>' +
-      '<input id="pedidoManual" inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+      '<input id="pedidoManual" autofocus inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" onkeydown="if((event.keyCode||event.which)===13){event.preventDefault();abrirPedidoManual();}" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
       '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
       '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
     return;
@@ -516,7 +516,7 @@ function digitarNumeroManual() {
   pararScanner();
   var box = el("scanBox");
   box.innerHTML = '<div class="card"><div class="muted mb">Digite o número do pedido:</div>' +
-    '<input id="pedidoManual" inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
+    '<input id="pedidoManual" autofocus inputmode="numeric" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" name="ped_man" placeholder="Nº do pedido" onkeydown="if((event.keyCode||event.which)===13){event.preventDefault();abrirPedidoManual();}" style="width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff">' +
     '<button class="btn btn-mag mt" style="width:100%" onclick="abrirPedidoManual()">Abrir pedido</button>' +
     '<button class="btn btn-ghost mt" onclick="fecharScanner()">Cancelar</button></div>';
   var inp = el("pedidoManual"); if (inp) inp.focus();
