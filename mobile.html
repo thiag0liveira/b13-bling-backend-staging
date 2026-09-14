@@ -961,7 +961,11 @@ function comprimirVideo(file, cb) {
   } catch (e) { cb(null, e.message); }
 }
 function confirmarConferencia() {
-  if (!PEDIDO) return;
+  if (!PEDIDO) {
+    var msgSemPedido = el("msgModalMob") || el("confMsg");
+    if (msgSemPedido) msgSemPedido.innerHTML = '<span style="color:#ffd23f">⚠️ Pedido perdido da tela, feche e abra de novo pra confirmar.</span>';
+    return;
+  }
   var id = String(PEDIDO.id);
   var tipoEntrega = PEDIDO._tipoEntrega || "retirada";
   var msgEl = el("msgModalMob") || el("confMsg");
