@@ -211,6 +211,7 @@ async function blingRaw(path,options={},_tentativa=0){
     const r=await fetch(API+path,{...options,signal:ctrl.signal,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",Accept:"application/json",...(options.headers||{})}});
     clearTimeout(timeout);
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
+    if(r.status===429){ try{ _metricas.err429++; }catch(e){} }
     if(r.status===429&&_tentativa<8){
       // limite de requisições do Bling — espera com backoff crescente e tenta de novo
       await new Promise(res=>setTimeout(res,1200*(_tentativa+1)));
@@ -247,6 +248,22 @@ let _blingUltimaChamada=0;
 // avançam quando não há nada de alta prioridade esperando — assim elas nunca mais
 // deixam o caixa "preso em Processando..." esperando atrás de uma varredura.
 let _filaAlta=[], _filaBaixa=[], _blingProcessando=false;
+// MÉTRICAS pra diagnosticar lentidão: quantas chamadas, quanto tempo esperando na
+// fila, quantos 429 (limite do Bling) e quais caminhos mais consomem.
+const _metricas={ inicio:Date.now(), total:0, err429:0, erros:0,
+  esperaTotalMs:0, esperaMaxMs:0, porCaminho:{}, ultimas:[] };
+function _registrarMetrica(path, esperouMs, duracaoMs, erro){
+  _metricas.total++;
+  _metricas.esperaTotalMs+=esperouMs;
+  if(esperouMs>_metricas.esperaMaxMs) _metricas.esperaMaxMs=esperouMs;
+  if(erro) _metricas.erros++;
+  const chave=String(path).split("?")[0].replace(/\/\d{6,}/g,"/:id");
+  if(!_metricas.porCaminho[chave]) _metricas.porCaminho[chave]={n:0, msTotal:0};
+  _metricas.porCaminho[chave].n++;
+  _metricas.porCaminho[chave].msTotal+=duracaoMs;
+  _metricas.ultimas.unshift({path:chave, esperouMs, duracaoMs, em:Date.now(), erro:erro||null});
+  if(_metricas.ultimas.length>40) _metricas.ultimas.pop();
+}
 function _blingAgendar(){
   if(_blingProcessando) return;
   _blingProcessando=true;
@@ -258,13 +275,15 @@ async function _blingProcessarProximo(){
   const espera=Math.max(0,_blingUltimaChamada+BLING_INTERVALO_MIN-Date.now());
   if(espera>0) await new Promise(r=>setTimeout(r,espera));
   _blingUltimaChamada=Date.now();
-  try{ const r=await blingRaw(item.path,item.options); item.resolve(r); }
-  catch(e){ item.reject(e); }
+  const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
+  const t0=Date.now();
+  try{ const r=await blingRaw(item.path,item.options); _registrarMetrica(item.path,esperouMs,Date.now()-t0,null); item.resolve(r); }
+  catch(e){ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro"); item.reject(e); }
   _blingProcessarProximo();
 }
 function bling(path,options={},prioridade="alta"){
   return new Promise((resolve,reject)=>{
-    (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject});
+    (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject,enfileiradoEm:Date.now()});
     _blingAgendar();
   });
 }
@@ -10066,6 +10085,75 @@ app.post("/api/pedidos-online/adotar/:termo",async(req,res)=>{
 // cache curto da busca: repetir o mesmo número (ou apertar Enter de novo) não refaz
 // as chamadas ao Bling
 const _cacheBusca={};
+// RAIO-X DO SERVIDOR: mostra tudo que costuma causar lentidao — memoria, fila do
+// Bling, limite de requisicoes (429), tamanho dos arquivos de dados e o que mais
+// consome chamadas. So leitura.
+app.get("/api/diag/saude",(req,res)=>{
+  try{
+    const mem=process.memoryUsage();
+    const upMin=Math.round(process.uptime()/60);
+    const minutosRodando=Math.max(1,(Date.now()-_metricas.inicio)/60000);
+
+    // arquivos de dados: tamanho e quantidade de registros
+    const arquivos=[];
+    try{
+      fs.readdirSync(DATA_DIR).forEach(nome=>{
+        if(!nome.endsWith(".json")) return;
+        try{
+          const st=fs.statSync(`${DATA_DIR}/${nome}`);
+          let registros=null;
+          if(st.size<8*1024*1024){
+            try{ const j=JSON.parse(fs.readFileSync(`${DATA_DIR}/${nome}`,"utf8"));
+              registros=Array.isArray(j)?j.length:(j&&typeof j==="object"?Object.keys(j).length:null); }catch(e){}
+          }
+          arquivos.push({ nome, mb:+(st.size/1048576).toFixed(2), registros });
+        }catch(e){}
+      });
+    }catch(e){}
+    arquivos.sort((a,b)=>b.mb-a.mb);
+    const totalMbDados=+arquivos.reduce((a,x)=>a+x.mb,0).toFixed(2);
+
+    // comprovantes (fotos/videos)
+    let comprovMb=0, comprovQtd=0;
+    try{ const st=_statComprovantes(); comprovMb=+(st.totalBytes/1048576).toFixed(1); comprovQtd=st.arquivos.length; }catch(e){}
+
+    // caminhos que mais consomem chamadas ao Bling
+    const topCaminhos=Object.entries(_metricas.porCaminho)
+      .map(([k,v])=>({caminho:k, chamadas:v.n, msMedio:Math.round(v.msTotal/v.n), msTotal:v.msTotal}))
+      .sort((a,b)=>b.chamadas-a.chamadas).slice(0,12);
+
+    const chamadasPorMin=+(_metricas.total/minutosRodando).toFixed(1);
+    const esperaMedia=_metricas.total?Math.round(_metricas.esperaTotalMs/_metricas.total):0;
+
+    const alertas=[];
+    if(_metricas.err429>0) alertas.push(`⚠️ ${_metricas.err429} chamadas bateram no LIMITE do Bling (429). O Bling permite ~3/s; acima disso ele recusa e o sistema espera pra tentar de novo — é a causa mais comum de lentidão geral.`);
+    if(esperaMedia>1500) alertas.push(`⚠️ Espera média na fila do Bling: ${esperaMedia}ms. Há mais pedidos de chamada do que a fila consegue vazar.`);
+    if(_metricas.esperaMaxMs>15000) alertas.push(`⚠️ Houve chamada que esperou ${Math.round(_metricas.esperaMaxMs/1000)}s na fila.`);
+    if(mem.heapUsed/1048576>400) alertas.push(`⚠️ Memória alta: ${Math.round(mem.heapUsed/1048576)} MB em uso.`);
+    if(totalMbDados>50) alertas.push(`⚠️ Arquivos de dados somam ${totalMbDados} MB. Como não há banco, cada leitura carrega o arquivo inteiro — acima disso começa a pesar.`);
+    const grandes=arquivos.filter(a=>a.mb>5);
+    if(grandes.length) alertas.push(`⚠️ Arquivo(s) grande(s): ${grandes.map(a=>a.nome+" ("+a.mb+" MB)").join(", ")}.`);
+
+    res.json({
+      resumo: alertas.length? alertas : ["✅ Nada fora do normal nas métricas coletadas."],
+      servidor:{ ligadoHaMin:upMin, memoriaUsadaMB:Math.round(mem.heapUsed/1048576), memoriaTotalMB:Math.round(mem.rss/1048576) },
+      bling:{
+        chamadasDesdeOBoot:_metricas.total, chamadasPorMinuto:chamadasPorMin,
+        limiteDoBlingPorMinuto:"~176 (3 por segundo)",
+        bateuNoLimite429:_metricas.err429, erros:_metricas.erros,
+        esperaMediaNaFilaMs:esperaMedia, esperaMaximaMs:_metricas.esperaMaxMs,
+        naFilaAgora:{alta:_filaAlta.length, baixa:_filaBaixa.length},
+      },
+      oQueMaisConsome: topCaminhos,
+      dados:{ totalMB:totalMbDados, arquivos:arquivos.slice(0,15) },
+      comprovantes:{ qtd:comprovQtd, mb:comprovMb },
+      ultimasChamadas:_metricas.ultimas.slice(0,15).map(u=>({
+        caminho:u.caminho, esperouMs:u.esperouMs, levouMs:u.duracaoMs,
+        quando:new Date(u.em).toLocaleTimeString("pt-BR",{timeZone:"America/Sao_Paulo"}), erro:u.erro })),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
   try{
     const t=String(req.params.termo).trim();
