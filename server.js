@@ -1338,7 +1338,13 @@ app.patch("/api/acrescimos/:id",(req,res)=>{
 
 // ---- PAGAMENTOS ----
 function lerPag(){ return lerJSON(PAG_FILE,{}); }
-function salvarPag(o){ salvarJSON(PAG_FILE,o); }
+function salvarPag(o){
+  salvarJSON(PAG_FILE,o);
+  // qualquer registro de pagamento invalida a faixa "Separados aguardando pagamento",
+  // pra ela refletir na hora (antes só recalculava a cada 2 min no servidor + 3 min na
+  // tela, então um pedido pago continuava lá por vários minutos)
+  try{ if(typeof _cacheAguardPag!=="undefined") _cacheAguardPag.em=0; }catch(e){}
+}
 
 // ---- LEDGER DIÁRIO (ficha local de cada pedido: data em que foi CRIADO x
 // data em que foi de fato PAGO — essa segunda data, uma vez detectada, fica
@@ -4401,6 +4407,7 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
   if(!sessao) return res.status(400).json({erro:"Nenhum caixa aberto pra esse usuário"});
   // Sangria pode ser MAIOR que o dinheiro em caixa (a pedido) — nao trava mais nisso;
   // o caixa apenas fica negativo no esperado, o que e permitido.
+  try{ if(typeof _cacheAguardPag!=="undefined") _cacheAguardPag.em=0; }catch(e){}
   sessao.movimentos.push({tipo,valor:v,motivo:motivo||"",operador:operador||"—",em:Date.now(),
     responsavelId:String(responsavelId), responsavelNome:resp.nome||""});
   salvarCaixaSessoes(d);
@@ -8723,7 +8730,7 @@ function registrarAviso(aviso){
 // pedidos duplicados em 2 caixas, caixa esquecido aberto, NFC-e pendente há dias,
 // pedidos Atendido que não passaram no caixa atacado (fora de vendedor de varejo).
 async function rodarAuditoriaGeral(diasCaixaBling=1){
-  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0, pedidosPresosDigitacao:0, estornosPendentes:0 };
+  const achados={ caixaBlingDivergente:0, pedidosDuplicados:0, caixaEsquecidoAberto:0, atacadoSemPassarCaixa:0, entregaSemPagamento:0, prazoVencido:0, pedidosPresosDigitacao:0, estornosPendentes:0, separadosSemPagamento:0 };
   const hojeISO=_hojeISO();
   // 1) caixa x Bling (últimos N dias) — reaproveita a lógica de /api/diag/sync-caixa-bling
   try{
@@ -8851,6 +8858,22 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
         oQueFazer:`O pedido #${numero} (${cliente}${total?`, ${total.toFixed(2)}`:""}) está agendado pra entrega em ${ag.data.split("-").reverse().join("/")} e ainda NÃO foi recebido em nenhum caixa${pag.parcial?` (pago parcial: ${Number(pag.valorPago||0).toFixed(2)} de ${Number(pag.valorPedido||0).toFixed(2)})`:""}. Confira se foi cobrado antes de sair pra entrega.` });
       achados.entregaSemPagamento=(achados.entregaSemPagamento||0)+1;
     });
+  }catch(e){}
+
+  // 4.54) SEPARADO SEM PAGAMENTO: pedido foi pra separação/está separado mas não
+  // passou por caixa nenhum. Não pode sair sem receber — precisa estar visível na
+  // Central, não só na faixa da tela de Pedidos.
+  try{
+    const r=await fetch(`http://127.0.0.1:${PORT}/api/pedidos-online/aguardando-pagamento?forcar=1`).then(x=>x.json()).catch(()=>null);
+    const lista=(r&&r.data)||[];
+    for(const p of lista.slice(0,25)){
+      registrarAviso({ tipo:"separado_sem_pagamento",
+        titulo:`Pedido #${p.numero} separado SEM pagamento (${Number(p.total||0).toFixed(2)})`,
+        pedidoId:String(p.id), numero:p.numero, origem:"Separação", operador:p.vendedor||"",
+        fingerprint:`sempag-${p.id}`,
+        oQueFazer:`O pedido #${p.numero} (${p.cliente||"—"}) foi pra separação sem passar pelo caixa. Não libere a entrega/retirada sem receber ${Number(p.total||0).toFixed(2)}.`});
+      achados.separadosSemPagamento=(achados.separadosSemPagamento||0)+1;
+    }
   }catch(e){}
 
   // 4.55) ESTORNO PENDENTE: item retirado de pedido já pago gerou anotação de

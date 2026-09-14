@@ -207,7 +207,7 @@ async function carregar(silencioso) {
     if (!silencioso) alert("Erro ao carregar: " + e.message);
   }
   // só busca a faixa de "aguardando pagamento" a cada 3 min (é consulta pesada)
-  if (!AGUARD_PAG || Date.now() - (window._apEm || 0) > 180000) {
+  if (!AGUARD_PAG || Date.now() - (window._apEm || 0) > 60000) {
     try {
       const ap = await fetch(B + "/api/pedidos-online/aguardando-pagamento").then(r => r.json());
       if (!ap.erro) {
@@ -1229,6 +1229,7 @@ function limparBusca() {
 // normal) — o card da busca ficava com o tipo/status ANTIGO na tela, mesmo com a
 // mudança já salva no servidor.
 function recarregarAtual() {
+  window._apEm = 0; // algo mudou: força recalcular a faixa "aguardando pagamento"
   if (BUSCA_RES) buscarPedido();else carregar();
 }
 
