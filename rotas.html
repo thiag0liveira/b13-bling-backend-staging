@@ -713,12 +713,13 @@ async function carregarPedidosDaVisaoGeral() {
   if (!faltando.length) return;
   S.carregandoVisaoGeral = true;
   render();
-  await Promise.all(faltando.map(async iso => {
+  for (const iso of faltando) {
     try {
       const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso).then(r => r.json());
       S.pedidosPorDia[iso] = j.data || [];
-    } catch (e) { S.pedidosPorDia[iso] = []; }
-  }));
+    } catch (e) { /* não marca como carregado — tenta de novo na próxima vez que a visão geral abrir */ }
+    render(); // vai aparecendo dia a dia, em vez de tudo de uma vez no final
+  }
   S.carregandoVisaoGeral = false;
   render();
 }
