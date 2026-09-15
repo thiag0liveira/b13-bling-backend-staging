@@ -970,26 +970,40 @@ function confirmarConferencia() {
   var tipoEntrega = PEDIDO._tipoEntrega || "retirada";
   var msgEl = el("msgModalMob") || el("confMsg");
   var btn = el("btnConfirmarMob");
+  if (typeof fetch === "undefined") {
+    // navegador antigo demais (sem suporte a fetch) — sem isso, o clique quebrava
+    // silenciosamente e parecia que o botão "não fazia nada"
+    if (msgEl) msgEl.innerHTML = '<span class="err">Este aparelho está com um navegador desatualizado demais pra confirmar aqui. Atualize o Chrome do aparelho ou use outro pra confirmar esse pedido.</span>';
+    return;
+  }
   if (btn) btn.disabled = true;
   msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
-  // envia o comprovante e CONFIRMA que salvou — antes o erro era engolido
-  // (.catch vazio), entao um video que falhasse no envio sumia sem ninguem saber
-  var passo = comprovanteMob ? fetch(BACKEND + "/api/comprovante/" + id, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      dataUrl: comprovanteMob.dataUrl,
-      tipo: comprovanteMob.tipo,
-      evento: comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia",
-      funcionarioId: FUNC.id,
-      funcionarioNome: FUNC.nome
-    })
-  }).then(function (r) {
-    return r.json().then(function (jc) {
-      if (!r.ok || jc.erro) throw new Error(jc.erro || "falha ao salvar o comprovante");
-      return jc;
-    });
-  }) : Promise.resolve();
+  try {
+    // envia o comprovante e CONFIRMA que salvou — antes o erro era engolido
+    // (.catch vazio), entao um video que falhasse no envio sumia sem ninguem saber
+    var passo = comprovanteMob ? fetch(BACKEND + "/api/comprovante/" + id, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dataUrl: comprovanteMob.dataUrl,
+        tipo: comprovanteMob.tipo,
+        evento: comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia",
+        funcionarioId: FUNC.id,
+        funcionarioNome: FUNC.nome
+      })
+    }).then(function (r) {
+      return r.json().then(function (jc) {
+        if (!r.ok || jc.erro) throw new Error(jc.erro || "falha ao salvar o comprovante");
+        return jc;
+      });
+    }) : Promise.resolve();
+  } catch (eSync) {
+    // qualquer erro síncrono aqui (ex.: API não suportada nesse aparelho) mostra
+    // mensagem em vez de deixar o clique morrer sem nenhum feedback
+    msgEl.innerHTML = '<span class="err">Erro ao iniciar a confirmação neste aparelho (' + esc(eSync.message || "erro") + '). Tente atualizar o navegador ou usar outro aparelho.</span>';
+    if (btn) btn.disabled = false;
+    return;
+  }
   passo.then(function () {
     return fetch(BACKEND + "/api/fluxo/" + id + "/conferido", {
       method: "POST",
