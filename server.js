@@ -8882,17 +8882,21 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
   try{
     const desde=Date.now()-diasCaixaBling*86400000;
     const dCx=lerCaixaSessoes(); const vendas=[];
-    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||m.em<desde) return; vendas.push({pedidoId:m.pedidoId,numero:m.numero,total:Number(m.total)||0,pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—",valor:Number(p.valor)||0})),em:m.em,operador:m.operador||s.operador}); }); });
+    (dCx.sessoes||[]).forEach(s=>{ if((s.tipoCaixa||"frente")!=="atacado") return; (s.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||m.em<desde) return; vendas.push({pedidoId:m.pedidoId,numero:m.numero,total:Number(m.total)||0,troco:Number(m.troco)||0,pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome||"—",valor:Number(p.valor)||0})),em:m.em,operador:m.operador||s.operador}); }); });
     const norm=(s)=>String(s||"").toLowerCase().replace(/pix.*/,"pix").replace(/[^a-z0-9]/g,"");
     for(const v of vendas.slice(0,60)){
       let b=null; try{ b=await blingLento(`/pedidos/vendas/${v.pedidoId}`).then(r=>r?.data); }catch(e){}
       if(!b){ registrarAviso({ tipo:"caixa_bling_nao_encontrado", titulo:`Pedido #${v.numero||v.pedidoId} não encontrado no Bling`, pedidoId:v.pedidoId, numero:v.numero, operador:v.operador, origem:"Auditoria", fingerprint:`nfenc-${v.pedidoId}`, oQueFazer:`Confira se o pedido #${v.numero||v.pedidoId} existe no Bling. Se não existir, a venda foi registrada no caixa mas não foi salva no Bling.` }); achados.caixaBlingDivergente++; continue; }
       const parcelas=[]; for(const pc of (b.parcelas||[])){ parcelas.push({forma:await nomeFormaPagamentoId(pc.formaPagamento?.id), valor:Number(pc.valor)||0}); }
-      const somaCaixa=+v.pagamentos.reduce((s,p)=>s+p.valor,0).toFixed(2), somaBling=+parcelas.reduce((s,p)=>s+p.valor,0).toFixed(2);
+      // o Bling só aceita o valor EXATO do pedido nas parcelas — o troco devolvido ao
+      // cliente não entra lá. Por isso compara o LÍQUIDO recebido no caixa (bruto − troco)
+      // com o Bling, e não o bruto: senão toda venda com troco aparecia como "diferente".
+      const somaCaixaBruta=+v.pagamentos.reduce((s,p)=>s+p.valor,0).toFixed(2);
+      const somaCaixa=+(somaCaixaBruta-v.troco).toFixed(2), somaBling=+parcelas.reduce((s,p)=>s+p.valor,0).toFixed(2);
       const formasCaixa=v.pagamentos.map(p=>norm(p.forma)).sort().join("|"), formasBling=parcelas.map(p=>norm(p.forma)).sort().join("|");
       if(Math.abs(v.total-(Number(b.total)||0))>0.009 || Math.abs(somaCaixa-somaBling)>0.009 || formasCaixa!==formasBling){
         registrarAviso({ tipo:"caixa_bling_divergente", titulo:`Pedido #${v.numero||v.pedidoId} diferente entre caixa e Bling`, pedidoId:v.pedidoId, numero:v.numero, operador:v.operador, origem:"Auditoria",
-          fingerprint:`div-${v.pedidoId}-${hojeISO}`, erroBling:`Caixa: ${somaCaixa} (${v.pagamentos.map(p=>p.forma).join(", ")}) — Bling: ${somaBling} (${parcelas.map(p=>p.forma).join(", ")})`,
+          fingerprint:`div-${v.pedidoId}-${hojeISO}`, erroBling:`Caixa: ${somaCaixa}${v.troco>0.009?` (líquido, bruto ${somaCaixaBruta} − troco ${v.troco})`:""} (${v.pagamentos.map(p=>p.forma).join(", ")}) — Bling: ${somaBling} (${parcelas.map(p=>p.forma).join(", ")})`,
           oQueFazer:`Confira o pedido #${v.numero||v.pedidoId} no Bling e ajuste pra bater com o caixa, ou vice-versa.` });
         achados.caixaBlingDivergente++;
       }
