@@ -725,6 +725,19 @@ async function carregarPedidosDaVisaoGeral() {
 function pedidoPorIdDia(iso, id) {
   return (S.pedidosPorDia[iso] || []).find(p => p.id === id);
 }
+// agrupa os pedidos de um dia por carro (ou "_semCarro"), direto da lista já
+// carregada — que já cobre tanto quem tem carro atribuído (rotas_dias.json)
+// quanto quem só tem turno de entrega marcado ainda sem carro (turnos_entrega.json).
+// Usar só o resumo do servidor (S.diasDetalhe) deixava de fora esse segundo caso.
+function detalheDoDia(iso) {
+  const detalhe = {};
+  (S.pedidosPorDia[iso] || []).forEach(p => {
+    const chave = p.carroAtribuido || (p.agendamento && p.agendamento.data === iso ? "_semCarro" : null);
+    if (!chave) return;
+    (detalhe[chave] = detalhe[chave] || []).push(p.id);
+  });
+  return detalhe;
+}
 async function salvarDia() {
   S.salvando = true;
   render();
@@ -974,7 +987,7 @@ function htmlVisaoGeral() {
     ${S.carregandoVisaoGeral ? '<div class="muted" style="margin-bottom:8px">⏳ Carregando pedidos dos dias…</div>' : ''}
     <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">
       ${dias.map(d => {
-    const detalhe = S.diasDetalhe[d.iso] || {};
+    const detalhe = detalheDoDia(d.iso);
     const totalDia = Object.values(detalhe).reduce((s, ids) => s + ids.length, 0);
     const semCarroQtd = (detalhe["_semCarro"] || []).length;
     const passado = d.iso < hojeIso;
