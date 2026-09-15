@@ -2223,7 +2223,15 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
       return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
         semPagamento:true, numero:ped?.numero||null });
     }
-    const novoSit=tipoEntrega==="retirada"?SIT.ATENDIDO:SIT.EM_ROTA;
+    // NÃO confia no tipoEntrega mandado pelo front pra decidir ATENDIDO x EM_ROTA —
+    // descobre pelo PRÓPRIO pedido no Bling (endereço de entrega, frete>0 ou a
+    // observação "ENTREGA —", mesmo critério usado no resto do sistema). Assim,
+    // mesmo que a tela mande "retirada" por engano (ou de propósito), um pedido que
+    // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar por EM ROTA.
+    const obsPed=String(ped?.observacoes||"");
+    const ehEntregaReal = /ENTREGA\s*—/i.test(obsPed) || Number(ped?.transporte?.frete||0)>0
+      || !!ped?.transporte?.enderecoEntrega?.endereco || !!ped?.transporte?.etiqueta?.endereco;
+    const novoSit=ehEntregaReal?SIT.EM_ROTA:SIT.ATENDIDO;
     if(!novoSit) return res.status(400).json({erro:"Status EM_ROTA ou ATENDIDO não configurado."});
     // PEDIDO A PRAZO: não muda a situação (tem que continuar em PRAZO até ser pago) —
     // só registra na observação do Bling que foi conferido, com data e hora.
@@ -13521,6 +13529,10 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           }catch(e){}
         }
         const temEndereco=!!enderecoTxt;
+        const pagamento=_pagamentoDoPedido(det.id, det.numero);
+        // pedido já recebido em algum caixa não precisa mais aparecer na tela de
+        // rota — só polui a lista de quem ainda falta receber/organizar entrega.
+        if(pagamento.pago) continue;
         // NÃO descarta mais por falta de frete/endereço: todos os candidatos
         // entram na lista. Os sem endereço aparecem marcados (semEndereco:true)
         // pra você adicionar o endereço ou decidir. Só o geocode precisa de endereço.
@@ -13536,7 +13548,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
           agendamento:(turnosAg[String(det.id)]||null), // dia+turno que a vendedora escolheu
-          pagamento:_pagamentoDoPedido(det.id, det.numero), // já foi recebido em algum caixa?
+          pagamento, // já foi recebido em algum caixa? (aqui sempre {pago:false} — os pagos foram filtrados acima)
           situacaoId:sit0, situacao:nomeSituacao(sit0),
           // pode mandar pra separação? (ainda não entrou no fluxo de separação)
           podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),
