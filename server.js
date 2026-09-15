@@ -13476,8 +13476,11 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     });
     // ALÉM dos agendados, também traz os pedidos cuja DATA (a data do próprio
     // pedido no Bling) é o dia pedido — "pedidos que estão pra esse dia", não só os
-    // que alguém agendou manualmente na tela de rota. Consulta de UM dia só (rápida,
-    // diferente da varredura de 60 dias que foi removida por ser pesada).
+    // que alguém agendou manualmente na tela de rota. SÓ faz essa busca extra quando
+    // o dia é aberto de propósito (não vem "?leve=1") — a visão geral pré-carrega
+    // uns 25 dias de uma vez, e repetir essa varredura pra cada um deles multiplicava
+    // o tempo e estourava timeout; ali continua só com os já agendados (rápido).
+    if(req.query.leve!=="1")
     try{
       let pagBl=1, seguir=true;
       while(seguir && pagBl<=10){

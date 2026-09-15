@@ -721,7 +721,7 @@ async function carregarPedidosDaVisaoGeral() {
       // os que já teriam carregado rápido, nunca apareciam.
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 20000);
-      const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso, { signal: ctrl.signal }).then(r => r.json());
+      const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso + "&leve=1", { signal: ctrl.signal }).then(r => r.json());
       clearTimeout(t);
       S.pedidosPorDia[iso] = j.data || [];
     } catch (e) { /* não marca como carregado — tenta de novo na próxima vez que a visão geral abrir */ }
