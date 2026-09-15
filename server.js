@@ -13254,11 +13254,22 @@ function distanciaKm(lat1,lng1,lat2,lng2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
+// cache em memória (endereço -> coordenada), 24h de validade. Sem isso, cada
+// chamada de /api/rotas/pedidos-entrega geocodificava o endereço DA LOJA do zero
+// (sempre o mesmo endereço!) e também repetia endereços de clientes recorrentes —
+// com a visão geral chamando esse endpoint ~25 vezes (uma por dia), isso significava
+// dezenas de chamadas repetidas e desnecessárias ao Google Maps a cada abertura.
+const _geocodeCache={};
 async function geocodeEndereco(endereco){
+  const chave=String(endereco||"").trim().toLowerCase();
+  const c=_geocodeCache[chave];
+  if(c && (Date.now()-c.em)<24*60*60*1000) return c.loc;
   const url=`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(endereco)}&region=br&key=${GOOGLE_MAPS_KEY}`;
   const r=await fetch(url).then(x=>x.json());
-  const loc=r?.results?.[0]?.geometry?.location;
-  return loc?{lat:loc.lat,lng:loc.lng}:null;
+  const loc0=r?.results?.[0]?.geometry?.location;
+  const loc=loc0?{lat:loc0.lat,lng:loc0.lng}:null;
+  if(loc) _geocodeCache[chave]={loc,em:Date.now()}; // só guarda em cache resultado válido
+  return loc;
 }
 
 // ======================= GERENCIAMENTO DE ROTA =======================
