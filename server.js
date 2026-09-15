@@ -567,7 +567,7 @@ app.get("/nav.js",(req,res)=>{
   res.send(`
 // B13 Nav — módulo de autenticação compartilhado
 const B13_BACKEND="${process.env.RAILWAY_PUBLIC_DOMAIN?'https://'+process.env.RAILWAY_PUBLIC_DOMAIN:''}";
-const B13_SIT={AGUARDANDO:${SIT.AGUARDANDO},EM_SEP:${SIT.EM_SEP},SEP_PEND:${SIT.SEP_PEND},SEPARADO:${SIT.SEPARADO},CONF_ENTREGA:${SIT.CONF_ENTREGA},VERIFICADO:${SIT.VERIFICADO},EM_ROTA:${SIT.EM_ROTA}};
+const B13_SIT={AGUARDANDO:${SIT.AGUARDANDO},EM_SEP:${SIT.EM_SEP},SEP_PEND:${SIT.SEP_PEND},SEPARADO:${SIT.SEPARADO},CONF_ENTREGA:${SIT.CONF_ENTREGA},VERIFICADO:${SIT.VERIFICADO},EM_ROTA:${SIT.EM_ROTA},PRAZO:${SIT.PRAZO}};
 
 // Quando o servidor está reiniciando (deploy) ou o Railway devolve erro de gateway, a
 // resposta vem como TEXTO ("upstream error"), e o .json() das telas quebrava com a

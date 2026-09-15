@@ -753,6 +753,7 @@ async function abrirPedido(id) {
     PEDIDO_ATUAL = {
       id: j.id,
       numero: j.numero,
+      situacaoId: j.situacaoId,
       situacaoNome: j.situacaoNome,
       vendedorNome: j.vendedorNome,
       contatoId: j.contatoId
@@ -904,6 +905,7 @@ async function abrirPedidoParaEdicao(id) {
     PEDIDO_ATUAL = {
       id: j.id,
       numero: j.numero,
+      situacaoId: j.situacaoId,
       situacaoNome: j.situacaoNome,
       vendedorNome: j.vendedorNome,
       contatoId: j.contatoId
@@ -2493,7 +2495,10 @@ async function finalizar() {
   // Esta tela é SEMPRE caixa atacado (TIPO_CAIXA="atacado"), então pergunta sempre —
   // antes dependia de ehPedidoAtacado() (heurística por modoPreco/PEDIDO_ATUAL) que
   // podia falhar silenciosamente e pular a pergunta.
-  if (!DESTINO_PEDIDO) {
+  // EXCEÇÃO: pedido em PRAZO já foi entregue — só faltava o pagamento. Não faz
+  // sentido perguntar destino, e o backend já força ATENDIDO nesse caso mesmo.
+  const ehPrazoAgora = Number((PEDIDO_ATUAL || {}).situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.PRAZO : 806183);
+  if (!DESTINO_PEDIDO && !ehPrazoAgora) {
     perguntarDestinoPedido();
     return;
   }
