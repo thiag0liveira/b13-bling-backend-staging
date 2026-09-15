@@ -13474,6 +13474,19 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     Object.values(atribuidoNoDia).forEach(c=>{
       (c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[])).forEach(id=>idsAgendados.add(Number(id)));
     });
+    // ALÉM dos agendados, também traz os pedidos cuja DATA (a data do próprio
+    // pedido no Bling) é o dia pedido — "pedidos que estão pra esse dia", não só os
+    // que alguém agendou manualmente na tela de rota. Consulta de UM dia só (rápida,
+    // diferente da varredura de 60 dias que foi removida por ser pesada).
+    try{
+      let pagBl=1, seguir=true;
+      while(seguir && pagBl<=10){
+        const p=new URLSearchParams({pagina:pagBl,limite:100,dataInicial:dataAlvo,dataFinal:dataAlvo});
+        const arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]).catch(()=>[]);
+        arr.forEach(pp=>{ if(Number(pp.situacao?.id)!==SIT.CANCELADO) idsAgendados.add(Number(pp.id)); });
+        seguir=arr.length===100; pagBl++;
+      }
+    }catch(e){}
     // ?todos=1 mantém o comportamento antigo (varre tudo por situação/valor), só
     // pra quem realmente precisar depurar/conferir contra a lista antiga.
     if(req.query.todos==="1"){
