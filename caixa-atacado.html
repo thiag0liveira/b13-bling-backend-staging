@@ -188,6 +188,7 @@ const TAXA_CARTAO = 0.035; // 3,5% — repassada ao cliente no atacado
 // Isso evita o efeito circular (taxa sobre taxa) que fazia o valor subir ao confirmar.
 function taxaCartao() {
   if (!COBRAR_TAXA_CARTAO) return 0;
+  if (!ehPedidoAtacado()) return 0; // varejo não tem a taxa do atacado
   const noCartao = valorEmCredito() + valorEmDebito();
   return +(noCartao * TAXA_CARTAO / (1 + TAXA_CARTAO)).toFixed(2);
 }
@@ -1081,6 +1082,10 @@ function novaVenda() {
   OUTRAS_DESPESAS = 0;
   FRETE = 0;
   COBRAR_TAXA_CARTAO = true;
+  MODO_PRECO = "atacado"; // sem isso, uma vez trocado pra varejo (botão Atacado/Varejo),
+  // ficava em varejo pra TODAS as vendas seguintes até recarregar a página — e é
+  // por isso que a taxa de cartão, a pergunta de destino etc. "sumiam": os itens
+  // entravam com modoPreco:"varejo" e ehPedidoAtacado() virava falso sem ninguém notar.
   MODO_EDICAO_PAGAMENTO = false;
   TOKEN_EDICAO = "";
   AUTORIZADO_POR = "";
@@ -1401,7 +1406,7 @@ function selecionarForma(id, nome) {
   // Se for CARTÃO com taxa, já preenche o valor certo a cobrar na maquininha:
   // a parte do pedido que falta + os 3,5% dela — assim fecha exato de primeira.
   let valor;
-  if (ehFormaCartao(nome) && COBRAR_TAXA_CARTAO) {
+  if (ehFormaCartao(nome) && COBRAR_TAXA_CARTAO && ehPedidoAtacado()) {
     const faltaProduto = +(totalSemTaxa() - totalPagoProduto()).toFixed(2); // o que falta, sem taxa
     valor = faltaProduto > 0 ? comTaxa(faltaProduto) : 0;
   } else {
@@ -1424,7 +1429,7 @@ function totalSemTaxa() {
 function totalPagoProduto() {
   return +PAGAMENTOS.reduce((s, p) => {
     const v = Number(p.valor) || 0;
-    if (ehFormaCartao(p.formaNome) && COBRAR_TAXA_CARTAO) return s + v / (1 + TAXA_CARTAO);
+    if (ehFormaCartao(p.formaNome) && COBRAR_TAXA_CARTAO && ehPedidoAtacado()) return s + v / (1 + TAXA_CARTAO);
     return s + v;
   }, 0).toFixed(2);
 }
@@ -2238,7 +2243,7 @@ function render() {
         ${OUTRAS_DESPESAS > 0 ? `<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>` : ""}
         <div class="linha" style="margin-top:10px;align-items:center"><span class="muted">🚚 Frete${PEDIDO_ATUAL ? ' (do pedido)' : ''}</span>
           <input type="number" step="0.01" min="0" value="${FRETE || ''}" placeholder="0,00" style="width:120px;text-align:right" onchange="FRETE=+this.value||0;render()"></div>
-        ${valorEmCredito() + valorEmDebito() > 0 ? `
+        ${ehPedidoAtacado() && valorEmCredito() + valorEmDebito() > 0 ? `
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO ? 'checked' : ''} onchange="alternarTaxaCartao(this.checked)"> Taxa cartão crédito/débito (3,5%)</span>
             <b style="color:#ffd23f">${brl(taxaCartao())}</b>
