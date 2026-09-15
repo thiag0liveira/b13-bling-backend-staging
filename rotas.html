@@ -715,7 +715,14 @@ async function carregarPedidosDaVisaoGeral() {
   render();
   for (const iso of faltando) {
     try {
-      const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso).then(r => r.json());
+      // timeout de segurança: sem isso, um ÚNICO dia que travasse esperando o Bling
+      // (ex.: muitos pedidos, fila cheia) prendia o loop sequencial pra sempre —
+      // a visão geral ficava presa em "carregando" e TODOS os outros dias, mesmo
+      // os que já teriam carregado rápido, nunca apareciam.
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 20000);
+      const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso, { signal: ctrl.signal }).then(r => r.json());
+      clearTimeout(t);
       S.pedidosPorDia[iso] = j.data || [];
     } catch (e) { /* não marca como carregado — tenta de novo na próxima vez que a visão geral abrir */ }
     render(); // vai aparecendo dia a dia, em vez de tudo de uma vez no final
