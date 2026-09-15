@@ -6951,8 +6951,13 @@ async function moverPedidoParaAtendido(pedidoId, opts={}){
   const caminho=[]; let reposto=[];
   let sitAtual=opts.sitConhecida?Number(opts.sitConhecida):await lerSit();
   if(sitAtual===SIT.ATENDIDO) return {ok:true, situacaoFinal:SIT.ATENDIDO, caminho:["já estava atendido"], reposto};
-  // REGRA DO NEGÓCIO: sempre passa por SEPARADO antes de ATENDIDO
-  if(sitAtual!==SIT.SEPARADO){
+  // REGRA DO NEGÓCIO: sempre passa por SEPARADO antes de ATENDIDO — EXCETO quando o
+  // pedido vem de PRAZO. Um pedido em PRAZO já teve a mercadoria entregue e a baixa
+  // de estoque feita há muito tempo (não passou pela separação agora); forçar
+  // SEPARADO antes tentava mexer numa etapa que já não existe mais pra esse pedido, e
+  // podia deixar ele travado em SEPARADO em vez de ATENDIDO quando o Bling recusava
+  // (ex.: nova tentativa de baixa de estoque já consumido). Pra PRAZO, vai direto.
+  if(sitAtual!==SIT.SEPARADO && sitAtual!==SIT.PRAZO){
     try{ await patch(SIT.SEPARADO); caminho.push("→ Separado"); }
     catch(e){
       caminho.push("falhou → Separado: "+e.message);
