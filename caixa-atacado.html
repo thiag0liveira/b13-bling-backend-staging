@@ -1489,21 +1489,24 @@ function imprimirPedidoAtual() {
   };
   imprimirComprovante(v);
 }
-function imprimirComprovante(v) {
+function imprimirComprovante(v, wPreAberta) {
   if (!v) {
     alert("Nenhuma venda pra reimprimir ainda.");
+    if (wPreAberta && !wPreAberta.closed) wPreAberta.close();
     return;
   }
   // abre a janela JÁ, ainda dentro do clique do usuário — se deixar pra abrir só
   // depois de montar QR/código de barras/logo (dentro de um setTimeout), o Chrome
   // entende que não é mais uma ação direta do clique e BLOQUEIA o popup sem avisar
   // nada na tela. Por isso abre logo com um aviso de "gerando…" e preenche depois.
-  const w = window.open("", "_blank", "width=420,height=700");
+  // Quando quem chamou já abriu a janela antes (ex.: antes de buscar o pedido por
+  // número, que leva um tempo com fetch), usa essa em vez de abrir outra.
+  const w = wPreAberta || window.open("", "_blank", "width=420,height=700");
   if (!w) {
     alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site (ícone na barra de endereço) e tente de novo.");
     return;
   }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
+  if (!wPreAberta) w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
     <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
   const pedidoId = String(v.pedidoId || v.numero || "");
   const tmp = document.createElement("div");
@@ -1598,6 +1601,12 @@ async function confirmarImprimirNumero() {
     if (erroEl) erroEl.innerHTML = `<div class="err">Digite o número do pedido.</div>`;
     return;
   }
+  // abre a janela JÁ, ainda dentro do clique — as duas buscas (fetch) a seguir levam
+  // um tempo, e se a janela só abrir depois delas o Chrome já não conta mais como
+  // ação direta do clique e bloqueia o popup.
+  const wAntecipada = window.open("", "_blank", "width=420,height=700");
+  if (wAntecipada) wAntecipada.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
+    <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Buscando pedido #${esc(numero)}…</body></html>`);
   if (btn) {
     btn.disabled = true;
     btn.textContent = "Buscando…";
@@ -1637,8 +1646,9 @@ async function confirmarImprimirNumero() {
       montadoPor: j.vendedorNome && j.vendedorNome !== "Sem vendedor" ? j.vendedorNome : ""
     };
     fecharModais();
-    imprimirComprovante(v);
+    imprimirComprovante(v, wAntecipada);
   } catch (e) {
+    if (wAntecipada && !wAntecipada.closed) wAntecipada.close();
     if (btn) {
       btn.disabled = false;
       btn.textContent = "🖨️ Imprimir";
