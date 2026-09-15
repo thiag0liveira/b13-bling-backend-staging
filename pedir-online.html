@@ -1489,21 +1489,25 @@ let _cvNotaOnline = null;
 function gerarImagemNota(pedidoId, numero) {
   const area = document.getElementById("notaImgArea");
   if (area) area.innerHTML = `<div class="muted" style="font-size:12px">Gerando nota…</div>`;
-  const tmp = document.createElement("div");
-  tmp.style.cssText = "position:absolute;left:-9999px;top:-9999px";
-  document.body.appendChild(tmp);
+  // QR e código de barras em containers SEPARADOS: antes os dois ficavam no mesmo
+  // <div>, e a busca do QR (querySelector("canvas")) pegava o primeiro canvas que
+  // aparecesse — se o QR não saísse como canvas, a busca podia pegar o canvas do
+  // código de barras por engano, e o QR sumia da nota.
+  const tmpQr = document.createElement("div");
+  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmpQr);
   // QR (acompanhamento do pedido) — a lib qrcodejs desenha num canvas local, sem CORS
   try {
-    new QRCode(tmp, {
+    new QRCode(tmpQr, {
       text: window.location.origin + "/pedido/" + pedidoId + "/acompanhar",
       width: 180,
       height: 180,
       correctLevel: QRCode.CorrectLevel.M
     });
   } catch (e) {}
-  // código de barras (mesmo número apresentado no caixa da loja)
+  // código de barras (mesmo número apresentado no caixa da loja) — canvas isolado,
+  // não precisa estar no documento pra ser lido com drawImage
   const barCanvas = document.createElement("canvas");
-  tmp.appendChild(barCanvas);
   try {
     JsBarcode(barCanvas, String(pedidoId), {
       format: "CODE128",
@@ -1524,10 +1528,10 @@ function gerarImagemNota(pedidoId, numero) {
   };
   logoImg.src = LOGO;
   setTimeout(() => {
-    const qrCanvas = tmp.querySelector("canvas"); // 1º canvas do container = o do QRCode.js (o barCanvas foi anexado depois dele)
-    const qrImg = tmp.querySelector("img"); // fallback, caso a lib use <img> em vez de <canvas>
+    const qrCanvas = tmpQr.querySelector("canvas");
+    const qrImg = tmpQr.querySelector("img"); // fallback, caso a lib use <img> em vez de <canvas>
     desenharNotaOnline(numero, qrCanvas || qrImg, barCanvas, logoPronta ? logoImg : null);
-    document.body.removeChild(tmp);
+    document.body.removeChild(tmpQr);
   }, 200); // pequena espera pra QR/barcode/logo terminarem de carregar
 }
 function desenharNotaOnline(numero, qrEl, barCanvas, logoImg) {

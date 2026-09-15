@@ -1312,11 +1312,23 @@ async function imprimirNotaLocal() {
     var _r$pedido5, _r$pedido6;
     const r = S.resultado || {};
     let pedidoId = ((_r$pedido5 = r.pedido) === null || _r$pedido5 === void 0 || (_r$pedido5 = _r$pedido5.data) === null || _r$pedido5 === void 0 ? void 0 : _r$pedido5.id) || "";
-    // Se o Bling não devolveu o id na criação (acontece quando ele está lento), ainda
-    // assim imprimimos a nota COMPLETA: o QR aponta pro acompanhamento pelo NÚMERO do
-    // pedido, que é o que o cliente e o caixa usam. Antes, sem id, caía numa nota
-    // simples sem QR nenhum.
-    const numero = ((_r$pedido6 = r.pedido) === null || _r$pedido6 === void 0 || (_r$pedido6 = _r$pedido6.data) === null || _r$pedido6 === void 0 ? void 0 : _r$pedido6.numero) || pedidoId || "";
+    // Se o Bling não devolveu o número na criação (acontece quando ele está lento),
+    // busca de novo por até uns 6s antes de montar a nota — sem isso a nota saía com
+    // o ID INTERNO do Bling (ex.: #26816688585) em vez do número real do pedido
+    // (ex.: #54894), porque caía direto no fallback pedidoId.
+    let numero = ((_r$pedido6 = r.pedido) === null || _r$pedido6 === void 0 || (_r$pedido6 = _r$pedido6.data) === null || _r$pedido6 === void 0 ? void 0 : _r$pedido6.numero) || "";
+    if (!numero && pedidoId) {
+      const areaEspera = document.getElementById("recibo");
+      if (areaEspera) areaEspera.innerHTML = `<div style="text-align:center;padding:30px 10px;color:#333">Confirmando o número do pedido…</div>`;
+      for (let i = 0; i < 8 && !numero; i++) {
+        await new Promise(res => setTimeout(res, 800));
+        try {
+          const nj = await fetch(BACKEND + "/api/atacado/pedido/" + pedidoId + "/numero").then(x => x.json());
+          if (nj.numero) numero = nj.numero;
+        } catch (e) {}
+      }
+    }
+    if (!numero) numero = pedidoId || "";
     const itensHtml = itens().map(i => `
     <tr><td>${esc(pack(i.qtd, i.un))} ${esc(i.nomeProduto)}${i.sabor && i.sabor !== i.nomeProduto ? ` (${esc(i.sabor)})` : ""}</td>
     <td style="text-align:right;white-space:nowrap">${brl(i.preco * i.qtd)}</td></tr>`).join("");
