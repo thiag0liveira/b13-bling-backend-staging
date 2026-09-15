@@ -13530,9 +13530,6 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
         }
         const temEndereco=!!enderecoTxt;
         const pagamento=_pagamentoDoPedido(det.id, det.numero);
-        // pedido já recebido em algum caixa não precisa mais aparecer na tela de
-        // rota — só polui a lista de quem ainda falta receber/organizar entrega.
-        if(pagamento.pago) continue;
         // NÃO descarta mais por falta de frete/endereço: todos os candidatos
         // entram na lista. Os sem endereço aparecem marcados (semEndereco:true)
         // pra você adicionar o endereço ou decidir. Só o geocode precisa de endereço.
@@ -13548,7 +13545,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
           agendamento:(turnosAg[String(det.id)]||null), // dia+turno que a vendedora escolheu
-          pagamento, // já foi recebido em algum caixa? (aqui sempre {pago:false} — os pagos foram filtrados acima)
+          pagamento, // já foi recebido em algum caixa? e como (forma, operador, quando)
           situacaoId:sit0, situacao:nomeSituacao(sit0),
           // pode mandar pra separação? (ainda não entrou no fluxo de separação)
           podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),

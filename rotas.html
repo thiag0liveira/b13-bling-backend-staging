@@ -147,7 +147,10 @@ const S = {
   // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
   idsUsadosOutrosDias: {},
   // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
-  verVisaoGeral: true
+  verVisaoGeral: true,
+  pedidosPorDia: {},
+  // "YYYY-MM-DD" -> lista de pedidos daquele dia (carregada sob demanda, cacheada)
+  carregandoVisaoGeral: false
 };
 async function carregarTudo() {
   S.carregando = true;
@@ -156,6 +159,7 @@ async function carregarTudo() {
     var _salvo$_semCarro;
     const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + S.data).then(r => r.json());
     S.pedidos = j.data || [];
+    S.pedidosPorDia[S.data] = S.pedidos; // já aproveita no cache da visão geral
     S.config = j.config;
     S.lojaCoord = j.lojaCoord;
     // reconstrói atribuições a partir do que já veio salvo. Cada carro agora
@@ -207,6 +211,7 @@ async function carregarTudo() {
   }
   S.carregando = false;
   render();
+  if (S.verVisaoGeral) carregarPedidosDaVisaoGeral();
 }
 function pedidosDisponiveis() {
   const usados = new Set();
@@ -681,7 +686,44 @@ async function toggleVisaoGeral() {
   const ligando = !S.verVisaoGeral;
   if (ligando) await atualizarResumoDias(); // busca fresco, senão mostra dado desatualizado
   S.verVisaoGeral = ligando;
+  if (ligando) await carregarPedidosDaVisaoGeral();
   render();
+}
+// lista de dias mostrados na visão geral: 14 dias passados + hoje + 9 dias futuros
+// (dias passados mostram o que já foi entregue/recebido; futuros, o planejado)
+function diasVisaoGeral() {
+  const dias = [];
+  const base = new Date(S.data + "T12:00:00");
+  for (let i = -14; i <= 9; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    if (!S.config.diasEntrega[d.getDay()]) continue;
+    dias.push({
+      iso: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })
+    });
+  }
+  return dias;
+}
+// busca (em paralelo — a fila do Bling já limita a concorrência) os pedidos de
+// cada dia mostrado na visão geral que ainda não estão no cache
+async function carregarPedidosDaVisaoGeral() {
+  const isos = diasVisaoGeral().map(d => d.iso);
+  const faltando = isos.filter(iso => !S.pedidosPorDia[iso]);
+  if (!faltando.length) return;
+  S.carregandoVisaoGeral = true;
+  render();
+  await Promise.all(faltando.map(async iso => {
+    try {
+      const j = await fetch(B + "/api/rotas/pedidos-entrega?data=" + iso).then(r => r.json());
+      S.pedidosPorDia[iso] = j.data || [];
+    } catch (e) { S.pedidosPorDia[iso] = []; }
+  }));
+  S.carregandoVisaoGeral = false;
+  render();
+}
+function pedidoPorIdDia(iso, id) {
+  return (S.pedidosPorDia[iso] || []).find(p => p.id === id);
 }
 async function salvarDia() {
   S.salvando = true;
@@ -925,31 +967,38 @@ async function salvarConfig() {
 // entrega dos próximos ~10 dias, quantas entregas tem e quais pedidos estão
 // em cada carro. Ajuda a ver a semana toda de uma vez sem ficar trocando de dia.
 function htmlVisaoGeral() {
-  const dias = [];
-  const base = new Date(S.data + "T12:00:00");
-  for (let i = -1; i <= 9; i++) {
-    const d = new Date(base);
-    d.setDate(d.getDate() + i);
-    if (!S.config.diasEntrega[d.getDay()]) continue;
-    dias.push({
-      iso: d.toISOString().slice(0, 10),
-      label: d.toLocaleDateString("pt-BR", {
-        weekday: "short",
-        day: "2-digit",
-        month: "2-digit"
-      })
-    });
-  }
+  const dias = diasVisaoGeral();
+  const hojeIso = hojeBR();
   return `<div class="card">
-    <div style="font-weight:900;margin-bottom:10px">📊 Visão geral — próximos dias de entrega</div>
+    <div style="font-weight:900;margin-bottom:10px">📊 Visão geral — dias de entrega (passados e futuros)</div>
+    ${S.carregandoVisaoGeral ? '<div class="muted" style="margin-bottom:8px">⏳ Carregando pedidos dos dias…</div>' : ''}
     <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">
       ${dias.map(d => {
     const detalhe = S.diasDetalhe[d.iso] || {};
     const totalDia = Object.values(detalhe).reduce((s, ids) => s + ids.length, 0);
     const semCarroQtd = (detalhe["_semCarro"] || []).length;
-    return `<div style="flex:0 0 270px;background:#181433;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};border-radius:12px;padding:10px">
+    const passado = d.iso < hojeIso;
+    const linhaPedido = id => {
+      const p = pedidoPorIdDia(d.iso, id);
+      if (!p) return `<div style="font-size:11px;color:#cfc9f5">· #${id} ${S.pedidosPorDia[d.iso] ? '(não encontrado — talvez cancelado)' : '(carregando…)'}</div>`;
+      const corSit = ehEmRota(p) ? "#3ce88a" : p.podeMandarSeparar ? "#ffd23f" : p.jaEmSeparacao ? "#29ABE2" : "#9a95c9";
+      const pg = p.pagamento || {};
+      const linhaPagto = pg.pago
+        ? `<div style="font-size:10px;color:#3ce88a;margin-top:2px">✅ Recebido${pg.ondeFoiPago ? " — " + esc(pg.ondeFoiPago) : ""}${pg.formas ? " (" + esc(pg.formas) + ")" : ""}</div>`
+        : `<div style="font-size:10px;color:#ff8090;margin-top:2px">⏳ Ainda não recebido</div>`;
+      return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:6px 8px;margin-bottom:4px">
+                    <div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
+                    <div style="font-size:10px;font-weight:800;color:${corSit}">${esc(p.situacao || "—")}</div>
+                    ${linhaPagto}
+                    <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+                      ${p.podeMandarSeparar ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px" onclick="mandarSeparar(${p.id},'${esc(String(p.numero))}')">📦 Mandar p/ separação</button>` : ''}
+                      ${ehEmRota(p) ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;background:#25D366;color:#fff" onclick="avisarSaidaEntrega(${p.id},'${esc(String(p.numero))}','${esc(String(p.clienteNome || "").replace(/'/g, ""))}')">🛵 Avisar saída</button>` : ''}
+                    </div>
+                  </div>`;
+    };
+    return `<div style="flex:0 0 270px;background:#181433;border:2px solid ${d.iso === S.data ? '#FF0082' : passado ? '#514c96' : '#2c2660'};border-radius:12px;padding:10px;${passado ? 'opacity:.85' : ''}">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="text-transform:capitalize;font-weight:900;font-size:13px">${d.label}</div>
+            <div style="text-transform:capitalize;font-weight:900;font-size:13px">${passado ? '✅ ' : ''}${d.label}</div>
             <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px" onclick="S.data='${d.iso}';S.verVisaoGeral=false;carregarTudo()">Abrir</button>
           </div>
           ${!totalDia ? '<div class="muted" style="font-size:12px">Nenhum pedido agendado.</div>' : `
@@ -960,32 +1009,11 @@ function htmlVisaoGeral() {
     }).map(c => `
               <div style="margin-bottom:8px">
                 <div style="font-weight:800;font-size:11px;color:#ffd23f">🚚 ${esc(c.nome)} (${detalhe[c.id].length})</div>
-                ${detalhe[c.id].map(id => {
-      const p = pedidoPorId(id);
-      if (!p) return `<div style="font-size:11px;color:#cfc9f5">· #${id}</div>`;
-      const corSit = ehEmRota(p) ? "#3ce88a" : p.podeMandarSeparar ? "#ffd23f" : p.jaEmSeparacao ? "#29ABE2" : "#9a95c9";
-      return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:6px 8px;margin-bottom:4px">
-                    <div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
-                    <div style="font-size:10px;font-weight:800;color:${corSit}">${esc(p.situacao || "—")}</div>
-                    <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
-                      ${p.podeMandarSeparar ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px" onclick="mandarSeparar(${p.id},'${esc(String(p.numero))}')">📦 Mandar p/ separação</button>` : ''}
-                      ${ehEmRota(p) ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;background:#25D366;color:#fff" onclick="avisarSaidaEntrega(${p.id},'${esc(String(p.numero))}','${esc(String(p.clienteNome || "").replace(/'/g, ""))}')">🛵 Avisar saída</button>` : ''}
-                    </div>
-                  </div>`;
-    }).join("")}
+                ${detalhe[c.id].map(linhaPedido).join("")}
               </div>`).join("")}
             ${semCarroQtd ? `<div style="margin-bottom:8px">
                 <div style="font-weight:800;font-size:11px;color:#ff8090">🗓️ Aguardando carro (${semCarroQtd})</div>
-                ${(detalhe["_semCarro"] || []).map(id => {
-      const p = pedidoPorId(id);
-      if (!p) return `<div style="font-size:11px;color:#cfc9f5">· #${id}</div>`;
-      const corSit = p.podeMandarSeparar ? "#ffd23f" : p.jaEmSeparacao ? "#29ABE2" : "#9a95c9";
-      return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:6px 8px;margin-bottom:4px">
-                    <div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
-                    <div style="font-size:10px;font-weight:800;color:${corSit}">${esc(p.situacao || "—")}</div>
-                    ${p.podeMandarSeparar ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;margin-top:4px" onclick="mandarSeparar(${p.id},'${esc(String(p.numero))}')">📦 Mandar p/ separação</button>` : ''}
-                  </div>`;
-    }).join("")}
+                ${(detalhe["_semCarro"] || []).map(linhaPedido).join("")}
               </div>` : ''}
           `}
         </div>`;
