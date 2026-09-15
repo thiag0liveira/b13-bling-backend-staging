@@ -86,6 +86,32 @@ const brl = v => "R$ " + Number(v || 0).toLocaleString("pt-BR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
 });
+const soDig = s => String(s !== null && s !== void 0 ? s : "").replace(/\D/g, "");
+const EM_ROTA = typeof B13_SIT !== "undefined" && B13_SIT.EM_ROTA ? B13_SIT.EM_ROTA : 820085;
+function ehEmRota(p) { return Number(p.situacaoId) === Number(EM_ROTA); }
+// avisa o cliente que o pedido saiu pra entrega (mesmo padrão do /pedidos-online)
+async function avisarSaidaEntrega(id, numero, cliente) {
+  try {
+    let ped = null;
+    try { ped = await fetch(B + "/api/pedidos/" + id).then(r => r.json()).then(j => j.data || j); } catch (e) {}
+    let t = soDig((ped && ped.contato && (ped.contato.celular || ped.contato.telefone || ped.contato.fone)) || "");
+    if (!t && ped && ped.contato && ped.contato.id) {
+      try {
+        const c = await fetch(B + "/api/contatos/" + ped.contato.id).then(r => r.json()).then(j => j.data || j);
+        t = soDig((c && (c.celular || c.telefone || c.fone)) || "");
+      } catch (e) {}
+    }
+    const nome = (ped && ped.contato && ped.contato.nome) || cliente || "";
+    const msg = "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + ((ped && ped.numero) || numero) + "* já saiu para entrega. 🛵💨\n\nEm breve chega aí!";
+    if (!t) {
+      alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa.");
+      window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
+      return;
+    }
+    const num = t.startsWith("55") ? t : "55" + t;
+    window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(msg), "_blank");
+  } catch (e) { alert("Erro ao montar a mensagem de saída pra entrega."); }
+}
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 function hojeBR() {
   return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -121,7 +147,7 @@ const S = {
   // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
   idsUsadosOutrosDias: {},
   // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
-  verVisaoGeral: false
+  verVisaoGeral: true
 };
 async function carregarTudo() {
   S.carregando = true;
@@ -921,7 +947,7 @@ function htmlVisaoGeral() {
     const detalhe = S.diasDetalhe[d.iso] || {};
     const totalDia = Object.values(detalhe).reduce((s, ids) => s + ids.length, 0);
     const semCarroQtd = (detalhe["_semCarro"] || []).length;
-    return `<div style="flex:0 0 220px;background:#181433;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};border-radius:12px;padding:10px">
+    return `<div style="flex:0 0 270px;background:#181433;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};border-radius:12px;padding:10px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="text-transform:capitalize;font-weight:900;font-size:13px">${d.label}</div>
             <button class="btn btn-ghost" style="font-size:10px;padding:4px 8px" onclick="S.data='${d.iso}';S.verVisaoGeral=false;carregarTudo()">Abrir</button>
@@ -934,13 +960,33 @@ function htmlVisaoGeral() {
     }).map(c => `
               <div style="margin-bottom:8px">
                 <div style="font-weight:800;font-size:11px;color:#ffd23f">🚚 ${esc(c.nome)} (${detalhe[c.id].length})</div>
-                ${detalhe[c.id].slice(0, 6).map(id => {
+                ${detalhe[c.id].map(id => {
       const p = pedidoPorId(id);
-      return `<div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${p ? 'Pedido ' + esc(p.numero) + ' — ' + esc(p.clienteNome) : '#' + id}</div>`;
+      if (!p) return `<div style="font-size:11px;color:#cfc9f5">· #${id}</div>`;
+      const corSit = ehEmRota(p) ? "#3ce88a" : p.podeMandarSeparar ? "#ffd23f" : p.jaEmSeparacao ? "#29ABE2" : "#9a95c9";
+      return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:6px 8px;margin-bottom:4px">
+                    <div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
+                    <div style="font-size:10px;font-weight:800;color:${corSit}">${esc(p.situacao || "—")}</div>
+                    <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+                      ${p.podeMandarSeparar ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px" onclick="mandarSeparar(${p.id},'${esc(String(p.numero))}')">📦 Mandar p/ separação</button>` : ''}
+                      ${ehEmRota(p) ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;background:#25D366;color:#fff" onclick="avisarSaidaEntrega(${p.id},'${esc(String(p.numero))}','${esc(String(p.clienteNome || "").replace(/'/g, ""))}')">🛵 Avisar saída</button>` : ''}
+                    </div>
+                  </div>`;
     }).join("")}
-                ${detalhe[c.id].length > 6 ? `<div class="muted" style="font-size:10px">+${detalhe[c.id].length - 6} mais…</div>` : ''}
               </div>`).join("")}
-            ${semCarroQtd ? `<div style="font-size:11px;color:#ff8090;font-weight:700">🗓️ ${semCarroQtd} aguardando carro</div>` : ''}
+            ${semCarroQtd ? `<div style="margin-bottom:8px">
+                <div style="font-weight:800;font-size:11px;color:#ff8090">🗓️ Aguardando carro (${semCarroQtd})</div>
+                ${(detalhe["_semCarro"] || []).map(id => {
+      const p = pedidoPorId(id);
+      if (!p) return `<div style="font-size:11px;color:#cfc9f5">· #${id}</div>`;
+      const corSit = p.podeMandarSeparar ? "#ffd23f" : p.jaEmSeparacao ? "#29ABE2" : "#9a95c9";
+      return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:6px 8px;margin-bottom:4px">
+                    <div style="font-size:11px;color:#cfc9f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pedido ${esc(p.numero)} — ${esc(p.clienteNome)}</div>
+                    <div style="font-size:10px;font-weight:800;color:${corSit}">${esc(p.situacao || "—")}</div>
+                    ${p.podeMandarSeparar ? `<button class="btn btn-ghost" style="font-size:10px;padding:3px 7px;margin-top:4px" onclick="mandarSeparar(${p.id},'${esc(String(p.numero))}')">📦 Mandar p/ separação</button>` : ''}
+                  </div>`;
+    }).join("")}
+              </div>` : ''}
           `}
         </div>`;
   }).join("")}
