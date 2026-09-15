@@ -13437,108 +13437,63 @@ app.get("/api/rotas/conferir-pagamentos",(req,res)=>{
 app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
   try{
     const dataAlvo=req.query.data||new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
-    const offsetBR=3*60*60*1000;
-    // janela de datas: por padrão 60 dias pra trás e 7 dias pra frente (pega
-    // pedidos futuros agendados também). Ajustável por ?dias= (quantos dias pra trás).
-    const diasTras=Math.min(Number(req.query.dias||60),180);
-    const dataFim=new Date(Date.now()-offsetBR+7*86400000).toISOString().slice(0,10);
-    const dataIni=new Date(Date.now()-offsetBR-diasTras*86400000).toISOString().slice(0,10);
-    // status que podem entrar na montagem de rota. Inclui "Em aberto" e "Em
-    // digitação" (pedidos criados por vendedores nascem "Em digitação"), pra
-    // permitir agendar na rota mesmo pedidos que ainda não passaram pela separação.
-    const situacoes=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
-    // pagina de verdade: busca TODAS as páginas (o Bling traz no máx 100 por vez).
-    // Sem isso, com muitos pedidos em aberto/digitação, os excedentes ficavam de fora.
-    let lista=[];
-    for(let pag=1;pag<=30;pag++){
-      const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:dataIni,dataFinal:dataFim});
-      situacoes.forEach(id=>p.append("idsSituacoes[]",id));
-      let arr=[];
-      try{ arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]); }catch(e){ break; }
-      lista.push(...arr);
-      if(arr.length<100) break; // última página
-      await new Promise(r=>setTimeout(r,300)); // respeita o limite do Bling
-    }
-    // remove duplicados (a paginação do Bling às vezes repete)
-    const vistos=new Set(); const unicos=lista.filter(p=>{ if(vistos.has(p.id)) return false; vistos.add(p.id); return true; });
-
     const rotasDias=lerRotasDias();
     const atribuidoNoDia=rotasDias[dataAlvo]||{};
+    const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
 
-    // AUTO-LIMPEZA de pedidos "fantasma": IDs agendados nesse dia que não estão
-    // mais na lista ativa do Bling. Pode ser porque foram (a) cancelados/excluídos
-    // no Bling — nesse caso devem sair da rota; ou (b) já entregues (atendido) —
-    // nesse caso ficam (é histórico legítimo do planejado x realizado). Confere a
-    // situação real SÓ dos IDs suspeitos (barato — normalmente é zero).
-    const idsAtivos=new Set(unicos.map(p=>Number(p.id)));
+    // só os pedidos JÁ ENVIADOS pra rota: atribuídos a um carro nesse dia, ou com
+    // dia/turno de entrega marcado (agendado pela vendedora). Antes essa rota
+    // varria TODOS os pedidos em aberto/digitação/separado dos últimos 60 dias
+    // pra descobrir isso (até 30 páginas de 100 no Bling) — pesado e desnecessário,
+    // já que os dois arquivos locais abaixo já dizem exatamente quais pedidos são.
     const idsAgendados=new Set();
     Object.values(atribuidoNoDia).forEach(c=>{
       (c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[])).forEach(id=>idsAgendados.add(Number(id)));
     });
-    const suspeitos=[...idsAgendados].filter(id=>!idsAtivos.has(id));
-    for(const id of suspeitos){
-      let situacao=null, existe=true;
-      try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); situacao=Number(d?.situacao?.id||0); }
-      catch(e){ if(e.status===404) existe=false; } // 404 = foi excluído no Bling
-      const SIT_CANCELADO=Number(process.env.SIT_CANCELADO||12);
-      // remove da rota só se foi cancelado ou excluído (não se foi entregue)
-      if(!existe || situacao===SIT_CANCELADO){
-        removerPedidoDeTodasRotas(id);
+    // ?todos=1 mantém o comportamento antigo (varre tudo por situação/valor), só
+    // pra quem realmente precisar depurar/conferir contra a lista antiga.
+    if(req.query.todos==="1"){
+      const offsetBR=3*60*60*1000;
+      const diasTras=Math.min(Number(req.query.dias||60),180);
+      const dataFim=new Date(Date.now()-offsetBR+7*86400000).toISOString().slice(0,10);
+      const dataIni=new Date(Date.now()-offsetBR-diasTras*86400000).toISOString().slice(0,10);
+      const situacoes=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
+      let lista=[];
+      for(let pag=1;pag<=30;pag++){
+        const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:dataIni,dataFinal:dataFim});
+        situacoes.forEach(id=>p.append("idsSituacoes[]",id));
+        let arr=[];
+        try{ arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]); }catch(e){ break; }
+        lista.push(...arr);
+        if(arr.length<100) break;
+        await new Promise(r=>setTimeout(r,300));
       }
+      const vistos=new Set(); const unicos=lista.filter(p=>{ if(vistos.has(p.id)) return false; vistos.add(p.id); return true; });
+      const valorMin=req.query.valorMin!=null?Number(req.query.valorMin):1000;
+      unicos.forEach(p=>{ if(valorMin<=0||Number(p.total||0)>=valorMin) idsAgendados.add(Number(p.id)); });
     }
-    // relê depois da limpeza (pode ter mudado)
-    const atribuidoNoDiaLimpo=lerRotasDias()[dataAlvo]||{};
+    // pedidos com turno marcado pra ESTE dia (mesmo que ainda não tenham carro)
+    Object.entries(turnosAg).forEach(([pid,t])=>{ if(t&&t.data===dataAlvo) idsAgendados.add(Number(pid)); });
+
     const acharCarroDoPedido=(pid)=>{
-      for(const carroId in atribuidoNoDiaLimpo){
-        const c=atribuidoNoDiaLimpo[carroId];
+      for(const carroId in atribuidoNoDia){
+        const c=atribuidoNoDia[carroId];
         const ids=(c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[]));
         if(ids.map(Number).includes(Number(pid))) return carroId;
       }
       return null;
     };
 
-    // OTIMIZAÇÃO: pré-filtro por valor usando o "total" que já vem na LISTAGEM
-    // (barato, sem ler o detalhe). Pedido de entrega costuma ser acima de R$ 1.000,
-    // então descarta os menores ANTES de ler o detalhe pesado — a não ser que o
-    // pedido já esteja agendado na rota (esse sempre precisa aparecer). Ajustável
-    // por ?valorMin= (0 desliga o filtro e volta a ler todos).
-    // PADRÃO: só os pedidos ENVIADOS pra rota (agendados pela vendedora na tela de
-    // Pedidos, com dia e turno) — era o que fazia aparecer pedido de retirada junto
-    // e sumir entrega de valor baixo, porque o filtro antigo era só por valor.
-    // ?todos=1 volta ao comportamento antigo (todos acima de ?valorMin=, padrão 1000).
-    const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
-    const jaAgendado=(id)=>!!acharCarroDoPedido(id)||!!turnosAg[String(id)];
-    let candidatos;
-    if(req.query.todos==="1"){
-      const valorMin=req.query.valorMin!=null?Number(req.query.valorMin):1000;
-      candidatos = valorMin>0 ? unicos.filter(p=> Number(p.total||0)>=valorMin || jaAgendado(p.id)) : unicos;
-    } else {
-      candidatos = unicos.filter(p=>jaAgendado(p.id));
-    }
-    // GARANTIA: todo pedido agendado PRECISA aparecer, mesmo que não tenha vindo na
-    // busca por situação (ex.: está "Em separação"/"Conferido", que não estão na lista
-    // de situações, ou foi criado fora da janela de datas). Sem isso, o pedido
-    // agendado simplesmente sumia da rota.
-    const idsCandidatos=new Set(candidatos.map(p=>Number(p.id)));
-    const faltando=[...new Set([...idsAgendados, ...Object.keys(turnosAg).map(Number)])]
-      .filter(id=>id && !idsCandidatos.has(Number(id)));
-    for(const id of faltando){
-      try{
-        const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
-        if(!d) continue;
-        const sit=Number(d.situacao?.id||0);
-        if(sit===SIT.CANCELADO) continue; // cancelado não entra
-        candidatos.push(d);
-      }catch(e){}
-      await sleep(120);
-    }
-
     const detalhados=[];
-    for(let i=0;i<candidatos.length;i++){
-      const resumo=candidatos[i];
+    const idsArr=[...idsAgendados];
+    for(let i=0;i<idsArr.length;i++){
+      const id=idsArr[i];
       try{
-        const det=await bling(`/pedidos/vendas/${resumo.id}`).then(r=>r?.data);
-        if(!det) continue;
+        const det=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        if(!det) continue; // 404: foi excluído no Bling
+        const sit0=Number(det.situacao?.id||0);
+        // fantasma cancelado: sai da rota e não aparece na tela
+        if(sit0===SIT.CANCELADO){ removerPedidoDeTodasRotas(id); continue; }
         const frete=+(det.transporte?.frete||0);
         // tenta achar o endereço em qualquer um dos formatos possíveis (o Bling
         // guarda em transporte.etiqueta OU transporte.enderecoEntrega dependendo
@@ -13575,18 +13530,17 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           id:det.id, numero:det.numero, clienteNome:det.contato?.nome||"—", clienteId:det.contato?.id||null,
           vendedorNome:await nomeVendedor(det.vendedor?.id),
           total:+(det.total||0), totalProdutos:+(det.totalProdutos||0), frete,
-          situacao:det.situacao?.id, situacaoNome:det.situacao?.nome||"",
           endereco:enderecoTxt, lat:coord?.lat||null, lng:coord?.lng||null,
           semEndereco:!temEndereco, enderecoOrigem,
           itens:(det.itens||[]).map(i=>({descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pesoEstimadoKg:estimarPesoPedido(det.itens||[]),
           carroAtribuido:acharCarroDoPedido(det.id),
-          agendamento:(lerJSON(`${DATA_DIR}/turnos_entrega.json`,{})[String(det.id)]||null), // dia+turno que a vendedora escolheu
+          agendamento:(turnosAg[String(det.id)]||null), // dia+turno que a vendedora escolheu
           pagamento:_pagamentoDoPedido(det.id, det.numero), // já foi recebido em algum caixa?
-          situacaoId:Number(det.situacao?.id||0), situacao:nomeSituacao(Number(det.situacao?.id||0)),
+          situacaoId:sit0, situacao:nomeSituacao(sit0),
           // pode mandar pra separação? (ainda não entrou no fluxo de separação)
-          podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(Number(det.situacao?.id||0)),
-          jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND].includes(Number(det.situacao?.id||0)),
+          podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),
+          jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND].includes(sit0),
         });
       }catch(e){}
       if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling
