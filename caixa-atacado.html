@@ -1509,21 +1509,25 @@ function imprimirComprovante(v, wPreAberta) {
   if (!wPreAberta) w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
     <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
   const pedidoId = String(v.pedidoId || v.numero || "");
-  const tmp = document.createElement("div");
-  tmp.style.cssText = "position:absolute;left:-9999px;top:-9999px";
-  document.body.appendChild(tmp);
+  // QR e código de barras em containers SEPARADOS: antes os dois ficavam no mesmo
+  // <div>, e a busca do QR (tmp.querySelector("canvas")) pegava o primeiro canvas
+  // que aparecesse — se o QR não saísse como canvas por algum motivo, a busca podia
+  // pegar o canvas do código de barras por engano, e o QR sumia da nota.
+  const tmpQr = document.createElement("div");
+  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmpQr);
   // QR de acompanhamento do pedido
   try {
-    new QRCode(tmp, {
+    new QRCode(tmpQr, {
       text: location.origin + "/pedido/" + pedidoId + "/acompanhar",
       width: 340,
       height: 340,
       correctLevel: QRCode.CorrectLevel.M
     });
   } catch (e) {}
-  // código de barras (id do pedido — mesmo que aparece pra bipar no caixa)
+  // código de barras (id do pedido — mesmo que aparece pra bipar no caixa) — canvas
+  // isolado, não precisa estar no documento pra ser lido com drawImage
   const barCanvas = document.createElement("canvas");
-  tmp.appendChild(barCanvas);
   try {
     JsBarcode(barCanvas, pedidoId, {
       format: "CODE128",
@@ -1544,11 +1548,11 @@ function imprimirComprovante(v, wPreAberta) {
   };
   logoImg.src = "/logo.png";
   setTimeout(() => {
-    if (w.closed) { document.body.removeChild(tmp); return; } // usuário fechou a aba enquanto gerava
-    const qrCanvas = tmp.querySelector("canvas");
-    const qrImg = tmp.querySelector("img");
+    if (w.closed) { document.body.removeChild(tmpQr); return; } // usuário fechou a aba enquanto gerava
+    const qrCanvas = tmpQr.querySelector("canvas");
+    const qrImg = tmpQr.querySelector("img");
     const cv = desenharComprovante(v, qrCanvas || qrImg, barCanvas, logoPronta ? logoImg : null);
-    document.body.removeChild(tmp);
+    document.body.removeChild(tmpQr);
     // preenche a janela que já estava aberta com a imagem final e imprime
     const dataUrl = cv.toDataURL("image/png");
     w.document.open();
