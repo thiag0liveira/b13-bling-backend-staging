@@ -1492,6 +1492,17 @@ function imprimirComprovante(v) {
     alert("Nenhuma venda pra reimprimir ainda.");
     return;
   }
+  // abre a janela JÁ, ainda dentro do clique do usuário — se deixar pra abrir só
+  // depois de montar QR/código de barras/logo (dentro de um setTimeout), o Chrome
+  // entende que não é mais uma ação direta do clique e BLOQUEIA o popup sem avisar
+  // nada na tela. Por isso abre logo com um aviso de "gerando…" e preenche depois.
+  const w = window.open("", "_blank", "width=420,height=700");
+  if (!w) {
+    alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site (ícone na barra de endereço) e tente de novo.");
+    return;
+  }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
+    <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
   const pedidoId = String(v.pedidoId || v.numero || "");
   const tmp = document.createElement("div");
   tmp.style.cssText = "position:absolute;left:-9999px;top:-9999px";
@@ -1528,13 +1539,14 @@ function imprimirComprovante(v) {
   };
   logoImg.src = "/logo.png";
   setTimeout(() => {
+    if (w.closed) { document.body.removeChild(tmp); return; } // usuário fechou a aba enquanto gerava
     const qrCanvas = tmp.querySelector("canvas");
     const qrImg = tmp.querySelector("img");
     const cv = desenharComprovante(v, qrCanvas || qrImg, barCanvas, logoPronta ? logoImg : null);
     document.body.removeChild(tmp);
-    // abre a imagem numa janela e imprime
+    // preenche a janela que já estava aberta com a imagem final e imprime
     const dataUrl = cv.toDataURL("image/png");
-    const w = window.open("", "_blank", "width=420,height=700");
+    w.document.open();
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido #${esc(v.numero || "")}</title>
       <style>
         *{margin:0;padding:0}
@@ -2478,7 +2490,10 @@ async function finalizar() {
     return;
   }
   // ATACADO: pergunta o destino do pedido — cliente já levou, ou vai pra separação?
-  if (ehPedidoAtacado() && !DESTINO_PEDIDO) {
+  // Esta tela é SEMPRE caixa atacado (TIPO_CAIXA="atacado"), então pergunta sempre —
+  // antes dependia de ehPedidoAtacado() (heurística por modoPreco/PEDIDO_ATUAL) que
+  // podia falhar silenciosamente e pular a pergunta.
+  if (!DESTINO_PEDIDO) {
     perguntarDestinoPedido();
     return;
   }
