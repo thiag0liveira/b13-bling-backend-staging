@@ -147,7 +147,7 @@ const S = {
   // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
   idsUsadosOutrosDias: {},
   // pedidoId -> data em que já está agendado (pra não repetir noutro dia)
-  verVisaoGeral: true,
+  verVisaoGeral: false,
   pedidosPorDia: {},
   // "YYYY-MM-DD" -> lista de pedidos daquele dia (carregada sob demanda, cacheada)
   carregandoVisaoGeral: false
@@ -1058,7 +1058,6 @@ function render() {
   let h = `<div class="topbar">
     <div class="pg">🗺️ Gerenciamento de Rota</div>
     <div style="flex:1"></div>
-    <button class="btn btn-ghost" onclick="toggleVisaoGeral()">${S.verVisaoGeral ? '📋 Ver dia a dia' : '📊 Visão geral da semana'}</button>
     <button class="btn btn-ghost" onclick="abrirConfig()">⚙️ Configurar</button>
   </div>
   <div class="content">`;
