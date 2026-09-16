@@ -426,9 +426,10 @@ function confirmarFinalizarViagem(){
 }
 
 function abrirMapaViagem(){
-  const centro = V.lojaCoord || { lat:-19.917, lng:-43.934 };
+  const partida = ULTIMA_POS || V.lojaCoord || { lat:-19.917, lng:-43.934 };
+  const usandoLocalAtual = !!ULTIMA_POS;
   const html = '<div class="fullscreen">' +
-    '<div class="topo"><h1>🗺️ Mapa da rota</h1><div class="muted">' + esc(V.carroNome) + '</div></div>' +
+    '<div class="topo"><h1>🗺️ Mapa da rota</h1><div class="muted">' + esc(V.carroNome) + (usandoLocalAtual ? ' · partindo da sua localização atual' : ' · partindo da B13') + '</div></div>' +
     '<div id="mapaMotorista"></div>' +
     '<div class="content"><button class="btn btn-ghost" onclick="fecharMapaViagem()">← Voltar</button></div>' +
   '</div>';
@@ -436,10 +437,10 @@ function abrirMapaViagem(){
   wrap.innerHTML = html;
   document.body.appendChild(wrap.firstChild);
   setTimeout(function(){
-    const mapa = L.map("mapaMotorista").setView([centro.lat, centro.lng], 12);
+    const mapa = L.map("mapaMotorista").setView([partida.lat, partida.lng], 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(mapa);
-    const pontos = [[centro.lat, centro.lng]];
-    L.marker([centro.lat, centro.lng]).addTo(mapa).bindPopup("🏪 B13 Bebidas (saída/volta)");
+    const pontos = [[partida.lat, partida.lng]];
+    L.marker([partida.lat, partida.lng]).addTo(mapa).bindPopup(usandoLocalAtual ? "📍 Você está aqui" : "🏪 B13 Bebidas (saída/volta)");
     V.entregas.forEach(function(e, ix){
       if(!e.lat || !e.lng) return;
       pontos.push([e.lat, e.lng]);
