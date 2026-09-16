@@ -9854,6 +9854,17 @@ function _montarPedidoDoBling(b){
   _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now()};
   const ag=_turnosEntrega()[bid]||null;
   const okReg=lerPedidosOk()[bid]||null;
+  // mesmo critério usado no resto do sistema (conferência, viagem etc.): é entrega
+  // se tiver endereço de entrega OU frete>0 OU a observação dizer "ENTREGA —".
+  // Antes olhava só o frete>0, então um pedido marcado como entrega mas com frete
+  // GRÁTIS (dentro do raio, por exemplo) voltava a aparecer como retirada.
+  const endObjB = b.transporte?.enderecoEntrega?.endereco ? b.transporte.enderecoEntrega
+                : b.transporte?.etiqueta?.endereco ? b.transporte.etiqueta
+                : null;
+  let enderecoB = endObjB ? [endObjB.endereco,endObjB.numero,endObjB.bairro,endObjB.municipio,endObjB.uf].filter(Boolean).join(", ") : "";
+  const obsB=String(b.observacoes||"");
+  if(!enderecoB){ const m=obsB.match(/ENTREGA\s*—\s*([^(]+)/i); if(m) enderecoB=m[1].trim(); }
+  const ehEntregaB = !!enderecoB || Number(b.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(obsB);
   return { id:b.id, numero:b.numero||b.id,
     agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
     teveRetirada:false,
@@ -9862,8 +9873,8 @@ function _montarPedidoDoBling(b){
     origem:"bling", noSistema:false, veioPorApi:_veioPorApi(b),
     vendedor:"", cliente:b.contato?.nome||"—", telefone:"",
     total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
-    tipo:(Number(b.transporte?.frete||0)>0)?"entrega":"retirada",
-    endereco:"", itens:[],
+    tipo: ehEntregaB?"entrega":"retirada",
+    endereco:enderecoB, itens:[],
     situacaoId:sitId, situacao:nomeSituacao(sitId),
     cancelado:sitId===SIT.CANCELADO };
 }
