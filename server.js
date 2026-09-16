@@ -2224,16 +2224,21 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
       return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
         semPagamento:true, numero:ped?.numero||null });
     }
-    // NÃO confia no tipoEntrega mandado pelo front pra decidir ATENDIDO x EM_ROTA —
+    // NÃO confia no tipoEntrega mandado pelo front pra decidir ATENDIDO x VERIFICADO —
     // descobre pelo PRÓPRIO pedido no Bling (endereço de entrega, frete>0 ou a
     // observação "ENTREGA —", mesmo critério usado no resto do sistema). Assim,
     // mesmo que a tela mande "retirada" por engano (ou de propósito), um pedido que
-    // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar por EM ROTA.
+    // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar pela
+    // conferência real de entrega.
+    // Pedido de entrega conferido vai pra VERIFICADO (não mais direto pra EM ROTA) —
+    // EM ROTA agora só acontece de verdade quando a viagem é iniciada (QR do
+    // motorista), depois de confirmar que TODOS os pedidos da viagem já estão
+    // Verificados.
     const obsPed=String(ped?.observacoes||"");
     const ehEntregaReal = /ENTREGA\s*—/i.test(obsPed) || Number(ped?.transporte?.frete||0)>0
       || !!ped?.transporte?.enderecoEntrega?.endereco || !!ped?.transporte?.etiqueta?.endereco;
-    const novoSit=ehEntregaReal?SIT.EM_ROTA:SIT.ATENDIDO;
-    if(!novoSit) return res.status(400).json({erro:"Status EM_ROTA ou ATENDIDO não configurado."});
+    const novoSit=ehEntregaReal?SIT.VERIFICADO:SIT.ATENDIDO;
+    if(!novoSit) return res.status(400).json({erro:"Status VERIFICADO ou ATENDIDO não configurado."});
     // PEDIDO A PRAZO: não muda a situação (tem que continuar em PRAZO até ser pago) —
     // só registra na observação do Bling que foi conferido, com data e hora.
     if(ehPrazo){
@@ -10120,15 +10125,17 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
     if(!String(motoristaNomeInformado||"").trim()) return res.status(400).json({erro:"informe o nome do motorista"});
     if(String(motoristaTelefone||"").replace(/\D/g,"").length<10) return res.status(400).json({erro:"informe o telefone do motorista com DDD"});
     // CONFERE ANTES DE MEXER EM NADA: só pode iniciar viagem com pedido que já foi
-    // separado e conferido (situação Separado ou já Em rota). Sem essa checagem, um
-    // pedido que ainda estava "Aguardando separação"/"Em separação" pulava direto
-    // pra Em rota sem nunca passar pela conferência de verdade — divergindo do fluxo
-    // normal (Separação → Conferência → Em rota) usado no resto do sistema.
+    // conferido de verdade (situação Verificado, ou já Em rota — idempotência, caso
+    // a viagem tenha sido cancelada e reiniciada). Sem essa checagem, um pedido que
+    // ainda estava "Aguardando separação"/"Em separação"/"Separado" (sem ter passado
+    // pela conferência) pulava direto pra Em rota — divergindo do fluxo normal
+    // (Separação → Conferência → Verificado → Em rota, esse último só ao iniciar
+    // a viagem de verdade) usado no resto do sistema.
     const naoConferidos=[];
     for(const pid of pedidoIds){
       let sit=null;
       try{ sit=Number((await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data))?.situacao?.id||0); }catch(e){}
-      if(sit!==SIT.SEPARADO && sit!==SIT.EM_ROTA) naoConferidos.push({id:pid, situacao:nomeSituacao(sit||0)});
+      if(sit!==SIT.VERIFICADO && sit!==SIT.EM_ROTA) naoConferidos.push({id:pid, situacao:nomeSituacao(sit||0)});
       await new Promise(r=>setTimeout(r,120));
     }
     if(naoConferidos.length) return res.status(400).json({
@@ -13885,8 +13892,8 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           pagamento, // já foi recebido em algum caixa? e como (forma, operador, quando)
           situacaoId:sit0, situacao:nomeSituacao(sit0),
           // pode mandar pra separação? (ainda não entrou no fluxo de separação)
-          podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),
-          jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND].includes(sit0),
+          podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.VERIFICADO,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),
+          jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.VERIFICADO].includes(sit0),
           motivoNaoEntrega: lerJSON(MOTIVOS_NAO_ENTREGA_FILE,{})[String(det.id)]||null,
         });
       }catch(e){}
