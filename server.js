@@ -13474,22 +13474,13 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
     Object.values(atribuidoNoDia).forEach(c=>{
       (c.viagens?.length?c.viagens.flatMap(v=>v.pedidoIds||[]):(c.pedidoIds||[])).forEach(id=>idsAgendados.add(Number(id)));
     });
-    // ALÉM dos agendados, também traz os pedidos cuja DATA (a data do próprio
-    // pedido no Bling) é o dia pedido — "pedidos que estão pra esse dia", não só os
-    // que alguém agendou manualmente na tela de rota. SÓ faz essa busca extra quando
-    // o dia é aberto de propósito (não vem "?leve=1") — a visão geral pré-carrega
-    // uns 25 dias de uma vez, e repetir essa varredura pra cada um deles multiplicava
-    // o tempo e estourava timeout; ali continua só com os já agendados (rápido).
-    if(req.query.leve!=="1")
-    try{
-      let pagBl=1, seguir=true;
-      while(seguir && pagBl<=10){
-        const p=new URLSearchParams({pagina:pagBl,limite:100,dataInicial:dataAlvo,dataFinal:dataAlvo});
-        const arr=await bling(`/pedidos/vendas?${p.toString()}`).then(r=>r?.data||[]).catch(()=>[]);
-        arr.forEach(pp=>{ if(Number(pp.situacao?.id)!==SIT.CANCELADO) idsAgendados.add(Number(pp.id)); });
-        seguir=arr.length===100; pagBl++;
-      }
-    }catch(e){}
+    // NOTA: chegou a existir aqui uma busca extra no Bling por "pedidos cuja data é
+    // esse dia" (pra pegar pedido que ninguém agendou na tela de rota). Foi removida
+    // porque deixava a tela presa em "carregando" — mesmo fazendo só 1 dia por vez,
+    // sempre que o Bling estivesse mais lento isso travava a resposta inteira. Voltou
+    // a usar só os dois arquivos locais abaixo, que já dizem exatamente quais pedidos
+    // foram enviados pra rota pelas outras telas (pedidos-online, venda atacado etc)
+    // — rápido e sem depender da velocidade do Bling nesse momento.
     // ?todos=1 mantém o comportamento antigo (varre tudo por situação/valor), só
     // pra quem realmente precisar depurar/conferir contra a lista antiga.
     if(req.query.todos==="1"){
