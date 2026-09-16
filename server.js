@@ -13372,6 +13372,23 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
     });
     if(total>0){ porDia[data]=total; detalheDias[data]=porCarro; }
   });
+  // TAMBÉM conta quem só tem o DIA marcado (turno de entrega), mesmo sem carro
+  // ou rota nenhuma atribuída — pedido agendado não precisa estar ligado a carro
+  // pra contar como "agendado pra esse dia". Sem isso, um pedido só-com-turno
+  // não aparecia no menu de dias nem na contagem, só quando alguém abria o dia.
+  const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+  Object.entries(turnosAg).forEach(([pid,t])=>{
+    const data=t&&t.data; if(!data) return;
+    const id=Number(pid);
+    if(idsUsados[id]) return; // já contado (tem carro nesse dia) — não conta 2x
+    if(!detalheDias[data]) detalheDias[data]={};
+    if(!detalheDias[data]["_semCarro"]) detalheDias[data]["_semCarro"]=[];
+    if(!detalheDias[data]["_semCarro"].includes(id)){
+      detalheDias[data]["_semCarro"].push(id);
+      porDia[data]=(porDia[data]||0)+1;
+      idsUsados[id]=data;
+    }
+  });
   res.json({porDia, idsUsados, detalheDias});
 });
 
