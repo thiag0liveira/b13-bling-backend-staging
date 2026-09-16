@@ -13856,14 +13856,31 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
   // números/clientes dos pedidos de cada dia (pra mostrar no menu de dias sem
   // precisar abrir o dia) — usa o que já foi salvo no agendamento por turno; pra
   // quem só tem carro atribuído (sem turno salvo) mostra só o ID do Bling
+  // números/clientes dos pedidos de cada dia (pra mostrar no menu de dias sem
+  // precisar abrir o dia) — usa o que já foi salvo no agendamento por turno; pra
+  // quem só tem carro atribuído (sem turno salvo) mostra só o ID do Bling.
+  // Tira quem já está CANCELADO (usa o cache de situação já mantido pelo resto do
+  // sistema — não temos tempo de consultar o Bling aqui um por um sem travar a
+  // tela; dispara a atualização em 2º plano pros que ainda não têm situação
+  // conhecida, então um cancelamento recente pode levar um instante pra sumir).
   const pedidosPorDia={};
+  const todosIds=[];
   Object.entries(detalheDias).forEach(([data,porCarro])=>{
     const ids=[...new Set(Object.values(porCarro||{}).flat())];
     pedidosPorDia[data]=ids.map(id=>{
       const t=turnosAg[String(id)];
+      todosIds.push(id);
       return {id, numero:(t&&t.numero)||id, cliente:(t&&t.cliente)||""};
+    }).filter(p=>{
+      const sit=_sitOnline[String(p.id)];
+      return !(sit && Number(sit.situacaoId)===SIT.CANCELADO);
     });
   });
+  const semSituacao=todosIds.filter(id=>!_sitOnline[String(id)]);
+  if(semSituacao.length) _atualizarSituacoesOnline(semSituacao.slice(0,60));
+  // recalcula a contagem de cada dia pra bater com a lista já filtrada (sem os
+  // cancelados) — senão o número mostrado no menu ficava maior que a lista real
+  Object.keys(pedidosPorDia).forEach(data=>{ porDia[data]=pedidosPorDia[data].length; });
   res.json({porDia, idsUsados, detalheDias, pedidosPorDia});
 });
 
