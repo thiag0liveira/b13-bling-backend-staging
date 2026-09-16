@@ -188,6 +188,7 @@ let CAT = null,
   META = {},
   ERRO = null;
 let S = novoEstado();
+let OP_ID_FINALIZAR = null; // uma so por tentativa de finalizar; reseta em novoEstado()
 function novoEstado() {
   return {
     etapa: "splash",
@@ -1199,12 +1200,14 @@ async function finalizar() {
       valor: i.preco,
       nome: [i.nomeProduto, i.sabor].filter(Boolean).join(" ")
     }));
+    if (!OP_ID_FINALIZAR) OP_ID_FINALIZAR = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
     const r = await fetch(BACKEND + "/api/finalizar", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        opId: OP_ID_FINALIZAR,
         documento: S.doc || "",
         nome: S.nome,
         email: S.email,
@@ -1472,6 +1475,7 @@ function recomecar(perguntar) {
   }
   if (perguntar && contagem() > 0 && !confirm("Recomeçar? O carrinho será esvaziado.")) return;
   S = novoEstado();
+  OP_ID_FINALIZAR = null;
   render();
 }
 

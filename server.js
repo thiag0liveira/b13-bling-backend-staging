@@ -6344,6 +6344,7 @@ app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
 });
 
 const _opsVendaNovaEmAndamento=new Set();
+const _opsFinalizarEmAndamento=new Set(); // idempotência do /api/finalizar (totem/site)
 app.post("/api/pdv/venda", async(req,res)=>{
   const opId=req.body?.opId?String(req.body.opId):null;
   // idempotência: a mesma tentativa (retry/clique duplo/F5) NÃO cria um segundo pedido no Bling
@@ -7287,6 +7288,16 @@ app.post("/api/pedido",async(req,res)=>{
 
 // Finaliza: concilia contato por CPF/CNPJ (cria se não existir) e gera o pedido de venda
 app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"}), async (req, res) => {
+  const opId=req.body?.opId?String(req.body.opId):null;
+  // idempotência: a mesma tentativa (retry/clique duplo/conexão lenta) NÃO cria um
+  // segundo pedido no Bling — mesmo padrão já usado no /api/pdv/venda.
+  if(opId){
+    const op=opFinalizarGet(opId);
+    if(op?.status==="ok") return res.json({...op.resposta, repetido:true});
+    if(op?.status==="em_andamento" && _opsFinalizarEmAndamento.has(opId)) return res.status(202).json({emAndamento:true,opId});
+    _opsFinalizarEmAndamento.add(opId);
+    opFinalizarSet(opId,{status:"em_andamento"});
+  }
   try {
     const { documento, itens, entrega, cadastro } = req.body || {};
     const doc = soDigitos(documento);
@@ -7589,8 +7600,13 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       }catch(e){ console.error("Falha ao registrar pedido totem/site na lista de propostas (ignorado):",e.message); }
     }
 
-    res.json({ ok: true, contatoId, criouContato, pedido });
-  } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
+    const respostaFinal={ ok: true, contatoId, criouContato, pedido };
+    if(opId) opFinalizarSet(opId,{status:"ok",resposta:respostaFinal});
+    res.json(respostaFinal);
+  } catch (e) {
+    if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
+    res.status(e.status || 500).json({ erro: e.message, body: e.body });
+  } finally { if(opId) _opsFinalizarEmAndamento.delete(opId); }
 });
 
 // ------------------------- Frete / Entrega (Google Maps) -------------------------
