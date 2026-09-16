@@ -10111,9 +10111,11 @@ function salvarViagensAtivas(o){ salvarJSON(VIAGENS_ATIVAS_FILE,o); }
 // dessa viagem pra EM_ROTA de uma vez (o motorista já está saindo com eles)
 app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
   try{
-    const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId}=req.body||{};
+    const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId,motoristaNomeInformado,motoristaTelefone}=req.body||{};
     if(!Array.isArray(pedidoIds)||!pedidoIds.length) return res.status(400).json({erro:"a viagem precisa ter ao menos 1 pedido"});
     if(!(Number(kmInicial)>=0)) return res.status(400).json({erro:"informe o KM inicial"});
+    if(!String(motoristaNomeInformado||"").trim()) return res.status(400).json({erro:"informe o nome do motorista"});
+    if(String(motoristaTelefone||"").replace(/\D/g,"").length<10) return res.status(400).json({erro:"informe o telefone do motorista com DDD"});
     // CONFERE ANTES DE MEXER EM NADA: só pode iniciar viagem com pedido que já foi
     // separado e conferido (situação Separado ou já Em rota). Sem essa checagem, um
     // pedido que ainda estava "Aguardando separação"/"Em separação" pulava direto
@@ -10137,7 +10139,8 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
       pedidoIds:pedidoIds.map(Number),
       kmInicial:Number(kmInicial), kmFinal:null,
       iniciadaEm:Date.now(), finalizadaEm:null,
-      motoristaFuncionarioId:funcionarioId||null, motoristaNome:funcNome,
+      motoristaFuncionarioId:funcionarioId||null, motoristaNome:funcNome||String(motoristaNomeInformado).trim(),
+      motoristaNomeInformado:String(motoristaNomeInformado).trim(), motoristaTelefone:String(motoristaTelefone).replace(/\D/g,""),
       entregas:{},
     };
     salvarViagensAtivas(viagens);

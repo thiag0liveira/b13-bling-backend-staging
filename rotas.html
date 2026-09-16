@@ -1420,24 +1420,55 @@ function reabrirViagem(carroId, vix) {
   delete S.viagensFechadas[chave];
   render();
 }
-async function iniciarViagem(carroId, carroNome, vix) {
+function iniciarViagem(carroId, carroNome, vix) {
   const chave = carroId + "_" + vix;
   const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
   if (!ids.length) return;
-  const km = prompt("KM inicial (do painel do carro agora):");
-  if (km == null) return;
-  if (!(parseFloat(km) >= 0)) { alert("KM inválido."); return; }
+  const html = `<div class="modalBg"><div class="modal" style="max-width:360px">
+    <h3 style="margin:0 0 8px">🚀 Iniciar viagem — ${esc(carroNome)}</h3>
+    <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">KM inicial (do painel do carro agora)</label>
+    <input id="ivKm" type="number" inputmode="numeric" placeholder="Ex: 45120" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">Nome do motorista</label>
+    <input id="ivNome" type="text" placeholder="Nome" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">Telefone do motorista (com DDD)</label>
+    <input id="ivTel" type="tel" placeholder="Ex: 31999998888" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    <div id="ivMsg" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>
+      <button class="btn btn-mag" style="flex:1" onclick="confirmarIniciarViagem('${carroId}','${esc(carroNome)}',${vix})">Iniciar</button>
+    </div>
+  </div></div>`;
+  document.getElementById("modais").innerHTML = html;
+}
+async function confirmarIniciarViagem(carroId, carroNome, vix) {
+  const chave = carroId + "_" + vix;
+  const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
+  const msgEl = document.getElementById("ivMsg");
+  const km = parseFloat(document.getElementById("ivKm").value);
+  const nome = document.getElementById("ivNome").value.trim();
+  const tel = document.getElementById("ivTel").value.replace(/\D/g, "");
+  if (!(km >= 0)) { msgEl.innerHTML = '<span style="color:#ff8090">Informe o KM inicial.</span>'; return; }
+  if (!nome) { msgEl.innerHTML = '<span style="color:#ff8090">Informe o nome do motorista.</span>'; return; }
+  if (tel.length < 10) { msgEl.innerHTML = '<span style="color:#ff8090">Informe o telefone com DDD.</span>'; return; }
+  msgEl.innerHTML = '<span class="muted">Iniciando…</span>';
   try {
     const j = await fetch(B + "/api/rotas/viagem/iniciar", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ carroId, carroNome, data: S.data, vix, pedidoIds: ids, kmInicial: parseFloat(km), funcionarioId: FUNC ? FUNC.id : null })
+      body: JSON.stringify({ carroId, carroNome, data: S.data, vix, pedidoIds: ids, kmInicial: km, funcionarioId: FUNC ? FUNC.id : null, motoristaNomeInformado: nome, motoristaTelefone: tel })
     }).then(r => r.json());
-    if (j.erro) { alert("Erro ao iniciar viagem: " + j.erro); return; }
-    S.viagensIniciadas[chave] = { token: j.token, url: j.url };
+    if (j.erro) { msgEl.innerHTML = '<span style="color:#ff8090">' + esc(j.erro) + '</span>'; return; }
+    S.viagensIniciadas[chave] = { token: j.token, url: j.url, motoristaNome: nome, motoristaTelefone: tel };
     if (j.falharamEmRota && j.falharamEmRota.length) alert("Atenção: não consegui mudar o status de " + j.falharamEmRota.length + " pedido(s) pra Em rota no Bling. Confira manualmente.");
     mostrarQrViagem(j.url, j.token, chave);
     render();
-  } catch (e) { alert("Erro ao iniciar viagem."); }
+  } catch (e) { msgEl.innerHTML = '<span style="color:#ff8090">Erro ao iniciar viagem.</span>'; }
+}
+function enviarLinkWhatsapp(chave) {
+  const info = S.viagensIniciadas[chave];
+  if (!info || !info.motoristaTelefone) return;
+  const msg = `Oi ${info.motoristaNome || ""}! Segue o link da sua viagem de hoje (entregas, pagamento e assinatura):\n${info.url}\n\nGuarda esse link — se fechar sem querer, é só abrir de novo por aqui.`;
+  const num = info.motoristaTelefone.startsWith("55") ? info.motoristaTelefone : "55" + info.motoristaTelefone;
+  window.open("https://wa.me/" + num + "?text=" + encodeURIComponent(msg), "_blank");
 }
 function mostrarQrViagem(url, token, chave) {
   const html = `<div class="modalBg"><div class="modal" style="max-width:340px;text-align:center">
@@ -1445,9 +1476,10 @@ function mostrarQrViagem(url, token, chave) {
     <div class="muted" style="font-size:12px;margin-bottom:10px">O motorista escaneia esse código pra abrir a área dele (vale até finalizar a viagem).</div>
     <div id="qrViagemBox" style="display:flex;justify-content:center;margin-bottom:10px"></div>
     <input readonly value="${esc(url)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;font-size:11px;text-align:center">
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Fechar</button>
-      ${token ? `<button class="btn" style="flex:1;background:#b3341f;color:#fff" onclick="cancelarViagemAtiva('${token}','${chave || ''}')">✕ Cancelar viagem</button>` : ''}
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="flex:1;min-width:90px" onclick="fecharModais()">Fechar</button>
+      ${chave && S.viagensIniciadas[chave] && S.viagensIniciadas[chave].motoristaTelefone ? `<button class="btn btn-grn" style="flex:1;min-width:120px" onclick="enviarLinkWhatsapp('${chave}')">📲 Enviar por WhatsApp</button>` : ''}
+      ${token ? `<button class="btn" style="flex:1;min-width:100px;background:#b3341f;color:#fff" onclick="cancelarViagemAtiva('${token}','${chave || ''}')">✕ Cancelar</button>` : ''}
     </div>
   </div></div>`;
   document.getElementById("modais").innerHTML = html;
