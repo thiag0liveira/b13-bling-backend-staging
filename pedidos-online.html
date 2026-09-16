@@ -1288,6 +1288,7 @@ function addItemEdit(r, id) {
 async function salvarEditarAguardando(id) {
   const itens = (window.itensEdit || []).filter(i => !i._removido).map(i => ({
     produtoId: i.produtoId,
+    nome: i.descricao || i.nome || "",
     quantidade: Number(i.quantidade),
     valor: Number(i.valor)
   }));

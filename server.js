@@ -5176,7 +5176,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
-      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||i.descricao||"").trim()?{descricao:String(i.nome||i.descricao).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)})),
     };
     if(ped.observacoes) payload.observacoes=ped.observacoes;
     if(ped.transporte) payload.transporte=ped.transporte;
@@ -7897,7 +7897,7 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
       // PRESERVA o vendedor original do pedido (senão o Bling troca/remove o vendedor
       // no PUT, o que causava "vendedor trocado" e erro "Vendedor inativo").
       ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
-      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+      itens:itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||i.descricao||"").trim()?{descricao:String(i.nome||i.descricao).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       observacoes:obsFinal?obsFinal+" | edit "+tsEdit:"edit "+tsEdit,
     };
     // preserva desconto e outras despesas (senão o PUT zera no Bling)
