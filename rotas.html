@@ -1424,12 +1424,18 @@ function iniciarViagem(carroId, carroNome, vix) {
   const chave = carroId + "_" + vix;
   const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
   if (!ids.length) return;
+  // sugere o KM inicial a partir do KM final da última viagem já finalizada
+  // desse MESMO carro nesse dia (viagem 2 parte de onde a viagem 1 parou, etc.)
+  const anteriores = (S.viagensDoDia || []).filter(v => String(v.carroId) === String(carroId) && v.status === "finalizada" && v.kmFinal != null).sort((a, b) => (b.finalizadaEm || 0) - (a.finalizadaEm || 0));
+  const kmSugerido = anteriores.length ? anteriores[0].kmFinal : "";
+  const nomeSugerido = anteriores.length ? (anteriores[0].motoristaNome || "") : "";
   const html = `<div class="modalBg"><div class="modal" style="max-width:360px">
     <h3 style="margin:0 0 8px">🚀 Iniciar viagem — ${esc(carroNome)}</h3>
     <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">KM inicial (do painel do carro agora)</label>
-    <input id="ivKm" type="number" inputmode="numeric" placeholder="Ex: 45120" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    <input id="ivKm" type="number" inputmode="numeric" placeholder="Ex: 45120" value="${kmSugerido}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    ${anteriores.length ? `<div class="muted" style="font-size:11px;margin:-6px 0 8px">Sugerido a partir do KM final da viagem anterior desse carro hoje (${anteriores[0].kmFinal}). Confira no painel antes de confirmar.</div>` : ''}
     <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">Nome do motorista</label>
-    <input id="ivNome" type="text" placeholder="Nome" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
+    <input id="ivNome" type="text" placeholder="Nome" value="${esc(nomeSugerido)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
     <label class="muted" style="font-size:12px;display:block;margin-bottom:2px">Telefone do motorista (com DDD)</label>
     <input id="ivTel" type="tel" placeholder="Ex: 31999998888" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;margin-bottom:8px">
     <div id="ivMsg" style="margin-bottom:8px"></div>

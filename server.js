@@ -10276,7 +10276,7 @@ app.get("/api/rotas/viagens-do-dia",(req,res)=>{
       const comProblema=entregasArr.filter(e=>e.valorProblema>0).length;
       const comOcorrencia=entregasArr.filter(e=>e.ocorrencia).length;
       return {
-        token:v.token, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
+        token:v.token, carroId:v.carroId, vix:v.vix, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
         status: v.canceladaEm?"cancelada":v.finalizadaEm?"finalizada":"em_andamento",
         kmInicial:v.kmInicial, kmFinal:v.kmFinal,
         kmRodado: v.kmFinal!=null?+(v.kmFinal-v.kmInicial).toFixed(1):null,
