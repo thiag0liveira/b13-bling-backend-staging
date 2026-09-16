@@ -218,6 +218,10 @@ async function carregarTudo() {
     // reconstrói o estado local (QR/fechada) a partir do que o servidor já tem —
     // sem isso, recarregar a página fazia a viagem "esquecer" que já tinha sido
     // fechada/iniciada, e a tela deixava abrir outra viagem com o mesmo pedido.
+    // reconstrói do ZERO a cada carregamento (limpa e repopula) — sem isso, uma
+    // viagem cancelada ou finalizada continuava aparecendo como "em andamento" na
+    // tela, porque a entrada antiga em S.viagensIniciadas nunca era removida.
+    S.viagensIniciadas = {};
     S.viagensDoDia.forEach(v => {
       const chaveV = v.carroId + "_" + v.vix;
       if (v.status === "em_andamento") {
@@ -1519,12 +1523,12 @@ function mostrarQrViagem(url, token, chave) {
   try { new QRCode(document.getElementById("qrViagemBox"), { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
 }
 async function cancelarViagemAtiva(token, chave) {
-  if (!confirm("Cancelar essa viagem? Pedidos que ainda não foram entregues voltam pra Separado (o que já foi entregue continua valendo).")) return;
+  if (!confirm("Cancelar essa viagem? Pedidos que ainda não foram entregues voltam pra Verificado (o que já foi entregue continua valendo).")) return;
   try {
     const j = await fetch(B + "/api/rotas/viagem/" + token + "/cancelar", { method: "POST" }).then(r => r.json());
     if (j.erro) { alert("Erro ao cancelar: " + j.erro); return; }
     if (chave) { delete S.viagensIniciadas[chave]; delete S.viagensFechadas[chave]; }
-    alert("Viagem cancelada." + (j.revertidos.length ? " " + j.revertidos.length + " pedido(s) voltaram pra Separado." : "") + (j.falharam.length ? " ⚠️ " + j.falharam.length + " pedido(s) não consegui reverter — confira manualmente." : ""));
+    alert("Viagem cancelada." + (j.revertidos.length ? " " + j.revertidos.length + " pedido(s) voltaram pra Verificado." : "") + (j.falharam.length ? " ⚠️ " + j.falharam.length + " pedido(s) não consegui reverter — confira manualmente." : ""));
     fecharModais();
     await carregarTudo();
   } catch (e) { alert("Erro ao cancelar viagem."); }

@@ -10254,7 +10254,7 @@ app.get("/api/rotas/viagem-status/:token",(req,res)=>{
 });
 
 // cancela uma viagem iniciada — pra quando algo deu errado (carro errado, engano
-// etc). Pedidos que AINDA não tiveram a entrega finalizada voltam pra Separado,
+// etc). Pedidos que AINDA não tiveram a entrega finalizada voltam pra Verificado,
 // pra poderem ser reagrupados numa viagem nova; os que já foram entregues ficam
 // como estão (o que já foi feito, foi feito).
 app.post("/api/rotas/viagem/:token/cancelar",async(req,res)=>{
@@ -10268,7 +10268,7 @@ app.post("/api/rotas/viagem/:token/cancelar",async(req,res)=>{
     for(const pid of v.pedidoIds){
       const feita=v.entregas[String(pid)] && v.entregas[String(pid)].status==="entregue";
       if(feita) continue; // já entregue — não mexe
-      try{ const r=await mudarSituacaoPedido(Number(pid),SIT.SEPARADO); if(r.ok) revertidos.push(pid); else falharam.push(pid); }
+      try{ const r=await mudarSituacaoPedido(Number(pid),SIT.VERIFICADO); if(r.ok) revertidos.push(pid); else falharam.push(pid); }
       catch(e){ falharam.push(pid); }
       await new Promise(r=>setTimeout(r,150));
     }
