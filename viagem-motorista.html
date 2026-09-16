@@ -248,10 +248,19 @@ function marcarQtdProblemaTudo(produtoId){
 
 // ---- pagamentos: botões pré-definidos, igual ao caixa atacado (tocar adiciona,
 // pode repetir a mesma forma — ex.: 2 Pix) ----
+// quanto do total (produto+frete, sem taxa) já está coberto: pagamentos que não são
+// cartão entram cheios; os de cartão entram sem a taxa embutida (V/1,035) -- mesma
+// lógica do caixa atacado (totalPagoProduto)
+function totalPagoSemTaxa(){
+  return +PAGAMENTOS.reduce(function(s,p){
+    var v = Number(p.valor)||0;
+    if(ehFormaCartao(p.formaNome)) return s + v/(1+TAXA_CARTAO);
+    return s + v;
+  }, 0).toFixed(2);
+}
 function selecionarFormaPagamento(formaId, formaNome){
-  const jaCoberto = +(somaPagamentos()).toFixed(2);
-  const faltaSemTaxa = +(valorFinalCalc() - jaCoberto).toFixed(2);
-  const valor = ehFormaCartao(formaNome) ? (faltaSemTaxa>0?comTaxa(faltaSemTaxa):0) : (faltaSemTaxa>0?faltaSemTaxa:0);
+  const falta = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
+  const valor = ehFormaCartao(formaNome) ? (falta>0?comTaxa(falta):0) : (falta>0?falta:0);
   PAGAMENTOS.push({ formaId: formaId, formaNome: formaNome, valor: valor });
   renderModalEntrega();
 }
@@ -317,8 +326,8 @@ function renderModalEntrega(){
       '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:14px;background:#3a0010;color:#ff8f7a" onclick="removerLinhaPagamento(' + ix + ')">✕</button>' +
     '</div>';
   }).join("");
-  var valorProb = valorProblemaTotal(), valorFinal = valorFinalCalc(), somaPg = somaPagamentos();
-  var diff = +(valorFinal - somaPg).toFixed(2);
+  var valorProb = valorProblemaTotal(), valorFinal = valorFinalCalc();
+  var diff = +(valorFinal - totalPagoSemTaxa()).toFixed(2);
   var html = '<div class="modalBg" id="modalWrap"><div class="modal">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
       '<h3 style="margin:0">Pedido ' + esc(e.numero) + '</h3>' +
@@ -328,14 +337,14 @@ function renderModalEntrega(){
     '<div style="margin-top:10px"><b style="font-size:13px">Confira cada produto</b></div>' +
     itensHtml +
     '<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:14px">' +
-      '<span class="muted">Total do pedido</span><span>' + brl(e.total) + '</span></div>' +
+      '<span class="muted">Total do pedido' + (e.frete>0 ? ' (já inclui frete de ' + brl(e.frete) + ')' : '') + '</span><span>' + brl(e.total) + '</span></div>' +
     (valorProb>0 ? '<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8f7a"><span>Desconto (avaria/falta)</span><span>-' + brl(valorProb) + '</span></div>' : '') +
     '<div style="display:flex;justify-content:space-between;font-weight:900;font-size:16px;margin-top:2px"><span>Valor a receber</span><span style="color:#3ce88a">' + brl(valorFinal) + '</span></div>' +
     '<div style="margin-top:12px"><b style="font-size:13px">Forma(s) de pagamento recebida(s)</b>' +
     '<div class="muted" style="font-size:11px;margin:4px 0">Toque na forma pra adicionar. Pode repetir a mesma forma (ex.: 2 Pix).</div>' +
     formasBotoes +
     pagamentosHtml +
-    (Math.abs(diff)>0.009 ? '<div class="muted" style="font-size:11px;margin-top:4px;color:#ffd23f">Falta ' + brl(diff) + ' pra fechar o valor (ou já recebeu diferente — tudo bem, só confira antes de continuar).</div>' : '') +
+    (Math.abs(diff)>0.009 ? '<div class="muted" style="font-size:11px;margin-top:4px;color:#ffd23f">' + (diff>0 ? 'Falta ' + brl(diff) : 'Está ' + brl(-diff) + ' a mais') + ' pra fechar certinho — precisa bater exato pra continuar.</div>' : '') +
     '</div>' +
     '<button type="button" class="btn btn-ghost" style="margin-top:12px" onclick="toggleOcorrencia()">📸 Abrir ocorrência (foto/vídeo)</button>' +
     '<div id="ocorrenciaBox" style="display:none;margin-top:8px">' +
@@ -361,6 +370,14 @@ function irParaAssinatura(){
   var msgEl = document.getElementById("msgEntrega");
   var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
   if(valorFinalCalc()>0 && !temForma){ msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>'; return; }
+  // trava de verdade: o valor pago (descontando a taxa embutida nos pagamentos de
+  // cartão) precisa bater exatamente com o valor a receber — não deixa fechar nem
+  // a maior nem a menor.
+  var diffFinal = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
+  if(Math.abs(diffFinal) > 0.009){
+    msgEl.innerHTML = '<span class="err">' + (diffFinal>0 ? 'Falta ' + brl(diffFinal) : 'Está ' + brl(-diffFinal) + ' a mais') + ' pra fechar certinho com o valor a receber (' + brl(valorFinalCalc()) + '). Ajuste o(s) valor(es) antes de continuar.</span>';
+    return;
+  }
   const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
   if(temPix){ perguntarBancoPix(); return; }
   fecharModal();

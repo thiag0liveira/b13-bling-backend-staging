@@ -42,6 +42,7 @@ const SESSOES_FILE = `${DATA_DIR}/sessoes.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
+const TAXA_CARTAO_PADRAO=0.035; // mesma taxa (3,5%) usada no caixa atacado e na entrega do motorista
 const PIX_BANCOS_FILE = `${DATA_DIR}/pix_bancos.json`;
 const LEDGER_FILE = `${DATA_DIR}/ledger-pagamentos.json`;
 const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
@@ -10175,7 +10176,7 @@ app.get("/api/viagem/:token",async(req,res)=>{
         numero:det?.numero||pid,
         clienteNome:det?.contato?.nome||"—",
         endereco, lat:coord?.lat||null, lng:coord?.lng||null,
-        total:Number(det?.total||0),
+        total:Number(det?.total||0), frete:Number(det?.transporte?.frete||0),
         itens:(det?.itens||[]).map(i=>({produtoId:i.produto?.id||null, descricao:i.descricao||i.produto?.nome||"produto", quantidade:i.quantidade, valor:i.valor})),
         status:reg?reg.status:"pendente",
         entrega:reg||null,
@@ -10313,6 +10314,16 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     const valorFinal=Math.max(0,+(totalPedido-valorProblema).toFixed(2));
     const pags=(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p.formaId&&Number(p.valor)>0);
     const somaPags=+pags.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    // valida que o valor pago bate EXATO com o valor a receber — descontando a taxa
+    // de cartão embutida (o valor do cartão inclui os 3,5%, então não entra cheio
+    // nessa conta). Mesma trava já feita no front, repetida aqui pra não confiar só
+    // no cliente.
+    const ehCartao=n=>/cr[eé]dito|d[eé]bito/i.test(n||"");
+    const totalPagoSemTaxa=+pags.reduce((s,p)=>s+(ehCartao(p.formaNome)?Number(p.valor)/(1+TAXA_CARTAO_PADRAO):Number(p.valor)),0).toFixed(2);
+    if(valorFinal>0){
+      const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
+      if(Math.abs(diff)>0.01) return res.status(400).json({erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`});
+    }
     // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
     // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
     if(valorFinal>0 && pags.length){
