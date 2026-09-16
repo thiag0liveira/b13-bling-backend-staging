@@ -10177,15 +10177,13 @@ app.get("/api/viagem/:token",async(req,res)=>{
       });
     }
     const feitas=entregas.filter(e=>e.status==="entregue").length;
-    let formasPagto=[];
-    try{ formasPagto=await bling(`/formas-pagamentos`).then(r=>(r?.data||[]).map(f=>({id:f.id,nome:f.descricao||f.nome}))); }catch(e){}
     res.json({
       ok:true, token:v.token, carroNome:v.carroNome, data:v.data,
       kmInicial:v.kmInicial, kmFinal:v.kmFinal, finalizada:!!v.finalizadaEm,
-      motoristaNome:v.motoristaNome,
+      motoristaNome:v.motoristaNome, motoristaFuncionarioId:v.motoristaFuncionarioId,
       totalEntregas:entregas.length, feitas,
       // ordem já é a sugestão de rota (foi organizada na tela antes de fechar a viagem)
-      entregas, formasPagamento:formasPagto,
+      entregas,
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -10217,7 +10215,7 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada"});
     const pid=Number(req.params.pedidoId);
     if(!v.pedidoIds.includes(pid)) return res.status(400).json({erro:"esse pedido não está nessa viagem"});
-    const {itensProblema,formaPagamentoId,formaPagamentoNome,assinaturaDataUrl,obs}=req.body||{};
+    const {itensProblema,pagamentos,assinaturaDataUrl,ocorrencia}=req.body||{};
     let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
     if(!det) return res.status(404).json({erro:"pedido não encontrado no Bling"});
     const totalPedido=Number(det.total||0);
@@ -10228,27 +10226,28 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
       return s+valorUn*Number(i.quantidade||0);
     },0).toFixed(2);
     const valorFinal=Math.max(0,+(totalPedido-valorProblema).toFixed(2));
+    const pags=(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p.formaId&&Number(p.valor)>0);
+    const somaPags=+pags.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
     // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
-    if(valorFinal>0 && formaPagamentoNome){
+    if(valorFinal>0 && pags.length){
       const pg=lerPag();
-      pg[String(pid)]={ statusPagamento:"pago", valorPago:valorFinal, valorPedido:totalPedido,
-        historico:[{formaNome:formaPagamentoNome, valor:valorFinal, em:Date.now(), origem:"entrega (motorista)"}] };
+      pg[String(pid)]={ statusPagamento:"pago", valorPago:somaPags, valorPedido:totalPedido,
+        historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), em:Date.now(), origem:"entrega (motorista)"})) };
       salvarPag(pg);
-      // reflete no Bling também (parcela real), sem travar a resposta se falhar —
+      // reflete no Bling também (parcelas reais), sem travar a resposta se falhar —
       // o pagamento já ficou registrado localmente de qualquer forma
-      if(formaPagamentoId){
-        atualizarParcelasBling(pid,[{formaPagamento:{id:Number(formaPagamentoId)},valor:valorFinal}]).catch(()=>{});
-      }
+      atualizarParcelasBling(pid,pags.map(p=>({formaPagamento:{id:Number(p.formaId)},valor:Number(p.valor)}))).catch(()=>{});
     }
     v.entregas[String(pid)]={
       status:"entregue", em:Date.now(),
       itensProblema:problemas, valorProblema, valorFinal,
-      formaPagamentoNome:formaPagamentoNome||null,
-      assinaturaDataUrl:assinaturaDataUrl||null, obs:String(obs||"").slice(0,300),
+      pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor)})),
+      assinaturaDataUrl:assinaturaDataUrl||null,
+      ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
     };
     salvarViagensAtivas(viagens);
-    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0});
+    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao))});
     res.json({ok:true, valorProblema, valorFinal});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

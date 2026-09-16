@@ -27,7 +27,15 @@
   .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center;z-index:20}
   .modal{background:#181433;border-radius:16px 16px 0 0;padding:16px;width:100%;max-width:480px;max-height:92vh;overflow:auto}
   canvas#assinaturaCv{width:100%;height:160px;background:#fff;border-radius:8px;touch-action:none}
+  canvas#assinaturaCvGrande{width:100%;height:60vh;background:#fff;border-radius:8px;touch-action:none}
   .err{color:#ff8090}
+  .segbtn{flex:1;padding:10px 6px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#9a95c9;font-weight:800;font-size:12px;cursor:pointer;text-align:center}
+  .segbtn.on-ok{background:#0f3a24;border-color:#2f9e6b;color:#3ce88a}
+  .segbtn.on-problema{background:#3a0010;border-color:#b3341f;color:#ff8f7a}
+  .stepper{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:8px}
+  .stepbtn{width:40px;height:40px;border-radius:8px;border:none;background:#241f4d;color:#fff;font-size:20px;font-weight:900;cursor:pointer}
+  .pagLinha{display:flex;gap:6px;margin-top:6px;align-items:center}
+  .fullscreen{position:fixed;inset:0;background:#0f0d24;z-index:30;display:flex;flex-direction:column}
 </style>
 </head>
 <body>
@@ -38,6 +46,9 @@ var B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backen
 var V = null; // dados da viagem
 var PEDIDO_ATIVO = null; // pedido aberto no modal de finalizar
 var PROBLEMAS = {}; // produtoId -> quantidade com problema (no modal atual)
+var ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
+var PAGAMENTOS = []; // [{formaId, valor}]
+var OCORRENCIA = { descricao: "", url: null, tipo: null };
 var FORMAS = [];
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function brl(v){ return "R$ " + Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -46,7 +57,10 @@ function carregar(){
   fetch(B + "/api/viagem/" + TOKEN).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ document.getElementById("app").innerHTML = '<div class="content"><div class="card"><b class="err">'+esc(j.erro)+'</b></div></div>'; return; }
     V = j;
-    FORMAS = j.formasPagamento || [];
+    // mesmas formas de pagamento que o caixa atacado usa
+    fetch(B + "/api/formas-pagamento").then(function(r){ return r.json(); }).then(function(fj){
+      FORMAS = fj.data || [];
+    }).catch(function(){});
     // vincula o usuário logado nesse aparelho, se tiver sessão do sistema
     try{
       var f = typeof b13GetSession === "function" ? b13GetSession() : null;
@@ -93,7 +107,7 @@ function render(){
         (done ? '<span class="badge" style="background:#0f3a24;color:#3ce88a">✅ ENTREGUE</span>' : '<span class="badge" style="background:#3a2a00;color:#ffd23f">PENDENTE</span>') +
       '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:4px">📍 ' + esc(e.endereco || "—") + ' · ' + brl(e.total) + '</div>' +
-      (done && e.entrega ? '<div class="muted" style="font-size:11px;margin-top:4px">Recebido: ' + brl(e.entrega.valorFinal) + (e.entrega.valorProblema>0 ? ' (descontado ' + brl(e.entrega.valorProblema) + ' de avaria/falta)':'') + ' · ' + esc(e.entrega.formaPagamentoNome||'') + '</div>' : '') +
+      (done && e.entrega ? '<div class="muted" style="font-size:11px;margin-top:4px">Recebido: ' + brl(e.entrega.valorFinal) + (e.entrega.valorProblema>0 ? ' (descontado ' + brl(e.entrega.valorProblema) + ' de avaria/falta)':'') + ' · ' + (e.entrega.pagamentos||[]).map(function(p){ return esc(p.formaNome)+': '+brl(p.valor); }).join(", ") + (e.entrega.ocorrencia ? ' · 📸 ocorrência registrada' : '') + '</div>' : '') +
     '</div>';
   });
   h += '<button class="btn btn-ghost" style="margin-top:10px" onclick="abrirFinalizarViagem()">🏁 Finalizar viagem (informar KM final)</button>';
@@ -103,7 +117,11 @@ function render(){
 
 function abrirEntrega(pedidoId){
   PEDIDO_ATIVO = V.entregas.find(function(e){ return e.pedidoId === pedidoId; });
-  PROBLEMAS = {};
+  ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
+  PROBLEMAS = {}; // produtoId -> quantidade com problema
+  PAGAMENTOS = [{ formaId: "", valor: null }];
+  OCORRENCIA = { descricao: "", url: null, tipo: null };
+  (PEDIDO_ATIVO.itens || []).forEach(function(it){ ITEM_STATUS[it.produtoId || 0] = "ok"; });
   renderModalEntrega();
 }
 function fecharModal(){
@@ -111,47 +129,170 @@ function fecharModal(){
   if(m) m.remove();
   PEDIDO_ATIVO = null;
 }
+function valorProblemaTotal(){
+  var e = PEDIDO_ATIVO, soma = 0;
+  (e.itens||[]).forEach(function(it){
+    var pid = it.produtoId || 0;
+    if(ITEM_STATUS[pid] === "problema") soma += (PROBLEMAS[pid]||0) * Number(it.valor||0);
+  });
+  return +soma.toFixed(2);
+}
+function valorFinalCalc(){ return Math.max(0, +(PEDIDO_ATIVO.total - valorProblemaTotal()).toFixed(2)); }
+
+function marcarItemStatus(produtoId, status){
+  ITEM_STATUS[produtoId] = status;
+  if(status === "problema" && !PROBLEMAS[produtoId]){
+    var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
+    PROBLEMAS[produtoId] = it ? it.quantidade : 1; // padrão: item inteiro, ajustável depois
+  }
+  renderModalEntrega();
+}
+function mudarQtdProblema(produtoId, delta){
+  var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
+  var max = it ? it.quantidade : 99;
+  PROBLEMAS[produtoId] = Math.max(1, Math.min(max, (PROBLEMAS[produtoId]||1) + delta));
+  renderModalEntrega();
+}
+
+// ---- pagamentos (várias formas, igual ao caixa atacado) ----
+function addLinhaPagamento(){ PAGAMENTOS.push({ formaId:"", valor:null }); renderModalEntrega(); }
+function removerLinhaPagamento(ix){ PAGAMENTOS.splice(ix,1); if(!PAGAMENTOS.length) PAGAMENTOS.push({formaId:"",valor:null}); renderModalEntrega(); }
+function mudarFormaPagamento(ix, formaId){ PAGAMENTOS[ix].formaId = formaId; }
+function mudarValorPagamento(ix, valor){ PAGAMENTOS[ix].valor = valor === "" ? null : Number(valor); }
+function somaPagamentos(){ return +PAGAMENTOS.reduce(function(s,p){ return s + (Number(p.valor)||0); }, 0).toFixed(2); }
+function preencherRestante(ix){
+  var restante = +(valorFinalCalc() - somaPagamentos() + (Number(PAGAMENTOS[ix].valor)||0)).toFixed(2);
+  PAGAMENTOS[ix].valor = restante > 0 ? restante : 0;
+  renderModalEntrega();
+}
+
+// ---- ocorrência (foto/vídeo + descrição) ----
+function toggleOcorrencia(){
+  var box = document.getElementById("ocorrenciaBox");
+  if(box) box.style.display = box.style.display === "none" ? "" : "none";
+}
+function anexarOcorrencia(input){
+  var file = input.files && input.files[0];
+  if(!file) return;
+  var msgEl = document.getElementById("ocorrenciaMsg");
+  msgEl.innerHTML = '<span class="muted">Enviando anexo…</span>';
+  var reader = new FileReader();
+  reader.onload = function(){
+    fetch(B + "/api/comprovante/" + PEDIDO_ATIVO.pedidoId, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ dataUrl: reader.result, tipo: file.type.indexOf("video")===0?"video":"foto",
+        evento:"ocorrencia_entrega", funcionarioId: V.motoristaFuncionarioId||null, funcionarioNome: V.motoristaNome||null })
+    }).then(function(r){ return r.json(); }).then(function(j){
+      if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
+      OCORRENCIA.url = j.url; OCORRENCIA.tipo = file.type.indexOf("video")===0?"video":"foto";
+      msgEl.innerHTML = '<span style="color:#3ce88a">✅ Anexo enviado.</span>';
+    }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro ao enviar o anexo.</span>'; });
+  };
+  reader.readAsDataURL(file);
+}
+
 function renderModalEntrega(){
   var e = PEDIDO_ATIVO;
-  var itensHtml = e.itens.map(function(it){
-    return '<div class="item"><span>' + esc(it.descricao) + ' <span class="muted">(' + it.quantidade + 'un · ' + brl(it.valor) + ')</span></span>' +
-      '<input type="number" min="0" max="' + it.quantidade + '" value="0" style="width:70px;padding:6px" onchange="PROBLEMAS[' + (it.produtoId||0) + ']=Math.max(0,Math.min(' + it.quantidade + ',parseInt(this.value)||0))"></div>';
+  var itensHtml = (e.itens||[]).map(function(it){
+    var pid = it.produtoId || 0;
+    var st = ITEM_STATUS[pid] || "ok";
+    return '<div style="border-bottom:1px solid #201c48;padding:8px 0">' +
+      '<div style="font-size:13px">' + esc(it.descricao) + ' <span class="muted">(' + it.quantidade + 'un · ' + brl(it.valor) + ' cada)</span></div>' +
+      '<div style="display:flex;gap:6px;margin-top:6px">' +
+        '<div class="segbtn ' + (st==="ok"?"on-ok":"") + '" onclick="marcarItemStatus(' + pid + ',\'ok\')">✅ Está tudo OK</div>' +
+        '<div class="segbtn ' + (st==="problema"?"on-problema":"") + '" onclick="marcarItemStatus(' + pid + ',\'problema\')">⚠️ Não está OK</div>' +
+      '</div>' +
+      (st === "problema" ? '<div class="stepper">' +
+        '<button type="button" class="stepbtn" onclick="mudarQtdProblema(' + pid + ',-1)">−</button>' +
+        '<div style="min-width:70px;text-align:center"><b>' + (PROBLEMAS[pid]||1) + '</b><div class="muted" style="font-size:10px">de ' + it.quantidade + ' com problema</div></div>' +
+        '<button type="button" class="stepbtn" onclick="mudarQtdProblema(' + pid + ',1)">+</button>' +
+      '</div>' : '') +
+    '</div>';
   }).join("");
-  var formasHtml = FORMAS.map(function(f){ return '<option value="' + f.id + '" data-nome="' + esc(f.nome) + '">' + esc(f.nome) + '</option>'; }).join("");
+  var formasOpts = '<option value="">Selecione…</option>' + FORMAS.map(function(f){ return '<option value="' + f.id + '">' + esc(f.nome) + '</option>'; }).join("");
+  var pagamentosHtml = PAGAMENTOS.map(function(p, ix){
+    return '<div class="pagLinha">' +
+      '<select style="flex:1.4" onchange="mudarFormaPagamento(' + ix + ',this.value)">' + formasOpts.replace('value="' + p.formaId + '"', 'value="' + p.formaId + '" selected') + '</select>' +
+      '<input type="number" step="0.01" placeholder="Valor" style="flex:1" value="' + (p.valor==null?"":p.valor) + '" onchange="mudarValorPagamento(' + ix + ',this.value)">' +
+      '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:12px" title="Preencher o restante" onclick="preencherRestante(' + ix + ')">↧</button>' +
+      (PAGAMENTOS.length>1 ? '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:14px;background:#3a0010;color:#ff8f7a" onclick="removerLinhaPagamento(' + ix + ')">✕</button>' : '') +
+    '</div>';
+  }).join("");
+  var valorProb = valorProblemaTotal(), valorFinal = valorFinalCalc(), somaPg = somaPagamentos();
+  var diff = +(valorFinal - somaPg).toFixed(2);
   var html = '<div class="modalBg" id="modalWrap"><div class="modal">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
       '<h3 style="margin:0">Pedido ' + esc(e.numero) + '</h3>' +
       '<button class="btn btn-ghost" style="width:auto;padding:6px 12px" onclick="fecharModal()">✕</button>' +
     '</div>' +
-    '<div class="muted">' + esc(e.clienteNome) + ' · ' + brl(e.total) + '</div>' +
-    '<div style="margin-top:10px"><b style="font-size:13px">Teve algum produto com avaria ou que não foi carregado?</b>' +
-    '<div class="muted" style="font-size:11px;margin-bottom:4px">Informe a quantidade com problema de cada item (0 se está tudo certo)</div>' +
-    itensHtml + '</div>' +
-    '<label>Forma de pagamento recebida</label>' +
-    '<select id="formaSel"><option value="">Selecione…</option>' + formasHtml + '</select>' +
-    '<label>Observação (opcional)</label>' +
-    '<textarea id="obsTxt" rows="2" placeholder="Ex: cliente pediu pra deixar na portaria"></textarea>' +
-    '<label>Assinatura do cliente</label>' +
-    '<canvas id="assinaturaCv"></canvas>' +
-    '<button class="btn btn-ghost" style="margin-top:6px" onclick="limparAssinatura()">↺ Limpar assinatura</button>' +
+    '<div class="muted">' + esc(e.clienteNome) + '</div>' +
+    '<div style="margin-top:10px"><b style="font-size:13px">Confira cada produto</b></div>' +
+    itensHtml +
+    '<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:14px">' +
+      '<span class="muted">Total do pedido</span><span>' + brl(e.total) + '</span></div>' +
+    (valorProb>0 ? '<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8f7a"><span>Desconto (avaria/falta)</span><span>-' + brl(valorProb) + '</span></div>' : '') +
+    '<div style="display:flex;justify-content:space-between;font-weight:900;font-size:16px;margin-top:2px"><span>Valor a receber</span><span style="color:#3ce88a">' + brl(valorFinal) + '</span></div>' +
+    '<div style="margin-top:12px"><b style="font-size:13px">Forma(s) de pagamento recebida(s)</b>' +
+    pagamentosHtml +
+    '<button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addLinhaPagamento()">+ Adicionar outra forma</button>' +
+    (Math.abs(diff)>0.009 ? '<div class="muted" style="font-size:11px;margin-top:4px;color:#ffd23f">Falta ' + brl(diff) + ' pra fechar o valor (ou já recebeu diferente — tudo bem, só confira antes de continuar).</div>' : '') +
+    '</div>' +
+    '<button type="button" class="btn btn-ghost" style="margin-top:12px" onclick="toggleOcorrencia()">📸 Abrir ocorrência (foto/vídeo)</button>' +
+    '<div id="ocorrenciaBox" style="display:none;margin-top:8px">' +
+      '<textarea id="ocorrenciaTxt" rows="2" placeholder="Descreva o que aconteceu…" onchange="OCORRENCIA.descricao=this.value"></textarea>' +
+      '<input type="file" accept="image/*,video/*" capture="environment" style="margin-top:6px" onchange="anexarOcorrencia(this)">' +
+      '<div id="ocorrenciaMsg" style="margin-top:4px;font-size:12px"></div>' +
+    '</div>' +
     '<div id="msgEntrega" style="margin-top:8px"></div>' +
-    '<button class="btn btn-mag" style="margin-top:10px" onclick="confirmarEntrega()">✅ Finalizar entrega</button>' +
+    '<button class="btn btn-mag" style="margin-top:12px" onclick="irParaAssinatura()">Continuar pra assinatura →</button>' +
   '</div></div>';
+  var wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
+}
+
+function irParaAssinatura(){
+  var msgEl = document.getElementById("msgEntrega");
+  var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
+  if(valorFinalCalc()>0 && !temForma){ msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>'; return; }
+  fecharModal();
+  renderAssinaturaGrande();
+}
+
+// ---- assinatura (canvas com toque/mouse, tela cheia) ----
+var _sigCtx = null, _sigDesenhando = false;
+function renderAssinaturaGrande(){
+  var e = PEDIDO_ATIVO;
+  var html = '<div class="fullscreen">' +
+    '<div class="topo"><h1>✍️ Assinatura do cliente</h1><div class="muted">Pedido ' + esc(e.numero) + ' — ' + esc(e.clienteNome) + ' · ' + brl(valorFinalCalc()) + '</div></div>' +
+    '<div class="content" style="flex:1;display:flex;flex-direction:column">' +
+      '<div class="muted" style="margin-bottom:6px;font-size:12px">Peça pro cliente assinar com o dedo na área abaixo</div>' +
+      '<canvas id="assinaturaCvGrande"></canvas>' +
+      '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button class="btn btn-ghost" onclick="limparAssinatura()">↺ Limpar</button>' +
+        '<button class="btn btn-ghost" onclick="voltarParaItens()">← Voltar</button>' +
+      '</div>' +
+      '<div id="msgEntrega" style="margin-top:8px"></div>' +
+      '<button class="btn btn-grn" style="margin-top:10px" onclick="confirmarEntrega()">✅ Finalizar entrega</button>' +
+    '</div>' +
+  '</div>';
   var wrap = document.createElement("div");
   wrap.innerHTML = html;
   document.body.appendChild(wrap.firstChild);
   configurarAssinatura();
 }
-
-// ---- assinatura (canvas com toque/mouse) ----
-var _sigCtx = null, _sigDesenhando = false;
+function voltarParaItens(){
+  var f = document.querySelector(".fullscreen");
+  if(f) f.remove();
+  renderModalEntrega();
+}
 function configurarAssinatura(){
-  var cv = document.getElementById("assinaturaCv");
+  var cv = document.getElementById("assinaturaCvGrande");
   if(!cv) return;
   var rect = cv.getBoundingClientRect();
   cv.width = rect.width; cv.height = rect.height;
   _sigCtx = cv.getContext("2d");
-  _sigCtx.lineWidth = 2; _sigCtx.lineCap = "round"; _sigCtx.strokeStyle = "#000";
+  _sigCtx.lineWidth = 2.5; _sigCtx.lineCap = "round"; _sigCtx.strokeStyle = "#000";
   function pos(ev){
     var r = cv.getBoundingClientRect();
     var t = ev.touches ? ev.touches[0] : ev;
@@ -164,31 +305,35 @@ function configurarAssinatura(){
   cv.addEventListener("touchstart", iniciar, {passive:false}); cv.addEventListener("touchmove", mover, {passive:false}); cv.addEventListener("touchend", parar);
 }
 function limparAssinatura(){
-  var cv = document.getElementById("assinaturaCv");
+  var cv = document.getElementById("assinaturaCvGrande");
   if(cv && _sigCtx) _sigCtx.clearRect(0,0,cv.width,cv.height);
 }
 
 function confirmarEntrega(){
   var msgEl = document.getElementById("msgEntrega");
-  var sel = document.getElementById("formaSel");
-  var formaId = sel.value, formaNome = sel.value ? sel.options[sel.selectedIndex].getAttribute("data-nome") : "";
-  if(!formaId){ msgEl.innerHTML = '<span class="err">Escolha a forma de pagamento recebida.</span>'; return; }
-  var cv = document.getElementById("assinaturaCv");
+  var cv = document.getElementById("assinaturaCvGrande");
   var vazio = true;
   try{
     var d = cv.getContext("2d").getImageData(0,0,cv.width,cv.height).data;
     for(var i=3;i<d.length;i+=4){ if(d[i]!==0){ vazio=false; break; } }
   }catch(e){ vazio=false; }
   if(vazio){ msgEl.innerHTML = '<span class="err">Peça pro cliente assinar antes de finalizar.</span>'; return; }
-  var itensProblema = Object.keys(PROBLEMAS).filter(function(k){ return PROBLEMAS[k]>0; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]}; });
+  var itensProblema = Object.keys(ITEM_STATUS).filter(function(k){ return ITEM_STATUS[k]==="problema"; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]||1}; });
+  var pagamentos = PAGAMENTOS.filter(function(p){ return p.formaId && Number(p.valor)>0; }).map(function(p){
+    var f = FORMAS.find(function(x){ return String(x.id)===String(p.formaId); });
+    return { formaId:p.formaId, formaNome: f?f.nome:"", valor:Number(p.valor) };
+  });
   msgEl.innerHTML = '<span class="muted">Salvando…</span>';
   fetch(B + "/api/viagem/" + TOKEN + "/entrega/" + PEDIDO_ATIVO.pedidoId, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ itensProblema:itensProblema, formaPagamentoId:formaId, formaPagamentoNome:formaNome,
-      assinaturaDataUrl: cv.toDataURL("image/png"), obs: document.getElementById("obsTxt").value })
+    body: JSON.stringify({ itensProblema:itensProblema, pagamentos:pagamentos,
+      assinaturaDataUrl: cv.toDataURL("image/png"),
+      ocorrencia: (OCORRENCIA.url || OCORRENCIA.descricao) ? OCORRENCIA : null })
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
-    fecharModal();
+    var f = document.querySelector(".fullscreen");
+    if(f) f.remove();
+    PEDIDO_ATIVO = null;
     carregar();
   }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão. Tenta de novo.</span>'; });
 }
