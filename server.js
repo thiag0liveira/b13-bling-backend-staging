@@ -12602,11 +12602,19 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
       }
       if(!existe){
         removidos.push({id:p.id, pedidoBlingNumero:p.pedidoBlingNumero, cliente:p.clienteNome||p.cliente?.nome||""});
-        delete props[p.id];
       }
       await new Promise(r=>setTimeout(r,150)); // respeita o limite do Bling
     }
-    if(removidos.length) salvarPropostas(props);
+    // RELÊ do disco antes de salvar: essa função leva vários segundos (às vezes bem
+    // mais) rodando as chamadas ao Bling acima. Se alguém criar uma proposta nova
+    // NESSE MEIO-TEMPO, salvar de volta a cópia lida lá no início apagava essa
+    // proposta nova sem querer (sobrescrevia o arquivo inteiro com dados velhos).
+    // Aplica só as remoções calculadas, por cima do que está no disco AGORA.
+    if(removidos.length){
+      const propsAgora=lerPropostas();
+      removidos.forEach(r=>delete propsAgora[r.id]);
+      salvarPropostas(propsAgora);
+    }
 
     // AGORA também PUXA os pedidos em "Aguardando Separação" do Bling que ainda não
     // estão na lista (status criado só pelo nosso sistema: totem, site e atacado).
@@ -12618,6 +12626,7 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
     const jaTem=new Set(Object.values(props).filter(p=>p.pedidoBlingId).map(p=>String(p.pedidoBlingId)));
     const jaTemNumero=new Set(Object.values(props).filter(p=>p.pedidoBlingNumero).map(p=>String(p.pedidoBlingNumero)));
     let adicionados=[];
+    const novosRegistros={}; // idReg -> registro, aplicados por cima do disco fresco no final
     try{
       let pedidosBling=[], pagina=1;
       for(let i=0;i<5;i++){ // até 500
@@ -12649,7 +12658,7 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
         // ser criado na próxima passada, quando houver orçamento de detalhe.
         if(!detalheOk) continue;
         const idReg="ped-"+String(pd.id);
-        props[idReg]={
+        novosRegistros[idReg]={
           id:idReg, origem:"bling", tipo:"pedido",
           cliente:{ id:pd.contato?.id||null, nome:pd.contato?.nome||"—" },
           itens:itensReg,
@@ -12663,7 +12672,13 @@ app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
         };
         adicionados.push({numero:pd.numero, cliente:pd.contato?.nome||""});
       }
-      if(adicionados.length) salvarPropostas(props);
+      if(adicionados.length){
+        // mesma proteção: relê do disco AGORA (não a cópia velha do início) antes de
+        // gravar os novos registros de pedido puxados do Bling.
+        const propsAgora2=lerPropostas();
+        Object.assign(propsAgora2,novosRegistros);
+        salvarPropostas(propsAgora2);
+      }
     }catch(e){ console.error("sincronizar: falha ao puxar aguardando separação (ignorado):",e.message); }
 
     res.json({ok:true, verificados:pedidos.length, removidos:removidos.length, detalhes:removidos, adicionados:adicionados.length, detalhesAdicionados:adicionados});
@@ -12870,8 +12885,13 @@ app.post("/api/atacado/propostas/:id/cancelar",async(req,res)=>{
       }
     }
     // chegou aqui = ou não tinha pedido no Bling, ou o Bling confirmou o cancelamento
-    p.status="cancelada"; p.atualizadoEm=Date.now();
-    props[p.id]=p; salvarPropostas(props);
+    // relê do disco antes de salvar — entre o início desta função e aqui rolaram
+    // chamadas ao Bling; se outra proposta foi criada/editada nesse meio-tempo,
+    // salvar a cópia velha de `props` apagaria essa mudança.
+    const propsAgora=lerPropostas();
+    const pAgora=propsAgora[p.id]||p;
+    pAgora.status="cancelada"; pAgora.atualizadoEm=Date.now();
+    propsAgora[p.id]=pAgora; salvarPropostas(propsAgora);
     // tira o pedido de qualquer rota onde estava agendado (não deixa fantasma
     // ocupando lugar/peso/capacidade no gerenciamento de rota)
     let tiradoDaRota=null;
