@@ -554,15 +554,78 @@ async function editarPedido(blingId, numero) {
     alert("Erro ao abrir o pedido.");
   }
 }
+function mudarTipoEdUi() {
+  const el = document.querySelector('input[name="edTipoEnt"]:checked');
+  const box = document.getElementById("edCamposEntrega");
+  if (box) box.style.display = el && el.value === "entrega" ? "block" : "none";
+}
+async function calcularFreteEd() {
+  const info = document.getElementById("edInfoFrete");
+  const endereco = (document.getElementById("edEndereco") || {}).value || "";
+  if (!endereco.trim()) { if (info) info.innerHTML = '<span style="color:#ff8090">Informe o endereço primeiro.</span>'; return; }
+  if (info) info.textContent = "Calculando…";
+  try {
+    const j = await fetch(B + "/api/frete?endereco=" + encodeURIComponent(endereco) + "&valor=" + totalEd()).then(r => r.json());
+    if (j.erro) { if (info) info.innerHTML = '<span style="color:#ff8090">' + esc(j.erro) + '</span>'; return; }
+    if (!j.entregaDisponivel) { if (info) info.innerHTML = '<span style="color:#ffd23f">' + esc(j.motivo || "Entrega não disponível") + '</span>'; return; }
+    const el = document.getElementById("edFrete");
+    if (el) el.value = j.taxa;
+    if (info) info.innerHTML = '✅ ' + j.km + ' km' + (j.gratis ? ' · frete grátis' : ' · R$ ' + j.porKm + '/km') + ' → ' + brl(j.taxa);
+  } catch (e) {
+    if (info) info.innerHTML = '<span style="color:#ff8090">Erro ao calcular o frete.</span>';
+  }
+}
+async function salvarTipoEntregaEd(idAlvo) {
+  const msg = document.getElementById("edMsgEntrega");
+  const el = document.querySelector('input[name="edTipoEnt"]:checked');
+  const tipo = el ? el.value : "retirada";
+  const endereco = (document.getElementById("edEndereco") || {}).value || "";
+  const frete = Number((document.getElementById("edFrete") || {}).value || 0);
+  if (tipo === "entrega" && !endereco.trim()) { if (msg) msg.innerHTML = '<span style="color:#ff8090;font-size:12px">Informe o endereço da entrega.</span>'; return; }
+  mostrarCarregando(window.pedEd.ehProposta ? ["Salvando…"] : ["Enviando pro Bling…", "Aguardando confirmação…"]);
+  try {
+    const url = window.pedEd.ehProposta
+      ? B + "/api/atacado/propostas/" + encodeURIComponent(idAlvo) + "/editar-entrega"
+      : B + "/api/pedidos-online/" + idAlvo + "/tipo-entrega";
+    const j = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipo, endereco, frete, funcionarioId: (typeof b13GetSession === "function" ? (b13GetSession() || {}).id : null) })
+    }).then(r => r.json());
+    esconderCarregando();
+    if (j.erro) { if (msg) msg.innerHTML = '<span style="color:#ff8090;font-size:12px">' + esc(j.erro) + '</span>'; return; }
+    window.pedEd.tipoEntrega = tipo;
+    window.pedEd.enderecoEntrega = tipo === "entrega" ? endereco : "";
+    window.pedEd.freteEntrega = tipo === "entrega" ? frete : 0;
+    if (msg) msg.innerHTML = '<span style="color:#3ce88a;font-size:12px">✅ Salvo!</span>';
+    if (typeof carregar === "function") carregar();
+  } catch (e) {
+    esconderCarregando();
+    if (msg) msg.innerHTML = '<span style="color:#ff8090;font-size:12px">Erro de conexão.</span>';
+  }
+}
 function renderEdicao() {
   const rows = (window.itensEd || []).map((it, ix) => {
     if (it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">' + esc(it.descricao) + '</div>' + '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd(' + ix + ')">desfazer</button></div>';
     return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">' + esc(it.descricao) + '<div class="muted" style="font-size:11px">' + brl(it.valor) + ' un' + (it._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + it.quantidade + '" onchange="mudarQtdEd(' + ix + ',this.value)">' + '<button class="rmEd" onclick="removerItemEd(' + ix + ')">🗑</button></div>';
   }).join("");
-  const tipoBadge = window.pedEd.tipoEntrega === "entrega"
-    ? `<div style="background:#0f2233;border:1px solid #29ABE2;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:12px">🛵 <b>Entrega</b>${window.pedEd.enderecoEntrega ? ' — ' + esc(window.pedEd.enderecoEntrega) : ''}${window.pedEd.freteEntrega > 0 ? ' · frete ' + brl(window.pedEd.freteEntrega) : ''}</div>`
-    : `<div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:12px">📦 <b>Retirada</b></div>`;
-  document.getElementById("boxEd").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3 style="margin:0">✏️ ' + (window.pedEd.ehProposta ? "Proposta" : "Pedido") + ' ' + esc(window.pedEd.numero) + '</h3>' + '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>' + tipoBadge + '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. ' + (window.pedEd.ehProposta ? "A proposta é atualizada aqui no sistema (ainda não existe no Bling)." : "Ao salvar, atualiza no Bling.") + '</div>' + '<div style="max-height:40vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">' + brl(totalEd()) + '</b></div>' + '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">' + '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>' + '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">' + '<div id="resEdProp"></div></div>' + '<div id="edMsgProp" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>' + '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 ' + (window.pedEd.ehProposta ? "Salvar proposta" : "Salvar no Bling") + '</button></div>';
+  const idAlvo = window.pedEd.ehProposta ? window.pedEd.propostaId : window.pedEd.id;
+  const tipoBloco = `<div style="background:#1c1846;border:1px solid #37327a;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+    <div style="display:flex;gap:8px;margin-bottom:6px">
+      <label style="flex:1;background:#0f0d24;border-radius:8px;padding:8px;cursor:pointer;text-align:center;font-size:12px"><input type="radio" name="edTipoEnt" value="retirada"${window.pedEd.tipoEntrega !== "entrega" ? " checked" : ""} onchange="mudarTipoEdUi()"> 📦 Retirada</label>
+      <label style="flex:1;background:#0f0d24;border-radius:8px;padding:8px;cursor:pointer;text-align:center;font-size:12px"><input type="radio" name="edTipoEnt" value="entrega"${window.pedEd.tipoEntrega === "entrega" ? " checked" : ""} onchange="mudarTipoEdUi()"> 🛵 Entrega</label>
+    </div>
+    <div id="edCamposEntrega" style="display:${window.pedEd.tipoEntrega === "entrega" ? "block" : "none"}">
+      <input id="edEndereco" placeholder="Endereço de entrega" value="${esc(window.pedEd.enderecoEntrega || "")}" style="margin-bottom:6px">
+      <div style="display:flex;gap:6px;align-items:flex-end">
+        <div style="flex:1"><div class="muted" style="font-size:11px;margin-bottom:2px">Frete (R$)</div><input id="edFrete" type="number" step="0.01" value="${Number(window.pedEd.freteEntrega) || 0}"></div>
+        <button class="btn btn-ghost" style="width:auto;margin:0;padding:8px 10px" onclick="calcularFreteEd()">🧮 Calcular</button>
+      </div>
+      <div id="edInfoFrete" class="muted" style="font-size:11px;margin-top:4px"></div>
+    </div>
+    <div id="edMsgEntrega" style="margin-top:6px"></div>
+    <button class="btn btn-mag" style="margin-top:8px;font-size:12px;padding:7px" onclick="salvarTipoEntregaEd('${idAlvo}')">💾 Salvar tipo/frete</button>
+  </div>`;
+  document.getElementById("boxEd").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3 style="margin:0">✏️ ' + (window.pedEd.ehProposta ? "Proposta" : "Pedido") + ' ' + esc(window.pedEd.numero) + '</h3>' + '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>' + tipoBloco + '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. ' + (window.pedEd.ehProposta ? "A proposta é atualizada aqui no sistema (ainda não existe no Bling)." : "Ao salvar, atualiza no Bling.") + '</div>' + '<div style="max-height:40vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">' + brl(totalEd()) + '</b></div>' + '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">' + '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>' + '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">' + '<div id="resEdProp"></div></div>' + '<div id="edMsgProp" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>' + '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 ' + (window.pedEd.ehProposta ? "Salvar proposta" : "Salvar no Bling") + '</button></div>';
 }
 function mudarQtdEd(ix, v) {
   window.itensEd[ix].quantidade = Math.max(1, parseInt(v) || 1);

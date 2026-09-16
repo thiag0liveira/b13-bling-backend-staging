@@ -13001,6 +13001,26 @@ app.get("/api/atacado/pedido/:blingId/numero",async(req,res)=>{
 });
 
 // EDITAR os itens de uma PROPOSTA (ainda não virou pedido no Bling — é registro local)
+// muda tipo entrega/retirada (+ endereço/frete) de uma proposta que AINDA não virou
+// pedido no Bling — é só local. Pra pedido já gerado, usa /api/pedidos-online/:id/tipo-entrega
+app.post("/api/atacado/propostas/:id/editar-entrega",(req,res)=>{
+  try{
+    const props=lerPropostas();
+    const prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+(prop.pedidoBlingNumero||prop.pedidoBlingId)+" — mude o tipo por lá"});
+    const {tipo,endereco,frete}=req.body||{};
+    if(tipo!=="entrega"&&tipo!=="retirada") return res.status(400).json({erro:"tipo inválido"});
+    if(tipo==="entrega"&&!String(endereco||"").trim()) return res.status(400).json({erro:"informe o endereço da entrega"});
+    const taxa=tipo==="entrega"?+Number(frete||0).toFixed(2):0;
+    prop.entrega = tipo==="entrega" ? {tipo:"entrega", endereco:String(endereco).slice(0,300), taxa} : {tipo:"retirada"};
+    const totalItens=(prop.itens||[]).reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    prop.total=+(totalItens+taxa).toFixed(2);
+    prop.atualizadoEm=Date.now();
+    props[prop.id]=prop; salvarPropostas(props);
+    res.json({ok:true, total:prop.total, entrega:prop.entrega});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
   try{
     const props=lerPropostas();
