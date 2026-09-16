@@ -10102,7 +10102,7 @@ app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
     const turnos=lerJSON(TURNOS_ENTREGA_FILE,{});
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     // obsEntrega é SÓ do nosso sistema — não vai pro Bling nem pra nota do cliente
-    turnos[String(id)]={data,turno:turnoOk,obsEntrega:String(obsEntrega||"").slice(0,300),por:funcNome,em:Date.now(),numero:ped.numero};
+    turnos[String(id)]={data,turno:turnoOk,obsEntrega:String(obsEntrega||"").slice(0,300),por:funcNome,em:Date.now(),numero:ped.numero,cliente:ped.contato?.nome||""};
     salvarJSON(TURNOS_ENTREGA_FILE,turnos);
     addLog(String(id),"entrega_agendada",funcionarioId,funcNome,{data,turno:turnoOk,obs:obsEntrega||"",numero:ped.numero});
     res.json({ok:true,data,turno:turnoOk,numero:ped.numero});
@@ -12718,7 +12718,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
           const tf=`${DATA_DIR}/turnos_entrega.json`;
           const turnos=lerJSON(tf,{});
           turnos[String(pedidoId)]={data, turno:(["manha","tarde"].includes(entregaProp.turno)?entregaProp.turno:"qualquer"),
-            obsEntrega:String(entregaProp.obsEntrega||"").slice(0,300), por:prop.funcionarioNome||prop.vendedorNome||"—", em:Date.now(), numero};
+            obsEntrega:String(entregaProp.obsEntrega||"").slice(0,300), por:prop.funcionarioNome||prop.vendedorNome||"—", em:Date.now(), numero, cliente:prop.cliente?.nome||""};
           salvarJSON(tf,turnos);
         }catch(e){}
         agendadoRotaData=data;
@@ -13389,15 +13389,18 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
       idsUsados[id]=data;
     }
   });
-  // números dos pedidos de cada dia (pra mostrar no menu de dias sem precisar abrir
-  // o dia) — usa o número já salvo no agendamento por turno; pra quem só tem carro
-  // atribuído (sem turno salvo) mostra o ID do Bling mesmo, como último recurso
-  const numerosPorDia={};
+  // números/clientes dos pedidos de cada dia (pra mostrar no menu de dias sem
+  // precisar abrir o dia) — usa o que já foi salvo no agendamento por turno; pra
+  // quem só tem carro atribuído (sem turno salvo) mostra só o ID do Bling
+  const pedidosPorDia={};
   Object.entries(detalheDias).forEach(([data,porCarro])=>{
     const ids=[...new Set(Object.values(porCarro||{}).flat())];
-    numerosPorDia[data]=ids.map(id=>(turnosAg[String(id)]&&turnosAg[String(id)].numero)||id);
+    pedidosPorDia[data]=ids.map(id=>{
+      const t=turnosAg[String(id)];
+      return {id, numero:(t&&t.numero)||id, cliente:(t&&t.cliente)||""};
+    });
   });
-  res.json({porDia, idsUsados, detalheDias, numerosPorDia});
+  res.json({porDia, idsUsados, detalheDias, pedidosPorDia});
 });
 
 // Estimativa de peso do pedido a partir do nome/quantidade dos produtos —
