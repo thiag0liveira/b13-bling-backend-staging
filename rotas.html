@@ -1095,6 +1095,11 @@ function htmlVisaoGeral() {
   </div>`;
 }
 function render() {
+  const scrollY = window.scrollY;
+  renderInterno();
+  requestAnimationFrame(() => window.scrollTo(0, scrollY));
+}
+function renderInterno() {
   var _S$atribuicoes$_semCa3;
   const app = document.getElementById("app");
   if (S.carregando) {
