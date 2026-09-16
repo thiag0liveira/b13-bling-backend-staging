@@ -13906,13 +13906,20 @@ app.post("/api/rotas/calcular",async(req,res)=>{
     if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"Google Maps não configurado no servidor."});
     const paradas=req.body?.paradas||[]; // [{id,endereco}]
     if(!paradas.length) return res.status(400).json({erro:"Informe ao menos uma parada."});
-    const origem=LOJA_ENDERECO;
+    // origem: por padrão a loja (comportamento antigo); se vier origemLat/origemLng
+    // (ex.: localização atual do motorista), usa essa em vez da loja
+    const origem = (req.body?.origemLat!=null && req.body?.origemLng!=null)
+      ? `${req.body.origemLat},${req.body.origemLng}` : LOJA_ENDERECO;
+    // otimizar: por padrão reordena os waypoints pro menor trajeto (uso do
+    // planejamento); passando otimizar:false mantém a ordem exatamente como veio
+    // (uso do motorista, que já recebeu a ordem sugerida pronta)
+    const otimizar = req.body?.otimizar!==false;
     const waypointsStr=paradas.map(p=>encodeURIComponent(p.endereco)).join("|");
-    const url=`https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origem)}&destination=${encodeURIComponent(origem)}&waypoints=optimize:true|${waypointsStr}&key=${GOOGLE_MAPS_KEY}`;
+    const url=`https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origem)}&destination=${encodeURIComponent(LOJA_ENDERECO)}&waypoints=${otimizar?"optimize:true|":""}${waypointsStr}&key=${GOOGLE_MAPS_KEY}`;
     const j=await fetch(url).then(r=>r.json());
     if(j.status!=="OK") return res.status(400).json({erro:`Google Directions: ${j.status}${j.error_message?" — "+j.error_message:""}`});
     const rota=j.routes[0];
-    const ordemOtimizada=rota.waypoint_order; // índices na ordem otimizada (referentes a `paradas`)
+    const ordemOtimizada=otimizar?rota.waypoint_order:paradas.map((_,i)=>i); // sem otimizar, a ordem é a que já veio
     const distanciaTotalM=rota.legs.reduce((s,l)=>s+l.distance.value,0);
     const duracaoTotalS=rota.legs.reduce((s,l)=>s+l.duration.value,0);
     const paradasOrdenadas=ordemOtimizada.map((ix,pos)=>({
