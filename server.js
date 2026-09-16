@@ -10677,14 +10677,19 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
     const ag=_turnosEntrega()[String(ped.id)]||null;
     const sit=Number(ped.situacao?.id||0);
     const obs=String(ped.observacoes||"");
-    const ehEntrega=(prop?.entrega?.tipo==="entrega")||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
+    // mesmo critério completo do resto do sistema: endereço de entrega OU frete>0 OU
+    // a observação "ENTREGA —" OU o registro local — antes só checava frete/observação/
+    // registro local, sem olhar o endereço salvo no pedido, então um pedido de entrega
+    // com frete grátis e sem registro local aparecia como retirada na busca.
+    const endBusca = ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
+    const ehEntrega=(prop?.entrega?.tipo==="entrega")||!!endBusca||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
     const _resp={ data:[{
       id:ped.id, numero:ped.numero, criadoEm:prop?.criadoEm||null,
       origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||await nomeVendedor(ped.vendedor?.id||null),
       cliente:ped.contato?.nome||"—", telefone:prop?.cliente?.telefone||"",
       total:Number(ped.total)||0, frete:Number(ped.transporte?.frete||0),
       tipo: ehEntrega?"entrega":"retirada",
-      endereco:prop?.entrega?.endereco||"",
+      endereco:prop?.entrega?.endereco||endBusca||"",
       itens:(ped.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
       situacaoId:sit, situacao:nomeSituacao(sit), cancelado:sit===SIT.CANCELADO,
       agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
