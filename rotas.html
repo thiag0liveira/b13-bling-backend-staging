@@ -707,10 +707,11 @@ function removerDeTodasAtribuicoes(pedidoId) {
 function delete_resultadoViagem(carroId, vix) {
   if (S.resultadoRota[carroId]) S.resultadoRota[carroId][vix] = null;
 }
-function removerDoCarreo(carroId, vix, pedidoId) {
+async function removerDoCarreo(carroId, vix, pedidoId) {
   S.atribuicoes[carroId].viagens[vix].pedidoIds = (S.atribuicoes[carroId].viagens[vix].pedidoIds || []).filter(id => id !== pedidoId);
   delete_resultadoViagem(carroId, vix);
   render();
+  await salvarDia();
 }
 function moverNaLista(carroId, vix, ix, delta) {
   const arr = S.atribuicoes[carroId].viagens[vix].pedidoIds;
@@ -1406,6 +1407,7 @@ function htmlStopItem(ped, ix, infoExtra, botoes) {
       <div class="nm">Pedido ${esc(ped.numero)} — ${esc(ped.clienteNome)} <span class="muted">${exp ? '▲' : '▼'} ${((_ped$itens = ped.itens) === null || _ped$itens === void 0 ? void 0 : _ped$itens.length) || 0} itens</span>
         ${(_ped$agendamento2 = ped.agendamento) !== null && _ped$agendamento2 !== void 0 && _ped$agendamento2.turno && ped.agendamento.turno !== "qualquer" ? `<span style="background:#29ABE2;color:#000;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:5px">${ped.agendamento.turno === "manha" ? "MANHÃ" : "TARDE"}</span>` : ""}
         ${(_ped$agendamento3 = ped.agendamento) !== null && _ped$agendamento3 !== void 0 && _ped$agendamento3.obsEntrega ? `<span title="${esc(ped.agendamento.obsEntrega)}" style="background:#6b5f1f;color:#ffd23f;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📝 OBS</span>` : ""}
+        ${/cancelad/i.test(String(ped.situacao || "")) ? `<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">✕ CANCELADO — remova daqui</span>` : ""}
         ${ped.pagamento && !ped.pagamento.pago ? `<span style="background:#b3341f;color:#fff;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">⚠️ NÃO PAGO</span>` : ""}
         ${ped.pagamento && ped.pagamento.pago ? `<span style="background:#0f3a24;color:#3ce88a;border:1px solid #2f9e6b;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">✅ ENTREGUE</span>` : ped.jaEmSeparacao ? `<span style="background:#0f2233;color:#7fd4ff;border:1px solid #29ABE2;border-radius:5px;font-size:9px;font-weight:900;padding:1px 6px;margin-left:4px">📦 ${esc(String(ped.situacao || "").toUpperCase())}</span>` : ""}</div>
       ${infoExtra ? `<div class="km">${infoExtra}</div>` : ''}
@@ -1660,12 +1662,12 @@ function htmlViagemBox(carro, vix, cap) {
     ${acimaPeso ? `<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ Peso dessa viagem acima do sugerido (+20%) pra esse carro.</div>` : ''}
     ${!ids.length ? '<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>' : resultado ? resultado.paradasOrdenadas.map((p, ix) => {
     const ped = pedidoPorId(p.id);
-    return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
-           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
-  }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
+    return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, `${S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>`}
+           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`);
+  }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, `${S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
-           <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
-           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`)).join("")}
+           <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>`}
+           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`)).join("")}
     ${resultado ? `<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin + ids.length * (S.config.tempoParadaMin || 15)} min</b> no total (com as ${ids.length} parada${ids.length !== 1 ? 's' : ''})</span></div>
     <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo === chave ? 'Mapa aberto abaixo' : 'Ver rota no mapa'}</button>
     ${S.carroMapaAtivo === chave ? `<div id="mapaRota"></div>` : ''}` : ''}
