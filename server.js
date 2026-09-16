@@ -10231,6 +10231,57 @@ app.get("/api/rotas/viagem-status/:token",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// cancela uma viagem iniciada — pra quando algo deu errado (carro errado, engano
+// etc). Pedidos que AINDA não tiveram a entrega finalizada voltam pra Separado,
+// pra poderem ser reagrupados numa viagem nova; os que já foram entregues ficam
+// como estão (o que já foi feito, foi feito).
+app.post("/api/rotas/viagem/:token/cancelar",async(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"viagem não encontrada"});
+    if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada, não dá pra cancelar"});
+    if(v.canceladaEm) return res.status(400).json({erro:"essa viagem já estava cancelada"});
+    const revertidos=[], falharam=[];
+    for(const pid of v.pedidoIds){
+      const feita=v.entregas[String(pid)] && v.entregas[String(pid)].status==="entregue";
+      if(feita) continue; // já entregue — não mexe
+      try{ const r=await mudarSituacaoPedido(Number(pid),SIT.SEPARADO); if(r.ok) revertidos.push(pid); else falharam.push(pid); }
+      catch(e){ falharam.push(pid); }
+      await new Promise(r=>setTimeout(r,150));
+    }
+    v.canceladaEm=Date.now();
+    salvarViagensAtivas(viagens);
+    res.json({ok:true, revertidos, falharam});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// lista as viagens (iniciadas, finalizadas ou canceladas) de um dia — pra mostrar
+// no início do dia "como foram" as viagens já feitas
+app.get("/api/rotas/viagens-do-dia",(req,res)=>{
+  try{
+    const data=req.query.data;
+    if(!data) return res.status(400).json({erro:"informe a data"});
+    const viagens=lerViagensAtivas();
+    const lista=Object.values(viagens).filter(v=>v.data===data).map(v=>{
+      const entregasArr=Object.values(v.entregas||{});
+      const comProblema=entregasArr.filter(e=>e.valorProblema>0).length;
+      const comOcorrencia=entregasArr.filter(e=>e.ocorrencia).length;
+      return {
+        token:v.token, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
+        status: v.canceladaEm?"cancelada":v.finalizadaEm?"finalizada":"em_andamento",
+        kmInicial:v.kmInicial, kmFinal:v.kmFinal,
+        kmRodado: v.kmFinal!=null?+(v.kmFinal-v.kmInicial).toFixed(1):null,
+        totalEntregas:v.pedidoIds.length, feitas:entregasArr.filter(e=>e.status==="entregue").length,
+        comProblema, comOcorrencia,
+        valorTotalRecebido:+entregasArr.reduce((s,e)=>s+(e.valorFinal||0),0).toFixed(2),
+        iniciadaEm:v.iniciadaEm, finalizadaEm:v.finalizadaEm||null,
+      };
+    }).sort((a,b)=>(a.iniciadaEm||0)-(b.iniciadaEm||0));
+    res.json({ok:true, data, viagens:lista});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // motorista finaliza a entrega de UM pedido da viagem: informa avaria/falta (se
 // houver), a forma de pagamento e a assinatura do cliente. O valor da avaria/falta
 // é subtraído do total antes de registrar o pagamento.
