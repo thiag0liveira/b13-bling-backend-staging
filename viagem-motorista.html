@@ -149,6 +149,11 @@ function carregar(){
 }
 
 function render(){
+  const scrollY = window.scrollY;
+  renderInterno();
+  requestAnimationFrame(function(){ window.scrollTo(0, scrollY); });
+}
+function renderInterno(){
   if(!V) return;
   var app = document.getElementById("app");
   if(V.finalizada){
@@ -341,9 +346,15 @@ function renderModalEntrega(){
     '<div id="msgEntrega" style="margin-top:8px"></div>' +
     '<button class="btn btn-mag" style="margin-top:12px" onclick="irParaAssinatura()">Continuar pra assinatura →</button>' +
   '</div></div>';
+  var antigo = document.getElementById("modalWrap");
+  var modalAntigo = antigo ? antigo.querySelector(".modal") : null;
+  var scrollAnterior = modalAntigo ? modalAntigo.scrollTop : 0;
+  if(antigo) antigo.remove();
   var wrap = document.createElement("div");
   wrap.innerHTML = html;
   document.body.appendChild(wrap.firstChild);
+  var modalNovo = document.querySelector("#modalWrap .modal");
+  if(modalNovo) modalNovo.scrollTop = scrollAnterior;
 }
 
 function irParaAssinatura(){
