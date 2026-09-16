@@ -226,6 +226,28 @@ function pedidosDisponiveis() {
   });
   return S.pedidos.filter(p => !usados.has(p.id) && !S.idsUsadosOutrosDias[p.id]);
 }
+function mudarUiMotivo(pedidoId) {
+  const sel = document.getElementById("motivoSel-" + pedidoId);
+  const txt = document.getElementById("motivoTxt-" + pedidoId);
+  const btnReag = document.getElementById("btnReagendar-" + pedidoId);
+  if (!sel) return;
+  if (txt) txt.style.display = sel.value === "outro" ? "" : "none";
+  if (btnReag) btnReag.style.display = ["cliente_recusou", "cancelar"].includes(sel.value) ? "none" : "";
+}
+async function salvarMotivo(pedidoId) {
+  const sel = document.getElementById("motivoSel-" + pedidoId);
+  const txt = document.getElementById("motivoTxt-" + pedidoId);
+  if (!sel || !sel.value) { alert("Escolha um motivo antes de salvar."); return; }
+  try {
+    const j = await fetch(B + "/api/rotas/motivo-nao-entrega", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pedidoId, motivo: sel.value, texto: txt ? txt.value : "", funcionarioId: FUNC ? FUNC.id : null })
+    }).then(r => r.json());
+    if (j.erro) { alert("Erro ao salvar motivo: " + j.erro); return; }
+    await carregarTudo();
+  } catch (e) { alert("Erro ao salvar motivo."); }
+}
 async function reagendarPedidoDashboard(id, numero) {
   const novaData = prompt("Pedido " + numero + " — reagendar pra qual dia? (AAAA-MM-DD)", hojeBR());
   if (!novaData) return;
@@ -1125,12 +1147,24 @@ function render() {
         </div>
         ${semReceber.length ? `<div style="border-top:1px solid var(--border);padding-top:10px">
           <div style="font-weight:900;color:#ff8f7a;margin-bottom:6px">⚠️ Não passaram em nenhum caixa nesse dia</div>
-          ${semReceber.map(p => `<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px 10px;margin-bottom:6px">
-            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
-              <div><b>Pedido ${esc(p.numero)}</b> — ${esc(p.clienteNome)}<div class="muted" style="font-size:11px">Motivo provável: ${esc(p.situacao || "não chegou a sair pra entrega")} · ${brl(p.total)}</div></div>
-              <button class="btn btn-mag" style="font-size:11px;padding:6px 10px" onclick="reagendarPedidoDashboard(${p.id},'${esc(String(p.numero))}')">🔁 Reagendar</button>
-            </div>
-          </div>`).join("")}
+          ${semReceber.map(p => {
+    const mv = p.motivoNaoEntrega || {};
+    const opcoes = [["", "Selecione o motivo…"], ["cliente_recusou", "Cliente recusou"], ["cancelar", "Cancelar"], ["nao_conseguiu", "Não conseguiu entregar no dia"], ["sem_produto", "Não tinha produto pra enviar no dia"], ["outro", "Outro motivo"]];
+    return `<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+                <div><b>Pedido ${esc(p.numero)}</b> — ${esc(p.clienteNome)}<div class="muted" style="font-size:11px">${brl(p.total)} · situação no Bling: ${esc(p.situacao || "—")}</div></div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+                <select id="motivoSel-${p.id}" style="flex:1;min-width:180px" onchange="mudarUiMotivo(${p.id})">
+                  ${opcoes.map(([v, txt]) => `<option value="${v}" ${mv.motivo === v ? "selected" : ""}>${esc(txt)}</option>`).join("")}
+                </select>
+                <input id="motivoTxt-${p.id}" placeholder="Descreva o motivo…" value="${esc(mv.texto || "")}" style="flex:1;min-width:160px;${mv.motivo === "outro" ? "" : "display:none"}">
+                <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="salvarMotivo(${p.id})">💾 Salvar motivo</button>
+                <button id="btnReagendar-${p.id}" class="btn btn-mag" style="font-size:11px;padding:6px 10px;${["cliente_recusou", "cancelar"].includes(mv.motivo) ? "display:none" : ""}" onclick="reagendarPedidoDashboard(${p.id},'${esc(String(p.numero))}')">🔁 Reagendar</button>
+              </div>
+              ${mv.por ? `<div class="muted" style="font-size:10px;margin-top:4px">Motivo registrado por ${esc(mv.por)}</div>` : ''}
+            </div>`;
+  }).join("")}
         </div>` : `<div class="muted" style="border-top:1px solid var(--border);padding-top:10px">✅ Todos os pedidos desse dia já foram recebidos em caixa.</div>`}
       `}
     </div>`;

@@ -10082,6 +10082,22 @@ app.post("/api/pedidos-online/:blingId/cancelar",async(req,res)=>{
 // Coloca o pedido no Gerenciamento de Rota no dia escolhido, com o TURNO
 // (manhã/tarde). Fica em "_semCarro" — pronto pra entrar na distribuição.
 const TURNOS_ENTREGA_FILE=`${DATA_DIR}/turnos_entrega.json`; // pedidoId -> {data,turno,por,em}
+// motivo escolhido pelo funcionário quando um pedido agendado não foi recebido em
+// nenhum caixa naquele dia — pedidoId -> {motivo, texto, por, em}
+const MOTIVOS_NAO_ENTREGA_FILE=`${DATA_DIR}/motivos_nao_entrega.json`;
+const MOTIVOS_VALIDOS=["cliente_recusou","cancelar","nao_conseguiu","sem_produto","outro"];
+app.post("/api/rotas/motivo-nao-entrega",(req,res)=>{
+  try{
+    const {pedidoId,motivo,texto,funcionarioId}=req.body||{};
+    if(!pedidoId) return res.status(400).json({erro:"pedidoId obrigatório"});
+    if(!MOTIVOS_VALIDOS.includes(motivo)) return res.status(400).json({erro:"motivo inválido"});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    const motivos=lerJSON(MOTIVOS_NAO_ENTREGA_FILE,{});
+    motivos[String(pedidoId)]={motivo, texto:String(texto||"").slice(0,300), por:funcNome, em:Date.now()};
+    salvarJSON(MOTIVOS_NAO_ENTREGA_FILE,motivos);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
   try{
     const id=Number(req.params.blingId);
@@ -13601,6 +13617,7 @@ app.get("/api/rotas/pedidos-entrega",async(req,res)=>{
           // pode mandar pra separação? (ainda não entrou no fluxo de separação)
           podeMandarSeparar: ![SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.CANCELADO].includes(sit0),
           jaEmSeparacao: [SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND].includes(sit0),
+          motivoNaoEntrega: lerJSON(MOTIVOS_NAO_ENTREGA_FILE,{})[String(det.id)]||null,
         });
       }catch(e){}
       if(i%5===4) await new Promise(r=>setTimeout(r,300)); // evita rate-limit do Bling
