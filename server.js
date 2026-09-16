@@ -9884,6 +9884,26 @@ function _montarPedidoDoBling(b){
 // a busca pula os dias já totalmente finalizados, o que a torna muito mais rápida em
 // períodos com muitos pedidos antigos.
 const _cacheBlingPedidos={}; // "iniISO_fimISO" -> {pedidos, pronto, progresso, em, rodando}
+// atualiza (ou remove) um pedido em TODOS os buckets de cache — usado depois de
+// mudar tipo-entrega/retirada de um pedido SEM registro local, que só é mostrado
+// via esse cache (até 2 min de vida). Sem isso, a mudança só aparecia depois do
+// cache expirar sozinho, dando a impressão de "não funcionou".
+function _atualizarPedidoNoCacheBling(id, patch){
+  Object.values(_cacheBlingPedidos).forEach(bucket=>{
+    if(!bucket?.pedidos) return;
+    const ix=bucket.pedidos.findIndex(p=>String(p.id)===String(id));
+    if(ix>=0) bucket.pedidos[ix]={...bucket.pedidos[ix], ...patch};
+  });
+  // também no cache persistido de finalizados, se por acaso estiver lá
+  try{
+    const fin=lerPedidosFinalizados();
+    Object.keys(fin.porDia||{}).forEach(dia=>{
+      const arr=fin.porDia[dia]||[];
+      const ix=arr.findIndex(p=>String(p.id)===String(id));
+      if(ix>=0){ arr[ix]={...arr[ix], ...patch}; salvarJSON(PEDIDOS_FINALIZADOS_FILE, fin); }
+    });
+  }catch(e){}
+}
 const PEDIDOS_FINALIZADOS_FILE=`${DATA_DIR}/pedidos_bling_finalizados.json`;
 function lerPedidosFinalizados(){ return lerJSON(PEDIDOS_FINALIZADOS_FILE,{porDia:{}, diasCompletos:{}}); }
 function _ehFinalizado(sitId){ return Number(sitId)===SIT.ATENDIDO || Number(sitId)===SIT.CANCELADO; }
@@ -11046,6 +11066,10 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
       if(mudou) salvarPropostas(props);
     }catch(e){}
     addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa});
+    // atualiza o cache de pedidos do Bling NA HORA — pedido sem registro local só
+    // aparece pra tela através desse cache (até 2 min de vida); sem isso, a mudança
+    // só refletia depois do cache expirar sozinho, parecendo que "não funcionou"
+    _atualizarPedidoNoCacheBling(id, { tipo, endereco: tipo==="entrega"?(endereco||""):"", frete:taxa });
     res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
