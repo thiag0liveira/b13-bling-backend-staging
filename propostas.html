@@ -53,6 +53,40 @@
 <div id="app"></div>
 <script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
 const esc = s => String(s !== null && s !== void 0 ? s : "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// ---- overlay de carregamento (gerar pedido / editar) — mostra o que está
+// acontecendo, com mensagens que vão mudando, pra ninguém pensar que travou
+// durante uma requisição mais demorada (chamadas ao Bling não são instantâneas)
+let _carregandoTimer = null;
+function mostrarCarregando(etapas) {
+  const lista = Array.isArray(etapas) ? etapas : [etapas];
+  const html = `<div class="modalBg" id="overlayCarregando" style="z-index:2000"><div class="modal" style="text-align:center;max-width:340px">
+    <div style="font-size:36px;margin-bottom:8px">⏳</div>
+    <div id="txtCarregando" style="font-weight:700;font-size:14px">${esc(lista[0])}</div>
+    <div class="muted" style="font-size:11px;margin-top:8px">Isso pode levar alguns segundos — não feche nem clique de novo.</div>
+  </div></div>`;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
+  let ix = 0;
+  if (_carregandoTimer) clearInterval(_carregandoTimer);
+  if (lista.length > 1) {
+    _carregandoTimer = setInterval(() => {
+      ix = (ix + 1) % lista.length;
+      const el = document.getElementById("txtCarregando");
+      if (el) el.textContent = lista[ix];
+    }, 2500);
+  }
+}
+function atualizarCarregando(msg) {
+  const el = document.getElementById("txtCarregando");
+  if (el) el.textContent = msg;
+}
+function esconderCarregando() {
+  if (_carregandoTimer) { clearInterval(_carregandoTimer); _carregandoTimer = null; }
+  const el = document.getElementById("overlayCarregando");
+  if (el) el.remove();
+}
 const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
@@ -588,6 +622,7 @@ async function salvarEdicao() {
     return;
   }
   edMsg('<div class="muted" style="font-size:12px">' + (ehProp ? "Salvando a proposta…" : "Salvando no Bling…") + '</div>');
+  mostrarCarregando(ehProp ? ["Salvando a proposta…"] : ["Enviando a alteração pro Bling…", "Aguardando o Bling confirmar…", "Ainda trabalhando nisso, aguarde…"]);
   try {
     const url = ehProp ? B + "/api/atacado/propostas/" + encodeURIComponent(window.pedEd.propostaId) + "/editar-itens" : B + "/api/pedidos/" + window.pedEd.id + "/editar-itens";
     const j = await fetch(url, {
@@ -600,6 +635,7 @@ async function salvarEdicao() {
         funcionarioNome: typeof b13GetSession === "function" ? (b13GetSession() || {}).nome || "" : ""
       })
     }).then(r => r.json());
+    esconderCarregando();
     if (j.erro) {
       edMsg('<div style="color:#ff8090;font-size:12px">❌ ' + esc(j.erro) + '</div>');
       return;
@@ -608,6 +644,7 @@ async function salvarEdicao() {
     fecharModalEd();
     if (typeof carregar === "function") carregar();
   } catch (e) {
+    esconderCarregando();
     edMsg('<div style="color:#ff8090;font-size:12px">Erro de conexão. Nada foi alterado.</div>');
   }
 }
@@ -848,10 +885,12 @@ async function gerarPedido(id) {
     alert("Não consegui abrir a confirmação (o navegador pode estar bloqueando pop-ups repetidos nesta aba — recarregue a página e tente de novo). Detalhe: " + eConfirm.message);
     return;
   }
+  mostrarCarregando(["Conferindo estoque dos produtos…", "Enviando o pedido pro Bling…", "Ainda trabalhando nisso, aguarde…"]);
   try {
     const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
       method: "POST"
     }).then(r => r.json());
+    esconderCarregando();
     if (j.erro) {
       alert("❌ Não foi possível gerar o pedido no Bling:\n\n" + j.erro + "\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo.");
       return;
@@ -859,6 +898,7 @@ async function gerarPedido(id) {
     alert("Pedido #" + j.numero + " criado (aguardando separação)!");
     carregar();
   } catch (e) {
+    esconderCarregando();
     alert("Erro inesperado ao gerar o pedido (" + (e && e.message || "erro desconhecido") + "). Ela continua como proposta — tire um print desta mensagem e tente de novo.");
   }
 }
