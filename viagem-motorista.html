@@ -316,7 +316,7 @@ function renderModalEntrega(){
     '</div>';
   }).join("");
   var formasBotoes = '<div class="formasGrid">' + FORMAS.map(function(f){
-    var qtd = PAGAMENTOS.filter(function(p){ return p.formaId == f.id; }).length;
+    var qtd = PAGAMENTOS.filter(function(p){ return p.formaId == f.id && p.formaNome === f.nome; }).length;
     return '<div class="formaBtn' + (qtd?' sel':'') + '" onclick="selecionarFormaPagamento(' + f.id + ',\'' + esc(f.nome).replace(/'/g,"\\'") + '\')">' + esc(f.nome) + (qtd>1?' <b style="color:#ffd23f">×'+qtd+'</b>':'') + '</div>';
   }).join("") + '</div>';
   var pagamentosHtml = PAGAMENTOS.map(function(p, ix){
@@ -369,13 +369,20 @@ function renderModalEntrega(){
 function irParaAssinatura(){
   var msgEl = document.getElementById("msgEntrega");
   var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
-  if(valorFinalCalc()>0 && !temForma){ msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>'; return; }
+  if(valorFinalCalc()>0 && !temForma){
+    msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>';
+    msgEl.scrollIntoView({behavior:"smooth", block:"center"});
+    return;
+  }
   // trava de verdade: o valor pago (descontando a taxa embutida nos pagamentos de
   // cartão) precisa bater exatamente com o valor a receber — não deixa fechar nem
   // a maior nem a menor.
   var diffFinal = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
   if(Math.abs(diffFinal) > 0.009){
-    msgEl.innerHTML = '<span class="err">' + (diffFinal>0 ? 'Falta ' + brl(diffFinal) : 'Está ' + brl(-diffFinal) + ' a mais') + ' pra fechar certinho com o valor a receber (' + brl(valorFinalCalc()) + '). Ajuste o(s) valor(es) antes de continuar.</span>';
+    var msgDiff = (diffFinal>0 ? 'Falta ' + brl(diffFinal) : 'Está ' + brl(-diffFinal) + ' a mais') + ' pra fechar certinho com o valor a receber (' + brl(valorFinalCalc()) + ').';
+    msgEl.innerHTML = '<span class="err">' + msgDiff + ' Ajuste o(s) valor(es) antes de continuar (confira se não adicionou a mesma forma 2x sem querer).</span>';
+    msgEl.scrollIntoView({behavior:"smooth", block:"center"});
+    alert("⚠️ " + msgDiff + "\n\nConfira as formas de pagamento adicionadas antes de continuar.");
     return;
   }
   const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
@@ -475,8 +482,7 @@ function confirmarEntrega(){
   if(vazio){ msgEl.innerHTML = '<span class="err">Peça pro cliente assinar antes de finalizar.</span>'; return; }
   var itensProblema = Object.keys(ITEM_STATUS).filter(function(k){ return ITEM_STATUS[k]==="problema"; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]||1}; });
   var pagamentos = PAGAMENTOS.filter(function(p){ return p.formaId && Number(p.valor)>0; }).map(function(p){
-    var f = FORMAS.find(function(x){ return String(x.id)===String(p.formaId); });
-    return { formaId:p.formaId, formaNome: (f?f.nome:p.formaNome||""), valor:Number(p.valor), banco:p.banco||null };
+    return { formaId:p.formaId, formaNome: p.formaNome||"", valor:Number(p.valor), banco:p.banco||null };
   });
   msgEl.innerHTML = '<span class="muted">Salvando…</span>';
   fetch(B + "/api/viagem/" + TOKEN + "/entrega/" + PEDIDO_ATIVO.pedidoId, {
