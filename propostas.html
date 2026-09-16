@@ -484,7 +484,10 @@ function editarProposta(propId) {
   window.pedEd = {
     propostaId: propId,
     numero: "(proposta) " + (((_p$cliente4 = p.cliente) === null || _p$cliente4 === void 0 ? void 0 : _p$cliente4.nome) || ""),
-    ehProposta: true
+    ehProposta: true,
+    tipoEntrega: p.entrega?.tipo === "entrega" ? "entrega" : "retirada",
+    enderecoEntrega: p.entrega?.endereco || "",
+    freteEntrega: Number(p.entrega?.taxa || 0)
   };
   window.itensEd = (p.itens || []).map(i => ({
     produtoId: i.produtoId,
@@ -529,6 +532,12 @@ async function editarPedido(blingId, numero) {
       id: blingId,
       numero: ped.numero || numero
     };
+    const _endB = ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
+    const _obsB = String(ped.observacoes || "");
+    const _ehEntregaB = !!_endB || Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB);
+    window.pedEd.tipoEntrega = _ehEntregaB ? "entrega" : "retirada";
+    window.pedEd.enderecoEntrega = _endB;
+    window.pedEd.freteEntrega = Number(ped.transporte?.frete || 0);
     window.itensEd = (ped.itens || []).map(i => {
       var _i$produto, _i$produto2;
       return {
@@ -550,7 +559,10 @@ function renderEdicao() {
     if (it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">' + esc(it.descricao) + '</div>' + '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd(' + ix + ')">desfazer</button></div>';
     return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">' + esc(it.descricao) + '<div class="muted" style="font-size:11px">' + brl(it.valor) + ' un' + (it._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + it.quantidade + '" onchange="mudarQtdEd(' + ix + ',this.value)">' + '<button class="rmEd" onclick="removerItemEd(' + ix + ')">🗑</button></div>';
   }).join("");
-  document.getElementById("boxEd").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3 style="margin:0">✏️ ' + (window.pedEd.ehProposta ? "Proposta" : "Pedido") + ' ' + esc(window.pedEd.numero) + '</h3>' + '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>' + '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. ' + (window.pedEd.ehProposta ? "A proposta é atualizada aqui no sistema (ainda não existe no Bling)." : "Ao salvar, atualiza no Bling.") + '</div>' + '<div style="max-height:40vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">' + brl(totalEd()) + '</b></div>' + '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">' + '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>' + '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">' + '<div id="resEdProp"></div></div>' + '<div id="edMsgProp" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>' + '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 ' + (window.pedEd.ehProposta ? "Salvar proposta" : "Salvar no Bling") + '</button></div>';
+  const tipoBadge = window.pedEd.tipoEntrega === "entrega"
+    ? `<div style="background:#0f2233;border:1px solid #29ABE2;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:12px">🛵 <b>Entrega</b>${window.pedEd.enderecoEntrega ? ' — ' + esc(window.pedEd.enderecoEntrega) : ''}${window.pedEd.freteEntrega > 0 ? ' · frete ' + brl(window.pedEd.freteEntrega) : ''}</div>`
+    : `<div style="background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:6px 10px;margin-bottom:8px;font-size:12px">📦 <b>Retirada</b></div>`;
+  document.getElementById("boxEd").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3 style="margin:0">✏️ ' + (window.pedEd.ehProposta ? "Proposta" : "Pedido") + ' ' + esc(window.pedEd.numero) + '</h3>' + '<button class="btn btn-ghost" onclick="fecharModalEd()">✕</button></div>' + tipoBadge + '<div class="muted" style="margin-bottom:8px;font-size:12px">Altere quantidades ou remova itens. ' + (window.pedEd.ehProposta ? "A proposta é atualizada aqui no sistema (ainda não existe no Bling)." : "Ao salvar, atualiza no Bling.") + '</div>' + '<div style="max-height:40vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total:</span><b style="color:#ffd23f" id="edTotalProp">' + brl(totalEd()) + '</b></div>' + '<div style="border-top:1px solid #2a2660;padding-top:8px;margin-top:4px">' + '<div class="muted" style="margin-bottom:4px;font-size:12px">➕ Adicionar produto</div>' + '<input id="buscaEdProp" placeholder="🔎 Buscar por nome…" oninput="buscarItemEd(this.value)">' + '<div id="resEdProp"></div></div>' + '<div id="edMsgProp" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Cancelar</button>' + '<button class="btn btn-mag" style="flex:1" onclick="salvarEdicao()">💾 ' + (window.pedEd.ehProposta ? "Salvar proposta" : "Salvar no Bling") + '</button></div>';
 }
 function mudarQtdEd(ix, v) {
   window.itensEd[ix].quantidade = Math.max(1, parseInt(v) || 1);
