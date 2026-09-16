@@ -10909,11 +10909,21 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     const taxa=tipo==="entrega"?+Number(frete||0).toFixed(2):0;
     const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
     const nota=`[${quando} — ${funcNome}] Alterado para ${tipo.toUpperCase()}${tipo==="entrega"?` — ${endereco||"(sem endereço)"} · frete ${taxa.toFixed(2)}`:""}`;
+    // ao virar RETIRADA, tira qualquer linha "ENTREGA — ..." que tenha ficado de uma
+    // troca anterior — sem isso, o pedido continuava sendo detectado como entrega em
+    // todo o resto do sistema (conferência, viagem etc.), porque a detecção de
+    // "é entrega?" olha justamente essa observação (além do endereço/frete).
+    const obsBase=String(ped.observacoes||"").split("\n").filter(l=>tipo!=="retirada"||!/^ENTREGA\s*—/i.test(l.trim())).join("\n").trim();
     const payload={
       data:ped.data, contato:{id:ped.contato?.id},
       itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
-      observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
-      transporte:{ frete:taxa, ...(tipo==="entrega"&&endereco?{enderecoEntrega:{endereco:String(endereco).slice(0,180)}}:{}) },
+      observacoes:[obsBase,nota].filter(Boolean).join("\n"),
+      // ao virar RETIRADA, limpa de verdade o endereço de entrega no Bling (manda
+      // enderecoEntrega vazio) — antes só zerava o frete e deixava o endereço antigo
+      // intacto, e a detecção de entrega usada no resto do sistema olha esse campo.
+      transporte: tipo==="entrega"
+        ? { frete:taxa, ...(endereco?{enderecoEntrega:{endereco:String(endereco).slice(0,180)}}:{}) }
+        : { frete:0, enderecoEntrega:{endereco:""}, etiqueta:{endereco:""} },
     };
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
