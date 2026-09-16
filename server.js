@@ -10886,9 +10886,20 @@ app.post("/api/pedidos-online/:blingId/restaurar-agendamento",(req,res)=>{
 // pra achar na hora se o problema é "não salvou" ou "salvou mas não aparece certo"
 app.get("/api/diag/tipo-entrega/:id",async(req,res)=>{
   try{
-    const id=req.params.id;
-    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
-    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const idOuNumero=req.params.id;
+    // aceita tanto o ID interno do Bling quanto o número curto do pedido — tenta
+    // como ID primeiro (mais rápido) e, se não achar, busca por número
+    let ped=null;
+    try{ ped=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data); }catch(e){}
+    if(!ped){
+      try{
+        const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`);
+        const achado=(r?.data||[])[0];
+        if(achado?.id) ped=await bling(`/pedidos/vendas/${achado.id}`).then(x=>x?.data);
+      }catch(e){}
+    }
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling (tentei como ID e como número — confira se o pedido "+idOuNumero+" existe)"});
+    const id=ped.id;
     const obs=String(ped.observacoes||"");
     const props=lerPropostas();
     const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id))||null;

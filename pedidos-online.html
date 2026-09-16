@@ -67,6 +67,8 @@
   .chipSem{display:inline-block;background:#1c1846;border:1px solid #37327a;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-right:4px;white-space:nowrap}
   .chipSem.on{background:#FF0082;border-color:#FF0082}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
   @media(min-width:900px){
@@ -120,6 +122,146 @@ function esconderCarregando() {
   if (_carregandoTimer) { clearInterval(_carregandoTimer); _carregandoTimer = null; }
   const el = document.getElementById("overlayCarregando");
   if (el) el.remove();
+}
+
+// ---- impressão do comprovante (mesmo estilo do totem/caixa atacado) ----
+function quebrarTextoPed(ctx, texto, maxW, maxLinhas) {
+  const palavras = String(texto || "").split(" ");
+  const linhas = [];
+  let atual = "";
+  for (const p of palavras) {
+    const teste = atual ? atual + " " + p : p;
+    if (ctx.measureText(teste).width > maxW && atual) { linhas.push(atual); atual = p; }
+    else atual = teste;
+    if (linhas.length >= maxLinhas - 1) break;
+  }
+  if (atual) linhas.push(atual);
+  if (linhas.length > maxLinhas) linhas.length = maxLinhas;
+  return linhas;
+}
+function imprimirPedidoComprovante(id) {
+  const p = (BUSCA_RES || PEDIDOS).find(function (x) { return String(x.id) === String(id); });
+  if (!p) { alert("Não encontrei esse pedido pra imprimir."); return; }
+  // abre a janela JÁ, ainda dentro do clique — se deixar pra abrir só depois de
+  // montar QR/código de barras, o Chrome entende que não é mais uma ação direta
+  // do clique e bloqueia o popup sem avisar nada na tela.
+  const w = window.open("", "_blank", "width=420,height=700");
+  if (!w) { alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site e tente de novo."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>' +
+    '<body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>');
+  const tmpQr = document.createElement("div");
+  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmpQr);
+  try {
+    new QRCode(tmpQr, { text: location.origin + "/pedido/" + p.id + "/acompanhar", width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) {}
+  const barCanvas = document.createElement("canvas");
+  try { JsBarcode(barCanvas, String(p.id), { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 }); } catch (e) {}
+  setTimeout(function () {
+    if (w.closed) { document.body.removeChild(tmpQr); return; }
+    const qrCanvas = tmpQr.querySelector("canvas");
+    const qrImg = tmpQr.querySelector("img");
+    const cv = desenharComprovantePed(p, qrCanvas || qrImg, barCanvas);
+    document.body.removeChild(tmpQr);
+    const dataUrl = cv.toDataURL("image/png");
+    w.document.open();
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Pedido #' + esc(p.numero) + '</title>' +
+      '<style>*{margin:0;padding:0}body{text-align:center;background:#fff}img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}@page{margin:0}@media print{body{margin:0}img{max-width:100%;width:100%}}</style></head>' +
+      '<body><img src="' + dataUrl + '"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>');
+    w.document.close();
+  }, 220);
+}
+function desenharComprovantePed(p, qrEl, barCanvas) {
+  const itensArr = p.itens || [];
+  const itemH = 50, headerH = 132, qrSize = 200;
+  const W = 580, padd = 24;
+  const _mc = document.createElement("canvas").getContext("2d");
+  _mc.font = "900 18px Arial";
+  const maxNomeW = W - 200 - padd - 16;
+  itensArr.forEach(function (i) { i._linhas = quebrarTextoPed(_mc, i.nome || "produto", maxNomeW, 2); });
+  const extraLinhas = itensArr.reduce(function (s, i) { return s + ((i._linhas.length || 1) - 1); }, 0);
+  const H = 560 + itensArr.length * itemH + extraLinhas * 22 + qrSize + 90;
+  const cv = document.createElement("canvas");
+  const dpr = 3;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, headerH - 14);
+  ctx.fillStyle = "#fff"; ctx.font = "900 32px Arial"; ctx.textAlign = "left";
+  ctx.fillText("B13 BEBIDAS", padd, 50);
+  ctx.font = "900 14px Arial";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH", padd, headerH - 40);
+  ctx.fillText("(31) 99971-9888", padd, headerH - 22);
+  ctx.fillStyle = "#000"; ctx.fillRect(0, headerH - 10, W, 4);
+  let y = headerH + 30;
+  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("PEDIDO", padd, y);
+  ctx.font = "900 44px Arial";
+  ctx.fillText("#" + p.numero, padd, y + 44);
+  y += 60;
+  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000";
+  ctx.fillText(esc(p.situacao || ""), padd, y);
+  y += 26;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 30;
+  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("CLIENTE", padd, y);
+  ctx.font = "900 24px Arial";
+  ctx.fillText(p.cliente || "Consumidor Final", padd, y + 28);
+  y += 48;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 26;
+  ctx.font = "900 13px Arial"; ctx.fillStyle = "#666"; ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "right";
+  ctx.fillText("QTD", W - 300, y); ctx.fillText("UNIT.", W - 170, y); ctx.fillText("TOTAL", W - padd, y);
+  y += 14;
+  itensArr.forEach(function (i) {
+    const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
+    const linhas = i._linhas.length || 1;
+    ctx.textAlign = "left"; ctx.font = "900 18px Arial"; ctx.fillStyle = "#000";
+    (i._linhas || [i.nome]).forEach(function (ln, ix) { ctx.fillText(ln, padd, y + 20 + ix * 22); });
+    ctx.textAlign = "right"; ctx.font = "700 17px Arial"; ctx.fillStyle = "#333";
+    ctx.fillText(String(qtd), W - 300, y + 20);
+    ctx.fillText(brl(un), W - 170, y + 20);
+    ctx.font = "900 17px Arial"; ctx.fillStyle = "#000";
+    ctx.fillText(brl(un * qtd), W - padd, y + 20);
+    y += itemH - 8 + (linhas - 1) * 22;
+    ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke();
+    y += 14;
+  });
+  if (p.frete > 0) {
+    ctx.textAlign = "left"; ctx.font = "700 14px Arial"; ctx.fillStyle = "#555";
+    ctx.fillText("Frete", padd, y + 16);
+    ctx.textAlign = "right"; ctx.fillText(brl(p.frete), W - padd, y + 16);
+    y += 26;
+  }
+  y += 6;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 50);
+  ctx.fillStyle = "#fff"; ctx.font = "900 20px Arial"; ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd, y + 32);
+  ctx.textAlign = "right"; ctx.font = "900 26px Arial";
+  ctx.fillText(brl(p.total), W - padd, y + 33);
+  y += 66;
+  if (qrEl) {
+    const qrX = (W - qrSize) / 2;
+    try { ctx.drawImage(qrEl, qrX, y, qrSize, qrSize); } catch (e) {}
+    y += qrSize + 20;
+    ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
+    ctx.fillText("Leia o QR para acompanhar seu pedido", W / 2, y);
+    y += 24;
+    if (barCanvas) {
+      const bw = 220, bh = barCanvas.height * (bw / barCanvas.width);
+      try { ctx.drawImage(barCanvas, (W - bw) / 2, y, bw, bh); } catch (e) {}
+      y += bh + 20;
+    }
+  }
+  ctx.font = "13px Arial"; ctx.fillStyle = "#9a95c9"; ctx.textAlign = "center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, y + 16);
+  const cvFinal = document.createElement("canvas");
+  cvFinal.width = W * dpr; cvFinal.height = Math.round((y + 36) * dpr);
+  cvFinal.getContext("2d").drawImage(cv, 0, 0);
+  return cvFinal;
 }
 const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
   minimumFractionDigits: 2,
@@ -472,7 +614,7 @@ function cardPedido(p) {
   return '<div class="card' + (ehNovo ? ' novo' : '') + (pend ? ' pend' : '') + '"' + (estiloCard ? ' style="' + estiloCard + '"' : '') + '>' + (pend ? '<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>' + pendFaltasHtml : '') + '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar(' + p.id + ')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">' + '<span class="muted" style="font-size:11px">' + org + '</span>' + '<span class="muted" style="font-size:11px">🕐 ' + esc(dataHora(p.criadoEm)) + '</span></div>' + '<div style="display:flex;justify-content:space-between;align-items:center">' + '<div style="font-weight:900;font-size:15px">Pedido ' + esc(p.numero) + '</div>' + (p.noSistema === false ? (p.veioPorApi ? '<span class="chip" style="background:#3a2a5a;color:#c9b6ff" title="A observação indica que veio do nosso sistema, mas o registro local não foi salvo">🔄 do sistema (registro perdido)</span>' : '<span class="chip" style="background:#5a3a1a;color:#ffb86b" title="Sem registro no nosso sistema. Confira no Bling se aparece Importado de: API">🔗 sem registro no sistema</span>') : (ehNovo ? '<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>' : '')) + '</div>' + '<div class="sit"' + (p.situacao === "carregando…" ? ' style="background:#2a2660;color:#9a95c9"' : corStatus ? ' style="background:' + corStatus.bd + ';color:' + (p.cancelado || aguard ? "#000" : "#fff") + '"' : '') + '>' + esc((p.situacao || "").toUpperCase()) + '</div>' + '<div><span class="chip ' + (p.tipo === "entrega" ? "ent" : "ret") + '">' + (p.tipo === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA") + '</span></div>' + '<div class="muted" style="margin-top:6px">👤 ' + esc(p.cliente) + '</div>' + (p.tipo === "entrega" && p.endereco ? '<div class="muted" style="font-size:11px;margin-top:2px">📍 ' + esc(p.endereco) + '</div>' : '') + (p.agendamento ? '<div style="margin-top:4px"><span class="chip" style="background:' + (ehDiaDaEntrega(p) ? "#ff8c00" : "#2f9e6b") + ';color:#fff">' + (ehDiaDaEntrega(p) ? "🔥 ENTREGA HOJE · " : "📅 ") + esc(p.agendamento.data.split("-").reverse().join("/")) + ' · ' + (p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO") + '</span></div>' + (p.agendamento.obsEntrega ? '<div class="muted" style="font-size:11px;margin-top:3px">📝 ' + esc(p.agendamento.obsEntrega) + '</div>' : '') : '') + (p.teveRetirada ? '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>' : '') + (p.frete > 0 ? '<div class="muted" style="font-size:11px">frete ' + brl(p.frete) + '</div>' : '') + '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">' + brl(p.total) + '</div>' + '<div class="muted" style="font-size:11px;margin-top:4px">' + (p.itens || []).length + ' item(ns) · ' + esc((p.itens || []).slice(0, 2).map(i => i.quantidade + "x " + i.nome).join(", ")) + ((p.itens || []).length > 2 ? "…" : "") + '</div>' + (
   // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
   // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
-  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + ((aguard && !p.agendamento) ? '<button class="btn ' + (p.okStatus === "confirmado" ? "btn-ok" : (p.okStatus === "negociando" ? "" : "btn-okOff")) + '" style="' + (p.okStatus === "negociando" ? "background:#c77dff;color:#1a0a2e" : "") + '" onclick="ciclarNegoc(' + p.id + ')">' + (p.okStatus === "confirmado" ? "✅ Confirmado" : (p.okStatus === "negociando" ? "🤝 Negociando" : "🤝 Negociando / Confirmado")) + '</button>' : '') + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendência resolvida (mandar p/ Separado)</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + (ehEmRota(p) ? '<button class="btn btn-wa" style="background:#25D366" onclick="avisarSaidaEntrega(' + p.id + ',\'' + esc(String(p.numero)) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\')">🛵 Avisar que saiu para entrega</button>' : '') + (ehAtendido(p) ? '<button class="btn btn-ghost" style="border:1px solid #4a8f6b;color:#8fffc0" onclick="verFilmagem(' + p.id + ',\'' + esc(String(p.numero)) + '\')">🎥 Ver filmagem da conferência</button>' : '') + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
+  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + ((aguard && !p.agendamento) ? '<button class="btn ' + (p.okStatus === "confirmado" ? "btn-ok" : (p.okStatus === "negociando" ? "" : "btn-okOff")) + '" style="' + (p.okStatus === "negociando" ? "background:#c77dff;color:#1a0a2e" : "") + '" onclick="ciclarNegoc(' + p.id + ')">' + (p.okStatus === "confirmado" ? "✅ Confirmado" : (p.okStatus === "negociando" ? "🤝 Negociando" : "🤝 Negociando / Confirmado")) + '</button>' : '') + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendência resolvida (mandar p/ Separado)</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + '<button class="btn btn-ghost" onclick="imprimirPedidoComprovante(' + p.id + ')">🖨️ Imprimir</button>' + (ehEmRota(p) ? '<button class="btn btn-wa" style="background:#25D366" onclick="avisarSaidaEntrega(' + p.id + ',\'' + esc(String(p.numero)) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\')">🛵 Avisar que saiu para entrega</button>' : '') + (ehAtendido(p) ? '<button class="btn btn-ghost" style="border:1px solid #4a8f6b;color:#8fffc0" onclick="verFilmagem(' + p.id + ',\'' + esc(String(p.numero)) + '\')">🎥 Ver filmagem da conferência</button>' : '') + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
 }
 function render() {
   const app = document.getElementById("app");
