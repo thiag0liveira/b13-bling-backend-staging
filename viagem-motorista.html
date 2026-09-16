@@ -50,6 +50,33 @@ var ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
 var PAGAMENTOS = []; // [{formaId, valor}]
 var OCORRENCIA = { descricao: "", url: null, tipo: null };
 var FORMAS = [];
+var _watchId = null;
+var ULTIMA_POS = null; // {lat,lng}
+function iniciarRastreamento(){
+  if(!("geolocation" in navigator) || _watchId != null) return;
+  _watchId = navigator.geolocation.watchPosition(function(pos){
+    ULTIMA_POS = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    fetch(B + "/api/viagem/" + TOKEN + "/localizacao", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(ULTIMA_POS)
+    }).catch(function(){});
+    var el = document.getElementById("localizacaoAtualLinha");
+    if(el) el.innerHTML = htmlLinhaLocalizacao();
+  }, function(){ /* usuário negou ou indisponível — segue sem localização */ }, { enableHighAccuracy:true, maximumAge:15000, timeout:20000 });
+}
+function pegarPosicaoAgora(){
+  return new Promise(function(resolve){
+    if(!("geolocation" in navigator)) { resolve(ULTIMA_POS); return; }
+    navigator.geolocation.getCurrentPosition(function(pos){
+      resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    }, function(){ resolve(ULTIMA_POS); }, { enableHighAccuracy:true, timeout:8000, maximumAge:5000 });
+  });
+}
+function htmlLinhaLocalizacao(){
+  if(!ULTIMA_POS) return '<span class="muted">📍 Obtendo localização…</span>';
+  return '<span class="muted">📍 Localização compartilhada — </span><a href="https://maps.google.com/?q=' + ULTIMA_POS.lat + ',' + ULTIMA_POS.lng + '" target="_blank" style="color:#7fd4ff">ver no mapa</a>';
+}
+
 function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function brl(v){ return "R$ " + Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
@@ -57,6 +84,8 @@ function carregar(){
   fetch(B + "/api/viagem/" + TOKEN).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ document.getElementById("app").innerHTML = '<div class="content"><div class="card"><b class="err">'+esc(j.erro)+'</b></div></div>'; return; }
     V = j;
+    if(V.localizacaoAtual && !ULTIMA_POS) ULTIMA_POS = { lat:V.localizacaoAtual.lat, lng:V.localizacaoAtual.lng };
+    if(!V.finalizada) iniciarRastreamento();
     // mesmas formas de pagamento que o caixa atacado usa
     fetch(B + "/api/formas-pagamento").then(function(r){ return r.json(); }).then(function(fj){
       FORMAS = fj.data || [];
@@ -84,6 +113,7 @@ function render(){
         '<div style="font-weight:900;margin-top:6px">Viagem encerrada</div>' +
         '<div class="muted" style="margin-top:6px">KM inicial: ' + V.kmInicial + ' · KM final: ' + V.kmFinal + ' · Rodou ' + (V.kmFinal - V.kmInicial).toFixed(1) + ' km</div>' +
         '<div class="muted" style="margin-top:10px">' + V.feitas + ' de ' + V.totalEntregas + ' entrega(s) concluída(s)</div>' +
+        (V.localizacaoFinal ? '<div class="muted" style="margin-top:10px">📍 Encerrada em <a href="https://maps.google.com/?q=' + V.localizacaoFinal.lat + ',' + V.localizacaoFinal.lng + '" target="_blank" style="color:#7fd4ff">ver no mapa</a></div>' : '') +
       '</div></div>';
     return;
   }
@@ -91,7 +121,8 @@ function render(){
   var feitos = V.entregas.filter(function(e){ return e.status === "entregue"; });
   var proxima = pendentes[0];
   var h = '<div class="topo"><h1>🚚 ' + esc(V.carroNome) + '</h1>' +
-    '<div class="muted">' + (V.motoristaNome ? esc(V.motoristaNome) + " · " : "") + 'KM inicial ' + V.kmInicial + ' · ' + V.feitas + '/' + V.totalEntregas + ' entregues</div></div>';
+    '<div class="muted">' + (V.motoristaNome ? esc(V.motoristaNome) + " · " : "") + 'KM inicial ' + V.kmInicial + ' · ' + V.feitas + '/' + V.totalEntregas + ' entregues</div>' +
+    '<div id="localizacaoAtualLinha" style="margin-top:4px;font-size:12px">' + htmlLinhaLocalizacao() + '</div></div>';
   h += '<div class="content">';
   if(proxima){
     h += '<div class="card" style="border-color:#ffd23f"><div class="badge" style="background:#3a2a00;color:#ffd23f">🧭 SUGESTÃO: ENTREGAR PRIMEIRO</div>' +
@@ -358,13 +389,16 @@ function confirmarFinalizarViagem(){
   var msgEl = document.getElementById("msgFin");
   var km = parseFloat(document.getElementById("kmFinalInp").value);
   if(!(km>=0)){ msgEl.innerHTML = '<span class="err">Informe o KM final.</span>'; return; }
-  msgEl.innerHTML = '<span class="muted">Salvando…</span>';
-  fetch(B + "/api/viagem/" + TOKEN + "/finalizar", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({kmFinal:km}) })
-    .then(function(r){ return r.json(); }).then(function(j){
-      if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
-      fecharModal();
-      carregar();
-    }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão.</span>'; });
+  msgEl.innerHTML = '<span class="muted">Pegando localização e salvando…</span>';
+  pegarPosicaoAgora().then(function(pos){
+    var body = { kmFinal:km };
+    if(pos){ body.lat = pos.lat; body.lng = pos.lng; }
+    return fetch(B + "/api/viagem/" + TOKEN + "/finalizar", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+  }).then(function(r){ return r.json(); }).then(function(j){
+    if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
+    fecharModal();
+    carregar();
+  }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão.</span>'; });
 }
 
 carregar();

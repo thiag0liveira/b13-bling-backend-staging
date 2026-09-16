@@ -10182,6 +10182,7 @@ app.get("/api/viagem/:token",async(req,res)=>{
       kmInicial:v.kmInicial, kmFinal:v.kmFinal, finalizada:!!v.finalizadaEm,
       motoristaNome:v.motoristaNome, motoristaFuncionarioId:v.motoristaFuncionarioId,
       totalEntregas:entregas.length, feitas,
+      localizacaoAtual:v.localizacaoAtual||null, localizacaoFinal:v.localizacaoFinal||null,
       // ordem já é a sugestão de rota (foi organizada na tela antes de fechar a viagem)
       entregas,
     });
@@ -10201,6 +10202,32 @@ app.post("/api/viagem/:token/vincular-usuario",(req,res)=>{
       salvarViagensAtivas(viagens);
     }
     res.json({ok:true, motoristaNome:v.motoristaNome});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// atualiza a localização atual do motorista (mandado periodicamente pela página
+// dele enquanto a viagem está rolando) — dá pra acompanhar de fora também
+app.post("/api/viagem/:token/localizacao",(req,res)=>{
+  try{
+    const {lat,lng}=req.body||{};
+    if(!(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng)))) return res.status(400).json({erro:"lat/lng inválidos"});
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    v.localizacaoAtual={lat:Number(lat), lng:Number(lng), em:Date.now()};
+    salvarViagensAtivas(viagens);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// consulta rápida da viagem (status + última localização) — usado pela tela de rota
+// pra acompanhar sem expor os dados completos dos pedidos
+app.get("/api/rotas/viagem-status/:token",(req,res)=>{
+  try{
+    const v=lerViagensAtivas()[req.params.token];
+    if(!v) return res.status(404).json({erro:"não encontrada"});
+    res.json({ ok:true, finalizada:!!v.finalizadaEm, localizacaoAtual:v.localizacaoAtual||null,
+      localizacaoFinal:v.localizacaoFinal||null, kmInicial:v.kmInicial, kmFinal:v.kmFinal,
+      totalEntregas:v.pedidoIds.length, feitas:Object.values(v.entregas||{}).filter(e=>e.status==="entregue").length });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -10258,10 +10285,11 @@ app.post("/api/viagem/:token/finalizar",(req,res)=>{
     const viagens=lerViagensAtivas();
     const v=viagens[req.params.token];
     if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
-    const {kmFinal}=req.body||{};
+    const {kmFinal,lat,lng}=req.body||{};
     if(!(Number(kmFinal)>=v.kmInicial)) return res.status(400).json({erro:"KM final precisa ser maior ou igual ao KM inicial ("+v.kmInicial+")"});
     v.kmFinal=Number(kmFinal);
     v.finalizadaEm=Date.now();
+    if(Number.isFinite(Number(lat))&&Number.isFinite(Number(lng))) v.localizacaoFinal={lat:Number(lat),lng:Number(lng),em:Date.now()};
     salvarViagensAtivas(viagens);
     res.json({ok:true, kmRodado:+(v.kmFinal-v.kmInicial).toFixed(1)});
   }catch(e){ res.status(500).json({erro:e.message}); }
