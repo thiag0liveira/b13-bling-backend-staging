@@ -10881,6 +10881,35 @@ app.post("/api/pedidos-online/:blingId/restaurar-agendamento",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// DIAGNÓSTICO: mostra exatamente o que está gravado no pedido no Bling (frete,
+// endereço nos dois formatos, observação) e o que o sistema calcula como tipo —
+// pra achar na hora se o problema é "não salvou" ou "salvou mas não aparece certo"
+app.get("/api/diag/tipo-entrega/:id",async(req,res)=>{
+  try{
+    const id=req.params.id;
+    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const obs=String(ped.observacoes||"");
+    const props=lerPropostas();
+    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id))||null;
+    const enderecoEntrega=ped.transporte?.enderecoEntrega||null;
+    const etiqueta=ped.transporte?.etiqueta||null;
+    const temEnderecoEntrega=!!(enderecoEntrega?.endereco);
+    const temEtiqueta=!!(etiqueta?.endereco);
+    const temObsEntrega=/ENTREGA\s*—/i.test(obs);
+    const frete=Number(ped.transporte?.frete||0);
+    const ehEntregaCalculado = temEnderecoEntrega || temEtiqueta || temObsEntrega || frete>0 || (prop?.entrega?.tipo==="entrega");
+    res.json({
+      ok:true,
+      numero:ped.numero, id:ped.id, situacao:nomeSituacao(Number(ped.situacao?.id||0)),
+      frete, temEnderecoEntrega, enderecoEntrega, temEtiqueta, etiqueta,
+      temObsEntrega, observacoesCompletas:obs,
+      temRegistroLocal:!!prop, tipoNoRegistroLocal:prop?.entrega?.tipo||null,
+      enderecoNoRegistroLocal:prop?.entrega?.endereco||null,
+      CONCLUSAO: ehEntregaCalculado ? "entrega" : "retirada",
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
   try{
     const ped=await bling(`/pedidos/vendas/${req.params.blingId}`).then(r=>r?.data);
