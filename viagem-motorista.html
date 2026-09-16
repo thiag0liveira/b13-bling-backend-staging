@@ -206,9 +206,14 @@ function abrirEntrega(pedidoId){
   (PEDIDO_ATIVO.itens || []).forEach(function(it){ ITEM_STATUS[it.produtoId || 0] = "ok"; });
   renderModalEntrega();
 }
-function fecharModal(){
+function fecharModalDom(){
+  // só tira o modal da tela, sem mexer em PEDIDO_ATIVO — usada quando ainda vamos
+  // PRECISAR do pedido ativo logo em seguida (ex.: indo pra tela de assinatura)
   var m = document.getElementById("modalWrap");
   if(m) m.remove();
+}
+function fecharModal(){
+  fecharModalDom();
   PEDIDO_ATIVO = null;
 }
 function valorProblemaTotal(){
@@ -388,7 +393,7 @@ function irParaAssinatura(){
     }
     const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
     if(temPix){ perguntarBancoPix(); return; }
-    fecharModal();
+    fecharModalDom();
     renderAssinaturaGrande();
   }catch(erroInesperado){
     alert("Deu um erro inesperado ao tentar continuar: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
@@ -422,7 +427,7 @@ function fecharModais(){ const m = document.getElementById("modalPix"); if(m) m.
 function confirmarBancoPix(){
   try{
     fecharModais();
-    fecharModal();
+    fecharModalDom();
     renderAssinaturaGrande();
   }catch(erroInesperado){
     alert("Deu um erro inesperado ao continuar: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
