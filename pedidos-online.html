@@ -810,6 +810,7 @@ async function enviarSeparacao(id) {
   });
   const tipo = p && p.tipo === "entrega" ? "ENTREGA" : "RETIRADA";
   if (!confirm("Mandar o pedido " + (p ? p.numero : id) + " pra separação?\n\nEle está como " + tipo + (p && p.agendamento ? " agendada para " + p.agendamento.data.split("-").reverse().join("/") : "") + ".")) return;
+  mostrarCarregando(["Enviando pra separação…", "Aguardando confirmação…"]);
   try {
     const r = await fetch(B + "/api/mesa/enviar-separacao/" + id, {
       method: "POST",
@@ -821,6 +822,7 @@ async function enviarSeparacao(id) {
       })
     });
     const j = await r.json();
+    esconderCarregando();
     if (j.erro) {
       alert(j.erro);
       // conflito de estado: recarrega pra tela refletir a situação real
@@ -829,6 +831,7 @@ async function enviarSeparacao(id) {
     }
     recarregarAtual();
   } catch (e) {
+    esconderCarregando();
     alert("Erro: " + e.message);
   }
 }
@@ -836,6 +839,7 @@ async function enviarSeparacao(id) {
 // ou pedido alterado direto lá) — depois disso ele aparece normalmente na lista
 async function adotarPedido(id, numero) {
   if (!confirm("Trazer o pedido " + numero + " pra lista do sistema?\n\nEle será registrado aqui com os dados do Bling e passará a aparecer normalmente na tela.")) return;
+  mostrarCarregando(["Trazendo o pedido do Bling…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/adotar/" + id, {
       method: "POST",
@@ -848,11 +852,13 @@ async function adotarPedido(id, numero) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     if (j.jaEstava) alert("Esse pedido já estava no sistema.");else alert("✅ Pedido " + j.numero + " trazido pra lista.\n" + (j.cliente || "") + " · " + brl(j.total) + "\nSituação: " + (j.situacao || "—"));
     limparBusca();
     carregar();
   } catch (e) {
+    esconderCarregando();
     alert("Erro: " + e.message);
   }
 }
@@ -863,6 +869,7 @@ async function resolverPendencia(id) {
     return String(x.id) === String(id);
   });
   if (!confirm("Marcar a pendência do pedido " + (p ? p.numero : id) + " como RESOLVIDA?\n\nO pedido vai pra SEPARADO e fica liberado pra conferência.\n\nSe ainda falta ajustar item ou valor, faça isso antes em 'Resolver pendência (editar itens)'.")) return;
+  mostrarCarregando(["Atualizando no Bling…"]);
   try {
     const j = await fetch(B + "/api/fluxo/" + id + "/seguir-sem-pendencias", {
       method: "POST",
@@ -876,9 +883,11 @@ async function resolverPendencia(id) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     recarregarAtual();
   } catch (e) {
+    esconderCarregando();
     alert("Erro: " + e.message);
   }
 }
@@ -896,18 +905,21 @@ async function verFilmagem(id, numero) {
   } catch (e) { alert("Erro ao buscar a filmagem: " + e.message); }
 }
 async function ciclarNegoc(id) {
+  mostrarCarregando(["Atualizando…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/" + id + "/ok", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ funcionarioId: S.id })
     }).then(function (r) { return r.json(); });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     const p = (BUSCA_RES || PEDIDOS).find(function (x) { return String(x.id) === String(id); });
     if (p) { p.ok = j.marcado; p.okStatus = j.status || null; p.okPor = j.por || null; }
     recarregarAtual();
-  } catch (e) { alert("Erro: " + e.message); }
+  } catch (e) { esconderCarregando(); alert("Erro: " + e.message); }
 }
 async function marcarOk(id) {
+  mostrarCarregando(["Atualizando…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/" + id + "/ok", {
       method: "POST",
@@ -920,6 +932,7 @@ async function marcarOk(id) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     const p = (BUSCA_RES || PEDIDOS).find(function (x) {
       return String(x.id) === String(id);
@@ -930,6 +943,7 @@ async function marcarOk(id) {
     }
     render();
   } catch (e) {
+    esconderCarregando();
     alert("Erro: " + e.message);
   }
 }
@@ -1052,6 +1066,7 @@ async function confirmarCancelar(id) {
     btn.disabled = true;
     btn.textContent = "Cancelando…";
   }
+  mostrarCarregando(["Cancelando no Bling…", "Aguardando confirmação…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/" + id + "/cancelar", {
       method: "POST",
@@ -1065,10 +1080,12 @@ async function confirmarCancelar(id) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     fechar();
     recarregarAtual();
   } catch (e) {
+    esconderCarregando();
     const el = document.getElementById("errCanc");
     if (el) el.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
     if (btn) {
@@ -1330,6 +1347,7 @@ async function salvarAgendamento(id) {
     btn.disabled = true;
     btn.textContent = "Salvando…";
   }
+  mostrarCarregando(["Salvando agendamento…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/" + id + "/agendar-entrega", {
       method: "POST",
@@ -1345,10 +1363,12 @@ async function salvarAgendamento(id) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     fechar();
     recarregarAtual();
   } catch (e) {
+    esconderCarregando();
     const err = document.getElementById("errAg");
     if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
     if (btn) {
@@ -1359,6 +1379,7 @@ async function salvarAgendamento(id) {
 }
 // desfaz a mudança pra retirada: volta pra entrega e restaura o agendamento anterior
 async function desfazerRetirada(id) {
+  mostrarCarregando(["Voltando pra entrega…", "Restaurando o agendamento…"]);
   try {
     const p = (BUSCA_RES || PEDIDOS).find(function (x) {
       return String(x.id) === String(id);
@@ -1380,21 +1401,26 @@ async function desfazerRetirada(id) {
     }).then(function (x) {
       return x.json();
     });
+    esconderCarregando();
     fechar();
     recarregarAtual();
     if (r.erro) alert("Voltou pra entrega, mas não consegui restaurar o agendamento: " + r.erro);
   } catch (e) {
+    esconderCarregando();
     alert("Erro ao desfazer.");
   }
 }
 async function desagendar(id) {
+  mostrarCarregando(["Desagendando…"]);
   try {
     await fetch(B + "/api/pedidos-online/" + id + "/desagendar-entrega", {
       method: "POST"
     });
+    esconderCarregando();
     fechar();
     recarregarAtual();
   } catch (e) {
+    esconderCarregando();
     alert("Erro ao desagendar.");
   }
 }
@@ -1574,6 +1600,7 @@ async function moverStatus(id, situacaoId) {
     return;
   }
   if (err) err.innerHTML = '<div class="muted" style="font-size:12px;margin-top:8px">Alterando no Bling…</div>';
+  mostrarCarregando(["Alterando situação no Bling…", "Aguardando confirmação…"]);
   try {
     const j = await fetch(B + "/api/pedidos-online/" + id + "/situacao", {
       method: "POST",
@@ -1588,11 +1615,13 @@ async function moverStatus(id, situacaoId) {
     }).then(function (r) {
       return r.json();
     });
+    esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     fechar();
     alert("Pedido " + j.numero + ": " + j.de + " → " + j.para + "\nAutorizado por " + (j.autorizadoPor || "—"));
     if (BUSCA_RES) buscarPedido();else carregar();
   } catch (e) {
+    esconderCarregando();
     if (qr) qr.value = "";
     if (err) err.innerHTML = '<div style="color:#ff8090;font-size:12px;margin-top:8px">' + esc(e.message) + '</div>';
   }
