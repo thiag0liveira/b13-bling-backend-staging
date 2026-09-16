@@ -142,6 +142,7 @@ const S = {
   salvando: false,
   msg: "",
   diasResumo: {},
+  diasNumeros: {},
   // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
   diasDetalhe: {},
   // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
@@ -201,6 +202,7 @@ async function carregarTudo() {
     // estão agendados em OUTRO dia (pra não aparecerem como "disponíveis" aqui)
     const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
     S.diasResumo = rResumo.porDia || {};
+    S.diasNumeros = rResumo.numerosPorDia || {};
     S.diasDetalhe = rResumo.detalheDias || {};
     S.idsUsadosOutrosDias = {};
     Object.entries(rResumo.idsUsados || {}).forEach(([pid, data]) => {
@@ -679,6 +681,7 @@ async function atualizarResumoDias() {
   try {
     const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
     S.diasResumo = rResumo.porDia || {};
+    S.diasNumeros = rResumo.numerosPorDia || {};
     S.diasDetalhe = rResumo.detalheDias || {};
   } catch (e) {}
 }
@@ -1160,16 +1163,18 @@ function htmlResumoDias() {
         day: "2-digit",
         month: "2-digit"
       }),
-      qtd: S.diasResumo[iso] || 0
+      qtd: S.diasResumo[iso] || 0,
+      numeros: S.diasNumeros[iso] || []
     });
   }
   if (!dias.length) return "";
   return `<div class="card">
     <div style="font-weight:900;margin-bottom:8px">📅 Pedidos já agendados por dia</div>
     <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
-      ${dias.map(d => `<button onclick="S.data='${d.iso}';carregarTudo()" style="flex:0 0 auto;min-width:78px;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};background:${d.iso === S.data ? 'rgba(255,0,130,.12)' : '#181433'};color:#fff;cursor:pointer;text-align:center">
+      ${dias.map(d => `<button onclick="S.data='${d.iso}';carregarTudo()" style="flex:0 0 auto;min-width:92px;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};background:${d.iso === S.data ? 'rgba(255,0,130,.12)' : '#181433'};color:#fff;cursor:pointer;text-align:center">
         <div style="font-size:11px;color:#9a95c9;text-transform:capitalize">${d.label}</div>
         <div style="font-size:18px;font-weight:900;${d.qtd > 0 ? 'color:#3ce88a' : 'color:#514c96'}">${d.qtd}</div>
+        ${d.numeros.length ? `<div style="font-size:9px;color:#7fd4ff;line-height:1.3;margin-top:2px;white-space:normal">${d.numeros.slice(0, 6).map(n => '#' + esc(String(n))).join(" ")}${d.numeros.length > 6 ? ` +${d.numeros.length - 6}` : ''}</div>` : ''}
       </button>`).join("")}
     </div>
   </div>`;

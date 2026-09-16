@@ -13372,11 +13372,11 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
     });
     if(total>0){ porDia[data]=total; detalheDias[data]=porCarro; }
   });
+  const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
   // TAMBÉM conta quem só tem o DIA marcado (turno de entrega), mesmo sem carro
   // ou rota nenhuma atribuída — pedido agendado não precisa estar ligado a carro
   // pra contar como "agendado pra esse dia". Sem isso, um pedido só-com-turno
   // não aparecia no menu de dias nem na contagem, só quando alguém abria o dia.
-  const turnosAg=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
   Object.entries(turnosAg).forEach(([pid,t])=>{
     const data=t&&t.data; if(!data) return;
     const id=Number(pid);
@@ -13389,7 +13389,15 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
       idsUsados[id]=data;
     }
   });
-  res.json({porDia, idsUsados, detalheDias});
+  // números dos pedidos de cada dia (pra mostrar no menu de dias sem precisar abrir
+  // o dia) — usa o número já salvo no agendamento por turno; pra quem só tem carro
+  // atribuído (sem turno salvo) mostra o ID do Bling mesmo, como último recurso
+  const numerosPorDia={};
+  Object.entries(detalheDias).forEach(([data,porCarro])=>{
+    const ids=[...new Set(Object.values(porCarro||{}).flat())];
+    numerosPorDia[data]=ids.map(id=>(turnosAg[String(id)]&&turnosAg[String(id)].numero)||id);
+  });
+  res.json({porDia, idsUsados, detalheDias, numerosPorDia});
 });
 
 // Estimativa de peso do pedido a partir do nome/quantidade dos produtos —
