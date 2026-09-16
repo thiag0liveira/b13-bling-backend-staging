@@ -1238,7 +1238,6 @@ function renderInterno() {
   (S.config.carros || []).forEach(carro => {
     h += htmlCarroBox(carro);
   });
-  h += `<button class="btn btn-mag" style="width:100%;padding:14px;font-size:15px" ${S.salvando ? "disabled" : ""} onclick="salvarDia()">${S.salvando ? "Salvando…" : "💾 Salvar plano do dia"}</button>`;
   h += `</div>`;
   app.innerHTML = h;
   if (S.carroMapaAtivo) {
@@ -1414,10 +1413,11 @@ async function fecharViagem(carroId, vix) {
   if (!confirm("Fechar essa viagem com " + ids.length + " pedido(s)? Depois de fechada, não dá mais pra adicionar ou tirar pedido dela — só pra reabrir de novo.")) return;
   S.viagensFechadas[chave] = true;
   render();
-  // salva o plano do dia JÁ, na hora de fechar — antes isso só acontecia se
-  // alguém clicasse "Salvar plano do dia" à parte, e se esquecesse (ou recarregasse
-  // a página antes), a viagem fechada/iniciada sumia do servidor e o pedido
-  // aparecia de novo como "disponível", abrindo outra viagem com ele por engano.
+  // salva o plano do dia JÁ, na hora de fechar — não existe mais um botão de
+  // "Salvar plano do dia" separado; o salvamento acontece viagem por viagem, no
+  // momento de fechar cada uma (antes, dependia de alguém lembrar de salvar à
+  // parte, e se recarregasse a página antes, a viagem sumia do servidor e o
+  // pedido voltava a aparecer como "disponível", abrindo outra viagem com ele).
   await salvarDia();
 }
 function reabrirViagem(carroId, vix) {
