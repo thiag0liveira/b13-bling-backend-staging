@@ -7579,7 +7579,7 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       }catch(e){ console.error("Falha ao registrar pedido totem/site na lista de propostas (ignorado):",e.message); }
     }
 
-    res.json({ eraPrazoRecebido:eraPrazo, ok: true, contatoId, criouContato, pedido });
+    res.json({ ok: true, contatoId, criouContato, pedido });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
 
