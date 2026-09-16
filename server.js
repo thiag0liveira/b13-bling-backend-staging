@@ -10284,6 +10284,7 @@ app.get("/api/rotas/viagens-do-dia",(req,res)=>{
   try{
     const data=req.query.data;
     if(!data) return res.status(400).json({erro:"informe a data"});
+    const origem=`https://${req.get("host")}`;
     const viagens=lerViagensAtivas();
     const lista=Object.values(viagens).filter(v=>v.data===data).map(v=>{
       const entregasArr=Object.values(v.entregas||{});
@@ -10291,6 +10292,7 @@ app.get("/api/rotas/viagens-do-dia",(req,res)=>{
       const comOcorrencia=entregasArr.filter(e=>e.ocorrencia).length;
       return {
         token:v.token, carroId:v.carroId, vix:v.vix, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
+        motoristaTelefone:v.motoristaTelefone||null, url:`${origem}/viagem/${v.token}`,
         status: v.canceladaEm?"cancelada":v.finalizadaEm?"finalizada":"em_andamento",
         kmInicial:v.kmInicial, kmFinal:v.kmFinal,
         kmRodado: v.kmFinal!=null?+(v.kmFinal-v.kmInicial).toFixed(1):null,
