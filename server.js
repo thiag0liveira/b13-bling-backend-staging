@@ -253,6 +253,34 @@ let _filaAlta=[], _filaBaixa=[], _blingProcessando=false;
 // fila, quantos 429 (limite do Bling) e quais caminhos mais consomem.
 const _metricas={ inicio:Date.now(), total:0, err429:0, erros:0,
   esperaTotalMs:0, esperaMaxMs:0, porCaminho:{}, ultimas:[] };
+// DIAGNÓSTICO: mostra se o problema é token vencido, fila travada, ou o Bling
+// recusando de verdade (429/erro) — sem isso, "parou de funcionar" fica no chute.
+app.get("/api/diag/bling-status",async(req,res)=>{
+  const t=lerTokens();
+  const tokenInfo = t ? {
+    tem:true,
+    obtidoEm:new Date(t.obtido_em).toISOString(),
+    expiraEm:new Date(t.obtido_em+(t.expires_in-60)*1000).toISOString(),
+    expirado: Date.now() >= t.obtido_em+(t.expires_in-60)*1000,
+  } : {tem:false, aviso:"Nunca autorizado — acesse /auth"};
+  let testeAoVivo={ok:false};
+  const inicio=Date.now();
+  try{
+    const r=await bling(`/situacoes/vendas`);
+    testeAoVivo={ok:true, ms:Date.now()-inicio, itens:(r?.data||[]).length};
+  }catch(e){
+    testeAoVivo={ok:false, ms:Date.now()-inicio, erro:e.message, status:e.status||null};
+  }
+  res.json({
+    token:tokenInfo,
+    fila:{ emVoo:_blingEmVoo, altaPrioridadeEsperando:_filaAlta.length, baixaPrioridadeEsperando:_filaBaixa.length },
+    metricas:{ total:_metricas.total, erros:_metricas.erros, err429:_metricas.err429,
+      esperaMediaMs: _metricas.total?Math.round(_metricas.esperaTotalMs/_metricas.total):0,
+      esperaMaxMs:_metricas.esperaMaxMs, desde:new Date(_metricas.inicio).toISOString() },
+    ultimasChamadas: _metricas.ultimas.slice(0,15),
+    testeAoVivo,
+  });
+});
 function _registrarMetrica(path, esperouMs, duracaoMs, erro){
   _metricas.total++;
   _metricas.esperaTotalMs+=esperouMs;
