@@ -2220,23 +2220,28 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     const pago=noCaixa.pago || (pag&&pag.statusPagamento==="pago");
     let ped=null; try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     const ehPrazo=Number(ped?.situacao?.id||0)===SIT.PRAZO;
-    if(!pago && !ehPrazo){
-      return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
-        semPagamento:true, numero:ped?.numero||null });
-    }
     // NÃO confia no tipoEntrega mandado pelo front pra decidir ATENDIDO x VERIFICADO —
     // descobre pelo PRÓPRIO pedido no Bling (endereço de entrega, frete>0 ou a
     // observação "ENTREGA —", mesmo critério usado no resto do sistema). Assim,
     // mesmo que a tela mande "retirada" por engano (ou de propósito), um pedido que
     // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar pela
     // conferência real de entrega.
+    const obsPed=String(ped?.observacoes||"");
+    const ehEntregaReal = /ENTREGA\s*—/i.test(obsPed) || Number(ped?.transporte?.frete||0)>0
+      || !!ped?.transporte?.enderecoEntrega?.endereco || !!ped?.transporte?.etiqueta?.endereco;
+    // PAGAMENTO: só exige pagamento antes de conferir pra RETIRADA — o cliente leva
+    // na hora, então tem que estar pago. ENTREGA é paga pelo motorista ao finalizar
+    // a entrega (dinheiro, cartão, pix), então segue pra Verificado mesmo sem
+    // pagamento — mas o pedido continua marcado como "não recebido" até lá (não
+    // finge que já foi pago).
+    if(!pago && !ehPrazo && !ehEntregaReal){
+      return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
+        semPagamento:true, numero:ped?.numero||null });
+    }
     // Pedido de entrega conferido vai pra VERIFICADO (não mais direto pra EM ROTA) —
     // EM ROTA agora só acontece de verdade quando a viagem é iniciada (QR do
     // motorista), depois de confirmar que TODOS os pedidos da viagem já estão
     // Verificados.
-    const obsPed=String(ped?.observacoes||"");
-    const ehEntregaReal = /ENTREGA\s*—/i.test(obsPed) || Number(ped?.transporte?.frete||0)>0
-      || !!ped?.transporte?.enderecoEntrega?.endereco || !!ped?.transporte?.etiqueta?.endereco;
     const novoSit=ehEntregaReal?SIT.VERIFICADO:SIT.ATENDIDO;
     if(!novoSit) return res.status(400).json({erro:"Status VERIFICADO ou ATENDIDO não configurado."});
     // PEDIDO A PRAZO: não muda a situação (tem que continuar em PRAZO até ser pago) —

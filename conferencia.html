@@ -453,12 +453,13 @@ function abrirModal(){
   const tf=document.getElementById("tipoFixo");
   const ehPrazoSel=(sel.situacao&&sel.situacao.id)===SIT.PRAZO;
   tf.innerHTML=ehPrazoSel?"🧾 PRAZO":(tipoSel==="entrega"?"🚚 ENTREGA":"🏪 RETIRADA");
-  // NENHUM pedido pode ser conferido sem pagamento — vale pra entrega e retirada
-  // igual (antes só bloqueava retirada, e entrega sem pagar so falhava depois, no
-  // servidor, dando uma mensagem tardia em vez de bloquear na hora). PRAZO é a
-  // única exceção: foi autorizado, pode seguir sem estar pago ainda.
+  // RETIRADA precisa estar paga antes de conferir (o cliente leva na hora). ENTREGA
+  // é paga pelo motorista ao finalizar a entrega (dinheiro/cartão/pix na hora) —
+  // então segue mesmo sem pagamento, mas o aviso "Não pago" continua aparecendo
+  // (não esconde que ainda falta receber). PRAZO é exceção pros dois: foi
+  // autorizado, pode seguir sem estar pago ainda.
   const btnConf=document.getElementById("btnConfirmar");
-  if(!pago&&!ehPrazoSel){
+  if(!pago&&!ehPrazoSel&&tipoSel!=="entrega"){
     btnConf.disabled=true;
     document.getElementById("msgModal").innerHTML=`<span class="err">Este pedido ainda não foi pago em nenhum caixa — não pode ser conferido.</span>`;
   } else {
