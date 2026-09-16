@@ -266,7 +266,7 @@ app.get("/api/diag/bling-status",async(req,res)=>{
   let testeAoVivo={ok:false};
   const inicio=Date.now();
   try{
-    const r=await bling(`/situacoes/vendas`);
+    const r=await bling(`/situacoes/modulos`);
     testeAoVivo={ok:true, ms:Date.now()-inicio, itens:(r?.data||[]).length};
   }catch(e){
     testeAoVivo={ok:false, ms:Date.now()-inicio, erro:e.message, status:e.status||null};
