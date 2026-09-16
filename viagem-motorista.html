@@ -97,9 +97,18 @@ function carregar(){
     V = j;
     if(V.localizacaoAtual && !ULTIMA_POS) ULTIMA_POS = { lat:V.localizacaoAtual.lat, lng:V.localizacaoAtual.lng };
     if(!V.finalizada) iniciarRastreamento();
-    // mesmas formas de pagamento que o caixa atacado usa
+    // mesmas formas de pagamento que o caixa atacado usa, mas só as que fazem
+    // sentido na entrega — o Bling tem dezenas de variantes (parcelado 2x/3x,
+    // por bandeira, boleto de outras empresas, "usar crédito do cliente" etc.)
+    // que não servem aqui e só confundiam o motorista.
     fetch(B + "/api/formas-pagamento").then(function(r){ return r.json(); }).then(function(fj){
-      FORMAS = fj.data || [];
+      var todas = fj.data || [];
+      FORMAS = todas.filter(function(f){
+        var n = (f.nome||"");
+        return /^boleto adega ?13/i.test(n) || /^dinheiro$/i.test(n) || /^pix$/i.test(n) ||
+          /^cart[aã]o de cr[eé]dito\b/i.test(n) || /^cart[aã]o de d[eé]bito\b/i.test(n);
+      });
+      if(!FORMAS.length) FORMAS = todas; // se o filtro não achar nada, melhor mostrar tudo do que nada
     }).catch(function(){});
     fetch(B + "/api/pix-bancos").then(function(r){ return r.json(); }).then(function(bj){
       if(bj && Array.isArray(bj.bancos) && bj.bancos.length) PIX_BANCOS = bj;
