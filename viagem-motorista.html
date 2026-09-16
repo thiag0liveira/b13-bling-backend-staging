@@ -32,7 +32,7 @@
   .segbtn{flex:1;padding:10px 6px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#9a95c9;font-weight:800;font-size:12px;cursor:pointer;text-align:center}
   .segbtn.on-ok{background:#0f3a24;border-color:#2f9e6b;color:#3ce88a}
   .segbtn.on-problema{background:#3a0010;border-color:#b3341f;color:#ff8f7a}
-  .stepper{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:8px}
+  .stepper{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
   .stepbtn{width:40px;height:40px;border-radius:8px;border:none;background:#241f4d;color:#fff;font-size:20px;font-weight:900;cursor:pointer}
   .pagLinha{display:flex;gap:6px;margin-top:6px;align-items:center}
   .fullscreen{position:fixed;inset:0;background:#0f0d24;z-index:30;display:flex;flex-direction:column}
@@ -173,8 +173,7 @@ function valorFinalCalc(){ return Math.max(0, +(PEDIDO_ATIVO.total - valorProble
 function marcarItemStatus(produtoId, status){
   ITEM_STATUS[produtoId] = status;
   if(status === "problema" && !PROBLEMAS[produtoId]){
-    var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
-    PROBLEMAS[produtoId] = it ? it.quantidade : 1; // padrão: item inteiro, ajustável depois
+    PROBLEMAS[produtoId] = 1; // padrão: 1 unidade, não a quantidade toda — ajustável depois
   }
   renderModalEntrega();
 }
@@ -182,6 +181,17 @@ function mudarQtdProblema(produtoId, delta){
   var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
   var max = it ? it.quantidade : 99;
   PROBLEMAS[produtoId] = Math.max(1, Math.min(max, (PROBLEMAS[produtoId]||1) + delta));
+  renderModalEntrega();
+}
+function digitarQtdProblema(produtoId, valor){
+  var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
+  var max = it ? it.quantidade : 99;
+  PROBLEMAS[produtoId] = Math.max(1, Math.min(max, parseInt(valor) || 1));
+  renderModalEntrega();
+}
+function marcarQtdProblemaTudo(produtoId){
+  var it = (PEDIDO_ATIVO.itens||[]).find(function(i){ return (i.produtoId||0) === produtoId; });
+  PROBLEMAS[produtoId] = it ? it.quantidade : 1;
   renderModalEntrega();
 }
 
@@ -235,8 +245,12 @@ function renderModalEntrega(){
       '</div>' +
       (st === "problema" ? '<div class="stepper">' +
         '<button type="button" class="stepbtn" onclick="mudarQtdProblema(' + pid + ',-1)">−</button>' +
-        '<div style="min-width:70px;text-align:center"><b>' + (PROBLEMAS[pid]||1) + '</b><div class="muted" style="font-size:10px">de ' + it.quantidade + ' com problema</div></div>' +
+        '<div style="min-width:80px;text-align:center">' +
+          '<input type="number" min="1" max="' + it.quantidade + '" value="' + (PROBLEMAS[pid]||1) + '" style="width:56px;text-align:center;padding:6px;margin-top:0" onchange="digitarQtdProblema(' + pid + ',this.value)">' +
+          '<div class="muted" style="font-size:10px">de ' + it.quantidade + ' com problema</div>' +
+        '</div>' +
         '<button type="button" class="stepbtn" onclick="mudarQtdProblema(' + pid + ',1)">+</button>' +
+        '<button type="button" class="btn btn-ghost" style="width:auto;padding:8px 10px;font-size:11px" onclick="marcarQtdProblemaTudo(' + pid + ')">Tudo (' + it.quantidade + ')</button>' +
       '</div>' : '') +
     '</div>';
   }).join("");
