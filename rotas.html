@@ -226,6 +226,26 @@ function pedidosDisponiveis() {
   });
   return S.pedidos.filter(p => !usados.has(p.id) && !S.idsUsadosOutrosDias[p.id]);
 }
+async function reagendarPedidoDashboard(id, numero) {
+  const novaData = prompt("Pedido " + numero + " — reagendar pra qual dia? (AAAA-MM-DD)", hojeBR());
+  if (!novaData) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
+    alert("Data inválida. Use o formato AAAA-MM-DD.");
+    return;
+  }
+  try {
+    const j = await fetch(B + "/api/pedidos-online/" + id + "/agendar-entrega", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: novaData, turno: "qualquer", funcionarioId: FUNC ? FUNC.id : null })
+    }).then(r => r.json());
+    if (j.erro) { alert("Erro ao reagendar: " + j.erro); return; }
+    alert("Pedido " + numero + " reagendado pra " + novaData.split("-").reverse().join("/") + ".");
+    await atualizarResumoDias();
+    S.pedidosPorDia = {}; // invalida cache da visão geral (fora de uso, mas evita dado velho se reativada)
+    render();
+  } catch (e) { alert("Erro ao reagendar."); }
+}
 function pedidoPorId(id) {
   return S.pedidos.find(p => p.id === id);
 }
@@ -1083,6 +1103,41 @@ function render() {
   </div>`;
   h += htmlResumoDias();
   if (S.editandoConfig) h += htmlConfig();
+
+  // DIA QUE JÁ PASSOU: não dá mais pra mexer nos pedidos recebidos/entregues —
+  // vira um dashboard informativo do que aconteceu naquele dia, em vez da tela de
+  // montar rota (que não faz mais sentido pra um dia que já foi).
+  if (S.data < hojeBR()) {
+    const doDia = (S.pedidos || []).filter(p => p.agendamento && p.agendamento.data === S.data);
+    const semReceber = doDia.filter(p => p.pagamento && !p.pagamento.pago);
+    const entregues = doDia.filter(p => !(p.pagamento && !p.pagamento.pago));
+    const totalDia = doDia.reduce((s, p) => s + (p.total || 0), 0);
+    const totalSemReceber = semReceber.reduce((s, p) => s + (p.total || 0), 0);
+    h += `<div class="card">
+      <div style="font-weight:900;margin-bottom:10px">📊 Como foi ${dataLabel(S.data)}</div>
+      ${!doDia.length ? '<div class="muted">Nenhum pedido tinha sido agendado pra esse dia.</div>' : `
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+          <div><div class="muted" style="font-size:11px">Pedidos agendados</div><div style="font-size:20px;font-weight:900">${doDia.length}</div></div>
+          <div><div class="muted" style="font-size:11px">Recebidos</div><div style="font-size:20px;font-weight:900;color:#3ce88a">${entregues.length}</div></div>
+          <div><div class="muted" style="font-size:11px">Sem receber</div><div style="font-size:20px;font-weight:900;color:${semReceber.length ? '#ff8f7a' : '#514c96'}">${semReceber.length}</div></div>
+          <div><div class="muted" style="font-size:11px">Total do dia</div><div style="font-size:20px;font-weight:900">${brl(totalDia)}</div></div>
+          ${semReceber.length ? `<div><div class="muted" style="font-size:11px">Total sem receber</div><div style="font-size:20px;font-weight:900;color:#ff8f7a">${brl(totalSemReceber)}</div></div>` : ''}
+        </div>
+        ${semReceber.length ? `<div style="border-top:1px solid var(--border);padding-top:10px">
+          <div style="font-weight:900;color:#ff8f7a;margin-bottom:6px">⚠️ Não passaram em nenhum caixa nesse dia</div>
+          ${semReceber.map(p => `<div style="background:#3a0010;border:1px solid #b3341f;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+              <div><b>Pedido ${esc(p.numero)}</b> — ${esc(p.clienteNome)}<div class="muted" style="font-size:11px">Motivo provável: ${esc(p.situacao || "não chegou a sair pra entrega")} · ${brl(p.total)}</div></div>
+              <button class="btn btn-mag" style="font-size:11px;padding:6px 10px" onclick="reagendarPedidoDashboard(${p.id},'${esc(String(p.numero))}')">🔁 Reagendar</button>
+            </div>
+          </div>`).join("")}
+        </div>` : `<div class="muted" style="border-top:1px solid var(--border);padding-top:10px">✅ Todos os pedidos desse dia já foram recebidos em caixa.</div>`}
+      `}
+    </div>`;
+    h += "</div>";
+    app.innerHTML = h;
+    return;
+  }
 
   // ---- pedidos disponíveis (ainda sem dia nenhum) ----
   const disponiveis = pedidosDisponiveis();

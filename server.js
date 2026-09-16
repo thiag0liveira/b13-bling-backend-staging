@@ -14133,6 +14133,31 @@ setTimeout(()=>{ try{ migrarPermissoesPorAba(); }catch(e){ console.error("[migra
   }catch(e){}
 })();
 
+// backfill único: preenche o cliente nos agendamentos por turno (turnos_entrega.json)
+// que já existiam antes de a gente gravar esse campo — pra mostrar o nome no menu
+// de dias do Gerenciamento de Rota. Roda uma vez só (marca em arquivo), alguns
+// segundos depois do boot, com um pouco de espera entre cada chamada ao Bling.
+setTimeout(async()=>{
+  try{
+    const marca=`${DATA_DIR}/_backfill_cliente_turnos.json`;
+    if(fs.existsSync(marca)) return;
+    const tf=`${DATA_DIR}/turnos_entrega.json`;
+    const turnos=lerJSON(tf,{});
+    const faltando=Object.entries(turnos).filter(([id,t])=>t && !t.cliente);
+    let ok=0;
+    for(const [id,t] of faltando){
+      try{
+        const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+        if(d?.contato?.nome){ t.cliente=d.contato.nome; ok++; }
+      }catch(e){}
+      await new Promise(r=>setTimeout(r,200));
+    }
+    if(ok) salvarJSON(tf,turnos);
+    salvarJSON(marca,{em:Date.now(),verificados:faltando.length,preenchidos:ok});
+    console.log(`[backfill] cliente em turnos_entrega.json: ${ok}/${faltando.length} preenchido(s)`);
+  }catch(e){ console.error("[backfill] falhou:",e.message); }
+}, 10000);
+
 app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 
 // auditoria geral roda sozinha a cada 30 min (além de poder ser disparada manualmente
