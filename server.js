@@ -10167,23 +10167,27 @@ app.get("/api/viagem/:token",async(req,res)=>{
     for(const pid of v.pedidoIds){
       let det=null;
       try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
+      const endereco=[det?.transporte?.enderecoEntrega?.endereco||det?.transporte?.etiqueta?.endereco,det?.transporte?.enderecoEntrega?.numero||det?.transporte?.etiqueta?.numero,det?.transporte?.enderecoEntrega?.bairro||det?.transporte?.etiqueta?.bairro,det?.transporte?.enderecoEntrega?.municipio||det?.transporte?.etiqueta?.municipio].filter(Boolean).join(", ");
       const reg=v.entregas[String(pid)]||null;
+      let coord=null; if(endereco) coord=await geocodeEndereco(endereco).catch(()=>null);
       entregas.push({
         pedidoId:pid,
         numero:det?.numero||pid,
         clienteNome:det?.contato?.nome||"—",
-        endereco:[det?.transporte?.enderecoEntrega?.endereco||det?.transporte?.etiqueta?.endereco,det?.transporte?.enderecoEntrega?.numero||det?.transporte?.etiqueta?.numero,det?.transporte?.enderecoEntrega?.bairro||det?.transporte?.etiqueta?.bairro,det?.transporte?.enderecoEntrega?.municipio||det?.transporte?.etiqueta?.municipio].filter(Boolean).join(", "),
+        endereco, lat:coord?.lat||null, lng:coord?.lng||null,
         total:Number(det?.total||0),
         itens:(det?.itens||[]).map(i=>({produtoId:i.produto?.id||null, descricao:i.descricao||i.produto?.nome||"produto", quantidade:i.quantidade, valor:i.valor})),
         status:reg?reg.status:"pendente",
         entrega:reg||null,
       });
     }
+    const lojaCoord=await geocodeEndereco(LOJA_ENDERECO).catch(()=>null);
     const feitas=entregas.filter(e=>e.status==="entregue").length;
     res.json({
       ok:true, token:v.token, carroNome:v.carroNome, data:v.data,
       kmInicial:v.kmInicial, kmFinal:v.kmFinal, finalizada:!!v.finalizadaEm,
       motoristaNome:v.motoristaNome, motoristaFuncionarioId:v.motoristaFuncionarioId,
+      lojaCoord,
       totalEntregas:entregas.length, feitas,
       localizacaoAtual:v.localizacaoAtual||null, localizacaoFinal:v.localizacaoFinal||null,
       // ordem já é a sugestão de rota (foi organizada na tela antes de fechar a viagem)
