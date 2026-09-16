@@ -52,13 +52,35 @@ async function carregar() {
     document.getElementById("msg").textContent = "Erro ao carregar.";
   }
 }
+// tenta reconhecer o TIPO de embalagem e a CATEGORIA a partir do próprio nome do
+// produto (a proposta hoje só guarda o nome — não vem um campo de categoria
+// separado do Bling), pra aparecer na imagem que o cliente recebe.
+function tipoEmbalagem(nome) {
+  const n = (nome || "").toUpperCase();
+  if (/\bLN\b|LONG\s*NECK/.test(n)) return "Long Neck";
+  if (/\bLAT[AÃ]O\b|\bLATA\b|\bLATINHA\b/.test(n)) return "Latão";
+  if (/\bGARRAFA\b|\b1L\b|LITRO/.test(n)) return "Garrafa";
+  return "";
+}
+function categoriaProduto(nome) {
+  const n = (nome || "").toUpperCase();
+  if (/CHIVAS|BUCHANAN|WHISKY|JOHNNIE|BLACK LABEL|RED LABEL|JACK DANIEL/.test(n)) return "Whisky";
+  if (/VODKA|SMIRNOFF|ABSOLUT/.test(n)) return "Vodka";
+  if (/GIN\b/.test(n)) return "Gin";
+  if (/VINHO/.test(n)) return "Vinho";
+  if (/ENERG[EÉ]TICO|RED BULL|MONSTER|TNT/.test(n)) return "Energético";
+  if (/REFRIGERANTE|COCA|PEPSI|GUARAN[AÁ]|SPRITE/.test(n)) return "Refrigerante";
+  if (/[ÁA]GUA/.test(n)) return "Água";
+  if (/SKOL|BRAHMA|ANTARCTICA|BUDWEISER|HEINEKEN|STELLA|KAISER|ORIGINAL|PETRA|SPATEN|AMSTEL|SERRAMALTE|BOHEMIA|EISENBAHN|PATAGONIA/.test(n)) return "Cerveja";
+  return "";
+}
 function desenhar(p) {
   var _p$cliente;
   const itens = p.itens || [];
   const W = 680,
     padd = 28;
   const headerH = 120,
-    itemH = 40,
+    itemH = 52,
     footerH = 90;
   const H = headerH + itens.length * itemH + footerH + 30;
   const cv = document.getElementById("cv");
@@ -121,8 +143,19 @@ function desenhar(p) {
     ctx.textAlign = "left";
     let nome = i.nome || "";
     if (nome.length > 34) nome = nome.slice(0, 33) + "…";
-    ctx.fillText(nome, padd, y + itemH / 2);
+    ctx.fillText(nome, padd, y + 18);
+    // tipo de embalagem + categoria, numa linha menor embaixo do nome
+    const tipo = tipoEmbalagem(i.nome);
+    const cat = categoriaProduto(i.nome);
+    const tags = [cat, tipo].filter(Boolean).join(" · ");
+    if (tags) {
+      ctx.font = "11px Arial";
+      ctx.fillStyle = "#FF0082";
+      ctx.fillText(tags, padd, y + 34);
+    }
     ctx.textAlign = "center";
+    ctx.font = "14px Arial";
+    ctx.fillStyle = "#111";
     ctx.fillText(String(qtd), W - 260, y + itemH / 2);
     ctx.textAlign = "right";
     ctx.fillStyle = "#555";
