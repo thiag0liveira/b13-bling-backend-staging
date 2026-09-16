@@ -28,6 +28,8 @@
   .tag-prop{background:#2a1f00;color:#ffd23f}.tag-ped{background:#0a2a1a;color:#3ce88a}
   .tag-ger{background:#0d2440;color:#7fd4ff}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
   @media(min-width:900px){
@@ -208,6 +210,176 @@ function statusTag(p) {
   if (p.tipo === 'pedido') return `<span class="tag tag-prop">⚠️ Proposta (pedido não gerado)</span>`;
   return `<span class="tag tag-prop">Proposta</span>`;
 }
+// ---- impressão no comprovante térmico (mesmo estilo do caixa atacado/totem) ----
+function quebrarTextoProp(ctx, texto, maxW, maxLinhas) {
+  const palavras = String(texto || "").split(" ");
+  const linhas = [];
+  let atual = "";
+  for (const p of palavras) {
+    const teste = atual ? atual + " " + p : p;
+    if (ctx.measureText(teste).width > maxW && atual) { linhas.push(atual); atual = p; }
+    else atual = teste;
+    if (linhas.length >= maxLinhas - 1) break;
+  }
+  if (atual) linhas.push(atual);
+  if (linhas.length > maxLinhas) linhas.length = maxLinhas;
+  return linhas;
+}
+function imprimirPropostaOuPedido(id) {
+  const p = LISTA.find(x => x.id === id);
+  if (!p) { alert("Não encontrei esse registro pra imprimir."); return; }
+  // abre a janela JÁ, ainda dentro do clique — se deixar pra abrir só depois de
+  // montar QR/código de barras, o Chrome entende que não é mais uma ação direta
+  // do clique e bloqueia o popup sem avisar nada na tela.
+  const w = window.open("", "_blank", "width=420,height=700");
+  if (!w) { alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site e tente de novo."); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
+    <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
+  const ehPedido = !!p.pedidoBlingId;
+  const tmpQr = document.createElement("div");
+  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
+  document.body.appendChild(tmpQr);
+  let barCanvas = null;
+  if (ehPedido) {
+    try {
+      new QRCode(tmpQr, { text: location.origin + "/pedido/" + p.pedidoBlingId + "/acompanhar", width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    } catch (e) {}
+    barCanvas = document.createElement("canvas");
+    try { JsBarcode(barCanvas, String(p.pedidoBlingId), { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 }); } catch (e) {}
+  }
+  setTimeout(() => {
+    if (w.closed) { document.body.removeChild(tmpQr); return; }
+    const qrCanvas = tmpQr.querySelector("canvas");
+    const qrImg = tmpQr.querySelector("img");
+    const cv = desenharComprovanteProp(p, ehPedido, qrCanvas || qrImg, barCanvas);
+    document.body.removeChild(tmpQr);
+    const dataUrl = cv.toDataURL("image/png");
+    w.document.open();
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ehPedido ? "Pedido #" + esc(p.pedidoBlingNumero) : "Proposta"}</title>
+      <style>
+        *{margin:0;padding:0}
+        body{text-align:center;background:#fff}
+        img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
+        @page{margin:0}
+        @media print{ body{margin:0} img{max-width:100%;width:100%} }
+      </style></head>
+      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
+    w.document.close();
+  }, 220);
+}
+function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
+  var _pCliente;
+  const itensArr = p.itens || [];
+  const itemH = 50, headerH = 132, qrSize = 200;
+  const W = 580, padd = 24;
+  const _mc = document.createElement("canvas").getContext("2d");
+  _mc.font = "900 18px Arial";
+  const maxNomeW = W - 200 - padd - 16;
+  itensArr.forEach(i => { i._linhas = quebrarTextoProp(_mc, i.nome || "produto", maxNomeW, 2); });
+  const extraLinhas = itensArr.reduce((s, i) => s + ((i._linhas.length || 1) - 1), 0);
+  const H = 560 + itensArr.length * itemH + extraLinhas * 22 + (ehPedido ? qrSize + 90 : 70) + (p.observacao ? 60 : 0);
+  const cv = document.createElement("canvas");
+  const dpr = 3;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic";
+  // cabeçalho
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, headerH - 14);
+  ctx.fillStyle = "#fff"; ctx.font = "900 32px Arial"; ctx.textAlign = "left";
+  ctx.fillText("B13 BEBIDAS", padd, 50);
+  ctx.font = "900 14px Arial";
+  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH", padd, headerH - 40);
+  ctx.fillText("(31) 99971-9888", padd, headerH - 22);
+  ctx.fillStyle = "#000"; ctx.fillRect(0, headerH - 10, W, 4);
+  let y = headerH + 30;
+  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  if (ehPedido) {
+    ctx.fillText("PEDIDO", padd, y);
+    ctx.font = "900 44px Arial";
+    ctx.fillText("#" + (p.pedidoBlingNumero || p.pedidoBlingId), padd, y + 44);
+    y += 60;
+  } else {
+    // deixa BEM claro que ainda é só uma proposta, não um pedido fechado
+    ctx.fillStyle = "#b3341f"; ctx.font = "900 30px Arial";
+    ctx.fillText("PROPOSTA COMERCIAL", padd, y + 14);
+    ctx.font = "900 14px Arial"; ctx.fillStyle = "#b3341f";
+    ctx.fillText("(ainda não é um pedido fechado — sujeito a confirmação)", padd, y + 36);
+    y += 50;
+  }
+  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000";
+  ctx.fillText(new Date(p.criadoEm || Date.now()).toLocaleString("pt-BR"), padd, y);
+  y += 26;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 30;
+  // cliente
+  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("CLIENTE", padd, y);
+  ctx.font = "900 24px Arial";
+  ctx.fillText(((_pCliente = p.cliente) === null || _pCliente === void 0 ? void 0 : _pCliente.nome) || "Consumidor Final", padd, y + 28);
+  y += 48;
+  if (p.vendedorNome) {
+    ctx.font = "900 13px Arial"; ctx.fillText("VENDEDOR(A)", padd, y);
+    ctx.font = "900 18px Arial"; ctx.fillText(p.vendedorNome, padd + 150, y);
+    y += 28;
+  }
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 26;
+  // itens
+  ctx.font = "900 13px Arial"; ctx.fillStyle = "#666"; ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "right";
+  ctx.fillText("QTD", W - 300, y); ctx.fillText("UNIT.", W - 170, y); ctx.fillText("TOTAL", W - padd, y);
+  y += 14;
+  itensArr.forEach(i => {
+    const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
+    const linhas = i._linhas.length || 1;
+    ctx.textAlign = "left"; ctx.font = "900 18px Arial"; ctx.fillStyle = "#000";
+    (i._linhas || [i.nome]).forEach((ln, ix) => ctx.fillText(ln, padd, y + 20 + ix * 22));
+    ctx.textAlign = "right"; ctx.font = "700 17px Arial"; ctx.fillStyle = "#333";
+    ctx.fillText(String(qtd), W - 300, y + 20);
+    ctx.fillText(brl(un), W - 170, y + 20);
+    ctx.font = "900 17px Arial"; ctx.fillStyle = "#000";
+    ctx.fillText(brl(un * qtd), W - padd, y + 20);
+    y += itemH - 8 + (linhas - 1) * 22;
+    ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke();
+    y += 14;
+  });
+  y += 6;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 50);
+  ctx.fillStyle = "#fff"; ctx.font = "900 20px Arial"; ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd, y + 32);
+  ctx.textAlign = "right"; ctx.font = "900 26px Arial";
+  ctx.fillText(brl(p.total), W - padd, y + 33);
+  y += 66;
+  if (p.observacao) {
+    ctx.fillStyle = "#333"; ctx.font = "14px Arial"; ctx.textAlign = "left";
+    ctx.fillText("Obs: " + String(p.observacao).slice(0, 70), padd, y);
+    y += 30;
+  }
+  // QR + código de barras SÓ pra pedido de verdade — proposta não tem link de
+  // acompanhamento nenhum, porque ainda não virou pedido no Bling
+  if (ehPedido && qrEl) {
+    const qrX = (W - qrSize) / 2;
+    try { ctx.drawImage(qrEl, qrX, y, qrSize, qrSize); } catch (e) {}
+    y += qrSize + 20;
+    ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
+    ctx.fillText("Leia o QR para acompanhar seu pedido", W / 2, y);
+    y += 24;
+    if (barCanvas) {
+      const bw = 220, bh = barCanvas.height * (bw / barCanvas.width);
+      try { ctx.drawImage(barCanvas, (W - bw) / 2, y, bw, bh); } catch (e) {}
+      y += bh + 20;
+    }
+  }
+  ctx.font = "13px Arial"; ctx.fillStyle = "#9a95c9"; ctx.textAlign = "center";
+  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, y + 16);
+  // apara pro tamanho real
+  const cvFinal = document.createElement("canvas");
+  cvFinal.width = W * dpr; cvFinal.height = Math.round((y + 36) * dpr);
+  cvFinal.getContext("2d").drawImage(cv, 0, 0);
+  return cvFinal;
+}
+
 function cardProposta(p) {
   var _p$cliente, _p$cliente2, _p$cliente3;
   const data = p.criadoEm ? new Date(p.criadoEm).toLocaleString("pt-BR", {
@@ -234,6 +406,7 @@ function cardProposta(p) {
     ${p.observacao ? `<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
+      <button class="btn btn-ghost" onclick='imprimirPropostaOuPedido(${JSON.stringify(p.id)})'>🖨️ Imprimir</button>
       ${(_p$cliente3 = p.cliente) !== null && _p$cliente3 !== void 0 && _p$cliente3.telefone ? `<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>` : ''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
       ${!p.pedidoBlingId && p.status !== 'cancelada' ? `<button class="btn btn-mag" onclick='editarProposta(${JSON.stringify(p.id)})'>✏️ Editar</button>` : ''}
