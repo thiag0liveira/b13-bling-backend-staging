@@ -10304,6 +10304,32 @@ app.get("/api/rotas/viagens-do-dia",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// detalhes completos de uma viagem, pedido por pedido — pra conferir depois:
+// itens com problema, pagamentos recebidos, assinatura do cliente, ocorrência
+app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
+  try{
+    const v=lerViagensAtivas()[req.params.token];
+    if(!v) return res.status(404).json({erro:"viagem não encontrada"});
+    const entregas=[];
+    for(const pid of v.pedidoIds){
+      let det=null;
+      try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
+      const reg=v.entregas[String(pid)]||null;
+      entregas.push({
+        pedidoId:pid, numero:det?.numero||pid, clienteNome:det?.contato?.nome||"—",
+        total:Number(det?.total||0),
+        itens:(det?.itens||[]).map(i=>({produtoId:i.produto?.id||null, descricao:i.descricao||i.produto?.nome||"produto", quantidade:i.quantidade, valor:i.valor})),
+        status:reg?reg.status:"pendente",
+        entrega:reg||null,
+      });
+      await new Promise(r=>setTimeout(r,100));
+    }
+    res.json({ ok:true, token:v.token, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
+      kmInicial:v.kmInicial, kmFinal:v.kmFinal, iniciadaEm:v.iniciadaEm, finalizadaEm:v.finalizadaEm||null,
+      entregas });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // motorista finaliza a entrega de UM pedido da viagem: informa avaria/falta (se
 // houver), a forma de pagamento e a assinatura do cliente. O valor da avaria/falta
 // é subtraído do total antes de registrar o pagamento.

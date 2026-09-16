@@ -1514,6 +1514,44 @@ function fecharModais() {
   const m = document.getElementById("modais");
   if (m) m.innerHTML = "";
 }
+async function verDetalhesViagem(token) {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando detalhes…</div></div></div>`;
+  try {
+    const j = await fetch(B + "/api/rotas/viagem/" + token + "/detalhes").then(r => r.json());
+    if (j.erro) { alert("Erro ao carregar detalhes: " + j.erro); fecharModais(); return; }
+    const html = `<div class="modalBg"><div class="modal" style="max-width:520px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0">🚚 ${esc(j.carroNome)}${j.motoristaNome ? ' — ' + esc(j.motoristaNome) : ''}</h3>
+        <button class="btn btn-ghost" style="width:auto;padding:6px 12px" onclick="fecharModais()">✕</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">KM: ${j.kmInicial}${j.kmFinal != null ? ' → ' + j.kmFinal : ' (viagem ainda em andamento)'}</div>
+      ${j.entregas.map(e => {
+      const en = e.entrega;
+      if (!en || en.status !== "entregue") {
+        return `<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+            <b>Pedido ${esc(e.numero)}</b> — ${esc(e.clienteNome)}
+            <div style="color:#ffd23f;font-size:12px;margin-top:2px">⏳ Ainda não entregue</div>
+          </div>`;
+      }
+      const itensProbHtml = (en.itensProblema || []).map(ip => {
+        const it = e.itens.find(x => String(x.produtoId) === String(ip.produtoId));
+        return `<div style="font-size:12px;color:#ff8f7a">⚠️ ${ip.quantidade}x ${esc(it ? it.descricao : "produto")} com problema</div>`;
+      }).join("");
+      const pagHtml = (en.pagamentos || []).map(p => `<div style="font-size:12px">${esc(p.formaNome)}${p.banco ? ' (' + esc(p.banco) + ')' : ''}: <b>${brl(p.valor)}</b></div>`).join("");
+      return `<div style="background:#0f0d24;border:1px solid #2f9e6b;border-radius:8px;padding:8px 10px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between"><b>Pedido ${esc(e.numero)}</b><span class="muted" style="font-size:11px">${new Date(en.em).toLocaleString("pt-BR")}</span></div>
+          <div class="muted" style="font-size:12px">${esc(e.clienteNome)}</div>
+          <div style="margin-top:6px;font-size:12px">Total do pedido: ${brl(e.total)}${en.valorProblema > 0 ? ` · Desconto: -${brl(en.valorProblema)}` : ''} · <b style="color:#3ce88a">Recebido: ${brl(en.valorFinal)}</b></div>
+          ${itensProbHtml}
+          <div style="margin-top:4px">${pagHtml}</div>
+          ${en.ocorrencia ? `<div style="margin-top:6px;font-size:12px;color:#ffd23f">📸 Ocorrência: ${esc(en.ocorrencia.descricao || "sem descrição")}${en.ocorrencia.url ? ` — <a href="${esc(en.ocorrencia.url)}" target="_blank" style="color:#7fd4ff">ver anexo</a>` : ''}</div>` : ''}
+          ${en.assinaturaDataUrl ? `<div style="margin-top:8px"><div class="muted" style="font-size:11px;margin-bottom:4px">Assinatura do cliente:</div><img src="${en.assinaturaDataUrl}" style="width:100%;max-width:300px;background:#fff;border-radius:6px"></div>` : ''}
+        </div>`;
+    }).join("")}
+    </div></div>`;
+    document.getElementById("modais").innerHTML = html;
+  } catch (e) { alert("Erro ao carregar detalhes da viagem."); fecharModais(); }
+}
 function htmlViagensDoDia() {
   if (!S.viagensDoDia.length) return "";
   const cores = { em_andamento: "#ffd23f", finalizada: "#3ce88a", cancelada: "#ff8f7a" };
@@ -1530,6 +1568,7 @@ function htmlViagensDoDia() {
         ${v.comProblema ? ` · <span style="color:#ff8f7a">⚠️ ${v.comProblema} com avaria/falta</span>` : ''}
         ${v.comOcorrencia ? ` · <span style="color:#ffd23f">📸 ${v.comOcorrencia} ocorrência(s)</span>` : ''}
       </div>
+      <button class="btn btn-ghost" style="margin-top:6px;font-size:11px;padding:5px 10px" onclick="verDetalhesViagem('${v.token}')">🔍 Ver detalhes (itens, pagamento, assinatura)</button>
     </div>`).join("")}
   </div>`;
 }
