@@ -56,6 +56,11 @@ var ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
 var PAGAMENTOS = []; // [{formaId, valor}]
 var OCORRENCIA = { descricao: "", url: null, tipo: null };
 var FORMAS = [];
+var PIX_BANCOS = { bancos: ["Inter", "Santander", "Itaú"], padrao: "Inter" };
+var TAXA_CARTAO = 0.035;
+function ehFormaCartao(nome){ return /cr[eé]dito/i.test(nome||"") || /d[eé]bito/i.test(nome||""); }
+function ehFormaPix(nome){ return /pix/i.test(nome||""); }
+function comTaxa(valor){ return +(Number(valor||0) * (1 + TAXA_CARTAO)).toFixed(2); }
 var _watchId = null;
 var ULTIMA_POS = null; // {lat,lng}
 function iniciarRastreamento(){
@@ -95,6 +100,9 @@ function carregar(){
     // mesmas formas de pagamento que o caixa atacado usa
     fetch(B + "/api/formas-pagamento").then(function(r){ return r.json(); }).then(function(fj){
       FORMAS = fj.data || [];
+    }).catch(function(){});
+    fetch(B + "/api/pix-bancos").then(function(r){ return r.json(); }).then(function(bj){
+      if(bj && Array.isArray(bj.bancos) && bj.bancos.length) PIX_BANCOS = bj;
     }).catch(function(){});
     // vincula o usuário logado nesse aparelho, se tiver sessão do sistema
     try{
@@ -205,9 +213,10 @@ function marcarQtdProblemaTudo(produtoId){
 // ---- pagamentos: botões pré-definidos, igual ao caixa atacado (tocar adiciona,
 // pode repetir a mesma forma — ex.: 2 Pix) ----
 function selecionarFormaPagamento(formaId, formaNome){
-  const restante = +(valorFinalCalc() - somaPagamentos()).toFixed(2);
-  PAGAMENTOS = PAGAMENTOS.filter(function(p){ return p.formaId; }); // tira a linha vazia inicial, se tiver
-  PAGAMENTOS.push({ formaId: formaId, formaNome: formaNome, valor: restante > 0 ? restante : 0 });
+  const jaCoberto = +(somaPagamentos()).toFixed(2);
+  const faltaSemTaxa = +(valorFinalCalc() - jaCoberto).toFixed(2);
+  const valor = ehFormaCartao(formaNome) ? (faltaSemTaxa>0?comTaxa(faltaSemTaxa):0) : (faltaSemTaxa>0?faltaSemTaxa:0);
+  PAGAMENTOS.push({ formaId: formaId, formaNome: formaNome, valor: valor });
   renderModalEntrega();
 }
 function mudarValorPagamento(ix, valor){ PAGAMENTOS[ix].valor = valor === "" ? 0 : Number(valor); }
@@ -310,6 +319,38 @@ function irParaAssinatura(){
   var msgEl = document.getElementById("msgEntrega");
   var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
   if(valorFinalCalc()>0 && !temForma){ msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>'; return; }
+  const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
+  if(temPix){ perguntarBancoPix(); return; }
+  fecharModal();
+  renderAssinaturaGrande();
+}
+function perguntarBancoPix(){
+  const linhasPix = [];
+  PAGAMENTOS.forEach(function(p, i){ if(ehFormaPix(p.formaNome)) linhasPix.push(i); });
+  const bancos = PIX_BANCOS.bancos && PIX_BANCOS.bancos.length ? PIX_BANCOS.bancos : ["Inter","Santander","Itaú"];
+  const pad = PIX_BANCOS.padrao && bancos.indexOf(PIX_BANCOS.padrao)>=0 ? PIX_BANCOS.padrao : bancos[0];
+  const html = '<div class="modalBg" id="modalPix"><div class="modal">' +
+    '<h3 style="margin:0 0 8px">🏦 Pix — qual banco recebeu?</h3>' +
+    linhasPix.map(function(ix, k){
+      return '<div style="border:1px solid #2c2660;border-radius:10px;padding:8px;margin-bottom:8px">' +
+        '<div style="font-weight:700;margin-bottom:6px;font-size:12px">Pix' + (linhasPix.length>1 ? ' #'+(k+1) : '') + ' — ' + brl(PAGAMENTOS[ix].valor) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+        bancos.map(function(b){
+          return '<div class="formaBtn' + ((PAGAMENTOS[ix].banco||pad)===b?' sel':'') + '" style="min-width:80px" onclick="PAGAMENTOS[' + ix + '].banco=\'' + b + '\';perguntarBancoPix()">' + b + '</div>';
+        }).join("") + '</div></div>';
+    }).join("") +
+    '<div style="display:flex;gap:8px;margin-top:6px">' +
+      '<button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>' +
+      '<button class="btn btn-mag" style="flex:1" onclick="confirmarBancoPix()">Confirmar</button>' +
+    '</div>' +
+  '</div></div>';
+  var atual = document.getElementById("modalPix");
+  if(atual) atual.remove();
+  const wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+}
+function fecharModais(){ const m = document.getElementById("modalPix"); if(m) m.remove(); }
+function confirmarBancoPix(){
+  fecharModais();
   fecharModal();
   renderAssinaturaGrande();
 }
@@ -376,7 +417,7 @@ function confirmarEntrega(){
   var itensProblema = Object.keys(ITEM_STATUS).filter(function(k){ return ITEM_STATUS[k]==="problema"; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]||1}; });
   var pagamentos = PAGAMENTOS.filter(function(p){ return p.formaId && Number(p.valor)>0; }).map(function(p){
     var f = FORMAS.find(function(x){ return String(x.id)===String(p.formaId); });
-    return { formaId:p.formaId, formaNome: f?f.nome:"", valor:Number(p.valor) };
+    return { formaId:p.formaId, formaNome: (f?f.nome:p.formaNome||""), valor:Number(p.valor), banco:p.banco||null };
   });
   msgEl.innerHTML = '<span class="muted">Salvando…</span>';
   fetch(B + "/api/viagem/" + TOKEN + "/entrega/" + PEDIDO_ATIVO.pedidoId, {

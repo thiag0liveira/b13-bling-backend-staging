@@ -10318,7 +10318,7 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     if(valorFinal>0 && pags.length){
       const pg=lerPag();
       pg[String(pid)]={ statusPagamento:"pago", valorPago:somaPags, valorPedido:totalPedido,
-        historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), em:Date.now(), origem:"entrega (motorista)"})) };
+        historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), banco:p.banco||null, em:Date.now(), origem:"entrega (motorista)"})) };
       salvarPag(pg);
       // reflete no Bling também (parcelas reais), sem travar a resposta se falhar —
       // o pagamento já ficou registrado localmente de qualquer forma
@@ -10327,7 +10327,7 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     v.entregas[String(pid)]={
       status:"entregue", em:Date.now(),
       itensProblema:problemas, valorProblema, valorFinal,
-      pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor)})),
+      pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor),banco:p.banco||null})),
       assinaturaDataUrl:assinaturaDataUrl||null,
       ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
     };
