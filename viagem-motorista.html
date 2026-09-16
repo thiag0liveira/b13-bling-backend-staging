@@ -35,6 +35,9 @@
   .stepper{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:8px;flex-wrap:wrap}
   .stepbtn{width:40px;height:40px;border-radius:8px;border:none;background:#241f4d;color:#fff;font-size:20px;font-weight:900;cursor:pointer}
   .pagLinha{display:flex;gap:6px;margin-top:6px;align-items:center}
+  .formasGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:8px 0}
+  .formaBtn{background:#1c1846;border:2px solid #514c96;border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;font-size:11px;font-weight:800;min-height:40px;display:flex;align-items:center;justify-content:center}
+  .formaBtn.sel{border-color:#FF0082;background:#2a1a4d}
   .fullscreen{position:fixed;inset:0;background:#0f0d24;z-index:30;display:flex;flex-direction:column}
 </style>
 </head>
@@ -150,7 +153,7 @@ function abrirEntrega(pedidoId){
   PEDIDO_ATIVO = V.entregas.find(function(e){ return e.pedidoId === pedidoId; });
   ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
   PROBLEMAS = {}; // produtoId -> quantidade com problema
-  PAGAMENTOS = [{ formaId: "", valor: null }];
+  PAGAMENTOS = [];
   OCORRENCIA = { descricao: "", url: null, tipo: null };
   (PEDIDO_ATIVO.itens || []).forEach(function(it){ ITEM_STATUS[it.produtoId || 0] = "ok"; });
   renderModalEntrega();
@@ -195,17 +198,17 @@ function marcarQtdProblemaTudo(produtoId){
   renderModalEntrega();
 }
 
-// ---- pagamentos (várias formas, igual ao caixa atacado) ----
-function addLinhaPagamento(){ PAGAMENTOS.push({ formaId:"", valor:null }); renderModalEntrega(); }
-function removerLinhaPagamento(ix){ PAGAMENTOS.splice(ix,1); if(!PAGAMENTOS.length) PAGAMENTOS.push({formaId:"",valor:null}); renderModalEntrega(); }
-function mudarFormaPagamento(ix, formaId){ PAGAMENTOS[ix].formaId = formaId; }
-function mudarValorPagamento(ix, valor){ PAGAMENTOS[ix].valor = valor === "" ? null : Number(valor); }
-function somaPagamentos(){ return +PAGAMENTOS.reduce(function(s,p){ return s + (Number(p.valor)||0); }, 0).toFixed(2); }
-function preencherRestante(ix){
-  var restante = +(valorFinalCalc() - somaPagamentos() + (Number(PAGAMENTOS[ix].valor)||0)).toFixed(2);
-  PAGAMENTOS[ix].valor = restante > 0 ? restante : 0;
+// ---- pagamentos: botões pré-definidos, igual ao caixa atacado (tocar adiciona,
+// pode repetir a mesma forma — ex.: 2 Pix) ----
+function selecionarFormaPagamento(formaId, formaNome){
+  const restante = +(valorFinalCalc() - somaPagamentos()).toFixed(2);
+  PAGAMENTOS = PAGAMENTOS.filter(function(p){ return p.formaId; }); // tira a linha vazia inicial, se tiver
+  PAGAMENTOS.push({ formaId: formaId, formaNome: formaNome, valor: restante > 0 ? restante : 0 });
   renderModalEntrega();
 }
+function mudarValorPagamento(ix, valor){ PAGAMENTOS[ix].valor = valor === "" ? 0 : Number(valor); }
+function removerLinhaPagamento(ix){ PAGAMENTOS.splice(ix,1); renderModalEntrega(); }
+function somaPagamentos(){ return +PAGAMENTOS.reduce(function(s,p){ return s + (Number(p.valor)||0); }, 0).toFixed(2); }
 
 // ---- ocorrência (foto/vídeo + descrição) ----
 function toggleOcorrencia(){
@@ -254,13 +257,15 @@ function renderModalEntrega(){
       '</div>' : '') +
     '</div>';
   }).join("");
-  var formasOpts = '<option value="">Selecione…</option>' + FORMAS.map(function(f){ return '<option value="' + f.id + '">' + esc(f.nome) + '</option>'; }).join("");
+  var formasBotoes = '<div class="formasGrid">' + FORMAS.map(function(f){
+    var qtd = PAGAMENTOS.filter(function(p){ return p.formaId == f.id; }).length;
+    return '<div class="formaBtn' + (qtd?' sel':'') + '" onclick="selecionarFormaPagamento(' + f.id + ',\'' + esc(f.nome).replace(/'/g,"\\'") + '\')">' + esc(f.nome) + (qtd>1?' <b style="color:#ffd23f">×'+qtd+'</b>':'') + '</div>';
+  }).join("") + '</div>';
   var pagamentosHtml = PAGAMENTOS.map(function(p, ix){
     return '<div class="pagLinha">' +
-      '<select style="flex:1.4" onchange="mudarFormaPagamento(' + ix + ',this.value)">' + formasOpts.replace('value="' + p.formaId + '"', 'value="' + p.formaId + '" selected') + '</select>' +
-      '<input type="number" step="0.01" placeholder="Valor" style="flex:1" value="' + (p.valor==null?"":p.valor) + '" onchange="mudarValorPagamento(' + ix + ',this.value)">' +
-      '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:12px" title="Preencher o restante" onclick="preencherRestante(' + ix + ')">↧</button>' +
-      (PAGAMENTOS.length>1 ? '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:14px;background:#3a0010;color:#ff8f7a" onclick="removerLinhaPagamento(' + ix + ')">✕</button>' : '') +
+      '<span class="muted" style="flex:1.2;font-size:12px">' + esc(p.formaNome) + '</span>' +
+      '<input type="number" step="0.01" placeholder="Valor" style="flex:1" value="' + p.valor + '" onchange="mudarValorPagamento(' + ix + ',this.value)">' +
+      '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:14px;background:#3a0010;color:#ff8f7a" onclick="removerLinhaPagamento(' + ix + ')">✕</button>' +
     '</div>';
   }).join("");
   var valorProb = valorProblemaTotal(), valorFinal = valorFinalCalc(), somaPg = somaPagamentos();
@@ -278,8 +283,9 @@ function renderModalEntrega(){
     (valorProb>0 ? '<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8f7a"><span>Desconto (avaria/falta)</span><span>-' + brl(valorProb) + '</span></div>' : '') +
     '<div style="display:flex;justify-content:space-between;font-weight:900;font-size:16px;margin-top:2px"><span>Valor a receber</span><span style="color:#3ce88a">' + brl(valorFinal) + '</span></div>' +
     '<div style="margin-top:12px"><b style="font-size:13px">Forma(s) de pagamento recebida(s)</b>' +
+    '<div class="muted" style="font-size:11px;margin:4px 0">Toque na forma pra adicionar. Pode repetir a mesma forma (ex.: 2 Pix).</div>' +
+    formasBotoes +
     pagamentosHtml +
-    '<button type="button" class="btn btn-ghost" style="margin-top:6px" onclick="addLinhaPagamento()">+ Adicionar outra forma</button>' +
     (Math.abs(diff)>0.009 ? '<div class="muted" style="font-size:11px;margin-top:4px;color:#ffd23f">Falta ' + brl(diff) + ' pra fechar o valor (ou já recebeu diferente — tudo bem, só confira antes de continuar).</div>' : '') +
     '</div>' +
     '<button type="button" class="btn btn-ghost" style="margin-top:12px" onclick="toggleOcorrencia()">📸 Abrir ocorrência (foto/vídeo)</button>' +
