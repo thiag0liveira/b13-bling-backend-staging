@@ -10114,6 +10114,21 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
     const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId}=req.body||{};
     if(!Array.isArray(pedidoIds)||!pedidoIds.length) return res.status(400).json({erro:"a viagem precisa ter ao menos 1 pedido"});
     if(!(Number(kmInicial)>=0)) return res.status(400).json({erro:"informe o KM inicial"});
+    // CONFERE ANTES DE MEXER EM NADA: só pode iniciar viagem com pedido que já foi
+    // separado e conferido (situação Separado ou já Em rota). Sem essa checagem, um
+    // pedido que ainda estava "Aguardando separação"/"Em separação" pulava direto
+    // pra Em rota sem nunca passar pela conferência de verdade — divergindo do fluxo
+    // normal (Separação → Conferência → Em rota) usado no resto do sistema.
+    const naoConferidos=[];
+    for(const pid of pedidoIds){
+      let sit=null;
+      try{ sit=Number((await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data))?.situacao?.id||0); }catch(e){}
+      if(sit!==SIT.SEPARADO && sit!==SIT.EM_ROTA) naoConferidos.push({id:pid, situacao:nomeSituacao(sit||0)});
+      await new Promise(r=>setTimeout(r,120));
+    }
+    if(naoConferidos.length) return res.status(400).json({
+      erro:"Tem pedido nessa viagem que ainda não passou pela conferência: "+naoConferidos.map(p=>`#${p.id} (${p.situacao})`).join(", ")+". Confira esses pedidos (tela de Conferência) antes de iniciar a viagem.",
+      naoConferidos });
     const token=crypto.randomBytes(16).toString("hex");
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||null;
     const viagens=lerViagensAtivas();
@@ -10126,7 +10141,8 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
       entregas:{},
     };
     salvarViagensAtivas(viagens);
-    // move os pedidos pra EM ROTA — o motorista já está de saída com eles
+    // move pra EM ROTA só quem ainda não estava (já conferimos acima que só chega
+    // aqui pedido Separado ou já Em rota — não pula mais nenhuma etapa)
     const falharam=[];
     for(const pid of pedidoIds){
       try{ const r=await mudarSituacaoPedido(Number(pid),SIT.EM_ROTA); if(!r.ok) falharam.push(pid); }
