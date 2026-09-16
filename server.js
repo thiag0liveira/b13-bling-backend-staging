@@ -10315,9 +10315,22 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada"});
     const pid=Number(req.params.pedidoId);
     if(!v.pedidoIds.includes(pid)) return res.status(400).json({erro:"esse pedido não está nessa viagem"});
+    // trava ATÔMICA contra finalizar a MESMA entrega duas vezes ao mesmo tempo
+    // (clique duplo, ou dois celulares/abas na mesma viagem) — tudo isso roda antes
+    // de qualquer "await", então nenhuma outra requisição consegue entrelaçar no
+    // meio: quem chega primeiro reivindica a entrega, quem chega depois é recusado.
+    // Expira em 60s (se algo falhar no meio do caminho e não liberar sozinho, não
+    // fica travado pra sempre).
+    const regAtual=v.entregas[String(pid)];
+    if(regAtual && (regAtual.status==="entregue" || (regAtual.status==="processando" && Date.now()-regAtual.travadoEm<60000))){
+      return res.status(409).json({erro:"Esse pedido já foi finalizado (ou está sendo finalizado agora) — por você ou por outra pessoa acessando o mesmo link. Não dá pra registrar de novo."});
+    }
+    v.entregas[String(pid)]={status:"processando", travadoEm:Date.now()};
+    salvarViagensAtivas(viagens);
     const {itensProblema,pagamentos,assinaturaDataUrl,ocorrencia}=req.body||{};
+    const liberarTravaEntrega=()=>{ try{ const vv=lerViagensAtivas(); if(vv[req.params.token] && vv[req.params.token].entregas[String(pid)]?.status==="processando"){ delete vv[req.params.token].entregas[String(pid)]; salvarViagensAtivas(vv); } }catch(e){} };
     let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
-    if(!det) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    if(!det){ liberarTravaEntrega(); return res.status(404).json({erro:"pedido não encontrado no Bling"}); }
     const totalPedido=Number(det.total||0);
     const problemas=(Array.isArray(itensProblema)?itensProblema:[]).filter(i=>Number(i.quantidade)>0);
     const valorProblema=+problemas.reduce((s,i)=>{
@@ -10336,7 +10349,7 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     const totalPagoSemTaxa=+pags.reduce((s,p)=>s+(ehCartao(p.formaNome)?Number(p.valor)/(1+TAXA_CARTAO_PADRAO):Number(p.valor)),0).toFixed(2);
     if(valorFinal>0){
       const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
-      if(Math.abs(diff)>0.01) return res.status(400).json({erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`});
+      if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return res.status(400).json({erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}); }
     }
     // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
     // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
@@ -10359,9 +10372,8 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     salvarViagensAtivas(viagens);
     addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao))});
     res.json({ok:true, valorProblema, valorFinal});
-  }catch(e){ res.status(500).json({erro:e.message}); }
+  }catch(e){ try{ liberarTravaEntrega(); }catch(e2){} res.status(500).json({erro:e.message}); }
 });
-
 // finaliza a viagem inteira (motorista voltou) — informa o KM final
 app.post("/api/viagem/:token/finalizar",(req,res)=>{
   try{
