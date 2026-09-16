@@ -842,7 +842,12 @@ async function cancelar(id) {
   }
 }
 async function gerarPedido(id) {
-  if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
+  try {
+    if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
+  } catch (eConfirm) {
+    alert("Não consegui abrir a confirmação (o navegador pode estar bloqueando pop-ups repetidos nesta aba — recarregue a página e tente de novo). Detalhe: " + eConfirm.message);
+    return;
+  }
   try {
     const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
       method: "POST"
@@ -854,7 +859,7 @@ async function gerarPedido(id) {
     alert("Pedido #" + j.numero + " criado (aguardando separação)!");
     carregar();
   } catch (e) {
-    alert("Erro de conexão ao gerar o pedido. Ela continua como proposta — tente de novo.");
+    alert("Erro inesperado ao gerar o pedido (" + (e && e.message || "erro desconhecido") + "). Ela continua como proposta — tire um print desta mensagem e tente de novo.");
   }
 }
 async function excluir(id) {
@@ -1075,6 +1080,10 @@ async function desenharNotaEm(cv, p) {
   ctx.textAlign = "center";
   ctx.fillText("B13 Bebidas · Obrigado pela preferência!", W / 2, H - 16);
 }
+window.onerror = function(msg, url, linha, coluna, erro){
+  alert("Deu um erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
+  return false;
+};
 render();</script>
 </body>
 </html>
