@@ -2515,8 +2515,11 @@ async function finalizar() {
   // podia falhar silenciosamente e pular a pergunta.
   // EXCEÇÃO: pedido em PRAZO já foi entregue — só faltava o pagamento. Não faz
   // sentido perguntar destino, e o backend já força ATENDIDO nesse caso mesmo.
+  // Mesma coisa pra pedido já EM ROTA (saiu pra entrega, provavelmente com o
+  // motorista pelo app) — o backend também já vai direto pra ATENDIDO.
   const ehPrazoAgora = Number((PEDIDO_ATUAL || {}).situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.PRAZO : 806183);
-  if (!DESTINO_PEDIDO && !ehPrazoAgora) {
+  const ehEmRotaAgora = Number((PEDIDO_ATUAL || {}).situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.EM_ROTA : 820085);
+  if (!DESTINO_PEDIDO && !ehPrazoAgora && !ehEmRotaAgora) {
     perguntarDestinoPedido();
     return;
   }
