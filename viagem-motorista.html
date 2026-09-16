@@ -367,28 +367,32 @@ function renderModalEntrega(){
 }
 
 function irParaAssinatura(){
-  var msgEl = document.getElementById("msgEntrega");
-  var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
-  if(valorFinalCalc()>0 && !temForma){
-    msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>';
-    msgEl.scrollIntoView({behavior:"smooth", block:"center"});
-    return;
+  try{
+    var msgEl = document.getElementById("msgEntrega");
+    var temForma = PAGAMENTOS.some(function(p){ return p.formaId && Number(p.valor)>0; });
+    if(valorFinalCalc()>0 && !temForma){
+      msgEl.innerHTML = '<span class="err">Escolha ao menos uma forma de pagamento com valor.</span>';
+      msgEl.scrollIntoView({behavior:"smooth", block:"center"});
+      return;
+    }
+    // trava de verdade: o valor pago (descontando a taxa embutida nos pagamentos de
+    // cartão) precisa bater exatamente com o valor a receber — não deixa fechar nem
+    // a maior nem a menor.
+    var diffFinal = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
+    if(Math.abs(diffFinal) > 0.009){
+      var msgDiff = (diffFinal>0 ? 'Falta ' + brl(diffFinal) : 'Está ' + brl(-diffFinal) + ' a mais') + ' pra fechar certinho com o valor a receber (' + brl(valorFinalCalc()) + ').';
+      msgEl.innerHTML = '<span class="err">' + msgDiff + ' Ajuste o(s) valor(es) antes de continuar (confira se não adicionou a mesma forma 2x sem querer).</span>';
+      msgEl.scrollIntoView({behavior:"smooth", block:"center"});
+      alert("⚠️ " + msgDiff + "\n\nConfira as formas de pagamento adicionadas antes de continuar.");
+      return;
+    }
+    const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
+    if(temPix){ perguntarBancoPix(); return; }
+    fecharModal();
+    renderAssinaturaGrande();
+  }catch(erroInesperado){
+    alert("Deu um erro inesperado ao tentar continuar: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
   }
-  // trava de verdade: o valor pago (descontando a taxa embutida nos pagamentos de
-  // cartão) precisa bater exatamente com o valor a receber — não deixa fechar nem
-  // a maior nem a menor.
-  var diffFinal = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
-  if(Math.abs(diffFinal) > 0.009){
-    var msgDiff = (diffFinal>0 ? 'Falta ' + brl(diffFinal) : 'Está ' + brl(-diffFinal) + ' a mais') + ' pra fechar certinho com o valor a receber (' + brl(valorFinalCalc()) + ').';
-    msgEl.innerHTML = '<span class="err">' + msgDiff + ' Ajuste o(s) valor(es) antes de continuar (confira se não adicionou a mesma forma 2x sem querer).</span>';
-    msgEl.scrollIntoView({behavior:"smooth", block:"center"});
-    alert("⚠️ " + msgDiff + "\n\nConfira as formas de pagamento adicionadas antes de continuar.");
-    return;
-  }
-  const temPix = PAGAMENTOS.some(function(p){ return ehFormaPix(p.formaNome); });
-  if(temPix){ perguntarBancoPix(); return; }
-  fecharModal();
-  renderAssinaturaGrande();
 }
 function perguntarBancoPix(){
   const linhasPix = [];
@@ -416,9 +420,13 @@ function perguntarBancoPix(){
 }
 function fecharModais(){ const m = document.getElementById("modalPix"); if(m) m.remove(); }
 function confirmarBancoPix(){
-  fecharModais();
-  fecharModal();
-  renderAssinaturaGrande();
+  try{
+    fecharModais();
+    fecharModal();
+    renderAssinaturaGrande();
+  }catch(erroInesperado){
+    alert("Deu um erro inesperado ao continuar: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
+  }
 }
 
 // ---- assinatura (canvas com toque/mouse, tela cheia) ----
@@ -473,6 +481,7 @@ function limparAssinatura(){
 }
 
 function confirmarEntrega(){
+ try{
   var msgEl = document.getElementById("msgEntrega");
   var cv = document.getElementById("assinaturaCvGrande");
   var vazio = true;
@@ -498,6 +507,9 @@ function confirmarEntrega(){
     PEDIDO_ATIVO = null;
     carregar();
   }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão. Tenta de novo.</span>'; });
+ }catch(erroInesperado){
+   alert("Deu um erro inesperado ao finalizar: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
+ }
 }
 
 function abrirFinalizarViagem(){
@@ -517,6 +529,7 @@ function abrirFinalizarViagem(){
   var wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
 }
 function confirmarFinalizarViagem(){
+ try{
   var msgEl = document.getElementById("msgFin");
   var km = parseFloat(document.getElementById("kmFinalInp").value);
   if(!(km>=0)){ msgEl.innerHTML = '<span class="err">Informe o KM final.</span>'; return; }
@@ -530,6 +543,9 @@ function confirmarFinalizarViagem(){
     fecharModal();
     carregar();
   }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão.</span>'; });
+ }catch(erroInesperado){
+   alert("Deu um erro inesperado ao finalizar a viagem: " + erroInesperado.message + "\n\nTira um print dessa mensagem e manda pro suporte.");
+ }
 }
 
 function abrirMapaViagem(){
@@ -584,6 +600,11 @@ function fecharMapaViagem(){
   const f = document.querySelector(".fullscreen");
   if(f) f.remove();
 }
+
+window.onerror = function(msg, url, linha, coluna, erro){
+  alert("Deu um erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print dessa mensagem e manda pro suporte — sem isso a gente fica sem saber o que travou.");
+  return false;
+};
 
 carregar();
 </script>
