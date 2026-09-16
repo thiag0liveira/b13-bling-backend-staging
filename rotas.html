@@ -1407,20 +1407,28 @@ function htmlStopItem(ped, ix, infoExtra, botoes) {
     </div>` : ''}
   </div>`;
 }
-function fecharViagem(carroId, vix) {
+async function fecharViagem(carroId, vix) {
   const chave = carroId + "_" + vix;
   const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
   if (!ids.length) { alert("Essa viagem não tem pedidos ainda."); return; }
   if (!confirm("Fechar essa viagem com " + ids.length + " pedido(s)? Depois de fechada, não dá mais pra adicionar ou tirar pedido dela — só pra reabrir de novo.")) return;
   S.viagensFechadas[chave] = true;
   render();
+  // salva o plano do dia JÁ, na hora de fechar — antes isso só acontecia se
+  // alguém clicasse "Salvar plano do dia" à parte, e se esquecesse (ou recarregasse
+  // a página antes), a viagem fechada/iniciada sumia do servidor e o pedido
+  // aparecia de novo como "disponível", abrindo outra viagem com ele por engano.
+  await salvarDia();
 }
 function reabrirViagem(carroId, vix) {
   const chave = carroId + "_" + vix;
   delete S.viagensFechadas[chave];
   render();
 }
-function iniciarViagem(carroId, carroNome, vix) {
+async function iniciarViagem(carroId, carroNome, vix) {
+  // garante que o plano do dia está salvo no servidor antes de iniciar de verdade
+  // (segurança extra, caso o salvamento do "fechar viagem" não tenha ido pra frente)
+  await salvarDia();
   const chave = carroId + "_" + vix;
   const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
   if (!ids.length) return;
