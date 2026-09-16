@@ -59,7 +59,7 @@ var FORMAS = [];
 var PIX_BANCOS = { bancos: ["Inter", "Santander", "Itaú"], padrao: "Inter" };
 var TAXA_CARTAO = 0.035;
 function ehFormaCartao(nome){ return /cr[eé]dito/i.test(nome||"") || /d[eé]bito/i.test(nome||""); }
-function ehFormaPix(nome){ return /pix/i.test(nome||""); }
+function ehFormaPix(nome){ return /pix/i.test(nome||"") && /banco/i.test(nome||""); }
 function comTaxa(valor){ return +(Number(valor||0) * (1 + TAXA_CARTAO)).toFixed(2); }
 var _watchId = null;
 var ULTIMA_POS = null; // {lat,lng}
@@ -110,18 +110,27 @@ function carregar(){
     V = j;
     if(V.localizacaoAtual && !ULTIMA_POS) ULTIMA_POS = { lat:V.localizacaoAtual.lat, lng:V.localizacaoAtual.lng };
     if(!V.finalizada) iniciarRastreamento();
-    // mesmas formas de pagamento que o caixa atacado usa, mas só as que fazem
-    // sentido na entrega — o Bling tem dezenas de variantes (parcelado 2x/3x,
-    // por bandeira, boleto de outras empresas, "usar crédito do cliente" etc.)
-    // que não servem aqui e só confundiam o motorista.
+    // mesma lógica do caixa atacado: pix (banco/máquina), dinheiro, débito,
+    // crédito à vista — mais o boleto ADEGA 13, que o caixa atacado não usa mas
+    // a entrega precisa.
     fetch(B + "/api/formas-pagamento").then(function(r){ return r.json(); }).then(function(fj){
-      var todas = fj.data || [];
-      FORMAS = todas.filter(function(f){
-        var n = (f.nome||"");
-        return /^boleto adega ?13/i.test(n) || /^dinheiro$/i.test(n) || /^pix$/i.test(n) ||
-          /^cart[aã]o de cr[eé]dito\b/i.test(n) || /^cart[aã]o de d[eé]bito\b/i.test(n);
+      var todas = (fj.data||[]).filter(function(f){ return f.situacao!=="I"; });
+      var padroes = [/pix/i, /dinheiro/i, /d[eé]bito/i, /cr[eé]dito.*vista/i];
+      var filtradas = todas.filter(function(f){
+        var n = f.descricao||f.nome||"";
+        return padroes.some(function(p){ return p.test(n); }) && !/pix.*bling.*conta/i.test(n);
       });
-      if(!FORMAS.length) FORMAS = todas; // se o filtro não achar nada, melhor mostrar tudo do que nada
+      var pixReal = filtradas.find(function(f){ return /pix/i.test(f.descricao||f.nome||""); });
+      var semPix = filtradas.filter(function(f){ return !/pix/i.test(f.descricao||f.nome||""); });
+      var boleto = todas.find(function(f){ return /^boleto adega ?13/i.test(f.descricao||f.nome||""); });
+      var lista = [];
+      if(pixReal){
+        lista.push({ id: pixReal.id, nome: "Pix Banco", pixTipo: "banco" });
+        lista.push({ id: pixReal.id, nome: "Pix Máquina", pixTipo: "maquina" });
+      }
+      lista = lista.concat(semPix.map(function(f){ return { id:f.id, nome: f.descricao||f.nome }; }));
+      if(boleto) lista.push({ id: boleto.id, nome: boleto.descricao||boleto.nome });
+      FORMAS = lista.length ? lista : todas.map(function(f){ return { id:f.id, nome: f.descricao||f.nome }; });
     }).catch(function(){});
     fetch(B + "/api/pix-bancos").then(function(r){ return r.json(); }).then(function(bj){
       if(bj && Array.isArray(bj.bancos) && bj.bancos.length) PIX_BANCOS = bj;
