@@ -10098,6 +10098,162 @@ app.post("/api/rotas/motivo-nao-entrega",(req,res)=>{
     res.json({ok:true});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
+// ===================== ÁREA DO MOTORISTA (viagem por QR code) =====================
+// Uma viagem "fechada" na tela de rota vira um link temporário (via QR) que o
+// motorista acessa pelo celular dele, sem precisar de login no sistema. O link
+// fica ativo até a viagem ser finalizada (informar o KM final).
+const VIAGENS_ATIVAS_FILE=`${DATA_DIR}/viagens_ativas.json`; // token -> {dados da viagem}
+function lerViagensAtivas(){ return lerJSON(VIAGENS_ATIVAS_FILE,{}); }
+function salvarViagensAtivas(o){ salvarJSON(VIAGENS_ATIVAS_FILE,o); }
+
+// inicia a viagem: gera o token/QR, grava o KM inicial e move todos os pedidos
+// dessa viagem pra EM_ROTA de uma vez (o motorista já está saindo com eles)
+app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
+  try{
+    const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId}=req.body||{};
+    if(!Array.isArray(pedidoIds)||!pedidoIds.length) return res.status(400).json({erro:"a viagem precisa ter ao menos 1 pedido"});
+    if(!(Number(kmInicial)>=0)) return res.status(400).json({erro:"informe o KM inicial"});
+    const token=crypto.randomBytes(16).toString("hex");
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||null;
+    const viagens=lerViagensAtivas();
+    viagens[token]={
+      token, carroId, carroNome:carroNome||"", data:data||"", vix:Number(vix)||0,
+      pedidoIds:pedidoIds.map(Number),
+      kmInicial:Number(kmInicial), kmFinal:null,
+      iniciadaEm:Date.now(), finalizadaEm:null,
+      motoristaFuncionarioId:funcionarioId||null, motoristaNome:funcNome,
+      entregas:{},
+    };
+    salvarViagensAtivas(viagens);
+    // move os pedidos pra EM ROTA — o motorista já está de saída com eles
+    const falharam=[];
+    for(const pid of pedidoIds){
+      try{ const r=await mudarSituacaoPedido(Number(pid),SIT.EM_ROTA); if(!r.ok) falharam.push(pid); }
+      catch(e){ falharam.push(pid); }
+      await new Promise(r=>setTimeout(r,150));
+    }
+    const origem=`https://${req.get("host")}`;
+    res.json({ok:true, token, url:`${origem}/viagem/${token}`, falharamEmRota:falharam});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// dados da viagem pro motorista ver (sem precisar de login)
+app.get("/api/viagem/:token",async(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    const entregas=[];
+    for(const pid of v.pedidoIds){
+      let det=null;
+      try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
+      const reg=v.entregas[String(pid)]||null;
+      entregas.push({
+        pedidoId:pid,
+        numero:det?.numero||pid,
+        clienteNome:det?.contato?.nome||"—",
+        endereco:[det?.transporte?.enderecoEntrega?.endereco||det?.transporte?.etiqueta?.endereco,det?.transporte?.enderecoEntrega?.numero||det?.transporte?.etiqueta?.numero,det?.transporte?.enderecoEntrega?.bairro||det?.transporte?.etiqueta?.bairro,det?.transporte?.enderecoEntrega?.municipio||det?.transporte?.etiqueta?.municipio].filter(Boolean).join(", "),
+        total:Number(det?.total||0),
+        itens:(det?.itens||[]).map(i=>({produtoId:i.produto?.id||null, descricao:i.descricao||i.produto?.nome||"produto", quantidade:i.quantidade, valor:i.valor})),
+        status:reg?reg.status:"pendente",
+        entrega:reg||null,
+      });
+    }
+    const feitas=entregas.filter(e=>e.status==="entregue").length;
+    let formasPagto=[];
+    try{ formasPagto=await bling(`/formas-pagamentos`).then(r=>(r?.data||[]).map(f=>({id:f.id,nome:f.descricao||f.nome}))); }catch(e){}
+    res.json({
+      ok:true, token:v.token, carroNome:v.carroNome, data:v.data,
+      kmInicial:v.kmInicial, kmFinal:v.kmFinal, finalizada:!!v.finalizadaEm,
+      motoristaNome:v.motoristaNome,
+      totalEntregas:entregas.length, feitas,
+      // ordem já é a sugestão de rota (foi organizada na tela antes de fechar a viagem)
+      entregas, formasPagamento:formasPagto,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// motorista vincula o usuário logado dele (se tiver sessão do sistema no celular)
+app.post("/api/viagem/:token/vincular-usuario",(req,res)=>{
+  try{
+    const {funcionarioId}=req.body||{};
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    if(!v.motoristaFuncionarioId && funcionarioId){
+      const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||null;
+      v.motoristaFuncionarioId=funcionarioId; v.motoristaNome=funcNome;
+      salvarViagensAtivas(viagens);
+    }
+    res.json({ok:true, motoristaNome:v.motoristaNome});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// motorista finaliza a entrega de UM pedido da viagem: informa avaria/falta (se
+// houver), a forma de pagamento e a assinatura do cliente. O valor da avaria/falta
+// é subtraído do total antes de registrar o pagamento.
+app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada"});
+    const pid=Number(req.params.pedidoId);
+    if(!v.pedidoIds.includes(pid)) return res.status(400).json({erro:"esse pedido não está nessa viagem"});
+    const {itensProblema,formaPagamentoId,formaPagamentoNome,assinaturaDataUrl,obs}=req.body||{};
+    let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
+    if(!det) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const totalPedido=Number(det.total||0);
+    const problemas=(Array.isArray(itensProblema)?itensProblema:[]).filter(i=>Number(i.quantidade)>0);
+    const valorProblema=+problemas.reduce((s,i)=>{
+      const itemOrig=(det.itens||[]).find(x=>String(x.produto?.id)===String(i.produtoId));
+      const valorUn=Number(itemOrig?.valor||0);
+      return s+valorUn*Number(i.quantidade||0);
+    },0).toFixed(2);
+    const valorFinal=Math.max(0,+(totalPedido-valorProblema).toFixed(2));
+    // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
+    // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
+    if(valorFinal>0 && formaPagamentoNome){
+      const pg=lerPag();
+      pg[String(pid)]={ statusPagamento:"pago", valorPago:valorFinal, valorPedido:totalPedido,
+        historico:[{formaNome:formaPagamentoNome, valor:valorFinal, em:Date.now(), origem:"entrega (motorista)"}] };
+      salvarPag(pg);
+      // reflete no Bling também (parcela real), sem travar a resposta se falhar —
+      // o pagamento já ficou registrado localmente de qualquer forma
+      if(formaPagamentoId){
+        atualizarParcelasBling(pid,[{formaPagamento:{id:Number(formaPagamentoId)},valor:valorFinal}]).catch(()=>{});
+      }
+    }
+    v.entregas[String(pid)]={
+      status:"entregue", em:Date.now(),
+      itensProblema:problemas, valorProblema, valorFinal,
+      formaPagamentoNome:formaPagamentoNome||null,
+      assinaturaDataUrl:assinaturaDataUrl||null, obs:String(obs||"").slice(0,300),
+    };
+    salvarViagensAtivas(viagens);
+    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0});
+    res.json({ok:true, valorProblema, valorFinal});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// finaliza a viagem inteira (motorista voltou) — informa o KM final
+app.post("/api/viagem/:token/finalizar",(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    const {kmFinal}=req.body||{};
+    if(!(Number(kmFinal)>=v.kmInicial)) return res.status(400).json({erro:"KM final precisa ser maior ou igual ao KM inicial ("+v.kmInicial+")"});
+    v.kmFinal=Number(kmFinal);
+    v.finalizadaEm=Date.now();
+    salvarViagensAtivas(viagens);
+    res.json({ok:true, kmRodado:+(v.kmFinal-v.kmInicial).toFixed(1)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+app.get("/viagem/:token",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"viagem-motorista.html")); });
+
 app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
   try{
     const id=Number(req.params.blingId);

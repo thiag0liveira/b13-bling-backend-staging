@@ -55,6 +55,7 @@
   .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:300;padding:16px}
   .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:520px;width:100%;max-height:86vh;overflow:auto}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
@@ -143,6 +144,9 @@ const S = {
   msg: "",
   diasResumo: {},
   diasPedidos: {},
+  viagensFechadas: {},
+  // chave carroId_vix -> true (bloqueia edição, libera "iniciar viagem")
+  viagensIniciadas: {},
   // "YYYY-MM-DD" -> quantidade de pedidos já atribuídos naquele dia
   diasDetalhe: {},
   // "YYYY-MM-DD" -> {carroId: [pedidoIds]}
@@ -1394,6 +1398,53 @@ function htmlStopItem(ped, ix, infoExtra, botoes) {
     </div>` : ''}
   </div>`;
 }
+function fecharViagem(carroId, vix) {
+  const chave = carroId + "_" + vix;
+  const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
+  if (!ids.length) { alert("Essa viagem não tem pedidos ainda."); return; }
+  if (!confirm("Fechar essa viagem com " + ids.length + " pedido(s)? Depois de fechada, não dá mais pra adicionar ou tirar pedido dela — só pra reabrir de novo.")) return;
+  S.viagensFechadas[chave] = true;
+  render();
+}
+function reabrirViagem(carroId, vix) {
+  const chave = carroId + "_" + vix;
+  delete S.viagensFechadas[chave];
+  render();
+}
+async function iniciarViagem(carroId, carroNome, vix) {
+  const chave = carroId + "_" + vix;
+  const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
+  if (!ids.length) return;
+  const km = prompt("KM inicial (do painel do carro agora):");
+  if (km == null) return;
+  if (!(parseFloat(km) >= 0)) { alert("KM inválido."); return; }
+  try {
+    const j = await fetch(B + "/api/rotas/viagem/iniciar", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ carroId, carroNome, data: S.data, vix, pedidoIds: ids, kmInicial: parseFloat(km), funcionarioId: FUNC ? FUNC.id : null })
+    }).then(r => r.json());
+    if (j.erro) { alert("Erro ao iniciar viagem: " + j.erro); return; }
+    S.viagensIniciadas[chave] = { token: j.token, url: j.url };
+    if (j.falharamEmRota && j.falharamEmRota.length) alert("Atenção: não consegui mudar o status de " + j.falharamEmRota.length + " pedido(s) pra Em rota no Bling. Confira manualmente.");
+    mostrarQrViagem(j.url);
+    render();
+  } catch (e) { alert("Erro ao iniciar viagem."); }
+}
+function mostrarQrViagem(url) {
+  const html = `<div class="modalBg"><div class="modal" style="max-width:340px;text-align:center">
+    <h3 style="margin:0 0 8px">📱 QR da viagem</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">O motorista escaneia esse código pra abrir a área dele (vale até finalizar a viagem).</div>
+    <div id="qrViagemBox" style="display:flex;justify-content:center;margin-bottom:10px"></div>
+    <input readonly value="${esc(url)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;font-size:11px;text-align:center">
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="fecharModais()">Fechar</button>
+  </div></div>`;
+  document.getElementById("modais").innerHTML = html;
+  try { new QRCode(document.getElementById("qrViagemBox"), { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M }); } catch (e) {}
+}
+function fecharModais() {
+  const m = document.getElementById("modais");
+  if (m) m.innerHTML = "";
+}
 function htmlCarroBox(carro) {
   var _S$atribuicoes$carro$2;
   const viagens = ((_S$atribuicoes$carro$2 = S.atribuicoes[carro.id]) === null || _S$atribuicoes$carro$2 === void 0 ? void 0 : _S$atribuicoes$carro$2.viagens) || [{
@@ -1446,7 +1497,11 @@ function htmlViagemBox(carro, vix, cap) {
     const misto = ts.length > 1;
     return `<span style="background:${misto ? '#b3341f' : ts[0] === "manha" ? '#ffe600' : '#29ABE2'};color:${misto ? '#fff' : '#000'};border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px;margin-left:6px">${misto ? '⚠️ MANHÃ + TARDE' : ts[0] === "manha" ? '☀️ MANHÃ' : '🌇 TARDE'}</span>`;
   })()}</div>
-      <div style="display:flex;gap:6px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${S.viagensIniciadas[chave] ? `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #2f9e6b;color:#3ce88a" onclick="mostrarQrViagem('${esc(S.viagensIniciadas[chave].url)}')">📱 Viagem em andamento — ver QR</button>`
+    : S.viagensFechadas[chave] ? `<button class="btn btn-grn" style="font-size:11px;padding:6px 10px" onclick="iniciarViagem('${carro.id}','${esc(carro.nome)}',${vix})">🚀 Iniciar viagem</button>
+           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="reabrirViagem('${carro.id}',${vix})">🔓 Reabrir</button>`
+    : `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #ffd23f;color:#ffd23f" onclick="fecharViagem('${carro.id}',${vix})">🔒 Fechar viagem</button>`}
         <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave] ? "disabled" : ""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave] ? "Calculando…" : "🧭 Sugerir rota"}</button>
         ${totalViagens > 1 ? `<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>` : ''}
       </div>
@@ -1455,9 +1510,9 @@ function htmlViagemBox(carro, vix, cap) {
     ${acimaPeso ? `<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ Peso dessa viagem acima do sugerido (+20%) pra esse carro.</div>` : ''}
     ${!ids.length ? '<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>' : resultado ? resultado.paradasOrdenadas.map((p, ix) => {
     const ped = pedidoPorId(p.id);
-    return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
+    return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
            <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`);
-  }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
+  }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
            <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>
            <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover">✕</button>`)).join("")}

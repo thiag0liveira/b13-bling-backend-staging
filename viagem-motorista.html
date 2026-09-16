@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Minha viagem — B13 Bebidas</title>
+<script src="/nav.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#0f0d24;color:#fff;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .topo{background:#181433;border-bottom:2px solid #FF0082;padding:14px 16px;position:sticky;top:0;z-index:5}
+  .topo h1{margin:0;font-size:17px}
+  .muted{color:#9a95c9}
+  .content{padding:14px}
+  .card{background:#181433;border:1px solid #2c2660;border-radius:12px;padding:14px;margin-bottom:12px}
+  .btn{border:none;border-radius:8px;padding:12px 16px;font-weight:800;font-size:14px;cursor:pointer;width:100%}
+  .btn-mag{background:#FF0082;color:#fff}
+  .btn-ghost{background:#241f4d;color:#fff}
+  .btn-grn{background:#1f8f4e;color:#fff}
+  .btn[disabled]{opacity:.5}
+  .pedido{background:#0f0d24;border:1px solid #2c2660;border-radius:10px;padding:12px;margin-bottom:10px;cursor:pointer}
+  .pedido.done{border-color:#2f9e6b;background:#0f2418}
+  .badge{font-size:10px;font-weight:900;border-radius:5px;padding:2px 8px}
+  input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #2c2660;background:#0f0d24;color:#fff;font-size:14px;margin-top:4px}
+  label{font-size:12px;color:#9a95c9;display:block;margin-top:10px}
+  .item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #201c48;font-size:13px}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+  .modal{background:#181433;border-radius:16px 16px 0 0;padding:16px;width:100%;max-width:480px;max-height:92vh;overflow:auto}
+  canvas#assinaturaCv{width:100%;height:160px;background:#fff;border-radius:8px;touch-action:none}
+  .err{color:#ff8090}
+</style>
+</head>
+<body>
+<div id="app"><div class="content"><div class="muted">Carregando sua viagem…</div></div></div>
+<script>
+var TOKEN = location.pathname.split("/viagem/")[1];
+var B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+var V = null; // dados da viagem
+var PEDIDO_ATIVO = null; // pedido aberto no modal de finalizar
+var PROBLEMAS = {}; // produtoId -> quantidade com problema (no modal atual)
+var FORMAS = [];
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function brl(v){ return "R$ " + Number(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+function carregar(){
+  fetch(B + "/api/viagem/" + TOKEN).then(function(r){ return r.json(); }).then(function(j){
+    if(j.erro){ document.getElementById("app").innerHTML = '<div class="content"><div class="card"><b class="err">'+esc(j.erro)+'</b></div></div>'; return; }
+    V = j;
+    FORMAS = j.formasPagamento || [];
+    // vincula o usuário logado nesse aparelho, se tiver sessão do sistema
+    try{
+      var f = typeof b13GetSession === "function" ? b13GetSession() : null;
+      if(f && f.id){
+        fetch(B + "/api/viagem/" + TOKEN + "/vincular-usuario", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({funcionarioId:f.id}) });
+      }
+    }catch(e){}
+    render();
+  }).catch(function(){
+    document.getElementById("app").innerHTML = '<div class="content"><div class="card">Erro ao carregar a viagem. Confira sua internet e recarregue a página.</div></div>';
+  });
+}
+
+function render(){
+  if(!V) return;
+  var app = document.getElementById("app");
+  if(V.finalizada){
+    app.innerHTML = '<div class="topo"><h1>🚚 ' + esc(V.carroNome) + '</h1><div class="muted">Viagem finalizada</div></div>' +
+      '<div class="content"><div class="card" style="text-align:center">' +
+        '<div style="font-size:40px">✅</div>' +
+        '<div style="font-weight:900;margin-top:6px">Viagem encerrada</div>' +
+        '<div class="muted" style="margin-top:6px">KM inicial: ' + V.kmInicial + ' · KM final: ' + V.kmFinal + ' · Rodou ' + (V.kmFinal - V.kmInicial).toFixed(1) + ' km</div>' +
+        '<div class="muted" style="margin-top:10px">' + V.feitas + ' de ' + V.totalEntregas + ' entrega(s) concluída(s)</div>' +
+      '</div></div>';
+    return;
+  }
+  var pendentes = V.entregas.filter(function(e){ return e.status !== "entregue"; });
+  var feitos = V.entregas.filter(function(e){ return e.status === "entregue"; });
+  var proxima = pendentes[0];
+  var h = '<div class="topo"><h1>🚚 ' + esc(V.carroNome) + '</h1>' +
+    '<div class="muted">' + (V.motoristaNome ? esc(V.motoristaNome) + " · " : "") + 'KM inicial ' + V.kmInicial + ' · ' + V.feitas + '/' + V.totalEntregas + ' entregues</div></div>';
+  h += '<div class="content">';
+  if(proxima){
+    h += '<div class="card" style="border-color:#ffd23f"><div class="badge" style="background:#3a2a00;color:#ffd23f">🧭 SUGESTÃO: ENTREGAR PRIMEIRO</div>' +
+      '<div style="font-weight:900;margin-top:8px;font-size:15px">Pedido ' + esc(proxima.numero) + ' — ' + esc(proxima.clienteNome) + '</div>' +
+      '<div class="muted" style="margin-top:4px">📍 ' + esc(proxima.endereco || "endereço não informado") + '</div></div>';
+  }
+  h += '<div style="font-weight:900;margin:6px 0">📦 Entregas dessa viagem (em ordem sugerida)</div>';
+  V.entregas.forEach(function(e, ix){
+    var done = e.status === "entregue";
+    h += '<div class="pedido' + (done?' done':'') + '" onclick="' + (done?'':'abrirEntrega(' + e.pedidoId + ')') + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<div><b>' + (ix+1) + '. Pedido ' + esc(e.numero) + '</b> — ' + esc(e.clienteNome) + '</div>' +
+        (done ? '<span class="badge" style="background:#0f3a24;color:#3ce88a">✅ ENTREGUE</span>' : '<span class="badge" style="background:#3a2a00;color:#ffd23f">PENDENTE</span>') +
+      '</div>' +
+      '<div class="muted" style="font-size:12px;margin-top:4px">📍 ' + esc(e.endereco || "—") + ' · ' + brl(e.total) + '</div>' +
+      (done && e.entrega ? '<div class="muted" style="font-size:11px;margin-top:4px">Recebido: ' + brl(e.entrega.valorFinal) + (e.entrega.valorProblema>0 ? ' (descontado ' + brl(e.entrega.valorProblema) + ' de avaria/falta)':'') + ' · ' + esc(e.entrega.formaPagamentoNome||'') + '</div>' : '') +
+    '</div>';
+  });
+  h += '<button class="btn btn-ghost" style="margin-top:10px" onclick="abrirFinalizarViagem()">🏁 Finalizar viagem (informar KM final)</button>';
+  h += '</div>';
+  app.innerHTML = h;
+}
+
+function abrirEntrega(pedidoId){
+  PEDIDO_ATIVO = V.entregas.find(function(e){ return e.pedidoId === pedidoId; });
+  PROBLEMAS = {};
+  renderModalEntrega();
+}
+function fecharModal(){
+  var m = document.getElementById("modalWrap");
+  if(m) m.remove();
+  PEDIDO_ATIVO = null;
+}
+function renderModalEntrega(){
+  var e = PEDIDO_ATIVO;
+  var itensHtml = e.itens.map(function(it){
+    return '<div class="item"><span>' + esc(it.descricao) + ' <span class="muted">(' + it.quantidade + 'un · ' + brl(it.valor) + ')</span></span>' +
+      '<input type="number" min="0" max="' + it.quantidade + '" value="0" style="width:70px;padding:6px" onchange="PROBLEMAS[' + (it.produtoId||0) + ']=Math.max(0,Math.min(' + it.quantidade + ',parseInt(this.value)||0))"></div>';
+  }).join("");
+  var formasHtml = FORMAS.map(function(f){ return '<option value="' + f.id + '" data-nome="' + esc(f.nome) + '">' + esc(f.nome) + '</option>'; }).join("");
+  var html = '<div class="modalBg" id="modalWrap"><div class="modal">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+      '<h3 style="margin:0">Pedido ' + esc(e.numero) + '</h3>' +
+      '<button class="btn btn-ghost" style="width:auto;padding:6px 12px" onclick="fecharModal()">✕</button>' +
+    '</div>' +
+    '<div class="muted">' + esc(e.clienteNome) + ' · ' + brl(e.total) + '</div>' +
+    '<div style="margin-top:10px"><b style="font-size:13px">Teve algum produto com avaria ou que não foi carregado?</b>' +
+    '<div class="muted" style="font-size:11px;margin-bottom:4px">Informe a quantidade com problema de cada item (0 se está tudo certo)</div>' +
+    itensHtml + '</div>' +
+    '<label>Forma de pagamento recebida</label>' +
+    '<select id="formaSel"><option value="">Selecione…</option>' + formasHtml + '</select>' +
+    '<label>Observação (opcional)</label>' +
+    '<textarea id="obsTxt" rows="2" placeholder="Ex: cliente pediu pra deixar na portaria"></textarea>' +
+    '<label>Assinatura do cliente</label>' +
+    '<canvas id="assinaturaCv"></canvas>' +
+    '<button class="btn btn-ghost" style="margin-top:6px" onclick="limparAssinatura()">↺ Limpar assinatura</button>' +
+    '<div id="msgEntrega" style="margin-top:8px"></div>' +
+    '<button class="btn btn-mag" style="margin-top:10px" onclick="confirmarEntrega()">✅ Finalizar entrega</button>' +
+  '</div></div>';
+  var wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
+  configurarAssinatura();
+}
+
+// ---- assinatura (canvas com toque/mouse) ----
+var _sigCtx = null, _sigDesenhando = false;
+function configurarAssinatura(){
+  var cv = document.getElementById("assinaturaCv");
+  if(!cv) return;
+  var rect = cv.getBoundingClientRect();
+  cv.width = rect.width; cv.height = rect.height;
+  _sigCtx = cv.getContext("2d");
+  _sigCtx.lineWidth = 2; _sigCtx.lineCap = "round"; _sigCtx.strokeStyle = "#000";
+  function pos(ev){
+    var r = cv.getBoundingClientRect();
+    var t = ev.touches ? ev.touches[0] : ev;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function iniciar(ev){ _sigDesenhando = true; var p = pos(ev); _sigCtx.beginPath(); _sigCtx.moveTo(p.x,p.y); ev.preventDefault(); }
+  function mover(ev){ if(!_sigDesenhando) return; var p = pos(ev); _sigCtx.lineTo(p.x,p.y); _sigCtx.stroke(); ev.preventDefault(); }
+  function parar(){ _sigDesenhando = false; }
+  cv.addEventListener("mousedown", iniciar); cv.addEventListener("mousemove", mover); window.addEventListener("mouseup", parar);
+  cv.addEventListener("touchstart", iniciar, {passive:false}); cv.addEventListener("touchmove", mover, {passive:false}); cv.addEventListener("touchend", parar);
+}
+function limparAssinatura(){
+  var cv = document.getElementById("assinaturaCv");
+  if(cv && _sigCtx) _sigCtx.clearRect(0,0,cv.width,cv.height);
+}
+
+function confirmarEntrega(){
+  var msgEl = document.getElementById("msgEntrega");
+  var sel = document.getElementById("formaSel");
+  var formaId = sel.value, formaNome = sel.value ? sel.options[sel.selectedIndex].getAttribute("data-nome") : "";
+  if(!formaId){ msgEl.innerHTML = '<span class="err">Escolha a forma de pagamento recebida.</span>'; return; }
+  var cv = document.getElementById("assinaturaCv");
+  var vazio = true;
+  try{
+    var d = cv.getContext("2d").getImageData(0,0,cv.width,cv.height).data;
+    for(var i=3;i<d.length;i+=4){ if(d[i]!==0){ vazio=false; break; } }
+  }catch(e){ vazio=false; }
+  if(vazio){ msgEl.innerHTML = '<span class="err">Peça pro cliente assinar antes de finalizar.</span>'; return; }
+  var itensProblema = Object.keys(PROBLEMAS).filter(function(k){ return PROBLEMAS[k]>0; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]}; });
+  msgEl.innerHTML = '<span class="muted">Salvando…</span>';
+  fetch(B + "/api/viagem/" + TOKEN + "/entrega/" + PEDIDO_ATIVO.pedidoId, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ itensProblema:itensProblema, formaPagamentoId:formaId, formaPagamentoNome:formaNome,
+      assinaturaDataUrl: cv.toDataURL("image/png"), obs: document.getElementById("obsTxt").value })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
+    fecharModal();
+    carregar();
+  }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão. Tenta de novo.</span>'; });
+}
+
+function abrirFinalizarViagem(){
+  var pendentes = V.entregas.filter(function(e){ return e.status !== "entregue"; }).length;
+  var aviso = pendentes ? '<div class="card" style="border-color:#ff8090"><b class="err">⚠️ Ainda tem ' + pendentes + ' entrega(s) pendente(s) nessa viagem.</b> Se finalizar mesmo assim, elas continuam marcadas como não entregues.</div>' : '';
+  var html = '<div class="modalBg" id="modalWrap"><div class="modal">' +
+    '<h3 style="margin:0 0 8px">🏁 Finalizar viagem</h3>' + aviso +
+    '<div class="muted">KM inicial: ' + V.kmInicial + '</div>' +
+    '<label>KM final (do painel do carro agora)</label>' +
+    '<input id="kmFinalInp" type="number" inputmode="numeric" placeholder="Ex: 45230">' +
+    '<div id="msgFin" style="margin-top:8px"></div>' +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-ghost" onclick="fecharModal()">Cancelar</button>' +
+      '<button class="btn btn-grn" onclick="confirmarFinalizarViagem()">Confirmar</button>' +
+    '</div>' +
+  '</div></div>';
+  var wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+}
+function confirmarFinalizarViagem(){
+  var msgEl = document.getElementById("msgFin");
+  var km = parseFloat(document.getElementById("kmFinalInp").value);
+  if(!(km>=0)){ msgEl.innerHTML = '<span class="err">Informe o KM final.</span>'; return; }
+  msgEl.innerHTML = '<span class="muted">Salvando…</span>';
+  fetch(B + "/api/viagem/" + TOKEN + "/finalizar", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({kmFinal:km}) })
+    .then(function(r){ return r.json(); }).then(function(j){
+      if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
+      fecharModal();
+      carregar();
+    }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro de conexão.</span>'; });
+}
+
+carregar();
+</script>
+</body>
+</html>
