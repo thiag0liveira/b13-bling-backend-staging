@@ -173,14 +173,15 @@ function imprimirPedidoComprovante(id) {
 }
 function desenharComprovantePed(p, qrEl, barCanvas) {
   const itensArr = p.itens || [];
-  const itemH = 50, headerH = 132, qrSize = 200;
+  const itemH = 54, headerH = 136, qrSize = 210;
   const W = 580, padd = 24;
   const _mc = document.createElement("canvas").getContext("2d");
-  _mc.font = "900 18px Arial";
+  _mc.font = "900 19px Arial";
   const maxNomeW = W - 200 - padd - 16;
   itensArr.forEach(function (i) { i._linhas = quebrarTextoPed(_mc, i.nome || "produto", maxNomeW, 2); });
   const extraLinhas = itensArr.reduce(function (s, i) { return s + ((i._linhas.length || 1) - 1); }, 0);
-  const H = 560 + itensArr.length * itemH + extraLinhas * 22 + qrSize + 90;
+  const temFrete = Number(p.frete || 0) > 0.009;
+  const H = 620 + itensArr.length * itemH + extraLinhas * 24 + qrSize + (temFrete ? 34 : 0) + 90;
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr; cv.height = H * dpr;
@@ -188,78 +189,112 @@ function desenharComprovantePed(p, qrEl, barCanvas) {
   ctx.scale(dpr, dpr);
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = "alphabetic";
+
+  // cabeçalho (fundo preto pra sair sólido na térmica)
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, headerH - 14);
-  ctx.fillStyle = "#fff"; ctx.font = "900 32px Arial"; ctx.textAlign = "left";
-  ctx.fillText("B13 BEBIDAS", padd, 50);
-  ctx.font = "900 14px Arial";
+  ctx.fillStyle = "#fff"; ctx.font = "900 34px Arial"; ctx.textAlign = "left";
+  ctx.fillText("B13 BEBIDAS", padd, 52);
+  ctx.font = "900 15px Arial";
   ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH", padd, headerH - 40);
   ctx.fillText("(31) 99971-9888", padd, headerH - 22);
   ctx.fillStyle = "#000"; ctx.fillRect(0, headerH - 10, W, 4);
   let y = headerH + 30;
+
+  // pedido + código de barras
   ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
   ctx.fillText("PEDIDO", padd, y);
-  ctx.font = "900 44px Arial";
-  ctx.fillText("#" + p.numero, padd, y + 44);
-  y += 60;
-  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000";
-  ctx.fillText(esc(p.situacao || ""), padd, y);
-  y += 26;
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 30;
-  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
-  ctx.fillText("CLIENTE", padd, y);
-  ctx.font = "900 24px Arial";
-  ctx.fillText(p.cliente || "Consumidor Final", padd, y + 28);
-  y += 48;
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 26;
-  ctx.font = "900 13px Arial"; ctx.fillStyle = "#666"; ctx.textAlign = "left";
-  ctx.fillText("PRODUTO", padd, y);
-  ctx.textAlign = "right";
-  ctx.fillText("QTD", W - 300, y); ctx.fillText("UNIT.", W - 170, y); ctx.fillText("TOTAL", W - padd, y);
-  y += 14;
-  itensArr.forEach(function (i) {
-    const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
-    const linhas = i._linhas.length || 1;
-    ctx.textAlign = "left"; ctx.font = "900 18px Arial"; ctx.fillStyle = "#000";
-    (i._linhas || [i.nome]).forEach(function (ln, ix) { ctx.fillText(ln, padd, y + 20 + ix * 22); });
-    ctx.textAlign = "right"; ctx.font = "700 17px Arial"; ctx.fillStyle = "#333";
-    ctx.fillText(String(qtd), W - 300, y + 20);
-    ctx.fillText(brl(un), W - 170, y + 20);
-    ctx.font = "900 17px Arial"; ctx.fillStyle = "#000";
-    ctx.fillText(brl(un * qtd), W - padd, y + 20);
-    y += itemH - 8 + (linhas - 1) * 22;
-    ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke();
-    y += 14;
-  });
-  if (p.frete > 0) {
-    ctx.textAlign = "left"; ctx.font = "700 14px Arial"; ctx.fillStyle = "#555";
-    ctx.fillText("Frete", padd, y + 16);
-    ctx.textAlign = "right"; ctx.fillText(brl(p.frete), W - padd, y + 16);
-    y += 26;
+  ctx.font = "900 46px Arial";
+  ctx.fillText("#" + p.numero, padd, y + 46);
+  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000";
+  ctx.fillText(esc(p.situacao || ""), padd, y + 72);
+  if (barCanvas) {
+    const bw = 250, bh = barCanvas.height * (bw / barCanvas.width);
+    try {
+      ctx.drawImage(barCanvas, W - padd - bw, y - 4, bw, bh);
+      ctx.font = "900 13px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
+      ctx.fillText("Apresente no caixa", W - padd - bw / 2, y - 4 + bh + 16);
+    } catch (e) {}
   }
-  y += 6;
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 50);
-  ctx.fillStyle = "#fff"; ctx.font = "900 20px Arial"; ctx.textAlign = "left";
-  ctx.fillText("TOTAL", padd, y + 32);
-  ctx.textAlign = "right"; ctx.font = "900 26px Arial";
-  ctx.fillText(brl(p.total), W - padd, y + 33);
-  y += 66;
+  y += 112;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 32;
+
+  // cliente
+  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("CLIENTE", padd, y);
+  ctx.font = "900 26px Arial";
+  ctx.fillText(p.cliente || "Consumidor Final", padd, y + 30);
+  y += 52;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 32;
+
+  // itens
+  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("ITENS (" + itensArr.length + ")", padd, y);
+  y += 26;
+  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("PRODUTO", padd, y);
+  ctx.textAlign = "center"; ctx.fillText("QTD", W - 200, y);
+  ctx.textAlign = "right"; ctx.fillText("UNIT.", W - padd, y);
+  y += 10;
+  ctx.fillStyle = "#000"; ctx.fillRect(padd, y, W - padd * 2, 2);
+  y += itemH - 14;
+  itensArr.forEach(function (i, ix) {
+    const linhas = i._linhas || [i.nome || "produto"];
+    ctx.fillStyle = "#000"; ctx.font = "900 19px Arial"; ctx.textAlign = "left";
+    linhas.forEach(function (ln, li) { ctx.fillText(ln, padd, y + li * 24); });
+    ctx.font = "900 22px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
+    ctx.fillText(String(i.quantidade), W - 200, y);
+    ctx.font = "900 17px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "right";
+    ctx.fillText(brl(i.valor), W - padd, y);
+    const extra = (linhas.length - 1) * 24;
+    if (ix < itensArr.length - 1) { ctx.fillStyle = "#000"; ctx.fillRect(padd, y + extra + 18, W - padd * 2, 1); }
+    y += itemH + extra;
+  });
+  y += 8;
+  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 36;
+
+  // frete, quando houver
+  if (temFrete) {
+    ctx.font = "900 20px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+    ctx.fillText("Frete", padd, y);
+    ctx.textAlign = "right"; ctx.fillText(brl(p.frete), W - padd, y);
+    y += 34;
+  } else { y += 12; }
+
+  // total
+  ctx.font = "900 32px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+  ctx.fillText("TOTAL", padd, y);
+  ctx.textAlign = "right"; ctx.font = "900 38px Arial";
+  ctx.fillText(brl(p.total), W - padd, y);
+  y += 40;
+  if (p.pagamento && p.pagamento.pago) {
+    ctx.textAlign = "left"; ctx.font = "900 22px Arial"; ctx.fillStyle = "#000";
+    ctx.fillText("✓ PAGO", padd, y);
+    y += 34;
+  }
+  y += 12;
+
+  // divisor tracejado grosso
+  ctx.strokeStyle = "#000"; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  ctx.setLineDash([]); ctx.lineWidth = 1;
+  y += 36;
+
+  // QR
   if (qrEl) {
     const qrX = (W - qrSize) / 2;
     try { ctx.drawImage(qrEl, qrX, y, qrSize, qrSize); } catch (e) {}
-    y += qrSize + 20;
-    ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
-    ctx.fillText("Leia o QR para acompanhar seu pedido", W / 2, y);
-    y += 24;
-    if (barCanvas) {
-      const bw = 220, bh = barCanvas.height * (bw / barCanvas.width);
-      try { ctx.drawImage(barCanvas, (W - bw) / 2, y, bw, bh); } catch (e) {}
-      y += bh + 20;
-    }
+    y += qrSize + 26;
   }
-  ctx.font = "13px Arial"; ctx.fillStyle = "#9a95c9"; ctx.textAlign = "center";
-  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, y + 16);
+  ctx.fillStyle = "#000"; ctx.font = "900 15px Arial"; ctx.textAlign = "center";
+  ctx.fillText("Leia o QR para ver o status do pedido", W / 2, y);
+  y += 26;
+  ctx.font = "900 17px Arial"; ctx.fillStyle = "#000";
+  ctx.fillText("Obrigado pela preferência!", W / 2, y);
+  y += 28;
+
+  // apara pro tamanho real
   const cvFinal = document.createElement("canvas");
-  cvFinal.width = W * dpr; cvFinal.height = Math.round((y + 36) * dpr);
+  cvFinal.width = W * dpr; cvFinal.height = Math.round(y * dpr);
   cvFinal.getContext("2d").drawImage(cv, 0, 0);
   return cvFinal;
 }
