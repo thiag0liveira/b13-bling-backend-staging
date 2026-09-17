@@ -1650,10 +1650,22 @@ function htmlViagemBox(carro, vix, cap) {
     return `<span style="background:${misto ? '#b3341f' : ts[0] === "manha" ? '#ffe600' : '#29ABE2'};color:${misto ? '#fff' : '#000'};border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px;margin-left:6px">${misto ? '⚠️ MANHÃ + TARDE' : ts[0] === "manha" ? '☀️ MANHÃ' : '🌇 TARDE'}</span>`;
   })()}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${S.viagensIniciadas[chave] ? `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #2f9e6b;color:#3ce88a" onclick="mostrarQrViagem('${esc(S.viagensIniciadas[chave].url)}','${S.viagensIniciadas[chave].token}','${chave}')">📱 Viagem em andamento — ver QR</button>`
-    : S.viagensFechadas[chave] ? `<button class="btn btn-grn" style="font-size:11px;padding:6px 10px" onclick="iniciarViagem('${carro.id}','${esc(carro.nome)}',${vix})">🚀 Iniciar viagem</button>
+        ${(() => {
+    const jaFeita = (S.viagensDoDia || []).find(v => String(v.carroId) === String(carro.id) && Number(v.vix) === Number(vix) && (v.status === "finalizada" || v.status === "cancelada"));
+    if (jaFeita) {
+      const cor = jaFeita.status === "finalizada" ? "#3ce88a" : "#ff8f7a";
+      const label = jaFeita.status === "finalizada" ? "✅ Viagem finalizada" : "✕ Viagem cancelada";
+      return `<div style="width:100%;background:#0f0d24;border:1px solid ${cor};border-radius:8px;padding:8px 10px">
+                <div style="font-weight:900;color:${cor};font-size:12px">${label}</div>
+                <div class="muted" style="font-size:11px;margin-top:2px">${jaFeita.feitas}/${jaFeita.totalEntregas} entrega(s)${jaFeita.kmRodado != null ? ` · ${jaFeita.kmRodado} km` : ''} · ${brl(jaFeita.valorTotalRecebido)} recebido</div>
+                <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-top:6px" onclick="verDetalhesViagem('${jaFeita.token}')">🔍 Ver detalhes</button>
+              </div>`;
+    }
+    return S.viagensIniciadas[chave] ? `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #2f9e6b;color:#3ce88a" onclick="mostrarQrViagem('${esc(S.viagensIniciadas[chave].url)}','${S.viagensIniciadas[chave].token}','${chave}')">📱 Viagem em andamento — ver QR</button>`
+      : S.viagensFechadas[chave] ? `<button class="btn btn-grn" style="font-size:11px;padding:6px 10px" onclick="iniciarViagem('${carro.id}','${esc(carro.nome)}',${vix})">🚀 Iniciar viagem</button>
            <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="reabrirViagem('${carro.id}',${vix})">🔓 Reabrir</button>`
-    : `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #ffd23f;color:#ffd23f" onclick="fecharViagem('${carro.id}',${vix})">🔒 Fechar viagem</button>`}
+      : `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #ffd23f;color:#ffd23f" onclick="fecharViagem('${carro.id}',${vix})">🔒 Fechar viagem</button>`;
+  })()}
         <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave] ? "disabled" : ""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave] ? "Calculando…" : "🧭 Sugerir rota"}</button>
         ${totalViagens > 1 ? `<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>` : ''}
       </div>

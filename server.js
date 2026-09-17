@@ -10479,8 +10479,18 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
       ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
     };
     salvarViagensAtivas(viagens);
-    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao))});
-    res.json({ok:true, valorProblema, valorFinal});
+    // fecha o pedido de verdade no Bling (EM_ROTA -> ATENDIDO). Sem isso, o pedido
+    // ficava PRA SEMPRE em "Em rota" mesmo já entregue e pago — e como EM_ROTA é
+    // aceito como situação válida pra iniciar viagem (pensado pra reabrir uma viagem
+    // cancelada), um pedido já entregue podia ser colocado numa viagem NOVA e
+    // "iniciado" de novo, sem nenhuma trava percebendo que ele já tinha sido
+    // finalizado. Não bloqueia a resposta pro motorista se isso falhar — a entrega já
+    // ficou registrada de qualquer forma — mas avisa no retorno pra quem acompanha.
+    let atendidoOk=true, atendidoErro=null;
+    try{ const rAt=await mudarSituacaoPedido(pid,SIT.ATENDIDO); if(!rAt.ok){ atendidoOk=false; atendidoErro=rAt.erro||"o Bling recusou"; } }
+    catch(e){ atendidoOk=false; atendidoErro=e.message; }
+    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),atendidoOk,atendidoErro});
+    res.json({ok:true, valorProblema, valorFinal, atendidoOk, atendidoErro});
   }catch(e){ try{ liberarTravaEntrega(); }catch(e2){} res.status(500).json({erro:e.message}); }
 });
 // finaliza a viagem inteira (motorista voltou) — informa o KM final

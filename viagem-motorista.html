@@ -507,6 +507,7 @@ function confirmarEntrega(){
       ocorrencia: (OCORRENCIA.url || OCORRENCIA.descricao) ? OCORRENCIA : null })
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
+    if(j.atendidoOk===false){ alert("O pagamento foi registrado, mas não consegui fechar o pedido no Bling (" + (j.atendidoErro||"erro") + "). Avise o suporte — o pedido pode continuar aparecendo como 'Em rota'."); }
     var f = document.querySelector(".fullscreen");
     if(f) f.remove();
     PEDIDO_ATIVO = null;
