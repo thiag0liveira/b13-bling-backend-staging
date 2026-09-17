@@ -1001,10 +1001,13 @@ async function gerarPedido(id, tokenQr) {
     ? ["Conferindo estoque de " + nItens + " produtos (pode levar um tempinho)…", "Ainda conferindo, um produto de cada vez…", "Quase lá, aguarde…"]
     : ["Conferindo estoque dos produtos…", "Enviando o pedido pro Bling…", "Ainda trabalhando nisso, aguarde…"]);
   try {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 60000); // 60s — segunda camada de segurança, caso o servidor trave por algum motivo imprevisto
     const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tokenQr ? { tokenQr } : {})
-    }).then(r => r.json());
+      body: JSON.stringify(tokenQr ? { tokenQr } : {}),
+      signal: ctrl.signal
+    }).then(r => r.json()).finally(() => clearTimeout(timeoutId));
     esconderCarregando();
     if (j.precisaAutorizacaoEstoque) {
       const lista = j.itensSemEstoque.map(i => `${esc(i.nome)} (pediu ${i.pediu}, tem ${i.tem}, falta ${i.falta})`).join("<br>");
@@ -1027,6 +1030,10 @@ async function gerarPedido(id, tokenQr) {
     carregar();
   } catch (e) {
     esconderCarregando();
+    if (e && e.name === "AbortError") {
+      alert("A geração do pedido demorou mais de 1 minuto e foi interrompida por segurança (o servidor pode estar sobrecarregado). Ela continua como PROPOSTA — espere um instante e tente de novo.");
+      return;
+    }
     alert("Erro inesperado ao gerar o pedido (" + (e && e.message || "erro desconhecido") + "). Ela continua como proposta — tire um print desta mensagem e tente de novo.");
   }
 }

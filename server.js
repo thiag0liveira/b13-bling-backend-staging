@@ -13248,24 +13248,45 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     // (gerente/financeiro/admin), porque liberar sem estoque de verdade pode
     // impactar outros pedidos que também contam com esse mesmo saldo.
     const {tokenQr}=req.body||{};
-    // dispara a checagem de TODOS os itens de uma vez (em vez de um de cada vez,
-    // esperando cada um terminar antes de começar o próximo) — a fila global do
-    // bling() já limita a no máximo 3 chamadas concorrentes com o espaçamento
-    // mínimo necessário, então isso não sobrecarrega o Bling, só evita ficar
-    // esperando à toa entre uma chamada e outra. Numa proposta com 30 itens, isso é
-    // a diferença entre dezenas de segundos (arriscando até dar timeout na
-    // requisição) e poucos segundos.
-    const resultadosEstoque=await Promise.all(prop.itens.map(async it=>{
-      try{
-        const r=await bling(`/produtos/${it.produtoId}`);
-        const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
-        if(saldo!=null && Number(it.quantidade)>Number(saldo)){
-          return {nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)};
+    // conferência de estoque com concorrência CONTROLADA (5 por vez, não todos de
+    // uma vez): disparar tudo simultâneo aumenta o risco de vários baterem no limite
+    // do Bling (429) ao mesmo tempo, e cada 429 custa uma espera cara pra tentar de
+    // novo (até ~43s de espera acumulada por item, com backoff crescente) — o que na
+    // prática podia deixar a conferência MAIS lenta do que fazer um de cada vez, não
+    // mais rápida. 5 em paralelo já corta bastante o tempo sem gerar uma rajada.
+    async function conferirComLimite(itens, limite){
+      const resultados=new Array(itens.length).fill(null);
+      let proximo=0;
+      async function worker(){
+        while(proximo<itens.length){
+          const ix=proximo++; const it=itens[ix];
+          try{
+            const r=await bling(`/produtos/${it.produtoId}`);
+            const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+            if(saldo!=null && Number(it.quantidade)>Number(saldo)){
+              resultados[ix]={nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)};
+            }
+          }catch(e){}
         }
-      }catch(e){}
-      return null;
-    }));
-    const semEstoque=resultadosEstoque.filter(Boolean);
+      }
+      await Promise.all(Array.from({length:Math.min(limite,itens.length)},()=>worker()));
+      return resultados.filter(Boolean);
+    }
+    // TIMEOUT DE SEGURANÇA: sem isso, se alguma coisa travar de verdade (rede, fila
+    // presa etc.), a requisição fica pendurada indefinidamente — sem erro, sem
+    // sucesso, "só parada" — porque o fetch do navegador não tem timeout próprio.
+    // Com isso, no máximo espera 45s por essa etapa; se estourar, avisa claramente
+    // em vez de deixar a pessoa sem noção do que está havendo.
+    const semEstoque=await Promise.race([
+      conferirComLimite(prop.itens, 5),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error("TIMEOUT_ESTOQUE")),45000)),
+    ]).catch(e=>{
+      if(e.message==="TIMEOUT_ESTOQUE"){
+        liberarTrava();
+        throw Object.assign(new Error("A conferência de estoque demorou demais (mais de 45s) — o Bling deve estar sobrecarregado agora. A proposta continua intacta; espere um instante e tente de novo."),{status:503,__jaTratado:true});
+      }
+      throw e;
+    });
     let autorizadoPorEstoque=null;
     if(semEstoque.length){
       if(!tokenQr){
