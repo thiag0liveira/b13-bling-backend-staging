@@ -6802,9 +6802,21 @@ async function _identificarProdutosSemEstoque(itens){
   return faltantes;
 }
 
+let _depositoPadraoCache=null; // {id, em}
+async function _depositoPadraoId(){
+  if(_depositoPadraoCache && Date.now()-_depositoPadraoCache.em<30*60*1000) return _depositoPadraoCache.id;
+  try{
+    const r=await bling(`/depositos`);
+    const deps=r?.data||[];
+    const escolhido=deps.find(d=>d.padrao)||deps[0];
+    if(escolhido?.id){ _depositoPadraoCache={id:escolhido.id, em:Date.now()}; return escolhido.id; }
+  }catch(e){}
+  return null;
+}
 async function garantirEstoqueParaItens(itens){
   const reposto=[];
   if(!Array.isArray(itens)||!itens.length) return reposto;
+  const depositoId=await _depositoPadraoId();
   // 1) consulta o saldo atual de todos os produtos de uma vez
   const ids=[...new Set(itens.map(i=>Number(i.produtoId)).filter(Boolean))];
   const saldo={};
@@ -6824,9 +6836,11 @@ async function garantirEstoqueParaItens(itens){
     const atual=Number(saldo[pid] ?? 0);
     const falta=+(qtd-atual).toFixed(3);
     if(falta>0){
+      if(!depositoId){ console.error("Falha ao repor estoque do produto "+pid+": nenhum depósito encontrado no Bling."); continue; }
       try{
         await bling(`/estoques`,{method:"POST",body:JSON.stringify({
           produto:{id:pid},
+          deposito:{id:Number(depositoId)}, // obrigatório pro Bling — faltava e toda tentativa falhava
           operacao:"E", // entrada — soma ao saldo atual
           quantidade:falta,
           observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`,
