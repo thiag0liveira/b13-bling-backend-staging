@@ -7679,6 +7679,14 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:20,prefixo:"frete"}), async 
     if(km > limiteFinal) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:Number(km.toFixed(1))});
     const usaFaixaExtra = km > cfg.maxKm && cfg.faixaExtra;
     const faixa=porKmPara(valor, usaFaixaExtra ? cfg.faixaExtra.faixas : cfg.faixas);
+    // na faixa extra, se o valor do pedido não bate NENHUMA faixa configurada (ex.:
+    // abaixo de R$3000, quando as faixas dessa distância só começam ali), NÃO cai
+    // pra frete grátis por padrão — nessa distância mais longe, exige o mínimo
+    // configurado nas próprias faixas extras.
+    if(usaFaixaExtra && !faixa){
+      const minExtra=Math.min(...cfg.faixaExtra.faixas.map(f=>Number(f.min)));
+      return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — nessa distância, entrega disponível a partir de ${brlN(minExtra)}.`, km:Number(km.toFixed(1)), minExtra});
+    }
     const porKm=faixa?Number(faixa.porKm):0;
     const taxa=Math.round(porKm*km*100)/100;
     res.json({entregaDisponivel:true, km:Number(km.toFixed(1)), porKm, taxa, gratis:porKm===0, faixaExtra:!!usaFaixaExtra});
