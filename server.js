@@ -12561,8 +12561,20 @@ app.get("/",(req,res)=> res.redirect("/pedir-online"));
 // nada. Roda ao subir o servidor e depois a cada 30 min — assim produtos novos
 // entram na busca automaticamente, sem precisar reconstruir manualmente em /preco.
 let _indiceReconstruindo=false, _indiceProgresso="";
-async function reconstruirIndiceProdutosBg(){
+async function reconstruirIndiceProdutosBg(forcar){
   if(_indiceReconstruindo) return; // evita rodar dois ao mesmo tempo
+  // sem ISSO, cada reinício do servidor (a cada deploy) disparava essa varredura
+  // pesada de novo 15s depois — centenas de chamadas ao Bling ao longo de vários
+  // minutos. Num dia com muitos deploys seguidos (como hoje), isso repetia a mesma
+  // varredura completa várias vezes, competindo com todo o resto do tráfego do
+  // sistema. Agora só roda de novo se já tiver passado pelo menos 1h desde a
+  // última vez que terminou (a marca sobrevive a reinícios, fica salva em disco).
+  if(!forcar){
+    try{
+      const marca=lerJSON(`${DATA_DIR}/_indice_produtos_ultima_execucao.json`,{em:0});
+      if(Date.now()-(marca.em||0) < 60*60*1000) return;
+    }catch(e){}
+  }
   _indiceReconstruindo=true;
   try{
     // 1) lista todos os produtos (a listagem é enxuta: traz id/nome/codigo, mas
@@ -12598,6 +12610,7 @@ async function reconstruirIndiceProdutosBg(){
       await sleep(360); // respeita o limite do Bling (~2,9 req/s)
     }
     salvarJSON(GTIN_INDEX_FILE,indice);
+    salvarJSON(`${DATA_DIR}/_indice_produtos_ultima_execucao.json`,{em:Date.now()});
     _indiceProgresso=`Índice pronto: ${lista.length} produtos, ${comGtin} com código de barras`;
     console.log(`[indice] ${_indiceProgresso}`);
   }catch(e){ console.log("[indice] falha:",e.message); }
@@ -12611,7 +12624,7 @@ app.get("/api/indice-produtos/status",(req,res)=>{
 });
 app.post("/api/indice-produtos/reconstruir",(req,res)=>{
   if(_indiceReconstruindo) return res.json({ok:true,ja:true,progresso:_indiceProgresso});
-  reconstruirIndiceProdutosBg();
+  reconstruirIndiceProdutosBg(true);
   res.json({ok:true,iniciado:true});
 });
 setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
@@ -14898,7 +14911,20 @@ app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=$
 // em /api/auditoria/rodar). Espera 1 min após o boot pra não competir com o startup.
 let _auditoriaRodando=false;
 setTimeout(()=>{
-  const rodar=async()=>{ if(_auditoriaRodando) return; _auditoriaRodando=true; try{ await rodarAuditoriaGeral(1); }catch(e){ console.error("Auditoria automática falhou:",e.message); } _auditoriaRodando=false; };
+  const rodar=async()=>{
+    if(_auditoriaRodando) return;
+    // mesma lógica do índice de produtos: não repete se já rodou há pouco tempo,
+    // pra reinícios seguidos (vários deploys em sequência) não dispararem a
+    // auditoria de novo cada vez, competindo com o resto do tráfego do sistema.
+    try{
+      const marca=lerJSON(`${DATA_DIR}/_auditoria_ultima_execucao.json`,{em:0});
+      if(Date.now()-(marca.em||0) < 20*60*1000) return;
+    }catch(e){}
+    _auditoriaRodando=true;
+    try{ await rodarAuditoriaGeral(1); salvarJSON(`${DATA_DIR}/_auditoria_ultima_execucao.json`,{em:Date.now()}); }
+    catch(e){ console.error("Auditoria automática falhou:",e.message); }
+    _auditoriaRodando=false;
+  };
   rodar();
   setInterval(rodar, 30*60*1000);
 }, 60*1000);
