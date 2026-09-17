@@ -13196,7 +13196,10 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
           semEstoque.push({nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)});
         }
       }catch(e){}
-      await new Promise(r=>setTimeout(r,120));
+      // sem sleep extra aqui — a fila global do bling() já garante um espaçamento
+      // mínimo de 400ms entre QUALQUER chamada ao Bling no sistema inteiro; um sleep
+      // local em cima disso só deixava propostas com muitos itens ainda mais lentas
+      // sem necessidade nenhuma (era puro atraso duplicado).
     }
     let autorizadoPorEstoque=null;
     if(semEstoque.length){

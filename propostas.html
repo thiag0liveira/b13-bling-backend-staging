@@ -992,7 +992,10 @@ async function gerarPedido(id, tokenQr) {
       return;
     }
   }
-  mostrarCarregando(["Conferindo estoque dos produtos…", "Enviando o pedido pro Bling…", "Ainda trabalhando nisso, aguarde…"]);
+  const nItens = (LISTA.find(x => x.id === id)?.itens || []).length;
+  mostrarCarregando(nItens > 10
+    ? ["Conferindo estoque de " + nItens + " produtos (pode levar um tempinho)…", "Ainda conferindo, um produto de cada vez…", "Quase lá, aguarde…"]
+    : ["Conferindo estoque dos produtos…", "Enviando o pedido pro Bling…", "Ainda trabalhando nisso, aguarde…"]);
   try {
     const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
       method: "POST", headers: { "Content-Type": "application/json" },
