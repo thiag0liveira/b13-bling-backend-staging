@@ -6829,6 +6829,28 @@ async function garantirEstoqueParaItens(itens){
     }catch(e){}
     await sleep(250);
   }
+  // 1b) último custo de entrada de cada produto, pra repetir no lançamento
+  // automático (em vez de lançar sem custo nenhum) — procura no histórico de
+  // entradas já registradas no sistema, da mais recente pra mais antiga
+  const ultimoCusto={};
+  try{
+    const idsFaltantes=new Set(itens.filter(it=>{
+      const pid=Number(it.produtoId);
+      return pid && Number(it.quantidade||0) > Number(saldo[pid] ?? 0);
+    }).map(it=>Number(it.produtoId)));
+    if(idsFaltantes.size){
+      const db=lerEntradasEstoque();
+      for(const registro of (db.entradas||[])){
+        if(idsFaltantes.size===Object.keys(ultimoCusto).length) break; // já achou custo de todos que precisava
+        for(const it of (registro.itens||[])){
+          const pid=Number(it.produtoId);
+          if(idsFaltantes.has(pid) && !(pid in ultimoCusto) && it.custo!=null && Number(it.custo)>0){
+            ultimoCusto[pid]=Number(it.custo);
+          }
+        }
+      }
+    }
+  }catch(e){}
   // 2) pra cada item, se falta, lança a entrada do que falta
   for(const it of itens){
     const pid=Number(it.produtoId); if(!pid) continue;
@@ -6838,14 +6860,16 @@ async function garantirEstoqueParaItens(itens){
     if(falta>0){
       if(!depositoId){ console.error("Falha ao repor estoque do produto "+pid+": nenhum depósito encontrado no Bling."); continue; }
       try{
+        const custo=ultimoCusto[pid];
         await bling(`/estoques`,{method:"POST",body:JSON.stringify({
           produto:{id:pid},
           deposito:{id:Number(depositoId)}, // obrigatório pro Bling — faltava e toda tentativa falhava
           operacao:"E", // entrada — soma ao saldo atual
           quantidade:falta,
-          observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`,
+          ...(custo!=null?{preco:custo, custo:custo}:{}), // repete o último custo de entrada conhecido desse produto
+          observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`+(custo!=null?` — custo repetido da última entrada (${custo})`:""),
         })});
-        reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd});
+        reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd, custoUsado:custo??null});
         await sleep(300);
       }catch(e){ console.error("Falha ao repor estoque do produto "+pid+":",e.message); }
     }
