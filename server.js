@@ -10782,6 +10782,58 @@ const OK_PEDIDOS_FILE=`${DATA_DIR}/pedidos_ok.json`;
 function lerPedidosOk(){ const d=lerJSON(OK_PEDIDOS_FILE,{}); const lim=Date.now()-30*86400000;
   let mudou=false; for(const k of Object.keys(d)){ if((d[k]?.em||0)<lim){ delete d[k]; mudou=true; } }
   if(mudou) salvarJSON(OK_PEDIDOS_FILE,d); return d; }
+// Atualiza um pedido específico com o Bling agora mesmo, e corrige tudo que essa
+// atualização implica no resto do sistema (não fica só no "leu e mostrou"):
+// - situação atual (cache _sitOnline)
+// - tipo entrega/retirada (mesmo critério completo usado em todo o sistema) e
+//   endereço, refletidos no registro local (se existir) e no cache de listagem
+// - se foi CANCELADO no Bling: remove de todas as rotas/viagens automaticamente
+app.post("/api/pedidos-online/:blingId/sincronizar",async(req,res)=>{
+  try{
+    const id=String(req.params.blingId);
+    let ped=null;
+    try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
+    if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling — confira se o ID está certo ou se ele foi excluído."});
+    const sitId=Number(ped.situacao?.id||0);
+    const sitNome=nomeSituacao(sitId);
+    _sitOnline[id]={situacaoId:sitId, situacao:sitNome, em:Date.now()};
+    const obs=String(ped.observacoes||"");
+    const endereco = ped.transporte?.enderecoEntrega?.endereco
+      ? [ped.transporte.enderecoEntrega.endereco,ped.transporte.enderecoEntrega.numero,ped.transporte.enderecoEntrega.bairro,ped.transporte.enderecoEntrega.municipio].filter(Boolean).join(", ")
+      : ped.transporte?.etiqueta?.endereco
+      ? [ped.transporte.etiqueta.endereco,ped.transporte.etiqueta.numero,ped.transporte.etiqueta.bairro,ped.transporte.etiqueta.municipio].filter(Boolean).join(", ")
+      : "";
+    const frete=Number(ped.transporte?.frete||0);
+    const ehEntrega = !!endereco || frete>0 || /ENTREGA\s*—/i.test(obs);
+    const tipo = ehEntrega?"entrega":"retirada";
+
+    // atualiza o registro local (proposta/pedido), se existir — pra tela de
+    // Pedidos/Propostas mostrar o tipo/endereço/total certos sem precisar reabrir
+    const props=lerPropostas();
+    const prop=Object.values(props).find(p=>String(p.pedidoBlingId)===id);
+    let propAtualizada=false;
+    if(prop){
+      prop.entrega = ehEntrega ? {tipo:"entrega", endereco, taxa:frete} : {tipo:"retirada"};
+      prop.total=Number(ped.total)||prop.total;
+      prop.atualizadoEm=Date.now();
+      props[prop.id]=prop; salvarPropostas(props);
+      propAtualizada=true;
+    }
+
+    // cancelado no Bling → tira de qualquer viagem/rota onde ainda esteja
+    let removidoDeRotas=false;
+    if(sitId===SIT.CANCELADO){
+      try{ removerPedidoDeTodasRotas(Number(id)); removidoDeRotas=true; }catch(e){}
+    }
+
+    // reflete tudo isso no cache de listagem NA HORA (não espera o cache expirar)
+    _atualizarPedidoNoCacheBling(id, { situacao:sitNome, situacaoId:sitId, tipo, endereco, frete,
+      cancelado:sitId===SIT.CANCELADO, total:Number(ped.total)||undefined });
+
+    res.json({ ok:true, numero:ped.numero, situacao:sitNome, situacaoId:sitId, tipo, endereco, frete,
+      total:Number(ped.total)||0, propAtualizada, removidoDeRotas, cancelado:sitId===SIT.CANCELADO });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/pedidos-online/:blingId/ok",(req,res)=>{
   try{
     const id=String(req.params.blingId);
