@@ -10221,6 +10221,12 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
     if(naoConferidos.length) return res.status(400).json({
       erro:"Tem pedido nessa viagem que ainda não passou pela conferência: "+naoConferidos.map(p=>`#${p.id} (${p.situacao})`).join(", ")+". Confira esses pedidos (tela de Conferência) antes de iniciar a viagem.",
       naoConferidos });
+    // MESMO CARRO NÃO PODE TER 2 VIAGENS ABERTAS AO MESMO TEMPO — o front já confere
+    // isso antes de mostrar o modal, mas com dado que pode estar desatualizado (até
+    // 1 clique de diferença); confere de novo aqui, na hora de gravar de verdade.
+    const viagensAtuais=lerViagensAtivas();
+    const jaAberta=Object.values(viagensAtuais).find(v=>String(v.carroId)===String(carroId) && !v.finalizadaEm && !v.canceladaEm);
+    if(jaAberta) return res.status(409).json({erro:`Esse carro já tem uma viagem em andamento agora (KM inicial ${jaAberta.kmInicial}${jaAberta.motoristaNome?", com "+jaAberta.motoristaNome:""}). Finalize ou cancele ela antes de iniciar outra.`});
     const token=crypto.randomBytes(16).toString("hex");
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||null;
     const viagens=lerViagensAtivas();
