@@ -67,7 +67,7 @@ function mostrarCarregando(etapas) {
   </div></div>`;
   const wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   let ix = 0;
   if (_carregandoTimer) clearInterval(_carregandoTimer);
   if (lista.length > 1) {
@@ -971,7 +971,7 @@ function pedirQrAcao(titulo, texto, onConfirm) {
     </div></div>`;
   const wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   const go = async () => {
     const campo = document.getElementById("qrAcaoProp");
     const tokenQr = (campo?.value || "").trim();
@@ -997,7 +997,7 @@ function confirmarNaTela(titulo, texto, onOk){
       <button class="btn btn-mag" style="flex:1" id="btnConfirmNaTela">Confirmar</button>
     </div>
   </div></div>`;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   document.getElementById("btnConfirmNaTela").onclick = () => { document.getElementById("confirmNaTela")?.remove(); onOk(); };
 }
 async function gerarPedido(id, tokenQr) {

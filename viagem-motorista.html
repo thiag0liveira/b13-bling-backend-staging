@@ -366,7 +366,7 @@ function renderModalEntrega(){
   if(antigo) antigo.remove();
   var wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   var modalNovo = document.querySelector("#modalWrap .modal");
   if(modalNovo) modalNovo.scrollTop = scrollAnterior;
 }
@@ -421,7 +421,7 @@ function perguntarBancoPix(){
   '</div></div>';
   var atual = document.getElementById("modalPix");
   if(atual) atual.remove();
-  const wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+  const wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstElementChild);
 }
 function fecharModais(){ const m = document.getElementById("modalPix"); if(m) m.remove(); }
 function confirmarBancoPix(){
@@ -454,7 +454,7 @@ function renderAssinaturaGrande(){
   '</div>';
   var wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   configurarAssinatura();
 }
 function voltarParaItens(){
@@ -532,7 +532,7 @@ function abrirFinalizarViagem(){
       '<button class="btn btn-grn" onclick="confirmarFinalizarViagem()">Confirmar</button>' +
     '</div>' +
   '</div></div>';
-  var wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstChild);
+  var wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstElementChild);
 }
 function confirmarFinalizarViagem(){
  try{
@@ -564,7 +564,7 @@ function abrirMapaViagem(){
   '</div>';
   const wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   setTimeout(function(){
     const mapa = L.map("mapaMotorista").setView([partida.lat, partida.lng], 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(mapa);

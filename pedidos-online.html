@@ -107,7 +107,7 @@ function mostrarCarregando(etapas) {
     '</div></div>';
   const wrap = document.createElement("div");
   wrap.innerHTML = html;
-  document.body.appendChild(wrap.firstChild);
+  document.body.appendChild(wrap.firstElementChild);
   let ix = 0;
   if (_carregandoTimer) clearInterval(_carregandoTimer);
   if (lista.length > 1) {
