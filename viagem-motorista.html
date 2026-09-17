@@ -611,6 +611,12 @@ window.onerror = function(msg, url, linha, coluna, erro){
   alert("Deu um erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print dessa mensagem e manda pro suporte — sem isso a gente fica sem saber o que travou.");
   return false;
 };
+// window.onerror não pega erro dentro de Promise (ex.: .then() sem .catch()) — isso
+// falha 100% em silêncio sem essa captura separada, parecendo só "travar" sem aviso.
+window.addEventListener("unhandledrejection", function(ev){
+  const msg = (ev.reason && (ev.reason.message || ev.reason)) || "erro desconhecido";
+  alert("Deu um erro inesperado nessa tela (numa operação assíncrona): " + msg + "\n\nTira um print dessa mensagem e manda pro suporte.");
+});
 
 carregar();
 </script>

@@ -1249,9 +1249,20 @@ async function desenharNotaEm(cv, p) {
   ctx.fillText("B13 Bebidas · Obrigado pela preferência!", W / 2, H - 16);
 }
 window.onerror = function(msg, url, linha, coluna, erro){
+  esconderCarregando();
   alert("Deu um erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
   return false;
 };
+// window.onerror só pega erro SÍNCRONO — um erro dentro de uma Promise (ex.: um
+// .then() sem .catch(), ou um await que escapou de algum try/catch) NÃO passa por
+// ali, é um evento separado. Sem isso, esse tipo de erro falhava 100% em silêncio:
+// nenhum alerta, nenhuma mensagem — só "parava", com a tela de carregamento aberta
+// pra sempre, exatamente o tipo de sintoma mais difícil de diagnosticar.
+window.addEventListener("unhandledrejection", function(ev){
+  esconderCarregando();
+  const msg = (ev.reason && (ev.reason.message || ev.reason)) || "erro desconhecido";
+  alert("Deu um erro inesperado nessa tela (numa operação assíncrona): " + msg + "\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
+});
 render();</script>
 </body>
 </html>
