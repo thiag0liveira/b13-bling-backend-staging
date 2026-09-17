@@ -7647,6 +7647,12 @@ function configEntrega(){
     faixas: (c.faixas && c.faixas.length ? c.faixas : [
       {min:1000, porKm:3.60},{min:2300, porKm:2.80},{min:2600, porKm:2.50},{min:3000, porKm:0}
     ]),
+    // faixa adicional: pra pedidos ALÉM do maxKm normal, até um segundo limite (ex.:
+    // acima de 23km e até 28km), com sua PRÓPRIA tabela de faixas por valor — só
+    // válida se tiver um kmMax maior que o maxKm normal e ao menos 1 faixa
+    faixaExtra: (c.faixaExtra && Number(c.faixaExtra.kmMax)>Number(c.maxKm??23) && (c.faixaExtra.faixas||[]).length)
+      ? { kmMax:Number(c.faixaExtra.kmMax), faixas:c.faixaExtra.faixas }
+      : null,
   };
 }
 function porKmPara(valor, faixas){
@@ -7667,11 +7673,15 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:20,prefixo:"frete"}), async 
     const el=j?.rows?.[0]?.elements?.[0];
     if(!el || el.status!=="OK") return res.json({entregaDisponivel:false, motivo:"Não consegui calcular a distância desse endereço. Confira e tente novamente.", detalhe:el?.status||j.status});
     const km=el.distance.value/1000;
-    if(km > cfg.maxKm) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${cfg.maxKm} km para entrega.`, km:Number(km.toFixed(1))});
-    const faixa=porKmPara(valor, cfg.faixas);
+    // dentro do limite normal → tabela normal; além do limite normal, mas dentro da
+    // faixa adicional (se configurada) → usa a tabela DELA; além de tudo → sem entrega
+    const limiteFinal = cfg.faixaExtra ? cfg.faixaExtra.kmMax : cfg.maxKm;
+    if(km > limiteFinal) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:Number(km.toFixed(1))});
+    const usaFaixaExtra = km > cfg.maxKm && cfg.faixaExtra;
+    const faixa=porKmPara(valor, usaFaixaExtra ? cfg.faixaExtra.faixas : cfg.faixas);
     const porKm=faixa?Number(faixa.porKm):0;
     const taxa=Math.round(porKm*km*100)/100;
-    res.json({entregaDisponivel:true, km:Number(km.toFixed(1)), porKm, taxa, gratis:porKm===0});
+    res.json({entregaDisponivel:true, km:Number(km.toFixed(1)), porKm, taxa, gratis:porKm===0, faixaExtra:!!usaFaixaExtra});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
