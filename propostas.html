@@ -987,15 +987,32 @@ function pedirQrAcao(titulo, texto, onConfirm) {
   }, 50);
 }
 function fecharModais() { const el = document.getElementById("modaisQrProp"); if (el) el.remove(); }
+function confirmarNaTela(titulo, texto, onOk){
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `<div class="modalBg" id="confirmNaTela"><div class="modal">
+    <h3>${esc(titulo)}</h3>
+    <p class="muted" style="margin-bottom:14px">${esc(texto)}</p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:1" onclick="document.getElementById('confirmNaTela').remove()">Cancelar</button>
+      <button class="btn btn-mag" style="flex:1" id="btnConfirmNaTela">Confirmar</button>
+    </div>
+  </div></div>`;
+  document.body.appendChild(wrap.firstChild);
+  document.getElementById("btnConfirmNaTela").onclick = () => { document.getElementById("confirmNaTela")?.remove(); onOk(); };
+}
 async function gerarPedido(id, tokenQr) {
   if (!tokenQr) {
-    try {
-      if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
-    } catch (eConfirm) {
-      alert("Não consegui abrir a confirmação (o navegador pode estar bloqueando pop-ups repetidos nesta aba — recarregue a página e tente de novo). Detalhe: " + eConfirm.message);
-      return;
-    }
+    // NÃO usa mais o confirm() nativo do navegador: depois de muitos alert()/
+    // confirm() seguidos na mesma aba, o Chrome passa a BLOQUEAR SILENCIOSAMENTE
+    // toda caixa de diálogo nova daquela página — confirm() simplesmente retorna
+    // "cancelado" sem mostrar nada e sem avisar ninguém, o que fazia essa função
+    // parecer "não fez nada" (porque, de fato, não fazia — parava bem aqui).
+    confirmarNaTela("Gerar pedido", "Gerar o pedido de venda no Bling a partir desta proposta?", () => gerarPedidoDeVerdade(id, tokenQr));
+    return;
   }
+  await gerarPedidoDeVerdade(id, tokenQr);
+}
+async function gerarPedidoDeVerdade(id, tokenQr) {
   const nItens = (LISTA.find(x => x.id === id)?.itens || []).length;
   mostrarCarregando(nItens > 10
     ? ["Conferindo estoque de " + nItens + " produtos (pode levar um tempinho)…", "Ainda conferindo, um produto de cada vez…", "Quase lá, aguarde…"]
@@ -1014,27 +1031,27 @@ async function gerarPedido(id, tokenQr) {
       pedirQrAcao("⚠️ Estoque insuficiente", `Faltou estoque pra:<br>${lista}<br><br>Gerar mesmo assim pode impactar outros pedidos que também contam com esse saldo. Precisa de autorização de um gerente, financeiro ou admin.`,
         async (tokenQrLido, campo, erroEl) => {
           fecharModais();
-          await gerarPedido(id, tokenQrLido);
+          await gerarPedidoDeVerdade(id, tokenQrLido);
         });
       return;
     }
     if (j.erro) {
-      alert("❌ Não foi possível gerar o pedido no Bling:\n\n" + j.erro + "\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo.");
+      mostrarErroFixo("Não foi possível gerar o pedido no Bling:\n\n" + j.erro + "\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo.");
       return;
     }
-    let msg = "Pedido #" + j.numero + " criado (aguardando separação)!";
+    let msg = "✅ Pedido #" + j.numero + " criado (aguardando separação)!";
     if (j.autorizadoPorEstoque) {
       msg += "\n\n⚠️ Foi gerado SEM estoque suficiente (autorizado por " + j.autorizadoPorEstoque + "). Avise o estoquista — essa liberação pode ter impactado outros pedidos que contam com o mesmo saldo.";
     }
-    alert(msg);
+    mostrarErroFixo(msg);
     carregar();
   } catch (e) {
     esconderCarregando();
     if (e && e.name === "AbortError") {
-      alert("A geração do pedido demorou mais de 1 minuto e foi interrompida por segurança (o servidor pode estar sobrecarregado). Ela continua como PROPOSTA — espere um instante e tente de novo.");
+      mostrarErroFixo("A geração do pedido demorou mais de 1 minuto e foi interrompida por segurança (o servidor pode estar sobrecarregado). Ela continua como PROPOSTA — espere um instante e tente de novo.");
       return;
     }
-    alert("Erro inesperado ao gerar o pedido (" + (e && e.message || "erro desconhecido") + "). Ela continua como proposta — tire um print desta mensagem e tente de novo.");
+    mostrarErroFixo("Erro inesperado ao gerar o pedido (" + (e && e.message || "erro desconhecido") + "). Ela continua como proposta — tire um print desta mensagem e tente de novo.");
   }
 }
 async function excluir(id) {
@@ -1255,9 +1272,24 @@ async function desenharNotaEm(cv, p) {
   ctx.textAlign = "center";
   ctx.fillText("B13 Bebidas · Obrigado pela preferência!", W / 2, H - 16);
 }
+// BANNER DE ERRO FIXO NA TELA — depois de muitos alert()/confirm() seguidos numa
+// mesma aba, o Chrome passa a BLOQUEAR SILENCIOSAMENTE todo alert() novo daquela
+// página (sem avisar nada, nem pro usuário nem pro código) — foi exatamente o que
+// causou "não apareceu mensagem nenhuma" mesmo com o erro sendo capturado direito.
+// Um elemento fixo no próprio HTML não pode ser bloqueado dessa forma.
+function mostrarErroFixo(msg){
+  let el = document.getElementById("erroFixoGeral");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "erroFixoGeral";
+    el.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#3a0010;border:2px solid #ff4d6d;color:#fff;border-radius:12px;padding:14px 16px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.5);max-height:40vh;overflow:auto";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div>❌ ' + esc(msg).replace(/\n/g, "<br>") + '</div><button onclick="document.getElementById(\'erroFixoGeral\').remove()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0">✕</button></div>';
+}
 window.onerror = function(msg, url, linha, coluna, erro){
   esconderCarregando();
-  alert("Deu um erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
+  mostrarErroFixo("Erro inesperado nessa tela: " + msg + " (linha " + linha + ")\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
   return false;
 };
 // window.onerror só pega erro SÍNCRONO — um erro dentro de uma Promise (ex.: um
@@ -1268,7 +1300,7 @@ window.onerror = function(msg, url, linha, coluna, erro){
 window.addEventListener("unhandledrejection", function(ev){
   esconderCarregando();
   const msg = (ev.reason && (ev.reason.message || ev.reason)) || "erro desconhecido";
-  alert("Deu um erro inesperado nessa tela (numa operação assíncrona): " + msg + "\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
+  mostrarErroFixo("Erro inesperado nessa tela (numa operação assíncrona): " + msg + "\n\nTira um print e me manda — sem isso fico sem saber o que travou.");
 });
 render();</script>
 </body>
