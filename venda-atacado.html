@@ -902,7 +902,7 @@ function tbItemRow(it, chaveUnica) {
           <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.nome)}</div>
           <div style="color:#ffd23f;font-weight:800;font-size:12px">${brl(it.preco)}${mult > 1 ? ` <span class="muted" style="font-size:10px">· fardo ${mult}</span>` : ''} <span class="muted" style="font-size:10px">· ${blingList.length} sabores</span></div>
         </div>
-        <button class="btn btn-out" style="font-size:12px;padding:7px 12px;flex-shrink:0" onclick="S.tbAbertos['${chaveUnica}']=!S.tbAbertos['${chaveUnica}'];render()">${aberto ? '▲ Fechar' : '▼ Escolher sabor'}</button>
+        <button class="btn btn-out" style="font-size:12px;padding:7px 12px;flex-shrink:0" onclick="S.tbAbertos['${chaveUnica.replace(/'/g, "\\'")}']=!S.tbAbertos['${chaveUnica.replace(/'/g, "\\'")}'];render()">${aberto ? '▲ Fechar' : '▼ Escolher sabor'}</button>
       </div>
       ${aberto ? `<div style="padding:0 4px 8px 14px">${blingList.map(b => tbSaborRow(it, b, mult)).join("")}</div>` : ''}
     </div>`;
