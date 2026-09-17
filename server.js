@@ -13164,21 +13164,35 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     if(!prop.itens?.length){ liberarTrava(); return res.status(400).json({erro:"a proposta não tem itens"}); }
 
     // valida o estoque ao vivo de cada item antes de tentar criar (evita o erro genérico
-    // do Bling e diz exatamente qual produto está sem saldo)
+    // do Bling e diz exatamente qual produto está sem saldo, com a quantidade que
+    // falta). Se faltar estoque, NÃO bloqueia direto — exige autorização por QR
+    // (gerente/financeiro/admin), porque liberar sem estoque de verdade pode
+    // impactar outros pedidos que também contam com esse mesmo saldo.
+    const {tokenQr}=req.body||{};
     const semEstoque=[];
     for(const it of prop.itens){
       try{
         const r=await bling(`/produtos/${it.produtoId}`);
         const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
         if(saldo!=null && Number(it.quantidade)>Number(saldo)){
-          semEstoque.push(`${it.nome} (pediu ${it.quantidade}, tem ${saldo})`);
+          semEstoque.push({nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)});
         }
       }catch(e){}
       await new Promise(r=>setTimeout(r,120));
     }
+    let autorizadoPorEstoque=null;
     if(semEstoque.length){
-      liberarTrava();
-      return res.status(400).json({erro:"Estoque insuficiente: "+semEstoque.join("; ")+". Ajuste as quantidades."});
+      if(!tokenQr){
+        liberarTrava();
+        return res.status(409).json({
+          precisaAutorizacaoEstoque:true,
+          itensSemEstoque:semEstoque,
+          erro:"Estoque insuficiente pra "+semEstoque.length+" item(ns): "+semEstoque.map(i=>`${i.nome} (falta ${i.falta})`).join("; ")+". Liberar sem estoque pode impactar outros pedidos que contam com esse mesmo saldo — precisa de autorização (QR de gerente/financeiro/admin) pra continuar mesmo assim.",
+        });
+      }
+      const auth=validarTokenQrAtacado(tokenQr);
+      if(auth.erro){ liberarTrava(); return res.status(401).json({erro:auth.erro}); }
+      autorizadoPorEstoque=auth.funcionario.nome;
     }
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
@@ -13280,6 +13294,13 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         oQueFazer:`O pedido foi criado mas não entrou em "Aguardando separação". Na tela de Pedidos, busque o número e use "🔀 Mover status".`});
     }
     addLog(String(pedidoId),"pedido_criado_atacado",prop.funcionarioId,prop.funcionarioNome,{proposta:prop.id});
+    if(autorizadoPorEstoque){
+      addLog(String(pedidoId),"gerado_com_estoque_insuficiente",prop.funcionarioId,prop.funcionarioNome,{autorizadoPor:autorizadoPorEstoque, itensSemEstoque:semEstoque});
+      registrarAviso({tipo:"pedido_gerado_sem_estoque",
+        titulo:`Pedido #${numero||pedidoId} foi gerado SEM estoque suficiente — avisar o estoquista`,
+        pedidoId:String(pedidoId), numero, origem:"Venda Atacado", operador:prop.funcionarioNome||"",
+        oQueFazer:`Autorizado por ${autorizadoPorEstoque}. Itens sem saldo: ${semEstoque.map(i=>`${i.nome} (faltou ${i.falta})`).join("; ")}. Isso pode ter puxado saldo que outros pedidos também contavam — o estoquista precisa saber e conferir se algum outro pedido ficou descoberto.`});
+    }
 
     // se o vendedor já marcou um dia desejado de entrega, agenda o pedido
     // direto no Gerenciamento de Rota (fica em "aguardando carro" nesse dia,
@@ -13322,7 +13343,8 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         }catch(e){}
       })();
     }
-    res.json({ok:true,pedidoId,numero,numeroConfirmado:numeroVeioDoBling,agendadoRotaData});
+    res.json({ok:true,pedidoId,numero,numeroConfirmado:numeroVeioDoBling,agendadoRotaData,
+      autorizadoPorEstoque, itensSemEstoque: autorizadoPorEstoque?semEstoque:undefined});
   }catch(e){
     try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e2){}
     res.status(e.status||500).json({erro:e.message,body:e.body});

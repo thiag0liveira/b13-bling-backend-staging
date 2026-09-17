@@ -953,24 +953,70 @@ async function cancelar(id) {
     alert("Erro de conexão ao cancelar. Nada foi alterado — tente de novo.");
   }
 }
-async function gerarPedido(id) {
-  try {
-    if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
-  } catch (eConfirm) {
-    alert("Não consegui abrir a confirmação (o navegador pode estar bloqueando pop-ups repetidos nesta aba — recarregue a página e tente de novo). Detalhe: " + eConfirm.message);
-    return;
+function pedirQrAcao(titulo, texto, onConfirm) {
+  document.getElementById("modais").innerHTML = `
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>${titulo}</h3>
+      <p class="muted" style="margin-bottom:8px">${texto}</p>
+      <div class="muted" style="margin-bottom:4px">QR de autorização</div>
+      <input id="qrAcaoProp" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
+        autocomplete="new-password" name="qr_${Date.now()}" autocorrect="off" autocapitalize="off" spellcheck="false"
+        data-lpignore="true" data-1p-ignore data-form-type="other" autofocus>
+      <div id="qrErroAcaoProp"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" id="btnQrAcaoProp">Confirmar</button>
+        <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+  const go = async () => {
+    const campo = document.getElementById("qrAcaoProp");
+    const tokenQr = (campo?.value || "").trim();
+    const erroEl = document.getElementById("qrErroAcaoProp");
+    if (!tokenQr) { if (erroEl) erroEl.innerHTML = `<div class="err">Leia ou cole o QR de autorização.</div>`; return; }
+    await onConfirm(tokenQr, campo, erroEl);
+  };
+  setTimeout(() => {
+    const t = document.getElementById("qrAcaoProp");
+    if (t) t.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+    const b = document.getElementById("btnQrAcaoProp");
+    if (b) b.onclick = go;
+  }, 50);
+}
+function fecharModais() { const el = document.getElementById("modais"); if (el) el.innerHTML = ""; }
+async function gerarPedido(id, tokenQr) {
+  if (!tokenQr) {
+    try {
+      if (!confirm("Gerar o pedido de venda no Bling a partir desta proposta?")) return;
+    } catch (eConfirm) {
+      alert("Não consegui abrir a confirmação (o navegador pode estar bloqueando pop-ups repetidos nesta aba — recarregue a página e tente de novo). Detalhe: " + eConfirm.message);
+      return;
+    }
   }
   mostrarCarregando(["Conferindo estoque dos produtos…", "Enviando o pedido pro Bling…", "Ainda trabalhando nisso, aguarde…"]);
   try {
     const j = await fetch(B + "/api/atacado/propostas/" + id + "/gerar-pedido", {
-      method: "POST"
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tokenQr ? { tokenQr } : {})
     }).then(r => r.json());
     esconderCarregando();
+    if (j.precisaAutorizacaoEstoque) {
+      const lista = j.itensSemEstoque.map(i => `${esc(i.nome)} (pediu ${i.pediu}, tem ${i.tem}, falta ${i.falta})`).join("<br>");
+      pedirQrAcao("⚠️ Estoque insuficiente", `Faltou estoque pra:<br>${lista}<br><br>Gerar mesmo assim pode impactar outros pedidos que também contam com esse saldo. Precisa de autorização de um gerente, financeiro ou admin.`,
+        async (tokenQrLido, campo, erroEl) => {
+          fecharModais();
+          await gerarPedido(id, tokenQrLido);
+        });
+      return;
+    }
     if (j.erro) {
       alert("❌ Não foi possível gerar o pedido no Bling:\n\n" + j.erro + "\n\nEla continua como PROPOSTA — corrija o problema e tente gerar de novo.");
       return;
     }
-    alert("Pedido #" + j.numero + " criado (aguardando separação)!");
+    let msg = "Pedido #" + j.numero + " criado (aguardando separação)!";
+    if (j.autorizadoPorEstoque) {
+      msg += "\n\n⚠️ Foi gerado SEM estoque suficiente (autorizado por " + j.autorizadoPorEstoque + "). Avise o estoquista — essa liberação pode ter impactado outros pedidos que contam com o mesmo saldo.";
+    }
+    alert(msg);
     carregar();
   } catch (e) {
     esconderCarregando();
