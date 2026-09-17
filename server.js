@@ -795,7 +795,9 @@ async function b13ChecarNovosPedidos(){
     else { el.style.display="none"; }
   }catch(e){}
 }
-function b13AbrirNovosPedidos(){
+async function b13AbrirNovosPedidos(){
+  const f=b13GetSession();
+  if(f){ try{ window._b13Novos=await fetch(B13_BACKEND+"/api/pedidos-online/novos/"+encodeURIComponent(f.id)+"?abrir=1").then(r=>r.json()); }catch(e){} }
   const j=window._b13Novos||{novos:0,pedidos:[]};
   const fmtHora=(ms)=>{ if(!ms) return ""; const d=new Date(Number(ms)); const hj=new Date();
     const hh=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
@@ -10144,8 +10146,13 @@ app.get("/api/pedidos-online/novos/:funcionarioId",(req,res)=>{
     const marca=vistos[String(req.params.funcionarioId)]||{ultimoEm:0};
     const lista=_listaOnlineSimples(3);
     const novos=lista.filter(p=>(p.criadoEm||0)>Number(marca.ultimoEm||0));
-    // busca a situação atual dos novos em 2º plano, pra o sino poder mostrá-la
-    if(novos.length) _atualizarSituacoesOnline(novos.slice(0,10).map(p=>p.pedidoBlingId));
+    // busca a situação atual dos novos SÓ quando o funcionário realmente abre a
+    // notificação (?abrir=1) — antes isso rodava a cada checagem silenciosa (a cada
+    // 60s, de toda aba aberta, pra todo funcionário com o sino habilitado), gerando
+    // até 10 chamadas ao Bling por minuto só pra alimentar um número no badge, que
+    // nem precisa de situação nenhuma (só a contagem). A situação só é usada de
+    // verdade quando o dropdown é aberto.
+    if(req.query.abrir==="1" && novos.length) _atualizarSituacoesOnline(novos.slice(0,10).map(p=>p.pedidoBlingId));
     res.json({ novos:novos.length, vistoAte:Number(marca.ultimoEm||0),
       ultimoEm: lista.length?Math.max(...lista.map(p=>p.criadoEm||0)):0,
       pedidos:novos.slice(0,10).map(p=>{
