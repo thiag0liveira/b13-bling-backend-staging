@@ -23,6 +23,21 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// PROTEÇÃO GLOBAL CONTRA CRASH: em Node.js moderno, UM ÚNICO erro não tratado
+// (um throw fora de try/catch, ou uma Promise sem .catch) DERRUBA O PROCESSO
+// INTEIRO — não só a requisição que causou o erro, o servidor inteiro cai e todo
+// mundo perde a conexão até o Railway reiniciar sozinho. Com um sistema desse
+// tamanho, cheio de tarefas em segundo plano (sincronizações, cache, sino de
+// notificação etc.), um bug pontual em qualquer uma delas não pode derrubar o
+// site inteiro. Isso registra o erro no log e mantém o servidor no ar — é uma
+// rede de segurança, não substitui corrigir a causa quando ela for encontrada.
+process.on("unhandledRejection", (razao, promessa) => {
+  console.error("[unhandledRejection] Promise sem .catch() — servidor continua no ar:", razao?.stack || razao);
+});
+process.on("uncaughtException", (erro) => {
+  console.error("[uncaughtException] Erro não tratado — servidor continua no ar:", erro?.stack || erro);
+});
+
 const {
   BLING_CLIENT_ID, BLING_CLIENT_SECRET,
   BLING_REDIRECT_URI = "http://localhost:3000/callback",
@@ -9837,6 +9852,15 @@ app.get("/api/central/resumo",(req,res)=>{
 // no Bling em SEGUNDO PLANO e vai sendo preenchida (cache de 60s).
 let _sitOnline={};        // pedidoBlingId -> {situacaoId, situacao, em}
 let _sitOnlineRodando=false;
+// mesma lógica: tira entradas de pedidos que não são consultados há mais de 24h
+// (não crescem tanto individualmente quanto o cache de período, mas somado ao
+// longo de dias/semanas de uso também é memória que nunca volta)
+setInterval(()=>{
+  try{
+    const agora=Date.now();
+    Object.keys(_sitOnline).forEach(k=>{ if(agora-(_sitOnline[k]?.em||0)>24*60*60*1000) delete _sitOnline[k]; });
+  }catch(e){}
+}, 60*60*1000);
 async function _atualizarSituacoesOnline(ids){
   if(_sitOnlineRodando) return;
   _sitOnlineRodando=true;
@@ -9932,6 +9956,22 @@ function _montarPedidoDoBling(b){
 // a busca pula os dias já totalmente finalizados, o que a torna muito mais rápida em
 // períodos com muitos pedidos antigos.
 const _cacheBlingPedidos={}; // "iniISO_fimISO" -> {pedidos, pronto, progresso, em, rodando}
+// LIMPEZA: sem isso, esse cache cresce pra sempre — uma entrada nova pra cada
+// combinação de datas já consultada (que muda todo dia, já que "hoje" desliza), e
+// nenhuma é removida. Cada entrada guarda uma lista inteira de pedidos do
+// período. Rodando por dias, isso é um vazamento de memória de verdade — bem
+// provável causa dos travamentos/reinícios do servidor. Tira quem não é usado há
+// mais de 3 horas.
+function _limparCacheBlingPedidos(){
+  try{
+    const agora=Date.now();
+    Object.keys(_cacheBlingPedidos).forEach(k=>{
+      const c=_cacheBlingPedidos[k];
+      if(c && !c.rodando && agora-(c.em||0)>3*60*60*1000) delete _cacheBlingPedidos[k];
+    });
+  }catch(e){}
+}
+setInterval(_limparCacheBlingPedidos, 15*60*1000);
 // atualiza (ou remove) um pedido em TODOS os buckets de cache — usado depois de
 // mudar tipo-entrega/retirada de um pedido SEM registro local, que só é mostrado
 // via esse cache (até 2 min de vida). Sem isso, a mudança só aparecia depois do
