@@ -13234,20 +13234,24 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     // (gerente/financeiro/admin), porque liberar sem estoque de verdade pode
     // impactar outros pedidos que também contam com esse mesmo saldo.
     const {tokenQr}=req.body||{};
-    const semEstoque=[];
-    for(const it of prop.itens){
+    // dispara a checagem de TODOS os itens de uma vez (em vez de um de cada vez,
+    // esperando cada um terminar antes de começar o próximo) — a fila global do
+    // bling() já limita a no máximo 3 chamadas concorrentes com o espaçamento
+    // mínimo necessário, então isso não sobrecarrega o Bling, só evita ficar
+    // esperando à toa entre uma chamada e outra. Numa proposta com 30 itens, isso é
+    // a diferença entre dezenas de segundos (arriscando até dar timeout na
+    // requisição) e poucos segundos.
+    const resultadosEstoque=await Promise.all(prop.itens.map(async it=>{
       try{
         const r=await bling(`/produtos/${it.produtoId}`);
         const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
         if(saldo!=null && Number(it.quantidade)>Number(saldo)){
-          semEstoque.push({nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)});
+          return {nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)};
         }
       }catch(e){}
-      // sem sleep extra aqui — a fila global do bling() já garante um espaçamento
-      // mínimo de 400ms entre QUALQUER chamada ao Bling no sistema inteiro; um sleep
-      // local em cima disso só deixava propostas com muitos itens ainda mais lentas
-      // sem necessidade nenhuma (era puro atraso duplicado).
-    }
+      return null;
+    }));
+    const semEstoque=resultadosEstoque.filter(Boolean);
     let autorizadoPorEstoque=null;
     if(semEstoque.length){
       if(!tokenQr){
