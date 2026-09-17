@@ -954,8 +954,9 @@ async function cancelar(id) {
   }
 }
 function pedirQrAcao(titulo, texto, onConfirm) {
-  document.getElementById("modais").innerHTML = `
-    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+  fecharModais();
+  const html = `
+    <div class="modalBg" id="modaisQrProp" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>${titulo}</h3>
       <p class="muted" style="margin-bottom:8px">${texto}</p>
       <div class="muted" style="margin-bottom:4px">QR de autorização</div>
@@ -968,6 +969,9 @@ function pedirQrAcao(titulo, texto, onConfirm) {
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
   const go = async () => {
     const campo = document.getElementById("qrAcaoProp");
     const tokenQr = (campo?.value || "").trim();
@@ -982,7 +986,7 @@ function pedirQrAcao(titulo, texto, onConfirm) {
     if (b) b.onclick = go;
   }, 50);
 }
-function fecharModais() { const el = document.getElementById("modais"); if (el) el.innerHTML = ""; }
+function fecharModais() { const el = document.getElementById("modaisQrProp"); if (el) el.remove(); }
 async function gerarPedido(id, tokenQr) {
   if (!tokenQr) {
     try {
