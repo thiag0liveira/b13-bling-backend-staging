@@ -13360,15 +13360,43 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     try{
       criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
     }catch(errBling){
-      // extrai o detalhe do erro do Bling (quais campos falharam) pra mostrar na tela
-      console.error("[atacado] erro Bling ao criar pedido:",JSON.stringify(errBling.body||errBling.message));
-      const b=errBling.body||{};
-      const campos=b?.error?.fields||b?.error?.details||[];
-      const detalhe=Array.isArray(campos)&&campos.length
-        ? campos.map(f=>`${f.element||f.field||f.campo||''}: ${f.msg||f.message||f.descricao||JSON.stringify(f)}`).join(" | ")
-        : (b?.error?.description||b?.error?.message||errBling.message||"erro desconhecido");
-      liberarTrava();
-      return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
+      // se foi AUTORIZADO a gerar mesmo com estoque insuficiente, a autorização até
+      // agora só pulava o NOSSO aviso — o Bling continuava recusando por conta
+      // própria, porque o saldo real dele não tinha sido corrigido. Aqui, quando é
+      // esse o caso, repõe o estoque de verdade (mesma função usada no resto do
+      // sistema) e tenta criar de novo, uma vez, antes de desistir.
+      const ehErroEstoqueCriacao=/saldo.*insuficiente|estoque.*insuficiente|integrar o estoque/i.test((errBling?.message||"")+" "+JSON.stringify(errBling?.body||{}));
+      if(autorizadoPorEstoque && ehErroEstoqueCriacao){
+        try{
+          const itensParaRepor=prop.itens.map(i=>({produtoId:i.produtoId, quantidade:i.quantidade, nome:i.nome}));
+          const repostoAgora=await garantirEstoqueParaItens(itensParaRepor);
+          if(repostoAgora.length){
+            try{
+              criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+            }catch(errBling2){
+              console.error("[atacado] erro Bling ao criar pedido MESMO DEPOIS de repor estoque:",JSON.stringify(errBling2.body||errBling2.message));
+              liberarTrava();
+              return res.status(400).json({erro:"Mesmo repondo o estoque automaticamente, o Bling recusou de novo: "+(errBling2.body?.error?.description||errBling2.message||"erro desconhecido")});
+            }
+          } else {
+            liberarTrava();
+            return res.status(400).json({erro:"Autorizado, mas não consegui repor o estoque no Bling pra corrigir — confira o depósito/estoque desses produtos direto no Bling e tente de novo."});
+          }
+        }catch(e2){
+          liberarTrava();
+          return res.status(400).json({erro:"Autorizado, mas houve um erro ao repor o estoque: "+e2.message});
+        }
+      } else {
+        // extrai o detalhe do erro do Bling (quais campos falharam) pra mostrar na tela
+        console.error("[atacado] erro Bling ao criar pedido:",JSON.stringify(errBling.body||errBling.message));
+        const b=errBling.body||{};
+        const campos=b?.error?.fields||b?.error?.details||[];
+        const detalhe=Array.isArray(campos)&&campos.length
+          ? campos.map(f=>`${f.element||f.field||f.campo||''}: ${f.msg||f.message||f.descricao||JSON.stringify(f)}`).join(" | ")
+          : (b?.error?.description||b?.error?.message||errBling.message||"erro desconhecido");
+        liberarTrava();
+        return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
+      }
     }
     const pedidoId=criado?.data?.id;
     // proteção: se o Bling respondeu sem erro mas não devolveu o ID do pedido,
