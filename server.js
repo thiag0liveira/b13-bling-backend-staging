@@ -10334,6 +10334,29 @@ app.post("/api/rotas/motivo-nao-entrega",(req,res)=>{
 const VIAGENS_ATIVAS_FILE=`${DATA_DIR}/viagens_ativas.json`; // token -> {dados da viagem}
 function lerViagensAtivas(){ return lerJSON(VIAGENS_ATIVAS_FILE,{}); }
 function salvarViagensAtivas(o){ salvarJSON(VIAGENS_ATIVAS_FILE,o); }
+// LIMPEZA: cada viagem guarda, por entrega, a assinatura do cliente como IMAGEM
+// (base64) — sem limpeza, isso cresce pra sempre (nunca era removido) e o arquivo
+// inteiro é reescrito a cada atualização de qualquer viagem, então quanto maior
+// ele fica, mais cara cada gravação fica. Usa o MESMO prazo de retenção dos
+// comprovantes de foto/filmagem (60 dias) — depois disso, a viagem sai daqui (não
+// aparece mais em "Ver detalhes"), mas o pedido em si continua normal no Bling.
+function limparViagensAntigas(){
+  try{
+    const viagens=lerViagensAtivas();
+    const limite=Date.now()-COMPROV_DIAS_MANTER*86400000;
+    let removidas=0;
+    Object.keys(viagens).forEach(token=>{
+      const v=viagens[token];
+      const referencia=v.finalizadaEm||v.canceladaEm||v.iniciadaEm||0;
+      // só remove viagem já FINALIZADA ou CANCELADA e antiga — nunca uma em andamento
+      if((v.finalizadaEm||v.canceladaEm) && referencia<limite){ delete viagens[token]; removidas++; }
+    });
+    if(removidas){ salvarViagensAtivas(viagens); console.log(`[viagens] limpeza: ${removidas} viagem(ns) antiga(s) removida(s) (mais de ${COMPROV_DIAS_MANTER} dias)`); }
+    return {removidas};
+  }catch(e){ return {removidas:0, erro:e.message}; }
+}
+setTimeout(limparViagensAntigas, 90000); // 1min30 depois de subir (não compete com o boot)
+setInterval(limparViagensAntigas, 12*60*60*1000); // e a cada 12h, mesmo ritmo dos comprovantes
 
 // inicia a viagem: gera o token/QR, grava o KM inicial e move todos os pedidos
 // dessa viagem pra EM_ROTA de uma vez (o motorista já está saindo com eles)
