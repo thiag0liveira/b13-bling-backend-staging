@@ -10355,8 +10355,13 @@ function limparViagensAntigas(){
     return {removidas};
   }catch(e){ return {removidas:0, erro:e.message}; }
 }
-setTimeout(limparViagensAntigas, 90000); // 1min30 depois de subir (não compete com o boot)
-setInterval(limparViagensAntigas, 12*60*60*1000); // e a cada 12h, mesmo ritmo dos comprovantes
+// DESLIGADO URGENTE (18/09, minutos depois de adicionar): suspeita forte de que
+// viagens_ativas.json está grande o bastante (imagens de assinatura acumuladas
+// desde sempre, nunca limpas até agora) pra essa leitura/processamento síncrono
+// travar o processo inteiro por um tempo longo assim que roda. Precisa investigar
+// o tamanho real do arquivo antes de reativar isso com segurança.
+// setTimeout(limparViagensAntigas, 90000); // 1min30 depois de subir (não compete com o boot)
+// setInterval(limparViagensAntigas, 12*60*60*1000); // e a cada 12h, mesmo ritmo dos comprovantes
 
 // inicia a viagem: gera o token/QR, grava o KM inicial e move todos os pedidos
 // dessa viagem pra EM_ROTA de uma vez (o motorista já está saindo com eles)
