@@ -226,6 +226,15 @@ async function blingRaw(path,options={},_tentativa=0){
   try{
     const r=await fetch(API+path,{...options,signal:ctrl.signal,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",Accept:"application/json",...(options.headers||{})}});
     clearTimeout(timeout);
+    // guarda os cabeçalhos de limite de uso que o Bling manda (se mandar) — ajuda a
+    // saber, na próxima vez que ficar lento, se é limite de cota (throttle do lado
+    // deles pra essa integração) ou instabilidade geral deles mesmo
+    try{
+      const limite=r.headers.get("x-ratelimit-limit")||r.headers.get("x-rate-limit-limit");
+      const restante=r.headers.get("x-ratelimit-remaining")||r.headers.get("x-rate-limit-remaining");
+      const reset=r.headers.get("x-ratelimit-reset")||r.headers.get("retry-after");
+      if(limite||restante) _ultimoRateLimitBling={limite,restante,reset,em:Date.now(),path};
+    }catch(e){}
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
     if(r.status===429){ try{ _metricas.err429++; }catch(e){} }
     if(r.status===429&&_tentativa<8){
@@ -252,6 +261,7 @@ async function blingRaw(path,options={},_tentativa=0){
     return j;
   }catch(e){ clearTimeout(timeout); throw e; }
 }
+let _ultimoRateLimitBling=null;
 // Fila global: TODAS as chamadas ao Bling do sistema (não importa de qual endpoint/
 // tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
@@ -292,6 +302,7 @@ app.get("/api/diag/bling-status",async(req,res)=>{
     metricas:{ total:_metricas.total, erros:_metricas.erros, err429:_metricas.err429,
       esperaMediaMs: _metricas.total?Math.round(_metricas.esperaTotalMs/_metricas.total):0,
       esperaMaxMs:_metricas.esperaMaxMs, desde:new Date(_metricas.inicio).toISOString() },
+    limiteBling: _ultimoRateLimitBling, // o que o Bling mandou de cabecalho de cota, se mandou algo
     ultimasChamadas: _metricas.ultimas.slice(0,15),
     testeAoVivo,
   });
