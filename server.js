@@ -254,11 +254,14 @@ async function blingRaw(path,options={},_tentativa=0){
     if(r.status===429&&_tentativa<8){
       // limite de requisições do Bling — espera com backoff crescente e tenta de
       // novo. Se o Bling mandou "Retry-After" (segundos exatos de espera), usa
-      // esse valor de verdade em vez de só chutar um backoff fixo.
+      // esse valor de verdade em vez de só chutar um backoff fixo. Jitter (ruído
+      // aleatório) evita que várias chamadas que falharam juntas tentem de novo
+      // no mesmo instante exato (efeito manada).
       const retryAfterHeader=r.headers.get("retry-after");
+      const jitter=Math.floor(Math.random()*300);
       const esperaMs=retryAfterHeader && !isNaN(Number(retryAfterHeader))
-        ? Number(retryAfterHeader)*1000 + 200 // +200ms de folga
-        : 1200*(_tentativa+1);
+        ? Number(retryAfterHeader)*1000 + 200 + jitter
+        : 1200*(_tentativa+1) + jitter;
       await new Promise(res=>setTimeout(res,esperaMs));
       return blingRaw(path,options,_tentativa+1);
     }
@@ -347,7 +350,14 @@ function _registrarMetrica(path, esperouMs, duracaoMs, erro){
 // AGORA: até BLING_MAX_CONCORRENTE chamadas correm ao mesmo tempo; o intervalo
 // mínimo passa a valer entre o INÍCIO de uma chamada e o início da próxima, não entre
 // o início de uma e o fim da anterior.
-const BLING_MAX_CONCORRENTE=3;
+// BAIXADO PRA 1 (18/09): a documentação do Bling recomenda explicitamente "Worker
+// único (Single Thread)... evite ligar múltiplos workers simultâneos... eles vão
+// concorrer entre si e estourar o limite por segundo rapidamente". 3 chamadas
+// concorrentes, mesmo respeitando o intervalo de DISPACHO, ainda tem até 3
+// respostas chegando quase juntas do lado do Bling — mais seguro ser
+// rigorosamente serial (uma de cada vez, esperando terminar) até a situação
+// estabilizar.
+const BLING_MAX_CONCORRENTE=1;
 let _blingEmVoo=0;
 function _blingAgendar(){
   if(_blingProcessando) return;
