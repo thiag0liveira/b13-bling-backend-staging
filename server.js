@@ -208,6 +208,7 @@ async function trocarCodePorToken(code){
   if(!r.ok) throw new Error("Falha ao obter token: "+(await r.text()));
   const t=await r.json(); salvarTokens(t); return t;
 }
+let _renovacaoEmAndamento=null; // Promise em andamento, se houver -- evita chamadas concorrentes
 async function renovarToken(refresh_token){
   const body=new URLSearchParams({grant_type:"refresh_token",refresh_token});
   const r=await fetch(TOKEN_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded",Accept:"1.0",Authorization:basicAuth()},body});
@@ -217,7 +218,19 @@ async function renovarToken(refresh_token){
 async function getAccessToken(){
   let t=lerTokens();
   if(!t) throw new Error("Ainda não conectado ao Bling. Acesse /auth para autorizar.");
-  if(Date.now() >= t.obtido_em+(t.expires_in-60)*1000) t=await renovarToken(t.refresh_token);
+  if(Date.now() >= t.obtido_em+(t.expires_in-60)*1000){
+    // TRAVA: se várias chamadas percebem o token expirado ao mesmo tempo (comum
+    // quando a fila está cheia e várias esperam liberar juntas), só a PRIMEIRA
+    // dispara a renovação de verdade — as outras reaproveitam essa mesma
+    // renovação em andamento, em vez de cada uma tentar renovar por conta
+    // própria. O Bling bloqueia por 1 HORA inteira se detectar 20+ renovações de
+    // token em 60 segundos — sem essa trava, uma fila cheia poderia facilmente
+    // gerar renovações concorrentes suficientes pra bater nesse limite.
+    if(!_renovacaoEmAndamento){
+      _renovacaoEmAndamento=renovarToken(t.refresh_token).finally(()=>{ _renovacaoEmAndamento=null; });
+    }
+    t=await _renovacaoEmAndamento;
+  }
   return t.access_token;
 }
 async function blingRaw(path,options={},_tentativa=0){
@@ -239,8 +252,14 @@ async function blingRaw(path,options={},_tentativa=0){
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
     if(r.status===429){ try{ _metricas.err429++; }catch(e){} }
     if(r.status===429&&_tentativa<8){
-      // limite de requisições do Bling — espera com backoff crescente e tenta de novo
-      await new Promise(res=>setTimeout(res,1200*(_tentativa+1)));
+      // limite de requisições do Bling — espera com backoff crescente e tenta de
+      // novo. Se o Bling mandou "Retry-After" (segundos exatos de espera), usa
+      // esse valor de verdade em vez de só chutar um backoff fixo.
+      const retryAfterHeader=r.headers.get("retry-after");
+      const esperaMs=retryAfterHeader && !isNaN(Number(retryAfterHeader))
+        ? Number(retryAfterHeader)*1000 + 200 // +200ms de folga
+        : 1200*(_tentativa+1);
+      await new Promise(res=>setTimeout(res,esperaMs));
       return blingRaw(path,options,_tentativa+1);
     }
     if(!r.ok){
