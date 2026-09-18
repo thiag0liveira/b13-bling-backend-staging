@@ -12662,8 +12662,12 @@ app.post("/api/indice-produtos/reconstruir",(req,res)=>{
   reconstruirIndiceProdutosBg(true);
   res.json({ok:true,iniciado:true});
 });
-setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
-setInterval(reconstruirIndiceProdutosBg, 6*60*60*1000);    // e a cada 6h (é pesado, lê detalhe de todos)
+// DESLIGADO TEMPORARIAMENTE (18/09): esse job pesado (centenas de chamadas ao
+// Bling) disparando sozinho a cada reinício estava competindo demais com o resto
+// do tráfego bem na hora que o Bling também estava lento, contribuindo pra fila
+// travar. Continua disponível manualmente em POST /api/indice-produtos/reconstruir.
+// setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
+// setInterval(reconstruirIndiceProdutosBg, 6*60*60*1000);    // e a cada 6h (é pesado, lê detalhe de todos)
 
 // ===== VENDA ATACADO — propostas e pedidos =====
 // A "proposta comercial" fica só no nosso sistema (o Bling v3 não expõe propostas
@@ -14972,7 +14976,10 @@ app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=$
 
 // auditoria geral roda sozinha a cada 30 min (além de poder ser disparada manualmente
 // em /api/auditoria/rodar). Espera 1 min após o boot pra não competir com o startup.
+// DESLIGADO TEMPORARIAMENTE (18/09), mesmo motivo do índice de produtos acima —
+// continua disponível manualmente em GET /api/auditoria/rodar.
 let _auditoriaRodando=false;
+/*
 setTimeout(()=>{
   const rodar=async()=>{
     if(_auditoriaRodando) return;
@@ -14991,3 +14998,4 @@ setTimeout(()=>{
   rodar();
   setInterval(rodar, 30*60*1000);
 }, 60*1000);
+*/
