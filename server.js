@@ -60,7 +60,8 @@ const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
 const TAXA_CARTAO_PADRAO=0.035; // mesma taxa (3,5%) usada no caixa atacado e na entrega do motorista
 const PIX_BANCOS_FILE = `${DATA_DIR}/pix_bancos.json`;
 const LEDGER_FILE = `${DATA_DIR}/ledger-pagamentos.json`;
-const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`;
+const LOG_FILE    = `${DATA_DIR}/log_pedidos.json`; // legado — só lido agora, nunca mais escrito
+const LOG_JSONL_FILE = `${DATA_DIR}/log_pedidos.jsonl`; // novo formato: 1 linha por evento, ACRESCENTADA (nunca reescreve o arquivo inteiro)
 const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
@@ -2691,13 +2692,38 @@ app.get("/api/analytics", async (req,res)=>{
 });
 
 // ---- LOG DE PEDIDOS ----
-function lerLog(){ return lerJSON(LOG_FILE,{}); }
-function salvarLog(o){ salvarJSON(LOG_FILE,o); }
+function lerLog(){
+  // junta o histórico ANTIGO (arquivo legado, só leitura) com os eventos NOVOS
+  // (jsonl, 1 por linha) — sem isso, ia perder todo o histórico já gravado até
+  // agora ao trocar de formato
+  const antigo=lerJSON(LOG_FILE,{});
+  const out={};
+  Object.keys(antigo).forEach(id=>{ out[id]=[...(antigo[id]||[])]; });
+  try{
+    const txt=fs.readFileSync(LOG_JSONL_FILE,"utf8");
+    txt.split("\n").forEach(linha=>{
+      if(!linha.trim()) return;
+      try{
+        const ev=JSON.parse(linha);
+        const id=String(ev.pedidoId);
+        if(!out[id]) out[id]=[];
+        out[id].push({evento:ev.evento,funcionarioId:ev.funcionarioId,funcionarioNome:ev.funcionarioNome,detalhes:ev.detalhes,em:ev.em});
+      }catch(e){}
+    });
+  }catch(e){} // arquivo ainda não existe na primeira vez — normal
+  return out;
+}
 function addLog(pedidoId, evento, funcionarioId, funcionarioNome, detalhes={}){
-  const log=lerLog(); const id=String(pedidoId);
-  if(!log[id]) log[id]=[];
-  log[id].push({evento,funcionarioId,funcionarioNome,detalhes,em:Date.now()});
-  salvarLog(log);
+  // GRAVAÇÃO RÁPIDA: só ACRESCENTA uma linha no fim do arquivo (não lê nem
+  // reescreve tudo de novo). Antes, cada addLog() lia o arquivo INTEIRO de
+  // histórico (que só cresce, nunca é limpo), fazia JSON.parse nele, e reescrevia
+  // tudo de novo — com meses de uso, esse arquivo cresce o bastante pra cada
+  // chamada travar a CPU por um tempo. addLog() é chamado dezenas de vezes por
+  // dia em praticamente toda ação do sistema, então isso se acumulava rápido.
+  try{
+    const linha=JSON.stringify({pedidoId:String(pedidoId),evento,funcionarioId,funcionarioNome,detalhes,em:Date.now()})+"\n";
+    fs.appendFileSync(LOG_JSONL_FILE,linha);
+  }catch(e){ console.error("addLog falhou:",e.message); }
 }
 app.get("/api/log/:id",(req,res)=>{
   const log=lerLog(); res.json({data:log[String(req.params.id)]||[]});
