@@ -250,6 +250,20 @@ async function blingRaw(path,options={},_tentativa=0){
       if(limite||restante) _ultimoRateLimitBling={limite,restante,reset,em:Date.now(),path};
     }catch(e){}
     const txt=await r.text(); let j; try{ j=txt?JSON.parse(txt):{}; }catch{ j={raw:txt}; }
+    if(r.status===401&&_tentativa<1){
+      // token inválido/expirado NA HORA H, mesmo com a checagem proativa antes da
+      // chamada (pode acontecer por diferença de relógio, revogação, ou reinício
+      // com um token já vencido em disco) — força renovar (ignora a validade
+      // salva) e tenta de novo, uma única vez, em vez de falhar direto.
+      try{
+        if(!_renovacaoEmAndamento){
+          const t=lerTokens();
+          if(t) _renovacaoEmAndamento=renovarToken(t.refresh_token).finally(()=>{ _renovacaoEmAndamento=null; });
+        }
+        if(_renovacaoEmAndamento) await _renovacaoEmAndamento;
+      }catch(e){}
+      return blingRaw(path,options,_tentativa+1);
+    }
     if(r.status===429){ try{ _metricas.err429++; }catch(e){} }
     if(r.status===429&&_tentativa<8){
       // limite de requisições do Bling — espera com backoff crescente e tenta de
