@@ -300,7 +300,7 @@ function pararTimer() {
 function iniciarFila() {
   carregarFila();
   pararTimer();
-  timer = setInterval(() => carregarFila(true), 10000);
+  timer = setInterval(() => carregarFila(true), 20000); // era 10s -- reduzido 18/09 pra cortar volume de chamadas
 }
 function voltarFila() {
   if (S.sel && FUNC && !S.soVisualizacao) {

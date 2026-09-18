@@ -267,7 +267,7 @@ let _ultimoRateLimitBling=null;
 // tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
 // em digitação atualizando sozinho) somem chamadas e estourem o limite do Bling.
-const BLING_INTERVALO_MIN=400; // ms entre quaisquer duas chamadas ao Bling (2,5/s, com folga do limite de 3/s)
+const BLING_INTERVALO_MIN=500; // ms entre quaisquer duas chamadas ao Bling (2/s -- baixado de 2,5/s hoje, 18/09, como margem extra de segurança depois de suspeita de bloqueio por IP por uso intenso)
 let _blingUltimaChamada=0;
 // FILA COM PRIORIDADE: operações do caixa/POS (finalizar venda, editar pagamento,
 // consultar preço na hora) são "alta" e sempre passam na frente. Tarefas de fundo
@@ -809,78 +809,13 @@ function b13ToggleGrupo(nome){
   try{ const a=JSON.parse(localStorage.getItem("b13navAbertos")||"{}"); a[nome]=abrir; localStorage.setItem("b13navAbertos",JSON.stringify(a)); }catch(e){}
 }
 
-// ---- sino de novos pedidos do totem/site (a marca "já vi" é POR USUÁRIO) ----
-let _b13SinoTimer=null;
-async function b13ChecarNovosPedidos(){
-  const f=b13GetSession(); if(!f) return;
-  try{
-    const j=await fetch(B13_BACKEND+"/api/pedidos-online/novos/"+encodeURIComponent(f.id)).then(r=>r.json());
-    const el=document.getElementById("b13sino"), bd=document.getElementById("b13sinoBadge");
-    if(!el||!bd) return;
-    window._b13Novos=j;
-    if(j.novos>0){ el.style.display="block"; bd.textContent=j.novos>99?"99+":j.novos; }
-    else { el.style.display="none"; }
-  }catch(e){}
-}
-async function b13AbrirNovosPedidos(){
-  const f=b13GetSession();
-  if(f){ try{ window._b13Novos=await fetch(B13_BACKEND+"/api/pedidos-online/novos/"+encodeURIComponent(f.id)+"?abrir=1").then(r=>r.json()); }catch(e){} }
-  const j=window._b13Novos||{novos:0,pedidos:[]};
-  const fmtHora=(ms)=>{ if(!ms) return ""; const d=new Date(Number(ms)); const hj=new Date();
-    const hh=d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-    return d.toDateString()===hj.toDateString()?("hoje "+hh):(d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+hh); };
-  const corSit=(s)=>{ const t=String(s||"").toLowerCase();
-    if(t.indexOf("aguardando")>=0) return "#ffe600";
-    if(t.indexOf("separa")>=0) return "#29ABE2";
-    if(t.indexOf("atendido")>=0) return "#3ce88a";
-    if(t.indexOf("cancel")>=0) return "#ff8090";
-    return "#9a95c9"; };
-  const linhas=(j.pedidos||[]).map(p=>{
-    const org=(p.origem==="totem")?"🖥️ Totem":((p.origem==="site")?"🌐 Site":("🧑‍💼 "+(p.vendedor||"Atacado")));
-    return \`<div style="border-bottom:1px solid #2a2660;padding:8px 0">
-      <div style="display:flex;justify-content:space-between;gap:8px;font-size:13px">
-        <span><b>#\${p.numero}</b> \${p.cliente||""}</span>
-        <b>R$ \${(Number(p.total)||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</b>
-      </div>
-      <div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#9a95c9;margin-top:3px">
-        <span>\${org} · \${p.tipo==="entrega"?"🛵 entrega":"🏪 retirada"}</span>
-        <span>\${fmtHora(p.criadoEm)}</span>
-      </div>
-      <div style="margin-top:4px"><span style="background:\${corSit(p.situacao)};color:#000;border-radius:5px;font-size:10px;font-weight:900;padding:2px 7px">\${String(p.situacao||"—").toUpperCase()}</span></div>
-    </div>\`;
-  }).join("")||'<div style="color:#9a95c9">Nenhum novo.</div>';
-  document.getElementById("b13qrModal").innerHTML=\`
-    <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px" onclick="if(event.target===this)document.getElementById('b13qrModal').innerHTML=''">
-      <div style="background:#151233;border:1px solid #2c2660;border-radius:16px;padding:18px;max-width:440px;width:100%;max-height:80vh;overflow:auto">
-        <div style="font-weight:900;font-size:16px;margin-bottom:2px">🔔 \${j.novos} novo(s) pedido(s)</div>
-        <div style="color:#9a95c9;font-size:11px;margin-bottom:10px">Marcados como vistos automaticamente.</div>
-        <div>\${linhas}</div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button onclick="document.getElementById('b13qrModal').innerHTML=''" style="flex:1;padding:10px;border:none;border-radius:10px;background:#1c1846;color:#fff;font-weight:800;cursor:pointer">Fechar</button>
-          <button onclick="location.href='/pedidos-online'" style="flex:1;padding:10px;border:none;border-radius:10px;background:#FF0082;color:#fff;font-weight:800;cursor:pointer">Ver todos</button>
-        </div>
-      </div>
-    </div>\`;
-  // abrir JÁ conta como visto — não precisa clicar em nada
-  b13MarcarPedidosVistos(true);
-}
-async function b13MarcarPedidosVistos(manterModal){
-  const f=b13GetSession(); if(!f) return;
-  try{ await fetch(B13_BACKEND+"/api/pedidos-online/marcar-visto/"+encodeURIComponent(f.id),{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); }catch(e){}
-  if(!manterModal) document.getElementById("b13qrModal").innerHTML="";
-  const el=document.getElementById("b13sino"); if(el) el.style.display="none"; // zera o contador na hora
-  b13ChecarNovosPedidos();
-}
-
-function b13IniciarSino(){
-  const f=b13GetSession(); if(!f) return;
-  const gruposSino=["admin","gerente","lider_caixa","financeiro","financeiro_atacado","separacao","conferencia"];
-  const pode=gruposSino.includes(f.nivel)||(f.permissoes||[]).some(p=>gruposSino.includes(p))||b13Pode("ver_aguardando");
-  if(!pode) return;
-  b13ChecarNovosPedidos();
-  clearInterval(_b13SinoTimer);
-  _b13SinoTimer=setInterval(b13ChecarNovosPedidos,60000);
-}
+// ---- sino de novos pedidos REMOVIDO (18/09) -- gerava checagem a cada 60s em
+// toda aba aberta (pra quem tinha o acesso), consumindo chamadas ao Bling sem
+// necessidade, num momento em que reduzir volume de chamadas é prioridade.
+// Funções mantidas como no-op pra não quebrar quem ainda referencia (ex.:
+// pedidos-online.html chama b13ChecarNovosPedidos() de forma defensiva).
+async function b13ChecarNovosPedidos(){}
+async function b13MarcarPedidosVistos(){}
 
 function b13RenderNav(ativo){
   const f=b13GetSession(); if(!f) return "";
@@ -895,9 +830,6 @@ function b13RenderNav(ativo){
   return \`<style>body{padding-top:44px !important}@media(min-width:900px){#b13topbar{left:200px}}</style>
     <div id="b13topbar" style="position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:10px;padding:0 12px 0 52px;z-index:98">
       <div style="flex:1"></div>
-      <div id="b13sino" onclick="b13AbrirNovosPedidos()" title="Novos pedidos do totem/site" style="position:relative;cursor:pointer;font-size:18px;display:none;padding:2px 6px">🔔
-        <span id="b13sinoBadge" style="position:absolute;top:-4px;right:-4px;background:#FF0082;color:#fff;border-radius:10px;font-size:10px;font-weight:900;padding:1px 5px;min-width:16px;text-align:center">0</span>
-      </div>
       <div style="text-align:right;font-size:13px;color:#fff;font-weight:700">\${nomeTopo} <span style="color:#9a95c9;font-weight:400;font-size:11px">· \${f.nivel}</span></div>
     </div>
     <div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s">
@@ -916,8 +848,6 @@ function b13RenderNav(ativo){
   <div id="b13navOverlay" onclick="b13ToggleNav()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99"></div>
   <div id="b13qrModal"></div>\`;
 }
-// dispara o sino automaticamente assim que a barra existir na tela
-setTimeout(function(){ try{ if(document.getElementById("b13sino")) b13IniciarSino(); }catch(e){} }, 800);
 
 // mostra o QR do caixa do próprio usuário logado (em qualquer página). Só funciona
 // pra quem pode autorizar (o backend valida). O QR fica embaçado até revelar.

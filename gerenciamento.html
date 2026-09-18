@@ -147,7 +147,7 @@ async function iniciar() {
   } catch (e) {}
   await carregar();
   if (timer) clearInterval(timer);
-  timer = setInterval(carregar, 8000); // atualiza a cada 8s
+  timer = setInterval(carregar, 25000); // atualiza a cada 25s (era 8s -- reduzido 18/09 pra cortar volume de chamadas)
 }
 async function carregar() {
   try {

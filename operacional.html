@@ -225,7 +225,7 @@ async function iniciar() {
   } catch (e) {}
   await carregar();
   if (timer) clearInterval(timer);
-  timer = setInterval(carregar, 10000);
+  timer = setInterval(carregar, 20000); // era 10s -- reduzido 18/09 pra cortar volume de chamadas
 }
 async function carregar() {
   try {
