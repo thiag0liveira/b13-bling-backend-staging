@@ -756,7 +756,9 @@ async function abrirPedido(id) {
       situacaoId: j.situacaoId,
       situacaoNome: j.situacaoNome,
       vendedorNome: j.vendedorNome,
-      contatoId: j.contatoId
+      contatoId: j.contatoId,
+      ehEntrega: !!j.ehEntrega,
+      endereco: j.endereco || ""
     };
     CLIENTE_NOME = j.clienteNome || "";
     CARRINHO = (j.itens || []).map(it => ({
@@ -908,7 +910,9 @@ async function abrirPedidoParaEdicao(id) {
       situacaoId: j.situacaoId,
       situacaoNome: j.situacaoNome,
       vendedorNome: j.vendedorNome,
-      contatoId: j.contatoId
+      contatoId: j.contatoId,
+      ehEntrega: !!j.ehEntrega,
+      endereco: j.endereco || ""
     };
     CLIENTE_NOME = j.clienteNome || "";
     // itens travados (precoEditado) — na edição de pagamento não se mexe nos itens
@@ -1489,7 +1493,9 @@ function imprimirPedidoAtual() {
     nfce: null,
     observacao: window._obsVenda || "",
     operador: typeof S !== "undefined" && S && S.nome || "",
-    montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
+    montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : "",
+    ehEntrega: !!(PEDIDO_ATUAL && PEDIDO_ATUAL.ehEntrega),
+    endereco: (PEDIDO_ATUAL && PEDIDO_ATUAL.endereco) || ""
   };
   imprimirComprovante(v);
 }
@@ -1716,7 +1722,8 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
     i._nomeLinhas = quebrarTexto(_mc, i.nome || "Produto " + i.produtoId, maxNomeW, 2);
   });
   const extraLinhasItens = itensArr.reduce((s, i) => s + ((i._nomeLinhas.length || 1) - 1), 0);
-  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0);
+  const linhasEnderecoQtd = (v.ehEntrega && v.endereco) ? quebrarTexto(_mc, v.endereco, W - padd * 2, 3).length : 0;
+  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr;
@@ -1785,6 +1792,17 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   ctx.fillStyle = "#000";
   ctx.fillText(((_v$cliente = v.cliente) === null || _v$cliente === void 0 ? void 0 : _v$cliente.nome) || "Consumidor Final", padd, y + 30);
   y += 52;
+  if (v.ehEntrega && v.endereco) {
+    ctx.font = "900 15px Arial";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "left";
+    ctx.fillText("🛵 ENTREGAR EM", padd, y);
+    ctx.font = "700 20px Arial";
+    ctx.fillStyle = "#000";
+    const linhasEnd = quebrarTexto(ctx, v.endereco, W - padd * 2, 3);
+    linhasEnd.forEach((ln, ix) => ctx.fillText(ln, padd, y + 26 + ix * 25));
+    y += 26 + linhasEnd.length * 25 + 10;
+  }
   if (v.montadoPor) {
     ctx.font = "900 15px Arial";
     ctx.fillStyle = "#000";

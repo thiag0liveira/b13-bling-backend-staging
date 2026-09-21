@@ -6865,6 +6865,13 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
     }else{
       pagamentos=(d.parcelas||[]).map(p=>({formaNome:p.formaPagamento?.nome||"",valor:Number(p.valor||0)}));
     }
+    const _endCA = d.transporte?.enderecoEntrega?.endereco
+      ? [d.transporte.enderecoEntrega.endereco,d.transporte.enderecoEntrega.numero,d.transporte.enderecoEntrega.complemento,d.transporte.enderecoEntrega.bairro,d.transporte.enderecoEntrega.municipio].filter(Boolean).join(", ")
+      : d.transporte?.etiqueta?.endereco
+      ? [d.transporte.etiqueta.endereco,d.transporte.etiqueta.numero,d.transporte.etiqueta.complemento,d.transporte.etiqueta.bairro,d.transporte.etiqueta.municipio].filter(Boolean).join(", ")
+      : "";
+    const _obsCA = String(d.observacoes||"");
+    const _ehEntregaCA = !!_endCA || Number(d.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(_obsCA);
     res.json({
       id:d.id, numero:d.numero, situacaoId,
       situacaoNome:nomeSituacaoFechamento(situacaoId),
@@ -6873,6 +6880,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       total:Number(d.total||0), desconto:Number(d.desconto?.valor||0),
       outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
       frete:Number(d.transporte?.frete||0), // valor do frete do pedido (entrega)
+      ehEntrega:_ehEntregaCA, endereco:_endCA, // pra sair no comprovante quando for entrega
       pagamentos, observacao:d.observacoes||"",
       recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
