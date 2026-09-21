@@ -15247,9 +15247,11 @@ const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta
 // processo fecha a porta e sai limpo (código 0) quando recebe esse pedido.
 function _desligarEducadamente(sinal){
   console.log(`[shutdown] Recebido ${sinal} — desligando de forma educada (troca de deploy, não é crash).`);
-  _servidorHttp.close(()=>{ console.log("[shutdown] Porta fechada, saindo com código 0."); process.exit(0); });
-  // segurança: se por algum motivo não fechar em 8s, força a saída mesmo assim
-  setTimeout(()=>{ console.log("[shutdown] Não fechou a tempo — forçando saída."); process.exit(0); }, 8000).unref();
+  try{ _servidorHttp.close(); }catch(e){} // para de aceitar conexão nova, mas não espera as existentes fecharem sozinhas (com keep-alive isso pode demorar mais do que o tempo que o Railway realmente dá antes de matar geral)
+  // sai rápido de propósito: o log mostrou só ~4s entre "Stopping Container" e o
+  // processo sendo morto de verdade -- 8s era tempo demais, não dava a chance de
+  // sair "limpo" (código 0) antes do Railway desistir e matar cru
+  setTimeout(()=>{ console.log("[shutdown] Saindo com código 0."); process.exit(0); }, 300).unref();
 }
 process.on("SIGTERM",()=>_desligarEducadamente("SIGTERM"));
 process.on("SIGINT",()=>_desligarEducadamente("SIGINT"));
