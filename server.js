@@ -318,6 +318,28 @@ const _metricas={ inicio:Date.now(), total:0, err429:0, erros:0,
   esperaTotalMs:0, esperaMaxMs:0, porCaminho:{}, ultimas:[] };
 // DIAGNÓSTICO: mostra se o problema é token vencido, fila travada, ou o Bling
 // recusando de verdade (429/erro) — sem isso, "parou de funcionar" fica no chute.
+// SAÚDE GERAL DO PROCESSO: memória, tempo desde o último reinício, tamanho dos
+// arquivos de dados que já causaram crash antes (crescem sem parar se não forem
+// cuidados) — pra ver, num só lugar, se está tudo bem ou se algo está subindo
+// rumo a outro travamento, antes que aconteça de novo.
+app.get("/api/diag/saude",(req,res)=>{
+  try{
+    const mem=process.memoryUsage();
+    const arquivos=["log_pedidos.json","log_pedidos.jsonl","caixa_sessoes.json","caixa_sessoes_arquivo.json",
+      "propostas_atacado.json","pagamentos.json","avisos.json","gtin_index.json","pedidos_bling_finalizados.json",
+      "viagens_ativas.json","sessoes.json","geo_clientes.json"].map(nome=>{
+      try{ const st=fs.statSync(`${DATA_DIR}/${nome}`); return {nome, kb:Math.round(st.size/1024), modificadoEm:st.mtime.toISOString()}; }
+      catch(e){ return {nome, kb:0, modificadoEm:null}; }
+    }).sort((a,b)=>b.kb-a.kb);
+    res.json({
+      uptimeSegundos:Math.round(process.uptime()),
+      uptimeLegivel: (()=>{ const s=Math.round(process.uptime()); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}min`:`${m}min`; })(),
+      memoria:{ usadaMB:Math.round(mem.rss/1024/1024), heapUsadoMB:Math.round(mem.heapUsed/1024/1024), heapTotalMB:Math.round(mem.heapTotal/1024/1024) },
+      arquivos,
+      arquivoMaiorQue1MB: arquivos.filter(a=>a.kb>1024),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/diag/bling-status",async(req,res)=>{
   const t=lerTokens();
   const tokenInfo = t ? {
@@ -671,6 +693,7 @@ app.get("/musica-fundo",(req,res)=>{
   res.sendFile(arq);
 });
 app.get("/login",(req,res)=>res.sendFile(path.join(__dirname,"login.html")));
+app.get("/saude",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"saude.html")); });
 app.get("/nav.js",(req,res)=>{
   res.setHeader("Content-Type","application/javascript");
   res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");

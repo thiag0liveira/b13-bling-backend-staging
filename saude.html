@@ -1,0 +1,99 @@
+<!doctype html><html><head><meta charset="utf-8"><title>B13 — Saúde do Sistema</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{background:#0f0d24;color:#fff;font-family:Arial,sans-serif;margin:0;padding:16px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.top h1{font-size:20px;margin:0}
+.muted{color:#9a95c9;font-size:12px}
+.card{background:#1c1846;border:1px solid #37327a;border-radius:12px;padding:14px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.metric{background:#0f0d24;border-radius:8px;padding:10px;text-align:center}
+.metric .v{font-size:22px;font-weight:900}
+.metric .l{font-size:11px;color:#9a95c9;margin-top:2px}
+.ok{color:#3ce88a}.aviso{color:#ffd23f}.ruim{color:#ff8090}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:6px 8px;text-align:left;border-bottom:1px solid #2a2660}
+th{color:#9a95c9;font-weight:700}
+.badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:900}
+#status{font-size:13px;margin-top:4px}
+button{background:#2c2660;color:#fff;border:1px solid #514c96;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
+</style></head>
+<body>
+<div class="top"><h1>🩺 Saúde do Sistema — B13 Bebidas</h1></div>
+<div id="status" class="muted">Carregando…</div>
+<div id="app"></div>
+<script>
+const $ = s => document.querySelector(s);
+function corPara(valor, limiteAviso, limiteRuim){
+  if(valor>=limiteRuim) return "ruim";
+  if(valor>=limiteAviso) return "aviso";
+  return "ok";
+}
+async function carregar(){
+  $("#status").textContent = "Atualizando…";
+  try{
+    const [saude, bling] = await Promise.all([
+      fetch("/api/diag/saude").then(r=>r.json()),
+      fetch("/api/diag/bling-status").then(r=>r.json()),
+    ]);
+    render(saude, bling);
+    $("#status").innerHTML = "Atualizado às " + new Date().toLocaleTimeString("pt-BR") + " · atualiza sozinho a cada 30s";
+  }catch(e){
+    $("#status").innerHTML = '<span class="ruim">Erro ao carregar: ' + e.message + '</span>';
+  }
+}
+function render(saude, bling){
+  const memCor = corPara(saude.memoria.usadaMB, 350, 480);
+  const filaTotal = (bling.fila?.altaPrioridadeEsperando||0) + (bling.fila?.baixaPrioridadeEsperando||0);
+  const filaCor = corPara(filaTotal, 10, 40);
+  const esperaCor = corPara((bling.metricas?.esperaMediaMs||0)/1000, 5, 20);
+  const uptimeCurtoAlerta = saude.uptimeSegundos < 600; // reiniciou há menos de 10min
+  const arquivosGrandes = saude.arquivoMaiorQue1MB || [];
+
+  $("#app").innerHTML = `
+    <div class="card">
+      <h3>⏱️ Processo</h3>
+      <div class="grid">
+        <div class="metric"><div class="v ${uptimeCurtoAlerta?'ruim':'ok'}">${saude.uptimeLegivel}</div><div class="l">Rodando sem cair${uptimeCurtoAlerta?' ⚠️ subiu há pouco!':''}</div></div>
+        <div class="metric"><div class="v ${memCor}">${saude.memoria.usadaMB} MB</div><div class="l">Memória em uso</div></div>
+        <div class="metric"><div class="v">${saude.memoria.heapUsadoMB} / ${saude.memoria.heapTotalMB} MB</div><div class="l">Heap JS</div></div>
+      </div>
+      ${uptimeCurtoAlerta?'<div class="muted" style="margin-top:8px;color:#ff8090">⚠️ O processo subiu recentemente — pode ter caído e reiniciado sozinho. Se isso se repetir toda hora, é sinal de crash contínuo.</div>':''}
+    </div>
+
+    <div class="card">
+      <h3>🔗 Conexão com o Bling</h3>
+      <div class="grid">
+        <div class="metric"><div class="v ${filaCor}">${filaTotal}</div><div class="l">Na fila agora</div></div>
+        <div class="metric"><div class="v ${esperaCor}">${Math.round((bling.metricas?.esperaMediaMs||0)/1000)}s</div><div class="l">Espera média</div></div>
+        <div class="metric"><div class="v ${bling.metricas?.err429>0?'ruim':'ok'}">${bling.metricas?.err429||0}</div><div class="l">Erros 429 (limite)</div></div>
+        <div class="metric"><div class="v ${bling.testeAoVivo?.ok?'ok':'ruim'}">${bling.testeAoVivo?.ok? (bling.testeAoVivo.ms+'ms') : 'FALHOU'}</div><div class="l">Teste ao vivo</div></div>
+      </div>
+      <div class="muted" style="margin-top:8px">Métricas desde: ${bling.metricas?.desde ? new Date(bling.metricas.desde).toLocaleString("pt-BR") : "—"}</div>
+    </div>
+
+    <div class="card">
+      <h3>💾 Arquivos de dados (os que já causaram problema quando crescem demais)</h3>
+      ${arquivosGrandes.length ? `<div class="muted" style="margin-bottom:8px;color:#ffd23f">⚠️ ${arquivosGrandes.length} arquivo(s) acima de 1MB — vale conferir se algum está crescendo sem parar.</div>` : '<div class="muted" style="margin-bottom:8px;color:#3ce88a">✅ Nenhum arquivo grande demais no momento.</div>'}
+      <table><thead><tr><th>Arquivo</th><th>Tamanho</th><th>Última gravação</th></tr></thead><tbody>
+        ${saude.arquivos.map(a=>`<tr><td>${a.nome}</td><td class="${corPara(a.kb,800,2000)}">${a.kb>1024?(a.kb/1024).toFixed(1)+' MB':a.kb+' KB'}</td><td class="muted">${a.modificadoEm?new Date(a.modificadoEm).toLocaleString("pt-BR"):"—"}</td></tr>`).join("")}
+      </tbody></table>
+    </div>
+
+    <div class="card">
+      <h3>📋 O que fazer se algo estiver vermelho</h3>
+      <div class="muted" style="line-height:1.6">
+        <b class="ruim">Processo reiniciou há pouco</b> — se acontecer repetidamente ao longo do dia, é crash contínuo. Confira o e-mail "Deploy Crashed" do Railway e os logs de deploy.<br>
+        <b class="aviso">Memória subindo com o tempo, sem cair</b> — sinal de vazamento; anota o valor agora e confere de novo em 1h.<br>
+        <b class="ruim">Fila grande / espera alta</b> — o Bling pode estar lento hoje, ou tem muita coisa concorrendo. Espera 15-20min e confere de novo.<br>
+        <b class="aviso">Arquivo grande crescendo rápido</b> — me avisa qual arquivo, que eu confiro se ele tem o mesmo problema que os outros já tiveram (ler/reescrever inteiro toda hora).
+      </div>
+    </div>
+    <button onclick="carregar()">🔄 Atualizar agora</button>
+  `;
+}
+carregar();
+setInterval(carregar, 30000);
+</script>
+</body></html>
