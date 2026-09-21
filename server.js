@@ -15215,7 +15215,21 @@ setTimeout(async()=>{
   }catch(e){ console.error("[backfill] falhou:",e.message); }
 }, 10000);
 
-app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
+const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
+// DESLIGAMENTO EDUCADO: o Railway manda SIGTERM quando troca esse contêiner por
+// um novo (toda vez que um deploy novo sobe) — isso é normal e esperado, não é
+// um crash. Sem tratar esse sinal, o processo morria "cru" e o npm registrava
+// como "npm error signal SIGTERM", que o Railway então reporta como "Deploy
+// Crashed" por e-mail — um alarme falso pra cada deploy normal. Agora o
+// processo fecha a porta e sai limpo (código 0) quando recebe esse pedido.
+function _desligarEducadamente(sinal){
+  console.log(`[shutdown] Recebido ${sinal} — desligando de forma educada (troca de deploy, não é crash).`);
+  _servidorHttp.close(()=>{ console.log("[shutdown] Porta fechada, saindo com código 0."); process.exit(0); });
+  // segurança: se por algum motivo não fechar em 8s, força a saída mesmo assim
+  setTimeout(()=>{ console.log("[shutdown] Não fechou a tempo — forçando saída."); process.exit(0); }, 8000).unref();
+}
+process.on("SIGTERM",()=>_desligarEducadamente("SIGTERM"));
+process.on("SIGINT",()=>_desligarEducadamente("SIGINT"));
 
 // auditoria geral roda sozinha a cada 30 min (além de poder ser disparada manualmente
 // em /api/auditoria/rodar). Espera 1 min após o boot pra não competir com o startup.
