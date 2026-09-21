@@ -371,7 +371,17 @@ function _registrarMetrica(path, esperouMs, duracaoMs, erro){
 // respostas chegando quase juntas do lado do Bling — mais seguro ser
 // rigorosamente serial (uma de cada vez, esperando terminar) até a situação
 // estabilizar.
-const BLING_MAX_CONCORRENTE=1;
+// RESTAURADO PRA 3 (21/09): baixar pra 1 (18/09) causou fila catastrófica --
+// chamadas chegaram a esperar até 9 HORAS na fila. O motivo: com só 1 chamada em
+// voo por vez, o rendimento real cai pra 1/(duração de cada chamada) -- se o
+// Bling demora 2-3s pra responder cada uma (comum), isso trava o sistema em
+// ~0,3-0,5 chamada/s, bem ABAIXO do que o intervalo de disparo (500ms = 2/s) já
+// permite com segurança. Quem garante ficar sob o limite de 3/s do Bling é o
+// INTERVALO entre disparos, não a concorrência -- múltiplas chamadas em voo ao
+// mesmo tempo não aumentam o ritmo de novos disparos (isso já é travado pelo
+// intervalo), só evitam desperdiçar tempo ocioso esperando uma resposta lenta
+// terminar antes de poder disparar a próxima.
+const BLING_MAX_CONCORRENTE=3;
 let _blingEmVoo=0;
 function _blingAgendar(){
   if(_blingProcessando) return;
