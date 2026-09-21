@@ -786,6 +786,16 @@ function b13BloquearSeSemAcesso(href){
   return false;
 }
 function b13Logout(){ b13ClearSession(); location.href="/login?saiu=1"; }
+// se o logout acontecer em OUTRA aba (deslogar lá), essa aba precisa perceber e
+// deslogar também — sessionStorage é por aba, então uma aba esquecida aberta em
+// segundo plano continuava "logada" mesmo depois de deslogar em outra, e
+// qualquer ação nela podia reviver a sessão sem querer.
+window.addEventListener("storage",function(ev){
+  if(ev.key==="b13sess" && ev.newValue===null){
+    try{ sessionStorage.removeItem("b13sess"); }catch(e){}
+    if(location.pathname!=="/login") location.href="/login?saiu=1";
+  }
+});
 
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
