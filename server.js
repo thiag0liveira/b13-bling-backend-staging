@@ -1636,6 +1636,28 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
     else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
 
+    // AJUSTE DE ARREDONDAMENTO: quando o pagamento é dividido em várias parcelas
+    // (ex.: Pix + Dinheiro + Cartão), cada valor é arredondado pra 2 casas
+    // separadamente — a SOMA delas pode ficar 1-2 centavos diferente do total real
+    // do pedido (itens - desconto + frete + outras despesas), e o Bling recusa com
+    // "o somatório do valor das parcelas difere do total da venda". Calcula o total
+    // esperado do jeito que o Bling calcula e, se houver uma diferença pequena
+    // (só arredondamento, não um valor errado de verdade), absorve ela na ÚLTIMA
+    // parcela — igual qualquer sistema de caixa faz pra sobrar/faltar centavo.
+    if(payload.parcelas.length){
+      const somaItens=(payload.itens||[]).reduce((s,i)=>s+Number(i.quantidade||0)*Number(i.valor||0),0);
+      const desconto=Number(payload.desconto?.valor||0);
+      const outrasDespesas=Number(payload.outrasDespesas||0);
+      const frete=Number(payload.transporte?.frete||0);
+      const totalEsperado=+(somaItens-desconto+outrasDespesas+frete).toFixed(2);
+      const somaParcelas=+payload.parcelas.reduce((s,p)=>s+Number(p.valor||0),0).toFixed(2);
+      const diferenca=+(totalEsperado-somaParcelas).toFixed(2);
+      if(diferenca!==0 && Math.abs(diferenca)<1){ // só corrige diferença de centavos — um erro grande de verdade continua aparecendo
+        const ultima=payload.parcelas[payload.parcelas.length-1];
+        ultima.valor=+(Number(ultima.valor)+diferenca).toFixed(2);
+      }
+    }
+
     // PUT com tratamento de "saldo insuficiente": quando o Bling recusa por estoque,
     // repõe automaticamente o que falta (entrada de estoque só da diferença) e tenta
     // de novo. Antes esse erro fazia o pagamento ficar registrado no caixa mas NÃO no
