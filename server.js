@@ -10505,7 +10505,7 @@ app.get("/api/rotas/viagens-abertas",(req,res)=>{
 // ZERA TODAS as viagens em andamento de uma vez (cancela cada uma, revertendo os
 // pedidos ainda não entregues pra VERIFICADO) -- pra destravar quando não se sabe
 // onde uma corrida específica ficou presa depois de uma bagunça de reinícios
-app.post("/api/rotas/zerar-viagens-abertas",async(req,res)=>{
+async function _zerarViagensAbertasHandler(req,res){
   try{
     const viagens=lerViagensAtivas();
     const abertas=Object.values(viagens).filter(v=>!v.finalizadaEm && !v.canceladaEm);
@@ -10525,7 +10525,9 @@ app.post("/api/rotas/zerar-viagens-abertas",async(req,res)=>{
     salvarViagensAtivas(viagens);
     res.json({ok:true, totalZeradas:abertas.length, detalhe:resultado});
   }catch(e){ res.status(500).json({erro:e.message}); }
-});
+}
+app.post("/api/rotas/zerar-viagens-abertas",_zerarViagensAbertasHandler);
+app.get("/api/rotas/zerar-viagens-abertas",_zerarViagensAbertasHandler); // GET tambem -- pra dar pra acionar so clicando o link no navegador
 app.post("/api/rotas/viagem/:token/cancelar",async(req,res)=>{
   try{
     const viagens=lerViagensAtivas();
