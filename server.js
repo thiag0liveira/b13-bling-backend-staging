@@ -1896,9 +1896,16 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
     const idOuNumero=String(req.params.id);
     const emitidas=lerNfceEmitidas();
     if(emitidas[idOuNumero]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[idOuNumero]});
-    // RESOLVE o pedido: tenta pelo id interno; se não achar, tenta pelo número.
+    // RESOLVE o pedido: tenta pelo id interno; se não achar (ou o "id" na verdade
+    // era um número curto de pedido que colidiu por acaso com o ID de outro pedido),
+    // tenta pelo número de verdade. Mesma proteção usada na busca do caixa atacado —
+    // aqui o risco é ainda maior, já que emitiria a NFC-e pro pedido ERRADO.
     let pedidoId=null;
-    try{ const d=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data); if(d?.id) pedidoId=d.id; }catch(e){}
+    const pareceIdInterno=/^\d+$/.test(idOuNumero) && idOuNumero.length>=9;
+    try{
+      const d=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data);
+      if(d?.id && (pareceIdInterno || String(d.numero)===idOuNumero)) pedidoId=d.id;
+    }catch(e){}
     if(!pedidoId){
       try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`); const a=(r?.data||[])[0]; if(a?.id) pedidoId=a.id; }catch(e){}
     }
@@ -6829,10 +6836,21 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
     };
     // 1) tenta como ID direto do Bling (é o que o código de barras do totem carrega —
     //    o totem gera o barcode CODE128 com o pedidoId). É a via mais rápida.
+    // IMPORTANTE: o ID interno do Bling é sempre um número BEM comprido (10-11
+    // dígitos, ex.: 26925297779), enquanto o NÚMERO do pedido que o operador digita
+    // é curto (poucos dígitos, ex.: 57193). Sem diferenciar os dois, um número de
+    // pedido curto podia coincidir por acaso com o ID INTERNO de um pedido antigo
+    // completamente diferente, de outro cliente — o sistema abria ESSE por engano
+    // (o operador via o número certo na tela porque foi ele quem digitou, mas o
+    // pedido carregado por baixo, e impresso no comprovante, era outro). Por isso,
+    // pra número CURTO, só aceita esse atalho se o número do pedido encontrado
+    // bater com o que foi digitado; pra número comprido (leitura de código de
+    // barras), continua aceitando direto como sempre foi.
     if(/^\d+$/.test(num)){
+      const pareceIdInterno = num.length>=9;
       try{
         const d=await bling(`/pedidos/vendas/${num}`).then(r=>r?.data);
-        if(d&&d.id) return responder(d);
+        if(d&&d.id&&(pareceIdInterno || String(d.numero)===num)) return responder(d);
       }catch(e){ /* não é um id de pedido — cai pra busca por número */ }
     }
     // 2) tenta pelo NÚMERO do pedido (a API v3 não filtra por número, então varre
@@ -11361,9 +11379,14 @@ app.get("/api/diag/tipo-entrega/:id",async(req,res)=>{
   try{
     const idOuNumero=req.params.id;
     // aceita tanto o ID interno do Bling quanto o número curto do pedido — tenta
-    // como ID primeiro (mais rápido) e, se não achar, busca por número
+    // como ID primeiro (mais rápido) e, se não achar OU o número não bater (número
+    // curto colidindo por acaso com o ID de outro pedido), busca por número de verdade
     let ped=null;
-    try{ ped=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data); }catch(e){}
+    const pareceIdInterno=/^\d+$/.test(idOuNumero) && idOuNumero.length>=9;
+    try{
+      const d=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data);
+      if(d && (pareceIdInterno || String(d.numero)===idOuNumero)) ped=d;
+    }catch(e){}
     if(!ped){
       try{
         const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`);
