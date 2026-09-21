@@ -17,6 +17,7 @@
 import express from "express";
 import cors from "cors";
 import fs from "fs";
+import ExcelJS from "exceljs";
 import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -3905,6 +3906,95 @@ app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// Exporta os pagamentos de todas as sessões de caixa (frente + atacado) num
+// período, um arquivo Excel de verdade, pronto pra conferir com o extrato do
+// banco. Um valor separado por linha (uma venda paga em Pix + Dinheiro vira 2
+// linhas), com a forma de pagamento (o Pix Banco já vem com o nome do banco
+// junto, ex.: "Pix Banco Itaú"), pra bater fácil com o extrato de cada conta.
+app.get("/api/caixa/exportar-pagamentos",async(req,res)=>{
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const trintaDiasAtras=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const dataInicial=(req.query.dataInicial||trintaDiasAtras)+"T00:00:00-03:00";
+    const dataFinalStr=req.query.dataFinal||hoje;
+    const dataFinal=dataFinalStr+"T23:59:59-03:00";
+    const iniTs=new Date(dataInicial).getTime();
+    const fimTs=new Date(dataFinal).getTime();
+
+    const dCx=lerCaixaSessoes();
+    const linhas=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        if(m.em<iniTs||m.em>fimTs) return;
+        const pags=m.pagamentos&&m.pagamentos.length ? m.pagamentos : [{formaNome:"—",valor:m.total||0}];
+        pags.forEach(p=>{
+          const dt=new Date(m.em);
+          linhas.push({
+            data:dt, // guarda como Date de verdade — formata na célula, não como texto
+            caixa: (s.tipoCaixa||"frente")==="atacado"?"Atacado":"Frente",
+            operador: m.operador||s.operador||"—",
+            pedido: m.numero||m.pedidoId||"",
+            cliente: m.clienteNome||"",
+            forma: p.formaNome||"—",
+            valor: +Number(p.valor||0).toFixed(2),
+          });
+        });
+      });
+    });
+    linhas.sort((a,b)=>a.data-b.data);
+
+    const wb=new ExcelJS.Workbook();
+    wb.creator="B13 Bebidas";
+    wb.created=new Date();
+    const ws=wb.addWorksheet("Pagamentos",{views:[{state:"frozen",ySplit:1}]});
+    ws.columns=[
+      {header:"Data",key:"data",width:12},
+      {header:"Hora",key:"hora",width:9},
+      {header:"Caixa",key:"caixa",width:10},
+      {header:"Operador",key:"operador",width:18},
+      {header:"Pedido",key:"pedido",width:12},
+      {header:"Cliente",key:"cliente",width:26},
+      {header:"Forma de pagamento",key:"forma",width:22},
+      {header:"Valor",key:"valor",width:14},
+    ];
+    ws.getRow(1).font={bold:true};
+    ws.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF1C1846"}};
+    ws.getRow(1).font={bold:true,color:{argb:"FFFFFFFF"}};
+    linhas.forEach(l=>{
+      const row=ws.addRow({
+        data:l.data, hora:l.data, caixa:l.caixa, operador:l.operador,
+        pedido:l.pedido, cliente:l.cliente, forma:l.forma, valor:l.valor,
+      });
+      row.getCell("data").numFmt="dd/mm/yyyy";
+      row.getCell("hora").numFmt="hh:mm";
+      row.getCell("valor").numFmt='"R$" #,##0.00';
+    });
+    // total geral + total por forma de pagamento, no fim da planilha
+    const totalRow=ws.addRow({});
+    totalRow.getCell("cliente").value="TOTAL GERAL";
+    totalRow.getCell("cliente").font={bold:true};
+    totalRow.getCell("valor").value={formula:`SUM(H2:H${1+linhas.length})`};
+    totalRow.getCell("valor").font={bold:true};
+    totalRow.getCell("valor").numFmt='"R$" #,##0.00';
+    ws.addRow({});
+    const porForma={};
+    linhas.forEach(l=>{ porForma[l.forma]=(porForma[l.forma]||0)+l.valor; });
+    const cabForma=ws.addRow({cliente:"Por forma de pagamento:"});
+    cabForma.getCell("cliente").font={bold:true,italic:true};
+    Object.entries(porForma).sort((a,b)=>b[1]-a[1]).forEach(([forma,total])=>{
+      const r=ws.addRow({cliente:forma,valor:+total.toFixed(2)});
+      r.getCell("valor").numFmt='"R$" #,##0.00';
+    });
+    ws.autoFilter={from:"A1",to:`H${1+linhas.length}`};
+
+    const nomeArquivo=`pagamentos-caixa_${req.query.dataInicial||trintaDiasAtras}_a_${dataFinalStr}.xlsx`;
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",`attachment; filename="${nomeArquivo}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/diag/auditar-sessao/:sessaoId",(req,res)=>{
   try{
     const dCx=lerCaixaSessoes();

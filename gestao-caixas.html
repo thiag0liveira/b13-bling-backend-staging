@@ -123,6 +123,7 @@
         <button class="btn btn-mag" onclick="buscarPedidoNosCaixas()">Buscar</button>
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #3ce88a;color:#3ce88a" onclick="abrirExportarPagamentos()">📊 Exportar pagamentos (Excel)</button>
       <div class="toggle">
         <button class="${window.ABA === 'abertos' ? 'on' : ''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
         <button class="${window.ABA === 'historico' ? 'on' : ''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
@@ -1126,6 +1127,28 @@
 
 // Roda a conferência caixa x Bling deste caixa (aberto ou já fechado) e mostra num
 // modal — venda a venda, aponta o que não bate e o motivo provável.
+window.abrirExportarPagamentos=function(){
+  const hoje=new Date().toISOString().slice(0,10);
+  const trintaDias=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+  document.getElementById("modais").innerHTML=`
+    <div class="modalBg" onclick="if(event.target===this)fecharModal()"><div class="modal" style="max-width:420px">
+      <h3>📊 Exportar pagamentos (Excel)</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:12px">Gera uma planilha com um valor por linha (Pix, Débito, Crédito, Dinheiro), pronta pra conferir com o extrato do banco. Inclui Frente de Caixa e Caixa Atacado.</div>
+      <label style="font-size:12px;color:#cfc9f5">De</label>
+      <input id="expDataIni" type="date" value="${trintaDias}" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px;margin:4px 0 10px">
+      <label style="font-size:12px;color:#cfc9f5">Até</label>
+      <input id="expDataFim" type="date" value="${hoje}" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px;margin:4px 0 14px">
+      <button class="btn btn-grn" style="width:100%" onclick="baixarExportarPagamentos()">⬇️ Baixar Excel</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharModal()">Cancelar</button>
+    </div></div>`;
+};
+window.baixarExportarPagamentos=function(){
+  const ini=document.getElementById("expDataIni").value;
+  const fim=document.getElementById("expDataFim").value;
+  if(!ini||!fim){ alert("Escolha as duas datas."); return; }
+  window.open(_B+"/api/caixa/exportar-pagamentos?dataInicial="+ini+"&dataFinal="+fim, "_blank");
+  fecharModal();
+};
 window.conferirComBling=async function(sessaoId){
   document.getElementById("modais").innerHTML=`<div class="modalBg"><div class="modal" style="max-width:560px"><div class="muted">Conferindo com o Bling…</div></div></div>`;
   try{
