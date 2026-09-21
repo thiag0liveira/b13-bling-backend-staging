@@ -10489,6 +10489,43 @@ app.get("/api/rotas/viagem-status/:token",(req,res)=>{
 // etc). Pedidos que AINDA não tiveram a entrega finalizada voltam pra Verificado,
 // pra poderem ser reagrupados numa viagem nova; os que já foram entregues ficam
 // como estão (o que já foi feito, foi feito).
+// lista TODAS as viagens ainda em andamento (não finalizadas nem canceladas) --
+// útil quando não se sabe onde uma "corrida" ficou presa, depois de reinícios
+app.get("/api/rotas/viagens-abertas",(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const abertas=Object.values(viagens).filter(v=>!v.finalizadaEm && !v.canceladaEm).map(v=>({
+      token:v.token, carroId:v.carroId, vix:v.vix, carroNome:v.carroNome, data:v.data,
+      motoristaNome:v.motoristaNome, iniciadaEm:v.iniciadaEm?new Date(v.iniciadaEm).toISOString():null,
+      pedidoIds:v.pedidoIds, kmInicial:v.kmInicial,
+    }));
+    res.json({total:abertas.length, viagens:abertas});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// ZERA TODAS as viagens em andamento de uma vez (cancela cada uma, revertendo os
+// pedidos ainda não entregues pra VERIFICADO) -- pra destravar quando não se sabe
+// onde uma corrida específica ficou presa depois de uma bagunça de reinícios
+app.post("/api/rotas/zerar-viagens-abertas",async(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const abertas=Object.values(viagens).filter(v=>!v.finalizadaEm && !v.canceladaEm);
+    const resultado=[];
+    for(const v of abertas){
+      const revertidos=[], falharam=[];
+      for(const pid of v.pedidoIds){
+        const feita=v.entregas[String(pid)] && v.entregas[String(pid)].status==="entregue";
+        if(feita) continue;
+        try{ const r=await mudarSituacaoPedido(Number(pid),SIT.VERIFICADO); if(r.ok) revertidos.push(pid); else falharam.push(pid); }
+        catch(e){ falharam.push(pid); }
+        await new Promise(r=>setTimeout(r,150));
+      }
+      v.canceladaEm=Date.now();
+      resultado.push({token:v.token, carroNome:v.carroNome, revertidos, falharam});
+    }
+    salvarViagensAtivas(viagens);
+    res.json({ok:true, totalZeradas:abertas.length, detalhe:resultado});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/rotas/viagem/:token/cancelar",async(req,res)=>{
   try{
     const viagens=lerViagensAtivas();
