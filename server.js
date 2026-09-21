@@ -2915,6 +2915,42 @@ app.get("/api/contatos",rateLimit({janelaMs:60000,max:12,prefixo:"contatos"}),as
 // ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
 function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
 function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
+const CAIXA_SESSOES_ARQUIVO_FILE = `${DATA_DIR}/caixa_sessoes_arquivo.json`;
+// caixa_sessoes.json já é o MAIOR arquivo do sistema (1,6MB) e nunca teve nenhuma
+// sessão removida — cresce pra sempre, e é lido e reescrito INTEIRO a cada venda
+// de QUALQUER caixa (frente ou atacado), no sistema inteiro. É o mesmo padrão
+// perigoso do log de auditoria que já travava a CPU (corrigido antes) — só que
+// esse ainda não tinha sido corrigido, e é escrito com MUITO mais frequência.
+// Move sessões já FECHADAS há mais de 180 dias pra um arquivo separado (só
+// lido, não mexe no dia a dia), mantendo o arquivo ativo pequeno e rápido de
+// gravar. Sessão aberta nunca é arquivada, não importa a idade.
+function arquivarSessoesCaixaAntigas(){
+  try{
+    const d=lerCaixaSessoes();
+    const limite=Date.now()-180*86400000;
+    const manter=[], arquivar=[];
+    (d.sessoes||[]).forEach(s=>{
+      if(!s.fechadaEm || s.fechadaEm>=limite) manter.push(s); else arquivar.push(s);
+    });
+    if(!arquivar.length) return {arquivadas:0};
+    const arq=lerJSON(CAIXA_SESSOES_ARQUIVO_FILE,{sessoes:[]});
+    arq.sessoes=[...(arq.sessoes||[]),...arquivar];
+    salvarJSON(CAIXA_SESSOES_ARQUIVO_FILE,arq);
+    salvarCaixaSessoes({sessoes:manter});
+    console.log(`[caixa] arquivamento: ${arquivar.length} sessão(ões) fechada(s) há mais de 180 dias movida(s) pro arquivo`);
+    return {arquivadas:arquivar.length};
+  }catch(e){ console.error("Falha ao arquivar sessões de caixa:",e.message); return {arquivadas:0,erro:e.message}; }
+}
+// lê ativas + arquivadas juntas -- só pra relatório/exportação que pode
+// precisar de período mais longo que 180 dias; o dia a dia usa lerCaixaSessoes()
+// (só as ativas), que é o que fica rápido de verdade
+function lerCaixaSessoesCompleto(){
+  const ativas=lerCaixaSessoes();
+  const arq=lerJSON(CAIXA_SESSOES_ARQUIVO_FILE,{sessoes:[]});
+  return {sessoes:[...(arq.sessoes||[]),...(ativas.sessoes||[])]};
+}
+setTimeout(arquivarSessoesCaixaAntigas, 120000); // 2min depois de subir (não compete com o boot)
+setInterval(arquivarSessoesCaixaAntigas, 24*60*60*1000); // e 1x por dia
 // marca um movimento de venda (em QUALQUER sessão, aberta ou fechada) como ALTERADO,
 // troca as formas de pagamento exibidas e guarda o histórico do que mudou — pra o
 // "Minhas Vendas" mostrar o pedido em vermelho com o que aconteceu.
@@ -3931,7 +3967,7 @@ app.get("/api/caixa/exportar-pagamentos",async(req,res)=>{
     const iniTs=new Date(dataInicial).getTime();
     const fimTs=new Date(dataFinal).getTime();
 
-    const dCx=lerCaixaSessoes();
+    const dCx=lerCaixaSessoesCompleto();
     const linhas=[];
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
