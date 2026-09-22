@@ -77,7 +77,7 @@ function bipe() {
   try {
     // fala a frase usando a sintese de voz do proprio navegador -- nao precisa
     // de nenhum arquivo de audio
-    const u = new SpeechSynthesisUtterance("Ô, gordinho Zé!");
+    const u = new SpeechSynthesisUtterance("Aôô gordinho Zéé!!!!");
     u.lang = "pt-BR";
     u.rate = 1;
     u.pitch = 1;
@@ -111,7 +111,7 @@ let _testeSomTimer = null;
 // separado deixa o aviso mais difícil de ignorar.
 setInterval(function () {
   if (SOM_LIGADO && SOM_LIBERADO && FILA.length) bipe();
-}, 60000);
+}, 30000);
 // botão de teste (discreto) — toca o MESMO bipe agora e repete a cada 60s, pra
 // checar se o som está audível no ambiente sem precisar esperar um pedido de
 // verdade chegar. Clica de novo pra parar.
@@ -123,7 +123,7 @@ function toggleTesteSom() {
   } else {
     if (!SOM_LIBERADO) liberarSom();
     bipe();
-    _testeSomTimer = setInterval(bipe, 60000);
+    _testeSomTimer = setInterval(bipe, 30000);
     TESTE_SOM = true;
   }
   render();
