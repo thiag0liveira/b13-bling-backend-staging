@@ -694,6 +694,7 @@ app.get("/musica-fundo",(req,res)=>{
 });
 app.get("/login",(req,res)=>res.sendFile(path.join(__dirname,"login.html")));
 app.get("/saude",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"saude.html")); });
+app.get("/fluxo-caixa",(req,res)=>res.sendFile(path.join(__dirname,"fluxo-caixa.html")));
 app.get("/nav.js",(req,res)=>{
   res.setHeader("Content-Type","application/javascript");
   res.setHeader("Cache-Control","no-store, no-cache, must-revalidate");
@@ -837,6 +838,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
+  {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
   {grupo:"Estoque",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
@@ -4009,6 +4011,60 @@ app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
 // banco. Um valor separado por linha (uma venda paga em Pix + Dinheiro vira 2
 // linhas), com a forma de pagamento (o Pix Banco já vem com o nome do banco
 // junto, ex.: "Pix Banco Itaú"), pra bater fácil com o extrato de cada conta.
+// Pagamentos + estornos do nosso caixa, em JSON (não Excel) -- usado pela
+// ferramenta de Fluxo de Caixa pra cruzar com o extrato bancário importado.
+app.get("/api/caixa/conciliacao",async(req,res)=>{
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const noventaDiasAtras=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    const dataInicial=(req.query.dataInicial||noventaDiasAtras)+"T00:00:00-03:00";
+    const dataFinalStr=req.query.dataFinal||hoje;
+    const dataFinal=dataFinalStr+"T23:59:59-03:00";
+    const iniTs=new Date(dataInicial).getTime();
+    const fimTs=new Date(dataFinal).getTime();
+
+    const dCx=lerCaixaSessoesCompleto();
+    const pagamentos=[];
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        if(m.em<iniTs||m.em>fimTs) return;
+        const pags=m.pagamentos&&m.pagamentos.length ? m.pagamentos : [{formaNome:"—",valor:m.total||0}];
+        pags.forEach(p=>{
+          pagamentos.push({
+            data: new Date(m.em).toISOString().slice(0,10),
+            caixa: (s.tipoCaixa||"frente")==="atacado"?"Atacado":"Frente",
+            pedido: m.numero||m.pedidoId||"",
+            cliente: m.clienteNome||"",
+            forma: p.formaNome||"—",
+            valor: +Number(p.valor||0).toFixed(2),
+          });
+        });
+      });
+    });
+
+    // estornos: historico de pagamentos.json com tipo "estorno" e valor de verdade
+    // (soRegistrarLog:true não tem valor de dinheiro de verdade movimentado)
+    const pags=lerPag();
+    const estornos=[];
+    Object.entries(pags).forEach(([pedidoId,p])=>{
+      (p.historico||[]).forEach(h=>{
+        if(h.tipo!=="estorno"||h.soRegistrarLog||!(Number(h.valor)<0)) return;
+        if(h.em<iniTs||h.em>fimTs) return;
+        estornos.push({
+          data: new Date(h.em).toISOString().slice(0,10),
+          pedido: pedidoId,
+          forma: h.formaNome||"—",
+          conta: h.contaNome||"",
+          valor: +Math.abs(Number(h.valor)).toFixed(2),
+          funcionario: h.funcionarioNome||"",
+        });
+      });
+    });
+
+    res.json({pagamentos, estornos, geradoEm:new Date().toISOString()});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/caixa/exportar-pagamentos",async(req,res)=>{
   try{
     const hoje=new Date().toISOString().slice(0,10);
