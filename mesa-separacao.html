@@ -110,7 +110,8 @@ let _testeSomTimer = null;
 // passar despercebido no barulho do galpão; repetir enquanto ainda não foi
 // separado deixa o aviso mais difícil de ignorar.
 setInterval(function () {
-  if (SOM_LIGADO && SOM_LIBERADO && FILA.length) bipe();
+  const temLivre = ATIVOS.some(function (id) { return !MESAS[id] || !MESAS[id].pedido; });
+  if (SOM_LIGADO && SOM_LIBERADO && FILA.length && temLivre) bipe();
 }, 30000);
 // botão de teste (discreto) — toca o MESMO bipe agora e repete a cada 60s, pra
 // checar se o som está audível no ambiente sem precisar esperar um pedido de
