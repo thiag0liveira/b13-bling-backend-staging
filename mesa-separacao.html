@@ -75,25 +75,19 @@ let IDS_FILA = null; // ids já vistos — pra detectar pedido NOVO e avisar com
 let _audioCtx = null;
 function bipe() {
   try {
-    _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (_audioCtx.state === "suspended") _audioCtx.resume();
-    // campainha: "ding-dong" -- nota mais aguda, depois mais grave, cada uma com
-    // ataque rápido e um decaimento mais longo (mais parecido com sino de
-    // verdade do que um bipe eletrônico)
-    [{ atraso: 0, freq: 830 }, { atraso: 0.42, freq: 622 }].forEach(function (n) {
-      const o = _audioCtx.createOscillator(),
-        g = _audioCtx.createGain();
-      o.type = "triangle";
-      o.frequency.value = n.freq;
-      const t0 = _audioCtx.currentTime + n.atraso;
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
-      o.connect(g);
-      g.connect(_audioCtx.destination);
-      o.start(t0);
-      o.stop(t0 + 0.95);
-    });
+    // fala a frase usando a sintese de voz do proprio navegador -- nao precisa
+    // de nenhum arquivo de audio
+    const u = new SpeechSynthesisUtterance("Ô, gordinho Zé!");
+    u.lang = "pt-BR";
+    u.rate = 1;
+    u.pitch = 1;
+    u.volume = 1;
+    // pega uma voz em português, se o navegador tiver alguma instalada
+    const vozes = window.speechSynthesis.getVoices();
+    const vozPt = vozes.find(function (v) { return /pt(-|_)?BR/i.test(v.lang); }) || vozes.find(function (v) { return /^pt/i.test(v.lang); });
+    if (vozPt) u.voice = vozPt;
+    window.speechSynthesis.cancel(); // corta qualquer fala anterior ainda tocando
+    window.speechSynthesis.speak(u);
   } catch (e) {}
 }
 // navegador só deixa tocar som depois de uma interação — o primeiro toque libera
