@@ -93,6 +93,7 @@ const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
 });
 const soDig = s => String(s !== null && s !== void 0 ? s : "").replace(/\D/g, "");
 let FILTRO = "todas";
+let BUSCA = "";
 let LISTA = [];
 function render() {
   const app = document.getElementById("app");
@@ -111,6 +112,7 @@ function render() {
           <span style="flex:1"></span>
           <button class="btn btn-ghost" style="font-size:11px;padding:6px 10px" onclick="sincronizarPedidos(true)" title="Verifica no Bling e remove pedidos que foram excluídos lá">🔄 <span id="syncLabel">Sincronizar</span></button>
         </div>
+        <input id="buscaLista" placeholder="🔎 Buscar por nome do cliente ou número do pedido…" value="${esc(BUSCA)}" oninput="mudarBusca(this.value)" style="margin-top:8px">
       </div>
       <div id="lista"><div class="muted">Carregando…</div></div>
     </div>`;
@@ -123,6 +125,10 @@ function render() {
 // troca o filtro. Reconstrói a tela inteira (render) a partir do FILTRO atual,
 // então os botões de cima SEMPRE refletem o que está selecionado — sem depender
 // de mexer na classe na mão, que podia dessincronizar.
+function mudarBusca(v) {
+  BUSCA = v;
+  renderLista();
+}
 function mudarFiltro(f) {
   if (FILTRO === f) return;
   FILTRO = f;
@@ -149,7 +155,17 @@ async function carregar() {
 function renderLista() {
   const box = document.getElementById("lista");
   if (!box || !LISTA.length) return;
-  box.innerHTML = LISTA.map(cardProposta).join("");
+  const q = norm(BUSCA.trim());
+  const filtrada = q ? LISTA.filter(p => {
+    var _p$cliente;
+    const nome = norm(((_p$cliente = p.cliente) === null || _p$cliente === void 0 ? void 0 : _p$cliente.nome) || "");
+    const numero = String(p.pedidoBlingNumero || "");
+    return nome.includes(q) || numero.includes(q);
+  }) : LISTA;
+  box.innerHTML = filtrada.length ? filtrada.map(cardProposta).join("") : `<div class="card"><div class="muted">Nenhum resultado pra "${esc(BUSCA)}".</div></div>`;
+}
+function norm(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 // busca a situação atual (no Bling) de cada pedido gerado e atualiza o card
