@@ -1406,7 +1406,8 @@ async function salvarEditarAguardando(id, tokenQr) {
       alert("⚠️ ATENÇÃO: depois de retirar itens, o pedido ficou em " + brl(j.totalItensNovo) + ", ABAIXO do mínimo de " + brl(j.minimoEntrega) + " para entrega.\n\nConfirme com o cliente se mantém a entrega (com frete) ou passa para retirada.");
     }
     const minMsg = j.abaixoMinimoEntrega ? '<br><span style="color:#ff8f7a;font-weight:800">⚠️ Abaixo do mínimo de ' + brl(j.minimoEntrega) + ' pra entrega</span>' : '';
-    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + minMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
+    const situMsg = j.situacaoAvancada ? '<br><span style="color:#3ce88a;font-weight:800">✅ Pendência resolvida — pedido avançou pra ' + esc(j.situacaoAvancada) + '</span>' : '';
+    edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + minMsg + situMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
     if (j.alertaTotal) alert("⚠️ " + j.alertaTotal);
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
     setTimeout(function () {

@@ -5610,7 +5610,17 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         fingerprint:`abaixomin-${id}-${Date.now()}`,
         oQueFazer:`Depois de retirar itens, o pedido #${ped.numero||id} ficou em ${totalItensNovo.toFixed(2)}, abaixo do mínimo de ${(+minimoEntrega).toFixed(2)} pra entrega. Confirme com o cliente se mantém a entrega (com frete) ou passa pra retirada.`});
     }
-    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+    // se o pedido estava "Separado c/ Pendências" e a edição foi salva com sucesso,
+    // avança automaticamente pra SEPARADO — editar os itens (ex.: corrigir o que
+    // faltava, com ou sem autorização de estoque) É o jeito de resolver a
+    // pendência; sem isso, o pedido ficava com o problema já corrigido mas preso
+    // no mesmo status, esperando alguém lembrar de mudar por fora.
+    let situacaoAvancada=null;
+    if(_sitEd===SIT.SEP_PEND){
+      try{ const rSit=await mudarSituacaoPedido(Number(id),SIT.SEPARADO); if(rSit.ok) situacaoAvancada="Separado"; }
+      catch(e){}
+    }
+    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada,
       autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
