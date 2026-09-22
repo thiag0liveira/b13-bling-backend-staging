@@ -4020,6 +4020,43 @@ app.get("/api/caixa/exportar-pagamentos",async(req,res)=>{
     const fimTs=new Date(dataFinal).getTime();
 
     const dCx=lerCaixaSessoesCompleto();
+    // Corrige ANTES de montar as linhas: às vezes o Bling não devolve o número do
+    // pedido na hora da criação (assíncrono do lado deles) — o sistema tenta
+    // buscar de novo em segundo plano, mas isso pode falhar silenciosamente pra
+    // alguns casos, deixando o registro com o número faltando pra sempre (a
+    // exportação então mostrava o ID interno do Bling no lugar do número curto).
+    // Busca o número certo agora e já corrige o registro salvo.
+    const pedidosSemNumero=new Set();
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo==="venda"&&!m.cancelado&&!m.numero&&m.em>=iniTs&&m.em<=fimTs&&m.pedidoId) pedidosSemNumero.add(String(m.pedidoId));
+    }));
+    if(pedidosSemNumero.size){
+      const numerosAchados={};
+      await Promise.all([...pedidosSemNumero].map(async pid=>{
+        try{ const d=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); if(d?.numero) numerosAchados[pid]=d.numero; }catch(e){}
+      }));
+      if(Object.keys(numerosAchados).length){
+        // aplica no objeto já lido (usado nas linhas logo abaixo) e também salva de
+        // volta nos arquivos de origem, pra não precisar corrigir de novo depois
+        (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+          if(m.tipo==="venda"&&!m.numero&&numerosAchados[String(m.pedidoId)]) m.numero=numerosAchados[String(m.pedidoId)];
+        }));
+        try{
+          const ativas=lerCaixaSessoes();
+          let mudouAtivas=false;
+          (ativas.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+            if(m.tipo==="venda"&&!m.numero&&numerosAchados[String(m.pedidoId)]){ m.numero=numerosAchados[String(m.pedidoId)]; mudouAtivas=true; }
+          }));
+          if(mudouAtivas) salvarCaixaSessoes(ativas);
+          const arq=lerJSON(CAIXA_SESSOES_ARQUIVO_FILE,{sessoes:[]});
+          let mudouArq=false;
+          (arq.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+            if(m.tipo==="venda"&&!m.numero&&numerosAchados[String(m.pedidoId)]){ m.numero=numerosAchados[String(m.pedidoId)]; mudouArq=true; }
+          }));
+          if(mudouArq) salvarJSON(CAIXA_SESSOES_ARQUIVO_FILE,arq);
+        }catch(e){}
+      }
+    }
     const linhas=[];
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
