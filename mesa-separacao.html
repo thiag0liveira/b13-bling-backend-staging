@@ -77,19 +77,22 @@ function bipe() {
   try {
     _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     if (_audioCtx.state === "suspended") _audioCtx.resume();
-    // dois toques curtos, agudos — audível no galpão sem ser irritante
-    [0, 0.22].forEach(function (atraso, i) {
+    // campainha: "ding-dong" -- nota mais aguda, depois mais grave, cada uma com
+    // ataque rápido e um decaimento mais longo (mais parecido com sino de
+    // verdade do que um bipe eletrônico)
+    [{ atraso: 0, freq: 830 }, { atraso: 0.42, freq: 622 }].forEach(function (n) {
       const o = _audioCtx.createOscillator(),
         g = _audioCtx.createGain();
-      o.type = "sine";
-      o.frequency.value = i ? 1180 : 880;
-      g.gain.setValueAtTime(0.0001, _audioCtx.currentTime + atraso);
-      g.gain.exponentialRampToValueAtTime(0.5, _audioCtx.currentTime + atraso + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, _audioCtx.currentTime + atraso + 0.18);
+      o.type = "triangle";
+      o.frequency.value = n.freq;
+      const t0 = _audioCtx.currentTime + n.atraso;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.55, t0 + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
       o.connect(g);
       g.connect(_audioCtx.destination);
-      o.start(_audioCtx.currentTime + atraso);
-      o.stop(_audioCtx.currentTime + atraso + 0.2);
+      o.start(t0);
+      o.stop(t0 + 0.95);
     });
   } catch (e) {}
 }
