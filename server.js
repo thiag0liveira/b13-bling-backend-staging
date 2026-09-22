@@ -1615,7 +1615,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
       observacoes:[String(ped.observacoes||"").trim(), String(opts.obsExtra||"").trim()].filter(Boolean).join("\n"),
       // se veio lista vazia (ex.: só gravando a taxa em "outras despesas"), PRESERVA
       // as parcelas que já estão no pedido — enviar vazio apagaria o pagamento no Bling
@@ -1732,7 +1732,7 @@ async function acrescentarObservacaoBling(id,notaAdicional){
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
       observacoes:(obsAtual?obsAtual+"\n":"")+notaAdicional,
       ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
     };
@@ -2262,7 +2262,7 @@ app.post("/api/fluxo/:id/separacao-concluida",async(req,res)=>{
       const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r.data).catch(()=>({}));
       pend[id]={pedidoId:id,numero:ped.numero,cliente:ped.contato?.nome||"",telefone:ped.contato?.celular||"",faltas,sugestao:"",status:"pendente",em:Date.now()};
       salvarPend(pend);
-      if(texto) try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({data:ped.data,contato:{id:ped.contato?.id},itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto})}); }catch(e){}
+      if(texto) try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({data:ped.data,contato:{id:ped.contato?.id},itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto})}); }catch(e){}
     }
     const rSit=await mudarSituacaoPedido(id, novoSit);
     if(!rSit.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(rSit.erro||"erro")});
@@ -2355,7 +2355,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
       try{
         await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
           data:ped.data, contato:{id:ped.contato?.id},
-          itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+          itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
           observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
           ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
           ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
@@ -7591,7 +7591,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
 app.post("/api/pedido",async(req,res)=>{
   try{ const {contatoId,itens}=req.body;
     if(!contatoId||!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Envie { contatoId, itens }"});
-    const payload={contato:{id:Number(contatoId)},itens:itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)}))};
+    const payload={contato:{id:Number(contatoId)},itens:itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||i.descricao||"").trim()?{descricao:String(i.nome||i.descricao).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)}))};
     res.json(await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)}));
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
@@ -9795,7 +9795,7 @@ app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
       const nota=`[VENDA A PRAZO ${quando}] Autorizado por ${auth.funcionario.nome} · operador ${funcNome} · vence em ${new Date(venceEm).toLocaleDateString("pt-BR")}${observacao?" · "+String(observacao).slice(0,120):""}`;
       await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
         data:ped.data, contato:{id:ped.contato?.id},
-        itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+        itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
         observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
         ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
         ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
@@ -11490,7 +11490,7 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     const obsBase=String(ped.observacoes||"").split("\n").filter(l=>tipo!=="retirada"||!/^ENTREGA\s*—/i.test(l.trim())).join("\n").trim();
     const payload={
       data:ped.data, contato:{id:ped.contato?.id},
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
       observacoes:[obsBase,nota].filter(Boolean).join("\n"),
       // ao virar RETIRADA, limpa de verdade o endereço de entrega no Bling (manda
       // enderecoEntrega vazio) — antes só zerava o frete e deixava o endereço antigo
@@ -12764,7 +12764,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     const payload={
       data:ped.data,
       contato:{id:ped.contato?.id},
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
       observacoes:novaObs,
       transporte:{
         fretePorConta:ped.transporte?.fretePorConta??0,
@@ -12810,7 +12810,7 @@ app.patch("/api/pedidos/:id/observacao", async(req,res)=>{
       nome:ped.contato?.nome||"",
       contato:{id:ped.contato?.id},
       data:ped.data,
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},quantidade:i.quantidade,valor:i.valor})),
+      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
       observacoes:novaObs,
     })});
     addLog(id,"observacao_salva",funcionarioId,funcionarioNome,{texto:texto.slice(0,100)});
@@ -13653,7 +13653,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     const payload={
       data:dataHojeBR,
       contato:{id:Number(prop.cliente.id)},
-      itens:prop.itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor)})),
+      itens:prop.itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||"").trim()?{descricao:String(i.nome).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       ...(prop.vendedorId?{vendedor:{id:Number(prop.vendedorId)}}:{}),
       ...(prop.observacao?{observacoes:prop.observacao}:{}),
     };
