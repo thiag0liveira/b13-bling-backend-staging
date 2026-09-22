@@ -164,7 +164,29 @@ function imprimirPedidoComprovante(id) {
   const w = window.open("", "_blank", "width=420,height=700");
   if (!w) { alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site e tente de novo."); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>' +
-    '<body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>');
+    '<body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Buscando o pedido atualizado…</body></html>');
+  // BUSCA FRESCO no Bling antes de imprimir — sem isso, se o pedido tivesse sido
+  // editado (item trocado/adicionado) depois da última vez que essa tela carregou
+  // a lista, o comprovante saía com os dados VELHOS, antes da edição.
+  fetch(B + "/api/pedidos/" + id).then(r => r.json()).then(function (r) {
+    const ped = r.data || r;
+    const pFresco = (ped && ped.itens) ? {
+      id: p.id,
+      numero: ped.numero || p.numero,
+      cliente: (ped.contato && ped.contato.nome) || p.cliente,
+      total: Number(ped.total) || p.total,
+      frete: Number((ped.transporte && ped.transporte.frete) || 0),
+      situacao: (ped.situacao && ped.situacao.nome) || p.situacao,
+      itens: (ped.itens || []).map(function (i) {
+        var _i$produto;
+        return { nome: i.descricao || ((_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.nome) || "produto", quantidade: i.quantidade, valor: i.valor };
+      }),
+    } : p; // se a busca fresca falhar, cai pro dado que já tinha (melhor que não imprimir nada)
+    _continuarImpressaoComprovante(pFresco, w);
+  }).catch(function () { _continuarImpressaoComprovante(p, w); });
+}
+function _continuarImpressaoComprovante(p, w) {
+  if (w.closed) return;
   const tmpQr = document.createElement("div");
   tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
   document.body.appendChild(tmpQr);
