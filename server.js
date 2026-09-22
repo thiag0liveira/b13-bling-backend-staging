@@ -455,6 +455,29 @@ function _limparCacheProduto(){ try{
 }catch(e){} }
 setInterval(_limparCacheProduto, 10*60*1000);
 
+const OBSERVACOES_PEDIDO_FILE=`${DATA_DIR}/observacoes_pedidos.json`;
+// cache local, só de LEITURA (nunca gera chamada nova sozinho) das observações
+// dos pedidos -- muitas informações de pagamento (principalmente estorno) só
+// existem escritas na observação do pedido, não em campo estruturado nenhum.
+// Guardar aqui permite VARREDURAS (ex.: achar estorno mencionado num pedido que
+// sobrou sem bater no extrato bancário) sem precisar buscar tudo de novo no
+// Bling toda vez -- só usa o que já foi visto em consultas normais do dia a dia.
+// Fica em memória e só grava em disco periodicamente (não a cada pedido
+// consultado) -- pedido é consultado com MUITA frequência no sistema inteiro, e
+// reescrever o arquivo inteiro a cada vez é exatamente o padrão que já travou a
+// CPU antes (log de auditoria, sessões de caixa).
+let _obsPedidoCache=null, _obsPedidoSujo=false;
+function _obsPedidoCarregar(){ if(!_obsPedidoCache) _obsPedidoCache=lerJSON(OBSERVACOES_PEDIDO_FILE,{}); return _obsPedidoCache; }
+function cachearObservacaoPedido(id, observacoes, numero){
+  if(!id) return;
+  const texto=String(observacoes||"");
+  const d=_obsPedidoCarregar();
+  const atual=d[id];
+  if(atual && atual.observacoes===texto && atual.numero===numero) return; // nada mudou, não marca sujo à toa
+  d[id]={numero:numero||atual?.numero||null, observacoes:texto, atualizadoEm:Date.now()};
+  _obsPedidoSujo=true;
+}
+setInterval(()=>{ if(_obsPedidoSujo && _obsPedidoCache){ try{ salvarJSON(OBSERVACOES_PEDIDO_FILE,_obsPedidoCache); _obsPedidoSujo=false; }catch(e){} } }, 60000); // grava no máximo 1x por minuto
 function bling(path,options={},prioridade="alta"){
   // só cacheia LEITURA simples de produto (GET /produtos/<id>, sem query)
   const metodo=String(options.method||"GET").toUpperCase();
@@ -494,6 +517,22 @@ function bling(path,options={},prioridade="alta"){
       const corpo=JSON.parse(options.body||"{}");
       (corpo.itens||[]).forEach(it=>{ const pid=it?.produto?.id; if(pid) _invalidarProduto(pid); });
     }catch(e){}
+  }
+  // cacheia a OBSERVAÇÃO do pedido de graça, aproveitando qualquer leitura que o
+  // sistema já faça por outro motivo (abrir pedido, editar, conferência, etc.) --
+  // sem isso, ver a observação de um pedido específico (ex.: pra achar um estorno
+  // anotado lá, na conciliação bancária) exigiria buscar TODOS os pedidos de novo
+  // no Bling, gerando exatamente o tipo de volume de chamadas que já causou
+  // travamento antes. Não muda o fluxo normal, só espia a resposta.
+  const mPedUnico=/^\/pedidos\/vendas\/(\d+)$/.exec(String(path));
+  if(mPedUnico && metodo==="GET"){
+    const idPed=mPedUnico[1];
+    return new Promise((resolve,reject)=>{
+      (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,enfileiradoEm:Date.now(),
+        resolve:(r)=>{ try{ cachearObservacaoPedido(idPed, r?.data?.observacoes, r?.data?.numero); }catch(e){} resolve(r); },
+        reject});
+      _blingAgendar();
+    });
   }
   return new Promise((resolve,reject)=>{
     (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject,enfileiradoEm:Date.now()});
@@ -4013,6 +4052,22 @@ app.get("/api/gestao/buscar-pedido/:termo",(req,res)=>{
 // junto, ex.: "Pix Banco Itaú"), pra bater fácil com o extrato de cada conta.
 // Pagamentos + estornos do nosso caixa, em JSON (não Excel) -- usado pela
 // ferramenta de Fluxo de Caixa pra cruzar com o extrato bancário importado.
+// Busca a observação de uma LISTA de pedidos, sob demanda (o usuário clica um
+// botão) -- nunca dispara sozinho. Usa a fila normal do Bling (mesmo limite de
+// segurança de sempre), então é lento de propósito se a lista for grande; o
+// cache (acima) evita repetir isso de novo depois.
+app.post("/api/caixa/conciliacao/buscar-observacoes",async(req,res)=>{
+  try{
+    const ids=[...new Set((req.body?.pedidoIds||[]).map(String))].slice(0,60); // teto de segurança por chamada
+    if(!ids.length) return res.json({ok:true, buscados:0});
+    let buscados=0, falharam=0;
+    for(const id of ids){
+      try{ await bling(`/pedidos/vendas/${id}`); buscados++; } // a própria função bling() já cacheia a observação
+      catch(e){ falharam++; }
+    }
+    res.json({ok:true, buscados, falharam});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/caixa/conciliacao",async(req,res)=>{
   try{
     const hoje=new Date().toISOString().slice(0,10);
@@ -4024,20 +4079,24 @@ app.get("/api/caixa/conciliacao",async(req,res)=>{
     const fimTs=new Date(dataFinal).getTime();
 
     const dCx=lerCaixaSessoesCompleto();
+    const obsCache=_obsPedidoCarregar();
     const pagamentos=[];
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
         if(m.tipo!=="venda"||m.cancelado) return;
         if(m.em<iniTs||m.em>fimTs) return;
         const pags=m.pagamentos&&m.pagamentos.length ? m.pagamentos : [{formaNome:"—",valor:m.total||0}];
+        const obs=(obsCache[String(m.pedidoId)]?.observacoes||"").slice(0,300);
         pags.forEach(p=>{
           pagamentos.push({
             data: new Date(m.em).toISOString().slice(0,10),
             caixa: (s.tipoCaixa||"frente")==="atacado"?"Atacado":"Frente",
             pedido: m.numero||m.pedidoId||"",
+            pedidoId: m.pedidoId||"",
             cliente: m.clienteNome||"",
             forma: p.formaNome||"—",
             valor: +Number(p.valor||0).toFixed(2),
+            observacao: obs||undefined, // só o que já foi visto antes em consultas normais -- não busca na hora
           });
         });
       });
@@ -4054,6 +4113,7 @@ app.get("/api/caixa/conciliacao",async(req,res)=>{
         estornos.push({
           data: new Date(h.em).toISOString().slice(0,10),
           pedido: pedidoId,
+          pedidoId: pedidoId,
           forma: h.formaNome||"—",
           conta: h.contaNome||"",
           valor: +Math.abs(Number(h.valor)).toFixed(2),

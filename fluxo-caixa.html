@@ -351,6 +351,24 @@ let saveWarned = false;
 // dados do nosso caixa (pagamentos/estornos), buscados sob demanda -- não são
 // salvos no localStorage, sempre busca de novo (dado operacional, não do extrato)
 let CX = { loading: false, from: null, to: null, pagamentos: null, estornos: null, erro: null };
+let OBS = { loading: false };
+async function buscarObservacoesFaltando() {
+  const { matches, pagamentosSemMatch, estornosSemMatch } = matchCaixa(scope());
+  const ids = [...new Set([...pagamentosSemMatch, ...estornosSemMatch].filter(c => c.pedidoId && !c.observacao).map(c => String(c.pedidoId)))];
+  if (!ids.length) return;
+  OBS.loading = true; renderView();
+  try {
+    const j = await fetch('/api/caixa/conciliacao/buscar-observacoes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pedidoIds: ids })
+    }).then(r => r.json());
+    toast(`${j.buscados || 0} observação(ões) buscada(s)${j.falharam ? ' · ' + j.falharam + ' falharam' : ''}`);
+    await buscarCaixa(); // recarrega já com as observações novas no cache
+  } catch (e) {
+    toast('Não consegui buscar: ' + e.message);
+  }
+  OBS.loading = false; renderView();
+}
 function save(...keys) {
   let ok = true;
   for (const k of keys) ok = LS.set(k, S[k]) && ok;
@@ -1287,8 +1305,9 @@ function conciliacaoHTML(list) {
   const totMatch = matches.reduce((s, m) => s + Math.abs(m.t.valor), 0);
   const totBancoSem = bancoSemMatch.reduce((s, t) => s + t.valor, 0);
   const totCaixaSem = pagamentosSemMatch.reduce((s, p) => s + p.valor, 0) + estornosSemMatch.reduce((s, e) => s + e.valor, 0);
+  const semObsCount = [...pagamentosSemMatch, ...estornosSemMatch].filter(c => c.pedidoId && !c.observacao).length;
   const rowT = t => `<tr class="tx" data-act="tx" data-id="${t.id}"><td>${dShort(t.date)}</td><td><div class="desc"><span class="h">${esc(title(t))}</span></div></td><td class="r num">${fmtS(t.valor)}</td></tr>`;
-  const rowC = (c, tipo) => `<tr><td>${dBR(c.data)}</td><td>${esc(c.pedido ? '#' + c.pedido : '—')} ${c.cliente ? '· ' + esc(c.cliente) : ''}${c.forma ? ' · ' + esc(c.forma) : ''}${c.caixa ? ' · ' + esc(c.caixa) : ''}</td><td class="r num">${tipo === 'estorno' ? '− ' : '+ '}${fmt(c.valor)}</td></tr>`;
+  const rowC = (c, tipo) => `<tr><td>${dBR(c.data)}</td><td>${esc(c.pedido ? '#' + c.pedido : '—')} ${c.cliente ? '· ' + esc(c.cliente) : ''}${c.forma ? ' · ' + esc(c.forma) : ''}${c.caixa ? ' · ' + esc(c.caixa) : ''}${c.observacao ? `<div class="muted small" style="margin-top:2px">📝 ${esc(c.observacao)}</div>` : ''}</td><td class="r num">${tipo === 'estorno' ? '− ' : '+ '}${fmt(c.valor)}</td></tr>`;
   return `
     <div class="grid" style="grid-template-columns:repeat(4,1fr)">
       <div class="card kpi"><div class="lbl">Conciliados</div><div class="val">${matches.length}</div><div class="foot num">${fmt(totMatch)}</div></div>
@@ -1312,7 +1331,8 @@ function conciliacaoHTML(list) {
       </div>
       <div class="card">
         <h2>⚠️ No caixa, sem achar no banco (${pagamentosSemMatch.length + estornosSemMatch.length})</h2>
-        <div class="sub">Pode ser um recebimento ainda não compensado (comum em cartão) — ou uma conta diferente da que foi importada aqui.</div>
+        <div class="sub">Pode ser um recebimento ainda não compensado (comum em cartão) — ou uma conta diferente da que foi importada aqui. Muita informação de estorno só existe na <b>observação do pedido</b> — clique abaixo pra buscar as que ainda faltam (sem isso, o sistema só mostra a observação já vista antes em outras telas).</div>
+        ${semObsCount ? `<button class="iconbtn" data-act="buscarobs" ${OBS.loading ? 'disabled' : ''} style="margin:8px 0">${OBS.loading ? 'Buscando…' : `🔍 Buscar observação que falta (${semObsCount})`}</button>` : ''}
         <table class="tbl"><thead><tr><th>Data</th><th>Pedido/forma</th><th class="r">Valor</th></tr></thead><tbody>
           ${(pagamentosSemMatch.length + estornosSemMatch.length) ? [...pagamentosSemMatch.map(p => rowC(p, 'pagamento')), ...estornosSemMatch.map(e => rowC(e, 'estorno'))].join('') : '<tr><td colspan="3" class="muted" style="text-align:center">Nenhum — tudo do caixa apareceu no banco.</td></tr>'}
         </tbody></table>
@@ -1610,6 +1630,7 @@ document.addEventListener('click', ev => {
     case 'review': { const L = scope().filter(attention).sort((x, y) => Math.abs(y.valor) - Math.abs(x.valor)); if (L.length) openTx(L[0].id, { ids: L.map(t => t.id), i: 0 }); break; }
     case 'export': exportCSV(); break;
     case 'buscarcaixa': ev.preventDefault(); buscarCaixa(); break;
+    case 'buscarobs': ev.preventDefault(); buscarObservacoesFaltando(); break;
     case 'print': window.print(); break;
     case 'addrule': { const term = $('#r-term').value.trim(), cat = $('#r-cat').value; if (!term) { toast('Digite o termo'); break; } S.rules.push({ term: norm(term), cat }); save('rules'); renderView(); toast('Regra criada'); break; }
     case 'delrule': S.rules.splice(+v, 1); save('rules'); renderView(); break;
