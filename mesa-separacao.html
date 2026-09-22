@@ -105,7 +105,32 @@ function liberarSom() {
 let SOM_LIBERADO = false,
   SOM_LIGADO = true,
   PISCA = false,
-  TELA_CHEIA = false;
+  TELA_CHEIA = false,
+  TESTE_SOM = false;
+let _testeSomTimer = null;
+// enquanto tiver pedido esperando na fila, repete o mesmo bipe a cada 60s — o
+// aviso de "pedido novo" (acima) toca só uma vez na hora que chega, e podia
+// passar despercebido no barulho do galpão; repetir enquanto ainda não foi
+// separado deixa o aviso mais difícil de ignorar.
+setInterval(function () {
+  if (SOM_LIGADO && SOM_LIBERADO && FILA.length) bipe();
+}, 60000);
+// botão de teste (discreto) — toca o MESMO bipe agora e repete a cada 60s, pra
+// checar se o som está audível no ambiente sem precisar esperar um pedido de
+// verdade chegar. Clica de novo pra parar.
+function toggleTesteSom() {
+  if (_testeSomTimer) {
+    clearInterval(_testeSomTimer);
+    _testeSomTimer = null;
+    TESTE_SOM = false;
+  } else {
+    if (!SOM_LIBERADO) liberarSom();
+    bipe();
+    _testeSomTimer = setInterval(bipe, 60000);
+    TESTE_SOM = true;
+  }
+  render();
+}
 // tela cheia — no monitor touch some a barra do navegador e sobra tela pras colunas
 function toggleTelaCheia() {
   try {
@@ -508,7 +533,7 @@ function render() {
     }) + '</div>' : '') + (ocupado ? '<div class="quem">' + esc(quemSepara(p.id) || "separando…") + '</div>' : '') + (!ocupado ? '<button onclick="event.stopPropagation();tirarDaFila(' + p.id + ')" style="margin-top:5px;background:none;border:none;color:#6b6699;font-size:10px;cursor:pointer;padding:2px">✕ tirar da fila</button>' : '') + (travadoSemDono(p.id) ? '<button class="b bgh" style="margin-top:5px;padding:7px;font-size:11px" onclick="event.stopPropagation();destravar(' + p.id + ')">🔓 Destravar</button>' : '') + '</div>';
   }).join("") || '<div style="color:#9a95c9;font-size:13px;padding:6px">Nenhum pedido enviado pra separação. 🎉<br><span style="font-size:11px">Os pedidos aparecem aqui quando alguém manda pra separação no caixa atacado ou na tela de Pedidos.</span></div>';
   const cols = ATIVOS.length ? ATIVOS.map(colunaHtml).join("") : '<div class="col"><div class="colBody"><div class="vazio">Ative os separadores na barra de cima<br>para começar</div></div></div>';
-  app.innerHTML = '<div class="barraFunc">' + barra + '<div style="flex:1"></div>' + '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">' + ATIVOS.length + ' ativo(s) · ' + livres + ' livre(s)</div>' + (SOM_LIBERADO ? '<div class="fBtn ' + (SOM_LIGADO ? "on" : "") + '" onclick="SOM_LIGADO=!SOM_LIGADO;render()" style="min-height:44px">' + (SOM_LIGADO ? "🔔" : "🔕") + '</div>' : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>') + '<div class="fBtn" onclick="toggleTelaCheia()" style="min-height:44px" title="Tela cheia">' + (TELA_CHEIA ? "🡼 Sair" : "⛶ Tela cheia") + '</div>' + '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div></div>' + '<div class="filaWrap"' + (PISCA ? ' style="background:#123a2a;border-bottom-color:#3ce88a"' : '') + '><div class="filaTit">Fila de separação — ordem de envio (' + FILA.length + ')' + (PISCA ? ' <span style="color:#3ce88a">· PEDIDO NOVO!</span>' : '') + '</div>' + '<div class="fila">' + fila + '</div></div>' + '<div class="colunas">' + cols + '</div>';
+  app.innerHTML = '<div class="barraFunc">' + barra + '<div style="flex:1"></div>' + '<div style="font-size:12px;color:#9a95c9;white-space:nowrap">' + ATIVOS.length + ' ativo(s) · ' + livres + ' livre(s)</div>' + (SOM_LIBERADO ? '<div class="fBtn ' + (SOM_LIGADO ? "on" : "") + '" onclick="SOM_LIGADO=!SOM_LIGADO;render()" style="min-height:44px">' + (SOM_LIGADO ? "🔔" : "🔕") + '</div>' : '<div class="fBtn" onclick="liberarSom()" style="min-height:44px;background:#b3341f;border-color:#ff8f7a;color:#fff">🔔 Ativar som</div>') + '<div class="fBtn" onclick="toggleTelaCheia()" style="min-height:44px" title="Tela cheia">' + (TELA_CHEIA ? "🡼 Sair" : "⛶ Tela cheia") + '</div>' + '<div class="fBtn" onclick="carregar()" style="min-height:44px">🔄</div>' + '<div onclick="toggleTesteSom()" title="Testar som (repete a cada 60s até clicar de novo)" style="min-height:44px;min-width:14px;opacity:' + (TESTE_SOM ? '1' : '0.15') + ';display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px">🧪</div></div>' + '<div class="filaWrap"' + (PISCA ? ' style="background:#123a2a;border-bottom-color:#3ce88a"' : '') + '><div class="filaTit">Fila de separação — ordem de envio (' + FILA.length + ')' + (PISCA ? ' <span style="color:#3ce88a">· PEDIDO NOVO!</span>' : '') + '</div>' + '<div class="fila">' + fila + '</div></div>' + '<div class="colunas">' + cols + '</div>';
   // devolve cada coluna pra onde estava
   document.querySelectorAll(".colBody").forEach(function (el, i) {
     if (_scroll[i] != null) el.scrollTop = _scroll[i];
