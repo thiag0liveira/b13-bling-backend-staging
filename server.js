@@ -5461,11 +5461,65 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       }
     }
 
+    // CONFERE ESTOQUE antes de mandar pro Bling — mesmo mecanismo do gerar-pedido:
+    // se faltar saldo pra algum item, exige autorização por QR (gerente/financeiro/
+    // admin) antes de seguir, em vez de só deixar o Bling recusar sem explicação
+    // clara nem chance de liberar mesmo assim.
+    const {tokenQr}=req.body||{};
+    const resultadosEstoqueEd=await Promise.all(itens.map(async it=>{
+      try{
+        const rp=await bling(`/produtos/${it.produtoId}`);
+        const saldo=rp?.data?.estoque?.saldoVirtualTotal ?? rp?.data?.estoque?.saldoFisicoTotal ?? null;
+        if(saldo!=null && Number(it.quantidade)>Number(saldo)){
+          return {nome:it.nome||it.descricao||"produto", pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2), produtoId:it.produtoId};
+        }
+      }catch(e){}
+      return null;
+    }));
+    const semEstoqueEd=resultadosEstoqueEd.filter(Boolean);
+    let autorizadoPorEstoqueEd=null;
+    if(semEstoqueEd.length){
+      if(!tokenQr){
+        return res.status(409).json({
+          precisaAutorizacaoEstoque:true,
+          itensSemEstoque:semEstoqueEd,
+          erro:"Estoque insuficiente pra "+semEstoqueEd.length+" item(ns): "+semEstoqueEd.map(i=>`${i.nome} (falta ${i.falta})`).join("; ")+". Liberar sem estoque pode impactar outros pedidos que contam com esse mesmo saldo — precisa de autorização (QR de gerente/financeiro/admin) pra continuar mesmo assim.",
+        });
+      }
+      const authEd=validarTokenQrAtacado(tokenQr);
+      if(authEd.erro) return res.status(401).json({erro:authEd.erro});
+      autorizadoPorEstoqueEd=authEd.funcionario.nome;
+    }
+
     // aplica no Bling PRIMEIRO — se falhar, aborta sem mexer em nada aqui
     try{
       await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     }catch(e){
-      return res.status(502).json({erro:"O Bling recusou a alteração: "+(e.message||"erro")+". Nada foi alterado — verifique e tente de novo.",detalhe:e.body});
+      // se foi AUTORIZADO a editar mesmo com estoque insuficiente, repõe o estoque
+      // de verdade e tenta salvar de novo antes de desistir — autorizar só pulava o
+      // NOSSO aviso; o Bling continua recusando por conta própria até o saldo real
+      // dele ser corrigido.
+      const ehErroEstoqueEd=/saldo.*insuficiente|estoque.*insuficiente|integrar o estoque/i.test((e?.message||"")+" "+JSON.stringify(e?.body||{}));
+      if(autorizadoPorEstoqueEd && ehErroEstoqueEd){
+        try{
+          const repostoEd=await garantirEstoqueParaItens(itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,nome:i.nome||i.descricao})));
+          if(repostoEd.length){
+            try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }
+            catch(e2){ return res.status(400).json({erro:"Mesmo repondo o estoque automaticamente, o Bling recusou de novo: "+(e2.body?.error?.description||e2.message||"erro desconhecido")}); }
+          } else {
+            return res.status(400).json({erro:"Autorizado, mas não consegui repor o estoque no Bling pra corrigir — confira o depósito/estoque desses produtos direto no Bling e tente de novo."});
+          }
+        }catch(e3){ return res.status(400).json({erro:"Autorizado, mas houve um erro ao repor o estoque: "+e3.message}); }
+      } else {
+        return res.status(502).json({erro:"O Bling recusou a alteração: "+(e.message||"erro")+". Nada foi alterado — verifique e tente de novo.",detalhe:e.body});
+      }
+    }
+    if(autorizadoPorEstoqueEd){
+      addLog(id,"itens_editados_com_estoque_insuficiente",null,funcionarioNome,{autorizadoPor:autorizadoPorEstoqueEd, itensSemEstoque:semEstoqueEd});
+      registrarAviso({tipo:"pedido_editado_sem_estoque",
+        titulo:`Pedido #${ped.numero||id} teve itens editados SEM estoque suficiente — avisar o estoquista`,
+        pedidoId:id, numero:ped.numero, origem:"Editar itens", operador:funcionarioNome||"",
+        oQueFazer:`Autorizado por ${autorizadoPorEstoqueEd}. Itens sem saldo: ${semEstoqueEd.map(i=>`${i.nome} (faltou ${i.falta})`).join("; ")}. Isso pode ter puxado saldo que outros pedidos também contavam — o estoquista precisa saber e conferir se algum outro pedido ficou descoberto.`});
     }
 
     let pedNovo;
@@ -5557,6 +5611,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         oQueFazer:`Depois de retirar itens, o pedido #${ped.numero||id} ficou em ${totalItensNovo.toFixed(2)}, abaixo do mínimo de ${(+minimoEntrega).toFixed(2)} pra entrega. Confirme com o cliente se mantém a entrega (com frete) ou passa pra retirada.`});
     }
     res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado,
+      autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
