@@ -77,22 +77,22 @@ function bipe() {
   try {
     _audioCtx = _audioCtx || new (window.AudioContext || window.webkitAudioContext)();
     if (_audioCtx.state === "suspended") _audioCtx.resume();
-    // notificação estilo mensageiro retrô -- arpejo curto ascendente (dó-mi-sol),
-    // som ondulado (não é cópia de nenhum efeito específico, é uma composição
-    // original só inspirada nesse estilo)
-    [{ atraso: 0, freq: 523.25 }, { atraso: 0.09, freq: 659.25 }, { atraso: 0.18, freq: 784.0 }].forEach(function (n) {
+    // duas notas curtas e características, estilo notificação de mensageiro
+    // antigo -- composição própria, inspirada nesse formato clássico, não é
+    // gravação nem cópia de nenhum som específico
+    [{ atraso: 0, freq: 1046.5 }, { atraso: 0.13, freq: 784.0 }].forEach(function (n) {
       const o = _audioCtx.createOscillator(),
         g = _audioCtx.createGain();
       o.type = "square";
       o.frequency.value = n.freq;
       const t0 = _audioCtx.currentTime + n.atraso;
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+      g.gain.exponentialRampToValueAtTime(0.3, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
       o.connect(g);
       g.connect(_audioCtx.destination);
       o.start(t0);
-      o.stop(t0 + 0.15);
+      o.stop(t0 + 0.12);
     });
   } catch (e) {}
 }
