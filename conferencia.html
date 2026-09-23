@@ -314,7 +314,12 @@ async function abrirPedido(id){
     // tipo de entrega já definido lá no totem — não deixa escolher de novo aqui
     const entregaInfo=(rEnt.data||{})[String(sel.id)]||null;
     const freteCalc=+(((sel.total||0)-(sel.totalProdutos||0))).toFixed(2);
-    sel._tipoEntrega=entregaInfo?entregaInfo.tipo:(freteCalc>0.01?"entrega":"retirada");
+    // tem frete cobrado OU endereço de entrega de verdade anotado no pedido (Bling)
+    // -- sem essa segunda checagem, entrega GRÁTIS (promoção, ou dentro de uma
+    // faixa sem cobrança) tinha frete=0 e caía errado como "retirada" aqui.
+    const temEnderecoEntregaBling = !!(sel.transporte?.enderecoEntrega?.endereco || sel.transporte?.etiqueta?.endereco);
+    const obsIndicaEntrega = /ENTREGA\s*—/i.test(String(sel.observacoes||""));
+    sel._tipoEntrega=entregaInfo?entregaInfo.tipo:((freteCalc>0.01||temEnderecoEntregaBling||obsIndicaEntrega)?"entrega":"retirada");
     const logItems=rLog.data||[];
     const pend=rPend.data;
     const faltas=(pend&&pend.faltas)||[];

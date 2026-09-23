@@ -1382,6 +1382,7 @@ function _tipoEntregaDoPedido(pedidoId, ped){
   try{ if(_turnosEntrega()[id]) return "entrega"; }catch(e){}
   if(ped){
     if(Number(ped.transporte?.frete||0)>0) return "entrega";
+    if(ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco) return "entrega";
     if(/ENTREGA\s*—/i.test(String(ped.observacoes||""))) return "entrega";
   }
   return "retirada";
