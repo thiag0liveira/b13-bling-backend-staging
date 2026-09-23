@@ -4069,6 +4069,45 @@ app.post("/api/caixa/conciliacao/buscar-observacoes",async(req,res)=>{
     res.json({ok:true, buscados, falharam});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+function norm(s){ return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); }
+// Quantos produtos (de um tipo/nome) foram vendidos num dia -- usa só o que já
+// temos localmente (itens de cada venda em caixa_sessoes.json), sem chamar o
+// Bling nenhuma vez. Cobre vendas fechadas em qualquer um dos nossos caixas
+// (frente + atacado); um pedido pago fora do caixa (ex.: direto por link) não
+// entra aqui, já que não passou por nenhum dos nossos caixas.
+app.get("/api/central/vendas-produto-dia",(req,res)=>{
+  try{
+    const q=norm(String(req.query.q||"").trim());
+    if(!q) return res.status(400).json({erro:"Informe o nome (ou parte do nome) do produto em ?q="});
+    const dia=req.query.dia||new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
+    const iniTs=new Date(dia+"T00:00:00-03:00").getTime();
+    const fimTs=new Date(dia+"T23:59:59-03:00").getTime();
+    const dCx=lerCaixaSessoes(); // só o ativo -- "hoje" nunca estará arquivado
+    const porProduto={};
+    let totalGeral=0, vendasComItem=0;
+    (dCx.sessoes||[]).forEach(s=>{
+      (s.movimentos||[]).forEach(m=>{
+        if(m.tipo!=="venda"||m.cancelado) return;
+        if(m.em<iniTs||m.em>fimTs) return;
+        let bateu=false;
+        (m.itens||[]).forEach(it=>{
+          const nome=String(it.nome||it.descricao||"");
+          if(!norm(nome).includes(q)) return;
+          bateu=true;
+          const qtd=Number(it.quantidade||0);
+          porProduto[nome]=(porProduto[nome]||0)+qtd;
+          totalGeral+=qtd;
+        });
+        if(bateu) vendasComItem++;
+      });
+    });
+    res.json({
+      dia, busca:req.query.q,
+      totalUnidades:totalGeral, vendasComEsseItem:vendasComItem,
+      porProduto:Object.entries(porProduto).sort((a,b)=>b[1]-a[1]).map(([nome,qtd])=>({nome,quantidade:qtd})),
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/caixa/conciliacao",async(req,res)=>{
   try{
     const hoje=new Date().toISOString().slice(0,10);

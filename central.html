@@ -76,7 +76,9 @@ let D = null,
   RETIRADOS_EST = null,
   PRAZO = null,
   ESTORNOS = null,
-  SEMPAG = null;
+  SEMPAG = null,
+  BUSCA_PROD = null,
+  BUSCA_PROD_LOADING = false;
 const nEv = {
   fechado_valor_menor: "Valor menor",
   pagamento_editado_caixa: "Pagamento editado",
@@ -154,6 +156,19 @@ function render() {
         </div>
       </div>
       <div class="grid">
+        ${card("🔎 Quantos venderam hoje (por produto)", `
+          <div class="muted" style="margin-bottom:8px">Busca só no que já foi fechado nos nossos caixas (frente + atacado) — não chama o Bling.</div>
+          <div style="display:flex;gap:6px;margin-bottom:8px">
+            <input id="buscaProdInput" placeholder="Ex.: heineken, coca cola…" style="flex:1;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:13px" onkeydown="if(event.key==='Enter')buscarVendasProduto()">
+            <button class="btn btn-mag" onclick="buscarVendasProduto()" ${BUSCA_PROD_LOADING ? "disabled" : ""}>${BUSCA_PROD_LOADING ? "…" : "Buscar"}</button>
+          </div>
+          ${BUSCA_PROD ? (BUSCA_PROD.erro ? `<div style="color:#ff8090;font-size:12px">${esc(BUSCA_PROD.erro)}</div>` : `
+            <div class="big">${BUSCA_PROD.totalUnidades}</div>
+            <div class="muted" style="margin-bottom:8px">unidade(s) · "${esc(BUSCA_PROD.busca)}" · ${BUSCA_PROD.vendasComEsseItem} venda(s) · ${DIA}</div>
+            ${(BUSCA_PROD.porProduto || []).map(p => `<div class="lin"><span>${esc(p.nome)}</span><b>${p.quantidade}</b></div>`).join("") || '<div class="muted">Nenhuma venda encontrada com esse nome hoje.</div>'}
+          `) : ""}
+        `)}
+
         <div class="card wide"><div class="h"><span>💵 Caixas abertos (${(D.caixasAbertos || []).length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
           ${(D.caixasAbertos || []).map(blocoCaixa).join("") || '<div class="muted">Nenhum caixa aberto agora.</div>'}
           ${(D.caixasFechadosDia || []).length ? `<div class="h" style="margin-top:12px"><span>🔒 Caixas fechados no dia (${D.caixasFechadosDia.length})</span></div>${D.caixasFechadosDia.map(blocoCaixa).join("")}` : ""}
@@ -506,6 +521,19 @@ async function rodarAuditoria() {
     btn.disabled = false;
     btn.textContent = "🔎 Rodar auditoria";
   }
+}
+async function buscarVendasProduto() {
+  const q = (document.getElementById("buscaProdInput") || {}).value || "";
+  if (!q.trim()) { BUSCA_PROD = { erro: "Digite o nome (ou parte do nome) do produto." }; render(); return; }
+  BUSCA_PROD_LOADING = true;
+  render();
+  try {
+    BUSCA_PROD = await fetch(B + "/api/central/vendas-produto-dia?dia=" + DIA + "&q=" + encodeURIComponent(q)).then(r => r.json());
+  } catch (e) {
+    BUSCA_PROD = { erro: e.message };
+  }
+  BUSCA_PROD_LOADING = false;
+  render();
 }
 async function carregar() {
   try {
