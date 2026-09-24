@@ -5500,6 +5500,78 @@ app.post("/api/estoque/entrada",async(req,res)=>{
 });
 
 // histórico das entradas
+// Cruza ENTRADAS de nota fiscal (compra) com SAÍDAS via NFC-e, por produto, num
+// período. As entradas já têm os itens gravados direto; as saídas (NFC-e) só
+// guardam o ID do pedido -- pra saber os produtos, cruza com as vendas do
+// nosso caixa (que têm os itens) usando o mesmo pedidoId. Pedido com NFC-e que
+// não passou pelo nosso caixa (ex.: emitida direto no Bling) não entra na
+// saída, por falta desse dado aqui -- fica registrado como aviso na resposta.
+app.get("/api/central/entradas-saidas-produto",(req,res)=>{
+  try{
+    const hoje=new Date().toISOString().slice(0,10);
+    const trintaDiasAtras=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const dataInicial=req.query.dataInicial||trintaDiasAtras;
+    const dataFinalStr=req.query.dataFinal||hoje;
+    const iniTs=new Date(dataInicial+"T00:00:00-03:00").getTime();
+    const fimTs=new Date(dataFinalStr+"T23:59:59-03:00").getTime();
+
+    // ENTRADAS
+    const dbEnt=lerEntradasEstoque();
+    const entradasPorProduto={};
+    let entradasSemEstoqueQtd=0;
+    (dbEnt.entradas||[]).forEach(reg=>{
+      if(reg.em<iniTs||reg.em>fimTs) return;
+      (reg.itens||[]).forEach(it=>{
+        if(!it.ok) return;
+        const nome=it.nome||("produto "+it.produtoId);
+        entradasPorProduto[nome]=(entradasPorProduto[nome]||0)+Number(it.quantidade||0);
+      });
+    });
+
+    // SAÍDAS via NFC-e -- cruza com caixa_sessoes pra achar os itens
+    const emitidas=lerNfceEmitidas();
+    const nfcesUnicas=new Map(); // idNotaFiscal -> {pedidoId, registro}
+    Object.entries(emitidas).forEach(([pedidoId,registro])=>{
+      if(!registro||!registro.idNotaFiscal) return;
+      if(registro.em<iniTs||registro.em>fimTs) return;
+      const existente=nfcesUnicas.get(registro.idNotaFiscal);
+      // o mesmo registro é salvo com 2 chaves (ID interno E número curto) --
+      // sempre prefere a chave comprida (ID interno de verdade, o que existe em
+      // caixa_sessoes) em vez da curta, senão a ordem de iteração de chaves
+      // numéricas do JS pode trazer o número curto primeiro por engano
+      if(!existente || (pedidoId.length>existente.pedidoId.length)) nfcesUnicas.set(registro.idNotaFiscal,{pedidoId,registro});
+    });
+    const dCx=lerCaixaSessoesCompleto();
+    const itensPorPedidoId={};
+    (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+      if(m.tipo==="venda"&&!m.cancelado&&m.pedidoId) itensPorPedidoId[String(m.pedidoId)]=m.itens||[];
+    }));
+    const saidasPorProduto={};
+    let nfcesSemItensLocais=0;
+    nfcesUnicas.forEach(({pedidoId})=>{
+      const itens=itensPorPedidoId[String(pedidoId)];
+      if(!itens){ nfcesSemItensLocais++; return; }
+      itens.forEach(it=>{
+        const nome=it.nome||it.descricao||("produto "+it.produtoId);
+        saidasPorProduto[nome]=(saidasPorProduto[nome]||0)+Number(it.quantidade||0);
+      });
+    });
+
+    // junta os dois num relatório só, por produto
+    const todosNomes=new Set([...Object.keys(entradasPorProduto), ...Object.keys(saidasPorProduto)]);
+    const produtos=[...todosNomes].map(nome=>({
+      nome, entradas:entradasPorProduto[nome]||0, saidasNfce:saidasPorProduto[nome]||0,
+      saldo:(entradasPorProduto[nome]||0)-(saidasPorProduto[nome]||0),
+    })).sort((a,b)=>(b.entradas+b.saidasNfce)-(a.entradas+a.saidasNfce));
+
+    res.json({
+      periodo:{dataInicial, dataFinal:dataFinalStr},
+      produtos,
+      totalNfces:nfcesUnicas.size, nfcesSemItensLocais,
+      aviso: nfcesSemItensLocais ? nfcesSemItensLocais+" NFC-e no período não foram encontradas no nosso caixa (emitida fora do fluxo normal, ou pedido antigo) -- os produtos delas NÃO entraram na contagem de saída." : null,
+    });
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/estoque/entradas",(req,res)=>{
   const db=lerEntradasEstoque();
   res.json({entradas:(db.entradas||[]).slice(0,100)});

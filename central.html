@@ -78,7 +78,9 @@ let D = null,
   ESTORNOS = null,
   SEMPAG = null,
   BUSCA_PROD = null,
-  BUSCA_PROD_LOADING = false;
+  BUSCA_PROD_LOADING = false,
+  ENTSAI = null,
+  ENTSAI_LOADING = false;
 const nEv = {
   fechado_valor_menor: "Valor menor",
   pagamento_editado_caixa: "Pagamento editado",
@@ -166,6 +168,26 @@ function render() {
             <div class="big">${BUSCA_PROD.totalUnidades}</div>
             <div class="muted" style="margin-bottom:8px">unidade(s) · "${esc(BUSCA_PROD.busca)}" · ${BUSCA_PROD.vendasComEsseItem} venda(s) · ${DIA}</div>
             ${(BUSCA_PROD.porProduto || []).map(p => `<div class="lin"><span>${esc(p.nome)}</span><b>${p.quantidade}</b></div>`).join("") || '<div class="muted">Nenhuma venda encontrada com esse nome hoje.</div>'}
+          `) : ""}
+        `)}
+
+        ${card("📦 Entradas (nota) × Saídas (NFC-e) por produto", `
+          <div class="muted" style="margin-bottom:8px">Entradas vêm das notas de compra lançadas no sistema. Saídas são só as vendas que tiveram NFC-e emitida <b>e</b> que passaram pelo nosso caixa (pra saber os produtos) — não é o total geral de vendas.</div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+            <input id="entsaiIni" type="date" style="background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:13px">
+            <input id="entsaiFim" type="date" style="background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:13px">
+            <button class="btn btn-mag" onclick="buscarEntradasSaidas()" ${ENTSAI_LOADING ? "disabled" : ""}>${ENTSAI_LOADING ? "…" : "Buscar"}</button>
+          </div>
+          ${ENTSAI ? (ENTSAI.erro ? `<div style="color:#ff8090;font-size:12px">${esc(ENTSAI.erro)}</div>` : `
+            ${ENTSAI.aviso ? `<div class="muted" style="color:#ffd23f;margin-bottom:8px;font-size:12px">⚠️ ${esc(ENTSAI.aviso)}</div>` : ""}
+            <div style="max-height:340px;overflow:auto">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="text-align:left;color:#9a95c9"><th>Produto</th><th style="text-align:right">Entrada</th><th style="text-align:right">Saída (NFC-e)</th><th style="text-align:right">Saldo</th></tr></thead>
+              <tbody>
+                ${(ENTSAI.produtos || []).map(p => `<tr style="border-top:1px solid #2a2660"><td style="padding:4px 0">${esc(p.nome)}</td><td style="text-align:right;color:#3ce88a">${p.entradas}</td><td style="text-align:right;color:#ff8f7a">${p.saidasNfce}</td><td style="text-align:right;font-weight:800">${p.saldo}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nada no período.</td></tr>`}
+              </tbody>
+            </table>
+            </div>
           `) : ""}
         `)}
 
@@ -533,6 +555,19 @@ async function buscarVendasProduto() {
     BUSCA_PROD = { erro: e.message };
   }
   BUSCA_PROD_LOADING = false;
+  render();
+}
+async function buscarEntradasSaidas() {
+  const ini = (document.getElementById("entsaiIni") || {}).value || "";
+  const fim = (document.getElementById("entsaiFim") || {}).value || "";
+  ENTSAI_LOADING = true;
+  render();
+  try {
+    ENTSAI = await fetch(B + "/api/central/entradas-saidas-produto?dataInicial=" + ini + "&dataFinal=" + fim).then(r => r.json());
+  } catch (e) {
+    ENTSAI = { erro: e.message };
+  }
+  ENTSAI_LOADING = false;
   render();
 }
 async function carregar() {
