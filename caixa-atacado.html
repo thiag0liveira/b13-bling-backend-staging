@@ -612,12 +612,12 @@ async function abrirModalHistorico() {
 
 // ---------------- pedidos (coluna extra) ----------------
 async function carregarPedidos() {
-  try {
-    const j = await fetch(BACKEND + "/api/caixa-atacado/pedidos-nao-atendidos").then(r => r.json());
-    PEDIDOS = j.data || [];
-  } catch (e) {
-    PEDIDOS = [];
-  }
+  // DESLIGADO (24/09): essa lista varria até 20 páginas de pedidos no Bling
+  // (até 2.000 pedidos, cobrindo 30 dias) toda vez que a tela carregava ou
+  // alguém clicava em atualizar -- gerava um volume de chamadas desnecessário.
+  // A busca direta por número (mais abaixo) continua funcionando normal, e é
+  // uma consulta única e barata, não uma varredura.
+  PEDIDOS = [];
   pintarPedidos();
 }
 function pintarPedidos() {
@@ -635,7 +635,7 @@ function pintarPedidos() {
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="buscarPedidoNoBling('${esc(f)}')">🔎 Buscar #${esc(f)} no Bling</button></div>`;
   }
   if (nadaNaLista) {
-    box.innerHTML = extra || `<div class="muted" style="padding:8px">${PEDIDOS.length ? "Nenhum pedido bate com o filtro." : "Nenhum pedido a receber."}</div>`;
+    box.innerHTML = extra || `<div class="muted" style="padding:8px">Lista de pedidos recentes desligada (economiza requisições).<br>Use a busca por número acima.</div>`;
     return;
   }
   box.innerHTML = lista.map(p => `
