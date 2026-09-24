@@ -10527,14 +10527,14 @@ async function _cederSeHouverBusca(){
   let voltas=0;
   while(_temBuscaRecente() && voltas<40){ await sleep(500); voltas++; }
 }
-function _carregarBlingPedidosBg(iniISO, fimISO, chave){
+function _carregarBlingPedidosBg(iniISO, fimISO, chave, situacoesFiltro){
   const c=_cacheBlingPedidos[chave];
   if(c && c.pronto && (Date.now()-c.em)<120000) return;
   if(c && c.rodando) return;
   _cacheBlingPedidos[chave]={pedidos:(c&&c.pedidos)||[], pronto:false, progresso:0, em:Date.now(), rodando:true};
   (async()=>{
     try{
-      const sitInteresse=[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
+      const sitInteresse=situacoesFiltro && situacoesFiltro.length ? situacoesFiltro : [SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21];
       const ehConsumidorFinal=(nome)=> /consumidor\s*final/i.test(String(nome||""));
       const fin=lerPedidosFinalizados();
       const hojeISO=new Date(Date.now()-3*3600*1000).toISOString().slice(0,10);
@@ -10650,15 +10650,31 @@ app.get("/api/pedidos-online",async(req,res)=>{
     const chaveCache=`${iniISO}_${fimISO}`;
     if(fase==="local"){
       const lista=Object.values(porBlingId).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
-      _atualizarSituacoesOnline(lista.slice(0,60).map(p=>p.id));
-      // dispara a busca do Bling em segundo plano (não espera)
-      _carregarBlingPedidosBg(iniISO, fimISO, chaveCache);
-      return res.json({data:lista, fase:"local", blingPronto:_cacheBlingPedidos[chaveCache]?.pronto||false,
+      // NÃO dispara mais a sincronização ampla do Bling sozinho aqui -- isso
+      // gerava, toda vez que a tela abria, uma varredura de 9 situações na
+      // semana inteira em segundo plano, mesmo que a pessoa só quisesse dar
+      // uma olhada rápida. Agora só busca no Bling quando a pessoa escolhe um
+      // status específico (?fase=bling&situacao=...) -- ver mais abaixo.
+      return res.json({data:lista, fase:"local",
         periodo:{ini:iniISO, fim:fimISO}});
     }
     if(fase==="bling"){
-      const cache=_cacheBlingPedidos[chaveCache];
-      if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveCache); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
+      // mapa de "menus" de status pro código de situação real no Bling -- cada
+      // um busca só o que interessa, não a semana inteira em todos os status de
+      // uma vez. "todos" existe só pra quem realmente quiser a varredura ampla
+      // de propósito (equivalente ao comportamento antigo).
+      const MAPA_SITUACAO_MENU={
+        aguardando:[SIT.AGUARDANDO,21], pendencias:[SIT.SEP_PEND], em_separacao:[SIT.EM_SEP],
+        separado:[SIT.SEPARADO], conferencia:[SIT.CONF_ENTREGA], em_rota:[SIT.EM_ROTA],
+        atendido:[SIT.ATENDIDO], prazo:[SIT.PRAZO], aberto:[SIT.EM_ABERTO],
+        todos:[SIT.AGUARDANDO,SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO,SIT.EM_ABERTO,21],
+      };
+      const situacaoKey=String(req.query.situacao||"");
+      const situacoesFiltro=MAPA_SITUACAO_MENU[situacaoKey];
+      if(!situacoesFiltro) return res.status(400).json({erro:"Informe ?situacao= com um dos valores: "+Object.keys(MAPA_SITUACAO_MENU).join(", ")});
+      const chaveEspecifica=`${chaveCache}_${situacaoKey}`;
+      const cache=_cacheBlingPedidos[chaveEspecifica];
+      if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveEspecifica, situacoesFiltro.filter(Boolean)); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
       // devolve os do Bling que NÃO estão no local. Filtra por id E por NÚMERO — se o
       // registro local gravou um pedidoBlingId diferente do id real (pedido recriado no
       // Bling, p.ex.), o mesmo pedido apareceria DUAS vezes na tela.
