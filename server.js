@@ -340,6 +340,56 @@ app.get("/api/diag/saude",(req,res)=>{
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// Resumo em TEXTO simples (não JSON, não visual) pra colar direto na conversa
+// com a IA em vez de mandar print -- já vem com um diagnóstico automático
+// classificando onde está o problema (Bling, sistema, ou nada), pra não
+// precisar perguntar toda vez.
+app.get("/api/diag/resumo-texto",async(req,res)=>{
+  try{
+    const mem=process.memoryUsage();
+    const usadaMB=Math.round(mem.rss/1024/1024);
+    const uptimeSeg=Math.round(process.uptime());
+    const uptimeMin=Math.round(uptimeSeg/60);
+    const arquivos=["caixa_sessoes.json","propostas_atacado.json","log_pedidos.jsonl","pagamentos.json"].map(nome=>{
+      try{ const st=fs.statSync(`${DATA_DIR}/${nome}`); return {nome, kb:Math.round(st.size/1024)}; }
+      catch(e){ return {nome, kb:0}; }
+    });
+    const arquivoGrande=arquivos.find(a=>a.kb>5000); // >5MB é o que realmente preocupa
+
+    let testeAoVivo={ok:false};
+    const inicioTeste=Date.now();
+    try{ const r=await bling(`/situacoes/modulos`); testeAoVivo={ok:true, ms:Date.now()-inicioTeste}; }
+    catch(e){ testeAoVivo={ok:false, ms:Date.now()-inicioTeste, erro:e.message, status:e.status||null}; }
+
+    const filaTotal=_filaAlta.length+_filaBaixa.length;
+    const esperaMediaMs=_metricas.total?Math.round(_metricas.esperaTotalMs/_metricas.total):0;
+
+    // DIAGNÓSTICO AUTOMÁTICO — mesma lógica que uso quando você me manda print
+    const problemas=[];
+    let ondeEsta="tudo normal";
+    if(uptimeSeg<300){ problemas.push("processo reiniciou há pouco (pode ter caído sozinho, ou foi um deploy normal)"); ondeEsta="verificar se foi deploy ou crash"; }
+    if(!testeAoVivo.ok){ problemas.push("o Bling não respondeu no teste ao vivo agora ("+(testeAoVivo.erro||"erro desconhecido")+")"); ondeEsta="BLING (fora do ar ou bloqueando)"; }
+    else if(testeAoVivo.ms>5000){ problemas.push("o Bling respondeu, mas devagar ("+testeAoVivo.ms+"ms — o normal é até 1000ms)"); ondeEsta="BLING (lento do lado deles)"; }
+    if(_metricas.err429>0){ problemas.push(_metricas.err429+" erro(s) de limite (429) desde o último reinício"); ondeEsta="BLING (limite de requisições)"; }
+    if(filaTotal>20){ problemas.push("fila de chamadas ao Bling grande agora ("+filaTotal+")"); if(ondeEsta==="tudo normal") ondeEsta="BLING (fila acumulando)"; }
+    if(usadaMB>400){ problemas.push("memória do processo alta ("+usadaMB+"MB)"); if(ondeEsta==="tudo normal") ondeEsta="SISTEMA (memória alta, ficar de olho)"; }
+    if(arquivoGrande){ problemas.push("o arquivo "+arquivoGrande.nome+" está grande ("+(arquivoGrande.kb/1024).toFixed(1)+"MB)"); if(ondeEsta==="tudo normal") ondeEsta="SISTEMA (arquivo de dados grande)"; }
+    if(!problemas.length) problemas.push("nada fora do normal encontrado agora");
+
+    const linhas=[
+      "=== B13 — resumo de saúde ("+new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})+") ===",
+      "DIAGNÓSTICO: "+ondeEsta.toUpperCase(),
+      ...problemas.map(p=>"- "+p),
+      "",
+      "Processo: "+uptimeMin+"min de pé, "+usadaMB+"MB de memória",
+      "Bling: fila="+filaTotal+", espera média="+esperaMediaMs+"ms, teste ao vivo="+(testeAoVivo.ok?testeAoVivo.ms+"ms":"FALHOU"),
+      "Erros 429 desde o início: "+_metricas.err429+" | total de chamadas: "+_metricas.total,
+      "Arquivos: "+arquivos.map(a=>a.nome+"="+(a.kb>1024?(a.kb/1024).toFixed(1)+"MB":a.kb+"KB")).join(", "),
+    ];
+    res.set("Content-Type","text/plain; charset=utf-8");
+    res.send(linhas.join("\n"));
+  }catch(e){ res.set("Content-Type","text/plain; charset=utf-8"); res.send("Erro ao gerar resumo: "+e.message); }
+});
 app.get("/api/diag/bling-status",async(req,res)=>{
   const t=lerTokens();
   const tokenInfo = t ? {

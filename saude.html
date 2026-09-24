@@ -91,7 +91,27 @@ function render(saude, bling){
       </div>
     </div>
     <button onclick="carregar()">🔄 Atualizar agora</button>
+    <button onclick="copiarResumo()" style="background:#3ce88a;color:#000;font-weight:800">📋 Copiar resumo pra mandar no chat</button>
+    <div id="resumoTexto" style="display:none;margin-top:10px"></div>
   `;
+}
+async function copiarResumo(){
+  const box = $("#resumoTexto");
+  box.style.display = "block";
+  box.innerHTML = '<div class="muted">Gerando…</div>';
+  try{
+    const texto = await fetch("/api/diag/resumo-texto").then(r=>r.text());
+    try{
+      await navigator.clipboard.writeText(texto);
+      box.innerHTML = '<div class="ok" style="margin-bottom:6px">✅ Copiado! Agora é só colar no chat com a IA.</div><pre style="white-space:pre-wrap;background:#0f0d24;border-radius:8px;padding:10px;font-size:11px;color:#cfc9f5">'+texto.replace(/</g,"&lt;")+'</pre>';
+    }catch(eClip){
+      // clipboard pode falhar por permissão do navegador -- mostra o texto pra
+      // selecionar e copiar na mão
+      box.innerHTML = '<div class="aviso" style="margin-bottom:6px">Não consegui copiar sozinho — toca e segura o texto abaixo pra selecionar e copiar:</div><textarea readonly onclick="this.select()" style="width:100%;height:180px;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#cfc9f5;font-size:11px;padding:10px">'+texto+'</textarea>';
+    }
+  }catch(e){
+    box.innerHTML = '<div class="ruim">Erro ao gerar resumo: '+e.message+'</div>';
+  }
 }
 carregar();
 setInterval(carregar, 30000);
