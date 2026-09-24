@@ -10915,9 +10915,12 @@ app.post("/api/viagem/:token/vincular-usuario",(req,res)=>{
     const viagens=lerViagensAtivas();
     const v=viagens[req.params.token];
     if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
+    // NUNCA sobrescreve o motoristaNome aqui -- esse nome é o que foi digitado
+    // de propósito ao iniciar a viagem (na tela de Rotas), e é o correto. Esse
+    // endpoint só registra qual funcionarioId abriu o link, se algum dia for
+    // útil pra outra coisa -- nunca pra decidir quem é o motorista.
     if(!v.motoristaFuncionarioId && funcionarioId){
-      const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||null;
-      v.motoristaFuncionarioId=funcionarioId; v.motoristaNome=funcNome;
+      v.motoristaFuncionarioId=funcionarioId;
       salvarViagensAtivas(viagens);
     }
     res.json({ok:true, motoristaNome:v.motoristaNome});

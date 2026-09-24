@@ -135,13 +135,11 @@ function carregar(){
     fetch(B + "/api/pix-bancos").then(function(r){ return r.json(); }).then(function(bj){
       if(bj && Array.isArray(bj.bancos) && bj.bancos.length) PIX_BANCOS = bj;
     }).catch(function(){});
-    // vincula o usuário logado nesse aparelho, se tiver sessão do sistema
-    try{
-      var f = typeof b13GetSession === "function" ? b13GetSession() : null;
-      if(f && f.id){
-        fetch(B + "/api/viagem/" + TOKEN + "/vincular-usuario", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({funcionarioId:f.id}) });
-      }
-    }catch(e){}
+    // NÃO vincula usuário logado no aparelho -- na prática o motorista só lê o
+    // QR e não loga no sistema; se o aparelho tivesse alguma sessão antiga (de
+    // outra pessoa, num celular compartilhado, por exemplo), isso substituía o
+    // nome do motorista que foi digitado certinho ao iniciar a viagem por quem
+    // estivesse logado ali, errando a atribuição.
     render();
   }).catch(function(){
     document.getElementById("app").innerHTML = '<div class="content"><div class="card">Erro ao carregar a viagem. Confira sua internet e recarregue a página.</div></div>';
