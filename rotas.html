@@ -1479,7 +1479,7 @@ async function iniciarViagem(carroId, carroNome, vix) {
   </div></div>`;
   document.getElementById("modais").innerHTML = html;
 }
-async function confirmarIniciarViagem(carroId, carroNome, vix) {
+async function confirmarIniciarViagem(carroId, carroNome, vix, tokenQr) {
   const chave = carroId + "_" + vix;
   const ids = (S.atribuicoes[carroId]?.viagens || [])[vix]?.pedidoIds || [];
   const msgEl = document.getElementById("ivMsg");
@@ -1493,14 +1493,50 @@ async function confirmarIniciarViagem(carroId, carroNome, vix) {
   try {
     const j = await fetch(B + "/api/rotas/viagem/iniciar", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ carroId, carroNome, data: S.data, vix, pedidoIds: ids, kmInicial: km, funcionarioId: FUNC ? FUNC.id : null, motoristaNomeInformado: nome, motoristaTelefone: tel })
+      body: JSON.stringify({ carroId, carroNome, data: S.data, vix, pedidoIds: ids, kmInicial: km, funcionarioId: FUNC ? FUNC.id : null, motoristaNomeInformado: nome, motoristaTelefone: tel, tokenQr: tokenQr || undefined })
     }).then(r => r.json());
+    if (j.precisaAutorizacao) {
+      pedirQrAcaoRota("⚠️ Pedido sem conferência", esc(j.erro) + "<br><br>Se a conferência já foi feita manualmente por fora (Bling lento, por exemplo), autorize com QR de gerente/financeiro/admin pra iniciar mesmo assim.",
+        function (tokenQrLido) { confirmarIniciarViagem(carroId, carroNome, vix, tokenQrLido); });
+      return;
+    }
     if (j.erro) { msgEl.innerHTML = '<span style="color:#ff8090">' + esc(j.erro) + '</span>'; return; }
     S.viagensIniciadas[chave] = { token: j.token, url: j.url, motoristaNome: nome, motoristaTelefone: tel };
     if (j.falharamEmRota && j.falharamEmRota.length) alert("Atenção: não consegui mudar o status de " + j.falharamEmRota.length + " pedido(s) pra Em rota no Bling. Confira manualmente.");
+    if (j.autorizadoPorConferencia) alert("⚠️ Viagem iniciada SEM conferência no sistema (autorizado por " + j.autorizadoPorConferencia + "). Confirme que a conferência manual foi feita direito.");
     mostrarQrViagem(j.url, j.token, chave);
     render();
   } catch (e) { msgEl.innerHTML = '<span style="color:#ff8090">Erro ao iniciar viagem.</span>'; }
+}
+function pedirQrAcaoRota(titulo, texto, onConfirm) {
+  document.getElementById("modais").innerHTML = `
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>${titulo}</h3>
+      <p class="muted" style="margin-bottom:8px">${texto}</p>
+      <div class="muted" style="margin-bottom:4px">QR de autorização</div>
+      <input id="qrAcaoRota" type="password" inputmode="text" placeholder="Bipe o QR ou cole o código"
+        autocomplete="new-password" name="qr_${Date.now()}" autocorrect="off" autocapitalize="off" spellcheck="false"
+        data-lpignore="true" data-1p-ignore data-form-type="other" autofocus
+        style="width:100%;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:13px;margin-bottom:6px">
+      <div id="qrErroAcaoRota"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn" style="flex:1" id="btnQrAcaoRota">Confirmar</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>
+      </div>
+    </div></div>`;
+  const go = () => {
+    const campo = document.getElementById("qrAcaoRota");
+    const tokenQr = (campo?.value || "").trim();
+    if (!tokenQr) { document.getElementById("qrErroAcaoRota").innerHTML = '<span style="color:#ff8090;font-size:12px">Leia ou cole o QR de autorização.</span>'; return; }
+    fecharModais();
+    onConfirm(tokenQr);
+  };
+  setTimeout(() => {
+    const t = document.getElementById("qrAcaoRota");
+    if (t) t.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); go(); } });
+    const b = document.getElementById("btnQrAcaoRota");
+    if (b) b.onclick = go;
+  }, 50);
 }
 function enviarLinkWhatsapp(chave) {
   const info = S.viagensIniciadas[chave];
@@ -1659,6 +1695,7 @@ function htmlViagemBox(carro, vix, cap) {
                 <div style="font-weight:900;color:${cor};font-size:12px">${label}</div>
                 <div class="muted" style="font-size:11px;margin-top:2px">${jaFeita.feitas}/${jaFeita.totalEntregas} entrega(s)${jaFeita.kmRodado != null ? ` · ${jaFeita.kmRodado} km` : ''} · ${brl(jaFeita.valorTotalRecebido)} recebido</div>
                 <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px;margin-top:6px" onclick="verDetalhesViagem('${jaFeita.token}')">🔍 Ver detalhes</button>
+                ${jaFeita.status === "cancelada" ? `<button class="btn btn-grn" style="font-size:11px;padding:5px 10px;margin-top:6px" onclick="iniciarViagem('${carro.id}','${esc(carro.nome)}',${vix})">🚀 Iniciar de novo</button>` : ""}
               </div>`;
     }
     return S.viagensIniciadas[chave] ? `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #2f9e6b;color:#3ce88a" onclick="mostrarQrViagem('${esc(S.viagensIniciadas[chave].url)}','${S.viagensIniciadas[chave].token}','${chave}')">📱 Viagem em andamento — ver QR</button>`

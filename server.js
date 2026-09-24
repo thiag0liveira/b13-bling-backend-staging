@@ -10831,7 +10831,7 @@ function limparViagensAntigas(){
 // dessa viagem pra EM_ROTA de uma vez (o motorista já está saindo com eles)
 app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
   try{
-    const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId,motoristaNomeInformado,motoristaTelefone}=req.body||{};
+    const {carroId,carroNome,data,vix,pedidoIds,kmInicial,funcionarioId,motoristaNomeInformado,motoristaTelefone,tokenQr}=req.body||{};
     if(!Array.isArray(pedidoIds)||!pedidoIds.length) return res.status(400).json({erro:"a viagem precisa ter ao menos 1 pedido"});
     if(!(Number(kmInicial)>=0)) return res.status(400).json({erro:"informe o KM inicial"});
     if(!String(motoristaNomeInformado||"").trim()) return res.status(400).json({erro:"informe o nome do motorista"});
@@ -10843,6 +10843,9 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
     // pela conferência) pulava direto pra Em rota — divergindo do fluxo normal
     // (Separação → Conferência → Verificado → Em rota, esse último só ao iniciar
     // a viagem de verdade) usado no resto do sistema.
+    // PODE PULAR essa exigência com autorização por QR — usado quando o Bling está
+    // lento e a conferência está sendo feita manualmente fora do sistema, travando
+    // viagens de iniciar por causa disso.
     const naoConferidos=[];
     for(const pid of pedidoIds){
       let sit=null;
@@ -10850,9 +10853,15 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
       if(sit!==SIT.VERIFICADO && sit!==SIT.EM_ROTA) naoConferidos.push({id:pid, situacao:nomeSituacao(sit||0)});
       await new Promise(r=>setTimeout(r,120));
     }
-    if(naoConferidos.length) return res.status(400).json({
-      erro:"Tem pedido nessa viagem que ainda não passou pela conferência: "+naoConferidos.map(p=>`#${p.id} (${p.situacao})`).join(", ")+". Confira esses pedidos (tela de Conferência) antes de iniciar a viagem.",
-      naoConferidos });
+    let autorizadoPorConferencia=null;
+    if(naoConferidos.length){
+      if(!tokenQr) return res.status(400).json({
+        erro:"Tem pedido nessa viagem que ainda não passou pela conferência: "+naoConferidos.map(p=>`#${p.id} (${p.situacao})`).join(", ")+". Confira esses pedidos (tela de Conferência) antes de iniciar a viagem, ou autorize com QR pra pular (ex.: quando a conferência está sendo feita manualmente por fora, com o Bling lento).",
+        naoConferidos, precisaAutorizacao:true });
+      const auth=validarTokenQrAtacado(tokenQr);
+      if(auth.erro) return res.status(401).json({erro:auth.erro});
+      autorizadoPorConferencia=auth.funcionario.nome;
+    }
     // MESMO CARRO NÃO PODE TER 2 VIAGENS ABERTAS AO MESMO TEMPO — o front já confere
     // isso antes de mostrar o modal, mas com dado que pode estar desatualizado (até
     // 1 clique de diferença); confere de novo aqui, na hora de gravar de verdade.
@@ -10881,7 +10890,12 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
       await new Promise(r=>setTimeout(r,150));
     }
     const origem=`https://${req.get("host")}`;
-    res.json({ok:true, token, url:`${origem}/viagem/${token}`, falharamEmRota:falharam});
+    if(autorizadoPorConferencia){
+      registrarAviso({tipo:"viagem_iniciada_sem_conferencia",
+        titulo:`Viagem do carro ${carroNome||carroId} iniciada SEM conferência no sistema — conferir manualmente`,
+        oQueFazer:`Autorizado por ${autorizadoPorConferencia}. Pedidos sem conferência no sistema: ${naoConferidos.map(p=>`#${p.id} (${p.situacao})`).join(", ")}. Confirme que a conferência manual (feita por fora, com o Bling lento) foi feita direito.`});
+    }
+    res.json({ok:true, token, url:`${origem}/viagem/${token}`, falharamEmRota:falharam, autorizadoPorConferencia});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
