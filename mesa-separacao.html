@@ -115,7 +115,11 @@ let SOM_LIBERADO = false,
 // separado deixa o aviso mais difícil de ignorar.
 setInterval(function () {
   const temLivre = ATIVOS.some(function (id) { return !MESAS[id] || !MESAS[id].pedido; });
-  if (SOM_LIGADO && SOM_LIBERADO && FILA.length && temLivre) bipe();
+  // só conta pedido que ninguém pegou ainda -- FILA inclui também os que já
+  // estão sendo separados por alguém (situação "Em separação"), e esses não
+  // precisam de aviso nenhum, já tem gente cuidando.
+  const temPedidoLivre = FILA.some(function (p) { return !p.emSeparacaoPor; });
+  if (SOM_LIGADO && SOM_LIBERADO && temPedidoLivre && temLivre) bipe();
 }, 30000);
 // botão de teste (discreto) — toca o MESMO som uma vez a cada clique, pra
 // checar se está audível no ambiente sem precisar esperar um pedido de
