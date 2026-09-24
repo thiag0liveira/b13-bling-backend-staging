@@ -4587,7 +4587,7 @@ app.get("/api/diag/venda-vs-bling/:numero",async(req,res)=>{
         if(m.tipo!=="venda") return;
         if(String(m.numero)===numero || String(m.pedidoId)===numero){
           movs.push({ sessaoId:s.id, operadorCaixa:s.operador, tipoCaixa:s.tipoCaixa||"frente",
-            pedidoId:m.pedidoId, numero:m.numero, total:m.total, em:new Date(m.em).toLocaleString("pt-BR"),
+            pedidoId:m.pedidoId, numero:m.numero, total:m.total, em:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
             itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
             pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})),
             clienteNome:m.clienteNome||"", operador:m.operador||"", alterado:!!m.alterado, cancelado:!!m.cancelado,
@@ -4652,7 +4652,7 @@ app.get("/api/diag/movimentos-inconsistentes",(req,res)=>{
         const dif=+(somaItens-esperado).toFixed(2);
         if(Math.abs(dif)>0.10){
           achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero,
-            em:new Date(m.em).toLocaleString("pt-BR"), total:m.total, outras:m.outrasDespesas||0, frete:m.frete||0, desconto:m.desconto||0,
+            em:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}), total:m.total, outras:m.outrasDespesas||0, frete:m.frete||0, desconto:m.desconto||0,
             somaItens, esperadoDosItens:esperado, diferenca:dif, alterado:!!m.alterado,
             itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
             pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
@@ -4676,7 +4676,7 @@ app.get("/api/diag/vendas-por-produto/:termo",(req,res)=>{
         const casa=(m.itens||[]).some(i=>String(i.nome||"").toLowerCase().includes(termo));
         if(casa){
           achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero, total:m.total,
-            em:new Date(m.em).toLocaleString("pt-BR"), alterado:!!m.alterado, cancelado:!!m.cancelado,
+            em:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}), alterado:!!m.alterado, cancelado:!!m.cancelado,
             itens:(m.itens||[]).map(i=>({nome:i.nome,quantidade:i.quantidade,valor:i.valor})),
             pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
         }
@@ -4698,7 +4698,7 @@ app.get("/api/diag/vendas-por-valor/:valor",(req,res)=>{
         if(m.tipo!=="venda") return;
         if(Math.abs((Number(m.total)||0)-alvo)<0.02){
           achados.push({ sessaoId:s.id, operador:s.operador, pedidoId:m.pedidoId, numero:m.numero, total:m.total,
-            em:new Date(m.em).toLocaleString("pt-BR"),
+            em:new Date(m.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
             pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})) });
         }
       });
@@ -6467,7 +6467,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     let descAntes=antesList.map(p=>`${p.formaNome}: ${fmt(p.valor)}`).join(" · ")||"—";
 
     const funcsNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
-    const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
     const depoisList=linhas.map(p=>({formaNome:p.formaNome||"?", valor:Number(p.valor)||0}));
     const descDepoisPre=depoisList.map(p=>`${p.formaNome}: ${fmt(p.valor)}`).join(" · ")||"—";
     // diff: o que saiu e o que entrou, por forma
@@ -6603,7 +6603,7 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
     descAntes=descAntes||"—";
     const descDepois=linhas.map(p=>`${p.formaNome||"?"}: ${fmt(p.valor)}`).join(" · ");
 
-    const quando=new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
     const notaObs=`[Alteração ${quando} — ${quemAlterou} (Gestão de Caixas)] Pagamento: ${descAntes} -> ${descDepois}`;
     const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
     const blingOk=!!rBling.ok;
@@ -9564,7 +9564,7 @@ async function rodarAuditoriaGeral(diasCaixaBling=1){
   try{
     const dCx=lerCaixaSessoes(); const limite=Date.now()-15*3600*1000;
     (dCx.sessoes||[]).filter(s=>!s.fechadaEm && s.abertaEm<limite).forEach(s=>{
-      registrarAviso({ tipo:"caixa_esquecido_aberto", titulo:`Caixa de ${s.operador||"—"} aberto há mais de 15h`, origem:"Auditoria", fingerprint:`esq-${s.id}`, oQueFazer:`O caixa de ${s.operador||"—"} (${s.tipoCaixa||"frente"}) está aberto desde ${new Date(s.abertaEm).toLocaleString("pt-BR")}. Confira se foi esquecido e feche pela Gestão de Caixas.` });
+      registrarAviso({ tipo:"caixa_esquecido_aberto", titulo:`Caixa de ${s.operador||"—"} aberto há mais de 15h`, origem:"Auditoria", fingerprint:`esq-${s.id}`, oQueFazer:`O caixa de ${s.operador||"—"} (${s.tipoCaixa||"frente"}) está aberto desde ${new Date(s.abertaEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})}. Confira se foi esquecido e feche pela Gestão de Caixas.` });
       achados.caixaEsquecidoAberto++;
     });
   }catch(e){}
@@ -11240,7 +11240,7 @@ app.get("/api/diag/por-que-nao-aparece/:numero",async(req,res)=>{
     res.json({
       pedido:{ id:ped.id, numero:ped.numero, cliente:ped.contato?.nome||"—", total:Number(ped.total)||0,
         situacao:nomeSituacao(sit), situacaoId:sit, data:ped.data },
-      registroLocal: prop? { existe:true, origem:prop.origem, criadoEm:new Date(prop.criadoEm).toLocaleString("pt-BR"), dentroDoPeriodo, adotado:!!prop.adotado } : {existe:false},
+      registroLocal: prop? { existe:true, origem:prop.origem, criadoEm:new Date(prop.criadoEm).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}), dentroDoPeriodo, adotado:!!prop.adotado } : {existe:false},
       marcadoOk:ok, agendamento:ag||null,
       motivos: motivos.length?motivos:["Ele deveria estar aparecendo. Verifique a aba/filtro selecionado na tela."],
       oQueFazer: solucoes.length?solucoes:["Confira a aba selecionada (Aguardando separação x Todos os status) e o período."],
