@@ -686,7 +686,15 @@ function abrirPedido(id) {
     PEDIDO._pag = got.pag;
     PEDIDO._pago = !!(got.pag && got.pag.statusPagamento === "pago");
     var frete0 = Number((PEDIDO.total || 0) - (PEDIDO.totalProdutos || 0));
-    PEDIDO._tipoEntrega = frete0 > 0.01 ? "entrega" : "retirada";
+    var _tEnt = PEDIDO.transporte || {};
+    var temEnderecoEntregaMob = !!((_tEnt.enderecoEntrega && _tEnt.enderecoEntrega.endereco) || (_tEnt.etiqueta && _tEnt.etiqueta.endereco));
+    var obsIndicaEntregaMob = /ENTREGA\s*—/i.test(String(PEDIDO.observacoes || ""));
+    // mesmo critério usado no resto do sistema (conferência, viagem etc.): é
+    // entrega se tiver endereço de entrega OU frete>0 OU a observação dizer
+    // "ENTREGA —" -- só olhar frete deixava passar entrega com frete GRÁTIS
+    // (dentro do raio, por exemplo) como se fosse retirada, bloqueando errado
+    // por falta de pagamento (entrega paga na entrega, não antes).
+    PEDIDO._tipoEntrega = (frete0 > 0.01 || temEnderecoEntregaMob || obsIndicaEntregaMob) ? "entrega" : "retirada";
     var faltas = got.pend && got.pend.faltas ? got.pend.faltas : [];
     var itensPed = PEDIDO.itens || [];
     var estMap = got.estMap || {};
