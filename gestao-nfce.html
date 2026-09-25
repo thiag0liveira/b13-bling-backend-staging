@@ -261,6 +261,7 @@ async function emitir(id, usarConsumidorFinal) {
     }
     p.jaEmitida = true;
     p.nfce = j.nfce;
+    if (j.jaExistiaNoBling) alert("Esse pedido já tinha nota fiscal no Bling (emitida por lá direto, ou uma tentativa anterior que não sincronizou aqui) — só atualizei o registro local, não gerei nota nova.");
     if (j.envioErro) alert("A NFC-e foi gerada, mas a transmissão falhou. Ela fica 'Pendente' no Bling — dá pra reenviar por lá.\n\nDetalhe: " + j.envioErro);
     render();
   } catch (e) {

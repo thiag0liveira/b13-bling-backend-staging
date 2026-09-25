@@ -2014,17 +2014,30 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
     // era um número curto de pedido que colidiu por acaso com o ID de outro pedido),
     // tenta pelo número de verdade. Mesma proteção usada na busca do caixa atacado —
     // aqui o risco é ainda maior, já que emitiria a NFC-e pro pedido ERRADO.
-    let pedidoId=null;
+    let pedidoId=null, notaJaExistente=null;
     const pareceIdInterno=/^\d+$/.test(idOuNumero) && idOuNumero.length>=9;
     try{
       const d=await bling(`/pedidos/vendas/${idOuNumero}`).then(r=>r?.data);
-      if(d?.id && (pareceIdInterno || String(d.numero)===idOuNumero)) pedidoId=d.id;
+      if(d?.id && (pareceIdInterno || String(d.numero)===idOuNumero)){ pedidoId=d.id; notaJaExistente=d.notaFiscal||null; }
     }catch(e){}
     if(!pedidoId){
-      try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`); const a=(r?.data||[])[0]; if(a?.id) pedidoId=a.id; }catch(e){}
+      try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(idOuNumero)}`); const a=(r?.data||[])[0]; if(a?.id){ pedidoId=a.id; notaJaExistente=a.notaFiscal||null; } }catch(e){}
     }
     if(!pedidoId) return res.status(404).json({erro:`Pedido não encontrado no Bling (id/número ${idOuNumero}). Pode ter sido excluído ou o registro do caixa está com um id diferente.`});
     if(emitidas[String(pedidoId)]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[String(pedidoId)]});
+    // O BLING JÁ TEM NOTA PRA ESSE PEDIDO, mas nosso registro local não sabia
+    // disso (por isso a tela mostrava "sem NFC-e") -- em vez de tentar gerar de
+    // novo e tomar erro ("possui nota fiscal referenciada"), sincroniza com o
+    // que já existe de verdade lá.
+    if(notaJaExistente && (notaJaExistente.id||notaJaExistente.numero)){
+      let link=null;
+      try{ const det=await bling(`/nfce/${notaJaExistente.id}`); link=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
+      const registro={ idNotaFiscal:notaJaExistente.id||null, numeroNota:notaJaExistente.numero||null, link, em:Date.now(), por:(req.body?.operador||""), envioErro:null, sincronizadoDoBling:true };
+      emitidas[String(pedidoId)]=registro;
+      if(String(pedidoId)!==idOuNumero) emitidas[idOuNumero]=registro;
+      salvarNfceEmitidas(emitidas);
+      return res.json({ok:true, pedidoId, nfce:registro, jaExistiaNoBling:true});
+    }
     // gera a NFC-e a partir do pedido (igual o botão "Gerar NFC-e" do Bling) --
     // isso so cria o RASCUNHO da nota, ainda nao envia pra SEFAZ
     const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
