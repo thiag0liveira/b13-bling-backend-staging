@@ -2025,6 +2025,25 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
     }
     if(!pedidoId) return res.status(404).json({erro:`Pedido não encontrado no Bling (id/número ${idOuNumero}). Pode ter sido excluído ou o registro do caixa está com um id diferente.`});
     if(emitidas[String(pedidoId)]) return res.status(400).json({erro:"Esse pedido já teve NFC-e emitida.", nfce:emitidas[String(pedidoId)]});
+    // se pedido pra trocar o cliente do pedido pra "Consumidor Final" antes de
+    // emitir -- reescreve o pedido preservando tudo (itens com descrição,
+    // desconto, frete, parcelas), só troca o contato.
+    if(req.body?.usarConsumidorFinal){
+      try{
+        const ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        if(ped){
+          const payload={
+            contato:{id:CONSUMIDOR_FINAL_ID},
+            itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
+          };
+          if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+          if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+          if(ped.transporte) payload.transporte=ped.transporte;
+          if(ped.parcelas&&ped.parcelas.length) payload.parcelas=ped.parcelas;
+          await bling(`/pedidos/vendas/${pedidoId}`,{method:"PUT",body:JSON.stringify(payload)});
+        }
+      }catch(e){ return res.status(400).json({erro:"Não consegui trocar o cliente pra Consumidor Final antes de emitir: "+e.message}); }
+    }
     // gera a NFC-e a partir do pedido (igual o botão "Gerar NFC-e" do Bling)
     const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
     const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;

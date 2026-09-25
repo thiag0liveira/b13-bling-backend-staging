@@ -93,6 +93,7 @@ function cardVenda(p) {
     <div class="lin"><div class="muted" style="margin-bottom:4px">Formas de pagamento:</div>${formasHtml}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
       ${p.jaEmitida ? `<span class="tag tag-ok">Emitida em ${(_p$nfce3 = p.nfce) !== null && _p$nfce3 !== void 0 && _p$nfce3.em ? new Date(p.nfce.em).toLocaleString("pt-BR") : ""}</span> ${link} ${avisoEnvio}` : `<button class="btn btn-grn" onclick="emitir('${p.pedidoId}')">🧾 Emitir NFC-e</button>
+           <button class="btn btn-ghost" style="font-size:11px" onclick="emitir('${p.pedidoId}', true)" title="Troca o cliente do pedido pra Consumidor Final antes de emitir">🧾 Emitir p/ Consumidor Final</button>
            <button class="btn btn-ghost" onclick="diagnosticoFiscal('${p.pedidoId}')">🔎 O que falta pra emitir</button>`}
     </div>
   </div>`;
@@ -229,11 +230,12 @@ async function diagnosticoFiscal(id) {
     if (b) b.innerHTML = `<div style="color:#ff8090">Erro ao consultar.</div>`;
   }
 }
-async function emitir(id) {
+async function emitir(id, usarConsumidorFinal) {
   const p = LISTA.find(x => String(x.pedidoId) === String(id));
   if (!p) return;
-  if (!confirm(`Emitir a NFC-e do pedido #${p.numero || p.pedidoId} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.`)) return;
-  const btns = document.querySelectorAll(`button[onclick="emitir('${id}')"]`);
+  const avisoCliente = usarConsumidorFinal ? "\n\n⚠️ O cliente do pedido será trocado pra \"Consumidor Final\" antes de emitir (não muda o cliente pra quem entregou/vendeu de fato, só o que fica na nota)." : "";
+  if (!confirm(`Emitir a NFC-e do pedido #${p.numero || p.pedidoId} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.${avisoCliente}`)) return;
+  const btns = document.querySelectorAll(`button[onclick^="emitir('${id}'"]`);
   btns.forEach(b => {
     b.disabled = true;
     b.textContent = "Emitindo…";
@@ -246,16 +248,15 @@ async function emitir(id) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        operador
+        operador,
+        usarConsumidorFinal: !!usarConsumidorFinal
       })
     }).then(r => r.json());
     if (j.erro) {
       const fiscal = /imposto|icms|pis|cofins|validação|validacao|ncm|tributa/i.test(j.erro);
       alert("Não foi possível emitir: " + j.erro + (fiscal ? "\n\nEsse é um erro de cadastro fiscal. Toque em '🔎 O que falta pra emitir' pra ver o que está pendente." : ""));
-      btns.forEach(b => {
-        b.disabled = false;
-        b.textContent = "🧾 Emitir NFC-e";
-      });
+      btns.forEach(b => { b.disabled = false; });
+      render();
       return;
     }
     p.jaEmitida = true;
@@ -264,10 +265,8 @@ async function emitir(id) {
     render();
   } catch (e) {
     alert("Erro ao emitir. Tente de novo.");
-    btns.forEach(b => {
-      b.disabled = false;
-      b.textContent = "🧾 Emitir NFC-e";
-    });
+    btns.forEach(b => { b.disabled = false; });
+    render();
   }
 }
 (function () {
