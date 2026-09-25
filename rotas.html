@@ -144,6 +144,8 @@ const S = {
   msg: "",
   diasResumo: {},
   diasPedidos: {},
+  diasEntregues: {},
+  diasFaltam: {},
   viagensDoDia: [],
   viagensFechadas: {},
   // chave carroId_vix -> true (bloqueia edição, libera "iniciar viagem")
@@ -208,6 +210,8 @@ async function carregarTudo() {
     const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
     S.diasResumo = rResumo.porDia || {};
     S.diasPedidos = rResumo.pedidosPorDia || {};
+    S.diasEntregues = rResumo.entreguesPorDia || {};
+    S.diasFaltam = rResumo.faltamPorDia || {};
     S.diasDetalhe = rResumo.detalheDias || {};
     S.idsUsadosOutrosDias = {};
     Object.entries(rResumo.idsUsados || {}).forEach(([pid, data]) => {
@@ -746,6 +750,8 @@ async function atualizarResumoDias() {
     const rResumo = await fetch(B + "/api/rotas/dias-resumo").then(r => r.json());
     S.diasResumo = rResumo.porDia || {};
     S.diasPedidos = rResumo.pedidosPorDia || {};
+    S.diasEntregues = rResumo.entreguesPorDia || {};
+    S.diasFaltam = rResumo.faltamPorDia || {};
     S.diasDetalhe = rResumo.detalheDias || {};
   } catch (e) {}
 }
@@ -1280,7 +1286,9 @@ function htmlResumoDias() {
         month: "2-digit"
       }),
       qtd: S.diasResumo[iso] || 0,
-      pedidos: S.diasPedidos[iso] || []
+      pedidos: S.diasPedidos[iso] || [],
+      entregues: S.diasEntregues[iso] || 0,
+      faltam: S.diasFaltam[iso] || 0
     });
   }
   if (!dias.length) return "";
@@ -1291,6 +1299,7 @@ function htmlResumoDias() {
         <button onclick="S.data='${d.iso}';carregarTudo()" style="width:100%;padding:8px 6px;border-radius:10px;border:2px solid ${d.iso === S.data ? '#FF0082' : '#2c2660'};background:${d.iso === S.data ? 'rgba(255,0,130,.12)' : '#181433'};color:#fff;cursor:pointer;text-align:center">
           <div style="font-size:11px;color:#9a95c9;text-transform:capitalize">${d.label}</div>
           <div style="font-size:18px;font-weight:900;${d.qtd > 0 ? 'color:#3ce88a' : 'color:#514c96'}">${d.qtd}</div>
+          ${d.qtd > 0 ? `<div style="font-size:10px;margin-top:2px"><span style="color:#3ce88a">✅ ${d.entregues}</span> · <span style="color:#ffd23f">⏳ ${d.faltam}</span></div>` : ''}
         </button>
         ${d.pedidos.length ? `<div style="margin-top:6px">
           ${d.pedidos.map(p => `<div style="font-size:11px;color:#cfc9f5;padding:2px 0;border-bottom:1px solid #201c48">
