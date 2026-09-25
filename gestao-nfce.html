@@ -132,7 +132,7 @@ function render() {
         <div class="muted" style="font-size:11px;margin-bottom:4px">Forma de pagamento</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <span class="chip ${FILTRO_FORMA === 'todas' ? 'on' : ''}" onclick="FILTRO_FORMA='todas';render()">Todas</span>
-          ${formasOrdenadas.map(([forma]) => `<span class="chip ${FILTRO_FORMA === forma ? 'on' : ''}" onclick="FILTRO_FORMA=${JSON.stringify(forma)};render()">${esc(forma)}</span>`).join("")}
+          ${formasOrdenadas.map(([forma]) => `<span class="chip ${FILTRO_FORMA === forma ? 'on' : ''}" onclick='FILTRO_FORMA=${JSON.stringify(forma)};render()'>${esc(forma)}</span>`).join("")}
         </div>
         ${formasOrdenadas.length ? `<div style="margin-top:10px;border-top:1px solid #2a2660;padding-top:8px">
           <div class="muted" style="font-size:11px;margin-bottom:4px">Total por forma de pagamento (no filtro de status acima)</div>
