@@ -56,6 +56,7 @@ const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", {
 });
 let LISTA = []; // vendas do caixa atacado (mês vigente)
 let FILTRO = "todos"; // todos | pendentes | emitidas
+let FILTRO_FORMA = "todas";
 let CARREGANDO = false;
 let MES = "";
 let S = null;
@@ -107,6 +108,12 @@ function render() {
   let lista = LISTA.slice();
   if (FILTRO === "pendentes") lista = lista.filter(p => !p.jaEmitida);else if (FILTRO === "emitidas") lista = lista.filter(p => p.jaEmitida);
   const pend = LISTA.filter(p => !p.jaEmitida).length;
+  // formas de pagamento distintas presentes na lista (já filtrada por status),
+  // pra montar os chips e o resumo de totais
+  const formasTotais = {};
+  lista.forEach(v => (v.formas || []).forEach(f => { formasTotais[f.forma] = (formasTotais[f.forma] || 0) + Number(f.valor || 0); }));
+  const formasOrdenadas = Object.entries(formasTotais).sort((a, b) => b[1] - a[1]);
+  if (FILTRO_FORMA !== "todas") lista = lista.filter(v => (v.formas || []).some(f => f.forma === FILTRO_FORMA));
   app.innerHTML = `
     <div class="top">
       <button onclick="b13ToggleNav()" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">☰</button>
@@ -117,11 +124,20 @@ function render() {
       <div class="card">
         <div style="font-weight:800;margin-bottom:4px">Vendas do caixa atacado — ${esc(mesLabel())}</div>
         <div class="muted" style="margin-bottom:8px">${LISTA.length} venda(s), ${pend} sem NFC-e. A lista atualiza sozinha conforme novas vendas são feitas.</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
           <span class="chip ${FILTRO === 'todos' ? 'on' : ''}" onclick="FILTRO='todos';render()">Todos</span>
           <span class="chip ${FILTRO === 'pendentes' ? 'on' : ''}" onclick="FILTRO='pendentes';render()">⏳ Sem NFC-e</span>
           <span class="chip ${FILTRO === 'emitidas' ? 'on' : ''}" onclick="FILTRO='emitidas';render()">✅ Emitidas</span>
         </div>
+        <div class="muted" style="font-size:11px;margin-bottom:4px">Forma de pagamento</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="chip ${FILTRO_FORMA === 'todas' ? 'on' : ''}" onclick="FILTRO_FORMA='todas';render()">Todas</span>
+          ${formasOrdenadas.map(([forma]) => `<span class="chip ${FILTRO_FORMA === forma ? 'on' : ''}" onclick="FILTRO_FORMA=${JSON.stringify(forma)};render()">${esc(forma)}</span>`).join("")}
+        </div>
+        ${formasOrdenadas.length ? `<div style="margin-top:10px;border-top:1px solid #2a2660;padding-top:8px">
+          <div class="muted" style="font-size:11px;margin-bottom:4px">Total por forma de pagamento (no filtro de status acima)</div>
+          ${formasOrdenadas.map(([forma, valor]) => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${esc(forma)}</span><b>${brl(valor)}</b></div>`).join("")}
+        </div>` : ""}
       </div>
       ${CARREGANDO && !LISTA.length ? `<div class="card"><div class="muted">Carregando vendas…</div></div>` : ""}
       ${!CARREGANDO && !lista.length ? `<div class="card"><div class="muted">Nenhuma venda nesse filtro.</div></div>` : ""}
