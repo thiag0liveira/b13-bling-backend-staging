@@ -11325,8 +11325,12 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     // Expira em 60s (se algo falhar no meio do caminho e não liberar sozinho, não
     // fica travado pra sempre).
     const regAtual=v.entregas[String(pid)];
-    if(regAtual && (regAtual.status==="entregue" || (regAtual.status==="processando" && Date.now()-regAtual.travadoEm<60000))){
-      return res.status(409).json({erro:"Esse pedido já foi finalizado (ou está sendo finalizado agora) — por você ou por outra pessoa acessando o mesmo link. Não dá pra registrar de novo."});
+    if(regAtual && regAtual.status==="entregue"){
+      return res.status(409).json({erro:"Esse pedido já está registrado como ENTREGUE no sistema. Se a entrega não aconteceu de verdade (por engano, ou travou antes), avise o escritório pra corrigir manualmente — não dá pra registrar de novo por aqui.", jaEntregue:true});
+    }
+    if(regAtual && regAtual.status==="processando" && Date.now()-regAtual.travadoEm<60000){
+      const faltamSeg=Math.ceil((60000-(Date.now()-regAtual.travadoEm))/1000);
+      return res.status(409).json({erro:`Essa entrega já está sendo processada agora (pode ter sido você mesmo, numa tentativa que ainda não terminou). Espera uns ${faltamSeg}s e tenta de novo — se ainda travar depois disso, tenta mais uma vez.`, travaTemporaria:true});
     }
     v.entregas[String(pid)]={status:"processando", travadoEm:Date.now()};
     salvarViagensAtivas(viagens);
