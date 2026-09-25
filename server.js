@@ -2090,6 +2090,11 @@ app.get("/api/nfce/diagnostico-fiscal/:pedidoId",async(req,res)=>{
       const faltando=[];
       if(!trib.ncm) faltando.push("NCM");
       if(trib.origem===undefined||trib.origem===null||trib.origem==="") faltando.push("Origem");
+      // grupos de imposto (o Bling exige isso pra gerar a NFC-e, erro comum:
+      // "Os grupos de impostos (ICMS ou ISSQN, PIS, COFINS) são obrigatórios")
+      if(!trib.pis||(trib.pis.situacaoTributaria==null&&trib.pis.st==null)) faltando.push("PIS");
+      if(!trib.cofins||(trib.cofins.situacaoTributaria==null&&trib.cofins.st==null)) faltando.push("COFINS");
+      if(!trib.icms&&!trib.issqn) faltando.push("ICMS ou ISSQN");
       produtos.push({
         id:pid, nome:it.descricao||prod?.nome||"produto",
         ncm:trib.ncm||null,
