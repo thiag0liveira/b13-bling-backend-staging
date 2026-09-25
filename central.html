@@ -80,7 +80,9 @@ let D = null,
   BUSCA_PROD = null,
   BUSCA_PROD_LOADING = false,
   ENTSAI = null,
-  ENTSAI_LOADING = false;
+  ENTSAI_LOADING = false,
+  AUDTRIB = null,
+  AUDTRIB_TIMER = null;
 const nEv = {
   fechado_valor_menor: "Valor menor",
   pagamento_editado_caixa: "Pagamento editado",
@@ -189,6 +191,22 @@ function render() {
             </table>
             </div>
           `) : ""}
+        `)}
+
+        ${card("🧾 Produtos sem PIS/COFINS configurado", `
+          <div class="muted" style="margin-bottom:8px">Varre TODOS os produtos do Bling procurando quem não tem PIS/COFINS configurado (causa do erro "grupos de impostos são obrigatórios" ao emitir NFC-e). Demora uns 10-15min (1 chamada por produto, no ritmo seguro de sempre) — pode fechar a tela e conferir depois, continua rodando.</div>
+          ${!AUDTRIB || (!AUDTRIB.rodando && !AUDTRIB.concluido) ? `<button class="btn btn-mag" onclick="iniciarAuditoriaTributos()">🔎 Começar varredura</button>` : ""}
+          ${AUDTRIB && AUDTRIB.rodando ? `<div class="muted">Varrendo… ${AUDTRIB.progresso} / ${AUDTRIB.total || "?"} produtos conferidos (${AUDTRIB.semImposto.length} sem PIS/COFINS até agora)</div><button class="btn btn-ghost" style="margin-top:6px" onclick="pollAuditoriaTributos()">🔄 Atualizar progresso</button>` : ""}
+          ${AUDTRIB && AUDTRIB.concluido ? `
+            <div style="margin-bottom:8px"><b>${AUDTRIB.semImposto.length}</b> de ${AUDTRIB.total} produtos sem PIS e/ou COFINS configurado:</div>
+            <div style="max-height:340px;overflow:auto">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="text-align:left;color:#9a95c9"><th>Produto</th><th>Código</th><th>Falta</th></tr></thead>
+              <tbody>${AUDTRIB.semImposto.map(p => `<tr style="border-top:1px solid #2a2660"><td style="padding:4px 0">${esc(p.nome)}</td><td>${esc(p.codigo)}</td><td>${p.faltando.join(", ")}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">Nenhum — todos os produtos já têm PIS/COFINS configurado ✅</td></tr>`}</tbody>
+            </table>
+            </div>
+            <button class="btn btn-ghost" style="margin-top:8px" onclick="iniciarAuditoriaTributos()">🔄 Rodar de novo</button>
+          ` : ""}
         `)}
 
         <div class="card wide"><div class="h"><span>💵 Caixas abertos (${(D.caixasAbertos || []).length})</span><span class="big">${brl(D.totalCaixasAbertos)}</span></div>
@@ -569,6 +587,20 @@ async function buscarEntradasSaidas() {
   }
   ENTSAI_LOADING = false;
   render();
+}
+async function iniciarAuditoriaTributos() {
+  await fetch(B + "/api/produtos/auditoria-tributos/iniciar", { method: "POST" });
+  pollAuditoriaTributos();
+}
+async function pollAuditoriaTributos() {
+  try {
+    AUDTRIB = await fetch(B + "/api/produtos/auditoria-tributos/status").then(r => r.json());
+  } catch (e) {}
+  render();
+  if (AUDTRIB && AUDTRIB.rodando) {
+    clearTimeout(AUDTRIB_TIMER);
+    AUDTRIB_TIMER = setTimeout(pollAuditoriaTributos, 3000);
+  }
 }
 async function carregar() {
   try {

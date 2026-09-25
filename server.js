@@ -5546,6 +5546,50 @@ app.post("/api/estoque/entrada",async(req,res)=>{
 // nosso caixa (que têm os itens) usando o mesmo pedidoId. Pedido com NFC-e que
 // não passou pelo nosso caixa (ex.: emitida direto no Bling) não entra na
 // saída, por falta desse dado aqui -- fica registrado como aviso na resposta.
+// AUDITORIA DE PIS/COFINS EM TODOS OS PRODUTOS -- varre o catálogo inteiro (não
+// só um pedido) procurando produto sem grupo de PIS/COFINS configurado (a causa
+// do erro "grupos de impostos são obrigatórios" ao emitir NFC-e). É tarefa
+// pesada de propósito (até ~1500 produtos, 1 chamada por produto) -- por isso
+// só roda quando a pessoa pede explicitamente (nunca sozinha), como um job em
+// segundo plano com progresso, usando a fila normal (mesmo limite de segurança
+// de sempre).
+let _auditoriaTributos={rodando:false, concluido:false, progresso:0, total:0, semImposto:[], iniciadoEm:null};
+async function _rodarAuditoriaTributos(){
+  _auditoriaTributos={rodando:true, concluido:false, progresso:0, total:0, semImposto:[], iniciadoEm:Date.now()};
+  try{
+    // 1) lista todos os produtos (só id+nome+situação, leve) paginando
+    const todos=[];
+    for(let pg=1; pg<=30; pg++){
+      const d=await bling(`/produtos?pagina=${pg}&limite=100`);
+      const pagina=d?.data||[];
+      if(!pagina.length) break;
+      todos.push(...pagina);
+      if(pagina.length<100) break;
+    }
+    _auditoriaTributos.total=todos.length;
+    // 2) pra cada um, busca o detalhe (só ali vem tributacao completa) e confere
+    for(const p of todos){
+      try{
+        const prod=await bling(`/produtos/${p.id}`).then(r=>r?.data);
+        const trib=prod?.tributacao||{};
+        const semPis=!trib.pis||(trib.pis.situacaoTributaria==null&&trib.pis.st==null);
+        const semCofins=!trib.cofins||(trib.cofins.situacaoTributaria==null&&trib.cofins.st==null);
+        if(semPis||semCofins){
+          _auditoriaTributos.semImposto.push({id:p.id, nome:prod?.nome||p.nome||("produto "+p.id), codigo:prod?.codigo||p.codigo||"", situacao:prod?.situacao||p.situacao||"", faltando:[semPis?"PIS":null,semCofins?"COFINS":null].filter(Boolean)});
+        }
+      }catch(e){}
+      _auditoriaTributos.progresso++;
+    }
+  }catch(e){ console.error("Falha na auditoria de tributos:",e.message); }
+  _auditoriaTributos.rodando=false;
+  _auditoriaTributos.concluido=true;
+}
+app.post("/api/produtos/auditoria-tributos/iniciar",(req,res)=>{
+  if(_auditoriaTributos.rodando) return res.json({ok:true, jaRodando:true});
+  _rodarAuditoriaTributos();
+  res.json({ok:true, iniciado:true});
+});
+app.get("/api/produtos/auditoria-tributos/status",(req,res)=>{ res.json(_auditoriaTributos); });
 app.get("/api/central/entradas-saidas-produto",(req,res)=>{
   try{
     const hoje=new Date().toISOString().slice(0,10);
