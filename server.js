@@ -2054,6 +2054,12 @@ app.post("/api/nfce/pedido/:id/emitir",async(req,res)=>{
         const rascunho=await bling(`/nfce/${idNotaFiscal}`).then(r=>r?.data);
         if(rascunho){
           rascunho.contato={id:CONSUMIDOR_FINAL_ID};
+          // remove qualquer campo de DATA do rascunho antes de reenviar -- o
+          // formato que o GET devolve (provavelmente com hora/fuso) não bate
+          // com o que o PUT aceita de volta, dando "Data de operação inválida".
+          // Sem mandar esses campos, o Bling mantém o que já tinha calculado
+          // sozinho ao gerar o rascunho.
+          Object.keys(rascunho).forEach(k=>{ if(/data/i.test(k)) delete rascunho[k]; });
           await bling(`/nfce/${idNotaFiscal}`,{method:"PUT",body:JSON.stringify(rascunho)});
         }
       }catch(e){ return res.status(400).json({erro:"A NFC-e foi gerada, mas não consegui trocar o cliente pra Consumidor Final nela: "+e.message+". A nota ainda está como rascunho (Pendente) no Bling — corrija por lá antes de enviar, ou tente de novo.", idNotaFiscal}); }
