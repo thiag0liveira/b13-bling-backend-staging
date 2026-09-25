@@ -233,7 +233,7 @@ async function diagnosticoFiscal(id) {
 async function emitir(id, usarConsumidorFinal) {
   const p = LISTA.find(x => String(x.pedidoId) === String(id));
   if (!p) return;
-  const avisoCliente = usarConsumidorFinal ? "\n\n⚠️ O cliente do pedido será trocado pra \"Consumidor Final\" antes de emitir (não muda o cliente pra quem entregou/vendeu de fato, só o que fica na nota)." : "";
+  const avisoCliente = usarConsumidorFinal ? "\n\n⚠️ Só a NOTA FISCAL sairá em nome de \"Consumidor Final\" — o pedido de venda continua com o cliente de verdade, sem mudar nada nele." : "";
   if (!confirm(`Emitir a NFC-e do pedido #${p.numero || p.pedidoId} (${p.cliente})?\n\nLembre: a NFC-e é fiscal. A data da nota será a de agora, não a da venda.${avisoCliente}`)) return;
   const btns = document.querySelectorAll(`button[onclick^="emitir('${id}'"]`);
   btns.forEach(b => {
