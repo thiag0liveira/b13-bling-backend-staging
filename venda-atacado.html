@@ -502,7 +502,6 @@ async function escolherClienteBusca(id) {
     S.editandoCliente = false;
     S.analise = null;
     render();
-    carregarAnalise();
   } catch (e) {
     const m = document.getElementById("buscaClienteMsg");
     if (m) m.textContent = "Erro ao carregar o cliente.";
@@ -580,7 +579,11 @@ function trocarCliente() {
 function cardAnalise() {
   if (S.carregandoAnalise) return `<div class="card"><div class="muted">📊 Analisando histórico do cliente…</div></div>`;
   const a = S.analise;
-  if (!a) return '';
+  if (!a) {
+    var _S$cliente6;
+    if (!((_S$cliente6 = S.cliente) !== null && _S$cliente6 !== void 0 && _S$cliente6.id)) return '';
+    return `<div class="card"><button class="btn btn-ghost" style="width:100%" onclick="carregarAnalise()">📊 Ver análise do cliente e produtos novos</button></div>`;
+  }
   if (!a.qtdPedidos) return `<div class="card"><div class="muted">📊 Cliente sem compras anteriores registradas.</div></div>`;
   const ultima = a.ultimaCompra ? a.ultimaCompra.split('-').reverse().join('/') : '—';
   const mesesTxt = (a.gastoPorMes || []).map(m => {
