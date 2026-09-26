@@ -67,6 +67,9 @@ const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
 const GTIN_INDEX_FILE = `${DATA_DIR}/gtin_index.json`;
+// vendas do varejo finalizadas localmente rápido, sem lançar no Bling na hora --
+// ficam aqui até alguém sincronizar depois (Gestão de Caixas)
+const PDV_PENDENTES_FILE = `${DATA_DIR}/pdv_pendentes.json`;
 // cache persistente de imagem de produto (produtoId -> {url, em}) -- imagem de
 // produto quase nunca muda, então guarda por bastante tempo (7 dias) e evita
 // buscar ao vivo de novo pro mesmo produto a cada busca.
@@ -3025,7 +3028,21 @@ app.get("/api/catalogo",async(req,res)=>{
   try{
     const tab=lerTabela();
     if(!tab||!tab.model) return res.json({categorias:[],aviso:"Nenhuma tabela publicada ainda."});
-    const est=await getEstoqueMap();
+    // TIMEOUT DE SEGURANÇA: getEstoqueMap() pode escanear até 40 páginas do catálogo
+    // inteiro quando o cache de 5min vence -- se o Bling estiver lento/instável
+    // nesse momento, isso podia travar a página INTEIRA de pedir-online por dezenas
+    // de segundos (ou até nunca terminar). Com isso, no máximo espera 12s por
+    // estoque atualizado; se estourar, usa o que tiver em cache (mesmo desatualizado)
+    // em vez de deixar o cliente sem conseguir nem ver o catálogo.
+    let est;
+    try{
+      est=await Promise.race([
+        getEstoqueMap(),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error("TIMEOUT_ESTOQUE")),12000)),
+      ]);
+    }catch(e){
+      est=_estCache.map||{}; // cache antigo (mesmo vencido) é melhor que nada
+    }
     const cats={};
     tab.model.forEach(c=>{
       if(!cats[c.t]) cats[c.t]={nome:c.t,col:c.col,produtos:[]};
@@ -7087,6 +7104,78 @@ app.post("/api/pdv/venda", async(req,res)=>{
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"Carrinho vazio"});
     if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
 
+    // MODO RÁPIDO: no varejo, o cliente já está com o produto em mãos e precisa sair
+    // logo -- diferente do caixa atacado, onde o pedido pode sair depois. Se marcado
+    // pra NÃO lançar no Bling agora (checkbox desmarcado na tela), NENHUMA chamada ao
+    // Bling é feita aqui: só registra local (pro fechamento de caixa bater) e responde
+    // na hora. Fica pendente de sincronizar depois em Gestão de Caixas.
+    if(req.body.lancarNoBlingAgora===false){
+      const localId="local_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);
+      const totalItensRapido=itens.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0);
+      const totalDescontoRapido=Number(desconto||0);
+      const totalPedidoRapido=+(totalItensRapido-totalDescontoRapido).toFixed(2);
+      const pendentes=lerJSON(PDV_PENDENTES_FILE,{});
+      // AVISO de possível conflito de estoque -- NUNCA bloqueia (no varejo, quem
+      // chegou com o produto na mão tem que sair vendido, sempre). Só existe pra
+      // avisar o financeiro/gerência, no momento de sincronizar com o Bling, que
+      // pode faltar estoque de verdade (ex.: duas vendas rápidas do mesmo último
+      // item, uma atrás da outra, antes de qualquer uma ser lançada no Bling).
+      // Confere o saldo no Bling MENOS o que outras vendas pendentes (ainda não
+      // sincronizadas) já reservaram desse mesmo produto.
+      let conflitosEstoque=[];
+      try{
+        const reservadoPorOutros={};
+        Object.values(pendentes).forEach(pv=>{
+          if(pv.sincronizado) return;
+          (pv.itens||[]).forEach(it=>{ reservadoPorOutros[it.produtoId]=(reservadoPorOutros[it.produtoId]||0)+Number(it.quantidade||0); });
+        });
+        const ids=[...new Set(itens.map(i=>Number(i.produtoId)).filter(Boolean))];
+        if(ids.length){
+          const r=await bling(`/estoques/saldos?${ids.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+          const saldoPorId={}; (r?.data||[]).forEach(s=>{ saldoPorId[s.produto?.id]=Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0); });
+          itens.forEach(it=>{
+            const pid=Number(it.produtoId); if(!pid) return;
+            const disponivel=Number(saldoPorId[pid]??0)-Number(reservadoPorOutros[pid]||0);
+            if(Number(it.quantidade)>disponivel) conflitosEstoque.push({nome:it.nome, pediu:Number(it.quantidade), disponivelEstimado:disponivel});
+          });
+        }
+      }catch(e){ /* se a checagem falhar, segue sem aviso -- nunca trava a venda por causa disso */ }
+      pendentes[localId]={
+        localId, criadoEm:Date.now(), sincronizado:false,
+        itens, contatoId:contatoId?Number(contatoId):null, clienteNome:clienteNome||"",
+        desconto:totalDescontoRapido, pagamentos, emitirNfce:!!emitirNfce, funcionarioId,
+        tipoCaixa:req.body.tipoCaixa||"frente", statusFinal:req.body.statusFinal||null,
+        observacao:req.body.observacao||"", taxaCredito:Number(req.body.taxaCredito||0),
+        freteBase:Number(req.body.freteBase||0), troco:Number(req.body.troco||0),
+        autorizouMenor:req.body.autorizouMenor||null,
+        conflitosEstoque,
+      };
+      salvarJSON(PDV_PENDENTES_FILE,pendentes);
+      // registra no caixa local JÁ, com o id local como placeholder -- assim o
+      // fechamento de caixa do dia já bate, mesmo antes de sincronizar com o Bling
+      try{
+        const dCx=lerCaixaSessoes();
+        const tc=req.body.tipoCaixa||"frente";
+        const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&s.funcionarioId===funcionarioId&&(s.tipoCaixa||"frente")===tc);
+        if(sessaoAtual){
+          const _outrasR=+Number(req.body.taxaCredito||0).toFixed(2);
+          const _freteR=+Number(req.body.freteBase||0).toFixed(2);
+          sessaoAtual.movimentos.push({
+            tipo:"venda", em:Date.now(), pedidoId:localId, numero:null, pendenteBling:true,
+            total:+(totalPedidoRapido+_outrasR+_freteR).toFixed(2), clienteNome:clienteNome||"", desconto:totalDescontoRapido,
+            outrasDespesas:_outrasR, frete:_freteR, operador:sessaoAtual.operador||"",
+            ...(Number(req.body.troco)>0.009?{troco:+Number(req.body.troco).toFixed(2)}:{}),
+            itens:(itens||[]).map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:Number(i.quantidade),valor:Number(i.valor),modoPreco:i.modoPreco||null})),
+            pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})),
+          });
+          salvarCaixaSessoes(dCx);
+        }
+      }catch(e){ console.error("Falha ao vincular venda rápida à sessão de caixa (ignorado):",e.message); }
+      const respostaRapida={ok:true,pendente:true,localId,total:totalPedidoRapido,conflitosEstoque};
+      if(opId) opFinalizarSet(opId,{status:"ok",resposta:respostaRapida,pedidoId:localId});
+      return res.json(respostaRapida);
+    }
+
     // se a venda vem do caixa atacado, garante estoque (repõe só o que faltar) pra o
     // Bling não barrar a baixa de estoque na criação/atendimento do pedido.
     let estoqueReposto=[];
@@ -7272,6 +7361,116 @@ app.post("/api/pdv/venda", async(req,res)=>{
     if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
     res.status(e.status||500).json({erro:e.message,detalhe:e.body});
   }finally{ if(opId) _opsVendaNovaEmAndamento.delete(opId); }
+});
+
+// Sincroniza DEPOIS uma venda que foi registrada rápido, sem lançar no Bling na
+// hora (varejo, "não emitir agora"). Faz exatamente o que a venda normal faz --
+// cria o pedido no Bling, move pro status final, registra pagamento, e emite
+// NFC-e se foi pedido -- só que baseado no registro salvo local, e no final
+// TROCA o id placeholder pelo id real do Bling no movimento do caixa (em vez de
+// criar um movimento novo, que duplicaria a venda no fechamento do dia).
+app.post("/api/pdv/pendentes/:localId/sincronizar",async(req,res)=>{
+  const localId=req.params.localId;
+  const pendentes=lerJSON(PDV_PENDENTES_FILE,{});
+  const p=pendentes[localId];
+  if(!p) return res.status(404).json({erro:"venda pendente não encontrada (id inválido ou já removida)"});
+  if(p.sincronizado) return res.status(400).json({erro:"essa venda já foi sincronizada", pedidoId:p.pedidoBlingId});
+  try{
+    const {itens,pagamentos,funcionarioId,contatoId,clienteNome,emitirNfce}=p;
+    let vendedorId=null;
+    if(funcionarioId){
+      const funcs=lerJSON(FUNC_FILE,{});
+      const func=funcs[funcionarioId];
+      if(func?.vendedorBlingId) vendedorId=Number(func.vendedorBlingId);
+    }
+    if(!vendedorId) vendedorId=Number(process.env.BLING_VENDEDOR_ID)||null;
+    try{ vendedorId=await vendedorAtivoId(vendedorId); }catch(e){}
+    const itensPayload=itens.map(i=>({produto:{id:Number(i.produtoId)},quantidade:Number(i.quantidade),valor:Number(i.valor),...(i.desconto?{desconto:Number(i.desconto)}:{})}));
+    const totalItens=itens.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0);
+    const totalPedido=+(totalItens-Number(p.desconto||0)).toFixed(2);
+    const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
+    let contatoFinal=contatoId?Number(contatoId):null;
+    if(!contatoFinal){ try{ contatoFinal=await getContatoPadrao(); }catch(e){} }
+    const payload={
+      data:dataHojeBR, itens:itensPayload,
+      ...(contatoFinal?{contato:{id:Number(contatoFinal)}}:{}),
+      ...(vendedorId?{vendedor:{id:vendedorId}}:{}),
+      ...(Number(p.desconto)?{desconto:{valor:Number(p.desconto),unidade:"REAL"}}:{}),
+      ...(p.observacao?{observacoes:p.observacao}:{}),
+      ...(Number(p.taxaCredito)>0?{outrasDespesas:+Number(p.taxaCredito).toFixed(2)}:{}),
+      ...(Number(p.freteBase)>0?{transporte:{frete:+Number(p.freteBase).toFixed(2),fretePorConta:0}}:{}),
+      parcelas:(function(){
+        let t=Number(p.troco)||0;
+        return pagamentos.map(pg=>{
+          let v=Number(pg.valor)||0;
+          if(t>0.0049 && /dinheiro/i.test(pg.formaNome||"")){ const d=Math.min(v,t); v=+(v-d).toFixed(2); t=+(t-d).toFixed(2); }
+          return {valor:+v.toFixed(2), dataVencimento:dataHojeBR, formaPagamento:{id:Number(pg.formaId)}};
+        }).filter(pg=>pg.valor>0);
+      })(),
+    };
+    let criado;
+    try{ criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)}); }
+    catch(e){
+      if(/vendedor\s*inativo|vendedor.*inativ/i.test(e.message||"")){
+        let alt=null; try{ alt=await vendedorAtivoId(null); }catch(_){}
+        if(alt && String(alt)!==String(payload.vendedor?.id)) payload.vendedor={id:alt}; else delete payload.vendedor;
+        criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+      } else throw e;
+    }
+    const pedidoId=criado?.data?.id;
+    if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
+    const statusFinalVenda=p.statusFinal==="separacao"?"separacao":(p.statusFinal==="separado"?"separado":"atendido");
+    try{
+      if(statusFinalVenda==="separacao"){
+        const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação");
+        const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
+        registrarNaFilaSeparacao(pedidoId,_tipoEntregaDoPedido(pedidoId,criado?.data),fn,criado?.data?.numero||null);
+      } else { await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
+    }catch(e){ console.error("Falha ao mover pedido pendente pra "+statusFinalVenda+":",e.message); }
+    let numeroPedido=criado?.data?.numero||null;
+
+    const pags=lerPag();
+    const historico=pagamentos.map(pg=>({em:Date.now(),valor:+Number(pg.valor).toFixed(2),formaNome:pg.formaNome||"",tipo:"pdv_varejo_sincronizado"}));
+    const _totalPagarSync=+(totalPedido+Number(p.taxaCredito||0)+Number(p.freteBase||0)).toFixed(2);
+    const _valorPagoSync=+pagamentos.reduce((s,pg)=>s+Number(pg.valor),0).toFixed(2);
+    pags[String(pedidoId)]={pedidoId:String(pedidoId), valorPago:_valorPagoSync, valorPedido:_totalPagarSync, historico,
+      statusPagamento:_valorPagoSync>=_totalPagarSync-0.05?"pago":(_valorPagoSync>0?"parcial":"pendente")};
+    salvarJSON(PAG_FILE,pags);
+
+    // troca o placeholder (localId) pelo id real no movimento do caixa -- NÃO cria
+    // um movimento novo, senão a venda apareceria duplicada no fechamento do dia
+    try{
+      const dCx=lerCaixaSessoes(); let achou=false;
+      (dCx.sessoes||[]).forEach(s=>(s.movimentos||[]).forEach(m=>{
+        if(m.tipo==="venda" && m.pedidoId===localId){ m.pedidoId=pedidoId; m.numero=numeroPedido; m.pendenteBling=false; achou=true; }
+      }));
+      if(achou) salvarCaixaSessoes(dCx);
+    }catch(e){ console.error("Falha ao atualizar movimento do caixa após sincronizar:",e.message); }
+
+    let nfce=null;
+    if(emitirNfce){
+      try{
+        const gerado=await bling(`/pedidos/vendas/${pedidoId}/gerar-nfce`,{method:"POST"});
+        const idNotaFiscal=gerado?.data?.id||gerado?.data?.idNotaFiscal||null;
+        if(idNotaFiscal){
+          try{
+            await bling(`/nfce/${idNotaFiscal}/enviar`,{method:"POST"});
+            let linkDanfe=null; try{ const det=await bling(`/nfce/${idNotaFiscal}`); linkDanfe=det?.data?.linkDanfe||det?.data?.linkPDF||null; }catch(e){}
+            nfce={ok:true,idNotaFiscal,linkDanfe};
+          }catch(e){ nfce={ok:true,idNotaFiscal,erroEnvio:e.message}; }
+        } else { nfce={erro:"Bling não retornou o ID da NFC-e gerada"}; }
+      }catch(e){ nfce={erro:e.message}; }
+    }
+
+    p.sincronizado=true; p.pedidoBlingId=pedidoId; p.numeroPedido=numeroPedido; p.sincronizadoEm=Date.now(); p.nfce=nfce;
+    pendentes[localId]=p; salvarJSON(PDV_PENDENTES_FILE,pendentes);
+    res.json({ok:true,pedidoId,numero:numeroPedido,nfce});
+  }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
+});
+app.get("/api/pdv/pendentes",(req,res)=>{
+  const pendentes=lerJSON(PDV_PENDENTES_FILE,{});
+  const lista=Object.values(pendentes).filter(p=>!p.sincronizado).sort((a,b)=>b.criadoEm-a.criadoEm);
+  res.json({data:lista});
 });
 
 // ==================== CAIXA ATACADO ====================

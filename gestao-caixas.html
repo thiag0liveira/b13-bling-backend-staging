@@ -124,6 +124,7 @@
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #3ce88a;color:#3ce88a" onclick="abrirExportarPagamentos()">📊 Exportar pagamentos (Excel)</button>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #ffd23f;color:#ffd23f" onclick="verVendasPendentes()">⏳ Vendas pendentes de lançar no Bling</button>
       <div class="toggle">
         <button class="${window.ABA === 'abertos' ? 'on' : ''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
         <button class="${window.ABA === 'historico' ? 'on' : ''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
@@ -463,6 +464,54 @@
   };
 
   // ---- gerenciar os bancos do PIX (nome, padrão, adicionar, excluir) ----
+  window.verVendasPendentes = async function () {
+    let j;
+    try { j = await fetch(B + "/api/pdv/pendentes").then(r => r.json()); }
+    catch (e) { j = { data: [] }; }
+    window._PENDENTES = j.data || [];
+    renderVendasPendentes();
+  };
+  window.renderVendasPendentes = function () {
+    const lista = window._PENDENTES || [];
+    document.getElementById("modais").innerHTML = `
+    <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>⏳ Vendas pendentes de lançar no Bling</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">Vendas do varejo feitas com o checkbox "Lançar no Bling agora" desmarcado — o cliente já levou o produto, mas ainda faltar registrar oficialmente no Bling (e emitir a nota, se marcado). Sincronize uma a uma.</div>
+      <div style="max-height:400px;overflow:auto">
+        ${lista.length ? lista.map(p => `
+          <div style="background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:10px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-weight:800">${esc(p.clienteNome || "Consumidor Final")}</div>
+                <div class="muted" style="font-size:11px">${new Date(p.criadoEm).toLocaleString("pt-BR")} · ${p.itens.length} item(ns)${p.emitirNfce ? " · vai emitir NFC-e" : ""}</div>
+                ${(p.conflitosEstoque||[]).length ? `<div style="color:#ffb0b0;font-size:11px;margin-top:4px">⚠️ Possível falta de estoque: ${p.conflitosEstoque.map(c=>`${esc(c.nome)} (pediu ${c.pediu}, tinha ~${c.disponivelEstimado})`).join(", ")}</div>` : ""}
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:800;color:#3ce88a">${brl(p.itens.reduce((s,i)=>s+i.valor*i.quantidade,0)-Number(p.desconto||0))}</div>
+                <button class="btn btn-mag btn-sm" style="margin-top:4px" id="sinc-${esc(p.localId)}" onclick="sincronizarVendaPendente('${esc(p.localId)}')">Lançar no Bling</button>
+              </div>
+            </div>
+            <div id="msg-${esc(p.localId)}"></div>
+          </div>`).join("") : `<div class="muted" style="padding:12px">Nenhuma venda pendente 🎉</div>`}
+      </div>
+      <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fecharModais()">Fechar</button>
+    </div></div>`;
+  };
+  window.sincronizarVendaPendente = async function (localId) {
+    const btn = document.getElementById("sinc-" + localId);
+    const msgEl = document.getElementById("msg-" + localId);
+    if (btn) { btn.disabled = true; btn.textContent = "Lançando…"; }
+    try {
+      const j = await fetch(B + "/api/pdv/pendentes/" + encodeURIComponent(localId) + "/sincronizar", { method: "POST" }).then(r => r.json());
+      if (j.erro) throw new Error(j.erro);
+      if (msgEl) msgEl.innerHTML = `<div style="color:#3ce88a;font-size:12px;margin-top:4px">✅ Lançado! Pedido #${esc(j.numero || j.pedidoId)}${j.nfce && j.nfce.ok ? " · NFC-e emitida" : j.nfce && j.nfce.erro ? " · NFC-e: " + esc(j.nfce.erro) : ""}</div>`;
+      window._PENDENTES = (window._PENDENTES || []).filter(p => p.localId !== localId);
+      setTimeout(renderVendasPendentes, 1200);
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Tentar de novo"; }
+      if (msgEl) msgEl.innerHTML = `<div style="color:#ff8090;font-size:12px;margin-top:4px">${esc(e.message)}</div>`;
+    }
+  };
   window.gerenciarBancosPix = async function () {
     let cfg;
     try {

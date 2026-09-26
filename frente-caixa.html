@@ -527,6 +527,7 @@ function imprimirComprovante(v) {
     </style></head><body>
     <h2>B13 Bebidas</h2>
     <div style="text-align:center">Comprovante de venda</div>
+    ${v.pendente ? `<div style="text-align:center;font-weight:bold;margin-top:4px">⚠️ NÃO É DOCUMENTO FISCAL</div>` : ""}
     <hr>
     <div>Venda: #${esc(v.numero)}</div>
     <div>Data: ${new Date(v.dataHora).toLocaleString("pt-BR")}</div>
@@ -1282,7 +1283,8 @@ function render() {
   })()}
         ${somaNaoDinheiro() > totalPedido() + 0.009 ? `<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>` : ""}
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
-          <input type="checkbox" id="emitirNfce" checked> Emitir NFCe ao finalizar</label>
+          <input type="checkbox" id="emitirNfce" checked> 🧾 Lançar no Bling e emitir cupom fiscal agora</label>
+        <div class="muted" style="font-size:11px;margin:-6px 0 8px 26px">Desmarcado: a venda é registrada rápido só aqui no sistema (sem cupom fiscal), e fica pendente de lançar no Bling depois em Gestão de Caixas.</div>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
           ${FINALIZANDO || !CARRINHO.length || PAGAMENTOS.some(p => !p.formaId) || restante() > 0.009 || somaNaoDinheiro() > totalPedido() + 0.009 ? "disabled" : ""}
@@ -1331,8 +1333,9 @@ function mostrarSucessoVenda(j, ctx) {
     clienteFinal
   } = ctx;
   ULTIMA_VENDA = {
-    numero: j.numero || j.pedidoId,
-    pedidoId: j.pedidoId,
+    numero: j.numero || j.pedidoId || j.localId,
+    pedidoId: j.pedidoId || j.localId,
+    pendente: !!j.pendente,
     total: j.total,
     desconto: descontoVenda,
     itens: itensVenda,
@@ -1355,7 +1358,16 @@ function mostrarSucessoVenda(j, ctx) {
   carregarCaixa().then(() => {
     var _j$nfce, _j$nfce2, _j$nfce3, _j$nfce4;
     const m = document.getElementById("msgFinalizar");
-    if (m) m.innerHTML = `<div class="ok">✅ Venda #${esc(j.numero || j.pedidoId)} — ${brl(j.total)}${j.repetido ? ' <span class="muted" style="font-size:12px">(já tinha sido concluída — nada foi feito de novo)</span>' : ''}
+    if (!m) return;
+    if (j.pendente) {
+      m.innerHTML = `<div class="ok">✅ Venda registrada rápido — ${brl(j.total)}
+        <br><span class="muted" style="font-size:12px">Ainda não lançada no Bling (sem cupom fiscal agora). Sincronize depois em Gestão de Caixas.</span>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante (não fiscal)</button>
+        </div></div>`;
+      return;
+    }
+    m.innerHTML = `<div class="ok">✅ Venda #${esc(j.numero || j.pedidoId)} — ${brl(j.total)}${j.repetido ? ' <span class="muted" style="font-size:12px">(já tinha sido concluída — nada foi feito de novo)</span>' : ''}
       ${(_j$nfce = j.nfce) !== null && _j$nfce !== void 0 && _j$nfce.erro ? `<br><span style="color:#ffb0b0;font-size:12px">NFCe: ${esc(j.nfce.erro)}</span>` : (_j$nfce2 = j.nfce) !== null && _j$nfce2 !== void 0 && _j$nfce2.erroEnvio ? `<br><span style="color:#ffd580;font-size:12px">NFCe gerada mas não transmitida (fica Pendente no Bling): ${esc(j.nfce.erroEnvio)}</span>` : (_j$nfce3 = j.nfce) !== null && _j$nfce3 !== void 0 && _j$nfce3.pendente ? "<br><span class=\"muted\" style=\"font-size:12px\">NFCe sendo emitida em segundo plano</span>" : j.nfce ? "<br>NFCe emitida" : ""}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Comprovante</button>
@@ -1438,6 +1450,7 @@ async function finalizarVenda() {
         }))];
       })(),
       emitirNfce: document.getElementById("emitirNfce").checked,
+      lancarNoBlingAgora: document.getElementById("emitirNfce").checked,
       funcionarioId: funcionarioIdAtual(),
       contatoId: (clienteFinal === null || clienteFinal === void 0 ? void 0 : clienteFinal.id) || null,
       clienteNome: (clienteFinal === null || clienteFinal === void 0 ? void 0 : clienteFinal.nome) || ""
