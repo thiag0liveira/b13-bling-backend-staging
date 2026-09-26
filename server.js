@@ -7445,6 +7445,16 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       : "";
     const _obsCA = String(d.observacoes||"");
     const _ehEntregaCA = !!_endCA || Number(d.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(_obsCA);
+    // status de pagamento/autorização -- calculado do MESMO "d" já buscado acima,
+    // sem chamada nova ao Bling. Isso é o que o front antes buscava numa chamada
+    // SEPARADA (status-pagamento), que buscava esse mesmo pedido de novo no Bling
+    // só pra saber a situação -- duas chamadas idênticas em sequência, sem
+    // necessidade. Unificado aqui: abrir o pedido agora é 1 chamada ao Bling, não 2.
+    const jaSaiuDoFluxoInicial=[SIT.EM_SEP,SIT.SEPARADO,SIT.SEP_PEND,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO].includes(situacaoId);
+    const pReg=pagsLocais[String(d.id)];
+    const statusPagLocal=pReg?.statusPagamento||"pendente";
+    let recebidoInfo=null; try{ recebidoInfo=_pagamentoDoPedido(d.id, d.numero); }catch(e){}
+    const pagoNoCaixa=!!recebidoInfo?.pago;
     res.json({
       id:d.id, numero:d.numero, situacaoId,
       situacaoNome:nomeSituacaoFechamento(situacaoId),
@@ -7457,6 +7467,13 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       pagamentos, observacao:d.observacoes||"",
       recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
+      // pra decidir se precisa de autorização (QR) antes de reabrir/editar
+      pago: pagoNoCaixa || statusPagLocal==="pago" || statusPagLocal==="parcial",
+      recebido: pagoNoCaixa,
+      ondeFoiPago: recebidoInfo?.ondeFoiPago||null, operadorRecebeu: recebidoInfo?.operador||null,
+      quandoRecebeu: recebidoInfo?.quando||null, valorRecebido: recebidoInfo?.valor||0,
+      statusPagamento: statusPagLocal, valorPago: pReg?.valorPago||0,
+      jaSaiuDoFluxoInicial, pagoNoCaixa,
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
