@@ -1623,13 +1623,11 @@ async function confirmarImprimirNumero() {
     btn.textContent = "Buscando…";
   }
   try {
-    // 1) resolve número -> id
-    const b = await fetch(BACKEND + "/api/caixa-atacado/buscar-pedido/" + encodeURIComponent(numero)).then(r => r.json());
-    if (b.erro) throw new Error(b.erro);
-    if (!b.achou) throw new Error("Pedido #" + numero + " não encontrado no Bling.");
-    // 2) carrega o detalhe (itens, total, pagamentos)
-    const j = await fetch(BACKEND + "/api/caixa-atacado/pedido/" + b.id).then(r => r.json());
+    // resolve número -> dados completos, numa chamada só (antes eram 2: essa
+    // aqui só devolvia o id, e uma segunda buscava o mesmo pedido de novo)
+    const j = await fetch(BACKEND + "/api/caixa-atacado/buscar-pedido/" + encodeURIComponent(numero)).then(r => r.json());
     if (j.erro) throw new Error(j.erro);
+    if (!j.achou) throw new Error("Pedido #" + numero + " não encontrado no Bling.");
     // 3) monta o comprovante e imprime (SEM abrir pra editar)
     const v = {
       numero: j.numero || numero,

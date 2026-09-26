@@ -7312,13 +7312,27 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
     const num=String(req.params.numero||"").trim();
     if(!num) return res.status(400).json({erro:"informe o número"});
     const CANCELADO=Number(process.env.SIT_CANCELADO||12);
-    const responder=(d)=>{
+    const responder=async(d)=>{
       const sit=Number(d.situacao?.id||0);
-      if(sit===SIT.ATENDIDO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Atendido"});
+      // monta os dados completos (itens, cliente, pagamentos) JUNTO com a resposta
+      // -- "d" já é o pedido inteiro que acabamos de buscar; sem isso, quem
+      // precisasse dos itens (ex.: imprimir por número) tinha que buscar esse
+      // MESMO pedido de novo numa segunda chamada logo em seguida.
+      let vendedorNome="Sem vendedor";
+      try{ if(d.vendedor?.id) vendedorNome=await nomeVendedor(d.vendedor.id); }catch(e){}
+      const detalhe={
+        itens:(d.itens||[]).map(it=>({produtoId:it.produto?.id, nome:it.descricao||it.produto?.nome||"", quantidade:Number(it.quantidade||0), valor:Number(it.valor||0), codigo:it.codigo||""})),
+        total:Number(d.total||0), desconto:Number(d.desconto?.valor||0), outrasDespesas:Number(d.outrasDespesas||0),
+        frete:Number(d.transporte?.frete||0), clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
+        observacao:d.observacoes||"", vendedorNome,
+        recebidoPor:recebidoPorDoPedido(d.id).operador,
+        pagamentos:(d.parcelas||[]).map(p=>({formaNome:p.formaPagamento?.nome||"",valor:Number(p.valor||0)})),
+      };
+      if(sit===SIT.ATENDIDO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Atendido", ...detalhe});
       // SEPARADO = já pago no caixa (nova regra) — não pode ser aberto/puxado de novo
-      if(sit===SIT.SEPARADO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Separado (já pago no caixa)"});
-      if(sit===CANCELADO)    return res.json({achou:true, id:d.id, numero:d.numero, cancelado:true, situacaoNome:"Cancelado"});
-      return res.json({achou:true, id:d.id, numero:d.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit)});
+      if(sit===SIT.SEPARADO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Separado (já pago no caixa)", ...detalhe});
+      if(sit===CANCELADO)    return res.json({achou:true, id:d.id, numero:d.numero, cancelado:true, situacaoNome:"Cancelado", ...detalhe});
+      return res.json({achou:true, id:d.id, numero:d.numero, atendido:false, situacaoNome:nomeSituacaoFechamento(sit), ...detalhe});
     };
     // 1) tenta como ID direto do Bling (é o que o código de barras do totem carrega —
     //    o totem gera o barcode CODE128 com o pedidoId). É a via mais rápida.
@@ -7336,23 +7350,34 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
       const pareceIdInterno = num.length>=9;
       try{
         const d=await bling(`/pedidos/vendas/${num}`).then(r=>r?.data);
-        if(d&&d.id&&(pareceIdInterno || String(d.numero)===num)) return responder(d);
+        if(d&&d.id&&(pareceIdInterno || String(d.numero)===num)) return await responder(d);
       }catch(e){ /* não é um id de pedido — cai pra busca por número */ }
     }
-    // 2) tenta pelo NÚMERO do pedido (a API v3 não filtra por número, então varre
-    //    páginas). Aumentei o alcance e comparo com numero E numeroLoja.
+    // 2) tenta pelo NÚMERO do pedido, filtrando DIRETO no Bling (a API v3 aceita
+    // ?numero= no GET /pedidos/vendas -- antes disso ser descoberto, o sistema
+    // varria até 50 páginas (5.000 pedidos!) procurando bater o número, com uma
+    // pausa de 300ms entre cada página -- podia levar 10-15+ segundos só nessa
+    // busca. Com o filtro direto, é 1 chamada só.
     let achado=null;
-    for(let pag=1;pag<=50 && !achado;pag++){
-      let arr=[];
-      try{ arr=await bling(`/pedidos/vendas?pagina=${pag}&limite=100`).then(r=>r?.data||[]); }catch(e){ break; }
-      achado=arr.find(x=>String(x.numero)===num || String(x.numeroLoja||"")===num)||null;
-      if(arr.length<100) break;
-      await sleep(300);
+    try{
+      const arrFiltro=await bling(`/pedidos/vendas?numero=${encodeURIComponent(num)}&limite=10`).then(r=>r?.data||[]);
+      achado=arrFiltro.find(x=>String(x.numero)===num || String(x.numeroLoja||"")===num)||null;
+    }catch(e){}
+    // rede de segurança: se o filtro não achar por algum motivo (numeroLoja, ou
+    // o Bling ignorar o parâmetro num caso raro), cai pra varredura como antes
+    if(!achado){
+      for(let pag=1;pag<=50 && !achado;pag++){
+        let arr=[];
+        try{ arr=await bling(`/pedidos/vendas?pagina=${pag}&limite=100`).then(r=>r?.data||[]); }catch(e){ break; }
+        achado=arr.find(x=>String(x.numero)===num || String(x.numeroLoja||"")===num)||null;
+        if(arr.length<100) break;
+        await sleep(300);
+      }
     }
     if(!achado) return res.json({achou:false});
     // pega o detalhe (a listagem não traz situação completa em alguns casos)
-    try{ const d=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data); if(d) return responder(d); }catch(e){}
-    return responder(achado);
+    try{ const d=await bling(`/pedidos/vendas/${achado.id}`).then(r=>r?.data); if(d) return await responder(d); }catch(e){}
+    return await responder(achado);
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
