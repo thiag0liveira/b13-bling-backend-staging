@@ -4337,7 +4337,13 @@ app.get("/api/caixa/exportar-pagamentos",async(req,res)=>{
         if(m.em<iniTs||m.em>fimTs) return;
         const pags=m.pagamentos&&m.pagamentos.length ? m.pagamentos : [{formaNome:"—",valor:m.total||0}];
         pags.forEach(p=>{
-          const dt=new Date(m.em);
+          // o Excel trata objetos Date como horário "cru" (sem fuso nenhum) --
+          // ele pega os componentes em UTC e mostra direto, sem converter pra
+          // hora local. Como aqui os horários são guardados em UTC (Date.now()),
+          // sem subtrair as 3h de Brasília, o Excel mostrava a hora 3h ADIANTADA
+          // da hora real (ex.: venda das 18:35 aparecia como 21:35). Subtrai as
+          // 3h ANTES de criar o Date, pra compensar exatamente essa diferença.
+          const dt=new Date(m.em - 3*3600*1000);
           linhas.push({
             data:dt, // guarda como Date de verdade — formata na célula, não como texto
             caixa: (s.tipoCaixa||"frente")==="atacado"?"Atacado":"Frente",
