@@ -7942,25 +7942,6 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       if(!rt?.ok) avisoBling=(avisoBling?avisoBling+" ":"")+"A taxa do cartão não foi gravada no Bling ("+(rt?.erro||"erro")+").";
     }
 
-    // CONFERE se a taxa entrou em "outras despesas" no Bling — o total de lá tem que
-    // bater com itens + despesas + frete. Se não bater, o pedido fica no Bling sem a
-    // taxa (foi o que aconteceu no #54940) e o caixa não fecha: vira Aviso.
-    if(taxaAdd>0.009){
-      try{
-        await sleep(600);
-        const conf=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
-        const desp=Number(conf?.outrasDespesas||0);
-        if(Math.abs(desp-despesasTotal)>0.05){
-          registrarAviso({ tipo:"taxa_cartao_nao_gravada",
-            titulo:`Pedido #${ped.numero||pedidoId}: taxa do cartão não entrou no Bling`,
-            pedidoId:chave, numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
-            fingerprint:`taxa-${chave}`,
-            erroBling:`Outras despesas no Bling: ${desp.toFixed(2)} · esperado: ${despesasTotal.toFixed(2)}`,
-            oQueFazer:`A taxa de ${taxaAdd.toFixed(2)} deveria estar em "Outras despesas" do pedido #${ped.numero||pedidoId} no Bling, mas lá está ${desp.toFixed(2)}. Ajuste no Bling pra o total do pedido bater com o que foi cobrado.` });
-        }
-      }catch(e){}
-    }
-
     // 6) registros locais (pagamento + caixa, sem duplicar)
     const totalItens=+itensEfetivos.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0).toFixed(2);
     const _outras=despesasTotal, _frete=+Number(freteBase||0).toFixed(2);
@@ -8046,6 +8027,30 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       itensAlterados:itensMudaram?{retirados:diff.retirados.map(_fmtItem),acrescentados:diff.acrescentados.map(_fmtItem),alterados:diff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null };
     if(opId) opFinalizarSet(opId,{status:"ok",resposta});
     res.json(resposta);
+    // CONFERE se a taxa entrou em "outras despesas" no Bling — o total de lá tem que
+    // bater com itens + despesas + frete. Se não bater, o pedido fica no Bling sem a
+    // taxa (foi o que aconteceu no #54940) e vira Aviso. Roda DEPOIS de já ter
+    // respondido pro caixa — antes isso fazia o caixa (e o cliente na frente do
+    // balcão) esperar mais de 600ms + uma chamada inteira ao Bling só pra uma
+    // conferência que não muda o resultado da venda, só gera um aviso se algo
+    // estiver errado.
+    if(taxaAdd>0.009){
+      (async()=>{
+        try{
+          await sleep(600);
+          const conf=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+          const desp=Number(conf?.outrasDespesas||0);
+          if(Math.abs(desp-despesasTotal)>0.05){
+            registrarAviso({ tipo:"taxa_cartao_nao_gravada",
+              titulo:`Pedido #${ped.numero||pedidoId}: taxa do cartão não entrou no Bling`,
+              pedidoId:chave, numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
+              fingerprint:`taxa-${chave}`,
+              erroBling:`Outras despesas no Bling: ${desp.toFixed(2)} · esperado: ${despesasTotal.toFixed(2)}`,
+              oQueFazer:`A taxa de ${taxaAdd.toFixed(2)} deveria estar em "Outras despesas" do pedido #${ped.numero||pedidoId} no Bling, mas lá está ${desp.toFixed(2)}. Ajuste no Bling pra o total do pedido bater com o que foi cobrado.` });
+          }
+        }catch(e){}
+      })();
+    }
   }catch(e){
     if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
     res.status(e.status||500).json({erro:e.message,detalhe:e.body});
