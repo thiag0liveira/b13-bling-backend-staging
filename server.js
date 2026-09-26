@@ -67,6 +67,10 @@ const PERDAS_FILE = `${DATA_DIR}/perdas.json`;
 const CREDITOS_FILE = `${DATA_DIR}/creditos_clientes.json`;
 const ENTREGAS_FILE = `${DATA_DIR}/entregas.json`;
 const GTIN_INDEX_FILE = `${DATA_DIR}/gtin_index.json`;
+// cache persistente de imagem de produto (produtoId -> {url, em}) -- imagem de
+// produto quase nunca muda, então guarda por bastante tempo (7 dias) e evita
+// buscar ao vivo de novo pro mesmo produto a cada busca.
+const IMAGENS_CACHE_FILE = `${DATA_DIR}/imagens_produtos_cache.json`;
 const INSTAGRAM_CACHE_FILE = `${DATA_DIR}/instagram_cache.json`;
 const EMDIG_TRACK_FILE = `${DATA_DIR}/em_digitacao_track.json`;
 const FPAG_FILE = `${DATA_DIR}/formas_pagamento.json`;
@@ -8654,17 +8658,43 @@ app.get("/api/buscar-atacado", async (req, res) => {
       p.multiplo = vinc?.caixaQtd || 1; // de quantas em quantas unidades some
       p.precoFardo = vinc?.precoFardo ?? null;
     });
-    // busca o estoque AO VIVO dos primeiros resultados (o índice não guarda saldo,
-    // que muda toda hora) — limita pra não estourar o rate limit do Bling
-    const topN=lista.slice(0,8);
-    await Promise.all(topN.map(async p=>{
+    // ESTOQUE em lote (1 chamada, até 40 produtos) -- antes buscava individual,
+    // um por produto (até 8 ao mesmo tempo), toda vez que alguém buscava. Isso é
+    // o motivo real da demora percebida ao "adicionar produto": a busca em si já
+    // gastava vários segundos nesses 8 lookups simultâneos, antes mesmo do clique.
+    const idsParaEstoque=lista.map(p=>p.id).slice(0,40);
+    if(idsParaEstoque.length){
+      try{
+        const r=await bling(`/estoques/saldos?${idsParaEstoque.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+        const saldoPorId={}; (r?.data||[]).forEach(s=>{ saldoPorId[s.produto?.id]=Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0); });
+        lista.forEach(p=>{ if(saldoPorId[p.id]!=null) p.estoque=saldoPorId[p.id]; });
+      }catch(e){}
+    }
+    // IMAGEM com cache persistente (7 dias -- imagem de produto quase nunca muda).
+    // Só busca ao vivo no Bling pra quem realmente ainda não está no cache, e no
+    // máximo os 8 primeiros sem cache (pra não estourar limite numa busca com
+    // muito resultado novo de uma vez).
+    const cacheImg=lerJSON(IMAGENS_CACHE_FILE,{});
+    const seteDias=7*24*60*60*1000;
+    let mudouCacheImg=false;
+    lista.forEach(p=>{
+      const c=cacheImg[String(p.id)];
+      if(c && (Date.now()-c.em)<seteDias) p.imagem=c.url||"";
+    });
+    const semImagemCache=lista.filter(p=>p.imagem==null||p.imagem===undefined).slice(0,8);
+    await Promise.all(semImagemCache.map(async p=>{
       try{
         const r=await bling(`/produtos/${p.id}`);
-        p.estoque=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
-        // aproveita a MESMA chamada pra trazer a imagem do produto (quando tiver)
-        p.imagem=extrairImagemProduto(r?.data)||"";
-      }catch(e){ p.estoque=null; }
+        const url=extrairImagemProduto(r?.data)||"";
+        p.imagem=url;
+        cacheImg[String(p.id)]={url, em:Date.now()};
+        mudouCacheImg=true;
+        // aproveita a mesma chamada pra corrigir o estoque também, se o lote acima falhou
+        if(p.estoque==null) p.estoque=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
+      }catch(e){ p.imagem=""; }
     }));
+    if(mudouCacheImg) salvarJSON(IMAGENS_CACHE_FILE,cacheImg);
+    lista.forEach(p=>{ if(p.imagem==null||p.imagem===undefined) p.imagem=""; });
     res.json({ data: lista });
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
