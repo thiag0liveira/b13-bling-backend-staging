@@ -14142,29 +14142,30 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     // (gerente/financeiro/admin), porque liberar sem estoque de verdade pode
     // impactar outros pedidos que também contam com esse mesmo saldo.
     const {tokenQr}=req.body||{};
-    // conferência de estoque com concorrência CONTROLADA (5 por vez, não todos de
-    // uma vez): disparar tudo simultâneo aumenta o risco de vários baterem no limite
-    // do Bling (429) ao mesmo tempo, e cada 429 custa uma espera cara pra tentar de
-    // novo (até ~43s de espera acumulada por item, com backoff crescente) — o que na
-    // prática podia deixar a conferência MAIS lenta do que fazer um de cada vez, não
-    // mais rápida. 5 em paralelo já corta bastante o tempo sem gerar uma rajada.
-    async function conferirComLimite(itens, limite){
-      const resultados=new Array(itens.length).fill(null);
-      let proximo=0;
-      async function worker(){
-        while(proximo<itens.length){
-          const ix=proximo++; const it=itens[ix];
-          try{
-            const r=await bling(`/produtos/${it.produtoId}`);
-            const saldo=r?.data?.estoque?.saldoVirtualTotal ?? r?.data?.estoque?.saldoFisicoTotal ?? null;
-            if(saldo!=null && Number(it.quantidade)>Number(saldo)){
-              resultados[ix]={nome:it.nome, pediu:Number(it.quantidade), tem:Number(saldo), falta:+(Number(it.quantidade)-Number(saldo)).toFixed(2)};
-            }
-          }catch(e){}
-        }
+    // conferência de estoque em LOTE (até 40 produtos por chamada) -- antes era item
+    // por item (com até 5 em paralelo), o que pra um pedido de 15-17 itens (comum
+    // aqui) significava várias rodadas de chamadas. Mesmo padrão já usado e testado
+    // no Caixa Atacado (_identificarProdutosSemEstoque): 1-2 chamadas no total, não
+    // uma por produto.
+    async function conferirEstoqueEmLote(itens){
+      const ids=[...new Set(itens.map(i=>Number(i.produtoId)).filter(Boolean))];
+      const saldo={};
+      for(let i=0;i<ids.length;i+=40){
+        const bloco=ids.slice(i,i+40);
+        try{
+          const r=await bling(`/estoques/saldos?${bloco.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+          (r?.data||[]).forEach(s=>{ saldo[s.produto?.id]=Number(s.saldoVirtualTotal ?? s.saldoFisicoTotal ?? 0); });
+        }catch(e){}
+        if(i+40<ids.length) await sleep(150);
       }
-      await Promise.all(Array.from({length:Math.min(limite,itens.length)},()=>worker()));
-      return resultados.filter(Boolean);
+      const faltantes=[];
+      itens.forEach(it=>{
+        const pid=Number(it.produtoId); if(!pid) return;
+        const qtd=Number(it.quantidade)||0;
+        const atual=Number(saldo[pid]??0);
+        if(qtd>atual) faltantes.push({nome:it.nome, pediu:qtd, tem:atual, falta:+(qtd-atual).toFixed(2)});
+      });
+      return faltantes;
     }
     // TIMEOUT DE SEGURANÇA: sem isso, se alguma coisa travar de verdade (rede, fila
     // presa etc.), a requisição fica pendurada indefinidamente — sem erro, sem
@@ -14172,7 +14173,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     // Com isso, no máximo espera 45s por essa etapa; se estourar, avisa claramente
     // em vez de deixar a pessoa sem noção do que está havendo.
     const semEstoque=await Promise.race([
-      conferirComLimite(prop.itens, 5),
+      conferirEstoqueEmLote(prop.itens),
       new Promise((_,rej)=>setTimeout(()=>rej(new Error("TIMEOUT_ESTOQUE")),45000)),
     ]).catch(e=>{
       if(e.message==="TIMEOUT_ESTOQUE"){
@@ -14300,7 +14301,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         salvarPropostas(ppIni);
       }
     }catch(e){}
-    const numeroVeioDoBling=!!numero;
+    let numeroVeioDoBling=!!numero;
     if(!numero) numero=pedidoId; // provisório, só pra não travar a resposta — corrigido abaixo em 2º plano
     // reforça o vendedor via PUT (o POST às vezes não respeita) e move pra separação
     if(pedidoId&&prop.vendedorId){
@@ -14355,14 +14356,26 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       }catch(e){ console.error("[atacado] falhou ao agendar pedido",pedidoId,"no Gerenciamento de Rota:",e.message); }
     }
 
+    // se o Bling não devolveu o número na criação, JÁ TEMOS uma chance boa de
+    // conseguir agora sem custo extra real: os passos acima (reforçar vendedor,
+    // até 3 tentativas de mudar situação, cada uma com sleep crescente) já levaram
+    // vários segundos -- tempo de sobra pro Bling terminar de atribuir o número
+    // do lado dele. Confere UMA VEZ aqui, antes de responder, em vez de deixar
+    // isso só rolando em segundo plano -- se conseguir, elimina o polling que o
+    // front fazia depois (até 8 tentativas de 800ms, quase 6,5s a mais).
+    if(!numeroVeioDoBling){
+      try{
+        const det=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        if(det?.numero){ numero=det.numero; numeroVeioDoBling=true; }
+      }catch(e){}
+    }
     prop.status="pedido_gerado";
     prop.pedidoBlingId=pedidoId; prop.pedidoBlingNumero=numero;
     prop.gerandoPedidoEm=null;
     prop.atualizadoEm=Date.now();
     props[prop.id]=prop; salvarPropostas(props);
-    // se o Bling não devolveu o número na criação, busca em SEGUNDO PLANO (sem travar
-    // a resposta) e corrige tanto a proposta quanto o comprovante já impresso não dá
-    // pra corrigir, mas o registro fica certo pra próximas consultas/impressões
+    // se AINDA não tiver o número (raro, a essa altura), busca em SEGUNDO PLANO
+    // (sem travar mais a resposta) e corrige o registro pra próximas consultas
     if(!numeroVeioDoBling){
       (async()=>{
         try{
