@@ -8360,6 +8360,47 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       entrega.taxa = (Number.isFinite(t) && t >= 0) ? Math.min(t, 1000) : 0;
     }
 
+    // PEDIDO DO SITE: vira PROPOSTA local, sem nenhuma chamada ao Bling -- fica pra
+    // alguém no Caixa Atacado (ou onde for) revisar, confirmar dados e só então gerar
+    // o pedido de verdade no Bling (mesmo fluxo de qualquer proposta feita por
+    // vendedor). O totem CONTINUA gerando pedido direto no Bling como sempre (não
+    // entra nesse branch) -- só o site muda.
+    if (req.body?.origem === "site") {
+      const props = lerPropostas();
+      const propId = "prop_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      const itensProp = itens.map(it => ({
+        produtoId: it.produtoId, nome: it.nome || "",
+        quantidade: Number(it.quantidade), valor: Number(it.valor) || 0,
+      }));
+      const totalItensProp = +itensProp.reduce((s, i) => s + i.valor * i.quantidade, 0).toFixed(2);
+      const entregaProp = entrega && entrega.tipo === "entrega"
+        ? { tipo: "entrega", endereco: [cadastro?.endereco?.rua, cadastro?.endereco?.numero, cadastro?.endereco?.bairro, cadastro?.endereco?.cidade].filter(Boolean).join(", "), km: entrega.km || 0, taxa: Number(entrega.taxa) || 0 }
+        : { tipo: "retirada" };
+      const registro = {
+        id: propId, tipo: "proposta", status: "aberta",
+        origemPedido: "site", // pra destacar na tela de propostas com cor diferente
+        cliente: { nome: nome || "", documento: doc || "", telefone: telefone || "", email: email || "" },
+        itens: itensProp, observacao: "",
+        vendedorId: null, vendedorNome: "",
+        funcionarioId: null, funcionarioNome: "",
+        entrega: entregaProp,
+        totalItens: totalItensProp,
+        total: +(totalItensProp + (entregaProp.tipo === "entrega" ? entregaProp.taxa : 0)).toFixed(2),
+        pedidoBlingId: null, pedidoBlingNumero: null,
+        criadoEm: Date.now(), atualizadoEm: Date.now(),
+      };
+      props[propId] = registro;
+      salvarPropostas(props);
+      registrarAviso({
+        tipo: "pedido_site_novo",
+        titulo: `🛎️ Novo pedido pelo site — ${nome || "sem nome"} — ${brlN(registro.total)}`,
+        oQueFazer: `Confira em Propostas (destacado como "Pedido Site") e gere o pedido no Bling depois de revisar os itens e o cliente.`,
+        fingerprint: "pedido-site-" + propId,
+      });
+      if (opId) opFinalizarSet(opId, { status: "ok", resposta: { ok: true, site: true, propostaId: propId } });
+      return res.json({ ok: true, site: true, propostaId: propId });
+    }
+
     // 1) resolve o contato: por documento (identificado) ou contato padrão (sem identificação)
     let contatoId = null, criouContato = false;
     if (doc) {

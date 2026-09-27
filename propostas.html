@@ -440,9 +440,11 @@ function cardProposta(p) {
     minute: "2-digit"
   }) : "";
   const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}`).join(", ");
-  return `<div class="card">
+  const ehSite = p.origemPedido === "site";
+  return `<div class="card" style="${ehSite ? 'border:2px solid #25D366;background:rgba(37,211,102,.06)' : ''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
+        ${ehSite ? `<span class="tag" style="background:#123a2a;color:#25D366;font-weight:800;margin-bottom:4px;display:inline-block">🌐 PEDIDO SITE</span><br/>` : ''}
         <div style="font-weight:800">${esc(((_p$cliente = p.cliente) === null || _p$cliente === void 0 ? void 0 : _p$cliente.nome) || '—')}</div>
         <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome || '—')}${(_p$cliente2 = p.cliente) !== null && _p$cliente2 !== void 0 && _p$cliente2.telefone ? ` · 📞 ${esc(p.cliente.telefone)}` : ''}</div>
       </div>
