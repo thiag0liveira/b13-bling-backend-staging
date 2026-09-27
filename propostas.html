@@ -163,6 +163,25 @@ function renderLista() {
     return nome.includes(q) || numero.includes(q);
   }) : LISTA;
   box.innerHTML = filtrada.length ? filtrada.map(cardProposta).join("") : `<div class="card"><div class="muted">Nenhum resultado pra "${esc(BUSCA)}".</div></div>`;
+  // veio de um link direto (ex.: clicou em "Abrir pedido" num aviso do sino) --
+  // rola até o card certo e pisca uma borda por alguns segundos, pra achar na hora
+  // em vez de precisar procurar na lista inteira
+  const abrirId = new URLSearchParams(window.location.search).get("abrir");
+  if (abrirId) {
+    const el = document.getElementById("proposta-" + abrirId);
+    if (el) {
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.outline = "3px solid #ffd23f";
+        el.style.transition = "outline .3s";
+        setTimeout(() => { el.style.outline = "none"; }, 4000);
+      }, 100);
+      // limpa da URL pra não ficar destacando de novo se recarregar a página
+      const url = new URL(window.location.href);
+      url.searchParams.delete("abrir");
+      window.history.replaceState({}, "", url);
+    }
+  }
 }
 function norm(s) {
   return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -441,7 +460,7 @@ function cardProposta(p) {
   }) : "";
   const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}`).join(", ");
   const ehSite = p.origemPedido === "site";
-  return `<div class="card" style="${ehSite ? 'border:2px solid #25D366;background:rgba(37,211,102,.06)' : ''}">
+  return `<div class="card" id="proposta-${esc(p.id)}" style="${ehSite ? 'border:2px solid #25D366;background:rgba(37,211,102,.06)' : ''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
         ${ehSite ? `<span class="tag" style="background:#123a2a;color:#25D366;font-weight:800;margin-bottom:4px;display:inline-block">🌐 PEDIDO SITE</span><br/>` : ''}

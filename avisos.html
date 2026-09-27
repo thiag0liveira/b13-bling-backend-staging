@@ -68,6 +68,7 @@ function card(a) {
     ${a.estoqueAjustado ? `<div class="kv" style="color:#ffd23f"><b>Estoque ajustado automaticamente:</b> ${esc(a.estoqueAjustado)}</div>` : ""}
     ${a.erroBling ? `<div class="kv" style="color:#ff9a9a"><b>Erro do Bling:</b> ${esc(a.erroBling)}</div>` : ""}
     ${a.oQueFazer ? `<pre>👉 ${esc(a.oQueFazer)}</pre>` : ""}
+    ${a.link ? `<button class="btn btn-mag" style="margin-top:8px" onclick="window.location.href='${esc(a.link)}'">🔗 Abrir pedido</button>` : ""}
   </div>`;
 }
 function render() {

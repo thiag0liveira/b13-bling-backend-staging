@@ -8396,6 +8396,7 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
         titulo: `🛎️ Novo pedido pelo site — ${nome || "sem nome"} — ${brlN(registro.total)}`,
         oQueFazer: `Confira em Propostas (destacado como "Pedido Site") e gere o pedido no Bling depois de revisar os itens e o cliente.`,
         fingerprint: "pedido-site-" + propId,
+        link: "/propostas?abrir=" + propId,
       });
       if (opId) opFinalizarSet(opId, { status: "ok", resposta: { ok: true, site: true, propostaId: propId } });
       return res.json({ ok: true, site: true, propostaId: propId });
