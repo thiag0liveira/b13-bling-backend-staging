@@ -14854,7 +14854,11 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     }
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
-    const totalItensPed=+prop.itens.reduce((s,i)=>s+Number(i.valor||0)*Number(i.quantidade||0),0).toFixed(2);
+    // arredonda CADA item pra 2 casas antes de somar (igual o Bling faz por linha) --
+    // somar tudo em ponto flutuante e arredondar só no total dava, às vezes, 1 centavo
+    // de diferença numa proposta com muitos itens, e o Bling recusava a parcela com
+    // "o somatório do valor das parcelas difere do total da venda".
+    const totalItensPed=+prop.itens.reduce((s,i)=>s+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0).toFixed(2);
     const entregaProp=prop.entrega&&prop.entrega.tipo==="entrega"?prop.entrega:{tipo:"retirada"};
     const freteProp=entregaProp.tipo==="entrega"?Number(entregaProp.taxa)||0:0;
     const totalPed=+(totalItensPed+freteProp).toFixed(2);
