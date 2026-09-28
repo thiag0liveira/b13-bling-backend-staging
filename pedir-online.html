@@ -186,6 +186,7 @@ function novoEstado() {
     docInfo: null,
     docChecado: false,
     catAtiva: 0,
+    tabSel: [],
     busca: "",
     expandido: null,
     carrinho: {},
@@ -778,27 +779,86 @@ async function checarDoc() {
 }
 
 // ---- MODO TABELA embutido ----
+function tbToggleCat(i) {
+  const s = S.tabSel || [];
+  S.tabSel = s.includes(i) ? s.filter(x => x !== i) : [...s, i];
+  S.expandido = null;
+  tbRender();
+}
+function tbLimparCat() {
+  S.tabSel = [];
+  S.expandido = null;
+  tbRender();
+}
+// re-renderiza mantendo a posição da rolagem horizontal da barra de chips
+function tbRender() {
+  const el = document.getElementById("tbChips");
+  const x = el ? el.scrollLeft : 0;
+  render();
+  const novo = document.getElementById("tbChips");
+  if (novo) novo.scrollLeft = x;
+}
 function telaTabela(app) {
   if (!CAT) {
     app.innerHTML = header(true) + `<div class="wrap"><div class="muted">Carregando…</div></div>`;
     return;
   }
-  const cols = {
-    1: [],
-    2: [],
-    3: [],
-    4: []
-  };
-  CAT.forEach(c => {
-    const col = Math.min(4, Math.max(1, c.col || 1));
-    cols[col].push(c);
-  });
-  const tabela = `<style>.tb-mob{display:none}.tb-desk{display:grid}</style><div class="tb-wrap" style="margin-top:10px"><div class="tb-desk" id="tabelaGrid" style="grid-template-columns:repeat(4,minmax(140px,1fr));background:linear-gradient(180deg,#2b2870,#262366);border:2px solid var(--mag);border-radius:10px;overflow:hidden">
-    ${[1, 2, 3, 4].map(n => `<div style="border-right:${n < 4 ? '2px solid var(--mag)' : 'none'}">
-      ${cols[n].filter(c => (c.produtos || []).some(p => saboresDisp(p).length > 0)).map(tbCatHTML).join("")}
+  const temProd = c => (c.produtos || []).some(p => saboresDisp(p).length > 0);
+  const visiveis = CAT.map((c, i) => ({
+    c,
+    i
+  })).filter(v => temProd(v.c));
+  const sel = (S.tabSel || []).filter(i => visiveis.some(v => v.i === i));
+  const chips = `<style>.tbchip{white-space:nowrap;flex-shrink:0;padding:3px 9px;border-radius:999px;background:#1c1846;color:#cfc9f5;font-weight:700;font-size:10.5px;border:1px solid rgba(255,0,130,.35);cursor:pointer;transition:all .15s}.tbchip.on{background:var(--mag);color:#fff;border-color:var(--mag)}</style>
+    <div id="tbChips" style="display:flex;gap:5px;overflow-x:auto;padding:2px 0 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch">
+      <div class="tbchip ${!sel.length ? "on" : ""}" onclick="tbLimparCat()">Todas</div>
+      ${visiveis.map(v => `<div class="tbchip ${sel.includes(v.i) ? "on" : ""}" onclick="tbToggleCat(${v.i})">${esc(v.c.nome)}</div>`).join("")}
+    </div>`;
+  // monta as colunas. Sem filtro: como sempre (cada categoria na sua coluna).
+  // Com filtro: reagrupa só o que foi escolhido pra não sobrar coluna vazia --
+  // uma categoria só espalha os produtos em até 4 colunas; várias categorias
+  // são distribuídas equilibrando o tamanho das colunas.
+  let colunas;
+  if (!sel.length) {
+    const cols = {
+      1: [],
+      2: [],
+      3: [],
+      4: []
+    };
+    CAT.forEach(c => {
+      const col = Math.min(4, Math.max(1, c.col || 1));
+      cols[col].push(c);
+    });
+    colunas = [1, 2, 3, 4].map(n => cols[n].filter(temProd));
+  } else if (sel.length === 1) {
+    const cat = CAT[sel[0]];
+    const prods = (cat.produtos || []).filter(p => saboresDisp(p).length > 0);
+    const n = Math.min(4, Math.max(1, Math.ceil(prods.length / 7)));
+    const tam = Math.ceil(prods.length / n);
+    colunas = Array.from({
+      length: n
+    }, (_, k) => [{
+      nome: cat.nome,
+      produtos: prods.slice(k * tam, (k + 1) * tam)
+    }]).filter(col => col[0].produtos.length);
+  } else {
+    const n = Math.min(4, sel.length);
+    colunas = Array.from({
+      length: n
+    }, () => []);
+    const peso = col => col.reduce((s, c) => s + (c.produtos || []).filter(p => saboresDisp(p).length > 0).length + 1, 0);
+    sel.map(i => CAT[i]).sort((a, b) => (b.produtos || []).length - (a.produtos || []).length).forEach(c => {
+      colunas.reduce((menor, col) => peso(col) < peso(menor) ? col : menor).push(c);
+    });
+  }
+  const nCols = colunas.length || 1;
+  const tabela = `<style>.tb-mob{display:none}.tb-desk{display:grid}</style><div class="tb-wrap" style="margin-top:6px"><div class="tb-desk" id="tabelaGrid" style="grid-template-columns:repeat(${nCols},minmax(140px,1fr));background:linear-gradient(180deg,#2b2870,#262366);border:2px solid var(--mag);border-radius:10px;overflow:hidden">
+    ${colunas.map((col, k) => `<div style="border-right:${k < nCols - 1 ? '2px solid var(--mag)' : 'none'}">
+      ${col.map(tbCatHTML).join("")}
     </div>`).join("")}
   </div>`;
-  app.innerHTML = header(true) + `<div class="wrap">${tabela}<div style="height:80px"></div></div>` + barra();
+  app.innerHTML = header(true) + `<div class="wrap" style="padding-top:8px">${chips}${tabela}<div style="height:80px"></div></div>` + barra();
 }
 function tbCatHTML(cat) {
   const prods = (cat.produtos || []).filter(p => saboresDisp(p).length > 0);
