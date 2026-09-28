@@ -11542,11 +11542,19 @@ app.get("/api/rotas/viagem-status/:token",(req,res)=>{
 app.get("/api/rotas/viagens-abertas",(req,res)=>{
   try{
     const viagens=lerViagensAtivas();
-    const abertas=Object.values(viagens).filter(v=>!v.finalizadaEm && !v.canceladaEm).map(v=>({
-      token:v.token, carroId:v.carroId, vix:v.vix, carroNome:v.carroNome, data:v.data,
-      motoristaNome:v.motoristaNome, iniciadaEm:v.iniciadaEm?new Date(v.iniciadaEm).toISOString():null,
-      pedidoIds:v.pedidoIds, kmInicial:v.kmInicial,
-    }));
+    const abertas=Object.values(viagens).filter(v=>!v.finalizadaEm && !v.canceladaEm).map(v=>{
+      const regs=Object.values(v.entregas||{});
+      const feitas=regs.filter(e=>e.status==="entregue").length;
+      const naoEntregues=regs.filter(e=>e.status==="nao_entregue").length;
+      return {
+        token:v.token, carroId:v.carroId, vix:v.vix, carroNome:v.carroNome, data:v.data,
+        motoristaNome:v.motoristaNome, motoristaTelefone:v.motoristaTelefone||null,
+        iniciadaEm:v.iniciadaEm?new Date(v.iniciadaEm).toISOString():null, iniciadaEmMs:v.iniciadaEm||null,
+        pedidoIds:v.pedidoIds, kmInicial:v.kmInicial,
+        totalEntregas:v.pedidoIds.length, feitas, naoEntregues, pendentes:v.pedidoIds.length-feitas-naoEntregues,
+        ultimaLocalizacaoEm:v.localizacaoAtual?.em||null,
+      };
+    }).sort((a,b)=>(a.iniciadaEmMs||0)-(b.iniciadaEmMs||0));
     res.json({total:abertas.length, viagens:abertas});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -11636,8 +11644,11 @@ app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
       let det=null;
       try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
       const reg=v.entregas[String(pid)]||null;
+      const pgLocal=lerPag()[String(pid)]||null;
       entregas.push({
         pedidoId:pid, numero:det?.numero||pid, clienteNome:det?.contato?.nome||"—",
+        situacaoBling:det?.situacao?.id?nomeSituacao(Number(det.situacao.id)):null,
+        pagamentoLocal:pgLocal?{statusPagamento:pgLocal.statusPagamento||"pendente",valorPago:Number(pgLocal.valorPago||0)}:null,
         total:Number(det?.total||0),
         itens:(det?.itens||[]).map(i=>({produtoId:i.produto?.id||null, descricao:i.descricao||i.produto?.nome||"produto", quantidade:i.quantidade, valor:i.valor})),
         status:reg?reg.status:"pendente",
@@ -11647,6 +11658,7 @@ app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
     }
     res.json({ ok:true, token:v.token, carroNome:v.carroNome, motoristaNome:v.motoristaNome,
       kmInicial:v.kmInicial, kmFinal:v.kmFinal, iniciadaEm:v.iniciadaEm, finalizadaEm:v.finalizadaEm||null,
+      canceladaEm:v.canceladaEm||null, data:v.data,
       entregas });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -11654,14 +11666,23 @@ app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
 // motorista finaliza a entrega de UM pedido da viagem: informa avaria/falta (se
 // houver), a forma de pagamento e a assinatura do cliente. O valor da avaria/falta
 // é subtraído do total antes de registrar o pagamento.
-app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
+// Registra a entrega de UM pedido de uma viagem. É a mesma regra para o motorista (pelo
+// link da viagem) e para o gerenciador de rotas (quando o motorista não finalizou do
+// jeito certo e a corrida ficou travada). A diferença: o gerenciador não colhe assinatura
+// e pode marcar "pedido já estava pago". O valor da avaria/falta é subtraído do total
+// antes de registrar o pagamento.
+async function registrarEntregaViagem(token,pidRaw,body,ctx){
+  const gerente=!!(ctx&&ctx.origem==="gerente");
+  const por=String((ctx&&ctx.por)||"").slice(0,80);
+  const pid=Number(pidRaw);
+  const liberarTravaEntrega=()=>{ try{ const vv=lerViagensAtivas(); if(vv[token] && vv[token].entregas[String(pid)]?.status==="processando"){ delete vv[token].entregas[String(pid)]; salvarViagensAtivas(vv); } }catch(e){} };
   try{
     const viagens=lerViagensAtivas();
-    const v=viagens[req.params.token];
-    if(!v) return res.status(404).json({erro:"link inválido ou expirado"});
-    if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada"});
-    const pid=Number(req.params.pedidoId);
-    if(!v.pedidoIds.includes(pid)) return res.status(400).json({erro:"esse pedido não está nessa viagem"});
+    const v=viagens[token];
+    if(!v) return {code:404,json:{erro:"link inválido ou expirado"}};
+    if(v.finalizadaEm) return {code:400,json:{erro:"essa viagem já foi finalizada"}};
+    if(gerente && v.canceladaEm) return {code:400,json:{erro:"essa viagem foi cancelada"}};
+    if(!v.pedidoIds.includes(pid)) return {code:400,json:{erro:"esse pedido não está nessa viagem"}};
     // trava ATÔMICA contra finalizar a MESMA entrega duas vezes ao mesmo tempo
     // (clique duplo, ou dois celulares/abas na mesma viagem) — tudo isso roda antes
     // de qualquer "await", então nenhuma outra requisição consegue entrelaçar no
@@ -11670,18 +11691,18 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     // fica travado pra sempre).
     const regAtual=v.entregas[String(pid)];
     if(regAtual && regAtual.status==="entregue"){
-      return res.status(409).json({erro:"Esse pedido já está registrado como ENTREGUE no sistema. Se a entrega não aconteceu de verdade (por engano, ou travou antes), avise o escritório pra corrigir manualmente — não dá pra registrar de novo por aqui.", jaEntregue:true});
+      return {code:409,json:{erro:"Esse pedido já está registrado como ENTREGUE no sistema. Se a entrega não aconteceu de verdade (por engano, ou travou antes), avise o escritório pra corrigir manualmente — não dá pra registrar de novo por aqui.", jaEntregue:true}};
     }
     if(regAtual && regAtual.status==="processando" && Date.now()-regAtual.travadoEm<60000){
       const faltamSeg=Math.ceil((60000-(Date.now()-regAtual.travadoEm))/1000);
-      return res.status(409).json({erro:`Essa entrega já está sendo processada agora (pode ter sido você mesmo, numa tentativa que ainda não terminou). Espera uns ${faltamSeg}s e tenta de novo — se ainda travar depois disso, tenta mais uma vez.`, travaTemporaria:true});
+      return {code:409,json:{erro:`Essa entrega já está sendo processada agora (pode ter sido você mesmo, numa tentativa que ainda não terminou). Espera uns ${faltamSeg}s e tenta de novo — se ainda travar depois disso, tenta mais uma vez.`, travaTemporaria:true}};
     }
     v.entregas[String(pid)]={status:"processando", travadoEm:Date.now()};
     salvarViagensAtivas(viagens);
-    const {itensProblema,pagamentos,assinaturaDataUrl,ocorrencia}=req.body||{};
-    const liberarTravaEntrega=()=>{ try{ const vv=lerViagensAtivas(); if(vv[req.params.token] && vv[req.params.token].entregas[String(pid)]?.status==="processando"){ delete vv[req.params.token].entregas[String(pid)]; salvarViagensAtivas(vv); } }catch(e){} };
+    const {itensProblema,pagamentos,assinaturaDataUrl,ocorrencia}=body||{};
+    const jaPago=gerente&&!!(body&&body.jaPago);
     let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
-    if(!det){ liberarTravaEntrega(); return res.status(404).json({erro:"pedido não encontrado no Bling"}); }
+    if(!det){ liberarTravaEntrega(); return {code:404,json:{erro:"pedido não encontrado no Bling"}}; }
     const totalPedido=Number(det.total||0);
     const problemas=(Array.isArray(itensProblema)?itensProblema:[]).filter(i=>Number(i.quantidade)>0);
     const valorProblema=+problemas.reduce((s,i)=>{
@@ -11690,7 +11711,7 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
       return s+valorUn*Number(i.quantidade||0);
     },0).toFixed(2);
     const valorFinal=Math.max(0,+(totalPedido-valorProblema).toFixed(2));
-    const pags=(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p.formaId&&Number(p.valor)>0);
+    const pags=jaPago?[]:(Array.isArray(pagamentos)?pagamentos:[]).filter(p=>p.formaId&&Number(p.valor)>0);
     const somaPags=+pags.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     // valida que o valor pago bate EXATO com o valor a receber — descontando a taxa
     // de cartão embutida (o valor do cartão inclui os 3,5%, então não entra cheio
@@ -11698,42 +11719,117 @@ app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
     // no cliente.
     const ehCartao=n=>/cr[eé]dito|d[eé]bito/i.test(n||"");
     const totalPagoSemTaxa=+pags.reduce((s,p)=>s+(ehCartao(p.formaNome)?Number(p.valor)/(1+TAXA_CARTAO_PADRAO):Number(p.valor)),0).toFixed(2);
-    if(valorFinal>0){
+    if(valorFinal>0 && !jaPago){
       const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
-      if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return res.status(400).json({erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}); }
+      if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return {code:400,json:{erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}}; }
     }
     // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
     // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
     if(valorFinal>0 && pags.length){
       const pg=lerPag();
       pg[String(pid)]={ statusPagamento:"pago", valorPago:somaPags, valorPedido:totalPedido,
-        historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), banco:p.banco||null, em:Date.now(), origem:"entrega (motorista)"})) };
+        historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), banco:p.banco||null, em:Date.now(), origem:gerente?("entrega (gerente"+(por?": "+por:"")+")"):"entrega (motorista)"})) };
       salvarPag(pg);
       // reflete no Bling também (parcelas reais), sem travar a resposta se falhar —
       // o pagamento já ficou registrado localmente de qualquer forma
       atualizarParcelasBling(pid,pags.map(p=>({formaPagamento:{id:Number(p.formaId)},valor:Number(p.valor)}))).catch(()=>{});
     }
-    v.entregas[String(pid)]={
+    // relê antes de gravar: houve chamadas ao Bling no meio, e outra entrega da mesma
+    // viagem pode ter sido registrada nesse intervalo
+    const vv=lerViagensAtivas();
+    if(!vv[token]) return {code:404,json:{erro:"link inválido ou expirado"}};
+    vv[token].entregas[String(pid)]={
       status:"entregue", em:Date.now(),
       itensProblema:problemas, valorProblema, valorFinal,
       pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor),banco:p.banco||null})),
-      assinaturaDataUrl:assinaturaDataUrl||null,
+      assinaturaDataUrl:gerente?null:(assinaturaDataUrl||null),
       ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
+      ...(gerente?{origem:"gerente",registradoPor:por,jaPago}:{}),
     };
-    salvarViagensAtivas(viagens);
+    salvarViagensAtivas(vv);
     // fecha o pedido de verdade no Bling (EM_ROTA -> ATENDIDO). Sem isso, o pedido
     // ficava PRA SEMPRE em "Em rota" mesmo já entregue e pago — e como EM_ROTA é
     // aceito como situação válida pra iniciar viagem (pensado pra reabrir uma viagem
     // cancelada), um pedido já entregue podia ser colocado numa viagem NOVA e
     // "iniciado" de novo, sem nenhuma trava percebendo que ele já tinha sido
-    // finalizado. Não bloqueia a resposta pro motorista se isso falhar — a entrega já
-    // ficou registrada de qualquer forma — mas avisa no retorno pra quem acompanha.
+    // finalizado. Não bloqueia a resposta se isso falhar — a entrega já ficou
+    // registrada de qualquer forma — mas avisa no retorno pra quem acompanha.
     let atendidoOk=true, atendidoErro=null;
     try{ const rAt=await mudarSituacaoPedido(pid,SIT.ATENDIDO); if(!rAt.ok){ atendidoOk=false; atendidoErro=rAt.erro||"o Bling recusou"; } }
     catch(e){ atendidoOk=false; atendidoErro=e.message; }
-    addLog(String(pid),"entrega_finalizada_motorista",v.motoristaFuncionarioId,v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),atendidoOk,atendidoErro});
-    res.json({ok:true, valorProblema, valorFinal, atendidoOk, atendidoErro});
-  }catch(e){ try{ liberarTravaEntrega(); }catch(e2){} res.status(500).json({erro:e.message}); }
+    addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,gerente?por:v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),atendidoOk,atendidoErro,...(gerente?{jaPago}:{})});
+    return {code:200,json:{ok:true, valorProblema, valorFinal, atendidoOk, atendidoErro}};
+  }catch(e){ liberarTravaEntrega(); return {code:500,json:{erro:e.message}}; }
+}
+// Pedido que NÃO foi entregue (cliente ausente, recusou, voltou no carro). Só o
+// gerenciador de rotas usa: volta o pedido pra Verificado no Bling, pra poder ser
+// colocado numa viagem nova, e deixa a entrega da viagem resolvida (sem travar).
+async function registrarNaoEntregaViagem(token,pidRaw,body,ctx){
+  const pid=Number(pidRaw);
+  const por=String((ctx&&ctx.por)||"").slice(0,80);
+  const motivo=String((body&&body.motivo)||"").slice(0,300);
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[token];
+    if(!v) return {code:404,json:{erro:"viagem não encontrada"}};
+    if(v.finalizadaEm) return {code:400,json:{erro:"essa viagem já foi finalizada"}};
+    if(v.canceladaEm) return {code:400,json:{erro:"essa viagem foi cancelada"}};
+    if(!v.pedidoIds.includes(pid)) return {code:400,json:{erro:"esse pedido não está nessa viagem"}};
+    const regAtual=v.entregas[String(pid)];
+    if(regAtual && regAtual.status==="entregue") return {code:409,json:{erro:"Esse pedido já está registrado como ENTREGUE.", jaEntregue:true}};
+    if(regAtual && regAtual.status==="processando" && Date.now()-regAtual.travadoEm<60000) return {code:409,json:{erro:"Esse pedido está sendo processado agora. Espera alguns segundos e tenta de novo.", travaTemporaria:true}};
+    v.entregas[String(pid)]={status:"processando", travadoEm:Date.now()};
+    salvarViagensAtivas(viagens);
+    let revertido=true, erroBling=null;
+    try{ const r=await mudarSituacaoPedido(pid,SIT.VERIFICADO); if(!r.ok){ revertido=false; erroBling=r.erro||"o Bling recusou"; } }
+    catch(e){ revertido=false; erroBling=e.message; }
+    const vv=lerViagensAtivas();
+    if(!vv[token]) return {code:404,json:{erro:"viagem não encontrada"}};
+    vv[token].entregas[String(pid)]={status:"nao_entregue", em:Date.now(), motivo, revertidoNoBling:revertido, erroBling, origem:"gerente", registradoPor:por};
+    salvarViagensAtivas(vv);
+    addLog(String(pid),"entrega_nao_realizada_gerente",(ctx&&ctx.funcionarioId)||null,por,{motivo,revertido,erroBling});
+    return {code:200,json:{ok:true, revertido, erroBling}};
+  }catch(e){
+    try{ const vv=lerViagensAtivas(); if(vv[token]&&vv[token].entregas[String(pid)]?.status==="processando"){ delete vv[token].entregas[String(pid)]; salvarViagensAtivas(vv); } }catch(e2){}
+    return {code:500,json:{erro:e.message}};
+  }
+}
+app.post("/api/viagem/:token/entrega/:pedidoId",async(req,res)=>{
+  const r=await registrarEntregaViagem(req.params.token,req.params.pedidoId,req.body,{origem:"motorista"});
+  res.status(r.code).json(r.json);
+});
+// GERENCIADOR DE ROTAS: registra a entrega de um pedido no lugar do motorista (sem
+// assinatura), quando a corrida ficou travada porque ele não finalizou direito
+app.post("/api/rotas/viagem/:token/entrega/:pedidoId",async(req,res)=>{
+  const r=await registrarEntregaViagem(req.params.token,req.params.pedidoId,req.body,{origem:"gerente",por:req.body?.por,funcionarioId:req.body?.funcionarioId});
+  res.status(r.code).json(r.json);
+});
+app.post("/api/rotas/viagem/:token/nao-entregue/:pedidoId",async(req,res)=>{
+  const r=await registrarNaoEntregaViagem(req.params.token,req.params.pedidoId,req.body,{por:req.body?.por,funcionarioId:req.body?.funcionarioId});
+  res.status(r.code).json(r.json);
+});
+// GERENCIADOR DE ROTAS: encerra a corrida. Só deixa encerrar quando TODOS os pedidos
+// estão resolvidos (entregue ou não entregue), pra nenhum ficar preso em "Em rota".
+app.post("/api/rotas/viagem/:token/finalizar-gerente",(req,res)=>{
+  try{
+    const viagens=lerViagensAtivas();
+    const v=viagens[req.params.token];
+    if(!v) return res.status(404).json({erro:"viagem não encontrada"});
+    if(v.finalizadaEm) return res.status(400).json({erro:"essa viagem já foi finalizada"});
+    if(v.canceladaEm) return res.status(400).json({erro:"essa viagem foi cancelada"});
+    const pendentes=v.pedidoIds.filter(pid=>{ const st=v.entregas[String(pid)]?.status; return st!=="entregue" && st!=="nao_entregue"; });
+    if(pendentes.length) return res.status(400).json({erro:`Ainda tem ${pendentes.length} pedido(s) sem resolver. Marque cada um como entregue ou não entregue antes de encerrar.`, pendentes});
+    const {kmFinal,semKm,por}=req.body||{};
+    if(semKm){ v.kmFinal=v.kmInicial; v.kmFinalNaoInformado=true; }
+    else{
+      if(!(Number(kmFinal)>=v.kmInicial)) return res.status(400).json({erro:"KM final precisa ser maior ou igual ao KM inicial ("+v.kmInicial+")"});
+      v.kmFinal=Number(kmFinal);
+    }
+    v.finalizadaEm=Date.now();
+    v.finalizadaPor="gerente"; v.finalizadaPorNome=String(por||"").slice(0,80);
+    salvarViagensAtivas(viagens);
+    res.json({ok:true, kmRodado:+(v.kmFinal-v.kmInicial).toFixed(1), kmNaoInformado:!!semKm});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // finaliza a viagem inteira (motorista voltou) — informa o KM final
 app.post("/api/viagem/:token/finalizar",(req,res)=>{

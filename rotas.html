@@ -1136,6 +1136,7 @@ function renderInterno() {
   let h = `<div class="topbar">
     <div class="pg">🗺️ Gerenciamento de Rota</div>
     <div style="flex:1"></div>
+    <button class="btn btn-ghost" onclick="abrirCorridasAbertas()">🚚 Corridas abertas <span id="badgeAbertas" style="background:#FF0082;border-radius:999px;padding:1px 7px;font-size:11px;margin-left:4px;${S.abertasTotal ? "" : "display:none"}">${S.abertasTotal || ""}</span></button>
     <button class="btn btn-ghost" onclick="abrirConfig()">⚙️ Configurar</button>
   </div>
   <div class="content">`;
@@ -1584,6 +1585,272 @@ function fecharModais() {
   const m = document.getElementById("modais");
   if (m) m.innerHTML = "";
 }
+
+// ---- CORRIDAS ABERTAS + ENCERRAR PELO GERENCIADOR ----
+// Quando o motorista não finaliza do jeito certo, a corrida fica aberta pra sempre.
+// Aqui o gerenciador vê quais estão abertas e encerra cada uma, pedido por pedido,
+// informando só o que interessa: os produtos chegaram certos? e a forma de pagamento.
+// Sem assinatura (essa parte é só do motorista com o cliente na frente).
+async function atualizarBadgeAbertas() {
+  try {
+    const j = await fetch(B + "/api/rotas/viagens-abertas").then(r => r.json());
+    S.abertasTotal = j.total || 0;
+    const el = document.getElementById("badgeAbertas");
+    if (el) { el.textContent = S.abertasTotal || ""; el.style.display = S.abertasTotal ? "" : "none"; }
+    return j;
+  } catch (e) { return null; }
+}
+function _tempoAtras(ms) {
+  if (!ms) return "";
+  const min = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (min < 60) return "há " + min + " min";
+  const h = Math.round(min / 60);
+  if (h < 48) return "há " + h + " h";
+  return "há " + Math.round(h / 24) + " dias";
+}
+async function abrirCorridasAbertas() {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando corridas abertas…</div></div></div>`;
+  const j = await atualizarBadgeAbertas();
+  if (!j) { document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="warn">Não consegui carregar. Tente de novo.</div><button class="btn btn-ghost" style="margin-top:8px" onclick="fecharModais()">Fechar</button></div></div>`; return; }
+  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const lista = j.viagens || [];
+  document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="margin:0">🚚 Corridas abertas (${lista.length})</h3>
+      <button class="btn btn-ghost" style="width:auto;padding:6px 12px" onclick="fecharModais()">✕</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Corridas iniciadas que ainda não foram encerradas. Toque em Resolver pra conferir os pedidos e encerrar.</div>
+    ${lista.length ? lista.map(v => {
+      const antiga = v.data && v.data < hoje;
+      const dataTxt = v.data ? v.data.split("-").reverse().join("/") : "";
+      return `<div style="background:#0f0d24;border:1px solid ${antiga ? "#ff8090" : "#2c2660"};border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <div>
+            <div style="font-weight:800">${esc(v.carroNome || "Carro")}${v.motoristaNome ? " — " + esc(v.motoristaNome) : ""}</div>
+            <div class="muted" style="font-size:11px">Dia ${esc(dataTxt)} · iniciada ${_tempoAtras(v.iniciadaEmMs)}${v.motoristaTelefone ? " · 📞 " + esc(v.motoristaTelefone) : ""}</div>
+          </div>
+          <div style="text-align:right;font-size:12px">
+            <div><b>${v.feitas}</b>/${v.totalEntregas} entregues</div>
+            ${v.pendentes ? `<div style="color:#ffd23f">${v.pendentes} sem resolver</div>` : `<div style="color:#3ce88a">tudo resolvido</div>`}
+          </div>
+        </div>
+        ${antiga ? `<div style="color:#ff8090;font-size:11px;margin-top:4px">⚠️ Corrida de um dia que já passou, provavelmente travada.</div>` : ""}
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn btn-mag" style="flex:1;font-size:12px;padding:8px" onclick='abrirEncerrarCorrida(${JSON.stringify(v.token)})'>✅ Resolver corrida</button>
+          <button class="btn btn-ghost" style="font-size:12px;padding:8px" onclick='verDetalhesViagem(${JSON.stringify(v.token)})'>🔍 Detalhes</button>
+        </div>
+      </div>`;
+    }).join("") : `<div class="muted" style="padding:14px;text-align:center">Nenhuma corrida aberta 🎉</div>`}
+  </div></div>`;
+}
+
+let G = null; // estado da janela de encerramento
+const TAXA_CARTAO_GER = 0.035;
+const _ehCartaoGer = n => /cr[eé]dito|d[eé]bito/i.test(n || "");
+async function _carregarFormasGer() {
+  if (window._formasGer) return window._formasGer;
+  let lista = [], bancos = { bancos: ["Inter", "Santander", "Itaú"], padrao: "Inter" };
+  try {
+    const fj = await fetch(B + "/api/formas-pagamento").then(r => r.json());
+    const todas = (fj.data || []).filter(f => f.situacao !== "I");
+    const padroes = [/pix/i, /dinheiro/i, /d[eé]bito/i, /cr[eé]dito.*vista/i];
+    const filtradas = todas.filter(f => { const n = f.descricao || f.nome || ""; return padroes.some(p => p.test(n)) && !/pix.*bling.*conta/i.test(n); });
+    const pixReal = filtradas.find(f => /pix/i.test(f.descricao || f.nome || ""));
+    const semPix = filtradas.filter(f => !/pix/i.test(f.descricao || f.nome || ""));
+    const boleto = todas.find(f => /^boleto adega ?13/i.test(f.descricao || f.nome || ""));
+    if (pixReal) { lista.push({ id: pixReal.id, nome: "Pix Banco", pixTipo: "banco" }); lista.push({ id: pixReal.id, nome: "Pix Máquina", pixTipo: "maquina" }); }
+    lista = lista.concat(semPix.map(f => ({ id: f.id, nome: f.descricao || f.nome })));
+    if (boleto) lista.push({ id: boleto.id, nome: boleto.descricao || boleto.nome });
+    if (!lista.length) lista = todas.map(f => ({ id: f.id, nome: f.descricao || f.nome }));
+  } catch (e) {}
+  try { const bj = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (bj && Array.isArray(bj.bancos) && bj.bancos.length) bancos = bj; } catch (e) {}
+  window._formasGer = { lista, bancos };
+  return window._formasGer;
+}
+function _edGer(pid) {
+  if (!G.edit[pid]) {
+    const e = G.dados.entregas.find(x => x.pedidoId === pid);
+    G.edit[pid] = { modo: "entregue", prob: {}, jaPago: !!(e && e.pagamentoLocal && e.pagamentoLocal.statusPagamento === "pago"), pags: [{ formaId: null, formaNome: "", valor: "", banco: null, pixTipo: null }], motivo: "", aberto: false, salvando: false, msg: "" };
+  }
+  return G.edit[pid];
+}
+function _calcGer(e) {
+  const ed = _edGer(e.pedidoId);
+  const valorProblema = +(e.itens || []).reduce((s, i) => s + Number(i.valor || 0) * Number(ed.prob[i.produtoId] || 0), 0).toFixed(2);
+  const valorFinal = Math.max(0, +(Number(e.total || 0) - valorProblema).toFixed(2));
+  const semTaxa = +ed.pags.reduce((s, p) => s + (_ehCartaoGer(p.formaNome) ? Number(p.valor || 0) / (1 + TAXA_CARTAO_GER) : Number(p.valor || 0)), 0).toFixed(2);
+  return { valorProblema, valorFinal, diff: +(valorFinal - semTaxa).toFixed(2) };
+}
+async function abrirEncerrarCorrida(token) {
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando a corrida e os pedidos no Bling…</div></div></div>`;
+  try {
+    const [dados, formas] = await Promise.all([fetch(B + "/api/rotas/viagem/" + encodeURIComponent(token) + "/detalhes").then(r => r.json()), _carregarFormasGer()]);
+    if (dados.erro) throw new Error(dados.erro);
+    G = { token, dados, formas, edit: {}, msgViagem: "", km: "", semKm: false, encerrando: false };
+    _renderEncerrar();
+  } catch (e) {
+    document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="warn">Não consegui carregar a corrida: ${esc(e.message)}</div><button class="btn btn-ghost" style="margin-top:8px" onclick="abrirCorridasAbertas()">← Voltar</button></div></div>`;
+  }
+}
+function _blocoPagamentoGer(e, ed, calc) {
+  const opts = (sel) => `<option value="">Forma…</option>` + G.formas.lista.map((f, ix) => `<option value="${ix}" ${sel === f.nome ? "selected" : ""}>${esc(f.nome)}</option>`).join("");
+  const linhas = ed.pags.map((p, k) => `<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+      <select onchange="gerForma(${e.pedidoId},${k},this.value)" style="flex:1.4;min-width:0;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">${opts(p.formaNome)}</select>
+      ${p.pixTipo === "banco" ? `<select onchange="gerBanco(${e.pedidoId},${k},this.value)" style="width:82px;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">${G.formas.bancos.bancos.map(b => `<option ${((p.banco || G.formas.bancos.padrao) === b) ? "selected" : ""}>${esc(b)}</option>`).join("")}</select>` : ""}
+      <input type="number" step="0.01" inputmode="decimal" value="${esc(p.valor)}" placeholder="R$" oninput="gerValor(${e.pedidoId},${k},this.value)" style="width:84px;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">
+      ${ed.pags.length > 1 ? `<button class="btn btn-ghost" style="width:auto;padding:4px 8px" onclick="gerRemoverForma(${e.pedidoId},${k})">✕</button>` : ""}
+    </div>`).join("");
+  return `<label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:6px 0"><input type="checkbox" ${ed.jaPago ? "checked" : ""} onchange="gerJaPago(${e.pedidoId},this.checked)"> Esse pedido já estava pago antes (não receber agora)${e.pagamentoLocal && e.pagamentoLocal.statusPagamento === "pago" ? ` <span class="muted">— o sistema já tem R$ ${Number(e.pagamentoLocal.valorPago || 0).toFixed(2)} registrados</span>` : ""}</label>
+    ${ed.jaPago ? "" : `<div style="font-size:12px;font-weight:700;margin:4px 0">Como o cliente pagou</div>${linhas}
+      <button class="btn btn-ghost" style="width:auto;font-size:11px;padding:4px 10px" onclick="gerAddForma(${e.pedidoId})">+ outra forma (pagamento dividido)</button>
+      <div id="gerResumo-${e.pedidoId}" style="font-size:12px;margin-top:6px">${_resumoGer(calc)}</div>`}`;
+}
+function _resumoGer(calc) {
+  if (calc.valorFinal <= 0) return `<span class="muted">Nada a receber neste pedido.</span>`;
+  const ok = Math.abs(calc.diff) <= 0.01;
+  return `A receber: <b>${brl(calc.valorFinal)}</b> · ${ok ? '<span style="color:#3ce88a">confere ✅</span>' : (calc.diff > 0 ? `<span style="color:#ffd23f">falta ${brl(calc.diff)}</span>` : `<span style="color:#ff8090">sobra ${brl(Math.abs(calc.diff))}</span>`)}<span class="muted" style="font-size:10px"> (cartão: informe o valor com a taxa de 3,5%)</span>`;
+}
+function _cardEntregaGer(e) {
+  const en = e.entrega;
+  const cab = `<div style="display:flex;justify-content:space-between;gap:8px"><div><b>#${esc(e.numero)}</b> — ${esc(e.clienteNome)}</div><div style="font-weight:800;color:#ffd23f">${brl(e.total)}</div></div>`;
+  if (en && en.status === "entregue") {
+    const pg = (en.pagamentos || []).map(p => `${esc(p.formaNome)}${p.banco ? " (" + esc(p.banco) + ")" : ""} ${brl(p.valor)}`).join(" · ");
+    return `<div style="background:#0d2a1c;border:1px solid #2f9e6b;border-radius:10px;padding:10px;margin-bottom:8px">${cab}
+      <div style="font-size:12px;color:#a8f0c8;margin-top:4px">✅ Entregue${en.origem === "gerente" ? " (registrado por " + esc(en.registradoPor || "gerente") + ")" : ""}${en.valorProblema > 0 ? ` · com problema em itens: −${brl(en.valorProblema)}` : ""}</div>
+      <div class="muted" style="font-size:11px">${en.jaPago ? "Já estava pago antes" : (pg ? "Pagamento: " + pg : "Sem valor a receber")}</div></div>`;
+  }
+  if (en && en.status === "nao_entregue") {
+    return `<div style="background:#2a1510;border:1px solid #c0304a;border-radius:10px;padding:10px;margin-bottom:8px">${cab}
+      <div style="font-size:12px;color:#ff9aa8;margin-top:4px">↩️ Não entregue — voltou pra Verificado${en.revertidoNoBling === false ? " (⚠️ o Bling não aceitou a mudança, ajuste lá)" : ""}</div>
+      ${en.motivo ? `<div class="muted" style="font-size:11px">${esc(en.motivo)}</div>` : ""}</div>`;
+  }
+  const ed = _edGer(e.pedidoId);
+  const calc = _calcGer(e);
+  const corpo = ed.modo === "nao"
+    ? `<input placeholder="Motivo (opcional): cliente ausente, recusou…" value="${esc(ed.motivo)}" oninput="G.edit[${e.pedidoId}].motivo=this.value" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:7px;font-size:12px;margin:6px 0">
+       <div class="muted" style="font-size:11px">O pedido volta pra Verificado no Bling, pra entrar numa corrida nova.</div>`
+    : `<div style="margin:6px 0"><a href="#" style="color:#ffd23f;font-size:12px" onclick="gerToggleProb(${e.pedidoId});return false">${ed.aberto ? "▾" : "▸"} Algum produto veio com problema (faltou ou estragou)?<span id="gerDesc-${e.pedidoId}">${calc.valorProblema > 0 ? " — desconto de " + brl(calc.valorProblema) : ""}</span></a></div>
+       ${ed.aberto ? `<div style="background:#0f0d24;border-radius:8px;padding:6px;margin-bottom:6px">${(e.itens || []).map(i => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;padding:2px 0"><span style="flex:1;min-width:0">${esc(i.quantidade)}x ${esc(i.descricao)}</span><span class="muted" style="font-size:11px">qtd com problema</span><input type="number" min="0" max="${Number(i.quantidade) || 0}" value="${ed.prob[i.produtoId] || 0}" oninput="gerProb(${e.pedidoId},${Number(i.produtoId) || 0},this.value,${Number(i.quantidade) || 0})" style="width:54px;background:#151233;color:#fff;border:1px solid #37327a;border-radius:6px;padding:4px;font-size:12px"></div>`).join("")}</div>` : ""}
+       ${_blocoPagamentoGer(e, ed, calc)}`;
+  return `<div style="background:#0f0d24;border:1px solid #37327a;border-radius:10px;padding:10px;margin-bottom:8px">${cab}
+    <div class="muted" style="font-size:11px">Situação no Bling: ${esc(e.situacaoBling || "—")}</div>
+    <div style="display:flex;gap:6px;margin:8px 0 2px">
+      <button class="btn ${ed.modo === "entregue" ? "btn-grn" : "btn-ghost"}" style="flex:1;font-size:12px;padding:7px" onclick="gerModo(${e.pedidoId},'entregue')">✅ Entregue</button>
+      <button class="btn ${ed.modo === "nao" ? "btn-red" : "btn-ghost"}" style="flex:1;font-size:12px;padding:7px" onclick="gerModo(${e.pedidoId},'nao')">↩️ Não entregue</button>
+    </div>
+    ${corpo}
+    <div id="gerMsg-${e.pedidoId}" style="font-size:12px;margin-top:4px">${ed.msg || ""}</div>
+    <button class="btn btn-mag" style="width:100%;margin-top:6px;font-size:13px" ${ed.salvando ? "disabled" : ""} onclick="gerSalvar(${e.pedidoId})">${ed.salvando ? "Salvando…" : (ed.modo === "nao" ? "Registrar como não entregue" : "Salvar entrega deste pedido")}</button>
+  </div>`;
+}
+function _renderEncerrar() {
+  const d = G.dados;
+  const total = d.entregas.length;
+  const resolvidos = d.entregas.filter(e => e.entrega && (e.entrega.status === "entregue" || e.entrega.status === "nao_entregue")).length;
+  const tudo = resolvidos === total;
+  document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal" style="max-width:600px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h3 style="margin:0">✅ Resolver corrida — ${esc(d.carroNome)}${d.motoristaNome ? " (" + esc(d.motoristaNome) + ")" : ""}</h3>
+      <button class="btn btn-ghost" style="width:auto;padding:6px 12px" onclick="abrirCorridasAbertas()">← Voltar</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">${resolvidos} de ${total} pedidos resolvidos · KM inicial ${esc(d.kmInicial)}. Sem assinatura: informe só se os produtos chegaram certos e a forma de pagamento de cada pedido.</div>
+    ${d.entregas.map(_cardEntregaGer).join("")}
+    <div style="border-top:1px solid #2c2660;margin-top:10px;padding-top:10px">
+      <div style="font-weight:800;margin-bottom:6px">🏁 Encerrar a corrida</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="gerKm" type="number" inputmode="numeric" placeholder="KM final (inicial: ${esc(d.kmInicial)})" value="${esc(G.km)}" ${G.semKm ? "disabled" : ""} oninput="G.km=this.value" style="flex:1;min-width:150px;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:8px;font-size:13px">
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center"><input type="checkbox" ${G.semKm ? "checked" : ""} onchange="G.semKm=this.checked;_renderEncerrar()"> Não sei o KM final</label>
+      </div>
+      <div id="gerMsgViagem" style="font-size:12px;margin-top:6px">${G.msgViagem || (tudo ? "" : '<span class="muted">Resolva todos os pedidos acima pra poder encerrar.</span>')}</div>
+      <button class="btn btn-grn" style="width:100%;margin-top:8px" ${(tudo && !G.encerrando) ? "" : "disabled"} onclick="gerEncerrar()">${G.encerrando ? "Encerrando…" : "🏁 Encerrar corrida"}</button>
+    </div>
+  </div></div>`;
+}
+function gerModo(pid, modo) { const ed = G.edit[pid]; ed.modo = modo; ed.msg = ""; _renderEncerrar(); }
+function gerToggleProb(pid) { const ed = G.edit[pid]; ed.aberto = !ed.aberto; _renderEncerrar(); }
+function gerProb(pid, prodId, v, max) {
+  const ed = G.edit[pid];
+  const n = Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
+  if (n > 0) ed.prob[prodId] = n; else delete ed.prob[prodId];
+  gerAtualizarResumo(pid);
+}
+function gerJaPago(pid, v) { G.edit[pid].jaPago = !!v; _renderEncerrar(); }
+function gerAddForma(pid) { G.edit[pid].pags.push({ formaId: null, formaNome: "", valor: "", banco: null, pixTipo: null }); _renderEncerrar(); }
+function gerRemoverForma(pid, k) { const ed = G.edit[pid]; ed.pags.splice(k, 1); _renderEncerrar(); }
+function gerForma(pid, k, ix) {
+  const ed = G.edit[pid], p = ed.pags[k];
+  if (ix === "") { p.formaId = null; p.formaNome = ""; p.pixTipo = null; p.banco = null; _renderEncerrar(); return; }
+  const f = G.formas.lista[Number(ix)];
+  p.formaId = f.id; p.formaNome = f.nome; p.pixTipo = f.pixTipo || null;
+  p.banco = f.pixTipo === "banco" ? (G.formas.bancos.padrao || G.formas.bancos.bancos[0]) : null;
+  // se ainda não tem valor, já sugere o que falta receber (cartão leva a taxa embutida)
+  if (!Number(p.valor)) {
+    const e = G.dados.entregas.find(x => x.pedidoId === pid);
+    const faltando = _calcGer(e).diff;
+    if (faltando > 0) p.valor = _ehCartaoGer(p.formaNome) ? +(faltando * (1 + TAXA_CARTAO_GER)).toFixed(2) : faltando;
+  }
+  _renderEncerrar();
+}
+function gerBanco(pid, k, b) { G.edit[pid].pags[k].banco = b; }
+function gerValor(pid, k, v) { G.edit[pid].pags[k].valor = v; gerAtualizarResumo(pid); }
+function gerAtualizarResumo(pid) {
+  const e = G.dados.entregas.find(x => x.pedidoId === pid);
+  const calc = _calcGer(e);
+  const el = document.getElementById("gerResumo-" + pid);
+  if (el) el.innerHTML = _resumoGer(calc);
+  const ds = document.getElementById("gerDesc-" + pid);
+  if (ds) ds.textContent = calc.valorProblema > 0 ? " — desconto de " + brl(calc.valorProblema) : "";
+}
+async function gerSalvar(pid) {
+  const e = G.dados.entregas.find(x => x.pedidoId === pid);
+  const ed = G.edit[pid];
+  const por = FUNC && FUNC.nome || "", funcionarioId = FUNC && FUNC.id || null;
+  const erro = m => { ed.msg = `<span style="color:#ff8090">${esc(m)}</span>`; ed.salvando = false; _renderEncerrar(); };
+  let url, corpo;
+  if (ed.modo === "nao") {
+    url = "/api/rotas/viagem/" + encodeURIComponent(G.token) + "/nao-entregue/" + pid;
+    corpo = { motivo: ed.motivo, por, funcionarioId };
+  } else {
+    const calc = _calcGer(e);
+    const pags = ed.jaPago ? [] : ed.pags.filter(p => p.formaId && Number(p.valor) > 0).map(p => ({ formaId: p.formaId, formaNome: p.formaNome, valor: Number(p.valor), banco: p.banco || null }));
+    if (!ed.jaPago && calc.valorFinal > 0) {
+      if (!pags.length) return erro("Informe a forma de pagamento (ou marque que o pedido já estava pago).");
+      if (Math.abs(calc.diff) > 0.01) return erro("O valor informado não bate com o valor a receber (" + (calc.diff > 0 ? "falta " : "sobra ") + brl(Math.abs(calc.diff)) + ").");
+    }
+    url = "/api/rotas/viagem/" + encodeURIComponent(G.token) + "/entrega/" + pid;
+    corpo = { itensProblema: Object.keys(ed.prob).map(k => ({ produtoId: Number(k), quantidade: ed.prob[k] })), pagamentos: pags, jaPago: !!ed.jaPago, por, funcionarioId };
+  }
+  ed.salvando = true; ed.msg = ""; _renderEncerrar();
+  try {
+    const j = await fetch(B + url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) }).then(r => r.json());
+    if (j.erro) return erro(j.erro);
+    // atualiza aqui mesmo, sem buscar tudo de novo no Bling
+    if (ed.modo === "nao") {
+      e.entrega = { status: "nao_entregue", motivo: ed.motivo, revertidoNoBling: j.revertido, origem: "gerente", registradoPor: por };
+    } else {
+      e.entrega = { status: "entregue", origem: "gerente", registradoPor: por, jaPago: !!ed.jaPago, valorProblema: j.valorProblema, valorFinal: j.valorFinal,
+        pagamentos: (corpo.pagamentos || []).map(p => ({ formaNome: p.formaNome, valor: p.valor, banco: p.banco })) };
+      if (j.atendidoOk === false) G.msgViagem = `<span style="color:#ffd23f">O pedido #${esc(e.numero)} foi registrado, mas o Bling não aceitou fechar como Atendido (${esc(j.atendidoErro || "erro")}). Confira lá.</span>`;
+    }
+    ed.salvando = false;
+    _renderEncerrar();
+  } catch (err) { erro("Erro de conexão. Tente de novo."); }
+}
+async function gerEncerrar() {
+  const por = FUNC && FUNC.nome || "";
+  if (!G.semKm && !(Number(G.km) >= Number(G.dados.kmInicial))) {
+    G.msgViagem = `<span style="color:#ff8090">Informe o KM final (maior ou igual a ${esc(G.dados.kmInicial)}) ou marque "Não sei o KM final".</span>`;
+    _renderEncerrar(); return;
+  }
+  G.encerrando = true; G.msgViagem = ""; _renderEncerrar();
+  try {
+    const j = await fetch(B + "/api/rotas/viagem/" + encodeURIComponent(G.token) + "/finalizar-gerente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kmFinal: G.semKm ? null : Number(G.km), semKm: G.semKm, por }) }).then(r => r.json());
+    if (j.erro) { G.encerrando = false; G.msgViagem = `<span style="color:#ff8090">${esc(j.erro)}</span>`; _renderEncerrar(); return; }
+    document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal" style="text-align:center"><div style="font-size:40px">✅</div><h3>Corrida encerrada</h3><div class="muted">${j.kmNaoInformado ? "KM final não informado." : "KM rodado: " + esc(j.kmRodado)}</div><button class="btn btn-mag" style="width:100%;margin-top:12px" onclick="fecharModais();abrirCorridasAbertas()">Ver outras corridas abertas</button><button class="btn btn-ghost" style="width:100%;margin-top:6px" onclick="fecharModais()">Fechar</button></div></div>`;
+    atualizarBadgeAbertas();
+    carregarTudo(); // atualiza a tela de rotas do dia
+  } catch (err) { G.encerrando = false; G.msgViagem = `<span style="color:#ff8090">Erro de conexão. Tente de novo.</span>`; _renderEncerrar(); }
+}
 async function verDetalhesViagem(token) {
   document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando detalhes…</div></div></div>`;
   try {
@@ -1731,6 +1998,7 @@ function htmlViagemBox(carro, vix, cap) {
     ${S.carroMapaAtivo === chave ? `<div id="mapaRota"></div>` : ''}` : ''}
   </div>`;
 }
-carregarTudo();</script>
+carregarTudo();
+atualizarBadgeAbertas();</script>
 </body>
 </html>
