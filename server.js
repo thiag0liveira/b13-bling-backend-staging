@@ -5823,8 +5823,25 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // travada e a única saída era mexer direto no Bling.
     const _sitEd=Number(ped.situacao?.id);
     const _editaveis=[SIT.AGUARDANDO, SIT.SEP_PEND, SIT.EM_SEP, SIT.EM_ABERTO, 21];
+    // Verificado e Conferência de entrega já passaram pela conferência, mas ainda não
+    // saíram. Se AINDA NÃO FORAM PAGOS (comum: pagam na entrega), dá pra editar aqui
+    // com autorização de gerente. Já pago, separado, em rota ou atendido continua
+    // só pelo caixa, onde a diferença de valor é acertada com o cliente.
+    const _editaveisComQr=[SIT.VERIFICADO, SIT.CONF_ENTREGA];
+    let autorizadoPorStatus=null;
     if(!_editaveis.includes(_sitEd)){
-      return res.status(400).json({erro:`Este pedido está como "${nomeSituacao(_sitEd)}" e não pode ter os itens editados por aqui. Se já foi separado ou pago, use o caixa atacado (com autorização).`});
+      const msgCaixa=`Este pedido está como "${nomeSituacao(_sitEd)}" e não pode ter os itens editados por aqui. Se já foi separado ou pago, use o caixa atacado (com autorização).`;
+      if(!_editaveisComQr.includes(_sitEd)) return res.status(400).json({erro:msgCaixa});
+      const pgSt=lerPag()[String(id)];
+      if(pgSt && (Number(pgSt.valorPago)>0 || ["pago","parcial"].includes(pgSt.statusPagamento))){
+        return res.status(400).json({erro:`Este pedido já tem pagamento registrado (${nomeSituacao(_sitEd)}). Pra alterar os itens e acertar a diferença de valor com o cliente, use o caixa atacado (com autorização).`});
+      }
+      const tkSt=req.body?.tokenQr;
+      if(!tkSt) return res.status(409).json({precisaAutorizacaoStatus:true, situacao:nomeSituacao(_sitEd),
+        erro:`Este pedido está como "${nomeSituacao(_sitEd)}" (já conferido). Editar os itens agora precisa de autorização de gerente, financeiro ou admin.`});
+      const authSt=validarTokenQrAtacado(tkSt);
+      if(authSt.erro) return res.status(401).json({erro:authSt.erro});
+      autorizadoPorStatus=authSt.funcionario.nome;
     }
     const itensAntes=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade}));
     const idsDepois=new Set(itens.map(i=>Number(i.produtoId)));
@@ -5954,6 +5971,9 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         oQueFazer:`Autorizado por ${autorizadoPorEstoqueEd}. Itens sem saldo: ${semEstoqueEd.map(i=>`${i.nome} (faltou ${i.falta})`).join("; ")}. Isso pode ter puxado saldo que outros pedidos também contavam — o estoquista precisa saber e conferir se algum outro pedido ficou descoberto.`});
     }
 
+    if(autorizadoPorStatus){
+      addLog(id,"itens_editados_apos_conferencia",null,funcionarioNome,{autorizadoPor:autorizadoPorStatus, situacao:nomeSituacao(_sitEd)});
+    }
     let pedNovo;
     try{ await sleep(500); pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     const novoTotal=+(pedNovo?.total||0);
@@ -6034,6 +6054,35 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     }catch(e){}
     // 3) histórico do pedido (aparece na Central e na conferência)
     if(diffEd.mudou) registrarHistoricoItens(String(id), diffEd, null, funcionarioNome||"—", null);
+    // 4) PAGAMENTO JÁ RECEBIDO x novo total. Editar itens muda o total, mas o que o
+    // cliente já pagou continua o mesmo. Sem esse cuidado o pedido seguia "pago" com
+    // valor diferente e ninguém percebia. Se passou a faltar, o pedido volta a
+    // "parcial" (o caixa passa a cobrar a diferença); se sobrou, vira Aviso pra
+    // devolver. Cartão leva a taxa embutida, então o teto de "pago demais" a inclui.
+    let diferencaPagamento=null;
+    try{
+      const pgAll=lerPag(); const regPg=pgAll[String(id)]; const pago=Number(regPg?.valorPago||0);
+      if(regPg && pago>0 && diffEd.mudou){
+        const totalRef=+Number(novoTotal||totalCalc).toFixed(2);
+        const temCartaoPg=(regPg.historico||[]).some(h=>/cr[eé]dito|d[eé]bito/i.test(h.formaNome||""));
+        const teto=temCartaoPg?+(totalRef*(1+TAXA_CARTAO_PADRAO)).toFixed(2):totalRef;
+        if(totalRef>pago+0.05){
+          diferencaPagamento={tipo:"falta",valor:+(totalRef-pago).toFixed(2)};
+          regPg.statusPagamento="parcial"; regPg.valorPedido=totalRef; pgAll[String(id)]=regPg; salvarPag(pgAll);
+        } else if(pago>teto+0.05){
+          diferencaPagamento={tipo:"sobra",valor:+(pago-teto).toFixed(2)};
+        }
+        if(diferencaPagamento){
+          registrarAviso({tipo:"pedido_pago_editado",
+            titulo:`Pedido #${ped.numero||id} já estava pago e teve os itens editados — ${diferencaPagamento.tipo==="falta"?"falta receber":"devolver"} ${diferencaPagamento.valor.toFixed(2)}`,
+            pedidoId:String(id), numero:ped.numero, operador:funcionarioNome||"", origem:"Edição de pedido",
+            fingerprint:`pagoeditado-${id}-${Date.now()}`,
+            oQueFazer: diferencaPagamento.tipo==="falta"
+              ? `O total do pedido #${ped.numero||id} passou a ${totalRef.toFixed(2)}, mas só ${pago.toFixed(2)} foram recebidos. Cobre a diferença de ${diferencaPagamento.valor.toFixed(2)} do cliente (o pedido voltou a constar como pagamento parcial).`
+              : `O total do pedido #${ped.numero||id} caiu pra ${totalRef.toFixed(2)}, mas ${pago.toFixed(2)} já tinham sido recebidos. Devolva ${diferencaPagamento.valor.toFixed(2)} ao cliente e registre o estorno.`});
+        }
+      }
+    }catch(e){}
 
     if(abaixoMinimoEntrega){
       registrarAviso({tipo:"pedido_entrega_abaixo_minimo",
@@ -6052,7 +6101,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       try{ const rSit=await mudarSituacaoPedido(Number(id),SIT.SEPARADO); if(rSit.ok) situacaoAvancada="Separado"; }
       catch(e){}
     }
-    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada,
+    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
       autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});

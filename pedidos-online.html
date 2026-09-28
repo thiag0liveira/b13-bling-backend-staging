@@ -742,7 +742,7 @@ function cardPedido(p) {
   return '<div class="card' + (ehNovo ? ' novo' : '') + (pend ? ' pend' : '') + '"' + (estiloCard ? ' style="' + estiloCard + '"' : '') + '>' + (pend ? '<div style="text-align:center;margin-bottom:6px"><span class="selPend">⚠️ PENDÊNCIA — RESOLVER</span></div>' + pendFaltasHtml : '') + '<div style="text-align:right;margin-bottom:2px"><span onclick="alternar(' + p.id + ')" style="cursor:pointer;font-size:11px;color:#9a95c9">▲ minimizar</span></div>' + '<div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-bottom:2px">' + '<span class="muted" style="font-size:11px">' + org + '</span>' + '<span class="muted" style="font-size:11px">🕐 ' + esc(dataHora(p.criadoEm)) + '</span></div>' + '<div style="display:flex;justify-content:space-between;align-items:center">' + '<div style="font-weight:900;font-size:15px">Pedido ' + esc(p.numero) + '</div>' + (p.noSistema === false ? (p.veioPorApi ? '<span class="chip" style="background:#3a2a5a;color:#c9b6ff" title="A observação indica que veio do nosso sistema, mas o registro local não foi salvo">🔄 do sistema (registro perdido)</span>' : '<span class="chip" style="background:#5a3a1a;color:#ffb86b" title="Sem registro no nosso sistema. Confira no Bling se aparece Importado de: API">🔗 sem registro no sistema</span>') : (ehNovo ? '<span class="chip" style="background:#3ce88a;color:#000">NOVO</span>' : '')) + '</div>' + '<div class="sit"' + (p.situacao === "carregando…" ? ' style="background:#2a2660;color:#9a95c9"' : corStatus ? ' style="background:' + corStatus.bd + ';color:' + (p.cancelado || aguard ? "#000" : "#fff") + '"' : '') + '>' + esc((p.situacao || "").toUpperCase()) + '</div>' + '<div><span class="chip ' + (p.tipo === "entrega" ? "ent" : "ret") + '">' + (p.tipo === "entrega" ? "🛵 ENTREGA" : "🏪 RETIRADA") + '</span></div>' + '<div class="muted" style="margin-top:6px">👤 ' + esc(p.cliente) + '</div>' + (p.tipo === "entrega" && p.endereco ? '<div class="muted" style="font-size:11px;margin-top:2px">📍 ' + esc(p.endereco) + '</div>' : '') + (p.agendamento ? '<div style="margin-top:4px"><span class="chip" style="background:' + (ehDiaDaEntrega(p) ? "#ff8c00" : "#2f9e6b") + ';color:#fff">' + (ehDiaDaEntrega(p) ? "🔥 ENTREGA HOJE · " : "📅 ") + esc(p.agendamento.data.split("-").reverse().join("/")) + ' · ' + (p.agendamento.turno === "manha" ? "MANHÃ" : p.agendamento.turno === "tarde" ? "TARDE" : "QUALQUER HORÁRIO") + '</span></div>' + (p.agendamento.obsEntrega ? '<div class="muted" style="font-size:11px;margin-top:3px">📝 ' + esc(p.agendamento.obsEntrega) + '</div>' : '') : '') + (p.teveRetirada ? '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>' : '') + (p.frete > 0 ? '<div class="muted" style="font-size:11px">frete ' + brl(p.frete) + '</div>' : '') + '<div style="color:#ffd23f;font-weight:900;font-size:17px;margin-top:6px">' + brl(p.total) + '</div>' + '<div class="muted" style="font-size:11px;margin-top:4px">' + (p.itens || []).length + ' item(ns) · ' + esc((p.itens || []).slice(0, 2).map(i => i.quantidade + "x " + i.nome).join(", ")) + ((p.itens || []).length > 2 ? "…" : "") + '</div>' + (
   // PEDIDO CANCELADO: nenhuma ação faz sentido (nem OK, nem editar, nem WhatsApp,
   // nem agendar) — sobra só consultar os itens e, na busca, mover o status.
-  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + ((aguard && !p.agendamento) ? '<button class="btn ' + (p.okStatus === "confirmado" ? "btn-ok" : (p.okStatus === "negociando" ? "" : "btn-okOff")) + '" style="' + (p.okStatus === "negociando" ? "background:#c77dff;color:#1a0a2e" : "") + '" onclick="ciclarNegoc(' + p.id + ')">' + (p.okStatus === "confirmado" ? "✅ Confirmado" : (p.okStatus === "negociando" ? "🤝 Negociando" : "🤝 Negociando / Confirmado")) + '</button>' : '') + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + (aguard || pend ? '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar") + '</button>' : '<button class="btn btn-ghost" onclick="editarNoCaixa(\'' + esc(p.numero) + '\')">✏️ Editar no caixa</button>') + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendências resolvidas</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + '<button class="btn btn-ghost" onclick="imprimirPedidoComprovante(' + p.id + ')">🖨️ Imprimir</button>' + '<button class="btn btn-ghost" onclick="sincronizarComBling(' + p.id + ')">🔄 Atualizar com Bling</button>' + (ehEmRota(p) ? '<button class="btn btn-wa" style="background:#25D366" onclick="avisarSaidaEntrega(' + p.id + ',\'' + esc(String(p.numero)) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\')">🛵 Avisar que saiu para entrega</button>' : '') + (ehAtendido(p) ? '<button class="btn btn-ghost" style="border:1px solid #4a8f6b;color:#8fffc0" onclick="verFilmagem(' + p.id + ',\'' + esc(String(p.numero)) + '\')">🎥 Ver filmagem da conferência</button>' : '') + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
+  p.cancelado ? '<div style="background:#3a3210;border:1px solid #8a7a1f;border-radius:8px;padding:8px;margin-top:6px;font-size:12px;color:#ffe600;text-align:center">🚫 Pedido cancelado — nenhuma ação disponível</div>' + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') : (aguard ? '<button class="btn btn-wa" onclick="enviarSeparacao(' + p.id + ')">📦 Mandar p/ separação' + ' <span style="font-size:10px;opacity:.85">(' + (p.tipo === "entrega" ? "entrega" : "retirada") + ')</span></button>' : '') + ((aguard && !p.agendamento) ? '<button class="btn ' + (p.okStatus === "confirmado" ? "btn-ok" : (p.okStatus === "negociando" ? "" : "btn-okOff")) + '" style="' + (p.okStatus === "negociando" ? "background:#c77dff;color:#1a0a2e" : "") + '" onclick="ciclarNegoc(' + p.id + ')">' + (p.okStatus === "confirmado" ? "✅ Confirmado" : (p.okStatus === "negociando" ? "🤝 Negociando" : "🤝 Negociando / Confirmado")) + '</button>' : '') + '<button class="btn btn-ghost" onclick="verDetalhe(' + p.id + ')">👁️ Ver itens</button>' + (p.buscado ? '<button class="btn btn-ghost" style="border:1px solid #6b5f1f;color:#ffd23f" onclick="abrirMoverStatus(' + p.id + ')">🔀 Mover status (com QR)</button>' : '') + (p.buscado ? '<button class="btn btn-ok" onclick="adotarPedido(' + p.id + ',\'' + esc(String(p.numero)) + '\')">📥 Trazer pra lista</button>' : '') + '<button class="btn btn-mag" onclick="editarPedidoAguardando(' + p.id + ')">' + (pend ? "🛠️ Resolver pendência (editar itens)" : "✏️ Editar pedido") + '</button>' + (pend ? '<button class="btn btn-ok" onclick="resolverPendencia(' + p.id + ')">✅ Pendências resolvidas</button>' : '') + '<button class="btn btn-ghost" onclick="abrirTipoEntrega(' + p.id + ')">🛵 Entrega / Retirada</button>' + (p.tipo === "entrega" ? '<button class="btn ' + (p.agendamento ? "btn-ghost" : "btn-mag") + '" onclick="abrirAgendar(' + p.id + ')">📅 ' + (p.agendamento ? "Reagendar entrega" : "Agendar entrega") + '</button>' : '<button class="btn btn-ghost" style="opacity:.75" onclick="avisarRetirada(' + p.id + ')">📅 Agendar entrega</button>') + '<button class="btn btn-wa" onclick="whats(\'' + tel + '\',\'' + esc(p.numero) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\',' + p.id + ')">💬 WhatsApp</button>' + '<button class="btn btn-ghost" onclick="imprimirPedidoComprovante(' + p.id + ')">🖨️ Imprimir</button>' + '<button class="btn btn-ghost" onclick="sincronizarComBling(' + p.id + ')">🔄 Atualizar com Bling</button>' + (ehEmRota(p) ? '<button class="btn btn-wa" style="background:#25D366" onclick="avisarSaidaEntrega(' + p.id + ',\'' + esc(String(p.numero)) + '\',\'' + esc(String(p.cliente).replace(/'/g, "")) + '\')">🛵 Avisar que saiu para entrega</button>' : '') + (ehAtendido(p) ? '<button class="btn btn-ghost" style="border:1px solid #4a8f6b;color:#8fffc0" onclick="verFilmagem(' + p.id + ',\'' + esc(String(p.numero)) + '\')">🎥 Ver filmagem da conferência</button>' : '') + (p.situacaoId !== 9 ? '<button class="btn btn-red" onclick="cancelar(' + p.id + ',\'' + esc(p.numero) + '\')">🚫 Cancelar</button>' : '')) + '</div>';
 }
 function render() {
   const app = document.getElementById("app");
@@ -1236,6 +1236,11 @@ async function marcarVistos() {
   carregar();
 }
 /* ===== EDIÇÃO DO PEDIDO (mesma lógica do /operacional: altera itens direto no Bling) ===== */
+// redesenha o modal de edição com os itens que já estão na memória (sem recarregar)
+function reabrirEdicao(id) {
+  document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" id="mbox"></div></div>';
+  renderEditarAguardando(id);
+}
 function edSetMsg(h) {
   const el = document.getElementById("edMsg");
   if (el) el.innerHTML = h;
@@ -1271,10 +1276,57 @@ async function editarPedidoAguardando(id) {
     document.getElementById("mbox").innerHTML = '<div style="color:#ff8090">Erro ao carregar o pedido.</div><button class="btn btn-ghost" onclick="fechar()">Fechar</button>';
   }
 }
+// Situações em que o backend deixa salvar itens aqui. As de "com QR" pedem autorização
+// de gerente (pedido já conferido, mas ainda não pago). O resto só pelo caixa.
+function statusEdicao(sitId) {
+  const S_ = typeof B13_SIT !== "undefined" ? B13_SIT : {};
+  const livres = [S_.AGUARDANDO || 818795, S_.SEP_PEND || 819227, S_.EM_SEP || 817963, 6, 21];
+  const comQr = [S_.VERIFICADO || 24, S_.CONF_ENTREGA || 821611];
+  sitId = Number(sitId);
+  if (livres.includes(sitId)) return "livre";
+  if (comQr.includes(sitId)) return "qr";
+  return "caixa";
+}
 function renderEditarAguardando(id) {
-  var _window$pedidoEditOri;
+  const orig = window.pedidoEditOrig || {};
+  const modo = statusEdicao(orig.situacao && orig.situacao.id);
+  const nomeSit = (orig.situacao && (orig.situacao.valor || orig.situacao.nome)) || "";
   const rows = (window.itensEdit || []).map((item, ix) => linhaItemEdit(item, ix, id)).join("");
-  document.getElementById("mbox").innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' + '<h3>✏️ Pedido ' + esc(((_window$pedidoEditOri = window.pedidoEditOrig) === null || _window$pedidoEditOri === void 0 ? void 0 : _window$pedidoEditOri.numero) || id) + '</h3>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' + '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens. Ao salvar, altera também no Bling.</div>' + '<div style="max-height:42vh;overflow:auto">' + rows + '</div>' + '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px">' + '<span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' + '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px">' + '<div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>' + '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,' + id + ')">' + '<div id="resBuscaEd"></div></div>' + '<div id="edMsg" style="margin-top:8px"></div>' + '<div style="display:flex;gap:8px;margin-top:10px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Cancelar</button>' + '<button class="btn btn-mag" style="margin:0" onclick="salvarEditarAguardando(' + id + ')">💾 Salvar no Bling</button></div>';
+  const numero = orig.numero || id;
+  // pedido que não pode ser salvo aqui: mostra os itens e explica, sem botão de salvar
+  // que não funcionaria. O caminho certo (caixa, com autorização) fica à mão.
+  if (modo === "caixa") {
+    document.getElementById("mbox").innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3>✏️ Pedido ' + esc(numero) + '</h3>' +
+      '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' +
+      '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;font-size:13px;color:#ffd23f;margin-bottom:10px">' +
+      'Este pedido está' + (nomeSit ? ' como <b>' + esc(nomeSit) + '</b>' : ' num status') + ' que já passou da fase de edição direta (separado, pago, em rota ou atendido). ' +
+      'Alterar os itens agora mexe em estoque e no valor já recebido, então é feito no caixa, com autorização de gerente, onde a diferença é acertada com o cliente.</div>' +
+      '<div class="muted" style="margin-bottom:4px">Itens do pedido</div>' +
+      '<div style="max-height:36vh;overflow:auto;font-size:13px">' +
+      (window.itensEdit || []).map(i => '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #2a2660"><span>' + esc(i.quantidade) + 'x ' + esc(i.descricao) + '</span><span class="muted">' + brl(Number(i.valor) * Number(i.quantidade)) + '</span></div>').join("") + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="margin:0" onclick="fechar()">Fechar</button>' +
+      '<button class="btn btn-mag" style="margin:0" onclick="editarNoCaixa(\'' + esc(String(numero)) + '\')">Abrir no caixa (com autorização)</button></div>';
+    return;
+  }
+  const aviso = modo === "qr"
+    ? '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px;font-size:12px;color:#ffd23f;margin-bottom:8px">🔐 Pedido já conferido' + (nomeSit ? ' (' + esc(nomeSit) + ')' : '') + '. Ao salvar, vai pedir o QR de um gerente, financeiro ou admin.</div>'
+    : '';
+  document.getElementById("mbox").innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3>✏️ Pedido ' + esc(numero) + '</h3>' +
+    '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' + aviso +
+    '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens, depois toque em <b>Salvar</b>. Ao salvar, altera também no Bling.</div>' +
+    '<div style="max-height:38vh;overflow:auto">' + rows + '</div>' +
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px"><span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' +
+    '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px"><div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>' +
+    '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,' + id + ')"><div id="resBuscaEd"></div></div>' +
+    // rodapé FIXO: o botão de salvar e as mensagens ficam sempre à vista, mesmo com a
+    // lista de itens ou o resultado da busca deixando o modal comprido (no celular o
+    // botão ficava lá embaixo, fora da tela, e parecia que não existia)
+    '<div style="position:sticky;bottom:-18px;background:#151233;margin:10px -18px -18px;padding:10px 18px 18px;border-top:1px solid #2a2660;box-shadow:0 -8px 12px rgba(21,18,51,.9)">' +
+    '<div id="edMsg" style="margin-bottom:8px"></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-ghost" style="margin:0;width:auto;flex:0 0 auto" onclick="fechar()">Cancelar</button>' +
+    '<button class="btn btn-mag" style="margin:0;width:auto;flex:1 1 auto;font-weight:900" onclick="salvarEditarAguardando(' + id + ')">💾 Salvar alterações</button></div></div>';
   if (typeof atualizarTotalEdit === "function") atualizarTotalEdit();
 }
 function linhaItemEdit(item, ix, id) {
@@ -1437,14 +1489,30 @@ async function salvarEditarAguardando(id, tokenQr) {
       const lista = j.itensSemEstoque.map(i => `${esc(i.nome)} (pediu ${i.pediu}, tem ${i.tem}, falta ${i.falta})`).join("<br>");
       pedirQrAcao("⚠️ Estoque insuficiente", `Faltou estoque pra:<br>${lista}<br><br>Salvar mesmo assim pode impactar outros pedidos que também contam com esse saldo. Precisa de autorização de um gerente, financeiro ou admin.`,
         async (tokenQrLido, campo, erroEl) => {
-          fechar();
+          // volta pro modal de edição (em vez de fechar tudo) pra qualquer erro ou o
+          // resultado do salvamento aparecerem na tela, e não sumirem em silêncio
+          reabrirEdicao(id);
+          await salvarEditarAguardando(id, tokenQrLido);
+        });
+      return;
+    }
+    if (j.precisaAutorizacaoStatus) {
+      pedirQrAcao("🔐 Pedido já conferido", `Este pedido está como <b>${esc(j.situacao)}</b> (já passou pela conferência).<br>Editar os itens agora precisa de autorização de um gerente, financeiro ou admin.`,
+        async (tokenQrLido, campo, erroEl) => {
+          reabrirEdicao(id);
           await salvarEditarAguardando(id, tokenQrLido);
         });
       return;
     }
     if (j.erro) {
       edSetMsg('<div style="color:#ff8090">❌ ' + esc(j.erro) + '</div>');
+      // 401 = QR recusado: deixa tentar de novo, pedindo o QR outra vez
       return;
+    }
+    if (j.diferencaPagamento) {
+      alert(j.diferencaPagamento.tipo === "falta"
+        ? "⚠️ Esse pedido já estava pago e o novo total é maior.\n\nFalta receber " + brl(j.diferencaPagamento.valor) + " do cliente. O pedido passou a constar como pagamento parcial e foi criado um aviso."
+        : "⚠️ Esse pedido já estava pago e o novo total é menor.\n\nDevolva " + brl(j.diferencaPagamento.valor) + " ao cliente e registre o estorno. Foi criado um aviso.");
     }
     if (j.autorizadoPorEstoque) {
       alert("⚠️ Salvo SEM estoque suficiente (autorizado por " + j.autorizadoPorEstoque + "). Avise o estoquista — essa liberação pode ter impactado outros pedidos que contam com o mesmo saldo.");
