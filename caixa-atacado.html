@@ -2359,10 +2359,14 @@ function mostrarSucessoFinalizacao(resp, ctx) {
   const ia = resp.itensAlterados;
   const iaMsg = ia && ((_ia$retirados3 = ia.retirados) !== null && _ia$retirados3 !== void 0 && _ia$retirados3.length || (_ia$acrescentados3 = ia.acrescentados) !== null && _ia$acrescentados3 !== void 0 && _ia$acrescentados3.length || (_ia$alterados3 = ia.alterados) !== null && _ia$alterados3 !== void 0 && _ia$alterados3.length) ? `<div class="muted" style="text-align:left;margin-top:8px;font-size:12px">✏️ Itens alterados:${(_ia$retirados4 = ia.retirados) !== null && _ia$retirados4 !== void 0 && _ia$retirados4.length ? " <b>retirou</b> " + esc(ia.retirados.join(", ")) + "." : ""}${(_ia$acrescentados4 = ia.acrescentados) !== null && _ia$acrescentados4 !== void 0 && _ia$acrescentados4.length ? " <b>acrescentou</b> " + esc(ia.acrescentados.join(", ")) + "." : ""}${(_ia$alterados4 = ia.alterados) !== null && _ia$alterados4 !== void 0 && _ia$alterados4.length ? " <b>alterou</b> " + esc(ia.alterados.join(", ")) + "." : ""}</div>` : "";
   const repetidoMsg = resp.repetido ? `<div class="muted" style="font-size:12px;margin-top:6px">(essa venda já tinha sido concluída — nada foi feito de novo)</div>` : "";
+  // pedido do caixa atacado agora fecha local na hora (igual o varejo) e sincroniza
+  // com o Bling depois, em segundo plano -- mostra esse acompanhamento ao vivo aqui
+  const mostraSync = resp.pendenteBling && resp.pedidoId;
   document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this){fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render);}"><div class="modal" style="text-align:center">
       <div style="font-size:44px">${resp.aviso ? '⚠️' : '✅'}</div><h3>${resp.aviso ? 'Pagamento registrado' : 'Pedido finalizado!'}</h3>
       <div class="ok">Total: ${brl(resp.total || total)}.${nfMsg}</div>
+      ${mostraSync ? `<div id="syncStatusBox" style="margin-top:8px;padding:8px;background:#1c1846;border-radius:8px;font-size:12px">🔄 Sincronizando com o Bling…</div>` : ""}
       ${resp.eraPrazoRecebido ? `<div style="background:#0a2a1a;border:1px solid #2f9e6b;border-radius:8px;padding:8px;margin-top:8px;font-size:12px;color:#a8f0c8">🧾 Venda a prazo quitada — o pedido foi para <b>ATENDIDO</b> (a mercadoria já tinha saído).</div>` : ""}
       ${repetidoMsg}${repMsg}${jaMsg}${iaMsg}
       ${resp.aviso ? `<div class="err" style="text-align:left;margin-top:8px">${esc(resp.aviso)}</div>` : ""}
@@ -2371,11 +2375,47 @@ function mostrarSucessoFinalizacao(resp, ctx) {
         <button class="btn" style="flex:1" onclick="fecharModais();novaVenda();carregarPedidos();carregarSessao().then(render)">OK</button>
       </div>
     </div></div>`;
+  if (mostraSync) acompanharSyncAtacado(resp.pedidoId);
   if (!resp.repetido) setTimeout(() => {
     try {
       imprimirComprovante(ULTIMA_VENDA);
     } catch (e) {}
   }, 300);
+}
+// acompanha (a cada 1,5s) a sincronização em segundo plano da venda com o Bling --
+// o caixa já foi liberado antes disso rodar; isso é só pra avisar visualmente quando
+// terminar (ou se der algum problema, pra não passar batido)
+const ETAPA_LABEL = { lendo_pedido: "Lendo o pedido", conferindo_estoque: "Conferindo estoque", salvando_itens_pagamento: "Salvando itens e pagamento", mudando_situacao: "Atualizando status", nfce: "Emitindo NFC-e" };
+async function acompanharSyncAtacado(pedidoId, tentativas) {
+  tentativas = tentativas || 0;
+  const box = document.getElementById("syncStatusBox");
+  if (!box) return; // modal já foi fechado — não precisa mais atualizar
+  let st = null;
+  try { st = await fetch(BACKEND + "/api/caixa-atacado/sync-status/" + encodeURIComponent(pedidoId)).then(r => r.json()); } catch (e) {}
+  if (!st || st.status === "desconhecido") {
+    if (tentativas < 60) setTimeout(() => acompanharSyncAtacado(pedidoId, tentativas + 1), 1500);
+    return;
+  }
+  if (st.status === "concluido") {
+    box.innerHTML = "✅ Sincronizado com o Bling";
+    box.style.background = "#0a2a1a"; box.style.color = "#a8f0c8";
+    return;
+  }
+  if (st.status === "concluido_com_aviso") {
+    box.innerHTML = "⚠️ Sincronizado com o Bling, mas com aviso — confira em Avisos: " + esc(st.aviso || "");
+    box.style.background = "#2a2410"; box.style.color = "#ffd23f";
+    return;
+  }
+  if (st.status === "erro") {
+    box.innerHTML = "❌ Não sincronizou com o Bling: " + esc(st.erro || "erro") + '<br><span class="muted" style="font-size:11px">A venda já está registrada aqui — o pagamento não se perde. Veja em ⚙️ Vendas pendentes de sincronizar, ou em Avisos, pra tentar de novo.</span>';
+    box.style.background = "#2a1015"; box.style.color = "#ff9aa2";
+    return;
+  }
+  // ainda processando — mostra a etapa atual e continua checando
+  const etapaTxt = ETAPA_LABEL[st.etapaAtual] || "Sincronizando";
+  box.innerHTML = "🔄 " + esc(etapaTxt) + "…";
+  if (tentativas < 60) setTimeout(() => acompanharSyncAtacado(pedidoId, tentativas + 1), 1500);
+  else box.innerHTML = "⏳ Ainda sincronizando — pode fechar essa tela, a venda já está registrada. Acompanhe em ⚙️ Vendas pendentes de sincronizar.";
 }
 // ---- espera a conclusão no servidor (quando a resposta demorou) — NÃO deixa o
 // operador clicar de novo; consulta o status a cada 3s por até 5 min ----

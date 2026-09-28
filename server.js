@@ -58,6 +58,25 @@ const SESSOES_FILE = `${DATA_DIR}/sessoes.json`;
 const SEP_FILE  = `${DATA_DIR}/separacoes.json`;
 const ACRS_FILE = `${DATA_DIR}/acrescimos.json`;
 const PAG_FILE  = `${DATA_DIR}/pagamentos.json`;
+// acompanha, passo a passo, a sincronizacao em segundo plano do Caixa Atacado com o
+// Bling (venda ja fechada/paga localmente na hora; o Bling e atualizado depois)
+const SYNC_ATACADO_FILE = `${DATA_DIR}/sync_atacado.json`;
+function lerSyncAtacado(){ return lerJSON(SYNC_ATACADO_FILE,{}); }
+function salvarSyncAtacado(d){ salvarJSON(SYNC_ATACADO_FILE,d); }
+function syncAtacadoSet(pedidoId,patch){
+  const d=lerSyncAtacado(); const k=String(pedidoId);
+  d[k]={...(d[k]||{criadoEm:Date.now(),etapas:[]}),...patch,atualizadoEm:Date.now()};
+  salvarSyncAtacado(d);
+  return d[k];
+}
+function syncAtacadoEtapa(pedidoId,nome,status,detalhe){
+  const d=lerSyncAtacado(); const k=String(pedidoId);
+  const reg=d[k]||{criadoEm:Date.now(),etapas:[]};
+  reg.etapas=[...(reg.etapas||[]),{nome,status,detalhe:detalhe||null,em:Date.now()}];
+  reg.etapaAtual=nome; reg.etapaStatus=status;
+  reg.atualizadoEm=Date.now();
+  d[k]=reg; salvarSyncAtacado(d);
+}
 const TAXA_CARTAO_PADRAO=0.035; // mesma taxa (3,5%) usada no caixa atacado e na entrega do motorista
 const PIX_BANCOS_FILE = `${DATA_DIR}/pix_bancos.json`;
 const LEDGER_FILE = `${DATA_DIR}/ledger-pagamentos.json`;
@@ -8120,11 +8139,188 @@ app.get("/api/caixa-atacado/finalizar/status/:opId",(req,res)=>{
   res.json({status:op.status, resposta:op.resposta||null, erro:op.erro||null});
 });
 
+// Faz a parte que depende do Bling da finalizacao do Caixa Atacado: le o pedido,
+// confere/repoe estoque, grava itens e parcelas, muda a situacao, emite NFC-e.
+// Roda DEPOIS que a venda ja foi registrada local e o caixa ja foi liberado -- exatamente
+// as mesmas etapas e as mesmas regras de antes, só que em segundo plano, com cada passo
+// registrado em SYNC_ATACADO_FILE pra dar pra acompanhar (tela de sincronizacao).
+const _pedidosSincronizando=new Set();
+async function sincronizarFinalizacaoComBling(pedidoId, dados, ctx){
+  const chave=String(pedidoId);
+  const {itens,pagamentos,emitirNfce,funcionarioNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco,numero}=dados;
+  const {sessaoId}=ctx||{};
+  _pedidosSincronizando.add(chave);
+  syncAtacadoSet(pedidoId,{status:"processando",numero:numero||null});
+  try{
+    syncAtacadoEtapa(pedidoId,"lendo_pedido","rodando");
+    let ped=null; try{ ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); }catch(e){}
+    if(!ped){
+      syncAtacadoEtapa(pedidoId,"lendo_pedido","erro","Pedido não encontrado no Bling.");
+      syncAtacadoSet(pedidoId,{status:"erro",erro:"Pedido não encontrado no Bling."});
+      registrarAviso({tipo:"sync_atacado_falhou",titulo:`Venda #${numero||pedidoId} não sincronizou com o Bling: pedido não encontrado`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado (segundo plano)",fingerprint:`syncatacado-${chave}`,oQueFazer:`A venda já foi recebida e está no caixa, mas o pedido #${numero||pedidoId} não foi encontrado no Bling pra sincronizar. Confira lá e, se precisar, refaça manualmente.`});
+      return;
+    }
+    syncAtacadoEtapa(pedidoId,"lendo_pedido","ok");
+    if(Number(ped.situacao?.id)===SIT.CANCELADO){
+      syncAtacadoEtapa(pedidoId,"lendo_pedido","erro","Pedido está CANCELADO no Bling.");
+      syncAtacadoSet(pedidoId,{status:"erro",erro:"Este pedido está CANCELADO no Bling."});
+      registrarAviso({tipo:"sync_atacado_falhou",titulo:`Venda #${numero||pedidoId} recebida, mas o pedido está CANCELADO no Bling`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado (segundo plano)",fingerprint:`syncatacado-${chave}`,oQueFazer:`A venda foi recebida no caixa, mas o pedido #${numero||pedidoId} está cancelado no Bling. Confira com urgência -- pode ser engano do cliente/operador ou um pedido errado.`});
+      return;
+    }
+    const sitInicial=Number(ped.situacao?.id||0);
+    const itensBling=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
+    const temItens=Array.isArray(itens)&&itens.length;
+    const itensEfetivos=temItens?itens:itensBling;
+    const diff=temItens?diffItens(itensBling,itens):{mudou:false,retirados:[],acrescentados:[],alterados:[],de:"",para:""};
+    const itensMudaram=diff.mudou;
+
+    syncAtacadoEtapa(pedidoId,"conferindo_estoque","rodando");
+    let estoqueReposto=[];
+    try{ estoqueReposto=await garantirEstoqueParaItens(itensEfetivos); }catch(e){ console.error("garantirEstoque:",e.message); }
+    syncAtacadoEtapa(pedidoId,"conferindo_estoque","ok");
+
+    let _trocoPend=Number(troco)||0;
+    const parcelasBling=(pagamentos||[]).filter(p=>p.formaId&&Number(p.valor)>0).map(p=>{
+      let v=Number(p.valor)||0;
+      if(_trocoPend>0.0049 && /dinheiro/i.test(p.formaNome||"")){
+        const desc=Math.min(v,_trocoPend); v=+(v-desc).toFixed(2); _trocoPend=+(_trocoPend-desc).toFixed(2);
+      }
+      return {formaId:Number(p.formaId), valor:+v.toFixed(2)};
+    }).filter(p=>p.valor>0);
+    const taxaAdd=Number(taxaCredito||0);
+    const despesasTotal=+(Number(outrasDespesasBase||0)+taxaAdd).toFixed(2);
+    const outrasDespesasFinal = taxaAdd>0 ? despesasTotal : (ped.outrasDespesas!=null?Number(ped.outrasDespesas):null);
+    const blocos=[]; if(observacao&&String(observacao).trim()) blocos.push(String(observacao).trim()); if(itensMudaram) blocos.push(blocoHistoricoItens(diff,funcionarioNome,null));
+    const obsExtra=blocos.length?blocos.join("\n"):null;
+
+    syncAtacadoEtapa(pedidoId,"salvando_itens_pagamento","rodando");
+    let avisoBling=null, sitDepoisPut=sitInicial;
+    if(itensMudaram){
+      let r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
+      let produtosSemEstoque=[];
+      if(!r?.ok && /estoque|saldo/i.test(r?.erro||"")){
+        produtosSemEstoque=await _identificarProdutosSemEstoque(itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,nome:(itensEfetivos.find(x=>String(x.produtoId)===String(i.produtoId))?.nome)||""})));
+        if(produtosSemEstoque.length){
+          try{ const rep2=await garantirEstoqueParaItens(produtosSemEstoque.map(p=>({produtoId:p.produtoId,quantidade:p.quantidade,nome:p.nome})));
+            if(rep2.length) estoqueReposto=[...estoqueReposto,...rep2]; }catch(e){}
+          await sleep(500);
+          r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
+        }
+      }
+      if(!r?.ok){
+        let m=r?.erro||"erro";
+        let listaProd="";
+        if(/estoque|saldo/i.test(m)){
+          if(!produtosSemEstoque.length){ try{ produtosSemEstoque=await _identificarProdutosSemEstoque(itensEfetivos); }catch(e){} }
+          listaProd=produtosSemEstoque.map(p=>`${p.nome} (precisa ${p.quantidade}, tem ${p.saldoAtual})`).join("; ");
+          m=produtosSemEstoque.length ? `Estoque insuficiente em: ${listaProd}.` : "O Bling barrou por estoque insuficiente, mesmo após tentar repor.";
+        }
+        syncAtacadoEtapa(pedidoId,"salvando_itens_pagamento","erro",m);
+        syncAtacadoSet(pedidoId,{status:"erro",erro:m});
+        registrarAviso({ tipo:"sync_atacado_falhou",
+          titulo:`Venda #${numero||pedidoId} recebida no caixa, mas NÃO sincronizou com o Bling`,
+          pedidoId:chave, numero, operador:funcionarioNome, origem:"Caixa Atacado (segundo plano)",
+          fingerprint:`syncatacado-${chave}`,
+          oQueFazer:`A venda foi recebida e está no caixa (o dinheiro já entrou), mas os itens/pagamento não foram salvos no Bling: ${m}. ${listaProd?"Ajuste o estoque e ":""}Use "Tentar de novo" no painel de sincronização.`});
+        return;
+      }
+      if(r.reposto?.length) estoqueReposto=[...estoqueReposto,...r.reposto];
+      sitDepoisPut=r.situacaoFinal||sitInicial;
+      if(sitInicial===SIT.ATENDIDO) await verificarRelancamento(pedidoId, SIT.ATENDIDO, {operador:funcionarioNome, origem:"Caixa Atacado"});
+    } else if(parcelasBling.length){
+      const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
+      if(rp?.estoqueReposto?.length) estoqueReposto=[...estoqueReposto,...rp.estoqueReposto];
+      if(!rp?.ok){
+        avisoBling="As formas de pagamento não foram gravadas no Bling ("+(rp?.erro||"erro")+").";
+        registrarAviso({tipo:"pagamento_nao_gravado_bling",titulo:`Pedido #${numero||pedidoId}: formas de pagamento não gravadas no Bling`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado",erroBling:rp?.erro||"",fingerprint:`pagbling-${chave}-${Date.now()}`,oQueFazer:`No Bling, abra o pedido #${numero||pedidoId} e confira as formas de pagamento: ${(pagamentos||[]).map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(", ")}.`});
+      } else if(rp.restauracao?.reposto?.length){ estoqueReposto=[...estoqueReposto,...rp.restauracao.reposto]; }
+    } else if(taxaAdd>0.009){
+      const rt=await atualizarParcelasBling(pedidoId, [], {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
+      if(!rt?.ok) avisoBling=(avisoBling?avisoBling+" ":"")+"A taxa do cartão não foi gravada no Bling ("+(rt?.erro||"erro")+").";
+    }
+    syncAtacadoEtapa(pedidoId,"salvando_itens_pagamento","ok");
+    if(itensMudaram) registrarHistoricoItens(chave, diff, null, funcionarioNome, null);
+
+    syncAtacadoEtapa(pedidoId,"mudando_situacao","rodando");
+    const eraPrazo = Number(sitInicial)===SIT.PRAZO;
+    let statusFinalEfetivo = statusFinal;
+    if(eraPrazo) statusFinalEfetivo = "atendido";
+    const alvo=statusFinalEfetivo==="separacao"?"Em separação":(statusFinalEfetivo==="separado"?"Separado":"Atendido");
+    let avisoAtendido=null;
+    try{
+      const rMov=statusFinalEfetivo==="separacao"
+        ? await (async()=>{
+            try{
+              { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
+              registrarNaFilaSeparacao(pedidoId, _tipoEntregaDoPedido(pedidoId,ped), funcionarioNome, numero);
+              addLog(String(pedidoId),"enviado_separacao",null,funcionarioNome,{origem:"caixa atacado (pago, seg. plano)",numero});
+              return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
+            }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
+          })()
+        : statusFinalEfetivo==="separado"
+        ? await moverPedidoParaSeparado(pedidoId)
+        : await moverPedidoParaAtendido(pedidoId,{sitConhecida:sitDepoisPut, itensParaEstoque:itensEfetivos});
+      if(rMov.reposto?.length) estoqueReposto=[...estoqueReposto,...rMov.reposto];
+      if(!rMov.ok){
+        avisoAtendido="Não consegui mudar a situação do pedido pra "+alvo+" (ficou em "+nomeSituacao(rMov.situacaoFinal)+").";
+        syncAtacadoEtapa(pedidoId,"mudando_situacao","erro",avisoAtendido);
+        registrarAviso({tipo:"situacao_nao_movida",titulo:`Pedido #${numero||pedidoId} não foi pra ${alvo}`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado (segundo plano)",erroBling:(rMov.caminho||[]).join(" | "),fingerprint:`sit-${chave}-${Date.now()}`,oQueFazer:`A venda já foi recebida. Abra o pedido #${numero||pedidoId} no Bling e mude a situação pra ${alvo} manualmente.`});
+      } else {
+        syncAtacadoEtapa(pedidoId,"mudando_situacao","ok",alvo);
+      }
+    }catch(e){
+      avisoAtendido="Não consegui mudar a situação do pedido pra "+alvo+" ("+e.message+").";
+      syncAtacadoEtapa(pedidoId,"mudando_situacao","erro",avisoAtendido);
+    }
+
+    if(estoqueReposto.length){
+      registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${numero||pedidoId}: estoque reposto automaticamente`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado",
+        fingerprint:`repo-${chave}-${_hojeISO()}`, estoqueAjustado:estoqueReposto.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),
+        oQueFazer:"A entrada de estoque foi lançada só pra o Bling deixar concluir a venda. Confira no Bling se o saldo desses produtos está certo."});
+    }
+
+    if(emitirNfce){
+      syncAtacadoEtapa(pedidoId,"nfce","rodando");
+      emitirNfceEmSegundoPlano(pedidoId, numero, funcionarioNome);
+      syncAtacadoEtapa(pedidoId,"nfce","ok","emissão iniciada em segundo plano");
+    }
+
+    if(avisoBling||avisoAtendido){
+      syncAtacadoSet(pedidoId,{status:"concluido_com_aviso",aviso:[avisoAtendido,avisoBling].filter(Boolean).join(" ")});
+    } else {
+      syncAtacadoSet(pedidoId,{status:"concluido",aviso:null});
+    }
+
+    // confere se a taxa do cartão entrou certo no Bling (mesma checagem de sempre,
+    // já rodando em segundo plano igual o resto dessa sincronização)
+    if(taxaAdd>0.009){
+      try{
+        await sleep(600);
+        const conf=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
+        const desp=Number(conf?.outrasDespesas||0);
+        if(Math.abs(desp-despesasTotal)>0.05){
+          registrarAviso({ tipo:"taxa_cartao_nao_gravada",
+            titulo:`Pedido #${numero||pedidoId}: taxa do cartão não entrou no Bling`,
+            pedidoId:chave, numero, operador:funcionarioNome, origem:"Caixa Atacado",
+            fingerprint:`taxa-${chave}`,
+            erroBling:`Outras despesas no Bling: ${desp.toFixed(2)} · esperado: ${despesasTotal.toFixed(2)}`,
+            oQueFazer:`A taxa de ${taxaAdd.toFixed(2)} deveria estar em "Outras despesas" do pedido #${numero||pedidoId} no Bling, mas lá está ${desp.toFixed(2)}. Ajuste no Bling pra o total do pedido bater com o que foi cobrado.` });
+        }
+      }catch(e){}
+    }
+  }catch(e){
+    syncAtacadoEtapa(pedidoId,"erro_inesperado","erro",e.message);
+    syncAtacadoSet(pedidoId,{status:"erro",erro:e.message});
+    registrarAviso({tipo:"sync_atacado_falhou",titulo:`Venda #${numero||pedidoId} recebida, mas deu erro inesperado ao sincronizar com o Bling`,pedidoId:chave,numero,operador:funcionarioNome,origem:"Caixa Atacado (segundo plano)",fingerprint:`syncatacado-erro-${chave}`,oQueFazer:`A venda foi recebida no caixa. Erro ao sincronizar: ${e.message}. Use "Tentar de novo" no painel de sincronização, ou confira manualmente no Bling.`});
+  }finally{ _pedidosSincronizando.delete(chave); }
+}
+
 app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
-  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco,autorizadoPor}=req.body||{};
+  const {pedidoId,itens,pagamentos,emitirNfce,funcionarioId,clienteNome,observacao,statusFinal,taxaCredito,outrasDespesasBase,freteBase,troco,autorizadoPor,numero:numeroReq}=req.body||{};
   // TRAVA DE SEGURANÇA no servidor: pedido que já foi recebido em caixa só pode ser
   // refinalizado com autorização. Não basta a tela pedir o QR — se a checagem da tela
-  // falhar (ou alguém chamar a API direto), o servidor recusa.
+  // falhar (ou alguém chamar a API direto), o servidor recusa. Isso já é 100% local
+  // (lê pagamentos.json), então continua rápido mesmo com o Bling lento.
   try{
     if(pedidoId && !autorizadoPor){
       const jaPago=_pagamentoDoPedido(pedidoId, req.body?.numero);
@@ -8141,116 +8337,27 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   if(opId){
     const op=opFinalizarGet(opId);
     if(op?.status==="ok") return res.json({...op.resposta, repetido:true});
-    if(op?.status==="em_andamento" && _pedidosEmFinalizacao.has(chave)) return res.status(202).json({emAndamento:true,opId});
   }
-  // ---- trava por pedido: nunca 2 finalizações do mesmo pedido ao mesmo tempo ----
-  if(_pedidosEmFinalizacao.has(chave)){
-    const em=_pedidosEmFinalizacao.get(chave);
-    return res.status(409).json({emAndamento:true, opId:em.opId||null, erro:"Este pedido já está sendo finalizado. Aguarde a conclusão."});
+  // já tem uma sincronização em segundo plano rodando pra esse MESMO pedido (ex.:
+  // reabriu com autorização enquanto a sincronização da vez anterior ainda não
+  // terminou) -- espera terminar em vez de disparar duas ao mesmo tempo por cima
+  // uma da outra
+  if(_pedidosSincronizando.has(chave)){
+    return res.status(409).json({erro:"Este pedido ainda está sincronizando com o Bling da finalização anterior. Aguarde alguns segundos e tente de novo.", aindaSincronizando:true});
   }
-  _pedidosEmFinalizacao.set(chave,{opId,desde:Date.now()});
-  if(opId) opFinalizarSet(opId,{status:"em_andamento",pedidoId:chave});
   try{
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     const temItens=Array.isArray(itens)&&itens.length;
-    const temObs=observacao&&String(observacao).trim();
+    const itensEfetivos=temItens?itens.map(i=>({produtoId:i.produtoId,nome:i.nome||i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)})):null;
+    if(!itensEfetivos) throw Object.assign(new Error("informe os itens do pedido"),{status:400});
 
-    // 1) lê o pedido UMA vez (todo o resto reaproveita)
-    let ped=null; try{ ped=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data); }catch(e){}
-    if(!ped) throw Object.assign(new Error("Pedido não encontrado no Bling."),{status:404});
-    const sitInicial=Number(ped.situacao?.id||0);
-    if(sitInicial===SIT.CANCELADO) throw Object.assign(new Error("Este pedido está CANCELADO no Bling e não pode ser finalizado."),{status:400});
-    const itensBling=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade),valor:Number(i.valor)}));
-    const itensEfetivos=temItens?itens:itensBling;
-
-    // 2) o que mudou nos itens (pra histórico) — e se precisa regravar
-    const diff=temItens?diffItens(itensBling,itens):{mudou:false,retirados:[],acrescentados:[],alterados:[],de:"",para:""};
-    const itensMudaram=diff.mudou;
-
-    // 3) estoque: 1 chamada de saldos + entrada só do que faltar (barato)
-    let estoqueReposto=[];
-    try{ estoqueReposto=await garantirEstoqueParaItens(itensEfetivos); }catch(e){ console.error("garantirEstoque:",e.message); }
-
-    // 4) parcelas, despesas e observação
-    // PARCELAS PRO BLING: o Bling exige que a soma das parcelas seja EXATAMENTE o
-    // total da venda. Quando há TROCO, o cliente entrega mais do que o pedido vale
-    // (ex.: paga 2.670 numa venda de 2.669,64 e leva 0,36 de volta) — mandar o valor
-    // entregue fazia o Bling recusar com "o somatório das parcelas difere do total".
-    // Então o troco é descontado da parcela em dinheiro.
-    let _trocoPend=Number(troco)||0;
-    const parcelasBling=pagamentos.filter(p=>p.formaId&&Number(p.valor)>0).map(p=>{
-      let v=Number(p.valor)||0;
-      if(_trocoPend>0.0049 && /dinheiro/i.test(p.formaNome||"")){
-        const desc=Math.min(v,_trocoPend);
-        v=+(v-desc).toFixed(2);
-        _trocoPend=+(_trocoPend-desc).toFixed(2);
-      }
-      return {formaId:Number(p.formaId), valor:+v.toFixed(2)};
-    }).filter(p=>p.valor>0);
-    const taxaAdd=Number(taxaCredito||0);
-    const despesasTotal=+(Number(outrasDespesasBase||0)+taxaAdd).toFixed(2);
-    const outrasDespesasFinal = taxaAdd>0 ? despesasTotal : (ped.outrasDespesas!=null?Number(ped.outrasDespesas):null);
-    const blocos=[]; if(temObs) blocos.push(String(observacao).trim()); if(itensMudaram) blocos.push(blocoHistoricoItens(diff,funcNome,null));
-    const obsExtra=blocos.length?blocos.join("\n"):null;
-
-    // 5) grava no Bling em UM PUT (itens+parcelas+obs+despesas), destravando se preciso
-    let avisoBling=null, sitDepoisPut=sitInicial;
-    if(itensMudaram){
-      let r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
-      // Se falhou por ESTOQUE: identifica o(s) produto(s) exato(s) (o Bling não diz
-      // qual é), tenta repor de novo (a reposição anterior pode ter falhado só num
-      // item, ou o saldo mudou entre a checagem e o PUT) e tenta salvar mais 1 vez
-      // antes de desistir — em vez de travar direto sem dizer o produto.
-      let produtosSemEstoque=[];
-      if(!r?.ok && /estoque|saldo/i.test(r?.erro||"")){
-        produtosSemEstoque=await _identificarProdutosSemEstoque(itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,nome:(itensEfetivos.find(x=>String(x.produtoId)===String(i.produtoId))?.nome)||""})));
-        if(produtosSemEstoque.length){
-          try{ const rep2=await garantirEstoqueParaItens(produtosSemEstoque.map(p=>({produtoId:p.produtoId,quantidade:p.quantidade,nome:p.nome})));
-            if(rep2.length) estoqueReposto=[...estoqueReposto,...rep2]; }catch(e){}
-          await sleep(500);
-          r=await atualizarItensBling(pedidoId, itens.map(i=>({produtoId:i.produtoId,quantidade:i.quantidade,valor:i.valor})), obsExtra, {ped, parcelas:parcelasBling, outrasDespesas:outrasDespesasFinal, itensParaEstoque:itensEfetivos});
-        }
-      }
-      if(!r?.ok){
-        let m=r?.erro||"erro";
-        if(/estoque|saldo/i.test(m)){
-          if(!produtosSemEstoque.length){ try{ produtosSemEstoque=await _identificarProdutosSemEstoque(itensEfetivos); }catch(e){} }
-          const listaProd=produtosSemEstoque.map(p=>`${p.nome} (precisa ${p.quantidade}, tem ${p.saldoAtual})`).join("; ");
-          m=produtosSemEstoque.length
-            ? `Estoque insuficiente em: ${listaProd}. Tentamos repor automaticamente e não foi possível. NADA foi finalizado.`
-            : "O Bling barrou por estoque insuficiente em um ou mais produtos, mesmo após tentar repor. NADA foi finalizado. Confira o estoque no Bling e tente de novo.";
-          registrarAviso({ tipo:"estoque_insuficiente_venda",
-            titulo:`Pedido #${ped.numero||pedidoId}: estoque insuficiente travou a venda`,
-            pedidoId:String(pedidoId), numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
-            fingerprint:`estoqinsuf-${pedidoId}-${Date.now()}`,
-            oQueFazer: produtosSemEstoque.length
-              ? `A venda do pedido #${ped.numero||pedidoId} travou porque estes produtos estão com saldo insuficiente no Bling: ${listaProd}. Ajuste o estoque desses produtos no Bling e peça pra reabrir/finalizar de novo.`
-              : `A venda do pedido #${ped.numero||pedidoId} travou por estoque insuficiente, mas não foi possível identificar qual produto. Confira o pedido no Bling.` });
-        }
-        throw Object.assign(new Error("Não consegui salvar as alterações no Bling: "+m),{status:502});
-      }
-      if(r.reposto?.length) estoqueReposto=[...estoqueReposto,...r.reposto];
-      sitDepoisPut=r.situacaoFinal||sitInicial;
-      // pedido que já estava Atendido teve o estoque estornado no destrave —
-      // confere se voltou a ser baixado
-      if(sitInicial===SIT.ATENDIDO) await verificarRelancamento(pedidoId, SIT.ATENDIDO, {operador:funcNome, origem:"Caixa Atacado"});
-    } else if(parcelasBling.length){
-      const rp=await atualizarParcelasBling(pedidoId, parcelasBling, {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
-      if(rp?.estoqueReposto?.length) estoqueReposto=[...estoqueReposto,...rp.estoqueReposto];
-      if(!rp?.ok){
-        avisoBling="As formas de pagamento não foram gravadas no Bling ("+(rp?.erro||"erro")+"). O caixa registrou a venda; confira o pedido no Bling.";
-        registrarAviso({tipo:"pagamento_nao_gravado_bling",titulo:`Pedido #${ped.numero||pedidoId}: formas de pagamento não gravadas no Bling`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:rp?.erro||"",fingerprint:`pagbling-${chave}-${Date.now()}`,oQueFazer:`No Bling, abra o pedido #${ped.numero||pedidoId} e confira as formas de pagamento: ${pagamentos.map(p=>`${p.formaNome}: ${Number(p.valor).toFixed(2)}`).join(", ")}.`});
-      } else if(rp.restauracao?.reposto?.length){ estoqueReposto=[...estoqueReposto,...rp.restauracao.reposto]; }
-    } else if(taxaAdd>0.009){
-      // sem itens alterados e sem parcelas pra gravar, mas HÁ taxa: ainda assim
-      // precisa gravar "outras despesas" no Bling, senão o total de lá fica sem a taxa
-      const rt=await atualizarParcelasBling(pedidoId, [], {append:false, obsExtra, ped, outrasDespesas:outrasDespesasFinal});
-      if(!rt?.ok) avisoBling=(avisoBling?avisoBling+" ":"")+"A taxa do cartão não foi gravada no Bling ("+(rt?.erro||"erro")+").";
-    }
-
-    // 6) registros locais (pagamento + caixa, sem duplicar)
+    // ===== 1) REGISTRO LOCAL, NA HORA — igual o caixa varejo. O caixa já libera
+    // aqui, ANTES de qualquer chamada ao Bling. O resto (itens/parcelas/situação/
+    // NFC-e no Bling) roda depois, em segundo plano (sincronizarFinalizacaoComBling). =====
     const totalItens=+itensEfetivos.reduce((s,i)=>s+Number(i.valor)*Number(i.quantidade),0).toFixed(2);
-    const _outras=despesasTotal, _frete=+Number(freteBase||0).toFixed(2);
+    const taxaAdd=Number(taxaCredito||0);
+    const _outras=+(Number(outrasDespesasBase||0)+taxaAdd).toFixed(2);
+    const _frete=+Number(freteBase||0).toFixed(2);
     const totalPagar=+(totalItens+_outras+_frete).toFixed(2);
     const valorPago=+pagamentos.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
     const pags=lerPag();
@@ -8258,110 +8365,77 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
       historico:pagamentos.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado"})),
       statusPagamento:valorPago>=totalPagar-0.05?"pago":(valorPago>0?"parcial":"pendente") };
     salvarJSON(PAG_FILE,pags);
+
     let jaEstavaNoCaixa=null;
     try{
       const dCx=lerCaixaSessoes();
       const sessaoAtual=(dCx.sessoes||[]).find(s=>!s.fechadaEm&&String(s.funcionarioId)===String(funcionarioId)&&(s.tipoCaixa||"frente")==="atacado");
       if(sessaoAtual){
         const _menor=(req.body.autorizouMenor&&Number(req.body.autorizouMenor.falta)>0)?{faltou:+Number(req.body.autorizouMenor.falta).toFixed(2),autorizadoPor:req.body.autorizouMenor.autorizadoPor||"—"}:null;
-        const mov={ tipo:"venda", em:Date.now(), pedidoId, numero:req.body.numero||ped.numero||null,
-          total:totalPagar, clienteNome:clienteNome||ped.contato?.nome||"", origem:"caixa_atacado",
+        const mov={ tipo:"venda", em:Date.now(), pedidoId, numero:numeroReq||null,
+          total:totalPagar, clienteNome:clienteNome||"", origem:"caixa_atacado",
           outrasDespesas:_outras, frete:_frete, operador:sessaoAtual.operador||"",
+          pendenteBling:true, // marca visível: já foi paga, mas o Bling ainda não foi atualizado
           ...(_menor?{valorMenor:_menor}:{}),
-          ...(Number(troco)>0.009?{troco:+Number(troco).toFixed(2)}:{}), // saída de dinheiro da gaveta
-          itens:itensEfetivos.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor,modoPreco:i.modoPreco||null})),
+          ...(Number(troco)>0.009?{troco:+Number(troco).toFixed(2)}:{}),
+          itens:itensEfetivos.map(i=>({produtoId:i.produtoId,nome:i.nome||"",quantidade:i.quantidade,valor:i.valor})),
           pagamentos:pagamentos.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})) };
-        const reg=registrarVendaNoCaixa(dCx, sessaoAtual, mov, {itensDiff:itensMudaram?diff:null, por:funcNome});
-      // era venda a prazo e agora foi paga: baixa o registro
-      try{
-        const vp=lerVendasPrazo();
-        if(vp[chave]&&!vp[chave].pago){ vp[chave].pago=true; vp[chave].pagoEm=Date.now(); vp[chave].pagoPor=funcNome; salvarJSON(PRAZO_FILE,vp); }
-      }catch(e){}
+        const reg=registrarVendaNoCaixa(dCx, sessaoAtual, mov, {itensDiff:null, por:funcNome});
+        try{
+          const vp=lerVendasPrazo();
+          if(vp[chave]&&!vp[chave].pago){ vp[chave].pago=true; vp[chave].pagoEm=Date.now(); vp[chave].pagoPor=funcNome; salvarJSON(PRAZO_FILE,vp); }
+        }catch(e){}
         salvarCaixaSessoes(dCx);
         if(reg.duplicadoEvitado) jaEstavaNoCaixa={operador:reg.sessao.operador||"", quando:reg.movimento.em, mesmaSessao:!!reg.mesmaSessao};
         if(_menor) addLog(chave,"fechado_valor_menor",funcionarioId,funcNome,{faltou:_menor.faltou,autorizadoPor:_menor.autorizadoPor});
-      } else {
-        avisoBling=(avisoBling?avisoBling+" ":"")+"Você não tem um caixa ATACADO aberto — a venda foi salva no Bling e no pagamento, mas não entrou em nenhum caixa.";
       }
     }catch(e){ console.error("Falha ao vincular ao caixa:",e.message); }
-    if(itensMudaram) registrarHistoricoItens(chave, diff, funcionarioId, funcNome, null);
 
-    // 7) situação final (Atendido, passando por Separado)
-    // destino escolhido no caixa: "separacao" = pago, mas ainda vai ser separado
-    // (entra na fila da Mesa e no Painel); os outros seguem como antes.
-    // EXCEÇÃO — VENDA A PRAZO: se o pedido estava em PRAZO, a mercadoria JÁ FOI
-    // entregue e o que faltava era só o pagamento. Ao receber, ele fecha direto em
-    // ATENDIDO, não volta pra Separado nem pra separação.
-    const eraPrazo = Number(sitInicial)===SIT.PRAZO;
-    let statusFinalEfetivo = statusFinal;
-    if(eraPrazo) statusFinalEfetivo = "atendido";
-    const alvo=statusFinalEfetivo==="separacao"?"Em separação":(statusFinalEfetivo==="separado"?"Separado":"Atendido");
-    let avisoAtendido=null;
-    try{
-      const rMov=statusFinalEfetivo==="separacao"
-        ? await (async()=>{
-            try{
-              { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
-              registrarNaFilaSeparacao(pedidoId, _tipoEntregaDoPedido(pedidoId,ped), funcNome, ped.numero);
-              addLog(String(pedidoId),"enviado_separacao",funcionarioId,funcNome,{origem:"caixa atacado (pago)",numero:ped.numero});
-              return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
-            }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
-          })()
-        : statusFinalEfetivo==="separado"
-        ? await moverPedidoParaSeparado(pedidoId)
-        : await moverPedidoParaAtendido(pedidoId,{sitConhecida:sitDepoisPut, itensParaEstoque:itensEfetivos});
-      console.log("Transição do pedido "+pedidoId+" (alvo "+alvo+"):",JSON.stringify(rMov.caminho));
-      if(rMov.reposto?.length) estoqueReposto=[...estoqueReposto,...rMov.reposto];
-      if(!rMov.ok){
-        avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" (ficou em "+nomeSituacao(rMov.situacaoFinal)+"). Verifique no Bling.";
-        registrarAviso({tipo:"situacao_nao_movida",titulo:`Pedido #${ped.numero||pedidoId} não foi pra ${alvo}`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",erroBling:(rMov.caminho||[]).join(" | "),fingerprint:`sit-${chave}-${Date.now()}`,oQueFazer:`Abra o pedido #${ped.numero||pedidoId} no Bling e mude a situação pra ${alvo} manualmente.`});
-      }
-    }catch(e){ avisoAtendido="O pagamento foi registrado, mas não consegui mudar a situação do pedido pra "+alvo+" ("+e.message+"). Verifique no Bling."; }
-
-    if(estoqueReposto.length){
-      registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${ped.numero||pedidoId}: estoque reposto automaticamente`,pedidoId:chave,numero:ped.numero,operador:funcNome,origem:"Caixa Atacado",
-        fingerprint:`repo-${chave}-${_hojeISO()}`, estoqueAjustado:estoqueReposto.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),
-        oQueFazer:"A entrada de estoque foi lançada só pra o Bling deixar concluir a venda. Confira no Bling se o saldo desses produtos está certo."});
-    }
-
-    // 8) NFC-e em SEGUNDO PLANO (não segura o caixa)
-    let nfce=null;
-    if(emitirNfce){ emitirNfceEmSegundoPlano(pedidoId, ped.numero, funcNome); nfce={pendente:true}; }
-
-    const resposta={ ok:true, pedidoId, numero:ped.numero||null, total:totalItens, nfce,
-      aviso:[avisoAtendido,avisoBling].filter(Boolean).join(" ")||null, estoqueReposto, jaEstavaNoCaixa,
-      itensAlterados:itensMudaram?{retirados:diff.retirados.map(_fmtItem),acrescentados:diff.acrescentados.map(_fmtItem),alterados:diff.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}:null };
+    // resposta JÁ VAI AGORA — o caixa está liberado. Nada do que vem depois atrasa isso.
+    const resposta={ ok:true, pedidoId, numero:numeroReq||null, total:totalItens,
+      pendenteBling:true, jaEstavaNoCaixa };
     if(opId) opFinalizarSet(opId,{status:"ok",resposta});
     res.json(resposta);
-    // CONFERE se a taxa entrou em "outras despesas" no Bling — o total de lá tem que
-    // bater com itens + despesas + frete. Se não bater, o pedido fica no Bling sem a
-    // taxa (foi o que aconteceu no #54940) e vira Aviso. Roda DEPOIS de já ter
-    // respondido pro caixa — antes isso fazia o caixa (e o cliente na frente do
-    // balcão) esperar mais de 600ms + uma chamada inteira ao Bling só pra uma
-    // conferência que não muda o resultado da venda, só gera um aviso se algo
-    // estiver errado.
-    if(taxaAdd>0.009){
-      (async()=>{
-        try{
-          await sleep(600);
-          const conf=await bling(`/pedidos/vendas/${pedidoId}`).then(r=>r?.data);
-          const desp=Number(conf?.outrasDespesas||0);
-          if(Math.abs(desp-despesasTotal)>0.05){
-            registrarAviso({ tipo:"taxa_cartao_nao_gravada",
-              titulo:`Pedido #${ped.numero||pedidoId}: taxa do cartão não entrou no Bling`,
-              pedidoId:chave, numero:ped.numero, operador:funcNome, origem:"Caixa Atacado",
-              fingerprint:`taxa-${chave}`,
-              erroBling:`Outras despesas no Bling: ${desp.toFixed(2)} · esperado: ${despesasTotal.toFixed(2)}`,
-              oQueFazer:`A taxa de ${taxaAdd.toFixed(2)} deveria estar em "Outras despesas" do pedido #${ped.numero||pedidoId} no Bling, mas lá está ${desp.toFixed(2)}. Ajuste no Bling pra o total do pedido bater com o que foi cobrado.` });
-          }
-        }catch(e){}
-      })();
-    }
+
+    // ===== 2) SEGUNDO PLANO: sincroniza com o Bling. A resposta já foi enviada. =====
+    const dadosSync={
+      itens:itensEfetivos, pagamentos, emitirNfce, funcionarioNome:funcNome, observacao, statusFinal,
+      taxaCredito, outrasDespesasBase, freteBase, troco, numero:numeroReq,
+    };
+    syncAtacadoSet(pedidoId,{status:"pendente",criadoEm:Date.now(),etapas:[],numero:numeroReq||null,operador:funcNome,dadosOriginais:dadosSync});
+    sincronizarFinalizacaoComBling(pedidoId, dadosSync, {}).catch(e=>console.error("sincronizarFinalizacaoComBling (não deveria escapar):",e.message));
   }catch(e){
     if(opId) opFinalizarSet(opId,{status:"erro",erro:e.message});
     res.status(e.status||500).json({erro:e.message,detalhe:e.body});
-  }finally{ _pedidosEmFinalizacao.delete(chave); }
+  }
 });
+// status da sincronização em segundo plano de UM pedido -- pra tela de recibo mostrar
+// "sincronizando... concluído" depois de já ter liberado o caixa
+app.get("/api/caixa-atacado/sync-status/:pedidoId",(req,res)=>{
+  const reg=lerSyncAtacado()[String(req.params.pedidoId)];
+  if(!reg) return res.json({status:"desconhecido"});
+  res.json(reg);
+});
+// lista tudo que ainda não terminou de sincronizar (ou terminou com erro/aviso) --
+// pra um painel acompanhar e, se precisar, tentar de novo
+app.get("/api/caixa-atacado/sync-pendentes",(req,res)=>{
+  const d=lerSyncAtacado();
+  const lista=Object.entries(d).filter(([,v])=>v.status!=="concluido").map(([pedidoId,v])=>({pedidoId,...v})).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+  res.json({data:lista});
+});
+// tenta sincronizar de novo um pedido que falhou (ou ficou parado) -- usa os MESMOS
+// dados (itens, pagamentos, etc.) que foram recebidos na hora, salvos no registro
+app.post("/api/caixa-atacado/sync-tentar-de-novo/:pedidoId",async(req,res)=>{
+  const pedidoId=req.params.pedidoId;
+  const chave=String(pedidoId);
+  if(_pedidosSincronizando.has(chave)) return res.status(409).json({erro:"já está sincronizando agora"});
+  const reg=lerSyncAtacado()[chave];
+  if(!reg) return res.status(404).json({erro:"não encontrei o registro dessa sincronização"});
+  if(!reg.dadosOriginais) return res.status(400).json({erro:"esse registro é antigo demais e não guardou os dados originais pra tentar de novo -- finalize o pedido de novo no caixa (com autorização, se precisar)"});
+  res.json({ok:true, iniciado:true});
+  sincronizarFinalizacaoComBling(pedidoId, reg.dadosOriginais, {}).catch(e=>console.error("retry sync atacado:",e.message));
+});
+
 
 app.post("/api/pedido",async(req,res)=>{
   try{ const {contatoId,itens}=req.body;

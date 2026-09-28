@@ -125,6 +125,7 @@
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #3ce88a;color:#3ce88a" onclick="abrirExportarPagamentos()">📊 Exportar pagamentos (Excel)</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #ffd23f;color:#ffd23f" onclick="verVendasPendentes()">⏳ Vendas pendentes de lançar no Bling</button>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #29ABE2;color:#29ABE2" onclick="verSyncAtacado()">🔄 Sincronização do Atacado</button>
       <div class="toggle">
         <button class="${window.ABA === 'abertos' ? 'on' : ''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
         <button class="${window.ABA === 'historico' ? 'on' : ''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
@@ -464,6 +465,64 @@
   };
 
   // ---- gerenciar os bancos do PIX (nome, padrão, adicionar, excluir) ----
+  const ETAPA_LABEL_GC = { lendo_pedido: "Lendo o pedido", conferindo_estoque: "Conferindo estoque", salvando_itens_pagamento: "Salvando itens e pagamento", mudando_situacao: "Atualizando status", nfce: "Emitindo NFC-e", erro_inesperado: "Erro inesperado" };
+  window.verSyncAtacado = async function () {
+    let j;
+    try { j = await fetch(B + "/api/caixa-atacado/sync-pendentes").then(r => r.json()); }
+    catch (e) { j = { data: [] }; }
+    window._SYNC_ATACADO = j.data || [];
+    renderSyncAtacado();
+    clearTimeout(window._syncAtacadoTimer);
+    // atualiza sozinho enquanto tiver algo "processando" ou "pendente" (pra ver o
+    // progresso ao vivo sem precisar clicar em atualizar toda hora)
+    if (window._SYNC_ATACADO.some(p => p.status === "processando" || p.status === "pendente")) {
+      window._syncAtacadoTimer = setTimeout(() => { if (document.getElementById("syncAtacadoBox")) window.verSyncAtacado(); }, 2000);
+    }
+  };
+  window.renderSyncAtacado = function () {
+    const lista = window._SYNC_ATACADO || [];
+    const corStatus = s => s === "erro" ? "#ff8090" : s === "concluido_com_aviso" ? "#ffd23f" : (s === "processando" || s === "pendente") ? "#29ABE2" : "#9a95c9";
+    const labelStatus = s => ({ erro: "❌ Erro", concluido_com_aviso: "⚠️ Concluído com aviso", processando: "🔄 Sincronizando…", pendente: "⏳ Na fila" })[s] || s;
+    document.getElementById("modais").innerHTML = `
+    <div class="modalBg" onclick="if(event.target===this){clearTimeout(window._syncAtacadoTimer);fecharModais()}"><div class="modal" id="syncAtacadoBox">
+      <h3>🔄 Sincronização do Atacado com o Bling</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">Vendas do Caixa Atacado fecham local na hora (igual o varejo) e depois sincronizam com o Bling em segundo plano. Aqui dá pra acompanhar cada etapa e tentar de novo se algo falhar. Concluídas sem aviso não aparecem aqui.</div>
+      <div style="max-height:420px;overflow:auto">
+        ${lista.length ? lista.map(p => `
+          <div style="background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:10px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <div>
+                <div style="font-weight:800">Pedido #${esc(p.numero || p.pedidoId)}${p.operador ? " · " + esc(p.operador) : ""}</div>
+                <div class="muted" style="font-size:11px">${new Date(p.criadoEm).toLocaleString("pt-BR")}</div>
+                <div style="color:${corStatus(p.status)};font-size:12px;font-weight:700;margin-top:2px">${labelStatus(p.status)}${(p.status === "processando" || p.status === "pendente") ? " — " + esc(ETAPA_LABEL_GC[p.etapaAtual] || "iniciando") : ""}</div>
+                ${p.status === "erro" ? `<div style="color:#ff9aa2;font-size:11px;margin-top:2px">${esc(p.erro || "")}</div>` : ""}
+                ${p.status === "concluido_com_aviso" ? `<div style="color:#ffd23f;font-size:11px;margin-top:2px">${esc(p.aviso || "")}</div>` : ""}
+              </div>
+              ${p.status === "erro" ? `<button class="btn btn-mag btn-sm" id="retry-${esc(p.pedidoId)}" onclick="tentarSyncAtacadoDeNovo('${esc(p.pedidoId)}')">Tentar de novo</button>` : ""}
+            </div>
+            <div id="msgSync-${esc(p.pedidoId)}"></div>
+          </div>`).join("") : `<div class="muted" style="padding:12px">Nada pendente ou com problema 🎉</div>`}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-ghost" style="flex:1" onclick="verSyncAtacado()">🔄 Atualizar agora</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="clearTimeout(window._syncAtacadoTimer);fecharModais()">Fechar</button>
+      </div>
+    </div></div>`;
+  };
+  window.tentarSyncAtacadoDeNovo = async function (pedidoId) {
+    const btn = document.getElementById("retry-" + pedidoId);
+    const msgEl = document.getElementById("msgSync-" + pedidoId);
+    if (btn) { btn.disabled = true; btn.textContent = "Tentando…"; }
+    try {
+      const j = await fetch(B + "/api/caixa-atacado/sync-tentar-de-novo/" + encodeURIComponent(pedidoId), { method: "POST" }).then(r => r.json());
+      if (j.erro) throw new Error(j.erro);
+      if (msgEl) msgEl.innerHTML = `<div style="color:#29ABE2;font-size:12px;margin-top:4px">Sincronizando de novo…</div>`;
+      setTimeout(window.verSyncAtacado, 1500);
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.textContent = "Tentar de novo"; }
+      if (msgEl) msgEl.innerHTML = `<div style="color:#ff8090;font-size:12px;margin-top:4px">${esc(e.message)}</div>`;
+    }
+  };
   window.verVendasPendentes = async function () {
     let j;
     try { j = await fetch(B + "/api/pdv/pendentes").then(r => r.json()); }
