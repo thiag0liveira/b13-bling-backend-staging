@@ -466,6 +466,7 @@ function cardProposta(p) {
         ${ehSite ? `<span class="tag" style="background:#123a2a;color:#25D366;font-weight:800;margin-bottom:4px;display:inline-block">🌐 PEDIDO SITE</span><br/>` : ''}
         <div style="font-weight:800">${esc(((_p$cliente = p.cliente) === null || _p$cliente === void 0 ? void 0 : _p$cliente.nome) || '—')}</div>
         <div class="muted" style="font-size:12px">${data} · Vendedor: ${esc(p.vendedorNome || '—')}${(_p$cliente2 = p.cliente) !== null && _p$cliente2 !== void 0 && _p$cliente2.telefone ? ` · 📞 ${esc(p.cliente.telefone)}` : ''}</div>
+        ${ehSite ? blocoClienteSite(p) : ''}
       </div>
       <div style="text-align:right">
         ${statusTag(p)}
@@ -1037,7 +1038,148 @@ function confirmarNaTela(titulo, texto, onOk){
   document.body.appendChild(wrap.firstElementChild);
   document.getElementById("btnConfirmNaTela").onclick = () => { document.getElementById("confirmNaTela")?.remove(); onOk(); };
 }
+// ---- ASSOCIAR CLIENTE DO SITE A UM CONTATO DO BLING ----
+function fmtDoc(d) {
+  const s = String(d || "").replace(/\D/g, "");
+  if (s.length === 11) return s.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  if (s.length === 14) return s.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
+  return s;
+}
+function blocoClienteSite(p) {
+  const c = p.cliente || {};
+  const dados = [c.documento ? fmtDoc(c.documento) : "", c.email || ""].filter(Boolean).join(" · ");
+  const trocar = !p.pedidoBlingId && p.status !== "cancelada" ? ` <a href="#" style="color:#ffd23f" onclick='abrirAssociarCliente(${JSON.stringify(p.id)});return false'>trocar</a>` : "";
+  const linha = c.id
+    ? `<div style="font-size:11px;color:#a8f0c8;margin-top:3px">🔗 Bling: <b>${esc(c.blingNome || "contato #" + c.id)}</b>${c.vinculo && c.vinculo.modo === "auto" ? " (automático)" : ""}${trocar}</div>`
+    : `<div style="font-size:11px;color:#ffd23f;margin-top:3px">⚠️ Cliente do site ainda não associado ao Bling <button class="btn btn-mag" style="padding:3px 8px;font-size:11px;margin-left:4px" onclick='abrirAssociarCliente(${JSON.stringify(p.id)})'>🔗 Associar cliente</button></div>`;
+  return (dados ? `<div class="muted" style="font-size:11px">${esc(dados)}</div>` : "") + linha;
+}
+function _linhaCandidato(c, i, origem) {
+  const tags = (c.motivos || []).map(m => `<span class="tag" style="background:#123a2a;color:#a8f0c8;font-size:10px">${esc(m)}</span>`).join(" ");
+  return `<div style="background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:8px;margin-bottom:6px;display:flex;gap:8px;align-items:center">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:800;font-size:13px">${esc(c.nome || "—")}</div>
+      <div class="muted" style="font-size:11px">${[c.documento ? fmtDoc(c.documento) : "", c.telefone || "", c.email || ""].filter(Boolean).map(esc).join(" · ")}</div>
+      ${tags ? `<div style="margin-top:3px">${tags}</div>` : ""}
+    </div>
+    <button class="btn btn-grn" style="padding:6px 10px;font-size:12px" onclick="assocEscolher('${origem}',${i})">Associar</button>
+  </div>`;
+}
+function _renderAssociar() {
+  const A = window._assoc;
+  if (!A) return;
+  const c = A.cliente || {};
+  const end = c.endereco || {};
+  const endTxt = [end.rua, end.numero, end.bairro, end.cidade].filter(Boolean).join(", ");
+  const docOk = String(c.documento || "").replace(/\D/g, "").length === 11 || String(c.documento || "").replace(/\D/g, "").length === 14;
+  modaisEl().innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharModalEd()"><div class="modal" style="max-width:560px">
+    <h3>🔗 Associar cliente do site</h3>
+    <div style="background:#123a2a;border:1px solid #25D366;border-radius:8px;padding:8px;font-size:12px;margin-bottom:8px">
+      <b>${esc(c.nome || "—")}</b><br>
+      <span class="muted">${[c.documento ? fmtDoc(c.documento) : "", c.telefone || "", c.email || ""].filter(Boolean).map(esc).join(" · ") || "sem documento, telefone ou email"}${endTxt ? "<br>📍 " + esc(endTxt) : ""}</span>
+    </div>
+    ${A.associadoA ? `<div style="font-size:12px;margin-bottom:8px">Associado hoje a <b>${esc(A.associadoA.nome || "contato #" + A.associadoA.id)}</b> <button class="btn btn-ghost" style="padding:3px 8px;font-size:11px" onclick="assocDesfazer()">Desfazer</button></div>` : ""}
+    <div id="assocMsg" style="font-size:12px;margin-bottom:6px"></div>
+    <div style="font-weight:800;font-size:12px;margin:6px 0">Possíveis contatos no Bling</div>
+    <div style="max-height:220px;overflow:auto">${A.carregando ? '<div class="muted">Procurando no Bling…</div>' : (A.cand.length ? A.cand.map((x, i) => _linhaCandidato(x, i, "cand")).join("") : '<div class="muted" style="font-size:12px">Nenhum contato parecido encontrado.</div>')}</div>
+    <div style="font-weight:800;font-size:12px;margin:10px 0 4px">Procurar outro</div>
+    <div style="display:flex;gap:6px"><input id="assocBusca" placeholder="Nome (3+ letras) ou CPF/CNPJ" style="flex:1;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:8px;font-size:13px" onkeydown="if(event.key==='Enter')assocBuscar()"><button class="btn btn-mag" onclick="assocBuscar()">Buscar</button></div>
+    <div style="max-height:180px;overflow:auto;margin-top:6px">${(A.busca || []).map((x, i) => _linhaCandidato(x, i, "busca")).join("")}</div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-ghost" style="flex:1" ${docOk ? "" : "disabled title='Precisa de CPF ou CNPJ válido'"} onclick="assocCadastrarNovo()">➕ Cadastrar como novo no Bling</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="fecharModalEd()">Fechar</button>
+    </div>
+    <div class="muted" style="font-size:10px;margin-top:6px">Só cadastre como novo se realmente não existir no Bling. Associar a um contato existente evita cadastro duplicado, e o vínculo fica lembrado pra próximos pedidos do mesmo documento ou email.</div>
+  </div></div>`;
+}
+async function abrirAssociarCliente(propId) {
+  const p = LISTA.find(x => x.id === propId);
+  if (!p) { alert("Proposta não encontrada."); return; }
+  window._assoc = { propId, cliente: p.clienteSite || p.cliente || {}, cand: [], busca: [], associadoA: p.cliente?.id ? { id: p.cliente.id, nome: p.cliente.blingNome || "" } : null, carregando: true };
+  _renderAssociar();
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + encodeURIComponent(propId) + "/candidatos-cliente").then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    window._assoc.cand = j.candidatos || [];
+    window._assoc.associadoA = j.associadoA || null;
+  } catch (e) {
+    window._assoc.cand = [];
+    setTimeout(() => { const m = document.getElementById("assocMsg"); if (m) m.innerHTML = `<span style="color:#ff8090">Não consegui procurar no Bling agora (${esc(e.message)}). Use a busca manual.</span>`; }, 50);
+  }
+  window._assoc.carregando = false;
+  _renderAssociar();
+}
+async function assocBuscar() {
+  const A = window._assoc; if (!A) return;
+  const q = (document.getElementById("assocBusca") || {}).value?.trim() || "";
+  if (!q) return;
+  const digitos = q.replace(/\D/g, "");
+  try {
+    if (digitos.length === 11 || digitos.length === 14) {
+      const j = await fetch(B + "/api/contatos?doc=" + digitos).then(r => r.json());
+      A.busca = j.encontrado && j.contato ? [{ id: j.contato.id, nome: j.contato.nome, documento: j.contato.documento, telefone: j.contato.celular || j.contato.telefone, email: j.contato.email, motivos: ["mesmo documento"] }] : [];
+    } else {
+      const j = await fetch(B + "/api/contatos?nome=" + encodeURIComponent(q)).then(r => r.json());
+      if (j.erro) throw new Error(j.erro);
+      A.busca = (j.lista || []).map(x => ({ ...x, motivos: [] }));
+    }
+    _renderAssociar();
+    const inp = document.getElementById("assocBusca"); if (inp) inp.value = q;
+    if (!A.busca.length) { const m = document.getElementById("assocMsg"); if (m) m.innerHTML = '<span class="muted">Nada encontrado nessa busca.</span>'; }
+  } catch (e) {
+    const m = document.getElementById("assocMsg"); if (m) m.innerHTML = `<span style="color:#ff8090">${esc(e.message)}</span>`;
+  }
+}
+async function _assocSalvar(contato) {
+  const A = window._assoc;
+  const por = (typeof b13GetSession === "function" && b13GetSession() && b13GetSession().nome) || "";
+  const j = await fetch(B + "/api/atacado/propostas/" + encodeURIComponent(A.propId) + "/associar-cliente", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contatoId: contato.id, nome: contato.nome, documento: contato.documento || "", por })
+  }).then(r => r.json());
+  if (j.erro) throw new Error(j.erro);
+  fecharModalEd();
+  await carregar();
+}
+async function assocEscolher(origem, i) {
+  const A = window._assoc; if (!A) return;
+  const c = (origem === "busca" ? A.busca : A.cand)[i];
+  if (!c) return;
+  try { await _assocSalvar(c); }
+  catch (e) { const m = document.getElementById("assocMsg"); if (m) m.innerHTML = `<span style="color:#ff8090">${esc(e.message)}</span>`; }
+}
+async function assocCadastrarNovo() {
+  const A = window._assoc; if (!A) return;
+  const c = A.cliente || {};
+  const m = document.getElementById("assocMsg");
+  if (m) m.innerHTML = '<span class="muted">Cadastrando no Bling…</span>';
+  try {
+    const j = await fetch(B + "/api/atacado/cliente", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documento: c.documento, nome: c.nome, telefone: c.telefone, email: c.email, endereco: c.endereco || {} })
+    }).then(r => r.json());
+    if (j.erro || !j.id) throw new Error(j.erro || "o Bling não devolveu o id do contato");
+    await _assocSalvar({ id: j.id, nome: j.nome || c.nome, documento: c.documento });
+  } catch (e) {
+    if (m) m.innerHTML = `<span style="color:#ff8090">${esc(e.message)}</span>`;
+  }
+}
+async function assocDesfazer() {
+  const A = window._assoc; if (!A) return;
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + encodeURIComponent(A.propId) + "/desassociar-cliente", { method: "POST" }).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    fecharModalEd();
+    await carregar();
+  } catch (e) { const m = document.getElementById("assocMsg"); if (m) m.innerHTML = `<span style="color:#ff8090">${esc(e.message)}</span>`; }
+}
 async function gerarPedido(id, tokenQr) {
+  // pedido do site: o cliente ainda não existe no Bling, então precisa associar antes
+  const _p = LISTA.find(x => x.id === id);
+  if (_p && _p.origemPedido === "site" && !(_p.cliente && _p.cliente.id)) {
+    abrirAssociarCliente(id);
+    return;
+  }
   if (!tokenQr) {
     // NÃO usa mais o confirm() nativo do navegador: depois de muitos alert()/
     // confirm() seguidos na mesma aba, o Chrome passa a BLOQUEAR SILENCIOSAMENTE

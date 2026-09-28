@@ -8376,10 +8376,24 @@ app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"})
       const entregaProp = entrega && entrega.tipo === "entrega"
         ? { tipo: "entrega", endereco: [cadastro?.endereco?.rua, cadastro?.endereco?.numero, cadastro?.endereco?.bairro, cadastro?.endereco?.cidade].filter(Boolean).join(", "), km: entrega.km || 0, taxa: Number(entrega.taxa) || 0 }
         : { tipo: "retirada" };
+      const enderecoSite = {
+        rua: lim(cadastro?.endereco?.rua || "", 120), numero: lim(cadastro?.endereco?.numero || "", 20),
+        complemento: lim(cadastro?.endereco?.complemento || "", 60), bairro: lim(cadastro?.endereco?.bairro || "", 80),
+        cidade: lim(cadastro?.endereco?.cidade || "", 80), uf: lim(cadastro?.endereco?.uf || "", 2),
+        cep: soDigitos(cadastro?.endereco?.cep || "").slice(0, 8),
+      };
+      // o cliente do site NÃO é gravado no Bling. Os dados digitados ficam junto do
+      // pedido (clienteSite guarda uma cópia intocada) e o vendedor associa a um contato
+      // que já exista no Bling. Se esse mesmo documento ou email já foi associado antes,
+      // o vínculo é aplicado sozinho, só com dado local, sem nenhuma chamada ao Bling.
+      const clienteSite = { nome: nome || "", documento: doc || "", telefone: telefone || "", email: email || "", endereco: enderecoSite };
+      const vinc = buscarVinculoCliente(clienteSite, false);
+      const clienteProp = { ...clienteSite, id: vinc ? vinc.contatoId : null };
+      if (vinc) { clienteProp.blingNome = vinc.nome || ""; clienteProp.vinculo = { modo: "auto", chave: vinc.chave, em: Date.now() }; }
       const registro = {
         id: propId, tipo: "proposta", status: "aberta",
         origemPedido: "site", // pra destacar na tela de propostas com cor diferente
-        cliente: { nome: nome || "", documento: doc || "", telefone: telefone || "", email: email || "" },
+        cliente: clienteProp, clienteSite,
         itens: itensProp, observacao: "",
         vendedorId: null, vendedorNome: "",
         funcionarioId: null, funcionarioNome: "",
@@ -13988,6 +14002,152 @@ app.post("/api/atacado/cliente",async(req,res)=>{
 });
 
 
+// ---- CLIENTE DO PEDIDO DO SITE x CONTATO DO BLING ----
+// O pedido do site não cria nem altera contato no Bling. O vendedor associa o cliente
+// do site a um contato que já exista lá. Cada associação é lembrada (por documento,
+// email e telefone) pra que várias contas do site apontem pra um mesmo contato do
+// Bling e nenhum cadastro duplicado seja gerado.
+const CLIENTES_SITE_VINCULOS_FILE = `${DATA_DIR}/clientes_site_vinculos.json`;
+function _chavesCliente(c){
+  const chaves=[];
+  const doc=soDigitos(c?.documento||"");
+  if(doc.length===11||doc.length===14) chaves.push({k:"doc:"+doc,forte:true,rot:"documento"});
+  const email=String(c?.email||"").trim().toLowerCase();
+  if(/\S+@\S+\.\S+/.test(email)) chaves.push({k:"email:"+email,forte:true,rot:"email"});
+  const tel=soDigitos(c?.telefone||"").slice(-11);
+  if(tel.length>=10) chaves.push({k:"tel:"+tel,forte:false,rot:"telefone"});
+  return chaves;
+}
+// só documento e email valem pra aplicar sozinho; telefone é compartilhado demais
+// (funcionários de empresas diferentes), então só aparece como sugestão
+function buscarVinculoCliente(c, incluirFracos){
+  const db=(lerJSON(CLIENTES_SITE_VINCULOS_FILE,{chaves:{}}).chaves)||{};
+  for(const ch of _chavesCliente(c)){
+    if(!ch.forte && !incluirFracos) continue;
+    const v=db[ch.k];
+    if(v&&v.contatoId) return {...v,chave:ch.k,rot:ch.rot};
+  }
+  return null;
+}
+function salvarVinculosCliente(c, contatoId, nome, por){
+  const db=lerJSON(CLIENTES_SITE_VINCULOS_FILE,{chaves:{}}); db.chaves=db.chaves||{};
+  _chavesCliente(c).forEach(ch=>{ db.chaves[ch.k]={contatoId:Number(contatoId),nome:nome||"",em:Date.now(),por:por||""}; });
+  salvarJSON(CLIENTES_SITE_VINCULOS_FILE,db);
+}
+function esquecerVinculosCliente(c, contatoId){
+  const db=lerJSON(CLIENTES_SITE_VINCULOS_FILE,{chaves:{}}); db.chaves=db.chaves||{};
+  _chavesCliente(c).forEach(ch=>{ if(db.chaves[ch.k] && String(db.chaves[ch.k].contatoId)===String(contatoId)) delete db.chaves[ch.k]; });
+  salvarJSON(CLIENTES_SITE_VINCULOS_FILE,db);
+}
+// procura possíveis contatos do Bling pro cliente do site. Só roda quando o vendedor
+// abre a associação (nunca na chegada do pedido), então não gera chamada sozinha.
+app.get("/api/atacado/propostas/:id/candidatos-cliente",async(req,res)=>{
+  try{
+    const prop=lerPropostas()[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    const c=prop.clienteSite||prop.cliente||{};
+    const achados=new Map();
+    const add=(x,motivo)=>{
+      if(!x||!x.id) return;
+      const id=String(x.id);
+      const cur=achados.get(id)||{id:Number(x.id),nome:x.nome||"",documento:soDigitos(x.numeroDocumento||x.documento||""),telefone:x.celular||x.telefone||"",email:x.email||"",motivos:[]};
+      if(!cur.nome&&x.nome) cur.nome=x.nome;
+      if(!cur.motivos.includes(motivo)) cur.motivos.push(motivo);
+      achados.set(id,cur);
+    };
+    // 1) vínculos já feitos antes (local, sem Bling)
+    const db=(lerJSON(CLIENTES_SITE_VINCULOS_FILE,{chaves:{}}).chaves)||{};
+    _chavesCliente(c).forEach(ch=>{ const v=db[ch.k]; if(v&&v.contatoId) add({id:v.contatoId,nome:v.nome},"vínculo anterior ("+ch.rot+")"); });
+    // 2) documento
+    const doc=soDigitos(c.documento||"");
+    if(doc.length===11||doc.length===14){
+      let achouDoc=false;
+      try{
+        const d=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}&limite=20`);
+        (d?.data||[]).filter(x=>soDigitos(x.numeroDocumento)===doc).forEach(x=>{ add(x,"mesmo documento"); achouDoc=true; });
+      }catch(e){}
+      if(!achouDoc){
+        const fmt=doc.length===11?`${doc.slice(0,3)}.${doc.slice(3,6)}.${doc.slice(6,9)}-${doc.slice(9)}`:`${doc.slice(0,2)}.${doc.slice(2,5)}.${doc.slice(5,8)}/${doc.slice(8,12)}-${doc.slice(12)}`;
+        try{
+          const d=await bling(`/contatos?pesquisa=${encodeURIComponent(fmt)}&limite=20`);
+          (d?.data||[]).filter(x=>soDigitos(x.numeroDocumento)===doc).forEach(x=>add(x,"mesmo documento"));
+        }catch(e){}
+      }
+    }
+    // 3) email, 4) telefone (só aceita o que bate exatamente, pra não trazer ruído)
+    const email=String(c.email||"").trim().toLowerCase();
+    if(/\S+@\S+\.\S+/.test(email)){
+      try{
+        const d=await bling(`/contatos?pesquisa=${encodeURIComponent(email)}&limite=20`);
+        (d?.data||[]).filter(x=>String(x.email||"").trim().toLowerCase()===email).forEach(x=>add(x,"mesmo email"));
+      }catch(e){}
+    }
+    const tel=soDigitos(c.telefone||"").slice(-9);
+    if(tel.length>=8){
+      try{
+        const d=await bling(`/contatos?pesquisa=${encodeURIComponent(soDigitos(c.telefone))}&limite=20`);
+        (d?.data||[]).filter(x=>[x.telefone,x.celular].some(t=>soDigitos(t||"").slice(-9)===tel)).forEach(x=>add(x,"mesmo telefone"));
+      }catch(e){}
+    }
+    // 5) nome (parecido, só aparece se ainda tiver pouco candidato)
+    const nome=String(c.nome||"").trim();
+    if(nome.length>=3 && achados.size<5){
+      try{
+        const d=await bling(`/contatos?pesquisa=${encodeURIComponent(nome)}&limite=10`);
+        (d?.data||[]).forEach(x=>add(x,"nome parecido"));
+      }catch(e){}
+    }
+    const peso=m=>m.some(t=>t==="mesmo documento")?0:m.some(t=>t.startsWith("vínculo"))?1:m.includes("mesmo email")?2:m.includes("mesmo telefone")?3:4;
+    const lista=[...achados.values()].sort((a,b)=>peso(a.motivos)-peso(b.motivos)).slice(0,15);
+    res.json({cliente:c,candidatos:lista,associadoA:prop.cliente?.id?{id:prop.cliente.id,nome:prop.cliente.blingNome||""}:null});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+});
+app.post("/api/atacado/propostas/:id/associar-cliente",(req,res)=>{
+  try{
+    const props=lerPropostas(); const prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.pedidoBlingId) return res.status(400).json({erro:"essa proposta já virou pedido no Bling"});
+    const contatoId=Number(String(req.body?.contatoId||"").replace(/\D/g,""));
+    if(!contatoId) return res.status(400).json({erro:"informe o contato do Bling"});
+    const lim=(s,n)=>String(s||"").slice(0,n);
+    const nomeBling=lim(req.body?.nome,120), por=lim(req.body?.por,80);
+    prop.cliente=prop.cliente||{};
+    prop.cliente.id=contatoId; prop.cliente.blingNome=nomeBling; prop.cliente.blingDocumento=soDigitos(req.body?.documento||"");
+    prop.cliente.vinculo={modo:"manual",por,em:Date.now()};
+    prop.atualizadoEm=Date.now();
+    const base=prop.clienteSite||null;
+    let aplicados=0;
+    if(base){
+      salvarVinculosCliente(base,contatoId,nomeBling,por);
+      // outros pedidos do site ainda abertos, do mesmo cliente (mesmo documento ou email)
+      const fortes=new Set(_chavesCliente(base).filter(x=>x.forte).map(x=>x.k));
+      Object.values(props).forEach(o=>{
+        if(o.id===prop.id||o.origemPedido!=="site"||o.pedidoBlingId||o.status==="cancelada"||o.cliente?.id) return;
+        if(_chavesCliente(o.clienteSite||o.cliente).some(x=>x.forte&&fortes.has(x.k))){
+          o.cliente.id=contatoId; o.cliente.blingNome=nomeBling;
+          o.cliente.vinculo={modo:"auto",chave:"associação de "+(prop.id),em:Date.now()};
+          o.atualizadoEm=Date.now(); aplicados++;
+        }
+      });
+    }
+    props[prop.id]=prop; salvarPropostas(props);
+    res.json({ok:true,id:contatoId,nome:nomeBling,aplicadosEmOutrosPedidos:aplicados});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/atacado/propostas/:id/desassociar-cliente",(req,res)=>{
+  try{
+    const props=lerPropostas(); const prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.pedidoBlingId) return res.status(400).json({erro:"essa proposta já virou pedido no Bling"});
+    const antigo=prop.cliente?.id;
+    if(prop.clienteSite && antigo) esquecerVinculosCliente(prop.clienteSite,antigo);
+    if(prop.cliente){ prop.cliente.id=null; delete prop.cliente.blingNome; delete prop.cliente.blingDocumento; delete prop.cliente.vinculo; }
+    prop.atualizadoEm=Date.now();
+    props[prop.id]=prop; salvarPropostas(props);
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // lista propostas/pedidos-atacado (mais recentes primeiro), com filtro opcional por tipo/status
 app.get("/api/atacado/propostas",(req,res)=>{
   const {tipo,status}=req.query;
@@ -14410,7 +14570,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     props[req.params.id]=prop;
     salvarPropostas(props);
     const liberarTrava=()=>{ try{ const pp=lerPropostas(); if(pp[req.params.id]){ pp[req.params.id].gerandoPedidoEm=null; salvarPropostas(pp); } }catch(e){} };
-    if(!prop.cliente?.id){ liberarTrava(); return res.status(400).json({erro:"a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido"}); }
+    if(!prop.cliente?.id){ liberarTrava(); return res.status(400).json({erro: prop.origemPedido==="site" ? "Antes de gerar o pedido, associe o cliente do site a um contato do Bling (botão Associar cliente)." : "a proposta precisa de um cliente cadastrado no Bling pra gerar o pedido", precisaAssociarCliente: prop.origemPedido==="site"}); }
     if(!prop.itens?.length){ liberarTrava(); return res.status(400).json({erro:"a proposta não tem itens"}); }
 
     // valida o estoque ao vivo de cada item antes de tentar criar (evita o erro genérico
