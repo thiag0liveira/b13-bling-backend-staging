@@ -1763,7 +1763,12 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     // (só arredondamento, não um valor errado de verdade), absorve ela na ÚLTIMA
     // parcela — igual qualquer sistema de caixa faz pra sobrar/faltar centavo.
     if(payload.parcelas.length){
-      const somaItens=(payload.itens||[]).reduce((s,i)=>s+Number(i.quantidade||0)*Number(i.valor||0),0);
+      // arredonda CADA item pra 2 casas antes de somar (igual o Bling faz por linha)
+      // -- usar soma em ponto flutuante e arredondar só no total, aqui também,
+      // fazia esse "ajuste de arredondamento" às vezes CRIAR uma diferença de 1
+      // centavo em vez de corrigir, porque comparava contra um total calculado
+      // diferente do que o Bling realmente usa.
+      const somaItens=(payload.itens||[]).reduce((s,i)=>s+ +(Number(i.quantidade||0)*Number(i.valor||0)).toFixed(2),0);
       const desconto=Number(payload.desconto?.valor||0);
       const outrasDespesas=Number(payload.outrasDespesas||0);
       const frete=Number(payload.transporte?.frete||0);
@@ -14862,14 +14867,8 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     }
 
     const dataHojeBR=new Date(Date.now()-3*60*60*1000).toISOString().slice(0,10);
-    // arredonda CADA item pra 2 casas antes de somar (igual o Bling faz por linha) --
-    // somar tudo em ponto flutuante e arredondar só no total dava, às vezes, 1 centavo
-    // de diferença numa proposta com muitos itens, e o Bling recusava a parcela com
-    // "o somatório do valor das parcelas difere do total da venda".
-    const totalItensPed=+prop.itens.reduce((s,i)=>s+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0).toFixed(2);
     const entregaProp=prop.entrega&&prop.entrega.tipo==="entrega"?prop.entrega:{tipo:"retirada"};
     const freteProp=entregaProp.tipo==="entrega"?Number(entregaProp.taxa)||0:0;
-    const totalPed=+(totalItensPed+freteProp).toFixed(2);
     // o Bling exige uma parcela pra validar a venda — usa "Ficha Financeira" como
     // marcador de "ainda não pago" (mesma regra do totem)
     const formaFicha=await getFormaPagamentoIdPorNome("ficha financeira");
@@ -14879,10 +14878,15 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       itens:prop.itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||"").trim()?{descricao:String(i.nome).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       ...(prop.vendedorId?{vendedor:{id:Number(prop.vendedorId)}}:{}),
       ...(prop.observacao?{observacoes:prop.observacao}:{}),
+      // SEM "parcelas" aqui de propósito — o Bling calcula o total da venda por
+      // conta própria a partir dos itens (arredondando por linha), e adivinhar
+      // esse total aqui e mandar de cara já dava, às vezes, 1 centavo de diferença
+      // numa proposta com muitos itens, com o Bling recusando a criação inteira
+      // ("o somatório do valor das parcelas difere do total da venda"). A parcela
+      // é gravada DEPOIS de criar (mais abaixo), com o total REAL que o Bling
+      // devolveu — não um cálculo nosso — reaproveitando a mesma função que já
+      // absorve qualquer diferença de centavo na última parcela.
     };
-    if(formaFicha){
-      payload.parcelas=[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:totalPed}];
-    }
     if(entregaProp.tipo==="entrega"){
       payload.transporte={ fretePorConta:0, frete:freteProp, quantidade:1, pesoBruto:estimarPesoPedido(prop.itens||[])||1 };
       const end=prop.cliente?.endereco||{};
@@ -14944,8 +14948,25 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
         const detalhe=Array.isArray(campos)&&campos.length
           ? campos.map(f=>`${f.element||f.field||f.campo||''}: ${f.msg||f.message||f.descricao||JSON.stringify(f)}`).join(" | ")
           : (b?.error?.description||b?.error?.message||errBling.message||"erro desconhecido");
-        liberarTrava();
-        return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
+        // se o Bling exigir parcela pra criar (mensagem diferente de "somatório
+        // difere", que é o que estamos evitando ao não mandar parcela nenhuma),
+        // tenta só mais uma vez, agora COM uma parcela -- rede de segurança pro
+        // caso desse cadastro do Bling específico não aceitar pedido sem parcela.
+        const pedeParcela=/parcela/i.test(detalhe) && !/somat[oó]rio/i.test(detalhe);
+        if(pedeParcela && formaFicha){
+          const totalItensFallback=+prop.itens.reduce((s,i)=>s+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0).toFixed(2);
+          const payloadComParcela={...payload, parcelas:[{formaPagamento:{id:formaFicha},dataVencimento:dataHojeBR,valor:+(totalItensFallback+freteProp).toFixed(2)}]};
+          try{ criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payloadComParcela)}); }
+          catch(errBling3){
+            liberarTrava();
+            const b3=errBling3.body||{};
+            const detalhe3=(b3?.error?.description||b3?.error?.message||errBling3.message||"erro desconhecido");
+            return res.status(400).json({erro:"Bling recusou: "+detalhe3, detalheCompleto:b3});
+          }
+        } else {
+          liberarTrava();
+          return res.status(400).json({erro:"Bling recusou: "+detalhe, detalheCompleto:b});
+        }
       }
     }
     const pedidoId=criado?.data?.id;
@@ -14956,6 +14977,16 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       return res.status(400).json({erro:"O Bling não retornou o número do pedido — tente de novo. Se persistir, confira no Bling se o pedido chegou a ser criado antes de gerar outro."});
     }
     let numero=criado?.data?.numero||null;
+    // grava a parcela AGORA, com o total que o Bling realmente calculou pro pedido
+    // recém-criado (não um cálculo nosso) -- reaproveita a mesma função que já
+    // absorve qualquer diferença de centavo na última parcela, usada no resto do
+    // sistema pra registrar pagamento sem cair nesse mesmo erro.
+    if(formaFicha && !(criado?.data?.parcelas||[]).length){
+      try{
+        const rParc=await atualizarParcelasBling(pedidoId, [{formaId:formaFicha, valor:Number(criado?.data?.total)||0}], {ped:criado.data});
+        if(!rParc?.ok) console.error("[atacado] gerar-pedido: não consegui gravar a parcela Ficha Financeira após criar o pedido",pedidoId,rParc?.erro);
+      }catch(e){ console.error("[atacado] gerar-pedido: erro ao gravar parcela após criar:",e.message); }
+    }
     // GRAVA O VÍNCULO NA HORA, logo após o Bling responder. Antes isso só acontecia no
     // fim do fluxo (depois de até 3 tentativas de mudar a situação, ~2s ou mais), e
     // nessa janela a rotina de sincronização podia varrer o Bling, não achar o vínculo
