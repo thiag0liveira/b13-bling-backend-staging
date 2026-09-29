@@ -5311,7 +5311,7 @@ function _indicePrecosTabela(){
   };
   (tab?.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{
     const info={itemId:it.id, categoria:cat.t||"", itemNome:it.nome||"", precoAtacado:it.preco??null,
-      precoFardo: precoFardoDe(it.id), caixaQtd:it.caixa||null};
+      precoFardo: precoFardoDe(it.id), caixaQtd:it.caixa||null, desabilitado:!!it.desabilitado};
     (it.bling||[]).forEach(b=>{
       if(b.codigo) porCodigo[String(b.codigo)]=info;
       if(b.nome) porNome[String(b.nome).toLowerCase().trim()]=info;
@@ -9029,10 +9029,18 @@ app.get("/api/buscar-atacado", async (req, res) => {
     }
     let lista=Object.values(porId);
 
-    // aplica o preço de atacado (tabela publicada); se não houver, usa o preço padrão do Bling
+    // aplica o preço de atacado (tabela publicada); exclui da busca produto marcado
+    // como "desabilitado" (🚫) na tabela -- antes só o /pedir-online (site/totem)
+    // respeitava essa marcação; a busca do Venda Atacado usava outra fonte (índice
+    // geral de produtos) e ignorava, então o produto continuava aparecendo aqui
+    // mesmo depois de marcado pra não aparecer.
     // também traz o "múltiplo" de venda (campo caixa da tabela: soma de N em N unidades)
     // e o preço de FARDO (se cadastrado), quando existir pra aquele item da tabela
     const idxTabela = _indicePrecosTabela();
+    lista = lista.filter(p => {
+      const vinc = idxTabela.porCodigo[String(p.codigo)] || idxTabela.porNome[String(p.nome||"").toLowerCase().trim()];
+      return !vinc?.desabilitado;
+    });
     lista.forEach(p => {
       const vinc = idxTabela.porCodigo[String(p.codigo)];
       const atacado = vinc?.precoAtacado;
