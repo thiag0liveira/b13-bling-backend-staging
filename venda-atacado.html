@@ -1091,9 +1091,9 @@ async function addItem(p) {
     } catch (e) {}
   }
   if (estoque != null && estoque < mult) {
-    S.msg = `⚠️ ${p.nome} está sem estoque suficiente pra 1 fardo (estoque: ${estoque}, fardo: ${mult}).`;
-    render();
-    return;
+    S.msg = `⚠️ ${p.nome}: a última conferência de estoque (pode estar desatualizada) mostrava só ${estoque} un, menos que 1 fardo (${mult}). Adicionando mesmo assim — a conferência de verdade acontece ao gerar o pedido.`;
+  } else {
+    S.msg = "";
   }
   S.itens.push({
     produtoId: p.id,
@@ -1105,7 +1105,6 @@ async function addItem(p) {
     multiplo: mult,
     estoque
   });
-  S.msg = "";
   render();
   agendarAutoSave();
 }
@@ -1120,9 +1119,12 @@ function mudarQtd(ix, d) {
   const mult = Math.max(1, parseInt(it.multiplo) || 1);
   let q = Math.max(mult, (+it.quantidade || mult) + d * mult);
   const max = maxPorEstoque(it);
+  // NÃO trava mais no número de estoque guardado no carrinho -- ele é uma FOTO de
+  // quando o produto foi adicionado e pode estar desatualizado (ex.: entrou
+  // mercadoria nova depois). Só avisa; quem confere de verdade, ao vivo, é o Bling
+  // na hora de "Gerar pedido" (com autorização por QR se realmente faltar).
   if (q > max) {
-    q = max;
-    S.msg = `⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`;
+    S.msg = `⚠️ ${it.nome}: você pediu ${q} un, mas a última conferência de estoque (pode estar desatualizada) mostrava só ${it.estoque} un. Seguindo mesmo assim — a conferência de verdade acontece ao gerar o pedido.`;
   } else S.msg = "";
   it.quantidade = q;
   render();
@@ -1135,8 +1137,7 @@ function setQtd(ix, v) {
   q = Math.max(mult, Math.round(q / mult) * mult); // arredonda pro múltiplo mais próximo
   const max = maxPorEstoque(it);
   if (q > max) {
-    q = max;
-    S.msg = `⚠️ Estoque disponível de ${it.nome}: ${it.estoque} un (máx. ${max} respeitando o fardo de ${mult}).`;
+    S.msg = `⚠️ ${it.nome}: você pediu ${q} un, mas a última conferência de estoque (pode estar desatualizada) mostrava só ${it.estoque} un. Seguindo mesmo assim — a conferência de verdade acontece ao gerar o pedido.`;
   } else S.msg = "";
   it.quantidade = q;
   render();
