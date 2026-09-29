@@ -9050,6 +9050,7 @@ app.get("/api/buscar-atacado", async (req, res) => {
       const vinc = idxTabela.porCodigo[String(p.codigo)];
       const atacado = vinc?.precoAtacado;
       p.precoAtacado = (atacado != null) ? atacado : null;
+      p.categoria = vinc?.categoria || null; // categoria da tabela, pra distinguir formatos do mesmo produto na proposta
       p.preco = (atacado != null) ? atacado : (p.precoBling ?? 0);
       p.origemPreco = (atacado != null) ? "atacado" : "bling";
       p.multiplo = vinc?.caixaQtd || 1; // de quantas em quantas unidades some

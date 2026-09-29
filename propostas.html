@@ -458,7 +458,7 @@ function cardProposta(p) {
     hour: "2-digit",
     minute: "2-digit"
   }) : "";
-  const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}`).join(", ");
+  const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}${i.categoria ? ` (${i.categoria})` : ""}`).join(", ");
   const ehSite = p.origemPedido === "site";
   return `<div class="card" id="proposta-${esc(p.id)}" style="${ehSite ? 'border:2px solid #25D366;background:rgba(37,211,102,.06)' : ''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">

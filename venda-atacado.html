@@ -677,6 +677,7 @@ async function addSugestao(s) {
     await addItem({
       id: p.id,
       nome: p.nome,
+      categoria: p.categoria || null,
       preco: (_ref = (_p$preco = p.preco) !== null && _p$preco !== void 0 ? _p$preco : p.precoBling) !== null && _ref !== void 0 ? _ref : 0,
       imagem: p.imagem || "",
       origemPreco: p.origemPreco || 'bling',
@@ -865,7 +866,7 @@ function listaTabelaHtml() {
   const renderColuna = lista => lista.map(c => `
         <div style="margin-bottom:10px">
           <div style="background:#262366;border-radius:8px;text-align:center;font-weight:900;font-size:12px;padding:5px;text-transform:uppercase;position:sticky;top:0">${esc(c.titulo)}</div>
-          ${c.itens.map((it, ix) => tbItemRow(it, c.titulo + "|" + ix + "|" + it.nome)).join("")}
+          ${c.itens.map((it, ix) => tbItemRow(it, c.titulo + "|" + ix + "|" + it.nome, c.titulo)).join("")}
         </div>`).join("");
   if (cats.length === 1) return renderColuna(cats);
   const meio = Math.ceil(cats.length / 2);
@@ -880,7 +881,7 @@ function filtrarTabela(v) {
     if (w) w.innerHTML = listaTabelaHtml();
   }, 120);
 }
-function tbItemRow(it, chaveUnica) {
+function tbItemRow(it, chaveUnica, categoria) {
   const mult = it.caixa || 1;
   const blingList = (it.bling || []).filter(b => b && b.id);
 
@@ -907,14 +908,14 @@ function tbItemRow(it, chaveUnica) {
         </div>
         <button class="btn btn-out" style="font-size:12px;padding:7px 12px;flex-shrink:0" onclick="S.tbAbertos['${chaveUnica.replace(/'/g, "\\'")}']=!S.tbAbertos['${chaveUnica.replace(/'/g, "\\'")}'];render()">${aberto ? '▲ Fechar' : '▼ Escolher sabor'}</button>
       </div>
-      ${aberto ? `<div style="padding:0 4px 8px 14px">${blingList.map(b => tbSaborRow(it, b, mult)).join("")}</div>` : ''}
+      ${aberto ? `<div style="padding:0 4px 8px 14px">${blingList.map(b => tbSaborRow(it, b, mult, false, categoria)).join("")}</div>` : ''}
     </div>`;
   }
 
   // associação única — comportamento simples de sempre
-  return tbSaborRow(it, blingList[0], mult, true);
+  return tbSaborRow(it, blingList[0], mult, true, categoria);
 }
-function tbSaborRow(it, b, mult, semIndent) {
+function tbSaborRow(it, b, mult, semIndent, categoria) {
   const ix = S.itens.findIndex(i => String(i.produtoId) === String(b.id));
   const jaTem = ix >= 0;
   const nomeExib = semIndent ? it.nome : b.nome || it.nome;
@@ -922,7 +923,8 @@ function tbSaborRow(it, b, mult, semIndent) {
     id: b.id,
     nome: nomeExib,
     preco: it.preco,
-    multiplo: mult
+    multiplo: mult,
+    categoria: categoria || null
   }).replace(/'/g, "&#39;");
   const precoTxt = `<span style="color:#ffd23f;font-weight:800;font-size:11px;white-space:nowrap">${brl(it.preco)}${mult > 1 ? ` <span class="muted" style="font-size:9px">· fardo ${mult}</span>` : ''}</span>`;
   if (jaTem) {
@@ -960,6 +962,7 @@ async function addDaTabela(it) {
   await addItem({
     id: it.id,
     nome: it.nome,
+    categoria: it.categoria || null,
     preco: it.preco,
     imagem: "",
     origemPreco: 'atacado',
@@ -1098,6 +1101,7 @@ async function addItem(p) {
   S.itens.push({
     produtoId: p.id,
     nome: p.nome,
+    categoria: p.categoria || null,
     valor: +p.preco || 0,
     quantidade: mult,
     imagem: imagem || "",
