@@ -345,6 +345,18 @@ const _metricas={ inicio:Date.now(), total:0, err429:0, erros:0,
 // DIAGNÓSTICO: mostra se o problema é token vencido, fila travada, ou o Bling
 // recusando de verdade (429/erro) — sem isso, "parou de funcionar" fica no chute.
 // SAÚDE GERAL DO PROCESSO: memória, tempo desde o último reinício, tamanho dos
+// diz com certeza qual código está rodando -- pra confirmar deploy sem depender
+// de status do Railway/GitHub (que às vezes demora a responder)
+const _SERVIDOR_INICIADO_EM=new Date().toISOString();
+app.get("/api/versao",(req,res)=>{
+  res.json({
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+    commitCurto: (process.env.RAILWAY_GIT_COMMIT_SHA||"").slice(0,7) || null,
+    mensagemCommit: process.env.RAILWAY_GIT_COMMIT_MESSAGE || null,
+    servidorIniciadoEm: _SERVIDOR_INICIADO_EM,
+    agora: new Date().toISOString(),
+  });
+});
 // arquivos de dados que já causaram crash antes (crescem sem parar se não forem
 // cuidados) — pra ver, num só lugar, se está tudo bem ou se algo está subindo
 // rumo a outro travamento, antes que aconteça de novo.
