@@ -7313,16 +7313,13 @@ app.post("/api/pdv/venda", async(req,res)=>{
       ...(req.body.observacao&&String(req.body.observacao).trim()?{observacoes:String(req.body.observacao).trim()}:{}),
       ...(Number(req.body.taxaCredito)>0?{outrasDespesas:+Number(req.body.taxaCredito).toFixed(2)}:{}),
       ...(Number(req.body.freteBase)>0?{transporte:{frete:+Number(req.body.freteBase).toFixed(2),fretePorConta:0}}:{}),
-      // desconta o TROCO da parcela em dinheiro: o Bling exige que a soma das
-      // parcelas seja exatamente o total da venda (mesmo motivo do caixa atacado)
-      parcelas: (function(){
-        let t=Number(req.body.troco)||0;
-        return pagamentos.map(p=>{
-          let v=Number(p.valor)||0;
-          if(t>0.0049 && /dinheiro/i.test(p.formaNome||"")){ const d=Math.min(v,t); v=+(v-d).toFixed(2); t=+(t-d).toFixed(2); }
-          return {valor:+v.toFixed(2), dataVencimento:dataHojeBR, formaPagamento:{id:Number(p.formaId)}};
-        }).filter(p=>p.valor>0);
-      })(),
+      // SEM "parcelas" aqui de propósito -- mesmo motivo do gerar-pedido de proposta:
+      // mandar a parcela já na criação exige adivinhar exatamente o total que o Bling
+      // vai calcular (por linha, com o próprio arredondamento dele), e isso vinha
+      // sendo recusado ("uma ou mais parcelas da venda possuem erros de validação").
+      // A parcela é gravada DEPOIS de criar (mais abaixo), com o total REAL que o
+      // Bling devolveu, reaproveitando atualizarParcelasBling (que já tem o ajuste de
+      // arredondamento certo e o desconto do troco).
     };
 
     let criado;
@@ -7341,10 +7338,37 @@ app.post("/api/pdv/venda", async(req,res)=>{
           delete payload.vendedor;
         }
         criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
-      } else { throw e; }
+      }
+      // rede de segurança: se esse cadastro do Bling específico exigir parcela já
+      // na criação (mensagem sobre parcela, sem ser a de vendedor), tenta só mais
+      // uma vez com uma parcela só, pelo total calculado aqui mesmo
+      else if(/parcela/i.test(e.message||"")){
+        console.warn("Bling recusou sem parcela na criação, tentando de novo com uma parcela:",e.message);
+        const pagPrincipal=pagamentos[0];
+        payload.parcelas=[{valor:totalPedido, dataVencimento:dataHojeBR, formaPagamento:{id:Number(pagPrincipal?.formaId)}}];
+        criado=await bling(`/pedidos/vendas`,{method:"POST",body:JSON.stringify(payload)});
+      }
+      else { throw e; }
     }
     const pedidoId=criado?.data?.id;
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
+    // grava a(s) parcela(s) de verdade AGORA, com o total que o Bling realmente
+    // calculou pro pedido recém-criado (não um cálculo nosso) -- pula esse passo se
+    // o fallback acima já deixou uma parcela gravada na criação
+    if(!(criado?.data?.parcelas||[]).length){
+      try{
+        let t=Number(req.body.troco)||0;
+        const parcelasReais=pagamentos.map(p=>{
+          let v=Number(p.valor)||0;
+          if(t>0.0049 && /dinheiro/i.test(p.formaNome||"")){ const d=Math.min(v,t); v=+(v-d).toFixed(2); t=+(t-d).toFixed(2); }
+          return {formaId:Number(p.formaId), valor:+v.toFixed(2)};
+        }).filter(p=>p.valor>0);
+        if(parcelasReais.length){
+          const rParc=await atualizarParcelasBling(pedidoId, parcelasReais, {ped:criado.data});
+          if(!rParc?.ok) console.error("[pdv] não consegui gravar a parcela após criar o pedido",pedidoId,rParc?.erro);
+        }
+      }catch(e){ console.error("[pdv] erro ao gravar parcela após criar:",e.message); }
+    }
     // move pro status final correto. Regra: venda nova no VAREJO -> Atendido;
     // venda nova no atacado (ou statusFinal 'separado') -> Separado. Default Atendido.
     // "separacao" = o caixa mandou o pedido pra separação (Em separação + fila da Mesa).
