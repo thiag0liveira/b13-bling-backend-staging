@@ -202,6 +202,24 @@ function ehFormaCartao(nome) {
 function totalPedido() {
   return +(subtotal() + OUTRAS_DESPESAS + FRETE + taxaCartao()).toFixed(2);
 }
+// atualiza só os 3 números do resumo (Total a receber / Pago / Falta), sem chamar
+// render() -- assim o campo onde a pessoa está digitando (valor do pagamento, frete)
+// não perde o foco/cursor a cada tecla. render() continua rodando nos outros
+// gatilhos (trocar forma, mudar quantidade etc.), então o resto da tela sempre
+// fica consistente; isso aqui é só pra manter esses 3 números ao vivo enquanto
+// alguém ainda está digitando, sem esperar perder o foco do campo.
+function atualizarResumoPagamento() {
+  const elT = document.getElementById("valTotalReceber");
+  const elP = document.getElementById("valPago");
+  const elF = document.getElementById("valFalta");
+  if (elT) elT.textContent = brl(totalPedido());
+  if (elP) elP.textContent = brl(totalPago());
+  if (elF) {
+    const f = restante();
+    elF.textContent = brl(Math.max(0, f));
+    elF.style.color = f > 0.009 ? "#ff8090" : "#8fffc0";
+  }
+}
 
 // calcula o valor certo pra cobrar no cartão (crédito/débito) já considerando que a
 // própria taxa de 3,5% incide sobre esse valor — sem isso, o operador digita só o
@@ -1095,7 +1113,7 @@ function novaVenda() {
   FINALIZANDO = false;
   OP_ID = null;
   DESTINO_PEDIDO = null;
-  window._obsVenda = "";
+  window._obsVenda = ""; _obsVendaEmUso = false;
   render();
 }
 
@@ -2154,7 +2172,18 @@ async function abrirModalMinhasVendas() {
       </div>
     </div>`;
 }
+let _obsVendaEmUso = false; // true assim que a pessoa toca no campo de observação --
+// fica assim até finalizar/trocar de pedido, pra devolver o foco pra lá depois de
+// qualquer clique em outro lugar (ex.: +/- de quantidade) que redesenhe a tela
 function render() {
+  // preserva o foco do campo de observação através de um render() completo -- como
+  // a tela inteira é redesenhada (ex.: ao clicar +/- na quantidade de um item), sem
+  // isso o campo perdia o foco no meio da digitação, dando a impressão de que o
+  // texto tinha sumido (mesmo o valor sendo salvo certinho por trás). Usa
+  // _obsVendaEmUso (fica ligado desde a última vez que a pessoa tocou no campo) --
+  // não dá pra checar "está focado agora" porque o PRÓPRIO clique que disparou este
+  // render já tirou o foco de lá antes de chegar aqui. O cursor sempre volta pro fim
+  // do texto (mais simples e cobre o caso comum de continuar escrevendo a nota).
   const pill = document.getElementById("pillCaixa");
   const btnAF = document.getElementById("btnAbrirFechar");
   if (CAIXA.aberta) {
@@ -2250,12 +2279,12 @@ function render() {
         ${PAGAMENTOS.map((p, ix) => `
           <div class="pagRow">
             <span style="flex:1">${p.formaNome ? esc(p.formaNome) : '<span class="muted">escolha a forma acima</span>'}</span>
-            <input type="number" step="0.01" value="${p.valor}" onchange="PAGAMENTOS[${ix}].valor=+this.value||0;render()">
+            <input type="number" step="0.01" value="${p.valor}" oninput="PAGAMENTOS[${ix}].valor=+this.value||0;atualizarResumoPagamento()">
             <button class="rm" onclick="PAGAMENTOS.splice(${ix},1);render()">🗑</button>
           </div>`).join("")}
         ${OUTRAS_DESPESAS > 0 ? `<div class="linha" style="margin-top:10px"><span class="muted">Outras despesas (do pedido)</span><b>${brl(OUTRAS_DESPESAS)}</b></div>` : ""}
         <div class="linha" style="margin-top:10px;align-items:center"><span class="muted">🚚 Frete${PEDIDO_ATUAL ? ' (do pedido)' : ''}</span>
-          <input type="number" step="0.01" min="0" value="${FRETE || ''}" placeholder="0,00" style="width:120px;text-align:right" onchange="FRETE=+this.value||0;render()"></div>
+          <input type="number" step="0.01" min="0" value="${FRETE || ''}" placeholder="0,00" style="width:120px;text-align:right" oninput="FRETE=+this.value||0;atualizarResumoPagamento()"></div>
         ${ehPedidoAtacado() && valorEmCredito() + valorEmDebito() > 0 ? `
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO ? 'checked' : ''} onchange="alternarTaxaCartao(this.checked)"> Taxa cartão crédito/débito (3,5%)</span>
@@ -2263,13 +2292,13 @@ function render() {
           </label>
           <div class="muted" style="font-size:11px;margin-top:2px">O valor do cartão já sai com a taxa embutida (é o que passa na maquininha). A taxa mostrada é a parte dele que corresponde aos 3,5%.</div>
           ${COBRAR_TAXA_CARTAO && Math.abs(restante()) > 0.009 ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Recalcular valor do cartão</button>` : ""}` : ""}
-        <div class="linha" style="margin-top:10px"><span>Total a receber</span><b style="color:#ffd23f">${brl(totalPedido())}</b></div>
-        <div class="linha" style="margin-top:6px"><span>Pago</span><b>${brl(totalPago())}</b></div>
-        <div class="linha"><span>Falta</span><b style="color:${restante() > 0.009 ? '#ff8090' : '#8fffc0'}">${brl(Math.max(0, restante()))}</b></div>
+        <div class="linha" style="margin-top:10px"><span>Total a receber</span><b id="valTotalReceber" style="color:#ffd23f">${brl(totalPedido())}</b></div>
+        <div class="linha" style="margin-top:6px"><span>Pago</span><b id="valPago">${brl(totalPago())}</b></div>
+        <div class="linha"><span>Falta</span><b id="valFalta" style="color:${restante() > 0.009 ? '#ff8090' : '#8fffc0'}">${brl(Math.max(0, restante()))}</b></div>
         ${trocoAtual() > 0.009 ? `<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(trocoAtual())}</b></div>` : ""}
         ${sobraSemDinheiro() > 0.009 ? `<div class="linha" style="margin-top:2px;background:#3a0010;border-radius:8px;padding:6px"><span style="color:#ff8f7a">⚠️ Passou ${brl(sobraSemDinheiro())} do total (cartão/pix não dá troco)</span><b style="color:#ff8f7a">corrija</b></div>` : ""}
         <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
-        <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" oninput="window._obsVenda=this.value">${esc(window._obsVenda || '')}</textarea>
+        <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" onfocus="_obsVendaEmUso=true" oninput="window._obsVenda=this.value">${esc(window._obsVenda || '')}</textarea>
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
           <input type="checkbox" id="emitirNfce"> Emitir NFC-e (desligada por padrão)</label>
         <div id="msgFinalizar"></div>
@@ -2307,6 +2336,13 @@ function render() {
   </div>`;
   ligarBusca();
   pintarPedidos();
+  if (_obsVendaEmUso) {
+    const novoObs = document.getElementById("obsVenda");
+    if (novoObs) {
+      novoObs.focus();
+      try { novoObs.setSelectionRange(novoObs.value.length, novoObs.value.length); } catch (e) {}
+    }
+  }
 }
 
 // ---- modal de sucesso da finalização (usado na resposta direta E quando a
@@ -2345,7 +2381,7 @@ function mostrarSucessoFinalizacao(resp, ctx) {
     operador: S.nome || "",
     montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
   };
-  window._obsVenda = "";
+  window._obsVenda = ""; _obsVendaEmUso = false;
   OP_ID = null;
   FINALIZANDO = false;
   const nfMsg = emitirNfce ? (_resp$nfce = resp.nfce) !== null && _resp$nfce !== void 0 && _resp$nfce.pendente ? " NFC-e sendo emitida em segundo plano (veja em Gestão de NFC-e)." : (_resp$nfce2 = resp.nfce) !== null && _resp$nfce2 !== void 0 && _resp$nfce2.ok ? " NFC-e emitida." : (_resp$nfce3 = resp.nfce) !== null && _resp$nfce3 !== void 0 && _resp$nfce3.erro ? " (NFC-e falhou)" : "" : "";
