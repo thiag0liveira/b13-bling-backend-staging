@@ -416,6 +416,13 @@ let BUSCA_RES = null,
   BUSCANDO = false,
   SITUACOES = [],
   AGUARD_PAG = null;
+// acha um pedido tanto na lista principal quanto num resultado de busca --
+// pedido achado só pela busca (não estava na lista carregada) também precisa
+// conseguir abrir o editor de entrega/retirada, calcular frete etc.
+function acharPedido(id) {
+  return PEDIDOS.find(function (x) { return String(x.id) === String(id); }) ||
+    (BUSCA_RES || []).find(function (x) { return String(x.id) === String(id); });
+}
 let EXPANDIDO = {}; // pedidoId -> true (card aberto com todos os botões)
 // faixas recolhíveis — por padrão só "Novos pedidos" fica aberta
 let FAIXAS_ABERTAS = function () {
@@ -1145,9 +1152,7 @@ async function whats(tel, numero, cliente, id) {
         if (m) t = soDig(m[1]);
       }
     }
-    const p = PEDIDOS.find(function (x) {
-      return String(x.id) === String(id);
-    });
+    const p = acharPedido(id);
     const nome = ((_ped = ped) === null || _ped === void 0 || (_ped = _ped.contato) === null || _ped === void 0 ? void 0 : _ped.nome) || cliente || "";
     const itens = ((_ped2 = ped) !== null && _ped2 !== void 0 && (_ped2 = _ped2.itens) !== null && _ped2 !== void 0 && _ped2.length ? ped.itens.map(function (i) {
       var _i$produto;
@@ -1547,15 +1552,11 @@ async function salvarEditarAguardando(id, tokenQr) {
 // pedido marcado como RETIRADA não tem entrega pra agendar — explica e oferece
 // voltar pra entrega (com a opção de restaurar o agendamento que existia antes)
 function avisarRetirada(id) {
-  const p = PEDIDOS.find(function (x) {
-    return String(x.id) === String(id);
-  });
+  const p = acharPedido(id);
   document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>📅 Agendar entrega — pedido ' + esc(p ? p.numero : id) + '</h3>' + '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:10px;padding:10px;margin:10px 0;font-size:13px;color:#ffd23f">' + 'Este pedido está como <b>🏪 RETIRADA</b>, por isso não há entrega pra agendar.<br><br>' + 'Se foi engano, mude pra <b>Entrega</b> primeiro (o endereço e o frete são pedidos lá).</div>' + '<div style="display:flex;gap:8px;margin-top:12px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Fechar</button>' + '<button class="btn btn-mag" style="margin:0" onclick="fechar();abrirTipoEntrega(' + id + ')">🛵 Mudar pra Entrega</button>' + '</div></div></div>';
 }
 function abrirAgendar(id) {
-  const p = PEDIDOS.find(function (x) {
-    return String(x.id) === String(id);
-  });
+  const p = acharPedido(id);
   if (!p) return;
   const hoje = new Date();
   const d0 = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
@@ -1667,9 +1668,7 @@ async function desagendar(id) {
 
 /* ===== TROCAR ENTREGA <-> RETIRADA (com cálculo de frete) ===== */
 async function abrirTipoEntrega(id) {
-  const p = PEDIDOS.find(function (x) {
-    return String(x.id) === String(id);
-  });
+  const p = acharPedido(id);
   if (!p) return;
   // busca o endereço ATUAL no Bling (cadastro do cliente + o que está no pedido),
   // pra não trabalhar com endereço velho salvo no nosso registro
@@ -1690,9 +1689,7 @@ function mostrarCamposEntrega() {
   if (box) box.style.display = el && el.value === "entrega" ? "block" : "none";
 }
 async function calcularFretePedido(id) {
-  const p = PEDIDOS.find(function (x) {
-    return String(x.id) === String(id);
-  });
+  const p = acharPedido(id);
   const end = (document.getElementById("teEnd") || {}).value || "";
   const info = document.getElementById("infoFrete");
   if (!end.trim()) {
@@ -1773,8 +1770,10 @@ async function buscarPedido() {
     limparBusca();
     return;
   }
-  // se já está na lista carregada, mostra na hora
-  const local = PEDIDOS.filter(p => String(p.numero) === termo || String(p.id) === termo);
+  // se já está na lista carregada E já tem uma situação de verdade (não o placeholder
+  // "carregando…", que fica assim pra sempre desde que a sincronização automática de
+  // fundo parou de rodar), mostra na hora. Senão, cai pra busca de verdade abaixo.
+  const local = PEDIDOS.filter(p => (String(p.numero) === termo || String(p.id) === termo) && p.situacao !== "carregando…");
   if (local.length) {
     BUSCA_RES = local;
     render();
