@@ -1463,6 +1463,7 @@ function movimentoParaComprovante(m) {
     desconto: m.desconto || 0,
     outrasDespesas: Number(m.outrasDespesas || 0),
     frete: Number(m.frete || 0),
+    troco: Number(m.troco || 0),
     itens: (m.itens || []).map(i => ({
       produtoId: i.produtoId,
       nome: i.nome || "Produto " + i.produtoId,
