@@ -1373,7 +1373,12 @@ async function imprimirNotaLocal() {
         });
       } catch (e) {}
     }
-    window.print();
+    // pequeno atraso antes de imprimir: a biblioteca do QR code desenha de forma
+    // assíncrona (gera uma imagem por baixo dos panos) -- imprimir na mesma hora,
+    // sem esperar, às vezes saía ANTES do QR terminar de aparecer, imprimindo o
+    // comprovante sem ele (mais comum com o totem sob uso mais pesado).
+    setTimeout(() => window.print(), 200);
+    return;
   } catch (e) {
     alertaBonito("Deu erro ao montar/imprimir a nota:\n\n" + (e.message || e) + "\n\nTira uma foto dessa tela e manda pro suporte.");
   }
