@@ -8878,10 +8878,15 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:20,prefixo:"frete"}), async 
     if(!el || el.status!=="OK") return res.json({entregaDisponivel:false, motivo:"Não consegui calcular a distância desse endereço. Confira e tente novamente.", detalhe:el?.status||j.status});
     const km=el.distance.value/1000;
     // dentro do limite normal → tabela normal; além do limite normal, mas dentro da
-    // faixa adicional (se configurada) → usa a tabela DELA; além de tudo → sem entrega
+    // faixa adicional (se configurada) → usa a tabela DELA; além de tudo → sem entrega.
+    // O limite é por KM INTEIRO: até 23,999km ainda conta como "dentro de 23km" —
+    // só a partir de 24,000km (o próximo km fechado) é que passa pra faixa seguinte.
+    // Sem isso, 23,1km já virava faixa extra (ou "fora do limite"), quando deveria
+    // continuar valendo a regra de até 23km.
+    const dentroDe = (kmValor, limite) => Math.floor(kmValor) <= limite;
     const limiteFinal = cfg.faixaExtra ? cfg.faixaExtra.kmMax : cfg.maxKm;
-    if(km > limiteFinal) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:Number(km.toFixed(1))});
-    const usaFaixaExtra = km > cfg.maxKm && cfg.faixaExtra;
+    if(!dentroDe(km, limiteFinal)) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:Number(km.toFixed(1))});
+    const usaFaixaExtra = !dentroDe(km, cfg.maxKm) && cfg.faixaExtra;
     const faixa=porKmPara(valor, usaFaixaExtra ? cfg.faixaExtra.faixas : cfg.faixas);
     // na faixa extra, se o valor do pedido não bate NENHUMA faixa configurada (ex.:
     // abaixo de R$3000, quando as faixas dessa distância só começam ali), NÃO cai
