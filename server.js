@@ -8463,7 +8463,14 @@ app.post("/api/pedido",async(req,res)=>{
 });
 
 // Finaliza: concilia contato por CPF/CNPJ (cria se não existir) e gera o pedido de venda
-app.post("/api/finalizar", rateLimit({janelaMs:60000,max:5,prefixo:"finalizar"}), async (req, res) => {
+// o totem é um equipamento DENTRO da loja -- pode ficar atrás do MESMO IP público
+// que outros sistemas da loja (rede compartilhada/NAT), e um totem movimentado
+// facilmente passa de poucos pedidos por minuto. Por isso tem um limite bem mais
+// folgado que o do site (que é público, exposto a qualquer um na internet, e
+// precisa de proteção maior contra abuso).
+const limiteFinalizarSite=rateLimit({janelaMs:60000,max:5,prefixo:"finalizar-site"});
+const limiteFinalizarTotem=rateLimit({janelaMs:60000,max:40,prefixo:"finalizar-totem"});
+app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limiteFinalizarTotem : limiteFinalizarSite)(req,res,next), async (req, res) => {
   const opId=req.body?.opId?String(req.body.opId):null;
   // idempotência: a mesma tentativa (retry/clique duplo/conexão lenta) NÃO cria um
   // segundo pedido no Bling — mesmo padrão já usado no /api/pdv/venda.
