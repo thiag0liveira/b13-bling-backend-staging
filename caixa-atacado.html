@@ -966,7 +966,11 @@ function salvarEdicaoPagamento() {
   }
   const total = totalPedido();
   const soma = linhas.reduce((s, p) => s + Number(p.valor), 0);
-  if (Math.abs(soma - total) >= 0.01 && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
+  const difSoma = soma - total;
+  // pagou a mais e é tudo troco legítimo (dinheiro): segue sem perguntar, igual a
+  // tela normal de finalizar -- o troco é calculado e gravado certo mais abaixo
+  const ehTrocoLegitimo = difSoma > 0.009 && trocoAtual() >= difSoma - 0.01;
+  if (Math.abs(difSoma) >= 0.01 && !ehTrocoLegitimo && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
   const pagamentos = linhas.map(p => ({
     formaId: p.formaId,
     formaNome: p.formaNome,
@@ -1006,7 +1010,8 @@ function salvarEdicaoPagamento() {
           itens: itensEd,
           tokenQr,
           funcionarioId: S.id,
-          frete: FRETE
+          frete: FRETE,
+          troco: trocoAtual()
         })
       }).then(r => r.json());
       if (resp.erro) throw new Error(resp.erro);

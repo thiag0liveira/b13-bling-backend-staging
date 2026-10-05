@@ -3224,6 +3224,7 @@ function marcarMovimentoAlterado(pedidoId, novosPagamentos, alteracao, opts={}){
           if(opts.cancelado) m.cancelado=true;
           if(opts.novoTotal!=null) m.total=+Number(opts.novoTotal).toFixed(2);
           if(opts.frete!=null) m.frete=+Number(opts.frete).toFixed(2);
+          if(opts.troco!=null){ if(Number(opts.troco)>0.009) m.troco=+Number(opts.troco).toFixed(2); else delete m.troco; }
           if(Array.isArray(opts.itens)&&opts.itens.length) m.itens=opts.itens;
           m.alteracoes=[...(m.alteracoes||[]), ...(Array.isArray(opts.alteracoesExtra)?opts.alteracoesExtra:[]), alteracao];
           if(Array.isArray(novosPagamentos)&&novosPagamentos.length) m.pagamentos=novosPagamentos;
@@ -6807,7 +6808,18 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       `Tirou: ${tirou.length?tirou.join(" · "):"—"}`,
       `Acrescentou: ${acrescentou.length?acrescentou.join(" · "):"—"}`,
     ].join("\n");
-    const parcelasEd=linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId}));
+    // desconta o TROCO da parcela em dinheiro antes de mandar pro Bling -- mesma
+    // regra do finalizar. Sem isso, se o caixa recebeu MAIS do que o total (pagou
+    // com troco) e corrige o pagamento aqui, o Bling recusa (soma das parcelas
+    // diferente do total) ou, pior, o troco simplesmente não é considerado.
+    let _trocoPendEd=Number(req.body.troco)||0;
+    const parcelasEd=linhas.map(p=>{
+      let v=Number(p.valor)||0;
+      if(_trocoPendEd>0.0049 && /dinheiro/i.test(p.formaNome||"")){
+        const d=Math.min(v,_trocoPendEd); v=+(v-d).toFixed(2); _trocoPendEd=+(_trocoPendEd-d).toFixed(2);
+      }
+      return {valor:v,formaId:p.formaId};
+    }).filter(p=>p.valor>0);
     let rBling, estoqueRepostoEd=[];
     if(itensMudaramEd){
       // itens mudaram: grava itens + parcelas + histórico num único PUT (destrava Atendido se preciso)
@@ -6844,10 +6856,19 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
       registrarAviso({tipo:"estoque_reposto_auto",titulo:`Pedido #${numero||ped.numero}: estoque reposto automaticamente (reabertura)`,pedidoId:idStr,numero:numero||ped.numero,operador:funcsNome,origem:"Caixa Atacado (reabertura)",fingerprint:`repo-ed-${idStr}-${Date.now()}`,estoqueAjustado:estoqueRepostoEd.map(r=>`${r.nome||("produto "+r.produtoId)} +${r.faltava}`).join(", "),oQueFazer:"Confira no Bling se o saldo desses produtos está certo."});
     }
 
-    // atualiza registro local de pagamento — o total passa a ser o que foi efetivamente recebido
+    // atualiza registro local de pagamento -- o total do PEDIDO continua sendo o
+    // real (itens, do Bling), não o valor pago. Pagar a mais é troco, não vira um
+    // "pedido mais caro" (bug corrigido: antes o total virava a própria soma paga).
     const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    const trocoEd=Number(req.body.troco)||0;
     const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"caixa_atacado_edit"}));
-    const valorPedido=somaNova;
+    // total do pedido: se os itens mudaram, recalcula a partir deles (arredondando por
+    // linha, igual o Bling); senão, usa o total real que o Bling já tinha pro pedido
+    const valorPedido = itensMudaramEd
+      ? +(itensNovos.reduce((s,i)=>s+ +(Number(i.valor||0)*Number(i.quantidade||0)).toFixed(2),0)
+          + Number(ped.outrasDespesas||0) + Number(req.body.frete!=null?req.body.frete:(ped.transporte?.frete||0))
+          - Number(ped.desconto?.valor||0)).toFixed(2)
+      : totalPedido;
     pags[idStr]={
       ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido, frete:Number(req.body.frete||antigo?.frete||0), historico,
       statusPagamento: somaNova>=valorPedido-0.05?"pago":(somaNova>0?"parcial":"pendente"),
@@ -6866,7 +6887,7 @@ app.post("/api/caixa-atacado/editar-pagamento",async(req,res)=>{
     const altItens=itensMudaramEd?[{em:Date.now(),tipo:"itens",por:alteracao.por,autorizadoPor:auth.funcionario.nome,de:diffItensEd.de,para:diffItensEd.para,
       retirados:diffItensEd.retirados.map(_fmtItem),acrescentados:diffItensEd.acrescentados.map(_fmtItem),
       alterados:diffItensEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x ${fmt(a.de.valor)} → ${a.para.quantidade}x ${fmt(a.para.valor)}`)}]:[];
-    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens});
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:valorPedido, frete:Number(req.body.frete||0), itens:itensMudaramEd?itensNovos:null, alteracoesExtra:altItens, troco:trocoEd});
     addLog(idStr,"pagamento_editado_caixa",funcionarioId,alteracao.por,{autorizadoPor:auth.funcionario.nome,de:descAntes,para:descDepois});
     if(itensMudaramEd) registrarHistoricoItens(idStr, diffItensEd, funcionarioId, alteracao.por, auth.funcionario.nome);
 
@@ -6929,22 +6950,37 @@ app.post("/api/gestao/editar-pagamento-venda",async(req,res)=>{
 
     const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
     const notaObs=`[Alteração ${quando} — ${quemAlterou} (Gestão de Caixas)] Pagamento: ${descAntes} -> ${descDepois}`;
-    const rBling=await atualizarParcelasBling(pedidoId, linhas.map(p=>({valor:Number(p.valor),formaId:p.formaId})), {obsExtra:notaObs});
+    // desconta o TROCO da parcela em dinheiro antes de mandar pro Bling (mesma regra
+    // do finalizar/editar-pagamento do caixa) -- sem isso, pagar a mais (com troco)
+    // fazia o Bling recusar ou o total do pedido ficar errado no nosso registro.
+    const totalPedidoGestao=Number(ped.total||0);
+    let _trocoPendGestao=Number(req.body.troco)||0;
+    const parcelasGestao=linhas.map(p=>{
+      let v=Number(p.valor)||0;
+      if(_trocoPendGestao>0.0049 && /dinheiro/i.test(p.formaNome||"")){
+        const d=Math.min(v,_trocoPendGestao); v=+(v-d).toFixed(2); _trocoPendGestao=+(_trocoPendGestao-d).toFixed(2);
+      }
+      return {valor:v,formaId:p.formaId};
+    }).filter(p=>p.valor>0);
+    const rBling=await atualizarParcelasBling(pedidoId, parcelasGestao, {obsExtra:notaObs, ped});
     const blingOk=!!rBling.ok;
     const blingErro=blingOk?"":(rBling.erro||"desconhecido");
     // segue registrando no histórico do caixa MESMO se o Bling recusar (ex.: estoque insuficiente).
     // Nesse caso o gestor ajusta o Bling na mão, mas o caixa já reflete a forma correta.
 
     const somaNova=+linhas.reduce((s,p)=>s+Number(p.valor),0).toFixed(2);
+    const trocoGestao=Number(req.body.troco)||0;
     const historico=linhas.map(p=>({em:Date.now(),valor:+Number(p.valor).toFixed(2),formaNome:p.formaNome||"",tipo:"gestao_edit"}));
+    // total do pedido continua sendo o real (do Bling) -- pagar a mais é troco, não
+    // vira um "pedido mais caro" (mesmo bug corrigido no editar-pagamento do caixa)
     pags[idStr]={
-      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido:somaNova, historico,
+      ...(antigo||{}), pedidoId:idStr, valorPago:somaNova, valorPedido:totalPedidoGestao||somaNova, historico,
       statusPagamento: somaNova>0?"pago":"pendente",
     };
     salvarJSON(PAG_FILE,pags);
 
     const alteracao={ em:Date.now(), tipo:"pagamento", autorizadoPor:quemAlterou+" (Gestão)", por:quemAlterou, de:descAntes, para:descDepois, ...(blingOk?{}:{blingPendente:true, blingErro}) };
-    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:somaNova});
+    const achouMov=marcarMovimentoAlterado(idStr, linhas.map(p=>({formaNome:p.formaNome||"",valor:+Number(p.valor).toFixed(2)})), alteracao, {novoTotal:totalPedidoGestao||somaNova, troco:trocoGestao});
     addLog(idStr,"pagamento_editado_gestao",funcionarioId||null,quemAlterou,{de:descAntes,para:descDepois,blingOk,blingErro});
 
     res.json({ok:true, blingOk, blingErro, de:descAntes, para:descDepois, numero:numero||ped.numero, movimentoAtualizado:achouMov});
