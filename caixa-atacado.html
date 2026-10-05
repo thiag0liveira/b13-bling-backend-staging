@@ -208,7 +208,25 @@ function totalPedido() {
 // gatilhos (trocar forma, mudar quantidade etc.), então o resto da tela sempre
 // fica consistente; isso aqui é só pra manter esses 3 números ao vivo enquanto
 // alguém ainda está digitando, sem esperar perder o foco do campo.
+// bloco do TROCO + aviso de "passou do total" -- usado no render() e na atualização
+// ao vivo. Antes só o render() desenhava isso; como o campo de valor deixou de
+// redesenhar a tela a cada digitação, o troco parou de aparecer.
+function htmlTrocoResumo() {
+  const troco = trocoAtual();
+  const sobra = sobraSemDinheiro();
+  return (troco > 0.009 ? `<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(troco)}</b></div>` : "") +
+    (sobra > 0.009 ? `<div class="linha" style="margin-top:2px;background:#3a0010;border-radius:8px;padding:6px"><span style="color:#ff8f7a">⚠️ Passou ${brl(sobra)} do total (cartão/pix não dá troco)</span><b style="color:#ff8f7a">corrija</b></div>` : "");
+}
+function htmlRecalcTaxa() {
+  return COBRAR_TAXA_CARTAO && Math.abs(restante()) > 0.009 ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Recalcular valor do cartão</button>` : "";
+}
 function atualizarResumoPagamento() {
+  const elRecalc = document.getElementById("boxRecalcTaxa");
+  if (elRecalc) elRecalc.innerHTML = htmlRecalcTaxa();
+  const elTroco = document.getElementById("boxTroco");
+  if (elTroco) elTroco.innerHTML = htmlTrocoResumo();
+  const elTaxa = document.getElementById("valTaxaCartao");
+  if (elTaxa) elTaxa.textContent = brl(taxaCartao());
   const elT = document.getElementById("valTotalReceber");
   const elP = document.getElementById("valPago");
   const elF = document.getElementById("valFalta");
@@ -1669,6 +1687,7 @@ async function confirmarImprimirNumero() {
         formaNome: p.formaNome || "",
         valor: Number(p.valor || 0)
       })),
+      troco: Number(j.troco || 0),
       cliente: {
         nome: j.clienteNome || "Consumidor Final"
       },
@@ -1742,7 +1761,7 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   });
   const extraLinhasItens = itensArr.reduce((s, i) => s + ((i._nomeLinhas.length || 1) - 1), 0);
   const linhasEnderecoQtd = (v.ehEntrega && v.endereco) ? quebrarTexto(_mc, v.endereco, W - padd * 2, 3).length : 0;
-  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
+  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + ((v.pagamentos || []).length ? 28 : 0) + (Number(v.troco) > 0.009 ? 42 : 0) + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr;
@@ -1935,14 +1954,33 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   ctx.fillStyle = "#000";
   ctx.fillText("✓ PAGO", padd, y);
   y += 34;
-  // formas de pagamento
-  (v.pagamentos || []).forEach(p => {
-    ctx.font = "900 18px Arial";
+  // formas de pagamento (nome exato de cada uma + valor)
+  if ((v.pagamentos || []).length) {
+    ctx.font = "700 15px Arial";
     ctx.fillStyle = "#000";
     ctx.textAlign = "left";
-    ctx.fillText(p.formaNome || "—", padd, y);
+    ctx.fillText("Forma de pagamento", padd, y);
+    y += 28;
+  }
+  (v.pagamentos || []).forEach(p => {
+    const valorTxt = brl(p.valor);
+    const nomeForma = String(p.formaNome || "").trim() || "Forma não informada";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "left";
+    // nome longo (ex.: "Cartão de Débito - Master e Visa") encolhe a fonte pra não
+    // sobrepor o valor, em vez de cortar o que identifica a forma
+    ctx.font = "900 18px Arial";
+    const maxNomeW = W - 2 * padd - ctx.measureText(valorTxt).width - 14;
+    let tamNome = 18;
+    while (tamNome > 12) {
+      ctx.font = `900 ${tamNome}px Arial`;
+      if (ctx.measureText(nomeForma).width <= maxNomeW) break;
+      tamNome--;
+    }
+    ctx.fillText(nomeForma, padd, y);
+    ctx.font = "900 18px Arial";
     ctx.textAlign = "right";
-    ctx.fillText(brl(p.valor), W - padd, y);
+    ctx.fillText(valorTxt, W - padd, y);
     y += 30;
   });
   // TROCO — quanto voltou pro cliente (saída de dinheiro da gaveta)
@@ -2295,15 +2333,14 @@ function render() {
         ${ehPedidoAtacado() && valorEmCredito() + valorEmDebito() > 0 ? `
           <label class="linha" style="margin-top:10px;cursor:pointer;align-items:center">
             <span style="display:flex;align-items:center;gap:6px"><input type="checkbox" ${COBRAR_TAXA_CARTAO ? 'checked' : ''} onchange="alternarTaxaCartao(this.checked)"> Taxa cartão crédito/débito (3,5%)</span>
-            <b style="color:#ffd23f">${brl(taxaCartao())}</b>
+            <b id="valTaxaCartao" style="color:#ffd23f">${brl(taxaCartao())}</b>
           </label>
           <div class="muted" style="font-size:11px;margin-top:2px">O valor do cartão já sai com a taxa embutida (é o que passa na maquininha). A taxa mostrada é a parte dele que corresponde aos 3,5%.</div>
-          ${COBRAR_TAXA_CARTAO && Math.abs(restante()) > 0.009 ? `<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px" onclick="ajustarCartaoComTaxa()">🧮 Recalcular valor do cartão</button>` : ""}` : ""}
+          <div id="boxRecalcTaxa">${htmlRecalcTaxa()}</div>` : ""}
         <div class="linha" style="margin-top:10px"><span>Total a receber</span><b id="valTotalReceber" style="color:#ffd23f">${brl(totalPedido())}</b></div>
         <div class="linha" style="margin-top:6px"><span>Pago</span><b id="valPago">${brl(totalPago())}</b></div>
         <div class="linha"><span>Falta</span><b id="valFalta" style="color:${restante() > 0.009 ? '#ff8090' : '#8fffc0'}">${brl(Math.max(0, restante()))}</b></div>
-        ${trocoAtual() > 0.009 ? `<div class="linha" style="margin-top:2px"><span>💵 Troco</span><b style="color:#8fffc0;font-size:17px">${brl(trocoAtual())}</b></div>` : ""}
-        ${sobraSemDinheiro() > 0.009 ? `<div class="linha" style="margin-top:2px;background:#3a0010;border-radius:8px;padding:6px"><span style="color:#ff8f7a">⚠️ Passou ${brl(sobraSemDinheiro())} do total (cartão/pix não dá troco)</span><b style="color:#ff8f7a">corrija</b></div>` : ""}
+        <div id="boxTroco">${htmlTrocoResumo()}</div>
         <div class="muted" style="margin:10px 0 4px">📝 Observação (salva no pedido do Bling)</div>
         <textarea id="obsVenda" placeholder="Ex: retirar amanhã, falar com fulano…" style="width:100%;min-height:56px;resize:vertical;padding:10px" onfocus="_obsVendaEmUso=true" oninput="window._obsVenda=this.value">${esc(window._obsVenda || '')}</textarea>
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">

@@ -3199,6 +3199,39 @@ setInterval(arquivarSessoesCaixaAntigas, 24*60*60*1000); // e 1x por dia
 // "Minhas Vendas" mostrar o pedido em vermelho com o que aconteceu.
 // quem recebeu um pedido no caixa (operador da sessão onde a venda foi lançada) — pra
 // mostrar na nota e facilitar reabrir no caixa da pessoa certa
+// nome da forma de pagamento a partir do ID. O GET de um pedido no Bling devolve
+// a parcela só com o ID da forma (sem o nome), então a reimpressão saía com a forma
+// em branco ("—"). Lista as formas uma vez e guarda 10 min.
+let _formasPagPorIdCache={t:0,map:{}};
+async function nomeFormaPagamentoPorId(id){
+  if(id==null) return "";
+  if(Date.now()-_formasPagPorIdCache.t>10*60*1000){
+    try{
+      const r=await bling("/formas-pagamentos");
+      const map={};
+      (r?.data||[]).forEach(f=>{ map[String(f.id)]=f.descricao||f.nome||""; });
+      if(Object.keys(map).length) _formasPagPorIdCache={t:Date.now(),map};
+    }catch(e){}
+  }
+  return _formasPagPorIdCache.map[String(id)]||"";
+}
+// movimento de venda MAIS RECENTE desse pedido no caixa (tem o nome exato da forma,
+// inclusive o banco do Pix, e o troco -- coisas que o Bling não guarda)
+function movimentoLocalDoPedido(pedidoId){
+  try{
+    const idStr=String(pedidoId);
+    const d=lerCaixaSessoes();
+    let achado=null;
+    for(const s of (d.sessoes||[])){
+      for(const m of (s.movimentos||[])){
+        if(m.tipo==="venda" && !m.cancelado && String(m.pedidoId)===idStr){
+          if(!achado || (m.em||0)>=(achado.em||0)) achado=m;
+        }
+      }
+    }
+    return achado;
+  }catch(e){ return null; }
+}
 function recebidoPorDoPedido(pedidoId){
   try{
     const idStr=String(pedidoId);
@@ -7688,8 +7721,20 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
         frete:Number(d.transporte?.frete||0), clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
         observacao:d.observacoes||"", vendedorNome,
         recebidoPor:recebidoPorDoPedido(d.id).operador,
-        pagamentos:(d.parcelas||[]).map(p=>({formaNome:p.formaPagamento?.nome||"",valor:Number(p.valor||0)})),
+        pagamentos:await Promise.all((d.parcelas||[]).map(async p=>({
+          formaNome:p.formaPagamento?.nome||await nomeFormaPagamentoPorId(p.formaPagamento?.id)||"",
+          valor:Number(p.valor||0),
+        }))),
+        troco:0,
       };
+      // se a venda passou pelo nosso caixa, o registro local é mais fiel que o Bling:
+      // tem o nome exato da forma (ex.: "Pix Banco Santander"), o valor que o cliente
+      // realmente entregou e o troco (o Bling só guarda a parcela já sem o troco)
+      const movLocal=movimentoLocalDoPedido(d.id);
+      if(movLocal && Array.isArray(movLocal.pagamentos) && movLocal.pagamentos.length){
+        detalhe.pagamentos=movLocal.pagamentos.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor||0)}));
+        detalhe.troco=Number(movLocal.troco||0);
+      }
       if(sit===SIT.ATENDIDO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Atendido", ...detalhe});
       // SEPARADO = já pago no caixa (nova regra) — não pode ser aberto/puxado de novo
       if(sit===SIT.SEPARADO) return res.json({achou:true, id:d.id, numero:d.numero, atendido:true, situacaoNome:"Separado (já pago no caixa)", ...detalhe});
