@@ -1902,6 +1902,16 @@ async function avisarCliente(id, tipo) {
 }
 render();
 carregar();
+// abre já buscando um pedido quando vem de outra tela (ex.: /pedidos-online?buscar=58817)
+(function () {
+  const q = new URLSearchParams(location.search).get("buscar");
+  if (!q) return;
+  setTimeout(function () {
+    const el = document.getElementById("buscaPed");
+    if (el) el.value = q;
+    buscarPedido();
+  }, 700);
+})();
 setInterval(function () {
   // não recarrega enquanto a pessoa está digitando na busca (evita perder o texto)
   const b = document.getElementById("buscaPed");

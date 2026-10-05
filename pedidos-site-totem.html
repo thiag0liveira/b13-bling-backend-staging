@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Site e Totem por dia</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:980px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:36px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .muted{color:#9a95c9;font-size:12px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff;text-decoration:none;display:inline-block}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #37327a}.btn-grn{background:#2f9e6b}
+  .btn:disabled{opacity:.5;cursor:default}
+  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .dias{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 10px;-webkit-overflow-scrolling:touch}
+  .dia{flex:0 0 auto;min-width:92px;background:#151233;border:2px solid #2c2660;border-radius:12px;padding:8px 10px;cursor:pointer;text-align:center}
+  .dia.on{border-color:var(--mag);background:#2a1740}
+  .dia.vazio{opacity:.55}
+  .dia .d{font-weight:900;font-size:13px}
+  .dia .s{font-size:11px;color:#cfc9f5;margin-top:3px}
+  .dia .w{font-size:10px;color:#ffd23f;margin-top:2px;font-weight:800}
+  .linha{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+  .tag{font-size:10px;font-weight:800;padding:3px 9px;border-radius:6px;display:inline-block}
+  .t-site{background:#123a2a;color:#25D366}.t-totem{background:#1a2a4a;color:#7fb4ff}
+  .e-ok{background:#123a2a;color:#a8f0c8}.e-esp{background:#3a2a0a;color:#ffd23f}.e-can{background:#3a1018;color:#ff9aa8}
+  .conf{font-size:12px;margin-top:6px;font-weight:700}
+  .ok{color:#8fffc0}.bad{color:#ff8090}.warn{color:#ffd23f}
+  input[type=date]{background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:8px;padding:8px;font-size:14px;color-scheme:dark}
+  .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/pedidos-site-totem")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/pedidos-site-totem");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const SEM = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+let DIA = new URLSearchParams(location.search).get("dia") || null;
+let ORIGEM = "todos";
+let DADOS = null;
+let ERRO = "";
+let CONF = {};          // id do registro -> resultado da conferência no Bling
+let CONFERINDO = false, CONF_MSG = "";
+
+function dataDe(dia) { return new Date(dia + "T12:00:00Z"); }
+function fmtDia(dia) { const p = dia.split("-"); return p[2] + "/" + p[1]; }
+function fmtDiaLongo(dia) { const p = dia.split("-"); return SEM[dataDe(dia).getUTCDay()] + ", " + p[2] + "/" + p[1] + "/" + p[0]; }
+function somaDias(dia, n) { const d = dataDe(dia); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+async function carregar(silencioso) {
+  try {
+    const q = "?dia=" + encodeURIComponent(DIA || "") + "&origem=" + ORIGEM + "&dias=14";
+    const j = await fetch(B + "/api/pedidos-origem" + q).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    DADOS = j; DIA = j.dia; ERRO = "";
+    try { history.replaceState({}, "", "?dia=" + DIA); } catch (e) {}
+  } catch (e) { ERRO = e.message || "Não consegui carregar."; }
+  render();
+}
+function irDia(d) { DIA = d; CONF = {}; CONF_MSG = ""; carregar(); }
+function setOrigem(o) { ORIGEM = o; carregar(); }
+
+function estadoTag(x) {
+  if (x.estado === "cancelada") return '<span class="tag e-can">Cancelado</span>';
+  if (x.estado === "aguardando_revisao") return '<span class="tag e-esp">⏳ Aguardando revisão (ainda não está no Bling)</span>';
+  return '<span class="tag e-ok">✅ Pedido no Bling</span>';
+}
+function confHtml(x) {
+  const c = CONF[x.id];
+  if (!c) return "";
+  if (c.existe === true) {
+    const dif = Math.abs((c.totalBling || 0) - (x.total || 0)) > 0.05;
+    return '<div class="conf ok">✅ Confirmado no Bling · ' + esc(c.situacao || "") + "</div>" +
+      (dif ? '<div class="conf warn">⚠️ Total no Bling: ' + brl(c.totalBling) + " (aqui: " + brl(x.total) + ")</div>" : "");
+  }
+  if (c.existe === false) return '<div class="conf bad">❌ NÃO encontrado no Bling</div>';
+  return '<div class="conf warn">⚠️ Não consegui conferir agora' + (c.erro ? " (" + esc(c.erro) + ")" : "") + "</div>";
+}
+function cardPedido(x) {
+  const origemTag = x.origem === "site" ? '<span class="tag t-site">🌐 SITE</span>' : '<span class="tag t-totem">🖥️ TOTEM</span>';
+  const numOk = x.numero && String(x.numero) !== String(x.pedidoBlingId);
+  const numTxt = x.pedidoBlingId
+    ? (numOk ? "Pedido #" + esc(x.numero) : "Pedido (número ainda não confirmado)")
+    : "Sem pedido no Bling";
+  let acao = "";
+  if (x.estado === "aguardando_revisao" || x.estado === "cancelada") {
+    acao = '<a class="btn btn-mag" href="/propostas?abrir=' + encodeURIComponent(x.id) + '">Abrir em Propostas</a>';
+  } else if (numOk) {
+    acao = '<a class="btn btn-ghost" href="/pedidos-online?buscar=' + encodeURIComponent(x.numero) + '">Abrir em Pedidos</a>';
+  }
+  const cli = x.clienteBling && x.clienteBling !== x.cliente ? esc(x.cliente) + ' <span class="muted">(Bling: ' + esc(x.clienteBling) + ")</span>" : esc(x.cliente || "—");
+  return '<div class="card">' +
+    '<div class="linha"><div>' +
+      '<div style="font-size:15px;font-weight:900">' + esc(x.hora) + " · " + cli + "</div>" +
+      '<div class="muted" style="margin-top:3px">' + (x.telefone ? "📞 " + esc(x.telefone) + " · " : "") + (x.entrega === "entrega" ? "🛵 Entrega" : "🏪 Retirada") + " · " + x.qtdItens + " un. em " + x.linhasItens + " item(ns)</div>" +
+      '<div class="muted" style="margin-top:3px">' + esc(x.itensTxt) + "</div>" +
+    '</div><div style="text-align:right;flex-shrink:0"><div style="font-size:17px;font-weight:900;color:#ffd23f">' + brl(x.total) + "</div>" +
+      '<div class="muted" style="margin-top:3px">' + numTxt + "</div></div></div>" +
+    '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + origemTag + " " + estadoTag(x) +
+      (x.origem === "site" && x.estado === "aguardando_revisao" && !x.clienteAssociado ? ' <span class="tag e-esp">cliente a associar</span>' : "") +
+    "</div>" + confHtml(x) +
+    (acao ? '<div style="margin-top:8px">' + acao + "</div>" : "") +
+  "</div>";
+}
+
+async function conferirNoBling() {
+  if (CONFERINDO || !DADOS) return;
+  const ids = DADOS.lista.filter(x => x.estado === "no_bling").map(x => x.id);
+  if (!ids.length) { CONF_MSG = "Nenhum pedido deste dia está no Bling pra conferir."; render(); return; }
+  CONFERINDO = true; CONF = {};
+  for (let i = 0; i < ids.length; i += 8) {
+    CONF_MSG = "Conferindo no Bling… " + Math.min(i + 8, ids.length) + " de " + ids.length;
+    render();
+    try {
+      const j = await fetch(B + "/api/pedidos-origem/conferir-bling", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: ids.slice(i, i + 8) })
+      }).then(r => r.json());
+      Object.assign(CONF, j.data || {});
+    } catch (e) {
+      ids.slice(i, i + 8).forEach(id => { CONF[id] = { existe: null, erro: "falha de conexão" }; });
+    }
+  }
+  CONFERINDO = false;
+  const v = Object.values(CONF);
+  const ok = v.filter(c => c.existe === true).length, nao = v.filter(c => c.existe === false).length, ind = v.filter(c => c.existe === null).length;
+  CONF_MSG = "Conferido: " + ok + " ok" + (nao ? " · ❌ " + nao + " NÃO encontrado(s)" : "") + (ind ? " · ⚠️ " + ind + " sem resposta" : "");
+  render();
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const topo = '<div class="top"><img src="/logo"><div class="t">🌐 Pedidos do Site e do Totem, por dia</div><div class="sp"></div></div>';
+  if (!DADOS) {
+    app.innerHTML = topo + '<div class="wrap">' + (ERRO ? '<div class="card bad">' + esc(ERRO) + '</div><button class="btn btn-mag" onclick="carregar()">Tentar de novo</button>' : '<div class="muted">Carregando…</div>') + "</div>";
+    return;
+  }
+  const d = DADOS, hoje = d.hoje;
+  const resDia = d.dias.find(x => x.dia === d.dia) || { site: 0, totem: 0, total: 0, valor: 0, semBling: 0 };
+  const faixa = d.dias.map(x => {
+    const w = x.semBling ? '<div class="w">⏳ ' + x.semBling + " a revisar</div>" : "";
+    return '<div class="dia ' + (x.dia === d.dia ? "on" : "") + " " + (x.total ? "" : "vazio") + '" onclick="irDia(\'' + x.dia + '\')">' +
+      '<div class="d">' + (x.dia === hoje ? "Hoje" : SEM[dataDe(x.dia).getUTCDay()] + " " + fmtDia(x.dia)) + "</div>" +
+      '<div class="s">🌐 ' + x.site + " · 🖥️ " + x.totem + "</div>" + w + "</div>";
+  }).join("");
+  const chip = (o, rot) => '<button class="chip ' + (ORIGEM === o ? "on" : "") + '" onclick="setOrigem(\'' + o + '\')">' + rot + "</button>";
+  const lista = d.lista.length
+    ? d.lista.map(cardPedido).join("")
+    : '<div class="card muted">Nenhum pedido ' + (ORIGEM === "todos" ? "do site ou do totem" : ORIGEM === "site" ? "do site" : "do totem") + " em " + esc(fmtDiaLongo(d.dia)) + ".</div>";
+  app.innerHTML = topo + '<div class="wrap">' +
+    '<div class="nav">' +
+      '<button class="btn btn-ghost" onclick="irDia(somaDias(DIA,-1))">◀</button>' +
+      '<input type="date" value="' + esc(d.dia) + '" max="' + esc(hoje) + '" onchange="if(this.value)irDia(this.value)">' +
+      '<button class="btn btn-ghost" ' + (d.dia >= hoje ? "disabled" : "") + ' onclick="irDia(somaDias(DIA,1))">▶</button>' +
+      '<button class="btn btn-ghost" ' + (d.dia === hoje ? "disabled" : "") + ' onclick="irDia(\'' + esc(hoje) + '\')">Hoje</button>' +
+      '<div class="muted" style="margin-left:6px">' + esc(fmtDiaLongo(d.dia)) + "</div>" +
+    "</div>" +
+    '<div class="dias">' + faixa + "</div>" +
+    '<div class="nav">' + chip("todos", "Todos (" + resDia.total + ")") + chip("site", "🌐 Site (" + resDia.site + ")") + chip("totem", "🖥️ Totem (" + resDia.totem + ")") + "</div>" +
+    '<div class="card" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">' +
+      "<div><b>" + resDia.total + " pedido(s)</b> neste dia · <b style=\"color:#ffd23f\">" + brl(d.totalDia) + "</b>" +
+      (resDia.semBling ? ' · <span class="warn">⏳ ' + resDia.semBling + " aguardando revisão</span>" : "") +
+      '<div class="muted" style="margin-top:3px">' + (CONF_MSG ? esc(CONF_MSG) : "Pedidos do site ficam aguardando revisão até alguém gerar o pedido no Bling.") + "</div></div>" +
+      '<button class="btn btn-grn" ' + (CONFERINDO ? "disabled" : "") + ' onclick="conferirNoBling()">🔍 Conferir no Bling</button>' +
+    "</div>" + lista +
+  "</div>";
+}
+
+render();
+carregar();
+setInterval(function () { if (!CONFERINDO && DADOS && DADOS.dia === DADOS.hoje) carregar(true); }, 60000);
+</script>
+</body>
+</html>

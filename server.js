@@ -957,6 +957,7 @@ window.B13_NAV_LINKS=[
   {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
   {href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
   {href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
+  {href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
   {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
 
   {grupo:"Vendas & Caixa",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
@@ -12805,6 +12806,82 @@ async function atualizarComDestrave(id, payload, sitAtual){
 }
 
 app.get("/pedidos-online", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedidos-online.html")); });
+
+// ---- PEDIDOS DO SITE E DO TOTEM, POR DIA ----
+// Tudo vem do registro LOCAL (propostas_atacado.json), sem chamar o Bling: o totem
+// grava um registro assim que o pedido é criado (com o número do Bling) e o site
+// grava uma proposta na hora que o cliente finaliza. A conferência no Bling é um
+// botão à parte (sob demanda), pra não gastar chamada à toa.
+app.get("/pedidos-site-totem", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedidos-site-totem.html")); });
+function _diaBRde(ms){ return new Date(ms-3*3600*1000).toISOString().slice(0,10); }
+function _origemSiteTotem(p){
+  if(p?.origem==="totem"||p?.origem==="site") return p.origem;
+  if(p?.origemPedido==="site") return "site";
+  return null;
+}
+app.get("/api/pedidos-origem",(req,res)=>{
+  try{
+    const janela=Math.min(Math.max(Number(req.query.dias)||14,1),60);
+    const hoje=_diaBRde(Date.now());
+    const dia=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia||""))?String(req.query.dia):hoje;
+    const filtro=["site","totem"].includes(String(req.query.origem))?String(req.query.origem):"todos";
+    const porDia={}; const lista=[];
+    for(const p of Object.values(lerPropostas())){
+      const origem=_origemSiteTotem(p);
+      if(!origem||!p.criadoEm) continue;
+      const d=_diaBRde(p.criadoEm);
+      const cancelada=p.status==="cancelada";
+      const noBling=!!p.pedidoBlingId;
+      const r=porDia[d]=porDia[d]||{dia:d,site:0,totem:0,total:0,valor:0,semBling:0};
+      r[origem]++; r.total++;
+      if(!cancelada){ r.valor=+(r.valor+Number(p.total||0)).toFixed(2); if(!noBling) r.semBling++; }
+      if(d!==dia||(filtro!=="todos"&&origem!==filtro)) continue;
+      const hora=new Date(p.criadoEm-3*3600*1000).toISOString().slice(11,16);
+      const itens=p.itens||[];
+      lista.push({
+        id:p.id, origem, em:p.criadoEm, hora,
+        cliente:p.cliente?.nome||"", telefone:p.cliente?.telefone||"",
+        clienteAssociado:!!p.cliente?.id, clienteBling:p.cliente?.blingNome||"",
+        total:Number(p.total||0), entrega:p.entrega?.tipo==="entrega"?"entrega":"retirada",
+        qtdItens:itens.reduce((s2,i)=>s2+(Number(i.quantidade)||0),0), linhasItens:itens.length,
+        itensTxt:itens.slice(0,3).map(i=>`${i.quantidade}x ${i.nome}`).join(", ")+(itens.length>3?` +${itens.length-3}`:""),
+        estado: cancelada?"cancelada":(noBling?"no_bling":"aguardando_revisao"),
+        pedidoBlingId:p.pedidoBlingId||null, numero:p.pedidoBlingNumero||null,
+      });
+    }
+    lista.sort((a,b)=>b.em-a.em);
+    // faixa de dias (hoje pra trás), incluindo os que não tiveram nenhum pedido
+    const dias=[];
+    for(let k=0;k<janela;k++){
+      const d=_diaBRde(Date.now()-k*86400000);
+      dias.push(porDia[d]||{dia:d,site:0,totem:0,total:0,valor:0,semBling:0});
+    }
+    if(!dias.some(x=>x.dia===dia)) dias.push(porDia[dia]||{dia,site:0,totem:0,total:0,valor:0,semBling:0});
+    res.json({dia,hoje,filtro,dias,lista,
+      totalDia:lista.filter(x=>x.estado!=="cancelada").reduce((s2,x)=>+(s2+x.total).toFixed(2),0)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// confere no Bling, sob demanda, se os pedidos gravados aqui existem lá e em que
+// situação estão. Lotes pequenos (a tela chama em partes) e com a fila de BAIXA
+// prioridade, pra não atrapalhar o caixa nem estourar o tempo quando o Bling está lento.
+app.post("/api/pedidos-origem/conferir-bling",async(req,res)=>{
+  try{
+    const ids=(Array.isArray(req.body?.ids)?req.body.ids:[]).map(String).slice(0,10);
+    const props=lerPropostas(); const out={};
+    for(const id of ids){
+      const p=props[id];
+      if(!p||!p.pedidoBlingId){ out[id]={existe:null}; continue; }
+      try{
+        const d=await blingLento(`/pedidos/vendas/${p.pedidoBlingId}`).then(r=>r?.data);
+        out[id]=d?{existe:true,numero:d.numero,situacao:nomeSituacao(Number(d.situacao?.id||0)),totalBling:Number(d.total||0)}:{existe:false};
+      }catch(e){
+        out[id]=(e.status===404)?{existe:false}:{existe:null,erro:String(e.message||"erro").slice(0,120)};
+      }
+      await sleep(250);
+    }
+    res.json({data:out});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 
 app.get("/api/estoque/depositos",async(req,res)=>{
   try{
