@@ -22,6 +22,7 @@ import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
+import { registrarConcursoSlogan } from "./concurso-slogan.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // PROTEÇÃO GLOBAL CONTRA CRASH: em Node.js moderno, UM ÚNICO erro não tratado
@@ -993,6 +994,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Gestão",href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
   {grupo:"Gestão",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {grupo:"Gestão",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
+  {grupo:"Gestão",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
 ];
 
 // monta o menu: links soltos no topo e o resto em seções recolhíveis (a seção da
@@ -16617,6 +16619,11 @@ setTimeout(async()=>{
     console.log(`[backfill] cliente em turnos_entrega.json: ${ok}/${faltando.length} preenchido(s)`);
   }catch(e){ console.error("[backfill] falhou:",e.message); }
 }, 10000);
+
+// Concurso do Slogan (Rota 2): link único por pedido, página /frase/<token> e painel
+// /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
+registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
+  lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname });
 
 const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 // DESLIGAMENTO EDUCADO: o Railway manda SIGTERM quando troca esse contêiner por

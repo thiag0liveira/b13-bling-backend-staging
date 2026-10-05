@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<meta name="referrer" content="no-referrer" />
+<meta name="theme-color" content="#1510B3" />
+<title>Concurso do Slogan · B13 Bebidas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --azul:#1510B3; --azul-2:#2219C9; --indigo:#0C0733; --mag:#F5127E; --mag-esc:#D40E6C;
+    --tinta:#1A1466; --apoio:#5B5791; --linha:#2D25D6; --campo:#F4F3FF; --ok:#13865A; --erro:#D3184F;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:"Archivo",Arial,sans-serif; color:var(--tinta); min-height:100vh;
+    background:
+      radial-gradient(90% 50% at 15% 0%, rgba(245,18,126,.20), rgba(245,18,126,0) 55%),
+      radial-gradient(80% 60% at 100% 100%, rgba(0,0,0,.28), rgba(0,0,0,0) 60%),
+      var(--azul);
+    background-attachment:fixed;
+  }
+  body::before{ /* granulado discreto, como no papel */
+    content:""; position:fixed; inset:0; pointer-events:none; opacity:.10; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  .pagina{position:relative;max-width:560px;margin:0 auto;padding:28px 16px calc(32px + env(safe-area-inset-bottom))}
+  header{text-align:center;color:#fff;margin-bottom:22px}
+  header img{height:46px;margin-bottom:16px}
+  .t1,.t3{font-stretch:62%;font-weight:900;text-transform:uppercase;letter-spacing:.2px;line-height:.95}
+  .t1{font-size:clamp(28px,8.4vw,42px)}
+  .t2{font-stretch:62%;font-weight:900;white-space:nowrap;font-size:clamp(64px,20vw,118px);line-height:.9;color:var(--mag);letter-spacing:-1px;margin:4px 0 2px;text-shadow:0 4px 0 rgba(0,0,0,.12)}
+  .t3{font-size:clamp(30px,9vw,46px)}
+
+  .cartao{background:#fff;border-radius:26px;padding:24px 20px 22px;box-shadow:0 18px 50px rgba(5,3,60,.35)}
+  .cartao + .cartao{margin-top:14px}
+  .pedido{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;margin-bottom:6px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--campo);color:var(--tinta);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700}
+  .chip.mag{background:var(--mag);color:#fff}
+  .direito{text-align:center;color:var(--apoio);font-size:14px;margin-bottom:18px}
+  .direito b{color:var(--tinta)}
+
+  h2{font-size:19px;font-weight:600;text-align:center;color:var(--azul);margin:6px 0 14px}
+  .secao{font-size:12px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--mag-esc);margin:22px 0 10px;display:flex;align-items:center;gap:8px}
+  .secao::before{content:"";width:7px;height:7px;background:var(--mag);transform:rotate(45deg)}
+
+  .travado{border:1.5px dashed #CFCBF5;border-radius:14px;padding:12px 14px;background:#FAFAFF}
+  .travado .r{font-weight:700;font-size:15px}
+  .travado .s{color:var(--apoio);font-size:13px;margin-top:2px}
+  .travado .cad{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--apoio);margin-top:8px}
+
+  .frase{margin-bottom:14px}
+  .frase label{display:flex;justify-content:space-between;font-size:14px;font-weight:600;color:var(--azul);margin-bottom:4px}
+  .frase textarea{
+    width:100%;resize:none;border:none;border-bottom:2px solid var(--linha);background:transparent;
+    font:600 19px/1.35 "Archivo",Arial,sans-serif;color:var(--tinta);padding:6px 2px 8px;min-height:44px;outline:none;
+  }
+  .frase textarea:focus{border-bottom-color:var(--mag)}
+  .frase .info{display:flex;justify-content:space-between;font-size:11.5px;color:var(--apoio);margin-top:4px}
+  .dica{font-size:12.5px;color:var(--apoio);background:var(--campo);border-radius:12px;padding:10px 12px;margin:2px 0 4px}
+
+  .campo{margin-bottom:16px}
+  .campo label{display:block;font-size:14px;font-weight:600;color:var(--azul);margin-bottom:2px}
+  .campo label small{font-weight:500;color:var(--apoio)}
+  .campo input{
+    width:100%;border:none;border-bottom:2px solid var(--linha);background:transparent;font:500 17px "Archivo",Arial,sans-serif;
+    color:var(--tinta);padding:8px 2px;outline:none;border-radius:0;
+  }
+  .campo input:focus{border-bottom-color:var(--mag)}
+  .opcoes{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .opcoes button{border:1.5px solid #CFCBF5;background:#fff;color:var(--tinta);border-radius:999px;padding:8px 14px;font:600 14px "Archivo",Arial,sans-serif;cursor:pointer}
+  .opcoes button[aria-pressed="true"]{background:var(--azul);border-color:var(--azul);color:#fff}
+  .erro-campo{display:none;color:var(--erro);font-size:12.5px;font-weight:600;margin-top:4px}
+  .com-erro .erro-campo{display:block}
+  .com-erro input,.com-erro textarea{border-bottom-color:var(--erro)}
+
+  .check{display:flex;gap:12px;align-items:flex-start;margin:12px 0;cursor:pointer}
+  .check input{appearance:none;-webkit-appearance:none;flex:0 0 26px;height:26px;border:2.5px solid var(--azul);border-radius:7px;margin-top:1px;cursor:pointer;display:grid;place-content:center;background:#fff}
+  .check input:checked{background:var(--azul)}
+  .check input:checked::after{content:"";width:10px;height:6px;border:3px solid #fff;border-top:0;border-right:0;transform:rotate(-45deg) translate(1px,-1px)}
+  .check span{font-size:14px;line-height:1.4;color:var(--tinta)}
+  .check span small{display:block;color:var(--apoio);font-style:italic;font-size:12px;margin-top:2px}
+  .check.com-erro input{border-color:var(--erro)}
+
+  .selos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border:2px solid var(--azul);border-radius:18px;padding:12px 10px;margin:20px 0 4px}
+  .selo{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;font-size:11.5px;line-height:1.3;color:var(--azul)}
+  .selo svg{width:28px;height:28px}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;border:none;border-radius:16px;padding:17px;font:900 19px "Archivo",Arial,sans-serif;font-stretch:80%;letter-spacing:.4px;text-transform:uppercase;cursor:pointer;transition:transform .08s, background .15s}
+  .btn:active{transform:scale(.985)}
+  .btn-mag{background:var(--mag);color:#fff;box-shadow:0 8px 22px rgba(245,18,126,.35)}
+  .btn-mag:hover{background:var(--mag-esc)}
+  .btn-sec{background:var(--campo);color:var(--tinta);font-size:15px;box-shadow:none}
+  .btn[disabled]{opacity:.6;cursor:wait}
+  .prazo{text-align:center;color:var(--azul);font-size:14px;margin-top:14px}
+  .aviso-geral{display:none;background:#FFF0F5;color:var(--erro);border-radius:12px;padding:10px 12px;font-size:14px;font-weight:600;margin-top:14px;text-align:center}
+
+  .rodape{text-align:center;color:rgba(255,255,255,.88);font-size:13px;line-height:1.6;margin-top:22px}
+  .rodape a{color:#fff}
+  .rodape .mod{font-size:11.5px;letter-spacing:.3px;margin-top:8px;opacity:.85}
+
+  .estado{text-align:center;padding:10px 4px}
+  .estado .icone{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;background:var(--campo)}
+  .estado h3{font-size:22px;font-weight:800;color:var(--azul);margin-bottom:8px}
+  .estado p{color:var(--apoio);font-size:15px;line-height:1.5}
+  .lista-enviadas{list-style:none;margin:16px 0 4px;text-align:left}
+  .lista-enviadas li{background:var(--campo);border-left:4px solid var(--mag);border-radius:10px;padding:12px 14px;font-weight:700;font-size:17px;margin-bottom:8px}
+  .carregando{height:220px;display:grid;place-items:center;color:var(--apoio)}
+
+  /* revisão antes do envio */
+  .fundo{position:fixed;inset:0;background:rgba(8,5,50,.62);display:none;align-items:flex-end;justify-content:center;z-index:20;padding:0}
+  .fundo.aberto{display:flex}
+  .folha{background:#fff;width:100%;max-width:560px;border-radius:24px 24px 0 0;padding:22px 20px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto;animation:sobe .2s ease-out}
+  @keyframes sobe{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+  .folha h3{font-size:20px;color:var(--azul);margin-bottom:4px}
+  .folha .sub{color:var(--apoio);font-size:14px;margin-bottom:14px}
+  .resumo{font-size:14px;color:var(--tinta);background:var(--campo);border-radius:12px;padding:10px 12px;margin:10px 0 16px;line-height:1.6}
+  .alerta-unico{display:flex;gap:10px;align-items:flex-start;background:#FFF4E5;color:#7A4A00;border-radius:12px;padding:10px 12px;font-size:13.5px;margin-bottom:14px}
+  .botoes{display:grid;gap:10px}
+  @media (min-width:600px){ .fundo{align-items:center} .folha{border-radius:24px} }
+  :focus-visible{outline:3px solid var(--mag);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="pagina">
+  <header>
+    <img src="/logo" alt="B13 Bebidas" />
+    <div class="t1">Escreva a frase da B13 e leve</div>
+    <div class="t2">R$ 2.000</div>
+    <div class="t3">em compras</div>
+  </header>
+
+  <main id="conteudo"><div class="cartao carregando">Carregando o seu pedido…</div></main>
+
+  <div class="rodape">
+    Regulamento completo no link da bio do <b>@b13_bebidas</b><span id="linkReg"></span> e no balcão.<br />
+    Dúvidas: WhatsApp oficial <span id="waOficial">(31) 99971-9888</span>
+    <div class="mod">BEBA COM MODERAÇÃO. VENDA PROIBIDA PARA MENORES DE 18 ANOS.</div>
+  </div>
+</div>
+
+<div class="fundo" id="revisao" role="dialog" aria-modal="true" aria-labelledby="revTitulo">
+  <div class="folha">
+    <h3 id="revTitulo">Confira antes de enviar</h3>
+    <div class="sub">Depois de enviar, não dá para trocar a frase.</div>
+    <ul class="lista-enviadas" id="revFrases"></ul>
+    <div class="resumo" id="revDados"></div>
+    <div class="alerta-unico">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <span id="revAlerta"></span>
+    </div>
+    <div class="botoes">
+      <button class="btn btn-mag" id="btnConfirmar">Confirmar e enviar</button>
+      <button class="btn btn-sec" id="btnVoltar">Voltar e editar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var API = window.CONCURSO_API || "";           // a prévia de demonstração troca isso
+  var token = window.CONCURSO_TOKEN || (location.pathname.match(/\/frase\/([A-Za-z0-9_-]{22})/) || [])[1] || (new URLSearchParams(location.search).get("t") || "");
+  var $ = function(s, el){ return (el || document).querySelector(s); };
+  var conteudo = $("#conteudo");
+  var DADOS = null, VINCULO = "";
+  var RASCUNHO = "b13frase_" + token;
+
+  function el(tag, attrs, filhos){
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function(k){
+      if (k === "text") e.textContent = attrs[k];
+      else if (k === "html") e.innerHTML = attrs[k];          // só com texto fixo do próprio código
+      else e.setAttribute(k, attrs[k]);
+    });
+    (filhos || []).forEach(function(f){ if (f) e.appendChild(typeof f === "string" ? document.createTextNode(f) : f); });
+    return e;
+  }
+  function palavras(s){ return (String(s || "").trim().match(/\S+/g) || []).length; }
+  function soDig(s){ return String(s || "").replace(/\D/g, ""); }
+  function fmtTel(v){
+    var d = soDig(v).slice(0, 11);
+    if (d.length <= 2) return d ? "(" + d : "";
+    if (d.length <= 6) return "(" + d.slice(0,2) + ") " + d.slice(2);
+    if (d.length <= 10) return "(" + d.slice(0,2) + ") " + d.slice(2,6) + "-" + d.slice(6);
+    return "(" + d.slice(0,2) + ") " + d.slice(2,7) + "-" + d.slice(7);
+  }
+  function fmtCpf(v){ var d = soDig(v).slice(0,11); return d.replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d)/,"$1.$2").replace(/(\d{3})(\d{1,2})$/,"$1-$2"); }
+  function dataBR(iso){ return iso ? iso.split("-").reverse().join("/") : ""; }
+  function lerRascunho(){ try { return JSON.parse(localStorage.getItem(RASCUNHO) || "null"); } catch(e){ return null; } }
+  function salvarRascunho(){ try { localStorage.setItem(RASCUNHO, JSON.stringify(coletar())); } catch(e){} }
+  function apagarRascunho(){ try { localStorage.removeItem(RASCUNHO); } catch(e){} }
+
+  var ICONES = {
+    ok: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#13865A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    relogio: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1510B3" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    x: '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#D3184F" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    cadeado: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+  };
+
+  function telaEstado(icone, titulo, texto, extra){
+    conteudo.innerHTML = "";
+    var c = el("div", {"class":"cartao"}, [ el("div", {"class":"estado"}, [
+      el("div", {"class":"icone", html: ICONES[icone]}), el("h3", {text: titulo}), el("p", {text: texto}), extra || null
+    ])]);
+    conteudo.appendChild(c);
+    c.focus && c.setAttribute("tabindex", "-1");
+  }
+
+  function cabecalhoPedido(d){
+    var w = el("div");
+    w.appendChild(el("div", {"class":"pedido"}, [
+      el("span", {"class":"chip", text: "Pedido nº " + d.numero}),
+      d.dataPedido ? el("span", {"class":"chip", text: dataBR(d.dataPedido)}) : null,
+      el("span", {"class":"chip mag", text: d.qtdFrases + (d.qtdFrases > 1 ? " frases" : " frase")})
+    ]));
+    return w;
+  }
+
+  function campo(id, rotulo, opcional, attrs){
+    var input = el("input", Object.assign({id: id, name: id, autocomplete: "off"}, attrs || {}));
+    return el("div", {"class":"campo", id: "c_" + id}, [
+      el("label", {"for": id}, [rotulo, opcional ? el("small", {text: " (opcional)"}) : null]),
+      input, el("div", {"class":"erro-campo", id: "e_" + id})
+    ]);
+  }
+  function caixa(id, texto, nota){
+    var input = el("input", {type:"checkbox", id: id});
+    return el("label", {"class":"check", id: "c_" + id, "for": id}, [input, el("span", null, [texto, nota ? el("small", {text: nota}) : null])]);
+  }
+
+  function montarFormulario(d){
+    conteudo.innerHTML = "";
+    var card = el("div", {"class":"cartao"});
+    card.appendChild(cabecalhoPedido(d));
+    card.appendChild(el("p", {"class":"direito", html: "Este pedido dá direito a <b>" + d.qtdFrases + (d.qtdFrases > 1 ? " frases" : " frase") + "</b>. Quanto mais frases, mais chances, mas cada uma é julgada sozinha."}));
+
+    // frases
+    card.appendChild(el("h2", {text: d.qtdFrases > 1 ? "As minhas frases para a B13" : "A minha frase para a B13"}));
+    var boxFrases = el("div", {id: "c_frases"});
+    for (var i = 1; i <= d.qtdFrases; i++){
+      var ta = el("textarea", {id: "frase" + i, rows: "1", maxlength: String(d.maxCaracteres || 120), placeholder: "Escreva aqui", "aria-label": "Frase " + i});
+      var info = el("div", {"class":"info"}, [el("span", {id: "p" + i, text: "0 palavras"}), el("span", {id: "n" + i, text: "0/" + (d.maxCaracteres || 120)})]);
+      boxFrases.appendChild(el("div", {"class":"frase"}, [el("label", {"for": "frase" + i}, [d.qtdFrases > 1 ? "Frase " + i : "Sua frase"]), ta, info]));
+    }
+    boxFrases.appendChild(el("div", {"class":"erro-campo", id: "e_frases"}));
+    card.appendChild(boxFrases);
+    card.appendChild(el("div", {"class":"dica", text: "Pelo link não tem limite fixo de palavras, mas slogan bom é curto: cabe no boné e na fachada. Frases iguais, de outra marca ou de música são desclassificadas."}));
+
+    // estabelecimento
+    if (d.estabelecimento || d.pedirEstabelecimento){
+      card.appendChild(el("div", {"class":"secao", text: "Estabelecimento"}));
+      if (d.estabelecimento){
+        card.appendChild(el("div", {"class":"travado"}, [
+          el("div", {"class":"r", text: d.estabelecimento.razaoSocial}),
+          d.estabelecimento.cnpj ? el("div", {"class":"s", text: "CNPJ " + d.estabelecimento.cnpj}) : null,
+          el("div", {"class":"cad", html: ICONES.cadeado + " Veio do seu pedido. Não precisa preencher."})
+        ]));
+      } else {
+        card.appendChild(campo("estabelecimento", "Nome do estabelecimento", false, {autocomplete: "organization"}));
+      }
+    }
+
+    // pessoa
+    card.appendChild(el("div", {"class":"secao", text: "Quem escreveu"}));
+    card.appendChild(el("p", {"class":"direito", style:"text-align:left;margin:-2px 0 12px", text: d.estabelecimento || d.pedirEstabelecimento ? "A frase é sempre de uma pessoa física: quem escreveu, indicada pelo estabelecimento." : "Os seus dados, para a B13 avisar se a sua frase ganhar."}));
+    card.appendChild(campo("nome", "Nome completo", false, {autocomplete: "name", autocapitalize: "words"}));
+    if (d.pedirCpf) card.appendChild(campo("cpf", "CPF", false, {inputmode: "numeric", autocomplete: "off"}));
+    if (d.tipo === "atacado"){
+      var ops = el("div", {"class":"opcoes", role: "group", "aria-label": "Vínculo com o estabelecimento"});
+      ["Sócio ou dono", "Gerente", "Funcionário", "Outro"].forEach(function(o){
+        var b = el("button", {type: "button", "aria-pressed": "false", text: o});
+        b.addEventListener("click", function(){
+          Array.prototype.forEach.call(ops.children, function(x){ x.setAttribute("aria-pressed", "false"); });
+          b.setAttribute("aria-pressed", "true");
+          VINCULO = o;
+          $("#c_vinculoOutro").style.display = o === "Outro" ? "block" : "none";
+          $("#c_vinculo").classList.remove("com-erro");
+          salvarRascunho();
+        });
+        ops.appendChild(b);
+      });
+      var outro = campo("vinculoOutro", "Qual?", false); outro.style.display = "none"; outro.style.marginTop = "10px";
+      card.appendChild(el("div", {"class":"campo", id: "c_vinculo"}, [el("label", {text: "Vínculo com o estabelecimento"}), ops, el("div", {"class":"erro-campo", id: "e_vinculo"}), outro]));
+    }
+    card.appendChild(campo("whatsapp", "WhatsApp", false, {type: "tel", inputmode: "tel", autocomplete: "tel-national", placeholder: "(31) 90000-0000"}));
+    card.appendChild(campo("email", "E-mail", true, {type: "email", inputmode: "email", autocomplete: "email"}));
+
+    // declarações
+    card.appendChild(el("div", {"class":"secao", text: "Para participar"}));
+    card.appendChild(caixa("maior18", "Tenho 18 anos ou mais."));
+    card.appendChild(caixa("autoria", "A frase é minha, inédita, e não é cópia de slogan, música ou marca de ninguém."));
+    card.appendChild(caixa("regulamento", "Li e aceito o regulamento do concurso."));
+    card.appendChild(caixa("marketing", "Autorizo a B13 a me enviar promoções e novidades pelo WhatsApp e pelo e-mail.", "Marcar é opcional, e não marcar não tira você do concurso."));
+
+    // selos
+    card.appendChild(el("div", {"class":"selos", html:
+      '<div class="selo"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><circle cx="15" cy="17" r="11"/><text x="15" y="21.5" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor" stroke="none" font-family="Archivo,Arial">18</text><path d="M26 3v6M23 6h6" stroke-linecap="round"/></svg>Apenas para maiores de 18 anos</div>' +
+      '<div class="selo"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="11" r="3.5"/><circle cx="16" cy="9.5" r="3.5"/><circle cx="23" cy="11" r="3.5"/><path d="M3 24c0-4 3-6.5 6-6.5M29 24c0-4-3-6.5-6-6.5M10 25c0-4.5 2.7-7.5 6-7.5s6 3 6 7.5"/></svg>Não é sorteio: frase escolhida por comissão</div>' +
+      '<div class="selo"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h4l3.5 15h14L28 10H9"/><circle cx="12" cy="26" r="2"/><circle cx="23" cy="26" r="2"/></svg>Uma frase a cada R$ 3.000 no atacado</div>'
+    }));
+    if (d.tipo === "varejo") card.lastChild.lastChild.lastChild.textContent = "Uma frase a cada R$ 200 no varejo";
+
+    card.appendChild(el("div", {"class":"aviso-geral", id: "avisoGeral", role: "alert"}));
+    var btn = el("button", {"class":"btn btn-mag", id: "btnEnviar", type: "button", style: "margin-top:18px", text: d.qtdFrases > 1 ? "Enviar minhas frases" : "Enviar minha frase"});
+    card.appendChild(btn);
+    card.appendChild(el("div", {"class":"prazo", text: "até " + (d.prazo || "30/10, às 23h59") + " · resultado em " + (d.resultado || "07/11")}));
+    conteudo.appendChild(card);
+
+    // comportamento
+    for (var j = 1; j <= d.qtdFrases; j++) (function(j){
+      var ta = $("#frase" + j);
+      var atualiza = function(){
+        ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px";
+        var p = palavras(ta.value);
+        $("#p" + j).textContent = p + (p === 1 ? " palavra" : " palavras") + (p > 6 ? " · slogan curto costuma funcionar melhor" : "");
+        $("#n" + j).textContent = ta.value.length + "/" + (d.maxCaracteres || 120);
+        $("#c_frases").classList.remove("com-erro");
+      };
+      ta.addEventListener("input", function(){ ta.value = ta.value.replace(/\n/g, " "); atualiza(); salvarRascunho(); });
+      ta._atualiza = atualiza;
+    })(j);
+    var wa = $("#whatsapp");
+    wa.addEventListener("input", function(){ wa.value = fmtTel(wa.value); });
+    if ($("#cpf")) $("#cpf").addEventListener("input", function(){ this.value = fmtCpf(this.value); });
+    conteudo.addEventListener("input", function(ev){ var c = ev.target.closest(".campo,.check"); if (c) c.classList.remove("com-erro"); salvarRascunho(); });
+    conteudo.addEventListener("change", function(ev){ var c = ev.target.closest(".check"); if (c) c.classList.remove("com-erro"); salvarRascunho(); });
+    btn.addEventListener("click", revisar);
+
+    // rascunho (se a pessoa fechou a página no meio)
+    var r = lerRascunho();
+    if (r){
+      (r.frases || []).forEach(function(f, k){ var t = $("#frase" + (k + 1)); if (t){ t.value = f; t._atualiza(); } });
+      ["nome","whatsapp","email","cpf","estabelecimento"].forEach(function(k){ if (r[k] && $("#" + k)) $("#" + k).value = k === "whatsapp" ? fmtTel(r[k]) : k === "cpf" ? fmtCpf(r[k]) : r[k]; });
+      ["maior18","autoria","regulamento","marketing"].forEach(function(k){ if ($("#" + k)) $("#" + k).checked = !!r[k]; });
+      if (r.vinculoBotao){ var bt = Array.prototype.find.call(document.querySelectorAll(".opcoes button"), function(b){ return b.textContent === r.vinculoBotao; }); if (bt) bt.click(); if (r.vinculoOutro) $("#vinculoOutro").value = r.vinculoOutro; }
+    }
+  }
+
+  function coletar(){
+    var frases = [];
+    for (var i = 1; i <= (DADOS ? DADOS.qtdFrases : 0); i++){ var t = $("#frase" + i); frases.push(t ? t.value.trim() : ""); }
+    var g = function(id){ var e = $("#" + id); return e ? e.value.trim() : ""; };
+    var c = function(id){ var e = $("#" + id); return !!(e && e.checked); };
+    return {
+      frases: frases, nome: g("nome"), whatsapp: soDig(g("whatsapp")), email: g("email"), cpf: soDig(g("cpf")),
+      estabelecimento: g("estabelecimento"), vinculoBotao: VINCULO, vinculoOutro: g("vinculoOutro"),
+      vinculo: VINCULO === "Outro" ? (g("vinculoOutro") || "") : VINCULO,
+      maior18: c("maior18"), autoria: c("autoria"), regulamento: c("regulamento"), marketing: c("marketing")
+    };
+  }
+
+  function marcarErros(campos){
+    var primeiro = null;
+    Object.keys(campos).forEach(function(k){
+      var box = $("#c_" + k); if (!box) return;
+      box.classList.add("com-erro");
+      var e = $("#e_" + k); if (e) e.textContent = campos[k] === "Obrigatório." ? "" : campos[k];
+      if (!primeiro) primeiro = box;
+    });
+    if (primeiro) primeiro.scrollIntoView({behavior: "smooth", block: "center"});
+  }
+
+  function validarLocal(v){
+    var e = {};
+    var preenchidas = v.frases.filter(Boolean);
+    if (!preenchidas.length) e.frases = "Escreva pelo menos uma frase.";
+    else {
+      var norm = preenchidas.map(function(f){ return f.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); });
+      if (new Set(norm).size !== norm.length) e.frases = "Há frases repetidas. Cada frase precisa ser diferente.";
+    }
+    if (DADOS.pedirEstabelecimento && v.estabelecimento.length < 2) e.estabelecimento = "Escreva o nome do estabelecimento.";
+    if (palavras(v.nome) < 2) e.nome = "Escreva o nome completo.";
+    if (DADOS.pedirCpf && v.cpf.length !== 11) e.cpf = "CPF com 11 dígitos.";
+    if (DADOS.tipo === "atacado" && !v.vinculo) e.vinculo = "Escolha uma opção.";
+    if (v.whatsapp.length < 10) e.whatsapp = "WhatsApp com DDD.";
+    if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) e.email = "E-mail inválido (ou deixe em branco).";
+    ["maior18","autoria","regulamento"].forEach(function(k){ if (!v[k]) e[k] = "Obrigatório."; });
+    return e;
+  }
+
+  function revisar(){
+    var v = coletar();
+    $("#avisoGeral").style.display = "none";
+    var e = validarLocal(v);
+    if (Object.keys(e).length){ marcarErros(e); return; }
+    var preenchidas = v.frases.filter(Boolean);
+    var ul = $("#revFrases"); ul.innerHTML = "";
+    preenchidas.forEach(function(f){ ul.appendChild(el("li", {text: "“" + f + "”"})); });
+    var dados = $("#revDados"); dados.innerHTML = "";
+    var linhas = [["Nome", v.nome], ["WhatsApp", fmtTel(v.whatsapp)], v.email ? ["E-mail", v.email] : null,
+      DADOS.estabelecimento ? ["Estabelecimento", DADOS.estabelecimento.razaoSocial] : (v.estabelecimento ? ["Estabelecimento", v.estabelecimento] : null),
+      v.vinculo ? ["Vínculo", v.vinculo] : null, ["Promoções", v.marketing ? "autorizado" : "não autorizado"]];
+    linhas.filter(Boolean).forEach(function(l){ dados.appendChild(el("div", null, [el("b", {text: l[0] + ": "}), l[1]])); });
+    var faltam = DADOS.qtdFrases - preenchidas.length;
+    $("#revAlerta").textContent = faltam > 0
+      ? "Você preencheu " + preenchidas.length + " de " + DADOS.qtdFrases + " frases. O link só pode ser usado uma vez: " + (faltam === 1 ? "a frase que ficou em branco não poderá ser enviada depois." : "as " + faltam + " frases que ficaram em branco não poderão ser enviadas depois.")
+      : "O link do seu pedido só pode ser usado uma vez.";
+    $("#revisao").classList.add("aberto");
+    $("#btnConfirmar").focus();
+  }
+
+  function enviar(){
+    var v = coletar();
+    var btn = $("#btnConfirmar"); btn.disabled = true; btn.textContent = "Enviando…";
+    var corpo = { frases: v.frases.filter(Boolean), nome: v.nome, whatsapp: v.whatsapp, email: v.email, vinculo: v.vinculo,
+      estabelecimento: v.estabelecimento, maior18: v.maior18, autoria: v.autoria, regulamento: v.regulamento, marketing: v.marketing };
+    if (DADOS.pedirCpf) corpo.cpf = v.cpf;
+    fetch(API + "/api/concurso/link/" + encodeURIComponent(token) + "/enviar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)})
+      .then(function(r){ return r.json().then(function(j){ return {status: r.status, j: j}; }); })
+      .then(function(res){
+        $("#revisao").classList.remove("aberto");
+        if (res.status === 200 && res.j.ok){ apagarRascunho(); return telaEnviado(res.j.frases, res.j.enviadoEm, true); }
+        if (res.status === 409 || res.status === 410) return carregar();
+        if (res.j.campos) marcarErros(res.j.campos);
+        var a = $("#avisoGeral"); a.textContent = res.j.erro || "Não foi possível enviar. Tente de novo."; a.style.display = "block";
+      })
+      .catch(function(){
+        $("#revisao").classList.remove("aberto");
+        var a = $("#avisoGeral"); a.textContent = "Sem conexão. Suas frases continuam aqui; tente de novo em instantes."; a.style.display = "block";
+      })
+      .then(function(){ btn.disabled = false; btn.textContent = "Confirmar e enviar"; });
+  }
+
+  function telaEnviado(frases, em, agora){
+    var lista = el("ul", {"class":"lista-enviadas"});
+    (frases || []).forEach(function(f){ lista.appendChild(el("li", {text: "“" + f + "”"})); });
+    telaEstado("ok", agora ? "Frase recebida!" : "Este link já foi usado",
+      (agora ? "Obrigado por participar. " : "") + "Recebemos em " + (em || "") + ". O resultado sai em 07/11, às 15h30, no @b13_bebidas. Se você ganhar, a B13 avisa pelo WhatsApp.", lista);
+    window.scrollTo({top: 0, behavior: "smooth"});
+  }
+
+  function carregar(){
+    if (!/^[A-Za-z0-9_-]{22}$/.test(token)) return telaEstado("x", "Link incompleto", "Abra o link inteiro que a B13 mandou junto com o seu pedido. Se não funcionar, chame a gente no WhatsApp oficial.");
+    fetch(API + "/api/concurso/link/" + encodeURIComponent(token))
+      .then(function(r){ return r.json().then(function(j){ return {status: r.status, j: j}; }); })
+      .then(function(res){
+        var d = res.j;
+        if (res.status !== 200) return telaEstado("x", "Link não encontrado", d.erro || "Confira se copiou o endereço inteiro.");
+        DADOS = d;
+        if (d.whatsappOficial) $("#waOficial").textContent = d.whatsappOficial;
+        if (d.regulamentoUrl){ $("#linkReg").innerHTML = ""; $("#linkReg").appendChild(document.createTextNode(" (")); $("#linkReg").appendChild(el("a", {href: d.regulamentoUrl, target: "_blank", rel: "noopener noreferrer", text: "abrir"})); $("#linkReg").appendChild(document.createTextNode(")")); }
+        if (d.status === "aberto") return montarFormulario(d);
+        if (d.status === "enviado") return telaEnviado(d.frasesEnviadas, d.enviadoEm, false);
+        if (d.status === "encerrado") return telaEstado("relogio", "Envio encerrado", "O prazo para enviar frases terminou em 30/10/2026, às 23h59. O resultado sai em 07/11, às 15h30, no @b13_bebidas.");
+        if (d.status === "nao_iniciado") return telaEstado("relogio", "Ainda não começou", "O concurso começa em 01/10/2026, à 00h01.");
+        if (d.status === "revogado") return telaEstado("x", "Link cancelado", "Este link foi cancelado pela B13. Fale com a gente no WhatsApp oficial " + (d.whatsappOficial || "") + ".");
+        telaEstado("x", "Algo deu errado", "Tente de novo em instantes.");
+      })
+      .catch(function(){ telaEstado("x", "Sem conexão", "Não conseguimos carregar o seu pedido. Confira a internet e tente de novo."); });
+  }
+
+  $("#btnConfirmar").addEventListener("click", enviar);
+  $("#btnVoltar").addEventListener("click", function(){ $("#revisao").classList.remove("aberto"); });
+  $("#revisao").addEventListener("click", function(ev){ if (ev.target === this) this.classList.remove("aberto"); });
+  document.addEventListener("keydown", function(ev){ if (ev.key === "Escape") $("#revisao").classList.remove("aberto"); });
+  carregar();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Concurso do Slogan</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#2f9e6b;--warn:#ffd23f;--erro:#ff5c7a}
+  body{background:var(--bg);color:#fff}
+  [hidden]{display:none !important}
+  #app{max-width:1180px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag);flex-wrap:wrap}
+  .top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+  .wrap{padding:14px}
+  .card{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:14px;margin-bottom:12px}
+  .muted{color:var(--muted);font-size:13px}
+  h3{font-size:15px;margin-bottom:10px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff;white-space:nowrap}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-grn{background:var(--ok)}.btn-red{background:#a3203f}
+  .btn[disabled]{opacity:.55;cursor:wait}
+  .btn-sm{padding:6px 9px;font-size:12px;border-radius:8px}
+  .chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+  .chip.on{background:var(--mag);border-color:var(--mag)}
+  .tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+  .tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfc9f5}.tag.mag{background:#4a0f33;color:#ff86c3}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+  .kpi{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:12px 14px}
+  .kpi .v{font-size:26px;font-weight:900}.kpi .l{color:var(--muted);font-size:12px;margin-top:2px}
+  .linha{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:700}
+  input,select,textarea{background:#0f0c22;border:1px solid #3a3480;color:#fff;border-radius:9px;padding:9px 10px;font-size:14px}
+  textarea{resize:vertical;min-height:70px;font-family:inherit}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--mag);outline-offset:0}
+  .previa{margin-top:12px;border-top:1px dashed #3a3480;padding-top:12px;display:none}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 16px}
+  .kv{font-size:13px}.kv b{display:block;color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+  .grande{font-size:22px;font-weight:900;color:#ff86c3}
+  .msg{border-radius:10px;padding:9px 11px;font-size:13px;margin-top:8px}
+  .msg.erro{background:#3d1020;color:#ffc2cf}.msg.warn{background:#3a2a0a;color:#ffe9a6}.msg.ok{background:#11352a;color:#b6f5d4}
+  .resultado{background:#0f0c22;border:1px solid var(--ok);border-radius:12px;padding:12px;margin-top:12px;display:none}
+  .url{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;word-break:break-all;color:#b6f5d4;margin:6px 0 10px}
+  .abas{display:flex;gap:8px;margin:4px 0 12px;flex-wrap:wrap}
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:8px;border-bottom:1px solid var(--borda);white-space:nowrap}
+  .tbl td{padding:9px 8px;border-bottom:1px solid #221d4d;vertical-align:top}
+  .tbl tr:hover td{background:#18143a}
+  .rolagem{overflow-x:auto}
+  .frase{font-weight:800;font-size:14px;color:#fff}
+  .acoes{display:flex;gap:6px;flex-wrap:wrap}
+  .vazio{color:var(--muted);text-align:center;padding:26px 8px;font-size:14px}
+  .fundo{position:fixed;inset:0;background:rgba(5,3,20,.7);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+  .fundo.aberto{display:flex}
+  .modal{background:var(--card);border:1px solid #3a3480;border-radius:16px;padding:18px;width:100%;max-width:560px;max-height:92vh;overflow:auto}
+  .modal h3{font-size:17px}
+  .modal .linha>label.f{flex:1;min-width:160px}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#11352a;color:#b6f5d4;border:1px solid var(--ok);border-radius:10px;padding:10px 16px;font-weight:700;font-size:13px;display:none;z-index:60}
+  .barra{height:6px;background:#221d4d;border-radius:4px;overflow:hidden;margin-top:6px}
+  .barra i{display:block;height:100%;background:var(--mag);width:0}
+  @media(max-width:700px){ .tbl .hide-sm{display:none} }
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/concurso")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      if(typeof b13RenderNav!=="function") return;
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/concurso");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app">
+  <div class="top">
+    <img src="/logo" alt="B13" />
+    <div><div class="t">🏆 Concurso do Slogan · Rota 2 (a frase da tela)</div><div class="muted" id="faseTxt">carregando…</div></div>
+    <div class="sp"></div>
+    <button class="btn btn-ghost btn-sm" onclick="recarregar()">↻ Atualizar</button>
+  </div>
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="card">
+      <h3>Gerar link para um pedido</h3>
+      <div class="muted" style="margin-bottom:10px">O sistema confere o pedido no Bling: valor em produtos (sem frete), data, situação e cliente. Cada pedido tem um link só, de uso único.</div>
+      <div class="linha">
+        <label class="f">Nº do pedido<input id="gNumero" inputmode="numeric" placeholder="ex.: 48213" style="width:150px" /></label>
+        <label class="f" id="gTipoBox" hidden>Tipo de compra<select id="gTipo"><option value="atacado">Atacado · 1 frase a cada R$ 3.000</option><option value="varejo">Varejo pelo app · 1 a cada R$ 200</option></select></label>
+        <div class="kv" style="padding-bottom:9px"><b>Regra</b>Atacado · 1 frase a cada R$ 3.000 em produtos</div>
+        <label class="f">Canal do pedido<select id="gCanal"><option value="">Automático</option><option value="whatsapp">WhatsApp</option><option value="app">Aplicativo</option></select></label>
+        <button class="btn btn-ghost" id="btnConferir" onclick="conferirPedido()">Conferir pedido</button>
+      </div>
+      <div class="previa" id="previa"></div>
+      <div class="resultado" id="resultado"></div>
+    </div>
+
+    <div class="card">
+      <div class="abas" id="abas">
+        <span class="chip on" data-aba="links">Links</span>
+        <span class="chip" data-aba="frases">Frases recebidas</span>
+        <span class="chip" data-aba="sugestoes">Pedidos sem link</span>
+      </div>
+      <div id="corpoAba"></div>
+    </div>
+  </div>
+</div>
+
+<div class="fundo" id="mWhats"><div class="modal">
+  <h3>Registrar frase recebida pelo WhatsApp</h3>
+  <div class="muted" style="margin:4px 0 12px">Cláusula 4.4 c: quando o cliente manda a frase respondendo à mensagem do pedido. Salve o print da conversa para a ata (8.2 c).</div>
+  <div class="linha">
+    <label class="f">Nº do pedido<input id="wNumero" inputmode="numeric" /></label>
+    <label class="f" id="wTipoBox" hidden>Tipo<select id="wTipo"><option value="atacado">Atacado</option><option value="varejo">Varejo</option></select></label>
+    <label class="f">Data e hora da mensagem<input id="wQuando" type="datetime-local" /></label>
+  </div>
+  <label class="f" style="margin-top:10px">Frase(s), uma por linha<textarea id="wFrases"></textarea></label>
+  <div class="linha" style="margin-top:10px">
+    <label class="f">Nome completo de quem escreveu<input id="wNome" /></label>
+    <label class="f">WhatsApp<input id="wWhats" inputmode="tel" /></label>
+  </div>
+  <div class="linha" style="margin-top:10px">
+    <label class="f">Estabelecimento <span style="font-weight:400">(se o pedido não tiver CNPJ)</span><input id="wEstab" /></label>
+    <label class="f">Vínculo<input id="wVinculo" placeholder="ex.: gerente" /></label>
+  </div>
+  <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px"><input type="checkbox" id="wMkt" /> Cliente autorizou expressamente receber promoções</label>
+  <div id="wMsg"></div>
+  <div class="linha" style="justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost" onclick="fechar('mWhats')">Cancelar</button>
+    <button class="btn btn-mag" id="wBtn" onclick="salvarWhats()">Registrar</button>
+  </div>
+</div></div>
+
+<div class="fundo" id="mMotivo"><div class="modal">
+  <h3 id="motTitulo">Motivo</h3>
+  <div class="muted" id="motSub" style="margin:4px 0 10px"></div>
+  <select id="motSel" style="width:100%;margin-bottom:8px"></select>
+  <textarea id="motTxt" placeholder="Detalhe (vai para a ata)" style="width:100%"></textarea>
+  <div id="motMsg"></div>
+  <div class="linha" style="justify-content:flex-end;margin-top:12px">
+    <button class="btn btn-ghost" onclick="fechar('mMotivo')">Cancelar</button>
+    <button class="btn btn-red" id="motBtn">Confirmar</button>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.CONCURSO_API || "";
+const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const brl = n => (n==null||n==="")?"—":Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const dtBR = iso => iso ? new Date(iso).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "";
+const dataBR = s => s ? s.split("-").reverse().join("/") : "";
+const fmtDoc = d => { d=String(d||""); return d.length===14?d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,"$1.$2.$3/$4-$5"):d; };
+const fmtTel = d => { d=String(d||"").replace(/\D/g,"").replace(/^55(?=\d{10,11}$)/,""); return d.length===11?d.replace(/(\d{2})(\d{5})(\d{4})/,"($1) $2-$3"):d.length===10?d.replace(/(\d{2})(\d{4})(\d{4})/,"($1) $2-$3"):d; };
+let ABA="links", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
+
+function token(){ try{ return (b13GetSession()||{}).token||""; }catch(e){ return ""; } }
+async function api(path, opts={}){
+  const r = await fetch(API+path, {...opts, headers:{"Content-Type":"application/json","X-Auth-Token":token(),...(opts.headers||{})}});
+  if(r.status===401){ if(typeof b13Logout==="function") b13Logout(); throw new Error("Sessão expirada"); }
+  const ct=r.headers.get("content-type")||"";
+  const j = ct.includes("json") ? await r.json() : {};
+  return {status:r.status, j};
+}
+function toast(t){ const e=document.getElementById("toast"); e.textContent=t; e.style.display="block"; clearTimeout(e._t); e._t=setTimeout(()=>e.style.display="none",2200); }
+async function copiar(txt, aviso){ try{ await navigator.clipboard.writeText(txt); toast(aviso||"Copiado"); }catch(e){ const t=document.createElement("textarea"); t.value=txt; document.body.appendChild(t); t.select(); try{document.execCommand("copy");}catch(_){} t.remove(); toast(aviso||"Copiado"); } }
+function abrir(id){ document.getElementById(id).classList.add("aberto"); }
+function fechar(id){ document.getElementById(id).classList.remove("aberto"); }
+
+function tagStatusLink(l){
+  if(l.status==="enviado") return `<span class="tag ok">${l.viaWhatsapp?"frase via WhatsApp":"frases enviadas"}</span>`;
+  if(l.status==="revogado") return `<span class="tag erro">revogado</span>`;
+  return `<span class="tag warn">aguardando o cliente</span>`;
+}
+function tagConf(c){
+  if(!c) return `<span class="tag neu">não conferido</span>`;
+  if(c.ok) return `<span class="tag ok">OK · ${esc(c.situacao||"")}</span>`;
+  return `<span class="tag erro" title="${esc((c.problemas||[]).join("; "))}">${esc((c.problemas||[])[0]||"problema")}</span>`;
+}
+
+async function carregarResumo(){
+  const {j}=await api("/api/concurso/resumo");
+  const f={aberto:"Envio aberto",encerrado:"Envio encerrado",nao_iniciado:"Ainda não começou"}[j.fase]||j.fase;
+  document.getElementById("faseTxt").textContent=`${f} · atacado, 1 frase a cada R$ 3.000 · envio até 30/10/2026 às 23h59 · resultado 07/11`;
+  // a faixa de varejo só aparece se for ligada no servidor (CONCURSO_PERMITIR_VAREJO=1)
+  document.getElementById("gTipoBox").hidden=!j.permitirVarejo; document.getElementById("wTipoBox").hidden=!j.permitirVarejo;
+  if(!j.permitirVarejo){ document.getElementById("gTipo").value="atacado"; document.getElementById("wTipo").value="atacado"; }
+  const k=[
+    [j.links.total,"links gerados"],[j.links.aguardando,"aguardando o cliente"],[j.frases.validas,"frases válidas"],
+    [j.frases.porLink+" / "+j.frases.porWhatsapp,"pelo link / pelo WhatsApp"],[j.frases.desclassificadas,"desclassificadas"],
+  ];
+  document.getElementById("kpis").innerHTML=k.map(x=>`<div class="kpi"><div class="v">${esc(x[0])}</div><div class="l">${esc(x[1])}</div></div>`).join("");
+  return j;
+}
+
+// ---------- gerar link ----------
+async function conferirPedido(){
+  const numero=document.getElementById("gNumero").value.trim();
+  const box=document.getElementById("previa"), res=document.getElementById("resultado");
+  res.style.display="none";
+  if(!/^\d+$/.test(numero)){ box.style.display="block"; box.innerHTML=`<div class="msg erro">Informe o número do pedido.</div>`; return; }
+  const btn=document.getElementById("btnConferir"); btn.disabled=true; btn.textContent="Consultando o Bling…";
+  try{
+    const q=new URLSearchParams({tipo:document.getElementById("gTipo").value, canal:document.getElementById("gCanal").value});
+    const {status,j}=await api(`/api/concurso/pedido/${encodeURIComponent(numero)}?${q}`);
+    box.style.display="block";
+    if(status!==200){ box.innerHTML=`<div class="msg erro">${esc(j.erro||"Erro ao consultar")}</div>`; PREVIA=null; return; }
+    PREVIA=j;
+    const c=j.cliente||{};
+    box.innerHTML=`
+      <div class="grid2">
+        <div class="kv"><b>Pedido</b>nº ${esc(j.numero)} · ${esc(dataBR(j.dataPedido))} · ${esc(j.situacaoNaGeracao?.nome||"")}</div>
+        <div class="kv"><b>Cliente</b>${esc(c.nome||"—")}${c.fantasia?`<div class="muted">${esc(c.fantasia)}</div>`:""}</div>
+        <div class="kv"><b>${c.pj?"CNPJ":"Documento"}</b>${esc(fmtDoc(c.documento)||"—")}</div>
+        <div class="kv"><b>Celular no Bling</b>${esc(fmtTel(c.telefone)||"—")}</div>
+        <div class="kv"><b>Valor em produtos</b>${brl(j.valorProdutos)} <span class="muted">(pedido ${brl(j.totalPedido)})</span></div>
+        <div class="kv"><b>Dá direito a</b><span class="grande">${esc(j.qtdFrases)}</span> frase${j.qtdFrases==1?"":"s"} <span class="muted">· canal ${j.canal==="app"?"aplicativo":"WhatsApp"}</span></div>
+      </div>
+      ${(j.bloqueios||[]).map(b=>`<div class="msg erro">⛔ ${esc(b)}</div>`).join("")}
+      ${(j.avisos||[]).map(a=>`<div class="msg warn">⚠️ ${esc(a)}</div>`).join("")}
+      ${j.linkExistente?`<div class="msg ok">Este pedido já tem link (${esc(j.linkExistente.status)}). Mostrando abaixo.</div>`:""}
+      <div class="linha" style="margin-top:12px">
+        ${!j.bloqueios?.length && !j.linkExistente ? `<button class="btn btn-mag" id="btnGerar" onclick="gerarLink()">${j.avisos?.length?"Conferi os avisos, gerar link":"Gerar link"}</button>`:""}
+      </div>`;
+    if(j.linkExistente) mostrarResultado(j.linkExistente);
+  }catch(e){ box.innerHTML=`<div class="msg erro">${esc(e.message)}</div>`; }
+  finally{ btn.disabled=false; btn.textContent="Conferir pedido"; }
+}
+async function gerarLink(){
+  if(!PREVIA) return;
+  const b=document.getElementById("btnGerar"); b.disabled=true; b.textContent="Gerando…";
+  const {status,j}=await api("/api/concurso/links",{method:"POST",body:JSON.stringify({numero:PREVIA.numero,tipo:document.getElementById("gTipo").value,canal:document.getElementById("gCanal").value||PREVIA.canal,ignorarAvisos:true})});
+  if(status!==200){ b.disabled=false; b.textContent="Gerar link"; document.getElementById("previa").insertAdjacentHTML("beforeend",`<div class="msg erro">${esc(j.erro)}</div>`); return; }
+  b.remove();
+  mostrarResultado(j.link);
+  recarregar();
+}
+function mostrarResultado(l){
+  const r=document.getElementById("resultado"); r.style.display="block";
+  r.innerHTML=`<div style="font-weight:800">✅ Link do pedido nº ${esc(l.numero)} · ${esc(l.qtdFrases)} frase${l.qtdFrases==1?"":"s"} ${tagStatusLink(l)}</div>
+    <div class="url">${esc(l.url)}</div>
+    <div class="acoes">
+      <a class="btn btn-grn" href="${esc(l.whatsappLink)}" target="_blank" rel="noopener">Abrir no WhatsApp${l.cliente?.telefone?" do cliente":""}</a>
+      <button class="btn btn-ghost" data-copiar="msg">Copiar mensagem</button>
+      <button class="btn btn-ghost" data-copiar="url">Copiar só o link</button>
+    </div>
+    <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Ver a mensagem</summary><pre style="white-space:pre-wrap;font-size:12.5px;margin-top:8px;color:#e6e2ff">${esc(l.whatsappTexto)}</pre></details>`;
+  r.querySelector('[data-copiar="msg"]').onclick=()=>copiar(l.whatsappTexto,"Mensagem copiada");
+  r.querySelector('[data-copiar="url"]').onclick=()=>copiar(l.url,"Link copiado");
+}
+
+// ---------- abas ----------
+document.getElementById("abas").addEventListener("click",ev=>{
+  const c=ev.target.closest(".chip"); if(!c) return;
+  ABA=c.dataset.aba; document.querySelectorAll("#abas .chip").forEach(x=>x.classList.toggle("on",x===c)); render();
+});
+function render(){
+  const el=document.getElementById("corpoAba");
+  if(ABA==="links") el.innerHTML=htmlLinks();
+  if(ABA==="frases") el.innerHTML=htmlFrases();
+  if(ABA==="sugestoes") el.innerHTML=htmlSugestoes();
+}
+function htmlLinks(){
+  if(!LINKS.length) return `<div class="vazio">Nenhum link gerado ainda. Comece pelo número do pedido aí em cima.</div>`;
+  return `<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th class="hide-sm">Valor produtos</th><th>Frases</th><th>Status</th><th class="hide-sm">Gerado</th><th></th></tr></thead><tbody>
+    ${LINKS.map((l,i)=>`<tr>
+      <td><b>${esc(l.numero)}</b><div class="muted">${esc(dataBR(l.dataPedido))} · ${l.canal==="app"?"app":"WhatsApp"}</div></td>
+      <td>${esc(l.cliente?.nome||"—")}<div class="muted">${esc(fmtDoc(l.cliente?.documento))}</div></td>
+      <td class="hide-sm">${brl(l.valorProdutos)}</td>
+      <td><b>${esc(l.qtdFrases)}</b>${l.status==="enviado"?`<div class="muted">${esc(l.qtdEnviada??"")} enviada(s)</div>`:""}</td>
+      <td>${tagStatusLink(l)}${l.status==="enviado"?`<div class="muted">${esc(dtBR(l.enviadoEm))}</div>`:""}${l.status==="revogado"?`<div class="muted">${esc(l.motivoRevogacao)}</div>`:""}</td>
+      <td class="hide-sm"><div class="muted">${esc(dtBR(l.criadoEm))}<br>${esc(l.criadoPor||"")}</div></td>
+      <td><div class="acoes">${l.status==="aberto"?`
+        <a class="btn btn-grn btn-sm" href="${esc(l.whatsappLink)}" target="_blank" rel="noopener">WhatsApp</a>
+        <button class="btn btn-ghost btn-sm" onclick="copiar(LINKS[${i}].whatsappTexto,'Mensagem copiada')">Copiar</button>
+        <button class="btn btn-red btn-sm" onclick="revogar(${i})">Revogar</button>`:""}</div></td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+function htmlFrases(){
+  const lista=FRASES.filter(f=>FILTRO_FRASE==="todas"||(FILTRO_FRASE==="validas"?f.status==="valida":f.status!=="valida"));
+  const topo=`<div class="linha" style="justify-content:space-between;margin-bottom:12px">
+    <div class="acoes">
+      <span class="chip ${FILTRO_FRASE==="todas"?"on":""}" onclick="FILTRO_FRASE='todas';render()">Todas (${FRASES.length})</span>
+      <span class="chip ${FILTRO_FRASE==="validas"?"on":""}" onclick="FILTRO_FRASE='validas';render()">Válidas</span>
+      <span class="chip ${FILTRO_FRASE==="desc"?"on":""}" onclick="FILTRO_FRASE='desc';render()">Desclassificadas</span>
+    </div>
+    <div class="acoes">
+      <button class="btn btn-ghost btn-sm" onclick="abrirWhats()">+ Frase recebida pelo WhatsApp</button>
+      <button class="btn btn-ghost btn-sm" id="btnConf" onclick="conferirBling()">Conferir pedidos no Bling</button>
+      <button class="btn btn-ghost btn-sm" onclick="baixar('triagem')">⬇ Planilha da triagem</button>
+      <button class="btn btn-mag btn-sm" onclick="baixar('cega')">⬇ Planilha às cegas (comissão)</button>
+    </div></div><div id="confProg"></div>`;
+  if(!lista.length) return topo+`<div class="vazio">Nenhuma frase ${FILTRO_FRASE==="desc"?"desclassificada":"recebida"} ainda.</div>`;
+  return topo+`<div class="rolagem"><table class="tbl"><thead><tr><th>Nº</th><th>Frase</th><th>Recebida</th><th class="hide-sm">Pedido</th><th class="hide-sm">Estabelecimento / autor</th><th>Conferência</th><th></th></tr></thead><tbody>
+    ${lista.map(f=>`<tr style="${f.status!=="valida"?"opacity:.6":""}">
+      <td><b>${esc(f.seq)}</b></td>
+      <td><div class="frase">“${esc(f.frase)}”</div><div class="muted">${esc(f.palavras)} palavra${f.palavras==1?"":"s"}${f.igualA?` · <span class="tag mag">igual à nº ${esc(f.igualA)}</span>`:""}${f.status!=="valida"?` · <span class="tag erro">desclassificada</span> ${esc(f.motivo)}`:""}</div></td>
+      <td>${esc(f.enviadoEmBR)}<div><span class="tag neu">${f.canal==="link"?"link":"WhatsApp"}</span></div></td>
+      <td class="hide-sm">${esc(f.numero)}</td>
+      <td class="hide-sm">${esc(f.estabelecimento?.razaoSocial||"—")}<div class="muted">${esc(f.autor?.nome||"")}${f.autor?.vinculo?" · "+esc(f.autor.vinculo):""} · ${esc(fmtTel(f.autor?.whatsapp))}${f.marketing?" · aceita promoções":""}</div></td>
+      <td>${tagConf(f.conferencia)}</td>
+      <td>${f.status==="valida"?`<button class="btn btn-red btn-sm" onclick="desclassificar('${esc(f.id)}')">Desclassificar</button>`:`<button class="btn btn-ghost btn-sm" onclick="reabilitar('${esc(f.id)}')">Reabilitar</button>`}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+function htmlSugestoes(){
+  if(!SUG.length) return `<div class="vazio">Nenhum pedido do período sem link com valor aproximado de R$ 3.000 ou mais no registro local.<br><span class="muted">Pedido criado direto no Bling não aparece aqui: gere pelo número.</span></div>`;
+  return `<div class="muted" style="margin-bottom:8px">Do registro local do sistema (venda atacado e site). O valor aqui é aproximado; o que vale é o do Bling, conferido ao gerar.</div>
+  <div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Valor aprox.</th><th>Frases aprox.</th><th>Origem</th><th></th></tr></thead><tbody>
+  ${SUG.map(s=>`<tr><td><b>${esc(s.numero)}</b></td><td>${esc(s.cliente)}</td><td>${brl(s.valorAprox)}</td><td>${esc(s.frasesAprox)}</td><td><span class="tag neu">${esc(s.origem==="site"?"app":s.origem==="atacado"?"venda atacado":s.origem)}</span></td>
+    <td><button class="btn btn-mag btn-sm" onclick="usarSugestao('${esc(s.numero)}','${s.origem==="site"?"app":"whatsapp"}')">Conferir e gerar</button></td></tr>`).join("")}
+  </tbody></table></div>`;
+}
+function usarSugestao(numero,canal){
+  document.getElementById("gNumero").value=numero; document.getElementById("gCanal").value=canal;
+  window.scrollTo({top:0,behavior:"smooth"}); conferirPedido();
+}
+
+// ---------- motivo (revogar / desclassificar) ----------
+const MOTIVOS_DESC=["Xingamento, ofensa ou conteúdo sexual, político, religioso ou preconceituoso (11.1)","Incentiva beber em excesso, beber e dirigir ou se dirige a menor (11.1)","Cópia ou adaptação de slogan, marca, jingle ou música (11.1)","Cita marca de concorrente (11.1)","Pessoa impedida (3.4)","Sem compra correspondente / pedido não confere (11.1)","Pedido cancelado, devolvido ou estornado (4.7)","Enviada por quem não é titular / link repassado (3.3)","Fora do período (2.5)","Ilegível","Dado falso ou de terceiro","Indício de fraude ou pedido fracionado","Outro"];
+function pedirMotivo({titulo,sub,opcoes,botao},cb){
+  document.getElementById("motTitulo").textContent=titulo; document.getElementById("motSub").textContent=sub||"";
+  const sel=document.getElementById("motSel"); sel.style.display=opcoes?"block":"none"; sel.innerHTML=(opcoes||[]).map(o=>`<option>${esc(o)}</option>`).join("");
+  document.getElementById("motTxt").value=""; document.getElementById("motMsg").innerHTML="";
+  const b=document.getElementById("motBtn"); b.textContent=botao||"Confirmar";
+  b.onclick=async()=>{
+    const det=document.getElementById("motTxt").value.trim();
+    const motivo=opcoes?(sel.value+(det?" — "+det:"")):det;
+    if(!motivo||(opcoes&&sel.value==="Outro"&&!det)){ document.getElementById("motMsg").innerHTML=`<div class="msg erro">Descreva o motivo.</div>`; return; }
+    b.disabled=true; try{ await cb(motivo); fechar("mMotivo"); }catch(e){ document.getElementById("motMsg").innerHTML=`<div class="msg erro">${esc(e.message)}</div>`; } b.disabled=false;
+  };
+  abrir("mMotivo");
+}
+function revogar(i){
+  const l=LINKS[i];
+  pedirMotivo({titulo:`Revogar o link do pedido nº ${l.numero}?`,sub:"O cliente não consegue mais enviar por ele. Use para link enviado errado ou pedido cancelado.",botao:"Revogar link"},async motivo=>{
+    const {status,j}=await api(`/api/concurso/links/${encodeURIComponent(l.token)}/revogar`,{method:"POST",body:JSON.stringify({motivo})});
+    if(status!==200) throw new Error(j.erro); toast("Link revogado"); recarregar();
+  });
+}
+function desclassificar(id){
+  const f=FRASES.find(x=>x.id===id);
+  pedirMotivo({titulo:`Desclassificar a frase nº ${f.seq}?`,sub:`“${f.frase}” — o motivo vai para a ata (11.3).`,opcoes:MOTIVOS_DESC,botao:"Desclassificar"},async motivo=>{
+    const {status,j}=await api(`/api/concurso/frases/${encodeURIComponent(id)}/status`,{method:"POST",body:JSON.stringify({status:"desclassificada",motivo})});
+    if(status!==200) throw new Error(j.erro); toast("Frase desclassificada"); recarregar();
+  });
+}
+async function reabilitar(id){
+  const {status,j}=await api(`/api/concurso/frases/${encodeURIComponent(id)}/status`,{method:"POST",body:JSON.stringify({status:"valida"})});
+  if(status!==200) return toast(j.erro); toast("Frase reabilitada"); recarregar();
+}
+
+// ---------- WhatsApp (4.4 c) ----------
+function abrirWhats(){
+  ["wNumero","wFrases","wNome","wWhats","wEstab","wVinculo"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("wMkt").checked=false; document.getElementById("wMsg").innerHTML="";
+  const agora=new Date(Date.now()-3*3600e3).toISOString().slice(0,16); document.getElementById("wQuando").value=agora;
+  abrir("mWhats");
+}
+async function salvarWhats(){
+  const b=document.getElementById("wBtn"); b.disabled=true; b.textContent="Conferindo no Bling…";
+  const quando=document.getElementById("wQuando").value;
+  const corpo={ numero:document.getElementById("wNumero").value.trim(), tipo:document.getElementById("wTipo").value,
+    recebidaEm: quando? quando+":00-03:00" : "", frases:document.getElementById("wFrases").value.split("\n").map(s=>s.trim()).filter(Boolean),
+    nome:document.getElementById("wNome").value, whatsapp:document.getElementById("wWhats").value, estabelecimento:document.getElementById("wEstab").value,
+    vinculo:document.getElementById("wVinculo").value, marketing:document.getElementById("wMkt").checked };
+  try{
+    const {status,j}=await api("/api/concurso/frases/whatsapp",{method:"POST",body:JSON.stringify(corpo)});
+    if(status!==200){ document.getElementById("wMsg").innerHTML=`<div class="msg erro">${esc(j.erro)}</div>`; return; }
+    fechar("mWhats"); toast(`${j.registradas} frase(s) registrada(s)`); recarregar();
+  }finally{ b.disabled=false; b.textContent="Registrar"; }
+}
+
+// ---------- conferência e planilhas ----------
+async function conferirBling(){
+  await api("/api/concurso/conferir",{method:"POST"}); acompanharConf();
+}
+async function acompanharConf(){
+  const j=await carregarResumo(); const c=j.conferencia||{};
+  const el=document.getElementById("confProg"); if(!el) return;
+  if(c.rodando){ el.innerHTML=`<div class="msg warn">Conferindo no Bling (fila lenta, não atrapalha o caixa): ${c.feitos} de ${c.total}<div class="barra"><i style="width:${c.total?Math.round(100*c.feitos/c.total):0}%"></i></div></div>`; setTimeout(acompanharConf,2500); }
+  else if(c.terminadoEm){ el.innerHTML=`<div class="msg ok">Conferência concluída em ${esc(dtBR(c.terminadoEm))}: ${c.total} pedido(s).</div>`; carregarListas(); }
+}
+async function baixar(modo){
+  const r=await fetch(API+`/api/concurso/exportar?modo=${modo}`,{headers:{"X-Auth-Token":token()}});
+  if(!r.ok){ toast("Não foi possível gerar a planilha"); return; }
+  const blob=await r.blob(); const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=(r.headers.get("content-disposition")||"").match(/filename="([^"]+)"/)?.[1]||`concurso-${modo}.xlsx`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+async function carregarListas(){
+  const [l,f,s]=await Promise.all([api("/api/concurso/links"),api("/api/concurso/frases"),api("/api/concurso/sugestoes")]);
+  LINKS=l.j.data||[]; FRASES=f.j.data||[]; SUG=s.j.data||[]; render();
+}
+async function recarregar(){ try{ await carregarResumo(); await carregarListas(); }catch(e){ document.getElementById("corpoAba").innerHTML=`<div class="msg erro">${esc(e.message)}</div>`; } }
+document.getElementById("gNumero").addEventListener("keydown",e=>{ if(e.key==="Enter") conferirPedido(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".fundo.aberto").forEach(x=>x.classList.remove("aberto")); });
+recarregar();
+</script>
+</body>
+</html>
