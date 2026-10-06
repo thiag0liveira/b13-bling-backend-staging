@@ -6050,6 +6050,17 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     let pedNovo;
     try{ await sleep(500); pedNovo=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     const novoTotal=+(pedNovo?.total||0);
+    // o pedido acabou de ser lido do Bling já com a edição: atualiza a "foto" que a tela
+    // de Pedidos usa e as listas por status em cache, pra o card mostrar na hora o
+    // total, os itens e a situação de lá (antes ficava com os valores antigos até a
+    // próxima varredura)
+    if(pedNovo){
+      try{
+        _registrarSitOnline(pedNovo);
+        _atualizarPedidoNoCacheBling(id,{ total:novoTotal, frete:Number(pedNovo.transporte?.frete||0),
+          situacaoId:Number(pedNovo.situacao?.id||0), situacao:nomeSituacao(Number(pedNovo.situacao?.id||0)) });
+      }catch(e){}
+    }
     // confere se o Bling gravou o total certo — se não bater, avisa em vez de deixar
     // passar uma divergência silenciosa entre o que a tela mostra e o que está lá
     let alertaTotal=null;
@@ -6171,8 +6182,16 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // no mesmo status, esperando alguém lembrar de mudar por fora.
     let situacaoAvancada=null;
     if(_sitEd===SIT.SEP_PEND){
-      try{ const rSit=await mudarSituacaoPedido(Number(id),SIT.SEPARADO); if(rSit.ok) situacaoAvancada="Separado"; }
-      catch(e){}
+      try{
+        const rSit=await mudarSituacaoPedido(Number(id),SIT.SEPARADO);
+        if(rSit.ok){
+          situacaoAvancada="Separado";
+          // a foto do pedido e as listas em cache ainda diziam "com pendências": acerta já
+          const sitNova={situacaoId:SIT.SEPARADO, situacao:nomeSituacao(SIT.SEPARADO)};
+          _sitOnline[String(id)]={...(_sitOnline[String(id)]||{}), ...sitNova, em:Date.now()};
+          _atualizarPedidoNoCacheBling(id,sitNova);
+        }
+      }catch(e){}
     }
     res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
       autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
@@ -8074,6 +8093,7 @@ function blocoHistoricoItens(diff, quem, autorizadoPor){
 // grava o histórico de itens no log do pedido (Central e Gestão de Caixas leem daqui)
 function registrarHistoricoItens(pedidoId, diff, funcionarioId, funcNome, autorizadoPor){
   try{
+    _retiradosCache.t=0; // a lista de retirados da tela de Pedidos precisa enxergar esta edição já
     const id=String(pedidoId);
     addLog(id,"itens_alterados_caixa",funcionarioId,funcNome,{autorizadoPor:autorizadoPor||"",de:diff.de,para:diff.para,
       retirados:diff.retirados.map(_fmtItem),acrescentados:diff.acrescentados.map(_fmtItem),
@@ -11203,23 +11223,65 @@ setInterval(()=>{
     Object.keys(_sitOnline).forEach(k=>{ if(agora-(_sitOnline[k]?.em||0)>24*60*60*1000) delete _sitOnline[k]; });
   }catch(e){}
 }, 60*60*1000);
+// guarda a "foto" do pedido como está no Bling AGORA (situação, total, frete e itens).
+// Os cards da tela de Pedidos usam isso por cima do registro local -- assim uma edição
+// feita aqui (ou direto no Bling) aparece certa na tela sem esperar ninguém reabrir.
+function _registrarSitOnline(d){
+  if(!d||!d.id) return;
+  const sit=Number(d.situacao?.id||0);
+  _sitOnline[String(d.id)]={ situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now(),
+    total:Number(d.total||0), frete:Number(d.transporte?.frete||0),
+    itens:(d.itens||[]).map(i=>({nome:i.descricao||i.produto?.nome||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0})) };
+}
 async function _atualizarSituacoesOnline(ids){
   if(_sitOnlineRodando) return;
   _sitOnlineRodando=true;
   try{
     for(const id of ids){
       const c=_sitOnline[String(id)];
-      if(c && (Date.now()-c.em)<60*1000) continue;
+      // pedido FINALIZADO (Atendido/Cancelado) quase não muda: confere de novo só a cada
+      // 30 min. Os em andamento, a cada 60s. Isso mantém a tela fiel ao Bling sem
+      // refazer chamada à toa pra pedido que já acabou.
+      const ttl=(c && _ehFinalizado(c.situacaoId)) ? 30*60*1000 : 60*1000;
+      if(c && (Date.now()-c.em)<ttl) continue;
       try{
         const d=await blingLento(`/pedidos/vendas/${id}`).then(r=>r?.data);
-        const sit=Number(d?.situacao?.id||0);
-        _sitOnline[String(id)]={situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now()};
-      }catch(e){ _sitOnline[String(id)]={situacaoId:0, situacao:"—", em:Date.now()}; }
+        _registrarSitOnline(d);
+      }catch(e){
+        // falhou: mantém o que já sabia (em vez de apagar pra "—") e tenta de novo em 60s
+        _sitOnline[String(id)]={ ...(c||{situacaoId:0, situacao:"—"}), em:Date.now() };
+      }
       await sleep(120);
     }
   }catch(e){}
   _sitOnlineRodando=false;
 }
+// o que mudou em cada pedido (retirado / acrescentado / alterado), lido do histórico de
+// uma vez só e guardado 15s -- ler o histórico inteiro por pedido deixava a listagem lenta
+let _retiradosCache={t:0,map:{}};
+function _mapaAlteracoes(){
+  if(Date.now()-_retiradosCache.t<15000) return _retiradosCache.map;
+  const map={};
+  const juntar=(arr,destino)=>{ (arr||[]).forEach(x=>{ const t=String(x||"").trim(); if(t&&!destino.includes(t)) destino.push(t); }); };
+  try{
+    const lg=lerLog();
+    Object.keys(lg).forEach(pid=>{
+      const alt={retirados:[],acrescentados:[],alterados:[]};
+      (lg[pid]||[]).forEach(e=>{
+        const d=e.detalhes||{};
+        if(e.evento==="itens_retirados") juntar((d.detalhe&&d.detalhe.length?d.detalhe:d.itens),alt.retirados);
+        else if(e.evento==="itens_acrescentados") juntar(d.itens,alt.acrescentados);
+        if(Array.isArray(d.retirados)) juntar(d.retirados,alt.retirados);
+        if(Array.isArray(d.acrescentados)) juntar(d.acrescentados,alt.acrescentados);
+        if(Array.isArray(d.alterados)) juntar(d.alterados,alt.alterados);
+      });
+      if(alt.retirados.length||alt.acrescentados.length||alt.alterados.length) map[pid]=alt;
+    });
+  }catch(e){}
+  _retiradosCache={t:Date.now(),map};
+  return map;
+}
+const _SEM_ALTERACAO={retirados:[],acrescentados:[],alterados:[]};
 function _turnosEntrega(){ try{ return lerJSON(`${DATA_DIR}/turnos_entrega.json`,{}); }catch(e){ return {}; } }
 // helper: início da semana (segunda 00:00) e fim (domingo 23:59) a partir de uma data
 function _semanaDe(refISO){
@@ -11265,7 +11327,11 @@ function _veioPorApi(b){
 function _montarPedidoDoBling(b){
   const bid=String(b.id);
   const sitId=Number(b.situacao?.id||0);
-  _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now()};
+  { const prev=_sitOnline[bid];
+    _sitOnline[bid]={situacaoId:sitId, situacao:nomeSituacao(sitId), em:Date.now(),
+      ...(prev&&Array.isArray(prev.itens)?{total:Number(b.total)||prev.total, frete:Number(b.transporte?.frete||0), itens:prev.itens}:{})}; }
+  const altB=_mapaAlteracoes()[bid]||_SEM_ALTERACAO;
+  const retiradosB=altB.retirados;
   const ag=_turnosEntrega()[bid]||null;
   const okReg=lerPedidosOk()[bid]||null;
   // mesmo critério usado no resto do sistema (conferência, viagem etc.): é entrega
@@ -11281,7 +11347,7 @@ function _montarPedidoDoBling(b){
   const ehEntregaB = !!enderecoB || Number(b.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(obsB);
   return { id:b.id, numero:b.numero||b.id,
     agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-    teveRetirada:false,
+    teveRetirada:retiradosB.length>0, retirados:retiradosB, acrescentados:altB.acrescentados, alterados:altB.alterados,
     ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
     criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
     origem:"bling", noSistema:false, veioPorApi:_veioPorApi(b),
@@ -11435,21 +11501,23 @@ app.get("/api/pedidos-online",async(req,res)=>{
     const montarDoLocal=(p)=>{
       const sit=_sitOnline[String(p.pedidoBlingId)]||null;
       const ag=_turnosEntrega()[String(p.pedidoBlingId)]||null;
-      let teveRetirada=false;
-      try{ const lg=lerLog()[String(p.pedidoBlingId)]||[];
-        teveRetirada=lg.some(e=>e.evento==="itens_retirados"||(e.detalhes&&Array.isArray(e.detalhes.retirados)&&e.detalhes.retirados.length)); }catch(e){}
+      const alt=_mapaAlteracoes()[String(p.pedidoBlingId)]||_SEM_ALTERACAO;
+      const retirados=alt.retirados, teveRetirada=retirados.length>0;
+      // foto do pedido no Bling (quando já foi lida): total, frete e itens de lá têm
+      // prioridade sobre o registro local, que pode estar velho depois de uma edição
+      const snap=(sit&&Array.isArray(sit.itens))?sit:null;
       const okReg=lerPedidosOk()[String(p.pedidoBlingId)]||null;
       return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
         agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-        teveRetirada,
+        teveRetirada, retirados, acrescentados:alt.acrescentados, alterados:alt.alterados,
         ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
         criadoEm:p.criadoEm||0, origem:p.origem||"atacado", noSistema:true,
         vendedor:p.vendedorNome||p.funcionarioNome||"",
         cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
-        total:Number(p.total)||0, frete:Number(p.entrega?.taxa)||0,
+        total:snap?snap.total:(Number(p.total)||0), frete:snap?snap.frete:(Number(p.entrega?.taxa)||0),
         tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
         endereco:p.entrega?.endereco||"",
-        itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+        itens:snap?snap.itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
         situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
         cancelado: sit?sit.situacaoId===SIT.CANCELADO:false };
     };
@@ -11469,12 +11537,20 @@ app.get("/api/pedidos-online",async(req,res)=>{
     const chaveCache=`${iniISO}_${fimISO}`;
     if(fase==="local"){
       const lista=Object.values(porBlingId).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
-      // NÃO dispara mais a sincronização ampla do Bling sozinho aqui -- isso
-      // gerava, toda vez que a tela abria, uma varredura de 9 situações na
-      // semana inteira em segundo plano, mesmo que a pessoa só quisesse dar
-      // uma olhada rápida. Agora só busca no Bling quando a pessoa escolhe um
-      // status específico (?fase=bling&situacao=...) -- ver mais abaixo.
-      return res.json({data:lista, fase:"local",
+      // NÃO dispara a varredura ampla do Bling (9 situações na semana inteira) -- essa só
+      // roda quando a pessoa escolhe um status (?fase=bling&situacao=...). Mas a
+      // situação/total/itens de CADA pedido da tela precisam seguir o Bling: sem isso
+      // o card mostrava "carregando…" ou ficava velho depois de uma edição. Então
+      // atualiza, em segundo plano e com a fila de baixa prioridade, só os pedidos
+      // desta lista (os em andamento primeiro, no máximo 40 por vez).
+      try{
+        const ordemAtu=lista.slice().sort((a,b)=>{
+          const fa=(a.situacaoId!=null&&_ehFinalizado(a.situacaoId))?1:0, fb=(b.situacaoId!=null&&_ehFinalizado(b.situacaoId))?1:0;
+          return fa-fb;
+        });
+        _atualizarSituacoesOnline(ordemAtu.slice(0,40).map(p=>p.id));
+      }catch(e){}
+      return res.json({data:lista, fase:"local", situacoesCarregando:_sitOnlineRodando,
         periodo:{ini:iniISO, fim:fimISO}});
     }
     if(fase==="bling"){
@@ -11492,8 +11568,17 @@ app.get("/api/pedidos-online",async(req,res)=>{
       const situacoesFiltro=MAPA_SITUACAO_MENU[situacaoKey];
       if(!situacoesFiltro) return res.status(400).json({erro:"Informe ?situacao= com um dos valores: "+Object.keys(MAPA_SITUACAO_MENU).join(", ")});
       const chaveEspecifica=`${chaveCache}_${situacaoKey}`;
-      const cache=_cacheBlingPedidos[chaveEspecifica];
-      if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveEspecifica, situacoesFiltro.filter(Boolean)); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
+      let cache=_cacheBlingPedidos[chaveEspecifica];
+      // soCache=1: a tela só quer reaplicar o que já foi buscado (ex.: depois de uma edição
+      // ou do refresh automático) -- nunca dispara busca nova no Bling por conta própria
+      if(String(req.query.soCache||"")==="1"){
+        if(!cache) return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}});
+      } else if(!cache){ _carregarBlingPedidosBg(iniISO, fimISO, chaveEspecifica, situacoesFiltro.filter(Boolean)); return res.json({data:[], fase:"bling", pronto:false, progresso:0, periodo:{ini:iniISO, fim:fimISO}}); }
+      else if(cache.pronto && !cache.rodando && (Date.now()-cache.em)>120000){
+        // a pessoa clicou de novo no status e a lista tem mais de 2 min: atualiza de verdade
+        _carregarBlingPedidosBg(iniISO, fimISO, chaveEspecifica, situacoesFiltro.filter(Boolean));
+        cache=_cacheBlingPedidos[chaveEspecifica]; // o objeto novo (pronto:false, rodando) -- a tela passa a esperar de novo
+      }
       // devolve os do Bling que NÃO estão no local. Filtra por id E por NÚMERO — se o
       // registro local gravou um pedidoBlingId diferente do id real (pedido recriado no
       // Bling, p.ex.), o mesmo pedido apareceria DUAS vezes na tela.
