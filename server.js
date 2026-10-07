@@ -555,7 +555,9 @@ function _registrarMetrica(path, esperouMs, duracaoMs, erro, prio, metodo){
 const BLING_MAX_CONCORRENTE=3;
 let _blingEmVoo=0;
 function _blingAgendar(){
-  if(_blingProcessando) return;
+  // sempre tenta despachar: se já há laços ativos ou as 3 vagas estão ocupadas, a chamada abaixo
+  // volta na hora. Antes, com um laço "em processamento", uma chamada nova ficava parada até
+  // alguma chamada em voo terminar, mesmo com vaga livre (pior quando o Bling está lento).
   _blingProcessando=true;
   _blingTentarDespachar();
 }
@@ -573,21 +575,34 @@ async function _blingReservarVez(){
     await new Promise(r=>setTimeout(r,espera));
   }
 }
+let _blingDespachantes=0; // laços de despacho ativos (no máximo BLING_MAX_CONCORRENTE)
 async function _blingTentarDespachar(){
-  while(_blingEmVoo<BLING_MAX_CONCORRENTE){
-    const daAlta=_filaAlta.length>0;
-    const item=daAlta?_filaAlta.shift():_filaBaixa.shift();
-    if(!item) break;
-    const prioItem=daAlta?"alta":"baixa";
-    await _blingReservarVez();
-    _blingEmVoo++;
-    const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
-    const t0=Date.now();
-    blingRaw(item.path,item.options)
-      .then(r=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,null,prioItem,item.options?.method); item.resolve(r); })
-      .catch(e=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro",prioItem,item.options?.method); item.reject(e); })
-      .finally(()=>{ _blingEmVoo--; _blingTentarDespachar(); });
-  }
+  // ANTES: o laço pegava o próximo item da fila e só DEPOIS esperava a sua vez de sair. Com a fila
+  // cheia, vários itens ficavam "pegos" e parados esperando, e nada que chegasse depois (uma
+  // chamada urgente da tela, ou do caixa contra uma de fundo) conseguia passar na frente deles;
+  // e cada chamada concluída ainda abria mais um laço. AGORA: espera a vez PRIMEIRO e só então
+  // escolhe o próximo item, e há no máximo MAX laços -- a prioridade vale no instante em que a
+  // chamada sai. O ritmo (intervalo mínimo) e o limite de chamadas simultâneas não mudaram.
+  if(_blingDespachantes>=BLING_MAX_CONCORRENTE) return;
+  _blingDespachantes++;
+  try{
+    while(_blingEmVoo<BLING_MAX_CONCORRENTE){
+      if(_filaAlta.length===0 && _filaBaixa.length===0) break;
+      await _blingReservarVez();
+      if(_blingEmVoo>=BLING_MAX_CONCORRENTE) break;   // outro laço ocupou a vaga enquanto este esperava
+      const daAlta=_filaAlta.length>0;
+      const item=daAlta?_filaAlta.shift():_filaBaixa.shift();
+      if(!item) break;                                  // outro laço levou o último item
+      const prioItem=daAlta?"alta":"baixa";
+      _blingEmVoo++;
+      const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
+      const t0=Date.now();
+      blingRaw(item.path,item.options)
+        .then(r=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,null,prioItem,item.options?.method); item.resolve(r); })
+        .catch(e=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro",prioItem,item.options?.method); item.reject(e); })
+        .finally(()=>{ _blingEmVoo--; _blingTentarDespachar(); });
+    }
+  } finally { _blingDespachantes--; }
   if(_filaAlta.length===0 && _filaBaixa.length===0 && _blingEmVoo===0) _blingProcessando=false;
 }
 // ===== CACHE DE PRODUTO =====
@@ -678,16 +693,24 @@ function bling(path,options={},prioridade="alta"){
   if(mPedUnico && metodo==="GET"){
     const idPed=mPedUnico[1];
     return new Promise((resolve,reject)=>{
-      (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,enfileiradoEm:Date.now(),
+      _enfileirarBling(prioridade,{path,options,enfileiradoEm:Date.now(),
         resolve:(r)=>{ try{ cachearObservacaoPedido(idPed, r?.data?.observacoes, r?.data?.numero); }catch(e){} resolve(r); },
         reject});
       _blingAgendar();
     });
   }
   return new Promise((resolve,reject)=>{
-    (prioridade==="baixa"?_filaBaixa:_filaAlta).push({path,options,resolve,reject,enfileiradoEm:Date.now()});
+    _enfileirarBling(prioridade,{path,options,resolve,reject,enfileiradoEm:Date.now()});
     _blingAgendar();
   });
+}
+// "baixa" = trabalho de fundo; "alta" = o normal; "urgente" = uma pessoa está olhando a tela esperando
+// (ex.: pesquisar um pedido): entra na frente das outras de prioridade alta. Não fura o intervalo
+// mínimo entre chamadas, só a ordem da fila.
+function _enfileirarBling(prioridade,item){
+  if(prioridade==="baixa") _filaBaixa.push(item);
+  else if(prioridade==="urgente") _filaAlta.unshift(item);
+  else _filaAlta.push(item);
 }
 function blingLento(path,options={}){ return bling(path,options,"baixa"); } // uso: tarefas de fundo (nunca o caixa)
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
@@ -9646,7 +9669,24 @@ app.get("/ofertas", (req, res) => { res.set("Cache-Control","no-store, no-cache,
 app.get("/pedir-tabela", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "pedir-tabela.html")); });
 app.get("/painel", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "painel.html")); });
 // ------------------------- Fechamento de Caixa -------------------------
-const _vendedorCache={};
+const VENDEDORES_CACHE_FILE=`${DATA_DIR}/vendedores_cache.json`;
+const _vendedorCache=lerJSON(VENDEDORES_CACHE_FILE,{});   // antes só em memória: a cada deploy as buscas voltavam a pagar uma chamada por vendedor
+function _salvarVendedoresCache(){ try{ salvarJSON(VENDEDORES_CACHE_FILE,_vendedorCache); }catch(e){} }
+const _vendedoresBuscando={};
+// versão que NUNCA espera o Bling: devolve o nome se já conhece; senão devolve vazio e busca em
+// segundo plano (fila de fundo) pra próxima vez. Pra telas em que o nome do vendedor é só um enfeite.
+function nomeVendedorRapido(id){
+  if(!id) return "Sem vendedor";
+  if(_vendedorCache[id]) return _vendedorCache[id];
+  if(!_vendedoresBuscando[id]){
+    _vendedoresBuscando[id]=true;
+    blingLento(`/vendedores/${id}`).then(v=>{
+      const nome=v?.data?.nome||v?.data?.contato?.nome||`Vendedor ${id}`;
+      _vendedorCache[id]=nome; _salvarVendedoresCache();
+    }).catch(()=>{}).finally(()=>{ delete _vendedoresBuscando[id]; });
+  }
+  return "";
+}
 async function nomeVendedor(id){
   if(!id) return "Sem vendedor";
   if(_vendedorCache[id]) return _vendedorCache[id];
@@ -9654,7 +9694,7 @@ async function nomeVendedor(id){
     await new Promise(r=>setTimeout(r,350));
     const v=await bling(`/vendedores/${id}`);
     const nome=v?.data?.nome||v?.data?.contato?.nome||`Vendedor ${id}`;
-    _vendedorCache[id]=nome; return nome;
+    _vendedorCache[id]=nome; _salvarVendedoresCache(); return nome;
   }catch(e){ return `Vendedor ${id}`; }
 }
 function nomeSituacaoFechamento(id){
@@ -12619,14 +12659,26 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
       const achado=Object.values(props0||{}).find(p=>String(p.pedidoBlingNumero)===t||String(p.pedidoBlingId)===t);
       if(achado&&achado.pedidoBlingId) idConhecido=String(achado.pedidoBlingId);
     }catch(e){}
+    // 1b) também não está no registro local, mas pode já ter vindo numa lista que o sistema buscou
+    // no Bling (botões de status da tela de Pedidos): ali o número já aparece junto do id
+    if(!idConhecido && t.length<10){
+      try{
+        for(const c of Object.values(_cacheBlingPedidos)){
+          const a=(c.pedidos||[]).find(x=>String(x.numero)===t && x.id);
+          if(a){ idConhecido=String(a.id); break; }
+        }
+      }catch(e){}
+    }
     // 2) se não sabemos o id e o termo parece NÚMERO de pedido (curto), vai direto na
-    // busca por número — tentar como id primeiro é uma chamada que quase sempre falha
+    // busca por número — tentar como id primeiro é uma chamada que quase sempre falha.
+    // As chamadas são "urgentes": tem alguém olhando a tela esperando o resultado, então passam
+    // na frente das outras da fila (mesmo assim respeitando o intervalo mínimo entre chamadas).
     const pareceId = t.length>=10;
     try{
-      if(idConhecido)      ped=await bling(`/pedidos/vendas/${idConhecido}`).then(r=>r?.data);
-      else if(pareceId)    ped=await bling(`/pedidos/vendas/${t}`).then(r=>r?.data);
+      if(idConhecido)      ped=await bling(`/pedidos/vendas/${idConhecido}`,{},"urgente").then(r=>r?.data);
+      else if(pareceId)    ped=await bling(`/pedidos/vendas/${t}`,{},"urgente").then(r=>r?.data);
     }catch(e){}
-    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`).then(x=>x?.data); }catch(e){} }
+    if(!ped){ try{ const r=await bling(`/pedidos/vendas?numero=${encodeURIComponent(t)}`,{},"urgente"); const a=(r?.data||[])[0]; if(a?.id) ped=await bling(`/pedidos/vendas/${a.id}`,{},"urgente").then(x=>x?.data); }catch(e){} }
     if(!ped) return res.json({data:[], naoEncontrado:true});
     const props=lerPropostas();
     const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(ped.id))||null;
@@ -12641,7 +12693,7 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
     const ehEntrega=(prop?.entrega?.tipo==="entrega")||!!endBusca||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
     const _resp={ data:[{
       id:ped.id, numero:ped.numero, criadoEm:prop?.criadoEm||null,
-      origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||await nomeVendedor(ped.vendedor?.id||null),
+      origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||nomeVendedorRapido(ped.vendedor?.id||null),
       cliente:ped.contato?.nome||"—", telefone:prop?.cliente?.telefone||"",
       total:Number(ped.total)||0, frete:Number(ped.transporte?.frete||0),
       tipo: ehEntrega?"entrega":"retirada",
