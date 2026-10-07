@@ -298,7 +298,7 @@ async function blingRaw(path,options={},_tentativa=0){
       }catch(e){}
       return blingRaw(path,options,_tentativa+1);
     }
-    if(r.status===429){ try{ _metricas.err429++; }catch(e){} }
+    if(r.status===429){ try{ _metricas.err429++; _metricas.ultimos429.unshift({em:Date.now(),rotulo:_rotuloMetrica(path,options&&options.method)}); if(_metricas.ultimos429.length>15) _metricas.ultimos429.pop(); }catch(e){} }
     if(r.status===429&&_tentativa<8){
       // limite de requisições do Bling — espera com backoff crescente e tenta de
       // novo. Se o Bling mandou "Retry-After" (segundos exatos de espera), usa
@@ -348,7 +348,17 @@ let _filaAlta=[], _filaBaixa=[], _blingProcessando=false;
 // MÉTRICAS pra diagnosticar lentidão: quantas chamadas, quanto tempo esperando na
 // fila, quantos 429 (limite do Bling) e quais caminhos mais consomem.
 const _metricas={ inicio:Date.now(), total:0, err429:0, erros:0,
-  esperaTotalMs:0, esperaMaxMs:0, porCaminho:{}, ultimas:[] };
+  esperaTotalMs:0, esperaMaxMs:0, porCaminho:{}, ultimas:[],
+  // espera na fila separada por prioridade (alta = caixa e telas; baixa = trabalho de fundo): a média
+  // geral mistura as duas e a de fundo é de propósito mais demorada, então sozinha não diz se o caixa sofre
+  porPrio:{alta:{n:0,esperaTotalMs:0},baixa:{n:0,esperaTotalMs:0}},
+  janela:[],      // chamadas dos últimos 10 min {em,rotulo,prio}: mostra QUEM está consumindo o limite
+  ultimos429:[] };  // onde aconteceram os últimos 429
+function _rotuloMetrica(path,metodo){
+  const chave=String(path).split("?")[0].replace(/\/\d{6,}/g,"/:id");
+  const m=String(metodo||"GET").toUpperCase();
+  return (m==="GET"?"":m+" ")+chave;
+}
 // DIAGNÓSTICO: mostra se o problema é token vencido, fila travada, ou o Bling
 // recusando de verdade (429/erro) — sem isso, "parou de funcionar" fica no chute.
 // SAÚDE GERAL DO PROCESSO: memória, tempo desde o último reinício, tamanho dos
@@ -389,6 +399,25 @@ app.get("/api/diag/saude",(req,res)=>{
 // com a IA em vez de mandar print -- já vem com um diagnóstico automático
 // classificando onde está o problema (Bling, sistema, ou nada), pra não
 // precisar perguntar toda vez.
+// Linhas extras do resumo de saúde: o limite do Bling (2 chamadas/s) é compartilhado por tudo, e
+// o resumo só mostrava o total. Aqui aparece QUEM está consumindo e se o caixa está esperando.
+function detalheUsoBling(){
+  try{
+    const agora=Date.now();
+    const jan=_metricas.janela.filter(j=>agora-j.em<=10*60*1000);
+    const por={}; jan.forEach(j=>{ const k=j.rotulo+(j.prio==="baixa"?" (fundo)":""); por[k]=(por[k]||0)+1; });
+    const top=Object.entries(por).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n])=>k+" ×"+n).join(" · ");
+    const pa=_metricas.porPrio.alta, pb=_metricas.porPrio.baixa;
+    const med=p=>p.n?Math.round(p.esperaTotalMs/p.n):0;
+    const linhas=[
+      "Espera na fila: caixa e telas (prioridade alta)="+med(pa)+"ms em "+pa.n+" chamadas | trabalho de fundo="+med(pb)+"ms em "+pb.n+" chamadas",
+      "Últimos 10 min: "+jan.length+" chamadas (≈"+Math.round(jan.length/10)+"/min; o teto do sistema é "+Math.round(60000/BLING_INTERVALO_MIN)+"/min). Mais usadas: "+(top||"nenhuma"),
+    ];
+    const u=_metricas.ultimos429[0];
+    if(u) linhas.push("Último 429: há "+Math.round((agora-u.em)/60000)+" min em "+u.rotulo+" (no total, os "+_metricas.ultimos429.length+" últimos foram em: "+[...new Set(_metricas.ultimos429.map(x=>x.rotulo))].slice(0,4).join(", ")+")");
+    return linhas;
+  }catch(e){ return []; }
+}
 // Teste "ao vivo" do Bling para a tela de Saúde. Antes cada abertura da tela (e a cada 30s) fazia
 // DUAS chamadas de alta prioridade e esperava o Bling responder, mesmo lento (já deu 12s), então
 // a tela e o botão de copiar demoravam o mesmo tanto, e ainda concorriam com o caixa. Agora é UMA
@@ -456,6 +485,7 @@ app.get("/api/diag/resumo-texto",async(req,res)=>{
       "Bling: fila="+filaTotal+", espera média="+esperaMediaMs+"ms, teste ao vivo="+(testeAoVivo.ok?testeAoVivo.ms+"ms":(testeAoVivo.timeout?"sem resposta em 4s":"FALHOU"))+(medianaRecente!=null?", chamadas reais recentes≈"+medianaRecente+"ms":""),
       "Erros 429 desde o início: "+_metricas.err429+" | total de chamadas: "+_metricas.total,
       "Arquivos: "+arquivos.map(a=>a.nome+"="+(a.kb>1024?(a.kb/1024).toFixed(1)+"MB":a.kb+"KB")).join(", "),
+      ...detalheUsoBling(),
     ];
     res.set("Content-Type","text/plain; charset=utf-8");
     res.send(linhas.join("\n"));
@@ -481,7 +511,11 @@ app.get("/api/diag/bling-status",async(req,res)=>{
     testeAoVivo,
   });
 });
-function _registrarMetrica(path, esperouMs, duracaoMs, erro){
+function _registrarMetrica(path, esperouMs, duracaoMs, erro, prio, metodo){
+  const pr=_metricas.porPrio[prio==="baixa"?"baixa":"alta"]; pr.n++; pr.esperaTotalMs+=esperouMs;
+  const agora=Date.now();
+  _metricas.janela.push({em:agora,rotulo:_rotuloMetrica(path,metodo),prio:prio==="baixa"?"baixa":"alta"});
+  while(_metricas.janela.length && agora-_metricas.janela[0].em>10*60*1000) _metricas.janela.shift();
   _metricas.total++;
   _metricas.esperaTotalMs+=esperouMs;
   if(esperouMs>_metricas.esperaMaxMs) _metricas.esperaMaxMs=esperouMs;
@@ -541,15 +575,17 @@ async function _blingReservarVez(){
 }
 async function _blingTentarDespachar(){
   while(_blingEmVoo<BLING_MAX_CONCORRENTE){
-    const item=_filaAlta.shift()||_filaBaixa.shift();
+    const daAlta=_filaAlta.length>0;
+    const item=daAlta?_filaAlta.shift():_filaBaixa.shift();
     if(!item) break;
+    const prioItem=daAlta?"alta":"baixa";
     await _blingReservarVez();
     _blingEmVoo++;
     const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
     const t0=Date.now();
     blingRaw(item.path,item.options)
-      .then(r=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,null); item.resolve(r); })
-      .catch(e=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro"); item.reject(e); })
+      .then(r=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,null,prioItem,item.options?.method); item.resolve(r); })
+      .catch(e=>{ _registrarMetrica(item.path,esperouMs,Date.now()-t0,e.message||"erro",prioItem,item.options?.method); item.reject(e); })
       .finally(()=>{ _blingEmVoo--; _blingTentarDespachar(); });
   }
   if(_filaAlta.length===0 && _filaBaixa.length===0 && _blingEmVoo===0) _blingProcessando=false;
