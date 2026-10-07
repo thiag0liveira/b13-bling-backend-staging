@@ -23,6 +23,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { registrarConcursoSlogan } from "./concurso-slogan.js";
+import { registrarEstoqueFiscal } from "./estoque-fiscal.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // PROTEÇÃO GLOBAL CONTRA CRASH: em Node.js moderno, UM ÚNICO erro não tratado
@@ -973,6 +974,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
   {grupo:"Estoque",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
   {grupo:"Estoque",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
+  {grupo:"Estoque",href:"/estoque-fiscal",label:"🧮 Estoque fiscal",acoes:["acesso_estoque_fiscal","admin"]},
   {grupo:"Estoque",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
 
   {grupo:"Listas & Imagens",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
@@ -16831,6 +16833,7 @@ setTimeout(async()=>{
 // /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
 registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname });
+registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 
 const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 // DESLIGAMENTO EDUCADO: o Railway manda SIGTERM quando troca esse contêiner por

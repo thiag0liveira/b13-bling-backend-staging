@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B13 — Estoque fiscal</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+  :root{--mag:#FF0082;--bg:#0f0d24}
+  body{background:var(--bg);color:#fff}
+  #app{max-width:1000px;margin:0 auto;min-height:100vh}
+  .top{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#2b2870,#262366);display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:3px solid var(--mag)}
+  .top img{height:36px}.top .t{font-weight:900;font-size:16px}
+  .wrap{padding:14px}
+  .card{background:#151233;border:1px solid #2c2660;border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .muted{color:#9a95c9;font-size:12px}
+  .btn{border:none;border-radius:10px;font-weight:800;cursor:pointer;font-size:13px;padding:9px 13px;color:#fff;display:inline-block}
+  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846;border:1px solid #37327a}.btn-grn{background:#2f9e6b}.btn-red{background:#c0304a}
+  .btn:disabled{opacity:.5;cursor:default}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{background:#1c1846;border:1px solid #37327a;border-radius:12px;padding:8px 12px;font-size:12px}
+  .chip b{display:block;font-size:18px}
+  .chip.warn{border-color:#ffd23f;color:#ffd23f}.chip.bad{border-color:#ff8090;color:#ff8090}.chip.ok{border-color:#2f9e6b;color:#8fffc0}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px}
+  .tab{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer}
+  .tab.on{background:var(--mag);border-color:var(--mag)}
+  input,select{background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:8px;padding:8px;font-size:13px}
+  input[type=date]{color-scheme:dark}
+  .tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;display:inline-block}
+  .t-pend{background:#3a2a0a;color:#ffd23f}.t-rev{background:#3a1018;color:#ff9aa8}.t-ok{background:#123a2a;color:#a8f0c8}
+  .sug{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:8px;padding:6px 9px;font-size:12px;margin:3px 4px 0 0;cursor:pointer}
+  .sug.on{background:#2a1740;border-color:var(--mag)}
+  .res{max-height:170px;overflow:auto;margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:#9a95c9;font-size:11px;padding:6px 4px;border-bottom:1px solid #2c2660}
+  td{padding:7px 4px;border-bottom:1px solid #221e52;vertical-align:top}
+  td.n,th.n{text-align:right}
+  .linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#2f9e6b;color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;display:none;z-index:50;max-width:90vw}
+</style>
+<script src="/nav.js"></script>
+<style>
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/estoque-fiscal")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/estoque-fiscal");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div id="app"></div>
+<div id="toast"></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const num = v => (+v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const token = () => { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } };
+async function api(path, opts) {
+  opts = opts || {};
+  const r = await fetch(B + path, Object.assign({}, opts, { headers: Object.assign({ "Content-Type": "application/json", "X-Auth-Token": token() }, opts.headers || {}) }));
+  if (r.status === 401) { if (typeof b13Logout === "function") b13Logout(); throw new Error("Sessão expirada"); }
+  let j = {}; try { j = await r.json(); } catch (e) {}
+  return { ok: r.ok, status: r.status, j };
+}
+function toast(t, ruim) { const e = document.getElementById("toast"); e.textContent = t; e.style.background = ruim ? "#c0304a" : "#2f9e6b"; e.style.display = "block"; clearTimeout(e._t); e._t = setTimeout(() => e.style.display = "none", 3200); }
+
+let TAB = "pend", RESUMO = null, PEND = [], SEL = {}, ENT = null, NOTAS = null, VINC = null, ABERTA = null, ENVIO = [];
+const hojeISO = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+const diasAtras = n => new Date(Date.now() - 3 * 3600 * 1000 - n * 86400000).toISOString().slice(0, 10);
+let BL_INI = diasAtras(30), BL_FIM = hojeISO(), ENT_INI = diasAtras(30), ENT_FIM = hojeISO();
+const fmtData = ms => ms ? new Date(ms - 3 * 3600 * 1000).toISOString().slice(0, 10).split("-").reverse().join("/") : "—";
+const fmtCnpj = c => { c = String(c || ""); return c.length === 14 ? c.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5") : c; };
+
+async function carregarResumo() {
+  const r = await api("/api/fiscal/resumo");
+  if (r.ok) RESUMO = r.j;
+}
+async function carregarAba() {
+  if (TAB === "pend") { const r = await api("/api/fiscal/pendencias"); if (r.ok) PEND = r.j.data || []; }
+  if (TAB === "ent") { const r = await api("/api/fiscal/entradas-produto?dataInicial=" + ENT_INI + "&dataFinal=" + ENT_FIM); if (r.ok) ENT = r.j; }
+  if (TAB === "notas") { const r = await api("/api/fiscal/notas"); if (r.ok) NOTAS = r.j; }
+  if (TAB === "vinc") { const r = await api("/api/fiscal/vinculos"); if (r.ok) VINC = r.j; }
+}
+async function atualizar() { try { await carregarResumo(); await carregarAba(); } catch (e) { toast(e.message, true); } render(); agendar(); }
+let _t = null;
+function agendar() {
+  clearTimeout(_t);
+  const ocupado = RESUMO && ((RESUMO.processando && RESUMO.processando.rodando) || (RESUMO.bling && RESUMO.bling.rodando));
+  if (ocupado) _t = setTimeout(atualizar, 2000);
+}
+function irAba(t) { TAB = t; atualizar(); }
+
+// ---------- envio de XML ----------
+async function enviarXmls(files) {
+  files = Array.prototype.slice.call(files || []);
+  if (!files.length) return;
+  ENVIO = [];
+  for (let i = 0; i < files.length; i += 15) {
+    const lote = files.slice(i, i + 15);
+    const arquivos = [];
+    for (const f of lote) { try { arquivos.push({ nome: f.name, xml: await f.text() }); } catch (e) { ENVIO.push({ nome: f.name, ok: false, erro: "não consegui ler o arquivo" }); } }
+    try {
+      const r = await api("/api/fiscal/xml", { method: "POST", body: JSON.stringify({ arquivos: arquivos }) });
+      if (r.ok) ENVIO = ENVIO.concat(r.j.arquivos || []); else ENVIO.push({ nome: "lote", ok: false, erro: r.j.erro || "erro" });
+    } catch (e) { ENVIO.push({ nome: "lote", ok: false, erro: e.message }); }
+  }
+  const boas = ENVIO.filter(a => a.ok && !a.duplicada).length;
+  toast(boas + " nota(s) nova(s) recebida(s)");
+  TAB = "pend"; atualizar();
+}
+async function lerDoBling() {
+  const r = await api("/api/fiscal/bling/importar", { method: "POST", body: JSON.stringify({ dataInicial: BL_INI, dataFinal: BL_FIM }) });
+  if (!r.ok) { toast(r.j.erro || "não consegui iniciar", true); return; }
+  toast(r.j.jaRodando ? "Já está lendo o Bling" : "Lendo as notas de entrada do Bling…");
+  atualizar();
+}
+async function salvarCnpj() {
+  const v = document.getElementById("cnpjEmp").value;
+  const r = await api("/api/fiscal/config", { method: "POST", body: JSON.stringify({ cnpjEmpresa: v }) });
+  toast(r.ok ? "CNPJ da empresa salvo" : (r.j.erro || "erro"), !r.ok); if (r.ok) atualizar();
+}
+async function reprocessar() {
+  const r = await api("/api/fiscal/reprocessar", { method: "POST", body: JSON.stringify({}) });
+  toast(r.ok ? "Tentando associar de novo (" + r.j.itens + " item(ns))" : "erro", !r.ok); atualizar();
+}
+
+// ---------- pendências ----------
+function selInicial(g) {
+  if (!SEL[g.chave]) SEL[g.chave] = { produtoId: g.produtoId || null, nome: g.produtoNome || "", fator: g.fator || g.sugestaoFator || "", busca: [] };
+  return SEL[g.chave];
+}
+function escolher(i, pid, nome) { const g = PEND[i], s = selInicial(g); s.produtoId = pid; s.nome = nome; render(); }
+function setFator(i, v) { const g = PEND[i]; selInicial(g).fator = v; }
+let _bt = null;
+function buscar(i, q) {
+  clearTimeout(_bt);
+  _bt = setTimeout(async function () {
+    const g = PEND[i], s = selInicial(g);
+    if (String(q).trim().length < 2) { s.busca = []; render(); return; }
+    const r = await api("/api/fiscal/produtos?q=" + encodeURIComponent(q));
+    s.busca = r.ok ? (r.j.data || []) : []; s.q = q; render();
+    const el = document.getElementById("q" + i); if (el) { el.focus(); el.setSelectionRange(q.length, q.length); }
+  }, 300);
+}
+async function confirmar(i) {
+  const g = PEND[i], s = selInicial(g);
+  if (!s.produtoId) { toast("Escolha o produto primeiro", true); return; }
+  if (!(+s.fator > 0)) { toast("Informe quantas unidades vêm em cada " + g.uCom, true); return; }
+  const r = await api("/api/fiscal/associar", { method: "POST", body: JSON.stringify({ cnpj: g.cnpj, cProd: g.cProd, uCom: g.uCom, xProd: g.xProd, produtoId: s.produtoId, fator: +s.fator }) });
+  if (!r.ok) { toast(r.j.erro || "não consegui salvar", true); return; }
+  delete SEL[g.chave];
+  toast("Vínculo salvo. Vale para as próximas notas desse fornecedor.");
+  atualizar();
+}
+function cardPend(g, i) {
+  const s = selInicial(g);
+  const sug = (g.sugestoes || []).map(x => '<span class="sug ' + (s.produtoId === x.produtoId ? "on" : "") + '" onclick="escolher(' + i + ',' + x.produtoId + ',\'' + esc(x.nome).replace(/'/g, "&#39;") + '\')">' + esc(x.nome) + "</span>").join("");
+  const busca = (s.busca || []).map(x => '<span class="sug ' + (s.produtoId === x.produtoId ? "on" : "") + '" onclick="escolher(' + i + ',' + x.produtoId + ',\'' + esc(x.nome).replace(/'/g, "&#39;") + '\')">' + esc(x.nome) + "</span>").join("");
+  return '<div class="card">' +
+    '<div class="linha" style="justify-content:space-between"><div><b>' + esc(g.xProd) + "</b>" +
+    '<div class="muted">' + esc(g.fornecedor) + " · " + fmtCnpj(g.cnpj) + " · código " + esc(g.cProd) + (g.cEAN ? " · GTIN " + esc(g.cEAN) : "") + "</div></div>" +
+    '<span class="tag ' + (g.status === "revisar" ? "t-rev" : "t-pend") + '">' + (g.status === "revisar" ? "REVISAR" : "PENDENTE") + "</span></div>" +
+    '<div class="muted" style="margin-top:6px">Nota informa <b>' + num(g.exemplo.qCom) + " " + esc(g.uCom) + "</b>" + (g.uTrib && g.uTrib !== g.uCom ? " (" + num(g.exemplo.qTrib) + " " + esc(g.uTrib) + " tributável)" : "") + " · " + g.ocorrencias + " ocorrência(s) · notas " + esc(g.notas.join(", ")) + "</div>" +
+    '<div style="color:#ffd23f;font-size:12px;margin-top:5px">⚠️ ' + esc(g.motivo) + "</div>" +
+    '<div style="margin-top:8px"><div class="muted">Produto nosso' + (s.nome ? ': <b style="color:#fff">' + esc(s.nome) + "</b>" : "") + "</div>" + sug + "</div>" +
+    '<div style="margin-top:6px"><input id="q' + i + '" placeholder="🔎 buscar outro produto (nome, código ou GTIN)" style="width:100%" value="' + esc(s.q || "") + '" oninput="buscar(' + i + ',this.value)"><div class="res">' + busca + "</div></div>" +
+    '<div class="linha" style="margin-top:8px"><span class="muted">Quantas UNIDADES vêm em cada ' + esc(g.uCom) + '?</span><input type="number" min="1" step="1" style="width:90px" value="' + esc(s.fator) + '" oninput="setFator(' + i + ',this.value)">' +
+    '<button class="btn btn-mag" onclick="confirmar(' + i + ')">' + (g.status === "revisar" ? "Confirmar assim" : "Confirmar") + "</button></div></div>";
+}
+
+// ---------- telas ----------
+function abaPend() {
+  const envio = ENVIO.length ? '<div class="card"><b>Último envio</b>' + ENVIO.map(a => '<div class="muted" style="margin-top:4px;' + (a.ok ? "" : "color:#ff9aa8") + '">' + (a.ok ? (a.duplicada ? "↺ já tinha" : "✅") : "❌") + " " + esc(a.nome) + (a.numero ? " · nota " + esc(a.numero) : "") + (a.emitente ? " · " + esc(a.emitente) : "") + (a.erro ? " — " + esc(a.erro) : "") + "</div>").join("") + "</div>" : "";
+  if (!PEND.length) return envio + '<div class="card muted">Nada pendente. Tudo o que entrou já está associado e convertido para unidade.</div>';
+  return envio + '<div class="muted" style="margin-bottom:8px">Cada confirmação vale para todas as notas desse fornecedor com o mesmo código, inclusive as próximas.</div>' + PEND.map(cardPend).join("");
+}
+function abaEnt() {
+  const d = ENT || { data: [], itensPendentes: 0, itensParaRevisar: 0 };
+  const total = d.data.reduce((s, x) => s + x.unidades, 0);
+  return '<div class="card"><div class="linha"><span class="muted">De</span><input type="date" value="' + ENT_INI + '" onchange="ENT_INI=this.value;atualizar()"><span class="muted">até</span><input type="date" value="' + ENT_FIM + '" onchange="ENT_FIM=this.value;atualizar()"></div>' +
+    '<div class="muted" style="margin-top:8px">Tudo já em <b>unidade</b>. ' + (d.itensPendentes || d.itensParaRevisar ? '<span style="color:#ffd23f">Ainda fora da conta: ' + d.itensPendentes + " pendente(s) e " + d.itensParaRevisar + " para revisar.</span>" : "Nenhum item fora da conta.") + "</div></div>" +
+    '<div class="card"><table><tr><th>Produto</th><th class="n">Unidades</th><th class="n">Custo médio/un</th><th class="n">Notas</th></tr>' +
+    (d.data.map(x => "<tr><td>" + esc(x.nome) + '</td><td class="n"><b>' + num(x.unidades) + '</b></td><td class="n">' + brl(x.custoMedioUn) + '</td><td class="n">' + x.notas + "</td></tr>").join("") || '<tr><td colspan="4" class="muted">Sem entradas associadas nesse período.</td></tr>') +
+    '<tr><td><b>Total</b></td><td class="n"><b>' + num(total) + "</b></td><td></td><td></td></tr></table></div>";
+}
+async function abrirNota(id) { ABERTA = ABERTA && ABERTA.id === id ? null : { id: id, nota: null }; render(); if (ABERTA) { const r = await api("/api/fiscal/nota/" + encodeURIComponent(id)); if (r.ok && ABERTA) { ABERTA.nota = r.j.nota; render(); } } }
+function abaNotas() {
+  const d = NOTAS || { data: [] };
+  return d.data.map(n => {
+    const c = n.contagem || {};
+    const det = ABERTA && ABERTA.id === n.id ? (ABERTA.nota ? '<table style="margin-top:8px"><tr><th>Item</th><th class="n">Nota</th><th class="n">Em unidades</th><th>Produto</th><th>Situação</th></tr>' + ABERTA.nota.itens.map(it => "<tr><td>" + esc(it.xProd) + '</td><td class="n">' + num(it.qCom) + " " + esc(it.uCom) + '</td><td class="n"><b>' + (it.qtdUn ? num(it.qtdUn) : "—") + "</b>" + (it.fator > 1 ? '<div class="muted">×' + it.fator + "</div>" : "") + "</td><td>" + esc(it.produtoNome || "—") + '<div class="muted">' + esc(it.fonte || "") + "</div></td><td>" + '<span class="tag ' + (it.status === "ok" ? "t-ok" : it.status === "revisar" ? "t-rev" : "t-pend") + '">' + esc(it.status) + "</span>" + (it.motivo ? '<div class="muted">' + esc(it.motivo) + "</div>" : "") + "</td></tr>").join("") + "</table>" : '<div class="muted" style="margin-top:8px">Carregando…</div>') : "";
+    return '<div class="card" style="cursor:pointer" onclick="abrirNota(\'' + esc(n.id) + '\')"><div class="linha" style="justify-content:space-between"><div><b>Nota ' + esc(n.numero) + "</b> · " + esc(n.emitente) + '<div class="muted">' + fmtData(n.emissao) + " · " + (n.origemDados === "xml" ? "XML" : n.origem === "bling" ? "itens lidos do Bling" : "") + " · " + n.itens + " item(ns)" + (n.ignorada ? " · IGNORADA: " + esc(n.motivoIgnorada) : "") + "</div></div>" +
+      '<div><span class="tag t-ok">' + (c.ok || 0) + " ok</span> " + (c.pendente ? '<span class="tag t-pend">' + c.pendente + " pend.</span> " : "") + (c.revisar ? '<span class="tag t-rev">' + c.revisar + " rev.</span>" : "") + "</div></div>" + det + "</div>";
+  }).join("") || '<div class="card muted">Nenhuma nota ainda. Envie XMLs de compra ou leia as notas de entrada do Bling.</div>';
+}
+async function removerVinc(chave) {
+  if (!confirm("Remover esse vínculo? Os itens dele voltam a ser conferidos.")) return;
+  const r = await api("/api/fiscal/vinculo/remover", { method: "POST", body: JSON.stringify({ chave: chave }) });
+  toast(r.ok ? "Vínculo removido" : (r.j.erro || "erro"), !r.ok); atualizar();
+}
+function abaVinc() {
+  const d = VINC || { data: [] };
+  return '<div class="card muted">Estes são os vínculos que o sistema aprendeu (código de barras, código do produto) ou que foram confirmados. Quanto mais vínculos, menos pendência nas próximas notas.</div>' +
+    '<div class="card"><table><tr><th>Fornecedor / código</th><th>Produto nosso</th><th class="n">Fator</th><th>Origem</th><th></th></tr>' +
+    (d.data.map(v => "<tr><td>" + esc(v.xProd || "") + '<div class="muted">' + fmtCnpj(v.cnpj) + " · " + esc(v.cProd) + "</div></td><td>" + esc(v.produtoNome) + '</td><td class="n">' + num(v.fator) + " por " + esc(v.uCom) + "</td><td>" + (v.fonte === "confirmado" ? "confirmado" + (v.por ? " por " + esc(v.por) : "") : "aprendido (" + esc(v.via || "") + ")") + '</td><td><button class="btn btn-ghost" style="padding:5px 9px" onclick="removerVinc(\'' + esc(v.chave) + '\')">✕</button></td></tr>').join("") || '<tr><td colspan="5" class="muted">Nenhum vínculo ainda.</td></tr>') + "</table></div>";
+}
+function render() {
+  const app = document.getElementById("app");
+  const r = RESUMO && RESUMO.resumo || { notas: 0, itens: 0, ok: 0, pendente: 0, revisar: 0, vinculos: 0 };
+  const pr = RESUMO && RESUMO.processando, bl = RESUMO && RESUMO.bling;
+  const status = (bl && bl.rodando ? "📥 " + esc(bl.msg) : "") + (pr && pr.rodando ? " 🔄 Associando e convertendo para unidade… " + pr.feito + " de " + pr.total : "") + (bl && !bl.rodando && bl.msg ? '<div class="muted">Bling: ' + esc(bl.msg) + "</div>" : "");
+  const cnpj = RESUMO && RESUMO.config ? RESUMO.config.cnpjEmpresa : "";
+  let corpo = "";
+  if (TAB === "pend") corpo = abaPend(); if (TAB === "ent") corpo = abaEnt(); if (TAB === "notas") corpo = abaNotas(); if (TAB === "vinc") corpo = abaVinc();
+  const tab = (k, rot) => '<div class="tab ' + (TAB === k ? "on" : "") + '" onclick="irAba(\'' + k + '\')">' + rot + "</div>";
+  app.innerHTML = '<div class="top"><img src="/logo"><div class="t">🧮 Estoque fiscal · entradas em unidade</div></div><div class="wrap">' +
+    '<div class="chips"><div class="chip"><b>' + r.notas + '</b>notas</div><div class="chip ok"><b>' + r.ok + '</b>itens ok</div><div class="chip ' + (r.pendente ? "warn" : "") + '"><b>' + r.pendente + '</b>pendentes</div><div class="chip ' + (r.revisar ? "bad" : "") + '"><b>' + r.revisar + '</b>para revisar</div><div class="chip"><b>' + r.vinculos + "</b>vínculos</div></div>" +
+    (status ? '<div class="card" style="border-color:#29ABE2">' + status + "</div>" : "") +
+    '<div class="card"><div class="linha"><label class="btn btn-mag" style="cursor:pointer">📄 Enviar XMLs de compra<input type="file" accept=".xml,text/xml" multiple style="display:none" onchange="enviarXmls(this.files);this.value=\'\'"></label>' +
+    '<span class="muted">ou ler as notas de entrada do Bling</span><input type="date" value="' + BL_INI + '" onchange="BL_INI=this.value"><input type="date" value="' + BL_FIM + '" onchange="BL_FIM=this.value"><button class="btn btn-grn" ' + (bl && bl.rodando ? "disabled" : "") + ' onclick="lerDoBling()">🔄 Ler do Bling</button></div>' +
+    '<div class="linha" style="margin-top:10px"><span class="muted">CNPJ da empresa (barra nota de saída nossa e nota de outro destinatário)</span><input id="cnpjEmp" placeholder="só números" value="' + esc(cnpj) + '" style="width:170px"><button class="btn btn-ghost" onclick="salvarCnpj()">Salvar</button><button class="btn btn-ghost" onclick="reprocessar()">Tentar associar de novo</button></div></div>' +
+    '<div class="tabs">' + tab("pend", "⚠️ Pendências" + (r.pendente + r.revisar ? " (" + (r.pendente + r.revisar) + ")" : "")) + tab("ent", "📦 Entradas em unidades") + tab("notas", "🧾 Notas") + tab("vinc", "🔗 Vínculos") + "</div>" + corpo + "</div>";
+}
+render();
+atualizar();
+</script>
+</body>
+</html>
