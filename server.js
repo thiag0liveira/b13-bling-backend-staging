@@ -1832,7 +1832,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       // o erro vinha com status exatamente 400, mas o Bling nem sempre retorna
       // esse código pra "situação bloqueada", o que fazia falhar silenciosamente
       // (o pagamento ficava salvo aqui no sistema, mas não ia pro Bling)
-      if(!precisaUnlock) throw e1;
+      if(!precisaUnlock || opts.semDestravar) throw e1; // semDestravar: nunca mexe na situação só pra gravar uma nota
       // situação bloqueada — desbloqueia tentando situações editáveis que este Bling aceite
       const sitDestravado=await _destravarSituacao(id);
       if(!sitDestravado) throw e1;
@@ -11349,7 +11349,7 @@ function _montarPedidoDoBling(b){
   const ehEntregaB = !!enderecoB || Number(b.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(obsB);
   return { id:b.id, numero:b.numero||b.id,
     agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-    teveRetirada:retiradosB.length>0, retirados:retiradosB, acrescentados:altB.acrescentados, alterados:altB.alterados,
+    teveRetirada:retiradosB.length>0, retirados:retiradosB, acrescentados:altB.acrescentados, alterados:altB.alterados, entregaLocal:_mapaEntregasLocais()[bid]||null,
     ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
     criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
     origem:"bling", noSistema:false, veioPorApi:_veioPorApi(b),
@@ -11511,7 +11511,7 @@ app.get("/api/pedidos-online",async(req,res)=>{
       const okReg=lerPedidosOk()[String(p.pedidoBlingId)]||null;
       return { id:p.pedidoBlingId, numero:p.pedidoBlingNumero||p.pedidoBlingId,
         agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
-        teveRetirada, retirados, acrescentados:alt.acrescentados, alterados:alt.alterados,
+        teveRetirada, retirados, acrescentados:alt.acrescentados, alterados:alt.alterados, entregaLocal:_mapaEntregasLocais()[String(p.pedidoBlingId)]||null,
         ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
         criadoEm:p.criadoEm||0, origem:p.origem||"atacado", noSistema:true,
         vendedor:p.vendedorNome||p.funcionarioNome||"",
@@ -11703,6 +11703,29 @@ app.post("/api/rotas/motivo-nao-entrega",(req,res)=>{
 // fica ativo até a viagem ser finalizada (informar o KM final).
 const VIAGENS_ATIVAS_FILE=`${DATA_DIR}/viagens_ativas.json`; // token -> {dados da viagem}
 function lerViagensAtivas(){ return lerJSON(VIAGENS_ATIVAS_FILE,{}); }
+// pedidos JÁ ENTREGUES, segundo o registro da entrega no nosso sistema. O recebimento da
+// entrega fica só aqui (o pedido NÃO vira Atendido no Bling), então "entregue" precisa
+// ser lido daqui, não da situação do Bling. Guardado 10s pra não reler o arquivo a toda hora.
+let _entLocaisCache={t:0,map:{}};
+function _mapaEntregasLocais(){
+  if(Date.now()-_entLocaisCache.t<10000) return _entLocaisCache.map;
+  const map={};
+  try{
+    Object.values(lerViagensAtivas()).forEach(v=>{
+      if(!v||v.canceladaEm) return;
+      Object.entries(v.entregas||{}).forEach(([pid,e])=>{
+        if(!e||e.status!=="entregue") return;
+        const atual=map[pid];
+        if(atual && (e.em||0)<(atual.em||0)) return;
+        map[pid]={ em:e.em||0, motorista:v.motoristaNome||"", carro:v.carroNome||"", viagem:v.token,
+          gerente:e.origem==="gerente", registradoPor:e.registradoPor||"", prazo:!!e.prazo, jaPago:!!e.jaPago,
+          valorFinal:Number(e.valorFinal)||0, formas:(e.pagamentos||[]).map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor)||0,banco:p.banco||null})) };
+      });
+    });
+  }catch(e){}
+  _entLocaisCache={t:Date.now(),map};
+  return map;
+}
 function salvarViagensAtivas(o){ salvarJSON(VIAGENS_ATIVAS_FILE,o); }
 // LIMPEZA: cada viagem guarda, por entrega, a assinatura do cliente como IMAGEM
 // (base64) — sem limpeza, isso cresce pra sempre (nunca era removido) e o arquivo
@@ -11741,6 +11764,11 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
     if(!Array.isArray(pedidoIds)||!pedidoIds.length) return res.status(400).json({erro:"a viagem precisa ter ao menos 1 pedido"});
     if(!(Number(kmInicial)>=0)) return res.status(400).json({erro:"informe o KM inicial"});
     if(!String(motoristaNomeInformado||"").trim()) return res.status(400).json({erro:"informe o nome do motorista"});
+    // a entrega NÃO muda mais o pedido pra Atendido no Bling (ele segue "Em rota" lá), então a
+    // trava contra levar de novo um pedido que já foi entregue vem do registro de entregas daqui
+    { const entL=_mapaEntregasLocais();
+      const jaEntregues=pedidoIds.filter(pid=>entL[String(pid)]);
+      if(jaEntregues.length) return res.status(409).json({erro:"Estes pedidos já foram entregues e não podem entrar em outra viagem: "+jaEntregues.map(pid=>`#${pid} (entregue em ${new Date(entL[String(pid)].em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}${entL[String(pid)].motorista?", "+entL[String(pid)].motorista:""})`).join("; ")+". Se a entrega não aconteceu de verdade, corrija pelo gerenciador de rotas (Corridas abertas).", jaEntregues}); }
     if(String(motoristaTelefone||"").replace(/\D/g,"").length<10) return res.status(400).json({erro:"informe o telefone do motorista com DDD"});
     // CONFERE ANTES DE MEXER EM NADA: só pode iniciar viagem com pedido que já foi
     // conferido de verdade (situação Verificado, ou já Em rota — idempotência, caso
@@ -12079,42 +12107,91 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
       const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
       if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return {code:400,json:{erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}}; }
     }
-    // registra o pagamento (mesmo mecanismo já usado quando um pedido é pago fora
-    // do caixa — é isso que faz ele aparecer como "recebido" no resto do sistema)
-    if(valorFinal>0 && pags.length){
+    // venda A PRAZO: o motorista escolheu "A prazo" (cliente paga depois). Só vale como o
+    // pagamento ÚNICO do pedido -- misturar parte à vista com parte a prazo deixaria a
+    // quitação, depois, no caixa, sem saber quanto falta.
+    const ehLinhaPrazo=p=>String(p.formaId)==="prazo"||/^a prazo/i.test(p.formaNome||"");
+    const entrouPrazo=!jaPago && (Array.isArray(pagamentos)?pagamentos:[]).some(p=>ehLinhaPrazo(p)&&Number(p.valor)>0);
+    if(entrouPrazo && (pags.length!==1 || !ehLinhaPrazo(pags[0]))){
+      liberarTravaEntrega();
+      return {code:400,json:{erro:"Venda a prazo não pode ser misturada com outra forma de pagamento. Escolha só \"A prazo\" ou só as formas à vista."}};
+    }
+    const prazo=entrouPrazo && valorFinal>0;
+    const diasPrazo=Math.max(1,Math.min(Math.floor(Number(body?.diasPrazo)||7),60));
+    // o RECEBIMENTO fica só aqui no nosso sistema (mesmo registro de pagamento usado no resto
+    // do sistema pra "recebido"). Nada é gravado nas parcelas do Bling.
+    if(valorFinal>0 && pags.length && !prazo){
       const pg=lerPag();
       pg[String(pid)]={ statusPagamento:"pago", valorPago:somaPags, valorPedido:totalPedido,
         historico:pags.map(p=>({formaNome:p.formaNome||"", valor:Number(p.valor), banco:p.banco||null, em:Date.now(), origem:gerente?("entrega (gerente"+(por?": "+por:"")+")"):"entrega (motorista)"})) };
       salvarPag(pg);
-      // reflete no Bling também (parcelas reais), sem travar a resposta se falhar —
-      // o pagamento já ficou registrado localmente de qualquer forma
-      atualizarParcelasBling(pid,pags.map(p=>({formaPagamento:{id:Number(p.formaId)},valor:Number(p.valor)}))).catch(()=>{});
     }
     // relê antes de gravar: houve chamadas ao Bling no meio, e outra entrega da mesma
     // viagem pode ter sido registrada nesse intervalo
     const vv=lerViagensAtivas();
     if(!vv[token]) return {code:404,json:{erro:"link inválido ou expirado"}};
+    const agora=Date.now();
     vv[token].entregas[String(pid)]={
-      status:"entregue", em:Date.now(),
+      status:"entregue", em:agora,
       itensProblema:problemas, valorProblema, valorFinal,
       pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor),banco:p.banco||null})),
       assinaturaDataUrl:gerente?null:(assinaturaDataUrl||null),
       ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
       ...(gerente?{origem:"gerente",registradoPor:por,jaPago}:{}),
+      ...(prazo?{prazo:true,diasPrazo,venceEm:agora+diasPrazo*86400000}:{}),
     };
     salvarViagensAtivas(vv);
-    // fecha o pedido de verdade no Bling (EM_ROTA -> ATENDIDO). Sem isso, o pedido
-    // ficava PRA SEMPRE em "Em rota" mesmo já entregue e pago — e como EM_ROTA é
-    // aceito como situação válida pra iniciar viagem (pensado pra reabrir uma viagem
-    // cancelada), um pedido já entregue podia ser colocado numa viagem NOVA e
-    // "iniciado" de novo, sem nenhuma trava percebendo que ele já tinha sido
-    // finalizado. Não bloqueia a resposta se isso falhar — a entrega já ficou
-    // registrada de qualquer forma — mas avisa no retorno pra quem acompanha.
-    let atendidoOk=true, atendidoErro=null;
-    try{ const rAt=await mudarSituacaoPedido(pid,SIT.ATENDIDO); if(!rAt.ok){ atendidoOk=false; atendidoErro=rAt.erro||"o Bling recusou"; } }
-    catch(e){ atendidoOk=false; atendidoErro=e.message; }
-    addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,gerente?por:v.motoristaNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),atendidoOk,atendidoErro,...(gerente?{jaPago}:{})});
-    return {code:200,json:{ok:true, valorProblema, valorFinal, atendidoOk, atendidoErro}};
+    _entLocaisCache.t=0; // a lista de "já entregues" precisa enxergar esta entrega já
+    const quando=new Date(agora).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
+    const venceTxt=new Date(agora+diasPrazo*86400000).toLocaleDateString("pt-BR",{timeZone:"America/Sao_Paulo"});
+    const quemNome=gerente?(por||"gerente"):(v.motoristaNome||"motorista");
+    if(prazo){
+      const reg=lerVendasPrazo();
+      reg[String(pid)]={ em:agora, venceEm:agora+diasPrazo*86400000, dias:diasPrazo,
+        autorizadoPor:gerente?`${quemNome} (gerente, na entrega)`:`motorista ${quemNome} (na entrega)`, operador:quemNome,
+        total:valorFinal, cliente:det.contato?.nome||"", numero:det.numero, observacao:"", pago:false, origem:"entrega" };
+      salvarJSON(PRAZO_FILE,reg);
+      registrarAviso({tipo:"venda_prazo_entrega", pedidoId:String(pid), numero:det.numero, operador:quemNome, origem:"Entrega",
+        titulo:`Venda A PRAZO registrada na entrega: pedido #${det.numero||pid} (${brlN(valorFinal)}), ${gerente?"por "+quemNome:"motorista "+quemNome}`,
+        fingerprint:`prazo-entrega-${pid}`,
+        oQueFazer:`O cliente ${det.contato?.nome||""} ficou de pagar ${brlN(valorFinal)} até ${venceTxt}. O pedido foi para PRAZO no Bling. Confira com o cliente e receba depois pelo Caixa Atacado.`});
+    }
+    // BLING: o pedido NÃO vira Atendido nem recebe parcelas. Vai só uma nota na observação
+    // (quem entregou, quando, o que foi recebido) e, nas vendas A PRAZO e só nelas, a mudança
+    // de situação pra PRAZO. Tudo em segundo plano -- a resposta pro motorista não espera o Bling.
+    const nomeItem=(prodId)=>{ const o=(det.itens||[]).find(x=>String(x.produto?.id)===String(prodId)); return o?.descricao||`produto ${prodId}`; };
+    const partes=[`[ENTREGA ${quando} — ${gerente?"registrado por "+quemNome+" no escritório":"motorista "+quemNome+(v.carroNome?" · "+v.carroNome:"")}] Entregue.`];
+    if(problemas.length) partes.push(`Itens com problema: ${problemas.map(i=>`${Number(i.quantidade)}x ${nomeItem(i.produtoId)}`).join(", ")} (abatido ${brlN(valorProblema)}; a receber ${brlN(valorFinal)} de ${brlN(totalPedido)}).`);
+    if(prazo) partes.push(`VENDA A PRAZO, nada recebido na entrega; vence em ${venceTxt}.`);
+    else if(jaPago) partes.push("Já estava pago antes da entrega.");
+    else if(pags.length) partes.push("Recebido na entrega: "+pags.map(p=>`${p.formaNome||"forma"}${p.banco?` (${p.banco})`:""} ${brlN(p.valor)}`).join(" · ")+".");
+    else partes.push("Nada a receber nesta entrega.");
+    if(ocorrencia&&(ocorrencia.descricao||ocorrencia.url)) partes.push(`Ocorrência: ${String(ocorrencia.descricao||"(com anexo)").slice(0,200)}.`);
+    partes.push(prazo?"Recebimento registrado no sistema B13; situação alterada para PRAZO.":"Recebimento registrado no sistema B13; situação do pedido mantida.");
+    const nota=partes.join(" ");
+    (async()=>{
+      try{
+        const rNota=await atualizarParcelasBling(pid,[],{obsExtra:nota,ped:det,semDestravar:true});
+        if(!rNota?.ok) registrarAviso({tipo:"obs_entrega_nao_gravada", pedidoId:String(pid), numero:det.numero, origem:"Entrega", erroBling:detalheErroBling(rNota),
+          titulo:`Pedido #${det.numero||pid}: entrega registrada, mas a observação não entrou no Bling`, fingerprint:`obsentrega-${pid}`,
+          oQueFazer:`A entrega e o recebimento estão salvos no sistema. Se quiser que conste no Bling, cole na observação do pedido: ${nota}`});
+      }catch(e){}
+      if(prazo){
+        try{
+          const rs=await mudarSituacaoPedido(pid,SIT.PRAZO);
+          if(rs.ok) _sitOnline[String(pid)]={situacaoId:SIT.PRAZO,situacao:nomeSituacao(SIT.PRAZO),em:Date.now()};
+          else registrarAviso({tipo:"prazo_nao_movido", pedidoId:String(pid), numero:det.numero, origem:"Entrega", erroBling:(rs.caminho||[]).join(" | ")||rs.erro||"",
+            titulo:`Pedido #${det.numero||pid} a prazo na entrega, mas o Bling não mudou para PRAZO`, fingerprint:`prazo-sit-${pid}`,
+            oQueFazer:`A venda a prazo já está registrada no sistema. No Bling, mude o pedido #${det.numero||pid} para PRAZO manualmente.`});
+        }catch(e){
+          registrarAviso({tipo:"prazo_nao_movido", pedidoId:String(pid), numero:det.numero, origem:"Entrega", erroBling:String(e.message||e).slice(0,160),
+            titulo:`Pedido #${det.numero||pid} a prazo na entrega, mas o Bling não mudou para PRAZO`, fingerprint:`prazo-sit-${pid}`,
+            oQueFazer:`A venda a prazo já está registrada no sistema. No Bling, mude o pedido #${det.numero||pid} para PRAZO manualmente.`});
+        }
+      }
+    })();
+    addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,quemNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),prazo,...(gerente?{jaPago}:{})});
+    return {code:200,json:{ok:true, valorProblema, valorFinal, prazo, venceEm:prazo?venceTxt:null, situacaoNoBling:prazo?"PRAZO":"mantida"}};
   }catch(e){ liberarTravaEntrega(); return {code:500,json:{erro:e.message}}; }
 }
 // Pedido que NÃO foi entregue (cliente ausente, recusou, voltou no carro). Só o
@@ -16052,10 +16129,10 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
       const sit=_sitOnline[String(p.id)];
       return !(sit && Number(sit.situacaoId)===SIT.CANCELADO);
     });
-    // conta entregue (Atendido) x falta entregar (qualquer outra situação não
-    // cancelada) -- usa o MESMO cache de situação já mantido acima, sem chamada
-    // nova nenhuma ao Bling
-    entreguesPorDia[data]=pedidosPorDia[data].filter(p=>Number(p.situacaoId)===SIT.ATENDIDO).length;
+    // conta entregue (Atendido no Bling OU entrega registrada no nosso sistema -- a entrega
+    // não muda mais o pedido pra Atendido) x falta entregar (qualquer outra situação não
+    // cancelada) -- usa o MESMO cache de situação já mantido acima, sem chamada nova ao Bling
+    entreguesPorDia[data]=pedidosPorDia[data].filter(p=>Number(p.situacaoId)===SIT.ATENDIDO || _mapaEntregasLocais()[String(p.id)]).length;
     faltamPorDia[data]=pedidosPorDia[data].length-entreguesPorDia[data];
   });
   const semSituacao=todosIds.filter(id=>!_sitOnline[String(id)]);

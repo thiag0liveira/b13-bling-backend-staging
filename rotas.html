@@ -1663,6 +1663,8 @@ async function _carregarFormasGer() {
     if (boleto) lista.push({ id: boleto.id, nome: boleto.descricao || boleto.nome });
     if (!lista.length) lista = todas.map(f => ({ id: f.id, nome: f.descricao || f.nome }));
   } catch (e) {}
+  // cliente paga depois (o pedido vai pra PRAZO no Bling; o recebimento é feito depois, no caixa)
+  lista.push({ id: "prazo", nome: "🗓️ A prazo (cliente paga depois)", prazo: true });
   try { const bj = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (bj && Array.isArray(bj.bancos) && bj.bancos.length) bancos = bj; } catch (e) {}
   window._formasGer = { lista, bancos };
   return window._formasGer;
@@ -1694,7 +1696,9 @@ async function abrirEncerrarCorrida(token) {
 }
 function _blocoPagamentoGer(e, ed, calc) {
   const opts = (sel) => `<option value="">Forma…</option>` + G.formas.lista.map((f, ix) => `<option value="${ix}" ${sel === f.nome ? "selected" : ""}>${esc(f.nome)}</option>`).join("");
-  const linhas = ed.pags.map((p, k) => `<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
+  const linhas = ed.pags.map((p, k) => p.formaId === "prazo"
+    ? `<div style="display:flex;gap:6px;margin-bottom:4px;align-items:center;color:#ffd23f;font-size:12px"><span style="flex:1"><b>A prazo</b> · ${brl(p.valor)} a receber depois. O pedido vai pra PRAZO no Bling; nada é recebido agora.</span><button class="btn btn-ghost" style="width:auto;padding:4px 8px" onclick="gerRemoverForma(${e.pedidoId},${k})">✕</button></div>`
+    : `<div style="display:flex;gap:4px;margin-bottom:4px;align-items:center">
       <select onchange="gerForma(${e.pedidoId},${k},this.value)" style="flex:1.4;min-width:0;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">${opts(p.formaNome)}</select>
       ${p.pixTipo === "banco" ? `<select onchange="gerBanco(${e.pedidoId},${k},this.value)" style="width:82px;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">${G.formas.bancos.bancos.map(b => `<option ${((p.banco || G.formas.bancos.padrao) === b) ? "selected" : ""}>${esc(b)}</option>`).join("")}</select>` : ""}
       <input type="number" step="0.01" inputmode="decimal" value="${esc(p.valor)}" placeholder="R$" oninput="gerValor(${e.pedidoId},${k},this.value)" style="width:84px;background:#0f0d24;color:#fff;border:1px solid #37327a;border-radius:6px;padding:6px;font-size:12px">
@@ -1702,7 +1706,7 @@ function _blocoPagamentoGer(e, ed, calc) {
     </div>`).join("");
   return `<label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:6px 0"><input type="checkbox" ${ed.jaPago ? "checked" : ""} onchange="gerJaPago(${e.pedidoId},this.checked)"> Esse pedido já estava pago antes (não receber agora)${e.pagamentoLocal && e.pagamentoLocal.statusPagamento === "pago" ? ` <span class="muted">— o sistema já tem R$ ${Number(e.pagamentoLocal.valorPago || 0).toFixed(2)} registrados</span>` : ""}</label>
     ${ed.jaPago ? "" : `<div style="font-size:12px;font-weight:700;margin:4px 0">Como o cliente pagou</div>${linhas}
-      <button class="btn btn-ghost" style="width:auto;font-size:11px;padding:4px 10px" onclick="gerAddForma(${e.pedidoId})">+ outra forma (pagamento dividido)</button>
+      ${ed.pags.some(p => p.formaId === "prazo") ? "" : `<button class="btn btn-ghost" style="width:auto;font-size:11px;padding:4px 10px" onclick="gerAddForma(${e.pedidoId})">+ outra forma (pagamento dividido)</button>`}
       <div id="gerResumo-${e.pedidoId}" style="font-size:12px;margin-top:6px">${_resumoGer(calc)}</div>`}`;
 }
 function _resumoGer(calc) {
@@ -1772,6 +1776,7 @@ function gerProb(pid, prodId, v, max) {
   const ed = G.edit[pid];
   const n = Math.max(0, Math.min(max, Math.floor(Number(v) || 0)));
   if (n > 0) ed.prob[prodId] = n; else delete ed.prob[prodId];
+  if (ed.pags.length === 1 && ed.pags[0].formaId === "prazo") { ed.pags[0].valor = _calcGer(G.dados.entregas.find(x => x.pedidoId === pid)).valorFinal; }
   gerAtualizarResumo(pid);
 }
 function gerJaPago(pid, v) { G.edit[pid].jaPago = !!v; _renderEncerrar(); }
@@ -1781,6 +1786,12 @@ function gerForma(pid, k, ix) {
   const ed = G.edit[pid], p = ed.pags[k];
   if (ix === "") { p.formaId = null; p.formaNome = ""; p.pixTipo = null; p.banco = null; _renderEncerrar(); return; }
   const f = G.formas.lista[Number(ix)];
+  if (f.prazo) {
+    const eP = G.dados.entregas.find(x => x.pedidoId === pid);
+    ed.pags = [{ formaId: "prazo", formaNome: "A prazo", valor: _calcGer(eP).valorFinal, banco: null, pixTipo: null }];
+    _renderEncerrar();
+    return;
+  }
   p.formaId = f.id; p.formaNome = f.nome; p.pixTipo = f.pixTipo || null;
   p.banco = f.pixTipo === "banco" ? (G.formas.bancos.padrao || G.formas.bancos.bancos[0]) : null;
   // se ainda não tem valor, já sugere o que falta receber (cartão leva a taxa embutida)
@@ -1830,7 +1841,7 @@ async function gerSalvar(pid) {
     } else {
       e.entrega = { status: "entregue", origem: "gerente", registradoPor: por, jaPago: !!ed.jaPago, valorProblema: j.valorProblema, valorFinal: j.valorFinal,
         pagamentos: (corpo.pagamentos || []).map(p => ({ formaNome: p.formaNome, valor: p.valor, banco: p.banco })) };
-      if (j.atendidoOk === false) G.msgViagem = `<span style="color:#ffd23f">O pedido #${esc(e.numero)} foi registrado, mas o Bling não aceitou fechar como Atendido (${esc(j.atendidoErro || "erro")}). Confira lá.</span>`;
+      if (j.prazo) G.msgViagem = `<span style="color:#ffd23f">Pedido #${esc(e.numero)} registrado A PRAZO (vence em ${esc(j.venceEm || "")}). Nada foi recebido; o recebimento é feito depois no caixa.</span>`;
     }
     ed.salvando = false;
     _renderEncerrar();

@@ -186,7 +186,8 @@ function renderInterno(){
         (done ? '<span class="badge" style="background:#0f3a24;color:#3ce88a">✅ ENTREGUE</span>' : '<span class="badge" style="background:#3a2a00;color:#ffd23f">PENDENTE</span>') +
       '</div>' +
       '<div class="muted" style="font-size:12px;margin-top:4px">📍 ' + esc(e.endereco || "—") + ' · ' + brl(e.total) + '</div>' +
-      (done && e.entrega ? '<div class="muted" style="font-size:11px;margin-top:4px">Recebido: ' + brl(e.entrega.valorFinal) + (e.entrega.valorProblema>0 ? ' (descontado ' + brl(e.entrega.valorProblema) + ' de avaria/falta)':'') + ' · ' + (e.entrega.pagamentos||[]).map(function(p){ return esc(p.formaNome)+': '+brl(p.valor); }).join(", ") + (e.entrega.ocorrencia ? ' · 📸 ocorrência registrada' : '') + '</div>' : '') +
+      (done && e.entrega && e.entrega.prazo ? '<div style="font-size:11px;margin-top:4px;color:#ffd23f">🗓️ Venda A PRAZO: ' + brl(e.entrega.valorFinal) + ' a receber depois (nada recebido na entrega)</div>' : '') +
+      (done && e.entrega && !e.entrega.prazo ? '<div class="muted" style="font-size:11px;margin-top:4px">Recebido: ' + brl(e.entrega.valorFinal) + (e.entrega.valorProblema>0 ? ' (descontado ' + brl(e.entrega.valorProblema) + ' de avaria/falta)':'') + ' · ' + (e.entrega.pagamentos||[]).map(function(p){ return esc(p.formaNome)+': '+brl(p.valor); }).join(", ") + (e.entrega.ocorrencia ? ' · 📸 ocorrência registrada' : '') + '</div>' : '') +
     '</div>';
   });
   h += '<button class="btn btn-ghost" style="margin-top:10px" onclick="abrirMapaViagem()">🗺️ Ver mapa da rota</button>';
@@ -261,7 +262,19 @@ function totalPagoSemTaxa(){
     return s + v;
   }, 0).toFixed(2);
 }
+// "A prazo": cliente paga depois. Vale como o pagamento ÚNICO do pedido (não mistura com as
+// formas à vista) e o recebimento depois é feito no caixa.
+var FORMA_PRAZO = { id: "prazo", nome: "A prazo (cliente paga depois)" };
+var DIAS_PRAZO = 7;
+function ehLinhaPrazo(p){ return String(p.formaId) === "prazo"; }
 function selecionarFormaPagamento(formaId, formaNome){
+  if(String(formaId) === "prazo"){
+    PAGAMENTOS = [{ formaId: "prazo", formaNome: "A prazo", valor: valorFinalCalc() }];
+    renderModalEntrega();
+    return;
+  }
+  // escolheu uma forma à vista depois de ter marcado "A prazo": tira o a prazo
+  PAGAMENTOS = PAGAMENTOS.filter(function(p){ return !ehLinhaPrazo(p); });
   const falta = +(valorFinalCalc() - totalPagoSemTaxa()).toFixed(2);
   const valor = ehFormaCartao(formaNome) ? (falta>0?comTaxa(falta):0) : (falta>0?falta:0);
   PAGAMENTOS.push({ formaId: formaId, formaNome: formaNome, valor: valor });
@@ -318,11 +331,22 @@ function renderModalEntrega(){
       '</div>' : '') +
     '</div>';
   }).join("");
-  var formasBotoes = '<div class="formasGrid">' + FORMAS.map(function(f){
-    var qtd = PAGAMENTOS.filter(function(p){ return p.formaId == f.id && p.formaNome === f.nome; }).length;
-    return '<div class="formaBtn' + (qtd?' sel':'') + '" onclick="selecionarFormaPagamento(' + f.id + ',\'' + esc(f.nome).replace(/'/g,"\\'") + '\')">' + esc(f.nome) + (qtd>1?' <b style="color:#ffd23f">×'+qtd+'</b>':'') + '</div>';
+  // a linha "A prazo" sempre vale o valor a receber (se mudar o que veio com problema, acompanha)
+  PAGAMENTOS.forEach(function(p){ if(ehLinhaPrazo(p)) p.valor = valorFinalCalc(); });
+  var formasBotoes = '<div class="formasGrid">' + FORMAS.concat([FORMA_PRAZO]).map(function(f){
+    var ehPrazo = String(f.id) === "prazo";
+    var qtd = ehPrazo ? (PAGAMENTOS.some(ehLinhaPrazo) ? 1 : 0) : PAGAMENTOS.filter(function(p){ return p.formaId == f.id && p.formaNome === f.nome; }).length;
+    return '<div class="formaBtn' + (qtd?' sel':'') + '"' + (ehPrazo ? ' style="grid-column:1/-1;border-color:#ffd23f"' : '') + ' onclick="selecionarFormaPagamento(\'' + f.id + '\',\'' + esc(f.nome).replace(/'/g,"\\'") + '\')">' + (ehPrazo ? '🗓️ ' : '') + esc(f.nome) + (qtd>1?' <b style="color:#ffd23f">×'+qtd+'</b>':'') + '</div>';
   }).join("") + '</div>';
   var pagamentosHtml = PAGAMENTOS.map(function(p, ix){
+    if(ehLinhaPrazo(p)){
+      return '<div class="pagLinha" style="flex-wrap:wrap">' +
+        '<span style="flex:1;font-size:13px;color:#ffd23f"><b>A prazo</b> · ' + brl(p.valor) + ' a receber depois</span>' +
+        '<button type="button" class="stepbtn" style="width:34px;height:34px;font-size:14px;background:#3a0010;color:#ff8f7a" onclick="removerLinhaPagamento(' + ix + ')">✕</button>' +
+        '<div class="muted" style="width:100%;font-size:11px;margin-top:6px">Vence em: ' +
+        [7,15,30].map(function(d){ return '<span class="formaBtn' + (DIAS_PRAZO===d?' sel':'') + '" style="display:inline-block;margin:0 4px;padding:6px 10px" onclick="DIAS_PRAZO=' + d + ';renderModalEntrega()">' + d + ' dias</span>'; }).join("") +
+        '</div></div>';
+    }
     return '<div class="pagLinha">' +
       '<span class="muted" style="flex:1.2;font-size:12px">' + esc(p.formaNome) + '</span>' +
       '<input type="number" step="0.01" placeholder="Valor" style="flex:1" value="' + p.valor + '" onchange="mudarValorPagamento(' + ix + ',this.value)">' +
@@ -500,12 +524,12 @@ function confirmarEntrega(){
   msgEl.innerHTML = '<span class="muted">Salvando…</span>';
   fetch(B + "/api/viagem/" + TOKEN + "/entrega/" + PEDIDO_ATIVO.pedidoId, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({ itensProblema:itensProblema, pagamentos:pagamentos,
+    body: JSON.stringify({ itensProblema:itensProblema, pagamentos:pagamentos, diasPrazo: DIAS_PRAZO,
       assinaturaDataUrl: cv.toDataURL("image/png"),
       ocorrencia: (OCORRENCIA.url || OCORRENCIA.descricao) ? OCORRENCIA : null })
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
-    if(j.atendidoOk===false){ alert("O pagamento foi registrado, mas não consegui fechar o pedido no Bling (" + (j.atendidoErro||"erro") + "). Avise o suporte — o pedido pode continuar aparecendo como 'Em rota'."); }
+    if(j.prazo){ alert("Venda registrada A PRAZO (" + brl(j.valorFinal) + ", vence em " + (j.venceEm||"") + "). Nada foi recebido agora; o escritório recebe depois."); }
     var f = document.querySelector(".fullscreen");
     if(f) f.remove();
     PEDIDO_ATIVO = null;
