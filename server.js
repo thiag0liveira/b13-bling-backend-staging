@@ -389,6 +389,31 @@ app.get("/api/diag/saude",(req,res)=>{
 // com a IA em vez de mandar print -- já vem com um diagnóstico automático
 // classificando onde está o problema (Bling, sistema, ou nada), pra não
 // precisar perguntar toda vez.
+// Teste "ao vivo" do Bling para a tela de Saúde. Antes cada abertura da tela (e a cada 30s) fazia
+// DUAS chamadas de alta prioridade e esperava o Bling responder, mesmo lento (já deu 12s), então
+// a tela e o botão de copiar demoravam o mesmo tanto, e ainda concorriam com o caixa. Agora é UMA
+// sonda de baixa prioridade, com limite de 4s, compartilhada por quem pedir ao mesmo tempo e
+// guardada por 20s. Se estourar o limite, o resultado é "sem resposta em 4s" (já diz tudo: o Bling
+// está lento ou fora) em vez de fazer a tela esperar.
+let _sondaBling={ok:null,ms:0,em:0}, _sondaEmCurso=null;
+async function sondarBling(maxMs=4000){
+  if(_sondaBling.em && Date.now()-_sondaBling.em<20000) return {..._sondaBling};
+  if(!_sondaEmCurso){
+    _sondaEmCurso=(async()=>{
+      const ini=Date.now();
+      const chamada=blingLento(`/situacoes/modulos`)
+        .then(r=>({ok:true,ms:Date.now()-ini,itens:(r?.data||[]).length}))
+        .catch(e=>({ok:false,ms:Date.now()-ini,erro:e.message,status:e.status||null}));
+      const limite=new Promise(r=>setTimeout(()=>r({ok:false,timeout:true,ms:maxMs,erro:`sem resposta em ${maxMs/1000}s`}),maxMs));
+      const res=await Promise.race([chamada,limite]);
+      _sondaBling={...res,em:Date.now()};
+      // estourou o limite: a chamada segue em segundo plano e, quando terminar, guarda o tempo real
+      if(res.timeout) chamada.then(r=>{ _sondaBling={...r,em:Date.now(),tardio:true}; });
+      return _sondaBling;
+    })().finally(()=>{ _sondaEmCurso=null; });
+  }
+  return {...(await _sondaEmCurso)};
+}
 app.get("/api/diag/resumo-texto",async(req,res)=>{
   try{
     const mem=process.memoryUsage();
@@ -401,10 +426,10 @@ app.get("/api/diag/resumo-texto",async(req,res)=>{
     });
     const arquivoGrande=arquivos.find(a=>a.kb>5000); // >5MB é o que realmente preocupa
 
-    let testeAoVivo={ok:false};
-    const inicioTeste=Date.now();
-    try{ const r=await bling(`/situacoes/modulos`); testeAoVivo={ok:true, ms:Date.now()-inicioTeste}; }
-    catch(e){ testeAoVivo={ok:false, ms:Date.now()-inicioTeste, erro:e.message, status:e.status||null}; }
+    const testeAoVivo=await sondarBling(4000);
+    // tempo das chamadas REAIS mais recentes (sem custo: já estão registradas)
+    const recentes=_metricas.ultimas.filter(u=>!u.erro).slice(0,10).map(u=>u.duracaoMs).sort((a,b)=>a-b);
+    const medianaRecente=recentes.length?recentes[Math.floor(recentes.length/2)]:null;
 
     const filaTotal=_filaAlta.length+_filaBaixa.length;
     const esperaMediaMs=_metricas.total?Math.round(_metricas.esperaTotalMs/_metricas.total):0;
@@ -413,8 +438,9 @@ app.get("/api/diag/resumo-texto",async(req,res)=>{
     const problemas=[];
     let ondeEsta="tudo normal";
     if(uptimeSeg<300){ problemas.push("processo reiniciou há pouco (pode ter caído sozinho, ou foi um deploy normal)"); ondeEsta="verificar se foi deploy ou crash"; }
-    if(!testeAoVivo.ok){ problemas.push("o Bling não respondeu no teste ao vivo agora ("+(testeAoVivo.erro||"erro desconhecido")+")"); ondeEsta="BLING (fora do ar ou bloqueando)"; }
-    else if(testeAoVivo.ms>5000){ problemas.push("o Bling respondeu, mas devagar ("+testeAoVivo.ms+"ms — o normal é até 1000ms)"); ondeEsta="BLING (lento do lado deles)"; }
+    if(testeAoVivo.timeout){ problemas.push("o Bling não respondeu em 4s no teste ao vivo (muito lento ou fora do ar)"+(medianaRecente!=null?"; as últimas chamadas reais levaram cerca de "+medianaRecente+"ms":"")); ondeEsta="BLING (muito lento ou fora do ar)"; }
+    else if(!testeAoVivo.ok){ problemas.push("o Bling não respondeu no teste ao vivo agora ("+(testeAoVivo.erro||"erro desconhecido")+")"); ondeEsta="BLING (fora do ar ou bloqueando)"; }
+    else if(testeAoVivo.ms>2500){ problemas.push("o Bling respondeu, mas devagar ("+testeAoVivo.ms+"ms — o normal é até 1000ms)"); ondeEsta="BLING (lento do lado deles)"; }
     if(_metricas.err429>0){ problemas.push(_metricas.err429+" erro(s) de limite (429) desde o último reinício"); ondeEsta="BLING (limite de requisições)"; }
     if(filaTotal>20){ problemas.push("fila de chamadas ao Bling grande agora ("+filaTotal+")"); if(ondeEsta==="tudo normal") ondeEsta="BLING (fila acumulando)"; }
     if(usadaMB>400){ problemas.push("memória do processo alta ("+usadaMB+"MB)"); if(ondeEsta==="tudo normal") ondeEsta="SISTEMA (memória alta, ficar de olho)"; }
@@ -427,7 +453,7 @@ app.get("/api/diag/resumo-texto",async(req,res)=>{
       ...problemas.map(p=>"- "+p),
       "",
       "Processo: "+uptimeMin+"min de pé, "+usadaMB+"MB de memória",
-      "Bling: fila="+filaTotal+", espera média="+esperaMediaMs+"ms, teste ao vivo="+(testeAoVivo.ok?testeAoVivo.ms+"ms":"FALHOU"),
+      "Bling: fila="+filaTotal+", espera média="+esperaMediaMs+"ms, teste ao vivo="+(testeAoVivo.ok?testeAoVivo.ms+"ms":(testeAoVivo.timeout?"sem resposta em 4s":"FALHOU"))+(medianaRecente!=null?", chamadas reais recentes≈"+medianaRecente+"ms":""),
       "Erros 429 desde o início: "+_metricas.err429+" | total de chamadas: "+_metricas.total,
       "Arquivos: "+arquivos.map(a=>a.nome+"="+(a.kb>1024?(a.kb/1024).toFixed(1)+"MB":a.kb+"KB")).join(", "),
     ];
@@ -443,14 +469,7 @@ app.get("/api/diag/bling-status",async(req,res)=>{
     expiraEm:new Date(t.obtido_em+(t.expires_in-60)*1000).toISOString(),
     expirado: Date.now() >= t.obtido_em+(t.expires_in-60)*1000,
   } : {tem:false, aviso:"Nunca autorizado — acesse /auth"};
-  let testeAoVivo={ok:false};
-  const inicio=Date.now();
-  try{
-    const r=await bling(`/situacoes/modulos`);
-    testeAoVivo={ok:true, ms:Date.now()-inicio, itens:(r?.data||[]).length};
-  }catch(e){
-    testeAoVivo={ok:false, ms:Date.now()-inicio, erro:e.message, status:e.status||null};
-  }
+  const testeAoVivo=await sondarBling(4000);
   res.json({
     token:tokenInfo,
     fila:{ emVoo:_blingEmVoo, altaPrioridadeEsperando:_filaAlta.length, baixaPrioridadeEsperando:_filaBaixa.length },

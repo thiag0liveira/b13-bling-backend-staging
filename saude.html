@@ -22,6 +22,10 @@ button{background:#2c2660;color:#fff;border:1px solid #514c96;border-radius:8px;
 <body>
 <div class="top"><h1>🩺 Saúde do Sistema — B13 Bebidas</h1></div>
 <div id="status" class="muted">Carregando…</div>
+<div id="acoesFixas" style="margin:8px 0 14px">
+  <button id="btnCopiar" onclick="copiarResumo()" style="background:#3ce88a;color:#000;font-weight:800">📋 Copiar resumo pra mandar no chat</button>
+  <div id="resumoTexto" style="display:none;margin-top:10px"></div>
+</div>
 <div id="app"></div>
 <script>
 const $ = s => document.querySelector(s);
@@ -32,6 +36,7 @@ function corPara(valor, limiteAviso, limiteRuim){
 }
 async function carregar(){
   $("#status").textContent = "Atualizando…";
+  prepararResumo().catch(()=>{}); // deixa o texto do botão de copiar pronto
   try{
     const [saude, bling] = await Promise.all([
       fetch("/api/diag/saude").then(r=>r.json()),
@@ -68,7 +73,7 @@ function render(saude, bling){
         <div class="metric"><div class="v ${filaCor}">${filaTotal}</div><div class="l">Na fila agora</div></div>
         <div class="metric"><div class="v ${esperaCor}">${Math.round((bling.metricas?.esperaMediaMs||0)/1000)}s</div><div class="l">Espera média</div></div>
         <div class="metric"><div class="v ${bling.metricas?.err429>0?'ruim':'ok'}">${bling.metricas?.err429||0}</div><div class="l">Erros 429 (limite)</div></div>
-        <div class="metric"><div class="v ${bling.testeAoVivo?.ok?'ok':'ruim'}">${bling.testeAoVivo?.ok? (bling.testeAoVivo.ms+'ms') : 'FALHOU'}</div><div class="l">Teste ao vivo</div></div>
+        <div class="metric"><div class="v ${bling.testeAoVivo?.ok?'ok':'ruim'}">${bling.testeAoVivo?.ok? (bling.testeAoVivo.ms+'ms') : (bling.testeAoVivo?.timeout ? '&gt;4s' : 'FALHOU')}</div><div class="l">Teste ao vivo</div></div>
       </div>
       <div class="muted" style="margin-top:8px">Métricas desde: ${bling.metricas?.desde ? new Date(bling.metricas.desde).toLocaleString("pt-BR") : "—"}</div>
     </div>
@@ -91,27 +96,79 @@ function render(saude, bling){
       </div>
     </div>
     <button onclick="carregar()">🔄 Atualizar agora</button>
-    <button onclick="copiarResumo()" style="background:#3ce88a;color:#000;font-weight:800">📋 Copiar resumo pra mandar no chat</button>
-    <div id="resumoTexto" style="display:none;margin-top:10px"></div>
   `;
 }
-async function copiarResumo(){
+// O texto do resumo é buscado ANTES (ao abrir a tela e a cada atualização) e fica guardado.
+// Assim o toque no botão copia na hora: o navegador só deixa copiar logo depois do toque, e
+// esperar o servidor (que pode demorar quando o Bling está lento) fazia a cópia falhar.
+let RESUMO_TXT = "", RESUMO_EM = 0, RESUMO_BUSCANDO = null;
+function prepararResumo(){
+  if(RESUMO_BUSCANDO) return RESUMO_BUSCANDO;
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), 12000);
+  RESUMO_BUSCANDO = fetch("/api/diag/resumo-texto", {signal: ctrl.signal}).then(r=>r.text()).then(tx=>{
+    RESUMO_TXT = tx; RESUMO_EM = Date.now(); return tx;
+  }).finally(()=>{ clearTimeout(t); RESUMO_BUSCANDO = null; });
+  return RESUMO_BUSCANDO;
+}
+function copiarTexto(texto){
+  // 1) API moderna; 2) plano B com textarea (funciona fora de https e em navegador mais antigo)
+  const legado = ()=>{
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = texto; ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, texto.length);
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return !!ok;
+    }catch(e){ return false; }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext){
+    return navigator.clipboard.writeText(texto).then(()=>true).catch(()=>legado());
+  }
+  return Promise.resolve(legado());
+}
+function mostrarResumo(texto, copiou, nota){
   const box = $("#resumoTexto");
   box.style.display = "block";
-  box.innerHTML = '<div class="muted">Gerando…</div>';
-  try{
-    const texto = await fetch("/api/diag/resumo-texto").then(r=>r.text());
-    try{
-      await navigator.clipboard.writeText(texto);
-      box.innerHTML = '<div class="ok" style="margin-bottom:6px">✅ Copiado! Agora é só colar no chat com a IA.</div><pre style="white-space:pre-wrap;background:#0f0d24;border-radius:8px;padding:10px;font-size:11px;color:#cfc9f5">'+texto.replace(/</g,"&lt;")+'</pre>';
-    }catch(eClip){
-      // clipboard pode falhar por permissão do navegador -- mostra o texto pra
-      // selecionar e copiar na mão
-      box.innerHTML = '<div class="aviso" style="margin-bottom:6px">Não consegui copiar sozinho — toca e segura o texto abaixo pra selecionar e copiar:</div><textarea readonly onclick="this.select()" style="width:100%;height:180px;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#cfc9f5;font-size:11px;padding:10px">'+texto+'</textarea>';
-    }
-  }catch(e){
-    box.innerHTML = '<div class="ruim">Erro ao gerar resumo: '+e.message+'</div>';
+  const seguro = texto.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  if(copiou){
+    box.innerHTML = '<div class="ok" style="margin-bottom:6px">✅ Copiado! Agora é só colar no chat com a IA.'+(nota?' <span class="muted">'+nota+'</span>':'')+'</div><pre style="white-space:pre-wrap;background:#0f0d24;border-radius:8px;padding:10px;font-size:11px;color:#cfc9f5">'+seguro+'</pre>';
+  }else{
+    box.innerHTML = '<div class="aviso" style="margin-bottom:6px">Não consegui copiar sozinho. O texto abaixo já está selecionado: copie com Ctrl+C (ou toque e segure → Copiar).</div><textarea readonly style="width:100%;height:190px;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#cfc9f5;font-size:11px;padding:8px">'+seguro+'</textarea>';
+    const ta = box.querySelector("textarea"); if(ta){ ta.focus(); ta.select(); }
   }
+}
+function erroResumo(e){
+  const box = $("#resumoTexto");
+  box.style.display = "block";
+  const msg = (e && e.name === "AbortError") ? "O servidor demorou mais de 12s pra responder." : (e && e.message ? e.message : "erro");
+  box.innerHTML = '<div class="ruim">Não consegui gerar o resumo agora: '+msg+'</div>' +
+    (RESUMO_TXT ? '<div class="muted" style="margin:6px 0 4px">Este é o último resumo que consegui ('+Math.round((Date.now()-RESUMO_EM)/1000)+'s atrás):</div><textarea readonly style="width:100%;height:150px;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#cfc9f5;font-size:11px;padding:8px">'+RESUMO_TXT.replace(/&/g,"&amp;").replace(/</g,"&lt;")+'</textarea>' : '');
+}
+function copiarResumo(){
+  const box = $("#resumoTexto");
+  box.style.display = "block";
+  // 1) texto já pronto: copia NA HORA, dentro do toque
+  if(RESUMO_TXT && Date.now()-RESUMO_EM < 120000){
+    const tx = RESUMO_TXT;
+    copiarTexto(tx).then(ok=>mostrarResumo(tx, ok));
+    prepararResumo().catch(()=>{}); // já deixa o próximo pronto
+    return;
+  }
+  // 2) ainda não tem: entrega ao navegador uma PROMESSA do texto, que ele espera sem perder o toque
+  box.innerHTML = '<div class="muted">Gerando… (se o Bling estiver lento pode levar alguns segundos)</div>';
+  const promessa = prepararResumo();
+  if(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write && window.isSecureContext){
+    try{
+      navigator.clipboard.write([new ClipboardItem({"text/plain": promessa.then(t=>new Blob([t], {type:"text/plain"}))})])
+        .then(()=>promessa.then(t=>mostrarResumo(t, true)))
+        .catch(()=>promessa.then(t=>mostrarResumo(t, false)).catch(erroResumo));
+      return;
+    }catch(e){ /* cai pro caminho comum */ }
+  }
+  promessa.then(t=>copiarTexto(t).then(ok=>mostrarResumo(t, ok))).catch(erroResumo);
 }
 carregar();
 setInterval(carregar, 30000);
