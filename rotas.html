@@ -1892,7 +1892,7 @@ async function verDetalhesViagem(token) {
           <div style="margin-top:6px;font-size:12px">Total do pedido: ${brl(e.total)}${en.valorProblema > 0 ? ` · Desconto: -${brl(en.valorProblema)}` : ''} · <b style="color:#3ce88a">Recebido: ${brl(en.valorFinal)}</b></div>
           ${itensProbHtml}
           <div style="margin-top:4px">${pagHtml}</div>
-          ${en.ocorrencia ? `<div style="margin-top:6px;font-size:12px;color:#ffd23f">📸 Ocorrência: ${esc(en.ocorrencia.descricao || "sem descrição")}${en.ocorrencia.url ? ` — <a href="${esc(en.ocorrencia.url)}" target="_blank" style="color:#7fd4ff">ver anexo</a>` : ''}</div>` : ''}
+          ${en.ocorrencia ? `<div style="margin-top:6px;font-size:12px;color:#ffd23f">📸 Ocorrência: ${esc(en.ocorrencia.descricao || "sem descrição")}${(en.ocorrencia.anexos && en.ocorrencia.anexos.length) ? en.ocorrencia.anexos.map((a, k) => ` — <a href="${esc(a.url)}" target="_blank" style="color:#7fd4ff">${a.tipo === "video" ? "🎥" : "📷"} anexo ${k + 1}</a>`).join("") : (en.ocorrencia.url ? ` — <a href="${esc(en.ocorrencia.url)}" target="_blank" style="color:#7fd4ff">ver anexo</a>` : '')}</div>` : ''}
           ${en.assinaturaDataUrl ? `<div style="margin-top:8px"><div class="muted" style="font-size:11px;margin-bottom:4px">Assinatura do cliente:</div><img src="${en.assinaturaDataUrl}" style="width:100%;max-width:300px;background:#fff;border-radius:6px"></div>` : ''}
         </div>`;
     }).join("")}

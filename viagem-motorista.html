@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Minha viagem — B13 Bebidas</title>
+<script src="/upload-midia.js"></script>
 <script src="/nav.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -54,7 +55,9 @@ var PEDIDO_ATIVO = null; // pedido aberto no modal de finalizar
 var PROBLEMAS = {}; // produtoId -> quantidade com problema (no modal atual)
 var ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
 var PAGAMENTOS = []; // [{formaId, valor}]
-var OCORRENCIA = { descricao: "", url: null, tipo: null };
+var OCORRENCIA = { descricao: "" };
+var MIDIA_OC = null;      // componente de anexos (fotos/vídeos) da ocorrência
+var OC_ABERTA = false;    // caixa da ocorrência aberta no modal
 var FORMAS = [];
 var PIX_BANCOS = { bancos: ["Inter", "Santander", "Itaú"], padrao: "Inter" };
 var TAXA_CARTAO = 0.035;
@@ -201,7 +204,7 @@ function abrirEntrega(pedidoId){
   ITEM_STATUS = {}; // produtoId -> 'ok' | 'problema'
   PROBLEMAS = {}; // produtoId -> quantidade com problema
   PAGAMENTOS = [];
-  OCORRENCIA = { descricao: "", url: null, tipo: null };
+  OCORRENCIA = { descricao: "" }; MIDIA_OC = null; OC_ABERTA = false;
   (PEDIDO_ATIVO.itens || []).forEach(function(it){ ITEM_STATUS[it.produtoId || 0] = "ok"; });
   renderModalEntrega();
 }
@@ -286,27 +289,23 @@ function somaPagamentos(){ return +PAGAMENTOS.reduce(function(s,p){ return s + (
 
 // ---- ocorrência (foto/vídeo + descrição) ----
 function toggleOcorrencia(){
+  OC_ABERTA = !OC_ABERTA;
   var box = document.getElementById("ocorrenciaBox");
-  if(box) box.style.display = box.style.display === "none" ? "" : "none";
+  if(box) box.style.display = OC_ABERTA ? "" : "none";
 }
-function anexarOcorrencia(input){
-  var file = input.files && input.files[0];
-  if(!file) return;
-  var msgEl = document.getElementById("ocorrenciaMsg");
-  msgEl.innerHTML = '<span class="muted">Enviando anexo…</span>';
-  var reader = new FileReader();
-  reader.onload = function(){
-    fetch(B + "/api/comprovante/" + PEDIDO_ATIVO.pedidoId, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ dataUrl: reader.result, tipo: file.type.indexOf("video")===0?"video":"foto",
-        evento:"ocorrencia_entrega", funcionarioId: V.motoristaFuncionarioId||null, funcionarioNome: V.motoristaNome||null })
-    }).then(function(r){ return r.json(); }).then(function(j){
-      if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
-      OCORRENCIA.url = j.url; OCORRENCIA.tipo = file.type.indexOf("video")===0?"video":"foto";
-      msgEl.innerHTML = '<span style="color:#3ce88a">✅ Anexo enviado.</span>';
-    }).catch(function(){ msgEl.innerHTML = '<span class="err">Erro ao enviar o anexo.</span>'; });
-  };
-  reader.readAsDataURL(file);
+// o modal inteiro é redesenhado a cada mudança (forma de pagamento etc.): traz o componente de
+// anexos (com tudo o que já foi escolhido/enviado) pro container novo
+function montarMidiaOcorrencia(){
+  if(!window.B13Midia || !document.getElementById("midiaOcorrencia")) return;
+  if(!MIDIA_OC){
+    MIDIA_OC = B13Midia.criar({
+      container: "midiaOcorrencia", base: B,
+      imediato: {
+        pedidoId: function(){ return PEDIDO_ATIVO ? PEDIDO_ATIVO.pedidoId : null; },
+        meta: function(){ return { funcionarioId: V.motoristaFuncionarioId||null, funcionarioNome: V.motoristaNome||null, eventoFoto: "ocorrencia_entrega", eventoVideo: "ocorrencia_entrega" }; }
+      }
+    });
+  } else { MIDIA_OC.moverPara("midiaOcorrencia"); }
 }
 
 function renderModalEntrega(){
@@ -374,10 +373,10 @@ function renderModalEntrega(){
     (Math.abs(diff)>0.009 ? '<div class="muted" style="font-size:11px;margin-top:4px;color:#ffd23f">' + (diff>0 ? 'Falta ' + brl(diff) : 'Está ' + brl(-diff) + ' a mais') + ' pra fechar certinho — precisa bater exato pra continuar.</div>' : '') +
     '</div>' +
     '<button type="button" class="btn btn-ghost" style="margin-top:12px" onclick="toggleOcorrencia()">📸 Abrir ocorrência (foto/vídeo)</button>' +
-    '<div id="ocorrenciaBox" style="display:none;margin-top:8px">' +
-      '<textarea id="ocorrenciaTxt" rows="2" placeholder="Descreva o que aconteceu…" onchange="OCORRENCIA.descricao=this.value"></textarea>' +
-      '<input type="file" accept="image/*,video/*" capture="environment" style="margin-top:6px" onchange="anexarOcorrencia(this)">' +
-      '<div id="ocorrenciaMsg" style="margin-top:4px;font-size:12px"></div>' +
+    '<div id="ocorrenciaBox" style="' + ((OC_ABERTA || OCORRENCIA.descricao || (MIDIA_OC && MIDIA_OC.quantidade()>0)) ? '' : 'display:none;') + 'margin-top:8px">' +
+      '<textarea id="ocorrenciaTxt" rows="2" placeholder="Descreva o que aconteceu…" oninput="OCORRENCIA.descricao=this.value">' + esc(OCORRENCIA.descricao||"") + '</textarea>' +
+      '<div class="muted" style="font-size:11px;margin:6px 0 2px">Fotos e vídeos da ocorrência (pode mandar vários):</div>' +
+      '<div id="midiaOcorrencia"></div>' +
     '</div>' +
     '<div id="msgEntrega" style="margin-top:8px"></div>' +
     '<button class="btn btn-mag" style="margin-top:12px" onclick="irParaAssinatura()">Continuar pra assinatura →</button>' +
@@ -391,6 +390,7 @@ function renderModalEntrega(){
   document.body.appendChild(wrap.firstElementChild);
   var modalNovo = document.querySelector("#modalWrap .modal");
   if(modalNovo) modalNovo.scrollTop = scrollAnterior;
+  montarMidiaOcorrencia();
 }
 
 function irParaAssinatura(){
@@ -517,6 +517,10 @@ function confirmarEntrega(){
     for(var i=3;i<d.length;i+=4){ if(d[i]!==0){ vazio=false; break; } }
   }catch(e){ vazio=false; }
   if(vazio){ msgEl.innerHTML = '<span class="err">Peça pro cliente assinar antes de finalizar.</span>'; return; }
+  if(MIDIA_OC && MIDIA_OC.ocupado()){ msgEl.innerHTML = '<span class="err">Espere terminar de enviar os anexos da ocorrência.</span>'; return; }
+  var anexosOc = MIDIA_OC ? MIDIA_OC.enviados() : [];
+  var anexosFalhos = MIDIA_OC ? MIDIA_OC.itens().filter(function(i){ return i.estado !== "enviado"; }).length : 0;
+  if(anexosFalhos && !confirm(anexosFalhos + " anexo(s) da ocorrência NÃO foram enviados e ficarão de fora. Finalizar a entrega mesmo assim?")) return;
   var itensProblema = Object.keys(ITEM_STATUS).filter(function(k){ return ITEM_STATUS[k]==="problema"; }).map(function(k){ return {produtoId:Number(k), quantidade:PROBLEMAS[k]||1}; });
   var pagamentos = PAGAMENTOS.filter(function(p){ return p.formaId && Number(p.valor)>0; }).map(function(p){
     return { formaId:p.formaId, formaNome: p.formaNome||"", valor:Number(p.valor), banco:p.banco||null };
@@ -526,7 +530,7 @@ function confirmarEntrega(){
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({ itensProblema:itensProblema, pagamentos:pagamentos, diasPrazo: DIAS_PRAZO,
       assinaturaDataUrl: cv.toDataURL("image/png"),
-      ocorrencia: (OCORRENCIA.url || OCORRENCIA.descricao) ? OCORRENCIA : null })
+      ocorrencia: (anexosOc.length || OCORRENCIA.descricao) ? { descricao: OCORRENCIA.descricao || "", anexos: anexosOc } : null })
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j.erro){ msgEl.innerHTML = '<span class="err">' + esc(j.erro) + '</span>'; return; }
     if(j.prazo){ alert("Venda registrada A PRAZO (" + brl(j.valorFinal) + ", vence em " + (j.venceEm||"") + "). Nada foi recebido agora; o escritório recebe depois."); }

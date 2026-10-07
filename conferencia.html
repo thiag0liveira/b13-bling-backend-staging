@@ -102,6 +102,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
     #etiquetaPrint .qr div{font-size:10px;color:#555;margin-top:3px}
   }
 </style>
+<script src="/upload-midia.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="/nav.js"></script>
 <style>
@@ -148,10 +149,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
     <p class="muted" style="margin-bottom:14px;font-size:12px">Tipo definido desde a criação do pedido (totem):</p>
     <div id="pagStatus" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
     <div id="tipoFixo" style="text-align:center;padding:14px;border-radius:10px;border:2px solid var(--mag);background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
-    <div class="foto-area" id="fotoArea" onclick="document.getElementById('fotoInput').click()">
-      <input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="carregarFoto(this)">
-      <div id="fotoPreview">📷 Toque para tirar foto do pedido (opcional)</div>
-    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">Opcional: fotos e vídeos do pedido (pode mandar vários).</div>
+    <div id="midiaConf" style="margin-bottom:12px"></div>
     <div id="msgModal" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-grn" id="btnConfirmar" onclick="confirmarConferencia()" disabled style="flex:1">✅ Confirmar</button>
@@ -163,7 +162,7 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
 <script>
 const BACKEND=window.location.origin;
 
-let FUNC=null, SIT={}, pedidos=[], sel=null, itensConf=[], tipoSel=null, fotoBase64=null;
+let FUNC=null, SIT={}, pedidos=[], sel=null, itensConf=[], tipoSel=null, MIDIA_CONF=null;
 
 // Auth — usa sessão do nav
 FUNC=b13GetSession();
@@ -437,8 +436,8 @@ function confirmarItem(ix){
 }
 
 function abrirModal(){
-  fotoBase64=null;
-  document.getElementById("fotoPreview").innerHTML='📷 Toque para tirar foto do pedido (opcional)';
+  if(!MIDIA_CONF && window.B13Midia) MIDIA_CONF=B13Midia.criar({container:"midiaConf",base:BACKEND});
+  else if(MIDIA_CONF) MIDIA_CONF.limpar();
   document.getElementById("msgModal").textContent="";
   // mostra status de pagamento
   const pag=sel._pag;
@@ -475,31 +474,23 @@ function abrirModal(){
 
 function fecharModal(){ document.getElementById("modal").classList.remove("open"); }
 
-function carregarFoto(input){
-  const file=input.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    fotoBase64=e.target.result;
-    document.getElementById("fotoPreview").innerHTML=`<img src="${fotoBase64}">`;
-  };
-  reader.readAsDataURL(file);
-}
-
 async function confirmarConferencia(){
   if(!tipoSel) return;
   document.getElementById("btnConfirmar").disabled=true;
   document.getElementById("msgModal").textContent="Finalizando…";
   const id=String(sel.id);
   try{
-    // salva foto como COMPROVANTE (vira arquivo + entra no painel). Antes ia pro log
-    // como texto base64 gigante em detalhes.foto, sem url — o painel nunca achava.
-    if(fotoBase64){
+    // envia TODAS as fotos/vídeos escolhidos como COMPROVANTE (viram arquivo e entram no
+    // painel), um de cada vez, mostrando o andamento. Se algum falhar, pergunta se conclui mesmo assim.
+    if(MIDIA_CONF && MIDIA_CONF.quantidade()>0){
       try{
-        const rc=await fetch(BACKEND+"/api/comprovante/"+id,{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({dataUrl:fotoBase64,tipo:"foto",evento:"foto_conferencia",funcionarioId:FUNC.id,funcionarioNome:FUNC.nome})});
-        const jc=await rc.json().catch(()=>({}));
-        if(!rc.ok||jc.erro){ if(!confirm("A foto não foi salva ("+(jc.erro||"erro")+"). Concluir a conferência mesmo assim?")) { document.getElementById("msgModal").textContent=""; return; } }
-      }catch(e){ if(!confirm("A foto não foi salva (erro de conexão). Concluir mesmo assim?")){ document.getElementById("msgModal").textContent=""; return; } }
+        await MIDIA_CONF.enviarTodos(id,{funcionarioId:FUNC.id,funcionarioNome:FUNC.nome,eventoFoto:"foto_conferencia",eventoVideo:"video_conferencia"},
+          (feitos,total)=>{ document.getElementById("msgModal").textContent="Enviando arquivos ("+Math.min(feitos+1,total)+" de "+total+")…"; });
+      }catch(e){
+        if(!confirm((e.message||"Falha no envio dos arquivos")+"\n\nConcluir a conferência mesmo assim? (OK = concluir sem esses arquivos · Cancelar = ficar e tentar de novo)")){
+          document.getElementById("msgModal").textContent=""; document.getElementById("btnConfirmar").disabled=false; return;
+        }
+      }
     }
     // confirma
     const r=await fetch(BACKEND+"/api/fluxo/"+id+"/conferido",{method:"POST",

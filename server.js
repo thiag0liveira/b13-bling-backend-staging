@@ -203,7 +203,12 @@ app.use(cors({
     cb(new Error("Origem não permitida por CORS"));
   },
 }));
-app.use(express.json({ limit: "5mb" }));
+// O parser global é de 5mb. O envio de comprovante (foto/vídeo) tem o próprio parser mais
+// folgado na rota, mas como este global vinha ANTES, qualquer arquivo acima de ~3,7 MB
+// (em base64 passa de 5 MB) era barrado com erro 413 e a rota nem chegava a rodar. Por isso
+// o comprovante fica de fora do global.
+const _jsonGlobal=express.json({ limit: "5mb" });
+app.use((req,res,next)=> req.path.startsWith("/api/comprovante/") ? next() : _jsonGlobal(req,res,next));
 
 // Headers de segurança básicos em todas as respostas. Protegem contra:
 // - clickjacking (X-Frame-Options): impede que o site seja embutido em iframe de
@@ -800,7 +805,7 @@ function extPorMime(mime) {
   if (mime.indexOf("webp") >= 0) return "webp";
   return "jpg";
 }
-app.post("/api/comprovante/:id", express.json({ limit: "60mb" }), (req, res) => {
+app.post("/api/comprovante/:id", express.json({ limit: "100mb" }), (req, res) => {
   try {
     const { dataUrl, tipo, funcionarioId, funcionarioNome, evento } = req.body || {};
     if (!dataUrl || typeof dataUrl !== "string") return res.status(400).json({ erro: "dataUrl obrigatório" });
@@ -816,6 +821,61 @@ app.post("/api/comprovante/:id", express.json({ limit: "60mb" }), (req, res) => 
     res.json({ ok: true, url });
   } catch (e) { res.status(500).json({ erro: e.message }); }
 });
+// ENVIO EM BINÁRIO (foto/vídeo): o arquivo vai cru no corpo da requisição e é gravado direto
+// no disco, em fluxo -- sem virar base64 (que incha ~33%) e sem ficar inteiro na memória.
+// É o que as telas novas usam; /api/comprovante/:id (JSON em base64) segue valendo pras antigas.
+const LIM_COMP_FOTO=30*1024*1024, LIM_COMP_VIDEO=200*1024*1024;
+function extComprovante(mime,tipo){
+  const m=String(mime||"").toLowerCase();
+  if(tipo==="video"){
+    if(m.includes("webm")) return "webm"; if(m.includes("quicktime")||m.includes("mov")) return "mov";
+    if(m.includes("3gpp")) return "3gp"; if(m.includes("matroska")) return "mkv"; if(m.includes("ogg")) return "ogv";
+    return "mp4";
+  }
+  if(m.includes("png")) return "png"; if(m.includes("webp")) return "webp"; if(m.includes("gif")) return "gif";
+  if(m.includes("heic")||m.includes("heif")) return "heic";
+  return "jpg";
+}
+app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefixo:"comprovante-arq"}), (req,res)=>{
+  const idPed=String(req.params.id||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);
+  const recusar=(code,erro)=>{ res.set("Connection","close"); res.status(code).json({erro}); req.resume(); };
+  if(!idPed) return recusar(400,"Pedido inválido.");
+  const mime=String(req.headers["content-type"]||"").split(";")[0].trim().toLowerCase();
+  const ehVideo=mime.startsWith("video/"), ehFoto=mime.startsWith("image/");
+  if(!ehVideo && !ehFoto && mime!=="application/octet-stream") return recusar(415,"Só aceito foto ou vídeo.");
+  const tipo=ehVideo?"video":(ehFoto?"foto":(String(req.query.tipo||"")==="video"?"video":"foto"));
+  const limite=tipo==="video"?LIM_COMP_VIDEO:LIM_COMP_FOTO;
+  const cl=Number(req.headers["content-length"]||0);
+  if(cl>limite) return recusar(413,`Arquivo grande demais (${(cl/1048576).toFixed(0)} MB). O limite é ${limite/1048576} MB para ${tipo==="video"?"vídeo":"foto"}; grave um trecho mais curto.`);
+  const evento=/^[a-z_]{3,40}$/.test(String(req.query.evento||""))?String(req.query.evento):(tipo==="video"?"video_conferencia":"foto_conferencia");
+  const funcionarioId=String(req.query.funcionarioId||"").slice(0,40)||null, funcionarioNome=String(req.query.funcionarioNome||"").slice(0,60)||null;
+  const ext=extComprovante(mime,tipo);
+  const nomeArq=`${idPed}_${Date.now()}_${crypto.randomBytes(3).toString("hex")}.${ext}`;
+  const caminho=path.join(COMPROVANTES_DIR,nomeArq);
+  const out=fs.createWriteStream(caminho);
+  let bytes=0, encerrado=false;
+  const abortar=(code,erro)=>{
+    if(encerrado) return; encerrado=true;
+    try{ req.unpipe(out); out.destroy(); }catch(e){}
+    fs.unlink(caminho,()=>{});
+    if(!res.headersSent) recusar(code,erro); else req.resume();
+  };
+  req.on("data",c=>{ bytes+=c.length; if(bytes>limite) abortar(413,`Arquivo grande demais. O limite é ${limite/1048576} MB para ${tipo==="video"?"vídeo":"foto"}.`); });
+  req.on("aborted",()=>abortar(499,"Envio cancelado."));
+  req.on("error",()=>abortar(500,"Falha na conexão durante o envio."));
+  out.on("error",()=>abortar(500,"Não consegui gravar o arquivo no servidor."));
+  out.on("finish",()=>{
+    if(encerrado) return; encerrado=true;
+    if(!bytes){ fs.unlink(caminho,()=>{}); return res.status(400).json({erro:"O arquivo chegou vazio."}); }
+    const url=`/comprovantes/${nomeArq}`;
+    addLog(idPed,evento,funcionarioId,funcionarioNome,{tipo,url,mime:mime||null,bytes});
+    res.json({ok:true,url,tipo,bytes});
+    // vídeo grande pode estourar o teto do volume antes da limpeza das 12h: confere na hora
+    setImmediate(()=>{ try{ if(_statComprovantes().totalBytes>COMPROV_LIMITE_MB*1048576) limparComprovantesAntigos(); }catch(e){} });
+  });
+  req.pipe(out);
+});
+app.get("/upload-midia.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"upload-midia.js")); });
 app.get("/musica-fundo",(req,res)=>{
   const arq=path.join(__dirname,"musica-fundo.mp3");
   if(!fs.existsSync(arq)) return res.status(404).send("Música de fundo ainda não configurada");
@@ -12084,6 +12144,12 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     v.entregas[String(pid)]={status:"processando", travadoEm:Date.now()};
     salvarViagensAtivas(viagens);
     const {itensProblema,pagamentos,assinaturaDataUrl,ocorrencia}=body||{};
+    // anexos da ocorrência (vários, foto e/ou vídeo): só aceita endereço de arquivo que veio do
+    // nosso próprio envio de comprovante. "url" (um só) segue valendo pras telas antigas.
+    const urlComprovanteOk=u=>/^\/comprovantes\/[\w.-]+$/.test(String(u||""));
+    const anexosOc=(Array.isArray(ocorrencia?.anexos)?ocorrencia.anexos:[]).filter(a=>a&&urlComprovanteOk(a.url)).slice(0,12).map(a=>({url:String(a.url),tipo:a.tipo==="video"?"video":"foto"}));
+    if(ocorrencia?.url && urlComprovanteOk(ocorrencia.url) && !anexosOc.some(a=>a.url===ocorrencia.url)) anexosOc.unshift({url:String(ocorrencia.url),tipo:ocorrencia.tipo==="video"?"video":"foto"});
+    const temOcorrencia=!!(ocorrencia&&(String(ocorrencia.descricao||"").trim()||anexosOc.length));
     const jaPago=gerente&&!!(body&&body.jaPago);
     let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
     if(!det){ liberarTravaEntrega(); return {code:404,json:{erro:"pedido não encontrado no Bling"}}; }
@@ -12136,7 +12202,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
       itensProblema:problemas, valorProblema, valorFinal,
       pagamentos:pags.map(p=>({formaNome:p.formaNome||"",valor:Number(p.valor),banco:p.banco||null})),
       assinaturaDataUrl:gerente?null:(assinaturaDataUrl||null),
-      ocorrencia: ocorrencia&&(ocorrencia.url||ocorrencia.descricao) ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:ocorrencia.url||null, tipo:ocorrencia.tipo||null} : null,
+      ocorrencia: temOcorrencia ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:anexosOc[0]?.url||null, tipo:anexosOc[0]?.tipo||null, anexos:anexosOc} : null,
       ...(gerente?{origem:"gerente",registradoPor:por,jaPago}:{}),
       ...(prazo?{prazo:true,diasPrazo,venceEm:agora+diasPrazo*86400000}:{}),
     };
@@ -12166,7 +12232,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     else if(jaPago) partes.push("Já estava pago antes da entrega.");
     else if(pags.length) partes.push("Recebido na entrega: "+pags.map(p=>`${p.formaNome||"forma"}${p.banco?` (${p.banco})`:""} ${brlN(p.valor)}`).join(" · ")+".");
     else partes.push("Nada a receber nesta entrega.");
-    if(ocorrencia&&(ocorrencia.descricao||ocorrencia.url)) partes.push(`Ocorrência: ${String(ocorrencia.descricao||"(com anexo)").slice(0,200)}.`);
+    if(temOcorrencia) partes.push(`Ocorrência: ${String(ocorrencia.descricao||"(com anexo)").slice(0,200)}${anexosOc.length?` (${anexosOc.length} anexo${anexosOc.length>1?"s":""})`:""}.`);
     partes.push(prazo?"Recebimento registrado no sistema B13; situação alterada para PRAZO.":"Recebimento registrado no sistema B13; situação do pedido mantida.");
     const nota=partes.join(" ");
     (async()=>{
@@ -12190,7 +12256,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
         }
       }
     })();
-    addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,quemNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia:!!(ocorrencia&&(ocorrencia.url||ocorrencia.descricao)),prazo,...(gerente?{jaPago}:{})});
+    addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,quemNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia,prazo,...(gerente?{jaPago}:{})});
     return {code:200,json:{ok:true, valorProblema, valorFinal, prazo, venceEm:prazo?venceTxt:null, situacaoNoBling:prazo?"PRAZO":"mantida"}};
   }catch(e){ liberarTravaEntrega(); return {code:500,json:{erro:e.message}}; }
 }

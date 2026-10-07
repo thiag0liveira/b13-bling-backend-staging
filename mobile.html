@@ -69,6 +69,7 @@
 </style>
 </head>
 <body>
+<script src="/upload-midia.js"></script>
 <script>
   // se algum script travar (navegador antigo), mostra o erro em vez de tela parada
   window.onerror=function(msg){
@@ -102,13 +103,8 @@
     <h3 id="modalTituloMob">✅ Pedido Conferido</h3>
     <div id="pagStatusMob" class="mt" style="margin-bottom:12px;padding:8px 12px;border-radius:8px;font-size:12px"></div>
     <div id="tipoFixoMob" style="text-align:center;padding:14px;border-radius:10px;border:2px solid #FF0082;background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
-    <div class="row">
-      <div class="col"><button class="btn btn-out" style="margin-top:0" onclick="document.getElementById('fotoInputMob').click()">📷 Foto</button></div>
-      <div class="col"><button class="btn btn-out" style="margin-top:0" onclick="document.getElementById('videoInputMob').click()">🎥 Vídeo</button></div>
-    </div>
-    <input type="file" id="fotoInputMob" accept="image/*" capture="environment" style="display:none" onchange="carregarFotoMob(this)">
-    <input type="file" id="videoInputMob" accept="video/*" capture="environment" style="display:none" onchange="carregarVideoMob(this)">
-    <div id="fotoPreviewMob" class="muted center mt" style="margin-bottom:12px">Opcional: registre uma foto ou um vídeo curto do pedido.</div>
+    <div class="muted center" style="margin-bottom:8px;font-size:12px">Opcional: registre fotos e vídeos do pedido (pode mandar vários).</div>
+    <div id="midiaMob" style="margin-bottom:12px"></div>
     <div id="msgModalMob" class="mt center" style="margin-bottom:10px"></div>
     <div class="row">
       <div class="col"><button class="btn btn-grn" id="btnConfirmarMob" onclick="confirmarConferencia()">✅ Confirmar</button></div>
@@ -828,12 +824,11 @@ function toggleItem(ix) {
 }
 
 /* --- Modal de finalização (igual /conferencia): status pagamento + foto/vídeo opcional --- */
-var comprovanteMob = null; // { dataUrl, tipo: "foto"|"video" }
-var LIMITE_COMPROVANTE = 15 * 1024 * 1024; // ~15MB de arquivo bruto (fica ~20MB em base64, dentro do limite do endpoint)
+var MIDIA_MOB = null; // componente de envio de várias fotos/vídeos (upload-midia.js)
 function abrirModalMob() {
   if (!PEDIDO) return;
-  comprovanteMob = null;
-  el("fotoPreviewMob").innerHTML = "Opcional: registre uma foto ou um vídeo curto do pedido.";
+  if (!MIDIA_MOB && window.B13Midia) MIDIA_MOB = B13Midia.criar({ container: "midiaMob", base: BACKEND, comprimirVideo: comprimirVideo });
+  else if (MIDIA_MOB) MIDIA_MOB.limpar();
   el("msgModalMob").textContent = "";
   var tituloEl = el("modalTituloMob");
   if (tituloEl) tituloEl.textContent = PEDIDO._tipoEntrega === "entrega" ? "✅ Liberar para entrega" : "✅ Pedido Conferido";
@@ -866,64 +861,6 @@ function abrirModalMob() {
 }
 function fecharModalMob() {
   el("modalConf").className = "modal";
-}
-function carregarFotoMob(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  if (file.size > LIMITE_COMPROVANTE) {
-    el("fotoPreviewMob").innerHTML = '<span class="err">Foto muito grande. Tente novamente.</span>';
-    return;
-  }
-  var reader = new FileReader();
-  reader.onload = function (e) {
-    comprovanteMob = {
-      dataUrl: e.target.result,
-      tipo: "foto"
-    };
-    el("fotoPreviewMob").innerHTML = '<img src="' + comprovanteMob.dataUrl + '" style="max-width:100%;max-height:180px;border-radius:8px">';
-  };
-  reader.readAsDataURL(file);
-}
-function carregarVideoMob(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  el("fotoPreviewMob").innerHTML = '<span class="spinner"></span> Processando vídeo (baixa resolução)…';
-  var _respondeu = false;
-  var _timeout = setTimeout(function () {
-    if (_respondeu) return;
-    _respondeu = true;
-    // compressão travou/demorou demais: cai pro original se couber
-    if (file.size > LIMITE_COMPROVANTE) {
-      el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande. Grave um trecho mais curto (uns 10s).</span>';
-    } else { lerVideoParaEnvio(file); }
-  }, 25000);
-  comprimirVideo(file, function (blob, err) {
-    if (_respondeu) return;
-    _respondeu = true;
-    clearTimeout(_timeout);
-    if (err || !blob) {
-      // não deu pra comprimir: usa o original SE couber no limite
-      if (file.size > LIMITE_COMPROVANTE) {
-        el("fotoPreviewMob").innerHTML = '<span class="err">Vídeo muito grande e este aparelho não comprime. Grave um trecho mais curto (uns 10s).</span>';
-        return;
-      }
-      lerVideoParaEnvio(file);
-      return;
-    }
-    lerVideoParaEnvio(blob);
-  });
-}
-function lerVideoParaEnvio(blob) {
-  var reader = new FileReader();
-  reader.onload = function (e) {
-    comprovanteMob = { dataUrl: e.target.result, tipo: "video" };
-    var kb = Math.round((comprovanteMob.dataUrl.length * 0.75) / 1024);
-    el("fotoPreviewMob").innerHTML = '<video src="' + comprovanteMob.dataUrl + '" controls style="max-width:100%;max-height:200px;border-radius:8px"></video><div class="muted" style="font-size:11px;margin-top:4px">~' + kb + ' KB</div>';
-  };
-  reader.onerror = function () {
-    el("fotoPreviewMob").innerHTML = '<span class="err">Não consegui preparar o vídeo.</span>';
-  };
-  reader.readAsDataURL(blob);
 }
 // Recomprime o video pra 480px de largura, ~800kbps, usando canvas+MediaRecorder.
 // Roda no navegador; se nao houver suporte, chama o callback com erro pra usar o original.
@@ -987,23 +924,15 @@ function confirmarConferencia() {
   if (btn) btn.disabled = true;
   msgEl.innerHTML = '<span class="spinner"></span> Finalizando…';
   try {
-    // envia o comprovante e CONFIRMA que salvou — antes o erro era engolido
-    // (.catch vazio), entao um video que falhasse no envio sumia sem ninguem saber
-    var passo = comprovanteMob ? fetch(BACKEND + "/api/comprovante/" + id, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dataUrl: comprovanteMob.dataUrl,
-        tipo: comprovanteMob.tipo,
-        evento: comprovanteMob.tipo === "video" ? "video_conferencia" : "foto_conferencia",
-        funcionarioId: FUNC.id,
-        funcionarioNome: FUNC.nome
-      })
-    }).then(function (r) {
-      return r.json().then(function (jc) {
-        if (!r.ok || jc.erro) throw new Error(jc.erro || "falha ao salvar o comprovante");
-        return jc;
-      });
+    // envia TODAS as fotos/vídeos escolhidos (um de cada vez) e CONFIRMA que salvaram — se
+    // algum falhar, para aqui com o motivo e deixa tentar de novo só os que faltam
+    var passo = (MIDIA_MOB && MIDIA_MOB.quantidade() > 0) ? MIDIA_MOB.enviarTodos(id, {
+      funcionarioId: FUNC.id,
+      funcionarioNome: FUNC.nome,
+      eventoFoto: "foto_conferencia",
+      eventoVideo: "video_conferencia"
+    }, function (feitos, total) {
+      msgEl.innerHTML = '<span class="spinner"></span> Enviando arquivos (' + Math.min(feitos + 1, total) + ' de ' + total + ')…';
     }) : Promise.resolve();
   } catch (eSync) {
     // qualquer erro síncrono aqui (ex.: API não suportada nesse aparelho) mostra
@@ -1042,8 +971,10 @@ function confirmarConferencia() {
       msgEl.innerHTML = '<span class="err">' + esc(res.j.erro || "Erro ao confirmar") + '</span>';
       if (btn) btn.disabled = false;
     }
-  }).catch(function () {
-    msgEl.innerHTML = '<span class="err">Erro de conexão</span>';
+  }).catch(function (e) {
+    var m = e && e.message ? e.message : "";
+    if (!m || /failed to fetch|networkerror|load failed/i.test(m)) m = "Erro de conexão";
+    msgEl.innerHTML = '<span class="err">' + esc(m) + '</span>' + ((MIDIA_MOB && MIDIA_MOB.quantidade() > 0) ? '<div class="muted" style="font-size:11px;margin-top:4px">Toque em Confirmar para tentar de novo só os que faltam, ou tire da lista o que não precisa.</div>' : '');
     if (btn) btn.disabled = false;
   });
 }
