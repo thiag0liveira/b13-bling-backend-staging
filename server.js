@@ -3155,7 +3155,13 @@ app.get("/api/buscar",async(req,res)=>{
 function lerTabela(){ try{ return JSON.parse(fs.readFileSync(TABELA_FILE,"utf8")); }catch{ return null; } }
 app.post("/api/tabela",(req,res)=>{
   try{ const {model,meta}=req.body||{}; if(!Array.isArray(model)) return res.status(400).json({erro:"Envie { model, meta }"});
-    const dados={model,meta:meta||{},publicadoEm:Date.now()};
+    // a configuração de entrega é DO SERVIDOR (arquivo próprio): o que vier da tela da tabela não a substitui.
+    // Só se o servidor ainda não tiver uma, a que veio vira a primeira.
+    const metaFinal={...(meta||{})};
+    const armazenada=lerEntregaArmazenada();
+    if(armazenada) metaFinal.entrega=armazenada.config;
+    else if(metaFinal.entrega){ try{ salvarJSON(ENTREGA_CONFIG_FILE,{config:normalizarEntrega(metaFinal.entrega),atualizadoEm:Date.now(),por:"publicação da tabela",historico:[]}); }catch(e){} }
+    const dados={model,meta:metaFinal,publicadoEm:Date.now()};
     fs.writeFileSync(TABELA_FILE, JSON.stringify(dados));
     res.json({ok:true, produtos: model.reduce((s,c)=>s+((c.itens&&c.itens.length)||0),0)});
   }catch(e){ res.status(500).json({erro:e.message}); }
@@ -3189,7 +3195,12 @@ app.get("/api/tabela/imagem-info",(req,res)=>{
   }catch(e){ res.json({existe:false}); }
 });
 
-app.get("/api/tabela",(req,res)=> res.json(lerTabela()||{model:[],meta:{}}));
+app.get("/api/tabela",(req,res)=>{
+  const t=lerTabela()||{model:[],meta:{}};
+  const cfg=configEntrega();
+  // "faixaExtra" segue sendo enviada (a primeira zona) pra telas antigas que ainda a leem
+  res.json({...t, meta:{...(t.meta||{}), entrega:{...cfg, faixaExtra:cfg.zonas[0]?{kmMax:cfg.zonas[0].kmMax,faixas:cfg.zonas[0].faixas}:null}}});
+});
 
 // estoque atual de vários produtos de uma vez (usa o endpoint de saldos do Bling)
 app.post("/api/tabela/estoques",async(req,res)=>{
@@ -9140,63 +9151,213 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
 });
 
 // ------------------------- Frete / Entrega (Google Maps) -------------------------
-function configEntrega(){
-  const t=lerTabela(); const c=(t&&t.meta&&t.meta.entrega)||{};
-  return {
-    origem: c.origem || "AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG",
-    maxKm: c.maxKm ?? 23,
-    minEntrega: c.minEntrega ?? 1000,
-    faixas: (c.faixas && c.faixas.length ? c.faixas : [
-      {min:1000, porKm:3.60},{min:2300, porKm:2.80},{min:2600, porKm:2.50},{min:3000, porKm:0}
-    ]),
-    // faixa adicional: pra pedidos ALÉM do maxKm normal, até um segundo limite (ex.:
-    // acima de 23km e até 28km), com sua PRÓPRIA tabela de faixas por valor — só
-    // válida se tiver um kmMax maior que o maxKm normal e ao menos 1 faixa
-    faixaExtra: (c.faixaExtra && Number(c.faixaExtra.kmMax)>Number(c.maxKm??23) && (c.faixaExtra.faixas||[]).length)
-      ? { kmMax:Number(c.faixaExtra.kmMax), faixas:c.faixaExtra.faixas }
-      : null,
-  };
+// CONFIGURAÇÃO DA ENTREGA (raio em km, mínimo, faixas por valor e zonas mais distantes).
+// ANTES: morava dentro da TABELA publicada. Quem clicava em "Publicar" mandava a tabela inteira do próprio
+// navegador e SUBSTITUÍA o que o servidor tinha; se esse navegador não tinha a configuração (outro computador,
+// cache limpo), o servidor caía em silêncio nos valores padrão (23 km, R$ 1.000). AGORA é uma configuração do
+// servidor, em arquivo próprio, alterada só por administrador; publicar a tabela não mexe nela. Guarda as
+// últimas versões pra voltar atrás.
+const ENTREGA_CONFIG_FILE=`${DATA_DIR}/entrega_config.json`;
+const ENTREGA_PADRAO={
+  origem:"AV. BRIGADEIRO EDUARDO GOMES, 1668, GLÓRIA, BELO HORIZONTE - MG", maxKm:23, minEntrega:1000,
+  faixas:[{min:1000,porKm:3.60},{min:2300,porKm:2.80},{min:2600,porKm:2.50},{min:3000,porKm:0}], zonas:[],
+};
+function lerEntregaArmazenada(){ const j=lerJSON(ENTREGA_CONFIG_FILE,null); return (j&&j.config)?j:null; }
+// aceita o formato antigo (uma "faixaExtra") e o novo (lista de "zonas"); descarta zona inválida
+function normalizarEntrega(c){
+  c=c||{}; const num=(v,pad)=>{ const n=Number(v); return Number.isFinite(n)?n:pad; };
+  const maxKm=num(c.maxKm,23)>0?num(c.maxKm,23):23;
+  const faixasOk=(fs)=>(Array.isArray(fs)?fs:[]).map(f=>({min:Math.max(0,num(f&&f.min,0)),porKm:Math.max(0,num(f&&f.porKm,0))})).sort((a,b)=>a.min-b.min);
+  let zonas=Array.isArray(c.zonas)?c.zonas:[];
+  if(!zonas.length && c.faixaExtra && Number(c.faixaExtra.kmMax)>maxKm) zonas=[c.faixaExtra];
+  let anterior=maxKm; const zs=[];
+  zonas.map(z=>({kmMax:num(z&&z.kmMax,0),faixas:faixasOk(z&&z.faixas)})).filter(z=>z.kmMax>0&&z.faixas.length).sort((a,b)=>a.kmMax-b.kmMax)
+    .forEach(z=>{ if(z.kmMax>anterior){ zs.push(z); anterior=z.kmMax; } });
+  const faixas=faixasOk(c.faixas);
+  return { origem:String(c.origem||"").trim()||ENTREGA_PADRAO.origem, maxKm, minEntrega:num(c.minEntrega,ENTREGA_PADRAO.minEntrega),
+           faixas:faixas.length?faixas:ENTREGA_PADRAO.faixas, zonas:zs };
 }
+function configEntrega(){
+  const arm=lerEntregaArmazenada();
+  if(arm) return normalizarEntrega(arm.config);
+  // primeira vez: o que estava dentro da tabela publicada vira configuração do servidor (e passa a não depender de quem publica)
+  const t=lerTabela(); const doMeta=t&&t.meta&&t.meta.entrega;
+  const cfg=normalizarEntrega(doMeta||{});
+  if(doMeta){ try{ salvarJSON(ENTREGA_CONFIG_FILE,{config:cfg,atualizadoEm:Date.now(),por:"migrado da tabela publicada",historico:[]}); }catch(e){} }
+  return cfg;
+}
+// valida o que veio da tela de configuração (recusa com motivo claro em vez de ajustar em silêncio)
+function validarEntrega(c){
+  const n=(v)=>(v===""||v==null)?NaN:Number(v);
+  const origem=String((c&&c.origem)||"").trim(); if(!origem) return {erro:"Informe o endereço da loja (origem da rota)."};
+  if(origem.length>200) return {erro:"O endereço da loja está longo demais."};
+  const maxKm=n(c.maxKm); if(!(maxKm>=1&&maxKm<=500)) return {erro:"A distância máxima precisa estar entre 1 e 500 km."};
+  const minEntrega=n(c.minEntrega); if(!(minEntrega>=0&&minEntrega<=1000000)) return {erro:"O valor mínimo para entrega é inválido."};
+  const checaFaixas=(fs,rotulo)=>{
+    if(!Array.isArray(fs)||!fs.length) return `${rotulo}: coloque pelo menos uma faixa.`;
+    for(const f of fs){ const mi=n(f&&f.min), pk=n(f&&f.porKm);
+      if(!(mi>=0)) return `${rotulo}: o valor "acima de R$" de uma faixa é inválido.`;
+      if(!(pk>=0&&pk<=100)) return `${rotulo}: o valor por km de uma faixa é inválido (use 0 para frete grátis).`; }
+    return null;
+  };
+  const eF=checaFaixas(c.faixas,"Faixas por valor"); if(eF) return {erro:eF};
+  const zonas=Array.isArray(c.zonas)?c.zonas:[]; if(zonas.length>10) return {erro:"No máximo 10 zonas mais distantes."};
+  let anterior=maxKm;
+  for(let i=0;i<zonas.length;i++){
+    const kmMax=n(zonas[i]&&zonas[i].kmMax);
+    if(!(kmMax>anterior)) return {erro:`Zona ${i+1}: o "até quantos km" (${zonas[i]&&zonas[i].kmMax}) precisa ser MAIOR que ${anterior} (${i?"a zona anterior":"a distância máxima"}).`};
+    if(kmMax>1000) return {erro:`Zona ${i+1}: distância grande demais.`};
+    const eZ=checaFaixas(zonas[i].faixas,`Zona ${i+1}`); if(eZ) return {erro:eZ};
+    anterior=kmMax;
+  }
+  return {cfg:normalizarEntrega({origem,maxKm,minEntrega,faixas:c.faixas,zonas})};
+}
+function salvarEntregaComHistorico(cfg,por){
+  const arm=lerEntregaArmazenada(); const historico=(arm&&arm.historico)||[];
+  if(arm) historico.unshift({em:arm.atualizadoEm||Date.now(),por:arm.por||"",config:arm.config});
+  salvarJSON(ENTREGA_CONFIG_FILE,{config:cfg,atualizadoEm:Date.now(),por:por||"administrador",historico:historico.slice(0,30)});
+}
+app.get("/api/entrega/config",(req,res)=>{
+  const arm=lerEntregaArmazenada();
+  res.json({config:configEntrega(), atualizadoEm:arm?arm.atualizadoEm:null, por:arm?arm.por:null, fonte:arm?"servidor":"padrao"});
+});
+app.post("/api/entrega/config",requireAdmin,(req,res)=>{
+  try{
+    const v=validarEntrega(req.body||{}); if(v.erro) return res.status(400).json({erro:v.erro});
+    salvarEntregaComHistorico(v.cfg, String(req.sessao?.nome||req.sessao?.login||"administrador").slice(0,60));
+    res.json({ok:true,config:v.cfg});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/entrega/historico",requireAdmin,(req,res)=>{
+  const arm=lerEntregaArmazenada(); res.json({data:((arm&&arm.historico)||[]).map((h,i)=>({indice:i,em:h.em,por:h.por,config:h.config}))});
+});
+app.post("/api/entrega/restaurar",requireAdmin,(req,res)=>{
+  try{
+    const arm=lerEntregaArmazenada(); const h=arm&&arm.historico&&arm.historico[Number(req.body?.indice)];
+    if(!h) return res.status(404).json({erro:"Versão não encontrada."});
+    const v=validarEntrega(h.config); if(v.erro) return res.status(400).json({erro:"Essa versão antiga não passa mais na validação: "+v.erro});
+    salvarEntregaComHistorico(v.cfg, String(req.sessao?.nome||"administrador").slice(0,60)+" (restaurou versão anterior)");
+    res.json({ok:true,config:v.cfg});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 function porKmPara(valor, faixas){
   let escolhido=null;
   faixas.slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(valor > Number(f.min)) escolhido=f; });
   return escolhido;
 }
-app.get("/api/frete", rateLimit({janelaMs:60000,max:20,prefixo:"frete"}), async (req,res)=>{
+// O limite é por KM INTEIRO: até 23,999 km ainda conta como "dentro de 23 km"; só a partir de 24,000 km passa
+// pra zona seguinte. Função pura (só números), pra dar sempre o mesmo resultado pro mesmo km e valor.
+function calcularFretePorKm(km, valor, cfg){
+  const dentroDe=(k,l)=>Math.floor(k)<=l;
+  const zonas=cfg.zonas||[];
+  const limiteFinal=zonas.length?zonas[zonas.length-1].kmMax:cfg.maxKm;
+  const kmTxt=Number(km.toFixed(1));
+  if(!dentroDe(km,limiteFinal)) return {entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:kmTxt, limiteKm:limiteFinal};
+  let zona=0, faixas=cfg.faixas;
+  if(!dentroDe(km,cfg.maxKm)){ zona=zonas.findIndex(z=>dentroDe(km,z.kmMax))+1; faixas=zonas[zona-1].faixas; }
+  const faixa=porKmPara(valor,faixas);
+  // nas zonas mais longe, valor abaixo de TODAS as faixas NÃO vira frete grátis: exige o mínimo das próprias faixas
+  if(zona>0 && !faixa){
+    const minZ=Math.min(...faixas.map(f=>Number(f.min)));
+    return {entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — nessa distância, entrega disponível a partir de ${brlN(minZ)}.`, km:kmTxt, minExtra:minZ, zona};
+  }
+  const porKm=faixa?Number(faixa.porKm):0;
+  return {entregaDisponivel:true, km:kmTxt, porKm, taxa:Math.round(porKm*km*100)/100, gratis:porKm===0, faixaExtra:zona>0, zona};
+}
+
+// DISTÂNCIA ESTÁVEL: guarda o km de cada endereço (e do endereço "oficial" que o Google devolve), então o mesmo
+// lugar dá sempre o mesmo km e o mesmo frete, mesmo que o Google escolha outra rota num dia, e a consulta não
+// repete (menos custo e menos lentidão). Renova a cada 45 dias; se o Google cair, usa o último valor conhecido.
+const FRETE_CACHE_FILE=`${DATA_DIR}/frete_cache.json`;
+const FRETE_CACHE_DIAS=45;
+let _freteCache=lerJSON(FRETE_CACHE_FILE,{itens:{},canon:{}}); if(!_freteCache.itens) _freteCache.itens={}; if(!_freteCache.canon) _freteCache.canon={};
+let _freteCacheTimer=null;
+function salvarFreteCache(){
+  if(_freteCacheTimer) return;
+  _freteCacheTimer=setTimeout(()=>{ _freteCacheTimer=null;
+    try{
+      for(const grupo of ["itens","canon"]){ const ks=Object.keys(_freteCache[grupo]);
+        if(ks.length>6000) ks.sort((a,b)=>(_freteCache[grupo][a].em||0)-(_freteCache[grupo][b].em||0)).slice(0,ks.length-5000).forEach(k=>delete _freteCache[grupo][k]); }
+      salvarJSON(FRETE_CACHE_FILE,_freteCache);
+    }catch(e){}
+  },1500);
+}
+function normEndereco(t){
+  return String(t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/\bn[ºo°.]?\s*(?=\d)/g," ").replace(/[^a-z0-9 ]+/g," ").replace(/\b(brasil|brazil)\b/g," ")
+    .replace(/\bav\b/g,"avenida").replace(/\br\b/g,"rua").replace(/\brod\b/g,"rodovia").replace(/\bal\b/g,"alameda").replace(/\btrav\b/g,"travessa")
+    .replace(/\s+/g," ").trim();
+}
+const _chaveOrigem=(cfg)=>crypto.createHash("sha1").update(normEndereco(cfg.origem)).digest("hex").slice(0,8);
+function freteCacheGet(cfg,endereco,aceitaAntigo){
+  const e=_freteCache.itens[_chaveOrigem(cfg)+"|"+normEndereco(endereco)]; if(!e) return null;
+  const idadeDias=(Date.now()-(e.em||0))/86400000;
+  if(idadeDias<FRETE_CACHE_DIAS) return {km:e.km,fonte:"cache"};
+  return aceitaAntigo?{km:e.km,fonte:"cache-antigo"}:null;
+}
+async function distanciaGoogle(origem,destino){
+  let ultimo={tipo:"servico",detalhe:"sem resposta"};
+  const url=`https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&mode=driving&origins=${encodeURIComponent(origem)}&destinations=${encodeURIComponent(destino)}&key=${GOOGLE_MAPS_KEY}`;
+  for(let t=0;t<2;t++){
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),6000);
+    try{
+      const r=await fetch(url,{signal:ctrl.signal}); clearTimeout(to);
+      if(r.status>=500){ ultimo={tipo:"servico",detalhe:"HTTP "+r.status}; await sleep(500); continue; }
+      const j=await r.json();
+      if(j.status==="OVER_QUERY_LIMIT"||j.status==="UNKNOWN_ERROR"||j.status==="MAX_ELEMENTS_EXCEEDED"){ ultimo={tipo:"servico",detalhe:j.status}; await sleep(700); continue; }
+      if(j.status==="REQUEST_DENIED"||j.status==="INVALID_REQUEST") return {tipo:"config",detalhe:`${j.status}${j.error_message?": "+j.error_message:""}`};
+      const el=j&&j.rows&&j.rows[0]&&j.rows[0].elements&&j.rows[0].elements[0];
+      if(!el||el.status!=="OK") return {tipo:"endereco",detalhe:(el&&el.status)||j.status};
+      return {ok:true, km:Math.round(el.distance.value/10)/100, canon:(j.destination_addresses||[])[0]||""};
+    }catch(e){
+      clearTimeout(to);
+      // demora (6s sem resposta) não se resolve repetindo: devolve já, em vez de o cliente esperar o dobro no totem.
+      // Erro rápido (rede, 5xx, limite do Google) tenta mais uma vez.
+      if(e.name==="AbortError") return {tipo:"servico",detalhe:"tempo esgotado"};
+      ultimo={tipo:"servico",detalhe:String(e.message||e).slice(0,80)}; await sleep(500);
+    }
+  }
+  return ultimo;
+}
+// limite de consultas ao GOOGLE (só as que não estavam guardadas): 40 por minuto por IP. Antes eram 20 por minuto
+// somando TUDO, e todos os tablets da loja saem pelo mesmo IP, então um tablet atrapalhava o outro.
+const _rlFreteGoogle=rateLimit({janelaMs:60000,max:40,prefixo:"frete-google"});
+function passouLimiteFrete(req,res){ return new Promise(ok=>{ let passou=false; _rlFreteGoogle(req,res,()=>{ passou=true; ok(true); }); if(!passou) ok(false); }); }
+app.get("/api/frete", rateLimit({janelaMs:60000,max:240,prefixo:"frete"}), async (req,res)=>{
   try{
     const endereco=(req.query.endereco||"").toString().slice(0,200).trim();
     const valor=Number(req.query.valor||0);
     const cfg=configEntrega();
     if(!endereco) return res.status(400).json({erro:"endereco obrigatório"});
     if(valor < cfg.minEntrega) return res.json({entregaDisponivel:false, motivo:`Entrega disponível a partir de ${brlN(cfg.minEntrega)}. Abaixo disso, somente retirada.`, minEntrega:cfg.minEntrega});
-    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"GOOGLE_MAPS_KEY não configurada no servidor."});
-    const url=`https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&mode=driving&origins=${encodeURIComponent(cfg.origem)}&destinations=${encodeURIComponent(endereco)}&key=${GOOGLE_MAPS_KEY}`;
-    const r=await fetch(url); const j=await r.json();
-    const el=j?.rows?.[0]?.elements?.[0];
-    if(!el || el.status!=="OK") return res.json({entregaDisponivel:false, motivo:"Não consegui calcular a distância desse endereço. Confira e tente novamente.", detalhe:el?.status||j.status});
-    const km=el.distance.value/1000;
-    // dentro do limite normal → tabela normal; além do limite normal, mas dentro da
-    // faixa adicional (se configurada) → usa a tabela DELA; além de tudo → sem entrega.
-    // O limite é por KM INTEIRO: até 23,999km ainda conta como "dentro de 23km" —
-    // só a partir de 24,000km (o próximo km fechado) é que passa pra faixa seguinte.
-    // Sem isso, 23,1km já virava faixa extra (ou "fora do limite"), quando deveria
-    // continuar valendo a regra de até 23km.
-    const dentroDe = (kmValor, limite) => Math.floor(kmValor) <= limite;
-    const limiteFinal = cfg.faixaExtra ? cfg.faixaExtra.kmMax : cfg.maxKm;
-    if(!dentroDe(km, limiteFinal)) return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:Number(km.toFixed(1))});
-    const usaFaixaExtra = !dentroDe(km, cfg.maxKm) && cfg.faixaExtra;
-    const faixa=porKmPara(valor, usaFaixaExtra ? cfg.faixaExtra.faixas : cfg.faixas);
-    // na faixa extra, se o valor do pedido não bate NENHUMA faixa configurada (ex.:
-    // abaixo de R$3000, quando as faixas dessa distância só começam ali), NÃO cai
-    // pra frete grátis por padrão — nessa distância mais longe, exige o mínimo
-    // configurado nas próprias faixas extras.
-    if(usaFaixaExtra && !faixa){
-      const minExtra=Math.min(...cfg.faixaExtra.faixas.map(f=>Number(f.min)));
-      return res.json({entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — nessa distância, entrega disponível a partir de ${brlN(minExtra)}.`, km:Number(km.toFixed(1)), minExtra});
+    let km=null, fonte="google";
+    const guardado=freteCacheGet(cfg,endereco,false);
+    if(guardado){ km=guardado.km; fonte=guardado.fonte; }
+    else {
+      if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"GOOGLE_MAPS_KEY não configurada no servidor."});
+      if(!(await passouLimiteFrete(req,res))) return; // o limitador já respondeu 429
+      const g=await distanciaGoogle(cfg.origem,endereco);
+      if(g.ok){
+        const ok=_chaveOrigem(cfg); const agora=Date.now();
+        // o mesmo lugar escrito de jeitos diferentes cai no mesmo endereço "oficial" do Google e herda o km já guardado
+        const ck=g.canon?ok+"|"+normEndereco(g.canon):null; const ex=ck&&_freteCache.canon[ck];
+        km=(ex&&(agora-(ex.em||0))/86400000<FRETE_CACHE_DIAS)?ex.km:g.km;
+        if(ck&&!(ex&&km===ex.km)) _freteCache.canon[ck]={km,em:agora};
+        _freteCache.itens[ok+"|"+normEndereco(endereco)]={km,em:agora,canon:ck};
+        salvarFreteCache(); fonte="google";
+      } else if(g.tipo==="endereco"){
+        // o problema é o ENDEREÇO (não achado / sem rota): aí sim pede pra conferir. Não guarda nada.
+        return res.json({entregaDisponivel:false, motivo:"Não consegui calcular a distância desse endereço. Confira e tente novamente.", detalhe:g.detalhe});
+      } else {
+        // o problema é o SERVIÇO de mapas (fora do ar, chave, limite): usa o último valor conhecido desse endereço, se houver
+        console.error("frete: Google indisponível:",g.tipo,g.detalhe);
+        const antigo=freteCacheGet(cfg,endereco,true);
+        if(antigo){ km=antigo.km; fonte=antigo.fonte; }
+        else return res.json({entregaDisponivel:false, servicoIndisponivel:true, tentarNovamente:true, motivo:"Não consegui consultar o mapa agora. Tente novamente em instantes.", detalhe:g.detalhe});
+      }
     }
-    const porKm=faixa?Number(faixa.porKm):0;
-    const taxa=Math.round(porKm*km*100)/100;
-    res.json({entregaDisponivel:true, km:Number(km.toFixed(1)), porKm, taxa, gratis:porKm===0, faixaExtra:!!usaFaixaExtra});
+    res.json({...calcularFretePorKm(km,valor,cfg), fonte});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

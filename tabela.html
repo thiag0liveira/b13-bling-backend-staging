@@ -145,7 +145,7 @@
         <div style="font-size:18px;font-weight:800">🚚 Configuração de Entrega</div>
         <button onclick="fecharEntrega()" style="background:none;border:none;color:#a29ed0;font-size:20px;cursor:pointer">✕</button>
       </div>
-      <div style="font-size:12px;color:#a29ed0;margin-bottom:12px">Depois de editar, clique em <b>Salvar</b> e depois em <b>📤 Publicar para o sistema</b> para o totem usar os novos valores.</div>
+      <div style="font-size:12px;color:#a29ed0;margin-bottom:12px">Ao clicar em <b>Salvar configuração</b>, os novos valores já valem no totem, no site e nas propostas. <b>Não precisa publicar a tabela</b>, e publicar a tabela não altera esta configuração.</div>
       <label style="font-size:12px;color:#cfc9f5">Endereço da loja (origem da rota)</label>
       <input id="e_origem" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px;margin:4px 0 10px">
       <div style="display:flex;gap:10px">
@@ -160,12 +160,18 @@
       <button onclick="addFaixa()" style="background:transparent;border:1px dashed #7d78b0;color:#cfc9f5;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;margin-top:6px">+ Faixa</button>
 
       <div style="border-top:1px solid #3a357f;margin:14px 0 10px;padding-top:10px">
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px">Faixa adicional por distância (opcional)</div>
-        <div style="font-size:11px;color:#a29ed0;margin-bottom:6px">Pra pedido ALÉM da distância máxima normal, até um segundo limite — com sua própria tabela de preço por km. Deixe "até quantos km" vazio ou igual/menor que a distância máxima pra não usar essa faixa.</div>
-        <label style="font-size:12px;color:#cfc9f5">Distância máxima nessa faixa (km) — ex.: acima de 23 e até 28</label>
-        <input id="e_maxkm_extra" type="number" placeholder="Ex: 28" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px;margin:4px 0 10px">
-        <div id="e_faixas_extra"></div>
-        <button onclick="addFaixaExtra()" style="background:transparent;border:1px dashed #7d78b0;color:#cfc9f5;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;margin-top:6px">+ Faixa (extra)</button>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">📍 Zonas mais distantes (opcional)</div>
+        <div style="font-size:11px;color:#a29ed0;margin-bottom:8px">Para entregar mais longe que a distância máxima acima. Cada zona vai "até X km" e tem a sua própria tabela de preço por km: a primeira começa depois da distância máxima, a segunda depois da primeira, e assim por diante. Acima da última zona não há entrega.</div>
+        <div id="e_zonas"></div>
+        <button onclick="addZona()" style="background:transparent;border:1px dashed #7d78b0;color:#cfc9f5;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:6px">+ Adicionar zona</button>
+      </div>
+      <div style="border-top:1px solid #3a357f;margin:14px 0 6px;padding-top:10px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔎 Testar um endereço</div>
+        <div style="font-size:11px;color:#a29ed0;margin-bottom:6px">Usa a configuração que está SALVA no servidor (salve antes de testar).</div>
+        <input id="e_teste_end" placeholder="Endereço, número, bairro, cidade" style="width:100%;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px;margin-bottom:6px">
+        <div style="display:flex;gap:8px"><input id="e_teste_valor" type="number" placeholder="Valor do pedido (R$)" value="3000" style="flex:1;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:6px;padding:8px;font-size:13px">
+        <button onclick="testarEntrega()" class="btn btn-out" style="flex:0 0 auto">Calcular</button></div>
+        <div id="e_teste_res" style="font-size:12px;margin-top:8px;color:#cfc9f5"></div>
       </div>
       <div style="display:flex;gap:10px;margin-top:16px">
         <button onclick="fecharEntrega()" class="btn btn-out" style="flex:1">Cancelar</button>
@@ -681,18 +687,25 @@ function setBackend(v) {
   save();
 }
 let _faixasTmp = [];
-let _faixasExtraTmp = [];
-function abrirEntrega() {
-  var _e$maxKm, _e$minEntrega;
-  const e = META.entrega || {};
+let _zonasTmp = [];
+function _tokenAdmin() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+function _urlApi(p) { return (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + p; }
+async function abrirEntrega() {
+  // a fonte da verdade é o SERVIDOR; só usa a cópia local se o servidor não responder
+  let e = META.entrega || {}, aviso = "";
+  try {
+    const r = await fetch(_urlApi("/api/entrega/config"));
+    const j = await r.json();
+    if (j && j.config) { e = j.config; aviso = j.atualizadoEm ? "Última alteração salva no servidor: " + new Date(j.atualizadoEm).toLocaleString("pt-BR") + (j.por ? " (" + j.por + ")" : "") : "Ainda não foi salva no servidor: valores atuais em uso."; }
+  } catch (err) { aviso = "⚠️ Não consegui falar com o servidor; mostrando a cópia deste navegador. Não salve até conferir."; }
   document.getElementById("e_origem").value = e.origem || "";
-  document.getElementById("e_maxkm").value = (_e$maxKm = e.maxKm) !== null && _e$maxKm !== void 0 ? _e$maxKm : 23;
-  document.getElementById("e_min").value = (_e$minEntrega = e.minEntrega) !== null && _e$minEntrega !== void 0 ? _e$minEntrega : 1000;
+  document.getElementById("e_maxkm").value = e.maxKm != null ? e.maxKm : 23;
+  document.getElementById("e_min").value = e.minEntrega != null ? e.minEntrega : 1000;
   _faixasTmp = JSON.parse(JSON.stringify(e.faixas || []));
+  _zonasTmp = JSON.parse(JSON.stringify(e.zonas && e.zonas.length ? e.zonas : (e.faixaExtra ? [e.faixaExtra] : [])));
   renderFaixas();
-  document.getElementById("e_maxkm_extra").value = e.faixaExtra?.kmMax || "";
-  _faixasExtraTmp = JSON.parse(JSON.stringify(e.faixaExtra?.faixas || []));
-  renderFaixasExtra();
+  renderZonas();
+  document.getElementById("e_teste_res").innerHTML = aviso ? '<span style="color:#a29ed0">' + aviso + "</span>" : "";
   document.getElementById("modalEntrega").style.display = "flex";
 }
 function fecharEntrega() {
@@ -716,39 +729,71 @@ function addFaixa() {
   });
   renderFaixas();
 }
-function renderFaixasExtra() {
-  const box = document.getElementById("e_faixas_extra");
-  box.innerHTML = _faixasExtraTmp.map((f, ix) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
-    <span style="font-size:12px;color:#cfc9f5">acima de R$</span>
-    <input type="number" value="${f.min}" onchange="_faixasExtraTmp[${ix}].min=parseFloat(this.value)||0" style="width:90px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
-    <span style="font-size:12px;color:#cfc9f5">→ R$</span>
-    <input type="number" step="0.01" value="${f.porKm}" onchange="_faixasExtraTmp[${ix}].porKm=parseFloat(this.value)||0" style="width:80px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
-    <span style="font-size:12px;color:#cfc9f5">/km</span>
-    <button onclick="_faixasExtraTmp.splice(${ix},1);renderFaixasExtra()" style="background:none;border:none;color:#e5563f;cursor:pointer;font-size:14px">✕</button>
+function renderZonas() {
+  const box = document.getElementById("e_zonas");
+  if (!_zonasTmp.length) { box.innerHTML = '<div style="font-size:12px;color:#7d78b0;padding:6px 0">Nenhuma zona: a entrega vai só até a distância máxima.</div>'; return; }
+  box.innerHTML = _zonasTmp.map((z, zi) => `<div style="border:1px solid #3a357f;border-radius:10px;padding:10px;margin-bottom:8px;background:#17133a">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <b style="font-size:12px;color:#ffd23f">Zona ${zi + 1}</b>
+      <span style="font-size:12px;color:#cfc9f5">até</span>
+      <input type="number" value="${z.kmMax ?? ""}" onchange="_zonasTmp[${zi}].kmMax=parseFloat(this.value)||0" style="width:80px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
+      <span style="font-size:12px;color:#cfc9f5">km</span>
+      <span style="flex:1"></span>
+      <button onclick="_zonasTmp.splice(${zi},1);renderZonas()" style="background:none;border:1px solid #6b2a2a;color:#e5563f;cursor:pointer;font-size:11px;border-radius:5px;padding:3px 8px">remover zona</button>
+    </div>
+    ${(z.faixas || []).map((f, fi) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px">
+      <span style="font-size:12px;color:#cfc9f5">acima de R$</span>
+      <input type="number" value="${f.min}" onchange="_zonasTmp[${zi}].faixas[${fi}].min=parseFloat(this.value)||0" style="width:90px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
+      <span style="font-size:12px;color:#cfc9f5">→ R$</span>
+      <input type="number" step="0.01" value="${f.porKm}" onchange="_zonasTmp[${zi}].faixas[${fi}].porKm=parseFloat(this.value)||0" style="width:80px;background:#0f0d24;color:#fff;border:1px solid #3a357f;border-radius:5px;padding:5px;font-size:12px">
+      <span style="font-size:12px;color:#cfc9f5">/km</span>
+      <button onclick="_zonasTmp[${zi}].faixas.splice(${fi},1);renderZonas()" style="background:none;border:none;color:#e5563f;cursor:pointer;font-size:14px">✕</button>
+    </div>`).join("")}
+    <button onclick="_zonasTmp[${zi}].faixas.push({min:0,porKm:0});renderZonas()" style="background:transparent;border:1px dashed #7d78b0;color:#cfc9f5;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;margin-top:4px">+ Faixa</button>
   </div>`).join("");
 }
-function addFaixaExtra() {
-  _faixasExtraTmp.push({
-    min: 0,
-    porKm: 0
-  });
-  renderFaixasExtra();
+function addZona() {
+  const base = parseFloat(document.getElementById("e_maxkm").value) || 23;
+  const ultimo = _zonasTmp.length ? (_zonasTmp[_zonasTmp.length - 1].kmMax || base) : base;
+  // faixa inicial NÃO é grátis de propósito: a pessoa confere e ajusta os valores antes de salvar
+  _zonasTmp.push({ kmMax: ultimo + 5, faixas: [{ min: 3000, porKm: 3 }] });
+  renderZonas();
 }
-function salvarEntrega() {
-  const maxKm = parseFloat(document.getElementById("e_maxkm").value) || 23;
-  const maxKmExtra = parseFloat(document.getElementById("e_maxkm_extra").value) || 0;
-  META.entrega = {
+async function salvarEntrega() {
+  const cfg = {
     origem: document.getElementById("e_origem").value.trim(),
-    maxKm,
-    minEntrega: parseFloat(document.getElementById("e_min").value) || 0,
+    maxKm: parseFloat(document.getElementById("e_maxkm").value),
+    minEntrega: parseFloat(document.getElementById("e_min").value),
     faixas: _faixasTmp.slice().sort((a, b) => a.min - b.min),
-    faixaExtra: (maxKmExtra > maxKm && _faixasExtraTmp.length)
-      ? { kmMax: maxKmExtra, faixas: _faixasExtraTmp.slice().sort((a, b) => a.min - b.min) }
-      : null
+    zonas: _zonasTmp.slice().sort((a, b) => a.kmMax - b.kmMax).map(z => ({ kmMax: z.kmMax, faixas: (z.faixas || []).slice().sort((a, b) => a.min - b.min) }))
   };
+  let j = {};
+  try {
+    const r = await fetch(_urlApi("/api/entrega/config"), { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": _tokenAdmin() }, body: JSON.stringify(cfg) });
+    j = await r.json().catch(() => ({}));
+    if (!r.ok) { alert("NÃO foi salvo: " + (j.erro || ("erro " + r.status))); return; }
+  } catch (e) { alert("NÃO foi salvo (sem conexão com o servidor): " + e.message); return; }
+  META.entrega = j.config || cfg; // cópia local
   save();
   fecharEntrega();
-  alert("Configuração de entrega salva! Clique em 📤 Publicar para o sistema para aplicar no totem.");
+  alert("✅ Configuração de entrega salva no servidor. Já vale no totem, no site e nas propostas.");
+}
+async function testarEntrega() {
+  const end = document.getElementById("e_teste_end").value.trim();
+  const val = parseFloat(document.getElementById("e_teste_valor").value) || 0;
+  const out = document.getElementById("e_teste_res");
+  if (!end) { out.textContent = "Digite um endereço."; return; }
+  out.textContent = "Calculando…";
+  try {
+    const r = await fetch(_urlApi("/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + val));
+    const j = await r.json();
+    if (j.erro) { out.innerHTML = '<span style="color:#ff8090">' + j.erro + "</span>"; return; }
+    if (j.entregaDisponivel) {
+      out.innerHTML = "✅ <b>" + j.km + " km</b>" + (j.zona ? " · zona " + j.zona : " · raio normal") + " · " + (j.gratis ? "<b>frete grátis</b>" : "R$ " + j.porKm.toFixed(2) + "/km = <b>R$ " + j.taxa.toFixed(2) + "</b>") + ' <span style="color:#7d78b0">(' + (j.fonte || "") + ")</span>";
+    } else {
+      out.innerHTML = '🚫 <span style="color:#ffd23f">' + (j.motivo || "sem entrega") + "</span>" + (j.km ? " <b>(" + j.km + " km)</b>" : "");
+    }
+  } catch (e) { out.innerHTML = '<span style="color:#ff8090">Erro: ' + e.message + "</span>"; }
 }
 async function publicar() {
   const url = (META.backend || BACKEND_PADRAO).replace(/\/$/, "") + "/api/tabela";
