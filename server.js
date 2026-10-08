@@ -15115,6 +15115,11 @@ function deduplicarRegistrosLocais(opcoes){
   if(aplicar&&(rel.removidos.length||rel.origemRestaurada.length)) salvarPropostas(props);
   return rel;
 }
+// abrir no navegador (GET): só CONFERE, nunca apaga nada. Quem aplica a limpeza é o POST abaixo (e ela já roda sozinha ao subir o servidor e a cada sincronização).
+app.get("/api/atacado/propostas/deduplicar",(req,res)=>{
+  try{ res.json({ok:true, simulacao:true, ...deduplicarRegistrosLocais({aplicar:false})}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/atacado/propostas/deduplicar",(req,res)=>{
   try{ res.json({ok:true, ...deduplicarRegistrosLocais({aplicar:req.query.simular!=="1"})}); }
   catch(e){ res.status(500).json({erro:e.message}); }
