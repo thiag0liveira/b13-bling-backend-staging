@@ -577,6 +577,7 @@ async function _blingReservarVez(){
   }
 }
 let _blingDespachantes=0; // laços de despacho ativos (no máximo BLING_MAX_CONCORRENTE)
+const BLING_BAIXA_ESPERA_MAX=4000; let _ultimaBaixaSaiu=0;
 async function _blingTentarDespachar(){
   // ANTES: o laço pegava o próximo item da fila e só DEPOIS esperava a sua vez de sair. Com a fila
   // cheia, vários itens ficavam "pegos" e parados esperando, e nada que chegasse depois (uma
@@ -591,10 +592,17 @@ async function _blingTentarDespachar(){
       if(_filaAlta.length===0 && _filaBaixa.length===0) break;
       await _blingReservarVez();
       if(_blingEmVoo>=BLING_MAX_CONCORRENTE) break;   // outro laço ocupou a vaga enquanto este esperava
-      const daAlta=_filaAlta.length>0;
-      const item=daAlta?_filaAlta.shift():_filaBaixa.shift();
+      // prioridade alta vai primeiro, MAS uma chamada de prioridade baixa nunca espera indefinidamente:
+      // se a primeira da fila baixa já espera mais de BLING_BAIXA_ESPERA_MAX, ela leva a próxima vaga
+      // (no máximo uma a cada BLING_BAIXA_ESPERA_MAX). Sem isso, com a fila de prioridade alta sempre
+      // cheia, a atualização da mesa de separação (que é de prioridade baixa) ficava esperando a fila
+      // inteira esvaziar. É ~12% da capacidade só quando o sistema está saturado.
+      const agoraD=Date.now();
+      const baixaVelha=_filaBaixa.length>0 && (agoraD-(_filaBaixa[0].enfileiradoEm||agoraD))>BLING_BAIXA_ESPERA_MAX && (agoraD-_ultimaBaixaSaiu)>=BLING_BAIXA_ESPERA_MAX;
+      let item=null, prioItem="alta";
+      if(_filaAlta.length>0 && !baixaVelha){ item=_filaAlta.shift(); }
+      else if(_filaBaixa.length>0){ item=_filaBaixa.shift(); prioItem="baixa"; _ultimaBaixaSaiu=agoraD; }
       if(!item) break;                                  // outro laço levou o último item
-      const prioItem=daAlta?"alta":"baixa";
       _blingEmVoo++;
       const esperouMs = Date.now()-(item.enfileiradoEm||Date.now());
       const t0=Date.now();
@@ -9221,7 +9229,8 @@ app.get("/api/pedidos/:id", async (req, res) => {
 // Detalhe do pedido ENRIQUECIDO para a expedição: un (caixa), estoque e imagem por item
 app.get("/api/expedicao/pedido/:id", async (req, res) => {
   try {
-    const j = await bling(`/pedidos/vendas/${req.params.id}`);
+    // "urgente": quem abriu o pedido na mesa de separação está parado na tela esperando os itens
+    const j = await bling(`/pedidos/vendas/${req.params.id}`, {}, "urgente");
     const ped = j?.data; if (!ped) return res.status(404).json({ erro: "pedido não encontrado" });
     // mapa código -> {un, imagem?} da tabela publicada
     const tab = lerTabela(); const unPorCod = {};
