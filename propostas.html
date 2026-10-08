@@ -237,7 +237,7 @@ async function sincronizarPedidos(manual) {
   const lbl = document.getElementById("syncLabel");
   if (lbl && manual) lbl.textContent = "Verificando…";
   try {
-    const j = await fetch(B + "/api/atacado/propostas/sincronizar-pedidos", {
+    const j = await fetch(B + "/api/atacado/propostas/sincronizar-pedidos" + (manual ? "?forcar=1" : ""), {
       method: "POST"
     }).then(r => r.json());
     if (lbl) lbl.textContent = "Sincronizar";

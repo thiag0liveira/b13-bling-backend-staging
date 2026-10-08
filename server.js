@@ -330,10 +330,23 @@ async function blingRaw(path,options={},_tentativa=0){
       if(!motivo) motivo=JSON.stringify(j).slice(0,300);
       throw Object.assign(new Error(`Erro Bling ${r.status}: ${motivo}`),{status:r.status,body:j});
     }
+    try{ // anota pedido de venda recém-criado (POST /pedidos/vendas) -- ver _pedidosRecemCriados
+      if(String((options&&options.method)||"GET").toUpperCase()==="POST" && String(path).split("?")[0].replace(/\/+$/,"")==="/pedidos/vendas" && j&&j.data&&j.data.id) _pedidosRecemCriados.set(String(j.data.id),Date.now());
+    }catch(e){}
     return j;
   }catch(e){ clearTimeout(timeout); throw e; }
 }
 let _ultimoRateLimitBling=null;
+// Pedidos que ACABAMOS de criar no Bling (qualquer fluxo: totem, proposta virando pedido, caixa...), com a
+// hora. Existe porque entre o Bling responder "criei o pedido X" e o nosso registro local ficar ligado a X
+// passam alguns segundos, e nessa janela a rotina de sincronização via X no Bling sem registro aqui e
+// criava um SEGUNDO registro (duplicado). Ela não mexe em pedido criado há menos de 15 min.
+const _pedidosRecemCriados=new Map();
+function pedidoCriadoRecentemente(id,ms=15*60*1000){
+  const t=_pedidosRecemCriados.get(String(id)); if(!t) return false;
+  if(Date.now()-t>ms){ _pedidosRecemCriados.delete(String(id)); return false; }
+  return true;
+}
 // Fila global: TODAS as chamadas ao Bling do sistema (não importa de qual endpoint/
 // tela vieram) passam por aqui, uma de cada vez, com espaçamento mínimo garantido.
 // Isso evita que dois processos concorrentes (ex: fechamento de caixa rodando +
@@ -11694,7 +11707,10 @@ app.get("/api/pedidos-online",async(req,res)=>{
       const o=String(p.origem||"atacado");
       if(o==="caixa"||o==="caixa_atacado"||o==="pdv") return;
       if(ehConsumidorFinal(p.cliente?.nome)) return; // pedido de consumidor final nao entra
-      porBlingId[String(p.pedidoBlingId)]=montarDoLocal(p);
+      // dois registros do MESMO pedido do Bling: o automatico (origem "bling") nunca passa por cima do real
+      const _novo=montarDoLocal(p), _ant=porBlingId[String(p.pedidoBlingId)];
+      if(_ant && _ant.origem!=="bling" && _novo.origem==="bling") return;
+      porBlingId[String(p.pedidoBlingId)]=_novo;
     });
 
     // 2) pedidos do BLING no período que NÃO estão no registro local. Roda em SEGUNDO
@@ -14936,7 +14952,13 @@ app.get("/api/atacado/propostas",(req,res)=>{
   // independente de ter nascido como proposta ou como pedido direto.
   // "Propostas" = os que ainda NÃO viraram pedido. Assim, quando uma proposta
   // é convertida em pedido, ela sai da aba Propostas e passa pra aba Pedidos.
-  if(tipo==="pedido") lista=lista.filter(p=>!!p.pedidoBlingId);
+  if(tipo==="pedido"){
+    lista=lista.filter(p=>!!p.pedidoBlingId);
+    // defesa: se o mesmo pedido do Bling tiver mais de um registro, mostra uma linha só (o real, não o automático)
+    const escolhido={};
+    lista.forEach(p=>{ const k=String(p.pedidoBlingId); const auto=p.origem==="bling"&&String(p.id).startsWith("ped-"); const ant=escolhido[k]; if(!ant||(ant.__auto&&!auto)) escolhido[k]={p,__auto:auto}; });
+    lista=Object.values(escolhido).map(x=>x.p);
+  }
   else if(tipo==="proposta") lista=lista.filter(p=>!p.pedidoBlingId);
   if(status) lista=lista.filter(p=>p.status===status);
   lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
@@ -14949,115 +14971,167 @@ app.get("/api/atacado/propostas/:id",(req,res)=>{
   res.json({data:p});
 });
 
-// SINCRONIZA os PEDIDOS com o Bling: pra cada item que já virou pedido (tem
-// pedidoBlingId), verifica se o pedido ainda existe no Bling. Se foi excluído lá
-// (404), remove do nosso sistema — o pedido é um espelho do Bling, então não faz
-// sentido manter fantasma. As PROPOSTAS (sem pedidoBlingId) vivem só no nosso
-// sistema e NÃO são tocadas. Retorna quantos foram removidos.
+// ---------------------------------------------------------------------------------------------
+// SINCRONIZA os PEDIDOS com o Bling. Faz duas coisas:
+//  1) FANTASMAS: pedido que existe aqui (tem pedidoBlingId) mas foi EXCLUÍDO no Bling (404) é removido,
+//     porque o pedido é um espelho do Bling. Propostas (sem pedidoBlingId) não são tocadas.
+//  2) PEDIDOS EM "AGUARDANDO" NO BLING SEM REGISTRO AQUI (criados direto no Bling) ganham um registro.
+//
+// ANTES: pra cada pedido local já vinculado (centenas/milhares, acumulados por semanas) fazia UMA chamada
+// ao Bling, e rodava TODA vez que alguém abria a tela de Propostas, sem limite e em paralelo se duas pessoas
+// abrissem. Isso (a) gastava milhares de chamadas à toa e (b) abria uma janela de minutos em que um pedido
+// recém-criado (totem, proposta virando pedido) parecia "novo" -- a rotina usava uma lista de "pedidos que já
+// existem" tirada no INÍCIO -- e ganhava um segundo registro "ped-<id>" (DUPLICADO na tela, 1x só no Bling).
+// AGORA: verifica só os dos últimos 7 dias, por LISTA do Bling (poucas páginas) e só tira a prova, um a um,
+// de quem não apareceu na lista; relê o disco na hora de gravar cada registro novo; nunca mexe em pedido criado
+// há menos de 15 min; uma sincronização por vez; e repete no máximo a cada 2 min.
+// ---------------------------------------------------------------------------------------------
+const SYNC_JANELA_DIAS=7;
+let _syncPedidos={rodando:null,ultimo:null,ultimoEm:0};
+async function sincronizarPedidosComBling(){
+  const agora=Date.now();
+  const diaISO=(ms)=>new Date(ms-3*3600*1000).toISOString().slice(0,10);
+  const props=lerPropostas();
+  // ---- 1) fantasmas, só os recentes, por lista ----
+  const recentes=Object.values(props).filter(p=>p.pedidoBlingId && (p.criadoEm||0)>=agora-SYNC_JANELA_DIAS*86400000);
+  const noBling=new Set();
+  try{
+    for(let pg=1;pg<=8;pg++){
+      const params=new URLSearchParams({pagina:pg,limite:100,dataInicial:diaISO(agora-(SYNC_JANELA_DIAS+1)*86400000),dataFinal:diaISO(agora)});
+      const r=await blingLento(`/pedidos/vendas?${params.toString()}`);
+      const arr=r?.data||[]; arr.forEach(b=>noBling.add(String(b.id)));
+      if(arr.length<100) break;
+      await sleep(150);
+    }
+  }catch(e){ /* lista falhou: cai na conferência individual abaixo, com teto */ }
+  const faltando=recentes.filter(p=>!noBling.has(String(p.pedidoBlingId)) && !pedidoCriadoRecentemente(p.pedidoBlingId));
+  const removidos=[]; let conferidos=0;
+  for(const p of faltando.slice(0,40)){
+    let existe=true; conferidos++;
+    try{ const r=await blingLento(`/pedidos/vendas/${p.pedidoBlingId}`); existe=!!(r&&r.data); }
+    catch(e){
+      // 404 = pedido não existe mais no Bling. Outros erros (rede, 429, 5xx) NÃO removem: só o 404 é conclusivo.
+      const msg=String(e.message||""); const body=e.body?JSON.stringify(e.body):"";
+      if(e.status===404 || /404|not.?found|não encontrad|resource_not_found/i.test(msg+body)) existe=false;
+    }
+    if(!existe) removidos.push({id:p.id, pedidoBlingNumero:p.pedidoBlingNumero, cliente:p.clienteNome||p.cliente?.nome||""});
+    await sleep(120);
+  }
+  if(removidos.length){
+    // RELÊ do disco antes de salvar (esta função leva tempo; propostas novas feitas nesse meio-tempo não podem sumir)
+    const propsAgora=lerPropostas();
+    removidos.forEach(r=>delete propsAgora[r.id]);
+    salvarPropostas(propsAgora);
+  }
+  // ---- 2) pedidos em "Aguardando" no Bling que não têm registro aqui ----
+  const adicionados=[];
+  const estadoAtual=()=>{ const pp=lerPropostas(); const vals=Object.values(pp);
+    return { ids:new Set(vals.filter(p=>p.pedidoBlingId).map(p=>String(p.pedidoBlingId))),
+             nums:new Set(vals.filter(p=>p.pedidoBlingNumero).map(p=>String(p.pedidoBlingNumero))), chaves:new Set(Object.keys(pp)) }; };
+  const jaExiste=(pd)=>{ const e=estadoAtual(); return e.ids.has(String(pd.id)) || e.nums.has(String(pd.numero)) || e.chaves.has("ped-"+String(pd.id)) || pedidoCriadoRecentemente(pd.id); };
+  try{
+    let pedidosBling=[], pagina=1;
+    for(let i=0;i<5;i++){ // até 500
+      const pp=new URLSearchParams({pagina:String(pagina), limite:"100"});
+      pp.append("idsSituacoes[]", String(SIT.AGUARDANDO));
+      const r=await blingLento(`/pedidos/vendas?${pp.toString()}`);
+      const arr=r?.data||[]; pedidosBling=pedidosBling.concat(arr);
+      if(arr.length<100) break;
+      pagina++; await sleep(150);
+    }
+    const novos=pedidosBling.filter(pd=>!jaExiste(pd));
+    let contDet=0;
+    for(const pd of novos){
+      if(contDet>=80) break; // teto de detalhes por passada (o resto entra na próxima)
+      let d=null;
+      try{ d=await blingLento(`/pedidos/vendas/${pd.id}`).then(r=>r?.data); contDet++; await sleep(120); }catch(e){}
+      // NÃO cria registro sem os itens: registro incompleto diverge do Bling e vira confusão na tela
+      if(!d) continue;
+      // reconfere com o disco de AGORA: durante as chamadas acima outro fluxo (totem, proposta virando pedido)
+      // pode ter criado/vinculado este mesmo pedido
+      if(jaExiste(pd)) continue;
+      const idReg="ped-"+String(pd.id);
+      const itensReg=(d.itens||[]).map(it=>({produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"produto", quantidade:it.quantidade, valor:it.valor}));
+      const freteReg=Number(d.transporte?.frete)||0;
+      const fresco=lerPropostas();
+      if(fresco[idReg]) continue; // nunca sobrescreve um registro que já existe com essa chave
+      fresco[idReg]={
+        id:idReg, origem:"bling", tipo:"pedido",
+        cliente:{ id:pd.contato?.id||null, nome:pd.contato?.nome||"—" },
+        itens:itensReg, total:+Number(d.total||pd.total||0).toFixed(2),
+        vendedorNome: pd.vendedor?.nome||"",
+        entrega:{ tipo: freteReg>0?"entrega":"retirada", taxa:freteReg },
+        observacao:"", status:"pedido_gerado",
+        pedidoBlingId:pd.id, pedidoBlingNumero:pd.numero||pd.id,
+        criadoEm: pd.data? new Date(pd.data+"T12:00:00").getTime() : Date.now(),
+        atualizadoEm:Date.now(),
+      };
+      salvarPropostas(fresco);
+      adicionados.push({numero:pd.numero, cliente:pd.contato?.nome||""});
+    }
+  }catch(e){ console.error("sincronizar: falha ao puxar aguardando separação (ignorado):",e.message); }
+  // ---- 3) limpeza de registros repetidos que já existam ----
+  let limpeza=null; try{ limpeza=deduplicarRegistrosLocais(); }catch(e){ console.error("deduplicar falhou:",e.message); }
+  return {ok:true, verificados:recentes.length, conferidosUmAUm:conferidos, removidos:removidos.length, detalhes:removidos,
+    adicionados:adicionados.length, detalhesAdicionados:adicionados, duplicadosRemovidos:limpeza?limpeza.removidos.length:0};
+}
+
+// REGISTROS REPETIDOS: o mesmo pedido do Bling com mais de um registro local. Só resolve o caso claro: um
+// registro REAL (proposta que virou pedido, totem, atacado...) + um registro AUTOMÁTICO ("ped-<id>" com origem
+// "bling", criado pela sincronização). Mantém o real, completa o que faltar nele e apaga o automático. Se forem
+// dois reais (ou dois automáticos) NÃO decide sozinho: só informa. Também devolve a origem (totem/atacado)
+// aos registros automáticos que sobrescreveram um registro real, usando o histórico do pedido.
+function deduplicarRegistrosLocais(opcoes){
+  const aplicar=!opcoes||opcoes.aplicar!==false;
+  const props=lerPropostas(); const grupos={};
+  Object.values(props).forEach(p=>{ if(p&&p.pedidoBlingId) (grupos[String(p.pedidoBlingId)]=grupos[String(p.pedidoBlingId)]||[]).push(p); });
+  const ehAuto=(p)=>p.origem==="bling" && String(p.id).startsWith("ped-");
+  const rel={grupos:0,removidos:[],ignorados:[],origemRestaurada:[]};
+  for(const [bid,lista] of Object.entries(grupos)){
+    if(lista.length<2) continue; rel.grupos++;
+    const auto=lista.filter(ehAuto), reais=lista.filter(p=>!ehAuto(p));
+    if(!auto.length||!reais.length){ rel.ignorados.push({pedidoBlingId:bid,registros:lista.map(p=>p.id)}); continue; }
+    const mantido=reais.slice().sort((a,b)=>((b.itens||[]).length-(a.itens||[]).length)||((a.criadoEm||0)-(b.criadoEm||0)))[0];
+    auto.forEach(a=>{
+      if((!mantido.itens||!mantido.itens.length)&&(a.itens||[]).length) mantido.itens=a.itens;
+      if(!(Number(mantido.total)>0)&&Number(a.total)>0) mantido.total=a.total;
+      if(!mantido.pedidoBlingNumero&&a.pedidoBlingNumero) mantido.pedidoBlingNumero=a.pedidoBlingNumero;
+      delete props[a.id];
+      rel.removidos.push({pedidoBlingId:bid,removido:a.id,mantido:mantido.id,numero:mantido.pedidoBlingNumero||a.pedidoBlingNumero||null});
+    });
+  }
+  // origem perdida: registro automático que na verdade nasceu no totem / no atacado
+  try{
+    const log=lerLog();
+    Object.values(props).forEach(p=>{
+      if(!p||!ehAuto(p)) return;
+      const ev=(log[String(p.pedidoBlingId)]||[]).find(e=>/^pedido_criado_(totem|atacado)$/.test(String(e.evento||"")));
+      if(!ev) return;
+      const origem=String(ev.evento).endsWith("totem")?"totem":"atacado";
+      p.origem=origem; if(origem==="totem"&&!p.vendedorNome) p.vendedorNome="Totem"; if(origem==="atacado"&&!p.vendedorNome&&ev.funcionarioNome) p.vendedorNome=ev.funcionarioNome;
+      rel.origemRestaurada.push({pedidoBlingId:String(p.pedidoBlingId),origem});
+    });
+  }catch(e){}
+  if(aplicar&&(rel.removidos.length||rel.origemRestaurada.length)) salvarPropostas(props);
+  return rel;
+}
+app.post("/api/atacado/propostas/deduplicar",(req,res)=>{
+  try{ res.json({ok:true, ...deduplicarRegistrosLocais({aplicar:req.query.simular!=="1"})}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
+// ao subir o servidor, limpa o que a sincronização antiga já deixou repetido
+setTimeout(()=>{ try{ const r=deduplicarRegistrosLocais(); if(r.removidos.length||r.origemRestaurada.length) console.log(`[dedup] ${r.removidos.length} registro(s) repetido(s) removido(s), ${r.origemRestaurada.length} origem(ns) restaurada(s)`); }catch(e){} },20000);
+
 app.post("/api/atacado/propostas/sincronizar-pedidos",async(req,res)=>{
   try{
-    const props=lerPropostas();
-    // só os que são pedidos de verdade (espelho do Bling)
-    const pedidos=Object.values(props).filter(p=>p.pedidoBlingId);
-    const removidos=[];
-    for(const p of pedidos){
-      let existe=true;
-      try{
-        const r=await bling(`/pedidos/vendas/${p.pedidoBlingId}`);
-        // se voltou com dados, existe. Se o Bling não achou, cai no catch.
-        existe=!!(r&&r.data);
-      }catch(e){
-        // 404 = pedido não existe mais no Bling → marca pra remover.
-        // Outros erros (rede, 429, 5xx) NÃO removem — só o 404 é conclusivo,
-        // pra não apagar pedido bom por causa de instabilidade.
-        const msg=String(e.message||"");
-        const body=e.body?JSON.stringify(e.body):"";
-        const ehNaoEncontrado = e.status===404 || /404|not.?found|não encontrad|resource_not_found/i.test(msg+body);
-        if(ehNaoEncontrado) existe=false;
-        else existe=true; // erro incerto → mantém o pedido
-      }
-      if(!existe){
-        removidos.push({id:p.id, pedidoBlingNumero:p.pedidoBlingNumero, cliente:p.clienteNome||p.cliente?.nome||""});
-      }
-      await new Promise(r=>setTimeout(r,150)); // respeita o limite do Bling
-    }
-    // RELÊ do disco antes de salvar: essa função leva vários segundos (às vezes bem
-    // mais) rodando as chamadas ao Bling acima. Se alguém criar uma proposta nova
-    // NESSE MEIO-TEMPO, salvar de volta a cópia lida lá no início apagava essa
-    // proposta nova sem querer (sobrescrevia o arquivo inteiro com dados velhos).
-    // Aplica só as remoções calculadas, por cima do que está no disco AGORA.
-    if(removidos.length){
-      const propsAgora=lerPropostas();
-      removidos.forEach(r=>delete propsAgora[r.id]);
-      salvarPropostas(propsAgora);
-    }
-
-    // AGORA também PUXA os pedidos em "Aguardando Separação" do Bling que ainda não
-    // estão na lista (status criado só pelo nosso sistema: totem, site e atacado).
-    // considera "já tem" por ID **e por NÚMERO** — um registro da venda atacado pode
-    // ainda não ter o pedidoBlingId gravado quando esta sincronização roda (a gravação
-    // do id acontece logo depois de criar no Bling). Olhando só o id, o pedido era
-    // tratado como novo e ganhava um registro duplicado "ped-<id>" com origem "bling",
-    // fazendo o mesmo pedido aparecer DUAS vezes na tela (foi o caso do 55812).
-    const jaTem=new Set(Object.values(props).filter(p=>p.pedidoBlingId).map(p=>String(p.pedidoBlingId)));
-    const jaTemNumero=new Set(Object.values(props).filter(p=>p.pedidoBlingNumero).map(p=>String(p.pedidoBlingNumero)));
-    let adicionados=[];
-    const novosRegistros={}; // idReg -> registro, aplicados por cima do disco fresco no final
-    try{
-      let pedidosBling=[], pagina=1;
-      for(let i=0;i<5;i++){ // até 500
-        const pp=new URLSearchParams({pagina:String(pagina), limite:"100"});
-        pp.append("idsSituacoes[]", String(SIT.AGUARDANDO));
-        const r=await bling(`/pedidos/vendas?${pp.toString()}`);
-        const arr=r?.data||[];
-        pedidosBling=pedidosBling.concat(arr);
-        if(arr.length<100) break;
-        pagina++; await new Promise(r=>setTimeout(r,150));
-      }
-      const novos=pedidosBling.filter(pd=>!jaTem.has(String(pd.id)) && !jaTemNumero.has(String(pd.numero)));
-      let contDet=0;
-      for(const pd of novos){
-        let itensReg=[], total=pd.total||0, freteReg=0, detalheOk=false;
-        if(contDet<80){ // busca o detalhe (produtos/frete) só pros novos, com teto pra não estourar o tempo
-          try{
-            const d=await bling(`/pedidos/vendas/${pd.id}`).then(r=>r?.data);
-            itensReg=(d?.itens||[]).map(it=>({produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"produto", quantidade:it.quantidade, valor:it.valor}));
-            freteReg=Number(d?.transporte?.frete)||0;
-            total=d?.total||total;
-            detalheOk=true;
-            contDet++; await new Promise(r=>setTimeout(r,120));
-          }catch(e){}
-        }
-        // NÃO cria registro sem os itens: um registro incompleto fica divergindo do
-        // Bling (produtos e valor diferentes) e vira fonte de confusão na tela. Melhor
-        // deixar o pedido sem registro local — ele continua aparecendo via Bling — e
-        // ser criado na próxima passada, quando houver orçamento de detalhe.
-        if(!detalheOk) continue;
-        const idReg="ped-"+String(pd.id);
-        novosRegistros[idReg]={
-          id:idReg, origem:"bling", tipo:"pedido",
-          cliente:{ id:pd.contato?.id||null, nome:pd.contato?.nome||"—" },
-          itens:itensReg,
-          total:+Number(total).toFixed(2),
-          vendedorNome: pd.vendedor?.nome||"",
-          entrega:{ tipo: freteReg>0?"entrega":"retirada", taxa:freteReg },
-          observacao:"", status:"pedido_gerado",
-          pedidoBlingId:pd.id, pedidoBlingNumero:pd.numero||pd.id,
-          criadoEm: pd.data? new Date(pd.data+"T12:00:00").getTime() : Date.now(),
-          atualizadoEm:Date.now(),
-        };
-        adicionados.push({numero:pd.numero, cliente:pd.contato?.nome||""});
-      }
-      if(adicionados.length){
-        // mesma proteção: relê do disco AGORA (não a cópia velha do início) antes de
-        // gravar os novos registros de pedido puxados do Bling.
-        const propsAgora2=lerPropostas();
-        Object.assign(propsAgora2,novosRegistros);
-        salvarPropostas(propsAgora2);
-      }
-    }catch(e){ console.error("sincronizar: falha ao puxar aguardando separação (ignorado):",e.message); }
-
-    res.json({ok:true, verificados:pedidos.length, removidos:removidos.length, detalhes:removidos, adicionados:adicionados.length, detalhesAdicionados:adicionados});
+    const forcar=req.query.forcar==="1";
+    // já tem uma rodando (outra pessoa abriu a tela): espera e devolve o MESMO resultado, sem começar outra
+    if(_syncPedidos.rodando){ const r=await _syncPedidos.rodando; return res.json({...r,compartilhado:true}); }
+    // abertura de tela repetida em menos de 2 min: não refaz (o botão manual usa ?forcar=1)
+    if(!forcar && _syncPedidos.ultimo && Date.now()-_syncPedidos.ultimoEm<120000)
+      return res.json({..._syncPedidos.ultimo, removidos:0, adicionados:0, detalhes:[], detalhesAdicionados:[], doCache:true});
+    _syncPedidos.rodando=sincronizarPedidosComBling().then(r=>{ _syncPedidos.ultimo=r; _syncPedidos.ultimoEm=Date.now(); return r; }).finally(()=>{ _syncPedidos.rodando=null; });
+    res.json(await _syncPedidos.rodando);
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
