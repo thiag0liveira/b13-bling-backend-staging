@@ -24,6 +24,7 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { registrarConcursoSlogan } from "./concurso-slogan.js";
 import { registrarEstoqueFiscal } from "./estoque-fiscal.js";
+import { registrarGestaoPedidos } from "./gestao-pedidos.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // PROTEÇÃO GLOBAL CONTRA CRASH: em Node.js moderno, UM ÚNICO erro não tratado
@@ -953,6 +954,7 @@ app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefix
   });
   req.pipe(out);
 });
+app.get("/pedidos-gestao.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"pedidos-gestao.js")); });
 app.get("/upload-midia.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"upload-midia.js")); });
 app.get("/musica-fundo",(req,res)=>{
   const arq=path.join(__dirname,"musica-fundo.mp3");
@@ -11694,19 +11696,10 @@ app.get("/api/pedidos-online",async(req,res)=>{
     const chaveCache=`${iniISO}_${fimISO}`;
     if(fase==="local"){
       const lista=Object.values(porBlingId).sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
-      // NÃO dispara a varredura ampla do Bling (9 situações na semana inteira) -- essa só
-      // roda quando a pessoa escolhe um status (?fase=bling&situacao=...). Mas a
-      // situação/total/itens de CADA pedido da tela precisam seguir o Bling: sem isso
-      // o card mostrava "carregando…" ou ficava velho depois de uma edição. Então
-      // atualiza, em segundo plano e com a fila de baixa prioridade, só os pedidos
-      // desta lista (os em andamento primeiro, no máximo 40 por vez).
-      try{
-        const ordemAtu=lista.slice().sort((a,b)=>{
-          const fa=(a.situacaoId!=null&&_ehFinalizado(a.situacaoId))?1:0, fb=(b.situacaoId!=null&&_ehFinalizado(b.situacaoId))?1:0;
-          return fa-fb;
-        });
-        _atualizarSituacoesOnline(ordemAtu.slice(0,40).map(p=>p.id));
-      }catch(e){}
+      // NÃO consulta o Bling pedido a pedido aqui. Isso (até 40 chamadas por minuto, mesmo sem ninguém
+      // olhando) foi trocado pelo painel de gestão: UMA consulta com todas as etapas, só quando a
+      // pessoa abre/atualiza o painel (/api/gestao/pipeline). A situação mostrada vem da última
+      // consulta e das ações feitas pelo próprio sistema, que atualizam na hora.
       return res.json({data:lista, fase:"local", situacoesCarregando:_sitOnlineRodando,
         periodo:{ini:iniISO, fim:fimISO}});
     }
@@ -17084,6 +17077,8 @@ setTimeout(async()=>{
 registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname });
 registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
+registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
+  lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais });
 
 const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 // DESLIGAMENTO EDUCADO: o Railway manda SIGTERM quando troca esse contêiner por
