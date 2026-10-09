@@ -17658,7 +17658,9 @@ setTimeout(async()=>{
 // /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
 registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname,
-  pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso });
+  pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso,
+  // quem tem a permissão do concurso (ativo): aparece no relatório de adesão mesmo sem ter usado
+  usuariosComAcessoConcurso:()=>Object.values(lerJSON(FUNC_FILE,{})).filter(f=>f&&f.ativo!==false&&(f.permissoes||[]).includes("acesso_concurso")).map(f=>f.nome) });
 registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
   lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });

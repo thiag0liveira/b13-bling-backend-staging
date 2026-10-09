@@ -570,6 +570,10 @@ function htmlRelatorios(){
   const barras=dias.map(d=>`<div class="d" title="${d.dia.split("-").reverse().slice(0,2).join("/")}: ${d.gerados} gerado(s), ${d.enviados} enviado(s), ${d.respostas} resposta(s)"><i style="height:${d.enviados/maxD*100}%;background:var(--mag)"></i><i style="height:${d.respostas/maxD*100}%;background:#6be3a8"></i></div>`).join("");
   const eixo=dias.map((d,i)=>`<span>${(i===0||i===dias.length-1||(i%5===0))?d.dia.slice(8):""}</span>`).join("");
   const vend=REL.porVendedora.map(v=>`<tr><td><b>${esc(v.vendedora)}</b></td><td>${v.elegiveisPagos}</td><td>${v.aguardandoPagamento}</td><td>${v.gerados}</td><td>${v.enviados}</td><td>${v.respondidos}</td><td>${pctTxt(v.taxaResposta)}</td><td>${v.paraFazer?`<span class="tag warn">${v.paraFazer}</span>`:"—"}</td></tr>`).join("");
+  const diasDesde=iso=>iso?Math.floor((Date.now()-Date.parse(iso))/86400000):null;
+  const usu=(REL.porUsuario||[]).map(u=>{ const dd=diasDesde(u.ultimaEm);
+    const alerta=u.semUso?'<span class="tag erro">ainda não usou</span>':(dd!=null&&dd>=3?`<span class="tag warn">sem uso há ${dd} dias</span>`:"");
+    return `<tr><td><b>${esc(u.usuario)}</b> ${alerta}</td><td>${u.gerados}</td><td><b>${u.linksEnviados}</b></td><td>${u.lembretes}</td><td>${u.responderam}${u.taxaResposta!=null?` <span class="muted">(${u.taxaResposta}%)</span>`:""}</td><td>${u.diasComUso}</td><td>${u.acoes7d}</td><td>${u.ultimaEm?hora(u.ultimaEm):"—"}</td></tr>`; }).join("");
   const cli=REL.porCliente.slice(0,15).map(c=>`<tr style="cursor:pointer" onclick="abrirCliente('${esc(c.chave)}')"><td><b style="color:#9fd8ff">${esc(c.nome)}</b></td><td>${c.totalPedidos}</td><td>${c.frasesLiberadas}</td><td>${c.linksEnviados}</td><td>${c.frasesEnviadas}</td><td>${c.frasesValidas}</td></tr>`).join("");
   return `<div class="secao"><h4>Funil da campanha</h4><div class="desc">Da campanha inteira (todas as vendedoras), do pedido pago até a frase recebida. A porcentagem é em relação à etapa anterior.</div>
     <div class="funil">${ln("Pedidos pagos elegíveis",F.elegiveisPagos,"")}${ln("Links gerados",F.linksGerados,"")}${ln("Enviados ao cliente",F.linksEnviados,pctTxt(F.taxaEnvio))}${ln("Clientes que responderam",F.respondidos,pctTxt(F.taxaResposta),"#6be3a8")}${ln("Aguardando pagamento",F.aguardandoPagamento,"","#514c96")}</div></div>
@@ -583,7 +587,9 @@ function htmlRelatorios(){
   </div>
   <div class="secao"><h4>Por dia</h4><div class="desc"><span style="color:var(--mag)">■</span> links enviados ao cliente · <span style="color:#6be3a8">■</span> respostas recebidas. Passe o dedo ou o mouse para ver os números.</div>
     <div class="dias">${barras}</div><div class="eixoD">${eixo}</div></div>
-  <div class="secao"><h4>Por vendedora</h4><div class="desc">Dona do pedido (quem fez a venda). Pedido sem vendedora conta para quem gerou o link.</div>
+  <div class="secao"><h4>Por usuário · adesão ao painel</h4><div class="desc">Quem da B13 está operando o painel: links que gerou, que enviou ao cliente e lembretes. Inclui quem tem acesso e ainda não usou.</div>
+    ${usu?`<div class="rolagem"><table class="tbl"><thead><tr><th>Usuário</th><th>Gerados</th><th>Enviados ao cliente</th><th>Lembretes</th><th>Responderam</th><th>Dias com uso</th><th>Ações em 7 dias</th><th>Última atividade</th></tr></thead><tbody>${usu}</tbody></table></div>`:`<div class="muted">Ninguém usou o painel ainda.</div>`}</div>
+  <div class="secao"><h4>Por vendedora · dona da venda</h4><div class="desc">Resultado da carteira de cada vendedora (quem fez a venda), não importa quem enviou o link. Pedido sem vendedora conta para quem gerou o link.</div>
     ${vend?`<div class="rolagem"><table class="tbl"><thead><tr><th>Vendedora</th><th>Pagos</th><th>Aguard. pagamento</th><th>Gerados</th><th>Enviados</th><th>Responderam</th><th>Resposta</th><th>Para fazer</th></tr></thead><tbody>${vend}</tbody></table></div>`:`<div class="muted">Sem dados ainda.</div>`}</div>
   <div class="secao"><h4>Por cliente <span class="muted" style="font-weight:400;font-size:12px">(os 15 com mais frases liberadas; toque para ver o histórico)</span></h4>
     ${cli?`<div class="rolagem"><table class="tbl"><thead><tr><th>Cliente</th><th>Pedidos</th><th>Frases liberadas</th><th>Links</th><th>Frases enviadas</th><th>Válidas</th></tr></thead><tbody>${cli}</tbody></table></div>`:`<div class="muted">Sem dados ainda.</div>`}</div>
@@ -591,6 +597,7 @@ function htmlRelatorios(){
     <button class="btn btn-ghost btn-sm" onclick="baixarCsv('clientes')">⬇ CSV por cliente</button>
     <button class="btn btn-ghost btn-sm" onclick="baixarCsv('pedidos')">⬇ CSV de todos os pedidos</button>
     <button class="btn btn-ghost btn-sm" onclick="baixarCsv('vendedoras')">⬇ CSV por vendedora</button>
+    <button class="btn btn-ghost btn-sm" onclick="baixarCsv('usuarios')">⬇ CSV por usuário</button>
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="REL=null;render()">↻ Atualizar relatório</button></div>`;
 }
 async function sincronizarAgora(){

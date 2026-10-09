@@ -49,7 +49,7 @@ const ORIGENS_LOJA = new Set(["totem", "caixa", "caixa_atacado", "pdv"]);
 export function registrarConcursoSlogan(app, deps) {
   const { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
           lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir,
-          pagamentoDoPedido, mapaEntregasLocais, lerCaixaSessoes, requireAcesso } = deps;
+          pagamentoDoPedido, mapaEntregasLocais, lerCaixaSessoes, requireAcesso, usuariosComAcessoConcurso } = deps;
   // OPERAÇÃO (vendedoras com a permissão "acesso_concurso"): ver, gerar, enviar, lembrar, relatórios.
   // GESTÃO (só admin): revogar link, desclassificar/reabilitar frase, conferir no Bling, planilhas da ata.
   const reqOper = typeof requireAcesso === "function" ? requireAcesso("acesso_concurso") : requireAdmin;
@@ -612,6 +612,24 @@ export function registrarConcursoSlogan(app, deps) {
   // ---------- RELATÓRIO ----------
   const mediana = (a) => { const v = a.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
   const diaBRde = (iso) => iso ? new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10) : null;
+  // ADESÃO: o que cada USUÁRIO da B13 fez no painel (quem operou, não a dona da venda). Inclui quem tem a permissão do
+  // concurso e ainda não fez nada (zerado), que é o sinal de baixa adesão. Só dados reais (sem testes).
+  function calcPorUsuario(dReal) {
+    const links = Object.values(dReal.links).filter(l => !l.teste);
+    const U = {}; const pega = (nome) => { const n = String(nome || "").trim() || "(sem nome)"; return (U[n] ||= { usuario: n, gerados: 0, trocados: 0, linksEnviados: 0, envios: 0, lembretes: 0, responderam: 0, frasesWhatsapp: 0, revogados: 0, dias: new Set(), ultimaEm: null, acoes7d: 0, temAcesso: false }); };
+    const marca = (u, iso) => { if (!iso) return; const t = Date.parse(iso); if (!isFinite(t)) return; u.dias.add(new Date(t - 3 * 3600e3).toISOString().slice(0, 10)); if (!u.ultimaEm || iso > u.ultimaEm) u.ultimaEm = iso; if (Date.now() - t <= 7 * 86400000) u.acoes7d++; };
+    links.forEach(l => {
+      if (l.criadoPor) { const u = pega(l.criadoPor); u.gerados++; if (l.substitui) u.trocados++; marca(u, l.criadoEm); }
+      if (l.compartilhadoPor) { const u = pega(l.compartilhadoPor); u.linksEnviados++; if (l.status === "enviado") u.responderam++; }
+      contatosDe(l).forEach(c => { const u = pega(c.por); if (c.lembrete) u.lembretes++; else u.envios++; marca(u, c.em); });
+      if (l.revogadoPor && !l.substituidoPor) { const u = pega(l.revogadoPor); u.revogados++; marca(u, l.revogadoEm); }
+    });
+    dReal.frases.filter(f => !f.teste && f.registradoPor).forEach(f => { const u = pega(f.registradoPor); u.frasesWhatsapp++; marca(u, f.registradoEm); });
+    try { (typeof usuariosComAcessoConcurso === "function" ? usuariosComAcessoConcurso() : []).forEach(n => { pega(n).temAcesso = true; }); } catch (e) {}
+    return Object.values(U).map(u => ({ ...u, dias: u.dias.size, diasComUso: u.dias.size, taxaResposta: u.linksEnviados ? Math.round(u.responderam / u.linksEnviados * 100) : null,
+      semUso: !u.gerados && !u.envios && !u.lembretes && !u.frasesWhatsapp }))
+      .sort((a, b) => (b.linksEnviados + b.gerados) - (a.linksEnviados + a.gerados) || a.usuario.localeCompare(b.usuario));
+  }
   function calcRelatorio() {
     const d = ler(); d.frases = d.frases.filter(f => !f.teste); // relatório só com dados reais
     const lista = listaElegiveis().filter(x => !x.teste); const eleg = lista.filter(x => x.elegivel);
@@ -657,6 +675,7 @@ export function registrarConcursoSlogan(app, deps) {
       tempos: { horasGeradoAteEnvio: mediana(links.filter(l => l.compartilhadoEm).map(l => (Date.parse(l.compartilhadoEm) - Date.parse(l.criadoEm)) / 3600e3)),
                 horasEnvioAteResposta: mediana(respondidos.filter(l => l.compartilhadoEm && l.enviadoEm).map(l => (Date.parse(l.enviadoEm) - Date.parse(l.compartilhadoEm)) / 3600e3)) },
       lembretesEnviados: links.reduce((s2, l) => s2 + contatosDe(l).filter(c => c.lembrete).length, 0),
+      porUsuario: calcPorUsuario(d),
       porDia: Object.values(porDia), porVendedora: Object.values(porVend).filter(v => v.elegiveisPagos || v.aguardandoPagamento || v.gerados).sort((a2, b2) => b2.elegiveisPagos - a2.elegiveisPagos), porCliente: clientes,
       sync: statusSync(),
     };
@@ -665,7 +684,7 @@ export function registrarConcursoSlogan(app, deps) {
   // CSV (abre no Excel: ponto e vírgula + BOM): ?tipo=clientes | pedidos | vendedoras
   app.get("/api/concurso/relatorio.csv", reqOper, (req, res) => {
     try {
-      const tipo = ["pedidos", "vendedoras"].includes(req.query.tipo) ? req.query.tipo : "clientes";
+      const tipo = ["pedidos", "vendedoras", "usuarios"].includes(req.query.tipo) ? req.query.tipo : "clientes";
       const cel = (v) => { const t = v == null ? "" : String(v); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
       const num = (v) => v == null ? "" : String(v).replace(".", ",");
       const dt = (iso) => iso ? emBR(iso) : "";
@@ -675,6 +694,9 @@ export function registrarConcursoSlogan(app, deps) {
         linhas = [["Pedido", "Data", "Cliente", "Documento", "Vendedora", "Valor em produtos", "Frases", "Pagamento", "Etapa", "Link gerado em", "Gerado por", "Enviado ao cliente em", "Enviado por", "Lembretes", "Respondeu em", "Protocolo", "Frases enviadas", "Frases válidas", "Motivo (fora da regra)"]]
           .concat(listaElegiveis().filter(x => !x.teste).map(x => [x.numero, x.data, x.cliente?.nome, mascaraDoc(x.cliente?.documento), x.vendedor, num(x.valorProdutos), x.qtdFrases, x.pago ? "pago (" + x.ondePago + ")" : x.ondePago, ROT[x.etapa] || x.etapa,
             dt(x.link?.criadoEm), x.link?.criadoPor || "", dt(x.link?.compartilhadoEm), x.link?.compartilhadoPor || "", x.link?.lembretes || 0, dt(x.link?.enviadoEm), x.link?.protocolo || "", x.frasesEnviadas, x.frasesValidas, x.motivoFora]));
+      } else if (tipo === "usuarios") {
+        linhas = [["Usuário", "Links gerados", "Links enviados ao cliente", "Envios (incl. reenvios)", "Lembretes", "Clientes que responderam", "Taxa de resposta (%)", "Links trocados", "Frases registradas do WhatsApp", "Dias com uso", "Ações nos últimos 7 dias", "Última atividade", "Tem acesso ao painel"]]
+          .concat(calcRelatorio().porUsuario.map(u => [u.usuario, u.gerados, u.linksEnviados, u.envios, u.lembretes, u.responderam, u.taxaResposta ?? "", u.trocados, u.frasesWhatsapp, u.diasComUso, u.acoes7d, dt(u.ultimaEm), u.temAcesso ? "sim" : "não"]));
       } else if (tipo === "vendedoras") {
         linhas = [["Vendedora", "Pedidos pagos elegíveis", "Aguardando pagamento", "Links gerados", "Enviados ao cliente", "Responderam", "Taxa de resposta (%)", "Para fazer agora", "Frases válidas"]]
           .concat(calcRelatorio().porVendedora.map(v => [v.vendedora, v.elegiveisPagos, v.aguardandoPagamento, v.gerados, v.enviados, v.respondidos, v.taxaResposta ?? "", v.paraFazer, v.frasesValidas]));
