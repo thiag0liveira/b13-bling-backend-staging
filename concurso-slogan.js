@@ -47,7 +47,8 @@ const ORIGENS_LOJA = new Set(["totem", "caixa", "caixa_atacado", "pdv"]);
 
 export function registrarConcursoSlogan(app, deps) {
   const { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
-          lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir } = deps;
+          lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir,
+          pagamentoDoPedido, mapaEntregasLocais, lerCaixaSessoes } = deps;
   const ARQ = `${DATA_DIR}/concurso_slogan.json`;
 
   // ---------- armazenamento ----------
@@ -180,6 +181,115 @@ export function registrarConcursoSlogan(app, deps) {
       },
     };
   }
+
+  // =========================== PEDIDOS ELEGÍVEIS (automático) ===========================
+  // O painel acha sozinho os pedidos que dão direito a frase, sem digitar número.
+  // COMO BUSCA, SEM PESAR NO BLING: (1) lista os pedidos do período do concurso direto no Bling, 100 por chamada
+  // (o mês inteiro são poucas chamadas); (2) só abre o DETALHE dos pedidos com total de R$ 3.000 ou mais que ainda não
+  // conhece ou cujo total mudou (precisa do detalhe pra descontar frete e outras despesas, cláusula 4.3); (3) tudo pela
+  // fila LENTA do Bling (baixa prioridade, nunca passa na frente do caixa), com pausa entre chamadas, em segundo plano
+  // e uma execução por vez. Roda sozinho a cada CONCURSO_SYNC_MIN minutos (padrão 60) e pelo botão "Sincronizar agora".
+  // PAGO = Atendido no Bling, OU recebido em caixa, OU entregue com recebimento registrado (pedido entregue fica
+  // "Em rota" no Bling, então só o Bling não basta). A prazo só conta depois de quitado.
+  const SYNC = {
+    desde: process.env.CONCURSO_SYNC_DESDE || "2026-10-05",
+    intervaloMs: Math.max(15, Number(process.env.CONCURSO_SYNC_MIN || 60)) * 60000,
+    maxPaginas: 80,
+  };
+  let _sync = { rodando: false, origem: "", iniciadoEm: null, terminadoEm: null, paginas: 0, pedidosListados: 0, detalhes: 0, candidatos: 0, erro: "", proximaEm: null };
+  const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const chaveCliente = (c) => { const doc = soDig(c?.documento); if (doc.length >= 11) return "d" + doc; if (c?.contatoId) return "c" + c.contatoId; return "n" + normFrase(c?.nome || "?"); };
+  function statusPagamento(pid, numero, sitId, dCx, entregas) {
+    if (sitId === SIT.CANCELADO) return { pago: false, cancelado: true, onde: "cancelado" };
+    if (sitId === SIT.ATENDIDO) return { pago: true, onde: "Atendido no Bling" };
+    let pg = { pago: false };
+    try { if (pagamentoDoPedido) pg = pagamentoDoPedido(pid, numero, dCx) || { pago: false }; } catch (e) {}
+    if (pg.pago) return { pago: true, onde: pg.ondeFoiPago || "recebido" };
+    const ent = entregas[String(pid)];
+    if (ent && !ent.prazo && (ent.jaPago || (ent.formas || []).length)) return { pago: true, onde: "recebido na entrega" };
+    if (sitId === SIT.PRAZO || (ent && ent.prazo)) return { pago: false, onde: "a prazo (aguardando quitação)" };
+    return { pago: false, onde: pg.parcial ? "pagamento parcial" : "aguardando pagamento" };
+  }
+  async function sincronizarElegiveis(origem) {
+    if (_sync.rodando) return _sync;
+    _sync = { ..._sync, rodando: true, origem, iniciadoEm: agoraISO(), terminadoEm: null, paginas: 0, pedidosListados: 0, detalhes: 0, candidatos: 0, erro: "" };
+    try {
+      const ini = SYNC.desde > CONCURSO.dataPedidoMin ? SYNC.desde : CONCURSO.dataPedidoMin;
+      const fim = hojeBR() < CONCURSO.dataPedidoMax ? hojeBR() : CONCURSO.dataPedidoMax;
+      if (ini > fim) { _sync.erro = "fora do período de pedidos do concurso"; return _sync; }
+      const listados = [];
+      for (let pagina = 1; pagina <= SYNC.maxPaginas; pagina++) {
+        const r = await blingLento(`/pedidos/vendas?pagina=${pagina}&limite=100&dataInicial=${ini}&dataFinal=${fim}`);
+        _sync.paginas++;
+        const arr = (r && r.data) || [];
+        listados.push(...arr);
+        _sync.pedidosListados = listados.length;
+        if (arr.length < 100) break;
+        await sleep(400);
+      }
+      const cache = { ...(ler().elegiveis || {}) };
+      // só vale a pena olhar quem PODE dar direito: o valor em produtos nunca passa do total do pedido
+      const candidatos = listados.filter(p => Number(p.total || 0) + 0.001 >= CONCURSO.faixas.atacado);
+      _sync.candidatos = candidatos.length;
+      for (const p of candidatos) {
+        const id = String(p.id), antes = cache[id];
+        let valor = antes ? antes.valorProdutos : null;
+        if (!antes || antes.valorProdutos == null || Math.abs(Number(antes.totalBling || 0) - Number(p.total || 0)) > 0.009) {
+          try { const det = (await blingLento(`/pedidos/vendas/${id}`))?.data; if (det) valor = valorEmProdutos(det); } catch (e) {}
+          _sync.detalhes++;
+          await sleep(350);
+        }
+        const doc = soDig(p.contato?.numeroDocumento);
+        cache[id] = {
+          pedidoId: id, numero: String(p.numero || id), data: String(p.data || "").slice(0, 10),
+          totalBling: Number(p.total || 0), valorProdutos: valor, situacaoId: Number(p.situacao?.id || 0),
+          cliente: { contatoId: p.contato?.id || null, nome: p.contato?.nome || "", documento: doc, pj: doc.length === 14 || String(p.contato?.tipoPessoa || "").toUpperCase() === "J" },
+          atualizadoEm: agoraISO(),
+        };
+      }
+      // pedidos que eram candidatos mas caíram abaixo da faixa (editados): atualiza o total e a situação
+      listados.forEach(p => { const c = cache[String(p.id)]; if (c && Number(p.total || 0) + 0.001 < CONCURSO.faixas.atacado) { c.totalBling = Number(p.total || 0); c.valorProdutos = Math.min(Number(c.valorProdutos || 0), Number(p.total || 0)); c.situacaoId = Number(p.situacao?.id || 0); c.atualizadoEm = agoraISO(); } });
+      // grava de forma SÍNCRONA, relendo o arquivo (não perde frases enviadas durante a busca)
+      const d = ler(); d.elegiveis = cache; d.sincronizadoEm = agoraISO(); gravar(d);
+    } catch (e) { _sync.erro = String(e.message || e).slice(0, 200); }
+    finally { _sync.rodando = false; _sync.terminadoEm = agoraISO(); }
+    return _sync;
+  }
+  // monta a lista (barato: só dados locais) com pagamento, link e frases de cada pedido
+  function listaElegiveis() {
+    const d = ler(); const faixa = CONCURSO.faixas.atacado;
+    let dCx = null; try { dCx = lerCaixaSessoes ? lerCaixaSessoes() : null; } catch (e) {}
+    let entregas = {}; try { entregas = mapaEntregasLocais ? mapaEntregasLocais() : {}; } catch (e) {}
+    const props = {}; try { Object.values(lerPropostas() || {}).forEach(p => { if (p?.pedidoBlingId) props[String(p.pedidoBlingId)] = p; }); } catch (e) {}
+    const linksPorPedido = {}; Object.values(d.links).filter(l => l.status !== "revogado").forEach(l => { linksPorPedido[String(l.pedidoId)] = l; });
+    const frasesPorPedido = {}; d.frases.forEach(f => { (frasesPorPedido[String(f.pedidoId)] ||= []).push(f); });
+    return Object.values(d.elegiveis || {}).map(e => {
+      const orig = props[e.pedidoId] ? String(props[e.pedidoId].origem || "atacado") : null;
+      const fora = [];
+      if (e.situacaoId === SIT.CANCELADO) fora.push("cancelado");
+      if (orig && ORIGENS_LOJA.has(orig)) fora.push(`compra na loja (${orig}): participa pela Rota 1`);
+      if (/consumidor\s*final/i.test(e.cliente?.nome || "")) fora.push("Consumidor Final (sem titular)");
+      if (e.data < CONCURSO.dataPedidoMin || e.data > CONCURSO.dataPedidoMax) fora.push("fora do período");
+      const valor = e.valorProdutos != null ? e.valorProdutos : null;
+      const qtd = valor != null ? Math.floor(valor / faixa + 1e-9) : null;
+      if (qtd != null && qtd < 1) fora.push("valor em produtos abaixo de R$ " + faixa.toLocaleString("pt-BR"));
+      const pg = statusPagamento(e.pedidoId, e.numero, e.situacaoId, dCx, entregas);
+      const L = linksPorPedido[e.pedidoId];
+      const fr = frasesPorPedido[e.pedidoId] || [];
+      return {
+        ...e, chaveCliente: chaveCliente(e.cliente), situacao: nomeSituacao(e.situacaoId), origem: orig || "bling",
+        qtdFrases: qtd, elegivel: !fora.length, motivoFora: fora.join("; "), pago: pg.pago, ondePago: pg.onde,
+        link: L ? { token: L.token, status: L.status, qtdFrases: L.qtdFrases, criadoEm: L.criadoEm, enviadoEm: L.enviadoEm || null, url: urlDoLink(L.token) } : null,
+        frasesEnviadas: fr.length, frasesValidas: fr.filter(x => x.status === "valida").length,
+      };
+    }).sort((a, b) => String(b.data).localeCompare(String(a.data)) || Number(b.numero) - Number(a.numero));
+  }
+  const statusSync = () => ({ ..._sync, intervaloMin: Math.round(SYNC.intervaloMs / 60000), desde: SYNC.desde > CONCURSO.dataPedidoMin ? SYNC.desde : CONCURSO.dataPedidoMin, sincronizadoEm: ler().sincronizadoEm || null });
+  // sincronização automática: 2 min depois de subir e depois a cada intervalo, enquanto o concurso não terminou
+  const _agendarProxima = () => { _sync.proximaEm = new Date(Date.now() + SYNC.intervaloMs).toISOString(); };
+  setTimeout(() => { if (Date.now() <= CONCURSO.fimEnvio + 7 * 86400000) sincronizarElegiveis("automático (início)").catch(() => {}); _agendarProxima(); }, 120000);
+  setInterval(() => { if (Date.now() <= CONCURSO.fimEnvio + 7 * 86400000) sincronizarElegiveis("automático").catch(() => {}); _agendarProxima(); }, SYNC.intervaloMs);
+  _sync.proximaEm = new Date(Date.now() + 120000).toISOString();
 
   // =========================== ROTAS PÚBLICAS ===========================
   const limitePublico = rateLimit({ janelaMs: 60000, max: 30, prefixo: "concurso" });
@@ -353,6 +463,40 @@ export function registrarConcursoSlogan(app, deps) {
     res.json({ data: lista, obs: "Valor do registro local, aproximado. O valor que vale é o do Bling, conferido ao gerar o link." });
   });
 
+
+  // ---------- elegíveis, sincronização e clientes ----------
+  app.get("/api/concurso/elegiveis", requireAdmin, (req, res) => {
+    try { res.json({ data: listaElegiveis(), sync: statusSync(), faixa: CONCURSO.faixas.atacado }); }
+    catch (e) { res.status(500).json({ erro: e.message }); }
+  });
+  app.get("/api/concurso/sincronizar", requireAdmin, (req, res) => res.json({ sync: statusSync() }));
+  app.post("/api/concurso/sincronizar", requireAdmin, (req, res) => {
+    if (_sync.rodando) return res.json({ ok: true, jaRodando: true, sync: statusSync() });
+    sincronizarElegiveis("manual (" + (req.sessao?.nome || "admin") + ")").catch(() => {});
+    res.json({ ok: true, sync: statusSync() });
+  });
+  // histórico por CLIENTE: pedidos que deram direito, links e frases enviadas
+  app.get("/api/concurso/clientes", requireAdmin, (req, res) => {
+    try {
+      const d = ler(); const lista = listaElegiveis().filter(x => x.elegivel);
+      const porChave = {};
+      const pegar = (cli) => { const k = chaveCliente(cli); return (porChave[k] ||= { chave: k, nome: cli?.nome || "", documento: cli?.documento || "", pj: !!cli?.pj, pedidos: {}, frases: [] }); };
+      lista.forEach(e => { pegar(e.cliente).pedidos[e.pedidoId] = { pedidoId: e.pedidoId, numero: e.numero, data: e.data, valorProdutos: e.valorProdutos, qtdFrases: e.qtdFrases, pago: e.pago, ondePago: e.ondePago, link: e.link ? { status: e.link.status, criadoEm: e.link.criadoEm } : null }; });
+      // links gerados à mão (pedido que não veio da busca) também entram
+      Object.values(d.links).filter(l => l.status !== "revogado").forEach(l => { const c = pegar(l.cliente); if (!c.pedidos[l.pedidoId]) c.pedidos[l.pedidoId] = { pedidoId: l.pedidoId, numero: l.numero, data: l.dataPedido, valorProdutos: l.valorProdutos, qtdFrases: l.qtdFrases, pago: null, ondePago: "", link: { status: l.status, criadoEm: l.criadoEm } }; });
+      const clientePorPedido = {}; Object.values(porChave).forEach(c => Object.keys(c.pedidos).forEach(pid => { clientePorPedido[pid] = c; }));
+      d.frases.forEach(f => { const c = clientePorPedido[String(f.pedidoId)]; if (c) c.frases.push({ id: f.id, seq: f.seq, frase: f.frase, status: f.status, canal: f.canal, enviadoEm: f.enviadoEm, enviadoEmBR: emBR(f.enviadoEm), numero: f.numero || c.pedidos[f.pedidoId]?.numero || "", autor: f.autor?.nome || "", motivo: f.motivoDesclassificacao || f.motivo || "" }); });
+      const out = Object.values(porChave).map(c => {
+        const peds = Object.values(c.pedidos).sort((a, b) => String(b.data).localeCompare(String(a.data)));
+        return { chave: c.chave, nome: c.nome, documento: mascaraDoc(c.documento), pj: c.pj, pedidos: peds,
+          totalPedidos: peds.length, frasesLiberadas: peds.reduce((s, p) => s + (p.qtdFrases || 0), 0),
+          frasesEnviadas: c.frases.length, frasesValidas: c.frases.filter(x => x.status === "valida").length,
+          linksAbertos: peds.filter(p => p.link && p.link.status === "aberto").length,
+          frases: c.frases.sort((a, b) => String(b.enviadoEm).localeCompare(String(a.enviadoEm))) };
+      }).sort((a, b) => b.frasesLiberadas - a.frasesLiberadas || a.nome.localeCompare(b.nome));
+      res.json({ data: out });
+    } catch (e) { res.status(500).json({ erro: e.message }); }
+  });
   app.get("/api/concurso/frases", requireAdmin, (req, res) => {
     const d = ler();
     const primeiraPorNorm = {};

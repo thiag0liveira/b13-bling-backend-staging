@@ -17649,7 +17649,8 @@ setTimeout(async()=>{
 // Concurso do Slogan (Rota 2): link único por pedido, página /frase/<token> e painel
 // /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
 registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
-  lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname });
+  lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname,
+  pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes });
 registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
   lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });
