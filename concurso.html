@@ -89,19 +89,7 @@
   <div class="wrap">
     <div class="kpis" id="kpis"></div>
 
-    <div class="card">
-      <h3>Gerar link para um pedido</h3>
-      <div class="muted" style="margin-bottom:10px">O sistema confere o pedido no Bling: valor em produtos (sem frete), data, situação e cliente. Cada pedido tem um link só, de uso único.</div>
-      <div class="linha">
-        <label class="f">Nº do pedido<input id="gNumero" inputmode="numeric" placeholder="ex.: 48213" style="width:150px" /></label>
-        <label class="f" id="gTipoBox" hidden>Tipo de compra<select id="gTipo"><option value="atacado">Atacado · 1 frase a cada R$ 3.000</option><option value="varejo">Varejo pelo app · 1 a cada R$ 200</option></select></label>
-        <div class="kv" style="padding-bottom:9px"><b>Regra</b>Atacado · 1 frase a cada R$ 3.000 em produtos</div>
-        <label class="f">Canal do pedido<select id="gCanal"><option value="">Automático</option><option value="whatsapp">WhatsApp</option><option value="app">Aplicativo</option></select></label>
-        <button class="btn btn-ghost" id="btnConferir" onclick="conferirPedido()">Conferir pedido</button>
-      </div>
-      <div class="previa" id="previa"></div>
-      <div class="resultado" id="resultado"></div>
-    </div>
+    <div class="resultado" id="resultado"></div>
 
     <div class="card">
       <div class="abas" id="abas">
@@ -110,8 +98,23 @@
         <span class="chip" data-aba="links">Links</span>
         <span class="chip" data-aba="frases">Frases recebidas</span>
       </div>
+      <input id="busca" type="search" placeholder="🔎 Buscar por nº do pedido ou nome do cliente" autocomplete="off"
+        style="width:100%;margin:10px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px" />
       <div id="corpoAba"></div>
     </div>
+
+    <details class="card" id="manual" style="padding-top:12px;padding-bottom:12px">
+      <summary style="cursor:pointer;font-weight:800;color:#9fd8ff">Pedido não apareceu na lista? Gerar link pelo número</summary>
+      <div class="muted" style="margin:10px 0">Só para exceções (pedido pago depois da última sincronização ou busca com problema). Aplica as MESMAS regras da lista: valor em produtos (sem frete), data, situação e cliente. Cada pedido tem um link só, de uso único.</div>
+      <div class="linha">
+        <label class="f">Nº do pedido<input id="gNumero" inputmode="numeric" placeholder="ex.: 48213" style="width:150px" /></label>
+        <label class="f" id="gTipoBox" hidden>Tipo de compra<select id="gTipo"><option value="atacado">Atacado · 1 frase a cada R$ 3.000</option><option value="varejo">Varejo pelo app · 1 a cada R$ 200</option></select></label>
+        <div class="kv" style="padding-bottom:9px"><b>Regra</b>Atacado · 1 frase a cada R$ 3.000 em produtos</div>
+        <label class="f">Canal do pedido<select id="gCanal"><option value="">Automático</option><option value="whatsapp">WhatsApp</option><option value="app">Aplicativo</option></select></label>
+        <button class="btn btn-ghost" id="btnConferir" onclick="conferirPedido()">Conferir pedido</button>
+      </div>
+      <div class="previa" id="previa"></div>
+    </details>
   </div>
 </div>
 
@@ -167,7 +170,9 @@ const dataBR = s => s ? s.split("-").reverse().join("/") : "";
 const fmtDoc = d => { d=String(d||""); return d.length===14?d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,"$1.$2.$3/$4-$5"):d; };
 const fmtTel = d => { d=String(d||"").replace(/\D/g,"").replace(/^55(?=\d{10,11}$)/,""); return d.length===11?d.replace(/(\d{2})(\d{5})(\d{4})/,"($1) $2-$3"):d.length===10?d.replace(/(\d{2})(\d{4})(\d{4})/,"($1) $2-$3"):d; };
 let ABA="elegiveis", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
-let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="pagos", _pollSync=null;
+let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="pagos", _pollSync=null, BUSCA="";
+const normB=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+function bate(numero,nome){ const b=normB(BUSCA); if(!b) return true; return String(numero||"").includes(b.replace(/\D/g,"")||"\u0000")||normB(nome).includes(b); }
 
 function token(){ try{ return (b13GetSession()||{}).token||""; }catch(e){ return ""; } }
 async function api(path, opts={}){
@@ -252,6 +257,7 @@ async function gerarLink(){
 }
 function mostrarResultado(l){
   const r=document.getElementById("resultado"); r.style.display="block";
+  setTimeout(()=>r.scrollIntoView({behavior:"smooth",block:"start"}),50); // o resultado fica no topo da tela
   r.innerHTML=`<div style="font-weight:800">✅ Link do pedido nº ${esc(l.numero)} · ${esc(l.qtdFrases)} frase${l.qtdFrases==1?"":"s"} ${tagStatusLink(l)}</div>
     <div class="url">${esc(l.url)}</div>
     <div class="acoes">
@@ -278,6 +284,10 @@ function render(){
   if(ABA==="clientes") el.innerHTML=htmlClientes();
 }
 function htmlLinks(){
+  if(BUSCA){ const todos=LINKS; LINKS=todos.filter(l=>bate(l.numero,l.cliente&&l.cliente.nome)); try{ return htmlLinksBase(); } finally{ LINKS=todos; } }
+  return htmlLinksBase();
+}
+function htmlLinksBase(){
   if(!LINKS.length) return `<div class="vazio">Nenhum link gerado ainda. Comece pelo número do pedido aí em cima.</div>`;
   return `<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th class="hide-sm">Valor produtos</th><th>Frases</th><th>Status</th><th class="hide-sm">Gerado</th><th></th></tr></thead><tbody>
     ${LINKS.map((l,i)=>`<tr>
@@ -326,7 +336,7 @@ function htmlSync(){
   const st=s.rodando?`<span class="tag warn">⏳ sincronizando… ${s.paginas||0} página(s), ${s.pedidosListados||0} pedidos lidos, ${s.detalhes||0} conferido(s)</span>`
     :`<span class="muted">Última sincronização: <b>${hora(s.sincronizadoEm)}</b> · próxima automática: ${hora(s.proximaEm)} (a cada ${s.intervaloMin||60} min)</span>`;
   return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">${st}
-    ${s.erro?`<span class="tag erro">${esc(s.erro)}</span>`:""}
+    ${s.erro?`<span class="tag erro" title="${esc(s.erro)}">⚠️ a última sincronização não conseguiu falar com o Bling; a lista mostra o que já tinha</span>`:""}
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" ${s.rodando?"disabled":""} onclick="sincronizarAgora()">🔄 Sincronizar agora</button></div>`;
 }
 function filtroEleg(e){
@@ -340,7 +350,7 @@ function htmlElegiveis(){
   const cont=k=>{ const f=FILTRO_ELEG; FILTRO_ELEG=k; const n=ELEG.filter(filtroEleg).length; FILTRO_ELEG=f; return n; };
   const chips=[["pagos","Pagos, sem link"],["aguardando","Aguardando pagamento"],["comlink","Com link"],["todos","Todos elegíveis"],["fora","Fora da regra"]]
     .map(([k,t])=>`<span class="chip ${FILTRO_ELEG===k?"on":""}" onclick="FILTRO_ELEG='${k}';render()">${t} (${cont(k)})</span>`).join(" ");
-  const lista=ELEG.filter(filtroEleg);
+  const lista=BUSCA?ELEG.filter(e=>bate(e.numero,e.cliente&&e.cliente.nome)):ELEG.filter(filtroEleg);
   const linhas=lista.map(e=>{
     const pag=e.pago?`<span class="tag ok">✅ pago · ${esc(e.ondePago)}</span>`:(e.situacaoId===12?`<span class="tag erro">cancelado</span>`:`<span class="tag warn">⏳ ${esc(e.ondePago)}</span>`);
     const lk=e.link?(e.link.status==="enviado"?`<span class="tag ok">frases enviadas (${e.frasesEnviadas})</span>`:`<span class="tag neu">link aguardando o cliente</span>`):"";
@@ -353,7 +363,9 @@ function htmlElegiveis(){
       <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':brl(e.valorProdutos)}</td>
       <td><b>${e.qtdFrases==null?"—":e.qtdFrases}</b></td><td>${pag}</td><td>${lk}</td><td>${acao}</td></tr>`;
   }).join("");
-  return htmlSync()+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
+  const avisoBusca=BUSCA?`<div class="muted" style="margin-bottom:8px">Buscando "<b>${esc(BUSCA)}</b>" em todos os pedidos (pagos, aguardando, com link e fora da regra).</div>`:"";
+  if(BUSCA&&!lista.length) return htmlSync()+avisoBusca+`<div class="vazio">Nenhum pedido com "${esc(BUSCA)}".<br><span class="muted">Se for um pedido novo, toque em 🔄 Sincronizar agora. Se ainda assim não aparecer, use <a href="#" onclick="abrirManual();return false" style="color:#9fd8ff">gerar link pelo número</a>.</span></div>`;
+  return htmlSync()+avisoBusca+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;${BUSCA?"opacity:.45;pointer-events:none":""}">${chips}</div>
     <div class="muted" style="margin-bottom:8px;font-size:12px">Atacado, 1 frase a cada ${brl(FAIXA)} em produtos (sem frete). "Pago" = Atendido no Bling, recebido em caixa ou entregue com recebimento registrado. A prazo só conta depois de quitado.</div>
     ${lista.length?`<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Em produtos</th><th>Frases</th><th>Pagamento</th><th>Situação do link</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
       :`<div class="vazio">${SYNC&&!SYNC.sincronizadoEm?"Ainda não sincronizou. Toque em 🔄 Sincronizar agora.":"Nenhum pedido neste filtro."}</div>`}`;
@@ -376,10 +388,11 @@ async function gerarDireto(numero,confirmado){
 function verLink(tok){ const l=LINKS.find(x=>x.token===tok); if(l){ mostrarResultado(l); window.scrollTo({top:0,behavior:"smooth"}); } }
 // ---------- CLIENTES (histórico) ----------
 function htmlClientes(){
-  if(!CLIENTES.length) return `<div class="vazio">Nenhum cliente com pedido elegível ainda.</div>`;
+  const CL=BUSCA?CLIENTES.filter(c=>normB(c.nome).includes(normB(BUSCA))||c.pedidos.some(p=>bate(p.numero,""))):CLIENTES;
+  if(!CL.length) return `<div class="vazio">${BUSCA?`Nenhum cliente com "${esc(BUSCA)}".`:"Nenhum cliente com pedido elegível ainda."}</div>`;
   return `<div class="muted" style="margin-bottom:8px">Toque no cliente para ver os pedidos e o histórico de frases.</div>
   <div class="rolagem"><table class="tbl"><thead><tr><th>Cliente</th><th>Pedidos</th><th>Frases liberadas</th><th>Enviadas (válidas)</th><th>Links aguardando</th></tr></thead><tbody>
-  ${CLIENTES.map(c=>`<tr style="cursor:pointer" onclick="abrirCliente('${esc(c.chave)}')"><td><b style="color:#9fd8ff">${esc(c.nome||"—")}</b><div class="muted" style="font-size:11px">${esc(c.documento||"")}</div></td>
+  ${CL.map(c=>`<tr style="cursor:pointer" onclick="abrirCliente('${esc(c.chave)}')"><td><b style="color:#9fd8ff">${esc(c.nome||"—")}</b><div class="muted" style="font-size:11px">${esc(c.documento||"")}</div></td>
     <td>${c.totalPedidos}</td><td>${c.frasesLiberadas}</td><td>${c.frasesEnviadas} (${c.frasesValidas})</td><td>${c.linksAbertos?`<span class="tag neu">${c.linksAbertos}</span>`:"—"}</td></tr>`).join("")}
   </tbody></table></div>`;
 }
@@ -412,7 +425,7 @@ function htmlSugestoes(){
 }
 function usarSugestao(numero,canal){
   document.getElementById("gNumero").value=numero; document.getElementById("gCanal").value=canal;
-  window.scrollTo({top:0,behavior:"smooth"}); conferirPedido();
+  abrirManual(); conferirPedido();
 }
 
 // ---------- motivo (revogar / desclassificar) ----------
@@ -495,6 +508,8 @@ async function carregarListas(){
 async function recarregar(){ try{ await carregarResumo(); await carregarListas(); }catch(e){ document.getElementById("corpoAba").innerHTML=`<div class="msg erro">${esc(e.message)}</div>`; } }
 document.getElementById("gNumero").addEventListener("keydown",e=>{ if(e.key==="Enter") conferirPedido(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".fundo.aberto").forEach(x=>x.classList.remove("aberto")); });
+document.getElementById("busca").addEventListener("input",ev=>{ BUSCA=ev.target.value; render(); });
+function abrirManual(){ const d=document.getElementById("manual"); d.open=true; d.scrollIntoView({behavior:"smooth"}); setTimeout(()=>document.getElementById("gNumero").focus(),300); }
 recarregar();
 </script>
 </body>
