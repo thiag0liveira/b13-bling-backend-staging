@@ -1,6 +1,6 @@
 // =============================================================================
 // CONCURSO DO SLOGAN DA B13 — Rota 2 ("A frase da tela")
-// Regulamento v7 (30/09/2026). Período: 01/10/2026 00h01 a 30/10/2026 23h59.
+// Regulamento v7 (30/09/2026). Período: 01/10/2026 00h01 a 30/10/2026 23h59. Pedidos do atacado contam a partir de 05/10 (início da divulgação).
 // -----------------------------------------------------------------------------
 // Módulo separado do server.js de propósito: é uma ação temporária, e assim fica
 // fácil de revisar e de desligar depois (apagar o import e a chamada no server.js).
@@ -26,7 +26,8 @@ import path from "path";
 const CONCURSO = {
   inicio: Date.parse(process.env.CONCURSO_INICIO || "2026-10-01T00:01:00-03:00"),
   fimEnvio: Date.parse(process.env.CONCURSO_FIM_ENVIO || "2026-10-30T23:59:59-03:00"),
-  dataPedidoMin: "2026-10-01",
+  // pedidos só contam a partir do início da DIVULGAÇÃO do atacado (05/10), não do início do concurso (01/10)
+  dataPedidoMin: process.env.CONCURSO_DATA_PEDIDO_MIN || "2026-10-05",
   dataPedidoMax: "2026-10-30",
   faixas: { atacado: 3000, varejo: 200 },
   // Esta campanha da Rota 2 é SÓ para o atacado (R$ 3.000 por frase). A faixa de
@@ -149,7 +150,7 @@ export function registrarConcursoSlogan(app, deps) {
     const sit = Number(ped.situacao?.id || 0);
     const data = String(ped.data || "").slice(0, 10);
     if (sit === SIT.CANCELADO) bloqueios.push("Pedido cancelado no Bling (cláusula 4.7).");
-    if (!data || data < CONCURSO.dataPedidoMin || data > CONCURSO.dataPedidoMax) bloqueios.push(`Pedido de ${data ? data.split("-").reverse().join("/") : "data desconhecida"}, fora do período de 01/10 a 30/10 (cláusula 2.5).`);
+    if (!data || data < CONCURSO.dataPedidoMin || data > CONCURSO.dataPedidoMax) bloqueios.push(`Pedido de ${data ? data.split("-").reverse().join("/") : "data desconhecida"}, fora do período de ${CONCURSO.dataPedidoMin.split("-").reverse().slice(0, 2).join("/")} a ${CONCURSO.dataPedidoMax.split("-").reverse().slice(0, 2).join("/")} (cláusula 2.5).`);
     if (qtd < 1) bloqueios.push(`Valor em produtos de ${valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} não alcança a faixa de R$ ${faixa.toLocaleString("pt-BR")} do ${tipo} (cláusula 4.2).`);
     if (sit === SIT.EM_ABERTO || sit === SIT.EM_DIGITACAO) avisos.push(`Pedido ainda "${nomeSituacao(sit)}". A frase só vale para compra efetivada; confira o pagamento antes de mandar o link.`);
     const orig = origemLocal(ped.id);
@@ -192,7 +193,7 @@ export function registrarConcursoSlogan(app, deps) {
   // PAGO = Atendido no Bling, OU recebido em caixa, OU entregue com recebimento registrado (pedido entregue fica
   // "Em rota" no Bling, então só o Bling não basta). A prazo só conta depois de quitado.
   const SYNC = {
-    desde: process.env.CONCURSO_SYNC_DESDE || "2026-10-05",
+    desde: process.env.CONCURSO_SYNC_DESDE || CONCURSO.dataPedidoMin,
     intervaloMs: Math.max(15, Number(process.env.CONCURSO_SYNC_MIN || 60)) * 60000,
     maxPaginas: 80,
   };
