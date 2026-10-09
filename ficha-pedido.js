@@ -27,11 +27,19 @@
       ".b13f-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}" +
       ".b13f-tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap;margin-right:4px}" +
       ".b13f-tag.ok{background:#11352a;color:#6be3a8}.b13f-tag.warn{background:#3a2a0a;color:#ffd23f}.b13f-tag.erro{background:#3d1020;color:#ff8aa3}.b13f-tag.neu{background:#24205a;color:#cfcaf5}.b13f-tag.azul{background:#0d2a44;color:#7fd0ff}" +
-      ".b13f-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.b13f-gal a,.b13f-gal div{display:block;border:1px solid #2c2660;border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}" +
+      ".b13f-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}" +
       ".b13f-gal img{width:100%;height:110px;object-fit:cover;display:block}.b13f-gal video{width:100%;height:110px;display:block;background:#000}.b13f-gal small{display:block;padding:5px 7px;font-size:10.5px;color:#9a95c9}" +
       ".b13f-tl{border-left:2px solid #2c2660;padding-left:12px}.b13f-tl div{font-size:12.5px;padding:4px 0}.b13f-tl span{color:#9a95c9}" +
       ".b13f-btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;background:#1c1846;border:1px solid #3a3480}" +
-      ".b13f-desc{font-size:12px;color:#9a95c9}";
+      ".b13f-desc{font-size:12px;color:#9a95c9}" +
+      ".b13f-mid{position:relative;cursor:pointer;border:1px solid #2c2660;border-radius:8px;overflow:hidden;background:#0b0a1e}.b13f-mid:hover{border-color:#FF0082}" +
+      ".b13f-mid img{width:100%;height:110px;object-fit:cover;display:block}.b13f-mid small{display:block;padding:5px 7px;font-size:10.5px;color:#9a95c9}" +
+      ".b13f-play{position:absolute;left:50%;top:55px;transform:translate(-50%,-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,0,130,.9);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.6)}" +
+      ".b13f-lb{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:400;display:none;flex-direction:column}.b13f-lb.aberto{display:flex}" +
+      ".b13f-lb-top{display:flex;gap:8px;align-items:center;padding:10px 12px;color:#cfcaf5;font-size:13px;font-family:Arial,Helvetica,sans-serif}.b13f-lb-top span{flex:1}" +
+      ".b13f-lb-palco{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:0 50px 20px}" +
+      ".b13f-lb-palco video,.b13f-lb-palco img{max-width:100%;max-height:calc(100vh - 80px);border-radius:8px;background:#000}" +
+      ".b13f-seta{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:60px;border:none;border-radius:10px;background:rgba(255,255,255,.12);color:#fff;font-size:30px;cursor:pointer}";
     document.head.appendChild(st);
   }
   function fundo() {
@@ -45,12 +53,51 @@
   }
   function fechar() { var f = document.getElementById("b13FichaFundo"); if (f) f.classList.remove("aberto"); }
   function lin(a, b) { return '<div class="b13f-lin"><span>' + a + "</span><b>" + b + "</b></div>"; }
+  var MID = []; // mídias do pedido aberto (para passar de uma para outra no visualizador)
   function midia(m) {
+    var i = MID.length; MID.push(m);
     var orig = m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro";
-    if (m.tipo === "video") return '<div><video src="' + esc(B + m.url) + '" controls preload="none"' + (m.thumb ? ' poster="' + esc(B + m.thumb) + '"' : "") + '></video><small>🎥 ' + orig + " · " + hora(m.em) + " · " + esc(m.por) + "</small></div>";
-    return '<a href="' + esc(B + m.url) + '" target="_blank" rel="noopener"><img src="' + esc(B + (m.thumb || m.url)) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)"><small>📷 ' + orig + " · " + hora(m.em) + " · " + esc(m.por) + "</small></a>";
+    var capa = m.tipo === "video"
+      ? (m.thumb ? '<img src="' + esc(B + m.thumb) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">' : '<div style="height:110px;background:#000"></div>')
+      : '<img src="' + esc(B + (m.thumb || m.url)) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">';
+    return '<div class="b13f-mid" onclick="B13Ficha.ver(' + i + ')">' + capa + (m.tipo === "video" ? '<span class="b13f-play">▶</span>' : "") +
+      "<small>" + (m.tipo === "video" ? "🎥 " : "📷 ") + orig + " · " + hora(m.em) + " · " + esc(m.por) + "</small></div>";
+  }
+  // VISUALIZADOR: vídeo abre em TELA CHEIA e já tocando; foto abre grande. Setas (ou ← →) passam para a próxima; Esc fecha.
+  function lb() {
+    var el = document.getElementById("b13FichaLb"); if (el) return el;
+    el = document.createElement("div"); el.id = "b13FichaLb"; el.className = "b13f-lb";
+    el.addEventListener("click", function (e) { if (e.target === el || e.target.className === "b13f-lb-palco") fecharLb(); });
+    document.addEventListener("keydown", function (e) { if (!el.classList.contains("aberto")) return; if (e.key === "Escape") fecharLb(); if (e.key === "ArrowRight") ver(LB_I + 1); if (e.key === "ArrowLeft") ver(LB_I - 1); });
+    document.body.appendChild(el); return el;
+  }
+  var LB_I = 0;
+  function ver(i) {
+    if (!MID.length) return; LB_I = (i + MID.length) % MID.length; var m = MID[LB_I], el = lb();
+    var url = B + m.url;
+    el.innerHTML = '<div class="b13f-lb-top"><span>' + (LB_I + 1) + " de " + MID.length + " · " + (m.tipo === "video" ? "🎥" : "📷") + " " + hora(m.em) + (m.por ? " · " + esc(m.por) : "") + "</span>" +
+      '<a class="b13f-btn" href="' + esc(url) + '" download target="_blank" rel="noopener">⬇ Baixar</a><button class="b13f-btn" onclick="B13Ficha.fecharLb()">✕ Fechar</button></div>' +
+      '<div class="b13f-lb-palco">' + (MID.length > 1 ? '<button class="b13f-seta" style="left:8px" onclick="B13Ficha.ver(' + (LB_I - 1) + ')">‹</button>' : "") +
+      (m.tipo === "video" ? '<video id="b13fVideo" src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" onerror="B13Ficha._semArquivo(this)">') +
+      (MID.length > 1 ? '<button class="b13f-seta" style="right:8px" onclick="B13Ficha.ver(' + (LB_I + 1) + ')">›</button>' : "") + "</div>";
+    el.classList.add("aberto");
+    if (m.tipo === "video") {
+      var v = document.getElementById("b13fVideo");
+      try { // tela cheia direto (o toque do usuário permite); se o aparelho não deixar, fica grande no visualizador
+        var p = v.requestFullscreen ? v.requestFullscreen() : v.webkitRequestFullscreen ? v.webkitRequestFullscreen() : v.webkitEnterFullscreen ? v.webkitEnterFullscreen() : null;
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+      try { var t = v.play(); if (t && t.catch) t.catch(function () {}); } catch (e) {}
+    }
+  }
+  function fecharLb() {
+    var el = document.getElementById("b13FichaLb"); if (!el) return;
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+    var v = document.getElementById("b13fVideo"); if (v) { try { v.pause(); } catch (e) {} }
+    el.classList.remove("aberto"); el.innerHTML = "";
   }
   function render(x) {
+    MID = [];
     var st = ST[x.status] || [x.status, "neu"], pg = PG[x.pagamento.situacao] || [x.pagamento.situacao, "neu"];
     var conf = x.midias.filter(function (m) { return m.origem === "conferencia"; }), ent = x.midias.filter(function (m) { return m.origem !== "conferencia"; });
     var S = x.separacao, C = x.conferencia, E = x.entrega;
@@ -110,5 +157,5 @@
   }
   // arquivo apagado pela limpeza automática (ou que não existe mais): aviso no lugar da imagem quebrada
   function semArquivo(img) { var d = document.createElement("div"); d.style.cssText = "height:110px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#9a95c9;padding:8px"; d.textContent = "arquivo não está mais disponível (limpeza automática de arquivos antigos)"; if (img.parentNode) { var a = img.parentNode; if (a.tagName === "A") a.removeAttribute("href"); a.replaceChild(d, img); } }
-  window.B13Ficha = { abrir: abrir, fechar: fechar, assinatura: assinatura, _semArquivo: semArquivo };
+  window.B13Ficha = { abrir: abrir, fechar: fechar, assinatura: assinatura, ver: ver, fecharLb: fecharLb, _semArquivo: semArquivo };
 })();
