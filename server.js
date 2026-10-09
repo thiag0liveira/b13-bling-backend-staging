@@ -1360,8 +1360,13 @@ app.get("/api/debug/pedidos-hoje", async(req,res)=>{
 app.get("/api/situacoes",async(req,res)=>{ try{ const m=req.query.modulo; res.json(await bling(m?`/situacoes/modulos/${m}`:`/situacoes/modulos`)); }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }});
 
 // ---- helpers ----
-const lerJSON=(f,def={})=>{ try{return JSON.parse(fs.readFileSync(f,"utf8"));}catch{return def;} };
-const salvarJSON=(f,d)=>fs.writeFileSync(f,JSON.stringify(d));
+const lerJSON=(f,def={})=>{ try{return JSON.parse(fs.readFileSync(f,"utf8"));}catch(e){
+  // arquivo que NÃO existe é normal (usa o padrão); arquivo que existe mas não abre é grave: avisa alto no log
+  if(e&&e.code!=="ENOENT") console.error(`[lerJSON] ${f} ilegível (${String(e.message).slice(0,90)}) — usando o valor padrão`);
+  return def; } };
+// grava num arquivo temporário e troca (rename é atômico): se o servidor cair no meio da gravação, o arquivo
+// antigo continua inteiro, em vez de ficar cortado pela metade (e depois ser lido como vazio).
+const salvarJSON=(f,d)=>{ const tmp=`${f}.tmp-${process.pid}`; fs.writeFileSync(tmp,JSON.stringify(d)); fs.renameSync(tmp,f); };
 // Hash de senha forte: scrypt com sal único por usuário (formato salvo: "salt:hash").
 // Antigo (SHA-256 com sal fixo compartilhado) ainda é reconhecido pra não invalidar
 // senhas já cadastradas — migra sozinho pro formato novo no próximo login com sucesso.
@@ -4156,7 +4161,7 @@ app.get("/api/diag/tem-registro-local/:termo",async(req,res)=>{
 // Filtra por ?numeros=A,B,C ou, sem filtro, varre os últimos ?dias=N (padrão 30).
 app.get("/api/diag/conferir-registros",async(req,res)=>{
   try{
-    const props=lerPropostas();
+    const t0Run=Date.now(); const props=lerPropostas();
     const filtro=String(req.query.numeros||"").split(",").map(x=>x.trim()).filter(Boolean);
     const dias=Math.min(Number(req.query.dias||30),90);
     const desde=Date.now()-dias*86400000;
@@ -4197,7 +4202,8 @@ app.get("/api/diag/conferir-registros",async(req,res)=>{
       await sleep(90);
     }
     if(req.query.executar==="1" && divergentes.length){
-      salvarPropostas(props);
+      // relê o arquivo atual e leva só os registros que ESTA execução mudou (ela espera o Bling por muito tempo)
+      { const pp=lerPropostas(); Object.values(props).forEach(p=>{ if(p&&p.ressincronizadoEm>=t0Run&&pp[p.id]) pp[p.id]=p; }); salvarPropostas(pp); }
       return res.json({ok:true, executado:true, atualizados:divergentes.length, detalhe:divergentes});
     }
     res.json({ conferidos:alvos.length, divergentes:divergentes.length, iguais:iguais.length,
@@ -12881,7 +12887,8 @@ app.post("/api/pedidos-online/adotar/:termo",async(req,res)=>{
       pedidoBlingId:ped.id, pedidoBlingNumero:ped.numero,
       adotado:true, adotadoEm:Date.now(),
     };
-    salvarPropostas(props);
+    // relê o arquivo AGORA (houve awaits do Bling desde a leitura lá em cima) e grava só este registro
+    { const pp=lerPropostas(); pp[id]=props[id]; salvarPropostas(pp); }
     const sit=Number(ped.situacao?.id||0);
     _sitOnline[String(ped.id)]={situacaoId:sit, situacao:nomeSituacao(sit), em:Date.now()};
     addLog(String(ped.id),"pedido_adotado",req.body?.funcionarioId,props[id].funcionarioNome,{numero:ped.numero});
@@ -15678,6 +15685,7 @@ app.post("/api/atacado/propostas/:id/editar-entrega",(req,res)=>{
     const props=lerPropostas();
     const prop=props[req.params.id];
     if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.gerandoPedidoEm && Date.now()-prop.gerandoPedidoEm<120000) return res.status(409).json({erro:"o pedido desta proposta está sendo gerado agora — espere terminar e, se precisar mudar algo, edite pelo pedido"});
     if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+(prop.pedidoBlingNumero||prop.pedidoBlingId)+" — mude o tipo por lá"});
     const {tipo,endereco,frete}=req.body||{};
     if(tipo!=="entrega"&&tipo!=="retirada") return res.status(400).json({erro:"tipo inválido"});
@@ -15696,6 +15704,7 @@ app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
     const props=lerPropostas();
     const prop=props[req.params.id];
     if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    if(prop.gerandoPedidoEm && Date.now()-prop.gerandoPedidoEm<120000) return res.status(409).json({erro:"o pedido desta proposta está sendo gerado agora — espere terminar e, se precisar mudar algo, edite pelo pedido"});
     if(prop.pedidoBlingId) return res.status(400).json({erro:"esta proposta já virou o pedido #"+(prop.pedidoBlingNumero||prop.pedidoBlingId)+" — edite pelo pedido"});
     const {itens,funcionarioNome}=req.body||{};
     if(!Array.isArray(itens)||!itens.length) return res.status(400).json({erro:"a proposta precisa ter ao menos 1 item"});
@@ -16004,7 +16013,12 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     prop.pedidoBlingId=pedidoId; prop.pedidoBlingNumero=numero;
     prop.gerandoPedidoEm=null;
     prop.atualizadoEm=Date.now();
-    props[prop.id]=prop; salvarPropostas(props);
+    // ATENÇÃO: aqui `props` é a cópia lida no COMEÇO da rota, antes de esperar o Bling (segundos). Gravar ela de volta
+    // apagava tudo que outras pessoas salvaram nesse intervalo (edição de outras propostas, propostas novas...).
+    // Por isso relê o arquivo AGORA e muda só os campos que esta rota decidiu, só nesta proposta.
+    { const pp=lerPropostas(); const reg=pp[prop.id]||prop;
+      Object.assign(reg,{status:"pedido_gerado",pedidoBlingId:pedidoId,pedidoBlingNumero:numero,gerandoPedidoEm:null,atualizadoEm:Date.now()});
+      pp[prop.id]=reg; salvarPropostas(pp); }
     // se AINDA não tiver o número (raro, a essa altura), busca em SEGUNDO PLANO
     // (sem travar mais a resposta) e corrige o registro pra próximas consultas
     if(!numeroVeioDoBling){
