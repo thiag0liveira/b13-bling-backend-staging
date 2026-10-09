@@ -20,6 +20,7 @@
   .pc .mid{background:#000;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
   .pc .mid img,.pc .mid video{width:100%;height:100%;object-fit:cover}
   .pc .play{position:absolute;font-size:44px;color:#fff;text-shadow:0 2px 8px #000;pointer-events:none}
+  .pc .ph{font-size:38px;opacity:.35}
   .pc .info{padding:10px}
   .pc .num{font-weight:900;font-size:15px}
   .pc .cli{font-size:12px;color:#9a95c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -56,64 +57,136 @@ function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"
 
 var DADOS=null, FILTRO="", DIAS=15, BUSCA="", USO=null;
 
-function carregar(){
+// ============ CARREGAMENTO LEVE ============
+// Antes: cada cartão de vídeo criava um <video preload="metadata"> (o navegador baixava boa parte de CADA vídeo pra
+// mostrar a capa), a tela desenhava todos os pedidos de uma vez e redesenhava tudo a cada letra da busca.
+// Agora: a capa é uma MINIATURA (JPEG pequeno, guardada no servidor e no cache do navegador); o vídeo/foto inteiro só
+// é baixado ao abrir; a grade vem em blocos de 24; a busca só refaz a grade. Arquivo antigo sem miniatura: a tela
+// gera a miniatura UMA vez, só quando o cartão aparece na tela (2 por vez), e guarda no servidor pra próxima.
+var PAG=24, MOSTRAR=PAG, _tBusca=null, THUMBS={}, FILA=[], ATIVOS=0, OBS=null;
+function tokenSess(){ try{ var s=JSON.parse(localStorage.getItem("b13sess")||"null"); return (s&&s.token)||""; }catch(e){ return ""; } }
+function carregar(silencioso){
   var app=document.getElementById("app");
-  app.innerHTML='<div class="card"><div class="muted">Carregando comprovantes…</div></div>';
+  if(!silencioso){ app.innerHTML='<div class="card"><div class="muted">Carregando comprovantes…</div></div>'; MOSTRAR=PAG; }
   fetch(B+"/api/comprovantes/lista?dias="+DIAS+(FILTRO?"&tipo="+FILTRO:"")).then(function(r){return r.json();}).then(function(j){
-    DADOS=j; render();
-    fetch(B+"/api/comprovantes/uso").then(function(r){return r.json();}).then(function(u){ if(!u.erro){ USO=u; render(); } }).catch(function(){});
-  }).catch(function(){ app.innerHTML='<div class="card"><div class="muted">Erro ao carregar.</div></div>'; });
+    DADOS=j;
+    if(silencioso&&document.getElementById("grade")) renderGrade(); else render();
+    // número/cliente que o servidor ainda está buscando no Bling: atualiza sozinho daqui a pouco
+    if(j.completando>0&&!silencioso) setTimeout(function(){ carregar(true); },9000);
+    if(!silencioso) fetch(B+"/api/comprovantes/uso").then(function(r){return r.json();}).then(function(u){ if(!u.erro){ USO=u; renderUso(); } }).catch(function(){});
+  }).catch(function(){ if(!silencioso) app.innerHTML='<div class="card"><div class="muted">Erro ao carregar.</div></div>'; });
 }
-
 function render(){
   var app=document.getElementById("app");
   if(!DADOS){ carregar(); return; }
-  var lista=(DADOS.data||[]);
-  if(BUSCA){ var b=BUSCA.toLowerCase(); lista=lista.filter(function(p){ return String(p.numero).indexOf(b)>=0 || (p.cliente||"").toLowerCase().indexOf(b)>=0; }); }
-  var cards=lista.map(function(p){
-    var c=p.comprovantes[0]; // capa = mais recente
-    var ehVideo=c.tipo==="video";
-    var mid=ehVideo
-      ? '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'video\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"><video src="'+B+esc(c.url)+'#t=0.1" preload="metadata" muted></video><span class="play">▶</span></div>'
-      : '<div class="mid" onclick="abrirLb(\''+esc(c.url)+'\',\'foto\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"><img src="'+B+esc(c.url)+'" loading="lazy"></div>';
-    return '<div class="pc">'+mid+
-      '<div class="info">'+
-        '<div class="num">Pedido #'+esc(p.numero)+'</div>'+
-        '<div class="cli">'+esc(p.cliente||"cliente não identificado")+'</div>'+
-        '<div style="margin-top:6px">'+
-          (p.temFoto?'<span class="badge" style="background:#2f9e6b">📷 foto</span>':'')+
-          (p.temVideo?'<span class="badge" style="background:#b3341f">🎥 vídeo</span>':'')+
-          (p.qtd>1?'<span class="badge" style="background:#514c96">'+p.qtd+' arquivos</span>':'')+
-        '</div>'+
-        '<div class="muted" style="font-size:11px;margin-top:5px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div>'+
-        (p.qtd>1?'<button class="btn btn-ghost" style="width:100%;margin-top:8px;font-size:11px" onclick="verTodos('+p.pedidoId+')">Ver os '+p.qtd+'</button>':'')+
-      '</div></div>';
-  }).join("");
-
   app.innerHTML=
     '<div class="card" style="margin-top:0">'+
       '<div style="font-weight:900;font-size:18px">📸 Comprovantes de Conferência</div>'+
       '<div class="muted" style="font-size:12px;margin-top:4px">Fotos e vídeos tirados na conferência de cada pedido. Toque pra ampliar.</div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">'+
-        '<input placeholder="🔎 nº do pedido ou cliente" value="'+esc(BUSCA)+'" oninput="BUSCA=this.value;render()" style="flex:1;min-width:160px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px">'+
+        '<input id="busca" placeholder="🔎 nº do pedido ou cliente" value="'+esc(BUSCA)+'" style="flex:1;min-width:160px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px">'+
         '<span class="chip '+(FILTRO===""?"on":"")+'" onclick="FILTRO=\'\';carregar()">Tudo</span>'+
         '<span class="chip '+(FILTRO==="foto"?"on":"")+'" onclick="FILTRO=\'foto\';carregar()">📷 Fotos</span>'+
         '<span class="chip '+(FILTRO==="video"?"on":"")+'" onclick="FILTRO=\'video\';carregar()">🎥 Vídeos</span>'+
         '<select onchange="DIAS=this.value;carregar()" style="background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px">'+
-          '<option value="7" '+(DIAS==7?"selected":"")+'>7 dias</option>'+
-          '<option value="15" '+(DIAS==15?"selected":"")+'>15 dias</option>'+
-          '<option value="30" '+(DIAS==30?"selected":"")+'>30 dias</option>'+
-          '<option value="90" '+(DIAS==90?"selected":"")+'>90 dias</option>'+
+          [7,15,30,90].map(function(d){ return '<option value="'+d+'" '+(DIAS==d?"selected":"")+'>'+d+' dias</option>'; }).join("")+
         '</select>'+
       '</div>'+
-      '<div class="muted" style="font-size:12px;margin-top:8px">'+lista.length+' pedido(s) · '+(DADOS.totalArquivos||0)+' arquivo(s)</div>'+
-      (USO?'<div style="margin-top:8px">'+
-        '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9"><span>Armazenamento: '+USO.totalMB+' MB de '+USO.limiteMB+' MB</span><span>'+USO.pctUsado+'%</span></div>'+
-        '<div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:3px"><div style="height:100%;width:'+Math.min(100,USO.pctUsado)+'%;background:'+(USO.pctUsado>85?"#ff3b3b":(USO.pctUsado>60?"#ffd23f":"#3ce88a"))+'"></div></div>'+
-        '<div style="font-size:10px;color:#6b6699;margin-top:3px">'+USO.videos+' vídeos ('+USO.videoMB+' MB) · '+USO.fotos+' fotos ('+USO.fotoMB+' MB) · guarda '+USO.diasManter+' dias'+(USO.maisAntigo?' · mais antigo: '+USO.maisAntigo:'')+'</div>'+
-      '</div>':'')+
-    '</div>'+
-    (lista.length?'<div class="grid">'+cards+'</div>':'<div class="card"><div class="muted">Nenhum comprovante no período.</div></div>');
+      '<div class="muted" id="contagem" style="font-size:12px;margin-top:8px"></div>'+
+      '<div id="uso"></div>'+
+    '</div><div id="grade"></div>';
+  // a busca NÃO redesenha a tela inteira (o campo não perde o foco e as imagens não recarregam)
+  document.getElementById("busca").addEventListener("input",function(ev){ var v=ev.target.value; clearTimeout(_tBusca); _tBusca=setTimeout(function(){ BUSCA=v; MOSTRAR=PAG; renderGrade(); },200); });
+  renderUso(); renderGrade();
+}
+function renderUso(){
+  var el=document.getElementById("uso"); if(!el||!USO) return;
+  el.innerHTML='<div style="margin-top:8px">'+
+    '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9"><span>Armazenamento: '+USO.totalMB+' MB de '+USO.limiteMB+' MB</span><span>'+USO.pctUsado+'%</span></div>'+
+    '<div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:3px"><div style="height:100%;width:'+Math.min(100,USO.pctUsado)+'%;background:'+(USO.pctUsado>85?"#ff3b3b":USO.pctUsado>70?"#ffd23f":"#3ce88a")+'"></div></div>'+
+    '<div style="font-size:10px;color:#6b6699;margin-top:3px">'+USO.videos+' vídeos ('+USO.videoMB+' MB) · '+USO.fotos+' fotos ('+USO.fotoMB+' MB) · guarda '+USO.diasManter+' dias'+(USO.maisAntigo?' · mais antigo: '+esc(USO.maisAntigo):'')+'</div></div>';
+}
+function listaFiltrada(){
+  var lista=(DADOS&&DADOS.data)||[];
+  if(BUSCA){ var b=BUSCA.toLowerCase(); lista=lista.filter(function(p){ return String(p.numero).indexOf(b)>=0 || (p.cliente||"").toLowerCase().indexOf(b)>=0; }); }
+  return lista;
+}
+function midiaCard(p,c){
+  var ab=' onclick="abrirLb(\''+esc(c.url)+'\',\''+c.tipo+'\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"';
+  var src=c.thumb?(B+c.thumb):(THUMBS[c.url]||"");
+  var play=c.tipo==="video"?'<span class="play">▶</span>':'';
+  if(src) return '<div class="mid"'+ab+'><img src="'+esc(src)+'" loading="lazy" decoding="async" alt="">'+play+'</div>';
+  return '<div class="mid semthumb" data-url="'+esc(c.url)+'" data-tipo="'+c.tipo+'"'+ab+'>'+(c.tipo==="video"?play:'<span class="ph">📷</span>')+'</div>';
+}
+function cartao(p){
+  var c=p.comprovantes[0]; // capa = mais recente
+  return '<div class="pc">'+midiaCard(p,c)+
+    '<div class="info">'+
+      '<div class="num">Pedido #'+esc(p.numero)+'</div>'+
+      '<div class="cli">'+esc(p.cliente||"cliente não identificado")+'</div>'+
+      '<div style="margin-top:6px">'+
+        (p.temFoto?'<span class="badge" style="background:#2f9e6b">📷 foto</span>':'')+
+        (p.temVideo?'<span class="badge" style="background:#b3341f">🎥 vídeo</span>':'')+
+        (p.qtd>1?'<span class="badge" style="background:#514c96">'+p.qtd+' arquivos</span>':'')+
+      '</div>'+
+      '<div class="muted" style="font-size:11px;margin-top:5px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div>'+
+      (p.qtd>1?'<button class="btn btn-ghost" style="width:100%;margin-top:8px;font-size:11px" onclick="verTodos(\''+esc(String(p.pedidoId))+'\')">Ver os '+p.qtd+'</button>':'')+
+    '</div></div>';
+}
+function renderGrade(){
+  var g=document.getElementById("grade"); if(!g) return;
+  var lista=listaFiltrada(), vis=lista.slice(0,MOSTRAR);
+  document.getElementById("contagem").textContent=lista.length+' pedido(s) · '+(DADOS.totalArquivos||0)+' arquivo(s)'+(DADOS.completando?' · completando nomes no Bling…':'');
+  g.innerHTML=lista.length
+    ? '<div class="grid">'+vis.map(cartao).join("")+'</div>'+(lista.length>MOSTRAR?'<div style="text-align:center;margin:14px 0"><button class="btn btn-ghost" id="maisBtn" onclick="mostrarMais()">Mostrar mais ('+(lista.length-MOSTRAR)+' restantes)</button></div>':'')
+    : '<div class="card"><div class="muted">'+(BUSCA?'Nenhum pedido com "'+esc(BUSCA)+'".':'Nenhum comprovante no período.')+'</div></div>';
+  observarSemThumb();
+  var mb=document.getElementById("maisBtn");
+  if(mb&&"IntersectionObserver" in window){ var o=new IntersectionObserver(function(e){ if(e[0].isIntersecting){ o.disconnect(); mostrarMais(); } },{rootMargin:"500px"}); o.observe(mb); }
+}
+function mostrarMais(){ MOSTRAR+=PAG; renderGrade(); }
+// ---- miniaturas que faltam (arquivos antigos): gera só o que aparece na tela, 2 por vez, e guarda no servidor ----
+function observarSemThumb(){
+  if(!("IntersectionObserver" in window)) return;
+  if(OBS) OBS.disconnect();
+  OBS=new IntersectionObserver(function(ents){ ents.forEach(function(en){ if(en.isIntersecting){ OBS.unobserve(en.target); FILA.push(en.target); proximo(); } }); },{rootMargin:"150px"});
+  document.querySelectorAll(".semthumb").forEach(function(el){ OBS.observe(el); });
+}
+function proximo(){
+  while(ATIVOS<2&&FILA.length){
+    var el=FILA.shift(); if(!document.body.contains(el)||!el.classList.contains("semthumb")) continue;
+    ATIVOS++; gerarThumb(el).then(fim,fim);
+  }
+  function fim(){ ATIVOS--; proximo(); }
+}
+function capturar(url,tipo){
+  return new Promise(function(res){
+    var to=setTimeout(function(){ res(null); },20000);
+    function desenhar(fonte,w,h){ try{ var W=360,H=Math.round(W*(h||3)/(w||4)); var cv=document.createElement("canvas"); cv.width=W; cv.height=H; cv.getContext("2d").drawImage(fonte,0,0,W,H); clearTimeout(to); res(cv.toDataURL("image/jpeg",0.72)); }catch(e){ clearTimeout(to); res(null); } }
+    if(tipo==="video"){
+      var v=document.createElement("video"); v.muted=true; v.playsInline=true; v.preload="metadata";
+      v.onloadedmetadata=function(){ try{ v.currentTime=Math.min(0.5,(v.duration||1)/2); }catch(e){ clearTimeout(to); res(null); } };
+      v.onseeked=function(){ desenhar(v,v.videoWidth,v.videoHeight); v.removeAttribute("src"); try{ v.load(); }catch(e){} };
+      v.onerror=function(){ clearTimeout(to); res(null); };
+      v.src=B+url;
+    } else {
+      var im=new Image(); im.decoding="async";
+      im.onload=function(){ desenhar(im,im.naturalWidth,im.naturalHeight); };
+      im.onerror=function(){ clearTimeout(to); res(null); };
+      im.src=B+url;
+    }
+  });
+}
+function gerarThumb(el){
+  var url=el.getAttribute("data-url"), tipo=el.getAttribute("data-tipo");
+  return capturar(url,tipo).then(function(d){
+    if(!d) return;
+    THUMBS[url]=d;
+    el.classList.remove("semthumb"); el.innerHTML='<img src="'+d+'" alt="">'+(tipo==="video"?'<span class="play">▶</span>':'');
+    var tk=tokenSess(); if(!tk) return;
+    return fetch(B+"/api/comprovantes/miniatura",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":tk},body:JSON.stringify({url:url,dataUrl:d})})
+      .then(function(r){ return r.json(); }).then(function(j){ if(j&&j.thumb) ((DADOS&&DADOS.data)||[]).forEach(function(p){ p.comprovantes.forEach(function(c){ if(c.url===url) c.thumb=j.thumb; }); }); }).catch(function(){});
+  });
 }
 
 function abrirLb(url,tipo,numero,cliente){
@@ -133,7 +206,8 @@ function verTodos(pedidoId){
   lb.innerHTML='<div style="max-width:96vw;max-height:88vh;overflow:auto"><div style="color:#fff;font-weight:900;margin-bottom:10px">Pedido #'+esc(p.numero)+(p.cliente?' — '+esc(p.cliente):'')+' · '+p.qtd+' arquivos</div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">'+
     p.comprovantes.map(function(c){
-      var m=c.tipo==="video"?'<video src="'+B+esc(c.url)+'" controls playsinline style="width:100%;border-radius:8px"></video>':'<img src="'+B+esc(c.url)+'" style="width:100%;border-radius:8px">';
+      var capa=c.thumb?(B+c.thumb):(THUMBS[c.url]||"");
+      var m=c.tipo==="video"?'<video src="'+B+esc(c.url)+'" controls playsinline preload="none"'+(capa?' poster="'+esc(capa)+'"':'')+' style="width:100%;border-radius:8px;background:#000;min-height:120px"></video>':'<img src="'+B+esc(c.url)+'" loading="lazy" style="width:100%;border-radius:8px">';
       return '<div>'+m+'<div style="color:#9a95c9;font-size:11px;margin-top:3px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div></div>';
     }).join("")+'</div></div>';
   lb.classList.add("on");

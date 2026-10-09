@@ -3964,6 +3964,25 @@ app.post("/api/comprovantes/limpar-agora",(req,res)=>{
   catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+const COMPROV_PEDIDOS_CACHE=`${DATA_DIR}/comprovantes_pedidos_cache.json`;
+let _completandoComprov=false;
+// em SEGUNDO PLANO: procura no Bling (fila lenta) o número e o cliente dos pedidos que faltam e guarda no cache.
+// Uma execução por vez, no máximo 60 por rodada, com pausa entre as chamadas.
+function completarNumerosComprovantes(ids){
+  if(_completandoComprov) return; _completandoComprov=true;
+  (async()=>{
+    try{
+      for(const pid of ids.slice(0,60)){
+        if(lerJSON(COMPROV_PEDIDOS_CACHE,{})[pid]) continue;
+        let reg=null;
+        try{ const d=await blingLento(`/pedidos/vendas/${pid}`).then(r=>r?.data); if(d) reg={ numero:d.numero||null, cliente:(d.contato&&d.contato.nome)||"", em:Date.now() }; }catch(e){}
+        if(!reg) reg={ numero:null, cliente:"", em:Date.now(), naoAchado:true }; // não repete a busca a cada abertura
+        const c=lerJSON(COMPROV_PEDIDOS_CACHE,{}); c[pid]=reg; salvarJSON(COMPROV_PEDIDOS_CACHE,c);
+        await sleep(250);
+      }
+    }finally{ _completandoComprov=false; }
+  })().catch(()=>{ _completandoComprov=false; });
+}
 app.get("/api/comprovantes/lista",async(req,res)=>{
   let _miniaturas=new Set(); try{ _miniaturas=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
   try{
@@ -4004,18 +4023,16 @@ app.get("/api/comprovantes/lista",async(req,res)=>{
         temVideo:x.comprovantes.some(c=>c.tipo==="video"),
         temFoto:x.comprovantes.some(c=>c.tipo==="foto") };
     }).sort((a,b)=>b.ultimoEm-a.ultimoEm);
-    // completa no Bling o que faltou (numero ou cliente), limitando pra nao pesar
-    const faltando=lista.filter(x=>!x.numero||!x.cliente).slice(0,40);
-    for(const x of faltando){
-      try{
-        const d=await blingLento(`/pedidos/vendas/${x.pedidoId}`).then(r=>r?.data);
-        if(d){ if(!x.numero) x.numero=d.numero; if(!x.cliente) x.cliente=(d.contato&&d.contato.nome)||""; }
-      }catch(e){}
-      await sleep(60);
-    }
-    // pro que ainda nao achou numero, usa o id como ultimo recurso
+    // número/cliente que o registro local não tem: usa o CACHE (cada pedido é procurado no Bling uma vez só).
+    // Antes isto fazia até 40 consultas ao Bling, uma atrás da outra e na fila lenta, a CADA abertura da tela
+    // (e sem guardar), que era o que fazia a tela demorar. Agora responde na hora e completa em segundo plano.
+    const cacheNC=lerJSON(COMPROV_PEDIDOS_CACHE,{});
+    lista.forEach(x=>{ const c=cacheNC[String(x.pedidoId)]; if(c){ if(!x.numero&&c.numero) x.numero=c.numero; if(!x.cliente&&c.cliente) x.cliente=c.cliente; } });
+    const faltando=lista.filter(x=>(!x.numero||!x.cliente)&&!cacheNC[String(x.pedidoId)]).map(x=>String(x.pedidoId)); // já procurado (achado ou não) não entra de novo
+    if(faltando.length) completarNumerosComprovantes(faltando);
+    // pro que ainda nao achou numero, usa o id por enquanto
     lista.forEach(x=>{ if(!x.numero) x.numero=x.pedidoId; if(!x.cliente) x.cliente=""; });
-    res.json({ dias, qtd:lista.length,
+    res.json({ dias, qtd:lista.length, completando:faltando.length,
       totalArquivos:lista.reduce((a,x)=>a+x.qtd,0), data:lista });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

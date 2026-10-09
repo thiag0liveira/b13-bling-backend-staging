@@ -64,6 +64,42 @@
     document.head.appendChild(st);
   }
 
+  // MINIATURA: depois que o arquivo sobe, gera uma capa pequena (JPEG ~360px) do PRÓPRIO arquivo que está no aparelho
+  // e manda pro servidor. O painel de comprovantes mostra essa capa em vez de baixar o vídeo/foto inteiro.
+  // Silencioso: se falhar (aparelho antigo, sem sessão), nada muda para quem está conferindo.
+  function gerarMiniatura(file, tipo) {
+    return new Promise(function (res) {
+      var obj = null; try { obj = URL.createObjectURL(file); } catch (e) { return res(null); }
+      var to = setTimeout(function () { limpar(); res(null); }, 15000);
+      function limpar() { try { URL.revokeObjectURL(obj); } catch (e) {} }
+      function desenhar(fonte, w, h) {
+        try { var W = 360, H = Math.round(W * (h || 3) / (w || 4)); var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+          cv.getContext("2d").drawImage(fonte, 0, 0, W, H); clearTimeout(to); limpar(); res(cv.toDataURL("image/jpeg", 0.72)); }
+        catch (e) { clearTimeout(to); limpar(); res(null); }
+      }
+      if (tipo === "video") {
+        var v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto";
+        v.onloadeddata = function () { try { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); } catch (e) { desenhar(v, v.videoWidth, v.videoHeight); } };
+        v.onseeked = function () { desenhar(v, v.videoWidth, v.videoHeight); };
+        v.onerror = function () { clearTimeout(to); limpar(); res(null); };
+        v.src = obj;
+      } else {
+        var im = new Image();
+        im.onload = function () { desenhar(im, im.naturalWidth, im.naturalHeight); };
+        im.onerror = function () { clearTimeout(to); limpar(); res(null); };
+        im.src = obj;
+      }
+    });
+  }
+  function enviarMiniatura(base, urlArquivo, file, tipo) {
+    var tk = ""; try { var s = JSON.parse(localStorage.getItem("b13sess") || "null"); tk = (s && s.token) || ""; } catch (e) {}
+    if (!tk || !urlArquivo) return;
+    gerarMiniatura(file, tipo).then(function (d) {
+      if (!d) return;
+      fetch((base || "") + "/api/comprovantes/miniatura", { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": tk }, body: JSON.stringify({ url: urlArquivo, dataUrl: d }) }).catch(function () {});
+    });
+  }
+
   // Envia UM arquivo em binário, com progresso. Tenta de novo (até 3x) só se for falha de rede.
   function enviarArquivo(base, pedidoId, file, tipo, meta, onPct) {
     meta = meta || {};
@@ -220,7 +256,7 @@
       if (pedidoId == null || pedidoId === "") { it.estado = "erro"; it.erro = "pedido não identificado"; mudou(); return Promise.resolve(false); }
       it.estado = "enviando"; it.pct = 0; it.erro = null; mudou();
       return enviarArquivo(base, pedidoId, it.file, it.tipo, meta, function (p) { it.pct = p; atualizarPct(it); })
-        .then(function (j) { it.estado = "enviado"; it.url = j.url; mudou(); return true; })
+        .then(function (j) { it.estado = "enviado"; it.url = j.url; mudou(); try { enviarMiniatura(base, j.url, it.file, it.tipo); } catch (e) {} return true; })
         .catch(function (e) { it.estado = "erro"; it.erro = e.message || "falha no envio"; mudou(); return false; });
     }
 
