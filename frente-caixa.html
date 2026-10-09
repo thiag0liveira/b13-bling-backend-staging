@@ -1283,8 +1283,8 @@ function render() {
   })()}
         ${somaNaoDinheiro() > totalPedido() + 0.009 ? `<div class="err">⚠️ Pix/Débito/Crédito não podem somar mais que o total da venda. Só dinheiro pode gerar troco.</div>` : ""}
         <label style="display:flex;align-items:center;gap:8px;margin:12px 0;font-size:13px">
-          <input type="checkbox" id="emitirNfce" checked> 🧾 Lançar no Bling e emitir cupom fiscal agora</label>
-        <div class="muted" style="font-size:11px;margin:-6px 0 8px 26px">Desmarcado: a venda é registrada rápido só aqui no sistema (sem cupom fiscal), e fica pendente de lançar no Bling depois em Gestão de Caixas.</div>
+          <input type="checkbox" id="emitirNfce" ${LANCAR_NO_BLING ? "checked" : ""} onchange="LANCAR_NO_BLING=this.checked"> 🧾 Lançar no Bling e emitir cupom fiscal agora</label>
+        <div class="muted" style="font-size:11px;margin:-6px 0 8px 26px">Desmarcado (padrão): a venda é registrada rápido só aqui no sistema, sem cupom fiscal, e fica pendente de lançar no Bling depois em Gestão de Caixas. Marque quando o cliente precisar do cupom fiscal.</div>
         <div id="msgFinalizar"></div>
         <button class="btn" id="btnFinalizar" style="width:100%;padding:16px;font-size:15px"
           ${FINALIZANDO || !CARRINHO.length || PAGAMENTOS.some(p => !p.formaId) || restante() > 0.009 || somaNaoDinheiro() > totalPedido() + 0.009 ? "disabled" : ""}
@@ -1320,6 +1320,9 @@ function render() {
   </div>`;
   ligarBusca();
 }
+// padrão da caixinha "Lançar no Bling e emitir cupom fiscal agora": DESMARCADA (venda rápida, só no sistema).
+// Guardado aqui pra a escolha não se perder quando a tela se redesenha; volta ao padrão depois de cada venda.
+let LANCAR_NO_BLING = false;
 let FINALIZANDO = false,
   OP_ID = null;
 function gerarOpId() {
@@ -1332,6 +1335,7 @@ function mostrarSucessoVenda(j, ctx) {
     pagamentosEnviados,
     clienteFinal
   } = ctx;
+  LANCAR_NO_BLING = false; // próxima venda começa de novo no padrão (rápida)
   ULTIMA_VENDA = {
     numero: j.numero || j.pedidoId || j.localId,
     pedidoId: j.pedidoId || j.localId,
