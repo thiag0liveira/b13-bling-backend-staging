@@ -1342,6 +1342,12 @@ async function finalizar() {
     alertaBonito("Preencha o endereço completo: CEP, rua, número, bairro, cidade e UF.");
     return;
   }
+  // a taxa depende do VALOR dos itens (faixas): se o pedido mudou depois de calcular, recalcula antes de finalizar
+  if (S.entrega === 'entrega' && S.frete && S.frete.valorBase != null && Math.abs(Number(S.frete.valorBase) - subtotal()) > 0.009) {
+    alertaBonito("O valor do pedido mudou depois de calcular a entrega. Vou recalcular: confira o total e finalize de novo.");
+    calcularFrete();
+    return;
+  }
   if (S.entrega === 'entrega' && (!S.frete || !S.frete.entregaDisponivel)) {
     alertaBonito("Calcule a taxa de entrega (ou escolha Retirada).");
     return;
@@ -1349,7 +1355,8 @@ async function finalizar() {
   const entrega = S.entrega === 'entrega' ? {
     tipo: 'entrega',
     endereco: enderecoTexto(),
-    taxa: S.frete.taxa
+    taxa: S.frete.taxa,
+    km: S.frete.km
   } : {
     tipo: 'retirada'
   };

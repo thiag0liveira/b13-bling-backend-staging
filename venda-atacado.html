@@ -185,8 +185,11 @@ function freteAutoAtacado() {
 }
 async function calcularFreteAtacado(txt) {
   try {
-    const u = B + "/api/frete?endereco=" + encodeURIComponent(txt) + "&valor=" + total();
+    const valorEnviado = total();
+    const u = B + "/api/frete?endereco=" + encodeURIComponent(txt) + "&valor=" + valorEnviado;
     const j = await fetch(u).then(r => r.json());
+    // se os itens mudaram enquanto esta consulta voltava, a resposta é de um valor ANTIGO: descarta (a consulta nova decide)
+    if (Math.abs(valorEnviado - total()) > 0.009) return;
     if (j.entregaDisponivel) {
       S.frete = j;
       S.freteMsg = "";
@@ -1424,6 +1427,14 @@ async function salvar() {
   }
   if (S.tipoEntrega === 'entrega' && (!S.frete || !S.frete.entregaDisponivel)) {
     alert("Calcule a taxa de entrega (endereço do cliente) ou escolha Retirada.");
+    return;
+  }
+  // a taxa depende do VALOR dos itens (faixas). Se os itens mudaram há instantes e a taxa na tela ainda é a do valor
+  // antigo, NÃO salva assim: recalcula e pede pra conferir o total. (Sem isso a proposta saía com taxa de outro valor.)
+  if (S.tipoEntrega === 'entrega' && S.frete && S.frete.valorBase != null && Math.abs(Number(S.frete.valorBase) - total()) > 0.009) {
+    clearTimeout(_freteTimerAtacado);
+    S.msg = "A taxa de entrega estava calculada para outro valor dos itens. Recalculei: confira o total e toque em Salvar de novo.";
+    calcularFreteAtacado(enderecoClienteTexto());
     return;
   }
   clearTimeout(_autoSaveT);

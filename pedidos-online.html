@@ -1761,7 +1761,12 @@ async function calcularFretePedido(id) {
   }
   if (info) info.textContent = "Calculando…";
   try {
-    const j = await fetch(B + "/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + (Number(p === null || p === void 0 ? void 0 : p.total) || 0)).then(function (r) {
+    // A TAXA DEPENDE DO VALOR DOS ITENS (faixas). O total do pedido já inclui o frete atual, então calcular sobre ele dava
+    // uma taxa diferente da Venda Atacado e das Propostas (que usam só os itens). Aqui também só os itens.
+    const valorItens = p && Array.isArray(p.itens) && p.itens.length
+      ? p.itens.reduce(function (s, i) { return s + (Number(i.valor) || Number(i.preco) || 0) * (Number(i.quantidade) || 0); }, 0)
+      : Math.max(0, (Number(p && p.total) || 0) - (Number(p && p.frete) || 0));
+    const j = await fetch(B + "/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + (Math.round(valorItens * 100) / 100)).then(function (r) {
       return r.json();
     });
     if (j.erro) throw new Error(j.erro);

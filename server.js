@@ -6130,15 +6130,16 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       const km = prop0&&prop0.entrega ? Number(prop0.entrega.km||0) : 0;
       if(ehEntrega && km>0){
         const cfg=configEntrega();
-        if(totalItensNovo < cfg.minEntrega){
+        // MESMA função do /api/frete (faixas do raio normal, ZONAS mais longe e mínimo de cada zona). Antes isto usava só
+        // a tabela do raio normal, então um pedido de zona longe mudava de preço ao editar itens.
+        const rf=calcularFretePorKm(km, totalItensNovo, cfg);
+        if(totalItensNovo < cfg.minEntrega || !rf.entregaDisponivel){
           // caiu abaixo do minimo de entrega — sinaliza pra tela avisar. Nao vira
           // retirada automaticamente; quem edita decide. Registra tambem um Aviso.
           abaixoMinimoEntrega = true;
-          minimoEntrega = cfg.minEntrega;
+          minimoEntrega = Math.max(cfg.minEntrega, Number(rf.minExtra)||0);
         } else {
-          const faixa=porKmPara(totalItensNovo, cfg.faixas);
-          const porKm=faixa?Number(faixa.porKm):0;
-          const novoFrete=Math.round(porKm*km*100)/100;
+          const novoFrete=rf.taxa;
           if(Math.abs(novoFrete-freteAtual)>0.009){
             freteAtual=novoFrete;
             freteRecalculado=true;
@@ -9065,6 +9066,8 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
         const itensReg=(itens||[]).map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0}));
         const totalItensReg=+itensReg.reduce((s2,i)=>s2+i.valor*i.quantidade,0).toFixed(2);
         const freteReg=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
+        const _fd=_conferirFreteEnviado(entrega,(typeof totalItensCalc==="number"?totalItensCalc:totalItensReg),freteReg); // total com os preços OFICIAIS (os que vão pro Bling)
+        if(_fd) console.warn("[frete] divergência no finalizar:",JSON.stringify(_fd),"km",entrega&&entrega.km);
         const idReg="ped-"+String(pedidoId);
         const props0=lerPropostas();
         if(!props0[idReg]){
@@ -9073,7 +9076,8 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
             cliente:{ id:contatoId||null, nome:(nome||cadastro?.nome||"Consumidor Final"), telefone:(telefone||"") },
             itens:itensReg, total:+(totalItensReg+freteReg).toFixed(2),
             vendedorNome: origemReg==="site"?"Site":"Totem",
-            entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg, endereco:entrega?.endereco||"" },
+            entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg, endereco:entrega?.endereco||"", km:Number(entrega?.km)||0 },
+            ...(_fd?{freteDivergente:_fd}:{}),
             observacao:"", status:"pedido_gerado",
             pedidoBlingId:pedidoId, pedidoBlingNumero: pedido?.data?.numero||pedidoId,
             criadoEm:Date.now(), atualizadoEm:Date.now(),
@@ -9118,6 +9122,8 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
         const itensReg=(itens||[]).map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade)||0, valor:Number(i.valor)||0}));
         const totalItensReg=+itensReg.reduce((s,i)=>s+i.valor*i.quantidade,0).toFixed(2);
         const freteReg=(entrega&&entrega.tipo==="entrega")?(Number(entrega.taxa)||0):0;
+        const _fd=_conferirFreteEnviado(entrega,(typeof totalItensCalc==="number"?totalItensCalc:totalItensReg),freteReg); // total com os preços OFICIAIS (os que vão pro Bling)
+        if(_fd) console.warn("[frete] divergência no finalizar:",JSON.stringify(_fd),"km",entrega&&entrega.km);
         const numeroCriado=pedido?.data?.numero||null;
         const idReg="ped-"+String(pedidoId);
         const props=lerPropostas();
@@ -9127,7 +9133,8 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
           itens:itensReg,
           total:+(totalItensReg+freteReg).toFixed(2),
           vendedorNome: origem==="site"?"Site":"Totem",
-          entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg },
+          entrega:{ tipo: entrega?.tipo==="entrega"?"entrega":"retirada", taxa:freteReg, km:Number(entrega?.km)||0 },
+          ...(_fd?{freteDivergente:_fd}:{}),
           observacao:"",
           status:"pedido_gerado",
           pedidoBlingId:pedidoId,
@@ -9248,6 +9255,17 @@ app.post("/api/entrega/restaurar",requireAdmin,(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// Confere a taxa que veio PRONTA do cliente (totem/site) com o cálculo do servidor, usando o km enviado e o total dos ITENS.
+// Não bloqueia (a pessoa já viu aquele valor na tela): devolve o que divergiu pra gravar no registro e aparecer na conferência.
+function _conferirFreteEnviado(entrega,totalItens,freteEnviado){
+  try{
+    const km=Number(entrega&&entrega.km); if(!(km>0)||!entrega||entrega.tipo!=="entrega") return null;
+    const r=calcularFretePorKm(km,Number(totalItens)||0,configEntrega());
+    if(!r.entregaDisponivel) return {enviado:+Number(freteEnviado).toFixed(2),esperado:null,motivo:r.motivo};
+    if(Math.abs(r.taxa-Number(freteEnviado))>0.05) return {enviado:+Number(freteEnviado).toFixed(2),esperado:r.taxa,motivo:"taxa diferente do cálculo do servidor"};
+  }catch(e){}
+  return null;
+}
 function porKmPara(valor, faixas){
   let escolhido=null;
   faixas.slice().sort((a,b)=>a.min-b.min).forEach(f=>{ if(valor > Number(f.min)) escolhido=f; });
@@ -9259,7 +9277,7 @@ function calcularFretePorKm(km, valor, cfg){
   const dentroDe=(k,l)=>Math.floor(k)<=l;
   const zonas=cfg.zonas||[];
   const limiteFinal=zonas.length?zonas[zonas.length-1].kmMax:cfg.maxKm;
-  const kmTxt=Number(km.toFixed(1));
+  const kmTxt=Number(km.toFixed(2)); // 2 casas: quem guarda o km (propostas) precisa dele exato pra recalcular a MESMA taxa depois
   if(!dentroDe(km,limiteFinal)) return {entregaDisponivel:false, motivo:`Endereço a ${km.toFixed(1)} km — fora do limite de ${limiteFinal} km para entrega.`, km:kmTxt, limiteKm:limiteFinal};
   let zona=0, faixas=cfg.faixas;
   if(!dentroDe(km,cfg.maxKm)){ zona=zonas.findIndex(z=>dentroDe(km,z.kmMax))+1; faixas=zonas[zona-1].faixas; }
@@ -9331,6 +9349,38 @@ async function distanciaGoogle(origem,destino){
 // somando TUDO, e todos os tablets da loja saem pelo mesmo IP, então um tablet atrapalhava o outro.
 const _rlFreteGoogle=rateLimit({janelaMs:60000,max:40,prefixo:"frete-google"});
 function passouLimiteFrete(req,res){ return new Promise(ok=>{ let passou=false; _rlFreteGoogle(req,res,()=>{ passou=true; ok(true); }); if(!passou) ok(false); }); }
+// CONFERÊNCIA DE FRETES (somente leitura): recalcula, com a configuração ATUAL, a taxa de cada pedido/proposta de entrega
+// gravado (usando o km guardado e o total dos ITENS) e lista onde a taxa gravada é diferente, com o motivo provável.
+// Uso: /api/diag/conferir-fretes?dias=30   (registros sem km guardado não dá pra conferir; vêm contados à parte)
+app.get("/api/diag/conferir-fretes",(req,res)=>{
+  try{
+    const dias=Math.min(Math.max(Number(req.query.dias||30),1),365), desde=Date.now()-dias*86400000, cfg=configEntrega();
+    const regs=Object.values(lerPropostas()||{}).filter(p=>p&&p.entrega&&p.entrega.tipo==="entrega"&&p.status!=="cancelada"&&(p.criadoEm||0)>=desde);
+    const lista=[]; let semKm=0, conferidos=0; const porMotivo={};
+    regs.forEach(p=>{
+      const taxa=Number(p.entrega.taxa||0), km=Number(p.entrega.km||0);
+      const totalItens=Number(p.totalItens)||(p.itens||[]).reduce((t,i)=>t+Number(i.quantidade||0)*Number(i.valor||0),0);
+      if(!(km>0)){ semKm++; return; }
+      conferidos++;
+      const r=calcularFretePorKm(km,totalItens,cfg); const esperado=r.entregaDisponivel?r.taxa:null;
+      if(esperado!=null && Math.abs(esperado-taxa)<=0.01) return;
+      let motivo="a configuração de entrega mudou depois de gravado, ou a taxa foi digitada à mão";
+      // a tela Pedidos calculava sobre o total do pedido, que já incluía o frete da época: testa com a taxa gravada e com a atual
+      const comFreteA=calcularFretePorKm(km,totalItens+taxa,cfg), comFreteB=esperado!=null?calcularFretePorKm(km,totalItens+esperado,cfg):null;
+      const bateComFrete=(x)=>x&&x.entregaDisponivel&&Math.abs(x.taxa-taxa)<=0.01;
+      if(esperado==null) motivo="hoje esse endereço/valor não teria entrega ("+(r.motivo||"fora das regras")+")";
+      else if(bateComFrete(comFreteA)||bateComFrete(comFreteB)) motivo="calculada sobre o total COM frete (era o que a tela Pedidos fazia)";
+      else if((r.zona||0)>0 && Math.abs(Math.round(Number((porKmPara(totalItens,cfg.faixas)||{}).porKm||0)*km*100)/100-taxa)<=0.01) motivo="recalculada pela tabela do raio normal (ignorava a zona mais longe)";
+      else if(Math.abs(esperado-taxa)<=0.06*Number(r.porKm||0)+0.01) motivo="km arredondado em 1 casa (diferença de centavos)";
+      porMotivo[motivo]=(porMotivo[motivo]||0)+1;
+      lista.push({pedido:p.pedidoBlingNumero||p.pedidoBlingId||null,id:p.id,cliente:p.cliente?.nome||"",origem:p.origem||p.vendedorNome||"",km,totalItens:_round2(totalItens),
+        taxaGravada:taxa,taxaAtual:esperado,diferenca:esperado==null?null:_round2(taxa-esperado),zona:r.zona||0,motivo,
+        criadoEm:p.criadoEm?new Date(p.criadoEm-3*3600e3).toISOString().slice(0,16).replace("T"," "):null,avisoDoCliente:p.freteDivergente||undefined});
+    });
+    lista.sort((x,y)=>Math.abs(y.diferenca||0)-Math.abs(x.diferenca||0));
+    res.json({ok:true,dias,registrosDeEntrega:regs.length,conferidos,semKmGuardado:semKm,divergentes:lista.length,porMotivo,lista:lista.slice(0,Math.min(Number(req.query.limite||100),500))});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/frete", rateLimit({janelaMs:60000,max:240,prefixo:"frete"}), async (req,res)=>{
   try{
     const endereco=(req.query.endereco||"").toString().slice(0,200).trim();
@@ -9364,7 +9414,7 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:240,prefixo:"frete"}), async
         else return res.json({entregaDisponivel:false, servicoIndisponivel:true, tentarNovamente:true, motivo:"Não consegui consultar o mapa agora. Tente novamente em instantes.", detalhe:g.detalhe});
       }
     }
-    res.json({...calcularFretePorKm(km,valor,cfg), fonte});
+    res.json({...calcularFretePorKm(km,valor,cfg), fonte, valorBase:+Number(valor).toFixed(2)});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
