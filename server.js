@@ -12351,6 +12351,72 @@ app.get("/api/rotas/viagens-do-dia",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== RESUMO POR MOTORISTA =====================
+// Soma, por motorista, o que cada um está levando no dia: nº de entregas, valor, peso estimado,
+// quanto já foi pago no caixa e quanto ainda precisa ser cobrado na entrega. Junta as viagens JÁ
+// INICIADAS (têm o nome do motorista que foi digitado ao iniciar) com os pedidos que só estão
+// atribuídos a um carro (viagem ainda não iniciada, motorista ainda não definido). Usa só dados
+// locais (rápido, não consulta o Bling): pedido sem registro local aparece como "sem dados".
+function _round2(n){ return Math.round((Number(n)||0)*100)/100; }
+function calcularResumoMotoristas(data){
+  const rotas=(lerRotasDias()[data])||{};
+  const viagens=Object.values(lerViagensAtivas()).filter(v=>v.data===data && !v.canceladaEm);
+  const porPedido={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
+  const turnos=lerJSON(`${DATA_DIR}/turnos_entrega.json`,{});
+  const cfgCarros=(lerRotasConfig().carros)||[];
+  const nomeCarro=(id)=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
+  const grupos={}; const iniciados=new Set();
+  const grupo=(chave,base)=>(grupos[chave]=grupos[chave]||{chave,...base,carros:new Set(),viagens:0,emAndamento:0,finalizadas:0,planejadas:0,itens:[]});
+  viagens.forEach(v=>{
+    const nome=String(v.motoristaNomeInformado||v.motoristaNome||"").trim()||`Motorista do ${v.carroNome||nomeCarro(v.carroId)}`;
+    const g=grupo("m:"+nome.toLowerCase(),{motorista:nome,telefone:v.motoristaTelefone||null,semMotorista:false});
+    g.viagens++; g.carros.add(v.carroNome||nomeCarro(v.carroId)); if(v.finalizadaEm) g.finalizadas++; else g.emAndamento++;
+    (v.pedidoIds||[]).forEach(pid=>{ iniciados.add(String(pid)); const reg=(v.entregas||{})[String(pid)]; g.itens.push({pid:String(pid),entregue:reg?.status==="entregue",recebidoNaEntrega:Number(reg?.valorFinal||0)}); });
+  });
+  Object.entries(rotas).forEach(([carroId,c])=>{
+    const listas=(c.viagens&&c.viagens.length)?c.viagens.map(v=>v.pedidoIds||[]):[(c.pedidoIds||[])];
+    listas.forEach(ids=>{
+      const novos=ids.filter(id=>!iniciados.has(String(id))); if(!novos.length) return;
+      const g=grupo("c:"+carroId,{motorista:`${nomeCarro(carroId)} (motorista ainda não definido)`,telefone:null,semMotorista:true});
+      g.viagens++; g.planejadas++; g.carros.add(nomeCarro(carroId));
+      novos.forEach(pid=>g.itens.push({pid:String(pid),entregue:false,recebidoNaEntrega:0}));
+    });
+  });
+  const dCxLido=lerCaixaSessoes(); // lê o caixa uma vez só, não uma vez por pedido
+  const lista=Object.values(grupos).map(g=>{
+    let valorTotal=0, valorEntregue=0, peso=0, pesoNaRua=0, recebidoCaixa=0, aReceber=0, feitas=0, semDados=0;
+    const pedidos=g.itens.map(it=>{
+      const p=porPedido[it.pid]; const t=turnos[it.pid]||{};
+      const total=_round2(p?.total||0); const numero=p?.pedidoBlingNumero||t.numero||it.pid;
+      const pesoKg=p?.itens?.length?estimarPesoPedido(p.itens.map(i=>({descricao:i.nome||i.descricao,quantidade:i.quantidade}))):0;
+      const pag=_pagamentoDoPedido(it.pid,numero,dCxLido);
+      const pagoCaixa=pag.pago?Math.min(total||Infinity,Number(pag.valor)||total):(pag.parcial?Number(pag.valorPago)||0:0);
+      const falta=it.entregue?0:_round2(Math.max(0,total-pagoCaixa));
+      if(!total) semDados++;
+      valorTotal+=total; peso+=pesoKg; recebidoCaixa+=pagoCaixa;
+      if(it.entregue){ feitas++; valorEntregue+=total; } else { pesoNaRua+=pesoKg; aReceber+=falta; }
+      return {pedidoId:it.pid,numero,cliente:p?.cliente?.nome||t.cliente||"",total,pesoKg,entregue:it.entregue,pagoNoCaixa:!!pag.pago,aReceber:falta,semDados:!total};
+    });
+    return {motorista:g.motorista,telefone:g.telefone,semMotorista:g.semMotorista,carros:[...g.carros],
+      viagens:g.viagens,emAndamento:g.emAndamento,finalizadas:g.finalizadas,planejadas:g.planejadas,
+      entregas:pedidos.length,feitas,faltam:pedidos.length-feitas,
+      valorTotal:_round2(valorTotal),valorEntregue:_round2(valorEntregue),valorNaRua:_round2(valorTotal-valorEntregue),
+      recebidoNoCaixa:_round2(recebidoCaixa),aReceberNaEntrega:_round2(aReceber),
+      pesoKg:_round2(peso),pesoNaRuaKg:_round2(pesoNaRua),semDados,pedidos};
+  }).sort((a,b)=>b.valorTotal-a.valorTotal);
+  const somaV=lista.reduce((s,m)=>s+m.valorTotal,0), somaP=lista.reduce((s,m)=>s+m.pesoKg,0);
+  lista.forEach(m=>{ m.parteValorPct=somaV?Math.round(m.valorTotal/somaV*100):0; m.partePesoPct=somaP?Math.round(m.pesoKg/somaP*100):0; });
+  const tot=lista.reduce((t,m)=>({entregas:t.entregas+m.entregas,feitas:t.feitas+m.feitas,valorTotal:t.valorTotal+m.valorTotal,valorEntregue:t.valorEntregue+m.valorEntregue,valorNaRua:t.valorNaRua+m.valorNaRua,recebidoNoCaixa:t.recebidoNoCaixa+m.recebidoNoCaixa,aReceberNaEntrega:t.aReceberNaEntrega+m.aReceberNaEntrega,pesoKg:t.pesoKg+m.pesoKg}),{entregas:0,feitas:0,valorTotal:0,valorEntregue:0,valorNaRua:0,recebidoNoCaixa:0,aReceberNaEntrega:0,pesoKg:0});
+  Object.keys(tot).forEach(k=>{ tot[k]=_round2(tot[k]); });
+  return {data,motoristas:lista,totais:{...tot,motoristas:lista.length}};
+}
+app.get("/api/rotas/resumo-motoristas",(req,res)=>{
+  try{
+    const data=req.query.data||new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+    res.json({ok:true,...calcularResumoMotoristas(data)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // detalhes completos de uma viagem, pedido por pedido — pra conferir depois:
 // itens com problema, pagamentos recebidos, assinatura do cliente, ocorrência
 app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
@@ -16585,10 +16651,10 @@ function estimarPesoPedido(itens){
 // com os dados já prontos pra tela: cliente, vendedor, valor, frete, itens, peso.
 // Descobre se um pedido JÁ FOI RECEBIDO em algum caixa (atacado ou frente) e como.
 // Serve pra rota saber o que sai pra entrega sem estar pago.
-function _pagamentoDoPedido(pedidoId, numeroPedido){
+function _pagamentoDoPedido(pedidoId, numeroPedido, dCxPreLido){
   const id=String(pedidoId);
   const num=numeroPedido!=null?String(numeroPedido):null;
-  const dCx=lerCaixaSessoes();
+  const dCx=dCxPreLido||lerCaixaSessoes(); // quem chama em lote já lê o arquivo UMA vez e passa pra cá
   // RECEBIDO É RECEBIDO: procura em TODOS os caixas (atacado e frente, abertos e
   // fechados), casando por id OU por número do pedido — o registro antigo às vezes
   // guardou só o número, e sem isso um pedido recebido passava como "não recebido".

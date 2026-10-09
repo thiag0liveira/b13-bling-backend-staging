@@ -69,6 +69,7 @@ let D = null,
   TIMER = null,
   DIA = "",
   ENTREGAS = null,
+  MOTORISTAS = null,
   ENTREGA_ABERTA = null,
   AVISOS = null,
   META = null,
@@ -124,6 +125,32 @@ function blocoCaixa(c) {
       <div class="lin"><span>💸 Sangrias</span><b>${brl(c.resumo.totalSangrias)}</b></div>
       <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
     </div></details>`;
+}
+function cardMotoristas() {
+  const M = MOTORISTAS;
+  if (!M || !(M.motoristas || []).length) return "";
+  const T = M.totais || {};
+  const kg = v => Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 }) + " kg";
+  const linhas = M.motoristas.map(m => {
+    const estado = m.semMotorista ? '<span style="color:#ffd23f">⏳ não iniciada</span>' : (m.emAndamento ? '<span style="color:#3ce88a">🟢 em andamento</span>' : (m.finalizadas ? '<span class="muted">✅ finalizada</span>' : ""));
+    return `<div style="border:1px solid #2c2660;border-radius:10px;padding:8px 10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>👷 ${esc(m.motorista)}</b><span style="font-size:12px">${estado}</span></div>
+      <div style="height:6px;border-radius:5px;background:#1a1640;margin:6px 0"><div style="width:${m.parteValorPct || 0}%;height:100%;border-radius:5px;background:#FF0082"></div></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px">
+        <span><b>${m.entregas}</b> entrega(s) · ${m.feitas} feita(s)</span>
+        <b style="color:#ffd23f">${brl(m.valorTotal)}</b>
+        <span>${kg(m.pesoKg)}</span>
+        <span style="color:${m.aReceberNaEntrega > 0.009 ? '#ffd23f' : '#3ce88a'}">${m.aReceberNaEntrega > 0.009 ? "a cobrar " + brl(m.aReceberNaEntrega) : "tudo pago ✓"}</span>
+      </div></div>`;
+  }).join("");
+  return card("👷 Por motorista", `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <span class="pillE">${T.motoristas} motorista(s)</span>
+      <span class="pillE">${T.entregas} entrega(s)</span>
+      <span class="pillE">${brl(T.valorTotal)}</span>
+      <span class="pillE">${kg(T.pesoKg)}</span>
+    </div>${linhas}
+    <div class="muted" style="font-size:11px">${esc(M.data.split("-").reverse().join("/"))} · <a href="/rotas" style="color:#7fd0ff">abrir Rotas</a> para dividir ou mudar pedidos de carro.</div>`);
 }
 function render() {
   var _META$vendidoAtendido, _META$pctMetaAtendido, _META$pctMetaAtendido2, _META$pctMetaAtendido3, _META$pctMetaAtendido4, _META$pctMetaAtendido5, _META$faltaAtendido, _META$faltaAtendido2, _META$idealPorDiaRest, _META$mediaDiariaAten, _APOIO$metaMes, _APOIO$metaMes2, _APOIO$metaMes3, _APOIO$config, _APOIO$config2, _APOIO$config3, _b$pedidos$fechamento, _f$consumidorFinal, _f$consumidorFinal2, _b$pedidos$maiores, _f$porTipoCaixa, _f$porTipoCaixa2, _f$porTipoCaixa3, _f$porTipoCaixa4, _f$porTipoCaixa5, _f$porTipoCaixa6, _b$notasEmitidas$nfce, _b$notasEmitidas$nfce2, _b$notasEmitidas$nfce3, _b$notasEmitidas$nfe, _b$notasEmitidas$nfe2, _b$notasEmitidas$porS, _D$nfce, _D$nfce2, _D$nfce3, _b$notasEmitidas$porC, _b$entradas$fornecedo, _D$propostas, _D$propostas2, _D$propostas3;
@@ -307,6 +334,8 @@ function render() {
           <div class="h" style="margin-top:10px"><span>Pedidos mais antigos</span></div>
           ${lins(PRAZO.pedidos.slice(0, 12), p => `<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}<div class="muted" style="font-size:11px">${esc(p.vendedor || "—")} · ${p.data ? esc(p.data.split("-").reverse().join("/")) : ""}${p.diasEmAberto != null ? ` · <span style="color:${p.diasEmAberto > 15 ? '#ff8090' : p.diasEmAberto > 7 ? '#ffd23f' : '#9a95c9'}">${p.diasEmAberto} dia(s)</span>` : ""}</div></span><b>${brl(p.total)}</b></div>`)}
           <div class="muted" style="font-size:11px;margin-top:6px">Mercadoria já entregue/retirada. O cliente paga depois no caixa atacado.</div>`) : ""}
+
+        ${cardMotoristas()}
 
         ${ENTREGAS && ENTREGAS.dias && ENTREGAS.dias.length ? card("🛵 Entregas agendadas", `
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
@@ -617,6 +646,13 @@ async function carregar() {
     const e = await fetch(B + "/api/central/entregas").then(r => r.json());
     if (!e.erro) {
       ENTREGAS = e;
+      render();
+    }
+  } catch (e) {}
+  try {
+    const mo = await fetch(B + "/api/rotas/resumo-motoristas" + (DIA ? "?data=" + DIA : "")).then(r => r.json());
+    if (!mo.erro) {
+      MOTORISTAS = mo;
       render();
     }
   } catch (e) {}

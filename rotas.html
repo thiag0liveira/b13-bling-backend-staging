@@ -219,6 +219,7 @@ async function carregarTudo() {
     });
     const rViagens = await fetch(B + "/api/rotas/viagens-do-dia?data=" + S.data).then(r => r.json());
     S.viagensDoDia = rViagens.viagens || [];
+    try { S.resumoMot = await fetch(B + "/api/rotas/resumo-motoristas?data=" + S.data).then(r => r.json()); } catch (e) { S.resumoMot = null; }
     // reconstrói o estado local (QR/fechada) a partir do que o servidor já tem —
     // sem isso, recarregar a página fazia a viagem "esquecer" que já tinha sido
     // fechada/iniciada, e a tela deixava abrir outra viagem com o mesmo pedido.
@@ -1115,6 +1116,48 @@ function htmlVisaoGeral() {
     </div>
   </div>`;
 }
+// ---- PAINEL "POR MOTORISTA": o que cada um está levando no dia ----
+function htmlResumoMotoristas() {
+  const R = S.resumoMot;
+  if (!R || !(R.motoristas || []).length) return "";
+  const T = R.totais || {};
+  const kg = v => Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 }) + " kg";
+  const pcts = R.motoristas.map(m => m.parteValorPct || 0);
+  const desigual = R.motoristas.length > 1 && (Math.max(...pcts) - Math.min(...pcts)) >= 35;
+  const linhas = R.motoristas.map(m => {
+    const estado = m.semMotorista ? '<span style="color:#ffd23f">⏳ viagem ainda não iniciada</span>'
+      : (m.emAndamento ? '<span style="color:#3ce88a">🟢 em andamento</span>' : (m.finalizadas ? '<span style="color:#9aa0c8">✅ finalizada</span>' : ''));
+    const peds = (m.pedidos || []).map(p => `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #1d1946;font-size:12px">
+        <span>#${esc(String(p.numero))} ${esc(p.cliente || "")} ${p.entregue ? "✅" : "⏳"}</span>
+        <span class="muted">${p.semDados ? "sem valor no sistema" : brl(p.total) + " · " + kg(p.pesoKg) + (p.pagoNoCaixa ? " · pago" : "")}</span></div>`).join("");
+    return `<div style="border:1px solid #2c2660;border-radius:12px;padding:10px 12px;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div><b style="font-size:15px">👷 ${esc(m.motorista)}</b> <span class="muted" style="font-size:12px">· ${esc((m.carros || []).join(", "))}${m.viagens > 1 ? " · " + m.viagens + " viagens" : ""}</span></div>
+        <div style="font-size:12px">${estado}</div>
+      </div>
+      <div style="height:8px;border-radius:6px;background:#1a1640;margin:8px 0"><div style="width:${m.parteValorPct || 0}%;height:100%;border-radius:6px;background:#FF0082"></div></div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+        <span><b>${m.entregas}</b> entrega(s) · ${m.feitas} feita(s)</span>
+        <span><b>${brl(m.valorTotal)}</b> <span class="muted">(${m.parteValorPct || 0}% do dia)</span></span>
+        <span>${kg(m.pesoKg)} <span class="muted">(${m.partePesoPct || 0}%)</span></span>
+        <span style="color:#3ce88a">pago no caixa ${brl(m.recebidoNoCaixa)}</span>
+        <span style="color:${m.aReceberNaEntrega ? '#ffd23f' : '#9aa0c8'}">a cobrar na entrega ${brl(m.aReceberNaEntrega)}</span>
+      </div>
+      ${m.semDados ? `<div class="muted" style="font-size:11px;margin-top:4px">${m.semDados} pedido(s) sem valor registrado no sistema: o total pode estar maior.</div>` : ""}
+      <details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:12px">ver os ${m.entregas} pedido(s)</summary>${peds}</details>
+    </div>`;
+  }).join("");
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div style="font-weight:900">👷 Por motorista — ${dataLabel(S.data)}</div>
+      <div style="font-size:13px">${R.motoristas.length} motorista(s) · <b>${T.entregas}</b> entrega(s) · <b>${brl(T.valorTotal)}</b> · ${kg(T.pesoKg)}</div>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">Já pago no caixa ${brl(T.recebidoNoCaixa)} · a cobrar na entrega ${brl(T.aReceberNaEntrega)} · entregue até agora ${brl(T.valorEntregue)}</div>
+    ${desigual ? '<div style="margin-top:8px;background:#3a2f0f;border:1px solid #6b5a1f;border-radius:8px;padding:6px 10px;font-size:12px;color:#ffd23f">⚖️ A carga está desigual entre os motoristas. Use <b>⚡ Já dividir tudo em carros (automático)</b> ou mude pedidos de carro com <b>Atribuir →</b>.</div>' : ""}
+    ${linhas}
+  </div>`;
+}
+
 function render() {
   const scrollY = window.scrollY;
   renderInterno();
@@ -1218,6 +1261,8 @@ function renderInterno() {
     <div class="muted" style="font-size:11px;margin:-4px 0 10px">Primeiro agenda o pedido pra esse dia — o carro você decide depois (manual ou com sugestão automática).</div>
     ${disponiveis.length ? disponiveis.map(p => htmlPedidoCard(p, "disponivel")).join("") : '<div class="muted">Nenhum pedido aguardando agendamento — ou já estão todos num dia.</div>'}
   </div>`;
+
+  h += htmlResumoMotoristas();
 
   // ---- conferência de pagamento: o que vai/foi entregar sem estar recebido ----
   const todosDoDia = (S.pedidos || []).filter(p => p.agendamento && p.agendamento.data === S.data);
