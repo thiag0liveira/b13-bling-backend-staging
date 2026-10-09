@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Dashboard de Entregas</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--indigo:#262366;--mag:#FF0082;--bg:#0f0d24;--card:#151233;--border:#2c2660;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,var(--indigo));border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:36px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;touch-action:manipulation;text-decoration:none;display:inline-block}
+.btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}.btn-out{background:transparent;border:2px solid #514c96}
+.filtros{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#0d0b1e;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.filtros input{padding:7px 10px;border-radius:8px;border:1px solid #514c96;background:#0f0d24;color:#fff;font-size:13px}
+.mesLabel{font-weight:900;font-size:16px;min-width:170px;text-align:center}
+.dash{padding:14px;display:grid;gap:14px}
+.sec-title{font-weight:900;font-size:14px;color:#9a95c9;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sec-title::after{content:"";flex:1;height:1px;background:var(--border)}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,var(--mag))}
+.kpi .lb{font-size:11px;color:#9a95c9;font-weight:700;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;padding-right:26px}
+.kpi .vl{font-size:25px;font-weight:900;line-height:1.05}
+.kpi .sub{font-size:11px;color:#9a95c9;margin-top:5px}
+.kpi .ic{position:absolute;right:11px;top:11px;font-size:20px;opacity:.4}
+.var{font-weight:800}
+.box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.box h4{font-size:13px;font-weight:800;margin-bottom:10px;color:#9a95c9}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px}
+.barras{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:6px}
+.barras .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;min-width:0}
+.barras .b{width:100%;border-radius:4px 4px 0 0;background:var(--mag);min-height:0}
+.barras .col.zero .b{background:#2c2660;height:2px!important}
+.eixo{display:flex;gap:3px;margin-top:4px}
+.eixo span{flex:1;text-align:center;font-size:9px;color:#7a76a8;min-width:0;overflow:hidden}
+.tabwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:#9a95c9;font-weight:700;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+tr:hover td{background:rgba(255,255,255,.03)}
+.parte{height:5px;border-radius:3px;background:#1a1640;margin-top:4px;min-width:90px}
+.parte i{display:block;height:100%;border-radius:3px;background:var(--mag)}
+.muted{color:#9a95c9;font-size:12px}
+.lin{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #1d1946;font-size:13px}
+.lin:last-child{border-bottom:none}
+.hbar{height:6px;border-radius:3px;background:#1a1640;margin:3px 0 0}.hbar i{display:block;height:100%;border-radius:3px;background:#7fd0ff}
+.vazio{padding:30px;text-align:center;color:#9a95c9}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/nav.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/entregas-dashboard")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div");
+      nav.innerHTML=b13RenderNav("/entregas-dashboard");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div class="top">
+  <img src="/logo"><div class="t">📈 Dashboard de Entregas</div><div class="sp"></div>
+  <a href="/rotas" class="btn btn-ghost">🗺️ Rotas</a>
+  <a href="/central" class="btn btn-out">Central</a>
+</div>
+<div class="filtros">
+  <button class="btn btn-ghost" onclick="mudarMes(-1)">◀</button>
+  <div class="mesLabel" id="mesLabel">—</div>
+  <button class="btn btn-ghost" onclick="mudarMes(1)">▶</button>
+  <input type="month" id="mesInput" onchange="MES=this.value;carregar()">
+  <button class="btn btn-ghost" onclick="MES=mesHoje();carregar()">Este mês</button>
+  <button class="btn btn-ghost" onclick="carregar()" style="margin-left:auto">↻ Atualizar</button>
+</div>
+<div class="dash" id="dash"><div class="vazio"><div class="spin"></div><div style="margin-top:10px">Carregando…</div></div></div>
+
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = v => "R$ " + Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = (v, d) => Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: d == null ? 0 : d });
+const mesHoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+let MES = mesHoje(), DADOS = null, COMP_TXT = "vs mês anterior";
+
+function mudarMes(delta) {
+  const [a, m] = MES.split("-").map(Number);
+  const d = new Date(a, m - 1 + delta, 1);
+  MES = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  carregar();
+}
+function nomeMes(mes) { const t = new Date(mes + "-01T12:00:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" }); return t.charAt(0).toUpperCase() + t.slice(1); }
+function minLabel(min) { if (min == null) return "—"; const h = Math.floor(min / 60), m = min % 60; return h ? h + "h" + String(m).padStart(2, "0") : m + " min"; }
+// variação contra o mês anterior; "inverso" = subir é ruim (não entregues, ocorrências)
+function variacao(v, inverso) {
+  if (v == null) return '<span class="muted">sem mês anterior</span>';
+  if (v === 0) return '<span class="muted">igual ao período anterior</span>';
+  const bom = inverso ? v < 0 : v > 0;
+  return `<span class="var" style="color:${bom ? "var(--ok)" : "var(--ruim)"}">${v > 0 ? "▲" : "▼"} ${Math.abs(v)}%</span> <span class="muted">${COMP_TXT}</span>`;
+}
+function kpi(label, valor, sub, ic, accent) {
+  return `<div class="kpi" style="--accent:${accent || "var(--mag)"}"><div class="ic">${ic}</div><div class="lb">${label}</div><div class="vl">${valor}</div><div class="sub">${sub}</div></div>`;
+}
+function grafico(dias, campo, cor, formato, titulo) {
+  const max = Math.max(1, ...dias.map(d => d[campo]));
+  const barras = dias.map(d => {
+    const h = Math.round(d[campo] / max * 100);
+    const dd = d.data.slice(8) + "/" + d.data.slice(5, 7);
+    return `<div class="col ${d[campo] ? "" : "zero"}" title="${dd}: ${formato(d[campo])}${d.naoEntregues ? " · " + d.naoEntregues + " não entregue(s)" : ""}"><div class="b" style="height:${h}%;background:${cor}"></div></div>`;
+  }).join("");
+  const eixo = dias.map(d => { const n = Number(d.data.slice(8)); return `<span>${n === 1 || n % 5 === 0 ? n : ""}</span>`; }).join("");
+  return `<div class="box"><h4>${titulo}</h4><div class="barras">${barras}</div><div class="eixo">${eixo}</div></div>`;
+}
+function tabelaMot(lista, rotulo, chave) {
+  if (!lista.length) return '<div class="muted">Sem viagens no mês.</div>';
+  return `<div class="tabwrap"><table><tr><th>${rotulo}</th><th>Viagens</th><th>Entregas</th><th>Não entregues</th><th>Sucesso</th><th>Valor entregue</th><th>Ticket médio</th><th>KM</th><th>R$/km</th><th>Entregas/viagem</th><th>Tempo/viagem</th><th>Com problema</th><th>Ocorrências</th><th>A prazo</th></tr>
+  ${lista.map(m => `<tr><td><b>${esc(m[chave])}</b>${m.parteValorPct != null ? `<div class="parte"><i style="width:${m.parteValorPct}%"></i></div>` : ""}</td>
+    <td>${m.viagens}</td><td><b>${m.entregas}</b></td><td style="color:${m.naoEntregues ? "var(--ruim)" : "inherit"}">${m.naoEntregues}</td>
+    <td>${m.taxaSucessoPct == null ? "—" : m.taxaSucessoPct + "%"}</td><td><b style="color:var(--warn)">${brl(m.valorEntregue)}</b>${m.parteValorPct != null ? ` <span class="muted">${m.parteValorPct}%</span>` : ""}</td>
+    <td>${brl(m.ticketMedio)}</td><td>${m.km ? num(m.km, 0) : "—"}</td><td>${m.valorPorKm == null ? "—" : brl(m.valorPorKm)}</td>
+    <td>${num(m.entregasPorViagem, 1)}</td><td>${minLabel(m.minutosPorViagem)}</td><td>${m.comProblema}</td><td>${m.ocorrencias}</td><td>${m.aPrazo ? m.aPrazo + " · " + brl(m.valorAPrazo) : "—"}</td></tr>`).join("")}
+  </table></div>`;
+}
+function render() {
+  const D = DADOS, T = D.totais, V = D.variacao || {};
+  const C = D.comparacao || {};
+  COMP_TXT = C.parcial ? "vs dias 1 a " + C.ateDia + " do mês anterior" : "vs mês anterior";
+  document.getElementById("mesLabel").textContent = nomeMes(D.mes);
+  document.getElementById("mesInput").value = D.mes;
+  const el = document.getElementById("dash");
+  if (!T.viagens) { el.innerHTML = `<div class="vazio">Nenhuma viagem registrada em ${esc(nomeMes(D.mes))}.<br><span class="muted">O dashboard conta as viagens pela data da rota.</span></div>`; return; }
+  const formasMax = Math.max(1, ...(D.formasPagamento || []).map(f => f.valor));
+  const cliMax = Math.max(1, ...(D.clientes || []).map(c => c.valor));
+  el.innerHTML = `
+  <div><div class="sec-title">Resumo de ${esc(nomeMes(D.mes))}</div><div class="kpi-grid">
+    ${kpi("Entregas feitas", num(T.entregas), variacao(V.entregas), "🛵")}
+    ${kpi("Valor entregue", brl(T.valorEntregue), variacao(V.valorEntregue), "💰", "#ffd23f")}
+    ${kpi("Taxa de sucesso", T.taxaSucessoPct == null ? "—" : T.taxaSucessoPct + "%", T.naoEntregues + " não entregue(s) · " + variacao(V.naoEntregues, true), "🎯", "#3ce88a")}
+    ${kpi("Viagens", num(T.viagens), num(T.entregasPorViagem, 1) + " entregas por viagem · " + variacao(V.viagens), "🚚", "#7fd0ff")}
+    ${kpi("KM rodados", num(T.km, 0), (T.kmPorEntrega == null ? "" : num(T.kmPorEntrega, 1) + " km por entrega · ") + variacao(V.km), "🧭", "#7fd0ff")}
+    ${kpi("Valor por km", T.valorPorKm == null ? "—" : brl(T.valorPorKm), variacao(V.valorPorKm), "⛽", "#ffd23f")}
+    ${kpi("Ticket médio", brl(T.ticketMedio), variacao(V.ticketMedio), "🧾")}
+    ${kpi("Tempo por viagem", minLabel(T.minutosPorViagem), "da saída ao fim da viagem", "⏱️", "#a29ed0")}
+    ${kpi("Peso entregue", num(T.pesoKg, 0) + " kg", "estimado pelos itens", "⚖️", "#a29ed0")}
+    ${kpi("Com problema", num(T.comProblema), brl(T.valorProblema) + " abatidos", "⚠️", "#ff8f7a")}
+    ${kpi("Ocorrências", num(T.ocorrencias), variacao(V.ocorrencias, true), "📸", "#ff8f7a")}
+    ${kpi("Vendas a prazo", num(T.aPrazo), brl(T.valorAPrazo), "🗓️", "#ffd23f")}
+  </div></div>
+  <div class="grid2">${grafico(D.porDia, "entregas", "#FF0082", v => v + " entrega(s)", "Entregas por dia")}${grafico(D.porDia, "valor", "#ffd23f", brl, "Valor entregue por dia")}</div>
+  <div class="box"><div class="sec-title">👷 Por motorista (${T.motoristas})</div>${tabelaMot(D.porMotorista, "Motorista", "motorista")}</div>
+  <div class="box"><div class="sec-title">🚚 Por carro</div>${tabelaMot(D.porCarro, "Carro", "carro")}</div>
+  <div class="grid2">
+    <div class="box"><h4>💳 Como foi recebido na entrega</h4>${(D.formasPagamento || []).map(f => `<div><div class="lin"><span>${esc(f.forma)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div><div class="hbar"><i style="width:${Math.round(f.valor / formasMax * 100)}%"></i></div></div>`).join("") || '<div class="muted">Sem recebimentos registrados na entrega.</div>'}</div>
+    <div class="box"><h4>🏪 Clientes mais atendidos</h4>${(D.clientes || []).map(c => `<div><div class="lin"><span>${esc(c.cliente)} <span class="muted">· ${c.entregas} ${c.entregas > 1 ? "entregas" : "entrega"}</span></span><b>${brl(c.valor)}</b></div><div class="hbar"><i style="width:${Math.round(c.valor / cliMax * 100)}%"></i></div></div>`).join("") || '<div class="muted">—</div>'}</div>
+  </div>
+  <div class="muted" style="padding:0 4px 20px">Como é contado: as viagens entram no mês pela data da rota. Viagens canceladas não contam. KM e tempo só entram em viagens já finalizadas. O valor entregue é o total dos pedidos entregues (com frete). ${C.parcial ? "Como o mês ainda está em andamento, as comparações usam o mesmo período (dias 1 a " + C.ateDia + ") de " + esc(nomeMes(D.mesAnterior)) + "." : "As comparações são contra " + esc(nomeMes(D.mesAnterior)) + "."}</div>`;
+}
+async function carregar() {
+  document.getElementById("dash").innerHTML = '<div class="vazio"><div class="spin"></div></div>';
+  try {
+    const j = await fetch(B + "/api/rotas/dashboard-mensal?mes=" + MES).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    DADOS = j; MES = j.mes; render();
+  } catch (e) { document.getElementById("dash").innerHTML = '<div class="vazio">Não consegui carregar: ' + esc(e.message) + "</div>"; }
+}
+carregar();
+</script>
+</body>
+</html>

@@ -1150,6 +1150,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Logística",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+  {grupo:"Logística",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
 
   {grupo:"Gestão",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
   {grupo:"Gestão",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
@@ -10509,6 +10510,7 @@ app.get("/etiquetas", (req, res) => { res.set("Cache-Control","no-store, no-cach
 app.get("/listas-extras", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "listas-extras.html")); });
 app.get("/gestao", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "gestao.html")); });
 app.get("/rotas", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "rotas.html")); });
+app.get("/entregas-dashboard", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entregas-dashboard.html")); });
 app.get("/estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque-painel.html")); });
 app.get("/estoque-simples", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "estoque-simples.html")); });
 app.get("/entrada-estoque", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "entrada-estoque.html")); });
@@ -12414,6 +12416,81 @@ app.get("/api/rotas/resumo-motoristas",(req,res)=>{
   try{
     const data=req.query.data||new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
     res.json({ok:true,...calcularResumoMotoristas(data)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ===================== DASHBOARD MENSAL DE ENTREGAS =====================
+// Agrega, por mês (pela data da rota da viagem), tudo o que foi entregue: totais, por dia, por motorista,
+// por carro, formas de pagamento recebidas na entrega e clientes mais atendidos. Só dados locais
+// (viagens guardadas + registro local dos pedidos), então não consulta o Bling.
+function _agregarEntregasMes(mes,ateDia){
+  const viagens=Object.values(lerViagensAtivas()).filter(v=>String(v.data||"").startsWith(mes+"-") && !v.canceladaEm && (!ateDia||Number(String(v.data).slice(8,10))<=ateDia));
+  const porPedido={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
+  const [ano,m]=mes.split("-").map(Number); const diasNoMes=new Date(ano,m,0).getDate();
+  const porDia={}; for(let d=1;d<=diasNoMes;d++){ porDia[`${mes}-${String(d).padStart(2,"0")}`]={data:`${mes}-${String(d).padStart(2,"0")}`,entregas:0,naoEntregues:0,valor:0,viagens:0}; }
+  const novoAg=()=>({viagens:0,entregas:0,naoEntregues:0,valorEntregue:0,valorProblema:0,pesoKg:0,km:0,kmViagens:0,minutos:0,minViagens:0,ocorrencias:0,comProblema:0,aPrazo:0,valorAPrazo:0});
+  const tot=novoAg(), mot={}, carros={}, formas={}, clientes={};
+  const somaForma=(nome,valor,banco)=>{ const k=banco?`${nome} (${banco})`:nome; formas[k]=formas[k]||{forma:k,qtd:0,valor:0}; formas[k].qtd++; formas[k].valor+=valor; };
+  viagens.forEach(v=>{
+    const nome=String(v.motoristaNomeInformado||v.motoristaNome||"").trim()||`Motorista do ${v.carroNome||v.carroId}`;
+    const carro=v.carroNome||String(v.carroId||"—");
+    const gm=(mot[nome.toLowerCase()]=mot[nome.toLowerCase()]||{motorista:nome,...novoAg()});
+    const gc=(carros[carro]=carros[carro]||{carro,...novoAg()});
+    const alvos=[tot,gm,gc];
+    alvos.forEach(a=>a.viagens++);
+    if(porDia[v.data]) porDia[v.data].viagens++;
+    if(v.finalizadaEm && v.kmFinal!=null && v.kmInicial!=null && v.kmFinal>=v.kmInicial){ const km=Number(v.kmFinal)-Number(v.kmInicial); alvos.forEach(a=>{ a.km+=km; a.kmViagens++; }); }
+    if(v.finalizadaEm && v.iniciadaEm && v.finalizadaEm>v.iniciadaEm){ const mi=(v.finalizadaEm-v.iniciadaEm)/60000; if(mi<24*60) alvos.forEach(a=>{ a.minutos+=mi; a.minViagens++; }); }
+    Object.entries(v.entregas||{}).forEach(([pid,e])=>{
+      if(e.status==="nao_entregue"){ alvos.forEach(a=>a.naoEntregues++); if(porDia[v.data]) porDia[v.data].naoEntregues++; return; }
+      if(e.status!=="entregue") return;
+      const p=porPedido[pid]; const valorProblema=Number(e.valorProblema)||0; const valorFinal=Number(e.valorFinal)||0;
+      const total=Number(p?.total)||(valorFinal+valorProblema);
+      const peso=p?.itens?.length?estimarPesoPedido(p.itens.map(i=>({descricao:i.nome||i.descricao,quantidade:i.quantidade}))):0;
+      alvos.forEach(a=>{ a.entregas++; a.valorEntregue+=total; a.valorProblema+=valorProblema; a.pesoKg+=peso;
+        if(e.ocorrencia) a.ocorrencias++; if((e.itensProblema||[]).length||valorProblema>0) a.comProblema++;
+        if(e.prazo){ a.aPrazo++; a.valorAPrazo+=total; } });
+      if(porDia[v.data]){ porDia[v.data].entregas++; porDia[v.data].valor+=total; }
+      if(e.jaPago) somaForma("Já pago no caixa",total,null);
+      (e.pagamentos||[]).forEach(pg=>somaForma(String(pg.formaNome||"—"),Number(pg.valor)||0,pg.banco||null));
+      const cli=p?.cliente?.nome||"—"; clientes[cli]=clientes[cli]||{cliente:cli,entregas:0,valor:0}; clientes[cli].entregas++; clientes[cli].valor+=total;
+    });
+  });
+  const fim=a=>{
+    const feitas=a.entregas, tentadas=a.entregas+a.naoEntregues;
+    return {...a,
+      valorEntregue:_round2(a.valorEntregue),valorProblema:_round2(a.valorProblema),pesoKg:_round2(a.pesoKg),km:_round2(a.km),valorAPrazo:_round2(a.valorAPrazo),
+      taxaSucessoPct:tentadas?Math.round(feitas/tentadas*100):null,
+      entregasPorViagem:a.viagens?_round2(feitas/a.viagens):0,
+      valorPorKm:a.km>0?_round2(a.valorEntregue/a.km):null,
+      kmPorEntrega:(a.km>0&&feitas)?_round2(a.km/feitas):null,
+      minutosPorViagem:a.minViagens?Math.round(a.minutos/a.minViagens):null,
+      ticketMedio:feitas?_round2(a.valorEntregue/feitas):0};
+  };
+  const listaMot=Object.values(mot).map(fim).sort((a,b)=>b.valorEntregue-a.valorEntregue);
+  const somaV=listaMot.reduce((s,x)=>s+x.valorEntregue,0);
+  listaMot.forEach(x=>{ x.parteValorPct=somaV?Math.round(x.valorEntregue/somaV*100):0; });
+  const T=fim(tot); T.motoristas=listaMot.length;
+  return {mes,totais:T,
+    porDia:Object.values(porDia).map(d=>({...d,valor:_round2(d.valor)})),
+    porMotorista:listaMot,
+    porCarro:Object.values(carros).map(fim).sort((a,b)=>b.valorEntregue-a.valorEntregue),
+    formasPagamento:Object.values(formas).map(f=>({...f,valor:_round2(f.valor)})).sort((a,b)=>b.valor-a.valor),
+    clientes:Object.values(clientes).map(c=>({...c,valor:_round2(c.valor)})).sort((a,b)=>b.valor-a.valor).slice(0,10)};
+}
+app.get("/api/rotas/dashboard-mensal",(req,res)=>{
+  try{
+    const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,7);
+    const mes=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query.mes||""))?String(req.query.mes):hoje;
+    const [a,m]=mes.split("-").map(Number); const ant=m===1?`${a-1}-12`:`${a}-${String(m-1).padStart(2,"0")}`;
+    // mês EM ANDAMENTO: compara com o MESMO PERÍODO do mês anterior (dias 1 até hoje), senão qualquer mês parcial
+    // pareceria uma queda enorme contra o mês anterior inteiro
+    const parcial=(mes===hoje); const diaHoje=Number(new Date(Date.now()-3*3600e3).toISOString().slice(8,10));
+    const atual=_agregarEntregasMes(mes); const anterior=_agregarEntregasMes(ant,parcial?diaHoje:null);
+    const A=atual.totais, P=anterior.totais; const dif=(x,y)=>(y>0)?Math.round((x-y)/y*100):null;
+    const variacao={entregas:dif(A.entregas,P.entregas),valorEntregue:dif(A.valorEntregue,P.valorEntregue),viagens:dif(A.viagens,P.viagens),km:dif(A.km,P.km),
+      ocorrencias:dif(A.ocorrencias,P.ocorrencias),naoEntregues:dif(A.naoEntregues,P.naoEntregues),ticketMedio:dif(A.ticketMedio,P.ticketMedio),valorPorKm:(A.valorPorKm&&P.valorPorKm)?dif(A.valorPorKm,P.valorPorKm):null};
+    res.json({ok:true,...atual,mesAnterior:ant,anterior:P,variacao,comparacao:{mesAnterior:ant,parcial,ateDia:parcial?diaHoje:null}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
