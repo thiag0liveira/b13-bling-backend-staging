@@ -15763,14 +15763,30 @@ app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
       if(!(Number(i.quantidade)>0)) return res.status(400).json({erro:"quantidade inválida em algum item"});
     }
     const antes=(prop.itens||[]).map(i=>`${Number(i.quantidade)}x ${i.nome||i.produtoId}`).join(", ");
+    const totalAntes=(prop.itens||[]).reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
     prop.itens=itens.map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor)}));
     const totalItens=prop.itens.reduce((s,i)=>s+i.quantidade*i.valor,0);
+    // TAXA DE ENTREGA: ela depende do valor dos itens (faixas). Antes a taxa ficava PARADA ao editar os itens da proposta
+    // (a edição de itens de um PEDIDO já recalculava), e a proposta saía com a taxa da faixa antiga. Agora recalcula com a
+    // mesma função do /api/frete, MAS só se a taxa gravada era a automática da faixa antiga: taxa digitada à mão
+    // (cortesia, negociada) é mantida e a tela é avisada.
+    let freteRecalculado=false, freteManualMantido=false, abaixoMinimoEntrega=false, minimoEntrega=0, taxaAntiga=null;
+    if(prop.entrega?.tipo==="entrega" && Number(prop.entrega.km)>0){
+      const cfg=configEntrega(), km=Number(prop.entrega.km), taxaAtual=Number(prop.entrega.taxa||0);
+      const rAntes=calcularFretePorKm(km,totalAntes,cfg), rNovo=calcularFretePorKm(km,totalItens,cfg);
+      const eraAuto=rAntes.entregaDisponivel && Math.abs(rAntes.taxa-taxaAtual)<=0.25; // 0,25: folga do km que antes era gravado com 1 casa
+      if(totalItens<cfg.minEntrega || !rNovo.entregaDisponivel){ abaixoMinimoEntrega=true; minimoEntrega=Math.max(cfg.minEntrega,Number(rNovo.minExtra)||0); }
+      else if(Math.abs(rNovo.taxa-taxaAtual)>0.009){
+        if(eraAuto){ taxaAntiga=taxaAtual; prop.entrega.taxa=rNovo.taxa; freteRecalculado=true; }
+        else freteManualMantido=true;
+      }
+    }
     prop.total=+(totalItens+(prop.entrega?.tipo==="entrega"?Number(prop.entrega.taxa||0):0)).toFixed(2);
     prop.atualizadoEm=Date.now();
-    const depois=prop.itens.map(i=>`${i.quantidade}x ${i.nome||i.produtoId}`).join(", ");
+    const depois=prop.itens.map(i=>`${i.quantidade}x ${i.nome||i.produtoId}`).join(", ")+(freteRecalculado?` (taxa R$ ${taxaAntiga} → R$ ${prop.entrega.taxa})`:"");
     prop.historicoEdicoes=[...(prop.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:antes,para:depois}];
     props[prop.id]=prop; salvarPropostas(props);
-    res.json({ok:true, total:prop.total, itens:prop.itens});
+    res.json({ok:true, total:prop.total, itens:prop.itens, taxa:prop.entrega?.tipo==="entrega"?Number(prop.entrega.taxa||0):0, freteRecalculado, taxaAntiga, freteManualMantido, abaixoMinimoEntrega, minimoEntrega});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

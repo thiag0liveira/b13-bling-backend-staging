@@ -754,6 +754,10 @@ async function salvarEdicao() {
       return;
     }
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
+    // a taxa de entrega depende do valor dos itens: avisa quando ela mudou ou quando não foi mexida
+    if (j.freteRecalculado) alert("🛵 A taxa de entrega foi recalculada: de " + brl(j.taxaAntiga) + " para " + brl(j.taxa) + " (a faixa muda conforme o valor dos itens).");
+    else if (j.freteManualMantido) alert("🛵 A taxa de entrega foi mantida em " + brl(j.taxa) + " porque foi digitada à mão. Pelo novo valor dos itens o cálculo daria outra taxa: se quiser, edite a entrega e toque em Calcular.");
+    if (j.abaixoMinimoEntrega) alert("⚠️ O valor dos itens ficou abaixo do mínimo para entrega (" + brl(j.minimoEntrega) + "). Confira se ainda vale entregar.");
     fecharModalEd();
     if (typeof carregar === "function") carregar();
   } catch (e) {
