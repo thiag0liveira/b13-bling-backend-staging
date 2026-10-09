@@ -431,6 +431,14 @@
       .then(function(){ btn.disabled = false; btn.textContent = "Confirmar e enviar"; });
   }
 
+  // link de DEMONSTRAÇÃO: deixa claro na tela que não vale para o concurso
+  function faixaTeste(){
+    if (document.getElementById("faixaTeste")) return;
+    var x = document.createElement("div"); x.id = "faixaTeste";
+    x.textContent = "🧪 LINK DE TESTE · esta participação é só uma demonstração e não vale para o concurso";
+    x.style.cssText = "position:sticky;top:0;z-index:50;background:#ffd23f;color:#1a1300;font-weight:800;text-align:center;padding:10px 12px;font-size:13px";
+    document.body.insertBefore(x, document.body.firstChild);
+  }
   function telaEnviado(frases, em, agora, protocolo){
     var lista = el("ul", {"class":"lista-enviadas"});
     (frases || []).forEach(function(f){ lista.appendChild(el("li", {text: "“" + f + "”"})); });
@@ -460,6 +468,7 @@
         if (d.whatsappOficial) $("#waOficial").textContent = d.whatsappOficial;
         if (d.regulamentoUrl){ $("#linkReg").innerHTML = ""; $("#linkReg").appendChild(document.createTextNode(" (")); $("#linkReg").appendChild(el("a", {href: d.regulamentoUrl, target: "_blank", rel: "noopener noreferrer", text: "abrir"})); $("#linkReg").appendChild(document.createTextNode(")")); }
         if (d.status === "aberto") return montarFormulario(d);
+        if (d.teste) faixaTeste();
         if (d.status === "enviado") return telaEnviado(d.frasesEnviadas, d.enviadoEm, false, d.protocolo);
         if (d.status === "encerrado") return telaEstado("relogio", "Envio encerrado", "O prazo para enviar frases terminou em 30/10/2026, às 23h59. O resultado sai em 07/11, às 15h30, no @b13_bebidas.");
         if (d.status === "nao_iniciado") return telaEstado("relogio", "Ainda não começou", "O concurso começa em 01/10/2026, à 00h01.");

@@ -105,6 +105,7 @@
     <img src="/logo" alt="B13" />
     <div><div class="t">🏆 Concurso do Slogan · Rota 2 (a frase da tela)</div><div class="muted" id="faseTxt">carregando…</div></div>
     <div class="sp"></div>
+    <button class="btn btn-ghost btn-sm" id="btnTeste" hidden onclick="abrir('mTeste')">🧪 Pedido de teste</button>
     <button class="btn btn-ghost btn-sm" onclick="recarregar()">↻ Atualizar</button>
   </div>
   <div class="wrap">
@@ -151,6 +152,21 @@
     </details>
   </div>
 </div>
+
+<div class="fundo" id="mTeste"><div class="modal" style="max-width:480px">
+  <h3 style="margin:0">🧪 Criar pedido de teste</h3>
+  <div class="muted" style="margin:6px 0 12px;font-size:12.5px">Para mostrar o fluxo à equipe. O pedido aparece no painel com a etiqueta TESTE e passa por tudo (gerar, WhatsApp, página do cliente, protocolo), mas não existe no Bling e fica fora dos relatórios, dos CSVs e das planilhas da ata. Depois, apague em "Apagar dados de teste".</div>
+  <label class="f">Nome do cliente<input id="tCliente" value="CLIENTE TESTE B13" /></label>
+  <label class="f" style="margin-top:8px">Celular que vai receber a mensagem (o seu, para ver no WhatsApp)<input id="tTel" inputmode="tel" placeholder="(31) 9 9999-9999" /></label>
+  <div class="linha" style="margin-top:8px">
+    <label class="f">Valor em produtos (R$)<input id="tValor" inputmode="decimal" value="6000" style="width:140px" /></label>
+    <label class="f">Vendedora<input id="tVend" style="width:160px" /></label>
+  </div>
+  <div class="muted" id="tInfo" style="margin-top:6px;font-size:12px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost" onclick="fechar('mTeste')">Cancelar</button>
+    <button class="btn btn-mag" onclick="criarTeste()">Criar pedido de teste</button></div>
+</div></div>
 
 <div class="fundo" id="mEnviar"><div class="modal" style="max-width:560px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 id="meTitulo" style="margin:0">Enviar link</h3><button class="btn btn-ghost btn-sm" onclick="fechar('mEnviar')">Fechar</button></div>
@@ -383,7 +399,7 @@ function htmlFrases(){
   if(!lista.length) return topo+`<div class="vazio">Nenhuma frase ${FILTRO_FRASE==="desc"?"desclassificada":"recebida"} ainda.</div>`;
   return topo+`<div class="rolagem"><table class="tbl"><thead><tr><th>Nº</th><th>Frase</th><th>Recebida</th><th class="hide-sm">Pedido</th><th class="hide-sm">Estabelecimento / autor</th><th>Conferência</th><th></th></tr></thead><tbody>
     ${lista.map(f=>`<tr style="${f.status!=="valida"?"opacity:.6":""}">
-      <td><b>${esc(f.seq)}</b></td>
+      <td>${f.teste?'<span class="tag warn">🧪 TESTE</span>':`<b>${esc(f.seq)}</b>`}</td>
       <td><div class="frase">“${esc(f.frase)}”</div><div class="muted">${esc(f.palavras)} palavra${f.palavras==1?"":"s"}${f.igualA?` · <span class="tag mag">igual à nº ${esc(f.igualA)}</span>`:""}${f.status!=="valida"?` · <span class="tag erro">desclassificada</span> ${esc(f.motivo)}`:""}</div></td>
       <td>${esc(f.enviadoEmBR)}${f.protocolo?`<div class="muted" style="font-size:11px">${esc(f.protocolo)}</div>`:""}<div><span class="tag neu">${f.canal==="link"?"link":"WhatsApp"}</span></div></td>
       <td class="hide-sm">${esc(f.numero)}</td>
@@ -431,12 +447,34 @@ function renderCampanha(){
   document.getElementById("campanha").innerHTML=`<span>Dia <b style="color:#fff">${dia}</b> de ${total}</span><div class="trilho"><i style="width:${Math.round(dia/total*100)}%"></i></div>
     <span>${falta?`faltam <b style="color:${falta<=3?"var(--warn)":"#fff"}">${falta} dia${falta>1?"s":""}</b> para o fim do envio (30/10, 23h59)`:"<b>envio encerrado</b>"}</span>`;
 }
+// ---------- PEDIDOS DE TESTE (demonstração) ----------
+const tagTeste=e=>e&&e.teste?`<span class="tag warn" style="margin-right:4px">🧪 TESTE</span>`:"";
+function bannerTeste(){
+  const n=ELEG.filter(e=>e.teste).length; if(!n) return "";
+  return `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;color:var(--warn)">
+    🧪 ${n} pedido(s) de teste no painel. Eles não entram nos relatórios, nos CSVs nem nas planilhas da ata.
+    ${EH_ADMIN?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="limparTestes()">Apagar dados de teste</button>`:""}</div>`;
+}
+async function criarTeste(){
+  const corpo={cliente:document.getElementById("tCliente").value,telefone:document.getElementById("tTel").value,valor:document.getElementById("tValor").value,vendedora:document.getElementById("tVend").value};
+  const {status,j}=await api("/api/concurso/teste",{method:"POST",body:JSON.stringify(corpo)});
+  if(status!==200){ alert(j.erro||"Não consegui criar"); return; }
+  fechar("mTeste"); toast(`Pedido ${j.numero} criado (${j.qtdFrases} frase${j.qtdFrases>1?"s":""})`);
+  ABA="afazer"; document.querySelectorAll("#abas .chip").forEach(x=>x.classList.toggle("on",x.dataset.aba===ABA));
+  await carregarListas(); const s=document.getElementById("sec_gerar"); if(s) s.scrollIntoView({behavior:"smooth"});
+}
+async function limparTestes(){
+  if(!confirm("Apagar todos os pedidos, links e frases de TESTE? Os dados reais não são tocados.")) return;
+  const {status,j}=await api("/api/concurso/teste/limpar",{method:"POST"});
+  if(status!==200){ alert(j.erro||"Não consegui apagar"); return; }
+  toast(`Apagados: ${j.apagados.pedidos} pedido(s), ${j.apagados.links} link(s), ${j.apagados.frases} frase(s) de teste`); REL=null; await carregarListas();
+}
 function linhaTarefa(e,acao){
   const vend=e.vendedor?` · vendedora ${esc(e.vendedor)}`:"";
   const extra=e.etapa==="lembrar"?` · sem resposta há ${Math.round((e.horasSemResposta||0)/24)} dia(s)${e.link?.lembretes?` · ${e.link.lembretes} lembrete(s) já enviado(s)`:""}`
     :e.etapa==="enviar"?` · link gerado ${hora(e.link?.criadoEm)}`:"";
   return `<div class="tarefa"><div class="info"><div class="l1"><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#fff;text-decoration:none">${esc(e.cliente?.nome||"—")}</a></div>
-    <div class="l2">Pedido ${esc(e.numero)} · ${esc(String(e.data).split("-").reverse().slice(0,2).join("/"))} · ${esc(e.ondePago||"")}${vend}${extra}</div></div>
+    <div class="l2">${tagTeste(e)}Pedido ${esc(e.numero)} · ${esc(String(e.data).split("-").reverse().slice(0,2).join("/"))} · ${esc(e.ondePago||"")}${vend}${extra}</div></div>
     <div class="nums"><span class="valor">${brl(e.valorProdutos)}</span>${qfr(e.qtdFrases)}${acao}</div></div>`;
 }
 function htmlAFazer(){
@@ -447,7 +485,7 @@ function htmlAFazer(){
   const sec=(id,titulo,desc,lista,botao)=>`<div class="secao" id="sec_${id}"><h4>${titulo} <span class="tag ${lista.length?"mag":"neu"}">${lista.length}</span>${soma(lista)}</h4><div class="desc">${desc}</div>
     ${lista.length?lista.map(e=>linhaTarefa(e,botao(e))).join(""):`<div class="muted" style="font-size:12.5px;padding:2px 0 4px">Nada aqui. ✅</div>`}</div>`;
   const tudo=g.length+en.length+lb.length;
-  return htmlSync()+(tudo?"":`<div class="vazio" style="margin-bottom:10px">✅ Tudo em dia. Nenhum link para gerar, enviar ou lembrar agora.</div>`)+
+  return htmlSync()+bannerTeste()+(tudo?"":`<div class="vazio" style="margin-bottom:10px">✅ Tudo em dia. Nenhum link para gerar, enviar ou lembrar agora.</div>`)+
     sec("gerar","1. Gerar e enviar o link","Pedidos pagos que ainda não têm link. Um toque gera o link e já abre a mensagem para o WhatsApp.",g,e=>`<button class="btn btn-mag btn-sm" onclick="gerarEEnviar('${esc(e.numero)}')">Gerar e enviar</button>`)+
     sec("enviar","2. Enviar ao cliente","O link foi gerado, mas ninguém registrou o envio ao cliente.",en,e=>`<button class="btn btn-mag btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',false)">Enviar</button>`)+
     sec("lembrar","3. Lembrar o cliente","Enviado há 3 dias ou mais e o cliente ainda não respondeu (nos 3 últimos dias da campanha, a partir de 1 dia).",lb,e=>`<button class="btn btn-ghost btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',true)">Enviar lembrete</button>`)+
@@ -507,11 +545,11 @@ function htmlElegiveis(){
   const lista=ordenar(BUSCA?ELEG.filter(e=>bate(e.numero,textoBusca(e))):V.filter(filtroEleg));
   const avisoBusca=BUSCA?`<div class="muted" style="margin-bottom:8px">Buscando "<b>${esc(BUSCA)}</b>" em todos os pedidos.</div>`:"";
   if(BUSCA&&!lista.length) return htmlSync()+avisoBusca+`<div class="vazio">Nenhum pedido com "${esc(BUSCA)}".<br><span class="muted">Se for um pedido novo, toque em 🔄 Sincronizar agora. Se ainda assim não aparecer, use <a href="#" onclick="abrirManual();return false" style="color:#9fd8ff">gerar link pelo número</a>.</span></div>`;
-  const linhas=lista.map(e=>`<tr><td><b>${esc(e.numero)}</b><div class="muted" style="font-size:11px">${esc(String(e.data).split("-").reverse().join("/"))}</div></td>
+  const linhas=lista.map(e=>`<tr><td>${tagTeste(e)}<b>${esc(e.numero)}</b><div class="muted" style="font-size:11px">${esc(String(e.data).split("-").reverse().join("/"))}</div></td>
       <td><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a>${e.vendedor?`<div class="muted" style="font-size:11px">${esc(e.vendedor)}</div>`:""}</td>
       <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':`<span class="valor" style="font-size:15px">${brl(e.valorProdutos)}</span>`}</td><td>${qfr(e.qtdFrases)}</td>
       <td>${tagEtapa(e)}${e.link?.protocolo?`<div class="muted" style="font-size:11px">protocolo ${esc(e.link.protocolo)}</div>`:""}<div class="muted" style="font-size:11px;margin-top:3px">${esc(e.pago?"pago · "+e.ondePago:e.ondePago||"")}</div></td><td>${acaoPorEtapa(e)}</td></tr>`).join("");
-  return htmlSync()+avisoBusca+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;${BUSCA?"opacity:.45;pointer-events:none":""}">${chips}</div>
+  return htmlSync()+bannerTeste()+avisoBusca+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;${BUSCA?"opacity:.45;pointer-events:none":""}">${chips}</div>
     ${lista.length?`<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Em produtos</th><th>Frases</th><th>Etapa</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
       :`<div class="vazio">${SYNC&&!SYNC.sincronizadoEm?"Ainda não sincronizou. Toque em 🔄 Sincronizar agora.":"Nenhum pedido nesta etapa."}</div>`}`;
 }
@@ -691,6 +729,9 @@ document.getElementById("gNumero").addEventListener("keydown",e=>{ if(e.key==="E
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".fundo.aberto").forEach(x=>x.classList.remove("aberto")); });
 document.getElementById("busca").addEventListener("input",ev=>{ BUSCA=ev.target.value; render(); });
 function abrirManual(){ const d=document.getElementById("manual"); d.open=true; d.scrollIntoView({behavior:"smooth"}); setTimeout(()=>document.getElementById("gNumero").focus(),300); }
+document.getElementById("btnTeste").hidden=!EH_ADMIN;
+document.getElementById("tVend").value=String(SESS.nome||"").split(" ")[0];
+document.getElementById("tValor").addEventListener("input",ev=>{ const v=Number(String(ev.target.value).replace(",","."))||0; document.getElementById("tInfo").textContent=v>=3000?`Dá ${Math.floor(v/3000)} frase(s).`:"Mínimo R$ 3.000 (1 frase)."; });
 document.getElementById("soMeus").checked=SO_MEUS;
 document.getElementById("ordem").value=ORD;
 document.getElementById("ordem").addEventListener("change",ev=>{ ORD=ev.target.value; try{ localStorage.setItem("concurso_ordem",ORD); }catch(e){} render(); });

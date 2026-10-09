@@ -170,6 +170,24 @@ export function registrarConcursoSlogan(app, deps) {
     catch (e) { return null; }
   };
 
+  // ---------- PEDIDO DE TESTE (demonstração para a equipe) ----------
+  // Não existe no Bling: fica em elegiveis com teste:true e número TESTE-N. Passa pelo fluxo inteiro (gerar, WhatsApp,
+  // página do cliente, protocolo), mas fica FORA de relatórios, CSVs, planilhas da ata, conferência no Bling e da
+  // numeração oficial das frases e dos protocolos (usa sequências próprias: frases "t", protocolo TST-).
+  const ehNumeroTeste = (n) => /^TESTE-\d+$/i.test(String(n || "").trim());
+  function prepararTeste(numero) {
+    const e = Object.values(ler().elegiveis || {}).find(x => x.teste && String(x.numero).toUpperCase() === String(numero).trim().toUpperCase());
+    if (!e) { const er = new Error(`Pedido de teste ${numero} não encontrado (talvez já tenha sido apagado).`); er.status = 404; throw er; }
+    const faixa = CONCURSO.faixas.atacado;
+    return { ped: null, bloqueios: [], avisos: ["Pedido de TESTE: serve só para demonstração e não vale para o concurso."],
+      dados: { pedidoId: e.pedidoId, numero: e.numero, dataPedido: e.data, canal: "whatsapp", tipo: "atacado", faixa, valorProdutos: e.valorProdutos, totalPedido: e.valorProdutos,
+               qtdFrases: Math.floor(e.valorProdutos / faixa + 1e-9), situacaoNaGeracao: { id: SIT.ATENDIDO, nome: "Teste" }, teste: true,
+               cliente: { ...e.cliente, fantasia: e.cliente.nome, telefone: e.cliente.telefone || "" } } };
+  }
+  const prepararQualquer = (o) => ehNumeroTeste(o.numero) ? prepararTeste(o.numero) : prepararPedido(o);
+  const novoProtocoloTeste = (d) => { d.seqProtTeste = (d.seqProtTeste || 0) + 1; const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(2, 10).replace(/-/g, ""); return `TST-${dia}-${String(d.seqProtTeste).padStart(4, "0")}`; };
+  const idFrase = (d, teste) => { if (teste) { d.seqTeste = (d.seqTeste || 0) + 1; return { id: "t" + d.seqTeste, seq: 900000 + d.seqTeste, teste: true }; } d.seq += 1; return { id: "f" + d.seq, seq: d.seq }; };
+
   // monta (sem gravar) o que o link vai ter, com bloqueios e avisos
   async function prepararPedido({ numero, tipo, canal }) {
     const ped = await buscarPedido(numero, false);
@@ -305,7 +323,7 @@ export function registrarConcursoSlogan(app, deps) {
       const valor = e.valorProdutos != null ? e.valorProdutos : null;
       const qtd = valor != null ? Math.floor(valor / faixa + 1e-9) : null;
       if (qtd != null && qtd < 1) fora.push("valor em produtos abaixo de R$ " + faixa.toLocaleString("pt-BR"));
-      const pg = statusPagamento(e.pedidoId, e.numero, e.situacaoId, dCx, entregas);
+      const pg = e.teste ? { pago: true, onde: "pago (pedido de teste)" } : statusPagamento(e.pedidoId, e.numero, e.situacaoId, dCx, entregas);
       const L = linksPorPedido[e.pedidoId];
       const fr = frasesPorPedido[e.pedidoId] || [];
       const contatos = L ? contatosDe(L) : [];
@@ -320,7 +338,7 @@ export function registrarConcursoSlogan(app, deps) {
       else etapa = pg.pago ? "gerar" : "aguardando_pagamento";
       return {
         ...e, chaveCliente: chaveCliente(e.cliente), situacao: nomeSituacao(e.situacaoId), origem: orig || "bling",
-        vendedor: (props[e.pedidoId] && props[e.pedidoId].vendedorNome) || "", etapa, horasSemResposta: horasSem != null ? Math.round(horasSem) : null,
+        vendedor: (props[e.pedidoId] && props[e.pedidoId].vendedorNome) || e.vendedorTeste || "", etapa, horasSemResposta: horasSem != null ? Math.round(horasSem) : null,
         qtdFrases: qtd, elegivel: !fora.length, motivoFora: fora.join("; "), pago: pg.pago, ondePago: pg.onde,
         link: L ? { token: L.token, status: L.status, qtdFrases: L.qtdFrases, criadoEm: L.criadoEm, criadoPor: L.criadoPor || "", enviadoEm: L.enviadoEm || null, url: urlDoLink(L.token),
                     protocolo: L.protocolo || null, compartilhadoEm: L.compartilhadoEm || null, compartilhadoPor: L.compartilhadoPor || "", ultimoContatoEm: ultimo ? new Date(ultimo).toISOString() : null, lembretes: contatos.filter(c => c.lembrete).length } : null,
@@ -355,7 +373,7 @@ export function registrarConcursoSlogan(app, deps) {
       pedirEstabelecimento: L.tipo === "atacado" && !L.cliente?.pj,
       pedirCpf: CONCURSO.pedirCpf, prazo: "30/10/2026, às 23h59", resultado: "07/11/2026",
       whatsappOficial: CONCURSO.whatsappOficial, regulamentoUrl: CONCURSO.regulamentoUrl,
-      maxCaracteres: CONCURSO.maxCaracteresFrase,
+      maxCaracteres: CONCURSO.maxCaracteresFrase, teste: !!L.teste,
     };
     if (L.status === "revogado") return res.json({ ...base, status: "revogado" });
     if (L.status === "enviado") {
@@ -410,11 +428,10 @@ export function registrarConcursoSlogan(app, deps) {
     const estabelecimento = L.tipo === "atacado"
       ? { razaoSocial: L.cliente?.pj ? L.cliente.nome : estabelecimentoInformado, cnpj: L.cliente?.pj ? L.cliente.documento : "", informadoPeloCliente: !L.cliente?.pj }
       : null;
-    const protocolo = novoProtocolo(d), auditoria = auditoriaReq(req);
+    const protocolo = L.teste ? novoProtocoloTeste(d) : novoProtocolo(d), auditoria = auditoriaReq(req);
     frases.forEach((frase, i) => {
-      d.seq += 1;
       d.frases.push({
-        id: "f" + d.seq, seq: d.seq, rota: 2, canal: "link", token: t, protocolo, auditoria,
+        ...idFrase(d, !!L.teste), rota: 2, canal: "link", token: t, protocolo, auditoria,
         pedidoId: L.pedidoId, numero: L.numero, ordemNoPedido: i + 1, frase, palavras: palavras(frase),
         autor, estabelecimento, marketing: b.marketing === true,
         declaracoes: { maior18: true, autoria: true, regulamento: true },
@@ -433,7 +450,7 @@ export function registrarConcursoSlogan(app, deps) {
 
   app.get("/api/concurso/resumo", reqOper, (req, res) => {
     const d = ler();
-    const links = Object.values(d.links);
+    const links = Object.values(d.links).filter(l => !l.teste); d.frases = d.frases.filter(x => !x.teste);
     const validas = d.frases.filter(x => x.status === "valida");
     res.json({
       fase: fase(), inicio: new Date(CONCURSO.inicio).toISOString(), fimEnvio: new Date(CONCURSO.fimEnvio).toISOString(),
@@ -454,7 +471,7 @@ export function registrarConcursoSlogan(app, deps) {
   // pré-visualiza (não grava): mostra valor, quantidade de frases, bloqueios e avisos
   app.get("/api/concurso/pedido/:numero", reqOper, async (req, res) => {
     try {
-      const p = await prepararPedido({ numero: req.params.numero, tipo: req.query.tipo, canal: req.query.canal });
+      const p = await prepararQualquer({ numero: req.params.numero, tipo: req.query.tipo, canal: req.query.canal });
       const existente = Object.values(ler().links).find(l => l.pedidoId === p.dados.pedidoId && l.status !== "revogado");
       res.json({ ...p.dados, bloqueios: p.bloqueios, avisos: p.avisos, linkExistente: existente ? linkPublicoDTO(existente) : null });
     } catch (e) { res.status(e.status || 500).json({ erro: e.message }); }
@@ -463,7 +480,7 @@ export function registrarConcursoSlogan(app, deps) {
   app.post("/api/concurso/links", reqOper, async (req, res) => {
     try {
       const { numero, tipo, canal, ignorarAvisos } = req.body || {};
-      const p = await prepararPedido({ numero, tipo, canal });
+      const p = await prepararQualquer({ numero, tipo, canal });
       if (p.bloqueios.length) return res.status(422).json({ erro: p.bloqueios[0], bloqueios: p.bloqueios, avisos: p.avisos, previa: p.dados });
       if (p.avisos.length && ignorarAvisos !== true) return res.status(409).json({ erro: "Confirme os avisos antes de gerar.", precisaConfirmar: true, avisos: p.avisos, previa: p.dados });
       // daqui em diante síncrono: 1 link ativo por pedido (cláusula 4.3)
@@ -525,14 +542,14 @@ export function registrarConcursoSlogan(app, deps) {
       const d = ler(); const lista = listaElegiveis().filter(x => x.elegivel);
       const porChave = {};
       const pegar = (cli) => { const k = chaveCliente(cli); return (porChave[k] ||= { chave: k, nome: cli?.nome || "", documento: cli?.documento || "", pj: !!cli?.pj, pedidos: {}, frases: [] }); };
-      lista.forEach(e => { pegar(e.cliente).pedidos[e.pedidoId] = { pedidoId: e.pedidoId, numero: e.numero, data: e.data, valorProdutos: e.valorProdutos, qtdFrases: e.qtdFrases, pago: e.pago, ondePago: e.ondePago, link: e.link ? { status: e.link.status, criadoEm: e.link.criadoEm } : null }; });
+      lista.forEach(e => { pegar(e.cliente).pedidos[e.pedidoId] = { teste: !!e.teste, pedidoId: e.pedidoId, numero: e.numero, data: e.data, valorProdutos: e.valorProdutos, qtdFrases: e.qtdFrases, pago: e.pago, ondePago: e.ondePago, link: e.link ? { status: e.link.status, criadoEm: e.link.criadoEm } : null }; });
       // links gerados à mão (pedido que não veio da busca) também entram
       Object.values(d.links).filter(l => l.status !== "revogado").forEach(l => { const c = pegar(l.cliente); if (!c.pedidos[l.pedidoId]) c.pedidos[l.pedidoId] = { pedidoId: l.pedidoId, numero: l.numero, data: l.dataPedido, valorProdutos: l.valorProdutos, qtdFrases: l.qtdFrases, pago: null, ondePago: "", link: { status: l.status, criadoEm: l.criadoEm } }; });
       const clientePorPedido = {}; Object.values(porChave).forEach(c => Object.keys(c.pedidos).forEach(pid => { clientePorPedido[pid] = c; }));
       d.frases.forEach(f => { const c = clientePorPedido[String(f.pedidoId)]; if (c) c.frases.push({ id: f.id, seq: f.seq, frase: f.frase, protocolo: f.protocolo || "", status: f.status, canal: f.canal, enviadoEm: f.enviadoEm, enviadoEmBR: emBR(f.enviadoEm), numero: f.numero || c.pedidos[f.pedidoId]?.numero || "", autor: f.autor?.nome || "", motivo: f.motivoDesclassificacao || f.motivo || "" }); });
       const out = Object.values(porChave).map(c => {
         const peds = Object.values(c.pedidos).sort((a, b) => String(b.data).localeCompare(String(a.data)));
-        return { chave: c.chave, nome: c.nome, documento: mascaraDoc(c.documento), pj: c.pj, pedidos: peds,
+        return { chave: c.chave, nome: c.nome, documento: mascaraDoc(c.documento), pj: c.pj, pedidos: peds, teste: peds.length > 0 && peds.every(p => p.teste),
           totalPedidos: peds.length, frasesLiberadas: peds.reduce((s, p) => s + (p.qtdFrases || 0), 0),
           frasesEnviadas: c.frases.length, frasesValidas: c.frases.filter(x => x.status === "valida").length,
           linksAbertos: peds.filter(p => p.link && p.link.status === "aberto").length,
@@ -570,12 +587,35 @@ export function registrarConcursoSlogan(app, deps) {
     gravar(d);
     res.json({ ok: true, link: linkPublicoDTO(d.links[token]) });
   });
+  app.post("/api/concurso/teste", requireAdmin, (req, res) => {
+    const b = req.body || {}; const d = ler();
+    const valor = Math.max(CONCURSO.faixas.atacado, Math.min(100000, Number(String(b.valor || 6000).replace(",", ".")) || 6000));
+    d.seqPedTeste = (d.seqPedTeste || 0) + 1;
+    const n = d.seqPedTeste, pid = "teste-" + n, numero = "TESTE-" + n;
+    const doc = "99" + String(Date.now()).slice(-6) + String(n).padStart(4, "0") + "00"; // CNPJ fictício (14 dígitos), único por teste
+    d.elegiveis ||= {};
+    d.elegiveis[pid] = { teste: true, pedidoId: pid, numero, data: hojeBR(), totalBling: valor, valorProdutos: +valor.toFixed(2), situacaoId: SIT.ATENDIDO,
+      cliente: { contatoId: null, nome: limpaTexto(b.cliente, 80) || "CLIENTE TESTE B13", documento: doc, pj: true, telefone: soDig(b.telefone) },
+      vendedorTeste: limpaTexto(b.vendedora, 60) || String(req.sessao?.nome || "").split(" ")[0], criadoPor: req.sessao?.nome || "", atualizadoEm: agoraISO() };
+    gravar(d);
+    res.json({ ok: true, numero, qtdFrases: Math.floor(valor / CONCURSO.faixas.atacado + 1e-9) });
+  });
+  app.post("/api/concurso/teste/limpar", requireAdmin, (req, res) => {
+    const d = ler();
+    const antes = { pedidos: Object.values(d.elegiveis || {}).filter(e => e.teste).length, links: Object.values(d.links).filter(l => l.teste).length, frases: d.frases.filter(f => f.teste).length };
+    Object.keys(d.elegiveis || {}).forEach(k => { if (d.elegiveis[k].teste) delete d.elegiveis[k]; });
+    Object.keys(d.links).forEach(k => { if (d.links[k].teste) delete d.links[k]; });
+    d.frases = d.frases.filter(f => !f.teste);
+    gravar(d);
+    res.json({ ok: true, apagados: antes });
+  });
   // ---------- RELATÓRIO ----------
   const mediana = (a) => { const v = a.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
   const diaBRde = (iso) => iso ? new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10) : null;
   function calcRelatorio() {
-    const d = ler(); const lista = listaElegiveis(); const eleg = lista.filter(x => x.elegivel);
-    const links = Object.values(d.links).filter(l => l.status !== "revogado");
+    const d = ler(); d.frases = d.frases.filter(f => !f.teste); // relatório só com dados reais
+    const lista = listaElegiveis().filter(x => !x.teste); const eleg = lista.filter(x => x.elegivel);
+    const links = Object.values(d.links).filter(l => l.status !== "revogado" && !l.teste);
     const enviados = links.filter(l => l.compartilhadoEm || l.status === "enviado");
     const respondidos = links.filter(l => l.status === "enviado");
     const validas = d.frases.filter(f => f.status === "valida");
@@ -602,7 +642,7 @@ export function registrarConcursoSlogan(app, deps) {
       v.frasesValidas += x.frasesValidas || 0;
     });
     Object.values(porVend).forEach(v => { v.taxaResposta = pct(v.respondidos, v.enviados); });
-    const clientes = calcClientes().map(c => ({ ...c, frases: undefined, pedidos: undefined,
+    const clientes = calcClientes().filter(c => !c.teste).map(c => ({ ...c, frases: undefined, pedidos: undefined,
       linksEnviados: c.pedidos.filter(p => p.link).length, ultimaAtividade: c.frases[0]?.enviadoEm || null }));
     return {
       campanha: { inicioPedidos: CONCURSO.dataPedidoMin, fimEnvio: new Date(fimEnv).toISOString(), diaAtual, totalDias, diasRestantes: Math.max(0, Math.ceil((fimEnv - Date.now()) / 86400000)) },
@@ -633,14 +673,14 @@ export function registrarConcursoSlogan(app, deps) {
       let linhas;
       if (tipo === "pedidos") {
         linhas = [["Pedido", "Data", "Cliente", "Documento", "Vendedora", "Valor em produtos", "Frases", "Pagamento", "Etapa", "Link gerado em", "Gerado por", "Enviado ao cliente em", "Enviado por", "Lembretes", "Respondeu em", "Protocolo", "Frases enviadas", "Frases válidas", "Motivo (fora da regra)"]]
-          .concat(listaElegiveis().map(x => [x.numero, x.data, x.cliente?.nome, mascaraDoc(x.cliente?.documento), x.vendedor, num(x.valorProdutos), x.qtdFrases, x.pago ? "pago (" + x.ondePago + ")" : x.ondePago, ROT[x.etapa] || x.etapa,
+          .concat(listaElegiveis().filter(x => !x.teste).map(x => [x.numero, x.data, x.cliente?.nome, mascaraDoc(x.cliente?.documento), x.vendedor, num(x.valorProdutos), x.qtdFrases, x.pago ? "pago (" + x.ondePago + ")" : x.ondePago, ROT[x.etapa] || x.etapa,
             dt(x.link?.criadoEm), x.link?.criadoPor || "", dt(x.link?.compartilhadoEm), x.link?.compartilhadoPor || "", x.link?.lembretes || 0, dt(x.link?.enviadoEm), x.link?.protocolo || "", x.frasesEnviadas, x.frasesValidas, x.motivoFora]));
       } else if (tipo === "vendedoras") {
         linhas = [["Vendedora", "Pedidos pagos elegíveis", "Aguardando pagamento", "Links gerados", "Enviados ao cliente", "Responderam", "Taxa de resposta (%)", "Para fazer agora", "Frases válidas"]]
           .concat(calcRelatorio().porVendedora.map(v => [v.vendedora, v.elegiveisPagos, v.aguardandoPagamento, v.gerados, v.enviados, v.respondidos, v.taxaResposta ?? "", v.paraFazer, v.frasesValidas]));
       } else {
         linhas = [["Cliente", "Documento", "Pedidos elegíveis", "Frases liberadas", "Links gerados", "Frases enviadas", "Frases válidas", "Links aguardando o cliente", "Última frase em"]]
-          .concat(calcClientes().map(c => [c.nome, c.documento, c.totalPedidos, c.frasesLiberadas, c.pedidos.filter(p => p.link).length, c.frasesEnviadas, c.frasesValidas, c.linksAbertos, dt(c.frases[0]?.enviadoEm)]));
+          .concat(calcClientes().filter(c => !c.teste).map(c => [c.nome, c.documento, c.totalPedidos, c.frasesLiberadas, c.pedidos.filter(p => p.link).length, c.frasesEnviadas, c.frasesValidas, c.linksAbertos, dt(c.frases[0]?.enviadoEm)]));
       }
       const csv = "\uFEFF" + linhas.map(l => l.map(cel).join(";")).join("\r\n");
       res.set("Content-Type", "text/csv; charset=utf-8");
@@ -666,7 +706,7 @@ export function registrarConcursoSlogan(app, deps) {
       const frases = (Array.isArray(b.frases) ? b.frases : [b.frase]).map(x => limpaTexto(x, CONCURSO.maxCaracteresFrase)).filter(Boolean);
       const nome = limpaTexto(b.nome, 120);
       if (!frases.length || palavras(nome) < 2) return res.status(400).json({ erro: "Frase e nome completo são obrigatórios (cláusula 4.5)." });
-      const p = await prepararPedido({ numero: b.numero, tipo: b.tipo, canal: "whatsapp" });
+      const p = await prepararQualquer({ numero: b.numero, tipo: b.tipo, canal: "whatsapp" });
       if (p.bloqueios.length) return res.status(422).json({ erro: p.bloqueios[0], bloqueios: p.bloqueios });
       // síncrono daqui em diante
       const d = ler();
@@ -676,10 +716,10 @@ export function registrarConcursoSlogan(app, deps) {
       const estab = p.dados.tipo === "atacado" ? { razaoSocial: p.dados.cliente.pj ? p.dados.cliente.nome : limpaTexto(b.estabelecimento, 120), cnpj: p.dados.cliente.pj ? p.dados.cliente.documento : "", informadoPeloCliente: !p.dados.cliente.pj } : null;
       if (p.dados.tipo === "atacado" && !estab.razaoSocial) return res.status(400).json({ erro: "No atacado, informe o nome do estabelecimento." });
       const em = new Date(recebidaEm).toISOString();
-      const protocolo = novoProtocolo(d);
+      const ehT = !!p.dados.teste;
+      const protocolo = ehT ? novoProtocoloTeste(d) : novoProtocolo(d);
       frases.forEach((frase, i) => {
-        d.seq += 1;
-        d.frases.push({ id: "f" + d.seq, seq: d.seq, rota: 2, canal: "whatsapp", token: linkAberto?.token || null, protocolo,
+        d.frases.push({ ...idFrase(d, ehT), rota: 2, canal: "whatsapp", token: linkAberto?.token || null, protocolo,
           pedidoId: p.dados.pedidoId, numero: p.dados.numero, ordemNoPedido: doPedido.length + i + 1, frase, palavras: palavras(frase),
           autor: { nome, whatsapp: soDig(b.whatsapp), email: "", vinculo: limpaTexto(b.vinculo, 60) }, estabelecimento: estab,
           marketing: b.marketing === true, enviadoEm: em, registradoEm: agoraISO(), registradoPor: req.sessao?.nome || "",
@@ -709,7 +749,7 @@ export function registrarConcursoSlogan(app, deps) {
   app.post("/api/concurso/conferir", requireAdmin, (req, res) => {
     if (_conf.rodando) return res.json({ ok: true, jaRodando: true, conferencia: _conf });
     const d = ler();
-    const pedidos = [...new Set(d.frases.map(x => x.pedidoId))];
+    const pedidos = [...new Set(d.frases.filter(x => !x.teste).map(x => x.pedidoId))]; // teste não existe no Bling
     _conf = { rodando: true, feitos: 0, total: pedidos.length, iniciadoEm: agoraISO(), terminadoEm: null, erro: "" };
     (async () => {
       for (const pid of pedidos) {
@@ -752,7 +792,7 @@ export function registrarConcursoSlogan(app, deps) {
       const d = ler();
       const wb = new ExcelJS.Workbook(); wb.creator = "B13 Bebidas"; wb.created = new Date();
       const cab = (ws) => { const r = ws.getRow(1); r.font = { bold: true, color: { argb: "FFFFFFFF" } }; r.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1C1846" } }; };
-      const ordem = [...d.frases].sort((a, b) => String(a.enviadoEm).localeCompare(String(b.enviadoEm)) || a.seq - b.seq);
+      const ordem = [...d.frases].filter(x => !x.teste).sort((a, b) => String(a.enviadoEm).localeCompare(String(b.enviadoEm)) || a.seq - b.seq);
       if (modo === "cega") {
         // 6.5: sem nome do autor, sem canal, sem valor da compra. Só número e frase.
         const ws = wb.addWorksheet("Rota 2 - às cegas", { views: [{ state: "frozen", ySplit: 1 }] });
