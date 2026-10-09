@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Central de Entregas</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/nav.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/central-entregas")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/central-entregas");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div class="top">
+  <img src="/logo"><div class="t">📦 Central de Entregas</div><div class="sp"></div>
+  <a href="/rotas" class="btn btn-ghost">🗺️ Rotas</a>
+  <a href="/entregas-dashboard" class="btn btn-ghost">📈 Mensal</a>
+</div>
+<div class="wrap">
+  <div class="filtros" id="periodos">
+    <span class="chip on" data-p="hoje">Hoje</span><span class="chip" data-p="ontem">Ontem</span>
+    <span class="chip" data-p="7">Últimos 7 dias</span><span class="chip" data-p="mes">Este mês</span>
+    <input type="date" id="de"> <span class="muted">até</span> <input type="date" id="ate">
+    <button class="btn btn-ghost" onclick="carregar()">↻ Atualizar</button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h3>💵 Recebimentos por motorista (acerto)</h3>
+    <div class="desc">O que cada motorista recebeu na entrega no período. Dinheiro é o que ele precisa entregar no caixa; Pix confira no extrato de cada banco.</div>
+    <div id="motoristas"></div></div>
+  <div class="card">
+    <div class="filtros" style="margin-bottom:10px">
+      <input id="busca" type="search" placeholder="🔎 Pedido, cliente ou endereço" style="flex:1;min-width:200px">
+      <select id="fMot"><option value="">Todos os motoristas</option></select>
+    </div>
+    <div class="filtros" id="fStatus" style="margin-bottom:10px"></div>
+    <div id="lista"><div class="vazio"><div class="spin"></div></div></div>
+  </div>
+</div>
+<div class="fundo" id="mPed"><div class="modal" id="mPedCorpo"></div></div>
+
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const norm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const dmy = d => d ? String(d).split("-").reverse().join("/") : "—";
+const hora = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+function token(){ try{ return (b13GetSession()||{}).token||""; }catch(e){ return ""; } }
+async function api(p){ const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { status: r.status, j }; }
+let D = null, STATUS = "todos", MOT = "", BUSCA = "";
+const ST = {
+  entregue: ["✅ Entregue", "ok"], nao_entregue: ["↩️ Não entregue", "erro"], em_rota: ["🛵 Em rota", "azul"], sem_registro: ["⚠️ Viagem fechada sem registro", "warn"],
+  aguardando_saida: ["🚚 No carro, aguardando saída", "neu"], aguardando_carro: ["⏳ Aguardando carro", "neu"] };
+const PG = { pago_caixa: "ok", pago_entrega: "ok", ja_pago: "ok", prazo: "warn", parcial: "warn", pendente: "neu", sem_pagamento: "erro" };
+const tagSt = x => `<span class="tag ${ST[x.status]?.[1] || "neu"}">${ST[x.status]?.[0] || x.status}</span>`;
+const tagPg = x => `<span class="tag ${PG[x.pagamento.situacao] || "neu"}">${esc(x.pagamento.situacao === "pago_entrega" ? "💵 " + brl(x.recebidoEntrega) + " na entrega" : x.pagamento.situacao === "pago_caixa" ? "💳 pago no caixa" : x.pagamento.situacao === "prazo" ? "🗓️ a prazo" : x.pagamento.situacao === "ja_pago" ? "pago antes" : x.pagamento.situacao === "sem_pagamento" ? "❗ sem pagamento" : x.pagamento.situacao === "parcial" ? "parcial" : "não pago")}</span>`;
+
+function periodo(p){
+  const h = hojeBR(); let de = h, ate = h;
+  if (p === "ontem") { de = ate = new Date(Date.parse(h + "T12:00:00") - 86400000).toISOString().slice(0, 10); }
+  if (p === "7") { de = new Date(Date.parse(h + "T12:00:00") - 6 * 86400000).toISOString().slice(0, 10); }
+  if (p === "mes") { de = h.slice(0, 8) + "01"; }
+  document.getElementById("de").value = de; document.getElementById("ate").value = ate;
+}
+document.getElementById("periodos").addEventListener("click", ev => {
+  const c = ev.target.closest(".chip"); if (!c) return;
+  document.querySelectorAll("#periodos .chip").forEach(x => x.classList.toggle("on", x === c));
+  periodo(c.dataset.p); carregar();
+});
+["de", "ate"].forEach(id => document.getElementById(id).addEventListener("change", () => { document.querySelectorAll("#periodos .chip").forEach(x => x.classList.remove("on")); carregar(); }));
+document.getElementById("busca").addEventListener("input", e => { BUSCA = e.target.value; renderLista(); });
+document.getElementById("fMot").addEventListener("change", e => { MOT = e.target.value; renderLista(); });
+
+async function carregar(){
+  document.getElementById("lista").innerHTML = '<div class="vazio"><div class="spin"></div></div>';
+  const { status, j } = await api(`/api/central-entregas?de=${document.getElementById("de").value}&ate=${document.getElementById("ate").value}`);
+  if (status !== 200) { document.getElementById("lista").innerHTML = `<div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; renderTudo();
+}
+function renderTudo(){
+  const I = D.indicadores, re = I.recebidoEntrega;
+  const pix = Object.entries(re.pixPorBanco).map(([b, v]) => `${esc(b)} ${brl(v)}`).join(" · ");
+  const k = [
+    [`${I.entregues} / ${I.total}`, "Entregues", `${I.naoEntregues} não entregue(s) · ${I.emRota} em rota · ${I.aguardando} aguardando`],
+    [brl(I.valorEntregue), "Valor entregue", `de ${brl(I.valorPedidos)} em pedidos de entrega`],
+    [brl(re.total), "Recebido na entrega", `💵 ${brl(re.dinheiro)} · Pix ${brl(re.pix)} · cartão ${brl(re.cartao)}`],
+    [brl(re.dinheiro), "Dinheiro com os motoristas", "precisa voltar para o caixa"],
+    [brl(re.pix), "Pix recebido", pix || "—"],
+    [brl(I.pagoNoCaixa.valor), "Pago no caixa antes", `${I.pagoNoCaixa.qtd} pedido(s)`],
+    [brl(I.prazo.valor), "A prazo", `${I.prazo.qtd} pedido(s)`],
+    [I.semPagamento.qtd, "Entregues sem pagamento", I.semPagamento.qtd ? brl(I.semPagamento.valor) + " para conferir" : "tudo certo", I.semPagamento.qtd > 0],
+    [I.comOcorrencia, "Com ocorrência", `${I.comProblema} com produto com problema (${brl(I.valorProblema)} abatidos)`, I.comOcorrencia > 0],
+    [`${I.comFotoConferencia} / ${I.total}`, "Com foto/vídeo da conferência", `${I.comAssinatura} com assinatura do cliente`],
+  ];
+  document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
+  const M = D.porMotorista;
+  document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
+    ${M.map(m => `<tr><td><b>${esc(m.motorista)}</b><div style="font-size:11px;color:var(--muted)">${esc(m.carros)}</div></td><td>${m.entregas}</td><td>${m.entregues}${m.naoEntregues ? ` <span class="tag erro">${m.naoEntregues} não</span>` : ""}</td>
+      <td><b style="color:var(--warn)">${brl(m.dinheiro)}</b></td><td>${brl(m.pix)}</td><td>${brl(m.cartao)}</td><td>${brl(m.prazo)}</td><td>${m.semPagamento ? `<span class="tag erro">${m.semPagamento}</span>` : "—"}</td><td>${m.ocorrencias || "—"}</td></tr>`).join("")}</table></div>`
+    : `<div class="vazio" style="padding:10px">Nenhuma viagem no período.</div>`;
+  const sel = document.getElementById("fMot"); const atual = sel.value;
+  sel.innerHTML = `<option value="">Todos os motoristas</option>` + M.map(m => `<option ${m.motorista === atual ? "selected" : ""}>${esc(m.motorista)}</option>`).join("");
+  renderLista();
+}
+function filtra(x){
+  if (MOT && (x.viagem?.motorista || "") !== MOT) return false;
+  if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || norm(x.cliente).includes(b) || norm(x.endereco).includes(b))) return false; }
+  if (STATUS === "pendencia") return x.pagamento.situacao === "sem_pagamento" || !!x.entrega?.ocorrencia || x.status === "sem_registro" || x.status === "nao_entregue" || (x.entrega?.valorProblema > 0);
+  if (STATUS === "aguardando") return x.status === "aguardando_carro" || x.status === "aguardando_saida";
+  return STATUS === "todos" || x.status === STATUS;
+}
+function renderLista(){
+  if (!D) return;
+  const base = D.pedidos.filter(x => (!MOT || (x.viagem?.motorista || "") === MOT));
+  const ops = [["todos", "Todos"], ["entregue", "Entregues"], ["nao_entregue", "Não entregues"], ["em_rota", "Em rota"], ["aguardando", "Aguardando"], ["pendencia", "⚠️ Com pendência"]];
+  const cont = k => { const s = STATUS; STATUS = k; const n = base.filter(filtra).length; STATUS = s; return n; };
+  document.getElementById("fStatus").innerHTML = ops.map(([k, t]) => `<span class="chip ${STATUS === k ? "on" : ""}" onclick="STATUS='${k}';renderLista()">${t} (${cont(k)})</span>`).join("");
+  const L = D.pedidos.filter(filtra);
+  document.getElementById("lista").innerHTML = L.length ? L.map(x => {
+    const fotos = x.midias.filter(m => m.tipo !== "video").length, videos = x.midias.filter(m => m.tipo === "video").length;
+    return `<div class="ped" onclick="abrirPedido('${esc(x.pedidoId)}')">
+      <div class="info"><div class="l1">#${esc(x.numero)} · ${esc(x.cliente || "—")}</div>
+        <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div></div>
+      <div class="dir"><span class="valor">${brl(x.total)}</span>${tagSt(x)}${tagPg(x)}
+        ${fotos ? `<span class="ic">📷 ${fotos}</span>` : ""}${videos ? `<span class="ic">🎥 ${videos}</span>` : ""}${x.entrega?.temAssinatura ? `<span class="ic">✍️</span>` : ""}${x.entrega?.ocorrencia ? `<span class="tag warn">ocorrência</span>` : ""}${x.entrega?.valorProblema > 0 ? `<span class="tag erro">problema ${brl(x.entrega.valorProblema)}</span>` : ""}</div></div>`;
+  }).join("") : `<div class="vazio">Nenhum pedido de entrega neste filtro.</div>`;
+}
+function abrirPedido(pid){
+  const x = D.pedidos.find(p => p.pedidoId === pid); if (!x) return;
+  const lin = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
+  const midia = (m) => m.tipo === "video"
+    ? `<div><video src="${esc(m.url)}" controls preload="none" ${m.thumb ? `poster="${esc(m.thumb)}"` : ""}></video><small>🎥 ${m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro"} · ${hora(m.em)} · ${esc(m.por)}</small></div>`
+    : `<a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.thumb || m.url)}" loading="lazy"><small>📷 ${m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro"} · ${hora(m.em)} · ${esc(m.por)}</small></a>`;
+  const conf = x.midias.filter(m => m.origem === "conferencia"), ent = x.midias.filter(m => m.origem !== "conferencia");
+  document.getElementById("mPedCorpo").innerHTML = `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div><div style="font-size:18px;font-weight:900">Pedido #${esc(x.numero)} · ${esc(x.cliente || "—")}</div>
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${tagSt(x)}${tagPg(x)}<span class="valor">${brl(x.total)}</span></div></div>
+      <button class="btn btn-ghost" onclick="document.getElementById('mPed').classList.remove('aberto')">Fechar</button></div>
+    <div class="grid2">
+      <div class="bloco"><h4>🛵 Entrega</h4>
+        ${lin("Dia agendado", dmy(x.dataEntrega) + (x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""))}
+        ${lin("Endereço", esc(x.endereco || "—"))}${x.km ? lin("Distância", String(x.km).replace(".", ",") + " km") : ""}
+        ${lin("Carro / viagem", esc(x.carro || "—") + (x.viagem ? " · viagem " + x.viagem.viagem : ""))}
+        ${lin("Motorista", esc(x.viagem?.motorista || "—"))}
+        ${lin("Saiu", hora(x.viagem?.iniciadaEm))}
+        ${lin(x.status === "nao_entregue" ? "Tentativa" : "Entregue", x.entrega?.em ? hora(x.entrega.em) : "—")}
+        ${x.entrega?.peloGerente ? lin("Registrado por", esc(x.entrega.registradoPor || "escritório") + " (Resolver corrida)") : ""}
+        ${x.tentativas ? lin("Tentativas sem sucesso", x.tentativas) : ""}
+        ${x.obsEntrega ? lin("Observação", esc(x.obsEntrega)) : ""}${x.vendedor ? lin("Vendedor", esc(x.vendedor)) : ""}</div>
+      <div class="bloco"><h4>💵 Pagamento</h4>
+        ${lin("Situação", esc(x.pagamento.texto))}
+        ${x.pagamento.detalhe ? lin("No caixa", esc(x.pagamento.detalhe)) : ""}${x.pagamento.operador ? lin("Recebido por", esc(x.pagamento.operador)) : ""}
+        ${x.formas.map(f => lin(esc(f.forma) + (f.banco ? " (" + esc(f.banco) + ")" : ""), brl(f.valor))).join("")}
+        ${lin("Total do pedido", brl(x.total) + (x.frete ? " (frete " + brl(x.frete) + ")" : ""))}
+        ${x.entrega?.valorProblema > 0 ? lin("Abatido por problema", "− " + brl(x.entrega.valorProblema)) : ""}
+        ${x.recebidoEntrega ? lin("Recebido na entrega", brl(x.recebidoEntrega)) : ""}</div>
+    </div>
+    ${x.entrega?.ocorrencia || (x.entrega?.itensProblema || []).length || x.entrega?.motivo ? `<div class="bloco"><h4>⚠️ Ocorrência e problemas</h4>
+      ${x.entrega?.ocorrencia ? lin("Ocorrência", esc(x.entrega.ocorrencia.descricao || "(sem descrição)")) : ""}
+      ${x.entrega?.motivo ? lin("Motivo", esc(x.entrega.motivo)) : ""}
+      ${(x.entrega?.itensProblema || []).map(p => lin(esc(p.nome || p.descricao || "item"), esc((p.tipo || p.problema || "problema") + (p.quantidade ? " · " + p.quantidade + " un" : "")))).join("")}</div>` : ""}
+    <div class="bloco"><h4>📷 Fotos e vídeos da conferência (${conf.length})</h4>${conf.length ? `<div class="galeria">${conf.map(midia).join("")}</div>` : `<div class="desc" style="margin:0">Nenhuma.</div>`}</div>
+    <div class="bloco"><h4>📷 Fotos e vídeos da entrega / ocorrência (${ent.length})</h4>${ent.length ? `<div class="galeria">${ent.map(midia).join("")}</div>` : `<div class="desc" style="margin:0">Nenhuma.</div>`}</div>
+    <div class="bloco"><h4>✍️ Assinatura do cliente</h4><div id="assin">${x.entrega?.temAssinatura ? `<button class="btn btn-ghost" onclick="verAssinatura('${esc(x.viagem?.token || "")}','${esc(x.pedidoId)}')">Ver assinatura</button>` : `<div class="desc" style="margin:0">${x.entrega?.peloGerente ? "Entrega registrada pelo escritório (sem assinatura)." : "Sem assinatura."}</div>`}</div></div>
+    ${x.itens.length ? `<div class="bloco"><h4>🧾 Itens (${x.itens.length})</h4>${x.itens.map(i => lin(esc(i.nome), `${i.quantidade} un · ${brl(i.valor)}`)).join("")}</div>` : ""}
+    <div class="bloco"><h4>🕓 Linha do tempo</h4><div class="tl">${x.linha.length ? x.linha.map(e => `<div><b>${hora(e.em)}</b> · ${esc(e.texto)} <span>${e.por ? "· " + esc(e.por) : ""}</span></div>`).join("") : "—"}</div></div>`;
+  document.getElementById("mPed").classList.add("aberto");
+}
+async function verAssinatura(tok, pid){
+  const el = document.getElementById("assin"); el.innerHTML = '<div class="spin"></div>';
+  const { status, j } = await api(`/api/central-entregas/assinatura/${encodeURIComponent(tok)}/${encodeURIComponent(pid)}`);
+  el.innerHTML = status === 200 ? `<img src="${j.dataUrl}" style="max-width:100%;background:#fff;border-radius:8px;padding:6px">` : `<div class="desc" style="margin:0">${esc(j.erro || "Não encontrada.")}</div>`;
+}
+document.getElementById("mPed").addEventListener("click", e => { if (e.target.id === "mPed") e.target.classList.remove("aberto"); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.getElementById("mPed").classList.remove("aberto"); });
+periodo("hoje"); carregar();
+</script>
+</body>
+</html>

@@ -887,6 +887,8 @@ function limparComprovantesAntigos(){
         try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; restante.totalBytes-=a.bytes; }catch(e){}
       }
     }
+    // 3) MINIATURAS órfãs (o arquivo original já foi apagado)
+    try{ fs.readdirSync(MINIATURAS_DIR).forEach(n=>{ const orig=n.replace(/\.jpg$/,""); if(!fs.existsSync(path.join(COMPROVANTES_DIR,orig))){ try{ fs.unlinkSync(path.join(MINIATURAS_DIR,n)); }catch(e){} } }); }catch(e){}
     if(apagados) console.log(`[comprovantes] limpeza: ${apagados} arquivo(s), ${(bytesLiberados/1048576).toFixed(1)} MB liberados`);
     return {apagados, bytesLiberados};
   }catch(e){ return {apagados:0, bytesLiberados:0, erro:e.message}; }
@@ -895,7 +897,28 @@ function limparComprovantesAntigos(){
 setTimeout(limparComprovantesAntigos, 60000);
 setInterval(limparComprovantesAntigos, 12*60*60*1000);
 try { fs.mkdirSync(COMPROVANTES_DIR, { recursive: true }); } catch (e) {}
-app.use("/comprovantes", express.static(COMPROVANTES_DIR));
+// MINIATURAS (prévia leve de cada foto/vídeo, ~40 KB): geradas pelo NAVEGADOR na 1ª vez que o arquivo aparece no
+// painel e guardadas aqui. Sem biblioteca de imagem no servidor. O painel passa a carregar só a miniatura.
+const MINIATURAS_DIR = path.join(COMPROVANTES_DIR, "miniaturas");
+try { fs.mkdirSync(MINIATURAS_DIR, { recursive: true }); } catch (e) {}
+// os nomes dos comprovantes são únicos (pedido_data_aleatório) e nunca são reescritos: o navegador pode guardar em cache
+app.use("/comprovantes", express.static(COMPROVANTES_DIR, { maxAge: "30d", immutable: true }));
+app.post("/api/comprovantes/miniatura", express.json({ limit: "600kb" }), requireSessao, (req, res) => {
+  try{
+    const { url, dataUrl } = req.body || {};
+    const m = /^\/comprovantes\/([A-Za-z0-9_\-]+\.(jpg|jpeg|png|webp|mp4|mov|webm|3gp))$/i.exec(String(url||""));
+    if(!m) return res.status(400).json({ erro: "arquivo inválido" });
+    const nome=m[1];
+    if(!fs.existsSync(path.join(COMPROVANTES_DIR,nome))) return res.status(404).json({ erro: "arquivo não existe mais" });
+    const d=/^data:image\/jpeg;base64,(.+)$/.exec(String(dataUrl||""));
+    if(!d) return res.status(400).json({ erro: "miniatura precisa ser JPEG" });
+    const buf=Buffer.from(d[1],"base64");
+    if(buf.length<500||buf.length>400*1024||buf[0]!==0xFF||buf[1]!==0xD8) return res.status(400).json({ erro: "miniatura inválida" });
+    const destino=path.join(MINIATURAS_DIR, nome+".jpg");
+    if(!fs.existsSync(destino)) fs.writeFileSync(destino, buf);
+    res.json({ ok:true, thumb:`/comprovantes/miniaturas/${nome}.jpg` });
+  }catch(e){ res.status(500).json({ erro:e.message }); }
+});
 function extPorMime(mime) {
   mime = String(mime || "").toLowerCase();
   if (mime.indexOf("webm") >= 0) return "webm";
@@ -1150,6 +1173,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Logística",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+  {grupo:"Logística",href:"/central-entregas",label:"📦 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
   {grupo:"Logística",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
 
   {grupo:"Gestão",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
@@ -3941,6 +3965,7 @@ app.post("/api/comprovantes/limpar-agora",(req,res)=>{
 });
 
 app.get("/api/comprovantes/lista",async(req,res)=>{
+  let _miniaturas=new Set(); try{ _miniaturas=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
   try{
     const dias=Math.min(Number(req.query.dias||15),90);
     const desde=Date.now()-dias*86400000;
@@ -3957,7 +3982,8 @@ app.get("/api/comprovantes/lista",async(req,res)=>{
         const tipo=d.tipo||( /\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto");
         if(tipoFiltro && tipo!==tipoFiltro) return;
         if(!porPedido[pid]) porPedido[pid]={pedidoId:pid, comprovantes:[], ultimoEm:0};
-        porPedido[pid].comprovantes.push({ url:d.url, tipo, em:ev.em,
+        const _nm=String(d.url).split("/").pop();
+        porPedido[pid].comprovantes.push({ url:d.url, tipo, em:ev.em, thumb: _miniaturas.has(_nm+".jpg")?`/comprovantes/miniaturas/${_nm}.jpg`:null,
           quando:new Date(ev.em).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}),
           por:ev.funcionarioNome||ev.funcionario||"" });
         if((ev.em||0)>porPedido[pid].ultimoEm) porPedido[pid].ultimoEm=ev.em;
@@ -12560,6 +12586,120 @@ app.get("/api/rotas/dashboard-mensal",(req,res)=>{
 
 // detalhes completos de uma viagem, pedido por pedido — pra conferir depois:
 // itens com problema, pagamentos recebidos, assinatura do cliente, ocorrência
+// ===================== CENTRAL DE ENTREGAS =====================
+// Tudo de cada pedido de ENTREGA num lugar só: situação, carro/motorista, pagamento (no caixa antes ou na entrega,
+// formas, Pix por banco, a prazo), itens com problema, ocorrência, fotos/vídeos (conferência e motorista), assinatura
+// e linha do tempo. Só dados locais (rotas, viagens, registro dos pedidos, caixa e histórico): não consulta o Bling.
+const _rotEvento={pedido_criado_atacado:"Pedido criado",pedido_criado:"Pedido criado",enviado_separacao:"Enviado para a separação",pedido_aberto_separacao:"Separação iniciada",
+  separacao_completa:"Separação concluída",separacao_com_falta:"Separado com falta",seguiu_sem_pendencias:"Pendências resolvidas",conferido:"Conferido",conferencia_concluida:"Conferido",
+  voltou_separacao:"Voltou para a separação",entrega_registrada:"Entrega registrada",nao_entregue:"Não entregue",pagamento_registrado:"Pagamento registrado",itens_alterados:"Itens alterados"};
+const _rotuloEvento=(e)=>_rotEvento[e]||String(e||"").replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
+function _classeForma(nome){ const n=String(nome||"").toLowerCase(); if(/dinheiro|esp[eé]cie/.test(n)) return "dinheiro"; if(/pix/.test(n)) return "pix"; if(/cart|d[eé]bito|cr[eé]dito/.test(n)) return "cartao"; return "outros"; }
+function _centralEntregas(de,ate){
+  const rotas=lerRotasDias(); const viagens=Object.values(lerViagensAtivas()).filter(v=>v&&!v.canceladaEm);
+  const props={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
+  const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); const log=lerLog()||{}; const dCx=lerCaixaSessoes();
+  let mini=new Set(); try{ mini=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
+  const cfgCarros=(lerRotasConfig().carros)||[]; const nomeCarro=id=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
+  const P={}; const pega=(pid,data)=>(P[String(pid)]||={pedidoId:String(pid),dataEntrega:data,carro:null,viagemPlano:null,viagem:null,reg:null,tentativas:0});
+  Object.entries(rotas).forEach(([data,carros])=>{ if(data<de||data>ate) return;
+    Object.entries(carros||{}).forEach(([cid,c])=>{
+      if(cid==="_semCarro"){ ((c&&c.pedidoIds)||[]).forEach(pid=>pega(pid,data)); return; }
+      ((c&&c.viagens)||[]).forEach((v,ix)=>((v&&v.pedidoIds)||[]).forEach(pid=>{ const it=pega(pid,data); it.carro=nomeCarro(cid); it.viagemPlano=ix+1; }));
+    });
+  });
+  viagens.forEach(v=>{ if(!v.data||v.data<de||v.data>ate) return;
+    (v.pedidoIds||[]).forEach(pid=>{
+      const it=pega(pid,v.data); const reg=(v.entregas||{})[String(pid)];
+      if(reg&&reg.status==="nao_entregue") it.tentativas++;
+      // várias viagens com o mesmo pedido (não entregue e saiu de novo): vale o registro mais recente
+      if(!it.reg||(reg&&(reg.em||0)>=(it.reg.em||0))||(!reg&&!it.reg)){
+        it.carro=v.carroNome||nomeCarro(v.carroId);
+        it.viagem={token:v.token,motorista:v.motoristaNomeInformado||v.motoristaNome||"",telefone:v.motoristaTelefone||"",iniciadaEm:v.iniciadaEm||null,finalizadaEm:v.finalizadaEm||null,viagem:(Number(v.vix)||0)+1,kmInicial:v.kmInicial??null,kmFinal:v.kmFinal??null};
+        if(reg) it.reg=reg;
+      }
+    });
+  });
+  const lista=Object.values(P).map(it=>{
+    const pid=it.pedidoId, p=props[pid]||null, t=turnos[pid]||{}, reg=it.reg;
+    const numero=p?.pedidoBlingNumero||t.numero||pid;
+    const frete=p?.entrega?.tipo==="entrega"?Number(p.entrega.taxa||0):0;
+    // sem valor no registro local (pedido feito direto no Bling): usa o valor da entrega (recebido + abatido)
+    const total=_round2(Number(p?.total||0)||((Number(reg?.valorFinal)||0)+(Number(reg?.valorProblema)||0))||((reg?.pagamentos||[]).reduce((s2,x)=>s2+(Number(x.valor)||0),0)));
+    const status=reg?(reg.status==="entregue"?"entregue":reg.status==="nao_entregue"?"nao_entregue":"em_rota")
+      :it.viagem?(it.viagem.finalizadaEm?"sem_registro":"em_rota"):it.carro?"aguardando_saida":"aguardando_carro";
+    const cx=_pagamentoDoPedido(pid,numero,dCx);
+    const formas=((reg&&reg.pagamentos)||[]).map(x=>({forma:x.formaNome||"",valor:_round2(Number(x.valor)||0),banco:x.banco||null,classe:_classeForma(x.formaNome)}));
+    const recebidoEntrega=_round2(formas.reduce((s,x)=>s+x.valor,0));
+    let pagamento;
+    if(reg&&reg.prazo) pagamento={situacao:"prazo",texto:"A prazo"+(reg.venceEm?" · vence "+new Date(reg.venceEm-3*3600e3).toISOString().slice(0,10).split("-").reverse().join("/"):""),valor:Number(reg.valorFinal)||total};
+    else if(cx.pago) pagamento={situacao:"pago_caixa",texto:"Pago no "+(cx.ondeFoiPago||"caixa")+" (antes da entrega)",detalhe:cx.formas||"",valor:Number(cx.valor)||0,quando:cx.quando||null,operador:cx.operador||""};
+    else if(formas.length) pagamento={situacao:"pago_entrega",texto:"Recebido na entrega",valor:recebidoEntrega};
+    else if(reg&&reg.jaPago) pagamento={situacao:"ja_pago",texto:"Já estava pago (informado ao resolver a corrida)",valor:0};
+    else if(cx.parcial) pagamento={situacao:"parcial",texto:"Pagamento parcial",valor:Number(cx.valorPago)||0};
+    else pagamento={situacao:status==="entregue"?"sem_pagamento":"pendente",texto:status==="entregue"?"Entregue SEM pagamento registrado":"Ainda não pago",valor:0};
+    const midias=[]; const vistas=new Set();
+    (log[pid]||[]).forEach(e=>{ const d=e.detalhes||{}; if(!d.url||vistas.has(d.url)) return; vistas.add(d.url);
+      const nm=String(d.url).split("/").pop();
+      midias.push({url:d.url,tipo:d.tipo||(/\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto"),origem:/ocorr|entrega|motorista/i.test(e.evento||"")?"entrega":/confer/i.test(e.evento||"")?"conferencia":"outro",
+        em:e.em||null,por:e.funcionarioNome||"",thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
+    ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",thumb:null}); } });
+    const linha=(log[pid]||[]).filter(e=>!(e.detalhes&&e.detalhes.url)).map(e=>({em:e.em,texto:_rotuloEvento(e.evento),por:e.funcionarioNome||""}));
+    if(it.viagem?.iniciadaEm) linha.push({em:it.viagem.iniciadaEm,texto:`Saiu para entrega (${it.carro||"carro"}, viagem ${it.viagem.viagem})`,por:it.viagem.motorista});
+    if(reg&&reg.em) linha.push({em:reg.em,texto:reg.status==="entregue"?"Entregue":"Não entregue",por:reg.registradoPor||it.viagem?.motorista||""});
+    linha.sort((a,b)=>(a.em||0)-(b.em||0));
+    return { pedidoId:pid, numero:String(numero), cliente:p?.cliente?.nome||t.cliente||"", telefone:p?.cliente?.telefone||"", endereco:p?.entrega?.endereco||t.endereco||"",
+      dataEntrega:it.dataEntrega, turno:t.turno||"", obsEntrega:t.obsEntrega||"", vendedor:p?.vendedorNome||"",
+      total, frete:_round2(frete), km:p?.entrega?.km||null, itens:(p?.itens||[]).map(i=>({nome:i.nome||i.descricao||"",quantidade:i.quantidade,valor:i.valor})),
+      status, carro:it.carro, viagemPlano:it.viagemPlano, viagem:it.viagem, tentativas:it.tentativas,
+      entrega:reg?{em:reg.em||null,status:reg.status,registradoPor:reg.registradoPor||"",peloGerente:reg.origem==="gerente",valorFinal:_round2(Number(reg.valorFinal)||0),
+        valorProblema:_round2(Number(reg.valorProblema)||0),itensProblema:reg.itensProblema||[],ocorrencia:reg.ocorrencia?{descricao:reg.ocorrencia.descricao||""}:null,motivo:reg.motivo||"",temAssinatura:!!reg.assinaturaDataUrl}:null,
+      pagamento, formas, recebidoEntrega,
+      midias:midias.sort((a,b)=>(a.em||0)-(b.em||0)), linha:linha.slice(-30) };
+  }).sort((a,b)=>String(b.dataEntrega).localeCompare(String(a.dataEntrega))||Number(b.numero)-Number(a.numero));
+  // indicadores e acerto por motorista
+  const R={ total:lista.length, entregues:0, naoEntregues:0, emRota:0, aguardando:0, valorPedidos:0, valorEntregue:0,
+    recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
+    comOcorrencia:0, comProblema:0, valorProblema:0, comFotoConferencia:0, comAssinatura:0 };
+  const mot={};
+  lista.forEach(x=>{
+    R.valorPedidos+=x.total;
+    if(x.status==="entregue"){ R.entregues++; R.valorEntregue+=x.total; } else if(x.status==="nao_entregue") R.naoEntregues++; else if(x.status==="em_rota"||x.status==="sem_registro") R.emRota++; else R.aguardando++;
+    x.formas.forEach(f=>{ R.recebidoEntrega.total+=f.valor; R.recebidoEntrega[f.classe]+=f.valor; if(f.classe==="pix"){ const b=f.banco||"(banco não informado)"; R.recebidoEntrega.pixPorBanco[b]=(R.recebidoEntrega.pixPorBanco[b]||0)+f.valor; } });
+    if(x.pagamento.situacao==="pago_caixa"){ R.pagoNoCaixa.qtd++; R.pagoNoCaixa.valor+=x.pagamento.valor||x.total; }
+    if(x.pagamento.situacao==="prazo"){ R.prazo.qtd++; R.prazo.valor+=x.pagamento.valor||x.total; }
+    if(x.pagamento.situacao==="sem_pagamento"){ R.semPagamento.qtd++; R.semPagamento.valor+=x.total; }
+    if(x.entrega?.ocorrencia) R.comOcorrencia++;
+    if(x.entrega&&(x.entrega.valorProblema>0||(x.entrega.itensProblema||[]).length)){ R.comProblema++; R.valorProblema+=x.entrega.valorProblema; }
+    if(x.midias.some(m=>m.origem==="conferencia")) R.comFotoConferencia++;
+    if(x.entrega?.temAssinatura) R.comAssinatura++;
+    if(x.viagem){ const k=x.viagem.motorista||"(sem nome)";
+      const m=(mot[k]||={motorista:k,carros:new Set(),entregas:0,entregues:0,naoEntregues:0,dinheiro:0,pix:0,cartao:0,outros:0,prazo:0,semPagamento:0,ocorrencias:0,valorEntregue:0});
+      m.carros.add(x.carro||""); m.entregas++; if(x.status==="entregue"){ m.entregues++; m.valorEntregue+=x.total; } if(x.status==="nao_entregue") m.naoEntregues++;
+      x.formas.forEach(f=>{ m[f.classe]+=f.valor; }); if(x.pagamento.situacao==="prazo") m.prazo+=x.pagamento.valor||x.total; if(x.pagamento.situacao==="sem_pagamento") m.semPagamento++; if(x.entrega?.ocorrencia) m.ocorrencias++; }
+  });
+  const r2=o=>{ Object.keys(o).forEach(k=>{ if(typeof o[k]==="number") o[k]=_round2(o[k]); }); return o; };
+  r2(R); r2(R.recebidoEntrega); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
+  return { de, ate, indicadores:R, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
+}
+app.get("/api/central-entregas",requireSessao,(req,res)=>{
+  try{
+    const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+    const ok=d=>/^\d{4}-\d{2}-\d{2}$/.test(String(d||""));
+    let de=ok(req.query.de)?req.query.de:hoje, ate=ok(req.query.ate)?req.query.ate:de;
+    if(de>ate){ const x=de; de=ate; ate=x; }
+    if((Date.parse(ate)-Date.parse(de))/86400000>62) return res.status(400).json({erro:"escolha um período de até 62 dias"});
+    res.json({ok:true,..._centralEntregas(de,ate)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// assinatura do cliente (imagem), carregada só quando alguém abre (é pesada)
+app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>{
+  const v=lerViagensAtivas()[req.params.token]; const reg=v&&(v.entregas||{})[String(req.params.pid)];
+  if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
+  res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
+});
+app.get("/central-entregas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"central-entregas.html")); });
+
 app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{
   try{
     const v=lerViagensAtivas()[req.params.token];
