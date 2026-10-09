@@ -12629,7 +12629,7 @@ function _classeForma(nome){ const n=String(nome||"").toLowerCase(); if(/dinheir
 function _centralEntregas(de,ate){
   const rotas=lerRotasDias(); const viagens=Object.values(lerViagensAtivas()).filter(v=>v&&!v.canceladaEm);
   const props={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
-  const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); const log=lerLog()||{}; const dCx=lerCaixaSessoes();
+  const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); const log=lerLog()||{}; const dCx=lerCaixaSessoes(); const pagReg=lerPag();
   let mini=new Set(); try{ mini=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
   const cfgCarros=(lerRotasConfig().carros)||[]; const nomeCarro=id=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
   const P={}; const pega=(pid,data)=>(P[String(pid)]||={pedidoId:String(pid),dataEntrega:data,carro:null,viagemPlano:null,viagem:null,reg:null,tentativas:0});
@@ -12662,12 +12662,22 @@ function _centralEntregas(de,ate){
     const cx=_pagamentoDoPedido(pid,numero,dCx);
     const formas=((reg&&reg.pagamentos)||[]).map(x=>({forma:x.formaNome||"",valor:_round2(Number(x.valor)||0),banco:x.banco||null,classe:_classeForma(x.formaNome)}));
     const recebidoEntrega=_round2(formas.reduce((s,x)=>s+x.valor,0));
+    // ORIGEM DO PAGAMENTO (são 3 fontes diferentes; antes tudo aparecia como "pago no caixa"):
+    //  - recebido NA ENTREGA (motorista/escritório): formas do registro da entrega
+    //  - recebido num CAIXA (sessão de Caixa Atacado / Frente de Caixa): o que a Gestão de Caixas enxerga
+    //  - REGISTRADO NO SISTEMA fora de caixa (Registrar pagamento / Enviar p/ separação em Pedidos): não está em caixa nenhum
+    const viaCaixa=!!(cx.pago&&/caixa/i.test(String(cx.ondeFoiPago||"")));
+    const pr=pagReg[pid]||null; const prHist=((pr&&pr.historico)||[]).filter(h=>Number(h.valor)>0&&!/^substituicao$/.test(String(h.tipo||"")));
+    const prDaEntrega=prHist.length>0&&prHist.every(h=>/^entrega/i.test(String(h.origem||"")));
     let pagamento;
     if(reg&&reg.prazo) pagamento={situacao:"prazo",texto:"A prazo"+(reg.venceEm?" · vence "+new Date(reg.venceEm-3*3600e3).toISOString().slice(0,10).split("-").reverse().join("/"):""),valor:Number(reg.valorFinal)||total};
-    else if(cx.pago) pagamento={situacao:"pago_caixa",texto:"Pago no "+(cx.ondeFoiPago||"caixa")+" (antes da entrega)",detalhe:cx.formas||"",valor:Number(cx.valor)||0,quando:cx.quando||null,operador:cx.operador||""};
     else if(formas.length) pagamento={situacao:"pago_entrega",texto:"Recebido na entrega",valor:recebidoEntrega};
+    else if(viaCaixa) pagamento={situacao:"pago_caixa",texto:"Pago no "+cx.ondeFoiPago+" (antes da entrega)",detalhe:cx.formas||"",valor:Number(cx.valor)||0,quando:cx.quando||null,operador:cx.operador||""};
+    else if(pr&&pr.statusPagamento==="pago"&&!prDaEntrega) pagamento={situacao:"pago_registro",texto:"Pagamento registrado no sistema, FORA de caixa (não aparece na Gestão de Caixas)",
+      detalhe:prHist.map(h=>`${h.formaNome||"forma"}: ${brlN(Number(h.valor))}`).join(" · "),valor:Number(pr.valorPago)||0,
+      operador:[...new Set(prHist.map(h=>h.funcionarioNome).filter(Boolean))].join(", "),quando:prHist.length?Math.max(...prHist.map(h=>Number(h.em)||0)):null};
     else if(reg&&reg.jaPago) pagamento={situacao:"ja_pago",texto:"Já estava pago (informado ao resolver a corrida)",valor:0};
-    else if(cx.parcial) pagamento={situacao:"parcial",texto:"Pagamento parcial",valor:Number(cx.valorPago)||0};
+    else if((pr&&pr.statusPagamento==="parcial")||cx.parcial) pagamento={situacao:"parcial",texto:"Pagamento parcial",valor:Number(pr?.valorPago||cx.valorPago)||0};
     else pagamento={situacao:status==="entregue"?"sem_pagamento":"pendente",texto:status==="entregue"?"Entregue SEM pagamento registrado":"Ainda não pago",valor:0};
     const midias=[]; const vistas=new Set();
     (log[pid]||[]).forEach(e=>{ const d=e.detalhes||{}; if(!d.url||vistas.has(d.url)) return; vistas.add(d.url);
@@ -12690,7 +12700,7 @@ function _centralEntregas(de,ate){
   }).sort((a,b)=>String(b.dataEntrega).localeCompare(String(a.dataEntrega))||Number(b.numero)-Number(a.numero));
   // indicadores e acerto por motorista
   const R={ total:lista.length, entregues:0, naoEntregues:0, emRota:0, aguardando:0, valorPedidos:0, valorEntregue:0,
-    recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
+    recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, pagoForaDoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
     comOcorrencia:0, comProblema:0, valorProblema:0, comFotoConferencia:0, comAssinatura:0,
     frete:{entregues:0,total:0,qtdEntreguesComFrete:0,kmEntregues:0,medioPorEntrega:0,porKm:null} };
   const mot={};
@@ -12700,6 +12710,7 @@ function _centralEntregas(de,ate){
     if(x.status==="entregue"){ R.entregues++; R.valorEntregue+=x.total; } else if(x.status==="nao_entregue") R.naoEntregues++; else if(x.status==="em_rota"||x.status==="sem_registro") R.emRota++; else R.aguardando++;
     x.formas.forEach(f=>{ R.recebidoEntrega.total+=f.valor; R.recebidoEntrega[f.classe]+=f.valor; if(f.classe==="pix"){ const b=f.banco||"(banco não informado)"; R.recebidoEntrega.pixPorBanco[b]=(R.recebidoEntrega.pixPorBanco[b]||0)+f.valor; } });
     if(x.pagamento.situacao==="pago_caixa"){ R.pagoNoCaixa.qtd++; R.pagoNoCaixa.valor+=x.pagamento.valor||x.total; }
+    if(x.pagamento.situacao==="pago_registro"){ R.pagoForaDoCaixa.qtd++; R.pagoForaDoCaixa.valor+=x.pagamento.valor||x.total; }
     if(x.pagamento.situacao==="prazo"){ R.prazo.qtd++; R.prazo.valor+=x.pagamento.valor||x.total; }
     if(x.pagamento.situacao==="sem_pagamento"){ R.semPagamento.qtd++; R.semPagamento.valor+=x.total; }
     if(x.entrega?.ocorrencia) R.comOcorrencia++;
@@ -12714,7 +12725,7 @@ function _centralEntregas(de,ate){
   const r2=o=>{ Object.keys(o).forEach(k=>{ if(typeof o[k]==="number") o[k]=_round2(o[k]); }); return o; };
   R.frete.medioPorEntrega=R.frete.qtdEntreguesComFrete?R.frete.entregues/R.frete.qtdEntreguesComFrete:0;
   R.frete.porKm=R.frete.kmEntregues>0?R.frete.entregues/R.frete.kmEntregues:null;
-  r2(R); r2(R.recebidoEntrega); r2(R.frete); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
+  r2(R); r2(R.recebidoEntrega); r2(R.frete); r2(R.pagoForaDoCaixa); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
   return { de, ate, indicadores:R, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
 }
 app.get("/api/central-entregas",requireSessao,(req,res)=>{

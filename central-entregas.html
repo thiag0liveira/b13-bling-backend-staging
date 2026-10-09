@@ -114,9 +114,9 @@ let D = null, STATUS = "todos", MOT = "", BUSCA = "";
 const ST = {
   entregue: ["✅ Entregue", "ok"], nao_entregue: ["↩️ Não entregue", "erro"], em_rota: ["🛵 Em rota", "azul"], sem_registro: ["⚠️ Viagem fechada sem registro", "warn"],
   aguardando_saida: ["🚚 No carro, aguardando saída", "neu"], aguardando_carro: ["⏳ Aguardando carro", "neu"] };
-const PG = { pago_caixa: "ok", pago_entrega: "ok", ja_pago: "ok", prazo: "warn", parcial: "warn", pendente: "neu", sem_pagamento: "erro" };
+const PG = { pago_caixa: "ok", pago_registro: "azul", pago_entrega: "ok", ja_pago: "ok", prazo: "warn", parcial: "warn", pendente: "neu", sem_pagamento: "erro" };
 const tagSt = x => `<span class="tag ${ST[x.status]?.[1] || "neu"}">${ST[x.status]?.[0] || x.status}</span>`;
-const tagPg = x => `<span class="tag ${PG[x.pagamento.situacao] || "neu"}">${esc(x.pagamento.situacao === "pago_entrega" ? "💵 " + brl(x.recebidoEntrega) + " na entrega" : x.pagamento.situacao === "pago_caixa" ? "💳 pago no caixa" : x.pagamento.situacao === "prazo" ? "🗓️ a prazo" : x.pagamento.situacao === "ja_pago" ? "pago antes" : x.pagamento.situacao === "sem_pagamento" ? "❗ sem pagamento" : x.pagamento.situacao === "parcial" ? "parcial" : "não pago")}</span>`;
+const tagPg = x => `<span class="tag ${PG[x.pagamento.situacao] || "neu"}">${esc(x.pagamento.situacao === "pago_entrega" ? "💵 " + brl(x.recebidoEntrega) + " na entrega" : x.pagamento.situacao === "pago_caixa" ? "💳 pago no caixa" : x.pagamento.situacao === "pago_registro" ? "📝 pago fora do caixa" : x.pagamento.situacao === "prazo" ? "🗓️ a prazo" : x.pagamento.situacao === "ja_pago" ? "pago antes" : x.pagamento.situacao === "sem_pagamento" ? "❗ sem pagamento" : x.pagamento.situacao === "parcial" ? "parcial" : "não pago")}</span>`;
 
 function periodo(p){
   const h = hojeBR(); let de = h, ate = h;
@@ -155,7 +155,8 @@ function renderTudo(){
     [brl(re.total), "Recebido na entrega", `💵 ${brl(re.dinheiro)} · Pix ${brl(re.pix)} · cartão ${brl(re.cartao)}`],
     [brl(re.dinheiro), "Dinheiro com os motoristas", "precisa voltar para o caixa"],
     [brl(re.pix), "Pix recebido", pix || "—"],
-    [brl(I.pagoNoCaixa.valor), "Pago no caixa antes", `${I.pagoNoCaixa.qtd} pedido(s)`],
+    [brl(I.pagoNoCaixa.valor), "Pago no caixa antes", `${I.pagoNoCaixa.qtd} pedido(s) · aparecem na Gestão de Caixas`],
+    [brl(I.pagoForaDoCaixa.valor), "Pago fora do caixa", I.pagoForaDoCaixa.qtd ? `${I.pagoForaDoCaixa.qtd} pedido(s) com pagamento só registrado no sistema · não aparecem na Gestão de Caixas` : "nenhum", I.pagoForaDoCaixa.qtd > 0],
     [brl(I.prazo.valor), "A prazo", `${I.prazo.qtd} pedido(s)`],
     [I.semPagamento.qtd, "Entregues sem pagamento", I.semPagamento.qtd ? brl(I.semPagamento.valor) + " para conferir" : "tudo certo", I.semPagamento.qtd > 0],
     [I.comOcorrencia, "Com ocorrência", `${I.comProblema} com produto com problema (${brl(I.valorProblema)} abatidos)`, I.comOcorrencia > 0],
@@ -174,7 +175,7 @@ function renderTudo(){
 function filtra(x){
   if (MOT && (x.viagem?.motorista || "") !== MOT) return false;
   if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || norm(x.cliente).includes(b) || norm(x.endereco).includes(b))) return false; }
-  if (STATUS === "pendencia") return x.pagamento.situacao === "sem_pagamento" || !!x.entrega?.ocorrencia || x.status === "sem_registro" || x.status === "nao_entregue" || (x.entrega?.valorProblema > 0);
+  if (STATUS === "pendencia") return x.pagamento.situacao === "sem_pagamento" || x.pagamento.situacao === "pago_registro" || !!x.entrega?.ocorrencia || x.status === "sem_registro" || x.status === "nao_entregue" || (x.entrega?.valorProblema > 0);
   if (STATUS === "aguardando") return x.status === "aguardando_carro" || x.status === "aguardando_saida";
   return STATUS === "todos" || x.status === STATUS;
 }
@@ -219,7 +220,7 @@ function abrirPedido(pid){
         ${x.obsEntrega ? lin("Observação", esc(x.obsEntrega)) : ""}${x.vendedor ? lin("Vendedor", esc(x.vendedor)) : ""}</div>
       <div class="bloco"><h4>💵 Pagamento</h4>
         ${lin("Situação", esc(x.pagamento.texto))}
-        ${x.pagamento.detalhe ? lin("No caixa", esc(x.pagamento.detalhe)) : ""}${x.pagamento.operador ? lin("Recebido por", esc(x.pagamento.operador)) : ""}
+        ${x.pagamento.detalhe ? lin(x.pagamento.situacao === "pago_registro" ? "Formas registradas" : "No caixa", esc(x.pagamento.detalhe)) : ""}${x.pagamento.operador ? lin(x.pagamento.situacao === "pago_registro" ? "Registrado por" : "Recebido por", esc(x.pagamento.operador)) : ""}${x.pagamento.quando ? lin("Quando", hora(x.pagamento.quando)) : ""}
         ${x.formas.map(f => lin(esc(f.forma) + (f.banco ? " (" + esc(f.banco) + ")" : ""), brl(f.valor))).join("")}
         ${lin("Total do pedido", brl(x.total) + (x.frete ? " (frete " + brl(x.frete) + ")" : ""))}
         ${x.entrega?.valorProblema > 0 ? lin("Abatido por problema", "− " + brl(x.entrega.valorProblema)) : ""}
