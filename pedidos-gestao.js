@@ -78,6 +78,9 @@
       ".gTitulo{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:4px 0 10px}" +
       ".gTitulo h2{font-size:17px;margin:0}" +
       ".gFita{display:flex;gap:8px;overflow-x:auto;padding:2px 0 8px;-webkit-overflow-scrolling:touch}" +
+      // no COMPUTADOR as abas e a fita de etapas quebram em mais de uma linha (antes rolavam pro lado sem avisar e
+      // Atendidos, Em aberto, Indicadores e Clássica ficavam escondidas); no celular continua deslizando
+      '@media(min-width:768px){.gMenu{flex-wrap:wrap;overflow-x:visible}.gFita{flex-wrap:wrap;overflow-x:visible}}' +
       ".gEtapa{flex:1 0 118px;max-width:200px;background:#151233;border:2px solid #2c2660;border-radius:14px;padding:10px;cursor:pointer;position:relative;text-align:left}" +
       ".gEtapa.vazia{opacity:.55}" +
       ".gEtapa .gi{font-size:18px}.gEtapa .gq{font-size:26px;font-weight:900;line-height:1.1}" +
