@@ -404,7 +404,10 @@
     h += '<div class="gSecao"><h3>🕐 Pedidos por hora do dia</h3><div class="gHoras">' + I.porHora.map(function (n, hr) { return '<i title="' + hr + "h: " + n + ' pedido(s)" style="height:' + Math.round(n * 100 / maxH) + '%;opacity:' + (n ? 1 : .25) + '"></i>'; }).join("") +
       '</div><div class="muted" style="display:flex;justify-content:space-between"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span></div></div>';
     // equipe
-    h += '<div class="gSecao"><h3>🧑‍🔧 Equipe de separação</h3>' + (I.pessoas.length ? I.pessoas.map(function (p) { return barra("👤 " + esc(p.nome), p.pedidos, I.pessoas[0].pedidos, p.pedidos + " pedido(s)" + (p.mediana != null ? " · " + fmtDur(p.mediana) : "")); }).join("") : vazio("Sem separações concluídas no período.")) + "</div>";
+    var T = I.tamanhoPedido || {};
+    var resumoKg = T.kgMedio != null
+      ? '<div class="muted" style="margin:-2px 0 8px">Tamanho do pedido separado: <b>' + T.kgMedio + ' kg em média</b> (o do meio tem ' + T.kgMediano + ' kg, o maior ' + T.kgMax + ' kg). Peso estimado pelos itens' + (T.semPeso ? "; " + T.semPeso + " pedido(s) sem itens no sistema ficaram de fora" : "") + ".</div>" : "";
+    h += '<div class="gSecao"><h3>🧑‍🔧 Equipe de separação</h3>' + resumoKg + (I.pessoas.length ? I.pessoas.map(function (p) { return barra("👤 " + esc(p.nome), p.pedidos, I.pessoas[0].pedidos, p.pedidos + " pedido(s)" + (p.mediana != null ? " · " + fmtDur(p.mediana) : "") + (p.kgMedio != null ? " · " + p.kgMedio + " kg/ped." : "")); }).join("") : vazio("Sem separações concluídas no período.")) + "</div>";
     // itens retirados
     h += '<div class="gSecao"><h3>✂️ Itens que mais saem dos pedidos <span class="muted">(sinal de falta de estoque)</span></h3>' + (I.itensRetirados.length ? I.itensRetirados.map(function (it) { return barra(esc(it.nome), it.qtd, I.itensRetirados[0].qtd, it.qtd + " un · " + it.pedidos + " ped.", "#ff9aa8"); }).join("") : vazio("Nenhum item retirado no período.")) + "</div>";
     // entregas e caixa

@@ -17471,7 +17471,7 @@ registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAd
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname });
 registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
-  lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais });
+  lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });
 
 const _servidorHttp=app.listen(PORT,()=> console.log(`B13 Bling Backend na porta ${PORT} (DATA_DIR=${DATA_DIR})`));
 // DESLIGAMENTO EDUCADO: o Railway manda SIGTERM quando troca esse contêiner por

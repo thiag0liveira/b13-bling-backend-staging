@@ -62,7 +62,7 @@ const ROTULOS_EVENTO = {
 
 export function registrarGestaoPedidos(app, deps) {
   const { bling, SIT, nomeSituacao, montarPedidoDoBling, lerLog, lerFilaSep, lerLocks, lerCaixaSessoes, lerPag,
-    lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais, mapaAlteracoes } = deps;
+    lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais, mapaAlteracoes, estimarPesoPedido } = deps;
 
   // --------------------------------------------------------------------- histórico -> marcos
   // Lê o histórico UMA vez (guardado 15s) e tira, de cada pedido, os momentos que importam.
@@ -340,6 +340,17 @@ export function registrarGestaoPedidos(app, deps) {
     caixa.atacado.valor = r2(caixa.atacado.valor); caixa.frente.valor = r2(caixa.frente.valor);
     const formas = Object.entries(porForma).map(([nome, valor]) => ({ nome, valor: r2(valor) })).sort((a, b) => b.valor - a.valor).slice(0, 8);
 
+    // PESO dos pedidos separados: estimado pelos itens do registro local (mesma estimativa usada em Rotas).
+    // Pedido sem registro/itens no sistema fica de fora da média (e é contado em 'semPeso').
+    const regPorPedido = {};
+    Object.values(lerPropostas() || {}).forEach((pr) => { if (pr && pr.pedidoBlingId) regPorPedido[String(pr.pedidoBlingId)] = pr; });
+    const pesoPedido = (pid) => {
+      try {
+        const pr = regPorPedido[String(pid)]; if (!pr || !(pr.itens || []).length || typeof estimarPesoPedido !== "function") return 0;
+        return estimarPesoPedido(pr.itens.map((i) => ({ descricao: i.nome || i.descricao, quantidade: i.quantidade }))) || 0;
+      } catch (e) { return 0; }
+    };
+    const kgsSep = []; let semPeso = 0;
     // tempos por etapa (mediana) e por pessoa
     const tFila = [], tSep = [], tConf = [], tEnt = [], tCiclo = []; const pessoas = {};
     for (const pid of Object.keys(marcos)) {
@@ -348,8 +359,11 @@ export function registrarGestaoPedidos(app, deps) {
       if (m.fimSep && dentro(m.fimSep)) {
         const f = dur(m.envio, m.inicioSep), s = dur(m.inicioSep, m.fimSep);
         if (f != null) tFila.push(f);
-        if (s != null) { tSep.push(s); const nome = m.fimSepPor || "—"; (pessoas[nome] = pessoas[nome] || { nome, pedidos: 0, tempos: [] }).pedidos++; pessoas[nome].tempos.push(s); }
-        else { const nome = m.fimSepPor || "—"; (pessoas[nome] = pessoas[nome] || { nome, pedidos: 0, tempos: [] }).pedidos++; }
+        const nome = m.fimSepPor || "—";
+        const pe = (pessoas[nome] = pessoas[nome] || { nome, pedidos: 0, tempos: [], kgs: [] });
+        pe.pedidos++;
+        if (s != null) { tSep.push(s); pe.tempos.push(s); }
+        const kg = pesoPedido(pid); if (kg > 0) { pe.kgs.push(kg); kgsSep.push(kg); } else semPeso++;
       }
       if (m.conferido && dentro(m.conferido)) { const c = dur(m.fimSep, m.conferido); if (c != null) tConf.push(c); }
       if (m.entregue && dentro(m.entregue)) { const e = dur(m.conferido, m.entregue); if (e != null) tEnt.push(e); const ci = dur(m.envio, m.entregue, 3 * 86400000); if (ci != null) tCiclo.push(ci); }
@@ -362,7 +376,10 @@ export function registrarGestaoPedidos(app, deps) {
     ].map((x) => ({ ...x, mediana: x.mediana == null ? null : Math.round(x.mediana), media: x.media == null ? null : Math.round(x.media) }));
     const candidatas = etapasTempo.filter((x) => x.n >= 2 && x.mediana != null).sort((a, b) => b.mediana - a.mediana);
     const gargalo = candidatas.length ? { rotulo: candidatas[0].rotulo, mediana: candidatas[0].mediana } : null;
-    const pessoasLista = Object.values(pessoas).map((p) => ({ nome: p.nome, pedidos: p.pedidos, mediana: p.tempos.length ? Math.round(mediana(p.tempos)) : null })).sort((a, b) => b.pedidos - a.pedidos).slice(0, 8);
+    const pessoasLista = Object.values(pessoas).map((p) => ({ nome: p.nome, pedidos: p.pedidos, mediana: p.tempos.length ? Math.round(mediana(p.tempos)) : null,
+      kgMedio: p.kgs.length ? Math.round(media(p.kgs)) : null, pedidosComPeso: p.kgs.length })).sort((a, b) => b.pedidos - a.pedidos).slice(0, 8);
+    // tamanho típico do pedido separado (kg estimados), pra entender o "tamanho" do trabalho
+    const tamanhoPedido = kgsSep.length ? { kgMedio: Math.round(media(kgsSep)), kgMediano: Math.round(mediana(kgsSep)), kgMax: Math.round(Math.max(...kgsSep)), kgTotal: Math.round(kgsSep.reduce((x, y) => x + y, 0)), pedidos: kgsSep.length, semPeso } : { kgMedio: null, kgMediano: null, kgMax: null, kgTotal: 0, pedidos: 0, semPeso };
 
     // itens que mais saem do pedido (sinal de falta de estoque)
     const retirados = {};
@@ -386,7 +403,7 @@ export function registrarGestaoPedidos(app, deps) {
 
     const dias = Object.keys(porDia).sort().map((d) => ({ dia: d, qtd: porDia[d].qtd, valor: r2(porDia[d].valor) }));
     const out = { periodo: periodo || "hoje", rotulo, ini, fim, pedidos: { total: totalPed, valor: r2(valorPed), ticket: totalPed ? r2(valorPed / totalPed) : 0, porOrigem },
-      caixa, formas, etapasTempo, gargalo, cicloMediano: tCiclo.length ? Math.round(mediana(tCiclo)) : null, pessoas: pessoasLista, itensRetirados,
+      caixa, formas, etapasTempo, gargalo, cicloMediano: tCiclo.length ? Math.round(mediana(tCiclo)) : null, pessoas: pessoasLista, tamanhoPedido, itensRetirados,
       entregas: { total: entregas.total, comOcorrencia: entregas.comOcorrencia, aPrazo: entregas.aPrazo, recebido: entregas.recebido, motoristas }, porHora, dias };
     out.texto = textoResumo(out);
     return out;
@@ -401,6 +418,7 @@ export function registrarGestaoPedidos(app, deps) {
     L.push(`Entregas concluídas: ${o.entregas.total}${o.entregas.motoristas.length ? " (" + o.entregas.motoristas.map((m) => `${m.nome} ${m.qtd}`).join(", ") + ")" : ""}` + (o.entregas.aPrazo.qtd ? `, a prazo ${o.entregas.aPrazo.qtd} (${brl(o.entregas.aPrazo.valor)})` : "") + (o.entregas.comOcorrencia ? `, com ocorrência ${o.entregas.comOcorrencia}` : ""));
     const t = o.etapasTempo.filter((x) => x.mediana != null);
     if (t.length) L.push("Tempo típico: " + t.map((x) => `${x.rotulo.toLowerCase()} ${x.mediana} min`).join(", ") + (o.gargalo ? `. Maior espera: ${o.gargalo.rotulo.toLowerCase()}` : ""));
+    if (o.tamanhoPedido && o.tamanhoPedido.kgMedio != null) L.push(`Tamanho do pedido separado: média ${o.tamanhoPedido.kgMedio} kg (mediana ${o.tamanhoPedido.kgMediano} kg, maior ${o.tamanhoPedido.kgMax} kg, total ${o.tamanhoPedido.kgTotal} kg em ${o.tamanhoPedido.pedidos} pedidos)`);
     if (o.itensRetirados.length) L.push("Itens mais retirados dos pedidos: " + o.itensRetirados.slice(0, 4).map((i) => `${i.nome} (${i.qtd})`).join(", "));
     return L.join("\n");
   }
