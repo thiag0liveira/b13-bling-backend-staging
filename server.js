@@ -16706,22 +16706,50 @@ app.get("/api/rotas/dias-resumo",(req,res)=>{
 // baseada em regras (volume detectado no nome + tipo de embalagem), não uma
 // chamada de IA por produto (seria lento/caro e pouco confiável no servidor
 // pra cada item). Cobre os padrões mais comuns de bebida (lata, garrafa, pet).
-function estimarPesoProduto(nome){
-  const n=String(nome||"").toLowerCase();
-  let litros=0;
-  const mL=n.match(/(\d+[.,]?\d*)\s*ml\b/);
-  const mL2=n.match(/(\d+[.,]?\d*)\s*l\b/);
-  if(mL) litros=parseFloat(mL[1].replace(",","."))/1000;
-  else if(mL2) litros=parseFloat(mL2[1].replace(",","."));
-  if(!litros) litros=0.5; // sem volume identificado no nome — assume padrão médio (500ml)
-  let embalagemKg=0.03; // lata (padrão mais leve)
-  if(/\bpet\b/.test(n)) embalagemKg=0.05;
-  else if(/vidro|garrafa|long ?neck|whisky|whiskey|vodka|gin|licor|espumante|vinho|champanhe|conhaque|rum\b/.test(n)) embalagemKg=litros>=0.9?0.5:0.35;
-  else if(/barril|chopp/.test(n)) embalagemKg=1.5;
-  return +((litros*1+embalagemKg)).toFixed(3); // 1L de líquido ≈ 1kg
+// CONTEXTO DA TABELA: quando o NOME do produto não traz o volume (ou o tipo de embalagem), usa o nome do
+// item na tabela de preços e o nome da CATEGORIA onde ele está (ex.: "CERVEJAS LATA 350ML"). O produto é
+// ligado à tabela pelo nome (do Bling ou da tabela), igual ao resto do sistema. Guardado 60s.
+let _ctxPesoCache={t:0,idx:null};
+function _contextoPeso(nome){
+  try{
+    if(!_ctxPesoCache.idx||Date.now()-_ctxPesoCache.t>60000) _ctxPesoCache={t:Date.now(),idx:_indicePrecosTabela().porNome};
+    const info=_ctxPesoCache.idx[String(nome||"").toLowerCase().trim()];
+    return info?`${info.itemNome||""} ${info.categoria||""}`:"";
+  }catch(e){ return ""; }
 }
-function estimarPesoPedido(itens){
-  return +((itens||[]).reduce((s,i)=>s+estimarPesoProduto(i.descricao||i.produto?.nome||"")*Number(i.quantidade||0),0)).toFixed(2);
+function _volumeLitros(txt){
+  const mL=txt.match(/(\d+[.,]?\d*)\s*ml\b/), mL2=txt.match(/(\d+[.,]?\d*)\s*l\b/);
+  if(mL) return parseFloat(mL[1].replace(",","."))/1000;
+  if(mL2) return parseFloat(mL2[1].replace(",","."));
+  return 0;
+}
+// peso da embalagem pelo texto; null = o texto não diz nada sobre embalagem
+function _embalagemKg(txt,litros){
+  if(/\bpet\b/.test(txt)) return 0.05;
+  // (\bgin\b e \brum\b com borda: sem ela "ORIGINAL" casava com "gin" e virava garrafa de vidro)
+  if(/vidro|garrafa|long ?neck|whisky|whiskey|vodka|\bgin\b|licor|espumante|vinho|champanhe|conhaque|\brum\b/.test(txt)) return litros>=0.9?0.5:0.35;
+  if(/barril|chopp/.test(txt)) return 1.5;
+  if(/\blatas?\b/.test(txt)) return 0.03;
+  return null;
+}
+// peso de 1 unidade + de onde veio o volume: "nome" | "tabela" (item/categoria) | "padrao" (assumiu 500 ml)
+function pesoProdutoDetalhe(nome){
+  const n=String(nome||"").toLowerCase(); const ctx=_contextoPeso(nome).toLowerCase();
+  let litros=_volumeLitros(n), origemVolume="nome";
+  if(!litros&&ctx){ litros=_volumeLitros(ctx); origemVolume="tabela"; }
+  if(!litros){ litros=0.5; origemVolume="padrao"; }
+  let emb=_embalagemKg(n,litros); if(emb==null&&ctx) emb=_embalagemKg(ctx,litros); if(emb==null) emb=0.03; // lata (padrão mais leve)
+  return {kg:+(litros+emb).toFixed(3),litros,origemVolume}; // 1L de líquido ≈ 1kg
+}
+function estimarPesoProduto(nome){ return pesoProdutoDetalhe(nome).kg; }
+// 2º parâmetro opcional: objeto que recebe um relatório (quantos itens, quantos usaram a tabela e quais ficaram SEM volume)
+function estimarPesoPedido(itens,relatorio){
+  return +((itens||[]).reduce((s,i)=>{
+    const nome=i.descricao||i.produto?.nome||""; const d=pesoProdutoDetalhe(nome); const q=Number(i.quantidade||0);
+    if(relatorio){ relatorio.itens=(relatorio.itens||0)+1;
+      if(d.origemVolume==="tabela") relatorio.porTabela=(relatorio.porTabela||0)+1;
+      if(d.origemVolume==="padrao"){ relatorio.semVolume=relatorio.semVolume||{}; relatorio.semVolume[nome]=(relatorio.semVolume[nome]||0)+q; } }
+    return s+d.kg*q; },0)).toFixed(2);
 }
 
 // Lista pedidos elegíveis pra entrega (tipo entrega, ainda não atendidos/cancelados)

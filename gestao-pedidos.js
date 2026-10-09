@@ -347,10 +347,10 @@ export function registrarGestaoPedidos(app, deps) {
     const pesoPedido = (pid) => {
       try {
         const pr = regPorPedido[String(pid)]; if (!pr || !(pr.itens || []).length || typeof estimarPesoPedido !== "function") return 0;
-        return estimarPesoPedido(pr.itens.map((i) => ({ descricao: i.nome || i.descricao, quantidade: i.quantidade }))) || 0;
+        return estimarPesoPedido(pr.itens.map((i) => ({ descricao: i.nome || i.descricao, quantidade: i.quantidade })), relPeso) || 0;
       } catch (e) { return 0; }
     };
-    const kgsSep = []; let semPeso = 0;
+    const kgsSep = []; let semPeso = 0; const relPeso = {};
     // tempos por etapa (mediana) e por pessoa
     const tFila = [], tSep = [], tConf = [], tEnt = [], tCiclo = []; const pessoas = {};
     for (const pid of Object.keys(marcos)) {
@@ -379,7 +379,7 @@ export function registrarGestaoPedidos(app, deps) {
     const pessoasLista = Object.values(pessoas).map((p) => ({ nome: p.nome, pedidos: p.pedidos, mediana: p.tempos.length ? Math.round(mediana(p.tempos)) : null,
       kgMedio: p.kgs.length ? Math.round(media(p.kgs)) : null, pedidosComPeso: p.kgs.length })).sort((a, b) => b.pedidos - a.pedidos).slice(0, 8);
     // tamanho típico do pedido separado (kg estimados), pra entender o "tamanho" do trabalho
-    const tamanhoPedido = kgsSep.length ? { kgMedio: Math.round(media(kgsSep)), kgMediano: Math.round(mediana(kgsSep)), kgMax: Math.round(Math.max(...kgsSep)), kgTotal: Math.round(kgsSep.reduce((x, y) => x + y, 0)), pedidos: kgsSep.length, semPeso } : { kgMedio: null, kgMediano: null, kgMax: null, kgTotal: 0, pedidos: 0, semPeso };
+    const tamanhoPedido = kgsSep.length ? { kgMedio: Math.round(media(kgsSep)), kgMediano: Math.round(mediana(kgsSep)), kgMax: Math.round(Math.max(...kgsSep)), kgTotal: Math.round(kgsSep.reduce((x, y) => x + y, 0)), pedidos: kgsSep.length, semPeso, volumePelaTabela: relPeso.porTabela || 0, semVolume: Object.entries(relPeso.semVolume || {}).sort((p, q) => q[1] - p[1]).slice(0, 5).map(([nome, qtd]) => ({ nome, qtd })) } : { kgMedio: null, kgMediano: null, kgMax: null, kgTotal: 0, pedidos: 0, semPeso, volumePelaTabela: 0, semVolume: [] };
 
     // itens que mais saem do pedido (sinal de falta de estoque)
     const retirados = {};
