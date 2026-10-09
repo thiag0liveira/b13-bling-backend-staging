@@ -80,7 +80,8 @@ th:first-child,td:first-child{text-align:left}
 <div class="wrap">
   <div class="filtros" id="periodos">
     <span class="chip on" data-p="hoje">Hoje</span><span class="chip" data-p="ontem">Ontem</span>
-    <span class="chip" data-p="7">Últimos 7 dias</span><span class="chip" data-p="mes">Este mês</span>
+    <span class="chip" data-p="semana">Esta semana</span><span class="chip" data-p="semanaPassada">Semana passada</span>
+    <span class="chip" data-p="mes">Este mês</span><span class="chip" data-p="mesPassado">Mês passado</span><span class="chip" data-p="7">Últimos 7 dias</span>
     <input type="date" id="de"> <span class="muted">até</span> <input type="date" id="ate">
     <button class="btn btn-ghost" onclick="carregar()">↻ Atualizar</button>
   </div>
@@ -122,6 +123,11 @@ function periodo(p){
   if (p === "ontem") { de = ate = new Date(Date.parse(h + "T12:00:00") - 86400000).toISOString().slice(0, 10); }
   if (p === "7") { de = new Date(Date.parse(h + "T12:00:00") - 6 * 86400000).toISOString().slice(0, 10); }
   if (p === "mes") { de = h.slice(0, 8) + "01"; }
+  // semana começa na segunda-feira
+  const seg = (() => { const d = new Date(h + "T12:00:00"); const dow = (d.getDay() + 6) % 7; return new Date(d.getTime() - dow * 86400000).toISOString().slice(0, 10); })();
+  if (p === "semana") { de = seg; }
+  if (p === "semanaPassada") { de = new Date(Date.parse(seg + "T12:00:00") - 7 * 86400000).toISOString().slice(0, 10); ate = new Date(Date.parse(seg + "T12:00:00") - 86400000).toISOString().slice(0, 10); }
+  if (p === "mesPassado") { const d = new Date(h.slice(0, 8) + "01T12:00:00"); const fim = new Date(d.getTime() - 86400000); ate = fim.toISOString().slice(0, 10); de = ate.slice(0, 8) + "01"; }
   document.getElementById("de").value = de; document.getElementById("ate").value = ate;
 }
 document.getElementById("periodos").addEventListener("click", ev => {
@@ -145,6 +151,7 @@ function renderTudo(){
   const k = [
     [`${I.entregues} / ${I.total}`, "Entregues", `${I.naoEntregues} não entregue(s) · ${I.emRota} em rota · ${I.aguardando} aguardando`],
     [brl(I.valorEntregue), "Valor entregue", `de ${brl(I.valorPedidos)} em pedidos de entrega`],
+    [brl(I.frete.entregues), "Frete das entregas feitas", `${I.frete.qtdEntreguesComFrete} entrega(s) com frete · média ${brl(I.frete.medioPorEntrega)}${I.frete.porKm != null ? " · " + brl(I.frete.porKm) + "/km" : ""} · ${brl(I.frete.total)} no período todo`],
     [brl(re.total), "Recebido na entrega", `💵 ${brl(re.dinheiro)} · Pix ${brl(re.pix)} · cartão ${brl(re.cartao)}`],
     [brl(re.dinheiro), "Dinheiro com os motoristas", "precisa voltar para o caixa"],
     [brl(re.pix), "Pix recebido", pix || "—"],
@@ -156,9 +163,9 @@ function renderTudo(){
   ];
   document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
   const M = D.porMotorista;
-  document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
+  document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Frete</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
     ${M.map(m => `<tr><td><b>${esc(m.motorista)}</b><div style="font-size:11px;color:var(--muted)">${esc(m.carros)}</div></td><td>${m.entregas}</td><td>${m.entregues}${m.naoEntregues ? ` <span class="tag erro">${m.naoEntregues} não</span>` : ""}</td>
-      <td><b style="color:var(--warn)">${brl(m.dinheiro)}</b></td><td>${brl(m.pix)}</td><td>${brl(m.cartao)}</td><td>${brl(m.prazo)}</td><td>${m.semPagamento ? `<span class="tag erro">${m.semPagamento}</span>` : "—"}</td><td>${m.ocorrencias || "—"}</td></tr>`).join("")}</table></div>`
+      <td><b style="color:var(--warn)">${brl(m.dinheiro)}</b></td><td>${brl(m.pix)}</td><td>${brl(m.cartao)}</td><td>${brl(m.prazo)}</td><td>${brl(m.frete)}</td><td>${m.semPagamento ? `<span class="tag erro">${m.semPagamento}</span>` : "—"}</td><td>${m.ocorrencias || "—"}</td></tr>`).join("")}</table></div>`
     : `<div class="vazio" style="padding:10px">Nenhuma viagem no período.</div>`;
   const sel = document.getElementById("fMot"); const atual = sel.value;
   sel.innerHTML = `<option value="">Todos os motoristas</option>` + M.map(m => `<option ${m.motorista === atual ? "selected" : ""}>${esc(m.motorista)}</option>`).join("");
@@ -182,7 +189,7 @@ function renderLista(){
     const fotos = x.midias.filter(m => m.tipo !== "video").length, videos = x.midias.filter(m => m.tipo === "video").length;
     return `<div class="ped" onclick="abrirPedido('${esc(x.pedidoId)}')">
       <div class="info"><div class="l1">#${esc(x.numero)} · ${esc(x.cliente || "—")}</div>
-        <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div></div>
+        <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.frete ? " · frete " + brl(x.frete) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div></div>
       <div class="dir"><span class="valor">${brl(x.total)}</span>${tagSt(x)}${tagPg(x)}
         ${fotos ? `<span class="ic">📷 ${fotos}</span>` : ""}${videos ? `<span class="ic">🎥 ${videos}</span>` : ""}${x.entrega?.temAssinatura ? `<span class="ic">✍️</span>` : ""}${x.entrega?.ocorrencia ? `<span class="tag warn">ocorrência</span>` : ""}${x.entrega?.valorProblema > 0 ? `<span class="tag erro">problema ${brl(x.entrega.valorProblema)}</span>` : ""}</div></div>`;
   }).join("") : `<div class="vazio">Nenhum pedido de entrega neste filtro.</div>`;

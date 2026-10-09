@@ -12170,6 +12170,19 @@ function _mapaEntregasLocais(){
   return map;
 }
 function salvarViagensAtivas(o){ salvarJSON(VIAGENS_ATIVAS_FILE,o); }
+// ACERTO (uma vez, idempotente): viagens antigas gravaram como motorista o nome da CONTA LOGADA quando havia nome
+// digitado. Passa o digitado para motoristaNome e guarda a conta em iniciadaPor. Roda ao subir o servidor.
+function _acertarNomeMotoristaViagens(){
+  try{
+    const vv=lerViagensAtivas(); let n=0;
+    Object.values(vv).forEach(v=>{
+      const dig=String(v&&v.motoristaNomeInformado||"").trim();
+      if(v&&dig&&v.motoristaNome!==dig){ if(!v.iniciadaPor) v.iniciadaPor=v.motoristaNome||null; v.motoristaNome=dig; n++; }
+    });
+    if(n){ salvarViagensAtivas(vv); _entLocaisCache.t=0; console.log(`[viagens] nome do motorista acertado em ${n} viagem(ns): agora vale o nome digitado`); }
+  }catch(e){ console.error("[viagens] acerto do nome do motorista falhou:",e.message); }
+}
+setTimeout(_acertarNomeMotoristaViagens,4000);
 // LIMPEZA: cada viagem guarda, por entrega, a assinatura do cliente como IMAGEM
 // (base64) — sem limpeza, isso cresce pra sempre (nunca era removido) e o arquivo
 // inteiro é reescrito a cada atualização de qualquer viagem, então quanto maior
@@ -12253,7 +12266,8 @@ app.post("/api/rotas/viagem/iniciar",async(req,res)=>{
       pedidoIds:pedidoIds.map(Number),
       kmInicial:Number(kmInicial), kmFinal:null,
       iniciadaEm:Date.now(), finalizadaEm:null,
-      motoristaFuncionarioId:funcionarioId||null, motoristaNome:funcNome||String(motoristaNomeInformado).trim(),
+      // MOTORISTA = o nome DIGITADO ao iniciar (quem dirige). A conta logada é só quem iniciou a viagem (iniciadaPor).
+      motoristaFuncionarioId:funcionarioId||null, motoristaNome:String(motoristaNomeInformado||"").trim()||funcNome||"", iniciadaPor:funcNome||null,
       motoristaNomeInformado:String(motoristaNomeInformado).trim(), motoristaTelefone:String(motoristaTelefone).replace(/\D/g,""),
       entregas:{},
     };
@@ -12677,10 +12691,12 @@ function _centralEntregas(de,ate){
   // indicadores e acerto por motorista
   const R={ total:lista.length, entregues:0, naoEntregues:0, emRota:0, aguardando:0, valorPedidos:0, valorEntregue:0,
     recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
-    comOcorrencia:0, comProblema:0, valorProblema:0, comFotoConferencia:0, comAssinatura:0 };
+    comOcorrencia:0, comProblema:0, valorProblema:0, comFotoConferencia:0, comAssinatura:0,
+    frete:{entregues:0,total:0,qtdEntreguesComFrete:0,kmEntregues:0,medioPorEntrega:0,porKm:null} };
   const mot={};
   lista.forEach(x=>{
-    R.valorPedidos+=x.total;
+    R.valorPedidos+=x.total; R.frete.total+=x.frete;
+    if(x.status==="entregue"&&x.frete>0){ R.frete.entregues+=x.frete; R.frete.qtdEntreguesComFrete++; if(Number(x.km)>0) R.frete.kmEntregues+=Number(x.km); }
     if(x.status==="entregue"){ R.entregues++; R.valorEntregue+=x.total; } else if(x.status==="nao_entregue") R.naoEntregues++; else if(x.status==="em_rota"||x.status==="sem_registro") R.emRota++; else R.aguardando++;
     x.formas.forEach(f=>{ R.recebidoEntrega.total+=f.valor; R.recebidoEntrega[f.classe]+=f.valor; if(f.classe==="pix"){ const b=f.banco||"(banco não informado)"; R.recebidoEntrega.pixPorBanco[b]=(R.recebidoEntrega.pixPorBanco[b]||0)+f.valor; } });
     if(x.pagamento.situacao==="pago_caixa"){ R.pagoNoCaixa.qtd++; R.pagoNoCaixa.valor+=x.pagamento.valor||x.total; }
@@ -12691,12 +12707,14 @@ function _centralEntregas(de,ate){
     if(x.midias.some(m=>m.origem==="conferencia")) R.comFotoConferencia++;
     if(x.entrega?.temAssinatura) R.comAssinatura++;
     if(x.viagem){ const k=x.viagem.motorista||"(sem nome)";
-      const m=(mot[k]||={motorista:k,carros:new Set(),entregas:0,entregues:0,naoEntregues:0,dinheiro:0,pix:0,cartao:0,outros:0,prazo:0,semPagamento:0,ocorrencias:0,valorEntregue:0});
-      m.carros.add(x.carro||""); m.entregas++; if(x.status==="entregue"){ m.entregues++; m.valorEntregue+=x.total; } if(x.status==="nao_entregue") m.naoEntregues++;
+      const m=(mot[k]||={motorista:k,carros:new Set(),entregas:0,entregues:0,naoEntregues:0,dinheiro:0,pix:0,cartao:0,outros:0,prazo:0,semPagamento:0,ocorrencias:0,valorEntregue:0,frete:0});
+      m.carros.add(x.carro||""); m.entregas++; if(x.status==="entregue"){ m.entregues++; m.valorEntregue+=x.total; m.frete+=x.frete; } if(x.status==="nao_entregue") m.naoEntregues++;
       x.formas.forEach(f=>{ m[f.classe]+=f.valor; }); if(x.pagamento.situacao==="prazo") m.prazo+=x.pagamento.valor||x.total; if(x.pagamento.situacao==="sem_pagamento") m.semPagamento++; if(x.entrega?.ocorrencia) m.ocorrencias++; }
   });
   const r2=o=>{ Object.keys(o).forEach(k=>{ if(typeof o[k]==="number") o[k]=_round2(o[k]); }); return o; };
-  r2(R); r2(R.recebidoEntrega); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
+  R.frete.medioPorEntrega=R.frete.qtdEntreguesComFrete?R.frete.entregues/R.frete.qtdEntreguesComFrete:0;
+  R.frete.porKm=R.frete.kmEntregues>0?R.frete.entregues/R.frete.kmEntregues:null;
+  r2(R); r2(R.recebidoEntrega); r2(R.frete); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
   return { de, ate, indicadores:R, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
 }
 app.get("/api/central-entregas",requireSessao,(req,res)=>{
