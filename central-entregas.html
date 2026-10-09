@@ -52,6 +52,7 @@ th:first-child,td:first-child{text-align:left}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 <script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
   @media(min-width:900px){
@@ -188,7 +189,7 @@ function renderLista(){
   const L = D.pedidos.filter(filtra);
   document.getElementById("lista").innerHTML = L.length ? L.map(x => {
     const fotos = x.midias.filter(m => m.tipo !== "video").length, videos = x.midias.filter(m => m.tipo === "video").length;
-    return `<div class="ped" onclick="abrirPedido('${esc(x.pedidoId)}')">
+    return `<div class="ped" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">
       <div class="info"><div class="l1">#${esc(x.numero)} · ${esc(x.cliente || "—")}</div>
         <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.frete ? " · frete " + brl(x.frete) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div></div>
       <div class="dir"><span class="valor">${brl(x.total)}</span>${tagSt(x)}${tagPg(x)}

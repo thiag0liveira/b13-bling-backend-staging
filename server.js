@@ -12631,39 +12631,24 @@ const _rotEvento={pedido_criado_atacado:"Pedido criado",pedido_criado:"Pedido cr
   voltou_separacao:"Voltou para a separação",entrega_registrada:"Entrega registrada",nao_entregue:"Não entregue",pagamento_registrado:"Pagamento registrado",itens_alterados:"Itens alterados"};
 const _rotuloEvento=(e)=>_rotEvento[e]||String(e||"").replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
 function _classeForma(nome){ const n=String(nome||"").toLowerCase(); if(/dinheiro|esp[eé]cie/.test(n)) return "dinheiro"; if(/pix/.test(n)) return "pix"; if(/cart|d[eé]bito|cr[eé]dito/.test(n)) return "cartao"; return "outros"; }
-function _centralEntregas(de,ate){
-  const rotas=lerRotasDias(); const viagens=Object.values(lerViagensAtivas()).filter(v=>v&&!v.canceladaEm);
+// FICHA DO PEDIDO (compartilhada: Central de Entregas, Comprovantes e qualquer tela que precise do "tudo sobre o pedido").
+// it = onde o pedido está nas rotas/viagens (pode estar vazio, ex.: retirada). ctx = dados lidos uma vez só.
+function _ctxFicha(){
   const props={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
-  const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); const log=lerLog()||{}; const dCx=lerCaixaSessoes(); const pagReg=lerPag();
   let mini=new Set(); try{ mini=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
-  const cfgCarros=(lerRotasConfig().carros)||[]; const nomeCarro=id=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
-  const P={}; const pega=(pid,data)=>(P[String(pid)]||={pedidoId:String(pid),dataEntrega:data,carro:null,viagemPlano:null,viagem:null,reg:null,tentativas:0});
-  Object.entries(rotas).forEach(([data,carros])=>{ if(data<de||data>ate) return;
-    Object.entries(carros||{}).forEach(([cid,c])=>{
-      if(cid==="_semCarro"){ ((c&&c.pedidoIds)||[]).forEach(pid=>pega(pid,data)); return; }
-      ((c&&c.viagens)||[]).forEach((v,ix)=>((v&&v.pedidoIds)||[]).forEach(pid=>{ const it=pega(pid,data); it.carro=nomeCarro(cid); it.viagemPlano=ix+1; }));
-    });
-  });
-  viagens.forEach(v=>{ if(!v.data||v.data<de||v.data>ate) return;
-    (v.pedidoIds||[]).forEach(pid=>{
-      const it=pega(pid,v.data); const reg=(v.entregas||{})[String(pid)];
-      if(reg&&reg.status==="nao_entregue") it.tentativas++;
-      // várias viagens com o mesmo pedido (não entregue e saiu de novo): vale o registro mais recente
-      if(!it.reg||(reg&&(reg.em||0)>=(it.reg.em||0))||(!reg&&!it.reg)){
-        it.carro=v.carroNome||nomeCarro(v.carroId);
-        it.viagem={token:v.token,motorista:v.motoristaNomeInformado||v.motoristaNome||"",telefone:v.motoristaTelefone||"",iniciadaEm:v.iniciadaEm||null,finalizadaEm:v.finalizadaEm||null,viagem:(Number(v.vix)||0)+1,kmInicial:v.kmInicial??null,kmFinal:v.kmFinal??null};
-        if(reg) it.reg=reg;
-      }
-    });
-  });
-  const lista=Object.values(P).map(it=>{
+  return { props, turnos:lerJSON(TURNOS_ENTREGA_FILE,{}), log:lerLog()||{}, dCx:lerCaixaSessoes(), pagReg:lerPag(), mini };
+}
+function _viagemResumo(v){ return {token:v.token,motorista:v.motoristaNomeInformado||v.motoristaNome||"",telefone:v.motoristaTelefone||"",iniciadaEm:v.iniciadaEm||null,finalizadaEm:v.finalizadaEm||null,viagem:(Number(v.vix)||0)+1,kmInicial:v.kmInicial??null,kmFinal:v.kmFinal??null}; }
+function _montarFicha(it,ctx){
+  const {props,turnos,log,dCx,pagReg,mini}=ctx;
     const pid=it.pedidoId, p=props[pid]||null, t=turnos[pid]||{}, reg=it.reg;
     const numero=p?.pedidoBlingNumero||t.numero||pid;
     const frete=p?.entrega?.tipo==="entrega"?Number(p.entrega.taxa||0):0;
     // sem valor no registro local (pedido feito direto no Bling): usa o valor da entrega (recebido + abatido)
     const total=_round2(Number(p?.total||0)||((Number(reg?.valorFinal)||0)+(Number(reg?.valorProblema)||0))||((reg?.pagamentos||[]).reduce((s2,x)=>s2+(Number(x.valor)||0),0)));
     const status=reg?(reg.status==="entregue"?"entregue":reg.status==="nao_entregue"?"nao_entregue":"em_rota")
-      :it.viagem?(it.viagem.finalizadaEm?"sem_registro":"em_rota"):it.carro?"aguardando_saida":"aguardando_carro";
+      :it.viagem?(it.viagem.finalizadaEm?"sem_registro":"em_rota"):it.carro?"aguardando_saida":it.dataEntrega?"aguardando_carro"
+      :/^conferido_retirada$/.test(((log[pid]||[]).filter(e=>/^conferido_/.test(e.evento||"")).pop()||{}).evento||"")?"retirado":"sem_rota";
     const cx=_pagamentoDoPedido(pid,numero,dCx);
     const formas=((reg&&reg.pagamentos)||[]).map(x=>({forma:x.formaNome||"",valor:_round2(Number(x.valor)||0),banco:x.banco||null,classe:_classeForma(x.formaNome)}));
     const recebidoEntrega=_round2(formas.reduce((s,x)=>s+x.valor,0));
@@ -12690,11 +12675,21 @@ function _centralEntregas(de,ate){
       midias.push({url:d.url,tipo:d.tipo||(/\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto"),origem:/ocorr|entrega|motorista/i.test(e.evento||"")?"entrega":/confer/i.test(e.evento||"")?"conferencia":"outro",
         em:e.em||null,por:e.funcionarioNome||"",thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
     ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",thumb:null}); } });
-    const linha=(log[pid]||[]).filter(e=>!(e.detalhes&&e.detalhes.url)).map(e=>({em:e.em,texto:_rotuloEvento(e.evento),por:e.funcionarioNome||""}));
+    const linha=(log[pid]||[]).filter(e=>!(e.detalhes&&e.detalhes.url)).map(e=>({em:e.em,texto:(typeof LOG_LABELS!=="undefined"&&LOG_LABELS[e.evento]&&LOG_LABELS[e.evento].txt)||_rotuloEvento(e.evento),por:e.funcionarioNome||""}));
+    // separação e conferência (quem fez, quando, quanto tempo)
+    const evs=log[pid]||[]; const ultimo=re=>{ for(let i=evs.length-1;i>=0;i--) if(re.test(evs[i].evento||"")) return evs[i]; return null; };
+    const confFim=ultimo(/^conferido_[a-z_]+$/);
+    const confIni=(()=>{ let r=null; evs.forEach(e=>{ if(/^pedido_aberto_conferencia/.test(e.evento||"")&&(!confFim||(e.em||0)<=(confFim.em||0))) r=e; }); return r; })();
+    const sepFim=ultimo(/^separacao_(completa|com_falta)$/), sepIni=ultimo(/^pedido_aberto_separacao$/), criado=evs.find(e=>/^pedido_criado/.test(e.evento||""));
+    const ajustesConf=evs.filter(e=>/itens_removidos_conferencia|itens_editados_apos_conferencia/.test(e.evento||"")).length;
     if(it.viagem?.iniciadaEm) linha.push({em:it.viagem.iniciadaEm,texto:`Saiu para entrega (${it.carro||"carro"}, viagem ${it.viagem.viagem})`,por:it.viagem.motorista});
     if(reg&&reg.em) linha.push({em:reg.em,texto:reg.status==="entregue"?"Entregue":"Não entregue",por:reg.registradoPor||it.viagem?.motorista||""});
     linha.sort((a,b)=>(a.em||0)-(b.em||0));
-    return { pedidoId:pid, numero:String(numero), cliente:p?.cliente?.nome||t.cliente||"", telefone:p?.cliente?.telefone||"", endereco:p?.entrega?.endereco||t.endereco||"",
+    const tipo=p?.entrega?.tipo||(confFim?.evento==="conferido_retirada"?"retirada":(it.viagem||it.carro||it.dataEntrega?"entrega":""));
+    return { pedidoId:pid, numero:String(numero), cliente:p?.cliente?.nome||t.cliente||"", tipo, origem:p?.origem||"",
+      criadoEm:(criado&&criado.em)||p?.criadoEm||null, criadoPor:(criado&&criado.funcionarioNome)||"",
+      separacao:sepFim?{em:sepFim.em||null,por:sepFim.funcionarioNome||"",inicioEm:sepIni?.em||null,comFalta:sepFim.evento==="separacao_com_falta",duracaoMin:(sepIni&&sepIni.em<=sepFim.em)?Math.round((sepFim.em-sepIni.em)/60000):null}:null,
+      conferencia:confFim?{em:confFim.em||null,por:confFim.funcionarioNome||"",tipo:confFim.evento==="conferido_retirada"?"retirada":"entrega",inicioEm:confIni?.em||null,duracaoMin:confIni?Math.round((confFim.em-confIni.em)/60000):null,esperaMin:sepFim&&sepFim.em<=confFim.em?Math.round((confFim.em-sepFim.em)/60000):null,ajustes:ajustesConf}:null, telefone:p?.cliente?.telefone||"", endereco:p?.entrega?.endereco||t.endereco||"",
       dataEntrega:it.dataEntrega, turno:t.turno||"", obsEntrega:t.obsEntrega||"", vendedor:p?.vendedorNome||"",
       total, frete:_round2(frete), km:p?.entrega?.km||null, itens:(p?.itens||[]).map(i=>({nome:i.nome||i.descricao||"",quantidade:i.quantidade,valor:i.valor})),
       status, carro:it.carro, viagemPlano:it.viagemPlano, viagem:it.viagem, tentativas:it.tentativas,
@@ -12702,7 +12697,108 @@ function _centralEntregas(de,ate){
         valorProblema:_round2(Number(reg.valorProblema)||0),itensProblema:reg.itensProblema||[],ocorrencia:reg.ocorrencia?{descricao:reg.ocorrencia.descricao||""}:null,motivo:reg.motivo||"",temAssinatura:!!reg.assinaturaDataUrl}:null,
       pagamento, formas, recebidoEntrega,
       midias:midias.sort((a,b)=>(a.em||0)-(b.em||0)), linha:linha.slice(-30) };
-  }).sort((a,b)=>String(b.dataEntrega).localeCompare(String(a.dataEntrega))||Number(b.numero)-Number(a.numero));
+}
+// onde o pedido está nas rotas e viagens (qualquer dia) -> it da ficha
+function _localizarPedidoNasRotas(pid){
+  pid=String(pid); const it={pedidoId:pid,dataEntrega:null,carro:null,viagemPlano:null,viagem:null,reg:null,tentativas:0};
+  const cfgCarros=(lerRotasConfig().carros)||[]; const nomeCarro=id=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
+  Object.entries(lerRotasDias()).forEach(([data,carros])=>Object.entries(carros||{}).forEach(([cid,c])=>{
+    if(cid==="_semCarro"){ if(((c&&c.pedidoIds)||[]).map(String).includes(pid)) it.dataEntrega=data; return; }
+    ((c&&c.viagens)||[]).forEach((v,ix)=>{ if(((v&&v.pedidoIds)||[]).map(String).includes(pid)){ it.dataEntrega=data; it.carro=nomeCarro(cid); it.viagemPlano=ix+1; } });
+  }));
+  Object.values(lerViagensAtivas()).filter(v=>v&&!v.canceladaEm&&(v.pedidoIds||[]).map(String).includes(pid)).sort((a,b)=>(a.iniciadaEm||0)-(b.iniciadaEm||0)).forEach(v=>{
+    const reg=(v.entregas||{})[pid]; if(reg&&reg.status==="nao_entregue") it.tentativas++;
+    it.carro=v.carroNome||nomeCarro(v.carroId); it.dataEntrega=v.data||it.dataEntrega; it.viagem=_viagemResumo(v); if(reg) it.reg=reg;
+  });
+  return it;
+}
+app.get("/api/pedido-ficha/:id",requireSessao,(req,res)=>{
+  try{ const pid=String(req.params.id).replace(/\D/g,""); if(!pid) return res.status(400).json({erro:"pedido inválido"});
+    res.json({ok:true,ficha:_montarFicha(_localizarPedidoNasRotas(pid),_ctxFicha())}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/ficha-pedido.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"ficha-pedido.js")); });
+
+// ===================== PAINEL DE CONFERÊNCIAS (Comprovantes) =====================
+// Cada pedido CONFERIDO no período (pela última conclusão: conferido_entrega/retirada), com conferente, tempos,
+// fotos/vídeos e ajustes; mais pedidos com mídia de conferência sem conclusão registrada. Só dados locais.
+app.get("/api/conferencias/painel",requireSessao,(req,res)=>{
+  try{
+    const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10); const okD=d=>/^\d{4}-\d{2}-\d{2}$/.test(String(d||"")); const okH=h=>/^\d{2}:\d{2}$/.test(String(h||""));
+    let de=okD(req.query.de)?req.query.de:hoje, ate=okD(req.query.ate)?req.query.ate:de; if(de>ate){ const x=de; de=ate; ate=x; }
+    if((Date.parse(ate)-Date.parse(de))/86400000>92) return res.status(400).json({erro:"escolha um período de até 92 dias"});
+    const hDe=okH(req.query.horaDe)?req.query.horaDe:"00:00", hAte=okH(req.query.horaAte)?req.query.horaAte:"23:59";
+    const t0=Date.parse(de+"T00:00:00-03:00"), t1=Date.parse(ate+"T23:59:59.999-03:00");
+    const hm=ms=>new Date(ms-3*3600e3).toISOString().slice(11,16);
+    const dentro=ms=>ms>=t0&&ms<=t1&&hm(ms)>=hDe&&hm(ms)<=hAte;
+    const ctx=_ctxFicha(); const cacheNC=lerJSON(COMPROV_PEDIDOS_CACHE,{});
+    const lista=[];
+    Object.entries(ctx.log).forEach(([pid,evs])=>{
+      evs=evs||[];
+      let fim=null; evs.forEach(e=>{ if(/^conferido_[a-z_]+$/.test(e.evento||"")&&dentro(e.em||0)) fim=e; });
+      const midias=evs.filter(e=>e.detalhes&&e.detalhes.url&&/confer|comprovante/i.test(e.evento||""));
+      const midiasNoPeriodo=midias.filter(e=>dentro(e.em||0));
+      if(!fim&&!midiasNoPeriodo.length) return;
+      let ini=null; evs.forEach(e=>{ if(/^pedido_aberto_conferencia/.test(e.evento||"")&&(!fim||(e.em||0)<=(fim.em||0))) ini=e; });
+      let sep=null; evs.forEach(e=>{ if(/^separacao_(completa|com_falta)$/.test(e.evento||"")&&(!fim||(e.em||0)<=(fim.em||0))) sep=e; });
+      const p=ctx.props[pid]||null, c=cacheNC[pid]||{};
+      const capa=midias.find(m=>(m.detalhes.tipo||"foto")!=="video")||midias[0]||null; const nmCapa=capa?String(capa.detalhes.url).split("/").pop():"";
+      lista.push({ pedidoId:pid, numero:String(p?.pedidoBlingNumero||c.numero||pid), cliente:p?.cliente?.nome||c.cliente||"", valor:_round2(Number(p?.total)||0),
+        vendedor:p?.vendedorNome||"", tipo:fim?(fim.evento==="conferido_retirada"?"retirada":"entrega"):(p?.entrega?.tipo||""),
+        conferidoEm:fim?fim.em:null, conferente:fim?(fim.funcionarioNome||""):(midiasNoPeriodo[0]?.funcionarioNome||""), semConclusao:!fim,
+        inicioEm:ini?.em||null, duracaoMin:(fim&&ini)?Math.round((fim.em-ini.em)/60000):null,
+        separadoEm:sep?.em||null, separador:sep?.funcionarioNome||"", esperaMin:(fim&&sep)?Math.round((fim.em-sep.em)/60000):null,
+        fotos:midias.filter(m=>(m.detalhes.tipo||"foto")!=="video").length, videos:midias.filter(m=>m.detalhes.tipo==="video").length,
+        capa:capa?{url:capa.detalhes.url,tipo:capa.detalhes.tipo||"foto",thumb:ctx.mini.has(nmCapa+".jpg")?`/comprovantes/miniaturas/${nmCapa}.jpg`:null}:null,
+        ajustes:evs.filter(e=>/itens_removidos_conferencia|itens_editados_apos_conferencia/.test(e.evento||"")).length,
+        quandoMs:fim?fim.em:(midiasNoPeriodo[midiasNoPeriodo.length-1]?.em||0) });
+    });
+    lista.sort((a,b)=>b.quandoMs-a.quandoMs);
+    const med=a=>{ const v=a.filter(x=>x!=null&&x>=0).sort((x,y)=>x-y); if(!v.length) return null; const m=Math.floor(v.length/2); return v.length%2?v[m]:Math.round((v[m-1]+v[m])/2); };
+    const conc=lista.filter(x=>!x.semConclusao);
+    const porHora=Array(24).fill(0); conc.forEach(x=>{ porHora[Number(hm(x.conferidoEm).slice(0,2))]++; });
+    const pico=porHora.reduce((m,v,i)=>v>porHora[m]?i:m,0);
+    const porConf={}; conc.forEach(x=>{ const k=x.conferente||"(sem nome)"; const g=(porConf[k]||={conferente:k,qtd:0,comComprovante:0,fotos:0,videos:0,duracoes:[],esperas:[],ajustes:0,ultimaEm:0});
+      g.qtd++; if(x.fotos+x.videos>0) g.comComprovante++; g.fotos+=x.fotos; g.videos+=x.videos; g.duracoes.push(x.duracaoMin); g.esperas.push(x.esperaMin); g.ajustes+=x.ajustes; g.ultimaEm=Math.max(g.ultimaEm,x.conferidoEm||0); });
+    const indicadores={ conferencias:conc.length, entregas:conc.filter(x=>x.tipo==="entrega").length, retiradas:conc.filter(x=>x.tipo==="retirada").length,
+      comComprovante:conc.filter(x=>x.fotos+x.videos>0).length, semComprovante:conc.filter(x=>x.fotos+x.videos===0).length, midiaSemConclusao:lista.filter(x=>x.semConclusao).length,
+      fotos:conc.reduce((s2,x)=>s2+x.fotos,0), videos:conc.reduce((s2,x)=>s2+x.videos,0), // só das conferências concluídas (igual ao ranking)
+      duracaoMedianaMin:med(conc.map(x=>x.duracaoMin)), esperaMedianaMin:med(conc.map(x=>x.esperaMin)), ajustes:conc.filter(x=>x.ajustes>0).length,
+      picoHora:conc.length?pico:null, picoQtd:conc.length?porHora[pico]:0, conferentes:Object.keys(porConf).length, porHora };
+    res.json({ok:true,de,ate,horaDe:hDe,horaAte:hAte,indicadores,
+      porConferente:Object.values(porConf).map(g=>({conferente:g.conferente,qtd:g.qtd,comComprovante:g.comComprovante,pctComprovante:Math.round(g.comComprovante/g.qtd*100),fotos:g.fotos,videos:g.videos,
+        duracaoMedianaMin:med(g.duracoes),esperaMedianaMin:med(g.esperas),ajustes:g.ajustes,ultimaEm:g.ultimaEm})).sort((a,b)=>b.qtd-a.qtd),
+      pedidos:lista});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+function _centralEntregas(de,ate){
+  const rotas=lerRotasDias(); const viagens=Object.values(lerViagensAtivas()).filter(v=>v&&!v.canceladaEm);
+  const props={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
+  const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); const log=lerLog()||{}; const dCx=lerCaixaSessoes(); const pagReg=lerPag();
+  let mini=new Set(); try{ mini=new Set(fs.readdirSync(MINIATURAS_DIR)); }catch(e){}
+  const cfgCarros=(lerRotasConfig().carros)||[]; const nomeCarro=id=>((cfgCarros.find(c=>String(c.id)===String(id))||{}).nome)||String(id);
+  const P={}; const pega=(pid,data)=>(P[String(pid)]||={pedidoId:String(pid),dataEntrega:data,carro:null,viagemPlano:null,viagem:null,reg:null,tentativas:0});
+  Object.entries(rotas).forEach(([data,carros])=>{ if(data<de||data>ate) return;
+    Object.entries(carros||{}).forEach(([cid,c])=>{
+      if(cid==="_semCarro"){ ((c&&c.pedidoIds)||[]).forEach(pid=>pega(pid,data)); return; }
+      ((c&&c.viagens)||[]).forEach((v,ix)=>((v&&v.pedidoIds)||[]).forEach(pid=>{ const it=pega(pid,data); it.carro=nomeCarro(cid); it.viagemPlano=ix+1; }));
+    });
+  });
+  viagens.forEach(v=>{ if(!v.data||v.data<de||v.data>ate) return;
+    (v.pedidoIds||[]).forEach(pid=>{
+      const it=pega(pid,v.data); const reg=(v.entregas||{})[String(pid)];
+      if(reg&&reg.status==="nao_entregue") it.tentativas++;
+      // várias viagens com o mesmo pedido (não entregue e saiu de novo): vale o registro mais recente
+      if(!it.reg||(reg&&(reg.em||0)>=(it.reg.em||0))||(!reg&&!it.reg)){
+        it.carro=v.carroNome||nomeCarro(v.carroId);
+        it.viagem={token:v.token,motorista:v.motoristaNomeInformado||v.motoristaNome||"",telefone:v.motoristaTelefone||"",iniciadaEm:v.iniciadaEm||null,finalizadaEm:v.finalizadaEm||null,viagem:(Number(v.vix)||0)+1,kmInicial:v.kmInicial??null,kmFinal:v.kmFinal??null};
+        if(reg) it.reg=reg;
+      }
+    });
+  });
+  const ctx={props,turnos,log,dCx,pagReg,mini};
+  const lista=Object.values(P).map(it=>_montarFicha(it,ctx)).sort((a,b)=>String(b.dataEntrega).localeCompare(String(a.dataEntrega))||Number(b.numero)-Number(a.numero));
   // indicadores e acerto por motorista
   const R={ total:lista.length, entregues:0, naoEntregues:0, emRota:0, aguardando:0, valorPedidos:0, valorEntregue:0,
     recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, pagoForaDoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},

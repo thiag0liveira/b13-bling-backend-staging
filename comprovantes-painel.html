@@ -1,41 +1,51 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>B13 — Comprovantes de Conferência</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Conferências e Comprovantes</title>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-  :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233}
-  body{background:var(--bg);color:#fff;min-height:100vh}
-  .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  .card{background:var(--card);border:1px solid #2c2660;border-radius:14px;padding:14px;margin-top:14px}
-  .muted{color:#9a95c9}
-  .btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:13px;padding:8px 12px;color:#fff}
-  .btn-mag{background:var(--mag)}.btn-ghost{background:#1c1846}
-  .chip{background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer}
-  .chip.on{background:var(--mag);border-color:var(--mag)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:14px}
-  .pc{background:var(--card);border:1px solid #2c2660;border-radius:12px;overflow:hidden}
-  .pc .mid{background:#000;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
-  .pc .mid img,.pc .mid video{width:100%;height:100%;object-fit:cover}
-  .pc .play{position:absolute;font-size:44px;color:#fff;text-shadow:0 2px 8px #000;pointer-events:none}
-  .pc .ph{font-size:38px;opacity:.35}
-  .pc .info{padding:10px}
-  .pc .num{font-weight:900;font-size:15px}
-  .pc .cli{font-size:12px;color:#9a95c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pc .badge{display:inline-block;font-size:10px;font-weight:900;padding:1px 7px;border-radius:5px;margin-right:4px}
-  .lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:200;padding:16px;flex-direction:column}
-  .lb.on{display:flex}
-  .lb img,.lb video{max-width:96vw;max-height:82vh;border-radius:8px}
-  .lb .cap{color:#fff;margin-top:10px;text-align:center;font-size:13px}
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block;background:#1c1846;border:1px solid #3a3480}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.muted{color:var(--muted);font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px}.kpi.alerta{border-color:#7a2a3a;background:#20122a}
+.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}.card h3{font-size:14px;margin-bottom:4px}
+.rolagem{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px;min-width:700px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}
+.horas{display:flex;align-items:flex-end;gap:3px;height:80px;margin-top:8px}.horas i{flex:1;background:var(--mag);border-radius:3px 3px 0 0;min-height:1px}
+.eixoH{display:flex;gap:3px;font-size:9.5px;color:var(--muted)}.eixoH span{flex:1;text-align:center}
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.pc{background:#120f2c;border:1px solid var(--borda);border-radius:12px;overflow:hidden;cursor:pointer}.pc:hover{border-color:var(--mag)}
+.capa{height:140px;background:#0b0a1e;display:flex;align-items:center;justify-content:center;position:relative;font-size:30px;color:#514c96}
+.capa img{width:100%;height:100%;object-fit:cover}.capa .play{position:absolute;font-size:26px;color:#fff;text-shadow:0 2px 8px #000}
+.capa.sem{flex-direction:column;font-size:12px;color:#ff8aa3;background:#1d0f22}.capa.sem b{font-size:26px}
+.pc .info{padding:10px}.pc .num{font-weight:900}.pc .cli{font-size:12.5px;color:#cfcaf5;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 7px;border-radius:6px;white-space:nowrap;margin:4px 4px 0 0}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 <script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
 <style>
+  body.b13nav-open{ overflow:hidden }
   @media(min-width:900px){
     #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
     button[onclick="b13ToggleNav()"]{display:none !important}
-    body > .wrap{ margin-left:200px }
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.b13f-fundo){ margin-left:200px }
   }
 </style>
 </head>
@@ -44,176 +54,128 @@
     if(typeof b13RequireLogin==="function" && !b13RequireLogin()) return;
     if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/comprovantes-painel")) return;
     document.addEventListener("DOMContentLoaded",function(){
-      var nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/comprovantes-painel");
+      if(typeof b13RenderNav!=="function") return;
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/comprovantes-painel");
       document.body.insertBefore(nav,document.body.firstChild);
     });
   })();
 </script>
-<div class="wrap" id="app"></div>
-<div class="lb" id="lightbox" onclick="fecharLb(event)"></div>
+<div class="top"><img src="/logo"><div class="t">📸 Conferências e comprovantes</div><div class="sp"></div>
+  <a class="btn" href="/central-entregas">📦 Central de Entregas</a></div>
+<div class="wrap">
+  <div class="card">
+    <div class="filtros" id="periodos">
+      <span class="chip on" data-p="hoje">Hoje</span><span class="chip" data-p="ontem">Ontem</span><span class="chip" data-p="semana">Esta semana</span>
+      <span class="chip" data-p="mes">Este mês</span><span class="chip" data-p="7">Últimos 7 dias</span>
+      <input type="date" id="de"><span class="muted">até</span><input type="date" id="ate">
+      <span class="muted">das</span><input type="time" id="horaDe" value="00:00"><span class="muted">às</span><input type="time" id="horaAte" value="23:59">
+      <button class="btn" onclick="carregar()">↻ Atualizar</button>
+    </div>
+    <div class="filtros" style="margin-top:10px">
+      <input id="busca" type="search" placeholder="🔎 Pedido, cliente ou conferente" style="flex:1;min-width:200px">
+      <select id="fConf"><option value="">Todos os conferentes</option></select>
+      <span id="fTipo"></span>
+    </div>
+    <div class="filtros" id="fComp" style="margin-top:10px"></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h3>🕓 Conferências por hora</h3><div class="muted" id="picoTxt"></div><div class="horas" id="horas"></div><div class="eixoH" id="eixoH"></div></div>
+  <div class="card"><h3>👤 Por conferente</h3><div class="muted" style="margin-bottom:8px">Quem conferiu, quanto, com que evidência e em quanto tempo. "Tempo típico" é a mediana (o valor do meio).</div><div id="porConf"></div></div>
+  <div class="card"><h3 id="tituloLista">Pedidos conferidos</h3><div class="muted" style="margin-bottom:10px">Toque no pedido para ver tudo: itens, vendedor, separação, conferência, saída, entrega, pagamento, fotos e linha do tempo.</div><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
+  <div class="card" id="uso"></div>
+</div>
 <script>
-var B=(location.protocol.indexOf("http")===0)?"":"https://b13-bling-backend-production.up.railway.app";
-function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-
-var DADOS=null, FILTRO="", DIAS=15, BUSCA="", USO=null;
-
-// ============ CARREGAMENTO LEVE ============
-// Antes: cada cartão de vídeo criava um <video preload="metadata"> (o navegador baixava boa parte de CADA vídeo pra
-// mostrar a capa), a tela desenhava todos os pedidos de uma vez e redesenhava tudo a cada letra da busca.
-// Agora: a capa é uma MINIATURA (JPEG pequeno, guardada no servidor e no cache do navegador); o vídeo/foto inteiro só
-// é baixado ao abrir; a grade vem em blocos de 24; a busca só refaz a grade. Arquivo antigo sem miniatura: a tela
-// gera a miniatura UMA vez, só quando o cartão aparece na tela (2 por vez), e guarda no servidor pra próxima.
-var PAG=24, MOSTRAR=PAG, _tBusca=null, THUMBS={}, FILA=[], ATIVOS=0, OBS=null;
-function tokenSess(){ try{ var s=JSON.parse(localStorage.getItem("b13sess")||"null"); return (s&&s.token)||""; }catch(e){ return ""; } }
-function carregar(silencioso){
-  var app=document.getElementById("app");
-  if(!silencioso){ app.innerHTML='<div class="card"><div class="muted">Carregando comprovantes…</div></div>'; MOSTRAR=PAG; }
-  fetch(B+"/api/comprovantes/lista?dias="+DIAS+(FILTRO?"&tipo="+FILTRO:"")).then(function(r){return r.json();}).then(function(j){
-    DADOS=j;
-    if(silencioso&&document.getElementById("grade")) renderGrade(); else render();
-    // número/cliente que o servidor ainda está buscando no Bling: atualiza sozinho daqui a pouco
-    if(j.completando>0&&!silencioso) setTimeout(function(){ carregar(true); },9000);
-    if(!silencioso) fetch(B+"/api/comprovantes/uso").then(function(r){return r.json();}).then(function(u){ if(!u.erro){ USO=u; renderUso(); } }).catch(function(){});
-  }).catch(function(){ if(!silencioso) app.innerHTML='<div class="card"><div class="muted">Erro ao carregar.</div></div>'; });
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const norm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const hojeBR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const hora = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const min = m => m == null ? "—" : m < 60 ? m + " min" : Math.floor(m / 60) + "h" + (m % 60 ? String(m % 60).padStart(2, "0") : "");
+function token(){ try{ return (JSON.parse(localStorage.getItem("b13sess") || "null") || {}).token || ""; }catch(e){ return ""; } }
+async function api(p){ const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { status: r.status, j }; }
+let D = null, BUSCA = "", CONF = "", TIPO = "", COMP = "todos";
+function periodo(p){
+  const h = hojeBR(); let de = h, ate = h;
+  if (p === "ontem") de = ate = new Date(Date.parse(h + "T12:00:00") - 86400000).toISOString().slice(0, 10);
+  if (p === "7") de = new Date(Date.parse(h + "T12:00:00") - 6 * 86400000).toISOString().slice(0, 10);
+  if (p === "mes") de = h.slice(0, 8) + "01";
+  if (p === "semana") { const d = new Date(h + "T12:00:00"); de = new Date(d.getTime() - ((d.getDay() + 6) % 7) * 86400000).toISOString().slice(0, 10); }
+  document.getElementById("de").value = de; document.getElementById("ate").value = ate;
 }
-function render(){
-  var app=document.getElementById("app");
-  if(!DADOS){ carregar(); return; }
-  app.innerHTML=
-    '<div class="card" style="margin-top:0">'+
-      '<div style="font-weight:900;font-size:18px">📸 Comprovantes de Conferência</div>'+
-      '<div class="muted" style="font-size:12px;margin-top:4px">Fotos e vídeos tirados na conferência de cada pedido. Toque pra ampliar.</div>'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">'+
-        '<input id="busca" placeholder="🔎 nº do pedido ou cliente" value="'+esc(BUSCA)+'" style="flex:1;min-width:160px;background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px 10px">'+
-        '<span class="chip '+(FILTRO===""?"on":"")+'" onclick="FILTRO=\'\';carregar()">Tudo</span>'+
-        '<span class="chip '+(FILTRO==="foto"?"on":"")+'" onclick="FILTRO=\'foto\';carregar()">📷 Fotos</span>'+
-        '<span class="chip '+(FILTRO==="video"?"on":"")+'" onclick="FILTRO=\'video\';carregar()">🎥 Vídeos</span>'+
-        '<select onchange="DIAS=this.value;carregar()" style="background:#0f0d24;border:1px solid #514c96;border-radius:8px;color:#fff;padding:8px">'+
-          [7,15,30,90].map(function(d){ return '<option value="'+d+'" '+(DIAS==d?"selected":"")+'>'+d+' dias</option>'; }).join("")+
-        '</select>'+
-      '</div>'+
-      '<div class="muted" id="contagem" style="font-size:12px;margin-top:8px"></div>'+
-      '<div id="uso"></div>'+
-    '</div><div id="grade"></div>';
-  // a busca NÃO redesenha a tela inteira (o campo não perde o foco e as imagens não recarregam)
-  document.getElementById("busca").addEventListener("input",function(ev){ var v=ev.target.value; clearTimeout(_tBusca); _tBusca=setTimeout(function(){ BUSCA=v; MOSTRAR=PAG; renderGrade(); },200); });
-  renderUso(); renderGrade();
+document.getElementById("periodos").addEventListener("click", ev => { const c = ev.target.closest(".chip"); if (!c) return; document.querySelectorAll("#periodos .chip").forEach(x => x.classList.toggle("on", x === c)); periodo(c.dataset.p); carregar(); });
+["de", "ate", "horaDe", "horaAte"].forEach(id => document.getElementById(id).addEventListener("change", () => { if (id === "de" || id === "ate") document.querySelectorAll("#periodos .chip").forEach(x => x.classList.remove("on")); carregar(); }));
+document.getElementById("busca").addEventListener("input", e => { BUSCA = e.target.value; renderLista(); });
+document.getElementById("fConf").addEventListener("change", e => { CONF = e.target.value; renderLista(); });
+async function carregar(){
+  document.getElementById("lista").innerHTML = '<div class="vazio"><div class="spin"></div></div>';
+  const q = `de=${document.getElementById("de").value}&ate=${document.getElementById("ate").value}&horaDe=${document.getElementById("horaDe").value || "00:00"}&horaAte=${document.getElementById("horaAte").value || "23:59"}`;
+  const { status, j } = await api("/api/conferencias/painel?" + q);
+  if (status !== 200) { document.getElementById("lista").innerHTML = `<div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; renderTudo();
 }
-function renderUso(){
-  var el=document.getElementById("uso"); if(!el||!USO) return;
-  el.innerHTML='<div style="margin-top:8px">'+
-    '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9a95c9"><span>Armazenamento: '+USO.totalMB+' MB de '+USO.limiteMB+' MB</span><span>'+USO.pctUsado+'%</span></div>'+
-    '<div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:3px"><div style="height:100%;width:'+Math.min(100,USO.pctUsado)+'%;background:'+(USO.pctUsado>85?"#ff3b3b":USO.pctUsado>70?"#ffd23f":"#3ce88a")+'"></div></div>'+
-    '<div style="font-size:10px;color:#6b6699;margin-top:3px">'+USO.videos+' vídeos ('+USO.videoMB+' MB) · '+USO.fotos+' fotos ('+USO.fotoMB+' MB) · guarda '+USO.diasManter+' dias'+(USO.maisAntigo?' · mais antigo: '+esc(USO.maisAntigo):'')+'</div></div>';
+function renderTudo(){
+  const I = D.indicadores, pct = I.conferencias ? Math.round(I.comComprovante / I.conferencias * 100) : 0;
+  const k = [
+    [I.conferencias, "Conferências", `${I.entregas} entrega(s) · ${I.retiradas} retirada(s) · ${I.conferentes} conferente(s)`],
+    [pct + "%", "Com foto ou vídeo", `${I.comComprovante} com evidência`],
+    [I.semComprovante, "Conferidos SEM comprovante", I.semComprovante ? "sem foto nem vídeo: confira" : "todos com evidência", I.semComprovante > 0],
+    [`${I.fotos} · ${I.videos}`, "Fotos · vídeos", "arquivos de conferência"],
+    [min(I.duracaoMedianaMin), "Tempo típico de conferência", "do início ao fim da conferência"],
+    [min(I.esperaMedianaMin), "Espera típica", "entre separado e conferido"],
+    [I.picoHora == null ? "—" : String(I.picoHora).padStart(2, "0") + "h", "Horário de pico", I.picoHora == null ? "" : `${I.picoQtd} conferência(s) nessa hora`],
+    [I.ajustes, "Com ajuste na conferência", "itens removidos ou editados", I.ajustes > 0],
+    [I.midiaSemConclusao, "Foto/vídeo sem conclusão", I.midiaSemConclusao ? "tem mídia, mas a conferência não foi concluída no sistema" : "nenhum", I.midiaSemConclusao > 0],
+  ];
+  document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
+  const H = I.porHora.slice(6), maxH = Math.max(1, ...H);
+  document.getElementById("horas").innerHTML = H.map((n, i) => `<i style="height:${n / maxH * 100}%" title="${String(i + 6).padStart(2, "0")}h: ${n} conferência(s)"></i>`).join("");
+  document.getElementById("eixoH").innerHTML = H.map((n, i) => `<span>${(i + 6) % 2 === 0 ? (i + 6) + "h" : ""}</span>`).join("");
+  document.getElementById("picoTxt").textContent = I.picoHora == null ? "Sem conferências no período." : `Mais movimento às ${String(I.picoHora).padStart(2, "0")}h (${I.picoQtd}). Passe o mouse ou o dedo nas barras.`;
+  const P = D.porConferente;
+  document.getElementById("porConf").innerHTML = P.length ? `<div class="rolagem"><table><tr><th>Conferente</th><th>Conferências</th><th>Com comprovante</th><th>Fotos</th><th>Vídeos</th><th>Tempo típico</th><th>Espera típica</th><th>Ajustes</th><th>Última</th></tr>
+    ${P.map(c => `<tr style="cursor:pointer" onclick="CONF='${esc(c.conferente)}';document.getElementById('fConf').value=CONF;renderLista();document.getElementById('lista').scrollIntoView({behavior:'smooth'})"><td><b>${esc(c.conferente)}</b></td><td>${c.qtd}</td>
+      <td>${c.pctComprovante}% ${c.pctComprovante < 100 ? `<span class="tag ${c.pctComprovante < 70 ? "erro" : "warn"}">${c.qtd - c.comComprovante} sem</span>` : ""}</td><td>${c.fotos}</td><td>${c.videos}</td><td>${min(c.duracaoMedianaMin)}</td><td>${min(c.esperaMedianaMin)}</td><td>${c.ajustes || "—"}</td><td>${hora(c.ultimaEm)}</td></tr>`).join("")}</table></div>`
+    : `<div class="vazio" style="padding:10px">Ninguém conferiu no período.</div>`;
+  const sel = document.getElementById("fConf"); sel.innerHTML = `<option value="">Todos os conferentes</option>` + P.map(c => `<option ${c.conferente === CONF ? "selected" : ""}>${esc(c.conferente)}</option>`).join("");
+  renderLista();
 }
-function listaFiltrada(){
-  var lista=(DADOS&&DADOS.data)||[];
-  if(BUSCA){ var b=BUSCA.toLowerCase(); lista=lista.filter(function(p){ return String(p.numero).indexOf(b)>=0 || (p.cliente||"").toLowerCase().indexOf(b)>=0; }); }
-  return lista;
+function filtra(x, ignorarComp){
+  if (CONF && x.conferente !== CONF) return false;
+  if (TIPO && x.tipo !== TIPO) return false;
+  if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || norm(x.cliente).includes(b) || norm(x.conferente).includes(b) || norm(x.vendedor).includes(b))) return false; }
+  if (ignorarComp) return true;
+  if (COMP === "com") return !x.semConclusao && x.fotos + x.videos > 0;
+  if (COMP === "sem") return !x.semConclusao && x.fotos + x.videos === 0;
+  if (COMP === "semConclusao") return x.semConclusao;
+  return !x.semConclusao;
 }
-function midiaCard(p,c){
-  var ab=' onclick="abrirLb(\''+esc(c.url)+'\',\''+c.tipo+'\',\''+esc(String(p.numero))+'\',\''+esc(String(p.cliente||'').replace(/'/g,''))+'\')"';
-  var src=c.thumb?(B+c.thumb):(THUMBS[c.url]||"");
-  var play=c.tipo==="video"?'<span class="play">▶</span>':'';
-  if(src) return '<div class="mid"'+ab+'><img src="'+esc(src)+'" loading="lazy" decoding="async" alt="">'+play+'</div>';
-  return '<div class="mid semthumb" data-url="'+esc(c.url)+'" data-tipo="'+c.tipo+'"'+ab+'>'+(c.tipo==="video"?play:'<span class="ph">📷</span>')+'</div>';
+function renderLista(){
+  if (!D) return;
+  const base = D.pedidos.filter(x => filtra(x, true));
+  const c = k => base.filter(x => { const s = COMP; COMP = k; const r = filtra(x); COMP = s; return r; }).length;
+  document.getElementById("fComp").innerHTML = [["todos", "Todos conferidos"], ["com", "📷 Com foto ou vídeo"], ["sem", "⚠️ Sem comprovante"], ["semConclusao", "Mídia sem conclusão"]]
+    .map(([k, t]) => `<span class="chip ${COMP === k ? "on" : ""}" onclick="COMP='${k}';renderLista()">${t} (${c(k)})</span>`).join(" ");
+  document.getElementById("fTipo").innerHTML = [["", "Entregas e retiradas"], ["entrega", "🛵 Entregas"], ["retirada", "🏪 Retiradas"]]
+    .map(([k, t]) => `<span class="chip ${TIPO === k ? "on" : ""}" onclick="TIPO='${k}';renderLista()">${t}</span>`).join(" ");
+  const L = D.pedidos.filter(x => filtra(x));
+  document.getElementById("lista").innerHTML = L.length ? `<div class="grade">${L.map(x => {
+    const capa = x.capa ? (x.capa.tipo === "video" && !x.capa.thumb ? `<div class="capa"><span class="play">▶</span>🎥</div>` : `<div class="capa"><img src="${esc(B + (x.capa.thumb || x.capa.url))}" loading="lazy" alt="" onerror="this.parentNode.innerHTML='<span style=&quot;font-size:11px;color:#9a95c9;padding:10px;text-align:center&quot;>arquivo apagado pela limpeza automática</span>'">${x.capa.tipo === "video" ? '<span class="play">▶</span>' : ""}</div>`)
+      : `<div class="capa sem"><b>⚠️</b>sem foto ou vídeo</div>`;
+    return `<div class="pc" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">${capa}<div class="info"><div class="num">#${esc(x.numero)} ${x.valor ? `<span class="muted">· ${brl(x.valor)}</span>` : ""}</div>
+      <div class="cli">${esc(x.cliente || "cliente não identificado")}</div>
+      <div class="muted" style="margin-top:4px">${x.semConclusao ? "mídia de" : "conferido por"} <b style="color:#e6e2ff">${esc(x.conferente || "—")}</b> · ${hora(x.conferidoEm || x.quandoMs)}</div>
+      <div>${x.tipo ? `<span class="tag neu">${x.tipo === "retirada" ? "🏪 retirada" : "🛵 entrega"}</span>` : ""}${x.fotos ? `<span class="tag ok">📷 ${x.fotos}</span>` : ""}${x.videos ? `<span class="tag ok">🎥 ${x.videos}</span>` : ""}
+        ${x.duracaoMin != null ? `<span class="tag neu">⏱️ ${min(x.duracaoMin)}</span>` : ""}${x.ajustes ? `<span class="tag warn">ajuste</span>` : ""}${x.semConclusao ? `<span class="tag erro">sem conclusão</span>` : ""}</div></div></div>`;
+  }).join("")}</div>` : `<div class="vazio">Nenhum pedido neste filtro.</div>`;
 }
-function cartao(p){
-  var c=p.comprovantes[0]; // capa = mais recente
-  return '<div class="pc">'+midiaCard(p,c)+
-    '<div class="info">'+
-      '<div class="num">Pedido #'+esc(p.numero)+'</div>'+
-      '<div class="cli">'+esc(p.cliente||"cliente não identificado")+'</div>'+
-      '<div style="margin-top:6px">'+
-        (p.temFoto?'<span class="badge" style="background:#2f9e6b">📷 foto</span>':'')+
-        (p.temVideo?'<span class="badge" style="background:#b3341f">🎥 vídeo</span>':'')+
-        (p.qtd>1?'<span class="badge" style="background:#514c96">'+p.qtd+' arquivos</span>':'')+
-      '</div>'+
-      '<div class="muted" style="font-size:11px;margin-top:5px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div>'+
-      (p.qtd>1?'<button class="btn btn-ghost" style="width:100%;margin-top:8px;font-size:11px" onclick="verTodos(\''+esc(String(p.pedidoId))+'\')">Ver os '+p.qtd+'</button>':'')+
-    '</div></div>';
+async function carregarUso(){
+  const { status, j } = await api("/api/comprovantes/uso"); if (status !== 200 || j.erro) return;
+  document.getElementById("uso").innerHTML = `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>💾 Armazenamento dos comprovantes: ${j.totalMB} MB de ${j.limiteMB} MB</span><span>${j.pctUsado}%</span></div>
+    <div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:5px"><div style="height:100%;width:${Math.min(100, j.pctUsado)}%;background:${j.pctUsado > 85 ? "#ff3b3b" : j.pctUsado > 70 ? "#ffd23f" : "#3ce88a"}"></div></div>
+    <div class="muted" style="margin-top:5px;font-size:11px">${j.videos} vídeos (${j.videoMB} MB) · ${j.fotos} fotos (${j.fotoMB} MB) · guarda ${j.diasManter} dias${j.maisAntigo ? " · mais antigo: " + esc(j.maisAntigo) : ""}</div>`;
 }
-function renderGrade(){
-  var g=document.getElementById("grade"); if(!g) return;
-  var lista=listaFiltrada(), vis=lista.slice(0,MOSTRAR);
-  document.getElementById("contagem").textContent=lista.length+' pedido(s) · '+(DADOS.totalArquivos||0)+' arquivo(s)'+(DADOS.completando?' · completando nomes no Bling…':'');
-  g.innerHTML=lista.length
-    ? '<div class="grid">'+vis.map(cartao).join("")+'</div>'+(lista.length>MOSTRAR?'<div style="text-align:center;margin:14px 0"><button class="btn btn-ghost" id="maisBtn" onclick="mostrarMais()">Mostrar mais ('+(lista.length-MOSTRAR)+' restantes)</button></div>':'')
-    : '<div class="card"><div class="muted">'+(BUSCA?'Nenhum pedido com "'+esc(BUSCA)+'".':'Nenhum comprovante no período.')+'</div></div>';
-  observarSemThumb();
-  var mb=document.getElementById("maisBtn");
-  if(mb&&"IntersectionObserver" in window){ var o=new IntersectionObserver(function(e){ if(e[0].isIntersecting){ o.disconnect(); mostrarMais(); } },{rootMargin:"500px"}); o.observe(mb); }
-}
-function mostrarMais(){ MOSTRAR+=PAG; renderGrade(); }
-// ---- miniaturas que faltam (arquivos antigos): gera só o que aparece na tela, 2 por vez, e guarda no servidor ----
-function observarSemThumb(){
-  if(!("IntersectionObserver" in window)) return;
-  if(OBS) OBS.disconnect();
-  OBS=new IntersectionObserver(function(ents){ ents.forEach(function(en){ if(en.isIntersecting){ OBS.unobserve(en.target); FILA.push(en.target); proximo(); } }); },{rootMargin:"150px"});
-  document.querySelectorAll(".semthumb").forEach(function(el){ OBS.observe(el); });
-}
-function proximo(){
-  while(ATIVOS<2&&FILA.length){
-    var el=FILA.shift(); if(!document.body.contains(el)||!el.classList.contains("semthumb")) continue;
-    ATIVOS++; gerarThumb(el).then(fim,fim);
-  }
-  function fim(){ ATIVOS--; proximo(); }
-}
-function capturar(url,tipo){
-  return new Promise(function(res){
-    var to=setTimeout(function(){ res(null); },20000);
-    function desenhar(fonte,w,h){ try{ var W=360,H=Math.round(W*(h||3)/(w||4)); var cv=document.createElement("canvas"); cv.width=W; cv.height=H; cv.getContext("2d").drawImage(fonte,0,0,W,H); clearTimeout(to); res(cv.toDataURL("image/jpeg",0.72)); }catch(e){ clearTimeout(to); res(null); } }
-    if(tipo==="video"){
-      var v=document.createElement("video"); v.muted=true; v.playsInline=true; v.preload="metadata";
-      v.onloadedmetadata=function(){ try{ v.currentTime=Math.min(0.5,(v.duration||1)/2); }catch(e){ clearTimeout(to); res(null); } };
-      v.onseeked=function(){ desenhar(v,v.videoWidth,v.videoHeight); v.removeAttribute("src"); try{ v.load(); }catch(e){} };
-      v.onerror=function(){ clearTimeout(to); res(null); };
-      v.src=B+url;
-    } else {
-      var im=new Image(); im.decoding="async";
-      im.onload=function(){ desenhar(im,im.naturalWidth,im.naturalHeight); };
-      im.onerror=function(){ clearTimeout(to); res(null); };
-      im.src=B+url;
-    }
-  });
-}
-function gerarThumb(el){
-  var url=el.getAttribute("data-url"), tipo=el.getAttribute("data-tipo");
-  return capturar(url,tipo).then(function(d){
-    if(!d) return;
-    THUMBS[url]=d;
-    el.classList.remove("semthumb"); el.innerHTML='<img src="'+d+'" alt="">'+(tipo==="video"?'<span class="play">▶</span>':'');
-    var tk=tokenSess(); if(!tk) return;
-    return fetch(B+"/api/comprovantes/miniatura",{method:"POST",headers:{"Content-Type":"application/json","X-Auth-Token":tk},body:JSON.stringify({url:url,dataUrl:d})})
-      .then(function(r){ return r.json(); }).then(function(j){ if(j&&j.thumb) ((DADOS&&DADOS.data)||[]).forEach(function(p){ p.comprovantes.forEach(function(c){ if(c.url===url) c.thumb=j.thumb; }); }); }).catch(function(){});
-  });
-}
-
-function abrirLb(url,tipo,numero,cliente){
-  var lb=document.getElementById("lightbox");
-  lb.innerHTML=(tipo==="video"
-    ? '<video src="'+B+esc(url)+'" controls autoplay playsinline></video>'
-    : '<img src="'+B+esc(url)+'">')+
-    '<div class="cap">Pedido #'+esc(numero)+(cliente?' — '+esc(cliente):'')+' — <a href="'+B+esc(url)+'" target="_blank" style="color:#7fd4ff">abrir original</a></div>';
-  lb.classList.add("on");
-}
-function fecharLb(ev){ if(ev.target.id==="lightbox"||ev.target.className==="cap"){ var lb=document.getElementById("lightbox"); lb.classList.remove("on"); lb.innerHTML=""; } }
-
-function verTodos(pedidoId){
-  var p=(DADOS.data||[]).filter(function(x){return String(x.pedidoId)===String(pedidoId);})[0];
-  if(!p) return;
-  var lb=document.getElementById("lightbox");
-  lb.innerHTML='<div style="max-width:96vw;max-height:88vh;overflow:auto"><div style="color:#fff;font-weight:900;margin-bottom:10px">Pedido #'+esc(p.numero)+(p.cliente?' — '+esc(p.cliente):'')+' · '+p.qtd+' arquivos</div>'+
-    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">'+
-    p.comprovantes.map(function(c){
-      var capa=c.thumb?(B+c.thumb):(THUMBS[c.url]||"");
-      var m=c.tipo==="video"?'<video src="'+B+esc(c.url)+'" controls playsinline preload="none"'+(capa?' poster="'+esc(capa)+'"':'')+' style="width:100%;border-radius:8px;background:#000;min-height:120px"></video>':'<img src="'+B+esc(c.url)+'" loading="lazy" style="width:100%;border-radius:8px">';
-      return '<div>'+m+'<div style="color:#9a95c9;font-size:11px;margin-top:3px">'+esc(c.quando)+(c.por?' · '+esc(c.por):'')+'</div></div>';
-    }).join("")+'</div></div>';
-  lb.classList.add("on");
-}
-
-carregar();
+periodo("hoje"); carregar(); carregarUso();
 </script>
 </body>
 </html>
