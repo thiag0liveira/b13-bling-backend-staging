@@ -1425,6 +1425,14 @@ function requireSessao(req,res,next){
   req.sessao=s;
   next();
 }
+// Middleware: sessão válida + a PERMISSÃO da aba (ex.: "acesso_concurso"). Admin sempre passa.
+function requireAcesso(acao){
+  return (req,res,next)=>requireSessao(req,res,()=>{
+    const s=req.sessao||{};
+    if(s.nivel==="admin"||(s.permissoes||[]).includes("admin")||(s.permissoes||[]).includes(acao)) return next();
+    return res.status(403).json({erro:"Sem permissão para esta tela ("+acao+")"});
+  });
+}
 // Middleware: exige token de sessão válido de um admin (ou de quem tem "admin" nas permissões)
 function requireAdmin(req,res,next){
   const token=req.headers["x-auth-token"];
@@ -17650,7 +17658,7 @@ setTimeout(async()=>{
 // /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
 registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname,
-  pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes });
+  pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso });
 registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
   lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });

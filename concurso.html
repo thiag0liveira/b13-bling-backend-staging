@@ -25,6 +25,21 @@
   .tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
   .tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfc9f5}.tag.mag{background:#4a0f33;color:#ff86c3}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+  .kpi.clicavel{cursor:pointer;transition:border-color .15s}.kpi.clicavel:hover{border-color:var(--mag)}
+  .kpi.alerta{border-color:#7a2a5a;background:#1d1238}.kpi .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .campanha{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;color:var(--muted)}
+  .campanha .trilho{flex:1;min-width:160px;height:6px;border-radius:4px;background:#1c1846}.campanha .trilho i{display:block;height:100%;border-radius:4px;background:var(--mag)}
+  .secao{margin-bottom:16px}.secao h4{margin:0 0 2px;font-size:15px}.secao .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .tarefa{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;flex-wrap:wrap}
+  .tarefa .info{flex:1;min-width:200px}.tarefa .l1{font-weight:800}.tarefa .l2{font-size:12px;color:var(--muted);margin-top:2px}
+  .funil .ln{display:grid;grid-template-columns:190px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}
+  .funil .br{height:16px;border-radius:5px;background:#1c1846;overflow:hidden}.funil .br i{display:block;height:100%;background:var(--mag)}
+  .mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
+  .mini div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:10px}.mini b{display:block;font-size:20px}.mini span{font-size:11.5px;color:var(--muted)}
+  .dias{display:flex;align-items:flex-end;gap:3px;height:90px;margin-top:8px}.dias .d{flex:1;display:flex;gap:1px;align-items:flex-end;height:100%}
+  .dias .d i{flex:1;border-radius:3px 3px 0 0;min-height:1px}.eixoD{display:flex;gap:3px;font-size:9.5px;color:var(--muted)}.eixoD span{flex:1;text-align:center}
+  .so-meus{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#e6e2ff;cursor:pointer;user-select:none}
+  @media(max-width:700px){ .funil .ln{grid-template-columns:120px 1fr 70px} }
   .kpi{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:12px 14px}
   .kpi .v{font-size:26px;font-weight:900}.kpi .l{color:var(--muted);font-size:12px;margin-top:2px}
   .linha{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
@@ -87,19 +102,24 @@
     <button class="btn btn-ghost btn-sm" onclick="recarregar()">↻ Atualizar</button>
   </div>
   <div class="wrap">
+    <div class="campanha" id="campanha"></div>
     <div class="kpis" id="kpis"></div>
 
     <div class="resultado" id="resultado"></div>
 
     <div class="card">
       <div class="abas" id="abas">
-        <span class="chip on" data-aba="elegiveis">Pedidos elegíveis</span>
+        <span class="chip on" data-aba="afazer">✅ Para fazer</span>
+        <span class="chip" data-aba="elegiveis">Todos os pedidos</span>
         <span class="chip" data-aba="clientes">Clientes</span>
-        <span class="chip" data-aba="links">Links</span>
         <span class="chip" data-aba="frases">Frases recebidas</span>
+        <span class="chip" data-aba="relatorios">📊 Relatórios</span>
       </div>
-      <input id="busca" type="search" placeholder="🔎 Buscar por nº do pedido ou nome do cliente" autocomplete="off"
-        style="width:100%;margin:10px 0 12px;padding:10px 12px;border-radius:10px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px" />
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0 12px">
+        <input id="busca" type="search" placeholder="🔎 Buscar por nº do pedido ou nome do cliente" autocomplete="off"
+          style="flex:1;min-width:220px;padding:10px 12px;border-radius:10px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px" />
+        <label class="so-meus" id="soMeusBox" hidden><input type="checkbox" id="soMeus" /> Só os meus pedidos</label>
+      </div>
       <div id="corpoAba"></div>
     </div>
 
@@ -117,6 +137,11 @@
     </details>
   </div>
 </div>
+
+<div class="fundo" id="mEnviar"><div class="modal" style="max-width:560px">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 id="meTitulo" style="margin:0">Enviar link</h3><button class="btn btn-ghost btn-sm" onclick="fechar('mEnviar')">Fechar</button></div>
+  <div id="meCorpo" style="margin-top:10px"></div>
+</div></div>
 
 <div class="fundo" id="mCliente"><div class="modal" style="max-width:760px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 id="mcTitulo" style="margin:0">Cliente</h3><button class="btn btn-ghost btn-sm" onclick="fechar('mCliente')">Fechar</button></div>
@@ -169,8 +194,11 @@ const dtBR = iso => iso ? new Date(iso).toLocaleString("pt-BR",{timeZone:"Americ
 const dataBR = s => s ? s.split("-").reverse().join("/") : "";
 const fmtDoc = d => { d=String(d||""); return d.length===14?d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,"$1.$2.$3/$4-$5"):d; };
 const fmtTel = d => { d=String(d||"").replace(/\D/g,"").replace(/^55(?=\d{10,11}$)/,""); return d.length===11?d.replace(/(\d{2})(\d{5})(\d{4})/,"($1) $2-$3"):d.length===10?d.replace(/(\d{2})(\d{4})(\d{4})/,"($1) $2-$3"):d; };
-let ABA="elegiveis", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
-let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="pagos", _pollSync=null, BUSCA="";
+const SESS=(()=>{ try{ return (typeof b13GetSession==="function"&&b13GetSession())||{}; }catch(e){ return {}; } })();
+const EH_ADMIN=SESS.nivel==="admin"||(SESS.permissoes||[]).includes("admin");
+let ABA="afazer", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
+let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="todos", _pollSync=null, BUSCA="", REL=null, RESUMO=null;
+let SO_MEUS=false; try{ SO_MEUS=localStorage.getItem("concurso_so_meus")==="1"; }catch(e){}
 const normB=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 function bate(numero,nome){ const b=normB(BUSCA); if(!b) return true; return String(numero||"").includes(b.replace(/\D/g,"")||"\u0000")||normB(nome).includes(b); }
 
@@ -209,7 +237,7 @@ async function carregarResumo(){
     [j.links.total,"links gerados"],[j.links.aguardando,"aguardando o cliente"],[j.frases.validas,"frases válidas"],
     [j.frases.porLink+" / "+j.frases.porWhatsapp,"pelo link / pelo WhatsApp"],[j.frases.desclassificadas,"desclassificadas"],
   ];
-  document.getElementById("kpis").innerHTML=k.map(x=>`<div class="kpi"><div class="v">${esc(x[0])}</div><div class="l">${esc(x[1])}</div></div>`).join("");
+  RESUMO=j; // os indicadores do topo agora são as tarefas (renderKpis), calculadas da lista de pedidos
   return j;
 }
 
@@ -261,12 +289,14 @@ function mostrarResultado(l){
   r.innerHTML=`<div style="font-weight:800">✅ Link do pedido nº ${esc(l.numero)} · ${esc(l.qtdFrases)} frase${l.qtdFrases==1?"":"s"} ${tagStatusLink(l)}</div>
     <div class="url">${esc(l.url)}</div>
     <div class="acoes">
-      <a class="btn btn-grn" href="${esc(l.whatsappLink)}" target="_blank" rel="noopener">Abrir no WhatsApp${l.cliente?.telefone?" do cliente":""}</a>
+      <a class="btn btn-grn" href="${esc(l.whatsappLink)}" target="_blank" rel="noopener" onclick="registrarEnvio('${esc(l.token)}','whatsapp',false)">Abrir no WhatsApp${l.cliente?.telefone?" do cliente":""}</a>
       <button class="btn btn-ghost" data-copiar="msg">Copiar mensagem</button>
       <button class="btn btn-ghost" data-copiar="url">Copiar só o link</button>
     </div>
+    <div class="muted" style="margin-top:8px;font-size:12px">${l.compartilhadoEm?`📤 Enviado ao cliente ${hora(l.compartilhadoEm)}${l.compartilhadoPor?" por "+esc(l.compartilhadoPor):""}${l.lembretes?` · ${l.lembretes} lembrete(s)`:""}`:"Ainda não registrado como enviado ao cliente."}
+      ${EH_ADMIN&&l.status==="aberto"?` · <a href="#" style="color:#ff8aa3" onclick="revogarToken('${esc(l.token)}');return false">revogar este link</a>`:""}</div>
     <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Ver a mensagem</summary><pre style="white-space:pre-wrap;font-size:12.5px;margin-top:8px;color:#e6e2ff">${esc(l.whatsappTexto)}</pre></details>`;
-  r.querySelector('[data-copiar="msg"]').onclick=()=>copiar(l.whatsappTexto,"Mensagem copiada");
+  r.querySelector('[data-copiar="msg"]').onclick=()=>{ copiar(l.whatsappTexto,"Mensagem copiada"); if(l.status==="aberto") registrarEnvio(l.token,"copia",false); };
   r.querySelector('[data-copiar="url"]').onclick=()=>copiar(l.url,"Link copiado");
 }
 
@@ -281,6 +311,11 @@ function render(){
   if(ABA==="frases") el.innerHTML=htmlFrases();
   if(ABA==="sugestoes") el.innerHTML=htmlSugestoes();
   if(ABA==="elegiveis") el.innerHTML=htmlElegiveis();
+  if(ABA==="afazer") el.innerHTML=htmlAFazer();
+  // busca e "Só os meus" só valem nas listas; o relatório e as frases são da campanha inteira
+  { const barra=document.getElementById("busca").parentElement; if(barra) barra.style.display=(ABA==="relatorios"||ABA==="frases")?"none":"flex"; }
+  if(ABA==="relatorios"){ el.innerHTML=htmlRelatorios(); if(!REL) carregarRelatorio(); }
+  renderKpis();
   if(ABA==="clientes") el.innerHTML=htmlClientes();
 }
 function htmlLinks(){
@@ -313,9 +348,9 @@ function htmlFrases(){
     </div>
     <div class="acoes">
       <button class="btn btn-ghost btn-sm" onclick="abrirWhats()">+ Frase recebida pelo WhatsApp</button>
-      <button class="btn btn-ghost btn-sm" id="btnConf" onclick="conferirBling()">Conferir pedidos no Bling</button>
+      ${EH_ADMIN?`<button class="btn btn-ghost btn-sm" id="btnConf" onclick="conferirBling()">Conferir pedidos no Bling</button>
       <button class="btn btn-ghost btn-sm" onclick="baixar('triagem')">⬇ Planilha da triagem</button>
-      <button class="btn btn-mag btn-sm" onclick="baixar('cega')">⬇ Planilha às cegas (comissão)</button>
+      <button class="btn btn-mag btn-sm" onclick="baixar('cega')">⬇ Planilha às cegas (comissão)</button>`:""}
     </div></div><div id="confProg"></div>`;
   if(!lista.length) return topo+`<div class="vazio">Nenhuma frase ${FILTRO_FRASE==="desc"?"desclassificada":"recebida"} ainda.</div>`;
   return topo+`<div class="rolagem"><table class="tbl"><thead><tr><th>Nº</th><th>Frase</th><th>Recebida</th><th class="hide-sm">Pedido</th><th class="hide-sm">Estabelecimento / autor</th><th>Conferência</th><th></th></tr></thead><tbody>
@@ -326,7 +361,7 @@ function htmlFrases(){
       <td class="hide-sm">${esc(f.numero)}</td>
       <td class="hide-sm">${esc(f.estabelecimento?.razaoSocial||"—")}<div class="muted">${esc(f.autor?.nome||"")}${f.autor?.vinculo?" · "+esc(f.autor.vinculo):""} · ${esc(fmtTel(f.autor?.whatsapp))}${f.marketing?" · aceita promoções":""}</div></td>
       <td>${tagConf(f.conferencia)}</td>
-      <td>${f.status==="valida"?`<button class="btn btn-red btn-sm" onclick="desclassificar('${esc(f.id)}')">Desclassificar</button>`:`<button class="btn btn-ghost btn-sm" onclick="reabilitar('${esc(f.id)}')">Reabilitar</button>`}</td>
+      <td>${!EH_ADMIN?'<span class="muted">—</span>':f.status==="valida"?`<button class="btn btn-red btn-sm" onclick="desclassificar('${esc(f.id)}')">Desclassificar</button>`:`<button class="btn btn-ghost btn-sm" onclick="reabilitar('${esc(f.id)}')">Reabilitar</button>`}</td>
     </tr>`).join("")}</tbody></table></div>`;
 }
 // ---------- PEDIDOS ELEGÍVEIS (o sistema acha sozinho) ----------
@@ -339,36 +374,145 @@ function htmlSync(){
     ${s.erro?`<span class="tag erro" title="${esc(s.erro)}">⚠️ a última sincronização não conseguiu falar com o Bling; a lista mostra o que já tinha</span>`:""}
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" ${s.rodando?"disabled":""} onclick="sincronizarAgora()">🔄 Sincronizar agora</button></div>`;
 }
-function filtroEleg(e){
-  if(FILTRO_ELEG==="pagos") return e.elegivel&&e.pago&&!e.link;
-  if(FILTRO_ELEG==="aguardando") return e.elegivel&&!e.pago;
-  if(FILTRO_ELEG==="comlink") return e.elegivel&&!!e.link;
-  if(FILTRO_ELEG==="fora") return !e.elegivel;
-  return e.elegivel;
+// ---------- ETAPAS: um nome só para cada situação, em todo o painel ----------
+const ETAPA={
+  gerar:{t:"Pronto para gerar",ic:"🟣",tag:"mag"}, enviar:{t:"Link gerado, falta enviar",ic:"📤",tag:"warn"},
+  lembrar:{t:"Lembrar o cliente",ic:"⏰",tag:"warn"}, aguardando_resposta:{t:"Enviado, aguardando o cliente",ic:"🕓",tag:"neu"},
+  respondido:{t:"Respondeu",ic:"✅",tag:"ok"}, aguardando_pagamento:{t:"Aguardando pagamento",ic:"⏳",tag:"neu"}, fora:{t:"Fora da regra",ic:"⛔",tag:"erro"}};
+const tagEtapa=e=>{ const x=ETAPA[e.etapa]||{t:e.etapa,ic:"",tag:"neu"}; return `<span class="tag ${x.tag}">${x.ic} ${esc(x.t)}</span>`; };
+const MEU=normB(String(SESS.nome||"").split(" ")[0]);
+function meuPedido(e){ if(!SO_MEUS||!MEU) return true; const v=normB(e.vendedor||e.link?.criadoPor||""); return !v||v.startsWith(MEU); } // sem vendedora: aparece pra todas, pra ninguém esquecer
+const visiveis=()=>ELEG.filter(meuPedido);
+function renderKpis(){
+  const V=visiveis(), c=k=>V.filter(e=>e.etapa===k).length;
+  const resp=c("respondido"), val=V.reduce((s,e)=>s+(e.frasesValidas||0),0);
+  const k=[["gerar","Para gerar","pagos e sem link",c("gerar")],["enviar","Para enviar","link gerado, não enviado",c("enviar")],
+           ["lembrar","Para lembrar","sem resposta há 3 dias+",c("lembrar")],["respondido","Responderam",val+" frase(s) válida(s)",resp]];
+  document.getElementById("kpis").innerHTML=k.map(([id,t,sub,n])=>`<div class="kpi clicavel ${n&&id!=="respondido"?"alerta":""}" onclick="irPara('${id}')"><div class="v">${n}</div><div class="l">${t}</div><div class="sub">${sub}</div></div>`).join("");
+  const sel=document.getElementById("soMeusBox"); if(sel) sel.hidden=!MEU||!ELEG.some(e=>e.vendedor);
+}
+function irPara(etapa){
+  if(etapa==="respondido"){ FILTRO_ELEG="respondido"; ABA="elegiveis"; }
+  else ABA="afazer";
+  document.querySelectorAll("#abas .chip").forEach(x=>x.classList.toggle("on",x.dataset.aba===ABA)); render();
+  const s=document.getElementById("sec_"+etapa); if(s) s.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function renderCampanha(){
+  const ini=Date.parse("2026-10-05T00:00:00-03:00"), fim=Date.parse("2026-10-30T23:59:59-03:00"), t=Date.now();
+  const total=Math.round((fim-ini)/86400000), dia=Math.min(total,Math.max(0,Math.floor((t-ini)/86400000)+1)), falta=Math.max(0,Math.ceil((fim-t)/86400000));
+  document.getElementById("campanha").innerHTML=`<span>Dia <b style="color:#fff">${dia}</b> de ${total}</span><div class="trilho"><i style="width:${Math.round(dia/total*100)}%"></i></div>
+    <span>${falta?`faltam <b style="color:${falta<=3?"var(--warn)":"#fff"}">${falta} dia${falta>1?"s":""}</b> para o fim do envio (30/10, 23h59)`:"<b>envio encerrado</b>"}</span>`;
+}
+function linhaTarefa(e,acao){
+  const vend=e.vendedor?` · vendedora ${esc(e.vendedor)}`:"";
+  const extra=e.etapa==="lembrar"?` · sem resposta há ${Math.round((e.horasSemResposta||0)/24)} dia(s)${e.link?.lembretes?` · ${e.link.lembretes} lembrete(s) já enviado(s)`:""}`
+    :e.etapa==="enviar"?` · gerado ${hora(e.link?.criadoEm)}`:"";
+  return `<div class="tarefa"><div class="info"><div class="l1">Pedido ${esc(e.numero)} · <a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a></div>
+    <div class="l2">${e.qtdFrases} frase${e.qtdFrases>1?"s":""} · ${brl(e.valorProdutos)} em produtos · ${esc(e.ondePago||"")}${vend}${extra}</div></div>${acao}</div>`;
+}
+function htmlAFazer(){
+  const V=visiveis().filter(e=>bate(e.numero,e.cliente&&e.cliente.nome));
+  const g=V.filter(e=>e.etapa==="gerar"), en=V.filter(e=>e.etapa==="enviar"), lb=V.filter(e=>e.etapa==="lembrar");
+  const ag=V.filter(e=>e.etapa==="aguardando_resposta").length, pg=V.filter(e=>e.etapa==="aguardando_pagamento").length;
+  const sec=(id,titulo,desc,lista,botao)=>`<div class="secao" id="sec_${id}"><h4>${titulo} <span class="tag ${lista.length?"mag":"neu"}">${lista.length}</span></h4><div class="desc">${desc}</div>
+    ${lista.length?lista.map(e=>linhaTarefa(e,botao(e))).join(""):`<div class="muted" style="font-size:12.5px;padding:2px 0 4px">Nada aqui. ✅</div>`}</div>`;
+  const tudo=g.length+en.length+lb.length;
+  return htmlSync()+(tudo?"":`<div class="vazio" style="margin-bottom:10px">✅ Tudo em dia. Nenhum link para gerar, enviar ou lembrar agora.</div>`)+
+    sec("gerar","1. Gerar e enviar o link","Pedidos pagos que ainda não têm link. Um toque gera o link e já abre a mensagem para o WhatsApp.",g,e=>`<button class="btn btn-mag btn-sm" onclick="gerarEEnviar('${esc(e.numero)}')">Gerar e enviar</button>`)+
+    sec("enviar","2. Enviar ao cliente","O link foi gerado, mas ninguém registrou o envio ao cliente.",en,e=>`<button class="btn btn-mag btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',false)">Enviar</button>`)+
+    sec("lembrar","3. Lembrar o cliente","Enviado há 3 dias ou mais e o cliente ainda não respondeu (nos 3 últimos dias da campanha, a partir de 1 dia).",lb,e=>`<button class="btn btn-ghost btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',true)">Enviar lembrete</button>`)+
+    `<div class="muted" style="font-size:12.5px;border-top:1px solid var(--borda);padding-top:10px">Acompanhando: <b>${ag}</b> link(s) enviado(s) aguardando o cliente · <b>${pg}</b> pedido(s) aguardando pagamento (aparecem em "Gerar" quando pagos).</div>`;
+}
+// ---------- envio pelo WhatsApp, com registro ----------
+function abrirEnvio(tok,lembrete){
+  const l=LINKS.find(x=>x.token===tok); if(!l){ toast("Atualize a tela e tente de novo"); return; }
+  const txt=lembrete?l.lembreteTexto:l.whatsappTexto, wa=lembrete?l.lembreteLink:l.whatsappLink;
+  document.getElementById("meTitulo").textContent=(lembrete?"Lembrete para ":"Enviar para ")+(l.cliente?.fantasia||l.cliente?.nome||"o cliente");
+  document.getElementById("meCorpo").innerHTML=`<div class="muted" style="margin-bottom:8px">Pedido ${esc(l.numero)} · ${l.qtdFrases} frase${l.qtdFrases>1?"s":""}${l.cliente?.telefone?` · celular ${esc(fmtTel?fmtTel(l.cliente.telefone):l.cliente.telefone)}`:" · <b style='color:var(--warn)'>sem celular no Bling: copie a mensagem e envie pela conversa do pedido</b>"}</div>
+    <pre style="white-space:pre-wrap;font-size:13px;background:#0f0d24;border:1px solid var(--borda);border-radius:10px;padding:10px;margin:0 0 12px;color:#e6e2ff">${esc(txt)}</pre>
+    <div class="acoes" style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn btn-grn" href="${esc(wa)}" target="_blank" rel="noopener" onclick="registrarEnvio('${esc(tok)}','whatsapp',${lembrete})">📲 Abrir no WhatsApp</a>
+      <button class="btn btn-ghost" onclick="copiar(${JSON.stringify(txt).replace(/"/g,"&quot;")},'Mensagem copiada');registrarEnvio('${esc(tok)}','copia',${lembrete})">Copiar mensagem</button>
+      <button class="btn btn-ghost" onclick="copiar('${esc(l.url)}','Link copiado')">Copiar só o link</button></div>
+    <div class="muted" style="font-size:11.5px;margin-top:10px">Ao abrir o WhatsApp ou copiar a mensagem, o envio fica registrado${lembrete?" como lembrete":""} com o seu nome.</div>`;
+  abrir("mEnviar");
+}
+async function registrarEnvio(tok,meio,lembrete){
+  const {status,j}=await api(`/api/concurso/links/${encodeURIComponent(tok)}/compartilhado`,{method:"POST",body:JSON.stringify({meio,lembrete:!!lembrete})});
+  if(status!==200){ toast(j.erro||"Não consegui registrar o envio"); return; }
+  toast(lembrete?"Lembrete registrado":"Envio registrado"); setTimeout(()=>fechar("mEnviar"),600); REL=null; await carregarListas();
+}
+async function gerarEEnviar(numero,confirmado){
+  const {status,j}=await api("/api/concurso/links",{method:"POST",body:JSON.stringify({numero,ignorarAvisos:!!confirmado})});
+  if(status===409&&j.precisaConfirmar){ if(confirm("Antes de gerar, confira:\n\n• "+(j.avisos||[]).join("\n• ")+"\n\nGerar o link mesmo assim?")) return gerarEEnviar(numero,true); return; }
+  if(status>=400){ alert(j.erro||"Não consegui gerar o link."); return; }
+  await carregarListas(); abrirEnvio(j.link.token,false);
+}
+function revogarToken(tok){ const i=LINKS.findIndex(x=>x.token===tok); if(i>=0) revogar(i); }
+// ---------- TODOS OS PEDIDOS ----------
+function filtroEleg(e){ return FILTRO_ELEG==="todos"?e.etapa!=="fora":e.etapa===FILTRO_ELEG; }
+function acaoPorEtapa(e){
+  if(e.etapa==="gerar") return `<button class="btn btn-mag btn-sm" onclick="gerarEEnviar('${esc(e.numero)}')">Gerar e enviar</button>`;
+  if(e.etapa==="enviar") return `<button class="btn btn-mag btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',false)">Enviar</button>`;
+  if(e.etapa==="lembrar"||e.etapa==="aguardando_resposta") return `<button class="btn btn-ghost btn-sm" onclick="abrirEnvio('${esc(e.link.token)}',true)">${e.etapa==="lembrar"?"Enviar lembrete":"Reenviar"}</button>`;
+  if(e.etapa==="respondido") return `<button class="btn btn-ghost btn-sm" onclick="abrirCliente('${esc(e.chaveCliente)}')">Ver frases</button>`;
+  if(e.etapa==="aguardando_pagamento") return `<button class="btn btn-ghost btn-sm" title="Ainda não consta como pago" onclick="gerarEEnviar('${esc(e.numero)}')">Gerar mesmo assim</button>`;
+  return `<span class="muted" style="font-size:12px">${esc(e.motivoFora)}</span>`;
 }
 function htmlElegiveis(){
-  const cont=k=>{ const f=FILTRO_ELEG; FILTRO_ELEG=k; const n=ELEG.filter(filtroEleg).length; FILTRO_ELEG=f; return n; };
-  const chips=[["pagos","Pagos, sem link"],["aguardando","Aguardando pagamento"],["comlink","Com link"],["todos","Todos elegíveis"],["fora","Fora da regra"]]
-    .map(([k,t])=>`<span class="chip ${FILTRO_ELEG===k?"on":""}" onclick="FILTRO_ELEG='${k}';render()">${t} (${cont(k)})</span>`).join(" ");
-  const lista=BUSCA?ELEG.filter(e=>bate(e.numero,e.cliente&&e.cliente.nome)):ELEG.filter(filtroEleg);
-  const linhas=lista.map(e=>{
-    const pag=e.pago?`<span class="tag ok">✅ pago · ${esc(e.ondePago)}</span>`:(e.situacaoId===12?`<span class="tag erro">cancelado</span>`:`<span class="tag warn">⏳ ${esc(e.ondePago)}</span>`);
-    const lk=e.link?(e.link.status==="enviado"?`<span class="tag ok">frases enviadas (${e.frasesEnviadas})</span>`:`<span class="tag neu">link aguardando o cliente</span>`):"";
-    const acao=!e.elegivel?`<span class="muted" style="font-size:12px">${esc(e.motivoFora)}</span>`
-      :e.link?`<button class="btn btn-ghost btn-sm" onclick="verLink('${esc(e.link.token)}')">Ver link</button>`
-      :e.pago?`<button class="btn btn-mag btn-sm" onclick="gerarDireto('${esc(e.numero)}')">Gerar link</button>`
-      :`<button class="btn btn-ghost btn-sm" onclick="gerarDireto('${esc(e.numero)}')" title="Ainda não consta como pago">Gerar mesmo assim</button>`;
-    return `<tr><td><b>${esc(e.numero)}</b><div class="muted" style="font-size:11px">${esc(String(e.data).split("-").reverse().join("/"))}</div></td>
-      <td><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a></td>
-      <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':brl(e.valorProdutos)}</td>
-      <td><b>${e.qtdFrases==null?"—":e.qtdFrases}</b></td><td>${pag}</td><td>${lk}</td><td>${acao}</td></tr>`;
-  }).join("");
-  const avisoBusca=BUSCA?`<div class="muted" style="margin-bottom:8px">Buscando "<b>${esc(BUSCA)}</b>" em todos os pedidos (pagos, aguardando, com link e fora da regra).</div>`:"";
+  const V=visiveis();
+  const opc=[["todos","Todos"],["aguardando_pagamento","Aguardando pagamento"],["gerar","Para gerar"],["enviar","Para enviar"],["aguardando_resposta","Aguardando o cliente"],["lembrar","Para lembrar"],["respondido","Responderam"],["fora","Fora da regra"]];
+  const chips=opc.map(([k,t])=>`<span class="chip ${FILTRO_ELEG===k?"on":""}" onclick="FILTRO_ELEG='${k}';render()">${t} (${V.filter(e=>k==="todos"?e.etapa!=="fora":e.etapa===k).length})</span>`).join(" ");
+  const lista=BUSCA?ELEG.filter(e=>bate(e.numero,e.cliente&&e.cliente.nome)):V.filter(filtroEleg);
+  const avisoBusca=BUSCA?`<div class="muted" style="margin-bottom:8px">Buscando "<b>${esc(BUSCA)}</b>" em todos os pedidos.</div>`:"";
   if(BUSCA&&!lista.length) return htmlSync()+avisoBusca+`<div class="vazio">Nenhum pedido com "${esc(BUSCA)}".<br><span class="muted">Se for um pedido novo, toque em 🔄 Sincronizar agora. Se ainda assim não aparecer, use <a href="#" onclick="abrirManual();return false" style="color:#9fd8ff">gerar link pelo número</a>.</span></div>`;
+  const linhas=lista.map(e=>`<tr><td><b>${esc(e.numero)}</b><div class="muted" style="font-size:11px">${esc(String(e.data).split("-").reverse().join("/"))}</div></td>
+      <td><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a>${e.vendedor?`<div class="muted" style="font-size:11px">${esc(e.vendedor)}</div>`:""}</td>
+      <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':brl(e.valorProdutos)}</td><td><b>${e.qtdFrases==null?"—":e.qtdFrases}</b></td>
+      <td>${tagEtapa(e)}<div class="muted" style="font-size:11px;margin-top:3px">${esc(e.pago?"pago · "+e.ondePago:e.ondePago||"")}</div></td><td>${acaoPorEtapa(e)}</td></tr>`).join("");
   return htmlSync()+avisoBusca+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;${BUSCA?"opacity:.45;pointer-events:none":""}">${chips}</div>
-    <div class="muted" style="margin-bottom:8px;font-size:12px">Atacado, 1 frase a cada ${brl(FAIXA)} em produtos (sem frete). "Pago" = Atendido no Bling, recebido em caixa ou entregue com recebimento registrado. A prazo só conta depois de quitado.</div>
-    ${lista.length?`<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Em produtos</th><th>Frases</th><th>Pagamento</th><th>Situação do link</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
-      :`<div class="vazio">${SYNC&&!SYNC.sincronizadoEm?"Ainda não sincronizou. Toque em 🔄 Sincronizar agora.":"Nenhum pedido neste filtro."}</div>`}`;
+    ${lista.length?`<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Em produtos</th><th>Frases</th><th>Etapa</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
+      :`<div class="vazio">${SYNC&&!SYNC.sincronizadoEm?"Ainda não sincronizou. Toque em 🔄 Sincronizar agora.":"Nenhum pedido nesta etapa."}</div>`}`;
+}
+// ---------- RELATÓRIOS ----------
+async function carregarRelatorio(){ const {status,j}=await api("/api/concurso/relatorio"); if(status===200){ REL=j; if(ABA==="relatorios") document.getElementById("corpoAba").innerHTML=htmlRelatorios(); } }
+async function baixarCsv(tipo){
+  const r=await fetch(API+`/api/concurso/relatorio.csv?tipo=${tipo}`,{headers:{"X-Auth-Token":token()}});
+  if(!r.ok){ toast("Não consegui baixar"); return; }
+  const b=await r.blob(), a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download=`concurso_${tipo}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+const hrs=h=>h==null?"—":h<1?Math.round(h*60)+" min":h<48?h.toFixed(h<10?1:0).replace(".",",")+" h":Math.round(h/24)+" dias";
+const pctTxt=p=>p==null?"—":p+"%";
+function htmlRelatorios(){
+  if(!REL) return `<div class="vazio">Carregando o relatório…</div>`;
+  const F=REL.funil, R=REL.frases, base=Math.max(1,F.elegiveisPagos+F.aguardandoPagamento);
+  const ln=(t,n,p,cor)=>`<div class="ln"><div>${t}</div><div class="br"><i style="width:${Math.min(100,Math.round(n/base*100))}%;${cor?"background:"+cor:""}"></i></div><div><b>${n}</b> <span class="muted">${p||""}</span></div></div>`;
+  const dias=REL.porDia, maxD=Math.max(1,...dias.map(d=>Math.max(d.enviados,d.respostas,d.gerados)));
+  const barras=dias.map(d=>`<div class="d" title="${d.dia.split("-").reverse().slice(0,2).join("/")}: ${d.gerados} gerado(s), ${d.enviados} enviado(s), ${d.respostas} resposta(s)"><i style="height:${d.enviados/maxD*100}%;background:var(--mag)"></i><i style="height:${d.respostas/maxD*100}%;background:#6be3a8"></i></div>`).join("");
+  const eixo=dias.map((d,i)=>`<span>${(i===0||i===dias.length-1||(i%5===0))?d.dia.slice(8):""}</span>`).join("");
+  const vend=REL.porVendedora.map(v=>`<tr><td><b>${esc(v.vendedora)}</b></td><td>${v.elegiveisPagos}</td><td>${v.aguardandoPagamento}</td><td>${v.gerados}</td><td>${v.enviados}</td><td>${v.respondidos}</td><td>${pctTxt(v.taxaResposta)}</td><td>${v.paraFazer?`<span class="tag warn">${v.paraFazer}</span>`:"—"}</td></tr>`).join("");
+  const cli=REL.porCliente.slice(0,15).map(c=>`<tr style="cursor:pointer" onclick="abrirCliente('${esc(c.chave)}')"><td><b style="color:#9fd8ff">${esc(c.nome)}</b></td><td>${c.totalPedidos}</td><td>${c.frasesLiberadas}</td><td>${c.linksEnviados}</td><td>${c.frasesEnviadas}</td><td>${c.frasesValidas}</td></tr>`).join("");
+  return `<div class="secao"><h4>Funil da campanha</h4><div class="desc">Da campanha inteira (todas as vendedoras), do pedido pago até a frase recebida. A porcentagem é em relação à etapa anterior.</div>
+    <div class="funil">${ln("Pedidos pagos elegíveis",F.elegiveisPagos,"")}${ln("Links gerados",F.linksGerados,"")}${ln("Enviados ao cliente",F.linksEnviados,pctTxt(F.taxaEnvio))}${ln("Clientes que responderam",F.respondidos,pctTxt(F.taxaResposta),"#6be3a8")}${ln("Aguardando pagamento",F.aguardandoPagamento,"","#514c96")}</div></div>
+  <div class="mini">
+    <div><b>${R.recebidas}</b><span>frases recebidas (${R.validas} válidas, ${R.desclassificadas} desclassificadas)</span></div>
+    <div><b>${pctTxt(R.aproveitamento)}</b><span>aproveitamento: frases enviadas ÷ frases liberadas de quem respondeu</span></div>
+    <div><b>${hrs(REL.tempos.horasGeradoAteEnvio)}</b><span>tempo típico entre gerar e enviar o link</span></div>
+    <div><b>${hrs(REL.tempos.horasEnvioAteResposta)}</b><span>tempo típico entre enviar e o cliente responder</span></div>
+    <div><b>${REL.lembretesEnviados}</b><span>lembretes enviados</span></div>
+    <div><b>${R.porLink} / ${R.porWhatsapp}</b><span>frases válidas pelo link / pelo WhatsApp</span></div>
+  </div>
+  <div class="secao"><h4>Por dia</h4><div class="desc"><span style="color:var(--mag)">■</span> links enviados ao cliente · <span style="color:#6be3a8">■</span> respostas recebidas. Passe o dedo ou o mouse para ver os números.</div>
+    <div class="dias">${barras}</div><div class="eixoD">${eixo}</div></div>
+  <div class="secao"><h4>Por vendedora</h4><div class="desc">Dona do pedido (quem fez a venda). Pedido sem vendedora conta para quem gerou o link.</div>
+    ${vend?`<div class="rolagem"><table class="tbl"><thead><tr><th>Vendedora</th><th>Pagos</th><th>Aguard. pagamento</th><th>Gerados</th><th>Enviados</th><th>Responderam</th><th>Resposta</th><th>Para fazer</th></tr></thead><tbody>${vend}</tbody></table></div>`:`<div class="muted">Sem dados ainda.</div>`}</div>
+  <div class="secao"><h4>Por cliente <span class="muted" style="font-weight:400;font-size:12px">(os 15 com mais frases liberadas; toque para ver o histórico)</span></h4>
+    ${cli?`<div class="rolagem"><table class="tbl"><thead><tr><th>Cliente</th><th>Pedidos</th><th>Frases liberadas</th><th>Links</th><th>Frases enviadas</th><th>Válidas</th></tr></thead><tbody>${cli}</tbody></table></div>`:`<div class="muted">Sem dados ainda.</div>`}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--borda);padding-top:12px">
+    <button class="btn btn-ghost btn-sm" onclick="baixarCsv('clientes')">⬇ CSV por cliente</button>
+    <button class="btn btn-ghost btn-sm" onclick="baixarCsv('pedidos')">⬇ CSV de todos os pedidos</button>
+    <button class="btn btn-ghost btn-sm" onclick="baixarCsv('vendedoras')">⬇ CSV por vendedora</button>
+    <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="REL=null;render()">↻ Atualizar relatório</button></div>`;
 }
 async function sincronizarAgora(){
   const {j}=await api("/api/concurso/sincronizar",{method:"POST"}); SYNC=j.sync||SYNC; render(); acompanharSync();
@@ -379,12 +523,7 @@ function acompanharSync(){
     try{ const {j}=await api("/api/concurso/sincronizar"); SYNC=j.sync; if(!SYNC.rodando){ clearInterval(_pollSync); await carregarListas(); toast("Sincronização concluída"); } else if(ABA==="elegiveis") render(); }catch(e){}
   },3000);
 }
-async function gerarDireto(numero,confirmado){
-  const {status,j}=await api("/api/concurso/links",{method:"POST",body:JSON.stringify({numero,ignorarAvisos:!!confirmado}) /* sem canal: o servidor detecta (pedido do site = app) */});
-  if(status===409&&j.precisaConfirmar){ if(confirm("Antes de gerar, confira:\n\n• "+(j.avisos||[]).join("\n• ")+"\n\nGerar o link mesmo assim?")) return gerarDireto(numero,true); return; }
-  if(status>=400){ alert(j.erro||"Não consegui gerar o link."); return; }
-  mostrarResultado(j.link); window.scrollTo({top:0,behavior:"smooth"}); toast(j.jaExistia?"Esse pedido já tinha link":"Link gerado"); await carregarListas();
-}
+async function gerarDireto(numero,confirmado){ return gerarEEnviar(numero,confirmado); }
 function verLink(tok){ const l=LINKS.find(x=>x.token===tok); if(l){ mostrarResultado(l); window.scrollTo({top:0,behavior:"smooth"}); } }
 // ---------- CLIENTES (histórico) ----------
 function htmlClientes(){
@@ -510,6 +649,9 @@ document.getElementById("gNumero").addEventListener("keydown",e=>{ if(e.key==="E
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySelectorAll(".fundo.aberto").forEach(x=>x.classList.remove("aberto")); });
 document.getElementById("busca").addEventListener("input",ev=>{ BUSCA=ev.target.value; render(); });
 function abrirManual(){ const d=document.getElementById("manual"); d.open=true; d.scrollIntoView({behavior:"smooth"}); setTimeout(()=>document.getElementById("gNumero").focus(),300); }
+document.getElementById("soMeus").checked=SO_MEUS;
+document.getElementById("soMeus").addEventListener("change",ev=>{ SO_MEUS=ev.target.checked; try{ localStorage.setItem("concurso_so_meus",SO_MEUS?"1":"0"); }catch(e){} render(); });
+renderCampanha();
 recarregar();
 </script>
 </body>

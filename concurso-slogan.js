@@ -49,7 +49,11 @@ const ORIGENS_LOJA = new Set(["totem", "caixa", "caixa_atacado", "pdv"]);
 export function registrarConcursoSlogan(app, deps) {
   const { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
           lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir,
-          pagamentoDoPedido, mapaEntregasLocais, lerCaixaSessoes } = deps;
+          pagamentoDoPedido, mapaEntregasLocais, lerCaixaSessoes, requireAcesso } = deps;
+  // OPERAÇÃO (vendedoras com a permissão "acesso_concurso"): ver, gerar, enviar, lembrar, relatórios.
+  // GESTÃO (só admin): revogar link, desclassificar/reabilitar frase, conferir no Bling, planilhas da ata.
+  const reqOper = typeof requireAcesso === "function" ? requireAcesso("acesso_concurso") : requireAdmin;
+  const LEMBRETE_HORAS = Number(process.env.CONCURSO_LEMBRETE_HORAS || 72); // sem resposta há 3 dias → lembrar
   const ARQ = `${DATA_DIR}/concurso_slogan.json`;
 
   // ---------- armazenamento ----------
@@ -107,12 +111,29 @@ export function registrarConcursoSlogan(app, deps) {
       `Regulamento completo no link da bio do @b13_bebidas. Só para maiores de 18 anos.`,
     ].join("\n");
   };
+  const mensagemLembrete = (L) => {
+    const tit = (x) => x.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    const primeiro = L.cliente?.pj ? (L.cliente.fantasia || "") : tit(String(L.cliente?.nome || "").split(" ")[0] || "");
+    const n = L.qtdFrases; const dias = Math.max(0, Math.ceil((CONCURSO.fimEnvio - Date.now()) / 86400000));
+    return [
+      `Olá${primeiro ? ", " + primeiro : ""}! Aqui é a B13 Bebidas 💙`,
+      ``,
+      `Passando para lembrar: o seu pedido nº ${L.numero} dá direito a ${n} frase${n > 1 ? "s" : ""} no Concurso do Slogan. A frase escolhida vira o slogan da B13 e vale R$ 2.000,00 em compras.`,
+      ``,
+      dias <= 1 ? `É o último dia! O envio vai até hoje, 30/10, às 23h59:` : `Faltam ${dias} dias. O envio vai até 30/10, às 23h59:`,
+      urlDoLink(L.token),
+    ].join("\n");
+  };
+  const contatosDe = (L) => Array.isArray(L.contatos) ? L.contatos : [];
   const linkPublicoDTO = (L) => ({
     token: L.token, url: urlDoLink(L.token), numero: L.numero, pedidoId: L.pedidoId, dataPedido: L.dataPedido,
     canal: L.canal, tipo: L.tipo, faixa: L.faixa, valorProdutos: L.valorProdutos, qtdFrases: L.qtdFrases,
     cliente: L.cliente, status: L.status, criadoEm: L.criadoEm, criadoPor: L.criadoPor,
     enviadoEm: L.enviadoEm || null, qtdEnviada: L.qtdEnviada ?? null, viaWhatsapp: !!L.viaWhatsapp, revogadoEm: L.revogadoEm || null, motivoRevogacao: L.motivoRevogacao || "",
     avisos: L.avisos || [], conferencia: L.conferencia || null,
+    compartilhadoEm: L.compartilhadoEm || null, ultimoContatoEm: contatosDe(L).length ? contatosDe(L)[contatosDe(L).length - 1].em : null,
+    lembretes: contatosDe(L).filter(c => c.lembrete).length, contatos: contatosDe(L),
+    lembreteTexto: mensagemLembrete(L), lembreteLink: telWa(L.cliente?.telefone) ? `https://wa.me/${telWa(L.cliente.telefone)}?text=${encodeURIComponent(mensagemLembrete(L))}` : `https://wa.me/?text=${encodeURIComponent(mensagemLembrete(L))}`,
     whatsappTexto: mensagemWhatsApp(L), whatsappLink: telWa(L.cliente?.telefone) ? `https://wa.me/${telWa(L.cliente.telefone)}?text=${encodeURIComponent(mensagemWhatsApp(L))}` : `https://wa.me/?text=${encodeURIComponent(mensagemWhatsApp(L))}`,
   });
 
@@ -277,10 +298,22 @@ export function registrarConcursoSlogan(app, deps) {
       const pg = statusPagamento(e.pedidoId, e.numero, e.situacaoId, dCx, entregas);
       const L = linksPorPedido[e.pedidoId];
       const fr = frasesPorPedido[e.pedidoId] || [];
+      const contatos = L ? contatosDe(L) : [];
+      const ultimo = contatos.length ? Date.parse(contatos[contatos.length - 1].em) : null;
+      const horasSem = ultimo ? (Date.now() - ultimo) / 3600e3 : null;
+      const reta = (CONCURSO.fimEnvio - Date.now()) / 86400000 <= 3; // reta final: lembra com 1 dia
+      let etapa;
+      if (fora.length) etapa = "fora";
+      else if (L && L.status === "enviado") etapa = "respondido";
+      else if (L && !L.compartilhadoEm) etapa = "enviar";
+      else if (L) etapa = (horasSem != null && horasSem >= (reta ? 24 : LEMBRETE_HORAS)) ? "lembrar" : "aguardando_resposta";
+      else etapa = pg.pago ? "gerar" : "aguardando_pagamento";
       return {
         ...e, chaveCliente: chaveCliente(e.cliente), situacao: nomeSituacao(e.situacaoId), origem: orig || "bling",
+        vendedor: (props[e.pedidoId] && props[e.pedidoId].vendedorNome) || "", etapa, horasSemResposta: horasSem != null ? Math.round(horasSem) : null,
         qtdFrases: qtd, elegivel: !fora.length, motivoFora: fora.join("; "), pago: pg.pago, ondePago: pg.onde,
-        link: L ? { token: L.token, status: L.status, qtdFrases: L.qtdFrases, criadoEm: L.criadoEm, enviadoEm: L.enviadoEm || null, url: urlDoLink(L.token) } : null,
+        link: L ? { token: L.token, status: L.status, qtdFrases: L.qtdFrases, criadoEm: L.criadoEm, criadoPor: L.criadoPor || "", enviadoEm: L.enviadoEm || null, url: urlDoLink(L.token),
+                    compartilhadoEm: L.compartilhadoEm || null, compartilhadoPor: L.compartilhadoPor || "", ultimoContatoEm: ultimo ? new Date(ultimo).toISOString() : null, lembretes: contatos.filter(c => c.lembrete).length } : null,
         frasesEnviadas: fr.length, frasesValidas: fr.filter(x => x.status === "valida").length,
       };
     }).sort((a, b) => String(b.data).localeCompare(String(a.data)) || Number(b.numero) - Number(a.numero));
@@ -387,7 +420,7 @@ export function registrarConcursoSlogan(app, deps) {
 
   let _conf = { rodando: false, feitos: 0, total: 0, iniciadoEm: null, terminadoEm: null, erro: "" };
 
-  app.get("/api/concurso/resumo", requireAdmin, (req, res) => {
+  app.get("/api/concurso/resumo", reqOper, (req, res) => {
     const d = ler();
     const links = Object.values(d.links);
     const validas = d.frases.filter(x => x.status === "valida");
@@ -402,13 +435,13 @@ export function registrarConcursoSlogan(app, deps) {
     });
   });
 
-  app.get("/api/concurso/links", requireAdmin, (req, res) => {
+  app.get("/api/concurso/links", reqOper, (req, res) => {
     const d = ler();
     res.json({ data: Object.values(d.links).sort((a, b) => String(b.criadoEm).localeCompare(String(a.criadoEm))).map(linkPublicoDTO) });
   });
 
   // pré-visualiza (não grava): mostra valor, quantidade de frases, bloqueios e avisos
-  app.get("/api/concurso/pedido/:numero", requireAdmin, async (req, res) => {
+  app.get("/api/concurso/pedido/:numero", reqOper, async (req, res) => {
     try {
       const p = await prepararPedido({ numero: req.params.numero, tipo: req.query.tipo, canal: req.query.canal });
       const existente = Object.values(ler().links).find(l => l.pedidoId === p.dados.pedidoId && l.status !== "revogado");
@@ -416,7 +449,7 @@ export function registrarConcursoSlogan(app, deps) {
     } catch (e) { res.status(e.status || 500).json({ erro: e.message }); }
   });
 
-  app.post("/api/concurso/links", requireAdmin, async (req, res) => {
+  app.post("/api/concurso/links", reqOper, async (req, res) => {
     try {
       const { numero, tipo, canal, ignorarAvisos } = req.body || {};
       const p = await prepararPedido({ numero, tipo, canal });
@@ -444,7 +477,7 @@ export function registrarConcursoSlogan(app, deps) {
   });
 
   // pedidos do registro local que provavelmente dão direito e ainda não têm link
-  app.get("/api/concurso/sugestoes", requireAdmin, (req, res) => {
+  app.get("/api/concurso/sugestoes", reqOper, (req, res) => {
     const d = ler();
     const comLink = new Set(Object.values(d.links).filter(l => l.status !== "revogado").map(l => String(l.pedidoId)));
     const ini = Date.parse(CONCURSO.dataPedidoMin + "T00:00:00-03:00"), fim = Date.parse(CONCURSO.dataPedidoMax + "T23:59:59-03:00");
@@ -466,19 +499,18 @@ export function registrarConcursoSlogan(app, deps) {
 
 
   // ---------- elegíveis, sincronização e clientes ----------
-  app.get("/api/concurso/elegiveis", requireAdmin, (req, res) => {
+  app.get("/api/concurso/elegiveis", reqOper, (req, res) => {
     try { res.json({ data: listaElegiveis(), sync: statusSync(), faixa: CONCURSO.faixas.atacado }); }
     catch (e) { res.status(500).json({ erro: e.message }); }
   });
-  app.get("/api/concurso/sincronizar", requireAdmin, (req, res) => res.json({ sync: statusSync() }));
-  app.post("/api/concurso/sincronizar", requireAdmin, (req, res) => {
+  app.get("/api/concurso/sincronizar", reqOper, (req, res) => res.json({ sync: statusSync() }));
+  app.post("/api/concurso/sincronizar", reqOper, (req, res) => {
     if (_sync.rodando) return res.json({ ok: true, jaRodando: true, sync: statusSync() });
     sincronizarElegiveis("manual (" + (req.sessao?.nome || "admin") + ")").catch(() => {});
     res.json({ ok: true, sync: statusSync() });
   });
   // histórico por CLIENTE: pedidos que deram direito, links e frases enviadas
-  app.get("/api/concurso/clientes", requireAdmin, (req, res) => {
-    try {
+  function calcClientes() {
       const d = ler(); const lista = listaElegiveis().filter(x => x.elegivel);
       const porChave = {};
       const pegar = (cli) => { const k = chaveCliente(cli); return (porChave[k] ||= { chave: k, nome: cli?.nome || "", documento: cli?.documento || "", pj: !!cli?.pj, pedidos: {}, frases: [] }); };
@@ -495,10 +527,101 @@ export function registrarConcursoSlogan(app, deps) {
           linksAbertos: peds.filter(p => p.link && p.link.status === "aberto").length,
           frases: c.frases.sort((a, b) => String(b.enviadoEm).localeCompare(String(a.enviadoEm))) };
       }).sort((a, b) => b.frasesLiberadas - a.frasesLiberadas || a.nome.localeCompare(b.nome));
-      res.json({ data: out });
+    return out;
+  }
+  app.get("/api/concurso/clientes", reqOper, (req, res) => {
+    try { res.json({ data: calcClientes() }); } catch (e) { res.status(500).json({ erro: e.message }); }
+  });
+  // a vendedora ABRIU o WhatsApp ou COPIOU a mensagem: registra o envio ao cliente (e se foi lembrete)
+  app.post("/api/concurso/links/:token/compartilhado", reqOper, (req, res) => {
+    const d = ler(); const L = d.links[req.params.token];
+    if (!L) return res.status(404).json({ erro: "Link não encontrado." });
+    if (L.status === "revogado") return res.status(409).json({ erro: "Link revogado." });
+    const meio = req.body?.meio === "copia" ? "copia" : "whatsapp";
+    const c = { em: agoraISO(), por: req.sessao?.nome || "", meio, lembrete: req.body?.lembrete === true };
+    L.contatos = [...contatosDe(L), c].slice(-30);
+    if (!L.compartilhadoEm) { L.compartilhadoEm = c.em; L.compartilhadoPor = c.por; }
+    gravar(d); res.json({ ok: true, link: linkPublicoDTO(L) });
+  });
+  // ---------- RELATÓRIO ----------
+  const mediana = (a) => { const v = a.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+  const diaBRde = (iso) => iso ? new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10) : null;
+  function calcRelatorio() {
+    const d = ler(); const lista = listaElegiveis(); const eleg = lista.filter(x => x.elegivel);
+    const links = Object.values(d.links).filter(l => l.status !== "revogado");
+    const enviados = links.filter(l => l.compartilhadoEm || l.status === "enviado");
+    const respondidos = links.filter(l => l.status === "enviado");
+    const validas = d.frases.filter(f => f.status === "valida");
+    const pct = (a, b) => b ? Math.round(a / b * 100) : null;
+    const etapas = {}; eleg.forEach(x => { etapas[x.etapa] = (etapas[x.etapa] || 0) + 1; });
+    const ini = Date.parse(CONCURSO.dataPedidoMin + "T00:00:00-03:00"), fimEnv = CONCURSO.fimEnvio;
+    const totalDias = Math.round((Date.parse(CONCURSO.dataPedidoMax + "T00:00:00-03:00") - ini) / 86400000) + 1;
+    const diaAtual = Math.min(totalDias, Math.max(0, Math.floor((Date.now() - ini) / 86400000) + 1));
+    // por dia (data de Brasília) do início até hoje
+    const porDia = {}; const hoje = hojeBR();
+    for (let t = ini; ; t += 86400000) { const k = new Date(t).toISOString().slice(0, 10); if (k > hoje || k > CONCURSO.dataPedidoMax) break; porDia[k] = { dia: k, gerados: 0, enviados: 0, respostas: 0, frases: 0 }; }
+    links.forEach(l => { const a = diaBRde(l.criadoEm), b = diaBRde(l.compartilhadoEm), c = l.status === "enviado" ? diaBRde(l.enviadoEm) : null; if (porDia[a]) porDia[a].gerados++; if (porDia[b]) porDia[b].enviados++; if (porDia[c]) porDia[c].respostas++; });
+    d.frases.forEach(f => { const k = diaBRde(f.enviadoEm); if (porDia[k]) porDia[k].frases++; });
+    // por vendedora: a dona do pedido (venda) ou, sem ela, quem gerou o link
+    const porVend = {};
+    eleg.forEach(x => {
+      const nome = x.vendedor || x.link?.criadoPor || "Sem vendedora";
+      const v = (porVend[nome] ||= { vendedora: nome, elegiveisPagos: 0, aguardandoPagamento: 0, gerados: 0, enviados: 0, respondidos: 0, paraFazer: 0, frasesValidas: 0 });
+      if (x.pago) v.elegiveisPagos++; else v.aguardandoPagamento++;
+      if (x.link) v.gerados++;
+      if (x.link && (x.link.compartilhadoEm || x.link.status === "enviado")) v.enviados++;
+      if (x.etapa === "respondido") v.respondidos++;
+      if (["gerar", "enviar", "lembrar"].includes(x.etapa)) v.paraFazer++;
+      v.frasesValidas += x.frasesValidas || 0;
+    });
+    Object.values(porVend).forEach(v => { v.taxaResposta = pct(v.respondidos, v.enviados); });
+    const clientes = calcClientes().map(c => ({ ...c, frases: undefined, pedidos: undefined,
+      linksEnviados: c.pedidos.filter(p => p.link).length, ultimaAtividade: c.frases[0]?.enviadoEm || null }));
+    return {
+      campanha: { inicioPedidos: CONCURSO.dataPedidoMin, fimEnvio: new Date(fimEnv).toISOString(), diaAtual, totalDias, diasRestantes: Math.max(0, Math.ceil((fimEnv - Date.now()) / 86400000)) },
+      funil: { elegiveis: eleg.length, elegiveisPagos: eleg.filter(x => x.pago).length, aguardandoPagamento: eleg.filter(x => !x.pago).length,
+               linksGerados: links.length, linksEnviados: enviados.length, respondidos: respondidos.length,
+               taxaEnvio: pct(enviados.length, links.length), taxaResposta: pct(respondidos.length, enviados.length) },
+      frases: { liberadas: links.reduce((s2, l) => s2 + (l.qtdFrases || 0), 0), liberadasRespondidas: respondidos.reduce((s2, l) => s2 + (l.qtdFrases || 0), 0),
+                recebidas: d.frases.length, validas: validas.length, desclassificadas: d.frases.length - validas.length,
+                porLink: validas.filter(x => x.canal === "link").length, porWhatsapp: validas.filter(x => x.canal === "whatsapp").length,
+                aproveitamento: pct(d.frases.length, respondidos.reduce((s2, l) => s2 + (l.qtdFrases || 0), 0)) },
+      paraFazer: { gerar: etapas.gerar || 0, enviar: etapas.enviar || 0, lembrar: etapas.lembrar || 0 },
+      tempos: { horasGeradoAteEnvio: mediana(links.filter(l => l.compartilhadoEm).map(l => (Date.parse(l.compartilhadoEm) - Date.parse(l.criadoEm)) / 3600e3)),
+                horasEnvioAteResposta: mediana(respondidos.filter(l => l.compartilhadoEm && l.enviadoEm).map(l => (Date.parse(l.enviadoEm) - Date.parse(l.compartilhadoEm)) / 3600e3)) },
+      lembretesEnviados: links.reduce((s2, l) => s2 + contatosDe(l).filter(c => c.lembrete).length, 0),
+      porDia: Object.values(porDia), porVendedora: Object.values(porVend).filter(v => v.elegiveisPagos || v.aguardandoPagamento || v.gerados).sort((a2, b2) => b2.elegiveisPagos - a2.elegiveisPagos), porCliente: clientes,
+      sync: statusSync(),
+    };
+  }
+  app.get("/api/concurso/relatorio", reqOper, (req, res) => { try { res.json(calcRelatorio()); } catch (e) { res.status(500).json({ erro: e.message }); } });
+  // CSV (abre no Excel: ponto e vírgula + BOM): ?tipo=clientes | pedidos | vendedoras
+  app.get("/api/concurso/relatorio.csv", reqOper, (req, res) => {
+    try {
+      const tipo = ["pedidos", "vendedoras"].includes(req.query.tipo) ? req.query.tipo : "clientes";
+      const cel = (v) => { const t = v == null ? "" : String(v); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+      const num = (v) => v == null ? "" : String(v).replace(".", ",");
+      const dt = (iso) => iso ? emBR(iso) : "";
+      const ROT = { gerar: "Pronto para gerar", enviar: "Link gerado, falta enviar", aguardando_resposta: "Enviado, aguardando o cliente", lembrar: "Lembrar o cliente", respondido: "Respondeu", aguardando_pagamento: "Aguardando pagamento", fora: "Fora da regra" };
+      let linhas;
+      if (tipo === "pedidos") {
+        linhas = [["Pedido", "Data", "Cliente", "Documento", "Vendedora", "Valor em produtos", "Frases", "Pagamento", "Etapa", "Link gerado em", "Gerado por", "Enviado ao cliente em", "Enviado por", "Lembretes", "Respondeu em", "Frases enviadas", "Frases válidas", "Motivo (fora da regra)"]]
+          .concat(listaElegiveis().map(x => [x.numero, x.data, x.cliente?.nome, mascaraDoc(x.cliente?.documento), x.vendedor, num(x.valorProdutos), x.qtdFrases, x.pago ? "pago (" + x.ondePago + ")" : x.ondePago, ROT[x.etapa] || x.etapa,
+            dt(x.link?.criadoEm), x.link?.criadoPor || "", dt(x.link?.compartilhadoEm), x.link?.compartilhadoPor || "", x.link?.lembretes || 0, dt(x.link?.enviadoEm), x.frasesEnviadas, x.frasesValidas, x.motivoFora]));
+      } else if (tipo === "vendedoras") {
+        linhas = [["Vendedora", "Pedidos pagos elegíveis", "Aguardando pagamento", "Links gerados", "Enviados ao cliente", "Responderam", "Taxa de resposta (%)", "Para fazer agora", "Frases válidas"]]
+          .concat(calcRelatorio().porVendedora.map(v => [v.vendedora, v.elegiveisPagos, v.aguardandoPagamento, v.gerados, v.enviados, v.respondidos, v.taxaResposta ?? "", v.paraFazer, v.frasesValidas]));
+      } else {
+        linhas = [["Cliente", "Documento", "Pedidos elegíveis", "Frases liberadas", "Links gerados", "Frases enviadas", "Frases válidas", "Links aguardando o cliente", "Última frase em"]]
+          .concat(calcClientes().map(c => [c.nome, c.documento, c.totalPedidos, c.frasesLiberadas, c.pedidos.filter(p => p.link).length, c.frasesEnviadas, c.frasesValidas, c.linksAbertos, dt(c.frases[0]?.enviadoEm)]));
+      }
+      const csv = "\uFEFF" + linhas.map(l => l.map(cel).join(";")).join("\r\n");
+      res.set("Content-Type", "text/csv; charset=utf-8");
+      res.set("Content-Disposition", `attachment; filename="concurso_${tipo}_${hojeBR()}.csv"`);
+      res.send(csv);
     } catch (e) { res.status(500).json({ erro: e.message }); }
   });
-  app.get("/api/concurso/frases", requireAdmin, (req, res) => {
+  app.get("/api/concurso/frases", reqOper, (req, res) => {
     const d = ler();
     const primeiraPorNorm = {};
     [...d.frases].sort((a, b) => String(a.enviadoEm).localeCompare(String(b.enviadoEm)) || a.seq - b.seq).forEach(x => { const n = normFrase(x.frase); if (!(n in primeiraPorNorm)) primeiraPorNorm[n] = x.seq; });
@@ -507,7 +630,7 @@ export function registrarConcursoSlogan(app, deps) {
   });
 
   // 4.4 c: frase que chegou pelo WhatsApp oficial (respondendo à mensagem do pedido)
-  app.post("/api/concurso/frases/whatsapp", requireAdmin, async (req, res) => {
+  app.post("/api/concurso/frases/whatsapp", reqOper, async (req, res) => {
     try {
       const b = req.body || {};
       const recebidaEm = Date.parse(b.recebidaEm || "");
