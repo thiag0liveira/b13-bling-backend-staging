@@ -125,12 +125,22 @@ export function registrarConcursoSlogan(app, deps) {
     ].join("\n");
   };
   const contatosDe = (L) => Array.isArray(L.contatos) ? L.contatos : [];
+  // PROTOCOLO: um número por ENVIO (vale para todas as frases daquele envio), sequencial na campanha, para auditoria.
+  // Formato SLG-AAMMDD-NNNN (data de Brasília + sequência). Gerado dentro da gravação síncrona: nunca repete.
+  const novoProtocolo = (d) => { d.seqProtocolo = (d.seqProtocolo || 0) + 1; const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(2, 10).replace(/-/g, ""); return `SLG-${dia}-${String(d.seqProtocolo).padStart(4, "0")}`; };
+  // auditoria do envio: IP com o final apagado (identifica a rede sem guardar o endereço exato) e o aparelho/navegador
+  const auditoriaReq = (req) => {
+    let ip = String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim().replace(/^::ffff:/, "");
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(ip)) ip = ip.replace(/\.\d+$/, ".x"); else if (ip.includes(":")) ip = ip.split(":").slice(0, 4).join(":") + ":x";
+    return { ip, dispositivo: String(req.headers["user-agent"] || "").slice(0, 160) };
+  };
   const linkPublicoDTO = (L) => ({
     token: L.token, url: urlDoLink(L.token), numero: L.numero, pedidoId: L.pedidoId, dataPedido: L.dataPedido,
     canal: L.canal, tipo: L.tipo, faixa: L.faixa, valorProdutos: L.valorProdutos, qtdFrases: L.qtdFrases,
     cliente: L.cliente, status: L.status, criadoEm: L.criadoEm, criadoPor: L.criadoPor,
     enviadoEm: L.enviadoEm || null, qtdEnviada: L.qtdEnviada ?? null, viaWhatsapp: !!L.viaWhatsapp, revogadoEm: L.revogadoEm || null, motivoRevogacao: L.motivoRevogacao || "",
     avisos: L.avisos || [], conferencia: L.conferencia || null,
+    protocolo: L.protocolo || null, substitui: L.substitui || null, substituidoPor: L.substituidoPor || null,
     compartilhadoEm: L.compartilhadoEm || null, ultimoContatoEm: contatosDe(L).length ? contatosDe(L)[contatosDe(L).length - 1].em : null,
     lembretes: contatosDe(L).filter(c => c.lembrete).length, contatos: contatosDe(L),
     lembreteTexto: mensagemLembrete(L), lembreteLink: telWa(L.cliente?.telefone) ? `https://wa.me/${telWa(L.cliente.telefone)}?text=${encodeURIComponent(mensagemLembrete(L))}` : `https://wa.me/?text=${encodeURIComponent(mensagemLembrete(L))}`,
@@ -313,7 +323,7 @@ export function registrarConcursoSlogan(app, deps) {
         vendedor: (props[e.pedidoId] && props[e.pedidoId].vendedorNome) || "", etapa, horasSemResposta: horasSem != null ? Math.round(horasSem) : null,
         qtdFrases: qtd, elegivel: !fora.length, motivoFora: fora.join("; "), pago: pg.pago, ondePago: pg.onde,
         link: L ? { token: L.token, status: L.status, qtdFrases: L.qtdFrases, criadoEm: L.criadoEm, criadoPor: L.criadoPor || "", enviadoEm: L.enviadoEm || null, url: urlDoLink(L.token),
-                    compartilhadoEm: L.compartilhadoEm || null, compartilhadoPor: L.compartilhadoPor || "", ultimoContatoEm: ultimo ? new Date(ultimo).toISOString() : null, lembretes: contatos.filter(c => c.lembrete).length } : null,
+                    protocolo: L.protocolo || null, compartilhadoEm: L.compartilhadoEm || null, compartilhadoPor: L.compartilhadoPor || "", ultimoContatoEm: ultimo ? new Date(ultimo).toISOString() : null, lembretes: contatos.filter(c => c.lembrete).length } : null,
         frasesEnviadas: fr.length, frasesValidas: fr.filter(x => x.status === "valida").length,
       };
     }).sort((a, b) => String(b.data).localeCompare(String(a.data)) || Number(b.numero) - Number(a.numero));
@@ -350,7 +360,7 @@ export function registrarConcursoSlogan(app, deps) {
     if (L.status === "revogado") return res.json({ ...base, status: "revogado" });
     if (L.status === "enviado") {
       const minhas = ler().frases.filter(x => x.token === t).map(x => x.frase);
-      return res.json({ ...base, status: "enviado", enviadoEm: emBR(L.enviadoEm), frasesEnviadas: minhas });
+      return res.json({ ...base, status: "enviado", enviadoEm: emBR(L.enviadoEm), frasesEnviadas: minhas, protocolo: L.protocolo || null });
     }
     res.json({ ...base, status: f });
   });
@@ -400,19 +410,20 @@ export function registrarConcursoSlogan(app, deps) {
     const estabelecimento = L.tipo === "atacado"
       ? { razaoSocial: L.cliente?.pj ? L.cliente.nome : estabelecimentoInformado, cnpj: L.cliente?.pj ? L.cliente.documento : "", informadoPeloCliente: !L.cliente?.pj }
       : null;
+    const protocolo = novoProtocolo(d), auditoria = auditoriaReq(req);
     frases.forEach((frase, i) => {
       d.seq += 1;
       d.frases.push({
-        id: "f" + d.seq, seq: d.seq, rota: 2, canal: "link", token: t,
+        id: "f" + d.seq, seq: d.seq, rota: 2, canal: "link", token: t, protocolo, auditoria,
         pedidoId: L.pedidoId, numero: L.numero, ordemNoPedido: i + 1, frase, palavras: palavras(frase),
         autor, estabelecimento, marketing: b.marketing === true,
         declaracoes: { maior18: true, autoria: true, regulamento: true },
         enviadoEm: em, status: "valida", motivo: "",
       });
     });
-    L.status = "enviado"; L.enviadoEm = em; L.qtdEnviada = frases.length;
+    L.status = "enviado"; L.enviadoEm = em; L.qtdEnviada = frases.length; L.protocolo = protocolo; L.auditoriaEnvio = auditoria;
     gravar(d);
-    res.json({ ok: true, enviadoEm: emBR(em), frases });
+    res.json({ ok: true, enviadoEm: emBR(em), frases, protocolo });
   });
 
   // =========================== ROTAS INTERNAS (admin) ===========================
@@ -518,7 +529,7 @@ export function registrarConcursoSlogan(app, deps) {
       // links gerados à mão (pedido que não veio da busca) também entram
       Object.values(d.links).filter(l => l.status !== "revogado").forEach(l => { const c = pegar(l.cliente); if (!c.pedidos[l.pedidoId]) c.pedidos[l.pedidoId] = { pedidoId: l.pedidoId, numero: l.numero, data: l.dataPedido, valorProdutos: l.valorProdutos, qtdFrases: l.qtdFrases, pago: null, ondePago: "", link: { status: l.status, criadoEm: l.criadoEm } }; });
       const clientePorPedido = {}; Object.values(porChave).forEach(c => Object.keys(c.pedidos).forEach(pid => { clientePorPedido[pid] = c; }));
-      d.frases.forEach(f => { const c = clientePorPedido[String(f.pedidoId)]; if (c) c.frases.push({ id: f.id, seq: f.seq, frase: f.frase, status: f.status, canal: f.canal, enviadoEm: f.enviadoEm, enviadoEmBR: emBR(f.enviadoEm), numero: f.numero || c.pedidos[f.pedidoId]?.numero || "", autor: f.autor?.nome || "", motivo: f.motivoDesclassificacao || f.motivo || "" }); });
+      d.frases.forEach(f => { const c = clientePorPedido[String(f.pedidoId)]; if (c) c.frases.push({ id: f.id, seq: f.seq, frase: f.frase, protocolo: f.protocolo || "", status: f.status, canal: f.canal, enviadoEm: f.enviadoEm, enviadoEmBR: emBR(f.enviadoEm), numero: f.numero || c.pedidos[f.pedidoId]?.numero || "", autor: f.autor?.nome || "", motivo: f.motivoDesclassificacao || f.motivo || "" }); });
       const out = Object.values(porChave).map(c => {
         const peds = Object.values(c.pedidos).sort((a, b) => String(b.data).localeCompare(String(a.data)));
         return { chave: c.chave, nome: c.nome, documento: mascaraDoc(c.documento), pj: c.pj, pedidos: peds,
@@ -542,6 +553,22 @@ export function registrarConcursoSlogan(app, deps) {
     L.contatos = [...contatosDe(L), c].slice(-30);
     if (!L.compartilhadoEm) { L.compartilhadoEm = c.em; L.compartilhadoPor = c.por; }
     gravar(d); res.json({ ok: true, link: linkPublicoDTO(L) });
+  });
+  // cliente com PROBLEMA no link (não abre, foi para a pessoa errada, perdeu a mensagem): troca por um link novo.
+  // Só para link ainda NÃO usado. O antigo deixa de funcionar na hora (revogado, com o motivo e quem trocou).
+  app.post("/api/concurso/links/:token/substituir", reqOper, (req, res) => {
+    const d = ler(); const L = d.links[req.params.token];
+    if (!L) return res.status(404).json({ erro: "Link não encontrado." });
+    if (L.status === "enviado") return res.status(409).json({ erro: `Este link já foi usado: as frases chegaram${L.protocolo ? " (protocolo " + L.protocolo + ")" : ""}. Não dá para trocar.` });
+    if (L.status === "revogado") return res.status(409).json({ erro: "Este link já foi cancelado." });
+    const motivo = limpaTexto(req.body?.motivo, 200);
+    if (!motivo) return res.status(400).json({ erro: "Informe o motivo (fica no registro)." });
+    let token; do { token = novoToken(); } while (d.links[token]);
+    const { token: _a, status: _b, criadoEm: _c, criadoPor: _d, compartilhadoEm: _e, compartilhadoPor: _f, contatos: _g, conferencia: _h, ...dados } = L;
+    d.links[token] = { ...dados, token, status: "aberto", criadoEm: agoraISO(), criadoPor: req.sessao?.nome || "", substitui: L.token };
+    L.status = "revogado"; L.revogadoEm = agoraISO(); L.revogadoPor = req.sessao?.nome || ""; L.motivoRevogacao = "Trocado por um link novo: " + motivo; L.substituidoPor = token;
+    gravar(d);
+    res.json({ ok: true, link: linkPublicoDTO(d.links[token]) });
   });
   // ---------- RELATÓRIO ----------
   const mediana = (a) => { const v = a.filter(x => x != null && isFinite(x) && x >= 0).sort((x, y) => x - y); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
@@ -605,9 +632,9 @@ export function registrarConcursoSlogan(app, deps) {
       const ROT = { gerar: "Pronto para gerar", enviar: "Link gerado, falta enviar", aguardando_resposta: "Enviado, aguardando o cliente", lembrar: "Lembrar o cliente", respondido: "Respondeu", aguardando_pagamento: "Aguardando pagamento", fora: "Fora da regra" };
       let linhas;
       if (tipo === "pedidos") {
-        linhas = [["Pedido", "Data", "Cliente", "Documento", "Vendedora", "Valor em produtos", "Frases", "Pagamento", "Etapa", "Link gerado em", "Gerado por", "Enviado ao cliente em", "Enviado por", "Lembretes", "Respondeu em", "Frases enviadas", "Frases válidas", "Motivo (fora da regra)"]]
+        linhas = [["Pedido", "Data", "Cliente", "Documento", "Vendedora", "Valor em produtos", "Frases", "Pagamento", "Etapa", "Link gerado em", "Gerado por", "Enviado ao cliente em", "Enviado por", "Lembretes", "Respondeu em", "Protocolo", "Frases enviadas", "Frases válidas", "Motivo (fora da regra)"]]
           .concat(listaElegiveis().map(x => [x.numero, x.data, x.cliente?.nome, mascaraDoc(x.cliente?.documento), x.vendedor, num(x.valorProdutos), x.qtdFrases, x.pago ? "pago (" + x.ondePago + ")" : x.ondePago, ROT[x.etapa] || x.etapa,
-            dt(x.link?.criadoEm), x.link?.criadoPor || "", dt(x.link?.compartilhadoEm), x.link?.compartilhadoPor || "", x.link?.lembretes || 0, dt(x.link?.enviadoEm), x.frasesEnviadas, x.frasesValidas, x.motivoFora]));
+            dt(x.link?.criadoEm), x.link?.criadoPor || "", dt(x.link?.compartilhadoEm), x.link?.compartilhadoPor || "", x.link?.lembretes || 0, dt(x.link?.enviadoEm), x.link?.protocolo || "", x.frasesEnviadas, x.frasesValidas, x.motivoFora]));
       } else if (tipo === "vendedoras") {
         linhas = [["Vendedora", "Pedidos pagos elegíveis", "Aguardando pagamento", "Links gerados", "Enviados ao cliente", "Responderam", "Taxa de resposta (%)", "Para fazer agora", "Frases válidas"]]
           .concat(calcRelatorio().porVendedora.map(v => [v.vendedora, v.elegiveisPagos, v.aguardandoPagamento, v.gerados, v.enviados, v.respondidos, v.taxaResposta ?? "", v.paraFazer, v.frasesValidas]));
@@ -649,18 +676,19 @@ export function registrarConcursoSlogan(app, deps) {
       const estab = p.dados.tipo === "atacado" ? { razaoSocial: p.dados.cliente.pj ? p.dados.cliente.nome : limpaTexto(b.estabelecimento, 120), cnpj: p.dados.cliente.pj ? p.dados.cliente.documento : "", informadoPeloCliente: !p.dados.cliente.pj } : null;
       if (p.dados.tipo === "atacado" && !estab.razaoSocial) return res.status(400).json({ erro: "No atacado, informe o nome do estabelecimento." });
       const em = new Date(recebidaEm).toISOString();
+      const protocolo = novoProtocolo(d);
       frases.forEach((frase, i) => {
         d.seq += 1;
-        d.frases.push({ id: "f" + d.seq, seq: d.seq, rota: 2, canal: "whatsapp", token: linkAberto?.token || null,
+        d.frases.push({ id: "f" + d.seq, seq: d.seq, rota: 2, canal: "whatsapp", token: linkAberto?.token || null, protocolo,
           pedidoId: p.dados.pedidoId, numero: p.dados.numero, ordemNoPedido: doPedido.length + i + 1, frase, palavras: palavras(frase),
           autor: { nome, whatsapp: soDig(b.whatsapp), email: "", vinculo: limpaTexto(b.vinculo, 60) }, estabelecimento: estab,
           marketing: b.marketing === true, enviadoEm: em, registradoEm: agoraISO(), registradoPor: req.sessao?.nome || "",
           valorPedido: p.dados.valorProdutos, status: "valida", motivo: "" });
       });
       // o link do mesmo pedido deixa de valer, senão o cliente mandaria pelos dois canais
-      if (linkAberto) { linkAberto.status = "enviado"; linkAberto.enviadoEm = em; linkAberto.viaWhatsapp = true; linkAberto.qtdEnviada = frases.length; }
+      if (linkAberto) { linkAberto.status = "enviado"; linkAberto.enviadoEm = em; linkAberto.viaWhatsapp = true; linkAberto.qtdEnviada = frases.length; linkAberto.protocolo = protocolo; }
       gravar(d);
-      res.json({ ok: true, registradas: frases.length });
+      res.json({ ok: true, registradas: frases.length, protocolo });
     } catch (e) { res.status(e.status || 500).json({ erro: e.message }); }
   });
 

@@ -31,7 +31,13 @@
   .campanha .trilho{flex:1;min-width:160px;height:6px;border-radius:4px;background:#1c1846}.campanha .trilho i{display:block;height:100%;border-radius:4px;background:var(--mag)}
   .secao{margin-bottom:16px}.secao h4{margin:0 0 2px;font-size:15px}.secao .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
   .tarefa{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;flex-wrap:wrap}
-  .tarefa .info{flex:1;min-width:200px}.tarefa .l1{font-weight:800}.tarefa .l2{font-size:12px;color:var(--muted);margin-top:2px}
+  .tarefa .info{flex:1;min-width:200px}.tarefa .l1{font-weight:800;font-size:15px}.tarefa .l2{font-size:12px;color:var(--muted);margin-top:3px}
+  .tarefa .nums{display:flex;align-items:center;gap:10px;margin-left:auto}
+  .valor{font-size:17px;font-weight:900;white-space:nowrap;color:#fff}
+  .qfr{display:inline-block;min-width:74px;text-align:center;background:#24205a;color:#e6e2ff;font-weight:900;border-radius:999px;padding:5px 11px;font-size:13px;white-space:nowrap}
+  .qfr.mais{background:var(--mag);color:#fff}
+  .secao h4 .soma{font-weight:400;font-size:12.5px;color:var(--muted);margin-left:6px}
+  #ordem{padding:9px 10px;border-radius:10px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
   .funil .ln{display:grid;grid-template-columns:190px 1fr 110px;gap:10px;align-items:center;margin:7px 0;font-size:13px}
   .funil .br{height:16px;border-radius:5px;background:#1c1846;overflow:hidden}.funil .br i{display:block;height:100%;background:var(--mag)}
   .mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
@@ -116,8 +122,16 @@
         <span class="chip" data-aba="relatorios">📊 Relatórios</span>
       </div>
       <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0 12px">
-        <input id="busca" type="search" placeholder="🔎 Buscar por nº do pedido ou nome do cliente" autocomplete="off"
+        <input id="busca" type="search" placeholder="🔎 Buscar por nº do pedido, cliente ou protocolo" autocomplete="off"
           style="flex:1;min-width:220px;padding:10px 12px;border-radius:10px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px" />
+        <select id="ordem" title="Ordenar">
+          <option value="recentes">Mais recentes primeiro</option>
+          <option value="valor">Maior valor do pedido</option>
+          <option value="frases">Mais frases no pedido</option>
+          <option value="cliente">Cliente com mais frases (somando pedidos)</option>
+          <option value="antigos">Mais antigos primeiro</option>
+          <option value="nome">Cliente de A a Z</option>
+        </select>
         <label class="so-meus" id="soMeusBox" hidden><input type="checkbox" id="soMeus" /> Só os meus pedidos</label>
       </div>
       <div id="corpoAba"></div>
@@ -199,6 +213,19 @@ const EH_ADMIN=SESS.nivel==="admin"||(SESS.permissoes||[]).includes("admin");
 let ABA="afazer", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
 let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="todos", _pollSync=null, BUSCA="", REL=null, RESUMO=null;
 let SO_MEUS=false; try{ SO_MEUS=localStorage.getItem("concurso_so_meus")==="1"; }catch(e){}
+let ORD="recentes"; try{ ORD=localStorage.getItem("concurso_ordem")||"recentes"; }catch(e){}
+const qfr=n=>`<span class="qfr ${n>1?"mais":""}">${n==null?"—":n} frase${n==1?"":"s"}</span>`;
+function ordenar(lista){
+  const somaCli={}; ELEG.forEach(e=>{ if(e.elegivel) somaCli[e.chaveCliente]=(somaCli[e.chaveCliente]||0)+(e.qtdFrases||0); });
+  const nome=e=>normB(e.cliente&&e.cliente.nome), num=e=>Number(e.numero)||0, val=e=>Number(e.valorProdutos)||0;
+  const f={recentes:(a,b)=>String(b.data).localeCompare(String(a.data))||num(b)-num(a),
+           antigos:(a,b)=>String(a.data).localeCompare(String(b.data))||num(a)-num(b),
+           valor:(a,b)=>val(b)-val(a), frases:(a,b)=>(b.qtdFrases||0)-(a.qtdFrases||0)||val(b)-val(a),
+           cliente:(a,b)=>(somaCli[b.chaveCliente]||0)-(somaCli[a.chaveCliente]||0)||nome(a).localeCompare(nome(b))||val(b)-val(a),
+           nome:(a,b)=>nome(a).localeCompare(nome(b))}[ORD]||((a,b)=>0);
+  return [...lista].sort(f);
+}
+const textoBusca=e=>((e.cliente&&e.cliente.nome)||"")+" "+((e.link&&e.link.protocolo)||""); // busca também pelo protocolo
 const normB=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 function bate(numero,nome){ const b=normB(BUSCA); if(!b) return true; return String(numero||"").includes(b.replace(/\D/g,"")||"\u0000")||normB(nome).includes(b); }
 
@@ -293,6 +320,7 @@ function mostrarResultado(l){
       <button class="btn btn-ghost" data-copiar="msg">Copiar mensagem</button>
       <button class="btn btn-ghost" data-copiar="url">Copiar só o link</button>
     </div>
+    ${l.protocolo?`<div style="margin-top:8px;font-size:13px">📨 Frases recebidas · protocolo <b>${esc(l.protocolo)}</b></div>`:""}
     <div class="muted" style="margin-top:8px;font-size:12px">${l.compartilhadoEm?`📤 Enviado ao cliente ${hora(l.compartilhadoEm)}${l.compartilhadoPor?" por "+esc(l.compartilhadoPor):""}${l.lembretes?` · ${l.lembretes} lembrete(s)`:""}`:"Ainda não registrado como enviado ao cliente."}
       ${EH_ADMIN&&l.status==="aberto"?` · <a href="#" style="color:#ff8aa3" onclick="revogarToken('${esc(l.token)}');return false">revogar este link</a>`:""}</div>
     <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Ver a mensagem</summary><pre style="white-space:pre-wrap;font-size:12.5px;margin-top:8px;color:#e6e2ff">${esc(l.whatsappTexto)}</pre></details>`;
@@ -357,7 +385,7 @@ function htmlFrases(){
     ${lista.map(f=>`<tr style="${f.status!=="valida"?"opacity:.6":""}">
       <td><b>${esc(f.seq)}</b></td>
       <td><div class="frase">“${esc(f.frase)}”</div><div class="muted">${esc(f.palavras)} palavra${f.palavras==1?"":"s"}${f.igualA?` · <span class="tag mag">igual à nº ${esc(f.igualA)}</span>`:""}${f.status!=="valida"?` · <span class="tag erro">desclassificada</span> ${esc(f.motivo)}`:""}</div></td>
-      <td>${esc(f.enviadoEmBR)}<div><span class="tag neu">${f.canal==="link"?"link":"WhatsApp"}</span></div></td>
+      <td>${esc(f.enviadoEmBR)}${f.protocolo?`<div class="muted" style="font-size:11px">${esc(f.protocolo)}</div>`:""}<div><span class="tag neu">${f.canal==="link"?"link":"WhatsApp"}</span></div></td>
       <td class="hide-sm">${esc(f.numero)}</td>
       <td class="hide-sm">${esc(f.estabelecimento?.razaoSocial||"—")}<div class="muted">${esc(f.autor?.nome||"")}${f.autor?.vinculo?" · "+esc(f.autor.vinculo):""} · ${esc(fmtTel(f.autor?.whatsapp))}${f.marketing?" · aceita promoções":""}</div></td>
       <td>${tagConf(f.conferencia)}</td>
@@ -406,15 +434,17 @@ function renderCampanha(){
 function linhaTarefa(e,acao){
   const vend=e.vendedor?` · vendedora ${esc(e.vendedor)}`:"";
   const extra=e.etapa==="lembrar"?` · sem resposta há ${Math.round((e.horasSemResposta||0)/24)} dia(s)${e.link?.lembretes?` · ${e.link.lembretes} lembrete(s) já enviado(s)`:""}`
-    :e.etapa==="enviar"?` · gerado ${hora(e.link?.criadoEm)}`:"";
-  return `<div class="tarefa"><div class="info"><div class="l1">Pedido ${esc(e.numero)} · <a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a></div>
-    <div class="l2">${e.qtdFrases} frase${e.qtdFrases>1?"s":""} · ${brl(e.valorProdutos)} em produtos · ${esc(e.ondePago||"")}${vend}${extra}</div></div>${acao}</div>`;
+    :e.etapa==="enviar"?` · link gerado ${hora(e.link?.criadoEm)}`:"";
+  return `<div class="tarefa"><div class="info"><div class="l1"><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#fff;text-decoration:none">${esc(e.cliente?.nome||"—")}</a></div>
+    <div class="l2">Pedido ${esc(e.numero)} · ${esc(String(e.data).split("-").reverse().slice(0,2).join("/"))} · ${esc(e.ondePago||"")}${vend}${extra}</div></div>
+    <div class="nums"><span class="valor">${brl(e.valorProdutos)}</span>${qfr(e.qtdFrases)}${acao}</div></div>`;
 }
 function htmlAFazer(){
-  const V=visiveis().filter(e=>bate(e.numero,e.cliente&&e.cliente.nome));
+  const V=ordenar(visiveis().filter(e=>bate(e.numero,textoBusca(e))));
   const g=V.filter(e=>e.etapa==="gerar"), en=V.filter(e=>e.etapa==="enviar"), lb=V.filter(e=>e.etapa==="lembrar");
   const ag=V.filter(e=>e.etapa==="aguardando_resposta").length, pg=V.filter(e=>e.etapa==="aguardando_pagamento").length;
-  const sec=(id,titulo,desc,lista,botao)=>`<div class="secao" id="sec_${id}"><h4>${titulo} <span class="tag ${lista.length?"mag":"neu"}">${lista.length}</span></h4><div class="desc">${desc}</div>
+  const soma=l=>{ if(!l.length) return ""; const n=l.reduce((s,e)=>s+(e.qtdFrases||0),0); return `<span class="soma">${n} frase${n==1?"":"s"} · ${brl(l.reduce((s,e)=>s+(Number(e.valorProdutos)||0),0))}</span>`; };
+  const sec=(id,titulo,desc,lista,botao)=>`<div class="secao" id="sec_${id}"><h4>${titulo} <span class="tag ${lista.length?"mag":"neu"}">${lista.length}</span>${soma(lista)}</h4><div class="desc">${desc}</div>
     ${lista.length?lista.map(e=>linhaTarefa(e,botao(e))).join(""):`<div class="muted" style="font-size:12.5px;padding:2px 0 4px">Nada aqui. ✅</div>`}</div>`;
   const tudo=g.length+en.length+lb.length;
   return htmlSync()+(tudo?"":`<div class="vazio" style="margin-bottom:10px">✅ Tudo em dia. Nenhum link para gerar, enviar ou lembrar agora.</div>`)+
@@ -434,7 +464,8 @@ function abrirEnvio(tok,lembrete){
       <a class="btn btn-grn" href="${esc(wa)}" target="_blank" rel="noopener" onclick="registrarEnvio('${esc(tok)}','whatsapp',${lembrete})">📲 Abrir no WhatsApp</a>
       <button class="btn btn-ghost" onclick="copiar(${JSON.stringify(txt).replace(/"/g,"&quot;")},'Mensagem copiada');registrarEnvio('${esc(tok)}','copia',${lembrete})">Copiar mensagem</button>
       <button class="btn btn-ghost" onclick="copiar('${esc(l.url)}','Link copiado')">Copiar só o link</button></div>
-    <div class="muted" style="font-size:11.5px;margin-top:10px">Ao abrir o WhatsApp ou copiar a mensagem, o envio fica registrado${lembrete?" como lembrete":""} com o seu nome.</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:10px">Ao abrir o WhatsApp ou copiar a mensagem, o envio fica registrado${lembrete?" como lembrete":""} com o seu nome.</div>
+    ${l.status==="aberto"?`<div style="margin-top:12px;border-top:1px solid var(--borda);padding-top:10px;font-size:12.5px">O cliente teve problema com este link? <a href="#" style="color:#9fd8ff" onclick="trocarLink('${esc(tok)}');return false">Gerar um link novo</a> <span class="muted">(o atual deixa de funcionar)</span></div>`:""}`;
   abrir("mEnviar");
 }
 async function registrarEnvio(tok,meio,lembrete){
@@ -447,6 +478,16 @@ async function gerarEEnviar(numero,confirmado){
   if(status===409&&j.precisaConfirmar){ if(confirm("Antes de gerar, confira:\n\n• "+(j.avisos||[]).join("\n• ")+"\n\nGerar o link mesmo assim?")) return gerarEEnviar(numero,true); return; }
   if(status>=400){ alert(j.erro||"Não consegui gerar o link."); return; }
   await carregarListas(); abrirEnvio(j.link.token,false);
+}
+function trocarLink(tok){
+  const l=LINKS.find(x=>x.token===tok); if(!l) return;
+  fechar("mEnviar");
+  pedirMotivo({titulo:`Trocar o link do pedido nº ${l.numero}?`,sub:"O link atual deixa de funcionar na hora e um novo é gerado para o mesmo pedido. Fica registrado quem trocou e por quê.",
+    opcoes:["O cliente não consegue abrir o link","O link foi enviado para a pessoa errada","O cliente perdeu a mensagem","Outro"],botao:"Gerar link novo"},async motivo=>{
+    const {status,j}=await api(`/api/concurso/links/${encodeURIComponent(tok)}/substituir`,{method:"POST",body:JSON.stringify({motivo})});
+    if(status!==200) throw new Error(j.erro);
+    toast("Link novo gerado"); await carregarListas(); abrirEnvio(j.link.token,false);
+  });
 }
 function revogarToken(tok){ const i=LINKS.findIndex(x=>x.token===tok); if(i>=0) revogar(i); }
 // ---------- TODOS OS PEDIDOS ----------
@@ -463,13 +504,13 @@ function htmlElegiveis(){
   const V=visiveis();
   const opc=[["todos","Todos"],["aguardando_pagamento","Aguardando pagamento"],["gerar","Para gerar"],["enviar","Para enviar"],["aguardando_resposta","Aguardando o cliente"],["lembrar","Para lembrar"],["respondido","Responderam"],["fora","Fora da regra"]];
   const chips=opc.map(([k,t])=>`<span class="chip ${FILTRO_ELEG===k?"on":""}" onclick="FILTRO_ELEG='${k}';render()">${t} (${V.filter(e=>k==="todos"?e.etapa!=="fora":e.etapa===k).length})</span>`).join(" ");
-  const lista=BUSCA?ELEG.filter(e=>bate(e.numero,e.cliente&&e.cliente.nome)):V.filter(filtroEleg);
+  const lista=ordenar(BUSCA?ELEG.filter(e=>bate(e.numero,textoBusca(e))):V.filter(filtroEleg));
   const avisoBusca=BUSCA?`<div class="muted" style="margin-bottom:8px">Buscando "<b>${esc(BUSCA)}</b>" em todos os pedidos.</div>`:"";
   if(BUSCA&&!lista.length) return htmlSync()+avisoBusca+`<div class="vazio">Nenhum pedido com "${esc(BUSCA)}".<br><span class="muted">Se for um pedido novo, toque em 🔄 Sincronizar agora. Se ainda assim não aparecer, use <a href="#" onclick="abrirManual();return false" style="color:#9fd8ff">gerar link pelo número</a>.</span></div>`;
   const linhas=lista.map(e=>`<tr><td><b>${esc(e.numero)}</b><div class="muted" style="font-size:11px">${esc(String(e.data).split("-").reverse().join("/"))}</div></td>
       <td><a href="#" onclick="abrirCliente('${esc(e.chaveCliente)}');return false" style="color:#9fd8ff">${esc(e.cliente?.nome||"—")}</a>${e.vendedor?`<div class="muted" style="font-size:11px">${esc(e.vendedor)}</div>`:""}</td>
-      <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':brl(e.valorProdutos)}</td><td><b>${e.qtdFrases==null?"—":e.qtdFrases}</b></td>
-      <td>${tagEtapa(e)}<div class="muted" style="font-size:11px;margin-top:3px">${esc(e.pago?"pago · "+e.ondePago:e.ondePago||"")}</div></td><td>${acaoPorEtapa(e)}</td></tr>`).join("");
+      <td>${e.valorProdutos==null?'<span class="muted">a conferir</span>':`<span class="valor" style="font-size:15px">${brl(e.valorProdutos)}</span>`}</td><td>${qfr(e.qtdFrases)}</td>
+      <td>${tagEtapa(e)}${e.link?.protocolo?`<div class="muted" style="font-size:11px">protocolo ${esc(e.link.protocolo)}</div>`:""}<div class="muted" style="font-size:11px;margin-top:3px">${esc(e.pago?"pago · "+e.ondePago:e.ondePago||"")}</div></td><td>${acaoPorEtapa(e)}</td></tr>`).join("");
   return htmlSync()+avisoBusca+`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;${BUSCA?"opacity:.45;pointer-events:none":""}">${chips}</div>
     ${lista.length?`<div class="rolagem"><table class="tbl"><thead><tr><th>Pedido</th><th>Cliente</th><th>Em produtos</th><th>Frases</th><th>Etapa</th><th></th></tr></thead><tbody>${linhas}</tbody></table></div>`
       :`<div class="vazio">${SYNC&&!SYNC.sincronizadoEm?"Ainda não sincronizou. Toque em 🔄 Sincronizar agora.":"Nenhum pedido nesta etapa."}</div>`}`;
@@ -527,7 +568,8 @@ async function gerarDireto(numero,confirmado){ return gerarEEnviar(numero,confir
 function verLink(tok){ const l=LINKS.find(x=>x.token===tok); if(l){ mostrarResultado(l); window.scrollTo({top:0,behavior:"smooth"}); } }
 // ---------- CLIENTES (histórico) ----------
 function htmlClientes(){
-  const CL=BUSCA?CLIENTES.filter(c=>normB(c.nome).includes(normB(BUSCA))||c.pedidos.some(p=>bate(p.numero,""))):CLIENTES;
+  let CL=BUSCA?CLIENTES.filter(c=>normB(c.nome).includes(normB(BUSCA))||c.pedidos.some(p=>bate(p.numero,""))||c.frases.some(f=>normB(f.protocolo).includes(normB(BUSCA)))):CLIENTES;
+  CL=[...CL].sort(ORD==="nome"?(a,b)=>normB(a.nome).localeCompare(normB(b.nome)):(a,b)=>b.frasesLiberadas-a.frasesLiberadas||normB(a.nome).localeCompare(normB(b.nome)));
   if(!CL.length) return `<div class="vazio">${BUSCA?`Nenhum cliente com "${esc(BUSCA)}".`:"Nenhum cliente com pedido elegível ainda."}</div>`;
   return `<div class="muted" style="margin-bottom:8px">Toque no cliente para ver os pedidos e o histórico de frases.</div>
   <div class="rolagem"><table class="tbl"><thead><tr><th>Cliente</th><th>Pedidos</th><th>Frases liberadas</th><th>Enviadas (válidas)</th><th>Links aguardando</th></tr></thead><tbody>
@@ -550,7 +592,7 @@ async function abrirCliente(chave){
     <h4 style="margin:14px 0 6px">Frases enviadas</h4>
     ${c.frases.length?c.frases.map(f=>`<div style="border:1px solid #2c2660;border-radius:10px;padding:8px 10px;margin-bottom:6px">
       <div>“${esc(f.frase)}”</div>
-      <div class="muted" style="font-size:11.5px;margin-top:3px">pedido ${esc(f.numero)} · ${esc(f.enviadoEmBR)} · ${esc(f.autor||"")} · ${f.canal==="whatsapp"?"pelo WhatsApp":"pelo link"} · ${f.status==="valida"?'<span class="tag ok">válida</span>':`<span class="tag erro">desclassificada</span> ${esc(f.motivo||"")}`}</div></div>`).join("")
+      <div class="muted" style="font-size:11.5px;margin-top:3px">${f.protocolo?`<b style="color:#e6e2ff">${esc(f.protocolo)}</b> · `:""}pedido ${esc(f.numero)} · ${esc(f.enviadoEmBR)} · ${esc(f.autor||"")} · ${f.canal==="whatsapp"?"pelo WhatsApp":"pelo link"} · ${f.status==="valida"?'<span class="tag ok">válida</span>':`<span class="tag erro">desclassificada</span> ${esc(f.motivo||"")}`}</div></div>`).join("")
       :`<div class="muted">Nenhuma frase enviada ainda.</div>`}`;
   abrir("mCliente");
 }
@@ -650,6 +692,8 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape") document.querySele
 document.getElementById("busca").addEventListener("input",ev=>{ BUSCA=ev.target.value; render(); });
 function abrirManual(){ const d=document.getElementById("manual"); d.open=true; d.scrollIntoView({behavior:"smooth"}); setTimeout(()=>document.getElementById("gNumero").focus(),300); }
 document.getElementById("soMeus").checked=SO_MEUS;
+document.getElementById("ordem").value=ORD;
+document.getElementById("ordem").addEventListener("change",ev=>{ ORD=ev.target.value; try{ localStorage.setItem("concurso_ordem",ORD); }catch(e){} render(); });
 document.getElementById("soMeus").addEventListener("change",ev=>{ SO_MEUS=ev.target.checked; try{ localStorage.setItem("concurso_so_meus",SO_MEUS?"1":"0"); }catch(e){} render(); });
 renderCampanha();
 recarregar();

@@ -124,6 +124,10 @@
   .botoes{display:grid;gap:10px}
   @media (min-width:600px){ .fundo{align-items:center} .folha{border-radius:24px} }
   :focus-visible{outline:3px solid var(--mag);outline-offset:2px}
+  .protocolo{margin:14px 0 6px;padding:12px 14px;border-radius:12px;background:rgba(255,0,130,.10);border:1px dashed #FF0082;text-align:center}
+  .protocolo span{display:block;font-size:12px;opacity:.8;letter-spacing:.3px}
+  .protocolo b{display:block;font-size:22px;letter-spacing:1px;margin:4px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .protocolo small{display:block;font-size:12px;opacity:.75}
 </style>
 </head>
 <body>
@@ -415,7 +419,7 @@
       .then(function(r){ return r.json().then(function(j){ return {status: r.status, j: j}; }); })
       .then(function(res){
         $("#revisao").classList.remove("aberto");
-        if (res.status === 200 && res.j.ok){ apagarRascunho(); return telaEnviado(res.j.frases, res.j.enviadoEm, true); }
+        if (res.status === 200 && res.j.ok){ apagarRascunho(); return telaEnviado(res.j.frases, res.j.enviadoEm, true, res.j.protocolo); }
         if (res.status === 409 || res.status === 410) return carregar();
         if (res.j.campos) marcarErros(res.j.campos);
         var a = $("#avisoGeral"); a.textContent = res.j.erro || "Não foi possível enviar. Tente de novo."; a.style.display = "block";
@@ -427,11 +431,21 @@
       .then(function(){ btn.disabled = false; btn.textContent = "Confirmar e enviar"; });
   }
 
-  function telaEnviado(frases, em, agora){
+  function telaEnviado(frases, em, agora, protocolo){
     var lista = el("ul", {"class":"lista-enviadas"});
     (frases || []).forEach(function(f){ lista.appendChild(el("li", {text: "“" + f + "”"})); });
+    var bloco = el("div", {});
+    // protocolo: comprova o envio (o cliente guarda; a B13 tem o mesmo número registrado)
+    if (protocolo) {
+      var p = el("div", {"class":"protocolo"});
+      p.appendChild(el("span", {text: "Protocolo do envio"}));
+      p.appendChild(el("b", {text: protocolo}));
+      p.appendChild(el("small", {text: "Guarde este número (tire um print desta tela). Ele comprova o seu envio."}));
+      bloco.appendChild(p);
+    }
+    bloco.appendChild(lista);
     telaEstado("ok", agora ? "Frase recebida!" : "Este link já foi usado",
-      (agora ? "Obrigado por participar. " : "") + "Recebemos em " + (em || "") + ". O resultado sai em 07/11, às 15h30, no @b13_bebidas. Se você ganhar, a B13 avisa pelo WhatsApp.", lista);
+      (agora ? "Obrigado por participar. " : "") + "Recebemos em " + (em || "") + ". O resultado sai em 07/11, às 15h30, no @b13_bebidas. Se você ganhar, a B13 avisa pelo WhatsApp.", bloco);
     window.scrollTo({top: 0, behavior: "smooth"});
   }
 
@@ -446,7 +460,7 @@
         if (d.whatsappOficial) $("#waOficial").textContent = d.whatsappOficial;
         if (d.regulamentoUrl){ $("#linkReg").innerHTML = ""; $("#linkReg").appendChild(document.createTextNode(" (")); $("#linkReg").appendChild(el("a", {href: d.regulamentoUrl, target: "_blank", rel: "noopener noreferrer", text: "abrir"})); $("#linkReg").appendChild(document.createTextNode(")")); }
         if (d.status === "aberto") return montarFormulario(d);
-        if (d.status === "enviado") return telaEnviado(d.frasesEnviadas, d.enviadoEm, false);
+        if (d.status === "enviado") return telaEnviado(d.frasesEnviadas, d.enviadoEm, false, d.protocolo);
         if (d.status === "encerrado") return telaEstado("relogio", "Envio encerrado", "O prazo para enviar frases terminou em 30/10/2026, às 23h59. O resultado sai em 07/11, às 15h30, no @b13_bebidas.");
         if (d.status === "nao_iniciado") return telaEstado("relogio", "Ainda não começou", "O concurso começa em 01/10/2026, à 00h01.");
         if (d.status === "revogado") return telaEstado("x", "Link cancelado", "Este link foi cancelado pela B13. Fale com a gente no WhatsApp oficial " + (d.whatsappOficial || "") + ".");
