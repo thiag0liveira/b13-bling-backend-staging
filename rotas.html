@@ -182,7 +182,8 @@ async function carregarTudo() {
       const d = salvo[c.id];
       let viagens;
       if (d !== null && d !== void 0 && (_d$viagens = d.viagens) !== null && _d$viagens !== void 0 && _d$viagens.length) viagens = d.viagens.map(v => ({
-        pedidoIds: v.pedidoIds || []
+        pedidoIds: v.pedidoIds || [],
+        fechada: !!v.fechada
       }));else if (d !== null && d !== void 0 && (_d$pedidoIds = d.pedidoIds) !== null && _d$pedidoIds !== void 0 && _d$pedidoIds.length) viagens = [{
         pedidoIds: d.pedidoIds
       }]; // formato antigo
@@ -226,6 +227,9 @@ async function carregarTudo() {
     // reconstrói do ZERO a cada carregamento (limpa e repopula) — sem isso, uma
     // viagem cancelada ou finalizada continuava aparecendo como "em andamento" na
     // tela, porque a entrada antiga em S.viagensIniciadas nunca era removida.
+    // viagens FECHADAS vêm do servidor (campo fechada do plano do dia): valem em qualquer aparelho e depois de recarregar
+    S.viagensFechadas = {};
+    Object.entries(S.atribuicoes || {}).forEach(([cid, a]) => (a.viagens || []).forEach((v, ix) => { if (v.fechada) S.viagensFechadas[cid + "_" + ix] = true; }));
     S.viagensIniciadas = {};
     S.viagensDoDia.forEach(v => {
       const chaveV = v.carroId + "_" + v.vix;
@@ -364,6 +368,7 @@ function escolherOuCriarViagem(carroId, pesoNovoPedido) {
   });
   const ultimaIx = bucket.viagens.length - 1;
   const ultima = bucket.viagens[ultimaIx];
+  if (S.viagensFechadas[carroId + "_" + ultimaIx]) { bucket.viagens.push({ pedidoIds: [] }); return bucket.viagens.length - 1; } // viagem fechada/em andamento não recebe pedido: abre outra
   if (!ultima.pedidoIds.length) return ultimaIx; // última viagem ainda vazia, usa ela
   const pesoUltima = ultima.pedidoIds.reduce((s, id) => {
     var _pedidoPorId;
@@ -685,6 +690,7 @@ function atribuirCarro(pedidoId, carroId) {
       }
     }
   }
+  { const tr = viagemFechadaDoPedidoLocal(pedidoId); if (tr) { alert("Esse pedido está na viagem " + (tr.ix + 1) + " do carro " + tr.carroNome + ", que está FECHADA. Reabra a viagem para mudar o pedido de lugar."); return; } }
   removerDeTodasAtribuicoes(pedidoId);
   const viagemIx = escolherOuCriarViagem(carroId, (pedido === null || pedido === void 0 ? void 0 : pedido.pesoEstimadoKg) || 0);
   if (viagemIx > 0 && S.atribuicoes[carroId].viagens[viagemIx].pedidoIds.length === 0) {
@@ -697,6 +703,20 @@ function atribuirCarro(pedidoId, carroId) {
   S.atribuicoes[carroId].viagens[viagemIx].pedidoIds.push(pedidoId);
   delete_resultadoViagem(carroId, viagemIx);
   render();
+}
+// o pedido está numa viagem FECHADA (ou em andamento) neste plano? devolve onde, ou null
+function viagemFechadaDoPedidoLocal(pedidoId) {
+  for (const [carroId, a] of Object.entries(S.atribuicoes || {})) {
+    if (carroId === "_semCarro") continue;
+    const vs = a.viagens || [];
+    for (let ix = 0; ix < vs.length; ix++) {
+      if ((vs[ix].pedidoIds || []).includes(pedidoId) && S.viagensFechadas[carroId + "_" + ix]) {
+        const c = (S.config.carros || []).find(x => String(x.id) === String(carroId));
+        return { carroId, ix, carroNome: c ? c.nome : carroId };
+      }
+    }
+  }
+  return null;
 }
 function removerDeTodasAtribuicoes(pedidoId) {
   Object.entries(S.atribuicoes).forEach(([carroId, a]) => {
@@ -713,6 +733,7 @@ function delete_resultadoViagem(carroId, vix) {
   if (S.resultadoRota[carroId]) S.resultadoRota[carroId][vix] = null;
 }
 async function removerDoCarreo(carroId, vix, pedidoId) {
+  if (S.viagensFechadas[carroId + "_" + vix]) { alert("Essa viagem está FECHADA: não dá para tirar pedido dela. Para mudar, reabra a viagem (🔓 Reabrir)."); return; }
   S.atribuicoes[carroId].viagens[vix].pedidoIds = (S.atribuicoes[carroId].viagens[vix].pedidoIds || []).filter(id => id !== pedidoId);
   delete_resultadoViagem(carroId, vix);
   render();
@@ -733,6 +754,7 @@ function adicionarViagem(carroId) {
   render();
 }
 function removerViagem(carroId, vix) {
+  if (S.viagensFechadas[carroId + "_" + vix]) { alert("Essa viagem está FECHADA: não dá para removê-la nem tirar pedidos dela. Para mudar, reabra a viagem (🔓 Reabrir)."); return; }
   if (S.atribuicoes[carroId].viagens.length <= 1) {
     alert("Esse carro precisa ter pelo menos 1 viagem — pra remover de vez, tire os pedidos dela.");
     return;
@@ -824,7 +846,7 @@ async function salvarDia() {
   S.salvando = true;
   render();
   try {
-    await fetch(B + "/api/rotas/dia", {
+    const resp = await fetch(B + "/api/rotas/dia", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -834,6 +856,14 @@ async function salvarDia() {
         carros: S.atribuicoes
       })
     });
+    if (!resp.ok) {
+      // o servidor recusou (ex.: tentou tirar pedido de viagem fechada): mostra o motivo e recarrega o plano de verdade
+      const jj = await resp.json().catch(() => ({}));
+      S.salvando = false;
+      alert("⚠️ Não salvei: " + (jj.erro || "erro " + resp.status));
+      await carregarTudo();
+      return;
+    }
     S.msg = "✅ Salvo!";
     await atualizarResumoDias(); // sem isso, a Visão geral ficava mostrando o resumo de antes de salvar
   } catch (e) {
@@ -1489,17 +1519,29 @@ async function fecharViagem(carroId, vix) {
   if (aberta) { alert("Esse carro já tem uma viagem em andamento agora (KM inicial " + aberta.kmInicial + (aberta.motoristaNome ? ", com " + aberta.motoristaNome : "") + "). Finalize ela antes de fechar/iniciar outra."); return; }
   if (!confirm("Fechar essa viagem com " + ids.length + " pedido(s)? Depois de fechada, não dá mais pra adicionar ou tirar pedido dela — só pra reabrir de novo.")) return;
   S.viagensFechadas[chave] = true;
+  S.atribuicoes[carroId].viagens[vix].fechada = true;
   render();
-  // salva o plano do dia JÁ, na hora de fechar — não existe mais um botão de
-  // "Salvar plano do dia" separado; o salvamento acontece viagem por viagem, no
-  // momento de fechar cada uma (antes, dependia de alguém lembrar de salvar à
-  // parte, e se recarregasse a página antes, a viagem sumia do servidor e o
-  // pedido voltava a aparecer como "disponível", abrindo outra viagem com ele).
+  // salva o plano do dia JÁ, na hora de fechar (senão, ao recarregar, o pedido voltava a aparecer como "disponível")
   await salvarDia();
+  // a trava vale no SERVIDOR (qualquer aparelho, depois de recarregar), não só nesta tela
+  try {
+    const rr = await fetch(B + "/api/rotas/viagem/fechar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: S.data, carroId, vix }) });
+    const jj = await rr.json().catch(() => ({}));
+    if (!rr.ok) throw new Error(jj.erro || "erro " + rr.status);
+  } catch (e) {
+    delete S.viagensFechadas[chave]; S.atribuicoes[carroId].viagens[vix].fechada = false; render();
+    alert("Não consegui fechar a viagem: " + e.message);
+  }
 }
-function reabrirViagem(carroId, vix) {
+async function reabrirViagem(carroId, vix) {
   const chave = carroId + "_" + vix;
+  try {
+    const rr = await fetch(B + "/api/rotas/viagem/reabrir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data: S.data, carroId, vix }) });
+    const jj = await rr.json().catch(() => ({}));
+    if (!rr.ok) { alert(jj.erro || "Não consegui reabrir a viagem."); return; }
+  } catch (e) { alert("Sem conexão: não consegui reabrir a viagem."); return; }
   delete S.viagensFechadas[chave];
+  S.atribuicoes[carroId].viagens[vix].fechada = false;
   render();
 }
 async function iniciarViagem(carroId, carroNome, vix) {
@@ -2037,7 +2079,7 @@ function htmlViagemBox(carro, vix, cap) {
       : `<button class="btn btn-ghost" style="font-size:11px;padding:6px 10px;border:1px solid #ffd23f;color:#ffd23f" onclick="fecharViagem('${carro.id}',${vix})">🔒 Fechar viagem</button>`;
   })()}
         <button class="btn btn-out" style="font-size:11px;padding:6px 10px" ${S.calculando[chave] ? "disabled" : ""} onclick="sugerirRota('${carro.id}',${vix})">${S.calculando[chave] ? "Calculando…" : "🧭 Sugerir rota"}</button>
-        ${totalViagens > 1 ? `<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>` : ''}
+        ${totalViagens > 1 && !S.viagensFechadas[chave] ? `<button class="iconbtn" onclick="removerViagem('${carro.id}',${vix})" title="Remover essa viagem">✕ viagem</button>` : ''}
       </div>
     </div>
     ${acimaCapacidade ? `<div class="warn" style="font-size:11px;padding:6px 10px">⚠️ ${ids.length} entregas é mais do que a estimativa de capacidade por viagem (~${cap}).</div>` : ''}
@@ -2045,11 +2087,11 @@ function htmlViagemBox(carro, vix, cap) {
     ${!ids.length ? '<div class="muted" style="font-size:12px">Nenhum pedido nessa viagem ainda.</div>' : resultado ? resultado.paradasOrdenadas.map((p, ix) => {
     const ped = pedidoPorId(p.id);
     return htmlStopItem(ped, ix, `${p.distanciaProximaKm} km · ${p.duracaoProximaMin} min até aqui`, `${S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>`}
-           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`);
+           ${S.viagensFechadas[chave] ? `<span title="Viagem fechada: reabra para tirar pedido" style="font-size:13px;opacity:.7;padding:0 4px">🔒</span>` : `<button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`}`);
   }).join("") : pedidosViagemArr.map((p, ix) => htmlStopItem(p, ix, null, `${S.viagensFechadas[chave] ? '' : `<button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},-1)" title="Subir">▲</button>
            <button class="iconbtn" onclick="moverNaLista('${carro.id}',${vix},${ix},1)" title="Descer">▼</button>
            <button class="iconbtn" onclick="abrirMoverPedido('${carro.id}',${vix},${p.id})" title="Mover para outra viagem/carro">🔀</button>`}
-           <button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`)).join("")}
+           ${S.viagensFechadas[chave] ? `<span title="Viagem fechada: reabra para tirar pedido" style="font-size:13px;opacity:.7;padding:0 4px">🔒</span>` : `<button class="iconbtn" onclick="removerDoCarreo('${carro.id}',${vix},${p.id})" title="Remover (ex.: pedido cancelado)">✕</button>`}`)).join("")}
     ${resultado ? `<div class="resumo" style="margin-top:6px"><span>🛣️ <b>${resultado.distanciaTotalKm} km</b></span><span>⏱️ <b>${resultado.duracaoTotalMin} min</b> dirigindo (real)</span><span>🕐 <b>~${resultado.duracaoTotalMin + ids.length * (S.config.tempoParadaMin || 15)} min</b> no total (com as ${ids.length} parada${ids.length !== 1 ? 's' : ''})</span></div>
     <button class="btn btn-ghost" style="margin-top:8px;font-size:11px" onclick="S.carroMapaAtivo='${chave}';render()">🗺️ ${S.carroMapaAtivo === chave ? 'Mapa aberto abaixo' : 'Ver rota no mapa'}</button>
     ${S.carroMapaAtivo === chave ? `<div id="mapaRota"></div>` : ''}` : ''}

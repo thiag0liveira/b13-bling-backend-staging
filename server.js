@@ -12831,6 +12831,8 @@ app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
     let ped=null; try{ ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); }catch(e){}
     if(!ped) return res.status(404).json({erro:"pedido não encontrado no Bling"});
     if(Number(ped.situacao?.id)===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado não pode ser agendado"});
+    // não tira o pedido de uma viagem FECHADA ou em andamento por baixo dos panos
+    { const tr=viagemTravadaDoPedido(id); if(tr) return res.status(409).json({erro:_msgViagemTravada(tr)}); }
     // tira de qualquer outro dia antes de agendar no novo (evita duplicar na rota)
     removerPedidoDeTodasRotas(id);
     const rotas=lerRotasDias();
@@ -12850,6 +12852,7 @@ app.post("/api/pedidos-online/:blingId/agendar-entrega",async(req,res)=>{
 app.post("/api/pedidos-online/:blingId/desagendar-entrega",(req,res)=>{
   try{
     const id=Number(req.params.blingId);
+    { const tr=viagemTravadaDoPedido(id); if(tr) return res.status(409).json({erro:_msgViagemTravada(tr)}); }
     removerPedidoDeTodasRotas(id);
     const turnos=lerJSON(TURNOS_ENTREGA_FILE,{}); delete turnos[String(id)]; salvarJSON(TURNOS_ENTREGA_FILE,turnos);
     res.json({ok:true});
@@ -13405,6 +13408,8 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     if(Number(ped.situacao?.id)===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
+    // virar RETIRADA tira o pedido da rota: não faz isso com ele numa viagem fechada/em andamento
+    if(tipo==="retirada"){ const tr=viagemTravadaDoPedido(id); if(tr) return res.status(409).json({erro:_msgViagemTravada(tr)}); }
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     const taxa=tipo==="entrega"?+Number(frete||0).toFixed(2):0;
     const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
@@ -17023,13 +17028,81 @@ app.get("/api/rotas/dia",(req,res)=>{
   const rotas=lerRotasDias();
   res.json({data:rotas[data]||{}});
 });
+// ===================== TRAVA DE VIAGEM FECHADA / EM ANDAMENTO =====================
+// "Fechar viagem" só existia NA TELA aberta (recarregar ou abrir em outro aparelho fazia a viagem parecer aberta de novo) e
+// o botão de tirar pedido ficava disponível. Agora o servidor guarda que a viagem está fechada (campo fechada no plano do
+// dia) e NÃO deixa tirar nem trocar pedido de uma viagem fechada ou em andamento. Reordenar a lista continua valendo
+// (os mesmos pedidos). Pra mexer, é preciso reabrir (viagem já iniciada só pode ser cancelada).
+const _idsDaViagem=(v)=>((v&&v.pedidoIds)||[]).map(String).sort().join(",");
+const _viagensEmAndamentoDoDia=(data)=>Object.values(lerViagensAtivas()).filter(v=>v.data===data&&!v.canceladaEm&&!v.finalizadaEm);
+function _nomeCarroRota(id){ const c=((lerRotasConfig().carros)||[]).find(x=>String(x.id)===String(id)); return c?c.nome:String(id); }
+// lista as viagens TRAVADAS (fechadas ou em andamento) de um dia
+function _viagensTravadasDoDia(data,carros){
+  const ativas=_viagensEmAndamentoDoDia(data); const lista=[];
+  Object.entries(carros||{}).forEach(([carroId,c])=>{
+    ((c&&c.viagens)||[]).forEach((v,ix)=>{
+      const emAnd=ativas.some(a=>String(a.carroId)===String(carroId)&&Number(a.vix)===ix);
+      if(!(v&&v.fechada)&&!emAnd) return;
+      if(!(v.pedidoIds||[]).length) return;
+      lista.push({carroId,carro:_nomeCarroRota(carroId),ix,viagem:ix+1,motivo:emAnd?"em andamento":"fechada",chave:_idsDaViagem(v),pedidoIds:(v.pedidoIds||[]).map(Number),fechadaEm:v.fechadaEm||null,fechadaPor:v.fechadaPor||null});
+    });
+  });
+  return lista;
+}
+// o pedido está numa viagem travada? (qualquer dia). Devolve o primeiro encontrado ou null
+function viagemTravadaDoPedido(pedidoId){
+  const pid=Number(pedidoId); const rotas=lerRotasDias();
+  for(const [data,carros] of Object.entries(rotas)){
+    const t=_viagensTravadasDoDia(data,carros).find(x=>x.pedidoIds.includes(pid));
+    if(t) return {data,...t};
+  }
+  return null;
+}
+const _msgViagemTravada=(t)=>`Esse pedido está na viagem ${t.viagem} do carro ${t.carro} (${t.motivo}) do dia ${String(t.data).split("-").reverse().join("/")}. ${t.motivo==="fechada"?"Reabra a viagem em Gerenciamento de Rota antes de mudar.":"Uma viagem em andamento só pode ser cancelada em Gerenciamento de Rota."}`;
 app.post("/api/rotas/dia",(req,res)=>{
   const {data,carros}=req.body||{};
   if(!data||!carros) return res.status(400).json({erro:"data e carros obrigatórios"});
   const rotas=lerRotasDias();
+  const travadas=_viagensTravadasDoDia(data,rotas[data]||{});
+  // cada viagem travada precisa continuar existindo com os MESMOS pedidos (a ordem pode mudar, e ela pode ter mudado de posição na lista)
+  const novasPorChave={}; Object.entries(carros).forEach(([carroId,c])=>((c&&c.viagens)||[]).forEach(v=>{ (novasPorChave[carroId+"|"+_idsDaViagem(v)]=novasPorChave[carroId+"|"+_idsDaViagem(v)]||[]).push(v); }));
+  const problemas=travadas.filter(t=>!novasPorChave[t.carroId+"|"+t.chave]);
+  if(problemas.length){
+    return res.status(409).json({erro:"Viagem fechada ou em andamento: não dá para tirar nem trocar pedidos dela. "+problemas.map(p=>`(${p.carro}, viagem ${p.viagem}, ${p.motivo})`).join(" ")+" Reabra a viagem antes (viagem já iniciada só pode ser cancelada).",viagensTravadas:problemas.map(p=>({carro:p.carro,viagem:p.viagem,motivo:p.motivo}))});
+  }
+  // a marca de "fechada" é do SERVIDOR: vale o que já estava gravado (casando pelos pedidos), nunca o que a tela mandar
+  const gravadas={}; travadas.forEach(t=>{ gravadas[t.carroId+"|"+t.chave]=t; });
+  Object.entries(carros).forEach(([carroId,c])=>((c&&c.viagens)||[]).forEach(v=>{
+    const t=gravadas[carroId+"|"+_idsDaViagem(v)];
+    const antiga=((rotas[data]||{})[carroId]||{}).viagens||[];
+    const ant=t&&antiga.find(x=>_idsDaViagem(x)===t.chave&&x.fechada);
+    delete v.fechada; delete v.fechadaEm; delete v.fechadaPor;
+    if(ant){ v.fechada=true; v.fechadaEm=ant.fechadaEm||null; v.fechadaPor=ant.fechadaPor||null; }
+  }));
   rotas[data]=carros;
   salvarRotasDias(rotas);
   res.json({ok:true});
+});
+app.post("/api/rotas/viagem/fechar",(req,res)=>{
+  try{
+    const {data,carroId,vix,funcionarioNome}=req.body||{}; const rotas=lerRotasDias();
+    const v=(((rotas[data]||{})[carroId]||{}).viagens||[])[Number(vix)];
+    if(!v) return res.status(404).json({erro:"viagem não encontrada no plano deste dia (salve o plano primeiro)"});
+    if(!(v.pedidoIds||[]).length) return res.status(400).json({erro:"essa viagem não tem pedidos"});
+    v.fechada=true; v.fechadaEm=Date.now(); v.fechadaPor=funcionarioNome||null;
+    salvarRotasDias(rotas); res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/rotas/viagem/reabrir",(req,res)=>{
+  try{
+    const {data,carroId,vix}=req.body||{}; const rotas=lerRotasDias();
+    const v=(((rotas[data]||{})[carroId]||{}).viagens||[])[Number(vix)];
+    if(!v) return res.status(404).json({erro:"viagem não encontrada"});
+    const registro=Object.values(lerViagensAtivas()).find(a=>a.data===data&&!a.canceladaEm&&String(a.carroId)===String(carroId)&&Number(a.vix)===Number(vix));
+    if(registro) return res.status(409).json({erro:registro.finalizadaEm?"Essa viagem já foi realizada e não pode ser reaberta.":"Essa viagem já foi iniciada e não pode ser reaberta. Para mudar, cancele a viagem em andamento."});
+    delete v.fechada; delete v.fechadaEm; delete v.fechadaPor;
+    salvarRotasDias(rotas); res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 // Calcula a melhor ordem de entrega entre os pedidos selecionados (Google
