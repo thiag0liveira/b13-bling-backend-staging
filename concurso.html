@@ -368,7 +368,7 @@ function acompanharSync(){
   },3000);
 }
 async function gerarDireto(numero,confirmado){
-  const {status,j}=await api("/api/concurso/links",{method:"POST",body:JSON.stringify({numero,canal:"whatsapp",ignorarAvisos:!!confirmado})});
+  const {status,j}=await api("/api/concurso/links",{method:"POST",body:JSON.stringify({numero,ignorarAvisos:!!confirmado}) /* sem canal: o servidor detecta (pedido do site = app) */});
   if(status===409&&j.precisaConfirmar){ if(confirm("Antes de gerar, confira:\n\n• "+(j.avisos||[]).join("\n• ")+"\n\nGerar o link mesmo assim?")) return gerarDireto(numero,true); return; }
   if(status>=400){ alert(j.erro||"Não consegui gerar o link."); return; }
   mostrarResultado(j.link); window.scrollTo({top:0,behavior:"smooth"}); toast(j.jaExistia?"Esse pedido já tinha link":"Link gerado"); await carregarListas();
