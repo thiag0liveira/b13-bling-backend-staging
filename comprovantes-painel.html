@@ -94,7 +94,7 @@ const hora = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "Americ
 const min = m => m == null ? "—" : m < 60 ? m + " min" : Math.floor(m / 60) + "h" + (m % 60 ? String(m % 60).padStart(2, "0") : "");
 function token(){ try{ return (JSON.parse(localStorage.getItem("b13sess") || "null") || {}).token || ""; }catch(e){ return ""; } }
 async function api(p){ const r = await fetch(B + p, { headers: { "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { status: r.status, j }; }
-let D = null, BUSCA = "", CONF = "", TIPO = "", COMP = "todos";
+let D = null, BUSCA = "", CONF = "", TIPO = "", COMP = "todos", ORIG = "", _reTenta = null;
 function periodo(p){
   const h = hojeBR(); let de = h, ate = h;
   if (p === "ontem") de = ate = new Date(Date.parse(h + "T12:00:00") - 86400000).toISOString().slice(0, 10);
@@ -113,13 +113,16 @@ async function carregar(){
   const { status, j } = await api("/api/conferencias/painel?" + q);
   if (status !== 200) { document.getElementById("lista").innerHTML = `<div class="vazio">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
   D = j; renderTudo();
+  clearTimeout(_reTenta);
+  if (j.completando > 0) { document.getElementById("tituloLista").innerHTML = `Pedidos conferidos <span class="muted" style="font-weight:400">· completando ${j.completando} número(s) e cliente(s) no Bling, a lista atualiza sozinha</span>`; _reTenta = setTimeout(carregar, 20000); }
+  else document.getElementById("tituloLista").textContent = "Pedidos conferidos";
 }
 function renderTudo(){
   const I = D.indicadores, pct = I.conferencias ? Math.round(I.comComprovante / I.conferencias * 100) : 0;
   const k = [
     [I.conferencias, "Conferências", `${I.entregas} entrega(s) · ${I.retiradas} retirada(s) · ${I.conferentes} conferente(s)`],
     [pct + "%", "Com foto ou vídeo", `${I.comComprovante} com evidência`],
-    [I.semComprovante, "Conferidos SEM comprovante", I.semComprovante ? "sem foto nem vídeo: confira" : "todos com evidência", I.semComprovante > 0],
+    [I.semComprovante, "Conferidos SEM comprovante", I.semComprovante ? `sem foto nem vídeo${I.semComprovanteVendasCaixa ? ` · ${I.semComprovanteVendasCaixa} são vendas do caixa (balcão)` : ""}` : "todos com evidência", I.semComprovante > 0],
     [`${I.fotos} · ${I.videos}`, "Fotos · vídeos", "arquivos de conferência"],
     [min(I.duracaoMedianaMin), "Tempo típico de conferência", "do início ao fim da conferência"],
     [min(I.esperaMedianaMin), "Espera típica", "entre separado e conferido"],
@@ -143,7 +146,8 @@ function renderTudo(){
 function filtra(x, ignorarComp){
   if (CONF && x.conferente !== CONF) return false;
   if (TIPO && x.tipo !== TIPO) return false;
-  if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || norm(x.cliente).includes(b) || norm(x.conferente).includes(b) || norm(x.vendedor).includes(b))) return false; }
+  if (ORIG && (ORIG === "caixa" ? x.origem !== "caixa" : x.origem === "caixa")) return false;
+  if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || String(x.pedidoId).includes(b) || norm(x.cliente).includes(b) || norm(x.conferente).includes(b) || norm(x.vendedor).includes(b) || norm(x.operadorCaixa).includes(b))) return false; }
   if (ignorarComp) return true;
   if (COMP === "com") return !x.semConclusao && x.fotos + x.videos > 0;
   if (COMP === "sem") return !x.semConclusao && x.fotos + x.videos === 0;
@@ -157,15 +161,18 @@ function renderLista(){
   document.getElementById("fComp").innerHTML = [["todos", "Todos conferidos"], ["com", "📷 Com foto ou vídeo"], ["sem", "⚠️ Sem comprovante"], ["semConclusao", "Mídia sem conclusão"]]
     .map(([k, t]) => `<span class="chip ${COMP === k ? "on" : ""}" onclick="COMP='${k}';renderLista()">${t} (${c(k)})</span>`).join(" ");
   document.getElementById("fTipo").innerHTML = [["", "Entregas e retiradas"], ["entrega", "🛵 Entregas"], ["retirada", "🏪 Retiradas"]]
-    .map(([k, t]) => `<span class="chip ${TIPO === k ? "on" : ""}" onclick="TIPO='${k}';renderLista()">${t}</span>`).join(" ");
+    .map(([k, t]) => `<span class="chip ${TIPO === k ? "on" : ""}" onclick="TIPO='${k}';renderLista()">${t}</span>`).join(" ") + " " +
+    [["", "Pedidos e vendas do caixa"], ["pedido", "📋 Só pedidos"], ["caixa", "🧾 Só vendas do caixa"]]
+    .map(([k, t]) => `<span class="chip ${ORIG === k ? "on" : ""}" onclick="ORIG='${k}';renderLista()">${t}</span>`).join(" ");
   const L = D.pedidos.filter(x => filtra(x));
   document.getElementById("lista").innerHTML = L.length ? `<div class="grade">${L.map(x => {
     const capa = x.capa ? (x.capa.tipo === "video" && !x.capa.thumb ? `<div class="capa"><span class="play">▶</span>🎥</div>` : `<div class="capa"><img src="${esc(B + (x.capa.thumb || x.capa.url))}" loading="lazy" alt="" onerror="this.parentNode.innerHTML='<span style=&quot;font-size:11px;color:#9a95c9;padding:10px;text-align:center&quot;>arquivo apagado pela limpeza automática</span>'">${x.capa.tipo === "video" ? '<span class="play">▶</span>' : ""}</div>`)
       : `<div class="capa sem"><b>⚠️</b>sem foto ou vídeo</div>`;
-    return `<div class="pc" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">${capa}<div class="info"><div class="num">#${esc(x.numero)} ${x.valor ? `<span class="muted">· ${brl(x.valor)}</span>` : ""}</div>
-      <div class="cli">${esc(x.cliente || "cliente não identificado")}</div>
+    const semNumero = x.numero === x.pedidoId;
+    return `<div class="pc" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">${capa}<div class="info"><div class="num">${semNumero ? `<span class="muted" style="font-size:12px">buscando o nº no Bling…</span>` : "#" + esc(x.numero)} ${x.valor ? `<span class="muted">· ${brl(x.valor)}</span>` : ""}</div>
+      <div class="cli">${esc(x.cliente || (x.origem === "caixa" ? "venda de balcão (sem cliente)" : "cliente ainda não identificado"))}</div>
       <div class="muted" style="margin-top:4px">${x.semConclusao ? "mídia de" : "conferido por"} <b style="color:#e6e2ff">${esc(x.conferente || "—")}</b> · ${hora(x.conferidoEm || x.quandoMs)}</div>
-      <div>${x.tipo ? `<span class="tag neu">${x.tipo === "retirada" ? "🏪 retirada" : "🛵 entrega"}</span>` : ""}${x.fotos ? `<span class="tag ok">📷 ${x.fotos}</span>` : ""}${x.videos ? `<span class="tag ok">🎥 ${x.videos}</span>` : ""}
+      <div>${x.origem === "caixa" ? `<span class="tag neu" title="venda feita direto no caixa${x.operadorCaixa ? " por " + esc(x.operadorCaixa) : ""}">🧾 venda do caixa</span>` : ""}${x.tipo ? `<span class="tag neu">${x.tipo === "retirada" ? "🏪 retirada" : "🛵 entrega"}</span>` : ""}${x.fotos ? `<span class="tag ok">📷 ${x.fotos}</span>` : ""}${x.videos ? `<span class="tag ok">🎥 ${x.videos}</span>` : ""}
         ${x.duracaoMin != null ? `<span class="tag neu">⏱️ ${min(x.duracaoMin)}</span>` : ""}${x.ajustes ? `<span class="tag warn">ajuste</span>` : ""}${x.semConclusao ? `<span class="tag erro">sem conclusão</span>` : ""}</div></div></div>`;
   }).join("")}</div>` : `<div class="vazio">Nenhum pedido neste filtro.</div>`;
 }

@@ -55,7 +55,7 @@
     var conf = x.midias.filter(function (m) { return m.origem === "conferencia"; }), ent = x.midias.filter(function (m) { return m.origem !== "conferencia"; });
     var S = x.separacao, C = x.conferencia, E = x.entrega;
     var h = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">' +
-      '<div><div style="font-size:18px;font-weight:900">Pedido #' + esc(x.numero) + " · " + esc(x.cliente || "—") + "</div>" +
+      '<div><div style="font-size:18px;font-weight:900">' + (x.numeroConhecido === false ? 'Pedido <span style="font-size:13px;color:#9a95c9">(nº sendo buscado no Bling · código ' + esc(x.pedidoId) + ")</span>" : "Pedido #" + esc(x.numero)) + " · " + esc(x.cliente || "—") + "</div>" +
       '<div style="margin-top:6px"><span class="b13f-tag ' + st[1] + '">' + st[0] + '</span><span class="b13f-tag ' + pg[1] + '">' + pg[0] + "</span>" +
       (x.tipo ? '<span class="b13f-tag neu">' + (x.tipo === "retirada" ? "🏪 retirada" : "🛵 entrega") + "</span>" : "") +
       '<b style="font-size:15px;margin-left:4px">' + brl(x.total) + "</b></div></div>" +
