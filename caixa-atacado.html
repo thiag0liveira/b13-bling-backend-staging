@@ -791,7 +791,9 @@ async function abrirPedido(id) {
       vendedorNome: j.vendedorNome,
       contatoId: j.contatoId,
       ehEntrega: !!j.ehEntrega,
-      endereco: j.endereco || ""
+      endereco: j.endereco || "",
+      entregue: !!j.entregue,
+      recebidoNaEntrega: j.recebidoNaEntrega || null
     };
     CLIENTE_NOME = j.clienteNome || "";
     CARRINHO = (j.itens || []).map(it => ({
@@ -806,6 +808,15 @@ async function abrirPedido(id) {
     FRETE = Number(j.frete || 0); // puxa o frete do pedido (entrega)
     COBRAR_TAXA_CARTAO = true;
     PAGAMENTOS = [];
+    // recebido SÓ pelo motorista: já preenche as formas com o que ele recebeu (se todas existirem neste caixa)
+    if (j.recebidoNaEntrega && (j.recebidoNaEntrega.formas || []).length) {
+      const nrm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      const linhas = j.recebidoNaEntrega.formas.map(f => {
+        const alvo = FORMAS.find(x => nrm(x.nome || x.descricao) === nrm(f.formaNome)) || (/pix/i.test(f.formaNome) && /banco/i.test(f.formaNome) ? FORMAS.find(x => x.pixTipo === "banco") : null);
+        return alvo ? { formaId: alvo.id, formaNome: alvo.nome || alvo.descricao, valor: Number(f.valor), ...(f.banco ? { banco: f.banco } : {}) } : null;
+      });
+      if (linhas.every(Boolean)) PAGAMENTOS = linhas;
+    }
     ULTIMO_ITEM_PAINEL = null; // volta a logo até bipar um produto
     window._obsVenda = limparObs(j.observacao || ""); // carrega a observação existente do pedido (sem as notas automáticas)
     render();
@@ -945,7 +956,9 @@ async function abrirPedidoParaEdicao(id) {
       vendedorNome: j.vendedorNome,
       contatoId: j.contatoId,
       ehEntrega: !!j.ehEntrega,
-      endereco: j.endereco || ""
+      endereco: j.endereco || "",
+      entregue: !!j.entregue,
+      recebidoNaEntrega: j.recebidoNaEntrega || null
     };
     CLIENTE_NOME = j.clienteNome || "";
     // itens travados (precoEditado) — na edição de pagamento não se mexe nos itens
@@ -2280,6 +2293,7 @@ function render() {
           <div class="muted" style="margin-top:4px">📌 Status: <b style="color:#ffd23f">${esc(PEDIDO_ATUAL.situacaoNome || "—")}</b></div>
           <div class="muted">🧑‍💼 Vendedor: <b style="color:#cfc9f5">${esc(PEDIDO_ATUAL.vendedorNome || "—")}</b></div>
           ${CLIENTE_NOME ? `<div class="muted">👤 Cliente: <b style="color:#cfc9f5">${esc(CLIENTE_NOME)}</b></div>` : ''}
+          ${PEDIDO_ATUAL.recebidoNaEntrega ? `<div style="margin-top:8px;padding:8px 10px;background:#0f2a1f;border:1px solid #2f9e6b;border-radius:8px;font-size:12px;color:#bff5d9">🛵 <b>Entregue e recebido pelo ${PEDIDO_ATUAL.recebidoNaEntrega.peloEscritorio ? "escritório" : "motorista"}${PEDIDO_ATUAL.recebidoNaEntrega.motorista ? " " + esc(PEDIDO_ATUAL.recebidoNaEntrega.motorista) : ""}</b>${PEDIDO_ATUAL.recebidoNaEntrega.em ? " em " + new Date(PEDIDO_ATUAL.recebidoNaEntrega.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}: ${PEDIDO_ATUAL.recebidoNaEntrega.formas.map(f => esc(f.formaNome) + (f.banco ? " (" + esc(f.banco) + ")" : "") + " " + brl(f.valor)).join(" · ")}.<br>Aqui você só registra no caixa o que veio da rua. O pedido vai direto para <b>Atendido</b>, sem passar pela separação.</div>` : (PEDIDO_ATUAL.entregue ? `<div style="margin-top:8px;padding:8px 10px;background:#1c1846;border:1px solid #3a3480;border-radius:8px;font-size:12px">🛵 Pedido já entregue: ao finalizar, vai direto para <b>Atendido</b>.</div>` : '')}
           ${MODO_EDICAO_PAGAMENTO ? `<div style="margin-top:8px;padding:8px;background:#2a0f14;border:1px solid #6b1f24;border-radius:8px;font-size:12px;color:#ff9aa2">✏️ <b>Pedido reaberto</b>. Autorizado por ${esc(AUTORIZADO_POR || "—")}. Como ele já foi finalizado, ao salvar o sistema <b>estorna o estoque, aplica as mudanças e lança de novo</b> automaticamente. Pode <b>retirar/alterar itens</b> e escolher a nova forma de pagamento — tudo que mudar fica registrado no histórico (caixa, Bling e Central).</div>` : ""}
         </div>` : `<h3 style="margin-bottom:8px">🛒 Nova venda</h3>`}
         <div class="muted" style="margin-bottom:6px">💰 Modo de preço desta venda</div>
@@ -2653,7 +2667,8 @@ async function finalizar() {
   // motorista pelo app) — o backend também já vai direto pra ATENDIDO.
   const ehPrazoAgora = Number((PEDIDO_ATUAL || {}).situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.PRAZO : 806183);
   const ehEmRotaAgora = Number((PEDIDO_ATUAL || {}).situacaoId) === (typeof B13_SIT !== "undefined" ? B13_SIT.EM_ROTA : 820085);
-  if (!DESTINO_PEDIDO && !ehPrazoAgora && !ehEmRotaAgora) {
+  const ehEntregueAgora = !!(PEDIDO_ATUAL || {}).entregue; // já entregue: só registra, vai para Atendido
+  if (!DESTINO_PEDIDO && !ehPrazoAgora && !ehEmRotaAgora && !ehEntregueAgora) {
     perguntarDestinoPedido();
     return;
   }
@@ -2691,7 +2706,7 @@ async function finalizar() {
   const taxaCredito = taxaCartao(); // 3,5% do crédito + débito, se aplicável e marcado
   // "separacao" deixa o pedido EM SEPARAÇÃO (entra na fila da Mesa e do Painel);
   // "pronto" segue direto pra Atendido, como antes
-  const statusFinal = DESTINO_PEDIDO === "separacao" ? "separacao" : "separado";
+  const statusFinal = (PEDIDO_ATUAL && PEDIDO_ATUAL.entregue) ? "atendido" : (DESTINO_PEDIDO === "separacao" ? "separacao" : "separado");
   try {
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout = (url, opts, ms = 90000) => {

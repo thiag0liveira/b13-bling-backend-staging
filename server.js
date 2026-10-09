@@ -8139,7 +8139,9 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
     const pReg=pagsLocais[String(d.id)];
     const statusPagLocal=pReg?.statusPagamento||"pendente";
     let recebidoInfo=null; try{ recebidoInfo=_pagamentoDoPedido(d.id, d.numero); }catch(e){}
-    const pagoNoCaixa=!!recebidoInfo?.pago;
+    const soEntrega=_recebimentoSoNaEntrega(d.id, d.numero);
+    const entregueLocal=!!_mapaEntregasLocais()[String(d.id)];
+    const pagoNoCaixa=!soEntrega && !!recebidoInfo?.pago;
     res.json({
       id:d.id, numero:d.numero, situacaoId,
       situacaoNome:nomeSituacaoFechamento(situacaoId),
@@ -8153,11 +8155,13 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
       // pra decidir se precisa de autorização (QR) antes de reabrir/editar
-      pago: pagoNoCaixa || statusPagLocal==="pago" || statusPagLocal==="parcial",
+      pago: soEntrega ? false : (pagoNoCaixa || statusPagLocal==="pago" || statusPagLocal==="parcial"),
+      // entregue e recebido SÓ pelo motorista: abre sem QR para registrar no caixa, e vai direto para Atendido
+      recebidoNaEntrega: soEntrega || null, entregue: entregueLocal,
       recebido: pagoNoCaixa,
       ondeFoiPago: recebidoInfo?.ondeFoiPago||null, operadorRecebeu: recebidoInfo?.operador||null,
       quandoRecebeu: recebidoInfo?.quando||null, valorRecebido: recebidoInfo?.valor||0,
-      statusPagamento: statusPagLocal, valorPago: pReg?.valorPago||0,
+      statusPagamento: soEntrega ? "pendente" : statusPagLocal, valorPago: soEntrega ? 0 : (pReg?.valorPago||0),
       jaSaiuDoFluxoInicial, pagoNoCaixa,
     });
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
@@ -8702,7 +8706,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   try{
     if(pedidoId && !autorizadoPor){
       const jaPago=_pagamentoDoPedido(pedidoId, req.body?.numero);
-      if(jaPago.pago){
+      if(jaPago.pago && !_recebimentoSoNaEntrega(pedidoId, req.body?.numero)){
         return res.status(403).json({erro:`Este pedido já foi recebido em ${jaPago.ondeFoiPago||"caixa"}${jaPago.operador?" por "+jaPago.operador:""}. Pra reabrir e alterar, é preciso autorização (QR de gerente, financeiro ou admin).`, precisaAutorizacao:true, jaPago:true});
       }
     }
@@ -8777,7 +8781,8 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
 
     // ===== 2) SEGUNDO PLANO: sincroniza com o Bling. A resposta já foi enviada. =====
     const dadosSync={
-      itens:itensEfetivos, pagamentos, emitirNfce, funcionarioNome:funcNome, observacao, statusFinal,
+      itens:itensEfetivos, pagamentos, emitirNfce, funcionarioNome:funcNome, observacao,
+      statusFinal: _mapaEntregasLocais()[String(pedidoId)] ? "atendido" : statusFinal, // já entregue: só registra e vai para Atendido
       taxaCredito, outrasDespesasBase, freteBase, troco, numero:numeroReq,
     };
     syncAtacadoSet(pedidoId,{status:"pendente",criadoEm:Date.now(),etapas:[],numero:numeroReq||null,operador:funcNome,dadosOriginais:dadosSync});
@@ -17035,6 +17040,20 @@ function estimarPesoPedido(itens,relatorio){
 // com os dados já prontos pra tela: cliente, vendedor, valor, frete, itens, peso.
 // Descobre se um pedido JÁ FOI RECEBIDO em algum caixa (atacado ou frente) e como.
 // Serve pra rota saber o que sai pra entrega sem estar pago.
+// RECEBIDO SÓ NA ENTREGA: o motorista (ou o escritório no Resolver corrida) recebeu, e o pedido ainda NÃO passou
+// por nenhum caixa. Nesse caso o Caixa Atacado abre sem QR, só para registrar no caixa o que veio da rua.
+function _recebimentoSoNaEntrega(pedidoId, numeroPedido){
+  try{
+    const id=String(pedidoId);
+    const cx=_pagamentoDoPedido(id, numeroPedido);
+    if(cx.pago && /caixa/i.test(String(cx.ondeFoiPago||""))) return null; // já está numa sessão de caixa: continua pedindo QR
+    const ent=_mapaEntregasLocais()[id];
+    if(!ent || ent.prazo) return null;
+    const formas=(ent.formas||[]).filter(f=>Number(f.valor)>0);
+    if(!formas.length) return null;
+    return { motorista:ent.motorista||"", em:ent.em||null, formas, total:+formas.reduce((s2,f)=>s2+Number(f.valor),0).toFixed(2), peloEscritorio:!!ent.gerente, registradoPor:ent.registradoPor||"" };
+  }catch(e){ return null; }
+}
 function _pagamentoDoPedido(pedidoId, numeroPedido, dCxPreLido){
   const id=String(pedidoId);
   const num=numeroPedido!=null?String(numeroPedido):null;
