@@ -293,6 +293,13 @@ export function registrarGestaoPedidos(app, deps) {
   function janela(periodo) {
     const agora = Date.now(); const hoje = inicioDiaBR(diaBR(agora));
     if (periodo === "ontem") return { ini: hoje - 86400000, fim: hoje, rotulo: "Ontem" };
+    // SEMANA: começa na segunda-feira (semana de trabalho). "semana" = de segunda até agora;
+    // "semana_passada" = a semana anterior inteira, de segunda a domingo.
+    const dow = new Date(diaBR(agora) + "T12:00:00").getDay(); // 0 = domingo
+    const iniSemana = hoje - ((dow + 6) % 7) * 86400000;
+    const ddmm = (ms) => { const d = diaBR(ms); return d.slice(8) + "/" + d.slice(5, 7); };
+    if (periodo === "semana") return { ini: iniSemana, fim: agora, rotulo: "Esta semana (" + ddmm(iniSemana) + " até hoje)" };
+    if (periodo === "semana_passada") return { ini: iniSemana - 7 * 86400000, fim: iniSemana - 1, rotulo: "Semana passada (" + ddmm(iniSemana - 7 * 86400000) + " a " + ddmm(iniSemana - 86400000) + ")" };
     if (periodo === "7d") return { ini: hoje - 6 * 86400000, fim: agora, rotulo: "Últimos 7 dias" };
     if (periodo === "30d") return { ini: hoje - 29 * 86400000, fim: agora, rotulo: "Últimos 30 dias" };
     return { ini: hoje, fim: agora, rotulo: "Hoje" };

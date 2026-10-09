@@ -379,7 +379,7 @@
     return '<div class="gLinhaBarra"><span>' + rot + '</span><div class="gBarra"><i style="width:' + pct + "%" + (corBarra ? ";background:" + corBarra : "") + '"></i></div><b style="text-align:right">' + texto + "</b></div>";
   }
   function abaIndicadores() {
-    var per = [["hoje", "Hoje"], ["ontem", "Ontem"], ["7d", "7 dias"], ["30d", "30 dias"]];
+    var per = [["hoje", "Hoje"], ["ontem", "Ontem"], ["semana", "Semana"], ["semana_passada", "Sem. passada"], ["7d", "7 dias"], ["30d", "30 dias"]];
     var h = '<div class="gTitulo"><h2>📊 Indicadores</h2><div class="gFiltros" style="margin:0">' + per.map(function (x) {
       return '<span class="gF ' + (G.indPeriodo === x[0] ? "on" : "") + '" onclick="GESTAO.setPeriodo(\'' + x[0] + '\')">' + x[1] + "</span>";
     }).join("") + "</div></div>";
