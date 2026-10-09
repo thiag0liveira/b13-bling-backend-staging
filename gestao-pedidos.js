@@ -77,7 +77,11 @@ export function registrarGestaoPedidos(app, deps) {
         if (n.startsWith("pedido_criado_") || n === "pedido_incluido_no_caixa") m.criado = m.criado || t;
         else if (n.startsWith("enviado_separacao") || n === "separar_para_entregar") { m.envio = t; m.envioPor = e.funcionarioNome || ""; delete m.entregue; }
         else if (n === "pedido_aberto_separacao") { m.inicioSep = m.inicioSep || t; m.sepPor = e.funcionarioNome || m.sepPor; }
-        else if (n === "separacao_completa" || n === "separacao_com_falta" || n === "seguiu_sem_pendencias") { m.fimSep = t; m.fimSepPor = e.funcionarioNome || m.sepPor || ""; }
+        // quem SEPAROU é quem concluiu a separação (na Mesa ou na Expedição). "Pendências resolvidas"
+        // é outra pessoa (gestão/caixa) decidindo o que fazer com a falta: NÃO leva o crédito da separação
+        // nem estica o tempo dela. Só vale como fim da separação se não houve conclusão registrada antes.
+        else if (n === "separacao_completa" || n === "separacao_com_falta") { m.fimSep = t; m.fimSepPor = e.funcionarioNome || m.sepPor || ""; }
+        else if (n === "seguiu_sem_pendencias") { m.pendResolvidaEm = t; m.pendResolvidaPor = e.funcionarioNome || ""; if (!m.fimSep) { m.fimSep = t; m.fimSepPor = e.funcionarioNome || m.sepPor || ""; } }
         else if (n.startsWith("conferido_")) { m.conferido = t; m.confPor = e.funcionarioNome || ""; }
         else if (n === "voltou_separacao") { m.envio = t; delete m.inicioSep; delete m.fimSep; delete m.conferido; delete m.entregue; }
         else if (n.startsWith("entrega_finalizada_") || n === "entrega_confirmada") m.entregue = t;
