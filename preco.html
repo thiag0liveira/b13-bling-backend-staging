@@ -421,6 +421,7 @@ async function carregarIndiceInfo() {
     renderSinc();
   } catch (e) { renderSinc(); }
 }
+telaIdle(); // monta a tela de espera (leitor + carrossel) ao abrir
 carregarIndiceInfo();
 carregarFotosProdutos();
 setInterval(carregarFotosProdutos, 30 * 60 * 1000); // atualiza a lista de fotos a cada 30 min</script>
