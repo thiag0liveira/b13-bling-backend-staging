@@ -12859,9 +12859,13 @@ function _montarFicha(it,ctx){
     const pr=pagReg[pid]||null; const prHist=((pr&&pr.historico)||[]).filter(h=>Number(h.valor)>0&&!/^substituicao$/.test(String(h.tipo||"")));
     const prDaEntrega=prHist.length>0&&prHist.every(h=>/^entrega/i.test(String(h.origem||"")));
     let pagamento;
-    if(reg&&reg.prazo) pagamento={situacao:"prazo",texto:"A prazo"+(reg.venceEm?" · vence "+new Date(reg.venceEm-3*3600e3).toISOString().slice(0,10).split("-").reverse().join("/"):""),valor:Number(reg.valorFinal)||total};
-    else if(formas.length) pagamento={situacao:"pago_entrega",texto:"Recebido na entrega",valor:recebidoEntrega};
-    else if(viaCaixa) pagamento={situacao:"pago_caixa",texto:"Pago no "+cx.ondeFoiPago+" (antes da entrega)",detalhe:cx.formas||"",valor:Number(cx.valor)||0,quando:cx.quando||null,operador:cx.operador||""};
+    // PASSOU POR UM CAIXA = PAGO (regra da loja): antes da entrega, ou o motorista recebeu e o dinheiro foi
+    // registrado no caixa depois (acerto). Vem antes de "a prazo" e de "recebido na entrega".
+    if(viaCaixa){ const acertado=formas.length>0||!!(reg&&reg.em&&cx.quando&&cx.quando>=reg.em);
+      pagamento={situacao:"pago_caixa",acertado,texto:acertado?`Recebido na entrega e acertado no ${cx.ondeFoiPago}`:`Pago no ${cx.ondeFoiPago} (antes da entrega)`,
+        detalhe:cx.formas||"",valor:Number(cx.valor)||0,quando:cx.quando||null,operador:cx.operador||""}; }
+    else if(reg&&reg.prazo) pagamento={situacao:"prazo",texto:"A prazo"+(reg.venceEm?" · vence "+new Date(reg.venceEm-3*3600e3).toISOString().slice(0,10).split("-").reverse().join("/"):""),valor:Number(reg.valorFinal)||total};
+    else if(formas.length) pagamento={situacao:"pago_entrega",texto:"Recebido na entrega (ainda não acertado no caixa)",valor:recebidoEntrega};
     else if(pr&&pr.statusPagamento==="pago"&&!prDaEntrega) pagamento={situacao:"pago_registro",texto:"Pagamento registrado no sistema, FORA de caixa (não aparece na Gestão de Caixas)",
       detalhe:prHist.map(h=>`${h.formaNome||"forma"}: ${brlN(Number(h.valor))}`).join(" · "),valor:Number(pr.valorPago)||0,
       operador:[...new Set(prHist.map(h=>h.funcionarioNome).filter(Boolean))].join(", "),quando:prHist.length?Math.max(...prHist.map(h=>Number(h.em)||0)):null};
@@ -13008,7 +13012,8 @@ function _centralEntregas(de,ate){
   const lista=Object.values(P).map(it=>_montarFicha(it,ctx)).sort((a,b)=>String(b.dataEntrega).localeCompare(String(a.dataEntrega))||Number(b.numero)-Number(a.numero));
   // indicadores e acerto por motorista
   const R={ total:lista.length, entregues:0, naoEntregues:0, emRota:0, aguardando:0, valorPedidos:0, valorEntregue:0,
-    recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, pagoForaDoCaixa:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
+    recebidoEntrega:{total:0,dinheiro:0,pix:0,cartao:0,outros:0,pixPorBanco:{}}, pagoNoCaixa:{qtd:0,valor:0}, pagoForaDoCaixa:{qtd:0,valor:0},
+    acertadoNoCaixa:{qtd:0,valor:0,dinheiro:0}, dinheiroAAcertar:{qtd:0,valor:0}, prazo:{qtd:0,valor:0}, semPagamento:{qtd:0,valor:0},
     comOcorrencia:0, comProblema:0, valorProblema:0, comFotoConferencia:0, comAssinatura:0,
     frete:{entregues:0,total:0,qtdEntreguesComFrete:0,kmEntregues:0,medioPorEntrega:0,porKm:null} };
   const mot={};
@@ -13017,7 +13022,9 @@ function _centralEntregas(de,ate){
     if(x.status==="entregue"&&x.frete>0){ R.frete.entregues+=x.frete; R.frete.qtdEntreguesComFrete++; if(Number(x.km)>0) R.frete.kmEntregues+=Number(x.km); }
     if(x.status==="entregue"){ R.entregues++; R.valorEntregue+=x.total; } else if(x.status==="nao_entregue") R.naoEntregues++; else if(x.status==="em_rota"||x.status==="sem_registro") R.emRota++; else R.aguardando++;
     x.formas.forEach(f=>{ R.recebidoEntrega.total+=f.valor; R.recebidoEntrega[f.classe]+=f.valor; if(f.classe==="pix"){ const b=f.banco||"(banco não informado)"; R.recebidoEntrega.pixPorBanco[b]=(R.recebidoEntrega.pixPorBanco[b]||0)+f.valor; } });
-    if(x.pagamento.situacao==="pago_caixa"){ R.pagoNoCaixa.qtd++; R.pagoNoCaixa.valor+=x.pagamento.valor||x.total; }
+    if(x.pagamento.situacao==="pago_caixa"&&!x.pagamento.acertado){ R.pagoNoCaixa.qtd++; R.pagoNoCaixa.valor+=x.pagamento.valor||x.total; }
+    if(x.pagamento.situacao==="pago_caixa"&&x.pagamento.acertado){ R.acertadoNoCaixa.qtd++; R.acertadoNoCaixa.valor+=x.recebidoEntrega||x.pagamento.valor||0; R.acertadoNoCaixa.dinheiro+=x.formas.filter(f=>f.classe==="dinheiro").reduce((s2,f)=>s2+f.valor,0); }
+    if(x.pagamento.situacao==="pago_entrega"){ const din=x.formas.filter(f=>f.classe==="dinheiro").reduce((s2,f)=>s2+f.valor,0); if(din>0){ R.dinheiroAAcertar.qtd++; R.dinheiroAAcertar.valor+=din; } }
     if(x.pagamento.situacao==="pago_registro"){ R.pagoForaDoCaixa.qtd++; R.pagoForaDoCaixa.valor+=x.pagamento.valor||x.total; }
     if(x.pagamento.situacao==="prazo"){ R.prazo.qtd++; R.prazo.valor+=x.pagamento.valor||x.total; }
     if(x.pagamento.situacao==="sem_pagamento"){ R.semPagamento.qtd++; R.semPagamento.valor+=x.total; }
@@ -13026,14 +13033,15 @@ function _centralEntregas(de,ate){
     if(x.midias.some(m=>m.origem==="conferencia")) R.comFotoConferencia++;
     if(x.entrega?.temAssinatura) R.comAssinatura++;
     if(x.viagem){ const k=x.viagem.motorista||"(sem nome)";
-      const m=(mot[k]||={motorista:k,carros:new Set(),entregas:0,entregues:0,naoEntregues:0,dinheiro:0,pix:0,cartao:0,outros:0,prazo:0,semPagamento:0,ocorrencias:0,valorEntregue:0,frete:0});
+      const m=(mot[k]||={motorista:k,carros:new Set(),entregas:0,entregues:0,naoEntregues:0,dinheiro:0,pix:0,cartao:0,outros:0,prazo:0,semPagamento:0,ocorrencias:0,valorEntregue:0,frete:0,dinheiroAAcertar:0,acertadoCaixa:0});
       m.carros.add(x.carro||""); m.entregas++; if(x.status==="entregue"){ m.entregues++; m.valorEntregue+=x.total; m.frete+=x.frete; } if(x.status==="nao_entregue") m.naoEntregues++;
-      x.formas.forEach(f=>{ m[f.classe]+=f.valor; }); if(x.pagamento.situacao==="prazo") m.prazo+=x.pagamento.valor||x.total; if(x.pagamento.situacao==="sem_pagamento") m.semPagamento++; if(x.entrega?.ocorrencia) m.ocorrencias++; }
+      x.formas.forEach(f=>{ m[f.classe]+=f.valor; if(f.classe==="dinheiro"&&x.pagamento.situacao==="pago_entrega") m.dinheiroAAcertar+=f.valor; });
+      if(x.pagamento.situacao==="pago_caixa"&&x.pagamento.acertado) m.acertadoCaixa+=x.recebidoEntrega||0; if(x.pagamento.situacao==="prazo") m.prazo+=x.pagamento.valor||x.total; if(x.pagamento.situacao==="sem_pagamento") m.semPagamento++; if(x.entrega?.ocorrencia) m.ocorrencias++; }
   });
   const r2=o=>{ Object.keys(o).forEach(k=>{ if(typeof o[k]==="number") o[k]=_round2(o[k]); }); return o; };
   R.frete.medioPorEntrega=R.frete.qtdEntreguesComFrete?R.frete.entregues/R.frete.qtdEntreguesComFrete:0;
   R.frete.porKm=R.frete.kmEntregues>0?R.frete.entregues/R.frete.kmEntregues:null;
-  r2(R); r2(R.recebidoEntrega); r2(R.frete); r2(R.pagoForaDoCaixa); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
+  r2(R); r2(R.recebidoEntrega); r2(R.frete); r2(R.pagoForaDoCaixa); r2(R.acertadoNoCaixa); r2(R.dinheiroAAcertar); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
   return { de, ate, indicadores:R, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
 }
 app.get("/api/central-entregas",requireSessao,(req,res)=>{

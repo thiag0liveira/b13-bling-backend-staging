@@ -99,6 +99,7 @@
   function render(x) {
     MID = [];
     var st = ST[x.status] || [x.status, "neu"], pg = PG[x.pagamento.situacao] || [x.pagamento.situacao, "neu"];
+    if (x.pagamento.situacao === "pago_caixa" && x.pagamento.acertado) pg = ["💳 acertado no caixa", "ok"];
     var conf = x.midias.filter(function (m) { return m.origem === "conferencia"; }), ent = x.midias.filter(function (m) { return m.origem !== "conferencia"; });
     var S = x.separacao, C = x.conferencia, E = x.entrega;
     var h = '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">' +

@@ -88,7 +88,7 @@ th:first-child,td:first-child{text-align:left}
   </div>
   <div class="kpis" id="kpis"></div>
   <div class="card"><h3>💵 Recebimentos por motorista (acerto)</h3>
-    <div class="desc">O que cada motorista recebeu na entrega no período. Dinheiro é o que ele precisa entregar no caixa; Pix confira no extrato de cada banco.</div>
+    <div class="desc">O que cada motorista recebeu na entrega no período. "Dinheiro a acertar" é o recebido em dinheiro que ainda não passou por nenhum caixa; quando o pedido é registrado num caixa, sai daqui e vai para "Acertado no caixa". Pix confira no extrato de cada banco.</div>
     <div id="motoristas"></div></div>
   <div class="card">
     <div class="filtros" style="margin-bottom:10px">
@@ -117,7 +117,7 @@ const ST = {
   aguardando_saida: ["🚚 No carro, aguardando saída", "neu"], aguardando_carro: ["⏳ Aguardando carro", "neu"] };
 const PG = { pago_caixa: "ok", pago_registro: "azul", pago_entrega: "ok", ja_pago: "ok", prazo: "warn", parcial: "warn", pendente: "neu", sem_pagamento: "erro" };
 const tagSt = x => `<span class="tag ${ST[x.status]?.[1] || "neu"}">${ST[x.status]?.[0] || x.status}</span>`;
-const tagPg = x => `<span class="tag ${PG[x.pagamento.situacao] || "neu"}">${esc(x.pagamento.situacao === "pago_entrega" ? "💵 " + brl(x.recebidoEntrega) + " na entrega" : x.pagamento.situacao === "pago_caixa" ? "💳 pago no caixa" : x.pagamento.situacao === "pago_registro" ? "📝 pago fora do caixa" : x.pagamento.situacao === "prazo" ? "🗓️ a prazo" : x.pagamento.situacao === "ja_pago" ? "pago antes" : x.pagamento.situacao === "sem_pagamento" ? "❗ sem pagamento" : x.pagamento.situacao === "parcial" ? "parcial" : "não pago")}</span>`;
+const tagPg = x => `<span class="tag ${PG[x.pagamento.situacao] || "neu"}">${esc(x.pagamento.situacao === "pago_entrega" ? "💵 " + brl(x.recebidoEntrega) + " na entrega" : x.pagamento.situacao === "pago_caixa" ? (x.pagamento.acertado ? "💳 acertado no caixa" : "💳 pago no caixa") : x.pagamento.situacao === "pago_registro" ? "📝 pago fora do caixa" : x.pagamento.situacao === "prazo" ? "🗓️ a prazo" : x.pagamento.situacao === "ja_pago" ? "pago antes" : x.pagamento.situacao === "sem_pagamento" ? "❗ sem pagamento" : x.pagamento.situacao === "parcial" ? "parcial" : "não pago")}</span>`;
 
 function periodo(p){
   const h = hojeBR(); let de = h, ate = h;
@@ -154,7 +154,8 @@ function renderTudo(){
     [brl(I.valorEntregue), "Valor entregue", `de ${brl(I.valorPedidos)} em pedidos de entrega`],
     [brl(I.frete.entregues), "Frete das entregas feitas", `${I.frete.qtdEntreguesComFrete} entrega(s) com frete · média ${brl(I.frete.medioPorEntrega)}${I.frete.porKm != null ? " · " + brl(I.frete.porKm) + "/km" : ""} · ${brl(I.frete.total)} no período todo`],
     [brl(re.total), "Recebido na entrega", `💵 ${brl(re.dinheiro)} · Pix ${brl(re.pix)} · cartão ${brl(re.cartao)}`],
-    [brl(re.dinheiro), "Dinheiro com os motoristas", "precisa voltar para o caixa"],
+    [brl(I.dinheiroAAcertar.valor), "Dinheiro a acertar", I.dinheiroAAcertar.qtd ? `${I.dinheiroAAcertar.qtd} pedido(s) recebidos em dinheiro que ainda não passaram por caixa` : "nada pendente com os motoristas", I.dinheiroAAcertar.qtd > 0],
+    [brl(I.acertadoNoCaixa.valor), "Acertado no caixa", `${I.acertadoNoCaixa.qtd} pedido(s) recebidos pelo motorista e já registrados no caixa`],
     [brl(re.pix), "Pix recebido", pix || "—"],
     [brl(I.pagoNoCaixa.valor), "Pago no caixa antes", `${I.pagoNoCaixa.qtd} pedido(s) · aparecem na Gestão de Caixas`],
     [brl(I.pagoForaDoCaixa.valor), "Pago fora do caixa", I.pagoForaDoCaixa.qtd ? `${I.pagoForaDoCaixa.qtd} pedido(s) com pagamento só registrado no sistema · não aparecem na Gestão de Caixas` : "nenhum", I.pagoForaDoCaixa.qtd > 0],
@@ -165,9 +166,9 @@ function renderTudo(){
   ];
   document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
   const M = D.porMotorista;
-  document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Frete</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
+  document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro a acertar</th><th>Acertado no caixa</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Frete</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
     ${M.map(m => `<tr><td><b>${esc(m.motorista)}</b><div style="font-size:11px;color:var(--muted)">${esc(m.carros)}</div></td><td>${m.entregas}</td><td>${m.entregues}${m.naoEntregues ? ` <span class="tag erro">${m.naoEntregues} não</span>` : ""}</td>
-      <td><b style="color:var(--warn)">${brl(m.dinheiro)}</b></td><td>${brl(m.pix)}</td><td>${brl(m.cartao)}</td><td>${brl(m.prazo)}</td><td>${brl(m.frete)}</td><td>${m.semPagamento ? `<span class="tag erro">${m.semPagamento}</span>` : "—"}</td><td>${m.ocorrencias || "—"}</td></tr>`).join("")}</table></div>`
+      <td><b style="color:${m.dinheiroAAcertar > 0 ? "var(--warn)" : "var(--muted)"}">${brl(m.dinheiroAAcertar)}</b></td><td>${brl(m.acertadoCaixa)}</td><td>${brl(m.pix)}</td><td>${brl(m.cartao)}</td><td>${brl(m.prazo)}</td><td>${brl(m.frete)}</td><td>${m.semPagamento ? `<span class="tag erro">${m.semPagamento}</span>` : "—"}</td><td>${m.ocorrencias || "—"}</td></tr>`).join("")}</table></div>`
     : `<div class="vazio" style="padding:10px">Nenhuma viagem no período.</div>`;
   const sel = document.getElementById("fMot"); const atual = sel.value;
   sel.innerHTML = `<option value="">Todos os motoristas</option>` + M.map(m => `<option ${m.motorista === atual ? "selected" : ""}>${esc(m.motorista)}</option>`).join("");
