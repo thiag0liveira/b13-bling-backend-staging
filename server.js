@@ -895,6 +895,19 @@ function _liberarComprovantes(alvoLivreBytes){
   for(const a of arqs){ if(falta<=0) break; try{ fs.unlinkSync(a.p); try{ fs.unlinkSync(path.join(MINIATURAS_DIR,a.f+".jpg")); }catch(e){} apagados++; bytes+=a.size; falta-=a.size; }catch(e){} }
   return {apagados,bytes};
 }
+// AVISO DE DISCO (tela de Avisos): atenção abaixo de 30% livre e crítico abaixo de 15%, medido ANTES da faxina
+// (é o que mostra a pressão real). No máximo 1 aviso de cada nível por dia (fingerprint por nível + dia).
+const DISCO_ALERTA_ATENCAO=Number(process.env.DISCO_ALERTA_ATENCAO||30), DISCO_ALERTA_CRITICO=Number(process.env.DISCO_ALERTA_CRITICO||15);
+function _alertaDisco(antes,depois,liberadoMB){
+  if(!antes||!antes.total) return;
+  const pct=antes.pctLivre; const nivel=pct<DISCO_ALERTA_CRITICO?"critico":pct<DISCO_ALERTA_ATENCAO?"atencao":null; if(!nivel) return;
+  const dia=new Date(Date.now()-3*3600e3).toISOString().slice(0,10); const MB=b=>Math.round(b/1048576);
+  const limpou=(liberadoMB||0)>0.5?` A limpeza automática liberou ${liberadoMB} MB apagando fotos e vídeos de conferência mais antigos; agora estão livres ${depois?MB(depois.livre)+" MB ("+depois.pctLivre+"%)":"?"}.`:"";
+  registrarAviso({ tipo:nivel==="critico"?"disco_critico":"disco_atencao", origem:"Servidor", fingerprint:`disco-${nivel}-${dia}`,
+    titulo:nivel==="critico"?`🚨 Disco do servidor quase cheio: só ${pct}% livre (${MB(antes.livre)} MB de ${MB(antes.total)} MB)`:`⚠️ Espaço em disco do servidor baixo: ${pct}% livre (${MB(antes.livre)} MB de ${MB(antes.total)} MB)`,
+    oQueFazer:(nivel==="critico"?"Risco de os caixas pararem de gravar.":"Ainda não afeta os caixas.")+limpou+
+      ` Veja o que mais ocupa em https://app.b13bebidas.com.br/api/saude/disco e, se o espaço continuar baixo, aumente o volume do servidor no Railway (serviço > Volumes).` });
+}
 let _faxinaEm=0;
 function faxinaDisco(motivo,urgente){
   if(!urgente&&Date.now()-_faxinaEm<60000) return null; _faxinaEm=Date.now();
@@ -904,6 +917,7 @@ function faxinaDisco(motivo,urgente){
   if(meio){ const alvo=Math.max(meio.total*0.25,300*1048576); if(meio.livre<alvo) comp=_liberarComprovantes(Math.min(alvo,meio.total*0.5)); }
   const depois=_discoInfo();
   const liberadoMB=antes&&depois?+((depois.livre-antes.livre)/1048576).toFixed(1):null;
+  try{ _alertaDisco(antes,depois,liberadoMB); }catch(e){}
   if(tmp.n||comp.apagados||urgente||(liberadoMB||0)>0.5) console.warn(`[disco] faxina (${motivo}): ${liberadoMB} MB liberados (inclui fotos/vídeos antigos e temporários); livre agora ${depois?(depois.livre/1048576).toFixed(0)+" MB ("+depois.pctLivre+"%)":"?"}`);
   return {motivo,antes,depois,liberadoMB,temporarios:tmp,comprovantes:comp};
 }
