@@ -869,6 +869,46 @@ function _statComprovantes(){
   arquivos.sort((a,b)=>a.mtime-b.mtime); // mais antigo primeiro
   return {arquivos, totalBytes};
 }
+// ===================== ESPAÇO EM DISCO (proteção contra disco cheio, ENOSPC) =====================
+// O teto de fotos/vídeos era fixo em 2 GB; se o volume do servidor é menor, a limpeza nunca disparava e os vídeos
+// enchiam o disco, e aí NADA mais gravava (caixa, pedidos...). Agora: teto = menor entre COMPROV_LIMITE_MB e 40% do
+// disco, e uma FAXINA mantém pelo menos 25% (ou 300 MB) livres, apagando primeiro os VÍDEOS de conferência mais
+// antigos, depois as fotos mais antigas. Roda ao subir, a cada 30 min, após cada envio e na hora de um ENOSPC.
+function _discoInfo(){
+  try{ const st=fs.statfsSync(DATA_DIR); const total=st.blocks*st.bsize, livre=st.bavail*st.bsize; return {total,livre,usado:total-livre,pctLivre:total?+(livre/total*100).toFixed(1):100}; }
+  catch(e){
+    try{ const out=require("child_process").execSync(`df -Pk "${DATA_DIR}"`).toString().trim().split("\n").pop().split(/\s+/);
+      const total=Number(out[1])*1024, livre=Number(out[3])*1024; return {total,livre,usado:total-livre,pctLivre:total?+(livre/total*100).toFixed(1):100}; }catch(e2){ return null; }
+  }
+}
+function _tetoComprovantesBytes(){ const fixo=COMPROV_LIMITE_MB*1048576; const d=_discoInfo(); return d&&d.total?Math.min(fixo,Math.floor(d.total*0.40)):fixo; }
+function _apagarTemporarios(){
+  let n=0,bytes=0; try{ fs.readdirSync(DATA_DIR).forEach(f=>{ if(/\.tmp(-\d+)?$/.test(f)||/\.tmp-\d+$/.test(f)){ try{ const p=path.join(DATA_DIR,f); bytes+=fs.statSync(p).size; fs.unlinkSync(p); n++; }catch(e){} } }); }catch(e){}
+  return {n,bytes};
+}
+function _liberarComprovantes(alvoLivreBytes){
+  const info=_discoInfo(); if(!info) return {apagados:0,bytes:0};
+  let falta=alvoLivreBytes-info.livre; if(falta<=0) return {apagados:0,bytes:0};
+  let arqs=[]; try{ arqs=fs.readdirSync(COMPROVANTES_DIR).map(f=>{ const p=path.join(COMPROVANTES_DIR,f); try{ const st=fs.statSync(p); if(!st.isFile()) return null; return {p,f,size:st.size,mtime:st.mtimeMs,video:/\.(mp4|mov|webm|3gp|mkv|avi)$/i.test(f)?1:0}; }catch(e){ return null; } }).filter(Boolean); }catch(e){}
+  arqs.sort((a,b)=>(b.video-a.video)||(a.mtime-b.mtime)); // vídeos mais antigos primeiro, depois fotos mais antigas
+  let apagados=0,bytes=0;
+  for(const a of arqs){ if(falta<=0) break; try{ fs.unlinkSync(a.p); try{ fs.unlinkSync(path.join(MINIATURAS_DIR,a.f+".jpg")); }catch(e){} apagados++; bytes+=a.size; falta-=a.size; }catch(e){} }
+  return {apagados,bytes};
+}
+let _faxinaEm=0;
+function faxinaDisco(motivo,urgente){
+  if(!urgente&&Date.now()-_faxinaEm<60000) return null; _faxinaEm=Date.now();
+  const antes=_discoInfo(); const tmp=_apagarTemporarios(); let comp={apagados:0,bytes:0};
+  try{ limparComprovantesAntigos(); }catch(e){}
+  const meio=_discoInfo();
+  if(meio){ const alvo=Math.max(meio.total*0.25,300*1048576); if(meio.livre<alvo) comp=_liberarComprovantes(Math.min(alvo,meio.total*0.5)); }
+  const depois=_discoInfo();
+  const liberadoMB=antes&&depois?+((depois.livre-antes.livre)/1048576).toFixed(1):null;
+  if(tmp.n||comp.apagados||urgente||(liberadoMB||0)>0.5) console.warn(`[disco] faxina (${motivo}): ${liberadoMB} MB liberados (inclui fotos/vídeos antigos e temporários); livre agora ${depois?(depois.livre/1048576).toFixed(0)+" MB ("+depois.pctLivre+"%)":"?"}`);
+  return {motivo,antes,depois,liberadoMB,temporarios:tmp,comprovantes:comp};
+}
+setTimeout(()=>faxinaDisco("início do servidor",true),2500);
+setInterval(()=>faxinaDisco("rotina"),30*60000);
 function limparComprovantesAntigos(){
   try{
     const {arquivos}=_statComprovantes();
@@ -879,7 +919,7 @@ function limparComprovantesAntigos(){
       if(a.mtime<limite){ try{ fs.unlinkSync(`${COMPROVANTES_DIR}/${a.nome}`); apagados++; bytesLiberados+=a.bytes; a._del=true; }catch(e){} }
     });
     // 2) por ESPAÇO: se ainda estiver acima do teto, apaga do mais antigo até caber
-    const tetoBytes=COMPROV_LIMITE_MB*1024*1024;
+    const tetoBytes=_tetoComprovantesBytes();
     let restante=_statComprovantes();
     if(restante.totalBytes>tetoBytes){
       for(const a of restante.arquivos){
@@ -994,7 +1034,7 @@ app.post("/api/comprovante-arquivo/:id", rateLimit({janelaMs:60000,max:80,prefix
     addLog(idPed,evento,funcionarioId,funcionarioNome,{tipo,url,mime:mime||null,bytes});
     res.json({ok:true,url,tipo,bytes});
     // vídeo grande pode estourar o teto do volume antes da limpeza das 12h: confere na hora
-    setImmediate(()=>{ try{ if(_statComprovantes().totalBytes>COMPROV_LIMITE_MB*1048576) limparComprovantesAntigos(); }catch(e){} });
+    setImmediate(()=>{ try{ if(_statComprovantes().totalBytes>_tetoComprovantesBytes()) limparComprovantesAntigos(); faxinaDisco("depois de um envio de arquivo"); }catch(e){} });
   });
   req.pipe(out);
 });
@@ -1390,7 +1430,14 @@ const lerJSON=(f,def={})=>{ try{return JSON.parse(fs.readFileSync(f,"utf8"));}ca
   return def; } };
 // grava num arquivo temporário e troca (rename é atômico): se o servidor cair no meio da gravação, o arquivo
 // antigo continua inteiro, em vez de ficar cortado pela metade (e depois ser lido como vazio).
-const salvarJSON=(f,d)=>{ const tmp=`${f}.tmp-${process.pid}`; fs.writeFileSync(tmp,JSON.stringify(d)); fs.renameSync(tmp,f); };
+// gravação atômica. Se falhar, apaga o temporário (antes ele ficava ocupando espaço). Se a falha for DISCO CHEIO
+// (ENOSPC), faz a faxina de espaço na hora e tenta de novo, para o caixa não travar.
+const salvarJSON=(f,d)=>{
+  const tmp=`${f}.tmp-${process.pid}`; const txt=JSON.stringify(d);
+  const gravar=()=>{ try{ fs.writeFileSync(tmp,txt); fs.renameSync(tmp,f); }catch(e){ try{ fs.unlinkSync(tmp); }catch(_){} throw e; } };
+  try{ gravar(); }
+  catch(e){ if(e&&e.code==="ENOSPC"&&typeof faxinaDisco==="function"){ faxinaDisco("disco cheio ao gravar "+path.basename(f),true); gravar(); } else throw e; }
+};
 // Hash de senha forte: scrypt com sal único por usuário (formato salvo: "salt:hash").
 // Antigo (SHA-256 com sal fixo compartilhado) ainda é reconhecido pra não invalidar
 // senhas já cadastradas — migra sozinho pro formato novo no próximo login com sucesso.
@@ -3147,7 +3194,8 @@ function addLog(pedidoId, evento, funcionarioId, funcionarioNome, detalhes={}){
   // dia em praticamente toda ação do sistema, então isso se acumulava rápido.
   try{
     const linha=JSON.stringify({pedidoId:String(pedidoId),evento,funcionarioId,funcionarioNome,detalhes,em:Date.now()})+"\n";
-    fs.appendFileSync(LOG_JSONL_FILE,linha);
+    try{ fs.appendFileSync(LOG_JSONL_FILE,linha); }
+    catch(e){ if(e&&e.code==="ENOSPC"&&typeof faxinaDisco==="function"){ faxinaDisco("disco cheio ao gravar o histórico",true); fs.appendFileSync(LOG_JSONL_FILE,linha); } else throw e; }
   }catch(e){ console.error("addLog falhou:",e.message); }
 }
 app.get("/api/log/:id",(req,res)=>{
@@ -3943,10 +3991,21 @@ app.get("/api/diag/comprovante/:pedido",(req,res)=>{
 
 // uso de armazenamento dos comprovantes — quanto ocupa, quantos arquivos, e a
 // politica de limpeza atual. Serve pro painel mostrar e pra rodar limpeza manual.
+// DISCO: espaço total/livre e o que mais ocupa (para saber o que encheu). ?faxina=1 roda a faxina antes (admin).
+app.get("/api/saude/disco",requireSessao,(req,res)=>{
+  try{
+    let fax=null; if(req.query.faxina==="1"&&(req.sessao?.nivel==="admin"||(req.sessao?.permissoes||[]).includes("admin"))) fax=faxinaDisco("pedido manual",true);
+    const d=_discoInfo(); const MB=b=>+(b/1048576).toFixed(1);
+    const tam=(p)=>{ try{ const st=fs.statSync(p); if(st.isFile()) return st.size; return fs.readdirSync(p).reduce((s2,f)=>s2+tam(path.join(p,f)),0); }catch(e){ return 0; } };
+    const itens=fs.readdirSync(DATA_DIR).map(f=>({nome:f,mb:MB(tam(path.join(DATA_DIR,f)))})).sort((a,b)=>b.mb-a.mb).slice(0,20);
+    res.json({ok:true,disco:d?{totalMB:MB(d.total),livreMB:MB(d.livre),usadoMB:MB(d.usado),pctLivre:d.pctLivre}:null,
+      tetoComprovantesMB:MB(_tetoComprovantesBytes()),maioresItens:itens,faxina:fax});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/comprovantes/uso",(req,res)=>{
   try{
     const {arquivos,totalBytes}=_statComprovantes();
-    const tetoBytes=COMPROV_LIMITE_MB*1024*1024;
+    const tetoBytes=_tetoComprovantesBytes(); // teto real (respeita o tamanho do disco)
     let videos=0, fotos=0, bytesVideo=0, bytesFoto=0;
     arquivos.forEach(a=>{ if(/\.(mp4|mov|webm|3gp)$/i.test(a.nome)){ videos++; bytesVideo+=a.bytes; } else { fotos++; bytesFoto+=a.bytes; } });
     const maisAntigo=arquivos[0]?new Date(arquivos[0].mtime).toLocaleDateString("pt-BR"):null;
