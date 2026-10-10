@@ -1991,6 +1991,10 @@ async function _restaurarSituacao(id, alvo){
     await new Promise(r=>setTimeout(r,350));
   }
 }
+// O Bling responde 400 "Informações idênticas à última venda salva" quando o que mandamos JÁ é exatamente o
+// que está gravado lá (ex.: a 1ª gravação deu certo, a resposta demorou e a nova tentativa mandou o mesmo).
+// Isso é SUCESSO, não erro: não destrava/regrava e não gera o aviso "formas de pagamento não foram gravadas".
+function _ehIdenticoAoSalvo(e){ return /id[eê]ntica[s]?\s+[àa]\s+[uú]ltima\s+venda\s+salva/i.test(String(e?.message||"")+" "+JSON.stringify(e?.body||{})); }
 async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
   const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
@@ -2087,6 +2091,7 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
     try{
       resultado=await putComReposicao();
     }catch(e1){
+      if(_ehIdenticoAoSalvo(e1)){ console.log("[atualizarParcelasBling] pedido",id,"já estava com estas informações no Bling (idênticas): tratado como gravado"); return {ok:true,jaGravado:true,resposta:null,fezUnlock:false,restauracao:null,estoqueReposto:estoqueRepostoAqui}; }
       // qualquer erro na 1ª tentativa, se o pedido estava numa situação bloqueada,
       // tenta o caminho de desbloquear/editar/restaurar — antes só tentava quando
       // o erro vinha com status exatamente 400, mas o Bling nem sempre retorna
@@ -2100,7 +2105,8 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
       await new Promise(r=>setTimeout(r,400));
       try{
         resultado=await putComReposicao();
-      }finally{
+      }catch(e2){ if(_ehIdenticoAoSalvo(e2)) resultado={jaGravado:true}; else throw e2; }
+      finally{
         // sempre restaura a situação original (caminhando até ela), mesmo se o PUT falhar.
         // Atendido/Separado: com retry (o Bling pode reclamar de estoque na re-baixa).
         await new Promise(r=>setTimeout(r,400));
@@ -9957,13 +9963,14 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
       await new Promise(r=>setTimeout(r,200));
       resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     }catch(e1){
+      if(_ehIdenticoAoSalvo(e1)){ console.log("[atualizarItensBling] pedido",id,"já estava com estes itens/pagamentos no Bling (idênticos): tratado como gravado"); return {ok:true,jaGravado:true,resultado:null,fezUnlock:false,restaurouOk:true,situacaoFinal:sit,reposto:[],erroRestaurar:null}; }
       if(!precisaUnlock) throw e1;
       try{
         await blingComRetry(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
         fezUnlock=true;
         await new Promise(r=>setTimeout(r,400));
         resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
-      }catch(e2){ throw e2; }
+      }catch(e2){ if(_ehIdenticoAoSalvo(e2)) resultado={jaGravado:true}; else throw e2; }
     }finally{
       if(fezUnlock){
         await new Promise(r=>setTimeout(r,400));
