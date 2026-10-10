@@ -247,7 +247,7 @@ function telaIdle() {
 const CAT_KEY = "b13_preco_catalogo_v1", OVR_KEY = "b13_preco_ajustes_v1";
 let CAT = { versao: "", mapa: new Map(), em: 0 }, ONLINE = true, EXIBINDO = null;
 // manutenção: data do catálogo completo no servidor, conferências, conexão e correções
-const CATALOGO_VELHO_DIAS = 7, DIAG_KEY = "b13_preco_diag_v1";
+const CATALOGO_VELHO_DIAS = 2, DIAG_KEY = "b13_preco_diag_v1";
 let SINC = (() => { try { return JSON.parse(localStorage.getItem(DIAG_KEY) || "{}"); } catch (e) { return {}; } })();
 function salvarSinc() { try { localStorage.setItem(DIAG_KEY, JSON.stringify(SINC)); } catch (e) {} }
 function itemTela(it) { return { produtoId: it.id, nome: it.n, preco: it.p, precoAtacado: it.a ?? null, precoFardo: it.f ?? null, caixaQtd: it.q ?? null, imagem: it.i || null }; }
@@ -371,7 +371,8 @@ function abrirDiag(soAtualizar) {
     ${l("Última conferência com o servidor", (SINC.conferidoEm || CAT.em) ? quando(SINC.conferidoEm || CAT.em) + " (" + ha(SINC.conferidoEm || CAT.em) + ")" : "—")}
     ${l("Conexão", ONLINE ? `online${SINC.respostaMs ? " · servidor respondeu em " + SINC.respostaMs + " ms" : ""}` : `sem conexão${SINC.offlineDesde ? " desde " + quando(SINC.offlineDesde) : ""}`)}
     ${l("Preços corrigidos hoje nesta tela", SINC.corrigidosDia === new Date().toDateString() ? (SINC.corrigidosHoje || 0) : 0)}
-    <div class="obs">Os preços de cada produto se confirmam sozinhos a cada leitura. O catálogo completo (que traz produtos novos do Bling) só é refeito pelo botão 🔄 Atualizar índice de produtos.</div>
+    ${l("Próxima atualização do catálogo", "toda madrugada, entre 03:00 e 06:30")}
+    <div class="obs">Os preços de cada produto se confirmam sozinhos a cada leitura. O catálogo completo (que traz produtos novos do Bling) é refeito toda madrugada sem disputar a fila com os caixas; o botão 🔄 Atualizar índice de produtos faz na hora, também pela fila lenta.</div>
     <div class="bts"><button onclick="conferirAgora()">↻ Conferir agora</button><button onclick="fecharDiag()">Fechar</button></div>`;
   clearTimeout(_diagTimer); _diagTimer = setTimeout(fecharDiag, 60000); // fecha sozinho: a tela volta a ser do cliente
 }

@@ -14790,7 +14790,7 @@ app.get("/api/preco/reconstruir-indice", async(req,res)=>{
     send({tipo:"status",mensagem:"Buscando lista de produtos…"});
     const lista=[];
     for(let pg=1;pg<=100;pg++){
-      const r=await bling(`/produtos?pagina=${pg}&limite=100`);
+      const r=await blingLento(`/produtos?pagina=${pg}&limite=100`);
       const arr=r?.data||[]; lista.push(...arr);
       if(arr.length<100) break;
     }
@@ -14800,7 +14800,7 @@ app.get("/api/preco/reconstruir-indice", async(req,res)=>{
     for(let i=0;i<lista.length;i++){
       const p=lista[i];
       try{
-        const det=await bling(`/produtos/${p.id}`);
+        const det=await blingLento(`/produtos/${p.id}`);
         const d=det?.data||p;
         const item={produtoId:p.id,nome:d.nome||p.nome,preco:+(d.preco||p.preco||0),
           imagem:d.imagemURL||d.imagem?.link?.grande||null, codigo:d.codigo||p.codigo||""};
@@ -15412,7 +15412,10 @@ app.get("/",(req,res)=> res.redirect("/pedir-online"));
 // nada. Roda ao subir o servidor e depois a cada 30 min — assim produtos novos
 // entram na busca automaticamente, sem precisar reconstruir manualmente em /preco.
 let _indiceReconstruindo=false, _indiceProgresso="";
-async function reconstruirIndiceProdutosBg(forcar){
+// opts (atualização noturna): ate = hora limite (para e continua na noite seguinte), cederVez = espera a fila
+// normal do Bling esvaziar antes de cada chamada (caixas e sistema sempre primeiro), retomar = continua do último
+// produto processado, noite = data da noite (marca de concluída/andamento)
+async function reconstruirIndiceProdutosBg(forcar,opts={}){
   if(_indiceReconstruindo) return; // evita rodar dois ao mesmo tempo
   // sem ISSO, cada reinício do servidor (a cada deploy) disparava essa varredura
   // pesada de novo 15s depois — centenas de chamadas ao Bling ao longo de vários
@@ -15440,12 +15443,20 @@ async function reconstruirIndiceProdutosBg(forcar){
     // parte do índice já existente, pra não perder o que já foi indexado se cair no meio
     const indice=lerJSON(GTIN_INDEX_FILE,{});
     let comGtin=0;
+    // ordem estável (por id) para poder CONTINUAR de onde parou na noite seguinte
+    lista.sort((a,b)=>Number(a.id)-Number(b.id));
+    const marcaArq=`${DATA_DIR}/_indice_produtos_ultima_execucao.json`;
+    let inicio=0, interrompido=false, parouNoId=null;
+    if(opts.retomar){ const mk=lerJSON(marcaArq,{}); if(mk.parouNoId){ const k=lista.findIndex(p=>Number(p.id)>Number(mk.parouNoId)); inicio=k>=0?k:0; } }
     // 2) pra cada produto, lê o DETALHE (que traz gtin + preço real) e indexa por
     //    GTIN (código de barras) E por código (SKU). Roda em segundo plano.
-    for(let i=0;i<lista.length;i++){
+    for(let i=inicio;i<lista.length;i++){
       const p=lista[i];
+      if(opts.ate&&Date.now()>opts.ate){ interrompido=true; break; } // passou do horário: para e continua na próxima noite
+      if(opts.cederVez){ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; } } // caixas/sistema primeiro
       let det=p;
       try{ const d=await blingLento(`/produtos/${p.id}`); if(d?.data) det=d.data; }catch(e){}
+      parouNoId=p.id;
       const item={
         produtoId:det.id, nome:det.nome, preco:+(det.preco||0),
         imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
@@ -15457,11 +15468,17 @@ async function reconstruirIndiceProdutosBg(forcar){
       else indice["id_"+det.id]=item;
       _indiceProgresso=`Indexando produtos: ${i+1}/${lista.length} (${comGtin} com código de barras)`;
       // salva parcial a cada 40 produtos (pra já ir valendo e não perder progresso)
-      if(i%40===39) salvarJSON(GTIN_INDEX_FILE,indice);
+      if(i%40===39){ salvarJSON(GTIN_INDEX_FILE,indice); if(opts.noite){ try{ const mk=lerJSON(marcaArq,{}); salvarJSON(marcaArq,{...mk,parouNoId,batidaEm:Date.now(),rodandoNoite:opts.noite}); }catch(e){} } }
       await sleep(360); // respeita o limite do Bling (~2,9 req/s)
     }
     salvarJSON(GTIN_INDEX_FILE,indice);
-    salvarJSON(`${DATA_DIR}/_indice_produtos_ultima_execucao.json`,{em:Date.now()});
+    if(interrompido){
+      const mk=lerJSON(marcaArq,{});
+      salvarJSON(marcaArq,{...mk,parouNoId,interrompidoEm:Date.now(),rodandoNoite:null,...(opts.noite?{concluidaNoite:opts.noite}:{})});
+      _indiceProgresso=`Atualização noturna pausada no horário limite (${lista.findIndex(x=>x.id===parouNoId)+1}/${lista.length}); continua na próxima noite`;
+      console.log(`[indice] ${_indiceProgresso}`); return;
+    }
+    salvarJSON(marcaArq,{em:Date.now(),completo:true,produtos:lista.length,comGtin,parouNoId:null,rodandoNoite:null,...(opts.noite?{concluidaNoite:opts.noite}:{})});
     _indiceProgresso=`Índice pronto: ${lista.length} produtos, ${comGtin} com código de barras`;
     console.log(`[indice] ${_indiceProgresso}`);
   }catch(e){ console.log("[indice] falha:",e.message); }
@@ -15482,6 +15499,21 @@ app.post("/api/indice-produtos/reconstruir",(req,res)=>{
 // Bling) disparando sozinho a cada reinício estava competindo demais com o resto
 // do tráfego bem na hora que o Bling também estava lento, contribuindo pra fila
 // travar. Continua disponível manualmente em POST /api/indice-produtos/reconstruir.
+// RELIGADO (10/10) SÓ DE MADRUGADA: 1x por noite entre 03:00 e 06:30 (horário de Brasília), pela fila lenta,
+// cedendo a vez a qualquer chamada normal e parando no limite (continua na noite seguinte). Não roda ao subir.
+const INDICE_NOITE_INI_MIN=Number(process.env.INDICE_NOITE_INI_MIN||180), INDICE_NOITE_FIM_MIN=Number(process.env.INDICE_NOITE_FIM_MIN||390);
+function _agendarIndiceNoturno(){
+  try{
+    const brt=new Date(Date.now()-3*3600e3), min=brt.getUTCHours()*60+brt.getUTCMinutes(), noite=brt.toISOString().slice(0,10);
+    if(min<INDICE_NOITE_INI_MIN||min>=INDICE_NOITE_FIM_MIN||_indiceReconstruindo) return;
+    const mk=lerJSON(`${DATA_DIR}/_indice_produtos_ultima_execucao.json`,{});
+    if(mk.concluidaNoite===noite) return; // já terminou (ou pausou no limite) nesta noite
+    console.log(`[indice] atualização noturna do catálogo ${mk.parouNoId?"continuando":"iniciando"} (${noite})`);
+    reconstruirIndiceProdutosBg(true,{ate:Date.now()+(INDICE_NOITE_FIM_MIN-min)*60000,cederVez:true,retomar:true,noite});
+  }catch(e){ console.log("[indice] agendamento noturno falhou:",e.message); }
+}
+setInterval(_agendarIndiceNoturno,10*60000); // confere a cada 10 min; se o servidor reiniciar no meio, retoma
+setTimeout(_agendarIndiceNoturno,60000); // e 1 min depois de subir (deploy de madrugada retoma logo)
 // setTimeout(reconstruirIndiceProdutosBg, 15000);            // 15s depois de subir
 // setInterval(reconstruirIndiceProdutosBg, 6*60*60*1000);    // e a cada 6h (é pesado, lê detalhe de todos)
 
