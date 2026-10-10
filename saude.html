@@ -27,6 +27,7 @@ button{background:#2c2660;color:#fff;border:1px solid #514c96;border-radius:8px;
   <div id="resumoTexto" style="display:none;margin-top:10px"></div>
 </div>
 <div id="app"></div>
+<div id="cardIndice"></div>
 <script>
 const $ = s => document.querySelector(s);
 function corPara(valor, limiteAviso, limiteRuim){
@@ -34,8 +35,36 @@ function corPara(valor, limiteAviso, limiteRuim){
   if(valor>=limiteAviso) return "aviso";
   return "ok";
 }
+// ===== Catálogo da consulta de preço: situação + atualização forçada (EMERGÊNCIA, só administrador) =====
+function _tok(){ try{ return (JSON.parse(localStorage.getItem("b13sess")||"null")||{}).token||""; }catch(e){ return ""; } }
+const _dh = ms => ms ? new Date(ms).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+async function carregarIndice(msg){
+  try{
+    const j = await fetch("/api/indice-produtos/status").then(r=>r.json());
+    const dias = j.atualizadoEm ? (Date.now()-j.atualizadoEm)/86400000 : null;
+    document.getElementById("cardIndice").innerHTML = `<div class="card">
+      <h3>🔎 Catálogo da consulta de preço</h3>
+      <div class="muted" style="line-height:1.7">
+        Última atualização completa com o Bling: <b class="${dias!=null&&dias>2?"ruim":"ok"}">${_dh(j.atualizadoEm)}</b>${dias!=null?` (há ${dias<1?Math.round(dias*24)+" h":Math.round(dias)+" dia(s)"})`:""}<br>
+        Atualização automática: toda madrugada, das ${j.janelaNoite||"03:00 às 06:30"}, pela fila lenta, cedendo a vez aos caixas.${j.parouNoId?` Pausada no limite da última noite; continua na próxima.`:""}<br>
+        Códigos no catálogo: ${j.totalChaves||0} · produtos com código de barras: ${j.produtosComGtin||0}
+        ${j.reconstruindo?`<br><b class="aviso">Atualizando agora: ${j.progresso||""}</b>`:""}
+      </div>
+      <div style="margin-top:10px">
+        <button onclick="forcarIndice()" ${j.reconstruindo?"disabled":""}>⚠️ Forçar atualização agora (emergência)</button>
+        <span class="muted" style="margin-left:8px">Só administrador. Use só se precisar de um produto novo na consulta hoje; evite com a loja cheia.</span>
+      </div>${msg?`<div class="muted" style="margin-top:8px">${msg}</div>`:""}</div>`;
+  }catch(e){}
+}
+async function forcarIndice(){
+  if(!confirm("Forçar a atualização completa do catálogo agora?\n\nSão cerca de uma consulta ao Bling por produto, pela fila lenta e cedendo a vez aos caixas, mas atrasa outras tarefas de fundo enquanto roda. Evite com a loja cheia.")) return;
+  const r = await fetch("/api/indice-produtos/reconstruir",{method:"POST",headers:{"X-Auth-Token":_tok()}});
+  const j = await r.json().catch(()=>({}));
+  carregarIndice(r.ok ? (j.ja?"Já estava atualizando.":"Atualização iniciada.") : `<span class="ruim">${r.status===401||r.status===403?"Entre no sistema como administrador neste navegador para usar este botão.":(j.erro||"Não consegui iniciar.")}</span>`);
+}
 async function carregar(){
   $("#status").textContent = "Atualizando…";
+  carregarIndice();
   prepararResumo().catch(()=>{}); // deixa o texto do botão de copiar pronto
   try{
     const [saude, bling] = await Promise.all([

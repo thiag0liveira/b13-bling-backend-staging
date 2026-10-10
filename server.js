@@ -3325,8 +3325,16 @@ app.post("/api/tabela/estoques",async(req,res)=>{
 // ------------------------- Catálogo p/ o totem (tabela + estoque ao vivo) -------------------------
 let _estCache={t:0,map:null};
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
-async function getEstoqueMap(){
-  if(_estCache.map && Date.now()-_estCache.t < 300000) return _estCache.map; // cache 5 min
+// Se várias telas pedirem ao mesmo tempo com a memória vencida, todas esperam a MESMA leitura (antes cada uma
+// disparava sua própria varredura de até 40 páginas no Bling, em paralelo).
+let _estEmAndamento=null;
+function getEstoqueMap(){
+  if(_estCache.map && Date.now()-_estCache.t < 300000) return Promise.resolve(_estCache.map);
+  if(_estEmAndamento) return _estEmAndamento;
+  _estEmAndamento=_lerEstoqueMapBling().finally(()=>{ _estEmAndamento=null; });
+  return _estEmAndamento;
+}
+async function _lerEstoqueMapBling(){
   const map={};
   for(let pg=1; pg<=40; pg++){
     const d=await bling(`/produtos?pagina=${pg}&limite=100`);
@@ -3337,6 +3345,23 @@ async function getEstoqueMap(){
   }
   _estCache={t:Date.now(),map}; return map;
 }
+// FOTOS do carrossel da tela de preço: só dados locais (tabela de preços + catálogo da madrugada). ZERO Bling.
+// (antes o carrossel usava /api/catalogo, que lê o estoque inteiro no Bling, 24 h por dia)
+let _fotosPrecoMemo={em:0,lista:null};
+app.get("/api/preco/fotos",(req,res)=>{
+  try{
+    if(!_fotosPrecoMemo.lista||Date.now()-_fotosPrecoMemo.em>10*60000){
+      const idx=_gtinIndexMem(), tab=lerTabela(), lista=[], vistos=new Set();
+      const porCod={}, porId={}; Object.values(idx).forEach(v=>{ if(!v) return; if(v.codigo) porCod[String(v.codigo)]=v; if(v.produtoId) porId[String(v.produtoId)]=v; });
+      ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
+        const b=(it.bling||[]).map(x=>idx[String(x.codigo||"")]||porCod[String(x.codigo||"")]||porId[String(x.id||"")]||null).find(x=>x&&x.imagem);
+        if(b&&!vistos.has(b.imagem)){ vistos.add(b.imagem); lista.push({imagem:b.imagem,nome:it.nome||b.nome||""}); }
+      }));
+      _fotosPrecoMemo={em:Date.now(),lista};
+    }
+    res.json({ok:true,fotos:_fotosPrecoMemo.lista});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/catalogo",async(req,res)=>{
   try{
     const tab=lerTabela();
@@ -14775,46 +14800,9 @@ app.get("/api/preco/indice-info",(req,res)=>{
   res.json({qtd,atualizadoEm});
 });
 
-// Reconstrói o índice GTIN percorrendo todos os produtos (com progresso via SSE)
-app.get("/api/preco/reconstruir-indice", async(req,res)=>{
-  res.setHeader("Content-Type","text/event-stream");
-  res.setHeader("Cache-Control","no-cache");
-  res.setHeader("Connection","keep-alive");
-  res.setHeader("X-Accel-Buffering","no");
-  res.flushHeaders();
-  const send=(d)=>{ res.write(`data: ${JSON.stringify(d)}\n\n`); };
-  const heartbeat=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000);
-  res.on("close",()=>clearInterval(heartbeat));
-
-  try{
-    send({tipo:"status",mensagem:"Buscando lista de produtos…"});
-    const lista=[];
-    for(let pg=1;pg<=100;pg++){
-      const r=await blingLento(`/produtos?pagina=${pg}&limite=100`);
-      const arr=r?.data||[]; lista.push(...arr);
-      if(arr.length<100) break;
-    }
-    send({tipo:"total",total:lista.length});
-
-    const indice={};
-    for(let i=0;i<lista.length;i++){
-      const p=lista[i];
-      try{
-        const det=await blingLento(`/produtos/${p.id}`);
-        const d=det?.data||p;
-        const item={produtoId:p.id,nome:d.nome||p.nome,preco:+(d.preco||p.preco||0),
-          imagem:d.imagemURL||d.imagem?.link?.grande||null, codigo:d.codigo||p.codigo||""};
-        const codigos=[d.gtin,d.gtinEmbalagem,d.codigo].filter(Boolean).map(String);
-        codigos.forEach(c=>{ indice[c]=item; });
-      }catch(e){}
-      if(i%10===0) send({tipo:"progresso",atual:i+1,total:lista.length,nome:p.nome||""});
-    }
-    salvarJSON(GTIN_INDEX_FILE,indice);
-    send({tipo:"done",qtdProdutos:lista.length,qtdCodigos:Object.keys(indice).length});
-  }catch(e){ send({tipo:"erro",erro:e.message}); }
-  clearInterval(heartbeat);
-  res.end();
-});
+// (removida em 10/10) a rota aberta /api/preco/reconstruir-indice disparava a varredura completa sem login, pelo
+// botão da tela de preço. Agora o catálogo é refeito toda madrugada; para forçar, só administrador, pela tela de
+// Saúde do sistema (POST /api/indice-produtos/reconstruir, fila lenta e cedendo a vez).
 
 app.get("/preco", (req, res) => { res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname, "preco.html")); });
 
@@ -15488,11 +15476,16 @@ async function reconstruirIndiceProdutosBg(forcar,opts={}){
 app.get("/api/indice-produtos/status",(req,res)=>{
   const indice=lerJSON(GTIN_INDEX_FILE,{});
   const comGtin=Object.values(indice).filter((v,i,arr)=>arr.findIndex(x=>x.produtoId===v.produtoId)===i && v.gtin).length;
-  res.json({reconstruindo:_indiceReconstruindo, progresso:_indiceProgresso, totalChaves:Object.keys(indice).length, produtosComGtin:comGtin});
+  let atualizadoEm=null; try{ atualizadoEm=fs.statSync(GTIN_INDEX_FILE).mtimeMs; }catch(e){}
+  const marca=lerJSON(`${DATA_DIR}/_indice_produtos_ultima_execucao.json`,{});
+  res.json({reconstruindo:_indiceReconstruindo, progresso:_indiceProgresso, totalChaves:Object.keys(indice).length, produtosComGtin:comGtin,
+    atualizadoEm, ultimaCompletaEm:marca.em||null, concluidaNoite:marca.concluidaNoite||null, parouNoId:marca.parouNoId||null,
+    janelaNoite:`${String(Math.floor(INDICE_NOITE_INI_MIN/60)).padStart(2,"0")}:${String(INDICE_NOITE_INI_MIN%60).padStart(2,"0")} às ${String(Math.floor(INDICE_NOITE_FIM_MIN/60)).padStart(2,"0")}:${String(INDICE_NOITE_FIM_MIN%60).padStart(2,"0")}`});
 });
-app.post("/api/indice-produtos/reconstruir",(req,res)=>{
+app.post("/api/indice-produtos/reconstruir",requireAdmin,(req,res)=>{
   if(_indiceReconstruindo) return res.json({ok:true,ja:true,progresso:_indiceProgresso});
-  reconstruirIndiceProdutosBg(true);
+  console.log(`[indice] atualização forçada por ${req.sessao?.nome||"admin"}`);
+  reconstruirIndiceProdutosBg(true,{cederVez:true});
   res.json({ok:true,iniciado:true});
 });
 // DESLIGADO TEMPORARIAMENTE (18/09): esse job pesado (centenas de chamadas ao

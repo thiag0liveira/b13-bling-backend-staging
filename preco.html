@@ -81,9 +81,6 @@
 </div>
 <div id="app"></div>
 <div class="rodape">Aponte o leitor pro código de barras do produto</div>
-<div class="adminBox">
-  <button onclick="reconstruirIndice()">🔄 Atualizar índice de produtos</button>
-</div>
 <input id="entrada" autofocus>
 <script>const B = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
 let buffer = "";
@@ -111,14 +108,9 @@ const FRASES = ["SE PRECISA DE PRODUTOS PARA REVENDA, PROCURE NOSSO BALCÃO DO A
 let FOTOS = [];
 async function carregarFotosProdutos() {
   try {
-    const j = await fetch(B + "/api/catalogo").then(r => r.json());
-    const imgs = [];
-    (j.categorias || []).forEach(c => (c.produtos || []).forEach(p => {
-      if (p.imagem) imgs.push({
-        imagem: p.imagem,
-        nome: p.nome || ""
-      });
-    }));
+    // fotos montadas só com dados do servidor (tabela + catálogo da madrugada): não consulta o Bling
+    const j = await fetch(B + "/api/preco/fotos").then(r => r.json());
+    const imgs = (j.fotos || []).map(f => ({ imagem: f.imagem, nome: f.nome || "" }));
     for (let i = imgs.length - 1; i > 0; i--) {
       const k = Math.floor(Math.random() * (i + 1));
       [imgs[i], imgs[k]] = [imgs[k], imgs[i]];
@@ -372,13 +364,37 @@ function abrirDiag(soAtualizar) {
     ${l("Conexão", ONLINE ? `online${SINC.respostaMs ? " · servidor respondeu em " + SINC.respostaMs + " ms" : ""}` : `sem conexão${SINC.offlineDesde ? " desde " + quando(SINC.offlineDesde) : ""}`)}
     ${l("Preços corrigidos hoje nesta tela", SINC.corrigidosDia === new Date().toDateString() ? (SINC.corrigidosHoje || 0) : 0)}
     ${l("Próxima atualização do catálogo", "toda madrugada, entre 03:00 e 06:30")}
-    <div class="obs">Os preços de cada produto se confirmam sozinhos a cada leitura. O catálogo completo (que traz produtos novos do Bling) é refeito toda madrugada sem disputar a fila com os caixas; o botão 🔄 Atualizar índice de produtos faz na hora, também pela fila lenta.</div>
+    ${l("Versão desta tela", (VERSAO_TELA || "—").slice(0, 7) + " · recarga diária às " + horaRecarga())}
+    <div class="obs">Os preços de cada produto se confirmam sozinhos a cada leitura. O catálogo completo (que traz produtos novos do Bling) é refeito toda madrugada sem disputar a fila com os caixas. A tela se atualiza sozinha quando sai versão nova, só quando está ociosa e com internet.</div>
     <div class="bts"><button onclick="conferirAgora()">↻ Conferir agora</button><button onclick="fecharDiag()">Fechar</button></div>`;
   clearTimeout(_diagTimer); _diagTimer = setTimeout(fecharDiag, 60000); // fecha sozinho: a tela volta a ser do cliente
 }
 function fecharDiag() { const d = document.getElementById("diag"); if (d) d.remove(); clearTimeout(_diagTimer); input.focus(); }
 async function conferirAgora() { await atualizarCatalogo(); try { const j = await comTempo(B + "/api/preco/indice-info", 15000); if (j.atualizadoEm) { SINC.indiceEm = new Date(j.atualizadoEm).getTime(); SINC.indiceCodigos = j.qtd; salvarSinc(); } } catch (e) {} renderSinc(); }
 setInterval(renderSinc, 60000); // atualiza o "há X min"
+// ===== ATUALIZAÇÃO AUTOMÁTICA DA TELA (zero chamadas ao Bling) =====
+// Confere a versão publicada junto com o catálogo (a cada 15 min). Se mudou, ou na recarga diária (minuto sorteado
+// entre 06:45 e 07:15, para os terminais nunca recarregarem juntos), recarrega SÓ quando a tela está ociosa, sem
+// diagnóstico aberto e COM internet (sem internet a página não voltaria).
+let VERSAO_TELA = null, _recarregarMotivo = null;
+const RECARGA_KEY = "b13_preco_recarga_v1";
+function minutoRecarga() { let r = {}; try { r = JSON.parse(localStorage.getItem(RECARGA_KEY) || "{}"); } catch (e) {} if (r.minuto == null) { r.minuto = 405 + Math.floor(Math.random() * 31); try { localStorage.setItem(RECARGA_KEY, JSON.stringify(r)); } catch (e) {} } return r; }
+function horaRecarga() { const m = minutoRecarga().minuto; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
+async function conferirVersao() {
+  try { const j = await comTempo(B + "/api/versao", 15000); if (!j.commit) return; if (!VERSAO_TELA) { VERSAO_TELA = j.commit; return; } if (j.commit !== VERSAO_TELA) _recarregarMotivo = "versão nova"; } catch (e) {}
+}
+async function talvezRecarregar() {
+  const agora = new Date(), r = minutoRecarga(), min = agora.getHours() * 60 + agora.getMinutes(), hoje = agora.toDateString();
+  if (!_recarregarMotivo && min >= r.minuto && min < r.minuto + 120 && r.ultimaDiaria !== hoje) _recarregarMotivo = "recarga diária";
+  if (!_recarregarMotivo || EXIBINDO !== null || document.getElementById("diag")) return;
+  try { await comTempo(B + "/api/versao", 8000); } catch (e) { return; } // só com o servidor respondendo
+  if (_recarregarMotivo === "recarga diária") { r.ultimaDiaria = hoje; try { localStorage.setItem(RECARGA_KEY, JSON.stringify(r)); } catch (e) {} }
+  location.reload();
+}
+conferirVersao();
+setInterval(conferirVersao, 15 * 60 * 1000);
+setInterval(talvezRecarregar, 60 * 1000);
+
 carregarCatalogoGuardado();
 atualizarCatalogo();
 setInterval(atualizarCatalogo, 15 * 60 * 1000);
@@ -405,37 +421,6 @@ async function carregarIndiceInfo() {
     renderSinc();
   } catch (e) { renderSinc(); }
 }
-function reconstruirIndice() {
-  if (!confirm("Isso vai reconstruir o índice de todos os produtos — pode levar alguns minutos. Continuar?")) return;
-  pararCarrossel();
-  document.getElementById("app").innerHTML = `
-    <div class="titulo">Atualizando índice de produtos…</div>
-    <div class="sub" id="progTxt">Iniciando…</div>
-    <div class="barraProg"><div class="fill" id="progFill" style="width:5%"></div></div>`;
-  const es = new EventSource(B + "/api/preco/reconstruir-indice");
-  es.onmessage = ev => {
-    const d = JSON.parse(ev.data);
-    const txt = document.getElementById("progTxt");
-    const fill = document.getElementById("progFill");
-    if (d.tipo === "status" && txt) txt.textContent = d.mensagem;else if (d.tipo === "total" && txt) txt.textContent = `0 de ${d.total} produtos`;else if (d.tipo === "progresso" && txt) {
-      txt.textContent = `${d.atual} de ${d.total} — ${d.nome}`;
-      if (fill) fill.style.width = Math.round(d.atual / d.total * 100) + "%";
-    } else if (d.tipo === "done") {
-      es.close();
-      telaIdle();
-      carregarIndiceInfo();
-      alert(`✅ Índice atualizado! ${d.qtdProdutos} produtos, ${d.qtdCodigos} códigos.`);
-    } else if (d.tipo === "erro") {
-      es.close();
-      telaIdle();
-      alert("Erro ao atualizar índice: " + d.erro);
-    }
-  };
-  es.onerror = () => {
-    es.close();
-  };
-}
-telaIdle();
 carregarIndiceInfo();
 carregarFotosProdutos();
 setInterval(carregarFotosProdutos, 30 * 60 * 1000); // atualiza a lista de fotos a cada 30 min</script>
