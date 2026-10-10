@@ -60,6 +60,16 @@
   .adminBox button{background:#1c1846;color:#9a95c9;border:1px solid #2a2660;border-radius:6px;padding:5px 9px;font-size:10px;cursor:pointer}
   .barraProg{background:#0a0918;border:1px solid #514c96;border-radius:8px;height:12px;overflow:hidden;margin-top:8px;max-width:280px}
   .barraProg .fill{height:100%;background:linear-gradient(90deg,#FF0082,#ff5fae);transition:width .2s}
+  /* etiqueta de MANUTENÇÃO: discreta (o cliente não precisa ver), cor da bolinha diz o estado */
+  .sinc{display:inline-flex;align-items:center;gap:7px;font:600 11px Arial;color:#6f6aa8;cursor:pointer;user-select:none;padding:4px 8px;border-radius:999px}
+  .sinc:hover{background:#1c1846}
+  .sinc i{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .sinc.ok i{background:#3ce88a}.sinc.off i{background:#ffd23f}.sinc.velho i{background:#ff5c7a}
+  .sinc.off,.sinc.velho{color:#9a95c9}
+  .diag{position:fixed;top:70px;right:16px;width:400px;max-width:calc(100vw - 32px);background:#151233;border:1px solid #2c2660;border-radius:14px;padding:14px;z-index:80;font:13px Arial;color:#e6e2ff;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .diag h4{margin:0 0 10px;font-size:14px;display:flex;justify-content:space-between}.diag .l{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #23204f}
+  .diag .l span{color:#9a95c9}.diag .l b{text-align:right}.diag .obs{font-size:11.5px;color:#9a95c9;margin-top:8px}
+  .diag .bts{display:flex;gap:8px;margin-top:10px}.diag button{flex:1;background:#1c1846;color:#cfcaf5;border:1px solid #3a3480;border-radius:8px;padding:8px;font-weight:700;cursor:pointer}
 </style>
 </head>
 <body>
@@ -236,6 +246,10 @@ function telaIdle() {
 // se tiver mudado.
 const CAT_KEY = "b13_preco_catalogo_v1", OVR_KEY = "b13_preco_ajustes_v1";
 let CAT = { versao: "", mapa: new Map(), em: 0 }, ONLINE = true, EXIBINDO = null;
+// manutenção: data do catálogo completo no servidor, conferências, conexão e correções
+const CATALOGO_VELHO_DIAS = 7, DIAG_KEY = "b13_preco_diag_v1";
+let SINC = (() => { try { return JSON.parse(localStorage.getItem(DIAG_KEY) || "{}"); } catch (e) { return {}; } })();
+function salvarSinc() { try { localStorage.setItem(DIAG_KEY, JSON.stringify(SINC)); } catch (e) {} }
 function itemTela(it) { return { produtoId: it.id, nome: it.n, preco: it.p, precoAtacado: it.a ?? null, precoFardo: it.f ?? null, caixaQtd: it.q ?? null, imagem: it.i || null }; }
 function aplicarCatalogo(versao, itens, em) {
   const m = new Map(); (itens || []).forEach(it => { const p = itemTela(it); (it.k || []).forEach(c => { if (c) m.set(String(c), p); }); });
@@ -247,13 +261,16 @@ function carregarCatalogoGuardado() { try { const s = JSON.parse(localStorage.ge
 function comTempo(url, ms) { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms); return fetch(url, { signal: ctl.signal }).then(r => { clearTimeout(t); if (!r.ok) throw new Error("http " + r.status); return r.json(); }); }
 async function atualizarCatalogo() {
   try {
+    const t0 = performance.now();
     const j = await comTempo(B + "/api/preco/catalogo?versao=" + encodeURIComponent(CAT.versao || ""), 30000);
-    ONLINE = true;
+    ONLINE = true; SINC.respostaMs = Math.round(performance.now() - t0); SINC.offlineDesde = null; SINC.conferidoEm = Date.now();
+    if (j.indiceAtualizadoEm) SINC.indiceEm = j.indiceAtualizadoEm; if (j.indiceCodigos != null) SINC.indiceCodigos = j.indiceCodigos;
+    salvarSinc();
     if (!j.mesmo && j.itens) {
       aplicarCatalogo(j.versao, j.itens, Date.now());
       try { localStorage.setItem(CAT_KEY, JSON.stringify({ versao: j.versao, itens: j.itens, em: Date.now() })); localStorage.removeItem(OVR_KEY); } catch (e) {}
     } else if (j.mesmo) CAT.em = Date.now();
-  } catch (e) { ONLINE = false; }
+  } catch (e) { ONLINE = false; if (!SINC.offlineDesde) { SINC.offlineDesde = Date.now(); salvarSinc(); } }
   marcarConexao();
 }
 function guardarCorrecao(codigo, p) {
@@ -264,6 +281,7 @@ function marcarConexao() {
   let el = document.getElementById("semConexao");
   if (!el) { el = document.createElement("div"); el.id = "semConexao"; el.style.cssText = "position:fixed;left:12px;bottom:10px;z-index:50;font:700 12px Arial;color:#ffd23f;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:8px;display:none"; document.body.appendChild(el); }
   el.style.display = ONLINE ? "none" : "block";
+  renderSinc();
   el.textContent = "📶 sem conexão · mostrando os preços guardados" + (CAT.em ? " (atualizados " + new Date(CAT.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ")" : "");
 }
 function mostrarProduto(p) {
@@ -286,6 +304,7 @@ async function confirmar(codigo, atual) {
     ONLINE = true;
     if (j.data && (Number(j.data.preco) !== Number(atual.preco) || j.data.nome !== atual.nome || j.data.precoAtacado !== atual.precoAtacado || j.data.precoFardo !== atual.precoFardo)) {
       guardarCorrecao(codigo, j.data);
+      const hoje = new Date().toDateString(); if (SINC.corrigidosDia !== hoje) { SINC.corrigidosDia = hoje; SINC.corrigidosHoje = 0; } SINC.corrigidosHoje = (SINC.corrigidosHoje || 0) + 1; salvarSinc();
       if (EXIBINDO === codigo) mostrarProduto(j.data);
     }
   } catch (e) { ONLINE = false; }
@@ -322,6 +341,43 @@ async function buscarPreco(codigo) {
   marcarConexao();
   agendarVolta();
 }
+
+// ===== ETIQUETA DE MANUTENÇÃO + DIAGNÓSTICO (clique na etiqueta ou digite DIAG + Enter) =====
+function quando(ms) { if (!ms) return "—"; const d = new Date(ms), hoje = new Date(); const hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); return d.toDateString() === hoje.toDateString() ? hm : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + hm; }
+function ha(ms) { if (!ms) return ""; const m = Math.round((Date.now() - ms) / 60000); if (m < 60) return "há " + m + " min"; const h = Math.round(m / 60); if (h < 48) return "há " + h + " h"; return "há " + Math.round(h / 24) + " dias"; }
+function estadoSinc() {
+  if (!ONLINE) return { c: "off", t: "sem conexão" + (SINC.offlineDesde ? " desde " + quando(SINC.offlineDesde) : "") + " · usando preços guardados" };
+  const dias = SINC.indiceEm ? (Date.now() - SINC.indiceEm) / 86400000 : null;
+  if (dias != null && dias > CATALOGO_VELHO_DIAS) return { c: "velho", t: "catálogo do Bling de " + quando(SINC.indiceEm) + " (" + ha(SINC.indiceEm) + ") · atualizar índice" };
+  return { c: "ok", t: "catálogo do Bling " + quando(SINC.indiceEm) + " · conferido " + quando(SINC.conferidoEm || CAT.em) };
+}
+function renderSinc() {
+  const el = document.getElementById("indiceInfo"); if (!el) return;
+  const e = estadoSinc();
+  el.innerHTML = `<span class="sinc ${e.c}" onclick="abrirDiag()" title="Manutenção: clique para ver o diagnóstico"><i></i>${e.t}</span>`;
+  if (document.getElementById("diag")) abrirDiag(true);
+}
+let _diagTimer = null;
+function abrirDiag(soAtualizar) {
+  let d = document.getElementById("diag");
+  if (!d) { if (soAtualizar) return; d = document.createElement("div"); d.id = "diag"; d.className = "diag"; document.body.appendChild(d); }
+  const prod = new Set([...CAT.mapa.values()]).size, e = estadoSinc();
+  const l = (a, b) => `<div class="l"><span>${a}</span><b>${b}</b></div>`;
+  d.innerHTML = `<h4><span>🔎 Sincronização desta tela</span><span style="cursor:pointer" onclick="fecharDiag()">✕</span></h4>
+    ${l("Situação", `<span style="color:${e.c === "ok" ? "#3ce88a" : e.c === "off" ? "#ffd23f" : "#ff5c7a"}">${e.c === "ok" ? "tudo certo" : e.c === "off" ? "sem conexão" : "catálogo antigo"}</span>`)}
+    ${l("Catálogo completo atualizado com o Bling", SINC.indiceEm ? quando(SINC.indiceEm) + " (" + ha(SINC.indiceEm) + ")" : "—")}
+    ${l("Códigos no catálogo do servidor", SINC.indiceCodigos != null ? Number(SINC.indiceCodigos).toLocaleString("pt-BR") : "—")}
+    ${l("Produtos guardados nesta tela", prod.toLocaleString("pt-BR") + (CAT.versao ? ` · versão ${CAT.versao.slice(0, 6)}` : ""))}
+    ${l("Última conferência com o servidor", (SINC.conferidoEm || CAT.em) ? quando(SINC.conferidoEm || CAT.em) + " (" + ha(SINC.conferidoEm || CAT.em) + ")" : "—")}
+    ${l("Conexão", ONLINE ? `online${SINC.respostaMs ? " · servidor respondeu em " + SINC.respostaMs + " ms" : ""}` : `sem conexão${SINC.offlineDesde ? " desde " + quando(SINC.offlineDesde) : ""}`)}
+    ${l("Preços corrigidos hoje nesta tela", SINC.corrigidosDia === new Date().toDateString() ? (SINC.corrigidosHoje || 0) : 0)}
+    <div class="obs">Os preços de cada produto se confirmam sozinhos a cada leitura. O catálogo completo (que traz produtos novos do Bling) só é refeito pelo botão 🔄 Atualizar índice de produtos.</div>
+    <div class="bts"><button onclick="conferirAgora()">↻ Conferir agora</button><button onclick="fecharDiag()">Fechar</button></div>`;
+  clearTimeout(_diagTimer); _diagTimer = setTimeout(fecharDiag, 60000); // fecha sozinho: a tela volta a ser do cliente
+}
+function fecharDiag() { const d = document.getElementById("diag"); if (d) d.remove(); clearTimeout(_diagTimer); input.focus(); }
+async function conferirAgora() { await atualizarCatalogo(); try { const j = await comTempo(B + "/api/preco/indice-info", 15000); if (j.atualizadoEm) { SINC.indiceEm = new Date(j.atualizadoEm).getTime(); SINC.indiceCodigos = j.qtd; salvarSinc(); } } catch (e) {} renderSinc(); }
+setInterval(renderSinc, 60000); // atualiza o "há X min"
 carregarCatalogoGuardado();
 atualizarCatalogo();
 setInterval(atualizarCatalogo, 15 * 60 * 1000);
@@ -334,6 +390,7 @@ input.addEventListener("keydown", e => {
   if (e.key === "Enter") {
     const v = input.value.trim();
     input.value = "";
+    if (v && v.toUpperCase() === "DIAG") { abrirDiag(); return; } // manutenção
     if (v) buscarPreco(v);
   }
 });
@@ -342,14 +399,10 @@ setInterval(manterFoco, 1500);
 async function carregarIndiceInfo() {
   try {
     const j = await fetch(B + "/api/preco/indice-info").then(r => r.json());
-    const info = document.getElementById("indiceInfo");
-    if (!j.qtd) {
-      info.textContent = "⚠️ Índice vazio — clique em Atualizar";
-      return;
-    }
-    const dt = j.atualizadoEm ? new Date(j.atualizadoEm).toLocaleString("pt-BR") : "";
-    info.textContent = `${j.qtd} códigos indexados · atualizado em ${dt}`;
-  } catch (e) {}
+    if (!j.qtd) { document.getElementById("indiceInfo").innerHTML = `<span class="sinc velho"><i></i>catálogo vazio · atualizar índice</span>`; return; }
+    if (j.atualizadoEm) { SINC.indiceEm = new Date(j.atualizadoEm).getTime(); SINC.indiceCodigos = j.qtd; salvarSinc(); }
+    renderSinc();
+  } catch (e) { renderSinc(); }
 }
 function reconstruirIndice() {
   if (!confirm("Isso vai reconstruir o índice de todos os produtos — pode levar alguns minutos. Continuar?")) return;

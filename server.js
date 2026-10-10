@@ -14635,8 +14635,10 @@ function _catalogoPreco(){
 app.get("/api/preco/catalogo",(req,res)=>{
   try{
     const c=_catalogoPreco();
-    if(req.query.versao&&req.query.versao===c.versao) return res.json({mesmo:true,versao:c.versao});
-    res.json({versao:c.versao,geradoEm:c.geradoEm,total:c.itens.length,itens:c.itens});
+    // data da última vez que o catálogo inteiro foi refeito com o Bling (botão "Atualizar índice"), para a etiqueta de manutenção
+    const info={indiceAtualizadoEm:_gtinMem.mtime>0?Math.round(_gtinMem.mtime):null,indiceCodigos:Object.keys(_gtinIndexMem()).length,servidorEm:Date.now()};
+    if(req.query.versao&&req.query.versao===c.versao) return res.json({mesmo:true,versao:c.versao,...info});
+    res.json({versao:c.versao,geradoEm:c.geradoEm,total:c.itens.length,itens:c.itens,...info});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/preco/gtin/:codigo", async(req,res)=>{
@@ -14765,7 +14767,7 @@ app.get("/api/instagram/posts", async(req,res)=>{
 });
 
 app.get("/api/preco/indice-info",(req,res)=>{
-  const indice=lerJSON(GTIN_INDEX_FILE,{});
+  const indice=_gtinIndexMem();
   const qtd=Object.keys(indice).length;
   const arq=`${GTIN_INDEX_FILE}`;
   let atualizadoEm=null;
