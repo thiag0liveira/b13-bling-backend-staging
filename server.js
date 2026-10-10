@@ -5488,6 +5488,92 @@ app.post("/api/caixa-sessao/fechar",(req,res)=>{
 });
 
 // histórico de sessões já fechadas (traz também os movimentos, pra ver o que foi feito naquele dia)
+// ===================== CONTA DE TROCO =====================
+// Funciona como uma conta: o troco recolhido dos caixas no fim do expediente ENTRA, o que sai (troco para abrir
+// caixa, depósito, despesa...) SAI, e o saldo é a soma. Nada é apagado: lançamento errado é ESTORNADO com motivo.
+// A contagem física diária fica registrada (conferência) com a diferença, e pode gerar um ajuste.
+const CONTA_TROCO_FILE=`${DATA_DIR}/conta_troco.json`;
+const TROCO_CATEGORIAS={ entrada:["Recolhimento do troco dos caixas","Reforço de troco","Sobra na conferência","Outra entrada"],
+  saida:["Troco para abrir caixa","Depósito no banco","Pagamento de despesa","Falta na conferência","Outra saída"] };
+function lerContaTroco(){ const d=lerJSON(CONTA_TROCO_FILE,null)||{}; d.seq||=0; d.movimentos||=[]; d.conferencias||=[]; return d; }
+const _trocoValido=m=>!m.estornadoEm;
+function _saldoTroco(movs,ate){ return _round2(movs.filter(m=>_trocoValido(m)&&(ate==null||m.em<=ate)).reduce((s2,m)=>s2+(m.tipo==="entrada"?1:-1)*Number(m.valor||0),0)); }
+function _caixaDaSessao(id){ const sx=((lerCaixaSessoes().sessoes)||[]).find(x=>String(x.id)===String(id)); return sx?{id:sx.id,operador:sx.operador||"",tipoCaixa:sx.tipoCaixa||"frente",abertaEm:sx.abertaEm||null,fechadaEm:sx.fechadaEm||null,trocoInicial:_round2(Number(sx.trocoInicial||0))}:null; }
+function _novoMovTroco(d,{tipo,valor,categoria,descricao,sessaoId,por}){
+  d.seq+=1; const cx=sessaoId?_caixaDaSessao(sessaoId):null;
+  const m={id:"t"+d.seq,em:Date.now(),tipo,valor:_round2(valor),categoria,descricao:String(descricao||"").slice(0,200),por:por||"",
+    ...(cx?{sessaoId:String(cx.id),caixa:`${cx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} · ${cx.operador}`}:{})};
+  d.movimentos.push(m); return m;
+}
+app.get("/api/conta-troco",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  try{
+    const d=lerContaTroco(); const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10); const ok=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""));
+    let de=ok(req.query.de)?req.query.de:hoje.slice(0,8)+"01", ate=ok(req.query.ate)?req.query.ate:hoje; if(de>ate){ const x=de; de=ate; ate=x; }
+    const t0=Date.parse(de+"T00:00:00-03:00"), t1=Date.parse(ate+"T23:59:59.999-03:00");
+    const ord=[...d.movimentos].sort((a,b)=>a.em-b.em); let corrente=0;
+    const comSaldo=ord.map(m=>{ if(_trocoValido(m)) corrente+=(m.tipo==="entrada"?1:-1)*Number(m.valor||0); return {...m,saldoApos:_round2(corrente)}; });
+    const doPeriodo=comSaldo.filter(m=>m.em>=t0&&m.em<=t1);
+    const val=doPeriodo.filter(_trocoValido);
+    // sugestões: caixas fechados nos últimos 3 dias sem recolhimento lançado, e caixas abertos hoje sem a saída do troco
+    const ligados=new Set(d.movimentos.filter(_trocoValido).map(m=>m.sessaoId+"|"+m.categoria));
+    const sess=(lerCaixaSessoes().sessoes)||[]; const limite=Date.now()-3*86400000;
+    const desc=sx=>({sessaoId:String(sx.id),operador:sx.operador||"",tipoCaixa:sx.tipoCaixa||"frente",abertaEm:sx.abertaEm||null,fechadaEm:sx.fechadaEm||null,trocoInicial:_round2(Number(sx.trocoInicial||0))});
+    const recolher=sess.filter(sx=>sx.fechadaEm&&sx.fechadaEm>=limite&&!ligados.has(String(sx.id)+"|Recolhimento do troco dos caixas")).map(desc).sort((a,b)=>b.fechadaEm-a.fechadaEm);
+    const abrir=sess.filter(sx=>!sx.fechadaEm&&(sx.abertaEm||0)>=limite&&Number(sx.trocoInicial||0)>0&&!ligados.has(String(sx.id)+"|Troco para abrir caixa")).map(desc);
+    res.json({ok:true,de,ate,saldo:_saldoTroco(d.movimentos),saldoInicioPeriodo:_saldoTroco(d.movimentos,t0-1),saldoFimPeriodo:_saldoTroco(d.movimentos,t1),
+      entradas:_round2(val.filter(m=>m.tipo==="entrada").reduce((s2,m)=>s2+m.valor,0)), saidas:_round2(val.filter(m=>m.tipo==="saida").reduce((s2,m)=>s2+m.valor,0)),
+      movimentos:doPeriodo.reverse(), conferencias:d.conferencias.filter(c=>c.em>=t0&&c.em<=t1).sort((a,b)=>b.em-a.em),
+      ultimaConferencia:[...d.conferencias].sort((a,b)=>b.em-a.em)[0]||null, categorias:TROCO_CATEGORIAS, sugestoes:{recolher,abrir}});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/conta-troco/movimento",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  const b=req.body||{}; const tipo=b.tipo==="saida"?"saida":(b.tipo==="entrada"?"entrada":null);
+  const valor=Number(String(b.valor||"").replace(",",".")); 
+  if(!tipo) return res.status(400).json({erro:"tipo deve ser entrada ou saida"});
+  if(!(valor>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
+  const categoria=TROCO_CATEGORIAS[tipo].includes(b.categoria)?b.categoria:TROCO_CATEGORIAS[tipo][TROCO_CATEGORIAS[tipo].length-1];
+  if(/^Outra/.test(categoria)&&!String(b.descricao||"").trim()) return res.status(400).json({erro:"descreva o lançamento (fica no histórico)"});
+  const d=lerContaTroco(); // daqui até gravar é síncrono: dois lançamentos ao mesmo tempo não se perdem
+  if(tipo==="saida"){ const saldo=_saldoTroco(d.movimentos); if(valor>saldo+0.004) return res.status(409).json({erro:`Saldo do troco insuficiente: há ${brlN(saldo)} e a saída é de ${brlN(valor)}.`}); }
+  const m=_novoMovTroco(d,{tipo,valor,categoria,descricao:b.descricao,sessaoId:b.sessaoId,por:req.sessao?.nome||""});
+  salvarJSON(CONTA_TROCO_FILE,d); res.json({ok:true,movimento:m,saldo:_saldoTroco(d.movimentos)});
+});
+// recolhimento do fim do expediente: um lançamento por caixa, vinculado à sessão (não deixa recolher o mesmo caixa 2x)
+app.post("/api/conta-troco/recolher",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  const itens=(Array.isArray(req.body?.itens)?req.body.itens:[]).map(i=>({sessaoId:String(i.sessaoId||""),valor:Number(String(i.valor||"").replace(",","."))})).filter(i=>i.sessaoId&&i.valor>0);
+  if(!itens.length) return res.status(400).json({erro:"escolha ao menos um caixa com valor"});
+  const d=lerContaTroco(); const ja=new Set(d.movimentos.filter(m=>_trocoValido(m)&&m.categoria==="Recolhimento do troco dos caixas").map(m=>m.sessaoId));
+  const feitos=[], pulados=[];
+  itens.forEach(i=>{ if(ja.has(i.sessaoId)){ pulados.push(i.sessaoId); return; } feitos.push(_novoMovTroco(d,{tipo:"entrada",valor:i.valor,categoria:"Recolhimento do troco dos caixas",descricao:String(req.body?.obs||""),sessaoId:i.sessaoId,por:req.sessao?.nome||""})); ja.add(i.sessaoId); });
+  salvarJSON(CONTA_TROCO_FILE,d); res.json({ok:true,lancados:feitos.length,jaRecolhidos:pulados.length,saldo:_saldoTroco(d.movimentos)});
+});
+app.post("/api/conta-troco/:id/estornar",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  const motivo=String(req.body?.motivo||"").trim().slice(0,200); if(!motivo) return res.status(400).json({erro:"informe o motivo do estorno"});
+  const d=lerContaTroco(); const m=d.movimentos.find(x=>x.id===req.params.id);
+  if(!m) return res.status(404).json({erro:"lançamento não encontrado"}); if(m.estornadoEm) return res.status(409).json({erro:"esse lançamento já foi estornado"});
+  if(m.tipo==="entrada"){ const saldoSem=_saldoTroco(d.movimentos)-m.valor; if(saldoSem<-0.004) return res.status(409).json({erro:`Estornar essa entrada deixaria o saldo negativo (${brlN(saldoSem)}). Estorne antes as saídas que usaram esse dinheiro.`}); }
+  m.estornadoEm=Date.now(); m.estornadoPor=req.sessao?.nome||""; m.motivoEstorno=motivo;
+  salvarJSON(CONTA_TROCO_FILE,d); res.json({ok:true,saldo:_saldoTroco(d.movimentos)});
+});
+// contagem física: registra saldo do sistema x contado; opcionalmente lança o ajuste (sobra/falta)
+app.post("/api/conta-troco/conferencia",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  const contado=Number(String(req.body?.contado??"").replace(",",".")); if(!(contado>=0)||String(req.body?.contado??"")==="") return res.status(400).json({erro:"informe o valor contado"});
+  const d=lerContaTroco(); const saldo=_saldoTroco(d.movimentos), dif=_round2(contado-saldo);
+  let ajuste=null;
+  if(req.body?.lancarAjuste===true&&Math.abs(dif)>=0.01) ajuste=_novoMovTroco(d,{tipo:dif>0?"entrada":"saida",valor:Math.abs(dif),categoria:dif>0?"Sobra na conferência":"Falta na conferência",descricao:"Ajuste da contagem"+(req.body?.obs?": "+String(req.body.obs).slice(0,150):""),por:req.sessao?.nome||""});
+  const c={id:"c"+(d.conferencias.length+1)+"_"+Date.now(),em:Date.now(),por:req.sessao?.nome||"",saldoSistema:saldo,contado:_round2(contado),diferenca:dif,obs:String(req.body?.obs||"").slice(0,200),ajusteId:ajuste?ajuste.id:null};
+  d.conferencias.push(c); salvarJSON(CONTA_TROCO_FILE,d); res.json({ok:true,conferencia:c,saldo:_saldoTroco(d.movimentos)});
+});
+app.get("/api/conta-troco.csv",requireAcesso("acesso_gestao_caixas"),(req,res)=>{
+  const d=lerContaTroco(); const ord=[...d.movimentos].sort((a,b)=>a.em-b.em); let c=0;
+  const cel=v=>{ const t=v==null?"":String(v); return /[;"\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t; };
+  const dt=ms=>ms?new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"}):"";
+  const linhas=[["Data","Tipo","Categoria","Descrição","Caixa","Lançado por","Valor","Saldo após","Estornado em","Estornado por","Motivo do estorno"]]
+    .concat(ord.map(m=>{ if(_trocoValido(m)) c+=(m.tipo==="entrada"?1:-1)*m.valor; return [dt(m.em),m.tipo==="entrada"?"Entrada":"Saída",m.categoria,m.descricao,m.caixa||"",m.por,String((m.tipo==="entrada"?1:-1)*m.valor).replace(".",","),String(_round2(c)).replace(".",","),dt(m.estornadoEm),m.estornadoPor||"",m.motivoEstorno||""]; }));
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",`attachment; filename="conta_troco_${new Date(Date.now()-3*3600e3).toISOString().slice(0,10)}.csv"`);
+  res.send("\uFEFF"+linhas.map(l=>l.map(cel).join(";")).join("\r\n"));
+});
+
 app.get("/api/caixa-sessao/historico",(req,res)=>{
   const d=lerCaixaSessoes();
   const fechadas=(d.sessoes||[]).filter(s=>s.fechadaEm).sort((a,b)=>b.fechadaEm-a.fechadaEm).slice(0,50);

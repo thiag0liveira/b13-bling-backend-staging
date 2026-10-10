@@ -26,7 +26,7 @@
   .toggle{display:flex;background:#0a0918;border-radius:10px;padding:4px;gap:4px;margin-bottom:14px}
   .toggle button{flex:1;background:transparent;border:none;color:#9a95c9;padding:12px;border-radius:8px;font-weight:800;cursor:pointer;font-size:14px}
   .toggle button.on{background:var(--mag);color:#fff}
-  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .modalBg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:200}
   .modal{background:#151233;border:1px solid #2c2660;border-radius:16px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow:auto}
   .modal h3{margin:0 0 12px}
 </style>
@@ -111,6 +111,136 @@
     if (window.FILTRO_TIPO === "todos") return lista;
     return lista.filter(s => (s.tipoCaixa || "frente") === window.FILTRO_TIPO);
   }
+
+  // ======================= CONTA DE TROCO =======================
+  // Saldo do troco recolhido dos caixas, com entradas, saídas, contagem diária e estorno (nada é apagado).
+  function tokT(){ try{ return (b13GetSession()||{}).token||""; }catch(e){ return ""; } }
+  async function apiT(p, op){ op=op||{}; const r=await fetch(B+p,{...op,headers:{"Content-Type":"application/json","X-Auth-Token":tokT(),...(op.headers||{})}}); const j=await r.json().catch(()=>({})); return {ok:r.ok,status:r.status,j}; }
+  const hojeT=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+  window.TROCO={per:"mes",de:null,ate:null,d:null};
+  function periodoT(p){ const h=hojeT(); let de=h,ate=h;
+    if(p==="7") de=new Date(Date.parse(h+"T12:00:00")-6*86400000).toISOString().slice(0,10);
+    if(p==="mes") de=h.slice(0,8)+"01";
+    if(p==="mesPassado"){ const f=new Date(Date.parse(h.slice(0,8)+"01T12:00:00")-86400000).toISOString().slice(0,10); ate=f; de=f.slice(0,8)+"01"; }
+    TROCO.per=p; TROCO.de=de; TROCO.ate=ate; }
+  window.carregarTroco=async function(){
+    if(!TROCO.de) periodoT("mes");
+    const c=document.getElementById("conteudo"); c.innerHTML='<div class="muted">Carregando a conta de troco…</div>';
+    const {ok,j}=await apiT(`/api/conta-troco?de=${TROCO.de}&ate=${TROCO.ate}`);
+    if(!ok){ c.innerHTML=`<div class="err">${esc(j.erro||"Não consegui carregar.")}</div>`; return; }
+    TROCO.d=j; renderTroco();
+  };
+  window.trocoPeriodo=function(p){ periodoT(p); carregarTroco(); };
+  window.trocoDatas=function(){ TROCO.per=""; TROCO.de=document.getElementById("tDe").value; TROCO.ate=document.getElementById("tAte").value; carregarTroco(); };
+  function renderTroco(){
+    const d=TROCO.d, uc=d.ultimaConferencia;
+    const chip=(p,t)=>`<button class="btn btn-sm ${TROCO.per===p?"btn-mag":"btn-ghost"}" onclick="trocoPeriodo('${p}')">${t}</button>`;
+    const sug=(d.sugestoes.recolher||[]).length;
+    document.getElementById("conteudo").innerHTML=`
+      <div class="card" style="text-align:center">
+        <div class="muted">💰 Saldo do troco agora</div>
+        <div style="font-size:38px;font-weight:900;margin:4px 0;color:${d.saldo<0?"#ff8aa3":"#3ce88a"}">${brl(d.saldo)}</div>
+        <div class="muted">${uc?`Última contagem: ${hora(uc.em)} por ${esc(uc.por||"—")} · contado ${brl(uc.contado)} · ${Math.abs(uc.diferenca)<0.01?'<b style="color:#3ce88a">bateu</b>':`<b style="color:#ff8aa3">${uc.diferenca>0?"sobra":"falta"} de ${brl(Math.abs(uc.diferenca))}</b>${uc.ajusteId?" (ajustado)":""}`}`:"Nenhuma contagem registrada ainda."}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">
+          <button class="btn btn-mag" onclick="abrirRecolherTroco()">📥 Recolher troco dos caixas${sug?` (${sug})`:""}</button>
+          <button class="btn btn-ghost" style="border:1px solid #3ce88a" onclick="abrirMovTroco('entrada')">＋ Entrada</button>
+          <button class="btn btn-ghost" style="border:1px solid #ff8aa3" onclick="abrirMovTroco('saida')">－ Saída</button>
+          <button class="btn btn-ghost" style="border:1px solid #ffd23f" onclick="abrirConferirTroco()">🧮 Conferir (contagem)</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${chip("hoje","Hoje")}${chip("7","7 dias")}${chip("mes","Este mês")}${chip("mesPassado","Mês passado")}
+          <input type="date" id="tDe" value="${TROCO.de}" style="padding:7px" onchange="trocoDatas()"><span class="muted">até</span><input type="date" id="tAte" value="${TROCO.ate}" style="padding:7px" onchange="trocoDatas()">
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="baixarCsvTroco()">⬇ CSV do extrato</button></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:12px">
+          ${[["Saldo no início",d.saldoInicioPeriodo,"#fff"],["Entradas",d.entradas,"#3ce88a"],["Saídas",-d.saidas,"#ff8aa3"],["Saldo no fim",d.saldoFimPeriodo,"#fff"]].map(([t,v,c])=>`<div style="background:#0f0d24;border:1px solid #2c2660;border-radius:10px;padding:10px"><div class="muted" style="font-size:11px">${t}</div><div style="font-size:18px;font-weight:900;color:${c}">${brl(v)}</div></div>`).join("")}
+        </div>
+      </div>
+      <div class="card"><h3 style="margin:0 0 8px">📒 Extrato</h3>
+        ${d.movimentos.length?d.movimentos.map(m=>`<div class="linha" style="align-items:flex-start;gap:10px;${m.estornadoEm?"opacity:.5":""}">
+          <div style="flex:1;min-width:0"><b style="${m.estornadoEm?"text-decoration:line-through":""}">${m.tipo==="entrada"?"⬆":"⬇"} ${esc(m.categoria)}</b>
+            <div class="muted" style="font-size:12px">${hora(m.em)} · ${esc(m.por||"—")}${m.caixa?" · "+esc(m.caixa):""}${m.descricao?" · "+esc(m.descricao):""}</div>
+            ${m.estornadoEm?`<div style="font-size:12px;color:#ff8aa3">Estornado ${hora(m.estornadoEm)} por ${esc(m.estornadoPor||"—")}: ${esc(m.motivoEstorno||"")}</div>`:""}</div>
+          <div style="text-align:right;white-space:nowrap"><b style="color:${m.tipo==="entrada"?"#3ce88a":"#ff8aa3"};${m.estornadoEm?"text-decoration:line-through":""}">${m.tipo==="entrada"?"+":"−"} ${brl(m.valor)}</b>
+            <div class="muted" style="font-size:11px">saldo ${brl(m.saldoApos)}</div>
+            ${m.estornadoEm?"":`<button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px;margin-top:3px" onclick="estornarTroco('${esc(m.id)}')">estornar</button>`}</div></div>`).join("")
+          :'<div class="muted">Nenhum lançamento no período.</div>'}</div>
+      ${d.conferencias.length?`<div class="card"><h3 style="margin:0 0 8px">🧮 Contagens no período</h3>${d.conferencias.map(c=>`<div class="linha"><span>${hora(c.em)} · ${esc(c.por||"—")}${c.obs?" · "+esc(c.obs):""}</span><span>sistema ${brl(c.saldoSistema)} · contado ${brl(c.contado)} · ${Math.abs(c.diferenca)<0.01?'<b style="color:#3ce88a">bateu</b>':`<b style="color:#ff8aa3">${c.diferenca>0?"sobra":"falta"} ${brl(Math.abs(c.diferenca))}</b>${c.ajusteId?" (ajustado)":""}`}</span></div>`).join("")}</div>`:""}`;
+  }
+  window.abrirMovTroco=function(tipo,sessaoId,valor){
+    const d=TROCO.d, cats=d.categorias[tipo];
+    const caixas=tipo==="saida"?(d.sugestoes.abrir||[]):[];
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>${tipo==="entrada"?"＋ Entrada no troco":"－ Saída do troco"}</h3>
+      <div class="muted" style="margin-bottom:10px">Saldo agora: <b>${brl(d.saldo)}</b></div>
+      <label class="muted">Valor (R$)</label><input id="mtValor" inputmode="decimal" value="${valor?String(valor).replace(".",","):""}" style="width:100%;margin:4px 0 10px">
+      <label class="muted">Categoria</label><select id="mtCat" style="width:100%;margin:4px 0 10px">${cats.map(c=>`<option ${tipo==="saida"&&sessaoId&&c==="Troco para abrir caixa"?"selected":""}>${esc(c)}</option>`).join("")}</select>
+      ${caixas.length?`<label class="muted">Vincular a um caixa aberto (opcional)</label><select id="mtCx" style="width:100%;margin:4px 0 10px" onchange="const o=this.selectedOptions[0];if(o&&o.dataset.v){document.getElementById('mtValor').value=o.dataset.v;document.getElementById('mtCat').value='Troco para abrir caixa';}"><option value="">— nenhum —</option>${caixas.map(c=>`<option value="${esc(c.sessaoId)}" data-v="${String(c.trocoInicial).replace(".",",")}" ${String(sessaoId)===String(c.sessaoId)?"selected":""}>${c.tipoCaixa==="atacado"?"Caixa Atacado":"Frente"} · ${esc(c.operador)} · aberto ${hora(c.abertaEm)} · troco ${brl(c.trocoInicial)}</option>`).join("")}</select>`:""}
+      <label class="muted">Descrição ${tipo==="saida"?"(ex.: depósito no Inter, compra de moedas)":""}</label><input id="mtDesc" maxlength="200" style="width:100%;margin:4px 0 10px">
+      <div id="mtErr"></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarMovTroco('${tipo}')">Lançar</button></div></div></div>`;
+    setTimeout(()=>document.getElementById("mtValor").focus(),50);
+  };
+  window.salvarMovTroco=async function(tipo){
+    const cx=document.getElementById("mtCx");
+    const {ok,j}=await apiT("/api/conta-troco/movimento",{method:"POST",body:JSON.stringify({tipo,valor:numBR(document.getElementById("mtValor").value),categoria:document.getElementById("mtCat").value,descricao:document.getElementById("mtDesc").value,sessaoId:cx?cx.value:""})});
+    if(!ok){ document.getElementById("mtErr").innerHTML=`<div class="err">${esc(j.erro||"Não consegui lançar.")}</div>`; return; }
+    fecharModais(); carregarTroco();
+  };
+  window.abrirRecolherTroco=function(){
+    const L=TROCO.d.sugestoes.recolher||[];
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>📥 Recolher troco dos caixas</h3>
+      <div class="muted" style="margin-bottom:10px">Caixas fechados nos últimos 3 dias que ainda não tiveram o troco recolhido. O valor sugerido é o troco com que o caixa abriu; ajuste para o que foi contado de verdade.</div>
+      ${L.length?L.map((c,i)=>`<div class="linha" style="align-items:center;gap:8px"><label style="display:flex;gap:8px;align-items:center;flex:1;cursor:pointer"><input type="checkbox" id="rcOk${i}" checked style="width:20px;height:20px">
+        <span>${c.tipoCaixa==="atacado"?"🧾 Caixa Atacado":"🛒 Frente"} · <b>${esc(c.operador)}</b><br><span class="muted" style="font-size:12px">fechado ${hora(c.fechadaEm)} · abriu com ${brl(c.trocoInicial)}</span></span></label>
+        <input id="rcV${i}" inputmode="decimal" value="${String(c.trocoInicial).replace(".",",")}" style="width:120px;padding:8px"></div>`).join("")+`<label class="muted" style="display:block;margin-top:10px">Observação (opcional)</label><input id="rcObs" maxlength="150" style="width:100%;margin:4px 0 10px">`
+        :'<div class="muted">Nenhum caixa fechado pendente de recolhimento. Para lançar um valor avulso, use ＋ Entrada.</div>'}
+      <div id="rcErr"></div>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button>${L.length?`<button class="btn btn-mag" style="flex:1" onclick="salvarRecolherTroco()">Recolher</button>`:""}</div></div></div>`;
+  };
+  window.salvarRecolherTroco=async function(){
+    const L=TROCO.d.sugestoes.recolher||[]; const itens=L.map((c,i)=>document.getElementById("rcOk"+i).checked?{sessaoId:c.sessaoId,valor:numBR(document.getElementById("rcV"+i).value)}:null).filter(x=>x&&x.valor>0);
+    const {ok,j}=await apiT("/api/conta-troco/recolher",{method:"POST",body:JSON.stringify({itens,obs:(document.getElementById("rcObs")||{}).value||""})});
+    if(!ok){ document.getElementById("rcErr").innerHTML=`<div class="err">${esc(j.erro||"Não consegui recolher.")}</div>`; return; }
+    fecharModais(); carregarTroco();
+  };
+  window.abrirConferirTroco=function(){
+    const s=TROCO.d.saldo;
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>🧮 Conferir o troco (contagem)</h3>
+      <div class="muted" style="margin-bottom:10px">Conte o dinheiro do troco e digite o total. O sistema compara com o saldo e registra a contagem.</div>
+      <div class="linha"><span>Saldo no sistema</span><b>${brl(s)}</b></div>
+      <label class="muted" style="display:block;margin-top:10px">Valor contado (R$)</label><input id="cfV" inputmode="decimal" style="width:100%;margin:4px 0 6px" oninput="const v=numBR(this.value),d=+(v-${s}).toFixed(2);document.getElementById('cfDif').innerHTML=this.value?(Math.abs(d)<0.01?'<b style=&quot;color:#3ce88a&quot;>✅ Bateu</b>':'<b style=&quot;color:#ff8aa3&quot;>'+(d>0?'Sobra':'Falta')+' de '+brl(Math.abs(d))+'</b>'):''">
+      <div id="cfDif" style="margin-bottom:8px"></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:8px"><input type="checkbox" id="cfAj" style="width:18px;height:18px"> Se houver diferença, lançar o ajuste (o saldo passa a ser o contado)</label>
+      <label class="muted">Observação (opcional)</label><input id="cfObs" maxlength="150" style="width:100%;margin:4px 0 10px">
+      <div id="cfErr"></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarConferirTroco()">Registrar contagem</button></div></div></div>`;
+    setTimeout(()=>document.getElementById("cfV").focus(),50);
+  };
+  window.salvarConferirTroco=async function(){
+    const v=document.getElementById("cfV").value; if(!String(v).trim()){ document.getElementById("cfErr").innerHTML='<div class="err">Digite o valor contado.</div>'; return; }
+    const {ok,j}=await apiT("/api/conta-troco/conferencia",{method:"POST",body:JSON.stringify({contado:numBR(v),obs:document.getElementById("cfObs").value,lancarAjuste:document.getElementById("cfAj").checked})});
+    if(!ok){ document.getElementById("cfErr").innerHTML=`<div class="err">${esc(j.erro||"Não consegui registrar.")}</div>`; return; }
+    fecharModais(); carregarTroco();
+  };
+  window.estornarTroco=function(id){
+    document.getElementById("modais").innerHTML=`<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+      <h3>Estornar lançamento</h3><div class="muted" style="margin-bottom:10px">O lançamento continua no extrato, riscado, com o motivo e o seu nome. O saldo é recalculado.</div>
+      <label class="muted">Motivo</label><input id="esMot" maxlength="200" style="width:100%;margin:4px 0 10px" placeholder="ex.: valor digitado errado">
+      <div id="esErr"></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="confirmarEstornoTroco('${esc(id)}')">Estornar</button></div></div></div>`;
+  };
+  window.confirmarEstornoTroco=async function(id){
+    const {ok,j}=await apiT(`/api/conta-troco/${encodeURIComponent(id)}/estornar`,{method:"POST",body:JSON.stringify({motivo:document.getElementById("esMot").value})});
+    if(!ok){ document.getElementById("esErr").innerHTML=`<div class="err">${esc(j.erro||"Não consegui estornar.")}</div>`; return; }
+    fecharModais(); carregarTroco();
+  };
+  window.baixarCsvTroco=async function(){
+    const r=await fetch(B+"/api/conta-troco.csv",{headers:{"X-Auth-Token":tokT()}}); if(!r.ok) return;
+    const bl=await r.blob(), a=document.createElement("a"); a.href=URL.createObjectURL(bl); a.download="conta_troco.csv"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  };
   window.render = function () {
     document.getElementById("app").innerHTML = `
     <div class="top"><img src="${LOGO}"><div class="t">🗃️ Gestão de Caixas</div></div>
@@ -129,15 +259,16 @@
       <div class="toggle">
         <button class="${window.ABA === 'abertos' ? 'on' : ''}" onclick="window.ABA='abertos';render()">🏪 Abertos agora</button>
         <button class="${window.ABA === 'historico' ? 'on' : ''}" onclick="window.ABA='historico';render()">📜 Histórico</button>
+        <button class="${window.ABA === 'troco' ? 'on' : ''}" onclick="window.ABA='troco';render()">💰 Conta de troco</button>
       </div>
-      <div class="toggle" style="margin-top:-6px">
+      <div class="toggle" style="margin-top:-6px;${window.ABA === 'troco' ? 'display:none' : ''}">
         <button class="${window.FILTRO_TIPO === 'todos' ? 'on' : ''}" onclick="window.FILTRO_TIPO='todos';render()">Todos</button>
         <button class="${window.FILTRO_TIPO === 'frente' ? 'on' : ''}" onclick="window.FILTRO_TIPO='frente';render()">🛒 Frente</button>
         <button class="${window.FILTRO_TIPO === 'atacado' ? 'on' : ''}" onclick="window.FILTRO_TIPO='atacado';render()">🧾 Atacado</button>
       </div>
       <div id="conteudo"><div class="muted">Carregando…</div></div>
     </div>`;
-    if (window.ABA === "abertos") carregarAbertos();else carregarHistorico();
+    if (window.ABA === "troco") carregarTroco();else if (window.ABA === "abertos") carregarAbertos();else carregarHistorico();
   };
   window.carregarAbertos = async function () {
     const box = document.getElementById("conteudo");
