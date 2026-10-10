@@ -14598,6 +14598,47 @@ app.get("/api/diag/gtin/:codigo",async(req,res)=>{
   }catch(e){ testes.filtro_gtin={erro:e.message}; }
   res.json(testes);
 });
+// ===================== CACHE DA TELA DE PREÇO =====================
+// A tela /preco guarda o catálogo inteiro e responde a leitura na hora (sem depender da internet naquele
+// momento); a cada 15 min pergunta aqui se o catálogo mudou (resposta mínima se não mudou) e, a cada leitura,
+// confirma o preço em segundo plano (memória de 10 min por produto no servidor).
+let _gtinMem={mtime:-1,dados:{}};
+function _gtinIndexMem(){
+  try{ const st=fs.statSync(GTIN_INDEX_FILE); if(st.mtimeMs!==_gtinMem.mtime) _gtinMem={mtime:st.mtimeMs,dados:lerJSON(GTIN_INDEX_FILE,{})}; }
+  catch(e){ if(_gtinMem.mtime!==0) _gtinMem={mtime:0,dados:{}}; }
+  return _gtinMem.dados;
+}
+const _precoConfirmado=new Map(); // produtoId -> {preco,nome,em}: o último preço confirmado no Bling
+const PRECO_CONFIRMA_TTL=10*60000; let _precoConfVersao=0;
+let _catPrecoMemo={em:0,json:null};
+function _catalogoPreco(){
+  if(_catPrecoMemo.json&&Date.now()-_catPrecoMemo.em<60000) return _catPrecoMemo.json;
+  const idxG=_gtinIndexMem(); let idxT={porCodigo:{},porNome:{}}; try{ idxT=_indicePrecosTabela(); }catch(e){}
+  const porProd=new Map();
+  Object.entries(idxG).forEach(([cod,it])=>{
+    if(!it) return; const k=String(it.produtoId||it.codigo||cod);
+    let p=porProd.get(k);
+    if(!p){
+      const c=_precoConfirmado.get(String(it.produtoId));
+      const vinc=idxT.porCodigo[String(it.codigo||"")]||idxT.porCodigo[String(cod)]||idxT.porNome[String(it.nome||"").toLowerCase().trim()];
+      p={id:it.produtoId||null,k:[],n:(c&&c.nome)||it.nome||"",p:+((c?c.preco:it.preco)||0),i:it.imagem||null,
+         a:(vinc&&Number(vinc.precoAtacado)>0)?Number(vinc.precoAtacado):null,f:vinc?(vinc.precoFardo??null):null,q:vinc?(vinc.caixaQtd||null):null};
+      porProd.set(k,p);
+    }
+    [cod,it.gtin,it.codigo].forEach(x=>{ x=String(x||"").trim(); if(x&&!p.k.includes(x)) p.k.push(x); });
+  });
+  const itens=[...porProd.values()];
+  const versao=crypto.createHash("sha1").update(JSON.stringify(itens)).digest("hex").slice(0,16);
+  _catPrecoMemo={em:Date.now(),json:{versao,itens,geradoEm:Date.now()}};
+  return _catPrecoMemo.json;
+}
+app.get("/api/preco/catalogo",(req,res)=>{
+  try{
+    const c=_catalogoPreco();
+    if(req.query.versao&&req.query.versao===c.versao) return res.json({mesmo:true,versao:c.versao});
+    res.json({versao:c.versao,geradoEm:c.geradoEm,total:c.itens.length,itens:c.itens});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/preco/gtin/:codigo", async(req,res)=>{
   try{
     const codigo=String(req.params.codigo||"").trim();
@@ -14639,7 +14680,7 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
     //    filtro ?gtin= da API v3 do Bling NÃO funciona (ignora o filtro e devolve
     //    lista genérica). O índice é montado em segundo plano lendo o gtin real de
     //    cada produto. Cobre tanto código de barras quanto SKU.
-    const indice=lerJSON(GTIN_INDEX_FILE,{});
+    const indice=_gtinIndexMem(); // na memória (recarrega só quando o arquivo muda), não lê o disco a cada leitura
     if(indice[codigo]){
       const item={...indice[codigo]};
       // ?vivo=1 (usado só pela tela /preco de consulta) confirma o preço AO VIVO no
@@ -14648,11 +14689,19 @@ app.get("/api/preco/gtin/:codigo", async(req,res)=>{
       // pra não deixar o bipar de produtos mais lento numa hora de movimento — lá o
       // índice (que já se atualiza sozinho a cada 6h) continua sendo a fonte.
       if(req.query.vivo==="1"){
+        // confirmação com MEMÓRIA de 10 min por produto e pela fila LENTA do Bling (a tela já mostrou o preço
+        // guardado; isto só corrige se mudou, sem disputar a fila com os caixas)
         try{
-          const det=await bling(`/produtos/${item.produtoId}`).then(r=>r?.data);
-          if(det){ item.preco=+(det.preco||item.preco||0); item.nome=det.nome||item.nome; }
+          const k=String(item.produtoId), c=_precoConfirmado.get(k);
+          if(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL){ item.preco=c.preco; item.nome=c.nome||item.nome; }
+          else{
+            const det=await blingLento(`/produtos/${item.produtoId}`).then(r=>r?.data);
+            if(det){ item.preco=+(det.preco||item.preco||0); item.nome=det.nome||item.nome;
+              const ant=_precoConfirmado.get(k); _precoConfirmado.set(k,{preco:item.preco,nome:item.nome,em:Date.now()});
+              if(!ant||ant.preco!==item.preco||ant.nome!==item.nome) _precoConfVersao++; }
+          }
         }catch(e){}
-      }
+      }else{ const c=_precoConfirmado.get(String(item.produtoId)); if(c){ item.preco=c.preco; item.nome=c.nome||item.nome; } }
       return res.json({data:aplicarAtacado(anexarAtacadoFardo(item)),origem:"indice"});
     }
 

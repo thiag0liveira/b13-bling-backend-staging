@@ -230,25 +230,79 @@ function telaIdle() {
     </div>`;
   iniciarCarrossel();
 }
+// ===== CACHE: catálogo guardado na própria tela =====
+// A leitura responde na hora com o catálogo guardado (funciona com internet lenta ou caindo). A cada 15 min
+// pergunta ao servidor se o catálogo mudou; a cada leitura confirma o preço em segundo plano e corrige a tela
+// se tiver mudado.
+const CAT_KEY = "b13_preco_catalogo_v1", OVR_KEY = "b13_preco_ajustes_v1";
+let CAT = { versao: "", mapa: new Map(), em: 0 }, ONLINE = true, EXIBINDO = null;
+function itemTela(it) { return { produtoId: it.id, nome: it.n, preco: it.p, precoAtacado: it.a ?? null, precoFardo: it.f ?? null, caixaQtd: it.q ?? null, imagem: it.i || null }; }
+function aplicarCatalogo(versao, itens, em) {
+  const m = new Map(); (itens || []).forEach(it => { const p = itemTela(it); (it.k || []).forEach(c => { if (c) m.set(String(c), p); }); });
+  let ovr = {}; try { ovr = JSON.parse(localStorage.getItem(OVR_KEY) || "{}"); } catch (e) {}
+  if (ovr.versao === versao) Object.entries(ovr.itens || {}).forEach(([c, p]) => m.set(c, p)); // correções feitas depois desse catálogo
+  CAT = { versao, mapa: m, em: em || Date.now() };
+}
+function carregarCatalogoGuardado() { try { const s = JSON.parse(localStorage.getItem(CAT_KEY) || "null"); if (s && s.itens) aplicarCatalogo(s.versao, s.itens, s.em); } catch (e) {} }
+function comTempo(url, ms) { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms); return fetch(url, { signal: ctl.signal }).then(r => { clearTimeout(t); if (!r.ok) throw new Error("http " + r.status); return r.json(); }); }
+async function atualizarCatalogo() {
+  try {
+    const j = await comTempo(B + "/api/preco/catalogo?versao=" + encodeURIComponent(CAT.versao || ""), 30000);
+    ONLINE = true;
+    if (!j.mesmo && j.itens) {
+      aplicarCatalogo(j.versao, j.itens, Date.now());
+      try { localStorage.setItem(CAT_KEY, JSON.stringify({ versao: j.versao, itens: j.itens, em: Date.now() })); localStorage.removeItem(OVR_KEY); } catch (e) {}
+    } else if (j.mesmo) CAT.em = Date.now();
+  } catch (e) { ONLINE = false; }
+  marcarConexao();
+}
+function guardarCorrecao(codigo, p) {
+  CAT.mapa.set(String(codigo), p);
+  try { const o = JSON.parse(localStorage.getItem(OVR_KEY) || "{}"); if (o.versao !== CAT.versao) { o.versao = CAT.versao; o.itens = {}; } o.itens[String(codigo)] = p; localStorage.setItem(OVR_KEY, JSON.stringify(o)); } catch (e) {}
+}
+function marcarConexao() {
+  let el = document.getElementById("semConexao");
+  if (!el) { el = document.createElement("div"); el.id = "semConexao"; el.style.cssText = "position:fixed;left:12px;bottom:10px;z-index:50;font:700 12px Arial;color:#ffd23f;background:rgba(0,0,0,.55);padding:6px 10px;border-radius:8px;display:none"; document.body.appendChild(el); }
+  el.style.display = ONLINE ? "none" : "block";
+  el.textContent = "📶 sem conexão · mostrando os preços guardados" + (CAT.em ? " (atualizados " + new Date(CAT.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) + ")" : "");
+}
+function mostrarProduto(p) {
+  const extras = [];
+  if (p.precoFardo != null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div><div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd ? `<div class="obs">a partir de ${p.caixaQtd} un.</div>` : ""}</div>`);
+  if (p.precoAtacado != null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div><div class="val">${brl(p.precoAtacado)}</div></div>`);
+  document.getElementById("app").innerHTML = `
+    <div class="resultado">
+      ${p.imagem ? `<img src="${esc(p.imagem)}" onerror="this.style.display='none'">` : ""}
+      <div class="nome">${esc(p.nome)}</div>
+      <div class="preco">${brl(p.preco)}<small>VAREJO — preço unitário</small></div>
+      ${extras.length ? `<div class="maisPrecos">${extras.join("")}</div>` : ""}
+    </div>`;
+}
+function agendarVolta() { if (timerReset) clearTimeout(timerReset); timerReset = setTimeout(() => { EXIBINDO = null; telaIdle(); }, 6000); }
+// confirma em segundo plano; se o preço ou o nome mudaram, corrige a tela (se ainda for o mesmo produto) e guarda
+async function confirmar(codigo, atual) {
+  try {
+    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?vivo=1", 20000);
+    ONLINE = true;
+    if (j.data && (Number(j.data.preco) !== Number(atual.preco) || j.data.nome !== atual.nome || j.data.precoAtacado !== atual.precoAtacado || j.data.precoFardo !== atual.precoFardo)) {
+      guardarCorrecao(codigo, j.data);
+      if (EXIBINDO === codigo) mostrarProduto(j.data);
+    }
+  } catch (e) { ONLINE = false; }
+  marcarConexao();
+}
 async function buscarPreco(codigo) {
   pararCarrossel();
+  EXIBINDO = codigo;
+  const guardado = CAT.mapa.get(String(codigo));
+  if (guardado) { mostrarProduto(guardado); agendarVolta(); confirmar(codigo, guardado); return; } // na hora
   document.getElementById("app").innerHTML = `<div class="sub" style="font-size:16px">Buscando…</div>`;
   try {
-    const r = await fetch(B + "/api/preco/gtin/" + encodeURIComponent(codigo) + "?vivo=1");
-    const j = await r.json();
-    if (j.data) {
-      const p = j.data;
-      const extras = [];
-      if (p.precoFardo != null) extras.push(`<div class="cardPreco fardo"><div class="rot">FARDO</div><div class="val">${brl(p.precoFardo)}</div>${p.caixaQtd ? `<div class="obs">a partir de ${p.caixaQtd} un.</div>` : ""}</div>`);
-      if (p.precoAtacado != null) extras.push(`<div class="cardPreco atacado"><div class="rot">ATACADO</div><div class="val">${brl(p.precoAtacado)}</div></div>`);
-      document.getElementById("app").innerHTML = `
-        <div class="resultado">
-          ${p.imagem ? `<img src="${esc(p.imagem)}" onerror="this.style.display='none'">` : ""}
-          <div class="nome">${esc(p.nome)}</div>
-          <div class="preco">${brl(p.preco)}<small>VAREJO — preço unitário</small></div>
-          ${extras.length ? `<div class="maisPrecos">${extras.join("")}</div>` : ""}
-        </div>`;
-    } else {
+    const j = await comTempo(B + "/api/preco/gtin/" + encodeURIComponent(codigo), 12000);
+    ONLINE = true;
+    if (EXIBINDO !== codigo) return;
+    if (j.data) { mostrarProduto(j.data); guardarCorrecao(codigo, j.data); confirmar(codigo, j.data); }
+    else {
       document.getElementById("app").innerHTML = `
         <div class="naoachou">
           <div class="ico">❓</div>
@@ -257,15 +311,21 @@ async function buscarPreco(codigo) {
         </div>`;
     }
   } catch (e) {
-    document.getElementById("app").innerHTML = `
+    ONLINE = false;
+    if (EXIBINDO === codigo) document.getElementById("app").innerHTML = `
       <div class="naoachou">
-        <div class="ico">⚠️</div>
-        <div class="msg">Erro ao consultar</div>
+        <div class="ico">📶</div>
+        <div class="msg">Sem conexão no momento</div>
+        <div class="cod">Esse produto ainda não estava guardado nesta tela. Tente de novo em instantes.</div>
       </div>`;
   }
-  if (timerReset) clearTimeout(timerReset);
-  timerReset = setTimeout(telaIdle, 6000);
+  marcarConexao();
+  agendarVolta();
 }
+carregarCatalogoGuardado();
+atualizarCatalogo();
+setInterval(atualizarCatalogo, 15 * 60 * 1000);
+window.addEventListener("online", atualizarCatalogo);
 const input = document.getElementById("entrada");
 function manterFoco() {
   input.focus();
