@@ -842,6 +842,8 @@ async function buscarFormasPorData() {
               <span>${esc(o.origem)} <span class="muted">(${o.qtd}x)</span></span><b>${brl(o.valor)}</b>
             </div>`).join("")}
           ${d.regra ? `<div class="muted" style="font-size:11px;margin-top:8px">${esc(d.regra)}</div>` : ""}
+          <div style="margin-top:10px"><button class="btn" style="font-size:12px;padding:6px 10px" onclick="compararAntigo('${esc(d.dataInicial)}','${esc(d.dataFinal)}',${d.totalPago})">↔ Comparar com o cálculo antigo</button></div>
+          <div id="fpAntigo"></div>
           ${d.bling ? `<div class="muted" style="font-size:11px;margin-top:4px">Bling: ${d.bling.candidatos} pedido(s) atendido(s) que nunca passaram pelo sistema${d.bling.lidosAgora ? `, ${d.bling.lidosAgora} consultado(s) agora pela fila lenta` : ""}${d.bling.pendentes ? ` · <b style="color:#ffd23f">${d.bling.pendentes} ainda não consultado(s), abra o fechamento de novo depois para completar</b>` : ""}${d.bling.erro ? ` · <b style="color:#ff8aa3">não consegui consultar o Bling: ${esc(d.bling.erro)}</b>` : ""}</div>` : ""}
         </div>` : ""}
         ${d.pedidos.length ? `
@@ -1125,6 +1127,28 @@ function renderRelatorio(rel) {
       </div>
     </div>`;
 }
-if (!window.__b13SemAcesso) render();</script>
+if (!window.__b13SemAcesso) render();
+// compara com o fechamento ANTIGO (o que lia o Bling pedido a pedido), lado a lado, para conferir nos primeiros dias
+function compararAntigo(dataInicial, dataFinal, totalNovo) {
+  const box = document.getElementById("fpAntigo");
+  if (!confirm("O cálculo antigo consulta o Bling pedido a pedido (pode demorar e pesa na fila do Bling). Evite com a loja cheia. Continuar?")) return;
+  box.innerHTML = `<div class="muted" style="margin-top:8px">Calculando do jeito antigo…</div>`;
+  const es = new EventSource(B + "/api/fechamento-por-pagamento-antigo?" + new URLSearchParams({ dataInicial, dataFinal }).toString());
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if (d.tipo === "progresso") box.innerHTML = `<div class="muted" style="margin-top:8px">Cálculo antigo: ${d.atual} de ${d.total} pedidos verificados no Bling…</div>`;
+    else if (d.tipo === "done") {
+      es.close();
+      const dif = +(totalNovo - d.totalPago).toFixed(2);
+      box.innerHTML = `<div style="margin-top:10px;background:#0f0d24;border:1px solid #2a2660;border-radius:10px;padding:10px;font-size:13px">
+        <div style="display:flex;justify-content:space-between"><span>Cálculo novo</span><b>${brl(totalNovo)}</b></div>
+        <div style="display:flex;justify-content:space-between"><span>Cálculo antigo</span><b>${brl(d.totalPago)}</b></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #2a2660;margin-top:6px;padding-top:6px"><span>Diferença</span><b style="color:${Math.abs(dif) < 0.01 ? "#3ce88a" : "#ffd23f"}">${brl(dif)}</b></div>
+        <div class="muted" style="font-size:11px;margin-top:6px">Antigo por forma: ${d.formasPagamento.map(f => esc(f.nome) + " " + brl(f.valor)).join(" · ") || "—"}</div>
+        <div class="muted" style="font-size:11px;margin-top:4px">Diferenças esperadas: o antigo não vê vendas da Frente de Caixa sem Bling, conta o troco como recebido e fecha o dia às 21h.</div></div>`;
+    } else if (d.tipo === "erro") { es.close(); box.innerHTML = `<div class="err">${esc(d.erro)}</div>`; }
+  };
+}
+</script>
 </body>
 </html>
