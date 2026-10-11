@@ -834,12 +834,22 @@ async function buscarFormasPorData() {
               <b>${brl(f.valor)}</b>
             </div>`).join("") : '<div class="muted" style="margin:0">Nenhum pagamento no período.</div>'}
         </div>
+        ${(d.porOrigem || []).length ? `
+        <div class="card" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:6px">De onde veio</div>
+          ${d.porOrigem.map(o => `
+            <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
+              <span>${esc(o.origem)} <span class="muted">(${o.qtd}x)</span></span><b>${brl(o.valor)}</b>
+            </div>`).join("")}
+          ${d.regra ? `<div class="muted" style="font-size:11px;margin-top:8px">${esc(d.regra)}</div>` : ""}
+          ${d.bling ? `<div class="muted" style="font-size:11px;margin-top:4px">Bling: ${d.bling.candidatos} pedido(s) atendido(s) que nunca passaram pelo sistema${d.bling.lidosAgora ? `, ${d.bling.lidosAgora} consultado(s) agora pela fila lenta` : ""}${d.bling.pendentes ? ` · <b style="color:#ffd23f">${d.bling.pendentes} ainda não consultado(s), abra o fechamento de novo depois para completar</b>` : ""}${d.bling.erro ? ` · <b style="color:#ff8aa3">não consegui consultar o Bling: ${esc(d.bling.erro)}</b>` : ""}</div>` : ""}
+        </div>` : ""}
         ${d.pedidos.length ? `
         <div class="card" style="margin-top:10px">
-          <div style="font-weight:800;margin-bottom:6px">Pedidos (mostrados como se fossem do dia do pagamento)</div>
+          <div style="font-weight:800;margin-bottom:6px">Pedidos (pelo dia do pagamento)</div>
           ${d.pedidos.map(p => `
             <div style="padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
-              #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.situacao)} · criado em ${p.data})</span>
+              #${esc(p.numero)} — ${esc(p.cliente)} <span class="muted">(${esc(p.origem || p.situacao)} · pago em ${String(p.data || "").split("-").reverse().join("/")})</span>
               <span style="float:right;font-weight:700;color:#2f9e6b">${brl(p.valorRecebidoNoPeriodo)}</span>
             </div>`).join("")}
         </div>` : ""}

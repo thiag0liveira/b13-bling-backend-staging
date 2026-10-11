@@ -10297,7 +10297,114 @@ app.get("/api/em-digitacao", async(req,res)=>{
 // 2) pedidos direto do Bling (nunca passaram pelo nosso sistema) - usamos a
 //    data de vencimento da parcela como aproximação do dia do pagamento,
 //    procurando numa janela ampla de pedidos criados até a data final.
+// ===================== LIVRO DE RECEBIMENTOS (fonte única: fechamento do caixa e Central de Entregas) =====================
+// O que ENTROU de dinheiro no período, pelo DIA DO PAGAMENTO (horário de Brasília), sem contar nada duas vezes:
+//  1) registro de pagamentos (pagamentos.json): Caixa Atacado, Frente de Caixa, entrega (motorista/escritório),
+//     lançamentos em Pedidos e estornos. Quando um pedido recebido pelo motorista é registrado no caixa, o registro
+//     do caixa SUBSTITUI o do motorista, então não duplica. Troco não conta como recebido.
+//  2) vendas de caixa que não estão no registro (ex.: Frente de Caixa sem lançar no Bling), pelos pagamentos do
+//     movimento menos o troco.
+//  3) só no fechamento: pedidos ATENDIDOS no Bling que nunca passaram pelo sistema, pela fila LENTA e guardados
+//     (cada pedido é lido uma vez só).
+const FECH_BLING_CACHE=`${DATA_DIR}/fechamento_bling_cache.json`;
+function _origemDoHist(h){ const t=String(h.tipo||""), o=String(h.origem||"");
+  if(t==="estorno") return "Estorno";
+  if(t==="caixa_atacado"||/caixa[ _]atacado/i.test(o)) return "Caixa Atacado";
+  if(/frente/i.test(t)||/frente/i.test(o)) return "Frente de Caixa";
+  if(/^entrega/i.test(o)) return /gerente/i.test(o)?"Entrega (escritório)":"Entrega (motorista)";
+  if(o==="bling") return "Bling";
+  return "Lançado em Pedidos"; }
+function _diaBRms(ms){ return new Date(ms-3*3600e3).toISOString().slice(0,10); }
+function _livroRecebimentosLocal(t0,t1){
+  const pags=lerPag(), dCx=lerCaixaSessoes(), lanc=[], comRegistro=new Set();
+  for(const [id,p] of Object.entries(pags)){
+    if(!p) continue; if((p.historico||[]).length) comRegistro.add(String(id));
+    if(p.statusPagamento==="cancelado") continue;
+    const doPeriodo=(p.historico||[]).filter(h=>h&&h.valor&&h.em&&!h.soRegistrarLog&&h.em>=t0&&h.em<=t1);
+    if(!doPeriodo.length) continue;
+    // troco: entradas do caixa que somam mais que o pedido -> o excedente sai do dinheiro
+    let troco=0; const doCaixa=doPeriodo.filter(h=>h.tipo==="caixa_atacado");
+    if(doCaixa.length&&Number(p.valorPedido)>0){ const soma=doCaixa.reduce((s2,h)=>s2+Number(h.valor),0); if(soma>Number(p.valorPedido)+0.009) troco=+(soma-Number(p.valorPedido)).toFixed(2); }
+    doPeriodo.forEach(h=>{ let v=Number(h.valor); if(troco>0&&h.tipo==="caixa_atacado"&&/dinheiro/i.test(h.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
+      if(Math.abs(v)<0.005) return;
+      lanc.push({pedidoId:String(id),em:h.em,forma:h.formaNome||(h.tipo==="estorno"?"Estorno":"Não identificada"),valor:+v.toFixed(2),origem:_origemDoHist(h),por:h.funcionarioNome||""}); });
+  }
+  ((dCx&&dCx.sessoes)||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{
+    if(mv.tipo!=="venda"||mv.cancelado||!mv.em||mv.em<t0||mv.em>t1) return;
+    const k=String(mv.pedidoId||""); if(k&&comRegistro.has(k)) return;
+    let troco=Number(mv.troco||0); const origem=(sx.tipoCaixa==="atacado")?"Caixa Atacado":"Frente de Caixa";
+    (mv.pagamentos||[]).forEach(pg=>{ let v=Number(pg.valor||0); if(troco>0&&/dinheiro/i.test(pg.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
+      if(v>0.004) lanc.push({pedidoId:k||("cx-"+mv.em),numero:mv.numero||null,cliente:mv.clienteNome||"",total:Number(mv.total)||null,em:mv.em,forma:pg.formaNome||"Não identificada",valor:+v.toFixed(2),origem,por:mv.operador||sx.operador||"",pendenteBling:!!mv.pendenteBling}); });
+  }));
+  return {lanc,comRegistro};
+}
+function _resumoLivro(lanc){
+  const porForma={}, porOrigem={}; let total=0;
+  lanc.forEach(l=>{ total+=l.valor; (porForma[l.forma]||={nome:l.forma,valor:0,qtd:0}); porForma[l.forma].valor+=l.valor; porForma[l.forma].qtd++;
+    (porOrigem[l.origem]||={origem:l.origem,valor:0,qtd:0}); porOrigem[l.origem].valor+=l.valor; porOrigem[l.origem].qtd++; });
+  const arr=o=>Object.values(o).map(x=>({...x,valor:_round2(x.valor)})).sort((a,b)=>b.valor-a.valor);
+  return {total:_round2(total),formas:arr(porForma),origens:arr(porOrigem)};
+}
+// pedidos ATENDIDOS no Bling que nunca passaram pelo sistema (fila lenta, guardados; no máximo `max` leituras novas)
+async function _recebimentosBlingFora(dataIni,dataFim,t0,t1,conhecidos,progresso,max=60){
+  const cache=lerJSON(FECH_BLING_CACHE,{}); const lista=[];
+  const ini7=new Date(Date.parse(dataIni+"T12:00:00Z")-7*86400000).toISOString().slice(0,10);
+  for(let pg=1;pg<=30;pg++){
+    const r=await blingLento(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${ini7}&dataFinal=${dataFim}&idsSituacoes%5B%5D=${SIT.ATENDIDO}`);
+    const arr=(r&&r.data)||[]; lista.push(...arr); if(arr.length<100) break;
+  }
+  const cand=lista.filter(p=>!conhecidos.has(String(p.id))&&Number(p.situacao?.id)===SIT.ATENDIDO);
+  let lidos=0, pendentes=0; const lanc=[];
+  for(let i=0;i<cand.length;i++){
+    const p=cand[i], k=String(p.id);
+    if(!cache[k]){
+      if(lidos>=max){ pendentes++; continue; }
+      try{ const det=(await blingLento(`/pedidos/vendas/${k}`))?.data; if(det){ cache[k]={numero:det.numero,cliente:det.contato?.nome||"",total:Number(det.total)||0,data:det.data||"",
+        parcelas:(det.parcelas||[]).map(pc=>({valor:Number(pc.valor)||0,venc:pc.dataVencimento||"",formaId:pc.formaPagamento?.id||null})),lidoEm:Date.now()}; } }catch(e){}
+      lidos++; if(progresso) progresso(i+1,cand.length);
+    }
+    const c=cache[k]; if(!c) continue;
+    for(const pc of c.parcelas||[]){ if(!pc.venc) continue; const ms=Date.parse(pc.venc+"T12:00:00-03:00"); if(ms<t0||ms>t1) continue;
+      let nome="Não identificada"; try{ nome=await nomeFormaPagamentoId(pc.formaId); }catch(e){}
+      lanc.push({pedidoId:k,numero:c.numero,cliente:c.cliente,total:c.total,em:ms,forma:nome,valor:+pc.valor.toFixed(2),origem:"Direto no Bling",por:""}); }
+  }
+  if(lidos) salvarJSON(FECH_BLING_CACHE,cache);
+  return {lanc,candidatos:cand.length,lidosAgora:lidos,pendentes};
+}
 app.get("/api/fechamento-por-pagamento", async(req,res)=>{
+  res.setHeader("Content-Type","text/event-stream"); res.setHeader("Cache-Control","no-cache"); res.setHeader("Connection","keep-alive"); res.setHeader("X-Accel-Buffering","no"); res.flushHeaders();
+  const send=(d)=>{ try{ res.write(`data: ${JSON.stringify(d)}\n\n`); }catch(e){} };
+  const hb=setInterval(()=>{ try{ res.write(`: ping\n\n`); }catch(e){} },10000); res.on("close",()=>clearInterval(hb));
+  try{
+    const rx=/^\d{4}-\d{2}-\d{2}$/; let dataInicial=req.query.dataInicial, dataFinal=req.query.dataFinal;
+    if(!dataInicial||!dataFinal){ dataInicial=dataFinal=req.query.data; }
+    if(!rx.test(String(dataInicial))||!rx.test(String(dataFinal))){ send({tipo:"erro",erro:"informe ?data=AAAA-MM-DD ou ?dataInicial=&dataFinal="}); clearInterval(hb); return res.end(); }
+    const t0=Date.parse(dataInicial+"T00:00:00-03:00"), t1=Date.parse(dataFinal+"T23:59:59.999-03:00"); // dia de Brasília
+    send({tipo:"status",mensagem:"Somando os recebimentos registrados no sistema (caixas, entregas e lançamentos)…"});
+    const {lanc,comRegistro}=_livroRecebimentosLocal(t0,t1);
+    const conhecidos=new Set([...comRegistro,...lanc.map(l=>l.pedidoId)]);
+    try{ ((lerCaixaSessoes().sessoes)||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.pedidoId) conhecidos.add(String(mv.pedidoId)); })); }catch(e){}
+    send({tipo:"status",mensagem:"Conferindo no Bling só os pedidos atendidos que nunca passaram pelo sistema (fila lenta)…"});
+    let fora={lanc:[],candidatos:0,lidosAgora:0,pendentes:0};
+    try{ fora=await _recebimentosBlingFora(dataInicial,dataFinal,t0,t1,conhecidos,(a,t)=>send({tipo:"progresso",atual:a,total:t,pedido:""})); }catch(e){ fora.erro=e.message; }
+    const todos=lanc.concat(fora.lanc), R=_resumoLivro(todos);
+    // pedidos: número/cliente/valor com o que o sistema já tem (registro, caixa, cache), sem consultar o Bling
+    const props={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
+    const cacheNC=lerJSON(COMPROV_PEDIDOS_CACHE,{}), movs=_vendasCaixaPorPedido(lerCaixaSessoes()), fb=lerJSON(FECH_BLING_CACHE,{});
+    const porPed={}; todos.forEach(l=>{ const k=l.pedidoId; const g=(porPed[k]||={id:k,valor:0,origens:new Set(),em:l.em,numero:l.numero||null,cliente:l.cliente||"",total:l.total||null}); g.valor+=l.valor; g.origens.add(l.origem); g.em=Math.min(g.em,l.em); });
+    const pedidos=Object.values(porPed).map(g=>{ const p=props[g.id], mv=movs[g.id], c=cacheNC[g.id]||{}, b=fb[g.id]||{};
+      return {id:g.id,numero:p?.pedidoBlingNumero||mv?.numero||g.numero||c.numero||b.numero||(String(g.id).startsWith("cx-")?"(venda sem nº)":g.id),
+        cliente:p?.cliente?.nome||mv?.clienteNome||g.cliente||c.cliente||b.cliente||"—", data:_diaBRms(g.em), situacao:[...g.origens].join(" + "),
+        total:_round2(Number(p?.total)||Number(mv?.total)||Number(g.total)||Number(b.total)||0), valorRecebidoNoPeriodo:_round2(g.valor), origem:[...g.origens].join(" + ")}; })
+      .sort((a,b)=>String(a.data).localeCompare(String(b.data)));
+    send({tipo:"done",dataInicial,dataFinal,totalPago:R.total,qtdPedidos:pedidos.length,formasPagamento:R.formas,porOrigem:R.origens,pedidos,
+      bling:{candidatos:fora.candidatos,lidosAgora:fora.lidosAgora,pendentes:fora.pendentes,erro:fora.erro||null},
+      regra:"Pelo dia do pagamento (horário de Brasília). Troco não conta. Pedido recebido pelo motorista e depois registrado no caixa conta uma vez só."});
+  }catch(e){ send({tipo:"erro",erro:e.message}); }
+  clearInterval(hb); res.end();
+});
+
+app.get("/api/fechamento-por-pagamento-antigo", async(req,res)=>{ // versão antiga, só para comparar (lia o Bling pedido a pedido)
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
   res.setHeader("Connection","keep-alive");
@@ -13042,7 +13149,19 @@ function _centralEntregas(de,ate){
   R.frete.medioPorEntrega=R.frete.qtdEntreguesComFrete?R.frete.entregues/R.frete.qtdEntreguesComFrete:0;
   R.frete.porKm=R.frete.kmEntregues>0?R.frete.entregues/R.frete.kmEntregues:null;
   r2(R); r2(R.recebidoEntrega); r2(R.frete); r2(R.pagoForaDoCaixa); r2(R.acertadoNoCaixa); r2(R.dinheiroAAcertar); if(R.frete.porKm!=null) R.frete.porKm=_round2(R.frete.porKm); r2(R.pagoNoCaixa); r2(R.prazo); r2(R.semPagamento); Object.keys(R.recebidoEntrega.pixPorBanco).forEach(b=>{ R.recebidoEntrega.pixPorBanco[b]=_round2(R.recebidoEntrega.pixPorBanco[b]); });
-  return { de, ate, indicadores:R, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
+  // CONCILIAÇÃO com o fechamento do caixa: o que entrou no período pelo mesmo livro do fechamento (dia do pagamento),
+  // separando o que é de pedidos de entrega do resto (balcão, frente, site, totem)
+  let conciliacao=null;
+  try{
+    const t0=Date.parse(de+"T00:00:00-03:00"), t1=Date.parse(ate+"T23:59:59.999-03:00");
+    const {lanc}=_livroRecebimentosLocal(t0,t1); const ids=new Set(Object.keys(P));
+    Object.entries(rotas).forEach(([d,carros])=>Object.values(carros||{}).forEach(c=>{ ((c&&c.pedidoIds)||[]).forEach(x=>ids.add(String(x))); ((c&&c.viagens)||[]).forEach(v=>((v&&v.pedidoIds)||[]).forEach(x=>ids.add(String(x)))); }));
+    viagens.forEach(v=>(v.pedidoIds||[]).forEach(x=>ids.add(String(x))));
+    Object.entries(props).forEach(([k,p])=>{ if(p&&p.entrega&&p.entrega.tipo==="entrega") ids.add(k); });
+    const ent=lanc.filter(l=>ids.has(String(l.pedidoId))), out=lanc.filter(l=>!ids.has(String(l.pedidoId)));
+    conciliacao={ todos:_resumoLivro(lanc), entregas:_resumoLivro(ent), outros:_resumoLivro(out) };
+  }catch(e){ conciliacao={erro:e.message}; }
+  return { de, ate, indicadores:R, conciliacao, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
 }
 app.get("/api/central-entregas",requireSessao,(req,res)=>{
   try{
