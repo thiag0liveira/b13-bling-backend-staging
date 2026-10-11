@@ -70,6 +70,7 @@ let D = null,
   DIA = "",
   ENTREGAS = null,
   MOTORISTAS = null,
+  RECEB = null,
   ENTREGA_ABERTA = null,
   AVISOS = null,
   META = null,
@@ -125,6 +126,25 @@ function blocoCaixa(c) {
       <div class="lin"><span>💸 Sangrias</span><b>${brl(c.resumo.totalSangrias)}</b></div>
       <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
     </div></details>`;
+}
+// tudo o que ENTROU no dia (mesma conta do fechamento em /caixa) + dinheiro ainda com os motoristas
+function cardRecebimentos() {
+  const R = RECEB; if (!R || !R.conciliacao || R.conciliacao.erro) return "";
+  const C = R.conciliacao, A = R.dinheiroAAcertar || {};
+  const lin = r => (r.origens || []).map(o => `<div class="lin"><span>${esc(o.origem)} <span class="muted">(${o.qtd}x)</span></span><b>${brl(o.valor)}</b></div>`).join("") || `<div class="muted">nada</div>`;
+  return card("💰 Tudo o que entrou no dia", `
+    <div class="big">${brl(C.todos.total)}</div>
+    <div class="muted" style="margin-bottom:8px">mesma conta do fechamento em /caixa: pelo dia do pagamento, sem troco, sem contar duas vezes</div>
+    ${lin(C.todos)}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <span class="pillE">🛵 de entregas ${brl(C.entregas.total)}</span>
+      <span class="pillE">🏪 balcão, frente, site e totem ${brl(C.outros.total)}</span>
+    </div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid #2c2660">
+      <div class="lin"><span>💵 Dinheiro ainda com os motoristas <span class="muted">(entregas de ${esc(String(A.de || "").split("-").reverse().slice(0, 2).join("/"))} a ${esc(String(A.ate || "").split("-").reverse().slice(0, 2).join("/"))})</span></span><b style="color:${A.total > 0.009 ? "#ffd23f" : "#3ce88a"}">${A.total > 0.009 ? brl(A.total) : "nada pendente ✓"}</b></div>
+      ${(A.porMotorista || []).map(m => `<div class="lin" style="font-size:12px"><span>👷 ${esc(m.motorista)} <span class="muted">(${m.pedidos} pedido(s))</span></span><b>${brl(m.valor)}</b></div>`).join("")}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px">O bloco "Fechamento do dia (nossos caixas)" soma só as vendas feitas nos caixas; este soma tudo o que entrou. <a href="/caixa" style="color:#7fd0ff">fechamento em /caixa</a> · <a href="/central-entregas" style="color:#7fd0ff">Central de Entregas</a></div>`);
 }
 function cardMotoristas() {
   const M = MOTORISTAS;
@@ -335,6 +355,7 @@ function render() {
           ${lins(PRAZO.pedidos.slice(0, 12), p => `<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}<div class="muted" style="font-size:11px">${esc(p.vendedor || "—")} · ${p.data ? esc(p.data.split("-").reverse().join("/")) : ""}${p.diasEmAberto != null ? ` · <span style="color:${p.diasEmAberto > 15 ? '#ff8090' : p.diasEmAberto > 7 ? '#ffd23f' : '#9a95c9'}">${p.diasEmAberto} dia(s)</span>` : ""}</div></span><b>${brl(p.total)}</b></div>`)}
           <div class="muted" style="font-size:11px;margin-top:6px">Mercadoria já entregue/retirada. O cliente paga depois no caixa atacado.</div>`) : ""}
 
+        ${cardRecebimentos()}
         ${cardMotoristas()}
 
         ${ENTREGAS && ENTREGAS.dias && ENTREGAS.dias.length ? card("🛵 Entregas agendadas", `
@@ -648,6 +669,10 @@ async function carregar() {
       ENTREGAS = e;
       render();
     }
+  } catch (e) {}
+  try {
+    const rc = await fetch(B + "/api/central/recebimentos" + (DIA ? "?data=" + DIA : "")).then(r => r.json());
+    if (!rc.erro) { RECEB = rc; render(); }
   } catch (e) {}
   try {
     const mo = await fetch(B + "/api/rotas/resumo-motoristas" + (DIA ? "?data=" + DIA : "")).then(r => r.json());

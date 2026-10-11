@@ -13163,6 +13163,20 @@ function _centralEntregas(de,ate){
   }catch(e){ conciliacao={erro:e.message}; }
   return { de, ate, indicadores:R, conciliacao, porMotorista:Object.values(mot).map(m=>r2({...m,carros:[...m.carros].filter(Boolean).join(", ")})).sort((a,b)=>b.entregas-a.entregas), pedidos:lista };
 }
+// CENTRAL (tela inicial): tudo o que ENTROU no dia pela mesma conta do fechamento em /caixa (livro de recebimentos,
+// só dados locais) + o dinheiro recebido pelos motoristas que ainda não passou por caixa (entregas dos últimos 7 dias)
+app.get("/api/central/recebimentos",(req,res)=>{
+  try{
+    const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10); const dia=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.data||""))?req.query.data:hoje;
+    const ce=_centralEntregas(dia,dia);
+    const ini7=new Date(Date.parse(dia+"T12:00:00Z")-6*86400000).toISOString().slice(0,10);
+    const ce7=_centralEntregas(ini7,dia);
+    const pend=ce7.pedidos.filter(x=>x.pagamento.situacao==="pago_entrega").map(x=>({motorista:x.viagem?.motorista||"(sem nome)",dinheiro:x.formas.filter(f=>f.classe==="dinheiro").reduce((a,f)=>a+f.valor,0),numero:x.numero,dia:x.dataEntrega})).filter(x=>x.dinheiro>0.004);
+    const porMot={}; pend.forEach(p=>{ const m=(porMot[p.motorista]||={motorista:p.motorista,valor:0,pedidos:0}); m.valor+=p.dinheiro; m.pedidos++; });
+    res.json({ok:true,dia,conciliacao:ce.conciliacao,
+      dinheiroAAcertar:{de:ini7,ate:dia,total:_round2(pend.reduce((a,p)=>a+p.dinheiro,0)),pedidos:pend.length,porMotorista:Object.values(porMot).map(m=>({...m,valor:_round2(m.valor)})).sort((a,b)=>b.valor-a.valor)}});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/central-entregas",requireSessao,(req,res)=>{
   try{
     const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
