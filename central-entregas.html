@@ -87,7 +87,6 @@ th:first-child,td:first-child{text-align:left}
     <button class="btn btn-ghost" onclick="carregar()">↻ Atualizar</button>
   </div>
   <div class="kpis" id="kpis"></div>
-  <div class="card" id="conciliacao"></div>
   <div class="card"><h3>💵 Recebimentos por motorista (acerto)</h3>
     <div class="desc">O que cada motorista recebeu na entrega no período. "Dinheiro a acertar" é o recebido em dinheiro que ainda não passou por nenhum caixa; quando o pedido é registrado num caixa, sai daqui e vai para "Acertado no caixa". Pix confira no extrato de cada banco.</div>
     <div id="motoristas"></div></div>
@@ -166,16 +165,6 @@ function renderTudo(){
     [`${I.comFotoConferencia} / ${I.total}`, "Com foto/vídeo da conferência", `${I.comAssinatura} com assinatura do cliente`],
   ];
   document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
-  const C = D.conciliacao;
-  const linhasOr = r => (r.origens || []).map(o => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0"><span>${esc(o.origem)} <span style="color:var(--muted)">(${o.qtd}x)</span></span><b>${brl(o.valor)}</b></div>`).join("") || `<div style="color:var(--muted);font-size:12px">nada</div>`;
-  document.getElementById("conciliacao").innerHTML = !C || C.erro ? "" : `<h3>🧮 Conciliação com o fechamento do caixa</h3>
-    <div class="desc">Mesma regra do fechamento em /caixa: o que ENTROU no período pelo dia do pagamento, sem troco e sem contar duas vezes. A diferença para os números acima vem daqui: lá em cima é pelo dia da entrega e só pedidos de entrega; aqui é tudo o que entrou.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
-      <div style="background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:10px"><div style="color:var(--muted);font-size:11px;font-weight:700">ENTROU NO PERÍODO (TUDO)</div><div style="font-size:20px;font-weight:900;margin:2px 0 6px">${brl(C.todos.total)}</div>${linhasOr(C.todos)}</div>
-      <div style="background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:10px"><div style="color:var(--muted);font-size:11px;font-weight:700">DE PEDIDOS DE ENTREGA</div><div style="font-size:20px;font-weight:900;margin:2px 0 6px">${brl(C.entregas.total)}</div>${linhasOr(C.entregas)}</div>
-      <div style="background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:10px"><div style="color:var(--muted);font-size:11px;font-weight:700">BALCÃO, FRENTE, SITE E TOTEM</div><div style="font-size:20px;font-weight:900;margin:2px 0 6px">${brl(C.outros.total)}</div>${linhasOr(C.outros)}</div>
-    </div>
-    <div class="desc" style="margin:8px 0 0">O fechamento em /caixa pode somar um pouco mais: ele também consulta, pela fila lenta, os pedidos atendidos direto no Bling que nunca passaram pelo sistema.</div>`;
   const M = D.porMotorista;
   document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro a acertar</th><th>Acertado no caixa</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Frete</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
     ${M.map(m => `<tr><td><b>${esc(m.motorista)}</b><div style="font-size:11px;color:var(--muted)">${esc(m.carros)}</div></td><td>${m.entregas}</td><td>${m.entregues}${m.naoEntregues ? ` <span class="tag erro">${m.naoEntregues} não</span>` : ""}</td>
