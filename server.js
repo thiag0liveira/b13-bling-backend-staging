@@ -3435,7 +3435,7 @@ app.get("/api/ofertas/produtos",(req,res)=>{
       ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
         if(it.desabilitado) return; const preco=Number(it.preco)||0; if(!(preco>0)) return; comPreco++;
         const b=_fotoDoItemTabela(it,idx,porCod,porId);
-        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||""}); else semFoto++;
+        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||"",un:Number(it.caixa)>1?Number(it.caixa):null}); else semFoto++;
       }));
       if(!lista.length&&comPreco>0) _fotosBootstrapLento(); // 1ª vez: busca as fotos pela fila lenta, em segundo plano
       _ofertasMemo={em:lista.length?Date.now():Date.now()-4*60000,json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista,

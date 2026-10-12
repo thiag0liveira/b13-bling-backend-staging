@@ -33,7 +33,7 @@
   .top{display:flex;align-items:center;gap:2vw;padding:0 3vw;border-bottom:.5vh solid #FF0082;background:linear-gradient(180deg,rgba(36,32,106,.95),rgba(26,22,80,.95))}
   .top img{height:7vh}
   .top .cat{flex:1;text-align:center;min-width:0}
-  .top .cat small{display:block;font-size:1.7vh;letter-spacing:.5vh;color:#ff7ac0;font-weight:800}
+  .top .cat small{display:inline-block;font-size:2.4vh;letter-spacing:.35vh;color:#1a1300;background:#ffd23f;font-weight:900;padding:.3vh 1.6vh;border-radius:.8vh;margin-bottom:.4vh;box-shadow:0 .4vh 1.2vh rgba(255,210,63,.35)}
   .top .cat b{display:block;font-size:5vh;letter-spacing:.2vh;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top .hora{text-align:right;font-size:2vh;color:#cfcaf5;white-space:nowrap}.top .hora b{display:block;font-size:4.6vh;color:#fff}
   .palco{display:grid;grid-template-columns:42fr 58fr;gap:2vh;padding:2vh 3vw;min-height:0;overflow:hidden;transition:opacity .35s}
@@ -56,6 +56,10 @@
   .grade .card .foto{flex:0 0 44%}
   .grade .card .info{flex:1;justify-content:center;padding:1.2vh 1.6vh 1.2vh .4vh}
   .grade .card .nome{font-size:2.6vh;-webkit-line-clamp:3}
+  .tagAtac{align-self:flex-start;margin-top:.8vh;border:.25vh solid #ffd23f;color:#ffd23f;font-weight:900;font-size:1.7vh;letter-spacing:.2vh;padding:.2vh .9vh;border-radius:.6vh}
+  .hero .tagAtac{font-size:2.2vh}
+  .porUn{font-size:1.9vh;color:#cfcaf5;font-weight:700;margin-top:.3vh}.hero .porUn{font-size:2.6vh}
+  .fita{position:absolute;top:3.2vh;right:-5vh;transform:rotate(35deg);background:#ffd23f;color:#1a1300;font-weight:900;font-size:2.2vh;letter-spacing:.4vh;padding:.7vh 7vh;z-index:3;box-shadow:0 .5vh 1.5vh rgba(0,0,0,.4)}
   .vazio{grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#cfcaf5;font-size:3vh;text-align:center;line-height:1.5}
   .rodape{display:flex;align-items:center;gap:2vw;padding:0 calc(3vw + 30px) 0 3vw;background:rgba(18,15,44,.96);border-top:.25vh solid #2c2660;position:relative}
   .rodape .zap{display:flex;align-items:center;gap:1vh;font-size:3.2vh;font-weight:900;white-space:nowrap}.rodape .zap svg{width:3.6vh;height:3.6vh}.rodape .zap span{color:#3ce88a}
@@ -81,7 +85,7 @@
 <div id="app">
   <div class="top">
     <img src="/logo">
-    <div class="cat"><small>OFERTAS IMPERDÍVEIS · ATACADO</small><b id="cat">OFERTAS</b></div>
+    <div class="cat"><small>🏷️ PREÇOS DE ATACADO</small><b id="cat">OFERTAS</b></div>
     <div class="hora"><span id="dia"></span><b id="relogio"></b></div>
   </div>
   <div class="palco" id="palco"></div>
@@ -89,7 +93,7 @@
     <div class="barra" id="barra"></div>
     <div class="zap"><svg viewBox="0 0 32 32" fill="#25D366"><path d="M16 3C9 3 3.3 8.7 3.3 15.7c0 2.4.7 4.7 1.9 6.7L3 29l6.8-2.1c1.9 1 4 1.6 6.2 1.6 7 0 12.7-5.7 12.7-12.7C28.7 8.7 23 3 16 3zm0 23.2c-2 0-3.9-.5-5.5-1.5l-.4-.2-4.1 1.3 1.3-4-.3-.4c-1.1-1.7-1.7-3.7-1.7-5.7 0-5.9 4.8-10.7 10.7-10.7 5.9 0 10.7 4.8 10.7 10.7 0 5.9-4.8 10.5-10.7 10.5zm5.9-8c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.1-.3-.2-.6-.4z"/></svg> Televendas <span>(31) 99971-9888</span></div>
     <div class="pags" id="pags"></div>
-    <div class="dir">📍 Av. Brigadeiro Eduardo Gomes, 1668, Glória, BH · 📷 @b13_bebidas<br><span class="lei">Beba com moderação. Venda proibida para menores de 18 anos.</span></div>
+    <div class="dir">📍 Av. Brigadeiro Eduardo Gomes, 1668, Glória, BH · 📷 @b13_bebidas<br><b style="color:#ffd23f">Preços de atacado por unidade, na compra da caixa fechada.</b><br><span class="lei">Beba com moderação. Venda proibida para menores de 18 anos.</span></div>
   </div>
 </div>
 <button id="btnGravar" onclick="alternarGravacao()" style="position:fixed;bottom:10px;right:10px;z-index:5;background:rgba(0,0,0,.25);color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.15);border-radius:50%;width:26px;height:26px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .2s,background .2s,color .2s;opacity:.5"
@@ -124,10 +128,13 @@ const semParenteses = n => String(n || "").replace(/\s*\([^)]*\)/, "");
 const partes = v => { const [i, c] = Number(v || 0).toFixed(2).split("."); return { i: Number(i).toLocaleString("pt-BR"), c }; };
 function cardOf(p, hero) {
   const v = partes(p.preco), e = embalagem(p.nome);
-  return `<div class="card ${hero ? "hero" : ""}">${hero ? '<div class="selo">⭐ DESTAQUE</div>' : ""}
+  const fardo = /fardo/i.test(p.nome || "");
+  const porUn = p.un ? (hero ? `por unidade · ${fardo ? "fardo" : "caixa"} com ${p.un}` : `un. · ${fardo ? "fardo" : "cx"} c/ ${p.un}`) : "por unidade";
+  return `<div class="card ${hero ? "hero" : ""}">${hero ? '<div class="selo">⭐ DESTAQUE</div><div class="fita">ATACADO</div>' : ""}
     <div class="foto"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
     <div class="info"><div class="nome">${esc(semParenteses(p.nome))}</div>${e ? `<span class="emb">${esc(e)}</span>` : ""}
-      <div class="preco"><span class="rs">R$</span><span class="int">${v.i}</span><span class="cent">,${v.c}</span></div></div></div>`;
+      <span class="tagAtac">ATACADO</span>
+      <div class="preco"><span class="rs">R$</span><span class="int">${v.i}</span><span class="cent">,${v.c}</span></div><div class="porUn">${esc(porUn)}</div></div></div>`;
 }
 function embaralhar(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function montarPaginas() {
