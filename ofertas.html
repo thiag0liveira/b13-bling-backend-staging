@@ -148,26 +148,23 @@ function esc(s) {
   })[c]);
 }
 let PRODUTOS = [];
+// CACHE: a lista fica guardada na tela (abre na hora, funciona sem internet). A cada 30 min pergunta ao servidor
+// se mudou (resposta mínima se não mudou); se mudou, redesenha. A rota não consulta o Bling.
+const OF_KEY = "b13_ofertas_v1";
+let OF_VERSAO = "";
+function comTempoOf(url, ms) { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); return fetch(url, { signal: c.signal }).then(r => { clearTimeout(t); if (!r.ok) throw new Error("http " + r.status); return r.json(); }); }
+function carregarGuardado() { try { const s = JSON.parse(localStorage.getItem(OF_KEY) || "null"); if (s && s.produtos) { PRODUTOS = s.produtos; OF_VERSAO = s.versao || ""; } } catch (e) {} }
 async function carregarProdutos() {
   try {
-    const j = await fetch(BACKEND + "/api/catalogo").then(r => r.json());
-    const todos = [];
-    (j.categorias || []).forEach(c => {
-      (c.produtos || []).forEach(p => {
-        var _find;
-        const imagem = p.imagem || ((_find = (p.sabores || []).find(s => s.imagem)) === null || _find === void 0 ? void 0 : _find.imagem);
-        if (imagem && p.preco > 0) todos.push({
-          nome: p.nome,
-          preco: p.preco,
-          imagem,
-          categoria: c.t || c.nome || ""
-        });
-      });
-    });
-    PRODUTOS = todos;
-  } catch (e) {
-    PRODUTOS = [];
-  }
+    const j = await comTempoOf(BACKEND + "/api/ofertas/produtos?versao=" + encodeURIComponent(OF_VERSAO), 30000);
+    if (j.mesmo) return false;
+    if (Array.isArray(j.produtos)) {
+      PRODUTOS = j.produtos; OF_VERSAO = j.versao || "";
+      try { localStorage.setItem(OF_KEY, JSON.stringify({ versao: OF_VERSAO, produtos: PRODUTOS, em: Date.now() })); } catch (e) {}
+      return true;
+    }
+  } catch (e) {}
+  return false;
 }
 function cardHtml(p) {
   const cat = (p.categoria || "").toLowerCase();
@@ -209,10 +206,11 @@ function montarGrupos() {
   for (let i = 0; i < lista.length; i += 9) grupos.push(lista.slice(i, i + 9));
   grid.innerHTML = grupos.map((g, i) => `<div class="grupo ${i === 0 ? 'ativo' : ''}" data-i="${i}">${g.map(cardHtml).join("")}</div>`).join("");
   _grupoAtivo = 0;
-  if (grupos.length > 1) {
-    setInterval(() => {
+  if (grupos.length > 1 && !window._trocaGrupos) {
+    window._trocaGrupos = setInterval(() => {
       const els = document.querySelectorAll(".grupo");
-      if (!els.length) return;
+      if (els.length < 2) return;
+      if (_grupoAtivo >= els.length) _grupoAtivo = 0;
       const prox = (_grupoAtivo + 1) % els.length;
       els[_grupoAtivo].classList.remove("ativo");
       // pausa de 1s com a tela sem nenhum produto, revelando o fundo, antes de mostrar o proximo grupo
@@ -224,14 +222,35 @@ function montarGrupos() {
   }
 }
 async function iniciar() {
-  await carregarProdutos();
-  montarGrupos();
+  carregarGuardado();
+  if (PRODUTOS.length) montarGrupos(); // mostra na hora o que já estava guardado
+  const mudou = await carregarProdutos();
+  if (mudou || !document.querySelector(".grupo")) montarGrupos();
 }
 iniciar();
-// atualiza a lista de produtos a cada 10 minutos (preço/estoque podem mudar)
+// a cada 30 min confere se a lista mudou; se mudou, REDESENHA (antes baixava e não mostrava)
+setInterval(async () => { if (await carregarProdutos()) montarGrupos(); }, 30 * 60 * 1000);
+// ATUALIZAÇÃO AUTOMÁTICA DA TELA (zero Bling): versão nova publicada -> recarrega; e 1x por dia num minuto
+// sorteado entre 06:45 e 07:15 (telas nunca juntas). Só recarrega com o servidor respondendo (sem internet, ficaria em branco).
+let OF_APP = null;
+const OF_REC = "b13_ofertas_recarga_v1";
+function ofMinuto() { let r = {}; try { r = JSON.parse(localStorage.getItem(OF_REC) || "{}"); } catch (e) {} if (r.minuto == null) { r.minuto = 405 + Math.floor(Math.random() * 31); try { localStorage.setItem(OF_REC, JSON.stringify(r)); } catch (e) {} } return r; }
+async function ofConferirVersao() {
+  let j; try { j = await comTempoOf(BACKEND + "/api/versao", 15000); } catch (e) { return; }
+  if (!j || !j.commit) return;
+  if (!OF_APP) { OF_APP = j.commit; return; }
+  if (j.commit !== OF_APP) location.reload();
+}
 setInterval(async () => {
-  await carregarProdutos();
-}, 10 * 60 * 1000);
+  const r = ofMinuto(), d = new Date(), m = d.getHours() * 60 + d.getMinutes(), hoje = d.toDateString();
+  if (m >= r.minuto && m < r.minuto + 120 && r.ultimaDiaria !== hoje) {
+    try { await comTempoOf(BACKEND + "/api/versao", 8000); } catch (e) { return; }
+    r.ultimaDiaria = hoje; try { localStorage.setItem(OF_REC, JSON.stringify(r)); } catch (e) {}
+    location.reload();
+  }
+}, 60 * 1000);
+ofConferirVersao();
+setInterval(ofConferirVersao, 15 * 60 * 1000);
 let _gravador = null,
   _chunksGravacao = [];
 async function alternarGravacao() {

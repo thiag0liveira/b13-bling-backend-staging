@@ -3392,6 +3392,27 @@ app.get("/api/preco/fotos",(req,res)=>{
     res.json({ok:true,fotos:_fotosPrecoMemo.lista});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// TELA DE OFERTAS (fica ligada o tempo todo na loja): nome, preço, foto e categoria só com dados locais
+// (tabela de preços + catálogo da madrugada). ZERO Bling. Antes usava /api/catalogo, que lê o estoque inteiro
+// no Bling na fila normal, e a tela pedia a cada 10 min, 24 h por dia, sem nem usar o estoque.
+let _ofertasMemo={em:0,json:null};
+app.get("/api/ofertas/produtos",(req,res)=>{
+  try{
+    if(!_ofertasMemo.json||Date.now()-_ofertasMemo.em>5*60000){
+      const idx=_gtinIndexMem(), tab=lerTabela(), lista=[];
+      const porCod={}, porId={}; Object.values(idx).forEach(v=>{ if(!v) return; if(v.codigo) porCod[String(v.codigo)]=v; if(v.produtoId) porId[String(v.produtoId)]=v; });
+      ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
+        if(it.desabilitado) return; const preco=Number(it.preco)||0; if(!(preco>0)) return;
+        const b=(it.bling||[]).map(x=>idx[String(x.codigo||"")]||porCod[String(x.codigo||"")]||porId[String(x.id||"")]||null).find(x=>x&&x.imagem);
+        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||""});
+      }));
+      _ofertasMemo={em:Date.now(),json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista}};
+    }
+    const j=_ofertasMemo.json;
+    if(req.query.versao&&req.query.versao===j.versao) return res.json({mesmo:true,versao:j.versao});
+    res.json(j);
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/catalogo",async(req,res)=>{
   try{
     const tab=lerTabela();
