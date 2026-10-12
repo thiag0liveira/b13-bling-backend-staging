@@ -429,6 +429,36 @@ function render() {
   if (S.etapa === "sucesso") return telaSucesso(app);
 }
 let _splashTimer = null;
+// ---- slide do MODO TABELA no carrossel da tela de espera ----
+function cardTabelaHtml() {
+  let linhas = [];
+  try {
+    const vistos = new Set();
+    todosProdutos().forEach(p => { if (p && p.nome && Number(p.preco) > 0 && !vistos.has(p.nome)) { vistos.add(p.nome); linhas.push(p); } });
+  } catch (e) {}
+  for (let i = linhas.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [linhas[i], linhas[j]] = [linhas[j], linhas[i]]; }
+  linhas = linhas.slice(0, 18);
+  const lin = linhas.map((p, i) => `<div style="display:flex;justify-content:space-between;gap:18px;padding:min(1.6vh,18px) 30px;font-size:min(2.6vh,30px);font-weight:800;background:${i % 2 ? "#17133a" : "#1d1848"}">
+      <span style="text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(String(p.nome).toUpperCase())}</span><span style="color:#ffd23f;white-space:nowrap">${brl(p.preco)}</span></div>`).join("");
+  return `<style>@keyframes tbRola{from{transform:translateY(0)}to{transform:translateY(-50%)}}</style>
+  <div onclick="event.stopPropagation();abrirTabelaDoSplash()" style="width:min(980px,94%);background:#120f2c;border:3px solid #FF0082;border-radius:26px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);cursor:pointer">
+    <div style="padding:22px 28px;background:linear-gradient(90deg,#FF0082,#ff4fa8);text-align:left">
+      <div style="font-size:min(4.2vh,48px);font-weight:900;letter-spacing:.5px">📋 MODO TABELA DE PREÇOS</div>
+      <div style="font-size:min(2.2vh,24px);font-weight:700;opacity:.95;margin-top:6px">Todos os produtos e preços numa lista só. Monte seu pedido rapidinho.</div>
+    </div>
+    <div style="height:min(48vh,860px);overflow:hidden;position:relative">
+      <div style="animation:tbRola ${Math.max(10, linhas.length * 1.4)}s linear infinite">${lin}${lin}</div>
+      <div style="position:absolute;left:0;right:0;bottom:0;height:90px;background:linear-gradient(transparent,#120f2c);pointer-events:none"></div>
+    </div>
+    <div style="padding:min(2.2vh,24px);font-size:min(3.4vh,38px);font-weight:900;color:#ffd23f;animation:pulseTexto 1.6s infinite">👆 Toque aqui para abrir a tabela</div>
+  </div>`;
+}
+function abrirTabelaDoSplash() {
+  if (_splashTimer) clearTimeout(_splashTimer);
+  document.querySelectorAll(".slideCard video").forEach(v => { try { v.pause(); } catch (e) {} });
+  const m = document.getElementById("musicaFundo"); if (m) m.pause();
+  S.modo = "tabela"; S.etapa = "catalogo"; render();
+}
 function produtosDestaque() {
   const vistos = new Set();
   const itens = [];
@@ -531,6 +561,8 @@ function telaSplash(app) {
       tipo: "produtos",
       itens: g
     });
+    // MODO TABELA: aparece depois do 2º grupo e depois a cada 5 grupos (mostra que existe e volta pro carrossel)
+    if (i === 1 || (i > 1 && (i - 1) % 5 === 0)) slides.push({ tipo: "tabela" });
     if ((i + 1) % 2 === 0) {
       slides.push({
         tipo: "promo",
@@ -549,8 +581,8 @@ function telaSplash(app) {
   const slidesHtml = slides.map((sl, i) => `
     <div class="slideCard" data-i="${i}" data-tipo="${sl.tipo}" style="
       position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-      opacity:${i === 0 ? 1 : 0};transition:opacity 1.2s ease-in-out;padding:10px 24px">
-      ${sl.tipo === "logo" ? cardLogoHtml() : sl.tipo === "instagram" ? cardInstagramHtml() : sl.tipo === "promo" ? cardPromoHtml(sl.src) : `<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
+      opacity:${i === 0 ? 1 : 0};pointer-events:${i === 0 ? "auto" : "none"};transition:opacity 1.2s ease-in-out;padding:10px 24px">
+      ${sl.tipo === "logo" ? cardLogoHtml() : sl.tipo === "tabela" ? cardTabelaHtml() : sl.tipo === "instagram" ? cardInstagramHtml() : sl.tipo === "promo" ? cardPromoHtml(sl.src) : `<div style="display:flex;width:100%;justify-content:center;gap:18px;flex-wrap:wrap">${sl.itens.map(cardProdutoHtml).join("")}</div>`}
     </div>
   `).join("");
   app.innerHTML = `
@@ -626,7 +658,7 @@ function agendarProximoSlideSplash() {
     // segurança: se o vídeo travar/der erro e nunca disparar "ended", avança mesmo assim
     _splashTimer = setTimeout(avancarSlideSplash, 90000);
   } else {
-    _splashTimer = setTimeout(avancarSlideSplash, 5000);
+    _splashTimer = setTimeout(avancarSlideSplash, (atualEl && atualEl.dataset.tipo === "tabela") ? 9000 : 5000);
   }
 }
 function avancarSlideSplash() {
@@ -644,8 +676,8 @@ function avancarSlideSplash() {
       } catch (e) {}
     }
     const prox = (_splashAtual + 1) % els.length;
-    if (atualEl) atualEl.style.opacity = 0;
-    if (els[prox]) els[prox].style.opacity = 1;
+    if (atualEl) { atualEl.style.opacity = 0; atualEl.style.pointerEvents = "none"; }
+    if (els[prox]) { els[prox].style.opacity = 1; els[prox].style.pointerEvents = "auto"; } // só o slide visível recebe o toque
     _splashAtual = prox;
     tocarSlideAtual();
   } catch (e) {
