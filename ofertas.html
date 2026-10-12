@@ -193,7 +193,7 @@ let _grupoAtivo = 0;
 function montarGrupos() {
   const grid = document.getElementById("grid");
   if (!PRODUTOS.length) {
-    grid.innerHTML = `<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:20px">Carregando ofertas…</div>`;
+    grid.innerHTML = `<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:20px;text-align:center">Preparando as ofertas…<br><span style="font-size:13px;opacity:.8">as fotos dos produtos estão sendo carregadas; a tela tenta de novo sozinha a cada 2 minutos</span></div>`;
     return;
   }
   // embaralha e divide em grupos de 8
@@ -230,6 +230,8 @@ async function iniciar() {
 iniciar();
 // a cada 30 min confere se a lista mudou; se mudou, REDESENHA (antes baixava e não mostrava)
 setInterval(async () => { if (await carregarProdutos()) montarGrupos(); }, 30 * 60 * 1000);
+// lista ainda vazia (ex.: fotos sendo preparadas): tenta de novo a cada 2 min até aparecer
+setInterval(async () => { if (!PRODUTOS.length && await carregarProdutos()) montarGrupos(); }, 2 * 60 * 1000);
 // ATUALIZAÇÃO AUTOMÁTICA DA TELA (zero Bling): versão nova publicada -> recarrega; e 1x por dia num minuto
 // sorteado entre 06:45 e 07:15 (telas nunca juntas). Só recarrega com o servidor respondendo (sem internet, ficaria em branco).
 let OF_APP = null;

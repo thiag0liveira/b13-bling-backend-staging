@@ -3370,6 +3370,7 @@ async function _lerEstoqueMapBling(){
     const d=await bling(`/produtos?pagina=${pg}&limite=100`);
     const arr=d.data||[]; if(!arr.length) break;
     arr.forEach(p=>{ map[String(p.codigo)]={estoque:p.estoque?.saldoVirtualTotal ?? 0, nome:p.nome, id:p.id, imagem:p.imagemURL||"", preco:+(p.preco||0)}; });
+    try{ _guardarFotos(arr); }catch(e){} // aproveita a leitura que já está sendo feita
     if(arr.length<100) break;
     await sleep(400); // respeita o limite de 3 req/s do Bling
   }
@@ -3384,7 +3385,7 @@ app.get("/api/preco/fotos",(req,res)=>{
       const idx=_gtinIndexMem(), tab=lerTabela(), lista=[], vistos=new Set();
       const porCod={}, porId={}; Object.values(idx).forEach(v=>{ if(!v) return; if(v.codigo) porCod[String(v.codigo)]=v; if(v.produtoId) porId[String(v.produtoId)]=v; });
       ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
-        const b=(it.bling||[]).map(x=>idx[String(x.codigo||"")]||porCod[String(x.codigo||"")]||porId[String(x.id||"")]||null).find(x=>x&&x.imagem);
+        const b=_fotoDoItemTabela(it,idx,porCod,porId);
         if(b&&!vistos.has(b.imagem)){ vistos.add(b.imagem); lista.push({imagem:b.imagem,nome:it.nome||b.nome||""}); }
       }));
       _fotosPrecoMemo={em:Date.now(),lista};
@@ -3395,18 +3396,50 @@ app.get("/api/preco/fotos",(req,res)=>{
 // TELA DE OFERTAS (fica ligada o tempo todo na loja): nome, preço, foto e categoria só com dados locais
 // (tabela de preços + catálogo da madrugada). ZERO Bling. Antes usava /api/catalogo, que lê o estoque inteiro
 // no Bling na fila normal, e a tela pedia a cada 10 min, 24 h por dia, sem nem usar o estoque.
+// FOTOS GUARDADAS (codigo -> foto e id -> foto): a foto do Bling vem na LISTAGEM de produtos (imagemURL), e o
+// detalhe muitas vezes não traz. É preenchido sem custo quando o site/totem lê a listagem, e na 1ª vez (ou se ficar
+// vazio) por uma leitura única pela fila lenta (no máximo 1 a cada 6 h).
+const FOTOS_PRODUTOS_FILE=`${DATA_DIR}/fotos_produtos.json`;
+let _fotosMem=null;
+function _lerFotos(){ if(!_fotosMem) _fotosMem=lerJSON(FOTOS_PRODUTOS_FILE,{})||{}; return _fotosMem; }
+function _guardarFotos(lista){
+  const f=_lerFotos(); let mudou=false;
+  (lista||[]).forEach(p=>{ const u=p&&p.imagemURL; if(!u) return; if(p.codigo&&f[String(p.codigo)]!==u){ f[String(p.codigo)]=u; mudou=true; } if(p.id&&f["id:"+p.id]!==u){ f["id:"+p.id]=u; mudou=true; } });
+  if(mudou){ f._em=Date.now(); salvarJSON(FOTOS_PRODUTOS_FILE,f); _ofertasMemo.em=0; _fotosPrecoMemo.em=0; }
+}
+let _fotosBootEm=0, _fotosBootRodando=false;
+async function _fotosBootstrapLento(){
+  if(_fotosBootRodando||Date.now()-_fotosBootEm<6*3600e3) return; _fotosBootRodando=true; _fotosBootEm=Date.now();
+  try{ for(let pg=1;pg<=40;pg++){ const d=await blingLento(`/produtos?pagina=${pg}&limite=100`); const arr=(d&&d.data)||[]; _guardarFotos(arr); if(arr.length<100) break; }
+    console.log("[fotos] fotos dos produtos guardadas pela leitura lenta"); }
+  catch(e){ console.log("[fotos] leitura lenta falhou:",e.message); }
+  finally{ _fotosBootRodando=false; }
+}
+// foto de um item da tabela: catálogo da madrugada -> fotos guardadas -> memória do estoque (sem chamar o Bling)
+function _fotoDoItemTabela(it,idx,porCod,porId){
+  const fotos=_lerFotos(), est=(_estCache&&_estCache.map)||{};
+  for(const x of (it.bling||[])){
+    const c=String(x.codigo||""), id=String(x.id||"");
+    const v=idx[c]||porCod[c]||porId[id]; if(v&&v.imagem) return {imagem:v.imagem,nome:v.nome};
+    const u=fotos[c]||(id&&fotos["id:"+id])||(est[c]&&est[c].imagem); if(u) return {imagem:u,nome:(v&&v.nome)||x.nome||""};
+  }
+  return null;
+}
 let _ofertasMemo={em:0,json:null};
 app.get("/api/ofertas/produtos",(req,res)=>{
   try{
     if(!_ofertasMemo.json||Date.now()-_ofertasMemo.em>5*60000){
       const idx=_gtinIndexMem(), tab=lerTabela(), lista=[];
       const porCod={}, porId={}; Object.values(idx).forEach(v=>{ if(!v) return; if(v.codigo) porCod[String(v.codigo)]=v; if(v.produtoId) porId[String(v.produtoId)]=v; });
+      let comPreco=0, semFoto=0;
       ((tab&&tab.model)||[]).forEach(c=>(c.itens||[]).forEach(it=>{
-        if(it.desabilitado) return; const preco=Number(it.preco)||0; if(!(preco>0)) return;
-        const b=(it.bling||[]).map(x=>idx[String(x.codigo||"")]||porCod[String(x.codigo||"")]||porId[String(x.id||"")]||null).find(x=>x&&x.imagem);
-        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||""});
+        if(it.desabilitado) return; const preco=Number(it.preco)||0; if(!(preco>0)) return; comPreco++;
+        const b=_fotoDoItemTabela(it,idx,porCod,porId);
+        if(b) lista.push({nome:it.nome||b.nome||"",preco,imagem:b.imagem,categoria:c.t||""}); else semFoto++;
       }));
-      _ofertasMemo={em:Date.now(),json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista}};
+      if(!lista.length&&comPreco>0) _fotosBootstrapLento(); // 1ª vez: busca as fotos pela fila lenta, em segundo plano
+      _ofertasMemo={em:lista.length?Date.now():Date.now()-4*60000,json:{versao:crypto.createHash("sha1").update(JSON.stringify(lista)).digest("hex").slice(0,16),produtos:lista,
+        diag:{itensComPreco:comPreco,semFoto,buscandoFotos:_fotosBootRodando}}};
     }
     const j=_ofertasMemo.json;
     if(req.query.versao&&req.query.versao===j.versao) return res.json({mesmo:true,versao:j.versao});
@@ -15640,7 +15673,7 @@ async function reconstruirIndiceProdutosBg(forcar,opts={}){
       parouNoId=p.id;
       const item={
         produtoId:det.id, nome:det.nome, preco:+(det.preco||0),
-        imagem:det.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||null,
+        imagem:det.imagemURL||p.imagemURL||det.imagem?.link?.grande||det.midia?.imagens?.internas?.[0]?.link||det.midia?.imagens?.externas?.[0]?.link||null,
         codigo:det.codigo||"", gtin:det.gtin||det.codigoBarras||"",
       };
       const codigos=[det.gtin, det.codigoBarras, det.codigo].filter(Boolean).map(String);
