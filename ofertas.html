@@ -6,7 +6,8 @@
 <title>B13 Bebidas — Ofertas</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-  body{background:#181542;color:#fff;overflow:hidden;height:100vh}
+  html,body{width:100vw;height:100vh;overflow:hidden}
+  body{background:#0b0920;color:#fff}
   #fundo{position:fixed;inset:0;z-index:0;overflow:hidden;
     background-color:#181542;
     background-image:
@@ -27,71 +28,44 @@
     radial-gradient(rgba(255,255,255,.9) 1px,transparent 1px);
     background-size:3px 3px}
   #fundo .vinheta{position:absolute;inset:0;box-shadow:inset 0 0 220px 60px rgba(0,0,0,.65)}
-  #app{position:relative;z-index:1;height:100vh;display:flex;flex-direction:column;padding:18px 26px}
-
-  .telefoneTopo{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:0 0 auto;width:100%}
-  .telefoneTopo .selo{font-size:32px;font-weight:900;letter-spacing:2px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6)}
-  .telefoneTopo .num{display:flex;align-items:center;gap:10px;font-weight:900;font-size:32px;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6)}
-  .telefoneTopo svg{width:34px;height:34px;flex-shrink:0}
-
-  .titulo{text-align:center;margin:20px 0 10px;flex:0 0 auto}
-  .titulo img{height:100px;display:block;margin:0 auto 8px}
-  .titulo .l1{font-size:46px;font-weight:900;color:#fff;letter-spacing:1px;text-shadow:0 4px 0 #0c0a24,0 6px 18px rgba(0,0,0,.5)}
-  .titulo .l2{font-size:54px;font-weight:900;color:#FF0082;letter-spacing:1px;text-shadow:0 4px 0 #6b0038,0 8px 24px rgba(255,0,130,.5);margin-top:-6px}
-  .titulo .l3{font-size:80px;font-weight:900;letter-spacing:3px;margin-top:2px;
-    color:#000;-webkit-text-stroke:4px #FF0082;paint-order:stroke fill;
-    filter:drop-shadow(0 0 16px rgba(255,0,130,.6)) drop-shadow(0 8px 0 #6b0038)}
-
-  #grid{flex:1 1 auto;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
-  .grupo{position:absolute;width:100%;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;opacity:0;transition:opacity 1s ease-in-out;align-content:center}
-  .grupo.ativo{opacity:1;position:relative}
-  .card{position:relative;background:linear-gradient(160deg,#252158,#1a1748);border-radius:18px;padding:3px;
-    box-shadow:0 14px 34px rgba(0,0,0,.45),0 0 0 1px rgba(255,0,130,.15);isolation:isolate;align-self:start}
-  .card::before{content:"";position:absolute;inset:0;border-radius:18px;padding:2px;
-    background:linear-gradient(135deg,#FF0082,#6228d7,#00c8ff,#FF0082);
-    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.55;z-index:-1}
-  .card .inner{display:flex;flex-direction:column;align-items:center;padding:16px;border-radius:15px}
-  .card .nomeTag{background:linear-gradient(90deg,#FF0082,#ff4fa8);color:#fff;font-weight:900;font-size:17px;text-align:center;
-    border-radius:10px;padding:9px 14px;margin-bottom:12px;width:100%;box-shadow:0 4px 12px rgba(255,0,130,.35);letter-spacing:.3px}
-  .card .imgBox{width:100%;background:radial-gradient(circle at 50% 30%,#ffffff,#f0eefc);border-radius:14px;padding:12px;margin-bottom:12px;
-    box-shadow:inset 0 0 0 1px rgba(0,0,0,.04),0 4px 10px rgba(0,0,0,.15)}
-  .card img{width:100%;height:170px;object-fit:contain;display:block}
-  .card .precoTag{background:rgba(15,13,46,.55);border:2px solid #FF0082;color:#fff;font-weight:900;font-size:30px;border-radius:10px;
-    padding:7px 18px;text-align:center;width:100%;box-shadow:0 4px 14px rgba(255,0,130,.25)}
-  .card .precoTag small{color:#ffd23f;font-size:14px;font-weight:800}
-
-  .rodape{flex:0 0 auto;text-align:center;display:flex;flex-direction:column;gap:6px;
-    border:2px solid #ff8fc7;border-radius:18px;padding:20px 30px;margin-top:14px;
-    background:linear-gradient(90deg,#FF0082,#ff4fa8);
-    box-shadow:0 0 28px rgba(255,0,130,.55)}
-  .rodape .end{font-size:22px;font-weight:900;color:#fff}
-  .rodape .aviso{font-size:16px;color:#ffe0f0;font-weight:700}
-
-  /* telas em pé (monitor vertical/retrato) — os tamanhos acima foram pensados
-     pra TV larga; numa tela estreita isso não cabe e corta a última fileira.
-     Reduz tudo proporcionalmente pra caber sem cortar. */
-  @media (orientation: portrait){
-    #app{padding:12px 16px}
-    .telefoneTopo .selo{font-size:22px}
-    .telefoneTopo .num{font-size:22px}
-    .telefoneTopo svg{width:24px;height:24px}
-    .titulo{margin:0 0 4px}
-    .titulo img{height:60px;margin-bottom:4px}
-    .titulo .l1{font-size:26px}
-    .titulo .l2{font-size:32px;margin-top:-4px}
-    .titulo .l3{font-size:46px;-webkit-text-stroke:3px #FF0082}
-    .grupo{gap:10px}
-    .card .inner{padding:10px}
-    .card .nomeTag{font-size:13px;padding:6px 10px;margin-bottom:8px}
-    .card .imgBox{padding:8px;margin-bottom:8px}
-    .card img{height:80px}
-    .card .precoTag{font-size:20px;padding:5px 12px}
-    .card .precoTag small{font-size:11px}
-    .rodape{padding:12px 18px;margin-top:8px}
-    .rodape .end{font-size:16px}
-    .rodape .aviso{font-size:12px}
-  }
+  /* LAYOUT (pensado para o monitor de 18", 1366x768 ou 1600x900; tudo em vh para caber em qualquer tela) */
+  #app{position:relative;z-index:1;width:100vw;height:100vh;display:grid;grid-template-rows:11vh 1fr 9vh}
+  .top{display:flex;align-items:center;gap:2vw;padding:0 3vw;border-bottom:.5vh solid #FF0082;background:linear-gradient(180deg,rgba(36,32,106,.95),rgba(26,22,80,.95))}
+  .top img{height:7vh}
+  .top .cat{flex:1;text-align:center;min-width:0}
+  .top .cat small{display:block;font-size:1.7vh;letter-spacing:.5vh;color:#ff7ac0;font-weight:800}
+  .top .cat b{display:block;font-size:5vh;letter-spacing:.2vh;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top .hora{text-align:right;font-size:2vh;color:#cfcaf5;white-space:nowrap}.top .hora b{display:block;font-size:4.6vh;color:#fff}
+  .palco{display:grid;grid-template-columns:42fr 58fr;gap:2vh;padding:2vh 3vw;min-height:0;overflow:hidden;transition:opacity .35s}
+  .palco.so{grid-template-columns:1fr}
+  .palco.saindo{opacity:0}
+  .card{min-height:0;background:linear-gradient(160deg,rgba(31,26,85,.96),rgba(20,16,54,.96));border:.25vh solid #3a3480;border-radius:2vh;display:flex;flex-direction:column;overflow:hidden;position:relative;box-shadow:0 1vh 3vh rgba(0,0,0,.35)}
+  .card .foto{flex:1 1 0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 55%,#ffffff 0%,#eeeaff 60%,#d6d0f7 100%);margin:1.2vh;border-radius:1.4vh;min-height:0;overflow:hidden}
+  .card .foto img{max-height:92%;max-width:90%;object-fit:contain}
+  .card .info{padding:0 1.6vh 1.4vh;display:flex;flex-direction:column}
+  .card .nome{font-weight:800;font-size:2.9vh;line-height:1.15;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card .emb{align-self:flex-start;margin-top:.5vh;background:#FF0082;color:#fff;font-weight:900;font-size:2.1vh;padding:.4vh 1vh;border-radius:.8vh}
+  .preco{display:flex;align-items:flex-start;font-weight:900;color:#ffd23f;line-height:1;margin-top:.8vh}
+  .preco .rs{font-size:3vh;margin:1vh .7vh 0 0;color:#fff}.preco .int{font-size:8.5vh}.preco .cent{font-size:4.2vh;margin-top:.6vh}
+  .hero .nome{font-size:3.8vh}.hero .emb{font-size:2.4vh}
+  .hero .preco .rs{font-size:4.4vh;margin-top:1.8vh}.hero .preco .int{font-size:15vh}.hero .preco .cent{font-size:7vh;margin-top:1.4vh}
+  .hero .selo{position:absolute;top:2.2vh;left:2.2vh;background:#ffd23f;color:#1a1300;font-weight:900;font-size:2vh;padding:.8vh 1.6vh;border-radius:1vh;box-shadow:0 .5vh 1.5vh rgba(0,0,0,.4);z-index:2}
+  .grade{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:2vh;min-height:0}
+  .grade.n1{grid-template-columns:1fr;grid-template-rows:1fr}.grade.n2{grid-template-rows:1fr}
+  .grade .card{flex-direction:row;align-items:stretch}
+  .grade .card .foto{flex:0 0 44%}
+  .grade .card .info{flex:1;justify-content:center;padding:1.2vh 1.6vh 1.2vh .4vh}
+  .grade .card .nome{font-size:2.6vh;-webkit-line-clamp:3}
+  .vazio{grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#cfcaf5;font-size:3vh;text-align:center;line-height:1.5}
+  .rodape{display:flex;align-items:center;gap:2vw;padding:0 calc(3vw + 30px) 0 3vw;background:rgba(18,15,44,.96);border-top:.25vh solid #2c2660;position:relative}
+  .rodape .zap{display:flex;align-items:center;gap:1vh;font-size:3.2vh;font-weight:900;white-space:nowrap}.rodape .zap svg{width:3.6vh;height:3.6vh}.rodape .zap span{color:#3ce88a}
+  .rodape .pags{flex:1;display:flex;gap:1vh;justify-content:center;align-items:center}
+  .rodape .pags i{width:1.3vh;height:1.3vh;border-radius:50%;background:#3a3480;transition:all .3s}.rodape .pags i.on{width:4.5vh;border-radius:1vh;background:#FF0082}
+  .rodape .dir{text-align:right;font-size:1.6vh;color:#9a95c9;line-height:1.5}
+  .rodape .dir .lei{color:#cfcaf5;font-weight:700}
+  .barra{position:absolute;left:0;top:-.6vh;height:.6vh;background:#FF0082;width:0}
+  .barra.correndo{animation:corre linear forwards}
+  @keyframes corre{from{width:0}to{width:100%}}
 </style>
 </head>
 <body>
@@ -105,48 +79,25 @@
   <div class="vinheta"></div>
 </div>
 <div id="app">
-  <div class="telefoneTopo">
-    <div class="selo">TELEVENDAS</div>
-    <div class="num">
-      <svg viewBox="0 0 32 32" fill="#25D366"><path d="M16 3C9 3 3.3 8.7 3.3 15.7c0 2.4.7 4.7 1.9 6.7L3 29l6.8-2.1c1.9 1 4 1.6 6.2 1.6 7 0 12.7-5.7 12.7-12.7C28.7 8.7 23 3 16 3zm0 23.2c-2 0-3.9-.5-5.5-1.5l-.4-.2-4.1 1.3 1.3-4-.3-.4c-1.1-1.7-1.7-3.7-1.7-5.7 0-5.9 4.8-10.7 10.7-10.7 5.9 0 10.7 4.8 10.7 10.7 0 5.9-4.8 10.5-10.7 10.5zm5.9-8c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.1-.3-.2-.6-.4z"/></svg>
-      (31) 99971-9888
-    </div>
-  </div>
-  <div class="titulo">
+  <div class="top">
     <img src="/logo">
-    <div class="l1">OFERTAS</div>
-    <div class="l2">IMPERDÍVEIS</div>
-    <div class="l3">ATACADO</div>
+    <div class="cat"><small>OFERTAS IMPERDÍVEIS · ATACADO</small><b id="cat">OFERTAS</b></div>
+    <div class="hora"><span id="dia"></span><b id="relogio"></b></div>
   </div>
-  <div id="grid"></div>
+  <div class="palco" id="palco"></div>
   <div class="rodape">
-    <div class="end">📍 Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH &nbsp;·&nbsp; 📷 @b13_bebidas &nbsp;·&nbsp;
-      <svg viewBox="0 0 32 32" fill="#fff" style="width:18px;height:18px;vertical-align:-3px;margin-right:3px"><path d="M16 3C9 3 3.3 8.7 3.3 15.7c0 2.4.7 4.7 1.9 6.7L3 29l6.8-2.1c1.9 1 4 1.6 6.2 1.6 7 0 12.7-5.7 12.7-12.7C28.7 8.7 23 3 16 3zm0 23.2c-2 0-3.9-.5-5.5-1.5l-.4-.2-4.1 1.3 1.3-4-.3-.4c-1.1-1.7-1.7-3.7-1.7-5.7 0-5.9 4.8-10.7 10.7-10.7 5.9 0 10.7 4.8 10.7 10.7 0 5.9-4.8 10.5-10.7 10.5zm5.9-8c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.1-.3-.2-.6-.4z"/></svg>
-      (31) 99971-9888</div>
-    <div class="aviso">*Beba com moderação. Venda proibida para menores de 18 anos.*</div>
+    <div class="barra" id="barra"></div>
+    <div class="zap"><svg viewBox="0 0 32 32" fill="#25D366"><path d="M16 3C9 3 3.3 8.7 3.3 15.7c0 2.4.7 4.7 1.9 6.7L3 29l6.8-2.1c1.9 1 4 1.6 6.2 1.6 7 0 12.7-5.7 12.7-12.7C28.7 8.7 23 3 16 3zm0 23.2c-2 0-3.9-.5-5.5-1.5l-.4-.2-4.1 1.3 1.3-4-.3-.4c-1.1-1.7-1.7-3.7-1.7-5.7 0-5.9 4.8-10.7 10.7-10.7 5.9 0 10.7 4.8 10.7 10.7 0 5.9-4.8 10.5-10.7 10.5zm5.9-8c-.3-.2-1.9-.9-2.2-1-.3-.1-.5-.2-.7.2-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.5.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1.1 2.8 1.2 3c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.1-.3-.2-.6-.4z"/></svg> Televendas <span>(31) 99971-9888</span></div>
+    <div class="pags" id="pags"></div>
+    <div class="dir">📍 Av. Brigadeiro Eduardo Gomes, 1668, Glória, BH · 📷 @b13_bebidas<br><span class="lei">Beba com moderação. Venda proibida para menores de 18 anos.</span></div>
   </div>
 </div>
 <button id="btnGravar" onclick="alternarGravacao()" style="position:fixed;bottom:10px;right:10px;z-index:5;background:rgba(0,0,0,.25);color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.15);border-radius:50%;width:26px;height:26px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .2s,background .2s,color .2s;opacity:.5"
   onmouseover="this.style.opacity=1;this.style.background='rgba(0,0,0,.6)';this.style.color='#fff'"
   onmouseout="this.style.opacity=.5;this.style.background='rgba(0,0,0,.25)';this.style.color='rgba(255,255,255,.35)'"
   title="Gravar vídeo da tela">🎥</button>
-
 <script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
-function brl(n) {
-  return (Number(n) || 0).toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  });
-}
-function esc(s) {
-  return String(s !== null && s !== void 0 ? s : "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[c]);
-}
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]); }
 let PRODUTOS = [];
 // CACHE: a lista fica guardada na tela (abre na hora, funciona sem internet). A cada 30 min pergunta ao servidor
 // se mudou (resposta mínima se não mudou); se mudou, redesenha. A rota não consulta o Bling.
@@ -166,71 +117,62 @@ async function carregarProdutos() {
   } catch (e) {}
   return false;
 }
-function cardHtml(p) {
-  const cat = (p.categoria || "").toLowerCase();
-  const SUFIXOS_POR_CATEGORIA = [{
-    chave: "latao 473ml",
-    sufixo: "473ml"
-  }, {
-    chave: "latão 473ml",
-    sufixo: "473ml"
-  }, {
-    chave: "refrigerante 200ml",
-    sufixo: "200ml"
-  }, {
-    chave: "refrigerante 350ml",
-    sufixo: "350ml"
-  }];
-  const match = SUFIXOS_POR_CATEGORIA.find(x => cat.includes(x.chave));
-  const nomeExibido = match ? `${p.nome} ${match.sufixo}` : p.nome;
-  return `<div class="card"><div class="inner">
-    <div class="nomeTag">${esc(nomeExibido.toUpperCase())}</div>
-    <div class="imgBox"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
-    <div class="precoTag">R$ ${brl(p.preco).replace("R$", "").trim()}</div>
-  </div></div>`;
+// ===== VITRINE: uma categoria por página, 1 destaque + até 4; categorias pequenas juntas em "MAIS OFERTAS" =====
+const TEMPO_PAGINA = 12000;
+const embalagem = n => { const m = /\(([^)]+)\)/.exec(n || ""); if (m) return m[1].toUpperCase(); const v = /(\d+(?:[.,]\d+)?\s?(?:ML|L))\b/i.exec(n || ""); return v ? v[1].toUpperCase().replace(/\s/g, "") : ""; };
+const semParenteses = n => String(n || "").replace(/\s*\([^)]*\)/, "");
+const partes = v => { const [i, c] = Number(v || 0).toFixed(2).split("."); return { i: Number(i).toLocaleString("pt-BR"), c }; };
+function cardOf(p, hero) {
+  const v = partes(p.preco), e = embalagem(p.nome);
+  return `<div class="card ${hero ? "hero" : ""}">${hero ? '<div class="selo">⭐ DESTAQUE</div>' : ""}
+    <div class="foto"><img src="${esc(p.imagem)}" onerror="this.style.display='none'"></div>
+    <div class="info"><div class="nome">${esc(semParenteses(p.nome))}</div>${e ? `<span class="emb">${esc(e)}</span>` : ""}
+      <div class="preco"><span class="rs">R$</span><span class="int">${v.i}</span><span class="cent">,${v.c}</span></div></div></div>`;
 }
-let _grupoAtivo = 0;
-function montarGrupos() {
-  const grid = document.getElementById("grid");
-  if (!PRODUTOS.length) {
-    grid.innerHTML = `<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:center;color:#9a95c9;font-size:20px;text-align:center">Preparando as ofertas…<br><span style="font-size:13px;opacity:.8">as fotos dos produtos estão sendo carregadas; a tela tenta de novo sozinha a cada 2 minutos</span></div>`;
+function embaralhar(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function montarPaginas() {
+  const porCat = {}; PRODUTOS.forEach(p => (porCat[p.categoria || "OFERTAS"] ||= []).push(p));
+  const pags = [], sobra = [];
+  Object.keys(porCat).sort((a, b) => porCat[b].length - porCat[a].length).forEach(c => {
+    const l = embaralhar(porCat[c].slice()); // a cada volta muda a ordem, e com ela o destaque
+    for (let i = 0; i < l.length; i += 5) { const g = l.slice(i, i + 5); if (g.length >= 3) pags.push({ cat: c, itens: g }); else sobra.push(...g); }
+  });
+  for (let i = 0; i < sobra.length; i += 5) pags.push({ cat: "MAIS OFERTAS", itens: sobra.slice(i, i + 5) });
+  return pags;
+}
+let PAGS = [], PI = 0;
+function mostrarPagina() {
+  const palco = document.getElementById("palco");
+  if (!PAGS.length) {
+    palco.className = "palco so"; document.getElementById("cat").textContent = "OFERTAS"; document.getElementById("pags").innerHTML = "";
+    palco.innerHTML = `<div class="vazio">Preparando as ofertas…<br><span style="font-size:2vh;opacity:.8">as fotos dos produtos estão sendo carregadas; a tela tenta de novo sozinha a cada 2 minutos</span></div>`;
     return;
   }
-  // embaralha e divide em grupos de 8
-  const lista = [...PRODUTOS];
-  for (let i = lista.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [lista[i], lista[j]] = [lista[j], lista[i]];
-  }
-  const grupos = [];
-  for (let i = 0; i < lista.length; i += 9) grupos.push(lista.slice(i, i + 9));
-  grid.innerHTML = grupos.map((g, i) => `<div class="grupo ${i === 0 ? 'ativo' : ''}" data-i="${i}">${g.map(cardHtml).join("")}</div>`).join("");
-  _grupoAtivo = 0;
-  if (grupos.length > 1 && !window._trocaGrupos) {
-    window._trocaGrupos = setInterval(() => {
-      const els = document.querySelectorAll(".grupo");
-      if (els.length < 2) return;
-      if (_grupoAtivo >= els.length) _grupoAtivo = 0;
-      const prox = (_grupoAtivo + 1) % els.length;
-      els[_grupoAtivo].classList.remove("ativo");
-      // pausa de 1s com a tela sem nenhum produto, revelando o fundo, antes de mostrar o proximo grupo
-      setTimeout(() => {
-        els[prox].classList.add("ativo");
-      }, 1000);
-      _grupoAtivo = prox;
-    }, 9000);
-  }
+  if (PI >= PAGS.length) { PAGS = montarPaginas(); PI = 0; }
+  const pg = PAGS[PI], hero = pg.itens[0], resto = pg.itens.slice(1);
+  palco.classList.add("saindo");
+  setTimeout(() => {
+    document.getElementById("cat").textContent = pg.cat;
+    palco.className = "palco" + (resto.length ? "" : " so");
+    palco.innerHTML = cardOf(hero, true) + (resto.length ? `<div class="grade n${resto.length}">${resto.map(p => cardOf(p)).join("")}</div>` : "");
+    document.getElementById("pags").innerHTML = PAGS.map((_, i) => `<i class="${i === PI ? "on" : ""}"></i>`).join("");
+    const b = document.getElementById("barra"); b.classList.remove("correndo"); void b.offsetWidth; b.style.animationDuration = TEMPO_PAGINA + "ms"; b.classList.add("correndo");
+    PI++;
+  }, 350);
 }
+// nome antigo mantido: o cache chama montarGrupos() quando a lista muda
+function montarGrupos() { PAGS = montarPaginas(); PI = 0; mostrarPagina(); }
+if (!window._trocaPag) window._trocaPag = setInterval(() => { if (PAGS.length) mostrarPagina(); }, TEMPO_PAGINA);
+function relogio() { const d = new Date(); document.getElementById("relogio").textContent = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); document.getElementById("dia").textContent = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }); }
+relogio(); setInterval(relogio, 20000);
 async function iniciar() {
   carregarGuardado();
-  if (PRODUTOS.length) montarGrupos(); // mostra na hora o que já estava guardado
+  if (PRODUTOS.length) montarGrupos(); else mostrarPagina();
   const mudou = await carregarProdutos();
-  if (mudou || !document.querySelector(".grupo")) montarGrupos();
+  if (mudou || !PAGS.length) montarGrupos();
 }
 iniciar();
-// a cada 30 min confere se a lista mudou; se mudou, REDESENHA (antes baixava e não mostrava)
 setInterval(async () => { if (await carregarProdutos()) montarGrupos(); }, 30 * 60 * 1000);
-// lista ainda vazia (ex.: fotos sendo preparadas): tenta de novo a cada 2 min até aparecer
 setInterval(async () => { if (!PRODUTOS.length && await carregarProdutos()) montarGrupos(); }, 2 * 60 * 1000);
 // ATUALIZAÇÃO AUTOMÁTICA DA TELA (zero Bling): versão nova publicada -> recarrega; e 1x por dia num minuto
 // sorteado entre 06:45 e 07:15 (telas nunca juntas). Só recarrega com o servidor respondendo (sem internet, ficaria em branco).
@@ -323,5 +265,6 @@ async function exportarImagem(){
     a.click();
   });
 }
+</script>
 </body>
 </html>
