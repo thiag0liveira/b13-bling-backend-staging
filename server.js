@@ -1105,6 +1105,19 @@ function b13GetSession(){ try{
   if(s){ try{ sessionStorage.setItem("b13sess",s); }catch(e){} return JSON.parse(s); }
   return null;
 }catch(e){ return null; } }
+// Mantém as permissões desta tela iguais às do cadastro: se o admin liberar ou tirar uma aba, o menu se
+// atualiza sozinho (ao abrir e a cada 5 min), SEM recarregar a página (não atrapalha quem está no meio de uma venda).
+function b13SincronizarSessao(){
+  var s=b13GetSession(); if(!s||!s.token) return;
+  fetch(B13_BACKEND+"/api/sessao/atual",{headers:{"X-Auth-Token":s.token}}).then(function(r){ return r.ok?r.json():null; }).then(function(j){
+    if(!j||!j.ok) return;
+    var antes=JSON.stringify([s.nivel,(s.permissoes||[]).slice().sort()]), depois=JSON.stringify([j.nivel,(j.permissoes||[]).slice().sort()]);
+    if(antes===depois) return;
+    s.nivel=j.nivel; s.permissoes=j.permissoes; if(j.nome) s.nome=j.nome; b13SetSession(s);
+    try{ var el=document.getElementById("b13nav"); if(el&&el.parentElement&&typeof b13RenderNav==="function") el.parentElement.innerHTML=b13RenderNav(location.pathname); }catch(e){}
+  }).catch(function(){});
+}
+if(typeof window!=="undefined"){ window.addEventListener("load",function(){ setTimeout(b13SincronizarSessao,1500); }); setInterval(b13SincronizarSessao,5*60000); }
 function b13SetSession(f){
   var t=JSON.stringify(f);
   try{ sessionStorage.setItem("b13sess",t); }catch(e){}
@@ -1500,12 +1513,20 @@ function senhaForte(s){
   return typeof s==="string" && s.length>=6 && /[a-z]/.test(s) && /[A-Z]/.test(s) && /[0-9]/.test(s);
 }
 // Middleware: exige apenas sessão válida (qualquer funcionário logado, não só admin)
+// Permissões VIVAS: o que vale é o cadastro atual do funcionário, não o que foi gravado na sessão no login.
+// (Antes, liberar uma aba para alguém só funcionava depois de ele sair e entrar de novo.)
+function _permsVivas(s){
+  try{ const f=lerJSON(FUNC_FILE,{})[s.funcionarioId]; if(!f) return true;
+    if(f.ativo===false) return false;
+    s.permissoes=f.permissoes||[f.nivel]; s.nivel=f.nivel; if(f.nome) s.nome=f.nome; return true; }catch(e){ return true; }
+}
 function requireSessao(req,res,next){
   const token=req.headers["x-auth-token"];
   if(!token) return res.status(401).json({erro:"Não autenticado — faça login novamente"});
   const sessoes=lerSessoes();
   const s=sessoes[token];
   if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  if(!_permsVivas(s)) return res.status(401).json({erro:"Usuário desativado"});
   renovarSessao(sessoes,token,s); // renovação deslizante: enquanto usa, não expira
   req.sessao=s;
   next();
@@ -1525,6 +1546,7 @@ function requireAdmin(req,res,next){
   const sessoes=lerSessoes();
   const s=sessoes[token];
   if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  if(!_permsVivas(s)) return res.status(401).json({erro:"Usuário desativado"});
   if(s.nivel!=="admin"&&!(s.permissoes||[]).includes("admin")) return res.status(403).json({erro:"Sem permissão de administrador"});
   renovarSessao(sessoes,token,s); // renovação deslizante
   req.sessao=s;
@@ -1640,6 +1662,8 @@ app.post("/api/funcionarios/login",(req,res)=>{
 
 // troca de senha pelo próprio funcionário logado — usada tanto no fluxo
 // obrigatório do primeiro acesso quanto numa troca voluntária futura
+// permissões atuais de quem está logado (o menu de cada tela usa para se atualizar sozinho)
+app.get("/api/sessao/atual",requireSessao,(req,res)=>{ const s=req.sessao; res.json({ok:true,nome:s.nome,nivel:s.nivel,permissoes:s.permissoes||[s.nivel]}); });
 app.post("/api/funcionarios/trocar-senha",requireSessao,(req,res)=>{
   const {senhaAtual,novaSenha}=req.body||{};
   if(!senhaAtual||!novaSenha) return res.status(400).json({erro:"Informe a senha atual e a nova senha"});
