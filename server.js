@@ -48,6 +48,7 @@ const {
   PORT = 3000, DATA_DIR = ".",
   GOOGLE_MAPS_KEY = "",
 } = process.env;
+const SERVIDOR_INICIADO_EM=Date.now(); // a chave do Google é lida só ao iniciar: serve para saber se a troca no Railway já valeu
 const brlN = (n) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const AUTH_URL = "https://www.bling.com.br/Api/v3/oauth/authorize";
@@ -9676,6 +9677,31 @@ function passouLimiteFrete(req,res){ return new Promise(ok=>{ let passou=false; 
 // CONFERÊNCIA DE FRETES (somente leitura): recalcula, com a configuração ATUAL, a taxa de cada pedido/proposta de entrega
 // gravado (usando o km guardado e o total dos ITENS) e lista onde a taxa gravada é diferente, com o motivo provável.
 // Uso: /api/diag/conferir-fretes?dias=30   (registros sem km guardado não dá pra conferir; vêm contados à parte)
+// CONFERÊNCIA DA CHAVE DO GOOGLE MAPS: qual chave o servidor está usando (só os 4 últimos caracteres, para comparar
+// com o Google Cloud), desde quando o servidor está no ar e um teste ao vivo (no máximo 1 a cada 60 s).
+let _diagMaps={em:0,r:null};
+app.get("/api/diag/maps",async(req,res)=>{
+  const k=String(GOOGLE_MAPS_KEY||"");
+  const quando=ms=>new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
+  if(!_diagMaps.r||Date.now()-_diagMaps.em>60000){
+    let r={status:"sem chave"};
+    if(k){ try{
+      const u=`https://maps.googleapis.com/maps/api/distancematrix/json?units=metric&mode=driving&origins=${encodeURIComponent("Av. Brigadeiro Eduardo Gomes, 1668, Belo Horizonte")}&destinations=${encodeURIComponent("Praça Sete, Belo Horizonte")}&key=${k}`;
+      const j=await (await fetch(u)).json(); r={status:j.status,mensagem:j.error_message||null,elemento:j.rows?.[0]?.elements?.[0]?.status||null};
+    }catch(e){ r={status:"falha de conexão",mensagem:e.message}; } }
+    _diagMaps={em:Date.now(),r};
+  }
+  const r=_diagMaps.r, ok=r.status==="OK"&&r.elemento==="OK";
+  res.json({ chaveConfigurada:!!k, chaveTerminaEm:k?"…"+k.slice(-4):null, tamanhoDaChave:k.length,
+    servidorIniciadoEm:quando(SERVIDOR_INICIADO_EM), versaoNoAr:(process.env.RAILWAY_GIT_COMMIT_SHA||"").slice(0,7)||null,
+    teste:{...r,feitoEm:quando(_diagMaps.em)},
+    resultado: ok?"✅ Google Maps funcionando: o frete volta a calcular.":
+      (/billing/i.test(r.mensagem||"")?"❌ O projeto desta chave está SEM FATURAMENTO no Google Cloud. Ative o faturamento no projeto ao qual esta chave pertence (confira os 4 últimos caracteres em Credenciais).":
+      !k?"❌ Nenhuma chave configurada (variável GOOGLE_MAPS_KEY vazia).":
+      /not authorized|not activated|disabled/i.test(r.mensagem||"")?"❌ Falta ativar a Distance Matrix API (e as outras) no projeto da chave.":
+      /referer/i.test(r.mensagem||"")?"❌ A chave tem restrição por site; em Restrições de aplicativo deixe 'Nenhuma'.":
+      "❌ O Google recusou: veja teste.mensagem.") });
+});
 app.get("/api/diag/conferir-fretes",(req,res)=>{
   try{
     const dias=Math.min(Math.max(Number(req.query.dias||30),1),365), desde=Date.now()-dias*86400000, cfg=configEntrega();
