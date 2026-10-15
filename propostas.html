@@ -477,7 +477,8 @@ function cardProposta(p) {
     <div class="muted" style="font-size:12px;margin:8px 0;line-height:1.4">${esc(itensTxt)}</div>
     ${p.observacao ? `<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-      <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 Enviar WhatsApp</button>
+      <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 WhatsApp (imagem)</button>
+      <button class="btn btn-wa" onclick='enviarWhatsTexto(${JSON.stringify(p.id)})' title="Abre a conversa com o texto pronto (WhatsApp Web no computador)">💬 WhatsApp (texto)</button>
       <button class="btn btn-ghost" onclick='imprimirPropostaOuPedido(${JSON.stringify(p.id)})'>🖨️ Imprimir</button>
       ${(_p$cliente3 = p.cliente) !== null && _p$cliente3 !== void 0 && _p$cliente3.telefone ? `<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>` : ''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
@@ -1266,18 +1267,38 @@ function enviarSMS(id) {
   // abre o app de mensagens do celular com o texto pronto
   window.location.href = "sms:+" + tel55 + "?body=" + encodeURIComponent(msg);
 }
+// texto da proposta/pedido para o WhatsApp (usado pelos dois botões: imagem e texto)
+function textoWhatsProposta(p) {
+  const itens = (p.itens || []).map(i => {
+    const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
+    return qtd > 1 ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un * qtd)}` : `• ${i.nome} — ${brl(un)}`;
+  }).join("\n");
+  const titulo = p.pedidoBlingId ? `*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*` : "*Proposta comercial — B13 Bebidas*";
+  const ent = p.entrega || {}, taxa = Number(ent.taxa || 0);
+  const entrega = ent.tipo === "entrega" ? `\n🛵 Entrega${ent.endereco ? ": " + (typeof ent.endereco === "string" ? ent.endereco : [ent.endereco.logradouro || ent.endereco.rua, ent.endereco.numero, ent.endereco.bairro].filter(Boolean).join(", ")) : ""}${taxa > 0 ? `\nTaxa de entrega: ${brl(taxa)}` : ""}` : (ent.tipo === "retirada" ? "\n🏪 Retirada na loja" : "");
+  return `${titulo}\n\nOlá, ${p.cliente?.nome || ""}!\n\n${itens}\n${entrega}\n\n*Total: ${brl(p.total)}*${p.observacao ? `\n\n${p.observacao}` : ""}`;
+}
+// envia SÓ O TEXTO: abre a conversa direto no WhatsApp Web (computador) ou no aplicativo (celular)
+function enviarWhatsTexto(id) {
+  const p = LISTA.find(x => x.id === id);
+  if (!p) return;
+  let tel = soDig(p.cliente?.telefone || "");
+  if (tel.length < 10) {
+    const t = prompt("WhatsApp do cliente (com DDD). Deixe em branco para escolher o contato no WhatsApp:", "");
+    if (t === null) return;
+    tel = soDig(t);
+  }
+  const tel55 = tel.length >= 10 ? (tel.length <= 11 ? "55" + tel : tel) : "";
+  const txt = encodeURIComponent(textoWhatsProposta(p));
+  const celular = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const url = celular ? `https://wa.me/${tel55}?text=${txt}` : `https://web.whatsapp.com/send?${tel55 ? "phone=" + tel55 + "&" : ""}text=${txt}`;
+  window.open(url, "_blank");
+}
 async function enviarWhats(id) {
   var _p$cliente8, _p$cliente9;
   const p = LISTA.find(x => x.id === id);
   if (!p) return;
-  // monta o texto (vai como legenda da imagem, ou como fallback se não der pra mandar imagem)
-  const itens = (p.itens || []).map(i => {
-    const qtd = Number(i.quantidade) || 1,
-      un = Number(i.valor) || 0;
-    return qtd > 1 ? `• ${qtd}x ${i.nome} — ${brl(un)} un = ${brl(un * qtd)}` : `• ${i.nome} — ${brl(un)}`;
-  }).join("\n");
-  const titulo = p.pedidoBlingId ? `*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*` : "*Proposta comercial — B13 Bebidas*";
-  const msg = `${titulo}\n\nOlá, ${((_p$cliente8 = p.cliente) === null || _p$cliente8 === void 0 ? void 0 : _p$cliente8.nome) || ''}!\n\n${itens}\n\n*Total: ${brl(p.total)}*${p.observacao ? `\n\n${p.observacao}` : ''}`;
+  const msg = textoWhatsProposta(p);
 
   // gera a imagem da nota num canvas oculto e tenta compartilhar (com a imagem)
   const cv = document.createElement("canvas");
