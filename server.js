@@ -10140,14 +10140,21 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:240,prefixo:"frete"}), async
     const cfg=configEntrega();
     if(!endereco) return res.status(400).json({erro:"endereco obrigatório"});
     if(valor < cfg.minEntrega) return res.json({entregaDisponivel:false, motivo:`Entrega disponível a partir de ${brlN(cfg.minEntrega)}. Abaixo disso, somente retirada.`, minEntrega:cfg.minEntrega});
-    let km=null, fonte="google";
+    let km=null, fonte="google", tentativa=null;
     const guardado=freteCacheGet(cfg,endereco,false);
     if(guardado){ km=guardado.km; fonte=guardado.fonte; }
     else {
       if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"GOOGLE_MAPS_KEY não configurada no servidor."});
       if(!(await passouLimiteFrete(req,res))) return; // o limitador já respondeu 429
-      const g=await distanciaGoogle(cfg.origem,endereco);
-      if(g.ok){
+      let g=await distanciaGoogle(cfg.origem,endereco);
+      // não achou o endereço: tenta de novo SEM o complemento (loja, apto, sala, bloco, casa) e, se tiver CEP, pelo CEP
+      if(!g.ok&&g.tipo==="endereco"){
+        const semCompl=endereco.replace(/,?\s*\b(loja|lj|apto?|apartamento|sala|sl|bloco|bl|casa|cs|fundos|galp[aã]o|box)\.?\s*[\w-]*\b/gi,"").replace(/\bn[º°o]\.?\s*/gi,"").replace(/\s+,/g,",").replace(/,\s*,/g,",").trim();
+        if(semCompl&&semCompl!==endereco){ const g2=await distanciaGoogle(cfg.origem,semCompl); if(g2.ok) g={...g2,tentativa:"sem complemento"}; }
+        const cep=(endereco.match(/\b(\d{5})-?(\d{3})\b/)||[]); 
+        if(!g.ok&&cep[0]){ const g3=await distanciaGoogle(cfg.origem,`${cep[1]}-${cep[2]}, Brasil`); if(g3.ok) g={...g3,tentativa:"pelo CEP"}; }
+      }
+      if(g.ok){ tentativa=g.tentativa||null;
         const ok=_chaveOrigem(cfg); const agora=Date.now();
         // o mesmo lugar escrito de jeitos diferentes cai no mesmo endereço "oficial" do Google e herda o km já guardado
         const ck=g.canon?ok+"|"+normEndereco(g.canon):null; const ex=ck&&_freteCache.canon[ck];
@@ -10166,7 +10173,7 @@ app.get("/api/frete", rateLimit({janelaMs:60000,max:240,prefixo:"frete"}), async
         else return res.json({entregaDisponivel:false, servicoIndisponivel:true, tentarNovamente:true, motivo:"Não consegui consultar o mapa agora. Tente novamente em instantes.", detalhe:g.detalhe});
       }
     }
-    res.json({...calcularFretePorKm(km,valor,cfg), fonte, valorBase:+Number(valor).toFixed(2)});
+    res.json({...calcularFretePorKm(km,valor,cfg), fonte, valorBase:+Number(valor).toFixed(2), ...(tentativa?{tentativa}:{})});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -14534,23 +14541,34 @@ app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
       return l.filter(x=>String(x).trim()).join(", ");
     };
     // 1) endereço que já está no pedido (entrega)
-    const noPedido=montar(ped.transporte?.etiqueta)||montar(ped.transporte?.enderecoEntrega)||"";
+    const noPedido=montar(ped.transporte?.etiqueta)||montar(ped.transporte?.enderecoEntrega)||""; let noPedidoCompleto="";
     // 2) cadastro atual do cliente
-    let doCadastro="", entregaCadastro="", cliente=ped.contato?.nome||"";
+    let doCadastro="", entregaCadastro="", cliente=ped.contato?.nome||"", cadGeral=null;
     if(ped.contato?.id){
       try{
         const c=await bling(`/contatos/${ped.contato.id}`).then(r=>r?.data);
         cliente=c?.nome||cliente;
-        doCadastro=montar(c?.endereco?.geral||c?.endereco);
+        doCadastro=montar(c?.endereco?.geral||c?.endereco); cadGeral=c?.endereco?.geral||null;
         entregaCadastro=montar(c?.endereco?.cobranca)||"";
       }catch(e){}
     }
+    // o endereço do pedido às vezes vem SEM cidade e SEM CEP (o Google não acha a rua sem a cidade). Se for a mesma rua
+    // do cadastro, completa com bairro, cidade/UF e CEP do cadastro.
+    let completado=false;
+    try{
+      const ep=ped.transporte?.etiqueta||ped.transporte?.enderecoEntrega||null, cad=cadGeral; // cadastro já lido acima (sem consulta extra)
+      const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/^(r|rua|av|avenida|al|alameda|tv|travessa)\.?\s+/,"").replace(/[^a-z0-9]/g,"");
+      if(ep&&cad&&!(ep.municipio||ep.cidade)&&!ep.cep&&nrm(ep.endereco||ep.logradouro)&&nrm(ep.endereco||ep.logradouro)===nrm(cad.endereco)){
+        const e2={...ep,bairro:ep.bairro||cad.bairro,municipio:cad.municipio,uf:cad.uf,cep:cad.cep}; const novo=montar(e2);
+        if(novo){ completado=true; noPedidoCompleto=novo; }
+      }
+    }catch(e){}
     // 3) o que o totem/site gravou na observação
     let daObservacao="";
     const m=String(ped.observacoes||"").match(/ENTREGA\s*—\s*([^(\n]+)/i);
     if(m) daObservacao=m[1].trim();
-    res.json({ cliente, noPedido, doCadastro, entregaCadastro, daObservacao,
-      sugerido: noPedido||daObservacao||doCadastro||"",
+    res.json({ cliente, noPedido, doCadastro, entregaCadastro, daObservacao, completadoComCadastro:completado,
+      sugerido: noPedidoCompleto||noPedido||daObservacao||doCadastro||"",
       divergente: !!(noPedido&&doCadastro&&noPedido.replace(/\s+/g," ").toLowerCase()!==doCadastro.replace(/\s+/g," ").toLowerCase()) });
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });

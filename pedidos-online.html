@@ -1739,6 +1739,7 @@ async function abrirTipoEntrega(id) {
   try {
     end = await fetch(B + "/api/pedidos-online/" + id + "/endereco").then(r => r.json());
   } catch (e) {}
+  window._endTE = end || null; // endereços do pedido e do cadastro (o cálculo usa o do cadastro se o digitado não for achado)
   document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal">' + '<h3>🛵 Entrega / Retirada — pedido ' + esc(p.numero) + '</h3>' + '<div class="muted" style="margin:6px 0 10px">Hoje: <b>' + (p.tipo === "entrega" ? "Entrega" : "Retirada") + '</b>' + (p.frete > 0 ? ' · frete ' + brl(p.frete) : '') + '</div>' + '<div style="display:flex;gap:8px;margin-bottom:10px">' + '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="retirada"' + (p.tipo !== "entrega" ? " checked" : "") + ' onchange="mostrarCamposEntrega()"> 🏪 Retirada</label>' + '<label style="flex:1;background:#1c1846;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><input type="radio" name="teTipo" value="entrega"' + (p.tipo === "entrega" ? " checked" : "") + ' onchange="mostrarCamposEntrega()"> 🛵 Entrega</label>' + '</div>' + '<div id="camposEntrega" style="display:' + (p.tipo === "entrega" ? "block" : "none") + '">' + '<div class="muted" style="margin-bottom:4px">Endereço de entrega <span style="opacity:.7">(do Bling)</span></div>' + '<input id="teEnd" value="' + esc(end && end.sugerido || p.endereco || "") + '" placeholder="Rua, número, bairro, cidade">' + (end ? '<div class="muted" style="font-size:11px;margin-top:4px">' + (end.doCadastro ? '🏠 Cadastro do cliente: <a href="#" onclick="usarEndereco(event,\'' + esc(String(end.doCadastro).replace(/'/g, "")) + '\')" style="color:#29ABE2">' + esc(end.doCadastro) + '</a><br>' : '') + (end.noPedido && end.noPedido !== end.doCadastro ? '📦 No pedido: <a href="#" onclick="usarEndereco(event,\'' + esc(String(end.noPedido).replace(/'/g, "")) + '\')" style="color:#29ABE2">' + esc(end.noPedido) + '</a><br>' : '') + (end.divergente ? '<span style="color:#ffd23f">⚠️ O endereço do pedido está diferente do cadastro — confira qual é o certo.</span>' : '') + '</div>' : '') + '<div style="display:flex;gap:8px;margin-top:8px;align-items:flex-end">' + '<div style="flex:1"><div class="muted" style="margin-bottom:4px">Frete (R$)</div><input id="teFrete" type="number" step="0.01" value="' + (Number(p.frete) || 0) + '"></div>' + '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="calcularFretePedido(' + id + ')">🧮 Calcular</button>' + '</div>' + '<div id="infoFrete" class="muted" style="font-size:11px;margin-top:4px"></div>' + '</div>' + '<div id="errTE"></div>' + '<div style="display:flex;gap:8px;margin-top:14px">' + '<button class="btn btn-ghost" style="margin:0" onclick="fechar()">Voltar</button>' + '<button class="btn btn-mag" style="margin:0" id="btnTE" onclick="salvarTipoEntrega(' + id + ')">Salvar no Bling</button>' + '</div></div></div>';
 }
 function usarEndereco(ev, txt) {
@@ -1766,17 +1767,27 @@ async function calcularFretePedido(id) {
     const valorItens = p && Array.isArray(p.itens) && p.itens.length
       ? p.itens.reduce(function (s, i) { return s + (Number(i.valor) || Number(i.preco) || 0) * (Number(i.quantidade) || 0); }, 0)
       : Math.max(0, (Number(p && p.total) || 0) - (Number(p && p.frete) || 0));
-    const j = await fetch(B + "/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + (Math.round(valorItens * 100) / 100)).then(function (r) {
-      return r.json();
-    });
+    const valorQ = Math.round(valorItens * 100) / 100;
+    const consultar = function (e) { return fetch(B + "/api/frete?endereco=" + encodeURIComponent(e) + "&valor=" + valorQ).then(function (r) { return r.json(); }); };
+    let j = await consultar(end), usouCadastro = false;
     if (j.erro) throw new Error(j.erro);
+    // endereço não achado (ex.: pedido sem cidade/CEP): tenta sozinho com o endereço do CADASTRO do cliente
+    const cad = window._endTE && window._endTE.doCadastro;
+    const nz = function (x) { return String(x || "").toLowerCase().replace(/\s+/g, " ").trim(); };
+    if (!j.entregaDisponivel && /n[ãa]o consegui calcular a dist/i.test(j.motivo || "") && cad && nz(cad) !== nz(end)) {
+      if (info) info.textContent = "Endereço não encontrado; tentando com o endereço do cadastro do cliente…";
+      const j2 = await consultar(cad);
+      if (j2.entregaDisponivel) { j = j2; usouCadastro = true; const campo = document.getElementById("teEnd"); if (campo) campo.value = cad; }
+    }
     if (!j.entregaDisponivel) {
       if (info) info.innerHTML = '<span style="color:#ffd23f">' + esc(j.motivo || "Entrega não disponível") + '</span>';
       return;
     }
     const f = document.getElementById("teFrete");
     if (f) f.value = j.taxa;
-    if (info) info.innerHTML = '✅ ' + j.km + ' km' + (j.gratis ? ' · frete grátis' : ' · R$ ' + j.porKm + '/km') + ' → ' + brl(j.taxa);
+    if (info) info.innerHTML = '✅ <b>' + String(j.km).replace(".", ",") + ' km</b> até o cliente' + (j.gratis ? ' · frete grátis' : ' · R$ ' + Number(j.porKm).toFixed(2).replace(".", ",") + '/km') + ' → <b>' + brl(j.taxa) + '</b>'
+      + (usouCadastro ? '<br><span style="color:#ffd23f">Usei o endereço do cadastro do cliente (o do pedido estava sem cidade/CEP ou não foi encontrado).</span>' : '')
+      + (j.tentativa === "pelo CEP" ? '<br><span style="color:#ffd23f">Localizado pelo CEP (distância aproximada): confira o número da rua.</span>' : '');
   } catch (e) {
     if (info) info.innerHTML = '<span style="color:#ff8090">' + esc(e.message) + '</span>';
   }
