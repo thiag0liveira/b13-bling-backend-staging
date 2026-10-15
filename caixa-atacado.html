@@ -297,6 +297,14 @@ function notaPix(pags) {
   return totalPix > 0.009 ? "PIX: " + brl(totalPix) : "";
 }
 // pergunta qual banco recebeu o PIX (padrão pré-selecionado); ao confirmar, finaliza
+// linha de "Pix Banco" que ainda NÃO tem banco escolhido ("Pix Banco Inter", vindo de um registro, já tem)
+function pixSemBanco(p) {
+  if (!/pix/i.test(p.formaNome || "") || !/banco/i.test(p.formaNome || "")) return false;
+  if (p.banco) return false;
+  const m = /pix\s+banco\s+(.+)$/i.exec(p.formaNome || "");
+  if (m && m[1].trim()) { p.banco = m[1].trim(); return false; }
+  return true;
+}
 function perguntarBancosPix() {
   const bancos = PIX_BANCOS.bancos && PIX_BANCOS.bancos.length ? PIX_BANCOS.bancos : ["Inter", "Santander", "Itaú"];
   const pad = PIX_BANCOS.padrao && bancos.includes(PIX_BANCOS.padrao) ? PIX_BANCOS.padrao : bancos[0];
@@ -308,32 +316,35 @@ function perguntarBancosPix() {
   const varios = linhas.length > 1;
   document.getElementById("modais").innerHTML = `
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
-      <h3>🏦 PIX Banco — qual banco?</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:10px">${varios ? "Escolha o banco de cada PIX Banco." : "Selecione o banco que recebeu o PIX."}</div>
+      <h3>🏦 Em qual banco o cliente fez o PIX?</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:10px">${varios ? "Toque no banco de cada PIX." : "Toque no banco que recebeu o PIX."} Confira no aplicativo do banco antes de confirmar.</div>
       ${linhas.map((x, k) => `
         <div style="border:1px solid #2a2660;border-radius:10px;padding:10px;margin-bottom:8px">
           <div style="font-weight:700;margin-bottom:6px">PIX Banco${varios ? " #" + (k + 1) : ""} — ${brl(x.p.valor)}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px">
             ${bancos.map(b => `<label class="forma" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;padding:6px 10px">
-              <input type="radio" name="bancoPix_${x.i}" value="${esc(b)}" ${b === (x.p.banco || pad) ? "checked" : ""}> <span>${esc(b)}</span></label>`).join("")}
+              <input type="radio" name="bancoPix_${x.i}" value="${esc(b)}" ${x.p.banco && b === x.p.banco ? "checked" : ""} onchange="document.getElementById('msgBancoPix').innerHTML=''"> <span>${esc(b)}</span></label>`).join("")}
           </div>
         </div>`).join("")}
+      <div id="msgBancoPix"></div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn" style="flex:1" onclick="confirmarBancosPix()">Confirmar e finalizar</button>
+        <button class="btn" style="flex:1" onclick="confirmarBancosPix()">Confirmar ${MODO_EDICAO_PAGAMENTO ? "e salvar" : "e finalizar"}</button>
         <button class="btn btn-ghost" onclick="fecharModais()">Cancelar</button>
       </div>
     </div></div>`;
 }
 function confirmarBancosPix() {
-  // aplica o banco escolhido em cada linha Pix Banco
+  // o banco precisa ser ESCOLHIDO (antes vinha o padrão marcado e ia sem o operador perceber)
+  const faltando = PAGAMENTOS.some((p, i) => /pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "") && !document.querySelector(`input[name="bancoPix_${i}"]:checked`) && !p.banco);
+  if (faltando) { document.getElementById("msgBancoPix").innerHTML = `<div class="err">Escolha o banco${PAGAMENTOS.filter(p => /pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "")).length > 1 ? " de cada PIX" : ""}.</div>`; return; }
   PAGAMENTOS.forEach((p, i) => {
     if (/pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "")) {
       const sel = document.querySelector(`input[name="bancoPix_${i}"]:checked`);
-      p.banco = sel ? sel.value : PIX_BANCOS.padrao || "Inter";
+      if (sel) p.banco = sel.value;
     }
   });
   fecharModais();
-  finalizar();
+  if (MODO_EDICAO_PAGAMENTO) salvarEdicaoPagamento(); else finalizar();
 }
 function totalPago() {
   return PAGAMENTOS.reduce((s, p) => s + (Number(p.valor) || 0), 0);
@@ -1001,10 +1012,12 @@ function salvarEdicaoPagamento() {
   // pagou a mais e é tudo troco legítimo (dinheiro): segue sem perguntar, igual a
   // tela normal de finalizar -- o troco é calculado e gravado certo mais abaixo
   const ehTrocoLegitimo = difSoma > 0.009 && trocoAtual() >= difSoma - 0.01;
+  // PIX Banco também pergunta o banco na correção de pagamento (antes gravava sem banco)
+  if (linhas.some(p => pixSemBanco(p))) { perguntarBancosPix(); return; }
   if (Math.abs(difSoma) >= 0.01 && !ehTrocoLegitimo && !confirm(`A soma dos pagamentos (${brl(soma)}) é diferente do total (${brl(total)}). Continuar?`)) return;
   const pagamentos = linhas.map(p => ({
     formaId: p.formaId,
-    formaNome: p.formaNome,
+    formaNome: /pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "") && p.banco && !/pix\s+banco\s+\S/i.test(p.formaNome) ? "Pix Banco " + p.banco : p.formaNome,
     valor: Number(p.valor)
   }));
   pedirQrAcao(`💾 Confirmar novo pagamento — #${esc(((_PEDIDO_ATUAL = PEDIDO_ATUAL) === null || _PEDIDO_ATUAL === void 0 ? void 0 : _PEDIDO_ATUAL.numero) || "")}`, "Pra salvar a nova forma de pagamento, leia o QR de novo (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
@@ -2652,7 +2665,7 @@ async function finalizar() {
     if (!confirm(`Recebido ${brl(soma)} para um total de ${brl(total)} (troco ${brl(dif)}). Continuar?`)) return;
   }
   // se pagou com "Pix Banco", pergunta o banco de CADA Pix Banco antes de finalizar
-  const pixBancoSemBanco = PAGAMENTOS.some(p => /pix/i.test(p.formaNome || "") && /banco/i.test(p.formaNome || "") && !p.banco);
+  const pixBancoSemBanco = PAGAMENTOS.some(p => p.formaId && Number(p.valor) > 0 && pixSemBanco(p));
   if (pixBancoSemBanco) {
     perguntarBancosPix();
     return;
