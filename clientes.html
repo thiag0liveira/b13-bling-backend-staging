@@ -87,6 +87,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="top">
   <img src="/logo"><div class="t">👥 Clientes</div><div class="sp"></div>
   <span class="ic" id="sinc"></span>
+  <button class="btn btn-ghost" id="btnDup" onclick="abrirDuplicados()">🧩 Duplicados</button>
 </div>
 <div class="wrap">
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
@@ -103,6 +104,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div id="lista"><div class="vazio"><div class="spin"></div></div></div>
   </div>
 </div>
+<div class="fundo" id="mDup"><div class="modal" id="mDupCorpo" style="max-width:980px"></div></div>
 <div class="fundo" id="mCli"><div class="modal" id="mCliCorpo" style="max-width:980px"></div></div>
 <script>
 const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
@@ -324,7 +326,8 @@ function abaCadastro() {
       ${f("cDoc", "CPF / CNPJ", c.doc)}${f("cIe", "Inscrição estadual", c.ie)}${f("cCel", "Celular (WhatsApp)", c.celular)}${f("cTel", "Telefone", c.telefone)}${f("cEmail", "E-mail", c.email)}
       ${f("cRua", "Endereço (rua)", e.endereco)}${f("cNum", "Número", e.numero)}${f("cComp", "Complemento", e.complemento)}${f("cBairro", "Bairro", e.bairro)}
       ${f("cCep", "CEP", e.cep)}${f("cCidade", "Cidade", e.municipio)}${f("cUf", "UF", e.uf, 'maxlength="2"')}</div>
-    <button class="btn btn-mag" style="margin-top:10px" onclick="salvarCadastro()">💾 Salvar no Bling</button><div id="msgCad"></div>`;
+    <button class="btn btn-mag" style="margin-top:10px" onclick="salvarCadastro()">💾 Salvar no Bling</button><div id="msgCad"></div>
+    ${(C.unificados || []).length ? `<div class="bloco"><h4>🧩 Cadastros unificados neste cliente</h4>${C.unificados.map(u => `<div class="lin"><span>${esc(u.nome)} · ${esc(u.doc || "sem documento")} · cód. ${esc(u.id)} · unificado ${dth(u.em)} por ${esc(u.por || "—")}</span><button class="btn btn-ghost" style="padding:3px 8px;font-size:11px" onclick="desunificar('${esc(u.id)}')">desfazer</button></div>`).join("")}</div>` : ""}`;
 }
 async function salvarCadastro() {
   const v = id => document.getElementById(id).value.trim();
@@ -335,7 +338,49 @@ async function salvarCadastro() {
   if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
   Object.assign(C.cadastro, { ...cadastro, endereco: cadastro.endereco }); msg.innerHTML = `<div class="okmsg">Cadastro salvo no Bling.</div>`;
 }
-(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (b && b.bancos && b.bancos.length) BANCOS = b.bancos; } catch (e) {} carregar(); })();
+
+// ===================== DUPLICADOS =====================
+let DUP = null;
+async function contarDuplicados() { const { ok, j } = await api("/api/clientes/duplicados"); if (!ok) return; DUP = j; const b = document.getElementById("btnDup"); b.textContent = `🧩 Duplicados (${j.total})`; b.style.borderColor = j.porForca.certeza ? "#ff8aa3" : ""; }
+async function abrirDuplicados() {
+  document.getElementById("mDup").classList.add("aberto");
+  document.getElementById("mDupCorpo").innerHTML = `<div class="vazio"><div class="spin"></div></div>`;
+  await contarDuplicados(); renderDuplicados();
+}
+function renderDuplicados() {
+  const el = document.getElementById("mDupCorpo"), g = (DUP && DUP.grupos) || [];
+  const cor = { "certeza": "erro", "provável": "warn", "sugestão": "neu" };
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:18px;font-weight:900">🧩 Cadastros duplicados</div>
+      <div class="ic">${DUP.porForca.certeza} com o mesmo CPF/CNPJ · ${DUP.porForca.provavel} com o mesmo telefone · ${DUP.porForca.sugestao} com o mesmo nome</div></div>
+      <button class="btn btn-ghost" onclick="document.getElementById('mDup').classList.remove('aberto')">Fechar</button></div>
+    <div class="desc" style="margin-top:8px">Escolha o cadastro <b>principal</b> (já vem marcado o que tem mais pedidos) e unifique. No sistema, o histórico dos outros passa a contar no principal; no Bling, os outros ficam <b>inativos</b> para não aparecerem mais nas buscas. Os pedidos antigos continuam onde estão no Bling. Dá para desfazer pela ficha do cliente.</div>
+    ${g.length ? g.map((gr, gi) => `<div class="bloco"><h4><span class="tag ${cor[gr.forca]}">${esc(gr.forca)}</span> ${esc(gr.motivo)}${gr.forca !== "certeza" ? ' <span class="ic">· confira antes de unificar</span>' : ""}</h4>
+      ${gr.membros.map((m, mi) => `<label class="lin" style="cursor:pointer;align-items:center"><span style="display:flex;gap:8px;align-items:center"><input type="radio" name="pr_${gi}" value="${esc(m.id)}" ${mi === 0 ? "checked" : ""}>
+        <span><b style="color:#fff">${esc(m.nome)}</b> <span class="ic">· ${m.doc ? esc(m.doc) : "sem documento"} · ${m.telefone ? esc(m.telefone) : "sem telefone"} · cód. ${esc(m.id)}</span></span></span>
+        <span class="ic">${m.pedidos} pedido(s) · ${brl(m.total)}${m.ultima ? " · última " + dt(m.ultima) : ""}</span></label>`).join("")}
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap"><label class="ic" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="in_${gi}" checked> inativar os outros no Bling</label>
+        <button class="btn btn-mag" onclick="unificar(${gi})">Unificar no principal marcado</button><span id="msg_${gi}"></span></div></div>`).join("")
+      : `<div class="vazio">Nenhum duplicado encontrado. 🎉</div>`}`;
+}
+async function unificar(gi) {
+  const gr = DUP.grupos[gi], principal = document.querySelector(`input[name="pr_${gi}"]:checked`).value;
+  const secs = gr.membros.map(m => m.id).filter(id => id !== principal), nomeP = gr.membros.find(m => m.id === principal).nome;
+  if (!confirm(`Unificar ${secs.length} cadastro(s) em "${nomeP}"?${document.getElementById("in_" + gi).checked ? "\n\nOs outros ficarão INATIVOS no Bling." : ""}`)) return;
+  document.getElementById("msg_" + gi).innerHTML = `<span class="ic">Unificando…</span>`;
+  const { ok, j } = await api("/api/clientes/unificar", { method: "POST", body: JSON.stringify({ principalId: principal, secundarios: secs, inativarNoBling: document.getElementById("in_" + gi).checked }) });
+  if (!ok) { document.getElementById("msg_" + gi).innerHTML = `<span class="err">${esc(j.erro || "Não consegui unificar.")}</span>`; return; }
+  const falhas = (j.resultado || []).filter(r => r.erro);
+  DUP.grupos.splice(gi, 1); DUP.total--; renderDuplicados(); carregar(); contarDuplicados();
+  if (falhas.length) alert(`Unificado no sistema. ${falhas.length} cadastro(s) não puderam ser inativados no Bling agora; inative manualmente lá: ${falhas.map(f => f.id).join(", ")}`);
+}
+async function desunificar(id) {
+  if (!confirm("Desfazer a unificação deste cadastro? Ele volta a aparecer separado e é reativado no Bling.")) return;
+  const { ok, j } = await api("/api/clientes/desunificar", { method: "POST", body: JSON.stringify({ id }) });
+  if (!ok) { alert(j.erro || "Não consegui desfazer."); return; }
+  abrirCliente(C.cadastro.id); carregar(); contarDuplicados();
+}
+document.getElementById("mDup").addEventListener("click", e => { if (e.target.id === "mDup") document.getElementById("mDup").classList.remove("aberto"); });
+(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (b && b.bancos && b.bancos.length) BANCOS = b.bancos; } catch (e) {} carregar(); contarDuplicados(); })();
 </script>
 </body>
 </html>

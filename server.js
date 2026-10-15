@@ -778,6 +778,27 @@ function formatarTelefoneBling(tel){
 
 // contato genérico para pedidos sem identificação (CONSUMIDOR FINAL)
 let _contatoPadrao=null;
+// BUSCA ÚNICA DE CLIENTE POR CPF/CNPJ antes de criar (evita duplicados). 1) base local de clientes (sem chamar o
+// Bling); 2) Bling: pesquisa sem pontuação, com pontuação e pelo campo numeroDocumento. Se o achado foi unificado
+// (duplicado), devolve o PRINCIPAL. Prefere cadastro ativo.
+function _fmtDoc(doc){ return doc.length===11?`${doc.slice(0,3)}.${doc.slice(3,6)}.${doc.slice(6,9)}-${doc.slice(9)}`:doc.length===14?`${doc.slice(0,2)}.${doc.slice(2,5)}.${doc.slice(5,8)}/${doc.slice(8,12)}-${doc.slice(12)}`:doc; }
+var _unifMem=null; // unificações em memória (zerada ao unificar/desfazer)
+function _lerUnif(){ if(!_unifMem) _unifMem=lerJSON(`${DATA_DIR}/clientes_unificados.json`,{})||{}; return _unifMem; }
+function _principalDe(id){ try{ const u=_lerUnif(); let k=String(id), n=0; while(u[k]&&n<5){ k=String(u[k].principal); n++; } return k; }catch(e){ return String(id); } }
+async function encontrarContatoPorDoc(doc){
+  doc=soDigitos(doc); if(!doc||(doc.length!==11&&doc.length!==14)) return null;
+  const escolher=l=>{ const c=(l||[]).filter(x=>soDigitos(x.numeroDocumento||x.doc)===doc); return c.find(x=>(x.situacao||"A")==="A")||c[0]||null; };
+  try{ const base=lerClientesBase(); const loc=escolher(Object.values(base.porId||{}).map(c=>({...c,numeroDocumento:c.doc})));
+    if(loc){ const pid=_principalDe(loc.id); const p=(base.porId||{})[pid]||loc; return {id:Number(pid)||pid,nome:p.nome||loc.nome,origem:"base local"}; } }catch(e){}
+  for(const q of [`pesquisa=${encodeURIComponent(doc)}`,`pesquisa=${encodeURIComponent(_fmtDoc(doc))}`,`numeroDocumento=${encodeURIComponent(doc)}`]){
+    try{ const r=await bling(`/contatos?${q}`); const a=escolher(r?.data); if(a){ const pid=_principalDe(a.id); return {id:Number(pid)||pid,nome:a.nome,origem:"bling"}; } }catch(e){}
+  }
+  return null;
+}
+// cliente criado agora entra na base local na hora (a próxima busca já acha sem chamar o Bling)
+function _registrarContatoNaBase(id,dados){ try{ const b=lerClientesBase(), k=String(id);
+  b.porId[k]={...(b.porId[k]||{}),id,nome:dados.nome||"",doc:soDigitos(dados.numeroDocumento||""),tipo:dados.tipo||"",telefone:dados.telefone||"",celular:dados.celular||"",situacao:"A",criadoPeloSistemaEm:Date.now()};
+  salvarClientesBase(b); }catch(e){} }
 async function getContatoPadrao(){
   if(_contatoPadrao) return _contatoPadrao;
   if(process.env.BLING_CONTATO_PADRAO_ID){ _contatoPadrao=Number(process.env.BLING_CONTATO_PADRAO_ID); return _contatoPadrao; }
@@ -6968,8 +6989,7 @@ app.post("/api/pdv/cliente-por-cpf",async(req,res)=>{
   const nome=String(req.body?.nome||"").trim();
   if(!doc) return res.status(400).json({erro:"informe o CPF/CNPJ"});
   try{
-    const busca=await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`);
-    const achado=(busca?.data||[]).find(c=>soDigitos(c.numeroDocumento)===doc);
+    const achado=await encontrarContatoPorDoc(doc); // local + Bling em 3 formatos (antes: só sem pontuação)
     if(achado) return res.json({id:achado.id,nome:achado.nome,criado:false});
 
     const tipo=doc.length===14?"J":"F";
@@ -6979,6 +6999,7 @@ app.post("/api/pdv/cliente-por-cpf",async(req,res)=>{
       numeroDocumento:doc,
       situacao:"A",
     })});
+    if(criado?.data?.id) _registrarContatoNaBase(criado.data.id,{nome:nome||"Consumidor",numeroDocumento:doc,tipo});
     res.json({id:criado?.data?.id,nome:nome||"Consumidor",criado:true});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
@@ -9202,8 +9223,7 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
     // 1) resolve o contato: por documento (identificado) ou contato padrão (sem identificação)
     let contatoId = null, criouContato = false;
     if (doc) {
-      const busca = await bling(`/contatos?pesquisa=${encodeURIComponent(doc)}`);
-      const achado = (busca.data || []).find((c) => soDigitos(c.numeroDocumento) === doc);
+      const achado = await encontrarContatoPorDoc(doc); // local + Bling em 3 formatos (antes: só sem pontuação)
       if (achado) {
         contatoId = achado.id;
         // busca o contato completo para saber o que já tem preenchido
@@ -9276,6 +9296,7 @@ app.post("/api/finalizar", (req,res,next)=> (req.body?.origem==="totem" ? limite
         };
         const novo = await bling(`/contatos`, { method: "POST", body: JSON.stringify(contato) });
         contatoId = novo?.data?.id; criouContato = true;
+        if (contatoId) _registrarContatoNaBase(contatoId, contato);
       }
     } else {
       contatoId = await getContatoPadrao();
@@ -9786,7 +9807,7 @@ function _indiceClientes(){
   const porCli={};
   Object.values(props).forEach(p=>{
     if(!p||!p.pedidoBlingId||/cancel/i.test(String(p.status||""))) return;
-    const cid=String(p.cliente?.id||""); if(!cid) return;
+    const cid=_principalDe(p.cliente?.id||""); if(!cid) return;
     const pid=String(p.pedidoBlingId), pg=pags[pid]||{}, e=ent[pid]||null;
     if(pg.statusPagamento==="cancelado") return;
     (porCli[cid]||=[]).push({pedidoId:pid,numero:String(p.pedidoBlingNumero||pid),em:Number(p.criadoEm)||0,total:Number(p.total)||0,
@@ -9799,7 +9820,7 @@ function _indiceClientes(){
   // pedidos do Bling que não passaram pelo registro do sistema (lançados direto no Bling, antigos, caixa...)
   try{ const locais=new Set(Object.values(porCli).flat().map(p=>p.pedidoId)), hist=lerHistPedidos().porId;
     Object.entries(hist).forEach(([pid,h])=>{ if(!h.c||locais.has(pid)||h.s===SIT.CANCELADO||!h.d) return;
-      (porCli[h.c]||=[]).push({pedidoId:pid,numero:String(h.n||pid),em:Date.parse(h.d+"T12:00:00-03:00"),total:Number(h.t)||0,itens:[],vendedor:"",origem:"bling",
+      (porCli[_principalDe(h.c)]||=[]).push({pedidoId:pid,numero:String(h.n||pid),em:Date.parse(h.d+"T12:00:00-03:00"),total:Number(h.t)||0,itens:[],vendedor:"",origem:"bling",
         entrega:{tipo:"",km:0,taxa:0,endereco:""},statusPagamento:"",valorPago:0,formas:[],motorista:"",entregue:null,ocorrencia:false,cliNome:"",cliTel:"",soBling:true,situacaoBling:h.s}); });
   }catch(e){}
   Object.values(porCli).forEach(l=>l.sort((a,b)=>a.em-b.em));
@@ -9853,7 +9874,8 @@ function _resumoCliente(id,base,idx,creditos){
 app.get("/api/clientes",requireAcesso("acesso_clientes"),(req,res)=>{
   try{
     const base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs;
-    const ids=new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)]);
+    const unif=lerJSON(CLIENTES_UNIF_FILE,{});
+    const ids=new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)].filter(id=>!unif[id]));
     let lista=[...ids].map(id=>_resumoCliente(id,base,idx,cred)).filter(c=>c.situacaoCadastro!=="I"||c.pedidos>0);
     const resumo={base:lista.length,ativos:0,novos:0,emRisco:0,parados:0,semCompras:0,comPrazo:0,aReceber:0,comCredito:0,credito:0};
     lista.forEach(c=>{ ({ativo:()=>resumo.ativos++,novo:()=>resumo.novos++,em_risco:()=>resumo.emRisco++,parado:()=>resumo.parados++,sem_compras:()=>resumo.semCompras++})[c.status]?.();
@@ -9881,7 +9903,8 @@ app.get("/api/clientes",requireAcesso("acesso_clientes"),(req,res)=>{
       historico:{blingDesde:lerHistPedidos().desde||null,pedidos:Object.keys(lerHistPedidos().porId).length,sincronizando:_histSync.rodando,progresso:_histSync.progresso}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
-app.get("/api/clientes/:id",requireAcesso("acesso_clientes"),async(req,res)=>{
+app.get("/api/clientes/:id",requireAcesso("acesso_clientes"),async(req,res,next)=>{
+  if(!/^\d+$/.test(String(req.params.id))) return next(); // "duplicados" e outras rotas fixas seguem adiante
   try{
     const id=String(req.params.id), base=lerClientesBase(), idx=_indiceClientes(), credD=lerCreditos();
     let b=base.porId[id]||{};
@@ -9902,7 +9925,8 @@ app.get("/api/clientes/:id",requireAcesso("acesso_clientes"),async(req,res)=>{
         entrega:p.entrega.tipo,statusPagamento:p.statusPagamento,motorista:p.motorista,entregue:p.entregue,ocorrencia:p.ocorrencia,soBling:!!p.soBling})),
       historico:{blingDesde:lerHistPedidos().desde||null,sincronizando:_histSync.rodando,progresso:_histSync.progresso},
       financeiro:{prazo,aReceber:_round2(prazo.reduce((s2,p)=>s2+p.falta,0)),prazoAtualizadoEm:_prazoCli.em||null,credito:{saldo:_saldoCredito(credD.movs,id),movs}},
-      geo:geo&&geo.lat?{lat:geo.lat,lng:geo.lng,endereco:geo.endereco||""}:null, notas});
+      geo:geo&&geo.lat?{lat:geo.lat,lng:geo.lng,endereco:geo.endereco||""}:null, notas,
+      unificados:Object.entries(lerJSON(CLIENTES_UNIF_FILE,{})).filter(([k,v])=>String(v.principal)===id).map(([k,v])=>({id:k,nome:(base.porId[k]||{}).nome||v.nome||"",doc:(base.porId[k]||{}).doc||"",em:v.em,por:v.por}))});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/clientes/:id/proximos",requireAcesso("acesso_clientes"),(req,res)=>{
@@ -9955,6 +9979,64 @@ app.post("/api/clientes/credito/:movId/estornar",requireAcesso("acesso_clientes"
   if(m.tipo==="entrada"&&_saldoCredito(d.movs,m.clienteId)-m.valor<-0.004) return res.status(409).json({erro:"estornar deixaria o crédito negativo; estorne antes os usos"});
   m.estornadoEm=Date.now(); m.estornadoPor=req.sessao?.nome||""; m.motivoEstorno=motivo; salvarJSON(CLIENTES_CREDITO_FILE,d);
   res.json({ok:true,saldo:_saldoCredito(d.movs,m.clienteId)});
+});
+// ===== DUPLICADOS: agrupa cadastros com o mesmo CPF/CNPJ (certeza), mesmo telefone (provável) ou mesmo nome (sugestão)
+const CLIENTES_UNIF_FILE=`${DATA_DIR}/clientes_unificados.json`;
+app.get("/api/clientes/duplicados",requireAcesso("acesso_clientes"),(req,res)=>{
+  try{
+    const base=lerClientesBase(), unif=lerJSON(CLIENTES_UNIF_FILE,{}), idx=_indiceClientes();
+    // métricas de cada cadastro SEM juntar unificações (para comparar os candidatos)
+    const props=lerPropostas()||{}, hist=lerHistPedidos().porId, cont={};
+    const somar=(c,v,d)=>{ const o=(cont[c]||={pedidos:0,total:0,ultima:0}); o.pedidos++; o.total+=v; o.ultima=Math.max(o.ultima,d); };
+    const vistos=new Set();
+    Object.values(props).forEach(p=>{ if(!p?.pedidoBlingId||!p.cliente?.id) return; vistos.add(String(p.pedidoBlingId)); somar(String(p.cliente.id),Number(p.total)||0,Number(p.criadoEm)||0); });
+    Object.entries(hist).forEach(([pid,h])=>{ if(!h.c||vistos.has(pid)||h.s===SIT.CANCELADO) return; somar(h.c,Number(h.t)||0,Date.parse(h.d+"T12:00:00-03:00")||0); });
+    const ativos=Object.values(base.porId).filter(c=>c&&c.id&&!unif[String(c.id)]&&c.situacao!=="I"&&!/consumidor\s*final/i.test(c.nome||""));
+    const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\b(ltda|me|epp|eireli|s\/?a)\b/g,"").replace(/[^a-z0-9]/g,"");
+    const tel=c=>{ const d=String(c.celular||c.telefone||"").replace(/\D/g,""); return d.length>=10?d.slice(-9):""; };
+    const grupos=[], usados=new Set();
+    const agrupar=(chave,motivo,forca)=>{ const m={}; ativos.forEach(c=>{ const k=chave(c); if(k) (m[k]||=[]).push(c); });
+      Object.entries(m).forEach(([k,l])=>{ const livres=l.filter(c=>!usados.has(String(c.id))); if(livres.length<2) return; livres.forEach(c=>usados.add(String(c.id)));
+        grupos.push({motivo,forca,chave:k,membros:livres.map(c=>({id:String(c.id),nome:c.nome||"",doc:c.doc||"",telefone:c.celular||c.telefone||"",...(cont[String(c.id)]||{pedidos:0,total:0,ultima:0})}))
+          .map(x=>({...x,total:_round2(x.total)})).sort((a,b)=>b.pedidos-a.pedidos||b.total-a.total||Number(a.id)-Number(b.id))}); }); };
+    agrupar(c=>{ const d=String(c.doc||"").replace(/\D/g,""); return d.length===11||d.length===14?d:""; },"mesmo CPF/CNPJ","certeza");
+    agrupar(tel,"mesmo telefone","provável");
+    agrupar(c=>{ const n=nrm(c.nome); return n.length>=6?n:""; },"mesmo nome","sugestão");
+    res.json({ok:true,total:grupos.length,porForca:{certeza:grupos.filter(g=>g.forca==="certeza").length,provavel:grupos.filter(g=>g.forca==="provável").length,sugestao:grupos.filter(g=>g.forca==="sugestão").length},grupos});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/clientes/unificar",requireAcesso("acesso_clientes"),async(req,res)=>{
+  try{
+    const principal=String(req.body?.principalId||""), secs=(req.body?.secundarios||[]).map(String).filter(x=>x&&x!==principal);
+    if(!principal||!secs.length) return res.status(400).json({erro:"escolha o cadastro principal e ao menos um duplicado"});
+    if(_principalDe(principal)!==principal) return res.status(400).json({erro:"o principal escolhido já foi unificado em outro cadastro"});
+    const u=lerJSON(CLIENTES_UNIF_FILE,{}), base=lerClientesBase(), resultado=[];
+    for(const s2 of secs){
+      u[s2]={principal,em:Date.now(),por:req.sessao?.nome||"",nome:(base.porId[s2]||{}).nome||""};
+      Object.keys(u).forEach(k=>{ if(String(u[k].principal)===s2) u[k].principal=principal; }); // quem apontava para o duplicado passa a apontar para o principal
+      let inativado=false, erro=null;
+      if(req.body?.inativarNoBling!==false){
+        try{ const a=(await bling(`/contatos/${s2}`))?.data;
+          if(a){ await bling(`/contatos/${s2}`,{method:"PUT",body:JSON.stringify({nome:a.nome,situacao:"I",tipo:a.tipo||"F",numeroDocumento:a.numeroDocumento||"",celular:a.celular||"",telefone:a.telefone||"",email:a.email||"",...(a.endereco?{endereco:a.endereco}:{})})});
+            inativado=true; if(base.porId[s2]) base.porId[s2].situacao="I"; } }catch(e){ erro=e.message; }
+      }
+      resultado.push({id:s2,inativado,erro});
+    }
+    salvarJSON(CLIENTES_UNIF_FILE,u); _unifMem=null; salvarClientesBase(base); _idxCli.em=0;
+    addLog("cliente-"+principal,"clientes_unificados",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{principal,secundarios:secs,resultado});
+    res.json({ok:true,principal,resultado});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/clientes/desunificar",requireAcesso("acesso_clientes"),async(req,res)=>{
+  try{
+    const id=String(req.body?.id||""), u=lerJSON(CLIENTES_UNIF_FILE,{}); if(!u[id]) return res.status(404).json({erro:"este cadastro não está unificado"});
+    const principal=u[id].principal; delete u[id]; salvarJSON(CLIENTES_UNIF_FILE,u); _unifMem=null; _idxCli.em=0;
+    let reativado=false;
+    if(req.body?.reativarNoBling!==false){ try{ const a=(await bling(`/contatos/${id}`))?.data; if(a){ await bling(`/contatos/${id}`,{method:"PUT",body:JSON.stringify({nome:a.nome,situacao:"A",tipo:a.tipo||"F",numeroDocumento:a.numeroDocumento||"",celular:a.celular||"",telefone:a.telefone||"",email:a.email||"",...(a.endereco?{endereco:a.endereco}:{})})}); reativado=true;
+      const base=lerClientesBase(); if(base.porId[id]) base.porId[id].situacao="A"; salvarClientesBase(base); } }catch(e){} }
+    addLog("cliente-"+principal,"cliente_desunificado",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{id});
+    res.json({ok:true,reativado});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/clientes/sincronizar",requireAdmin,(req,res)=>{ const ja=_cliSync.rodando; if(!ja) sincronizarClientesBling({cederVez:true}); res.json({ok:true,iniciado:!ja,jaEstavaRodando:ja}); });
 
@@ -16232,14 +16314,16 @@ app.post("/api/atacado/cliente",async(req,res)=>{
         uf:end.uf||"MG", pais:"Brasil",
       } },
     };
-    let contatoId=b.id||null, criou=false;
+    let contatoId=b.id||null, criou=false, jaExistia=false;
+    if(!contatoId){ const ex=await encontrarContatoPorDoc(doc); if(ex){ contatoId=ex.id; jaExistia=true; } } // antes criava sem procurar: gerava duplicados
     if(contatoId){
       await bling(`/contatos/${contatoId}`,{method:"PUT",body:JSON.stringify(corpo)});
     }else{
       const novo=await bling(`/contatos`,{method:"POST",body:JSON.stringify(corpo)});
       contatoId=novo?.data?.id; criou=true;
     }
-    res.json({ok:true,id:contatoId,criou,nome:corpo.nome,documento:doc,telefone:b.telefone||b.celular||""});
+    if(contatoId) _registrarContatoNaBase(contatoId,corpo);
+    res.json({ok:true,id:contatoId,criou,jaExistia,nome:corpo.nome,documento:doc,telefone:b.telefone||b.celular||""});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
 });
 
