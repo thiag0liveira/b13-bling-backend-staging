@@ -846,7 +846,16 @@ async function buscarFormasPorData() {
           <div id="fpAntigo"></div>
           ${d.bling ? `<div class="muted" style="font-size:11px;margin-top:4px">Bling: ${d.bling.candidatos} pedido(s) atendido(s) que nunca passaram pelo sistema${d.bling.lidosAgora ? `, ${d.bling.lidosAgora} consultado(s) agora pela fila lenta` : ""}${d.bling.pendentes ? ` · <b style="color:#ffd23f">${d.bling.pendentes} ainda não consultado(s), abra o fechamento de novo depois para completar</b>` : ""}${d.bling.erro ? ` · <b style="color:#ff8aa3">não consegui consultar o Bling: ${esc(d.bling.erro)}</b>` : ""}</div>` : ""}
         </div>` : ""}
-        ${d.pedidos.length ? `
+        ${(d.creditoUsado || []).length ? `
+        <div class="card" style="margin-top:10px">
+          <div style="font-weight:800;margin-bottom:2px">💳 Crédito de cliente usado no período: ${brl(d.creditoUsado.reduce((s, u) => s + u.valor, 0))}</div>
+          <div class="muted" style="font-size:11px;margin-bottom:6px">Não entra no total acima: o dinheiro entrou no dia em que o cliente pagou o crédito (origem abaixo).</div>
+          ${d.creditoUsado.map(u => `
+            <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #2a2660;font-size:13px">
+              <span>${u.pedidoNumero ? "#" + esc(u.pedidoNumero) + " · " : ""}${esc(u.cliente || "—")} <span class="muted">(${new Date(u.em).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })})</span><br>
+                <span class="muted" style="font-size:11.5px">${(u.origens || []).length ? u.origens.map(o => `${brl(o.valor)} de ${esc(o.forma || "forma não informada")}, recebido em ${new Date(o.em).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`).join(" · ") : "origem não registrada"}</span></span>
+              <b>${brl(u.valor)}</b></div>`).join("")}
+        </div>` : ""}        ${d.pedidos.length ? `
         <div class="card" style="margin-top:10px">
           <div style="font-weight:800;margin-bottom:6px">Pedidos (pelo dia do pagamento)</div>
           ${d.pedidos.map(p => `

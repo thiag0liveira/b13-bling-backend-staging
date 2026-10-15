@@ -3711,7 +3711,7 @@ function resumoSessaoCaixa(sessao){
     const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0);
     const sobra=+(pago-(Number(v.total)||0)).toFixed(2);
     if(sobra<0.02) return 0;
-    const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+    const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")&&!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
     const taxaEsperada=+((Number(v.total)||0)*TAXA_CT).toFixed(2);
     if(emCartao>0.009 && Math.abs(sobra-taxaEsperada)<0.05) return 0; // é a taxa, não troco
     const emDinheiro=(v.pagamentos||[]).filter(p=>/dinheiro/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
@@ -3758,7 +3758,12 @@ function resumoSessaoCaixa(sessao){
   const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
 
   const totalTroco=vendas.reduce((a,m)=>a+(Number(m.troco)||0),0);
+  // CRÉDITO DE CLIENTE usado neste caixa: valor, pedido e de onde veio (dia e forma em que o cliente pagou o crédito)
+  const creditoUsos=vendas.map(v=>{ const linha=(v.pagamentos||[]).filter(p=>/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+      if(!(linha>0.004)&&!v.creditoUsado) return null; const cu=v.creditoUsado||{};
+      return {numero:v.numero||v.pedidoId,cliente:cu.cliente||v.clienteNome||"",em:v.em,valor:+(Number(cu.valor)||linha).toFixed(2),origens:cu.origens||[]}; }).filter(Boolean);
   return {
+    creditoCliente:{total:+creditoUsos.reduce((a,u)=>a+u.valor,0).toFixed(2),usos:creditoUsos},
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
     totalTroco:+totalTroco.toFixed(2),
     vendasComTroco:vendas.filter(m=>trocoEfetivo(m)>0.009).length,
@@ -9073,7 +9078,7 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     const resposta={ ok:true, pedidoId, numero:numeroReq||null, total:totalItens,
       pendenteBling:true, jaEstavaNoCaixa };
     if(usoCred){ try{ const fn=(lerJSON(FUNC_FILE,{})[String(funcionarioId||"")]||{}).nome||"";
-      const r=_usarCreditoNaVenda(usoCred.clienteId,usoCred.valor,{opId,pedidoNumero:resposta?.numero||req.body?.numero||pedidoId,origem:"Caixa Atacado",por:fn});
+      const r=_usarCreditoNaVenda(usoCred.clienteId,usoCred.valor,{opId,pedidoNumero:resposta?.numero||req.body?.numero||pedidoId,pedidoId,origem:"Caixa Atacado",por:fn});
       if(!r.ok) console.error("[credito] não descontou:",r.erro); }catch(e){ console.error("[credito] falha ao descontar:",e.message); } }
     if(opId) opFinalizarSet(opId,{status:"ok",resposta});
     res.json(resposta);
@@ -9978,19 +9983,37 @@ app.post("/api/clientes/:id/credito",requireAcesso("acesso_clientes"),(req,res)=
   if(tipo==="saida"){ const saldo=_saldoCredito(d.movs,id); if(valor>saldo+0.004) return res.status(409).json({erro:`Crédito insuficiente: o cliente tem ${brlN(saldo)}.`}); }
   d.seq+=1; const nome=(lerClientesBase().porId[id]||{}).nome||String(b.clienteNome||"");
   const m={id:"cr"+d.seq,clienteId:id,clienteNome:nome,em:Date.now(),tipo,valor,forma:String(b.forma||"").slice(0,60),descricao:String(b.descricao||"").slice(0,200),pedidoNumero:String(b.pedidoNumero||"").slice(0,20),por:req.sessao?.nome||""};
+  if(tipo==="saida") m.origens=_origensDoUso(d.movs,id,valor);
   d.movs.push(m); salvarJSON(CLIENTES_CREDITO_FILE,d);
   res.json({ok:true,movimento:m,saldo:_saldoCredito(d.movs,id)});
 });
 // saldo de crédito do cliente para o CAIXA (qualquer funcionário logado; não precisa da permissão da tela Clientes)
 app.get("/api/clientes/:id/credito-saldo",requireSessao,(req,res)=>{ res.json({ok:true,saldo:_saldoCredito(lerCreditos().movs,_principalDe(req.params.id))}); });
 // uso do crédito numa venda do caixa: idempotente pelo opId (a mesma finalização repetida não desconta duas vezes)
-function _usarCreditoNaVenda(clienteId,valor,{opId,pedidoNumero,origem,por}){
+// de onde sai o crédito usado: dos recebimentos de crédito mais antigos para os mais novos (dia e forma: Pix de qual banco, dinheiro...)
+function _origensDoUso(movs,cid,valor){
+  const val=movs.filter(m=>_credValido(m)&&String(m.clienteId)===String(cid)).sort((a,b)=>a.em-b.em);
+  let consumido=val.filter(m=>m.tipo==="saida").reduce((s2,m)=>s2+Number(m.valor||0),0), falta=_round2(valor); const origens=[];
+  for(const e of val.filter(m=>m.tipo==="entrada")){
+    let disp=Number(e.valor||0); const usa1=Math.min(disp,consumido); disp-=usa1; consumido-=usa1;
+    if(disp<=0.004||falta<=0.004) continue;
+    const usa=_round2(Math.min(disp,falta)); origens.push({entradaId:e.id,em:e.em,forma:e.forma||"",valor:usa}); falta=_round2(falta-usa);
+  }
+  return origens;
+}
+function _usarCreditoNaVenda(clienteId,valor,{opId,pedidoNumero,origem,por,pedidoId}){
   const d=lerCreditos(), cid=_principalDe(clienteId);
   if(opId&&d.movs.some(m=>m.opId===opId&&!m.estornadoEm)) return {ok:true,repetido:true};
   const saldo=_saldoCredito(d.movs,cid); if(valor>saldo+0.004) return {ok:false,erro:`Crédito insuficiente: o cliente tem ${brlN(saldo)}.`};
-  d.seq+=1; d.movs.push({id:"cr"+d.seq,clienteId:cid,clienteNome:(lerClientesBase().porId[cid]||{}).nome||"",em:Date.now(),tipo:"saida",valor:_round2(valor),forma:"",
-    descricao:`Usado no ${origem||"caixa"}`,pedidoNumero:String(pedidoNumero||""),por:por||"",opId:opId||null});
-  salvarJSON(CLIENTES_CREDITO_FILE,d); return {ok:true,saldo:_saldoCredito(d.movs,cid)};
+  const origens=_origensDoUso(d.movs,cid,valor), nomeCli=(lerClientesBase().porId[cid]||{}).nome||"";
+  d.seq+=1; d.movs.push({id:"cr"+d.seq,clienteId:cid,clienteNome:nomeCli,em:Date.now(),tipo:"saida",valor:_round2(valor),forma:"",
+    descricao:`Usado no ${origem||"caixa"}`,pedidoNumero:String(pedidoNumero||""),pedidoId:pedidoId?String(pedidoId):null,por:por||"",opId:opId||null,origens});
+  salvarJSON(CLIENTES_CREDITO_FILE,d);
+  // grava também na venda do caixa, para o relatório do caixa mostrar o crédito usado e de onde veio
+  try{ if(pedidoId){ const cx=lerCaixaSessoes(); let alvo=null;
+    (cx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&String(mv.pedidoId)===String(pedidoId)&&(!alvo||mv.em>=alvo.em)) alvo=mv; }));
+    if(alvo){ alvo.creditoUsado={valor:_round2(valor),clienteId:cid,cliente:nomeCli,origens}; salvarCaixaSessoes(cx); } } }catch(e){}
+  return {ok:true,saldo:_saldoCredito(d.movs,cid)};
 }
 app.post("/api/clientes/credito/:movId/estornar",requireAcesso("acesso_clientes"),(req,res)=>{
   const motivo=String(req.body?.motivo||"").trim().slice(0,200); if(!motivo) return res.status(400).json({erro:"informe o motivo"});
@@ -10883,7 +10906,9 @@ app.get("/api/fechamento-por-pagamento", async(req,res)=>{
         cliente:p?.cliente?.nome||mv?.clienteNome||g.cliente||c.cliente||b.cliente||"—", data:_diaBRms(g.em), situacao:[...g.origens].join(" + "),
         total:_round2(Number(p?.total)||Number(mv?.total)||Number(g.total)||Number(b.total)||0), valorRecebidoNoPeriodo:_round2(g.valor), origem:[...g.origens].join(" + ")}; })
       .sort((a,b)=>String(a.data).localeCompare(String(b.data)));
-    send({tipo:"done",dataInicial,dataFinal,totalPago:R.total,qtdPedidos:pedidos.length,formasPagamento:R.formas,porOrigem:R.origens,pedidos,
+    let creditoUsado=[]; try{ creditoUsado=lerCreditos().movs.filter(m=>m.tipo==="saida"&&!m.estornadoEm&&m.em>=t0&&m.em<=t1)
+      .map(m=>({em:m.em,cliente:m.clienteNome||"",pedidoNumero:m.pedidoNumero||"",valor:Number(m.valor),descricao:m.descricao||"",origens:m.origens||[]})).sort((a,b)=>a.em-b.em); }catch(e){}
+    send({tipo:"done",dataInicial,dataFinal,totalPago:R.total,qtdPedidos:pedidos.length,formasPagamento:R.formas,porOrigem:R.origens,pedidos,creditoUsado,
       bling:{candidatos:fora.candidatos,lidosAgora:fora.lidosAgora,pendentes:fora.pendentes,erro:fora.erro||null},
       regra:"Pelo dia do pagamento (horário de Brasília). Troco não conta. Pedido recebido pelo motorista e depois registrado no caixa conta uma vez só."});
   }catch(e){ send({tipo:"erro",erro:e.message}); }

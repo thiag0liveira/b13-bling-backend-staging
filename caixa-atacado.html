@@ -289,6 +289,23 @@ function ajustarCartaoComTaxa() {
 // monta a nota que vai pra observação do Bling: mostra só "PIX: valor" (o banco/maquininha
 // é interno e fica nos registros do caixa, não na nota fiscal).
 // soma tudo que é PIX (banco de qualquer banco + maquininha) a partir do porForma do resumo
+// crédito de cliente usado no caixa: valor, pedido e de onde veio (dia e forma em que o cliente pagou o crédito)
+function blocoCreditoCliente(cc, estiloLinha) {
+  if (!cc || !(cc.usos || []).length) return "";
+  const d = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "—";
+  const origem = o => `${brl(o.valor)} de ${esc(o.forma || "forma não informada")} (recebido em ${d(o.em)})`;
+  return `<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+    <div class="muted" style="font-size:11px;margin-bottom:2px">💳 Crédito de cliente usado: ${brl(cc.total)} <span style="opacity:.8">(não é dinheiro novo neste caixa)</span></div>
+    ${cc.usos.map(u => `<div class="linha" style="${estiloLinha || "font-size:12px"};align-items:flex-start"><span>#${esc(u.numero)}${u.cliente ? " · " + esc(u.cliente) : ""}<br><span class="muted" style="font-size:11px">${(u.origens || []).length ? u.origens.map(origem).join("<br>") : "origem não registrada (venda anterior a este controle)"}</span></span><b>${brl(u.valor)}</b></div>`).join("")}
+  </div>`;
+}
+// linhas do relatório IMPRESSO: crédito de cliente usado, com a origem de cada valor
+function linhasCreditoPrint(cc) {
+  if (!cc || !(cc.usos || []).length) return "";
+  const d = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "—";
+  return `<tr><td colspan="2" style="padding-top:6px"><b>Crédito de cliente usado: ${brl(cc.total)}</b> <span class="q">(não é dinheiro novo neste caixa)</span></td></tr>` +
+    cc.usos.map(u => `<tr><td>#${esc(u.numero)}${u.cliente ? " " + esc(u.cliente) : ""}<br><span class="q">${(u.origens || []).length ? u.origens.map(o => `${brl(o.valor)} ${esc(o.forma || "?")} de ${d(o.em)}`).join("<br>") : "origem não registrada"}</span></td><td class="v">${brl(u.valor)}</td></tr>`).join("");
+}
 function totalPixForma(porForma) {
   return (porForma || []).filter(f => /pix/i.test(f.nome || "")).reduce((s, f) => s + (Number(f.valor) || 0), 0);
 }
@@ -565,6 +582,7 @@ async function modalFechar() {
         <div class="linha"><span>Vendas (${r.qtdVendas || 0})</span><b>${brl(r.totalVendas)}</b></div>
         ${r.porForma.map(f => `<div class="linha" style="font-size:13px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
         ${totalPixForma(r.porForma) > 0.009 ? `<div class="linha" style="border-top:1px dashed #2a2660;margin-top:4px;padding-top:4px;font-size:13px"><span>🔷 <b>Total PIX</b></span><b style="color:#7fd4ff">${brl(totalPixForma(r.porForma))}</b></div>` : ""}
+        ${blocoCreditoCliente(r.creditoCliente, "font-size:13px")}
       </div>` : ""}
       <p class="muted" style="margin:6px 0 4px">Quanto tem na gaveta (contado)?</p>
       <input id="mContado" type="number" step="0.01" placeholder="0,00" style="text-align:center;font-size:18px">
@@ -2181,7 +2199,7 @@ function gerarHtmlRelatorioCaixa(sessao, resumo, movimentos, fechamento) {
     return `<div class="mv"><div class="mv1">${hora(m.em)} · <b>#${esc(m.numero || m.pedidoId)}</b>${rot ? `<b> ·${rot}</b>` : ""}${m.clienteNome ? ` · ${esc(m.clienteNome)}` : ""}</div>
       <div class="mv2"><span>${(m.pagamentos || []).map(p => esc(p.formaNome)).join(", ") || "—"}</span><b>${brl(m.total)}</b></div></div>`;
   }).join("") : '<div class="mv">Nenhuma venda.</div>';
-  const linhasForma = (resumo.porForma || []).map(f => `<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("") + (totalPixForma(resumo.porForma) > 0.009 ? `<tr class="pix"><td>Total PIX</td><td class="v">${brl(totalPixForma(resumo.porForma))}</td></tr>` : "");
+  const linhasForma = (resumo.porForma || []).map(f => `<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("") + (totalPixForma(resumo.porForma) > 0.009 ? `<tr class="pix"><td>Total PIX</td><td class="v">${brl(totalPixForma(resumo.porForma))}</td></tr>` : "") + linhasCreditoPrint(resumo.creditoCliente);
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Relatorio de Caixa Atacado</title>
     <style>
       *{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}

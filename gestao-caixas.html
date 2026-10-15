@@ -94,6 +94,23 @@
     }
     return parseFloat(s) || 0;
   }
+  // crédito de cliente usado no caixa: valor, pedido e de onde veio (dia e forma em que o cliente pagou o crédito)
+function blocoCreditoCliente(cc, estiloLinha) {
+  if (!cc || !(cc.usos || []).length) return "";
+  const d = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "—";
+  const origem = o => `${brl(o.valor)} de ${esc(o.forma || "forma não informada")} (recebido em ${d(o.em)})`;
+  return `<div style="margin-top:6px;border-top:1px solid #2a2660;padding-top:6px">
+    <div class="muted" style="font-size:11px;margin-bottom:2px">💳 Crédito de cliente usado: ${brl(cc.total)} <span style="opacity:.8">(não é dinheiro novo neste caixa)</span></div>
+    ${cc.usos.map(u => `<div class="linha" style="${estiloLinha || "font-size:12px"};align-items:flex-start"><span>#${esc(u.numero)}${u.cliente ? " · " + esc(u.cliente) : ""}<br><span class="muted" style="font-size:11px">${(u.origens || []).length ? u.origens.map(origem).join("<br>") : "origem não registrada (venda anterior a este controle)"}</span></span><b>${brl(u.valor)}</b></div>`).join("")}
+  </div>`;
+}
+  // linhas do relatório IMPRESSO: crédito de cliente usado, com a origem de cada valor
+function linhasCreditoPrint(cc) {
+  if (!cc || !(cc.usos || []).length) return "";
+  const d = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "—";
+  return `<tr><td colspan="2" style="padding-top:6px"><b>Crédito de cliente usado: ${brl(cc.total)}</b> <span class="q">(não é dinheiro novo neste caixa)</span></td></tr>` +
+    cc.usos.map(u => `<tr><td>#${esc(u.numero)}${u.cliente ? " " + esc(u.cliente) : ""}<br><span class="q">${(u.origens || []).length ? u.origens.map(o => `${brl(o.valor)} ${esc(o.forma || "?")} de ${d(o.em)}`).join("<br>") : "origem não registrada"}</span></td><td class="v">${brl(u.valor)}</td></tr>`).join("");
+}
   function totalPixForma(porForma) {
     return (porForma || []).filter(f => /pix/i.test(f.nome || "")).reduce((a, f) => a + (Number(f.valor) || 0), 0);
   }
@@ -289,6 +306,7 @@
           <div class="muted" style="font-size:11px;margin-bottom:2px">Por forma de pagamento</div>
           ${s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("")}
           ${totalPixForma(s.resumo.porForma) > 0.009 ? `<div class="linha" style="font-size:12px;border-top:1px dashed #2a2660;margin-top:3px;padding-top:3px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>` : ""}
+          ${blocoCreditoCliente(s.resumo.creditoCliente)}
         </div>` : ""}
         <button class="btn btn-mag btn-sm" style="width:100%;margin-top:8px" onclick="conferirCaixa('${s.id}')">🧮 Conferir caixa (contar e comparar)</button>
         <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="imprimirRelatorioCaixa('${s.id}')">🖨️ Imprimir relatório</button>
@@ -311,6 +329,7 @@
         <div style="font-size:12px;color:#9a95c9;margin-bottom:6px">🕐 ${hora(s.abertaEm)} → ${hora(s.fechadaEm)} · 👤 ${esc(s.operador || "—")} ${tagTipo(s.tipoCaixa)}</div>
         <div class="linha"><span>Vendas (${s.resumo.qtdVendas})</span><b>${brl(s.resumo.totalVendas)}</b></div>
         ${(s.resumo.porForma || []).length ? s.resumo.porForma.map(f => `<div class="linha" style="font-size:12px"><span>${esc(f.nome)} <span class="muted">(${f.qtd}x)</span></span><b>${brl(f.valor)}</b></div>`).join("") : ""}
+        ${blocoCreditoCliente((s.resumo || {}).creditoCliente)}
         ${totalPixForma(s.resumo.porForma) > 0.009 ? `<div class="linha" style="font-size:12px"><span>🔷 Total PIX</span><b style="color:#7fd4ff">${brl(totalPixForma(s.resumo.porForma))}</b></div>` : ""}
         ${Number(s.resumo.totalSuprimentos) > 0 ? `<div class="linha" style="font-size:12px"><span>💰 Suprimentos</span><b style="color:#8fffc0">${brl(s.resumo.totalSuprimentos)}</b></div>` : ""}
         <div class="linha" style="font-size:12px"><span>💸 Sangrias</span><b style="color:${Number(s.resumo.totalSangrias) > 0 ? '#ff8090' : '#9a95c9'}">${brl(s.resumo.totalSangrias)}</b></div>
@@ -816,7 +835,7 @@
       const qv = Number(r.qtdVendas || vendas.length || 0);
       const ticket = qv > 0 ? brl((Number(r.totalVendas) || 0) / qv) : "—";
       const linha = (rot, val, cor) => `<tr><td>${esc(rot)}</td><td class="v"${cor ? ` style="color:${cor}"` : ""}>${val}</td></tr>`;
-      const pf = (r.porForma || []).map(f => `<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("");
+      const pf = (r.porForma || []).map(f => `<tr><td>${esc(f.nome)} <span class="q">(${f.qtd}x)</span></td><td class="v">${brl(f.valor)}</td></tr>`).join("") + linhasCreditoPrint(r.creditoCliente);
       const totPix = totalPixForma(r.porForma);
       const temManual = r.esperadoGavetaManual != null;
       const confHtml = confs.length ? `
