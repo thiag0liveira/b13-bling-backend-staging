@@ -9005,6 +9005,11 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   const opId=req.body?.opId?String(req.body.opId):null;
   if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
   if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+  // CRÉDITO DO CLIENTE: confere o saldo antes de qualquer coisa (o desconto é feito só quando a venda se confirma)
+  const usoCred=req.body?.usoCredito&&Number(req.body.usoCredito.valor)>0?{clienteId:String(req.body.usoCredito.clienteId||""),valor:_round2(Number(req.body.usoCredito.valor))}:null;
+  if(usoCred){ const d0=lerCreditos(); const jaFoi=opId&&d0.movs.some(m=>m.opId===opId&&!m.estornadoEm);
+    const saldo0=_saldoCredito(d0.movs,_principalDe(usoCred.clienteId));
+    if(!jaFoi&&usoCred.valor>saldo0+0.004) return res.status(409).json({erro:`O cliente tem ${brlN(saldo0)} de crédito; não dá para usar ${brlN(usoCred.valor)}. Ajuste o valor do crédito.`}); }
   const chave=String(pedidoId);
   // ---- idempotência: mesma tentativa chegando 2x devolve o resultado pronto ----
   if(opId){
@@ -9067,6 +9072,9 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
     // resposta JÁ VAI AGORA — o caixa está liberado. Nada do que vem depois atrasa isso.
     const resposta={ ok:true, pedidoId, numero:numeroReq||null, total:totalItens,
       pendenteBling:true, jaEstavaNoCaixa };
+    if(usoCred){ try{ const fn=(lerJSON(FUNC_FILE,{})[String(funcionarioId||"")]||{}).nome||"";
+      const r=_usarCreditoNaVenda(usoCred.clienteId,usoCred.valor,{opId,pedidoNumero:resposta?.numero||req.body?.numero||pedidoId,origem:"Caixa Atacado",por:fn});
+      if(!r.ok) console.error("[credito] não descontou:",r.erro); }catch(e){ console.error("[credito] falha ao descontar:",e.message); } }
     if(opId) opFinalizarSet(opId,{status:"ok",resposta});
     res.json(resposta);
 
@@ -9973,6 +9981,17 @@ app.post("/api/clientes/:id/credito",requireAcesso("acesso_clientes"),(req,res)=
   d.movs.push(m); salvarJSON(CLIENTES_CREDITO_FILE,d);
   res.json({ok:true,movimento:m,saldo:_saldoCredito(d.movs,id)});
 });
+// saldo de crédito do cliente para o CAIXA (qualquer funcionário logado; não precisa da permissão da tela Clientes)
+app.get("/api/clientes/:id/credito-saldo",requireSessao,(req,res)=>{ res.json({ok:true,saldo:_saldoCredito(lerCreditos().movs,_principalDe(req.params.id))}); });
+// uso do crédito numa venda do caixa: idempotente pelo opId (a mesma finalização repetida não desconta duas vezes)
+function _usarCreditoNaVenda(clienteId,valor,{opId,pedidoNumero,origem,por}){
+  const d=lerCreditos(), cid=_principalDe(clienteId);
+  if(opId&&d.movs.some(m=>m.opId===opId&&!m.estornadoEm)) return {ok:true,repetido:true};
+  const saldo=_saldoCredito(d.movs,cid); if(valor>saldo+0.004) return {ok:false,erro:`Crédito insuficiente: o cliente tem ${brlN(saldo)}.`};
+  d.seq+=1; d.movs.push({id:"cr"+d.seq,clienteId:cid,clienteNome:(lerClientesBase().porId[cid]||{}).nome||"",em:Date.now(),tipo:"saida",valor:_round2(valor),forma:"",
+    descricao:`Usado no ${origem||"caixa"}`,pedidoNumero:String(pedidoNumero||""),por:por||"",opId:opId||null});
+  salvarJSON(CLIENTES_CREDITO_FILE,d); return {ok:true,saldo:_saldoCredito(d.movs,cid)};
+}
 app.post("/api/clientes/credito/:movId/estornar",requireAcesso("acesso_clientes"),(req,res)=>{
   const motivo=String(req.body?.motivo||"").trim().slice(0,200); if(!motivo) return res.status(400).json({erro:"informe o motivo"});
   const d=lerCreditos(), m=d.movs.find(x=>x.id===req.params.movId); if(!m) return res.status(404).json({erro:"lançamento não encontrado"}); if(m.estornadoEm) return res.status(409).json({erro:"já estornado"});
@@ -10784,7 +10803,7 @@ function _livroRecebimentosLocal(t0,t1){
   for(const [id,p] of Object.entries(pags)){
     if(!p) continue; if((p.historico||[]).length) comRegistro.add(String(id));
     if(p.statusPagamento==="cancelado") continue;
-    const doPeriodo=(p.historico||[]).filter(h=>h&&h.valor&&h.em&&!h.soRegistrarLog&&h.em>=t0&&h.em<=t1);
+    const doPeriodo=(p.historico||[]).filter(h=>h&&h.valor&&h.em&&!h.soRegistrarLog&&h.em>=t0&&h.em<=t1&&!/^cr[eé]dito do cliente/i.test(h.formaNome||""));
     if(!doPeriodo.length) continue;
     // troco: entradas do caixa que somam mais que o pedido -> o excedente sai do dinheiro
     let troco=0; const doCaixa=doPeriodo.filter(h=>h.tipo==="caixa_atacado");
@@ -10797,7 +10816,7 @@ function _livroRecebimentosLocal(t0,t1){
     if(mv.tipo!=="venda"||mv.cancelado||!mv.em||mv.em<t0||mv.em>t1) return;
     const k=String(mv.pedidoId||""); if(k&&comRegistro.has(k)) return;
     let troco=Number(mv.troco||0); const origem=(sx.tipoCaixa==="atacado")?"Caixa Atacado":"Frente de Caixa";
-    (mv.pagamentos||[]).forEach(pg=>{ let v=Number(pg.valor||0); if(troco>0&&/dinheiro/i.test(pg.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
+    (mv.pagamentos||[]).forEach(pg=>{ if(/^cr[eé]dito do cliente/i.test(pg.formaNome||"")) return; let v=Number(pg.valor||0); if(troco>0&&/dinheiro/i.test(pg.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
       if(v>0.004) lanc.push({pedidoId:k||("cx-"+mv.em),numero:mv.numero||null,cliente:mv.clienteNome||"",total:Number(mv.total)||null,em:mv.em,forma:pg.formaNome||"Não identificada",valor:+v.toFixed(2),origem,por:mv.operador||sx.operador||"",pendenteBling:!!mv.pendenteBling}); });
   }));
   // crédito de cliente recebido (Pix, dinheiro...) também é dinheiro que entrou
