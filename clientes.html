@@ -128,7 +128,9 @@ async function carregar(mais) {
 }
 function renderTopo() {
   const R = DADOS.resumo, S = DADOS.sincronizacao;
-  document.getElementById("sinc").innerHTML = S.rodando ? `⏳ copiando clientes do Bling (${esc(S.progresso)})` : (S.em ? `base do Bling: ${S.contatos} contatos · copiada ${dth(S.em)}` : "base do Bling ainda não copiada");
+  const H = DADOS.historico || {};
+  document.getElementById("sinc").innerHTML = (S.rodando ? `⏳ copiando clientes do Bling (${esc(S.progresso)})` : (S.em ? `base do Bling: ${S.contatos} contatos · copiada ${dth(S.em)}` : "base do Bling ainda não copiada"))
+    + " · " + (H.sincronizando ? `⏳ trazendo o histórico de pedidos do Bling (${esc(H.progresso)})` : (H.blingDesde ? `histórico de pedidos desde ${H.blingDesde.split("-").reverse().join("/")}` : "histórico do Bling ainda não carregado"));
   const k = (v, l, s, al, st) => `<div class="kpi ${al ? "alerta" : ""}" ${st != null ? `style="cursor:pointer" onclick="filtrar('${st}')"` : ""}><div class="v">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
   document.getElementById("kpis").innerHTML = [
     k(R.base, "Clientes", "na base do Bling e com pedidos", false, ""),
@@ -191,12 +193,12 @@ function abaResumo() {
   const m = C.metricas, el = document.getElementById("aba");
   if (!m.pedidos) { el.innerHTML = `<div class="vazio">Este cliente ainda não tem pedidos registrados no sistema.</div>` + blocoNota(); return; }
   const maxS = Math.max(1, ...m.diasDaSemana.map(d => d.qtd)), maxM = Math.max(1, ...m.meses.map(x => x.valor));
-  el.innerHTML = `
+  el.innerHTML = (m.pedidosComDetalhe < m.pedidos ? `<div class="desc">${m.pedidos} pedidos no total; ${m.pedidosComDetalhe} passaram pelo sistema e têm itens, horário, vendedora e entrega. Os outros vêm do histórico do Bling (data, valor e situação).</div>` : "") + `
     <div class="par">
       ${par(brl(m.total), "total comprado")}${par(m.pedidos, "pedidos")}${par(brl(m.ticketMedio), "ticket médio")}${par(brl(m.maiorPedido), "maior pedido")}
       ${par(dt(m.ultimaCompra), `última compra (há ${m.diasDesdeUltima} dia(s))`)}${par(m.intervaloMedioDias != null ? m.intervaloMedioDias + " dias" : "—", "intervalo típico entre compras")}
       ${par(m.proximaPrevista ? dt(m.proximaPrevista) : "—", "próxima compra prevista")}${par(dt(m.primeiraCompra), "cliente desde")}
-      ${par(brl(m.total30), "últimos 30 dias")}${par(brl(m.total90), "últimos 90 dias")}${par(brl(m.total365), "últimos 12 meses")}${par(m.itensPorPedido, "itens por pedido")}
+      ${par(brl(m.total30), "últimos 30 dias")}${par(brl(m.total90), "últimos 90 dias")}${par(brl(m.total365), "últimos 12 meses")}${par(m.itensPorPedido != null ? m.itensPorPedido : "—", "itens por pedido")}
     </div>
     <div class="grid2" style="margin-top:10px">
       <div class="bloco"><h4>🗓️ Quando costuma comprar</h4>
@@ -205,7 +207,7 @@ function abaResumo() {
         <div class="lin"><span>Período</span><b>${Object.entries(m.periodos).filter(([, q]) => q).map(([p, q]) => `${p} ${Math.round(q / m.pedidos * 100)}%`).join(" · ")}</b></div>
         <div class="barras">${m.diasDaSemana.map(d => `<div style="height:${Math.round(d.qtd / maxS * 100)}%" class="${d.qtd === maxS ? "on" : ""}" title="${d.qtd}"><small>${d.dia.slice(0, 3)}</small></div>`).join("")}</div><div style="height:16px"></div></div>
       <div class="bloco"><h4>🛵 Entrega</h4>
-        <div class="lin"><span>Pede entrega</span><b>${m.pctEntrega}% dos pedidos</b></div>
+        <div class="lin"><span>Pede entrega</span><b>${m.pctEntrega != null ? m.pctEntrega + "% dos pedidos" : "—"}</b></div>
         <div class="lin"><span>Distância média</span><b>${m.kmMedio != null ? m.kmMedio + " km" : "—"}</b></div>
         <div class="lin"><span>Taxa média · total pago de frete</span><b>${brl(m.freteMedio)} · ${brl(m.freteTotal)}</b></div>
         <div class="lin"><span>Motoristas mais frequentes</span><b>${esc(m.motoristas.map(x => `${x.nome} (${x.qtd})`).join(", ") || "—")}</b></div>
@@ -234,10 +236,11 @@ function abaPedidos() {
   const el = document.getElementById("aba");
   if (!C.pedidos.length) { el.innerHTML = `<div class="vazio">Sem pedidos registrados no sistema.</div>`; return; }
   const PG = { pago: ["pago", "ok"], parcial: ["parcial", "warn"], pendente: ["pendente", "erro"] };
-  el.innerHTML = `<div class="desc">Toque num pedido para abrir a ficha completa (itens, separação, conferência, entrega, pagamento e fotos).</div>` + C.pedidos.map(p => {
+  const H = C.historico || {};
+  el.innerHTML = `<div class="desc">Toque num pedido para abrir a ficha completa. ${H.blingDesde ? `Inclui os pedidos do Bling desde ${H.blingDesde.split("-").reverse().join("/")}; os marcados "Bling" foram lançados fora do sistema e não têm itens, vendedora nem entrega aqui.` : (H.sincronizando ? "⏳ O histórico completo do Bling está sendo carregado; reabra em alguns minutos." : "")}</div>` + C.pedidos.map(p => {
     const pg = PG[p.statusPagamento];
     return `<div class="cli" onclick="B13Ficha.abrir('${esc(p.pedidoId)}')"><div class="info"><div class="l1">#${esc(p.numero)} <span class="ic">${dth(p.em)}</span></div>
-      <div class="l2">${p.itens} item(ns) · ${esc(p.vendedor || "—")} · ${p.entrega === "entrega" ? "🛵 entrega" + (p.motorista ? " · " + esc(p.motorista) : "") : "🏪 retirada"}${p.ocorrencia ? " · ⚠️ ocorrência" : ""}</div></div>
+      <div class="l2">${p.soBling ? `<span class="tag neu">Bling</span> lançado fora do sistema` : `${p.itens} item(ns) · ${esc(p.vendedor || "—")} · ${p.entrega === "entrega" ? "🛵 entrega" + (p.motorista ? " · " + esc(p.motorista) : "") : "🏪 retirada"}${p.ocorrencia ? " · ⚠️ ocorrência" : ""}`}</div></div>
       <div style="text-align:right"><div class="valor">${brl(p.total)}</div>${pg ? `<span class="tag ${pg[1]}">${pg[0]}</span>` : ""}</div></div>`;
   }).join("");
 }
