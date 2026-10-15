@@ -1219,6 +1219,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
+  {grupo:"Vendas & Caixa",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
@@ -9680,6 +9681,240 @@ function passouLimiteFrete(req,res){ return new Promise(ok=>{ let passou=false; 
 // CONFERÊNCIA DA CHAVE DO GOOGLE MAPS: qual chave o servidor está usando (só os 4 últimos caracteres, para comparar
 // com o Google Cloud), desde quando o servidor está no ar e um teste ao vivo (no máximo 1 a cada 60 s).
 let _diagMaps={em:0,r:null};
+// ===================== CLIENTES (central do cliente) =====================
+// Base de clientes copiada do Bling (listagem de contatos, 100 por consulta) DE MADRUGADA pela fila LENTA; o detalhe
+// (endereço, e-mail) só quando alguém abre a ficha, também pela fila lenta, e fica guardado. O perfil de cada cliente
+// é calculado com o que o sistema já tem: pedidos (registro), pagamentos, entregas/viagens, coordenadas e crédito.
+const CLIENTES_BASE_FILE=`${DATA_DIR}/clientes_base.json`;
+const CLIENTES_CREDITO_FILE=`${DATA_DIR}/clientes_credito.json`;
+const CLIENTES_NOTAS_FILE=`${DATA_DIR}/clientes_notas.json`;
+let _cliBaseMem=null;
+function lerClientesBase(){ if(!_cliBaseMem){ _cliBaseMem=lerJSON(CLIENTES_BASE_FILE,null)||{}; _cliBaseMem.porId||={}; } return _cliBaseMem; }
+function salvarClientesBase(b){ _cliBaseMem=b; salvarJSON(CLIENTES_BASE_FILE,b); }
+function lerCreditos(){ const d=lerJSON(CLIENTES_CREDITO_FILE,null)||{}; d.seq||=0; d.movs||=[]; return d; }
+const _credValido=m=>!m.estornadoEm;
+function _saldoCredito(movs,cid){ return _round2(movs.filter(m=>_credValido(m)&&String(m.clienteId)===String(cid)).reduce((s2,m)=>s2+(m.tipo==="entrada"?1:-1)*Number(m.valor||0),0)); }
+let _cliSync={rodando:false,progresso:"",em:0};
+async function sincronizarClientesBling(opts={}){
+  if(_cliSync.rodando) return; _cliSync={rodando:true,progresso:"começando",em:Date.now()};
+  try{
+    const base=lerClientesBase(); let total=0;
+    for(let pg=1;pg<=300;pg++){
+      if(opts.ate&&Date.now()>opts.ate) break;
+      if(opts.cederVez){ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; } }
+      const r=await blingLento(`/contatos?pagina=${pg}&limite=100`); const arr=(r&&r.data)||[];
+      arr.forEach(c=>{ if(!c||!c.id) return; const k=String(c.id), a=base.porId[k]||{};
+        base.porId[k]={...a,id:c.id,nome:c.nome||a.nome||"",codigo:c.codigo||a.codigo||"",situacao:c.situacao||a.situacao||"A",
+          doc:String(c.numeroDocumento||a.doc||""),tipo:c.tipo||a.tipo||(String(c.numeroDocumento||"").replace(/\D/g,"").length>11?"J":"F"),
+          telefone:c.telefone||a.telefone||"",celular:c.celular||a.celular||"",listadoEm:Date.now()}; });
+      total+=arr.length; _cliSync.progresso=`${total} contatos lidos`;
+      if(pg%5===0) salvarClientesBase(base);
+      if(arr.length<100) break;
+    }
+    base.sincEm=Date.now(); base.total=Object.keys(base.porId).length; salvarClientesBase(base); _idxCli.em=0;
+    console.log(`[clientes] base sincronizada: ${base.total} contatos`);
+  }catch(e){ console.log("[clientes] sincronização falhou:",e.message); }
+  finally{ _cliSync.rodando=false; _cliSync.progresso=""; }
+}
+// madrugada (mesma janela do catálogo), 1x por noite; e 2 min após subir se a base estiver vazia
+setInterval(()=>{ try{
+  const brt=new Date(Date.now()-3*3600e3), min=brt.getUTCHours()*60+brt.getUTCMinutes(), noite=brt.toISOString().slice(0,10);
+  if(min<INDICE_NOITE_INI_MIN||min>=INDICE_NOITE_FIM_MIN||_cliSync.rodando) return;
+  const b=lerClientesBase(); if(b.sincNoite===noite) return; b.sincNoite=noite; salvarClientesBase(b);
+  sincronizarClientesBling({ate:Date.now()+(INDICE_NOITE_FIM_MIN-min)*60000,cederVez:true});
+}catch(e){} },10*60000);
+setTimeout(()=>{ try{ if(!Object.keys(lerClientesBase().porId).length) sincronizarClientesBling({cederVez:true}); }catch(e){} },120000);
+
+// pedidos A PRAZO em aberto no Bling (situação Prazo), pela fila lenta, guardados 15 min
+let _prazoCli={em:0,porCli:{},rodando:false};
+async function _atualizarPrazoAbertos(){
+  if(_prazoCli.rodando) return; _prazoCli.rodando=true;
+  try{ const porCli={};
+    for(let pg=1;pg<=20;pg++){ const r=await blingLento(`/pedidos/vendas?pagina=${pg}&limite=100&idsSituacoes%5B%5D=${SIT.PRAZO}`); const arr=(r&&r.data)||[];
+      arr.forEach(p=>{ const c=String(p.contato?.id||""); if(!c) return; (porCli[c]||=[]).push({id:String(p.id),numero:p.numero,data:p.data||"",total:Number(p.total||p.totalProdutos||0)}); });
+      if(arr.length<100) break; }
+    _prazoCli={em:Date.now(),porCli,rodando:false};
+  }catch(e){ _prazoCli.rodando=false; }
+}
+function _prazoDoCliente(cid){
+  if(Date.now()-_prazoCli.em>15*60000) _atualizarPrazoAbertos();
+  const pags=lerPag()||{};
+  return (_prazoCli.porCli[String(cid)]||[]).map(p=>{ const pago=Number(pags[p.id]?.valorPago)||0; return {...p,pago:_round2(pago),falta:_round2(Math.max(0,p.total-pago))}; });
+}
+
+// índice: pedidos de cada cliente (registro local), com pagamento e entrega; refeito a cada 5 min
+let _idxCli={em:0,porCli:{}};
+function _indiceClientes(){
+  if(_idxCli.em&&Date.now()-_idxCli.em<5*60000) return _idxCli;
+  const props=lerPropostas()||{}, pags=lerPag()||{}; let ent={};
+  try{ const fim=new Date(Date.now()-3*3600e3).toISOString().slice(0,10), ini=new Date(Date.now()-180*86400000-3*3600e3).toISOString().slice(0,10);
+    (_centralEntregas(ini,fim).pedidos||[]).forEach(x=>{ ent[String(x.pedidoId)]=x; }); }catch(e){}
+  const porCli={};
+  Object.values(props).forEach(p=>{
+    if(!p||!p.pedidoBlingId||/cancel/i.test(String(p.status||""))) return;
+    const cid=String(p.cliente?.id||""); if(!cid) return;
+    const pid=String(p.pedidoBlingId), pg=pags[pid]||{}, e=ent[pid]||null;
+    if(pg.statusPagamento==="cancelado") return;
+    (porCli[cid]||=[]).push({pedidoId:pid,numero:String(p.pedidoBlingNumero||pid),em:Number(p.criadoEm)||0,total:Number(p.total)||0,
+      itens:(p.itens||[]).map(i=>({nome:i.nome||i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
+      vendedor:p.vendedorNome||"",origem:p.origem||"",entrega:{tipo:p.entrega?.tipo||"",km:Number(p.entrega?.km)||0,taxa:Number(p.entrega?.taxa)||0,endereco:p.entrega?.endereco||""},
+      statusPagamento:pg.statusPagamento||"",valorPago:Number(pg.valorPago)||0,
+      formas:(pg.historico||[]).filter(h=>h&&Number(h.valor)>0).map(h=>({forma:h.formaNome||"",valor:Number(h.valor)})),
+      motorista:e?.viagem?.motorista||"",entregue:e?e.status==="entregue":null,ocorrencia:!!(e&&e.ocorrencia),cliNome:p.cliente?.nome||"",cliTel:p.cliente?.telefone||""});
+  });
+  Object.values(porCli).forEach(l=>l.sort((a,b)=>a.em-b.em));
+  _idxCli={em:Date.now(),porCli}; return _idxCli;
+}
+const _DIA=86400000;
+function _metricasCliente(peds,completo){
+  const n=peds.length, agora=Date.now();
+  if(!n) return {pedidos:0,total:0,status:"sem_compras"};
+  const total=peds.reduce((s2,p)=>s2+p.total,0), ult=peds[n-1].em, pri=peds[0].em, dias=Math.floor((agora-ult)/_DIA);
+  const diasCompra=[...new Set(peds.map(p=>new Date(p.em-3*3600e3).toISOString().slice(0,10)))].sort();
+  const difs=[]; for(let i=1;i<diasCompra.length;i++) difs.push((Date.parse(diasCompra[i])-Date.parse(diasCompra[i-1]))/_DIA);
+  const med=a=>{ if(!a.length) return null; const s2=[...a].sort((x,y)=>x-y), m=Math.floor(s2.length/2); return s2.length%2?s2[m]:(s2[m-1]+s2[m])/2; };
+  const intervalo=med(difs);
+  let status; if(n===1&&dias<=30) status="novo"; else if(dias<=Math.max(30,(intervalo||0)*1.5)) status="ativo"; else if(dias<=Math.max(90,(intervalo||0)*3)) status="em_risco"; else status="parado";
+  const soma=(desde)=>_round2(peds.filter(p=>p.em>=agora-desde*_DIA).reduce((s2,p)=>s2+p.total,0));
+  const porVend={}; peds.forEach(p=>{ const v=p.vendedor||"(sem vendedora)"; (porVend[v]||={vendedor:v,pedidos:0,valor:0}); porVend[v].pedidos++; porVend[v].valor+=p.total; });
+  const vends=Object.values(porVend).map(v=>({...v,valor:_round2(v.valor)})).sort((a,b)=>b.valor-a.valor);
+  const m={pedidos:n,total:_round2(total),ticketMedio:_round2(total/n),primeiraCompra:pri,ultimaCompra:ult,diasDesdeUltima:dias,
+    intervaloMedioDias:intervalo!=null?Math.round(intervalo):null,proximaPrevista:intervalo?ult+intervalo*_DIA:null,status,
+    total30:soma(30),total90:soma(90),total365:soma(365),vendedoraPrincipal:vends[0]?.vendedor||"",porVendedora:vends};
+  if(!completo) return m;
+  const NDIA=["domingo","segunda","terça","quarta","quinta","sexta","sábado"];
+  const dsem=Array(7).fill(0), hora=Array(24).fill(0); peds.forEach(p=>{ const d=new Date(p.em-3*3600e3); dsem[d.getUTCDay()]++; hora[d.getUTCHours()]++; });
+  const top=(arr,k=3)=>arr.map((v,i)=>({i,v})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,k);
+  const ent=peds.filter(p=>p.entrega.tipo==="entrega"), comKm=ent.filter(p=>p.entrega.km>0);
+  const cont=(arr,f)=>{ const o={}; arr.forEach(x=>{ const k=f(x); if(k) o[k]=(o[k]||0)+1; }); return Object.entries(o).map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd); };
+  const formas={}; peds.forEach(p=>p.formas.forEach(f=>{ const k=String(f.forma||"").replace(/^Pix Banco.*/i,"Pix (banco)"); formas[k]=(formas[k]||0)+f.valor; }));
+  const prod={}; peds.forEach(p=>p.itens.forEach(i=>{ const k=i.nome; if(!k) return; (prod[k]||={nome:k,quantidade:0,valor:0,pedidos:0,ultima:0}); prod[k].quantidade+=i.quantidade; prod[k].valor+=i.quantidade*i.valor; prod[k].pedidos++; prod[k].ultima=Math.max(prod[k].ultima,p.em); }));
+  const meses=[]; for(let k=11;k>=0;k--){ const d=new Date(Date.now()-3*3600e3); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()-k); const ym=d.toISOString().slice(0,7);
+    meses.push({mes:ym,valor:_round2(peds.filter(p=>new Date(p.em-3*3600e3).toISOString().slice(0,7)===ym).reduce((s2,p)=>s2+p.total,0))}); }
+  const periodos={manhã:0,tarde:0,noite:0,madrugada:0}; hora.forEach((q,h)=>{ periodos[h<6?"madrugada":h<12?"manhã":h<18?"tarde":"noite"]+=q; });
+  return {...m,
+    diasDaSemana:NDIA.map((d,i)=>({dia:d,qtd:dsem[i]})), diasPreferidos:top(dsem).map(x=>NDIA[x.i]), horarioPreferido:top(hora,1).map(x=>`${String(x.i).padStart(2,"0")}h`)[0]||"",
+    periodos, pctEntrega:Math.round(ent.length/n*100), kmMedio:comKm.length?+(comKm.reduce((s2,p)=>s2+p.entrega.km,0)/comKm.length).toFixed(1):null,
+    freteMedio:ent.length?_round2(ent.reduce((s2,p)=>s2+p.entrega.taxa,0)/ent.length):0, freteTotal:_round2(ent.reduce((s2,p)=>s2+p.entrega.taxa,0)),
+    motoristas:cont(peds,p=>p.motorista).slice(0,5), ocorrencias:peds.filter(p=>p.ocorrencia).length,
+    canais:cont(peds,p=>({site:"Site",totem:"Totem"})[p.origem]||(p.vendedor?"Vendedora / atacado":"Caixa")),
+    formasPagamento:Object.entries(formas).map(([nome,valor])=>({nome,valor:_round2(valor)})).sort((a,b)=>b.valor-a.valor),
+    produtos:Object.values(prod).map(x=>({...x,valor:_round2(x.valor)})).sort((a,b)=>b.quantidade-a.quantidade).slice(0,20),
+    itensPorPedido:+(peds.reduce((s2,p)=>s2+p.itens.length,0)/n).toFixed(1), maiorPedido:_round2(Math.max(...peds.map(p=>p.total))), meses};
+}
+function _resumoCliente(id,base,idx,creditos){
+  const b=base.porId[id]||{}, peds=idx.porCli[id]||[], ult=peds[peds.length-1];
+  const prazo=_prazoDoCliente(id), aReceber=_round2(prazo.reduce((s2,p)=>s2+p.falta,0));
+  return {id,nome:b.nome||ult?.cliNome||"(sem nome)",doc:b.doc||"",tipo:b.tipo||"",telefone:b.celular||b.telefone||ult?.cliTel||"",
+    bairro:b.detalhe?.endereco?.bairro||"",cidade:b.detalhe?.endereco?.municipio||"",situacaoCadastro:b.situacao||"",
+    ..._metricasCliente(peds,false),aReceber,prazoAbertos:prazo.length,credito:_saldoCredito(creditos,id)};
+}
+app.get("/api/clientes",requireAcesso("acesso_clientes"),(req,res)=>{
+  try{
+    const base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs;
+    const ids=new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)]);
+    let lista=[...ids].map(id=>_resumoCliente(id,base,idx,cred)).filter(c=>c.situacaoCadastro!=="I"||c.pedidos>0);
+    const resumo={base:lista.length,ativos:0,novos:0,emRisco:0,parados:0,semCompras:0,comPrazo:0,aReceber:0,comCredito:0,credito:0};
+    lista.forEach(c=>{ ({ativo:()=>resumo.ativos++,novo:()=>resumo.novos++,em_risco:()=>resumo.emRisco++,parado:()=>resumo.parados++,sem_compras:()=>resumo.semCompras++})[c.status]?.();
+      if(c.aReceber>0){ resumo.comPrazo++; resumo.aReceber+=c.aReceber; } if(c.credito>0){ resumo.comCredito++; resumo.credito+=c.credito; } });
+    resumo.aReceber=_round2(resumo.aReceber); resumo.credito=_round2(resumo.credito);
+    // vendas por vendedora (clientes atendidos, ativos e valor)
+    const pv={}; Object.values(idx.porCli).forEach(peds=>{ if(!peds.length) return;
+      const ativo=Date.now()-peds[peds.length-1].em<=30*_DIA, vistos=new Set();
+      peds.forEach(p=>{ const v=p.vendedor||"(sem vendedora)"; const o=(pv[v]||={vendedor:v,clientes:0,clientesAtivos30:0,pedidos90:0,valor90:0,valor365:0});
+        if(!vistos.has(v)){ vistos.add(v); o.clientes++; if(ativo) o.clientesAtivos30++; }
+        if(Date.now()-p.em<=90*_DIA){ o.pedidos90++; o.valor90+=p.total; } if(Date.now()-p.em<=365*_DIA) o.valor365+=p.total; }); });
+    const porVendedora=Object.values(pv).map(v=>({...v,valor90:_round2(v.valor90),valor365:_round2(v.valor365)})).sort((a,b)=>b.valor90-a.valor90);
+    // filtros
+    const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    const q=nrm(req.query.busca||""), qd=String(req.query.busca||"").replace(/\D/g,"");
+    if(q) lista=lista.filter(c=>nrm(c.nome).includes(q)||(qd.length>=3&&(String(c.doc).replace(/\D/g,"").includes(qd)||String(c.telefone).replace(/\D/g,"").includes(qd)))||nrm(c.bairro).includes(q));
+    const st=String(req.query.status||""); if(st==="prazo") lista=lista.filter(c=>c.aReceber>0); else if(st==="credito") lista=lista.filter(c=>c.credito>0); else if(st) lista=lista.filter(c=>c.status===st);
+    if(req.query.vendedora) lista=lista.filter(c=>(c.porVendedora||[]).some(v=>v.vendedor===req.query.vendedora));
+    const ord=String(req.query.ordem||"ultima");
+    const cmp={ultima:(a,b)=>(b.ultimaCompra||0)-(a.ultimaCompra||0),total:(a,b)=>(b.total365||0)-(a.total365||0),nome:(a,b)=>nrm(a.nome).localeCompare(nrm(b.nome)),areceber:(a,b)=>b.aReceber-a.aReceber,parados:(a,b)=>(b.diasDesdeUltima||0)-(a.diasDesdeUltima||0)}[ord]||((a,b)=>0);
+    lista.sort(cmp);
+    const off=Math.max(0,Number(req.query.offset)||0), lim=Math.min(300,Number(req.query.limite)||100);
+    res.json({ok:true,resumo,porVendedora,total:lista.length,itens:lista.slice(off,off+lim).map(c=>{ const {porVendedora:pvx,...r}=c; return r; }),
+      sincronizacao:{em:base.sincEm||null,contatos:Object.keys(base.porId).length,rodando:_cliSync.rodando,progresso:_cliSync.progresso},prazoAtualizadoEm:_prazoCli.em||null});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/clientes/:id",requireAcesso("acesso_clientes"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), base=lerClientesBase(), idx=_indiceClientes(), credD=lerCreditos();
+    let b=base.porId[id]||{};
+    // detalhe do Bling (endereço, e-mail): pela fila lenta, guardado por 7 dias; espera no máximo 6 s
+    if(!b.detalheEm||Date.now()-b.detalheEm>7*_DIA){
+      const lido=blingLento(`/contatos/${id}`).then(r=>{ const d=r?.data; if(!d) return null; const bb=lerClientesBase(); const a=bb.porId[id]||{};
+        bb.porId[id]={...a,id:d.id,nome:d.nome||a.nome||"",doc:String(d.numeroDocumento||a.doc||""),tipo:d.tipo||a.tipo||"",telefone:d.telefone||"",celular:d.celular||"",situacao:d.situacao||a.situacao||"A",
+          detalhe:{email:d.email||"",fantasia:d.fantasia||"",ie:d.ie||"",endereco:d.endereco?.geral||{},dataNascimento:d.dadosAdicionais?.dataNascimento||""},detalheEm:Date.now()};
+        salvarClientesBase(bb); return bb.porId[id]; }).catch(()=>null);
+      const r=await Promise.race([lido,new Promise(r2=>setTimeout(()=>r2(null),6000))]); if(r) b=r;
+    }
+    const peds=idx.porCli[id]||[], met=_metricasCliente(peds,true), prazo=_prazoDoCliente(id);
+    const geo=lerGeoClientes()[id]||null, notas=lerJSON(CLIENTES_NOTAS_FILE,{})[id]||null;
+    const movs=credD.movs.filter(m=>String(m.clienteId)===id).sort((a,b2)=>b2.em-a.em);
+    res.json({ok:true,cadastro:{id,nome:b.nome||peds[peds.length-1]?.cliNome||"",doc:b.doc||"",tipo:b.tipo||"",telefone:b.telefone||"",celular:b.celular||peds[peds.length-1]?.cliTel||"",
+        situacao:b.situacao||"",codigo:b.codigo||"",...(b.detalhe||{}),detalheEm:b.detalheEm||null},
+      metricas:met, pedidos:[...peds].reverse().slice(0,300).map(p=>({pedidoId:p.pedidoId,numero:p.numero,em:p.em,total:p.total,itens:p.itens.length,vendedor:p.vendedor,origem:p.origem,
+        entrega:p.entrega.tipo,statusPagamento:p.statusPagamento,motorista:p.motorista,entregue:p.entregue,ocorrencia:p.ocorrencia})),
+      financeiro:{prazo,aReceber:_round2(prazo.reduce((s2,p)=>s2+p.falta,0)),prazoAtualizadoEm:_prazoCli.em||null,credito:{saldo:_saldoCredito(credD.movs,id),movs}},
+      geo:geo&&geo.lat?{lat:geo.lat,lng:geo.lng,endereco:geo.endereco||""}:null, notas});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/clientes/:id/proximos",requireAcesso("acesso_clientes"),(req,res)=>{
+  try{
+    const id=String(req.params.id), geo=lerGeoClientes(), g=geo[id]; if(!g||!g.lat) return res.json({ok:true,semLocalizacao:true,itens:[]});
+    const raio=Math.min(20,Math.max(0.2,Number(req.query.raio)||2)), base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs;
+    const itens=Object.entries(geo).filter(([k,v])=>k!==id&&v&&v.lat).map(([k,v])=>({id:k,lat:v.lat,lng:v.lng,dist:+distanciaKm(g.lat,g.lng,v.lat,v.lng).toFixed(2)}))
+      .filter(x=>x.dist<=raio).sort((a,b)=>a.dist-b.dist).slice(0,60).map(x=>{ const r=_resumoCliente(x.id,base,idx,cred); return {id:x.id,lat:x.lat,lng:x.lng,dist:x.dist,nome:r.nome,telefone:r.telefone,status:r.status,ultimaCompra:r.ultimaCompra||null,total365:r.total365||0,pedidos:r.pedidos}; });
+    res.json({ok:true,centro:{lat:g.lat,lng:g.lng},raio,itens});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// editar cadastro no Bling (PUT exige o objeto completo: mescla com o atual) + observação interna (só no sistema)
+app.put("/api/clientes/:id",requireAcesso("acesso_clientes"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), b=req.body||{};
+    if(b.notaInterna!==undefined){ const n=lerJSON(CLIENTES_NOTAS_FILE,{}); n[id]={texto:String(b.notaInterna||"").slice(0,2000),por:req.sessao?.nome||"",em:Date.now()}; salvarJSON(CLIENTES_NOTAS_FILE,n); }
+    if(!b.cadastro) return res.json({ok:true});
+    const atual=(await bling(`/contatos/${id}`))?.data; if(!atual) return res.status(404).json({erro:"contato não encontrado no Bling"});
+    const c=b.cadastro, ea=atual.endereco?.geral||{}, e=c.endereco||{};
+    const putBody={ nome:String(c.nome||atual.nome||"").trim(), situacao:atual.situacao||"A", tipo:c.tipo||atual.tipo||"F",
+      numeroDocumento:String(c.doc??atual.numeroDocumento??"").replace(/\D/g,""), celular:c.celular??atual.celular??"", telefone:c.telefone??atual.telefone??"", email:c.email??atual.email??"",
+      ...(atual.fantasia||c.fantasia?{fantasia:c.fantasia??atual.fantasia}:{}), ...(atual.ie||c.ie?{ie:c.ie??atual.ie}:{}),
+      endereco:{geral:{endereco:e.endereco??ea.endereco??"",numero:e.numero??ea.numero??"",complemento:e.complemento??ea.complemento??"",bairro:e.bairro??ea.bairro??"",
+        cep:String(e.cep??ea.cep??"").replace(/\D/g,""),municipio:e.municipio??ea.municipio??"",uf:e.uf??ea.uf??"MG",pais:"Brasil"}} };
+    if(!putBody.nome) return res.status(400).json({erro:"o nome é obrigatório"});
+    await bling(`/contatos/${id}`,{method:"PUT",body:JSON.stringify(putBody)});
+    const bb=lerClientesBase(), a=bb.porId[id]||{};
+    bb.porId[id]={...a,id:atual.id,nome:putBody.nome,doc:putBody.numeroDocumento,tipo:putBody.tipo,telefone:putBody.telefone,celular:putBody.celular,
+      detalhe:{...(a.detalhe||{}),email:putBody.email,fantasia:putBody.fantasia||"",ie:putBody.ie||"",endereco:putBody.endereco.geral},detalheEm:Date.now()};
+    salvarClientesBase(bb); _idxCli.em=0;
+    addLog("cliente-"+id,"cliente_editado",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{campos:Object.keys(c)});
+    res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:"Não consegui salvar no Bling: "+e.message}); }
+});
+// CRÉDITO DO CLIENTE: entrada (com a forma em que o dinheiro entrou) ou uso; nada é apagado, só estornado
+app.post("/api/clientes/:id/credito",requireAcesso("acesso_clientes"),(req,res)=>{
+  const id=String(req.params.id), b=req.body||{}, tipo=b.tipo==="saida"?"saida":"entrada";
+  const valor=_round2(Number(String(b.valor||"").replace(",","."))); if(!(valor>0)) return res.status(400).json({erro:"informe um valor maior que zero"});
+  if(tipo==="entrada"&&!String(b.forma||"").trim()) return res.status(400).json({erro:"informe como o cliente pagou o crédito (Pix e banco, dinheiro...)"});
+  const d=lerCreditos();
+  if(tipo==="saida"){ const saldo=_saldoCredito(d.movs,id); if(valor>saldo+0.004) return res.status(409).json({erro:`Crédito insuficiente: o cliente tem ${brlN(saldo)}.`}); }
+  d.seq+=1; const nome=(lerClientesBase().porId[id]||{}).nome||String(b.clienteNome||"");
+  const m={id:"cr"+d.seq,clienteId:id,clienteNome:nome,em:Date.now(),tipo,valor,forma:String(b.forma||"").slice(0,60),descricao:String(b.descricao||"").slice(0,200),pedidoNumero:String(b.pedidoNumero||"").slice(0,20),por:req.sessao?.nome||""};
+  d.movs.push(m); salvarJSON(CLIENTES_CREDITO_FILE,d);
+  res.json({ok:true,movimento:m,saldo:_saldoCredito(d.movs,id)});
+});
+app.post("/api/clientes/credito/:movId/estornar",requireAcesso("acesso_clientes"),(req,res)=>{
+  const motivo=String(req.body?.motivo||"").trim().slice(0,200); if(!motivo) return res.status(400).json({erro:"informe o motivo"});
+  const d=lerCreditos(), m=d.movs.find(x=>x.id===req.params.movId); if(!m) return res.status(404).json({erro:"lançamento não encontrado"}); if(m.estornadoEm) return res.status(409).json({erro:"já estornado"});
+  if(m.tipo==="entrada"&&_saldoCredito(d.movs,m.clienteId)-m.valor<-0.004) return res.status(409).json({erro:"estornar deixaria o crédito negativo; estorne antes os usos"});
+  m.estornadoEm=Date.now(); m.estornadoPor=req.sessao?.nome||""; m.motivoEstorno=motivo; salvarJSON(CLIENTES_CREDITO_FILE,d);
+  res.json({ok:true,saldo:_saldoCredito(d.movs,m.clienteId)});
+});
+app.post("/api/clientes/sincronizar",requireAdmin,(req,res)=>{ const ja=_cliSync.rodando; if(!ja) sincronizarClientesBling({cederVez:true}); res.json({ok:true,iniciado:!ja,jaEstavaRodando:ja}); });
+
 app.get("/api/diag/maps",async(req,res)=>{
   const k=String(GOOGLE_MAPS_KEY||"");
   const quando=ms=>new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
@@ -10440,6 +10675,9 @@ function _livroRecebimentosLocal(t0,t1){
     (mv.pagamentos||[]).forEach(pg=>{ let v=Number(pg.valor||0); if(troco>0&&/dinheiro/i.test(pg.formaNome||"")){ const d=Math.min(troco,v); v-=d; troco-=d; }
       if(v>0.004) lanc.push({pedidoId:k||("cx-"+mv.em),numero:mv.numero||null,cliente:mv.clienteNome||"",total:Number(mv.total)||null,em:mv.em,forma:pg.formaNome||"Não identificada",valor:+v.toFixed(2),origem,por:mv.operador||sx.operador||"",pendenteBling:!!mv.pendenteBling}); });
   }));
+  // crédito de cliente recebido (Pix, dinheiro...) também é dinheiro que entrou
+  try{ lerCreditos().movs.forEach(m=>{ if(m.tipo!=="entrada"||m.estornadoEm||m.em<t0||m.em>t1) return;
+    lanc.push({pedidoId:"credito-"+m.id,cliente:m.clienteNome||"",em:m.em,forma:m.forma||"Não identificada",valor:Number(m.valor),origem:"Crédito de cliente",por:m.por||""}); }); }catch(e){}
   return {lanc,comRegistro};
 }
 function _resumoLivro(lanc){
@@ -13297,6 +13535,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/clientes",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"clientes.html")); });
 app.get("/central-entregas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"central-entregas.html")); });
 
 app.get("/api/rotas/viagem/:token/detalhes",async(req,res)=>{

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Clientes</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){
+    if(!b13RequireLogin()) return;
+    if(!b13BloquearSeSemAcesso("/clientes")) return;
+    document.addEventListener("DOMContentLoaded",function(){
+      const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/clientes");
+      document.body.insertBefore(nav,document.body.firstChild);
+    });
+  })();
+</script>
+<div class="top">
+  <img src="/logo"><div class="t">👥 Clientes</div><div class="sp"></div>
+  <span class="ic" id="sinc"></span>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="card"><h3>🧑‍💼 Vendas por vendedora</h3>
+    <div class="desc">Clientes atendidos por cada vendedora (pedidos registrados no sistema), quantos deles compraram nos últimos 30 dias e o valor vendido. Toque numa vendedora para ver só os clientes dela.</div>
+    <div class="rolagem" id="vendedoras"></div></div>
+  <div class="card">
+    <div class="filtros" style="margin-bottom:10px">
+      <input id="busca" type="search" placeholder="🔎 Nome, CPF/CNPJ, telefone ou bairro" style="flex:1;min-width:220px">
+      <select id="fOrdem"><option value="ultima">Última compra</option><option value="total">Mais compraram (12 meses)</option><option value="parados">Parados há mais tempo</option><option value="areceber">Mais a receber</option><option value="nome">Nome (A-Z)</option></select>
+      <select id="fVend"><option value="">Todas as vendedoras</option></select>
+    </div>
+    <div class="filtros" id="fStatus" style="margin-bottom:10px"></div>
+    <div id="lista"><div class="vazio"><div class="spin"></div></div></div>
+  </div>
+</div>
+<div class="fundo" id="mCli"><div class="modal" id="mCliCorpo" style="max-width:980px"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dt = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
+const dth = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const soDig = s => String(s || "").replace(/\D/g, "");
+function token(){ try{ return (b13GetSession()||{}).token||""; }catch(e){ return ""; } }
+async function api(p, op){ op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token(), ...(op.headers || {}) } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, status: r.status, j }; }
+const ST = { ativo: ["ativo", "ok"], novo: ["novo", "azul"], em_risco: ["em risco", "warn"], parado: ["parado", "erro"], sem_compras: ["sem compras", "neu"] };
+const tagSt = s => { const t = ST[s] || [s, "neu"]; return `<span class="tag ${t[1]}">${t[0]}</span>`; };
+const wa = tel => { const d = soDig(tel); if (d.length < 10) return ""; return `https://wa.me/${d.length <= 11 ? "55" + d : d}`; };
+let F = { status: "", vendedora: "", ordem: "ultima", busca: "", offset: 0 }, DADOS = null, ITENS = [], BANCOS = ["Inter", "Santander", "Itaú"];
+
+async function carregar(mais) {
+  if (!mais) { F.offset = 0; ITENS = []; }
+  const q = new URLSearchParams({ busca: F.busca, status: F.status, vendedora: F.vendedora, ordem: F.ordem, offset: F.offset, limite: 100 });
+  const { ok, j } = await api("/api/clientes?" + q);
+  if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  DADOS = j; ITENS = ITENS.concat(j.itens || []);
+  renderTopo(); renderLista();
+}
+function renderTopo() {
+  const R = DADOS.resumo, S = DADOS.sincronizacao;
+  document.getElementById("sinc").innerHTML = S.rodando ? `⏳ copiando clientes do Bling (${esc(S.progresso)})` : (S.em ? `base do Bling: ${S.contatos} contatos · copiada ${dth(S.em)}` : "base do Bling ainda não copiada");
+  const k = (v, l, s, al, st) => `<div class="kpi ${al ? "alerta" : ""}" ${st != null ? `style="cursor:pointer" onclick="filtrar('${st}')"` : ""}><div class="v">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+  document.getElementById("kpis").innerHTML = [
+    k(R.base, "Clientes", "na base do Bling e com pedidos", false, ""),
+    k(R.ativos, "Ativos", "comprando no ritmo de sempre", false, "ativo"),
+    k(R.novos, "Novos", "primeira compra nos últimos 30 dias", false, "novo"),
+    k(R.emRisco, "Em risco", "passaram do intervalo de costume", R.emRisco > 0, "em_risco"),
+    k(R.parados, "Parados", "sem comprar há muito tempo", false, "parado"),
+    k(brl(R.aReceber), "A receber (prazo)", `${R.comPrazo} cliente(s) com pedido a prazo`, R.aReceber > 0, "prazo"),
+    k(brl(R.credito), "Créditos", `${R.comCredito} cliente(s) com crédito`, false, "credito")].join("");
+  const sel = document.getElementById("fVend"), atual = F.vendedora;
+  sel.innerHTML = `<option value="">Todas as vendedoras</option>` + (DADOS.porVendedora || []).map(v => `<option ${v.vendedor === atual ? "selected" : ""}>${esc(v.vendedor)}</option>`).join("");
+  document.getElementById("vendedoras").innerHTML = (DADOS.porVendedora || []).length ? `<table><tr><th>Vendedora</th><th>Clientes atendidos</th><th>Compraram em 30 dias</th><th>Pedidos 90 dias</th><th>Valor 90 dias</th><th>Valor 12 meses</th></tr>
+    ${DADOS.porVendedora.map(v => `<tr style="cursor:pointer" onclick="F.vendedora='${esc(v.vendedor)}';document.getElementById('fVend').value=F.vendedora;carregar()"><td><b>${esc(v.vendedor)}</b></td><td>${v.clientes}</td><td>${v.clientesAtivos30}</td><td>${v.pedidos90}</td><td>${brl(v.valor90)}</td><td>${brl(v.valor365)}</td></tr>`).join("")}</table>` : `<div class="vazio">Sem pedidos registrados.</div>`;
+  const chips = [["", "Todos"], ["ativo", "Ativos"], ["novo", "Novos"], ["em_risco", "Em risco"], ["parado", "Parados"], ["sem_compras", "Sem compras"], ["prazo", "Com prazo em aberto"], ["credito", "Com crédito"]];
+  document.getElementById("fStatus").innerHTML = chips.map(([k2, t]) => `<span class="chip ${F.status === k2 ? "on" : ""}" onclick="filtrar('${k2}')">${t}</span>`).join("");
+}
+function filtrar(st) { F.status = st; carregar(); }
+function renderLista() {
+  const el = document.getElementById("lista");
+  if (!ITENS.length) { el.innerHTML = `<div class="vazio">Nenhum cliente encontrado.</div>`; return; }
+  el.innerHTML = `<div class="desc">${DADOS.total} cliente(s)</div>` + ITENS.map(c => `<div class="cli" onclick="abrirCliente('${esc(c.id)}')">
+    <div class="info"><div class="l1">${esc(c.nome)} ${tagSt(c.status)}</div>
+      <div class="l2">${c.doc ? esc(c.doc) + " · " : ""}${c.telefone ? esc(c.telefone) + " · " : ""}${c.bairro ? esc(c.bairro) + " · " : ""}${c.pedidos ? `${c.pedidos} pedido(s) · última compra ${dt(c.ultimaCompra)} (${c.diasDesdeUltima} dia(s))` : "sem pedidos no sistema"}${c.vendedoraPrincipal ? " · " + esc(c.vendedoraPrincipal) : ""}</div></div>
+    <div style="text-align:right">${c.total365 ? `<div class="valor">${brl(c.total365)}</div><div class="ic">em 12 meses</div>` : ""}
+      ${c.aReceber > 0 ? `<span class="tag warn">a receber ${brl(c.aReceber)}</span>` : ""} ${c.credito > 0 ? `<span class="tag ok">crédito ${brl(c.credito)}</span>` : ""}</div>
+    ${wa(c.telefone) ? `<a class="btn btn-ghost" href="${wa(c.telefone)}" target="_blank" onclick="event.stopPropagation()">💬</a>` : ""}</div>`).join("")
+    + (ITENS.length < DADOS.total ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-ghost" onclick="F.offset=ITENS.length;carregar(true)">Carregar mais</button></div>` : "");
+}
+let _t = null;
+document.getElementById("busca").addEventListener("input", e => { clearTimeout(_t); _t = setTimeout(() => { F.busca = e.target.value.trim(); carregar(); }, 350); });
+document.getElementById("fOrdem").addEventListener("change", e => { F.ordem = e.target.value; carregar(); });
+document.getElementById("fVend").addEventListener("change", e => { F.vendedora = e.target.value; carregar(); });
+
+// ===================== FICHA DO CLIENTE =====================
+let C = null, ABA = "resumo", MAPA = null;
+async function abrirCliente(id) {
+  document.getElementById("mCli").classList.add("aberto");
+  document.getElementById("mCliCorpo").innerHTML = `<div class="vazio"><div class="spin"></div><div style="margin-top:8px">Montando a ficha do cliente…</div></div>`;
+  const { ok, j } = await api("/api/clientes/" + encodeURIComponent(id));
+  if (!ok) { document.getElementById("mCliCorpo").innerHTML = `<div class="err">${esc(j.erro || "Não consegui abrir.")}</div><button class="btn btn-ghost" onclick="fecharCli()">Fechar</button>`; return; }
+  C = j; ABA = "resumo"; renderFicha();
+}
+function fecharCli() { document.getElementById("mCli").classList.remove("aberto"); if (MAPA) { MAPA.remove(); MAPA = null; } }
+document.getElementById("mCli").addEventListener("click", e => { if (e.target.id === "mCli") fecharCli(); });
+function renderFicha() {
+  const c = C.cadastro, m = C.metricas, tel = c.celular || c.telefone;
+  const abas = [["resumo", "📊 Resumo"], ["pedidos", `🧾 Pedidos (${C.pedidos.length})`], ["produtos", "🍺 Produtos"], ["financeiro", "💰 Financeiro"], ["mapa", "🗺️ Mapa e próximos"], ["cadastro", "✏️ Cadastro"]];
+  document.getElementById("mCliCorpo").innerHTML = `
+    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px"><div style="font-size:19px;font-weight:900">${esc(c.nome || "(sem nome)")} ${tagSt(m.status)}</div>
+        <div class="ic" style="margin-top:4px">${c.doc ? esc(c.doc) + " · " : ""}${tel ? esc(tel) : "sem telefone"}${c.email ? " · " + esc(c.email) : ""}</div></div>
+      ${wa(tel) ? `<a class="btn btn-mag" href="${wa(tel)}" target="_blank">💬 WhatsApp</a>` : ""}
+      <button class="btn btn-ghost" onclick="fecharCli()">Fechar</button></div>
+    <div class="tabs">${abas.map(([k, t]) => `<span class="chip ${ABA === k ? "on" : ""}" onclick="ABA='${k}';renderFicha()">${t}</span>`).join("")}</div>
+    <div id="aba"></div>`;
+  ({ resumo: abaResumo, pedidos: abaPedidos, produtos: abaProdutos, financeiro: abaFinanceiro, mapa: abaMapa, cadastro: abaCadastro })[ABA]();
+}
+const par = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
+function abaResumo() {
+  const m = C.metricas, el = document.getElementById("aba");
+  if (!m.pedidos) { el.innerHTML = `<div class="vazio">Este cliente ainda não tem pedidos registrados no sistema.</div>` + blocoNota(); return; }
+  const maxS = Math.max(1, ...m.diasDaSemana.map(d => d.qtd)), maxM = Math.max(1, ...m.meses.map(x => x.valor));
+  el.innerHTML = `
+    <div class="par">
+      ${par(brl(m.total), "total comprado")}${par(m.pedidos, "pedidos")}${par(brl(m.ticketMedio), "ticket médio")}${par(brl(m.maiorPedido), "maior pedido")}
+      ${par(dt(m.ultimaCompra), `última compra (há ${m.diasDesdeUltima} dia(s))`)}${par(m.intervaloMedioDias != null ? m.intervaloMedioDias + " dias" : "—", "intervalo típico entre compras")}
+      ${par(m.proximaPrevista ? dt(m.proximaPrevista) : "—", "próxima compra prevista")}${par(dt(m.primeiraCompra), "cliente desde")}
+      ${par(brl(m.total30), "últimos 30 dias")}${par(brl(m.total90), "últimos 90 dias")}${par(brl(m.total365), "últimos 12 meses")}${par(m.itensPorPedido, "itens por pedido")}
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="bloco"><h4>🗓️ Quando costuma comprar</h4>
+        <div class="lin"><span>Dias preferidos</span><b>${esc(m.diasPreferidos.join(", ") || "—")}</b></div>
+        <div class="lin"><span>Horário mais comum</span><b>${esc(m.horarioPreferido || "—")}</b></div>
+        <div class="lin"><span>Período</span><b>${Object.entries(m.periodos).filter(([, q]) => q).map(([p, q]) => `${p} ${Math.round(q / m.pedidos * 100)}%`).join(" · ")}</b></div>
+        <div class="barras">${m.diasDaSemana.map(d => `<div style="height:${Math.round(d.qtd / maxS * 100)}%" class="${d.qtd === maxS ? "on" : ""}" title="${d.qtd}"><small>${d.dia.slice(0, 3)}</small></div>`).join("")}</div><div style="height:16px"></div></div>
+      <div class="bloco"><h4>🛵 Entrega</h4>
+        <div class="lin"><span>Pede entrega</span><b>${m.pctEntrega}% dos pedidos</b></div>
+        <div class="lin"><span>Distância média</span><b>${m.kmMedio != null ? m.kmMedio + " km" : "—"}</b></div>
+        <div class="lin"><span>Taxa média · total pago de frete</span><b>${brl(m.freteMedio)} · ${brl(m.freteTotal)}</b></div>
+        <div class="lin"><span>Motoristas mais frequentes</span><b>${esc(m.motoristas.map(x => `${x.nome} (${x.qtd})`).join(", ") || "—")}</b></div>
+        <div class="lin"><span>Ocorrências na entrega</span><b style="color:${m.ocorrencias ? "var(--warn)" : "inherit"}">${m.ocorrencias}</b></div></div>
+      <div class="bloco"><h4>💳 Pagamento e canal</h4>
+        ${m.formasPagamento.map(f => `<div class="lin"><span>${esc(f.nome)}</span><b>${brl(f.valor)}</b></div>`).join("") || `<div class="ic">sem pagamentos registrados</div>`}
+        <div class="lin"><span>Canais</span><b>${esc(m.canais.map(x => `${x.nome} (${x.qtd})`).join(", "))}</b></div></div>
+      <div class="bloco"><h4>🧑‍💼 Vendedoras</h4>
+        ${m.porVendedora.map(v => `<div class="lin"><span>${esc(v.vendedor)} (${v.pedidos} pedido(s))</span><b>${brl(v.valor)}</b></div>`).join("")}</div>
+    </div>
+    <div class="bloco"><h4>📈 Compras nos últimos 12 meses</h4>
+      <div class="barras" style="height:110px">${m.meses.map(x => `<div style="height:${Math.round(x.valor / maxM * 100)}%" title="${esc(x.mes)}: ${brl(x.valor)}"><small>${x.mes.slice(5)}/${x.mes.slice(2, 4)}</small></div>`).join("")}</div><div style="height:16px"></div></div>
+    ${blocoNota()}`;
+}
+function blocoNota() {
+  const n = C.notas;
+  return `<div class="bloco"><h4>📝 Observação interna (só no sistema)</h4><textarea id="nota" placeholder="Ex.: prefere entrega pela manhã, falar com o Sr. João">${esc(n?.texto || "")}</textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button class="btn btn-mag" onclick="salvarNota()">Salvar observação</button><span class="ic">${n ? `última alteração ${dth(n.em)} por ${esc(n.por || "—")}` : ""}</span></div><div id="msgNota"></div></div>`;
+}
+async function salvarNota() {
+  const { ok, j } = await api("/api/clientes/" + encodeURIComponent(C.cadastro.id), { method: "PUT", body: JSON.stringify({ notaInterna: document.getElementById("nota").value }) });
+  document.getElementById("msgNota").innerHTML = ok ? `<div class="okmsg">Observação salva.</div>` : `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`;
+  if (ok) C.notas = { texto: document.getElementById("nota").value, em: Date.now(), por: (b13GetSession() || {}).nome || "" };
+}
+function abaPedidos() {
+  const el = document.getElementById("aba");
+  if (!C.pedidos.length) { el.innerHTML = `<div class="vazio">Sem pedidos registrados no sistema.</div>`; return; }
+  const PG = { pago: ["pago", "ok"], parcial: ["parcial", "warn"], pendente: ["pendente", "erro"] };
+  el.innerHTML = `<div class="desc">Toque num pedido para abrir a ficha completa (itens, separação, conferência, entrega, pagamento e fotos).</div>` + C.pedidos.map(p => {
+    const pg = PG[p.statusPagamento];
+    return `<div class="cli" onclick="B13Ficha.abrir('${esc(p.pedidoId)}')"><div class="info"><div class="l1">#${esc(p.numero)} <span class="ic">${dth(p.em)}</span></div>
+      <div class="l2">${p.itens} item(ns) · ${esc(p.vendedor || "—")} · ${p.entrega === "entrega" ? "🛵 entrega" + (p.motorista ? " · " + esc(p.motorista) : "") : "🏪 retirada"}${p.ocorrencia ? " · ⚠️ ocorrência" : ""}</div></div>
+      <div style="text-align:right"><div class="valor">${brl(p.total)}</div>${pg ? `<span class="tag ${pg[1]}">${pg[0]}</span>` : ""}</div></div>`;
+  }).join("");
+}
+function abaProdutos() {
+  const p = C.metricas.produtos || [], el = document.getElementById("aba");
+  el.innerHTML = p.length ? `<div class="desc">Os produtos que este cliente mais compra (pela quantidade).</div><div class="rolagem"><table><tr><th>Produto</th><th>Quantidade</th><th>Pedidos com ele</th><th>Valor</th><th>Última vez</th></tr>
+    ${p.map(x => `<tr><td>${esc(x.nome)}</td><td>${x.quantidade}</td><td>${x.pedidos}</td><td>${brl(x.valor)}</td><td>${dt(x.ultima)}</td></tr>`).join("")}</table></div>` : `<div class="vazio">Sem itens registrados.</div>`;
+}
+function abaFinanceiro() {
+  const f = C.financeiro, cr = f.credito, el = document.getElementById("aba");
+  const formas = ["Dinheiro", ...BANCOS.map(b => "Pix Banco " + b), "Pix Máquina", "Cartão de Débito", "Cartão de Crédito"];
+  el.innerHTML = `
+    <div class="bloco"><h4>🧾 Pedidos a prazo em aberto</h4>
+      ${f.prazo.length ? `<div class="rolagem"><table><tr><th>Pedido</th><th>Data</th><th>Total</th><th>Já pago</th><th>Falta pagar</th></tr>
+        ${f.prazo.map(p => `<tr style="cursor:pointer" onclick="B13Ficha.abrir('${esc(p.id)}')"><td><b>#${esc(p.numero)}</b></td><td>${esc(String(p.data || "").split("-").reverse().join("/"))}</td><td>${brl(p.total)}</td><td>${brl(p.pago)}</td><td><b style="color:var(--warn)">${brl(p.falta)}</b></td></tr>`).join("")}
+        <tr><td colspan="4"><b>Total a receber</b></td><td><b style="color:var(--warn)">${brl(f.aReceber)}</b></td></tr></table></div>` : `<div class="ic">Nenhum pedido a prazo em aberto.</div>`}
+      <div class="ic" style="margin-top:6px">Situação "Prazo" no Bling, conferida a cada 15 min${f.prazoAtualizadoEm ? " · última conferência " + dth(f.prazoAtualizadoEm) : " (primeira conferência em andamento, reabra em instantes)"}.</div></div>
+    <div class="bloco"><h4>💳 Crédito do cliente · saldo <span style="color:${cr.saldo > 0 ? "var(--ok)" : "inherit"}">${brl(cr.saldo)}</span></h4>
+      <div class="form">
+        <div><label>Lançamento</label><select id="crTipo" onchange="document.getElementById('crFormaBox').style.display=this.value==='entrada'?'':'none';document.getElementById('crPedBox').style.display=this.value==='saida'?'':'none'"><option value="entrada">➕ Adicionar crédito (cliente pagou)</option><option value="saida">➖ Usar crédito</option></select></div>
+        <div><label>Valor (R$)</label><input id="crValor" inputmode="decimal"></div>
+        <div id="crFormaBox"><label>Como o cliente pagou</label><select id="crForma">${formas.map(x => `<option>${esc(x)}</option>`).join("")}</select></div>
+        <div id="crPedBox" style="display:none"><label>Pedido em que usou (nº)</label><input id="crPed"></div>
+        <div style="grid-column:1/-1"><label>Descrição</label><input id="crDesc" placeholder="Ex.: adiantamento para o pedido da festa"></div></div>
+      <button class="btn btn-mag" style="margin-top:8px" onclick="lancarCredito()">Lançar</button><div id="msgCr"></div>
+      <div style="margin-top:10px">${cr.movs.length ? cr.movs.map(x => `<div class="lin" style="${x.estornadoEm ? "opacity:.5" : ""}"><span>${dth(x.em)} · ${x.tipo === "entrada" ? "➕ " + esc(x.forma) : "➖ usado" + (x.pedidoNumero ? " no pedido #" + esc(x.pedidoNumero) : "")}${x.descricao ? " · " + esc(x.descricao) : ""} · ${esc(x.por || "—")}${x.estornadoEm ? ` · <b style="color:#ff8aa3">estornado: ${esc(x.motivoEstorno)}</b>` : ""}</span>
+        <span><b style="color:${x.tipo === "entrada" ? "var(--ok)" : "#ff8aa3"};${x.estornadoEm ? "text-decoration:line-through" : ""}">${x.tipo === "entrada" ? "+" : "−"} ${brl(x.valor)}</b> ${x.estornadoEm ? "" : `<button class="btn btn-ghost" style="padding:3px 7px;font-size:11px" onclick="estornarCredito('${esc(x.id)}')">estornar</button>`}</span></div>`).join("") : `<div class="ic">Sem lançamentos de crédito.</div>`}</div>
+      <div class="ic" style="margin-top:6px">O crédito recebido entra no fechamento do caixa do dia como "Crédito de cliente", na forma em que o cliente pagou.</div></div>`;
+}
+async function lancarCredito() {
+  const tipo = document.getElementById("crTipo").value;
+  const body = { tipo, valor: document.getElementById("crValor").value, forma: tipo === "entrada" ? document.getElementById("crForma").value : "", pedidoNumero: tipo === "saida" ? document.getElementById("crPed").value : "", descricao: document.getElementById("crDesc").value };
+  const { ok, j } = await api("/api/clientes/" + encodeURIComponent(C.cadastro.id) + "/credito", { method: "POST", body: JSON.stringify(body) });
+  if (!ok) { document.getElementById("msgCr").innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar.")}</div>`; return; }
+  C.financeiro.credito.saldo = j.saldo; C.financeiro.credito.movs.unshift(j.movimento); abaFinanceiro();
+}
+async function estornarCredito(mid) {
+  const motivo = prompt("Motivo do estorno (fica registrado):"); if (!motivo) return;
+  const { ok, j } = await api("/api/clientes/credito/" + encodeURIComponent(mid) + "/estornar", { method: "POST", body: JSON.stringify({ motivo }) });
+  if (!ok) { alert(j.erro || "Não consegui estornar."); return; }
+  const m = C.financeiro.credito.movs.find(x => x.id === mid); if (m) { m.estornadoEm = Date.now(); m.motivoEstorno = motivo; }
+  C.financeiro.credito.saldo = j.saldo; abaFinanceiro();
+}
+function carregarLeaflet() {
+  return new Promise(ok => { if (window.L) return ok();
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(css);
+    const js = document.createElement("script"); js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; js.onload = () => ok(); document.head.appendChild(js); });
+}
+async function abaMapa() {
+  const el = document.getElementById("aba");
+  if (!C.geo) { el.innerHTML = `<div class="vazio">Este cliente ainda não tem localização no mapa. A localização é gravada a partir do endereço de entrega do cadastro.</div>`; return; }
+  el.innerHTML = `<div class="filtros" style="margin-bottom:8px"><span class="ic">📍 ${esc(C.geo.endereco || "")}</span><span class="sp" style="flex:1"></span>
+      <span class="ic">Clientes num raio de</span><select id="raio" onchange="carregarProximos()"><option>0.5</option><option>1</option><option selected>2</option><option>5</option><option>10</option></select><span class="ic">km</span></div>
+    <div id="mapa"></div><div id="proximos" style="margin-top:10px"></div>`;
+  await carregarLeaflet();
+  if (MAPA) { MAPA.remove(); MAPA = null; }
+  MAPA = L.map("mapa").setView([C.geo.lat, C.geo.lng], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(MAPA);
+  L.circleMarker([C.geo.lat, C.geo.lng], { radius: 10, color: "#FF0082", fillColor: "#FF0082", fillOpacity: .9 }).addTo(MAPA).bindPopup(`<b>${esc(C.cadastro.nome)}</b>`).openPopup();
+  carregarProximos();
+}
+let _camadaProx = null;
+async function carregarProximos() {
+  const raio = document.getElementById("raio").value;
+  const { ok, j } = await api(`/api/clientes/${encodeURIComponent(C.cadastro.id)}/proximos?raio=${raio}`);
+  const box = document.getElementById("proximos"); if (!ok) { box.innerHTML = `<div class="err">${esc(j.erro || "")}</div>`; return; }
+  if (_camadaProx) _camadaProx.remove(); _camadaProx = L.layerGroup().addTo(MAPA);
+  const cor = { ativo: "#3ce88a", novo: "#7fd0ff", em_risco: "#ffd23f", parado: "#ff8aa3", sem_compras: "#9a95c9" };
+  L.circle([C.geo.lat, C.geo.lng], { radius: raio * 1000, color: "#FF0082", weight: 1, fillOpacity: .04 }).addTo(_camadaProx);
+  j.itens.forEach(x => L.circleMarker([x.lat, x.lng], { radius: 7, color: cor[x.status] || "#9a95c9", fillColor: cor[x.status] || "#9a95c9", fillOpacity: .85 }).addTo(_camadaProx).bindPopup(`<b>${esc(x.nome)}</b><br>${x.dist} km · ${x.pedidos ? "última compra " + dt(x.ultimaCompra) : "sem compras"}`));
+  MAPA.fitBounds(L.circle([C.geo.lat, C.geo.lng], { radius: raio * 1000 }).addTo(_camadaProx).getBounds());
+  box.innerHTML = `<div class="desc">${j.itens.length} cliente(s) a até ${raio} km. Bom para montar rotas e oferecer na mesma viagem.</div>` + j.itens.map(x => `<div class="cli" onclick="abrirCliente('${esc(x.id)}')"><div class="info"><div class="l1">${esc(x.nome)} ${tagSt(x.status)}</div>
+    <div class="l2">${x.dist} km · ${x.pedidos ? `${x.pedidos} pedido(s) · última compra ${dt(x.ultimaCompra)}` : "sem compras"}${x.telefone ? " · " + esc(x.telefone) : ""}</div></div>${x.total365 ? `<div class="valor">${brl(x.total365)}</div>` : ""}${wa(x.telefone) ? `<a class="btn btn-ghost" href="${wa(x.telefone)}" target="_blank" onclick="event.stopPropagation()">💬</a>` : ""}</div>`).join("");
+}
+function abaCadastro() {
+  const c = C.cadastro, e = c.endereco || {}, el = document.getElementById("aba");
+  const f = (id, l, v, extra) => `<div><label>${l}</label><input id="${id}" value="${esc(v || "")}" ${extra || ""}></div>`;
+  el.innerHTML = `<div class="desc">As alterações são gravadas no cadastro do cliente no Bling.${c.detalheEm ? " Dados do Bling lidos em " + dth(c.detalheEm) + "." : ""}</div>
+    <div class="form">${f("cNome", "Nome / razão social *", c.nome)}${f("cFantasia", "Nome fantasia", c.fantasia)}
+      <div><label>Tipo</label><select id="cTipo"><option value="F" ${c.tipo !== "J" ? "selected" : ""}>Pessoa física</option><option value="J" ${c.tipo === "J" ? "selected" : ""}>Pessoa jurídica</option></select></div>
+      ${f("cDoc", "CPF / CNPJ", c.doc)}${f("cIe", "Inscrição estadual", c.ie)}${f("cCel", "Celular (WhatsApp)", c.celular)}${f("cTel", "Telefone", c.telefone)}${f("cEmail", "E-mail", c.email)}
+      ${f("cRua", "Endereço (rua)", e.endereco)}${f("cNum", "Número", e.numero)}${f("cComp", "Complemento", e.complemento)}${f("cBairro", "Bairro", e.bairro)}
+      ${f("cCep", "CEP", e.cep)}${f("cCidade", "Cidade", e.municipio)}${f("cUf", "UF", e.uf, 'maxlength="2"')}</div>
+    <button class="btn btn-mag" style="margin-top:10px" onclick="salvarCadastro()">💾 Salvar no Bling</button><div id="msgCad"></div>`;
+}
+async function salvarCadastro() {
+  const v = id => document.getElementById(id).value.trim();
+  const cadastro = { nome: v("cNome"), fantasia: v("cFantasia"), tipo: v("cTipo"), doc: v("cDoc"), ie: v("cIe"), celular: v("cCel"), telefone: v("cTel"), email: v("cEmail"),
+    endereco: { endereco: v("cRua"), numero: v("cNum"), complemento: v("cComp"), bairro: v("cBairro"), cep: v("cCep"), municipio: v("cCidade"), uf: v("cUf").toUpperCase() } };
+  const msg = document.getElementById("msgCad"); msg.innerHTML = `<div class="ic" style="margin-top:6px">Salvando no Bling…</div>`;
+  const { ok, j } = await api("/api/clientes/" + encodeURIComponent(C.cadastro.id), { method: "PUT", body: JSON.stringify({ cadastro }) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  Object.assign(C.cadastro, { ...cadastro, endereco: cadastro.endereco }); msg.innerHTML = `<div class="okmsg">Cadastro salvo no Bling.</div>`;
+}
+(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (b && b.bancos && b.bancos.length) BANCOS = b.bancos; } catch (e) {} carregar(); })();
+</script>
+</body>
+</html>
