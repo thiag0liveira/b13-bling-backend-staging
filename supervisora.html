@@ -125,8 +125,17 @@ const situacaoPrazo = p => {
 };
 const linhaPed = x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>#${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.vendedor)} · ${dm(x.criadoEm)} · ${esc(x.situacao || "")}${x.dias ? ` · há ${x.dias} dia(s)` : ""}${x.pagoForaDoCaixa ? " · pago, não acertado no caixa" : ""}</span></div><b>${brl(x.total)}</b></div>`;
 async function carregar() {
-  const { ok, j } = await api("/api/supervisora/painel");
-  if (!ok) { document.getElementById("grade").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  // tempo-limite: nunca fica carregando para sempre; se já havia dados, mantém e só avisa no topo
+  let ok = false, j = {};
+  try {
+    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 25000);
+    const r = await fetch(B + "/api/supervisora/painel", { headers: { "X-Auth-Token": token() }, signal: ac.signal }); clearTimeout(to);
+    ok = r.ok; j = await r.json().catch(() => ({}));
+  } catch (e) { j = { erro: e.name === "AbortError" ? "O servidor demorou para responder." : "Sem conexão com o servidor." }; }
+  if (!ok) {
+    if (D) { document.getElementById("atual").innerHTML = `<span class="verm">atualização falhou · ${esc(j.erro || "")}</span>`; return; }
+    document.getElementById("grade").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")} <button class="btn btn-mag" style="margin-left:8px" onclick="document.getElementById('grade').innerHTML='<div class=&quot;vazio&quot;><div class=&quot;spin&quot;></div></div>';carregar()">Tentar de novo</button></div>`; return;
+  }
   D = j; document.getElementById("atual").textContent = "atualizado " + hm(j.agora); render();
 }
 function render() {

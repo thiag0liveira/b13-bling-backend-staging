@@ -10166,12 +10166,33 @@ app.get("/api/supervisora/vivo",requireAcesso("acesso_supervisora"),(req,res)=>{
     const {pix}=_supPix(cfg,lerCaixaSessoes(),tIniSem); res.json({ok:true,agora,pix,pendencias:_supPend(lerPropostas()||{},null,tHoje)}); }
   catch(e){ res.status(500).json({erro:e.message}); }
 });
+// o painel é o mesmo para todos: guardado 15 s (várias telas abertas usam o mesmo cálculo); Pix e pendências chegam
+// na hora pelo aviso do servidor
+let _supPainelCache={em:0,dados:null,promessa:null}; let _supRiscoCache={em:0,n:null};
 app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,res)=>{
   try{
+    if(!req.query.fresco&&_supPainelCache.dados&&Date.now()-_supPainelCache.em<15000) return res.json(_supPainelCache.dados);
+    if(_supPainelCache.promessa) return res.json(await _supPainelCache.promessa);
+    _supPainelCache.promessa=_montarPainelSupervisora();
+    try{ const d=await _supPainelCache.promessa; _supPainelCache={em:Date.now(),dados:d,promessa:null}; res.json(d); }
+    finally{ _supPainelCache.promessa=null; }
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+async function _montarPainelSupervisora(){
+  {
+    const T0=Date.now(), tempos={}; const marca=k=>{ tempos[k]=Date.now()-T0; };
     const cfg=_supCfg(), agora=Date.now(), hoje=_diaBRk(agora), iniSem=_iniSemanaBR(agora);
     const tIniSem=Date.parse(iniSem+"T00:00:00-03:00"), tHoje=Date.parse(hoje+"T00:00:00-03:00");
     // pedidos da semana (mesma lista da tela de Pedidos)
-    let L=[]; try{ const r=await fetch(`http://127.0.0.1:${PORT}/api/pedidos-online?ref=${hoje}`); const j=await r.json(); L=(j.data||[]).filter(x=>x&&x.id); }catch(e){}
+    let L=[]; try{ const ac=new AbortController(), to=setTimeout(()=>ac.abort(),10000);
+      const r=await fetch(`http://127.0.0.1:${PORT}/api/pedidos-online?ref=${hoje}&fase=local`,{signal:ac.signal}); clearTimeout(to); const j=await r.json(); L=(j.data||[]).filter(x=>x&&x.id); }catch(e){ console.error("[supervisora] lista de pedidos:",e.message); }
+    // pedidos feitos DIRETO no Bling: a fase "bling" devolve o que já foi buscado (ou começa a buscar em segundo plano),
+    // sem esperar a fila lenta; junta só os que não estão na lista local
+    try{ const ac2=new AbortController(), to2=setTimeout(()=>ac2.abort(),5000);
+      const r2=await fetch(`http://127.0.0.1:${PORT}/api/pedidos-online?ref=${hoje}&fase=bling`,{signal:ac2.signal}); clearTimeout(to2); const j2=await r2.json();
+      const ja=new Set(L.map(x=>String(x.id))), nums=new Set(L.map(x=>String(x.numero)));
+      (j2.data||[]).forEach(x=>{ if(x&&x.id&&!ja.has(String(x.id))&&!nums.has(String(x.numero))) L.push(x); }); }catch(e){}
+    marca("pedidos");
     const dCx=lerCaixaSessoes(), pags=lerPag()||{}, props=lerPropostas()||{};
     const passouCaixa={}; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&mv.pedidoId) (passouCaixa[String(mv.pedidoId)]||=[]).push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",em:mv.em}); }));
     const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
@@ -10246,7 +10267,8 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const hojeAteAgora=somaPeriodo(tHoje,agora), mesmoHorarioSemPassada=somaPeriodo(semPassada(tHoje),semPassada(agora));
     const semanaAteAgora=somaPeriodo(tIniSem,agora), semanaPassadaAteAgora=somaPeriodo(semPassada(tIniSem),semPassada(agora));
     const prod={}; ativos.forEach(x=>(x.itens||[]).forEach(i=>{ const k=i.nome||""; if(!k) return; (prod[k]||={nome:k,qtd:0,valor:0}); prod[k].qtd+=Number(i.quantidade)||0; prod[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); }));
-    let clientesRisco=null; try{ const idx=_indiceClientes(); clientesRisco=Object.values(idx.porCli).map(p=>_metricasCliente(p,false)).filter(m=>m.status==="em_risco").length; }catch(e){}
+    let clientesRisco=_supRiscoCache.n; if(Date.now()-_supRiscoCache.em>5*60000){ try{ const idx=_indiceClientes(); clientesRisco=Object.values(idx.porCli).map(p=>_metricasCliente(p,false)).filter(m=>m.status==="em_risco").length; _supRiscoCache={em:Date.now(),n:clientesRisco}; }catch(e){} }
+    marca("clientesRisco");
     // PEDIDOS POR HORA: hoje x mesmo dia da semana passada x média das 4 semanas anteriores (mesmo dia da semana)
     const pedsHora=Object.values(props).filter(p=>p&&p.pedidoBlingId&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem||""))&&!/consumidor\s*final/i.test(String(p.cliente?.nome||"")));
     const serieDia=(ini)=>{ const qtd=Array(24).fill(0), valor=Array(24).fill(0); pedsHora.forEach(p=>{ const t=Number(p.criadoEm)||0; if(t<ini||t>=ini+_DIA) return; const h=new Date(t-3*3600e3).getUTCHours(); qtd[h]++; valor[h]+=Number(p.total)||0; }); return {qtd,valor:valor.map(_round2),data:_diaBRk(ini+12*3600e3)}; };
@@ -10258,12 +10280,13 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
       pedidosSemana:daSemana.length, ticketMedio:daSemana.length?_round2(daSemana.reduce((a,x)=>a+(Number(x.total)||0),0)/daSemana.length):0, cancelados:L.filter(x=>x.cancelado&&(Number(x.criadoEm)||0)>=tIniSem).length,
       pctEntrega:daSemana.length?Math.round(daSemana.filter(x=>x.tipo==="entrega").length/daSemana.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
-    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
+    marca("total"); if(tempos.total>3000) console.log("[supervisora] painel lento:",JSON.stringify(tempos));
+    return {ok:true,tempos,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA,meses:meses.map(m=>({mes:m.mes,ate:m.fim}))},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
-      criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas});
-  }catch(e){ res.status(500).json({erro:e.message}); }
-});
+      criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas};
+  }
+}
 app.post("/api/supervisora/pix/confirmar",requireAcesso("acesso_supervisora"),(req,res)=>{
   const k=String(req.body?.chave||""); if(!k) return res.status(400).json({erro:"chave"});
   const c=lerJSON(SUP_PIX_FILE,{}); if(req.body?.desfazer) delete c[k]; else c[k]={por:req.sessao?.nome||"",em:Date.now()};
