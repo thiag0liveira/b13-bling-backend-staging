@@ -61,7 +61,7 @@ th:first-child,td:first-child{text-align:left}
 #precoRes{max-height:440px}
 .prod{border:1px solid #2c2660;border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#120f2c}
 .prod .pn{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;font-size:14px;margin-bottom:6px}.prod .pn b{line-height:1.3}
-.pps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}@media(max-width:600px){#mRiscoCorpo .pps{grid-template-columns:repeat(2,1fr) !important}}
 .pp{background:#1c1846;border-radius:8px;padding:6px 8px;text-align:center;min-width:0}.pp span{display:block;font-size:10.5px;color:#9a95c9;font-weight:700;text-transform:uppercase}
 .pp b{display:block;font-size:16px;white-space:nowrap}.pp small{display:block;font-size:10.5px;color:#9a95c9}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}#qComp{grid-column:1/-1}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
 .bar{height:10px;background:#221e4f;border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,#FF0082,#ffd23f)}
@@ -87,6 +87,7 @@ th:first-child,td:first-child{text-align:left}
     document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/supervisora"); document.body.insertBefore(nav,document.body.firstChild); }); })();
 </script>
 <div class="top"><img src="/logo"><div class="t">🧭 Apoio à Supervisora</div><div class="sp"></div><span class="ic" id="vivo" style="font-weight:700"></span><span class="ic" id="atual"></span><button class="btn btn-ghost" onclick="carregar()">↻</button></div>
+<div class="fundo" id="mRisco"><div class="modal" id="mRiscoCorpo" style="max-width:860px"></div></div>
 <div class="wrap" style="max-width:none">
   <div class="kpis" id="kpis"></div>
   <div class="grade" id="grade"><div class="vazio"><div class="spin"></div></div></div>
@@ -144,7 +145,7 @@ function render() {
     + kComp(M.semanaValor, "Semana até agora", M.semanaPassada, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs)
     + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
     + k(brl(M.aReceberPrazo), "A receber (prazo)", `${d.prazo.length} pedido(s)`, M.aReceberPrazo > 0 ? "amar" : "")
-    + k(M.clientesEmRisco != null ? M.clientesEmRisco : "—", "Clientes em risco", "passaram do ritmo de compra", M.clientesEmRisco > 0 ? "amar" : "");
+    + `<div class="kpi" style="cursor:pointer" onclick="abrirRisco()" title="Ver quem são e por quê"><div class="v ${M.clientesEmRisco > 0 ? "amar" : ""}">${M.clientesEmRisco != null ? M.clientesEmRisco : "—"}</div><div class="l">Clientes em risco</div><div class="s">passaram do ritmo de compra · <u>ver o motivo</u></div></div>`
   const cx = d.caixas.map(c => `<div class="l"><div class="x"><b>${esc(c.operador)}</b><span>aberto ${dm(c.abertaEm)} ${hm(c.abertaEm)}</span></div><b class="${c.sangrar ? "verm" : "verde"}">${brl(c.dinheiro)}</b>${c.sangrar ? `<span class="tag erro">fazer sangria</span>` : ""}</div>`).join("") || `<div class="ic">Nenhum caixa atacado aberto.</div>`;
   const cr = d.criados, orig = `<div class="chipz">${cr.porOrigem.map(o => `<span>${esc(o.origem)} <b>${o.qtd}</b></span>`).join("") || `<span>nenhum ainda</span>`}</div>`
     + `<div class="lst">${cr.ultimos.map(x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>${hm(x.em)} · #${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.origem)}${x.vendedor ? " · " + esc(x.vendedor) : ""}</span></div><b>${brl(x.total)}</b></div>`).join("")}</div>`;
@@ -219,6 +220,28 @@ function quadroHora() {
     <div class="ic">Pedidos criados no sistema (sem vendas de caixa e sem consumidor final). Média das semanas de ${P.media4.datas.slice().reverse().map(d => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ")} (mesmo dia da semana).</div>`;
   return q("qHora", "📈 Pedidos por hora: hoje x semanas anteriores", null, corpo);
 }
+
+// ===== Clientes em risco: quem são e por quê =====
+async function abrirRisco() {
+  const box = document.getElementById("mRiscoCorpo"); document.getElementById("mRisco").classList.add("aberto");
+  box.innerHTML = `<div class="vazio"><div class="spin"></div></div>`;
+  const { ok, j } = await api("/api/supervisora/clientes-risco");
+  if (!ok) { box.innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  const wa = t => { const d = String(t || "").replace(/\D/g, ""); return d.length >= 10 ? `https://wa.me/${d.length <= 11 ? "55" + d : d}` : ""; };
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:18px;font-weight:900">⚠️ Clientes em risco (${j.itens.length})</div><div class="ic" style="white-space:normal">${esc(j.regra)}</div></div>
+      <button class="btn btn-ghost" onclick="document.getElementById('mRisco').classList.remove('aberto')">Fechar</button></div>
+    <div style="margin-top:10px;max-height:65vh;overflow:auto">${j.itens.map(c => `<div class="prod" style="margin-bottom:8px">
+      <div class="pn"><b style="font-size:15px">${esc(c.nome)}</b>${wa(c.telefone) ? `<a class="btn btn-mag" style="padding:4px 10px;font-size:12px" href="${wa(c.telefone)}" target="_blank">💬 Chamar</a>` : ""}</div>
+      <div style="font-size:13.5px;color:#ffd23f;margin-bottom:6px">${esc(c.motivo)}</div>
+      <div class="pps" style="grid-template-columns:repeat(4,1fr)">
+        <div class="pp"><span>Última compra</span><b style="font-size:14px">${dm(c.ultimaCompra)}</b><small>${brl(c.ultimoValor)}</small></div>
+        <div class="pp"><span>Deveria ter comprado</span><b style="font-size:14px">${c.deveriaTerCompradoEm ? dm(c.deveriaTerCompradoEm) : "—"}</b><small>${c.intervalo ? "a cada " + c.intervalo + " dias" : "sem ritmo definido"}</small></div>
+        <div class="pp"><span>Costuma gastar</span><b style="font-size:14px">${brl(c.ticketMedio)}</b><small>${c.pedidos} pedido(s)</small></div>
+        <div class="pp"><span>Últimos 12 meses</span><b style="font-size:14px">${brl(c.total365)}</b><small>${esc(c.vendedora || "sem vendedora")}</small></div>
+      </div></div>`).join("") || `<div class="ic">Nenhum cliente em risco agora. 🎉</div>`}</div>
+    <div class="ic" style="margin-top:6px">Ordenado por quem mais comprou nos últimos 12 meses. Ficha completa na tela <a href="/clientes" style="color:#7fd0ff">Clientes</a>.</div>`;
+}
+document.addEventListener("click", e => { if (e.target && e.target.id === "mRisco") document.getElementById("mRisco").classList.remove("aberto"); });
 // ===== Pix e pendências: atualizam NA HORA (aviso do servidor), sem recarregar a tela =====
 let PIX_VISTOS = null;
 function quadroPix() {

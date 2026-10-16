@@ -10241,6 +10241,24 @@ app.post("/api/supervisora/pedido/:id/prazo",requireAcesso("acesso_supervisora")
     res.json({ok:true,numero:r.ped.numero,dias:r.prazoDias,venceEm:r.venceEm});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
+// CLIENTES EM RISCO com o motivo (pelo ritmo de compra do próprio cliente)
+app.get("/api/supervisora/clientes-risco",requireAcesso("acesso_supervisora"),(req,res)=>{
+  try{
+    const idx=_indiceClientes(), base=lerClientesBase(), itens=[];
+    Object.entries(idx.porCli).forEach(([id,peds])=>{
+      const m=_metricasCliente(peds,false); if(m.status!=="em_risco") return;
+      const b=base.porId[id]||{}, ult=peds[peds.length-1]||{}, iv=m.intervaloMedioDias, vezes=iv?+(m.diasDesdeUltima/iv).toFixed(1):null;
+      const motivo=iv
+        ? `Comprava a cada ${iv} dia${iv===1?"":"s"} e está há ${m.diasDesdeUltima} dias sem comprar (${String(vezes).replace(".",",")} vezes o intervalo normal).`
+        : `Comprou ${m.pedidos===1?"uma vez":m.pedidos+" vezes no mesmo período"} e não voltou: está há ${m.diasDesdeUltima} dias sem comprar.`;
+      itens.push({id,nome:b.nome||ult.cliNome||"(sem nome)",telefone:b.celular||b.telefone||ult.cliTel||"",motivo,diasSemComprar:m.diasDesdeUltima,intervalo:iv,vezes,
+        ultimaCompra:m.ultimaCompra,ultimoValor:_round2(ult.total||0),ticketMedio:m.ticketMedio,pedidos:m.pedidos,total365:m.total365,vendedora:m.vendedoraPrincipal||"",
+        deveriaTerCompradoEm:iv?m.ultimaCompra+iv*_DIA:null});
+    });
+    itens.sort((a,b)=>b.total365-a.total365||b.ticketMedio-a.ticketMedio); // quem mais compra primeiro
+    res.json({ok:true,itens,regra:"Em risco: está sem comprar há mais de 1,5 vez o intervalo normal dele (e há mais de 30 dias). Vira 'parado' quando passa do maior entre 90 dias e 3 vezes o intervalo."});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/supervisora/meta",requireAcesso("acesso_supervisora"),(req,res)=>{
   const v=Number(String(req.body?.metaDia||"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta"});
   const c=_supCfg(); c.metaDia=_round2(v); c.metaPor=req.sessao?.nome||""; c.metaEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); res.json({ok:true,metaDia:c.metaDia});
