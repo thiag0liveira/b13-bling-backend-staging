@@ -404,9 +404,32 @@ async function abrirModalCaixasAbertos() {
     document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="fecharModais()"><div class="modal"><div class="err">Erro ao carregar</div></div></div>`;
   }
 }
+// aviso de SANGRIA CANCELADA no caixa (aparece em cima da lista de sangrias, nos relatórios e na Gestão de Caixas)
+function _normSangCanc(l) { return (l || []).map(m => m.cancelamento ? { valor: m.valor, em: m.em, responsavelNome: m.responsavelNome, canceladaEm: m.cancelamento.em, autorizadoPor: m.cancelamento.autorizadoPor, pedidoPor: m.cancelamento.pedidoPor, motivoCancelamento: m.cancelamento.motivo } : m); }
+function avisoSangriasCanceladas(lista, impresso) {
+  const l = _normSangCanc(lista).filter(Boolean); if (!l.length) return "";
+  const hh = ms => ms ? new Date(ms).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "—";
+  const fmt = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const e = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const est = impresso ? "border:2px solid #000;padding:6px;margin:6px 0;font-size:12px" : "background:#3d1020;border:1px solid #9e2f4a;border-radius:10px;padding:8px 10px;margin:6px 0 10px;font-size:12.5px;color:#ffd9e0";
+  return `<div style="${est}">⚠️ <b>Este caixa teve ${l.length} sangria${l.length > 1 ? "s" : ""} cancelada${l.length > 1 ? "s" : ""}</b>${l.map(m => `<div style="margin-top:3px">${fmt(m.valor)} (sangria das ${hh(m.em)}${m.responsavelNome ? ", retirada por " + e(m.responsavelNome) : ""}) · cancelada às ${hh(m.canceladaEm)}, <b>autorizada por ${e(m.autorizadoPor || "—")}</b>${m.pedidoPor ? " · pedido por " + e(m.pedidoPor) : ""}${m.motivoCancelamento ? " · motivo: " + e(m.motivoCancelamento) : ""}</div>`).join("")}</div>`;
+}
+function rotuloSangriaCancelada(m) { return m && m.cancelado ? ` <span style="background:#9e2f4a;color:#fff;border-radius:6px;padding:1px 6px;font-size:10.5px;font-weight:800">CANCELADA · autorizada por ${String((m.cancelamento && m.cancelamento.autorizadoPor) || "—").replace(/</g, "&lt;")}</span>` : ""; }
+async function cancelarSangria(sessaoId, em, valor) {
+  const motivo = prompt(`Cancelar a sangria de ${brl(valor)}?\n\nMotivo do cancelamento:`, ""); if (motivo == null) return;
+  pedirAutorizacao(async (autorizadoPor, a, b, tokenQr) => {
+    try {
+      const r = await fetch(BACKEND + "/api/caixa-sessao/" + encodeURIComponent(sessaoId) + "/sangria/cancelar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ em, tokenQr, motivo, funcionarioId: funcionarioIdAtual() }) });
+      const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui cancelar");
+      alert(`Sangria de ${brl(valor)} cancelada. Autorizada por ${j.autorizadoPor}.`);
+      try { await carregarCaixa(); } catch (e) {}
+      verMovimentosSessao(sessaoId);
+    } catch (e) { alert(e.message); }
+  }, `Cancelar a sangria de ${brl(valor)}: leia o QR do dia de quem autoriza.`);
+}
 function nomeMovimento(m) {
   if (m.tipo === "venda") return `🛒 Venda #${esc(m.numero || m.pedidoId)} — ${brl(m.total)}${m.clienteNome ? ` <span class="muted" style="font-size:11px">(${esc(m.clienteNome)})</span>` : ""}<div style="font-size:11px;color:#9a95c9;margin-top:2px">${(m.pagamentos || []).map(p => esc(p.formaNome) + ": " + brl(p.valor)).join(" · ")}</div>`;
-  if (m.tipo === "sangria") return `💸 Sangria — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>` : ""}`;
+  if (m.tipo === "sangria") return `${m.cancelado ? "<s>" : ""}💸 Sangria — ${brl(m.valor)}${m.cancelado ? "</s>" + rotuloSangriaCancelada(m) : ""}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">retirado por ${esc(m.responsavelNome)}</div>` : ""}`;
   if (m.tipo === "suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>` : ""}`;
   return esc(m.tipo);
 }
@@ -422,10 +445,12 @@ async function verMovimentosSessao(id) {
         <div class="modal" style="max-width:560px">
           <h3>📋 Movimentos — ${esc(((_j$sessao = j.sessao) === null || _j$sessao === void 0 ? void 0 : _j$sessao.operador) || "")}</h3>
           <div class="muted" style="font-size:12px;margin-bottom:8px">Troco inicial: ${brl((_j$sessao2 = j.sessao) === null || _j$sessao2 === void 0 ? void 0 : _j$sessao2.trocoInicial)} · Aberto: ${hora((_j$sessao3 = j.sessao) === null || _j$sessao3 === void 0 ? void 0 : _j$sessao3.abertaEm)}${(_j$sessao4 = j.sessao) !== null && _j$sessao4 !== void 0 && _j$sessao4.fechadaEm ? " · Fechado: " + hora(j.sessao.fechadaEm) : ""}</div>
+          ${avisoSangriasCanceladas(movs.filter(m => m.tipo === "sangria" && m.cancelado))}
           ${movs.length ? movs.map(m => `
-            <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px">
-              <div>${nomeMovimento(m)}</div>
-              <div class="muted" style="font-size:11px">${hora(m.em)}</div>
+            <div style="padding:8px 0;border-bottom:1px solid #2a2660;font-size:13px;display:flex;gap:8px;align-items:flex-start">
+              <div style="flex:1"><div>${nomeMovimento(m)}</div>
+              <div class="muted" style="font-size:11px">${hora(m.em)}</div></div>
+              ${m.tipo === "sangria" && !m.cancelado && !(j.sessao && j.sessao.fechadaEm) ? `<button class="btn btn-ghost btn-sm" style="padding:4px 8px;flex-shrink:0" onclick="cancelarSangria('${esc(id)}',${Number(m.em)},${Number(m.valor) || 0})">cancelar</button>` : ""}
             </div>`).join("") : '<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
             ${(((_j$resumo2 = j.resumo) === null || _j$resumo2 === void 0 ? void 0 : _j$resumo2.porForma) || []).length ? `<div style="margin-bottom:8px">
@@ -583,6 +608,7 @@ function gerarHtmlRelatorioCaixa(sessao, resumo, movimentos, fechamento) {
     </style></head><body>
     <h2>B13 Bebidas — Relatório de Caixa</h2>
     <div>Operador: <b>${esc(sessao.operador || "—")}</b></div>
+    ${avisoSangriasCanceladas((resumo || {}).sangriasCanceladas, true)}
     <div>Aberto em: ${hora(sessao.abertaEm)} ${fechamento ? " · Fechado em: " + hora(sessao.fechadaEm || Date.now()) : " · (em andamento)"}</div>
     <div>Troco inicial: <b>${brl(sessao.trocoInicial)}</b></div>
 

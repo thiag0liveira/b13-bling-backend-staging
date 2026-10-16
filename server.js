@@ -3705,7 +3705,7 @@ function sessaoCaixaAberta(funcionarioId,tipoCaixa){
 function resumoSessaoCaixa(sessao){
   const movs=sessao.movimentos||[];
   const vendas=movs.filter(m=>m.tipo==="venda" && !m.cancelado);
-  const sangrias=movs.filter(m=>m.tipo==="sangria");
+  const sangrias=movs.filter(m=>m.tipo==="sangria"&&!m.cancelado); // sangria cancelada (com QR) não conta
   const suprimentos=movs.filter(m=>m.tipo==="suprimento");
 
   // POR FORMA: o dinheiro entra LÍQUIDO (o que o cliente entregou menos o troco que
@@ -3776,7 +3776,10 @@ function resumoSessaoCaixa(sessao){
   const creditoUsos=vendas.map(v=>{ const linha=(v.pagamentos||[]).filter(p=>/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
       if(!(linha>0.004)&&!v.creditoUsado) return null; const cu=v.creditoUsado||{};
       return {numero:v.numero||v.pedidoId,cliente:cu.cliente||v.clienteNome||"",em:v.em,valor:+(Number(cu.valor)||linha).toFixed(2),origens:cu.origens||[]}; }).filter(Boolean);
+  const sangriasCanceladas=movs.filter(m=>m.tipo==="sangria"&&m.cancelado).map(m=>({valor:+Number(m.valor||0).toFixed(2),em:m.em,motivo:m.motivo||"",responsavelNome:m.responsavelNome||"",
+    canceladaEm:m.cancelamento?.em||null,autorizadoPor:m.cancelamento?.autorizadoPor||"",pedidoPor:m.cancelamento?.pedidoPor||"",motivoCancelamento:m.cancelamento?.motivo||""}));
   return {
+    sangriasCanceladas,
     creditoCliente:{total:+creditoUsos.reduce((a,u)=>a+u.valor,0).toFixed(2),usos:creditoUsos},
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
     totalTroco:+totalTroco.toFixed(2),
@@ -5670,6 +5673,27 @@ app.post("/api/caixa-sessao/movimento",(req,res)=>{
   salvarCaixaSessoes(d);
   addLog("caixa-"+sessao.id, tipo==="sangria"?"sangria":"suprimento", funcionarioId, operador||"—", {valor:v,motivo:motivo||"",responsavel:resp.nome||""});
   res.json({ok:true,resumo:resumoSessaoCaixa(sessao),responsavelNome:resp.nome||""});
+});
+
+// CANCELA UMA SANGRIA com o QR do dia (Atacado: gerente/financeiro/admin; Frente: quem autoriza no PDV).
+// Só com o caixa aberto. A sangria fica no histórico marcada como cancelada (com quem autorizou) e sai das contas.
+app.post("/api/caixa-sessao/:id/sangria/cancelar",(req,res)=>{
+  try{
+    const {em,tokenQr,motivo,funcionarioId}=req.body||{};
+    const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===req.params.id);
+    if(!sx) return res.status(404).json({erro:"caixa não encontrado"});
+    if(sx.fechadaEm) return res.status(400).json({erro:"Esse caixa já foi fechado. A sangria só pode ser cancelada com o caixa aberto."});
+    const auth=(sx.tipoCaixa==="atacado"?validarTokenQrAtacado:validarTokenQr)(tokenQr);
+    if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const mv=(sx.movimentos||[]).find(m=>m.tipo==="sangria"&&Number(m.em)===Number(em));
+    if(!mv) return res.status(404).json({erro:"sangria não encontrada nesse caixa"});
+    if(mv.cancelado) return res.status(400).json({erro:"essa sangria já foi cancelada"});
+    const funcs=lerJSON(FUNC_FILE,{}), quem=(funcs[String(funcionarioId||"")]||{}).nome||sx.operador||"";
+    mv.cancelado=true; mv.cancelamento={em:Date.now(),autorizadoPor:auth.funcionario.nome||"",autorizadoPorId:auth.funcionario.id||"",pedidoPor:quem,motivo:String(motivo||"").slice(0,200)};
+    salvarCaixaSessoes(d);
+    addLog("caixa-"+sx.id,"sangria_cancelada",String(funcionarioId||""),quem||"—",{valor:mv.valor,sangriaEm:mv.em,responsavel:mv.responsavelNome||"",autorizadoPor:auth.funcionario.nome||"",motivo:mv.cancelamento.motivo});
+    res.json({ok:true,autorizadoPor:auth.funcionario.nome||"",resumo:resumoSessaoCaixa(sx)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 // fecha o caixa, comparando o contado com o esperado (conferência)
@@ -12558,7 +12582,7 @@ app.get("/api/central/resumo",(req,res)=>{
     (dCx.sessoes||[]).forEach(s=>{
       (s.movimentos||[]).forEach(m=>{
         if(!noDia(m.em)) return;
-        if(m.tipo==="sangria"){ sangrias+=Number(m.valor)||0; return; }
+        if(m.tipo==="sangria"){ if(!m.cancelado) sangrias+=Number(m.valor)||0; return; }
         if(m.tipo==="suprimento"){ supr+=Number(m.valor)||0; return; }
         if(m.tipo!=="venda") return;
         if(m.cancelado){ canceladas++; return; }
