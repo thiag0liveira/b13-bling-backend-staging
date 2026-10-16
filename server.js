@@ -1241,6 +1241,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"Vendas & Caixa",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
+  {grupo:"Vendas & Caixa",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
   {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
@@ -10082,6 +10083,143 @@ app.post("/api/clientes/desunificar",requireAcesso("acesso_clientes"),async(req,
 });
 app.post("/api/clientes/sincronizar",requireAdmin,(req,res)=>{ const ja=_cliSync.rodando; if(!ja) sincronizarClientesBling({cederVez:true}); res.json({ok:true,iniciado:!ja,jaEstavaRodando:ja}); });
 
+// ===================== APOIO À SUPERVISORA DE VENDAS =====================
+// Tudo numa tela, com dados que o sistema já tem: pedidos da semana (a mesma rota da tela de Pedidos), vendas dos
+// caixas, pagamentos, viagens, pendências da separação, catálogo de preços, créditos e base de clientes. Bling: só os
+// pedidos a prazo (fila lenta, guardados 15 min) e a rota no mapa (Google, só quando alguém calcula um frete).
+const SUP_CFG_FILE=`${DATA_DIR}/supervisora_config.json`, SUP_PIX_FILE=`${DATA_DIR}/supervisora_pix_confirmados.json`;
+function _supCfg(){ const c=lerJSON(SUP_CFG_FILE,null)||{}; if(!c.inicioEm){ c.inicioEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); } return c; }
+const _diaBRk=ms=>new Date(ms-3*3600e3).toISOString().slice(0,10);
+function _iniSemanaBR(ms){ const d=new Date(ms-3*3600e3); const dow=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-dow); return d.toISOString().slice(0,10); } // segunda
+app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,res)=>{
+  try{
+    const cfg=_supCfg(), agora=Date.now(), hoje=_diaBRk(agora), iniSem=_iniSemanaBR(agora);
+    const tIniSem=Date.parse(iniSem+"T00:00:00-03:00"), tHoje=Date.parse(hoje+"T00:00:00-03:00");
+    // pedidos da semana (mesma lista da tela de Pedidos)
+    let L=[]; try{ const r=await fetch(`http://127.0.0.1:${PORT}/api/pedidos-online?ref=${hoje}`); const j=await r.json(); L=(j.data||[]).filter(x=>x&&x.id); }catch(e){}
+    const dCx=lerCaixaSessoes(), pags=lerPag()||{}, props=lerPropostas()||{};
+    const passouCaixa={}; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&mv.pedidoId) (passouCaixa[String(mv.pedidoId)]||=[]).push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",em:mv.em}); }));
+    const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
+    const pago=x=>!!passouCaixa[String(x.id)]||["pago"].includes(pags[String(x.id)]?.statusPagamento);
+    const resumoPed=x=>({id:x.id,numero:x.numero,cliente:x.cliente,vendedor:x.vendedor||"—",origem:x.origem,total:_round2(x.total),situacao:x.situacao,situacaoId:x.situacaoId,criadoEm:x.criadoEm,tipo:x.tipo,
+      dias:Math.floor((agora-(x.criadoEm||agora))/_DIA),pagoForaDoCaixa:!passouCaixa[String(x.id)]&&pags[String(x.id)]?.statusPagamento==="pago"});
+    // 1) não passaram por nenhum caixa
+    const naoPassouCaixa=ativos.filter(x=>!passouCaixa[String(x.id)]).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
+    // 2) Pix dos caixas atacado em sequência (desde que a tela foi criada), com confirmação
+    const conf=lerJSON(SUP_PIX_FILE,{}), desdePix=Math.max(cfg.inicioEm,tIniSem); const pix=[];
+    (dCx.sessoes||[]).filter(sx=>sx.tipoCaixa==="atacado").forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo!=="venda"||mv.cancelado||(mv.em||0)<desdePix) return;
+      (mv.pagamentos||[]).forEach((p,i)=>{ if(!/pix/i.test(p.formaNome||"")||!(Number(p.valor)>0)) return; const k=`${sx.id}|${mv.em}|${i}`;
+        pix.push({chave:k,em:mv.em,valor:_round2(p.valor),forma:p.formaNome,numero:mv.numero||mv.pedidoId||"",cliente:mv.clienteNome||"",operador:mv.operador||sx.operador||"",confirmado:conf[k]||null}); }); }));
+    pix.sort((a,b)=>b.em-a.em);
+    // 3) por vendedora e dia da semana: feitos, recebidos, atendidos
+    const dias=[]; for(let i=0;i<7;i++) dias.push(new Date(Date.parse(iniSem+"T12:00:00Z")+i*_DIA).toISOString().slice(0,10));
+    const pv={}; ativos.forEach(x=>{ const v=x.vendedor||"(sem vendedora)", d=_diaBRk(x.criadoEm||agora); const o=(pv[v]||={vendedora:v,porDia:{},feitos:0,recebidos:0,atendidos:0,valor:0});
+      const dd=(o.porDia[d]||={feitos:0,recebidos:0,atendidos:0}); dd.feitos++; o.feitos++; o.valor+=Number(x.total)||0;
+      if(pago(x)){ dd.recebidos++; o.recebidos++; } if(x.situacaoId===ATD){ dd.atendidos++; o.atendidos++; } });
+    const porVendedora=Object.values(pv).map(v=>({...v,valor:_round2(v.valor)})).sort((a,b)=>b.feitos-a.feitos);
+    // 4) não atendidos
+    const naoAtendidos=ativos.filter(x=>x.situacaoId!==ATD).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
+    // 6) a prazo sem receber, com dias
+    if(Date.now()-_prazoCli.em>15*60000) _atualizarPrazoAbertos();
+    const base=lerClientesBase(); const prazo=[]; Object.entries(_prazoCli.porCli||{}).forEach(([cid,l])=>l.forEach(p=>{ const pg=Number(pags[p.id]?.valorPago)||0, falta=_round2(Math.max(0,p.total-pg)); if(falta<=0.009) return;
+      prazo.push({id:p.id,numero:p.numero,cliente:(base.porId[cid]||{}).nome||"",clienteId:cid,data:p.data,dias:p.data?Math.floor((agora-Date.parse(p.data+"T12:00:00-03:00"))/_DIA):null,total:_round2(p.total),falta}); }));
+    prazo.sort((a,b)=>(b.dias||0)-(a.dias||0));
+    // 7) pendências da separação e valor a retirar
+    const pend=Object.values(lerPend()||{}).filter(p=>p&&p.status!=="resolvido"&&p.status!=="resolvida").map(p=>{
+      const reg=Object.values(props).find(x=>String(x.pedidoBlingId)===String(p.pedidoId))||null, its=(L.find(x=>String(x.id)===String(p.pedidoId))||{}).itens||reg?.itens||[];
+      const faltas=(p.faltas||[]).map(f=>{ const it=its.find(i=>(f.produtoId&&String(i.produtoId||i.id)===String(f.produtoId))||String(i.nome||i.descricao||"").toLowerCase()===String(f.descricao||f.nome||"").toLowerCase())||{};
+        const q=Number(f.qtdFalta??f.falta??f.quantidadeFalta??f.quantidade??1)||1, vu=Number(f.valor??it.valor??0)||0; return {nome:f.descricao||f.nome||it.nome||"",qtd:q,valorUnit:_round2(vu),valor:_round2(q*vu)}; });
+      return {pedidoId:p.pedidoId,numero:p.numero||p.pedidoId,cliente:p.cliente||"",em:p.em||null,faltas,valorRetirar:_round2(faltas.reduce((a,f)=>a+f.valor,0))}; }).sort((a,b)=>(a.em||0)-(b.em||0));
+    // 8) meta do dia: vendas de hoje (pedidos do sistema + vendas de caixa sem pedido do sistema)
+    let vendidoHoje=ativos.filter(x=>(x.criadoEm||0)>=tHoje).reduce((a,x)=>a+(Number(x.total)||0),0);
+    const idsL=new Set(L.map(x=>String(x.id)));
+    (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&(mv.em||0)>=tHoje&&!idsL.has(String(mv.pedidoId||""))) vendidoHoje+=Number(mv.total)||0; }));
+    vendidoHoje=_round2(vendidoHoje);
+    // 9) entregas por dia: agendadas, realizadas, com pagamento, passaram no caixa
+    const entregasDia=dias.map(d=>{ const l=ativos.filter(x=>x.tipo==="entrega"&&x.agendamento&&x.agendamento.data===d);
+      return {dia:d,agendadas:l.length,realizadas:l.filter(x=>x.entregaLocal).length,comPagamento:l.filter(pago).length,passaramCaixa:l.filter(x=>!!passouCaixa[String(x.id)]).length,valor:_round2(l.reduce((a,x)=>a+(Number(x.total)||0),0))}; });
+    // 10) dinheiro nos caixas atacado abertos
+    const caixas=(dCx.sessoes||[]).filter(sx=>sx.tipoCaixa==="atacado"&&!sx.fechadaEm).map(sx=>{ const r=resumoSessaoCaixa(sx); return {id:sx.id,operador:sx.operador||"",abertaEm:sx.abertaEm,dinheiro:_round2(r.esperadoGaveta||0),sangrar:(r.esperadoGaveta||0)>2000}; });
+    // 11) concurso
+    let concurso=null; try{ concurso=_concursoApi?_concursoApi.paraFazer():null; }catch(e){}
+    // 12) clientes com crédito
+    const cm=lerCreditos().movs, sald={}; cm.forEach(m=>{ if(m.estornadoEm) return; sald[m.clienteId]=(sald[m.clienteId]||0)+(m.tipo==="entrada"?1:-1)*Number(m.valor||0); });
+    const creditos=Object.entries(sald).filter(([,v])=>v>0.009).map(([id,v])=>({id,nome:(base.porId[id]||{}).nome||(cm.find(m=>m.clienteId===id)||{}).clienteNome||id,saldo:_round2(v)})).sort((a,b)=>b.saldo-a.saldo);
+    // 13) pedidos sendo criados hoje: por origem e os últimos
+    const hojeL=ativos.filter(x=>(x.criadoEm||0)>=tHoje), orig={};
+    const nomeOrig=o=>({site:"Site",totem:"Totem",atacado:"Vendedoras",proposta:"Propostas"})[o]||o||"Outros";
+    hojeL.forEach(x=>{ const k=nomeOrig(x.origem); orig[k]=(orig[k]||0)+1; });
+    let caixaHoje=0; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&(mv.em||0)>=tHoje&&!idsL.has(String(mv.pedidoId||""))) caixaHoje++; }));
+    if(caixaHoje) orig["Balcão (caixas)"]=caixaHoje;
+    const ultimos=[...hojeL].sort((a,b)=>b.criadoEm-a.criadoEm).slice(0,12).map(x=>({numero:x.numero,cliente:x.cliente,vendedor:x.vendedor,origem:nomeOrig(x.origem),total:_round2(x.total),em:x.criadoEm,id:x.id}));
+    // métricas para decisão
+    const semPassada=(ms)=>ms-7*_DIA;
+    const somaPeriodo=(a,b)=>Object.values(props).filter(p=>p&&p.pedidoBlingId&&(p.criadoEm||0)>=a&&(p.criadoEm||0)<b&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem))).reduce((s2,p)=>s2+(Number(p.total)||0),0);
+    const hojeAteAgora=somaPeriodo(tHoje,agora), mesmoHorarioSemPassada=somaPeriodo(semPassada(tHoje),semPassada(agora));
+    const semanaAteAgora=somaPeriodo(tIniSem,agora), semanaPassadaAteAgora=somaPeriodo(semPassada(tIniSem),semPassada(agora));
+    const prod={}; ativos.forEach(x=>(x.itens||[]).forEach(i=>{ const k=i.nome||""; if(!k) return; (prod[k]||={nome:k,qtd:0,valor:0}); prod[k].qtd+=Number(i.quantidade)||0; prod[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); }));
+    let clientesRisco=null; try{ const idx=_indiceClientes(); clientesRisco=Object.values(idx.porCli).map(p=>_metricasCliente(p,false)).filter(m=>m.status==="em_risco").length; }catch(e){}
+    const metricas={ hojeValor:_round2(hojeAteAgora), hojeSemanaPassada:_round2(mesmoHorarioSemPassada), semanaValor:_round2(semanaAteAgora), semanaPassada:_round2(semanaPassadaAteAgora),
+      pedidosSemana:ativos.length, ticketMedio:ativos.length?_round2(ativos.reduce((a,x)=>a+(Number(x.total)||0),0)/ativos.length):0, cancelados:L.length-ativos.length,
+      pctEntrega:ativos.length?Math.round(ativos.filter(x=>x.tipo==="entrega").length/ativos.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
+      topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
+    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
+      meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
+      criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/supervisora/pix/confirmar",requireAcesso("acesso_supervisora"),(req,res)=>{
+  const k=String(req.body?.chave||""); if(!k) return res.status(400).json({erro:"chave"});
+  const c=lerJSON(SUP_PIX_FILE,{}); if(req.body?.desfazer) delete c[k]; else c[k]={por:req.sessao?.nome||"",em:Date.now()};
+  salvarJSON(SUP_PIX_FILE,c); res.json({ok:true,confirmado:c[k]||null});
+});
+app.post("/api/supervisora/meta",requireAcesso("acesso_supervisora"),(req,res)=>{
+  const v=Number(String(req.body?.metaDia||"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta"});
+  const c=_supCfg(); c.metaDia=_round2(v); c.metaPor=req.sessao?.nome||""; c.metaEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); res.json({ok:true,metaDia:c.metaDia});
+});
+// em qual caixa o pedido passou
+app.get("/api/supervisora/onde-passou",requireAcesso("acesso_supervisora"),(req,res)=>{
+  const q=String(req.query.numero||"").trim(); if(!q) return res.json({ok:true,itens:[]});
+  const itens=[]; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo!=="venda") return;
+    if(String(mv.numero||"")===q||String(mv.pedidoId||"")===q) itens.push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",sessao:sx.id,
+      aberta:!sx.fechadaEm,em:mv.em,total:_round2(mv.total||0),cancelado:!!mv.cancelado,formas:(mv.pagamentos||[]).map(p=>`${p.formaNome} ${brlN(p.valor)}`).join(" + ")}); }));
+  const pg=Object.entries(lerPag()||{}).find(([id,p])=>id===q||String(p.numero||"")===q);
+  res.json({ok:true,itens:itens.sort((a,b)=>b.em-a.em),pagamentoRegistrado:pg?{status:pg[1].statusPagamento,valorPago:pg[1].valorPago,formas:(pg[1].historico||[]).map(h=>`${h.formaNome} ${brlN(h.valor)}`).join(" + ")}:null});
+});
+// pesquisa de preço: varejo, atacado e fardo (catálogo local)
+app.get("/api/supervisora/preco",requireAcesso("acesso_supervisora"),(req,res)=>{
+  const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); const q=nrm(req.query.q||"").trim(); if(q.length<2) return res.json({ok:true,itens:[]});
+  const ps=q.split(/\s+/);
+  const itens=_catalogoPreco().itens.filter(p=>ps.every(t=>nrm(p.n).includes(t))||(p.k||[]).some(k=>k===q)).slice(0,15).map(p=>({nome:p.n,varejo:p.p,atacado:p.a,fardo:p.f,qtdFardo:p.q}));
+  res.json({ok:true,itens});
+});
+// clientes para o frete: nome, documento ou telefone -> endereço do cadastro (ou da última entrega)
+app.get("/api/supervisora/clientes",requireAcesso("acesso_supervisora"),(req,res)=>{
+  const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); const q=nrm(req.query.q||"").trim(), qd=q.replace(/\D/g,""); if(q.length<2) return res.json({ok:true,itens:[]});
+  const base=lerClientesBase(), props=Object.values(lerPropostas()||{}), ultEnd={};
+  props.forEach(p=>{ const id=String(p?.cliente?.id||""); if(id&&p.entrega?.endereco&&(!ultEnd[id]||p.criadoEm>ultEnd[id].em)) ultEnd[id]={end:p.entrega.endereco,em:p.criadoEm}; });
+  const montar=e=>e?[e.endereco,e.numero,e.bairro,[e.municipio,e.uf].filter(Boolean).join("/"),e.cep?("CEP "+e.cep):""].filter(x=>String(x||"").trim()).join(", "):"";
+  const itens=Object.values(base.porId).filter(c=>c&&c.situacao!=="I"&&(nrm(c.nome).includes(q)||(qd.length>=4&&(String(c.doc||"").replace(/\D/g,"").includes(qd)||String(c.celular||c.telefone||"").replace(/\D/g,"").includes(qd))))).slice(0,12)
+    .map(c=>({id:c.id,nome:c.nome,doc:c.doc||"",telefone:c.celular||c.telefone||"",endereco:montar(c.detalhe?.endereco)||ultEnd[String(c.id)]?.end||""}));
+  res.json({ok:true,itens});
+});
+// rota até o cliente para o mapa (Google Directions, guardada 30 dias por endereço)
+const _rotasCache=new Map();
+function _decodePolyline(s){ const pts=[]; let i=0,lat=0,lng=0; while(i<s.length){ let b,sh=0,r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lat+=(r&1)?~(r>>1):(r>>1); sh=0; r=0; do{ b=s.charCodeAt(i++)-63; r|=(b&31)<<sh; sh+=5; }while(b>=32); lng+=(r&1)?~(r>>1):(r>>1); pts.push([lat/1e5,lng/1e5]); } return pts; }
+app.get("/api/supervisora/rota",requireAcesso("acesso_supervisora"),async(req,res)=>{
+  try{
+    const dest=String(req.query.endereco||"").trim().slice(0,200); if(!dest) return res.status(400).json({erro:"endereço"});
+    if(!GOOGLE_MAPS_KEY) return res.status(500).json({erro:"chave do Google Maps não configurada"});
+    const k=normEndereco(dest), c=_rotasCache.get(k); if(c&&Date.now()-c.em<30*_DIA) return res.json({ok:true,...c.r});
+    const origem=configEntrega().origem;
+    const j=await (await fetch(`https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origem)}&destination=${encodeURIComponent(dest)}&mode=driving&language=pt-BR&key=${GOOGLE_MAPS_KEY}`)).json();
+    if(j.status!=="OK") return res.json({ok:false,erro:j.status==="NOT_FOUND"||j.status==="ZERO_RESULTS"?"Não encontrei esse endereço.":`Google: ${j.status}`});
+    const rt=j.routes[0], lg=rt.legs[0];
+    const r={km:+(lg.distance.value/1000).toFixed(2),minutos:Math.round(lg.duration.value/60),origem:{lat:lg.start_location.lat,lng:lg.start_location.lng},destino:{lat:lg.end_location.lat,lng:lg.end_location.lng,endereco:lg.end_address},caminho:_decodePolyline(rt.overview_polyline.points)};
+    _rotasCache.set(k,{em:Date.now(),r}); res.json({ok:true,...r});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 app.get("/api/diag/maps",async(req,res)=>{
   const k=String(GOOGLE_MAPS_KEY||"");
   const quando=ms=>new Date(ms).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
@@ -13711,6 +13849,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/supervisora",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"supervisora.html")); });
 app.get("/clientes",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"clientes.html")); });
 app.get("/central-entregas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"central-entregas.html")); });
 
@@ -18888,7 +19027,8 @@ setTimeout(async()=>{
 
 // Concurso do Slogan (Rota 2): link único por pedido, página /frase/<token> e painel
 // /concurso. Ação temporária (01/10 a 07/11/2026) — código em concurso-slogan.js.
-registrarConcursoSlogan(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
+let _concursoApi=null;
+registrarConcursoSlogan(app, { expor:(api)=>{ _concursoApi=api; }, bling, blingLento, lerJSON, salvarJSON, requireAdmin, rateLimit, DATA_DIR, SIT,
   lerPropostas, nomeSituacao, ExcelJS, registrarAviso, sleep, rootDir: __dirname,
   pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso,
   // quem tem a permissão do concurso (ativo): aparece no relatório de adesão mesmo sem ter usado

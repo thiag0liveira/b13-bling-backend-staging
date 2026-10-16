@@ -630,6 +630,8 @@ export function registrarConcursoSlogan(app, deps) {
       semUso: !u.gerados && !u.envios && !u.lembretes && !u.frasesWhatsapp }))
       .sort((a, b) => (b.linksEnviados + b.gerados) - (a.linksEnviados + a.gerados) || a.usuario.localeCompare(b.usuario));
   }
+  // contagem para a tela de Apoio à Supervisora (só leitura)
+  if (deps.expor) deps.expor({ paraFazer: () => calcRelatorio().paraFazer });
   function calcRelatorio() {
     const d = ler(); d.frases = d.frases.filter(f => !f.teste); // relatório só com dados reais
     const lista = listaElegiveis().filter(x => !x.teste); const eleg = lista.filter(x => x.elegivel);

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Apoio à Supervisora</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
+.q{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;min-height:0}
+.q h3{margin:0 0 6px;font-size:13.5px;display:flex;align-items:center;gap:6px}.q h3 .n{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}
+.lst{overflow:auto;max-height:230px}.lst.alto{max-height:330px}
+.l{display:flex;gap:8px;align-items:center;padding:5px 2px;border-bottom:1px solid #221e4f;font-size:12.5px}.l:last-child{border-bottom:none}.l .x{flex:1;min-width:0}
+.l .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.l .x span{color:var(--muted);font-size:11px}
+.l.click{cursor:pointer}.l.click:hover{background:#1c1846}
+.rolagem{overflow-x:auto;max-width:100%}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
+.bar{height:10px;background:#221e4f;border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,#FF0082,#ffd23f)}
+.big{font-size:22px;font-weight:900}.verde{color:#3ce88a}.amar{color:#ffd23f}.verm{color:#ff8aa3}
+.inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
+#mapaFrete{height:200px;border-radius:8px;border:1px solid var(--borda);margin-top:6px;display:none}
+.chipz{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}.chipz span{background:#1c1846;border:1px solid #3a3480;border-radius:999px;padding:3px 9px;font-size:11.5px}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){ #b13nav{transform:translateX(0%) !important} #b13navOverlay{display:none !important} button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ margin-left:200px } }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/supervisora")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/supervisora"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🧭 Apoio à Supervisora</div><div class="sp"></div><span class="ic" id="atual"></span><button class="btn btn-ghost" onclick="carregar()">↻</button></div>
+<div class="wrap" style="max-width:none">
+  <div class="kpis" id="kpis"></div>
+  <div class="grade" id="grade"><div class="vazio"><div class="spin"></div></div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const hm = ms => ms ? new Date(ms).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "";
+const dm = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "";
+const diaCurto = d => { const x = new Date(d + "T12:00:00"); return ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][x.getDay()] + " " + d.slice(8, 10); };
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+let D = null;
+const q = (id, titulo, n, corpo) => `<div class="q" id="${id}"><h3>${titulo}${n != null ? `<span class="n">${n}</span>` : ""}</h3>${corpo}</div>`;
+const linhaPed = x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>#${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.vendedor)} · ${dm(x.criadoEm)} · ${esc(x.situacao || "")}${x.dias ? ` · há ${x.dias} dia(s)` : ""}${x.pagoForaDoCaixa ? " · pago, não acertado no caixa" : ""}</span></div><b>${brl(x.total)}</b></div>`;
+async function carregar() {
+  const { ok, j } = await api("/api/supervisora/painel");
+  if (!ok) { document.getElementById("grade").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; document.getElementById("atual").textContent = "atualizado " + hm(j.agora); render();
+}
+function render() {
+  const d = D, M = d.metricas, me = d.meta, pct = me.valor ? Math.min(100, Math.round(me.vendido / me.valor * 100)) : 0;
+  const varPct = (a, b) => b ? Math.round((a - b) / b * 100) : null, vh = varPct(M.hojeValor, M.hojeSemanaPassada), vs = varPct(M.semanaValor, M.semanaPassada);
+  const k = (v, l, s, cl) => `<div class="kpi"><div class="v ${cl || ""}">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+  document.getElementById("kpis").innerHTML =
+    `<div class="kpi" style="grid-column:span 2"><div class="l">🎯 Meta do dia ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.valor ? "alterar" : "definir meta"}</a></div>
+      <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "meta batida ✓") : ""}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="s">${pct}% da meta</div>` : ""}</div>`
+    + k(brl(M.hojeValor), "Vendido hoje (pedidos)", vh != null ? `${vh >= 0 ? "▲" : "▼"} ${Math.abs(vh)}% vs mesmo horário semana passada` : "", vh != null && vh < 0 ? "verm" : "")
+    + k(brl(M.semanaValor), "Semana até agora", vs != null ? `${vs >= 0 ? "▲" : "▼"} ${Math.abs(vs)}% vs semana passada` : "", vs != null && vs < 0 ? "verm" : "")
+    + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
+    + k(brl(M.aReceberPrazo), "A receber (prazo)", `${d.prazo.length} pedido(s)`, M.aReceberPrazo > 0 ? "amar" : "")
+    + k(M.clientesEmRisco != null ? M.clientesEmRisco : "—", "Clientes em risco", "passaram do ritmo de compra", M.clientesEmRisco > 0 ? "amar" : "");
+  const cx = d.caixas.map(c => `<div class="l"><div class="x"><b>${esc(c.operador)}</b><span>aberto ${dm(c.abertaEm)} ${hm(c.abertaEm)}</span></div><b class="${c.sangrar ? "verm" : "verde"}">${brl(c.dinheiro)}</b>${c.sangrar ? `<span class="tag erro">fazer sangria</span>` : ""}</div>`).join("") || `<div class="ic">Nenhum caixa atacado aberto.</div>`;
+  const cr = d.criados, orig = `<div class="chipz">${cr.porOrigem.map(o => `<span>${esc(o.origem)} <b>${o.qtd}</b></span>`).join("") || `<span>nenhum ainda</span>`}</div>`
+    + `<div class="lst">${cr.ultimos.map(x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>${hm(x.em)} · #${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.origem)}${x.vendedor ? " · " + esc(x.vendedor) : ""}</span></div><b>${brl(x.total)}</b></div>`).join("")}</div>`;
+  const pixL = `<div class="lst alto">${d.pix.map(p => `<div class="l"><div class="x"><b>${dm(p.em)} ${hm(p.em)} · ${esc(p.forma)} · #${esc(p.numero)}</b><span>${esc(p.cliente || "—")} · caixa ${esc(p.operador)}${p.confirmado ? ` · ✔ ${esc(p.confirmado.por)} ${hm(p.confirmado.em)}` : ""}</span></div><b>${brl(p.valor)}</b>
+      <button class="btn ${p.confirmado ? "btn-ghost" : "btn-mag"}" style="padding:4px 8px;font-size:11px" onclick="confPix('${esc(p.chave)}',${p.confirmado ? "true" : "false"})">${p.confirmado ? "desfazer" : "confirmar"}</button></div>`).join("") || `<div class="ic">Nenhum Pix nos caixas atacado nesta semana.</div>`}</div>`;
+  const vend = `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th>${d.dias.map(x => `<th>${diaCurto(x)}</th>`).join("")}<th>Semana</th></tr>
+    ${d.porVendedora.map(v => `<tr><td><b>${esc(v.vendedora)}</b></td>${d.dias.map(x => { const z = v.porDia[x]; return `<td title="feitos · recebidos · atendidos">${z ? `${z.feitos}·<span class="verde">${z.recebidos}</span>·<span class="amar">${z.atendidos}</span>` : "—"}</td>`; }).join("")}<td><b>${v.feitos}</b>·<span class="verde">${v.recebidos}</span>·<span class="amar">${v.atendidos}</span><br><span class="ic">${brl(v.valor)}</span></td></tr>`).join("")}</table></div>
+    <div class="ic" style="margin-top:4px">feitos · <span class="verde">recebidos</span> · <span class="amar">atendidos</span></div>`;
+  const ent = `<div class="rolagem"><table class="mini"><tr><th>Dia</th><th title="agendadas">Agend.</th><th title="entregues">Entreg.</th><th title="com pagamento">Pagas</th><th title="passaram em algum caixa">Caixa</th><th>Valor</th></tr>${d.entregasDia.map(e => `<tr><td>${diaCurto(e.dia)}</td><td>${e.agendadas}</td><td>${e.realizadas}</td><td>${e.comPagamento}</td><td>${e.passaramCaixa}</td><td>${brl(e.valor)}</td></tr>`).join("")}</table></div>`;
+  const pend = d.pendencias.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.pedidoId)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente)}</b><span>${p.faltas.map(f => `${f.qtd}x ${esc(f.nome)}`).join(", ") || "faltas não detalhadas"}</span></div><b class="verm">− ${brl(p.valorRetirar)}</b></div>`).join("") || `<div class="ic">Nenhuma pendência na separação.</div>`;
+  const prazo = d.prazo.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.id)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente || "—")}</b><span>${p.data ? p.data.split("-").reverse().join("/") : ""} · <span class="${p.dias > 30 ? "verm" : p.dias > 15 ? "amar" : ""}">${p.dias != null ? p.dias + " dia(s)" : ""}</span></span></div><b>${brl(p.falta)}</b></div>`).join("") || `<div class="ic">${d.prazoAtualizadoEm ? "Nenhum pedido a prazo em aberto." : "Conferindo os pedidos a prazo no Bling…"}</div>`;
+  const conc = d.concurso ? `<div class="chipz"><span>gerar e enviar <b>${d.concurso.gerar}</b></span><span>enviar <b>${d.concurso.enviar}</b></span><span>lembrar <b>${d.concurso.lembrar}</b></span></div><div class="big ${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar ? "amar" : "verde"}">${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar} cliente(s) para avisar</div><a href="/concurso" style="color:#7fd0ff;font-size:12px">abrir o Concurso →</a>` : `<div class="ic">Indisponível.</div>`;
+  const cred = d.creditos.map(c => `<div class="l"><div class="x"><b>${esc(c.nome)}</b></div><b class="verde">${brl(c.saldo)}</b></div>`).join("") || `<div class="ic">Nenhum cliente com crédito.</div>`;
+  const met = `<div class="l"><div class="x">Cancelados na semana</div><b>${M.cancelados}</b></div><div class="l"><div class="x">Pedidos com entrega</div><b>${M.pctEntrega}%</b></div><div class="l"><div class="x">Ticket médio</div><b>${brl(M.ticketMedio)}</b></div>
+    <div class="ic" style="margin:6px 0 2px">Mais vendidos na semana</div>${M.topProdutos.map(p => `<div class="l"><div class="x">${esc(p.nome)} <span>(${p.qtd})</span></div><b>${brl(p.valor)}</b></div>`).join("")}`;
+  // os quadros interativos (busca no caixa, preço, frete e mapa) são mantidos na atualização automática
+  const manter = {}; ["qOnde", "qPreco", "qFrete"].forEach(id => { const el = document.getElementById(id); if (el) manter[id] = el; });
+  document.getElementById("grade").innerHTML = [
+    q("qCaixas", "💵 Dinheiro nos caixas atacado", null, cx + `<div class="ic" style="margin-top:4px">Acima de R$ 2.000,00 aparece em vermelho: sugira a sangria.</div>`),
+    q("qCriados", "🆕 Pedidos sendo criados hoje", cr.total, orig),
+    q("qPix", "🔷 Pix recebidos nos caixas atacado", `${d.pix.filter(p => !p.confirmado).length} a confirmar`, pixL),
+    q("qVend", "🧑‍💼 Vendedoras na semana", null, vend),
+    q("qNaoCaixa", "🚫 Não passaram por nenhum caixa", d.naoPassouCaixa.length, `<div class="lst">${d.naoPassouCaixa.map(linhaPed).join("") || `<div class="ic">Todos passaram por caixa.</div>`}</div>`),
+    q("qNaoAtend", "⏳ Não estão como Atendido", d.naoAtendidos.length, `<div class="lst">${d.naoAtendidos.map(linhaPed).join("") || `<div class="ic">Todos atendidos.</div>`}</div>`),
+    q("qOnde", "🔎 Em qual caixa o pedido passou", null, `<div class="inp"><input id="ondeNum" placeholder="nº do pedido" inputmode="numeric" onkeydown="if(event.key==='Enter')ondePassou()"><button class="btn btn-mag" onclick="ondePassou()">Buscar</button></div><div id="ondeRes" class="lst" style="margin-top:6px"></div>`),
+    q("qPrazo", "📅 A prazo sem receber", brl(M.aReceberPrazo), `<div class="lst">${prazo}</div>`),
+    q("qPend", "📦 Pendências na separação", d.pendencias.length ? "retirar " + brl(d.pendencias.reduce((a, p) => a + p.valorRetirar, 0)) : null, `<div class="lst">${pend}</div>`),
+    q("qEnt", "🛵 Entregas agendadas na semana", null, ent),
+    q("qConc", "🏆 Concurso do Slogan", null, conc),
+    q("qCred", "💳 Clientes com crédito", brl(d.creditos.reduce((a, c) => a + c.saldo, 0)), `<div class="lst">${cred}</div>`),
+    q("qPreco", "🏷️ Pesquisa de preço", null, `<div class="inp"><input id="precoQ" placeholder="nome ou código de barras" oninput="clearTimeout(window._tp);window._tp=setTimeout(buscarPreco,300)"></div><div id="precoRes" class="lst" style="margin-top:6px"></div>`),
+    q("qFrete", "🗺️ Calcular frete", null, `<div class="inp"><input id="frCli" placeholder="buscar cliente (nome, CPF/CNPJ, telefone)" oninput="clearTimeout(window._tc);window._tc=setTimeout(buscarCli,300)"></div><div id="frCliRes" class="lst" style="max-height:110px"></div>
+      <div class="inp" style="margin-top:6px"><input id="frEnd" placeholder="endereço completo (rua, nº, bairro, cidade)"><input id="frValor" placeholder="valor R$" inputmode="decimal" style="max-width:90px"><button class="btn btn-mag" onclick="calcFrete()">Calcular</button></div><div id="frRes" style="font-size:12.5px;margin-top:6px"></div><div id="mapaFrete"></div>`),
+    q("qMet", "📊 Métricas da semana", null, `<div class="lst alto">${met}</div>`)
+  ].join("");
+  Object.entries(manter).forEach(([id, el]) => { const novo = document.getElementById(id); if (novo) novo.replaceWith(el); });
+}
+async function confPix(chave, desfazer) { const { ok, j } = await api("/api/supervisora/pix/confirmar", { method: "POST", body: JSON.stringify({ chave, desfazer }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } const p = D.pix.find(x => x.chave === chave); if (p) p.confirmado = j.confirmado; render(); }
+async function editarMeta() { const v = prompt("Meta de vendas do dia (R$):", D.meta.valor || ""); if (v == null) return; const { ok, j } = await api("/api/supervisora/meta", { method: "POST", body: JSON.stringify({ metaDia: v }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
+async function ondePassou() {
+  const n = document.getElementById("ondeNum").value.trim(), el = document.getElementById("ondeRes"); if (!n) return;
+  const { j } = await api("/api/supervisora/onde-passou?numero=" + encodeURIComponent(n));
+  el.innerHTML = (j.itens || []).map(x => `<div class="l"><div class="x"><b>${esc(x.caixa)} · ${esc(x.operador)}${x.cancelado ? " · cancelada" : ""}</b><span>${dm(x.em)} ${hm(x.em)} · ${x.aberta ? "caixa aberto" : "caixa fechado"} · ${esc(x.formas)}</span></div><b>${brl(x.total)}</b></div>`).join("")
+    || `<div class="ic">O pedido #${esc(n)} não passou por nenhum caixa.${j.pagamentoRegistrado ? ` Pagamento registrado fora do caixa: ${esc(j.pagamentoRegistrado.formas || j.pagamentoRegistrado.status)}.` : ""}</div>`;
+}
+async function buscarPreco() {
+  const v = document.getElementById("precoQ").value.trim(), el = document.getElementById("precoRes"); if (v.length < 2) { el.innerHTML = ""; return; }
+  const { j } = await api("/api/supervisora/preco?q=" + encodeURIComponent(v));
+  el.innerHTML = `<div class="rolagem"><table class="mini"><tr><th>Produto</th><th>Varejo</th><th>Atacado</th><th>Fardo</th></tr>${(j.itens || []).map(p => `<tr><td style="white-space:normal">${esc(p.nome)}</td><td><b>${brl(p.varejo)}</b></td><td>${p.atacado != null ? brl(p.atacado) : "—"}</td><td>${p.fardo != null ? brl(p.fardo) + (p.qtdFardo ? `<br><span class="ic">${p.qtdFardo} un</span>` : "") : "—"}</td></tr>`).join("") || `<tr><td colspan="4" class="ic">Nenhum produto.</td></tr>`}</table></div>`;
+}
+async function buscarCli() {
+  const v = document.getElementById("frCli").value.trim(), el = document.getElementById("frCliRes"); if (v.length < 2) { el.innerHTML = ""; return; }
+  const { j } = await api("/api/supervisora/clientes?q=" + encodeURIComponent(v)); window._cliFr = j.itens || [];
+  el.innerHTML = window._cliFr.map((c, i) => `<div class="l click" onclick="escolherCli(${i})"><div class="x"><b>${esc(c.nome)}</b><span>${esc(c.endereco || "sem endereço no cadastro")}</span></div></div>`).join("") || `<div class="ic">Nenhum cliente.</div>`;
+}
+function escolherCli(i) { const c = window._cliFr[i]; document.getElementById("frEnd").value = c.endereco || ""; document.getElementById("frCliRes").innerHTML = `<div class="ic">Cliente: <b>${esc(c.nome)}</b>${c.telefone ? " · " + esc(c.telefone) : ""}</div>`; }
+function carregarLeaflet() { return new Promise(ok => { if (window.L) return ok(); const c = document.createElement("link"); c.rel = "stylesheet"; c.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(c); const s = document.createElement("script"); s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; s.onload = () => ok(); document.head.appendChild(s); }); }
+let MAPA = null;
+async function calcFrete() {
+  const end = document.getElementById("frEnd").value.trim(), valor = Number(String(document.getElementById("frValor").value || "0").replace(",", ".")) || 0, el = document.getElementById("frRes");
+  if (!end) { el.innerHTML = `<span class="verm">Digite ou escolha o endereço.</span>`; return; }
+  el.innerHTML = "Calculando…";
+  const [f, r] = await Promise.all([fetch(B + "/api/frete?endereco=" + encodeURIComponent(end) + "&valor=" + valor).then(x => x.json()).catch(() => ({})), api("/api/supervisora/rota?endereco=" + encodeURIComponent(end)).then(x => x.j)]);
+  el.innerHTML = (f.entregaDisponivel ? `✅ <b>${String(f.km).replace(".", ",")} km</b> · taxa <b>${brl(f.taxa)}</b>${f.gratis ? " (grátis)" : ""}${f.tentativa === "pelo CEP" ? ` <span class="amar">(pelo CEP, aproximado)</span>` : ""}` : `<span class="amar">${esc(f.motivo || f.erro || "Sem frete para esse endereço.")}</span>`)
+    + (r && r.ok ? `<br><span class="ic">Caminho: ${String(r.km).replace(".", ",")} km · cerca de ${r.minutos} min · ${esc(r.destino.endereco || "")}</span>` : (r && r.erro ? `<br><span class="ic">${esc(r.erro)}</span>` : ""));
+  if (!(r && r.ok)) return;
+  await carregarLeaflet(); const box = document.getElementById("mapaFrete"); box.style.display = "block";
+  if (MAPA) { MAPA.remove(); MAPA = null; }
+  MAPA = L.map("mapaFrete"); L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(MAPA);
+  const linha = L.polyline(r.caminho, { color: "#FF0082", weight: 4 }).addTo(MAPA);
+  L.circleMarker([r.origem.lat, r.origem.lng], { radius: 7, color: "#3ce88a", fillOpacity: 1 }).addTo(MAPA).bindPopup("Loja");
+  L.circleMarker([r.destino.lat, r.destino.lng], { radius: 7, color: "#FF0082", fillOpacity: 1 }).addTo(MAPA).bindPopup("Cliente");
+  MAPA.fitBounds(linha.getBounds(), { padding: [12, 12] });
+}
+carregar(); setInterval(carregar, 60000);
+</script>
+</body>
+</html>
