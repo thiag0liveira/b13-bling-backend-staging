@@ -10327,13 +10327,28 @@ app.post("/api/supervisora/pix/confirmar",requireAcesso("acesso_supervisora"),(r
   const c=lerJSON(SUP_PIX_FILE,{}); if(req.body?.desfazer) delete c[k]; else c[k]={por:req.sessao?.nome||"",em:Date.now()};
   salvarJSON(SUP_PIX_FILE,c); res.json({ok:true,confirmado:c[k]||null});
 });
+app.get("/api/supervisora/pedido/:id/caminho-prazo",requireAcesso("acesso_supervisora"),async(req,res)=>{
+  try{
+    const d=await bling(`/pedidos/vendas/${req.params.id}`).then(r=>r?.data); if(!d) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+    const atual=Number(d.situacao?.id)||0;
+    if(atual===SIT.PRAZO) return res.json({ok:true,atual,atualNome:nomeSituacao(atual),jaEsta:true});
+    if(atual===SIT.CANCELADO) return res.json({ok:true,atual,atualNome:nomeSituacao(atual),bloqueado:"Pedido cancelado não pode ir a prazo."});
+    const g=await _grafoTransicoes(), direto=!g||!(g[atual]&&g[atual].length)||(g[atual]||[]).includes(SIT.PRAZO), cam=g?_caminhoSituacao(g,atual,SIT.PRAZO):null;
+    res.json({ok:true,atual,atualNome:nomeSituacao(atual),direto:direto&&(!cam||cam.length<=1),caminho:cam?cam.map(nomeSituacao):null,fluxoConhecido:!!g,
+      semCaminho:!!g&&g[atual]&&g[atual].length&&!cam});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/diag/transicoes",requireAdmin,async(req,res)=>{
+  const g=await _grafoTransicoes(); const nomes=g?Object.fromEntries(Object.entries(g).map(([o,ds])=>[nomeSituacao(o)+" ("+o+")",ds.map(x=>nomeSituacao(x)+" ("+x+")")])):null;
+  res.json({ok:!!g,fonte:_transCache.fonte||null,modulo:_transCache.modulo||null,qtdTransicoes:_transCache.qtd||0,erro:_transCache.erro||null,transicoes:nomes});
+});
 app.post("/api/supervisora/pedido/:id/prazo",requireAcesso("acesso_supervisora"),async(req,res)=>{
   try{
     const dias=Math.max(1,Math.min(Number(req.body?.dias)||7,60)), nome=req.sessao?.nome||"Supervisora";
     const r=await _colocarAPrazo(String(req.params.id),{dias,observacao:String(req.body?.observacao||"").slice(0,200),autorizadoPorNome:nome,funcNome:nome,funcionarioId:req.sessao?.funcionarioId||""});
     // aparece já no quadro "a prazo" (sem esperar a próxima leitura do Bling)
     try{ const cid=String(r.ped.contato?.id||""); if(cid){ const l=(_prazoCli.porCli[cid]||=[]); if(!l.some(x=>x.id===String(r.ped.id))) l.push({id:String(r.ped.id),numero:r.ped.numero,data:r.ped.data||"",total:Number(r.ped.total||0)}); } }catch(e){}
-    res.json({ok:true,numero:r.ped.numero,dias:r.prazoDias,venceEm:r.venceEm});
+    res.json({ok:true,numero:r.ped.numero,dias:r.prazoDias,venceEm:r.venceEm,viaPonte:r.viaPonte,situacaoAnterior:r.situacaoAnterior});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 // CLIENTES EM RISCO com o motivo (pelo ritmo de compra do próprio cliente)
@@ -12491,14 +12506,14 @@ async function _colocarAPrazo(id,{dias,observacao,autorizadoPorNome,funcNome,fun
         ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
       })});
     }catch(e){}
-    { const r=await mudarSituacaoPedido(id, SIT.PRAZO); if(!r.ok) throw Object.assign(new Error("Não consegui mudar o pedido pra PRAZO no Bling: "+(r.erro||"erro")),{status:502}); }
+    const rSit=await mudarSituacaoPedido(id, SIT.PRAZO); if(!rSit.ok) throw Object.assign(new Error("Não consegui mudar o pedido pra PRAZO no Bling: "+(rSit.erro||"erro")),{status:502});
     const reg=lerVendasPrazo();
     reg[String(id)]={ em:agora, venceEm, dias:prazoDias, autorizadoPor:auth.funcionario.nome, operador:funcNome,
       total:Number(ped.total)||0, cliente:ped.contato?.nome||"", numero:ped.numero, observacao:observacao||"", pago:false };
     salvarJSON(PRAZO_FILE,reg);
     addLog(String(id),"venda_a_prazo",funcionarioId,funcNome,{autorizadoPor:auth.funcionario.nome,venceEm:new Date(venceEm).toLocaleDateString("pt-BR"),total:ped.total,numero:ped.numero});
     _sitOnline[String(id)]={situacaoId:SIT.PRAZO, situacao:"PRAZO", em:Date.now()};
-  return {ped,prazoDias,agora,venceEm,quando};
+  return {ped,prazoDias,agora,venceEm,quando,viaPonte:rSit.viaPonte||null,situacaoAnterior:nomeSituacao(sit)};
 }
 app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
   try{
@@ -17132,6 +17147,35 @@ async function situacaoAtualBling(pedidoBlingId){
 // Muda a situação do pedido tratando o caso "já está nessa situação": o Bling
 // devolve 400 ("A venda possui a mesma situação"), que NÃO é erro — o pedido já
 // está onde queremos. Antes isso quebrava a conclusão da separação com um alerta.
+// TRANSIÇÕES PERMITIDAS entre situações de venda, lidas do Bling (fluxo configurado na conta), guardadas 1 h.
+// Servem para achar o caminho quando o Bling não aceita ir direto de uma situação para outra.
+let _transCache={em:0,grafo:null};
+async function _grafoTransicoes(){
+  if(_transCache.grafo&&Date.now()-_transCache.em<3600e3) return _transCache.grafo;
+  if(!_transCache.grafo&&_transCache.em&&Date.now()-_transCache.em<10*60000) return null; // falhou há pouco: espera 10 min
+  try{
+    const mods=(await bling(`/situacoes/modulos`))?.data||[];
+    const mv=mods.find(m=>/vend/i.test(m.nome||m.descricao||"")&&!/nota|compra|nfc|nf-e/i.test(m.nome||m.descricao||""));
+    if(!mv) throw new Error("módulo de vendas não encontrado em /situacoes/modulos");
+    let lista=null, fonte="";
+    for(const p of [`/situacoes/modulos/${mv.id}/transicoes`,`/situacoes/transicoes?idModuloSistema=${mv.id}`]){
+      try{ const r=await bling(p); if(Array.isArray(r?.data)){ lista=r.data; fonte=p; break; } }catch(e){}
+    }
+    if(!lista) throw new Error("o Bling não devolveu as transições");
+    const g={}; lista.forEach(t=>{ if(t&&t.ativo===false) return;
+      const o=Number(t.situacaoOrigem?.id??t.idSituacaoOrigem??t.origem?.id), d=Number(t.situacaoDestino?.id??t.idSituacaoDestino??t.destino?.id);
+      if(o&&d) (g[o]||=[]).includes(d)||g[o].push(d); });
+    _transCache={em:Date.now(),grafo:g,fonte,modulo:mv.id,qtd:lista.length};
+    return g;
+  }catch(e){ _transCache={em:Date.now(),grafo:null,erro:e.message}; return null; }
+}
+// caminho mais curto de uma situação até outra pelas transições permitidas (nunca passa por Cancelado)
+function _caminhoSituacao(g,de,para){
+  de=Number(de); para=Number(para); if(!g||!de||!para||de===para) return de===para?[]:null;
+  const ant={[de]:null}, fila=[de];
+  while(fila.length){ const x=fila.shift(); for(const y of (g[x]||[])){ if(y in ant) continue; if(y===SIT.CANCELADO&&y!==para) continue; ant[y]=x; if(y===para){ const c=[]; let z=y; while(z!==de){ c.unshift(z); z=ant[z]; } return c; } fila.push(y); } }
+  return null;
+}
 async function mudarSituacaoPedido(id, novaSit, _viaIntermediaria){
   try{
     await bling(`/pedidos/vendas/${id}/situacoes/${novaSit}`,{method:"PATCH"});
@@ -17149,6 +17193,16 @@ async function mudarSituacaoPedido(id, novaSit, _viaIntermediaria){
     // costuma aceitar transição pra qualquer outra (Em digitação / Em aberto).
     const semTransicao=txt.includes("transi")&&(txt.includes("não há")||txt.includes("nao ha")||txt.includes("definidas"));
     if(semTransicao && !_viaIntermediaria){
+      // 1º: o caminho pelas transições permitidas no fluxo do Bling
+      try{
+        const g=await _grafoTransicoes(), atual=Number((await bling(`/pedidos/vendas/${id}`).then(r=>r?.data?.situacao?.id).catch(()=>0))||0);
+        const cam=_caminhoSituacao(g,atual,novaSit);
+        if(cam&&cam.length>1){
+          for(const passo of cam){ await bling(`/pedidos/vendas/${id}/situacoes/${passo}`,{method:"PATCH"}); await sleep(400); }
+          return {ok:true, mudou:true, viaPonte:cam.slice(0,-1).map(nomeSituacao).join(" → "), caminho:cam};
+        }
+      }catch(e4){}
+      // 2º: situações-ponte de sempre
       for(const ponte of [21, SIT.EM_ABERTO]){   // 21 = Em digitação
         if(!ponte||Number(ponte)===Number(novaSit)) continue;
         try{
@@ -17180,6 +17234,7 @@ function nomeSituacao(id){
     [SIT.EM_ROTA]:"Em rota",
     [SIT.ATENDIDO]:"Atendido",
     [Number(process.env.SIT_CANCELADO||12)]:"Cancelado",
+    [SIT.PRAZO]:"Prazo", [SIT.CANCELADO]:"Cancelado",
   };
   return mapa[n]||_situacoesBling[String(n)]||("Situação "+n);
 }

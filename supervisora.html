@@ -108,12 +108,21 @@ const q = (id, titulo, n, corpo) => `<div class="q" id="${id}"><h3>${titulo}${n 
 const linhaPedSemCaixa = x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>#${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.vendedor)} · ${dm(x.criadoEm)} · ${esc(x.situacao || "")}${x.dias ? ` · há ${x.dias} dia(s)` : ""}${x.pagoForaDoCaixa ? " · pago, não acertado no caixa" : ""}</span></div><b>${brl(x.total)}</b>
   <button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;white-space:nowrap" title="Colocar este pedido a prazo" onclick="event.stopPropagation();colocarAPrazo('${esc(x.id)}','${esc(x.numero)}','${esc(x.cliente)}',${Number(x.total) || 0})">⏳ a prazo</button></div>`;
 async function colocarAPrazo(id, numero, cliente, total) {
-  const v = prompt(`Colocar o pedido #${numero} (${cliente}, ${brl(total)}) A PRAZO.\n\nQuantos dias de prazo? (1 a 60)`, "7"); if (v == null) return;
+  // confere a situação atual no Bling e o caminho até Prazo (o fluxo do Bling pode não aceitar ir direto)
+  const { ok: okC, j: c } = await api("/api/supervisora/pedido/" + encodeURIComponent(id) + "/caminho-prazo");
+  if (!okC) { alert(c.erro || "Não consegui conferir a situação do pedido no Bling."); return; }
+  if (c.jaEsta) { alert(`O pedido #${numero} já está a prazo.`); carregar(); return; }
+  if (c.bloqueado) { alert(c.bloqueado); return; }
+  const rota = c.caminho && c.caminho.length > 1 ? `Situação atual: ${c.atualNome}.\nO Bling não aceita ir direto: o pedido vai passar por ${c.atualNome} → ${c.caminho.join(" → ")}.`
+    : c.semCaminho ? `Situação atual: ${c.atualNome}.\nAtenção: pelo fluxo do Bling não há caminho direto até Prazo; vou tentar pelas situações-ponte (Em digitação / Em aberto).`
+    : `Situação atual: ${c.atualNome}. Muda direto para Prazo.`;
+  const v = prompt(`Colocar o pedido #${numero} (${cliente}, ${brl(total)}) A PRAZO.\n\n${rota}\n\nQuantos dias de prazo? (1 a 60)`, "7"); if (v == null) return;
   const dias = parseInt(v, 10); if (!(dias >= 1 && dias <= 60)) { alert("Informe de 1 a 60 dias."); return; }
   const venc = new Date(Date.now() + dias * 86400000).toLocaleDateString("pt-BR");
   if (!confirm(`Confirmar: pedido #${numero} a prazo por ${dias} dia(s), vencendo em ${venc}?\nA situação muda para Prazo no Bling.`)) return;
   const { ok, j } = await api("/api/supervisora/pedido/" + encodeURIComponent(id) + "/prazo", { method: "POST", body: JSON.stringify({ dias }) });
   if (!ok) { alert(j.erro || "Não consegui colocar a prazo."); return; }
+  alert(`Pedido #${numero} a prazo por ${j.dias} dia(s).` + (j.viaPonte ? `\nPassou por: ${j.viaPonte} → Prazo.` : ""));
   carregar();
 }
 const situacaoPrazo = p => {
