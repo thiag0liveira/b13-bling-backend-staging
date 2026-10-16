@@ -10260,6 +10260,23 @@ async function _montarPainelSupervisora(){
     const idsL=new Set(L.map(x=>String(x.id)));
     (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&(mv.em||0)>=tHoje&&!idsL.has(String(mv.pedidoId||""))) vendidoHoje+=Number(mv.total)||0; }));
     vendidoHoje=_round2(vendidoHoje);
+    // META DO DIA a partir da META DO MÊS: (meta do mês − vendido no mês até ontem) ÷ dias de venda que restam (com hoje)
+    const hist=lerHistPedidos().porId, idsReg=new Set();
+    const cancelado=p=>{ const id=String(p.pedidoBlingId); const sOn=_sitOnline[id]; if(sOn&&sOn.situacaoId) return sOn.situacaoId===SIT.CANCELADO; return (hist[id]||{}).s===SIT.CANCELADO; };
+    const regMes=Object.values(props).filter(p=>p&&p.pedidoBlingId&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem||""))&&!/consumidor\s*final/i.test(String(p.cliente?.nome||"")));
+    regMes.forEach(p=>idsReg.add(String(p.pedidoBlingId)));
+    const vendidoEntre=(a,b)=>{ let v=0; regMes.forEach(p=>{ const t=Number(p.criadoEm)||0; if(t>=a&&t<b&&!cancelado(p)) v+=Number(p.total)||0; });
+      (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&(mv.em||0)>=a&&(mv.em||0)<b&&!idsReg.has(String(mv.pedidoId||""))) v+=Number(mv.total)||0; })); return _round2(v); };
+    const mesK=hoje.slice(0,7), iniMesT=Date.parse(mesK+"-01T00:00:00-03:00");
+    const metasMes=cfg.metasMes||{}; const mesesCom=Object.keys(metasMes).filter(k=>k<=mesK).sort();
+    const metaMes=Number(metasMes[mesK]||(mesesCom.length?metasMes[mesesCom[mesesCom.length-1]]:0))||0, metaHerdada=!metasMes[mesK]&&metaMes>0;
+    const diasVenda=Array.isArray(cfg.diasVenda)&&cfg.diasVenda.length?cfg.diasVenda.map(Number):[1,2,3,4,5,6]; // padrão: segunda a sábado
+    const ultimoDia=new Date(Date.UTC(Number(mesK.slice(0,4)),Number(mesK.slice(5,7)),0)).getUTCDate();
+    let diasRestantes=0, diasNoMes=0; for(let dd=1;dd<=ultimoDia;dd++){ const dw=new Date(Date.UTC(Number(mesK.slice(0,4)),Number(mesK.slice(5,7))-1,dd,12)).getUTCDay(); if(!diasVenda.includes(dw)) continue; diasNoMes++; if(dd>=Number(hoje.slice(8,10))) diasRestantes++; }
+    const vendidoMesAteOntem=vendidoEntre(iniMesT,tHoje), vendidoMes=_round2(vendidoMesAteOntem+vendidoHoje);
+    const hojeEhDiaDeVenda=diasVenda.includes(new Date(Date.parse(hoje+"T12:00:00Z")).getUTCDay());
+    const faltaMesInicioDia=Math.max(0,metaMes-vendidoMesAteOntem);
+    const metaDiaCalc=metaMes>0?(hojeEhDiaDeVenda&&diasRestantes>0?_round2(faltaMesInicioDia/diasRestantes):0):(Number(cfg.metaDia)||0);
     // 9) entregas por dia: agendadas, realizadas, com pagamento, passaram no caixa
     const entregasDia=dias.map(d=>{ const l=ativos.filter(x=>x.tipo==="entrega"&&x.agendamento&&x.agendamento.data===d);
       return {dia:d,agendadas:l.length,realizadas:l.filter(x=>x.entregaLocal).length,comPagamento:l.filter(pago).length,passaramCaixa:l.filter(x=>!!passouCaixa[String(x.id)]).length,valor:_round2(l.reduce((a,x)=>a+(Number(x.total)||0),0))}; });
@@ -10299,7 +10316,9 @@ async function _montarPainelSupervisora(){
     marca("total"); if(tempos.total>3000) console.log("[supervisora] painel lento:",JSON.stringify(tempos));
     return {ok:true,tempos,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA,meses:meses.map(m=>({mes:m.mes,ate:m.fim}))},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
-      meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
+      meta:{valor:metaDiaCalc,vendido:vendidoHoje,falta:_round2(Math.max(0,metaDiaCalc-vendidoHoje)),
+        mes:metaMes>0?{meta:metaMes,herdada:metaHerdada,vendido:vendidoMes,falta:_round2(Math.max(0,metaMes-vendidoMes)),diasRestantes,diasNoMes,hojeEhDiaDeVenda,
+          mediaNecessaria:diasRestantes>1?_round2(Math.max(0,metaMes-vendidoMes)/(diasRestantes-(hojeEhDiaDeVenda?1:0)||1)):null}:null,diasVenda},entregasDia,caixas,concurso,creditos,
       criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas};
   }
 }
@@ -10336,8 +10355,13 @@ app.get("/api/supervisora/clientes-risco",requireAcesso("acesso_supervisora"),(r
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/supervisora/meta",requireAcesso("acesso_supervisora"),(req,res)=>{
-  const v=Number(String(req.body?.metaDia||"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta"});
-  const c=_supCfg(); c.metaDia=_round2(v); c.metaPor=req.sessao?.nome||""; c.metaEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); res.json({ok:true,metaDia:c.metaDia});
+  const c=_supCfg();
+  if(req.body?.metaMes!=null){ const v=Number(String(req.body.metaMes).replace(/\./g,"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta do mês"});
+    const mes=/^\d{4}-\d{2}$/.test(String(req.body?.mes||""))?String(req.body.mes):_diaBRk(Date.now()).slice(0,7); (c.metasMes||={})[mes]=_round2(v); }
+  if(Array.isArray(req.body?.diasVenda)){ const d=[...new Set(req.body.diasVenda.map(Number).filter(n=>n>=0&&n<=6))]; if(!d.length) return res.status(400).json({erro:"marque ao menos um dia de venda"}); c.diasVenda=d.sort(); }
+  if(req.body?.metaDia!=null&&req.body?.metaMes==null){ const v=Number(String(req.body.metaDia).replace(",",".")); if(v>=0) c.metaDia=_round2(v); }
+  c.metaPor=req.sessao?.nome||""; c.metaEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); _supPainelCache.em=0;
+  res.json({ok:true,metasMes:c.metasMes||{},diasVenda:c.diasVenda||[1,2,3,4,5,6]});
 });
 // em qual caixa o pedido passou
 app.get("/api/supervisora/onde-passou",requireAcesso("acesso_supervisora"),(req,res)=>{

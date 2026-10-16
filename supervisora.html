@@ -148,8 +148,10 @@ function render() {
       ${pct != null ? `<div class="var ${pct >= 0 ? "verde" : "verm"}">${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% ${pct >= 0 ? "acima" : "abaixo"}</div>` : `<div class="s">sem venda no período de comparação</div>`}</div>`; };
   const k = (v, l, s, cl) => `<div class="kpi"><div class="v ${cl || ""}">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
   document.getElementById("kpis").innerHTML =
-    `<div class="kpi ${me.valor && me.falta <= 0 ? "pos" : ""}" style="grid-column:span 2"><div class="l">🎯 Meta do dia ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.valor ? "alterar" : "definir meta"}</a></div>
-      <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "🎉 Meta batida!") : ""}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%;${me.falta <= 0 ? "background:#3ce88a" : ""}"></i></div><div class="s">${me.falta <= 0 ? `${Math.round(me.vendido / me.valor * 100)}% da meta · passou ${brl(me.vendido - me.valor)}` : pct + "% da meta"}</div>` : ""}</div>`
+    `<div class="kpi ${me.valor && me.falta <= 0 ? "pos" : ""}" style="grid-column:span 2"><div class="l">🎯 Meta de hoje ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.mes ? "alterar meta do mês" : "definir meta do mês"}</a></div>
+      <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "🎉 Meta do dia batida!") : (me.mes && !me.mes.hojeEhDiaDeVenda ? "hoje não é dia de venda" : "")}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%;${me.falta <= 0 ? "background:#3ce88a" : ""}"></i></div>` : ""}
+      ${me.mes ? `<div class="s">Mês: <b>${brl(me.mes.vendido)}</b> de ${brl(me.mes.meta)} (${Math.round(me.mes.vendido / me.mes.meta * 100)}%)${me.mes.falta > 0 ? ` · faltam ${brl(me.mes.falta)} em ${me.mes.diasRestantes} dia(s) de venda` : " · <span class='verde'>meta do mês batida ✓</span>"}${me.mes.herdada ? " · <span class='amar'>meta repetida do mês anterior</span>" : ""}</div>`
+        : (me.valor ? `<div class="s">${pct}% da meta · defina a meta do mês para a meta de hoje ser calculada sozinha</div>` : `<div class="s">Defina a meta do mês: a meta de hoje é calculada pelo que falta e pelos dias de venda que restam.</div>`)}</div>`
     + kComp(M.hojeValor, "Vendido hoje (pedidos)", M.hojeSemanaPassada, `${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, vh)
     + kComp(M.semanaValor, "Semana até agora", M.semanaPassada, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs)
     + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
@@ -282,12 +284,24 @@ function ligarAvisos() {
   } catch (e) { _reserva = setInterval(atualizarVivo, 20000); }
 }
 async function confPix(chave, desfazer) { const { ok, j } = await api("/api/supervisora/pix/confirmar", { method: "POST", body: JSON.stringify({ chave, desfazer }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } const p = D.pix.find(x => x.chave === chave); if (p) p.confirmado = j.confirmado; const a = document.getElementById("qPix"); if (a) a.outerHTML = quadroPix(); }
-async function editarMeta() { const v = prompt("Meta de vendas do dia (R$):", D.meta.valor || ""); if (v == null) return; const { ok, j } = await api("/api/supervisora/meta", { method: "POST", body: JSON.stringify({ metaDia: v }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
-async function ondePassou() {
-  const n = document.getElementById("ondeNum").value.trim(), el = document.getElementById("ondeRes"); if (!n) return;
-  const { j } = await api("/api/supervisora/onde-passou?numero=" + encodeURIComponent(n));
-  el.innerHTML = (j.itens || []).map(x => `<div class="l"><div class="x"><b>${esc(x.caixa)} · ${esc(x.operador)}${x.cancelado ? " · cancelada" : ""}</b><span>${dm(x.em)} ${hm(x.em)} · ${x.aberta ? "caixa aberto" : "caixa fechado"} · ${esc(x.formas)}</span></div><b>${brl(x.total)}</b></div>`).join("")
-    || `<div class="ic">O pedido #${esc(n)} não passou por nenhum caixa.${j.pagamentoRegistrado ? ` Pagamento registrado fora do caixa: ${esc(j.pagamentoRegistrado.formas || j.pagamentoRegistrado.status)}.` : ""}</div>`;
+function editarMeta() {
+  const me = D.meta, ds = me.diasVenda || [1, 2, 3, 4, 5, 6], nomes = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const box = document.getElementById("mRiscoCorpo"); document.getElementById("mRisco").classList.add("aberto");
+  box.innerHTML = `<div style="font-size:18px;font-weight:900;margin-bottom:6px">🎯 Meta do mês</div>
+    <div class="ic" style="white-space:normal;margin-bottom:10px">A meta de cada dia é calculada sozinha: o que falta para a meta do mês, dividido pelos dias de venda que restam (contando hoje). Se um dia vender menos, a meta dos próximos sobe; se vender mais, cai.</div>
+    <label class="ic">Meta de vendas deste mês (R$)</label>
+    <input id="mMetaMes" inputmode="decimal" style="width:100%;font-size:18px;padding:10px;margin:4px 0 12px" value="${me.mes ? String(me.mes.meta).replace(".", ",") : ""}" placeholder="ex.: 150000">
+    <div class="ic" style="margin-bottom:4px">Dias da semana em que a loja vende</div>
+    <div class="chipz">${nomes.map((n, i) => `<label style="background:#1c1846;border:1px solid #3a3480;border-radius:999px;padding:5px 11px;font-size:13px;cursor:pointer"><input type="checkbox" class="mDia" value="${i}" ${ds.includes(i) ? "checked" : ""}> ${n}</label>`).join("")}</div>
+    <div id="mMetaErr"></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-mag" style="flex:1" onclick="salvarMeta()">Salvar</button><button class="btn btn-ghost" onclick="document.getElementById('mRisco').classList.remove('aberto')">Cancelar</button></div>`;
+}
+async function salvarMeta() {
+  const v = document.getElementById("mMetaMes").value.trim(), dias = [...document.querySelectorAll(".mDia:checked")].map(x => Number(x.value));
+  if (!v) { document.getElementById("mMetaErr").innerHTML = `<div class="err">Informe a meta do mês.</div>`; return; }
+  const { ok, j } = await api("/api/supervisora/meta", { method: "POST", body: JSON.stringify({ metaMes: v, diasVenda: dias }) });
+  if (!ok) { document.getElementById("mMetaErr").innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  document.getElementById("mRisco").classList.remove("aberto"); carregar();
 }
 async function buscarPreco() {
   const v = document.getElementById("precoQ").value.trim(), el = document.getElementById("precoRes"); if (v.length < 2) { el.innerHTML = ""; return; }
