@@ -10155,15 +10155,20 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     // COMPARATIVO por vendedora (registro do sistema, mesmos filtros da lista da semana): semana até agora x mesmo período
     // da semana passada; mês até agora x mesmo período do mês passado (do dia 1 até o mesmo dia e horário)
     const pedsReg=Object.values(props).filter(p=>p&&p.pedidoBlingId&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem||""))&&!/consumidor\s*final/i.test(String(p.cliente?.nome||"")));
-    const brtNow=new Date(agora-3*3600e3), iniMes=Date.parse(brtNow.toISOString().slice(0,7)+"-01T00:00:00-03:00");
-    const mAnt=new Date(Date.UTC(brtNow.getUTCFullYear(),brtNow.getUTCMonth()-1,1)), iniMesAnt=Date.parse(mAnt.toISOString().slice(0,7)+"-01T00:00:00-03:00");
-    const diasNoMesAnt=new Date(Date.UTC(brtNow.getUTCFullYear(),brtNow.getUTCMonth(),0)).getUTCDate();
-    const fimMesAnt=iniMesAnt+Math.min(agora-iniMes,diasNoMesAnt*_DIA); // mesmo dia/horário do mês passado (sem passar do fim dele)
-    const janelas={semana:[tIniSem,agora],semanaAnt:[tIniSem-7*_DIA,agora-7*_DIA],mes:[iniMes,agora],mesAnt:[iniMesAnt,fimMesAnt]};
+    const brtNow=new Date(agora-3*3600e3), iniMes=Date.parse(brtNow.toISOString().slice(0,7)+"-01T00:00:00-03:00"), decorrido=agora-iniMes;
+    // mês atual e os 3 anteriores, cada um do dia 1 até o MESMO dia e horário (sem passar do fim daquele mês)
+    const meses=[0,1,2,3].map(k=>{ const m=new Date(Date.UTC(brtNow.getUTCFullYear(),brtNow.getUTCMonth()-k,1)); const ini=Date.parse(m.toISOString().slice(0,7)+"-01T00:00:00-03:00");
+      const diasNoMes=new Date(Date.UTC(m.getUTCFullYear(),m.getUTCMonth()+1,0)).getUTCDate(); const fim=k===0?agora:ini+Math.min(decorrido,diasNoMes*_DIA);
+      return {k,ini,fim,mes:m.toISOString().slice(0,7)}; });
+    const fimMesAnt=meses[1].fim;
+    const janelas={semana:[tIniSem,agora],semanaAnt:[tIniSem-7*_DIA,agora-7*_DIA]}; meses.forEach(m=>{ janelas["m"+m.k]=[m.ini,m.fim]; });
     const cmp={};
     pedsReg.forEach(p=>{ const v=p.vendedorNome||p.funcionarioNome||"(sem vendedora)", t=Number(p.criadoEm)||0;
-      Object.entries(janelas).forEach(([k,[a,b]])=>{ if(t>=a&&t<b){ const o=(cmp[v]||={vendedora:v,semana:{qtd:0,valor:0},semanaAnt:{qtd:0,valor:0},mes:{qtd:0,valor:0},mesAnt:{qtd:0,valor:0}}); o[k].qtd++; o[k].valor+=Number(p.total)||0; } }); });
-    const comparativo=Object.values(cmp).map(o=>{ ["semana","semanaAnt","mes","mesAnt"].forEach(k=>{ o[k].valor=_round2(o[k].valor); }); return o; })
+      Object.entries(janelas).forEach(([k,[a,b]])=>{ if(t>=a&&t<b){ const o=(cmp[v]||={vendedora:v}); (o[k]||={qtd:0,valor:0}); o[k].qtd++; o[k].valor+=Number(p.total)||0; } }); });
+    const vazio=()=>({qtd:0,valor:0});
+    const comparativo=Object.values(cmp).map(o=>({vendedora:o.vendedora,semana:o.semana||vazio(),semanaAnt:o.semanaAnt||vazio(),
+        meses:meses.map(m=>({mes:m.mes,ate:m.fim,...(o["m"+m.k]||vazio())})),mes:o.m0||vazio(),mesAnt:o.m1||vazio()}))
+      .map(o=>{ [o.semana,o.semanaAnt,...o.meses].forEach(x=>{ x.valor=_round2(x.valor); }); return o; })
       .sort((a,b)=>b.mes.qtd-a.mes.qtd||b.semana.qtd-a.semana.qtd);
     // 4) não atendidos
     const naoAtendidos=ativos.filter(x=>x.situacaoId!==ATD).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
@@ -10217,7 +10222,7 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
       pctEntrega:daSemana.length?Math.round(daSemana.filter(x=>x.tipo==="entrega").length/daSemana.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
     res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
-      periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
+      periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA,meses:meses.map(m=>({mes:m.mes,ate:m.fim}))},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
       criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas});
   }catch(e){ res.status(500).json({erro:e.message}); }
