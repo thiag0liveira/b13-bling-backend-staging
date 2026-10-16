@@ -10181,13 +10181,13 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
 // ATENDIDOS DA SEMANA: uma busca no Bling pelos pedidos na situação Atendido (1 a 3 páginas, prioridade normal, em
 // segundo plano, a cada 5 min). Antes dependia do acompanhamento pedido a pedido da tela de Pedidos, que só roda com
 // ela aberta e se perde a cada reinício: os atendidos saíam sempre 0.
-let _supAtd={em:0,ids:new Set(),rodando:null,ini:""};
+let _supAtd={em:0,ids:new Set(),mapa:{},rodando:null,ini:""};
 function _supAtualizarAtendidos(iniISO,fimISO){
   if(_supAtd.rodando) return _supAtd.rodando;
-  _supAtd.rodando=(async()=>{ try{ const ids=new Set();
-      for(let pag=1;pag<=6;pag++){ const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO}); p.append("idsSituacoes[]",SIT.ATENDIDO);
-        const r=await bling(`/pedidos/vendas?${p.toString()}`); const arr=r?.data||[]; arr.forEach(b=>ids.add(String(b.id))); if(arr.length<100) break; } // prioridade normal: 1 a 3 chamadas a cada 5 min (a fila lenta pode estar cheia de tarefas grandes)
-      _supAtd={em:Date.now(),ids,rodando:null,ini:iniISO}; }
+  _supAtd.rodando=(async()=>{ try{ const ids=new Set(), mapa={};
+      for(let pag=1;pag<=20;pag++){ const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO}); p.append("idsSituacoes[]",SIT.ATENDIDO);
+        const r=await bling(`/pedidos/vendas?${p.toString()}`); const arr=r?.data||[]; arr.forEach(b=>{ ids.add(String(b.id)); mapa[String(b.id)]={t:Number(b.total)||0,d:String(b.data||"").slice(0,10)}; }); if(arr.length<100) break; } // prioridade normal: 1 a 3 chamadas a cada 5 min (a fila lenta pode estar cheia de tarefas grandes)
+      _supAtd={em:Date.now(),ids,mapa,rodando:null,ini:iniISO}; }
     catch(e){ _supAtd.rodando=null; _supAtd.em=Date.now()-4*60000; } })(); // falhou: tenta de novo em 1 min
   return _supAtd.rodando;
 }
@@ -10226,7 +10226,8 @@ async function _montarPainelSupervisora(){
     const dCx=lerCaixaSessoes(), pags=lerPag()||{}, props=lerPropostas()||{};
     const passouCaixa={}; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&mv.pedidoId) (passouCaixa[String(mv.pedidoId)]||=[]).push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",em:mv.em}); }));
     const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
-    if(_supAtd.ini!==iniSem||Date.now()-_supAtd.em>5*60000){ const pr=_supAtualizarAtendidos(iniSem,hoje); if(!_supAtd.em||_supAtd.ini!==iniSem) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
+    const iniBusca=[iniSem,hoje.slice(0,7)+"-01"].sort()[0]; // do que vier antes: começo da semana ou do mês
+    if(_supAtd.ini!==iniBusca||Date.now()-_supAtd.em>5*60000){ const pr=_supAtualizarAtendidos(iniBusca,hoje); if(!_supAtd.em||_supAtd.ini!==iniBusca) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
     const ehAtendido=x=>x.situacaoId===ATD||_supAtd.ids.has(String(x.id));
     marca("atendidos");
     const pago=x=>!!passouCaixa[String(x.id)]||["pago"].includes(pags[String(x.id)]?.statusPagamento);
@@ -10294,6 +10295,12 @@ async function _montarPainelSupervisora(){
     const hojeEhDiaDeVenda=diasVenda.includes(new Date(Date.parse(hoje+"T12:00:00Z")).getUTCDay());
     const faltaMesInicioDia=Math.max(0,metaMes-vendidoMesAteOntem);
     const metaDiaCalc=metaMes>0?(hojeEhDiaDeVenda&&diasRestantes>0?_round2(faltaMesInicioDia/diasRestantes):0):(Number(cfg.metaDia)||0);
+    // META DE ATENDIDOS: valor dos pedidos na situação Atendido (pelo dia do pedido), mesma conta da meta de pedidos
+    const metasAtd=cfg.metasAtdMes||{}; const mesesAtd=Object.keys(metasAtd).filter(k=>k<=mesK).sort();
+    const metaAtdMes=Number(metasAtd[mesK]||(mesesAtd.length?metasAtd[mesesAtd[mesesAtd.length-1]]:0))||metaMes, metaAtdIgual=!metasAtd[mesK]&&!mesesAtd.length;
+    let atdMesAteOntem=0, atdHoje=0; Object.values(_supAtd.mapa||{}).forEach(x=>{ if(!x.d||x.d.slice(0,7)!==mesK) return; if(x.d===hoje) atdHoje+=x.t; else if(x.d<hoje) atdMesAteOntem+=x.t; });
+    atdMesAteOntem=_round2(atdMesAteOntem); atdHoje=_round2(atdHoje);
+    const metaAtdDia=metaAtdMes>0&&hojeEhDiaDeVenda&&diasRestantes>0?_round2(Math.max(0,metaAtdMes-atdMesAteOntem)/diasRestantes):0;
     // 9) entregas por dia: agendadas, realizadas, com pagamento, passaram no caixa
     const entregasDia=dias.map(d=>{ const l=ativos.filter(x=>x.tipo==="entrega"&&x.agendamento&&x.agendamento.data===d);
       return {dia:d,agendadas:l.length,realizadas:l.filter(x=>x.entregaLocal).length,comPagamento:l.filter(pago).length,passaramCaixa:l.filter(x=>!!passouCaixa[String(x.id)]).length,valor:_round2(l.reduce((a,x)=>a+(Number(x.total)||0),0))}; });
@@ -10337,7 +10344,9 @@ async function _montarPainelSupervisora(){
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA,meses:meses.map(m=>({mes:m.mes,ate:m.fim}))},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:metaDiaCalc,vendido:vendidoHoje,falta:_round2(Math.max(0,metaDiaCalc-vendidoHoje)),
         mes:metaMes>0?{meta:metaMes,herdada:metaHerdada,vendido:vendidoMes,falta:_round2(Math.max(0,metaMes-vendidoMes)),diasRestantes,diasNoMes,hojeEhDiaDeVenda,
-          mediaNecessaria:diasRestantes>1?_round2(Math.max(0,metaMes-vendidoMes)/(diasRestantes-(hojeEhDiaDeVenda?1:0)||1)):null}:null,diasVenda},entregasDia,caixas,concurso,creditos,
+          mediaNecessaria:diasRestantes>1?_round2(Math.max(0,metaMes-vendidoMes)/(diasRestantes-(hojeEhDiaDeVenda?1:0)||1)):null}:null,diasVenda,
+        atendidos:metaAtdMes>0?{valor:metaAtdDia,vendido:atdHoje,falta:_round2(Math.max(0,metaAtdDia-atdHoje)),igualPedidos:metaAtdIgual,carregado:_supAtd.em>0,
+          mes:{meta:metaAtdMes,vendido:_round2(atdMesAteOntem+atdHoje),falta:_round2(Math.max(0,metaAtdMes-atdMesAteOntem-atdHoje)),diasRestantes}}:null},entregasDia,caixas,concurso,creditos,
       criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas};
   }
 }
@@ -10391,7 +10400,8 @@ app.get("/api/supervisora/clientes-risco",requireAcesso("acesso_supervisora"),(r
 app.post("/api/supervisora/meta",requireAcesso("acesso_supervisora"),(req,res)=>{
   const c=_supCfg();
   if(req.body?.metaMes!=null){ const v=Number(String(req.body.metaMes).replace(/\./g,"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta do mês"});
-    const mes=/^\d{4}-\d{2}$/.test(String(req.body?.mes||""))?String(req.body.mes):_diaBRk(Date.now()).slice(0,7); (c.metasMes||={})[mes]=_round2(v); }
+    const mes=/^\d{4}-\d{2}$/.test(String(req.body?.mes||""))?String(req.body.mes):_diaBRk(Date.now()).slice(0,7); (c.metasMes||={})[mes]=_round2(v);
+    const va=String(req.body?.metaAtdMes??"").trim(); if(va){ const n=Number(va.replace(/\./g,"").replace(",",".")); if(n>=0) (c.metasAtdMes||={})[mes]=_round2(n); } else if(c.metasAtdMes) delete c.metasAtdMes[mes]; }
   if(Array.isArray(req.body?.diasVenda)){ const d=[...new Set(req.body.diasVenda.map(Number).filter(n=>n>=0&&n<=6))]; if(!d.length) return res.status(400).json({erro:"marque ao menos um dia de venda"}); c.diasVenda=d.sort(); }
   if(req.body?.metaDia!=null&&req.body?.metaMes==null){ const v=Number(String(req.body.metaDia).replace(",",".")); if(v>=0) c.metaDia=_round2(v); }
   c.metaPor=req.sessao?.nome||""; c.metaEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); _supPainelCache.em=0;
