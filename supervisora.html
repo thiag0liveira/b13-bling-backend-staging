@@ -69,6 +69,9 @@ th:first-child,td:first-child{text-align:left}
 .inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
 #mapaFrete{height:200px;border-radius:8px;border:1px solid var(--borda);margin-top:6px;display:none}
 .l.novo{animation:pisca 6s ease-out}@keyframes pisca{0%,30%{background:#4a3a00}100%{background:transparent}}
+.kpi.pos{background:linear-gradient(160deg,#0f3a28,#101f1a);border-color:#2f9e6b}.kpi.neg{background:linear-gradient(160deg,#3d1020,#21101a);border-color:#9e2f4a}
+.kpi .cmp{margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);font-size:11px;color:#9a95c9}.kpi .cmp b{display:block;font-size:19px;color:#e9e6ff;margin:1px 0}
+.kpi .var{font-weight:900;font-size:15px;margin-top:4px}
 .chipz{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}.chipz span{background:#1c1846;border:1px solid #3a3480;border-radius:999px;padding:3px 9px;font-size:11.5px}
 </style>
 <script src="/nav.js"></script>
@@ -128,12 +131,17 @@ async function carregar() {
 function render() {
   const d = D, M = d.metricas, me = d.meta, pct = me.valor ? Math.min(100, Math.round(me.vendido / me.valor * 100)) : 0;
   const varPct = (a, b) => b ? Math.round((a - b) / b * 100) : null, vh = varPct(M.hojeValor, M.hojeSemanaPassada), vs = varPct(M.semanaValor, M.semanaPassada);
+  // comparativo com o valor de referência em destaque; quadro verde se está acima, vermelho se está abaixo
+  const kComp = (v, l, ref, quando, pct) => { const cl = pct == null ? "" : (pct >= 0 ? "pos" : "neg");
+    return `<div class="kpi ${cl}"><div class="l">${l}</div><div class="v">${brl(v)}</div>
+      <div class="cmp"><span>comparado com</span><b>${brl(ref)}</b><span>${quando}</span></div>
+      ${pct != null ? `<div class="var ${pct >= 0 ? "verde" : "verm"}">${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% ${pct >= 0 ? "acima" : "abaixo"}</div>` : `<div class="s">sem venda no período de comparação</div>`}</div>`; };
   const k = (v, l, s, cl) => `<div class="kpi"><div class="v ${cl || ""}">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
   document.getElementById("kpis").innerHTML =
-    `<div class="kpi" style="grid-column:span 2"><div class="l">🎯 Meta do dia ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.valor ? "alterar" : "definir meta"}</a></div>
-      <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "meta batida ✓") : ""}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="s">${pct}% da meta</div>` : ""}</div>`
-    + k(brl(M.hojeValor), "Vendido hoje (pedidos)", `${vh != null ? `${vh >= 0 ? "▲" : "▼"} ${Math.abs(vh)}% ` : ""}vs <b>${brl(M.hojeSemanaPassada)}</b> em ${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, vh != null && vh < 0 ? "verm" : "")
-    + k(brl(M.semanaValor), "Semana até agora", `${vs != null ? `${vs >= 0 ? "▲" : "▼"} ${Math.abs(vs)}% ` : ""}vs <b>${brl(M.semanaPassada)}</b> de ${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs != null && vs < 0 ? "verm" : "")
+    `<div class="kpi ${me.valor && me.falta <= 0 ? "pos" : ""}" style="grid-column:span 2"><div class="l">🎯 Meta do dia ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.valor ? "alterar" : "definir meta"}</a></div>
+      <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "🎉 Meta batida!") : ""}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%;${me.falta <= 0 ? "background:#3ce88a" : ""}"></i></div><div class="s">${me.falta <= 0 ? `${Math.round(me.vendido / me.valor * 100)}% da meta · passou ${brl(me.vendido - me.valor)}` : pct + "% da meta"}</div>` : ""}</div>`
+    + kComp(M.hojeValor, "Vendido hoje (pedidos)", M.hojeSemanaPassada, `${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, vh)
+    + kComp(M.semanaValor, "Semana até agora", M.semanaPassada, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs)
     + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
     + k(brl(M.aReceberPrazo), "A receber (prazo)", `${d.prazo.length} pedido(s)`, M.aReceberPrazo > 0 ? "amar" : "")
     + k(M.clientesEmRisco != null ? M.clientesEmRisco : "—", "Clientes em risco", "passaram do ritmo de compra", M.clientesEmRisco > 0 ? "amar" : "");
