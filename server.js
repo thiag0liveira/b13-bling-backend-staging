@@ -1131,7 +1131,10 @@ function b13GetSession(){ try{
 // atualiza sozinho (ao abrir e a cada 5 min), SEM recarregar a página (não atrapalha quem está no meio de uma venda).
 function b13SincronizarSessao(){
   var s=b13GetSession(); if(!s||!s.token) return;
-  fetch(B13_BACKEND+"/api/sessao/atual",{headers:{"X-Auth-Token":s.token}}).then(function(r){ return r.ok?r.json():null; }).then(function(j){
+  fetch(B13_BACKEND+"/api/sessao/atual",{headers:{"X-Auth-Token":s.token}}).then(function(r){
+    // sessão inválida no servidor: apaga; e só leva ao login nas telas que exigem login (preço, ofertas, totem seguem funcionando)
+    if(r.status===401){ b13ClearSession(); if(window.__b13PrecisaLogin&&location.pathname!=="/login") location.href="/login?expirou=1&next="+encodeURIComponent(location.pathname+location.search); return null; }
+    return r.ok?r.json():null; }).then(function(j){
     if(!j||!j.ok) return;
     var antes=JSON.stringify([s.nivel,(s.permissoes||[]).slice().sort()]), depois=JSON.stringify([j.nivel,(j.permissoes||[]).slice().sort()]);
     if(antes===depois) return;
@@ -1179,7 +1182,7 @@ function b13PodeComPermissoes(acao,n){
   };
   return (mapa[acao]||[]).some(x=>n.includes(x));
 }
-function b13RequireLogin(){ if(!b13GetSession()){ location.href="/login?next="+encodeURIComponent(location.pathname); return false; } return true; }
+function b13RequireLogin(){ window.__b13PrecisaLogin=true; if(!b13GetSession()){ location.href="/login?next="+encodeURIComponent(location.pathname); return false; } return true; }
 // checa se o funcionário logado tem acesso a uma aba específica, usando a
 // MESMA lista/regras do menu lateral — fonte única de verdade
 function b13PodeAba(href){
@@ -1211,7 +1214,11 @@ function b13BloquearSeSemAcesso(href){
   window.__b13SemAcesso=true;
   return false;
 }
-function b13Logout(){ b13ClearSession(); location.href="/login?saiu=1"; }
+function b13Logout(){
+  // encerra a sessão NO SERVIDOR (antes só limpava o navegador: o token seguia válido por 7 dias)
+  try{ var s=b13GetSession(); if(s&&s.token) fetch(B13_BACKEND+"/api/funcionarios/logout",{method:"POST",keepalive:true,headers:{"X-Auth-Token":s.token}}).catch(function(){}); }catch(e){}
+  b13ClearSession(); setTimeout(function(){ location.href="/login?saiu=1"; },150);
+}
 // se o logout acontecer em OUTRA aba (deslogar lá), essa aba precisa perceber e
 // deslogar também — sessionStorage é por aba, então uma aba esquecida aberta em
 // segundo plano continuava "logada" mesmo depois de deslogar em outra, e
@@ -1688,6 +1695,12 @@ app.post("/api/funcionarios/login",(req,res)=>{
 // obrigatório do primeiro acesso quanto numa troca voluntária futura
 // permissões atuais de quem está logado (o menu de cada tela usa para se atualizar sozinho)
 app.get("/api/sessao/atual",requireSessao,(req,res)=>{ const s=req.sessao; res.json({ok:true,nome:s.nome,nivel:s.nivel,permissoes:s.permissoes||[s.nivel]}); });
+// SAIR: apaga a sessão no servidor (o token deixa de valer em qualquer aba ou aparelho)
+app.post("/api/funcionarios/logout",(req,res)=>{
+  const t=String(req.headers["x-auth-token"]||""); if(!t) return res.json({ok:true});
+  const ss=lerSessoes(); if(ss[t]){ const nome=ss[t].nome; delete ss[t]; salvarSessoes(ss); console.log(`[sessao] saiu: ${nome}`); }
+  res.json({ok:true});
+});
 app.post("/api/funcionarios/trocar-senha",requireSessao,(req,res)=>{
   const {senhaAtual,novaSenha}=req.body||{};
   if(!senhaAtual||!novaSenha) return res.status(400).json({erro:"Informe a senha atual e a nova senha"});
