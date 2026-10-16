@@ -10205,11 +10205,18 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const semanaAteAgora=somaPeriodo(tIniSem,agora), semanaPassadaAteAgora=somaPeriodo(semPassada(tIniSem),semPassada(agora));
     const prod={}; ativos.forEach(x=>(x.itens||[]).forEach(i=>{ const k=i.nome||""; if(!k) return; (prod[k]||={nome:k,qtd:0,valor:0}); prod[k].qtd+=Number(i.quantidade)||0; prod[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); }));
     let clientesRisco=null; try{ const idx=_indiceClientes(); clientesRisco=Object.values(idx.porCli).map(p=>_metricasCliente(p,false)).filter(m=>m.status==="em_risco").length; }catch(e){}
+    // PEDIDOS POR HORA: hoje x mesmo dia da semana passada x média das 4 semanas anteriores (mesmo dia da semana)
+    const pedsHora=Object.values(props).filter(p=>p&&p.pedidoBlingId&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem||""))&&!/consumidor\s*final/i.test(String(p.cliente?.nome||"")));
+    const serieDia=(ini)=>{ const qtd=Array(24).fill(0), valor=Array(24).fill(0); pedsHora.forEach(p=>{ const t=Number(p.criadoEm)||0; if(t<ini||t>=ini+_DIA) return; const h=new Date(t-3*3600e3).getUTCHours(); qtd[h]++; valor[h]+=Number(p.total)||0; }); return {qtd,valor:valor.map(_round2),data:_diaBRk(ini+12*3600e3)}; };
+    const sHoje=serieDia(tHoje), sAnt=serieDia(tHoje-7*_DIA), semanas=[1,2,3,4].map(k=>serieDia(tHoje-7*k*_DIA));
+    const media={qtd:Array(24).fill(0).map((_,h)=>+(semanas.reduce((a,x)=>a+x.qtd[h],0)/4).toFixed(2)),valor:Array(24).fill(0).map((_,h)=>_round2(semanas.reduce((a,x)=>a+x.valor[h],0)/4)),datas:semanas.map(x=>x.data)};
+    const porHora={horaAgora:new Date(agora-3*3600e3).getUTCHours(),hoje:sHoje,semanaPassada:sAnt,media4:media};
     const metricas={ hojeValor:_round2(hojeAteAgora), hojeSemanaPassada:_round2(mesmoHorarioSemPassada), semanaValor:_round2(semanaAteAgora), semanaPassada:_round2(semanaPassadaAteAgora),
+      refHojeAte:semPassada(agora), refSemanaIni:semPassada(tIniSem), refSemanaAte:semPassada(agora),
       pedidosSemana:daSemana.length, ticketMedio:daSemana.length?_round2(daSemana.reduce((a,x)=>a+(Number(x.total)||0),0)/daSemana.length):0, cancelados:L.filter(x=>x.cancelado&&(Number(x.criadoEm)||0)>=tIniSem).length,
       pctEntrega:daSemana.length?Math.round(daSemana.filter(x=>x.tipo==="entrega").length/daSemana.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
-    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,
+    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
       criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas});

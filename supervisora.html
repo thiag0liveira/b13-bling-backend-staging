@@ -57,7 +57,7 @@ th:first-child,td:first-child{text-align:left}
 .l{display:flex;gap:8px;align-items:center;padding:5px 2px;border-bottom:1px solid #221e4f;font-size:12.5px}.l:last-child{border-bottom:none}.l .x{flex:1;min-width:0}
 .l .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.l .x span{color:var(--muted);font-size:11px}
 .l.click{cursor:pointer}.l.click:hover{background:#1c1846}
-.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal}#qVend{grid-column:1/-1}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}@media(min-width:1100px){#qComp{grid-column:span 2}}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
+.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal}#qVend{grid-column:1/-1}#qHora{grid-column:1/-1}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}@media(min-width:1100px){#qComp{grid-column:span 2}}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
 .bar{height:10px;background:#221e4f;border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,#FF0082,#ffd23f)}
 .big{font-size:22px;font-weight:900}.verde{color:#3ce88a}.amar{color:#ffd23f}.verm{color:#ff8aa3}
 .inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
@@ -88,6 +88,7 @@ const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g,
 const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const hm = ms => ms ? new Date(ms).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "";
 const dm = ms => ms ? new Date(ms).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "";
+const dsem = ms => ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][new Date(ms - 3 * 3600e3).getUTCDay()];
 const diaCurto = d => { const x = new Date(d + "T12:00:00"); return ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][x.getDay()] + " " + d.slice(8, 10); };
 function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
@@ -125,8 +126,8 @@ function render() {
   document.getElementById("kpis").innerHTML =
     `<div class="kpi" style="grid-column:span 2"><div class="l">🎯 Meta do dia ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.valor ? "alterar" : "definir meta"}</a></div>
       <div class="v">${brl(me.vendido)} <span style="font-size:13px" class="${me.falta > 0 ? "amar" : "verde"}">${me.valor ? (me.falta > 0 ? "faltam " + brl(me.falta) : "meta batida ✓") : ""}</span></div>${me.valor ? `<div class="bar"><i style="width:${pct}%"></i></div><div class="s">${pct}% da meta</div>` : ""}</div>`
-    + k(brl(M.hojeValor), "Vendido hoje (pedidos)", vh != null ? `${vh >= 0 ? "▲" : "▼"} ${Math.abs(vh)}% vs mesmo horário semana passada` : "", vh != null && vh < 0 ? "verm" : "")
-    + k(brl(M.semanaValor), "Semana até agora", vs != null ? `${vs >= 0 ? "▲" : "▼"} ${Math.abs(vs)}% vs semana passada` : "", vs != null && vs < 0 ? "verm" : "")
+    + k(brl(M.hojeValor), "Vendido hoje (pedidos)", `${vh != null ? `${vh >= 0 ? "▲" : "▼"} ${Math.abs(vh)}% ` : ""}vs <b>${brl(M.hojeSemanaPassada)}</b> em ${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, vh != null && vh < 0 ? "verm" : "")
+    + k(brl(M.semanaValor), "Semana até agora", `${vs != null ? `${vs >= 0 ? "▲" : "▼"} ${Math.abs(vs)}% ` : ""}vs <b>${brl(M.semanaPassada)}</b> de ${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs != null && vs < 0 ? "verm" : "")
     + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
     + k(brl(M.aReceberPrazo), "A receber (prazo)", `${d.prazo.length} pedido(s)`, M.aReceberPrazo > 0 ? "amar" : "")
     + k(M.clientesEmRisco != null ? M.clientesEmRisco : "—", "Clientes em risco", "passaram do ritmo de compra", M.clientesEmRisco > 0 ? "amar" : "");
@@ -152,6 +153,7 @@ function render() {
   // os quadros interativos (busca no caixa, preço, frete e mapa) são mantidos na atualização automática
   const manter = {}; ["qOnde", "qPreco", "qFrete"].forEach(id => { const el = document.getElementById(id); if (el) manter[id] = el; });
   document.getElementById("grade").innerHTML = [
+    quadroHora(),
     q("qCaixas", "💵 Dinheiro nos caixas atacado", null, cx + `<div class="ic" style="margin-top:4px">Acima de R$ 2.000,00 aparece em vermelho: sugira a sangria.</div>`),
     q("qCriados", "🆕 Pedidos sendo criados hoje", cr.total, orig),
     quadroPix(),
@@ -173,6 +175,34 @@ function render() {
   Object.entries(manter).forEach(([id, el]) => { const novo = document.getElementById(id); if (novo) novo.replaceWith(el); });
 }
 
+
+// ===== Pedidos por hora: hoje x mesmo dia da semana passada x média das 4 semanas anteriores =====
+let HORA_MET = "qtd", HORA_MODO = "hora";
+function quadroHora() {
+  const P = D.porHora; if (!P) return "";
+  const acum = a => { let s = 0; return a.map(v => (s += v)); };
+  const serie = x => { const a = x[HORA_MET].slice(); return HORA_MODO === "acum" ? acum(a) : a; };
+  const hj = serie(P.hoje), sp = serie(P.semanaPassada), md = serie(P.media4), hAg = P.horaAgora;
+  let h0 = 7, h1 = 22; [P.hoje, P.semanaPassada, P.media4].forEach(x => x.qtd.forEach((q, i) => { if (q > 0) { h0 = Math.min(h0, i); h1 = Math.max(h1, i); } }));
+  const horas = []; for (let i = h0; i <= h1; i++) horas.push(i);
+  const max = Math.max(1, ...horas.map(i => Math.max(i <= hAg ? hj[i] : 0, sp[i], md[i])));
+  const W = 1000, H = 230, L = 52, R = 12, T = 12, Bm = 28, cw = (W - L - R) / (horas.length - 1 || 1);
+  const X = i => L + (i - h0) * cw, Y = v => T + (H - T - Bm) * (1 - v / max);
+  const fmt = v => HORA_MET === "valor" ? brl(v) : (Math.round(v * 10) / 10).toLocaleString("pt-BR");
+  const linha = (arr, cor, extra, ate) => { const pts = horas.filter(i => ate == null || i <= ate).map(i => `${X(i).toFixed(1)},${Y(arr[i]).toFixed(1)}`).join(" ");
+    return `<polyline points="${pts}" fill="none" stroke="${cor}" stroke-width="2.5" ${extra || ""}/>` + horas.filter(i => ate == null || i <= ate).map(i => `<circle cx="${X(i).toFixed(1)}" cy="${Y(arr[i]).toFixed(1)}" r="3.2" fill="${cor}"><title>${String(i).padStart(2, "0")}h · ${fmt(arr[i])}</title></circle>`).join(""); };
+  const grade = [0, .25, .5, .75, 1].map(f => `<line x1="${L}" x2="${W - R}" y1="${Y(max * f)}" y2="${Y(max * f)}" stroke="#2a2660"/><text x="${L - 6}" y="${Y(max * f) + 4}" fill="#9a95c9" font-size="11" text-anchor="end">${HORA_MET === "valor" ? (max * f >= 1000 ? (max * f / 1000).toFixed(1).replace(".", ",") + " mil" : Math.round(max * f)) : Math.round(max * f * 10) / 10}</text>`).join("");
+  const eixo = horas.map(i => `<text x="${X(i)}" y="${H - 8}" fill="${i === hAg ? "#FF0082" : "#9a95c9"}" font-size="11" text-anchor="middle">${i}h</text>`).join("");
+  const agora = `<line x1="${X(Math.min(Math.max(hAg, h0), h1))}" x2="${X(Math.min(Math.max(hAg, h0), h1))}" y1="${T}" y2="${H - Bm}" stroke="#FF0082" stroke-dasharray="3 4" opacity=".6"/>`;
+  const tot = (x, ate) => x[HORA_MET].reduce((a, v, i) => a + (ate == null || i <= ate ? v : 0), 0);
+  const tHj = tot(P.hoje, hAg), tSp = tot(P.semanaPassada, hAg), tMd = tot(P.media4, hAg);
+  const btn = (grupo, val, txt) => `<span class="chip ${(grupo === "m" ? HORA_MET : HORA_MODO) === val ? "on" : ""}" style="font-size:11.5px;padding:3px 9px" onclick="${grupo === "m" ? "HORA_MET" : "HORA_MODO"}='${val}';document.getElementById('qHora').outerHTML=quadroHora()">${txt}</span>`;
+  const corpo = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">${btn("m", "qtd", "Pedidos")}${btn("m", "valor", "Valor (R$)")}<span style="width:10px"></span>${btn("o", "hora", "Por hora")}${btn("o", "acum", "Acumulado no dia")}
+      <span style="margin-left:auto;font-size:12px"><span style="color:#FF0082">● Hoje ${fmt(tHj)}</span> · <span style="color:#7fd0ff">● ${dsem(Date.parse(P.semanaPassada.data + "T12:00:00-03:00"))} ${P.semanaPassada.data.slice(8, 10)}/${P.semanaPassada.data.slice(5, 7)} ${fmt(tSp)}</span> · <span style="color:#9a95c9">● média 4 semanas ${fmt(tMd)}</span> <span class="ic">(até ${hAg}h)</span></span></div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grade}${agora}${linha(md, "#9a95c9", 'stroke-dasharray="6 5"')}${linha(sp, "#7fd0ff")}${linha(hj, "#FF0082", "", hAg)}${eixo}</svg>
+    <div class="ic">Pedidos criados no sistema (sem vendas de caixa e sem consumidor final). Média das semanas de ${P.media4.datas.slice().reverse().map(d => d.slice(8, 10) + "/" + d.slice(5, 7)).join(", ")} (mesmo dia da semana).</div>`;
+  return q("qHora", "📈 Pedidos por hora: hoje x semanas anteriores", null, corpo);
+}
 // ===== Pix e pendências: atualizam NA HORA (aviso do servidor), sem recarregar a tela =====
 let PIX_VISTOS = null;
 function quadroPix() {
