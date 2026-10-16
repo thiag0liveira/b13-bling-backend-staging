@@ -3565,7 +3565,7 @@ app.get("/api/contatos",rateLimit({janelaMs:60000,max:12,prefixo:"contatos"}),as
 // registra o(s) pagamento(s) (pode ser dividido entre formas) e tenta emitir a NFCe.
 // ---------------- CONTROLE DE CAIXA (sessões: abertura, movimentos, fechamento) ----------------
 function lerCaixaSessoes(){ return lerJSON(CAIXA_SESSOES_FILE,{sessoes:[]}); }
-function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); }
+function salvarCaixaSessoes(d){ salvarJSON(CAIXA_SESSOES_FILE,d); try{ _supAvisar("caixa"); }catch(e){} }
 const CAIXA_SESSOES_ARQUIVO_FILE = `${DATA_DIR}/caixa_sessoes_arquivo.json`;
 // caixa_sessoes.json já é o MAIOR arquivo do sistema (1,6MB) e nunca teve nenhuma
 // sessão removida — cresce pra sempre, e é lido e reescrito INTEIRO a cada venda
@@ -10091,6 +10091,44 @@ const SUP_CFG_FILE=`${DATA_DIR}/supervisora_config.json`, SUP_PIX_FILE=`${DATA_D
 function _supCfg(){ const c=lerJSON(SUP_CFG_FILE,null)||{}; if(!c.inicioEm){ c.inicioEm=Date.now(); salvarJSON(SUP_CFG_FILE,c); } return c; }
 const _diaBRk=ms=>new Date(ms-3*3600e3).toISOString().slice(0,10);
 function _iniSemanaBR(ms){ const d=new Date(ms-3*3600e3); const dow=(d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-dow); return d.toISOString().slice(0,10); } // segunda
+function _supPix(cfg,dCx,tIniSem){
+  const conf=lerJSON(SUP_PIX_FILE,{}), desdePix=Math.max(cfg.inicioEm,tIniSem), pix=[];
+  (dCx.sessoes||[]).filter(sx=>sx.tipoCaixa==="atacado").forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo!=="venda"||mv.cancelado||(mv.em||0)<desdePix) return;
+    (mv.pagamentos||[]).forEach((p,i)=>{ if(!/pix/i.test(p.formaNome||"")||!(Number(p.valor)>0)) return; const k=`${sx.id}|${mv.em}|${i}`;
+      pix.push({chave:k,em:mv.em,valor:_round2(p.valor),forma:p.formaNome,numero:mv.numero||mv.pedidoId||"",cliente:mv.clienteNome||"",operador:mv.operador||sx.operador||"",confirmado:conf[k]||null}); }); }));
+  pix.sort((a,b)=>b.em-a.em); return {pix,desdePix};
+}
+function _supPend(props,L,tHoje){
+  return Object.values(lerPend()||{}).filter(p=>p&&p.status!=="resolvido"&&p.status!=="resolvida"&&(Number(p.em)||0)>=tHoje).map(p=>{ // só de hoje em diante
+    const reg=Object.values(props).find(x=>String(x.pedidoBlingId)===String(p.pedidoId))||null, its=((L||[]).find(x=>String(x.id)===String(p.pedidoId))||{}).itens||reg?.itens||[];
+    const faltas=(p.faltas||[]).map(f=>{ const it=its.find(i=>(f.produtoId&&String(i.produtoId||i.id)===String(f.produtoId))||String(i.nome||i.descricao||"").toLowerCase()===String(f.descricao||f.nome||"").toLowerCase())||{};
+      const q=Number(f.qtdFalta??f.falta??f.quantidadeFalta??f.quantidade??1)||1, vu=Number(f.valor??it.valor??0)||0; return {nome:f.descricao||f.nome||it.nome||"",qtd:q,valorUnit:_round2(vu),valor:_round2(q*vu)}; });
+    return {pedidoId:p.pedidoId,numero:p.numero||p.pedidoId,cliente:p.cliente||"",em:p.em||null,faltas,valorRetirar:_round2(faltas.reduce((a,f)=>a+f.valor,0))}; }).sort((a,b)=>(a.em||0)-(b.em||0));
+}
+// AVISO NA HORA (sem a tela ficar perguntando): conexão leve aberta; quando um caixa grava uma venda ou o separador
+// registra uma pendência, avisa as telas abertas, que buscam só esses dois quadros. Agrupa avisos seguidos (1 s).
+const _supConexoes=new Set(); let _supAvisoT=null, _supAvisoTipos=new Set();
+function _supAvisar(tipo){
+  if(!_supConexoes.size) return; _supAvisoTipos.add(tipo); if(_supAvisoT) return;
+  _supAvisoT=setTimeout(()=>{ const tipos=[..._supAvisoTipos]; _supAvisoTipos.clear(); _supAvisoT=null;
+    _supConexoes.forEach(r=>{ try{ r.write(`event: mudou\ndata: ${JSON.stringify({tipos,em:Date.now()})}\n\n`); }catch(e){} }); },1000);
+}
+app.get("/api/supervisora/eventos",(req,res)=>{
+  // EventSource não manda cabeçalho: o token vem na URL; mesma checagem de permissão da tela
+  const s0=lerSessoes()[String(req.query.t||"")];
+  if(!s0||s0.expiraEm<Date.now()||!_permsVivas(s0)) return res.status(401).end();
+  const pe=s0.permissoes||[s0.nivel]; if(!(s0.nivel==="admin"||pe.includes("admin")||pe.includes("acesso_supervisora"))) return res.status(403).end();
+  res.setHeader("Content-Type","text/event-stream"); res.setHeader("Cache-Control","no-cache"); res.setHeader("Connection","keep-alive"); res.setHeader("X-Accel-Buffering","no"); res.flushHeaders();
+  res.write(`event: pronto\ndata: {}\n\n`); _supConexoes.add(res);
+  const hb=setInterval(()=>{ try{ res.write(": ping\n\n"); }catch(e){} },25000);
+  req.on("close",()=>{ clearInterval(hb); _supConexoes.delete(res); });
+});
+// consulta leve: só Pix e pendências (dados locais)
+app.get("/api/supervisora/vivo",requireAcesso("acesso_supervisora"),(req,res)=>{
+  try{ const cfg=_supCfg(), agora=Date.now(), hoje=_diaBRk(agora), tIniSem=Date.parse(_iniSemanaBR(agora)+"T00:00:00-03:00"), tHoje=Date.parse(hoje+"T00:00:00-03:00");
+    const {pix}=_supPix(cfg,lerCaixaSessoes(),tIniSem); res.json({ok:true,agora,pix,pendencias:_supPend(lerPropostas()||{},null,tHoje)}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,res)=>{
   try{
     const cfg=_supCfg(), agora=Date.now(), hoje=_diaBRk(agora), iniSem=_iniSemanaBR(agora);
@@ -10106,11 +10144,7 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     // 1) não passaram por nenhum caixa
     const naoPassouCaixa=ativos.filter(x=>!passouCaixa[String(x.id)]).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
     // 2) Pix dos caixas atacado em sequência (desde que a tela foi criada), com confirmação
-    const conf=lerJSON(SUP_PIX_FILE,{}), desdePix=Math.max(cfg.inicioEm,tIniSem); const pix=[];
-    (dCx.sessoes||[]).filter(sx=>sx.tipoCaixa==="atacado").forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo!=="venda"||mv.cancelado||(mv.em||0)<desdePix) return;
-      (mv.pagamentos||[]).forEach((p,i)=>{ if(!/pix/i.test(p.formaNome||"")||!(Number(p.valor)>0)) return; const k=`${sx.id}|${mv.em}|${i}`;
-        pix.push({chave:k,em:mv.em,valor:_round2(p.valor),forma:p.formaNome,numero:mv.numero||mv.pedidoId||"",cliente:mv.clienteNome||"",operador:mv.operador||sx.operador||"",confirmado:conf[k]||null}); }); }));
-    pix.sort((a,b)=>b.em-a.em);
+    const {pix,desdePix}=_supPix(cfg,dCx,tIniSem);
     // 3) por vendedora e dia da semana: feitos, recebidos, atendidos
     const dias=[]; for(let i=0;i<7;i++) dias.push(new Date(Date.parse(iniSem+"T12:00:00Z")+i*_DIA).toISOString().slice(0,10));
     const pv={}; ativos.forEach(x=>{ const v=x.vendedor||"(sem vendedora)", d=_diaBRk(x.criadoEm||agora); const o=(pv[v]||={vendedora:v,porDia:{},feitos:0,recebidos:0,atendidos:0,valor:0});
@@ -10137,12 +10171,8 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const base=lerClientesBase(); const prazo=[]; Object.entries(_prazoCli.porCli||{}).forEach(([cid,l])=>l.forEach(p=>{ const pg=Number(pags[p.id]?.valorPago)||0, falta=_round2(Math.max(0,p.total-pg)); if(falta<=0.009) return;
       prazo.push({id:p.id,numero:p.numero,cliente:(base.porId[cid]||{}).nome||"",clienteId:cid,data:p.data,dias:p.data?Math.floor((agora-Date.parse(p.data+"T12:00:00-03:00"))/_DIA):null,total:_round2(p.total),falta}); }));
     prazo.sort((a,b)=>(b.dias||0)-(a.dias||0));
-    // 7) pendências da separação e valor a retirar
-    const pend=Object.values(lerPend()||{}).filter(p=>p&&p.status!=="resolvido"&&p.status!=="resolvida"&&(Number(p.em)||0)>=tHoje).map(p=>{ // só de hoje em diante
-      const reg=Object.values(props).find(x=>String(x.pedidoBlingId)===String(p.pedidoId))||null, its=(L.find(x=>String(x.id)===String(p.pedidoId))||{}).itens||reg?.itens||[];
-      const faltas=(p.faltas||[]).map(f=>{ const it=its.find(i=>(f.produtoId&&String(i.produtoId||i.id)===String(f.produtoId))||String(i.nome||i.descricao||"").toLowerCase()===String(f.descricao||f.nome||"").toLowerCase())||{};
-        const q=Number(f.qtdFalta??f.falta??f.quantidadeFalta??f.quantidade??1)||1, vu=Number(f.valor??it.valor??0)||0; return {nome:f.descricao||f.nome||it.nome||"",qtd:q,valorUnit:_round2(vu),valor:_round2(q*vu)}; });
-      return {pedidoId:p.pedidoId,numero:p.numero||p.pedidoId,cliente:p.cliente||"",em:p.em||null,faltas,valorRetirar:_round2(faltas.reduce((a,f)=>a+f.valor,0))}; }).sort((a,b)=>(a.em||0)-(b.em||0));
+    // 7) pendências da separação (de hoje em diante) e valor a retirar
+    const pend=_supPend(props,L,tHoje);
     // 8) meta do dia: vendas de hoje (pedidos do sistema + vendas de caixa sem pedido do sistema)
     let vendidoHoje=ativos.filter(x=>(x.criadoEm||0)>=tHoje).reduce((a,x)=>a+(Number(x.total)||0),0);
     const idsL=new Set(L.map(x=>String(x.id)));
@@ -10392,7 +10422,7 @@ app.get("/api/expedicao/pedido/:id", async (req, res) => {
 
 // Pendências (registro estruturado no volume)
 function lerPend(){ try{ return JSON.parse(fs.readFileSync(PEND_FILE,"utf8")); }catch{ return {}; } }
-function salvarPend(o){ fs.writeFileSync(PEND_FILE, JSON.stringify(o)); }
+function salvarPend(o){ fs.writeFileSync(PEND_FILE, JSON.stringify(o)); try{ _supAvisar("pendencia"); }catch(e){} }
 app.post("/api/pendencias", (req, res) => {
   try {
     const { pedidoId, numero, cliente, telefone, faltas } = req.body || {};

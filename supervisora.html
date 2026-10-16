@@ -62,6 +62,7 @@ th:first-child,td:first-child{text-align:left}
 .big{font-size:22px;font-weight:900}.verde{color:#3ce88a}.amar{color:#ffd23f}.verm{color:#ff8aa3}
 .inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
 #mapaFrete{height:200px;border-radius:8px;border:1px solid var(--borda);margin-top:6px;display:none}
+.l.novo{animation:pisca 6s ease-out}@keyframes pisca{0%,30%{background:#4a3a00}100%{background:transparent}}
 .chipz{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}.chipz span{background:#1c1846;border:1px solid #3a3480;border-radius:999px;padding:3px 9px;font-size:11.5px}
 </style>
 <script src="/nav.js"></script>
@@ -76,7 +77,7 @@ th:first-child,td:first-child{text-align:left}
   (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/supervisora")) return;
     document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/supervisora"); document.body.insertBefore(nav,document.body.firstChild); }); })();
 </script>
-<div class="top"><img src="/logo"><div class="t">🧭 Apoio à Supervisora</div><div class="sp"></div><span class="ic" id="atual"></span><button class="btn btn-ghost" onclick="carregar()">↻</button></div>
+<div class="top"><img src="/logo"><div class="t">🧭 Apoio à Supervisora</div><div class="sp"></div><span class="ic" id="vivo" style="font-weight:700"></span><span class="ic" id="atual"></span><button class="btn btn-ghost" onclick="carregar()">↻</button></div>
 <div class="wrap" style="max-width:none">
   <div class="kpis" id="kpis"></div>
   <div class="grade" id="grade"><div class="vazio"><div class="spin"></div></div></div>
@@ -113,8 +114,6 @@ function render() {
   const cx = d.caixas.map(c => `<div class="l"><div class="x"><b>${esc(c.operador)}</b><span>aberto ${dm(c.abertaEm)} ${hm(c.abertaEm)}</span></div><b class="${c.sangrar ? "verm" : "verde"}">${brl(c.dinheiro)}</b>${c.sangrar ? `<span class="tag erro">fazer sangria</span>` : ""}</div>`).join("") || `<div class="ic">Nenhum caixa atacado aberto.</div>`;
   const cr = d.criados, orig = `<div class="chipz">${cr.porOrigem.map(o => `<span>${esc(o.origem)} <b>${o.qtd}</b></span>`).join("") || `<span>nenhum ainda</span>`}</div>`
     + `<div class="lst">${cr.ultimos.map(x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>${hm(x.em)} · #${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.origem)}${x.vendedor ? " · " + esc(x.vendedor) : ""}</span></div><b>${brl(x.total)}</b></div>`).join("")}</div>`;
-  const pixL = `<div class="lst alto">${d.pix.map(p => `<div class="l"><div class="x"><b>${dm(p.em)} ${hm(p.em)} · ${esc(p.forma)} · #${esc(p.numero)}</b><span>${esc(p.cliente || "—")} · caixa ${esc(p.operador)}${p.confirmado ? ` · ✔ ${esc(p.confirmado.por)} ${hm(p.confirmado.em)}` : ""}</span></div><b>${brl(p.valor)}</b>
-      <button class="btn ${p.confirmado ? "btn-ghost" : "btn-mag"}" style="padding:4px 8px;font-size:11px" onclick="confPix('${esc(p.chave)}',${p.confirmado ? "true" : "false"})">${p.confirmado ? "desfazer" : "confirmar"}</button></div>`).join("") || `<div class="ic">Nenhum Pix nos caixas atacado nesta semana.</div>`}</div>`;
   const vend = `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th>${d.dias.map(x => `<th>${diaCurto(x)}</th>`).join("")}<th>Semana</th></tr>
     ${d.porVendedora.map(v => `<tr><td><b>${esc(v.vendedora)}</b></td>${d.dias.map(x => { const z = v.porDia[x]; return `<td title="feitos · recebidos · atendidos">${z ? `${z.feitos}·<span class="verde">${z.recebidos}</span>·<span class="amar">${z.atendidos}</span>` : "—"}</td>`; }).join("")}<td><b>${v.feitos}</b>·<span class="verde">${v.recebidos}</span>·<span class="amar">${v.atendidos}</span><br><span class="ic">${brl(v.valor)}</span></td></tr>`).join("")}</table></div>
     <div class="ic" style="margin-top:4px">feitos · <span class="verde">recebidos</span> · <span class="amar">atendidos</span></div>`;
@@ -124,7 +123,6 @@ function render() {
     ${d.comparativo.map(c => `<tr><td><b>${esc(c.vendedora)}</b></td><td>${cel(c.semana, c.semanaAnt)}</td><td>${cel(c.mes, c.mesAnt)}</td></tr>`).join("")}</table></div>
     <div class="ic" style="margin-top:4px">Pedidos (e valor) até agora contra o mesmo período: semana passada até ${dm(d.periodos.semanaAntAte)} ${hm(d.periodos.semanaAntAte)}; mês passado até ${dm(d.periodos.mesAntAte)} ${hm(d.periodos.mesAntAte)}.</div>` : `<div class="ic">Sem pedidos registrados.</div>`;
   const ent = `<div class="rolagem"><table class="mini"><tr><th>Dia</th><th title="agendadas">Agend.</th><th title="entregues">Entreg.</th><th title="com pagamento">Pagas</th><th title="passaram em algum caixa">Caixa</th><th>Valor</th></tr>${d.entregasDia.map(e => `<tr><td>${diaCurto(e.dia)}</td><td>${e.agendadas}</td><td>${e.realizadas}</td><td>${e.comPagamento}</td><td>${e.passaramCaixa}</td><td>${brl(e.valor)}</td></tr>`).join("")}</table></div>`;
-  const pend = d.pendencias.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.pedidoId)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente)}</b><span>${p.faltas.map(f => `${f.qtd}x ${esc(f.nome)}`).join(", ") || "faltas não detalhadas"}</span></div><b class="verm">− ${brl(p.valorRetirar)}</b></div>`).join("") || `<div class="ic">Nenhuma pendência na separação a partir de hoje.</div>`;
   const prazo = d.prazo.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.id)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente || "—")}</b><span>${p.data ? p.data.split("-").reverse().join("/") : ""} · <span class="${p.dias > 30 ? "verm" : p.dias > 15 ? "amar" : ""}">${p.dias != null ? p.dias + " dia(s)" : ""}</span></span></div><b>${brl(p.falta)}</b></div>`).join("") || `<div class="ic">${d.prazoAtualizadoEm ? "Nenhum pedido a prazo em aberto." : "Conferindo os pedidos a prazo no Bling…"}</div>`;
   const conc = d.concurso ? `<div class="chipz"><span>gerar e enviar <b>${d.concurso.gerar}</b></span><span>enviar <b>${d.concurso.enviar}</b></span><span>lembrar <b>${d.concurso.lembrar}</b></span></div><div class="big ${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar ? "amar" : "verde"}">${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar} cliente(s) para avisar</div><a href="/concurso" style="color:#7fd0ff;font-size:12px">abrir o Concurso →</a>` : `<div class="ic">Indisponível.</div>`;
   const cred = d.creditos.map(c => `<div class="l"><div class="x"><b>${esc(c.nome)}</b></div><b class="verde">${brl(c.saldo)}</b></div>`).join("") || `<div class="ic">Nenhum cliente com crédito.</div>`;
@@ -135,14 +133,14 @@ function render() {
   document.getElementById("grade").innerHTML = [
     q("qCaixas", "💵 Dinheiro nos caixas atacado", null, cx + `<div class="ic" style="margin-top:4px">Acima de R$ 2.000,00 aparece em vermelho: sugira a sangria.</div>`),
     q("qCriados", "🆕 Pedidos sendo criados hoje", cr.total, orig),
-    q("qPix", "🔷 Pix recebidos nos caixas atacado", `${d.pix.filter(p => !p.confirmado).length} a confirmar`, pixL),
+    quadroPix(),
     q("qVend", "🧑‍💼 Vendedoras na semana", null, vend),
     q("qComp", "📈 Vendedoras: comparativo", null, comp),
     q("qNaoCaixa", "🚫 Não passaram por nenhum caixa", d.naoPassouCaixa.length, `<div class="lst">${d.naoPassouCaixa.map(linhaPed).join("") || `<div class="ic">Todos passaram por caixa.</div>`}</div>`),
     q("qNaoAtend", "⏳ Não estão como Atendido", d.naoAtendidos.length, `<div class="lst">${d.naoAtendidos.map(linhaPed).join("") || `<div class="ic">Todos atendidos.</div>`}</div>`),
     q("qOnde", "🔎 Em qual caixa o pedido passou", null, `<div class="inp"><input id="ondeNum" placeholder="nº do pedido" inputmode="numeric" onkeydown="if(event.key==='Enter')ondePassou()"><button class="btn btn-mag" onclick="ondePassou()">Buscar</button></div><div id="ondeRes" class="lst" style="margin-top:6px"></div>`),
     q("qPrazo", "📅 A prazo sem receber", brl(M.aReceberPrazo), `<div class="lst">${prazo}</div>`),
-    q("qPend", "📦 Pendências na separação (hoje em diante)", d.pendencias.length ? "retirar " + brl(d.pendencias.reduce((a, p) => a + p.valorRetirar, 0)) : null, `<div class="lst">${pend}</div>`),
+    quadroPend(),
     q("qEnt", "🛵 Entregas agendadas na semana", null, ent),
     q("qConc", "🏆 Concurso do Slogan", null, conc),
     q("qCred", "💳 Clientes com crédito", brl(d.creditos.reduce((a, c) => a + c.saldo, 0)), `<div class="lst">${cred}</div>`),
@@ -153,7 +151,38 @@ function render() {
   ].join("");
   Object.entries(manter).forEach(([id, el]) => { const novo = document.getElementById(id); if (novo) novo.replaceWith(el); });
 }
-async function confPix(chave, desfazer) { const { ok, j } = await api("/api/supervisora/pix/confirmar", { method: "POST", body: JSON.stringify({ chave, desfazer }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } const p = D.pix.find(x => x.chave === chave); if (p) p.confirmado = j.confirmado; render(); }
+
+// ===== Pix e pendências: atualizam NA HORA (aviso do servidor), sem recarregar a tela =====
+let PIX_VISTOS = null;
+function quadroPix() {
+  const d = D, novos = new Set(PIX_VISTOS ? d.pix.filter(p => !PIX_VISTOS.has(p.chave)).map(p => p.chave) : []);
+  PIX_VISTOS = new Set(d.pix.map(p => p.chave));
+  const l = `<div class="lst alto">${d.pix.map(p => `<div class="l${novos.has(p.chave) ? " novo" : ""}"><div class="x"><b>${dm(p.em)} ${hm(p.em)} · ${esc(p.forma)} · #${esc(p.numero)}</b><span>${esc(p.cliente || "—")} · caixa ${esc(p.operador)}${p.confirmado ? ` · ✔ ${esc(p.confirmado.por)} ${hm(p.confirmado.em)}` : ""}</span></div><b>${brl(p.valor)}</b>
+      <button class="btn ${p.confirmado ? "btn-ghost" : "btn-mag"}" style="padding:4px 8px;font-size:11px" onclick="confPix('${esc(p.chave)}',${p.confirmado ? "true" : "false"})">${p.confirmado ? "desfazer" : "confirmar"}</button></div>`).join("") || `<div class="ic">Nenhum Pix nos caixas atacado nesta semana.</div>`}</div>`;
+  return q("qPix", "🔷 Pix recebidos nos caixas atacado", `${d.pix.filter(p => !p.confirmado).length} a confirmar`, l);
+}
+function quadroPend() {
+  const d = D, l = d.pendencias.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.pedidoId)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente)}</b><span>${p.faltas.map(f => `${f.qtd}x ${esc(f.nome)}`).join(", ") || "faltas não detalhadas"}</span></div><b class="verm">− ${brl(p.valorRetirar)}</b></div>`).join("") || `<div class="ic">Nenhuma pendência na separação a partir de hoje.</div>`;
+  return q("qPend", "📦 Pendências na separação (hoje em diante)", d.pendencias.length ? "retirar " + brl(d.pendencias.reduce((a, p) => a + p.valorRetirar, 0)) : null, `<div class="lst">${l}</div>`);
+}
+async function atualizarVivo() {
+  if (!D) return;
+  const { ok, j } = await api("/api/supervisora/vivo"); if (!ok) return;
+  D.pix = j.pix; D.pendencias = j.pendencias;
+  const a = document.getElementById("qPix"), b = document.getElementById("qPend");
+  if (a) a.outerHTML = quadroPix(); if (b) b.outerHTML = quadroPend();
+  document.getElementById("atual").textContent = "atualizado " + hm(j.agora);
+}
+let _es = null, _reserva = null;
+function ligarAvisos() {
+  try {
+    _es = new EventSource(B + "/api/supervisora/eventos?t=" + encodeURIComponent(token()));
+    _es.addEventListener("pronto", () => { if (_reserva) { clearInterval(_reserva); _reserva = null; } document.getElementById("vivo").textContent = "● ao vivo"; document.getElementById("vivo").style.color = "#3ce88a"; });
+    _es.addEventListener("mudou", () => atualizarVivo());
+    _es.onerror = () => { document.getElementById("vivo").textContent = "● reconectando"; document.getElementById("vivo").style.color = "#ffd23f"; if (!_reserva) _reserva = setInterval(atualizarVivo, 20000); }; // reconecta sozinho; enquanto isso, confere a cada 20 s
+  } catch (e) { _reserva = setInterval(atualizarVivo, 20000); }
+}
+async function confPix(chave, desfazer) { const { ok, j } = await api("/api/supervisora/pix/confirmar", { method: "POST", body: JSON.stringify({ chave, desfazer }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } const p = D.pix.find(x => x.chave === chave); if (p) p.confirmado = j.confirmado; const a = document.getElementById("qPix"); if (a) a.outerHTML = quadroPix(); }
 async function editarMeta() { const v = prompt("Meta de vendas do dia (R$):", D.meta.valor || ""); if (v == null) return; const { ok, j } = await api("/api/supervisora/meta", { method: "POST", body: JSON.stringify({ metaDia: v }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar(); }
 async function ondePassou() {
   const n = document.getElementById("ondeNum").value.trim(), el = document.getElementById("ondeRes"); if (!n) return;
@@ -190,7 +219,7 @@ async function calcFrete() {
   L.circleMarker([r.destino.lat, r.destino.lng], { radius: 7, color: "#FF0082", fillOpacity: 1 }).addTo(MAPA).bindPopup("Cliente");
   MAPA.fitBounds(linha.getBounds(), { padding: [12, 12] });
 }
-carregar(); setInterval(carregar, 60000);
+carregar().then(ligarAvisos); setInterval(carregar, 120000); // Pix e pendências chegam na hora; o resto a cada 2 min
 </script>
 </body>
 </html>
