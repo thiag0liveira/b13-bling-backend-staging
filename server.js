@@ -10178,6 +10178,19 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     finally{ _supPainelCache.promessa=null; }
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// ATENDIDOS DA SEMANA: uma busca no Bling pelos pedidos na situação Atendido (1 a 3 páginas, prioridade normal, em
+// segundo plano, a cada 5 min). Antes dependia do acompanhamento pedido a pedido da tela de Pedidos, que só roda com
+// ela aberta e se perde a cada reinício: os atendidos saíam sempre 0.
+let _supAtd={em:0,ids:new Set(),rodando:null,ini:""};
+function _supAtualizarAtendidos(iniISO,fimISO){
+  if(_supAtd.rodando) return _supAtd.rodando;
+  _supAtd.rodando=(async()=>{ try{ const ids=new Set();
+      for(let pag=1;pag<=6;pag++){ const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO}); p.append("idsSituacoes[]",SIT.ATENDIDO);
+        const r=await bling(`/pedidos/vendas?${p.toString()}`); const arr=r?.data||[]; arr.forEach(b=>ids.add(String(b.id))); if(arr.length<100) break; } // prioridade normal: 1 a 3 chamadas a cada 5 min (a fila lenta pode estar cheia de tarefas grandes)
+      _supAtd={em:Date.now(),ids,rodando:null,ini:iniISO}; }
+    catch(e){ _supAtd.rodando=null; _supAtd.em=Date.now()-4*60000; } })(); // falhou: tenta de novo em 1 min
+  return _supAtd.rodando;
+}
 async function _montarPainelSupervisora(){
   {
     const T0=Date.now(), tempos={}; const marca=k=>{ tempos[k]=Date.now()-T0; };
@@ -10196,8 +10209,11 @@ async function _montarPainelSupervisora(){
     const dCx=lerCaixaSessoes(), pags=lerPag()||{}, props=lerPropostas()||{};
     const passouCaixa={}; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&mv.pedidoId) (passouCaixa[String(mv.pedidoId)]||=[]).push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",em:mv.em}); }));
     const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
+    if(_supAtd.ini!==iniSem||Date.now()-_supAtd.em>5*60000){ const pr=_supAtualizarAtendidos(iniSem,hoje); if(!_supAtd.em||_supAtd.ini!==iniSem) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
+    const ehAtendido=x=>x.situacaoId===ATD||_supAtd.ids.has(String(x.id));
+    marca("atendidos");
     const pago=x=>!!passouCaixa[String(x.id)]||["pago"].includes(pags[String(x.id)]?.statusPagamento);
-    const resumoPed=x=>({id:x.id,numero:x.numero,cliente:x.cliente,vendedor:x.vendedor||"—",origem:x.origem,total:_round2(x.total),situacao:x.situacao,situacaoId:x.situacaoId,criadoEm:x.criadoEm,tipo:x.tipo,
+    const resumoPed=x=>({id:x.id,numero:x.numero,cliente:x.cliente,vendedor:x.vendedor||"—",origem:x.origem,total:_round2(x.total),situacao:(!x.situacaoId&&ehAtendido(x))?"Atendido":x.situacao,situacaoId:x.situacaoId||(ehAtendido(x)?ATD:x.situacaoId),criadoEm:x.criadoEm,tipo:x.tipo,
       dias:Math.floor((agora-(x.criadoEm||agora))/_DIA),pagoForaDoCaixa:!passouCaixa[String(x.id)]&&pags[String(x.id)]?.statusPagamento==="pago"});
     // 1) não passaram por nenhum caixa
     const naoPassouCaixa=ativos.filter(x=>!passouCaixa[String(x.id)]&&x.situacaoId!==SIT.PRAZO).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm); // a prazo já está tratado
@@ -10208,7 +10224,7 @@ async function _montarPainelSupervisora(){
     const daSemana=ativos.filter(x=>(Number(x.criadoEm)||0)>=tIniSem&&(Number(x.criadoEm)||0)<=agora); // só os criados nesta semana
     const pv={}; daSemana.forEach(x=>{ const v=x.vendedor||"(sem vendedora)", d=_diaBRk(x.criadoEm||agora); const o=(pv[v]||={vendedora:v,porDia:{},feitos:0,recebidos:0,atendidos:0,valor:0});
       const dd=(o.porDia[d]||={feitos:0,recebidos:0,atendidos:0}); dd.feitos++; o.feitos++; o.valor+=Number(x.total)||0;
-      if(pago(x)){ dd.recebidos++; o.recebidos++; } if(x.situacaoId===ATD){ dd.atendidos++; o.atendidos++; } });
+      if(pago(x)){ dd.recebidos++; o.recebidos++; } if(ehAtendido(x)){ dd.atendidos++; o.atendidos++; } });
     const porVendedora=Object.values(pv).map(v=>({...v,valor:_round2(v.valor)})).sort((a,b)=>b.feitos-a.feitos);
     // COMPARATIVO por vendedora (registro do sistema, mesmos filtros da lista da semana): semana até agora x mesmo período
     // da semana passada; mês até agora x mesmo período do mês passado (do dia 1 até o mesmo dia e horário)
@@ -10229,7 +10245,7 @@ async function _montarPainelSupervisora(){
       .map(o=>{ [o.semana,o.semanaAnt,...o.meses].forEach(x=>{ x.valor=_round2(x.valor); }); return o; })
       .sort((a,b)=>b.mes.qtd-a.mes.qtd||b.semana.qtd-a.semana.qtd);
     // 4) não atendidos
-    const naoAtendidos=ativos.filter(x=>x.situacaoId!==ATD).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
+    const naoAtendidos=ativos.filter(x=>!ehAtendido(x)).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
     // 6) a prazo sem receber, com dias
     if(Date.now()-_prazoCli.em>15*60000) _atualizarPrazoAbertos();
     const base=lerClientesBase(), regPrazo=lerVendasPrazo()||{}; const prazo=[]; Object.entries(_prazoCli.porCli||{}).forEach(([cid,l])=>l.forEach(p=>{ const pg=Number(pags[p.id]?.valorPago)||0, falta=_round2(Math.max(0,p.total-pg)); if(falta<=0.009) return;
