@@ -10142,7 +10142,7 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const resumoPed=x=>({id:x.id,numero:x.numero,cliente:x.cliente,vendedor:x.vendedor||"—",origem:x.origem,total:_round2(x.total),situacao:x.situacao,situacaoId:x.situacaoId,criadoEm:x.criadoEm,tipo:x.tipo,
       dias:Math.floor((agora-(x.criadoEm||agora))/_DIA),pagoForaDoCaixa:!passouCaixa[String(x.id)]&&pags[String(x.id)]?.statusPagamento==="pago"});
     // 1) não passaram por nenhum caixa
-    const naoPassouCaixa=ativos.filter(x=>!passouCaixa[String(x.id)]).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
+    const naoPassouCaixa=ativos.filter(x=>!passouCaixa[String(x.id)]&&x.situacaoId!==SIT.PRAZO).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm); // a prazo já está tratado
     // 2) Pix dos caixas atacado em sequência (desde que a tela foi criada), com confirmação
     const {pix,desdePix}=_supPix(cfg,dCx,tIniSem);
     // 3) por vendedora e dia da semana: feitos, recebidos, atendidos
@@ -10169,9 +10169,11 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const naoAtendidos=ativos.filter(x=>x.situacaoId!==ATD).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
     // 6) a prazo sem receber, com dias
     if(Date.now()-_prazoCli.em>15*60000) _atualizarPrazoAbertos();
-    const base=lerClientesBase(); const prazo=[]; Object.entries(_prazoCli.porCli||{}).forEach(([cid,l])=>l.forEach(p=>{ const pg=Number(pags[p.id]?.valorPago)||0, falta=_round2(Math.max(0,p.total-pg)); if(falta<=0.009) return;
-      prazo.push({id:p.id,numero:p.numero,cliente:(base.porId[cid]||{}).nome||"",clienteId:cid,data:p.data,dias:p.data?Math.floor((agora-Date.parse(p.data+"T12:00:00-03:00"))/_DIA):null,total:_round2(p.total),falta}); }));
-    prazo.sort((a,b)=>(b.dias||0)-(a.dias||0));
+    const base=lerClientesBase(), regPrazo=lerVendasPrazo()||{}; const prazo=[]; Object.entries(_prazoCli.porCli||{}).forEach(([cid,l])=>l.forEach(p=>{ const pg=Number(pags[p.id]?.valorPago)||0, falta=_round2(Math.max(0,p.total-pg)); if(falta<=0.009) return;
+      const rp=regPrazo[String(p.id)]||null, venceEm=rp?.venceEm||null, dVence=venceEm?Math.round((Date.parse(_diaBRk(venceEm)+"T12:00:00Z")-Date.parse(hoje+"T12:00:00Z"))/_DIA):null;
+      prazo.push({id:p.id,numero:p.numero,cliente:(base.porId[cid]||{}).nome||rp?.cliente||"",clienteId:cid,data:p.data,dias:p.data?Math.floor((agora-Date.parse(p.data+"T12:00:00-03:00"))/_DIA):null,total:_round2(p.total),falta,
+        venceEm,diasParaVencer:dVence,prazoDias:rp?.dias||null,autorizadoPor:rp?.autorizadoPor||""}); }));
+    prazo.sort((a,b)=>(a.diasParaVencer??999)-(b.diasParaVencer??999)||(b.dias||0)-(a.dias||0)); // vencidos e que vencem hoje primeiro
     // 7) pendências da separação (de hoje em diante) e valor a retirar
     const pend=_supPend(props,L,tHoje);
     // 8) meta do dia: vendas de hoje (pedidos do sistema + vendas de caixa sem pedido do sistema)
@@ -10217,6 +10219,15 @@ app.post("/api/supervisora/pix/confirmar",requireAcesso("acesso_supervisora"),(r
   const k=String(req.body?.chave||""); if(!k) return res.status(400).json({erro:"chave"});
   const c=lerJSON(SUP_PIX_FILE,{}); if(req.body?.desfazer) delete c[k]; else c[k]={por:req.sessao?.nome||"",em:Date.now()};
   salvarJSON(SUP_PIX_FILE,c); res.json({ok:true,confirmado:c[k]||null});
+});
+app.post("/api/supervisora/pedido/:id/prazo",requireAcesso("acesso_supervisora"),async(req,res)=>{
+  try{
+    const dias=Math.max(1,Math.min(Number(req.body?.dias)||7,60)), nome=req.sessao?.nome||"Supervisora";
+    const r=await _colocarAPrazo(String(req.params.id),{dias,observacao:String(req.body?.observacao||"").slice(0,200),autorizadoPorNome:nome,funcNome:nome,funcionarioId:req.sessao?.funcionarioId||""});
+    // aparece já no quadro "a prazo" (sem esperar a próxima leitura do Bling)
+    try{ const cid=String(r.ped.contato?.id||""); if(cid){ const l=(_prazoCli.porCli[cid]||=[]); if(!l.some(x=>x.id===String(r.ped.id))) l.push({id:String(r.ped.id),numero:r.ped.numero,data:r.ped.data||"",total:Number(r.ped.total||0)}); } }catch(e){}
+    res.json({ok:true,numero:r.ped.numero,dias:r.prazoDias,venceEm:r.venceEm});
+  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 app.post("/api/supervisora/meta",requireAcesso("acesso_supervisora"),(req,res)=>{
   const v=Number(String(req.body?.metaDia||"").replace(",",".")); if(!(v>=0)) return res.status(400).json({erro:"informe a meta"});
@@ -12327,18 +12338,14 @@ let _cachePrazo={em:0,dados:null,calculando:false};
 // registrado quem autorizou, quando, e o vencimento (7 dias por padrão).
 const PRAZO_FILE=`${DATA_DIR}/vendas_prazo.json`; // pedidoId -> {em, venceEm, autorizadoPor, operador, total, cliente}
 function lerVendasPrazo(){ return lerJSON(PRAZO_FILE,{}); }
-app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
-  try{
-    const id=req.params.blingId;
-    const {token,funcionarioId,observacao,dias}=req.body||{};
-    const auth=validarTokenQrAtacado(token);           // exige QR de gerente/financeiro/admin
-    if(auth.erro) return res.status(403).json({erro:auth.erro});
+// coloca um pedido A PRAZO: observação no Bling (quem autorizou e vencimento), situação Prazo e registro com vencimento
+async function _colocarAPrazo(id,{dias,observacao,autorizadoPorNome,funcNome,funcionarioId}){
+  const auth={funcionario:{nome:autorizadoPorNome}};
     const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
-    if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
+    if(!ped) throw Object.assign(new Error("pedido não encontrado"),{status:404});
     const sit=Number(ped.situacao?.id||0);
-    if(sit===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
-    if(sit===SIT.PRAZO) return res.status(400).json({erro:"esse pedido já está a prazo"});
-    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    if(sit===SIT.CANCELADO) throw Object.assign(new Error("pedido cancelado"),{status:400});
+    if(sit===SIT.PRAZO) throw Object.assign(new Error("esse pedido já está a prazo"),{status:400});
     const prazoDias=Math.max(1,Math.min(Number(dias||7),60));
     const agora=Date.now(), venceEm=agora+prazoDias*86400000;
     const quando=new Date(agora).toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
@@ -12354,13 +12361,23 @@ app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
         ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
       })});
     }catch(e){}
-    { const r=await mudarSituacaoPedido(id, SIT.PRAZO); if(!r.ok) return res.status(502).json({erro:"Não consegui mudar o pedido pra PRAZO no Bling: "+(r.erro||"erro")}); }
+    { const r=await mudarSituacaoPedido(id, SIT.PRAZO); if(!r.ok) throw Object.assign(new Error("Não consegui mudar o pedido pra PRAZO no Bling: "+(r.erro||"erro")),{status:502}); }
     const reg=lerVendasPrazo();
     reg[String(id)]={ em:agora, venceEm, dias:prazoDias, autorizadoPor:auth.funcionario.nome, operador:funcNome,
       total:Number(ped.total)||0, cliente:ped.contato?.nome||"", numero:ped.numero, observacao:observacao||"", pago:false };
     salvarJSON(PRAZO_FILE,reg);
     addLog(String(id),"venda_a_prazo",funcionarioId,funcNome,{autorizadoPor:auth.funcionario.nome,venceEm:new Date(venceEm).toLocaleDateString("pt-BR"),total:ped.total,numero:ped.numero});
     _sitOnline[String(id)]={situacaoId:SIT.PRAZO, situacao:"PRAZO", em:Date.now()};
+  return {ped,prazoDias,agora,venceEm,quando};
+}
+app.post("/api/atacado/pedido/:blingId/vender-a-prazo",async(req,res)=>{
+  try{
+    const id=req.params.blingId;
+    const {token,funcionarioId,observacao,dias}=req.body||{};
+    const auth=validarTokenQrAtacado(token);           // exige QR de gerente/financeiro/admin
+    if(auth.erro) return res.status(403).json({erro:auth.erro});
+    const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
+    const {ped,prazoDias,venceEm,quando}=await _colocarAPrazo(id,{dias,observacao,autorizadoPorNome:auth.funcionario.nome,funcNome,funcionarioId});
     res.json({ ok:true, numero:ped.numero, autorizadoPor:auth.funcionario.nome,
       em:quando, venceEm:new Date(venceEm).toLocaleDateString("pt-BR"), dias:prazoDias, total:Number(ped.total)||0 });
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }

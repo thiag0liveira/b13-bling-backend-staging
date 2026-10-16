@@ -93,6 +93,25 @@ function token() { try { return (b13GetSession() || {}).token || ""; } catch (e)
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
 let D = null;
 const q = (id, titulo, n, corpo) => `<div class="q" id="${id}"><h3>${titulo}${n != null ? `<span class="n">${n}</span>` : ""}</h3>${corpo}</div>`;
+// pedido sem caixa: botão para colocar a prazo (quantos dias)
+const linhaPedSemCaixa = x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>#${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.vendedor)} · ${dm(x.criadoEm)} · ${esc(x.situacao || "")}${x.dias ? ` · há ${x.dias} dia(s)` : ""}${x.pagoForaDoCaixa ? " · pago, não acertado no caixa" : ""}</span></div><b>${brl(x.total)}</b>
+  <button class="btn btn-ghost" style="padding:3px 7px;font-size:11px;white-space:nowrap" title="Colocar este pedido a prazo" onclick="event.stopPropagation();colocarAPrazo('${esc(x.id)}','${esc(x.numero)}','${esc(x.cliente)}',${Number(x.total) || 0})">⏳ a prazo</button></div>`;
+async function colocarAPrazo(id, numero, cliente, total) {
+  const v = prompt(`Colocar o pedido #${numero} (${cliente}, ${brl(total)}) A PRAZO.\n\nQuantos dias de prazo? (1 a 60)`, "7"); if (v == null) return;
+  const dias = parseInt(v, 10); if (!(dias >= 1 && dias <= 60)) { alert("Informe de 1 a 60 dias."); return; }
+  const venc = new Date(Date.now() + dias * 86400000).toLocaleDateString("pt-BR");
+  if (!confirm(`Confirmar: pedido #${numero} a prazo por ${dias} dia(s), vencendo em ${venc}?\nA situação muda para Prazo no Bling.`)) return;
+  const { ok, j } = await api("/api/supervisora/pedido/" + encodeURIComponent(id) + "/prazo", { method: "POST", body: JSON.stringify({ dias }) });
+  if (!ok) { alert(j.erro || "Não consegui colocar a prazo."); return; }
+  carregar();
+}
+const situacaoPrazo = p => {
+  if (p.diasParaVencer == null) return `<span class="ic">sem vencimento registrado · ${p.dias != null ? p.dias + " dia(s) em aberto" : ""}</span>`;
+  const dv = dm(p.venceEm);
+  if (p.diasParaVencer < 0) return `<b class="verm">vencido há ${-p.diasParaVencer} dia(s)</b> <span class="ic">(venceu ${dv})</span>`;
+  if (p.diasParaVencer === 0) return `<b class="amar">vence hoje</b> <span class="ic">(${dv})</span>`;
+  return `<span class="${p.diasParaVencer <= 2 ? "amar" : ""}">vence em ${p.diasParaVencer} dia(s)</span> <span class="ic">(${dv})</span>`;
+};
 const linhaPed = x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>#${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.vendedor)} · ${dm(x.criadoEm)} · ${esc(x.situacao || "")}${x.dias ? ` · há ${x.dias} dia(s)` : ""}${x.pagoForaDoCaixa ? " · pago, não acertado no caixa" : ""}</span></div><b>${brl(x.total)}</b></div>`;
 async function carregar() {
   const { ok, j } = await api("/api/supervisora/painel");
@@ -125,7 +144,7 @@ function render() {
     ${d.comparativo.map(c => `<tr><td><b>${esc(c.vendedora)}</b></td><td>${cel(c.semana, c.semanaAnt)}</td><td>${cel(c.mes, c.mesAnt)}</td></tr>`).join("")}</table></div>
     <div class="ic" style="margin-top:4px">Pedidos (e valor) até agora contra o mesmo período: semana passada até ${dm(d.periodos.semanaAntAte)} ${hm(d.periodos.semanaAntAte)}; mês passado até ${dm(d.periodos.mesAntAte)} ${hm(d.periodos.mesAntAte)}.</div>` : `<div class="ic">Sem pedidos registrados.</div>`;
   const ent = `<div class="rolagem"><table class="mini"><tr><th>Dia</th><th title="agendadas">Agend.</th><th title="entregues">Entreg.</th><th title="com pagamento">Pagas</th><th title="passaram em algum caixa">Caixa</th><th>Valor</th></tr>${d.entregasDia.map(e => `<tr><td>${diaCurto(e.dia)}</td><td>${e.agendadas}</td><td>${e.realizadas}</td><td>${e.comPagamento}</td><td>${e.passaramCaixa}</td><td>${brl(e.valor)}</td></tr>`).join("")}</table></div>`;
-  const prazo = d.prazo.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.id)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente || "—")}</b><span>${p.data ? p.data.split("-").reverse().join("/") : ""} · <span class="${p.dias > 30 ? "verm" : p.dias > 15 ? "amar" : ""}">${p.dias != null ? p.dias + " dia(s)" : ""}</span></span></div><b>${brl(p.falta)}</b></div>`).join("") || `<div class="ic">${d.prazoAtualizadoEm ? "Nenhum pedido a prazo em aberto." : "Conferindo os pedidos a prazo no Bling…"}</div>`;
+  const prazo = d.prazo.map(p => `<div class="l click" onclick="B13Ficha.abrir('${esc(p.id)}')"><div class="x"><b>#${esc(p.numero)} · ${esc(p.cliente || "—")}</b><span>${situacaoPrazo(p)}${p.prazoDias ? ` · prazo de ${p.prazoDias} dia(s)` : ""}${p.autorizadoPor ? " · por " + esc(p.autorizadoPor) : ""}</span></div><b>${brl(p.falta)}</b></div>`).join("") || `<div class="ic">${d.prazoAtualizadoEm ? "Nenhum pedido a prazo em aberto." : "Conferindo os pedidos a prazo no Bling…"}</div>`;
   const conc = d.concurso ? `<div class="chipz"><span>gerar e enviar <b>${d.concurso.gerar}</b></span><span>enviar <b>${d.concurso.enviar}</b></span><span>lembrar <b>${d.concurso.lembrar}</b></span></div><div class="big ${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar ? "amar" : "verde"}">${d.concurso.gerar + d.concurso.enviar + d.concurso.lembrar} cliente(s) para avisar</div><a href="/concurso" style="color:#7fd0ff;font-size:12px">abrir o Concurso →</a>` : `<div class="ic">Indisponível.</div>`;
   const cred = d.creditos.map(c => `<div class="l"><div class="x"><b>${esc(c.nome)}</b></div><b class="verde">${brl(c.saldo)}</b></div>`).join("") || `<div class="ic">Nenhum cliente com crédito.</div>`;
   const met = `<div class="l"><div class="x">Cancelados na semana</div><b>${M.cancelados}</b></div><div class="l"><div class="x">Pedidos com entrega</div><b>${M.pctEntrega}%</b></div><div class="l"><div class="x">Ticket médio</div><b>${brl(M.ticketMedio)}</b></div>
@@ -138,10 +157,10 @@ function render() {
     quadroPix(),
     q("qVend", "🧑‍💼 Vendedoras na semana", null, vend),
     q("qComp", "📈 Vendedoras: comparativo", null, comp),
-    q("qNaoCaixa", "🚫 Não passaram por nenhum caixa", d.naoPassouCaixa.length, `<div class="lst">${d.naoPassouCaixa.map(linhaPed).join("") || `<div class="ic">Todos passaram por caixa.</div>`}</div>`),
+    q("qNaoCaixa", "🚫 Não passaram por nenhum caixa", d.naoPassouCaixa.length, `<div class="lst">${d.naoPassouCaixa.map(linhaPedSemCaixa).join("") || `<div class="ic">Todos passaram por caixa (os que estão a prazo não aparecem aqui).</div>`}</div>`),
     q("qNaoAtend", "⏳ Não estão como Atendido", d.naoAtendidos.length, `<div class="lst">${d.naoAtendidos.map(linhaPed).join("") || `<div class="ic">Todos atendidos.</div>`}</div>`),
     q("qOnde", "🔎 Em qual caixa o pedido passou", null, `<div class="inp"><input id="ondeNum" placeholder="nº do pedido" inputmode="numeric" onkeydown="if(event.key==='Enter')ondePassou()"><button class="btn btn-mag" onclick="ondePassou()">Buscar</button></div><div id="ondeRes" class="lst" style="margin-top:6px"></div>`),
-    q("qPrazo", "📅 A prazo sem receber", brl(M.aReceberPrazo), `<div class="lst">${prazo}</div>`),
+    q("qPrazo", "📅 A prazo sem receber", `${brl(M.aReceberPrazo)}${d.prazo.filter(p => p.diasParaVencer != null && p.diasParaVencer < 0).length ? ` · <span class="verm">${d.prazo.filter(p => p.diasParaVencer != null && p.diasParaVencer < 0).length} vencido(s)</span>` : ""}`, `<div class="lst">${prazo}</div>`),
     quadroPend(),
     q("qEnt", "🛵 Entregas agendadas na semana", null, ent),
     q("qConc", "🏆 Concurso do Slogan", null, conc),
