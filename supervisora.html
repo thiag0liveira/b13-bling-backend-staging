@@ -151,10 +151,10 @@ function render() {
   const d = D, M = d.metricas, me = d.meta, pct = me.valor ? Math.min(100, Math.round(me.vendido / me.valor * 100)) : 0;
   const varPct = (a, b) => b ? Math.round((a - b) / b * 100) : null, vh = varPct(M.hojeValor, M.hojeSemanaPassada), vs = varPct(M.semanaValor, M.semanaPassada);
   // comparativo com o valor de referência em destaque; quadro verde se está acima, vermelho se está abaixo
-  const kComp = (v, l, ref, quando, pct) => { const cl = pct == null ? "" : (pct >= 0 ? "pos" : "neg");
+  const kComp = (v, l, ref, quando, pct, extra) => { const cl = pct == null ? "" : (pct >= 0 ? "pos" : "neg");
     return `<div class="kpi ${cl}"><div class="l">${l}</div><div class="v">${brl(v)}</div>
       <div class="cmp"><span>comparado com</span><b>${brl(ref)}</b><span>${quando}</span></div>
-      ${pct != null ? `<div class="var ${pct >= 0 ? "verde" : "verm"}">${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% ${pct >= 0 ? "acima" : "abaixo"}</div>` : `<div class="s">sem venda no período de comparação</div>`}</div>`; };
+      ${pct != null ? `<div class="var ${pct >= 0 ? "verde" : "verm"}">${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% ${pct >= 0 ? "acima" : "abaixo"}</div>` : `<div class="s">sem venda no período de comparação</div>`}${extra || ""}</div>`; };
   const k = (v, l, s, cl) => `<div class="kpi"><div class="v ${cl || ""}">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
   document.getElementById("kpis").innerHTML =
     `<div class="kpi ${me.valor && me.falta <= 0 ? "pos" : ""}" style="grid-column:span 2"><div class="l">🎯 Meta de hoje ${me.valor ? brl(me.valor) : ""} <a href="#" onclick="editarMeta();return false" style="color:#7fd0ff;font-size:11px">${me.mes ? "alterar meta do mês" : "definir meta do mês"}</a></div>
@@ -162,7 +162,11 @@ function render() {
       ${me.mes ? `<div class="s">Mês: <b>${brl(me.mes.vendido)}</b> de ${brl(me.mes.meta)} (${Math.round(me.mes.vendido / me.mes.meta * 100)}%)${me.mes.falta > 0 ? ` · faltam ${brl(me.mes.falta)} em ${me.mes.diasRestantes} dia(s) de venda` : " · <span class='verde'>meta do mês batida ✓</span>"}${me.mes.herdada ? " · <span class='amar'>meta repetida do mês anterior</span>" : ""}</div>`
         : (me.valor ? `<div class="s">${pct}% da meta · defina a meta do mês para a meta de hoje ser calculada sozinha</div>` : `<div class="s">Defina a meta do mês: a meta de hoje é calculada pelo que falta e pelos dias de venda que restam.</div>`)}</div>`
     + kComp(M.hojeValor, "Vendido hoje (pedidos)", M.hojeSemanaPassada, `${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, vh)
-    + kComp(M.semanaValor, "Semana até agora", M.semanaPassada, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs)
+    + kComp(M.semanaValor, "Semana até agora (pedidos)", M.semanaPassada, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, vs)
+    + (M.recebido ? kComp(M.recebido.hoje.total, "💵 Recebido hoje nos caixas", M.recebido.hojeAnt.total, `${dsem(M.refHojeAte)} ${dm(M.refHojeAte)} até ${hm(M.refHojeAte)}`, varPct(M.recebido.hoje.total, M.recebido.hojeAnt.total),
+        `<div class="s" style="margin-top:4px">Atacado ${brl(M.recebido.hoje.atacado)} · Frente ${brl(M.recebido.hoje.frente)} · ${M.recebido.hoje.vendas} venda(s)</div>`)
+      + kComp(M.recebido.semana.total, "💵 Recebido na semana nos caixas", M.recebido.semanaAnt.total, `${dm(M.refSemanaIni)} a ${dsem(M.refSemanaAte)} ${dm(M.refSemanaAte)} ${hm(M.refSemanaAte)}`, varPct(M.recebido.semana.total, M.recebido.semanaAnt.total),
+        `<div class="s" style="margin-top:4px">Atacado ${brl(M.recebido.semana.atacado)} · Frente ${brl(M.recebido.semana.frente)}</div>`) : "")
     + k(M.pedidosSemana, "Pedidos na semana", `ticket médio ${brl(M.ticketMedio)} · ${M.pctEntrega}% entrega`)
     + k(brl(M.aReceberPrazo), "A receber (prazo)", `${d.prazo.length} pedido(s)`, M.aReceberPrazo > 0 ? "amar" : "")
     + `<div class="kpi" style="cursor:pointer" onclick="abrirRisco()" title="Ver quem são e por quê"><div class="v ${M.clientesEmRisco > 0 ? "amar" : ""}">${M.clientesEmRisco != null ? M.clientesEmRisco : "—"}</div><div class="l">Clientes em risco</div><div class="s">passaram do ritmo de compra · <u>ver o motivo</u></div></div>`

@@ -10191,6 +10191,23 @@ function _supAtualizarAtendidos(iniISO,fimISO){
     catch(e){ _supAtd.rodando=null; _supAtd.em=Date.now()-4*60000; } })(); // falhou: tenta de novo em 1 min
   return _supAtd.rodando;
 }
+// troco de uma venda de caixa (mesma regra do resumo do caixa): o registrado; senão a sobra paga em dinheiro (sem confundir com a taxa de cartão)
+function _trocoDaVenda(v){
+  const reg=Number(v.troco)||0; if(reg>0.009) return reg;
+  const pago=(v.pagamentos||[]).reduce((a,p)=>a+(Number(p.valor)||0),0), sobra=+(pago-(Number(v.total)||0)).toFixed(2); if(sobra<0.02) return 0;
+  const emCartao=(v.pagamentos||[]).filter(p=>/cr[eé]dito|d[eé]bito/i.test(p.formaNome||"")&&!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+  if(emCartao>0.009&&Math.abs(sobra-+((Number(v.total)||0)*0.035).toFixed(2))<0.05) return 0;
+  const emDinheiro=(v.pagamentos||[]).filter(p=>/dinheiro/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0);
+  return +Math.min(sobra,emDinheiro).toFixed(2);
+}
+// RECEBIDO NOS CAIXAS num período: formas de pagamento das vendas, sem troco, sem uso de crédito de cliente e sem canceladas
+function _recebidoNosCaixas(dCx,a,b){
+  const r={total:0,atacado:0,frente:0,vendas:0};
+  (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo!=="venda"||mv.cancelado||(mv.em||0)<a||(mv.em||0)>=b) return;
+    const v=(mv.pagamentos||[]).filter(p=>!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((s2,p)=>s2+(Number(p.valor)||0),0)-_trocoDaVenda(mv);
+    if(!(v>0.004)) return; r.total+=v; r[sx.tipoCaixa==="atacado"?"atacado":"frente"]+=v; r.vendas++; }));
+  ["total","atacado","frente"].forEach(k=>{ r[k]=_round2(r[k]); }); return r;
+}
 async function _montarPainelSupervisora(){
   {
     const T0=Date.now(), tempos={}; const marca=k=>{ tempos[k]=Date.now()-T0; };
@@ -10310,6 +10327,8 @@ async function _montarPainelSupervisora(){
     const porHora={horaAgora:new Date(agora-3*3600e3).getUTCHours(),hoje:sHoje,semanaPassada:sAnt,media4:media};
     const metricas={ hojeValor:_round2(hojeAteAgora), hojeSemanaPassada:_round2(mesmoHorarioSemPassada), semanaValor:_round2(semanaAteAgora), semanaPassada:_round2(semanaPassadaAteAgora),
       refHojeAte:semPassada(agora), refSemanaIni:semPassada(tIniSem), refSemanaAte:semPassada(agora),
+      recebido:{hoje:_recebidoNosCaixas(dCx,tHoje,agora),hojeAnt:_recebidoNosCaixas(dCx,semPassada(tHoje),semPassada(agora)),
+        semana:_recebidoNosCaixas(dCx,tIniSem,agora),semanaAnt:_recebidoNosCaixas(dCx,semPassada(tIniSem),semPassada(agora))},
       pedidosSemana:daSemana.length, ticketMedio:daSemana.length?_round2(daSemana.reduce((a,x)=>a+(Number(x.total)||0),0)/daSemana.length):0, cancelados:L.filter(x=>x.cancelado&&(Number(x.criadoEm)||0)>=tIniSem).length,
       pctEntrega:daSemana.length?Math.round(daSemana.filter(x=>x.tipo==="entrega").length/daSemana.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
