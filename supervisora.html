@@ -57,7 +57,13 @@ th:first-child,td:first-child{text-align:left}
 .l{display:flex;gap:8px;align-items:center;padding:5px 2px;border-bottom:1px solid #221e4f;font-size:12.5px}.l:last-child{border-bottom:none}.l .x{flex:1;min-width:0}
 .l .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.l .x span{color:var(--muted);font-size:11px}
 .l.click{cursor:pointer}.l.click:hover{background:#1c1846}
-.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal;padding:6px 8px;line-height:1.45}#qComp .mini{font-size:13px}#qVend{grid-column:1/-1}#qHora{grid-column:1/-1}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}#qComp{grid-column:1/-1}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
+.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal;padding:6px 8px;line-height:1.45}#qComp .mini{font-size:13px}#qVend{grid-column:1/-1}#qHora{grid-column:1/-1}@media(min-width:1100px){#qPreco{grid-column:span 2}}
+#precoRes{max-height:440px}
+.prod{border:1px solid #2c2660;border-radius:10px;padding:8px 10px;margin-bottom:6px;background:#120f2c}
+.prod .pn{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;font-size:14px;margin-bottom:6px}.prod .pn b{line-height:1.3}
+.pps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pp{background:#1c1846;border-radius:8px;padding:6px 8px;text-align:center;min-width:0}.pp span{display:block;font-size:10.5px;color:#9a95c9;font-weight:700;text-transform:uppercase}
+.pp b{display:block;font-size:16px;white-space:nowrap}.pp small{display:block;font-size:10.5px;color:#9a95c9}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}#qComp{grid-column:1/-1}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
 .bar{height:10px;background:#221e4f;border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,#FF0082,#ffd23f)}
 .big{font-size:22px;font-weight:900}.verde{color:#3ce88a}.amar{color:#ffd23f}.verm{color:#ff8aa3}
 .inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
@@ -169,7 +175,7 @@ function render() {
     q("qEnt", "🛵 Entregas agendadas na semana", null, ent),
     q("qConc", "🏆 Concurso do Slogan", null, conc),
     q("qCred", "💳 Clientes com crédito", brl(d.creditos.reduce((a, c) => a + c.saldo, 0)), `<div class="lst">${cred}</div>`),
-    q("qPreco", "🏷️ Pesquisa de preço", null, `<div class="inp"><input id="precoQ" placeholder="nome ou código de barras" oninput="clearTimeout(window._tp);window._tp=setTimeout(buscarPreco,300)"></div><div id="precoRes" class="lst" style="margin-top:6px"></div>`),
+    q("qPreco", "🏷️ Pesquisa de preço", null, `<div class="inp"><input id="precoQ" style="font-size:15px;padding:10px 12px" placeholder="🔎 nome do produto ou código de barras" oninput="clearTimeout(window._tp);window._tp=setTimeout(buscarPreco,300)"></div><div id="precoRes" class="lst" style="margin-top:8px"></div>`),
     q("qFrete", "🗺️ Calcular frete", null, `<div class="inp"><input id="frCli" placeholder="buscar cliente (nome, CPF/CNPJ, telefone)" oninput="clearTimeout(window._tc);window._tc=setTimeout(buscarCli,300)"></div><div id="frCliRes" class="lst" style="max-height:110px"></div>
       <div class="inp" style="margin-top:6px"><input id="frEnd" placeholder="endereço completo (rua, nº, bairro, cidade)"><input id="frValor" placeholder="valor R$" inputmode="decimal" style="max-width:90px"><button class="btn btn-mag" onclick="calcFrete()">Calcular</button></div><div id="frRes" style="font-size:12.5px;margin-top:6px"></div><div id="mapaFrete"></div>`),
     q("qMet", "📊 Métricas da semana", null, `<div class="lst alto">${met}</div>`)
@@ -247,8 +253,10 @@ async function buscarPreco() {
   const v = document.getElementById("precoQ").value.trim(), el = document.getElementById("precoRes"); if (v.length < 2) { el.innerHTML = ""; return; }
   const { j } = await api("/api/supervisora/preco?q=" + encodeURIComponent(v));
   window._precoItens = j.itens || [];
-  el.innerHTML = (window._precoItens.length ? `<div style="text-align:right;margin-bottom:4px"><button class="btn btn-ghost" style="padding:4px 9px;font-size:11.5px" onclick="enviarPrecoWhats(-1)">💬 Enviar todos no WhatsApp</button></div>` : "")
-    + `<div class="rolagem"><table class="mini"><tr><th>Produto</th><th>Varejo</th><th>Atacado</th><th>Fardo</th><th></th></tr>${window._precoItens.map((p, i) => `<tr><td style="white-space:normal">${esc(p.nome)}</td><td><b>${brl(p.varejo)}</b></td><td>${p.atacado != null ? brl(p.atacado) : "—"}</td><td>${p.fardo != null ? brl(p.fardo) + (p.qtdFardo ? `<br><span class="ic">${p.qtdFardo} un</span>` : "") : "—"}</td><td><button class="btn btn-ghost" style="padding:3px 7px;font-size:12px" title="Enviar no WhatsApp" onclick="enviarPrecoWhats(${i})">💬</button></td></tr>`).join("") || `<tr><td colspan="5" class="ic">Nenhum produto.</td></tr>`}</table></div>`;
+  const caixa = (rot, v, sub, cor) => `<div class="pp"><span>${rot}</span><b style="color:${cor}">${v != null ? brl(v) : "—"}</b>${sub ? `<small>${sub}</small>` : ""}</div>`;
+  el.innerHTML = (window._precoItens.length ? `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 6px"><span class="ic">${window._precoItens.length} produto(s)</span><button class="btn btn-ghost" style="padding:4px 9px;font-size:11.5px" onclick="enviarPrecoWhats(-1)">💬 Enviar todos no WhatsApp</button></div>` : "")
+    + (window._precoItens.map((p, i) => `<div class="prod"><div class="pn"><b>${esc(p.nome)}</b><button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" title="Enviar no WhatsApp" onclick="enviarPrecoWhats(${i})">💬</button></div>
+      <div class="pps">${caixa("Varejo", p.varejo, "unidade", "#fff")}${caixa("Atacado", p.atacado, "unidade", "#ffd23f")}${caixa("Fardo", p.fardo, p.fardo != null && p.qtdFardo ? p.qtdFardo + " un" : "", "#7fd0ff")}</div></div>`).join("") || `<div class="ic">Nenhum produto encontrado.</div>`);
 }
 // manda os preços pelo WhatsApp (WhatsApp Web no computador, aplicativo no celular), escolhendo o contato
 function textoPreco(p) {
