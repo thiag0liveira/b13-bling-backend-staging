@@ -72,6 +72,18 @@ th:first-child,td:first-child{text-align:left}
 .kpi.pos{background:linear-gradient(160deg,#0f3a28,#101f1a);border-color:#2f9e6b}.kpi.neg{background:linear-gradient(160deg,#3d1020,#21101a);border-color:#9e2f4a}
 .kpi .cmp{margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);font-size:11px;color:#9a95c9}.kpi .cmp b{display:block;font-size:19px;color:#e9e6ff;margin:1px 0}
 .kpi .var{font-weight:900;font-size:15px;margin-top:4px}
+/* topo numa linha só: colunas dividem o espaço (meta um pouco maior); em tela pequena rola de lado */
+#kpis{display:grid;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(122px,1fr);gap:7px;overflow-x:auto;padding-bottom:2px}
+#kpis .kpi{padding:8px 9px;border-radius:10px;min-width:0}
+#kpis .kpi:first-child{grid-column:span 2;min-width:230px}
+#kpis .kpi .v{font-size:17px;line-height:1.15;white-space:nowrap}
+#kpis .kpi .l{font-size:9.5px;margin-top:0;margin-bottom:2px;line-height:1.2}
+#kpis .kpi .s{font-size:10.5px;margin-top:2px;line-height:1.3}
+#kpis .kpi .cmp{margin-top:4px;padding-top:4px;font-size:10px}#kpis .kpi .cmp b{font-size:14px}
+#kpis .kpi .var{font-size:12.5px;margin-top:2px}
+#kpis .kpi .bar{height:7px;margin:4px 0}
+@media(max-width:1500px){#kpis{grid-auto-columns:minmax(104px,1fr);gap:6px}#kpis .kpi{padding:7px 7px}#kpis .kpi:first-child{min-width:200px}
+  #kpis .kpi .v{font-size:14.5px}#kpis .kpi .cmp b{font-size:12.5px}#kpis .kpi .l{font-size:9px}#kpis .kpi .s,#kpis .kpi .cmp{font-size:9.5px}#kpis .kpi .var{font-size:11.5px}}
 .chipz{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}.chipz span{background:#1c1846;border:1px solid #3a3480;border-radius:999px;padding:3px 9px;font-size:11.5px}
 </style>
 <script src="/nav.js"></script>
