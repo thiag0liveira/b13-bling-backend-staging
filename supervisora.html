@@ -57,7 +57,7 @@ th:first-child,td:first-child{text-align:left}
 .l{display:flex;gap:8px;align-items:center;padding:5px 2px;border-bottom:1px solid #221e4f;font-size:12.5px}.l:last-child{border-bottom:none}.l .x{flex:1;min-width:0}
 .l .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.l .x span{color:var(--muted);font-size:11px}
 .l.click{cursor:pointer}.l.click:hover{background:#1c1846}
-.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}@media(min-width:1100px){#qComp{grid-column:span 2}}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
+.rolagem{overflow-x:auto;max-width:100%}#qComp .mini td{white-space:normal}#qVend{grid-column:1/-1}#qVend .mini{font-size:13.5px}#qVend .mini td{padding:7px 8px;line-height:1.45}#qVend .mini th{font-size:12.5px;padding:7px 8px}.q>*{min-width:0;max-width:100%}.q,.grade,.kpis{min-width:0}.q .ic,.q div.ic{white-space:normal}.rolagem{width:100%}@media(min-width:1100px){#qComp{grid-column:span 2}}.mini{border-collapse:collapse;width:100%;font-size:11.5px}.mini th,.mini td{padding:4px 5px;border-bottom:1px solid #221e4f;text-align:center;white-space:nowrap}.mini th{color:var(--muted);font-weight:700}.mini td:first-child,.mini th:first-child{text-align:left}
 .bar{height:10px;background:#221e4f;border-radius:6px;overflow:hidden;margin:6px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,#FF0082,#ffd23f)}
 .big{font-size:22px;font-weight:900}.verde{color:#3ce88a}.amar{color:#ffd23f}.verm{color:#ff8aa3}
 .inp{display:flex;gap:6px}.inp input{flex:1;min-width:0}
@@ -114,9 +114,11 @@ function render() {
   const cx = d.caixas.map(c => `<div class="l"><div class="x"><b>${esc(c.operador)}</b><span>aberto ${dm(c.abertaEm)} ${hm(c.abertaEm)}</span></div><b class="${c.sangrar ? "verm" : "verde"}">${brl(c.dinheiro)}</b>${c.sangrar ? `<span class="tag erro">fazer sangria</span>` : ""}</div>`).join("") || `<div class="ic">Nenhum caixa atacado aberto.</div>`;
   const cr = d.criados, orig = `<div class="chipz">${cr.porOrigem.map(o => `<span>${esc(o.origem)} <b>${o.qtd}</b></span>`).join("") || `<span>nenhum ainda</span>`}</div>`
     + `<div class="lst">${cr.ultimos.map(x => `<div class="l click" onclick="B13Ficha.abrir('${esc(x.id)}')"><div class="x"><b>${hm(x.em)} · #${esc(x.numero)} · ${esc(x.cliente)}</b><span>${esc(x.origem)}${x.vendedor ? " · " + esc(x.vendedor) : ""}</span></div><b>${brl(x.total)}</b></div>`).join("")}</div>`;
-  const vend = `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th>${d.dias.map(x => `<th>${diaCurto(x)}</th>`).join("")}<th>Semana</th></tr>
-    ${d.porVendedora.map(v => `<tr><td><b>${esc(v.vendedora)}</b></td>${d.dias.map(x => { const z = v.porDia[x]; return `<td title="feitos · recebidos · atendidos">${z ? `${z.feitos}·<span class="verde">${z.recebidos}</span>·<span class="amar">${z.atendidos}</span>` : "—"}</td>`; }).join("")}<td><b>${v.feitos}</b>·<span class="verde">${v.recebidos}</span>·<span class="amar">${v.atendidos}</span><br><span class="ic">${brl(v.valor)}</span></td></tr>`).join("")}</table></div>
-    <div class="ic" style="margin-top:4px">feitos · <span class="verde">recebidos</span> · <span class="amar">atendidos</span></div>`;
+  const celV = z => z && z.feitos ? `<b style="font-size:16px">${z.feitos}</b> feito${z.feitos > 1 ? "s" : ""}<br><span class="verde">${z.recebidos} recebido${z.recebidos === 1 ? "" : "s"}</span><br><span class="amar">${z.atendidos} atendido${z.atendidos === 1 ? "" : "s"}</span>` : `<span class="ic">—</span>`;
+  const hojeK = d.hoje;
+  const vend = `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th>${d.dias.map(x => `<th style="${x === hojeK ? "color:#FF0082" : ""}">${diaCurto(x)}${x === hojeK ? " (hoje)" : ""}</th>`).join("")}<th>Semana</th></tr>
+    ${d.porVendedora.map(v => `<tr><td><b style="font-size:14.5px">${esc(v.vendedora)}</b></td>${d.dias.map(x => `<td style="${x === hojeK ? "background:#1c1846" : ""}">${celV(v.porDia[x])}</td>`).join("")}<td>${celV(v)}<br><b>${brl(v.valor)}</b></td></tr>`).join("") || `<tr><td colspan="9" class="ic">Sem pedidos na semana.</td></tr>`}</table></div>
+    <div class="ic" style="margin-top:4px">Feitos: pedidos criados. Recebidos: passaram por caixa ou estão pagos. Atendidos: situação Atendido no Bling.</div>`;
   const seta = (a, b) => { if (!b) return a ? `<span class="verde">novo</span>` : ""; const v = Math.round((a - b) / b * 100); return `<span class="${v >= 0 ? "verde" : "verm"}">${v >= 0 ? "▲" : "▼"}${Math.abs(v)}%</span>`; };
   const cel = (x, ant) => `<b>${x.qtd}</b> <span class="ic">vs ${ant.qtd}</span> ${seta(x.qtd, ant.qtd)}<br><span class="ic">${brl(x.valor)} vs ${brl(ant.valor)}</span>`;
   const comp = (d.comparativo || []).length ? `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th><th title="da segunda até agora, contra o mesmo período da semana passada">Semana x semana passada</th><th title="do dia 1 até agora, contra o mesmo período do mês passado">Mês x mês passado</th></tr>
@@ -193,7 +195,19 @@ async function ondePassou() {
 async function buscarPreco() {
   const v = document.getElementById("precoQ").value.trim(), el = document.getElementById("precoRes"); if (v.length < 2) { el.innerHTML = ""; return; }
   const { j } = await api("/api/supervisora/preco?q=" + encodeURIComponent(v));
-  el.innerHTML = `<div class="rolagem"><table class="mini"><tr><th>Produto</th><th>Varejo</th><th>Atacado</th><th>Fardo</th></tr>${(j.itens || []).map(p => `<tr><td style="white-space:normal">${esc(p.nome)}</td><td><b>${brl(p.varejo)}</b></td><td>${p.atacado != null ? brl(p.atacado) : "—"}</td><td>${p.fardo != null ? brl(p.fardo) + (p.qtdFardo ? `<br><span class="ic">${p.qtdFardo} un</span>` : "") : "—"}</td></tr>`).join("") || `<tr><td colspan="4" class="ic">Nenhum produto.</td></tr>`}</table></div>`;
+  window._precoItens = j.itens || [];
+  el.innerHTML = (window._precoItens.length ? `<div style="text-align:right;margin-bottom:4px"><button class="btn btn-ghost" style="padding:4px 9px;font-size:11.5px" onclick="enviarPrecoWhats(-1)">💬 Enviar todos no WhatsApp</button></div>` : "")
+    + `<div class="rolagem"><table class="mini"><tr><th>Produto</th><th>Varejo</th><th>Atacado</th><th>Fardo</th><th></th></tr>${window._precoItens.map((p, i) => `<tr><td style="white-space:normal">${esc(p.nome)}</td><td><b>${brl(p.varejo)}</b></td><td>${p.atacado != null ? brl(p.atacado) : "—"}</td><td>${p.fardo != null ? brl(p.fardo) + (p.qtdFardo ? `<br><span class="ic">${p.qtdFardo} un</span>` : "") : "—"}</td><td><button class="btn btn-ghost" style="padding:3px 7px;font-size:12px" title="Enviar no WhatsApp" onclick="enviarPrecoWhats(${i})">💬</button></td></tr>`).join("") || `<tr><td colspan="5" class="ic">Nenhum produto.</td></tr>`}</table></div>`;
+}
+// manda os preços pelo WhatsApp (WhatsApp Web no computador, aplicativo no celular), escolhendo o contato
+function textoPreco(p) {
+  return `*${p.nome}*\nVarejo (unidade): ${brl(p.varejo)}` + (p.atacado != null ? `\nAtacado (unidade): ${brl(p.atacado)}` : "") + (p.fardo != null ? `\nFardo${p.qtdFardo ? " com " + p.qtdFardo + " un" : ""}: ${brl(p.fardo)}` : "");
+}
+function enviarPrecoWhats(i) {
+  const l = window._precoItens || []; const itens = i < 0 ? l : [l[i]]; if (!itens.length) return;
+  const txt = encodeURIComponent(itens.map(textoPreco).join("\n\n") + "\n\n_B13 Bebidas · preços sujeitos a alteração_");
+  const celular = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  window.open(celular ? `https://wa.me/?text=${txt}` : `https://web.whatsapp.com/send?text=${txt}`, "_blank");
 }
 async function buscarCli() {
   const v = document.getElementById("frCli").value.trim(), el = document.getElementById("frCliRes"); if (v.length < 2) { el.innerHTML = ""; return; }

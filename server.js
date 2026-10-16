@@ -10147,7 +10147,8 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const {pix,desdePix}=_supPix(cfg,dCx,tIniSem);
     // 3) por vendedora e dia da semana: feitos, recebidos, atendidos
     const dias=[]; for(let i=0;i<7;i++) dias.push(new Date(Date.parse(iniSem+"T12:00:00Z")+i*_DIA).toISOString().slice(0,10));
-    const pv={}; ativos.forEach(x=>{ const v=x.vendedor||"(sem vendedora)", d=_diaBRk(x.criadoEm||agora); const o=(pv[v]||={vendedora:v,porDia:{},feitos:0,recebidos:0,atendidos:0,valor:0});
+    const daSemana=ativos.filter(x=>(Number(x.criadoEm)||0)>=tIniSem&&(Number(x.criadoEm)||0)<=agora); // só os criados nesta semana
+    const pv={}; daSemana.forEach(x=>{ const v=x.vendedor||"(sem vendedora)", d=_diaBRk(x.criadoEm||agora); const o=(pv[v]||={vendedora:v,porDia:{},feitos:0,recebidos:0,atendidos:0,valor:0});
       const dd=(o.porDia[d]||={feitos:0,recebidos:0,atendidos:0}); dd.feitos++; o.feitos++; o.valor+=Number(x.total)||0;
       if(pago(x)){ dd.recebidos++; o.recebidos++; } if(x.situacaoId===ATD){ dd.atendidos++; o.atendidos++; } });
     const porVendedora=Object.values(pv).map(v=>({...v,valor:_round2(v.valor)})).sort((a,b)=>b.feitos-a.feitos);
@@ -10203,8 +10204,8 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     const prod={}; ativos.forEach(x=>(x.itens||[]).forEach(i=>{ const k=i.nome||""; if(!k) return; (prod[k]||={nome:k,qtd:0,valor:0}); prod[k].qtd+=Number(i.quantidade)||0; prod[k].valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); }));
     let clientesRisco=null; try{ const idx=_indiceClientes(); clientesRisco=Object.values(idx.porCli).map(p=>_metricasCliente(p,false)).filter(m=>m.status==="em_risco").length; }catch(e){}
     const metricas={ hojeValor:_round2(hojeAteAgora), hojeSemanaPassada:_round2(mesmoHorarioSemPassada), semanaValor:_round2(semanaAteAgora), semanaPassada:_round2(semanaPassadaAteAgora),
-      pedidosSemana:ativos.length, ticketMedio:ativos.length?_round2(ativos.reduce((a,x)=>a+(Number(x.total)||0),0)/ativos.length):0, cancelados:L.length-ativos.length,
-      pctEntrega:ativos.length?Math.round(ativos.filter(x=>x.tipo==="entrega").length/ativos.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
+      pedidosSemana:daSemana.length, ticketMedio:daSemana.length?_round2(daSemana.reduce((a,x)=>a+(Number(x.total)||0),0)/daSemana.length):0, cancelados:L.filter(x=>x.cancelado&&(Number(x.criadoEm)||0)>=tIniSem).length,
+      pctEntrega:daSemana.length?Math.round(daSemana.filter(x=>x.tipo==="entrega").length/daSemana.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
     res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
