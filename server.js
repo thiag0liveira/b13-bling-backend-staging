@@ -10117,6 +10117,19 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
       const dd=(o.porDia[d]||={feitos:0,recebidos:0,atendidos:0}); dd.feitos++; o.feitos++; o.valor+=Number(x.total)||0;
       if(pago(x)){ dd.recebidos++; o.recebidos++; } if(x.situacaoId===ATD){ dd.atendidos++; o.atendidos++; } });
     const porVendedora=Object.values(pv).map(v=>({...v,valor:_round2(v.valor)})).sort((a,b)=>b.feitos-a.feitos);
+    // COMPARATIVO por vendedora (registro do sistema, mesmos filtros da lista da semana): semana até agora x mesmo período
+    // da semana passada; mês até agora x mesmo período do mês passado (do dia 1 até o mesmo dia e horário)
+    const pedsReg=Object.values(props).filter(p=>p&&p.pedidoBlingId&&!["caixa","caixa_atacado","pdv"].includes(String(p.origem||""))&&!/consumidor\s*final/i.test(String(p.cliente?.nome||"")));
+    const brtNow=new Date(agora-3*3600e3), iniMes=Date.parse(brtNow.toISOString().slice(0,7)+"-01T00:00:00-03:00");
+    const mAnt=new Date(Date.UTC(brtNow.getUTCFullYear(),brtNow.getUTCMonth()-1,1)), iniMesAnt=Date.parse(mAnt.toISOString().slice(0,7)+"-01T00:00:00-03:00");
+    const diasNoMesAnt=new Date(Date.UTC(brtNow.getUTCFullYear(),brtNow.getUTCMonth(),0)).getUTCDate();
+    const fimMesAnt=iniMesAnt+Math.min(agora-iniMes,diasNoMesAnt*_DIA); // mesmo dia/horário do mês passado (sem passar do fim dele)
+    const janelas={semana:[tIniSem,agora],semanaAnt:[tIniSem-7*_DIA,agora-7*_DIA],mes:[iniMes,agora],mesAnt:[iniMesAnt,fimMesAnt]};
+    const cmp={};
+    pedsReg.forEach(p=>{ const v=p.vendedorNome||p.funcionarioNome||"(sem vendedora)", t=Number(p.criadoEm)||0;
+      Object.entries(janelas).forEach(([k,[a,b]])=>{ if(t>=a&&t<b){ const o=(cmp[v]||={vendedora:v,semana:{qtd:0,valor:0},semanaAnt:{qtd:0,valor:0},mes:{qtd:0,valor:0},mesAnt:{qtd:0,valor:0}}); o[k].qtd++; o[k].valor+=Number(p.total)||0; } }); });
+    const comparativo=Object.values(cmp).map(o=>{ ["semana","semanaAnt","mes","mesAnt"].forEach(k=>{ o[k].valor=_round2(o[k].valor); }); return o; })
+      .sort((a,b)=>b.mes.qtd-a.mes.qtd||b.semana.qtd-a.semana.qtd);
     // 4) não atendidos
     const naoAtendidos=ativos.filter(x=>x.situacaoId!==ATD).map(resumoPed).sort((a,b)=>a.criadoEm-b.criadoEm);
     // 6) a prazo sem receber, com dias
@@ -10125,7 +10138,7 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
       prazo.push({id:p.id,numero:p.numero,cliente:(base.porId[cid]||{}).nome||"",clienteId:cid,data:p.data,dias:p.data?Math.floor((agora-Date.parse(p.data+"T12:00:00-03:00"))/_DIA):null,total:_round2(p.total),falta}); }));
     prazo.sort((a,b)=>(b.dias||0)-(a.dias||0));
     // 7) pendências da separação e valor a retirar
-    const pend=Object.values(lerPend()||{}).filter(p=>p&&p.status!=="resolvido"&&p.status!=="resolvida").map(p=>{
+    const pend=Object.values(lerPend()||{}).filter(p=>p&&p.status!=="resolvido"&&p.status!=="resolvida"&&(Number(p.em)||0)>=tHoje).map(p=>{ // só de hoje em diante
       const reg=Object.values(props).find(x=>String(x.pedidoBlingId)===String(p.pedidoId))||null, its=(L.find(x=>String(x.id)===String(p.pedidoId))||{}).itens||reg?.itens||[];
       const faltas=(p.faltas||[]).map(f=>{ const it=its.find(i=>(f.produtoId&&String(i.produtoId||i.id)===String(f.produtoId))||String(i.nome||i.descricao||"").toLowerCase()===String(f.descricao||f.nome||"").toLowerCase())||{};
         const q=Number(f.qtdFalta??f.falta??f.quantidadeFalta??f.quantidade??1)||1, vu=Number(f.valor??it.valor??0)||0; return {nome:f.descricao||f.nome||it.nome||"",qtd:q,valorUnit:_round2(vu),valor:_round2(q*vu)}; });
@@ -10163,7 +10176,8 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
       pedidosSemana:ativos.length, ticketMedio:ativos.length?_round2(ativos.reduce((a,x)=>a+(Number(x.total)||0),0)/ativos.length):0, cancelados:L.length-ativos.length,
       pctEntrega:ativos.length?Math.round(ativos.filter(x=>x.tipo==="entrega").length/ativos.length*100):0, aReceberPrazo:_round2(prazo.reduce((a,p)=>a+p.falta,0)),
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
-    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
+    res.json({ok:true,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,
+      periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:Number(cfg.metaDia)||0,vendido:vendidoHoje,falta:_round2(Math.max(0,(Number(cfg.metaDia)||0)-vendidoHoje))},entregasDia,caixas,concurso,creditos,
       criados:{porOrigem:Object.entries(orig).map(([origem,qtd])=>({origem,qtd})).sort((a,b)=>b.qtd-a.qtd),total:hojeL.length+caixaHoje,ultimos},metricas});
   }catch(e){ res.status(500).json({erro:e.message}); }
