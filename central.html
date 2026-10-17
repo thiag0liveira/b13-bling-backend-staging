@@ -127,6 +127,70 @@ function blocoCaixa(c) {
       <div class="lin"><span>Esperado na gaveta</span><b style="color:#ffd23f">${brl(c.resumo.esperadoGaveta)}</b></div>
     </div></details>`;
 }
+// ===== PEDIDOS DIFERENTES DO BLING: listar, comparar e corrigir =====
+let DIVERG = null;
+function _tok() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function _apiC(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": _tok() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+async function carregarDivergencias() { const { ok, j } = await _apiC("/api/central/divergencias"); if (ok) { DIVERG = j; render(); } }
+function cardDivergencias() {
+  if (!DIVERG) return "";
+  const L = DIVERG.itens || [];
+  const quando = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  return card(`🔧 Pedidos diferentes do Bling ${L.length ? `<span style="color:#ff8aa3">(${L.length})</span>` : ""}`, `
+    <div style="display:flex;gap:6px;margin-bottom:8px"><input id="divNum" placeholder="conferir pedido nº" inputmode="numeric" style="flex:1;min-width:0;padding:7px 9px;background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:8px" onkeydown="if(event.key==='Enter')compararPedido(null,this.value)"><button style="background:#1c1846;color:#fff;border:1px solid #3a3480;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer" onclick="compararPedido(null,document.getElementById('divNum').value)">Conferir</button></div>
+    ${L.length ? L.map(x => `<div class="lin" style="align-items:flex-start;gap:8px"><span style="flex:1"><b>#${esc(x.numero || x.pedidoId)}</b>${x.cliente ? " · " + esc(x.cliente) : ""}<br><span class="muted" style="font-size:11px">${esc(x.motivos.join(" · "))} · ${quando(x.em)}</span></span>
+      <button style="background:#1c1846;color:#fff;border:1px solid #3a3480;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;padding:4px 10px;font-size:12px" onclick="compararPedido('${esc(x.pedidoId)}')">Comparar</button></div>`).join("")
+      : `<div class="muted">Nenhuma falha de gravação no Bling pendente. Use o campo acima para conferir qualquer pedido.</div>`}`);
+}
+async function compararPedido(pid, numero) {
+  let m = document.getElementById("mDiv");
+  if (!m) { m = document.createElement("div"); m.id = "mDiv"; m.style.cssText = "position:fixed;inset:0;background:rgba(5,3,20,.8);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto"; m.onclick = e => { if (e.target === m) m.remove(); }; document.body.appendChild(m); }
+  m.innerHTML = `<div class="card" style="max-width:900px;width:100%"><div class="muted">Comparando com o Bling…</div></div>`;
+  const q = pid ? "pedidoId=" + encodeURIComponent(pid) : "numero=" + encodeURIComponent(String(numero || "").trim());
+  const { ok, j } = await _apiC("/api/central/divergencias/comparar?" + q);
+  if (!ok || j.ok === false) { m.innerHTML = `<div class="card" style="max-width:900px;width:100%"><div style="color:#ff8aa3">${esc(j.erro || "Não consegui comparar.")}</div><button style="background:#1c1846;color:#fff;border:1px solid #3a3480;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;margin-top:10px" onclick="document.getElementById('mDiv').remove()">Fechar</button></div>`; return; }
+  renderComparacao(j);
+}
+function renderComparacao(j, msg) {
+  const m = document.getElementById("mDiv"), I = j.itens || {}, F = j.formas || {};
+  const linhaItem = (i, cor) => `<div class="lin" style="${cor ? "color:" + cor : ""}"><span>${i.quantidade}x ${esc(i.nome)}</span><b>${brl(i.quantidade * i.valor)}</b></div>`;
+  const somaF = l => (l || []).reduce((a, p) => a + (Number(p.valor) || 0), 0);
+  const formasIguais = Math.abs(somaF(F.bling) - somaF((F.caixa || []))) < 0.02 && (F.bling || []).length === (F.caixa || []).filter(p => p.valor > 0.004).length;
+  const igual = !j.difere && formasIguais;
+  const lado = (titulo, itensLado, so, total, formas) => `<div style="flex:1;min-width:260px;background:#120f2c;border:1px solid #2c2660;border-radius:10px;padding:10px">
+      <div style="font-weight:900;margin-bottom:6px">${titulo}</div>
+      ${itensLado}${so.map(i => linhaItem(i, "#ff8aa3")).join("")}
+      <div class="lin" style="border-top:1px solid #2c2660;margin-top:4px"><span><b>Total</b></span><b style="${j.total && j.total.difere ? "color:#ff8aa3" : ""}">${total == null ? "—" : brl(total)}</b></div>
+      <div class="muted" style="font-size:11px;margin-top:6px">Formas de pagamento</div>${(formas || []).map(p => `<div class="lin"><span>${esc(p.forma)}</span><b>${brl(p.valor)}</b></div>`).join("") || `<div class="muted">nenhuma</div>`}</div>`;
+  const comuns = lado => (I.divergentes || []).map(d => linhaItem(d[lado], "#ffd23f")).join("");
+  const blingTodos = comuns("bling"), caixaTodos = comuns("caixa");
+  m.innerHTML = `<div class="card" style="max-width:900px;width:100%">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:17px;font-weight:900">Pedido #${esc(j.numero)}${j.cliente ? " · " + esc(j.cliente) : ""}</div><button style="background:#1c1846;color:#fff;border:1px solid #3a3480;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer" onclick="document.getElementById('mDiv').remove()">Fechar</button></div>
+    ${msg || ""}
+    <div style="padding:8px 10px;border-radius:8px;margin-bottom:10px;${igual ? "background:#0f3a28;color:#3ce88a" : "background:#3d1020;color:#ffd9e0"}">${igual ? "✅ Bling e sistema estão iguais." : `⚠️ Diferenças: ${[(I.soNoBling || []).length ? (I.soNoBling.length + " item(ns) só no Bling") : "", (I.soNoCaixa || []).length ? (I.soNoCaixa.length + " item(ns) só no sistema") : "", (I.divergentes || []).length ? (I.divergentes.length + " item(ns) com quantidade ou preço diferente") : "", j.total && j.total.difere ? "total diferente" : "", !formasIguais ? "formas de pagamento diferentes" : ""].filter(Boolean).join(" · ")}`}</div>
+    ${j.temRegistroCaixa === false ? `<div class="muted" style="margin-bottom:8px">Esse pedido não passou por nenhum caixa do sistema: só dá para conferir.</div>` : ""}
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${lado("Bling", blingTodos, I.soNoBling || [], j.total && j.total.bling, F.bling)}
+      ${lado("Sistema (caixa)", caixaTodos, I.soNoCaixa || [], j.total && j.total.caixa, F.caixa)}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:6px">Em vermelho: itens que só existem de um lado. Em amarelo: mesmo item com quantidade ou preço diferente. Itens iguais nos dois não aparecem.</div>
+    ${!igual && j.temRegistroCaixa !== false ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button style="flex:1;background:#FF0082;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer" onclick="corrigirDiv('${esc(j.pedidoId)}','bling')">⬆️ Mandar o do sistema para o Bling</button>
+      <button style="background:#1c1846;color:#fff;border:1px solid #3a3480;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;flex:1" onclick="corrigirDiv('${esc(j.pedidoId)}','sistema')">⬇️ Usar o do Bling no sistema</button></div>
+      <div class="muted" style="font-size:11px;margin-top:6px">Mandar para o Bling grava no Bling os itens e as formas de pagamento do caixa (o estoque do Bling acompanha). Usar o do Bling copia itens, total e pagamentos do Bling para a venda do caixa.</div>` : ""}
+    <div id="divMsg" style="margin-top:8px"></div></div>`;
+}
+async function corrigirDiv(pid, direcao) {
+  const txt = direcao === "bling" ? "Gravar no BLING os itens e as formas de pagamento que estão no sistema (caixa)?\n\nO estoque do Bling acompanha a mudança." : "Copiar para o SISTEMA (venda do caixa) os itens, o total e as formas de pagamento que estão no Bling?";
+  if (!confirm(txt)) return;
+  document.getElementById("divMsg").innerHTML = `<div class="muted">Corrigindo… (pode levar alguns segundos)</div>`;
+  const { ok, j } = await _apiC("/api/central/divergencias/" + encodeURIComponent(pid) + "/corrigir", { method: "POST", body: JSON.stringify({ direcao }) });
+  if (!ok) { document.getElementById("divMsg").innerHTML = `<div style="color:#ff8aa3">⚠️ ${esc(j.erro || "Não consegui corrigir.")}</div>`; return; }
+  const c = j.comparacao || {}; c.pedidoId = pid; c.numero = c.numero || pid;
+  const { j: atual } = await _apiC("/api/central/divergencias/comparar?pedidoId=" + encodeURIComponent(pid));
+  renderComparacao(atual && atual.ok !== false ? atual : c, `<div style="padding:8px 10px;border-radius:8px;margin-bottom:8px;background:#0f3a28;color:#3ce88a">${j.resolvido ? "✅ Corrigido: Bling e sistema ficaram iguais. O aviso foi marcado como resolvido." : "Correção enviada. Confira abaixo se ainda sobrou alguma diferença."}</div>`);
+  carregarDivergencias();
+}
 // tudo o que ENTROU no dia (mesma conta do fechamento em /caixa) + dinheiro ainda com os motoristas
 function cardRecebimentos() {
   const R = RECEB; if (!R || !R.conciliacao || R.conciliacao.erro) return "";
@@ -355,6 +419,7 @@ function render() {
           ${lins(PRAZO.pedidos.slice(0, 12), p => `<div class="lin"><span>#${esc(p.numero)} ${esc(p.cliente)}<div class="muted" style="font-size:11px">${esc(p.vendedor || "—")} · ${p.data ? esc(p.data.split("-").reverse().join("/")) : ""}${p.diasEmAberto != null ? ` · <span style="color:${p.diasEmAberto > 15 ? '#ff8090' : p.diasEmAberto > 7 ? '#ffd23f' : '#9a95c9'}">${p.diasEmAberto} dia(s)</span>` : ""}</div></span><b>${brl(p.total)}</b></div>`)}
           <div class="muted" style="font-size:11px;margin-top:6px">Mercadoria já entregue/retirada. O cliente paga depois no caixa atacado.</div>`) : ""}
 
+        ${cardDivergencias()}
         ${cardRecebimentos()}
         ${cardMotoristas()}
 
@@ -670,6 +735,7 @@ async function carregar() {
       render();
     }
   } catch (e) {}
+  carregarDivergencias();
   try {
     const rc = await fetch(B + "/api/central/recebimentos" + (DIA ? "?data=" + DIA : "")).then(r => r.json());
     if (!rc.erro) { RECEB = rc; render(); }

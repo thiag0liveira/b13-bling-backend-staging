@@ -7740,6 +7740,77 @@ app.post("/api/gestao/cancelar-venda",async(req,res)=>{
 
 // CONFERE o registro do caixa contra o Bling (ao reabrir um pedido). Aponta o que está
 // diferente: total, itens (faltando/sobrando/quantidade ou preço) e formas de pagamento.
+// ===== CENTRAL: PEDIDOS DIFERENTES DO BLING — listar, comparar e corrigir nos dois sentidos =====
+const _TIPOS_DIVERG=["edicao_itens_bling_falhou","edicao_caixa_bling_falhou","pagamento_nao_gravado_bling","caixa_bling_divergente","total_divergente_apos_edicao","sync_atacado_falhou","taxa_cartao_nao_gravada"];
+function _ultimaVendaCaixa(pid){ let mov=null, sess=null; const d=lerCaixaSessoes();
+  (d.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===String(pid)&&(!mov||m.em>mov.em)){ mov=m; sess=sx; } })); return {d,mov,sess}; }
+function _pidPorNumero(n){ n=String(n||"").trim(); if(!n) return null; let pid=null;
+  (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&(String(m.numero)===n||String(m.pedidoId)===n)) pid=String(m.pedidoId); }));
+  if(!pid){ const p=Object.values(lerPropostas()||{}).find(x=>String(x?.pedidoBlingNumero)===n||String(x?.pedidoBlingId)===n); if(p) pid=String(p.pedidoBlingId); }
+  return pid||(/^\d{6,}$/.test(n)?n:null); }
+app.get("/api/central/divergencias",requireAcesso("acesso_central"),(req,res)=>{
+  try{
+    const lim=Date.now()-45*_DIA, por={};
+    const add=(pid,o)=>{ if(!pid) return; const k=String(pid); const x=(por[k]||={pedidoId:k,numero:o.numero||"",cliente:o.cliente||"",tipos:[],avisos:[],em:0,detalhes:[]});
+      if(o.tipo&&!x.tipos.includes(o.tipo)) x.tipos.push(o.tipo); if(o.avisoId) x.avisos.push(o.avisoId); if(o.detalhe&&!x.detalhes.includes(o.detalhe)) x.detalhes.push(o.detalhe);
+      x.em=Math.max(x.em,o.em||0); if(!x.numero&&o.numero) x.numero=o.numero; if(!x.cliente&&o.cliente) x.cliente=o.cliente; };
+    (lerAvisos().lista||[]).forEach(a=>{ if(a.resolvido||!_TIPOS_DIVERG.includes(a.tipo)||!a.pedidoId||(a.em||0)<lim) return;
+      add(a.pedidoId,{tipo:a.tipo,avisoId:a.id,numero:a.numero,em:a.em,detalhe:a.erroBling||a.titulo||""}); });
+    (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||(m.em||0)<lim||m.divergenciaResolvidaEm) return;
+      const pend=(m.alteracoes||[]).some(a=>a.blingPendente); if(pend) add(m.pedidoId,{tipo:"bling_pendente",numero:m.numero,cliente:m.clienteNome,em:m.em}); }));
+    const nomes={edicao_itens_bling_falhou:"itens não gravados no Bling",edicao_caixa_bling_falhou:"edição do caixa não gravada no Bling",pagamento_nao_gravado_bling:"forma de pagamento não gravada no Bling",
+      caixa_bling_divergente:"caixa diferente do Bling",total_divergente_apos_edicao:"total diferente após edição",sync_atacado_falhou:"sincronização do atacado falhou",taxa_cartao_nao_gravada:"taxa do cartão não gravada",bling_pendente:"alteração pendente no Bling"};
+    const itens=Object.values(por).map(x=>({...x,motivos:x.tipos.map(t=>nomes[t]||t)})).sort((a,b)=>b.em-a.em);
+    res.json({ok:true,itens});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/central/divergencias/comparar",requireAcesso("acesso_central"),async(req,res)=>{
+  try{ const pid=req.query.pedidoId?String(req.query.pedidoId):_pidPorNumero(req.query.numero); if(!pid) return res.status(404).json({erro:"não achei esse pedido no sistema"});
+    const r=await fetch(`http://127.0.0.1:${PORT}/api/caixa-atacado/conferir-bling/${encodeURIComponent(pid)}`); const j=await r.json();
+    const {mov}=_ultimaVendaCaixa(pid); res.json({...j,pedidoId:pid,numero:mov?.numero||req.query.numero||pid,cliente:mov?.clienteNome||""}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/central/divergencias/:pedidoId/corrigir",requireAcesso("acesso_central"),async(req,res)=>{
+  try{
+    const pid=String(req.params.pedidoId), direcao=req.body?.direcao, quem=req.sessao?.nome||"Central";
+    const {d:dCx,mov}=_ultimaVendaCaixa(pid);
+    if(direcao==="bling"){
+      // manda a versão do SISTEMA (venda do caixa) para o Bling: itens e formas de pagamento (sem o troco)
+      if(!mov) return res.status(404).json({erro:"essa venda não está em nenhum caixa do sistema"});
+      const itens=(mov.itens||[]).map(i=>({produtoId:Number(i.produtoId),nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})).filter(i=>i.produtoId&&i.quantidade>0);
+      if(!itens.length) return res.status(400).json({erro:"a venda do caixa não tem itens com produto identificado"});
+      const obs=`[Corrigido pela Central em ${new Date(Date.now()-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${quem}: itens e pagamento iguais ao caixa]`;
+      const ri=await atualizarItensBling(pid,itens,obs);
+      if(!ri||ri.ok===false) return res.status(502).json({erro:"O Bling não aceitou os itens: "+((ri&&ri.erro)||"erro")});
+      let troco=_trocoDaVenda(mov); const parcelas=[];
+      (mov.pagamentos||[]).forEach(p=>{ let v=Number(p.valor)||0; if(troco>0&&/dinheiro/i.test(p.formaNome||"")){ const t=Math.min(troco,v); v-=t; troco-=t; } if(v>0.004&&p.formaId) parcelas.push({valor:_round2(v),formaId:p.formaId}); });
+      let rp={ok:true}; if(parcelas.length) rp=await atualizarParcelasBling(pid,parcelas,{obsExtra:""});
+      if(!rp||rp.ok===false) return res.status(502).json({erro:"Os itens foram gravados, mas o Bling não aceitou a forma de pagamento: "+((rp&&rp.erro)||"erro")});
+      addLog(pid,"divergencia_corrigida",req.sessao?.funcionarioId||"",quem,{direcao:"bling",itens:itens.length,parcelas:parcelas.length});
+    } else if(direcao==="sistema"){
+      // usa a versão do BLING na venda do caixa: itens, total e formas de pagamento
+      if(!mov) return res.status(404).json({erro:"essa venda não está em nenhum caixa do sistema"});
+      const b=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); if(!b) return res.status(404).json({erro:"pedido não encontrado no Bling"});
+      const antes=(mov.itens||[]).map(i=>`${i.quantidade}x ${i.nome}`).join(", ");
+      mov.itens=(b.itens||[]).map(it=>({produtoId:it.produto?.id||null,nome:(it.descricao||it.produto?.nome||"").trim(),quantidade:Number(it.quantidade)||0,valor:Number(it.valor)||0}));
+      mov.total=_round2(Number(b.total)||0);
+      const pags=[]; for(const pc of (b.parcelas||[])){ pags.push({formaId:pc.formaPagamento?.id||null,formaNome:await nomeFormaPagamentoId(pc.formaPagamento?.id),valor:_round2(Number(pc.valor)||0)}); }
+      if(pags.length){ mov.pagamentos=pags; mov.troco=0; }
+      (mov.alteracoes||=[]).push({em:Date.now(),tipo:"sincronizado_do_bling",por:quem,de:antes,para:mov.itens.map(i=>`${i.quantidade}x ${i.nome}`).join(", ")});
+      salvarCaixaSessoes(dCx);
+      addLog(pid,"divergencia_corrigida",req.sessao?.funcionarioId||"",quem,{direcao:"sistema"});
+    } else return res.status(400).json({erro:"direção inválida"});
+    // compara de novo; ficou igual -> resolve os avisos desse pedido
+    const r=await fetch(`http://127.0.0.1:${PORT}/api/caixa-atacado/conferir-bling/${encodeURIComponent(pid)}`); const cmp=await r.json();
+    const formasIguais=(()=>{ const f=x=>(x||[]).filter(p=>p.valor>0.004).map(p=>Math.round(p.valor*100)).sort().join(","); return f(cmp.formas?.bling)===f((cmp.formas?.caixa||[]).map(p=>p)); })();
+    if(cmp.ok&&!cmp.difere){
+      const av=lerAvisos(); let n=0; av.lista.forEach(a=>{ if(!a.resolvido&&String(a.pedidoId)===pid&&_TIPOS_DIVERG.includes(a.tipo)){ a.resolvido=true; a.resolvidoEm=Date.now(); a.resolvidoPor=quem; a.comoResolveu=direcao==="bling"?"sistema enviado ao Bling (Central)":"Bling copiado para o sistema (Central)"; n++; } });
+      if(n) salvarAvisos(av);
+      const {d:d2,mov:m2}=_ultimaVendaCaixa(pid); if(m2){ m2.divergenciaResolvidaEm=Date.now(); (m2.alteracoes||[]).forEach(a=>{ if(a.blingPendente) a.blingPendente=false; }); salvarCaixaSessoes(d2); }
+    }
+    res.json({ok:true,comparacao:cmp,resolvido:!!(cmp.ok&&!cmp.difere),formasIguais});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/caixa-atacado/conferir-bling/:pedidoId",async(req,res)=>{
   try{
     const pid=String(req.params.pedidoId);
