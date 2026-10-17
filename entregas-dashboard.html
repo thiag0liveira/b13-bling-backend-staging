@@ -52,6 +52,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 <script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
   @media(min-width:900px){
@@ -111,8 +112,8 @@ function variacao(v, inverso) {
   const bom = inverso ? v < 0 : v > 0;
   return `<span class="var" style="color:${bom ? "var(--ok)" : "var(--ruim)"}">${v > 0 ? "▲" : "▼"} ${Math.abs(v)}%</span> <span class="muted">${COMP_TXT}</span>`;
 }
-function kpi(label, valor, sub, ic, accent) {
-  return `<div class="kpi" style="--accent:${accent || "var(--mag)"}"><div class="ic">${ic}</div><div class="lb">${label}</div><div class="vl">${valor}</div><div class="sub">${sub}</div></div>`;
+function kpi(label, valor, sub, ic, accent, acao) {
+  return `<div class="kpi" style="--accent:${accent || "var(--mag)"}${acao ? ";cursor:pointer" : ""}" ${acao ? `onclick="${acao}" title="Ver a lista"` : ""}><div class="ic">${ic}</div><div class="lb">${label}</div><div class="vl">${valor}</div><div class="sub">${sub}${acao ? ` · <u>ver a lista</u>` : ""}</div></div>`;
 }
 function grafico(dias, campo, cor, formato, titulo) {
   const max = Math.max(1, ...dias.map(d => d[campo]));
@@ -170,6 +171,39 @@ async function salvarCustos() {
     carregar();
   } catch (e) { document.getElementById("cfMsg").innerHTML = `<span style="color:#ff8f7a">${esc(e.message)}</span>`; }
 }
+
+// ===== OCORRÊNCIAS DO MÊS: registros e pedidos (abre ao clicar nos indicadores) =====
+let OCORR = null, OC_FILTRO = "todas";
+async function abrirOcorrencias(filtro) {
+  OC_FILTRO = filtro || "todas";
+  let m = document.getElementById("mOcorr");
+  if (!m) { m = document.createElement("div"); m.id = "mOcorr"; m.style.cssText = "position:fixed;inset:0;background:rgba(5,3,20,.78);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow:auto";
+    m.onclick = e => { if (e.target === m) m.remove(); }; document.body.appendChild(m); }
+  m.innerHTML = `<div class="box" style="max-width:980px;width:100%;margin:0"><div class="vazio"><div class="spin"></div></div></div>`;
+  try { OCORR = await fetch(B + "/api/rotas/ocorrencias?mes=" + MES).then(r => r.json()); if (OCORR.erro) throw new Error(OCORR.erro); renderOcorr(); }
+  catch (e) { m.innerHTML = `<div class="box" style="max-width:980px;width:100%">Não consegui carregar: ${esc(e.message)}</div>`; }
+}
+function renderOcorr() {
+  const m = document.getElementById("mOcorr"), O = OCORR;
+  const filtrar = x => OC_FILTRO === "ocorrencia" ? (x.descricao || x.midias.length) : OC_FILTRO === "problema" ? (x.itensProblema.length || x.valorProblema > 0) : true;
+  const L = O.itens.filter(filtrar);
+  const chip = (k, t, n) => `<span class="chip ${OC_FILTRO === k ? "on" : ""}" style="cursor:pointer;padding:4px 10px;border-radius:999px;border:1px solid #3a3480;margin-right:6px;font-size:12px;${OC_FILTRO === k ? "background:#FF0082;color:#fff" : ""}" onclick="OC_FILTRO='${k}';renderOcorr()">${t} (${n})</span>`;
+  const dmy = d => d ? d.split("-").reverse().join("/") : "";
+  const hh = ms => ms ? new Date(ms).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "";
+  m.innerHTML = `<div class="box" style="max-width:980px;width:100%;margin:0">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:18px;font-weight:900">📸 Ocorrências de ${esc(nomeMes(O.mes))}</div><button class="btn btn-ghost" onclick="document.getElementById('mOcorr').remove()">Fechar</button></div>
+    <div style="margin-bottom:10px">${chip("todas", "Todas", O.total)}${chip("ocorrencia", "Com ocorrência", O.comOcorrencia)}${chip("problema", "Produto com problema", O.comProblema)}<span class="muted" style="font-size:12px">· ${brl(O.valorAbatido)} abatidos no mês</span></div>
+    ${L.length ? L.map(x => `<div style="border:1px solid #2c2660;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#120f2c">
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px"><b style="font-size:15px">#${esc(x.numero)} · ${esc(x.cliente || "—")}</b>
+        <div class="muted" style="font-size:12px">${dmy(x.data)}${x.em ? " " + hh(x.em) : ""} · ${esc(x.motorista || "—")}${x.carro ? " · " + esc(x.carro) : ""} · ${x.status === "nao_entregue" ? "<span style='color:#ff8f7a'>não entregue</span>" : "entregue"} · ${brl(x.total)}</div></div>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">Abrir pedido</button></div>
+      ${x.descricao ? `<div style="margin-top:6px;font-size:13.5px;color:#ffd23f">⚠️ ${esc(x.descricao)}</div>` : ""}${x.motivo ? `<div style="margin-top:4px;font-size:12.5px;color:#ff8f7a">Motivo: ${esc(x.motivo)}</div>` : ""}
+      ${x.itensProblema.length || x.valorProblema > 0 ? `<div style="margin-top:6px;font-size:12.5px">${x.itensProblema.map(i => `<div>📦 ${i.quantidade ? i.quantidade + "x " : ""}${esc(i.nome)}${i.motivo ? " · " + esc(i.motivo) : ""}${i.valor ? " · " + brl(i.valor) : ""}</div>`).join("")}${x.valorProblema > 0 ? `<div style="color:#ff8f7a;font-weight:700">Abatido: ${brl(x.valorProblema)}</div>` : ""}</div>` : ""}
+      ${x.midias.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${x.midias.map(md => md.tipo === "video"
+          ? `<a href="${esc(md.url)}" target="_blank" rel="noopener" style="width:96px;height:72px;border-radius:8px;background:#000 ${md.thumb ? `url('${esc(md.thumb)}') center/cover` : ""};display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;text-decoration:none">▶</a>`
+          : `<a href="${esc(md.url)}" target="_blank" rel="noopener"><img src="${esc(md.thumb || md.url)}" loading="lazy" style="width:96px;height:72px;object-fit:cover;border-radius:8px"></a>`).join("")}</div>` : ""}
+    </div>`).join("") : `<div class="muted">Nenhum registro neste filtro.</div>`}</div>`;
+}
 function render() {
   const D = DADOS, T = D.totais, V = D.variacao || {};
   const C = D.comparacao || {};
@@ -191,8 +225,8 @@ function render() {
     ${kpi("Ticket médio", brl(T.ticketMedio), variacao(V.ticketMedio), "🧾")}
     ${kpi("Tempo por viagem", minLabel(T.minutosPorViagem), "da saída ao fim da viagem", "⏱️", "#a29ed0")}
     ${kpi("Peso entregue", num(T.pesoKg, 0) + " kg", "estimado pelos itens", "⚖️", "#a29ed0")}
-    ${kpi("Com problema", num(T.comProblema), brl(T.valorProblema) + " abatidos", "⚠️", "#ff8f7a")}
-    ${kpi("Ocorrências", num(T.ocorrencias), variacao(V.ocorrencias, true), "📸", "#ff8f7a")}
+    ${kpi("Com problema", num(T.comProblema), brl(T.valorProblema) + " abatidos", "⚠️", "#ff8f7a", "abrirOcorrencias('problema')")}
+    ${kpi("Ocorrências", num(T.ocorrencias), variacao(V.ocorrencias, true), "📸", "#ff8f7a", "abrirOcorrencias('ocorrencia')")}
     ${kpi("Vendas a prazo", num(T.aPrazo), brl(T.valorAPrazo), "🗓️", "#ffd23f")}
   </div></div>
   ${secaoFrete(D, T, V)}

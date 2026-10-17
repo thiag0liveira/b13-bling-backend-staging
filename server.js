@@ -13807,6 +13807,34 @@ function _agregarEntregasMes(mes,ateDia){
     formasPagamento:Object.values(formas).map(f=>({...f,valor:_round2(f.valor)})).sort((a,b)=>b.valor-a.valor),
     clientes:Object.values(clientes).map(c=>({...c,valor:_round2(c.valor)})).sort((a,b)=>b.valor-a.valor).slice(0,10)};
 }
+// OCORRÊNCIAS DO MÊS (Dashboard de Entregas): cada entrega com ocorrência, produto com problema ou valor abatido,
+// com pedido, cliente, data, motorista, descrição, itens, valor abatido e fotos/vídeos. Só dados locais.
+app.get("/api/rotas/ocorrencias",(req,res)=>{
+  try{
+    const hojeM=new Date(Date.now()-3*3600e3).toISOString().slice(0,7);
+    const mes=/^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.query.mes||""))?String(req.query.mes):hojeM;
+    const ctx=_ctxFicha(), itens=[];
+    Object.values(lerViagensAtivas()).filter(v=>String(v.data||"").startsWith(mes+"-")&&!v.canceladaEm).forEach(v=>{
+      Object.entries(v.entregas||{}).forEach(([pid,e])=>{
+        const itensP=e.itensProblema||[], vp=Number(e.valorProblema)||0;
+        if(!(e.ocorrencia||itensP.length||vp>0)) return;
+        const p=ctx.props[pid]||null, t=ctx.turnos[pid]||{}, mv=(ctx.movCx||{})[pid]||null;
+        const midias=[], vistas=new Set(), mini=ctx.mini;
+        const add=(url,tipo,em)=>{ if(!url||vistas.has(url)) return; vistas.add(url); const nm=String(url).split("/").pop(); midias.push({url,tipo:tipo||(/\.(mp4|mov|webm|3gp)$/i.test(url)?"video":"foto"),em:em||null,thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); };
+        ((e.ocorrencia&&e.ocorrencia.anexos)||[]).forEach(a=>add(a&&a.url,a&&a.tipo,e.em));
+        if(e.ocorrencia&&e.ocorrencia.url) add(e.ocorrencia.url,e.ocorrencia.tipo,e.em);
+        (ctx.log[pid]||[]).forEach(l=>{ const d=l.detalhes||{}; if(d.url&&/ocorr|entrega|motorista/i.test(l.evento||"")) add(d.url,d.tipo,l.em); });
+        itens.push({pedidoId:pid,numero:p?.pedidoBlingNumero||t.numero||mv?.numero||pid,cliente:p?.cliente?.nome||t.cliente||mv?.clienteNome||"",data:v.data,em:e.em||null,
+          motorista:String(v.motoristaNomeInformado||v.motoristaNome||"").trim(),carro:v.carroNome||"",status:e.status,motivo:e.motivo||"",
+          descricao:String(e.ocorrencia?.descricao||"").trim(),itensProblema:itensP.map(i=>({nome:i.nome||i.descricao||"",quantidade:Number(i.quantidade)||0,motivo:i.motivo||"",valor:_round2(Number(i.valor)||0)})),
+          valorProblema:_round2(vp),total:_round2(Number(p?.total)||Number(mv?.total)||((Number(e.valorFinal)||0)+vp)),midias});
+      });
+    });
+    itens.sort((a,b)=>(b.em||0)-(a.em||0)||String(b.data).localeCompare(String(a.data)));
+    res.json({ok:true,mes,itens,total:itens.length,comOcorrencia:itens.filter(x=>x.descricao||x.midias.length).length,comProblema:itens.filter(x=>x.itensProblema.length||x.valorProblema>0).length,
+      valorAbatido:_round2(itens.reduce((a,x)=>a+x.valorProblema,0))});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/rotas/custos-frete",requireSessao,(req,res)=>{
   const pe=req.sessao?.permissoes||[req.sessao?.nivel]; if(!(req.sessao?.nivel==="admin"||pe.includes("admin")||["acesso_rotas","acesso_dashboard","ver_dashboard"].some(x=>pe.includes(x)))) return res.status(403).json({erro:"sem permissão"});
   const n=x=>{ const v=Number(String(x??"").replace(",",".")); return v>=0&&v<100000?_round2(v):0; };

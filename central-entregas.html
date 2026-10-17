@@ -161,10 +161,10 @@ function renderTudo(){
     [brl(I.pagoForaDoCaixa.valor), "Pago fora do caixa", I.pagoForaDoCaixa.qtd ? `${I.pagoForaDoCaixa.qtd} pedido(s) com pagamento só registrado no sistema · não aparecem na Gestão de Caixas` : "nenhum", I.pagoForaDoCaixa.qtd > 0],
     [brl(I.prazo.valor), "A prazo", `${I.prazo.qtd} pedido(s)`],
     [I.semPagamento.qtd, "Entregues sem pagamento", I.semPagamento.qtd ? brl(I.semPagamento.valor) + " para conferir" : "tudo certo", I.semPagamento.qtd > 0],
-    [I.comOcorrencia, "Com ocorrência", `${I.comProblema} com produto com problema (${brl(I.valorProblema)} abatidos)`, I.comOcorrencia > 0],
+    [I.comOcorrencia, "Com ocorrência", `${I.comProblema} com produto com problema (${brl(I.valorProblema)} abatidos) · <u>ver quais</u>`, I.comOcorrencia > 0, "verOcorrencias()"],
     [`${I.comFotoConferencia} / ${I.total}`, "Com foto/vídeo da conferência", `${I.comAssinatura} com assinatura do cliente`],
   ];
-  document.getElementById("kpis").innerHTML = k.map(([v, l, s, a]) => `<div class="kpi ${a ? "alerta" : ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
+  document.getElementById("kpis").innerHTML = k.map(([v, l, s, a, acao]) => `<div class="kpi ${a ? "alerta" : ""}" ${acao ? `style="cursor:pointer" onclick="${acao}" title="Ver os pedidos"` : ""}><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></div>`).join("");
   const M = D.porMotorista;
   document.getElementById("motoristas").innerHTML = M.length ? `<div class="rolagem"><table><tr><th>Motorista</th><th>Entregas</th><th>Entregues</th><th>💵 Dinheiro a acertar</th><th>Acertado no caixa</th><th>Pix</th><th>Cartão</th><th>A prazo</th><th>Frete</th><th>Sem pagamento</th><th>Ocorrências</th></tr>
     ${M.map(m => `<tr><td><b>${esc(m.motorista)}</b><div style="font-size:11px;color:var(--muted)">${esc(m.carros)}</div></td><td>${m.entregas}</td><td>${m.entregues}${m.naoEntregues ? ` <span class="tag erro">${m.naoEntregues} não</span>` : ""}</td>
@@ -179,12 +179,13 @@ function filtra(x){
   if (BUSCA) { const b = norm(BUSCA); if (!(String(x.numero).includes(b) || norm(x.cliente).includes(b) || norm(x.endereco).includes(b))) return false; }
   if (STATUS === "pendencia") return x.pagamento.situacao === "sem_pagamento" || x.pagamento.situacao === "pago_registro" || !!x.entrega?.ocorrencia || x.status === "sem_registro" || x.status === "nao_entregue" || (x.entrega?.valorProblema > 0);
   if (STATUS === "aguardando") return x.status === "aguardando_carro" || x.status === "aguardando_saida";
+  if (STATUS === "ocorrencia") return !!x.entrega?.ocorrencia || (x.entrega?.itensProblema || []).length > 0 || (Number(x.entrega?.valorProblema) || 0) > 0;
   return STATUS === "todos" || x.status === STATUS;
 }
 function renderLista(){
   if (!D) return;
   const base = D.pedidos.filter(x => (!MOT || (x.viagem?.motorista || "") === MOT));
-  const ops = [["todos", "Todos"], ["entregue", "Entregues"], ["nao_entregue", "Não entregues"], ["em_rota", "Em rota"], ["aguardando", "Aguardando"], ["pendencia", "⚠️ Com pendência"]];
+  const ops = [["todos", "Todos"], ["entregue", "Entregues"], ["nao_entregue", "Não entregues"], ["em_rota", "Em rota"], ["aguardando", "Aguardando"], ["pendencia", "⚠️ Com pendência"], ["ocorrencia", "📸 Com ocorrência"]];
   const cont = k => { const s = STATUS; STATUS = k; const n = base.filter(filtra).length; STATUS = s; return n; };
   document.getElementById("fStatus").innerHTML = ops.map(([k, t]) => `<span class="chip ${STATUS === k ? "on" : ""}" onclick="STATUS='${k}';renderLista()">${t} (${cont(k)})</span>`).join("");
   const L = D.pedidos.filter(filtra);
@@ -192,11 +193,13 @@ function renderLista(){
     const fotos = x.midias.filter(m => m.tipo !== "video").length, videos = x.midias.filter(m => m.tipo === "video").length;
     return `<div class="ped" onclick="B13Ficha.abrir('${esc(x.pedidoId)}')">
       <div class="info"><div class="l1">#${esc(x.numero)} · ${esc(x.cliente || "—")}</div>
-        <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.frete ? " · frete " + brl(x.frete) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div></div>
+        <div class="l2">${dmy(x.dataEntrega)}${x.turno && x.turno !== "qualquer" ? " · " + esc(x.turno) : ""} · ${esc(x.carro || "sem carro")}${x.viagem?.motorista ? " · " + esc(x.viagem.motorista) : ""}${x.entrega?.em ? " · entregue " + hora(x.entrega.em) : ""}${x.frete ? " · frete " + brl(x.frete) : ""}${x.endereco ? " · " + esc(x.endereco.slice(0, 60)) : ""}</div>
+        ${x.entrega?.ocorrencia || (x.entrega?.itensProblema || []).length || (Number(x.entrega?.valorProblema) || 0) > 0 ? `<div class="l2" style="color:#ffd23f;white-space:normal">⚠️ ${esc(x.entrega?.ocorrencia?.descricao || "")}${(x.entrega?.itensProblema || []).length ? ` · ${x.entrega.itensProblema.length} item(ns) com problema` : ""}${(Number(x.entrega?.valorProblema) || 0) > 0 ? ` · ${brl(x.entrega.valorProblema)} abatidos` : ""}</div>` : ""}</div>
       <div class="dir"><span class="valor">${brl(x.total)}</span>${tagSt(x)}${tagPg(x)}
         ${fotos ? `<span class="ic">📷 ${fotos}</span>` : ""}${videos ? `<span class="ic">🎥 ${videos}</span>` : ""}${x.entrega?.temAssinatura ? `<span class="ic">✍️</span>` : ""}${x.entrega?.ocorrencia ? `<span class="tag warn">ocorrência</span>` : ""}${x.entrega?.valorProblema > 0 ? `<span class="tag erro">problema ${brl(x.entrega.valorProblema)}</span>` : ""}</div></div>`;
   }).join("") : `<div class="vazio">Nenhum pedido de entrega neste filtro.</div>`;
 }
+function verOcorrencias() { STATUS = "ocorrencia"; renderLista(); const l = document.getElementById("fStatus"); if (l) l.scrollIntoView({ behavior: "smooth", block: "start" }); }
 function abrirPedido(pid){
   const x = D.pedidos.find(p => p.pedidoId === pid); if (!x) return;
   const lin = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
