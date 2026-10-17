@@ -10263,19 +10263,49 @@ app.get("/api/supervisora/painel",requireAcesso("acesso_supervisora"),async(req,
     finally{ _supPainelCache.promessa=null; }
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
-// ATENDIDOS DA SEMANA: uma busca no Bling pelos pedidos na situação Atendido (1 a 3 páginas, prioridade normal, em
-// segundo plano, a cada 5 min). Antes dependia do acompanhamento pedido a pedido da tela de Pedidos, que só roda com
-// ela aberta e se perde a cada reinício: os atendidos saíam sempre 0.
-let _supAtd={em:0,ids:new Set(),mapa:{},rodando:null,ini:""};
+// ATENDIDOS (semana e mês): busca no Bling dos pedidos na situação Atendido, com valor e data de cada um.
+// Robusta: cada página tenta até 3 vezes; falha NÃO apaga o que já foi buscado; mês inteiro a cada 30 min e só os
+// últimos 3 dias a cada 5 min; resultado salvo em arquivo (reinício não zera). Status visível no painel.
+const SUP_ATD_FILE=`${DATA_DIR}/supervisora_atendidos.json`;
+let _supAtd=(()=>{ try{ const d=lerJSON(SUP_ATD_FILE,null); if(d&&d.mapa) return {em:d.em||0,emCompleto:d.emCompleto||0,mapa:d.mapa,ids:new Set(Object.keys(d.mapa)),ini:d.ini||"",rodando:null,erro:d.erro||null,paginas:d.paginas||0}; }catch(e){} return {em:0,emCompleto:0,mapa:{},ids:new Set(),ini:"",rodando:null,erro:null,paginas:0}; })();
+async function _buscarAtendidosBling(iniISO,fimISO){
+  const mapa={}; let paginas=0;
+  for(let pag=1;pag<=30;pag++){
+    const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO}); p.append("idsSituacoes[]",SIT.ATENDIDO);
+    let r=null, ult=null;
+    for(let t=0;t<3&&!r;t++){ try{ r=await bling(`/pedidos/vendas?${p.toString()}`); }catch(e){ ult=e; await sleep(1500*(t+1)); } }
+    if(!r) throw new Error(`página ${pag}: ${ult&&ult.message||"sem resposta do Bling"}`);
+    const arr=r?.data||[]; paginas++; arr.forEach(b=>{ mapa[String(b.id)]={t:Number(b.total)||0,d:String(b.data||"").slice(0,10)}; }); if(arr.length<100) break;
+  }
+  return {mapa,paginas};
+}
 function _supAtualizarAtendidos(iniISO,fimISO){
   if(_supAtd.rodando) return _supAtd.rodando;
-  _supAtd.rodando=(async()=>{ try{ const ids=new Set(), mapa={};
-      for(let pag=1;pag<=20;pag++){ const p=new URLSearchParams({pagina:pag,limite:100,dataInicial:iniISO,dataFinal:fimISO}); p.append("idsSituacoes[]",SIT.ATENDIDO);
-        const r=await bling(`/pedidos/vendas?${p.toString()}`); const arr=r?.data||[]; arr.forEach(b=>{ ids.add(String(b.id)); mapa[String(b.id)]={t:Number(b.total)||0,d:String(b.data||"").slice(0,10)}; }); if(arr.length<100) break; } // prioridade normal: 1 a 3 chamadas a cada 5 min (a fila lenta pode estar cheia de tarefas grandes)
-      _supAtd={em:Date.now(),ids,mapa,rodando:null,ini:iniISO}; }
-    catch(e){ _supAtd.rodando=null; _supAtd.em=Date.now()-4*60000; } })(); // falhou: tenta de novo em 1 min
+  const completo=_supAtd.ini!==iniISO||Date.now()-_supAtd.emCompleto>30*60000||!_supAtd.emCompleto;
+  const ini=completo?iniISO:[iniISO,_diaBRk(Date.now()-3*_DIA)].sort().reverse()[0]; // parcial: só os últimos 3 dias
+  _supAtd.rodando=(async()=>{
+    try{
+      const {mapa,paginas}=await _buscarAtendidosBling(ini,fimISO);
+      let novo;
+      if(completo) novo=mapa;
+      else { novo={}; Object.entries(_supAtd.mapa||{}).forEach(([k,v])=>{ if(!(v.d>=ini&&v.d<=fimISO)) novo[k]=v; }); Object.assign(novo,mapa); } // troca só a faixa buscada
+      Object.keys(novo).forEach(k=>{ if(novo[k].d&&novo[k].d<iniISO) delete novo[k]; });
+      _supAtd={em:Date.now(),emCompleto:completo?Date.now():_supAtd.emCompleto,mapa:novo,ids:new Set(Object.keys(novo)),ini:iniISO,rodando:null,erro:null,paginas};
+      try{ salvarJSON(SUP_ATD_FILE,{em:_supAtd.em,emCompleto:_supAtd.emCompleto,mapa:novo,ini:iniISO,paginas}); }catch(e){}
+    }catch(e){
+      console.error("[supervisora] busca de atendidos no Bling falhou:",e.message);
+      _supAtd.rodando=null; _supAtd.erro={msg:e.message,em:Date.now()}; _supAtd.em=Date.now()-4*60000; // mantém o que já tinha; tenta de novo em 1 min
+    }
+  })();
   return _supAtd.rodando;
 }
+app.get("/api/diag/atendidos",requireAdmin,async(req,res)=>{
+  const hoje=_diaBRk(Date.now()), ini=hoje.slice(0,7)+"-01";
+  try{ const t0=Date.now(); const {mapa,paginas}=await _buscarAtendidosBling(ini,hoje); const v=Object.values(mapa);
+    res.json({ok:true,periodo:`${ini} a ${hoje}`,paginas,pedidosAtendidos:v.length,valor:_round2(v.reduce((a,x)=>a+x.t,0)),ms:Date.now()-t0,
+      guardado:{em:_supAtd.em?new Date(_supAtd.em).toISOString():null,qtd:_supAtd.ids.size,ultimoErro:_supAtd.erro}}); }
+  catch(e){ res.json({ok:false,erro:e.message,guardado:{qtd:_supAtd.ids.size,ultimoErro:_supAtd.erro}}); }
+});
 // troco de uma venda de caixa (mesma regra do resumo do caixa): o registrado; senão a sobra paga em dinheiro (sem confundir com a taxa de cartão)
 function _trocoDaVenda(v){
   const reg=Number(v.troco)||0; if(reg>0.009) return reg;
@@ -10313,7 +10343,9 @@ async function _montarPainelSupervisora(){
     const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
     const iniBusca=[iniSem,hoje.slice(0,7)+"-01"].sort()[0]; // do que vier antes: começo da semana ou do mês
     if(_supAtd.ini!==iniBusca||Date.now()-_supAtd.em>5*60000){ const pr=_supAtualizarAtendidos(iniBusca,hoje); if(!_supAtd.em||_supAtd.ini!==iniBusca) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
-    const ehAtendido=x=>x.situacaoId===ATD||_supAtd.ids.has(String(x.id));
+    // atendido: pela busca no Bling, pelo acompanhamento de situações ou, de reserva, pelo histórico copiado de madrugada
+    const histAtd=lerHistPedidos().porId||{};
+    const ehAtendido=x=>x.situacaoId===ATD||_supAtd.ids.has(String(x.id))||(histAtd[String(x.id)]||{}).s===ATD;
     marca("atendidos");
     const pago=x=>!!passouCaixa[String(x.id)]||["pago"].includes(pags[String(x.id)]?.statusPagamento);
     const resumoPed=x=>({id:x.id,numero:x.numero,cliente:x.cliente,vendedor:x.vendedor||"—",origem:x.origem,total:_round2(x.total),situacao:(!x.situacaoId&&ehAtendido(x))?"Atendido":x.situacao,situacaoId:x.situacaoId||(ehAtendido(x)?ATD:x.situacaoId),criadoEm:x.criadoEm,tipo:x.tipo,
@@ -10426,6 +10458,7 @@ async function _montarPainelSupervisora(){
       topProdutos:Object.values(prod).sort((a,b)=>b.valor-a.valor).slice(0,8).map(x=>({...x,valor:_round2(x.valor)})), clientesEmRisco:clientesRisco };
     marca("total"); if(tempos.total>3000) console.log("[supervisora] painel lento:",JSON.stringify(tempos));
     return {ok:true,tempos,agora,hoje,iniSem,dias,naoPassouCaixa,pix,pixDesde:desdePix,porVendedora,comparativo,porHora,
+      atendidosStatus:{conferidoEm:_supAtd.em&&!_supAtd.erro?_supAtd.em:(_supAtd.erro?null:_supAtd.em),ultimaBoaEm:_supAtd.emCompleto||null,qtdMes:_supAtd.ids.size,erro:_supAtd.erro},
       periodos:{mesAntAte:fimMesAnt,semanaAntAte:agora-7*_DIA,meses:meses.map(m=>({mes:m.mes,ate:m.fim}))},naoAtendidos,prazo,prazoAtualizadoEm:_prazoCli.em||null,pendencias:pend,
       meta:{valor:metaDiaCalc,vendido:vendidoHoje,falta:_round2(Math.max(0,metaDiaCalc-vendidoHoje)),
         mes:metaMes>0?{meta:metaMes,herdada:metaHerdada,vendido:vendidoMes,falta:_round2(Math.max(0,metaMes-vendidoMes)),diasRestantes,diasNoMes,hojeEhDiaDeVenda,

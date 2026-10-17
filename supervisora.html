@@ -195,7 +195,9 @@ function render() {
   const hojeK = d.hoje;
   const vend = `<div class="rolagem"><table class="mini"><tr><th>Vendedora</th>${d.dias.map(x => `<th style="${x === hojeK ? "color:#FF0082" : ""}">${diaCurto(x)}${x === hojeK ? " (hoje)" : ""}</th>`).join("")}<th>Semana</th></tr>
     ${d.porVendedora.map(v => `<tr><td><b style="font-size:14.5px">${esc(v.vendedora)}</b></td>${d.dias.map(x => `<td style="${x === hojeK ? "background:#1c1846" : ""}">${celV(v.porDia[x])}</td>`).join("")}<td>${celV(v)}<br><b>${brl(v.valor)}</b></td></tr>`).join("") || `<tr><td colspan="9" class="ic">Sem pedidos na semana.</td></tr>`}</table></div>
-    <div class="ic" style="margin-top:4px">Feitos: pedidos criados. Recebidos: passaram por caixa ou estão pagos. Atendidos: situação Atendido no Bling.</div>`;
+    <div class="ic" style="margin-top:4px">Feitos: pedidos criados. Recebidos: passaram por caixa ou estão pagos. Atendidos: situação Atendido no Bling.
+      ${(() => { const S = d.atendidosStatus || {}; if (S.erro) return `<span class="verm">· ⚠️ não consegui conferir os atendidos no Bling (${esc(S.erro.msg)}); mostrando o que já tinha${S.ultimaBoaEm ? " de " + hm(S.ultimaBoaEm) : ""}.</span>`;
+        return S.conferidoEm ? `· atendidos conferidos no Bling às ${hm(S.conferidoEm)} (${S.qtdMes} no mês)` : "· conferindo os atendidos no Bling…"; })()}</div>`;
   const seta = (a, b) => { if (!b) return a ? `<span class="verde">novo</span>` : ""; const v = Math.round((a - b) / b * 100); return `<span class="${v >= 0 ? "verde" : "verm"}">${v >= 0 ? "▲" : "▼"}${Math.abs(v)}%</span>`; };
   const cel = (x, ant) => `<b>${x.qtd}</b> <span class="ic">vs ${ant.qtd}</span> ${seta(x.qtd, ant.qtd)}<br><span class="ic">${brl(x.valor)} vs ${brl(ant.valor)}</span>`;
   const MS = (d.periodos && d.periodos.meses) || [];
