@@ -218,7 +218,8 @@
           if (itens.length >= MAX_ARQUIVOS) { rejeitados.push(file.name + " (máximo de " + MAX_ARQUIVOS + " arquivos)"); return; }
           var limite = tipo === "video" ? LIM_VIDEO : LIM_FOTO;
           // vídeo grande pode ser comprimido antes; o limite vale pro arquivo que vai de fato
-          var pode = tipo === "video" && opts.comprimirVideo && file.size > 6 * 1048576;
+          // só recomprime vídeo GRANDE (acima de 25 MB): os menores vão originais, com a qualidade da câmera
+          var pode = tipo === "video" && opts.comprimirVideo && file.size > (opts.comprimirAcimaMB || 25) * 1048576;
           if (file.size > limite && !pode) {
             rejeitados.push((file.name || tipo) + " tem " + legivel(file.size) + " (máximo " + legivel(limite) + "; grave um trecho mais curto)");
             return;

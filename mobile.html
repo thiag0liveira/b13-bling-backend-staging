@@ -862,8 +862,8 @@ function abrirModalMob() {
 function fecharModalMob() {
   el("modalConf").className = "modal";
 }
-// Recomprime o video pra 480px de largura, ~800kbps, usando canvas+MediaRecorder.
-// Roda no navegador; se nao houver suporte, chama o callback com erro pra usar o original.
+// Recomprime vídeo GRANDE (acima de 25 MB) mantendo boa imagem: até 1080 px no lado menor (1920 no maior), 30 fps, ~4 Mbps.
+// Roda no navegador; se não houver suporte, ou se o resultado ficar maior que o original, usa o original.
 function comprimirVideo(file, cb) {
   try {
     if (typeof MediaRecorder === "undefined" || !HTMLCanvasElement.prototype.captureStream) {
@@ -873,27 +873,31 @@ function comprimirVideo(file, cb) {
     v.muted = true; v.playsInline = true; v.preload = "auto";
     v.src = URL.createObjectURL(file);
     v.onloadedmetadata = function () {
-      var alvoL = 720;
-      var escala = v.videoWidth > alvoL ? alvoL / v.videoWidth : 1;
+      var menor = Math.min(v.videoWidth, v.videoHeight), maior = Math.max(v.videoWidth, v.videoHeight);
+      var escala = Math.min(1, 1080 / (menor || 1080), 1920 / (maior || 1920));
       var w = Math.round(v.videoWidth * escala), h = Math.round(v.videoHeight * escala);
       if (!w || !h) { return cb(null, "sem dimensao"); }
       var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-      var ctx = cv.getContext("2d");
-      var stream = cv.captureStream(24); // 24fps
+      var ctx = cv.getContext("2d"); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      var stream = cv.captureStream(30); // 30 fps
       var mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : (MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm");
       var rec;
-      try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2000000 }); }
+      try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 }); }
       catch (e) { return cb(null, "recorder"); }
       var chunks = [];
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
       rec.onstop = function () {
         try { URL.revokeObjectURL(v.src); } catch (e) {}
-        cb(new Blob(chunks, { type: "video/webm" }), null);
+        var saiu = new Blob(chunks, { type: "video/webm" });
+        if (!saiu.size || saiu.size >= file.size) return cb(null, "ficaria maior"); // não piora: manda o original
+        cb(saiu, null);
       };
+      // desenha cada QUADRO REAL do vídeo quando o navegador permite (antes seguia o ritmo da tela e pulava quadros)
+      var porQuadro = typeof v.requestVideoFrameCallback === "function";
       var desenhar = function () {
         if (v.paused || v.ended) return;
         ctx.drawImage(v, 0, 0, w, h);
-        requestAnimationFrame(desenhar);
+        if (porQuadro) v.requestVideoFrameCallback(desenhar); else requestAnimationFrame(desenhar);
       };
       v.onplay = function () { desenhar(); };
       v.onended = function () { try { rec.stop(); } catch (e) {} };
