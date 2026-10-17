@@ -2036,6 +2036,11 @@ async function _destravarSituacao(id){
     try{ await bling(`/pedidos/vendas/${id}/situacoes/${c}`,{method:"PATCH"}); return c; }
     catch(e){ /* transição não definida pra esta conta — tenta a próxima */ }
   }
+  // nenhuma mudança direta aceita: segue o CAMINHO permitido pelo fluxo de situações do Bling (ex.: Atendido → Em aberto → Em digitação)
+  for(const c of cands){
+    try{ const r=await mudarSituacaoPedido(id,c); if(r&&r.ok){ console.log(`[destravar] pedido ${id} destravado para ${nomeSituacao(c)}${r.viaPonte?" via "+r.viaPonte:""}`); return c; } }catch(e){}
+  }
+  console.error(`[destravar] pedido ${id}: o Bling não aceitou nenhum caminho até uma situação editável`);
   return null;
 }
 // restaura a situação original CAMINHANDO até ela (passos intermediários podem falhar
@@ -2051,6 +2056,9 @@ async function _restaurarSituacao(id, alvo){
     catch(e){ /* segue pros próximos passos */ }
     await new Promise(r=>setTimeout(r,350));
   }
+  // não chegou na situação original: segue o caminho permitido pelo fluxo do Bling
+  try{ const atual=Number((await bling(`/pedidos/vendas/${id}`).then(r=>r?.data?.situacao?.id).catch(()=>0))||0);
+    if(alvo&&atual&&atual!==Number(alvo)) await mudarSituacaoPedido(id,alvo); }catch(e){}
 }
 // O Bling responde 400 "Informações idênticas à última venda salva" quando o que mandamos JÁ é exatamente o
 // que está gravado lá (ex.: a 1ª gravação deu certo, a resposta demorou e a nova tentativa mandou o mesmo).
@@ -2216,7 +2224,7 @@ async function acrescentarObservacaoBling(id,notaAdicional){
       await tentarPut();
     }catch(e1){
       if(!precisaUnlock) throw e1;
-      await bling(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+      { const dz=await _destravarSituacao(id); if(!dz) throw e1; } // direto ou pelo caminho do fluxo
       fezUnlock=true;
       await new Promise(r=>setTimeout(r,400));
       try{
@@ -2224,8 +2232,8 @@ async function acrescentarObservacaoBling(id,notaAdicional){
       }finally{
         await new Promise(r=>setTimeout(r,400));
         for(let t=0;t<3;t++){
-          try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitAtual}`,{method:"PATCH"}); break; }
-          catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
+          try{ const rm=await mudarSituacaoPedido(id,sitAtual); if(rm&&rm.ok) break; }
+          catch(e){} await new Promise(r=>setTimeout(r,600*(t+1)));
         }
       }
     }
@@ -7648,6 +7656,12 @@ app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
 
     const freteAtual=+(ped.transporte?.frete||0);
     const novoTotal=+((itensLimpos.reduce((s,i)=>s+i.quantidade*i.valor,0))+freteAtual).toFixed(2);
+    // o Bling NÃO aceitou: não altera nada no caixa (antes gravava só no caixa e o pedido ficava diferente nos dois).
+    // Só grava só no caixa se a pessoa escolher isso explicitamente (forcar).
+    if(!blingOk&&!req.body?.forcar){
+      addLog(String(pedidoId),"itens_alterados_gestao_recusado",null,(operador||"Gestão"),{blingErro});
+      return res.status(409).json({erro:`O Bling não aceitou a alteração dos itens: ${blingErro||"erro"}. Nada foi alterado (nem no caixa).`,blingErro,podeForcar:true});
+    }
 
     // grava no movimento do caixa (itens + total) + histórico
     const dCx=lerCaixaSessoes(); let achou=false; const idStr=String(pedidoId);
@@ -10847,7 +10861,7 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
       if(_ehIdenticoAoSalvo(e1)){ console.log("[atualizarItensBling] pedido",id,"já estava com estes itens/pagamentos no Bling (idênticos): tratado como gravado"); return {ok:true,jaGravado:true,resultado:null,fezUnlock:false,restaurouOk:true,situacaoFinal:sit,reposto:[],erroRestaurar:null}; }
       if(!precisaUnlock) throw e1;
       try{
-        await blingComRetry(`/pedidos/vendas/${id}/situacoes/${SIT_EM_DIGITACAO}`,{method:"PATCH"});
+        { const dz=await _destravarSituacao(id); if(!dz) throw new Error("O Bling não aceitou destravar o pedido para editar (fluxo de situações)."); } // direto ou pelo caminho do fluxo
         fezUnlock=true;
         await new Promise(r=>setTimeout(r,400));
         resultado=await blingComRetry(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
@@ -10863,7 +10877,7 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
         } else {
           let restaurado=false;
           for(let t=0;t<3;t++){
-            try{ await bling(`/pedidos/vendas/${id}/situacoes/${sitRestaurar}`,{method:"PATCH"}); restaurado=true; break; }
+            try{ const rm=await mudarSituacaoPedido(id,sitRestaurar); if(rm&&rm.ok){ restaurado=true; break; } throw new Error(rm&&rm.erro||"não voltou"); }
             catch(e){ await new Promise(r=>setTimeout(r,600*(t+1))); }
           }
           if(!restaurado){ try{ await bling(`/pedidos/vendas/${id}/situacoes/${SIT.AGUARDANDO}`,{method:"PATCH"}); }catch(e){} }

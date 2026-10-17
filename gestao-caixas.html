@@ -1136,7 +1136,7 @@ function totalPixForma(porForma) {
     E.buscas = [];
     renderEditorItens();
   };
-  window.salvarItensVenda = async function salvarItensVenda() {
+  window.salvarItensVenda = async function salvarItensVenda(forcar) {
     const E = window._GITENS;
     if (!E) return;
     const msg = document.getElementById("msgEditorItens");
@@ -1145,7 +1145,8 @@ function totalPixForma(porForma) {
       if (msg) msg.innerHTML = '<div class="err">Deixe ao menos um item.</div>';
       return;
     }
-    if (!confirm(`Salvar os itens do pedido #${E.numero}?\n\nNovo total: ${brl(totalEditorItens())}\n\nIsso altera o pedido no Bling (estoque) e registra no histórico do caixa.`)) return;
+    if (!forcar && !confirm(`Salvar os itens do pedido #${E.numero}?\n\nNovo total: ${brl(totalEditorItens())}\n\nIsso altera o pedido no Bling (estoque) e registra no histórico do caixa.`)) return;
+    if (forcar && !confirm(`Gravar SÓ NO CAIXA os itens do pedido #${E.numero}?\n\nO Bling vai continuar com os itens antigos até alguém acertar lá. Fica registrado um aviso para isso.`)) return;
     if (msg) msg.innerHTML = '<div class="muted">Salvando…</div>';
     try {
       const r = await fetch(B + "/api/gestao/editar-itens-venda", {
@@ -1156,9 +1157,16 @@ function totalPixForma(porForma) {
         body: JSON.stringify({
           pedidoId: E.pedidoId,
           itens,
-          operador: window.GESTOR && window.GESTOR.nome || "Gestão"
+          operador: window.GESTOR && window.GESTOR.nome || "Gestão",
+          forcar: !!forcar
         })
       }).then(r => r.json());
+      if (r.podeForcar) {
+        if (msg) msg.innerHTML = `<div class="err" style="text-align:left">⚠️ ${esc(r.erro)}</div>
+          <div class="muted" style="font-size:12px;margin-top:6px">Tente salvar de novo daqui a pouco. Se o Bling continuar recusando, dá para gravar só no caixa e acertar no Bling depois.</div>
+          <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-mag" style="flex:1" onclick="salvarItensVenda()">Tentar de novo</button><button class="btn btn-ghost" onclick="salvarItensVenda(true)">Gravar só no caixa</button></div>`;
+        return;
+      }
       if (r.erro) throw new Error(r.erro);
       const avisoBling = r.blingOk === false ? `<div style="margin-top:10px;padding:8px;background:#3a2a0a;border:1px solid #6b5a1f;border-radius:8px;font-size:12px;color:#ffd23f">⚠️ Registrado no histórico do caixa, mas o <b>Bling não foi atualizado</b>: ${esc(r.blingErro || "erro")}.<br>Ajuste o pedido/estoque no Bling manualmente.</div>` : "";
       document.getElementById("modais").innerHTML = `
