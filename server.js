@@ -13739,12 +13739,17 @@ app.get("/api/rotas/resumo-motoristas",(req,res)=>{
 // Agrega, por mês (pela data da rota da viagem), tudo o que foi entregue: totais, por dia, por motorista,
 // por carro, formas de pagamento recebidas na entrega e clientes mais atendidos. Só dados locais
 // (viagens guardadas + registro local dos pedidos), então não consulta o Bling.
+// CUSTOS DO FRETE (configurados no Dashboard de Entregas): por km rodado, por viagem (diária/saída) e por entrega
+const CUSTOS_FRETE_FILE=`${DATA_DIR}/entregas_custos.json`;
+function _custosFrete(){ const c=lerJSON(CUSTOS_FRETE_FILE,{})||{}; return {custoKm:Number(c.custoKm)||0,custoViagem:Number(c.custoViagem)||0,custoEntrega:Number(c.custoEntrega)||0,por:c.por||"",em:c.em||null}; }
 function _agregarEntregasMes(mes,ateDia){
+  const CF=_custosFrete(), temCusto=CF.custoKm>0||CF.custoViagem>0||CF.custoEntrega>0;
   const viagens=Object.values(lerViagensAtivas()).filter(v=>String(v.data||"").startsWith(mes+"-") && !v.canceladaEm && (!ateDia||Number(String(v.data).slice(8,10))<=ateDia));
   const porPedido={}; Object.values(lerPropostas()||{}).forEach(p=>{ if(p.pedidoBlingId) porPedido[String(p.pedidoBlingId)]=p; });
   const [ano,m]=mes.split("-").map(Number); const diasNoMes=new Date(ano,m,0).getDate();
   const porDia={}; for(let d=1;d<=diasNoMes;d++){ porDia[`${mes}-${String(d).padStart(2,"0")}`]={data:`${mes}-${String(d).padStart(2,"0")}`,entregas:0,naoEntregues:0,valor:0,viagens:0}; }
-  const novoAg=()=>({viagens:0,entregas:0,naoEntregues:0,valorEntregue:0,valorProblema:0,pesoKg:0,km:0,kmViagens:0,minutos:0,minViagens:0,ocorrencias:0,comProblema:0,aPrazo:0,valorAPrazo:0});
+  const novoAg=()=>({viagens:0,entregas:0,naoEntregues:0,valorEntregue:0,valorProblema:0,pesoKg:0,km:0,kmViagens:0,minutos:0,minViagens:0,ocorrencias:0,comProblema:0,aPrazo:0,valorAPrazo:0,
+    freteCobrado:0,entregasComFrete:0,freteGratis:0,kmPedidos:0,semInfoFrete:0});
   const tot=novoAg(), mot={}, carros={}, formas={}, clientes={};
   const somaForma=(nome,valor,banco)=>{ const k=banco?`${nome} (${banco})`:nome; formas[k]=formas[k]||{forma:k,qtd:0,valor:0}; formas[k].qtd++; formas[k].valor+=valor; };
   viagens.forEach(v=>{
@@ -13763,6 +13768,9 @@ function _agregarEntregasMes(mes,ateDia){
       const p=porPedido[pid]; const valorProblema=Number(e.valorProblema)||0; const valorFinal=Number(e.valorFinal)||0;
       const total=Number(p?.total)||(valorFinal+valorProblema);
       const peso=p?.itens?.length?estimarPesoPedido(p.itens.map(i=>({descricao:i.nome||i.descricao,quantidade:i.quantidade}))):0;
+      // FRETE cobrado do cliente (registro do pedido no sistema); pedido feito direto no Bling não tem esse dado
+      const ehEnt=p&&p.entrega&&p.entrega.tipo==="entrega", frete=ehEnt?(Number(p.entrega.taxa)||0):0, kmP=ehEnt?(Number(p.entrega.km)||0):0;
+      alvos.forEach(a=>{ if(!p) a.semInfoFrete++; else if(ehEnt){ a.freteCobrado+=frete; a.kmPedidos+=kmP; if(frete>0.004) a.entregasComFrete++; else a.freteGratis++; } });
       alvos.forEach(a=>{ a.entregas++; a.valorEntregue+=total; a.valorProblema+=valorProblema; a.pesoKg+=peso;
         if(e.ocorrencia) a.ocorrencias++; if((e.itensProblema||[]).length||valorProblema>0) a.comProblema++;
         if(e.prazo){ a.aPrazo++; a.valorAPrazo+=total; } });
@@ -13781,19 +13789,30 @@ function _agregarEntregasMes(mes,ateDia){
       valorPorKm:a.km>0?_round2(a.valorEntregue/a.km):null,
       kmPorEntrega:(a.km>0&&feitas)?_round2(a.km/feitas):null,
       minutosPorViagem:a.minViagens?Math.round(a.minutos/a.minViagens):null,
-      ticketMedio:feitas?_round2(a.valorEntregue/feitas):0};
+      ticketMedio:feitas?_round2(a.valorEntregue/feitas):0,
+      ...(()=>{ const fc=_round2(a.freteCobrado), gasto=temCusto?_round2(a.km*CF.custoKm+a.viagens*CF.custoViagem+feitas*CF.custoEntrega):null;
+        return {freteCobrado:fc,kmPedidos:_round2(a.kmPedidos),gastoFrete:gasto,saldoFrete:gasto!=null?_round2(fc-gasto):null,coberturaFretePct:gasto?Math.round(fc/gasto*100):null,
+          fretePorEntrega:feitas?_round2(fc/feitas):0,gastoPorEntrega:gasto!=null&&feitas?_round2(gasto/feitas):null,
+          freteSobreValorPct:a.valorEntregue>0?+(fc/a.valorEntregue*100).toFixed(1):null,gastoSobreValorPct:gasto!=null&&a.valorEntregue>0?+(gasto/a.valorEntregue*100).toFixed(1):null,
+          freteGratisPct:(a.entregasComFrete+a.freteGratis)?Math.round(a.freteGratis/(a.entregasComFrete+a.freteGratis)*100):null}; })()};
   };
   const listaMot=Object.values(mot).map(fim).sort((a,b)=>b.valorEntregue-a.valorEntregue);
   const somaV=listaMot.reduce((s,x)=>s+x.valorEntregue,0);
   listaMot.forEach(x=>{ x.parteValorPct=somaV?Math.round(x.valorEntregue/somaV*100):0; });
   const T=fim(tot); T.motoristas=listaMot.length;
-  return {mes,totais:T,
+  return {mes,totais:T,custosFrete:CF,
     porDia:Object.values(porDia).map(d=>({...d,valor:_round2(d.valor)})),
     porMotorista:listaMot,
     porCarro:Object.values(carros).map(fim).sort((a,b)=>b.valorEntregue-a.valorEntregue),
     formasPagamento:Object.values(formas).map(f=>({...f,valor:_round2(f.valor)})).sort((a,b)=>b.valor-a.valor),
     clientes:Object.values(clientes).map(c=>({...c,valor:_round2(c.valor)})).sort((a,b)=>b.valor-a.valor).slice(0,10)};
 }
+app.post("/api/rotas/custos-frete",requireSessao,(req,res)=>{
+  const pe=req.sessao?.permissoes||[req.sessao?.nivel]; if(!(req.sessao?.nivel==="admin"||pe.includes("admin")||["acesso_rotas","acesso_dashboard","ver_dashboard"].some(x=>pe.includes(x)))) return res.status(403).json({erro:"sem permissão"});
+  const n=x=>{ const v=Number(String(x??"").replace(",",".")); return v>=0&&v<100000?_round2(v):0; };
+  const c={custoKm:n(req.body?.custoKm),custoViagem:n(req.body?.custoViagem),custoEntrega:n(req.body?.custoEntrega),por:req.sessao?.nome||"",em:Date.now()};
+  salvarJSON(CUSTOS_FRETE_FILE,c); res.json({ok:true,...c});
+});
 app.get("/api/rotas/dashboard-mensal",(req,res)=>{
   try{
     const hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,7);
@@ -13805,7 +13824,8 @@ app.get("/api/rotas/dashboard-mensal",(req,res)=>{
     const atual=_agregarEntregasMes(mes); const anterior=_agregarEntregasMes(ant,parcial?diaHoje:null);
     const A=atual.totais, P=anterior.totais; const dif=(x,y)=>(y>0)?Math.round((x-y)/y*100):null;
     const variacao={entregas:dif(A.entregas,P.entregas),valorEntregue:dif(A.valorEntregue,P.valorEntregue),viagens:dif(A.viagens,P.viagens),km:dif(A.km,P.km),
-      ocorrencias:dif(A.ocorrencias,P.ocorrencias),naoEntregues:dif(A.naoEntregues,P.naoEntregues),ticketMedio:dif(A.ticketMedio,P.ticketMedio),valorPorKm:(A.valorPorKm&&P.valorPorKm)?dif(A.valorPorKm,P.valorPorKm):null};
+      ocorrencias:dif(A.ocorrencias,P.ocorrencias),naoEntregues:dif(A.naoEntregues,P.naoEntregues),ticketMedio:dif(A.ticketMedio,P.ticketMedio),valorPorKm:(A.valorPorKm&&P.valorPorKm)?dif(A.valorPorKm,P.valorPorKm):null,
+      freteCobrado:dif(A.freteCobrado,P.freteCobrado),gastoFrete:(A.gastoFrete!=null&&P.gastoFrete)?dif(A.gastoFrete,P.gastoFrete):null,fretePorEntrega:dif(A.fretePorEntrega,P.fretePorEntrega)};
     res.json({ok:true,...atual,mesAnterior:ant,anterior:P,variacao,comparacao:{mesAnterior:ant,parcial,ateDia:parcial?diaHoje:null}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });

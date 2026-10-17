@@ -126,13 +126,49 @@ function grafico(dias, campo, cor, formato, titulo) {
 }
 function tabelaMot(lista, rotulo, chave) {
   if (!lista.length) return '<div class="muted">Sem viagens no mês.</div>';
-  return `<div class="tabwrap"><table><tr><th>${rotulo}</th><th>Viagens</th><th>Entregas</th><th>Não entregues</th><th>Sucesso</th><th>Valor entregue</th><th>Ticket médio</th><th>KM</th><th>R$/km</th><th>Entregas/viagem</th><th>Tempo/viagem</th><th>Com problema</th><th>Ocorrências</th><th>A prazo</th></tr>
+  return `<div class="tabwrap"><table><tr><th>${rotulo}</th><th>Viagens</th><th>Entregas</th><th>Não entregues</th><th>Sucesso</th><th>Valor entregue</th><th>Frete cobrado</th><th>Gasto (est.)</th><th>Saldo</th><th>Ticket médio</th><th>KM</th><th>R$/km</th><th>Entregas/viagem</th><th>Tempo/viagem</th><th>Com problema</th><th>Ocorrências</th><th>A prazo</th></tr>
   ${lista.map(m => `<tr><td><b>${esc(m[chave])}</b>${m.parteValorPct != null ? `<div class="parte"><i style="width:${m.parteValorPct}%"></i></div>` : ""}</td>
     <td>${m.viagens}</td><td><b>${m.entregas}</b></td><td style="color:${m.naoEntregues ? "var(--ruim)" : "inherit"}">${m.naoEntregues}</td>
     <td>${m.taxaSucessoPct == null ? "—" : m.taxaSucessoPct + "%"}</td><td><b style="color:var(--warn)">${brl(m.valorEntregue)}</b>${m.parteValorPct != null ? ` <span class="muted">${m.parteValorPct}%</span>` : ""}</td>
+    <td>${brl(m.freteCobrado)}${m.freteGratis ? `<div class="muted" style="font-size:10.5px">${m.freteGratis} grátis</div>` : ""}</td><td>${m.gastoFrete == null ? "—" : brl(m.gastoFrete)}</td>
+    <td style="color:${m.saldoFrete == null ? "inherit" : m.saldoFrete >= 0 ? "#3ce88a" : "#ff8f7a"}">${m.saldoFrete == null ? "—" : brl(m.saldoFrete)}</td>
     <td>${brl(m.ticketMedio)}</td><td>${m.km ? num(m.km, 0) : "—"}</td><td>${m.valorPorKm == null ? "—" : brl(m.valorPorKm)}</td>
     <td>${num(m.entregasPorViagem, 1)}</td><td>${minLabel(m.minutosPorViagem)}</td><td>${m.comProblema}</td><td>${m.ocorrencias}</td><td>${m.aPrazo ? m.aPrazo + " · " + brl(m.valorAPrazo) : "—"}</td></tr>`).join("")}
   </table></div>`;
+}
+// ===== FRETE: cobrado dos clientes x gasto estimado (km rodados, viagens e entregas x custos configurados) =====
+function secaoFrete(D, T, V) {
+  const CF = D.custosFrete || {}, tem = T.gastoFrete != null;
+  const saldoCor = !tem ? "#9a95c9" : T.saldoFrete >= 0 ? "#3ce88a" : "#ff8f7a";
+  return `<div><div class="sec-title" style="display:flex;align-items:center;gap:10px">🚚 Frete <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="editarCustos()">⚙️ Custos do frete</button>
+      <span class="muted" style="font-size:11px;font-weight:600">${tem ? `custo: ${brl(CF.custoKm)}/km · ${brl(CF.custoViagem)}/viagem · ${brl(CF.custoEntrega)}/entrega` : "defina os custos para ver o gasto"}</span></div>
+    <div id="custosBox"></div>
+    <div class="kpi-grid">
+      ${kpi("Frete cobrado", brl(T.freteCobrado), variacao(V.freteCobrado), "💵", "#3ce88a")}
+      ${kpi("Gasto com frete (estimado)", tem ? brl(T.gastoFrete) : "—", tem ? `${num(T.km, 0)} km · ${T.viagens} viagem(ns) · ` + variacao(V.gastoFrete, true) : "informe os custos em ⚙️", "⛽", "#ff8f7a")}
+      ${kpi("Saldo do frete", tem ? `<span style="color:${saldoCor}">${brl(T.saldoFrete)}</span>` : "—", tem ? `o frete cobrado cobre ${T.coberturaFretePct}% do gasto` : "cobrado − gasto", "⚖️", saldoCor)}
+      ${kpi("Frete por entrega", brl(T.fretePorEntrega), tem ? `gasto por entrega ${brl(T.gastoPorEntrega)}` : variacao(V.fretePorEntrega), "🧾")}
+      ${kpi("Frete grátis", num(T.freteGratis), T.freteGratisPct != null ? `${T.freteGratisPct}% das entregas · ${num(T.entregasComFrete)} com frete cobrado` : "", "🎁", "#ffd23f")}
+      ${kpi("Frete no valor entregue", T.freteSobreValorPct == null ? "—" : String(T.freteSobreValorPct).replace(".", ",") + "%", tem && T.gastoSobreValorPct != null ? `gasto = ${String(T.gastoSobreValorPct).replace(".", ",")}% do valor entregue` : "quanto o frete cobrado representa", "📊", "#7fd0ff")}
+    </div>
+    ${T.semInfoFrete ? `<div class="muted" style="font-size:11px;margin-top:4px">${T.semInfoFrete} entrega(s) de pedidos feitos direto no Bling não têm o frete no sistema e não entram no frete cobrado.</div>` : ""}</div>`;
+}
+function editarCustos() {
+  const CF = (DADOS && DADOS.custosFrete) || {}, box = document.getElementById("custosBox");
+  if (box.innerHTML) { box.innerHTML = ""; return; }
+  const campo = (id, rot, v, dica) => `<label style="flex:1;min-width:150px"><div class="muted" style="font-size:11px">${rot}</div><input id="${id}" inputmode="decimal" value="${v ? String(v).replace(".", ",") : ""}" placeholder="${dica}" style="width:100%;padding:8px;font-size:15px;background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:8px"></label>`;
+  box.innerHTML = `<div class="box" style="margin:6px 0 10px"><div class="muted" style="font-size:12px;margin-bottom:8px">Gasto estimado = km rodados (odômetro das viagens) × custo por km + viagens × custo por viagem + entregas × custo por entrega. Use os que fizerem sentido e deixe os outros em branco.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${campo("cfKm", "Custo por km rodado (R$)", CF.custoKm, "ex.: 1,20")}${campo("cfViagem", "Custo por viagem / diária (R$)", CF.custoViagem, "ex.: 80")}${campo("cfEntrega", "Custo por entrega (R$)", CF.custoEntrega, "ex.: 5")}</div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center"><button class="btn" onclick="salvarCustos()">Salvar</button><span id="cfMsg" class="muted" style="font-size:12px">${CF.por ? `última alteração por ${esc(CF.por)}` : ""}</span></div></div>`;
+}
+async function salvarCustos() {
+  const v = id => document.getElementById(id).value.trim();
+  try {
+    const tok = (typeof b13GetSession === "function" && (b13GetSession() || {}).token) || "";
+    const r = await fetch(B + "/api/rotas/custos-frete", { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": tok }, body: JSON.stringify({ custoKm: v("cfKm"), custoViagem: v("cfViagem"), custoEntrega: v("cfEntrega") }) });
+    const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui salvar");
+    carregar();
+  } catch (e) { document.getElementById("cfMsg").innerHTML = `<span style="color:#ff8f7a">${esc(e.message)}</span>`; }
 }
 function render() {
   const D = DADOS, T = D.totais, V = D.variacao || {};
@@ -159,6 +195,7 @@ function render() {
     ${kpi("Ocorrências", num(T.ocorrencias), variacao(V.ocorrencias, true), "📸", "#ff8f7a")}
     ${kpi("Vendas a prazo", num(T.aPrazo), brl(T.valorAPrazo), "🗓️", "#ffd23f")}
   </div></div>
+  ${secaoFrete(D, T, V)}
   <div class="grid2">${grafico(D.porDia, "entregas", "#FF0082", v => v + " entrega(s)", "Entregas por dia")}${grafico(D.porDia, "valor", "#ffd23f", brl, "Valor entregue por dia")}</div>
   <div class="box"><div class="sec-title">👷 Por motorista (${T.motoristas})</div>${tabelaMot(D.porMotorista, "Motorista", "motorista")}</div>
   <div class="box"><div class="sec-title">🚚 Por carro</div>${tabelaMot(D.porCarro, "Carro", "carro")}</div>
