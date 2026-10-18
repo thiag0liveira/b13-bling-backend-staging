@@ -1250,6 +1250,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"Vendas & Caixa",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
   {grupo:"Vendas & Caixa",href:"/pedidos-vendas",label:"🧾 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
+  {grupo:"Estoque",href:"/produtos",label:"🏷️ Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
@@ -10653,6 +10654,178 @@ app.get("/api/supervisora/rota",requireAcesso("acesso_supervisora"),async(req,re
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== PRODUTOS (análise) =====================
+// Catálogo e ESTOQUE do Bling (cópia a cada 2 h pela fila lenta: 1 consulta a cada 100 produtos para a lista e outra a
+// cada 100 para os saldos) cruzados com TODAS as vendas (as mesmas cópias de Pedidos e Clientes), tabela de preços,
+// códigos de barras, fotos, entradas e perdas. Listar e calcular não chamam o Bling; só a edição.
+const PRODUTOS_BLING_FILE=`${DATA_DIR}/produtos_bling.json`;
+let _prodMem=null, _prodSync={rodando:false,progresso:""};
+function lerProdutosBling(){ if(!_prodMem){ _prodMem=lerJSON(PRODUTOS_BLING_FILE,null)||{}; _prodMem.porId||={}; } return _prodMem; }
+async function sincronizarProdutosBling(){
+  if(_prodSync.rodando) return; _prodSync={rodando:true,progresso:"lendo o catálogo"};
+  try{
+    const porId={}, ceder=async()=>{ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; } };
+    for(let pg=1;pg<=100;pg++){ await ceder(); const r=await blingLento(`/produtos?pagina=${pg}&limite=100`); const arr=(r&&r.data)||[];
+      arr.forEach(p=>{ if(!p||!p.id) return; porId[String(p.id)]={n:String(p.nome||"").trim(),c:p.codigo||"",p:Number(p.preco)||0,pc:p.precoCusto!=null?Number(p.precoCusto):null,s:p.situacao||"A",t:p.tipo||"P",f:p.formato||"S",
+        u:p.unidade||"",img:p.imagemURL||"",pai:Number(p.idProdutoPai)||0,est:p.estoque&&p.estoque.saldoVirtualTotal!=null?Number(p.estoque.saldoVirtualTotal):null}; });
+      _prodSync.progresso=`catálogo: ${Object.keys(porId).length} produtos`; if(arr.length<100) break; }
+    if(!Object.keys(porId).length) throw new Error("o Bling não devolveu produtos");
+    const ids=Object.keys(porId).filter(id=>porId[id].s!=="I"&&porId[id].f!=="V"); let lidos=0;
+    for(let i=0;i<ids.length;i+=100){ await ceder(); const bloco=ids.slice(i,i+100);
+      try{ const r=await blingLento(`/estoques/saldos?${bloco.map(id=>`idsProdutos[]=${id}`).join("&")}`);
+        (r?.data||[]).forEach(x=>{ const id=String(x.produto?.id||""); if(porId[id]){ porId[id].est=Number(x.saldoVirtualTotal??x.saldoFisicoTotal??0); porId[id].fis=x.saldoFisicoTotal!=null?Number(x.saldoFisicoTotal):null; } }); }catch(e){}
+      lidos+=bloco.length; _prodSync.progresso=`estoque: ${lidos} de ${ids.length}`; }
+    const ant=lerProdutosBling(); const d={porId,em:Date.now(),estoqueEm:Date.now(),historicoEstoque:ant.historicoEstoque||{}};
+    // foto diária do estoque (para ver a evolução na ficha), guarda 120 dias
+    const hojeK=_diaBRk(Date.now()); Object.entries(porId).forEach(([id,p])=>{ if(p.est==null) return; const h=(d.historicoEstoque[id]||=[]); if(!h.length||h[h.length-1][0]!==hojeK) h.push([hojeK,p.est]); else h[h.length-1][1]=p.est; if(h.length>120) h.splice(0,h.length-120); });
+    salvarJSON(PRODUTOS_BLING_FILE,d); _prodMem=d; _metProdCache.clear();
+    console.log(`[produtos] catálogo e estoque do Bling copiados: ${Object.keys(porId).length} produtos`);
+  }catch(e){ console.log("[produtos] cópia do catálogo falhou (tenta de novo depois):",e.message); }
+  finally{ _prodSync={rodando:false,progresso:""}; }
+}
+setTimeout(()=>{ const d=lerProdutosBling(); if(!d.em||Date.now()-d.em>2*3600e3) sincronizarProdutosBling(); },240000);
+setInterval(()=>{ const d=lerProdutosBling(); if(!d.em||Date.now()-d.em>2*3600e3) sincronizarProdutosBling(); },20*60000);
+app.post("/api/produtos-gestao/sincronizar",requireAdmin,(req,res)=>{ sincronizarProdutosBling(); res.json({ok:true}); });
+
+const _nrmP=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+// vendas por produto num período (a partir do índice de pedidos): qtd, valor, pedidos, clientes, última venda, dia a dia
+const _metProdCache=new Map();
+function _vendasPorProduto(ini,fim){
+  const k=ini+"|"+fim, c=_metProdCache.get(k); if(c&&Date.now()-c.em<120000) return c.v;
+  const PB=lerProdutosBling().porId, porNome={}; Object.entries(PB).forEach(([id,p])=>{ const n=_nrmP(p.n); if(n&&!porNome[n]) porNome[n]=id; });
+  const out={}, I=_indicePedidos();
+  for(const r of I.lista){ if(!r.data||r.data<ini) continue; if(r.data>fim||r.cancelado) continue;
+    _itensDoPedido(r.id).forEach(it=>{ const id=it.produtoId&&PB[String(it.produtoId)]?String(it.produtoId):(porNome[_nrmP(it.nome)]||(it.produtoId?String(it.produtoId):"n:"+_nrmP(it.nome))); if(!id||id==="n:") return;
+      const o=(out[id]||={qtd:0,valor:0,pedidos:0,clientes:new Set(),ultima:"",nome:it.nome,vend:{},cli:{},dias:{}});
+      o.qtd+=it.quantidade; o.valor+=it.quantidade*it.valor; o.pedidos++; if(r.clienteId){ o.clientes.add(r.clienteId); o.cli[r.clienteId]=(o.cli[r.clienteId]||0)+it.quantidade*it.valor; }
+      if(r.data>o.ultima) o.ultima=r.data; const v=r.vendedor||"(sem vendedora)"; o.vend[v]=(o.vend[v]||0)+it.quantidade*it.valor; o.dias[r.data]=(o.dias[r.data]||0)+it.quantidade; }); }
+  _metProdCache.set(k,{em:Date.now(),v:out}); if(_metProdCache.size>30) _metProdCache.delete(_metProdCache.keys().next().value); return out;
+}
+function _perdasPorProduto(iniMs){ const out={}; Object.values(lerJSON(PERDAS_FILE,{})||{}).forEach(p=>{ if((p.em||0)<iniMs) return; [...(p.itensDanificados||[]),...(p.itensNaoEntregues||[])].forEach(i=>{ const id=String(i.produtoId||("n:"+_nrmP(i.nome||i.descricao))); const o=(out[id]||={qtd:0,valor:0,vezes:0}); o.qtd+=Number(i.quantidade)||0; o.valor+=(Number(i.quantidade)||0)*(Number(i.valor)||0); o.vezes++; }); }); return out; }
+function _entradasPorProduto(){ const out={}; (lerEntradasEstoque().entradas||[]).forEach(e=>(e.itens||[]).forEach(i=>{ if(!i.ok||!i.produtoId) return; const id=String(i.produtoId); const o=(out[id]||={ultima:0,qtdUlt:0,custoUlt:null,fornecedor:"",total90:0});
+  if(e.em>o.ultima){ o.ultima=e.em; o.qtdUlt=Number(i.quantidade)||0; o.custoUlt=i.custo!=null?Number(i.custo):o.custoUlt; o.fornecedor=e.fornecedor||""; } if(e.em>Date.now()-90*_DIA) o.total90+=Number(i.quantidade)||0; })); return out; }
+function _montarProdutos(q){
+  const hoje=_diaBRk(Date.now()), ini=/^\d{4}-\d{2}-\d{2}$/.test(String(q.ini||""))?q.ini:_diaBRk(Date.now()-29*_DIA), fim=/^\d{4}-\d{2}-\d{2}$/.test(String(q.fim||""))?q.fim:hoje;
+  const nd=Math.round((Date.parse(fim)-Date.parse(ini))/_DIA)+1, aIni=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-nd*_DIA), aFim=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-_DIA);
+  const PB=lerProdutosBling(), V=_vendasPorProduto(ini,fim), VA=_vendasPorProduto(aIni,aFim), V90=_vendasPorProduto(_diaBRk(Date.now()-89*_DIA),hoje), V30=_vendasPorProduto(_diaBRk(Date.now()-29*_DIA),hoje), VTodo=_vendasPorProduto("2000-01-01",hoje);
+  const cat={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) cat[String(c.id)]=c; }); }catch(e){}
+  const perdas=_perdasPorProduto(Date.parse(ini+"T00:00:00-03:00")), ent=_entradasPorProduto();
+  const ids=new Set([...Object.keys(PB.porId),...Object.keys(V)]);
+  const L=[...ids].map(id=>{ const p=PB.porId[id]||null, v=V[id], c=cat[id]||null, v90=V90[id], v30=V30[id], todo=VTodo[id], va=VA[id];
+    const est=p?p.est:null, media=v90?v90.qtd/90:0, custo=p&&p.pc>0?p.pc:(ent[id]&&ent[id].custoUlt>0?ent[id].custoUlt:null);
+    const qtd=v?v.qtd:0, valor=v?_round2(v.valor):0, precoMedio=qtd?_round2(valor/qtd):0, lucro=custo!=null&&qtd?_round2(valor-qtd*custo):null;
+    const cob=est!=null&&media>0?Math.max(0,Math.round(est/media)):null, ult=todo?todo.ultima:""; // sem estoque (ou negativo): 0 dias
+    const diasSemVenda=ult?Math.round((Date.parse(hoje)-Date.parse(ult))/_DIA):null;
+    const r={id,nome:p?p.n:(v?v.nome:""),codigo:p?p.c:"",situacao:p?p.s:"?",noBling:!!p,unidade:p?p.u:"",img:(c&&c.i)||(p&&p.img)||"",gtins:c?c.k:[],
+      preco:p?p.p:null,custo,precoVarejo:c?c.p:null,precoAtacado:c?c.a:null,precoFardo:c?c.f:null,qtdFardo:c?c.q:null,estoque:est,
+      qtd:_round2(qtd),valor,pedidos:v?v.pedidos:0,clientes:v?v.clientes.size:0,precoMedio,lucro,margem:lucro!=null&&valor>0?+(lucro/valor*100).toFixed(1):null,
+      qtdAnt:va?_round2(va.qtd):0,valorAnt:va?_round2(va.valor):0,v30:v30?_round2(v30.qtd):0,v90:v90?_round2(v90.qtd):0,mediaDia:+media.toFixed(2),cobertura:cob,ultimaVenda:ult,diasSemVenda,
+      sugestaoCompra:media>0&&est!=null?Math.max(0,Math.ceil(media*15-est)):0,perdas:perdas[id]?{qtd:_round2(perdas[id].qtd),valor:_round2(perdas[id].valor)}:null,entrada:ent[id]||null,
+      valorEstoqueCusto:est>0&&custo?_round2(est*custo):0,valorEstoqueVenda:est>0&&(p&&p.p)?_round2(est*p.p):0};
+    const fl=[]; if(est!=null&&est<=0&&r.v30>0) fl.push("ruptura"); else if(cob!=null&&cob<7&&r.v30>0) fl.push("baixo");
+    if(est>0&&(diasSemVenda==null||diasSemVenda>60)) fl.push("parado"); if(est!=null&&est<0) fl.push("negativo"); if(cob!=null&&cob>90&&est>0) fl.push("excesso");
+    if(r.noBling&&!custo) fl.push("sem custo"); if(r.margem!=null&&r.margem<10&&qtd>0) fl.push("margem baixa"); if(!r.noBling) fl.push("fora do catálogo");
+    r.flags=fl; return r; });
+  // curva ABC pelo valor vendido no período
+  const vend=L.filter(r=>r.valor>0).sort((a,b)=>b.valor-a.valor), tot=vend.reduce((a,r)=>a+r.valor,0); let acc=0;
+  vend.forEach(r=>{ acc+=r.valor; r.curva=acc/tot<=0.8?"A":acc/tot<=0.95?"B":"C"; }); L.forEach(r=>{ if(!r.curva) r.curva=r.valor>0?"C":"—"; });
+  return {L,ini,fim,aIni,aFim,PB};
+}
+app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
+  try{
+    const T0=Date.now(), q=req.query, {L:Todos,ini,fim,aIni,aFim,PB}=_montarProdutos(q), nrm=_nrmP, busca=nrm(q.busca||"");
+    const L=Todos.filter(r=>{
+      if((q.situacao||"A")!=="todos"&&r.noBling&&r.situacao!==(q.situacao||"A")) return false;
+      if(q.situacao==="A"||!q.situacao){ if(!r.noBling&&!(r.qtd>0)) return false; }
+      if(busca&&!(nrm(r.nome).includes(busca)||String(r.codigo).toLowerCase()===busca||(r.gtins||[]).includes(busca)||String(r.id)===busca)) return false;
+      if(q.curva&&r.curva!==q.curva) return false;
+      if(q.alerta&&!r.flags.includes(q.alerta)) return false;
+      if(q.estoque==="com"&&!(r.estoque>0)) return false; if(q.estoque==="sem"&&!(r.estoque!=null&&r.estoque<=0)) return false;
+      if(q.vendeu==="sim"&&!(r.qtd>0)) return false; if(q.vendeu==="nao"&&r.qtd>0) return false;
+      return true; });
+    const ord=String(q.ordem||"valor"), cmp={valor:(a,b)=>b.valor-a.valor,qtd:(a,b)=>b.qtd-a.qtd,lucro:(a,b)=>(b.lucro||0)-(a.lucro||0),estoque:(a,b)=>(b.estoque||0)-(a.estoque||0),
+      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
+      compra:(a,b)=>(b.sugestaoCompra*(b.precoMedio||b.preco||1))-(a.sugestaoCompra*(a.precoMedio||a.preco||1)),nome:(a,b)=>String(a.nome).localeCompare(String(b.nome))}[ord]||((a,b)=>b.valor-a.valor);
+    const O=L.slice().sort(cmp), off=Math.max(0,Number(q.offset)||0), lim=Math.min(200,Math.max(1,Number(q.limite)||100));
+    const ativos=Todos.filter(r=>r.noBling&&r.situacao==="A"), soma=(l,f)=>_round2(l.reduce((a,r)=>a+(Number(f(r))||0),0)), cont=f=>Todos.filter(r=>r.flags.includes(f)).length;
+    const M={produtosAtivos:ativos.length,comEstoque:ativos.filter(r=>r.estoque>0).length,valorEstoqueCusto:soma(ativos,r=>r.valorEstoqueCusto),valorEstoqueVenda:soma(ativos,r=>r.valorEstoqueVenda),
+      vendidos:Todos.filter(r=>r.qtd>0).length,faturamento:soma(Todos,r=>r.valor),faturamentoAnt:soma(Todos,r=>r.valorAnt),unidades:soma(Todos,r=>r.qtd),lucro:soma(Todos.filter(r=>r.lucro!=null),r=>r.lucro),
+      faturamentoComCusto:soma(Todos.filter(r=>r.lucro!=null),r=>r.valor),alertas:{ruptura:cont("ruptura"),baixo:cont("baixo"),parado:cont("parado"),negativo:cont("negativo"),excesso:cont("excesso"),"sem custo":cont("sem custo"),"margem baixa":cont("margem baixa"),"fora do catálogo":cont("fora do catálogo")},
+      valorParado:soma(Todos.filter(r=>r.flags.includes("parado")),r=>r.valorEstoqueCusto),curva:{A:Todos.filter(r=>r.curva==="A").length,B:Todos.filter(r=>r.curva==="B").length,C:Todos.filter(r=>r.curva==="C").length},
+      topValor:Todos.filter(r=>r.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,10).map(r=>({id:r.id,nome:r.nome,valor:r.valor,qtd:r.qtd})),
+      topLucro:Todos.filter(r=>r.lucro>0).sort((a,b)=>b.lucro-a.lucro).slice(0,10).map(r=>({id:r.id,nome:r.nome,lucro:r.lucro,margem:r.margem})),
+      altas:Todos.filter(r=>r.valor-r.valorAnt>0).sort((a,b)=>(b.valor-b.valorAnt)-(a.valor-a.valorAnt)).slice(0,8).map(r=>({id:r.id,nome:r.nome,valor:r.valor,valorAnt:r.valorAnt})),
+      quedas:Todos.filter(r=>r.valor-r.valorAnt<0).sort((a,b)=>(a.valor-a.valorAnt)-(b.valor-b.valorAnt)).slice(0,8).map(r=>({id:r.id,nome:r.nome,valor:r.valor,valorAnt:r.valorAnt})),
+      compras:Todos.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,12).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,cobertura:r.cobertura,sugestao:r.sugestaoCompra,mediaDia:r.mediaDia})),
+      paradosValor:Todos.filter(r=>r.flags.includes("parado")).sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,8).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,valor:r.valorEstoqueCusto,diasSemVenda:r.diasSemVenda}))};
+    M.margem=M.faturamentoComCusto>0?+(M.lucro/M.faturamentoComCusto*100).toFixed(1):null;
+    res.json({ok:true,ini,fim,anterior:{ini:aIni,fim:aFim},total:O.length,itens:O.slice(off,off+lim),metricas:M,
+      catalogo:{em:PB.em||null,estoqueEm:PB.estoqueEm||null,produtos:Object.keys(PB.porId||{}).length,rodando:_prodSync.rodando,progresso:_prodSync.progresso},historico:_statusHistorico(),ms:Date.now()-T0});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/produtos-gestao.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
+  try{ const {L}=_montarProdutos(req.query); const c=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`, n=v=>v==null?"":String(v).replace(".",",");
+    const linhas=[["id","codigo","produto","situacao","estoque","cobertura_dias","media_dia_90d","vendido_qtd","vendido_valor","pedidos","clientes","preco_medio","preco_bling","custo","lucro","margem_pct","curva","ultima_venda","dias_sem_venda","sugestao_compra_15d","alertas","varejo","atacado","fardo"].join(";")];
+    L.filter(r=>r.noBling||r.qtd>0).forEach(r=>linhas.push([r.id,r.codigo,r.nome,r.situacao,n(r.estoque),n(r.cobertura),n(r.mediaDia),n(r.qtd),n(r.valor),r.pedidos,r.clientes,n(r.precoMedio),n(r.preco),n(r.custo),n(r.lucro),n(r.margem),r.curva,r.ultimaVenda,n(r.diasSemVenda),r.sugestaoCompra,r.flags.join(" | "),n(r.precoVarejo),n(r.precoAtacado),n(r.precoFardo)].map(c).join(";")));
+    res.setHeader("Content-Type","text/csv; charset=utf-8"); res.setHeader("Content-Disposition",`attachment; filename="produtos_${_diaBRk(Date.now())}.csv"`); res.send("\uFEFF"+linhas.join("\n")); }
+  catch(e){ res.status(500).send(e.message); }
+});
+app.get("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), hoje=_diaBRk(Date.now()), {L}=_montarProdutos(req.query), r=L.find(x=>x.id===id); if(!r) return res.status(404).json({erro:"produto não encontrado"});
+    // 12 meses, dia da semana, vendedoras, clientes, pedidos recentes
+    const ini12=_diaBRk(Date.now()-364*_DIA), V=_vendasPorProduto(ini12,hoje)[id], meses={};
+    for(let k=11;k>=0;k--){ const d=new Date(Date.now()-3*3600e3); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()-k); meses[d.toISOString().slice(0,7)]={qtd:0,valor:0}; }
+    const sem=[0,1,2,3,4,5,6].map(i=>({dia:i,qtd:0})), pedidos=[], I=_indicePedidos(), PB=lerProdutosBling().porId, nomeN=_nrmP(r.nome);
+    for(const p of I.lista){ if(!p.data||p.data<ini12||p.cancelado) continue;
+      _itensDoPedido(p.id).forEach(it=>{ const ok=String(it.produtoId||"")===id||(!it.produtoId||!PB[String(it.produtoId)])&&_nrmP(it.nome)===nomeN; if(!ok) return;
+        const m=meses[p.data.slice(0,7)]; if(m){ m.qtd+=it.quantidade; m.valor+=it.quantidade*it.valor; } sem[new Date(Date.parse(p.data+"T12:00:00Z")).getUTCDay()].qtd+=it.quantidade;
+        if(pedidos.length<80) pedidos.push({pedidoId:p.id,numero:p.numero,data:p.data,cliente:p.cliente,vendedor:p.vendedor,quantidade:it.quantidade,valor:it.valor}); }); }
+    const base=lerClientesBase().porId;
+    const out={...r,meses:Object.entries(meses).map(([mes,o])=>({mes,qtd:_round2(o.qtd),valor:_round2(o.valor)})),porDiaSemana:sem.map(x=>({...x,qtd:_round2(x.qtd)})),
+      porVendedora:V?Object.entries(V.vend).map(([nome,valor])=>({nome,valor:_round2(valor)})).sort((a,b)=>b.valor-a.valor).slice(0,10):[],
+      topClientes:V?Object.entries(V.cli).map(([cid,valor])=>({id:cid,nome:(base[cid]||{}).nome||cid,valor:_round2(valor)})).sort((a,b)=>b.valor-a.valor).slice(0,10):[],
+      pedidosRecentes:pedidos.sort((a,b)=>String(b.data).localeCompare(String(a.data))).slice(0,40),
+      entradas:(lerEntradasEstoque().entradas||[]).filter(e=>(e.itens||[]).some(i=>String(i.produtoId)===id&&i.ok)).slice(0,15).map(e=>{ const i=e.itens.find(x=>String(x.produtoId)===id); return {em:e.em,fornecedor:e.fornecedor,nota:e.numeroNota,quantidade:i.quantidade,custo:i.custo,por:e.por}; }),
+      historicoEstoque:(lerProdutosBling().historicoEstoque||{})[id]||[],log:(lerLog()["produto-"+id]||[]).slice(-30).reverse().map(l=>({em:l.em,evento:l.evento,por:l.funcionarioNome,detalhes:l.detalhes}))};
+    if(req.query.bling==="1"){ try{ const b=(await bling(`/produtos/${id}`))?.data; const sd=(await bling(`/estoques/saldos?idsProdutos[]=${id}`))?.data?.[0];
+      if(b) out.bling={nome:b.nome,preco:Number(b.preco)||0,situacao:b.situacao,estoque:sd?Number(sd.saldoVirtualTotal??sd.saldoFisicoTotal??0):null,codigo:b.codigo||"",unidade:b.unidade||""}; }catch(e){ out.blingErro=e.message; } }
+    res.json({ok:true,produto:out});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// EDITAR (preço de venda, situação, balanço de estoque) — só com QR do dia (gerente, financeiro ou admin)
+app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), b=req.body||{};
+    const auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", motivo=String(b.motivo||"").trim().slice(0,150), feito=[];
+    const novoPreco=b.preco!=null&&String(b.preco).trim()!==""?Number(String(b.preco).replace(",",".")):null, novaSit=["A","I"].includes(b.situacao)?b.situacao:null;
+    if(novoPreco!=null&&!(novoPreco>0)) return res.status(400).json({erro:"preço inválido"});
+    if(novoPreco!=null||novaSit){
+      const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) return res.status(404).json({erro:"produto não encontrado no Bling"});
+      const payload={nome:pd.nome,codigo:pd.codigo||"",preco:novoPreco!=null?novoPreco:(pd.preco||0),tipo:pd.tipo||"P",situacao:novaSit||pd.situacao||"A",formato:pd.formato||"S"};
+      ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
+      if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+      try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou a alteração do produto: "+e.message}); }
+      const P=lerProdutosBling(); if(P.porId[id]){ if(novoPreco!=null) P.porId[id].p=novoPreco; if(novaSit) P.porId[id].s=novaSit; salvarJSON(PRODUTOS_BLING_FILE,P); }
+      if(novoPreco!=null) feito.push(`preço de venda ${brlN(pd.preco)} → ${brlN(novoPreco)}`); if(novaSit&&novaSit!==pd.situacao) feito.push(novaSit==="A"?"ativado":"inativado");
+    }
+    if(b.estoqueBalanco!=null&&String(b.estoqueBalanco).trim()!==""){
+      const q=Number(String(b.estoqueBalanco).replace(",",".")); if(!(q>=0)) return res.status(400).json({erro:"estoque inválido (não pode ser negativo)",feito});
+      if(!motivo) return res.status(400).json({erro:"informe o motivo do ajuste de estoque",feito});
+      const dep=await _depositoPadraoId(); if(!dep) return res.status(502).json({erro:"não encontrei o depósito padrão no Bling",feito});
+      let antes=null; try{ const sd=(await bling(`/estoques/saldos?idsProdutos[]=${id}`))?.data?.[0]; antes=sd?Number(sd.saldoVirtualTotal??sd.saldoFisicoTotal??0):null; }catch(e){}
+      try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(id)},deposito:{id:Number(dep)},operacao:"B",quantidade:q,observacoes:`Balanço via Produtos por ${pedidoPor||"—"} (aut. ${quem}): ${motivo}`.slice(0,190)})}); }
+      catch(e){ return res.status(502).json({erro:"O Bling não aceitou o ajuste de estoque: "+e.message,feito}); }
+      const P=lerProdutosBling(); if(P.porId[id]) { P.porId[id].est=q; salvarJSON(PRODUTOS_BLING_FILE,P); }
+      feito.push(`estoque ${antes!=null?antes:"?"} → ${q}`);
+    }
+    if(!feito.length) return res.status(400).json({erro:"nada para alterar"});
+    addLog("produto-"+id,"produto_editado",req.sessao?.funcionarioId||"",pedidoPor,{autorizadoPor:quem,alteracoes:feito.join(", "),motivo});
+    _metProdCache.clear(); res.json({ok:true,autorizadoPor:quem,feito});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== PEDIDOS DE VENDA =====================
 // Todos os pedidos (sistema + só no Bling) com tudo que temos de cada um. Usa as MESMAS cópias do Bling da tela de Clientes
 // (lista mês a mês + detalhes à noite): nenhuma requisição extra para listar ou calcular. Índice enxuto refeito no
@@ -14499,6 +14672,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"produtos-gestao.html")); });
 app.get("/pedidos-vendas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"pedidos-vendas.html")); });
 app.get("/supervisora",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"supervisora.html")); });
 app.get("/clientes",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"clientes.html")); });

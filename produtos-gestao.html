@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Produtos</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.ped .x span b{display:inline}
+.thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;background:#1c1846;flex-shrink:0}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/produtos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/produtos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🏷️ Produtos</div><div class="sp"></div><span class="ic" id="sinc"></span>
+  <button class="btn btn-ghost" onclick="exportarCsv()">⬇️ CSV</button></div>
+<div class="wrap">
+  <div class="card"><div class="filtros" style="margin-bottom:8px">
+      <label class="ic">Vendas de <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
+      <span class="chip" onclick="periodo(6)">7 dias</span><span class="chip" onclick="periodo(29)">30 dias</span><span class="chip" onclick="periodoMes(0)">Este mês</span><span class="chip" onclick="periodoMes(1)">Mês passado</span><span class="chip" onclick="periodo(89)">90 dias</span><span class="chip" onclick="periodo(364)">12 meses</span>
+    </div>
+    <div class="filtros" style="margin-bottom:8px">
+      <input id="busca" type="search" placeholder="🔎 Nome, código ou código de barras" style="flex:1;min-width:200px">
+      <select id="fSit"><option value="A">Ativos</option><option value="I">Inativos</option><option value="todos">Todos</option></select>
+      <select id="fCurva"><option value="">Curva ABC: todas</option><option value="A">Curva A</option><option value="B">Curva B</option><option value="C">Curva C</option></select>
+      <select id="fEst"><option value="">Com ou sem estoque</option><option value="com">Com estoque</option><option value="sem">Sem estoque</option></select>
+      <select id="fVendeu"><option value="">Vendeu ou não</option><option value="sim">Vendeu no período</option><option value="nao">Não vendeu no período</option></select>
+      <select id="fOrdem"><option value="valor">Mais vendidos (R$)</option><option value="qtd">Mais vendidos (unid.)</option><option value="lucro">Mais lucro</option><option value="compra">Comprar primeiro</option><option value="cobertura">Menos dias de estoque</option><option value="parado">Mais dinheiro parado</option><option value="estoque">Mais estoque</option><option value="alta">Maiores altas</option><option value="queda">Maiores quedas</option><option value="nome">Nome (A-Z)</option></select>
+      <button class="btn btn-ghost" onclick="limpar()">Limpar</button>
+    </div>
+    <div class="filtros" id="fAlertas"></div><div id="filtroAtivo" class="ic" style="margin-top:6px"></div></div>
+  <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="grid2">
+    <div class="card"><h3>🏆 Mais vendidos</h3><div id="cTop"></div></div>
+    <div class="card"><h3>💰 Mais lucrativos <span class="ic">(pelo custo no Bling)</span></h3><div id="cLucro"></div></div>
+    <div class="card"><h3>🛒 Sugestão de compra <span class="ic">(para 15 dias)</span></h3><div id="cCompra"></div></div>
+    <div class="card"><h3>🧊 Parados com mais dinheiro empatado</h3><div id="cParado"></div></div>
+    <div class="card"><h3>📈 Maiores altas</h3><div id="cAlta"></div></div>
+    <div class="card"><h3>📉 Maiores quedas</h3><div id="cQueda"></div></div>
+  </div>
+  <div class="card"><h3>🏷️ Produtos <span class="ic" id="qtdLista"></span></h3><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
+</div>
+<div class="fundo" id="mProd"><div class="modal" id="mProdCorpo" style="max-width:980px"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+const dth = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const DS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), diaISO = ms => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+const ALERTAS = [["ruptura", "🚨 Ruptura", "vende, mas o estoque acabou"], ["baixo", "⚠️ Estoque baixo", "menos de 7 dias de estoque"], ["parado", "🧊 Parado", "tem estoque e não vende há mais de 60 dias"], ["negativo", "➖ Negativo", "estoque negativo no Bling"], ["excesso", "📦 Excesso", "mais de 90 dias de estoque"], ["sem custo", "❔ Sem custo", "sem preço de custo no Bling"], ["margem baixa", "🔻 Margem baixa", "margem abaixo de 10%"], ["fora do catálogo", "🔍 Fora do catálogo", "vendido mas não está no catálogo do Bling"]];
+let D = null, ITENS = [], OFF = 0, ALERTA = "", PR = null, ABA = "resumo", ED = null;
+function filtros() { const v = id => document.getElementById(id).value.trim(); return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), situacao: v("fSit"), curva: v("fCurva"), estoque: v("fEst"), vendeu: v("fVendeu"), ordem: v("fOrdem"), alerta: ALERTA }; }
+function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
+function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h; document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(true); }
+function limpar() { ["busca", "fCurva", "fEst", "fVendeu"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fSit").value = "A"; document.getElementById("fOrdem").value = "valor"; ALERTA = ""; carregar(true); }
+function setAlerta(a, ordem) { ALERTA = ALERTA === a ? "" : a; if (ordem) document.getElementById("fOrdem").value = ordem; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+async function carregar(novo) {
+  if (novo) { OFF = 0; ITENS = []; }
+  const { ok, j } = await api("/api/produtos-gestao?" + new URLSearchParams({ ...filtros(), offset: OFF, limite: 100 }));
+  if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; ITENS = ITENS.concat(j.itens || []); render();
+}
+function render() {
+  const M = D.metricas, C = D.catalogo, H = D.historico || {};
+  document.getElementById("sinc").innerHTML = (C.rodando ? `⏳ copiando catálogo e estoque do Bling (${esc(C.progresso)})` : C.em ? `catálogo e estoque do Bling: ${num(C.produtos)} produtos · copiados ${dth(C.estoqueEm || C.em)}` : "catálogo do Bling ainda não copiado")
+    + (H.detalhes && H.detalhes.total ? ` · vendas do Bling com produtos: ${num(H.detalhes.feitos)} de ${num(H.detalhes.total)} pedidos` : "") + ` · ${D.ms} ms`;
+  const vr = M.faturamentoAnt ? Math.round((M.faturamento - M.faturamentoAnt) / M.faturamentoAnt * 100) : null, A = M.alertas;
+  const k = (v, l, s, cls, ac) => `<div class="kpi ${cls || ""}" ${ac ? `style="cursor:pointer" onclick="${ac}"` : ""}><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
+  document.getElementById("kpis").innerHTML =
+    k(num(M.produtosAtivos), "Produtos ativos", `${num(M.comEstoque)} com estoque · ${num(M.vendidos)} venderam no período`)
+    + k(brl(M.valorEstoqueCusto), "Estoque a custo", `${brl(M.valorEstoqueVenda)} a preço de venda`)
+    + k(brl(M.faturamento), "Vendido no período", `${vr == null ? "" : `<span style="color:${vr >= 0 ? "#3ce88a" : "#ff8aa3"}">${vr >= 0 ? "▲" : "▼"}${Math.abs(vr)}%</span> `}vs ${brl(M.faturamentoAnt)} de ${dmy(D.anterior.ini)} a ${dmy(D.anterior.fim)}`)
+    + k(brl(M.lucro), "Lucro estimado", `${M.margem != null ? "margem " + String(M.margem).replace(".", ",") + "%" : ""} · ${num(M.unidades)} unidades`)
+    + k(num(A.ruptura), "Ruptura", "vendem e o estoque acabou", A.ruptura ? "alerta" : "", "setAlerta('ruptura','valor')")
+    + k(num(A.baixo), "Estoque baixo", "menos de 7 dias", A.baixo ? "alerta" : "", "setAlerta('baixo','cobertura')")
+    + k(num(A.parado), "Parados", `${brl(M.valorParado)} empatados`, "", "setAlerta('parado','parado')")
+    + k(`${M.curva.A} · ${M.curva.B} · ${M.curva.C}`, "Curva A · B · C", "A = 80% do faturamento");
+  document.getElementById("fAlertas").innerHTML = ALERTAS.map(([key, t, dica]) => `<span class="chip ${ALERTA === key ? "on" : ""}" title="${esc(dica)}" onclick="setAlerta('${key}')">${t} (${num(A[key] || 0)})</span>`).join("");
+  const lin = (x, dir, sub) => `<div class="lin" style="cursor:pointer" onclick="abrirProduto('${esc(x.id)}')"><span>${esc(x.nome)}${sub ? ` <span class="ic">· ${sub}</span>` : ""}</span><b>${dir}</b></div>`;
+  document.getElementById("cTop").innerHTML = M.topValor.map(x => lin(x, brl(x.valor), num(x.qtd) + " un")).join("") || `<div class="ic">—</div>`;
+  document.getElementById("cLucro").innerHTML = M.topLucro.map(x => lin(x, brl(x.lucro), x.margem != null ? "margem " + String(x.margem).replace(".", ",") + "%" : "")).join("") || `<div class="ic">Sem custo cadastrado no Bling.</div>`;
+  document.getElementById("cCompra").innerHTML = M.compras.map(x => lin(x, `comprar ${num(x.sugestao)}`, `estoque ${num(x.estoque)} · ${x.cobertura != null ? x.cobertura + " dia(s)" : "sem estoque"} · ${num(x.mediaDia)}/dia`)).join("") || `<div class="ic">Nada urgente.</div>`;
+  document.getElementById("cParado").innerHTML = M.paradosValor.map(x => lin(x, brl(x.valor), `${num(x.estoque)} un · ${x.diasSemVenda != null ? "sem venda há " + x.diasSemVenda + " dias" : "nunca vendeu"}`)).join("") || `<div class="ic">—</div>`;
+  document.getElementById("cAlta").innerHTML = M.altas.map(x => lin(x, `<span style="color:#3ce88a">+${brl(x.valor - x.valorAnt)}</span>`, `${brl(x.valorAnt)} → ${brl(x.valor)}`)).join("") || `<div class="ic">—</div>`;
+  document.getElementById("cQueda").innerHTML = M.quedas.map(x => lin(x, `<span style="color:#ff8aa3">${brl(x.valor - x.valorAnt)}</span>`, `${brl(x.valorAnt)} → ${brl(x.valor)}`)).join("") || `<div class="ic">—</div>`;
+  document.getElementById("filtroAtivo").innerHTML = `vendas de ${dmy(D.ini)} a ${dmy(D.fim)}${ALERTA ? " · alerta: " + esc(ALERTA) : ""}`;
+  document.getElementById("qtdLista").textContent = `(${num(D.total)})`;
+  renderLista();
+}
+function linha(r) {
+  const tg = [`<span class="tagp ${r.curva === "A" ? "ok" : ""}">curva ${esc(r.curva)}</span>`].concat(r.flags.map(f => `<span class="tagp ${["ruptura", "negativo"].includes(f) ? "al" : ["baixo", "parado", "margem baixa", "excesso"].includes(f) ? "am" : ""}">${esc(f)}</span>`));
+  if (r.situacao === "I") tg.unshift(`<span class="tagp al">inativo</span>`);
+  return `<div class="ped" onclick="abrirProduto('${esc(r.id)}')">${r.img ? `<img class="thumb" src="${esc(r.img)}" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="thumb"></div>`}
+    <div class="x"><b>${esc(r.nome || "(sem nome)")}</b><span>${r.codigo ? "cód. " + esc(r.codigo) + " · " : ""}estoque <b style="color:${r.estoque != null && r.estoque <= 0 ? "#ff8aa3" : "inherit"}">${num(r.estoque)}</b>${r.cobertura != null ? ` (${r.cobertura} dia${r.cobertura === 1 ? "" : "s"})` : ""} · ${num(r.mediaDia)}/dia${r.ultimaVenda ? " · última venda " + dmy(r.ultimaVenda) : " · nunca vendeu"}</span><div>${tg.join("")}</div></div>
+    <div style="text-align:right"><b>${brl(r.valor)}</b><div class="ic">${num(r.qtd)} un${r.margem != null ? " · " + String(r.margem).replace(".", ",") + "%" : ""}</div></div></div>`;
+}
+function renderLista() { document.getElementById("lista").innerHTML = (ITENS.length ? ITENS.map(linha).join("") : `<div class="vazio">Nenhum produto nesse filtro.</div>`) + (ITENS.length < D.total ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(D.total - ITENS.length)} restantes)</button></div>` : ""); }
+function exportarCsv() { fetch(B + "/api/produtos-gestao.csv?" + new URLSearchParams(filtros()), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "produtos_" + hojeISO() + ".csv"; a.click(); }); }
+// ===== FICHA =====
+async function abrirProduto(id) {
+  document.getElementById("mProd").classList.add("aberto"); document.getElementById("mProdCorpo").innerHTML = `<div class="vazio"><div class="spin"></div></div>`;
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(id) + "?" + new URLSearchParams({ ini: filtros().ini, fim: filtros().fim }));
+  if (!ok) { document.getElementById("mProdCorpo").innerHTML = `<div class="err">${esc(j.erro || "Não consegui abrir.")}</div>`; return; }
+  PR = j.produto; ABA = "resumo"; ED = null; renderFicha();
+}
+function fechar() { document.getElementById("mProd").classList.remove("aberto"); }
+const L2 = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
+function renderFicha() {
+  const p = PR, abas = [["resumo", "Resumo"], ["vendas", "Vendas"], ["pedidos", `Pedidos (${p.pedidosRecentes.length})`], ["estoque", "Estoque"], ["historico", "Histórico"], ["editar", "✏️ Editar"]];
+  document.getElementById("mProdCorpo").innerHTML = `<div style="display:flex;gap:12px;align-items:flex-start">${p.img ? `<img src="${esc(p.img)}" style="width:72px;height:72px;border-radius:10px;object-fit:cover">` : ""}
+      <div style="flex:1"><div style="font-size:19px;font-weight:900">${esc(p.nome)}</div><div class="ic">${p.codigo ? "código " + esc(p.codigo) + " · " : ""}${(p.gtins || []).length ? "barras " + esc(p.gtins.slice(0, 3).join(", ")) + " · " : ""}${p.situacao === "I" ? "inativo" : "ativo"} · curva ${esc(p.curva)}</div>
+      <div>${p.flags.map(f => `<span class="tagp ${["ruptura", "negativo"].includes(f) ? "al" : "am"}">${esc(f)}</span>`).join("")}</div></div><button class="btn btn-ghost" onclick="fechar()">Fechar</button></div>
+    <div class="abas">${abas.map(([k, t]) => `<span class="${ABA === k ? "on" : ""}" onclick="ABA='${k}';renderFicha()">${t}</span>`).join("")}</div>
+    <div id="abaCorpo">${({ resumo: abaResumo, vendas: abaVendas, pedidos: abaPedidos, estoque: abaEstoque, historico: abaHist, editar: abaEditar })[ABA]()}</div>`;
+  if (ABA === "editar" && !ED) carregarEdicao();
+}
+function abaResumo() { const p = PR;
+  return `<div class="grid2"><div class="card" style="margin:0"><h3>Preços</h3>${L2("Preço no Bling", brl(p.preco))}${L2("Tabela varejo", brl(p.precoVarejo))}${L2("Tabela atacado", brl(p.precoAtacado))}${L2("Fardo", p.precoFardo != null ? brl(p.precoFardo) + (p.qtdFardo ? " (" + p.qtdFardo + " un)" : "") : "—")}${L2("Custo", brl(p.custo))}${L2("Preço médio vendido", brl(p.precoMedio))}${L2("Margem no período", p.margem != null ? String(p.margem).replace(".", ",") + "%" : "—")}</div>
+    <div class="card" style="margin:0"><h3>Estoque</h3>${L2("Saldo no Bling", num(p.estoque) + (p.unidade ? " " + esc(p.unidade) : ""))}${L2("Venda média (90 dias)", num(p.mediaDia) + " por dia")}${L2("Dura", p.cobertura != null ? p.cobertura + " dia(s)" : "—")}${L2("Sugestão de compra (15 dias)", p.sugestaoCompra ? num(p.sugestaoCompra) : "—")}
+      ${L2("Valor a custo", brl(p.valorEstoqueCusto))}${p.entrada ? L2("Última entrada", `${num(p.entrada.qtdUlt)} un em ${dth(p.entrada.ultima)}${p.entrada.fornecedor ? " · " + esc(p.entrada.fornecedor) : ""}`) : ""}${p.perdas ? L2("Perdas no período", `${num(p.perdas.qtd)} un · ${brl(p.perdas.valor)}`) : ""}</div></div>
+    <div class="grid2" style="margin-top:10px"><div class="card" style="margin:0"><h3>No período</h3>${L2("Vendido", `${num(p.qtd)} un · ${brl(p.valor)}`)}${L2("Período anterior", `${num(p.qtdAnt)} un · ${brl(p.valorAnt)}`)}${L2("Pedidos", num(p.pedidos))}${L2("Clientes", num(p.clientes))}${L2("Lucro estimado", brl(p.lucro))}</div>
+      <div class="card" style="margin:0"><h3>Ritmo</h3>${L2("Últimos 30 dias", num(p.v30) + " un")}${L2("Últimos 90 dias", num(p.v90) + " un")}${L2("Última venda", p.ultimaVenda ? dmy(p.ultimaVenda) + (p.diasSemVenda != null ? " (há " + p.diasSemVenda + " dias)" : "") : "nunca")}</div></div>`; }
+const barras = (dados, rot, val, alt, fmt) => { const mx = Math.max(1, ...dados.map(val)), W = Math.max(dados.length * 40, 280);
+  return `<div class="rolagem"><svg viewBox="0 0 ${W} ${alt + 30}" style="width:100%;height:${alt + 30}px">${dados.map((d, i) => { const h = Math.round(val(d) / mx * alt), x = i * (W / dados.length), w = W / dados.length - 6;
+    return `<rect x="${x + 3}" y="${alt - h + 6}" width="${w}" height="${h}" rx="3" fill="#FF0082"><title>${esc(rot(d))}: ${fmt(val(d))}</title></rect><text x="${x + w / 2 + 3}" y="${alt + 22}" fill="#9a95c9" font-size="10" text-anchor="middle">${esc(rot(d))}</text>`; }).join("")}</svg></div>`; };
+function abaVendas() { const p = PR, MS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return `<h3>Últimos 12 meses (valor)</h3>${barras(p.meses, d => MS[Number(d.mes.slice(5, 7)) - 1], d => d.valor, 120, brl)}
+    <h3 style="margin-top:10px">Por dia da semana (unidades, 12 meses)</h3>${barras(p.porDiaSemana, d => DS[d.dia], d => d.qtd, 90, num)}
+    <div class="grid2" style="margin-top:10px"><div class="card" style="margin:0"><h3>Vendedoras</h3>${p.porVendedora.map(v => L2(esc(v.nome), brl(v.valor))).join("") || `<div class="ic">—</div>`}</div>
+      <div class="card" style="margin:0"><h3>Clientes que mais compram</h3>${p.topClientes.map(c => `<div class="lin"><a href="/clientes?cliente=${encodeURIComponent(c.id)}" target="_blank" style="color:#7fd0ff">${esc(c.nome)}</a><b>${brl(c.valor)}</b></div>`).join("") || `<div class="ic">—</div>`}</div></div>`; }
+function abaPedidos() { return (PR.pedidosRecentes || []).map(x => `<div class="lin"><a href="/pedidos-vendas?pedido=${encodeURIComponent(x.pedidoId)}" target="_blank" style="color:#7fd0ff">#${esc(x.numero)} · ${esc(x.cliente || "—")}</a><span class="ic">${dmy(x.data)} · ${esc(x.vendedor || "")} · ${num(x.quantidade)} × ${brl(x.valor)}</span></div>`).join("") || `<div class="ic">Nenhum pedido nos últimos 12 meses.</div>`; }
+function abaEstoque() { const h = PR.historicoEstoque || [];
+  return `<h3>Saldo no Bling dia a dia</h3>${h.length > 1 ? barras(h.slice(-45).map(([d, v]) => ({ d, v })), x => x.d.slice(8, 10) + "/" + x.d.slice(5, 7), x => Math.max(0, x.v), 100, num) : `<div class="ic">O histórico do saldo começa a ser guardado a partir de hoje (uma foto por dia).</div>`}
+    <h3 style="margin-top:10px">Entradas</h3>${(PR.entradas || []).map(e => L2(`${dth(e.em)} · ${esc(e.fornecedor || "—")}${e.nota ? " · NF " + esc(e.nota) : ""}`, `${num(e.quantidade)} un${e.custo ? " a " + brl(e.custo) : ""}`)).join("") || `<div class="ic">Nenhuma entrada registrada no sistema.</div>`}`; }
+function abaHist() { return (PR.log || []).map(l => `<div class="lin"><span>${esc(String(l.evento || "").replace(/_/g, " "))}${l.detalhes ? `<br><span class="ic">${esc(Object.entries(l.detalhes).filter(([k, v]) => typeof v !== "object").map(([k, v]) => k + ": " + v).join(" · "))}</span>` : ""}</span><span class="ic">${dth(l.em)}<br>${esc(l.por || "")}</span></div>`).join("") || `<div class="ic">Sem alterações feitas pelo sistema.</div>`; }
+async function carregarEdicao() {
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(PR.id) + "?bling=1");
+  const b = ok && j.produto && j.produto.bling; ED = b ? { ...b } : { erro: (j.produto && j.produto.blingErro) || j.erro || "Não consegui ler o produto no Bling." };
+  if (ABA === "editar") document.getElementById("abaCorpo").innerHTML = abaEditar();
+}
+function abaEditar() {
+  if (!PR.noBling) return `<div class="ic">Este produto não está no catálogo do Bling, então não dá para editar por aqui.</div>`;
+  if (!ED) return `<div class="vazio"><div class="spin"></div> Lendo o produto no Bling…</div>`;
+  if (ED.erro) return `<div class="err">${esc(ED.erro)}</div>`;
+  return `<div class="ic" style="white-space:normal;margin-bottom:8px">Os valores abaixo foram lidos agora no Bling. Para salvar é preciso o QR do dia de um gerente, financeiro ou admin.</div>
+    <div class="grid2"><label><div class="ic">Preço de venda no Bling (atual ${brl(ED.preco)})</div><input id="pPreco" inputmode="decimal" placeholder="${String(ED.preco).replace(".", ",")}" style="width:100%"></label>
+      <label><div class="ic">Situação</div><select id="pSit" style="width:100%"><option value="A" ${ED.situacao === "A" ? "selected" : ""}>Ativo</option><option value="I" ${ED.situacao === "I" ? "selected" : ""}>Inativo</option></select></label></div>
+    <h3 style="margin-top:12px">Balanço de estoque</h3><div class="ic" style="white-space:normal">Define o saldo no Bling (contagem). Saldo atual: <b>${num(ED.estoque)}</b>.</div>
+    <div class="grid2"><label><div class="ic">Novo saldo contado</div><input id="pEst" inputmode="decimal" placeholder="deixe em branco para não mexer" style="width:100%"></label>
+      <label><div class="ic">Motivo (obrigatório para o estoque)</div><input id="pMot" placeholder="ex.: contagem de sábado" style="width:100%"></label></div>
+    <h3 style="margin-top:12px">🔒 QR de autorização</h3><input id="pQr" type="password" placeholder="Leia o QR do dia" style="width:100%" onkeydown="if(event.key==='Enter')salvarProd()">
+    <div id="pMsg" style="margin-top:8px"></div><button class="btn btn-mag" style="width:100%;margin-top:8px" onclick="salvarProd()">💾 Salvar no Bling</button>`;
+}
+async function salvarProd() {
+  const v = id => document.getElementById(id).value.trim(), msg = document.getElementById("pMsg");
+  const corpo = { tokenQr: v("pQr"), motivo: v("pMot") }; if (!corpo.tokenQr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
+  if (v("pPreco")) corpo.preco = v("pPreco"); if (v("pSit") !== ED.situacao) corpo.situacao = v("pSit"); if (v("pEst") !== "") corpo.estoqueBalanco = v("pEst");
+  if (!corpo.preco && !corpo.situacao && corpo.estoqueBalanco == null) { msg.innerHTML = `<div class="err">Nada foi alterado.</div>`; return; }
+  if (corpo.estoqueBalanco != null && !corpo.motivo) { msg.innerHTML = `<div class="err">Informe o motivo do ajuste de estoque.</div>`; return; }
+  msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(PR.id), { method: "PUT", body: JSON.stringify(corpo) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}${j.feito && j.feito.length ? "<br>Já gravado: " + esc(j.feito.join(", ")) : ""}</div>`; document.getElementById("pQr").value = ""; return; }
+  msg.innerHTML = `<div style="color:#3ce88a">✅ Salvo no Bling: ${esc(j.feito.join(", "))}. Autorizado por ${esc(j.autorizadoPor)}.</div>`;
+  setTimeout(() => { abrirProduto(PR.id); carregar(true); }, 1200);
+}
+document.getElementById("mProd").addEventListener("click", e => { if (e.target.id === "mProd") fechar(); });
+let _tb; document.getElementById("busca").addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(() => carregar(true), 400); });
+["fIni", "fFim", "fSit", "fCurva", "fEst", "fVendeu", "fOrdem"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
+(function () { const u = new URLSearchParams(location.search); document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 29 * 86400000);
+  carregar(true).then(() => { if (u.get("produto")) abrirProduto(u.get("produto")); }); })();
+</script>
+</body>
+</html>
