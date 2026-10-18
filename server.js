@@ -1249,6 +1249,7 @@ window.B13_NAV_LINKS=[
   {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"Vendas & Caixa",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"Vendas & Caixa",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
+  {grupo:"Vendas & Caixa",href:"/pedidos-vendas",label:"🧾 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
   {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
@@ -7780,11 +7781,11 @@ app.post("/api/central/divergencias/:pedidoId/corrigir",requireAcesso("acesso_ce
       const itens=(mov.itens||[]).map(i=>({produtoId:Number(i.produtoId),nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})).filter(i=>i.produtoId&&i.quantidade>0);
       if(!itens.length) return res.status(400).json({erro:"a venda do caixa não tem itens com produto identificado"});
       const obs=`[Corrigido pela Central em ${new Date(Date.now()-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${quem}: itens e pagamento iguais ao caixa]`;
-      const ri=await atualizarItensBling(pid,itens,obs);
+      let ri; try{ ri=await atualizarItensBling(pid,itens,obs); }catch(e){ ri={ok:false,erro:e.message}; }
       if(!ri||ri.ok===false) return res.status(502).json({erro:"O Bling não aceitou os itens: "+((ri&&ri.erro)||"erro")});
       let troco=_trocoDaVenda(mov); const parcelas=[];
       (mov.pagamentos||[]).forEach(p=>{ let v=Number(p.valor)||0; if(troco>0&&/dinheiro/i.test(p.formaNome||"")){ const t=Math.min(troco,v); v-=t; troco-=t; } if(v>0.004&&p.formaId) parcelas.push({valor:_round2(v),formaId:p.formaId}); });
-      let rp={ok:true}; if(parcelas.length) rp=await atualizarParcelasBling(pid,parcelas,{obsExtra:""});
+      let rp={ok:true}; if(parcelas.length){ try{ rp=await atualizarParcelasBling(pid,parcelas,{obsExtra:""}); }catch(e){ rp={ok:false,erro:e.message}; } }
       if(!rp||rp.ok===false) return res.status(502).json({erro:"Os itens foram gravados, mas o Bling não aceitou a forma de pagamento: "+((rp&&rp.erro)||"erro")});
       addLog(pid,"divergencia_corrigida",req.sessao?.funcionarioId||"",quem,{direcao:"bling",itens:itens.length,parcelas:parcelas.length});
     } else if(direcao==="sistema"){
@@ -10649,6 +10650,169 @@ app.get("/api/supervisora/rota",requireAcesso("acesso_supervisora"),async(req,re
     const rt=j.routes[0], lg=rt.legs[0];
     const r={km:+(lg.distance.value/1000).toFixed(2),minutos:Math.round(lg.duration.value/60),origem:{lat:lg.start_location.lat,lng:lg.start_location.lng},destino:{lat:lg.end_location.lat,lng:lg.end_location.lng,endereco:lg.end_address},caminho:_decodePolyline(rt.overview_polyline.points)};
     _rotasCache.set(k,{em:Date.now(),r}); res.json({ok:true,...r});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
+// ===================== PEDIDOS DE VENDA =====================
+// Todos os pedidos (sistema + só no Bling) com tudo que temos de cada um. Usa as MESMAS cópias do Bling da tela de Clientes
+// (lista mês a mês + detalhes à noite): nenhuma requisição extra para listar ou calcular. Índice enxuto refeito no
+// máximo a cada 1 min; itens lidos das fontes só quando a conta precisa. Bling só ao editar.
+let _idxPed={em:0,lista:null,porId:null,props:null};
+const PEDIDOS_NOTAS_FILE=`${DATA_DIR}/pedidos_notas.json`; // observações registradas no sistema (pedidos Atendidos ou recusadas pelo Bling)
+const _nomeOrigemPed=o=>({site:"Site",totem:"Totem",atacado:"Vendedoras",proposta:"Propostas",caixa:"Caixa",caixa_atacado:"Caixa",pdv:"Caixa",bling:"Só no Bling"})[o]||(o?String(o):"Sistema");
+function _indicePedidos(){
+  if(_idxPed.lista&&Date.now()-_idxPed.em<60000) return _idxPed;
+  const propsObj=lerPropostas()||{}, hist=lerHistPedidos().porId, DET=lerDetPedidos(), pags=lerPag()||{}, base=lerClientesBase().porId, prazo=lerVendasPrazo()||{};
+  let entregues={}; try{ entregues=_mapaEntregasLocais()||{}; }catch(e){}
+  const caixa={}; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||!m.pedidoId) return; const k=String(m.pedidoId);
+    if(!caixa[k]||m.em>caixa[k].em) caixa[k]={caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:m.operador||sx.operador||"",em:m.em,total:Number(m.total)||0,cliente:m.clienteNome||"",
+      formas:(m.pagamentos||[]).filter(p=>Number(p.valor)>0).map(p=>({forma:p.formaNome||"",valor:Number(p.valor)||0}))}; }));
+  const ocor={}; try{ Object.values(lerViagensAtivas()).forEach(v=>Object.entries(v.entregas||{}).forEach(([pid,e])=>{ if(e&&(e.ocorrencia||(e.itensProblema||[]).length||Number(e.valorProblema)>0)) ocor[pid]={descricao:String(e.ocorrencia?.descricao||"").slice(0,200),valor:Number(e.valorProblema)||0,motorista:v.motoristaNome||""}; })); }catch(e){}
+  const props={}; Object.values(propsObj).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
+  const porId={};
+  Object.entries(props).forEach(([id,p])=>{ porId[id]={id,numero:String(p.pedidoBlingNumero||id),em:Number(p.criadoEm)||0,data:p.criadoEm?_diaBRk(Number(p.criadoEm)):"",total:_round2(Number(p.total)||0),
+    clienteId:String(p.cliente?.id||""),cliente:p.cliente?.nome||"",vendedor:p.vendedorNome||p.funcionarioNome||"",origem:String(p.origem||"sistema"),tipo:p.entrega?.tipo||"",frete:Number(p.entrega?.taxa)||0,
+    km:Number(p.entrega?.km)||0,nItens:(p.itens||[]).length,soBling:false,detalhado:true,sitB:0}; });
+  Object.entries(hist).forEach(([id,h])=>{ if(!h) return; const r=porId[id]; if(r){ r.sitB=h.s||0; if(!r.data) r.data=h.d||""; if(!r.clienteId&&h.c) r.clienteId=h.c; if(!r.em&&h.d) r.em=Date.parse(h.d+"T12:00:00-03:00"); return; }
+    const dt=DET.porId[id]&&!DET.porId[id].x?DET.porId[id]:null;
+    porId[id]={id,numero:String(h.n||id),em:h.d?Date.parse(h.d+"T12:00:00-03:00"):0,data:h.d||"",total:_round2(Number(h.t)||0),clienteId:h.c||"",cliente:"",vendedor:dt?(DET.vend[String(dt.v)]||""):"",
+      origem:"bling",tipo:dt&&dt.f>0?"entrega":"",frete:dt?Number(dt.f)||0:0,km:0,nItens:dt?(dt.i||[]).length:0,soBling:true,detalhado:!!dt,sitB:h.s||0}; });
+  Object.values(porId).forEach(r=>{
+    const sOn=_sitOnline[r.id]; r.situacaoId=Number(sOn?.situacaoId||r.sitB||0)||null; delete r.sitB;
+    const cid=r.clienteId?_principalDe(r.clienteId):""; if(cid) r.clienteId=cid; if(!r.cliente&&cid) r.cliente=(base[cid]||{}).nome||"";
+    const cx=caixa[r.id]; if(cx){ r.caixa={caixa:cx.caixa,operador:cx.operador,em:cx.em}; if(!r.cliente) r.cliente=cx.cliente; if(r.origem==="bling") r.origem="caixa"; }
+    const pg=pags[r.id]||{};
+    r.formas=cx?cx.formas:(pg.historico||[]).filter(x=>x&&Number(x.valor)>0).map(x=>({forma:x.formaNome||"",valor:Number(x.valor)}));
+    if(!r.formas.length&&r.soBling){ const dt=DET.porId[r.id]; if(dt&&dt.pg) r.formas=dt.pg.map(([fi,v])=>({forma:DET.formas[fi]||"",valor:v})); }
+    r.pago=!!cx||pg.statusPagamento==="pago"||r.situacaoId===SIT.ATENDIDO&&r.soBling; r.valorPago=_round2(Number(pg.valorPago)||(cx?cx.total:0));
+    r.entregue=!!entregues[r.id]; r.ocorrencia=ocor[r.id]||null;
+    const pz=prazo[r.id]; r.prazo=pz?{venceEm:pz.venceEm||null,dias:pz.dias||null,pago:!!pz.pago}:null;
+    r.cancelado=r.situacaoId===SIT.CANCELADO;
+  });
+  const lista=Object.values(porId).sort((a,b)=>b.em-a.em);
+  _idxPed={em:Date.now(),lista,porId,props}; return _idxPed;
+}
+function _itensDoPedido(id){ const I=_indicePedidos(), p=I.props[id]; if(p) return (p.itens||[]).map(i=>({produtoId:i.produtoId||i.id||null,nome:i.nome||i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0}));
+  const DET=lerDetPedidos(), dt=DET.porId[id]; if(dt&&!dt.x) return (dt.i||[]).map(([pp,q,v,nm])=>({produtoId:pp||null,nome:nm||DET.prod[pp]||"",quantidade:q,valor:v})); return []; }
+function _filtrarPedidos(q){
+  const I=_indicePedidos(), hoje=_diaBRk(Date.now());
+  const ini=/^\d{4}-\d{2}-\d{2}$/.test(String(q.ini||""))?q.ini:_diaBRk(Date.now()-29*_DIA), fim=/^\d{4}-\d{2}-\d{2}$/.test(String(q.fim||""))?q.fim:hoje;
+  const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const busca=nrm(q.busca||"").trim(), prod=nrm(q.produto||"").trim(), min=Number(q.min)||0, max=Number(q.max)||0;
+  const L=I.lista.filter(r=>{
+    if(!r.data||r.data<ini||r.data>fim) return false;
+    if(q.situacao){ if(q.situacao==="cancelado"){ if(!r.cancelado) return false; } else if(q.situacao==="ativos"){ if(r.cancelado) return false; } else if(String(r.situacaoId)!==String(q.situacao)) return false; }
+    else if(r.cancelado&&q.incluirCancelados!=="1") return false;
+    if(q.vendedora&&r.vendedor!==q.vendedora) return false;
+    if(q.origem&&_nomeOrigemPed(r.origem)!==q.origem) return false;
+    if(q.tipo&&(q.tipo==="retirada"?r.tipo==="entrega":r.tipo!==q.tipo)) return false;
+    if(q.forma&&!(r.formas||[]).some(f=>f.forma===q.forma)) return false;
+    if(q.pagamento==="pago"&&!r.pago) return false; if(q.pagamento==="aberto"&&r.pago) return false;
+    if(q.caixa==="sim"&&!r.caixa) return false; if(q.caixa==="nao"&&r.caixa) return false;
+    if(q.prazo==="1"&&!r.prazo) return false; if(q.ocorrencia==="1"&&!r.ocorrencia) return false;
+    if(q.fonte==="sistema"&&r.soBling) return false; if(q.fonte==="bling"&&!r.soBling) return false;
+    if(q.cliente&&String(r.clienteId)!==String(q.cliente)) return false;
+    if(min&&r.total<min) return false; if(max&&r.total>max) return false;
+    if(busca){ const dg=busca.replace(/\D/g,""); if(!(nrm(r.cliente).includes(busca)||(dg&&(String(r.numero).includes(dg)||String(r.id)===dg))||nrm(r.vendedor).includes(busca))) return false; }
+    if(prod&&!_itensDoPedido(r.id).some(i=>nrm(i.nome).includes(prod))) return false;
+    return true; });
+  return {L,ini,fim};
+}
+function _metricasPedidos(L,ini,fim){
+  const soma=a=>_round2(a.reduce((x,r)=>x+r.total,0)), M={qtd:L.length,valor:soma(L)}; M.ticket=M.qtd?_round2(M.valor/M.qtd):0;
+  const grupo=(fn)=>{ const g={}; L.forEach(r=>{ const k=fn(r)||"—"; const o=(g[k]||={nome:k,qtd:0,valor:0}); o.qtd++; o.valor+=r.total; }); return Object.values(g).map(o=>({...o,valor:_round2(o.valor),ticket:o.qtd?_round2(o.valor/o.qtd):0})).sort((a,b)=>b.valor-a.valor); };
+  M.porSituacao=grupo(r=>r.situacaoId?nomeSituacao(r.situacaoId):"Sem situação");
+  M.porVendedora=grupo(r=>r.vendedor||"(sem vendedora)"); M.porOrigem=grupo(r=>_nomeOrigemPed(r.origem));
+  M.porTipo=grupo(r=>r.tipo==="entrega"?"Entrega":"Retirada / balcão");
+  const pf={}; L.forEach(r=>(r.formas||[]).forEach(f=>{ const k=f.forma||"—"; const o=(pf[k]||={nome:k,qtd:0,valor:0}); o.qtd++; o.valor+=f.valor; })); M.porForma=Object.values(pf).map(o=>({...o,valor:_round2(o.valor)})).sort((a,b)=>b.valor-a.valor);
+  const dias={}; for(let t=Date.parse(ini+"T12:00:00Z");t<=Date.parse(fim+"T12:00:00Z");t+=_DIA) dias[new Date(t).toISOString().slice(0,10)]={qtd:0,valor:0};
+  L.forEach(r=>{ const d=dias[r.data]; if(d){ d.qtd++; d.valor+=r.total; } }); M.porDia=Object.entries(dias).map(([dia,o])=>({dia,qtd:o.qtd,valor:_round2(o.valor)}));
+  const sem=[0,1,2,3,4,5,6].map(i=>({dia:i,qtd:0,valor:0})); L.forEach(r=>{ const w=new Date(Date.parse(r.data+"T12:00:00Z")).getUTCDay(); sem[w].qtd++; sem[w].valor+=r.total; }); M.porDiaSemana=sem.map(o=>({...o,valor:_round2(o.valor)}));
+  const hr=Array.from({length:24},(_,h)=>({hora:h,qtd:0,valor:0})); let comHora=0; L.forEach(r=>{ if(r.soBling||!r.em) return; comHora++; const h=new Date(r.em-3*3600e3).getUTCHours(); hr[h].qtd++; hr[h].valor+=r.total; }); M.porHora=hr.map(o=>({...o,valor:_round2(o.valor)})); M.comHora=comHora;
+  const pr={}; let lidos=0; for(const r of L){ if(lidos>=30000) break; lidos++; _itensDoPedido(r.id).forEach(i=>{ const k=i.nome||"—"; const o=(pr[k]||={nome:k,qtd:0,valor:0,pedidos:0}); o.qtd+=i.quantidade; o.valor+=i.quantidade*i.valor; o.pedidos++; }); }
+  M.topProdutos=Object.values(pr).map(o=>({...o,valor:_round2(o.valor)})).sort((a,b)=>b.valor-a.valor).slice(0,25);
+  M.topClientes=grupo(r=>r.clienteId?r.clienteId+"|"+(r.cliente||""):"").filter(x=>x.nome!=="—").slice(0,15).map(x=>({...x,clienteId:x.nome.split("|")[0],nome:x.nome.split("|").slice(1).join("|")||"(sem nome)"}));
+  M.clientesDistintos=new Set(L.map(r=>r.clienteId).filter(Boolean)).size;
+  M.entrega={qtd:L.filter(r=>r.tipo==="entrega").length,frete:_round2(L.reduce((a,r)=>a+(r.frete||0),0)),entregues:L.filter(r=>r.entregue).length,ocorrencias:L.filter(r=>r.ocorrencia).length};
+  M.pagamento={pagos:L.filter(r=>r.pago).length,emAberto:L.filter(r=>!r.pago&&!r.cancelado).length,valorEmAberto:soma(L.filter(r=>!r.pago&&!r.cancelado)),semCaixa:L.filter(r=>!r.caixa&&!r.soBling).length};
+  M.prazo={qtd:L.filter(r=>r.prazo&&!r.prazo.pago).length,valor:soma(L.filter(r=>r.prazo&&!r.prazo.pago)),vencidos:L.filter(r=>r.prazo&&!r.prazo.pago&&r.prazo.venceEm&&r.prazo.venceEm<Date.now()).length};
+  M.fonte={sistema:L.filter(r=>!r.soBling).length,soBling:L.filter(r=>r.soBling).length,soBlingSemDetalhe:L.filter(r=>r.soBling&&!r.detalhado).length};
+  return M;
+}
+app.get("/api/pedidos-vendas",requireAcesso("acesso_pedidos_vendas"),(req,res)=>{
+  try{
+    const T0=Date.now(), {L,ini,fim}=_filtrarPedidos(req.query), M=_metricasPedidos(L,ini,fim);
+    // comparação com o período anterior de mesmo tamanho (mesmos filtros)
+    const nd=Math.round((Date.parse(fim)-Date.parse(ini))/_DIA)+1, aIni=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-nd*_DIA), aFim=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-_DIA);
+    const ant=_filtrarPedidos({...req.query,ini:aIni,fim:aFim}).L; M.anterior={ini:aIni,fim:aFim,qtd:ant.length,valor:_round2(ant.reduce((a,r)=>a+r.total,0))};
+    let ordem=String(req.query.ordem||"recentes"), O=L.slice();
+    if(ordem==="valor") O.sort((a,b)=>b.total-a.total); else if(ordem==="antigos") O.sort((a,b)=>a.em-b.em); else if(ordem==="cliente") O.sort((a,b)=>String(a.cliente).localeCompare(String(b.cliente)));
+    const off=Math.max(0,Number(req.query.offset)||0), lim=Math.min(200,Math.max(1,Number(req.query.limite)||100));
+    const I=_indicePedidos(), uniq=(f)=>[...new Set(I.lista.map(f).filter(Boolean))].sort();
+    res.json({ok:true,ini,fim,total:O.length,itens:O.slice(off,off+lim).map(r=>({...r,situacao:r.situacaoId?nomeSituacao(r.situacaoId):"—",origemNome:_nomeOrigemPed(r.origem)})),metricas:M,
+      opcoes:{vendedoras:uniq(r=>r.vendedor),origens:uniq(r=>_nomeOrigemPed(r.origem)),formas:[...new Set(I.lista.slice(0,20000).flatMap(r=>(r.formas||[]).map(f=>f.forma)).filter(Boolean))].sort(),
+        situacoes:[...new Set(I.lista.map(r=>r.situacaoId).filter(Boolean))].map(id=>({id,nome:nomeSituacao(id)})).sort((a,b)=>a.nome.localeCompare(b.nome))},
+      historico:_statusHistorico(),ms:Date.now()-T0});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/pedidos-vendas.csv",requireAcesso("acesso_pedidos_vendas"),(req,res)=>{
+  try{ const {L}=_filtrarPedidos(req.query); const c=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
+    const linhas=[["numero","data","cliente","vendedora","origem","situacao","tipo","total","frete","pago","formas","caixa","entregue","ocorrencia","fonte"].join(";")];
+    L.forEach(r=>linhas.push([r.numero,r.data,r.cliente,r.vendedor,_nomeOrigemPed(r.origem),r.situacaoId?nomeSituacao(r.situacaoId):"",r.tipo||"retirada",String(r.total).replace(".",","),String(r.frete||0).replace(".",","),r.pago?"sim":"nao",
+      (r.formas||[]).map(f=>`${f.forma} ${String(f.valor).replace(".",",")}`).join(" + "),r.caixa?r.caixa.caixa:"",r.entregue?"sim":"",r.ocorrencia?r.ocorrencia.descricao||"sim":"",r.soBling?"so Bling":"sistema"].map(c).join(";")));
+    res.setHeader("Content-Type","text/csv; charset=utf-8"); res.setHeader("Content-Disposition",`attachment; filename="pedidos_${_diaBRk(Date.now())}.csv"`); res.send("\uFEFF"+linhas.join("\n")); }
+  catch(e){ res.status(500).send(e.message); }
+});
+app.get("/api/pedidos-vendas/:id",requireAcesso("acesso_pedidos_vendas"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), I=_indicePedidos(), r=I.porId[id]; if(!r) return res.status(404).json({erro:"pedido não encontrado"});
+    const p=I.props[id]||null, pg=(lerPag()||{})[id]||{}, log=(lerLog()[id]||[]).slice(-60).reverse();
+    const out={...r,situacao:r.situacaoId?nomeSituacao(r.situacaoId):"—",origemNome:_nomeOrigemPed(r.origem),itens:_itensDoPedido(id),
+      entrega:p?.entrega||null,agendamento:p?.agendamento||null,observacao:p?.observacao||p?.obs||"",pagamentoHistorico:(pg.historico||[]).map(h=>({forma:h.formaNome,valor:h.valor,em:h.em,por:h.funcionarioNome||h.operador||""})),
+      notas:(lerJSON(PEDIDOS_NOTAS_FILE,{})[id]||[]).slice().reverse(),
+      log:log.map(l=>({em:l.em,evento:l.evento,por:l.funcionarioNome||"",detalhes:l.detalhes&&typeof l.detalhes==="object"?Object.fromEntries(Object.entries(l.detalhes).filter(([k,v])=>typeof v!=="object").slice(0,6)):null})),
+      cancelavelAqui:false};
+    // versão atual no Bling (só quando pedido, para editar)
+    if(req.query.bling==="1"){ try{ const b=(await bling(`/pedidos/vendas/${id}`))?.data;
+      if(b) out.bling={situacaoId:b.situacao?.id||null,situacao:nomeSituacao(b.situacao?.id),total:Number(b.total)||0,observacoes:b.observacoes||"",observacoesInternas:b.observacoesInternas||"",
+        itens:(b.itens||[]).map(i=>({produtoId:i.produto?.id||null,nome:(i.descricao||"").trim(),quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),frete:Number(b.transporte?.frete)||0}; }catch(e){ out.blingErro=e.message; } }
+    res.json({ok:true,pedido:out});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// EDITAR (itens, observação, situação) — só com QR do dia (gerente, financeiro ou admin)
+app.put("/api/pedidos-vendas/:id",requireAcesso("acesso_pedidos_vendas"),async(req,res)=>{
+  try{
+    const id=String(req.params.id), b=req.body||{};
+    const auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", feito=[];
+    const I=_indicePedidos(), r=I.porId[id];
+    if(Array.isArray(b.itens)){
+      if(r&&r.caixa) return res.status(409).json({erro:`Esse pedido passou pelo ${r.caixa.caixa}. Para mudar os itens use a Gestão de Caixas (Editar itens), que mantém o caixa igual ao Bling.`});
+      const itens=b.itens.map(i=>({produtoId:Number(i.produtoId)||null,nome:String(i.nome||"").slice(0,120),quantidade:Number(String(i.quantidade).replace(",","."))||0,valor:Number(String(i.valor).replace(",","."))||0})).filter(i=>i.produtoId&&i.quantidade>0);
+      if(!itens.length) return res.status(400).json({erro:"o pedido precisa de ao menos um item com produto"});
+      let ri; try{ ri=await atualizarItensBling(id,itens,`[Itens alterados em Pedidos de Venda por ${pedidoPor||"—"}, autorizado por ${quem}]`); }catch(e){ ri={ok:false,erro:e.message}; }
+      if(!ri||ri.ok===false) return res.status(502).json({erro:"O Bling não aceitou os itens: "+((ri&&ri.erro)||"erro")+". Nada foi alterado."});
+      const p=I.props[id]; if(p){ const all=lerPropostas()||{}; const k=Object.keys(all).find(x=>String(all[x]?.pedidoBlingId)===id);
+        if(k){ all[k].itens=itens.map(i=>({...i,produtoId:i.produtoId})); all[k].total=_round2(itens.reduce((a,i)=>a+i.quantidade*i.valor,0)+(Number(all[k].entrega?.taxa)||0)); salvarJSON(PROPOSTAS_FILE,all); } }
+      const D=lerDetPedidos(); if(D.porId[id]){ D.porId[id].i=itens.map(i=>[i.produtoId,i.quantidade,i.valor]); salvarJSON(PEDIDOS_DET_FILE,D); }
+      feito.push(`itens (${itens.length})`);
+    }
+    if(b.observacao&&String(b.observacao).trim()){
+      const texto=String(b.observacao).trim().slice(0,400), carimbo=`[${new Date(Date.now()-3*3600e3).toISOString().slice(0,16).replace("T"," ")} ${pedidoPor||"—"} (aut. ${quem})]`;
+      const notas=lerJSON(PEDIDOS_NOTAS_FILE,{}); const guardarLocal=()=>{ (notas[id]||=[]).push({em:Date.now(),texto,por:pedidoPor,autorizadoPor:quem}); salvarJSON(PEDIDOS_NOTAS_FILE,notas); };
+      // pedido ATENDIDO não é destravado só para observação (voltar a Atendido lança o estoque de novo): fica no sistema
+      if(Number(r?.situacaoId)===SIT.ATENDIDO){ guardarLocal(); feito.push("observação (no sistema: pedido Atendido não é alterado no Bling só por observação)"); }
+      else { const r2=await acrescentarObservacaoBling(id,`${carimbo} ${texto}`);
+        if(r2&&r2.ok===false){ guardarLocal(); feito.push("observação (no sistema: o Bling não aceitou — "+String(r2.erro||"").slice(0,80)+")"); } else feito.push("observação no Bling"); }
+    }
+    if(b.situacaoId&&Number(b.situacaoId)!==Number(r?.situacaoId)){ const rs=await mudarSituacaoPedido(id,Number(b.situacaoId));
+      if(!rs||!rs.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+((rs&&rs.erro)||"erro"),feito});
+      _sitOnline[id]={situacaoId:Number(b.situacaoId),situacao:nomeSituacao(b.situacaoId),em:Date.now()}; const h=lerHistPedidos(); if(h.porId[id]) h.porId[id].s=Number(b.situacaoId);
+      feito.push(`situação → ${nomeSituacao(b.situacaoId)}${rs.viaPonte?" (via "+rs.viaPonte+")":""}`); }
+    if(!feito.length) return res.status(400).json({erro:"nada para alterar"});
+    addLog(id,"pedido_editado_pedidos_venda",req.sessao?.funcionarioId||"",pedidoPor,{autorizadoPor:quem,alteracoes:feito.join(", ")});
+    _idxPed.em=0; _idxCli.em=0;
+    res.json({ok:true,autorizadoPor:quem,feito});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -14335,6 +14499,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/pedidos-vendas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"pedidos-vendas.html")); });
 app.get("/supervisora",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"supervisora.html")); });
 app.get("/clientes",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"clientes.html")); });
 app.get("/central-entregas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"central-entregas.html")); });

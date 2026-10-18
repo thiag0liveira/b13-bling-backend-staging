@@ -61,6 +61,10 @@ th:first-child,td:first-child{text-align:left}
 textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
 #mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
 .err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0}#kpis{grid-template-columns:repeat(auto-fill,minmax(min(160px,100%),1fr));min-width:0}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -382,7 +386,8 @@ async function desunificar(id) {
   abrirCliente(C.cadastro.id); carregar(); contarDuplicados();
 }
 document.getElementById("mDup").addEventListener("click", e => { if (e.target.id === "mDup") document.getElementById("mDup").classList.remove("aberto"); });
-(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (b && b.bancos && b.bancos.length) BANCOS = b.bancos; } catch (e) {} carregar(); contarDuplicados(); })();
+(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); if (b && b.bancos && b.bancos.length) BANCOS = b.bancos; } catch (e) {} await carregar(); contarDuplicados();
+  const cq = new URLSearchParams(location.search).get("cliente"); if (cq) abrirCliente(cq); })(); // vindo da tela de Pedidos de Venda
 </script>
 </body>
 </html>

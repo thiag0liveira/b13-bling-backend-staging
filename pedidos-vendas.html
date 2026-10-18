@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Pedidos de Venda</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ margin-left:200px }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/pedidos-vendas")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/pedidos-vendas"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<script src="/ficha-pedido.js"></script>
+<div class="top"><img src="/logo"><div class="t">🧾 Pedidos de Venda</div><div class="sp"></div><span class="ic" id="sinc"></span>
+  <button class="btn btn-ghost" onclick="exportarCsv()">⬇️ CSV</button></div>
+<div class="wrap">
+  <div class="card"><div class="filtros" style="margin-bottom:8px">
+      <label class="ic">De <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
+      <span class="chip" onclick="periodo(0)">Hoje</span><span class="chip" onclick="periodo(6)">7 dias</span><span class="chip" onclick="periodo(29)">30 dias</span><span class="chip" onclick="periodoMes(0)">Este mês</span><span class="chip" onclick="periodoMes(1)">Mês passado</span><span class="chip" onclick="periodo(89)">90 dias</span><span class="chip" onclick="periodo(364)">12 meses</span>
+    </div>
+    <div class="filtros" style="margin-bottom:8px">
+      <input id="busca" type="search" placeholder="🔎 Nº do pedido, cliente ou vendedora" style="flex:1;min-width:200px">
+      <input id="fProd" type="search" placeholder="📦 Produto" style="min-width:150px">
+      <select id="fSit"><option value="">Situação: todas (sem cancelados)</option><option value="cancelado">Só cancelados</option></select>
+      <select id="fVend"><option value="">Todas as vendedoras</option></select>
+      <select id="fOrig"><option value="">Todas as origens</option></select>
+      <select id="fForma"><option value="">Todas as formas</option></select>
+    </div>
+    <div class="filtros">
+      <select id="fTipo"><option value="">Entrega e retirada</option><option value="entrega">Só entrega</option><option value="retirada">Só retirada / balcão</option></select>
+      <select id="fPag"><option value="">Pago ou não</option><option value="pago">Pagos</option><option value="aberto">Em aberto</option></select>
+      <select id="fCaixa"><option value="">Com ou sem caixa</option><option value="sim">Passaram por caixa</option><option value="nao">Não passaram por caixa</option></select>
+      <select id="fFonte"><option value="">Sistema e Bling</option><option value="sistema">Feitos no sistema</option><option value="bling">Feitos só no Bling</option></select>
+      <label class="ic"><input type="checkbox" id="fPrazo"> a prazo</label><label class="ic"><input type="checkbox" id="fOcor"> com ocorrência</label>
+      <input id="fMin" inputmode="decimal" placeholder="valor mín." style="width:90px"><input id="fMax" inputmode="decimal" placeholder="valor máx." style="width:90px">
+      <select id="fOrdem"><option value="recentes">Mais recentes</option><option value="antigos">Mais antigos</option><option value="valor">Maior valor</option><option value="cliente">Cliente (A-Z)</option></select>
+      <button class="btn btn-ghost" onclick="limparFiltros()">Limpar</button>
+    </div>
+    <div id="filtroAtivo" class="ic" style="margin-top:6px"></div></div>
+  <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="card"><h3>📈 Vendas por dia</h3><div id="gDia"></div></div>
+  <div class="grid2">
+    <div class="card"><h3>📅 Por dia da semana</h3><div id="gSem"></div></div>
+    <div class="card"><h3>🕐 Por hora <span class="ic" id="gHoraObs"></span></h3><div id="gHora"></div></div>
+  </div>
+  <div class="grid2 dist">
+    <div class="card"><h3>🧑‍💼 Por vendedora</h3><div id="dVend"></div></div>
+    <div class="card"><h3>📍 Por origem</h3><div id="dOrig"></div></div>
+    <div class="card"><h3>🏷️ Por situação</h3><div id="dSit"></div></div>
+    <div class="card"><h3>💳 Por forma de pagamento</h3><div id="dForma"></div></div>
+    <div class="card"><h3>🛵 Entrega x retirada</h3><div id="dTipo"></div></div>
+    <div class="card"><h3>💰 Pagamento, prazo e entrega</h3><div id="dPag"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>📦 Produtos mais vendidos</h3><div id="dProd" class="rolagem"></div></div>
+    <div class="card"><h3>👥 Clientes que mais compraram</h3><div id="dCli"></div></div>
+  </div>
+  <div class="card"><h3>🧾 Pedidos <span class="ic" id="qtdLista"></span></h3><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
+</div>
+<div class="fundo" id="mPed"><div class="modal" id="mPedCorpo" style="max-width:980px"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = n => Number(n || 0).toLocaleString("pt-BR");
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+const dth = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const DS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const diaISO = ms => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+let D = null, ITENS = [], OFF = 0, PED = null, ABA = "resumo", ED = null;
+function filtros() {
+  const v = id => document.getElementById(id).value.trim();
+  return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), produto: v("fProd"), situacao: v("fSit"), vendedora: v("fVend"), origem: v("fOrig"), forma: v("fForma"), tipo: v("fTipo"), pagamento: v("fPag"), caixa: v("fCaixa"), fonte: v("fFonte"),
+    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
+}
+function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
+function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h;
+  document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(true); }
+function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
+function setFiltro(id, v) { document.getElementById(id).value = v; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
+async function carregar(novo) {
+  if (novo) { OFF = 0; ITENS = []; }
+  const q = new URLSearchParams({ ...filtros(), offset: OFF, limite: 100 });
+  const { ok, j } = await api("/api/pedidos-vendas?" + q);
+  if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; ITENS = ITENS.concat(j.itens || []); preencherOpcoes(); render();
+}
+function preencherOpcoes() {
+  const O = D.opcoes || {}, set = (id, lista, rot) => { const el = document.getElementById(id), atual = el.value; if (el.dataset.ok) return; el.innerHTML = `<option value="">${rot}</option>` + lista.map(x => `<option>${esc(x)}</option>`).join(""); el.value = atual; el.dataset.ok = 1; };
+  set("fVend", O.vendedoras || [], "Todas as vendedoras"); set("fOrig", O.origens || [], "Todas as origens"); set("fForma", O.formas || [], "Todas as formas");
+  const s = document.getElementById("fSit"); if (!s.dataset.ok) { const a = s.value; s.innerHTML = `<option value="">Situação: todas (sem cancelados)</option><option value="ativos">Todas menos canceladas</option>` + (O.situacoes || []).map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join("") + `<option value="cancelado">Só cancelados</option>`; s.value = a; s.dataset.ok = 1; }
+}
+// período longo: soma blocos de N dias em uma barra (nada fica de fora)
+function agrupar(l, n) { const out = []; for (let i = 0; i < l.length; i += n) { const g = l.slice(i, i + n); out.push({ dia: g[0].dia, qtd: g.reduce((a, x) => a + x.qtd, 0), valor: g.reduce((a, x) => a + x.valor, 0) }); } return out; }
+function render() {
+  const M = D.metricas, A = M.anterior, H = D.historico || {};
+  document.getElementById("sinc").innerHTML = (H.varreduraCompleta ? `histórico completo do Bling desde ${H.blingDesde ? H.blingDesde.split("-").reverse().slice(1).join("/") : "—"}` : `⏳ trazendo o histórico do Bling${H.progresso ? " (" + esc(H.progresso) + ")" : ""}`)
+    + (H.detalhes && H.detalhes.total ? ` · produtos dos pedidos do Bling: ${num(H.detalhes.feitos)} de ${num(H.detalhes.total)}` : "") + ` · ${D.ms} ms`;
+  const vr = (a, b) => b ? Math.round((a - b) / b * 100) : null, vq = vr(M.qtd, A.qtd), vv = vr(M.valor, A.valor);
+  const seta = v => v == null ? "" : `<span style="color:${v >= 0 ? "#3ce88a" : "#ff8aa3"}">${v >= 0 ? "▲" : "▼"}${Math.abs(v)}%</span>`;
+  const k = (v, l, s, cls, ac) => `<div class="kpi ${cls || ""}" ${ac ? `style="cursor:pointer" onclick="${ac}"` : ""}><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
+  document.getElementById("kpis").innerHTML =
+    k(num(M.qtd), "Pedidos", `${seta(vq)} vs ${num(A.qtd)} de ${dmy(A.ini)} a ${dmy(A.fim)}`)
+    + k(brl(M.valor), "Valor vendido", `${seta(vv)} vs ${brl(A.valor)}`)
+    + k(brl(M.ticket), "Ticket médio", `${num(M.clientesDistintos)} clientes diferentes`)
+    + k(num(M.pagamento.emAberto), "Em aberto (não pagos)", brl(M.pagamento.valorEmAberto), M.pagamento.emAberto ? "alerta" : "", "setFiltro('fPag','aberto')")
+    + k(num(M.prazo.qtd), "A prazo", `${brl(M.prazo.valor)}${M.prazo.vencidos ? ` · <b style="color:#ff8aa3">${M.prazo.vencidos} vencido(s)</b>` : ""}`, M.prazo.vencidos ? "alerta" : "", "document.getElementById('fPrazo').checked=true;carregar(true)")
+    + k(num(M.entrega.qtd), "Entregas", `${brl(M.entrega.frete)} de frete · ${M.entrega.ocorrencias} com ocorrência`, "", "setFiltro('fTipo','entrega')")
+    + k(num(M.pagamento.semCaixa), "Sem caixa", "pedidos do sistema que não passaram por caixa", "", "setFiltro('fCaixa','nao')")
+    + k(num(M.fonte.soBling), "Feitos só no Bling", `${num(M.fonte.sistema)} no sistema${M.fonte.soBlingSemDetalhe ? ` · ${num(M.fonte.soBlingSemDetalhe)} ainda sem produtos` : ""}`, "", "setFiltro('fFonte','bling')");
+  // gráficos
+  const barras = (dados, rot, val, alt, fmt, destaque) => { const mx = Math.max(1, ...dados.map(val)), W = Math.max(dados.length * 26, 300), cada = dados.length > 16 ? Math.ceil(dados.length / 12) : 1;
+    return `<div class="rolagem"><svg viewBox="0 0 ${W} ${alt + 34}" style="width:100%;min-width:${Math.min(W, 900)}px;height:${alt + 34}px">${dados.map((d, i) => { const h = Math.round(val(d) / mx * alt), x = i * (W / dados.length), w = W / dados.length - 4;
+      return `<rect x="${x + 2}" y="${alt - h + 10}" width="${w}" height="${h}" rx="3" fill="${destaque && destaque(d) ? "#ffd23f" : "#FF0082"}"><title>${esc(rot(d))}: ${fmt(val(d))} · ${num(d.qtd)} pedido(s)</title></rect>${i % cada === 0 || i === dados.length - 1 ? `<text x="${x + w / 2 + 2}" y="${alt + 26}" fill="#9a95c9" font-size="10" text-anchor="middle">${esc(rot(d))}</text>` : ""}`; }).join("")}</svg></div>`; };
+  const passo = Math.ceil(M.porDia.length / 62);
+  document.getElementById("gDia").innerHTML = barras(passo === 1 ? M.porDia : agrupar(M.porDia, passo), d => d.dia.slice(8, 10) + "/" + d.dia.slice(5, 7), d => d.valor, 130, brl, d => [0, 6].includes(new Date(d.dia + "T12:00:00Z").getUTCDay()))
+    + `<div class="ic">${passo > 1 ? "Cada barra soma " + passo + " dias (período longo). " : "Em amarelo: fins de semana. "}Passe o mouse para ver o valor.</div>`;
+  document.getElementById("gSem").innerHTML = barras(M.porDiaSemana, d => DS[d.dia], d => d.valor, 110, brl);
+  document.getElementById("gHora").innerHTML = barras(M.porHora.filter(h => h.hora >= 6 && h.hora <= 23), d => d.hora + "h", d => d.qtd, 110, x => num(x) + " pedido(s)");
+  document.getElementById("gHoraObs").textContent = `(${num(M.comHora)} pedidos do sistema; os feitos só no Bling não têm hora)`;
+  const dist = (lista, campo, fmtNome) => { const mx = Math.max(1, ...lista.map(x => x.valor)); return lista.slice(0, 12).map(x => `<div class="lin" ${campo ? `onclick="setFiltro('${campo}','${esc(String(x.chave || x.nome)).replace(/'/g, "\\'")}')"` : ""} style="display:block">
+      <div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(fmtNome ? fmtNome(x) : x.nome)} <span class="ic">· ${num(x.qtd)} · ticket ${brl(x.ticket || (x.qtd ? x.valor / x.qtd : 0))}</span></span><b>${brl(x.valor)}</b></div>
+      <div class="barra"><i style="width:${Math.round(x.valor / mx * 100)}%"></i></div></div>`).join("") || `<div class="ic">—</div>`; };
+  document.getElementById("dVend").innerHTML = dist(M.porVendedora.map(x => ({ ...x, chave: x.nome === "(sem vendedora)" ? "" : x.nome })), "fVend");
+  document.getElementById("dOrig").innerHTML = dist(M.porOrigem, "fOrig");
+  const sitId = n => ((D.opcoes.situacoes || []).find(s => s.nome === n) || {}).id || "";
+  document.getElementById("dSit").innerHTML = dist(M.porSituacao.map(x => ({ ...x, chave: sitId(x.nome) })), "fSit");
+  document.getElementById("dForma").innerHTML = dist(M.porForma, "fForma");
+  document.getElementById("dTipo").innerHTML = dist(M.porTipo.map(x => ({ ...x, chave: x.nome === "Entrega" ? "entrega" : "retirada" })), "fTipo");
+  document.getElementById("dPag").innerHTML = `<div class="lin"><span>Pagos</span><b>${num(M.pagamento.pagos)}</b></div><div class="lin" onclick="setFiltro('fPag','aberto')" style="cursor:pointer"><span>Em aberto</span><b>${num(M.pagamento.emAberto)} · ${brl(M.pagamento.valorEmAberto)}</b></div>
+    <div class="lin"><span>A prazo em aberto</span><b>${num(M.prazo.qtd)} · ${brl(M.prazo.valor)}</b></div><div class="lin"><span>Prazo vencido</span><b style="color:${M.prazo.vencidos ? "#ff8aa3" : "inherit"}">${num(M.prazo.vencidos)}</b></div>
+    <div class="lin"><span>Entregues</span><b>${num(M.entrega.entregues)} de ${num(M.entrega.qtd)}</b></div><div class="lin" onclick="document.getElementById('fOcor').checked=true;carregar(true)" style="cursor:pointer"><span>Com ocorrência</span><b>${num(M.entrega.ocorrencias)}</b></div>`;
+  document.getElementById("dProd").innerHTML = `<table class="mini" style="width:100%"><tr><th style="text-align:left">Produto</th><th>Qtd</th><th>Pedidos</th><th>Valor</th></tr>${(M.topProdutos || []).map(p => `<tr style="cursor:pointer" onclick="document.getElementById('fProd').value='${esc(p.nome).replace(/'/g, "\\'")}';carregar(true)"><td>${esc(p.nome)}</td><td style="text-align:center">${num(p.qtd)}</td><td style="text-align:center">${num(p.pedidos)}</td><td style="text-align:right">${brl(p.valor)}</td></tr>`).join("")}</table>`;
+  document.getElementById("dCli").innerHTML = (M.topClientes || []).map(x => `<div class="lin" style="cursor:pointer" onclick="window._FCLI='${esc(x.clienteId)}';carregar(true)"><span>${esc(x.nome)} <span class="ic">· ${num(x.qtd)} pedido(s)</span></span><b>${brl(x.valor)}</b></div>`).join("") || `<div class="ic">—</div>`;
+  const f = filtros(), ativos = [f.busca && "busca: " + f.busca, f.produto && "produto: " + f.produto, f.vendedora, f.origem, f.forma, f.tipo, f.pagamento, f.caixa && "caixa: " + f.caixa, f.fonte, f.prazo && "a prazo", f.ocorrencia && "com ocorrência", window._FCLI && "um cliente"].filter(Boolean);
+  document.getElementById("filtroAtivo").innerHTML = `${dmy(D.ini)} a ${dmy(D.fim)}${ativos.length ? " · filtros: " + esc(ativos.join(" · ")) : ""}`;
+  document.getElementById("qtdLista").textContent = `(${num(D.total)})`;
+  renderLista();
+}
+function linhaPed(r) {
+  const t = [];
+  t.push(`<span class="tagp ${r.cancelado ? "al" : r.situacao === "Atendido" ? "ok" : ""}">${esc(r.situacao)}</span>`);
+  if (r.soBling) t.push(`<span class="tagp">Bling</span>`);
+  if (r.caixa) t.push(`<span class="tagp ok">${esc(r.caixa.caixa)}</span>`); else if (!r.soBling && !r.cancelado) t.push(`<span class="tagp am">sem caixa</span>`);
+  if (r.tipo === "entrega") t.push(`<span class="tagp">${r.entregue ? "✅ entregue" : "🛵 entrega"}</span>`);
+  if (r.prazo && !r.prazo.pago) t.push(`<span class="tagp ${r.prazo.venceEm && r.prazo.venceEm < Date.now() ? "al" : "am"}">prazo${r.prazo.venceEm ? " " + new Date(r.prazo.venceEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}</span>`);
+  if (r.ocorrencia) t.push(`<span class="tagp al">ocorrência</span>`);
+  return `<div class="ped" onclick="abrirPedido('${esc(r.id)}')"><div class="x"><b>#${esc(r.numero)} · ${esc(r.cliente || "—")}</b>
+    <span>${dmy(r.data)} · ${esc(r.vendedor || "sem vendedora")} · ${esc(r.origemNome)}${(r.formas || []).length ? " · " + esc(r.formas.map(f => f.forma).filter(Boolean).join(" + ")) : ""}</span><div>${t.join("")}</div></div><b>${brl(r.total)}</b></div>`;
+}
+function renderLista() {
+  document.getElementById("lista").innerHTML = (ITENS.length ? ITENS.map(linhaPed).join("") : `<div class="vazio">Nenhum pedido nesse filtro.</div>`)
+    + (ITENS.length < D.total ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(D.total - ITENS.length)} restantes)</button></div>` : "");
+}
+function exportarCsv() { const q = new URLSearchParams(filtros()); fetch(B + "/api/pedidos-vendas.csv?" + q, { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "pedidos_" + hojeISO() + ".csv"; a.click(); }); }
+// ===== FICHA DO PEDIDO =====
+async function abrirPedido(id) {
+  document.getElementById("mPed").classList.add("aberto"); document.getElementById("mPedCorpo").innerHTML = `<div class="vazio"><div class="spin"></div></div>`;
+  const { ok, j } = await api("/api/pedidos-vendas/" + encodeURIComponent(id));
+  if (!ok) { document.getElementById("mPedCorpo").innerHTML = `<div class="err">${esc(j.erro || "Não consegui abrir.")}</div>`; return; }
+  PED = j.pedido; ABA = "resumo"; ED = null; renderFicha();
+}
+function fecharPed() { document.getElementById("mPed").classList.remove("aberto"); }
+function renderFicha() {
+  const p = PED, abas = [["resumo", "Resumo"], ["itens", `Itens (${p.itens.length})`], ["pagamento", "Pagamento e caixa"], ["entrega", "Entrega"], ["historico", "Histórico"], ["editar", "✏️ Editar"]];
+  document.getElementById("mPedCorpo").innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div style="font-size:19px;font-weight:900">Pedido #${esc(p.numero)} <span class="tagp ${p.cancelado ? "al" : ""}">${esc(p.situacao)}</span>${p.soBling ? `<span class="tagp">feito no Bling</span>` : ""}</div>
+      <div class="ic">${dmy(p.data)}${p.em && !p.soBling ? " " + new Date(p.em).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : ""} · ${esc(p.origemNome)} · ${esc(p.vendedor || "sem vendedora")}</div></div>
+      <button class="btn btn-ghost" onclick="fecharPed()">Fechar</button></div>
+    <div class="abas">${abas.map(([k, t]) => `<span class="${ABA === k ? "on" : ""}" onclick="ABA='${k}';renderFicha()">${t}</span>`).join("")}</div><div id="abaCorpo">${({ resumo: abaResumo, itens: abaItens, pagamento: abaPagamento, entrega: abaEntrega, historico: abaHistorico, editar: abaEditar })[ABA]()}</div>`;
+  if (ABA === "editar" && !ED) carregarEdicao();
+}
+const L2 = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
+function abaResumo() {
+  const p = PED;
+  return `<div class="grid2"><div class="card" style="margin:0"><h3>Cliente</h3>${L2("Nome", esc(p.cliente || "—"))}${p.clienteId ? `<div style="margin-top:8px"><a class="btn btn-ghost" href="/clientes?cliente=${encodeURIComponent(p.clienteId)}" target="_blank">👥 Abrir ficha do cliente</a> <button class="btn btn-ghost" onclick="window._FCLI='${esc(p.clienteId)}';fecharPed();carregar(true)">Pedidos desse cliente</button></div>` : ""}</div>
+    <div class="card" style="margin:0"><h3>Valores</h3>${L2("Total", brl(p.total))}${p.frete ? L2("Frete", brl(p.frete)) : ""}${L2("Pago", p.pago ? `<span style="color:#3ce88a">sim${p.valorPago ? " · " + brl(p.valorPago) : ""}</span>` : `<span style="color:#ffd23f">em aberto</span>`)}
+      ${p.prazo ? L2("Prazo", `${p.prazo.dias ? p.prazo.dias + " dias · " : ""}${p.prazo.venceEm ? "vence " + new Date(p.prazo.venceEm).toLocaleDateString("pt-BR") : ""}${p.prazo.pago ? " · pago" : ""}`) : ""}</div></div>
+    <div class="grid2" style="margin-top:10px"><div class="card" style="margin:0"><h3>Caixa</h3>${p.caixa ? L2(esc(p.caixa.caixa), esc(p.caixa.operador) + " · " + dth(p.caixa.em)) : `<div class="ic">${p.soBling ? "Pedido do Bling: o sistema não sabe se passou por caixa." : "Não passou por nenhum caixa."}</div>`}</div>
+      <div class="card" style="margin:0"><h3>Entrega</h3>${L2("Tipo", p.tipo === "entrega" ? "Entrega" : "Retirada / balcão")}${p.tipo === "entrega" ? L2("Situação", p.entregue ? "✅ entregue" : "não marcada como entregue") : ""}${p.ocorrencia ? `<div style="color:#ffd23f;margin-top:6px">⚠️ ${esc(p.ocorrencia.descricao || "ocorrência")}${p.ocorrencia.valor ? " · " + brl(p.ocorrencia.valor) + " abatidos" : ""}</div>` : ""}</div></div>
+    ${(p.notas || []).length ? `<div class="card" style="margin:10px 0 0"><h3>📝 Observações no sistema</h3>${p.notas.map(n => `<div class="lin" style="align-items:flex-start"><span style="white-space:normal">${esc(n.texto)}</span><span class="ic" style="white-space:nowrap">${dth(n.em)}<br>${esc(n.por || "—")} · aut. ${esc(n.autorizadoPor || "—")}</span></div>`).join("")}</div>` : ""}
+    <div style="margin-top:10px">${!p.soBling ? `<button class="btn btn-ghost" onclick="B13Ficha.abrir('${esc(p.id)}')">📋 Ficha completa (fotos, vídeos, conferência)</button>` : ""}${p.soBling && !p.detalhado ? `<div class="ic">Os produtos deste pedido ainda vão ser copiados do Bling (à noite).</div>` : ""}</div>`;
+}
+function abaItens() { const p = PED; return p.itens.length ? `<table class="mini" style="width:100%"><tr><th style="text-align:left">Produto</th><th>Qtd</th><th>Preço</th><th>Total</th></tr>${p.itens.map(i => `<tr><td>${esc(i.nome)}</td><td style="text-align:center">${num(i.quantidade)}</td><td style="text-align:right">${brl(i.valor)}</td><td style="text-align:right">${brl(i.quantidade * i.valor)}</td></tr>`).join("")}</table>`
+  : `<div class="ic">${p.soBling ? "Ainda sem os produtos: serão copiados do Bling à noite." : "Sem itens registrados."}</div>`; }
+function abaPagamento() { const p = PED;
+  return `<h3>Formas de pagamento</h3>${(p.formas || []).map(f => L2(esc(f.forma || "—"), brl(f.valor))).join("") || `<div class="ic">Nenhuma registrada.</div>`}
+    ${(p.pagamentoHistorico || []).length ? `<h3 style="margin-top:12px">Registros de pagamento</h3>${p.pagamentoHistorico.map(h => L2(`${esc(h.forma || "—")} <span class="ic">· ${dth(h.em)}${h.por ? " · " + esc(h.por) : ""}</span>`, brl(h.valor))).join("")}` : ""}
+    ${p.caixa ? `<div class="ic" style="margin-top:8px">Passou pelo ${esc(p.caixa.caixa)} (${esc(p.caixa.operador)}) em ${dth(p.caixa.em)}.</div>` : ""}`; }
+function abaEntrega() { const p = PED, e = p.entrega || {};
+  return p.tipo !== "entrega" ? `<div class="ic">Retirada / balcão.</div>` : `${L2("Endereço", esc(e.endereco || "—"))}${L2("Distância", e.km ? String(e.km).replace(".", ",") + " km" : "—")}${L2("Frete cobrado", brl(p.frete))}${p.agendamento ? L2("Agendado para", esc((p.agendamento.data || "") + " " + (p.agendamento.turno || p.agendamento.hora || ""))) : ""}${L2("Entregue", p.entregue ? "sim" : "não")}${p.ocorrencia ? L2("Ocorrência", esc(p.ocorrencia.descricao || "—")) : ""}`; }
+function abaHistorico() { const l = PED.log || []; return l.length ? l.map(x => `<div class="lin" style="align-items:flex-start"><span>${esc(x.evento.replace(/_/g, " "))}${x.detalhes ? `<br><span class="ic">${esc(Object.entries(x.detalhes).map(([k, v]) => k + ": " + v).join(" · ").slice(0, 220))}</span>` : ""}</span><span class="ic" style="white-space:nowrap">${dth(x.em)}${x.por ? "<br>" + esc(x.por) : ""}</span></div>`).join("") : `<div class="ic">Sem registros no sistema${PED.soBling ? " (pedido feito no Bling)" : ""}.</div>`; }
+// ===== EDITAR (QR para salvar) =====
+async function carregarEdicao() {
+  const { ok, j } = await api("/api/pedidos-vendas/" + encodeURIComponent(PED.id) + "?bling=1");
+  const b = ok && j.pedido && j.pedido.bling; ED = b ? { itens: b.itens.map(i => ({ ...i })), situacaoId: b.situacaoId, obs: "", blingObs: b.observacoes || "", erro: null } : { erro: (j.pedido && j.pedido.blingErro) || j.erro || "Não consegui ler o pedido no Bling." };
+  if (ABA === "editar") document.getElementById("abaCorpo").innerHTML = abaEditar();
+}
+function abaEditar() {
+  if (!ED) return `<div class="vazio"><div class="spin"></div> Lendo a versão atual no Bling…</div>`;
+  if (ED.erro) return `<div class="err">${esc(ED.erro)}</div>`;
+  const travado = !!PED.caixa, sits = (D.opcoes.situacoes || []);
+  const tot = ED.itens.reduce((a, i) => a + (Number(i.quantidade) || 0) * (Number(i.valor) || 0), 0);
+  return `<div class="ic" style="white-space:normal;margin-bottom:8px">A edição é feita direto no Bling (versão atual lida agora). Para salvar é preciso o QR do dia de um gerente, financeiro ou admin.</div>
+    <h3>Itens</h3>${travado ? `<div class="err" style="margin-bottom:8px">Este pedido passou pelo ${esc(PED.caixa.caixa)}: os itens só podem ser mudados pela Gestão de Caixas (Editar itens), que mantém o caixa igual ao Bling. Aqui dá para mudar observação e situação.</div>` : ""}
+    <table class="mini edtab" style="width:100%"><tr><th style="text-align:left">Produto</th><th style="width:80px">Qtd</th><th style="width:100px">Preço</th><th style="width:90px">Total</th><th></th></tr>
+    ${ED.itens.map((i, k) => `<tr><td>${esc(i.nome)}</td><td><input ${travado ? "disabled" : ""} value="${String(i.quantidade).replace(".", ",")}" oninput="ED.itens[${k}].quantidade=Number(this.value.replace(',','.'))||0;atualTot()"></td>
+      <td><input ${travado ? "disabled" : ""} value="${String(i.valor).replace(".", ",")}" oninput="ED.itens[${k}].valor=Number(this.value.replace(',','.'))||0;atualTot()"></td><td style="text-align:right">${brl(i.quantidade * i.valor)}</td>
+      <td>${travado ? "" : `<button class="btn btn-ghost" style="padding:2px 8px" onclick="ED.itens.splice(${k},1);ED.mudouItens=true;document.getElementById('abaCorpo').innerHTML=abaEditar()">🗑</button>`}</td></tr>`).join("")}</table>
+    <div style="display:flex;justify-content:space-between;margin:6px 0"><span class="ic">Total dos itens</span><b id="edTot">${brl(tot)}</b></div>
+    ${travado ? "" : `<div style="display:flex;gap:6px"><input id="edBusca" placeholder="Adicionar produto (nome)" style="flex:1" onkeydown="if(event.key==='Enter')buscarProd()"><button class="btn btn-ghost" onclick="buscarProd()">🔎 Buscar</button></div><div id="edRes"></div>`}
+    <h3 style="margin-top:12px">Situação</h3><select id="edSit" style="width:100%" onchange="ED.situacaoId=Number(this.value)">${sits.map(s => `<option value="${s.id}" ${Number(s.id) === Number(ED.situacaoId) ? "selected" : ""}>${esc(s.nome)}</option>`).join("")}</select>
+    <div class="ic">Se o Bling não aceitar mudar direto, o sistema segue o caminho permitido pelo fluxo de situações.</div>
+    <h3 style="margin-top:12px">Acrescentar observação</h3><textarea id="edObs" rows="2" style="width:100%" placeholder="Fica registrada no pedido do Bling com data, quem pediu e quem autorizou" oninput="ED.obs=this.value">${esc(ED.obs)}</textarea>
+    ${ED.blingObs ? `<div class="ic" style="white-space:pre-wrap;margin-top:4px;max-height:80px;overflow:auto">Observações atuais: ${esc(ED.blingObs)}</div>` : ""}
+    <h3 style="margin-top:12px">🔒 QR de autorização</h3><input id="edQr" type="password" placeholder="Leia o QR do dia (gerente, financeiro ou admin)" style="width:100%" onkeydown="if(event.key==='Enter')salvarEdicao()">
+    <div id="edMsg" style="margin-top:8px"></div><button class="btn btn-mag" style="width:100%;margin-top:8px" onclick="salvarEdicao()">💾 Salvar no Bling</button>`;
+}
+function atualTot() { ED.mudouItens = true; const t = ED.itens.reduce((a, i) => a + (Number(i.quantidade) || 0) * (Number(i.valor) || 0), 0); const el = document.getElementById("edTot"); if (el) el.textContent = brl(t); }
+async function buscarProd() {
+  const q = document.getElementById("edBusca").value.trim(); if (q.length < 2) return;
+  const r = await fetch(B + "/api/buscar?nome=" + encodeURIComponent(q)).then(x => x.json()).catch(() => ({}));
+  const l = (r.data || r.itens || r || []).slice ? (r.data || r.itens || r).slice(0, 10) : [];
+  document.getElementById("edRes").innerHTML = l.map(p => `<div class="lin" style="cursor:pointer" onclick='addProd(${JSON.stringify({ id: p.id, nome: p.nome || p.descricao, preco: p.preco || p.precoVenda || 0 }).replace(/'/g, "&#39;")})'><span>${esc(p.nome || p.descricao)}</span><b>${brl(p.preco || p.precoVenda || 0)}</b></div>`).join("") || `<div class="ic">Nada encontrado.</div>`;
+}
+function addProd(p) { ED.itens.push({ produtoId: p.id, nome: p.nome, quantidade: 1, valor: Number(p.preco) || 0 }); ED.mudouItens = true; document.getElementById("abaCorpo").innerHTML = abaEditar(); }
+async function salvarEdicao() {
+  const qr = document.getElementById("edQr").value.trim(), msg = document.getElementById("edMsg");
+  if (!qr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
+  const corpo = { tokenQr: qr };
+  if (ED.mudouItens && !PED.caixa) corpo.itens = ED.itens;
+  if (ED.obs && ED.obs.trim()) corpo.observacao = ED.obs.trim();
+  if (Number(ED.situacaoId) && Number(ED.situacaoId) !== Number(PED.situacaoId)) corpo.situacaoId = Number(ED.situacaoId);
+  if (!corpo.itens && !corpo.observacao && !corpo.situacaoId) { msg.innerHTML = `<div class="err">Nada foi alterado.</div>`; return; }
+  msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
+  const { ok, j } = await api("/api/pedidos-vendas/" + encodeURIComponent(PED.id), { method: "PUT", body: JSON.stringify(corpo) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}${j.feito && j.feito.length ? "<br>Já gravado: " + esc(j.feito.join(", ")) : ""}</div>`; document.getElementById("edQr").value = ""; return; }
+  msg.innerHTML = `<div style="color:#3ce88a">✅ Salvo no Bling: ${esc(j.feito.join(", "))}. Autorizado por ${esc(j.autorizadoPor)}.</div>`;
+  setTimeout(() => { abrirPedido(PED.id); carregar(true); }, 1200);
+}
+document.getElementById("mPed").addEventListener("click", e => { if (e.target.id === "mPed") fecharPed(); });
+let _tb; ["busca", "fProd", "fMin", "fMax"].forEach(id => document.getElementById(id).addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(() => carregar(true), 400); }));
+["fIni", "fFim", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fFonte", "fPrazo", "fOcor", "fOrdem"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
+(function () { const u = new URLSearchParams(location.search); document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 29 * 86400000);
+  if (u.get("cliente")) window._FCLI = u.get("cliente"); carregar(true).then(() => { if (u.get("pedido")) abrirPedido(u.get("pedido")); }); })();
+</script>
+</body>
+</html>
