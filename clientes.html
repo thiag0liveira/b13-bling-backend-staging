@@ -132,7 +132,9 @@ function renderTopo() {
   const R = DADOS.resumo, S = DADOS.sincronizacao;
   const H = DADOS.historico || {};
   document.getElementById("sinc").innerHTML = (S.rodando ? `⏳ copiando clientes do Bling (${esc(S.progresso)})` : (S.em ? `base do Bling: ${S.contatos} contatos · copiada ${dth(S.em)}` : "base do Bling ainda não copiada"))
-    + " · " + (H.sincronizando ? `⏳ trazendo o histórico de pedidos do Bling (${esc(H.progresso)})` : (H.blingDesde ? `histórico de pedidos desde ${H.blingDesde.split("-").reverse().join("/")}` : "histórico do Bling ainda não carregado"));
+    + " · " + (H.varreduraCompleta ? `histórico completo do Bling desde ${H.blingDesde ? H.blingDesde.split("-").reverse().slice(1).join("/") : "—"}`
+        : `⏳ trazendo o histórico do Bling${H.progresso ? " (" + esc(H.progresso) + ")" : H.mesVarrendo ? " (" + H.mesVarrendo.split("-").reverse().join("/") + ")" : ""}${H.blingDesde ? ", já desde " + H.blingDesde.split("-").reverse().slice(1).join("/") : ""}`)
+    + (H.detalhes && H.detalhes.total ? ` · produtos dos pedidos do Bling: ${H.detalhes.feitos} de ${H.detalhes.total}${H.detalhes.feitos < H.detalhes.total ? (H.detalhes.rodando ? " (copiando agora)" : " (copiando à noite)") : " ✓"}` : "");
   const k = (v, l, s, al, st) => `<div class="kpi ${al ? "alerta" : ""}" ${st != null ? `style="cursor:pointer" onclick="filtrar('${st}')"` : ""}><div class="v">${v}</div><div class="l">${l}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
   document.getElementById("kpis").innerHTML = [
     k(R.base, "Clientes", "na base do Bling e com pedidos", false, ""),
