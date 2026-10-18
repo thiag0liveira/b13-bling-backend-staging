@@ -210,7 +210,7 @@ app.use(cors({
 // (em base64 passa de 5 MB) era barrado com erro 413 e a rota nem chegava a rodar. Por isso
 // o comprovante fica de fora do global.
 const _jsonGlobal=express.json({ limit: "5mb" });
-app.use((req,res,next)=> req.path.startsWith("/api/comprovante/") ? next() : _jsonGlobal(req,res,next));
+app.use((req,res,next)=> (req.path.startsWith("/api/comprovante/")||req.path==="/api/bling/webhook") ? next() : _jsonGlobal(req,res,next)); // o aviso do Bling precisa do texto original (assinatura)
 
 // Headers de segurança básicos em todas as respostas. Protegem contra:
 // - clickjacking (X-Frame-Options): impede que o site seja embutido em iframe de
@@ -10367,7 +10367,7 @@ async function _buscarAtendidosBling(iniISO,fimISO){
 }
 function _supAtualizarAtendidos(iniISO,fimISO){
   if(_supAtd.rodando) return _supAtd.rodando;
-  const completo=_supAtd.ini!==iniISO||Date.now()-_supAtd.emCompleto>30*60000||!_supAtd.emCompleto;
+  const completo=_supAtd.ini!==iniISO||Date.now()-_supAtd.emCompleto>(_webhookAtivo("order.")?6*3600e3:30*60000)||!_supAtd.emCompleto; // com avisos do Bling: conferência completa a cada 6 h
   const ini=completo?iniISO:[iniISO,_diaBRk(Date.now()-3*_DIA)].sort().reverse()[0]; // parcial: só os últimos 3 dias
   _supAtd.rodando=(async()=>{
     try{
@@ -10428,7 +10428,7 @@ async function _montarPainelSupervisora(){
     const passouCaixa={}; (dCx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(mv=>{ if(mv.tipo==="venda"&&!mv.cancelado&&mv.pedidoId) (passouCaixa[String(mv.pedidoId)]||=[]).push({caixa:sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa",operador:mv.operador||sx.operador||"",em:mv.em}); }));
     const ATD=SIT.ATENDIDO, ativos=L.filter(x=>!x.cancelado);
     const iniBusca=[iniSem,hoje.slice(0,7)+"-01"].sort()[0]; // do que vier antes: começo da semana ou do mês
-    if(_supAtd.ini!==iniBusca||Date.now()-_supAtd.em>5*60000){ const pr=_supAtualizarAtendidos(iniBusca,hoje); if(!_supAtd.em||_supAtd.ini!==iniBusca) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
+    if(_supAtd.ini!==iniBusca||Date.now()-_supAtd.em>(_webhookAtivo("order.")?60*60000:5*60000)){ /* com avisos do Bling: a cada 1 h */ const pr=_supAtualizarAtendidos(iniBusca,hoje); if(!_supAtd.em||_supAtd.ini!==iniBusca) await Promise.race([pr,sleep(4000)]); } // 1ª vez: espera até 4 s
     // atendido: pela busca no Bling, pelo acompanhamento de situações ou, de reserva, pelo histórico copiado de madrugada
     const histAtd=lerHistPedidos().porId||{};
     const ehAtendido=x=>x.situacaoId===ATD||_supAtd.ids.has(String(x.id))||(histAtd[String(x.id)]||{}).s===ATD;
@@ -10654,6 +10654,85 @@ app.get("/api/supervisora/rota",requireAcesso("acesso_supervisora"),async(req,re
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== AVISOS AUTOMÁTICOS DO BLING (WEBHOOKS) =====================
+// O Bling avisa na hora quando pedido, produto, estoque ou nota muda. Confere a assinatura (HMAC-SHA256 do texto com o
+// client secret do aplicativo), responde na hora e processa depois; ignora avisos repetidos. Atualiza as cópias que as
+// telas usam (lista de pedidos, situações, atendidos, catálogo e estoque). Enquanto chegam, as conferências periódicas
+// ficam bem mais espaçadas (as varreduras continuam como conferência).
+const WEBHOOK_LOG_FILE=`${DATA_DIR}/bling_webhooks_log.json`, NOTAS_BLING_FILE=`${DATA_DIR}/notas_bling.json`;
+let _wh=(()=>{ const d=lerJSON(WEBHOOK_LOG_FILE,null)||{}; return {porTipo:d.porTipo||{},ultimos:d.ultimos||[],ultimoEm:d.ultimoEm||{},rejeitados:d.rejeitados||0,vistos:new Set((d.ultimos||[]).map(x=>x.eventId).filter(Boolean))}; })();
+let _whSalvarT=null, _whSujo={hist:false,prod:false,atd:false,notas:false};
+function _whSalvarDepois(){ if(_whSalvarT) return; _whSalvarT=setTimeout(()=>{ _whSalvarT=null;
+  try{ if(_whSujo.hist){ salvarJSON(PEDIDOS_HIST_FILE,lerHistPedidos()); _whSujo.hist=false; } }catch(e){}
+  try{ if(_whSujo.prod){ salvarJSON(PRODUTOS_BLING_FILE,lerProdutosBling()); _whSujo.prod=false; } }catch(e){}
+  try{ if(_whSujo.atd){ salvarJSON(SUP_ATD_FILE,{em:_supAtd.em,emCompleto:_supAtd.emCompleto,mapa:_supAtd.mapa,ini:_supAtd.ini,paginas:_supAtd.paginas}); _whSujo.atd=false; } }catch(e){}
+  try{ salvarJSON(WEBHOOK_LOG_FILE,{porTipo:_wh.porTipo,ultimos:_wh.ultimos.slice(0,200),ultimoEm:_wh.ultimoEm,rejeitados:_wh.rejeitados}); }catch(e){}
+},20000); }
+// avisos chegando para um assunto nas últimas 2 h? (usado para espaçar as conferências periódicas)
+function _webhookAtivo(prefixo){ return Object.entries(_wh.ultimoEm).some(([k,t])=>k.startsWith(prefixo)&&Date.now()-t<2*3600e3); }
+const _detPendentes=new Set(); let _detFilaRodando=false;
+async function _buscarDetalhesAvisados(){ if(_detFilaRodando) return; _detFilaRodando=true;
+  try{ while(_detPendentes.size){ const id=_detPendentes.values().next().value; _detPendentes.delete(id);
+      try{ const p=(await blingLento(`/pedidos/vendas/${id}`))?.data; if(!p) continue; const d=lerDetPedidos();
+        for(const pc of (p.parcelas||[])){ const fid=pc.formaPagamento?.id; if(fid&&!d.formas[fid]) try{ d.formas[fid]=await nomeFormaPagamentoId(fid); }catch(e){} }
+        d.porId[String(id)]={i:(p.itens||[]).map(it=>{ const pp=Number(it.produto?.id)||0; if(pp&&!d.prod[pp]) d.prod[pp]=String(it.descricao||"").trim().slice(0,70); return pp?[pp,Number(it.quantidade)||0,Number(it.valor)||0]:[0,Number(it.quantidade)||0,Number(it.valor)||0,String(it.descricao||"").trim().slice(0,70)]; }),
+          v:Number(p.vendedor?.id)||0,f:Number(p.transporte?.frete)||0,pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0])};
+        salvarJSON(PEDIDOS_DET_FILE,d); _idxPed.em=0; _idxCli.em=0; _metProdCache.clear(); }catch(e){} }
+  }finally{ _detFilaRodando=false; } }
+function _processarAvisoBling(ev){
+  const tipo=String(ev.event||""), d=ev.data||{}, id=String(d.id||"");
+  if(tipo.startsWith("order.")&&id){
+    const h=lerHistPedidos();
+    if(tipo==="order.deleted"){ delete h.porId[id]; delete _sitOnline[id]; const D=lerDetPedidos(); if(D.porId[id]){ delete D.porId[id]; salvarJSON(PEDIDOS_DET_FILE,D); } if(_supAtd.mapa[id]){ delete _supAtd.mapa[id]; _supAtd.ids.delete(id); _whSujo.atd=true; } }
+    else {
+      const sit=Number(d.situacao?.id)||0, ant=h.porId[id]||{};
+      h.porId[id]={n:d.numero||ant.n||null,d:String(d.data||ant.d||"").slice(0,10),t:Number(d.total!=null?d.total:ant.t)||0,s:sit||ant.s||0,c:d.contato?.id?String(d.contato.id):(ant.c||"")};
+      if(sit){ _sitOnline[id]={situacaoId:sit,situacao:nomeSituacao(sit),em:Date.now()};
+        if(sit===SIT.ATENDIDO){ _supAtd.mapa[id]={t:h.porId[id].t,d:h.porId[id].d}; _supAtd.ids.add(id); } else if(_supAtd.mapa[id]){ delete _supAtd.mapa[id]; _supAtd.ids.delete(id); } _whSujo.atd=true; }
+      // itens (pedido novo ou alterado): busca o detalhe pela fila lenta, só se não for pedido do próprio sistema
+      const doSistema=Object.values(lerPropostas()||{}).some(p=>String(p?.pedidoBlingId)===id); if(!doSistema){ _detPendentes.add(id); setTimeout(_buscarDetalhesAvisados,3000); }
+    }
+    _whSujo.hist=true; _histMem=h; _idxPed.em=0; _idxCli.em=0; _supPainelCache.em=0; _metProdCache.clear();
+    try{ _supAvisar("pedido"); }catch(e){}
+  } else if(tipo.startsWith("product.")&&id){
+    const P=lerProdutosBling();
+    if(tipo==="product.deleted"){ if(P.porId[id]) P.porId[id].s="E"; }
+    else { const a=P.porId[id]||{}; P.porId[id]={...a,n:String(d.nome??a.n??"").trim(),c:d.codigo??a.c??"",p:d.preco!=null?Number(d.preco):(a.p||0),pc:d.precoCusto!=null?Number(d.precoCusto):(a.pc??null),
+      s:d.situacao||a.s||"A",t:d.tipo||a.t||"P",f:d.formato||a.f||"S",u:d.unidade??a.u??"",img:d.imagemURL||a.img||"",est:a.est??null}; }
+    _whSujo.prod=true; _metProdCache.clear();
+  } else if(tipo.startsWith("stock.")){
+    const pid=String(d.produto?.id||""); if(pid){ const P=lerProdutosBling(), a=P.porId[pid]||{};
+      const v=d.saldoVirtualTotal!=null?Number(d.saldoVirtualTotal):(d.saldoFisicoTotal!=null?Number(d.saldoFisicoTotal):null);
+      if(v!=null){ P.porId[pid]={...a,est:v,fis:d.saldoFisicoTotal!=null?Number(d.saldoFisicoTotal):a.fis}; _whSujo.prod=true; _metProdCache.clear();
+        const hk=_diaBRk(Date.now()), hh=((P.historicoEstoque||={})[pid]||=[]); if(!hh.length||hh[hh.length-1][0]!==hk) hh.push([hk,v]); else hh[hh.length-1][1]=v; } }
+  } else if((tipo.startsWith("invoice.")||tipo.startsWith("consumer_invoice."))&&id){
+    const N=lerJSON(NOTAS_BLING_FILE,{}); const k=(tipo.startsWith("consumer")?"nfce-":"nfe-")+id;
+    if(tipo.endsWith(".deleted")) delete N[k]; else N[k]={id,tipo:tipo.startsWith("consumer")?"NFC-e":"NF-e",numero:d.numero||null,serie:d.serie||null,situacao:d.situacao??null,data:d.dataEmissao||d.data||null,valor:d.valorNota??d.valor??null,contato:d.contato?.id||null,em:Date.now()};
+    salvarJSON(NOTAS_BLING_FILE,N);
+  }
+}
+app.post("/api/bling/webhook",express.raw({type:"*/*",limit:"2mb"}),(req,res)=>{
+  const bruto=Buffer.isBuffer(req.body)?req.body:Buffer.from(typeof req.body==="string"?req.body:JSON.stringify(req.body||{}));
+  const ass=String(req.headers["x-bling-signature-256"]||"").replace(/^sha256=/,"").trim();
+  const esperado=BLING_CLIENT_SECRET?crypto.createHmac("sha256",BLING_CLIENT_SECRET).update(bruto).digest("hex"):"";
+  const okAss=ass&&esperado&&ass.length===esperado.length&&crypto.timingSafeEqual(Buffer.from(ass),Buffer.from(esperado));
+  if(!okAss&&process.env.BLING_WEBHOOK_SEM_ASSINATURA!=="1"){ _wh.rejeitados++; _whSalvarDepois(); return res.status(401).json({erro:"assinatura inválida"}); }
+  let ev=null; try{ ev=JSON.parse(bruto.toString("utf8")); }catch(e){ return res.status(400).json({erro:"JSON inválido"}); }
+  res.status(200).json({ok:true}); // responde na hora; processa em seguida
+  setImmediate(()=>{ try{
+    const eid=String(ev.eventId||""); if(eid&&_wh.vistos.has(eid)) return; if(eid){ _wh.vistos.add(eid); if(_wh.vistos.size>3000) _wh.vistos=new Set([..._wh.vistos].slice(-2000)); }
+    const tipo=String(ev.event||"desconhecido"); _wh.porTipo[tipo]=(_wh.porTipo[tipo]||0)+1; _wh.ultimoEm[tipo]=Date.now();
+    _wh.ultimos.unshift({em:Date.now(),eventId:eid,tipo,id:ev.data?.id||null,numero:ev.data?.numero||null}); if(_wh.ultimos.length>200) _wh.ultimos.length=200;
+    _processarAvisoBling(ev);
+  }catch(e){ console.error("[webhook bling] falha ao processar:",e.message); } finally{ _whSalvarDepois(); } });
+});
+app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
+  res.json({ok:true,endereco:"https://app.b13bebidas.com.br/api/bling/webhook",assinaturaConfigurada:!!BLING_CLIENT_SECRET,recebidosPorTipo:_wh.porTipo,
+    ultimoPorTipo:Object.fromEntries(Object.entries(_wh.ultimoEm).map(([k,t])=>[k,new Date(t-3*3600e3).toISOString().replace("T"," ").slice(0,19)+" (Brasília)"])),
+    recusadosPorAssinatura:_wh.rejeitados,ativos:{pedidos:_webhookAtivo("order."),produtos:_webhookAtivo("product."),estoque:_webhookAtivo("stock.")},
+    ultimos:_wh.ultimos.slice(0,25).map(x=>({...x,em:new Date(x.em-3*3600e3).toISOString().replace("T"," ").slice(0,19)}))});
+});
+
 // ===================== PRODUTOS (análise) =====================
 // Catálogo e ESTOQUE do Bling (cópia a cada 2 h pela fila lenta: 1 consulta a cada 100 produtos para a lista e outra a
 // cada 100 para os saldos) cruzados com TODAS as vendas (as mesmas cópias de Pedidos e Clientes), tabela de preços,
@@ -10684,7 +10763,7 @@ async function sincronizarProdutosBling(){
   finally{ _prodSync={rodando:false,progresso:""}; }
 }
 setTimeout(()=>{ const d=lerProdutosBling(); if(!d.em||Date.now()-d.em>2*3600e3) sincronizarProdutosBling(); },240000);
-setInterval(()=>{ const d=lerProdutosBling(); if(!d.em||Date.now()-d.em>2*3600e3) sincronizarProdutosBling(); },20*60000);
+setInterval(()=>{ const d=lerProdutosBling(), lim=(_webhookAtivo("product.")||_webhookAtivo("stock."))?12*3600e3:2*3600e3; if(!d.em||Date.now()-d.em>lim) sincronizarProdutosBling(); },20*60000); // com avisos do Bling: a cada 12 h
 app.post("/api/produtos-gestao/sincronizar",requireAdmin,(req,res)=>{ sincronizarProdutosBling(); res.json({ok:true}); });
 
 const _nrmP=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
