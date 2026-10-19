@@ -790,9 +790,9 @@ async function buscarPedidoNoBling(numero) {
         <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
           <div style="font-size:42px">${j.atendido ? '✅' : '🚫'}</div>
           <h3>Pedido #${esc(j.numero)} ${j.atendido ? 'já finalizado' : 'cancelado'}</h3>
-          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir ? ' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.' : ''}</div>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir ? ' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.' : ' Se o cancelamento foi engano, um gerente, financeiro ou admin pode reativar (volta para Em aberto e pode ser recebido).'}</div>
           <div style="display:flex;gap:8px;margin-top:14px">
-            ${podeReabrir ? `<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>` : ''}
+            ${podeReabrir ? `<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>` : `<button class="btn" style="flex:1" onclick="reativarCancelado('${j.id}','${esc(j.numero)}')">🔓 Reativar com QR</button>`}
             <button class="btn btn-ghost" style="flex:1" onclick="fecharModais();window._filtroPed='';pintarPedidos()">${podeReabrir ? 'Cancelar' : 'OK'}</button>
           </div>
         </div></div>`;
@@ -817,10 +817,10 @@ function mostrarPedidoCancelado(id, j) {
       ${c.noBling ? "<br>No Bling o pedido está Cancelado." : c.origem === "Gestão de Caixas" ? "<br>No Bling o cancelamento pode não ter sido aceito, mas no sistema ele está cancelado." : ""}</div>
     <div class="muted" style="font-size:12px;margin:10px 0">Este pedido não pode ser recebido. Se o cancelamento foi engano, um gerente, financeiro ou admin pode reativar.</div>
     <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Voltar</button>
-      <button class="btn" style="flex:1" onclick="reativarCancelado('${esc(String(id))}')">🔓 Reativar com QR</button></div></div></div>`;
+      <button class="btn" style="flex:1" onclick="reativarCancelado('${esc(String(id))}','${esc(String(j.numero || id))}')">🔓 Reativar com QR</button></div></div></div>`;
 }
-function reativarCancelado(id) {
-  pedirQrAcao("🔓 Reativar pedido cancelado", "Reativar o pedido #" + esc(String(id)) + "? Ele volta a poder ser recebido e, se estiver Cancelado no Bling, volta para Em aberto. Leia o QR de autorização (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
+function reativarCancelado(id, numero) {
+  pedirQrAcao("🔓 Reativar pedido cancelado", "Reativar o pedido #" + esc(String(numero || id)) + "? Ele volta a poder ser recebido e, se estiver Cancelado no Bling, volta para Em aberto. Leia o QR de autorização (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
     try {
       const r = await fetch(BACKEND + "/api/caixa-atacado/reativar-cancelado/" + encodeURIComponent(id), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tokenQr, funcionarioId: S.id, operador: S.nome || "" }) });
       const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui reativar");
@@ -1446,9 +1446,9 @@ async function tentarAbrirComoPedido(codigo) {
         <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="text-align:center">
           <div style="font-size:42px">${j.atendido ? '✅' : '🚫'}</div>
           <h3>Pedido #${esc(j.numero)} ${j.atendido ? 'já finalizado' : 'cancelado'}</h3>
-          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir ? ' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.' : ''}</div>
+          <div class="muted">Este pedido está como <b>${esc(j.situacaoNome)}</b>.${podeReabrir ? ' Um gerente, financeiro ou admin pode reabrir pra corrigir a forma de pagamento.' : ' Se o cancelamento foi engano, um gerente, financeiro ou admin pode reativar (volta para Em aberto e pode ser recebido).'}</div>
           <div style="display:flex;gap:8px;margin-top:14px">
-            ${podeReabrir ? `<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>` : ''}
+            ${podeReabrir ? `<button class="btn" style="flex:1" onclick="pedirAutorizacaoReabrir(${j.id},'${esc(j.numero)}')">🔓 Reabrir com autorização</button>` : `<button class="btn" style="flex:1" onclick="reativarCancelado('${j.id}','${esc(j.numero)}')">🔓 Reativar com QR</button>`}
             <button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">${podeReabrir ? 'Cancelar' : 'OK'}</button>
           </div>
         </div></div>`;
@@ -3048,7 +3048,7 @@ async function finalizar() {
         }
         if (b && b.achou) {
           if (b.cancelado) {
-            alert("O pedido #" + num + " está CANCELADO no Bling e não pode ser aberto.");
+            if (confirm("O pedido #" + num + " está CANCELADO.\n\nSe o cancelamento foi engano, dá para reativar com o QR de um gerente, financeiro ou admin. Reativar agora?")) reativarCancelado(String(b.id), num);
           } else if (b.atendido) {
             // já finalizado/pago: abrir significa EDITAR pagamento — pede autorização,
             // igual ao fluxo normal de reabertura (antes só não abria, sem explicação)
