@@ -42,7 +42,9 @@
   (function(){
     const sess=(typeof b13GetSession==="function")?b13GetSession():null;
     if(!sess){ location.href="/login?next="+encodeURIComponent(location.pathname); return; }
-    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso("/caixa")) return;
+    window.__b13EmbedFech = new URLSearchParams(location.search).get("embed") === "fechamento"; // aberto dentro da Gestão de Caixas
+    if(typeof b13BloquearSeSemAcesso==="function" && !b13BloquearSeSemAcesso(window.__b13EmbedFech ? "/gestao-caixas" : "/caixa")) return;
+    if(window.__b13EmbedFech) return; // sem o menu do topo
     document.addEventListener("DOMContentLoaded",function(){
       const nav=document.createElement("div");
       nav.innerHTML=b13RenderNav("/caixa");
@@ -148,6 +150,7 @@ document.addEventListener("fullscreenchange", () => {
   if (btn) btn.textContent = document.fullscreenElement ? "⛶ Sair da tela inteira" : "⛶ Tela inteira";
 });
 function header() {
+  if (window.__b13EmbedFech) return ""; // embutido: sem a barra do caixa
   const botaoNav = S.view === "scan" ? `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="irFechamento()">📊 Fechamento</button>` : `<button class="btn btn-ghost" style="padding:8px 12px;font-size:12px" onclick="S.view='scan';render()">← Escanear</button>`;
   return `<div class="top"><img src="${LOGO}"><div class="t">Caixa</div><div class="sp"></div>
   ${botaoNav}
@@ -1136,7 +1139,7 @@ function renderRelatorio(rel) {
       </div>
     </div>`;
 }
-if (!window.__b13SemAcesso) render();
+if (!window.__b13SemAcesso) { if (window.__b13EmbedFech) irFechamento(); else render(); }
 // compara com o fechamento ANTIGO (o que lia o Bling pedido a pedido), lado a lado, para conferir nos primeiros dias
 function compararAntigo(dataInicial, dataFinal, totalNovo) {
   const box = document.getElementById("fpAntigo");

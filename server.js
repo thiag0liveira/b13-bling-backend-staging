@@ -1228,16 +1228,17 @@ window.addEventListener("storage",function(ev){
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
 window.B13_NAV_LINKS=[
+  // oculto:true = fora do menu por um tempo (continua abrindo pelo endereço) até decidir se exclui de vez
   // grupos do menu do topo (ordem = ordem na barra). O logo B13 BEBIDAS abre /inicio.
   {grupo:"B13 BEBIDAS",href:"/inicio",label:"📊 Painel B13 Bebidas",acoes:["acesso_painel_b13"]},
 
   {grupo:"GESTÃO",href:"/central",label:"🏠 Central",acoes:["acesso_central"]},
   {grupo:"GESTÃO",href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
-  {grupo:"GESTÃO",href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
+  {grupo:"GESTÃO",oculto:true,href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
   {grupo:"GESTÃO",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
-  {grupo:"GESTÃO",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
-  {grupo:"GESTÃO",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
-  {grupo:"GESTÃO",href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
+  {grupo:"GESTÃO",oculto:true,href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
+  {grupo:"GESTÃO",oculto:true,href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",oculto:true,href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
 
   {grupo:"CADASTROS",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"CADASTROS",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
@@ -1325,7 +1326,7 @@ async function b13MarcarPedidosVistos(){}
 function b13RenderNav(ativo){
   // MENU NO TOPO (como no Bling): logo B13 BEBIDAS + grupos; clicar abre o grupo para baixo. No celular, ☰ abre os grupos em lista.
   var f=b13GetSession(); if(!f) return "";
-  var links=B13_NAV_LINKS.filter(function(l){ return l.acoes.some(function(a){ return b13Pode(a); }); });
+  var links=B13_NAV_LINKS.filter(function(l){ return !l.oculto&&l.acoes.some(function(a){ return b13Pode(a); }); });
   var gruposQr=["admin","gerente","lider_caixa","financeiro","financeiro_atacado"];
   var temQr=gruposQr.indexOf(f.nivel)>=0||(f.permissoes||[]).some(function(p){ return gruposQr.indexOf(p)>=0; });
   var nomeTopo=temQr?'<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">'+f.nome+' <span style="font-size:11px">📱</span></span>':f.nome;

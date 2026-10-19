@@ -274,12 +274,23 @@ function totalPixForma(porForma) {
     <div class="top"><img src="${LOGO}"><div class="t">🗃️ Gestão de Caixas</div></div>
     <div class="wrap">
       <div class="muted" style="margin-bottom:12px">Acompanhe todos os caixas — Frente de Caixa e Caixa Atacado — os que estão abertos agora e o histórico dos já fechados, com horários, operador e total por forma de pagamento.</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <input id="buscaPedCx" inputmode="numeric" placeholder="🔎 nº do pedido — achar em qual caixa está"
-          onkeydown="if(event.key==='Enter')buscarPedidoNosCaixas()"
-          style="flex:1;min-width:200px;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px 12px">
-        <button class="btn btn-mag" onclick="buscarPedidoNosCaixas()">Buscar</button>
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+        <select id="modoBuscaPed" onchange="trocarModoBuscaPed()" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px 10px">
+          <option value="1" ${window._MODO_BUSCA !== "varios" ? "selected" : ""}>1 pedido</option><option value="varios" ${window._MODO_BUSCA === "varios" ? "selected" : ""}>Vários pedidos</option></select>
+        <div id="buscaUm" style="display:${window._MODO_BUSCA === "varios" ? "none" : "flex"};gap:8px;flex:1;min-width:220px">
+          <input id="buscaPedCx" inputmode="numeric" placeholder="🔎 nº do pedido — achar em qual caixa está"
+            onkeydown="if(event.key==='Enter')buscarPedidoNosCaixas()"
+            style="flex:1;min-width:160px;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px 12px">
+          <button class="btn btn-mag" onclick="buscarPedidoNosCaixas()">Buscar</button></div>
       </div>
+      <div id="buscaVarios" style="display:${window._MODO_BUSCA === "varios" ? "block" : "none"};margin-bottom:12px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px"><span class="muted" style="font-size:12px">Dia:</span>
+          <input type="date" id="confDia" style="background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:7px 10px">
+          <button class="btn btn-mag" onclick="confListaConferir()">Conferir</button><span class="muted" style="font-size:11px">Mostra quais estão no caixa, quais têm dinheiro e o que precisa de atenção.</span></div>
+        <textarea id="confNums" rows="3" placeholder="Cole os números: 55670, 55707, 55677… (vírgula, espaço ou um por linha)" style="width:100%;box-sizing:border-box;background:#1c1846;border:1px solid #37327a;border-radius:8px;color:#fff;padding:9px 12px"></textarea>
+        <div id="confRes"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-right:8px;border:1px solid #FF0082;color:#fff" onclick="abrirFechamentoGestao()">📊 Fechamento</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="gerenciarBancosPix()">🏦 Bancos do PIX</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #3ce88a;color:#3ce88a" onclick="abrirExportarPagamentos()">📊 Exportar pagamentos (Excel)</button>
       <button class="btn btn-ghost btn-sm" style="margin-bottom:12px;margin-left:8px;border:1px solid #ffd23f;color:#ffd23f" onclick="verVendasPendentes()">⏳ Vendas pendentes de lançar no Bling</button>
@@ -377,6 +388,52 @@ function totalPixForma(porForma) {
       verMovimentos(G.id); try { carregar(); } catch (e) {}
     } catch (e) { alert(e.message); }
   };
+
+// ===== CONFERIR 1 OU VÁRIOS PEDIDOS (antes era a tela "Conferir lista de pedidos") =====
+window.trocarModoBuscaPed = function () { const v = document.getElementById("modoBuscaPed").value; window._MODO_BUSCA = v;
+  document.getElementById("buscaUm").style.display = v === "varios" ? "none" : "flex"; document.getElementById("buscaVarios").style.display = v === "varios" ? "block" : "none";
+  const d = document.getElementById("confDia"); if (d && !d.value) d.value = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); };
+window.confListaConferir = async function () {
+  const nums = (document.getElementById("confNums").value || "").split(/[\s,;]+/).map(x => x.trim()).filter(Boolean), res = document.getElementById("confRes");
+  if (!nums.length) { alert("Cole os números dos pedidos."); return; }
+  const dia = document.getElementById("confDia").value || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  res.innerHTML = `<div class="muted" style="margin-top:8px">Conferindo ${nums.length} pedido(s)…</div>`;
+  try { let todos = [], R = { comDinheiro: 0, semDinheiro: 0, naoEncontrados: 0, somaDinheiro: 0, somaLiquido: 0 };
+    for (let i = 0; i < nums.length; i += 30) { const j = await fetch(B + "/api/gestao/conferir-lista?data=" + dia + "&numeros=" + encodeURIComponent(nums.slice(i, i + 30).join(","))).then(r => r.json());
+      if (j.erro) throw new Error(j.erro); todos = todos.concat(j.detalhe || []); R.comDinheiro += j.resumo.comDinheiro; R.semDinheiro += j.resumo.semDinheiro; R.naoEncontrados += j.resumo.naoEncontrados; R.somaDinheiro += j.resumo.somaDinheiro; R.somaLiquido += j.resumo.somaDinheiroLiquido; }
+    confListaRender(todos, R, nums.length);
+  } catch (e) { res.innerHTML = `<div style="color:#ff8090;margin-top:8px">Erro: ${esc(e.message)}</div>`; } };
+function confListaRender(lista, R, qtd) {
+  const prob = lista.filter(p => !p.noCaixa || !p.temDinheiro), ok = lista.filter(p => p.noCaixa && p.temDinheiro);
+  const pill = (t, c) => `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:${c};color:#fff">${t}</span>`;
+  const linha = p => !p.noCaixa ? `<tr style="background:#3d102033"><td><b>${esc(p.numero)}</b></td><td colspan="4">${pill("NÃO ESTÁ NO CAIXA", "#b3341f")} <span class="muted">${esc(p.obs || "")}</span></td></tr>`
+    : !p.temDinheiro ? `<tr style="background:#3a2e0833"><td><b>${esc(p.numero)}</b></td><td>${esc(p.cliente || "")}</td><td>${pill("SEM DINHEIRO", "#8a7a1f")}</td><td>${brl(p.total)}</td><td class="muted">${esc(p.formas || "")}</td></tr>`
+    : `<tr><td><b>${esc(p.numero)}</b></td><td>${esc(p.cliente || "")}</td><td><b style="color:#3ce88a">${brl(p.valorDinheiro)}</b>${p.troco > 0.009 ? `<div class="muted" style="font-size:10px">troco ${brl(p.troco)}</div>` : ""}</td><td>${brl(p.total)}</td><td class="muted" style="font-size:11px">${esc(p.operador || "")} · ${esc(p.hora || "")}<br>${esc(p.formas || "")}</td></tr>`;
+  const pc = {}; lista.filter(p => p.noCaixa).forEach(p => { const k = p.sessaoId || "?"; const c = (pc[k] ||= { operador: p.operador, tipoCaixa: p.tipoCaixa, qtd: 0, dinheiro: 0, troco: 0, liquido: 0, total: 0, numeros: [] });
+    c.qtd++; c.dinheiro += p.valorDinheiro || 0; c.troco += p.troco || 0; c.liquido += p.dinheiroLiquido || 0; c.total += p.total || 0; c.numeros.push(p.numero); });
+  const caixas = Object.values(pc).sort((a, b) => b.dinheiro - a.dinheiro);
+  const tab = (l) => `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:#9a95c9;text-align:left"><th>Pedido</th><th>Cliente</th><th>Dinheiro / situação</th><th>Total</th><th>Detalhe</th></tr></thead><tbody>${l.map(linha).join("")}</tbody></table></div>`;
+  document.getElementById("confRes").innerHTML = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;background:#1c1846;border-radius:10px;padding:10px">
+      <div><div class="muted" style="font-size:11px">Conferidos</div><b>${qtd}</b></div><div><div class="muted" style="font-size:11px">Com dinheiro</div><b style="color:#3ce88a">${R.comDinheiro}</b></div>
+      <div><div class="muted" style="font-size:11px">Precisam atenção</div><b style="color:${prob.length ? "#ff8090" : "#3ce88a"}">${prob.length}</b></div><div><div class="muted" style="font-size:11px">Dinheiro (líquido)</div><b style="color:#ffd23f">${brl(R.somaLiquido)}</b></div></div>
+    ${caixas.length ? `<div style="font-weight:900;margin:6px 0">🗃️ Total por caixa (${caixas.length})</div>` + caixas.map(c => `<div style="background:#1c1846;border-radius:10px;padding:9px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap"><b>👤 ${esc(c.operador)} ${pill(c.tipoCaixa === "atacado" ? "ATACADO" : "FRENTE", c.tipoCaixa === "atacado" ? "#5a2a6b" : "#2a4a6b")}</b><b style="color:#3ce88a">${brl(c.liquido)}</b></div><div class="muted" style="font-size:12px">${c.qtd} pedido(s) · dinheiro ${brl(c.dinheiro)}${c.troco > 0.009 ? " · troco " + brl(c.troco) : ""} · total vendido ${brl(c.total)}</div><div class="muted" style="font-size:11px;word-break:break-all">${c.numeros.join(", ")}</div></div>`).join("") : ""}
+    ${prob.length ? `<div style="font-weight:900;color:#ff8090;margin:10px 0 4px">⚠️ Precisam de atenção (${prob.length})</div>${tab(prob)}` : `<div style="color:#3ce88a;font-weight:900;margin:10px 0">✅ Todos os pedidos estão no caixa e com dinheiro</div>`}
+    <div style="font-weight:900;margin:10px 0 4px">Pedidos conferidos (${ok.length})</div>${tab(ok)}
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="confListaCopiar()">📋 Copiar resumo</button>`;
+  window._confUltimo = { lista, R };
+}
+window.confListaCopiar = function () { const d = window._confUltimo; if (!d) return; const prob = d.lista.filter(p => !p.noCaixa || !p.temDinheiro);
+  let t = "CONFERENCIA DE PEDIDOS\n\nTotal dinheiro (liquido): " + brl(d.R.somaLiquido) + "\nCom dinheiro: " + d.R.comDinheiro + " | Precisam atencao: " + prob.length + "\n\n";
+  if (prob.length) t += "PRECISAM ATENCAO:\n" + prob.map(p => "- " + p.numero + " " + (p.noCaixa ? "(sem dinheiro)" : "(nao esta no caixa)")).join("\n") + "\n\n";
+  const pc = {}; d.lista.filter(p => p.noCaixa).forEach(p => { const k = (p.operador || "?") + " (" + (p.tipoCaixa === "atacado" ? "atacado" : "frente") + ")"; (pc[k] ||= { qtd: 0, liq: 0 }); pc[k].qtd++; pc[k].liq += p.dinheiroLiquido || 0; });
+  t += "POR CAIXA:\n" + Object.keys(pc).map(k => "- " + k + ": " + pc[k].qtd + " pedidos | " + brl(pc[k].liq)).join("\n") + "\n\nCONFERIDOS:\n" + d.lista.filter(p => p.noCaixa && p.temDinheiro).map(p => "- " + p.numero + " " + (p.cliente || "") + " | dinheiro " + brl(p.valorDinheiro)).join("\n");
+  try { navigator.clipboard.writeText(t); alert("Resumo copiado!"); } catch (e) { alert("Não consegui copiar."); } };
+// ===== FECHAMENTO (o mesmo do /caixa, aberto aqui dentro) =====
+window.abrirFechamentoGestao = function () {
+  document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal" style="max-width:1200px;width:96vw;height:90vh;display:flex;flex-direction:column;padding:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h3 style="margin:0;flex:1">📊 Fechamento</h3><button class="btn btn-ghost btn-sm" onclick="fecharModais()">Fechar</button></div>
+    <iframe src="/caixa?embed=fechamento" style="flex:1;width:100%;border:0;border-radius:10px;background:#0f0c29"></iframe></div></div>`;
+};
   window.verMovimentos = async function (id) {
     document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
     try {
