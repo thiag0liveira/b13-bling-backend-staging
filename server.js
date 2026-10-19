@@ -7740,6 +7740,35 @@ app.post("/api/gestao/cancelar-venda",async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// DESFAZER CANCELAMENTO (Gestão de Caixas): volta a venda para o caixa como estava, devolve o pagamento para "pago" e,
+// se o cancelamento chegou a mudar o Bling para Cancelado, volta para Atendido pelo fluxo. Recusa se o pedido já foi
+// recebido de novo em outro lançamento (não conta o dinheiro duas vezes).
+app.post("/api/gestao/desfazer-cancelamento",async(req,res)=>{
+  try{
+    const {sessaoId,em,pedidoId,operador,motivo}=req.body||{}; if(!sessaoId||!em||!pedidoId) return res.status(400).json({erro:"informe sessaoId, em e pedidoId"});
+    const dCx=lerCaixaSessoes(), sx=(dCx.sessoes||[]).find(x=>x.id===sessaoId); if(!sx) return res.status(404).json({erro:"sessão não encontrada"});
+    const mov=(sx.movimentos||[]).find(m=>m.tipo==="venda"&&String(m.pedidoId)===String(pedidoId)&&Number(m.em)===Number(em)); if(!mov) return res.status(404).json({erro:"lançamento não encontrado"});
+    if(!mov.cancelado) return res.status(400).json({erro:"esse lançamento não está cancelado"});
+    let outra=null; (dCx.sessoes||[]).forEach(s2=>(s2.movimentos||[]).forEach(m=>{ if(m!==mov&&m.tipo==="venda"&&!m.cancelado&&String(m.pedidoId)===String(pedidoId)) outra={m,s:s2}; }));
+    if(outra) return res.status(409).json({erro:`Esse pedido já foi recebido de novo no ${outra.s.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} (${outra.s.operador||"—"}) em ${new Date(outra.m.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")}. Desfazer este cancelamento contaria o mesmo pedido duas vezes.`});
+    const c=(mov.alteracoes||[]).filter(a=>a&&/cancelamento/.test(a.tipo||"")).pop()||{}, quem=operador||"Gestão", feito=[];
+    mov.cancelado=false; delete mov.reativadoEm; delete mov.reativadoPor;
+    mov.alteracoes=[...(mov.alteracoes||[]),{em:Date.now(),tipo:"cancelamento_desfeito",por:quem,motivo:motivo||"",desfez:c.tipo||"cancelamento"}];
+    if(sx.fechadaEm&&sx.resumoFinal){ try{ sx.resumoFinal=resumoSessaoCaixa(sx); }catch(e){} }
+    salvarCaixaSessoes(dCx); feito.push("venda de volta no caixa");
+    const pags=lerPag(), id=String(pedidoId), pg=pags[id];
+    if(pg&&pg.statusPagamento==="cancelado"){
+      const pago=_round2((mov.pagamentos||[]).filter(p=>!/^cr[eé]dito do cliente/i.test(p.formaNome||"")).reduce((a,p)=>a+(Number(p.valor)||0),0)-(Number(mov.troco)||0));
+      pags[id]={...pg,statusPagamento:"pago",valorPago:pago>0?pago:Number(mov.total)||0,desfeitoEm:Date.now(),desfeitoPor:quem}; delete pags[id].canceladoEm; salvarJSON(PAG_FILE,pags); feito.push("pagamento de volta como pago");
+    }
+    let blingOk=true, blingErro=null;
+    if(c.tipo==="cancelamento"){ const sit=Number((await bling(`/pedidos/vendas/${id}`).then(r=>r?.data?.situacao?.id).catch(()=>0))||0);
+      if(sit===SIT.CANCELADO){ const r=await mudarSituacaoPedido(id,SIT.ATENDIDO); if(r.ok){ feito.push("Bling: Cancelado → Atendido"+(r.viaPonte?" (via "+r.viaPonte+")":"")); _sitOnline[id]={situacaoId:SIT.ATENDIDO,situacao:"Atendido",em:Date.now()}; } else { blingOk=false; blingErro=r.erro||"erro"; } } }
+    addLog(id,"cancelamento_desfeito_gestao",null,quem,{motivo:motivo||"",sessaoId,em,feito:feito.join(", "),blingOk});
+    res.json({ok:true,feito,blingOk,blingErro});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // CONFERE o registro do caixa contra o Bling (ao reabrir um pedido). Aponta o que está
 // diferente: total, itens (faltando/sobrando/quantidade ou preço) e formas de pagamento.
 // ===== CENTRAL: PEDIDOS DIFERENTES DO BLING — listar, comparar e corrigir nos dois sentidos =====
@@ -8526,7 +8555,10 @@ app.get("/api/diag/pedido-busca/:cod",async(req,res)=>{
 function _cancelamentoDoPedido(pid,situacaoBling){
   pid=String(pid); let info=null; const pg=(lerPag()||{})[pid];
   if(pg&&pg.statusPagamento==="cancelado"&&!pg.reativadoEm) info={em:pg.canceladoEm||null,origem:"Gestão de Caixas"};
-  let ultimo=null; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&String(m.pedidoId)===pid&&(!ultimo||m.em>ultimo.em)) ultimo=m; }));
+  let ultimo=null, temValida=false; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||String(m.pedidoId)!==pid) return;
+    if(!m.cancelado) temValida=true; const ul=(m.alteracoes||[]).filter(x=>x&&/cancelamento/.test(x.tipo||"")).pop(); if(m.cancelado&&ul&&ul.tipo==="cancelamento_local_duplicado") return; // duplicado só no caixa não cancela o pedido
+    if(!ultimo||m.em>ultimo.em) ultimo=m; }));
+  if(temValida&&(!pg||pg.statusPagamento!=="cancelado")) return Number(situacaoBling)===SIT.CANCELADO?{origem:"Bling",noBling:true}:null; // há venda válida: não está cancelado no sistema
   if(ultimo&&ultimo.cancelado&&!ultimo.reativadoEm){ const a=(ultimo.alteracoes||[]).filter(x=>x&&x.tipo==="cancelamento").pop()||{}; info={...(info||{}),em:a.em||info?.em||null,por:a.por||"",motivo:a.motivo||"",origem:a.viaGestao?"Gestão de Caixas":"caixa"}; }
   else if(ultimo&&!ultimo.cancelado&&info&&pg&&pg.canceladoEm&&ultimo.em>pg.canceladoEm) info=null; // recebido de novo depois (situação já tratada)
   if(Number(situacaoBling)===SIT.CANCELADO) info={...(info||{origem:"Bling"}),noBling:true};

@@ -366,6 +366,17 @@ function totalPixForma(porForma) {
     if (m.tipo === "suprimento") return `💰 Suprimento — ${brl(m.valor)}${m.motivo ? " (" + esc(m.motivo) + ")" : ""}${m.responsavelNome ? `<div style="font-size:11px;color:#9a95c9;margin-top:2px">entregue por ${esc(m.responsavelNome)}</div>` : ""}`;
     return esc(m.tipo);
   };
+  window.desfazerCancelamentoGestao = async function (ix) {
+    const G = window._GMOVS || {}, m = (G.movs || [])[ix]; if (!m) return;
+    if (!confirm(`Desfazer o cancelamento do pedido #${m.numero || m.pedidoId} (${brl(m.total)})?\n\nA venda volta para este caixa como estava, o pagamento volta como pago e, se o pedido ficou Cancelado no Bling, volta para Atendido.`)) return;
+    const motivo = prompt("Motivo (ex.: cancelei por engano, não era duplicado):", "") ; if (motivo === null) return;
+    try {
+      const r = await fetch(B + "/api/gestao/desfazer-cancelamento", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessaoId: G.id, em: m.em, pedidoId: m.pedidoId, operador: (window.GESTOR && window.GESTOR.nome) || "Gestão", motivo }) });
+      const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui desfazer");
+      alert("✅ Cancelamento desfeito: " + j.feito.join(", ") + "." + (j.blingOk ? "" : "\n\n⚠️ O Bling não aceitou voltar o pedido para Atendido: " + j.blingErro + "\nAjuste a situação no Bling."));
+      verMovimentos(G.id); try { carregar(); } catch (e) {}
+    } catch (e) { alert(e.message); }
+  };
   window.verMovimentos = async function (id) {
     document.getElementById("modais").innerHTML = `<div class="modalBg"><div class="modal"><div class="muted">Carregando…</div></div></div>`;
     try {
@@ -397,7 +408,7 @@ function totalPixForma(porForma) {
               ${m.tipo === "venda" && m.cancelado ? (() => {
         const c = (m.alteracoes || []).slice().reverse().find(a => a.tipo === "cancelamento_local_duplicado" || a.tipo === "cancelamento");
         const soLocal = c && c.tipo === "cancelamento_local_duplicado";
-        return `<div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 ${soLocal ? "Cancelado só no caixa (duplicado) — Bling não alterado" : "Venda cancelada"}${c !== null && c !== void 0 && c.por ? ` · por ${esc(c.por)}` : ""}${c !== null && c !== void 0 && c.em ? ` · ${hora(c.em)}` : ""}${c !== null && c !== void 0 && c.motivo ? `<br><span class="muted">motivo: ${esc(c.motivo)}</span>` : ""}<br><span class="muted">não conta no total do caixa</span></div>`;
+        return `<button class="btn btn-ghost btn-sm" style="padding:3px 8px;margin-top:4px;border:1px solid #2f9e6b;color:#3ce88a" onclick="desfazerCancelamentoGestao(${ix})">↩️ Desfazer cancelamento</button><div style="color:#ff8090;font-size:11px;margin-top:4px">🚫 ${soLocal ? "Cancelado só no caixa (duplicado) — Bling não alterado" : "Venda cancelada"}${c !== null && c !== void 0 && c.por ? ` · por ${esc(c.por)}` : ""}${c !== null && c !== void 0 && c.em ? ` · ${hora(c.em)}` : ""}${c !== null && c !== void 0 && c.motivo ? `<br><span class="muted">motivo: ${esc(c.motivo)}</span>` : ""}<br><span class="muted">não conta no total do caixa</span></div>`;
       })() : ''}
             </div>`).join("") : '<div class="muted">Nenhum movimento ainda.</div>'}
           <div class="card" style="background:#1c1846;margin:12px 0">
