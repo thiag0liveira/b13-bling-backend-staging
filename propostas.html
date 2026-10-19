@@ -571,16 +571,16 @@ async function editarPedido(blingId, numero) {
       id: blingId,
       numero: ped.numero || numero
     };
-    // ENDEREÇO completo: 1º o digitado no sistema; 2º o do pedido no Bling completo (número, bairro, cidade, CEP,
-    // completado com o cadastro do cliente — o mesmo da tela de Pedidos); 3º só a rua do Bling (como era antes)
+    // TIPO: abre como o pedido ESTAVA. Vem do registro do sistema; para pedido feito só no Bling, entrega só se tem frete
+    // ou a marcação "ENTREGA —" (o endereço da etiqueta do Bling é copiado do cadastro e não indica entrega).
     const _reg = (typeof LISTA !== "undefined" ? LISTA : []).find(x => String(x.pedidoBlingId || "") === String(blingId));
-    let _endCompleto = (_reg && _reg.entrega && _reg.entrega.endereco) || "";
-    if (!_endCompleto) { try { const en = await fetch(B + "/api/pedidos-online/" + blingId + "/endereco").then(r => r.json()); _endCompleto = (en && (en.sugerido || en.noPedido || en.daObservacao || en.doCadastro)) || ""; } catch (e) {} }
-    const _endB = _endCompleto || ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
     const _obsB = String(ped.observacoes || "");
-    const _ehEntregaB = (_reg && _reg.entrega && _reg.entrega.tipo === "entrega") || !!(ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco) || Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB);
+    const _ehEntregaB = _reg && _reg.entrega && _reg.entrega.tipo ? _reg.entrega.tipo === "entrega" : (Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB));
     window.pedEd.tipoEntrega = _ehEntregaB ? "entrega" : "retirada";
-    window.pedEd.enderecoEntrega = _endB;
+    // ENDEREÇO: só preenche se é entrega; em retirada fica vazio e é buscado ao clicar em Entrega (enderecoEdSugerido)
+    window.pedEd._endDigitado = (_reg && _reg.entrega && _reg.entrega.endereco) || "";
+    window.pedEd._endBlingRua = ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
+    window.pedEd.enderecoEntrega = _ehEntregaB ? (await enderecoEdSugerido(blingId)) : "";
     window.pedEd.freteEntrega = Number(ped.transporte?.frete || 0);
     window.itensEd = (ped.itens || []).map(i => {
       var _i$produto, _i$produto2;
@@ -598,10 +598,27 @@ async function editarPedido(blingId, numero) {
     alert("Erro ao abrir o pedido.");
   }
 }
-function mudarTipoEdUi() {
+// endereço para a edição: 1º o digitado no sistema; 2º o completo do pedido no Bling com o cadastro (o mesmo da tela de
+// Pedidos); 3º só a rua do Bling. Buscado uma vez e guardado.
+async function enderecoEdSugerido(blingId) {
+  const pe = window.pedEd || {}; if (pe._endSugerido != null) return pe._endSugerido;
+  let e = pe._endDigitado || "";
+  if (!e && blingId) { try { const en = await fetch(B + "/api/pedidos-online/" + blingId + "/endereco").then(r => r.json()); e = (en && (en.sugerido || en.noPedido || en.daObservacao || en.doCadastro)) || ""; } catch (x) {} }
+  pe._endSugerido = e || pe._endBlingRua || ""; return pe._endSugerido;
+}
+async function mudarTipoEdUi() {
   const el = document.querySelector('input[name="edTipoEnt"]:checked');
   const box = document.getElementById("edCamposEntrega");
-  if (box) box.style.display = el && el.value === "entrega" ? "block" : "none";
+  const ent = el && el.value === "entrega";
+  if (box) box.style.display = ent ? "block" : "none";
+  // clicou em ENTREGA e o endereço está vazio: busca e preenche sozinho
+  const campo = document.getElementById("edEndereco"), pe = window.pedEd || {};
+  if (ent && campo && !campo.value.trim() && pe.id) {
+    campo.placeholder = "Buscando o endereço do cliente…";
+    const e = await enderecoEdSugerido(pe.id);
+    if (!campo.value.trim() && e) { campo.value = e; pe.enderecoEntrega = e; campo.dispatchEvent(new Event("input")); }
+    campo.placeholder = "Rua, número, bairro, cidade";
+  }
 }
 async function calcularFreteEd() {
   const info = document.getElementById("edInfoFrete");
