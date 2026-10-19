@@ -1245,6 +1245,8 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {grupo:"CADASTROS",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
   {grupo:"CADASTROS",href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
+  {grupo:"CADASTROS",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
+  {grupo:"CADASTROS",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
@@ -1261,6 +1263,7 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
 
   {grupo:"VENDA",href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
+  {grupo:"VENDA",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
   {grupo:"VENDA",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
   {grupo:"VENDA",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
@@ -1278,10 +1281,7 @@ window.B13_NAV_LINKS=[
   {grupo:"LOGÍSTICA",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
 
   {grupo:"MARKETING",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
-  {grupo:"MARKETING",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
-  {grupo:"MARKETING",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
   {grupo:"MARKETING",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
-  {grupo:"MARKETING",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
 ];
 
 // monta o menu: links soltos no topo e o resto em seções recolhíveis (a seção da
