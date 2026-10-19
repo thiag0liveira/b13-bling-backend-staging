@@ -1325,6 +1325,8 @@ async function editarPedidoAguardando(id) {
     }
     window.pedidoEditOrig = ped;
     window.pedidoEditId = id;
+    window._edFrete = { endereco: "", cadastro: "", atual: Number((ped.transporte && ped.transporte.frete) || 0), taxa: null, km: null, aplicar: false, valorCalc: null, msg: "" };
+    try { const end = await fetch(B + "/api/pedidos-online/" + id + "/endereco").then(r => r.json()); if (end) { window._edFrete.endereco = end.sugerido || end.noPedido || end.doCadastro || ""; window._edFrete.cadastro = end.doCadastro || ""; } } catch (e) {}
     window.itensEdit = (ped.itens || []).map(i => {
       var _i$produto2, _i$produto3;
       return {
@@ -1383,7 +1385,7 @@ function renderEditarAguardando(id) {
     '<button class="btn btn-ghost" style="width:auto;margin:0" onclick="fechar()">✕</button></div>' + aviso +
     '<div class="muted" style="margin-bottom:8px">Ajuste as quantidades ou remova itens, depois toque em <b>Salvar</b>. Ao salvar, altera também no Bling.</div>' +
     '<div style="max-height:38vh;overflow:auto">' + rows + '</div>' +
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px"><span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid #2a2660;margin-top:6px"><span class="muted">Total ajustado:</span><b style="color:#ffd23f" id="edTotal">' + brl(totalEdit()) + '</b></div>' + blocoFreteEd() +
     '<div style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px"><div class="muted" style="margin-bottom:4px">➕ Adicionar produto</div>' +
     '<input id="buscaNovoItemEd" placeholder="🔎 Buscar por nome…" oninput="buscarNovoItemEdit(this.value,' + id + ')"><div id="resBuscaEd"></div></div>' +
     // rodapé FIXO: o botão de salvar e as mensagens ficam sempre à vista, mesmo com a
@@ -1411,6 +1413,8 @@ function atualizarTotalEdit() {
   const t = document.getElementById("edTotal");
   const tot = totalEdit();
   if (t) t.textContent = brl(tot);
+  const fr = window._edFrete;
+  if (fr && fr.taxa != null && fr.valorCalc != null && Math.abs(fr.valorCalc - tot) > 0.009) { fr.aplicar = false; fr.msg = '<span style="color:#ffd23f">O total mudou depois do cálculo: calcule o frete de novo.</span>'; const bx = document.getElementById("edFreteBox"); if (bx) bx.outerHTML = blocoFreteEd(); }
   var p = window.pedidoEditOrig || {};
   var ehEntrega = (p._tipoEntrega === "entrega") || (Number(p.frete || 0) > 0) || (p.transporte && Number(p.transporte.frete || 0) > 0);
   var MIN = 1000; // minimo pra entrega
@@ -1525,6 +1529,32 @@ function pedirQrAcao(titulo, texto, onConfirm) {
     if (b) b.onclick = go;
   }, 50);
 }
+
+// ===== Frete na edição do pedido: endereço já preenchido e cálculo com o total novo =====
+function ehEntregaEd() { const p = window.pedidoEditOrig || {}; return p._tipoEntrega === "entrega" || Number(p.frete || 0) > 0 || (p.transporte && Number(p.transporte.frete || 0) > 0); }
+function blocoFreteEd() {
+  const fr = window._edFrete; if (!fr || !ehEntregaEd()) return "";
+  return '<div id="edFreteBox" style="margin-top:8px;border-top:1px solid #2a2660;padding-top:8px"><div class="muted" style="margin-bottom:4px">🛵 Frete da entrega <span style="font-size:11px">(atual ' + brl(fr.atual) + ')</span></div>' +
+    '<input id="edFreteEnd" value="' + esc(fr.endereco) + '" placeholder="Endereço de entrega" oninput="window._edFrete.endereco=this.value" style="width:100%">' +
+    '<button class="btn btn-ghost" style="margin-top:6px" onclick="calcFreteEd()">📐 Calcular com o total novo</button>' +
+    '<div style="font-size:12.5px;margin-top:6px">' + (fr.msg || "") + '</div>' +
+    (fr.taxa != null && fr.valorCalc != null && Math.abs(fr.valorCalc - totalEdit()) < 0.01 ? '<label style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:6px"><input type="checkbox" ' + (fr.aplicar ? "checked" : "") + ' onchange="window._edFrete.aplicar=this.checked"> Gravar este frete (' + brl(fr.taxa) + ') junto com os itens</label>' : "") + '</div>';
+}
+async function calcFreteEd() {
+  const fr = window._edFrete; if (!fr) return; const end = (document.getElementById("edFreteEnd") || {}).value || fr.endereco; fr.endereco = end;
+  if (!end.trim()) { fr.msg = '<span style="color:#ff8090">Informe o endereço.</span>'; document.getElementById("edFreteBox").outerHTML = blocoFreteEd(); return; }
+  const valor = Math.round(totalEdit() * 100) / 100; fr.msg = '<span class="muted">Calculando…</span>'; document.getElementById("edFreteBox").outerHTML = blocoFreteEd();
+  const consultar = e => fetch(B + "/api/frete?endereco=" + encodeURIComponent(e) + "&valor=" + valor).then(r => r.json()).catch(() => ({}));
+  let j = await consultar(end), usouCad = false;
+  const nz = x => String(x || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!j.entregaDisponivel && /n[ãa]o consegui calcular a dist/i.test(j.motivo || "") && fr.cadastro && nz(fr.cadastro) !== nz(end)) { const j2 = await consultar(fr.cadastro); if (j2.entregaDisponivel) { j = j2; usouCad = true; fr.endereco = fr.cadastro; } }
+  if (!j.entregaDisponivel) { fr.taxa = null; fr.valorCalc = null; fr.aplicar = false; fr.msg = '<span style="color:#ffd23f">' + esc(j.motivo || j.erro || "Sem frete para esse endereço.") + '</span>'; }
+  else { fr.taxa = Number(j.taxa) || 0; fr.km = j.km; fr.valorCalc = valor; fr.aplicar = Math.abs(fr.taxa - fr.atual) > 0.009;
+    fr.msg = '✅ <b>' + String(j.km).replace(".", ",") + ' km</b> · ' + (j.gratis ? "frete grátis" : "R$ " + Number(j.porKm).toFixed(2).replace(".", ",") + "/km") + ' → <b>' + brl(fr.taxa) + '</b> para ' + brl(valor) + ' em itens'
+      + (Math.abs(fr.taxa - fr.atual) > 0.009 ? ' <span style="color:#ffd23f">(era ' + brl(fr.atual) + ')</span>' : ' <span class="muted">(igual ao atual)</span>')
+      + (usouCad ? '<br><span style="color:#ffd23f">Usei o endereço do cadastro do cliente.</span>' : "") + (j.tentativa === "pelo CEP" ? '<br><span style="color:#ffd23f">Localizado pelo CEP (aproximado).</span>' : ""); }
+  document.getElementById("edFreteBox").outerHTML = blocoFreteEd();
+}
 async function salvarEditarAguardando(id, tokenQr) {
   const itens = (window.itensEdit || []).filter(i => !i._removido).map(i => ({
     produtoId: i.produtoId,
@@ -1583,8 +1613,15 @@ async function salvarEditarAguardando(id, tokenQr) {
     if (j.autorizadoPorEstoque) {
       alert("⚠️ Salvo SEM estoque suficiente (autorizado por " + j.autorizadoPorEstoque + "). Avise o estoquista — essa liberação pode ter impactado outros pedidos que contam com o mesmo saldo.");
     }
+    const frG = window._edFrete;
+    if (frG && frG.aplicar && frG.taxa != null && (frG.endereco || "").trim()) {
+      try { const jf = await fetch(B + "/api/pedidos-online/" + id + "/tipo-entrega", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipo: "entrega", endereco: frG.endereco, frete: frG.taxa, funcionarioId: S.id }) }).then(r => r.json());
+        if (jf.erro) alert("⚠️ Os itens foram salvos, mas o frete novo não foi gravado: " + jf.erro + "\n\nGrave pelo botão de Entrega / Retirada.");
+        else frG.gravado = true; } catch (e) { alert("⚠️ Os itens foram salvos, mas o frete novo não foi gravado. Grave pelo botão de Entrega / Retirada."); }
+    }
     const sinc = j.sincronizado || {};
     const onde = ["Bling"];
+    if (frG && frG.gravado) onde.push("frete " + brl(frG.taxa));
     if (sinc.caixa) onde.push("caixa");
     if (sinc.proposta) onde.push("proposta");
     const ia = j.itensAlterados || {};
