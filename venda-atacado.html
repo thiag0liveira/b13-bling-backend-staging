@@ -1991,5 +1991,45 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   return cvFinal;
 }
 render();</script>
+<script>
+// ===== PEDIDO NOVO PELO SITE: janela ao entrar na tela (e enquanto estiver aberta, conferindo a cada 30 s) =====
+(function () {
+  const BS = (typeof B !== "undefined" ? B : ""), tok = () => { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } };
+  const e = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const R = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const hh = ms => new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const depois = new Set(JSON.parse(sessionStorage.getItem("b13SiteDepois") || "[]")); let vistos = new Set(), LISTA = [];
+  function bipe() { try { const c = new (window.AudioContext || window.webkitAudioContext)(); [0, 0.25].forEach(t => { const o = c.createOscillator(), g = c.createGain(); o.frequency.value = 880; o.connect(g); g.connect(c.destination); g.gain.setValueAtTime(0.25, c.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + t + 0.2); o.start(c.currentTime + t); o.stop(c.currentTime + t + 0.22); }); } catch (x) {} }
+  function janela() {
+    let m = document.getElementById("b13SiteNovo");
+    const mostrar = LISTA.filter(p => !depois.has(p.pedidoId));
+    if (!mostrar.length) { if (m) m.remove(); return; }
+    if (!m) { m = document.createElement("div"); m.id = "b13SiteNovo"; m.style.cssText = "position:fixed;inset:0;background:rgba(5,3,20,.78);z-index:99998;display:flex;align-items:flex-start;justify-content:center;padding:24px 10px;overflow:auto"; document.body.appendChild(m); }
+    m.innerHTML = `<div style="background:#16123a;border:2px solid #FF0082;border-radius:16px;max-width:620px;width:100%;padding:16px;color:#fff;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+      <div style="font-size:22px;font-weight:900;margin-bottom:4px">🛒 Novo pedido pelo site!</div>
+      <div style="font-size:13px;color:#b8b3e6;margin-bottom:10px">${mostrar.length === 1 ? "Chegou um pedido" : "Chegaram " + mostrar.length + " pedidos"} pelo site e ainda ninguém assumiu.</div>
+      ${mostrar.map(p => { const tel = String(p.telefone || "").replace(/\D/g, ""), wa = tel.length >= 10 ? "https://wa.me/" + (tel.length <= 11 ? "55" + tel : tel) : "";
+        return `<div style="border:1px solid #3a3480;border-radius:12px;padding:12px;margin-bottom:10px;background:#1c1846">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b style="font-size:17px">#${e(p.numero)} · ${e(p.cliente || "Cliente")}</b><span style="font-size:12px;color:#b8b3e6">${hh(p.criadoEm)}</span></div>
+        <div style="font-size:13px;margin-top:4px">${p.entrega.tipo === "entrega" ? "🛵 <b>Entrega</b>" + (p.entrega.endereco ? ": " + e(p.entrega.endereco) : "") + (p.entrega.taxa ? " · frete " + R(p.entrega.taxa) : "") : "🏪 <b>Retirada</b> na loja"}</div>
+        ${p.telefone ? `<div style="font-size:13px;margin-top:2px">📞 ${e(p.telefone)} ${wa ? `<a href="${wa}" target="_blank" style="color:#3ce88a;font-weight:700;margin-left:6px">WhatsApp</a>` : ""}</div>` : ""}
+        <div style="font-size:13px;margin-top:6px;max-height:140px;overflow:auto">${p.itens.map(i => `<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #2a2660;padding:2px 0"><span>${e(i.quantidade)}x ${e(i.nome)}</span><span>${R(i.quantidade * i.valor)}</span></div>`).join("")}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:15px"><span>Total</span><b style="color:#ffd23f">${R(p.total)}</b></div>
+        <div style="display:flex;gap:8px;margin-top:10px"><button onclick="b13SiteAssumir('${e(p.pedidoId)}')" style="flex:1;background:#FF0082;color:#fff;border:0;border-radius:10px;padding:10px;font-weight:800;font-size:14px;cursor:pointer">✋ Vou atender</button>
+          <button onclick="b13SiteDepois('${e(p.pedidoId)}')" style="background:#2a2660;color:#fff;border:1px solid #3a3480;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer">Ver depois</button></div></div>`; }).join("")}
+      <div style="font-size:11px;color:#9a95c9">"Vou atender" avisa as outras vendedoras que o pedido já tem dono. "Ver depois" fecha agora e a janela volta na próxima entrada na tela.</div></div>`;
+  }
+  async function conferir() {
+    try { const r = await fetch(BS + "/api/site/pedidos-novos", { headers: { "X-Auth-Token": tok() } }); if (!r.ok) return; const j = await r.json(); LISTA = j.itens || [];
+      const novos = LISTA.filter(p => !vistos.has(p.pedidoId)); if (novos.some(p => !depois.has(p.pedidoId)) && vistos.size >= 0 && novos.length) bipe(); novos.forEach(p => vistos.add(p.pedidoId));
+      janela(); } catch (x) {}
+  }
+  window.b13SiteDepois = id => { depois.add(id); sessionStorage.setItem("b13SiteDepois", JSON.stringify([...depois])); janela(); };
+  window.b13SiteAssumir = async id => { try { const r = await fetch(BS + "/api/site/pedidos-novos/" + encodeURIComponent(id) + "/assumir", { method: "POST", headers: { "X-Auth-Token": tok() } }); const j = await r.json();
+      if (j.jaAssumido) alert("Esse pedido já foi assumido por " + (j.assumidoPor || "outra pessoa") + "."); } catch (x) {} LISTA = LISTA.filter(p => p.pedidoId !== id); janela(); };
+  sessionStorage.removeItem("b13SiteDepois"); depois.clear(); // ao ENTRAR na tela, mostra de novo os que ficaram para depois
+  setTimeout(conferir, 1500); setInterval(conferir, 30000);
+})();
+</script>
 </body>
 </html>

@@ -10683,6 +10683,31 @@ app.get("/api/supervisora/rota",requireAcesso("acesso_supervisora"),async(req,re
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== PEDIDOS NOVOS DO SITE (janela na Venda Atacado) =====================
+// Pedidos do site dos últimos 3 dias ainda não assumidos por ninguém (sem cancelados). Só dados locais.
+app.get("/api/site/pedidos-novos",requireSessao,(req,res)=>{
+  try{
+    const lim=Date.now()-3*_DIA, props=lerPropostas()||{}, itens=[];
+    Object.values(props).forEach(p=>{ if(!p||p.origem!=="site"||!p.pedidoBlingId||(p.criadoEm||0)<lim) return;
+      if(p.avisoSite&&p.avisoSite.assumidoPor) return; const sit=_sitOnline[String(p.pedidoBlingId)]; if(sit&&sit.situacaoId===SIT.CANCELADO) return;
+      itens.push({pedidoId:String(p.pedidoBlingId),numero:p.pedidoBlingNumero||p.pedidoBlingId,criadoEm:p.criadoEm,cliente:p.cliente?.nome||"",telefone:p.cliente?.telefone||"",
+        total:Number(p.total)||0,entrega:{tipo:p.entrega?.tipo||"retirada",endereco:p.entrega?.endereco||"",taxa:Number(p.entrega?.taxa)||0},
+        itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),observacao:p.observacao||""}); });
+    itens.sort((a,b)=>b.criadoEm-a.criadoEm);
+    res.json({ok:true,itens});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/site/pedidos-novos/:pedidoId/assumir",requireSessao,(req,res)=>{
+  try{
+    const pid=String(req.params.pedidoId), props=lerPropostas()||{}, k=Object.keys(props).find(x=>String(props[x]?.pedidoBlingId)===pid&&props[x]?.origem==="site");
+    if(!k) return res.status(404).json({erro:"pedido do site não encontrado"});
+    if(props[k].avisoSite&&props[k].avisoSite.assumidoPor) return res.json({ok:true,jaAssumido:true,assumidoPor:props[k].avisoSite.assumidoPor});
+    props[k].avisoSite={assumidoPor:req.sessao?.nome||"",assumidoPorId:req.sessao?.funcionarioId||"",em:Date.now()}; salvarPropostas(props);
+    addLog(pid,"pedido_site_assumido",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{});
+    res.json({ok:true,assumidoPor:props[k].avisoSite.assumidoPor});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== AVISOS AUTOMÁTICOS DO BLING (WEBHOOKS) =====================
 // O Bling avisa na hora quando pedido, produto, estoque ou nota muda. Confere a assinatura (HMAC-SHA256 do texto com o
 // client secret do aplicativo), responde na hora e processa depois; ignora avisos repetidos. Atualiza as cópias que as
