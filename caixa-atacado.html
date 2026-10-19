@@ -108,6 +108,36 @@ document.addEventListener("DOMContentLoaded",function(){
 
 <script>const BACKEND = location.protocol.indexOf("http") === 0 ? "" : "https://b13-bling-backend-production.up.railway.app";
 const S = b13GetSession() || {};
+// ===== AVISO "PROCESSANDO" enquanto o caixa espera o servidor / o Bling =====
+// Aparece quando uma resposta demora mais de 0,5 s (as rápidas não piscam), diz o que está sendo feito e conta os segundos.
+// Na finalização fica até o fim (inclusive a confirmação). Consultas automáticas de fundo não acendem o aviso.
+(function () {
+  const IGNORAR = [/\/api\/caixa-atacado\/sync-status\//, /\/api\/caixa-sessao\/atual/, /\/credito-saldo/, /\/api\/pix-bancos/, /\/api\/formas-pagamento/, /\/api\/funcionarios/, /\/api\/caixa-sessao\/abertos/];
+  const MSG = [[/\/finalizar/, "Finalizando a venda e gravando no Bling…"], [/\/(caixa-atacado|atacado)\/(buscar-)?pedido\//, "Buscando o pedido no Bling…"], [/\/conferir-bling\//, "Conferindo com o Bling…"],
+    [/\/api\/(buscar|preco\/gtin|pdv\/info-fardo)/, "Buscando produto…"], [/\/caixa-sessao\/(abrir|fechar|movimento)/, "Registrando no caixa…"], [/\/autorizar/, "Conferindo a autorização…"], [/\/cancelar|\/editar|\/sangria/, "Gravando a alteração no Bling…"]];
+  let ativos = [], el = null, timer = null;
+  function caixa() { if (el) return el; el = document.createElement("div"); el.id = "b13Processando";
+    el.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99999;background:#1c1846;border:1px solid #FF0082;color:#fff;border-radius:999px;padding:10px 18px;font-size:14px;font-weight:700;box-shadow:0 6px 24px rgba(0,0,0,.45);display:none;align-items:center;gap:10px;max-width:92vw";
+    el.innerHTML = '<span style="width:16px;height:16px;border:3px solid #ffffff44;border-top-color:#FF0082;border-radius:50%;display:inline-block;animation:b13gira .8s linear infinite"></span><span id="b13ProcTxt"></span>';
+    const st = document.createElement("style"); st.textContent = "@keyframes b13gira{to{transform:rotate(360deg)}}"; document.head.appendChild(st); document.body.appendChild(el); return el; }
+  function atualizar() {
+    const agora = Date.now(), fin = typeof FINALIZANDO !== "undefined" && FINALIZANDO;
+    const visiveis = ativos.filter(a => agora - a.ini > 500), alvo = visiveis[0] || (fin ? { ini: window._b13FinIni || agora, msg: "Finalizando a venda e gravando no Bling…" } : null);
+    const e = caixa(); if (!alvo) { e.style.display = "none"; return; }
+    const seg = Math.floor((agora - alvo.ini) / 1000);
+    document.getElementById("b13ProcTxt").textContent = alvo.msg + " " + seg + "s" + (seg >= 25 ? " · ainda aguardando, não feche a tela" : seg >= 8 ? " · o Bling está demorando, aguarde" : "");
+    e.style.display = "flex";
+  }
+  setInterval(() => { if (typeof FINALIZANDO !== "undefined" && FINALIZANDO && !window._b13FinIni) window._b13FinIni = Date.now(); if (!(typeof FINALIZANDO !== "undefined" && FINALIZANDO)) window._b13FinIni = 0; atualizar(); }, 400);
+  const orig = window.fetch.bind(window);
+  window.fetch = function (url, op) {
+    const u = String(url && url.url || url || "");
+    if (!/\/api\//.test(u) || IGNORAR.some(r => r.test(u))) return orig(url, op);
+    const item = { ini: Date.now(), msg: (MSG.find(([r]) => r.test(u)) || [0, "Comunicando com o servidor…"])[1] }; ativos.push(item);
+    const fim = () => { ativos = ativos.filter(x => x !== item); atualizar(); };
+    return orig(url, op).then(r => { fim(); return r; }, err => { fim(); throw err; });
+  };
+})();
 const TIPO_CAIXA = "atacado";
 let CAIXA = {
   aberta: false,
