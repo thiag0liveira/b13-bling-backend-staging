@@ -807,6 +807,27 @@ async function buscarPedidoNoBling(numero) {
     if (box) box.innerHTML = `<div class="err">Erro: ${esc(e.message)}</div>`;
   }
 }
+function mostrarPedidoCancelado(id, j) {
+  const c = j.cancelamento || {}, quando = c.em ? new Date(c.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
+    <h3>🚫 Pedido #${esc(String(j.numero || id))} cancelado</h3>
+    <div style="font-size:14px;margin:8px 0">${j.cliente ? esc(j.cliente) + " · " : ""}${brl(j.total)}</div>
+    <div style="background:#3d1020;border:1px solid #9e2f4a;border-radius:10px;padding:10px;font-size:13px;color:#ffd9e0">
+      Cancelado${c.origem ? " na <b>" + esc(c.origem) + "</b>" : ""}${quando ? " em " + quando : ""}${c.por ? " por <b>" + esc(c.por) + "</b>" : ""}${c.motivo ? "<br>Motivo: <b>" + esc(c.motivo) + "</b>" : ""}
+      ${c.noBling ? "<br>No Bling o pedido está Cancelado." : c.origem === "Gestão de Caixas" ? "<br>No Bling o cancelamento pode não ter sido aceito, mas no sistema ele está cancelado." : ""}</div>
+    <div class="muted" style="font-size:12px;margin:10px 0">Este pedido não pode ser recebido. Se o cancelamento foi engano, um gerente, financeiro ou admin pode reativar.</div>
+    <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Voltar</button>
+      <button class="btn" style="flex:1" onclick="reativarCancelado('${esc(String(id))}')">🔓 Reativar com QR</button></div></div></div>`;
+}
+function reativarCancelado(id) {
+  pedirQrAcao("🔓 Reativar pedido cancelado", "Reativar o pedido #" + esc(String(id)) + "? Ele volta a poder ser recebido e, se estiver Cancelado no Bling, volta para Em aberto. Leia o QR de autorização (gerente, financeiro ou admin).", async (tokenQr, campo, erroEl) => {
+    try {
+      const r = await fetch(BACKEND + "/api/caixa-atacado/reativar-cancelado/" + encodeURIComponent(id), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tokenQr, funcionarioId: S.id, operador: S.nome || "" }) });
+      const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui reativar");
+      fecharModais(); alert("Pedido reativado (autorizado por " + j.autorizadoPor + "): " + j.feito.join(", ") + "."); abrirPedido(id);
+    } catch (e) { if (erroEl) erroEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; if (campo) { campo.value = ""; campo.focus(); } }
+  });
+}
 async function abrirPedido(id) {
   try {
     // SEGURANÇA: pedido que JÁ FOI RECEBIDO (pago) ou que já saiu pra separação não
@@ -817,6 +838,7 @@ async function abrirPedido(id) {
     // o pedido no Bling; outra pra pegar os dados completos, buscando o MESMO
     // pedido de novo) -- os dois vinham juntos no mesmo detalhe do pedido.
     const j = await fetch(BACKEND + "/api/caixa-atacado/pedido/" + id).then(r => r.json());
+    if (j.cancelado) { mostrarPedidoCancelado(id, j); return; } // cancelado (no Bling ou na Gestão de Caixas): não recebe
     if (j.erro) throw new Error(j.erro);
     const precisaAut = j.recebido || j.pago || j.statusPagamento === "pago" || j.statusPagamento === "parcial";
     if (precisaAut && !AUTORIZADO_POR) {

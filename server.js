@@ -8521,10 +8521,37 @@ app.get("/api/diag/pedido-busca/:cod",async(req,res)=>{
   res.json(out);
 });
 
+// PEDIDO CANCELADO não pode ser recebido no caixa: cancelado no Bling OU cancelado no sistema (Gestão de Caixas),
+// mesmo que o Bling não tenha aceitado cancelar. Só volta com reativação autorizada (QR).
+function _cancelamentoDoPedido(pid,situacaoBling){
+  pid=String(pid); let info=null; const pg=(lerPag()||{})[pid];
+  if(pg&&pg.statusPagamento==="cancelado"&&!pg.reativadoEm) info={em:pg.canceladoEm||null,origem:"Gestão de Caixas"};
+  let ultimo=null; (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&String(m.pedidoId)===pid&&(!ultimo||m.em>ultimo.em)) ultimo=m; }));
+  if(ultimo&&ultimo.cancelado&&!ultimo.reativadoEm){ const a=(ultimo.alteracoes||[]).filter(x=>x&&x.tipo==="cancelamento").pop()||{}; info={...(info||{}),em:a.em||info?.em||null,por:a.por||"",motivo:a.motivo||"",origem:a.viaGestao?"Gestão de Caixas":"caixa"}; }
+  else if(ultimo&&!ultimo.cancelado&&info&&pg&&pg.canceladoEm&&ultimo.em>pg.canceladoEm) info=null; // recebido de novo depois (situação já tratada)
+  if(Number(situacaoBling)===SIT.CANCELADO) info={...(info||{origem:"Bling"}),noBling:true};
+  return info;
+}
+app.post("/api/caixa-atacado/reativar-cancelado/:id",async(req,res)=>{
+  try{
+    const id=String(req.params.id), auth=validarTokenQrAtacado(req.body?.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const quem=auth.funcionario.nome||"", feito=[];
+    const pags=lerPag(); if(pags[id]&&pags[id].statusPagamento==="cancelado"){ pags[id]={...pags[id],statusPagamento:"pendente",reativadoEm:Date.now(),reativadoPor:quem}; salvarJSON(PAG_FILE,pags); feito.push("pagamento liberado"); }
+    const cx=lerCaixaSessoes(); let ult=null; (cx.sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&String(m.pedidoId)===id&&(!ult||m.em>ult.em)) ult=m; }));
+    if(ult&&ult.cancelado&&!ult.reativadoEm){ ult.reativadoEm=Date.now(); ult.reativadoPor=quem; salvarCaixaSessoes(cx); feito.push("a venda cancelada continua no histórico"); }
+    const sit=Number((await bling(`/pedidos/vendas/${id}`).then(r=>r?.data?.situacao?.id).catch(()=>0))||0);
+    if(sit===SIT.CANCELADO){ const r=await mudarSituacaoPedido(id,SIT.EM_ABERTO); if(!r.ok) return res.status(502).json({erro:"Liberado no sistema, mas o Bling não aceitou tirar o pedido de Cancelado: "+(r.erro||"erro"),feito}); feito.push("Bling: Cancelado → Em aberto"); }
+    addLog(id,"pedido_reativado",req.body?.funcionarioId||"",req.body?.operador||"",{autorizadoPor:quem,feito:feito.join(", ")});
+    res.json({ok:true,autorizadoPor:quem,feito});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
   try{
     const r=await bling(`/pedidos/vendas/${req.params.id}`);
     const d=r?.data; if(!d) return res.status(404).json({erro:"pedido não encontrado"});
+    { const canc=_cancelamentoDoPedido(d.id,Number(d.situacao?.id||0));
+      if(canc) return res.status(409).json({cancelado:true,cancelamento:canc,id:d.id,numero:d.numero,cliente:d.contato?.nome||"",total:Number(d.total)||0,
+        erro:`Este pedido foi CANCELADO${canc.origem?" na "+canc.origem:""} e não pode ser recebido.`}); }
     // monta os itens com nome/preço (o detalhe do pedido já traz isso)
     const itens=(d.itens||[]).map(it=>({
       produtoId:it.produto?.id, nome:it.descricao||it.produto?.nome||"",
@@ -9125,6 +9152,8 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   // falhar (ou alguém chamar a API direto), o servidor recusa. Isso já é 100% local
   // (lê pagamentos.json), então continua rápido mesmo com o Bling lento.
   try{
+    if(pedidoId){ const canc=_cancelamentoDoPedido(pedidoId,null); // 2ª proteção: cancelado não é recebido, nem com a autorização de reabrir
+      if(canc) return res.status(409).json({erro:`Este pedido foi CANCELADO${canc.origem?" na "+canc.origem:""}${canc.motivo?" (motivo: "+canc.motivo+")":""} e não pode ser recebido. Se foi engano, reative com autorização antes.`,cancelado:true}); }
     if(pedidoId && !autorizadoPor){
       const jaPago=_pagamentoDoPedido(pedidoId, req.body?.numero);
       if(jaPago.pago && !_recebimentoSoNaEntrega(pedidoId, req.body?.numero)){
