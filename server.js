@@ -1336,7 +1336,7 @@ function b13RenderNav(ativo){
   var css='<style id="b13menuCss">body{padding-top:48px !important}'+
     '#b13menu{position:fixed;top:0;left:0;right:0;height:48px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:2px;padding:0 10px;z-index:1000;font-family:Arial,sans-serif;box-sizing:border-box}'+
     '#b13menu .b13logo{color:#fff;font-weight:900;font-size:14px;letter-spacing:.5px;text-decoration:none;padding:8px 10px;border-radius:8px;white-space:nowrap}'+
-    '#b13menu .b13logo span{color:#FF0082}#b13menu .b13logo:hover,#b13menu .b13logo.b13ativo{background:rgba(255,0,130,.15)}'+
+    '#b13menu .b13logo{display:flex;align-items:center;gap:6px}#b13menu .b13logoimg{height:26px;width:auto;display:block}#b13menu .b13logo span{color:#FF0082}#b13menu .b13logo:hover,#b13menu .b13logo.b13ativo{background:rgba(255,0,130,.15)}'+
     '#b13menu .b13gb{background:none;border:0;color:#cfc9f5;font-weight:800;font-size:12px;letter-spacing:.4px;padding:8px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}'+
     '#b13menu .b13gb:hover,#b13menu .b13gb.b13aberto{background:rgba(255,255,255,.08);color:#fff}#b13menu .b13gb.b13temativo{color:#fff;box-shadow:inset 0 -3px 0 #FF0082}'+
     '#b13menu .b13dd{display:none;position:absolute;top:46px;min-width:240px;max-width:min(560px,96vw);background:#1f1b52;border:1px solid #FF0082;border-radius:0 0 12px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:1001;columns:1}'+
@@ -1357,7 +1357,7 @@ function b13RenderNav(ativo){
     return '<div class="b13grp" style="position:relative"><button class="b13gb'+(temAt?' b13temativo':'')+'" id="'+gid(g.nome)+'" onclick="b13AbrirGrupo(\\''+gid(g.nome)+'\\',event)" onmouseenter="b13TrocarGrupo(\\''+gid(g.nome)+'\\')">'+g.nome+' ▾</button>'+
       '<div class="b13dd'+(g.itens.length>8?' b13cols':'')+'" id="'+gid(g.nome)+'dd">'+g.itens.map(item).join("")+'</div></div>'; }).join("");
   return css+'<div id="b13menu"><button class="b13ham" onclick="b13MenuCelular()">☰</button>'+
-    (podeInicio?'<a class="b13logo'+(ativo==="/inicio"?' b13ativo':'')+'" href="/inicio">B13 <span>BEBIDAS</span></a>':'<span class="b13logo">B13 <span>BEBIDAS</span></span>')+
+    (podeInicio?'<a class="b13logo'+(ativo==="/inicio"?' b13ativo':'')+'" href="/inicio"><img src="/logo" alt="B13" class="b13logoimg"><span>BEBIDAS</span></a>':'<span class="b13logo"><img src="/logo" alt="B13" class="b13logoimg"><span>BEBIDAS</span></span>')+
     gruposHtml+'<div class="b13esp"></div><div class="b13user">'+nomeTopo+' <small>· '+f.nivel+'</small><button class="b13sair" onclick="b13Logout()">Sair</button></div></div><div id="b13qrModal"></div>';
 }
 // abre/fecha um grupo do menu do topo; com um aberto, passar o mouse em outro troca (como no Bling)
