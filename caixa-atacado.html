@@ -1912,7 +1912,10 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
   });
   const extraLinhasItens = itensArr.reduce((s, i) => s + ((i._nomeLinhas.length || 1) - 1), 0);
   const linhasEnderecoQtd = (v.ehEntrega && v.endereco) ? quebrarTexto(_mc, v.endereco, W - padd * 2, 3).length : 0;
-  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + ((v.pagamentos || []).length ? 28 : 0) + (Number(v.troco) > 0.009 ? 42 : 0) + (v.observacao ? 80 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
+  // observação INTEIRA: quebra em quantas linhas precisar (respeita as quebras de linha digitadas)
+  _mc.font = "900 18px Arial";
+  const linhasObs = v.observacao && String(v.observacao).trim() ? String(v.observacao).trim().split(/\n+/).flatMap(par => quebrarTexto(_mc, par.trim() || " ", W - padd * 2, 60)) : [];
+  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + ((v.pagamentos || []).length ? 28 : 0) + (Number(v.troco) > 0.009 ? 42 : 0) + (linhasObs.length ? 40 + linhasObs.length * 24 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr;
@@ -2156,10 +2159,8 @@ function desenharComprovante(v, qrEl, barCanvas, logoImg) {
     y += 24;
     ctx.font = "900 18px Arial";
     ctx.fillStyle = "#000";
-    let obs = String(v.observacao).trim();
-    if (obs.length > 52) obs = obs.slice(0, 51) + "…";
-    ctx.fillText(obs, padd, y);
-    y += 26;
+    linhasObs.forEach(l => { ctx.fillText(l, padd, y); y += 24; }); // inteira, em várias linhas
+    y += 2;
   }
   y += 12;
 
