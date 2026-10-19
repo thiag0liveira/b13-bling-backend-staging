@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 Bebidas — Painel</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.aviso{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:10px;margin-bottom:6px;text-decoration:none;color:#fff;border:1px solid #2a2660;background:#1c1846}
+.aviso:hover{border-color:#FF0082}.aviso .ic2{font-size:16px}.aviso.alto{border-left:4px solid #ff5a7a}.aviso.medio{border-left:4px solid #ffd23f}.aviso.baixo{border-left:4px solid #7fd0ff}.aviso.bom{border-left:4px solid #3ce88a}.aviso.info{border-left:4px solid #9a95c9}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:12px}.grid3>*{min-width:0}
+.leg{display:flex;gap:12px;font-size:11.5px;color:#9a95c9;margin-top:4px}.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/inicio")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/inicio"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📊 B13 Bebidas</div><div class="sp"></div><span class="ic" id="sinc"></span></div>
+<div class="wrap">
+  <div class="card"><div class="filtros">
+    <label class="ic">De <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
+    <span class="chip" onclick="periodo(6)">7 dias</span><span class="chip" onclick="periodo(29)">30 dias</span><span class="chip" onclick="periodoMes(0)">Este mês</span><span class="chip" onclick="periodoMes(1)">Mês passado</span><span class="chip" onclick="periodo(89)">90 dias</span><span class="chip" onclick="periodo(364)">12 meses</span>
+    <span class="ic" id="periodoTxt"></span></div></div>
+  <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="card"><h3>🧭 O que pede atenção agora</h3><div id="alertas"></div></div>
+  <div class="card"><h3>📈 Vendas por dia <span class="ic">(comparado ao período anterior)</span></h3><div id="gDia"></div><div class="leg"><span><i style="background:#FF0082"></i>período</span><span><i style="background:#5b55a8"></i>período anterior</span></div></div>
+  <div class="grid2"><div class="card"><h3>📅 Por dia da semana</h3><div id="gSem"></div></div><div class="card"><h3>🕐 Pedidos por hora <span class="ic">(feitos no sistema)</span></h3><div id="gHora"></div></div></div>
+  <div class="grid3">
+    <div class="card"><h3>🧑‍💼 Vendedoras</h3><div id="dVend"></div></div>
+    <div class="card"><h3>📍 Origem dos pedidos</h3><div id="dOrig"></div></div>
+    <div class="card"><h3>💳 Formas de pagamento</h3><div id="dForma"></div></div>
+    <div class="card"><h3>🛒 Comprar primeiro <span class="ic">(15 dias)</span></h3><div id="dCompra"></div></div>
+    <div class="card"><h3>📞 Clientes para recuperar</h3><div id="dRec"></div></div>
+    <div class="card"><h3>🏆 Produtos mais vendidos</h3><div id="dProd"></div></div>
+    <div class="card"><h3>🧊 Dinheiro parado no estoque</h3><div id="dParado"></div></div>
+    <div class="card"><h3>👥 Clientes que mais compraram</h3><div id="dCli"></div></div>
+    <div class="card"><h3>🧾 Recebido hoje nos caixas</h3><div id="dCaixa"></div></div>
+  </div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+const DS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), diaISO = ms => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(); }
+function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h;
+  document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(); }
+const var_ = (a, b) => b ? Math.round((a - b) / b * 100) : null;
+const seta = v => v == null ? "" : `<span style="color:${v >= 0 ? "#3ce88a" : "#ff8aa3"}">${v >= 0 ? "▲" : "▼"}${Math.abs(v)}%</span>`;
+async function carregar() {
+  const q = new URLSearchParams({ ini: document.getElementById("fIni").value, fim: document.getElementById("fFim").value });
+  const r = await fetch(B + "/api/painel-b13?" + q, { headers: { "X-Auth-Token": token() } }); const D = await r.json().catch(() => ({}));
+  if (!r.ok) { document.getElementById("kpis").innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar o painel.")}</div>`; return; }
+  render(D);
+}
+function barrasDuplas(atual, ant, alt) {
+  const n = atual.length, mx = Math.max(1, ...atual.map(x => x.valor), ...ant.map(x => x.valor)), W = Math.max(n * 22, 320), w = W / n, cada = n > 16 ? Math.ceil(n / 12) : 1;
+  return `<div class="rolagem"><svg viewBox="0 0 ${W} ${alt + 30}" style="width:100%;height:${alt + 30}px">${atual.map((d, i) => { const a = ant[i] || { valor: 0 }, h1 = Math.round(d.valor / mx * alt), h0 = Math.round(a.valor / mx * alt), x = i * w;
+    return `<rect x="${x + 2}" y="${alt - h0 + 6}" width="${w / 2 - 2}" height="${h0}" rx="2" fill="#5b55a8"><title>anterior: ${brl(a.valor)}</title></rect><rect x="${x + w / 2}" y="${alt - h1 + 6}" width="${w / 2 - 2}" height="${h1}" rx="2" fill="#FF0082"><title>${dmy(d.dia)}: ${brl(d.valor)} · ${d.qtd} pedido(s)</title></rect>${i % cada === 0 || i === n - 1 ? `<text x="${x + w / 2}" y="${alt + 22}" fill="#9a95c9" font-size="10" text-anchor="middle">${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)}</text>` : ""}`; }).join("")}</svg></div>`;
+}
+function barras(dados, rot, val, alt, fmt) { const mx = Math.max(1, ...dados.map(val)), W = Math.max(dados.length * 30, 280), w = W / dados.length;
+  return `<div class="rolagem"><svg viewBox="0 0 ${W} ${alt + 30}" style="width:100%;height:${alt + 30}px">${dados.map((d, i) => { const h = Math.round(val(d) / mx * alt); return `<rect x="${i * w + 3}" y="${alt - h + 6}" width="${w - 6}" height="${h}" rx="3" fill="#FF0082"><title>${esc(rot(d))}: ${fmt(val(d))}</title></rect><text x="${i * w + w / 2}" y="${alt + 22}" fill="#9a95c9" font-size="10" text-anchor="middle">${esc(rot(d))}</text>`; }).join("")}</svg></div>`; }
+const dist = (l, sub) => { const mx = Math.max(1, ...l.map(x => x.valor)); return l.map(x => `<div class="lin" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(x.nome)} <span class="ic">${sub ? sub(x) : ""}</span></span><b>${brl(x.valor)}</b></div><div class="barra"><i style="width:${Math.round(x.valor / mx * 100)}%"></i></div></div>`).join("") || `<div class="ic">—</div>`; };
+function render(D) {
+  const V = D.vendas, R = D.rapido, P = D.produtos, C = D.clientes || {}, H = D.historico || {};
+  document.getElementById("periodoTxt").textContent = `${dmy(D.ini)} a ${dmy(D.fim)} · comparado a ${dmy(D.anterior.ini)} a ${dmy(D.anterior.fim)}`;
+  document.getElementById("sinc").textContent = (H.varreduraCompleta ? "histórico completo do Bling" : "histórico do Bling sendo trazido") + ` · atualizado ${new Date(D.geradoEm).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}`;
+  const k = (v, l, s, cls, href) => `<a class="kpi ${cls || ""}" ${href ? `href="${href}"` : ""} style="text-decoration:none;color:inherit"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></a>`;
+  document.getElementById("kpis").innerHTML =
+    k(brl(R.hoje.valor), "Vendido hoje", `${R.hoje.qtd} pedido(s) · ontem ${brl(R.ontem.valor)}`, "", "/pedidos-vendas")
+    + k(brl(R.semana.valor), "Esta semana", `${seta(var_(R.semana.valor, R.semanaPassada.valor))} vs ${brl(R.semanaPassada.valor)} na semana passada até hoje`)
+    + k(brl(R.mes.valor), "Este mês", `${seta(var_(R.mes.valor, R.mesPassadoAteHoje.valor))} vs ${brl(R.mesPassadoAteHoje.valor)} no mês passado até o mesmo dia`)
+    + k(brl(V.valor), "No período", `${seta(var_(V.valor, D.anterior.valor))} · ${num(V.qtd)} pedidos · ticket ${brl(V.ticket)} ${seta(var_(V.ticket, D.anterior.ticket))}`)
+    + k(brl(D.caixas.recebidoHoje), "Recebido hoje nos caixas", `${D.caixas.vendasHoje} venda(s)`, "", "/gestao-caixas")
+    + k(brl(P.lucro), "Lucro estimado no período", P.margem != null ? `margem ${String(P.margem).replace(".", ",")}%` : "sem custo cadastrado", "", "/produtos")
+    + k(brl(P.valorEstoqueCusto), "Estoque a custo", `${P.ruptura} em ruptura · ${P.parado} parados`, P.rupturaA ? "alerta" : "", "/produtos")
+    + k(num(C.ativos || 0), "Clientes ativos", `${C.emRisco || 0} em risco · ${C.novos || 0} novos`, C.emRisco ? "alerta" : "", "/clientes")
+    + k(brl(C.aReceber || 0), "A receber (prazo)", `${V.prazo.vencidos} pedido(s) vencido(s)`, V.prazo.vencidos ? "alerta" : "", "/pedidos-vendas");
+  const ic = { alto: "🚨", medio: "⚠️", baixo: "ℹ️", bom: "✅", info: "💡" };
+  document.getElementById("alertas").innerHTML = (D.alertas || []).map(a => `<a class="aviso ${a.nivel}" href="${a.link || "#"}"><span class="ic2">${ic[a.nivel] || "•"}</span><span style="flex:1">${esc(a.texto)}</span><span class="ic">abrir ›</span></a>`).join("") || `<div class="ic">Nada fora do normal agora. ✅</div>`;
+  document.getElementById("gDia").innerHTML = barrasDuplas(V.porDia, D.anterior.porDia || [], 140);
+  document.getElementById("gSem").innerHTML = barras(V.porDiaSemana, d => DS[d.dia], d => d.valor, 110, brl);
+  document.getElementById("gHora").innerHTML = barras(V.porHora.filter(h => h.hora >= 6 && h.hora <= 23), d => d.hora + "h", d => d.qtd, 110, x => num(x) + " pedido(s)");
+  document.getElementById("dVend").innerHTML = dist(V.porVendedora, x => `${x.qtd} · ticket ${brl(x.ticket)}`);
+  document.getElementById("dOrig").innerHTML = dist(V.porOrigem, x => `${x.qtd} pedidos`);
+  document.getElementById("dForma").innerHTML = dist(V.porForma, x => `${x.qtd}x`);
+  document.getElementById("dCompra").innerHTML = (P.compras || []).map(x => `<a class="lin" href="/produtos?produto=${encodeURIComponent(x.id)}" style="color:inherit;text-decoration:none"><span>${esc(x.nome)} <span class="ic">· curva ${esc(x.curva)} · estoque ${num(x.estoque)}${x.cobertura != null ? " (" + x.cobertura + " dias)" : ""}</span></span><b>${num(x.sugestao)}</b></a>`).join("") || `<div class="ic">Nada urgente.</div>`;
+  document.getElementById("dRec").innerHTML = (C.recuperar || []).map(x => { const t = String(x.telefone || "").replace(/\D/g, ""), wa = t.length >= 10 ? "https://wa.me/" + (t.length <= 11 ? "55" + t : t) : "";
+    return `<div class="lin"><a href="/clientes?cliente=${encodeURIComponent(x.id)}" style="color:#e6e2ff;text-decoration:none">${esc(x.nome)} <span class="ic">· há ${x.dias} dias${x.intervalo ? " (comprava a cada " + x.intervalo + ")" : ""} · ${brl(x.total365)}/ano</span></a>${wa ? `<a href="${wa}" target="_blank" style="color:#3ce88a;font-weight:800;text-decoration:none">💬</a>` : ""}</div>`; }).join("") || `<div class="ic">Nenhum cliente em risco.</div>`;
+  document.getElementById("dProd").innerHTML = (V.topProdutos || []).map(x => `<div class="lin"><span>${esc(x.nome)} <span class="ic">· ${num(x.qtd)} un</span></span><b>${brl(x.valor)}</b></div>`).join("") || `<div class="ic">—</div>`;
+  document.getElementById("dParado").innerHTML = (P.parados || []).map(x => `<a class="lin" href="/produtos?produto=${encodeURIComponent(x.id)}" style="color:inherit;text-decoration:none"><span>${esc(x.nome)} <span class="ic">· ${x.diasSemVenda != null ? "sem venda há " + x.diasSemVenda + " dias" : "nunca vendeu"}</span></span><b>${brl(x.valor)}</b></a>`).join("") || `<div class="ic">—</div>`;
+  document.getElementById("dCli").innerHTML = (V.topClientes || []).map(x => `<a class="lin" href="/clientes?cliente=${encodeURIComponent(x.clienteId)}" style="color:inherit;text-decoration:none"><span>${esc(x.nome)} <span class="ic">· ${x.qtd} pedido(s)</span></span><b>${brl(x.valor)}</b></a>`).join("") || `<div class="ic">—</div>`;
+  document.getElementById("dCaixa").innerHTML = dist(D.caixas.porForma || []);
+}
+["fIni", "fFim"].forEach(id => document.getElementById(id).addEventListener("change", carregar));
+document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 29 * 86400000); carregar();
+setInterval(carregar, 5 * 60000);
+</script>
+</body>
+</html>

@@ -1198,11 +1198,6 @@ function b13BloquearSeSemAcesso(href){
   if(b13PodeAba(href)) return true;
   document.addEventListener("DOMContentLoaded",function(){
     document.body.innerHTML=\`
-      <style>
-        @media (min-width:769px){
-          body > *:not(#b13nav):not(button[onclick="b13ToggleNav()"]):not(#b13navOverlay){ margin-left:200px }
-        }
-      </style>
       \${(typeof b13RenderNav==="function")?b13RenderNav(href):""}
       <div style="max-width:420px;margin:20vh auto;text-align:center;color:#fff;font-family:Arial;padding:0 16px">
         <div style="font-size:40px;margin-bottom:10px">🚫</div>
@@ -1233,57 +1228,60 @@ window.addEventListener("storage",function(ev){
 // Lista única das "abas" do sistema — usada pra montar o menu lateral E pra
 // mostrar no cadastro de Funcionários quais abas cada permissão libera.
 window.B13_NAV_LINKS=[
-  // grupo:"" (ou ausente) = link solto no topo. Os demais viram seções recolhíveis.
-  {href:"/central",label:"🏠 Central",acoes:["acesso_central"]},
-  {href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
-  {href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
-  {href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
-  {href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
-  {href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
+  // grupos do menu do topo (ordem = ordem na barra). O logo B13 BEBIDAS abre /inicio.
+  {grupo:"B13 BEBIDAS",href:"/inicio",label:"📊 Painel B13 Bebidas",acoes:["acesso_painel_b13"]},
 
-  {grupo:"Vendas & Caixa",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
-  {grupo:"Vendas & Caixa",href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
-  {grupo:"Vendas & Caixa",href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
-  {grupo:"Vendas & Caixa",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {grupo:"Vendas & Caixa",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
-  {grupo:"Vendas & Caixa",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
-  {grupo:"Vendas & Caixa",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
-  {grupo:"Vendas & Caixa",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
-  {grupo:"Vendas & Caixa",href:"/pedidos-vendas",label:"🧾 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
-  {grupo:"Estoque",href:"/produtos",label:"🏷️ Produtos (análise)",acoes:["acesso_produtos_gestao"]},
-  {grupo:"Vendas & Caixa",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
-  {grupo:"Vendas & Caixa",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
+  {grupo:"GESTÃO",href:"/central",label:"🏠 Central",acoes:["acesso_central"]},
+  {grupo:"GESTÃO",href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
+  {grupo:"GESTÃO",href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
+  {grupo:"GESTÃO",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
+  {grupo:"GESTÃO",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
+  {grupo:"GESTÃO",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
 
-  {grupo:"Estoque",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
-  {grupo:"Estoque",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
-  {grupo:"Estoque",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
-  {grupo:"Estoque",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
-  {grupo:"Estoque",href:"/estoque-fiscal",label:"🧮 Estoque fiscal",acoes:["acesso_estoque_fiscal","admin"]},
-  {grupo:"Estoque",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
+  {grupo:"CADASTROS",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
+  {grupo:"CADASTROS",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
+  {grupo:"CADASTROS",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
+  {grupo:"CADASTROS",href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
+  {grupo:"CADASTROS",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
+  {grupo:"CADASTROS",href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
 
-  {grupo:"Listas & Imagens",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
-  {grupo:"Listas & Imagens",href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
-  {grupo:"Listas & Imagens",href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
-  {grupo:"Listas & Imagens",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
-  {grupo:"Listas & Imagens",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
-  {grupo:"Listas & Imagens",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
-  {grupo:"Logística",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
-  {grupo:"Logística",href:"/mesa-separacao",label:"🖥️ Mesa de Separação",acoes:["acesso_mesa_separacao"]},
-  {grupo:"Logística",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
-  {grupo:"Logística",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
-  {grupo:"Logística",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
-  {grupo:"Logística",href:"/central-entregas",label:"📦 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
-  {grupo:"Logística",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+  {grupo:"ESTOQUE",href:"/produtos",label:"🏷️ Produtos (análise)",acoes:["acesso_produtos_gestao"]},
+  {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
+  {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
+  {grupo:"ESTOQUE",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
+  {grupo:"ESTOQUE",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
+  {grupo:"ESTOQUE",href:"/estoque-fiscal",label:"🧮 Estoque fiscal",acoes:["acesso_estoque_fiscal","admin"]},
+  {grupo:"ESTOQUE",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
+  {grupo:"ESTOQUE",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
 
-  {grupo:"Gestão",href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
-  {grupo:"Gestão",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
-  {grupo:"Gestão",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
-  {grupo:"Gestão",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
-  {grupo:"Gestão",href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
-  {grupo:"Gestão",href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
-  {grupo:"Gestão",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
-  {grupo:"Gestão",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
+  {grupo:"VENDA",href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
+  {grupo:"VENDA",href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
+  {grupo:"VENDA",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"VENDA",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
+  {grupo:"VENDA",href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
+  {grupo:"VENDA",href:"/pedidos-vendas",label:"🧾 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
+  {grupo:"VENDA",href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
+  {grupo:"VENDA",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
+
+  {grupo:"LOGÍSTICA",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
+  {grupo:"LOGÍSTICA",href:"/mesa-separacao",label:"🖥️ Mesa de Separação",acoes:["acesso_mesa_separacao"]},
+  {grupo:"LOGÍSTICA",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
+  {grupo:"LOGÍSTICA",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
+  {grupo:"LOGÍSTICA",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
+  {grupo:"LOGÍSTICA",href:"/central-entregas",label:"📦 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+  {grupo:"LOGÍSTICA",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+
+  {grupo:"MARKETING",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
+  {grupo:"MARKETING",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
+  {grupo:"MARKETING",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
+  {grupo:"MARKETING",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
+  {grupo:"MARKETING",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
 ];
 
 // monta o menu: links soltos no topo e o resto em seções recolhíveis (a seção da
@@ -1325,36 +1323,67 @@ async function b13ChecarNovosPedidos(){}
 async function b13MarcarPedidosVistos(){}
 
 function b13RenderNav(ativo){
-  const f=b13GetSession(); if(!f) return "";
-  const links=B13_NAV_LINKS.filter(l=>l.acoes.some(a=>b13Pode(a)));
-  // o funcionário pode autorizar caixa? (admin/gerente/líder) → nome clicável abre o QR
-  const gruposQr=["admin","gerente","lider_caixa","financeiro","financeiro_atacado"];
-  const temQr=gruposQr.includes(f.nivel)||(f.permissoes||[]).some(p=>gruposQr.includes(p));
-  const nomeTopo=temQr
-    ? \`<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">\${f.nome} <span style="font-size:11px">📱</span></span>\`
-    : f.nome;
-
-  return \`<style>body{padding-top:44px !important}@media(min-width:900px){#b13topbar{left:200px}}</style>
-    <div id="b13topbar" style="position:fixed;top:0;left:0;right:0;height:44px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:10px;padding:0 12px 0 52px;z-index:98">
-      <div style="flex:1"></div>
-      <div style="text-align:right;font-size:13px;color:#fff;font-weight:700">\${nomeTopo} <span style="color:#9a95c9;font-weight:400;font-size:11px">· \${f.nivel}</span></div>
-    </div>
-    <div id="b13nav" style="position:fixed;top:0;left:0;bottom:0;width:200px;background:linear-gradient(180deg,#2b2870,#262366);border-right:2px solid #FF0082;display:flex;flex-direction:column;z-index:100;transform:translateX(-100%);transition:.25s">
-    <div style="padding:14px 12px;border-bottom:1px solid rgba(255,0,130,.3)">
-      <div style="font-weight:900;font-size:13px;color:#fff">\${f.nome}</div>
-      <div style="font-size:11px;color:#9a95c9">\${f.nivel}</div>
-    </div>
-    <nav style="flex:1;padding:8px 0;overflow-y:auto">
-      \${b13NavHtml(links,ativo)}
-    </nav>
-    <div style="padding:10px 12px;border-top:1px solid rgba(255,0,130,.3)">
-      <button onclick="b13Logout()" style="width:100%;padding:8px;border:1px solid #514c96;border-radius:8px;background:transparent;color:#9a95c9;cursor:pointer;font-size:12px">Sair</button>
-    </div>
-  </div>
-  <button onclick="b13ToggleNav()" style="position:fixed;top:6px;left:12px;z-index:101;background:#262366;border:1px solid #FF0082;border-radius:8px;color:#fff;padding:6px 10px;cursor:pointer;font-size:18px">☰</button>
-  <div id="b13navOverlay" onclick="b13ToggleNav()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99"></div>
-  <div id="b13qrModal"></div>\`;
+  // MENU NO TOPO (como no Bling): logo B13 BEBIDAS + grupos; clicar abre o grupo para baixo. No celular, ☰ abre os grupos em lista.
+  var f=b13GetSession(); if(!f) return "";
+  var links=B13_NAV_LINKS.filter(function(l){ return l.acoes.some(function(a){ return b13Pode(a); }); });
+  var gruposQr=["admin","gerente","lider_caixa","financeiro","financeiro_atacado"];
+  var temQr=gruposQr.indexOf(f.nivel)>=0||(f.permissoes||[]).some(function(p){ return gruposQr.indexOf(p)>=0; });
+  var nomeTopo=temQr?'<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">'+f.nome+' <span style="font-size:11px">📱</span></span>':f.nome;
+  var grupos=[]; links.forEach(function(l){ if(l.href==="/inicio") return; var g=null; for(var k=0;k<grupos.length;k++){ if(grupos[k].nome===l.grupo){ g=grupos[k]; break; } } if(!g){ g={nome:l.grupo||"OUTROS",itens:[]}; grupos.push(g); } g.itens.push(l); });
+  var podeInicio=links.some(function(l){ return l.href==="/inicio"; });
+  var gid=function(n){ return "b13g"+String(n).replace(/[^A-Za-z]/g,""); };
+  var item=function(l){ var at=l.href===ativo; return '<a href="'+l.href+'" data-href="'+l.href+'" class="b13mi'+(at?' b13ativo':'')+'">'+l.label+'</a>'; };
+  var css='<style id="b13menuCss">body{padding-top:48px !important}'+
+    '#b13menu{position:fixed;top:0;left:0;right:0;height:48px;background:linear-gradient(180deg,#2b2870,#262366);border-bottom:2px solid #FF0082;display:flex;align-items:center;gap:2px;padding:0 10px;z-index:1000;font-family:Arial,sans-serif;box-sizing:border-box}'+
+    '#b13menu .b13logo{color:#fff;font-weight:900;font-size:14px;letter-spacing:.5px;text-decoration:none;padding:8px 10px;border-radius:8px;white-space:nowrap}'+
+    '#b13menu .b13logo span{color:#FF0082}#b13menu .b13logo:hover,#b13menu .b13logo.b13ativo{background:rgba(255,0,130,.15)}'+
+    '#b13menu .b13gb{background:none;border:0;color:#cfc9f5;font-weight:800;font-size:12px;letter-spacing:.4px;padding:8px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}'+
+    '#b13menu .b13gb:hover,#b13menu .b13gb.b13aberto{background:rgba(255,255,255,.08);color:#fff}#b13menu .b13gb.b13temativo{color:#fff;box-shadow:inset 0 -3px 0 #FF0082}'+
+    '#b13menu .b13dd{display:none;position:absolute;top:46px;min-width:240px;max-width:min(560px,96vw);background:#1f1b52;border:1px solid #FF0082;border-radius:0 0 12px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:1001;columns:1}'+
+    '#b13menu .b13dd.b13cols{columns:2;column-gap:6px}#b13menu .b13dd.b13on{display:block}'+
+    '#b13menu .b13mi{display:block;break-inside:avoid;padding:9px 12px;color:#e6e2ff;text-decoration:none;font-size:13px;font-weight:700;border-radius:8px;white-space:nowrap}'+
+    '#b13menu .b13mi:hover{background:rgba(255,0,130,.15);color:#fff}#b13menu .b13mi.b13ativo{background:rgba(255,0,130,.22);color:#fff}'+
+    '#b13menu .b13esp{flex:1}#b13menu .b13user{color:#fff;font-size:13px;font-weight:700;white-space:nowrap;text-align:right}#b13menu .b13user small{color:#9a95c9;font-weight:400;font-size:11px}'+
+    '#b13menu .b13sair{background:transparent;border:1px solid #514c96;border-radius:8px;color:#9a95c9;cursor:pointer;font-size:12px;padding:5px 10px;margin-left:8px}'+
+    '#b13menu .b13ham{display:none;background:#262366;border:1px solid #FF0082;border-radius:8px;color:#fff;padding:5px 10px;cursor:pointer;font-size:18px;margin-right:4px}'+
+    '@keyframes b13pisca{0%,100%{background:rgba(255,0,130,.0)}50%{background:rgba(255,0,130,.55);color:#fff}}'+
+    '#b13menu .b13novo{animation:b13pisca 1s infinite}#b13menu .b13badge{display:inline-block;min-width:16px;padding:0 5px;margin-left:5px;border-radius:9px;background:#FF0082;color:#fff;font-size:10px;line-height:16px;text-align:center}'+
+    '@media(max-width:899px){#b13menu .b13grp,#b13menu .b13user{display:none}#b13menu .b13ham{display:block}'+
+    '#b13menu.b13mob{height:auto;max-height:100vh;overflow:auto;flex-wrap:wrap;align-content:flex-start;padding-bottom:10px}'+
+    '#b13menu.b13mob .b13grp{display:block;width:100%}#b13menu.b13mob .b13gb{width:100%;text-align:left;font-size:13px;padding:11px 10px}'+
+    '#b13menu.b13mob .b13dd{position:static;max-width:none;border:0;border-radius:8px;box-shadow:none;columns:1;background:rgba(0,0,0,.18)}#b13menu.b13mob .b13user{display:block;width:100%;text-align:left;padding:10px}}'+
+    '</style>';
+  var gruposHtml=grupos.map(function(g){ var temAt=g.itens.some(function(l){ return l.href===ativo; });
+    return '<div class="b13grp" style="position:relative"><button class="b13gb'+(temAt?' b13temativo':'')+'" id="'+gid(g.nome)+'" onclick="b13AbrirGrupo(\\''+gid(g.nome)+'\\',event)" onmouseenter="b13TrocarGrupo(\\''+gid(g.nome)+'\\')">'+g.nome+' ▾</button>'+
+      '<div class="b13dd'+(g.itens.length>8?' b13cols':'')+'" id="'+gid(g.nome)+'dd">'+g.itens.map(item).join("")+'</div></div>'; }).join("");
+  return css+'<div id="b13menu"><button class="b13ham" onclick="b13MenuCelular()">☰</button>'+
+    (podeInicio?'<a class="b13logo'+(ativo==="/inicio"?' b13ativo':'')+'" href="/inicio">B13 <span>BEBIDAS</span></a>':'<span class="b13logo">B13 <span>BEBIDAS</span></span>')+
+    gruposHtml+'<div class="b13esp"></div><div class="b13user">'+nomeTopo+' <small>· '+f.nivel+'</small><button class="b13sair" onclick="b13Logout()">Sair</button></div></div><div id="b13qrModal"></div>';
 }
+// abre/fecha um grupo do menu do topo; com um aberto, passar o mouse em outro troca (como no Bling)
+function b13FecharGrupos(){ var a=document.querySelectorAll("#b13menu .b13dd.b13on"); for(var i=0;i<a.length;i++) a[i].classList.remove("b13on"); var b=document.querySelectorAll("#b13menu .b13gb.b13aberto"); for(var j=0;j<b.length;j++) b[j].classList.remove("b13aberto"); }
+function b13AbrirGrupo(id,ev){ if(ev) ev.stopPropagation(); var dd=document.getElementById(id+"dd"), bt=document.getElementById(id); if(!dd) return; var aberto=dd.classList.contains("b13on");
+  var mob=document.getElementById("b13menu").classList.contains("b13mob"); if(!mob) b13FecharGrupos(); if(aberto){ dd.classList.remove("b13on"); bt.classList.remove("b13aberto"); return; }
+  dd.classList.add("b13on"); bt.classList.add("b13aberto");
+  if(!mob){ var r=bt.getBoundingClientRect(); dd.style.left="0px"; var sobra=window.innerWidth-(r.left+dd.offsetWidth)-8; if(sobra<0) dd.style.left=sobra+"px"; } }
+function b13TrocarGrupo(id){ var m=document.getElementById("b13menu"); if(!m||m.classList.contains("b13mob")) return; if(!document.querySelector("#b13menu .b13dd.b13on")) return; var dd=document.getElementById(id+"dd"); if(dd&&!dd.classList.contains("b13on")) b13AbrirGrupo(id); }
+function b13MenuCelular(){ var m=document.getElementById("b13menu"); if(m) m.classList.toggle("b13mob"); }
+document.addEventListener("click",function(e){ if(!e.target.closest||!e.target.closest("#b13menu .b13grp")) b13FecharGrupos(); });
+document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ b13FecharGrupos(); var m=document.getElementById("b13menu"); if(m) m.classList.remove("b13mob"); } });
+// PEDIDO NOVO DO SITE: VENDA pisca (com a quantidade) e, dentro dele, Pedidos e Venda Atacado — conferido a cada 30 s
+function b13ConferirSiteNovos(){
+  try{ var s=b13GetSession(); if(!s||!s.token) return; if(!(b13Pode("acesso_venda_atacado")||b13Pode("acesso_pedidos_online"))) return;
+    fetch(B13_BACKEND+"/api/site/pedidos-novos",{headers:{"X-Auth-Token":s.token}}).then(function(r){ return r.ok?r.json():null; }).then(function(j){ if(!j) return;
+      var n=(j.itens||[]).length, bt=document.getElementById("b13gVENDA"), ham=document.querySelector("#b13menu .b13ham");
+      if(bt){ var bd=bt.querySelector(".b13badge"); if(n){ bt.classList.add("b13novo"); if(!bd){ bd=document.createElement("span"); bd.className="b13badge"; bt.appendChild(bd); } bd.textContent=n; bt.title=n+" pedido(s) novo(s) pelo site"; } else { bt.classList.remove("b13novo"); if(bd) bd.remove(); bt.title=""; } }
+      if(ham){ if(n) ham.classList.add("b13novo"); else ham.classList.remove("b13novo"); }
+      ["/pedidos-online","/venda-atacado"].forEach(function(h){ var a=document.querySelector('#b13menu .b13mi[data-href="'+h+'"]'); if(!a) return; var bd2=a.querySelector(".b13badge");
+        if(n){ a.classList.add("b13novo"); if(!bd2){ bd2=document.createElement("span"); bd2.className="b13badge"; a.appendChild(bd2); } bd2.textContent=n; } else { a.classList.remove("b13novo"); if(bd2) bd2.remove(); } });
+    }).catch(function(){});
+  }catch(e){}
+}
+setTimeout(b13ConferirSiteNovos,2500); setInterval(b13ConferirSiteNovos,30000);
+function b13NavHtml(links,ativo){ return ""; } // (menu lateral antigo: substituído pelo menu do topo)
 
 // mostra o QR do caixa do próprio usuário logado (em qualquer página). Só funciona
 // pra quem pode autorizar (o backend valida). O QR fica embaçado até revelar.
@@ -10819,6 +10848,72 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
     ultimos:_wh.ultimos.slice(0,25).map(x=>({...x,em:new Date(x.em-3*3600e3).toISOString().replace("T"," ").slice(0,19)}))});
 });
 
+// ===================== PAINEL B13 BEBIDAS (página inicial) =====================
+// Junta, numa consulta só, o que as telas de Pedidos de Venda, Produtos, Clientes e caixas sabem, para decisões.
+// Só dados locais (as mesmas cópias do Bling das outras telas). Guardado 60 s por período.
+const _painelB13Cache=new Map();
+app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
+  try{
+    const hoje=_diaBRk(Date.now()), ok=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""));
+    const ini=ok(req.query.ini)?req.query.ini:_diaBRk(Date.now()-29*_DIA), fim=ok(req.query.fim)?req.query.fim:hoje, chave=ini+"|"+fim;
+    const c=_painelB13Cache.get(chave); if(c&&Date.now()-c.em<60000&&req.query.fresco!=="1") return res.json(c.v);
+    const T0=Date.now(), soma=L=>_round2(L.reduce((a,r)=>a+r.total,0)), per=(a,b)=>{ const L=_filtrarPedidos({ini:a,fim:b}).L; return {qtd:L.length,valor:soma(L)}; };
+    const P=_filtrarPedidos({ini,fim}), M=_metricasPedidos(P.L,P.ini,P.fim);
+    const nd=Math.round((Date.parse(fim)-Date.parse(ini))/_DIA)+1, aIni=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-nd*_DIA), aFim=_diaBRk(Date.parse(ini+"T12:00:00-03:00")-_DIA);
+    const PA=_filtrarPedidos({ini:aIni,fim:aFim}), MA=_metricasPedidos(PA.L,aIni,aFim);
+    const d=new Date(Date.parse(hoje+"T12:00:00Z")), dow=(d.getUTCDay()+6)%7, iniSem=_diaBRk(Date.parse(hoje+"T12:00:00-03:00")-dow*_DIA), iniMes=hoje.slice(0,8)+"01";
+    const mesAnt=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()-1,1)), iniMesAnt=mesAnt.toISOString().slice(0,10), diaMes=Number(hoje.slice(8,10));
+    const ultDiaAnt=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),0)).getUTCDate(), fimMesAntMesmoDia=iniMesAnt.slice(0,8)+String(Math.min(diaMes,ultDiaAnt)).padStart(2,"0");
+    const rapido={hoje:per(hoje,hoje),ontem:per(_diaBRk(Date.now()-_DIA),_diaBRk(Date.now()-_DIA)),semana:per(iniSem,hoje),semanaPassada:per(_diaBRk(Date.parse(iniSem+"T12:00:00-03:00")-7*_DIA),_diaBRk(Date.parse(hoje+"T12:00:00-03:00")-7*_DIA)),
+      mes:per(iniMes,hoje),mesPassadoAteHoje:per(iniMesAnt,fimMesAntMesmoDia)};
+    // produtos e estoque
+    const PR=_montarProdutos({ini,fim}).L, ativos=PR.filter(r=>r.noBling&&r.situacao==="A"), cont=f=>PR.filter(r=>r.flags.includes(f)).length;
+    const lucro=_round2(PR.filter(r=>r.lucro!=null).reduce((a,r)=>a+r.lucro,0)), fatCusto=_round2(PR.filter(r=>r.lucro!=null).reduce((a,r)=>a+r.valor,0));
+    const produtos={ativos:ativos.length,comEstoque:ativos.filter(r=>r.estoque>0).length,valorEstoqueCusto:_round2(ativos.reduce((a,r)=>a+(r.valorEstoqueCusto||0),0)),
+      lucro,margem:fatCusto>0?+(lucro/fatCusto*100).toFixed(1):null,ruptura:cont("ruptura"),rupturaA:PR.filter(r=>r.flags.includes("ruptura")&&r.curva==="A").length,baixo:cont("baixo"),parado:cont("parado"),negativo:cont("negativo"),semCusto:cont("sem custo"),
+      valorParado:_round2(PR.filter(r=>r.flags.includes("parado")).reduce((a,r)=>a+(r.valorEstoqueCusto||0),0)),
+      compras:PR.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,8).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,cobertura:r.cobertura,sugestao:r.sugestaoCompra,curva:r.curva})),
+      parados:PR.filter(r=>r.flags.includes("parado")).sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,6).map(r=>({id:r.id,nome:r.nome,valor:r.valorEstoqueCusto,diasSemVenda:r.diasSemVenda})),
+      curva:{A:PR.filter(r=>r.curva==="A").length,B:PR.filter(r=>r.curva==="B").length,C:PR.filter(r=>r.curva==="C").length}};
+    // clientes
+    let clientes=null; try{ const base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs, unif=lerJSON(CLIENTES_UNIF_FILE,{});
+      const ids=new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)].filter(id=>!unif[id]));
+      const lista=[...ids].map(id=>_resumoCliente(id,base,idx,cred)).filter(c=>c.pedidos>0), cnt=st=>lista.filter(c=>c.status===st).length;
+      clientes={ativos:cnt("ativo"),novos:cnt("novo"),emRisco:cnt("em_risco"),parados:cnt("parado"),aReceber:_round2(lista.reduce((a,c)=>a+(c.aReceber||0),0)),
+        recuperar:lista.filter(c=>c.status==="em_risco").sort((a,b)=>b.total365-a.total365).slice(0,8).map(c=>({id:c.id,nome:c.nome,telefone:c.telefone,dias:c.diasDesdeUltima,intervalo:c.intervaloMedioDias,total365:c.total365,ticket:c.ticketMedio}))}; }catch(e){}
+    // caixas: recebido hoje por forma (vendas não canceladas)
+    const ini0=Date.parse(hoje+"T00:00:00-03:00"), formas={}; let recebidoHoje=0, vendasCaixaHoje=0;
+    (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||(m.em||0)<ini0) return; vendasCaixaHoje++;
+      (m.pagamentos||[]).forEach(p=>{ const v=Number(p.valor)||0; if(!v) return; const k=String(p.formaNome||"—").replace(/^Pix Banco.*/i,"Pix"); formas[k]=_round2((formas[k]||0)+v); recebidoHoje+=v; }); recebidoHoje-=Number(m.troco)||0; }));
+    let siteNovos=0; try{ const lim=Date.now()-3*_DIA; Object.values(lerPropostas()||{}).forEach(p=>{ if(p&&p.origem==="site"&&p.pedidoBlingId&&(p.criadoEm||0)>=lim&&!(p.avisoSite&&p.avisoSite.assumidoPor)) siteNovos++; }); }catch(e){}
+    // ALERTAS para decisão (do mais importante para o menos)
+    const A=[], pct=(a,b)=>b?Math.round((a-b)/b*100):null, vV=pct(M.valor,MA.valor), vT=pct(M.ticket,MA.ticket), vMes=pct(rapido.mes.valor,rapido.mesPassadoAteHoje.valor);
+    if(siteNovos) A.push({nivel:"alto",texto:`${siteNovos} pedido(s) do site esperando alguém assumir`,link:"/venda-atacado"});
+    if(produtos.rupturaA) A.push({nivel:"alto",texto:`${produtos.rupturaA} produto(s) da curva A (os que mais vendem) sem estoque`,link:"/produtos"});
+    else if(produtos.ruptura) A.push({nivel:"medio",texto:`${produtos.ruptura} produto(s) vendendo e sem estoque (ruptura)`,link:"/produtos"});
+    if(M.prazo.vencidos) A.push({nivel:"alto",texto:`${M.prazo.vencidos} pedido(s) a prazo vencidos · ${brlN(M.prazo.valor)} a prazo em aberto no período`,link:"/pedidos-vendas"});
+    if(vMes!=null&&vMes<=-10) A.push({nivel:"alto",texto:`Mês ${Math.abs(vMes)}% abaixo do mês passado até o mesmo dia (${brlN(rapido.mes.valor)} x ${brlN(rapido.mesPassadoAteHoje.valor)})`,link:"/pedidos-vendas"});
+    else if(vMes!=null&&vMes>=10) A.push({nivel:"bom",texto:`Mês ${vMes}% acima do mês passado até o mesmo dia`,link:"/pedidos-vendas"});
+    if(vV!=null&&vV<=-10) A.push({nivel:"medio",texto:`Vendas do período ${Math.abs(vV)}% abaixo do período anterior`,link:"/pedidos-vendas"});
+    if(clientes&&clientes.emRisco) A.push({nivel:"medio",texto:`${clientes.emRisco} cliente(s) em risco (passaram do ritmo de compra) · veja quem ligar primeiro abaixo`,link:"/clientes"});
+    if(produtos.baixo) A.push({nivel:"medio",texto:`${produtos.baixo} produto(s) com menos de 7 dias de estoque`,link:"/produtos"});
+    if(M.pagamento.semCaixa) A.push({nivel:"medio",texto:`${M.pagamento.semCaixa} pedido(s) do sistema no período sem passar por caixa`,link:"/pedidos-vendas"});
+    if(produtos.negativo) A.push({nivel:"medio",texto:`${produtos.negativo} produto(s) com estoque negativo no Bling (conferir contagem)`,link:"/produtos"});
+    if(produtos.valorParado>0) A.push({nivel:"baixo",texto:`${brlN(produtos.valorParado)} em estoque parado (sem venda há mais de 60 dias) em ${produtos.parado} produto(s)`,link:"/produtos"});
+    if(vT!=null&&Math.abs(vT)>=10) A.push({nivel:vT<0?"baixo":"bom",texto:`Ticket médio ${vT<0?"caiu":"subiu"} ${Math.abs(vT)}% (${brlN(MA.ticket)} → ${brlN(M.ticket)})`,link:"/pedidos-vendas"});
+    if(produtos.semCusto) A.push({nivel:"baixo",texto:`${produtos.semCusto} produto(s) sem custo no Bling: margem e lucro ficam incompletos`,link:"/produtos"});
+    const ds=["domingo","segunda","terça","quarta","quinta","sexta","sábado"], semV=M.porDiaSemana.filter(x=>x.qtd>0);
+    if(semV.length>=4){ const mx=semV.reduce((a,b)=>b.valor>a.valor?b:a), mn=semV.reduce((a,b)=>b.valor<a.valor?b:a); A.push({nivel:"info",texto:`Dia mais forte: ${ds[mx.dia]} (${brlN(mx.valor)}); mais fraco: ${ds[mn.dia]} (${brlN(mn.valor)})`,link:"/pedidos-vendas"}); }
+    const out={ok:true,ini,fim,anterior:{ini:aIni,fim:aFim,qtd:MA.qtd,valor:MA.valor,ticket:MA.ticket,porDia:MA.porDia},rapido,
+      vendas:{qtd:M.qtd,valor:M.valor,ticket:M.ticket,clientes:M.clientesDistintos,porDia:M.porDia,porDiaSemana:M.porDiaSemana,porHora:M.porHora,porVendedora:M.porVendedora.slice(0,10),porOrigem:M.porOrigem,porForma:M.porForma.slice(0,8),porTipo:M.porTipo,
+        topProdutos:M.topProdutos.slice(0,10),topClientes:M.topClientes.slice(0,8),entrega:M.entrega,pagamento:M.pagamento,prazo:M.prazo},
+      produtos,clientes,caixas:{recebidoHoje:_round2(recebidoHoje),vendasHoje:vendasCaixaHoje,porForma:Object.entries(formas).map(([nome,valor])=>({nome,valor})).sort((a,b)=>b.valor-a.valor)},
+      siteNovos,alertas:A,historico:_statusHistorico(),ms:Date.now()-T0,geradoEm:Date.now()};
+    _painelB13Cache.set(chave,{em:Date.now(),v:out}); if(_painelB13Cache.size>20) _painelB13Cache.delete(_painelB13Cache.keys().next().value);
+    res.json(out);
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== PRODUTOS (análise) =====================
 // Catálogo e ESTOQUE do Bling (cópia a cada 2 h pela fila lenta: 1 consulta a cada 100 produtos para a lista e outra a
 // cada 100 para os saldos) cruzados com TODAS as vendas (as mesmas cópias de Pedidos e Clientes), tabela de preços,
@@ -14837,6 +14932,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });
 app.get("/produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"produtos-gestao.html")); });
 app.get("/pedidos-vendas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"pedidos-vendas.html")); });
 app.get("/supervisora",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"supervisora.html")); });
