@@ -571,9 +571,14 @@ async function editarPedido(blingId, numero) {
       id: blingId,
       numero: ped.numero || numero
     };
-    const _endB = ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
+    // ENDEREÇO completo: 1º o digitado no sistema; 2º o do pedido no Bling completo (número, bairro, cidade, CEP,
+    // completado com o cadastro do cliente — o mesmo da tela de Pedidos); 3º só a rua do Bling (como era antes)
+    const _reg = (typeof LISTA !== "undefined" ? LISTA : []).find(x => String(x.pedidoBlingId || "") === String(blingId));
+    let _endCompleto = (_reg && _reg.entrega && _reg.entrega.endereco) || "";
+    if (!_endCompleto) { try { const en = await fetch(B + "/api/pedidos-online/" + blingId + "/endereco").then(r => r.json()); _endCompleto = (en && (en.sugerido || en.noPedido || en.daObservacao || en.doCadastro)) || ""; } catch (e) {} }
+    const _endB = _endCompleto || ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
     const _obsB = String(ped.observacoes || "");
-    const _ehEntregaB = !!_endB || Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB);
+    const _ehEntregaB = (_reg && _reg.entrega && _reg.entrega.tipo === "entrega") || !!(ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco) || Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB);
     window.pedEd.tipoEntrega = _ehEntregaB ? "entrega" : "retirada";
     window.pedEd.enderecoEntrega = _endB;
     window.pedEd.freteEntrega = Number(ped.transporte?.frete || 0);
