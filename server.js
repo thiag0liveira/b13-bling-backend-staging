@@ -1236,52 +1236,52 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
   {grupo:"GESTÃO",oculto:true,href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
   {grupo:"GESTÃO",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
-  {grupo:"GESTÃO",oculto:true,href:"/gestao",label:"📋 Gestão",acoes:["acesso_gestao","editar_pedido"]},
-  {grupo:"GESTÃO",oculto:true,href:"/dashboard",label:"📊 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
-  {grupo:"GESTÃO",oculto:true,href:"/conferir-lista",label:"🧾 Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
+  {grupo:"GESTÃO",href:"/central-entregas",label:"🚛 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",oculto:true,href:"/gestao",label:"🧰 Gestão",acoes:["acesso_gestao","editar_pedido"]},
+  {grupo:"GESTÃO",oculto:true,href:"/dashboard",label:"📐 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",oculto:true,href:"/conferir-lista",label:"☑️ Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
 
   {grupo:"CADASTROS",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
-  {grupo:"CADASTROS",href:"/funcionarios",label:"👥 Funcionários",acoes:["ver_funcionarios"]},
+  {grupo:"CADASTROS",href:"/funcionarios",label:"🪪 Funcionários",acoes:["ver_funcionarios"]},
   {grupo:"CADASTROS",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
-  {grupo:"CADASTROS",href:"/listas",label:"📄 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
+  {grupo:"CADASTROS",href:"/listas",label:"💲 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {grupo:"CADASTROS",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
-  {grupo:"CADASTROS",href:"/listas-extras",label:"📂 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
-  {grupo:"CADASTROS",href:"/imagens",label:"📷 Imagens",acoes:["acesso_imagens","admin"]},
-  {grupo:"CADASTROS",href:"/etiquetas",label:"🏷 Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
+  {grupo:"CADASTROS",href:"/listas-extras",label:"📑 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
+  {grupo:"CADASTROS",href:"/imagens",label:"🖼️ Imagens",acoes:["acesso_imagens","admin"]},
+  {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
-  {grupo:"ESTOQUE",href:"/produtos",label:"🏷️ Produtos (análise)",acoes:["acesso_produtos_gestao"]},
+  {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
   {grupo:"ESTOQUE",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
-  {grupo:"ESTOQUE",href:"/entradas",label:"🧾 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
+  {grupo:"ESTOQUE",href:"/entradas",label:"📨 Entradas NF / Sem papel",acoes:["acesso_entradas_nf"]},
   {grupo:"ESTOQUE",href:"/estoque-fiscal",label:"🧮 Estoque fiscal",acoes:["acesso_estoque_fiscal","admin"]},
   {grupo:"ESTOQUE",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
   {grupo:"ESTOQUE",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
 
   {grupo:"VENDA",href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
-  {grupo:"VENDA",href:"/venda-atacado",label:"🛒 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
-  {grupo:"VENDA",href:"/propostas",label:"📄 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
-  {grupo:"VENDA",href:"/frente-caixa",label:"🧾 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
-  {grupo:"VENDA",href:"/caixa-atacado",label:"🧾 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
-  {grupo:"VENDA",href:"/pedidos-vendas",label:"🧾 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
+  {grupo:"VENDA",href:"/venda-atacado",label:"🤝 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
+  {grupo:"VENDA",href:"/propostas",label:"📝 Propostas",acoes:["acesso_propostas","receber_pagamento","editar_pedido"]},
+  {grupo:"VENDA",href:"/frente-caixa",label:"🏪 Frente de Caixa",acoes:["acesso_frente_caixa","receber_pagamento"]},
+  {grupo:"VENDA",href:"/caixa-atacado",label:"💰 Caixa Atacado",acoes:["acesso_caixa_atacado","receber_pagamento"]},
+  {grupo:"VENDA",href:"/pedidos-vendas",label:"📜 Pedidos de Venda",acoes:["acesso_pedidos_vendas"]},
   {grupo:"VENDA",href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
   {grupo:"VENDA",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
 
-  {grupo:"LOGÍSTICA",href:"/expedicao",label:"🚚 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
-  {grupo:"LOGÍSTICA",href:"/mesa-separacao",label:"🖥️ Mesa de Separação",acoes:["acesso_mesa_separacao"]},
-  {grupo:"LOGÍSTICA",href:"/conferencia",label:"🔍 Conferência",acoes:["acesso_conferencia","conferir"]},
+  {grupo:"LOGÍSTICA",href:"/expedicao",label:"📤 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
+  {grupo:"LOGÍSTICA",href:"/mesa-separacao",label:"🧺 Mesa de Separação",acoes:["acesso_mesa_separacao"]},
+  {grupo:"LOGÍSTICA",href:"/conferencia",label:"✅ Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"LOGÍSTICA",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"LOGÍSTICA",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
-  {grupo:"LOGÍSTICA",href:"/central-entregas",label:"📦 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
-  {grupo:"LOGÍSTICA",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
 
-  {grupo:"MARKETING",href:"/apoio-marketing",label:"🏷️ Apoio ao Marketing",acoes:["acesso_marketing"]},
+  {grupo:"MARKETING",href:"/apoio-marketing",label:"📣 Apoio ao Marketing",acoes:["acesso_marketing"]},
   {grupo:"MARKETING",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
 ];
 
@@ -1340,7 +1340,7 @@ function b13RenderNav(ativo){
     '#b13menu .b13logo{display:flex;align-items:center;gap:6px}#b13menu .b13logoimg{height:26px;width:auto;display:block}#b13menu .b13logo span{color:#FF0082}#b13menu .b13logo:hover,#b13menu .b13logo.b13ativo{background:rgba(255,0,130,.15)}'+
     '#b13menu .b13gb{background:none;border:0;color:#cfc9f5;font-weight:800;font-size:12px;letter-spacing:.4px;padding:8px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;position:relative;font-family:inherit}'+
     '#b13menu .b13gb:hover,#b13menu .b13gb.b13aberto{background:rgba(255,255,255,.08);color:#fff}#b13menu .b13gb.b13temativo{color:#fff;box-shadow:inset 0 -3px 0 #FF0082}'+
-    '#b13menu .b13dd{display:none;position:absolute;top:46px;min-width:240px;max-width:min(560px,96vw);background:#1f1b52;border:1px solid #FF0082;border-radius:0 0 12px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:1001;columns:1}'+
+    '#b13menu .b13dd{display:none;position:absolute;top:46px;min-width:250px;max-width:96vw;max-height:calc(100vh - 60px);overflow-y:auto;background:#1f1b52;border:1px solid #FF0082;border-radius:0 0 12px 12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:6px;z-index:1001;columns:1}'+
     '#b13menu .b13dd.b13cols{columns:2;column-gap:6px}#b13menu .b13dd.b13on{display:block}'+
     '#b13menu .b13mi{display:block;break-inside:avoid;padding:9px 12px;color:#e6e2ff;text-decoration:none;font-size:13px;font-weight:700;border-radius:8px;white-space:nowrap}'+
     '#b13menu .b13mi:hover{background:rgba(255,0,130,.15);color:#fff}#b13menu .b13mi.b13ativo{background:rgba(255,0,130,.22);color:#fff}'+
@@ -1356,9 +1356,9 @@ function b13RenderNav(ativo){
     '</style>';
   var gruposHtml=grupos.map(function(g){ var temAt=g.itens.some(function(l){ return l.href===ativo; });
     return '<div class="b13grp" style="position:relative"><button class="b13gb'+(temAt?' b13temativo':'')+'" id="'+gid(g.nome)+'" onclick="b13AbrirGrupo(\\''+gid(g.nome)+'\\',event)" onmouseenter="b13TrocarGrupo(\\''+gid(g.nome)+'\\')">'+g.nome+' ▾</button>'+
-      '<div class="b13dd'+(g.itens.length>8?' b13cols':'')+'" id="'+gid(g.nome)+'dd">'+g.itens.map(item).join("")+'</div></div>'; }).join("");
+      '<div class="b13dd" id="'+gid(g.nome)+'dd">'+g.itens.map(item).join("")+'</div></div>'; }).join("");
   return css+'<div id="b13menu"><button class="b13ham" onclick="b13MenuCelular()">☰</button>'+
-    (podeInicio?'<a class="b13logo'+(ativo==="/inicio"?' b13ativo':'')+'" href="/inicio"><img src="/logo" alt="B13" class="b13logoimg"><span>BEBIDAS</span></a>':'<span class="b13logo"><img src="/logo" alt="B13" class="b13logoimg"><span>BEBIDAS</span></span>')+
+    (podeInicio?'<a class="b13logo'+(ativo==="/inicio"?' b13ativo':'')+'" href="/inicio"><img src="/logo" alt="B13 Bebidas" class="b13logoimg"></a>':'<span class="b13logo"><img src="/logo" alt="B13 Bebidas" class="b13logoimg"></span>')+
     gruposHtml+'<div class="b13esp"></div><div class="b13user">'+nomeTopo+' <small>· '+f.nivel+'</small><button class="b13sair" onclick="b13Logout()">Sair</button></div></div><div id="b13qrModal"></div>';
 }
 // abre/fecha um grupo do menu do topo; com um aberto, passar o mouse em outro troca (como no Bling)
