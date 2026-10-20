@@ -1260,6 +1260,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
   {grupo:"ESTOQUE",href:"/painel/estoque",label:"🏬 Visão geral do Estoque",acoes:["acesso_painel_estoque"]},
+  {grupo:"ESTOQUE",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
@@ -10862,11 +10863,39 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
 const _painelGCache=new Map();
 function _montarPainelGrupo(g){
   const hoje=_diaBRk(Date.now()), d=n=>_diaBRk(Date.now()-n*_DIA), iniMes=hoje.slice(0,8)+"01", K=[], A=[], LS=[], seg=(fn)=>{ try{ fn(); }catch(e){ A.push({nivel:"info",texto:"Parte do painel indisponível: "+String(e.message).slice(0,80)}); } };
+  const RG=[], num0=n=>Number(n||0).toLocaleString("pt-BR",{maximumFractionDigits:0});
   const kpi=(valor,rotulo,sub,link,nivel)=>K.push({valor,rotulo,sub:sub||"",link:link||"",nivel:nivel||""}), al=(nivel,texto,link)=>A.push({nivel,texto,link:link||""}), lista=(titulo,link,linhas)=>LS.push({titulo,link,linhas});
   const ped=(a,b,extra)=>{ const r=_filtrarPedidos({ini:a,fim:b,...(extra||{})}); return {L:r.L,qtd:r.L.length,valor:_round2(r.L.reduce((x,p)=>x+p.total,0))}; };
   const sessoes=()=>lerCaixaSessoes().sessoes||[];
-  const titulos={gestao:"🛰️ Visão geral da Gestão",cadastros:"🗄️ Visão geral dos Cadastros",financeiro:"💹 Visão geral do Financeiro",estoque:"🏬 Visão geral do Estoque",venda:"💵 Visão geral das Vendas",logistica:"🚚 Visão geral da Logística",marketing:"🎨 Visão geral do Marketing"};
+  const G2=[]; const graf=(titulo,pontos,formato)=>G2.push({titulo,pontos,formato:formato||"brl"});
+  const titulos={valorestoque:"💎 Valor do Estoque",gestao:"🛰️ Visão geral da Gestão",cadastros:"🗄️ Visão geral dos Cadastros",financeiro:"💹 Visão geral do Financeiro",estoque:"🏬 Visão geral do Estoque",venda:"💵 Visão geral das Vendas",logistica:"🚚 Visão geral da Logística",marketing:"🎨 Visão geral do Marketing"};
   if(!titulos[g]) throw new Error("painel não encontrado");
+  if(g==="valorestoque"){
+    seg(()=>{ const PB=lerProdutosBling(), PR=_montarProdutos({ini:d(29),fim:hoje}).L.filter(r=>r.noBling), com=PR.filter(r=>r.estoque>0), soma=(l,f)=>l.reduce((a,r)=>a+(Number(f(r))||0),0);
+      const cc=com.filter(r=>r.custo>0), sc=com.filter(r=>!(r.custo>0)), vCusto=_round2(soma(cc,r=>r.estoque*r.custo)), vVenda=_round2(soma(com,r=>r.estoque*(r.preco||0))), vVendaCc=_round2(soma(cc,r=>r.estoque*(r.preco||0)));
+      const lucro=_round2(vVendaCc-vCusto), un=soma(com,r=>r.estoque), custoDia=soma(cc,r=>(r.v90/90)*r.custo), dias=custoDia>0?Math.round(vCusto/custoDia):null;
+      const neg=PR.filter(r=>r.estoque<0), par=com.filter(r=>r.flags.includes("parado")), vPar=_round2(soma(par.filter(r=>r.custo>0),r=>r.estoque*r.custo));
+      kpi(brlN(vCusto),"Valor do estoque a custo",`${cc.length} produtos com custo`,"/produtos"); kpi(brlN(vVenda),"Valor a preço de venda",`${com.length} produtos com estoque`,"/produtos");
+      kpi(brlN(lucro),"Lucro potencial",vCusto>0?`margem ${String((lucro/vVendaCc*100).toFixed(1)).replace(".",",")}% sobre a venda`:"","/produtos");
+      kpi(num0(un),"Unidades em estoque","","/estoque"); kpi(dias!=null?dias+" dias":"—","Cobertura do estoque","dias de venda que o estoque cobre (pela venda de 90 dias)","/produtos",dias!=null&&(dias>60||dias<7)?"alerta":"");
+      kpi(brlN(vPar),"Parado (sem venda > 60 dias)",vCusto>0?String((vPar/vCusto*100).toFixed(1)).replace(".",",")+"% do estoque":"","/produtos",vCusto>0&&vPar/vCusto>0.2?"alerta":"");
+      kpi(String(sc.length),"Com estoque e sem custo",`${num0(soma(sc,r=>r.estoque))} un · ${brlN(soma(sc,r=>r.estoque*(r.preco||0)))} a preço de venda`,"/produtos",sc.length?"alerta":"");
+      if(sc.length) al("medio",`${sc.length} produto(s) com estoque e sem custo no Bling: o valor a custo está incompleto. Cadastre o custo (ou dê entrada por nota, que grava o custo)`,"/produtos");
+      if(neg.length) al("medio",`${neg.length} produto(s) com estoque negativo (${num0(soma(neg,r=>-r.estoque))} un): o valor real pode estar diferente; confira a contagem`,"/produtos");
+      if(dias!=null&&dias>60) al("baixo",`O estoque cobre ${dias} dias de venda: há capital parado acima do necessário`,"/produtos");
+      if(dias!=null&&dias<7) al("alto",`O estoque cobre só ${dias} dias de venda: risco de faltar produto`,"/produtos");
+      const porC={A:0,B:0,C:0,"—":0}; cc.forEach(r=>{ porC[r.curva in porC?r.curva:"—"]+=r.estoque*r.custo; });
+      lista("🔤 Por curva ABC (a custo)","/produtos",Object.entries(porC).map(([k,v])=>({a:k==="—"?"Sem venda no período":"Curva "+k,b:brlN(v)})));
+      lista("💰 Produtos com mais dinheiro em estoque","/produtos",cc.sort((a,b)=>b.estoque*b.custo-a.estoque*a.custo).slice(0,10).map(r=>({a:`${r.nome} · ${num0(r.estoque)} un · ${r.cobertura!=null?r.cobertura+" dias":"sem venda"}`,b:brlN(r.estoque*r.custo)})));
+      const fp={}; (_FISCAL?_FISCAL.todosVinculos():[]).forEach(v=>{ if(!fp[String(v.produtoId)]) fp[String(v.produtoId)]=v.fornecedorNome||v.cnpj; });
+      const pf={}; cc.forEach(r=>{ const k=fp[String(r.id)]||"(sem fornecedor ligado)"; pf[k]=(pf[k]||0)+r.estoque*r.custo; });
+      lista("🏭 Por fornecedor (a custo)","/produtos",Object.entries(pf).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>({a:k,b:brlN(v)})));
+      // evolução: saldo guardado dia a dia × custo atual de cada produto
+      const H=PB.historicoEstoque||{}, custo={}; cc.forEach(r=>{ custo[String(r.id)]=r.custo; }); PR.forEach(r=>{ if(!custo[String(r.id)]&&r.custo>0) custo[String(r.id)]=r.custo; });
+      const porDia={}; Object.entries(H).forEach(([id,arr])=>{ const c=custo[id]; if(!c) return; (arr||[]).forEach(([dia,est])=>{ if(dia>=d(59)&&est>0) porDia[dia]=(porDia[dia]||0)+est*c; }); });
+      graf("📈 Evolução do valor do estoque a custo (custo atual)",Object.keys(porDia).sort().map(dia=>({rotulo:dia.slice(8,10)+"/"+dia.slice(5,7),valor:_round2(porDia[dia])})));
+      if(Object.keys(porDia).length<2) al("info","A evolução do valor começa a aparecer com os dias: o sistema guarda uma foto do saldo por dia","/produtos"); });
+  }
   if(g==="venda"){
     seg(()=>{ const H=ped(hoje,hoje), S=ped(d(6),hoje), Mm=ped(iniMes,hoje), M=_metricasPedidos(ped(d(29),hoje).L,d(29),hoje);
       kpi(brlN(H.valor),"Vendido hoje",`${H.qtd} pedido(s)`,"/pedidos-vendas"); kpi(brlN(S.valor),"Últimos 7 dias",`${S.qtd} pedidos`,"/pedidos-vendas"); kpi(brlN(Mm.valor),"Este mês",`${Mm.qtd} pedidos`,"/pedidos-vendas");
@@ -10936,6 +10965,8 @@ function _montarPainelGrupo(g){
     seg(()=>{ const ativo=_webhookAtivo("order."); kpi(ativo?"✅ chegando":"— parados","Avisos automáticos do Bling",ativo?"pedidos atualizados na hora":"sem avisos nas últimas 2 h","/central",ativo?"":"alerta");
       const H=_statusHistorico(); kpi(H.varreduraCompleta?"✅ completo":"⏳ trazendo","Histórico do Bling",H.detalhes&&H.detalhes.total?`produtos: ${H.detalhes.feitos} de ${H.detalhes.total} pedidos`:"","/clientes"); });
     seg(()=>{ const M=_metricasPedidos(ped(d(6),hoje).L,d(6),hoje); kpi(brlN(M.valor),"Vendas 7 dias",`${M.qtd} pedidos`,"/inicio"); });
+    seg(()=>{ RG.push(...["venda","valorestoque","estoque","financeiro","cadastros","logistica","marketing"].map(x=>{ try{ const c=_painelGCache.get(x); const v=(c&&Date.now()-c.em<120000)?c.v:_montarPainelGrupo(x); if(!(c&&Date.now()-c.em<120000)) _painelGCache.set(x,{em:Date.now(),v});
+        return {grupo:x,titulo:v.titulo,link:"/painel/"+x,kpis:v.kpis.slice(0,4),alertas:v.alertas.filter(a=>a.nivel==="alto"||a.nivel==="medio").length}; }catch(e){ return {grupo:x,titulo:x,link:"/painel/"+x,kpis:[],alertas:0,erro:e.message}; } })); });
   }
   if(g==="logistica"){
     seg(()=>{ const S=_centralEntregas(d(6),hoje), Mx=_centralEntregas(iniMes,hoje), R=S.indicadores||{}, RM=Mx.indicadores||{};
@@ -10955,7 +10986,7 @@ function _montarPainelGrupo(g){
       const semImg=Object.entries(P).filter(([id,p])=>p.s==="A"&&p.f!=="V"&&!(cat[id]&&cat[id].i)&&!p.img); kpi(String(semImg.length),"Produtos sem imagem","aparecem sem foto no site e no totem","/imagens",semImg.length?"alerta":"");
       lista("🖼️ Mais vendidos sem imagem (30 dias)","/imagens",_montarProdutos({ini:d(29),fim:hoje}).L.filter(r=>r.valor>0&&!r.img).sort((a,b)=>b.valor-a.valor).slice(0,8).map(r=>({a:r.nome,b:brlN(r.valor)}))); });
   }
-  return {ok:true,grupo:g,titulo:titulos[g],kpis:K,alertas:A,listas:LS,geradoEm:Date.now()};
+  return {ok:true,grupo:g,titulo:titulos[g],kpis:K,alertas:A,listas:LS,graficos:G2,resumoGrupos:RG,geradoEm:Date.now()};
 }
 app.get("/api/painel-grupo/:g",(req,res,next)=>requireAcesso("acesso_painel_"+String(req.params.g).replace(/[^a-z]/g,""))(req,res,next),(req,res)=>{
   try{ const g=String(req.params.g), c=_painelGCache.get(g); if(c&&Date.now()-c.em<60000&&req.query.fresco!=="1") return res.json(c.v);
