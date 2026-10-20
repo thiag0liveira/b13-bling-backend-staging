@@ -15309,6 +15309,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/diag",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"diag.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
 app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });

@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>B13 — Diagnóstico</title>
+<script src="/nav.js"></script>
+<style>body{margin:0;background:#0f0c29;color:#fff;font-family:Arial,sans-serif}.wrap{max-width:980px;margin:0 auto;padding:16px}
+.card{background:#16123a;border:1px solid #2a2660;border-radius:14px;padding:14px;margin-bottom:12px}h2{margin:0 0 8px;font-size:18px}
+.ok{color:#3ce88a;font-weight:800}.ruim{color:#ff8aa3;font-weight:800}pre{white-space:pre-wrap;word-break:break-word;background:#0b0920;border-radius:10px;padding:12px;font-size:12.5px;margin:0}
+a.c{display:inline-block;margin:0 6px 6px 0;padding:6px 12px;border:1px solid #3a3480;border-radius:999px;color:#e6e2ff;text-decoration:none;font-size:13px}a.c.on{background:#FF0082;border-color:#FF0082}.ic{color:#9a95c9;font-size:12px}</style></head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/diag"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="wrap">
+  <div class="card"><h2>🩺 Diagnóstico</h2><div class="ic">Abre os diagnósticos do sistema com o seu login (só administrador).</div>
+    <div style="margin-top:10px" id="atalhos"></div></div>
+  <div class="card" id="resumo"></div>
+  <div class="card"><pre id="saida">…</pre></div>
+</div>
+<script>
+const DIAGS = [["/api/diag/ia", "🤖 Leitura de foto (IA)"], ["/api/diag/webhooks", "🔔 Avisos do Bling"], ["/api/diag/atendidos", "✅ Atendidos (Supervisora)"], ["/api/diag/transicoes", "🔀 Fluxo de situações"], ["/api/diag/maps", "🗺️ Google Maps"], ["/api/saude/disco", "💽 Disco do servidor"]];
+const u = new URLSearchParams(location.search), alvo = u.get("api") || "/api/diag/ia";
+document.getElementById("atalhos").innerHTML = DIAGS.map(([p, t]) => `<a class="c ${p === alvo ? "on" : ""}" href="/diag?api=${encodeURIComponent(p)}">${t}</a>`).join("");
+(async () => {
+  const saida = document.getElementById("saida"), res = document.getElementById("resumo");
+  if (!/^\/api\/(diag|saude)\//.test(alvo)) { res.innerHTML = `<span class="ruim">Endereço não permitido.</span>`; saida.textContent = ""; return; }
+  res.innerHTML = `<span class="ic">Consultando ${alvo}…</span>`;
+  try { const tok = (b13GetSession() || {}).token || ""; const r = await fetch(alvo, { headers: { "X-Auth-Token": tok } }); const j = await r.json().catch(() => ({}));
+    saida.textContent = JSON.stringify(j, null, 2);
+    if (alvo === "/api/diag/ia") res.innerHTML = j.ok ? `<span class="ok">✅ Leitura de foto funcionando.</span> <span class="ic">Modelo ${j.modelo} · chave ${j.chaveFinal} · respondeu "${j.resposta}" em ${j.ms} ms.</span>`
+      : `<span class="ruim">❌ Leitura de foto com problema:</span> ${String(j.erro || r.status)}`;
+    else res.innerHTML = r.ok ? `<span class="ok">Consulta feita.</span> <span class="ic">Veja os detalhes abaixo.</span>` : `<span class="ruim">${String(j.erro || ("HTTP " + r.status))}</span>`;
+  } catch (e) { res.innerHTML = `<span class="ruim">Erro: ${e.message}</span>`; }
+})();
+</script></body></html>
