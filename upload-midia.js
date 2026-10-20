@@ -154,7 +154,9 @@
       if (multiplo) inp.setAttribute("multiple", "multiple");
       inp.onchange = function () { adicionar(inp.files); try { inp.value = ""; } catch (e) {} };
       var b = el("button", { type: "button", "class": "b13m-btn" }, rotulo);
-      b.onclick = function () { inp.click(); };
+      // GRAVAR VÍDEO: grava pelo próprio sistema em Full HD (a câmera aberta pelo jeito simples do navegador grava em qualidade
+      // reduzida em muitos celulares, e o iPhone recomprime); se o celular não permitir, abre a câmera como antes
+      b.onclick = function () { if (capture && /video/.test(accept) && gravadorDisponivel()) abrirGravador(function (f) { if (f) adicionar([f]); }, function () { inp.click(); }); else inp.click(); };
       btns.appendChild(b); cont.appendChild(inp); entradas.push(inp);
     }
     entradaArquivo("📷 Tirar foto", "image/*", true, false);
@@ -302,5 +304,47 @@
     return api;
   }
 
+
+  // ===== GRAVADOR DE VÍDEO EM ALTA QUALIDADE (1080p, ~8 Mbps, MP4 quando o celular suporta) =====
+  function gravadorDisponivel() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+  function abrirGravador(pronto, planoB) {
+    var MAX_S = 180, BPS = 8000000, stream = null, rec = null, partes = [], t0 = 0, timer = null, mime = "", torch = false, track = null;
+    var tipos = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+    for (var i = 0; i < tipos.length; i++) { try { if (MediaRecorder.isTypeSupported(tipos[i])) { mime = tipos[i]; break; } } catch (e) {} }
+    var ov = el("div", { style: "position:fixed;inset:0;background:#000;z-index:2147483000;display:flex;flex-direction:column;color:#fff;font-family:Arial,sans-serif" });
+    var vid = el("video", { playsinline: "playsinline", muted: "muted", autoplay: "autoplay", style: "flex:1;width:100%;min-height:0;object-fit:contain;background:#000" });
+    var info = el("div", { style: "text-align:center;padding:8px;font-size:14px" }, "Abrindo a câmera…");
+    var barra = el("div", { style: "display:flex;gap:10px;justify-content:center;align-items:center;padding:12px 10px 22px;flex-wrap:wrap" });
+    var bt = function (t, cor) { return el("button", { type: "button", style: "border:0;border-radius:999px;padding:14px 20px;font-size:16px;font-weight:bold;color:#fff;background:" + (cor || "#333") }, t); };
+    var bGrav = bt("⏺ Gravar", "#d0021b"), bParar = bt("⏹ Parar", "#d0021b"), bLuz = bt("🔦", "#333"), bSair = bt("✕ Cancelar", "#333"), bUsar = bt("✅ Usar este vídeo", "#1d9e75"), bDeNovo = bt("🔁 Gravar de novo", "#333");
+    ov.appendChild(vid); ov.appendChild(info); ov.appendChild(barra); document.body.appendChild(ov);
+    function botoes(l) { barra.innerHTML = ""; l.forEach(function (b) { barra.appendChild(b); }); }
+    function fechar() { try { clearInterval(timer); } catch (e) {} try { stream && stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} try { ov.remove(); } catch (e) {} }
+    function mmss(s) { s = Math.floor(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+    function aoVivo() { vid.srcObject = stream; vid.muted = true; vid.controls = false; vid.removeAttribute("src"); try { vid.play(); } catch (e) {} }
+    bSair.onclick = function () { fechar(); };
+    bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "#333"; };
+    bGrav.onclick = function () {
+      partes = []; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: BPS, audioBitsPerSecond: 128000 } : { videoBitsPerSecond: BPS }); }
+      catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { info.textContent = "Este celular não permite gravar por aqui."; fechar(); planoB(); return; } }
+      rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) partes.push(ev.data); };
+      rec.onstop = function () { clearInterval(timer); var tipo = (rec.mimeType || mime || "video/webm").split(";")[0], ext = /mp4/.test(tipo) ? "mp4" : "webm";
+        var blob = new Blob(partes, { type: tipo }), arq = new File([blob], "video_" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + "." + ext, { type: tipo });
+        vid.srcObject = null; vid.src = URL.createObjectURL(blob); vid.muted = false; vid.controls = true; try { vid.play(); } catch (e) {}
+        info.textContent = "Confira o vídeo (" + mmss((Date.now() - t0) / 1000) + " · " + (blob.size / 1048576).toFixed(1) + " MB)";
+        bUsar.onclick = function () { fechar(); pronto(arq); }; bDeNovo.onclick = function () { aoVivo(); info.textContent = "Pronto para gravar"; botoes([bSair, bGrav].concat(track && track._torch ? [bLuz] : [])); };
+        botoes([bDeNovo, bUsar]); };
+      rec.start(1000); t0 = Date.now(); botoes([bParar].concat(track && track._torch ? [bLuz] : []));
+      timer = setInterval(function () { var s = (Date.now() - t0) / 1000; info.innerHTML = '<span style="color:#ff4d4d">● gravando</span> ' + mmss(s) + " de " + mmss(MAX_S); if (s >= MAX_S && rec.state === "recording") rec.stop(); }, 500);
+    };
+    bParar.onclick = function () { if (rec && rec.state === "recording") rec.stop(); };
+    var pedir = function (audio) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }); };
+    pedir(true).catch(function () { return pedir(false); }).then(function (s) {
+      stream = s; track = s.getVideoTracks()[0]; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
+      var st = {}; try { st = track.getSettings(); } catch (e) {}
+      aoVivo(); info.textContent = "Pronto para gravar" + (st.width ? " · " + Math.max(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S);
+      botoes([bSair, bGrav].concat(track._torch ? [bLuz] : []));
+    }).catch(function () { fechar(); planoB(); });
+  }
   window.B13Midia = { criar: criar, enviarArquivo: enviarArquivo, LIM_FOTO: LIM_FOTO, LIM_VIDEO: LIM_VIDEO };
 })();
