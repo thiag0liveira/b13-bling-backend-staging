@@ -1254,6 +1254,7 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/painel/financeiro",label:"💹 Visão geral do Financeiro",acoes:["acesso_painel_financeiro"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
@@ -10931,7 +10932,7 @@ function _montarPainelGrupo(g){
   }
   if(g==="financeiro"){
     seg(()=>{ const T=lerContasPagar().titulos, ab=T.filter(t=>t.status!=="pago"), venc=ab.filter(t=>t.vencimento<hoje), sete=ab.filter(t=>t.vencimento>=hoje&&t.vencimento<=d(-7)), pagM=T.filter(t=>t.status==="pago"&&(t.pagoEm||0)>=Date.parse(iniMes+"T00:00:00-03:00")), soma=l=>brlN(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
-      kpi(soma(ab),"Contas a pagar em aberto",`${ab.length} título(s)`,"/entrada-nota",""); kpi(soma(venc),"Vencidas",`${venc.length} título(s)`,"/entrada-nota",venc.length?"alerta":"");
+      kpi(soma(ab),"Contas a pagar em aberto",`${ab.length} título(s)`,"/contas-pagar",""); kpi(soma(venc),"Vencidas",`${venc.length} título(s)`,"/contas-pagar",venc.length?"alerta":"");
       kpi(soma(sete),"Vencem em 7 dias",`${sete.length} título(s)`,"/entrada-nota"); kpi(soma(pagM),"Pagas no mês",`${pagM.length} título(s)`,"/entrada-nota");
       if(venc.length) al("alto",`${venc.length} conta(s) a pagar vencida(s): ${soma(venc)}`,"/entrada-nota");
       lista("📅 Próximas contas a pagar","/entrada-nota",ab.sort((a,b)=>String(a.vencimento).localeCompare(String(b.vencimento))).slice(0,8).map(t=>({a:`${String(t.vencimento).split("-").reverse().join("/")} · ${t.fornecedor?.nome||""} · NF ${t.numeroNota||"—"} (${t.parcela})`,b:brlN(t.valor)}))); });
@@ -11300,6 +11301,77 @@ app.post("/api/entrada-nota/sem-nota/editar",requireAcesso("acesso_entrada_nota"
       if(b.remover){ n.itens=n.itens.filter(x=>x!==it); } }
     _casarSemNota(n,true); res.json({ok:true,nota:await _resumoEntradaNota(n)});
   }catch(e){ res.status(400).json({erro:e.message}); }
+});
+
+// ===================== CONTAS A PAGAR =====================
+// Títulos vindos das notas (com e sem nota), de boletos e de despesas lançadas aqui; despesas fixas mensais geradas sozinhas.
+const CATEGORIAS_DESPESA=["Fornecedores (mercadoria)","Aluguel","Salários e encargos","Energia","Água","Internet e telefone","Impostos e taxas","Frete e combustível","Manutenção","Marketing","Tarifas bancárias","Outros"];
+function _salvarContas(C){ salvarJSON(CONTAS_PAGAR_FILE,C); }
+function _diaVenc(competencia,dia){ const [a,m]=competencia.split("-").map(Number); const ult=new Date(Date.UTC(a,m,0)).getUTCDate(); return `${competencia}-${String(Math.min(Math.max(1,dia),ult)).padStart(2,"0")}`; }
+function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo para cada despesa fixa ativa
+  const h=_diaBRk(Date.now()), comp=[h.slice(0,7),_diaBRk(Date.parse(h.slice(0,7)+"-28T12:00:00Z")+5*_DIA).slice(0,7)]; let mud=false;
+  (C.recorrentes||[]).filter(r=>r.ativo!==false).forEach(r=>comp.forEach(cp=>{ if(cp<String(r.inicio||"").slice(0,7)) return;
+    if(C.titulos.some(t=>t.recorrenteId===r.id&&t.competencia===cp)) return; C.seq++;
+    C.titulos.push({id:"cp"+C.seq,origem:"recorrente",recorrenteId:r.id,competencia:cp,descricao:r.descricao,categoria:r.categoria,fornecedor:{nome:r.fornecedor||"",cnpj:""},parcela:"mensal",vencimento:_diaVenc(cp,r.dia),valor:_round2(r.valor),status:"aberto",criadoEm:Date.now(),criadoPor:"automático"}); mud=true; }));
+  if(mud) _salvarContas(C); return C;
+}
+setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600e3);
+app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, h=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), iniM=Date.parse(h.slice(0,8)+"01T00:00:00-03:00");
+    const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), busca=nrm(q.busca||"");
+    const T=C.titulos.map(t=>({...t,categoria:t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros"),descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
+      situacao:t.status==="cancelado"?"cancelada":t.status==="pago"?"paga":t.vencimento<h?"vencida":t.vencimento<=d7?"vence logo":"aberta"}));
+    const st=String(q.situacao||"abertas");
+    const L=T.filter(t=>{ if(st==="abertas"&&!["aberta","vencida","vence logo"].includes(t.situacao)) return false; if(st==="vencidas"&&t.situacao!=="vencida") return false; if(st==="semana"&&!["vencida","vence logo"].includes(t.situacao)) return false;
+        if(st==="pagas"&&t.situacao!=="paga") return false; if(st==="canceladas"&&t.situacao!=="cancelada") return false;
+        if(q.de&&t.vencimento<q.de) return false; if(q.ate&&t.vencimento>q.ate) return false; if(q.categoria&&t.categoria!==q.categoria) return false;
+        if(busca&&!(nrm(t.fornecedor?.nome).includes(busca)||nrm(t.descricao).includes(busca)||String(t.numeroNota||"").includes(busca))) return false; return true; })
+      .sort((a,b)=>st==="pagas"?(b.pagoEm||0)-(a.pagoEm||0):String(a.vencimento).localeCompare(String(b.vencimento)));
+    const ab=T.filter(t=>["aberta","vencida","vence logo"].includes(t.situacao)), soma=l=>_round2(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
+    const pm=T.filter(t=>t.situacao==="paga"&&(t.pagoEm||0)>=iniM), pc={}; pm.forEach(t=>{ pc[t.categoria]=(pc[t.categoria]||0)+(Number(t.valorPago||t.valor)||0); });
+    res.json({ok:true,itens:L.slice(0,500),total:L.length,somaFiltro:soma(L),categorias:CATEGORIAS_DESPESA,recorrentes:(C.recorrentes||[]),
+      resumo:{aberto:soma(ab),qAberto:ab.length,vencido:soma(ab.filter(t=>t.situacao==="vencida")),qVencido:ab.filter(t=>t.situacao==="vencida").length,semana:soma(ab.filter(t=>t.situacao!=="aberta")),qSemana:ab.filter(t=>t.situacao!=="aberta").length,
+        pagoMes:_round2(pm.reduce((a,t)=>a+(Number(t.valorPago||t.valor)||0),0)),qPagoMes:pm.length,pagoPorCategoria:Object.entries(pc).map(([k,v])=>({categoria:k,valor:_round2(v)})).sort((a,b)=>b.valor-a.valor)}});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// nova despesa (com parcelas e/ou repetir todo mês)
+app.post("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const b=req.body||{}, v=Number(String(b.valor||"").replace(",",".")), n=Math.min(48,Math.max(1,Math.round(Number(b.parcelas)||1))), quem=req.sessao?.nome||"";
+    if(!String(b.descricao||"").trim()) return res.status(400).json({erro:"informe a descrição"}); if(!(v>0)) return res.status(400).json({erro:"informe o valor"});
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) return res.status(400).json({erro:"informe o vencimento"});
+    const cat=CATEGORIAS_DESPESA.includes(b.categoria)?b.categoria:"Outros", C=lerContasPagar(), novos=[];
+    if(b.repetirMensal){ C.recorrentes||=[]; const r={id:"rc"+Date.now(),descricao:String(b.descricao).trim().slice(0,120),fornecedor:String(b.fornecedor||"").slice(0,120),categoria:cat,valor:_round2(v),dia:Number(b.vencimento.slice(8,10)),inicio:b.vencimento,ativo:true,criadoEm:Date.now(),criadoPor:quem};
+      C.recorrentes.push(r); _gerarRecorrentes(C); const t=C.titulos.find(x=>x.recorrenteId===r.id&&x.competencia===b.vencimento.slice(0,7)); if(t){ t.vencimento=b.vencimento; novos.push(t); } }
+    else { const cada=_round2(v/n); for(let i=0;i<n;i++){ C.seq++; const dt=new Date(Date.parse(b.vencimento+"T12:00:00Z")); dt.setUTCMonth(dt.getUTCMonth()+i);
+      novos.push({id:"cp"+C.seq,origem:"despesa",descricao:String(b.descricao).trim().slice(0,120),categoria:cat,fornecedor:{nome:String(b.fornecedor||"").slice(0,120),cnpj:String(b.cnpj||"").replace(/\D/g,"").slice(0,14)},
+        parcela:`${i+1}/${n}`,vencimento:dt.toISOString().slice(0,10),valor:i===n-1?_round2(v-cada*(n-1)):cada,status:"aberto",observacao:String(b.observacao||"").slice(0,200),criadoEm:Date.now(),criadoPor:quem}); } C.titulos.push(...novos); }
+    if(b.pago&&novos[0]) Object.assign(novos[0],{status:"pago",pagoEm:Date.now(),dataPagamento:_diaBRk(Date.now()),forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),valorPago:novos[0].valor,pagoPor:quem});
+    _salvarContas(C); res.json({ok:true,titulos:novos});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const C=lerContasPagar(), t=C.titulos.find(x=>x.id===req.params.id), b=req.body||{}, quem=req.sessao?.nome||""; if(!t) return res.status(404).json({erro:"conta não encontrada"});
+    const a=req.params.acao, hist=(o)=>{ (t.historico||=[]).push({em:Date.now(),por:quem,...o}); };
+    if(a==="pagar"){ if(t.status==="pago") return res.status(409).json({erro:"essa conta já está paga"}); if(t.status==="cancelado") return res.status(409).json({erro:"essa conta está cancelada"});
+      const vp=Number(String(b.valorPago||t.valor).replace(",","."))||t.valor, dp=/^\d{4}-\d{2}-\d{2}$/.test(String(b.data||""))?b.data:_diaBRk(Date.now());
+      Object.assign(t,{status:"pago",pagoEm:Date.parse(dp+"T12:00:00-03:00"),dataPagamento:dp,forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),valorPago:_round2(vp),pagoPor:quem,observacaoPagamento:String(b.observacao||"").slice(0,200)});
+      hist({acao:"pagou",valor:t.valorPago,forma:t.forma,banco:t.banco}); }
+    else if(a==="reabrir"){ if(t.status!=="pago"&&t.status!=="cancelado") return res.status(400).json({erro:"a conta já está em aberto"}); hist({acao:t.status==="pago"?"desfez o pagamento":"reabriu",motivo:String(b.motivo||"")});
+      ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento","canceladoEm","motivoCancelamento"].forEach(k=>delete t[k]); t.status="aberto"; }
+    else if(a==="cancelar"){ if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"}); if(t.status==="pago") return res.status(409).json({erro:"desfaça o pagamento antes de cancelar"});
+      Object.assign(t,{status:"cancelado",canceladoEm:Date.now(),motivoCancelamento:String(b.motivo).slice(0,200)}); hist({acao:"cancelou",motivo:t.motivoCancelamento}); }
+    else if(a==="editar"){ const v=b.valor!=null?Number(String(b.valor).replace(",",".")):null; if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"});
+      const antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao};
+      if(v!=null) t.valor=_round2(v); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) t.vencimento=b.vencimento; if(CATEGORIAS_DESPESA.includes(b.categoria)) t.categoria=b.categoria; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
+      hist({acao:"editou",antes}); }
+    else return res.status(400).json({erro:"ação desconhecida"});
+    _salvarContas(C); res.json({ok:true,titulo:t});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/contas-pagar-recorrentes/:id",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const C=lerContasPagar(), r=(C.recorrentes||[]).find(x=>x.id===req.params.id), b=req.body||{}; if(!r) return res.status(404).json({erro:"despesa fixa não encontrada"});
+    if(b.ativo!=null) r.ativo=!!b.ativo; if(b.valor!=null&&Number(String(b.valor).replace(",","."))>0) r.valor=_round2(Number(String(b.valor).replace(",",".")));
+    _salvarContas(C); res.json({ok:true,recorrente:r}); }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
 // ===================== FORNECEDORES DO PRODUTO (ficha do produto) =====================
@@ -15383,6 +15455,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
 });
 app.get("/diag",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"diag.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
+app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
 app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });
 app.get("/produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"produtos-gestao.html")); });
