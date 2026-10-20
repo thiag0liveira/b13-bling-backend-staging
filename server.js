@@ -11148,6 +11148,16 @@ async function _garantirFornecedorSemNota(n){ // cadastra o fornecedor no Bling 
       if(novo?.data?.id){ f={id:novo.data.id,nome:n.emitente.nome}; try{ _registrarContatoNaBase(f.id,{nome:f.nome,numeroDocumento:d,tipo:d.length===14?"J":"F"}); }catch(e){} } }
     if(f){ n.fornecedorBlingId=f.id; _salvarSemNota(); } }catch(e){}
 }
+// diagnóstico da leitura de foto: confere a chave e o modelo com uma consulta mínima (administrador)
+app.get("/api/diag/ia",requireAdmin,async(req,res)=>{
+  const KEY=process.env.ANTHROPIC_API_KEY, modelo=process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5";
+  if(!KEY) return res.json({ok:false,chaveConfigurada:false,erro:"ANTHROPIC_API_KEY não encontrada no servidor (confira o nome da variável no Railway e se o serviço reiniciou)"});
+  try{ const t0=Date.now(), r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:modelo,max_tokens:10,messages:[{role:"user",content:"Responda apenas: OK"}]})});
+    const j=await r.json().catch(()=>({}));
+    res.json({ok:r.ok,chaveConfigurada:true,chaveFinal:"…"+KEY.slice(-4),modelo,status:r.status,resposta:(j.content||[]).map(c=>c.text||"").join("").slice(0,40)||null,erro:r.ok?null:(j?.error?.message||("HTTP "+r.status)),ms:Date.now()-t0});
+  }catch(e){ res.json({ok:false,chaveConfigurada:true,modelo,erro:e.message}); }
+});
 app.post("/api/entrada-nota/foto",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
   try{
     const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return res.status(503).json({erro:"A leitura de foto ainda não está ligada: falta configurar a chave da API da Anthropic (ANTHROPIC_API_KEY) no Railway."});
