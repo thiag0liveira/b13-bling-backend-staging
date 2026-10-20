@@ -173,7 +173,7 @@ function renderNota() {
         ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
         ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
     return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
         <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
         <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px">
         <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
@@ -190,7 +190,9 @@ function renderNota() {
       <div class="lin"><span>No Bling</span><b>${n.fornecedorBling ? "✅ " + esc(n.fornecedorBling.nome) : "será cadastrado ao ligar o 1º item"}</b></div><div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR") : "—"}</b></div></div>
       <div><div class="lin"><span>Produtos</span><b>${brl(T.vProd)}</b></div><div class="lin"><span>Impostos, frete e outros</span><b>${brl(T.extras)}${T.rateioPct ? " (+" + String(T.rateioPct).replace(".", ",") + "% no custo)" : ""}</b></div>
       ${T.vIPI || T.vST ? `<div class="lin"><span>IPI · ST</span><b>${brl(T.vIPI)} · ${brl(T.vST)}</b></div>` : ""}${T.vFrete ? `<div class="lin"><span>Frete</span><b>${brl(T.vFrete)}</b></div>` : ""}<div class="lin"><span>Pagamento na nota</span><b>${esc(n.formaNaNota || "—")}</b></div></div></div></div>
-  <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>${n.itens.map(it).join("")}</div>
+  <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
+    ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida; os outros você escolhe</span>` : ""; })()}
+    ${n.itens.map(it).join("")}</div>
   <div class="card"><h3>4. Pagamento</h3>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px"><label><input type="radio" name="pg" ${PAGO === false ? "checked" : ""} onchange="PAGO=false;renderNota()"> A pagar (gera contas a pagar)</label><label><input type="radio" name="pg" ${PAGO ? "checked" : ""} onchange="PAGO=true;renderNota()"> Já foi paga</label></div>
     ${PAGO ? `<div class="grid2"><label><div class="ic">Forma</div><select id="pgForma" style="width:100%" onchange="renderBancoPg()"><option>Pix</option><option>Dinheiro</option><option>Boleto</option><option>Transferência</option><option>Cartão</option></select></label>
@@ -201,6 +203,11 @@ function renderNota() {
 }
 function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
+// itens pendentes com sugestão FORTE e conversão conhecida (pela descrição, ou 1 quando a unidade é UN)
+function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
+async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
+  for (const x of f) { const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + ": " + x.xProd); break; } }
+  renderNota(); }
 let _tb = {}; function buscarProd(nItem, q) { clearTimeout(_tb[nItem]); if (q.trim().length < 2) return; _tb[nItem] = setTimeout(async () => { const { j } = await api("/api/entrada-nota/produtos?q=" + encodeURIComponent(q)); const sel = document.getElementById("sel" + nItem);
   sel.innerHTML = (j.itens || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("") + `<option value="">🔎 buscar outro produto…</option>`; }, 350); }
 async function ligar(nItem) { const pid = document.getElementById("sel" + nItem).value, fat = document.getElementById("fat" + nItem).value;

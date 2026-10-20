@@ -11067,6 +11067,7 @@ app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
 const CONTAS_PAGAR_FILE=`${DATA_DIR}/contas_pagar.json`;
 function lerContasPagar(){ const d=lerJSON(CONTAS_PAGAR_FILE,null)||{}; d.seq||=0; d.titulos||=[]; return d; }
 const _TPAG={"01":"Dinheiro","02":"Cheque","03":"Cartão de crédito","04":"Cartão de débito","05":"Crédito loja","15":"Boleto","16":"Depósito","17":"Pix","18":"Transferência","90":"Sem pagamento (a prazo)","99":"Outros"};
+function _mesclarSugestoes(a,b){ const out=[...a]; (b||[]).forEach(s=>{ if(s&&s.produtoId&&!out.some(o=>String(o.produtoId)===String(s.produtoId))) out.push({produtoId:s.produtoId,nome:s.nome,confianca:"fraca"}); }); return out.slice(0,6); }
 async function _resumoEntradaNota(n){
   const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
   const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0, k=base>0?extras/base:0;
@@ -11075,7 +11076,7 @@ async function _resumoEntradaNota(n){
     return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
       custoAnterior:p&&p.pc>0?p.pc:null,precoVenda:p?p.p:null,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
-      sugestoes:(x.sugestoes||[]).slice(0,4),sugestaoFator:x.sugestaoFator||0}; });
+      sugestoes:x.status==="ok"?[]:_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]),sugestaoFator:x.sugestaoFator||_fatorDoNome(x.xProd)||(/^(UN|UND|UNID)$/.test(String(x.uCom||""))?1:0)}; });
   const pend=itens.filter(x=>x.status!=="ok").length;
   const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
@@ -11103,7 +11104,7 @@ app.post("/api/entrada-nota/carregar",requireAcesso("acesso_entrada_nota"),expre
     res.json({ok:true,nota:await _resumoEntradaNota(nota)});
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
-app.get("/api/entrada-nota/produtos",requireAcesso("acesso_entrada_nota"),(req,res)=>{ try{ res.json({itens:_FISCAL?_FISCAL.buscarProdutos(String(req.query.q||"")):[]}); }catch(e){ res.json({itens:[]}); } });
+app.get("/api/entrada-nota/produtos",requireAcesso("acesso_entrada_nota"),(req,res)=>{ try{ const q=String(req.query.q||""); res.json({itens:_mesclarSugestoes(_sugerirProdutos(q,8),_FISCAL?_FISCAL.buscarProdutos(q):[])}); }catch(e){ res.json({itens:[]}); } });
 app.post("/api/entrada-nota/ligar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
   try{
     const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
@@ -11154,6 +11155,36 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
 });
 app.get("/api/entrada-nota/contas",requireAcesso("acesso_entrada_nota"),(req,res)=>{ const C=lerContasPagar(); res.json({titulos:C.titulos.slice(-300).reverse()}); });
 
+// ===== SUGESTÃO DE PRODUTO PELO NOME (feita para nomes de bebida) =====
+// Entende abreviações (LT/LTA=lata, LN=long neck, GF=garrafa), volume em qualquer escrita (350ML, 350 ML, 0,35L), dá peso a
+// volume e embalagem e ignora o que não muda o produto (CERV, CX, FARDO, C/12). Devolve a confiança de cada sugestão.
+const _STOPP=new Set(["EM","CERV","CERVEJA","BEB","BEBIDA","REFRIG","REFRI","REFRIGERANTE","C","COM","DE","DA","DO","E","UN","UND","UNID","CX","CAIXA","FD","FARDO","PCT","PACOTE","PACK","EMB","S","SEM"]);
+function _normProd(t){
+  let x=" "+String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/,/g,".")+" ";
+  let vol=null; const mv=x.match(/(\d+(?:\.\d+)?)\s*(ML|L|LT|LTS|LITRO|LITROS|KG|G)\b/);
+  if(mv){ const n=Number(mv[1]); vol=/ML/.test(mv[2])?Math.round(n):/^KG$/.test(mv[2])?"P"+Math.round(n*1000):/^G$/.test(mv[2])?"P"+Math.round(n):Math.round(n*1000); if(typeof vol==="number"&&vol<30&&/ML/.test(mv[2])) vol=null; } // KG/G: peso
+  let emb=null; if(/\b(LATA|LATAO|LT|LTA|LTS)\b/.test(x)&&!/\d\s*(LT|LTS)\b/.test(x)) emb="LATA"; if(/\bLATA\b|\bLATAO\b|\bLTA\b/.test(x)) emb="LATA";
+  if(/\b(LONG ?NECK|LN|LNECK)\b/.test(x)) emb="LN"; else if(/\b(GARRAFA|GF|GFA|GARR|GRF)\b/.test(x)) emb=emb||"GARRAFA"; if(/\bPET\b/.test(x)) emb="PET";
+  const pack=(x.match(/\b(?:C\/|CX\s*C?\/?|PCT\s*|FD\s*C?\/?|X)\s*(\d{1,3})\b/)||x.match(/\b(\d{1,3})\s*(?:UN|UND|UNID)\b/)||[])[1];
+  const toks=x.replace(/\d+(?:\.\d+)?\s*(ML|L|LT|LTS|LITRO|LITROS|KG|G)\b/g," ").replace(/\b(?:C\/|CX|PCT|FD|X)\s*\d+\b/g," ").replace(/[^A-Z0-9 ]/g," ").split(/\s+/)
+    .filter(w=>w.length>=2&&!_STOPP.has(w)&&!/^\d+$/.test(w)&&!["LATA","LATAO","LT","LTA","LN","LONG","NECK","GARRAFA","GF","GFA","GARR","PET","ML"].includes(w));
+  return {vol,emb,toks:[...new Set(toks)],pack:pack?Number(pack):null};
+}
+let _sugIdx={em:0,lista:[]};
+function _sugerirProdutos(texto,max=5){
+  if(Date.now()-_sugIdx.em>10*60000){ const P=lerProdutosBling().porId; _sugIdx={em:Date.now(),lista:Object.entries(P).filter(([,p])=>p&&p.s!=="I"&&p.s!=="E"&&p.n).map(([id,p])=>({produtoId:Number(id)||id,nome:p.n,N:_normProd(p.n)}))}; }
+  const A=_normProd(texto); if(!A.toks.length&&!A.vol) return [];
+  return _sugIdx.lista.map(c=>{ const B=c.N; let sc=0;
+      A.toks.forEach(t=>{ if(B.toks.includes(t)) sc+=2; else if(t.length>=4&&B.toks.some(u=>u.startsWith(t.slice(0,4))||t.startsWith(u.slice(0,4)))) sc+=1; });
+      const extra=B.toks.filter(u=>!A.toks.some(t=>t===u||(t.length>=4&&(u.startsWith(t.slice(0,4))||t.startsWith(u.slice(0,4)))))).length; sc-=extra*0.4;
+      if(A.vol&&B.vol) sc+=A.vol===B.vol?3:-4; if(A.emb&&B.emb) sc+=A.emb===B.emb?2:-3;
+      return {produtoId:c.produtoId,nome:c.nome,score:+sc.toFixed(2)}; })
+    .filter(x=>x.score>0.9).sort((a,b)=>b.score-a.score).slice(0,max)
+    .map((x,i,l)=>({...x,confianca:x.score>=6&&(i===0?(!l[1]||l[0].score-l[1].score>=1.5):false)?"forte":x.score>=4?"media":"fraca"}));
+}
+function _fatorDoNome(texto){ const N=_normProd(texto); return N.pack&&N.pack>1&&N.pack<=60?N.pack:null; }
+app.get("/api/entrada-nota/sugerir",requireAcesso("acesso_entrada_nota"),(req,res)=>res.json({itens:_sugerirProdutos(String(req.query.q||""),8)}));
+
 // ===== COMPRA SEM NOTA: foto do recibo/pedido lida por IA (API da Anthropic). Mesmo fluxo, sem a parte fiscal =====
 const SEMNOTA_FILE=`${DATA_DIR}/entradas_sem_nota.json`;
 let _semNota=lerJSON(SEMNOTA_FILE,{});
@@ -11169,7 +11200,7 @@ function _casarSemNota(n,salvar){
     if(v&&v.produtoId){ const P=lerProdutosBling().porId[String(v.produtoId)]; it.status="ok"; it.produtoId=v.produtoId; it.produtoNome=P?P.n:(v.produtoNome||""); it.fator=Number(v.fator)||1; it.fonte="ligação aprendida";
       it.qtdUn=+(Number(it.qCom||0)*it.fator).toFixed(3); it.custoUn=it.qtdUn>0?+((Number(it.vProd||0)-Number(it.vDesc||0))/it.qtdUn).toFixed(4):0; it.sugestoes=[]; it.motivo=""; }
     else { it.status="pendente"; it.produtoId=null; it.produtoNome=""; it.qtdUn=0; it.custoUn=0; it.fonte=""; it.motivo="produto ainda não ligado";
-      try{ it.sugestoes=_FISCAL?_FISCAL.buscarProdutos(it.xProd):[]; }catch(e){ it.sugestoes=[]; } } });
+      it.sugestoes=[]; it.sugestaoFator=_fatorDoNome(it.xProd)||0; } });
   const vp=_round2((n.itens||[]).reduce((a,x)=>a+Number(x.vProd||0),0)); n.totais={...(n.totais||{}),vProd:vp,vNF:_round2(vp-Number(n.totais?.vDesc||0)+Number(n.totais?.vFrete||0)+Number(n.totais?.vOutro||0))};
   if(salvar) _salvarSemNota(); return n;
 }
