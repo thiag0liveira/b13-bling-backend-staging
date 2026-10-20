@@ -2110,8 +2110,12 @@ async function atualizarParcelasBling(id,parcelas,opts={}){
   const SIT_EM_DIGITACAO=21;
   const STATUS_BLOQUEADOS=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO];
   try{
-    const rPed=opts.ped?{data:opts.ped}:await bling(`/pedidos/vendas/${id}`);
+    // usa o pedido recebido só se ele tiver os itens: a RESPOSTA DA CRIAÇÃO do Bling vem só com o id (sem itens), e regravar
+    // sem itens é recusado ("Insira ao menos um item"). Senão lê o pedido completo, tentando de novo logo após a criação.
+    let rPed=(opts.ped&&Array.isArray(opts.ped.itens)&&opts.ped.itens.length)?{data:opts.ped}:null;
+    if(!rPed){ for(let t=0;t<4;t++){ try{ rPed=await bling(`/pedidos/vendas/${id}`); }catch(e){ if(t===3) throw e; } if((rPed?.data?.itens||[]).length) break; await sleep(700*(t+1)); } }
     const ped=rPed?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
+    if(!(ped.itens||[]).length) return {ok:false,erro:"o Bling devolveu o pedido sem itens; não regravei para não apagar nada"};
     const sitAtual=ped.situacao?.id;
     if(sitAtual===SIT.CANCELADO) return {ok:false,erro:"Pedido Cancelado não pode ser editado."};
     const precisaUnlock=STATUS_BLOQUEADOS.includes(sitAtual);
