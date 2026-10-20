@@ -32,6 +32,10 @@
   /* Modelo 3: 1 produto por folha A4 inteira — mesmo cartão do modelo 2, só ampliado
      com zoom (mantém o fluxo do layout, ao contrário de transform:scale) */
   .folha.modelo3{ grid-template-columns:1fr; gap:0 }
+  /* Varal A4: o MESMO cartão do modelo 3, com margem em branco no topo para o prendedor do barbante */
+  .folha.modelo3.varal3 .varalPag{ break-inside:avoid }
+  .folha.modelo3.varal3 .varalTopo{ height:12mm; border-bottom:0.3mm dashed #ccc; margin-bottom:3mm; display:flex; align-items:center; justify-content:center; color:#bbb; font:8pt Arial; letter-spacing:1px }
+  @media print{ .folha.modelo3.varal3 .varalPag{ break-after:page; page-break-after:always } .folha.modelo3.varal3 .varalPag:last-child{ break-after:auto; page-break-after:auto } .folha.modelo3.varal3 .etq2{ page-break-after:auto; zoom:2.05 } }
   .folha.modelo3 .etq2{ zoom:2.2; margin:30px auto }
   @media print{
     .folha.modelo3 .etq2{ zoom:2.2; margin:0 auto; page-break-after:always }
@@ -173,7 +177,6 @@ document.addEventListener("DOMContentLoaded",function(){
       <button class="btn btn-ghost" onclick="gerarEtiquetasModelo2()">🏷 Gerar etiquetas (modelo 2)</button>
       <button class="btn btn-ghost" onclick="gerarEtiquetasModelo3()">📄 Gerar etiqueta (folha A4 — 1 por página)</button>
       <button class="btn btn-ghost" onclick="gerarVaral()">🧵 Varal A4 (1 produto por folha)</button>
-      <label class="noprint" style="font-size:12px;opacity:.85">Preço válido até <input type="date" id="varalValidade" style="width:auto"></label>
       <button class="btn btn-ghost" onclick="window.print()" id="btnImprimir" style="display:none">🖨 Imprimir</button>
     </div>
   </div>
@@ -424,7 +427,7 @@ function montarEtq2(it) {
       classe: "pack2Full",
       cor: "rosa2",
       preco: fardo,
-      label: `ACIMA DE ${it.caixaQtd || "—"} UNIDADES`
+      label: `A PARTIR DE ${it.caixaQtd || "—"} UNIDADES`
     } : {
       classe: "atacado2Full",
       cor: "azul2",
@@ -454,7 +457,7 @@ function montarEtq2(it) {
       <div class="pack2">
         <div class="preco2"><span class="cif2">R$</span>${fardo.i}<span class="cent2">,${fardo.c}</span></div>
         <div class="lbl2">UND</div>
-        <div class="lblGrande2">ACIMA DE ${it.caixaQtd || "—"} UNIDADES</div>
+        <div class="lblGrande2">A PARTIR DE ${it.caixaQtd || "—"} UNIDADES</div>
       </div>
     </div>
     <div class="atacado2">
@@ -514,22 +517,12 @@ function embalagemDoNome(nome) { const n = String(nome || "").toUpperCase(), emb
   return [emb, vol].filter(Boolean).join(" "); }
 function partesVaral(v) { const t = Number(v || 0).toFixed(2).split("."); return { r: Number(t[0]).toLocaleString("pt-BR"), c: t[1] }; }
 async function gerarVaral() {
+  // mesmo layout do gerador A4 (modelo 3), com margem no topo para pendurar no varal
   if (!SELECIONADOS.size) { alert("Selecione ao menos um produto."); return; }
-  const val = document.getElementById("varalValidade"); if (!val.value) { const d = new Date(Date.now() - 3 * 3600e3 + 7 * 86400000); val.value = d.toISOString().slice(0, 10); }
-  const folha = document.getElementById("folhaEtiquetas"); folha.className = "folha varal"; folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
+  const folha = document.getElementById("folhaEtiquetas"); folha.className = "folha modelo3 varal3"; folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
     const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
-    const valTxt = val.value ? val.value.split("-").reverse().join("/") : "";
-    folha.innerHTML = `<div class="muted noprint" style="margin-bottom:8px">Clique numa folha para colocar ou tirar a faixa <b>OFERTA</b>. Na impressão, use tamanho real (100%) e marque "gráficos de fundo".</div>` + (j.data || []).filter(it => !it.erro).map(it => {
-      const preco = it.precoVarejo > 0 ? it.precoVarejo : it.precoAtacado, P = partesVaral(preco), emb = embalagemDoNome(it.nomeCompleto || it.nome);
-      let vant = ""; if (it.precoFardo > 0 && it.caixaQtd > 1) vant = `<div class="vvant fardo"><b>FARDO C/${it.caixaQtd} ${brl(it.precoFardo)}</b><span>sai ${brl(it.precoFardo / it.caixaQtd)} cada</span></div>`;
-      else if (it.precoAtacado > 0 && it.precoVarejo > 0 && it.precoAtacado < it.precoVarejo) vant = `<div class="vvant atac"><b>ATACADO ${brl(it.precoAtacado)}</b><span>${it.caixaQtd > 1 ? "a partir de " + it.caixaQtd + " unidades" : "comprando no atacado"}</span></div>`;
-      return `<div class="vf" onclick="alternarOfertaVaral(this)"><div class="vtopo">prender aqui</div><div class="vcat">${esc(String(it.categoriaNome || "").replace(/^\(avulso\)$/, "") || "B13 Bebidas")}</div>
-        <div class="vcab"><div class="vnome"><div class="vn">${esc(it.nome)}</div>${emb ? `<div class="ve">${esc(emb)}</div>` : ""}</div>${it.imagem ? `<div class="vfoto"><img src="${esc(it.imagem)}" onerror="this.parentNode.remove()"></div>` : ""}</div>
-        <div class="vpreco"><span class="vrs">R$</span><span class="vre">${P.r}</span><span class="vcent">,${P.c}</span></div><div class="vun">a unidade</div>${vant}
-        ${valTxt ? `<div class="vval">Preço válido até ${valTxt} ou enquanto durar o estoque</div>` : `<div class="vval"></div>`}
-        <div class="vrod"><img src="/logo" onerror="this.outerHTML='<b>B13 BEBIDAS</b>'"><span>Av. Brigadeiro Eduardo Gomes, 1668 · Glória · BH · (31) 99971-9888</span></div></div>`; }).join("");
-    await (document.fonts && document.fonts.ready); ajustarVaral();
+    folha.innerHTML = (j.data || []).filter(it => !it.erro).map(it => `<div class="varalPag"><div class="varalTopo">prender aqui</div>${montarEtq2(it)}</div>`).join("");
     document.getElementById("btnImprimir").style.display = "inline-block";
   } catch (e) { folha.innerHTML = `<div class="muted">Erro ao gerar as folhas do varal.</div>`; }
 }
