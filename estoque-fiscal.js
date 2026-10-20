@@ -509,4 +509,35 @@ export function registrarEstoqueFiscal(app, deps) {
     const data = Object.values(por).map((p) => ({ ...p, unidades: r4(p.unidades), valor: r2(p.valor), custoMedioUn: p.unidades > 0 ? r4(p.valor / p.unidades) : 0 })).sort((a, b) => b.unidades - a.unidades);
     res.json({ data, itensPendentes: pend, itensParaRevisar: rev });
   });
+
+  // ===== FUNÇÕES PARA O RESTO DO SISTEMA (ficha do produto e entrada de nota): o módulo continua o dono das ligações
+  function _ultimoDoVinculo(cnpj, cProd) {
+    let ult = null, notas = 0;
+    Object.values(NOTAS).forEach((n) => { if (n.ignorada || String(n.emitente?.cnpj || "") !== String(cnpj)) return;
+      (n.itens || []).forEach((it) => { if (String(it.cProd) !== String(cProd)) return; notas++; const em = Date.parse(n.emissao || "") || n.importadaEm || 0;
+        if (!ult || em > ult.em) ult = { em, custoUn: num(it.custoUn), numero: n.numero, qtdUn: num(it.qtdUn) }; }); });
+    return { ult, notas };
+  }
+  function _nomeFornecedor(cnpj) { let nome = ""; Object.values(NOTAS).some((n) => { if (String(n.emitente?.cnpj || "") === String(cnpj) && n.emitente?.nome) { nome = n.emitente.nome; return true; } return false; }); return nome; }
+  return {
+    vinculosDoProduto(produtoId) {
+      const pid = Number(produtoId);
+      return Object.entries(DEPARA).filter(([, v]) => Number(v.produtoId) === pid).map(([chave, v]) => { const u = _ultimoDoVinculo(v.cnpj, v.cProd);
+        return { chave, cnpj: v.cnpj, fornecedorNome: v.fornecedorNome || _nomeFornecedor(v.cnpj), cProd: v.cProd, xProd: v.xProd || "", uCom: v.uCom || "", fator: v.fator || 0, fonte: v.fonte || "",
+          por: v.por || "", em: v.em || null, blingFornecedorId: v.blingFornecedorId || null, blingErro: v.blingErro || null, blingEm: v.blingEm || null,
+          ultimoCustoUn: u.ult ? u.ult.custoUn : null, ultimaNota: u.ult ? { numero: u.ult.numero, em: u.ult.em } : null, notas: u.notas }; });
+    },
+    salvarVinculo(d) {
+      const cnpj = digitos(d.cnpj), cProd = String(d.cProd || "").trim(); if (!cnpj || !cProd) throw new Error("informe o CNPJ do fornecedor e o código do item dele");
+      const chave = `${cnpj}|${cProd}`, ant = DEPARA[chave] || {};
+      DEPARA[chave] = { ...ant, produtoId: Number(d.produtoId), produtoNome: d.produtoNome || ant.produtoNome || "", uCom: up(d.uCom || ant.uCom || ""), fator: num(d.fator) || ant.fator || 1,
+        fonte: "confirmado", por: d.por || "", em: Date.now(), cnpj, cProd, xProd: String(d.xProd || ant.xProd || "").slice(0, 120), fornecedorNome: String(d.fornecedorNome || ant.fornecedorNome || _nomeFornecedor(cnpj) || "").slice(0, 120) };
+      if (ant.produtoId && Number(ant.produtoId) !== Number(d.produtoId)) { delete DEPARA[chave].blingFornecedorId; }
+      gravarDepara(); return { chave, ...DEPARA[chave] };
+    },
+    removerVinculo(chave) { const v = DEPARA[chave]; if (!v) return null; delete DEPARA[chave]; gravarDepara(); return v; },
+    marcarBling(chave, info) { const v = DEPARA[chave]; if (!v) return; Object.assign(v, info || {}); gravarDepara(); },
+    todosVinculos() { return Object.entries(DEPARA).map(([chave, v]) => ({ chave, ...v, fornecedorNome: v.fornecedorNome || _nomeFornecedor(v.cnpj), ultimoCustoUn: (_ultimoDoVinculo(v.cnpj, v.cProd).ult || {}).custoUn ?? null })); },
+    nomeFornecedor: _nomeFornecedor,
+  };
 }

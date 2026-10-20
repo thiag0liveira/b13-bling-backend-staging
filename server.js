@@ -10915,6 +10915,66 @@ app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== FORNECEDORES DO PRODUTO (ficha do produto) =====================
+// Cada produto guarda quem o vende e o código que cada fornecedor usa (as mesmas ligações do Estoque fiscal: assim a
+// nota se liga sozinha). Grava no sistema e no Bling (cadastro "fornecedores do produto", com código e preço de custo).
+var _FISCAL = null;
+async function _enviarFornecedorBling(produtoId, v){
+  try{
+    let forn=await encontrarContatoPorDoc(v.cnpj);
+    if(!forn){ const nome=(v.fornecedorNome||("Fornecedor "+v.cnpj)).slice(0,120);
+      const novo=await bling(`/contatos`,{method:"POST",body:JSON.stringify({nome,tipo:String(v.cnpj).length===14?"J":"F",numeroDocumento:v.cnpj,situacao:"A"})});
+      forn={id:novo?.data?.id,nome}; if(forn.id) try{ _registrarContatoNaBase(forn.id,{nome,numeroDocumento:v.cnpj,tipo:String(v.cnpj).length===14?"J":"F"}); }catch(e){} }
+    if(!forn||!forn.id) throw new Error("não consegui achar nem cadastrar o fornecedor no Bling");
+    const corpo={produto:{id:Number(produtoId)},fornecedor:{id:Number(forn.id)},codigo:String(v.cProd).slice(0,60),descricao:String(v.xProd||"").slice(0,120),padrao:false,
+      ...(v.ultimoCustoUn>0?{precoCusto:+Number(v.ultimoCustoUn).toFixed(4),precoCompra:+Number(v.ultimoCustoUn).toFixed(4)}:{})};
+    let id=v.blingFornecedorId||null;
+    if(id){ try{ await bling(`/produtos/fornecedores/${id}`,{method:"PUT",body:JSON.stringify(corpo)}); }catch(e){ if(/404|não encontrad/i.test(e.message)) id=null; else throw e; } }
+    if(!id){ const r=await bling(`/produtos/fornecedores`,{method:"POST",body:JSON.stringify(corpo)}); id=r?.data?.id||null; }
+    _FISCAL&&_FISCAL.marcarBling(v.chave,{blingFornecedorId:id,blingContatoId:forn.id,blingEm:Date.now(),blingErro:null});
+    return {ok:true,id,fornecedor:forn.nome};
+  }catch(e){ _FISCAL&&_FISCAL.marcarBling(v.chave,{blingErro:String(e.message).slice(0,200),blingEm:Date.now()}); return {ok:false,erro:e.message}; }
+}
+app.get("/api/produtos-gestao/:id/fornecedores",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
+  try{ if(!_FISCAL) return res.status(503).json({erro:"módulo fiscal indisponível"}); res.json({ok:true,itens:_FISCAL.vinculosDoProduto(req.params.id)}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/produtos-gestao/:id/fornecedores",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
+  try{
+    if(!_FISCAL) return res.status(503).json({erro:"módulo fiscal indisponível"});
+    const b=req.body||{}, pid=String(req.params.id), P=lerProdutosBling().porId[pid];
+    const fator=Number(String(b.fator||"").replace(",",".")); if(!(fator>0)||fator>1000) return res.status(400).json({erro:"informe quantas UNIDADES vêm em cada unidade da nota (ex.: 12 para caixa com 12; 1 se vem avulso)"});
+    const v=_FISCAL.salvarVinculo({cnpj:b.cnpj,cProd:b.cProd,uCom:b.uCom,fator,produtoId:pid,produtoNome:P?P.n:(b.produtoNome||""),xProd:b.xProd,fornecedorNome:b.fornecedorNome,por:req.sessao?.nome||""});
+    addLog("produto-"+pid,"fornecedor_produto_salvo",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{cnpj:v.cnpj,cProd:v.cProd,fator:v.fator});
+    let bl=null; if(b.enviarBling!==false){ const comp=_FISCAL.vinculosDoProduto(pid).find(x=>x.chave===v.chave)||v; bl=await _enviarFornecedorBling(pid,comp); }
+    res.json({ok:true,vinculo:v,bling:bl});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+app.post("/api/produtos-gestao/:id/fornecedores/remover",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
+  try{
+    const v=_FISCAL&&_FISCAL.removerVinculo(String(req.body?.chave||"")); if(!v) return res.status(404).json({erro:"ligação não encontrada"});
+    let bl=null; if(v.blingFornecedorId){ try{ await bling(`/produtos/fornecedores/${v.blingFornecedorId}`,{method:"DELETE"}); bl={ok:true}; }catch(e){ bl={ok:false,erro:e.message}; } }
+    addLog("produto-"+req.params.id,"fornecedor_produto_removido",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{cnpj:v.cnpj,cProd:v.cProd});
+    res.json({ok:true,bling:bl});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/produtos-gestao/:id/fornecedores/bling",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
+  try{ const v=(_FISCAL?_FISCAL.vinculosDoProduto(req.params.id):[]).find(x=>x.chave===String(req.body?.chave||"")); if(!v) return res.status(404).json({erro:"ligação não encontrada"});
+    res.json(await _enviarFornecedorBling(req.params.id,v)); }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// envia TODAS as ligações antigas ao Bling, pela fila lenta (uma vez; retoma as que faltam)
+let _fornEnvio={rodando:false,feitos:0,erros:0,total:0,ultimoErro:""};
+app.post("/api/produtos-gestao/fornecedores/enviar-todos",requireAdmin,(req,res)=>{
+  if(_fornEnvio.rodando) return res.json({ok:true,..._fornEnvio});
+  const lista=(_FISCAL?_FISCAL.todosVinculos():[]).filter(v=>v.produtoId&&!v.blingFornecedorId);
+  _fornEnvio={rodando:true,feitos:0,erros:0,total:lista.length,ultimoErro:""};
+  (async()=>{ for(const v of lista){ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; }
+      const r=await _enviarFornecedorBling(v.produtoId,v); if(r.ok) _fornEnvio.feitos++; else { _fornEnvio.erros++; _fornEnvio.ultimoErro=r.erro; if(/403|permiss|escopo|plano/i.test(r.erro||"")) break; } await sleep(700); }
+    _fornEnvio.rodando=false; })();
+  res.json({ok:true,..._fornEnvio});
+});
+app.get("/api/produtos-gestao/fornecedores/enviar-todos",requireAdmin,(req,res)=>res.json(_fornEnvio));
+
 // ===================== PRODUTOS (análise) =====================
 // Catálogo e ESTOQUE do Bling (cópia a cada 2 h pela fila lenta: 1 consulta a cada 100 produtos para a lista e outra a
 // cada 100 para os saldos) cruzados com TODAS as vendas (as mesmas cópias de Pedidos e Clientes), tabela de preços,
@@ -20160,7 +20220,7 @@ registrarConcursoSlogan(app, { expor:(api)=>{ _concursoApi=api; }, bling, blingL
   pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso,
   // quem tem a permissão do concurso (ativo): aparece no relatório de adesão mesmo sem ter usado
   usuariosComAcessoConcurso:()=>Object.values(lerJSON(FUNC_FILE,{})).filter(f=>f&&f.ativo!==false&&(f.permissoes||[]).includes("acesso_concurso")).map(f=>f.nome) });
-registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
+_FISCAL = registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
   lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });
 
