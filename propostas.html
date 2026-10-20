@@ -281,18 +281,16 @@ function statusTag(p) {
 }
 // ---- impressão no comprovante térmico (mesmo estilo do caixa atacado/totem) ----
 function quebrarTextoProp(ctx, texto, maxW, maxLinhas) {
-  const palavras = String(texto || "").split(" ");
-  const linhas = [];
-  let atual = "";
-  for (const p of palavras) {
-    const teste = atual ? atual + " " + p : p;
-    if (ctx.measureText(teste).width > maxW && atual) { linhas.push(atual); atual = p; }
-    else atual = teste;
-    if (linhas.length >= maxLinhas - 1) break;
+  // quebra em até maxLinhas sem cortar o nome; palavra maior que a linha é dividida; se ainda sobrar, termina com "…"
+  const cabe = t => ctx.measureText(t).width <= maxW, linhas = []; let atual = "";
+  const palavras = String(texto || "").trim().split(/\s+/);
+  for (let p of palavras) {
+    while (!cabe(p)) { let k = p.length - 1; while (k > 1 && !cabe((atual ? atual + " " : "") + p.slice(0, k))) k--; if (k <= 1 && atual) { linhas.push(atual); atual = ""; continue; } linhas.push((atual ? atual + " " : "") + p.slice(0, k)); atual = ""; p = p.slice(k); }
+    const teste = atual ? atual + " " + p : p; if (cabe(teste)) atual = teste; else { linhas.push(atual); atual = p; }
   }
   if (atual) linhas.push(atual);
-  if (linhas.length > maxLinhas) linhas.length = maxLinhas;
-  return linhas;
+  if (linhas.length > maxLinhas) { linhas.length = maxLinhas; let u = linhas[maxLinhas - 1]; while (u.length > 1 && !cabe(u + "…")) u = u.slice(0, -1); linhas[maxLinhas - 1] = u + "…"; }
+  return linhas.length ? linhas : [""];
 }
 function imprimirPropostaOuPedido(id) {
   const p = LISTA.find(x => x.id === id);
@@ -316,11 +314,14 @@ function imprimirPropostaOuPedido(id) {
     barCanvas = document.createElement("canvas");
     try { JsBarcode(barCanvas, String(p.pedidoBlingId), { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 }); } catch (e) {}
   }
-  setTimeout(() => {
+  setTimeout(async () => {
     if (w.closed) { document.body.removeChild(tmpQr); return; }
     const qrCanvas = tmpQr.querySelector("canvas");
     const qrImg = tmpQr.querySelector("img");
-    const cv = desenharComprovanteProp(p, ehPedido, qrCanvas || qrImg, barCanvas);
+    // nome COMPLETO do cadastro (com LN, LT, volume) no lugar do nome curto; sem cadastro, fica o nome gravado
+    let nomes = {}; try { const ids = [...new Set((p.itens || []).map(i => i.produtoId).filter(Boolean))].join(","); if (ids) nomes = (await fetch(B + "/api/produtos-nomes?ids=" + ids).then(r => r.json())).porId || {}; } catch (e) {}
+    const pImp = { ...p, itens: (p.itens || []).map(i => ({ ...i, nome: nomes[String(i.produtoId)] || i.nome })) };
+    const cv = desenharComprovanteProp(pImp, ehPedido, qrCanvas || qrImg, barCanvas);
     document.body.removeChild(tmpQr);
     const dataUrl = cv.toDataURL("image/png");
     w.document.open();
@@ -342,9 +343,9 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
   const itemH = 50, headerH = 132, qrSize = 200;
   const W = 580, padd = 24;
   const _mc = document.createElement("canvas").getContext("2d");
-  _mc.font = "900 18px Arial";
-  const maxNomeW = W - 200 - padd - 16;
-  itensArr.forEach(i => { i._linhas = quebrarTextoProp(_mc, i.nome || "produto", maxNomeW, 2); });
+  _mc.font = "900 16px Arial";
+  const maxNomeW = (W - 300 - 46) - padd; // o nome termina antes da coluna QTD (alinhada em W-300)
+  itensArr.forEach(i => { i._linhas = quebrarTextoProp(_mc, i.nome || "produto", maxNomeW, 3); });
   const extraLinhas = itensArr.reduce((s, i) => s + ((i._linhas.length || 1) - 1), 0);
   const H = 560 + itensArr.length * itemH + extraLinhas * 22 + (ehPedido ? qrSize + 90 : 70) + (p.observacao ? 60 : 0);
   const cv = document.createElement("canvas");
@@ -402,7 +403,7 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
   itensArr.forEach(i => {
     const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
     const linhas = i._linhas.length || 1;
-    ctx.textAlign = "left"; ctx.font = "900 18px Arial"; ctx.fillStyle = "#000";
+    ctx.textAlign = "left"; ctx.font = "900 16px Arial"; ctx.fillStyle = "#000";
     (i._linhas || [i.nome]).forEach((ln, ix) => ctx.fillText(ln, padd, y + 20 + ix * 22));
     ctx.textAlign = "right"; ctx.font = "700 17px Arial"; ctx.fillStyle = "#333";
     ctx.fillText(String(qtd), W - 300, y + 20);

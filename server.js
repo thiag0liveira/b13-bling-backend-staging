@@ -11212,6 +11212,9 @@ function _sugerirProdutos(texto,max=5){
     .map((x,i,l)=>({...x,confianca:x.score>=6&&(i===0?(!l[1]||l[0].score-l[1].score>=1.5):false)?"forte":x.score>=4?"media":"fraca"}));
 }
 function _fatorDoNome(texto){ const N=_normProd(texto); return N.pack&&N.pack>1&&N.pack<=60?N.pack:null; }
+// nomes completos dos produtos (com LN, LT, volume) para impressão de propostas e pedidos
+app.get("/api/produtos-nomes",(req,res)=>{ try{ const P=lerProdutosBling().porId, out={}; let cat={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) cat[String(c.id)]=c.n; }); }catch(e){}
+  String(req.query.ids||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,300).forEach(id=>{ const n=(P[id]&&P[id].n)||cat[id]; if(n) out[id]=n; }); res.json({porId:out}); }catch(e){ res.json({porId:{}}); } });
 app.get("/api/entrada-nota/sugerir",requireAcesso("acesso_entrada_nota"),(req,res)=>res.json({itens:_sugerirProdutos(String(req.query.q||""),8)}));
 
 // ===== COMPRA SEM NOTA: foto do recibo/pedido lida por IA (API da Anthropic). Mesmo fluxo, sem a parte fiscal =====
