@@ -1232,6 +1232,7 @@ window.B13_NAV_LINKS=[
   // grupos do menu do topo (ordem = ordem na barra). O logo B13 BEBIDAS abre /inicio.
   {grupo:"B13 BEBIDAS",href:"/inicio",label:"📊 Painel B13 Bebidas",acoes:["acesso_painel_b13"]},
 
+  {grupo:"GESTÃO",href:"/painel/gestao",label:"🛰️ Visão geral da Gestão",acoes:["acesso_painel_gestao"]},
   {grupo:"GESTÃO",href:"/central",label:"🏠 Central",acoes:["acesso_central"]},
   {grupo:"GESTÃO",href:"/avisos",label:"🔔 Avisos",acoes:["acesso_avisos"]},
   {grupo:"GESTÃO",oculto:true,href:"/operacional",label:"⚙️ Operacional",acoes:["acesso_operacional","ver_aguardando","ver_separacao","conferir"]},
@@ -1242,6 +1243,7 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",oculto:true,href:"/dashboard",label:"📐 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
   {grupo:"GESTÃO",oculto:true,href:"/conferir-lista",label:"☑️ Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
 
+  {grupo:"CADASTROS",href:"/painel/cadastros",label:"🗄️ Visão geral dos Cadastros",acoes:["acesso_painel_cadastros"]},
   {grupo:"CADASTROS",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"CADASTROS",href:"/funcionarios",label:"🪪 Funcionários",acoes:["ver_funcionarios"]},
   {grupo:"CADASTROS",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
@@ -1251,11 +1253,13 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/imagens",label:"🖼️ Imagens",acoes:["acesso_imagens","admin"]},
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/painel/financeiro",label:"💹 Visão geral do Financeiro",acoes:["acesso_painel_financeiro"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
+  {grupo:"ESTOQUE",href:"/painel/estoque",label:"🏬 Visão geral do Estoque",acoes:["acesso_painel_estoque"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
@@ -1266,6 +1270,7 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
   {grupo:"ESTOQUE",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
 
+  {grupo:"VENDA",href:"/painel/venda",label:"💵 Visão geral das Vendas",acoes:["acesso_painel_venda"]},
   {grupo:"VENDA",href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/venda-atacado",label:"🤝 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
@@ -1276,12 +1281,14 @@ window.B13_NAV_LINKS=[
   {grupo:"VENDA",href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
   {grupo:"VENDA",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
 
+  {grupo:"LOGÍSTICA",href:"/painel/logistica",label:"🚚 Visão geral da Logística",acoes:["acesso_painel_logistica"]},
   {grupo:"LOGÍSTICA",href:"/expedicao",label:"📤 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
   {grupo:"LOGÍSTICA",href:"/mesa-separacao",label:"🧺 Mesa de Separação",acoes:["acesso_mesa_separacao"]},
   {grupo:"LOGÍSTICA",href:"/conferencia",label:"✅ Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"LOGÍSTICA",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"LOGÍSTICA",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
 
+  {grupo:"MARKETING",href:"/painel/marketing",label:"🎨 Visão geral do Marketing",acoes:["acesso_painel_marketing"]},
   {grupo:"MARKETING",href:"/apoio-marketing",label:"📣 Apoio ao Marketing",acoes:["acesso_marketing"]},
   {grupo:"MARKETING",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
 ];
@@ -10850,6 +10857,112 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
     ultimos:_wh.ultimos.slice(0,25).map(x=>({...x,em:new Date(x.em-3*3600e3).toISOString().replace("T"," ").slice(0,19)}))});
 });
 
+// ===================== PAINEL DE CADA GRUPO DO MENU (visão geral com as métricas das telas do grupo) =====================
+// Só dados locais. Cada seção é independente (se uma fonte falhar, as outras aparecem). Guardado 60 s.
+const _painelGCache=new Map();
+function _montarPainelGrupo(g){
+  const hoje=_diaBRk(Date.now()), d=n=>_diaBRk(Date.now()-n*_DIA), iniMes=hoje.slice(0,8)+"01", K=[], A=[], LS=[], seg=(fn)=>{ try{ fn(); }catch(e){ A.push({nivel:"info",texto:"Parte do painel indisponível: "+String(e.message).slice(0,80)}); } };
+  const kpi=(valor,rotulo,sub,link,nivel)=>K.push({valor,rotulo,sub:sub||"",link:link||"",nivel:nivel||""}), al=(nivel,texto,link)=>A.push({nivel,texto,link:link||""}), lista=(titulo,link,linhas)=>LS.push({titulo,link,linhas});
+  const ped=(a,b,extra)=>{ const r=_filtrarPedidos({ini:a,fim:b,...(extra||{})}); return {L:r.L,qtd:r.L.length,valor:_round2(r.L.reduce((x,p)=>x+p.total,0))}; };
+  const sessoes=()=>lerCaixaSessoes().sessoes||[];
+  const titulos={gestao:"🛰️ Visão geral da Gestão",cadastros:"🗄️ Visão geral dos Cadastros",financeiro:"💹 Visão geral do Financeiro",estoque:"🏬 Visão geral do Estoque",venda:"💵 Visão geral das Vendas",logistica:"🚚 Visão geral da Logística",marketing:"🎨 Visão geral do Marketing"};
+  if(!titulos[g]) throw new Error("painel não encontrado");
+  if(g==="venda"){
+    seg(()=>{ const H=ped(hoje,hoje), S=ped(d(6),hoje), Mm=ped(iniMes,hoje), M=_metricasPedidos(ped(d(29),hoje).L,d(29),hoje);
+      kpi(brlN(H.valor),"Vendido hoje",`${H.qtd} pedido(s)`,"/pedidos-vendas"); kpi(brlN(S.valor),"Últimos 7 dias",`${S.qtd} pedidos`,"/pedidos-vendas"); kpi(brlN(Mm.valor),"Este mês",`${Mm.qtd} pedidos`,"/pedidos-vendas");
+      kpi(brlN(M.ticket),"Ticket médio (30 dias)",`${M.clientesDistintos} clientes`,"/pedidos-vendas");
+      kpi(String(M.pagamento.emAberto),"Em aberto (30 dias)",brlN(M.pagamento.valorEmAberto),"/pedidos-vendas",M.pagamento.emAberto?"alerta":"");
+      if(M.pagamento.semCaixa) al("medio",`${M.pagamento.semCaixa} pedido(s) do sistema nos últimos 30 dias sem passar por caixa`,"/pedidos-vendas");
+      lista("📍 Origem dos pedidos (30 dias)","/pedidos-vendas",M.porOrigem.slice(0,6).map(x=>({a:`${x.nome} · ${x.qtd}`,b:brlN(x.valor)})));
+      lista("🧑‍💼 Vendedoras (30 dias)","/supervisora",M.porVendedora.slice(0,8).map(x=>({a:`${x.nome} · ${x.qtd} · ticket ${brlN(x.ticket)}`,b:brlN(x.valor)}))); });
+    seg(()=>{ const P=Object.values(lerPropostas()||{}), ab=P.filter(p=>p&&p.tipo==="proposta"&&/aberta/i.test(String(p.status||"")));
+      kpi(String(ab.length),"Propostas abertas",brlN(ab.reduce((a,p)=>a+(Number(p.total)||0),0)),"/propostas");
+      const lim=Date.now()-3*_DIA, sn=P.filter(p=>p&&p.origem==="site"&&p.pedidoBlingId&&(p.criadoEm||0)>=lim&&!(p.avisoSite&&p.avisoSite.assumidoPor)).length;
+      if(sn) al("alto",`${sn} pedido(s) do site esperando alguém assumir`,"/venda-atacado"); });
+    seg(()=>{ const ab=sessoes().filter(s=>!s.fechadaEm); let v=0; ab.forEach(s=>{ try{ v+=Number(resumoSessaoCaixa(s).totalVendas)||0; }catch(e){} });
+      kpi(String(ab.length),"Caixas abertos",`${brlN(v)} vendidos neles`,"/gestao-caixas"); });
+  }
+  if(g==="estoque"){
+    seg(()=>{ const PR=_montarProdutos({ini:d(29),fim:hoje}).L, at=PR.filter(r=>r.noBling&&r.situacao==="A"), c=f=>PR.filter(r=>r.flags.includes(f));
+      kpi(String(at.length),"Produtos ativos",`${at.filter(r=>r.estoque>0).length} com estoque`,"/produtos");
+      kpi(brlN(at.reduce((a,r)=>a+(r.valorEstoqueCusto||0),0)),"Estoque a custo",brlN(at.reduce((a,r)=>a+(r.valorEstoqueVenda||0),0))+" a preço de venda","/produtos");
+      const ru=c("ruptura"), rA=ru.filter(r=>r.curva==="A"); kpi(String(ru.length),"Ruptura",`${rA.length} da curva A`,"/produtos",ru.length?"alerta":"");
+      kpi(String(c("baixo").length),"Estoque baixo","menos de 7 dias","/produtos",c("baixo").length?"alerta":""); kpi(String(c("parado").length),"Parados",brlN(c("parado").reduce((a,r)=>a+(r.valorEstoqueCusto||0),0))+" empatados","/produtos");
+      if(rA.length) al("alto",`${rA.length} produto(s) da curva A sem estoque: ${rA.slice(0,4).map(r=>r.nome).join(", ")}`,"/produtos");
+      if(c("negativo").length) al("medio",`${c("negativo").length} produto(s) com estoque negativo no Bling`,"/produtos");
+      lista("🛒 Comprar primeiro (15 dias)","/produtos",PR.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,8).map(r=>({a:`${r.nome} · estoque ${r.estoque}${r.cobertura!=null?" ("+r.cobertura+" dias)":""}`,b:`comprar ${r.sugestaoCompra}`})));
+      lista("🧊 Mais dinheiro parado","/produtos",c("parado").sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,6).map(r=>({a:`${r.nome} · ${r.diasSemVenda!=null?"sem venda há "+r.diasSemVenda+" dias":"nunca vendeu"}`,b:brlN(r.valorEstoqueCusto)}))); });
+    seg(()=>{ const E=(lerEntradasEstoque().entradas||[]).filter(e=>(e.em||0)>=Date.now()-30*_DIA), v=E.reduce((a,e)=>a+(e.itens||[]).filter(i=>i.ok!==false).reduce((x,i)=>x+(Number(i.quantidade)||0)*(Number(i.custo)||0),0),0);
+      kpi(String(E.length),"Entradas (30 dias)",`${brlN(v)} · ${E.filter(e=>e.tipo==="sem_nota").length} sem nota`,"/entrada-nota"); });
+    seg(()=>{ const N=(_FISCAL?_FISCAL.listarNotas():[]).filter(n=>!n.ignorada&&!n.entrada&&(n.emissao||0)>=Date.now()-45*_DIA);
+      if(N.length) al("medio",`${N.length} nota(s) fiscal(is) de entrada dos últimos 45 dias ainda sem entrada no estoque`,"/entrada-nota");
+      lista("🧾 Notas recebidas sem entrada","/entrada-nota",N.slice(0,6).map(n=>({a:`NF ${n.numero} · ${n.emitente?.nome||""}`,b:brlN(n.vNF)}))); });
+    seg(()=>{ const ini=Date.parse(iniMes+"T00:00:00-03:00"); let q=0,v=0; Object.values(lerJSON(PERDAS_FILE,{})||{}).forEach(p=>{ if((p.em||0)<ini) return; q++; v+=Number(p.valorAbatido)||0; });
+      kpi(brlN(v),"Perdas no mês",`${q} ocorrência(s)`,"/perdas",v>0?"alerta":""); });
+  }
+  if(g==="financeiro"){
+    seg(()=>{ const T=lerContasPagar().titulos, ab=T.filter(t=>t.status!=="pago"), venc=ab.filter(t=>t.vencimento<hoje), sete=ab.filter(t=>t.vencimento>=hoje&&t.vencimento<=d(-7)), pagM=T.filter(t=>t.status==="pago"&&(t.pagoEm||0)>=Date.parse(iniMes+"T00:00:00-03:00")), soma=l=>brlN(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
+      kpi(soma(ab),"Contas a pagar em aberto",`${ab.length} título(s)`,"/entrada-nota",""); kpi(soma(venc),"Vencidas",`${venc.length} título(s)`,"/entrada-nota",venc.length?"alerta":"");
+      kpi(soma(sete),"Vencem em 7 dias",`${sete.length} título(s)`,"/entrada-nota"); kpi(soma(pagM),"Pagas no mês",`${pagM.length} título(s)`,"/entrada-nota");
+      if(venc.length) al("alto",`${venc.length} conta(s) a pagar vencida(s): ${soma(venc)}`,"/entrada-nota");
+      lista("📅 Próximas contas a pagar","/entrada-nota",ab.sort((a,b)=>String(a.vencimento).localeCompare(String(b.vencimento))).slice(0,8).map(t=>({a:`${String(t.vencimento).split("-").reverse().join("/")} · ${t.fornecedor?.nome||""} · NF ${t.numeroNota||"—"} (${t.parcela})`,b:brlN(t.valor)}))); });
+    seg(()=>{ const ini0=Date.parse(hoje+"T00:00:00-03:00"), iniM=Date.parse(iniMes+"T00:00:00-03:00"), fh={}, fm={}; let rh=0, rm=0, sang=0;
+      sessoes().forEach(sx=>{ (sx.movimentos||[]).forEach(m=>{ if(m.tipo!=="venda"||m.cancelado||(m.em||0)<iniM) return; (m.pagamentos||[]).forEach(p=>{ const v=Number(p.valor)||0, k=String(p.formaNome||"—").replace(/^Pix Banco.*/i,(x)=>x); fm[k]=(fm[k]||0)+v; rm+=v; if(m.em>=ini0){ fh[k]=(fh[k]||0)+v; rh+=v; } }); });
+        if((sx.abertaEm||0)>=iniM) try{ sang+=Number(resumoSessaoCaixa(sx).totalSangrias)||0; }catch(e){} });
+      kpi(brlN(rh),"Recebido hoje nos caixas","","/gestao-caixas"); kpi(brlN(rm),"Recebido no mês","","/gestao-caixas"); kpi(brlN(sang),"Sangrias no mês","","/gestao-caixas");
+      lista("💳 Recebido no mês por forma","/gestao-caixas",Object.entries(fm).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>({a:k,b:brlN(v)}))); });
+    seg(()=>{ const M=_metricasPedidos(ped(d(364),hoje).L,d(364),hoje); kpi(brlN(M.prazo.valor),"A receber (prazo)",`${M.prazo.qtd} pedido(s) · ${M.prazo.vencidos} vencido(s)`,"/pedidos-vendas",M.prazo.vencidos?"alerta":"");
+      if(M.prazo.vencidos) al("medio",`${M.prazo.vencidos} pedido(s) a prazo vencido(s)`,"/pedidos-vendas"); });
+  }
+  if(g==="cadastros"){
+    seg(()=>{ const base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs, unif=lerJSON(CLIENTES_UNIF_FILE,{});
+      const l=[...new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)].filter(id=>!unif[id]))].map(id=>_resumoCliente(id,base,idx,cred)), c=st=>l.filter(x=>x.status===st).length;
+      kpi(String(l.length),"Clientes na base",`${c("ativo")} ativos · ${c("novo")} novos`,"/clientes"); kpi(String(c("em_risco")),"Clientes em risco","passaram do ritmo de compra","/clientes",c("em_risco")?"alerta":"");
+      kpi(String(c("parado")),"Clientes parados",`${c("sem_compras")} sem compras`,"/clientes");
+      lista("📞 Em risco com maior compra no ano","/clientes",l.filter(x=>x.status==="em_risco").sort((a,b)=>b.total365-a.total365).slice(0,6).map(x=>({a:`${x.nome} · há ${x.diasDesdeUltima} dias`,b:brlN(x.total365)}))); });
+    seg(()=>{ const F=lerJSON(FUNC_FILE,[]), arr=Array.isArray(F)?F:(F.lista||F.funcionarios||Object.values(F)); kpi(String(arr.filter(x=>x&&x.ativo!==false).length),"Funcionários ativos","","/funcionarios"); });
+    seg(()=>{ const P=lerProdutosBling().porId, at=Object.entries(P).filter(([,p])=>p.s==="A"&&p.f!=="V"); let cat={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) cat[String(c.id)]=c; }); }catch(e){}
+      const lig=new Set((_FISCAL?_FISCAL.todosVinculos():[]).map(v=>String(v.produtoId)));
+      const semPreco=at.filter(([id])=>!cat[id]||!(Number(cat[id].p)>0)), semImg=at.filter(([id,p])=>!(cat[id]&&cat[id].i)&&!p.img), semForn=at.filter(([id])=>!lig.has(id));
+      kpi(String(semPreco.length),"Produtos sem preço na tabela",`de ${at.length} ativos`,"/tabela-atacado",semPreco.length?"alerta":""); kpi(String(semImg.length),"Produtos sem imagem","","/imagens");
+      kpi(String(semForn.length),"Sem fornecedor ligado",`${new Set((_FISCAL?_FISCAL.todosVinculos():[]).map(v=>v.cnpj)).size} fornecedores ligados`,"/produtos");
+      lista("💲 Ativos sem preço na tabela","/tabela-atacado",semPreco.slice(0,8).map(([id,p])=>({a:p.n,b:p.c||""}))); });
+  }
+  if(g==="gestao"){
+    seg(()=>{ const av=(lerAvisos().lista||[]).filter(a=>!a.resolvido), por={}; av.forEach(a=>{ por[a.tipo||"outro"]=(por[a.tipo||"outro"]||0)+1; });
+      kpi(String(av.length),"Avisos abertos","","/avisos",av.length?"alerta":""); const div=av.filter(a=>_TIPOS_DIVERG.includes(a.tipo)).length; kpi(String(div),"Pedidos diferentes do Bling","a corrigir na Central","/central",div?"alerta":"");
+      lista("🔔 Avisos mais recentes","/avisos",av.slice(0,8).map(a=>({a:String(a.titulo||a.tipo||"").slice(0,110),b:new Date((a.em||0)-3*3600e3).toISOString().slice(5,16).replace("T"," ")})));
+      lista("📂 Avisos por tipo","/avisos",Object.entries(por).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>({a:k.replace(/_/g," "),b:String(v)}))); });
+    seg(()=>{ const ativo=_webhookAtivo("order."); kpi(ativo?"✅ chegando":"— parados","Avisos automáticos do Bling",ativo?"pedidos atualizados na hora":"sem avisos nas últimas 2 h","/central",ativo?"":"alerta");
+      const H=_statusHistorico(); kpi(H.varreduraCompleta?"✅ completo":"⏳ trazendo","Histórico do Bling",H.detalhes&&H.detalhes.total?`produtos: ${H.detalhes.feitos} de ${H.detalhes.total} pedidos`:"","/clientes"); });
+    seg(()=>{ const M=_metricasPedidos(ped(d(6),hoje).L,d(6),hoje); kpi(brlN(M.valor),"Vendas 7 dias",`${M.qtd} pedidos`,"/inicio"); });
+  }
+  if(g==="logistica"){
+    seg(()=>{ const S=_centralEntregas(d(6),hoje), Mx=_centralEntregas(iniMes,hoje), R=S.indicadores||{}, RM=Mx.indicadores||{};
+      kpi(String(R.total||0),"Entregas (7 dias)",`${R.entregues||0} entregues · ${R.emRota||0} em rota · ${R.aguardando||0} aguardando`,"/central-entregas");
+      kpi(String(RM.total||0),"Entregas no mês",`${RM.entregues||0} entregues`,"/entregas-dashboard"); kpi(String(RM.comOcorrencia||0),"Ocorrências no mês",brlN(RM.valorProblema||0)+" abatidos","/entregas-dashboard",RM.comOcorrencia?"alerta":"");
+      kpi(brlN(RM.frete?.total||0),"Frete cobrado no mês",RM.frete?.medioPorEntrega?brlN(RM.frete.medioPorEntrega)+" por entrega":"","/entregas-dashboard");
+      if((R.dinheiroAAcertar?.valor||0)>0) al("medio",`${brlN(R.dinheiroAAcertar.valor)} em dinheiro de entregas ainda a acertar no caixa (${R.dinheiroAAcertar.qtd})`,"/central-entregas");
+      if(R.aguardando) al("info",`${R.aguardando} entrega(s) aguardando saída`,"/rotas");
+      lista("🧑‍✈️ Motoristas (mês)","/entregas-dashboard",(Mx.porMotorista||[]).slice(0,8).map(m=>({a:`${m.motorista||m.nome||"—"} · ${m.entregas||0} entregas`,b:brlN(m.valor||m.valorEntregue||0)}))); });
+  }
+  if(g==="marketing"){
+    seg(()=>{ const r=_filtrarPedidos({ini:d(29),fim:hoje}).L, si=r.filter(p=>p.origem==="site"), to=r.filter(p=>p.origem==="totem"), sm=l=>brlN(l.reduce((a,p)=>a+p.total,0));
+      kpi(String(si.length),"Pedidos do site (30 dias)",sm(si),"/pedidos-site-totem"); kpi(String(to.length),"Pedidos do totem (30 dias)",sm(to),"/pedidos-site-totem");
+      const lim=Date.now()-3*_DIA, sn=Object.values(lerPropostas()||{}).filter(p=>p&&p.origem==="site"&&p.pedidoBlingId&&(p.criadoEm||0)>=lim&&!(p.avisoSite&&p.avisoSite.assumidoPor)).length;
+      if(sn) al("alto",`${sn} pedido(s) do site esperando alguém assumir`,"/venda-atacado"); });
+    seg(()=>{ const P=lerProdutosBling().porId; let cat={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) cat[String(c.id)]=c; }); }catch(e){}
+      const semImg=Object.entries(P).filter(([id,p])=>p.s==="A"&&p.f!=="V"&&!(cat[id]&&cat[id].i)&&!p.img); kpi(String(semImg.length),"Produtos sem imagem","aparecem sem foto no site e no totem","/imagens",semImg.length?"alerta":"");
+      lista("🖼️ Mais vendidos sem imagem (30 dias)","/imagens",_montarProdutos({ini:d(29),fim:hoje}).L.filter(r=>r.valor>0&&!r.img).sort((a,b)=>b.valor-a.valor).slice(0,8).map(r=>({a:r.nome,b:brlN(r.valor)}))); });
+  }
+  return {ok:true,grupo:g,titulo:titulos[g],kpis:K,alertas:A,listas:LS,geradoEm:Date.now()};
+}
+app.get("/api/painel-grupo/:g",(req,res,next)=>requireAcesso("acesso_painel_"+String(req.params.g).replace(/[^a-z]/g,""))(req,res,next),(req,res)=>{
+  try{ const g=String(req.params.g), c=_painelGCache.get(g); if(c&&Date.now()-c.em<60000&&req.query.fresco!=="1") return res.json(c.v);
+    const T0=Date.now(), v=_montarPainelGrupo(g); v.ms=Date.now()-T0; _painelGCache.set(g,{em:Date.now(),v}); res.json(v); }
+  catch(e){ res.status(e.message==="painel não encontrado"?404:500).json({erro:e.message}); }
+});
+
 // ===================== PAINEL B13 BEBIDAS (página inicial) =====================
 // Junta, numa consulta só, o que as telas de Pedidos de Venda, Produtos, Clientes e caixas sabem, para decisões.
 // Só dados locais (as mesmas cópias do Bling das outras telas). Guardado 60 s por período.
@@ -15155,6 +15268,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
 app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });
 app.get("/produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"produtos-gestao.html")); });
