@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Entrada de Nota</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/entrada-nota")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/entrada-nota"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📷 Entrada de Nota</div><div class="sp"></div></div>
+<div class="wrap">
+  <div class="card" id="cLer"><h3>1. Ler a nota</h3>
+    <div class="ic" style="white-space:normal;margin-bottom:8px">Aponte a câmera para o <b>código de barras</b> no topo da DANFE (ou tire uma foto dele). O sistema busca a nota completa, liga os produtos sozinho e calcula o custo.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-mag" onclick="abrirCamera()">📷 Ler código de barras</button>
+      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Foto do código<input type="file" accept="image/*" capture="environment" style="display:none" onchange="lerFoto(this.files[0])"></label>
+      <label class="btn btn-ghost" style="cursor:pointer">📄 Enviar XML<input type="file" accept=".xml,text/xml" style="display:none" onchange="lerXml(this.files[0])"></label></div>
+    <div id="camBox" style="display:none;margin-top:10px"><video id="video" playsinline muted></video><div class="ic" id="camMsg">Procurando o código de barras…</div><button class="btn btn-ghost" onclick="fecharCamera()">Fechar câmera</button></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><input id="chave" inputmode="numeric" placeholder="ou digite / cole a chave de 44 dígitos" style="flex:1" onkeydown="if(event.key==='Enter')carregarChave()"><button class="btn btn-ghost" onclick="carregarChave()">Buscar</button></div>
+    <div id="lerMsg" style="margin-top:8px"></div></div>
+  <div id="nota"></div>
+  <div class="card"><h3>💸 Contas a pagar geradas pelas notas <span class="ic">(últimas)</span></h3><div id="contas"><div class="ic">—</div></div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+let N = null, IGN = new Set(), BANCOS = [], PAGO = null, stream = null, lendo = false, zx = null;
+const msgLer = h => document.getElementById("lerMsg").innerHTML = h;
+// ===== leitura do código de barras (câmera / foto) =====
+const achaChave = t => { const d = String(t || "").replace(/\D/g, ""); const m = d.match(/\d{44}/); return m ? m[0] : null; };
+async function carregarZxing() { if (window.ZXing) return window.ZXing; await new Promise((ok, erro) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"; s.onload = ok; s.onerror = erro; document.head.appendChild(s); }); return window.ZXing; }
+async function abrirCamera() {
+  msgLer(""); document.getElementById("camBox").style.display = "block"; const v = document.getElementById("video");
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } }); v.srcObject = stream; await v.play(); }
+  catch (e) { document.getElementById("camMsg").textContent = "Não consegui abrir a câmera. Use 'Foto do código' ou digite a chave."; return; }
+  lendo = true;
+  if ("BarcodeDetector" in window) { const det = new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] });
+    const loop = async () => { if (!lendo) return; try { const r = await det.detect(v); const c = r.map(x => achaChave(x.rawValue)).find(Boolean); if (c) { fecharCamera(); carregar({ chave: c }); return; } } catch (e) {} setTimeout(loop, 250); }; loop(); }
+  else { try { const Z = await carregarZxing(); zx = new Z.BrowserMultiFormatReader(); zx.decodeFromVideoElementContinuously ? zx.decodeFromVideoElementContinuously(v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } })
+      : zx.decodeFromVideoDevice(undefined, v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } }); }
+    catch (e) { document.getElementById("camMsg").textContent = "Este navegador não lê código de barras pela câmera. Use 'Foto do código' ou digite a chave."; } }
+}
+function fecharCamera() { lendo = false; try { zx && zx.reset(); } catch (e) {} if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; document.getElementById("camBox").style.display = "none"; }
+async function lerFoto(f) { if (!f) return; msgLer(`<div class="ic">Lendo a foto…</div>`);
+  try { let c = null; if ("BarcodeDetector" in window) { const bmp = await createImageBitmap(f); const r = await new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] }).detect(bmp); c = r.map(x => achaChave(x.rawValue)).find(Boolean); }
+    if (!c) { const Z = await carregarZxing(); const url = URL.createObjectURL(f); try { const res = await new Z.BrowserMultiFormatReader().decodeFromImageUrl(url); c = achaChave(res.getText()); } catch (e) {} URL.revokeObjectURL(url); }
+    if (c) carregar({ chave: c }); else msgLer(`<div class="err">Não consegui ler o código de barras nessa foto. Tente mais perto e reto, com boa luz, ou digite a chave.</div>`);
+  } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
+async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }); }
+function carregarChave() { const c = achaChave(document.getElementById("chave").value); if (!c) { msgLer(`<div class="err">A chave tem 44 dígitos.</div>`); return; } carregar({ chave: c }); }
+async function carregar(corpo) {
+  msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
+  const { ok, j } = await api("/api/entrada-nota/carregar", { method: "POST", body: JSON.stringify(corpo) });
+  if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
+  msgLer(""); N = j.nota; IGN = new Set(); PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+}
+// ===== a nota =====
+function renderNota() {
+  const n = N, T = n.totais || {}, pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)).length;
+  const it = x => { const ign = IGN.has(x.nItem), dif = x.custoAnterior && x.custoRealUn ? Math.round((x.custoRealUn - x.custoAnterior) / x.custoAnterior * 100) : null;
+    if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
+        <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
+        <div style="text-align:right"><b>${brl(x.custoRealUn)}</b><span class="ic">/un</span>${dif != null ? `<div class="ic">antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span></div>` : ""}
+        ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
+        <label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
+    return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
+        <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
+        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px">
+        <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
+      <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas (e o Bling também aprende).</div>
+      <label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
+  const bancos = BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("");
+  document.getElementById("nota").innerHTML = `<div class="card">
+    ${n.entrada ? `<div class="err" style="margin-bottom:8px">Esta nota já deu entrada em ${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    <h3>2. Nota ${esc(n.numero)}${n.serie ? "/" + esc(n.serie) : ""} · ${brl(T.vNF)}</h3>
+    <div class="grid2"><div>${`<div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>`}<div class="lin"><span>CNPJ</span><b>${esc(n.emitente?.cnpj || "")}</b></div>
+      <div class="lin"><span>No Bling</span><b>${n.fornecedorBling ? "✅ " + esc(n.fornecedorBling.nome) : "será cadastrado ao ligar o 1º item"}</b></div><div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR") : "—"}</b></div></div>
+      <div><div class="lin"><span>Produtos</span><b>${brl(T.vProd)}</b></div><div class="lin"><span>Impostos, frete e outros</span><b>${brl(T.extras)}${T.rateioPct ? " (+" + String(T.rateioPct).replace(".", ",") + "% no custo)" : ""}</b></div>
+      ${T.vIPI || T.vST ? `<div class="lin"><span>IPI · ST</span><b>${brl(T.vIPI)} · ${brl(T.vST)}</b></div>` : ""}${T.vFrete ? `<div class="lin"><span>Frete</span><b>${brl(T.vFrete)}</b></div>` : ""}<div class="lin"><span>Pagamento na nota</span><b>${esc(n.formaNaNota || "—")}</b></div></div></div></div>
+  <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>${n.itens.map(it).join("")}</div>
+  <div class="card"><h3>4. Pagamento</h3>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px"><label><input type="radio" name="pg" ${PAGO === false ? "checked" : ""} onchange="PAGO=false;renderNota()"> A pagar (gera contas a pagar)</label><label><input type="radio" name="pg" ${PAGO ? "checked" : ""} onchange="PAGO=true;renderNota()"> Já foi paga</label></div>
+    ${PAGO ? `<div class="grid2"><label><div class="ic">Forma</div><select id="pgForma" style="width:100%" onchange="renderBancoPg()"><option>Pix</option><option>Dinheiro</option><option>Boleto</option><option>Transferência</option><option>Cartão</option></select></label>
+      <label id="pgBancoBox"><div class="ic">Banco</div><select id="pgBanco" style="width:100%">${bancos || "<option>—</option>"}</select></label></div>` : ""}
+    <table class="tb" style="margin-top:8px"><tr class="ic"><td>Parcela</td><td>Vencimento</td><td style="text-align:right">Valor</td></tr>${n.duplicatas.map((d, i) => `<tr><td>${i + 1}/${n.duplicatas.length}</td><td>${dmy(d.vencimento)}</td><td style="text-align:right">${brl(d.valor)}</td></tr>`).join("")}</table></div>
+  <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
+    <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada: o estoque de cada produto sobe no Bling com o custo real, a nota fica registrada na parte fiscal, as parcelas viram contas a pagar e o custo do fornecedor é atualizado no Bling.</div></div>`;
+}
+function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
+function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
+let _tb = {}; function buscarProd(nItem, q) { clearTimeout(_tb[nItem]); if (q.trim().length < 2) return; _tb[nItem] = setTimeout(async () => { const { j } = await api("/api/entrada-nota/produtos?q=" + encodeURIComponent(q)); const sel = document.getElementById("sel" + nItem);
+  sel.innerHTML = (j.itens || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("") + `<option value="">🔎 buscar outro produto…</option>`; }, 350); }
+async function ligar(nItem) { const pid = document.getElementById("sel" + nItem).value, fat = document.getElementById("fat" + nItem).value;
+  if (!pid) { alert("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { alert("Informe quantas unidades vêm em cada unidade da nota."); return; }
+  const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: pid, fator: fat }) });
+  if (!ok) { alert(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
+async function confirmar() {
+  const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
+  const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
+  const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, ignorar: [...IGN], pagamento: pg }) });
+  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
+  el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque · ${j.contas.length} conta(s) ${pg.pago ? "registrada(s) como paga(s)" : "a pagar"}.</div>${j.falhas.length ? `<div class="err">Não entraram: ${esc(j.falhas.map(x => (x.produtoNome || x.xProd) + " (" + x.erro + ")").join("; "))}</div>` : ""}`;
+  N.entrada = { em: Date.now() }; carregarContas();
+}
+async function carregarContas() { const { j } = await api("/api/entrada-nota/contas"); const t = (j.titulos || []).slice(0, 15);
+  document.getElementById("contas").innerHTML = t.length ? `<div style="overflow-x:auto"><table class="tb" style="min-width:560px"><tr class="ic"><td>Fornecedor</td><td>NF</td><td>Parcela</td><td>Vence</td><td style="text-align:right">Valor</td><td>Situação</td></tr>${t.map(x => `<tr><td>${esc(x.fornecedor?.nome)}</td><td>${esc(x.numeroNota)}</td><td>${esc(x.parcela)}</td><td>${dmy(x.vencimento)}</td><td style="text-align:right">${brl(x.valor)}</td><td>${x.status === "pago" ? "✅ paga" + (x.forma ? " · " + esc(x.forma) + (x.banco ? " " + esc(x.banco) : "") : "") : (x.vencimento < new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) ? "🔴 vencida" : "⏳ a pagar")}</td></tr>`).join("")}</table></div>` : `<div class="ic">Nenhuma ainda.</div>`; }
+(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContas(); })();
+</script>
+</body>
+</html>

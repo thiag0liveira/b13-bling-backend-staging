@@ -1256,6 +1256,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
+  {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
@@ -10915,6 +10916,98 @@ app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== ENTRADA DE NOTA (automática) =====================
+// Foto do código de barras (chave) ou XML -> nota completa -> fornecedor, itens ligados sozinhos (cadastro de fornecedores
+// do produto / código de barras / código), custo real com impostos e frete rateados, parcelas -> um clique dá entrada no
+// estoque do Bling, registra a parte fiscal, gera contas a pagar e atualiza o custo do fornecedor no Bling.
+const CONTAS_PAGAR_FILE=`${DATA_DIR}/contas_pagar.json`;
+function lerContasPagar(){ const d=lerJSON(CONTAS_PAGAR_FILE,null)||{}; d.seq||=0; d.titulos||=[]; return d; }
+const _TPAG={"01":"Dinheiro","02":"Cheque","03":"Cartão de crédito","04":"Cartão de débito","05":"Crédito loja","15":"Boleto","16":"Depósito","17":"Pix","18":"Transferência","90":"Sem pagamento (a prazo)","99":"Outros"};
+async function _resumoEntradaNota(n){
+  const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
+  const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0, k=base>0?extras/base:0;
+  let forn=null; try{ forn=await encontrarContatoPorDoc(n.emitente?.cnpj); }catch(e){}
+  const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, cr=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0;
+    return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
+      produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
+      custoAnterior:p&&p.pc>0?p.pc:null,precoVenda:p?p.p:null,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
+      sugestoes:(x.sugestoes||[]).slice(0,4),sugestaoFator:x.sugestaoFator||0}; });
+  const pend=itens.filter(x=>x.status!=="ok").length;
+  const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
+  const tp=(n.pagamentos||[])[0]?.tPag||"";
+  return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
+    totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):"",aPrazo:(n.duplicatas||[]).length>0||tp==="90"||tp==="15",
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null};
+}
+async function _acharNotaBlingPorChave(ch){
+  for(const ep of [`/nfe?chaveAcesso=${ch}`,`/notasfiscaisentrada?chaveAcesso=${ch}`]){ try{ const r=await bling(ep); const l=r?.data||[]; if(l.length) return l[0].id; }catch(e){} }
+  return null;
+}
+app.post("/api/entrada-nota/carregar",requireAcesso("acesso_entrada_nota"),express.json({limit:"6mb"}),async(req,res)=>{
+  try{
+    if(!_FISCAL) return res.status(503).json({erro:"módulo fiscal indisponível"});
+    const b=req.body||{}; let nota=null;
+    if(b.xml) nota=await _FISCAL.carregarNota({xml:b.xml});
+    else { const ch=String(b.chave||"").replace(/\D/g,""); if(ch.length!==44) return res.status(400).json({erro:"a chave da nota tem 44 dígitos (o número embaixo do código de barras da DANFE)"});
+      if(_FISCAL.nota(ch)) nota=await _FISCAL.carregarNota({chave:ch});
+      else { let id=await _acharNotaBlingPorChave(ch);
+        if(!id){ try{ await bling(`/nfe/manifestacaodestinatario`,{method:"POST",body:JSON.stringify({chaveAcesso:ch,tipoManifestacao:"210210"})}); }catch(e){}
+          try{ await bling(`/nfe/importarXmlSefaz`,{method:"POST",body:JSON.stringify({chaveAcesso:ch})}); }catch(e){} await sleep(1500); id=await _acharNotaBlingPorChave(ch); }
+        if(!id) return res.status(404).json({erro:"Não achei essa nota no Bling nem consegui buscar na SEFAZ. Envie o arquivo XML da nota (o fornecedor costuma mandar por e-mail).",chave:ch});
+        nota=await _FISCAL.carregarNota({blingId:id}); } }
+    res.json({ok:true,nota:await _resumoEntradaNota(nota)});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+app.get("/api/entrada-nota/produtos",requireAcesso("acesso_entrada_nota"),(req,res)=>{ try{ res.json({itens:_FISCAL?_FISCAL.buscarProdutos(String(req.query.q||"")):[]}); }catch(e){ res.json({itens:[]}); } });
+app.post("/api/entrada-nota/ligar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
+  try{
+    const b=req.body||{}, n=_FISCAL&&_FISCAL.nota(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    const it=(n.itens||[]).find(x=>Number(x.nItem)===Number(b.nItem)); if(!it) return res.status(404).json({erro:"item não encontrado"});
+    const fator=Number(String(b.fator||"").replace(",",".")); if(!(fator>0)||fator>1000) return res.status(400).json({erro:"informe quantas unidades vêm em cada "+(it.uCom||"unidade")+" da nota"});
+    const pid=String(b.produtoId||""), P=lerProdutosBling().porId[pid]; if(!pid) return res.status(400).json({erro:"escolha o produto"});
+    const v=_FISCAL.salvarVinculo({cnpj:n.emitente?.cnpj,cProd:it.cProd,uCom:it.uCom,fator,produtoId:pid,produtoNome:P?P.n:"",xProd:it.xProd,fornecedorNome:n.emitente?.nome,por:req.sessao?.nome||""});
+    await _FISCAL.reassociar(n.id);
+    setTimeout(()=>{ const comp=_FISCAL.vinculosDoProduto(pid).find(x=>x.chave===v.chave); if(comp) _enviarFornecedorBling(pid,comp); },200); // aprende também no Bling
+    res.json({ok:true,nota:await _resumoEntradaNota(_FISCAL.nota(n.id))});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
+  try{
+    const b=req.body||{}, n=_FISCAL&&_FISCAL.nota(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    if(n.entrada&&n.entrada.em) return res.status(409).json({erro:`Essa nota já deu entrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
+    const R=await _resumoEntradaNota(n), ign=new Set((b.ignorar||[]).map(Number)), quem=req.sessao?.nome||"";
+    const falta=R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
+    const dep=await _depositoPadraoId(); if(!dep) return res.status(502).json({erro:"não encontrei o depósito padrão no Bling"});
+    const lanc=[], P=lerProdutosBling();
+    for(const x of R.itens){ if(x.status!=="ok"||ign.has(Number(x.nItem))||!(x.qtdUn>0)) continue;
+      try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,precoCusto:x.custoRealUn||x.custoUn,
+          observacoes:`Entrada NF ${R.numero||""} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
+        lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
+      catch(e){ lanc.push({...x,ok:false,erro:e.message}); }
+      await sleep(320); }
+    try{ salvarJSON(PRODUTOS_BLING_FILE,P); _metProdCache.clear(); }catch(e){}
+    const okN=lanc.filter(x=>x.ok).length, falhas=lanc.filter(x=>!x.ok);
+    // registro da entrada (mesmo formato da Entrada de Estoque)
+    try{ const db=lerEntradasEstoque(); (db.entradas||=[]).unshift({id:"nf-"+(R.chave||n.id),em:Date.now(),tipo:"nota",fornecedor:R.emitente?.nome||"",cnpj:R.emitente?.cnpj||"",numeroNota:R.numero||"",chave:R.chave||"",por:quem,
+        itens:lanc.map(x=>({produtoId:x.produtoId,nome:x.produtoNome||x.xProd,quantidade:x.qtdUn,custo:x.custoRealUn||x.custoUn,ok:x.ok,erro:x.erro||undefined}))}); salvarEntradasEstoque(db); }catch(e){}
+    // contas a pagar (parcelas da nota) — pagas na hora se informado
+    const pg=b.pagamento||{}, C=lerContasPagar(), tit=[];
+    R.duplicatas.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",notaId:n.id,chave:R.chave,numeroNota:R.numero,fornecedor:{cnpj:R.emitente?.cnpj||"",nome:R.emitente?.nome||"",blingId:R.fornecedorBling?.id||null},
+      parcela:`${i+1}/${R.duplicatas.length}`,vencimento:d.vencimento,valor:_round2(d.valor),status:pg.pago?"pago":"aberto",criadoEm:Date.now(),criadoPor:quem};
+      if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
+      C.titulos.push(t); tit.push(t); });
+    salvarJSON(CONTAS_PAGAR_FILE,C);
+    _FISCAL.marcarEntrada(n.id,{em:Date.now(),por:quem,itensLancados:okN,falhas:falhas.length,contas:tit.map(t=>t.id)});
+    // custo atualizado no cadastro de fornecedores do Bling (fila lenta, em segundo plano)
+    setTimeout(async()=>{ for(const x of lanc.filter(y=>y.ok)){ const v=_FISCAL.vinculosDoProduto(x.produtoId).find(z=>z.cnpj===R.emitente?.cnpj&&String(z.cProd)===String(x.cProd)); if(v){ await _enviarFornecedorBling(x.produtoId,{...v,ultimoCustoUn:x.custoRealUn||v.ultimoCustoUn}); await sleep(700); } } },500);
+    addLog("nota-"+(R.chave||n.id),"entrada_nota",req.sessao?.funcionarioId||"",quem,{numero:R.numero,fornecedor:R.emitente?.nome,itens:okN,falhas:falhas.length,valor:R.totais.vNF,pago:!!pg.pago});
+    if(falhas.length) registrarAviso({tipo:"entrada_nota_falhou",titulo:`Entrada da NF ${R.numero}: ${falhas.length} item(ns) não entraram no estoque do Bling`,fingerprint:"nf-"+(R.chave||n.id),
+      oQueFazer:`Confira no Bling: ${falhas.map(x=>x.produtoNome||x.xProd).join(", ").slice(0,300)}`});
+    res.json({ok:true,lancados:okN,falhas,contas:tit});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/entrada-nota/contas",requireAcesso("acesso_entrada_nota"),(req,res)=>{ const C=lerContasPagar(); res.json({titulos:C.titulos.slice(-300).reverse()}); });
+
 // ===================== FORNECEDORES DO PRODUTO (ficha do produto) =====================
 // Cada produto guarda quem o vende e o código que cada fornecedor usa (as mesmas ligações do Estoque fiscal: assim a
 // nota se liga sozinha). Grava no sistema e no Bling (cadastro "fornecedores do produto", com código e preço de custo).
@@ -14993,6 +15086,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   if(!reg||!reg.assinaturaDataUrl) return res.status(404).json({erro:"assinatura não encontrada (pode ter sido apagada pela limpeza automática de imagens antigas)"});
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
+app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
 app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });
 app.get("/produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"produtos-gestao.html")); });
 app.get("/pedidos-vendas",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"pedidos-vendas.html")); });

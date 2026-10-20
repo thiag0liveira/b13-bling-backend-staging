@@ -92,6 +92,11 @@ export function registrarEstoqueFiscal(app, deps) {
       chave: chave.length === 44 ? chave : "", numero: String(ide.nNF || ""), serie: String(ide.serie || ""), emissao,
       emitente: { cnpj: digitos(emit.CNPJ || emit.CPF), nome: String(emit.xNome || "").trim() },
       destCnpj: digitos(dest.CNPJ || dest.CPF), vNF: num(inf.total?.ICMSTot?.vNF),
+      // para contas a pagar e custo real: parcelas (cobr/dup), forma de pagamento (pag/detPag) e totais da nota
+      duplicatas: [].concat(inf.cobr?.dup || []).map((d) => ({ numero: String(d.nDup || ""), vencimento: String(d.dVenc || "").slice(0, 10), valor: num(d.vDup) })).filter((d) => d.valor > 0),
+      pagamentos: [].concat(inf.pag?.detPag || []).map((p) => ({ tPag: String(p.tPag || ""), valor: num(p.vPag) })),
+      totais: { vProd: num(inf.total?.ICMSTot?.vProd), vDesc: num(inf.total?.ICMSTot?.vDesc), vFrete: num(inf.total?.ICMSTot?.vFrete), vSeg: num(inf.total?.ICMSTot?.vSeg),
+        vOutro: num(inf.total?.ICMSTot?.vOutro), vIPI: num(inf.total?.ICMSTot?.vIPI), vST: num(inf.total?.ICMSTot?.vST), vNF: num(inf.total?.ICMSTot?.vNF) },
       origem: "xml", origemDados: "xml", itens,
     };
   }
@@ -539,5 +544,21 @@ export function registrarEstoqueFiscal(app, deps) {
     marcarBling(chave, info) { const v = DEPARA[chave]; if (!v) return; Object.assign(v, info || {}); gravarDepara(); },
     todosVinculos() { return Object.entries(DEPARA).map(([chave, v]) => ({ chave, ...v, fornecedorNome: v.fornecedorNome || _nomeFornecedor(v.cnpj), ultimoCustoUn: (_ultimoDoVinculo(v.cnpj, v.cProd).ult || {}).custoUn ?? null })); },
     nomeFornecedor: _nomeFornecedor,
+    // ENTRADA DE NOTA: carrega a nota (XML enviado, chave já conhecida ou nota do Bling), guarda e LIGA os itens na hora
+    async carregarNota({ xml, chave, blingId }) {
+      let nota = null;
+      if (xml) nota = lerNFeXml(String(xml));
+      else if (chave && NOTAS[digitos(chave)]) { const n = NOTAS[digitos(chave)]; await this.reassociar(n.id); return NOTAS[n.id]; }
+      else if (blingId) nota = (await lerNotaDoBling(blingId)).nota;
+      if (!nota) throw new Error("nota não encontrada");
+      const g = guardarNota(nota); const n = NOTAS[g.id];
+      await this.reassociar(g.id); return NOTAS[g.id] || n;
+    },
+    async reassociar(id) { const n = NOTAS[id]; if (!n) return null; const idx = montarIndice();
+      for (const it of (n.itens || [])) { try { await associarItem(n, it, { idx }); } catch (e) { it.status = "pendente"; it.motivo = "erro ao associar: " + String(e.message || e).slice(0, 80); } }
+      gravarNotas(); return n; },
+    nota(id) { return NOTAS[id] || null; },
+    marcarEntrada(id, info) { const n = NOTAS[id]; if (!n) return; n.entrada = { ...(n.entrada || {}), ...info }; gravarNotas(); },
+    buscarProdutos(q) { const idx = montarIndice(); return sugerir(idx, q); },
   };
 }
