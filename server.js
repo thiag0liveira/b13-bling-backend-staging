@@ -7321,10 +7321,11 @@ app.get("/api/etiquetas",async(req,res)=>{
 
     if(!it&&!avulso){ resultado.push({itemId:id,erro:"item não encontrado"}); continue; }
 
-    let precoVarejo=null;
+    let precoVarejo=null, nomeCompleto="", imagem="";
     const produtoIdParaBusca=avulso?avulso.produtoId:(it.bling||[])[0]?.id;
     if(produtoIdParaBusca){
-      try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); }catch(e){}
+      try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); nomeCompleto=r?.data?.nome||""; imagem=r?.data?.imagemURL||(r?.data?.midia?.imagens?.externas||[])[0]?.link||""; }catch(e){}
+      if(!imagem||!nomeCompleto){ try{ const c=(_catalogoPreco().itens||[]).find(x=>String(x.id)===String(produtoIdParaBusca)); if(c){ imagem=imagem||c.i||""; nomeCompleto=nomeCompleto||c.n||""; } }catch(e){} }
     }
 
     // fonte dos preços de atacado/fardo: o próprio item da tabela, ou o item vinculado
@@ -7341,6 +7342,7 @@ app.get("/api/etiquetas",async(req,res)=>{
       precoFardo,
       caixaQtd: fonteAtacado?(fonteAtacado.caixa||null):null,
       precoVarejo,
+      produtoId:produtoIdParaBusca||null, nomeCompleto, imagem, // usados no modelo Varal A4
     });
   }
   res.json({data:resultado});
@@ -15519,6 +15521,8 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
   res.json({ok:true,dataUrl:reg.assinaturaDataUrl});
 });
 app.get("/diag",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"diag.html")); });
+// fontes usadas nas impressões (licença OFL do Google Fonts), servidas pelo próprio sistema
+app.get("/fontes/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^[A-Za-z0-9-]+\.ttf$/.test(a)) return res.status(404).end(); res.set("Cache-Control","public, max-age=2592000"); res.sendFile(path.join(__dirname,"fontes",a),e=>{ if(e&&!res.headersSent) res.status(404).end(); }); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
