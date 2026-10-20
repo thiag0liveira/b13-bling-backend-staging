@@ -11067,6 +11067,7 @@ app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
 const CONTAS_PAGAR_FILE=`${DATA_DIR}/contas_pagar.json`;
 function lerContasPagar(){ const d=lerJSON(CONTAS_PAGAR_FILE,null)||{}; d.seq||=0; d.titulos||=[]; return d; }
 const _TPAG={"01":"Dinheiro","02":"Cheque","03":"Cartão de crédito","04":"Cartão de débito","05":"Crédito loja","15":"Boleto","16":"Depósito","17":"Pix","18":"Transferência","90":"Sem pagamento (a prazo)","99":"Outros"};
+let _catCache={em:0,m:{}}; function _catPorId(){ if(Date.now()-_catCache.em>5*60000){ const m={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) m[String(c.id)]={a:Number(c.a)||0,f:Number(c.f)||0,q:Number(c.q)||0,p:Number(c.p)||0}; }); }catch(e){} _catCache={em:Date.now(),m}; } return _catCache.m; }
 function _mesclarSugestoes(a,b){ const out=[...a]; (b||[]).forEach(s=>{ if(s&&s.produtoId&&!out.some(o=>String(o.produtoId)===String(s.produtoId))) out.push({produtoId:s.produtoId,nome:s.nome,confianca:"fraca"}); }); return out.slice(0,6); }
 async function _resumoEntradaNota(n){
   const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
@@ -11080,8 +11081,16 @@ async function _resumoEntradaNota(n){
         const sg=_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]), lido=x.sugestaoFator||x.fatorLido||_fatorDoNome(x.xProd);
         if(lido) return {sugestoes:sg,sugestaoFator:lido,fatorFonte:x.fatorLido?"lido na foto":"pela descrição"};
         // sem a quantidade por embalagem escrita: se o preço unitário é bem maior que o custo/preço de uma unidade do produto sugerido, é caixa/fardo -> estima
-        const top=sg[0]&&P[String(sg[0].produtoId)], vu=Number(x.vUnCom)||(x.qCom?(Number(x.vProd)||0)/x.qCom:0), ref=top?(top.pc>0?top.pc:(top.p>0?top.p*0.75:0)):0;
-        if(ref>0&&vu>ref*2.5){ const est=vu/ref, packs=[6,8,10,12,15,18,20,24,30,36,48]; const f=packs.reduce((a,b)=>Math.abs(b-est)<Math.abs(a-est)?b:a); return {sugestoes:sg,sugestaoFator:f,fatorEstimado:true,fatorFonte:"estimada pelo preço"}; }
+        const pid=sg[0]&&String(sg[0].produtoId), top=pid&&P[pid], vu=Number(x.vUnCom)||(x.qCom?(Number(x.vProd)||0)/x.qCom:0), cat=pid?_catPorId()[pid]:null;
+        const ref=top?(top.pc>0?top.pc:(top.p>0?top.p*0.75:0)):0, packs=[6,8,10,12,15,18,20,24,30,36,48], perto=e=>packs.reduce((a,b)=>Math.abs(b-e)<Math.abs(a-e)?b:a);
+        if(vu>0&&(ref>0||cat)){
+          // pistas: 1) fardo da tabela (preço do fardo ~ preço da embalagem); 2) preço de atacado por unidade (margem baixa); 3) custo / venda
+          const pistas=[];
+          if(cat&&cat.q>1&&cat.f>0&&Math.abs(vu-cat.f)/cat.f<=0.25) pistas.push({f:cat.q,fonte:"pelo fardo da tabela ("+cat.q+" un)"});
+          if(cat&&cat.a>0&&vu>cat.a*2.5){ const e=vu/cat.a; if(Math.abs(perto(e)-e)/perto(e)<=0.2) pistas.push({f:perto(e),fonte:"pelo preço de atacado"}); }
+          if(ref>0&&vu>ref*2.5){ const e=vu/ref; pistas.push({f:perto(e),fonte:"pelo custo"}); }
+          if(pistas.length){ const iguais=pistas.filter(p=>p.f===pistas[0].f).length;
+            return {sugestoes:sg,sugestaoFator:pistas[0].f,fatorEstimado:true,fatorFonte:"estimada "+pistas[0].fonte+(iguais>1?" e confirmada por outra pista":"")}; } }
         return {sugestoes:sg,sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
   const pend=itens.filter(x=>x.status!=="ok").length;
   const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
