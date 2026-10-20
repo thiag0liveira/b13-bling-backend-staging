@@ -115,7 +115,7 @@ const hoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
 let D = null, BANCOS = [];
-const FORMAS = ["Pix", "Boleto", "Transferência", "Dinheiro", "Cartão", "Débito automático"];
+const FORMAS = ["Pix", "Boleto", "Transferência", "Dinheiro do caixa", "Dinheiro (cofre)", "Cartão", "Débito automático"]; let CAIXAS = [];
 async function carregar() {
   const q = new URLSearchParams({ situacao: fSit.value, de: fDe.value, ate: fAte.value, categoria: fCat.value, busca: fBusca.value.trim() });
   const { ok, j } = await api("/api/contas-pagar?" + q); if (!ok) { lista.innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; render(); }
@@ -144,12 +144,14 @@ function abrirNova() { abrir(`<h3>➕ Nova despesa</h3><div class="grid2">
   <div id="nMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarNova()">💾 Lançar</button></div>`); }
 async function salvarNova() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/contas-pagar", { method: "POST", body: JSON.stringify({ descricao: v("nDesc"), fornecedor: v("nForn"), categoria: v("nCat"), valor: v("nValor").replace(",", "."), vencimento: v("nVenc"), parcelas: v("nParc"), repetirMensal: nRep.checked, pago: nPago.checked, forma: v("nForma"), banco: v("nBanco") }) });
   if (!ok) { nMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar.")}</div>`; return; } fechar(); carregar(); }
-function abrirPagar(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>Pagar · ${esc(t.fornecedor?.nome || t.descricao)}</h3><div class="ic">${esc(t.descricao)} · vence ${dmy(t.vencimento)} · ${brl(t.valor)}</div><div class="grid2" style="margin-top:8px">
+async function abrirPagar(id) { try { const { j } = await api("/api/contas-pagar-caixas"); CAIXAS = j.caixas || []; } catch (e) {} abrirPagar2(id); }
+function abrirPagar2(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>Pagar · ${esc(t.fornecedor?.nome || t.descricao)}</h3><div class="ic">${esc(t.descricao)} · vence ${dmy(t.vencimento)} · ${brl(t.valor)}</div><div class="grid2" style="margin-top:8px">
   <label><div class="ic">Data do pagamento</div><input id="pData" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Valor pago</div><input id="pValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label>
-  <label><div class="ic">Forma</div><select id="pForma" style="width:100%">${FORMAS.map(f => `<option>${f}</option>`).join("")}</select></label><label><div class="ic">Banco / conta</div>${selBanco("pBanco")}</label></div>
+  <label><div class="ic">Forma</div><select id="pForma" style="width:100%" onchange="pCxBox.style.display=this.value==='Dinheiro do caixa'?'':'none';pBcBox.style.display=this.value==='Dinheiro do caixa'?'none':''">${FORMAS.map(f => `<option>${f}</option>`).join("")}</select></label><label id="pBcBox"><div class="ic">Banco / conta</div>${selBanco("pBanco")}</label>
+  <label id="pCxBox" style="display:none"><div class="ic">De qual caixa (vira sangria nele)</div><select id="pCaixa" style="width:100%">${CAIXAS.map(c => `<option value="${c.id}">${esc(c.nome)} · gaveta ${brl(c.gaveta)}</option>`).join("") || "<option value=''>nenhum caixa aberto</option>"}</select></label></div>
   <label style="display:block;margin-top:6px"><div class="ic">Observação</div><input id="pObs" style="width:100%"></label><div id="pMsg"></div>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="pagar('${id}')">✅ Confirmar pagamento</button></div>`); }
-async function pagar(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/pagar`, { method: "POST", body: JSON.stringify({ data: v("pData"), valorPago: v("pValor").replace(",", "."), forma: v("pForma"), banco: v("pBanco"), observacao: v("pObs") }) });
+async function pagar(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/pagar`, { method: "POST", body: JSON.stringify({ data: v("pData"), valorPago: v("pValor").replace(",", "."), forma: v("pForma"), banco: v("pBanco"), sessaoId: v("pCaixa"), observacao: v("pObs") }) });
   if (!ok) { pMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
 function abrirEditar(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>✏️ Editar conta</h3><div class="grid2"><label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
   <label><div class="ic">Categoria</div><select id="eCat" style="width:100%">${D.categorias.map(c => `<option ${c === t.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>

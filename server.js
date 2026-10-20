@@ -3816,7 +3816,8 @@ function resumoSessaoCaixa(sessao){
   const taxaCartaoEmbutida=+(vendasCartao*TAXA/(1+TAXA)).toFixed(2);
 
   // o que deveria ter na gaveta agora (vendasDinheiro já é líquido de troco)
-  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias).toFixed(2);
+  const estornos=movs.filter(m=>m.tipo==="estorno"&&!m.cancelado), estDin=estornos.filter(m=>m.forma==="dinheiro").reduce((s,m)=>s+(Number(m.valor)||0),0);
+  const esperadoGavetaCalc=+(Number(sessao.trocoInicial||0)+vendasDinheiro+totalSuprimentos-totalSangrias-estDin).toFixed(2); // estorno em dinheiro sai da gaveta
   // se um gestor ajustou o esperado manualmente, usa esse valor (mas mantém o calculado visível)
   const temManual=(sessao.esperadoGavetaManual!==undefined&&sessao.esperadoGavetaManual!==null&&sessao.esperadoGavetaManual!=="");
   const esperadoGaveta=temManual?+Number(sessao.esperadoGavetaManual).toFixed(2):esperadoGavetaCalc;
@@ -3830,6 +3831,8 @@ function resumoSessaoCaixa(sessao){
     canceladaEm:m.cancelamento?.em||null,autorizadoPor:m.cancelamento?.autorizadoPor||"",pedidoPor:m.cancelamento?.pedidoPor||"",motivoCancelamento:m.cancelamento?.motivo||""}));
   return {
     sangriasCanceladas,
+   estornos:{total:+estornos.reduce((s,m)=>s+(Number(m.valor)||0),0).toFixed(2),dinheiro:+estDin.toFixed(2),pix:+estornos.filter(m=>m.forma==="pix").reduce((s,m)=>s+(Number(m.valor)||0),0).toFixed(2),
+     credito:+estornos.filter(m=>m.forma==="credito").reduce((s,m)=>s+(Number(m.valor)||0),0).toFixed(2),lista:estornos.map(m=>({em:m.em,valor:m.valor,forma:m.forma,banco:m.banco||"",pedidoNumero:m.pedidoNumero||"",cliente:m.clienteNome||"",motivo:m.motivo||"",autorizadoPor:m.autorizadoPor||"",por:m.por||""}))},
     creditoCliente:{total:+creditoUsos.reduce((a,u)=>a+u.valor,0).toFixed(2),usos:creditoUsos},
     trocoInicial:+Number(sessao.trocoInicial||0).toFixed(2),
     totalTroco:+totalTroco.toFixed(2),
@@ -11303,6 +11306,29 @@ app.post("/api/entrada-nota/sem-nota/editar",requireAcesso("acesso_entrada_nota"
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
 
+// ===== ESTORNO AO CLIENTE (Caixa Atacado): dinheiro da gaveta, Pix de um banco ou crédito para o cliente — com QR =====
+app.post("/api/caixa-sessao/:id/estorno",async(req,res)=>{
+  try{ const b=req.body||{}, auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const v=_round2(Number(String(b.valor||"").replace(",","."))), forma=["dinheiro","pix","credito"].includes(b.forma)?b.forma:null;
+    if(!(v>0)) return res.status(400).json({erro:"informe o valor do estorno"}); if(!forma) return res.status(400).json({erro:"escolha como o valor foi devolvido"}); if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"});
+    const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===req.params.id); if(!sx) return res.status(404).json({erro:"caixa não encontrado"}); if(sx.fechadaEm) return res.status(409).json({erro:"esse caixa já foi fechado"});
+    if(forma==="dinheiro"){ const r=resumoSessaoCaixa(sx); if(v>r.esperadoGaveta+0.009) return res.status(409).json({erro:`Não há dinheiro suficiente na gaveta (esperado ${brlN(r.esperadoGaveta)}). Use Pix ou crédito, ou faça um suprimento antes.`}); }
+    if(forma==="pix"&&!String(b.banco||"").trim()) return res.status(400).json({erro:"informe de qual banco saiu o Pix"});
+    // pedido e cliente pelo número
+    let pid=String(b.pedidoId||""), num=String(b.pedidoNumero||"").replace(/\D/g,""), cliId=b.clienteId?String(b.clienteId):"", cliNome=String(b.clienteNome||"");
+    if(num&&(!pid||!cliId)){ const r=_indicePedidos().lista.find(x=>String(x.numero)===num); if(r){ pid=pid||r.id; cliId=cliId||r.clienteId; cliNome=cliNome||r.cliente; } }
+    if(forma==="credito"&&!cliId) return res.status(400).json({erro:"para devolver como crédito, informe o nº do pedido (para achar o cliente)"});
+    const quem=auth.funcionario.nome||"", mov={tipo:"estorno",em:Date.now(),valor:v,forma,banco:forma==="pix"?String(b.banco).slice(0,60):"",pedidoId:pid||null,pedidoNumero:num||"",clienteId:cliId||null,clienteNome:cliNome.slice(0,120),
+      motivo:String(b.motivo).trim().slice(0,200),autorizadoPor:quem,por:String(b.operador||"").slice(0,60)};
+    (sx.movimentos||=[]).push(mov); salvarCaixaSessoes(d);
+    if(forma==="credito"){ const C=lerCreditos(); C.seq++; C.movs.push({id:"cr"+C.seq,clienteId:cliId,clienteNome:cliNome,em:Date.now(),tipo:"entrada",valor:v,forma:"Estorno",descricao:`Estorno do pedido ${num||"—"}: ${mov.motivo}`,pedidoNumero:num,pedidoId:pid||null,por:quem}); salvarJSON(CLIENTES_CREDITO_FILE,C); }
+    if(pid) addLog(pid,"estorno_cliente",null,quem,{valor:v,forma,banco:mov.banco,motivo:mov.motivo,caixa:sx.id});
+    res.json({ok:true,estorno:mov,saldoCredito:forma==="credito"?_saldoCredito(lerCreditos().movs,cliId):null});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// caixas abertos (para pagar conta com dinheiro do caixa)
+app.get("/api/contas-pagar-caixas",requireAcesso("acesso_contas_pagar"),(req,res)=>{ const l=(lerCaixaSessoes().sessoes||[]).filter(s=>!s.fechadaEm).map(s=>{ let g=0; try{ g=resumoSessaoCaixa(s).esperadoGaveta; }catch(e){} return {id:s.id,nome:`${s.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} · ${s.operador||""}`,gaveta:g}; }); res.json({caixas:l}); });
+
 // ===================== CONTAS A PAGAR =====================
 // Títulos vindos das notas (com e sem nota), de boletos e de despesas lançadas aqui; despesas fixas mensais geradas sozinhas.
 const CATEGORIAS_DESPESA=["Fornecedores (mercadoria)","Aluguel","Salários e encargos","Energia","Água","Internet e telefone","Impostos e taxas","Frete e combustível","Manutenção","Marketing","Tarifas bancárias","Outros"];
@@ -11354,9 +11380,15 @@ app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req
     const a=req.params.acao, hist=(o)=>{ (t.historico||=[]).push({em:Date.now(),por:quem,...o}); };
     if(a==="pagar"){ if(t.status==="pago") return res.status(409).json({erro:"essa conta já está paga"}); if(t.status==="cancelado") return res.status(409).json({erro:"essa conta está cancelada"});
       const vp=Number(String(b.valorPago||t.valor).replace(",","."))||t.valor, dp=/^\d{4}-\d{2}-\d{2}$/.test(String(b.data||""))?b.data:_diaBRk(Date.now());
+      if(b.forma==="Dinheiro do caixa"){ const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===b.sessaoId&&!x.fechadaEm); if(!sx) return res.status(400).json({erro:"escolha um caixa aberto"});
+        const g=resumoSessaoCaixa(sx).esperadoGaveta; if(vp>g+0.009) return res.status(409).json({erro:`Esse caixa não tem dinheiro suficiente (esperado na gaveta ${brlN(g)}).`});
+        const em=Date.now(); (sx.movimentos||=[]).push({tipo:"sangria",em,valor:_round2(vp),motivo:`Pagamento: ${t.fornecedor?.nome||""} ${t.descricao||""}`.trim().slice(0,150),responsavelNome:quem,contaPagarId:t.id}); salvarCaixaSessoes(d);
+        t.sangria={sessaoId:sx.id,em}; b.banco=`${sx.tipoCaixa==="atacado"?"Caixa Atacado":"Frente de Caixa"} (${sx.operador||""})`; }
       Object.assign(t,{status:"pago",pagoEm:Date.parse(dp+"T12:00:00-03:00"),dataPagamento:dp,forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),valorPago:_round2(vp),pagoPor:quem,observacaoPagamento:String(b.observacao||"").slice(0,200)});
       hist({acao:"pagou",valor:t.valorPago,forma:t.forma,banco:t.banco}); }
     else if(a==="reabrir"){ if(t.status!=="pago"&&t.status!=="cancelado") return res.status(400).json({erro:"a conta já está em aberto"}); hist({acao:t.status==="pago"?"desfez o pagamento":"reabriu",motivo:String(b.motivo||"")});
+      if(t.sangria){ const d=lerCaixaSessoes(), sx=(d.sessoes||[]).find(x=>x.id===t.sangria.sessaoId), m=sx&&(sx.movimentos||[]).find(x=>x.tipo==="sangria"&&Number(x.em)===Number(t.sangria.em));
+        if(m&&!m.cancelado){ if(sx.fechadaEm) return res.status(409).json({erro:"o caixa onde saiu o dinheiro já foi fechado: acerte pela Gestão de Caixas"}); m.cancelado=true; m.canceladoMotivo="pagamento desfeito em Contas a Pagar"; m.canceladoPor=quem; salvarCaixaSessoes(d); } delete t.sangria; }
       ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento","canceladoEm","motivoCancelamento"].forEach(k=>delete t[k]); t.status="aberto"; }
     else if(a==="cancelar"){ if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"}); if(t.status==="pago") return res.status(409).json({erro:"desfaça o pagamento antes de cancelar"});
       Object.assign(t,{status:"cancelado",canceladoEm:Date.now(),motivoCancelamento:String(b.motivo).slice(0,200)}); hist({acao:"cancelou",motivo:t.motivoCancelamento}); }

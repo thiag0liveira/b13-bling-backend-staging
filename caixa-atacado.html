@@ -97,6 +97,7 @@ document.addEventListener("DOMContentLoaded",function(){
   <button class="btn btn-ghost btn-sm" onclick="imprimirComprovante(ULTIMA_VENDA)">🖨️ Reimprimir última venda</button>
   <button class="btn btn-ghost btn-sm" onclick="imprimirPorNumero()">🔢 Imprimir por nº do pedido</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('sangria')">💸 Sangria</button>
+          <button class="btn btn-ghost btn-sm" onclick="abrirEstorno()">↩️ Estorno ao cliente</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalMovimento('suprimento')">💰 Suprimento</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalCaixasAbertos()">🏪 Caixas Abertos</button>
   <button class="btn btn-ghost btn-sm" onclick="abrirModalHistorico()">📜 Histórico</button>
@@ -2314,6 +2315,31 @@ function avisoSangriasCanceladas(lista, impresso) {
   return `<div style="${est}">⚠️ <b>Este caixa teve ${l.length} sangria${l.length > 1 ? "s" : ""} cancelada${l.length > 1 ? "s" : ""}</b>${l.map(m => `<div style="margin-top:3px">${fmt(m.valor)} (sangria das ${hh(m.em)}${m.responsavelNome ? ", retirada por " + e(m.responsavelNome) : ""}) · cancelada às ${hh(m.canceladaEm)}, <b>autorizada por ${e(m.autorizadoPor || "—")}</b>${m.pedidoPor ? " · pedido por " + e(m.pedidoPor) : ""}${m.motivoCancelamento ? " · motivo: " + e(m.motivoCancelamento) : ""}</div>`).join("")}</div>`;
 }
 function rotuloSangriaCancelada(m) { return m && m.cancelado ? ` <span style="background:#9e2f4a;color:#fff;border-radius:6px;padding:1px 6px;font-size:10.5px;font-weight:800">CANCELADA · autorizada por ${String((m.cancelamento && m.cancelamento.autorizadoPor) || "—").replace(/</g, "&lt;")}</span>` : ""; }
+// ESTORNO AO CLIENTE: dinheiro da gaveta, Pix de um banco ou crédito para o cliente (com QR de gerente/financeiro/admin)
+async function abrirEstorno() {
+  const sid = CAIXA.sessao && CAIXA.sessao.id; if (!sid || !CAIXA.aberta) { alert("Abra o caixa antes."); return; }
+  let bancos = []; try { const b = await fetch(BACKEND + "/api/pix-bancos").then(r => r.json()); bancos = (b && b.bancos) || []; } catch (e) {}
+  document.getElementById("modais").innerHTML = `<div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal"><h3>↩️ Estorno ao cliente</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">Use quando devolver dinheiro ao cliente (ex.: pedido editado depois de pago, item que faltou). Fica no caixa, no fechamento e no histórico do pedido.</div>
+    <label style="display:block;margin-bottom:6px"><div class="muted" style="font-size:12px">Nº do pedido</div><input id="esNum" inputmode="numeric" style="width:100%"></label>
+    <label style="display:block;margin-bottom:6px"><div class="muted" style="font-size:12px">Valor devolvido</div><input id="esValor" inputmode="decimal" style="width:100%"></label>
+    <div class="muted" style="font-size:12px">Como foi devolvido</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 6px"><label><input type="radio" name="esForma" value="dinheiro" checked onchange="esBancoBox.style.display='none'"> 💵 Dinheiro da gaveta</label>
+      <label><input type="radio" name="esForma" value="pix" onchange="esBancoBox.style.display=''"> 📲 Pix</label><label><input type="radio" name="esForma" value="credito" onchange="esBancoBox.style.display='none'"> 💳 Crédito para o cliente</label></div>
+    <label id="esBancoBox" style="display:none;margin-bottom:6px"><div class="muted" style="font-size:12px">De qual banco saiu o Pix</div><select id="esBanco" style="width:100%">${bancos.map(b => `<option>${esc(b.nome || b)}</option>`).join("")}</select></label>
+    <label style="display:block;margin-bottom:6px"><div class="muted" style="font-size:12px">Motivo</div><input id="esMotivo" style="width:100%" placeholder="ex.: pedido editado, 2 fardos a menos"></label>
+    <div id="esMsg"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharModais()">Cancelar</button><button class="btn" style="flex:1" onclick="confirmarEstorno()">Continuar (QR)</button></div></div></div>`;
+}
+function confirmarEstorno() {
+  const v = id => (document.getElementById(id) || {}).value || "", forma = (document.querySelector('input[name="esForma"]:checked') || {}).value, dados = { pedidoNumero: v("esNum"), valor: v("esValor").replace(",", "."), forma, banco: v("esBanco"), motivo: v("esMotivo"), operador: S.nome || "" };
+  if (!(Number(dados.valor) > 0)) { esMsg.innerHTML = `<div class="err">Informe o valor.</div>`; return; } if (!dados.motivo.trim()) { esMsg.innerHTML = `<div class="err">Informe o motivo.</div>`; return; }
+  const sid = CAIXA.sessao.id, rot = { dinheiro: "em dinheiro da gaveta", pix: "por Pix (" + dados.banco + ")", credito: "como crédito para o cliente" }[forma];
+  pedirQrAcao("↩️ Estorno ao cliente", `Estornar <b>${brl(Number(dados.valor))}</b> ${esc(rot)}${dados.pedidoNumero ? " do pedido " + esc(dados.pedidoNumero) : ""}. Leia o QR de autorização (gerente, financeiro ou admin).`, async (tokenQr, campo, erroEl) => {
+    try { const r = await fetch(BACKEND + "/api/caixa-sessao/" + encodeURIComponent(sid) + "/estorno", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...dados, tokenQr }) });
+      const j = await r.json(); if (!r.ok || j.erro) throw new Error(j.erro || "Não consegui registrar");
+      fecharModais(); alert(`✅ Estorno de ${brl(j.estorno.valor)} registrado (${rot}), autorizado por ${j.estorno.autorizadoPor}.` + (j.saldoCredito != null ? `\nSaldo de crédito do cliente: ${brl(j.saldoCredito)}.` : "")); try { carregarCaixa(); } catch (e) {} try { location.reload(); } catch (e) {}
+    } catch (e) { if (erroEl) erroEl.innerHTML = `<div class="err">${esc(e.message)}</div>`; if (campo) { campo.value = ""; campo.focus(); } } });
+}
 function cancelarSangria(em, valor) {
   const motivo = prompt(`Cancelar a sangria de ${brl(valor)}?\n\nMotivo do cancelamento:`, ""); if (motivo == null) return;
   const sid = CAIXA.sessao && CAIXA.sessao.id; if (!sid) { alert("Caixa não encontrado."); return; }
