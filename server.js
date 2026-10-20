@@ -11076,7 +11076,13 @@ async function _resumoEntradaNota(n){
     return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
       custoAnterior:p&&p.pc>0?p.pc:null,precoVenda:p?p.p:null,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
-      sugestoes:x.status==="ok"?[]:_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]),sugestaoFator:x.sugestaoFator||_fatorDoNome(x.xProd)||(/^(UN|UND|UNID)$/.test(String(x.uCom||""))?1:0)}; });
+      ...(()=>{ if(x.status==="ok") return {sugestoes:[],sugestaoFator:0};
+        const sg=_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]), lido=x.sugestaoFator||x.fatorLido||_fatorDoNome(x.xProd);
+        if(lido) return {sugestoes:sg,sugestaoFator:lido,fatorFonte:x.fatorLido?"lido na foto":"pela descrição"};
+        // sem a quantidade por embalagem escrita: se o preço unitário é bem maior que o custo/preço de uma unidade do produto sugerido, é caixa/fardo -> estima
+        const top=sg[0]&&P[String(sg[0].produtoId)], vu=Number(x.vUnCom)||(x.qCom?(Number(x.vProd)||0)/x.qCom:0), ref=top?(top.pc>0?top.pc:(top.p>0?top.p*0.75:0)):0;
+        if(ref>0&&vu>ref*2.5){ const est=vu/ref, packs=[6,8,10,12,15,18,20,24,30,36,48]; const f=packs.reduce((a,b)=>Math.abs(b-est)<Math.abs(a-est)?b:a); return {sugestoes:sg,sugestaoFator:f,fatorEstimado:true,fatorFonte:"estimada pelo preço"}; }
+        return {sugestoes:sg,sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
   const pend=itens.filter(x=>x.status!=="ok").length;
   const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
@@ -11153,6 +11159,16 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
     res.json({ok:true,lancados:okN,falhas,contas:tit});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+app.post("/api/entrada-nota/boleto",requireAcesso("acesso_entrada_nota"),(req,res)=>{
+  try{ const b=req.body||{}, v=Number(String(b.valor||"").replace(",",".")); if(!(v>0)) return res.status(400).json({erro:"informe o valor do boleto"});
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) return res.status(400).json({erro:"informe o vencimento"});
+    const C=lerContasPagar(), ld=String(b.linhaDigitavel||"").replace(/\D/g,"");
+    if(ld&&C.titulos.some(t=>t.linhaDigitavel===ld)) return res.status(409).json({erro:"esse boleto já foi lançado em contas a pagar"});
+    C.seq++; const t={id:"cp"+C.seq,origem:"boleto",fornecedor:{cnpj:String(b.cnpj||"").replace(/\D/g,""),nome:String(b.beneficiario||"").slice(0,120)},numeroNota:String(b.numeroNota||"").slice(0,20),parcela:"1/1",
+      vencimento:b.vencimento,valor:_round2(v),linhaDigitavel:ld,status:"aberto",criadoEm:Date.now(),criadoPor:req.sessao?.nome||""};
+    C.titulos.push(t); salvarJSON(CONTAS_PAGAR_FILE,C); res.json({ok:true,titulo:t}); }
+  catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/entrada-nota/contas",requireAcesso("acesso_entrada_nota"),(req,res)=>{ const C=lerContasPagar(); res.json({titulos:C.titulos.slice(-300).reverse()}); });
 
 // ===== SUGESTÃO DE PRODUTO PELO NOME (feita para nomes de bebida) =====
@@ -11164,7 +11180,7 @@ function _normProd(t){
   let vol=null; const mv=x.match(/(\d+(?:\.\d+)?)\s*(ML|L|LT|LTS|LITRO|LITROS|KG|G)\b/);
   if(mv){ const n=Number(mv[1]); vol=/ML/.test(mv[2])?Math.round(n):/^KG$/.test(mv[2])?"P"+Math.round(n*1000):/^G$/.test(mv[2])?"P"+Math.round(n):Math.round(n*1000); if(typeof vol==="number"&&vol<30&&/ML/.test(mv[2])) vol=null; } // KG/G: peso
   let emb=null; if(/\b(LATA|LATAO|LT|LTA|LTS)\b/.test(x)&&!/\d\s*(LT|LTS)\b/.test(x)) emb="LATA"; if(/\bLATA\b|\bLATAO\b|\bLTA\b/.test(x)) emb="LATA";
-  if(/\b(LONG ?NECK|LN|LNECK)\b/.test(x)) emb="LN"; else if(/\b(GARRAFA|GF|GFA|GARR|GRF)\b/.test(x)) emb=emb||"GARRAFA"; if(/\bPET\b/.test(x)) emb="PET";
+  if(/\b(LONG ?NECK|LN|LNECK|LONG)\b/.test(x)) emb="LN"; // fornecedor costuma escrever só "LONG" else if(/\b(GARRAFA|GF|GFA|GARR|GRF)\b/.test(x)) emb=emb||"GARRAFA"; if(/\bPET\b/.test(x)) emb="PET";
   const pack=(x.match(/\b(?:C\/|CX\s*C?\/?|PCT\s*|FD\s*C?\/?|X)\s*(\d{1,3})\b/)||x.match(/\b(\d{1,3})\s*(?:UN|UND|UNID)\b/)||[])[1];
   const toks=x.replace(/\d+(?:\.\d+)?\s*(ML|L|LT|LTS|LITRO|LITROS|KG|G)\b/g," ").replace(/\b(?:C\/|CX|PCT|FD|X)\s*\d+\b/g," ").replace(/[^A-Z0-9 ]/g," ").split(/\s+/)
     .filter(w=>w.length>=2&&!_STOPP.has(w)&&!/^\d+$/.test(w)&&!["LATA","LATAO","LT","LTA","LN","LONG","NECK","GARRAFA","GF","GFA","GARR","PET","ML"].includes(w));
@@ -11226,9 +11242,11 @@ app.post("/api/entrada-nota/foto",requireAcesso("acesso_entrada_nota"),async(req
     const imgs=(Array.isArray(req.body?.imagens)?req.body.imagens:[]).slice(0,4).map(x=>String(x||"").replace(/^data:image\/\w+;base64,/,"")).filter(x=>x.length>100&&x.length<5e6);
     if(!imgs.length) return res.status(400).json({erro:"envie a foto"});
     const pedido=`Você lê fotos de comprovantes de COMPRA de uma distribuidora de bebidas no Brasil (recibo, pedido do fornecedor, cupom, anotação, orçamento). NÃO é nota fiscal eletrônica.
+Primeiro identifique o TIPO: "danfe" (nota fiscal eletrônica impressa, tem DANFE/chave de acesso), "boleto" (boleto bancário, tem linha digitável), "pedido", "recibo", "cupom" ou "outro".
 Responda SOMENTE com um JSON, sem texto antes ou depois, sem cercas de código, neste formato:
-{"fornecedor":{"nome":"","documento":"só dígitos do CNPJ/CPF ou vazio","telefone":""},"numeroDocumento":"","data":"AAAA-MM-DD ou vazio","itens":[{"descricao":"como está escrito","codigo":"código do item se houver, senão vazio","quantidade":0,"unidade":"UN/CX/FD/PCT/... como está escrito","valorUnitario":0,"valorTotal":0}],"desconto":0,"frete":0,"total":0,"pagamento":{"forma":"dinheiro/pix/boleto/cartão/a prazo ou vazio","pago":null,"vencimentos":[{"data":"AAAA-MM-DD","valor":0}]},"observacoes":"o que estiver ilegível ou duvidoso"}
-Use números com ponto decimal. Se um valor não aparecer, use 0 (ou vazio para textos). Não invente itens. Se a quantidade e o valor total aparecem mas o unitário não, calcule o unitário.`;
+{"tipoDocumento":"","danfe":{"chaveAcesso":"44 dígitos se legível, senão vazio","numeroNF":"","serie":"","cnpjEmitente":"só dígitos","valorTotal":0},"boleto":{"beneficiario":"","cnpjBeneficiario":"","linhaDigitavel":"só dígitos","valor":0,"vencimento":"AAAA-MM-DD"},"fornecedor":{"nome":"","documento":"só dígitos do CNPJ/CPF ou vazio","telefone":""},"numeroDocumento":"","data":"AAAA-MM-DD ou vazio","itens":[{"descricao":"como está escrito","codigo":"código do item se houver, senão vazio","quantidade":0,"unidade":"UN/CX/FD/PCT/... como está escrito","unidadesPorEmbalagem":0,"valorUnitario":0,"valorTotal":0}],"desconto":0,"frete":0,"total":0,"pagamento":{"forma":"dinheiro/pix/boleto/cartão/a prazo ou vazio","pago":null,"vencimentos":[{"data":"AAAA-MM-DD","valor":0}]},"observacoes":"o que estiver ilegível ou duvidoso"}
+Use números com ponto decimal. Se um valor não aparecer, use 0 (ou vazio para textos). Não invente itens. Se a quantidade e o valor total aparecem mas o unitário não, calcule o unitário.
+Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/pacote SÓ se estiver escrito (ex.: "C/12", "CX 24", "FD 6"); senão 0. Para danfe e boleto, preencha só o bloco correspondente e o fornecedor; itens podem ficar vazios.`;
     const corpo={model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:4000,messages:[{role:"user",content:[...imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})),{type:"text",text:pedido}]}]};
     const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
     const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",signal:ctrl.signal,headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify(corpo)}); clearTimeout(to);
@@ -11236,9 +11254,23 @@ Use números com ponto decimal. Se um valor não aparecer, use 0 (ou vazio para 
     const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim();
     let L; try{ L=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return res.status(502).json({erro:"Não consegui entender a leitura da foto. Tente outra foto, mais reta e com boa luz."}); }
     const nn=x=>{ const v=Number(String(x==null?0:x).replace(",",".")); return Number.isFinite(v)?v:0; };
+    const tipo=String(L.tipoDocumento||"").toLowerCase();
+    // NOTA FISCAL fotografada: nunca entra como compra sem nota. Procura pela chave ou pelo número + CNPJ entre as notas conhecidas
+    if(tipo==="danfe"){ const D=L.danfe||{}, ch=String(D.chaveAcesso||"").replace(/\D/g,""), nf=String(D.numeroNF||"").replace(/\D/g,"").replace(/^0+/,""), cnpj=String(D.cnpjEmitente||L.fornecedor?.documento||"").replace(/\D/g,"");
+      let nota=null;
+      try{ if(ch.length===44) nota=await _FISCAL.carregarNota({chave:ch}).catch(()=>null);
+        if(!nota&&ch.length===44){ const bid=await _acharNotaBlingPorChave(ch); if(bid) nota=await _FISCAL.carregarNota({blingId:bid}); }
+        if(!nota&&nf){ const c=(_FISCAL.listarNotas()||[]).find(n=>String(n.numero||"").replace(/^0+/,"")===nf&&(!cnpj||String(n.emitente?.cnpj||"")===cnpj)); if(c) nota=await _FISCAL.carregarNota({chave:c.id}); }
+        if(!nota&&nf){ try{ const r2=await bling(`/nfe?numero=${nf}&tipo=0`); const l=(r2?.data||[]).filter(x=>!cnpj||String(x.contato?.numeroDocumento||"").replace(/\D/g,"")===cnpj); if(l.length) nota=await _FISCAL.carregarNota({blingId:l[0].id}); }catch(e){} }
+      }catch(e){}
+      if(nota) return res.json({ok:true,lidaComo:"danfe",nota:await _resumoEntradaNota(nota)});
+      return res.status(422).json({tipo:"danfe",erro:`Essa foto é de uma NOTA FISCAL${nf?" (NF "+nf+(L.fornecedor?.nome?" de "+L.fornecedor.nome:"")+")":""}, então ela entra pela parte fiscal, não como compra sem nota. Não achei a nota no sistema nem no Bling: aproxime a câmera do código de barras (use "Ler código de barras") ou envie o XML.`}); }
+    // BOLETO: oferece lançar como conta a pagar
+    if(tipo==="boleto"){ const Bo=L.boleto||{}; return res.json({ok:true,lidaComo:"boleto",boleto:{beneficiario:String(Bo.beneficiario||L.fornecedor?.nome||"").slice(0,120),cnpj:String(Bo.cnpjBeneficiario||L.fornecedor?.documento||"").replace(/\D/g,"").slice(0,14),
+      linhaDigitavel:String(Bo.linhaDigitavel||"").replace(/\D/g,"").slice(0,60),valor:_round2(nn(Bo.valor)),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(String(Bo.vencimento||""))?Bo.vencimento:""}}); }
     const id="sn-"+Date.now()+"-"+Math.random().toString(36).slice(2,6), F=L.fornecedor||{}, pg=L.pagamento||{};
     const itens=(L.itens||[]).filter(i=>i&&String(i.descricao||"").trim()).slice(0,150).map((i,ix)=>{ const q=nn(i.quantidade)||1, vt=nn(i.valorTotal)||_round2(q*nn(i.valorUnitario));
-      return {nItem:ix+1,xProd:String(i.descricao).trim().slice(0,120),cProd:String(i.codigo||"").trim().slice(0,40),cEAN:"",uCom:String(i.unidade||"UN").toUpperCase().slice(0,6),qCom:q,vUnCom:q?_round2(vt/q):0,vProd:_round2(vt),vDesc:0}; });
+      const upe=Math.round(nn(i.unidadesPorEmbalagem)); return {nItem:ix+1,xProd:String(i.descricao).trim().slice(0,120),cProd:String(i.codigo||"").trim().slice(0,40),cEAN:"",uCom:String(i.unidade||"UN").toUpperCase().slice(0,6),qCom:q,vUnCom:q?_round2(vt/q):0,vProd:_round2(vt),vDesc:0,fatorLido:upe>1&&upe<=60?upe:0}; });
     if(!itens.length) return res.status(422).json({erro:"Não encontrei itens nessa foto. Tente outra foto, mais perto e com boa luz."});
     const vencs=(pg.vencimentos||[]).filter(v=>v&&nn(v.valor)>0).map((v,i)=>({numero:String(i+1),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(String(v.data||""))?v.data:_diaBRk(Date.now()),valor:_round2(nn(v.valor))}));
     const n={id,semNota:true,origemDados:"foto",numero:String(L.numeroDocumento||"").slice(0,30),serie:"",emissao:/^\d{4}-\d{2}-\d{2}$/.test(String(L.data||""))?Date.parse(L.data+"T12:00:00-03:00"):Date.now(),

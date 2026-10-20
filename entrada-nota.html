@@ -146,8 +146,16 @@ async function lerFotoCompra(files) { if (!files || !files.length) return; msgLe
   try { const imagens = []; for (const f of [...files].slice(0, 4)) imagens.push(await reduzir(f));
     const { ok, j } = await api("/api/entrada-nota/foto", { method: "POST", body: JSON.stringify({ imagens }) });
     if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`); return; }
-    msgLer(""); N = j.nota; IGN = new Set(); PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+    if (j.lidaComo === "boleto") { mostrarBoleto(j.boleto); return; }
+    msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota e ela entra pela parte fiscal.</div>` : ""); N = j.nota; IGN = new Set(); PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
   } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
+function mostrarBoleto(b) { msgLer(`<div class="card" style="margin:8px 0 0;border-color:#ffd23f"><b>🧾 A foto é de um boleto.</b> Confira e lance como conta a pagar:
+  <div class="grid2" style="margin-top:8px"><label><div class="ic">Beneficiário</div><input id="boNome" value="${esc(b.beneficiario)}" style="width:100%"></label><label><div class="ic">CNPJ</div><input id="boCnpj" value="${esc(b.cnpj)}" style="width:100%"></label>
+  <label><div class="ic">Valor</div><input id="boValor" value="${String(b.valor || "").replace(".", ",")}" inputmode="decimal" style="width:100%"></label><label><div class="ic">Vencimento</div><input id="boVenc" type="date" value="${esc(b.vencimento)}" style="width:100%"></label></div>
+  <label><div class="ic">Linha digitável</div><input id="boLinha" value="${esc(b.linhaDigitavel)}" style="width:100%"></label>
+  <button class="btn btn-mag" style="margin-top:8px" onclick="lancarBoleto()">💸 Lançar conta a pagar</button></div>`); }
+async function lancarBoleto() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/entrada-nota/boleto", { method: "POST", body: JSON.stringify({ beneficiario: v("boNome"), cnpj: v("boCnpj"), valor: v("boValor").replace(",", "."), vencimento: v("boVenc"), linhaDigitavel: v("boLinha") }) });
+  if (!ok) { alert(j.erro || "Não consegui lançar."); return; } msgLer(`<div style="color:#3ce88a;font-weight:800">✅ Boleto lançado em contas a pagar: ${esc(j.titulo.fornecedor.nome)} · ${brl(j.titulo.valor)} · vence ${dmy(j.titulo.vencimento)}</div>`); carregarContas(); }
 async function editarSN(corpo) { const { ok, j } = await api("/api/entrada-nota/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) });
   if (!ok) { alert(j.erro || "Não consegui corrigir."); return; } const ob = N.observacaoLeitura, tl = N.totalLido; N = { ...j.nota, observacaoLeitura: ob, totalLido: tl }; renderNota(); }
 async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }); }
@@ -177,6 +185,7 @@ function renderNota() {
         <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
         <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px">
         <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
+      ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b> pelo preço (${brl(x.vUnCom || (x.qCom ? x.vProd / x.qCom : 0))} cada). Confira antes de ligar.</div>` : x.fatorFonte && x.sugestaoFator > 1 ? `<div class="ic">conversão ${esc(x.fatorFonte)}</div>` : ""}
       <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas (e o Bling também aprende).</div>
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
   const bancos = BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("");
@@ -204,7 +213,7 @@ function renderNota() {
 function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
 // itens pendentes com sugestão FORTE e conversão conhecida (pela descrição, ou 1 quando a unidade é UN)
-function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
+function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
 async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
   for (const x of f) { const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + ": " + x.xProd); break; } }
   renderNota(); }
