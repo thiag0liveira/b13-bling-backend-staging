@@ -533,7 +533,7 @@ export function registrarEstoqueFiscal(app, deps) {
           ultimoCustoUn: u.ult ? u.ult.custoUn : null, ultimaNota: u.ult ? { numero: u.ult.numero, em: u.ult.em } : null, notas: u.notas }; });
     },
     salvarVinculo(d) {
-      const cnpj = digitos(d.cnpj), cProd = String(d.cProd || "").trim(); if (!cnpj || !cProd) throw new Error("informe o CNPJ do fornecedor e o código do item dele");
+      const cnpj = d.semDoc ? String(d.cnpj || "").trim() : digitos(d.cnpj), cProd = String(d.cProd || "").trim(); if (!cnpj || !cProd) throw new Error("informe o CNPJ do fornecedor e o código do item dele"); // semDoc: compra sem nota, fornecedor pelo nome
       const chave = `${cnpj}|${cProd}`, ant = DEPARA[chave] || {};
       DEPARA[chave] = { ...ant, produtoId: Number(d.produtoId), produtoNome: d.produtoNome || ant.produtoNome || "", uCom: up(d.uCom || ant.uCom || ""), fator: num(d.fator) || ant.fator || 1,
         fonte: "confirmado", por: d.por || "", em: Date.now(), cnpj, cProd, xProd: String(d.xProd || ant.xProd || "").slice(0, 120), fornecedorNome: String(d.fornecedorNome || ant.fornecedorNome || _nomeFornecedor(cnpj) || "").slice(0, 120) };

@@ -10935,8 +10935,9 @@ async function _resumoEntradaNota(n){
   const pend=itens.filter(x=>x.status!=="ok").length;
   const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
+  if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
-    totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):"",aPrazo:(n.duplicatas||[]).length>0||tp==="90"||tp==="15",
+    totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
     itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null};
 }
 async function _acharNotaBlingPorChave(ch){
@@ -10961,19 +10962,20 @@ app.post("/api/entrada-nota/carregar",requireAcesso("acesso_entrada_nota"),expre
 app.get("/api/entrada-nota/produtos",requireAcesso("acesso_entrada_nota"),(req,res)=>{ try{ res.json({itens:_FISCAL?_FISCAL.buscarProdutos(String(req.query.q||"")):[]}); }catch(e){ res.json({itens:[]}); } });
 app.post("/api/entrada-nota/ligar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
   try{
-    const b=req.body||{}, n=_FISCAL&&_FISCAL.nota(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
     const it=(n.itens||[]).find(x=>Number(x.nItem)===Number(b.nItem)); if(!it) return res.status(404).json({erro:"item não encontrado"});
     const fator=Number(String(b.fator||"").replace(",",".")); if(!(fator>0)||fator>1000) return res.status(400).json({erro:"informe quantas unidades vêm em cada "+(it.uCom||"unidade")+" da nota"});
     const pid=String(b.produtoId||""), P=lerProdutosBling().porId[pid]; if(!pid) return res.status(400).json({erro:"escolha o produto"});
-    const v=_FISCAL.salvarVinculo({cnpj:n.emitente?.cnpj,cProd:it.cProd,uCom:it.uCom,fator,produtoId:pid,produtoNome:P?P.n:"",xProd:it.xProd,fornecedorNome:n.emitente?.nome,por:req.sessao?.nome||""});
-    await _FISCAL.reassociar(n.id);
+    const v=_FISCAL.salvarVinculo({cnpj:n.semNota?_chaveFornSemNota(n):n.emitente?.cnpj,semDoc:!!n.semNota&&!/^\d{11,14}$/.test(String(n.emitente?.cnpj||"")),cProd:it.cProd,uCom:it.uCom,fator,produtoId:pid,produtoNome:P?P.n:"",xProd:it.xProd,fornecedorNome:n.emitente?.nome,por:req.sessao?.nome||""});
+    if(n.semNota) _casarSemNota(n,true); else await _FISCAL.reassociar(n.id);
     setTimeout(()=>{ const comp=_FISCAL.vinculosDoProduto(pid).find(x=>x.chave===v.chave); if(comp) _enviarFornecedorBling(pid,comp); },200); // aprende também no Bling
-    res.json({ok:true,nota:await _resumoEntradaNota(_FISCAL.nota(n.id))});
+    res.json({ok:true,nota:await _resumoEntradaNota(_notaEntrada(n.id))});
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
 app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
   try{
-    const b=req.body||{}, n=_FISCAL&&_FISCAL.nota(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    if(n.semNota) await _garantirFornecedorSemNota(n);
     if(n.entrada&&n.entrada.em) return res.status(409).json({erro:`Essa nota já deu entrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
     const R=await _resumoEntradaNota(n), ign=new Set((b.ignorar||[]).map(Number)), quem=req.sessao?.nome||"";
     const falta=R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
@@ -10981,14 +10983,14 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
     const lanc=[], P=lerProdutosBling();
     for(const x of R.itens){ if(x.status!=="ok"||ign.has(Number(x.nItem))||!(x.qtdUn>0)) continue;
       try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,precoCusto:x.custoRealUn||x.custoUn,
-          observacoes:`Entrada NF ${R.numero||""} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
+          observacoes:`${n.semNota?"Entrada SEM NOTA":"Entrada NF "+(R.numero||"")} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
         lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
       catch(e){ lanc.push({...x,ok:false,erro:e.message}); }
       await sleep(320); }
     try{ salvarJSON(PRODUTOS_BLING_FILE,P); _metProdCache.clear(); }catch(e){}
     const okN=lanc.filter(x=>x.ok).length, falhas=lanc.filter(x=>!x.ok);
     // registro da entrada (mesmo formato da Entrada de Estoque)
-    try{ const db=lerEntradasEstoque(); (db.entradas||=[]).unshift({id:"nf-"+(R.chave||n.id),em:Date.now(),tipo:"nota",fornecedor:R.emitente?.nome||"",cnpj:R.emitente?.cnpj||"",numeroNota:R.numero||"",chave:R.chave||"",por:quem,
+    try{ const db=lerEntradasEstoque(); (db.entradas||=[]).unshift({id:n.semNota?n.id:"nf-"+(R.chave||n.id),em:Date.now(),tipo:n.semNota?"sem_nota":"nota",fornecedor:R.emitente?.nome||"",cnpj:R.emitente?.cnpj||"",numeroNota:R.numero||"",chave:R.chave||"",por:quem,
         itens:lanc.map(x=>({produtoId:x.produtoId,nome:x.produtoNome||x.xProd,quantidade:x.qtdUn,custo:x.custoRealUn||x.custoUn,ok:x.ok,erro:x.erro||undefined}))}); salvarEntradasEstoque(db); }catch(e){}
     // contas a pagar (parcelas da nota) — pagas na hora se informado
     const pg=b.pagamento||{}, C=lerContasPagar(), tit=[];
@@ -10997,7 +10999,7 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
       if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
       C.titulos.push(t); tit.push(t); });
     salvarJSON(CONTAS_PAGAR_FILE,C);
-    _FISCAL.marcarEntrada(n.id,{em:Date.now(),por:quem,itensLancados:okN,falhas:falhas.length,contas:tit.map(t=>t.id)});
+    _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:okN,falhas:falhas.length,contas:tit.map(t=>t.id)}); // sem nota: não toca na parte fiscal
     // custo atualizado no cadastro de fornecedores do Bling (fila lenta, em segundo plano)
     setTimeout(async()=>{ for(const x of lanc.filter(y=>y.ok)){ const v=_FISCAL.vinculosDoProduto(x.produtoId).find(z=>z.cnpj===R.emitente?.cnpj&&String(z.cProd)===String(x.cProd)); if(v){ await _enviarFornecedorBling(x.produtoId,{...v,ultimoCustoUn:x.custoRealUn||v.ultimoCustoUn}); await sleep(700); } } },500);
     addLog("nota-"+(R.chave||n.id),"entrada_nota",req.sessao?.funcionarioId||"",quem,{numero:R.numero,fornecedor:R.emitente?.nome,itens:okN,falhas:falhas.length,valor:R.totais.vNF,pago:!!pg.pago});
@@ -11008,11 +11010,78 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
 });
 app.get("/api/entrada-nota/contas",requireAcesso("acesso_entrada_nota"),(req,res)=>{ const C=lerContasPagar(); res.json({titulos:C.titulos.slice(-300).reverse()}); });
 
+// ===== COMPRA SEM NOTA: foto do recibo/pedido lida por IA (API da Anthropic). Mesmo fluxo, sem a parte fiscal =====
+const SEMNOTA_FILE=`${DATA_DIR}/entradas_sem_nota.json`;
+let _semNota=lerJSON(SEMNOTA_FILE,{});
+const _salvarSemNota=()=>salvarJSON(SEMNOTA_FILE,_semNota);
+function _notaEntrada(id){ return String(id).startsWith("sn-")?(_semNota[id]||null):(_FISCAL?_FISCAL.nota(id):null); }
+function _marcarEntradaNota(n,info){ if(n.semNota){ n.entrada={...(n.entrada||{}),...info}; _salvarSemNota(); } else _FISCAL.marcarEntrada(n.id,info); }
+const _nrmF=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9 ]/g," ").replace(/\s+/g," ").trim();
+function _chaveFornSemNota(n){ const d=String(n.emitente?.cnpj||"").replace(/\D/g,""); return /^\d{11,14}$/.test(d)?d:"NOME:"+_nrmF(n.emitente?.nome).slice(0,60); }
+function _acharFornecedorPorNome(nome){ const alvo=_nrmF(nome); if(!alvo) return null; const b=lerClientesBase().porId; for(const [id,c] of Object.entries(b)) if(_nrmF(c.nome)===alvo) return {id:Number(id)||id,nome:c.nome}; return null; }
+function _casarSemNota(n,salvar){
+  const fk=_chaveFornSemNota(n), V={}; (_FISCAL?_FISCAL.todosVinculos():[]).forEach(v=>{ V[v.chave]=v; });
+  (n.itens||[]).forEach(it=>{ it.cProd=it.cProd||_nrmF(it.xProd).slice(0,50); const v=V[`${fk}|${it.cProd}`];
+    if(v&&v.produtoId){ const P=lerProdutosBling().porId[String(v.produtoId)]; it.status="ok"; it.produtoId=v.produtoId; it.produtoNome=P?P.n:(v.produtoNome||""); it.fator=Number(v.fator)||1; it.fonte="ligação aprendida";
+      it.qtdUn=+(Number(it.qCom||0)*it.fator).toFixed(3); it.custoUn=it.qtdUn>0?+((Number(it.vProd||0)-Number(it.vDesc||0))/it.qtdUn).toFixed(4):0; it.sugestoes=[]; it.motivo=""; }
+    else { it.status="pendente"; it.produtoId=null; it.produtoNome=""; it.qtdUn=0; it.custoUn=0; it.fonte=""; it.motivo="produto ainda não ligado";
+      try{ it.sugestoes=_FISCAL?_FISCAL.buscarProdutos(it.xProd):[]; }catch(e){ it.sugestoes=[]; } } });
+  const vp=_round2((n.itens||[]).reduce((a,x)=>a+Number(x.vProd||0),0)); n.totais={...(n.totais||{}),vProd:vp,vNF:_round2(vp-Number(n.totais?.vDesc||0)+Number(n.totais?.vFrete||0)+Number(n.totais?.vOutro||0))};
+  if(salvar) _salvarSemNota(); return n;
+}
+async function _garantirFornecedorSemNota(n){ // cadastra o fornecedor no Bling na hora de dar entrada (se ainda não existe)
+  try{ const d=String(n.emitente?.cnpj||"").replace(/\D/g,""); let f=/^\d{11,14}$/.test(d)?await encontrarContatoPorDoc(d):_acharFornecedorPorNome(n.emitente?.nome);
+    if(!f&&n.emitente?.nome){ const novo=await bling(`/contatos`,{method:"POST",body:JSON.stringify({nome:String(n.emitente.nome).slice(0,120),tipo:d.length===14?"J":"F",situacao:"A",...(/^\d{11,14}$/.test(d)?{numeroDocumento:d}:{})})});
+      if(novo?.data?.id){ f={id:novo.data.id,nome:n.emitente.nome}; try{ _registrarContatoNaBase(f.id,{nome:f.nome,numeroDocumento:d,tipo:d.length===14?"J":"F"}); }catch(e){} } }
+    if(f){ n.fornecedorBlingId=f.id; _salvarSemNota(); } }catch(e){}
+}
+app.post("/api/entrada-nota/foto",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
+  try{
+    const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return res.status(503).json({erro:"A leitura de foto ainda não está ligada: falta configurar a chave da API da Anthropic (ANTHROPIC_API_KEY) no Railway."});
+    const imgs=(Array.isArray(req.body?.imagens)?req.body.imagens:[]).slice(0,4).map(x=>String(x||"").replace(/^data:image\/\w+;base64,/,"")).filter(x=>x.length>100&&x.length<5e6);
+    if(!imgs.length) return res.status(400).json({erro:"envie a foto"});
+    const pedido=`Você lê fotos de comprovantes de COMPRA de uma distribuidora de bebidas no Brasil (recibo, pedido do fornecedor, cupom, anotação, orçamento). NÃO é nota fiscal eletrônica.
+Responda SOMENTE com um JSON, sem texto antes ou depois, sem cercas de código, neste formato:
+{"fornecedor":{"nome":"","documento":"só dígitos do CNPJ/CPF ou vazio","telefone":""},"numeroDocumento":"","data":"AAAA-MM-DD ou vazio","itens":[{"descricao":"como está escrito","codigo":"código do item se houver, senão vazio","quantidade":0,"unidade":"UN/CX/FD/PCT/... como está escrito","valorUnitario":0,"valorTotal":0}],"desconto":0,"frete":0,"total":0,"pagamento":{"forma":"dinheiro/pix/boleto/cartão/a prazo ou vazio","pago":null,"vencimentos":[{"data":"AAAA-MM-DD","valor":0}]},"observacoes":"o que estiver ilegível ou duvidoso"}
+Use números com ponto decimal. Se um valor não aparecer, use 0 (ou vazio para textos). Não invente itens. Se a quantidade e o valor total aparecem mas o unitário não, calcule o unitário.`;
+    const corpo={model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:4000,messages:[{role:"user",content:[...imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})),{type:"text",text:pedido}]}]};
+    const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
+    const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",signal:ctrl.signal,headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify(corpo)}); clearTimeout(to);
+    const j=await r.json().catch(()=>({})); if(!r.ok) return res.status(502).json({erro:"A leitura da foto falhou: "+(j?.error?.message||("HTTP "+r.status))});
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim();
+    let L; try{ L=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return res.status(502).json({erro:"Não consegui entender a leitura da foto. Tente outra foto, mais reta e com boa luz."}); }
+    const nn=x=>{ const v=Number(String(x==null?0:x).replace(",",".")); return Number.isFinite(v)?v:0; };
+    const id="sn-"+Date.now()+"-"+Math.random().toString(36).slice(2,6), F=L.fornecedor||{}, pg=L.pagamento||{};
+    const itens=(L.itens||[]).filter(i=>i&&String(i.descricao||"").trim()).slice(0,150).map((i,ix)=>{ const q=nn(i.quantidade)||1, vt=nn(i.valorTotal)||_round2(q*nn(i.valorUnitario));
+      return {nItem:ix+1,xProd:String(i.descricao).trim().slice(0,120),cProd:String(i.codigo||"").trim().slice(0,40),cEAN:"",uCom:String(i.unidade||"UN").toUpperCase().slice(0,6),qCom:q,vUnCom:q?_round2(vt/q):0,vProd:_round2(vt),vDesc:0}; });
+    if(!itens.length) return res.status(422).json({erro:"Não encontrei itens nessa foto. Tente outra foto, mais perto e com boa luz."});
+    const vencs=(pg.vencimentos||[]).filter(v=>v&&nn(v.valor)>0).map((v,i)=>({numero:String(i+1),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(String(v.data||""))?v.data:_diaBRk(Date.now()),valor:_round2(nn(v.valor))}));
+    const n={id,semNota:true,origemDados:"foto",numero:String(L.numeroDocumento||"").slice(0,30),serie:"",emissao:/^\d{4}-\d{2}-\d{2}$/.test(String(L.data||""))?Date.parse(L.data+"T12:00:00-03:00"):Date.now(),
+      emitente:{cnpj:String(F.documento||"").replace(/\D/g,"").slice(0,14),nome:String(F.nome||"").trim().slice(0,120)||"Fornecedor (sem nome na foto)",telefone:String(F.telefone||"").slice(0,30)},
+      itens,totais:{vDesc:_round2(nn(L.desconto)),vFrete:_round2(nn(L.frete)),vOutro:0,totalLido:_round2(nn(L.total))},duplicatas:vencs,formaTexto:String(pg.forma||"").slice(0,40),
+      aPrazo:pg.pago===true?false:(vencs.length>0||/prazo|boleto/i.test(String(pg.forma||""))),observacaoLeitura:String(L.observacoes||"").slice(0,300),criadoEm:Date.now(),por:req.sessao?.nome||""};
+    _semNota[id]=_casarSemNota(n,false); _salvarSemNota();
+    const R=await _resumoEntradaNota(n); res.json({ok:true,nota:{...R,observacaoLeitura:n.observacaoLeitura,totalLido:n.totais.totalLido}});
+  }catch(e){ res.status(500).json({erro:e.name==="AbortError"?"A leitura demorou demais. Tente de novo.":e.message}); }
+});
+// correções da leitura (quantidade, valor, descrição, fornecedor) antes de dar entrada
+app.post("/api/entrada-nota/sem-nota/editar",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
+  try{ const b=req.body||{}, n=_semNota[String(b.id||"")]; if(!n) return res.status(404).json({erro:"compra não encontrada"}); if(n.entrada) return res.status(409).json({erro:"essa compra já deu entrada"});
+    if(b.fornecedor){ if(b.fornecedor.nome!=null) n.emitente.nome=String(b.fornecedor.nome).trim().slice(0,120); if(b.fornecedor.cnpj!=null) n.emitente.cnpj=String(b.fornecedor.cnpj).replace(/\D/g,"").slice(0,14); }
+    if(b.nItem!=null){ const it=n.itens.find(x=>Number(x.nItem)===Number(b.nItem)); if(!it) return res.status(404).json({erro:"item não encontrado"});
+      const nn=x=>Number(String(x).replace(",","."));
+      if(b.qCom!=null&&nn(b.qCom)>0) it.qCom=nn(b.qCom); if(b.vProd!=null&&nn(b.vProd)>=0) it.vProd=_round2(nn(b.vProd)); if(b.xProd!=null&&String(b.xProd).trim()){ it.xProd=String(b.xProd).trim().slice(0,120); it.cProd=""; }
+      if(b.remover){ n.itens=n.itens.filter(x=>x!==it); } }
+    _casarSemNota(n,true); res.json({ok:true,nota:await _resumoEntradaNota(n)});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+
 // ===================== FORNECEDORES DO PRODUTO (ficha do produto) =====================
 // Cada produto guarda quem o vende e o código que cada fornecedor usa (as mesmas ligações do Estoque fiscal: assim a
 // nota se liga sozinha). Grava no sistema e no Bling (cadastro "fornecedores do produto", com código e preço de custo).
 var _FISCAL = null;
 async function _enviarFornecedorBling(produtoId, v){
+  if(!/^\d{11,14}$/.test(String(v.cnpj||""))) return {ok:false,erro:"fornecedor sem CNPJ/CPF (compra sem nota): a ligação fica só no sistema"};
   try{
     let forn=await encontrarContatoPorDoc(v.cnpj);
     if(!forn){ const nome=(v.fornecedorNome||("Fornecedor "+v.cnpj)).slice(0,120);
