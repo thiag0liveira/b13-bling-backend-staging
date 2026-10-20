@@ -164,7 +164,7 @@ async function carregar(corpo) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api("/api/entrada-nota/carregar", { method: "POST", body: JSON.stringify(corpo) });
   if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
-  msgLer(""); N = j.nota; IGN = new Set(); PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
 }
 // ===== a nota =====
 function renderNota() {
@@ -179,6 +179,11 @@ function renderNota() {
         <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
         <div style="text-align:right"><b>${brl(x.custoRealUn)}</b><span class="ic">/un</span>${dif != null ? `<div class="ic">antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span></div>` : ""}
         ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
+        ${x.reajuste ? (() => { const r = x.reajuste, ok = REAJ[x.produtoId] != null;
+          return `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12.5px;color:#ffe9a8">⚠️ <b>Custo subiu ${String(r.altaPct).replace(".", ",")}%</b> desde a ${esc(r.fonte)} (${brl(r.custoAnterior)} → ${brl(x.custoRealUn)} por unidade). Sem reajuste, a margem cai de ${String(r.margemAntes).replace(".", ",")}% para <b>${String(r.margemSemReajuste).replace(".", ",")}%</b>.
+            <div style="margin-top:4px">Para manter a margem: venda <b>${brl(r.precoAtual)} → ${brl(r.precoSugerido)}</b>${r.atacadoSugerido ? ` · atacado da tabela ${brl(r.atacadoAtual)} → <b>${brl(r.atacadoSugerido)}</b>` : ""}</div>
+            <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" ${ok ? "checked" : ""} onchange="marcarReajuste(${x.produtoId},this.checked,${r.precoSugerido})"> atualizar o preço de venda no Bling para R$
+              <input value="${String(ok ? REAJ[x.produtoId] : r.precoSugerido).replace(".", ",")}" inputmode="decimal" style="width:80px" onchange="REAJ[${x.produtoId}]!=null&&(REAJ[${x.produtoId}]=this.value.replace(',','.'))"></label></div>`; })() : ""}
         ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
     return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
@@ -200,6 +205,9 @@ function renderNota() {
       <div><div class="lin"><span>Produtos</span><b>${brl(T.vProd)}</b></div><div class="lin"><span>Impostos, frete e outros</span><b>${brl(T.extras)}${T.rateioPct ? " (+" + String(T.rateioPct).replace(".", ",") + "% no custo)" : ""}</b></div>
       ${T.vIPI || T.vST ? `<div class="lin"><span>IPI · ST</span><b>${brl(T.vIPI)} · ${brl(T.vST)}</b></div>` : ""}${T.vFrete ? `<div class="lin"><span>Frete</span><b>${brl(T.vFrete)}</b></div>` : ""}<div class="lin"><span>Pagamento na nota</span><b>${esc(n.formaNaNota || "—")}</b></div></div></div></div>
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
+    ${(() => { const al = n.itens.filter(x => x.reajuste); return al.length ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">⚠️ <b>${al.length} produto(s) com custo maior que na última entrada.</b> Confira os preços de venda sugeridos em cada um.
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:4px 10px" onclick="marcarTodosReajustes()">Marcar todos os sugeridos</button>
+      ${Object.keys(REAJ).length ? `<input id="qrReaj" type="password" placeholder="QR do gerente" style="width:150px"><button class="btn btn-mag" style="padding:4px 12px" onclick="gravarReajustes()">💲 Atualizar ${Object.keys(REAJ).length} preço(s) no Bling</button>` : ""}</div><div id="reajMsg"></div></div>` : ""; })()}
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida; os outros você escolhe</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
   <div class="card"><h3>4. Pagamento</h3>
@@ -213,6 +221,15 @@ function renderNota() {
 function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
 // itens pendentes com sugestão FORTE e conversão conhecida (pela descrição, ou 1 quando a unidade é UN)
+let REAJ = {}; // produtoId -> preço novo marcado
+function marcarReajuste(pid, on, sug) { if (on) REAJ[pid] = REAJ[pid] != null ? REAJ[pid] : sug; else delete REAJ[pid]; renderNota(); }
+function marcarTodosReajustes() { (N.itens || []).forEach(x => { if (x.reajuste && x.produtoId) REAJ[x.produtoId] = x.reajuste.precoSugerido; }); renderNota(); }
+async function gravarReajustes() { const tok = (document.getElementById("qrReaj") || {}).value || "", el = document.getElementById("reajMsg"); if (!tok) { el.innerHTML = `<div class="err">Leia o QR do gerente.</div>`; return; }
+  const itens = Object.entries(REAJ).map(([produtoId, preco]) => ({ produtoId, preco })); el.innerHTML = `<div class="ic">Atualizando no Bling…</div>`;
+  const { ok, j } = await api("/api/entrada-nota/precos", { method: "POST", body: JSON.stringify({ tokenQr: tok, notaId: N.id, itens }) });
+  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui atualizar.")}</div>`; return; }
+  el.innerHTML = `<div style="color:#3ce88a">✅ ${j.feitos.length} preço(s) atualizado(s) no Bling (aut. ${esc(j.autorizadoPor)}): ${esc(j.feitos.map(f => f.nome + " " + brl(f.antes) + " → " + brl(f.depois)).join(" · "))}</div>${j.falhas.length ? `<div class="err">Não atualizados: ${j.falhas.length}</div>` : ""}`;
+  REAJ = {}; }
 function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
 async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
   for (const x of f) { const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + ": " + x.xProd); break; } }

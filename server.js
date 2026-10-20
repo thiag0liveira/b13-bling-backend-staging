@@ -11081,10 +11081,17 @@ async function _resumoEntradaNota(n){
   const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
   const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0, k=base>0?extras/base:0;
   let forn=null; try{ forn=await encontrarContatoPorDoc(n.emitente?.cnpj); }catch(e){}
+  let ENT={}; try{ ENT=_entradasPorProduto(); }catch(e){} const CAT=_catPorId();
+  const arred=v=>{ if(!(v>0)) return 0; const r=Math.ceil(v*10-0.0001)/10-0.01; return +(r>=v-0.0001?r:r+0.10).toFixed(2); }; // termina em ,x9
   const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, cr=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0;
+    const ue=x.produtoId?ENT[String(x.produtoId)]:null, cRef=ue&&ue.custoUlt>0?ue.custoUlt:(p&&p.pc>0?p.pc:null), fonteRef=ue&&ue.custoUlt>0?"última entrada":"cadastro";
+    const alta=cRef&&cr>0?+((cr-cRef)/cRef*100).toFixed(1):null, cat=x.produtoId?CAT[String(x.produtoId)]:null;
+    const sobe=alta!=null&&alta>=0.5, fator=sobe?cr/cRef:1;
+    const reajuste=sobe&&p&&p.p>0?{custoAnterior:cRef,fonte:fonteRef,ultimaEntradaEm:ue?ue.ultima:null,altaPct:alta,precoAtual:p.p,precoSugerido:arred(p.p*fator),
+      margemAntes:+((p.p-cRef)/p.p*100).toFixed(1),margemSemReajuste:+((p.p-cr)/p.p*100).toFixed(1),atacadoAtual:cat&&cat.a>0?cat.a:null,atacadoSugerido:cat&&cat.a>0?arred(cat.a*fator):null}:null;
     return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
-      custoAnterior:p&&p.pc>0?p.pc:null,precoVenda:p?p.p:null,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
+      custoAnterior:cRef!=null?cRef:(p&&p.pc>0?p.pc:null),precoVenda:p?p.p:null,reajuste,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
       ...(()=>{ if(x.status==="ok") return {sugestoes:[],sugestaoFator:0};
         const sg=_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]), lido=x.sugestaoFator||x.fatorLido||_fatorDoNome(x.xProd);
         if(lido) return {sugestoes:sg,sugestaoFator:lido,fatorFonte:x.fatorLido?"lido na foto":"pela descrição"};
@@ -11185,6 +11192,25 @@ app.post("/api/entrada-nota/boleto",requireAcesso("acesso_entrada_nota"),(req,re
       vencimento:b.vencimento,valor:_round2(v),linhaDigitavel:ld,status:"aberto",criadoEm:Date.now(),criadoPor:req.sessao?.nome||""};
     C.titulos.push(t); salvarJSON(CONTAS_PAGAR_FILE,C); res.json({ok:true,titulo:t}); }
   catch(e){ res.status(500).json({erro:e.message}); }
+});
+async function _atualizarPrecoBling(id,novoPreco){
+  const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) throw new Error("produto não encontrado no Bling");
+  const payload={nome:pd.nome,codigo:pd.codigo||"",preco:novoPreco,tipo:pd.tipo||"P",situacao:pd.situacao||"A",formato:pd.formato||"S"};
+  ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
+  if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+  await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+  const P=lerProdutosBling(); if(P.porId[String(id)]){ P.porId[String(id)].p=novoPreco; salvarJSON(PRODUTOS_BLING_FILE,P); } _metProdCache.clear();
+  return {nome:pd.nome,antes:Number(pd.preco)||0};
+}
+app.post("/api/entrada-nota/precos",requireAcesso("acesso_entrada_nota"),async(req,res)=>{
+  try{ const b=req.body||{}, auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const quem=auth.funcionario.nome||"", feitos=[], falhas=[];
+    for(const it of (b.itens||[]).slice(0,80)){ const v=_round2(Number(String(it.preco||"").replace(",","."))); if(!it.produtoId||!(v>0)) continue;
+      try{ const r=await _atualizarPrecoBling(String(it.produtoId),v); feitos.push({produtoId:it.produtoId,nome:r.nome,antes:r.antes,depois:v});
+        addLog("produto-"+it.produtoId,"preco_reajustado_entrada_nota",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{autorizadoPor:quem,antes:r.antes,depois:v,nota:String(b.notaId||"")}); }
+      catch(e){ falhas.push({produtoId:it.produtoId,erro:e.message}); } await sleep(350); }
+    res.json({ok:true,autorizadoPor:quem,feitos,falhas});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/entrada-nota/contas",requireAcesso("acesso_entrada_nota"),(req,res)=>{ const C=lerContasPagar(); res.json({titulos:C.titulos.slice(-300).reverse()}); });
 
