@@ -323,7 +323,12 @@ function imprimirPropostaOuPedido(id) {
     const pImp = { ...p, itens: (p.itens || []).map(i => ({ ...i, nome: nomes[String(i.produtoId)] || i.nome })) };
     const cv = desenharComprovanteProp(pImp, ehPedido, qrCanvas || qrImg, barCanvas);
     document.body.removeChild(tmpQr);
-    const dataUrl = cv.toDataURL("image/png");
+    // divide em páginas A4 SEMPRE entre um item e outro (antes o navegador cortava um item ao meio na troca de página)
+    const paginas = [], dpr = cv._dpr || 3, pageH = Math.floor((cv._W || 580) * 1.414) - 14, H = cv.height / dpr, cortes = (cv._cortes || []).slice().sort((a, b) => a - b);
+    for (let ini = 0; ini < H - 1;) { let fim = ini + pageH; if (fim >= H) fim = H; else { const c = cortes.filter(x => x > ini + 120 && x <= fim).pop(); if (c) fim = c; }
+      const pc = document.createElement("canvas"); pc.width = cv.width; pc.height = Math.round((fim - ini) * dpr); pc.getContext("2d").drawImage(cv, 0, Math.round(ini * dpr), cv.width, pc.height, 0, 0, cv.width, pc.height);
+      paginas.push(pc.toDataURL("image/png")); ini = fim; }
+    const dataUrl = paginas[0];
     w.document.open();
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ehPedido ? "Pedido #" + esc(p.pedidoBlingNumero) : "Proposta"}</title>
       <style>
@@ -331,16 +336,16 @@ function imprimirPropostaOuPedido(id) {
         body{text-align:center;background:#fff}
         img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
         @page{margin:0}
-        @media print{ body{margin:0} img{max-width:100%;width:100%} }
+        @media print{ body{margin:0} img{max-width:100%;width:100%} .pg{break-after:page;page-break-after:always} .pg:last-child{break-after:auto;page-break-after:auto} }
       </style></head>
-      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
+      <body>${paginas.map(u => `<div class="pg"><img src="${u}"></div>`).join("")}<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
     w.document.close();
   }, 220);
 }
 function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
   var _pCliente;
   const itensArr = p.itens || [];
-  const itemH = 50, headerH = 132, qrSize = 200;
+  const itemH = 50, headerH = 132, qrSize = 200, cortes = [];
   const W = 580, padd = 24;
   const _mc = document.createElement("canvas").getContext("2d");
   _mc.font = "900 16px Arial";
@@ -412,8 +417,9 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
     ctx.fillText(brl(un * qtd), W - padd, y + 20);
     y += itemH - 8 + (linhas - 1) * 22;
     ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke();
-    y += 14;
+    y += 14; cortes.push(y - 7); // pode trocar de página aqui (entre um item e outro)
   });
+  cortes.push(y);
   y += 6;
   ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 50);
   ctx.fillStyle = "#fff"; ctx.font = "900 20px Arial"; ctx.textAlign = "left";
@@ -447,6 +453,7 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
   const cvFinal = document.createElement("canvas");
   cvFinal.width = W * dpr; cvFinal.height = Math.round((y + 36) * dpr);
   cvFinal.getContext("2d").drawImage(cv, 0, 0);
+  cvFinal._cortes = cortes; cvFinal._dpr = dpr; cvFinal._W = W;
   return cvFinal;
 }
 
