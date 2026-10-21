@@ -1239,11 +1239,19 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",href:"/supervisora",label:"🧭 Apoio à Supervisora",acoes:["acesso_supervisora"]},
   {grupo:"GESTÃO",href:"/central-entregas",label:"🚛 Central de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
   {grupo:"GESTÃO",href:"/entregas-dashboard",label:"📈 Dashboard de Entregas",acoes:["acesso_rotas","acesso_dashboard","ver_dashboard"]},
+  {grupo:"GESTÃO",href:"/painel/venda",label:"💵 Dashboard de Vendas",acoes:["acesso_painel_venda"]},
+  {grupo:"GESTÃO",href:"/painel/clientes",label:"🙋 Dashboard de Clientes",acoes:["acesso_painel_clientes"]},
+  {grupo:"GESTÃO",href:"/painel/produtos",label:"🧃 Dashboard de Produtos",acoes:["acesso_painel_produtos"]},
+  {grupo:"GESTÃO",href:"/painel/estoque",label:"🏬 Dashboard de Estoque",acoes:["acesso_painel_estoque"]},
+  {grupo:"GESTÃO",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
+  {grupo:"GESTÃO",href:"/painel/financeiro",label:"💹 Dashboard Financeiro",acoes:["acesso_painel_financeiro"]},
+  {grupo:"GESTÃO",href:"/painel/cadastros",label:"🗄️ Dashboard de Cadastros",acoes:["acesso_painel_cadastros"]},
+  {grupo:"GESTÃO",href:"/painel/logistica",label:"🚚 Dashboard de Logística",acoes:["acesso_painel_logistica"]},
+  {grupo:"GESTÃO",href:"/painel/marketing",label:"🎨 Dashboard de Marketing",acoes:["acesso_painel_marketing"]},
   {grupo:"GESTÃO",oculto:true,href:"/gestao",label:"🧰 Gestão",acoes:["acesso_gestao","editar_pedido"]},
   {grupo:"GESTÃO",oculto:true,href:"/dashboard",label:"📐 Dashboard",acoes:["acesso_dashboard","ver_dashboard"]},
   {grupo:"GESTÃO",oculto:true,href:"/conferir-lista",label:"☑️ Conferir lista de pedidos",acoes:["acesso_gestao_caixas","ver_caixa"]},
 
-  {grupo:"CADASTROS",href:"/painel/cadastros",label:"🗄️ Visão geral dos Cadastros",acoes:["acesso_painel_cadastros"]},
   {grupo:"CADASTROS",href:"/clientes",label:"👥 Clientes",acoes:["acesso_clientes"]},
   {grupo:"CADASTROS",href:"/funcionarios",label:"🪪 Funcionários",acoes:["ver_funcionarios"]},
   {grupo:"CADASTROS",href:"/tabela-atacado",label:"🗂️ Tabela Atacado",acoes:["acesso_tabela","ver_listas"]},
@@ -1253,15 +1261,12 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/imagens",label:"🖼️ Imagens",acoes:["acesso_imagens","admin"]},
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
-  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/painel/financeiro",label:"💹 Visão geral do Financeiro",acoes:["acesso_painel_financeiro"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
-  {grupo:"ESTOQUE",href:"/painel/estoque",label:"🏬 Visão geral do Estoque",acoes:["acesso_painel_estoque"]},
-  {grupo:"ESTOQUE",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
@@ -1272,7 +1277,6 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/movimentacoes",label:"🔄 Movimentações",acoes:["acesso_movimentacoes","editar_pedido","admin"]},
   {grupo:"ESTOQUE",href:"/perdas",label:"📉 Perdas",acoes:["acesso_perdas","ver_dashboard"]},
 
-  {grupo:"VENDA",href:"/painel/venda",label:"💵 Visão geral das Vendas",acoes:["acesso_painel_venda"]},
   {grupo:"VENDA",href:"/pedidos-online",label:"🛒 Pedidos",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/pedidos-site-totem",label:"🌐 Site e Totem por dia",acoes:["acesso_pedidos_online"]},
   {grupo:"VENDA",href:"/venda-atacado",label:"🤝 Venda Atacado",acoes:["acesso_venda_atacado","receber_pagamento","editar_pedido"]},
@@ -1283,14 +1287,12 @@ window.B13_NAV_LINKS=[
   {grupo:"VENDA",href:"/painel-pedidos",label:"📺 Painel de Pedidos",acoes:["acesso_painel_pedidos","ver_aguardando","ver_separacao","conferir"]},
   {grupo:"VENDA",href:"/vendedor",label:"🎯 Apoio ao Vendedor",acoes:["acesso_vendedor","receber_pagamento","editar_pedido"]},
 
-  {grupo:"LOGÍSTICA",href:"/painel/logistica",label:"🚚 Visão geral da Logística",acoes:["acesso_painel_logistica"]},
   {grupo:"LOGÍSTICA",href:"/expedicao",label:"📤 Expedição",acoes:["acesso_expedicao","ver_separacao"]},
   {grupo:"LOGÍSTICA",href:"/mesa-separacao",label:"🧺 Mesa de Separação",acoes:["acesso_mesa_separacao"]},
   {grupo:"LOGÍSTICA",href:"/conferencia",label:"✅ Conferência",acoes:["acesso_conferencia","conferir"]},
   {grupo:"LOGÍSTICA",href:"/comprovantes-painel",label:"📸 Comprovantes de Conferência",acoes:["acesso_comprovantes","ver_separado","conferir"]},
   {grupo:"LOGÍSTICA",href:"/rotas",label:"🗺️ Gerenciamento de Rota",acoes:["acesso_rotas","editar_pedido"]},
 
-  {grupo:"MARKETING",href:"/painel/marketing",label:"🎨 Visão geral do Marketing",acoes:["acesso_painel_marketing"]},
   {grupo:"MARKETING",href:"/apoio-marketing",label:"📣 Apoio ao Marketing",acoes:["acesso_marketing"]},
   {grupo:"MARKETING",href:"/concurso",label:"🏆 Concurso do Slogan",acoes:["acesso_concurso"]},
 ];
@@ -10878,8 +10880,33 @@ function _montarPainelGrupo(g){
   const ped=(a,b,extra)=>{ const r=_filtrarPedidos({ini:a,fim:b,...(extra||{})}); return {L:r.L,qtd:r.L.length,valor:_round2(r.L.reduce((x,p)=>x+p.total,0))}; };
   const sessoes=()=>lerCaixaSessoes().sessoes||[];
   const G2=[]; const graf=(titulo,pontos,formato)=>G2.push({titulo,pontos,formato:formato||"brl"});
-  const titulos={valorestoque:"💎 Valor do Estoque",gestao:"🛰️ Visão geral da Gestão",cadastros:"🗄️ Visão geral dos Cadastros",financeiro:"💹 Visão geral do Financeiro",estoque:"🏬 Visão geral do Estoque",venda:"💵 Visão geral das Vendas",logistica:"🚚 Visão geral da Logística",marketing:"🎨 Visão geral do Marketing"};
+  const titulos={clientes:"🙋 Dashboard de Clientes",produtos:"🧃 Dashboard de Produtos",valorestoque:"💎 Valor do Estoque",gestao:"🛰️ Visão geral da Gestão",cadastros:"🗄️ Dashboard de Cadastros",financeiro:"💹 Dashboard Financeiro",estoque:"🏬 Dashboard de Estoque",venda:"💵 Dashboard de Vendas",logistica:"🚚 Dashboard de Logística",marketing:"🎨 Dashboard de Marketing"};
   if(!titulos[g]) throw new Error("painel não encontrado");
+  if(g==="clientes"){
+    seg(()=>{ const base=lerClientesBase(), idx=_indiceClientes(), cred=lerCreditos().movs, unif=lerJSON(CLIENTES_UNIF_FILE,{});
+      const l=[...new Set([...Object.keys(base.porId),...Object.keys(idx.porCli)].filter(id=>!unif[id]))].map(id=>_resumoCliente(id,base,idx,cred)), c=st=>l.filter(x=>x.status===st);
+      const ar=_round2(l.reduce((a,x)=>a+(x.aReceber||0),0)), cr=_round2(l.reduce((a,x)=>a+(Number(x.saldoCredito??x.credito??0)||0),0));
+      kpi(String(l.filter(x=>x.pedidos>0).length),"Clientes que já compraram",`${l.length} na base`,"/clientes"); kpi(String(c("ativo").length),"Ativos","dentro do ritmo de compra","/clientes");
+      kpi(String(c("novo").length),"Novos","primeiras compras recentes","/clientes"); kpi(String(c("em_risco").length),"Em risco","passaram do ritmo de compra","/clientes",c("em_risco").length?"alerta":"");
+      kpi(String(c("parado").length),"Parados","sem comprar há muito tempo","/clientes"); kpi(brlN(ar),"A receber (prazo)","","/clientes",ar>0?"alerta":""); if(cr>0) kpi(brlN(cr),"Crédito dos clientes","saldo a usar nas próximas compras","/clientes");
+      const valRisco=_round2(c("em_risco").reduce((a,x)=>a+(x.total365||0),0)); if(valRisco>0) al("medio",`${c("em_risco").length} cliente(s) em risco que compraram ${brlN(valRisco)} no último ano`,"/clientes");
+      lista("📞 Recuperar primeiro (em risco)","/clientes",c("em_risco").sort((a,b)=>b.total365-a.total365).slice(0,10).map(x=>({a:`${x.nome} · há ${x.diasDesdeUltima} dias${x.intervaloMedioDias?" (comprava a cada "+x.intervaloMedioDias+")":""}`,b:brlN(x.total365)})));
+      lista("🆕 Clientes novos","/clientes",c("novo").sort((a,b)=>b.total365-a.total365).slice(0,8).map(x=>({a:`${x.nome} · ${x.pedidos} pedido(s)`,b:brlN(x.total365)})));
+      lista("💰 Maiores a receber","/clientes",l.filter(x=>x.aReceber>0).sort((a,b)=>b.aReceber-a.aReceber).slice(0,8).map(x=>({a:x.nome,b:brlN(x.aReceber)}))); });
+    seg(()=>{ const M=_metricasPedidos(ped(d(29),hoje).L,d(29),hoje); lista("🏆 Quem mais comprou (30 dias)","/pedidos-vendas",(M.topClientes||[]).slice(0,10).map(x=>({a:`${x.nome} · ${x.qtd} pedido(s)`,b:brlN(x.valor)}))); kpi(brlN(M.ticket),"Ticket médio (30 dias)",`${M.clientesDistintos} clientes compraram`,"/pedidos-vendas"); });
+  }
+  if(g==="produtos"){
+    seg(()=>{ const PR=_montarProdutos({ini:d(29),fim:hoje}).L, vend=PR.filter(r=>r.valor>0), cl=PR.filter(r=>r.lucro!=null), luc=_round2(cl.reduce((a,r)=>a+r.lucro,0)), fat=_round2(cl.reduce((a,r)=>a+r.valor,0)), c=f=>PR.filter(r=>r.flags.includes(f));
+      let cat={}; try{ (_catalogoPreco().itens||[]).forEach(x=>{ if(x.id) cat[String(x.id)]=x; }); }catch(e){} const semPreco=PR.filter(r=>r.noBling&&r.situacao==="A"&&!(cat[String(r.id)]&&Number(cat[String(r.id)].p)>0));
+      kpi(String(vend.length),"Produtos vendidos (30 dias)",`${num0(vend.reduce((a,r)=>a+r.qtd,0))} unidades`,"/produtos"); kpi(brlN(_round2(vend.reduce((a,r)=>a+r.valor,0))),"Faturamento (30 dias)","","/produtos");
+      kpi(fat>0?String((luc/fat*100).toFixed(1)).replace(".",",")+"%":"—","Margem média",`lucro estimado ${brlN(luc)}`,"/produtos"); kpi(`${PR.filter(r=>r.curva==="A").length} · ${PR.filter(r=>r.curva==="B").length} · ${PR.filter(r=>r.curva==="C").length}`,"Curva A · B · C","A = 80% do faturamento","/produtos");
+      kpi(String(c("margem baixa").length),"Margem baixa","abaixo de 10%","/produtos",c("margem baixa").length?"alerta":""); kpi(String(c("sem custo").length),"Sem custo","margem e lucro incompletos","/produtos",c("sem custo").length?"alerta":""); kpi(String(semPreco.length),"Sem preço na tabela","","/tabela-atacado",semPreco.length?"alerta":"");
+      lista("🏆 Mais vendidos (30 dias)","/produtos",vend.sort((a,b)=>b.valor-a.valor).slice(0,10).map(r=>({a:`${r.nome} · ${num0(r.qtd)} un`,b:brlN(r.valor)})));
+      lista("💰 Mais lucrativos","/produtos",cl.filter(r=>r.lucro>0).sort((a,b)=>b.lucro-a.lucro).slice(0,10).map(r=>({a:`${r.nome} · margem ${String(r.margem).replace(".",",")}%`,b:brlN(r.lucro)})));
+      lista("📈 Vendendo mais que no período anterior","/produtos",PR.filter(r=>r.valor-r.valorAnt>0).sort((a,b)=>(b.valor-b.valorAnt)-(a.valor-a.valorAnt)).slice(0,8).map(r=>({a:`${r.nome} · ${brlN(r.valorAnt)} → ${brlN(r.valor)}`,b:"+"+brlN(r.valor-r.valorAnt)})));
+      lista("📉 Vendendo menos","/produtos",PR.filter(r=>r.valor-r.valorAnt<0).sort((a,b)=>(a.valor-a.valorAnt)-(b.valor-b.valorAnt)).slice(0,8).map(r=>({a:`${r.nome} · ${brlN(r.valorAnt)} → ${brlN(r.valor)}`,b:brlN(r.valor-r.valorAnt)})));
+      lista("🔻 Margem baixa (vendidos)","/produtos",c("margem baixa").sort((a,b)=>b.valor-a.valor).slice(0,8).map(r=>({a:`${r.nome} · margem ${String(r.margem).replace(".",",")}%`,b:brlN(r.valor)}))); });
+  }
   if(g==="valorestoque"){
     seg(()=>{ const PB=lerProdutosBling(), PR=_montarProdutos({ini:d(29),fim:hoje}).L.filter(r=>r.noBling), com=PR.filter(r=>r.estoque>0), soma=(l,f)=>l.reduce((a,r)=>a+(Number(f(r))||0),0);
       const cc=com.filter(r=>r.custo>0), sc=com.filter(r=>!(r.custo>0)), vCusto=_round2(soma(cc,r=>r.estoque*r.custo)), vVenda=_round2(soma(com,r=>r.estoque*(r.preco||0))), vVendaCc=_round2(soma(cc,r=>r.estoque*(r.preco||0)));
@@ -10975,7 +11002,7 @@ function _montarPainelGrupo(g){
     seg(()=>{ const ativo=_webhookAtivo("order."); kpi(ativo?"✅ chegando":"— parados","Avisos automáticos do Bling",ativo?"pedidos atualizados na hora":"sem avisos nas últimas 2 h","/central",ativo?"":"alerta");
       const H=_statusHistorico(); kpi(H.varreduraCompleta?"✅ completo":"⏳ trazendo","Histórico do Bling",H.detalhes&&H.detalhes.total?`produtos: ${H.detalhes.feitos} de ${H.detalhes.total} pedidos`:"","/clientes"); });
     seg(()=>{ const M=_metricasPedidos(ped(d(6),hoje).L,d(6),hoje); kpi(brlN(M.valor),"Vendas 7 dias",`${M.qtd} pedidos`,"/inicio"); });
-    seg(()=>{ RG.push(...["venda","valorestoque","estoque","financeiro","cadastros","logistica","marketing"].map(x=>{ try{ const c=_painelGCache.get(x); const v=(c&&Date.now()-c.em<120000)?c.v:_montarPainelGrupo(x); if(!(c&&Date.now()-c.em<120000)) _painelGCache.set(x,{em:Date.now(),v});
+    seg(()=>{ RG.push(...["venda","clientes","produtos","valorestoque","estoque","financeiro","cadastros","logistica","marketing"].map(x=>{ try{ const c=_painelGCache.get(x); const v=(c&&Date.now()-c.em<120000)?c.v:_montarPainelGrupo(x); if(!(c&&Date.now()-c.em<120000)) _painelGCache.set(x,{em:Date.now(),v});
         return {grupo:x,titulo:v.titulo,link:"/painel/"+x,kpis:v.kpis.slice(0,4),alertas:v.alertas.filter(a=>a.nivel==="alto"||a.nivel==="medio").length}; }catch(e){ return {grupo:x,titulo:x,link:"/painel/"+x,kpis:[],alertas:0,erro:e.message}; } })); });
   }
   if(g==="logistica"){
