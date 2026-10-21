@@ -183,11 +183,13 @@ async function abrirCliente(id) {
 }
 function fecharCli() { document.getElementById("mCli").classList.remove("aberto"); if (MAPA) { MAPA.remove(); MAPA = null; } }
 document.getElementById("mCli").addEventListener("click", e => { if (e.target.id === "mCli") fecharCli(); });
-async function carregarPrazoCli() { const el = document.getElementById("blocoPrazoCli"); if (!el) return; const cid = (C.cadastro && C.cadastro.id) || C.id;
+async function carregarPrazoCli() { const els = [...document.querySelectorAll(".blocoPrazoCli")]; const cid = (C.cadastro && C.cadastro.id) || C.id;
   const { j } = await api("/api/clientes/" + encodeURIComponent(cid) + "/prazo-cliente"); const p = j.prazo || {};
-  el.innerHTML = `<h4>🗓️ Cliente com prazo</h4><label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" id="pcAtivo" ${p.ativo ? "checked" : ""}> Este cliente compra a prazo: o pedido pode ser conferido e sair sem passar pelo caixa, com pagamento em
+  const selo = document.getElementById("seloPrazoCli"); if (selo) selo.style.display = p.ativo ? "" : "none";
+  if (!els.length) return; const html = `<h4>🗓️ Cliente com prazo</h4><label style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="checkbox" id="pcAtivo" ${p.ativo ? "checked" : ""}> Este cliente compra a prazo: o pedido pode ser conferido e sair sem passar pelo caixa, com pagamento em
     <input id="pcDias" inputmode="numeric" value="${p.dias || 7}" style="width:56px"> dias a partir da conferência</label>
-    <button class="btn btn-mag" style="margin-top:6px" onclick="salvarPrazoCli()">Salvar</button>${p.em ? `<div class="ic" style="margin-top:4px">${p.ativo ? "Ligado" : "Desligado"} por ${esc(p.por || "—")} em ${dth(p.em)}</div>` : ""}`; }
+    <button class="btn btn-mag" style="margin-top:6px" onclick="salvarPrazoCli()">Salvar</button>${p.em ? `<div class="ic" style="margin-top:4px">${p.ativo ? "Ligado" : "Desligado"} por ${esc(p.por || "—")} em ${dth(p.em)}</div>` : ""}`;
+  els.forEach(e => { e.innerHTML = html; }); }
 async function salvarPrazoCli() { const cid = (C.cadastro && C.cadastro.id) || C.id; const { ok, j } = await api("/api/clientes/" + encodeURIComponent(cid) + "/prazo-cliente", { method: "POST", body: JSON.stringify({ ativo: document.getElementById("pcAtivo").checked, dias: document.getElementById("pcDias").value }) });
   if (!ok) { alert(j.erro || "Não consegui salvar."); return; } carregarPrazoCli(); }
 function renderFicha() {
@@ -195,7 +197,7 @@ function renderFicha() {
   const abas = [["resumo", "📊 Resumo"], ["pedidos", `🧾 Pedidos (${C.pedidos.length})`], ["produtos", "🍺 Produtos"], ["financeiro", "💰 Financeiro"], ["mapa", "🗺️ Mapa e próximos"], ["cadastro", "✏️ Cadastro"]];
   document.getElementById("mCliCorpo").innerHTML = `
     <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
-      <div style="flex:1;min-width:240px"><div style="font-size:19px;font-weight:900">${esc(c.nome || "(sem nome)")} ${tagSt(m.status)}</div>
+      <div style="flex:1;min-width:240px"><div style="font-size:19px;font-weight:900">${esc(c.nome || "(sem nome)")} ${tagSt(m.status)} <span id="seloPrazoCli" style="display:none;font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:#3a2e08;color:#ffd23f;vertical-align:middle">🗓️ Cliente com prazo</span></div>
         <div class="ic" style="margin-top:4px">${c.doc ? esc(c.doc) + " · " : ""}${tel ? esc(tel) : "sem telefone"}${c.email ? " · " + esc(c.email) : ""}</div></div>
       ${wa(tel) ? `<a class="btn btn-mag" href="${wa(tel)}" target="_blank">💬 WhatsApp</a>` : ""}
       <button class="btn btn-ghost" onclick="fecharCli()">Fechar</button></div>
@@ -206,9 +208,10 @@ function renderFicha() {
 const par = (v, l) => `<div><b>${v}</b><span>${l}</span></div>`;
 function abaResumo() {
   const m = C.metricas, el = document.getElementById("aba");
-  if (!m.pedidos) { el.innerHTML = `<div class="vazio">Este cliente ainda não tem pedidos registrados no sistema.</div>` + blocoNota(); return; }
+  const blocoPrazo = `<div class="bloco blocoPrazoCli"><h4>🗓️ Cliente com prazo</h4><div class="ic">Carregando…</div></div>`; setTimeout(carregarPrazoCli, 0);
+  if (!m.pedidos) { el.innerHTML = blocoPrazo + `<div class="vazio">Este cliente ainda não tem pedidos registrados no sistema.</div>` + blocoNota(); return; }
   const maxS = Math.max(1, ...m.diasDaSemana.map(d => d.qtd)), maxM = Math.max(1, ...m.meses.map(x => x.valor));
-  el.innerHTML = (m.pedidosComDetalhe < m.pedidos ? `<div class="desc">${m.pedidos} pedidos no total; ${m.pedidosComDetalhe} passaram pelo sistema e têm itens, horário, vendedora e entrega. Os outros vêm do histórico do Bling (data, valor e situação).</div>` : "") + `
+  el.innerHTML = blocoPrazo + (m.pedidosComDetalhe < m.pedidos ? `<div class="desc">${m.pedidos} pedidos no total; ${m.pedidosComDetalhe} passaram pelo sistema e têm itens, horário, vendedora e entrega. Os outros vêm do histórico do Bling (data, valor e situação).</div>` : "") + `
     <div class="par">
       ${par(brl(m.total), "total comprado")}${par(m.pedidos, "pedidos")}${par(brl(m.ticketMedio), "ticket médio")}${par(brl(m.maiorPedido), "maior pedido")}
       ${par(dt(m.ultimaCompra), `última compra (há ${m.diasDesdeUltima} dia(s))`)}${par(m.intervaloMedioDias != null ? m.intervaloMedioDias + " dias" : "—", "intervalo típico entre compras")}
@@ -269,7 +272,7 @@ function abaFinanceiro() {
   const f = C.financeiro, cr = f.credito, el = document.getElementById("aba");
   const formas = ["Dinheiro", ...BANCOS.map(b => "Pix Banco " + b), "Pix Máquina", "Cartão de Débito", "Cartão de Crédito"];
   el.innerHTML = `
-    <div class="bloco" id="blocoPrazoCli"><h4>🗓️ Cliente com prazo</h4><div class="ic">Carregando…</div></div>
+    <div class="bloco blocoPrazoCli"><h4>🗓️ Cliente com prazo</h4><div class="ic">Carregando…</div></div>
     <div class="bloco"><h4>🧾 Pedidos a prazo em aberto</h4>
       ${f.prazo.length ? `<div class="rolagem"><table><tr><th>Pedido</th><th>Data</th><th>Total</th><th>Já pago</th><th>Falta pagar</th></tr>
         ${f.prazo.map(p => `<tr style="cursor:pointer" onclick="B13Ficha.abrir('${esc(p.id)}')"><td><b>#${esc(p.numero)}</b></td><td>${esc(String(p.data || "").split("-").reverse().join("/"))}</td><td>${brl(p.total)}</td><td>${brl(p.pago)}</td><td><b style="color:var(--warn)">${brl(p.falta)}</b></td></tr>`).join("")}
