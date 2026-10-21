@@ -76,6 +76,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 #video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
 .itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
 .wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap .filtros{flex-wrap:wrap}.wrap input,.wrap select{max-width:100%;min-width:0}#comp{max-width:100%}#lista .ic,#recs .ic,#contasFin .ic{white-space:normal}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -103,6 +104,10 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <input id="fBusca" type="search" placeholder="🔎 fornecedor, descrição ou nº da nota" style="flex:1;min-width:180px"></div>
     <div class="ic" id="fRes" style="margin-top:6px"></div></div>
   <div class="card"><div id="lista"></div></div>
+  <div class="card"><h3>📊 Despesas por competência <select id="anoComp" onchange="carregarComp()" style="margin-left:8px"></select></h3><div class="ic" style="white-space:normal">Cada despesa no mês a que pertence (eventos anuais divididos nos meses). É a base da DRE e do ponto de equilíbrio.</div><div id="comp" style="overflow-x:auto;margin-top:6px"></div></div>
+  <div class="card"><h3>🏦 Contas e saldos iniciais</h3><div id="contasFin"></div>
+    <div class="filtros" style="margin-top:8px"><input id="cfNome" placeholder="Nome (ex.: Banco Inter, Cofre)" style="flex:1;min-width:160px"><select id="cfTipo"><option value="banco">Banco</option><option value="cofre">Cofre</option><option value="caixa">Caixa</option></select>
+      <input id="cfSaldo" inputmode="decimal" placeholder="Saldo inicial" style="width:120px"><input id="cfData" type="date" style="width:auto"><button class="btn btn-mag" onclick="salvarContaFin()">Salvar conta</button></div></div>
   <div class="grid2"><div class="card"><h3>🔁 Despesas fixas (todo mês)</h3><div id="recs"></div></div><div class="card"><h3>📊 Pago no mês por categoria</h3><div id="porCat"></div></div></div>
 </div>
 <div class="fundo" id="mod"><div class="modal" id="modCorpo" style="max-width:560px"></div></div>
@@ -114,7 +119,7 @@ const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "�
 const hoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
-let D = null, BANCOS = [];
+let D = null, BANCOS = [], CONTAS = [];
 const FORMAS = ["Pix", "Boleto", "Transferência", "Dinheiro do caixa", "Dinheiro (cofre)", "Cartão", "Débito automático"]; let CAIXAS = [];
 async function carregar() {
   const q = new URLSearchParams({ situacao: fSit.value, de: fDe.value, ate: fAte.value, categoria: fCat.value, busca: fBusca.value.trim() });
@@ -125,7 +130,7 @@ function render() {
   if (!fCat.dataset.ok) { fCat.innerHTML = `<option value="">Todas as categorias</option>` + D.categorias.map(c => `<option>${esc(c)}</option>`).join(""); fCat.dataset.ok = 1; }
   fRes.textContent = `${D.total} conta(s) · ${brl(D.somaFiltro)}`;
   const cor = { vencida: "#ff8aa3", "vence logo": "#ffd23f", aberta: "#cfcaff", paga: "#3ce88a", cancelada: "#9a95c9" };
-  lista.innerHTML = D.itens.map(t => `<div class="lin" style="align-items:flex-start;padding:9px 4px"><div style="min-width:0;flex:1"><b>${esc(t.fornecedor?.nome || t.descricao)}</b> <span class="ic">· ${esc(t.descricao)}${t.parcela && t.parcela !== "1/1" ? " · " + esc(t.parcela) : ""} · ${esc(t.categoria)}</span>
+  lista.innerHTML = D.itens.map(t => `<div class="lin" style="align-items:flex-start;padding:9px 4px"><div style="min-width:0;flex:1"><b>${esc(t.fornecedor?.nome || t.descricao)}</b> <span class="ic">· ${esc(t.descricao)}${t.parcela && t.parcela !== "1/1" ? " · " + esc(t.parcela) : ""} · ${esc(t.categoria)} · competência ${esc(t.competenciaTxt || "")}</span>
       <div class="ic" style="white-space:normal">vence ${dmy(t.vencimento)} · <b style="color:${cor[t.situacao]}">${esc(t.situacao)}</b>${t.status === "pago" ? ` em ${dmy(t.dataPagamento || "")} · ${esc(t.forma || "")}${t.banco ? " " + esc(t.banco) : ""}${t.valorPago && t.valorPago !== t.valor ? " · pago " + brl(t.valorPago) : ""}` : ""}${t.motivoCancelamento ? " · " + esc(t.motivoCancelamento) : ""}${t.origem === "recorrente" ? " · 🔁 fixa" : ""}</div></div>
     <div style="text-align:right;white-space:nowrap"><b>${brl(t.valor)}</b><div style="margin-top:4px;display:flex;gap:4px;justify-content:flex-end">
       ${t.status === "aberto" ? `<button class="btn btn-mag" style="padding:4px 10px" onclick="abrirPagar('${t.id}')">Pagar</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirEditar('${t.id}')">✏️</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="cancelar('${t.id}')">🗑</button>` : `<button class="btn btn-ghost" style="padding:4px 8px" onclick="reabrir('${t.id}')">↩️ ${t.status === "pago" ? "Desfazer pagamento" : "Reabrir"}</button>`}</div></div></div>`).join("") || `<div class="ic">Nenhuma conta nesse filtro.</div>`;
@@ -133,17 +138,19 @@ function render() {
   porCat.innerHTML = (D.resumo.pagoPorCategoria || []).map(c => `<div class="lin"><span>${esc(c.categoria)}</span><b>${brl(c.valor)}</b></div>`).join("") || `<div class="ic">Nada pago neste mês ainda.</div>`;
 }
 const abrir = h => { modCorpo.innerHTML = h; mod.classList.add("aberto"); }, fechar = () => mod.classList.remove("aberto");
-const selBanco = id => `<select id="${id}" style="width:100%"><option value="">—</option>${BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("")}<option>Cofre / dinheiro</option></select>`;
+const selBanco = id => `<select id="${id}" style="width:100%"><option value="">—</option>${CONTAS.filter(c => c.ativa !== false).map(c => `<option>${esc(c.nome)}</option>`).join("")}${BANCOS.filter(b => !CONTAS.some(c => c.nome === (b.nome || b))).map(b => `<option>${esc(b.nome || b)}</option>`).join("")}<option>Cofre / dinheiro</option></select>`;
 function abrirNova() { abrir(`<h3>➕ Nova despesa</h3><div class="grid2">
   <label><div class="ic">Descrição</div><input id="nDesc" style="width:100%" placeholder="ex.: Aluguel da loja"></label><label><div class="ic">Fornecedor / quem recebe</div><input id="nForn" style="width:100%"></label>
   <label><div class="ic">Categoria</div><select id="nCat" style="width:100%">${D.categorias.map(c => `<option>${esc(c)}</option>`).join("")}</select></label><label><div class="ic">Valor total</div><input id="nValor" inputmode="decimal" style="width:100%"></label>
-  <label><div class="ic">Vencimento (1ª parcela)</div><input id="nVenc" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Parcelas</div><input id="nParc" inputmode="numeric" value="1" style="width:100%"></label></div>
+  <label><div class="ic">Vencimento (1ª parcela)</div><input id="nVenc" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Parcelas (pagamentos)</div><input id="nParc" inputmode="numeric" value="1" style="width:100%"></label>
+  <label><div class="ic">Competência (mês a que pertence)</div><input id="nComp" type="month" value="${hoje().slice(0, 7)}" style="width:100%"></label><label><div class="ic">Distribuir em quantos meses</div><input id="nCompM" inputmode="numeric" value="1" style="width:100%"></label></div>
+  <div class="ic" style="white-space:normal;margin-top:4px">Ex.: IPVA ou seguro pagos de uma vez valem para o ano todo: competência no 1º mês e distribuir em 12. As parcelas são as datas de pagamento; a distribuição é para o custo mensal.</div>
   <label class="ic" style="display:block;margin-top:8px"><input type="checkbox" id="nRep"> 🔁 repetir todo mês (despesa fixa: o sistema cria a conta de cada mês sozinho)</label>
   <label class="ic" style="display:block;margin-top:4px"><input type="checkbox" id="nPago" onchange="nPagoBox.style.display=this.checked?'':'none'"> já foi paga</label>
   <div id="nPagoBox" class="grid2" style="display:none"><label><div class="ic">Forma</div><select id="nForma" style="width:100%">${FORMAS.map(f => `<option>${f}</option>`).join("")}</select></label><label><div class="ic">Banco / conta</div>${selBanco("nBanco")}</label></div>
   <div id="nMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarNova()">💾 Lançar</button></div>`); }
-async function salvarNova() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/contas-pagar", { method: "POST", body: JSON.stringify({ descricao: v("nDesc"), fornecedor: v("nForn"), categoria: v("nCat"), valor: v("nValor").replace(",", "."), vencimento: v("nVenc"), parcelas: v("nParc"), repetirMensal: nRep.checked, pago: nPago.checked, forma: v("nForma"), banco: v("nBanco") }) });
-  if (!ok) { nMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar.")}</div>`; return; } fechar(); carregar(); }
+async function salvarNova() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/contas-pagar", { method: "POST", body: JSON.stringify({ descricao: v("nDesc"), fornecedor: v("nForn"), categoria: v("nCat"), valor: v("nValor").replace(",", "."), vencimento: v("nVenc"), parcelas: v("nParc"), competencia: v("nComp"), competenciaMeses: v("nCompM"), repetirMensal: nRep.checked, pago: nPago.checked, forma: v("nForma"), banco: v("nBanco") }) });
+  if (!ok) { nMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar.")}</div>`; return; } fechar(); carregar(); carregarComp(); }
 async function abrirPagar(id) { try { const { j } = await api("/api/contas-pagar-caixas"); CAIXAS = j.caixas || []; } catch (e) {} abrirPagar2(id); }
 function abrirPagar2(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>Pagar · ${esc(t.fornecedor?.nome || t.descricao)}</h3><div class="ic">${esc(t.descricao)} · vence ${dmy(t.vencimento)} · ${brl(t.valor)}</div><div class="grid2" style="margin-top:8px">
   <label><div class="ic">Data do pagamento</div><input id="pData" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Valor pago</div><input id="pValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label>
@@ -155,16 +162,30 @@ async function pagar(id) { const v = x => document.getElementById(x).value; cons
   if (!ok) { pMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
 function abrirEditar(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>✏️ Editar conta</h3><div class="grid2"><label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
   <label><div class="ic">Categoria</div><select id="eCat" style="width:100%">${D.categorias.map(c => `<option ${c === t.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-  <label><div class="ic">Valor</div><input id="eValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label><label><div class="ic">Vencimento</div><input id="eVenc" type="date" value="${t.vencimento}" style="width:100%"></label></div><div id="eMsg"></div>
+  <label><div class="ic">Valor</div><input id="eValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label><label><div class="ic">Vencimento</div><input id="eVenc" type="date" value="${t.vencimento}" style="width:100%"></label>
+  <label><div class="ic">Competência</div><input id="eComp" type="month" value="${esc(t.competencia || String(t.vencimento).slice(0, 7))}" style="width:100%"></label><label><div class="ic">Distribuir em meses</div><input id="eCompM" inputmode="numeric" value="${t.competenciaMeses || 1}" style="width:100%"></label></div><div id="eMsg"></div>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarEdicao('${id}')">💾 Salvar</button></div>`); }
-async function salvarEdicao(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/editar`, { method: "POST", body: JSON.stringify({ descricao: v("eDesc"), categoria: v("eCat"), valor: v("eValor").replace(",", "."), vencimento: v("eVenc") }) });
+async function salvarEdicao(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/editar`, { method: "POST", body: JSON.stringify({ descricao: v("eDesc"), categoria: v("eCat"), valor: v("eValor").replace(",", "."), vencimento: v("eVenc"), competencia: v("eComp"), competenciaMeses: v("eCompM") }) });
   if (!ok) { eMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
 async function cancelar(id) { const m = prompt("Motivo do cancelamento:"); if (!m) return; const { ok, j } = await api(`/api/contas-pagar/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo: m }) }); if (!ok) alert(j.erro); carregar(); }
 async function reabrir(id) { if (!confirm("Voltar esta conta para 'em aberto'?")) return; const { ok, j } = await api(`/api/contas-pagar/${id}/reabrir`, { method: "POST", body: "{}" }); if (!ok) alert(j.erro); carregar(); }
 async function pausar(id, ativar) { await api(`/api/contas-pagar-recorrentes/${id}`, { method: "POST", body: JSON.stringify({ ativo: ativar }) }); carregar(); }
 mod.addEventListener("click", e => { if (e.target.id === "mod") fechar(); });
 let _tb; fBusca.addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(carregar, 350); }); [fSit, fDe, fAte, fCat].forEach(el => el.addEventListener("change", carregar));
-(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregar(); })();
+// contas financeiras e despesas por competência
+async function carregarContasFin() { const { j } = await api("/api/financeiro/contas"); CONTAS = j.contas || [];
+  contasFin.innerHTML = CONTAS.map(c => `<div class="lin"><span>${esc(c.nome)} <span class="ic">· ${esc(c.tipo)} · desde ${dmy(c.dataInicial)}</span></span><b>${brl(c.saldoInicial)}</b></div>`).join("") || `<div class="ic">Cadastre os bancos, o cofre e os caixas com o saldo do dia de início. A partir daí o sistema calcula o saldo de cada um.</div>`; }
+async function salvarContaFin() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/financeiro/contas", { method: "POST", body: JSON.stringify({ nome: v("cfNome"), tipo: v("cfTipo"), saldoInicial: v("cfSaldo").replace(",", "."), dataInicial: v("cfData") }) });
+  if (!ok) { alert(j.erro || "Não consegui salvar."); return; } cfNome.value = ""; cfSaldo.value = ""; carregarContasFin(); }
+async function carregarComp() { const { j } = await api("/api/financeiro/competencia?ano=" + (anoComp.value || hoje().slice(0, 4))); if (!j.ok) { comp.innerHTML = `<div class="err">${esc(j.erro || "")}</div>`; return; }
+  const M = j.meses, nomeM = m => ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(m.slice(5)) - 1], f = v => v ? Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : "";
+  const linha = (rot, vals, tot, est) => `<tr style="${est || ""}"><td style="white-space:nowrap;text-align:left">${rot}</td>${vals.map(v => `<td style="text-align:right">${f(v)}</td>`).join("")}<td style="text-align:right"><b>${f(tot)}</b></td></tr>`;
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  comp.innerHTML = j.linhas.length ? `<table style="min-width:900px;width:100%;border-collapse:collapse;font-size:12px"><tr class="ic"><td style="text-align:left">Conta</td>${M.map(m => `<td style="text-align:right">${nomeM(m)}</td>`).join("")}<td style="text-align:right">Ano</td></tr>
+    ${j.linhas.map(l => linha(`${esc(l.cod)} ${esc(l.nome)}`, M.map(m => l.meses[m] || 0), l.total)).join("")}
+    ${linha("<b>Despesas variáveis</b>", j.totais.variaveis, sum(j.totais.variaveis), "border-top:1px solid #3a3480")}${linha("<b>Despesas fixas</b>", j.totais.fixas, sum(j.totais.fixas))}${linha("Compras de mercadoria (vão para o CMV)", j.totais.compras, sum(j.totais.compras), "color:#9a95c9")}</table>` : `<div class="ic">Nenhuma despesa lançada para este ano.</div>`; }
+(async () => { const a = Number(hoje().slice(0, 4)); anoComp.innerHTML = [a - 1, a, a + 1].map(x => `<option ${x === a ? "selected" : ""}>${x}</option>`).join(""); cfData.value = hoje();
+  try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContasFin(); carregarComp(); carregar(); })();
 </script>
 </body>
 </html>

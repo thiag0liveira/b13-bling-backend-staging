@@ -11394,7 +11394,30 @@ app.get("/api/contas-pagar-caixas",requireAcesso("acesso_contas_pagar"),(req,res
 
 // ===================== CONTAS A PAGAR =====================
 // Títulos vindos das notas (com e sem nota), de boletos e de despesas lançadas aqui; despesas fixas mensais geradas sozinhas.
-const CATEGORIAS_DESPESA=["Fornecedores (mercadoria)","Aluguel","Salários e encargos","Energia","Água","Internet e telefone","Impostos e taxas","Frete e combustível","Manutenção","Marketing","Tarifas bancárias","Outros"];
+// PLANO DE CONTAS (DRE gerencial, LUCRO REAL). tipo: deducao, cmv, compra (estoque, vai para o CMV pelas vendas), variavel, fixa,
+// depreciacao, financeiro, imposto_lucro (IRPJ/CSLL sobre o lucro apurado), ativo (investimento: caixa, não é despesa), fora (não entra no resultado)
+const PLANO_CONTAS=[
+  ["2.1","ICMS sobre vendas","deducao"],["2.2","PIS sobre vendas","deducao"],["2.3","COFINS sobre vendas","deducao"],["2.4","Devoluções e estornos a clientes","deducao"],
+  ["3.1","Mercadorias para revenda (compras)","compra"],
+  ["4.1","Fretes, entregas e combustível","variavel"],["4.2","Comissões de vendas","variavel"],["4.3","Taxas de cartão e Pix","variavel"],["4.4","Embalagens, sacolas e gelo de venda","variavel"],["4.5","Perdas e avarias","variavel"],["4.9","Outras despesas variáveis","variavel"],
+  ["5.1.1","Salários","fixa"],["5.1.2","Encargos (FGTS, INSS)","fixa"],["5.1.3","Benefícios (VT, alimentação)","fixa"],["5.1.4","Provisão de 13º e férias","fixa"],["5.1.5","Pró-labore","fixa"],
+  ["5.2.1","Aluguel","fixa"],["5.2.2","Condomínio e IPTU","fixa"],["5.2.3","Energia","fixa"],["5.2.4","Água","fixa"],
+  ["5.3.1","Contabilidade","fixa"],["5.3.2","Sistemas e software (Bling etc.)","fixa"],["5.3.3","Internet e telefone","fixa"],["5.3.4","Material de escritório e limpeza","fixa"],["5.3.5","Taxas, alvarás e licenças","fixa"],
+  ["5.4.1","Marketing e publicidade","fixa"],["5.5.1","Manutenção (loja e equipamentos)","fixa"],["5.5.2","Veículos (IPVA, licenciamento, seguro, manutenção)","fixa"],["5.5.3","Seguros","fixa"],
+  ["5.6.1","Tarifas bancárias","fixa"],["5.9","Outras despesas fixas","fixa"],
+  ["6.1","Depreciação","depreciacao"],["7.1","Juros e encargos financeiros","financeiro"],["7.2","Receitas financeiras","financeiro"],
+  ["8.1","IRPJ","imposto_lucro"],["8.2","CSLL","imposto_lucro"],
+  ["9.1","Compra de equipamentos e veículos (ativo)","ativo"],["9.2","Empréstimos e financiamentos (amortização)","fora"],["9.3","Distribuição de lucros / retiradas","fora"],["9.9","Outros fora do resultado","fora"]
+].map(([cod,nome,tipo])=>({cod,nome,tipo,rotulo:cod+" "+nome}));
+const CATEGORIAS_DESPESA=PLANO_CONTAS.map(p=>p.rotulo);
+// categorias antigas (antes do plano de contas) -> conta do plano
+const _CAT_ANTIGA={"Fornecedores (mercadoria)":"3.1","Aluguel":"5.2.1","Salários e encargos":"5.1.1","Energia":"5.2.3","Água":"5.2.4","Internet e telefone":"5.3.3","Impostos e taxas":"5.3.5","Frete e combustível":"4.1","Manutenção":"5.5.1","Marketing":"5.4.1","Tarifas bancárias":"5.6.1","Outros":"5.9"};
+function _contaDoPlano(cat){ const c=String(cat||""); const p=PLANO_CONTAS.find(x=>x.rotulo===c||x.cod===c.split(" ")[0]&&c.includes(x.nome))||PLANO_CONTAS.find(x=>x.cod===_CAT_ANTIGA[c]); return p||PLANO_CONTAS.find(x=>x.cod==="5.9"); }
+// competência: mês (YYYY-MM) e em quantos meses distribuir (eventos anuais: IPVA, seguro, alvará…)
+function _competenciaDoTitulo(t){ const ini=/^\d{4}-\d{2}$/.test(String(t.competencia||""))?t.competencia:String(t.vencimento||"").slice(0,7); return {ini,meses:Math.min(60,Math.max(1,Number(t.competenciaMeses)||1))}; }
+// CONTAS FINANCEIRAS (bancos, cofre, caixas) com saldo inicial
+const CONTAS_FIN_FILE=`${DATA_DIR}/financeiro_contas.json`;
+function lerContasFin(){ const d=lerJSON(CONTAS_FIN_FILE,null)||{}; d.contas||=[]; return d; }
 function _salvarContas(C){ salvarJSON(CONTAS_PAGAR_FILE,C); }
 function _diaVenc(competencia,dia){ const [a,m]=competencia.split("-").map(Number); const ult=new Date(Date.UTC(a,m,0)).getUTCDate(); return `${competencia}-${String(Math.min(Math.max(1,dia),ult)).padStart(2,"0")}`; }
 function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo para cada despesa fixa ativa
@@ -11408,7 +11431,7 @@ setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600
 app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, h=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), iniM=Date.parse(h.slice(0,8)+"01T00:00:00-03:00");
     const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), busca=nrm(q.busca||"");
-    const T=C.titulos.map(t=>({...t,categoria:t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros"),descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
+    const T=C.titulos.map(t=>({...t,categoria:_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")).rotulo,competenciaTxt:(()=>{ const c=_competenciaDoTitulo(t); return c.meses>1?`${c.ini} (÷${c.meses} meses)`:c.ini; })(),descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
       situacao:t.status==="cancelado"?"cancelada":t.status==="pago"?"paga":t.vencimento<h?"vencida":t.vencimento<=d7?"vence logo":"aberta"}));
     const st=String(q.situacao||"abertas");
     const L=T.filter(t=>{ if(st==="abertas"&&!["aberta","vencida","vence logo"].includes(t.situacao)) return false; if(st==="vencidas"&&t.situacao!=="vencida") return false; if(st==="semana"&&!["vencida","vence logo"].includes(t.situacao)) return false;
@@ -11428,12 +11451,14 @@ app.post("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, v=Number(String(b.valor||"").replace(",",".")), n=Math.min(48,Math.max(1,Math.round(Number(b.parcelas)||1))), quem=req.sessao?.nome||"";
     if(!String(b.descricao||"").trim()) return res.status(400).json({erro:"informe a descrição"}); if(!(v>0)) return res.status(400).json({erro:"informe o valor"});
     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) return res.status(400).json({erro:"informe o vencimento"});
-    const cat=CATEGORIAS_DESPESA.includes(b.categoria)?b.categoria:"Outros", C=lerContasPagar(), novos=[];
+    const cat=_contaDoPlano(b.categoria).rotulo, C=lerContasPagar(), novos=[];
+    const compMeses=Math.min(60,Math.max(1,Math.round(Number(b.competenciaMeses)||1))), compIni=/^\d{4}-\d{2}$/.test(String(b.competencia||""))?b.competencia:null;
     if(b.repetirMensal){ C.recorrentes||=[]; const r={id:"rc"+Date.now(),descricao:String(b.descricao).trim().slice(0,120),fornecedor:String(b.fornecedor||"").slice(0,120),categoria:cat,valor:_round2(v),dia:Number(b.vencimento.slice(8,10)),inicio:b.vencimento,ativo:true,criadoEm:Date.now(),criadoPor:quem};
       C.recorrentes.push(r); _gerarRecorrentes(C); const t=C.titulos.find(x=>x.recorrenteId===r.id&&x.competencia===b.vencimento.slice(0,7)); if(t){ t.vencimento=b.vencimento; novos.push(t); } }
     else { const cada=_round2(v/n); for(let i=0;i<n;i++){ C.seq++; const dt=new Date(Date.parse(b.vencimento+"T12:00:00Z")); dt.setUTCMonth(dt.getUTCMonth()+i);
       novos.push({id:"cp"+C.seq,origem:"despesa",descricao:String(b.descricao).trim().slice(0,120),categoria:cat,fornecedor:{nome:String(b.fornecedor||"").slice(0,120),cnpj:String(b.cnpj||"").replace(/\D/g,"").slice(0,14)},
-        parcela:`${i+1}/${n}`,vencimento:dt.toISOString().slice(0,10),valor:i===n-1?_round2(v-cada*(n-1)):cada,status:"aberto",observacao:String(b.observacao||"").slice(0,200),criadoEm:Date.now(),criadoPor:quem}); } C.titulos.push(...novos); }
+        parcela:`${i+1}/${n}`,vencimento:dt.toISOString().slice(0,10),valor:i===n-1?_round2(v-cada*(n-1)):cada,status:"aberto",observacao:String(b.observacao||"").slice(0,200),criadoEm:Date.now(),criadoPor:quem,
+        ...(compMeses>1||compIni?{competencia:compIni||b.vencimento.slice(0,7),competenciaMeses:n>1?Math.max(1,Math.round(compMeses/n)):compMeses}:{})}); } C.titulos.push(...novos); }
     if(b.pago&&novos[0]) Object.assign(novos[0],{status:"pago",pagoEm:Date.now(),dataPagamento:_diaBRk(Date.now()),forma:String(b.forma||"").slice(0,40),banco:String(b.banco||"").slice(0,60),valorPago:novos[0].valor,pagoPor:quem});
     _salvarContas(C); res.json({ok:true,titulos:novos});
   }catch(e){ res.status(500).json({erro:e.message}); }
@@ -11457,10 +11482,31 @@ app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req
       Object.assign(t,{status:"cancelado",canceladoEm:Date.now(),motivoCancelamento:String(b.motivo).slice(0,200)}); hist({acao:"cancelou",motivo:t.motivoCancelamento}); }
     else if(a==="editar"){ const v=b.valor!=null?Number(String(b.valor).replace(",",".")):null; if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"});
       const antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao};
-      if(v!=null) t.valor=_round2(v); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) t.vencimento=b.vencimento; if(CATEGORIAS_DESPESA.includes(b.categoria)) t.categoria=b.categoria; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
+      if(v!=null) t.valor=_round2(v); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) t.vencimento=b.vencimento; if(b.categoria) t.categoria=_contaDoPlano(b.categoria).rotulo; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
+      if(/^\d{4}-\d{2}$/.test(String(b.competencia||""))) t.competencia=b.competencia; if(b.competenciaMeses!=null) t.competenciaMeses=Math.min(60,Math.max(1,Math.round(Number(b.competenciaMeses)||1)));
       hist({acao:"editou",antes}); }
     else return res.status(400).json({erro:"ação desconhecida"});
     _salvarContas(C); res.json({ok:true,titulo:t});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// contas financeiras (bancos, cofre, caixas) com saldo inicial
+app.get("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>res.json({contas:lerContasFin().contas}));
+app.post("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const b=req.body||{}, d=lerContasFin(), nome=String(b.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da conta"});
+    let c=d.contas.find(x=>x.id===b.id); if(!c){ c={id:"ct"+Date.now(),criadoEm:Date.now()}; d.contas.push(c); }
+    Object.assign(c,{nome,tipo:["banco","cofre","caixa"].includes(b.tipo)?b.tipo:"banco",saldoInicial:_round2(Number(String(b.saldoInicial||0).replace(",","."))||0),
+      dataInicial:/^\d{4}-\d{2}-\d{2}$/.test(String(b.dataInicial||""))?b.dataInicial:_diaBRk(Date.now()),ativa:b.ativa!==false,alteradoPor:req.sessao?.nome||""});
+    salvarJSON(CONTAS_FIN_FILE,d); res.json({ok:true,conta:c}); }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// DESPESAS POR COMPETÊNCIA (mês a mês por conta do plano, com a distribuição dos eventos em meses) — base da DRE
+app.get("/api/financeiro/competencia",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const ano=/^\d{4}$/.test(String(req.query.ano||""))?String(req.query.ano):_diaBRk(Date.now()).slice(0,4), meses=Array.from({length:12},(_,i)=>`${ano}-${String(i+1).padStart(2,"0")}`);
+    const por={}; (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status==="cancelado") return; const p=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), c=_competenciaDoTitulo(t);
+      if(!/^\d{4}-\d{2}$/.test(c.ini)) return; const v=(Number(t.valor)||0)/c.meses; let [a,m]=c.ini.split("-").map(Number);
+      for(let k=0;k<c.meses;k++){ const mm=`${a}-${String(m).padStart(2,"0")}`; if(mm.startsWith(ano)){ const L=(por[p.cod]||={cod:p.cod,nome:p.nome,tipo:p.tipo,meses:{}}); L.meses[mm]=_round2((L.meses[mm]||0)+v); } m++; if(m>12){ m=1; a++; } } });
+    const linhas=Object.values(por).sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true})).map(l=>({...l,total:_round2(Object.values(l.meses).reduce((x,y)=>x+y,0))}));
+    const somaTipo=tp=>meses.map(mm=>_round2(linhas.filter(l=>l.tipo===tp).reduce((x,l)=>x+(l.meses[mm]||0),0)));
+    res.json({ok:true,ano,meses,linhas,totais:{fixas:somaTipo("fixa"),variaveis:somaTipo("variavel"),compras:somaTipo("compra")},plano:PLANO_CONTAS});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/contas-pagar-recorrentes/:id",requireAcesso("acesso_contas_pagar"),(req,res)=>{
