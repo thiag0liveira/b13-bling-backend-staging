@@ -2932,7 +2932,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     // EM ROTA agora só acontece de verdade quando a viagem é iniciada (QR do
     // motorista), depois de confirmar que TODOS os pedidos da viagem já estão
     // Verificados.
-    const novoSit=ehEntregaReal?SIT.VERIFICADO:SIT.ATENDIDO;
+    const novoSit=ehEntregaReal?SIT.VERIFICADO:(cliPrazo&&SIT.PRAZO?SIT.PRAZO:SIT.ATENDIDO); // cliente com prazo na retirada: vai para PRAZO
     if(!novoSit) return res.status(400).json({erro:"Status VERIFICADO ou ATENDIDO não configurado."});
     // PEDIDO A PRAZO: não muda a situação (tem que continuar em PRAZO até ser pago) —
     // só registra na observação do Bling que foi conferido, com data e hora.
@@ -15721,7 +15721,8 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     // no cliente.
     const ehCartao=n=>/cr[eé]dito|d[eé]bito/i.test(n||"");
     const totalPagoSemTaxa=+pags.reduce((s,p)=>s+(ehCartao(p.formaNome)?Number(p.valor)/(1+TAXA_CARTAO_PADRAO):Number(p.valor)),0).toFixed(2);
-    if(valorFinal>0 && !jaPago){
+    const _cliPrazoEnt=(()=>{ try{ const r=lerVendasPrazo()[String(pid)]; return !!(r&&!r.pago&&r.origem==="conferencia"); }catch(e){ return false; } })();
+    if(valorFinal>0 && !jaPago && !(_cliPrazoEnt&&!pags.length)){ // cliente com prazo (registrado na conferência) pode finalizar sem pagamento
       const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
       if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return {code:400,json:{erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}}; }
     }
@@ -15734,8 +15735,9 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
       liberarTravaEntrega();
       return {code:400,json:{erro:"Venda a prazo não pode ser misturada com outra forma de pagamento. Escolha só \"A prazo\" ou só as formas à vista."}};
     }
-    const prazo=entrouPrazo && valorFinal>0;
-    const diasPrazo=Math.max(1,Math.min(Math.floor(Number(body?.diasPrazo)||7),60));
+    const _regConf=(()=>{ try{ const r=lerVendasPrazo()[String(pid)]; return r&&!r.pago&&r.origem==="conferencia"?r:null; }catch(e){ return null; } })();
+    const prazo=(entrouPrazo||(_regConf&&!pags.length)) && valorFinal>0; // cliente com prazo: entrega sem pagamento segue como prazo
+    const diasPrazo=_regConf&&!entrouPrazo?Number(_regConf.dias)||7:Math.max(1,Math.min(Math.floor(Number(body?.diasPrazo)||7),60));
     // o RECEBIMENTO fica só aqui no nosso sistema (mesmo registro de pagamento usado no resto
     // do sistema pra "recebido"). Nada é gravado nas parcelas do Bling.
     if(valorFinal>0 && pags.length && !prazo){
@@ -15765,7 +15767,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     const quemNome=gerente?(por||"gerente"):(v.motoristaNome||"motorista");
     if(prazo){
       const reg=lerVendasPrazo();
-      reg[String(pid)]={ em:agora, venceEm:agora+diasPrazo*86400000, dias:diasPrazo,
+      reg[String(pid)]={ em:agora, venceEm:(_regConf&&!entrouPrazo&&_regConf.venceEm)||agora+diasPrazo*86400000, dias:diasPrazo, // vencimento contado da conferência
         autorizadoPor:gerente?`${quemNome} (gerente, na entrega)`:`motorista ${quemNome} (na entrega)`, operador:quemNome,
         total:valorFinal, cliente:det.contato?.nome||"", numero:det.numero, observacao:"", pago:false, origem:"entrega" };
       salvarJSON(PRAZO_FILE,reg);
