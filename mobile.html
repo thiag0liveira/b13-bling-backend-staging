@@ -857,6 +857,9 @@ function abrirModalMob() {
   } else {
     btn.disabled = false;
   }
+  if (!pago) fetch(BACKEND + "/api/conferencia/cliente-prazo/" + encodeURIComponent(PEDIDO.id)).then(function (r) { return r.json(); }).then(function (j) { if (!j || !j.prazo) return;
+    btn.disabled = false; el("msgModalMob").innerHTML = ""; ps.style.background = "#3a2e08"; ps.style.border = "1px solid #ffd23f"; ps.style.color = "#ffe9a8";
+    ps.innerHTML = "🗓️ Cliente com prazo — Total: <b>" + brl(total) + "</b><br><span style=\"font-size:11px\">Pode conferir sem caixa. Pagamento vence em " + new Date(j.venceEm).toLocaleDateString("pt-BR") + " (" + j.dias + " dias)</span>"; }).catch(function () {});
   el("modalConf").className = "modal open";
 }
 function fecharModalMob() {

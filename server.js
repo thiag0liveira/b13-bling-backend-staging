@@ -2876,6 +2876,25 @@ app.post("/api/fluxo/:id/seguir-sem-pendencias",async(req,res)=>{
 });
 
 // Conferência final → entrega vai pra EM ROTA, retirada vai pra ATENDIDO
+// CLIENTE COM PRAZO (marcado na ficha): a conferência libera sem caixa e registra a venda a prazo (vence N dias após conferir)
+const CLIENTES_PRAZO_FILE=`${DATA_DIR}/clientes_prazo.json`;
+function _clientePrazo(cid){ if(!cid) return null; const d=lerJSON(CLIENTES_PRAZO_FILE,{}); let p=null; try{ p=d[String(_principalDe(cid))]; }catch(e){} p=p||d[String(cid)]; return p&&p.ativo?p:null; }
+app.get("/api/clientes/:id/prazo-cliente",requireSessao,(req,res)=>{ const d=lerJSON(CLIENTES_PRAZO_FILE,{}); let k=String(req.params.id); try{ k=String(_principalDe(k)); }catch(e){} res.json({prazo:d[k]||null}); });
+app.post("/api/clientes/:id/prazo-cliente",requireSessao,(req,res)=>{
+  try{ const d=lerJSON(CLIENTES_PRAZO_FILE,{}); let k=String(req.params.id); try{ k=String(_principalDe(k)); }catch(e){}
+    const dias=Math.min(60,Math.max(1,Math.round(Number(req.body?.dias)||7))), ativo=!!req.body?.ativo;
+    d[k]={ativo,dias,por:req.sessao?.nome||"",em:Date.now()}; salvarJSON(CLIENTES_PRAZO_FILE,d);
+    addLog("cliente-"+k,"cliente_prazo_"+(ativo?"ligado":"desligado"),req.sessao?.funcionarioId||"",req.sessao?.nome||"",{dias});
+    res.json({ok:true,prazo:d[k]}); }catch(e){ res.status(500).json({erro:e.message}); }
+});
+// a conferência pergunta se o cliente do pedido tem prazo
+app.get("/api/conferencia/cliente-prazo/:pedidoId",async(req,res)=>{
+  try{ const id=String(req.params.pedidoId); let cid=null, nome="";
+    try{ const r=_indicePedidos().porId[id]; if(r){ cid=r.clienteId; nome=r.cliente; } }catch(e){}
+    if(!cid){ try{ const p=(await bling(`/pedidos/vendas/${id}`))?.data; cid=p?.contato?.id; nome=p?.contato?.nome||""; }catch(e){} }
+    const cp=_clientePrazo(cid); res.json({prazo:!!cp,dias:cp?cp.dias:null,cliente:nome,venceEm:cp?Date.now()+cp.dias*86400000:null});
+  }catch(e){ res.json({prazo:false}); }
+});
 app.post("/api/fluxo/:id/conferido",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,tipoEntrega}=req.body||{}; const id=String(req.params.id);
@@ -2900,7 +2919,12 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     // a entrega (dinheiro, cartão, pix), então segue pra Verificado mesmo sem
     // pagamento — mas o pedido continua marcado como "não recebido" até lá (não
     // finge que já foi pago).
-    if(!pago && !ehPrazo && !ehEntregaReal){
+    // CLIENTE COM PRAZO no cadastro: libera a conferência sem caixa e registra a venda a prazo (vence N dias após a conferência)
+    const cliPrazo=!pago&&!ehPrazo?_clientePrazo(ped?.contato?.id):null;
+    if(cliPrazo){ const reg=lerVendasPrazo(); if(!reg[id]||reg[id].pago){ const agora=Date.now();
+        reg[id]={em:agora,venceEm:agora+cliPrazo.dias*86400000,dias:cliPrazo.dias,autorizadoPor:"cliente com prazo no cadastro",operador:funcionarioNome||"",total:Number(ped?.total)||0,cliente:ped?.contato?.nome||"",numero:ped?.numero,observacao:"conferido para sair",pago:false,origem:"conferencia"};
+        salvarJSON(PRAZO_FILE,reg); addLog(id,"venda_a_prazo_cliente_prazo",funcionarioId||"",funcionarioNome||"",{dias:cliPrazo.dias,venceEm:new Date(reg[id].venceEm).toISOString().slice(0,10)}); } }
+    if(!pago && !ehPrazo && !ehEntregaReal && !cliPrazo){
       return res.status(400).json({ erro:"Este pedido ainda NÃO foi pago em nenhum caixa. Receba no caixa atacado (ou registre como venda a prazo, com autorização) antes de conferir.",
         semPagamento:true, numero:ped?.numero||null });
     }

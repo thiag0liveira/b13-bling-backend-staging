@@ -469,6 +469,8 @@ function abrirModal(){
   } else {
     btnConf.disabled=false;
   }
+  if(!pago&&!ehPrazoSel){ fetch(BACKEND+"/api/conferencia/cliente-prazo/"+encodeURIComponent(sel.id)).then(r=>r.json()).then(j=>{ if(!j||!j.prazo) return;
+    btnConf.disabled=false; document.getElementById("msgModal").innerHTML=`<span style="color:#ffd23f;font-weight:bold">🗓️ Cliente com prazo: pode conferir sem caixa. O pagamento vence em ${new Date(j.venceEm).toLocaleDateString("pt-BR")} (${j.dias} dias).</span>`; }).catch(()=>{}); }
   document.getElementById("modal").classList.add("open");
 }
 
