@@ -99,9 +99,9 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="ic" style="white-space:normal;margin-bottom:8px">Aponte a câmera para o <b>código de barras</b> no topo da DANFE (ou tire uma foto dele). O sistema busca a nota completa, liga os produtos sozinho e calcula o custo.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-mag" onclick="abrirCamera()">📷 Ler código de barras</button>
-      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Foto do código<input type="file" accept="image/*" capture="environment" style="display:none" onchange="lerFoto(this.files[0])"></label>
+      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Foto do código (câmera ou galeria)<input type="file" accept="image/*" style="display:none" onchange="lerFoto(this.files[0])"></label>
       <label class="btn btn-ghost" style="cursor:pointer">📄 Enviar XML<input type="file" accept=".xml,text/xml" style="display:none" onchange="lerXml(this.files[0])"></label>
-      <label class="btn btn-ghost" style="cursor:pointer;border-color:#ffd23f;color:#ffd23f">🧾 Compra sem nota (foto)<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="lerFotoCompra(this.files)"></label></div>
+      <label class="btn btn-ghost" style="cursor:pointer;border-color:#ffd23f;color:#ffd23f">🧾 Compra sem nota (foto, galeria ou PDF)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="lerFotoCompra(this.files)"></label></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Compra sem nota fiscal (recibo, pedido, anotação): tire a foto e o sistema lê fornecedor, produtos, quantidades e valores. Confira antes de dar entrada. Não entra na parte fiscal.</div>
     <div id="camBox" style="display:none;margin-top:10px"><video id="video" playsinline muted></video><div class="ic" id="camMsg">Procurando o código de barras…</div><button class="btn btn-ghost" onclick="fecharCamera()">Fechar câmera</button></div>
     <div style="display:flex;gap:8px;margin-top:10px"><input id="chave" inputmode="numeric" placeholder="ou digite / cole a chave de 44 dígitos" style="flex:1" onkeydown="if(event.key==='Enter')carregarChave()"><button class="btn btn-ghost" onclick="carregarChave()">Buscar</button></div>
@@ -143,8 +143,12 @@ async function lerFoto(f) { if (!f) return; msgLer(`<div class="ic">Lendo a foto
 function reduzir(f) { return new Promise((ok, erro) => { const img = new Image(), u = URL.createObjectURL(f); img.onload = () => { const m = 1600, k = Math.min(1, m / Math.max(img.width, img.height)), c = document.createElement("canvas");
   c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); ok(c.toDataURL("image/jpeg", 0.82)); }; img.onerror = erro; img.src = u; }); }
 async function lerFotoCompra(files) { if (!files || !files.length) return; msgLer(`<div class="ic">⏳ Lendo a foto da compra… (leva uns segundos)</div>`);
-  try { const imagens = []; for (const f of [...files].slice(0, 4)) imagens.push(await reduzir(f));
-    const { ok, j } = await api("/api/entrada-nota/foto", { method: "POST", body: JSON.stringify({ imagens }) });
+  try { const imagens = [], pdfs = [];
+    for (const f of [...files].slice(0, 4)) {
+      if (/pdf/i.test(f.type) || /\.pdf$/i.test(f.name || "")) { if (f.size > 8 * 1048576) { msgLer(`<div class="err">O PDF ${esc(f.name)} passa de 8 MB.</div>`); return; }
+        pdfs.push(await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(f); })); }
+      else imagens.push(await reduzir(f)); }
+    const { ok, j } = await api("/api/entrada-nota/foto", { method: "POST", body: JSON.stringify({ imagens, pdfs }) });
     if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`); return; }
     if (j.lidaComo === "boleto") { mostrarBoleto(j.boleto); return; }
     msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota e ela entra pela parte fiscal.</div>` : ""); N = j.nota; IGN = new Set(); PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
