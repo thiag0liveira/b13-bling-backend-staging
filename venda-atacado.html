@@ -195,7 +195,7 @@ async function calcularFreteAtacado(txt) {
       S.freteMsg = "";
     } else {
       S.frete = null;
-      S.freteMsg = j.motivo || "Não foi possível calcular a entrega.";
+      S.freteMsg = j.motivo || (j.erro ? "Não consegui calcular o frete: " + j.erro : "Não foi possível calcular a entrega."); // mostra o motivo real (ex.: chave do mapa)
     }
   } catch (e) {
     S.freteMsg = "Erro ao calcular o frete. Tente de novo.";
