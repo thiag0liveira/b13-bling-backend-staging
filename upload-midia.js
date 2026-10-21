@@ -305,10 +305,10 @@
   }
 
 
-  // ===== GRAVADOR DE VÍDEO EM ALTA QUALIDADE (1080p, ~8 Mbps, MP4 quando o celular suporta) =====
+  // ===== GRAVADOR DE VÍDEO (HD 720p, ~2,5 Mbps: nítido para conferir e com arquivo de tamanho razoável, ~19 MB por minuto) =====
   function gravadorDisponivel() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
   function abrirGravador(pronto, planoB) {
-    var MAX_S = 180, BPS = 8000000, stream = null, rec = null, partes = [], t0 = 0, timer = null, mime = "", torch = false, track = null;
+    var MAX_S = 180, BPS = 2500000, stream = null, rec = null, partes = [], t0 = 0, timer = null, mime = "", torch = false, track = null;
     var tipos = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
     for (var i = 0; i < tipos.length; i++) { try { if (MediaRecorder.isTypeSupported(tipos[i])) { mime = tipos[i]; break; } } catch (e) {} }
     var ov = el("div", { style: "position:fixed;inset:0;background:#000;z-index:2147483000;display:flex;flex-direction:column;color:#fff;font-family:Arial,sans-serif" });
@@ -325,7 +325,7 @@
     bSair.onclick = function () { fechar(); };
     bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "#333"; };
     bGrav.onclick = function () {
-      partes = []; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: BPS, audioBitsPerSecond: 128000 } : { videoBitsPerSecond: BPS }); }
+      partes = []; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: BPS, audioBitsPerSecond: 64000 } : { videoBitsPerSecond: BPS }); }
       catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { info.textContent = "Este celular não permite gravar por aqui."; fechar(); planoB(); return; } }
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) partes.push(ev.data); };
       rec.onstop = function () { clearInterval(timer); var tipo = (rec.mimeType || mime || "video/webm").split(";")[0], ext = /mp4/.test(tipo) ? "mp4" : "webm";
@@ -338,11 +338,11 @@
       timer = setInterval(function () { var s = (Date.now() - t0) / 1000; info.innerHTML = '<span style="color:#ff4d4d">● gravando</span> ' + mmss(s) + " de " + mmss(MAX_S); if (s >= MAX_S && rec.state === "recording") rec.stop(); }, 500);
     };
     bParar.onclick = function () { if (rec && rec.state === "recording") rec.stop(); };
-    var pedir = function (audio) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } } }); };
+    var pedir = function (audio) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }); };
     pedir(true).catch(function () { return pedir(false); }).then(function (s) {
       stream = s; track = s.getVideoTracks()[0]; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
       var st = {}; try { st = track.getSettings(); } catch (e) {}
-      aoVivo(); info.textContent = "Pronto para gravar" + (st.width ? " · " + Math.max(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S);
+      aoVivo(); info.textContent = "Pronto para gravar" + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S) + " (~19 MB por minuto)";
       botoes([bSair, bGrav].concat(track._torch ? [bLuz] : []));
     }).catch(function () { fechar(); planoB(); });
   }
