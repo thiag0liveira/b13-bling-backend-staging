@@ -317,6 +317,7 @@
     var info = el("div", { style: "text-align:center;padding:8px;font-size:14px" }, "Abrindo a câmera…");
     var barra = el("div", { style: "display:flex;gap:10px;justify-content:center;align-items:center;padding:12px 10px 22px;flex-wrap:wrap" });
     var bt = function (t, cor) { return el("button", { type: "button", style: "border:0;border-radius:999px;padding:14px 20px;font-size:16px;font-weight:bold;color:#fff;background:" + (cor || "#333") }, t); };
+    var bNativa = bt("📷 Usar a câmera do celular", "#333"); bNativa.onclick = function () { fechar(); planoB(); }; // abre a câmera do jeito antigo, com o toque do usuário
     var bGrav = bt("⏺ Gravar", "#d0021b"), bParar = bt("⏹ Parar", "#d0021b"), bLuz = bt("🔦", "#333"), bSair = bt("✕ Cancelar", "#333"), bUsar = bt("✅ Usar este vídeo", "#1d9e75"), bDeNovo = bt("🔁 Gravar de novo", "#333");
     ov.appendChild(vid); ov.appendChild(info); ov.appendChild(barra); document.body.appendChild(ov);
     function botoes(l) { barra.innerHTML = ""; l.forEach(function (b) { barra.appendChild(b); }); }
@@ -327,7 +328,7 @@
     bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "#333"; };
     bGrav.onclick = function () {
       partes = []; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: BPS, audioBitsPerSecond: 64000 } : { videoBitsPerSecond: BPS }); }
-      catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { info.textContent = "Este celular não permite gravar por aqui."; fechar(); planoB(); return; } }
+      catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { info.textContent = "Este celular não permite gravar por aqui. Use a câmera do celular."; botoes([bSair, bNativa]); return; } }
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) partes.push(ev.data); };
       rec.onstop = function () { clearInterval(timer); var tipo = (rec.mimeType || mime || "video/webm").split(";")[0], ext = /mp4/.test(tipo) ? "mp4" : "webm";
         var blob = new Blob(partes, { type: tipo }), arq = new File([blob], "video_" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + "." + ext, { type: tipo });
@@ -344,8 +345,10 @@
       stream = s; track = s.getVideoTracks()[0]; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
       var st = {}; try { st = track.getSettings(); } catch (e) {}
       aoVivo(); info.textContent = "Pronto para gravar" + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S) + " (~19 MB por minuto)";
-      botoes([bSair, bGrav].concat(track._torch ? [bLuz] : []));
-    }).catch(function () { fechar(); planoB(); });
+      botoes([bSair, bGrav].concat(track._torch ? [bLuz] : []).concat([bNativa]));
+    }).catch(function (e) { // a câmera não abriu pelo navegador: mostra o motivo e o botão da câmera do celular (o navegador bloqueia abrir sozinho, sem toque)
+      var nome = (e && e.name) || "", msg = /NotAllowed|Permission/i.test(nome) ? "O navegador não tem permissão para usar a câmera. Libere nas configurações do site ou use a câmera do celular." : /NotFound|Overconstrained/i.test(nome) ? "Não encontrei a câmera traseira." : "Não consegui abrir a câmera por aqui.";
+      info.textContent = msg; botoes([bSair, bNativa]); });
   }
   window.B13Midia = { criar: criar, enviarArquivo: enviarArquivo, LIM_FOTO: LIM_FOTO, LIM_VIDEO: LIM_VIDEO };
 })();
