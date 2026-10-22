@@ -156,7 +156,11 @@
       var b = el("button", { type: "button", "class": "b13m-btn" }, rotulo);
       // GRAVAR VÍDEO: grava pelo próprio sistema em Full HD (a câmera aberta pelo jeito simples do navegador grava em qualidade
       // reduzida em muitos celulares, e o iPhone recomprime); se o celular não permitir, abre a câmera como antes
-      b.onclick = function () { if (capture && /video/.test(accept) && gravadorDisponivel()) abrirGravador(function (f) { if (f) adicionar([f]); }, function () { inp.click(); }); else inp.click(); };
+      b.onclick = function () { inp.click(); }; // câmera do próprio celular, como antes (traseira)
+      if (capture && /video/.test(accept) && gravadorDisponivel()) { // gravador do sistema em HD, como opção à parte
+        var bHD = el("button", { type: "button", "class": "b13m-btn" }, "🎬 Gravar em HD (gravador do sistema)");
+        bHD.onclick = function () { abrirGravador(function (f) { if (f) adicionar([f]); }, function () { inp.click(); }); };
+        setTimeout(function () { try { b.parentNode && b.parentNode.insertBefore(bHD, b.nextSibling); } catch (e) {} }, 0); }
       btns.appendChild(b); cont.appendChild(inp); entradas.push(inp);
     }
     entradaArquivo("📷 Tirar foto", "image/*", true, false);
