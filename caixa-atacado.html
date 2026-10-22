@@ -2799,6 +2799,10 @@ function perguntarDestinoPedido() {
     <div class="modalBg" onclick="if(event.target===this)fecharModais()"><div class="modal">
       <h3>📦 O que fazer com o pedido?</h3>
       <div class="muted" style="margin:8px 0 14px">Pagamento conferido. Agora diga o destino:</div>
+      ${PEDIDO_ATUAL && PEDIDO_ATUAL.ehEntrega ? `<button id="btnDestAtendido" class="btn" style="width:100%;padding:16px;background:#FF0082;margin-bottom:10px;text-align:left;outline:3px solid #ffd23f"
+        onclick="DESTINO_PEDIDO='atendido';fecharModais();finalizar()">
+        🚚 <b>Já foi entregue</b> <span style="font-size:11px;background:#ffd23f;color:#000;border-radius:999px;padding:1px 8px;margin-left:4px">padrão</span>
+        <div style="font-size:11px;opacity:.9;font-weight:400;margin-top:2px">Pedido de entrega já separado e entregue: vai para Atendido</div></button>` : ""}
       <button class="btn" style="width:100%;padding:16px;background:#2f9e6b;margin-bottom:10px;text-align:left"
         onclick="DESTINO_PEDIDO='separado';fecharModais();finalizar()">
         ✅ <b>Cliente já levou / já separou</b>
@@ -2809,6 +2813,7 @@ function perguntarDestinoPedido() {
         <div style="font-size:11px;opacity:.85;font-weight:400;margin-top:2px">Vai pra Em separação e entra na fila da Mesa e do Painel</div></button>
       <button class="btn btn-ghost" style="width:100%;margin-top:12px" onclick="fecharModais()">Cancelar</button>
     </div></div>`;
+  setTimeout(() => { const b = document.getElementById("btnDestAtendido"); if (b) b.focus(); }, 50); // entrega: "Já foi entregue" já selecionado (Enter confirma)
 }
 async function finalizar() {
   var _document$getElementB2;
@@ -2901,7 +2906,7 @@ async function finalizar() {
   const taxaCredito = taxaCartao(); // 3,5% do crédito + débito, se aplicável e marcado
   // "separacao" deixa o pedido EM SEPARAÇÃO (entra na fila da Mesa e do Painel);
   // "pronto" segue direto pra Atendido, como antes
-  const statusFinal = (PEDIDO_ATUAL && PEDIDO_ATUAL.entregue) ? "atendido" : (DESTINO_PEDIDO === "separacao" ? "separacao" : "separado");
+  const statusFinal = (PEDIDO_ATUAL && PEDIDO_ATUAL.entregue) || DESTINO_PEDIDO === "atendido" ? "atendido" : (DESTINO_PEDIDO === "separacao" ? "separacao" : "separado");
   try {
     // timeout de segurança: se o Bling demorar demais, não deixa preso em "Processando…"
     const comTimeout = (url, opts, ms = 90000) => {
