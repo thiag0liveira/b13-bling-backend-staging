@@ -1242,6 +1242,7 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",href:"/painel/venda",label:"💵 Dashboard de Vendas",acoes:["acesso_painel_venda"]},
   {grupo:"GESTÃO",href:"/painel/clientes",label:"🙋 Dashboard de Clientes",acoes:["acesso_painel_clientes"]},
   {grupo:"GESTÃO",href:"/painel/produtos",label:"🧃 Dashboard de Produtos",acoes:["acesso_painel_produtos"]},
+  {grupo:"GESTÃO",href:"/margem-bruta",label:"🪙 Margem Bruta",acoes:["acesso_margem_bruta"]},
   {grupo:"GESTÃO",href:"/painel/estoque",label:"🏬 Dashboard de Estoque",acoes:["acesso_painel_estoque"]},
   {grupo:"GESTÃO",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
   {grupo:"GESTÃO",href:"/painel/financeiro",label:"💹 Dashboard Financeiro",acoes:["acesso_painel_financeiro"]},
@@ -10894,6 +10895,25 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
     ultimos:_wh.ultimos.slice(0,25).map(x=>({...x,em:new Date(x.em-3*3600e3).toISOString().replace("T"," ").slice(0,19)}))});
 });
 
+// ===================== MARGEM BRUTA (produtos com preço de compra), por pedido, dia, semana ou mês =====================
+// custo = quantidade x preço de custo do cadastro (produtos_bling.json, pc). Itens sem custo ficam fora da margem, mas aparecem como "faturamento sem custo".
+app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
+  try{ const q=req.query, ag=["pedido","dia","semana","mes"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId;
+    const r=_filtrarPedidos({...q}), G={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}};
+    const chave=p=>{ const d=p.dia||_diaBRk(p.em||Date.now()); if(ag==="dia") return d; if(ag==="mes") return d.slice(0,7);
+      if(ag==="semana"){ const dt=new Date(d+"T12:00:00Z"), w=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-w); return "semana de "+dt.toISOString().slice(0,10); } return String(p.id); };
+    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} if(!it.length) return; T.pedidos++;
+      const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0}); g.pedidos++;
+      it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null;
+        if(c!=null){ g.fatCusto+=v; g.custo+=c; T.fatCusto+=v; T.custo+=c; } else { g.fatSemCusto+=v; T.fatSemCusto+=v; const nk=i.nome||String(i.produtoId||"?"); T.itensSemCusto[nk]=(T.itensSemCusto[nk]||0)+v; } }); });
+    const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null});
+    const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
+    const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto}), cob=T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null;
+    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
+      semCusto:Object.entries(T.itensSemCusto).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([nome,v])=>({nome,valor:_round2(v)}))});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== PAINEL DE CADA GRUPO DO MENU (visão geral com as métricas das telas do grupo) =====================
 // Só dados locais. Cada seção é independente (se uma fonte falhar, as outras aparecem). Guardado 60 s.
 const _painelGCache=new Map();
@@ -15621,6 +15641,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
 app.get("/diag",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"diag.html")); });
 // fontes usadas nas impressões (licença OFL do Google Fonts), servidas pelo próprio sistema
 app.get("/fontes/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^[A-Za-z0-9-]+\.ttf$/.test(a)) return res.status(404).end(); res.set("Cache-Control","public, max-age=2592000"); res.sendFile(path.join(__dirname,"fontes",a),e=>{ if(e&&!res.headersSent) res.status(404).end(); }); });
+app.get("/margem-bruta",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"margem-bruta.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
