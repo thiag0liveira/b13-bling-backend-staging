@@ -151,6 +151,8 @@ body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;min
     <div id="tipoFixo" style="text-align:center;padding:14px;border-radius:10px;border:2px solid var(--mag);background:#1a0530;font-weight:900;font-size:15px;margin-bottom:16px"></div>
     <div class="muted" style="font-size:12px;margin-bottom:6px">Opcional: fotos e vídeos do pedido (pode mandar vários).</div>
     <div id="midiaConf" style="margin-bottom:12px"></div>
+      <button type="button" class="btn" style="margin-top:8px;width:100%" onclick="conferirIA()">🔎 Conferir com IA (produtos fora do pedido)</button>
+      <div id="iaConf" style="margin-top:6px;font-size:13px"></div>
     <div id="msgModal" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-grn" id="btnConfirmar" onclick="confirmarConferencia()" disabled style="flex:1">✅ Confirmar</button>
@@ -554,6 +556,29 @@ function brl(n){ return Number(n).toLocaleString("pt-BR",{style:"currency",curre
 function dataBR(d){ if(!d) return "—"; const p=String(d).split("-"); return p.length===3?`${p[2]}/${p[1]}`:d; }
 
 init();
+
+// CONFERÊNCIA COM IA: tira quadros do vídeo (ou usa as fotos) e pergunta só os produtos que aparecem e NÃO estão no pedido
+function _quadro(el, w0, h0) { const k = Math.min(1, 960 / Math.max(w0, h0)), c = document.createElement("canvas"); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k); c.getContext("2d").drawImage(el, 0, 0, c.width, c.height); return c.toDataURL("image/jpeg", 0.72); }
+function _quadrosDoVideo(file, n) { return new Promise((ok, erro) => { const v = document.createElement("video"), u = URL.createObjectURL(file), out = []; v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = u;
+  v.onloadedmetadata = async () => { const d = v.duration && isFinite(v.duration) ? v.duration : 10;
+    for (let i = 0; i < n; i++) { await new Promise(r => { v.onseeked = r; v.currentTime = Math.min(d - 0.1, (i + 0.5) * d / n); setTimeout(r, 2500); }); try { out.push(_quadro(v, v.videoWidth, v.videoHeight)); } catch (e) {} }
+    URL.revokeObjectURL(u); ok(out); }; v.onerror = () => erro(new Error("não consegui ler o vídeo")); }); }
+function _imgDaFoto(file) { return new Promise((ok, erro) => { const im = new Image(), u = URL.createObjectURL(file); im.onload = () => { const r = _quadro(im, im.width, im.height); URL.revokeObjectURL(u); ok(r); }; im.onerror = erro; im.src = u; }); }
+async function conferirIA() {
+  const el = document.getElementById("iaConf"); const arqs = (MIDIA_CONF && MIDIA_CONF.arquivos) ? MIDIA_CONF.arquivos() : [];
+  if (!arqs.length) { el.innerHTML = `<span style="color:#ff8aa3">Grave o vídeo (ou tire fotos) antes de analisar.</span>`; return; }
+  el.innerHTML = "⏳ Preparando as imagens…";
+  try { let imagens = []; const vids = arqs.filter(a => a.tipo === "video"), fotos = arqs.filter(a => a.tipo !== "video");
+    for (const v of vids.slice(0, 2)) imagens = imagens.concat(await _quadrosDoVideo(v.file, vids.length > 1 ? 5 : 8));
+    for (const f of fotos.slice(0, 10 - imagens.length)) imagens.push(await _imgDaFoto(f.file));
+    imagens = imagens.slice(0, 10); el.innerHTML = `⏳ Analisando ${imagens.length} imagem(ns) com a IA…`;
+    const r = await fetch(BACKEND + "/api/conferencia/ia-fora-pedido/" + encodeURIComponent(sel.id), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imagens, funcionarioNome: (window.SESSAO && SESSAO.nome) || "" }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.erro || "falhou");
+    const cor = { alta: "#ff8aa3", media: "#ffd23f", baixa: "#9a95c9" };
+    el.innerHTML = j.foraDoPedido.length ? `<div style="background:#3d1020;border:1px solid #ff8aa3;border-radius:10px;padding:8px 10px"><b>⚠️ Possíveis produtos fora do pedido:</b>${j.foraDoPedido.map(x => `<div style="margin-top:4px">• <b>${esc(x.produto)}</b> <span style="color:${cor[x.confianca]}">(${x.confianca === "media" ? "média" : x.confianca})</span><br><span style="font-size:12px;opacity:.85">${esc(x.motivo)}</span></div>`).join("")}<div style="font-size:11px;opacity:.75;margin-top:6px">A IA é um apoio: confira antes de liberar.</div></div>`
+      : `<div style="background:#0f3a2a;border:1px solid #3ce88a;border-radius:10px;padding:8px 10px">✅ A IA não viu produtos fora do pedido em ${j.quadros} imagem(ns).${j.observacao ? `<br><span style="font-size:12px;opacity:.85">${esc(j.observacao)}</span>` : ""}</div>`;
+  } catch (e) { el.innerHTML = `<span style="color:#ff8aa3">${esc(e.message)}</span>`; }
+}
 </script>
 <div id="etiquetaPrint" style="display:none"></div>
 </body>

@@ -2896,6 +2896,34 @@ app.get("/api/conferencia/cliente-prazo/:pedidoId",async(req,res)=>{
     const cp=_clientePrazo(cid); res.json({prazo:!!cp,dias:cp?cp.dias:null,cliente:nome,venceEm:cp?Date.now()+cp.dias*86400000:null});
   }catch(e){ res.json({prazo:false}); }
 });
+// CONFERÊNCIA COM IA: quadros do vídeo/fotos + itens do pedido -> só os produtos que aparecem e NÃO estão no pedido (apoio, não prova)
+const _iaConfUso={};
+app.post("/api/conferencia/ia-fora-pedido/:id",async(req,res)=>{
+  try{ const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return res.status(503).json({erro:"A análise com IA não está ligada (falta ANTHROPIC_API_KEY no Railway)."});
+    const id=String(req.params.id), agora=Date.now(); _iaConfUso[id]=(_iaConfUso[id]||[]).filter(t=>agora-t<3600e3);
+    if(_iaConfUso[id].length>=5) return res.status(429).json({erro:"Limite de 5 análises por hora para este pedido."});
+    const imgs=(Array.isArray(req.body?.imagens)?req.body.imagens:[]).slice(0,10).map(x=>String(x||"").replace(/^data:image\/\w+;base64,/,"")).filter(x=>x.length>100&&x.length<4e6);
+    if(!imgs.length) return res.status(400).json({erro:"grave o vídeo (ou tire fotos) antes de analisar"});
+    let itens=[]; try{ itens=_itensDoPedido(id)||[]; }catch(e){}
+    if(!itens.length){ try{ const p=(await bling(`/pedidos/vendas/${id}`))?.data; itens=(p?.itens||[]).map(i=>({nome:i.descricao,quantidade:i.quantidade})); }catch(e){} }
+    if(!itens.length) return res.status(404).json({erro:"não achei os itens deste pedido"});
+    const lista=itens.map(i=>`- ${i.nome} (qtd ${i.quantidade})`).join("\n");
+    const pedido=`Estas imagens são quadros de um vídeo da conferência de um pedido de uma distribuidora de bebidas, antes de sair.
+Itens do pedido:
+${lista}
+Liste SOMENTE os produtos à venda que aparecem nas imagens e NÃO estão nessa lista. Marca, sabor, embalagem (lata, long neck, garrafa, PET) ou tamanho diferentes contam como outro produto. Ignore pessoas, paletes, carrinhos, plástico filme, caixas sem identificação e objetos que não são produtos. Se não houver nada fora do pedido, devolva a lista vazia. Não invente.
+Responda SOMENTE com JSON, sem texto antes ou depois: {"foraDoPedido":[{"produto":"","motivo":"o que você viu","confianca":"alta|media|baixa"}],"observacao":"algo que atrapalhou a análise, se houver"}`;
+    const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:1500,messages:[{role:"user",content:[...imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})),{type:"text",text:pedido}]}]})});
+    const j=await r.json().catch(()=>({})); if(!r.ok) return res.status(502).json({erro:"A análise falhou: "+(j?.error?.message||("HTTP "+r.status))});
+    _iaConfUso[id].push(agora);
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim();
+    let o; try{ o=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return res.status(502).json({erro:"Não consegui entender a resposta da análise. Tente de novo."}); }
+    const fora=(o.foraDoPedido||[]).filter(x=>x&&x.produto).slice(0,20).map(x=>({produto:String(x.produto).slice(0,120),motivo:String(x.motivo||"").slice(0,200),confianca:["alta","media","baixa"].includes(x.confianca)?x.confianca:"media"}));
+    addLog(id,"conferencia_ia",null,String(req.body?.funcionarioNome||""),{foraDoPedido:fora.map(x=>x.produto),quadros:imgs.length});
+    res.json({ok:true,foraDoPedido:fora,observacao:String(o.observacao||"").slice(0,300),quadros:imgs.length});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/fluxo/:id/conferido",async(req,res)=>{
   try{
     const {funcionarioId,funcionarioNome,tipoEntrega}=req.body||{}; const id=String(req.params.id);

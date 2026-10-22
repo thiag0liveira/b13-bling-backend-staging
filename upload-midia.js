@@ -277,6 +277,7 @@
         cont.appendChild(btns); cont.appendChild(lista); cont.appendChild(msg);
         entradas.forEach(function (inp) { cont.appendChild(inp); });
       },
+      arquivos: function () { return itens.map(function (i) { return { file: i.file, tipo: i.tipo }; }); }, // usado pela conferência com IA
       limpar: function () { itens.forEach(function (i) { try { URL.revokeObjectURL(i.previa); } catch (e) {} }); itens = []; aviso(""); mudou(); },
       // envia (em fila, um de cada vez) tudo o que ainda não foi; os já enviados não repetem.
       // aoProgredir(feitos, total) é opcional. Falha se algum não for.
