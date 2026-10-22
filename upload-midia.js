@@ -309,46 +309,60 @@
   // ===== GRAVADOR DE VÍDEO (HD 720p, ~2,5 Mbps: nítido para conferir e com arquivo de tamanho razoável, ~19 MB por minuto) =====
   function gravadorDisponivel() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
   function abrirGravador(pronto, planoB) {
-    var MAX_S = 180, BPS = 2500000, stream = null, rec = null, partes = [], t0 = 0, timer = null, mime = "", torch = false, track = null;
+    // gravador em tela cheia pensado para celular: vídeo ocupa a tela, controles por cima (sempre visíveis), inverter câmera, lanterna
+    var MAX_S = 180, BPS = 2500000, stream = null, rec = null, partes = [], t0 = 0, timer = null, mime = "", torch = false, track = null, frente = false, gravando = false;
     var tipos = ["video/mp4;codecs=avc1.640028,mp4a.40.2", "video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
     for (var i = 0; i < tipos.length; i++) { try { if (MediaRecorder.isTypeSupported(tipos[i])) { mime = tipos[i]; break; } } catch (e) {} }
-    var ov = el("div", { style: "position:fixed;inset:0;background:#000;z-index:2147483000;display:flex;flex-direction:column;color:#fff;font-family:Arial,sans-serif" });
-    var vid = el("video", { playsinline: "playsinline", muted: "muted", autoplay: "autoplay", style: "flex:1;width:100%;min-height:0;object-fit:contain;background:#000" });
-    var info = el("div", { style: "text-align:center;padding:8px;font-size:14px" }, "Abrindo a câmera…");
-    var barra = el("div", { style: "display:flex;gap:10px;justify-content:center;align-items:center;padding:12px 10px 22px;flex-wrap:wrap" });
-    var bt = function (t, cor) { return el("button", { type: "button", style: "border:0;border-radius:999px;padding:14px 20px;font-size:16px;font-weight:bold;color:#fff;background:" + (cor || "#333") }, t); };
-    var bNativa = bt("📷 Usar a câmera do celular", "#333"); bNativa.onclick = function () { fechar(); planoB(); }; // abre a câmera do jeito antigo, com o toque do usuário
-    var bGrav = bt("⏺ Gravar", "#d0021b"), bParar = bt("⏹ Parar", "#d0021b"), bLuz = bt("🔦", "#333"), bSair = bt("✕ Cancelar", "#333"), bUsar = bt("✅ Usar este vídeo", "#1d9e75"), bDeNovo = bt("🔁 Gravar de novo", "#333");
-    ov.appendChild(vid); ov.appendChild(info); ov.appendChild(barra); document.body.appendChild(ov);
-    function botoes(l) { barra.innerHTML = ""; l.forEach(function (b) { barra.appendChild(b); }); }
-    function fechar() { try { clearInterval(timer); } catch (e) {} try { stream && stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} try { ov.remove(); } catch (e) {} }
+    var css = function (o) { return Object.keys(o).map(function (k) { return k + ":" + o[k]; }).join(";"); };
+    var ov = el("div", { style: css({ position: "fixed", left: "0", top: "0", width: "100vw", height: "100dvh", "min-height": "100%", background: "#000", "z-index": "2147483000", overflow: "hidden", "font-family": "Arial,sans-serif", color: "#fff", "touch-action": "manipulation" }) });
+    var vid = el("video", { playsinline: "playsinline", "webkit-playsinline": "true", muted: "muted", autoplay: "autoplay", style: css({ position: "absolute", left: "0", top: "0", width: "100%", height: "100%", "object-fit": "cover", background: "#000" }) });
+    var topo = el("div", { style: css({ position: "absolute", left: "0", right: "0", top: "0", padding: "calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px", "text-align": "center", background: "linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,0))", "font-size": "14px", "font-weight": "bold" }) }, "Abrindo a câmera…");
+    var base = el("div", { style: css({ position: "absolute", left: "0", right: "0", bottom: "0", padding: "16px 18px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", "align-items": "center", "justify-content": "space-between", gap: "10px", background: "linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.65))" }) });
+    var redondo = function (t, tam, cor) { return el("button", { type: "button", style: css({ width: tam + "px", height: tam + "px", "border-radius": "50%", border: "0", background: cor || "rgba(255,255,255,.18)", color: "#fff", "font-size": Math.round(tam / 2.6) + "px", "flex-shrink": "0", display: "flex", "align-items": "center", "justify-content": "center" }) }, t); };
+    var pilula = function (t, cor) { return el("button", { type: "button", style: css({ border: "0", "border-radius": "999px", padding: "14px 18px", "font-size": "15px", "font-weight": "bold", color: "#fff", background: cor || "rgba(255,255,255,.18)" }) }, t); };
+    var bSair = redondo("✕", 50), bVirar = redondo("🔄", 50), bLuz = redondo("🔦", 50), bNativa = pilula("📷 Usar a câmera do celular"), bUsar = pilula("✅ Usar este vídeo", "#1d9e75"), bDeNovo = pilula("🔁 Gravar de novo");
+    var bGrav = el("button", { type: "button", "aria-label": "Gravar", style: css({ width: "78px", height: "78px", "border-radius": "50%", border: "5px solid #fff", background: "#d0021b", "flex-shrink": "0" }) });
+    var lados = function (esq, dir) { var a = el("div", { style: "display:flex;gap:10px;align-items:center;min-width:110px" }), b = el("div", { style: "display:flex;gap:10px;align-items:center;justify-content:flex-end;min-width:110px" }); esq.forEach(function (x) { a.appendChild(x); }); dir.forEach(function (x) { b.appendChild(x); }); return [a, b]; };
+    ov.appendChild(vid); ov.appendChild(topo); ov.appendChild(base); document.body.appendChild(ov);
+    var docOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden";
+    function telaGravar() { base.innerHTML = ""; var l = lados([bSair], [bVirar].concat(track && track._torch ? [bLuz] : [])); base.appendChild(l[0]); base.appendChild(bGrav); base.appendChild(l[1]);
+      bGrav.style.borderRadius = "50%"; bGrav.style.background = "#d0021b"; bVirar.style.opacity = "1"; }
+    function telaGravando() { bGrav.style.background = "#d0021b"; bGrav.style.borderRadius = "18px"; bVirar.style.opacity = ".35"; }
+    function telaRever() { base.innerHTML = ""; base.style.justifyContent = "center"; base.appendChild(bDeNovo); base.appendChild(bUsar); }
+    function telaErro(msg) { topo.textContent = msg; base.innerHTML = ""; base.style.justifyContent = "center"; base.appendChild(bSair); base.appendChild(bNativa); }
+    function pararStream() { try { stream && stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} stream = null; }
+    function fechar() { try { clearInterval(timer); } catch (e) {} pararStream(); try { ov.remove(); } catch (e) {} document.documentElement.style.overflow = docOverflow; }
     function mmss(s) { s = Math.floor(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
-    function aoVivo() { vid.srcObject = stream; vid.muted = true; vid.controls = false; vid.removeAttribute("src"); try { vid.play(); } catch (e) {} }
-    bSair.onclick = function () { fechar(); };
-    bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "#333"; };
+    function aoVivo() { vid.srcObject = stream; vid.muted = true; vid.controls = false; vid.removeAttribute("src"); vid.style.objectFit = "cover"; vid.style.transform = frente ? "scaleX(-1)" : "none"; try { vid.play(); } catch (e) {} }
+    function abrirCamera() {
+      var pedir = function (audio) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: { facingMode: { ideal: frente ? "user" : "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }); };
+      pararStream(); topo.textContent = "Abrindo a câmera…";
+      return pedir(true).catch(function () { return pedir(false); }).then(function (s) {
+        stream = s; track = s.getVideoTracks()[0]; torch = false; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
+        var st = {}; try { st = track.getSettings(); } catch (e) {}
+        aoVivo(); topo.textContent = (frente ? "Câmera frontal" : "Câmera traseira") + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S); base.style.justifyContent = "space-between"; telaGravar();
+      }).catch(function (e) { var nome = (e && e.name) || "";
+        telaErro(/NotAllowed|Permission/i.test(nome) ? "O navegador não tem permissão para usar a câmera. Libere nas configurações do site ou use a câmera do celular." : /NotFound|Overconstrained/i.test(nome) ? "Não encontrei essa câmera." : "Não consegui abrir a câmera por aqui."); });
+    }
+    bSair.onclick = function () { if (gravando) return; fechar(); };
+    bNativa.onclick = function () { fechar(); planoB(); }; // abre a câmera do celular com o toque do usuário (o navegador bloqueia abrir sozinho)
+    bVirar.onclick = function () { if (gravando) return; frente = !frente; abrirCamera(); };
+    bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "rgba(255,255,255,.18)"; };
     bGrav.onclick = function () {
+      if (gravando) { if (rec && rec.state === "recording") rec.stop(); return; }
       partes = []; try { rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: BPS, audioBitsPerSecond: 64000 } : { videoBitsPerSecond: BPS }); }
-      catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { info.textContent = "Este celular não permite gravar por aqui. Use a câmera do celular."; botoes([bSair, bNativa]); return; } }
+      catch (e) { try { rec = new MediaRecorder(stream); } catch (e2) { telaErro("Este celular não permite gravar por aqui. Use a câmera do celular."); return; } }
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) partes.push(ev.data); };
-      rec.onstop = function () { clearInterval(timer); var tipo = (rec.mimeType || mime || "video/webm").split(";")[0], ext = /mp4/.test(tipo) ? "mp4" : "webm";
+      rec.onstop = function () { gravando = false; clearInterval(timer); var tipo = (rec.mimeType || mime || "video/webm").split(";")[0], ext = /mp4/.test(tipo) ? "mp4" : "webm";
         var blob = new Blob(partes, { type: tipo }), arq = new File([blob], "video_" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + "." + ext, { type: tipo });
-        vid.srcObject = null; vid.src = URL.createObjectURL(blob); vid.muted = false; vid.controls = true; try { vid.play(); } catch (e) {}
-        info.textContent = "Confira o vídeo (" + mmss((Date.now() - t0) / 1000) + " · " + (blob.size / 1048576).toFixed(1) + " MB)";
-        bUsar.onclick = function () { fechar(); pronto(arq); }; bDeNovo.onclick = function () { aoVivo(); info.textContent = "Pronto para gravar"; botoes([bSair, bGrav].concat(track && track._torch ? [bLuz] : [])); };
-        botoes([bDeNovo, bUsar]); };
-      rec.start(1000); t0 = Date.now(); botoes([bParar].concat(track && track._torch ? [bLuz] : []));
-      timer = setInterval(function () { var s = (Date.now() - t0) / 1000; info.innerHTML = '<span style="color:#ff4d4d">● gravando</span> ' + mmss(s) + " de " + mmss(MAX_S); if (s >= MAX_S && rec.state === "recording") rec.stop(); }, 500);
+        pararStream(); vid.srcObject = null; vid.src = URL.createObjectURL(blob); vid.muted = false; vid.controls = true; vid.style.objectFit = "contain"; vid.style.transform = "none"; try { vid.play(); } catch (e) {}
+        topo.textContent = "Confira o vídeo · " + mmss((Date.now() - t0) / 1000) + " · " + (blob.size / 1048576).toFixed(1) + " MB";
+        bUsar.onclick = function () { fechar(); pronto(arq); }; bDeNovo.onclick = function () { abrirCamera(); };
+        telaRever(); };
+      rec.start(1000); t0 = Date.now(); gravando = true; telaGravando();
+      timer = setInterval(function () { var s = (Date.now() - t0) / 1000; topo.innerHTML = '<span style="color:#ff4d4d">● gravando</span> ' + mmss(s) + " de " + mmss(MAX_S); if (s >= MAX_S && rec.state === "recording") rec.stop(); }, 500);
     };
-    bParar.onclick = function () { if (rec && rec.state === "recording") rec.stop(); };
-    var pedir = function (audio) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } }); };
-    pedir(true).catch(function () { return pedir(false); }).then(function (s) {
-      stream = s; track = s.getVideoTracks()[0]; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
-      var st = {}; try { st = track.getSettings(); } catch (e) {}
-      aoVivo(); info.textContent = "Pronto para gravar" + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S) + " (~19 MB por minuto)";
-      botoes([bSair, bGrav].concat(track._torch ? [bLuz] : []).concat([bNativa]));
-    }).catch(function (e) { // a câmera não abriu pelo navegador: mostra o motivo e o botão da câmera do celular (o navegador bloqueia abrir sozinho, sem toque)
-      var nome = (e && e.name) || "", msg = /NotAllowed|Permission/i.test(nome) ? "O navegador não tem permissão para usar a câmera. Libere nas configurações do site ou use a câmera do celular." : /NotFound|Overconstrained/i.test(nome) ? "Não encontrei a câmera traseira." : "Não consegui abrir a câmera por aqui.";
-      info.textContent = msg; botoes([bSair, bNativa]); });
+    abrirCamera();
   }
   window.B13Midia = { criar: criar, enviarArquivo: enviarArquivo, LIM_FOTO: LIM_FOTO, LIM_VIDEO: LIM_VIDEO };
 })();
