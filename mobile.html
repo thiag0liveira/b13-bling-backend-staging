@@ -521,8 +521,13 @@ function abrirPedidoManual() {
   var inp = el("pedidoManual");
   var num = inp ? String(inp.value || "").replace(/\D/g, "") : "";
   if (!num) { if (inp) inp.focus(); return; }
-  el("scanBox").innerHTML = "";
-  abrirPedido(num);
+  if (num.length >= 10) { el("scanBox").innerHTML = ""; abrirPedido(num); return; } // código interno (como no QR)
+  // número do pedido: converte para o código interno antes de abrir
+  var box = el("scanBox"), msg = document.createElement("div"); msg.className = "muted mt"; msg.textContent = "Procurando o pedido " + num + "…"; box.querySelector(".card") && box.querySelector(".card").appendChild(msg);
+  fetch(BACKEND + "/api/pedido-por-numero/" + encodeURIComponent(num)).then(function (r) { return r.json(); }).then(function (j) {
+    if (!j || !j.id) { msg.innerHTML = '<span class="err">' + ((j && j.erro) || "Não achei esse pedido.") + "</span>"; if (inp) { inp.focus(); inp.select(); } return; }
+    el("scanBox").innerHTML = ""; abrirPedido(j.id);
+  }).catch(function () { msg.innerHTML = '<span class="err">Sem conexão. Tente de novo.</span>'; });
 }
 function toggleFlipScanner(classe) {
   var reader = el("reader");
