@@ -1,0 +1,31 @@
+{
+ "id": "fixas-aluguel-contador-2026-10",
+ "fonte": "aluguel e contador informados (1º dia útil do mês)",
+ "itens": [],
+ "recorrentes": [
+  {
+   "id": "rc-aluguel",
+   "descricao": "Aluguel da loja",
+   "fornecedor": "Aluguel",
+   "cod": "5.2.1",
+   "valor": 17518.56,
+   "diaUtil": 1,
+   "inicio": "2026-10-01",
+   "pagarCompetencias": [
+    "2026-10"
+   ]
+  },
+  {
+   "id": "rc-contador",
+   "descricao": "Contabilidade",
+   "fornecedor": "Contador",
+   "cod": "5.3.1",
+   "valor": 3242.0,
+   "diaUtil": 1,
+   "inicio": "2026-10-01",
+   "pagarCompetencias": [
+    "2026-10"
+   ]
+  }
+ ]
+}

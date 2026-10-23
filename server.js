@@ -11574,11 +11574,17 @@ const CONTAS_FIN_FILE=`${DATA_DIR}/financeiro_contas.json`;
 function lerContasFin(){ const d=lerJSON(CONTAS_FIN_FILE,null)||{}; d.contas||=[]; return d; }
 function _salvarContas(C){ salvarJSON(CONTAS_PAGAR_FILE,C); }
 function _diaVenc(competencia,dia){ const [a,m]=competencia.split("-").map(Number); const ult=new Date(Date.UTC(a,m,0)).getUTCDate(); return `${competencia}-${String(Math.min(Math.max(1,dia),ult)).padStart(2,"0")}`; }
+// 1º (ou N-ésimo) dia útil do mês: pula sábado, domingo e feriados nacionais fixos (e Sexta-feira Santa, Carnaval e Corpus Christi pela Páscoa)
+function _feriadosNac(a){ const f=["01-01","04-21","05-01","09-07","10-12","11-02","11-15","11-20","12-25"].map(d=>`${a}-${d}`);
+  const G=a%19,C=Math.floor(a/100),H=(C-Math.floor(C/4)-Math.floor((8*C+13)/25)+19*G+15)%30,I=H-Math.floor(H/28)*(1-Math.floor(29/(H+1))*Math.floor((21-G)/11)),J=(a+Math.floor(a/4)+I+2-C+Math.floor(C/4))%7,L=I-J,m=3+Math.floor((L+40)/44),d=L+28-31*Math.floor(m/4);
+  const pas=Date.UTC(a,m-1,d), k=n=>new Date(pas+n*864e5).toISOString().slice(0,10); return new Set([...f,k(-2),k(-48),k(-47),k(60)]); }
+function _diaUtil(competencia,n){ const [a,m]=competencia.split("-").map(Number), F=_feriadosNac(a); let dt=new Date(Date.UTC(a,m-1,1)), c=0;
+  while(true){ const s=dt.toISOString().slice(0,10), w=dt.getUTCDay(); if(w!==0&&w!==6&&!F.has(s)){ c++; if(c>=(n||1)) return s; } dt=new Date(dt.getTime()+864e5); } }
 function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo para cada despesa fixa ativa
   const h=_diaBRk(Date.now()), comp=[h.slice(0,7),_diaBRk(Date.parse(h.slice(0,7)+"-28T12:00:00Z")+5*_DIA).slice(0,7)]; let mud=false;
   (C.recorrentes||[]).filter(r=>r.ativo!==false).forEach(r=>comp.forEach(cp=>{ if(cp<String(r.inicio||"").slice(0,7)) return;
     if(C.titulos.some(t=>t.recorrenteId===r.id&&t.competencia===cp)) return; C.seq++;
-    C.titulos.push({id:"cp"+C.seq,origem:"recorrente",recorrenteId:r.id,competencia:cp,descricao:r.descricao,categoria:r.categoria,fornecedor:{nome:r.fornecedor||"",cnpj:""},parcela:"mensal",vencimento:_diaVenc(cp,r.dia),valor:_round2(r.valor),status:"aberto",criadoEm:Date.now(),criadoPor:"automático"}); mud=true; }));
+    C.titulos.push({id:"cp"+C.seq,origem:"recorrente",recorrenteId:r.id,competencia:cp,descricao:r.descricao,categoria:r.categoria,fornecedor:{nome:r.fornecedor||"",cnpj:""},parcela:"mensal",vencimento:r.diaUtil?_diaUtil(cp,r.diaUtil):_diaVenc(cp,r.dia),valor:_round2(r.valor),status:"aberto",criadoEm:Date.now(),criadoPor:"automático"}); mud=true; }));
   if(mud) _salvarContas(C); return C;
 }
 setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600e3);
@@ -11588,7 +11594,11 @@ function _importarLancamentosConhecidos(){ try{ for(const arq of fs.readdirSync(
     (L.itens||[]).forEach(x=>{ const p=PLANO_CONTAS.find(q=>q.cod===x.cod)||PLANO_CONTAS.find(q=>q.cod==="5.9"); C.seq++;
       C.titulos.push({id:"cp"+C.seq,origem:"importado",importacao:L.id,descricao:x.descricao,categoria:p.rotulo,fornecedor:{nome:x.fornecedor,cnpj:""},parcela:"1/1",vencimento:x.data,valor:_round2(x.valor),
         competencia:x.competencia||x.data.slice(0,7),...(x.aberto?{status:"aberto"}:{status:"pago",pagoEm:Date.parse(x.data+"T12:00:00-03:00"),dataPagamento:x.data,forma:"não informada",banco:"",valorPago:_round2(x.valor),pagoPor:"importação"}),criadoEm:Date.now(),criadoPor:"importação ("+(L.fonte||arq)+")"}); });
-    C.importados.push(L.id); salvarJSON(CONTAS_PAGAR_FILE,C); console.log("[contas-pagar] importados",(L.itens||[]).length,"lançamentos de",arq); } }catch(e){ console.error("[contas-pagar] importação:",e.message); } }
+    (L.recorrentes||[]).forEach(r=>{ C.recorrentes||=[]; if(C.recorrentes.some(x=>x.id===r.id)) return; const p=PLANO_CONTAS.find(q=>q.cod===r.cod)||PLANO_CONTAS.find(q=>q.cod==="5.9");
+      C.recorrentes.push({id:r.id,descricao:r.descricao,fornecedor:r.fornecedor||"",categoria:p.rotulo,valor:_round2(r.valor),dia:1,diaUtil:r.diaUtil||null,inicio:r.inicio,ativo:true,criadoEm:Date.now(),criadoPor:"importação"}); });
+    _gerarRecorrentes(C);
+    (L.recorrentes||[]).forEach(r=>(r.pagarCompetencias||[]).forEach(cp=>{ const t=C.titulos.find(x=>x.recorrenteId===r.id&&x.competencia===cp); if(t&&t.status!=="pago") Object.assign(t,{status:"pago",pagoEm:Date.parse(t.vencimento+"T12:00:00-03:00"),dataPagamento:t.vencimento,forma:"não informada",banco:"",valorPago:t.valor,pagoPor:"importação"}); }));
+    C.importados.push(L.id); salvarJSON(CONTAS_PAGAR_FILE,C); console.log("[contas-pagar] importados",(L.itens||[]).length,"lançamentos e",(L.recorrentes||[]).length,"despesas fixas de",arq); } }catch(e){ console.error("[contas-pagar] importação:",e.message); } }
 setTimeout(_importarLancamentosConhecidos,15000);
 app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, h=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), iniM=Date.parse(h.slice(0,8)+"01T00:00:00-03:00");
