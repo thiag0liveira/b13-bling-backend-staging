@@ -78,6 +78,9 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 .leg{display:flex;gap:12px;font-size:11.5px;color:#9a95c9;margin-top:4px}.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
 .wrap>*{min-width:0;max-width:100%;box-sizing:border-box}#kpis{grid-template-columns:repeat(auto-fill,minmax(min(160px,100%),1fr))}#atalhos{flex-wrap:wrap}
 .lin>span{min-width:0;overflow-wrap:anywhere;white-space:normal}.lin>b{flex-shrink:0;white-space:nowrap;margin-left:8px}.lin{gap:6px}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}#atalhos{flex-wrap:wrap}#atalhos input,#atalhos select{max-width:100%;min-width:0}#parProd{flex-wrap:wrap}
+.pcard{border-top:1px solid #2a2660;padding:10px 2px}.pcard .n{font-weight:800;font-size:14px;display:flex;justify-content:space-between;gap:8px}.pcard .l{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:#9a95c9;margin-top:4px}.pcard .l b{color:#fff}
+.pcard .c{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pcard .c input{width:110px;font-size:16px;padding:8px;text-align:right}.pcard .c button{font-size:18px;padding:6px 14px}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -130,6 +133,12 @@ async function carregar() {
 }
 function renderProdutos() {
   const corM = m => m == null ? "#9a95c9" : m < 10 ? "#ff8aa3" : m < 20 ? "#ffd23f" : "#3ce88a";
+  if (window.innerWidth < 720) { // celular: um cartão por produto
+    tab.innerHTML = `<tr><td>${D.produtos.map((x, k) => `<div class="pcard"><div class="n"><span>${esc(x.nome)}</span><span style="color:${corM(x.margem)}">${pct(x.margem)}</span></div>
+      <div class="l"><span>Venda <b>${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</b></span><span>Médio <b>${x.precoMedio != null ? brl(x.precoMedio) : "—"}</b></span><span>Qtd <b>${String(x.qtd).replace(".", ",")}</b></span><span>Faturou <b>${brl(x.fat)}</b></span><span>Lucro <b>${x.lucro != null ? brl(x.lucro) : "—"}</b></span></div>
+      ${x.produtoId ? `<div class="c"><span class="ic">Custo</span><input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="sem custo" onkeydown="if(event.key==='Enter')salvarCusto(${k})"><button class="chip" onclick="salvarCusto(${k})">💾</button></div>` : ""}</div>`).join("") || `<div class="ic">Nenhum produto com esses parâmetros.</div>`}</td></tr>`;
+    tab.style.minWidth = "0"; semCusto.parentElement.style.display = "none"; return; }
+  tab.style.minWidth = "560px";
   tab.innerHTML = `<tr class="ic"><td>Produto</td><td style="text-align:right">Qtd</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Preço de venda<div style="font-weight:400">(cadastro)</div></td><td style="text-align:right">Preço médio<div style="font-weight:400">(vendido)</div></td><td style="text-align:right">Preço de custo<div style="font-weight:400">(editar)</div></td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td></tr>` +
     D.produtos.map((x, k) => `<tr style="border-top:1px solid #2a2660"><td>${esc(x.nome)}<div class="ic">${x.pedidos} pedido(s)</div></td><td style="text-align:right">${String(x.qtd).replace(".", ",")}</td><td style="text-align:right">${brl(x.fat)}</td><td style="text-align:right">${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</td><td style="text-align:right">${x.precoMedio != null ? brl(x.precoMedio) : "—"}</td>
       <td style="text-align:right;white-space:nowrap">${x.produtoId ? `<input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="sem custo" style="width:76px;text-align:right" onkeydown="if(event.key==='Enter')salvarCusto(${k})"> <button class="chip" onclick="salvarCusto(${k})">💾</button>` : "—"}</td>
@@ -143,5 +152,5 @@ async function salvarCusto(k) { const x = D.produtos[k], inp = document.getEleme
 function csv() { if (!D) return; if (D.agrupar === "produto") { const L = [["produto", "qtd", "faturamento", "preco_venda_cadastro", "preco_medio_vendido", "preco_custo", "lucro_bruto", "margem_pct"].join(";")].concat(D.produtos.map(x => [x.nome, x.qtd, x.fat, x.precoVenda ?? "", x.precoMedio ?? "", x.custoUn ?? "", x.lucro ?? "", x.margem ?? ""].map(v => String(v).replace(".", ",")).join(";")));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_por_produto_${D.ini}_${D.fim}.csv`; a.click(); return; } const L = [["grupo", "pedidos", "faturamento_com_custo", "custo", "lucro_bruto", "margem_pct", "faturamento_sem_custo"].join(";")].concat(D.linhas.map(l => [l.rotulo, l.pedidos, l.fatCusto, l.custo, l.lucro, l.margem == null ? "" : l.margem, l.fatSemCusto].map(v => String(v).replace(".", ",")).join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_bruta_${D.agrupar}_${D.ini}_${D.fim}.csv`; a.click(); }
-fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar();
+fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar(); let _rz; addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(() => { if (D && D.agrupar === "produto") renderProdutos(); }, 200); });
 </script></body></html>
