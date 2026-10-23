@@ -199,7 +199,8 @@ function renderNota() {
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
   const bancos = BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("");
   document.getElementById("nota").innerHTML = `<div class="card">
-    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.soBoletos ? "Os boletos desta nota já foram lançados (sem entrada de estoque) em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.jaNoBling || n.entrada.soBoletos ? "Os produtos desta nota já foram marcados como lançados no Bling em " : n.entrada.soEstoque ? "Os produtos desta nota já deram entrada no estoque em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    ${n.financeiro ? `<div class="okmsg" style="margin-bottom:8px">Os boletos desta nota já foram lançados em contas a pagar em ${new Date(n.financeiro.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.financeiro.por || "—")}.</div>` : (n.entrada && n.entrada.soEstoque ? `<div class="ic" style="margin-bottom:8px;color:#ffd23f">Falta lançar os boletos desta nota (use o bloco “Só lançar os boletos”).</div>` : "")}
     ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, quantidades e valores. Não entra na parte fiscal.${n.observacaoLeitura ? "<br>Leitura: " + esc(n.observacaoLeitura) : ""}${n.totalLido && Math.abs(n.totalLido - T.vNF) > 0.05 ? `<br><b>⚠️ Total escrito na foto ${brl(n.totalLido)} é diferente da soma dos itens ${brl(T.vNF)}.</b> Confira os itens.` : ""}</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input id="snNome" value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input id="snDoc" value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
@@ -260,7 +261,8 @@ function blocoBoletos(n) {
     <div id="bolLinhas">${linhas || '<div class="ic">Nenhum boleto. Toque em "+ boleto".</div>'}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 12px" onclick="addBol()">+ boleto</button><span class="ic" id="bolSoma">${somaTxtBol()}</span></div>
     <div id="bolMsg" style="margin-top:6px"></div>
-    <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="lancarSoBoletos()">💸 Lançar só os boletos</button></div>`;
+    ${n.entrada ? "" : `<label class="ic" style="display:flex;gap:6px;align-items:flex-start;white-space:normal;margin-top:6px"><input type="checkbox" id="bolJaNoBling" checked> Os produtos desta nota já foram lançados no Bling (tira a nota da lista de “sem entrada” e evita lançar o estoque duas vezes)</label>`}
+    <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:11px" ${n.financeiro ? "disabled" : ""} onclick="lancarSoBoletos()">💸 Lançar só os boletos</button></div>`;
 }
 function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0); return "Total dos boletos: " + brl(t); }
 function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); }
@@ -275,10 +277,10 @@ async function lancarSoBoletos() {
   if (!confirm(`Lançar ${parcelas.length} boleto(s), total ${brl(total)}, como ${PAGO ? "JÁ PAGOS" : "A PAGAR (provisão)"}?\n\nO estoque do Bling NÃO será alterado.${PAGO ? "\n\nPara provisionar, cancele e marque \"A pagar\" em Pagamento." : ""}`)) return;
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
   el.innerHTML = `<div class="ic">⏳ Lançando…</div>`;
-  const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, soBoletos: true, parcelas, pagamento: pg }) });
+  const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, soBoletos: true, parcelas, pagamento: pg, produtosJaEntraram: !!(document.getElementById("bolJaNoBling") || {}).checked }) });
   if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar os boletos.")}</div>`; return; }
   el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ ${j.contas.length} boleto(s) lançado(s) em contas a pagar${pg.pago ? " como pago(s)" : ""}. Estoque do Bling não alterado.</div>`;
-  N.entrada = { em: Date.now(), soBoletos: true }; carregarContas();
+  N.financeiro = { em: Date.now(), por: "" }; if (!N.entrada && (document.getElementById("bolJaNoBling") || {}).checked) N.entrada = { em: Date.now(), jaNoBling: true }; carregarContas();
 }
 async function confirmar() {
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };

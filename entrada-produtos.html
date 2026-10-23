@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Entrada de Produtos</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/entrada-produtos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/entrada-produtos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📦 Entrada de Produtos</div><div class="sp"></div></div>
+<div class="wrap">
+  <div class="card" id="cLer"><h3>1. Ler a nota</h3>
+    <div class="ic" style="white-space:normal;margin-bottom:8px">Aponte a câmera para o <b>código de barras</b> no topo da DANFE (ou tire uma foto dele). O sistema busca a nota e liga os produtos sozinho. Você confere os produtos e as quantidades e dá a entrada no estoque.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-mag" onclick="abrirCamera()">📷 Ler código de barras</button>
+      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Foto do código (câmera ou galeria)<input type="file" accept="image/*" style="display:none" onchange="lerFoto(this.files[0])"></label>
+      <label class="btn btn-ghost" style="cursor:pointer">📄 Enviar XML<input type="file" accept=".xml,text/xml" style="display:none" onchange="lerXml(this.files[0])"></label>
+      <label class="btn btn-ghost" style="cursor:pointer;border-color:#ffd23f;color:#ffd23f">🧾 Compra sem nota (foto, galeria ou PDF)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="lerFotoCompra(this.files)"></label></div>
+    <div class="ic" style="white-space:normal;margin-top:6px">Compra sem nota fiscal (recibo, pedido, anotação): tire a foto e o sistema lê fornecedor, produtos e quantidades. Confira antes de dar entrada.</div>
+    <div id="camBox" style="display:none;margin-top:10px"><video id="video" playsinline muted></video><div class="ic" id="camMsg">Procurando o código de barras…</div><button class="btn btn-ghost" onclick="fecharCamera()">Fechar câmera</button></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><input id="chave" inputmode="numeric" placeholder="ou digite / cole a chave de 44 dígitos" style="flex:1" onkeydown="if(event.key==='Enter')carregarChave()"><button class="btn btn-ghost" onclick="carregarChave()">Buscar</button></div>
+    <div id="lerMsg" style="margin-top:8px"></div></div>
+  <div id="nota"></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const P = "/api/entrada-produtos";
+let N = null, IGN = new Set(), stream = null, lendo = false, zx = null;
+const msgLer = h => document.getElementById("lerMsg").innerHTML = h;
+// ===== leitura do código de barras (câmera / foto) =====
+const achaChave = t => { const d = String(t || "").replace(/\D/g, ""); const m = d.match(/\d{44}/); return m ? m[0] : null; };
+async function carregarZxing() { if (window.ZXing) return window.ZXing; await new Promise((ok, erro) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"; s.onload = ok; s.onerror = erro; document.head.appendChild(s); }); return window.ZXing; }
+async function abrirCamera() {
+  msgLer(""); document.getElementById("camBox").style.display = "block"; const v = document.getElementById("video");
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } } }); v.srcObject = stream; await v.play(); }
+  catch (e) { document.getElementById("camMsg").textContent = "Não consegui abrir a câmera. Use 'Foto do código' ou digite a chave."; return; }
+  lendo = true;
+  if ("BarcodeDetector" in window) { const det = new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] });
+    const loop = async () => { if (!lendo) return; try { const r = await det.detect(v); const c = r.map(x => achaChave(x.rawValue)).find(Boolean); if (c) { fecharCamera(); carregar({ chave: c }); return; } } catch (e) {} setTimeout(loop, 250); }; loop(); }
+  else { try { const Z = await carregarZxing(); zx = new Z.BrowserMultiFormatReader(); zx.decodeFromVideoElementContinuously ? zx.decodeFromVideoElementContinuously(v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } })
+      : zx.decodeFromVideoDevice(undefined, v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } }); }
+    catch (e) { document.getElementById("camMsg").textContent = "Este navegador não lê código de barras pela câmera. Use 'Foto do código' ou digite a chave."; } }
+}
+function fecharCamera() { lendo = false; try { zx && zx.reset(); } catch (e) {} if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; document.getElementById("camBox").style.display = "none"; }
+async function lerFoto(f) { if (!f) return; msgLer(`<div class="ic">Lendo a foto…</div>`);
+  try { let c = null; if ("BarcodeDetector" in window) { const bmp = await createImageBitmap(f); const r = await new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] }).detect(bmp); c = r.map(x => achaChave(x.rawValue)).find(Boolean); }
+    if (!c) { const Z = await carregarZxing(); const url = URL.createObjectURL(f); try { const res = await new Z.BrowserMultiFormatReader().decodeFromImageUrl(url); c = achaChave(res.getText()); } catch (e) {} URL.revokeObjectURL(url); }
+    if (c) carregar({ chave: c }); else msgLer(`<div class="err">Não consegui ler o código de barras nessa foto. Tente mais perto e reto, com boa luz, ou digite a chave.</div>`);
+  } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
+// compra SEM nota: reduz as fotos no aparelho e manda para a leitura
+function reduzir(f) { return new Promise((ok, erro) => { const img = new Image(), u = URL.createObjectURL(f); img.onload = () => { const m = 1600, k = Math.min(1, m / Math.max(img.width, img.height)), c = document.createElement("canvas");
+  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); ok(c.toDataURL("image/jpeg", 0.82)); }; img.onerror = erro; img.src = u; }); }
+async function lerFotoCompra(files) { if (!files || !files.length) return; msgLer(`<div class="ic">⏳ Lendo a foto da compra… (leva uns segundos)</div>`);
+  try { const imagens = [], pdfs = [];
+    for (const f of [...files].slice(0, 4)) {
+      if (/pdf/i.test(f.type) || /\.pdf$/i.test(f.name || "")) { if (f.size > 8 * 1048576) { msgLer(`<div class="err">O PDF ${esc(f.name)} passa de 8 MB.</div>`); return; }
+        pdfs.push(await new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(f); })); }
+      else imagens.push(await reduzir(f)); }
+    const { ok, j } = await api(P + "/foto", { method: "POST", body: JSON.stringify({ imagens, pdfs }) });
+    if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`); return; }
+    msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota.</div>` : ""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
+async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }); }
+function carregarChave() { const c = achaChave(document.getElementById("chave").value); if (!c) { msgLer(`<div class="err">A chave tem 44 dígitos.</div>`); return; } carregar({ chave: c }); }
+async function carregar(corpo) {
+  msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
+  const { ok, j } = await api(P + "/carregar", { method: "POST", body: JSON.stringify(corpo) });
+  if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
+  msgLer(""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+}
+// compra sem nota: corrigir descrição, quantidade ou tirar item (sem valores)
+async function editarSN(corpo) { const { ok, j } = await api(P + "/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) });
+  if (!ok) { alert(j.erro || "Não consegui corrigir."); return; } N = j.nota; renderNota(); }
+// ===== a nota (só produtos e quantidades) =====
+function renderNota() {
+  const n = N, pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)).length;
+  const edSN = x => n.semNota ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><span class="ic">corrigir:</span>
+      <input value="${esc(x.xProd)}" style="flex:1;min-width:140px" onchange="editarSN({nItem:${x.nItem},xProd:this.value})" title="descrição">
+      <input value="${String(x.qCom).replace(".", ",")}" inputmode="decimal" style="width:70px" onchange="editarSN({nItem:${x.nItem},qCom:this.value})" title="quantidade"><span class="ic">${esc(x.uCom)}</span>
+      <button class="btn btn-ghost" style="padding:4px 8px" onclick="if(confirm('Tirar este item da compra?'))editarSN({nItem:${x.nItem},remover:true})">🗑</button></div>` : "";
+  const it = x => { const ign = IGN.has(x.nItem);
+    if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
+        <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
+        ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
+    return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${esc(x.motivo || "produto não reconhecido")}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
+        <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
+        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px">
+        <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
+      ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b>. Confira antes de ligar.</div>` : ""}
+      <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas.</div>
+      ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
+  document.getElementById("nota").innerHTML = `<div class="card">
+    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.jaNoBling ? "Os produtos desta nota já foram marcados como lançados no Bling em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, produtos e quantidades.</div>
+      <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
+        <label><div class="ic">CNPJ / CPF (se tiver)</div><input value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
+    <h3>2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3>
+    <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
+    <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div></div>
+  <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
+    ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
+    ${n.itens.map(it).join("")}</div>
+  <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
+    <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
+}
+function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
+function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
+async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
+  for (const x of f) { const { ok, j } = await api(P + "/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + " (" + x.xProd + ")"); break; } }
+  renderNota(); }
+let _tb = {}; function buscarProd(nItem, q) { clearTimeout(_tb[nItem]); if (q.trim().length < 2) return; _tb[nItem] = setTimeout(async () => { const { j } = await api(P + "/produtos?q=" + encodeURIComponent(q)); const sel = document.getElementById("sel" + nItem); if (!sel) return;
+  sel.innerHTML = (j.itens || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("") + `<option value="">🔎 buscar outro produto…</option>`; }, 350); }
+async function ligar(nItem) { const pid = document.getElementById("sel" + nItem).value, fat = document.getElementById("fat" + nItem).value;
+  if (!pid) { alert("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { alert("Informe quantas unidades vêm em cada unidade da nota."); return; }
+  const { ok, j } = await api(P + "/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: pid, fator: fat }) });
+  if (!ok) { alert(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
+async function confirmar() {
+  const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
+  const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, ignorar: [...IGN] }) });
+  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
+  const msgOk = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque.</div>${(j.falhas || []).length ? `<div class="err">Não entraram: ${esc(j.falhas.map(x => x.produtoNome || x.xProd).join(", "))}. Avise o escritório.</div>` : ""}`;
+  N.entrada = { em: Date.now(), por: "" };
+  renderNota(); document.getElementById("confMsg").innerHTML = msgOk;
+}
+</script>
+</body>
+</html>
