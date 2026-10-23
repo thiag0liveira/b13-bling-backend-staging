@@ -10896,7 +10896,7 @@ function _processarAvisoBling(ev){
   } else if(tipo.startsWith("product.")&&id){
     const P=lerProdutosBling();
     if(tipo==="product.deleted"){ if(P.porId[id]) P.porId[id].s="E"; }
-    else { const a=P.porId[id]||{}; P.porId[id]={...a,n:String(d.nome??a.n??"").trim(),c:d.codigo??a.c??"",p:d.preco!=null?Number(d.preco):(a.p||0),pc:d.precoCusto!=null?Number(d.precoCusto):(a.pc??null),
+    else { const a=P.porId[id]||{}; P.porId[id]={...a,n:String(d.nome??a.n??"").trim(),c:d.codigo??a.c??"",p:d.preco!=null?Number(d.preco):(a.p||0),pc:_custoDaCopia(id,d.precoCusto!=null?Number(d.precoCusto):null,a.pc??null),
       s:d.situacao||a.s||"A",t:d.tipo||a.t||"P",f:d.formato||a.f||"S",u:d.unidade??a.u??"",img:d.imagemURL||a.img||"",est:a.est??null}; }
     _whSujo.prod=true; _metProdCache.clear();
   } else if(tipo.startsWith("stock.")){
@@ -10934,18 +10934,33 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
 
 // ===================== MARGEM BRUTA (produtos com preço de compra), por pedido, dia, semana ou mês =====================
 // custo = quantidade x preço de custo do cadastro (produtos_bling.json, pc). Itens sem custo ficam fora da margem, mas aparecem como "faturamento sem custo".
+// CUSTO EDITADO NO SISTEMA: prevalece sobre a cópia do Bling enquanto o Bling não mudar (o aviso automático de produto alterado
+// recopiava o custo antigo por cima). Se o Bling passar a mostrar o mesmo valor, fica sincronizado; se mudar por outro motivo, vale o do Bling.
+const CUSTOS_MANUAIS_FILE=`${DATA_DIR}/custos_manuais.json`;
+function _custoDaCopia(id,doBling,atual){ const M=lerJSON(CUSTOS_MANUAIS_FILE,{}), m=M[String(id)]; if(!m) return doBling!=null?doBling:(atual??null);
+  const b=doBling!=null?Number(doBling):null;
+  if(b!=null&&Math.abs(b-m.custo)<0.005){ delete M[String(id)]; salvarJSON(CUSTOS_MANUAIS_FILE,M); return b; } // Bling já reflete
+  if(b!=null&&m.blingAntes!=null&&Math.abs(b-m.blingAntes)>0.005){ delete M[String(id)]; salvarJSON(CUSTOS_MANUAIS_FILE,M); return b; } // Bling mudou por outro motivo
+  return m.custo; }
+async function _gravarCustoProduto(id,c,quem,origem){
+  const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) throw Object.assign(new Error("produto não encontrado no Bling"),{status:404});
+  const payload={nome:pd.nome,codigo:pd.codigo||"",preco:pd.preco||0,tipo:pd.tipo||"P",situacao:pd.situacao||"A",formato:pd.formato||"S"};
+  ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
+  if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+  const blingAntes=pd.precoCusto!=null?Number(pd.precoCusto):(pd.fornecedor?.precoCusto!=null?Number(pd.fornecedor.precoCusto):null), antes=Number(lerProdutosBling().porId[String(id)]?.pc??blingAntes??0)||0;
+  payload.fornecedor={...(pd.fornecedor||{}),precoCusto:c,precoCompra:c};
+  let avisoBling=""; try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ avisoBling="o Bling não aceitou ("+e.message+"); ficou salvo no sistema"; }
+  try{ const L=(await bling(`/produtos/fornecedores?idProduto=${id}`))?.data||[], f=L.find(x=>x.padrao)||L[0]; // fornecedor padrão: é de onde o Bling tira o custo
+    if(f&&f.id) await bling(`/produtos/fornecedores/${f.id}`,{method:"PUT",body:JSON.stringify({produto:{id:Number(id)},fornecedor:{id:f.fornecedor?.id},precoCusto:c,precoCompra:c,padrao:!!f.padrao,codigo:f.codigo||"",descricao:f.descricao||""})}); }catch(e){}
+  const M=lerJSON(CUSTOS_MANUAIS_FILE,{}); M[String(id)]={custo:c,blingAntes,em:Date.now(),por:quem||"",origem}; salvarJSON(CUSTOS_MANUAIS_FILE,M);
+  const P=lerProdutosBling(); if(P.porId[String(id)]){ P.porId[String(id)].pc=c; salvarJSON(PRODUTOS_BLING_FILE,P); } try{ _metProdCache.clear(); }catch(e){}
+  addLog("produto-"+id,"custo_editado",null,quem||"",{antes,depois:c,origem,avisoBling});
+  return {antes,custo:c,nome:pd.nome,avisoBling};
+}
 app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),async(req,res)=>{
-  try{ const id=String(req.params.id), c=_round2(Number(String(req.body?.custo||"").replace(",","."))); if(!(c>0)) return res.status(400).json({erro:"preço de custo inválido"});
-    const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) return res.status(404).json({erro:"produto não encontrado no Bling"});
-    const payload={nome:pd.nome,codigo:pd.codigo||"",preco:pd.preco||0,tipo:pd.tipo||"P",situacao:pd.situacao||"A",formato:pd.formato||"S"};
-    ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
-    if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
-    const antes=Number(pd.fornecedor?.precoCusto??pd.precoCusto??0)||0; payload.fornecedor={...(pd.fornecedor||{}),precoCusto:c,precoCompra:c};
-    try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou: "+e.message}); }
-    const P=lerProdutosBling(); if(P.porId[id]){ P.porId[id].pc=c; salvarJSON(PRODUTOS_BLING_FILE,P); } try{ _metProdCache.clear(); }catch(e){}
-    addLog("produto-"+id,"custo_editado",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{antes,depois:c,origem:"margem bruta"});
-    res.json({ok:true,antes,custo:c,nome:pd.nome});
-  }catch(e){ res.status(500).json({erro:e.message}); }
+  try{ const c=_round2(Number(String(req.body?.custo||"").replace(",","."))); if(!(c>0)) return res.status(400).json({erro:"preço de custo inválido"});
+    res.json({ok:true,...(await _gravarCustoProduto(String(req.params.id),c,req.sessao?.nome||"","margem bruta"))}); }
+  catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
@@ -11694,7 +11709,7 @@ async function sincronizarProdutosBling(){
   try{
     const porId={}, ceder=async()=>{ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; } };
     for(let pg=1;pg<=100;pg++){ await ceder(); const r=await blingLento(`/produtos?pagina=${pg}&limite=100`); const arr=(r&&r.data)||[];
-      arr.forEach(p=>{ if(!p||!p.id) return; porId[String(p.id)]={n:String(p.nome||"").trim(),c:p.codigo||"",p:Number(p.preco)||0,pc:p.precoCusto!=null?Number(p.precoCusto):null,s:p.situacao||"A",t:p.tipo||"P",f:p.formato||"S",
+      arr.forEach(p=>{ if(!p||!p.id) return; porId[String(p.id)]={n:String(p.nome||"").trim(),c:p.codigo||"",p:Number(p.preco)||0,pc:_custoDaCopia(p.id,p.precoCusto!=null?Number(p.precoCusto):null,null),s:p.situacao||"A",t:p.tipo||"P",f:p.formato||"S",
         u:p.unidade||"",img:p.imagemURL||"",pai:Number(p.idProdutoPai)||0,est:p.estoque&&p.estoque.saldoVirtualTotal!=null?Number(p.estoque.saldoVirtualTotal):null}; });
       _prodSync.progresso=`catálogo: ${Object.keys(porId).length} produtos`; if(arr.length<100) break; }
     if(!Object.keys(porId).length) throw new Error("o Bling não devolveu produtos");
@@ -11841,7 +11856,8 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
       if(novoCusto!=null) payload.fornecedor={...(pd.fornecedor||{}),precoCusto:novoCusto,precoCompra:novoCusto}; // preço de custo do produto no Bling
       try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou a alteração do produto: "+e.message}); }
       const P=lerProdutosBling(); if(P.porId[id]){ if(novoPreco!=null) P.porId[id].p=novoPreco; if(novaSit) P.porId[id].s=novaSit; if(novoCusto!=null) P.porId[id].pc=novoCusto; salvarJSON(PRODUTOS_BLING_FILE,P); }
-      if(novoCusto!=null){ feito.push(`preço de custo ${brlN(custoAntes)} → ${brlN(novoCusto)}`); try{ _metProdCache.clear(); }catch(e){} }
+      if(novoCusto!=null){ feito.push(`preço de custo ${brlN(custoAntes)} → ${brlN(novoCusto)}`); try{ _metProdCache.clear(); }catch(e){}
+        try{ const M=lerJSON(CUSTOS_MANUAIS_FILE,{}); M[id]={custo:novoCusto,blingAntes:pd.precoCusto!=null?Number(pd.precoCusto):(custoAntes||null),em:Date.now(),por:quem,origem:"ficha do produto"}; salvarJSON(CUSTOS_MANUAIS_FILE,M); }catch(e){} }
       if(novoPreco!=null) feito.push(`preço de venda ${brlN(pd.preco)} → ${brlN(novoPreco)}`); if(novaSit&&novaSit!==pd.situacao) feito.push(novaSit==="A"?"ativado":"inativado");
     }
     if(b.estoqueBalanco!=null&&String(b.estoqueBalanco).trim()!==""){

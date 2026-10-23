@@ -156,7 +156,12 @@ function renderProdutos() {
 async function salvarCusto(k) { const x = D.produtos[k], inp = document.getElementById("cu" + k), v = (inp.value || "").replace(",", ".");
   if (!(Number(v) > 0)) { alert("Informe um custo maior que zero."); inp.focus(); return; }
   inp.disabled = true; const r = await fetch(B + "/api/margem-bruta/custo/" + x.produtoId, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": (b13GetSession() || {}).token || "" }, body: JSON.stringify({ custo: v }) });
-  const j = await r.json().catch(() => ({})); inp.disabled = false; if (!r.ok) { alert(j.erro || "Não consegui gravar."); return; } carregar(); }
+  const j = await r.json().catch(() => ({})); inp.disabled = false; if (!r.ok) { alert(j.erro || "Não consegui gravar."); return; }
+  // atualiza a linha na hora e mantém o produto na lista (mesmo com o filtro "Só sem custo")
+  x.custoUn = j.custo; if (x.qtd) { x.custo = +(j.custo * x.qtd).toFixed(2); x.lucro = +(x.fat - x.custo).toFixed(2); x.margem = x.fat > 0 ? +((x.fat - x.custo) / x.fat * 100).toFixed(1) : null; }
+  renderProdutos(); const n = document.getElementById("cu" + k); if (n) { n.style.outline = "2px solid #3ce88a"; }
+  const av = document.createElement("div"); av.textContent = "✅ Custo salvo: " + brl(j.custo) + (j.avisoBling ? " (" + j.avisoBling + ")" : ""); av.style.cssText = "position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0f3a2a;border:1px solid #3ce88a;color:#fff;padding:10px 14px;border-radius:10px;z-index:9999;font-size:13px;max-width:90vw";
+  document.body.appendChild(av); setTimeout(() => av.remove(), 3500); }
 function csv() { if (!D) return; if (D.agrupar === "produto") { const L = [["produto", "qtd", "faturamento", "preco_venda_cadastro", "preco_medio_vendido", "preco_custo", "lucro_bruto", "margem_pct"].join(";")].concat(D.produtos.map(x => [x.nome, x.qtd, x.fat, x.precoVenda ?? "", x.precoMedio ?? "", x.custoUn ?? "", x.lucro ?? "", x.margem ?? ""].map(v => String(v).replace(".", ",")).join(";")));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_por_produto_${D.ini}_${D.fim}.csv`; a.click(); return; } const L = [["grupo", "pedidos", "faturamento_com_custo", "custo", "lucro_bruto", "margem_pct", "faturamento_sem_custo"].join(";")].concat(D.linhas.map(l => [l.rotulo, l.pedidos, l.fatCusto, l.custo, l.lucro, l.margem == null ? "" : l.margem, l.fatSemCusto].map(v => String(v).replace(".", ",")).join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_bruta_${D.agrupar}_${D.ini}_${D.fim}.csv`; a.click(); }
