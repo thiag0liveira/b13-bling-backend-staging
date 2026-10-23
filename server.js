@@ -10934,17 +10934,42 @@ app.get("/api/diag/webhooks",requireAdmin,(req,res)=>{
 
 // ===================== MARGEM BRUTA (produtos com preço de compra), por pedido, dia, semana ou mês =====================
 // custo = quantidade x preço de custo do cadastro (produtos_bling.json, pc). Itens sem custo ficam fora da margem, mas aparecem como "faturamento sem custo".
+app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),async(req,res)=>{
+  try{ const id=String(req.params.id), c=_round2(Number(String(req.body?.custo||"").replace(",","."))); if(!(c>0)) return res.status(400).json({erro:"preço de custo inválido"});
+    const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) return res.status(404).json({erro:"produto não encontrado no Bling"});
+    const payload={nome:pd.nome,codigo:pd.codigo||"",preco:pd.preco||0,tipo:pd.tipo||"P",situacao:pd.situacao||"A",formato:pd.formato||"S"};
+    ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
+    if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+    const antes=Number(pd.fornecedor?.precoCusto??pd.precoCusto??0)||0; payload.fornecedor={...(pd.fornecedor||{}),precoCusto:c,precoCompra:c};
+    try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou: "+e.message}); }
+    const P=lerProdutosBling(); if(P.porId[id]){ P.porId[id].pc=c; salvarJSON(PRODUTOS_BLING_FILE,P); } try{ _metProdCache.clear(); }catch(e){}
+    addLog("produto-"+id,"custo_editado",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{antes,depois:c,origem:"margem bruta"});
+    res.json({ok:true,antes,custo:c,nome:pd.nome});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
-  try{ const q=req.query, ag=["pedido","dia","semana","mes"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId;
+  try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
     const r=_filtrarPedidos({...q}), G={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}};
     const chave=p=>{ const d=p.dia||_diaBRk(p.em||Date.now()); if(ag==="dia") return d; if(ag==="mes") return d.slice(0,7);
       if(ag==="semana"){ const dt=new Date(d+"T12:00:00Z"), w=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-w); return "semana de "+dt.toISOString().slice(0,10); } return String(p.id); };
     r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} if(!it.length) return; T.pedidos++;
       const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0}); g.pedidos++;
       it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null;
+        if(ag==="produto"){ const pk=String(i.produtoId||i.nome||"?"), x=(PROD[pk]||={produtoId:i.produtoId||null,nome:(pr&&pr.n)||i.nome||pk,qtd:0,fat:0,custo:0,custoUn:pr&&pr.pc>0?pr.pc:null,precoVenda:pr?pr.p:null,pedidos:new Set()});
+          x.qtd+=Number(i.quantidade)||0; x.fat+=v; if(c!=null) x.custo+=c; x.pedidos.add(p.id); }
         if(c!=null){ g.fatCusto+=v; g.custo+=c; T.fatCusto+=v; T.custo+=c; } else { g.fatSemCusto+=v; T.fatSemCusto+=v; const nk=i.nome||String(i.produtoId||"?"); T.itensSemCusto[nk]=(T.itensSemCusto[nk]||0)+v; } }); });
     const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null});
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
+    if(ag==="produto"){ // lista de produtos com parâmetros de análise
+      let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
+        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,pedidos:x.pedidos.size}; });
+      const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
+      if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
+      if(mx!=null&&Number.isFinite(mx)) L=L.filter(x=>x.margem!=null&&x.margem<mx);
+      const ord={menor_margem:(a,b)=>(a.margem??1e9)-(b.margem??1e9),maior_margem:(a,b)=>(b.margem??-1e9)-(a.margem??-1e9),maior_lucro:(a,b)=>(b.lucro??-1e12)-(a.lucro??-1e12),maior_fat:(a,b)=>b.fat-a.fat,maior_qtd:(a,b)=>b.qtd-a.qtd}[q.ordem]||((a,b)=>(a.margem??1e9)-(b.margem??1e9));
+      L.sort(ord); const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto});
+      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
+    }
     const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto}), cob=T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null;
     res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
       semCusto:Object.entries(T.itensSemCusto).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([nome,v])=>({nome,valor:_round2(v)}))});
@@ -11800,7 +11825,8 @@ app.get("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
 app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{
   try{
     const id=String(req.params.id), b=req.body||{};
-    const auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const soCusto=b.custo!=null&&String(b.custo).trim()!==""&&!(b.preco!=null&&String(b.preco).trim()!=="")&&!["A","I"].includes(b.situacao)&&(b.estoqueBalanco==null||String(b.estoqueBalanco).trim()==="");
+    const auth=soCusto?{funcionario:{nome:req.sessao?.nome||""}}:validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro}); // só o custo: sem QR
     const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", motivo=String(b.motivo||"").trim().slice(0,150), feito=[];
     const novoPreco=b.preco!=null&&String(b.preco).trim()!==""?Number(String(b.preco).replace(",",".")):null, novaSit=["A","I"].includes(b.situacao)?b.situacao:null;
     if(novoPreco!=null&&!(novoPreco>0)) return res.status(400).json({erro:"preço inválido"});

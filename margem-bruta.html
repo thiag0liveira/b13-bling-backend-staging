@@ -99,7 +99,10 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="wrap">
   <div class="card"><div class="filtros" id="atalhos" style="flex-wrap:wrap">
     <label class="ic">De <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
-    <select id="fAg"><option value="mes">Por mês</option><option value="semana">Por semana</option><option value="dia">Por dia</option><option value="pedido">Por pedido</option></select>
+    <select id="fAg"><option value="mes">Por mês</option><option value="semana">Por semana</option><option value="dia">Por dia</option><option value="pedido">Por pedido</option><option value="produto">Por produto</option></select>
+    <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
+      <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
+      <select id="fSo"><option value="">Todos</option><option value="com_custo">Só com custo</option><option value="sem_custo">Só sem custo</option></select></span>
     <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Margem bruta só dos itens cujo produto tem preço de compra (custo) no cadastro. Itens sem custo aparecem à parte, para saber se a margem está completa.</div></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
@@ -113,17 +116,32 @@ const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", cur
 const hoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 let D = null;
 async function carregar() {
-  const q = new URLSearchParams({ ini: fIni.value, fim: fFim.value, agrupar: fAg.value, busca: fBusca.value.trim() });
+  parProd.style.display = fAg.value === "produto" ? "inline-flex" : "none";
+  const q = new URLSearchParams({ ini: fIni.value, fim: fFim.value, agrupar: fAg.value, busca: fBusca.value.trim(), ordem: fOrdem.value, margemMax: fMax.value.trim(), so: fSo.value });
   const r = await fetch(B + "/api/margem-bruta?" + q, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({}));
   if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; }
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
   kpis.innerHTML = k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
+  if (D.agrupar === "produto") { renderProdutos(); return; }
   const nome = { mes: "Mês", semana: "Semana", dia: "Dia", pedido: "Pedido" }[D.agrupar];
   tab.innerHTML = `<tr class="ic"><td>${nome}</td><td style="text-align:right">Pedidos</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Custo</td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td><td style="text-align:right">Sem custo</td></tr>` +
     D.linhas.map(l => `<tr style="border-top:1px solid #2a2660"><td>${l.pedidoId ? `<a href="/pedidos-vendas?pedido=${l.pedidoId}" style="color:#7fd0ff">${esc(l.rotulo)}</a>` : esc(l.rotulo)}</td><td style="text-align:right">${l.pedidos}</td><td style="text-align:right">${brl(l.fatCusto)}</td><td style="text-align:right">${brl(l.custo)}</td><td style="text-align:right"><b>${brl(l.lucro)}</b></td><td style="text-align:right"><b>${pct(l.margem)}</b></td><td style="text-align:right;color:#9a95c9">${brl(l.fatSemCusto)}</td></tr>`).join("");
   semCusto.innerHTML = D.semCusto.map(x => `<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`).join("") || `<div class="ic">Todos os itens vendidos têm custo.</div>`;
 }
-function csv() { if (!D) return; const L = [["grupo", "pedidos", "faturamento_com_custo", "custo", "lucro_bruto", "margem_pct", "faturamento_sem_custo"].join(";")].concat(D.linhas.map(l => [l.rotulo, l.pedidos, l.fatCusto, l.custo, l.lucro, l.margem == null ? "" : l.margem, l.fatSemCusto].map(v => String(v).replace(".", ",")).join(";")));
+function renderProdutos() {
+  const corM = m => m == null ? "#9a95c9" : m < 10 ? "#ff8aa3" : m < 20 ? "#ffd23f" : "#3ce88a";
+  tab.innerHTML = `<tr class="ic"><td>Produto</td><td style="text-align:right">Qtd</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Preço médio</td><td style="text-align:right">Custo unitário</td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td></tr>` +
+    D.produtos.map((x, k) => `<tr style="border-top:1px solid #2a2660"><td>${esc(x.nome)}<div class="ic">${x.pedidos} pedido(s)</div></td><td style="text-align:right">${String(x.qtd).replace(".", ",")}</td><td style="text-align:right">${brl(x.fat)}</td><td style="text-align:right">${x.precoMedio != null ? brl(x.precoMedio) : "—"}</td>
+      <td style="text-align:right;white-space:nowrap">${x.produtoId ? `<input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="sem custo" style="width:76px;text-align:right" onkeydown="if(event.key==='Enter')salvarCusto(${k})"> <button class="chip" onclick="salvarCusto(${k})">💾</button>` : "—"}</td>
+      <td style="text-align:right"><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></td><td style="text-align:right"><b style="color:${corM(x.margem)}">${pct(x.margem)}</b></td></tr>`).join("") || `<tr><td class="ic">Nenhum produto com esses parâmetros.</td></tr>`;
+  semCusto.parentElement.style.display = "none";
+}
+async function salvarCusto(k) { const x = D.produtos[k], inp = document.getElementById("cu" + k), v = (inp.value || "").replace(",", ".");
+  if (!(Number(v) > 0)) { alert("Informe um custo maior que zero."); inp.focus(); return; }
+  inp.disabled = true; const r = await fetch(B + "/api/margem-bruta/custo/" + x.produtoId, { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": (b13GetSession() || {}).token || "" }, body: JSON.stringify({ custo: v }) });
+  const j = await r.json().catch(() => ({})); inp.disabled = false; if (!r.ok) { alert(j.erro || "Não consegui gravar."); return; } carregar(); }
+function csv() { if (!D) return; if (D.agrupar === "produto") { const L = [["produto", "qtd", "faturamento", "preco_medio", "custo_unitario", "lucro_bruto", "margem_pct"].join(";")].concat(D.produtos.map(x => [x.nome, x.qtd, x.fat, x.precoMedio ?? "", x.custoUn ?? "", x.lucro ?? "", x.margem ?? ""].map(v => String(v).replace(".", ",")).join(";")));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_por_produto_${D.ini}_${D.fim}.csv`; a.click(); return; } const L = [["grupo", "pedidos", "faturamento_com_custo", "custo", "lucro_bruto", "margem_pct", "faturamento_sem_custo"].join(";")].concat(D.linhas.map(l => [l.rotulo, l.pedidos, l.fatCusto, l.custo, l.lucro, l.margem == null ? "" : l.margem, l.fatSemCusto].map(v => String(v).replace(".", ",")).join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_bruta_${D.agrupar}_${D.ini}_${D.fim}.csv`; a.click(); }
-fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); [fIni, fFim, fAg].forEach(e => e.addEventListener("change", carregar)); carregar();
+fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar();
 </script></body></html>
