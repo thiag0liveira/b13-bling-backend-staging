@@ -11549,7 +11549,7 @@ const PLANO_CONTAS=[
   ["2.1","ICMS sobre vendas","deducao"],["2.2","PIS sobre vendas","deducao"],["2.3","COFINS sobre vendas","deducao"],["2.4","Devoluções e estornos a clientes","deducao"],
   ["3.1","Mercadorias para revenda (compras)","compra"],
   ["4.1","Fretes, entregas e combustível","variavel"],["4.2","Comissões de vendas","variavel"],["4.3","Taxas de cartão e Pix","variavel"],["4.4","Embalagens, sacolas e gelo de venda","variavel"],["4.5","Perdas e avarias","variavel"],["4.9","Outras despesas variáveis","variavel"],
-  ["5.1.1","Salários","fixa"],["5.1.2","Encargos (FGTS, INSS)","fixa"],["5.1.3","Benefícios (VT, alimentação)","fixa"],["5.1.4","Provisão de 13º e férias","fixa"],["5.1.5","Pró-labore","fixa"],
+  ["5.1.1","Salários","fixa"],["5.1.2","Encargos (FGTS, INSS)","fixa"],["5.1.3","Benefícios (VT, alimentação)","fixa"],["5.1.4","Provisão de 13º e férias","fixa"],["5.1.5","Pró-labore","fixa"],["5.1.6","Prestadores de serviço (sem carteira)","fixa"],
   ["5.2.1","Aluguel","fixa"],["5.2.2","Condomínio e IPTU","fixa"],["5.2.3","Energia","fixa"],["5.2.4","Água","fixa"],
   ["5.3.1","Contabilidade","fixa"],["5.3.2","Sistemas e software (Bling etc.)","fixa"],["5.3.3","Internet e telefone","fixa"],["5.3.4","Material de escritório e limpeza","fixa"],["5.3.5","Taxas, alvarás e licenças","fixa"],
   ["5.4.1","Marketing e publicidade","fixa"],["5.5.1","Manutenção (loja e equipamentos)","fixa"],["5.5.2","Veículos (IPVA, licenciamento, seguro, manutenção)","fixa"],["5.5.3","Seguros","fixa"],
@@ -11578,11 +11578,11 @@ function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo pa
 }
 setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600e3);
 // IMPORTAÇÃO ÚNICA de gastos conhecidos (arquivo no repositório): lança em Contas a Pagar uma vez só (marca em C.importados)
-function _importarLancamentosConhecidos(){ try{ for(const arq of fs.readdirSync(__dirname).filter(f=>/^lancamentos_\d{4}-\d{2}\.json$/.test(f))){
+function _importarLancamentosConhecidos(){ try{ for(const arq of fs.readdirSync(__dirname).filter(f=>/^lancamentos_[\w-]+\.json$/.test(f))){
     const L=JSON.parse(fs.readFileSync(path.join(__dirname,arq),"utf8")), C=lerContasPagar(); C.importados||=[]; if(C.importados.includes(L.id)) continue;
     (L.itens||[]).forEach(x=>{ const p=PLANO_CONTAS.find(q=>q.cod===x.cod)||PLANO_CONTAS.find(q=>q.cod==="5.9"); C.seq++;
       C.titulos.push({id:"cp"+C.seq,origem:"importado",importacao:L.id,descricao:x.descricao,categoria:p.rotulo,fornecedor:{nome:x.fornecedor,cnpj:""},parcela:"1/1",vencimento:x.data,valor:_round2(x.valor),
-        competencia:x.data.slice(0,7),status:"pago",pagoEm:Date.parse(x.data+"T12:00:00-03:00"),dataPagamento:x.data,forma:"não informada",banco:"",valorPago:_round2(x.valor),pagoPor:"importação",criadoEm:Date.now(),criadoPor:"importação ("+(L.fonte||arq)+")"}); });
+        competencia:x.competencia||x.data.slice(0,7),...(x.aberto?{status:"aberto"}:{status:"pago",pagoEm:Date.parse(x.data+"T12:00:00-03:00"),dataPagamento:x.data,forma:"não informada",banco:"",valorPago:_round2(x.valor),pagoPor:"importação"}),criadoEm:Date.now(),criadoPor:"importação ("+(L.fonte||arq)+")"}); });
     C.importados.push(L.id); salvarJSON(CONTAS_PAGAR_FILE,C); console.log("[contas-pagar] importados",(L.itens||[]).length,"lançamentos de",arq); } }catch(e){ console.error("[contas-pagar] importação:",e.message); } }
 setTimeout(_importarLancamentosConhecidos,15000);
 app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{

@@ -1,0 +1,282 @@
+{
+ "id": "folha-outubro-2026",
+ "fonte": "pagamentos de salário (06/10) e adiantamento (20/10) informados pelo financeiro",
+ "itens": [
+  {
+   "fornecedor": "França",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 2234.77,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Andreia",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 939,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "César (desligado)",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 660,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Claudineia",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1091,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Gabrielle",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1372,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Gelciano",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1253,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Jessica",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1165,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Joyce",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1877,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Juliano",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1191,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Lucas",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 423,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Luiz Filipe",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1850,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Regiane",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1651,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Wagner",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 749,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Warley",
+   "descricao": "Salário de setembro",
+   "cod": "5.1.1",
+   "valor": 1092,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "França",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 749,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Andreia",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 594,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Claudineia",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 900,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Gabrielle",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 1120,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Gelciano",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 924,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Jessica",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 749,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Joyce",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 487,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Juliano",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 1000,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Lucas",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 298,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Luiz Filipe",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 1737,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Regiane",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 1400,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Wagner",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 769,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Warley",
+   "descricao": "Adiantamento de outubro",
+   "cod": "5.1.1",
+   "valor": 840,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Jhow Jhow",
+   "descricao": "Remuneração de setembro (sem carteira)",
+   "cod": "5.1.6",
+   "valor": 3000,
+   "data": "2026-10-06",
+   "competencia": "2026-09"
+  },
+  {
+   "fornecedor": "Jhow Jhow",
+   "descricao": "Notebook comprado dele (parcela 1/3 de R$ 3.000)",
+   "cod": "9.1",
+   "valor": 1000,
+   "data": "2026-10-06",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Jhow Jhow",
+   "descricao": "Notebook comprado dele (parcela 2/3)",
+   "cod": "9.1",
+   "valor": 1000,
+   "data": "2026-11-06",
+   "competencia": "2026-11",
+   "aberto": true
+  },
+  {
+   "fornecedor": "Jhow Jhow",
+   "descricao": "Notebook comprado dele (parcela 3/3)",
+   "cod": "9.1",
+   "valor": 1000,
+   "data": "2026-12-06",
+   "competencia": "2026-12",
+   "aberto": true
+  },
+  {
+   "fornecedor": "Jhow Jhow",
+   "descricao": "Remuneração de outubro (sem carteira)",
+   "cod": "5.1.6",
+   "valor": 3000,
+   "data": "2026-11-06",
+   "competencia": "2026-10",
+   "aberto": true
+  },
+  {
+   "fornecedor": "Layane",
+   "descricao": "Adiantamento de outubro (sem carteira)",
+   "cod": "5.1.6",
+   "valor": 1400,
+   "data": "2026-10-20",
+   "competencia": "2026-10"
+  },
+  {
+   "fornecedor": "Layane",
+   "descricao": "Saldo de outubro (sem carteira; total R$ 3.500)",
+   "cod": "5.1.6",
+   "valor": 2100,
+   "data": "2026-11-06",
+   "competencia": "2026-10",
+   "aberto": true
+  }
+ ]
+}
