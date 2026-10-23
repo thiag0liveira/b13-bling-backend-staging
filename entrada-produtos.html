@@ -164,6 +164,7 @@ async function editarSN(corpo) { const { ok, j } = await api(P + "/sem-nota/edit
   if (!ok) { alert(j.erro || "Não consegui corrigir."); return; } N = j.nota; renderNota(); }
 // ===== a nota (só produtos e quantidades) =====
 function renderNota() {
+  iniciarVenc(N);
   const n = N, pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)).length;
   const edSN = x => n.semNota ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><span class="ic">corrigir:</span>
       <input value="${esc(x.xProd)}" style="flex:1;min-width:140px" onchange="editarSN({nItem:${x.nItem},xProd:this.value})" title="descrição">
@@ -189,7 +190,7 @@ function renderNota() {
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3><button class="btn btn-ghost" style="padding:6px 10px" onclick="novaEntrada()">➕ Nova entrada</button></div>
     <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
     <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
-    ${(n.vencimentos || []).length ? `<div style="margin-top:8px"><div class="ic" style="white-space:normal;margin-bottom:4px">📅 Dia de pagamento lido (confira e corrija se estiver errado; o financeiro usa estas datas)</div>${n.vencimentos.map((d, i) => `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span class="ic" style="width:58px">${d.parcela}/${d.de}</span><input type="date" value="${esc(d.vencimento)}" ${n.financeiroFeito ? "disabled" : ""} onchange="salvarVenc(${i}, this.value)" style="flex:1"></div>`).join("")}<div id="vencMsg" class="ic"></div></div>` : ""}
+    <div style="margin-top:8px">${blocoPrazo(n)}</div>
     ${blocoAnexos(n)}</div>
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
@@ -240,9 +241,6 @@ function frameDe(v) { try { const k = Math.min(1, 1600 / Math.max(v.videoWidth |
 async function anexar(a) { if (!a || !N) return; const { ok, j } = await api(P + "/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: a.nome, dados: a.dados }) }); if (ok && j.anexos) { N.anexos = j.anexos; renderNota(); } }
 async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + P + "/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
 async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + P + "/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir o arquivo."); } }
-async function salvarVenc(i, v) { const datas = (N.vencimentos || []).map((d, k) => k === i ? v : d.vencimento), el = document.getElementById("vencMsg");
-  const { ok, j } = await api(P + "/vencimentos", { method: "POST", body: JSON.stringify({ notaId: N.id, vencimentos: datas }) });
-  if (!ok) { if (el) el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui salvar a data.")}</span>`; return; } N = j.nota; if (el) el.innerHTML = `<span style="color:#3ce88a">✅ Data salva.</span>`; }
 async function registrarSemEstoque() {
   if (!confirm("Registrar esta nota SEM dar entrada no estoque?\n\nNenhum produto será alterado no Bling. A nota fica registrada com a imagem lida e as datas de pagamento.")) return;
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Registrando…</div>`;
@@ -250,9 +248,49 @@ async function registrarSemEstoque() {
   if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui registrar.")}</div>`; return; }
   N.entrada = { em: Date.now(), por: "", semEstoque: true }; renderNota(); document.getElementById("confMsg").innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Nota registrada sem dar entrada no estoque.</div>`;
 }
+// ---- datas: dias, data digitável (dd/mm/aaaa) e calendário ----
+const isoParaBR = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+function brParaISO(t) { let m = String(t || "").replace(/\D/g, ""); if (m.length === 6) m = m.slice(0, 4) + "20" + m.slice(4); if (m.length !== 8) return ""; const iso = `${m.slice(4)}-${m.slice(2, 4)}-${m.slice(0, 2)}`; const d = new Date(iso + "T12:00:00Z"); return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : ""; }
+function mascaraData(el) { const d = el.value.replace(/\D/g, "").slice(0, 8); el.value = d.length > 4 ? d.slice(0, 2) + "/" + d.slice(2, 4) + "/" + d.slice(4) : d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d; }
+const diasEntre = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400000);
+const somarDias = (a, n) => new Date(Date.parse(a + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const emissaoISO = n => n && n.emissao ? new Date(Number(n.emissao) - 3 * 3600e3).toISOString().slice(0, 10) : "";
+// base dos dias: a emissão da nota, se for recente; senão, hoje
+const baseDefault = n => { const e = emissaoISO(n); return e && diasEntre(e, hojeISO()) >= 0 && diasEntre(e, hojeISO()) <= 45 ? "emissao" : "hoje"; };
+let VENC = [], VENCNOTA = null, BASEOPT = "hoje", _tVenc = null;
+function iniciarVenc(n) { if (VENCNOTA === n.id) return; VENCNOTA = n.id; BASEOPT = baseDefault(n); VENC = (n.vencimentos || []).map(v => v.vencimento); if (!VENC.length) VENC = [""]; }
+const baseISO = () => BASEOPT === "emissao" ? (emissaoISO(N) || hojeISO()) : hojeISO();
+function linhaPrazo(i) { const d = VENC[i], base = baseISO(), travado = N.financeiroFeito;
+  return `<div style="display:flex;gap:6px;align-items:center;margin:6px 0"><span class="ic" style="width:34px">${i + 1}/${VENC.length}</span>
+    <input id="vd${i}" inputmode="numeric" placeholder="dias" value="${d ? diasEntre(base, d) : ""}" ${travado ? "disabled" : ""} onchange="mudarDias(${i}, this.value)" style="width:58px"><span class="ic">dias</span>
+    <input id="vt${i}" inputmode="numeric" placeholder="dd/mm/aaaa" value="${d ? isoParaBR(d) : ""}" ${travado ? "disabled" : ""} oninput="mascaraData(this)" onchange="mudarData(${i}, this.value)" style="flex:1;min-width:0">
+    <label class="btn btn-ghost" style="padding:7px 10px;cursor:pointer;position:relative;overflow:hidden">📅<input id="vp${i}" type="date" value="${d || ""}" ${travado ? "disabled" : ""} onchange="mudarData(${i}, isoParaBR(this.value))" style="position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer"></label>
+    ${VENC.length > 1 && !travado ? `<button class="btn btn-ghost" style="padding:6px 9px" onclick="rmParc(${i})">✕</button>` : ""}</div>`; }
+function prazoInner(n) { const travado = n.financeiroFeito;
+  return `<div class="ic" style="white-space:normal;margin-bottom:4px">📅 Prazo e dia de pagamento do boleto ${n.pagamentoLido ? "(lido na nota; corrija se precisar)" : "(não veio na nota; informe)"}</div>
+    <div class="ic" style="margin-bottom:2px">Contar os dias a partir de <select onchange="setBase(this.value)" style="padding:4px 6px"><option value="emissao" ${BASEOPT === "emissao" ? "selected" : ""}>emissão (${isoParaBR(emissaoISO(n) || hojeISO())})</option><option value="hoje" ${BASEOPT === "hoje" ? "selected" : ""}>hoje (${isoParaBR(hojeISO())})</option></select></div>
+    ${VENC.map((d, i) => linhaPrazo(i)).join("")}
+    ${travado ? '<div class="ic">Os boletos já foram lançados; para mudar a data, o financeiro altera em contas a pagar.</div>' : '<button class="btn btn-ghost" style="padding:6px 12px" onclick="addParc()">+ parcela</button>'}<div id="vencMsg" class="ic" style="margin-top:4px;white-space:normal"></div>`; }
+function blocoPrazo(n) { return `<div id="prazoBox">${prazoInner(n)}</div>`; }
+function redesenharPrazo() { const el = document.getElementById("prazoBox"); if (el) el.innerHTML = prazoInner(N); }
+function setBase(v) { BASEOPT = v; redesenharPrazo(); }
+function atualizaLinha(i) { const d = VENC[i], base = baseISO(), s = (id, v) => { const e = document.getElementById(id + i); if (e) e.value = v; }; s("vd", d ? diasEntre(base, d) : ""); s("vt", d ? isoParaBR(d) : ""); s("vp", d || ""); }
+const msgVenc = h => { const el = document.getElementById("vencMsg"); if (el) el.innerHTML = h; };
+function mudarDias(i, v) { const n = parseInt(String(v).replace(/\D/g, ""), 10); if (isNaN(n) || n < 0 || n > 1000) { msgVenc('<span style="color:#ff8aa3">Informe os dias (0 a 1000).</span>'); return; } VENC[i] = somarDias(baseISO(), n); atualizaLinha(i); agendarSalvarVenc(); }
+function mudarData(i, t) { const iso = brParaISO(t); if (!iso) { msgVenc('<span style="color:#ff8aa3">Data inválida. Digite dia/mês/ano, por exemplo 25/11/2026.</span>'); return; } VENC[i] = iso; atualizaLinha(i); agendarSalvarVenc(); }
+function addParc() { const ult = VENC.filter(Boolean).slice(-1)[0], base = baseISO(); VENC.push(ult ? somarDias(ult, 30) : ""); redesenharPrazo(); if (VENC.every(Boolean)) agendarSalvarVenc(); }
+function rmParc(i) { VENC.splice(i, 1); if (!VENC.length) VENC = [""]; redesenharPrazo(); agendarSalvarVenc(); }
+function agendarSalvarVenc() { clearTimeout(_tVenc); _tVenc = setTimeout(salvarVenc, 400); }
+async function salvarVenc() {
+  if (VENC.some(x => !x)) { msgVenc('<span style="color:#ffd23f">Preencha todas as datas para salvar.</span>'); return; }
+  const { ok, j } = await api(P + "/vencimentos", { method: "POST", body: JSON.stringify({ notaId: N.id, vencimentos: VENC }) });
+  if (!ok) { msgVenc(`<span style="color:#ff8aa3">${esc(j.erro || "Não consegui salvar o prazo.")}</span>`); return; }
+  N.vencimentos = (j.nota && j.nota.vencimentos) || N.vencimentos; N.pagamentoLido = j.nota ? j.nota.pagamentoLido : N.pagamentoLido;
+  msgVenc('<span style="color:#3ce88a">✅ Prazo salvo. O financeiro usa estas datas nos boletos.</span>'); }
 function novaEntrada() {
   if (N && !N.entrada && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não deu entrada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
-  fecharCamera(); N = null; IGN = new Set(); IMG_MSG = ""; msgLer("");
+  fecharCamera(); N = null; IGN = new Set(); IMG_MSG = ""; VENCNOTA = null; msgLer("");
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

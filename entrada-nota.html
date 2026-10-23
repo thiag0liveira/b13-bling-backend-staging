@@ -168,7 +168,7 @@ async function carregar(corpo) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api("/api/entrada-nota/carregar", { method: "POST", body: JSON.stringify(corpo) });
   if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
-  msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; BASEOPT_FIN = null; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
 }
 // ===== a nota =====
 function renderNota() {
@@ -255,18 +255,35 @@ function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; co
   BOL = lidos.length ? lidos.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })) : (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
 function blocoBoletos(n) {
   iniciarBol(n);
-  const linhas = BOL.map((d, i) => `<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><span class="ic" style="width:34px">${i + 1}/${BOL.length}</span>
-    <input type="date" value="${esc(d.vencimento)}" onchange="BOL[${i}].vencimento=this.value" style="flex:1;min-width:0">
-    <input inputmode="decimal" value="${esc(d.valor)}" placeholder="Valor" onchange="BOL[${i}].valor=this.value;somaBol()" oninput="BOL[${i}].valor=this.value;somaBol()" style="width:100px">
-    <button class="btn btn-ghost" style="padding:4px 9px" onclick="rmBol(${i})">✕</button></div>`).join("");
+  const base = baseFin();
+  const linhas = BOL.map((d, i) => `<div style="margin:8px 0;padding-bottom:6px;border-bottom:1px solid #221e4f"><div style="display:flex;gap:6px;align-items:center"><span class="ic" style="width:34px">${i + 1}/${BOL.length}</span>
+    <input id="bd${i}" inputmode="numeric" placeholder="dias" value="${d.vencimento ? diasEntre(base, d.vencimento) : ""}" onchange="bolDias(${i}, this.value)" style="width:58px"><span class="ic">dias</span>
+    <input id="bt${i}" inputmode="numeric" placeholder="dd/mm/aaaa" value="${d.vencimento ? isoParaBR(d.vencimento) : ""}" oninput="mascaraData(this)" onchange="bolData(${i}, this.value)" style="flex:1;min-width:0">
+    <label class="btn btn-ghost" style="padding:7px 10px;cursor:pointer;position:relative;overflow:hidden">📅<input id="bp${i}" type="date" value="${esc(d.vencimento || "")}" onchange="bolData(${i}, isoParaBR(this.value))" style="position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer"></label></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:5px"><span class="ic" style="width:34px"></span><span class="ic">Valor R$</span><input inputmode="decimal" value="${esc(d.valor)}" placeholder="0,00" onchange="BOL[${i}].valor=this.value;somaBol()" oninput="BOL[${i}].valor=this.value;somaBol()" style="width:110px"><button class="btn btn-ghost" style="padding:4px 9px;margin-left:auto" onclick="rmBol(${i})">✕</button></div></div>`).join("");
   return `<div class="card" style="border-color:#2a4f7a"><h3 style="margin:0 0 4px">🧾 Só lançar os boletos</h3>
     <div class="ic" style="white-space:normal;margin-bottom:6px">Use quando os produtos desta nota já entraram no estoque do Bling. Não liga produtos e não mexe no estoque nem no custo, só cria as contas a pagar (usa a forma "A pagar" ou "Pago" escolhida em Pagamento).</div>
+    <div class="ic" style="margin-bottom:2px">Contar os dias a partir de <select onchange="BASEOPT_FIN=this.value;renderNota()" style="padding:4px 6px"><option value="emissao" ${(BASEOPT_FIN || baseDefault(n)) === "emissao" ? "selected" : ""}>emissão (${isoParaBR(emissaoISO(n) || hojeISO())})</option><option value="hoje" ${(BASEOPT_FIN || baseDefault(n)) === "hoje" ? "selected" : ""}>hoje (${isoParaBR(hojeISO())})</option></select></div>
     <div id="bolLinhas">${linhas || '<div class="ic">Nenhum boleto. Toque em "+ boleto".</div>'}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 12px" onclick="addBol()">+ boleto</button><span class="ic" id="bolSoma">${somaTxtBol()}</span></div>
     <div id="bolMsg" style="margin-top:6px"></div>
     ${n.entrada ? "" : `<label class="ic" style="display:flex;gap:6px;align-items:flex-start;white-space:normal;margin-top:6px"><input type="checkbox" id="bolJaNoBling" checked> Os produtos desta nota já foram lançados no Bling (tira a nota da lista de “sem entrada” e evita lançar o estoque duas vezes)</label>`}
     <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:11px" ${n.financeiro ? "disabled" : ""} onclick="lancarSoBoletos()">💸 Lançar só os boletos</button></div>`;
 }
+// ---- datas: dias, data digitável (dd/mm/aaaa) e calendário ----
+const isoParaBR = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+function brParaISO(t) { let m = String(t || "").replace(/\D/g, ""); if (m.length === 6) m = m.slice(0, 4) + "20" + m.slice(4); if (m.length !== 8) return ""; const iso = `${m.slice(4)}-${m.slice(2, 4)}-${m.slice(0, 2)}`; const d = new Date(iso + "T12:00:00Z"); return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : ""; }
+function mascaraData(el) { const d = el.value.replace(/\D/g, "").slice(0, 8); el.value = d.length > 4 ? d.slice(0, 2) + "/" + d.slice(2, 4) + "/" + d.slice(4) : d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d; }
+const diasEntre = (a, b) => Math.round((Date.parse(b + "T12:00:00Z") - Date.parse(a + "T12:00:00Z")) / 86400000);
+const somarDias = (a, n) => new Date(Date.parse(a + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const emissaoISO = n => n && n.emissao ? new Date(Number(n.emissao) - 3 * 3600e3).toISOString().slice(0, 10) : "";
+const baseDefault = n => { const e = emissaoISO(n); return e && diasEntre(e, hojeISO()) >= 0 && diasEntre(e, hojeISO()) <= 45 ? "emissao" : "hoje"; };
+let BASEOPT_FIN = null;
+const baseFin = () => (BASEOPT_FIN || baseDefault(N)) === "emissao" ? (emissaoISO(N) || hojeISO()) : hojeISO();
+function bolAtualiza(i) { const d = BOL[i].vencimento, base = baseFin(), s = (id, v) => { const e = document.getElementById(id + i); if (e) e.value = v; }; s("bd", d ? diasEntre(base, d) : ""); s("bt", d ? isoParaBR(d) : ""); s("bp", d || ""); }
+function bolDias(i, v) { const n = parseInt(String(v).replace(/\D/g, ""), 10); const el = document.getElementById("bolMsg"); if (isNaN(n) || n < 0 || n > 1000) { if (el) el.innerHTML = '<div class="err">Informe os dias (0 a 1000).</div>'; return; } if (el) el.innerHTML = ""; BOL[i].vencimento = somarDias(baseFin(), n); bolAtualiza(i); }
+function bolData(i, t) { const iso = brParaISO(t); const el = document.getElementById("bolMsg"); if (!iso) { if (el) el.innerHTML = '<div class="err">Data inválida. Digite dia/mês/ano, por exemplo 25/11/2026.</div>'; return; } if (el) el.innerHTML = ""; BOL[i].vencimento = iso; bolAtualiza(i); }
 function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0); return "Total dos boletos: " + brl(t); }
 function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); }
 function addBol() { const ult = (BOL || [])[BOL.length - 1]; let venc = ""; if (ult && ult.vencimento) { const d = new Date(ult.vencimento + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); venc = d.toISOString().slice(0, 10); } BOL.push({ vencimento: venc, valor: "" }); renderNota(); }
@@ -331,7 +348,7 @@ async function adicionarImagens(files) {
 function novaEntrada() {
   const ficou = N && !N.entrada && !N.financeiro;
   if (ficou && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não foi lançada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
-  fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; IMG_MSG = ""; msgLer("");
+  fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; BASEOPT_FIN = null; IMG_MSG = ""; msgLer("");
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

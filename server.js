@@ -11374,12 +11374,13 @@ async function _resumoEntradaNota(n){
             return {sugestoes:sg,sugestaoFator:pistas[0].f,fatorEstimado:true,fatorFonte:"estimada "+pistas[0].fonte+(iguais>1?" e confirmada por outra pista":"")}; } }
         return {sugestoes:sg,sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
   const pend=itens.filter(x=>x.status!=="ok").length;
-  const dups=(n.duplicatas||[]).length?_duplicatasEditadas(n):[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
+  const _ovx=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)], _temOv=Array.isArray(_ovx)&&_ovx.length>0;
+  const dups=((n.duplicatas||[]).length||_temOv)?_duplicatasEditadas(n,vNF):[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
-    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0};
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
 async function _acharNotaBlingPorChave(ch){
   for(const ep of [`/nfe?chaveAcesso=${ch}`,`/notasfiscaisentrada?chaveAcesso=${ch}`]){ try{ const r=await bling(ep); const l=r?.data||[]; if(l.length) return l[0].id; }catch(e){} }
@@ -11481,8 +11482,11 @@ function _vincularBoletoTitulo(notaId,t,boletoId){
     Object.assign(t,{linhaDigitavel:b.linhaDigitavel,codigoBarras:b.codigoBarras,boletoId:b.id,boletoAnexoId:b.anexoId||null,boletoBeneficiario:b.beneficiario||""}); return true;
   }catch(e){ return false; }
 }
-function _duplicatasEditadas(n){ const base=n.duplicatas||[], ov=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)];
-  return Array.isArray(ov)&&ov.length===base.length?base.map((d,i)=>({...d,vencimento:ov[i]||d.vencimento})):base; }
+function _duplicatasEditadas(n,vNF){ const base=n.duplicatas||[], ov=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)];
+  if(!Array.isArray(ov)||!ov.length) return base;
+  if(base.length&&ov.length===base.length) return base.map((d,i)=>({...d,vencimento:ov[i]||d.vencimento})); // mesma quantidade: só as datas mudam
+  const tot=Number(vNF)||Number(n.totais?.vNF)||base.reduce((a,d)=>a+(Number(d.valor)||0),0)||0, cada=_round2(tot/ov.length); // outra quantidade: divide o total
+  return ov.map((v,i)=>({numero:String(i+1),vencimento:v,valor:i===ov.length-1?_round2(tot-cada*(ov.length-1)):cada})); }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
 const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1};
 function _motivoSemValor(m){ m=String(m||""); return /R\$|\d+[.,]\d{2}/.test(m)?"confira se o produto ligado e a quantidade estão certos":m; }
@@ -11493,7 +11497,7 @@ function _notaSemValores(n){
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
     anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
     boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
-    vencimentos:n.pagamentoLido?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
+    pagamentoLido:!!n.pagamentoLido,vencimentos:(n.pagamentoLido||n.vencimentosEditados)?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||"",fator:x.fator||0,qtdUn:x.qtdUn||0,
       sugestoes:(x.sugestoes||[]).map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""})),
@@ -11532,9 +11536,9 @@ app.use((req,res,next)=>{ if(!req.path.startsWith("/api/entrada-produtos/")) ret
 app.post("/api/entrada-nota/vencimentos",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
     if(_finNota(n)) return res.status(409).json({erro:"os boletos dessa nota já foram lançados; mude as datas em contas a pagar"});
-    const base=n.duplicatas||[]; if(!base.length) return res.status(400).json({erro:"essa nota não tem dia de pagamento lido"});
     const v=Array.isArray(b.vencimentos)?b.vencimentos.map(x=>String(x||"").slice(0,10)):[];
-    if(v.length!==base.length||v.some(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x))) return res.status(400).json({erro:"informe a data de cada pagamento"});
+    if(!v.length||v.length>48) return res.status(400).json({erro:"informe de 1 a 48 datas de pagamento"});
+    if(v.some(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x)||isNaN(Date.parse(x+"T12:00:00Z"))||new Date(x+"T12:00:00Z").toISOString().slice(0,10)!==x)) return res.status(400).json({erro:"informe a data de cada pagamento (dia/mês/ano válidos)"});
     const d=lerJSON(ENTRADA_VENC_FILE,{}); d[String(n.id)]=v; salvarJSON(ENTRADA_VENC_FILE,d);
     addLog("nota-"+(n.chave||n.id),"entrada_nota_vencimentos",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{numero:n.numero,datas:v});
     res.json({ok:true,nota:await _resumoEntradaNota(n)});
@@ -11609,7 +11613,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     if(b.soBoletos){
       const quem=req.sessao?.nome||"", pg=b.pagamento||{};
       if(_finNota(n)) return res.status(409).json({erro:`Os boletos dessa nota já foram lançados em ${new Date((_finNota(n).em||Date.now())-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${_finNota(n).por||"—"}.`});
-      const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:_duplicatasEditadas(n);
+      const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:(await _resumoEntradaNota(n)).duplicatas;
       const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0),boletoId:x.boletoId||null}));
       if(!par.length) return res.status(400).json({erro:"informe ao menos um boleto (vencimento e valor)"});
       if(par.length>48) return res.status(400).json({erro:"no máximo 48 boletos por nota"});
