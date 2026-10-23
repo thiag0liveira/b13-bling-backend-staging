@@ -11379,7 +11379,7 @@ async function _resumoEntradaNota(n){
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
-    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),pagamentoLido:(n.duplicatas||[]).length>0};
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0};
 }
 async function _acharNotaBlingPorChave(ch){
   for(const ep of [`/nfe?chaveAcesso=${ch}`,`/notasfiscaisentrada?chaveAcesso=${ch}`]){ try{ const r=await bling(ep); const l=r?.data||[]; if(l.length) return l[0].id; }catch(e){} }
@@ -11407,6 +11407,80 @@ function _salvarAnexos(notaId,arqs,por){
     return novos;
   }catch(e){ console.error("anexos da nota:",e.message); return []; }
 }
+// ===== BOLETOS LIDOS (várias imagens por nota): número (linha digitável) e código de barras, guardados à parte para pagar =====
+const ENTRADA_BOLETOS_FILE=`${DATA_DIR}/entrada_nota_boletos.json`;
+function _boletosDaNota(id){ return lerJSON(ENTRADA_BOLETOS_FILE,{})[String(id)]||[]; }
+function _mod10Bol(n){ let soma=0,peso=2; for(let i=n.length-1;i>=0;i--){ let p=Number(n[i])*peso; if(p>9) p=Math.floor(p/10)+(p%10); soma+=p; peso=peso===2?1:2; } const r=soma%10; return r===0?0:10-r; }
+function _mod11Bol(n,conv){ let soma=0,peso=2; for(let i=n.length-1;i>=0;i--){ soma+=Number(n[i])*peso; peso=peso===9?2:peso+1; }
+  if(conv){ const r=soma%11; return (r===0||r===1)?0:(r===10?1:11-r); } const dv=11-(soma%11); return (dv===0||dv===10||dv===11)?1:dv; }
+function _vencDoFator(f){ f=Number(f); if(!f) return null; const dia=86400000, hoje=Date.now(), c=[Date.UTC(1997,9,7)+f*dia]; if(f>=1000) c.push(Date.UTC(2025,1,22)+(f-1000)*dia); // o fator recomeçou em 22/02/2025
+  c.sort((a,b)=>Math.abs(a-hoje)-Math.abs(b-hoje)); return new Date(c[0]).toISOString().slice(0,10); }
+function _linhaDoCodigo(bc){ const c1=bc.slice(0,4)+bc.slice(19,24), c2=bc.slice(24,34), c3=bc.slice(34,44);
+  return c1+_mod10Bol(c1)+c2+_mod10Bol(c2)+c3+_mod10Bol(c3)+bc[4]+bc.slice(5,19); }
+// confere os dígitos verificadores e deriva o código de barras; devolve {ok,linha,codigoBarras,valor,vencimento,tipo,motivo}
+function _validarBoleto(linhaRaw,codigoRaw){
+  let L=String(linhaRaw||"").replace(/\D/g,""), C=String(codigoRaw||"").replace(/\D/g,"");
+  const r={ok:false,linha:L,codigoBarras:"",valor:null,vencimento:null,tipo:"",motivo:""};
+  const doBanco=bc=>({valor:+(Number(bc.slice(9,19))/100).toFixed(2),vencimento:_vencDoFator(bc.slice(5,9))});
+  if(L.length===47){ r.tipo="banco";
+    const bc=L.slice(0,4)+L[32]+L.slice(33,47)+L.slice(4,9)+L.slice(10,20)+L.slice(21,31);
+    const dvs=_mod10Bol(L.slice(0,9))===Number(L[9])&&_mod10Bol(L.slice(10,20))===Number(L[20])&&_mod10Bol(L.slice(21,31))===Number(L[31]);
+    const geral=_mod11Bol(bc.slice(0,4)+bc.slice(5))===Number(bc[4]);
+    r.codigoBarras=bc; Object.assign(r,doBanco(bc));
+    if(dvs&&geral) r.ok=true; else r.motivo="os dígitos verificadores da linha digitável não conferem (alguma leitura pode estar errada)";
+    if(!r.ok&&C.length===44&&_mod11Bol(C.slice(0,4)+C.slice(5))===Number(C[4])){ // o código de barras lido confere: refaz a linha a partir dele
+      r.linha=_linhaDoCodigo(C); r.codigoBarras=C; Object.assign(r,doBanco(C)); r.ok=true; r.motivo="linha refeita a partir do código de barras lido"; }
+  } else if(L.length===48&&L[0]==="8"){ r.tipo="convenio"; const conv=/^[89]$/.test(L[2]); let bc="",ok=true;
+    for(let i=0;i<4;i++){ const b=L.slice(i*12,i*12+11), dv=Number(L[i*12+11]); bc+=b; if((conv?_mod11Bol(b,true):_mod10Bol(b))!==dv) ok=false; }
+    r.codigoBarras=bc; if(/^[68]$/.test(L[2])) r.valor=+(Number(bc.slice(4,15))/100).toFixed(2);
+    if(ok) r.ok=true; else r.motivo="os dígitos verificadores da linha digitável não conferem (alguma leitura pode estar errada)";
+  } else if(C.length===44&&C[0]!=="8"&&_mod11Bol(C.slice(0,4)+C.slice(5))===Number(C[4])){ r.tipo="banco"; r.linha=_linhaDoCodigo(C); r.codigoBarras=C; Object.assign(r,doBanco(C)); r.ok=true; r.motivo="linha refeita a partir do código de barras lido"; }
+  else r.motivo=L.length?`a linha digitável lida tem ${L.length} dígitos (o normal é 47 ou 48)`:"não consegui ler a linha digitável";
+  return r;
+}
+// pede para a IA ler um boleto numa imagem/PDF; devolve {ehBoleto,...} ou {erro}
+async function _lerBoletoIA(buf,mime){
+  const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return {erro:"A leitura de boleto não está ligada (falta a chave ANTHROPIC_API_KEY no Railway)."};
+  const b64=buf.toString("base64"), arq=mime==="application/pdf"?{type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}:{type:"image",source:{type:"base64",media_type:mime,data:b64}};
+  const pedido=`Você lê BOLETOS BANCÁRIOS brasileiros. Se o arquivo NÃO for um boleto (nota fiscal, foto de produto, recibo, etc.), responda apenas {"ehBoleto":false}.
+Se for um boleto, responda SOMENTE com um JSON, sem texto antes ou depois, sem cercas de código, neste formato:
+{"ehBoleto":true,"beneficiario":"","cnpjBeneficiario":"só dígitos","linhaDigitavel":"só os dígitos (47 ou 48)","codigoBarras":"só os 44 dígitos, se o código de barras estiver legível","valor":0,"vencimento":"AAAA-MM-DD","numeroDocumento":"","nossoNumero":""}
+Copie os números EXATAMENTE como estão impressos, dígito por dígito. Não invente nenhum dígito: se algo estiver ilegível, deixe vazio. Use ponto decimal no valor.`;
+  const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),70000);
+  try{
+    const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",signal:ctrl.signal,headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:1200,messages:[{role:"user",content:[arq,{type:"text",text:pedido}]}]})});
+    const j=await r.json().catch(()=>({})); if(!r.ok) return {erro:"A leitura falhou: "+(j?.error?.message||("HTTP "+r.status))};
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim();
+    try{ return JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return {erro:"Não consegui entender a leitura do boleto."}; }
+  }catch(e){ return {erro:e.name==="AbortError"?"A leitura demorou demais.":e.message}; }
+  finally{ clearTimeout(to); }
+}
+// lê o arquivo, valida e guarda o boleto separado; devolve o resumo da leitura
+async function _lerEGuardarBoleto(notaId,anexo,buf,mime,por){
+  const L=await _lerBoletoIA(buf,mime); if(L.erro) return {erro:L.erro};
+  if(!L.ehBoleto) return {ehBoleto:false};
+  const v=_validarBoleto(L.linhaDigitavel,L.codigoBarras);
+  const vlr=v.valor!=null?v.valor:_round2(Number(String(L.valor||0).replace(",","."))||0);
+  const venc=v.vencimento||(/^\d{4}-\d{2}-\d{2}$/.test(String(L.vencimento||""))?L.vencimento:"");
+  const todos=lerJSON(ENTRADA_BOLETOS_FILE,{});
+  const igual=v.linha&&Object.entries(todos).flatMap(([nid,l])=>l.map(b=>({...b,nid}))).find(b=>b.linhaDigitavel===v.linha);
+  if(igual) return {ehBoleto:true,duplicado:true,jaNaNota:String(igual.nid)===String(notaId),boleto:igual};
+  const C=lerContasPagar(), jaTit=v.linha&&C.titulos.find(t=>t.linhaDigitavel===v.linha);
+  const rec={id:"bo"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),anexoId:anexo?.id||null,beneficiario:String(L.beneficiario||"").slice(0,120),cnpj:String(L.cnpjBeneficiario||"").replace(/\D/g,"").slice(0,14),
+    linhaDigitavel:v.linha,codigoBarras:v.codigoBarras,valor:vlr,vencimento:venc,numeroDocumento:String(L.numeroDocumento||"").slice(0,40),nossoNumero:String(L.nossoNumero||"").slice(0,40),tipo:v.tipo,
+    conferido:!!v.ok,aviso:v.ok&&!v.motivo?"":(v.motivo||"confira os números"),lidoEm:Date.now(),por:por||"",...(jaTit?{lancadoEm:jaTit.criadoEm,tituloId:jaTit.id}:{})};
+  (todos[String(notaId)]||=[]).push(rec); salvarJSON(ENTRADA_BOLETOS_FILE,todos);
+  return {ehBoleto:true,boleto:rec};
+}
+// liga um boleto lido ao título criado (pelo id, ou pelo mesmo vencimento e valor) para o pagamento ter o código à mão
+function _vincularBoletoTitulo(notaId,t,boletoId){
+  try{ const d=lerJSON(ENTRADA_BOLETOS_FILE,{}), L=d[String(notaId)]||[];
+    const b=L.find(x=>boletoId&&x.id===boletoId&&!x.tituloId)||L.find(x=>!x.tituloId&&x.vencimento===t.vencimento&&Math.abs((x.valor||0)-t.valor)<0.011);
+    if(!b) return false; b.tituloId=t.id; b.lancadoEm=Date.now(); salvarJSON(ENTRADA_BOLETOS_FILE,d);
+    Object.assign(t,{linhaDigitavel:b.linhaDigitavel,codigoBarras:b.codigoBarras,boletoId:b.id,boletoAnexoId:b.anexoId||null,boletoBeneficiario:b.beneficiario||""}); return true;
+  }catch(e){ return false; }
+}
 function _duplicatasEditadas(n){ const base=n.duplicatas||[], ov=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)];
   return Array.isArray(ov)&&ov.length===base.length?base.map((d,i)=>({...d,vencimento:ov[i]||d.vencimento})):base; }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
@@ -11418,6 +11492,7 @@ function _notaSemValores(n){
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
     anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
+    boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
     vencimentos:n.pagamentoLido?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||"",fator:x.fator||0,qtdUn:x.qtdUn||0,
@@ -11433,6 +11508,8 @@ function _semValoresEntrada(o){
   if(o.nota) r.nota=_notaSemValores(o.nota);
   if(Array.isArray(o.itens)) r.itens=o.itens.map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""}));
   if(o.lancados!==undefined) r.lancados=o.lancados;
+  if(o.leitura) r.leitura=o.leitura.erro?{erro:o.leitura.erro}:{ehBoleto:!!o.leitura.ehBoleto,duplicado:!!o.leitura.duplicado,jaNaNota:!!o.leitura.jaNaNota,vencimento:o.leitura.boleto?.vencimento||"",confira:o.leitura.boleto?!o.leitura.boleto.conferido:false};
+  if(Array.isArray(o.boletos)) r.boletos=o.boletos.map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido}));
   if(o.semEstoque) r.semEstoque=true; if(Array.isArray(o.anexos)) r.anexos=o.anexos.map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em}));
   if(Array.isArray(o.falhas)) r.falhas=o.falhas.map(f=>({nItem:f.nItem,xProd:f.xProd,produtoNome:f.produtoNome||"",erro:f.erro||""}));
   return r;
@@ -11444,7 +11521,7 @@ app.use((req,res,next)=>{ if(!req.path.startsWith("/api/entrada-produtos/")) ret
   const b=req.body||{};
   if(sub==="/confirmar") req.body={notaId:b.notaId,ignorar:b.ignorar,semEstoque:!!b.semEstoque};      // sem pagamento nem boletos
   if(sub==="/vencimentos") req.body={notaId:b.notaId,vencimentos:b.vencimentos};                       // só as datas, nunca valores
-  if(sub==="/anexo") req.body={notaId:b.notaId,nome:b.nome,dados:b.dados};
+  if(sub==="/anexo") req.body={notaId:b.notaId,nome:b.nome,dados:b.dados,ler:!!b.ler};
   if(sub==="/sem-nota/editar") req.body={id:b.id,nItem:b.nItem,qCom:b.qCom,xProd:b.xProd,remover:b.remover,fornecedor:b.fornecedor}; // sem valores
   const orig=res.json.bind(res);
   res.json=o=>{ const r=_semValoresEntrada(o); if(r&&r.erro&&!(o&&o.erro)&&res.statusCode<400) res.status(422); return orig(r); };
@@ -11463,12 +11540,21 @@ app.post("/api/entrada-nota/vencimentos",acessoEntradaNota,async(req,res)=>{
     res.json({ok:true,nota:await _resumoEntradaNota(n)});
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
-app.post("/api/entrada-nota/anexo",acessoEntradaNota,(req,res)=>{
+app.post("/api/entrada-nota/anexo",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
     const m=String(b.dados||"").match(/^data:([\w\/+.-]+);base64,([\s\S]+)$/); if(!m) return res.status(400).json({erro:"envie o arquivo lido"});
-    const novos=_salvarAnexos(n.id,[{buf:Buffer.from(m[2],"base64"),mime:m[1],nome:b.nome}],req.sessao?.nome||"");
+    const buf=Buffer.from(m[2],"base64"), quem=req.sessao?.nome||"";
+    const novos=_salvarAnexos(n.id,[{buf,mime:m[1],nome:b.nome}],quem);
     if(!novos.length) return res.status(400).json({erro:"arquivo não aceito (use foto, PDF ou XML de até 8 MB)"});
-    res.json({ok:true,anexos:_anexosPublicos(n.id)});
+    // com "ler", a imagem/PDF passa pela leitura de boleto: número, código de barras e vencimento ficam guardados à parte para o pagamento
+    let leitura=null; if(b.ler&&(/^image\//.test(m[1])||m[1]==="application/pdf")) leitura=await _lerEGuardarBoleto(n.id,novos[0],buf,m[1],quem);
+    res.json({ok:true,anexos:_anexosPublicos(n.id),boletos:_boletosDaNota(n.id),leitura});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/contas-pagar/:id/boleto-imagem",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const t=lerContasPagar().titulos.find(x=>x.id===String(req.params.id)); if(!t||!t.boletoAnexoId) return res.status(404).json({erro:"esse título não tem imagem de boleto"});
+    const a=Object.values(lerJSON(ENTRADA_ANEXOS_IDX,{})).flat().find(x=>x.id===t.boletoAnexoId); if(!a) return res.status(404).json({erro:"imagem não encontrada"});
+    res.set("Content-Type",a.mime); res.sendFile(path.join(ENTRADA_ANEXOS_DIR,a.id+"."+a.ext));
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/entrada-nota/anexo/:id",acessoEntradaNota,(req,res)=>{
@@ -11524,7 +11610,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       const quem=req.sessao?.nome||"", pg=b.pagamento||{};
       if(_finNota(n)) return res.status(409).json({erro:`Os boletos dessa nota já foram lançados em ${new Date((_finNota(n).em||Date.now())-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${_finNota(n).por||"—"}.`});
       const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:_duplicatasEditadas(n);
-      const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0)}));
+      const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0),boletoId:x.boletoId||null}));
       if(!par.length) return res.status(400).json({erro:"informe ao menos um boleto (vencimento e valor)"});
       if(par.length>48) return res.status(400).json({erro:"no máximo 48 boletos por nota"});
       for(const d of par){ if(!/^\d{4}-\d{2}-\d{2}$/.test(d.vencimento)) return res.status(400).json({erro:"todo boleto precisa de vencimento"}); if(!(d.valor>0)) return res.status(400).json({erro:"todo boleto precisa de valor maior que zero"}); }
@@ -11533,7 +11619,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       par.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",soBoletos:true,notaId:n.id,chave:n.chave||"",numeroNota:n.numero||"",fornecedor:{cnpj:n.emitente?.cnpj||"",nome:n.emitente?.nome||"",blingId:fornBling?.id||null},
         parcela:`${i+1}/${par.length}`,vencimento:d.vencimento,valor:d.valor,status:pg.pago?"pago":"aberto",criadoEm:Date.now(),criadoPor:quem};
         if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
-        C.titulos.push(t); tit.push(t); });
+        _vincularBoletoTitulo(n.id,t,d.boletoId); C.titulos.push(t); tit.push(t); });
       salvarJSON(CONTAS_PAGAR_FILE,C);
       _marcarFinNota(n,{em:Date.now(),por:quem,contas:tit.map(t=>t.id)});
       // produtos que já entraram no Bling por fora: tira a nota dos avisos de "sem entrada" e impede lançar o estoque em duplicidade
@@ -11562,7 +11648,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     if(criarContas) R.duplicatas.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",notaId:n.id,chave:R.chave,numeroNota:R.numero,fornecedor:{cnpj:R.emitente?.cnpj||"",nome:R.emitente?.nome||"",blingId:R.fornecedorBling?.id||null},
       parcela:`${i+1}/${R.duplicatas.length}`,vencimento:d.vencimento,valor:_round2(d.valor),status:pg.pago?"pago":"aberto",criadoEm:Date.now(),criadoPor:quem};
       if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
-      C.titulos.push(t); tit.push(t); });
+      _vincularBoletoTitulo(n.id,t); C.titulos.push(t); tit.push(t); });
     if(criarContas){ salvarJSON(CONTAS_PAGAR_FILE,C); if(tit.length) _marcarFinNota(n,{em:Date.now(),por:quem,contas:tit.map(t=>t.id)}); }
     _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:okN,falhas:falhas.length,contas:tit.map(t=>t.id),...(req.produtosMode?{soEstoque:true}:{})}); // sem nota: não toca na parte fiscal
     // custo atualizado no cadastro de fornecedores do Bling (fila lenta, em segundo plano)

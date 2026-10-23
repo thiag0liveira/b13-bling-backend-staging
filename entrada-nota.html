@@ -168,7 +168,7 @@ async function carregar(corpo) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api("/api/entrada-nota/carregar", { method: "POST", body: JSON.stringify(corpo) });
   if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
-  msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
 }
 // ===== a nota =====
 function renderNota() {
@@ -210,6 +210,7 @@ function renderNota() {
       <div><div class="lin"><span>Produtos</span><b>${brl(T.vProd)}</b></div><div class="lin"><span>Impostos, frete e outros</span><b>${brl(T.extras)}${T.rateioPct ? " (+" + String(T.rateioPct).replace(".", ",") + "% no custo)" : ""}</b></div>
       ${T.vIPI || T.vST ? `<div class="lin"><span>IPI · ST</span><b>${brl(T.vIPI)} · ${brl(T.vST)}</b></div>` : ""}${T.vFrete ? `<div class="lin"><span>Frete</span><b>${brl(T.vFrete)}</b></div>` : ""}<div class="lin"><span>Pagamento na nota</span><b>${esc(n.formaNaNota || "—")}</b></div></div></div></div>
   ${(n.anexos || []).length ? `<div class="card">${blocoAnexos(n)}</div>` : ""}
+  ${blocoBoletosLidos(n)}
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const al = n.itens.filter(x => x.reajuste); return al.length ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">⚠️ <b>${al.length} produto(s) com custo maior que na última entrada.</b> Confira os preços de venda sugeridos em cada um.
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:4px 10px" onclick="marcarTodosReajustes()">Marcar todos os sugeridos</button>
@@ -250,7 +251,8 @@ async function ligar(nItem) { const pid = document.getElementById("sel" + nItem)
 // ---- SÓ OS BOLETOS (produtos que já entraram no Bling): cria só as contas a pagar, sem mexer no estoque ----
 let BOL = null, BOLNOTA = null;
 const numBol = v => { const t = String(v == null ? "" : v).trim(); if (!t) return 0; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
-function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; BOL = (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
+function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; const lidos = (n.boletosLidos || []).filter(b => !b.tituloId);
+  BOL = lidos.length ? lidos.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })) : (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
 function blocoBoletos(n) {
   iniciarBol(n);
   const linhas = BOL.map((d, i) => `<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><span class="ic" style="width:34px">${i + 1}/${BOL.length}</span>
@@ -271,7 +273,7 @@ function addBol() { const ult = (BOL || [])[BOL.length - 1]; let venc = ""; if (
 function rmBol(i) { BOL.splice(i, 1); renderNota(); }
 async function lancarSoBoletos() {
   const el = document.getElementById("bolMsg");
-  const parcelas = BOL.map(d => ({ vencimento: d.vencimento, valor: numBol(d.valor) }));
+  const parcelas = BOL.map(d => ({ vencimento: d.vencimento, valor: numBol(d.valor), boletoId: d.boletoId || null }));
   if (!parcelas.length) { el.innerHTML = `<div class="err">Informe ao menos um boleto.</div>`; return; }
   if (parcelas.some(d => !d.vencimento || !(d.valor > 0))) { el.innerHTML = `<div class="err">Todo boleto precisa de vencimento e valor.</div>`; return; }
   const total = parcelas.reduce((s, d) => s + d.valor, 0);
@@ -286,6 +288,46 @@ async function lancarSoBoletos() {
 function blocoAnexos(n) { const a = n.anexos || []; if (!a.length) return ""; return `<div class="ic" style="margin-bottom:4px">📎 Imagem lida (guardada nesta nota)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem lida" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF lido" : "📄 XML lido"}</button>`).join("")}</div>`; }
 async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + "/api/entrada-nota/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
 async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + "/api/entrada-nota/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir o arquivo."); } }
+// ---- BOLETOS LIDOS: número e código de barras guardados à parte, para pagar ----
+const dmyN = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
+function fmtLinha(l) { l = String(l || ""); if (l.length === 47) return `${l.slice(0, 5)}.${l.slice(5, 10)} ${l.slice(10, 15)}.${l.slice(15, 21)} ${l.slice(21, 26)}.${l.slice(26, 32)} ${l[32]} ${l.slice(33)}`; if (l.length === 48) return l.match(/.{1,12}/g).join(" "); return l; }
+async function copiar(txt, el) { try { await navigator.clipboard.writeText(txt); } catch (e) { const t = document.createElement("textarea"); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); } catch (x) {} t.remove(); } if (el) { const o = el.textContent; el.textContent = "✅ Copiado"; setTimeout(() => el.textContent = o, 1400); } }
+function blocoBoletosLidos(n) {
+  const L = n.boletosLidos || [];
+  const cards = L.map(b => `<div class="itn" style="margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(b.beneficiario || "Beneficiário não lido")}</b><b>${brl(b.valor)}</b></div>
+    <div class="ic" style="white-space:normal">vence ${dmyN(b.vencimento)}${b.numeroDocumento ? " · doc " + esc(b.numeroDocumento) : ""} · ${b.tituloId ? '<span style="color:#3ce88a">já lançado em contas a pagar</span>' : '<span style="color:#ffd23f">ainda não lançado</span>'} · ${b.conferido ? '<span style="color:#3ce88a">✅ dígitos conferem</span>' + (b.aviso ? ' <span class="ic">(' + esc(b.aviso) + ')</span>' : "") : '<span style="color:#ff8aa3">⚠️ confira: ' + esc(b.aviso || "") + "</span>"}</div>
+    <div class="ic" style="margin-top:6px">Linha digitável</div><div style="font-family:monospace;font-size:13px;word-break:break-all;color:#fff">${esc(fmtLinha(b.linhaDigitavel)) || "—"}</div>
+    <div class="ic" style="margin-top:4px">Código de barras</div><div style="font-family:monospace;font-size:12px;word-break:break-all;color:#cfcaf5">${esc(b.codigoBarras) || "—"}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-mag" style="padding:5px 10px" onclick="copiar('${esc(b.linhaDigitavel)}',this)">📋 Copiar linha digitável</button>
+      <button class="btn btn-ghost" style="padding:5px 10px" onclick="copiar('${esc(b.codigoBarras)}',this)">📋 Copiar código de barras</button>${b.anexoId ? `<button class="btn btn-ghost" style="padding:5px 10px" onclick="verAnexo('${esc(b.anexoId)}')">🖼️ Ver imagem</button>` : ""}</div></div>`).join("");
+  const pend = L.filter(b => !b.tituloId).length;
+  return `<div class="card"><h3>🧾 Boletos lidos <span class="ic">(separados para pagamento)</span></h3>
+    <div class="ic" style="white-space:normal">Cada boleto anexado é lido: número, código de barras, valor e vencimento ficam guardados aqui e vão junto para a conta a pagar.</div>
+    ${cards || '<div class="ic" style="margin-top:6px">Nenhum boleto lido nesta nota ainda.</div>'}
+    ${pend ? `<button class="btn btn-ghost" style="margin-top:8px" onclick="usarBoletosLidos()">⬇️ Usar estes ${pend} boleto(s) nos lançamentos abaixo</button>` : ""}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><label class="btn btn-ghost" style="cursor:pointer">📷 Tirar foto<input type="file" accept="image/*" capture="environment" style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label>
+      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Fotos, PDF ou boletos (várias)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label></div>
+    <div id="imgMsg" style="margin-top:4px">${IMG_MSG}</div></div>`;
+}
+function usarBoletosLidos() { const l = (N.boletosLidos || []).filter(b => !b.tituloId); BOL = l.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })); BOLNOTA = N.id; renderNota(); }
+let IMG_MSG = "";
+const lerArq = f => new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(f); });
+async function adicionarImagens(files) {
+  if (!files || !files.length || !N) return; const lista = [...files].slice(0, 10), linhas = [], antes = (N.boletosLidos || []).length;
+  const mostrar = extra => { IMG_MSG = linhas.join("") + (extra || ""); const el = document.getElementById("imgMsg"); if (el) el.innerHTML = IMG_MSG; };
+  for (let k = 0; k < lista.length; k++) { const f = lista[k], nome = esc(f.name || "imagem"); mostrar(`<div class="ic">⏳ Lendo ${k + 1} de ${lista.length}… (boleto leva uns segundos)</div>`);
+    try { const pdf = /pdf/i.test(f.type) || /\.pdf$/i.test(f.name || ""); if (pdf && f.size > 3.5 * 1048576) { linhas.push(`<div class="err">${nome}: o PDF passa de 3,5 MB. Tire foto do boleto.</div>`); continue; }
+      const dados = pdf ? await lerArq(f) : await reduzir(f);
+      const { ok, j } = await api("/api/entrada-nota/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: f.name || "imagem.jpg", dados, ler: true }) });
+      if (!ok) { linhas.push(`<div class="err">${nome}: ${esc(j.erro || "não consegui guardar")}</div>`); continue; }
+      N.anexos = j.anexos || N.anexos; N.boletosLidos = j.boletos || N.boletosLidos; const l = j.leitura || {};
+      if (l.erro) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">⚠️ ${nome}: guardada, mas não consegui ler como boleto (${esc(l.erro)})</div>`);
+      else if (l.ehBoleto && l.duplicado) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">ℹ️ ${nome}: esse boleto já tinha sido lido${l.jaNaNota ? " nesta nota" : " em outra nota"}.</div>`);
+      else if (l.ehBoleto) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">✅ ${nome}: boleto lido · ${brl(l.boleto.valor)} · vence ${dmyN(l.boleto.vencimento)}${l.boleto.conferido ? "" : " · ⚠️ confira os números"}</div>`);
+      else linhas.push(`<div class="ic" style="white-space:normal">🖼️ ${nome}: imagem guardada na nota.</div>`);
+    } catch (e) { linhas.push(`<div class="err">${nome}: ${esc(e.message || "erro")}</div>`); } }
+  IMG_MSG = linhas.join(""); if ((N.boletosLidos || []).length !== antes) BOLNOTA = null; renderNota();
+}
 async function confirmar() {
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;

@@ -148,7 +148,7 @@ async function lerFotoCompra(files) { if (!files || !files.length) return; msgLe
       else imagens.push(await reduzir(f)); }
     const { ok, j } = await api(P + "/foto", { method: "POST", body: JSON.stringify({ imagens, pdfs }) });
     if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`); return; }
-    msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota.</div>` : ""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+    msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota.</div>` : ""); N = j.nota; IGN = new Set(); IMG_MSG = ""; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
   } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
 async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }, { nome: f.name || "nota.xml", dados: "data:text/xml;base64," + btoa(unescape(encodeURIComponent(t))) }); }
 function carregarChave() { const c = achaChave(document.getElementById("chave").value); if (!c) { msgLer(`<div class="err">A chave tem 44 dígitos.</div>`); return; } carregar({ chave: c }); }
@@ -156,7 +156,7 @@ async function carregar(corpo, arq) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api(P + "/carregar", { method: "POST", body: JSON.stringify(corpo) });
   if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
-  msgLer(""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  msgLer(""); N = j.nota; IGN = new Set(); IMG_MSG = ""; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
   if (arq) anexar(arq); // guarda a imagem lida na nota
 }
 // compra sem nota: corrigir descrição, quantidade ou tirar item (sem valores)
@@ -198,7 +198,43 @@ function renderNota() {
     <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()">📋 Não dar entrada no estoque (só registrar a nota)</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
 }
-function blocoAnexos(n) { const a = n.anexos || []; if (!a.length) return ""; return `<div style="margin-top:8px"><div class="ic" style="margin-bottom:4px">📎 Imagem lida (guardada nesta nota)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem lida" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF lido" : "📄 XML lido"}</button>`).join("")}</div></div>`; }
+let IMG_MSG = "";
+const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+function blocoAnexos(n) {
+  const a = n.anexos || [], bo = n.boletos || [];
+  const miniaturas = a.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF" : "📄 XML"}</button>`).join("")}</div>` : "";
+  const boletos = bo.map(b => `<div class="ic" style="margin-top:4px;white-space:normal">🧾 Boleto lido${b.vencimento ? " · vence " + dmy(b.vencimento) : ""} · guardado para o financeiro pagar ${b.confira ? '<span style="color:#ffd23f">⚠️ o financeiro vai conferir os números</span>' : '<span style="color:#3ce88a">✅ conferido</span>'}</div>`).join("");
+  return `<div style="margin-top:8px"><div class="ic" style="margin-bottom:2px">📎 Imagens desta nota${a.length ? " (" + a.length + ")" : ""}</div>${miniaturas}${boletos}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <label class="btn btn-ghost" style="cursor:pointer">📷 Tirar foto<input type="file" accept="image/*" capture="environment" style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label>
+      <label class="btn btn-ghost" style="cursor:pointer">🖼️ Fotos, PDF ou boletos (várias)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label></div>
+    <div class="ic" style="white-space:normal;margin-top:4px">Pode juntar quantas imagens precisar. Se for um boleto, o sistema lê o número e o código de barras e guarda separado para o financeiro pagar.</div>
+    <div id="imgMsg" style="margin-top:4px">${IMG_MSG}</div></div>`;
+}
+const lerArq = f => new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(f); });
+async function adicionarImagens(files) {
+  if (!files || !files.length || !N) return;
+  const lista = [...files].slice(0, 10), linhas = [];
+  const mostrar = extra => { IMG_MSG = linhas.join("") + (extra || ""); const el = document.getElementById("imgMsg"); if (el) el.innerHTML = IMG_MSG; };
+  for (let k = 0; k < lista.length; k++) {
+    const f = lista[k], nome = esc(f.name || "imagem");
+    mostrar(`<div class="ic">⏳ Lendo ${k + 1} de ${lista.length}… (boleto leva uns segundos)</div>`);
+    try {
+      const pdf = /pdf/i.test(f.type) || /\.pdf$/i.test(f.name || "");
+      if (pdf && f.size > 3.5 * 1048576) { linhas.push(`<div class="err">${nome}: o PDF passa de 3,5 MB. Tire foto do boleto.</div>`); continue; }
+      const dados = pdf ? await lerArq(f) : await reduzir(f);
+      const { ok, j } = await api(P + "/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: f.name || "imagem.jpg", dados, ler: true }) });
+      if (!ok) { linhas.push(`<div class="err">${nome}: ${esc(j.erro || "não consegui guardar")}</div>`); continue; }
+      N.anexos = j.anexos || N.anexos; N.boletos = j.boletos || N.boletos;
+      const l = j.leitura || {};
+      if (l.erro) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">⚠️ ${nome}: guardada, mas não consegui ler como boleto (${esc(l.erro)})</div>`);
+      else if (l.ehBoleto && l.duplicado) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">ℹ️ ${nome}: esse boleto já tinha sido lido${l.jaNaNota ? " nesta nota" : " em outra nota"}.</div>`);
+      else if (l.ehBoleto) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">✅ ${nome}: boleto lido${l.vencimento ? " (vence " + dmy(l.vencimento) + ")" : ""}${l.confira ? " · ⚠️ o financeiro vai conferir os números" : ""}</div>`);
+      else linhas.push(`<div class="ic" style="white-space:normal">🖼️ ${nome}: imagem guardada na nota.</div>`);
+    } catch (e) { linhas.push(`<div class="err">${nome}: ${esc(e.message || "erro")}</div>`); }
+  }
+  IMG_MSG = linhas.join(""); renderNota();
+}
 function frameDe(v) { try { const k = Math.min(1, 1600 / Math.max(v.videoWidth || 1, v.videoHeight || 1)), c = document.createElement("canvas"); c.width = Math.round((v.videoWidth || 640) * k); c.height = Math.round((v.videoHeight || 480) * k); c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); return { nome: "codigo-barras.jpg", dados: c.toDataURL("image/jpeg", 0.82) }; } catch (e) { return null; } }
 async function anexar(a) { if (!a || !N) return; const { ok, j } = await api(P + "/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: a.nome, dados: a.dados }) }); if (ok && j.anexos) { N.anexos = j.anexos; renderNota(); } }
 async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + P + "/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
