@@ -204,7 +204,7 @@ function renderNota() {
     ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, quantidades e valores. Não entra na parte fiscal.${n.observacaoLeitura ? "<br>Leitura: " + esc(n.observacaoLeitura) : ""}${n.totalLido && Math.abs(n.totalLido - T.vNF) > 0.05 ? `<br><b>⚠️ Total escrito na foto ${brl(n.totalLido)} é diferente da soma dos itens ${brl(T.vNF)}.</b> Confira os itens.` : ""}</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input id="snNome" value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input id="snDoc" value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
-    <h3>2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")} · ${brl(T.vNF)}</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")} · ${brl(T.vNF)}</h3><button class="btn btn-ghost" style="padding:6px 10px;white-space:nowrap" onclick="novaEntrada()">➕ Nova entrada</button></div>
     <div class="grid2"><div>${`<div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>`}<div class="lin"><span>CNPJ</span><b>${esc(n.emitente?.cnpj || "")}</b></div>
       <div class="lin"><span>No Bling</span><b>${n.fornecedorBling ? "✅ " + esc(n.fornecedorBling.nome) : "será cadastrado ao ligar o 1º item"}</b></div><div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR") : "—"}</b></div></div>
       <div><div class="lin"><span>Produtos</span><b>${brl(T.vProd)}</b></div><div class="lin"><span>Impostos, frete e outros</span><b>${brl(T.extras)}${T.rateioPct ? " (+" + String(T.rateioPct).replace(".", ",") + "% no custo)" : ""}</b></div>
@@ -223,7 +223,7 @@ function renderNota() {
       <label id="pgBancoBox"><div class="ic">Banco</div><select id="pgBanco" style="width:100%">${bancos || "<option>—</option>"}</select></label></div>` : ""}
     <table class="tb" style="margin-top:8px"><tr class="ic"><td>Parcela</td><td>Vencimento</td><td style="text-align:right">Valor</td></tr>${n.duplicatas.map((d, i) => `<tr><td>${i + 1}/${n.duplicatas.length}</td><td>${dmy(d.vencimento)}</td><td style="text-align:right">${brl(d.valor)}</td></tr>`).join("")}</table></div>
   ${blocoBoletos(n)}
-  <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
+  <div class="card"><div id="confMsg"></div><button class="btn btn-ghost" style="width:100%;margin-bottom:8px;padding:10px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada: o estoque de cada produto sobe no Bling com o custo real, a nota fica registrada na parte fiscal, as parcelas viram contas a pagar e o custo do fornecedor é atualizado no Bling.</div></div>`;
 }
 function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
@@ -327,6 +327,13 @@ async function adicionarImagens(files) {
       else linhas.push(`<div class="ic" style="white-space:normal">🖼️ ${nome}: imagem guardada na nota.</div>`);
     } catch (e) { linhas.push(`<div class="err">${nome}: ${esc(e.message || "erro")}</div>`); } }
   IMG_MSG = linhas.join(""); if ((N.boletosLidos || []).length !== antes) BOLNOTA = null; renderNota();
+}
+function novaEntrada() {
+  const ficou = N && !N.entrada && !N.financeiro;
+  if (ficou && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não foi lançada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
+  fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; IMG_MSG = ""; msgLer("");
+  document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 async function confirmar() {
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };

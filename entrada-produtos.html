@@ -186,7 +186,7 @@ function renderNota() {
     ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, produtos e quantidades.</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
-    <h3>2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3><button class="btn btn-ghost" style="padding:6px 10px" onclick="novaEntrada()">➕ Nova entrada</button></div>
     <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
     <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
     ${(n.vencimentos || []).length ? `<div style="margin-top:8px"><div class="ic" style="white-space:normal;margin-bottom:4px">📅 Dia de pagamento lido (confira e corrija se estiver errado; o financeiro usa estas datas)</div>${n.vencimentos.map((d, i) => `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span class="ic" style="width:58px">${d.parcela}/${d.de}</span><input type="date" value="${esc(d.vencimento)}" ${n.financeiroFeito ? "disabled" : ""} onchange="salvarVenc(${i}, this.value)" style="flex:1"></div>`).join("")}<div id="vencMsg" class="ic"></div></div>` : ""}
@@ -196,6 +196,7 @@ function renderNota() {
     ${n.itens.map(it).join("")}</div>
   <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()">📋 Não dar entrada no estoque (só registrar a nota)</button>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
 }
 let IMG_MSG = "";
@@ -248,6 +249,12 @@ async function registrarSemEstoque() {
   const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, semEstoque: true }) });
   if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui registrar.")}</div>`; return; }
   N.entrada = { em: Date.now(), por: "", semEstoque: true }; renderNota(); document.getElementById("confMsg").innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Nota registrada sem dar entrada no estoque.</div>`;
+}
+function novaEntrada() {
+  if (N && !N.entrada && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não deu entrada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
+  fecharCamera(); N = null; IGN = new Set(); IMG_MSG = ""; msgLer("");
+  document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
 function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
