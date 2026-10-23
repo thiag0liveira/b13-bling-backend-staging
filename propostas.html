@@ -30,6 +30,7 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/comprovante.js"></script>
 <script src="/nav.js"></script>
 <style>
   @media(min-width:900px){
@@ -280,189 +281,49 @@ function statusTag(p) {
   return `<span class="tag tag-prop">Proposta</span>`;
 }
 // ---- impressão no comprovante térmico (mesmo estilo do caixa atacado/totem) ----
-function quebrarTextoProp(ctx, texto, maxW, maxLinhas) {
-  // quebra em até maxLinhas sem cortar o nome; palavra maior que a linha é dividida; se ainda sobrar, termina com "…"
-  const cabe = t => ctx.measureText(t).width <= maxW, linhas = []; let atual = "";
-  const palavras = String(texto || "").trim().split(/\s+/);
-  for (let p of palavras) {
-    while (!cabe(p)) { let k = p.length - 1; while (k > 1 && !cabe((atual ? atual + " " : "") + p.slice(0, k))) k--; if (k <= 1 && atual) { linhas.push(atual); atual = ""; continue; } linhas.push((atual ? atual + " " : "") + p.slice(0, k)); atual = ""; p = p.slice(k); }
-    const teste = atual ? atual + " " + p : p; if (cabe(teste)) atual = teste; else { linhas.push(atual); atual = p; }
-  }
-  if (atual) linhas.push(atual);
-  if (linhas.length > maxLinhas) { linhas.length = maxLinhas; let u = linhas[maxLinhas - 1]; while (u.length > 1 && !cabe(u + "…")) u = u.slice(0, -1); linhas[maxLinhas - 1] = u + "…"; }
-  return linhas.length ? linhas : [""];
-}
-function imprimirPropostaOuPedido(id) {
+async function imprimirPropostaOuPedido(id) {
   const p = LISTA.find(x => x.id === id);
   if (!p) { alert("Não encontrei esse registro pra imprimir."); return; }
-  // abre a janela JÁ, ainda dentro do clique — se deixar pra abrir só depois de
-  // montar QR/código de barras, o Chrome entende que não é mais uma ação direta
-  // do clique e bloqueia o popup sem avisar nada na tela.
+  // abre a janela JÁ, ainda dentro do clique, senão o Chrome bloqueia o pop-up
   const w = window.open("", "_blank", "width=420,height=700");
   if (!w) { alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site e tente de novo."); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
-    <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head><body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>');
   const ehPedido = !!p.pedidoBlingId;
-  const tmpQr = document.createElement("div");
-  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
-  document.body.appendChild(tmpQr);
-  let barCanvas = null;
-  if (ehPedido) {
-    try {
-      new QRCode(tmpQr, { text: location.origin + "/pedido/" + p.pedidoBlingId + "/acompanhar", width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
-    } catch (e) {}
-    barCanvas = document.createElement("canvas");
-    try { JsBarcode(barCanvas, String(p.pedidoBlingId), { format: "CODE128", width: 2, height: 60, fontSize: 14, margin: 0 }); } catch (e) {}
-  }
-  setTimeout(async () => {
-    if (w.closed) { document.body.removeChild(tmpQr); return; }
-    const qrCanvas = tmpQr.querySelector("canvas");
-    const qrImg = tmpQr.querySelector("img");
-    // nome COMPLETO do cadastro (com LN, LT, volume) no lugar do nome curto; sem cadastro, fica o nome gravado
-    let nomes = {}; try { const ids = [...new Set((p.itens || []).map(i => i.produtoId).filter(Boolean))].join(","); if (ids) nomes = (await fetch(B + "/api/produtos-nomes?ids=" + ids).then(r => r.json())).porId || {}; } catch (e) {}
-    const pImp = { ...p, itens: (p.itens || []).map(i => ({ ...i, nome: nomes[String(i.produtoId)] || i.nome })) };
-    const cv = desenharComprovanteProp(pImp, ehPedido, qrCanvas || qrImg, barCanvas);
-    document.body.removeChild(tmpQr);
-    // divide em páginas A4 SEMPRE entre um item e outro (antes o navegador cortava um item ao meio na troca de página)
-    const paginas = [], dpr = cv._dpr || 3, pageH = Math.floor((cv._W || 580) * 1.414) - 14, H = cv.height / dpr, cortes = (cv._cortes || []).slice().sort((a, b) => a - b);
-    for (let ini = 0; ini < H - 1;) { let fim = ini + pageH; if (fim >= H) fim = H; else { const c = cortes.filter(x => x > ini + 120 && x <= fim).pop(); if (c) fim = c; }
-      const pc = document.createElement("canvas"); pc.width = cv.width; pc.height = Math.round((fim - ini) * dpr); pc.getContext("2d").drawImage(cv, 0, Math.round(ini * dpr), cv.width, pc.height, 0, 0, cv.width, pc.height);
-      paginas.push(pc.toDataURL("image/png")); ini = fim; }
-    const dataUrl = paginas[0];
-    w.document.open();
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ehPedido ? "Pedido #" + esc(p.pedidoBlingNumero) : "Proposta"}</title>
-      <style>
-        *{margin:0;padding:0}
-        body{text-align:center;background:#fff}
-        img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
-        @page{margin:0}
-        @media print{ body{margin:0} img{max-width:100%;width:100%} .pg{break-after:page;page-break-after:always} .pg:last-child{break-after:auto;page-break-after:auto} }
-      </style></head>
-      <body>${paginas.map(u => `<div class="pg"><img src="${u}"></div>`).join("")}<script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
-    w.document.close();
-  }, 220);
-}
-function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
-  var _pCliente;
-  const itensArr = p.itens || [];
-  const itemH = 50, headerH = 132, qrSize = 200, cortes = [];
-  const W = 580, padd = 24;
-  const _mc = document.createElement("canvas").getContext("2d");
-  _mc.font = "900 16px Arial";
-  const maxNomeW = (W - 300 - 46) - padd; // o nome termina antes da coluna QTD (alinhada em W-300)
-  itensArr.forEach(i => { i._linhas = quebrarTextoProp(_mc, i.nome || "produto", maxNomeW, 3); });
-  const extraLinhas = itensArr.reduce((s, i) => s + ((i._linhas.length || 1) - 1), 0);
-  // ENTREGA: endereço completo no papel quando o pedido é de entrega
-  const ehEnt = p.entrega && p.entrega.tipo === "entrega", endTxt = ehEnt ? (String(p.entrega.endereco || "").trim() || "endereço não informado") : "", freteEnt = ehEnt ? Number(p.entrega.taxa || 0) : 0;
-  _mc.font = "700 16px Arial"; const endLinhas = ehEnt ? quebrarTextoProp(_mc, endTxt, W - padd * 2, 4) : [], endH = ehEnt ? 34 + endLinhas.length * 21 + (freteEnt > 0 ? 22 : 0) + 6 : 0;
-  const H = endH + 560 + itensArr.length * itemH + extraLinhas * 22 + (ehPedido ? qrSize + 90 : 70) + (p.observacao ? 60 : 0);
-  const cv = document.createElement("canvas");
-  const dpr = 3;
-  cv.width = W * dpr; cv.height = H * dpr;
-  const ctx = cv.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
-  ctx.textBaseline = "alphabetic";
-  // cabeçalho
-  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, headerH - 14);
-  ctx.fillStyle = "#fff"; ctx.font = "900 32px Arial"; ctx.textAlign = "left";
-  ctx.fillText("B13 BEBIDAS", padd, 50);
-  ctx.font = "900 14px Arial";
-  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH", padd, headerH - 40);
-  ctx.fillText("(31) 99971-9888", padd, headerH - 22);
-  ctx.fillStyle = "#000"; ctx.fillRect(0, headerH - 10, W, 4);
-  let y = headerH + 30;
-  ctx.font = "900 15px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
-  if (ehPedido) {
-    ctx.fillText("PEDIDO", padd, y);
-    ctx.font = "900 44px Arial";
-    ctx.fillText("#" + (p.pedidoBlingNumero || p.pedidoBlingId), padd, y + 44);
-    y += 60;
-  } else {
-    // deixa BEM claro que ainda é só uma proposta, não um pedido fechado
-    ctx.fillStyle = "#b3341f"; ctx.font = "900 30px Arial";
-    ctx.fillText("PROPOSTA COMERCIAL", padd, y + 14);
-    ctx.font = "900 14px Arial"; ctx.fillStyle = "#b3341f";
-    ctx.fillText("(ainda não é um pedido fechado — sujeito a confirmação)", padd, y + 36);
-    y += 50;
-  }
-  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000";
-  ctx.fillText(new Date(p.criadoEm || Date.now()).toLocaleString("pt-BR"), padd, y);
-  y += 26;
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 30;
-  // cliente
-  ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
-  ctx.fillText("CLIENTE", padd, y);
-  ctx.font = "900 24px Arial";
-  ctx.fillText(((_pCliente = p.cliente) === null || _pCliente === void 0 ? void 0 : _pCliente.nome) || "Consumidor Final", padd, y + 28);
-  y += 48;
-  if (p.vendedorNome) {
-    ctx.font = "900 13px Arial"; ctx.fillText("VENDEDOR(A)", padd, y);
-    ctx.font = "900 18px Arial"; ctx.fillText(p.vendedorNome, padd + 150, y);
-    y += 28;
-  }
-  if (ehEnt) { ctx.textAlign = "left"; ctx.fillStyle = "#000"; ctx.font = "900 13px Arial"; ctx.fillText("ENTREGA", padd, y); y += 22;
-    ctx.font = "700 16px Arial"; endLinhas.forEach(l => { ctx.fillText(l, padd, y); y += 21; });
-    if (freteEnt > 0) { ctx.font = "900 14px Arial"; ctx.fillText("Frete: R$ " + freteEnt.toFixed(2).replace(".", ","), padd, y); y += 22; } y += 6; }
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 26;
-  // itens
-  ctx.font = "900 13px Arial"; ctx.fillStyle = "#666"; ctx.textAlign = "left";
-  ctx.fillText("PRODUTO", padd, y);
-  ctx.textAlign = "right";
-  ctx.fillText("QTD", W - 300, y); ctx.fillText("UNIT.", W - 170, y); ctx.fillText("TOTAL", W - padd, y);
-  y += 14;
-  itensArr.forEach(i => {
-    const qtd = Number(i.quantidade) || 1, un = Number(i.valor) || 0;
-    const linhas = i._linhas.length || 1;
-    ctx.textAlign = "left"; ctx.font = "900 16px Arial"; ctx.fillStyle = "#000";
-    (i._linhas || [i.nome]).forEach((ln, ix) => ctx.fillText(ln, padd, y + 20 + ix * 22));
-    ctx.textAlign = "right"; ctx.font = "700 17px Arial"; ctx.fillStyle = "#333";
-    ctx.fillText(String(qtd), W - 300, y + 20);
-    ctx.fillText(brl(un), W - 170, y + 20);
-    ctx.font = "900 17px Arial"; ctx.fillStyle = "#000";
-    ctx.fillText(brl(un * qtd), W - padd, y + 20);
-    y += itemH - 8 + (linhas - 1) * 22;
-    ctx.strokeStyle = "#ddd"; ctx.beginPath(); ctx.moveTo(padd, y); ctx.lineTo(W - padd, y); ctx.stroke();
-    y += 14; cortes.push(y - 7); // pode trocar de página aqui (entre um item e outro)
-  });
-  cortes.push(y);
-  y += 6;
-  ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 50);
-  ctx.fillStyle = "#fff"; ctx.font = "900 20px Arial"; ctx.textAlign = "left";
-  ctx.fillText("TOTAL", padd, y + 32);
-  ctx.textAlign = "right"; ctx.font = "900 26px Arial";
-  ctx.fillText(brl(p.total), W - padd, y + 33);
-  y += 66;
-  if (p.observacao) {
-    ctx.fillStyle = "#333"; ctx.font = "14px Arial"; ctx.textAlign = "left";
-    ctx.fillText("Obs: " + String(p.observacao).slice(0, 70), padd, y);
-    y += 30;
-  }
-  // QR + código de barras SÓ pra pedido de verdade — proposta não tem link de
-  // acompanhamento nenhum, porque ainda não virou pedido no Bling
-  if (ehPedido && qrEl) {
-    const qrX = (W - qrSize) / 2;
-    try { ctx.drawImage(qrEl, qrX, y, qrSize, qrSize); } catch (e) {}
-    y += qrSize + 20;
-    ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "center";
-    ctx.fillText("Leia o QR para acompanhar seu pedido", W / 2, y);
-    y += 24;
-    if (barCanvas) {
-      const bw = 220, bh = barCanvas.height * (bw / barCanvas.width);
-      try { ctx.drawImage(barCanvas, (W - bw) / 2, y, bw, bh); } catch (e) {}
-      y += bh + 20;
-    }
-  }
-  ctx.font = "13px Arial"; ctx.fillStyle = "#9a95c9"; ctx.textAlign = "center";
-  ctx.fillText("B13 Bebidas · Obrigado pela preferência! 🍻", W / 2, y + 16);
-  // apara pro tamanho real
-  const cvFinal = document.createElement("canvas");
-  cvFinal.width = W * dpr; cvFinal.height = Math.round((y + 36) * dpr);
-  cvFinal.getContext("2d").drawImage(cv, 0, 0);
-  cvFinal._cortes = cortes; cvFinal._dpr = dpr; cvFinal._W = W;
-  return cvFinal;
+  // nome COMPLETO do cadastro (com LN, LT, volume); sem cadastro, fica o nome gravado
+  let nomes = {};
+  try { const ids = [...new Set((p.itens || []).map(i => i.produtoId).filter(Boolean))].join(","); if (ids) nomes = (await fetch(B + "/api/produtos-nomes?ids=" + ids).then(r => r.json())).porId || {}; } catch (e) {}
+  // observação impressa: do pedido (sistema) ou, na proposta, do próprio registro
+  let obs = p.observacao || "";
+  if (ehPedido) { try { const j = await fetch(B + "/api/obs-impressa?ids=" + encodeURIComponent(p.pedidoBlingId)).then(r => r.json()); obs = (j.porId || {})[String(p.pedidoBlingId)] || ""; } catch (e) {} }
+  const ehEnt = p.entrega && p.entrega.tipo === "entrega";
+  B13Comprovante.imprimir({
+    numero: ehPedido ? (p.pedidoBlingNumero || p.pedidoBlingId) : "", pedidoId: ehPedido ? p.pedidoBlingId : "",
+    ehProposta: !ehPedido, dataHora: p.criadoEm || Date.now(),
+    cliente: { nome: (p.cliente && p.cliente.nome) || "Consumidor Final" },
+    vendedor: p.vendedorNome || "",
+    ehEntrega: !!ehEnt, endereco: ehEnt ? (String(p.entrega.endereco || "").trim() || "endereço não informado") : "",
+    itens: (p.itens || []).map(i => ({ nome: nomes[String(i.produtoId)] || i.nome, quantidade: i.quantidade, preco: i.valor })),
+    frete: ehEnt ? Number(p.entrega.taxa || 0) : 0, total: Number(p.total || 0),
+    pago: false, obsImpressa: obs
+  }, { janela: w, paginar: true });
 }
 
+// edita a observação impressa na nota (proposta ou pedido gerado por ela)
+async function editarObsImpressa(id) {
+  const p = LISTA.find(x => x.id === id);
+  if (!p) return;
+  const novo = prompt("Observação impressa na nota (deixe vazio para tirar):", p.observacao || "");
+  if (novo === null) return;
+  try {
+    const j = await fetch(B + "/api/atacado/propostas/" + encodeURIComponent(id) + "/observacao", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto: novo, funcionarioNome: (typeof FUNC !== "undefined" && FUNC && FUNC.nome) || "" })
+    }).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    p.observacao = j.texto;
+    if (typeof render === "function") render();
+  } catch (e) { alert("Não consegui salvar a observação: " + e.message); }
+}
 function cardProposta(p) {
   var _p$cliente, _p$cliente2, _p$cliente3;
   const data = p.criadoEm ? new Date(p.criadoEm).toLocaleString("pt-BR", {
@@ -494,6 +355,7 @@ function cardProposta(p) {
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 WhatsApp (imagem)</button>
       <button class="btn btn-wa" onclick='enviarWhatsTexto(${JSON.stringify(p.id)})' title="Abre a conversa com o texto pronto (WhatsApp Web no computador)">💬 WhatsApp (texto)</button>
       <button class="btn btn-ghost" onclick='imprimirPropostaOuPedido(${JSON.stringify(p.id)})'>🖨️ Imprimir</button>
+      <button class="btn btn-ghost" onclick='editarObsImpressa(${JSON.stringify(p.id)})'>📝 Obs. da nota</button>
       ${(_p$cliente3 = p.cliente) !== null && _p$cliente3 !== void 0 && _p$cliente3.telefone ? `<button class="btn btn-ghost" onclick='enviarSMS(${JSON.stringify(p.id)})'>💬 SMS</button>` : ''}
       <button class="btn btn-ghost" onclick='verImagem(${JSON.stringify(p.id)})'>🖼️ Imagem</button>
       ${!p.pedidoBlingId && p.status !== 'cancelada' ? `<button class="btn btn-mag" onclick='editarProposta(${JSON.stringify(p.id)})'>✏️ Editar</button>` : ''}

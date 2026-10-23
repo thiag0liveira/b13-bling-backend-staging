@@ -73,6 +73,7 @@
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/comprovante.js"></script>
 </head>
 <body>
 <script src="/nav.js"></script>
@@ -904,7 +905,7 @@ async function abrirPedido(id) {
       if (linhas.every(Boolean)) PAGAMENTOS = linhas;
     }
     ULTIMO_ITEM_PAINEL = null; // volta a logo até bipar um produto
-    window._obsVenda = limparObs(j.observacao || ""); // carrega a observação existente do pedido (sem as notas automáticas)
+    window._obsVenda = j.obsImpressa || ""; // observação impressa na nota (guardada no sistema, não no Bling)
     render();
   } catch (e) {
     alert("Não foi possível abrir o pedido: " + e.message);
@@ -1064,7 +1065,7 @@ async function abrirPedidoParaEdicao(id) {
     PAGAMENTOS = [];
     ULTIMO_ITEM_PAINEL = null;
     MODO_EDICAO_PAGAMENTO = true;
-    window._obsVenda = limparObs(j.observacao || ""); // carrega a observação existente do pedido (sem as notas automáticas)
+    window._obsVenda = j.obsImpressa || ""; // observação impressa na nota (guardada no sistema, não no Bling)
     window._filtroPed = "";
     render();
     conferirPedidoContraBling(id); // destaca se o registro do caixa não bate com o Bling
@@ -1651,7 +1652,6 @@ function movimentoParaComprovante(m) {
     },
     dataHora: m.em,
     nfce: null,
-    observacao: m.observacao || "",
     operador: m.operador || ""
   };
 }
@@ -1682,7 +1682,7 @@ function imprimirPedidoAtual() {
     },
     dataHora: Date.now(),
     nfce: null,
-    observacao: window._obsVenda || "",
+    obsImpressa: window._obsVenda || "",
     operador: typeof S !== "undefined" && S && S.nome || "",
     montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : "",
     ehEntrega: !!(PEDIDO_ATUAL && PEDIDO_ATUAL.ehEntrega),
@@ -1690,18 +1690,13 @@ function imprimirPedidoAtual() {
   };
   imprimirComprovante(v);
 }
-function imprimirComprovante(v, wPreAberta) {
+async function imprimirComprovante(v, wPreAberta) {
   if (!v) {
     alert("Nenhuma venda pra reimprimir ainda.");
     if (wPreAberta && !wPreAberta.closed) wPreAberta.close();
     return;
   }
-  // abre a janela JÁ, ainda dentro do clique do usuário — se deixar pra abrir só
-  // depois de montar QR/código de barras/logo (dentro de um setTimeout), o Chrome
-  // entende que não é mais uma ação direta do clique e BLOQUEIA o popup sem avisar
-  // nada na tela. Por isso abre logo com um aviso de "gerando…" e preenche depois.
-  // Quando quem chamou já abriu a janela antes (ex.: antes de buscar o pedido por
-  // número, que leva um tempo com fetch), usa essa em vez de abrir outra.
+  // abre a janela JÁ, ainda dentro do clique, senão o Chrome bloqueia o pop-up
   const w = wPreAberta || window.open("", "_blank", "width=420,height=700");
   if (!w) {
     alert("O navegador bloqueou a janela de impressão. Permita pop-ups pra este site (ícone na barra de endereço) e tente de novo.");
@@ -1709,68 +1704,21 @@ function imprimirComprovante(v, wPreAberta) {
   }
   if (!wPreAberta) w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprovante</title></head>
     <body style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#888">Gerando comprovante…</body></html>`);
-  const pedidoId = String(v.pedidoId || v.numero || "");
-  // QR e código de barras em containers SEPARADOS: antes os dois ficavam no mesmo
-  // <div>, e a busca do QR (tmp.querySelector("canvas")) pegava o primeiro canvas
-  // que aparecesse — se o QR não saísse como canvas por algum motivo, a busca podia
-  // pegar o canvas do código de barras por engano, e o QR sumia da nota.
-  const tmpQr = document.createElement("div");
-  tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
-  document.body.appendChild(tmpQr);
-  // QR de acompanhamento do pedido
-  try {
-    new QRCode(tmpQr, {
-      text: location.origin + "/pedido/" + pedidoId + "/acompanhar",
-      width: 340,
-      height: 340,
-      correctLevel: QRCode.CorrectLevel.M
-    });
-  } catch (e) {}
-  // código de barras (id do pedido — mesmo que aparece pra bipar no caixa) — canvas
-  // isolado, não precisa estar no documento pra ser lido com drawImage
-  const barCanvas = document.createElement("canvas");
-  try {
-    JsBarcode(barCanvas, pedidoId, {
-      format: "CODE128",
-      width: 2,
-      height: 70,
-      fontSize: 16,
-      margin: 0
-    });
-  } catch (e) {}
-  // logo
-  const logoImg = new Image();
-  let logoPronta = false;
-  logoImg.onload = () => {
-    logoPronta = true;
-  };
-  logoImg.onerror = () => {
-    logoPronta = false;
-  };
-  logoImg.src = "/logo.png";
-  setTimeout(() => {
-    if (w.closed) { document.body.removeChild(tmpQr); return; } // usuário fechou a aba enquanto gerava
-    const qrCanvas = tmpQr.querySelector("canvas");
-    const qrImg = tmpQr.querySelector("img");
-    const cv = desenharComprovante(v, qrCanvas || qrImg, barCanvas, logoPronta ? logoImg : null);
-    document.body.removeChild(tmpQr);
-    // preenche a janela que já estava aberta com a imagem final e imprime
-    const dataUrl = cv.toDataURL("image/png");
-    w.document.open();
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Pedido #${esc(v.numero || "")}</title>
-      <style>
-        *{margin:0;padding:0}
-        body{text-align:center;background:#fff}
-        img{width:100%;max-width:400px;display:block;margin:0 auto;image-rendering:crisp-edges}
-        @page{margin:0}
-        @media print{
-          body{margin:0}
-          img{max-width:100%;width:100%}
-        }
-      </style></head>
-      <body><img src="${dataUrl}"><script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script></body></html>`);
-    w.document.close();
-  }, 220);
+  // observação impressa na nota: vem do sistema (nunca da observação do Bling)
+  let obs = v.obsImpressa;
+  if (obs === undefined && v.pedidoId) {
+    try {
+      const j = await fetch(BACKEND + "/api/obs-impressa?ids=" + encodeURIComponent(v.pedidoId)).then(r => r.json());
+      obs = (j.porId || {})[String(v.pedidoId)] || "";
+    } catch (e) { obs = ""; }
+  }
+  B13Comprovante.imprimir({
+    numero: v.numero, pedidoId: v.pedidoId, numeroConfirmado: v.numeroConfirmado, dataHora: v.dataHora,
+    cliente: v.cliente, vendedor: v.montadoPor || "", operador: v.operador || "",
+    ehEntrega: v.ehEntrega, endereco: v.endereco,
+    itens: v.itens, frete: v.frete, outrasDespesas: v.outrasDespesas, desconto: v.desconto, total: v.total,
+    pagamentos: v.pagamentos, troco: v.troco, obsImpressa: obs || ""
+  }, { janela: w });
 }
 
 // desenha o comprovante no canvas (mesmo layout do totem, adaptado pra venda paga)
@@ -1845,7 +1793,10 @@ async function confirmarImprimirNumero() {
       },
       dataHora: Date.now(),
       nfce: null,
-      observacao: j.observacao || "",
+      obsImpressa: j.obsImpressa || "",
+      frete: Number(j.frete || 0),
+      ehEntrega: !!j.ehEntrega,
+      endereco: j.endereco || "",
       operador: j.recebidoPor || "",
       montadoPor: j.vendedorNome && j.vendedorNome !== "Sem vendedor" ? j.vendedorNome : ""
     };
@@ -1860,349 +1811,6 @@ async function confirmarImprimirNumero() {
     if (erroEl) erroEl.innerHTML = `<div class="err">${esc(e.message)}</div>`;
   }
 }
-function quebrarTexto(ctx, texto, maxW, maxLinhas) {
-  texto = String(texto || "").trim();
-  if (!texto) return [""];
-  const cabe = s => ctx.measureText(s).width <= maxW;
-  const palavras = texto.split(/\s+/);
-  const linhas = [];
-  let atual = "";
-  for (const p of palavras) {
-    const teste = atual ? atual + " " + p : p;
-    if (cabe(teste)) {
-      atual = teste;
-    } else {
-      if (atual) linhas.push(atual);
-      if (!cabe(p)) {
-        // palavra maior que a linha: corta em pedaços
-        let resto = p;
-        while (resto.length && !cabe(resto)) {
-          let corte = resto;
-          while (corte.length > 1 && !cabe(corte)) corte = corte.slice(0, -1);
-          linhas.push(corte);
-          resto = resto.slice(corte.length);
-        }
-        atual = resto;
-      } else {
-        atual = p;
-      }
-    }
-  }
-  if (atual) linhas.push(atual);
-  if (linhas.length <= maxLinhas) return linhas;
-  const cortadas = linhas.slice(0, maxLinhas);
-  let ult = cortadas[maxLinhas - 1];
-  while (ult.length > 1 && !cabe(ult + "…")) ult = ult.slice(0, -1);
-  cortadas[maxLinhas - 1] = ult + "…";
-  return cortadas;
-}
-function desenharComprovante(v, qrEl, barCanvas, logoImg) {
-  var _v$cliente;
-  const itensArr = v.itens || [];
-  const itemH = 54,
-    headerH = 136,
-    qrSize = 210;
-  const W = 580,
-    padd = 24;
-  // quebra os nomes de produto em até 2 linhas (mede com um contexto temporário)
-  const _mc = document.createElement("canvas").getContext("2d");
-  _mc.font = "900 19px Arial";
-  const maxNomeW = W - 200 - padd - 16;
-  itensArr.forEach(i => {
-    i._nomeLinhas = quebrarTexto(_mc, i.nome || "Produto " + i.produtoId, maxNomeW, 2);
-  });
-  const extraLinhasItens = itensArr.reduce((s, i) => s + ((i._nomeLinhas.length || 1) - 1), 0);
-  const linhasEnderecoQtd = (v.ehEntrega && v.endereco) ? quebrarTexto(_mc, v.endereco, W - padd * 2, 3).length : 0;
-  // observação INTEIRA: quebra em quantas linhas precisar (respeita as quebras de linha digitadas)
-  _mc.font = "900 18px Arial";
-  const linhasObs = v.observacao && String(v.observacao).trim() ? String(v.observacao).trim().split(/\n+/).flatMap(par => quebrarTexto(_mc, par.trim() || " ", W - padd * 2, 60)) : [];
-  const H = 1080 + itensArr.length * itemH + extraLinhasItens * 24 + (v.pagamentos || []).length * 32 + ((v.pagamentos || []).length ? 28 : 0) + (Number(v.troco) > 0.009 ? 42 : 0) + (linhasObs.length ? 40 + linhasObs.length * 24 : 0) + (Number(v.outrasDespesas || 0) > 0 || Number(v.frete || 0) > 0 ? 64 : 0) + (Number(v.outrasDespesas || 0) > 0 && Number(v.frete || 0) > 0 ? 30 : 0) + (v.operador ? 40 : 0) + (v.montadoPor ? 34 : 0) + (linhasEnderecoQtd ? 36 + linhasEnderecoQtd * 25 : 0);
-  const cv = document.createElement("canvas");
-  const dpr = 3;
-  cv.width = W * dpr;
-  cv.height = H * dpr; // resolução alta = impressão nítida
-  const ctx = cv.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, W, H);
-  ctx.textBaseline = "alphabetic";
-
-  // cabeçalho (fundo preto pra sair sólido na térmica)
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, W, headerH - 14);
-  ctx.fillStyle = "#fff";
-  ctx.font = "900 34px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText("B13 BEBIDAS", padd, 52);
-  ctx.font = "900 15px Arial";
-  ctx.fillStyle = "#fff";
-  ctx.textAlign = "left";
-  ctx.fillText("Av. Brigadeiro Eduardo Gomes, 1668 — Glória, BH", padd, headerH - 40);
-  ctx.fillText("(31) 99971-9888", padd, headerH - 22);
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, headerH - 10, W, 4);
-  let y = headerH + 30;
-  // pedido + código de barras
-  ctx.font = "900 15px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText("PEDIDO", padd, y);
-  // se o Bling não confirmou o número, o que temos é o código interno — deixa claro
-  // na nota, em vez de parecer um número de pedido esquisito
-  const ehId = v.numeroConfirmado === false || String(v.numero || "").length >= 10;
-  ctx.font = "900 46px Arial";
-  ctx.fillStyle = "#000";
-  ctx.fillText("#" + (v.numero || "—"), padd, y + 46);
-  if (ehId) {
-    ctx.font = "700 15px Arial";
-    ctx.fillText("(código interno — nº do pedido em confirmação)", padd, y + 68);
-  }
-  ctx.font = "900 15px Arial";
-  ctx.fillStyle = "#000";
-  ctx.fillText(new Date(v.dataHora || Date.now()).toLocaleString("pt-BR"), padd, y + 72);
-  if (barCanvas) {
-    const bw = 250,
-      bh = barCanvas.height * (bw / barCanvas.width);
-    try {
-      ctx.drawImage(barCanvas, W - padd - bw, y - 4, bw, bh);
-      ctx.font = "900 13px Arial";
-      ctx.fillStyle = "#000";
-      ctx.textAlign = "center";
-      ctx.fillText("Apresente no caixa", W - padd - bw / 2, y - 4 + bh + 16);
-    } catch (e) {}
-  }
-  y += 112;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, y, W, 2);
-  y += 32;
-
-  // cliente
-  ctx.font = "900 15px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText("CLIENTE", padd, y);
-  ctx.font = "900 26px Arial";
-  ctx.fillStyle = "#000";
-  ctx.fillText(((_v$cliente = v.cliente) === null || _v$cliente === void 0 ? void 0 : _v$cliente.nome) || "Consumidor Final", padd, y + 30);
-  y += 52;
-  if (v.ehEntrega && v.endereco) {
-    ctx.font = "900 15px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("🛵 ENTREGAR EM", padd, y);
-    ctx.font = "700 20px Arial";
-    ctx.fillStyle = "#000";
-    const linhasEnd = quebrarTexto(ctx, v.endereco, W - padd * 2, 3);
-    linhasEnd.forEach((ln, ix) => ctx.fillText(ln, padd, y + 26 + ix * 25));
-    y += 26 + linhasEnd.length * 25 + 10;
-  }
-  if (v.montadoPor) {
-    ctx.font = "900 15px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("MONTADO POR", padd, y);
-    ctx.font = "900 22px Arial";
-    ctx.fillStyle = "#000";
-    ctx.fillText(v.montadoPor, padd + 180, y);
-    y += 34;
-  }
-  if (v.operador) {
-    ctx.font = "900 15px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("RECEBIDO POR", padd, y);
-    ctx.font = "900 22px Arial";
-    ctx.fillStyle = "#000";
-    ctx.fillText(v.operador, padd + 180, y);
-    y += 34;
-  }
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, y, W, 2);
-  y += 32;
-
-  // itens
-  ctx.font = "900 15px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText(`ITENS (${itensArr.length})`, padd, y);
-  y += 26;
-  ctx.font = "900 14px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText("PRODUTO", padd, y);
-  ctx.textAlign = "center";
-  ctx.fillText("QTD", W - 200, y);
-  ctx.textAlign = "right";
-  ctx.fillText("UNIT.", W - padd, y);
-  y += 10;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(padd, y, W - padd * 2, 2);
-  y += itemH - 14;
-  itensArr.forEach((i, ix) => {
-    const linhas = i._nomeLinhas || [String(i.nome || "Produto " + i.produtoId)];
-    ctx.fillStyle = "#000";
-    ctx.font = "900 19px Arial";
-    ctx.textAlign = "left";
-    linhas.forEach((ln, li) => ctx.fillText(ln, padd, y + li * 24));
-    ctx.font = "900 22px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "center";
-    ctx.fillText(String(i.quantidade), W - 200, y);
-    ctx.font = "900 17px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "right";
-    ctx.fillText(brl(i.preco), W - padd, y);
-    const extra = (linhas.length - 1) * 24;
-    if (ix < itensArr.length - 1) {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(padd, y + extra + 18, W - padd * 2, 1);
-    }
-    y += itemH + extra;
-  });
-  y += 8;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, y, W, 2);
-  y += 36;
-
-  // subtotal + outras despesas + frete, quando houver
-  const _outras = Number(v.outrasDespesas || 0);
-  const _frete = Number(v.frete || 0);
-  if (_outras > 0.009 || _frete > 0.009) {
-    const _sub = +(Number(v.total || 0) - _outras - _frete).toFixed(2);
-    ctx.font = "900 20px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("Subtotal", padd, y);
-    ctx.textAlign = "right";
-    ctx.fillText(brl(_sub), W - padd, y);
-    y += 30;
-    if (_outras > 0.009) {
-      ctx.textAlign = "left";
-      ctx.fillText("Outras despesas", padd, y);
-      ctx.textAlign = "right";
-      ctx.fillText(brl(_outras), W - padd, y);
-      y += 30;
-    }
-    if (_frete > 0.009) {
-      ctx.textAlign = "left";
-      ctx.fillText("Frete", padd, y);
-      ctx.textAlign = "right";
-      ctx.fillText(brl(_frete), W - padd, y);
-      y += 30;
-    }
-    y += 4;
-  } else {
-    y += 12;
-  }
-
-  // total + PAGO
-  ctx.font = "900 32px Arial";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "left";
-  ctx.fillText("TOTAL", padd, y);
-  ctx.textAlign = "right";
-  ctx.font = "900 38px Arial";
-  ctx.fillText(brl(v.total), W - padd, y);
-  y += 40;
-  ctx.textAlign = "left";
-  ctx.font = "900 22px Arial";
-  ctx.fillStyle = "#000";
-  ctx.fillText("✓ PAGO", padd, y);
-  y += 34;
-  // formas de pagamento (nome exato de cada uma + valor)
-  if ((v.pagamentos || []).length) {
-    ctx.font = "700 15px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("Forma de pagamento", padd, y);
-    y += 28;
-  }
-  (v.pagamentos || []).forEach(p => {
-    const valorTxt = brl(p.valor);
-    const nomeForma = String(p.formaNome || "").trim() || "Forma não informada";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    // nome longo (ex.: "Cartão de Débito - Master e Visa") encolhe a fonte pra não
-    // sobrepor o valor, em vez de cortar o que identifica a forma
-    ctx.font = "900 18px Arial";
-    const maxNomeW = W - 2 * padd - ctx.measureText(valorTxt).width - 14;
-    let tamNome = 18;
-    while (tamNome > 12) {
-      ctx.font = `900 ${tamNome}px Arial`;
-      if (ctx.measureText(nomeForma).width <= maxNomeW) break;
-      tamNome--;
-    }
-    ctx.fillText(nomeForma, padd, y);
-    ctx.font = "900 18px Arial";
-    ctx.textAlign = "right";
-    ctx.fillText(valorTxt, W - padd, y);
-    y += 30;
-  });
-  // TROCO — quanto voltou pro cliente (saída de dinheiro da gaveta)
-  if (Number(v.troco) > 0.009) {
-    y += 4;
-    ctx.font = "900 24px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("TROCO", padd, y);
-    ctx.textAlign = "right";
-    ctx.font = "900 26px Arial";
-    ctx.fillText(brl(v.troco), W - padd, y);
-    y += 34;
-  }
-  // observação
-  if (v.observacao && String(v.observacao).trim()) {
-    y += 8;
-    ctx.font = "900 15px Arial";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "left";
-    ctx.fillText("OBSERVAÇÃO", padd, y);
-    y += 24;
-    ctx.font = "900 18px Arial";
-    ctx.fillStyle = "#000";
-    linhasObs.forEach(l => { ctx.fillText(l, padd, y); y += 24; }); // inteira, em várias linhas
-    y += 2;
-  }
-  y += 12;
-
-  // divisor tracejado grosso
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 5]);
-  ctx.beginPath();
-  ctx.moveTo(0, y);
-  ctx.lineTo(W, y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.lineWidth = 1;
-  y += 36;
-
-  // QR
-  if (qrEl) {
-    const qrX = (W - qrSize) / 2;
-    try {
-      ctx.drawImage(qrEl, qrX, y, qrSize, qrSize);
-    } catch (e) {}
-    y += qrSize + 26;
-  }
-  ctx.fillStyle = "#000";
-  ctx.font = "900 15px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("Leia o QR para ver o status do pedido", W / 2, y);
-  y += 26;
-  ctx.font = "900 17px Arial";
-  ctx.fillStyle = "#000";
-  ctx.fillText("Obrigado pela preferência!", W / 2, y);
-  y += 28;
-
-  // apara pro tamanho real
-  const cvFinal = document.createElement("canvas");
-  cvFinal.width = W * dpr;
-  cvFinal.height = Math.round(y * dpr);
-  cvFinal.getContext("2d").drawImage(cv, 0, 0);
-  return cvFinal;
-}
-
 // comprovante de sangria/suprimento (letras robustas, igual ao de venda)
 function imprimirMovimento(m) {
   if (!m) {
@@ -2603,6 +2211,7 @@ function mostrarSucessoFinalizacao(resp, ctx) {
     itens,
     pagamentos,
     observacao,
+    obsImpressa,
     taxaCredito,
     emitirNfce
   } = ctx;
@@ -2626,7 +2235,7 @@ function mostrarSucessoFinalizacao(resp, ctx) {
     },
     dataHora: Date.now(),
     nfce: resp.nfce || null,
-    observacao,
+    obsImpressa: obsImpressa || "",
     operador: S.nome || "",
     montadoPor: PEDIDO_ATUAL && PEDIDO_ATUAL.vendedorNome && PEDIDO_ATUAL.vendedorNome !== "Sem vendedor" ? PEDIDO_ATUAL.vendedorNome : ""
   };
@@ -2890,7 +2499,8 @@ async function finalizar() {
   const notaMenor = AUTORIZOU_MENOR ? `[Valor menor: faltou ${brl(AUTORIZOU_MENOR.falta)}, autoriz. ${AUTORIZOU_MENOR.autorizadoPor}]` : "";
   const valorCredito = +PAGAMENTOS.filter(ehLinhaCredito).reduce((s, p) => s + Number(p.valor || 0), 0).toFixed(2);
   const notaCredito = valorCredito > 0 ? `Crédito do cliente: ${brl(valorCredito)}` : "";
-  const observacao = [observacaoUsuario, notaPix(pagamentos), notaMenor, notaCredito].filter(Boolean).join(" · ");
+  const observacao = [notaPix(pagamentos), notaMenor, notaCredito].filter(Boolean).join(" · ");
+  const obsImpressa = observacaoUsuario;
   const itens = CARRINHO.map(i => ({
     produtoId: i.produtoId,
     nome: i.nome,
@@ -2922,6 +2532,7 @@ async function finalizar() {
       itens,
       pagamentos,
       observacao,
+      obsImpressa,
       taxaCredito,
       emitirNfce,
       troco: trocoAtual()
@@ -2943,6 +2554,8 @@ async function finalizar() {
           funcionarioId: S.id,
           clienteNome: CLIENTE_NOME,
           observacao,
+          obsImpressa,
+          funcionarioNome: S.nome || "",
           statusFinal,
           taxaCredito,
           outrasDespesasBase: OUTRAS_DESPESAS,
@@ -2968,6 +2581,8 @@ async function finalizar() {
           clienteNome: CLIENTE_NOME,
           tipoCaixa: TIPO_CAIXA,
           observacao,
+          obsImpressa,
+          funcionarioNome: S.nome || "",
           statusFinal,
           taxaCredito,
           freteBase: FRETE,
@@ -2996,6 +2611,7 @@ async function finalizar() {
         itens,
         pagamentos,
         observacao,
+        obsImpressa,
         taxaCredito,
         emitirNfce
       }, msg);

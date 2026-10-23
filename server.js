@@ -396,7 +396,7 @@ app.get("/api/diag/saude",(req,res)=>{
   try{
     const mem=process.memoryUsage();
     const arquivos=["log_pedidos.json","log_pedidos.jsonl","caixa_sessoes.json","caixa_sessoes_arquivo.json",
-      "propostas_atacado.json","pagamentos.json","avisos.json","gtin_index.json","pedidos_bling_finalizados.json",
+      "propostas_atacado.json","obs_impressa_pedidos.json","pagamentos.json","avisos.json","gtin_index.json","pedidos_bling_finalizados.json",
       "viagens_ativas.json","sessoes.json","geo_clientes.json"].map(nome=>{
       try{ const st=fs.statSync(`${DATA_DIR}/${nome}`); return {nome, kb:Math.round(st.size/1024), modificadoEm:st.mtime.toISOString()}; }
       catch(e){ return {nome, kb:0, modificadoEm:null}; }
@@ -644,6 +644,19 @@ function _limparCacheProduto(){ try{
 setInterval(_limparCacheProduto, 10*60*1000);
 
 const OBSERVACOES_PEDIDO_FILE=`${DATA_DIR}/observacoes_pedidos.json`;
+// OBSERVAÇÃO IMPRESSA NA NOTA: texto livre por pedido, guardado só no sistema (nunca no Bling).
+// O campo "observações" do Bling guarda o histórico do sistema e não sai mais no papel.
+const OBS_IMPRESSA_FILE=`${DATA_DIR}/obs_impressa_pedidos.json`;
+function lerObsImpressa(){ return lerJSON(OBS_IMPRESSA_FILE,{}); }
+function obsImpressaDoPedido(id){ return String(lerObsImpressa()[String(id)]?.texto||""); }
+function gravarObsImpressa(id,texto,por){
+  const d=lerObsImpressa(), k=String(id), t=String(texto||"").replace(/\r/g,"").trim().slice(0,600);
+  if(!t){ if(d[k]){ delete d[k]; salvarJSON(OBS_IMPRESSA_FILE,d); } return ""; }
+  if(d[k]?.texto===t) return t;
+  d[k]={texto:t,por:por||d[k]?.por||"",em:Date.now()};
+  salvarJSON(OBS_IMPRESSA_FILE,d);
+  return t;
+}
 // cache local, só de LEITURA (nunca gera chamada nova sozinho) das observações
 // dos pedidos -- muitas informações de pagamento (principalmente estorno) só
 // existem escritas na observação do pedido, não em campo estruturado nenhum.
@@ -6953,7 +6966,7 @@ app.post("/api/caixa/pedido/:id/editar-itens",async(req,res)=>{
       .map(i=>({...i, saldo: saldos[Number(i.produtoId)] ?? null}))
       .filter(i=>i.saldo!=null && i.saldo < Number(i.quantidade))
       .map(i=>({nome:i.nome||("produto "+i.produtoId), pedido:Number(i.quantidade), emEstoque:i.saldo}));
-    res.json({ok:true, semEstoque});
+    res.json({ok:true, semEstoque, frete:r.frete, freteRecalculado:!!r.freteInfo?.recalculado, abaixoMinimoEntrega:!!r.freteInfo?.abaixoMinimoEntrega, minimoEntrega:r.freteInfo?.minimoEntrega||0});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
 
@@ -7745,7 +7758,7 @@ app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
     const sitOrig=ped.situacao?.id;
     const obsExtra=`[Itens alterados ${new Date().toISOString().slice(0,16).replace('T',' ')} — ${operador||"Gestão"} (Gestão de Caixas)]`;
 
-    let blingOk=true, blingErro=null, destravou=false;
+    let blingOk=true, blingErro=null, destravou=false, freteFinal=null;
     try{
       if(sitOrig===SIT.ATENDIDO){
         const d=await _destravarSituacao(pedidoId);
@@ -7754,14 +7767,14 @@ app.post("/api/gestao/editar-itens-venda",async(req,res)=>{
       }
       if(blingOk){
         const r=await atualizarItensBling(pedidoId, itensLimpos, obsExtra);
-        if(!r||r.ok===false){ blingOk=false; blingErro=(r&&r.erro)||"falha ao atualizar itens no Bling"; }
+        if(!r||r.ok===false){ blingOk=false; blingErro=(r&&r.erro)||"falha ao atualizar itens no Bling"; } else if(r.frete!=null) freteFinal=r.frete;
       }
     }catch(e){ blingOk=false; blingErro=e.message||String(e); }
     finally{
       if(destravou){ try{ await _restaurarSituacao(pedidoId, sitOrig); }catch(e){} }
     }
 
-    const freteAtual=+(ped.transporte?.frete||0);
+    const freteAtual=freteFinal!=null?freteFinal:+(ped.transporte?.frete||0);
     const novoTotal=+((itensLimpos.reduce((s,i)=>s+i.quantidade*i.valor,0))+freteAtual).toFixed(2);
     // o Bling NÃO aceitou: não altera nada no caixa (antes gravava só no caixa e o pedido ficava diferente nos dois).
     // Só grava só no caixa se a pessoa escolher isso explicitamente (forcar).
@@ -8115,7 +8128,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
         itens, contatoId:contatoId?Number(contatoId):null, clienteNome:clienteNome||"",
         desconto:totalDescontoRapido, pagamentos, emitirNfce:!!emitirNfce, funcionarioId,
         tipoCaixa:req.body.tipoCaixa||"frente", statusFinal:req.body.statusFinal||null,
-        observacao:req.body.observacao||"", taxaCredito:Number(req.body.taxaCredito||0),
+        observacao:req.body.observacao||"", obsImpressa:typeof req.body.obsImpressa==="string"?req.body.obsImpressa:undefined, taxaCredito:Number(req.body.taxaCredito||0),
         freteBase:Number(req.body.freteBase||0), troco:Number(req.body.troco||0),
         autorizouMenor:req.body.autorizouMenor||null,
         conflitosEstoque,
@@ -8230,6 +8243,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       else { throw e; }
     }
     const pedidoId=criado?.data?.id;
+    if(pedidoId && typeof req.body?.obsImpressa==="string"){ try{ gravarObsImpressa(pedidoId,req.body.obsImpressa,req.body?.funcionarioNome||""); }catch(e){} }
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
     // grava a(s) parcela(s) de verdade AGORA, com o total que o Bling realmente
     // calculou pro pedido recém-criado (não um cálculo nosso) -- pula esse passo se
@@ -8413,6 +8427,7 @@ app.post("/api/pdv/pendentes/:localId/sincronizar",async(req,res)=>{
     }
     const pedidoId=criado?.data?.id;
     if(!pedidoId) return res.status(500).json({erro:"Bling não retornou o ID do pedido criado",detalhe:criado});
+    if(typeof p.obsImpressa==="string"){ try{ gravarObsImpressa(pedidoId,p.obsImpressa,""); }catch(e){} }
     const statusFinalVenda=p.statusFinal==="separacao"?"separacao":(p.statusFinal==="separado"?"separado":"atendido");
     try{
       if(statusFinalVenda==="separacao"){
@@ -8536,7 +8551,7 @@ app.get("/api/caixa-atacado/buscar-pedido/:numero",async(req,res)=>{
         itens:(d.itens||[]).map(it=>({produtoId:it.produto?.id, nome:it.descricao||it.produto?.nome||"", quantidade:Number(it.quantidade||0), valor:Number(it.valor||0), codigo:it.codigo||""})),
         total:Number(d.total||0), desconto:Number(d.desconto?.valor||0), outrasDespesas:Number(d.outrasDespesas||0),
         frete:Number(d.transporte?.frete||0), clienteNome:d.contato?.nome||"", contatoId:d.contato?.id||null,
-        observacao:d.observacoes||"", vendedorNome,
+        observacao:d.observacoes||"", obsImpressa:obsImpressaDoPedido(d.id), vendedorNome,
         recebidoPor:recebidoPorDoPedido(d.id).operador,
         pagamentos:await Promise.all((d.parcelas||[]).map(async p=>({
           formaNome:p.formaPagamento?.nome||await nomeFormaPagamentoPorId(p.formaPagamento?.id)||"",
@@ -8745,7 +8760,7 @@ app.get("/api/caixa-atacado/pedido/:id",async(req,res)=>{
       outrasDespesas:Number(d.outrasDespesas||0), // taxa de cartão que a vendedora colocou
       frete:Number(d.transporte?.frete||0), // valor do frete do pedido (entrega)
       ehEntrega:_ehEntregaCA, endereco:_endCA, // pra sair no comprovante quando for entrega
-      pagamentos, observacao:d.observacoes||"",
+      pagamentos, observacao:d.observacoes||"", obsImpressa:obsImpressaDoPedido(d.id),
       recebidoPor:recebidoPorDoPedido(d.id).operador,
       itens,
       // pra decidir se precisa de autorização (QR) antes de reabrir/editar
@@ -9310,6 +9325,8 @@ app.post("/api/caixa-atacado/finalizar",async(req,res)=>{
   const opId=req.body?.opId?String(req.body.opId):null;
   if(!pedidoId) return res.status(400).json({erro:"informe o pedido"});
   if(!Array.isArray(pagamentos)||!pagamentos.length) return res.status(400).json({erro:"Informe ao menos uma forma de pagamento"});
+  // OBSERVAÇÃO IMPRESSA NA NOTA: texto do operador fica só no sistema (a observação do Bling guarda o histórico)
+  if(req.body && typeof req.body.obsImpressa==="string"){ try{ gravarObsImpressa(pedidoId,req.body.obsImpressa,req.body.funcionarioNome||""); }catch(e){ console.error("obs impressa:",e.message); } }
   // CRÉDITO DO CLIENTE: confere o saldo antes de qualquer coisa (o desconto é feito só quando a venda se confirma)
   const usoCred=req.body?.usoCredito&&Number(req.body.usoCredito.valor)>0?{clienteId:String(req.body.usoCredito.clienteId||""),valor:_round2(Number(req.body.usoCredito.valor))}:null;
   if(usoCred){ const d0=lerCreditos(); const jaFoi=opId&&d0.movs.some(m=>m.opId===opId&&!m.estornadoEm);
@@ -12471,6 +12488,35 @@ app.get("/api/buscar-atacado", async (req, res) => {
 // não bater com o total do pedido. Reaproveitado tanto pela edição manual de
 // itens (resolução de pendências) quanto pela confirmação de entrega com
 // ocorrências (Em Rota).
+// FRETE NA EDIÇÃO: o frete depende da faixa de valor da compra, então toda edição de itens precisa recalcular e gravar o frete
+// (transporte.frete no Bling) e manter o registro local da proposta igual. Usa o km salvo na proposta (a distância não muda).
+function recalcularFreteEdicao(id,ped,totalItensNovo){
+  const freteBling=+(ped?.transporte?.frete||0);
+  const r={frete:freteBling,freteAnterior:freteBling,recalculado:false,abaixoMinimoEntrega:false,minimoEntrega:0};
+  try{
+    const props=lerPropostas();
+    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id));
+    const ehEntrega=prop?(prop.entrega&&prop.entrega.tipo==="entrega"):(freteBling>0);
+    const km=prop&&prop.entrega?Number(prop.entrega.km||0):0;
+    if(ehEntrega&&km>0){
+      const cfg=configEntrega(), rf=calcularFretePorKm(km,totalItensNovo,cfg);
+      if(totalItensNovo<cfg.minEntrega||!rf.entregaDisponivel){ r.abaixoMinimoEntrega=true; r.minimoEntrega=Math.max(cfg.minEntrega,Number(rf.minExtra)||0); }
+      else if(Math.abs(rf.taxa-freteBling)>0.009){ r.frete=rf.taxa; r.recalculado=true; }
+    }
+    // registro local da proposta acompanha o frete que vai para o Bling
+    if(prop&&prop.entrega&&prop.entrega.tipo==="entrega"&&Math.abs(Number(prop.entrega.taxa||0)-r.frete)>0.009){
+      const props2=lerPropostas(), p2=props2[prop.id];
+      if(p2&&p2.entrega){
+        p2.entrega.taxa=r.frete;
+        p2.totalItens=+Number(totalItensNovo).toFixed(2);
+        p2.total=+(Number(totalItensNovo)+r.frete).toFixed(2);
+        p2.atualizadoEm=Date.now();
+        salvarPropostas(props2);
+      }
+    }
+  }catch(e){ console.error("recalcularFreteEdicao:",e.message); }
+  return r;
+}
 async function atualizarItensBling(id,itens,obsExtra,opts={}){
   try{
     // opts.ped: pedido já lido pelo chamador (evita 1 GET). opts.parcelas: [{formaId,valor}]
@@ -12516,11 +12562,14 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
     if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
     if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
     else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+    const _totalItensEd=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    const freteInfo=Array.isArray(opts.parcelas)?null:recalcularFreteEdicao(id,ped,_totalItensEd);
+    const freteUsado=freteInfo?freteInfo.frete:+(ped.transporte?.frete||0);
     if(Array.isArray(opts.parcelas)&&opts.parcelas.length){
       payload.parcelas=opts.parcelas.filter(p=>p.formaId&&(Number(p.valor)||0)>0).map(p=>({formaPagamento:{id:Number(p.formaId)},dataVencimento:ped.data,valor:+Number(p.valor).toFixed(2)}));
     } else if(ped.parcelas?.length){
-      const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
-      const freteAtual=+(ped.transporte?.frete||0);
+      const novoTotalItens=_totalItensEd;
+      const freteAtual=freteUsado;
       const novoTotal=+(novoTotalItens+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
       const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
       const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
@@ -12535,9 +12584,9 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
         ultima.valor=+(ultima.valor+diffArred).toFixed(2);
       }
     }
-    if(ped.transporte){
-      payload.transporte={fretePorConta:ped.transporte.fretePorConta??0,frete:ped.transporte.frete||0};
-      if(ped.transporte.enderecoEntrega){
+    if(ped.transporte||freteUsado>0){
+      payload.transporte={fretePorConta:ped.transporte?.fretePorConta??0,frete:freteUsado};
+      if(ped.transporte?.enderecoEntrega){
         const end=ped.transporte.enderecoEntrega;
         Object.assign(payload.transporte, montarBlocoEnderecoEntrega(end, ped.contato?.nome||""));
       }
@@ -12578,13 +12627,14 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
       }
     }
     const rest=_ultimaRestauracao||{ok:true,reposto:[],situacaoFinal:sit};
-    return {ok:true,resultado,fezUnlock,restaurouOk:rest.ok,situacaoFinal:rest.situacaoFinal||sit,reposto:rest.reposto||[],erroRestaurar:rest.erro||null};
+    return {ok:true,resultado,fezUnlock,restaurouOk:rest.ok,situacaoFinal:rest.situacaoFinal||sit,reposto:rest.reposto||[],erroRestaurar:rest.erro||null,frete:freteUsado,freteInfo};
   }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }
 
 app.put("/api/pedidos/:id/itens", async (req, res) => {
   try {
     const {itens, funcionarioId, funcionarioNome, motivo} = req.body||{};
+    const opts={}; // esta rota não recebe parcelas nem outras despesas de fora; sem isto toda chamada dava "opts is not defined"
     if (!Array.isArray(itens)) return res.status(400).json({ erro: "itens inválidos" });
     const atualJson = await bling(`/pedidos/vendas/${req.params.id}`);
     const ped = atualJson?.data; if (!ped) return res.status(404).json({ erro: "pedido não encontrado" });
@@ -12632,11 +12682,14 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
     if(ped.desconto&&ped.desconto.valor!=null) payload.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
     if(opts.outrasDespesas!=null) payload.outrasDespesas=+Number(opts.outrasDespesas).toFixed(2);
     else if(ped.outrasDespesas!=null) payload.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+    const _totalItensPut=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    const freteInfoPut=recalcularFreteEdicao(req.params.id,ped,_totalItensPut);
+    const freteUsadoPut=freteInfoPut.frete;
     if(Array.isArray(opts.parcelas)&&opts.parcelas.length){
       payload.parcelas=opts.parcelas.filter(p=>p.formaId&&(Number(p.valor)||0)>0).map(p=>({formaPagamento:{id:Number(p.formaId)},dataVencimento:ped.data,valor:+Number(p.valor).toFixed(2)}));
     } else if(ped.parcelas?.length){
       const novoTotalItens=itens.reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
-      const freteAtual=+(ped.transporte?.frete||0);
+      const freteAtual=freteUsadoPut;
       const novoTotal=+(novoTotalItens+freteAtual+Number(payload.outrasDespesas||0)-Number(payload.desconto?.valor||0)).toFixed(2);
       const somaParcelasAtual=ped.parcelas.reduce((s,p)=>s+(p.valor||0),0);
       const fator=somaParcelasAtual>0?novoTotal/somaParcelasAtual:1;
@@ -12653,12 +12706,12 @@ app.put("/api/pedidos/:id/itens", async (req, res) => {
       }
     }
     // incluir transporte/endereço se existir (UF obrigatório no Bling)
-    if(ped.transporte){
+    if(ped.transporte||freteUsadoPut>0){
       payload.transporte={
-        fretePorConta:ped.transporte.fretePorConta??0,
-        frete:ped.transporte.frete||0,
+        fretePorConta:ped.transporte?.fretePorConta??0,
+        frete:freteUsadoPut,
       };
-      if(ped.transporte.enderecoEntrega){
+      if(ped.transporte?.enderecoEntrega){
         const end=ped.transporte.enderecoEntrega;
         Object.assign(payload.transporte, montarBlocoEnderecoEntrega(end, ped.contato?.nome||""));
       }
@@ -15676,6 +15729,29 @@ app.get("/api/pedido-ficha/:id",requireSessao,(req,res)=>{
     if((!ficha.numeroConhecido||!ficha.cliente)&&!lerJSON(COMPROV_PEDIDOS_CACHE,{})[pid]) completarNumerosComprovantes([pid]);
     res.json({ok:true,ficha}); }
   catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/comprovante.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"comprovante.js")); });
+// OBSERVAÇÃO IMPRESSA NA NOTA (por pedido, só no sistema)
+app.get("/api/obs-impressa",(req,res)=>{
+  try{
+    const ids=String(req.query.ids||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,200);
+    const d=lerObsImpressa(), porId={};
+    ids.forEach(i=>{ porId[i]=String(d[i]?.texto||""); });
+    res.json({ok:true,porId});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.put("/api/pedidos/:id/obs-impressa",(req,res)=>{
+  try{
+    const id=String(req.params.id||"").trim();
+    if(!/^\d+$/.test(id)) return res.status(400).json({erro:"id de pedido inválido"});
+    const texto=gravarObsImpressa(id,req.body?.texto,req.body?.funcionarioNome);
+    try{ // mantém a proposta de origem igual (a tela de Propostas lê daqui)
+      const props=lerPropostas(); let mudou=false;
+      Object.values(props).forEach(pr=>{ if(String(pr.pedidoBlingId||"")===id && (pr.observacao||"")!==texto){ pr.observacao=texto; mudou=true; } });
+      if(mudou) salvarPropostas(props);
+    }catch(e){}
+    res.json({ok:true,texto});
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/ficha-pedido.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"ficha-pedido.js")); });
 
@@ -19143,6 +19219,17 @@ app.get("/api/atacado/pedido/:blingId/numero",async(req,res)=>{
 // EDITAR os itens de uma PROPOSTA (ainda não virou pedido no Bling — é registro local)
 // muda tipo entrega/retirada (+ endereço/frete) de uma proposta que AINDA não virou
 // pedido no Bling — é só local. Pra pedido já gerado, usa /api/pedidos-online/:id/tipo-entrega
+app.post("/api/atacado/propostas/:id/observacao",(req,res)=>{
+  try{
+    const props=lerPropostas(), prop=props[req.params.id];
+    if(!prop) return res.status(404).json({erro:"proposta não encontrada"});
+    const texto=String(req.body?.texto||"").replace(/\r/g,"").trim().slice(0,600);
+    prop.observacao=texto; prop.atualizadoEm=Date.now();
+    props[prop.id]=prop; salvarPropostas(props);
+    if(prop.pedidoBlingId) gravarObsImpressa(prop.pedidoBlingId,texto,req.body?.funcionarioNome||"");
+    res.json({ok:true,texto});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 app.post("/api/atacado/propostas/:id/editar-entrega",(req,res)=>{
   try{
     const props=lerPropostas();
@@ -19297,7 +19384,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       contato:{id:Number(prop.cliente.id)},
       itens:prop.itens.map(i=>({produto:{id:Number(i.produtoId)},...(String(i.nome||"").trim()?{descricao:String(i.nome).slice(0,120)}:{}),quantidade:Number(i.quantidade),valor:Number(i.valor)})),
       ...(prop.vendedorId?{vendedor:{id:Number(prop.vendedorId)}}:{}),
-      ...(prop.observacao?{observacoes:prop.observacao}:{}),
+      // a observação digitada fica no sistema (obs impressa na nota); o campo observações do Bling guarda só o histórico
       // SEM "parcelas" aqui de propósito — o Bling calcula o total da venda por
       // conta própria a partir dos itens (arredondando por linha), e adivinhar
       // esse total aqui e mandar de cara já dava, às vezes, 1 centavo de diferença
@@ -19390,6 +19477,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
       }
     }
     const pedidoId=criado?.data?.id;
+    if(pedidoId && String(prop.observacao||"").trim()){ try{ gravarObsImpressa(pedidoId,prop.observacao,prop.funcionarioNome||""); }catch(e){} }
     // proteção: se o Bling respondeu sem erro mas não devolveu o ID do pedido,
     // não dá pra considerar gerado — trata como falha e mantém como proposta
     if(!pedidoId){
