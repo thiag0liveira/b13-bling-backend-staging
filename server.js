@@ -11155,17 +11155,20 @@ function _montarPainelGrupo(g){
       kpi(brlN(RM.frete?.total||0),"Frete cobrado no mês",RM.frete?.medioPorEntrega?brlN(RM.frete.medioPorEntrega)+" por entrega":"","/entregas-dashboard");
       if((R.dinheiroAAcertar?.valor||0)>0) al("medio",`${brlN(R.dinheiroAAcertar.valor)} em dinheiro de entregas ainda a acertar no caixa (${R.dinheiroAAcertar.qtd})`,"/central-entregas");
       if(R.aguardando) al("info",`${R.aguardando} entrega(s) aguardando saída`,"/rotas");
-      try{ const O=lerOrcamento(), co=(O.itens||[]).find(x=>/coopermapp|coopermaq/i.test(x.nome)), custoM=co?(co.fev||co.jan||0):0;
+      try{ const O=lerOrcamento(), co=(O.itens||[]).find(x=>/coopermapp|coopermaq/i.test(x.nome)), custoPlan=co?(co.fev||co.jan||0):0;
+        const mesAt=hoje.slice(0,7), custoReal=_round2((lerContasPagar().titulos||[]).filter(t=>t.status!=="cancelado"&&/coopermapp|coopermaq/i.test(`${t.fornecedor?.nome||""} ${t.descricao||""}`)&&(t.competencia||String(t.vencimento||"").slice(0,7))===mesAt).reduce((a,t)=>a+(Number(t.valor)||0),0));
+        const usaReal=custoReal>0, custoM=usaReal?custoReal:custoPlan; // custo REAL lançado no mês; a planilha só sem cobrança lançada
         const dia=Number(hoje.slice(8,10)), diasMes=new Date(Date.UTC(+hoje.slice(0,4),+hoje.slice(5,7),0)).getUTCDate(), ent=RM.entregues||RM.total||0, entProj=dia>0?Math.round(ent/dia*diasMes):ent;
-        const fr=Number(RM.frete?.total||0), frProj=dia>0?fr/dia*diasMes:fr, ids=(Mx.pedidos||[]).map(p=>String(p.id||p.pedidoId||"")).filter(Boolean), P=lerProdutosBling().porId; let fat=0,fc=0,cu=0;
+        const fr=Number(RM.frete?.total||0); let frProj=dia>0?fr/dia*diasMes:fr; const ids=(Mx.pedidos||[]).map(p=>String(p.id||p.pedidoId||"")).filter(Boolean), P=lerProdutosBling().porId; let fat=0,fc=0,cu=0;
         ids.forEach(id=>{ let it=[]; try{ it=_itensDoPedido(id)||[]; }catch(e){} it.forEach(i=>{ const v=(Number(i.valor)||0)*(Number(i.quantidade)||0); fat+=v; const pr=i.produtoId?P[String(i.produtoId)]:null; if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } }); });
-        const mb=fc>0?(fc-cu)/fc:null, lucroProj=mb!=null?(fat*mb)/(dia||1)*diasMes:null, retorno=frProj+(lucroProj||0);
+        const mb=fc>0?(fc-cu)/fc:null; if(usaReal) frProj=fr; // custo real: compara com o frete e o lucro ATÉ HOJE
+        const lucroProj=mb!=null?(usaReal?fat*mb:(fat*mb)/(dia||1)*diasMes):null, retorno=frProj+(lucroProj||0);
         { const veic=(O.itens||[]).filter(x=>/^5\.5\.2/.test(x.cod)||/combust|manuten..o ve|pneu|seguro|ipva/i.test(x.nome)), gv=_round2(veic.reduce((a,x)=>a+(x.fev||x.jan||0),0)), dep=_depreciacaoMes(hoje.slice(0,7)), parados=(lerFrota().veiculos||[]).filter(v=>!v.ativo).length;
           kpi(brlN(gv+dep),"Frota própria (custo/mês)",`gastos ${brlN(gv)} + depreciação ${brlN(dep)}${parados?` · ${parados} veículo(s) parado(s) fora da conta`:""}`,"/contas-pagar"); }
-        if(custoM>0){ kpi(brlN(custoM),"Coopermapp (custo previsto/mês)",entProj?`${brlN(custoM/entProj)} por entrega · ${entProj} entregas no mês (projeção)`:"","/entregas-dashboard");
-          kpi(String(Math.round(frProj/custoM*100))+"%","Frete cobre do custo",`${brlN(frProj)} de frete no mês (projeção)`,"/entregas-dashboard",frProj<custoM?"alerta":"");
+        if(custoM>0){ kpi(brlN(custoM),usaReal?"Coopermapp (lançado no mês)":"Coopermapp (previsto, planilha)",usaReal?(ent?`${brlN(custoM/ent)} por entrega · ${ent} entregas até hoje`:"cobranças lançadas em Contas a Pagar"):(entProj?`${brlN(custoM/entProj)} por entrega · ${entProj} entregas no mês (projeção)`:""),"/contas-pagar");
+          kpi(String(Math.round(frProj/custoM*100))+"%","Frete cobre do custo",`${brlN(frProj)} de frete ${usaReal?"até hoje":"no mês (projeção)"}`,"/entregas-dashboard",frProj<custoM?"alerta":"");
           kpi(lucroProj!=null?brlN(retorno-custoM):"—","Resultado das entregas",lucroProj!=null?`frete ${brlN(frProj)} + lucro bruto ${brlN(lucroProj)} − Coopermapp ${brlN(custoM)}`:"cadastre custos para estimar o lucro bruto","/margem-bruta",lucroProj!=null&&retorno<custoM?"alerta":"");
-          if(frProj<custoM) al("medio",`O frete cobrado (${brlN(frProj)} no mês) cobre ${Math.round(frProj/custoM*100)}% do custo da Coopermapp (${brlN(custoM)}). A diferença sai da margem dos pedidos entregues`,"/entregas-dashboard"); } }catch(e){}
+          if(frProj<custoM) al("medio",`O frete cobrado (${brlN(frProj)} ${usaReal?"até hoje":"no mês"}) cobre ${Math.round(frProj/custoM*100)}% do custo da Coopermapp (${brlN(custoM)}${usaReal?" lançado no mês":", previsto pela planilha"}). A diferença, ${brlN(custoM-frProj)}, sai da margem dos pedidos entregues`,"/entregas-dashboard"); } }catch(e){}
       lista("🧑‍✈️ Motoristas (mês)","/entregas-dashboard",(Mx.porMotorista||[]).slice(0,8).map(m=>({a:`${m.motorista||m.nome||"—"} · ${m.entregas||0} entregas`,b:brlN(m.valor||m.valorEntregue||0)}))); });
   }
   if(g==="marketing"){
