@@ -329,8 +329,8 @@
     var bGrav = el("button", { type: "button", "aria-label": "Gravar", style: css({ width: "78px", height: "78px", "border-radius": "50%", border: "5px solid #fff", background: "#d0021b", "flex-shrink": "0" }) });
     var lados = function (esq, dir) { var a = el("div", { style: "display:flex;gap:10px;align-items:center;min-width:110px" }), b = el("div", { style: "display:flex;gap:10px;align-items:center;justify-content:flex-end;min-width:110px" }); esq.forEach(function (x) { a.appendChild(x); }); dir.forEach(function (x) { b.appendChild(x); }); return [a, b]; };
     ov.appendChild(vid); ov.appendChild(topo); ov.appendChild(base); document.body.appendChild(ov);
-    var docOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden";
-    function telaGravar() { base.innerHTML = ""; var l = lados([bSair], [bVirar].concat(track && track._torch ? [bLuz] : [])); base.appendChild(l[0]); base.appendChild(bGrav); base.appendChild(l[1]);
+    var semLado = false; var docOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden";
+    function telaGravar() { base.innerHTML = ""; var l = lados([bSair], [bVirar].concat(track && track._torch ? [bLuz] : []).concat(semLado ? [bNativa] : [])); base.appendChild(l[0]); base.appendChild(bGrav); base.appendChild(l[1]);
       bGrav.style.borderRadius = "50%"; bGrav.style.background = "#d0021b"; bVirar.style.opacity = "1"; }
     function telaGravando() { bGrav.style.background = "#d0021b"; bGrav.style.borderRadius = "18px"; bVirar.style.opacity = ".35"; }
     function telaRever() { base.innerHTML = ""; base.style.justifyContent = "center"; base.appendChild(bDeNovo); base.appendChild(bUsar); }
@@ -339,33 +339,58 @@
     function fechar() { try { clearInterval(timer); } catch (e) {} pararStream(); try { ov.remove(); } catch (e) {} document.documentElement.style.overflow = docOverflow; }
     function mmss(s) { s = Math.floor(s); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
     function aoVivo() { vid.srcObject = stream; vid.muted = true; vid.controls = false; vid.removeAttribute("src"); vid.style.objectFit = "cover"; vid.style.transform = frente ? "scaleX(-1)" : "none"; try { vid.play(); } catch (e) {} }
-    function abrirCamera() {
-      // com o id da câmera (troca firme) ou pelo lado: traseira OBRIGATÓRIA primeiro (muitos celulares ignoram a preferência e entregam a frontal)
+    // lado (frente/tras) que o aparelho REALMENTE entregou: pelo facingMode das configurações ou, sem ele, pelo nome da câmera
+    function ladoReal(trk) { var st = {}; try { st = trk.getSettings(); } catch (e) {} if (st.facingMode) return st.facingMode === "user" ? "frente" : "tras"; var l = trk.label || ""; return ehFrente(l) ? "frente" : ehTras(l) ? "tras" : "?"; }
+    function pedirUma(v) { var md = navigator.mediaDevices; return md.getUserMedia({ audio: true, video: v }).catch(function () { return md.getUserMedia({ audio: false, video: v }); }); }
+    function listarCams() { try { return navigator.mediaDevices.enumerateDevices().then(function (l) { cams = l.filter(function (d) { return d.kind === "videoinput"; }); return cams; }); } catch (e) { return Promise.resolve([]); } }
+    function idDe(st) { var t = st && st.getVideoTracks()[0], c = {}; try { c = t.getSettings(); } catch (e) {} return c.deviceId || ""; }
+    // abre a câmera do lado pedido e CONFERE o que veio: muitos celulares ignoram o pedido e entregam a frontal sem avisar.
+    // Se veio o lado errado, procura a câmera certa pelo id, uma por uma. Devolve {stream, lado, pediu}.
+    function abrirLado(lado) {
       var qual = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
-      var v1 = camId ? Object.assign({ deviceId: { exact: camId } }, qual) : Object.assign({ facingMode: frente ? "user" : { exact: "environment" } }, qual);
-      var v2 = Object.assign({ facingMode: { ideal: frente ? "user" : "environment" } }, qual);
-      var pedir = function (audio, v) { return navigator.mediaDevices.getUserMedia({ audio: audio, video: v }); };
+      var marcar = function (st) { st._lado = ladoReal(st.getVideoTracks()[0]); return st; };
+      var serve = function (st) { return st._lado === lado || st._lado === "?"; };
+      var soltar = function (st) { try { st && st.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} };
+      var porLado = function (obj) { return pedirUma(Object.assign({ facingMode: obj }, qual)).then(marcar); };
+      var exato = { exact: lado === "frente" ? "user" : "environment" }, ideal = { ideal: lado === "frente" ? "user" : "environment" };
+      return porLado(exato).catch(function () { return null; }).then(function (st) {
+        if (st && serve(st)) return { stream: st, lado: st._lado === "?" ? lado : st._lado, pediu: lado };
+        var errado = st; soltar(st); // libera a câmera errada antes de abrir outra (muitos celulares só deixam uma aberta)
+        return new Promise(function (r) { setTimeout(r, 300); }).then(listarCams).then(function (l) {
+          var cand = l.filter(function (c) { return c.deviceId && (lado === "frente" ? ehFrente(c.label) : ehTras(c.label)); });
+          if (!cand.length) cand = l.filter(function (c) { return c.deviceId && c.deviceId !== idDe(errado) && !(c.label && (lado === "frente" ? ehTras(c.label) : ehFrente(c.label))); });
+          var tenta = function (k) {
+            if (k >= cand.length) return Promise.resolve(null);
+            return pedirUma(Object.assign({ deviceId: { exact: cand[k].deviceId } }, qual)).then(marcar).then(function (s2) { if (serve(s2)) return s2; soltar(s2); return new Promise(function (r) { setTimeout(r, 200); }).then(function () { return tenta(k + 1); }); })
+              .catch(function () { return tenta(k + 1); });
+          };
+          return tenta(0);
+        }).then(function (s3) {
+          if (s3) return { stream: s3, lado: s3._lado === "?" ? lado : s3._lado, pediu: lado };
+          // o aparelho não liberou esse lado: abre o que ele deixar, para a pessoa não ficar sem câmera
+          return porLado(ideal).catch(function () { return pedirUma(Object.assign({}, qual)).then(marcar); }).then(function (s4) { return { stream: s4, lado: s4._lado === "?" ? (lado === "frente" ? "tras" : "frente") : s4._lado, pediu: lado }; });
+        });
+      });
+    }
+    function abrirCamera(lado) {
+      lado = lado || (frente ? "frente" : "tras");
       pararStream(); topo.textContent = "Abrindo a câmera…";
       return new Promise(function (r) { setTimeout(r, 250); }) // dá tempo do aparelho liberar a câmera anterior
-        .then(function () { return pedir(true, v1); }).catch(function () { return pedir(false, v1); }).catch(function () { return pedir(true, v2); }).catch(function () { return pedir(false, v2); }).then(function (s) {
-        stream = s; track = s.getVideoTracks()[0]; torch = false; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
+        .then(function () { return abrirLado(lado); }).then(function (res) {
+        stream = res.stream; track = stream.getVideoTracks()[0]; torch = false; try { var cap = track.getCapabilities ? track.getCapabilities() : {}; track._torch = !!cap.torch; } catch (e) {}
         var st = {}; try { st = track.getSettings(); } catch (e) {}
-        camId = st.deviceId || camId; frente = st.facingMode ? st.facingMode === "user" : (ehFrente(track.label) ? true : ehTras(track.label) ? false : frente);
-        try { navigator.mediaDevices.enumerateDevices().then(function (l) { cams = l.filter(function (d) { return d.kind === "videoinput"; }); }); } catch (e) {}
-        aoVivo(); topo.textContent = (frente ? "Câmera frontal" : "Câmera traseira") + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S); base.style.justifyContent = "space-between"; telaGravar();
+        camId = st.deviceId || null; frente = res.lado === "frente"; semLado = res.lado !== res.pediu;
+        listarCams().then(function () { try { if (semLado) topo.textContent += " · câmeras vistas pelo navegador: " + cams.length; } catch (e) {} });
+        aoVivo();
+        topo.textContent = (frente ? "Câmera frontal" : "Câmera traseira") + (st.width ? " · " + Math.min(st.width, st.height) + "p" : "") + " · até " + mmss(MAX_S)
+          + (semLado ? "\nO celular não liberou a câmera " + (res.pediu === "frente" ? "frontal" : "traseira") + " para o navegador. Para usar a traseira, toque em “Usar a câmera do celular”." : "");
+        topo.style.whiteSpace = "pre-line"; base.style.justifyContent = "space-between"; telaGravar();
       }).catch(function (e) { var nome = (e && e.name) || "";
-        telaErro(/NotAllowed|Permission/i.test(nome) ? "O navegador não tem permissão para usar a câmera. Libere nas configurações do site ou use a câmera do celular." : /NotFound|Overconstrained/i.test(nome) ? "Não encontrei essa câmera." : "Não consegui abrir a câmera por aqui."); });
+        telaErro(/NotAllowed|Permission/i.test(nome) ? "O navegador não tem permissão para usar a câmera. Libere nas configurações do site ou use a câmera do celular." : /NotFound|Overconstrained/i.test(nome) ? "Não encontrei essa câmera." : "Não consegui abrir a câmera pelo navegador. Use a câmera do celular."); });
     }
     bSair.onclick = function () { if (gravando) return; fechar(); };
     bNativa.onclick = function () { fechar(); planoB(); }; // abre a câmera do celular com o toque do usuário (o navegador bloqueia abrir sozinho)
-    bVirar.onclick = function () { if (gravando) return;
-      // escolhe a câmera do lado oposto pelo nome; sem nomes úteis, vai para a próxima da lista
-      var outras = cams.filter(function (c) { return c.deviceId && c.deviceId !== camId; }), alvo = null;
-      if (outras.length) { alvo = outras.filter(function (c) { return frente ? ehTras(c.label) : ehFrente(c.label); })[0];
-        if (!alvo) { var ix = cams.findIndex(function (c) { return c.deviceId === camId; }); alvo = cams[(ix + 1) % cams.length]; } }
-      if (alvo && alvo.deviceId) { camId = alvo.deviceId; frente = ehFrente(alvo.label) ? true : ehTras(alvo.label) ? false : !frente; }
-      else { camId = null; frente = !frente; }
-      abrirCamera(); };
+    bVirar.onclick = function () { if (gravando) return; abrirCamera(frente ? "tras" : "frente"); };
     bLuz.onclick = function () { if (!track) return; torch = !torch; track.applyConstraints({ advanced: [{ torch: torch }] }).catch(function () {}); bLuz.style.background = torch ? "#c9a400" : "rgba(255,255,255,.18)"; };
     bGrav.onclick = function () {
       if (gravando) { if (rec && rec.state === "recording") rec.stop(); return; }
