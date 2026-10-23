@@ -11380,7 +11380,7 @@ async function _resumoEntradaNota(n){
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
-    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
 // A API v3 do Bling NÃO tem busca por chave, nem manifestação, nem importação da SEFAZ (as rotas usadas antes não existem e o erro era engolido).
 // O que existe: listar as notas por período/tipo (GET /nfe?tipo=0 = entrada) e baixar o documento pela chave (GET /nfe/documento/{chave}).
@@ -11532,7 +11532,7 @@ function _notaSemValores(n){
   return {id:n.id,numero:n.numero,serie:n.serie,emissao:n.emissao,semNota:!!n.semNota,
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
-    anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
+    fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
     boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
     pagamentoLido:!!n.pagamentoLido,vencimentos:(n.pagamentoLido||n.vencimentosEditados)?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
@@ -11544,7 +11544,7 @@ function _semValoresEntrada(o){
   if(!o||typeof o!=="object") return o;
   if(o.lidaComo==="boleto") return {erro:"Essa foto é de um BOLETO, não de produtos. Entregue ao financeiro."};
   const r={};
-  if(o.ok!==undefined) r.ok=o.ok; if(o.erro) r.erro=o.erro;
+  if(o.ok!==undefined) r.ok=o.ok; if(o.erro) r.erro=o.erro; if(o.podeLerPorFoto) r.podeLerPorFoto=true;
   if(o.lidaComo) r.lidaComo=o.lidaComo;
   if(o.nota) r.nota=_notaSemValores(o.nota);
   if(Array.isArray(o.itens)) r.itens=o.itens.map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""}));
@@ -11614,7 +11614,7 @@ app.post("/api/entrada-nota/carregar",acessoEntradaNota,express.json({limit:"6mb
       if(_FISCAL.nota(ch)) nota=await _FISCAL.carregarNota({chave:ch});
       else { const tent=[], id=await _acharNotaBlingPorChave(ch,tent);
         if(!id){ const d=_descreverChave(ch);
-          return res.status(404).json({erro:`Não achei a NF ${d.nNF} (emitente CNPJ ${d.cnpjFmt}, emitida em ${d.mes}/${d.ano}) entre as notas de ENTRADA do Bling. Para entrar por aqui, a nota precisa estar recebida no Bling (Notas fiscais > Notas de entrada: buscar da SEFAZ e dar ciência da operação). Ou envie o arquivo XML da nota (o fornecedor costuma mandar por e-mail). Detalhe: ${tent.join("; ")||"sem retorno do Bling"}.`,chave:ch,tentativas:tent}); }
+          return res.status(404).json({erro:`Não achei a NF ${d.nNF} (emitente CNPJ ${d.cnpjFmt}, emitida em ${d.mes}/${d.ano}) entre as notas de ENTRADA do Bling. Para entrar por aqui, a nota precisa estar recebida no Bling (Notas fiscais > Notas de entrada: buscar da SEFAZ e dar ciência da operação). Ou envie o XML da nota (o fornecedor costuma mandar por e-mail) ou leia os itens pela foto/PDF da DANFE, no botão abaixo. Detalhe: ${tent.join("; ")||"sem retorno do Bling"}.`,chave:ch,tentativas:tent,podeLerPorFoto:true}); }
         nota=id.xml?await _FISCAL.carregarNota({xml:id.xml}):await _FISCAL.carregarNota({blingId:id}); } }
     res.json({ok:true,nota:await _resumoEntradaNota(nota)});
   }catch(e){ res.status(400).json({erro:e.message}); }
@@ -11805,12 +11805,12 @@ app.post("/api/entrada-nota/foto",acessoEntradaNota,async(req,res)=>{
     const imgs=(Array.isArray(req.body?.imagens)?req.body.imagens:[]).slice(0,4).map(x=>String(x||"").replace(/^data:image\/\w+;base64,/,"")).filter(x=>x.length>100&&x.length<5e6);
     const pdfs=(Array.isArray(req.body?.pdfs)?req.body.pdfs:[]).slice(0,3).map(x=>String(x||"").replace(/^data:application\/pdf;base64,/,"")).filter(x=>x.length>100&&x.length<12e6);
     if(!imgs.length&&!pdfs.length) return res.status(400).json({erro:"envie a foto ou o PDF"});
-    const pedido=`Você lê fotos de comprovantes de COMPRA de uma distribuidora de bebidas no Brasil (recibo, pedido do fornecedor, cupom, anotação, orçamento). NÃO é nota fiscal eletrônica.
+    const pedido=`Você lê fotos de comprovantes de COMPRA de uma distribuidora de bebidas no Brasil (recibo, pedido do fornecedor, cupom, anotação, orçamento) e também DANFE (nota fiscal eletrônica impressa ou em PDF).
 Primeiro identifique o TIPO: "danfe" (nota fiscal eletrônica impressa, tem DANFE/chave de acesso), "boleto" (boleto bancário, tem linha digitável), "pedido", "recibo", "cupom" ou "outro".
 Responda SOMENTE com um JSON, sem texto antes ou depois, sem cercas de código, neste formato:
 {"tipoDocumento":"","danfe":{"chaveAcesso":"44 dígitos se legível, senão vazio","numeroNF":"","serie":"","cnpjEmitente":"só dígitos","valorTotal":0},"boleto":{"beneficiario":"","cnpjBeneficiario":"","linhaDigitavel":"só dígitos","valor":0,"vencimento":"AAAA-MM-DD"},"fornecedor":{"nome":"","documento":"só dígitos do CNPJ/CPF ou vazio","telefone":""},"numeroDocumento":"","data":"AAAA-MM-DD ou vazio","itens":[{"descricao":"como está escrito","codigo":"código do item se houver, senão vazio","quantidade":0,"unidade":"UN/CX/FD/PCT/... como está escrito","unidadesPorEmbalagem":0,"valorUnitario":0,"valorTotal":0}],"desconto":0,"frete":0,"total":0,"pagamento":{"forma":"dinheiro/pix/boleto/cartão/a prazo ou vazio","pago":null,"vencimentos":[{"data":"AAAA-MM-DD","valor":0}]},"observacoes":"o que estiver ilegível ou duvidoso"}
 Use números com ponto decimal. Se um valor não aparecer, use 0 (ou vazio para textos). Não invente itens. Se a quantidade e o valor total aparecem mas o unitário não, calcule o unitário.
-Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/pacote SÓ se estiver escrito (ex.: "C/12", "CX 24", "FD 6"); senão 0. Para danfe e boleto, preencha só o bloco correspondente e o fornecedor; itens podem ficar vazios.`;
+Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/pacote SÓ se estiver escrito (ex.: "C/12", "CX 24", "FD 6"); senão 0. Para boleto, preencha só o bloco do boleto e o fornecedor; itens podem ficar vazios. Para DANFE, preencha o bloco danfe, o fornecedor (nome e CNPJ do EMITENTE), TODOS os itens da nota (código do produto, descrição, unidade, quantidade, valor unitário e valor total do item), o desconto, o frete, o total da nota, a data de emissão em "data" e os vencimentos das duplicatas em pagamento.vencimentos, se houver.`;
     const corpo={model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:4000,messages:[{role:"user",content:[...pdfs.map(d=>({type:"document",source:{type:"base64",media_type:"application/pdf",data:d}})),...imgs.map(d=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:d}})),{type:"text",text:pedido}]}]};
     const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
     const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",signal:ctrl.signal,headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify(corpo)}); clearTimeout(to);
@@ -11818,17 +11818,19 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
     const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").replace(/```json|```/g,"").trim();
     let L; try{ L=JSON.parse(txt.slice(txt.indexOf("{"),txt.lastIndexOf("}")+1)); }catch(e){ return res.status(502).json({erro:"Não consegui entender a leitura da foto. Tente outra foto, mais reta e com boa luz."}); }
     const nn=x=>{ const v=Number(String(x==null?0:x).replace(",",".")); return Number.isFinite(v)?v:0; };
-    const tipo=String(L.tipoDocumento||"").toLowerCase();
+    const tipo=String(L.tipoDocumento||"").toLowerCase(); let fotoDanfe=null;
     // NOTA FISCAL fotografada: nunca entra como compra sem nota. Procura pela chave ou pelo número + CNPJ entre as notas conhecidas
     if(tipo==="danfe"){ const D=L.danfe||{}, ch=String(D.chaveAcesso||"").replace(/\D/g,""), nf=String(D.numeroNF||"").replace(/\D/g,"").replace(/^0+/,""), cnpj=String(D.cnpjEmitente||L.fornecedor?.documento||"").replace(/\D/g,"");
       let nota=null;
       try{ if(ch.length===44) nota=await _FISCAL.carregarNota({chave:ch}).catch(()=>null);
         if(!nota&&ch.length===44&&_chaveNfeValida(ch).ok){ const bid=await _acharNotaBlingPorChave(ch); if(bid) nota=bid.xml?await _FISCAL.carregarNota({xml:bid.xml}):await _FISCAL.carregarNota({blingId:bid}); }
         if(!nota&&nf){ const c=(_FISCAL.listarNotas()||[]).find(n=>String(n.numero||"").replace(/^0+/,"")===nf&&(!cnpj||String(n.emitente?.cnpj||"")===cnpj)); if(c) nota=await _FISCAL.carregarNota({chave:c.id}); }
-        if(!nota&&nf){ try{ const r2=await bling(`/nfe?numero=${nf}&tipo=0`); const l=(r2?.data||[]).filter(x=>!cnpj||String(x.contato?.numeroDocumento||"").replace(/\D/g,"")===cnpj); if(l.length) nota=await _FISCAL.carregarNota({blingId:l[0].id}); }catch(e){} }
+        if(!nota&&nf){ try{ const r2=await bling(`/nfe?numero=${nf}&tipo=0`); const l=(r2?.data||[]).filter(x=>String(x.numero||"").replace(/\D/g,"").replace(/^0+/,"")===nf&&(!cnpj||String(x.contato?.numeroDocumento||"").replace(/\D/g,"")===cnpj)); /* o número TEM que conferir: o Bling pode ignorar o filtro e devolver outras notas do fornecedor */ if(l.length===1) nota=await _FISCAL.carregarNota({blingId:l[0].id}); }catch(e){} }
       }catch(e){}
       if(nota){ _salvarAnexos(nota.id,[...imgs.map(x=>({buf:Buffer.from(x,"base64"),mime:"image/jpeg",nome:"foto-lida.jpg"})),...pdfs.map(x=>({buf:Buffer.from(x,"base64"),mime:"application/pdf",nome:"documento-lido.pdf"}))],req.sessao?.nome||""); return res.json({ok:true,lidaComo:"danfe",nota:await _resumoEntradaNota(nota)}); }
-      return res.status(422).json({tipo:"danfe",erro:`Essa foto é de uma NOTA FISCAL${nf?" (NF "+nf+(L.fornecedor?.nome?" de "+L.fornecedor.nome:"")+")":""}, então ela entra pela parte fiscal, não como compra sem nota. Não achei a nota no sistema nem no Bling: aproxime a câmera do código de barras (use "Ler código de barras") ou envie o XML.`}); }
+      // não achou a nota (nem local, nem no Bling): lê os itens da própria DANFE (foto/PDF) para não travar a entrada
+      if(!(L.itens||[]).some(i=>i&&String(i.descricao||"").trim())) return res.status(422).json({tipo:"danfe",erro:`Essa imagem é de uma NOTA FISCAL${nf?" (NF "+nf+(L.fornecedor?.nome?" de "+L.fornecedor.nome:"")+")":""}, mas não achei a nota no Bling e não consegui ler os itens nela. Fotografe a DANFE inteira, bem reta e com boa luz (ou envie o PDF ou o XML).`});
+      fotoDanfe={ch:ch.length===44?ch:"",nf,cnpj,serie:String(D.serie||"").replace(/\D/g,"").slice(0,3)}; }
     // BOLETO: oferece lançar como conta a pagar
     if(tipo==="boleto"){ const Bo=L.boleto||{}; return res.json({ok:true,lidaComo:"boleto",boleto:{beneficiario:String(Bo.beneficiario||L.fornecedor?.nome||"").slice(0,120),cnpj:String(Bo.cnpjBeneficiario||L.fornecedor?.documento||"").replace(/\D/g,"").slice(0,14),
       linhaDigitavel:String(Bo.linhaDigitavel||"").replace(/\D/g,"").slice(0,60),valor:_round2(nn(Bo.valor)),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(String(Bo.vencimento||""))?Bo.vencimento:""}}); }
@@ -11837,8 +11839,8 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
       const upe=Math.round(nn(i.unidadesPorEmbalagem)); return {nItem:ix+1,xProd:String(i.descricao).trim().slice(0,120),cProd:String(i.codigo||"").trim().slice(0,40),cEAN:"",uCom:String(i.unidade||"UN").toUpperCase().slice(0,6),qCom:q,vUnCom:q?_round2(vt/q):0,vProd:_round2(vt),vDesc:0,fatorLido:upe>1&&upe<=60?upe:0}; });
     if(!itens.length) return res.status(422).json({erro:"Não encontrei itens nessa foto. Tente outra foto, mais perto e com boa luz."});
     const vencs=(pg.vencimentos||[]).filter(v=>v&&nn(v.valor)>0).map((v,i)=>({numero:String(i+1),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(String(v.data||""))?v.data:_diaBRk(Date.now()),valor:_round2(nn(v.valor))}));
-    const n={id,semNota:true,origemDados:"foto",numero:String(L.numeroDocumento||"").slice(0,30),serie:"",emissao:/^\d{4}-\d{2}-\d{2}$/.test(String(L.data||""))?Date.parse(L.data+"T12:00:00-03:00"):Date.now(),
-      emitente:{cnpj:String(F.documento||"").replace(/\D/g,"").slice(0,14),nome:String(F.nome||"").trim().slice(0,120)||"Fornecedor (sem nome na foto)",telefone:String(F.telefone||"").slice(0,30)},
+    const n={id,semNota:true,origemDados:fotoDanfe?"foto-danfe":"foto",...(fotoDanfe?{fotoDanfe:true,chave:fotoDanfe.ch}:{}),numero:String(L.numeroDocumento||(fotoDanfe&&fotoDanfe.nf)||"").slice(0,30),serie:fotoDanfe?fotoDanfe.serie:"",emissao:/^\d{4}-\d{2}-\d{2}$/.test(String(L.data||""))?Date.parse(L.data+"T12:00:00-03:00"):Date.now(),
+      emitente:{cnpj:String(F.documento||(fotoDanfe&&fotoDanfe.cnpj)||"").replace(/\D/g,"").slice(0,14),nome:String(F.nome||"").trim().slice(0,120)||"Fornecedor (sem nome na foto)",telefone:String(F.telefone||"").slice(0,30)},
       itens,totais:{vDesc:_round2(nn(L.desconto)),vFrete:_round2(nn(L.frete)),vOutro:0,totalLido:_round2(nn(L.total))},duplicatas:vencs,formaTexto:String(pg.forma||"").slice(0,40),
       aPrazo:pg.pago===true?false:(vencs.length>0||/prazo|boleto/i.test(String(pg.forma||""))),observacaoLeitura:String(L.observacoes||"").slice(0,300),criadoEm:Date.now(),por:req.sessao?.nome||""};
     _semNota[id]=_casarSemNota(n,false); _salvarSemNota();

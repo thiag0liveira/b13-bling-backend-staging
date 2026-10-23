@@ -155,7 +155,7 @@ function carregarChave() { const c = achaChave(document.getElementById("chave").
 async function carregar(corpo, arq) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api(P + "/carregar", { method: "POST", body: JSON.stringify(corpo) });
-  if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
+  if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>${j.podeLerPorFoto ? `<label class="btn btn-mag" style="margin-top:8px;cursor:pointer;display:inline-block">📷 Ler a nota pela foto ou PDF (DANFE)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="lerFotoCompra(this.files)"></label><div class="ic" style="white-space:normal;margin-top:4px">Fotografe a nota inteira, reta e com boa luz, ou envie o PDF. O sistema lê fornecedor, produtos, quantidades e datas; você confere antes de dar entrada.</div>` : ""}`); return; }
   msgLer(""); N = j.nota; IGN = new Set(); IMG_MSG = ""; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
   if (arq) anexar(arq); // guarda a imagem lida na nota
 }
@@ -184,10 +184,10 @@ function renderNota() {
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não alterar o estoque deste produto (ex.: bonificação, uso interno)</label></div>`; };
   document.getElementById("nota").innerHTML = `<div class="card">
     ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.semEstoque ? "Esta nota foi registrada SEM dar entrada no estoque em " : n.entrada.jaNoBling ? "Os produtos desta nota já foram marcados como lançados no Bling em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
-    ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, produtos e quantidades.</div>
+    ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">${n.fotoDanfe ? "📄 <b>Nota fiscal lida pela imagem</b> (não achei a nota no Bling):" : "🧾 <b>Compra SEM nota fiscal</b>, lida pela foto:"} confira fornecedor, produtos e quantidades.</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3><button class="btn btn-ghost" style="padding:6px 10px" onclick="novaEntrada()">➕ Nova entrada</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota && !n.fotoDanfe ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3><button class="btn btn-ghost" style="padding:6px 10px" onclick="novaEntrada()">➕ Nova entrada</button></div>
     <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
     <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
     <div style="margin-top:8px">${blocoPrazo(n)}</div>
