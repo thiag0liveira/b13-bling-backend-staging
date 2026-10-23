@@ -278,7 +278,7 @@ function abrirNovo() {
       <option value="lider_caixa">Líder de Caixa</option>
       <option value="gerente">Gerente</option>
       <option value="admin">Admin</option>
-    </select>
+    </select><div class="lbl">Entregas por (se for motorista)</div><select id="fEntregasPor" onchange="salvarFrotaMot(this.value)"><option value="">—</option><option value="propria">Frota própria</option><option value="coopermapp">Coopermapp</option><option value="lalamove">Lalamove</option><option value="outro">Outro</option></select>
     <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
     ${htmlVendedorBusca(null)}
     <div id="fMsg"></div>
@@ -362,7 +362,7 @@ function abrirEditar(id) {
       <option value="lider_caixa" ${f.nivel === 'lider_caixa' ? 'selected' : ''}>Líder de Caixa</option>
       <option value="gerente" ${f.nivel === 'gerente' ? 'selected' : ''}>Gerente</option>
       <option value="admin" ${f.nivel === 'admin' ? 'selected' : ''}>Admin</option>
-    </select>
+    </select><div class="lbl">Entregas por (se for motorista)</div><select id="fEntregasPor" onchange="salvarFrotaMot(this.value)"><option value="">—</option><option value="propria">Frota própria</option><option value="coopermapp">Coopermapp</option><option value="lalamove">Lalamove</option><option value="outro">Outro</option></select>
     <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
     ${htmlVendedorBusca(f)}
     <div class="lbl">Código de confirmação (Frente de Caixa)</div>
@@ -629,6 +629,13 @@ function revelarQr() {
 }
 document.getElementById("app").innerHTML = `<div class="top"><img src="${LOGO}"></div>`;
 document.querySelector(".top img").src = LOGO;
-if (logado) carregar();else render();</script>
+if (logado) carregar();else render();
+// "Entregas por": grava na hora pelo nome do motorista e preenche ao abrir o formulário
+async function salvarFrotaMot(v) { const nome = (document.getElementById("fNome") || {}).value || ""; if (!nome.trim() || !v) return;
+  try { await fetch(BACKEND + "/api/logistica/motorista-frota", { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": (b13GetSession() || {}).token || "" }, body: JSON.stringify({ nome: nome.trim(), frota: v }) }); } catch (e) {} }
+new MutationObserver(async () => { const s = document.getElementById("fEntregasPor"); if (!s || s.dataset.ok) return; s.dataset.ok = 1;
+  try { const j = await fetch(BACKEND + "/api/logistica/motoristas-frota", { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }).then(r => r.json()); const nome = ((document.getElementById("fNome") || {}).value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    const m = (j.mapa || {})[nome]; s.value = m ? m.frota : (/cooper/.test(nome) ? "coopermapp" : ""); } catch (e) {} }).observe(document.body, { childList: true, subtree: true });
+</script>
 </body>
 </html>

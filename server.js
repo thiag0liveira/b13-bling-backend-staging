@@ -10992,6 +10992,13 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
+const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
+const _nrmMot=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+function _frotaDoMotorista(nome){ const M=lerJSON(MOT_FROTA_FILE,{}), k=_nrmMot(nome); if(M[k]&&M[k].frota) return M[k].frota; if(/cooper/i.test(k)) return "coopermapp"; if(/lalamove/i.test(k)) return "lalamove"; return "propria"; }
+app.get("/api/logistica/motoristas-frota",requireSessao,(req,res)=>res.json({mapa:lerJSON(MOT_FROTA_FILE,{})}));
+app.post("/api/logistica/motorista-frota",requireSessao,(req,res)=>{ const nome=String(req.body?.nome||"").trim(), f=String(req.body?.frota||""); if(!nome||!["propria","coopermapp","lalamove","outro"].includes(f)) return res.status(400).json({erro:"informe o nome e quem entrega"});
+  const M=lerJSON(MOT_FROTA_FILE,{}); M[_nrmMot(nome)]={nome,frota:f,por:req.sessao?.nome||"",em:Date.now()}; salvarJSON(MOT_FROTA_FILE,M); res.json({ok:true}); });
 // ===================== FROTA PRÓPRIA: depreciação gerencial (valor de mercado x taxa anual, sem mexer no caixa) =====================
 let _frotaCache=null; function lerFrota(){ if(!_frotaCache){ try{ _frotaCache=JSON.parse(fs.readFileSync(path.join(__dirname,"frota.json"),"utf8")); }catch(e){ _frotaCache={veiculos:[]}; } } return _frotaCache; }
 function _depreciacaoMes(mm){ return _round2((lerFrota().veiculos||[]).filter(v=>v.ativo&&String(v.inicio||"")<=mm).reduce((a,v)=>a+(Number(v.valor)||0)*(Number(v.taxa)||0.05)/12,0)); }
@@ -11184,6 +11191,16 @@ function _montarPainelGrupo(g){
         const fr=Number(RM.frete?.total||0); let frProj=dia>0?fr/dia*diasMes:fr; const ids=(Mx.pedidos||[]).map(p=>String(p.id||p.pedidoId||"")).filter(Boolean), P=lerProdutosBling().porId; let fat=0,fc=0,cu=0;
         ids.forEach(id=>{ let it=[]; try{ it=_itensDoPedido(id)||[]; }catch(e){} it.forEach(i=>{ const v=(Number(i.valor)||0)*(Number(i.quantidade)||0); fat+=v; const pr=i.produtoId?P[String(i.produtoId)]:null; if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } }); });
         const mb=fc>0?(fc-cu)/fc:null; if(usaReal) frProj=fr; // custo real: compara com o frete e o lucro ATÉ HOJE
+        // SEPARADO POR QUEM ENTREGOU (pelo motorista): Coopermapp x frota própria
+        const G={}; (Mx.porMotorista||[]).forEach(m=>{ const f=_frotaDoMotorista(m.motorista), g=(G[f]||={entregas:0,valor:0,frete:0,motoristas:[]}); g.entregas+=Number(m.entregues||m.entregas||0); g.valor+=Number(m.valorEntregue||0); g.frete+=Number(m.frete||0); g.motoristas.push(m.motorista); });
+        const gc=G.coopermapp||{entregas:0,valor:0,frete:0,motoristas:[]}, gp=G.propria||{entregas:0,valor:0,frete:0,motoristas:[]};
+        if(gc.entregas||gp.entregas){ const lc=mb!=null?gc.valor*mb:null, lp=mb!=null?gp.valor*mb:null;
+          const veicP=(O.itens||[]).filter(x=>/^5\.5\.2/.test(x.cod)||/combust|manuten..o ve|pneu|seguro|ipva/i.test(x.nome)), custoFrotaMes=_round2(veicP.reduce((a,x)=>a+(x.fev||x.jan||0),0)+_depreciacaoMes(hoje.slice(0,7))), custoFrotaAteHoje=_round2(custoFrotaMes*dia/diasMes);
+          kpi(String(gc.entregas),"Entregas pela Coopermapp",`frete ${brlN(gc.frete)} · vendas ${brlN(gc.valor)}${lc!=null?` · lucro bruto ${brlN(lc)}`:""}`,"/entregas-dashboard");
+          if(custoM>0) kpi(lc!=null?brlN(gc.frete+lc-custoM):"—","Resultado da Coopermapp",`frete + lucro bruto das entregas dela − custo ${brlN(custoM)}${gc.entregas?` · ${brlN(custoM/gc.entregas)} por entrega`:""}`,"/entregas-dashboard",lc!=null&&gc.frete+lc<custoM?"alerta":"");
+          kpi(String(gp.entregas),"Entregas pela frota própria",`frete ${brlN(gp.frete)} · vendas ${brlN(gp.valor)}${lp!=null?` · lucro bruto ${brlN(lp)}`:""}`,"/entregas-dashboard");
+          kpi(lp!=null?brlN(gp.frete+lp-custoFrotaAteHoje):"—","Resultado da frota própria",`frete + lucro bruto − custo da frota até hoje ${brlN(custoFrotaAteHoje)}${gp.entregas?` · ${brlN(custoFrotaAteHoje/gp.entregas)} por entrega`:""}`,"/entregas-dashboard",lp!=null&&gp.frete+lp<custoFrotaAteHoje?"alerta":"");
+          frProj=usaReal?gc.frete:frProj; }
         const lucroProj=mb!=null?(usaReal?fat*mb:(fat*mb)/(dia||1)*diasMes):null, retorno=frProj+(lucroProj||0);
         { const veic=(O.itens||[]).filter(x=>/^5\.5\.2/.test(x.cod)||/combust|manuten..o ve|pneu|seguro|ipva/i.test(x.nome)), gv=_round2(veic.reduce((a,x)=>a+(x.fev||x.jan||0),0)), dep=_depreciacaoMes(hoje.slice(0,7)), parados=(lerFrota().veiculos||[]).filter(v=>!v.ativo).length;
           kpi(brlN(gv+dep),"Frota própria (custo/mês)",`gastos ${brlN(gv)} + depreciação ${brlN(dep)}${parados?` · ${parados} veículo(s) parado(s) fora da conta`:""}`,"/contas-pagar"); }
