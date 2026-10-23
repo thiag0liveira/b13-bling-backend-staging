@@ -1793,7 +1793,7 @@ function _blocoPagamentoGer(e, ed, calc) {
       ${ed.pags.length > 1 ? `<button class="btn btn-ghost" style="width:auto;padding:4px 8px" onclick="gerRemoverForma(${e.pedidoId},${k})">✕</button>` : ""}
     </div>`).join("");
   return `<label style="display:flex;gap:6px;align-items:center;font-size:12px;margin:6px 0"><input type="checkbox" ${ed.jaPago ? "checked" : ""} onchange="gerJaPago(${e.pedidoId},this.checked)"> Esse pedido já estava pago antes (não receber agora)${e.pagamentoLocal && e.pagamentoLocal.statusPagamento === "pago" ? ` <span class="muted">— o sistema já tem R$ ${Number(e.pagamentoLocal.valorPago || 0).toFixed(2)} registrados</span>` : ""}</label>
-    ${ed.jaPago ? "" : `<div style="font-size:12px;font-weight:700;margin:4px 0">Como o cliente pagou</div>${linhas}
+    ${ed.jaPago ? "" : `<div style="font-size:12px;font-weight:700;margin:4px 0">Como o cliente pagou</div><div class="muted" style="font-size:11px;margin-bottom:4px">Se não souber, deixe em branco e toque em Registrar entrega. O pedido fica marcado como SEM PAGAMENTO.</div>${linhas}
       ${ed.pags.some(p => p.formaId === "prazo") ? "" : `<button class="btn btn-ghost" style="width:auto;font-size:11px;padding:4px 10px" onclick="gerAddForma(${e.pedidoId})">+ outra forma (pagamento dividido)</button>`}
       <div id="gerResumo-${e.pedidoId}" style="font-size:12px;margin-top:6px">${_resumoGer(calc)}</div>`}`;
 }
@@ -1809,7 +1809,7 @@ function _cardEntregaGer(e) {
     const pg = (en.pagamentos || []).map(p => `${esc(p.formaNome)}${p.banco ? " (" + esc(p.banco) + ")" : ""} ${brl(p.valor)}`).join(" · ");
     return `<div style="background:#0d2a1c;border:1px solid #2f9e6b;border-radius:10px;padding:10px;margin-bottom:8px">${cab}
       <div style="font-size:12px;color:#a8f0c8;margin-top:4px">✅ Entregue${en.origem === "gerente" ? " (registrado por " + esc(en.registradoPor || "gerente") + ")" : ""}${en.valorProblema > 0 ? ` · com problema em itens: −${brl(en.valorProblema)}` : ""}</div>
-      <div class="muted" style="font-size:11px">${en.jaPago ? "Já estava pago antes" : (pg ? "Pagamento: " + pg : "Sem valor a receber")}</div></div>`;
+      <div class="muted" style="font-size:11px">${en.jaPago ? "Já estava pago antes" : (pg ? "Pagamento: " + pg : (en.semPagamento ? "⚠️ Sem pagamento registrado: fica marcado como SEM PAGAMENTO" : "Sem valor a receber"))}</div></div>`;
   }
   if (en && en.status === "nao_entregue") {
     return `<div style="background:#2a1510;border:1px solid #c0304a;border-radius:10px;padding:10px;margin-bottom:8px">${cab}
@@ -1912,12 +1912,13 @@ async function gerSalvar(pid) {
   } else {
     const calc = _calcGer(e);
     const pags = ed.jaPago ? [] : ed.pags.filter(p => p.formaId && Number(p.valor) > 0).map(p => ({ formaId: p.formaId, formaNome: p.formaNome, valor: Number(p.valor), banco: p.banco || null }));
-    if (!ed.jaPago && calc.valorFinal > 0) {
-      if (!pags.length) return erro("Informe a forma de pagamento (ou marque que o pedido já estava pago).");
+    // sem nenhuma forma informada, a entrega fecha e o pedido fica marcado como SEM PAGAMENTO; se digitou alguma, o valor tem que bater
+    const semPagamento = !ed.jaPago && calc.valorFinal > 0 && !pags.length;
+    if (!ed.jaPago && calc.valorFinal > 0 && pags.length) {
       if (Math.abs(calc.diff) > 0.01) return erro("O valor informado não bate com o valor a receber (" + (calc.diff > 0 ? "falta " : "sobra ") + brl(Math.abs(calc.diff)) + ").");
     }
     url = "/api/rotas/viagem/" + encodeURIComponent(G.token) + "/entrega/" + pid;
-    corpo = { itensProblema: Object.keys(ed.prob).map(k => ({ produtoId: Number(k), quantidade: ed.prob[k] })), pagamentos: pags, jaPago: !!ed.jaPago, por, funcionarioId };
+    corpo = { itensProblema: Object.keys(ed.prob).map(k => ({ produtoId: Number(k), quantidade: ed.prob[k] })), pagamentos: pags, jaPago: !!ed.jaPago, semPagamento, por, funcionarioId };
   }
   ed.salvando = true; ed.msg = ""; _renderEncerrar();
   try {
@@ -1928,7 +1929,7 @@ async function gerSalvar(pid) {
       e.entrega = { status: "nao_entregue", motivo: ed.motivo, revertidoNoBling: j.revertido, origem: "gerente", registradoPor: por };
     } else {
       e.entrega = { status: "entregue", origem: "gerente", registradoPor: por, jaPago: !!ed.jaPago, valorProblema: j.valorProblema, valorFinal: j.valorFinal,
-        pagamentos: (corpo.pagamentos || []).map(p => ({ formaNome: p.formaNome, valor: p.valor, banco: p.banco })) };
+        pagamentos: (corpo.pagamentos || []).map(p => ({ formaNome: p.formaNome, valor: p.valor, banco: p.banco })), semPagamento: !!j.semPagamento };
       if (j.prazo) G.msgViagem = `<span style="color:#ffd23f">Pedido #${esc(e.numero)} registrado A PRAZO (vence em ${esc(j.venceEm || "")}). Nada foi recebido; o recebimento é feito depois no caixa.</span>`;
     }
     ed.salvando = false;

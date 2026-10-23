@@ -16002,6 +16002,9 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     if(ocorrencia?.url && urlComprovanteOk(ocorrencia.url) && !anexosOc.some(a=>a.url===ocorrencia.url)) anexosOc.unshift({url:String(ocorrencia.url),tipo:ocorrencia.tipo==="video"?"video":"foto"});
     const temOcorrencia=!!(ocorrencia&&(String(ocorrencia.descricao||"").trim()||anexosOc.length));
     const jaPago=gerente&&!!(body&&body.jaPago);
+    // ENCERRAR PELO ESCRITÓRIO SEM INFORMAR PAGAMENTO: só o gerente, e só quando nenhuma forma foi digitada. A entrega fecha
+    // e o pedido segue marcado como SEM PAGAMENTO (Central de Entregas) até alguém regularizar.
+    const semPagamentoGer=gerente&&!jaPago&&!!(body&&body.semPagamento)&&!(Array.isArray(body&&body.pagamentos)&&body.pagamentos.some(x=>x&&x.formaId&&Number(x.valor)>0));
     let det=null; try{ det=await bling(`/pedidos/vendas/${pid}`).then(r=>r?.data); }catch(e){}
     if(!det){ liberarTravaEntrega(); return {code:404,json:{erro:"pedido não encontrado no Bling"}}; }
     const totalPedido=Number(det.total||0);
@@ -16021,7 +16024,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     const ehCartao=n=>/cr[eé]dito|d[eé]bito/i.test(n||"");
     const totalPagoSemTaxa=+pags.reduce((s,p)=>s+(ehCartao(p.formaNome)?Number(p.valor)/(1+TAXA_CARTAO_PADRAO):Number(p.valor)),0).toFixed(2);
     const _cliPrazoEnt=(()=>{ try{ const r=lerVendasPrazo()[String(pid)]; return !!(r&&!r.pago&&r.origem==="conferencia"); }catch(e){ return false; } })();
-    if(valorFinal>0 && !jaPago && !(_cliPrazoEnt&&!pags.length)){ // cliente com prazo (registrado na conferência) pode finalizar sem pagamento
+    if(valorFinal>0 && !jaPago && !semPagamentoGer && !(_cliPrazoEnt&&!pags.length)){ // cliente com prazo (registrado na conferência) pode finalizar sem pagamento
       const diff=+(valorFinal-totalPagoSemTaxa).toFixed(2);
       if(Math.abs(diff)>0.01){ liberarTravaEntrega(); return {code:400,json:{erro:`O valor pago não bate com o valor a receber (${diff>0?"falta ":"está "+Math.abs(diff).toFixed(2)+" a mais, "}${diff>0?diff.toFixed(2):""}). Ajuste antes de finalizar.`}}; }
     }
@@ -16057,6 +16060,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
       assinaturaDataUrl:gerente?null:(assinaturaDataUrl||null),
       ocorrencia: temOcorrencia ? {descricao:String(ocorrencia.descricao||"").slice(0,300), url:anexosOc[0]?.url||null, tipo:anexosOc[0]?.tipo||null, anexos:anexosOc} : null,
       ...(gerente?{origem:"gerente",registradoPor:por,jaPago}:{}),
+      ...(semPagamentoGer&&valorFinal>0&&!_regConf?{semPagamento:true}:{}),
       ...(prazo?{prazo:true,diasPrazo,venceEm:agora+diasPrazo*86400000}:{}),
     };
     salvarViagensAtivas(vv);
@@ -16083,6 +16087,7 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
     if(problemas.length) partes.push(`Itens com problema: ${problemas.map(i=>`${Number(i.quantidade)}x ${nomeItem(i.produtoId)}`).join(", ")} (abatido ${brlN(valorProblema)}; a receber ${brlN(valorFinal)} de ${brlN(totalPedido)}).`);
     if(prazo) partes.push(`VENDA A PRAZO, nada recebido na entrega; vence em ${venceTxt}.`);
     else if(jaPago) partes.push("Já estava pago antes da entrega.");
+    else if(semPagamentoGer&&valorFinal>0&&!pags.length) partes.push(`Pagamento NÃO informado ao encerrar pelo escritório (a receber ${brlN(valorFinal)}); pedido segue marcado como SEM PAGAMENTO até ser regularizado.`);
     else if(pags.length) partes.push("Recebido na entrega: "+pags.map(p=>`${p.formaNome||"forma"}${p.banco?` (${p.banco})`:""} ${brlN(p.valor)}`).join(" · ")+".");
     else partes.push("Nada a receber nesta entrega.");
     if(temOcorrencia) partes.push(`Ocorrência: ${String(ocorrencia.descricao||"(com anexo)").slice(0,200)}${anexosOc.length?` (${anexosOc.length} anexo${anexosOc.length>1?"s":""})`:""}.`);
@@ -16110,7 +16115,12 @@ async function registrarEntregaViagem(token,pidRaw,body,ctx){
       }
     })();
     addLog(String(pid),gerente?"entrega_finalizada_gerente":"entrega_finalizada_motorista",gerente?(ctx.funcionarioId||null):v.motoristaFuncionarioId,quemNome,{valorProblema,valorFinal,temAvaria:problemas.length>0,temOcorrencia,prazo,...(gerente?{jaPago}:{})});
-    return {code:200,json:{ok:true, valorProblema, valorFinal, prazo, venceEm:prazo?venceTxt:null, situacaoNoBling:prazo?"PRAZO":"mantida"}};
+    if(semPagamentoGer&&valorFinal>0&&!prazo){
+      try{ registrarAviso({tipo:"entrega_encerrada_sem_pagamento", pedidoId:String(pid), numero:det.numero, operador:quemNome, origem:"Gerenciador de rotas",
+        titulo:`Entrega do pedido #${det.numero||pid} encerrada SEM pagamento (${brlN(valorFinal)}), por ${quemNome}`, fingerprint:`entr-encerrada-sempag-${pid}`,
+        oQueFazer:`A corrida foi encerrada sem informar como o cliente pagou o pedido #${det.numero||pid} (${det.contato?.nome||""}, ${brlN(valorFinal)}). Ele fica como SEM PAGAMENTO na Central de Entregas. Confirme o recebimento e registre o pagamento.`}); }catch(e){}
+    }
+    return {code:200,json:{ok:true, semPagamento:!!(semPagamentoGer&&valorFinal>0&&!prazo), valorProblema, valorFinal, prazo, venceEm:prazo?venceTxt:null, situacaoNoBling:prazo?"PRAZO":"mantida"}};
   }catch(e){ liberarTravaEntrega(); return {code:500,json:{erro:e.message}}; }
 }
 // Pedido que NÃO foi entregue (cliente ausente, recusou, voltou no carro). Só o
