@@ -352,7 +352,10 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
   const maxNomeW = (W - 300 - 46) - padd; // o nome termina antes da coluna QTD (alinhada em W-300)
   itensArr.forEach(i => { i._linhas = quebrarTextoProp(_mc, i.nome || "produto", maxNomeW, 3); });
   const extraLinhas = itensArr.reduce((s, i) => s + ((i._linhas.length || 1) - 1), 0);
-  const H = 560 + itensArr.length * itemH + extraLinhas * 22 + (ehPedido ? qrSize + 90 : 70) + (p.observacao ? 60 : 0);
+  // ENTREGA: endereço completo no papel quando o pedido é de entrega
+  const ehEnt = p.entrega && p.entrega.tipo === "entrega", endTxt = ehEnt ? (String(p.entrega.endereco || "").trim() || "endereço não informado") : "", freteEnt = ehEnt ? Number(p.entrega.taxa || 0) : 0;
+  _mc.font = "700 16px Arial"; const endLinhas = ehEnt ? quebrarTextoProp(_mc, endTxt, W - padd * 2, 4) : [], endH = ehEnt ? 34 + endLinhas.length * 21 + (freteEnt > 0 ? 22 : 0) + 6 : 0;
+  const H = endH + 560 + itensArr.length * itemH + extraLinhas * 22 + (ehPedido ? qrSize + 90 : 70) + (p.observacao ? 60 : 0);
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr; cv.height = H * dpr;
@@ -398,6 +401,9 @@ function desenharComprovanteProp(p, ehPedido, qrEl, barCanvas) {
     ctx.font = "900 18px Arial"; ctx.fillText(p.vendedorNome, padd + 150, y);
     y += 28;
   }
+  if (ehEnt) { ctx.textAlign = "left"; ctx.fillStyle = "#000"; ctx.font = "900 13px Arial"; ctx.fillText("ENTREGA", padd, y); y += 22;
+    ctx.font = "700 16px Arial"; endLinhas.forEach(l => { ctx.fillText(l, padd, y); y += 21; });
+    if (freteEnt > 0) { ctx.font = "900 14px Arial"; ctx.fillText("Frete: R$ " + freteEnt.toFixed(2).replace(".", ","), padd, y); y += 22; } y += 6; }
   ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 26;
   // itens
   ctx.font = "900 13px Arial"; ctx.fillStyle = "#666"; ctx.textAlign = "left";
