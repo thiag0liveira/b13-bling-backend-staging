@@ -185,7 +185,15 @@ function imprimirPedidoComprovante(id) {
     _continuarImpressaoComprovante(pFresco, w);
   }).catch(function () { _continuarImpressaoComprovante(p, w); });
 }
+// antes de desenhar, busca o endereço de entrega do pedido (o mesmo usado no frete)
 function _continuarImpressaoComprovante(p, w) {
+  fetch(B + "/api/pedidos-online/" + p.id + "/endereco").then(function (r) { return r.json(); }).then(function (end) {
+    var txt = end ? (end.noPedido || end.sugerido || end.doCadastro || "") : "";
+    var ehEnt = !!(p.ehEntrega || p.tipoEntrega === "entrega" || (p.entrega && p.entrega.tipo === "entrega") || Number(p.frete || 0) > 0 || (end && end.noPedido));
+    if (ehEnt) p._entregaEnd = String(txt || "").trim() || "endereço não informado";
+  }).catch(function () {}).then(function () { _continuarImpressaoComprovante2(p, w); });
+}
+function _continuarImpressaoComprovante2(p, w) {
   if (w.closed) return;
   const tmpQr = document.createElement("div");
   tmpQr.style.cssText = "position:absolute;left:-9999px;top:-9999px";
@@ -219,7 +227,11 @@ function desenharComprovantePed(p, qrEl, barCanvas) {
   itensArr.forEach(function (i) { i._linhas = quebrarTextoPed(_mc, i.nome || "produto", maxNomeW, 2); });
   const extraLinhas = itensArr.reduce(function (s, i) { return s + ((i._linhas.length || 1) - 1); }, 0);
   const temFrete = Number(p.frete || 0) > 0.009;
-  const H = 620 + itensArr.length * itemH + extraLinhas * 24 + qrSize + (temFrete ? 34 : 0) + 90;
+  // ENTREGA: endereço completo quando o pedido é de entrega
+  const _m = document.createElement("canvas").getContext("2d"); _m.font = "700 16px Arial";
+  const endLinhas = []; if (p._entregaEnd) { let at = ""; String(p._entregaEnd).split(/\s+/).forEach(pal => { const t = at ? at + " " + pal : pal; if (_m.measureText(t).width > W - padd * 2 && at) { endLinhas.push(at); at = pal; } else at = t; }); if (at) endLinhas.push(at); endLinhas.length = Math.min(endLinhas.length, 4); }
+  const endH = p._entregaEnd ? 30 + endLinhas.length * 21 + 8 : 0;
+  const H = endH + 620 + itensArr.length * itemH + extraLinhas * 24 + qrSize + (temFrete ? 34 : 0) + 90;
   const cv = document.createElement("canvas");
   const dpr = 3;
   cv.width = W * dpr; cv.height = H * dpr;
@@ -262,6 +274,7 @@ function desenharComprovantePed(p, qrEl, barCanvas) {
   ctx.font = "900 26px Arial";
   ctx.fillText(p.cliente || "Consumidor Final", padd, y + 30);
   y += 52;
+  if (p._entregaEnd) { ctx.font = "900 14px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left"; ctx.fillText("ENTREGA", padd, y); y += 22; ctx.font = "700 16px Arial"; endLinhas.forEach(l => { ctx.fillText(l, padd, y); y += 21; }); y += 8; }
   ctx.fillStyle = "#000"; ctx.fillRect(0, y, W, 2); y += 32;
 
   // itens
