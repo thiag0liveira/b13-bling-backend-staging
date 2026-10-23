@@ -202,11 +202,32 @@ function renderNota() {
 }
 let IMG_MSG = "";
 const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+// ---- notas pagas pelo MESMO boleto ----
+const JB = () => (typeof P !== "undefined" ? P : "/api/entrada-nota");
+let JUNTAR_ABERTO = false, _tJ = null;
+const dataJ = ms => ms ? new Date(Number(ms)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
+function blocoJuntas(n, comValores) {
+  const js = n.notasJuntas || [], travado = !!(n.financeiroFeito || n.financeiro);
+  const chips = js.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:4px 0;background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:6px 8px"><span class="ic" style="white-space:normal;color:#fff">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")}${comValores && x.vNF != null ? " · " + brl(x.vNF) : ""}</span>${travado ? "" : `<button class="btn btn-ghost" style="padding:3px 8px" onclick="desjuntar('${esc(x.id)}')">✕</button>`}</div>`).join("");
+  return `<div style="margin:8px 0;padding:8px;border:1px dashed #3a3480;border-radius:10px"><div class="ic" style="white-space:normal;margin-bottom:4px">🔗 Um mesmo boleto pagando mais de uma nota</div>
+    ${chips || '<div class="ic">Nenhuma outra nota ligada a este boleto.</div>'}
+    ${travado ? "" : `<button class="btn btn-ghost" style="padding:6px 12px;margin-top:4px" onclick="abrirJuntar()">➕ Juntar outra nota neste boleto</button>`}
+    <div id="juntarBox" style="${JUNTAR_ABERTO ? "" : "display:none;"}margin-top:6px"><input id="juntarQ" placeholder="🔎 nº da nota ou fornecedor" oninput="buscarJuntar()" style="width:100%"><div id="juntarRes" class="ic" style="margin-top:4px"></div></div></div>`;
+}
+function abrirJuntar() { JUNTAR_ABERTO = true; const b = document.getElementById("juntarBox"); if (b) b.style.display = ""; buscarJuntar(); const q = document.getElementById("juntarQ"); if (q) q.focus(); }
+function buscarJuntar() { clearTimeout(_tJ); _tJ = setTimeout(async () => {
+  const q = (document.getElementById("juntarQ") || {}).value || "", { ok, j } = await api(JB() + "/buscar-notas?notaId=" + encodeURIComponent(N.id) + "&q=" + encodeURIComponent(q.trim())), el = document.getElementById("juntarRes"); if (!el) return;
+  if (!ok) { el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui buscar.")}</span>`; return; }
+  el.innerHTML = (j.notas || []).map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #221e4f"><span style="white-space:normal">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")} · ${dataJ(x.emissao)}${x.vNF != null ? " · " + brl(x.vNF) : ""}${x.entradaFeita ? " · estoque já lançado" : ""}</span><button class="btn btn-mag" style="padding:4px 10px" onclick="juntar('${esc(x.id)}')">Juntar</button></div>`).join("") || "Nenhuma nota encontrada."; }, 300); }
+async function juntar(id) { const { ok, j } = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui juntar."); return; } JUNTAR_ABERTO = false; aplicarNotaJunta(j.nota); }
+async function desjuntar(id) { if (!confirm("Desligar esta nota deste boleto?")) return; const { ok, j } = await api(JB() + "/desjuntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui desligar."); return; } aplicarNotaJunta(j.nota); }
+function aplicarNotaJunta(nota) { N.notasJuntas = nota.notasJuntas || []; N.boletos = nota.boletos || N.boletos; renderNota(); }
 function blocoAnexos(n) {
   const a = n.anexos || [], bo = n.boletos || [];
   const miniaturas = a.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF" : "📄 XML"}</button>`).join("")}</div>` : "";
   const boletos = bo.map(b => `<div class="ic" style="margin-top:4px;white-space:normal">🧾 Boleto lido${b.vencimento ? " · vence " + dmy(b.vencimento) : ""} · guardado para o financeiro pagar ${b.confira ? '<span style="color:#ffd23f">⚠️ o financeiro vai conferir os números</span>' : '<span style="color:#3ce88a">✅ conferido</span>'}</div>`).join("");
   return `<div style="margin-top:8px"><div class="ic" style="margin-bottom:2px">📎 Imagens desta nota${a.length ? " (" + a.length + ")" : ""}</div>${miniaturas}${boletos}
+    ${blocoJuntas(n, false)}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
       <label class="btn btn-ghost" style="cursor:pointer">📷 Tirar foto<input type="file" accept="image/*" capture="environment" style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label>
       <label class="btn btn-ghost" style="cursor:pointer">🖼️ Fotos, PDF ou boletos (várias)<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="adicionarImagens(this.files);this.value=''"></label></div>
@@ -227,9 +248,10 @@ async function adicionarImagens(files) {
       const dados = pdf ? await lerArq(f) : await reduzir(f);
       const { ok, j } = await api(P + "/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: f.name || "imagem.jpg", dados, ler: true }) });
       if (!ok) { linhas.push(`<div class="err">${nome}: ${esc(j.erro || "não consegui guardar")}</div>`); continue; }
-      N.anexos = j.anexos || N.anexos; N.boletos = j.boletos || N.boletos;
+      N.anexos = j.anexos || N.anexos; N.boletos = j.boletos || N.boletos; if (j.notasJuntas) N.notasJuntas = j.notasJuntas;
       const l = j.leitura || {};
       if (l.erro) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">⚠️ ${nome}: guardada, mas não consegui ler como boleto (${esc(l.erro)})</div>`);
+      else if (l.compartilhado) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">🔗 ${nome}: esse boleto também paga a NF ${esc((l.comNota || {}).numero || "")}${(l.comNota || {}).fornecedor ? " (" + esc(l.comNota.fornecedor) + ")" : ""}. As duas notas ficaram ligadas ao mesmo boleto.</div>`);
       else if (l.ehBoleto && l.duplicado) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">ℹ️ ${nome}: esse boleto já tinha sido lido${l.jaNaNota ? " nesta nota" : " em outra nota"}.</div>`);
       else if (l.ehBoleto) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">✅ ${nome}: boleto lido${l.vencimento ? " (vence " + dmy(l.vencimento) + ")" : ""}${l.confira ? " · ⚠️ o financeiro vai conferir os números" : ""}</div>`);
       else linhas.push(`<div class="ic" style="white-space:normal">🖼️ ${nome}: imagem guardada na nota.</div>`);
@@ -290,7 +312,7 @@ async function salvarVenc() {
   msgVenc('<span style="color:#3ce88a">✅ Prazo salvo. O financeiro usa estas datas nos boletos.</span>'); }
 function novaEntrada() {
   if (N && !N.entrada && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não deu entrada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
-  fecharCamera(); N = null; IGN = new Set(); IMG_MSG = ""; VENCNOTA = null; msgLer("");
+  fecharCamera(); N = null; IGN = new Set(); IMG_MSG = ""; VENCNOTA = null; JUNTAR_ABERTO = false; msgLer("");
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

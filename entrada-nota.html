@@ -180,7 +180,8 @@ function renderNota() {
       <button class="btn btn-ghost" style="padding:4px 8px" onclick="if(confirm('Tirar este item da compra?'))editarSN({nItem:${x.nItem},remover:true})">🗑</button></div>` : "";
   const it = x => { const ign = IGN.has(x.nItem), dif = x.custoAnterior && x.custoRealUn ? Math.round((x.custoRealUn - x.custoAnterior) / x.custoAnterior * 100) : null;
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
-        <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
+        <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div>
+        <div class="ic" style="white-space:normal;margin-top:2px">💲 Valor na nota: <b style="color:#fff">${brl(x.vUnCom)}</b> por ${esc(x.uCom)} → <b style="color:#fff">${brl(x.custoUn)}</b> por unidade · custo real <b style="color:#fff">${brl(x.custoRealUn)}</b>/un (com frete e impostos)</div></div>
         <div style="text-align:right"><b>${brl(x.custoRealUn)}</b><span class="ic">/un</span>${dif != null ? `<div class="ic">antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span></div>` : ""}
         ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
         ${x.reajuste ? (() => { const r = x.reajuste, ok = REAJ[x.produtoId] != null;
@@ -189,11 +190,12 @@ function renderNota() {
             <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" ${ok ? "checked" : ""} onchange="marcarReajuste(${x.produtoId},this.checked,${r.precoSugerido})"> atualizar o preço de venda no Bling para R$
               <input value="${String(ok ? REAJ[x.produtoId] : r.precoSugerido).replace(".", ",")}" inputmode="decimal" style="width:80px" onchange="REAJ[${x.produtoId}]!=null&&(REAJ[${x.produtoId}]=this.value.replace(',','.'))"></label></div>`; })() : ""}
         ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
-    return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
+    return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} × <b style="color:#fff">${brl(x.vUnCom)}</b> por ${esc(x.uCom)} = ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
         <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
-        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px">
+        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px" oninput="puAtualiza(${x.nItem})">
         <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
+      <div id="pu${x.nItem}" class="ic" style="white-space:normal;margin-top:4px">${puTxt(x, x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : 0))}</div>
       ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b> pelo preço (${brl(x.vUnCom || (x.qCom ? x.vProd / x.qCom : 0))} cada). Confira antes de ligar.</div>` : x.fatorFonte && x.sugestaoFator > 1 ? `<div class="ic">conversão ${esc(x.fatorFonte)}</div>` : ""}
       <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas (e o Bling também aprende).</div>
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
@@ -253,6 +255,30 @@ let BOL = null, BOLNOTA = null;
 const numBol = v => { const t = String(v == null ? "" : v).trim(); if (!t) return 0; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
 function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; const lidos = (n.boletosLidos || []).filter(b => !b.tituloId);
   BOL = lidos.length ? lidos.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })) : (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
+// valor por unidade enquanto se informa quantas unidades vêm em cada embalagem da nota
+function puTxt(x, f) { f = Number(String(f || "").replace(",", ".")); if (!(f > 0) || !(Number(x.qCom) > 0)) return ""; return `💲 ${brl(x.vUnCom)} por ${esc(x.uCom)} ÷ ${num(f)} = <b style="color:#fff">${brl(((Number(x.vProd) || 0) - (Number(x.vDesc) || 0)) / (Number(x.qCom) * f))}</b> por unidade (sem frete e impostos)`; }
+function puAtualiza(nItem) { const x = (N.itens || []).find(i => i.nItem === nItem), el = document.getElementById("pu" + nItem); if (x && el) el.innerHTML = puTxt(x, (document.getElementById("fat" + nItem) || {}).value); }
+// ---- notas pagas pelo MESMO boleto ----
+const JB = () => (typeof P !== "undefined" ? P : "/api/entrada-nota");
+let JUNTAR_ABERTO = false, _tJ = null;
+const dataJ = ms => ms ? new Date(Number(ms)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
+function blocoJuntas(n, comValores) {
+  const js = n.notasJuntas || [], travado = !!(n.financeiroFeito || n.financeiro);
+  const chips = js.map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin:4px 0;background:#0f0d24;border:1px solid #37327a;border-radius:8px;padding:6px 8px"><span class="ic" style="white-space:normal;color:#fff">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")}${comValores && x.vNF != null ? " · " + brl(x.vNF) : ""}</span>${travado ? "" : `<button class="btn btn-ghost" style="padding:3px 8px" onclick="desjuntar('${esc(x.id)}')">✕</button>`}</div>`).join("");
+  return `<div style="margin:8px 0;padding:8px;border:1px dashed #3a3480;border-radius:10px"><div class="ic" style="white-space:normal;margin-bottom:4px">🔗 Um mesmo boleto pagando mais de uma nota</div>
+    ${chips || '<div class="ic">Nenhuma outra nota ligada a este boleto.</div>'}
+    ${travado ? "" : `<button class="btn btn-ghost" style="padding:6px 12px;margin-top:4px" onclick="abrirJuntar()">➕ Juntar outra nota neste boleto</button>`}
+    <div id="juntarBox" style="${JUNTAR_ABERTO ? "" : "display:none;"}margin-top:6px"><input id="juntarQ" placeholder="🔎 nº da nota ou fornecedor" oninput="buscarJuntar()" style="width:100%"><div id="juntarRes" class="ic" style="margin-top:4px"></div></div></div>`;
+}
+function abrirJuntar() { JUNTAR_ABERTO = true; const b = document.getElementById("juntarBox"); if (b) b.style.display = ""; buscarJuntar(); const q = document.getElementById("juntarQ"); if (q) q.focus(); }
+function buscarJuntar() { clearTimeout(_tJ); _tJ = setTimeout(async () => {
+  const q = (document.getElementById("juntarQ") || {}).value || "", { ok, j } = await api(JB() + "/buscar-notas?notaId=" + encodeURIComponent(N.id) + "&q=" + encodeURIComponent(q.trim())), el = document.getElementById("juntarRes"); if (!el) return;
+  if (!ok) { el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui buscar.")}</span>`; return; }
+  el.innerHTML = (j.notas || []).map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #221e4f"><span style="white-space:normal">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")} · ${dataJ(x.emissao)}${x.vNF != null ? " · " + brl(x.vNF) : ""}${x.entradaFeita ? " · estoque já lançado" : ""}</span><button class="btn btn-mag" style="padding:4px 10px" onclick="juntar('${esc(x.id)}')">Juntar</button></div>`).join("") || "Nenhuma nota encontrada."; }, 300); }
+async function juntar(id) { const { ok, j } = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui juntar."); return; } JUNTAR_ABERTO = false; aplicarNotaJunta(j.nota); }
+async function desjuntar(id) { if (!confirm("Desligar esta nota deste boleto?")) return; const { ok, j } = await api(JB() + "/desjuntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui desligar."); return; } aplicarNotaJunta(j.nota); }
+function aplicarNotaJunta(nota) { N.notasJuntas = nota.notasJuntas || []; N.boletosLidos = nota.boletosLidos || N.boletosLidos; BOLNOTA = null; renderNota(); }
+const numeroDaJunta = id => { const x = (N.notasJuntas || []).find(y => String(y.id) === String(id)); return x ? x.numero : ""; };
 function blocoBoletos(n) {
   iniciarBol(n);
   const base = baseFin();
@@ -263,9 +289,10 @@ function blocoBoletos(n) {
     <div style="display:flex;gap:6px;align-items:center;margin-top:5px"><span class="ic" style="width:34px"></span><span class="ic">Valor R$</span><input inputmode="decimal" value="${esc(d.valor)}" placeholder="0,00" onchange="BOL[${i}].valor=this.value;somaBol()" oninput="BOL[${i}].valor=this.value;somaBol()" style="width:110px"><button class="btn btn-ghost" style="padding:4px 9px;margin-left:auto" onclick="rmBol(${i})">✕</button></div></div>`).join("");
   return `<div class="card" style="border-color:#2a4f7a"><h3 style="margin:0 0 4px">🧾 Só lançar os boletos</h3>
     <div class="ic" style="white-space:normal;margin-bottom:6px">Use quando os produtos desta nota já entraram no estoque do Bling. Não liga produtos e não mexe no estoque nem no custo, só cria as contas a pagar (usa a forma "A pagar" ou "Pago" escolhida em Pagamento).</div>
+    ${blocoJuntas(n, true)}
     <div class="ic" style="margin-bottom:2px">Contar os dias a partir de <select onchange="BASEOPT_FIN=this.value;renderNota()" style="padding:4px 6px"><option value="emissao" ${(BASEOPT_FIN || baseDefault(n)) === "emissao" ? "selected" : ""}>emissão (${isoParaBR(emissaoISO(n) || hojeISO())})</option><option value="hoje" ${(BASEOPT_FIN || baseDefault(n)) === "hoje" ? "selected" : ""}>hoje (${isoParaBR(hojeISO())})</option></select></div>
     <div id="bolLinhas">${linhas || '<div class="ic">Nenhum boleto. Toque em "+ boleto".</div>'}</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 12px" onclick="addBol()">+ boleto</button><span class="ic" id="bolSoma">${somaTxtBol()}</span></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 12px" onclick="addBol()">+ boleto</button><span class="ic" id="bolSoma" style="white-space:normal;flex:1 1 220px">${somaTxtBol()}</span></div>
     <div id="bolMsg" style="margin-top:6px"></div>
     ${n.entrada ? "" : `<label class="ic" style="display:flex;gap:6px;align-items:flex-start;white-space:normal;margin-top:6px"><input type="checkbox" id="bolJaNoBling" checked> Os produtos desta nota já foram lançados no Bling (tira a nota da lista de “sem entrada” e evita lançar o estoque duas vezes)</label>`}
     <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:11px" ${n.financeiro ? "disabled" : ""} onclick="lancarSoBoletos()">💸 Lançar só os boletos</button></div>`;
@@ -284,7 +311,9 @@ const baseFin = () => (BASEOPT_FIN || baseDefault(N)) === "emissao" ? (emissaoIS
 function bolAtualiza(i) { const d = BOL[i].vencimento, base = baseFin(), s = (id, v) => { const e = document.getElementById(id + i); if (e) e.value = v; }; s("bd", d ? diasEntre(base, d) : ""); s("bt", d ? isoParaBR(d) : ""); s("bp", d || ""); }
 function bolDias(i, v) { const n = parseInt(String(v).replace(/\D/g, ""), 10); const el = document.getElementById("bolMsg"); if (isNaN(n) || n < 0 || n > 1000) { if (el) el.innerHTML = '<div class="err">Informe os dias (0 a 1000).</div>'; return; } if (el) el.innerHTML = ""; BOL[i].vencimento = somarDias(baseFin(), n); bolAtualiza(i); }
 function bolData(i, t) { const iso = brParaISO(t); const el = document.getElementById("bolMsg"); if (!iso) { if (el) el.innerHTML = '<div class="err">Data inválida. Digite dia/mês/ano, por exemplo 25/11/2026.</div>'; return; } if (el) el.innerHTML = ""; BOL[i].vencimento = iso; bolAtualiza(i); }
-function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0); return "Total dos boletos: " + brl(t); }
+function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0), js = (N && N.notasJuntas) || []; let r = "Total dos boletos: " + brl(t);
+  if (js.length) { const sn = (Number((N.totais || {}).vNF) || 0) + js.reduce((s, x) => s + (Number(x.vNF) || 0), 0), dif = Math.round((t - sn) * 100) / 100; r += " · soma das " + (js.length + 1) + " notas: " + brl(sn) + (Math.abs(dif) > 0.05 ? " · ⚠️ diferença de " + brl(Math.abs(dif)) + (dif > 0 ? " a mais no boleto" : " a menos no boleto") : " · ✅ confere"); }
+  return r; }
 function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); }
 function addBol() { const ult = (BOL || [])[BOL.length - 1]; let venc = ""; if (ult && ult.vencimento) { const d = new Date(ult.vencimento + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); venc = d.toISOString().slice(0, 10); } BOL.push({ vencimento: venc, valor: "" }); renderNota(); }
 function rmBol(i) { BOL.splice(i, 1); renderNota(); }
@@ -312,7 +341,7 @@ async function copiar(txt, el) { try { await navigator.clipboard.writeText(txt);
 function blocoBoletosLidos(n) {
   const L = n.boletosLidos || [];
   const cards = L.map(b => `<div class="itn" style="margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><b>${esc(b.beneficiario || "Beneficiário não lido")}</b><b>${brl(b.valor)}</b></div>
-    <div class="ic" style="white-space:normal">vence ${dmyN(b.vencimento)}${b.numeroDocumento ? " · doc " + esc(b.numeroDocumento) : ""} · ${b.tituloId ? '<span style="color:#3ce88a">já lançado em contas a pagar</span>' : '<span style="color:#ffd23f">ainda não lançado</span>'} · ${b.conferido ? '<span style="color:#3ce88a">✅ dígitos conferem</span>' + (b.aviso ? ' <span class="ic">(' + esc(b.aviso) + ')</span>' : "") : '<span style="color:#ff8aa3">⚠️ confira: ' + esc(b.aviso || "") + "</span>"}</div>
+    <div class="ic" style="white-space:normal">${b.notaOrigem && String(b.notaOrigem) !== String(N.id) ? "🔗 lido na NF " + esc(numeroDaJunta(b.notaOrigem) || "") + " · " : ""}vence ${dmyN(b.vencimento)}${b.numeroDocumento ? " · doc " + esc(b.numeroDocumento) : ""} · ${b.tituloId ? '<span style="color:#3ce88a">já lançado em contas a pagar</span>' : '<span style="color:#ffd23f">ainda não lançado</span>'} · ${b.conferido ? '<span style="color:#3ce88a">✅ dígitos conferem</span>' + (b.aviso ? ' <span class="ic">(' + esc(b.aviso) + ')</span>' : "") : '<span style="color:#ff8aa3">⚠️ confira: ' + esc(b.aviso || "") + "</span>"}</div>
     <div class="ic" style="margin-top:6px">Linha digitável</div><div style="font-family:monospace;font-size:13px;word-break:break-all;color:#fff">${esc(fmtLinha(b.linhaDigitavel)) || "—"}</div>
     <div class="ic" style="margin-top:4px">Código de barras</div><div style="font-family:monospace;font-size:12px;word-break:break-all;color:#cfcaf5">${esc(b.codigoBarras) || "—"}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-mag" style="padding:5px 10px" onclick="copiar('${esc(b.linhaDigitavel)}',this)">📋 Copiar linha digitável</button>
@@ -337,8 +366,9 @@ async function adicionarImagens(files) {
       const dados = pdf ? await lerArq(f) : await reduzir(f);
       const { ok, j } = await api("/api/entrada-nota/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: f.name || "imagem.jpg", dados, ler: true }) });
       if (!ok) { linhas.push(`<div class="err">${nome}: ${esc(j.erro || "não consegui guardar")}</div>`); continue; }
-      N.anexos = j.anexos || N.anexos; N.boletosLidos = j.boletos || N.boletosLidos; const l = j.leitura || {};
+      N.anexos = j.anexos || N.anexos; N.boletosLidos = j.boletos || N.boletosLidos; if (j.notasJuntas) N.notasJuntas = j.notasJuntas; const l = j.leitura || {};
       if (l.erro) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">⚠️ ${nome}: guardada, mas não consegui ler como boleto (${esc(l.erro)})</div>`);
+      else if (l.compartilhado) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">🔗 ${nome}: esse boleto também paga a NF ${esc((l.comNota || {}).numero || "")}${(l.comNota || {}).fornecedor ? " (" + esc(l.comNota.fornecedor) + ")" : ""}. As duas notas ficaram ligadas ao mesmo boleto.</div>`);
       else if (l.ehBoleto && l.duplicado) linhas.push(`<div class="ic" style="color:#ffd23f;white-space:normal">ℹ️ ${nome}: esse boleto já tinha sido lido${l.jaNaNota ? " nesta nota" : " em outra nota"}.</div>`);
       else if (l.ehBoleto) linhas.push(`<div class="ic" style="color:#3ce88a;white-space:normal">✅ ${nome}: boleto lido · ${brl(l.boleto.valor)} · vence ${dmyN(l.boleto.vencimento)}${l.boleto.conferido ? "" : " · ⚠️ confira os números"}</div>`);
       else linhas.push(`<div class="ic" style="white-space:normal">🖼️ ${nome}: imagem guardada na nota.</div>`);
@@ -348,7 +378,7 @@ async function adicionarImagens(files) {
 function novaEntrada() {
   const ficou = N && !N.entrada && !N.financeiro;
   if (ficou && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não foi lançada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
-  fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; BASEOPT_FIN = null; IMG_MSG = ""; msgLer("");
+  fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; BASEOPT_FIN = null; JUNTAR_ABERTO = false; IMG_MSG = ""; msgLer("");
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

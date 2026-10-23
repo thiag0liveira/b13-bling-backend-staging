@@ -11355,7 +11355,7 @@ async function _resumoEntradaNota(n){
     const sobe=alta!=null&&alta>=0.5, fator=sobe?cr/cRef:1;
     const reajuste=sobe&&p&&p.p>0?{custoAnterior:cRef,fonte:fonteRef,ultimaEntradaEm:ue?ue.ultima:null,altaPct:alta,precoAtual:p.p,precoSugerido:arred(p.p*fator),
       margemAntes:+((p.p-cRef)/p.p*100).toFixed(1),margemSemReajuste:+((p.p-cr)/p.p*100).toFixed(1),atacadoAtual:cat&&cat.a>0?cat.a:null,atacadoSugerido:cat&&cat.a>0?arred(cat.a*fator):null}:null;
-    return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
+    return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,vUnCom:(Number(x.vUnCom)||(Number(x.qCom)>0?+((Number(x.vProd)||0)/Number(x.qCom)).toFixed(4):0)),cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
       custoAnterior:cRef!=null?cRef:(p&&p.pc>0?p.pc:null),precoVenda:p?p.p:null,reajuste,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
       ...(()=>{ if(x.status==="ok") return {sugestoes:[],sugestaoFator:0};
@@ -11380,7 +11380,7 @@ async function _resumoEntradaNota(n){
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
-    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,notasJuntas:_grupoDaNota(n.id).filter(x=>x!==String(n.id)).map(_resumoNotaJunta).filter(Boolean),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
 // A API v3 do Bling NÃO tem busca por chave, nem manifestação, nem importação da SEFAZ (as rotas usadas antes não existem e o erro era engolido).
 // O que existe: listar as notas por período/tipo (GET /nfe?tipo=0 = entrada) e baixar o documento pela chave (GET /nfe/documento/{chave}).
@@ -11447,7 +11447,20 @@ function _salvarAnexos(notaId,arqs,por){
 }
 // ===== BOLETOS LIDOS (várias imagens por nota): número (linha digitável) e código de barras, guardados à parte para pagar =====
 const ENTRADA_BOLETOS_FILE=`${DATA_DIR}/entrada_nota_boletos.json`;
-function _boletosDaNota(id){ return lerJSON(ENTRADA_BOLETOS_FILE,{})[String(id)]||[]; }
+const ENTRADA_JUNTAS_FILE=`${DATA_DIR}/entrada_nota_juntas.json`; // notas pagas pelo MESMO boleto: { grupos:{g1:[ids]}, porNota:{id:g1} }
+function _lerJuntas(){ const d=lerJSON(ENTRADA_JUNTAS_FILE,{}); d.grupos=d.grupos||{}; d.porNota=d.porNota||{}; return d; }
+function _grupoDaNota(id){ const d=_lerJuntas(), g=d.porNota[String(id)]; return g&&d.grupos[g]?d.grupos[g].map(String):[String(id)]; }
+function _juntarNotas(a,b){ a=String(a); b=String(b); if(a===b) return; const d=_lerJuntas(), ga=d.porNota[a], gb=d.porNota[b];
+  let g=ga||gb||("g"+Date.now().toString(36)+Math.random().toString(36).slice(2,4)); d.grupos[g]=d.grupos[g]||[];
+  [a,b,...(ga&&gb&&ga!==gb?(d.grupos[gb]||[]):[])].forEach(x=>{ if(!d.grupos[g].includes(x)) d.grupos[g].push(x); });
+  if(ga&&gb&&ga!==gb) delete d.grupos[gb]; d.grupos[g].forEach(x=>{ d.porNota[x]=g; }); salvarJSON(ENTRADA_JUNTAS_FILE,d); }
+function _desjuntarNota(id){ id=String(id); const d=_lerJuntas(), g=d.porNota[id]; if(!g) return; d.grupos[g]=(d.grupos[g]||[]).filter(x=>x!==id); delete d.porNota[id];
+  if(d.grupos[g].length<2){ d.grupos[g].forEach(x=>{ delete d.porNota[x]; }); delete d.grupos[g]; } salvarJSON(ENTRADA_JUNTAS_FILE,d); }
+function _boletosDaNota(id){ const T=lerJSON(ENTRADA_BOLETOS_FILE,{}), vistos=new Set(), r=[];
+  _grupoDaNota(id).forEach(nid=>(T[nid]||[]).forEach(b=>{ if(vistos.has(b.id)) return; vistos.add(b.id); r.push({...b,notaOrigem:nid}); })); return r; }
+function _resumoNotaJunta(nid){ const x=_notaEntrada(nid); if(!x) return null; const soma=(x.itens||[]).reduce((a,i)=>a+(Number(i.vProd)||0),0);
+  return {id:String(x.id),numero:x.numero||"",serie:x.serie||"",fornecedor:x.emitente?.nome||"",emissao:x.emissao||0,semNota:!!x.semNota,entradaFeita:!!(x.entrada&&x.entrada.em),
+    vNF:_round2(Number(x.totais?.vNF)||Number(x.vNF)||Number(x.totais?.totalLido)||soma)}; }
 function _mod10Bol(n){ let soma=0,peso=2; for(let i=n.length-1;i>=0;i--){ let p=Number(n[i])*peso; if(p>9) p=Math.floor(p/10)+(p%10); soma+=p; peso=peso===2?1:2; } const r=soma%10; return r===0?0:10-r; }
 function _mod11Bol(n,conv){ let soma=0,peso=2; for(let i=n.length-1;i>=0;i--){ soma+=Number(n[i])*peso; peso=peso===9?2:peso+1; }
   if(conv){ const r=soma%11; return (r===0||r===1)?0:(r===10?1:11-r); } const dv=11-(soma%11); return (dv===0||dv===10||dv===11)?1:dv; }
@@ -11503,7 +11516,10 @@ async function _lerEGuardarBoleto(notaId,anexo,buf,mime,por){
   const venc=v.vencimento||(/^\d{4}-\d{2}-\d{2}$/.test(String(L.vencimento||""))?L.vencimento:"");
   const todos=lerJSON(ENTRADA_BOLETOS_FILE,{});
   const igual=v.linha&&Object.entries(todos).flatMap(([nid,l])=>l.map(b=>({...b,nid}))).find(b=>b.linhaDigitavel===v.linha);
-  if(igual) return {ehBoleto:true,duplicado:true,jaNaNota:String(igual.nid)===String(notaId),boleto:igual};
+  if(igual&&String(igual.nid)!==String(notaId)){ // o mesmo boleto numa OUTRA nota: é um boleto que paga as duas
+    _juntarNotas(notaId,igual.nid); const o=_resumoNotaJunta(igual.nid);
+    return {ehBoleto:true,compartilhado:true,comNota:o?{id:o.id,numero:o.numero,fornecedor:o.fornecedor}:null,boleto:igual}; }
+  if(igual) return {ehBoleto:true,duplicado:true,jaNaNota:true,boleto:igual};
   const C=lerContasPagar(), jaTit=v.linha&&C.titulos.find(t=>t.linhaDigitavel===v.linha);
   const rec={id:"bo"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),anexoId:anexo?.id||null,beneficiario:String(L.beneficiario||"").slice(0,120),cnpj:String(L.cnpjBeneficiario||"").replace(/\D/g,"").slice(0,14),
     linhaDigitavel:v.linha,codigoBarras:v.codigoBarras,valor:vlr,vencimento:venc,numeroDocumento:String(L.numeroDocumento||"").slice(0,40),nossoNumero:String(L.nossoNumero||"").slice(0,40),tipo:v.tipo,
@@ -11513,8 +11529,8 @@ async function _lerEGuardarBoleto(notaId,anexo,buf,mime,por){
 }
 // liga um boleto lido ao título criado (pelo id, ou pelo mesmo vencimento e valor) para o pagamento ter o código à mão
 function _vincularBoletoTitulo(notaId,t,boletoId){
-  try{ const d=lerJSON(ENTRADA_BOLETOS_FILE,{}), L=d[String(notaId)]||[];
-    const b=L.find(x=>boletoId&&x.id===boletoId&&!x.tituloId)||L.find(x=>!x.tituloId&&x.vencimento===t.vencimento&&Math.abs((x.valor||0)-t.valor)<0.011);
+  try{ const d=lerJSON(ENTRADA_BOLETOS_FILE,{}), grupo=_grupoDaNota(notaId); let b=null;
+    for(const nid of grupo){ const L=d[nid]||[]; b=L.find(x=>boletoId&&x.id===boletoId&&!x.tituloId)||L.find(x=>!x.tituloId&&x.vencimento===t.vencimento&&Math.abs((x.valor||0)-t.valor)<0.011); if(b) break; }
     if(!b) return false; b.tituloId=t.id; b.lancadoEm=Date.now(); salvarJSON(ENTRADA_BOLETOS_FILE,d);
     Object.assign(t,{linhaDigitavel:b.linhaDigitavel,codigoBarras:b.codigoBarras,boletoId:b.id,boletoAnexoId:b.anexoId||null,boletoBeneficiario:b.beneficiario||""}); return true;
   }catch(e){ return false; }
@@ -11525,14 +11541,14 @@ function _duplicatasEditadas(n,vNF){ const base=n.duplicatas||[], ov=lerJSON(ENT
   const tot=Number(vNF)||Number(n.totais?.vNF)||base.reduce((a,d)=>a+(Number(d.valor)||0),0)||0, cada=_round2(tot/ov.length); // outra quantidade: divide o total
   return ov.map((v,i)=>({numero:String(i+1),vencimento:v,valor:i===ov.length-1?_round2(tot-cada*(ov.length-1)):cada})); }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
-const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1};
+const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1,"GET /buscar-notas":1,"POST /juntar":1,"POST /desjuntar":1};
 function _motivoSemValor(m){ m=String(m||""); return /R\$|\d+[.,]\d{2}/.test(m)?"confira se o produto ligado e a quantidade estão certos":m; }
 function _notaSemValores(n){
   if(!n||typeof n!=="object") return n;
   return {id:n.id,numero:n.numero,serie:n.serie,emissao:n.emissao,semNota:!!n.semNota,
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
-    fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
+    notasJuntas:(n.notasJuntas||[]).map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita})),fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
     boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
     pagamentoLido:!!n.pagamentoLido,vencimentos:(n.pagamentoLido||n.vencimentosEditados)?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
@@ -11549,7 +11565,9 @@ function _semValoresEntrada(o){
   if(o.nota) r.nota=_notaSemValores(o.nota);
   if(Array.isArray(o.itens)) r.itens=o.itens.map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""}));
   if(o.lancados!==undefined) r.lancados=o.lancados;
-  if(o.leitura) r.leitura=o.leitura.erro?{erro:o.leitura.erro}:{ehBoleto:!!o.leitura.ehBoleto,duplicado:!!o.leitura.duplicado,jaNaNota:!!o.leitura.jaNaNota,vencimento:o.leitura.boleto?.vencimento||"",confira:o.leitura.boleto?!o.leitura.boleto.conferido:false};
+  if(Array.isArray(o.notasJuntas)) r.notasJuntas=o.notasJuntas.map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita}));
+  if(Array.isArray(o.notas)) r.notas=o.notas.map(x=>({id:x.id,numero:x.numero,serie:x.serie,fornecedor:x.fornecedor,emissao:x.emissao,entradaFeita:x.entradaFeita}));
+  if(o.leitura) r.leitura=o.leitura.erro?{erro:o.leitura.erro}:{compartilhado:!!o.leitura.compartilhado,comNota:o.leitura.comNota?{numero:o.leitura.comNota.numero,fornecedor:o.leitura.comNota.fornecedor}:null,ehBoleto:!!o.leitura.ehBoleto,duplicado:!!o.leitura.duplicado,jaNaNota:!!o.leitura.jaNaNota,vencimento:o.leitura.boleto?.vencimento||"",confira:o.leitura.boleto?!o.leitura.boleto.conferido:false};
   if(Array.isArray(o.boletos)) r.boletos=o.boletos.map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido}));
   if(o.semEstoque) r.semEstoque=true; if(Array.isArray(o.anexos)) r.anexos=o.anexos.map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em}));
   if(Array.isArray(o.falhas)) r.falhas=o.falhas.map(f=>({nItem:f.nItem,xProd:f.xProd,produtoNome:f.produtoNome||"",erro:f.erro||""}));
@@ -11563,12 +11581,37 @@ app.use((req,res,next)=>{ if(!req.path.startsWith("/api/entrada-produtos/")) ret
   if(sub==="/confirmar") req.body={notaId:b.notaId,ignorar:b.ignorar,semEstoque:!!b.semEstoque};      // sem pagamento nem boletos
   if(sub==="/vencimentos") req.body={notaId:b.notaId,vencimentos:b.vencimentos};                       // só as datas, nunca valores
   if(sub==="/anexo") req.body={notaId:b.notaId,nome:b.nome,dados:b.dados,ler:!!b.ler};
+  if(sub==="/juntar"||sub==="/desjuntar") req.body={notaId:b.notaId,outraId:b.outraId};
   if(sub==="/sem-nota/editar") req.body={id:b.id,nItem:b.nItem,qCom:b.qCom,xProd:b.xProd,remover:b.remover,fornecedor:b.fornecedor}; // sem valores
   const orig=res.json.bind(res);
   res.json=o=>{ const r=_semValoresEntrada(o); if(r&&r.erro&&!(o&&o.erro)&&res.statusCode<400) res.status(422); return orig(r); };
   req.url="/api/entrada-nota"+req.url.slice("/api/entrada-produtos".length);
   next();
   });
+});
+app.get("/api/entrada-nota/buscar-notas",acessoEntradaNota,(req,res)=>{
+  try{ const q=String(req.query.q||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim(), eu=String(req.query.notaId||""), ja=new Set(_grupoDaNota(eu));
+    const ids=new Set([...(_FISCAL&&_FISCAL.listarNotas?_FISCAL.listarNotas().map(n=>String(n.id)):[]),...Object.keys(_semNota||{})]);
+    const L=[...ids].filter(id=>!ja.has(id)).map(_resumoNotaJunta).filter(Boolean)
+      .filter(x=>!q||String(x.numero).includes(q)||String(x.fornecedor).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().includes(q)||(q.length>=8&&String(x.id).includes(q)))
+      .sort((a,b)=>(b.emissao||0)-(a.emissao||0)).slice(0,15);
+    res.json({ok:true,notas:L});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.post("/api/entrada-nota/juntar",acessoEntradaNota,async(req,res)=>{
+  try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")), o=_notaEntrada(String(b.outraId||"")); if(!n||!o) return res.status(404).json({erro:"nota não encontrada"});
+    if(String(n.id)===String(o.id)) return res.status(400).json({erro:"escolha outra nota"});
+    if(_finNota(n)||_finNota(o)) return res.status(409).json({erro:"os boletos de uma dessas notas já foram lançados em contas a pagar"});
+    _juntarNotas(n.id,o.id); addLog("nota-"+(n.chave||n.id),"entrada_nota_juntar",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{numero:n.numero,com:o.numero});
+    res.json({ok:true,nota:await _resumoEntradaNota(n)});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+app.post("/api/entrada-nota/desjuntar",acessoEntradaNota,async(req,res)=>{
+  try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    if(_grupoDaNota(n.id).some(id=>{ const x=_notaEntrada(id); return x&&_finNota(x); })) return res.status(409).json({erro:"os boletos dessas notas já foram lançados em contas a pagar"});
+    const o=String(b.outraId||""); if(o&&_grupoDaNota(n.id).length===2) _desjuntarNota(n.id); else if(o) _desjuntarNota(o);
+    res.json({ok:true,nota:await _resumoEntradaNota(n)});
+  }catch(e){ res.status(400).json({erro:e.message}); }
 });
 app.post("/api/entrada-nota/vencimentos",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
@@ -11589,7 +11632,7 @@ app.post("/api/entrada-nota/anexo",acessoEntradaNota,async(req,res)=>{
     if(!novos.length) return res.status(400).json({erro:"arquivo não aceito (use foto, PDF ou XML de até 8 MB)"});
     // com "ler", a imagem/PDF passa pela leitura de boleto: número, código de barras e vencimento ficam guardados à parte para o pagamento
     let leitura=null; if(b.ler&&(/^image\//.test(m[1])||m[1]==="application/pdf")) leitura=await _lerEGuardarBoleto(n.id,novos[0],buf,m[1],quem);
-    res.json({ok:true,anexos:_anexosPublicos(n.id),boletos:_boletosDaNota(n.id),leitura});
+    res.json({ok:true,anexos:_anexosPublicos(n.id),boletos:_boletosDaNota(n.id),notasJuntas:_grupoDaNota(n.id).filter(x=>x!==String(n.id)).map(_resumoNotaJunta).filter(Boolean),leitura});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/contas-pagar/:id/boleto-imagem",requireAcesso("acesso_contas_pagar"),(req,res)=>{
@@ -11649,22 +11692,24 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     // só cria as contas a pagar (parcelas da nota ou as informadas) e marca a nota para não ser lançada de novo.
     if(b.soBoletos){
       const quem=req.sessao?.nome||"", pg=b.pagamento||{};
-      if(_finNota(n)) return res.status(409).json({erro:`Os boletos dessa nota já foram lançados em ${new Date((_finNota(n).em||Date.now())-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${_finNota(n).por||"—"}.`});
+      { const fin=_finNota(n)||_grupoDaNota(n.id).map(id=>{ const x=_notaEntrada(id); return x&&_finNota(x); }).find(Boolean); if(fin) return res.status(409).json({erro:`Os boletos dessa nota (ou de uma nota ligada a ela pelo mesmo boleto) já foram lançados em ${new Date((fin.em||Date.now())-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${fin.por||"—"}.`}); }
       const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:(await _resumoEntradaNota(n)).duplicatas;
       const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0),boletoId:x.boletoId||null}));
       if(!par.length) return res.status(400).json({erro:"informe ao menos um boleto (vencimento e valor)"});
       if(par.length>48) return res.status(400).json({erro:"no máximo 48 boletos por nota"});
       for(const d of par){ if(!/^\d{4}-\d{2}-\d{2}$/.test(d.vencimento)) return res.status(400).json({erro:"todo boleto precisa de vencimento"}); if(!(d.valor>0)) return res.status(400).json({erro:"todo boleto precisa de valor maior que zero"}); }
       let fornBling=null; try{ fornBling=await encontrarContatoPorDoc(n.emitente?.cnpj); }catch(e){}
+      const grupoNotas=_grupoDaNota(n.id).map(_notaEntrada).filter(Boolean).sort((a,b)=>(Number(a.numero)-Number(b.numero))||String(a.numero).localeCompare(String(b.numero))), numerosNF=[...new Set(grupoNotas.map(x=>x.numero).filter(Boolean))].join(" + ")||n.numero||"";
       const C=lerContasPagar(), tit=[];
-      par.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",soBoletos:true,notaId:n.id,chave:n.chave||"",numeroNota:n.numero||"",fornecedor:{cnpj:n.emitente?.cnpj||"",nome:n.emitente?.nome||"",blingId:fornBling?.id||null},
+      par.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",soBoletos:true,notaId:n.id,chave:n.chave||"",numeroNota:numerosNF,...(grupoNotas.length>1?{notasRelacionadas:grupoNotas.map(x=>({id:String(x.id),numero:x.numero||"",fornecedor:x.emitente?.nome||""}))}:{}),fornecedor:{cnpj:n.emitente?.cnpj||"",nome:n.emitente?.nome||"",blingId:fornBling?.id||null},
         parcela:`${i+1}/${par.length}`,vencimento:d.vencimento,valor:d.valor,status:pg.pago?"pago":"aberto",criadoEm:Date.now(),criadoPor:quem};
         if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
         _vincularBoletoTitulo(n.id,t,d.boletoId); C.titulos.push(t); tit.push(t); });
       salvarJSON(CONTAS_PAGAR_FILE,C);
-      _marcarFinNota(n,{em:Date.now(),por:quem,contas:tit.map(t=>t.id)});
+      // um boleto que paga várias notas: todas ficam marcadas (assim nenhuma cria contas de novo pelas próprias duplicatas)
+      grupoNotas.forEach(g=>_marcarFinNota(g,{em:Date.now(),por:quem,contas:tit.map(t=>t.id),...(grupoNotas.length>1?{juntas:grupoNotas.map(x=>String(x.id))}:{})}));
       // produtos que já entraram no Bling por fora: tira a nota dos avisos de "sem entrada" e impede lançar o estoque em duplicidade
-      if(b.produtosJaEntraram) _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:0,falhas:0,jaNoBling:true});
+      if(b.produtosJaEntraram) grupoNotas.forEach(g=>{ if(!(g.entrada&&g.entrada.em)) _marcarEntradaNota(g,{em:Date.now(),por:quem,itensLancados:0,falhas:0,jaNoBling:true}); });
       addLog("nota-"+(n.chave||n.id),"entrada_nota_so_boletos",req.sessao?.funcionarioId||"",quem,{numero:n.numero,fornecedor:n.emitente?.nome,boletos:tit.length,valor:_round2(tit.reduce((s,t)=>s+t.valor,0)),pago:!!pg.pago});
       return res.json({ok:true,soBoletos:true,lancados:0,falhas:[],contas:tit});
     }
