@@ -6289,11 +6289,11 @@ app.get("/api/estoque/nota-por-chave/:chave",async(req,res)=>{
   try{
     const ch=String(req.params.chave).replace(/\D/g,"");
     if(ch.length!==44) return res.status(400).json({erro:"a chave precisa ter 44 dígitos"});
-    let lista=[];
-    try{ const r=await bling(`/notasfiscaisentrada?chaveAcesso=${ch}`); lista=r?.data||[]; }catch(e){}
-    if(!lista.length) return res.json({encontrada:false, chave:ch});
-    const nid=lista[0].id;
-    let d=null; try{ d=await bling(`/notasfiscaisentrada/${nid}`).then(r=>r?.data); }catch(e){}
+    const v=_chaveNfeValida(ch); if(!v.ok) return res.json({encontrada:false, chave:ch, motivo:v.motivo});
+    const tent=[], achada=await _acharNotaBlingPorChave(ch,tent); // a API v3 não tem /notasfiscaisentrada: usa a listagem de notas de entrada
+    if(!achada||achada.xml) return res.json({encontrada:false, chave:ch, tentativas:tent});
+    const lista=[{id:achada}], nid=achada;
+    let d=null; try{ d=await bling(`/nfe/${nid}`).then(r=>r?.data); }catch(e){}
     const itens=((d&&d.itens)||[]).map(it=>({
       produtoId:it.produto?.id||null, nome:it.descricao||it.produto?.nome||"",
       quantidade:it.quantidade, custo:it.valor, casado:!!(it.produto?.id),
@@ -11382,8 +11382,45 @@ async function _resumoEntradaNota(n){
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
     itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
-async function _acharNotaBlingPorChave(ch){
-  for(const ep of [`/nfe?chaveAcesso=${ch}`,`/notasfiscaisentrada?chaveAcesso=${ch}`]){ try{ const r=await bling(ep); const l=r?.data||[]; if(l.length) return l[0].id; }catch(e){} }
+// A API v3 do Bling NÃO tem busca por chave, nem manifestação, nem importação da SEFAZ (as rotas usadas antes não existem e o erro era engolido).
+// O que existe: listar as notas por período/tipo (GET /nfe?tipo=0 = entrada) e baixar o documento pela chave (GET /nfe/documento/{chave}).
+// A emissão (AAMM) está dentro da própria chave, então lista só as entradas daquele mês (e vizinhos) e compara a chave.
+// Devolve o id da nota no Bling, ou {xml} se o Bling entregou o XML, ou null. "tent" recebe o que foi tentado (para a mensagem de erro).
+function _chaveNfeValida(ch){
+  ch=String(ch||"").replace(/\D/g,""); if(ch.length!==44) return {ok:false,motivo:"a chave tem que ter 44 dígitos"};
+  let soma=0,peso=2; for(let i=42;i>=0;i--){ soma+=Number(ch[i])*peso; peso=peso===9?2:peso+1; }
+  const r=soma%11, dv=(r===0||r===1)?0:11-r;
+  if(dv!==Number(ch[43])) return {ok:false,motivo:"o dígito verificador da chave não confere (leitura errada do código de barras ou da digitação)"};
+  const uf=Number(ch.slice(0,2)); if(uf<11||uf>53) return {ok:false,motivo:"o código do estado da chave é inválido"};
+  if(ch.slice(20,22)!=="55") return {ok:false,motivo:`o modelo da nota é ${ch.slice(20,22)} (só vale NF-e, modelo 55; NFC-e e cupom não entram aqui)`};
+  return {ok:true};
+}
+function _descreverChave(ch){ const c=ch.slice(6,20); return {nNF:String(Number(ch.slice(25,34))),serie:String(Number(ch.slice(22,25))),cnpj:c,cnpjFmt:`${c.slice(0,2)}.${c.slice(2,5)}.${c.slice(5,8)}/${c.slice(8,12)}-${c.slice(12)}`,mes:ch.slice(4,6),ano:2000+Number(ch.slice(2,4))}; }
+async function _acharNotaBlingPorChave(ch,tent){
+  tent=tent||[]; const pad=n=>String(n).padStart(2,"0"), d=_descreverChave(ch), mes=Number(d.mes), ano=d.ano;
+  const meses=[[ano,mes],[mes===12?ano+1:ano,mes===12?1:mes+1],[mes===1?ano-1:ano,mes===1?12:mes-1]]; // mês da emissão, o seguinte e o anterior
+  for(const [a,m] of meses){
+    const ini=`${a}-${pad(m)}-01`, fim=`${a}-${pad(m)}-${pad(new Date(Date.UTC(a,m,0)).getUTCDate())}`; let vistas=0, achou=null;
+    try{
+      for(let pg=1;pg<=15&&!achou;pg++){
+        const r=await bling(`/nfe?tipo=0&dataEmissaoInicial=${ini} 00:00:00&dataEmissaoFinal=${fim} 23:59:59&pagina=${pg}&limite=100`); const arr=r?.data||[]; vistas+=arr.length;
+        const igual=arr.find(n=>String(n.chaveAcesso||"").replace(/\D/g,"")===ch);
+        if(igual){ achou=igual.id; break; }
+        // a listagem pode não trazer a chave: confere o detalhe das notas com o mesmo número
+        for(const n of arr.filter(n=>!n.chaveAcesso&&String(Number(n.numero))===d.nNF)){ try{ const det=(await bling(`/nfe/${n.id}`))?.data; if(String(det?.chaveAcesso||"").replace(/\D/g,"")===ch){ achou=n.id; break; } }catch(e){} }
+        if(arr.length<100) break;
+      }
+    }catch(e){ tent.push(`listagem de entradas de ${pad(m)}/${a}: ${e.status?("Bling "+e.status+" "):""}${String(e.message||"").slice(0,80)}`); continue; }
+    tent.push(`entradas de ${pad(m)}/${a}: ${vistas} nota(s) no Bling, ${achou?"achada":"esta não está"}`);
+    if(achou) return achou;
+  }
+  try{ // rota documentada para baixar o documento da NF-e pela chave
+    const r=await bling(`/nfe/documento/${ch}?formato=xml`); const txt=typeof r?.raw==="string"?r.raw:"";
+    if(txt.trim().startsWith("<")) return {xml:txt};
+    const link=[r?.data?.xml,r?.data?.link,r?.data?.url,r?.xml,r?.link,r?.url].find(x=>typeof x==="string"&&/^https?:\/\//i.test(x));
+    if(link){ const t=await (await fetch(link)).text(); if(t.trim().startsWith("<")) return {xml:t}; }
+    tent.push("download do documento pela chave: o Bling não devolveu o XML");
+  }catch(e){ tent.push(`download do documento pela chave: ${e.status?("Bling "+e.status+" "):""}${String(e.message||"").slice(0,80)}`); }
   return null;
 }
 // ===== ENTRADA DE PRODUTOS (tela só do estoque, SEM valores) =====
@@ -11573,12 +11610,12 @@ app.post("/api/entrada-nota/carregar",acessoEntradaNota,express.json({limit:"6mb
     const b=req.body||{}; let nota=null;
     if(b.xml) nota=await _FISCAL.carregarNota({xml:b.xml});
     else { const ch=String(b.chave||"").replace(/\D/g,""); if(ch.length!==44) return res.status(400).json({erro:"a chave da nota tem 44 dígitos (o número embaixo do código de barras da DANFE)"});
+      const v=_chaveNfeValida(ch); if(!v.ok&&!_FISCAL.nota(ch)) return res.status(400).json({erro:`Essa chave não é válida: ${v.motivo}. Confira os 44 números (embaixo do código de barras da DANFE) ou leia de novo.`,chave:ch});
       if(_FISCAL.nota(ch)) nota=await _FISCAL.carregarNota({chave:ch});
-      else { let id=await _acharNotaBlingPorChave(ch);
-        if(!id){ try{ await bling(`/nfe/manifestacaodestinatario`,{method:"POST",body:JSON.stringify({chaveAcesso:ch,tipoManifestacao:"210210"})}); }catch(e){}
-          try{ await bling(`/nfe/importarXmlSefaz`,{method:"POST",body:JSON.stringify({chaveAcesso:ch})}); }catch(e){} await sleep(1500); id=await _acharNotaBlingPorChave(ch); }
-        if(!id) return res.status(404).json({erro:"Não achei essa nota no Bling nem consegui buscar na SEFAZ. Envie o arquivo XML da nota (o fornecedor costuma mandar por e-mail).",chave:ch});
-        nota=await _FISCAL.carregarNota({blingId:id}); } }
+      else { const tent=[], id=await _acharNotaBlingPorChave(ch,tent);
+        if(!id){ const d=_descreverChave(ch);
+          return res.status(404).json({erro:`Não achei a NF ${d.nNF} (emitente CNPJ ${d.cnpjFmt}, emitida em ${d.mes}/${d.ano}) entre as notas de ENTRADA do Bling. Para entrar por aqui, a nota precisa estar recebida no Bling (Notas fiscais > Notas de entrada: buscar da SEFAZ e dar ciência da operação). Ou envie o arquivo XML da nota (o fornecedor costuma mandar por e-mail). Detalhe: ${tent.join("; ")||"sem retorno do Bling"}.`,chave:ch,tentativas:tent}); }
+        nota=id.xml?await _FISCAL.carregarNota({xml:id.xml}):await _FISCAL.carregarNota({blingId:id}); } }
     res.json({ok:true,nota:await _resumoEntradaNota(nota)});
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
@@ -11786,7 +11823,7 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
     if(tipo==="danfe"){ const D=L.danfe||{}, ch=String(D.chaveAcesso||"").replace(/\D/g,""), nf=String(D.numeroNF||"").replace(/\D/g,"").replace(/^0+/,""), cnpj=String(D.cnpjEmitente||L.fornecedor?.documento||"").replace(/\D/g,"");
       let nota=null;
       try{ if(ch.length===44) nota=await _FISCAL.carregarNota({chave:ch}).catch(()=>null);
-        if(!nota&&ch.length===44){ const bid=await _acharNotaBlingPorChave(ch); if(bid) nota=await _FISCAL.carregarNota({blingId:bid}); }
+        if(!nota&&ch.length===44&&_chaveNfeValida(ch).ok){ const bid=await _acharNotaBlingPorChave(ch); if(bid) nota=bid.xml?await _FISCAL.carregarNota({xml:bid.xml}):await _FISCAL.carregarNota({blingId:bid}); }
         if(!nota&&nf){ const c=(_FISCAL.listarNotas()||[]).find(n=>String(n.numero||"").replace(/^0+/,"")===nf&&(!cnpj||String(n.emitente?.cnpj||"")===cnpj)); if(c) nota=await _FISCAL.carregarNota({chave:c.id}); }
         if(!nota&&nf){ try{ const r2=await bling(`/nfe?numero=${nf}&tipo=0`); const l=(r2?.data||[]).filter(x=>!cnpj||String(x.contato?.numeroDocumento||"").replace(/\D/g,"")===cnpj); if(l.length) nota=await _FISCAL.carregarNota({blingId:l[0].id}); }catch(e){} }
       }catch(e){}
@@ -18502,20 +18539,18 @@ app.post("/api/pagamentos/:id/estorno", async(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
-// Importar NF-e por chave de acesso via Bling → SEFAZ
-app.post("/api/nfe/importar", async (req, res) => {
+// Busca a NF-e de entrada pela chave nas notas do Bling (a API v3 não importa da SEFAZ nem manifesta; isso é feito dentro do Bling)
+app.post("/api/nfe/importar", requireAcesso("acesso_entrada_nota"), async (req, res) => {
   try {
-    const { chave } = req.body || {};
-    if (!chave || chave.replace(/\D/g,"").length !== 44)
-      return res.status(400).json({ erro: "Chave de acesso inválida (precisa ter 44 dígitos)" });
-    const ch = chave.replace(/\D/g,"");
-    try { await bling(`/nfe/manifestacaodestinatario`, { method:"POST", body:JSON.stringify({ chaveAcesso:ch, tipoManifestacao:"210210" }) }); } catch(e) {}
-    const r = await bling(`/nfe/importarXmlSefaz`, { method:"POST", body:JSON.stringify({ chaveAcesso:ch }) });
-    res.json({ ok:true, nota:r?.data||r });
+    const ch = String((req.body||{}).chave||"").replace(/\D/g,""), v=_chaveNfeValida(ch);
+    if (!v.ok) return res.status(400).json({ erro: "Chave inválida: "+v.motivo });
+    const tent=[], id=await _acharNotaBlingPorChave(ch,tent);
+    if (!id) return res.status(404).json({ erro:"Não achei essa nota entre as notas de entrada do Bling", tentativas:tent });
+    res.json({ ok:true, nota:id, tentativas:tent });
   } catch(e) { res.status(e.status||500).json({ erro:e.message, body:e.body }); }
 });
-app.get("/api/nfe/buscar/:chave", async (req, res) => {
-  try { res.json(await bling(`/notasfiscaisentrada?chaveAcesso=${req.params.chave.replace(/\D/g,"")}`)); }
+app.get("/api/nfe/buscar/:chave", requireAcesso("acesso_entrada_nota"), async (req, res) => {
+  try { const ch=req.params.chave.replace(/\D/g,""), v=_chaveNfeValida(ch), tent=[]; const id=v.ok?await _acharNotaBlingPorChave(ch,tent):null; res.json({ chave:ch, valida:v, achou:!!id, id:id&&id.xml?"xml":id, tentativas:tent }); }
   catch(e) { res.status(e.status||500).json({ erro:e.message, body:e.body }); }
 });
 app.get("/",(req,res)=> res.redirect("/pedir-online"));
