@@ -11577,6 +11577,14 @@ function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo pa
   if(mud) _salvarContas(C); return C;
 }
 setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600e3);
+// IMPORTAÇÃO ÚNICA de gastos conhecidos (arquivo no repositório): lança em Contas a Pagar uma vez só (marca em C.importados)
+function _importarLancamentosConhecidos(){ try{ for(const arq of fs.readdirSync(__dirname).filter(f=>/^lancamentos_\d{4}-\d{2}\.json$/.test(f))){
+    const L=JSON.parse(fs.readFileSync(path.join(__dirname,arq),"utf8")), C=lerContasPagar(); C.importados||=[]; if(C.importados.includes(L.id)) continue;
+    (L.itens||[]).forEach(x=>{ const p=PLANO_CONTAS.find(q=>q.cod===x.cod)||PLANO_CONTAS.find(q=>q.cod==="5.9"); C.seq++;
+      C.titulos.push({id:"cp"+C.seq,origem:"importado",importacao:L.id,descricao:x.descricao,categoria:p.rotulo,fornecedor:{nome:x.fornecedor,cnpj:""},parcela:"1/1",vencimento:x.data,valor:_round2(x.valor),
+        competencia:x.data.slice(0,7),status:"pago",pagoEm:Date.parse(x.data+"T12:00:00-03:00"),dataPagamento:x.data,forma:"não informada",banco:"",valorPago:_round2(x.valor),pagoPor:"importação",criadoEm:Date.now(),criadoPor:"importação ("+(L.fonte||arq)+")"}); });
+    C.importados.push(L.id); salvarJSON(CONTAS_PAGAR_FILE,C); console.log("[contas-pagar] importados",(L.itens||[]).length,"lançamentos de",arq); } }catch(e){ console.error("[contas-pagar] importação:",e.message); } }
+setTimeout(_importarLancamentosConhecidos,15000);
 app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, h=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), iniM=Date.parse(h.slice(0,8)+"01T00:00:00-03:00");
     const nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), busca=nrm(q.busca||"");
