@@ -1,0 +1,29 @@
+{
+ "taxaAnualPadrao": 0.05,
+ "veiculos": [
+  {
+   "nome": "Peugeot Partner Furgão 1.6 Flex 2018",
+   "valor": 32950,
+   "obs": "FIPE R$ 43.930 (set/2026) com 25% a menos por passagem em leilão",
+   "taxa": 0.05,
+   "ativo": true,
+   "inicio": "2026-10"
+  },
+  {
+   "nome": "VW Saveiro Startline 1.6 CS 2015",
+   "valor": 42581,
+   "obs": "FIPE ago/2026",
+   "taxa": 0.05,
+   "ativo": true,
+   "inicio": "2026-10"
+  },
+  {
+   "nome": "VW Kombi 2008",
+   "valor": 0,
+   "obs": "parada: fora do custo das entregas",
+   "taxa": 0.05,
+   "ativo": false,
+   "inicio": "2026-10"
+  }
+ ]
+}

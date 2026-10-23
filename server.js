@@ -10991,6 +10991,9 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== FROTA PRÓPRIA: depreciação gerencial (valor de mercado x taxa anual, sem mexer no caixa) =====================
+let _frotaCache=null; function lerFrota(){ if(!_frotaCache){ try{ _frotaCache=JSON.parse(fs.readFileSync(path.join(__dirname,"frota.json"),"utf8")); }catch(e){ _frotaCache={veiculos:[]}; } } return _frotaCache; }
+function _depreciacaoMes(mm){ return _round2((lerFrota().veiculos||[]).filter(v=>v.ativo&&String(v.inicio||"")<=mm).reduce((a,v)=>a+(Number(v.valor)||0)*(Number(v.taxa)||0.05)/12,0)); }
 // ===================== ORÇAMENTO PREVISTO (planilha de custos) E PROJEÇÕES =====================
 let _orcCache=null; function lerOrcamento(){ if(!_orcCache){ try{ _orcCache=JSON.parse(fs.readFileSync(path.join(__dirname,"orcamento_planilha_2026.json"),"utf8")); }catch(e){ _orcCache={itens:[]}; } } return _orcCache; }
 // margem bruta real de um período (itens com custo) e faturamento
@@ -11157,6 +11160,8 @@ function _montarPainelGrupo(g){
         const fr=Number(RM.frete?.total||0), frProj=dia>0?fr/dia*diasMes:fr, ids=(Mx.pedidos||[]).map(p=>String(p.id||p.pedidoId||"")).filter(Boolean), P=lerProdutosBling().porId; let fat=0,fc=0,cu=0;
         ids.forEach(id=>{ let it=[]; try{ it=_itensDoPedido(id)||[]; }catch(e){} it.forEach(i=>{ const v=(Number(i.valor)||0)*(Number(i.quantidade)||0); fat+=v; const pr=i.produtoId?P[String(i.produtoId)]:null; if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } }); });
         const mb=fc>0?(fc-cu)/fc:null, lucroProj=mb!=null?(fat*mb)/(dia||1)*diasMes:null, retorno=frProj+(lucroProj||0);
+        { const veic=(O.itens||[]).filter(x=>/^5\.5\.2/.test(x.cod)||/combust|manuten..o ve|pneu|seguro|ipva/i.test(x.nome)), gv=_round2(veic.reduce((a,x)=>a+(x.fev||x.jan||0),0)), dep=_depreciacaoMes(hoje.slice(0,7)), parados=(lerFrota().veiculos||[]).filter(v=>!v.ativo).length;
+          kpi(brlN(gv+dep),"Frota própria (custo/mês)",`gastos ${brlN(gv)} + depreciação ${brlN(dep)}${parados?` · ${parados} veículo(s) parado(s) fora da conta`:""}`,"/contas-pagar"); }
         if(custoM>0){ kpi(brlN(custoM),"Coopermapp (custo previsto/mês)",entProj?`${brlN(custoM/entProj)} por entrega · ${entProj} entregas no mês (projeção)`:"","/entregas-dashboard");
           kpi(String(Math.round(frProj/custoM*100))+"%","Frete cobre do custo",`${brlN(frProj)} de frete no mês (projeção)`,"/entregas-dashboard",frProj<custoM?"alerta":"");
           kpi(lucroProj!=null?brlN(retorno-custoM):"—","Resultado das entregas",lucroProj!=null?`frete ${brlN(frProj)} + lucro bruto ${brlN(lucroProj)} − Coopermapp ${brlN(custoM)}`:"cadastre custos para estimar o lucro bruto","/margem-bruta",lucroProj!=null&&retorno<custoM?"alerta":"");
@@ -11661,6 +11666,7 @@ app.get("/api/financeiro/competencia",requireAcesso("acesso_contas_pagar"),(req,
     const por={}; (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status==="cancelado") return; const p=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), c=_competenciaDoTitulo(t);
       if(!/^\d{4}-\d{2}$/.test(c.ini)) return; const v=(Number(t.valor)||0)/c.meses; let [a,m]=c.ini.split("-").map(Number);
       for(let k=0;k<c.meses;k++){ const mm=`${a}-${String(m).padStart(2,"0")}`; if(mm.startsWith(ano)){ const L=(por[p.cod]||={cod:p.cod,nome:p.nome,tipo:p.tipo,meses:{}}); L.meses[mm]=_round2((L.meses[mm]||0)+v); } m++; if(m>12){ m=1; a++; } } });
+    { const dm={}; meses.forEach(mm=>{ const v=_depreciacaoMes(mm); if(v>0) dm[mm]=v; }); if(Object.keys(dm).length) por["6.1"]={cod:"6.1",nome:"Depreciação (frota própria)",tipo:"depreciacao",meses:dm}; } // sem caixa
     const linhas=Object.values(por).sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true})).map(l=>({...l,total:_round2(Object.values(l.meses).reduce((x,y)=>x+y,0))}));
     const somaTipo=tp=>meses.map(mm=>_round2(linhas.filter(l=>l.tipo===tp).reduce((x,l)=>x+(l.meses[mm]||0),0)));
     res.json({ok:true,ano,meses,linhas,totais:{fixas:somaTipo("fixa"),variaveis:somaTipo("variavel"),compras:somaTipo("compra")},plano:PLANO_CONTAS});
