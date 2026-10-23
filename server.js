@@ -1243,6 +1243,7 @@ window.B13_NAV_LINKS=[
   {grupo:"GESTÃO",href:"/painel/clientes",label:"🙋 Dashboard de Clientes",acoes:["acesso_painel_clientes"]},
   {grupo:"GESTÃO",href:"/painel/produtos",label:"🧃 Dashboard de Produtos",acoes:["acesso_painel_produtos"]},
   {grupo:"GESTÃO",href:"/margem-bruta",label:"🪙 Margem Bruta",acoes:["acesso_margem_bruta"]},
+  {grupo:"GESTÃO",href:"/resultado",label:"🗒️ Resultado (DRE)",acoes:["acesso_resultado"]},
   {grupo:"GESTÃO",href:"/painel/estoque",label:"🏬 Dashboard de Estoque",acoes:["acesso_painel_estoque"]},
   {grupo:"GESTÃO",href:"/painel/valorestoque",label:"💎 Valor do Estoque",acoes:["acesso_painel_valorestoque"]},
   {grupo:"GESTÃO",href:"/painel/financeiro",label:"💹 Dashboard Financeiro",acoes:["acesso_painel_financeiro"]},
@@ -11013,6 +11014,27 @@ app.get("/api/financeiro/orcamento",requireAcesso("acesso_contas_pagar"),(req,re
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== RESULTADO (DRE gerencial, lucro real) mês a mês =====================
+app.get("/api/financeiro/dre",requireAcesso("acesso_resultado"),(req,res)=>{
+  try{ const ano=/^\d{4}$/.test(String(req.query.ano||""))?String(req.query.ano):_diaBRk(Date.now()).slice(0,4), meses=Array.from({length:12},(_,i)=>`${ano}-${String(i+1).padStart(2,"0")}`), hojeM=_diaBRk(Date.now()).slice(0,7);
+    // despesas por competência e tipo (mesma regra do quadro de Contas a Pagar)
+    const D={}; meses.forEach(m=>D[m]={deducao:0,compra:0,variavel:0,fixa:0,depreciacao:0,financeiro:0,imposto_lucro:0,ativo:0,fora:0});
+    (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status==="cancelado") return; const p=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), c=_competenciaDoTitulo(t); if(!/^\d{4}-\d{2}$/.test(c.ini)) return;
+      const v=(Number(t.valor)||0)/c.meses; let [a,m]=c.ini.split("-").map(Number); for(let k=0;k<c.meses;k++){ const mm=`${a}-${String(m).padStart(2,"0")}`; if(D[mm]) D[mm][p.tipo]=(D[mm][p.tipo]||0)+(p.cod==="7.2"?-v:v); m++; if(m>12){ m=1; a++; } } });
+    const P=lerProdutosBling().porId, r2=_round2;
+    const linhas=meses.map(mm=>{ const d=D[mm]; d.depreciacao+=_depreciacaoMes(mm); let rec=0,fc=0,cu=0,fs=0,ped=0;
+      if(mm<=hojeM){ const ult=new Date(Date.UTC(+mm.slice(0,4),+mm.slice(5,7),0)).getUTCDate(), R=_filtrarPedidos({ini:mm+"-01",fim:`${mm}-${String(ult).padStart(2,"0")}`});
+        R.L.forEach(p=>{ rec+=Number(p.total)||0; ped++; let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0); if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } else fs+=v; }); }); }
+      const mPct=fc>0?(fc-cu)/fc:null, cmvEst=mPct!=null?fs*(1-mPct):0, cmv=cu+cmvEst, recLiq=rec-d.deducao, lb=recLiq-cmv, mc=lb-d.variavel, op=mc-d.fixa, lair=op-d.depreciacao-d.financeiro;
+      const csll=lair>0?lair*0.09:0, irpj=lair>0?lair*0.15+Math.max(0,lair-20000)*0.10:0, imp=d.imposto_lucro>0?d.imposto_lucro:(csll+irpj), ll=lair-imp, mcPct=recLiq>0?mc/recLiq:null;
+      return {mes:mm,pedidos:ped,receita:r2(rec),deducoes:r2(d.deducao),receitaLiquida:r2(recLiq),cmv:r2(cmv),cmvEstimado:r2(cmvEst),coberturaCusto:rec>0?+((fc/(fc+fs||1))*100).toFixed(1):null,lucroBruto:r2(lb),
+        despVariaveis:r2(d.variavel),margemContrib:r2(mc),despFixas:r2(d.fixa),resultadoOperacional:r2(op),depreciacao:r2(d.depreciacao),financeiro:r2(d.financeiro),lair:r2(lair),irpjCsll:r2(imp),irEstimado:!(d.imposto_lucro>0),lucroLiquido:r2(ll),
+        pontoEquilibrio:mcPct>0?r2(d.fixa/mcPct):null,compras:r2(d.compra),investimentos:r2(d.ativo),foraResultado:r2(d.fora)}; });
+    const tot={}; ["pedidos","receita","deducoes","receitaLiquida","cmv","cmvEstimado","lucroBruto","despVariaveis","margemContrib","despFixas","resultadoOperacional","depreciacao","financeiro","lair","irpjCsll","lucroLiquido","compras","investimentos","foraResultado"].forEach(k=>tot[k]=r2(linhas.reduce((a,l)=>a+(Number(l[k])||0),0)));
+    res.json({ok:true,ano,meses:linhas,total:tot});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== PAINEL DE CADA GRUPO DO MENU (visão geral com as métricas das telas do grupo) =====================
 // Só dados locais. Cada seção é independente (se uma fonte falhar, as outras aparecem). Guardado 60 s.
 const _painelGCache=new Map();
@@ -15780,6 +15802,7 @@ app.get("/api/central-entregas/assinatura/:token/:pid",requireSessao,(req,res)=>
 app.get("/diag",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"diag.html")); });
 // fontes usadas nas impressões (licença OFL do Google Fonts), servidas pelo próprio sistema
 app.get("/fontes/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^[A-Za-z0-9-]+\.ttf$/.test(a)) return res.status(404).end(); res.set("Cache-Control","public, max-age=2592000"); res.sendFile(path.join(__dirname,"fontes",a),e=>{ if(e&&!res.headersSent) res.status(404).end(); }); });
+app.get("/resultado",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"resultado.html")); });
 app.get("/margem-bruta",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"margem-bruta.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
