@@ -81,6 +81,8 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 .wrap>*{min-width:0;max-width:100%;box-sizing:border-box}#atalhos{flex-wrap:wrap}#atalhos input,#atalhos select{max-width:100%;min-width:0}#parProd{flex-wrap:wrap}
 .pcard{border-top:1px solid #2a2660;padding:10px 2px}.pcard .n{font-weight:800;font-size:14px;display:flex;justify-content:space-between;gap:8px}.pcard .l{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:#9a95c9;margin-top:4px}.pcard .l b{color:#fff}
 .pcard .c{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pcard .c input{width:110px;font-size:16px;padding:8px;text-align:right}.pcard .c button{font-size:18px;padding:6px 14px}
+.pcard .g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 8px;margin-top:6px}.pcard .g3>div{min-width:0}.pcard .g3 span{display:block;font-size:11px;color:#9a95c9}.pcard .g3 b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.pcard .ced{display:flex;gap:4px;align-items:center}.pcard .ced input{width:100%;min-width:0;font-size:16px;padding:6px;text-align:right;border-radius:8px}.pcard .ced button{border:0;background:#FF0082;color:#fff;border-radius:8px;padding:6px 8px;font-size:15px;flex-shrink:0}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -135,8 +137,9 @@ function renderProdutos() {
   const corM = m => m == null ? "#9a95c9" : m < 10 ? "#ff8aa3" : m < 20 ? "#ffd23f" : "#3ce88a";
   if (window.innerWidth < 720) { // celular: um cartão por produto
     tab.innerHTML = `<tr><td>${D.produtos.map((x, k) => `<div class="pcard"><div class="n"><span>${esc(x.nome)}</span><span style="color:${corM(x.margem)}">${pct(x.margem)}</span></div>
-      <div class="l"><span>Venda <b>${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</b></span><span>Médio <b>${x.precoMedio != null ? brl(x.precoMedio) : "—"}</b></span><span>Qtd <b>${String(x.qtd).replace(".", ",")}</b></span><span>Faturou <b>${brl(x.fat)}</b></span><span>Lucro <b>${x.lucro != null ? brl(x.lucro) : "—"}</b></span></div>
-      ${x.produtoId ? `<div class="c"><span class="ic">Custo</span><input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="sem custo" onkeydown="if(event.key==='Enter')salvarCusto(${k})"><button class="chip" onclick="salvarCusto(${k})">💾</button></div>` : ""}</div>`).join("") || `<div class="ic">Nenhum produto com esses parâmetros.</div>`}</td></tr>`;
+      <div class="g3"><div><span>Venda</span><b>${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</b></div><div><span>Médio</span><b>${x.precoMedio != null ? brl(x.precoMedio) : "—"}</b></div>
+        <div><span>Custo</span>${x.produtoId ? `<div class="ced"><input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="—" onkeydown="if(event.key==='Enter')salvarCusto(${k})"><button onclick="salvarCusto(${k})">💾</button></div>` : "<b>—</b>"}</div>
+        <div><span>Qtd</span><b>${String(x.qtd).replace(".", ",")}</b></div><div><span>Faturou</span><b>${brl(x.fat)}</b></div><div><span>Lucro</span><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></div></div></div>`).join("") || `<div class="ic">Nenhum produto com esses parâmetros.</div>`}</td></tr>`;
     tab.style.minWidth = "0"; semCusto.parentElement.style.display = "none"; return; }
   tab.style.minWidth = "560px";
   tab.innerHTML = `<tr class="ic"><td>Produto</td><td style="text-align:right">Qtd</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Preço de venda<div style="font-weight:400">(cadastro)</div></td><td style="text-align:right">Preço médio<div style="font-weight:400">(vendido)</div></td><td style="text-align:right">Preço de custo<div style="font-weight:400">(editar)</div></td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td></tr>` +
