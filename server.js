@@ -10991,6 +10991,25 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// ===================== ORÇAMENTO PREVISTO (planilha de custos) E PROJEÇÕES =====================
+let _orcCache=null; function lerOrcamento(){ if(!_orcCache){ try{ _orcCache=JSON.parse(fs.readFileSync(path.join(__dirname,"orcamento_planilha_2026.json"),"utf8")); }catch(e){ _orcCache={itens:[]}; } } return _orcCache; }
+// margem bruta real de um período (itens com custo) e faturamento
+function _margemPeriodo(ini,fim){ const P=lerProdutosBling().porId; let fat=0,fc=0,cu=0; const r=_filtrarPedidos({ini,fim});
+  r.L.forEach(p=>{ fat+=Number(p.total)||0; let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0); if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } }); });
+  return {fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),margemPct:fc>0?(fc-cu)/fc*100:null,pedidos:r.L.length}; }
+app.get("/api/financeiro/orcamento",requireAcesso("acesso_contas_pagar"),(req,res)=>{
+  try{ const O=lerOrcamento(), nomeConta=c=>(PLANO_CONTAS.find(p=>p.cod===c)||{}).nome||c, tipo=c=>(PLANO_CONTAS.find(p=>p.cod===c)||{}).tipo||"fixa";
+    const itens=(O.itens||[]).map(x=>({...x,conta:x.cod+" "+nomeConta(x.cod),tipo:tipo(x.cod),previsto:x.fev||x.jan||0})).sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true})||b.previsto-a.previsto);
+    const soma=(t,k)=>_round2(itens.filter(x=>x.tipo===t).reduce((a,x)=>a+(Number(x[k])||0),0));
+    const fixas=soma("fixa","previsto"), variaveis=soma("variavel","previsto"), h=_diaBRk(Date.now()), M=_margemPeriodo(_diaBRk(Date.now()-29*_DIA),h);
+    const varPct=M.fat>0?variaveis/M.fat*100:null, mc=M.margemPct!=null&&varPct!=null?M.margemPct-varPct:null;
+    const pe=mc>0?_round2(fixas/(mc/100)):null;
+    res.json({ok:true,fonte:O.fonte,itens,totais:{fixas:{jan:soma("fixa","jan"),fev:soma("fixa","fev"),previsto:fixas},variaveis:{jan:soma("variavel","jan"),fev:soma("variavel","fev"),previsto:variaveis}},
+      pontoEquilibrio:{fat30:M.fat,margemBrutaPct:M.margemPct!=null?+M.margemPct.toFixed(1):null,variaveisPct:varPct!=null?+varPct.toFixed(1):null,margemContribPct:mc!=null?+mc.toFixed(1):null,mensal:pe,diario:pe?_round2(pe/26):null,
+        coberturaCusto:M.fat>0?+(M.fatCusto/M.fat*100).toFixed(1):null,atingidoPct:pe?+(M.fat/pe*100).toFixed(1):null}});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+
 // ===================== PAINEL DE CADA GRUPO DO MENU (visão geral com as métricas das telas do grupo) =====================
 // Só dados locais. Cada seção é independente (se uma fonte falhar, as outras aparecem). Guardado 60 s.
 const _painelGCache=new Map();
@@ -11133,6 +11152,15 @@ function _montarPainelGrupo(g){
       kpi(brlN(RM.frete?.total||0),"Frete cobrado no mês",RM.frete?.medioPorEntrega?brlN(RM.frete.medioPorEntrega)+" por entrega":"","/entregas-dashboard");
       if((R.dinheiroAAcertar?.valor||0)>0) al("medio",`${brlN(R.dinheiroAAcertar.valor)} em dinheiro de entregas ainda a acertar no caixa (${R.dinheiroAAcertar.qtd})`,"/central-entregas");
       if(R.aguardando) al("info",`${R.aguardando} entrega(s) aguardando saída`,"/rotas");
+      try{ const O=lerOrcamento(), co=(O.itens||[]).find(x=>/coopermapp|coopermaq/i.test(x.nome)), custoM=co?(co.fev||co.jan||0):0;
+        const dia=Number(hoje.slice(8,10)), diasMes=new Date(Date.UTC(+hoje.slice(0,4),+hoje.slice(5,7),0)).getUTCDate(), ent=RM.entregues||RM.total||0, entProj=dia>0?Math.round(ent/dia*diasMes):ent;
+        const fr=Number(RM.frete?.total||0), frProj=dia>0?fr/dia*diasMes:fr, ids=(Mx.pedidos||[]).map(p=>String(p.id||p.pedidoId||"")).filter(Boolean), P=lerProdutosBling().porId; let fat=0,fc=0,cu=0;
+        ids.forEach(id=>{ let it=[]; try{ it=_itensDoPedido(id)||[]; }catch(e){} it.forEach(i=>{ const v=(Number(i.valor)||0)*(Number(i.quantidade)||0); fat+=v; const pr=i.produtoId?P[String(i.produtoId)]:null; if(pr&&pr.pc>0){ fc+=v; cu+=pr.pc*(Number(i.quantidade)||0); } }); });
+        const mb=fc>0?(fc-cu)/fc:null, lucroProj=mb!=null?(fat*mb)/(dia||1)*diasMes:null, retorno=frProj+(lucroProj||0);
+        if(custoM>0){ kpi(brlN(custoM),"Coopermapp (custo previsto/mês)",entProj?`${brlN(custoM/entProj)} por entrega · ${entProj} entregas no mês (projeção)`:"","/entregas-dashboard");
+          kpi(String(Math.round(frProj/custoM*100))+"%","Frete cobre do custo",`${brlN(frProj)} de frete no mês (projeção)`,"/entregas-dashboard",frProj<custoM?"alerta":"");
+          kpi(lucroProj!=null?brlN(retorno-custoM):"—","Resultado das entregas",lucroProj!=null?`frete ${brlN(frProj)} + lucro bruto ${brlN(lucroProj)} − Coopermapp ${brlN(custoM)}`:"cadastre custos para estimar o lucro bruto","/margem-bruta",lucroProj!=null&&retorno<custoM?"alerta":"");
+          if(frProj<custoM) al("medio",`O frete cobrado (${brlN(frProj)} no mês) cobre ${Math.round(frProj/custoM*100)}% do custo da Coopermapp (${brlN(custoM)}). A diferença sai da margem dos pedidos entregues`,"/entregas-dashboard"); } }catch(e){}
       lista("🧑‍✈️ Motoristas (mês)","/entregas-dashboard",(Mx.porMotorista||[]).slice(0,8).map(m=>({a:`${m.motorista||m.nome||"—"} · ${m.entregas||0} entregas`,b:brlN(m.valor||m.valorEntregue||0)}))); });
   }
   if(g==="marketing"){

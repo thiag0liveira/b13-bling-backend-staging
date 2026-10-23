@@ -105,6 +105,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="ic" id="fRes" style="margin-top:6px"></div></div>
   <div class="card"><div id="lista"></div></div>
   <div class="card"><h3>📊 Despesas por competência <select id="anoComp" onchange="carregarComp()" style="margin-left:8px"></select></h3><div class="ic" style="white-space:normal">Cada despesa no mês a que pertence (eventos anuais divididos nos meses). É a base da DRE e do ponto de equilíbrio.</div><div id="comp" style="overflow-x:auto;margin-top:6px"></div></div>
+  <div class="card"><h3>📋 Orçamento previsto (planilha de custos)</h3><div id="orc" style="overflow-x:auto"></div></div>
   <div class="card"><h3>🏦 Contas e saldos iniciais</h3><div id="contasFin"></div>
     <div class="filtros" style="margin-top:8px"><input id="cfNome" placeholder="Nome (ex.: Banco Inter, Cofre)" style="flex:1;min-width:160px"><select id="cfTipo"><option value="banco">Banco</option><option value="cofre">Cofre</option><option value="caixa">Caixa</option></select>
       <input id="cfSaldo" inputmode="decimal" placeholder="Saldo inicial" style="width:120px"><input id="cfData" type="date" style="width:auto"><button class="btn btn-mag" onclick="salvarContaFin()">Salvar conta</button></div></div>
@@ -173,6 +174,15 @@ async function pausar(id, ativar) { await api(`/api/contas-pagar-recorrentes/${i
 mod.addEventListener("click", e => { if (e.target.id === "mod") fechar(); });
 let _tb; fBusca.addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(carregar, 350); }); [fSit, fDe, fAte, fCat].forEach(el => el.addEventListener("change", carregar));
 // contas financeiras e despesas por competência
+async function carregarOrc() { const { ok, j } = await api("/api/financeiro/orcamento"); if (!ok) { orc.innerHTML = `<div class="err">${esc(j.erro || "")}</div>`; return; }
+  const T = j.totais, PE = j.pontoEquilibrio, f = v => brl(v), p = v => v == null ? "—" : String(v).replace(".", ",") + "%";
+  orc.innerHTML = `<div class="kpis" style="margin-bottom:8px"><div class="kpi"><div class="v">${f(T.fixas.previsto)}</div><div class="l">Fixas previstas/mês</div><div class="s">jan ${f(T.fixas.jan)} · fev ${f(T.fixas.fev)}</div></div>
+    <div class="kpi"><div class="v">${f(T.variaveis.previsto)}</div><div class="l">Variáveis previstas/mês</div><div class="s">${p(PE.variaveisPct)} do faturamento</div></div>
+    <div class="kpi ${PE.atingidoPct != null && PE.atingidoPct < 100 ? "alerta" : ""}"><div class="v">${PE.mensal ? f(PE.mensal) : "—"}</div><div class="l">Ponto de equilíbrio/mês</div><div class="s">${PE.mensal ? f(PE.diario) + " por dia útil · 30 dias faturou " + f(PE.fat30) + " (" + p(PE.atingidoPct) + ")" : "precisa da margem bruta (cadastre custos)"}</div></div>
+    <div class="kpi"><div class="v">${p(PE.margemContribPct)}</div><div class="l">Margem de contribuição</div><div class="s">margem bruta ${p(PE.margemBrutaPct)} − variáveis ${p(PE.variaveisPct)} · custo cadastrado em ${p(PE.coberturaCusto)} das vendas</div></div></div>
+    <table style="width:100%;min-width:520px;border-collapse:collapse;font-size:12px"><tr class="ic"><td>Item</td><td>Conta</td><td style="text-align:right">Jan</td><td style="text-align:right">Fev</td><td style="text-align:right">Previsto/mês</td></tr>
+    ${j.itens.map(x => `<tr style="border-top:1px solid #2a2660"><td>${esc(x.nome)}</td><td class="ic" style="white-space:normal">${esc(x.conta)}${x.tipo === "variavel" ? " · variável" : ""}</td><td style="text-align:right">${f(x.jan)}</td><td style="text-align:right">${f(x.fev)}</td><td style="text-align:right"><b>${f(x.previsto)}</b></td></tr>`).join("")}</table>
+    <div class="ic" style="white-space:normal;margin-top:6px">${esc(j.fonte || "")}. Pró-labore lançado como despesa fixa (5.1.5).</div>`; }
 async function carregarContasFin() { const { j } = await api("/api/financeiro/contas"); CONTAS = j.contas || [];
   contasFin.innerHTML = CONTAS.map(c => `<div class="lin"><span>${esc(c.nome)} <span class="ic">· ${esc(c.tipo)} · desde ${dmy(c.dataInicial)}</span></span><b>${brl(c.saldoInicial)}</b></div>`).join("") || `<div class="ic">Cadastre os bancos, o cofre e os caixas com o saldo do dia de início. A partir daí o sistema calcula o saldo de cada um.</div>`; }
 async function salvarContaFin() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/financeiro/contas", { method: "POST", body: JSON.stringify({ nome: v("cfNome"), tipo: v("cfTipo"), saldoInicial: v("cfSaldo").replace(",", "."), dataInicial: v("cfData") }) });
@@ -185,7 +195,7 @@ async function carregarComp() { const { j } = await api("/api/financeiro/compete
     ${j.linhas.map(l => linha(`${esc(l.cod)} ${esc(l.nome)}`, M.map(m => l.meses[m] || 0), l.total)).join("")}
     ${linha("<b>Despesas variáveis</b>", j.totais.variaveis, sum(j.totais.variaveis), "border-top:1px solid #3a3480")}${linha("<b>Despesas fixas</b>", j.totais.fixas, sum(j.totais.fixas))}${linha("Compras de mercadoria (vão para o CMV)", j.totais.compras, sum(j.totais.compras), "color:#9a95c9")}</table>` : `<div class="ic">Nenhuma despesa lançada para este ano.</div>`; }
 (async () => { const a = Number(hoje().slice(0, 4)); anoComp.innerHTML = [a - 1, a, a + 1].map(x => `<option ${x === a ? "selected" : ""}>${x}</option>`).join(""); cfData.value = hoje();
-  try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContasFin(); carregarComp(); carregar(); })();
+  try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContasFin(); carregarComp(); carregarOrc(); carregar(); })();
 </script>
 </body>
 </html>

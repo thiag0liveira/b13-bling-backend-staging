@@ -1,0 +1,313 @@
+{
+ "fonte": "Planilha de Controle Economico e Financeiro (fev/2026), aba Planilha de Custos, realizado de jan e fev",
+ "itens": [
+  {
+   "linha": 10,
+   "nome": "Aluguel",
+   "cod": "5.2.1",
+   "jan": 17518.56,
+   "fev": 17518.56
+  },
+  {
+   "linha": 11,
+   "nome": "Contador",
+   "cod": "5.3.1",
+   "jan": 3372.0,
+   "fev": 3242.0
+  },
+  {
+   "linha": 12,
+   "nome": "Luz",
+   "cod": "5.2.3",
+   "jan": 200.0,
+   "fev": 3000.0
+  },
+  {
+   "linha": 13,
+   "nome": "Água",
+   "cod": "5.2.4",
+   "jan": 351.74,
+   "fev": 237.91
+  },
+  {
+   "linha": 14,
+   "nome": "INSS",
+   "cod": "5.1.2",
+   "jan": 10885.2,
+   "fev": 10684.8
+  },
+  {
+   "linha": 15,
+   "nome": "Alvará",
+   "cod": "5.3.5",
+   "jan": 178.21,
+   "fev": 178.21
+  },
+  {
+   "linha": 16,
+   "nome": "Telefone Celular",
+   "cod": "5.3.3",
+   "jan": 70.0,
+   "fev": 70.0
+  },
+  {
+   "linha": 17,
+   "nome": "Internet",
+   "cod": "5.3.3",
+   "jan": 109.0,
+   "fev": 109.0
+  },
+  {
+   "linha": 18,
+   "nome": "Mat de Limpeza",
+   "cod": "5.3.4",
+   "jan": 183.11,
+   "fev": 200.0
+  },
+  {
+   "linha": 19,
+   "nome": "Papelaria",
+   "cod": "5.3.4",
+   "jan": 60.0,
+   "fev": 100.0
+  },
+  {
+   "linha": 20,
+   "nome": "Sindicato Patronal",
+   "cod": "5.1.2",
+   "jan": 47.85,
+   "fev": 47.85
+  },
+  {
+   "linha": 21,
+   "nome": "Pró-Labore retirada",
+   "cod": "5.1.5",
+   "jan": 27000.0,
+   "fev": 27000.0
+  },
+  {
+   "linha": 22,
+   "nome": "Salários do Mês",
+   "cod": "5.1.1",
+   "jan": 30339.0,
+   "fev": 30424.99
+  },
+  {
+   "linha": 23,
+   "nome": "FGTS do Mês",
+   "cod": "5.1.2",
+   "jan": 3027.25,
+   "fev": 2482.16
+  },
+  {
+   "linha": 25,
+   "nome": "Vale Transporte/ mobilidade",
+   "cod": "5.1.3",
+   "jan": 3995.17,
+   "fev": 5506.6
+  },
+  {
+   "linha": 26,
+   "nome": "Vale alimentação",
+   "cod": "5.1.3",
+   "jan": 5200.0,
+   "fev": 5640.0
+  },
+  {
+   "linha": 27,
+   "nome": "Uniforme",
+   "cod": "5.9",
+   "jan": 238.65,
+   "fev": 238.65
+  },
+  {
+   "linha": 31,
+   "nome": "Combustível",
+   "cod": "4.1",
+   "jan": 2500.0,
+   "fev": 2500.0
+  },
+  {
+   "linha": 32,
+   "nome": "IPVA",
+   "cod": "5.5.2",
+   "jan": 100.0,
+   "fev": 100.0
+  },
+  {
+   "linha": 33,
+   "nome": "Pneus",
+   "cod": "5.5.2",
+   "jan": 150.0,
+   "fev": 150.0
+  },
+  {
+   "linha": 34,
+   "nome": "Seguro",
+   "cod": "5.5.3",
+   "jan": 333.0,
+   "fev": 333.0
+  },
+  {
+   "linha": 36,
+   "nome": "Imprevistos",
+   "cod": "5.9",
+   "jan": 200.0,
+   "fev": 114.0
+  },
+  {
+   "linha": 37,
+   "nome": "Tarifas Bancárias",
+   "cod": "5.6.1",
+   "jan": 180.0,
+   "fev": 180.0
+  },
+  {
+   "linha": 40,
+   "nome": "Propaganda/tráfego pago",
+   "cod": "5.4.1",
+   "jan": 4000.0,
+   "fev": 4000.0
+  },
+  {
+   "linha": 41,
+   "nome": "Software de gestão",
+   "cod": "5.3.2",
+   "jan": 1100.0,
+   "fev": 1100.0
+  },
+  {
+   "linha": 42,
+   "nome": "Manutenção Equipamentos",
+   "cod": "5.5.1",
+   "jan": 390.0,
+   "fev": 0
+  },
+  {
+   "linha": 43,
+   "nome": "Manutenção veículos",
+   "cod": "5.5.1",
+   "jan": 1000.0,
+   "fev": 1000.0
+  },
+  {
+   "linha": 44,
+   "nome": "Manutenção predial",
+   "cod": "5.5.1",
+   "jan": 0,
+   "fev": 2339.18
+  },
+  {
+   "linha": 45,
+   "nome": "Plano de saúde colab",
+   "cod": "5.1.3",
+   "jan": 4527.82,
+   "fev": 4238.68
+  },
+  {
+   "linha": 46,
+   "nome": "Aluguel equipamentos/Empilhadeira",
+   "cod": "5.5.1",
+   "jan": 3000.0,
+   "fev": 3000.0
+  },
+  {
+   "linha": 47,
+   "nome": "Serviço de vigilância",
+   "cod": "5.9",
+   "jan": 250.0,
+   "fev": 250.0
+  },
+  {
+   "linha": 50,
+   "nome": "Social mídia/ gestor de tráfego",
+   "cod": "5.4.1",
+   "jan": 850.0,
+   "fev": 1850.0
+  },
+  {
+   "linha": 52,
+   "nome": "Assessoria jurídica",
+   "cod": "5.9",
+   "jan": 0.0,
+   "fev": 600.0
+  },
+  {
+   "linha": 54,
+   "nome": "Transporte Coopermapp",
+   "cod": "4.1",
+   "jan": 773.9,
+   "fev": 3381.47
+  },
+  {
+   "linha": 55,
+   "nome": "Medicina e segurança do trabalho",
+   "cod": "5.9",
+   "jan": 760.0,
+   "fev": 775.0
+  },
+  {
+   "linha": 58,
+   "nome": "Sindicato dos Comerciários",
+   "cod": "5.1.2",
+   "jan": 51.5,
+   "fev": 51.5
+  },
+  {
+   "linha": 59,
+   "nome": "Gás empilhadeira",
+   "cod": "5.5.1",
+   "jan": 360.0,
+   "fev": 360.0
+  },
+  {
+   "linha": 60,
+   "nome": "freelancer",
+   "cod": "4.9",
+   "jan": 2500.0,
+   "fev": 712.0
+  },
+  {
+   "linha": 61,
+   "nome": "Material de depósito",
+   "cod": "5.3.4",
+   "jan": 66.9,
+   "fev": 2.4
+  },
+  {
+   "linha": 62,
+   "nome": "Transporte Lalamove",
+   "cod": "4.1",
+   "jan": 2675.6,
+   "fev": 1988.2
+  },
+  {
+   "linha": 63,
+   "nome": "Faxineira",
+   "cod": "5.3.4",
+   "jan": 826.9,
+   "fev": 1040.0
+  },
+  {
+   "linha": 64,
+   "nome": "Supermercado",
+   "cod": "5.9",
+   "jan": 150.0,
+   "fev": 181.08
+  },
+  {
+   "linha": 65,
+   "nome": "Solides (sistema de ponto)",
+   "cod": "5.3.2",
+   "jan": 57.67,
+   "fev": 116.5
+  },
+  {
+   "linha": 66,
+   "nome": "Dedetização",
+   "cod": "5.5.1",
+   "jan": 107.47,
+   "fev": 107.47
+  }
+ ]
+}
