@@ -274,6 +274,7 @@ function abaEditar() {
   if (ED.erro) return `<div class="err">${esc(ED.erro)}</div>`;
   return `<div class="ic" style="white-space:normal;margin-bottom:8px">Os valores abaixo foram lidos agora no Bling. Para salvar é preciso o QR do dia de um gerente, financeiro ou admin.</div>
     <div class="grid2"><label><div class="ic">Preço de venda no Bling (atual ${brl(ED.preco)})</div><input id="pPreco" inputmode="decimal" placeholder="${String(ED.preco).replace(".", ",")}" style="width:100%"></label>
+      <label><div class="ic">Preço de custo (atual ${ED.custo > 0 ? brl(ED.custo) : "sem custo"})</div><input id="pCusto" inputmode="decimal" placeholder="${ED.custo > 0 ? String(ED.custo).replace(".", ",") : "ex.: 3,79"}" style="width:100%"></label>
       <label><div class="ic">Situação</div><select id="pSit" style="width:100%"><option value="A" ${ED.situacao === "A" ? "selected" : ""}>Ativo</option><option value="I" ${ED.situacao === "I" ? "selected" : ""}>Inativo</option></select></label></div>
     <h3 style="margin-top:12px">Balanço de estoque</h3><div class="ic" style="white-space:normal">Define o saldo no Bling (contagem). Saldo atual: <b>${num(ED.estoque)}</b>.</div>
     <div class="grid2"><label><div class="ic">Novo saldo contado</div><input id="pEst" inputmode="decimal" placeholder="deixe em branco para não mexer" style="width:100%"></label>
@@ -284,8 +285,8 @@ function abaEditar() {
 async function salvarProd() {
   const v = id => document.getElementById(id).value.trim(), msg = document.getElementById("pMsg");
   const corpo = { tokenQr: v("pQr"), motivo: v("pMot") }; if (!corpo.tokenQr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
-  if (v("pPreco")) corpo.preco = v("pPreco"); if (v("pSit") !== ED.situacao) corpo.situacao = v("pSit"); if (v("pEst") !== "") corpo.estoqueBalanco = v("pEst");
-  if (!corpo.preco && !corpo.situacao && corpo.estoqueBalanco == null) { msg.innerHTML = `<div class="err">Nada foi alterado.</div>`; return; }
+  if (v("pPreco")) corpo.preco = v("pPreco"); if (v("pCusto")) corpo.custo = v("pCusto").replace(",", "."); if (v("pSit") !== ED.situacao) corpo.situacao = v("pSit"); if (v("pEst") !== "") corpo.estoqueBalanco = v("pEst");
+  if (!corpo.preco && !corpo.custo && !corpo.situacao && corpo.estoqueBalanco == null) { msg.innerHTML = `<div class="err">Nada foi alterado.</div>`; return; }
   if (corpo.estoqueBalanco != null && !corpo.motivo) { msg.innerHTML = `<div class="err">Informe o motivo do ajuste de estoque.</div>`; return; }
   msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
   const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(PR.id), { method: "PUT", body: JSON.stringify(corpo) });

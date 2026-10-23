@@ -11804,13 +11804,18 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
     const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", motivo=String(b.motivo||"").trim().slice(0,150), feito=[];
     const novoPreco=b.preco!=null&&String(b.preco).trim()!==""?Number(String(b.preco).replace(",",".")):null, novaSit=["A","I"].includes(b.situacao)?b.situacao:null;
     if(novoPreco!=null&&!(novoPreco>0)) return res.status(400).json({erro:"preço inválido"});
-    if(novoPreco!=null||novaSit){
+    const novoCusto=b.custo!=null&&String(b.custo).trim()!==""?_round2(Number(String(b.custo).replace(",","."))):null;
+    if(novoCusto!=null&&!(novoCusto>0)) return res.status(400).json({erro:"preço de custo inválido"});
+    if(novoPreco!=null||novaSit||novoCusto!=null){
       const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) return res.status(404).json({erro:"produto não encontrado no Bling"});
       const payload={nome:pd.nome,codigo:pd.codigo||"",preco:novoPreco!=null?novoPreco:(pd.preco||0),tipo:pd.tipo||"P",situacao:novaSit||pd.situacao||"A",formato:pd.formato||"S"};
       ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
       if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+      const custoAntes=Number(pd.fornecedor?.precoCusto??pd.precoCusto??0)||0;
+      if(novoCusto!=null) payload.fornecedor={...(pd.fornecedor||{}),precoCusto:novoCusto,precoCompra:novoCusto}; // preço de custo do produto no Bling
       try{ await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)}); }catch(e){ return res.status(502).json({erro:"O Bling não aceitou a alteração do produto: "+e.message}); }
-      const P=lerProdutosBling(); if(P.porId[id]){ if(novoPreco!=null) P.porId[id].p=novoPreco; if(novaSit) P.porId[id].s=novaSit; salvarJSON(PRODUTOS_BLING_FILE,P); }
+      const P=lerProdutosBling(); if(P.porId[id]){ if(novoPreco!=null) P.porId[id].p=novoPreco; if(novaSit) P.porId[id].s=novaSit; if(novoCusto!=null) P.porId[id].pc=novoCusto; salvarJSON(PRODUTOS_BLING_FILE,P); }
+      if(novoCusto!=null){ feito.push(`preço de custo ${brlN(custoAntes)} → ${brlN(novoCusto)}`); try{ _metProdCache.clear(); }catch(e){} }
       if(novoPreco!=null) feito.push(`preço de venda ${brlN(pd.preco)} → ${brlN(novoPreco)}`); if(novaSit&&novaSit!==pd.situacao) feito.push(novaSit==="A"?"ativado":"inativado");
     }
     if(b.estoqueBalanco!=null&&String(b.estoqueBalanco).trim()!==""){
