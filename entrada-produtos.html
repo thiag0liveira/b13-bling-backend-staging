@@ -126,16 +126,16 @@ async function abrirCamera() {
   catch (e) { document.getElementById("camMsg").textContent = "Não consegui abrir a câmera. Use 'Foto do código' ou digite a chave."; return; }
   lendo = true;
   if ("BarcodeDetector" in window) { const det = new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] });
-    const loop = async () => { if (!lendo) return; try { const r = await det.detect(v); const c = r.map(x => achaChave(x.rawValue)).find(Boolean); if (c) { fecharCamera(); carregar({ chave: c }); return; } } catch (e) {} setTimeout(loop, 250); }; loop(); }
-  else { try { const Z = await carregarZxing(); zx = new Z.BrowserMultiFormatReader(); zx.decodeFromVideoElementContinuously ? zx.decodeFromVideoElementContinuously(v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } })
-      : zx.decodeFromVideoDevice(undefined, v, (res) => { const c = res && achaChave(res.getText()); if (c) { fecharCamera(); carregar({ chave: c }); } }); }
+    const loop = async () => { if (!lendo) return; try { const r = await det.detect(v); const c = r.map(x => achaChave(x.rawValue)).find(Boolean); if (c) { const fr = frameDe(v); fecharCamera(); carregar({ chave: c }, fr); return; } } catch (e) {} setTimeout(loop, 250); }; loop(); }
+  else { try { const Z = await carregarZxing(); zx = new Z.BrowserMultiFormatReader(); zx.decodeFromVideoElementContinuously ? zx.decodeFromVideoElementContinuously(v, (res) => { const c = res && achaChave(res.getText()); if (c) { const fr = frameDe(v); fecharCamera(); carregar({ chave: c }, fr); } })
+      : zx.decodeFromVideoDevice(undefined, v, (res) => { const c = res && achaChave(res.getText()); if (c) { const fr = frameDe(v); fecharCamera(); carregar({ chave: c }, fr); } }); }
     catch (e) { document.getElementById("camMsg").textContent = "Este navegador não lê código de barras pela câmera. Use 'Foto do código' ou digite a chave."; } }
 }
 function fecharCamera() { lendo = false; try { zx && zx.reset(); } catch (e) {} if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; document.getElementById("camBox").style.display = "none"; }
 async function lerFoto(f) { if (!f) return; msgLer(`<div class="ic">Lendo a foto…</div>`);
   try { let c = null; if ("BarcodeDetector" in window) { const bmp = await createImageBitmap(f); const r = await new BarcodeDetector({ formats: ["code_128", "itf", "qr_code", "code_39"] }).detect(bmp); c = r.map(x => achaChave(x.rawValue)).find(Boolean); }
     if (!c) { const Z = await carregarZxing(); const url = URL.createObjectURL(f); try { const res = await new Z.BrowserMultiFormatReader().decodeFromImageUrl(url); c = achaChave(res.getText()); } catch (e) {} URL.revokeObjectURL(url); }
-    if (c) carregar({ chave: c }); else msgLer(`<div class="err">Não consegui ler o código de barras nessa foto. Tente mais perto e reto, com boa luz, ou digite a chave.</div>`);
+    if (c) carregar({ chave: c }, { nome: f.name || "codigo.jpg", dados: await reduzir(f) }); else msgLer(`<div class="err">Não consegui ler o código de barras nessa foto. Tente mais perto e reto, com boa luz, ou digite a chave.</div>`);
   } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
 // compra SEM nota: reduz as fotos no aparelho e manda para a leitura
 function reduzir(f) { return new Promise((ok, erro) => { const img = new Image(), u = URL.createObjectURL(f); img.onload = () => { const m = 1600, k = Math.min(1, m / Math.max(img.width, img.height)), c = document.createElement("canvas");
@@ -150,13 +150,14 @@ async function lerFotoCompra(files) { if (!files || !files.length) return; msgLe
     if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui ler a foto.")}</div>`); return; }
     msgLer(j.lidaComo === "danfe" ? `<div style="color:#3ce88a">📄 A foto é de uma nota fiscal: achei a nota.</div>` : ""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
   } catch (e) { msgLer(`<div class="err">Não consegui ler a foto: ${esc(e.message)}</div>`); } }
-async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }); }
+async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }, { nome: f.name || "nota.xml", dados: "data:text/xml;base64," + btoa(unescape(encodeURIComponent(t))) }); }
 function carregarChave() { const c = achaChave(document.getElementById("chave").value); if (!c) { msgLer(`<div class="err">A chave tem 44 dígitos.</div>`); return; } carregar({ chave: c }); }
-async function carregar(corpo) {
+async function carregar(corpo, arq) {
   msgLer(`<div class="ic">⏳ Buscando a nota${corpo.chave ? " " + corpo.chave.replace(/(\d{4})/g, "$1 ") : ""}… (pode levar alguns segundos se o Bling precisar buscar na SEFAZ)</div>`);
   const { ok, j } = await api(P + "/carregar", { method: "POST", body: JSON.stringify(corpo) });
   if (!ok) { msgLer(`<div class="err">${esc(j.erro || "Não consegui carregar a nota.")}</div>`); return; }
   msgLer(""); N = j.nota; IGN = new Set(); renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" });
+  if (arq) anexar(arq); // guarda a imagem lida na nota
 }
 // compra sem nota: corrigir descrição, quantidade ou tirar item (sem valores)
 async function editarSN(corpo) { const { ok, j } = await api(P + "/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) });
@@ -171,7 +172,7 @@ function renderNota() {
   const it = x => { const ign = IGN.has(x.nItem);
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
         <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
-        ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item</label></div>`;
+        ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não alterar o estoque deste produto</label></div>`;
     return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} · ${esc(x.motivo || "produto não reconhecido")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
         <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
@@ -179,20 +180,38 @@ function renderNota() {
         <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
       ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b>. Confira antes de ligar.</div>` : ""}
       <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas.</div>
-      ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
+      ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não alterar o estoque deste produto (ex.: bonificação, uso interno)</label></div>`; };
   document.getElementById("nota").innerHTML = `<div class="card">
-    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.jaNoBling ? "Os produtos desta nota já foram marcados como lançados no Bling em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.semEstoque ? "Esta nota foi registrada SEM dar entrada no estoque em " : n.entrada.jaNoBling ? "Os produtos desta nota já foram marcados como lançados no Bling em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
     ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, produtos e quantidades.</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
     <h3>2. ${n.semNota ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3>
     <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
-    <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div></div>
+    <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
+    ${(n.vencimentos || []).length ? `<div style="margin-top:8px"><div class="ic" style="white-space:normal;margin-bottom:4px">📅 Dia de pagamento lido (confira e corrija se estiver errado; o financeiro usa estas datas)</div>${n.vencimentos.map((d, i) => `<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span class="ic" style="width:58px">${d.parcela}/${d.de}</span><input type="date" value="${esc(d.vencimento)}" ${n.financeiroFeito ? "disabled" : ""} onchange="salvarVenc(${i}, this.value)" style="flex:1"></div>`).join("")}<div id="vencMsg" class="ic"></div></div>` : ""}
+    ${blocoAnexos(n)}</div>
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
   <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
-    <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()">📋 Não dar entrada no estoque (só registrar a nota)</button>
+    <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
+}
+function blocoAnexos(n) { const a = n.anexos || []; if (!a.length) return ""; return `<div style="margin-top:8px"><div class="ic" style="margin-bottom:4px">📎 Imagem lida (guardada nesta nota)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem lida" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF lido" : "📄 XML lido"}</button>`).join("")}</div></div>`; }
+function frameDe(v) { try { const k = Math.min(1, 1600 / Math.max(v.videoWidth || 1, v.videoHeight || 1)), c = document.createElement("canvas"); c.width = Math.round((v.videoWidth || 640) * k); c.height = Math.round((v.videoHeight || 480) * k); c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); return { nome: "codigo-barras.jpg", dados: c.toDataURL("image/jpeg", 0.82) }; } catch (e) { return null; } }
+async function anexar(a) { if (!a || !N) return; const { ok, j } = await api(P + "/anexo", { method: "POST", body: JSON.stringify({ notaId: N.id, nome: a.nome, dados: a.dados }) }); if (ok && j.anexos) { N.anexos = j.anexos; renderNota(); } }
+async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + P + "/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
+async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + P + "/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir o arquivo."); } }
+async function salvarVenc(i, v) { const datas = (N.vencimentos || []).map((d, k) => k === i ? v : d.vencimento), el = document.getElementById("vencMsg");
+  const { ok, j } = await api(P + "/vencimentos", { method: "POST", body: JSON.stringify({ notaId: N.id, vencimentos: datas }) });
+  if (!ok) { if (el) el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui salvar a data.")}</span>`; return; } N = j.nota; if (el) el.innerHTML = `<span style="color:#3ce88a">✅ Data salva.</span>`; }
+async function registrarSemEstoque() {
+  if (!confirm("Registrar esta nota SEM dar entrada no estoque?\n\nNenhum produto será alterado no Bling. A nota fica registrada com a imagem lida e as datas de pagamento.")) return;
+  const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Registrando…</div>`;
+  const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, semEstoque: true }) });
+  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui registrar.")}</div>`; return; }
+  N.entrada = { em: Date.now(), por: "", semEstoque: true }; renderNota(); document.getElementById("confMsg").innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Nota registrada sem dar entrada no estoque.</div>`;
 }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
 function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
@@ -213,6 +232,7 @@ async function confirmar() {
   N.entrada = { em: Date.now(), por: "" };
   renderNota(); document.getElementById("confMsg").innerHTML = msgOk;
 }
+const _renderNotaBase = renderNota; renderNota = function () { _renderNotaBase(); carregarThumbs(); };
 </script>
 </body>
 </html>

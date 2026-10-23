@@ -11374,12 +11374,12 @@ async function _resumoEntradaNota(n){
             return {sugestoes:sg,sugestaoFator:pistas[0].f,fatorEstimado:true,fatorFonte:"estimada "+pistas[0].fonte+(iguais>1?" e confirmada por outra pista":"")}; } }
         return {sugestoes:sg,sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
   const pend=itens.filter(x=>x.status!=="ok").length;
-  const dups=(n.duplicatas||[]).length?n.duplicatas:[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
+  const dups=(n.duplicatas||[]).length?_duplicatasEditadas(n):[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
-    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n)};
+    itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),pagamentoLido:(n.duplicatas||[]).length>0};
 }
 async function _acharNotaBlingPorChave(ch){
   for(const ep of [`/nfe?chaveAcesso=${ch}`,`/notasfiscaisentrada?chaveAcesso=${ch}`]){ try{ const r=await bling(ep); const l=r?.data||[]; if(l.length) return l[0].id; }catch(e){} }
@@ -11394,14 +11394,31 @@ const ENTRADA_FIN_FILE=`${DATA_DIR}/entrada_nota_financeiro.json`;
 function _finNota(n){ try{ const f=lerJSON(ENTRADA_FIN_FILE,{})[String(n&&n.id)]; if(f) return f; }catch(e){}
   return n&&n.entrada&&n.entrada.soBoletos?{em:n.entrada.em,por:n.entrada.por||"",contas:n.entrada.contas||[]}:null; } // compatível com o que já foi marcado antes
 function _marcarFinNota(n,info){ const d=lerJSON(ENTRADA_FIN_FILE,{}); d[String(n.id)]=info; salvarJSON(ENTRADA_FIN_FILE,d); }
+// IMAGEM LIDA + DIA DE PAGAMENTO EDITÁVEL
+const ENTRADA_ANEXOS_DIR=`${DATA_DIR}/entrada_anexos`, ENTRADA_ANEXOS_IDX=`${DATA_DIR}/entrada_nota_anexos.json`, ENTRADA_VENC_FILE=`${DATA_DIR}/entrada_nota_vencimentos.json`;
+const _EXT_ANEXO={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","application/pdf":"pdf","text/xml":"xml","application/xml":"xml"};
+function _anexosPublicos(id){ return (lerJSON(ENTRADA_ANEXOS_IDX,{})[String(id)]||[]).map(a=>({id:a.id,tipo:/^image\//.test(a.mime)?"imagem":a.mime==="application/pdf"?"pdf":"xml",nome:a.nome||"",em:a.em,por:a.por||""})); }
+function _salvarAnexos(notaId,arqs,por){
+  try{ fs.mkdirSync(ENTRADA_ANEXOS_DIR,{recursive:true}); const idx=lerJSON(ENTRADA_ANEXOS_IDX,{}), L=idx[String(notaId)]||[], novos=[];
+    for(const a of arqs){ const ext=_EXT_ANEXO[a.mime]; if(!ext||!a.buf||!a.buf.length||a.buf.length>8*1048576) continue; if(L.length+novos.length>=12) break;
+      const id="an"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); fs.writeFileSync(path.join(ENTRADA_ANEXOS_DIR,id+"."+ext),a.buf);
+      novos.push({id,ext,mime:a.mime,nome:String(a.nome||"").slice(0,80),em:Date.now(),por:por||""}); }
+    if(novos.length){ idx[String(notaId)]=[...L,...novos]; salvarJSON(ENTRADA_ANEXOS_IDX,idx); }
+    return novos;
+  }catch(e){ console.error("anexos da nota:",e.message); return []; }
+}
+function _duplicatasEditadas(n){ const base=n.duplicatas||[], ov=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)];
+  return Array.isArray(ov)&&ov.length===base.length?base.map((d,i)=>({...d,vencimento:ov[i]||d.vencimento})):base; }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
-const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1};
+const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1};
 function _motivoSemValor(m){ m=String(m||""); return /R\$|\d+[.,]\d{2}/.test(m)?"confira se o produto ligado e a quantidade estão certos":m; }
 function _notaSemValores(n){
   if(!n||typeof n!=="object") return n;
   return {id:n.id,numero:n.numero,serie:n.serie,emissao:n.emissao,semNota:!!n.semNota,
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
-    entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos)}:null,
+    entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
+    anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
+    vencimentos:n.pagamentoLido?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||"",fator:x.fator||0,qtdUn:x.qtdUn||0,
       sugestoes:(x.sugestoes||[]).map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""})),
@@ -11416,21 +11433,49 @@ function _semValoresEntrada(o){
   if(o.nota) r.nota=_notaSemValores(o.nota);
   if(Array.isArray(o.itens)) r.itens=o.itens.map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""}));
   if(o.lancados!==undefined) r.lancados=o.lancados;
+  if(o.semEstoque) r.semEstoque=true; if(Array.isArray(o.anexos)) r.anexos=o.anexos.map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em}));
   if(Array.isArray(o.falhas)) r.falhas=o.falhas.map(f=>({nItem:f.nItem,xProd:f.xProd,produtoNome:f.produtoNome||"",erro:f.erro||""}));
   return r;
 }
 app.use((req,res,next)=>{ if(!req.path.startsWith("/api/entrada-produtos/")) return next(); // sem prefixo no app.use: o Express desfaz a reescrita da URL quando há prefixo
   requireAcesso("acesso_entrada_produtos")(req,res,()=>{
-  const sub=req.path.slice("/api/entrada-produtos".length); if(!_ENT_PROD_ROTAS[req.method+" "+sub]) return res.status(404).json({erro:"rota não encontrada"});
+  const sub=req.path.slice("/api/entrada-produtos".length); if(!_ENT_PROD_ROTAS[req.method+" "+(/^\/anexo\/[\w]+$/.test(sub)?"/anexo/:id":sub)]) return res.status(404).json({erro:"rota não encontrada"});
   req.produtosMode=true;
   const b=req.body||{};
-  if(sub==="/confirmar") req.body={notaId:b.notaId,ignorar:b.ignorar};                                   // sem pagamento nem boletos
+  if(sub==="/confirmar") req.body={notaId:b.notaId,ignorar:b.ignorar,semEstoque:!!b.semEstoque};      // sem pagamento nem boletos
+  if(sub==="/vencimentos") req.body={notaId:b.notaId,vencimentos:b.vencimentos};                       // só as datas, nunca valores
+  if(sub==="/anexo") req.body={notaId:b.notaId,nome:b.nome,dados:b.dados};
   if(sub==="/sem-nota/editar") req.body={id:b.id,nItem:b.nItem,qCom:b.qCom,xProd:b.xProd,remover:b.remover,fornecedor:b.fornecedor}; // sem valores
   const orig=res.json.bind(res);
   res.json=o=>{ const r=_semValoresEntrada(o); if(r&&r.erro&&!(o&&o.erro)&&res.statusCode<400) res.status(422); return orig(r); };
   req.url="/api/entrada-nota"+req.url.slice("/api/entrada-produtos".length);
   next();
   });
+});
+app.post("/api/entrada-nota/vencimentos",acessoEntradaNota,async(req,res)=>{
+  try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    if(_finNota(n)) return res.status(409).json({erro:"os boletos dessa nota já foram lançados; mude as datas em contas a pagar"});
+    const base=n.duplicatas||[]; if(!base.length) return res.status(400).json({erro:"essa nota não tem dia de pagamento lido"});
+    const v=Array.isArray(b.vencimentos)?b.vencimentos.map(x=>String(x||"").slice(0,10)):[];
+    if(v.length!==base.length||v.some(x=>!/^\d{4}-\d{2}-\d{2}$/.test(x))) return res.status(400).json({erro:"informe a data de cada pagamento"});
+    const d=lerJSON(ENTRADA_VENC_FILE,{}); d[String(n.id)]=v; salvarJSON(ENTRADA_VENC_FILE,d);
+    addLog("nota-"+(n.chave||n.id),"entrada_nota_vencimentos",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{numero:n.numero,datas:v});
+    res.json({ok:true,nota:await _resumoEntradaNota(n)});
+  }catch(e){ res.status(400).json({erro:e.message}); }
+});
+app.post("/api/entrada-nota/anexo",acessoEntradaNota,(req,res)=>{
+  try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    const m=String(b.dados||"").match(/^data:([\w\/+.-]+);base64,([\s\S]+)$/); if(!m) return res.status(400).json({erro:"envie o arquivo lido"});
+    const novos=_salvarAnexos(n.id,[{buf:Buffer.from(m[2],"base64"),mime:m[1],nome:b.nome}],req.sessao?.nome||"");
+    if(!novos.length) return res.status(400).json({erro:"arquivo não aceito (use foto, PDF ou XML de até 8 MB)"});
+    res.json({ok:true,anexos:_anexosPublicos(n.id)});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
+app.get("/api/entrada-nota/anexo/:id",acessoEntradaNota,(req,res)=>{
+  try{ const id=String(req.params.id||""); if(!/^an[\w]+$/.test(id)) return res.status(400).json({erro:"anexo inválido"});
+    const a=Object.values(lerJSON(ENTRADA_ANEXOS_IDX,{})).flat().find(x=>x.id===id); if(!a) return res.status(404).json({erro:"anexo não encontrado"});
+    res.set("Content-Type",a.mime); res.sendFile(path.join(ENTRADA_ANEXOS_DIR,a.id+"."+a.ext));
+  }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/entrada-nota/carregar",acessoEntradaNota,express.json({limit:"6mb"}),async(req,res)=>{
   try{
@@ -11463,14 +11508,22 @@ app.post("/api/entrada-nota/ligar",acessoEntradaNota,async(req,res)=>{
 app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
   try{
     const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
-    if(n.semNota&&!b.soBoletos) await _garantirFornecedorSemNota(n);
-    if(!b.soBoletos&&n.entrada&&n.entrada.em) return res.status(409).json({erro:n.entrada.jaNoBling||n.entrada.soBoletos?`Os produtos dessa nota já foram marcados como lançados no Bling (${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}).`:`Essa nota já deu entrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
+    if(n.semNota&&!b.soBoletos&&!b.semEstoque) await _garantirFornecedorSemNota(n);
+    // NÃO DAR ENTRADA NO ESTOQUE: só registra a nota (fica fora da lista de "sem entrada"), sem tocar no estoque do Bling nem nas contas
+    if(b.semEstoque&&!b.soBoletos){
+      if(n.entrada&&n.entrada.em) return res.status(409).json({erro:`Essa nota já foi registrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
+      const quem=req.sessao?.nome||"";
+      _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:0,falhas:0,semEstoque:true});
+      addLog("nota-"+(n.chave||n.id),"entrada_nota_sem_estoque",req.sessao?.funcionarioId||"",quem,{numero:n.numero,fornecedor:n.emitente?.nome});
+      return res.json({ok:true,semEstoque:true,lancados:0,falhas:[],contas:[]});
+    }
+    if(!b.soBoletos&&n.entrada&&n.entrada.em) return res.status(409).json({erro:n.entrada.jaNoBling||n.entrada.soBoletos?`Os produtos dessa nota já foram marcados como lançados no Bling (${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}).`:(n.entrada.semEstoque?`Essa nota já foi registrada SEM entrada no estoque em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`:`Essa nota já deu entrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`)});
     // SÓ OS BOLETOS: os produtos já entraram no Bling por outro caminho. Não liga produto, não mexe no estoque nem no custo;
     // só cria as contas a pagar (parcelas da nota ou as informadas) e marca a nota para não ser lançada de novo.
     if(b.soBoletos){
       const quem=req.sessao?.nome||"", pg=b.pagamento||{};
       if(_finNota(n)) return res.status(409).json({erro:`Os boletos dessa nota já foram lançados em ${new Date((_finNota(n).em||Date.now())-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${_finNota(n).por||"—"}.`});
-      const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:(n.duplicatas||[]);
+      const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:_duplicatasEditadas(n);
       const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0)}));
       if(!par.length) return res.status(400).json({erro:"informe ao menos um boleto (vencimento e valor)"});
       if(par.length>48) return res.status(400).json({erro:"no máximo 48 boletos por nota"});
@@ -11647,7 +11700,7 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
         if(!nota&&nf){ const c=(_FISCAL.listarNotas()||[]).find(n=>String(n.numero||"").replace(/^0+/,"")===nf&&(!cnpj||String(n.emitente?.cnpj||"")===cnpj)); if(c) nota=await _FISCAL.carregarNota({chave:c.id}); }
         if(!nota&&nf){ try{ const r2=await bling(`/nfe?numero=${nf}&tipo=0`); const l=(r2?.data||[]).filter(x=>!cnpj||String(x.contato?.numeroDocumento||"").replace(/\D/g,"")===cnpj); if(l.length) nota=await _FISCAL.carregarNota({blingId:l[0].id}); }catch(e){} }
       }catch(e){}
-      if(nota) return res.json({ok:true,lidaComo:"danfe",nota:await _resumoEntradaNota(nota)});
+      if(nota){ _salvarAnexos(nota.id,[...imgs.map(x=>({buf:Buffer.from(x,"base64"),mime:"image/jpeg",nome:"foto-lida.jpg"})),...pdfs.map(x=>({buf:Buffer.from(x,"base64"),mime:"application/pdf",nome:"documento-lido.pdf"}))],req.sessao?.nome||""); return res.json({ok:true,lidaComo:"danfe",nota:await _resumoEntradaNota(nota)}); }
       return res.status(422).json({tipo:"danfe",erro:`Essa foto é de uma NOTA FISCAL${nf?" (NF "+nf+(L.fornecedor?.nome?" de "+L.fornecedor.nome:"")+")":""}, então ela entra pela parte fiscal, não como compra sem nota. Não achei a nota no sistema nem no Bling: aproxime a câmera do código de barras (use "Ler código de barras") ou envie o XML.`}); }
     // BOLETO: oferece lançar como conta a pagar
     if(tipo==="boleto"){ const Bo=L.boleto||{}; return res.json({ok:true,lidaComo:"boleto",boleto:{beneficiario:String(Bo.beneficiario||L.fornecedor?.nome||"").slice(0,120),cnpj:String(Bo.cnpjBeneficiario||L.fornecedor?.documento||"").replace(/\D/g,"").slice(0,14),
@@ -11662,6 +11715,7 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
       itens,totais:{vDesc:_round2(nn(L.desconto)),vFrete:_round2(nn(L.frete)),vOutro:0,totalLido:_round2(nn(L.total))},duplicatas:vencs,formaTexto:String(pg.forma||"").slice(0,40),
       aPrazo:pg.pago===true?false:(vencs.length>0||/prazo|boleto/i.test(String(pg.forma||""))),observacaoLeitura:String(L.observacoes||"").slice(0,300),criadoEm:Date.now(),por:req.sessao?.nome||""};
     _semNota[id]=_casarSemNota(n,false); _salvarSemNota();
+    _salvarAnexos(id,[...imgs.map(x=>({buf:Buffer.from(x,"base64"),mime:"image/jpeg",nome:"foto-lida.jpg"})),...pdfs.map(x=>({buf:Buffer.from(x,"base64"),mime:"application/pdf",nome:"documento-lido.pdf"}))],req.sessao?.nome||""); // guarda a imagem que foi lida
     const R=await _resumoEntradaNota(n); res.json({ok:true,nota:{...R,observacaoLeitura:n.observacaoLeitura,totalLido:n.totais.totalLido}});
   }catch(e){ res.status(500).json({erro:e.name==="AbortError"?"A leitura demorou demais. Tente de novo.":e.message}); }
 });
