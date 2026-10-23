@@ -11021,6 +11021,29 @@ app.get("/api/financeiro/orcamento",requireAcesso("acesso_contas_pagar"),(req,re
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// GASTOS DO MÊS (cada lançamento por conta) com previsto, mês anterior e análises para decisão
+app.get("/api/financeiro/dre-gastos",requireAcesso("acesso_resultado"),(req,res)=>{
+  try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_diaBRk(Date.now()).slice(0,7), [ya,mo]=mes.split("-").map(Number), ant=mo===1?`${ya-1}-12`:`${ya}-${String(mo-1).padStart(2,"0")}`;
+    const por={}, porAnt={};
+    (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status==="cancelado") return; const p=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), c=_competenciaDoTitulo(t); if(!/^\d{4}-\d{2}$/.test(c.ini)) return;
+      const v=(Number(t.valor)||0)/c.meses; let [a,m]=c.ini.split("-").map(Number);
+      for(let k=0;k<c.meses;k++){ const mm=`${a}-${String(m).padStart(2,"0")}`;
+        if(mm===mes){ const L=(por[p.cod]||={cod:p.cod,nome:p.nome,tipo:p.tipo,valor:0,itens:[]}); L.valor+=v; L.itens.push({fornecedor:t.fornecedor?.nome||"",descricao:t.descricao||"",data:t.dataPagamento||t.vencimento,valor:_round2(v),status:t.status==="pago"?"pago":"aberto",parcela:c.meses>1?`1/${c.meses} do mês`:(t.parcela||"")}); }
+        if(mm===ant) porAnt[p.cod]=(porAnt[p.cod]||0)+v; m++; if(m>12){ m=1; a++; } } });
+    const dep=_depreciacaoMes(mes); if(dep>0) por["6.1"]={cod:"6.1",nome:"Depreciação (frota própria)",tipo:"depreciacao",valor:dep,itens:(lerFrota().veiculos||[]).filter(v=>v.ativo).map(v=>({fornecedor:v.nome,descricao:v.obs||"",data:"",valor:_round2(v.valor*v.taxa/12),status:"sem caixa"}))};
+    const O=lerOrcamento(), prev={}; (O.itens||[]).forEach(x=>{ prev[x.cod]=(prev[x.cod]||0)+(x.fev||x.jan||0); });
+    const ult=new Date(Date.UTC(ya,mo,0)).getUTCDate(), R=_filtrarPedidos({ini:mes+"-01",fim:`${mes}-${String(ult).padStart(2,"0")}`}), receita=_round2(R.L.reduce((a,p)=>a+(Number(p.total)||0),0)), pedidos=R.L.length;
+    const contas=Object.values(por).map(l=>({...l,valor:_round2(l.valor),pctReceita:receita>0?+(l.valor/receita*100).toFixed(1):null,previsto:prev[l.cod]!=null?_round2(prev[l.cod]):null,anterior:porAnt[l.cod]!=null?_round2(porAnt[l.cod]):null,
+      itens:l.itens.sort((a,b)=>b.valor-a.valor)})).sort((a,b)=>a.cod.localeCompare(b.cod,undefined,{numeric:true}));
+    const soma=f=>_round2(contas.filter(f).reduce((a,c)=>a+c.valor,0)), pct=v=>receita>0?+(v/receita*100).toFixed(1):null;
+    const fixas=soma(c=>c.tipo==="fixa"), variaveis=soma(c=>c.tipo==="variavel"), pessoal=soma(c=>c.cod.startsWith("5.1")), ocup=soma(c=>c.cod.startsWith("5.2")), entregas=soma(c=>c.cod==="4.1");
+    const acima=contas.filter(c=>c.previsto>0&&c.valor>c.previsto*1.1).map(c=>({cod:c.cod,nome:c.nome,valor:c.valor,previsto:c.previsto,dif:_round2(c.valor-c.previsto),pct:+((c.valor/c.previsto-1)*100).toFixed(0)})).sort((a,b)=>b.dif-a.dif);
+    const aumentos=contas.filter(c=>c.anterior>0&&c.valor>c.anterior*1.1).map(c=>({cod:c.cod,nome:c.nome,valor:c.valor,anterior:c.anterior,dif:_round2(c.valor-c.anterior)})).sort((a,b)=>b.dif-a.dif).slice(0,6);
+    const maiores=contas.flatMap(c=>c.itens.map(i=>({...i,conta:c.nome}))).sort((a,b)=>b.valor-a.valor).slice(0,5);
+    res.json({ok:true,mes,anterior:ant,receita,pedidos,contas,analise:{fixas,variaveis,pctFixas:pct(fixas),pctVariaveis:pct(variaveis),pessoal,pctPessoal:pct(pessoal),ocupacao:ocup,pctOcupacao:pct(ocup),entregas,pctEntregas:pct(entregas),
+      custoPorPedido:pedidos?_round2((fixas+variaveis)/pedidos):null,acimaDoPrevisto:acima,aumentos,maiores}});
+  }catch(e){ res.status(500).json({erro:e.message}); }
+});
 // ===================== RESULTADO (DRE gerencial, lucro real) mês a mês =====================
 app.get("/api/financeiro/dre",requireAcesso("acesso_resultado"),(req,res)=>{
   try{ const ano=/^\d{4}$/.test(String(req.query.ano||""))?String(req.query.ano):_diaBRk(Date.now()).slice(0,4), meses=Array.from({length:12},(_,i)=>`${ano}-${String(i+1).padStart(2,"0")}`), hojeM=_diaBRk(Date.now()).slice(0,7);

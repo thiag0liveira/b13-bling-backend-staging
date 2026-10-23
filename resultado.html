@@ -107,12 +107,15 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <style>.dre{width:100%;border-collapse:collapse;font-size:12.5px}.dre td{padding:6px 6px;border-top:1px solid #2a2660;text-align:right;white-space:nowrap}.dre td:first-child{text-align:left;white-space:normal;min-width:180px}
 .dre tr.t td{font-weight:800;background:#1d1848}.dre tr.f td{font-weight:900;font-size:14px;background:#2a1240}.dre .neg{color:#ff8aa3}.dre .pos{color:#3ce88a}.dre tr.s td{color:#9a95c9;font-size:11.5px}
 .wrap>*{min-width:0;max-width:100%;box-sizing:border-box}
+#gastos .ic,#analise .ic{white-space:normal} #gastos summary{align-items:flex-start} #analise .kpis{grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr))} #fMesG{max-width:100%}
 @media (max-width:719px){ .dre{table-layout:fixed} .dre td:first-child{min-width:0;width:60%;font-size:12px} .dre td:last-child{width:40%} }</style>
 <div class="top"><img src="/logo"><div class="t">Resultado (DRE)</div><div class="sp"></div><select id="fAno" class="chip"></select><select id="fMes" class="chip" style="display:none"></select></div>
 <div class="wrap">
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
   <div id="avisoCmv"></div>
   <div class="card" id="cTab" style="overflow-x:auto"><table class="dre" id="tab"></table></div>
+  <div class="card"><h3 style="margin:0 0 8px">🔎 Análises para decisão <select id="fMesG" class="chip" style="margin-left:6px"></select></h3><div id="analise"></div></div>
+  <div class="card"><h3 style="margin:0 0 8px">📂 Gastos do mês, conta por conta</h3><div id="gastos"></div></div>
   <div class="card"><div class="ic" style="white-space:normal">Receita = vendas do sistema no mês. CMV pelo custo cadastrado de cada produto; a parte vendida sem custo é estimada pela margem média (mostrado em "CMV estimado"). Despesas pela competência lançada em Contas a Pagar (fixas, variáveis, distribuição em meses) e depreciação da frota. IRPJ (15% + 10% acima de R$ 20 mil no mês) e CSLL (9%) estimados sobre o lucro do mês quando não houver imposto lançado; a apuração oficial do lucro real é do contador. Bebidas com PIS/COFINS monofásico e ICMS-ST têm pouca dedução na revenda.</div></div>
 </div>
 <script>
@@ -124,8 +127,27 @@ const LIN = [["receita", "Receita bruta", ""], ["deducoes", "(−) Deduções (i
   ["depreciacao", "(−) Depreciação", "-"], ["financeiro", "(−) Resultado financeiro", "-"], ["lair", "= Lucro antes do IR e CSLL", "t"], ["irpjCsll", "(−) IRPJ e CSLL", "-"], ["lucroLiquido", "= LUCRO LÍQUIDO", "f"],
   ["pontoEquilibrio", "Ponto de equilíbrio (receita necessária)", "s"], ["compras", "Compras de mercadoria (caixa, viram CMV ao vender)", "s"], ["investimentos", "Investimentos (equipamentos, veículos)", "s"], ["foraResultado", "Fora do resultado (retiradas, repasses)", "s"]];
 let D = null;
+const TIPOS = { fixa: "Despesas fixas", variavel: "Despesas variáveis", deducao: "Deduções", depreciacao: "Depreciação", financeiro: "Resultado financeiro", imposto_lucro: "IRPJ e CSLL", compra: "Compras de mercadoria", ativo: "Investimentos", fora: "Fora do resultado" };
+const pc = v => v == null ? "—" : String(v).replace(".", ",") + "%";
+async function carregarGastos() { const mes = fMesG.value; const r = await fetch(B + "/api/financeiro/dre-gastos?mes=" + mes, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); const G = await r.json().catch(() => ({}));
+  if (!r.ok) { gastos.innerHTML = `<div class="err">${esc(G.erro || "")}</div>`; return; } const A = G.analise;
+  const lin = (a, b) => `<div class="lin"><span style="min-width:0;overflow-wrap:anywhere">${a}</span><b style="white-space:nowrap;margin-left:8px">${b}</b></div>`;
+  analise.innerHTML = `<div class="kpis" style="margin-bottom:8px">${[["Despesas fixas", A.pctFixas, A.fixas], ["Variáveis", A.pctVariaveis, A.variaveis], ["Pessoal", A.pctPessoal, A.pessoal], ["Ocupação", A.pctOcupacao, A.ocupacao], ["Entregas", A.pctEntregas, A.entregas]].map(([l, p, v]) => `<div class="kpi"><div class="v">${pc(p)}</div><div class="l">${l} / receita</div><div class="s">${brl(v)}</div></div>`).join("")}
+      <div class="kpi"><div class="v">${A.custoPorPedido != null ? brl(A.custoPorPedido) : "—"}</div><div class="l">Gasto por pedido</div><div class="s">${G.pedidos} pedidos · receita ${brl(G.receita)}</div></div></div>
+    ${A.acimaDoPrevisto.length ? `<div style="margin-top:6px"><b style="color:#ff8aa3">Acima do previsto (mais de 10%)</b>${A.acimaDoPrevisto.map(x => lin(`${esc(x.cod)} ${esc(x.nome)} · previsto ${brl(x.previsto)}`, `+${brl(x.dif)} (${x.pct}%)`)).join("")}</div>` : `<div class="ic">Nenhuma conta mais de 10% acima do previsto.</div>`}
+    ${A.aumentos.length ? `<div style="margin-top:8px"><b style="color:#ffd23f">Maiores aumentos sobre o mês anterior</b>${A.aumentos.map(x => lin(`${esc(x.nome)} · antes ${brl(x.anterior)}`, `+${brl(x.dif)}`)).join("")}</div>` : ""}
+    <div style="margin-top:8px"><b>Maiores gastos do mês</b>${A.maiores.map(x => lin(`${esc(x.fornecedor || x.descricao)} · ${esc(x.conta)}`, brl(x.valor))).join("") || `<div class="ic">Nenhum gasto lançado.</div>`}</div>`;
+  const grupos = {}; G.contas.forEach(c => (grupos[c.tipo] ||= []).push(c));
+  gastos.innerHTML = Object.keys(TIPOS).filter(t => grupos[t]).map(t => { const L = grupos[t], tot = L.reduce((a, c) => a + c.valor, 0);
+    return `<div style="margin-bottom:10px"><div class="lin" style="font-weight:800"><span>${TIPOS[t]}</span><b>${brl(tot)}</b></div>${L.map(c => { const d = c.anterior != null ? c.valor - c.anterior : null, dp = c.previsto != null ? c.valor - c.previsto : null;
+      return `<details style="border-top:1px solid #2a2660;padding:4px 0"><summary style="cursor:pointer;display:flex;justify-content:space-between;gap:8px;list-style:none"><span style="min-width:0">▸ ${esc(c.cod)} ${esc(c.nome)} <span class="ic">· ${pc(c.pctReceita)} da receita${c.previsto != null ? ` · previsto ${brl(c.previsto)}` : ""}${d != null ? ` · ${d >= 0 ? "+" : ""}${brl(d)} sobre o mês anterior` : ""}</span></span>
+        <b style="white-space:nowrap;color:${dp != null && dp > c.previsto * 0.1 ? "#ff8aa3" : "inherit"}">${brl(c.valor)}</b></summary>
+        <div style="padding:4px 0 4px 14px">${c.itens.map(i => lin(`${esc(i.fornecedor)}${i.descricao ? " · " + esc(i.descricao) : ""} <span class="ic">· ${i.data ? i.data.split("-").reverse().join("/") : ""} · ${esc(i.status)}${i.parcela && i.parcela !== "1/1" ? " · " + esc(i.parcela) : ""}</span>`, brl(i.valor))).join("")}</div></details>`; }).join("")}</div>`; }).join("") || `<div class="ic">Nenhum gasto lançado neste mês.</div>`;
+}
 async function carregar() { const r = await fetch(B + "/api/financeiro/dre?ano=" + fAno.value, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({}));
-  if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; } render(); }
+  if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; } render();
+  if (!fMesG.dataset.ok) { const hm = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7); fMesG.innerHTML = D.meses.map(m => `<option value="${m.mes}" ${m.mes === hm ? "selected" : ""}>${NM[+m.mes.slice(5) - 1]}/${m.mes.slice(0, 4)}</option>`).join(""); fMesG.dataset.ok = 1; }
+  carregarGastos(); }
 function cel(v, k) { if (v == null) return "—"; const cls = (k === "lucroLiquido" || k === "lair" || k === "resultadoOperacional") ? (v < 0 ? "neg" : "pos") : ""; return `<span class="${cls}">${brl(v)}</span>`; }
 function render() {
   const hojeM = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7), comDados = D.meses.filter(m => m.receita > 0 || m.despFixas > 0), ult = comDados.filter(m => m.mes <= hojeM).pop() || D.meses[0], T = D.total;
@@ -142,6 +164,6 @@ function render() {
   tab.innerHTML = `<tr class="s"><td></td>${D.meses.map(m => `<td>${NM[+m.mes.slice(5) - 1]}</td>`).join("")}<td><b>Ano</b></td></tr>` + LIN.map(([key, rot, t]) => `<tr class="${t}"><td>${esc(rot)}</td>${D.meses.map(m => `<td>${cel(m[key], key)}</td>`).join("")}<td><b>${key === "pontoEquilibrio" ? "—" : cel(T[key], key)}</b></td></tr>`).join("");
 }
 const a = +new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 4); fAno.innerHTML = [a - 1, a].map(x => `<option ${x === a ? "selected" : ""}>${x}</option>`).join("");
-fAno.addEventListener("change", () => { fMes.dataset.ok = ""; carregar(); }); fMes.addEventListener("change", render);
+fAno.addEventListener("change", () => { fMes.dataset.ok = ""; fMesG.dataset.ok = ""; carregar(); }); fMes.addEventListener("change", () => { render(); if (fMes.value !== "ano") { fMesG.value = fMes.value; carregarGastos(); } }); fMesG.addEventListener("change", carregarGastos);
 let _w = innerWidth; addEventListener("resize", () => { if (Math.abs(innerWidth - _w) > 40) { _w = innerWidth; if (D) render(); } }); carregar();
 </script></body></html>
