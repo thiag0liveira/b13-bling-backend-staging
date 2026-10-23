@@ -11417,6 +11417,26 @@ app.post("/api/entrada-nota/confirmar",requireAcesso("acesso_entrada_nota"),asyn
     const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
     if(n.semNota) await _garantirFornecedorSemNota(n);
     if(n.entrada&&n.entrada.em) return res.status(409).json({erro:`Essa nota já deu entrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
+    // SÓ OS BOLETOS: os produtos já entraram no Bling por outro caminho. Não liga produto, não mexe no estoque nem no custo;
+    // só cria as contas a pagar (parcelas da nota ou as informadas) e marca a nota para não ser lançada de novo.
+    if(b.soBoletos){
+      const quem=req.sessao?.nome||"", pg=b.pagamento||{};
+      const brutas=(Array.isArray(b.parcelas)&&b.parcelas.length)?b.parcelas:(n.duplicatas||[]);
+      const par=brutas.map(x=>({vencimento:String(x.vencimento||"").slice(0,10),valor:_round2(Number(String(x.valor).replace(",","."))||0)}));
+      if(!par.length) return res.status(400).json({erro:"informe ao menos um boleto (vencimento e valor)"});
+      if(par.length>48) return res.status(400).json({erro:"no máximo 48 boletos por nota"});
+      for(const d of par){ if(!/^\d{4}-\d{2}-\d{2}$/.test(d.vencimento)) return res.status(400).json({erro:"todo boleto precisa de vencimento"}); if(!(d.valor>0)) return res.status(400).json({erro:"todo boleto precisa de valor maior que zero"}); }
+      let fornBling=null; try{ fornBling=await encontrarContatoPorDoc(n.emitente?.cnpj); }catch(e){}
+      const C=lerContasPagar(), tit=[];
+      par.forEach((d,i)=>{ C.seq++; const t={id:"cp"+C.seq,origem:"nota",soBoletos:true,notaId:n.id,chave:n.chave||"",numeroNota:n.numero||"",fornecedor:{cnpj:n.emitente?.cnpj||"",nome:n.emitente?.nome||"",blingId:fornBling?.id||null},
+        parcela:`${i+1}/${par.length}`,vencimento:d.vencimento,valor:d.valor,status:pg.pago?"pago":"aberto",criadoEm:Date.now(),criadoPor:quem};
+        if(pg.pago){ t.pagoEm=Date.now(); t.forma=String(pg.forma||"").slice(0,40); t.banco=String(pg.banco||"").slice(0,60); t.pagoPor=quem; }
+        C.titulos.push(t); tit.push(t); });
+      salvarJSON(CONTAS_PAGAR_FILE,C);
+      _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:0,falhas:0,soBoletos:true,contas:tit.map(t=>t.id)});
+      addLog("nota-"+(n.chave||n.id),"entrada_nota_so_boletos",req.sessao?.funcionarioId||"",quem,{numero:n.numero,fornecedor:n.emitente?.nome,boletos:tit.length,valor:_round2(tit.reduce((s,t)=>s+t.valor,0)),pago:!!pg.pago});
+      return res.json({ok:true,soBoletos:true,lancados:0,falhas:[],contas:tit});
+    }
     const R=await _resumoEntradaNota(n), ign=new Set((b.ignorar||[]).map(Number)), quem=req.sessao?.nome||"";
     const falta=R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
     const dep=await _depositoPadraoId(); if(!dep) return res.status(502).json({erro:"não encontrei o depósito padrão no Bling"});

@@ -199,7 +199,7 @@ function renderNota() {
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
   const bancos = BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("");
   document.getElementById("nota").innerHTML = `<div class="card">
-    ${n.entrada ? `<div class="err" style="margin-bottom:8px">Esta nota já deu entrada em ${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
+    ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.soBoletos ? "Os boletos desta nota já foram lançados (sem entrada de estoque) em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
     ${n.semNota ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">🧾 <b>Compra SEM nota fiscal</b>, lida pela foto: confira fornecedor, quantidades e valores. Não entra na parte fiscal.${n.observacaoLeitura ? "<br>Leitura: " + esc(n.observacaoLeitura) : ""}${n.totalLido && Math.abs(n.totalLido - T.vNF) > 0.05 ? `<br><b>⚠️ Total escrito na foto ${brl(n.totalLido)} é diferente da soma dos itens ${brl(T.vNF)}.</b> Confira os itens.` : ""}</div>
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input id="snNome" value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input id="snDoc" value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
@@ -219,6 +219,7 @@ function renderNota() {
     ${PAGO ? `<div class="grid2"><label><div class="ic">Forma</div><select id="pgForma" style="width:100%" onchange="renderBancoPg()"><option>Pix</option><option>Dinheiro</option><option>Boleto</option><option>Transferência</option><option>Cartão</option></select></label>
       <label id="pgBancoBox"><div class="ic">Banco</div><select id="pgBanco" style="width:100%">${bancos || "<option>—</option>"}</select></label></div>` : ""}
     <table class="tb" style="margin-top:8px"><tr class="ic"><td>Parcela</td><td>Vencimento</td><td style="text-align:right">Valor</td></tr>${n.duplicatas.map((d, i) => `<tr><td>${i + 1}/${n.duplicatas.length}</td><td>${dmy(d.vencimento)}</td><td style="text-align:right">${brl(d.valor)}</td></tr>`).join("")}</table></div>
+  ${blocoBoletos(n)}
   <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada: o estoque de cada produto sobe no Bling com o custo real, a nota fica registrada na parte fiscal, as parcelas viram contas a pagar e o custo do fornecedor é atualizado no Bling.</div></div>`;
 }
@@ -244,6 +245,41 @@ async function ligar(nItem) { const pid = document.getElementById("sel" + nItem)
   if (!pid) { alert("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { alert("Informe quantas unidades vêm em cada unidade da nota."); return; }
   const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: pid, fator: fat }) });
   if (!ok) { alert(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
+// ---- SÓ OS BOLETOS (produtos que já entraram no Bling): cria só as contas a pagar, sem mexer no estoque ----
+let BOL = null, BOLNOTA = null;
+const numBol = v => { const t = String(v == null ? "" : v).trim(); if (!t) return 0; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
+function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; BOL = (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
+function blocoBoletos(n) {
+  iniciarBol(n);
+  const linhas = BOL.map((d, i) => `<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><span class="ic" style="width:34px">${i + 1}/${BOL.length}</span>
+    <input type="date" value="${esc(d.vencimento)}" onchange="BOL[${i}].vencimento=this.value" style="flex:1;min-width:0">
+    <input inputmode="decimal" value="${esc(d.valor)}" placeholder="Valor" onchange="BOL[${i}].valor=this.value;somaBol()" oninput="BOL[${i}].valor=this.value;somaBol()" style="width:100px">
+    <button class="btn btn-ghost" style="padding:4px 9px" onclick="rmBol(${i})">✕</button></div>`).join("");
+  return `<div class="card" style="border-color:#2a4f7a"><h3 style="margin:0 0 4px">🧾 Só lançar os boletos</h3>
+    <div class="ic" style="white-space:normal;margin-bottom:6px">Use quando os produtos desta nota já entraram no estoque do Bling. Não liga produtos e não mexe no estoque nem no custo, só cria as contas a pagar (usa a forma "A pagar" ou "Pago" escolhida em Pagamento).</div>
+    <div id="bolLinhas">${linhas || '<div class="ic">Nenhum boleto. Toque em "+ boleto".</div>'}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 12px" onclick="addBol()">+ boleto</button><span class="ic" id="bolSoma">${somaTxtBol()}</span></div>
+    <div id="bolMsg" style="margin-top:6px"></div>
+    <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="lancarSoBoletos()">💸 Lançar só os boletos</button></div>`;
+}
+function somaTxtBol() { const t = (BOL || []).reduce((s, d) => s + numBol(d.valor), 0); return "Total dos boletos: " + brl(t); }
+function somaBol() { const el = document.getElementById("bolSoma"); if (el) el.textContent = somaTxtBol(); }
+function addBol() { const ult = (BOL || [])[BOL.length - 1]; let venc = ""; if (ult && ult.vencimento) { const d = new Date(ult.vencimento + "T12:00:00Z"); d.setUTCMonth(d.getUTCMonth() + 1); venc = d.toISOString().slice(0, 10); } BOL.push({ vencimento: venc, valor: "" }); renderNota(); }
+function rmBol(i) { BOL.splice(i, 1); renderNota(); }
+async function lancarSoBoletos() {
+  const el = document.getElementById("bolMsg");
+  const parcelas = BOL.map(d => ({ vencimento: d.vencimento, valor: numBol(d.valor) }));
+  if (!parcelas.length) { el.innerHTML = `<div class="err">Informe ao menos um boleto.</div>`; return; }
+  if (parcelas.some(d => !d.vencimento || !(d.valor > 0))) { el.innerHTML = `<div class="err">Todo boleto precisa de vencimento e valor.</div>`; return; }
+  const total = parcelas.reduce((s, d) => s + d.valor, 0);
+  if (!confirm(`Lançar ${parcelas.length} boleto(s), total ${brl(total)}, como ${PAGO ? "JÁ PAGOS" : "A PAGAR (provisão)"}?\n\nO estoque do Bling NÃO será alterado.${PAGO ? "\n\nPara provisionar, cancele e marque \"A pagar\" em Pagamento." : ""}`)) return;
+  const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
+  el.innerHTML = `<div class="ic">⏳ Lançando…</div>`;
+  const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, soBoletos: true, parcelas, pagamento: pg }) });
+  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar os boletos.")}</div>`; return; }
+  el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ ${j.contas.length} boleto(s) lançado(s) em contas a pagar${pg.pago ? " como pago(s)" : ""}. Estoque do Bling não alterado.</div>`;
+  N.entrada = { em: Date.now(), soBoletos: true }; carregarContas();
+}
 async function confirmar() {
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
