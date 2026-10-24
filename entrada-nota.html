@@ -117,6 +117,19 @@ const brl = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { st
 const num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
 const dmy = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
 function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+// ---- avisos e perguntas DENTRO da página: alert/confirm do navegador são bloqueados em alguns celulares e navegadores embutidos, e a ação sumia sem mensagem ----
+function clienteLog(tipo, dados) { try { const d = dados || {}; fetch((typeof B !== "undefined" ? B : "") + "/api/diag/erro-cliente", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json", "X-Auth-Token": token() }, body: JSON.stringify({ tipo, pagina: location.pathname, nota: d.nota || (typeof N !== "undefined" && N ? N.id : ""), msg: d.msg || "", stack: d.stack || "" }) }).catch(() => {}); } catch (e) {} }
+function avisar(msg, ok) { try { let c = document.getElementById("b13Avisos"); if (!c) { c = document.createElement("div"); c.id = "b13Avisos"; c.style.cssText = "position:fixed;top:56px;left:8px;right:8px;z-index:100000;display:flex;flex-direction:column;gap:6px;pointer-events:none"; document.body.appendChild(c); }
+  const d = document.createElement("div"); d.style.cssText = "pointer-events:auto;background:" + (ok ? "#10392a" : "#4a1230") + ";border:1px solid " + (ok ? "#2aa876" : "#ff5f8a") + ";color:#fff;border-radius:12px;padding:10px 12px;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.5);white-space:pre-wrap";
+  d.innerHTML = '<div style="display:flex;justify-content:space-between;gap:10px"><span>' + String(msg).replace(/&/g, "&amp;").replace(/</g, "&lt;") + '</span><b style="cursor:pointer;padding:0 4px" onclick="this.closest(\'div[style]\').remove()">✕</b></div>'; c.appendChild(d); setTimeout(() => { try { d.remove(); } catch (e) {} }, 12000); } catch (e) { try { window.alert(msg); } catch (x) {} } }
+function pergunta(msg, sim, nao) { return new Promise(res => { const f = document.createElement("div"); f.id = "b13Pergunta"; f.style.cssText = "position:fixed;inset:0;background:rgba(5,3,20,.8);z-index:100001;display:flex;align-items:center;justify-content:center;padding:16px";
+  f.innerHTML = '<div style="background:#16123a;border:2px solid #FF0082;border-radius:16px;max-width:460px;width:100%;padding:16px;color:#fff;max-height:88vh;overflow:auto"><div data-m style="white-space:pre-wrap;font-size:15px;line-height:1.45;margin-bottom:14px"></div><div style="display:flex;gap:8px"><button type="button" data-n style="flex:1;padding:12px;border-radius:10px;border:1px solid #514c96;background:#262366;color:#fff;font-size:15px;cursor:pointer"></button><button type="button" data-s style="flex:1;padding:12px;border-radius:10px;border:0;background:#FF0082;color:#fff;font-weight:800;font-size:15px;cursor:pointer"></button></div></div>';
+  f.querySelector("[data-m]").textContent = msg; f.querySelector("[data-n]").textContent = nao || "Cancelar"; f.querySelector("[data-s]").textContent = sim || "Sim, continuar";
+  const fim = v => { f.remove(); res(v); }; f.querySelector("[data-n]").onclick = () => fim(false); f.querySelector("[data-s]").onclick = () => fim(true); document.body.appendChild(f); }); }
+function mostrarErroTela(msg, stack) { if (/ResizeObserver|Script error\.?$/i.test(String(msg))) return; clienteLog("erro_tela", { msg: String(msg).slice(0, 280), stack: String(stack || "").slice(0, 700) }); avisar("⚠️ Deu erro nesta tela: " + String(msg).slice(0, 160) + "\nO erro foi registrado. Recarregue a página e tente de novo.", false); }
+window.addEventListener("error", e => mostrarErroTela(e.message, e.error && e.error.stack));
+window.addEventListener("unhandledrejection", e => mostrarErroTela(e.reason && e.reason.message || e.reason, e.reason && e.reason.stack));
+async function removerItem(nItem) { if (await pergunta("Tirar este item da compra?", "Sim, tirar")) editarSN({ nItem, remover: true }); }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
 let N = null, IGN = new Set(), BANCOS = [], PAGO = null, stream = null, lendo = false, zx = null;
 const msgLer = h => document.getElementById("lerMsg").innerHTML = h;
@@ -160,9 +173,9 @@ function mostrarBoleto(b) { msgLer(`<div class="card" style="margin:8px 0 0;bord
   <label><div class="ic">Linha digitável</div><input id="boLinha" value="${esc(b.linhaDigitavel)}" style="width:100%"></label>
   <button class="btn btn-mag" style="margin-top:8px" onclick="lancarBoleto()">💸 Lançar conta a pagar</button></div>`); }
 async function lancarBoleto() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/entrada-nota/boleto", { method: "POST", body: JSON.stringify({ beneficiario: v("boNome"), cnpj: v("boCnpj"), valor: v("boValor").replace(",", "."), vencimento: v("boVenc"), linhaDigitavel: v("boLinha") }) });
-  if (!ok) { alert(j.erro || "Não consegui lançar."); return; } msgLer(`<div style="color:#3ce88a;font-weight:800">✅ Boleto lançado em contas a pagar: ${esc(j.titulo.fornecedor.nome)} · ${brl(j.titulo.valor)} · vence ${dmy(j.titulo.vencimento)}</div>`); carregarContas(); }
-async function editarSN(corpo) { let r; try { r = await api("/api/entrada-nota/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) }); } catch (e) { alert("Sem conexão com o servidor. Tente de novo."); return; } const { ok, j } = r;
-  if (!ok) { alert(j.erro || "Não consegui corrigir."); return; } const ob = N.observacaoLeitura, tl = N.totalLido; N = { ...j.nota, observacaoLeitura: ob, totalLido: tl }; renderNota(); }
+  if (!ok) { avisar(j.erro || "Não consegui lançar."); return; } msgLer(`<div style="color:#3ce88a;font-weight:800">✅ Boleto lançado em contas a pagar: ${esc(j.titulo.fornecedor.nome)} · ${brl(j.titulo.valor)} · vence ${dmy(j.titulo.vencimento)}</div>`); carregarContas(); }
+async function editarSN(corpo) { let r; try { r = await api("/api/entrada-nota/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) }); } catch (e) { avisar("Sem conexão com o servidor. Tente de novo."); return; } const { ok, j } = r;
+  if (!ok) { avisar(j.erro || "Não consegui corrigir."); return; } const ob = N.observacaoLeitura, tl = N.totalLido; N = { ...j.nota, observacaoLeitura: ob, totalLido: tl }; renderNota(); }
 async function lerXml(f) { if (!f) return; const t = await f.text(); carregar({ xml: t }); }
 function carregarChave() { const c = achaChave(document.getElementById("chave").value); if (!c) { msgLer(`<div class="err">A chave tem 44 dígitos.</div>`); return; } carregar({ chave: c }); }
 async function carregar(corpo) {
@@ -178,7 +191,7 @@ function renderNota() {
       <input value="${esc(x.xProd)}" style="flex:1;min-width:140px" onchange="editarSN({nItem:${x.nItem},xProd:this.value})" title="descrição">
       <input value="${String(x.qCom).replace(".", ",")}" inputmode="decimal" style="width:70px" onchange="editarSN({nItem:${x.nItem},qCom:this.value})" title="quantidade"><span class="ic">${esc(x.uCom)}</span>
       <span class="ic">total R$</span><input value="${String(x.vProd).replace(".", ",")}" inputmode="decimal" style="width:90px" onchange="editarSN({nItem:${x.nItem},vProd:this.value})" title="valor total do item">
-      <button class="btn btn-ghost" style="padding:4px 8px" onclick="if(confirm('Tirar este item da compra?'))editarSN({nItem:${x.nItem},remover:true})">🗑</button></div>` : "";
+      <button class="btn btn-ghost" style="padding:4px 8px" onclick="removerItem(${x.nItem})">🗑</button></div>` : "";
   const it = x => { if (x.status === "frete") return `<div class="itn ign"><b>🚚 Frete</b> · ${esc(x.xProd)} · <b>${brl(x.vProd)}</b><div class="ic" style="white-space:normal">Não é produto: o valor entra no custo conforme a divisão do frete (quadro acima). <a href="#" style="color:#ff5fa8" onclick="marcarFrete(${x.nItem}, false);return false">isto não é frete</a></div></div>`;
     const ign = IGN.has(x.nItem), dif = x.custoAnterior && x.custoRealUn ? Math.round((x.custoRealUn - x.custoAnterior) / x.custoAnterior * 100) : null;
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>${x.custoSubiu ? ` <span class="alta">▲ CUSTO MAIOR +${String(x.altaPct).replace(".", ",")}% (antes ${brl(x.custoAnterior)})</span>` : x.custoCaiu ? ` <span class="baixa">▼ custo menor ${String(x.altaPct).replace(".", ",")}%</span>` : ""}
@@ -243,15 +256,15 @@ async function gravarReajustes() { const tok = (document.getElementById("qrReaj"
   el.innerHTML = `<div style="color:#3ce88a">✅ ${j.feitos.length} preço(s) atualizado(s) no Bling (aut. ${esc(j.autorizadoPor)}): ${esc(j.feitos.map(f => f.nome + " " + brl(f.antes) + " → " + brl(f.depois)).join(" · "))}</div>${j.falhas.length ? `<div class="err">Não atualizados: ${j.falhas.length}</div>` : ""}`;
   REAJ = {}; }
 function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && x.status !== "frete" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
-async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
-  for (const x of f) { const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + ": " + x.xProd); break; } }
+async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!await pergunta(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
+  for (const x of f) { const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { avisar((j.erro || "Não consegui ligar") + ": " + x.xProd); break; } }
   renderNota(); }
 let _tb = {}; function buscarProd(nItem, q) { clearTimeout(_tb[nItem]); if (q.trim().length < 2) return; _tb[nItem] = setTimeout(async () => { const { j } = await api("/api/entrada-nota/produtos?q=" + encodeURIComponent(q)); const sel = document.getElementById("sel" + nItem);
   sel.innerHTML = (j.itens || []).map(s => `<option value="${s.produtoId}">${esc(s.nome)}</option>`).join("") + `<option value="">🔎 buscar outro produto…</option>`; }, 350); }
 async function ligar(nItem) { const pid = document.getElementById("sel" + nItem).value, fat = document.getElementById("fat" + nItem).value;
-  if (!pid) { alert("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { alert("Informe quantas unidades vêm em cada unidade da nota."); return; }
+  if (!pid) { avisar("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { avisar("Informe quantas unidades vêm em cada unidade da nota."); return; }
   const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: pid, fator: fat }) });
-  if (!ok) { alert(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
+  if (!ok) { avisar(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
 // ---- SÓ OS BOLETOS (produtos que já entraram no Bling): cria só as contas a pagar, sem mexer no estoque ----
 let BOL = null, BOLNOTA = null;
 const numBol = v => { const t = String(v == null ? "" : v).trim(); if (!t) return 0; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
@@ -290,8 +303,8 @@ function buscarJuntar() { clearTimeout(_tJ); _tJ = setTimeout(async () => {
   const q = (document.getElementById("juntarQ") || {}).value || "", { ok, j } = await api(JB() + "/buscar-notas?notaId=" + encodeURIComponent(N.id) + "&q=" + encodeURIComponent(q.trim())), el = document.getElementById("juntarRes"); if (!el) return;
   if (!ok) { el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui buscar.")}</span>`; return; }
   el.innerHTML = (j.notas || []).map(x => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #221e4f"><span style="white-space:normal">NF ${esc(x.numero || "s/n")} · ${esc(x.fornecedor || "")} · ${dataJ(x.emissao)}${x.vNF != null ? " · " + brl(x.vNF) : ""}${x.entradaFeita ? " · estoque já lançado" : ""}</span><button class="btn btn-mag" style="padding:4px 10px" onclick="juntar('${esc(x.id)}')">Juntar</button></div>`).join("") || "Nenhuma nota encontrada."; }, 300); }
-async function juntar(id) { const { ok, j } = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui juntar."); return; } JUNTAR_ABERTO = false; aplicarNotaJunta(j.nota); }
-async function desjuntar(id) { if (!confirm("Desligar esta nota deste boleto?")) return; const { ok, j } = await api(JB() + "/desjuntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { alert(j.erro || "Não consegui desligar."); return; } aplicarNotaJunta(j.nota); }
+async function juntar(id) { const { ok, j } = await api(JB() + "/juntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { avisar(j.erro || "Não consegui juntar."); return; } JUNTAR_ABERTO = false; aplicarNotaJunta(j.nota); }
+async function desjuntar(id) { if (!await pergunta("Desligar esta nota deste boleto?")) return; const { ok, j } = await api(JB() + "/desjuntar", { method: "POST", body: JSON.stringify({ notaId: N.id, outraId: id }) }); if (!ok) { avisar(j.erro || "Não consegui desligar."); return; } aplicarNotaJunta(j.nota); }
 function aplicarNotaJunta(nota) { N.notasJuntas = nota.notasJuntas || []; N.boletosLidos = nota.boletosLidos || N.boletosLidos; BOLNOTA = null; renderNota(); }
 const numeroDaJunta = id => { const x = (N.notasJuntas || []).find(y => String(y.id) === String(id)); return x ? x.numero : ""; };
 function blocoBoletos(n) {
@@ -338,7 +351,7 @@ async function lancarSoBoletos() {
   if (!parcelas.length) { el.innerHTML = `<div class="err">Informe ao menos um boleto.</div>`; return; }
   if (parcelas.some(d => !d.vencimento || !(d.valor > 0))) { el.innerHTML = `<div class="err">Todo boleto precisa de vencimento e valor.</div>`; return; }
   const total = parcelas.reduce((s, d) => s + d.valor, 0);
-  if (!confirm(`Lançar ${parcelas.length} boleto(s), total ${brl(total)}, como ${PAGO ? "JÁ PAGOS" : "A PAGAR (provisão)"}?\n\nO estoque do Bling NÃO será alterado.${PAGO ? "\n\nPara provisionar, cancele e marque \"A pagar\" em Pagamento." : ""}`)) return;
+  if (!await pergunta(`Lançar ${parcelas.length} boleto(s), total ${brl(total)}, como ${PAGO ? "JÁ PAGOS" : "A PAGAR (provisão)"}?\n\nO estoque do Bling NÃO será alterado.${PAGO ? "\n\nPara provisionar, cancele e marque \"A pagar\" em Pagamento." : ""}`)) return;
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
   el.innerHTML = `<div class="ic">⏳ Lançando…</div>`;
   const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, soBoletos: true, parcelas, pagamento: pg, produtosJaEntraram: !!(document.getElementById("bolJaNoBling") || {}).checked }) });
@@ -348,7 +361,7 @@ async function lancarSoBoletos() {
 }
 function blocoAnexos(n) { const a = n.anexos || []; if (!a.length) return ""; return `<div class="ic" style="margin-bottom:4px">📎 Imagem lida (guardada nesta nota)</div><div style="display:flex;gap:6px;flex-wrap:wrap">${a.map(x => x.tipo === "imagem" ? `<img data-an="${esc(x.id)}" alt="imagem lida" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid #37327a;cursor:pointer;background:#0f0d24" onclick="verAnexo('${esc(x.id)}')">` : `<button class="btn btn-ghost" onclick="verAnexo('${esc(x.id)}')">${x.tipo === "pdf" ? "📄 PDF lido" : "📄 XML lido"}</button>`).join("")}</div>`; }
 async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + "/api/entrada-nota/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
-async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + "/api/entrada-nota/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir o arquivo."); } }
+async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + "/api/entrada-nota/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} avisar("Não consegui abrir o arquivo."); } }
 // ---- BOLETOS LIDOS: número e código de barras guardados à parte, para pagar ----
 const dmyN = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
 function fmtLinha(l) { l = String(l || ""); if (l.length === 47) return `${l.slice(0, 5)}.${l.slice(5, 10)} ${l.slice(10, 15)}.${l.slice(15, 21)} ${l.slice(21, 26)}.${l.slice(26, 32)} ${l[32]} ${l.slice(33)}`; if (l.length === 48) return l.match(/.{1,12}/g).join(" "); return l; }
@@ -390,9 +403,9 @@ async function adicionarImagens(files) {
     } catch (e) { linhas.push(`<div class="err">${nome}: ${esc(e.message || "erro")}</div>`); } }
   IMG_MSG = linhas.join(""); if ((N.boletosLidos || []).length !== antes) BOLNOTA = null; renderNota();
 }
-function novaEntrada() {
+async function novaEntrada() {
   const ficou = N && !N.entrada && !N.financeiro;
-  if (ficou && !confirm("Começar uma nova entrada?\n\nEsta nota ainda não foi lançada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
+  if (ficou && !await pergunta("Começar uma nova entrada?\n\nEsta nota ainda não foi lançada. Ela continua guardada e você pode abri-la de novo lendo o código de barras.")) return;
   fecharCamera(); N = null; IGN = new Set(); REAJ = {}; PAGO = null; BOL = null; BOLNOTA = null; BASEOPT_FIN = null; JUNTAR_ABERTO = false; IMG_MSG = ""; msgLer("");
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -435,11 +448,11 @@ function ligarSug(nItem, pid, f) { const sel = document.getElementById("sel" + n
 // ---- custo que está entrando: quadro-resumo + correção por item ----
 async function salvarCustoItem(nItem, voltar) { const el = document.getElementById("cu" + nItem), v = voltar ? "" : (el ? el.value : "");
   const { ok, j } = await api("/api/entrada-nota/ajuste-custo", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, custoUn: v }) });
-  if (!ok) { alert(j.erro || "Não consegui salvar o custo."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
+  if (!ok) { avisar(j.erro || "Não consegui salvar o custo."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
 async function trocarFator(nItem) { const x = N.itens.find(i => i.nItem === nItem), f = (document.getElementById("fe" + nItem) || {}).value;
-  if (!x || !confirm("Mudar para " + f + " unidade(s) por " + x.uCom + "?\\n\\nIsso recalcula o custo desta nota e vale também para as próximas notas deste fornecedor.")) return;
+  if (!x || !await pergunta("Mudar para " + f + " unidade(s) por " + x.uCom + "?\\n\\nIsso recalcula o custo desta nota e vale também para as próximas notas deste fornecedor.")) return;
   const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: x.produtoId, fator: f }) });
-  if (!ok) { alert(j.erro || "Não consegui aplicar."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
+  if (!ok) { avisar(j.erro || "Não consegui aplicar."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
 function blocoCustoNota(n) {
   if (!n.itens.length) return "";
   const lig = n.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && Number(x.qtdUn) > 0), tot = lig.reduce((s, x) => s + x.qtdUn * (Number(x.custoRealUn) || Number(x.custoUn) || 0), 0),
@@ -458,9 +471,9 @@ async function carregarIncompletas() { const { ok, j } = await api("/api/entrada
     ${j.itens.map(x => `<div style="border-top:1px solid #3a2a4a;padding:7px 0"><b>NF ${esc(x.numero || "s/n")}</b> · ${esc(x.fornecedor)}<div class="ic" style="white-space:normal">${new Date(x.em).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}${x.por ? " · " + esc(x.por) : ""} · ${esc(x.motivo)}${x.temRegistro ? "" : " · sem registro dos itens"}</div>
       <button class="btn btn-ghost" style="padding:5px 12px;margin-top:4px" onclick="reabrirNota('${esc(x.id)}', ${x.temRegistro ? "false" : "true"})">🔁 Reabrir para dar entrada</button></div>`).join("")}</div>`; }
 async function reabrirNota(id, semRegistro, confirma) {
-  if (semRegistro && !confirm("Não há registro de quais itens já entraram nesta nota.\n\nConfira o saldo dos produtos no Bling para não entrar em dobro. Reabrir mesmo assim?")) return;
+  if (semRegistro && !await pergunta("Não há registro de quais itens já entraram nesta nota.\n\nConfira o saldo dos produtos no Bling para não entrar em dobro. Reabrir mesmo assim?")) return;
   const { ok, j } = await api("/api/entrada-nota/reabrir", { method: "POST", body: JSON.stringify({ notaId: id, confirmaDuplicidade: !!semRegistro || !!confirma }) });
-  if (!ok) { if (j.precisaConfirmar && !confirma && !semRegistro) { if (confirm(j.erro + "\n\nReabrir mesmo assim?")) return reabrirNota(id, false, true); return; } alert(j.erro || "Não consegui reabrir."); return; }
+  if (!ok) { if (j.precisaConfirmar && !confirma && !semRegistro) { if (await pergunta(j.erro + "\n\nReabrir mesmo assim?")) return reabrirNota(id, false, true); return; } avisar(j.erro || "Não consegui reabrir."); return; }
   N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" }); carregarIncompletas();
   document.getElementById("lerMsg").innerHTML = `<div style="color:#3ce88a">Nota reaberta.${j.jaLancados ? " " + j.jaLancados + " item(ns) que já tinham entrado ficam marcados e não repetem." : ""} Confira e dê entrada de novo.</div>`; }
 // ---- o botão de dar entrada nunca fica mudo: explica por que está desativado, oferece reabrir e trata demora ou falta de rede ----
@@ -499,20 +512,25 @@ function buscarForn() { clearTimeout(_tf); _tf = setTimeout(async () => { const 
 const usarFornecedorBusca = i => { const f = FRES[i]; if (f) editarSN({ fornecedor: { nome: f.nome, cnpj: f.cnpj || "", blingId: f.blingId || "" } }); };
 const usarFornecedorSug = i => { const f = (N.sugestoesFornecedor || []).filter(x => !x.atual)[i]; if (f) editarSN({ fornecedor: { nome: f.nome, cnpj: f.cnpj || "", blingId: f.blingId || "" } }); };
 async function confirmar() {
-  if (_confirmando) return;
-  const altos = N.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && x.altaPct >= 10);
-  if (altos.length && !confirm("ATENÇÃO: " + altos.length + " produto(s) com custo MUITO maior que o anterior:\n\n" + altos.sort((a, b) => b.altaPct - a.altaPct).slice(0, 8).map(x => "• " + (x.produtoNome || x.xProd) + ": +" + String(x.altaPct).replace(".", ",") + "% (antes R$ " + String(x.custoAnterior).replace(".", ",") + ", agora R$ " + String(x.custoRealUn).replace(".", ",") + ")").join("\n") + "\n\nConfira a conversão e o custo. Dar entrada mesmo assim?")) return;
+  if (_confirmando) { avisar("Já estou dando entrada nesta nota… aguarde a resposta.", true); return; }
   _confirmando = true;
-  const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
-  const el = document.getElementById("confMsg"), btn = document.querySelector('button[onclick="confirmar()"]'); if (btn) { btn.disabled = true; btn.textContent = "⏳ Dando entrada…"; }
-  el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling… (pode levar alguns segundos por item; não feche a tela)</div>`;
+  const el = document.getElementById("confMsg"), btn = document.querySelector('button[onclick="confirmar()"]');
   try {
+    clienteLog("clique_dar_entrada", { nota: N && N.id }); el.innerHTML = `<div class="ic">⏳ Conferindo a nota…</div>`;
+    const altos = (N.itens || []).filter(x => x.status === "ok" && !IGN.has(x.nItem) && x.altaPct >= 10);
+    if (altos.length && !(await pergunta("ATENÇÃO: " + altos.length + " produto(s) com custo MUITO maior que o anterior:\n\n" + altos.sort((a, b) => b.altaPct - a.altaPct).slice(0, 8).map(x => "• " + (x.produtoNome || x.xProd) + ": +" + String(x.altaPct).replace(".", ",") + "% (antes R$ " + String(x.custoAnterior).replace(".", ",") + ", agora R$ " + String(x.custoRealUn).replace(".", ",") + ")").join("\n") + "\n\nConfira a conversão e o custo.", "Dar entrada mesmo assim", "Voltar e conferir"))) { el.innerHTML = `<div class="err" style="white-space:normal">Você escolheu voltar: <b>nada foi lançado</b>. Confira o custo dos itens marcados com ▲ e toque em Dar entrada de novo.</div>`; return; }
+    const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Dando entrada…"; }
+    el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling… (pode levar alguns segundos por item; não feche a tela)</div>`;
     const { ok, j } = await chamarComTempo("/api/entrada-nota/confirmar", { notaId: N.id, ignorar: [...IGN], pagamento: pg });
     if (!ok) { if (j.falhas) mostrarFalhaEntrada(j, el); else el.innerHTML = `<div class="err" style="white-space:normal">${esc(j.erro || "Não consegui dar entrada.")}</div>`; if (btn) { btn.disabled = false; btn.textContent = "🔁 Dar entrada de novo (só o que faltou)"; } return; }
     el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque · ${j.contas.length} conta(s) ${pg.pago ? "registrada(s) como paga(s)" : "a pagar"}.</div>${confTxt(j)}`;
     N.entrada = { em: Date.now() }; carregarContas();
-  } catch (e) { falhaDeRede(e, el); if (btn) { btn.disabled = false; btn.textContent = "🔁 Dar entrada de novo"; } }
-  finally { _confirmando = false; }
+  } catch (e) {
+    if (e && (e.name === "AbortError" || /fetch|network|Failed|Load failed/i.test(String(e.message)))) falhaDeRede(e, el);
+    else { el.innerHTML = `<div class="err" style="white-space:normal">⚠️ Deu erro na tela ao dar entrada: <b>${esc(String((e && e.message) || e))}</b>. <b>Nada foi lançado.</b> O erro foi registrado: recarregue a página e tente de novo.</div>`; clienteLog("erro_dar_entrada", { msg: String(e && e.message), stack: String(e && e.stack).slice(0, 700) }); }
+    if (btn) { btn.disabled = false; btn.textContent = "🔁 Dar entrada de novo"; }
+  } finally { _confirmando = false; }
 }
 async function carregarContas() { const { j } = await api("/api/entrada-nota/contas"); const t = (j.titulos || []).slice(0, 15);
   document.getElementById("contas").innerHTML = t.length ? `<div style="overflow-x:auto"><table class="tb" style="min-width:560px"><tr class="ic"><td>Fornecedor</td><td>NF</td><td>Parcela</td><td>Vence</td><td style="text-align:right">Valor</td><td>Situação</td></tr>${t.map(x => `<tr><td>${esc(x.fornecedor?.nome)}</td><td>${esc(x.numeroNota)}</td><td>${esc(x.parcela)}</td><td>${dmy(x.vencimento)}</td><td style="text-align:right">${brl(x.valor)}</td><td>${x.status === "pago" ? "✅ paga" + (x.forma ? " · " + esc(x.forma) + (x.banco ? " " + esc(x.banco) : "") : "") : (x.vencimento < new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) ? "🔴 vencida" : "⏳ a pagar")}</td></tr>`).join("")}</table></div>` : `<div class="ic">Nenhuma ainda.</div>`; }

@@ -12047,6 +12047,13 @@ async function _garantirFornecedorSemNota(n){ // cadastra o fornecedor no Bling 
     if(f){ n.fornecedorBlingId=f.id; _salvarSemNota(); } }catch(e){}
 }
 // diagnóstico da leitura de foto: confere a chave e o modelo com uma consulta mínima (administrador)
+// erros de tela e cliques no botão de dar entrada, mandados pelas próprias telas (para descobrir o que acontece nos celulares)
+const ERROS_CLIENTE_FILE=`${DATA_DIR}/erros_cliente.json`;
+app.post("/api/diag/erro-cliente",requireSessao,(req,res)=>{ try{ const b=req.body||{}, d=lerJSON(ERROS_CLIENTE_FILE,{}); d.erros=d.erros||[]; d.cliques=d.cliques||[];
+    const r={em:Date.now(),por:req.sessao?.nome||"",pagina:String(b.pagina||"").slice(0,80),tipo:String(b.tipo||"").slice(0,40),msg:String(b.msg||"").slice(0,300),stack:String(b.stack||"").slice(0,800),nota:String(b.nota||"").slice(0,60),ua:String(req.headers["user-agent"]||"").slice(0,180)};
+    if(/^clique/.test(r.tipo)){ d.cliques.unshift(r); d.cliques=d.cliques.slice(0,120); } else { d.erros.unshift(r); d.erros=d.erros.slice(0,300); }
+    salvarJSON(ERROS_CLIENTE_FILE,d); res.json({ok:true}); }catch(e){ res.json({ok:false}); } });
+app.get("/api/diag/erros-cliente",requireAdmin,(req,res)=>{ const d=lerJSON(ERROS_CLIENTE_FILE,{}), f=x=>({...x,em:new Date(x.em-3*3600e3).toISOString().replace("T"," ").slice(0,19)}); res.json({ok:true,erros:(d.erros||[]).slice(0,100).map(f),cliques:(d.cliques||[]).slice(0,60).map(f)}); });
 app.get("/api/diag/ia",requireAdmin,async(req,res)=>{
   const KEY=process.env.ANTHROPIC_API_KEY, modelo=process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5";
   if(!KEY) return res.json({ok:false,chaveConfigurada:false,erro:"ANTHROPIC_API_KEY não encontrada no servidor (confira o nome da variável no Railway e se o serviço reiniciou)"});
