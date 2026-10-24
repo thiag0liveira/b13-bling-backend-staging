@@ -12313,7 +12313,14 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
       if(umin!=null&&!(r.custo!=null&&r.custo>=umin)) return false; if(umax!=null&&!(r.custo!=null&&r.custo<=umax)) return false; // PREÇO DE CUSTO de cada unidade
       return true; });
     const ord=String(q.ordem||"valor"), cmp={valor:(a,b)=>b.valor-a.valor,qtd:(a,b)=>b.qtd-a.qtd,lucro:(a,b)=>(b.lucro||0)-(a.lucro||0),estoque:(a,b)=>(b.estoque||0)-(a.estoque||0),
-      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),valorestoque:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0)||(b.estoque||0)-(a.estoque||0),custo:(a,b)=>(b.custo||0)-(a.custo||0),custoasc:(a,b)=>(a.custo==null)-(b.custo==null)||(a.custo||0)-(b.custo||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
+      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),valorestoque:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0)||(b.estoque||0)-(a.estoque||0),custo:(a,b)=>(b.custo||0)-(a.custo||0),custoasc:(a,b)=>(a.custo==null)-(b.custo==null)||(a.custo||0)-(b.custo||0),
+      // rankings do estoque: nos sentidos "menor", quem tem estoque vem primeiro (os zerados e os sem custo ficam por último)
+      estoqueasc:(a,b)=>((a.estoque>0)?0:1)-((b.estoque>0)?0:1)||(a.estoque||0)-(b.estoque||0),
+      valorestoqueasc:(a,b)=>((a.estoque>0&&a.custo!=null)?0:1)-((b.estoque>0&&b.custo!=null)?0:1)||(a.valorEstoqueCusto||0)-(b.valorEstoqueCusto||0),
+      valorvenda:(a,b)=>(b.valorEstoqueVenda||0)-(a.valorEstoqueVenda||0)||(b.estoque||0)-(a.estoque||0),
+      valorvendaasc:(a,b)=>((a.estoque>0&&a.preco)?0:1)-((b.estoque>0&&b.preco)?0:1)||(a.valorEstoqueVenda||0)-(b.valorEstoqueVenda||0),
+      preco:(a,b)=>(b.preco||0)-(a.preco||0),precoasc:(a,b)=>((a.preco>0)?0:1)-((b.preco>0)?0:1)||(a.preco||0)-(b.preco||0),
+      lucropot:(a,b)=>((b.custo!=null&&b.estoque>0)?b.valorEstoqueVenda-b.valorEstoqueCusto:-1e12)-((a.custo!=null&&a.estoque>0)?a.valorEstoqueVenda-a.valorEstoqueCusto:-1e12),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
       compra:(a,b)=>(b.sugestaoCompra*(b.precoMedio||b.preco||1))-(a.sugestaoCompra*(a.precoMedio||a.preco||1)),nome:(a,b)=>String(a.nome).localeCompare(String(b.nome))}[ord]||((a,b)=>b.valor-a.valor);
     const O=L.slice().sort(cmp), off=Math.max(0,Number(q.offset)||0), lim=Math.min(200,Math.max(1,Number(q.limite)||100));
     const ativos=Todos.filter(r=>r.noBling&&r.situacao==="A"), soma=(l,f)=>_round2(l.reduce((a,r)=>a+(Number(f(r))||0),0)), cont=f=>Todos.filter(r=>r.flags.includes(f)).length;
