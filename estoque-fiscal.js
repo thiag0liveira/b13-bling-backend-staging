@@ -559,6 +559,7 @@ export function registrarEstoqueFiscal(app, deps) {
       gravarNotas(); return n; },
     nota(id) { return NOTAS[id] || null; },
     marcarEntrada(id, info) { const n = NOTAS[id]; if (!n) return; n.entrada = { ...(n.entrada || {}), ...info }; gravarNotas(); },
+    desmarcarEntrada(id) { const n = NOTAS[id]; if (!n) return; delete n.entrada; gravarNotas(); },
     buscarProdutos(q) { const idx = montarIndice(); return sugerir(idx, q); },
     listarNotas() { return Object.values(NOTAS).map((n) => ({ id: n.id, numero: n.numero, emitente: n.emitente, emissao: n.emissao, vNF: n.vNF, entrada: !!(n.entrada && n.entrada.em), ignorada: !!n.ignorada })); },
   };

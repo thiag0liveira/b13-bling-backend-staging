@@ -196,7 +196,7 @@ function renderNota() {
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
   <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
-    <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()">📋 Não dar entrada no estoque (só registrar a nota)</button>
+    <div style="text-align:center;margin-top:14px"><button ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()" style="background:none;border:0;color:#9a95c9;text-decoration:underline;font-size:12px;padding:4px 8px;cursor:pointer">Só registrar a nota, sem somar no estoque</button></div>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
 }
@@ -264,7 +264,7 @@ async function anexar(a) { if (!a || !N) return; const { ok, j } = await api(P +
 async function carregarThumbs() { for (const im of document.querySelectorAll("img[data-an]")) { if (im.getAttribute("src")) continue; try { const r = await fetch(B + P + "/anexo/" + im.dataset.an, { headers: { "X-Auth-Token": token() } }); if (r.ok) im.src = URL.createObjectURL(await r.blob()); } catch (e) {} } }
 async function verAnexo(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + P + "/anexo/" + id, { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir o arquivo."); } }
 async function registrarSemEstoque() {
-  if (!confirm("Registrar esta nota SEM dar entrada no estoque?\n\nNenhum produto será alterado no Bling. A nota fica registrada com a imagem lida e as datas de pagamento.")) return;
+  if (!confirm("ATENÇÃO: o estoque NÃO vai aumentar.\n\nIsto só registra a nota (imagem e datas de pagamento). Nenhum produto será somado no Bling.\n\nSe você quer que os produtos entrem no estoque, toque em Cancelar e use \"Dar entrada no estoque\".")) return;
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Registrando…</div>`;
   const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, semEstoque: true }) });
   if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui registrar.")}</div>`; return; }
@@ -327,11 +327,19 @@ async function ligar(nItem) { const pid = document.getElementById("sel" + nItem)
   if (!pid) { alert("Escolha o produto (ou busque pelo nome)."); return; } if (!fat) { alert("Informe quantas unidades vêm em cada unidade da nota."); return; }
   const { ok, j } = await api(P + "/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: pid, fator: fat }) });
   if (!ok) { alert(j.erro || "Não consegui ligar."); return; } N = j.nota; renderNota(); }
+function mostrarFalhaEntrada(j, el) {
+  const fs = j.falhas || [], conf = j.conferencia || [];
+  el.innerHTML = `<div class="err" style="white-space:normal"><b>⚠️ ${fs.length ? fs.length + " produto(s) NÃO entraram no estoque" : "A entrada não foi feita"}${j.lancados ? " (os outros " + j.lancados + " entraram)" : ""}.</b>
+    ${fs.length ? "<ul style='margin:6px 0 4px 16px;padding:0'>" + fs.map(x => `<li><b>${esc(x.produtoNome || x.xProd)}</b>: ${esc(x.erro || "erro")}</li>`).join("") + "</ul>" : esc(j.erro || "")}
+    <div class="ic" style="white-space:normal;margin-top:4px">Nada foi marcado como lançado. Corrija e toque em <b>Dar entrada</b> de novo: só o que faltou será lançado.</div></div>`
+    + (conf.length ? `<div class="ic" style="white-space:normal;margin-top:6px">Já conferido no Bling: ${conf.slice(0, 8).map(c => esc(c.nome) + " " + c.antes + " → " + c.depois).join(" · ")}</div>` : "");
+}
+const confTxt = j => (j.conferencia || []).length ? `<div class="ic" style="white-space:normal;margin-top:4px">📦 Conferido no Bling (saldo antes → depois): ${(j.conferencia || []).slice(0, 8).map(c => esc(c.nome) + " <b style='color:#fff'>" + c.antes + " → " + c.depois + "</b>").join(" · ")}${(j.conferencia || []).length > 8 ? " …" : ""}</div>` : "";
 async function confirmar() {
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
   const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, ignorar: [...IGN] }) });
-  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
-  const msgOk = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque.</div>${(j.falhas || []).length ? `<div class="err">Não entraram: ${esc(j.falhas.map(x => x.produtoNome || x.xProd).join(", "))}. Avise o escritório.</div>` : ""}`;
+  if (!ok) { if (j.falhas) mostrarFalhaEntrada(j, el); else el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
+  const msgOk = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque.</div>${confTxt(j)}`;
   N.entrada = { em: Date.now(), por: "" };
   renderNota(); document.getElementById("confMsg").innerHTML = msgOk;
 }

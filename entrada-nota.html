@@ -95,6 +95,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 </script>
 <div class="top"><img src="/logo"><div class="t">📷 Entrada de Nota</div><div class="sp"></div></div>
 <div class="wrap">
+  <div id="incompletas"></div>
   <div class="card" id="cLer"><h3>1. Ler a nota</h3>
     <div class="ic" style="white-space:normal;margin-bottom:8px">Aponte a câmera para o <b>código de barras</b> no topo da DANFE (ou tire uma foto dele). O sistema busca a nota completa, liga os produtos sozinho e calcula o custo.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -382,18 +383,39 @@ function novaEntrada() {
   document.getElementById("nota").innerHTML = ""; document.getElementById("chave").value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+function mostrarFalhaEntrada(j, el) {
+  const fs = j.falhas || [], conf = j.conferencia || [];
+  el.innerHTML = `<div class="err" style="white-space:normal"><b>⚠️ ${fs.length ? fs.length + " produto(s) NÃO entraram no estoque" : "A entrada não foi feita"}${j.lancados ? " (os outros " + j.lancados + " entraram)" : ""}.</b>
+    ${fs.length ? "<ul style='margin:6px 0 4px 16px;padding:0'>" + fs.map(x => `<li><b>${esc(x.produtoNome || x.xProd)}</b>: ${esc(x.erro || "erro")}</li>`).join("") + "</ul>" : esc(j.erro || "")}
+    <div class="ic" style="white-space:normal;margin-top:4px">Nada foi marcado como lançado. Corrija e toque em <b>Dar entrada</b> de novo: só o que faltou será lançado.</div></div>`
+    + (conf.length ? `<div class="ic" style="white-space:normal;margin-top:6px">Já conferido no Bling: ${conf.slice(0, 8).map(c => esc(c.nome) + " " + c.antes + " → " + c.depois).join(" · ")}</div>` : "");
+}
+const confTxt = j => (j.conferencia || []).length ? `<div class="ic" style="white-space:normal;margin-top:4px">📦 Conferido no Bling (saldo antes → depois): ${(j.conferencia || []).slice(0, 8).map(c => esc(c.nome) + " <b style='color:#fff'>" + c.antes + " → " + c.depois + "</b>").join(" · ")}${(j.conferencia || []).length > 8 ? " …" : ""}</div>` : "";
+// ---- notas que ficaram incompletas (erro da versão antiga: marcava como lançada mesmo com item recusado) ----
+async function carregarIncompletas() { const { ok, j } = await api("/api/entrada-nota/incompletas"), el = document.getElementById("incompletas"); if (!el) return;
+  if (!ok || !j.total) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="card" style="border-color:#ff8aa3"><h3 style="margin:0 0 2px">⚠️ Notas com entrada incompleta (${j.total})</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Foram marcadas como lançadas, mas o estoque não subiu para todos os itens. Reabra, confira os itens e dê entrada de novo (o que já entrou não repete).</div>
+    ${j.itens.map(x => `<div style="border-top:1px solid #3a2a4a;padding:7px 0"><b>NF ${esc(x.numero || "s/n")}</b> · ${esc(x.fornecedor)}<div class="ic" style="white-space:normal">${new Date(x.em).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}${x.por ? " · " + esc(x.por) : ""} · ${esc(x.motivo)}${x.temRegistro ? "" : " · sem registro dos itens"}</div>
+      <button class="btn btn-ghost" style="padding:5px 12px;margin-top:4px" onclick="reabrirNota('${esc(x.id)}', ${x.temRegistro ? "false" : "true"})">🔁 Reabrir para dar entrada</button></div>`).join("")}</div>`; }
+async function reabrirNota(id, semRegistro, confirma) {
+  if (semRegistro && !confirm("Não há registro de quais itens já entraram nesta nota.\n\nConfira o saldo dos produtos no Bling para não entrar em dobro. Reabrir mesmo assim?")) return;
+  const { ok, j } = await api("/api/entrada-nota/reabrir", { method: "POST", body: JSON.stringify({ notaId: id, confirmaDuplicidade: !!semRegistro || !!confirma }) });
+  if (!ok) { alert(j.erro || "Não consegui reabrir."); return; }
+  N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; PAGO = N.aPrazo ? false : true; renderNota(); document.getElementById("nota").scrollIntoView({ behavior: "smooth" }); carregarIncompletas();
+  document.getElementById("lerMsg").innerHTML = `<div style="color:#3ce88a">Nota reaberta.${j.jaLancados ? " " + j.jaLancados + " item(ns) que já tinham entrado ficam marcados e não repetem." : ""} Confira e dê entrada de novo.</div>`; }
 async function confirmar() {
   const pg = PAGO ? { pago: true, forma: document.getElementById("pgForma").value, banco: (document.getElementById("pgBancoBox").style.display === "none" ? "" : document.getElementById("pgBanco").value) } : { pago: false };
   const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
   const { ok, j } = await api("/api/entrada-nota/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, ignorar: [...IGN], pagamento: pg }) });
-  if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
-  el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque · ${j.contas.length} conta(s) ${pg.pago ? "registrada(s) como paga(s)" : "a pagar"}.</div>${j.falhas.length ? `<div class="err">Não entraram: ${esc(j.falhas.map(x => (x.produtoNome || x.xProd) + " (" + x.erro + ")").join("; "))}</div>` : ""}`;
+  if (!ok) { if (j.falhas) mostrarFalhaEntrada(j, el); else el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
+  el.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque · ${j.contas.length} conta(s) ${pg.pago ? "registrada(s) como paga(s)" : "a pagar"}.</div>${confTxt(j)}`;
   N.entrada = { em: Date.now() }; carregarContas();
 }
 async function carregarContas() { const { j } = await api("/api/entrada-nota/contas"); const t = (j.titulos || []).slice(0, 15);
   document.getElementById("contas").innerHTML = t.length ? `<div style="overflow-x:auto"><table class="tb" style="min-width:560px"><tr class="ic"><td>Fornecedor</td><td>NF</td><td>Parcela</td><td>Vence</td><td style="text-align:right">Valor</td><td>Situação</td></tr>${t.map(x => `<tr><td>${esc(x.fornecedor?.nome)}</td><td>${esc(x.numeroNota)}</td><td>${esc(x.parcela)}</td><td>${dmy(x.vencimento)}</td><td style="text-align:right">${brl(x.valor)}</td><td>${x.status === "pago" ? "✅ paga" + (x.forma ? " · " + esc(x.forma) + (x.banco ? " " + esc(x.banco) : "") : "") : (x.vencimento < new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) ? "🔴 vencida" : "⏳ a pagar")}</td></tr>`).join("")}</table></div>` : `<div class="ic">Nenhuma ainda.</div>`; }
 (async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContas(); })();
 const _renderNotaBase = renderNota; renderNota = function () { _renderNotaBase(); carregarThumbs(); };
+carregarIncompletas();
 </script>
 </body>
 </html>
