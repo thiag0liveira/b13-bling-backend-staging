@@ -188,6 +188,7 @@ function renderNota() {
       <div class="grid2" style="margin-bottom:8px"><label><div class="ic">Fornecedor</div><input value="${esc(n.emitente?.nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label>
         <label><div class="ic">CNPJ / CPF (se tiver)</div><input value="${esc(n.emitente?.cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div>` : ""}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0">2. ${n.semNota && !n.fotoDanfe ? "Compra" + (n.numero ? " " + esc(n.numero) : "") : "Nota " + esc(n.numero) + (n.serie ? "/" + esc(n.serie) : "")}</h3><button class="btn btn-ghost" style="padding:6px 10px" onclick="novaEntrada()">➕ Nova entrada</button></div>
+    ${(typeof b13Pode === "function" && b13Pode("acesso_entrada_nota")) ? `<a class="btn btn-ghost" style="display:block;text-align:center;margin:8px 0;border-color:#1f6f93;color:#7fc8ea" href="/entrada-nota?${n.semNota ? "nota=" + encodeURIComponent(n.id) : "chave=" + encodeURIComponent(n.id)}">💲 Ver valores, valor unitário e custos desta nota (financeiro)</a>` : ""}
     <div class="lin"><span>Fornecedor</span><b>${esc(n.emitente?.nome || "—")}</b></div>
     <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
     <div style="margin-top:8px">${blocoPrazo(n)}</div>

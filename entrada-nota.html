@@ -76,7 +76,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 #video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
 .itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
 .wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
-</style>
+.vun{background:#0d2230;border:1px solid #1f6f93;border-radius:10px;padding:7px 10px;margin:6px 0;font-size:13px;color:#cfeeff;line-height:1.5}.vun .g{font-size:17px;font-weight:900;color:#fff}.vun .tt{font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:#7fc8ea;margin-bottom:2px}</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -182,7 +182,7 @@ function renderNota() {
   const it = x => { const ign = IGN.has(x.nItem), dif = x.custoAnterior && x.custoRealUn ? Math.round((x.custoRealUn - x.custoAnterior) / x.custoAnterior * 100) : null;
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
         <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div>
-        <div class="ic" style="white-space:normal;margin-top:2px">💲 Valor na nota: <b style="color:#fff">${brl(x.vUnCom)}</b> por ${esc(x.uCom)} → <b style="color:#fff">${brl(x.custoUn)}</b> por unidade · custo real <b style="color:#fff">${brl(x.custoRealUn)}</b>/un (com frete e impostos)</div></div>
+        <div class="vun">${vunConteudo(x, x.fator)}</div></div>
         <div style="text-align:right"><b>${brl(x.custoRealUn)}</b><span class="ic">/un</span>${dif != null ? `<div class="ic">antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span></div>` : ""}
         ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
         ${x.reajuste ? (() => { const r = x.reajuste, ok = REAJ[x.produtoId] != null;
@@ -194,9 +194,9 @@ function renderNota() {
     return `<div class="itn pend ${ign ? "ign" : ""}"><b>⚠️ ${esc(x.xProd)}</b><div class="ic" style="white-space:normal">código ${esc(x.cProd)}${x.cEAN ? " · barras " + esc(x.cEAN) : ""} · ${num(x.qCom)} ${esc(x.uCom)} × <b style="color:#fff">${brl(x.vUnCom)}</b> por ${esc(x.uCom)} = ${brl(x.vProd)} · ${esc(x.motivo || "produto não reconhecido")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><select id="sel${x.nItem}" style="flex:1;min-width:180px">${(x.sugestoes || []).map(s => `<option value="${s.produtoId}">${s.confianca === "forte" ? "✨ " : s.confianca === "media" ? "• " : "· "}${esc(s.nome)}${s.confianca ? " (" + (s.confianca === "forte" ? "sugestão forte" : s.confianca === "media" ? "provável" : "possível") + ")" : ""}</option>`).join("")}<option value="">🔎 buscar outro produto…</option></select>
         <input id="bus${x.nItem}" placeholder="buscar produto" style="width:150px" oninput="buscarProd(${x.nItem},this.value)">
-        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : "")}" placeholder="un" style="width:60px" oninput="puAtualiza(${x.nItem})">
+        <label class="ic">1 ${esc(x.uCom)} =</label><input id="fat${x.nItem}" inputmode="decimal" value="${fatorDoItem(x) || ""}" placeholder="un" style="width:60px" oninput="puAtualiza(${x.nItem})">
         <button class="btn btn-mag" style="padding:6px 12px" onclick="ligar(${x.nItem})">Ligar</button></div>
-      <div id="pu${x.nItem}" class="ic" style="white-space:normal;margin-top:4px">${puTxt(x, x.sugestaoFator || (/^(UN|UND|UNID)$/.test(x.uCom) ? 1 : 0))}</div>
+      <div id="pu${x.nItem}" class="vun">${vunConteudo(x, fatorDoItem(x))}</div>
       ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b> pelo preço (${brl(x.vUnCom || (x.qCom ? x.vProd / x.qCom : 0))} cada). Confira antes de ligar.</div>` : x.fatorFonte && x.sugestaoFator > 1 ? `<div class="ic">conversão ${esc(x.fatorFonte)}</div>` : ""}
       <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas (e o Bling também aprende).</div>
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
@@ -256,9 +256,19 @@ let BOL = null, BOLNOTA = null;
 const numBol = v => { const t = String(v == null ? "" : v).trim(); if (!t) return 0; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t) || 0; };
 function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; const lidos = (n.boletosLidos || []).filter(b => !b.tituloId);
   BOL = lidos.length ? lidos.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })) : (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
+// QUADRO "VALOR UNITÁRIO CALCULADO": aparece em todo item, em qualquer situação (ligado, para revisar, sugerido ou ainda sem conversão)
+function fatorDoItem(x) { return Number(x.fator) > 0 ? Number(x.fator) : (Number(x.sugestaoFator) > 0 ? Number(x.sugestaoFator) : (/^(UN|UND|UNID)$/i.test(x.uCom || "") ? 1 : 0)); }
+function vunConteudo(x, f) {
+  f = Number(f) || 0; const liq = (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), qc = Number(x.qCom) || 0, unit = Number(x.vUnCom) || (qc > 0 ? Number(x.vProd) / qc : 0);
+  const real = f > 0 && Number(x.fator) === f && Number(x.custoRealUn) > 0 ? Number(x.custoRealUn) : 0, dif = real && x.custoAnterior ? Math.round((real - x.custoAnterior) / x.custoAnterior * 100) : null;
+  const ligado = Number(x.fator) > 0 && f === Number(x.fator), por = f > 0 && qc > 0 ? liq / (qc * f) : 0;
+  return `<div class="tt">💲 Valor unitário calculado</div>
+    Na nota: <b style="color:#fff">${brl(unit)}</b> por ${esc(x.uCom)} × ${num(qc)} = ${brl(x.vProd)}${Number(x.vDesc) > 0 ? " (desconto " + brl(x.vDesc) + ")" : ""}<br>
+    ${f > 0 && qc > 0 ? `${/^(UN|UND|UNID)$/i.test(x.uCom || "") && f === 1 ? "Já vem em unidade" : (ligado ? "Cada " + esc(x.uCom) + " tem" : "Se cada " + esc(x.uCom) + " tiver") + " <b style=\"color:#fff\">" + num(f) + "</b> un" + (ligado ? "" : " (sugestão: confirme)")}: <span class="g">${brl(por)}</span> por unidade${real ? `<br>Custo real <b style="color:#fff">${brl(real)}</b> por unidade (com frete e impostos)${dif != null ? ` · antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span>` : ""}` : ""}` : `<span style="color:#ffd23f">Informe quantas unidades vêm em cada ${esc(x.uCom || "embalagem")} para calcular o valor por unidade.</span>`}`;
+}
 // valor por unidade enquanto se informa quantas unidades vêm em cada embalagem da nota
-function puTxt(x, f) { f = Number(String(f || "").replace(",", ".")); if (!(f > 0) || !(Number(x.qCom) > 0)) return ""; return `💲 ${brl(x.vUnCom)} por ${esc(x.uCom)} ÷ ${num(f)} = <b style="color:#fff">${brl(((Number(x.vProd) || 0) - (Number(x.vDesc) || 0)) / (Number(x.qCom) * f))}</b> por unidade (sem frete e impostos)`; }
-function puAtualiza(nItem) { const x = (N.itens || []).find(i => i.nItem === nItem), el = document.getElementById("pu" + nItem); if (x && el) el.innerHTML = puTxt(x, (document.getElementById("fat" + nItem) || {}).value); }
+function puTxtAntigo(x, f) { f = Number(String(f || "").replace(",", ".")); if (!(f > 0) || !(Number(x.qCom) > 0)) return ""; return `💲 ${brl(x.vUnCom)} por ${esc(x.uCom)} ÷ ${num(f)} = <b style="color:#fff">${brl(((Number(x.vProd) || 0) - (Number(x.vDesc) || 0)) / (Number(x.qCom) * f))}</b> por unidade (sem frete e impostos)`; }
+function puAtualiza(nItem) { const x = (N.itens || []).find(i => i.nItem === nItem), el = document.getElementById("pu" + nItem); if (x && el) { const v = (document.getElementById("fat" + nItem) || {}).value; el.innerHTML = vunConteudo(x, Number(String(v || "").replace(",", ".")) || 0); } }
 // ---- notas pagas pelo MESMO boleto ----
 const JB = () => (typeof P !== "undefined" ? P : "/api/entrada-nota");
 let JUNTAR_ABERTO = false, _tJ = null;
@@ -416,6 +426,9 @@ async function carregarContas() { const { j } = await api("/api/entrada-nota/con
 (async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContas(); })();
 const _renderNotaBase = renderNota; renderNota = function () { _renderNotaBase(); carregarThumbs(); };
 carregarIncompletas();
+(function () { const q = new URLSearchParams(location.search), ch = q.get("chave"), sn = q.get("nota");
+  if (ch && /^\d{44}$/.test(ch)) carregar({ chave: ch });
+  else if (sn) (async () => { const { ok, j } = await api("/api/entrada-nota/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: sn }) }); if (ok && j.nota) { msgLer(""); N = j.nota; IGN = new Set(); REAJ = {}; IMG_MSG = ""; PAGO = N.aPrazo ? false : true; renderNota(); } else msgLer(`<div class="err">${esc(j.erro || "Não consegui abrir a nota.")}</div>`); })(); })();
 </script>
 </body>
 </html>
