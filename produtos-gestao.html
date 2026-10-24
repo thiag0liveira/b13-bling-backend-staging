@@ -103,8 +103,9 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
       <select id="fSit"><option value="A">Ativos</option><option value="I">Inativos</option><option value="todos">Todos</option></select>
       <select id="fCurva"><option value="">Curva ABC: todas</option><option value="A">Curva A</option><option value="B">Curva B</option><option value="C">Curva C</option></select>
       <select id="fEst"><option value="">Com ou sem estoque</option><option value="com">Com estoque</option><option value="sem">Sem estoque</option></select>
+      <input id="fCusto" inputmode="decimal" placeholder="Custo em estoque a partir de R$" title="Mostra só produtos cujo estoque, a custo, vale pelo menos esse valor" style="width:215px">
       <select id="fVendeu"><option value="">Vendeu ou não</option><option value="sim">Vendeu no período</option><option value="nao">Não vendeu no período</option></select>
-      <select id="fOrdem"><option value="valor">Mais vendidos (R$)</option><option value="qtd">Mais vendidos (unid.)</option><option value="lucro">Mais lucro</option><option value="compra">Comprar primeiro</option><option value="cobertura">Menos dias de estoque</option><option value="parado">Mais dinheiro parado</option><option value="estoque">Mais estoque</option><option value="alta">Maiores altas</option><option value="queda">Maiores quedas</option><option value="nome">Nome (A-Z)</option></select>
+      <select id="fOrdem"><option value="valor">Mais vendidos (R$)</option><option value="qtd">Mais vendidos (unid.)</option><option value="lucro">Mais lucro</option><option value="compra">Comprar primeiro</option><option value="cobertura">Menos dias de estoque</option><option value="parado">Mais dinheiro parado</option><option value="estoque">Mais estoque (unidades)</option><option value="valorestoque">Maior custo em estoque (R$)</option><option value="alta">Maiores altas</option><option value="queda">Maiores quedas</option><option value="nome">Nome (A-Z)</option></select>
       <button class="btn btn-ghost" onclick="limpar()">Limpar</button>
     </div>
     <div class="filtros" id="fAlertas"></div><div id="filtroAtivo" class="ic" style="margin-top:6px"></div></div>
@@ -117,7 +118,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="card"><h3>📈 Maiores altas</h3><div id="cAlta"></div></div>
     <div class="card"><h3>📉 Maiores quedas</h3><div id="cQueda"></div></div>
   </div>
-  <div class="card"><h3>🏷️ Produtos <span class="ic" id="qtdLista"></span></h3><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
+  <div class="card"><h3>🏷️ Produtos <span class="ic" id="qtdLista"></span></h3><div id="resumoFiltro" style="background:#0f0d24;border:1px solid #37327a;border-radius:10px;padding:8px 10px;margin:6px 0 8px;font-size:13px;line-height:1.5"></div><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
 </div>
 <div class="fundo" id="mProd"><div class="modal" id="mProdCorpo" style="max-width:980px"></div></div>
 <div class="fundo" id="mAjuste" style="z-index:300"><div class="modal" id="mAjusteCorpo" style="max-width:440px;margin-top:30px"></div></div>
@@ -134,10 +135,10 @@ async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op,
 const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), diaISO = ms => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
 const ALERTAS = [["ruptura", "🚨 Ruptura", "vende, mas o estoque acabou"], ["baixo", "⚠️ Estoque baixo", "menos de 7 dias de estoque"], ["parado", "🧊 Parado", "tem estoque e não vende há mais de 60 dias"], ["negativo", "➖ Negativo", "estoque negativo no Bling"], ["excesso", "📦 Excesso", "mais de 90 dias de estoque"], ["sem custo", "❔ Sem custo", "sem preço de custo no Bling"], ["margem baixa", "🔻 Margem baixa", "margem abaixo de 10%"], ["fora do catálogo", "🔍 Fora do catálogo", "vendido mas não está no catálogo do Bling"]];
 let D = null, ITENS = [], OFF = 0, ALERTA = "", PR = null, ABA = "resumo", ED = null;
-function filtros() { const v = id => document.getElementById(id).value.trim(); return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), situacao: v("fSit"), curva: v("fCurva"), estoque: v("fEst"), vendeu: v("fVendeu"), ordem: v("fOrdem"), alerta: ALERTA }; }
+function filtros() { const v = id => document.getElementById(id).value.trim(); return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), situacao: v("fSit"), curva: v("fCurva"), estoque: v("fEst"), custoMin: v("fCusto").replace(",", "."), vendeu: v("fVendeu"), ordem: v("fOrdem"), alerta: ALERTA }; }
 function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
 function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h; document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(true); }
-function limpar() { ["busca", "fCurva", "fEst", "fVendeu"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fSit").value = "A"; document.getElementById("fOrdem").value = "valor"; ALERTA = ""; carregar(true); }
+function limpar() { ["busca", "fCurva", "fEst", "fVendeu", "fCusto"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fSit").value = "A"; document.getElementById("fOrdem").value = "valor"; ALERTA = ""; carregar(true); }
 function setAlerta(a, ordem) { ALERTA = ALERTA === a ? "" : a; if (ordem) document.getElementById("fOrdem").value = ordem; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 async function carregar(novo) {
   if (novo) { OFF = 0; ITENS = []; }
@@ -170,6 +171,7 @@ function render() {
   document.getElementById("cQueda").innerHTML = M.quedas.map(x => lin(x, `<span style="color:#ff8aa3">${brl(x.valor - x.valorAnt)}</span>`, `${brl(x.valorAnt)} → ${brl(x.valor)}`)).join("") || `<div class="ic">—</div>`;
   document.getElementById("filtroAtivo").innerHTML = `vendas de ${dmy(D.ini)} a ${dmy(D.fim)}${ALERTA ? " · alerta: " + esc(ALERTA) : ""}`;
   document.getElementById("qtdLista").textContent = `(${num(D.total)})`;
+  const F = D.filtro; document.getElementById("resumoFiltro").innerHTML = F ? `📊 <b>Neste filtro</b>: ${num(F.produtos)} produto(s) · ${num(F.unidades)} un em estoque (${num(F.comEstoque)} produtos com estoque)<br>💰 Estoque a <b>custo</b>: <b style="color:#fff;font-size:16px">${brl(F.valorEstoqueCusto)}</b> · a preço de venda ${brl(F.valorEstoqueVenda)}${F.semCusto ? `<br><span style="color:#ffd23f">⚠️ ${num(F.semCusto)} produto(s) com estoque e sem custo cadastrado: não entram nessa soma</span>` : ""}` : "";
   renderLista();
 }
 function linha(r) {
@@ -177,7 +179,7 @@ function linha(r) {
   if (r.situacao === "I") tg.unshift(`<span class="tagp al">inativo</span>`);
   return `<div class="ped" onclick="abrirProduto('${esc(r.id)}')">${r.img ? `<img class="thumb" src="${esc(r.img)}" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="thumb"></div>`}
     <div class="x"><b>${esc(r.nome || "(sem nome)")}</b><span>${r.codigo ? "cód. " + esc(r.codigo) + " · " : ""}estoque <b style="color:${r.estoque != null && r.estoque <= 0 ? "#ff8aa3" : "inherit"}">${num(r.estoque)}</b>${r.cobertura != null ? ` (${r.cobertura} dia${r.cobertura === 1 ? "" : "s"})` : ""} · ${num(r.mediaDia)}/dia${r.ultimaVenda ? " · última venda " + dmy(r.ultimaVenda) : " · nunca vendeu"}</span><div>${tg.join("")}</div></div>
-    <div style="text-align:right"><b>${brl(r.valor)}</b><div class="ic">${num(r.qtd)} un${r.margem != null ? " · " + String(r.margem).replace(".", ",") + "%" : ""}</div><button class="btn btn-ghost" style="padding:4px 9px;margin-top:5px;font-size:12px;white-space:nowrap" onclick="event.stopPropagation();abrirAjuste('${esc(r.id)}')">📦 Ajustar estoque</button></div></div>`;
+    <div style="text-align:right"><b>${brl(r.valor)}</b><div class="ic">${num(r.qtd)} un${r.margem != null ? " · " + String(r.margem).replace(".", ",") + "%" : ""}</div><div class="ic" style="color:#cfcaf5">estoque a custo ${r.valorEstoqueCusto > 0 ? "<b style=\"color:#fff\">" + brl(r.valorEstoqueCusto) + "</b>" : (r.estoque > 0 ? "<span style=\"color:#ffd23f\">sem custo</span>" : "—")}</div><button class="btn btn-ghost" style="padding:4px 9px;margin-top:5px;font-size:12px;white-space:nowrap" onclick="event.stopPropagation();abrirAjuste('${esc(r.id)}')">📦 Ajustar estoque</button></div></div>`;
 }
 function renderLista() { document.getElementById("lista").innerHTML = (ITENS.length ? ITENS.map(linha).join("") : `<div class="vazio">Nenhum produto nesse filtro.</div>`) + (ITENS.length < D.total ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(D.total - ITENS.length)} restantes)</button></div>` : ""); }
 function exportarCsv() { fetch(B + "/api/produtos-gestao.csv?" + new URLSearchParams(filtros()), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "produtos_" + hojeISO() + ".csv"; a.click(); }); }
@@ -279,7 +281,7 @@ async function atualizarAposAjuste(id) {
       if (it) Object.keys(it).forEach(k => { if (k in novo) it[k] = novo[k]; });
       if (PR && String(PR.id) === String(id)) { const aba = ABA; PR = novo; ABA = aba; ED = null; }
     }
-    if (r2.ok && D) { D.metricas = r2.j.metricas; D.catalogo = r2.j.catalogo; D.historico = r2.j.historico || D.historico; D.anterior = r2.j.anterior || D.anterior; D.ms = r2.j.ms; }
+    if (r2.ok && D) { D.metricas = r2.j.metricas; D.catalogo = r2.j.catalogo; D.filtro = r2.j.filtro || D.filtro; D.historico = r2.j.historico || D.historico; D.anterior = r2.j.anterior || D.anterior; D.ms = r2.j.ms; }
     if (D) render();
     if (document.getElementById("mProd").classList.contains("aberto") && PR && String(PR.id) === String(id)) renderFicha();
   } catch (e) { /* a tela já mostra o saldo novo; o resto se acerta no próximo carregamento */ }
@@ -395,7 +397,7 @@ async function salvarProd() {
 }
 document.getElementById("mProd").addEventListener("click", e => { if (e.target.id === "mProd") fechar(); });
 let _tb; document.getElementById("busca").addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(() => carregar(true), 400); });
-["fIni", "fFim", "fSit", "fCurva", "fEst", "fVendeu", "fOrdem"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
+["fIni", "fFim", "fSit", "fCurva", "fEst", "fVendeu", "fOrdem", "fCusto"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
 (function () { const u = new URLSearchParams(location.search); document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 29 * 86400000);
   carregar(true).then(() => { if (u.get("produto")) abrirProduto(u.get("produto")); }); })();
 </script>

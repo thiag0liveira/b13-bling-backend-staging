@@ -12306,9 +12306,10 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
       if(q.alerta&&!r.flags.includes(q.alerta)) return false;
       if(q.estoque==="com"&&!(r.estoque>0)) return false; if(q.estoque==="sem"&&!(r.estoque!=null&&r.estoque<=0)) return false;
       if(q.vendeu==="sim"&&!(r.qtd>0)) return false; if(q.vendeu==="nao"&&r.qtd>0) return false;
+      const cmin=Number(String(q.custoMin||"").replace(",","."))||0; if(cmin>0&&!(r.valorEstoqueCusto>=cmin)) return false; // só produtos cujo estoque, a custo, vale pelo menos isso
       return true; });
     const ord=String(q.ordem||"valor"), cmp={valor:(a,b)=>b.valor-a.valor,qtd:(a,b)=>b.qtd-a.qtd,lucro:(a,b)=>(b.lucro||0)-(a.lucro||0),estoque:(a,b)=>(b.estoque||0)-(a.estoque||0),
-      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
+      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),valorestoque:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0)||(b.estoque||0)-(a.estoque||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
       compra:(a,b)=>(b.sugestaoCompra*(b.precoMedio||b.preco||1))-(a.sugestaoCompra*(a.precoMedio||a.preco||1)),nome:(a,b)=>String(a.nome).localeCompare(String(b.nome))}[ord]||((a,b)=>b.valor-a.valor);
     const O=L.slice().sort(cmp), off=Math.max(0,Number(q.offset)||0), lim=Math.min(200,Math.max(1,Number(q.limite)||100));
     const ativos=Todos.filter(r=>r.noBling&&r.situacao==="A"), soma=(l,f)=>_round2(l.reduce((a,r)=>a+(Number(f(r))||0),0)), cont=f=>Todos.filter(r=>r.flags.includes(f)).length;
@@ -12323,14 +12324,15 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
       compras:Todos.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,12).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,cobertura:r.cobertura,sugestao:r.sugestaoCompra,mediaDia:r.mediaDia})),
       paradosValor:Todos.filter(r=>r.flags.includes("parado")).sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,8).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,valor:r.valorEstoqueCusto,diasSemVenda:r.diasSemVenda}))};
     M.margem=M.faturamentoComCusto>0?+(M.lucro/M.faturamentoComCusto*100).toFixed(1):null;
-    res.json({ok:true,ini,fim,anterior:{ini:aIni,fim:aFim},total:O.length,itens:O.slice(off,off+lim),metricas:M,
+    const comEst=L.filter(r=>r.estoque>0), filtro={produtos:L.length,comEstoque:comEst.length,unidades:soma(comEst,r=>r.estoque),valorEstoqueCusto:soma(L,r=>r.valorEstoqueCusto),valorEstoqueVenda:soma(L,r=>r.valorEstoqueVenda),semCusto:comEst.filter(r=>!r.custo).length}; // soma do que está listado agora (respeita todos os filtros)
+    res.json({ok:true,filtro,ini,fim,anterior:{ini:aIni,fim:aFim},total:O.length,itens:O.slice(off,off+lim),metricas:M,
       catalogo:{em:PB.em||null,estoqueEm:PB.estoqueEm||null,produtos:Object.keys(PB.porId||{}).length,rodando:_prodSync.rodando,progresso:_prodSync.progresso},historico:_statusHistorico(),ms:Date.now()-T0});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.get("/api/produtos-gestao.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
   try{ const {L}=_montarProdutos(req.query); const c=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`, n=v=>v==null?"":String(v).replace(".",",");
-    const linhas=[["id","codigo","produto","situacao","estoque","cobertura_dias","media_dia_90d","vendido_qtd","vendido_valor","pedidos","clientes","preco_medio","preco_bling","custo","lucro","margem_pct","curva","ultima_venda","dias_sem_venda","sugestao_compra_15d","alertas","varejo","atacado","fardo"].join(";")];
-    L.filter(r=>r.noBling||r.qtd>0).forEach(r=>linhas.push([r.id,r.codigo,r.nome,r.situacao,n(r.estoque),n(r.cobertura),n(r.mediaDia),n(r.qtd),n(r.valor),r.pedidos,r.clientes,n(r.precoMedio),n(r.preco),n(r.custo),n(r.lucro),n(r.margem),r.curva,r.ultimaVenda,n(r.diasSemVenda),r.sugestaoCompra,r.flags.join(" | "),n(r.precoVarejo),n(r.precoAtacado),n(r.precoFardo)].map(c).join(";")));
+    const linhas=[["id","codigo","produto","situacao","estoque","cobertura_dias","media_dia_90d","vendido_qtd","vendido_valor","pedidos","clientes","preco_medio","preco_bling","custo","lucro","margem_pct","curva","ultima_venda","dias_sem_venda","sugestao_compra_15d","alertas","varejo","atacado","fardo","valor_estoque_custo","valor_estoque_venda"].join(";")];
+    L.filter(r=>r.noBling||r.qtd>0).forEach(r=>linhas.push([r.id,r.codigo,r.nome,r.situacao,n(r.estoque),n(r.cobertura),n(r.mediaDia),n(r.qtd),n(r.valor),r.pedidos,r.clientes,n(r.precoMedio),n(r.preco),n(r.custo),n(r.lucro),n(r.margem),r.curva,r.ultimaVenda,n(r.diasSemVenda),r.sugestaoCompra,r.flags.join(" | "),n(r.precoVarejo),n(r.precoAtacado),n(r.precoFardo),n(r.valorEstoqueCusto),n(r.valorEstoqueVenda)].map(c).join(";")));
     res.setHeader("Content-Type","text/csv; charset=utf-8"); res.setHeader("Content-Disposition",`attachment; filename="produtos_${_diaBRk(Date.now())}.csv"`); res.send("\uFEFF"+linhas.join("\n")); }
   catch(e){ res.status(500).send(e.message); }
 });
