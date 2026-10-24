@@ -165,12 +165,13 @@ async function editarSN(corpo) { let r; try { r = await api(P + "/sem-nota/edita
 // ===== a nota (só produtos e quantidades) =====
 function renderNota() {
   iniciarVenc(N);
-  const n = N, pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)).length;
+  const n = N, pend = n.itens.filter(x => x.status !== "ok" && x.status !== "frete" && !IGN.has(x.nItem)).length;
   const edSN = x => n.semNota ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><span class="ic">corrigir:</span>
       <input value="${esc(x.xProd)}" style="flex:1;min-width:140px" onchange="editarSN({nItem:${x.nItem},xProd:this.value})" title="descrição">
       <input value="${String(x.qCom).replace(".", ",")}" inputmode="decimal" style="width:70px" onchange="editarSN({nItem:${x.nItem},qCom:this.value})" title="quantidade"><span class="ic">${esc(x.uCom)}</span>
       <button class="btn btn-ghost" style="padding:4px 8px" onclick="if(confirm('Tirar este item da compra?'))editarSN({nItem:${x.nItem},remover:true})">🗑</button></div>` : "";
   const it = x => { const ign = IGN.has(x.nItem);
+    if (x.status === "frete") return `<div class="itn ign"><b>🚚 Frete</b> · ${esc(x.xProd)}<div class="ic" style="white-space:normal">Não é produto: não entra no estoque. O financeiro decide como dividir o valor entre os itens.</div></div>`;
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
         <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div></div>
         ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não alterar o estoque deste produto</label></div>`;
@@ -197,7 +198,7 @@ function renderNota() {
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
-  <div class="card"><div id="confMsg"></div>${n.entrada ? blocoJaLancada(n, "reabrirAqui()") : `<button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>${motivosEntrada(n)}`}
+  <div class="card"><div id="confMsg"></div>${n.entrada ? blocoJaLancada(n, "reabrirAqui()") : `${freteIndeciso(n) ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px;white-space:normal">🚚 Esta compra tem <b>frete</b>. O financeiro precisa decidir como dividi-lo entre os itens (Entrada de Nota) antes de dar entrada.</div>` : ""}<button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || freteIndeciso(n) ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : freteIndeciso(n) ? " (aguardando o financeiro: frete)" : ""}</button>${motivosEntrada(n)}`}
     <div style="text-align:center;margin-top:14px"><button ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()" style="background:none;border:0;color:#9a95c9;text-decoration:underline;font-size:12px;padding:4px 8px;cursor:pointer">Só registrar a nota, sem somar no estoque</button></div>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
@@ -319,7 +320,7 @@ function novaEntrada() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
-function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
+function fortes() { return (N && N.itens || []).filter(x => x.status !== "ok" && x.status !== "frete" && !IGN.has(x.nItem) && !x.fatorEstimado && x.sugestoes && x.sugestoes[0] && x.sugestoes[0].confianca === "forte" && Number(x.sugestaoFator) > 0); }
 async function aceitarFortes() { const f = fortes(); if (!f.length) return; if (!confirm(`Ligar ${f.length} item(ns) às sugestões fortes?\n\n` + f.map(x => `• ${x.xProd} → ${x.sugestoes[0].nome} (1 ${x.uCom} = ${x.sugestaoFator})`).join("\n"))) return;
   for (const x of f) { const { ok, j } = await api(P + "/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem: x.nItem, produtoId: x.sugestoes[0].produtoId, fator: x.sugestaoFator }) }); if (ok) N = j.nota; else { alert((j.erro || "Não consegui ligar") + " (" + x.xProd + ")"); break; } }
   renderNota(); }
@@ -338,8 +339,9 @@ function mostrarFalhaEntrada(j, el) {
 }
 const confTxt = j => (j.conferencia || []).length ? `<div class="ic" style="white-space:normal;margin-top:4px">📦 Conferido no Bling (saldo antes → depois): ${(j.conferencia || []).slice(0, 8).map(c => esc(c.nome) + " <b style='color:#fff'>" + c.antes + " → " + c.depois + "</b>").join(" · ")}${(j.conferencia || []).length > 8 ? " …" : ""}</div>` : "";
 // ---- o botão de dar entrada nunca fica mudo: explica por que está desativado, oferece reabrir e trata demora ou falta de rede ----
-function motivosEntrada(n) { const m = [], pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)), zero = n.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && !(Number(x.qtdUn) > 0));
+function motivosEntrada(n) { const m = [], pend = n.itens.filter(x => x.status !== "ok" && x.status !== "frete" && !IGN.has(x.nItem)), zero = n.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && !(Number(x.qtdUn) > 0));
   if (pend.length) m.push(`Faltam <b>${pend.length}</b> item(ns) para ligar a um produto: ${pend.slice(0, 4).map(x => esc(x.xProd)).join(", ")}${pend.length > 4 ? "…" : ""}`);
+  if (freteIndeciso(n)) m.push("Esta compra tem <b>frete</b>: o financeiro precisa decidir como dividir antes.");
   if (zero.length) m.push(`${zero.length} item(ns) ficaram com <b>0 unidade</b> (confira quantas unidades vêm em cada embalagem): ${zero.slice(0, 3).map(x => esc(x.xProd)).join(", ")}`);
   if (n.itens.length && n.itens.every(x => IGN.has(x.nItem))) m.push("Todos os itens estão marcados como <b>“não alterar o estoque”</b>: desmarque os que devem entrar.");
   else if (IGN.size) m.push(`${IGN.size} item(ns) marcado(s) como <b>“não alterar o estoque”</b> não vão entrar.`);
@@ -348,6 +350,7 @@ function blocoJaLancada(n, reabrirFn) { const e = n.entrada, quando = new Date(e
     tipo = e.semEstoque ? "foi só <b>registrada</b>, sem somar no estoque," : (e.jaNoBling || e.soBoletos) ? "foi marcada como <b>já lançada no Bling</b> pelo financeiro," : "já foi marcada como <b>lançada</b>,";
   return `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:10px 12px;color:#ffe9a8;font-size:13px;white-space:normal">🔒 Esta nota ${tipo} em <b>${quando}</b>${e.por ? " por <b>" + esc(e.por) + "</b>" : ""}. É por isso que o botão de dar entrada está desativado.${podeReabrir ? " <b>Se o estoque NÃO subiu, toque em Reabrir.</b> O que já entrou (registrado) não é lançado de novo." : " Peça ao financeiro para reabrir, se for preciso."}</div>${podeReabrir ? `<button class="btn btn-mag" style="width:100%;margin-top:8px;padding:12px" onclick="${reabrirFn}">🔁 Reabrir para dar entrada</button>` : ""}`; }
 let _confirmando = false;
+const freteIndeciso = n => !!(n.semNota && n.temFrete && !n.freteDecidido);
 async function chamarComTempo(caminho, corpo, ms) { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms || 170000); try { return await api(caminho, { method: "POST", body: JSON.stringify(corpo), signal: ctl.signal }); } finally { clearTimeout(t); } }
 function falhaDeRede(e, el) { el.innerHTML = `<div class="err" style="white-space:normal">⚠️ ${e && e.name === "AbortError" ? "A resposta demorou demais (mais de 2 minutos)." : "Não consegui falar com o servidor (" + esc((e && e.message) || "sem conexão") + ")."} <b>Nada foi lançado em duplicidade:</b> o sistema não repete o que já entrou. Toque em <b>Dar entrada</b> de novo para conferir e terminar.</div>`; }
 async function reabrirAqui() {

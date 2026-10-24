@@ -11430,13 +11430,20 @@ const _fornCache=new Map();
 async function _fornecedorCacheado(cnpj){ const k=String(cnpj||"").replace(/\D/g,""); if(!k) return null; const c=_fornCache.get(k); if(c&&Date.now()-c.em<(c.v?10*60000:2*60000)) return c.v;
   let v=null; try{ v=await encontrarContatoPorDoc(cnpj); }catch(e){ return null; } _fornCache.set(k,{em:Date.now(),v}); return v; }
 async function _resumoEntradaNota(n){
-  const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
-  const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0, k=base>0?extras/base:0;
+  const P=lerProdutosBling().porId, it=n.itens||[], itP=n.semNota?it.filter(x=>x.status!=="frete"):it, base=itP.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
+  const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0;
+  // FRETE em compra SEM nota fiscal: só entra no custo depois que o financeiro responde como dividir (por valor, por unidades ou não dividir)
+  const freteVal=n.semNota?_round2((Number(T.vFrete)||0)+(Number(T.vFreteLinhas)||0)):0, freteModo=freteVal>0?((n.freteRateio&&n.freteRateio.modo)||null):null;
+  const k=base>0?(n.semNota?Math.max(0,extras-freteVal):extras)/base:0, totalUn=itP.reduce((a,x)=>a+(x.status==="ok"?(Number(x.qtdUn)||0):0),0);
+  const kFrete=freteModo==="valor"&&base>0?freteVal/base:0, fretePorUn=freteModo==="qtd"&&totalUn>0?freteVal/totalUn:0;
   let forn=null; try{ forn=await _fornecedorCacheado(n.emitente?.cnpj); }catch(e){}
   let ENT={}; try{ ENT=_entradasPorProduto(); }catch(e){} const CAT=_catPorId();
   const arred=v=>{ if(!(v>0)) return 0; const r=Math.ceil(v*10-0.0001)/10-0.01; return +(r>=v-0.0001?r:r+0.10).toFixed(2); }; // termina em ,x9
-  const AJC=_ajustesDaNota(n.id);
-  const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, crCalc=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0, aj=AJC[x.nItem], editado=!!(aj&&aj.custoUn>0&&crCalc>0), cr=editado?+Number(aj.custoUn).toFixed(4):crCalc;
+  const AJC=_ajustesDaNota(n.id), chaveForn=n.semNota?_chaveFornSemNota(n):String(n.emitente?.cnpj||"");
+  const enriqSug=(lista,x)=>(lista||[]).map(sg=>{ const pid=String(sg.produtoId), pp=P[pid], ue=ENT[pid]; let fatorSug=null;
+    try{ const vs=_FISCAL.vinculosDoProduto(sg.produtoId).filter(v=>String(v.cnpj)===chaveForn&&(!v.uCom||String(v.uCom).toUpperCase()===String(x.uCom||"").toUpperCase())); if(vs.length) fatorSug=Number(vs[0].fator)||null; }catch(e){}
+    return {...sg,custoRef:ue&&ue.custoUlt>0?ue.custoUlt:(pp&&pp.pc>0?pp.pc:null),custoRefFonte:ue&&ue.custoUlt>0?"última entrada":"cadastro",custoRefEm:ue&&ue.custoUlt>0?ue.ultima:null,fatorSug,precoVenda:pp?pp.p:null}; });
+  const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, crCalc=x.custoUn>0?+(x.custoUn*(1+k+kFrete)+fretePorUn).toFixed(4):0, aj=AJC[x.nItem], editado=!!(aj&&aj.custoUn>0&&crCalc>0), cr=editado?+Number(aj.custoUn).toFixed(4):crCalc;
     const ue=x.produtoId?ENT[String(x.produtoId)]:null, cRef=ue&&ue.custoUlt>0?ue.custoUlt:(p&&p.pc>0?p.pc:null), fonteRef=ue&&ue.custoUlt>0?"última entrada":"cadastro";
     const alta=cRef&&cr>0?+((cr-cRef)/cRef*100).toFixed(1):null, cat=x.produtoId?CAT[String(x.produtoId)]:null;
     const sobe=alta!=null&&alta>=0.5, fator=sobe?cr/cRef:1;
@@ -11444,10 +11451,10 @@ async function _resumoEntradaNota(n){
       margemAntes:+((p.p-cRef)/p.p*100).toFixed(1),margemSemReajuste:+((p.p-cr)/p.p*100).toFixed(1),atacadoAtual:cat&&cat.a>0?cat.a:null,atacadoSugerido:cat&&cat.a>0?arred(cat.a*fator):null}:null;
     return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,vUnCom:(Number(x.vUnCom)||(Number(x.qCom)>0?+((Number(x.vProd)||0)/Number(x.qCom)).toFixed(4):0)),cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
       produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,custoCalculadoUn:crCalc,custoEditado:editado,custoEditadoPor:editado?(aj.por||""):"",custoEditadoEm:editado?aj.em:0,
-      custoAnterior:cRef!=null?cRef:(p&&p.pc>0?p.pc:null),precoVenda:p?p.p:null,reajuste,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
+      custoAnterior:cRef!=null?cRef:(p&&p.pc>0?p.pc:null),altaPct:alta,custoSubiu:alta!=null&&alta>=0.5,custoCaiu:alta!=null&&alta<=-0.5,custoAnteriorFonte:fonteRef,precoVenda:p?p.p:null,reajuste,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
       ...(()=>{ if(x.status==="ok") return {sugestoes:[],sugestaoFator:0};
         const sg=_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]), lido=x.sugestaoFator||x.fatorLido||_fatorDoNome(x.xProd);
-        if(lido) return {sugestoes:sg,sugestaoFator:lido,fatorFonte:x.fatorLido?"lido na foto":"pela descrição"};
+        if(lido) return {sugestoes:enriqSug(sg,x),sugestaoFator:lido,fatorFonte:x.fatorLido?"lido na foto":"pela descrição"};
         // sem a quantidade por embalagem escrita: se o preço unitário é bem maior que o custo/preço de uma unidade do produto sugerido, é caixa/fardo -> estima
         const pid=sg[0]&&String(sg[0].produtoId), top=pid&&P[pid], vu=Number(x.vUnCom)||(x.qCom?(Number(x.vProd)||0)/x.qCom:0), cat=pid?_catPorId()[pid]:null;
         const ref=top?(top.pc>0?top.pc:(top.p>0?top.p*0.75:0)):0, packs=[6,8,10,12,15,18,20,24,30,36,48], perto=e=>packs.reduce((a,b)=>Math.abs(b-e)<Math.abs(a-e)?b:a);
@@ -11458,16 +11465,17 @@ async function _resumoEntradaNota(n){
           if(cat&&cat.a>0&&vu>cat.a*2.5){ const e=vu/cat.a; if(Math.abs(perto(e)-e)/perto(e)<=0.2) pistas.push({f:perto(e),fonte:"pelo preço de atacado"}); }
           if(ref>0&&vu>ref*2.5){ const e=vu/ref; pistas.push({f:perto(e),fonte:"pelo custo"}); }
           if(pistas.length){ const iguais=pistas.filter(p=>p.f===pistas[0].f).length;
-            return {sugestoes:sg,sugestaoFator:pistas[0].f,fatorEstimado:true,fatorFonte:"estimada "+pistas[0].fonte+(iguais>1?" e confirmada por outra pista":"")}; } }
-        return {sugestoes:sg,sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
-  const pend=itens.filter(x=>x.status!=="ok").length;
+            return {sugestoes:enriqSug(sg,x),sugestaoFator:pistas[0].f,fatorEstimado:true,fatorFonte:"estimada "+pistas[0].fonte+(iguais>1?" e confirmada por outra pista":"")}; } }
+        return {sugestoes:enriqSug(sg,x),sugestaoFator:/^(UN|UND|UNID)$/.test(String(x.uCom||""))&&!(ref>0&&vu>ref*1.6)?1:0,fatorFonte:"unidade"}; })()}; });
+  const pend=itens.filter(x=>x.status!=="ok"&&x.status!=="frete").length;
   const _ovx=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)], _temOv=Array.isArray(_ovx)&&_ovx.length>0;
   const dups=((n.duplicatas||[]).length||_temOv)?_duplicatasEditadas(n,vNF):[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
   if(n.semNota&&!forn&&n.fornecedorBlingId){ const cb=lerClientesBase().porId[String(n.fornecedorBlingId)]; forn={id:n.fornecedorBlingId,nome:cb?cb.nome:(n.emitente?.nome||"")}; }
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,sugestoesFornecedor:(n.semNota&&!(n.entrada&&n.entrada.em))?_sugerirFornecedores(n):[],
-    totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
+    totais:{...T,vNF,extras:_round2(extras),rateioPct:+((k+kFrete)*100).toFixed(2)},
+    frete:n.semNota?{valor:freteVal,campo:_round2(Number(T.vFrete)||0),linhas:it.filter(x=>x.status==="frete").map(x=>({nItem:x.nItem,xProd:x.xProd,valor:_round2(Number(x.vProd)||0)})),modo:freteModo,decidido:!!freteModo,por:(n.freteRateio&&n.freteRateio.por)||"",baseItens:_round2(base),unidades:totalUn}:null,duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
     itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,notasJuntas:_grupoDaNota(n.id).filter(x=>x!==String(n.id)).map(_resumoNotaJunta).filter(Boolean),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
 // A API v3 do Bling NÃO tem busca por chave, nem manifestação, nem importação da SEFAZ (as rotas usadas antes não existem e o erro era engolido).
@@ -11636,6 +11644,7 @@ function _notaSemValores(n){
   return {id:n.id,numero:n.numero,serie:n.serie,emissao:n.emissao,semNota:!!n.semNota,
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
+    temFrete:!!(n.frete&&n.frete.valor>0),freteDecidido:!!(n.frete&&n.frete.decidido),
     sugestoesFornecedor:(n.sugestoesFornecedor||[]).map(f=>({chave:f.chave,nome:f.nome,cnpj:f.cnpj,blingId:f.blingId,motivo:f.motivo,atual:!!f.atual,reconhecido:!!f.reconhecido})),notasJuntas:(n.notasJuntas||[]).map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita})),fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
     boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
     pagamentoLido:!!n.pagamentoLido,vencimentos:(n.pagamentoLido||n.vencimentosEditados)?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
@@ -11661,6 +11670,7 @@ function _semValoresEntrada(o){
   if(Array.isArray(o.boletos)) r.boletos=o.boletos.map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido}));
   if(o.semEstoque) r.semEstoque=true; if(Array.isArray(o.anexos)) r.anexos=o.anexos.map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em}));
   if(Array.isArray(o.falhas)) r.falhas=o.falhas.map(f=>({nItem:f.nItem,xProd:f.xProd,produtoNome:f.produtoNome||"",erro:f.erro||"",semEfeito:!!f.semEfeito}));
+  if(o.precisaFrete) r.precisaFrete=true;
   if(o.jaLancados!==undefined) r.jaLancados=o.jaLancados; if(o.preservados!==undefined) r.preservados=o.preservados;
   if(o.parcial!==undefined) r.parcial=!!o.parcial; if(Array.isArray(o.conferencia)) r.conferencia=o.conferencia.map(c=>({nome:c.nome,antes:c.antes,depois:c.depois}));
   return r;
@@ -11890,7 +11900,8 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     }
     const R=await _resumoEntradaNota(n), ign=new Set((b.ignorar||[]).map(Number)), quem=req.sessao?.nome||"";
     addLog("nota-"+(R.chave||n.id),"entrada_nota_tentativa",req.sessao?.funcionarioId||"",quem,{numero:R.numero,itens:R.itens.length,ignorados:ign.size,pendentes:R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))).length,tela:req.produtosMode?"produtos":"financeiro"});
-    const falta=R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
+    const falta=R.itens.filter(x=>x.status!=="ok"&&x.status!=="frete"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
+    if(n.semNota&&R.frete&&R.frete.valor>0&&!R.frete.decidido) return res.status(409).json({precisaFrete:true,erro:req.produtosMode?"Esta compra tem FRETE. Antes de dar entrada, o financeiro precisa decidir como dividi-lo entre os itens (na Entrada de Nota).":`Esta compra tem frete de ${R.frete.valor.toFixed(2).replace(".",",")} reais. Responda se ele será dividido entre os itens antes de dar entrada.`});
     const dep=await _depositoPadraoId(); if(!dep) return res.status(502).json({erro:"não encontrei o depósito padrão no Bling",falhas:[]});
     const lanc=[], P=lerProdutosBling(), LI=lerJSON(ENTRADA_ITENS_FILE,{}), jaL=LI[String(n.id)]||{}, elegiveis=R.itens.filter(x=>x.status==="ok"&&!ign.has(Number(x.nItem)));
     // saldo antes: depois do lançamento o sistema lê de novo no Bling e CONFERE que subiu
@@ -12015,12 +12026,17 @@ function _chaveFornSemNota(n){ const d=String(n.emitente?.cnpj||"").replace(/\D/
 function _acharFornecedorPorNome(nome){ const alvo=_nrmF(nome); if(!alvo) return null; const b=lerClientesBase().porId; for(const [id,c] of Object.entries(b)) if(_nrmF(c.nome)===alvo) return {id:Number(id)||id,nome:c.nome}; return null; }
 function _casarSemNota(n,salvar){
   const fk=_chaveFornSemNota(n), V={}, VX={}; (_FISCAL?_FISCAL.todosVinculos():[]).forEach(v=>{ V[v.chave]=v; if(String(v.cnpj)===fk&&v.xProd) VX[_nrmF(v.xProd)]=v; }); // VX: vínculos do MESMO fornecedor pelo nome do produto na nota (vale também para os criados a partir de notas XML)
-  (n.itens||[]).forEach(it=>{ it.cProd=it.cProd||_nrmF(it.xProd).slice(0,50); const v=V[`${fk}|${it.cProd}`]||VX[_nrmF(it.xProd)];
+  (n.itens||[]).forEach(it=>{ it.cProd=it.cProd||_nrmF(it.xProd).slice(0,50);
+    // linha de FRETE (ou entrega/transporte) na compra: não é produto; o valor entra no custo conforme o financeiro decidir dividir
+    const ehFrete=it.ehFrete!==undefined?!!it.ehFrete:/^\s*(FRETE|TAXA DE ENTREGA|SERVICO DE ENTREGA|ENTREGA|TRANSPORTE|CARRETO)\b/.test(_nrmF(it.xProd));
+    if(ehFrete){ it.status="frete"; it.produtoId=null; it.produtoNome=""; it.qtdUn=0; it.custoUn=0; it.fonte=""; it.motivo="frete da compra"; it.sugestoes=[]; return; }
+    const v=V[`${fk}|${it.cProd}`]||VX[_nrmF(it.xProd)];
     if(v&&v.produtoId){ const P=lerProdutosBling().porId[String(v.produtoId)]; it.status="ok"; it.produtoId=v.produtoId; it.produtoNome=P?P.n:(v.produtoNome||""); it.fator=Number(v.fator)||1; it.fonte="ligação aprendida";
       it.qtdUn=+(Number(it.qCom||0)*it.fator).toFixed(3); it.custoUn=it.qtdUn>0?+((Number(it.vProd||0)-Number(it.vDesc||0))/it.qtdUn).toFixed(4):0; it.sugestoes=[]; it.motivo=""; }
     else { it.status="pendente"; it.produtoId=null; it.produtoNome=""; it.qtdUn=0; it.custoUn=0; it.fonte=""; it.motivo="produto ainda não ligado";
       it.sugestoes=[]; it.sugestaoFator=_fatorDoNome(it.xProd)||0; } });
-  const vp=_round2((n.itens||[]).reduce((a,x)=>a+Number(x.vProd||0),0)); n.totais={...(n.totais||{}),vProd:vp,vNF:_round2(vp-Number(n.totais?.vDesc||0)+Number(n.totais?.vFrete||0)+Number(n.totais?.vOutro||0))};
+  const vp=_round2((n.itens||[]).filter(x=>x.status!=="frete").reduce((a,x)=>a+Number(x.vProd||0),0)), vfl=_round2((n.itens||[]).filter(x=>x.status==="frete").reduce((a,x)=>a+Number(x.vProd||0),0));
+  n.totais={...(n.totais||{}),vProd:vp,vFreteLinhas:vfl,vNF:_round2(vp-Number(n.totais?.vDesc||0)+Number(n.totais?.vFrete||0)+vfl+Number(n.totais?.vOutro||0))};
   if(salvar) _salvarSemNota(); return n;
 }
 async function _garantirFornecedorSemNota(n){ // cadastra o fornecedor no Bling na hora de dar entrada (se ainda não existe)
@@ -12094,6 +12110,10 @@ app.post("/api/entrada-nota/sem-nota/editar",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_semNota[String(b.id||"")]; if(!n) return res.status(404).json({erro:"compra não encontrada"}); if(n.entrada) return res.status(409).json({erro:"essa compra já deu entrada"});
     if(b.fornecedor){ if(b.fornecedor.nome!=null) n.emitente.nome=String(b.fornecedor.nome).trim().slice(0,120); if(b.fornecedor.cnpj!=null) n.emitente.cnpj=String(b.fornecedor.cnpj).replace(/\D/g,"").slice(0,14);
       delete n.fornecedorBlingId; if(b.fornecedor.blingId) n.fornecedorBlingId=Number(b.fornecedor.blingId)||String(b.fornecedor.blingId); _idxFornCache.em=0; }
+    if(!req.produtosMode){ // frete envolve valores: só o financeiro decide
+      if(b.freteValor!==undefined){ const v=_numBR(b.freteValor); n.totais=n.totais||{}; n.totais.vFrete=isFinite(v)&&v>0?_round2(v):0; if(!(n.totais.vFrete>0)&&!(n.itens||[]).some(x=>x.status==="frete")) delete n.freteRateio; }
+      if(b.freteRateio!==undefined){ const m=String(b.freteRateio); if(["valor","qtd","nao"].includes(m)){ n.freteRateio={modo:m,por:req.sessao?.nome||"",em:Date.now()}; addLog("nota-"+n.id,"entrada_frete_rateio",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{modo:m,compra:n.id}); } else delete n.freteRateio; }
+      if(b.itemFrete&&b.itemFrete.nItem!=null){ const itf=(n.itens||[]).find(x=>Number(x.nItem)===Number(b.itemFrete.nItem)); if(itf){ itf.ehFrete=!!b.itemFrete.ehFrete; delete n.freteRateio; } } }
     if(b.nItem!=null){ const it=n.itens.find(x=>Number(x.nItem)===Number(b.nItem)); if(!it) return res.status(404).json({erro:"item não encontrado"});
       const nn=x=>Number(String(x).replace(",","."));
       if(b.qCom!=null&&nn(b.qCom)>0) it.qCom=nn(b.qCom); if(b.vProd!=null&&nn(b.vProd)>=0) it.vProd=_round2(nn(b.vProd)); if(b.xProd!=null&&String(b.xProd).trim()){ it.xProd=String(b.xProd).trim().slice(0,120); it.cProd=""; }
