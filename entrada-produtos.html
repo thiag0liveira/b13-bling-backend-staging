@@ -160,7 +160,7 @@ async function carregar(corpo, arq) {
   if (arq) anexar(arq); // guarda a imagem lida na nota
 }
 // compra sem nota: corrigir descrição, quantidade ou tirar item (sem valores)
-async function editarSN(corpo) { const { ok, j } = await api(P + "/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) });
+async function editarSN(corpo) { let r; try { r = await api(P + "/sem-nota/editar", { method: "POST", body: JSON.stringify({ id: N.id, ...corpo }) }); } catch (e) { alert("Sem conexão com o servidor. Tente de novo."); return; } const { ok, j } = r;
   if (!ok) { alert(j.erro || "Não consegui corrigir."); return; } N = j.nota; renderNota(); }
 // ===== a nota (só produtos e quantidades) =====
 function renderNota() {
@@ -193,6 +193,7 @@ function renderNota() {
     <div class="lin"><span>Emissão</span><b>${n.emissao ? new Date(n.emissao).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—"}</b></div>
     <div style="margin-top:8px">${blocoPrazo(n)}</div>
     ${blocoAnexos(n)}</div>
+  ${blocoFornecedor(n)}
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
@@ -355,6 +356,26 @@ async function reabrirAqui() {
   try { const { ok, j } = await chamarComTempo(P + "/reabrir", { notaId: N.id }, 60000); if (!ok) { el.innerHTML = `<div class="err" style="white-space:normal">${esc(j.erro || "Não consegui reabrir.")}</div>`; return; }
     N = j.nota; IGN = new Set(); renderNota(); document.getElementById("confMsg").innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Nota reaberta.${j.jaLancados ? " " + j.jaLancados + " item(ns) que já tinham entrado ficam marcados e não repetem." : ""} Confira os itens e toque em Dar entrada.</div>`; }
   catch (e) { falhaDeRede(e, el); } }
+// ===== FORNECEDOR: pesquisar e já sugerir (compra sem XML ou nota lida por foto) =====
+let FRES = [], _tf = null;
+const fmtDoc = d => { d = String(d || "").replace(/\D/g, ""); return d.length === 14 ? d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5") : d.length === 11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : d; };
+const dtF = ms => ms ? new Date(Number(ms)).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
+function blocoFornecedor(n) {
+  if (!n.semNota || n.entrada) return "";
+  const sug = (n.sugestoesFornecedor || []).filter(f => !f.atual), jaReconhecido = (n.sugestoesFornecedor || []).some(f => f.atual && f.reconhecido);
+  return `<div class="card" style="border-color:#1f6f93"><h3 style="margin:0 0 2px">🏷️ Fornecedor</h3>
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline"><b>${esc((n.emitente || {}).nome || "— sem nome —")}</b><span class="ic">${esc(fmtDoc((n.emitente || {}).cnpj)) || "sem CNPJ"}</span></div>
+    <div class="ic" style="white-space:normal">${n.fornecedorBling ? "✅ cadastrado no Bling: " + esc(n.fornecedorBling.nome) : "ainda não está no Bling (será cadastrado ao dar entrada, se você não escolher um da lista)"}${jaReconhecido ? " · ✅ reconhecido pelas notas anteriores" : ""}</div>
+    ${sug.length ? `<div style="margin-top:8px"><div class="ic" style="color:#7fc8ea">💡 Sugestão de fornecedor</div>${sug.map((f, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #1f6f93;background:#0d2230;border-radius:10px;padding:7px 10px;margin:4px 0"><span style="min-width:0"><b style="color:#fff">${esc(f.nome)}</b> <span class="ic">${esc(fmtDoc(f.cnpj))}</span><br><span class="ic" style="white-space:normal">${esc(f.motivo)}${f.notas ? " · " + f.notas + " nota(s) anteriores" : ""}</span></span><button class="btn btn-mag" style="padding:5px 12px;white-space:nowrap" onclick="usarFornecedorSug(${i})">Usar</button></div>`).join("")}</div>` : ""}
+    <div style="margin-top:8px"><div class="ic">🔎 Pesquisar fornecedor (nome ou CNPJ)</div><input id="fqBusca" placeholder="ex.: Alfa, 11.222.333…" oninput="buscarForn()" onfocus="buscarForn()" autocomplete="off" style="width:100%"><div id="fqRes" style="margin-top:4px"></div></div>
+    <details style="margin-top:6px"><summary class="ic" style="cursor:pointer">Fornecedor novo ou corrigir nome/CNPJ à mão</summary><div class="grid2" style="margin-top:6px"><label><div class="ic">Nome</div><input id="snNome" value="${esc((n.emitente || {}).nome || "")}" style="width:100%" onchange="editarSN({fornecedor:{nome:this.value}})"></label><label><div class="ic">CNPJ / CPF (se tiver)</div><input id="snDoc" value="${esc((n.emitente || {}).cnpj || "")}" inputmode="numeric" style="width:100%" onchange="editarSN({fornecedor:{cnpj:this.value}})"></label></div></details></div>`;
+}
+function buscarForn() { clearTimeout(_tf); _tf = setTimeout(async () => { const q = (document.getElementById("fqBusca") || {}).value || "", el = document.getElementById("fqRes"); if (!el) return;
+  const { ok, j } = await api(JB() + "/fornecedores?q=" + encodeURIComponent(q.trim())); if (!ok) { el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui pesquisar.")}</div>`; return; }
+  FRES = j.fornecedores || [];
+  el.innerHTML = FRES.length ? FRES.map((f, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #221e4f"><span style="min-width:0"><b>${esc(f.nome)}</b> <span class="ic">${esc(fmtDoc(f.cnpj))}</span><br><span class="ic" style="white-space:normal">${f.notas ? f.notas + " nota(s)" + (f.ultimaEm ? " · última " + dtF(f.ultimaEm) : "") + " · " : ""}${esc((f.fontes || []).join(", "))}</span></span><button class="btn btn-ghost" style="padding:4px 10px;white-space:nowrap" onclick="usarFornecedorBusca(${i})">Usar</button></div>`).join("") : '<div class="ic" style="padding:6px 0">Nenhum fornecedor encontrado. Use "Fornecedor novo" abaixo.</div>'; }, 280); }
+const usarFornecedorBusca = i => { const f = FRES[i]; if (f) editarSN({ fornecedor: { nome: f.nome, cnpj: f.cnpj || "", blingId: f.blingId || "" } }); };
+const usarFornecedorSug = i => { const f = (N.sugestoesFornecedor || []).filter(x => !x.atual)[i]; if (f) editarSN({ fornecedor: { nome: f.nome, cnpj: f.cnpj || "", blingId: f.blingId || "" } }); };
 async function confirmar() {
   if (_confirmando) return; _confirmando = true;
   const el = document.getElementById("confMsg"), btn = document.querySelector('button[onclick="confirmar()"]'); if (btn) { btn.disabled = true; btn.textContent = "⏳ Dando entrada…"; }

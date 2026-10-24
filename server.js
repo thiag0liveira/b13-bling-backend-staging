@@ -11464,8 +11464,9 @@ async function _resumoEntradaNota(n){
   const _ovx=lerJSON(ENTRADA_VENC_FILE,{})[String(n.id)], _temOv=Array.isArray(_ovx)&&_ovx.length>0;
   const dups=((n.duplicatas||[]).length||_temOv)?_duplicatasEditadas(n,vNF):[{numero:"1",vencimento:_diaBRk(Date.now()),valor:vNF}];
   const tp=(n.pagamentos||[])[0]?.tPag||"";
+  if(n.semNota&&!forn&&n.fornecedorBlingId){ const cb=lerClientesBase().porId[String(n.fornecedorBlingId)]; forn={id:n.fornecedorBlingId,nome:cb?cb.nome:(n.emitente?.nome||"")}; }
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
-  return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,
+  return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,sugestoesFornecedor:(n.semNota&&!(n.entrada&&n.entrada.em))?_sugerirFornecedores(n):[],
     totais:{...T,vNF,extras:_round2(extras),rateioPct:+(k*100).toFixed(2)},duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
     itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,notasJuntas:_grupoDaNota(n.id).filter(x=>x!==String(n.id)).map(_resumoNotaJunta).filter(Boolean),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
@@ -11628,14 +11629,14 @@ function _duplicatasEditadas(n,vNF){ const base=n.duplicatas||[], ov=lerJSON(ENT
   const tot=Number(vNF)||Number(n.totais?.vNF)||base.reduce((a,d)=>a+(Number(d.valor)||0),0)||0, cada=_round2(tot/ov.length); // outra quantidade: divide o total
   return ov.map((v,i)=>({numero:String(i+1),vencimento:v,valor:i===ov.length-1?_round2(tot-cada*(ov.length-1)):cada})); }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
-const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1,"POST /reabrir":1,"GET /buscar-notas":1,"POST /juntar":1,"POST /desjuntar":1};
+const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1,"POST /reabrir":1,"GET /buscar-notas":1,"GET /fornecedores":1,"POST /juntar":1,"POST /desjuntar":1};
 function _motivoSemValor(m){ m=String(m||""); return /R\$|\d+[.,]\d{2}/.test(m)?"confira se o produto ligado e a quantidade estão certos":m; }
 function _notaSemValores(n){
   if(!n||typeof n!=="object") return n;
   return {id:n.id,numero:n.numero,serie:n.serie,emissao:n.emissao,semNota:!!n.semNota,
     emitente:{nome:n.emitente?.nome||"",cnpj:n.emitente?.cnpj||""},fornecedorBling:n.fornecedorBling?{nome:n.fornecedorBling.nome}:null,pendentes:n.pendentes,
     entrada:n.entrada?{em:n.entrada.em,por:n.entrada.por||"",jaNoBling:!!(n.entrada.jaNoBling||n.entrada.soBoletos),semEstoque:!!n.entrada.semEstoque}:null,
-    notasJuntas:(n.notasJuntas||[]).map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita})),fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
+    sugestoesFornecedor:(n.sugestoesFornecedor||[]).map(f=>({chave:f.chave,nome:f.nome,cnpj:f.cnpj,blingId:f.blingId,motivo:f.motivo,atual:!!f.atual,reconhecido:!!f.reconhecido})),notasJuntas:(n.notasJuntas||[]).map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita})),fotoDanfe:!!n.fotoDanfe,anexos:(n.anexos||[]).map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em})),financeiroFeito:!!n.financeiro,
     boletos:(n.boletosLidos||[]).map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido})),
     pagamentoLido:!!n.pagamentoLido,vencimentos:(n.pagamentoLido||n.vencimentosEditados)?(n.duplicatas||[]).map((d,i)=>({parcela:i+1,de:(n.duplicatas||[]).length,vencimento:d.vencimento})):[],
     itens:(n.itens||[]).map(x=>({nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,status:x.status,motivo:_motivoSemValor(x.motivo),fonte:x.fonte||"",
@@ -11652,6 +11653,8 @@ function _semValoresEntrada(o){
   if(o.nota) r.nota=_notaSemValores(o.nota);
   if(Array.isArray(o.itens)) r.itens=o.itens.map(g=>({produtoId:g.produtoId,nome:g.nome,confianca:g.confianca||""}));
   if(o.lancados!==undefined) r.lancados=o.lancados;
+  if(Array.isArray(o.sugestoesFornecedor)) r.sugestoesFornecedor=o.sugestoesFornecedor.map(f=>({chave:f.chave,nome:f.nome,cnpj:f.cnpj,blingId:f.blingId,motivo:f.motivo,atual:!!f.atual,reconhecido:!!f.reconhecido,notas:f.notas}));
+  if(Array.isArray(o.fornecedores)) r.fornecedores=o.fornecedores.map(f=>({chave:f.chave,nome:f.nome,cnpj:f.cnpj,notas:f.notas,ultimaEm:f.ultimaEm,blingId:f.blingId,fontes:f.fontes}));
   if(Array.isArray(o.notasJuntas)) r.notasJuntas=o.notasJuntas.map(x=>({id:x.id,numero:x.numero,fornecedor:x.fornecedor,entradaFeita:x.entradaFeita}));
   if(Array.isArray(o.notas)) r.notas=o.notas.map(x=>({id:x.id,numero:x.numero,serie:x.serie,fornecedor:x.fornecedor,emissao:x.emissao,entradaFeita:x.entradaFeita}));
   if(o.leitura) r.leitura=o.leitura.erro?{erro:o.leitura.erro}:{compartilhado:!!o.leitura.compartilhado,comNota:o.leitura.comNota?{numero:o.leitura.comNota.numero,fornecedor:o.leitura.comNota.fornecedor}:null,ehBoleto:!!o.leitura.ehBoleto,duplicado:!!o.leitura.duplicado,jaNaNota:!!o.leitura.jaNaNota,vencimento:o.leitura.boleto?.vencimento||"",confira:o.leitura.boleto?!o.leitura.boleto.conferido:false};
@@ -11802,6 +11805,45 @@ app.post("/api/entrada-nota/ligar",acessoEntradaNota,async(req,res)=>{
     res.json({ok:true,nota:await _resumoEntradaNota(_notaEntrada(n.id))});
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
+// ===================== FORNECEDORES: pesquisa e sugestão =====================
+// Junta tudo que o sistema já sabe sobre fornecedores (notas anteriores, vínculos de produtos, entradas, contas a pagar) e os contatos do Bling.
+const _tokF=t=>_nrmF(t).split(" ").filter(x=>x.length>=3&&!["LTDA","EPP","EIRELI"].includes(x));
+let _idxFornCache={em:0,v:null};
+function _indiceFornecedores(){
+  if(_idxFornCache.v&&Date.now()-_idxFornCache.em<60000) return _idxFornCache.v;
+  const M=new Map(), itemSup=new Map(), soDig=x=>String(x||"").replace(/\D/g,"");
+  const chaveDe=(nome,doc)=>{ const d=soDig(doc); if(/^\d{11,14}$/.test(d)) return d; if(String(doc||"").startsWith("NOME:")) return String(doc); const nn=_nrmF(nome).slice(0,60); return nn?"NOME:"+nn:""; };
+  const add=(nome,doc,fonte,extra)=>{ nome=String(nome||"").trim(); const key=chaveDe(nome,doc); if(!key) return null; let f=M.get(key);
+    if(!f){ f={chave:key,nome:"",cnpj:/^\d{11,14}$/.test(key)?key:"",notas:0,ultimaEm:0,vinculos:0,blingId:null,fontes:new Set()}; M.set(key,f); }
+    if(nome&&(!f.nome||(extra&&extra.preferir))) f.nome=nome; f.fontes.add(fonte); if(extra){ if(extra.notas) f.notas+=extra.notas; if(extra.ultimaEm&&extra.ultimaEm>f.ultimaEm) f.ultimaEm=extra.ultimaEm; if(extra.vinculos) f.vinculos+=extra.vinculos; if(extra.blingId) f.blingId=extra.blingId; } return f; };
+  try{ (_FISCAL&&_FISCAL.listarNotas?_FISCAL.listarNotas():[]).forEach(x=>{ const f=add(x.emitente?.nome,x.emitente?.cnpj,"notas anteriores",{notas:1,ultimaEm:Number(x.emissao)||0});
+      if(f){ const n=_notaEntrada(x.id); (n&&n.itens||[]).forEach(it=>{ const k=_nrmF(it.xProd); if(!k) return; (itemSup.get(k)||itemSup.set(k,new Set()).get(k)).add(f.chave); }); } }); }catch(e){}
+  // só compras já lançadas ensinam quais produtos são de quem (a que está aberta não vota em si mesma)
+  try{ Object.values(_semNota||{}).forEach(n=>{ const f=add(n.emitente?.nome,n.emitente?.cnpj,"compras sem nota",{notas:1,ultimaEm:Number(n.criadoEm||n.emissao)||0}); if(f&&n.entrada&&n.entrada.em) (n.itens||[]).forEach(it=>{ const k=_nrmF(it.xProd); if(!k) return; (itemSup.get(k)||itemSup.set(k,new Set()).get(k)).add(f.chave); }); }); }catch(e){}
+  try{ (_FISCAL&&_FISCAL.todosVinculos?_FISCAL.todosVinculos():[]).forEach(v=>{ const f=add(v.fornecedorNome,v.cnpj,"produtos já ligados",{vinculos:1}); if(f&&v.xProd){ const k=_nrmF(v.xProd); (itemSup.get(k)||itemSup.set(k,new Set()).get(k)).add(f.chave); } }); }catch(e){}
+  try{ (lerEntradasEstoque().entradas||[]).forEach(e=>add(e.fornecedor,e.cnpj,"entradas de estoque",{notas:0,ultimaEm:Number(e.em)||0})); }catch(e){}
+  try{ lerContasPagar().titulos.forEach(t=>{ if(t.fornecedor&&t.fornecedor.nome&&t.origem!=="recorrente"&&t.origem!=="despesa") add(t.fornecedor.nome,t.fornecedor.cnpj,"contas a pagar",{ultimaEm:Number(t.criadoEm)||0}); }); }catch(e){}
+  // contatos do Bling: completam o blingId de quem já é conhecido; os demais só aparecem na pesquisa
+  const contatos=[]; try{ Object.values(lerClientesBase().porId||{}).forEach(c=>{ if(!c||!c.nome) return; const k=chaveDe(c.nome,c.doc), f=k&&M.get(k); if(f){ f.blingId=f.blingId||c.id; f.fontes.add("cadastro do Bling"); if(!f.cnpj&&/^\d{11,14}$/.test(soDig(c.doc))) f.cnpj=soDig(c.doc); } else contatos.push({chave:k||("BL:"+c.id),nome:c.nome,cnpj:/^\d{11,14}$/.test(soDig(c.doc))?soDig(c.doc):"",notas:0,ultimaEm:0,vinculos:0,blingId:c.id,fontes:new Set(["cadastro do Bling"]),nn:_nrmF(c.nome),toks:_tokF(c.nome)}); }); }catch(e){}
+  const lista=[...M.values()].map(f=>({...f,nn:_nrmF(f.nome),toks:_tokF(f.nome)})), porChave=new Map(lista.map(f=>[f.chave,f]));
+  _idxFornCache={em:Date.now(),v:{lista,porChave,itemSup,contatos}}; return _idxFornCache.v; }
+const _fornPublico=f=>({chave:f.chave,nome:f.nome,cnpj:f.cnpj||"",notas:f.notas||0,ultimaEm:f.ultimaEm||0,vinculos:f.vinculos||0,blingId:f.blingId||null,fontes:[...(f.fontes||[])]});
+function _buscarFornecedores(q,limite){
+  const I=_indiceFornecedores(), qn=_nrmF(q), qd=String(q||"").replace(/\D/g,""), toks=qn.split(" ").filter(Boolean), ord=(a,b)=>(b._ini-a._ini)||(b.notas-a.notas)||(b.ultimaEm-a.ultimaEm)||a.nome.localeCompare(b.nome);
+  if(!toks.length&&qd.length<3) return [...I.lista].sort(ord).slice(0,limite||8).map(_fornPublico); // sem digitar: os mais usados
+  const casa=f=>(toks.length&&toks.every(t=>f.nn.includes(t)))||(qd.length>=4&&f.cnpj.includes(qd));
+  const A=I.lista.filter(casa).map(f=>({...f,_ini:f.nn.startsWith(qn)?1:0})).sort(ord), B=I.contatos.filter(casa).map(f=>({...f,_ini:f.nn.startsWith(qn)?1:0})).sort(ord).slice(0,8);
+  return [...A,...B].slice(0,limite||12).map(_fornPublico); }
+function _sugerirFornecedores(n){
+  try{ const I=_indiceFornecedores(), atual=_chaveFornSemNota(n), cand=new Map(), nomeN=_tokF(n.emitente?.nome||""), docN=String(n.emitente?.cnpj||"").replace(/\D/g,"");
+    const bump=(f,pts,motivo)=>{ const c=cand.get(f.chave)||{...f,score:0,motivos:[]}; c.score+=pts; c.motivos.push(motivo); cand.set(f.chave,c); };
+    I.lista.forEach(f=>{ if(/^\d{11,14}$/.test(docN)&&f.cnpj===docN) bump(f,100,"mesmo CNPJ");
+      if(nomeN.length&&f.toks.length){ const inter=nomeN.filter(t=>f.toks.includes(t)).length; if(inter){ const uni=new Set([...nomeN,...f.toks]).size, menor=Math.min(nomeN.length,f.toks.length), sim=Math.max(inter/uni,inter===menor?0.75:0); if(sim>=0.5) bump(f,Math.round(sim*60),sim>=0.99?"mesmo nome":"nome parecido ("+Math.round(sim*100)+"%)"); } } });
+    const itens=n.itens||[]; if(itens.length){ const votos=new Map(); itens.forEach(it=>{ const sup=I.itemSup.get(_nrmF(it.xProd)); if(sup) sup.forEach(k=>votos.set(k,(votos.get(k)||0)+1)); });
+      votos.forEach((v,k)=>{ const f=I.porChave.get(k); if(f) bump(f,Math.round(60*v/itens.length),`${v} de ${itens.length} produto(s) iguais aos de notas anteriores dele`); }); }
+    return [...cand.values()].filter(c=>c.score>=30).sort((a,b)=>b.score-a.score).slice(0,3).map(c=>({..._fornPublico(c),motivo:c.motivos.join(" · "),atual:c.chave===atual,reconhecido:c.chave===atual&&[...c.fontes].some(x=>x!=="compras sem nota")}));
+  }catch(e){ return []; } }
+app.get("/api/entrada-nota/fornecedores",acessoEntradaNota,(req,res)=>{ try{ res.json({ok:true,fornecedores:_buscarFornecedores(String(req.query.q||""),12)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // itens de cada nota que JÁ entraram no estoque do Bling (para tentar de novo só o que faltou, sem duplicar)
 const ENTRADA_ITENS_FILE=`${DATA_DIR}/entrada_itens_lancados.json`;
 async function _saldosBling(ids){ try{ const out={}; ids=[...new Set(ids.map(Number).filter(Boolean))];
@@ -11972,8 +12014,8 @@ const _nrmF=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toU
 function _chaveFornSemNota(n){ const d=String(n.emitente?.cnpj||"").replace(/\D/g,""); return /^\d{11,14}$/.test(d)?d:"NOME:"+_nrmF(n.emitente?.nome).slice(0,60); }
 function _acharFornecedorPorNome(nome){ const alvo=_nrmF(nome); if(!alvo) return null; const b=lerClientesBase().porId; for(const [id,c] of Object.entries(b)) if(_nrmF(c.nome)===alvo) return {id:Number(id)||id,nome:c.nome}; return null; }
 function _casarSemNota(n,salvar){
-  const fk=_chaveFornSemNota(n), V={}; (_FISCAL?_FISCAL.todosVinculos():[]).forEach(v=>{ V[v.chave]=v; });
-  (n.itens||[]).forEach(it=>{ it.cProd=it.cProd||_nrmF(it.xProd).slice(0,50); const v=V[`${fk}|${it.cProd}`];
+  const fk=_chaveFornSemNota(n), V={}, VX={}; (_FISCAL?_FISCAL.todosVinculos():[]).forEach(v=>{ V[v.chave]=v; if(String(v.cnpj)===fk&&v.xProd) VX[_nrmF(v.xProd)]=v; }); // VX: vínculos do MESMO fornecedor pelo nome do produto na nota (vale também para os criados a partir de notas XML)
+  (n.itens||[]).forEach(it=>{ it.cProd=it.cProd||_nrmF(it.xProd).slice(0,50); const v=V[`${fk}|${it.cProd}`]||VX[_nrmF(it.xProd)];
     if(v&&v.produtoId){ const P=lerProdutosBling().porId[String(v.produtoId)]; it.status="ok"; it.produtoId=v.produtoId; it.produtoNome=P?P.n:(v.produtoNome||""); it.fator=Number(v.fator)||1; it.fonte="ligação aprendida";
       it.qtdUn=+(Number(it.qCom||0)*it.fator).toFixed(3); it.custoUn=it.qtdUn>0?+((Number(it.vProd||0)-Number(it.vDesc||0))/it.qtdUn).toFixed(4):0; it.sugestoes=[]; it.motivo=""; }
     else { it.status="pendente"; it.produtoId=null; it.produtoNome=""; it.qtdUn=0; it.custoUn=0; it.fonte=""; it.motivo="produto ainda não ligado";
@@ -11982,6 +12024,7 @@ function _casarSemNota(n,salvar){
   if(salvar) _salvarSemNota(); return n;
 }
 async function _garantirFornecedorSemNota(n){ // cadastra o fornecedor no Bling na hora de dar entrada (se ainda não existe)
+  if(n.fornecedorBlingId) return; // já escolhido na pesquisa
   try{ const d=String(n.emitente?.cnpj||"").replace(/\D/g,""); let f=/^\d{11,14}$/.test(d)?await encontrarContatoPorDoc(d):_acharFornecedorPorNome(n.emitente?.nome);
     if(!f&&n.emitente?.nome){ const novo=await bling(`/contatos`,{method:"POST",body:JSON.stringify({nome:String(n.emitente.nome).slice(0,120),tipo:d.length===14?"J":"F",situacao:"A",...(/^\d{11,14}$/.test(d)?{numeroDocumento:d}:{})})});
       if(novo?.data?.id){ f={id:novo.data.id,nome:n.emitente.nome}; try{ _registrarContatoNaBase(f.id,{nome:f.nome,numeroDocumento:d,tipo:d.length===14?"J":"F"}); }catch(e){} } }
@@ -12049,7 +12092,8 @@ Em "unidadesPorEmbalagem" informe quantas unidades vêm em cada caixa/fardo/paco
 // correções da leitura (quantidade, valor, descrição, fornecedor) antes de dar entrada
 app.post("/api/entrada-nota/sem-nota/editar",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_semNota[String(b.id||"")]; if(!n) return res.status(404).json({erro:"compra não encontrada"}); if(n.entrada) return res.status(409).json({erro:"essa compra já deu entrada"});
-    if(b.fornecedor){ if(b.fornecedor.nome!=null) n.emitente.nome=String(b.fornecedor.nome).trim().slice(0,120); if(b.fornecedor.cnpj!=null) n.emitente.cnpj=String(b.fornecedor.cnpj).replace(/\D/g,"").slice(0,14); }
+    if(b.fornecedor){ if(b.fornecedor.nome!=null) n.emitente.nome=String(b.fornecedor.nome).trim().slice(0,120); if(b.fornecedor.cnpj!=null) n.emitente.cnpj=String(b.fornecedor.cnpj).replace(/\D/g,"").slice(0,14);
+      delete n.fornecedorBlingId; if(b.fornecedor.blingId) n.fornecedorBlingId=Number(b.fornecedor.blingId)||String(b.fornecedor.blingId); _idxFornCache.em=0; }
     if(b.nItem!=null){ const it=n.itens.find(x=>Number(x.nItem)===Number(b.nItem)); if(!it) return res.status(404).json({erro:"item não encontrado"});
       const nn=x=>Number(String(x).replace(",","."));
       if(b.qCom!=null&&nn(b.qCom)>0) it.qCom=nn(b.qCom); if(b.vProd!=null&&nn(b.vProd)>=0) it.vProd=_round2(nn(b.vProd)); if(b.xProd!=null&&String(b.xProd).trim()){ it.xProd=String(b.xProd).trim().slice(0,120); it.cProd=""; }
