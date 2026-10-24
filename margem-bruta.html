@@ -87,7 +87,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   .pcard .g3{gap:3px 6px;margin-top:4px}.pcard .g3 span{font-size:9.5px}.pcard .g3 b{font-size:11px}
   .pcard .ced input{font-size:16px;padding:3px 4px;height:28px;box-sizing:border-box}.pcard .ced button{padding:3px 6px;font-size:12px;height:28px}
   #cards{width:100%;max-width:100%;overflow:hidden} .kpi .v{font-size:18px} .kpi .l{font-size:10px} .kpi .s{font-size:10px} }
-</style>
+.dtx{display:inline-flex;gap:4px;align-items:center}.dtx>input{width:104px}.dtx .cal{position:relative;overflow:hidden;cursor:pointer;padding:7px 10px;border:1px solid #37327a;border-radius:9px;background:#0f0d24;line-height:1}.dtx .cal input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0;border:0}</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -107,7 +107,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="top"><img src="/logo"><div class="t">🪙 Margem Bruta</div><div class="sp"></div><button class="chip" onclick="csv()">⬇️ CSV</button></div>
 <div class="wrap">
   <div class="card"><div class="filtros" id="atalhos" style="flex-wrap:wrap">
-    <label class="ic">De <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
+    <label class="ic">De <span class="dtx"><input id="fIniT" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="off" enterkeyhint="done"><span class="cal">📅<input type="date" id="fIni" aria-label="escolher no calendário"></span></span></label><label class="ic">até <span class="dtx"><input id="fFimT" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="off" enterkeyhint="done"><span class="cal">📅<input type="date" id="fFim" aria-label="escolher no calendário"></span></span></label>
     <select id="fAg"><option value="produto" selected>Por produto</option><option value="mes">Por mês</option><option value="semana">Por semana</option><option value="dia">Por dia</option><option value="pedido">Por pedido</option></select>
     <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
       <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
@@ -165,7 +165,15 @@ async function salvarCusto(k) { const x = D.produtos[k], inp = document.getEleme
 function csv() { if (!D) return; if (D.agrupar === "produto") { const L = [["produto", "qtd", "faturamento", "preco_venda_cadastro", "preco_medio_vendido", "preco_custo", "lucro_bruto", "margem_pct"].join(";")].concat(D.produtos.map(x => [x.nome, x.qtd, x.fat, x.precoVenda ?? "", x.precoMedio ?? "", x.custoUn ?? "", x.lucro ?? "", x.margem ?? ""].map(v => String(v).replace(".", ",")).join(";")));
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_por_produto_${D.ini}_${D.fim}.csv`; a.click(); return; } const L = [["grupo", "pedidos", "faturamento_com_custo", "custo", "lucro_bruto", "margem_pct", "faturamento_sem_custo"].join(";")].concat(D.linhas.map(l => [l.rotulo, l.pedidos, l.fatCusto, l.custo, l.lucro, l.margem == null ? "" : l.margem, l.fatSemCusto].map(v => String(v).replace(".", ",")).join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\n")], { type: "text/csv" })); a.download = `margem_bruta_${D.agrupar}_${D.ini}_${D.fim}.csv`; a.click(); }
-fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar(); let _rz, _larg = innerWidth; // o teclado do celular muda só a ALTURA: redesenhar ali apagava o campo e fechava o teclado
+// datas: digitar dd/mm/aaaa (teclado numérico do celular) ou escolher no calendário; fIni/fFim continuam guardando a data no formato do sistema
+const brDeIso = iso => iso ? String(iso).split("-").reverse().join("/") : "";
+function isoDeBr(t) { const m = String(t || "").replace(/\D/g, ""); if (m.length !== 8) return ""; const iso = `${m.slice(4)}-${m.slice(2, 4)}-${m.slice(0, 2)}`, d = new Date(iso + "T12:00:00Z"); return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : ""; }
+function ligarData(idT, idD) { const T = document.getElementById(idT), D = document.getElementById(idD);
+  T.addEventListener("input", () => { const d = T.value.replace(/\D/g, "").slice(0, 8); T.value = d.length > 4 ? d.slice(0, 2) + "/" + d.slice(2, 4) + "/" + d.slice(4) : d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d;
+    const iso = isoDeBr(T.value); T.style.borderColor = T.value.length === 10 && !iso ? "#ff5f8a" : ""; if (iso && D.value !== iso) { D.value = iso; D.dispatchEvent(new Event("change")); } });
+  T.addEventListener("blur", () => { if (!isoDeBr(T.value)) T.value = brDeIso(D.value); T.style.borderColor = ""; }); // data incompleta ou inválida: volta para a que está valendo
+  D.addEventListener("change", () => { T.value = brDeIso(D.value); T.style.borderColor = ""; }); T.value = brDeIso(D.value); }
+fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar(); let _rz, _larg = innerWidth; // o teclado do celular muda só a ALTURA: redesenhar ali apagava o campo e fechava o teclado
 addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(() => { const a = document.activeElement; if (a && a.tagName === "INPUT") return;
   if (Math.abs(innerWidth - _larg) < 40) return; _larg = innerWidth; if (D && D.agrupar === "produto") renderProdutos(); }, 250); });
 </script></body></html>
