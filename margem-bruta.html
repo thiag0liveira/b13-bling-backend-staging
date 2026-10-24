@@ -112,8 +112,9 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
       <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
       <select id="fSo"><option value="">Todos</option><option value="com_custo">Só com custo</option><option value="sem_custo">Só sem custo</option></select></span>
-    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora, nº" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
+    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora, nº" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button><button class="chip" onclick="atualizarAgora()">🔄 Atualizar</button></div>
     <div id="msgBusca" class="ic" style="white-space:normal;margin-top:6px"></div>
+    <div id="msgAtu" style="margin-top:4px"></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Margem bruta só dos itens cujo produto tem preço de compra (custo) no cadastro. Itens sem custo aparecem à parte, para saber se a margem está completa.</div></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
   <div class="card" id="cliCard" style="display:none"></div>
@@ -136,7 +137,7 @@ async function carregar() {
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
   const F = D.faturamento || { total: T.fatCusto + T.fatSemCusto, pedidos: T.pedidos }, tk = F.pedidos ? F.total / F.pedidos : 0;
   kpis.innerHTML = `<div class="kpi" style="grid-column:1/-1;border-color:#2aa876"><div class="v" style="font-size:26px">${brl(F.total)}</div><div class="l">Faturamento total neste filtro</div><div class="s">${F.pedidos} pedido(s)${F.pedidos ? " · ticket médio " + brl(tk) : ""} · valor dos itens vendidos, sem o frete</div></div>` + k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
-  atualizarMsgBusca(); renderClientes();
+  atualizarMsgBusca(); blocoAtualizacao(); renderClientes();
   if (D.agrupar === "produto") { renderProdutos(); return; }
   cards.innerHTML = ""; tab.style.display = ""; tab.style.minWidth = ""; tab.parentElement.style.overflowX = "auto"; semCusto.parentElement.style.display = ""; // vindo de "Por produto" no celular: tira os cartões antigos e mostra a tabela
   const nome = { mes: "Mês", semana: "Semana", dia: "Dia", pedido: "Pedido" }[D.agrupar];
@@ -196,6 +197,13 @@ function filtrarCliente(i) { const x = (D.clientes || [])[i]; if (!x || /^\(sem 
 function exportarClientes() { const L = D.clientes || [], n = v => String(v == null ? "" : v).replace(".", ","), q = v => '"' + String(v).replace(/"/g, '""') + '"';
   const linhas = ["Cliente;Pedidos;Faturamento;Custo;Lucro bruto;Margem %"].concat(L.map(x => [q(x.nome), x.pedidos, n(x.fat), n(x.custo), n(x.lucro), x.margem == null ? "" : n(x.margem)].join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + linhas.join("\r\n")], { type: "text/csv" })); a.download = `clientes_margem_${D.ini}_${D.fim}.csv`; a.click(); }
+// ---- atualização: hora dos dados, pedidos que ainda não têm os itens e botão para buscar no Bling agora ----
+let _poll = [];
+async function atualizarAgora() { const el = document.getElementById("msgAtu"); if (el) el.innerHTML = '<span class="ic">⏳ Pedindo ao Bling os itens que faltam…</span>'; _poll.forEach(clearTimeout); _poll = [];
+  let enf = 0; try { const r = await fetch(B + "/api/margem-bruta/atualizar", { method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": (b13GetSession() || {}).token || "" }, body: JSON.stringify({ ini: fIni.value, fim: fFim.value }) }); const j = await r.json().catch(() => ({})); enf = j.enfileirados || 0; } catch (e) {}
+  await carregar(); if (enf) [6000, 14000, 30000].forEach(ms => _poll.push(setTimeout(() => { if (D && D.semItens && D.semItens.qtd) carregar(); }, ms))); }
+function blocoAtualizacao() { const el = document.getElementById("msgAtu"), S = D.semItens || { qtd: 0 }, hh = D.atualizadoEm ? new Date(D.atualizadoEm).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "";
+  el.innerHTML = `<div class="ic" style="white-space:normal">🕒 Dados lidos às <b style="color:#fff">${hh}</b>. Pedidos feitos no sistema entram em até 1 minuto.</div>` + (S.qtd ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-top:6px;color:#ffe9a8;font-size:13px;white-space:normal">⚠️ <b>${S.qtd} pedido(s)</b> (${brl(S.total)}) deste período ainda estão <b>sem os itens</b> e <b>não entram</b> nestas contas${S.hoje ? ` (${S.hoje} de hoje)` : ""}. Os itens chegam do Bling em segundos ou poucos minutos depois do pedido.<br>${(S.lista || []).slice(0, 4).map(x => "#" + esc(x.numero) + " " + brDeIso(x.dia) + " " + brl(x.total)).join(" · ")}${S.qtd > 4 ? " …" : ""}<br><button class="chip" style="margin-top:6px" onclick="atualizarAgora()">🔄 Buscar os itens agora</button></div>` : ""); }
 function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"), F = D.faturamento || { total: ((D.totais || {}).fatCusto || 0) + ((D.totais || {}).fatSemCusto || 0), pedidos: (D.totais || {}).pedidos || 0 }, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
   const extra = (D.agrupar === "produto" && (fMax.value.trim() || fSo.value)) ? " (com o filtro de margem/custo aplicado)" : "";
   let t = `<div style="font-size:15px;color:#fff">💰 Faturamento total: <b style="color:#3ce88a;font-size:18px">${brl(F.total)}</b> <span class="ic">· ${F.pedidos} pedido(s) · ${(D.clientesTotal || 0)} cliente(s) · ${per}${extra}</span></div>`;

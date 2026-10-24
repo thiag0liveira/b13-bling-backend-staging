@@ -11062,13 +11062,16 @@ app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),asyn
 app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
     // BUSCA: cliente, vendedora, nº do pedido OU produto (nome ou código). Várias palavras: todas precisam aparecer. Se a busca é de produto, só os itens daquele produto entram nas contas.
-    const r=_filtrarPedidos({...q,busca:""}), G={}, CLI={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}};
+    const r=_filtrarPedidos({...q,busca:""}), G={}, CLI={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}}, SI={qtd:0,total:0,hoje:0,lista:[]};
     const nrmB=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), toks=nrmB(q.busca||"").split(/\s+/).filter(Boolean), dgB=String(q.busca||"").replace(/\D/g,"");
     const tokOk=txt=>toks.every(t=>txt.includes(t)), casaPed=p=>tokOk(nrmB(p.cliente)+" "+nrmB(p.vendedor))||(dgB.length>=3&&(String(p.numero).includes(dgB)||String(p.id)===dgB)),
       casaItem=i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null; return tokOk(nrmB(i.nome)+" "+nrmB(pr&&pr.n)+" "+nrmB(pr&&pr.c)); };
     const chave=p=>{ const d=p.dia||_diaBRk(p.em||Date.now()); if(ag==="dia") return d; if(ag==="mes") return d.slice(0,7);
       if(ag==="semana"){ const dt=new Date(d+"T12:00:00Z"), w=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-w); return "semana de "+dt.toISOString().slice(0,10); } return String(p.id); };
-    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} if(toks.length&&!casaPed(p)) it=it.filter(casaItem); if(!it.length) return; T.pedidos++;
+    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){}
+      // pedido do período que ainda está SEM os itens (o detalhe vem do Bling depois do aviso): não entra na conta, mas é contado para a tela avisar
+      if(!it.length&&(!toks.length||casaPed(p))){ SI.qtd++; SI.total+=Number(p.total)||0; if(p.data===_diaBRk(Date.now())) SI.hoje++; if(SI.lista.length<8) SI.lista.push({numero:p.numero,dia:p.data,total:_round2(Number(p.total)||0),cliente:p.cliente||""}); }
+      if(toks.length&&!casaPed(p)) it=it.filter(casaItem); if(!it.length) return; T.pedidos++;
       const nmCli=p.cliente||((p.clienteId&&lerClientesBase().porId[String(p.clienteId)]||{}).nome)||"", cliK=nmCli?"N:"+nrmB(nmCli).replace(/\s+/g," ").trim():(p.clienteId?"I:"+p.clienteId:"N:"), cli=(CLI[cliK]||={clienteId:p.clienteId||null,nome:nmCli,prod:{}}); // mesmo nome = mesmo cliente (os pedidos podem trazer contatos repetidos no Bling)
       const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0}); g.pedidos++;
       it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null;
@@ -11081,6 +11084,7 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const montarClientes=permitidos=>Object.values(CLI).map(c=>{ let fat=0,fc=0,cu=0; const ped=new Set(); Object.entries(c.prod).forEach(([pk,x])=>{ if(permitidos&&!permitidos.has(pk)) return; fat+=x.fat; fc+=x.fatCusto; cu+=x.custo; x.ped.forEach(i=>ped.add(i)); });
       return ped.size?{clienteId:c.clienteId,nome:nomeCli(c),pedidos:ped.size,fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),lucro:_round2(fc-cu),margem:fc>0?+(((fc-cu)/fc)*100).toFixed(1):null}:null; }).filter(Boolean).sort((a,b)=>b.fat-a.fat);
     const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null});
+    const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em};
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
@@ -11094,15 +11098,21 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
       const uni=new Set(); L.forEach(x=>{ x._ped.forEach(i=>uni.add(i)); }); const fatL=_round2(L.reduce((a,x)=>a+x.fat,0)), fatSem=_round2(L.filter(x=>x.custoUn==null).reduce((a,x)=>a+x.fat,0));
       const clientes=montarClientes(new Set(L.map(x=>String(x.produtoId||x.nome||"?"))));
       const faturamento={total:fatL,comCusto:_round2(fatL-fatSem),semCusto:fatSem,pedidos:uni.size,qtd:+L.reduce((a,x)=>a+x.qtd,0).toFixed(2),linhas:L.length}; L.forEach(x=>{ delete x._ped; });
-      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,faturamento,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
+      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,faturamento,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
     }
     const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto}), cob=T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null;
     const clientes=montarClientes(null);
-    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,faturamento:{total:_round2(T.fatCusto+T.fatSemCusto),comCusto:_round2(T.fatCusto),semCusto:_round2(T.fatSemCusto),pedidos:T.pedidos,linhas:linhas.length},totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
+    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,faturamento:{total:_round2(T.fatCusto+T.fatSemCusto),comCusto:_round2(T.fatCusto),semCusto:_round2(T.fatSemCusto),pedidos:T.pedidos,linhas:linhas.length},totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
       semCusto:Object.entries(T.itensSemCusto).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([nome,v])=>({nome,valor:_round2(v)}))});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+app.post("/api/margem-bruta/atualizar",requireAcesso("acesso_margem_bruta"),(req,res)=>{
+  try{ const b=req.body||{}, ini=/^\d{4}-\d{2}-\d{2}$/.test(String(b.ini||""))?b.ini:"0000-00-00", fim=/^\d{4}-\d{2}-\d{2}$/.test(String(b.fim||""))?b.fim:"9999-99-99";
+    _idxPed.em=0; const H=lerHistPedidos().porId, todos=_pendentesDetalhe(), ids=todos.filter(id=>{ const d=String((H[id]||{}).d||""); return d>=ini&&d<=fim; }).slice(0,60);
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(_buscarDetalhesAvisados,50);
+    res.json({ok:true,enfileirados:ids.length,restantes:Math.max(0,todos.length-ids.length)});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
 const _nrmMot=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
