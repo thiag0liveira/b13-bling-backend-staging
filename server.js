@@ -3519,6 +3519,10 @@ const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 // Se várias telas pedirem ao mesmo tempo com a memória vencida, todas esperam a MESMA leitura (antes cada uma
 // disparava sua própria varredura de até 40 páginas no Bling, em paralelo).
 let _estEmAndamento=null;
+// depois de qualquer lançamento de estoque, o mapa em memória (catálogo, busca de produtos, caixa) acompanha na hora,
+// em vez de esperar os 5 minutos para reler o Bling. modo "set" = saldo absoluto (balanço); "add" = soma (entrada) ou subtrai (negativo)
+function _estoqueNoCache(id,valor,modo){ try{ if(!_estCache||!_estCache.map) return; const v=Number(valor); if(!isFinite(v)) return;
+  for(const p of Object.values(_estCache.map)){ if(p&&String(p.id)===String(id)) p.estoque=modo==="set"?v:(Number(p.estoque)||0)+v; } }catch(e){} }
 function getEstoqueMap(){
   if(_estCache.map && Date.now()-_estCache.t < 300000) return Promise.resolve(_estCache.map);
   if(_estEmAndamento) return _estEmAndamento;
@@ -6322,7 +6326,7 @@ app.post("/api/estoque/entrada",async(req,res)=>{
         const corpo={ produto:{id:pid}, operacao:"E", quantidade:qtd,
           observacoes:`Entrada ${tipo==="fiscal"?("NF "+(numeroNota||"")):"manual"}${fornecedor?(" — "+fornecedor):""}${funcionarioNome?(" ("+funcionarioNome+")"):""}`.slice(0,190) };
         if(it.custo!=null && !isNaN(Number(it.custo)) && Number(it.custo)>0){ corpo.preco=Number(it.custo); corpo.custo=Number(it.custo); }
-        await bling(`/estoques`,{method:"POST",body:JSON.stringify(corpo)});
+        await bling(`/estoques`,{method:"POST",body:JSON.stringify(corpo)}); _estoqueNoCache(pid,qtd,"add");
         resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, custo:it.custo||null, ok:true});
         await sleep(150);
       }catch(e){ resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, ok:false, erro:e.message}); }
@@ -6474,6 +6478,7 @@ app.post("/api/estoque/ajustar",async(req,res)=>{
       quantidade:Number(novoTotal),
       observacoes:`Ajuste de estoque via sistema${funcionarioNome?` — ${funcionarioNome}`:""}`,
     })});
+    _estoqueNoCache(produtoId,novoTotal,"set");
     res.json({ok:true, produtoId:Number(produtoId), novoTotal:Number(novoTotal)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
@@ -8067,6 +8072,7 @@ app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
       quantidade:Number(quantidade),
       observacoes:`Ajuste via Frente de Caixa — autorizado por ${auth.funcionario.nome}`,
     })});
+      _estoqueNoCache(produtoId,quantidade,"set");
     res.json({ok:true,autorizadoPor:auth.funcionario.nome,novoEstoque:Number(quantidade)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
@@ -8876,7 +8882,7 @@ async function garantirEstoqueParaItens(itens){
           ...(custo!=null?{preco:custo, custo:custo}:{}), // repete o último custo de entrada conhecido desse produto
           observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`+(custo!=null?` — custo repetido da última entrada (${custo})`:""),
         })});
-        reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd, custoUsado:custo??null});
+        _estoqueNoCache(pid,falta,"add"); reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd, custoUsado:custo??null});
         await sleep(300);
       }catch(e){ console.error("Falha ao repor estoque do produto "+pid+":",e.message); }
     }
@@ -11720,7 +11726,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     for(const x of R.itens){ if(x.status!=="ok"||ign.has(Number(x.nItem))||!(x.qtdUn>0)) continue;
       try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,precoCusto:x.custoRealUn||x.custoUn,
           observacoes:`${n.semNota?"Entrada SEM NOTA":"Entrada NF "+(R.numero||"")} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
-        lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
+        _estoqueNoCache(x.produtoId,x.qtdUn,"add"); lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
       catch(e){ lanc.push({...x,ok:false,erro:e.message}); }
       await sleep(320); }
     try{ salvarJSON(PRODUTOS_BLING_FILE,P); _metProdCache.clear(); }catch(e){}
@@ -12303,7 +12309,7 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
       let antes=null; try{ const sd=(await bling(`/estoques/saldos?idsProdutos[]=${id}`))?.data?.[0]; antes=sd?Number(sd.saldoVirtualTotal??sd.saldoFisicoTotal??0):null; }catch(e){}
       try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(id)},deposito:{id:Number(dep)},operacao:"B",quantidade:q,observacoes:`Balanço via Produtos por ${pedidoPor||"—"} (aut. ${quem}): ${motivo}`.slice(0,190)})}); }
       catch(e){ return res.status(502).json({erro:"O Bling não aceitou o ajuste de estoque: "+e.message,feito}); }
-      const P=lerProdutosBling(); if(P.porId[id]) { P.porId[id].est=q; salvarJSON(PRODUTOS_BLING_FILE,P); }
+      const P=lerProdutosBling(); if(P.porId[id]) { P.porId[id].est=q; salvarJSON(PRODUTOS_BLING_FILE,P); } _estoqueNoCache(id,q,"set");
       feito.push(`estoque ${antes!=null?antes:"?"} → ${q}`);
     }
     if(!feito.length) return res.status(400).json({erro:"nada para alterar"});
@@ -17479,7 +17485,7 @@ app.post("/api/estoque/lancar",async(req,res)=>{
           operacao, quantidade,
           precoCusto: it.precoCusto!=null?Number(it.precoCusto):undefined,
           observacoes:(observacao||`Ajuste pelo painel de estoque (${modo}) — por ${funcNome}`).slice(0,300),
-        })});
+        })}); _estoqueNoCache(pid,operacao==="B"?quantidade:(operacao==="E"?quantidade:-quantidade),operacao==="B"?"set":"add");
         resultados.push({produtoId:pid,nome:it.nome||"",ok:true,operacao,quantidade,antes,
           depois: modo==="balanco"?qtdInformada:(antes!=null?+(antes+(operacao==="E"?quantidade:-quantidade)).toFixed(3):null)});
       }catch(e){ resultados.push({produtoId:pid,nome:it.nome||"",ok:false,erro:e.message,detalhe:e.body}); }

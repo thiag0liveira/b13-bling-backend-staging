@@ -251,8 +251,25 @@ async function salvarAjuste() {
   if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui ajustar.")}</div>`; return; }
   const it = ITENS.find(x => String(x.id) === String(a.id)); if (it) it.estoque = n; if (PR && String(PR.id) === String(a.id)) { PR.estoque = n; ED = null; } renderLista();
   if (document.getElementById("mProd").classList.contains("aberto") && PR && String(PR.id) === String(a.id)) renderFicha();
+  atualizarAposAjuste(a.id); // busca de novo o produto e os totais do topo, sem recarregar a página
   msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Estoque ajustado: ${fmtQ(a.atual)} → ${fmtQ(n)}</div>`;
   setTimeout(fecharAjuste, 1100);
+}
+// depois de ajustar: relê SÓ esse produto e os totais do topo (cobertura em dias, alertas, valor do estoque) e redesenha tudo
+async function atualizarAposAjuste(id) {
+  try {
+    const f = filtros(), [r1, r2] = await Promise.all([
+      api("/api/produtos-gestao/" + encodeURIComponent(id) + "?" + new URLSearchParams({ ini: f.ini, fim: f.fim })),
+      api("/api/produtos-gestao?" + new URLSearchParams({ ...f, offset: 0, limite: 1 }))]);
+    if (r1.ok && r1.j.produto) {
+      const novo = r1.j.produto, it = ITENS.find(x => String(x.id) === String(id));
+      if (it) Object.keys(it).forEach(k => { if (k in novo) it[k] = novo[k]; });
+      if (PR && String(PR.id) === String(id)) { const aba = ABA; PR = novo; ABA = aba; ED = null; }
+    }
+    if (r2.ok && D) { D.metricas = r2.j.metricas; D.catalogo = r2.j.catalogo; D.historico = r2.j.historico || D.historico; D.anterior = r2.j.anterior || D.anterior; D.ms = r2.j.ms; }
+    if (D) render();
+    if (document.getElementById("mProd").classList.contains("aberto") && PR && String(PR.id) === String(id)) renderFicha();
+  } catch (e) { /* a tela já mostra o saldo novo; o resto se acerta no próximo carregamento */ }
 }
 document.getElementById("mAjuste").addEventListener("click", e => { if (e.target.id === "mAjuste") fecharAjuste(); });
 function fechar() { document.getElementById("mProd").classList.remove("aberto"); }
