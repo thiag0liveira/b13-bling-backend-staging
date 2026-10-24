@@ -190,7 +190,7 @@ async function abrirProduto(id) {
 }
 // ===== AJUSTE RÁPIDO DE ESTOQUE (contei / entrou / saiu), com motivo pronto e QR lembrado nesta sessão =====
 const MOTIVOS_AJ = { contei: ["Contagem de estoque", "Correção de erro", "Inventário"], entrou: ["Entrada sem nota", "Devolução de cliente", "Bonificação recebida", "Correção de erro"], saiu: ["Quebra ou perda", "Consumo interno", "Vencido", "Correção de erro"] };
-let AJ = null, QR_AUT = "", QR_NOME = "";
+let AJ = null;
 const fmtQ = n => String(Math.round(Number(n || 0) * 1000) / 1000).replace(".", ",");
 const numAj = v => { const t = String(v == null ? "" : v).trim(); if (!t) return NaN; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t); };
 async function abrirAjuste(id) {
@@ -224,8 +224,6 @@ function renderAjuste() {
     <div class="ic" style="margin-bottom:3px">Motivo</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${motivos.map(m => { const ativo = m === "Outro motivo…" ? a.motivo === "Outro motivo…" : a.motivo === m; return `<button class="btn ${ativo ? "btn-mag" : "btn-ghost"}" style="padding:6px 10px;font-size:13px" onclick="setMotivoAj(this.dataset.m)" data-m="${esc(m)}">${esc(m)}</button>`; }).join("")}</div>
     <input id="ajOutro" placeholder="Descreva o motivo" value="${esc(a.outro)}" oninput="AJ.outro=this.value" style="width:100%;margin-top:6px;${a.motivo === "Outro motivo…" ? "" : "display:none"}">
-    ${QR_AUT ? `<div class="ic" style="margin-top:10px">🔓 Autorizado por <b>${esc(QR_NOME || "gerente")}</b> nesta sessão · <a href="#" onclick="QR_AUT='';renderAjuste();return false" style="color:#ff5fa8">trocar</a></div>`
-      : `<div class="ic" style="margin-top:10px">🔒 QR de autorização do dia (gerente, financeiro ou admin)</div><input id="ajQr" type="password" placeholder="Leia o QR do dia" style="width:100%" onkeydown="if(event.key==='Enter')salvarAjuste()">`}
     <div id="ajMsg" style="margin-top:8px"></div>
     <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:13px;font-size:16px" onclick="salvarAjuste()">💾 Ajustar estoque</button>`;
   prevAj();
@@ -246,13 +244,11 @@ async function salvarAjuste() {
   if (n < 0) { msg.innerHTML = `<div class="err">O saldo não pode ficar negativo.</div>`; return; }
   if (Math.abs(n - a.atual) < 0.0005) { msg.innerHTML = `<div class="err">O novo saldo é igual ao atual. Nada para ajustar.</div>`; return; }
   const motivo = a.motivo === "Outro motivo…" ? String(a.outro || "").trim() : a.motivo; if (!motivo) { msg.innerHTML = `<div class="err">Informe o motivo.</div>`; return; }
-  const qr = QR_AUT || ((document.getElementById("ajQr") || {}).value || "").trim(); if (!qr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
   const dif = n - a.atual;
   if (Math.abs(dif) >= 100 && !confirm(`O saldo vai mudar ${dif > 0 ? "+" : ""}${fmtQ(dif)} (de ${fmtQ(a.atual)} para ${fmtQ(n)}). Confirma?`)) return;
   msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
-  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(a.id), { method: "PUT", body: JSON.stringify({ tokenQr: qr, estoqueBalanco: String(n).replace(".", ","), motivo: `${motivo}${a.modo === "contei" ? "" : a.modo === "entrou" ? " (+" + fmtQ(numAj(a.qtd)) + ")" : " (−" + fmtQ(numAj(a.qtd)) + ")"}` }) });
-  if (!ok) { if (/qr|autoriz/i.test(j.erro || "")) QR_AUT = ""; msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui ajustar.")}</div>`; const q = document.getElementById("ajQr"); if (q) q.value = ""; return; }
-  QR_AUT = qr; QR_NOME = j.autorizadoPor || QR_NOME;
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(a.id), { method: "PUT", body: JSON.stringify({ estoqueBalanco: String(n).replace(".", ","), motivo: `${motivo}${a.modo === "contei" ? "" : a.modo === "entrou" ? " (+" + fmtQ(numAj(a.qtd)) + ")" : " (−" + fmtQ(numAj(a.qtd)) + ")"}` }) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui ajustar.")}</div>`; return; }
   const it = ITENS.find(x => String(x.id) === String(a.id)); if (it) it.estoque = n; if (PR && String(PR.id) === String(a.id)) { PR.estoque = n; ED = null; } renderLista();
   if (document.getElementById("mProd").classList.contains("aberto") && PR && String(PR.id) === String(a.id)) renderFicha();
   msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Estoque ajustado: ${fmtQ(a.atual)} → ${fmtQ(n)}</div>`;
@@ -344,20 +340,21 @@ function abaEditar() {
   if (!PR.noBling) return `<div class="ic">Este produto não está no catálogo do Bling, então não dá para editar por aqui.</div>`;
   if (!ED) return `<div class="vazio"><div class="spin"></div> Lendo o produto no Bling…</div>`;
   if (ED.erro) return `<div class="err">${esc(ED.erro)}</div>`;
-  return `<div class="ic" style="white-space:normal;margin-bottom:8px">Os valores abaixo foram lidos agora no Bling. Para salvar é preciso o QR do dia de um gerente, financeiro ou admin.</div>
+  return `<div class="ic" style="white-space:normal;margin-bottom:8px">Os valores abaixo foram lidos agora no Bling. O QR do dia (gerente, financeiro ou admin) só é pedido para mudar preço de venda, situação ou custo junto com estoque. Só estoque ou só custo salvam sem QR.</div>
     <div class="grid2"><label><div class="ic">Preço de venda no Bling (atual ${brl(ED.preco)})</div><input id="pPreco" inputmode="decimal" placeholder="${String(ED.preco).replace(".", ",")}" style="width:100%"></label>
       <label><div class="ic">Preço de custo (atual ${ED.custo > 0 ? brl(ED.custo) : "sem custo"})</div><input id="pCusto" inputmode="decimal" placeholder="${ED.custo > 0 ? String(ED.custo).replace(".", ",") : "ex.: 3,79"}" style="width:100%"></label>
       <label><div class="ic">Situação</div><select id="pSit" style="width:100%"><option value="A" ${ED.situacao === "A" ? "selected" : ""}>Ativo</option><option value="I" ${ED.situacao === "I" ? "selected" : ""}>Inativo</option></select></label></div>
     <h3 style="margin-top:12px">Balanço de estoque</h3><div class="ic" style="white-space:normal">Define o saldo no Bling (contagem). Saldo atual: <b>${num(ED.estoque)}</b>.</div>
     <div class="grid2"><label><div class="ic">Novo saldo contado</div><input id="pEst" inputmode="decimal" placeholder="deixe em branco para não mexer" style="width:100%"></label>
       <label><div class="ic">Motivo (obrigatório para o estoque)</div><input id="pMot" placeholder="ex.: contagem de sábado" style="width:100%"></label></div>
-    <h3 style="margin-top:12px">🔒 QR de autorização</h3><input id="pQr" type="password" placeholder="Leia o QR do dia" style="width:100%" onkeydown="if(event.key==='Enter')salvarProd()">
+    <h3 style="margin-top:12px">🔒 QR de autorização <span class="ic">(só para preço, situação ou custo junto com estoque)</span></h3><input id="pQr" type="password" placeholder="Leia o QR do dia" style="width:100%" onkeydown="if(event.key==='Enter')salvarProd()">
     <div id="pMsg" style="margin-top:8px"></div><button class="btn btn-mag" style="width:100%;margin-top:8px" onclick="salvarProd()">💾 Salvar no Bling</button>`;
 }
 async function salvarProd() {
   const v = id => document.getElementById(id).value.trim(), msg = document.getElementById("pMsg");
-  const corpo = { tokenQr: v("pQr"), motivo: v("pMot") }; if (!corpo.tokenQr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
+  const corpo = { tokenQr: v("pQr"), motivo: v("pMot") };
   if (v("pPreco")) corpo.preco = v("pPreco"); if (v("pCusto")) corpo.custo = v("pCusto").replace(",", "."); if (v("pSit") !== ED.situacao) corpo.situacao = v("pSit"); if (v("pEst") !== "") corpo.estoqueBalanco = v("pEst");
+  if ((corpo.preco || corpo.situacao || (corpo.custo && corpo.estoqueBalanco != null)) && !corpo.tokenQr) { msg.innerHTML = `<div class="err">Para mudar preço, situação ou custo junto com estoque, leia o QR de autorização.</div>`; return; }
   if (!corpo.preco && !corpo.custo && !corpo.situacao && corpo.estoqueBalanco == null) { msg.innerHTML = `<div class="err">Nada foi alterado.</div>`; return; }
   if (corpo.estoqueBalanco != null && !corpo.motivo) { msg.innerHTML = `<div class="err">Informe o motivo do ajuste de estoque.</div>`; return; }
   msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;

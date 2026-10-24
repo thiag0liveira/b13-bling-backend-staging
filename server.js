@@ -12275,7 +12275,9 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
   try{
     const id=String(req.params.id), b=req.body||{};
     const soCusto=b.custo!=null&&String(b.custo).trim()!==""&&!(b.preco!=null&&String(b.preco).trim()!=="")&&!["A","I"].includes(b.situacao)&&(b.estoqueBalanco==null||String(b.estoqueBalanco).trim()==="");
-    const auth=soCusto?{funcionario:{nome:req.sessao?.nome||""}}:validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro}); // só o custo: sem QR
+    // só o ESTOQUE (balanço), sem mexer em preço, custo ou situação: também sem QR (continua exigindo o motivo e fica registrado quem ajustou)
+    const temTxt=k=>b[k]!=null&&String(b[k]).trim()!=="", soEstoque=temTxt("estoqueBalanco")&&!temTxt("preco")&&!temTxt("custo")&&!["A","I"].includes(b.situacao);
+    const auth=(soCusto||soEstoque)?{funcionario:{nome:req.sessao?.nome||""}}:validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro}); // só o custo ou só o estoque: sem QR
     const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", motivo=String(b.motivo||"").trim().slice(0,150), feito=[];
     const novoPreco=b.preco!=null&&String(b.preco).trim()!==""?Number(String(b.preco).replace(",",".")):null, novaSit=["A","I"].includes(b.situacao)?b.situacao:null;
     if(novoPreco!=null&&!(novoPreco>0)) return res.status(400).json({erro:"preço inválido"});
