@@ -87,7 +87,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   .pcard .g3{gap:3px 6px;margin-top:4px}.pcard .g3 span{font-size:9.5px}.pcard .g3 b{font-size:11px}
   .pcard .ced input{font-size:16px;padding:3px 4px;height:28px;box-sizing:border-box}.pcard .ced button{padding:3px 6px;font-size:12px;height:28px}
   #cards{width:100%;max-width:100%;overflow:hidden} .kpi .v{font-size:18px} .kpi .l{font-size:10px} .kpi .s{font-size:10px} }
-.dtx{display:inline-flex;gap:4px;align-items:center}.dtx>input{width:104px}.dtx .cal{position:relative;overflow:hidden;cursor:pointer;padding:7px 10px;border:1px solid #37327a;border-radius:9px;background:#0f0d24;line-height:1}.dtx .cal input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0;border:0}</style>
+.dtx{display:inline-flex;gap:4px;align-items:center}.dtx>input{width:104px}.dtx .cal{position:relative;overflow:hidden;cursor:pointer;padding:7px 10px;border:1px solid #37327a;border-radius:9px;background:#0f0d24;line-height:1}.dtx .cal input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0;border:0}.cli{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #2a2660;cursor:pointer}.cli:active{background:#1b1442}</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -116,6 +116,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div id="msgBusca" class="ic" style="white-space:normal;margin-top:6px"></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Margem bruta só dos itens cujo produto tem preço de compra (custo) no cadastro. Itens sem custo aparecem à parte, para saber se a margem está completa.</div></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="card" id="cliCard" style="display:none"></div>
   <div class="card" style="overflow-x:auto"><table id="tab" style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px"></table><div id="cards"></div></div>
   <div class="card"><h3>Faturamento sem custo (maiores)</h3><div id="semCusto"></div></div>
 </div>
@@ -135,7 +136,7 @@ async function carregar() {
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
   const F = D.faturamento || { total: T.fatCusto + T.fatSemCusto, pedidos: T.pedidos }, tk = F.pedidos ? F.total / F.pedidos : 0;
   kpis.innerHTML = `<div class="kpi" style="grid-column:1/-1;border-color:#2aa876"><div class="v" style="font-size:26px">${brl(F.total)}</div><div class="l">Faturamento total neste filtro</div><div class="s">${F.pedidos} pedido(s)${F.pedidos ? " · ticket médio " + brl(tk) : ""} · valor dos itens vendidos, sem o frete</div></div>` + k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
-  atualizarMsgBusca();
+  atualizarMsgBusca(); renderClientes();
   if (D.agrupar === "produto") { renderProdutos(); return; }
   cards.innerHTML = ""; tab.style.display = ""; tab.style.minWidth = ""; tab.parentElement.style.overflowX = "auto"; semCusto.parentElement.style.display = ""; // vindo de "Por produto" no celular: tira os cartões antigos e mostra a tabela
   const nome = { mes: "Mês", semana: "Semana", dia: "Dia", pedido: "Pedido" }[D.agrupar];
@@ -180,9 +181,24 @@ function ligarData(idT, idD) { const T = document.getElementById(idT), D = docum
   T.addEventListener("blur", () => { if (!isoDeBr(T.value)) T.value = brDeIso(D.value); T.style.borderColor = ""; }); // data incompleta ou inválida: volta para a que está valendo
   D.addEventListener("change", () => { T.value = brDeIso(D.value); T.style.borderColor = ""; }); T.value = brDeIso(D.value); }
 fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar);
+// ---- clientes que entraram no filtro (a soma deles é o faturamento total mostrado) ----
+let CLI_TODOS = false;
+const corMargem = m => m == null ? "#9a95c9" : m < 10 ? "#ff8aa3" : m < 20 ? "#ffd23f" : "#3ce88a";
+function renderClientes() {
+  const el = document.getElementById("cliCard"), L = D.clientes || [], tot = D.clientesTotal || 0, F = D.faturamento || {};
+  if (!tot) { el.style.display = "none"; return; } el.style.display = "";
+  const lim = CLI_TODOS ? L.length : 8, soma = F.total || L.reduce((a, x) => a + x.fat, 0);
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">👥 Clientes neste filtro <span class="ic">(${tot})</span></h3><button class="chip" onclick="exportarClientes()">⬇️ CSV</button></div>
+    <div class="ic" style="white-space:normal;margin:2px 0 4px">Toque em um cliente para ver só as compras dele.</div>
+    ${L.slice(0, lim).map((x, i) => `<div class="cli" onclick="filtrarCliente(${i})"><div style="min-width:0"><b style="word-break:break-word">${esc(x.nome)}</b><div class="ic">${x.pedidos} pedido(s) · ${soma > 0 ? Math.round(x.fat / soma * 100) : 0}% do total</div></div><div style="text-align:right;white-space:nowrap"><b>${brl(x.fat)}</b><div class="ic" style="color:${corMargem(x.margem)}">margem ${pct(x.margem)}</div></div></div>`).join("")}
+    ${tot > lim ? `<button class="chip" style="margin-top:8px" onclick="CLI_TODOS=true;renderClientes()">Ver todos os ${tot} clientes</button>` : (CLI_TODOS && tot > 8 ? `<button class="chip" style="margin-top:8px" onclick="CLI_TODOS=false;renderClientes()">Mostrar menos</button>` : "")}${tot > L.length ? `<div class="ic" style="margin-top:4px">Mostrando os ${L.length} maiores.</div>` : ""}`; }
+function filtrarCliente(i) { const x = (D.clientes || [])[i]; if (!x || /^\(sem cliente/.test(x.nome)) return; fBusca.value = x.nome; carregar(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+function exportarClientes() { const L = D.clientes || [], n = v => String(v == null ? "" : v).replace(".", ","), q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const linhas = ["Cliente;Pedidos;Faturamento;Custo;Lucro bruto;Margem %"].concat(L.map(x => [q(x.nome), x.pedidos, n(x.fat), n(x.custo), n(x.lucro), x.margem == null ? "" : n(x.margem)].join(";")));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + linhas.join("\r\n")], { type: "text/csv" })); a.download = `clientes_margem_${D.ini}_${D.fim}.csv`; a.click(); }
 function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"), F = D.faturamento || { total: ((D.totais || {}).fatCusto || 0) + ((D.totais || {}).fatSemCusto || 0), pedidos: (D.totais || {}).pedidos || 0 }, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
   const extra = (D.agrupar === "produto" && (fMax.value.trim() || fSo.value)) ? " (com o filtro de margem/custo aplicado)" : "";
-  let t = `<div style="font-size:15px;color:#fff">💰 Faturamento total: <b style="color:#3ce88a;font-size:18px">${brl(F.total)}</b> <span class="ic">· ${F.pedidos} pedido(s) · ${per}${extra}</span></div>`;
+  let t = `<div style="font-size:15px;color:#fff">💰 Faturamento total: <b style="color:#3ce88a;font-size:18px">${brl(F.total)}</b> <span class="ic">· ${F.pedidos} pedido(s) · ${(D.clientesTotal || 0)} cliente(s) · ${per}${extra}</span></div>`;
   if (b) t += F.pedidos ? `<div style="margin-top:2px">🔎 “${esc(b)}”: a busca olha cliente, produto, vendedora e nº do pedido.</div>` : `<div style="margin-top:2px">🔎 Nada encontrado para “${esc(b)}” neste período. A busca olha cliente, produto, vendedora e nº do pedido <b>dentro das datas escolhidas</b>: amplie-as se precisar.</div>`;
   el.innerHTML = t; }
 let _tb; // busca automática: ao digitar (depois de uma pausa), ao tocar em Enter/Ir/Buscar no teclado do celular e ao limpar o campo
