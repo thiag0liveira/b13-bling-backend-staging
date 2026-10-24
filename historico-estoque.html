@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Histórico do Estoque</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+.mv{padding:9px 0;border-bottom:1px solid #221e4f}.mv .t{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mv b.n{cursor:pointer;line-height:1.25}.qtd{font-weight:900;font-size:18px;white-space:nowrap}.qtd.mais{color:#3ce88a}.qtd.menos{color:#ff8aa3}.qtd.zero{color:#aaa}
+.tp{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;margin-right:6px;border:1px solid #37327a;background:#0f0d24}
+.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.g4{display:grid;grid-template-columns:1fr 1fr;gap:8px}</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/historico-estoque")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/historico-estoque"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📒 Histórico do Estoque</div><div class="sp"></div></div>
+<div class="wrap">
+  <div class="card"><h3 style="margin:0 0 6px">📒 Tudo que mexeu no estoque</h3>
+    <div class="ic" style="white-space:normal;margin-bottom:8px">Cada venda, entrada, ajuste, reposição, cancelamento e mudança feita direto no Bling vira uma linha, com o saldo antes e depois e quem fez.</div>
+    <div class="g4"><label><div class="ic">De</div><input id="fIni" type="date" style="width:100%"></label><label><div class="ic">Até</div><input id="fFim" type="date" style="width:100%"></label>
+      <label><div class="ic">Produto, pedido ou motivo</div><input id="fBusca" placeholder="🔎 buscar" style="width:100%"></label><label><div class="ic">Quem fez</div><input id="fPor" placeholder="nome" style="width:100%"></label></div>
+    <div id="fProd" class="ic" style="margin-top:6px"></div>
+    <div id="chips" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-mag" onclick="carregar(true)">Buscar</button><button class="btn btn-ghost" onclick="exportar()">⬇️ Exportar CSV</button><button class="btn btn-ghost" id="bConf" onclick="conferir()">🔄 Conferir agora com o Bling</button></div>
+    <div id="msg" class="ic" style="margin-top:6px;white-space:normal"></div></div>
+  <div class="card"><div id="resumo" class="ic" style="margin-bottom:6px;white-space:normal"></div><div id="lista"><div class="ic">Carregando…</div></div><div id="mais" style="text-align:center;margin-top:8px"></div></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const num = n => n == null ? "—" : Number(n).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), diaISO = ms => new Date(ms - 3 * 3600e3).toISOString().slice(0, 10);
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const ICONES = { venda: "🛒", entrada: "⬆️", saida: "⬇️", balanco: "📋", estorno: "↩️", reposicao_auto: "🔁", alteracao_bling: "🔧" };
+let TIPOS = {}, SEL = new Set(), PROD = "", OFF = 0, TOTAL = 0, ITENS = [], PRODNOME = "";
+const dh = ms => { const d = new Date(ms - 3 * 3600e3).toISOString(); return d.slice(8, 10) + "/" + d.slice(5, 7) + " " + d.slice(11, 16); };
+function filtros() { const g = id => document.getElementById(id).value.trim(); return { ini: g("fIni"), fim: g("fFim"), busca: g("fBusca"), por: g("fPor"), tipo: [...SEL].join(","), produtoId: PROD }; }
+async function carregar(novo) {
+  if (novo) { OFF = 0; ITENS = []; }
+  document.getElementById("msg").textContent = "";
+  const { ok, j } = await api("/api/estoque-historico?" + new URLSearchParams({ ...filtros(), offset: OFF, limite: 100 }));
+  if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  TIPOS = j.tipos || TIPOS; TOTAL = j.total; ITENS = ITENS.concat(j.itens || []); render(j.resumo || []);
+}
+function render(resumo) {
+  document.getElementById("chips").innerHTML = Object.entries(TIPOS).map(([k, nome]) => `<span class="chipf ${SEL.has(k) ? "on" : ""}" onclick="alternar('${k}')">${ICONES[k] || ""} ${esc(nome)}</span>`).join("");
+  document.getElementById("fProd").innerHTML = PROD ? `Só o produto <b>${esc(PRODNOME || PROD)}</b> <a href="#" onclick="limparProd();return false" style="color:#ff5fa8">tirar filtro</a>` : "";
+  document.getElementById("resumo").innerHTML = `<b>${num(TOTAL)}</b> movimentação(ões) no período` + (resumo.length ? " · " + resumo.map(t => `${ICONES[t.tipo] || ""} ${esc(t.nome)}: ${num(t.movimentos)} (${t.soma > 0 ? "+" : ""}${num(t.soma)})`).join(" · ") : "");
+  document.getElementById("lista").innerHTML = ITENS.length ? ITENS.map(m => { const d = m.delta, cl = d > 0 ? "mais" : d < 0 ? "menos" : "zero", ref = m.ref && !String(m.motivo || "").includes(String(m.ref.numero || m.ref.nota || "§")) ? (m.ref.numero ? "Pedido #" + esc(m.ref.numero) : m.ref.nota ? "NF " + esc(m.ref.nota) : "") : "";
+    return `<div class="mv"><div class="t"><b class="n" onclick="verProduto('${esc(m.produtoId)}','${esc((m.nome || "").replace(/'/g, " "))}')">${esc(m.nome || "Produto " + m.produtoId)}</b><span class="qtd ${cl}">${d == null ? "?" : (d > 0 ? "+" : "") + num(d)}</span></div>
+      <div class="ic" style="white-space:normal"><span class="tp">${ICONES[m.tipo] || ""} ${esc(m.tipoNome || m.tipo)}</span>${dh(m.em)}${m.antes != null && m.depois != null ? " · saldo " + num(m.antes) + " → <b style='color:#fff'>" + num(m.depois) + "</b>" : m.depois != null ? " · saldo agora <b style='color:#fff'>" + num(m.depois) + "</b>" : ""}${m.por ? " · " + esc(m.por) : ""}${ref ? " · " + ref : ""}${m.motivo ? "<br>" + esc(m.motivo) : ""}</div></div>`; }).join("") : `<div class="ic">Nenhuma movimentação nesse filtro.</div>`;
+  document.getElementById("mais").innerHTML = ITENS.length < TOTAL ? `<button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(TOTAL - ITENS.length)} restantes)</button>` : "";
+}
+function alternar(k) { if (SEL.has(k)) SEL.delete(k); else SEL.add(k); carregar(true); }
+function verProduto(id, nome) { PROD = id; PRODNOME = nome; carregar(true); }
+function limparProd() { PROD = ""; PRODNOME = ""; carregar(true); }
+function exportar() { fetch(B + "/api/estoque-historico.csv?" + new URLSearchParams(filtros()), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "historico_estoque_" + hojeISO() + ".csv"; a.click(); }); }
+async function conferir() { const el = document.getElementById("msg"), b = document.getElementById("bConf"); b.disabled = true; el.textContent = "⏳ Lendo o estoque de todos os produtos no Bling… (pode levar um minuto)";
+  const { ok, j } = await api("/api/estoque-historico/conferir-agora", { method: "POST" }); b.disabled = false;
+  if (!ok) { el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Só administrador.")}</span>`; return; }
+  el.innerHTML = `<span style="color:#3ce88a">✅ Conferido. ${j.novos ? j.novos + " mudança(s) nova(s) registrada(s)." : "Nada diferente do que o sistema já sabia."}</span>`; carregar(true); }
+(function () { const u = new URLSearchParams(location.search); document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 6 * 86400000);
+  ["fIni", "fFim"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
+  let t; ["fBusca", "fPor"].forEach(id => document.getElementById(id).addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => carregar(true), 400); }));
+  if (u.get("produto")) { PROD = u.get("produto"); PRODNOME = u.get("nome") || ""; document.getElementById("fIni").value = diaISO(Date.now() - 89 * 86400000); }
+  carregar(true); })();
+</script>
+</body>
+</html>

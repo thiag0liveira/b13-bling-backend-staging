@@ -1282,6 +1282,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/fluxo-caixa",label:"🏦 Fluxo de Caixa (extrato)",acoes:["acesso_gestao_caixas"]},
 
+  {grupo:"ESTOQUE",href:"/historico-estoque",label:"📒 Histórico do Estoque",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/entrada-produtos",label:"📦 Entrada de Produtos",acoes:["acesso_entrada_produtos"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota (financeiro)",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
@@ -3523,6 +3524,61 @@ let _estEmAndamento=null;
 // em vez de esperar os 5 minutos para reler o Bling. modo "set" = saldo absoluto (balanço); "add" = soma (entrada) ou subtrai (negativo)
 function _estoqueNoCache(id,valor,modo){ try{ if(!_estCache||!_estCache.map) return; const v=Number(valor); if(!isFinite(v)) return;
   for(const p of Object.values(_estCache.map)){ if(p&&String(p.id)===String(id)) p.estoque=modo==="set"?v:(Number(p.estoque)||0)+v; } }catch(e){} }
+// ===================== HISTÓRICO DE MOVIMENTAÇÕES DE ESTOQUE =====================
+// Uma linha para cada mudança de saldo: venda, entrada, balanço/ajuste, saída, reposição automática, cancelamento (estorno) e qualquer
+// alteração feita direto no Bling. Duas fontes se completam:
+//  1) o que o próprio sistema grava (tela Produtos, painel de estoque, Frente de Caixa, entrada de nota, reposição do caixa atacado);
+//  2) o que o Bling AVISA (webhook stock.*) ou o que a varredura encontra: se o saldo mudou e o sistema não explica, procura o pedido que
+//     acabou de ser separado/atendido (venda) ou cancelado (estorno); sem causa conhecida vira "alteração no Bling".
+// "_saldoVivo" é o saldo que o sistema acredita que cada produto tem agora; a diferença para o saldo observado é o que entra no livro.
+const ESTOQUE_MOV_FILE=`${DATA_DIR}/estoque_movimentos.jsonl`;
+let _movs=[], _movSeq=0, _movOk=false; const _saldoVivo={}, _ultimoMovEm={};
+function _movCarregar(){ if(_movOk) return; _movOk=true;
+  try{ if(!fs.existsSync(ESTOQUE_MOV_FILE)) return;
+    for(const l of fs.readFileSync(ESTOQUE_MOV_FILE,"utf8").split("\n")){ if(!l) continue; try{ const m=JSON.parse(l); _movs.push(m); if(m.seq>_movSeq) _movSeq=m.seq; if(m.depois!=null) _saldoVivo[m.produtoId]=m.depois; _ultimoMovEm[m.produtoId]=Math.max(_ultimoMovEm[m.produtoId]||0,m.em||0); }catch(e){} }
+  }catch(e){ console.error("[estoque] lendo o histórico:",e.message); } }
+function _saldoConhecido(id){ _movCarregar(); id=String(id); if(_saldoVivo[id]!=null) return _saldoVivo[id];
+  try{ const e=lerProdutosBling().porId[id]?.est; if(e!=null) return Number(e); }catch(x){}
+  try{ if(_estCache&&_estCache.map) for(const p of Object.values(_estCache.map)) if(String(p.id)===id&&p.estoque!=null) return Number(p.estoque); }catch(x){}
+  return null; }
+function _movRegistrar(m){ _movCarregar(); const id=String(m.produtoId); let nome=m.nome; try{ nome=nome||lerProdutosBling().porId[id]?.n||""; }catch(e){}
+  if(!nome){ try{ if(_estCache&&_estCache.map) for(const p of Object.values(_estCache.map)) if(String(p.id)===id&&p.nome){ nome=p.nome; break; } }catch(e){} }
+  const antes=m.antes!=null?Number(m.antes):null; let depois=m.depois!=null?Number(m.depois):null, delta=m.delta!=null?Number(m.delta):null;
+  if(delta==null&&depois!=null&&antes!=null) delta=+(depois-antes).toFixed(4); if(depois==null&&delta!=null&&antes!=null) depois=+(antes+delta).toFixed(4);
+  const r={seq:++_movSeq,id:"mv"+Date.now().toString(36)+_movSeq.toString(36),em:m.em||Date.now(),produtoId:id,nome:String(nome||"").slice(0,120),tipo:m.tipo,delta,antes,depois,
+    por:String(m.por||"").slice(0,60),motivo:String(m.motivo||"").slice(0,220),origem:String(m.origem||"").slice(0,60),ref:m.ref||null};
+  _movs.push(r); _ultimoMovEm[id]=r.em; try{ fs.appendFileSync(ESTOQUE_MOV_FILE,JSON.stringify(r)+"\n"); }catch(e){ console.error("[estoque] não gravou o histórico:",e.message); }
+  if(depois!=null) _saldoVivo[id]=depois; return r; }
+// pedidos que mudaram de situação há pouco: candidatos a explicar uma baixa (venda) ou uma devolução (cancelamento) de estoque
+const _pedAtiv=[], _causaUsada=new Set();
+function _pedidoAtividade(pedidoId,numero,sit,por){ try{ let n=numero; if(!n){ try{ n=lerHistPedidos().porId[String(pedidoId)]?.n||null; }catch(e){} }
+  _pedAtiv.push({id:String(pedidoId),numero:n,sit:Number(sit)||0,em:Date.now(),por:por||""}); if(_pedAtiv.length>300) _pedAtiv.splice(0,_pedAtiv.length-300); }catch(e){} }
+function _acharCausa(pid,qtd,saiu){ const lim=Date.now()-20*60000;
+  for(let i=_pedAtiv.length-1;i>=0;i--){ const a=_pedAtiv[i]; if(a.em<lim) break;
+    const baixa=[SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,SIT.EM_ROTA,SIT.ATENDIDO,SIT.PRAZO].includes(a.sit), cancel=a.sit===SIT.CANCELADO;
+    if(saiu?!baixa:!cancel) continue; const k=(saiu?"b|":"c|")+a.id+"|"+pid; if(_causaUsada.has(k)) continue;
+    let q=0; try{ _itensDoPedido(a.id).forEach(it=>{ if(String(it.produtoId||"")===String(pid)) q+=Number(it.quantidade)||0; }); }catch(e){}
+    if(q>0&&Math.abs(q-qtd)<0.0005){ _causaUsada.add(k); return a; } }
+  return null; }
+// o saldo observado (aviso do Bling ou varredura) é diferente do que o sistema esperava: registra o que explica a diferença
+function _conciliarSaldo(pid,v,origem){ _movCarregar(); pid=String(pid); v=Number(v); if(!isFinite(v)) return;
+  const esperado=_saldoVivo[pid]; if(esperado==null){ _saldoVivo[pid]=v; return; } // primeira vez: só aprende o saldo
+  const dif=+(v-esperado).toFixed(4); if(Math.abs(dif)<0.0005) return;
+  const causa=_acharCausa(pid,Math.abs(dif),dif<0);
+  if(causa) _movRegistrar({produtoId:pid,tipo:dif<0?"venda":"estorno",delta:dif,antes:esperado,depois:v,por:causa.por,origem,
+    motivo:dif<0?`Pedido #${causa.numero||causa.id} (${nomeSituacaoFechamento(causa.sit)})`:`Pedido #${causa.numero||causa.id} cancelado`,ref:{pedidoId:causa.id,numero:causa.numero}});
+  else _movRegistrar({produtoId:pid,tipo:"alteracao_bling",delta:dif,antes:esperado,depois:v,origem,
+    motivo:"Mudança no Bling que o sistema não fez (venda por outro canal, nota, ajuste direto ou devolução)"}); }
+// varredura (catálogo/cópia noturna): ignora produtos que o sistema mexeu durante a leitura, para não confundir leitura antiga com mudança
+function _conciliarVarredura(pid,v,iniLeitura,origem){ try{ if((_ultimoMovEm[String(pid)]||0)>=iniLeitura-2000) return; _conciliarSaldo(pid,v,origem); }catch(e){} }
+// o sistema mexeu no estoque: registra no histórico (antes/depois, quem, por quê) e atualiza o mapa em memória
+function _estoqueMudou(id,valor,modo,ctx){ ctx=ctx||{};
+  try{ const v=Number(valor); if(isFinite(v)){
+      if(ctx.antes!=null&&isFinite(Number(ctx.antes))) _conciliarSaldo(id,Number(ctx.antes),"leitura antes do ajuste"); // se o Bling já estava diferente do esperado, registra isso primeiro
+      _movRegistrar({produtoId:id,nome:ctx.nome,tipo:ctx.tipo||(modo==="set"?"balanco":(v>=0?"entrada":"saida")),antes:_saldoConhecido(id),...(modo==="set"?{depois:v}:{delta:v}),por:ctx.por,motivo:ctx.motivo,origem:ctx.origem,ref:ctx.ref}); }
+  }catch(e){ console.error("[estoque] histórico:",e.message); }
+  _estoqueNoCache(id,valor,modo); }
+_movCarregar();
 function getEstoqueMap(){
   if(_estCache.map && Date.now()-_estCache.t < 300000) return Promise.resolve(_estCache.map);
   if(_estEmAndamento) return _estEmAndamento;
@@ -3530,7 +3586,7 @@ function getEstoqueMap(){
   return _estEmAndamento;
 }
 async function _lerEstoqueMapBling(){
-  const map={};
+  const map={}, _t0=Date.now();
   for(let pg=1; pg<=40; pg++){
     const d=await bling(`/produtos?pagina=${pg}&limite=100`);
     const arr=d.data||[]; if(!arr.length) break;
@@ -3539,7 +3595,9 @@ async function _lerEstoqueMapBling(){
     if(arr.length<100) break;
     await sleep(400); // respeita o limite de 3 req/s do Bling
   }
-  _estCache={t:Date.now(),map}; return map;
+  _estCache={t:Date.now(),map};
+  try{ Object.values(map).forEach(p=>{ if(p&&p.id!=null&&p.estoque!=null) _conciliarVarredura(p.id,p.estoque,_t0,"varredura do catálogo"); }); }catch(e){}
+  return map;
 }
 // FOTOS do carrossel da tela de preço: só dados locais (tabela de preços + catálogo da madrugada). ZERO Bling.
 // (antes o carrossel usava /api/catalogo, que lê o estoque inteiro no Bling, 24 h por dia)
@@ -6326,7 +6384,7 @@ app.post("/api/estoque/entrada",async(req,res)=>{
         const corpo={ produto:{id:pid}, operacao:"E", quantidade:qtd,
           observacoes:`Entrada ${tipo==="fiscal"?("NF "+(numeroNota||"")):"manual"}${fornecedor?(" — "+fornecedor):""}${funcionarioNome?(" ("+funcionarioNome+")"):""}`.slice(0,190) };
         if(it.custo!=null && !isNaN(Number(it.custo)) && Number(it.custo)>0){ corpo.preco=Number(it.custo); corpo.custo=Number(it.custo); }
-        await bling(`/estoques`,{method:"POST",body:JSON.stringify(corpo)}); _estoqueNoCache(pid,qtd,"add");
+        await bling(`/estoques`,{method:"POST",body:JSON.stringify(corpo)}); _estoqueMudou(pid,qtd,"add",{tipo:"entrada",por:funcionarioNome,nome:it.nome||it.produtoNome,motivo:`Entrada de estoque${numeroNota?" NF "+numeroNota:""}${fornecedor?" · "+fornecedor:""}`,origem:"Entrada de estoque",ref:numeroNota?{nota:String(numeroNota),fornecedor:fornecedor||""}:null});
         resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, custo:it.custo||null, ok:true});
         await sleep(150);
       }catch(e){ resultados.push({produtoId:pid, nome:it.nome||it.produtoNome||"", quantidade:qtd, ok:false, erro:e.message}); }
@@ -6478,7 +6536,7 @@ app.post("/api/estoque/ajustar",async(req,res)=>{
       quantidade:Number(novoTotal),
       observacoes:`Ajuste de estoque via sistema${funcionarioNome?` — ${funcionarioNome}`:""}`,
     })});
-    _estoqueNoCache(produtoId,novoTotal,"set");
+    _estoqueMudou(produtoId,novoTotal,"set",{tipo:"balanco",por:funcionarioNome,motivo:"Ajuste de estoque pelo painel",origem:"Painel de estoque"});
     res.json({ok:true, produtoId:Number(produtoId), novoTotal:Number(novoTotal)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
@@ -8072,7 +8130,7 @@ app.post("/api/pdv/ajustar-estoque",async(req,res)=>{
       quantidade:Number(quantidade),
       observacoes:`Ajuste via Frente de Caixa — autorizado por ${auth.funcionario.nome}`,
     })});
-      _estoqueNoCache(produtoId,quantidade,"set");
+      _estoqueMudou(produtoId,quantidade,"set",{tipo:"balanco",por:auth.funcionario.nome,motivo:"Ajuste na Frente de Caixa",origem:"Frente de caixa"});
     res.json({ok:true,autorizadoPor:auth.funcionario.nome,novoEstoque:Number(quantidade)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,detalhe:e.body}); }
 });
@@ -8882,7 +8940,7 @@ async function garantirEstoqueParaItens(itens){
           ...(custo!=null?{preco:custo, custo:custo}:{}), // repete o último custo de entrada conhecido desse produto
           observacoes:`Entrada automática p/ concluir venda no caixa atacado (faltavam ${falta})`+(custo!=null?` — custo repetido da última entrada (${custo})`:""),
         })});
-        _estoqueNoCache(pid,falta,"add"); reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd, custoUsado:custo??null});
+        _estoqueMudou(pid,falta,"add",{tipo:"reposicao_auto",por:"sistema",nome:it.nome,motivo:"Entrada automática para concluir venda no caixa atacado",origem:"Caixa atacado"}); reposto.push({produtoId:pid, nome:it.nome||"", faltava:falta, saldoAntes:atual, qtdVenda:qtd, custoUsado:custo??null});
         await sleep(300);
       }catch(e){ console.error("Falha ao repor estoque do produto "+pid+":",e.message); }
     }
@@ -10911,7 +10969,7 @@ function _processarAvisoBling(ev){
     else {
       const sit=Number(d.situacao?.id)||0, ant=h.porId[id]||{};
       h.porId[id]={n:d.numero||ant.n||null,d:String(d.data||ant.d||"").slice(0,10),t:Number(d.total!=null?d.total:ant.t)||0,s:sit||ant.s||0,c:d.contato?.id?String(d.contato.id):(ant.c||"")};
-      if(sit){ _sitOnline[id]={situacaoId:sit,situacao:nomeSituacao(sit),em:Date.now()};
+      if(sit){ _pedidoAtividade(id,d.numero,sit); _sitOnline[id]={situacaoId:sit,situacao:nomeSituacao(sit),em:Date.now()};
         if(sit===SIT.ATENDIDO){ _supAtd.mapa[id]={t:h.porId[id].t,d:h.porId[id].d}; _supAtd.ids.add(id); } else if(_supAtd.mapa[id]){ delete _supAtd.mapa[id]; _supAtd.ids.delete(id); } _whSujo.atd=true; }
       // itens (pedido novo ou alterado): busca o detalhe pela fila lenta, só se não for pedido do próprio sistema
       const doSistema=Object.values(lerPropostas()||{}).some(p=>String(p?.pedidoBlingId)===id); if(!doSistema){ _detPendentes.add(id); setTimeout(_buscarDetalhesAvisados,3000); }
@@ -10927,7 +10985,7 @@ function _processarAvisoBling(ev){
   } else if(tipo.startsWith("stock.")){
     const pid=String(d.produto?.id||""); if(pid){ const P=lerProdutosBling(), a=P.porId[pid]||{};
       const v=d.saldoVirtualTotal!=null?Number(d.saldoVirtualTotal):(d.saldoFisicoTotal!=null?Number(d.saldoFisicoTotal):null);
-      if(v!=null){ P.porId[pid]={...a,est:v,fis:d.saldoFisicoTotal!=null?Number(d.saldoFisicoTotal):a.fis}; _whSujo.prod=true; _metProdCache.clear();
+      if(v!=null){ setTimeout(()=>_conciliarSaldo(pid,v,"aviso do Bling"),8000); /* espera um pouco: o aviso do pedido e o registro do próprio sistema chegam junto */ P.porId[pid]={...a,est:v,fis:d.saldoFisicoTotal!=null?Number(d.saldoFisicoTotal):a.fis}; _whSujo.prod=true; _metProdCache.clear();
         const hk=_diaBRk(Date.now()), hh=((P.historicoEstoque||={})[pid]||=[]); if(!hh.length||hh[hh.length-1][0]!==hk) hh.push([hk,v]); else hh[hh.length-1][1]=v; } }
   } else if((tipo.startsWith("invoice.")||tipo.startsWith("consumer_invoice."))&&id){
     const N=lerJSON(NOTAS_BLING_FILE,{}); const k=(tipo.startsWith("consumer")?"nfce-":"nfe-")+id;
@@ -11726,7 +11784,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     for(const x of R.itens){ if(x.status!=="ok"||ign.has(Number(x.nItem))||!(x.qtdUn>0)) continue;
       try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,precoCusto:x.custoRealUn||x.custoUn,
           observacoes:`${n.semNota?"Entrada SEM NOTA":"Entrada NF "+(R.numero||"")} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
-        _estoqueNoCache(x.produtoId,x.qtdUn,"add"); lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
+        _estoqueMudou(x.produtoId,x.qtdUn,"add",{tipo:"entrada",por:quem,nome:x.produtoNome,motivo:`${n.semNota?"Entrada sem nota":"Entrada NF "+(R.numero||"")} ${String(R.emitente?.nome||"").slice(0,50)}`.trim(),origem:"Entrada de nota",ref:{nota:String(R.numero||""),fornecedor:R.emitente?.nome||""}}); lanc.push({...x,ok:true}); if(P.porId[String(x.produtoId)]&&x.custoRealUn>0){ P.porId[String(x.produtoId)].pc=x.custoRealUn; if(P.porId[String(x.produtoId)].est!=null) P.porId[String(x.produtoId)].est+=x.qtdUn; } }
       catch(e){ lanc.push({...x,ok:false,erro:e.message}); }
       await sleep(320); }
     try{ salvarJSON(PRODUTOS_BLING_FILE,P); _metProdCache.clear(); }catch(e){}
@@ -12097,6 +12155,28 @@ async function _enviarFornecedorBling(produtoId, v){
     return {ok:true,id,fornecedor:forn.nome};
   }catch(e){ _FISCAL&&_FISCAL.marcarBling(v.chave,{blingErro:String(e.message).slice(0,200),blingEm:Date.now()}); return {ok:false,erro:e.message}; }
 }
+// ---- histórico de movimentações de estoque: consulta, exportação e conferência ----
+const _TIPOS_MOV={venda:"Venda",entrada:"Entrada",saida:"Saída",balanco:"Ajuste (contagem)",estorno:"Estorno (cancelamento)",reposicao_auto:"Reposição automática",alteracao_bling:"Alteração no Bling"};
+function _filtrarMov(q){ _movCarregar();
+  const ini=/^\d{4}-\d{2}-\d{2}$/.test(String(q.ini||""))?Date.parse(q.ini+"T00:00:00-03:00"):0, fim=/^\d{4}-\d{2}-\d{2}$/.test(String(q.fim||""))?Date.parse(q.fim+"T23:59:59.999-03:00"):Infinity;
+  const tipos=String(q.tipo||"").split(",").filter(Boolean), busca=_nrmP(q.busca||""), por=_nrmP(q.por||""), pid=String(q.produtoId||""), L=[];
+  for(let i=_movs.length-1;i>=0;i--){ const m=_movs[i]; if(m.em<ini||m.em>fim) continue; if(pid&&m.produtoId!==pid) continue; if(tipos.length&&!tipos.includes(m.tipo)) continue;
+    if(busca&&!(_nrmP(m.nome).includes(busca)||_nrmP(m.motivo).includes(busca)||_nrmP(m.ref&&m.ref.numero||"").includes(busca))) continue; if(por&&!_nrmP(m.por).includes(por)) continue; L.push(m); }
+  return L; }
+app.get("/api/estoque-historico",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
+  try{ const L=_filtrarMov(req.query), lim=Math.min(Math.max(Number(req.query.limite)||100,1),500), off=Math.max(Number(req.query.offset)||0,0), porTipo={};
+    L.forEach(m=>{ const t=(porTipo[m.tipo]||={tipo:m.tipo,nome:_TIPOS_MOV[m.tipo]||m.tipo,movimentos:0,soma:0}); t.movimentos++; t.soma=+(t.soma+(Number(m.delta)||0)).toFixed(4); });
+    res.json({ok:true,total:L.length,itens:L.slice(off,off+lim).map(m=>({...m,tipoNome:_TIPOS_MOV[m.tipo]||m.tipo})),resumo:Object.values(porTipo),tipos:_TIPOS_MOV});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/estoque-historico.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
+  try{ const L=_filtrarMov(req.query).slice(0,20000), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(x).replace(".",",");
+    const linhas=[["Data","Hora","Produto","Tipo","Quantidade","Saldo antes","Saldo depois","Quem","Motivo","Referência","Origem"].join(";")];
+    L.forEach(m=>{ const d=new Date(m.em-3*3600e3).toISOString(); linhas.push([d.slice(0,10).split("-").reverse().join("/"),d.slice(11,19),q(m.nome),q(_TIPOS_MOV[m.tipo]||m.tipo),n(m.delta),n(m.antes),n(m.depois),q(m.por),q(m.motivo),q(m.ref?(m.ref.numero?"Pedido "+m.ref.numero:(m.ref.nota?"NF "+m.ref.nota:"")):""),q(m.origem)].join(";")); });
+    res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="historico_estoque.csv"'); res.send("\ufeff"+linhas.join("\r\n"));
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// lê o estoque de todos os produtos no Bling agora e registra o que mudou e o sistema ainda não sabia
+app.post("/api/estoque-historico/conferir-agora",requireAdmin,async(req,res)=>{
+  try{ const antes=_movs.length; _estCache={t:0,map:null}; await getEstoqueMap(); res.json({ok:true,novos:_movs.length-antes}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/produtos-gestao/:id/fornecedores",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
   try{ if(!_FISCAL) return res.status(503).json({erro:"módulo fiscal indisponível"}); res.json({ok:true,itens:_FISCAL.vinculosDoProduto(req.params.id)}); }
   catch(e){ res.status(500).json({erro:e.message}); }
@@ -12145,7 +12225,7 @@ const PRODUTOS_BLING_FILE=`${DATA_DIR}/produtos_bling.json`;
 let _prodMem=null, _prodSync={rodando:false,progresso:""};
 function lerProdutosBling(){ if(!_prodMem){ _prodMem=lerJSON(PRODUTOS_BLING_FILE,null)||{}; _prodMem.porId||={}; } return _prodMem; }
 async function sincronizarProdutosBling(){
-  if(_prodSync.rodando) return; _prodSync={rodando:true,progresso:"lendo o catálogo"};
+  if(_prodSync.rodando) return; _prodSync={rodando:true,progresso:"lendo o catálogo"}; const _t0=Date.now();
   try{
     const porId={}, ceder=async()=>{ let w=0; while(_filaAlta.length>0&&w<300){ await sleep(1000); w++; } };
     for(let pg=1;pg<=100;pg++){ await ceder(); const r=await blingLento(`/produtos?pagina=${pg}&limite=100`); const arr=(r&&r.data)||[];
@@ -12162,6 +12242,7 @@ async function sincronizarProdutosBling(){
     // foto diária do estoque (para ver a evolução na ficha), guarda 120 dias
     const hojeK=_diaBRk(Date.now()); Object.entries(porId).forEach(([id,p])=>{ if(p.est==null) return; const h=(d.historicoEstoque[id]||=[]); if(!h.length||h[h.length-1][0]!==hojeK) h.push([hojeK,p.est]); else h[h.length-1][1]=p.est; if(h.length>120) h.splice(0,h.length-120); });
     salvarJSON(PRODUTOS_BLING_FILE,d); _prodMem=d; _metProdCache.clear();
+    try{ Object.entries(porId).forEach(([id,p])=>{ if(p.est!=null) _conciliarVarredura(id,p.est,_t0,"cópia do catálogo"); }); }catch(e){}
     console.log(`[produtos] catálogo e estoque do Bling copiados: ${Object.keys(porId).length} produtos`);
   }catch(e){ console.log("[produtos] cópia do catálogo falhou (tenta de novo depois):",e.message); }
   finally{ _prodSync={rodando:false,progresso:""}; }
@@ -12309,7 +12390,7 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
       let antes=null; try{ const sd=(await bling(`/estoques/saldos?idsProdutos[]=${id}`))?.data?.[0]; antes=sd?Number(sd.saldoVirtualTotal??sd.saldoFisicoTotal??0):null; }catch(e){}
       try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(id)},deposito:{id:Number(dep)},operacao:"B",quantidade:q,observacoes:`Balanço via Produtos por ${pedidoPor||"—"} (aut. ${quem}): ${motivo}`.slice(0,190)})}); }
       catch(e){ return res.status(502).json({erro:"O Bling não aceitou o ajuste de estoque: "+e.message,feito}); }
-      const P=lerProdutosBling(); if(P.porId[id]) { P.porId[id].est=q; salvarJSON(PRODUTOS_BLING_FILE,P); } _estoqueNoCache(id,q,"set");
+      const P=lerProdutosBling(); if(P.porId[id]) { P.porId[id].est=q; salvarJSON(PRODUTOS_BLING_FILE,P); } _estoqueMudou(id,q,"set",{tipo:"balanco",antes,por:pedidoPor,motivo:`${motivo} (aut. ${quem})`,origem:"Produtos"});
       feito.push(`estoque ${antes!=null?antes:"?"} → ${q}`);
     }
     if(!feito.length) return res.status(400).json({erro:"nada para alterar"});
@@ -16230,6 +16311,7 @@ app.get("/resultado",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, m
 app.get("/margem-bruta",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"margem-bruta.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
+app.get("/historico-estoque",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"historico-estoque.html")); });
 app.get("/entrada-produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-produtos.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });
 app.get("/inicio",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"inicio.html")); });
@@ -17485,7 +17567,7 @@ app.post("/api/estoque/lancar",async(req,res)=>{
           operacao, quantidade,
           precoCusto: it.precoCusto!=null?Number(it.precoCusto):undefined,
           observacoes:(observacao||`Ajuste pelo painel de estoque (${modo}) — por ${funcNome}`).slice(0,300),
-        })}); _estoqueNoCache(pid,operacao==="B"?quantidade:(operacao==="E"?quantidade:-quantidade),operacao==="B"?"set":"add");
+        })}); _estoqueMudou(pid,operacao==="B"?quantidade:(operacao==="E"?quantidade:-quantidade),operacao==="B"?"set":"add",{tipo:operacao==="B"?"balanco":(operacao==="E"?"entrada":"saida"),por:funcNome,nome:it.nome,motivo:String(observacao||`Ajuste pelo painel de estoque (${modo})`).slice(0,150),origem:"Painel de estoque"});
         resultados.push({produtoId:pid,nome:it.nome||"",ok:true,operacao,quantidade,antes,
           depois: modo==="balanco"?qtdInformada:(antes!=null?+(antes+(operacao==="E"?quantidade:-quantidade)).toFixed(3):null)});
       }catch(e){ resultados.push({produtoId:pid,nome:it.nome||"",ok:false,erro:e.message,detalhe:e.body}); }
@@ -19368,6 +19450,7 @@ function _caminhoSituacao(g,de,para){
 async function mudarSituacaoPedido(id, novaSit, _viaIntermediaria){
   try{
     await bling(`/pedidos/vendas/${id}/situacoes/${novaSit}`,{method:"PATCH"});
+    _pedidoAtividade(id,null,novaSit);
     return {ok:true, mudou:true};
   }catch(e){
     const txt=((e.message||"")+" "+JSON.stringify(e.body||{})).toLowerCase();
