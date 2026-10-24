@@ -1277,6 +1277,7 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
@@ -12030,7 +12031,7 @@ function _gerarRecorrentes(C){ // garante a conta do mês atual e do próximo pa
   const h=_diaBRk(Date.now()), comp=[h.slice(0,7),_diaBRk(Date.parse(h.slice(0,7)+"-28T12:00:00Z")+5*_DIA).slice(0,7)]; let mud=false;
   (C.recorrentes||[]).filter(r=>r.ativo!==false).forEach(r=>comp.forEach(cp=>{ if(cp<String(r.inicio||"").slice(0,7)) return;
     if(C.titulos.some(t=>t.recorrenteId===r.id&&t.competencia===cp)) return; C.seq++;
-    C.titulos.push({id:"cp"+C.seq,origem:"recorrente",recorrenteId:r.id,competencia:cp,descricao:r.descricao,categoria:r.categoria,fornecedor:{nome:r.fornecedor||"",cnpj:""},parcela:"mensal",vencimento:r.diaUtil?_diaUtil(cp,r.diaUtil):_diaVenc(cp,r.dia),valor:_round2(r.valor),status:"aberto",criadoEm:Date.now(),criadoPor:"automático"}); mud=true; }));
+    C.titulos.push({id:"cp"+C.seq,origem:"recorrente",recorrenteId:r.id,competencia:cp,descricao:r.descricao,categoria:r.categoria,...(r.funcionarioId?{funcionarioId:r.funcionarioId}:{}),fornecedor:{nome:r.fornecedor||"",cnpj:""},parcela:"mensal",vencimento:r.diaUtil?_diaUtil(cp,r.diaUtil):_diaVenc(cp,r.dia),valor:_round2(r.valor),status:"aberto",criadoEm:Date.now(),criadoPor:"automático"}); mud=true; }));
   if(mud) _salvarContas(C); return C;
 }
 setInterval(()=>{ try{ _gerarRecorrentes(lerContasPagar()); }catch(e){} },6*3600e3);
@@ -12108,6 +12109,130 @@ app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // contas financeiras (bancos, cofre, caixas) com saldo inicial
+// ===================== CUSTOS E FOLHA =====================
+// Visão por mês e por grupo do plano de contas (Pessoal, Ocupação, Administrativo…), com edição e ligação dos custos de pessoal aos
+// funcionários cadastrados. Cada funcionário tem uma "ficha de custo" (salário, encargos, benefícios, provisão) que gera as despesas
+// fixas mensais dele. Dados de salário: só quem tem a permissão "acesso_custos" (ou admin).
+const CUSTOS_FICHAS_FILE=`${DATA_DIR}/custos_fichas_funcionarios.json`;
+const _GRUPOS_CUSTO=[
+  {id:"pessoal",nome:"Pessoal e folha",icone:"👥",pref:["5.1"]},{id:"ocupacao",nome:"Ocupação (aluguel, energia, água)",icone:"🏢",pref:["5.2"]},
+  {id:"admin",nome:"Administrativo",icone:"🗂️",pref:["5.3"]},{id:"marketing",nome:"Marketing",icone:"📣",pref:["5.4"]},
+  {id:"manutencao",nome:"Manutenção, veículos e seguros",icone:"🛠️",pref:["5.5"]},{id:"financeiro",nome:"Financeiro e tarifas",icone:"🏦",pref:["5.6","7.1"]},
+  {id:"variaveis",nome:"Custos de venda",icone:"🚚",pref:["4."]},{id:"mercadoria",nome:"Mercadorias (compras)",icone:"📦",pref:["3."]},
+  {id:"impostos",nome:"Impostos sobre vendas e lucro",icone:"🧾",pref:["2.","8."]},{id:"outros",nome:"Outros",icone:"📎",pref:[]},
+  {id:"fora",nome:"Fora do resultado (empréstimos, retiradas, ativos)",icone:"↔️",pref:["9."],foraDoTotal:true}];
+function _grupoDoCusto(cod){ cod=String(cod||""); if(cod==="7.2") return "fora"; for(const g of _GRUPOS_CUSTO){ if(g.pref.some(p=>cod.startsWith(p))) return g.id; } return "outros"; }
+const _COMP_PESSOAL={"5.1.1":"salario","5.1.2":"encargos","5.1.3":"beneficios","5.1.4":"provisao","5.1.5":"prolabore","5.1.6":"prestador"};
+function _addMes(mes,k){ const [a,m]=mes.split("-").map(Number), d=new Date(Date.UTC(a,m-1+k,1)); return d.toISOString().slice(0,7); }
+function _lancamentosDoMes(C,mes,F,hoje){ const d7=_diaBRk(Date.parse(hoje+"T12:00:00Z")+7*_DIA), out=[];
+  for(const t of C.titulos){ if(t.status==="cancelado") continue; const c=_competenciaDoTitulo(t); let dentro=false; for(let k=0;k<c.meses;k++){ if(_addMes(c.ini,k)===mes){ dentro=true; break; } } if(!dentro) continue;
+    const pl=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), valorMes=_round2((Number(t.valor)||0)/c.meses);
+    out.push({id:t.id,origem:t.origem||"",descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),categoria:pl.rotulo,cod:pl.cod,grupo:_grupoDoCusto(pl.cod),
+      fornecedor:t.fornecedor?.nome||"",vencimento:t.vencimento,valor:_round2(Number(t.valor)||0),valorMes,meses:c.meses,competencia:c.ini,status:t.status==="pago"?"paga":t.vencimento<hoje?"vencida":t.vencimento<=d7?"vence logo":"aberta",
+      funcionarioId:t.funcionarioId||"",funcionarioNome:t.funcionarioId&&F[t.funcionarioId]?F[t.funcionarioId].nome:"",recorrenteId:t.recorrenteId||"",parcela:t.parcela||"",observacao:t.observacao||"",pagoEm:t.pagoEm||null}); }
+  return out; }
+const _somaMes=l=>_round2(l.reduce((a,x)=>a+x.valorMes,0));
+const _numBR=x=>{ const t=String(x==null?"":x).trim(); if(!t) return NaN; if(t.includes(",")) return Number(t.replace(/\./g,"").replace(",",".")); if(/^\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g,"")); return Number(t); }; // aceita 1234,56 · 1.234,56 · 2.800 (ponto de milhar) · 2.5
+function _blocoPessoal(lista){ const por={}; ["salario","encargos","beneficios","provisao","prolabore","prestador","outros"].forEach(k=>por[k]=0);
+  lista.forEach(x=>{ por[_COMP_PESSOAL[x.cod]||"outros"]=_round2(por[_COMP_PESSOAL[x.cod]||"outros"]+x.valorMes); });
+  return {...por,total:_somaMes(lista),pago:_somaMes(lista.filter(x=>x.status==="paga")),aberto:_somaMes(lista.filter(x=>x.status!=="paga")),lancamentos:lista.length}; }
+app.get("/api/custos",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const C=_gerarRecorrentes(lerContasPagar()), q=req.query, hoje=_diaBRk(Date.now()), mes=/^\d{4}-\d{2}$/.test(String(q.mes||""))?q.mes:hoje.slice(0,7), ant=_addMes(mes,-1);
+    const F=lerJSON(FUNC_FILE,{}), fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), todos=_lancamentosDoMes(C,mes,F,hoje), tAnt=_lancamentosDoMes(C,ant,F,hoje);
+    const grupos=_GRUPOS_CUSTO.map(g=>{ const L=todos.filter(x=>x.grupo===g.id), La=tAnt.filter(x=>x.grupo===g.id); return {id:g.id,nome:g.nome,icone:g.icone,foraDoTotal:!!g.foraDoTotal,total:_somaMes(L),pago:_somaMes(L.filter(x=>x.status==="paga")),aberto:_somaMes(L.filter(x=>x.status!=="paga")),qtd:L.length,anterior:_somaMes(La)}; });
+    const dentro=todos.filter(x=>x.grupo!=="fora"), dentroAnt=tAnt.filter(x=>x.grupo!=="fora"), total=_somaMes(dentro), totalAnt=_somaMes(dentroAnt);
+    const resumo={mes,mesAnterior:ant,total,pago:_somaMes(dentro.filter(x=>x.status==="paga")),aberto:_somaMes(dentro.filter(x=>x.status!=="paga")),vencido:_somaMes(dentro.filter(x=>x.status==="vencida")),anterior:totalAnt,variacaoPct:totalAnt>0?+(((total-totalAnt)/totalAnt)*100).toFixed(1):null,qtd:dentro.length};
+    const nrm=_nrmP, busca=nrm(q.busca||""); let L=todos;
+    if(q.grupo) L=L.filter(x=>x.grupo===q.grupo); if(q.cat) L=L.filter(x=>x.cod===q.cat);
+    if(q.func==="__sem") L=L.filter(x=>!x.funcionarioId&&!(x.grupo==="pessoal"&&x.cod==="5.1.2")); else if(q.func==="__guias") L=L.filter(x=>!x.funcionarioId&&x.cod==="5.1.2"); else if(q.func) L=L.filter(x=>x.funcionarioId===q.func);
+    if(q.situacao==="pagas") L=L.filter(x=>x.status==="paga"); else if(q.situacao==="abertas") L=L.filter(x=>x.status!=="paga"); else if(q.situacao==="vencidas") L=L.filter(x=>x.status==="vencida");
+    if(busca) L=L.filter(x=>nrm(x.descricao).includes(busca)||nrm(x.fornecedor).includes(busca)||nrm(x.funcionarioNome).includes(busca)||nrm(x.categoria).includes(busca));
+    L=L.slice().sort((a,b)=>b.valorMes-a.valorMes);
+    const categorias=q.grupo?PLANO_CONTAS.filter(p=>_grupoDoCusto(p.cod)===q.grupo).map(p=>{ const l=todos.filter(x=>x.cod===p.cod); return {cod:p.cod,rotulo:p.rotulo,nome:p.nome,total:_somaMes(l),qtd:l.length}; }):[];
+    let pessoal=null;
+    if(q.grupo==="pessoal"){ const pes=todos.filter(x=>x.grupo==="pessoal"), ids=new Set(pes.map(x=>x.funcionarioId).filter(Boolean)), lista=[];
+      Object.values(F).forEach(f=>{ if(f.ativo===false&&!ids.has(f.id)) return; const l=pes.filter(x=>x.funcionarioId===f.id), fi=fichas[f.id]||null;
+        lista.push({id:f.id,nome:f.nome,nivel:f.nivel||"",ativo:f.ativo!==false,temFicha:!!fi,ficha:fi?{salario:fi.salario,dia:fi.dia,diaTipo:fi.diaTipo,ativo:fi.ativo!==false}:null,..._blocoPessoal(l)}); });
+      lista.sort((a,b)=>b.total-a.total||a.nome.localeCompare(b.nome));
+      pessoal={funcionarios:lista,semVinculo:_blocoPessoal(pes.filter(x=>!x.funcionarioId&&x.cod!=="5.1.2")),encargosEmpresa:_blocoPessoal(pes.filter(x=>!x.funcionarioId&&x.cod==="5.1.2")),total:_somaMes(pes),pago:_somaMes(pes.filter(x=>x.status==="paga")),aberto:_somaMes(pes.filter(x=>x.status!=="paga"))}; }
+    res.json({ok:true,resumo,grupos,categorias,pessoal,itens:L.slice(0,400),totalItens:L.length,somaItens:_somaMes(L),
+      funcionarios:Object.values(F).filter(f=>f.ativo!==false).map(f=>({id:f.id,nome:f.nome,nivel:f.nivel||""})).sort((a,b)=>a.nome.localeCompare(b.nome)),plano:PLANO_CONTAS.filter(p=>p.cod!=="7.2").map(p=>({cod:p.cod,rotulo:p.rotulo,grupo:_grupoDoCusto(p.cod)}))});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/custos.csv",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const C=lerContasPagar(), hoje=_diaBRk(Date.now()), mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:hoje.slice(0,7), F=lerJSON(FUNC_FILE,{}), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>String(x==null?"":x).replace(".",",");
+    let L=_lancamentosDoMes(C,mes,F,hoje); if(req.query.grupo) L=L.filter(x=>x.grupo===req.query.grupo); if(req.query.func==="__sem") L=L.filter(x=>!x.funcionarioId); else if(req.query.func) L=L.filter(x=>x.funcionarioId===req.query.func);
+    const nomeG=Object.fromEntries(_GRUPOS_CUSTO.map(g=>[g.id,g.nome])), linhas=[["Competência","Grupo","Categoria","Descrição","Funcionário","Fornecedor","Vencimento","Valor do mês","Valor total","Situação"].join(";")];
+    L.sort((a,b)=>b.valorMes-a.valorMes).forEach(x=>linhas.push([mes,q(nomeG[x.grupo]),q(x.categoria),q(x.descricao),q(x.funcionarioNome),q(x.fornecedor),x.vencimento.split("-").reverse().join("/"),n(x.valorMes),n(x.valor),x.status].join(";")));
+    res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",`attachment; filename="custos_${mes}.csv"`); res.send("\ufeff"+linhas.join("\r\n"));
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// novo custo (uma conta ou despesa fixa mensal), com funcionário opcional
+app.post("/api/custos/lancamento",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const b=req.body||{}, v=_numBR(b.valor), quem=req.sessao?.nome||"", F=lerJSON(FUNC_FILE,{});
+    if(!String(b.descricao||"").trim()) return res.status(400).json({erro:"informe a descrição"}); if(!(v>0)) return res.status(400).json({erro:"informe o valor"}); if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) return res.status(400).json({erro:"informe o vencimento"});
+    const fid=b.funcionarioId&&F[b.funcionarioId]?String(b.funcionarioId):"", cat=_contaDoPlano(b.categoria).rotulo, C=lerContasPagar(), fornNome=fid?F[fid].nome:String(b.fornecedor||"").slice(0,120);
+    if(b.repetirMensal){ C.recorrentes||=[]; const r={id:"rc"+Date.now(),descricao:String(b.descricao).trim().slice(0,120),fornecedor:fornNome,categoria:cat,valor:_round2(v),dia:Number(b.vencimento.slice(8,10)),inicio:b.vencimento,ativo:true,criadoEm:Date.now(),criadoPor:quem,...(fid?{funcionarioId:fid}:{})};
+      C.recorrentes.push(r); _gerarRecorrentes(C); const t=C.titulos.find(x=>x.recorrenteId===r.id&&x.competencia===b.vencimento.slice(0,7)); if(t) t.vencimento=b.vencimento; _salvarContas(C); return res.json({ok:true,recorrente:r,titulo:t||null}); }
+    C.seq++; const t={id:"cp"+C.seq,origem:"despesa",descricao:String(b.descricao).trim().slice(0,120),categoria:cat,fornecedor:{nome:fornNome,cnpj:""},parcela:"1/1",vencimento:b.vencimento,valor:_round2(v),status:"aberto",observacao:String(b.observacao||"").slice(0,200),criadoEm:Date.now(),criadoPor:quem,
+      ...(fid?{funcionarioId:fid}:{}),...(/^\d{4}-\d{2}$/.test(String(b.competencia||""))?{competencia:b.competencia}:{})}; C.titulos.push(t); _salvarContas(C); res.json({ok:true,titulo:t});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// editar um custo: só este mês, ou este e os próximos (quando vem de uma despesa fixa)
+app.post("/api/custos/lancamento/:id",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const C=lerContasPagar(), t=C.titulos.find(x=>x.id===req.params.id), b=req.body||{}, quem=req.sessao?.nome||"", F=lerJSON(FUNC_FILE,{}); if(!t) return res.status(404).json({erro:"custo não encontrado"});
+    const v=b.valor!=null&&String(b.valor).trim()!==""?_numBR(b.valor):null; if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"});
+    const fid=b.funcionarioId!=null?(F[b.funcionarioId]?String(b.funcionarioId):""):undefined, antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao,funcionarioId:t.funcionarioId||""};
+    const aplicar=x=>{ if(v!=null&&x.status!=="pago") x.valor=_round2(v); if(b.descricao!=null&&String(b.descricao).trim()) x.descricao=String(b.descricao).trim().slice(0,120); if(b.categoria) x.categoria=_contaDoPlano(b.categoria).rotulo;
+      if(fid!==undefined){ if(fid){ x.funcionarioId=fid; x.fornecedor={...(x.fornecedor||{}),nome:F[fid].nome}; } else delete x.funcionarioId; } if(b.observacao!=null) x.observacao=String(b.observacao).slice(0,200); };
+    if(v!=null&&t.status==="pago"&&Math.abs(v-t.valor)>0.004) return res.status(409).json({erro:"essa conta já está paga: para mudar o valor, desfaça o pagamento em Contas a Pagar"});
+    aplicar(t); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))&&t.status!=="pago") t.vencimento=b.vencimento; if(/^\d{4}-\d{2}$/.test(String(b.competencia||""))) t.competencia=b.competencia;
+    (t.historico||=[]).push({em:Date.now(),por:quem,acao:"editou (Custos)",antes});
+    let afetados=1;
+    if(b.escopo==="proximos"&&t.recorrenteId){ const r=(C.recorrentes||[]).find(x=>x.id===t.recorrenteId);
+      if(r){ if(v!=null) r.valor=_round2(v); if(b.descricao!=null&&String(b.descricao).trim()) r.descricao=String(b.descricao).trim().slice(0,120); if(b.categoria) r.categoria=_contaDoPlano(b.categoria).rotulo;
+        if(fid!==undefined){ if(fid){ r.funcionarioId=fid; r.fornecedor=F[fid].nome; } else delete r.funcionarioId; } if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))){ r.dia=Number(b.vencimento.slice(8,10)); delete r.diaUtil; }
+        C.titulos.filter(x=>x.recorrenteId===r.id&&x.id!==t.id&&x.status==="aberto"&&String(x.competencia)>String(t.competencia)).forEach(x=>{ aplicar(x); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) x.vencimento=_diaVenc(x.competencia,r.dia); afetados++; }); } }
+    _salvarContas(C); res.json({ok:true,afetados,titulo:t});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// sugere o funcionário de cada custo de pessoal sem vínculo, pelo nome que aparece no fornecedor/descrição (só quando há UM candidato)
+app.get("/api/custos/sugestoes",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const C=lerContasPagar(), F=lerJSON(FUNC_FILE,{}), nrm=_nrmP, tok=t=>nrm(t).split(/[^a-z0-9]+/).filter(x=>x.length>=3&&!["sem","carteira","outubro","salario","adiantamento","saldo","total","remuneracao","novembro","setembro","dezembro","janeiro","fevereiro","marco","abril","maio","junho","julho","agosto","mensal","pro","labore","servico"].includes(x));
+    const pessoas=Object.values(F).filter(f=>f.ativo!==false).map(f=>({id:f.id,nome:f.nome,t:new Set(tok(f.nome))})), lista=[];
+    for(const t of C.titulos){ if(t.status==="cancelado"||t.funcionarioId) continue; const pl=_contaDoPlano(t.categoria||""); if(_grupoDoCusto(pl.cod)!=="pessoal"||pl.cod==="5.1.2") continue;
+      const alvo=new Set([...tok(t.fornecedor?.nome||""),...tok(t.descricao||"")]); let melhor=[], max=0;
+      pessoas.forEach(p=>{ let n=0; p.t.forEach(x=>{ if(alvo.has(x)) n++; }); if(n>max){ max=n; melhor=[p]; } else if(n===max&&n>0) melhor.push(p); });
+      lista.push({id:t.id,descricao:t.descricao||"",fornecedor:t.fornecedor?.nome||"",categoria:pl.rotulo,valor:_round2(Number(t.valor)||0),vencimento:t.vencimento,sugestao:max>0&&melhor.length===1?{id:melhor[0].id,nome:melhor[0].nome}:null,ambigua:max>0&&melhor.length>1}); }
+    lista.sort((a,b)=>(b.sugestao?1:0)-(a.sugestao?1:0)||String(b.vencimento).localeCompare(String(a.vencimento)));
+    res.json({ok:true,total:lista.length,comSugestao:lista.filter(x=>x.sugestao).length,itens:lista.slice(0,300)});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/custos/vincular",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const C=lerContasPagar(), F=lerJSON(FUNC_FILE,{}), quem=req.sessao?.nome||"", pares=Array.isArray(req.body?.pares)?req.body.pares.slice(0,500):[]; let n=0;
+    pares.forEach(p=>{ const t=C.titulos.find(x=>x.id===p.id), f=F[p.funcionarioId]; if(!t||!f) return; t.funcionarioId=f.id; t.fornecedor={...(t.fornecedor||{}),nome:t.fornecedor?.nome||f.nome}; (t.historico||=[]).push({em:Date.now(),por:quem,acao:"vinculou ao funcionário (Custos)",funcionario:f.nome}); n++; });
+    if(n) _salvarContas(C); res.json({ok:true,vinculados:n});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// FICHA DE CUSTO DO FUNCIONÁRIO: gera/atualiza as despesas fixas mensais (salário, encargos, benefícios, provisão), todas ligadas à pessoa
+app.get("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
+  const F=lerJSON(FUNC_FILE,{}), f=F[req.params.fid]; if(!f) return res.status(404).json({erro:"funcionário não encontrado"});
+  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel||"",ativo:f.ativo!==false},ficha:lerJSON(CUSTOS_FICHAS_FILE,{})[f.id]||null}); });
+app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
+  try{ const F=lerJSON(FUNC_FILE,{}), f=F[req.params.fid]; if(!f) return res.status(404).json({erro:"funcionário não encontrado"});
+    const b=req.body||{}, quem=req.sessao?.nome||"", hoje=_diaBRk(Date.now()), nf=x=>{ const t=String(x==null?"":x).trim(); if(!t) return 0; const n=_numBR(t); return isFinite(n)&&n>=0?n:NaN; };
+    const salario=nf(b.salario), enc=nf(b.encargos), ben=nf(b.beneficios), prov=nf(b.provisaoPct);
+    if([salario,enc,ben,prov].some(x=>isNaN(x))) return res.status(400).json({erro:"confira os valores (use números, sem texto)"});
+    const encModo=b.encargosModo==="valor"?"valor":"pct", diaTipo=b.diaTipo==="util"?"util":"dia", dia=Math.min(diaTipo==="util"?15:31,Math.max(1,Math.round(Number(b.dia)||5))), inicio=/^\d{4}-\d{2}$/.test(String(b.inicio||""))?b.inicio:hoje.slice(0,7), ativo=b.ativo!==false;
+    const valores={salario:_round2(salario),encargos:_round2(encModo==="pct"?salario*enc/100:enc),beneficios:_round2(ben),provisao:_round2(salario*prov/100)};
+    const COMP={salario:{cod:"5.1.1",rot:"Salário"},encargos:{cod:"5.1.2",rot:"Encargos"},beneficios:{cod:"5.1.3",rot:"Benefícios"},provisao:{cod:"5.1.4",rot:"Provisão de 13º e férias"}};
+    const C=lerContasPagar(); C.recorrentes||=[]; const fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), rcs=(fichas[f.id]&&fichas[f.id].recorrentes)||{}, mesAtual=hoje.slice(0,7);
+    Object.entries(COMP).forEach(([k,c])=>{ const val=valores[k]; let r=C.recorrentes.find(x=>x.id===rcs[k]); if(!r&&!(val>0)) return;
+      if(!r){ r={id:"rc"+Date.now().toString(36)+k,criadoEm:Date.now(),criadoPor:quem}; C.recorrentes.push(r); rcs[k]=r.id; }
+      const rot=(PLANO_CONTAS.find(x=>x.cod===c.cod)||_contaDoPlano("5.9")).rotulo, desc=`${c.rot} · ${f.nome}`, ligado=ativo&&val>0; // nome completo da conta (a função _contaDoPlano não aceita só o código)
+      Object.assign(r,{descricao:desc,fornecedor:f.nome,categoria:rot,valor:val,dia:diaTipo==="dia"?dia:5,inicio:inicio+"-01",ativo:ligado,funcionarioId:f.id,fichaComponente:k}); if(diaTipo==="util") r.diaUtil=dia; else delete r.diaUtil;
+      const abertos=C.titulos.filter(t=>t.recorrenteId===r.id&&t.status==="aberto"&&String(t.competencia)>=mesAtual);
+      if(!ligado){ C.titulos=C.titulos.filter(t=>!abertos.includes(t)); } // desligado: tira as contas em aberto deste mês em diante (as pagas ficam)
+      else abertos.forEach(t=>{ t.valor=val; t.descricao=desc; t.categoria=rot; t.funcionarioId=f.id; t.fornecedor={...(t.fornecedor||{}),nome:f.nome}; t.vencimento=r.diaUtil?_diaUtil(t.competencia,r.diaUtil):_diaVenc(t.competencia,r.dia); }); });
+    _gerarRecorrentes(C); _salvarContas(C);
+    fichas[f.id]={salario:valores.salario,encargosModo:encModo,encargos:encModo==="pct"?enc:_round2(enc),beneficios:valores.beneficios,provisaoPct:prov,diaTipo,dia,inicio,ativo,observacao:String(b.observacao||"").slice(0,300),recorrentes:rcs,valores,atualizadoEm:Date.now(),atualizadoPor:quem};
+    salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
+    res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>res.json({contas:lerContasFin().contas}));
 app.post("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, d=lerContasFin(), nome=String(b.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da conta"});
@@ -16324,6 +16449,7 @@ app.get("/resultado",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, m
 app.get("/margem-bruta",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"margem-bruta.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
+app.get("/custos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"custos.html")); });
 app.get("/historico-estoque",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"historico-estoque.html")); });
 app.get("/entrada-produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-produtos.html")); });
 app.get("/entrada-nota",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-nota.html")); });

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Custos e Folha</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+.mv{padding:9px 0;border-bottom:1px solid #221e4f}.mv .t{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mv b.n{cursor:pointer;line-height:1.25}.qtd{font-weight:900;font-size:18px;white-space:nowrap}.qtd.mais{color:#3ce88a}.qtd.menos{color:#ff8aa3}.qtd.zero{color:#aaa}
+.tp{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;margin-right:6px;border:1px solid #37327a;background:#0f0d24}
+.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.g4{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kpi{background:#0f0d24;border:1px solid #37327a;border-radius:12px;padding:10px 12px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:11px;color:#a9a4d6;text-transform:uppercase;letter-spacing:.3px}.kpi .s{font-size:12px;color:#cfcaf5;margin-top:2px}
+.gr{display:block;border:1px solid #2b2760;border-radius:12px;padding:9px 12px;margin:6px 0;background:#120f2c;cursor:pointer}.gr.on{border-color:#ff1a8c;background:#1b1442}.gr .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.gr .t b:last-child{white-space:nowrap}.gr .bar{height:5px;border-radius:4px;background:#241f55;margin-top:6px;overflow:hidden}.gr .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff1a8c,#ff7ac3)}
+.mes{display:flex;align-items:center;justify-content:space-between;gap:8px}.mes b{font-size:18px}
+.fx{background:#120f2c;border:1px solid #2b2760;border-radius:12px;padding:10px 12px;margin:8px 0}.fx .nm{font-weight:900}.fx .cmp{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:#cfcaf5;margin:4px 0}.fx .cmp b{color:#fff}
+.ls{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #221e4f;cursor:pointer}.ls .d{font-weight:800;line-height:1.25}.ls .m{font-size:12px;color:#a9a4d6}.ls .v{text-align:right;white-space:nowrap;font-weight:900}
+.bd{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:4px}.bd.paga{background:#11352a;color:#6be3a8}.bd.aberta{background:#24205a;color:#cfcaf5}.bd.vencida{background:#4a1230;color:#ff8aa3}.bd.vence{background:#3a2e08;color:#ffd23f}
+.fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:460px}
+.modal2 label{display:block;margin-top:8px}.modal2 label .ic{display:block;margin-bottom:2px;white-space:normal}.modal2 input,.modal2 select,.modal2 textarea{width:100%}.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.dt{display:flex;gap:6px;align-items:center}.dt label.btn{position:relative;overflow:hidden;cursor:pointer;padding:8px 11px;margin:0}.dt label.btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/custos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/custos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">💼 Custos e Folha</div><div class="sp"></div></div>
+<div class="wrap">
+  <div class="card"><div class="mes"><button class="btn btn-ghost" onclick="mudarMes(-1)">◀</button><b id="mesTxt">—</b><button class="btn btn-ghost" onclick="mudarMes(1)">▶</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-mag" onclick="abrirNovo()">➕ Novo custo</button><button class="btn btn-ghost" onclick="exportar()">⬇️ CSV</button><button class="btn btn-ghost" onclick="hoje()">Mês atual</button></div></div>
+  <div class="card"><div class="kp" id="kpis"></div></div>
+  <div class="card"><h3 style="margin:0 0 4px">Para onde vai o dinheiro</h3><div class="ic" style="white-space:normal">Toque em um grupo para ver só ele (por exemplo, só salários).</div><div id="grupos"></div></div>
+  <div id="blocoGrupo"></div>
+</div>
+<div class="fundo2" id="mdl"><div class="modal2" id="mdlCorpo"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => n == null ? "—" : Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const isoParaBR = d => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "";
+function brParaISO(t) { let m = String(t || "").replace(/\D/g, ""); if (m.length === 6) m = m.slice(0, 4) + "20" + m.slice(4); if (m.length !== 8) return ""; const iso = `${m.slice(4)}-${m.slice(2, 4)}-${m.slice(0, 2)}`, d = new Date(iso + "T12:00:00Z"); return !isNaN(d) && d.toISOString().slice(0, 10) === iso ? iso : ""; }
+function mascara(el) { const d = el.value.replace(/\D/g, "").slice(0, 8); el.value = d.length > 4 ? d.slice(0, 2) + "/" + d.slice(2, 4) + "/" + d.slice(4) : d.length > 2 ? d.slice(0, 2) + "/" + d.slice(2) : d; }
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+let MES = hojeISO().slice(0, 7), GRUPO = "", CAT = "", FUNC = "", SIT = "", BUSCA = "", D = null, _tb = null;
+const addMes = (m, k) => { const [a, n] = m.split("-").map(Number), d = new Date(Date.UTC(a, n - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+function mudarMes(k) { MES = addMes(MES, k); carregar(); }
+function hoje() { MES = hojeISO().slice(0, 7); carregar(); }
+async function carregar() {
+  document.getElementById("mesTxt").textContent = MESES[Number(MES.slice(5)) - 1] + " / " + MES.slice(0, 4);
+  const { ok, j } = await api("/api/custos?" + new URLSearchParams({ mes: MES, grupo: GRUPO, cat: CAT, func: FUNC, situacao: SIT, busca: BUSCA }));
+  if (!ok) { document.getElementById("kpis").innerHTML = `<div class="err" style="grid-column:1/-1">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; render();
+}
+function variacao(atual, ant) { if (!(ant > 0)) return ""; const p = Math.round((atual - ant) / ant * 100); return `<span style="color:${p > 0 ? "#ff8aa3" : "#3ce88a"}">${p > 0 ? "▲" : "▼"} ${Math.abs(p)}%</span> vs mês anterior`; }
+function render() {
+  const R = D.resumo, G = D.grupos;
+  document.getElementById("kpis").innerHTML = [["Custos do mês", brl(R.total), variacao(R.total, R.anterior) || R.qtd + " lançamentos"], ["Já pago", brl(R.pago), R.total ? Math.round(R.pago / R.total * 100) + "% do mês" : ""], ["Em aberto", brl(R.aberto), ""], ["Vencido", brl(R.vencido), R.vencido ? '<span style="color:#ff8aa3">precisa pagar</span>' : "nada vencido"]].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  const maior = Math.max(1, ...G.filter(g => !g.foraDoTotal).map(g => g.total));
+  document.getElementById("grupos").innerHTML = `<div class="gr ${GRUPO === "" ? "on" : ""}" onclick="setGrupo('')"><div class="t"><b>📊 Todos os custos</b><b>${brl(R.total)}</b></div></div>` + G.filter(g => g.total > 0 || g.id === "pessoal" || g.id === GRUPO).map(g => `<div class="gr ${GRUPO === g.id ? "on" : ""}" onclick="setGrupo('${g.id}')"><div class="t"><b>${g.icone} ${esc(g.nome)}</b><b>${brl(g.total)}</b></div>
+    <div class="ic" style="white-space:normal">${g.qtd} lançamento(s)${g.aberto > 0 ? " · em aberto " + brl(g.aberto) : ""}${g.anterior > 0 || g.total > 0 ? " · " + (variacao(g.total, g.anterior) || "") : ""}</div>
+    ${g.foraDoTotal ? '<div class="ic">não entra no total de custos</div>' : `<div class="bar"><i style="width:${Math.max(2, Math.round(g.total / maior * 100))}%"></i></div>`}</div>`).join("");
+  renderBloco();
+}
+function setGrupo(g) { GRUPO = g; CAT = ""; FUNC = ""; carregar(); }
+function setCat(c) { CAT = CAT === c ? "" : c; carregar(); }
+function setSit(s) { SIT = SIT === s ? "" : s; carregar(); }
+function setFunc(f) { FUNC = f; carregar(); window.scrollTo({ top: document.getElementById("blocoGrupo").offsetTop - 60, behavior: "smooth" }); }
+function renderBloco() {
+  const g = D.grupos.find(x => x.id === GRUPO), titulo = g ? g.icone + " " + g.nome : "📋 Todos os lançamentos";
+  const cats = (D.categorias || []).filter(c => c.qtd > 0 || c.cod === CAT).map(c => `<span class="chipf ${CAT === c.cod ? "on" : ""}" onclick="setCat('${c.cod}')">${esc(c.nome)} · ${brl(c.total)}</span>`).join("");
+  const sits = [["abertas", "Em aberto"], ["pagas", "Pagas"], ["vencidas", "Vencidas"]].map(([k, t]) => `<span class="chipf ${SIT === k ? "on" : ""}" onclick="setSit('${k}')">${t}</span>`).join("");
+  let pessoal = "";
+  if (GRUPO === "pessoal" && D.pessoal) { const P = D.pessoal;
+    pessoal = `<div class="card"><h3 style="margin:0 0 2px">👥 Folha do mês por funcionário</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Total <b style="color:#fff">${brl(P.total)}</b> · pago ${brl(P.pago)} · em aberto ${brl(P.aberto)}. Cada funcionário tem uma ficha de custo (salário, encargos, benefícios e provisão) que gera os lançamentos mensais dele.</div>
+      ${P.funcionarios.map(f => `<div class="fx"><div style="display:flex;justify-content:space-between;gap:8px"><span class="nm">${esc(f.nome)}${f.ativo ? "" : ' <span class="bd vencida">inativo</span>'}</span><b>${brl(f.total)}</b></div>
+        <div class="ic">${esc(f.nivel)}${f.temFicha ? "" : ' · <span style="color:#ffd23f">sem ficha de custo</span>'}</div>
+        ${f.total > 0 ? `<div class="cmp">${f.salario ? `<span>Salário <b>${brl(f.salario)}</b></span>` : ""}${f.encargos ? `<span>Encargos <b>${brl(f.encargos)}</b></span>` : ""}${f.beneficios ? `<span>Benefícios <b>${brl(f.beneficios)}</b></span>` : ""}${f.provisao ? `<span>Provisão 13º/férias <b>${brl(f.provisao)}</b></span>` : ""}${f.prolabore ? `<span>Pró-labore <b>${brl(f.prolabore)}</b></span>` : ""}${f.prestador ? `<span>Serviço <b>${brl(f.prestador)}</b></span>` : ""}${f.outros ? `<span>Outros <b>${brl(f.outros)}</b></span>` : ""}</div><div class="ic">pago ${brl(f.pago)} · em aberto ${brl(f.aberto)}</div>` : '<div class="ic" style="margin:4px 0">Nenhum custo lançado neste mês.</div>'}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:5px 11px" onclick="abrirFicha('${esc(f.id)}')">📝 ${f.temFicha ? "Ficha de custo" : "Criar ficha de custo"}</button>${f.lancamentos ? `<button class="btn btn-ghost" style="padding:5px 11px" onclick="setFunc('${esc(f.id)}')">Ver lançamentos (${f.lancamentos})</button>` : ""}</div></div>`).join("")}
+      ${P.semVinculo.lancamentos ? `<div class="fx" style="border-color:#8a7a1f"><div style="display:flex;justify-content:space-between"><span class="nm">⚠️ Sem funcionário vinculado</span><b>${brl(P.semVinculo.total)}</b></div><div class="ic" style="white-space:normal">${P.semVinculo.lancamentos} lançamento(s) de pessoal não ligados a ninguém. O sistema pode sugerir pelo nome que aparece neles.</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-mag" style="padding:5px 11px" onclick="abrirSugestoes()">🔗 Sugerir vínculos pelo nome</button><button class="btn btn-ghost" style="padding:5px 11px" onclick="setFunc('__sem')">Ver quais são</button></div></div>` : ""}
+      ${P.encargosEmpresa && P.encargosEmpresa.lancamentos ? `<div class="fx"><div style="display:flex;justify-content:space-between"><span class="nm">🏛️ Encargos pagos em guia (INSS, FGTS)</span><b>${brl(P.encargosEmpresa.total)}</b></div><div class="ic" style="white-space:normal">${P.encargosEmpresa.lancamentos} guia(s) da empresa, não ligadas a uma pessoa. Já estão no total da folha.</div><button class="btn btn-ghost" style="padding:5px 11px;margin-top:6px" onclick="setFunc('__guias')">Ver guias</button></div>` : ""}</div>`; }
+  const fNome = FUNC === "__sem" ? "sem funcionário vinculado" : FUNC === "__guias" ? "guias de encargos (INSS, FGTS)" : (D.funcionarios.find(x => x.id === FUNC) || {}).nome;
+  document.getElementById("blocoGrupo").innerHTML = pessoal + `<div class="card"><h3 style="margin:0 0 4px">${esc(titulo)}</h3>
+    ${cats ? `<div style="margin-bottom:4px">${cats}</div>` : ""}<div>${sits}</div>
+    ${FUNC ? `<div class="ic" style="margin:4px 0">Funcionário: <b style="color:#fff">${esc(fNome || "")}</b> <a href="#" style="color:#ff5fa8" onclick="FUNC='';carregar();return false">tirar filtro</a></div>` : ""}
+    <input id="busca" placeholder="🔎 buscar por descrição, funcionário ou fornecedor" value="${esc(BUSCA)}" oninput="buscar(this.value)" style="width:100%;margin:6px 0">
+    <div class="ic" style="margin-bottom:4px"><b style="color:#fff">${D.totalItens}</b> lançamento(s) · soma do mês <b style="color:#fff">${brl(D.somaItens)}</b></div>
+    <div id="lista">${D.itens.map(linha).join("") || '<div class="ic" style="padding:10px 0">Nenhum lançamento nesse filtro.</div>'}</div></div>`;
+}
+function buscar(v) { BUSCA = v; clearTimeout(_tb); _tb = setTimeout(async () => { await carregar(); const b = document.getElementById("busca"); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }, 450); }
+function linha(x) { const cls = x.status === "paga" ? "paga" : x.status === "vencida" ? "vencida" : x.status === "vence logo" ? "vence" : "aberta";
+  return `<div class="ls" onclick="abrirEditar('${esc(x.id)}')"><div style="min-width:0"><div class="d">${esc(x.descricao)}</div><div class="m">${esc(x.categoria)}${x.funcionarioNome ? " · 👤 " + esc(x.funcionarioNome) : (x.grupo === "pessoal" ? ' · <span style="color:#ffd23f">sem funcionário</span>' : "")}${x.fornecedor && !x.funcionarioNome ? " · " + esc(x.fornecedor) : ""} · vence ${isoParaBR(x.vencimento)}${x.recorrenteId ? " · fixa mensal" : ""}<span class="bd ${cls}">${esc(x.status)}</span></div></div>
+    <div class="v">${brl(x.valorMes)}${x.meses > 1 ? `<div class="ic">de ${brl(x.valor)} ÷ ${x.meses} meses</div>` : ""}</div></div>`; }
+function exportar() { fetch(B + "/api/custos.csv?" + new URLSearchParams({ mes: MES, grupo: GRUPO, func: FUNC }), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "custos_" + MES + ".csv"; a.click(); }); }
+// ---------- janelas ----------
+const abrirJanela = h => { document.getElementById("mdlCorpo").innerHTML = h; document.getElementById("mdl").classList.add("aberto"); };
+function fecharJanela() { document.getElementById("mdl").classList.remove("aberto"); }
+document.getElementById("mdl").addEventListener("click", e => { if (e.target.id === "mdl") fecharJanela(); });
+function selCategoria(sel) { const porG = {}; D.plano.forEach(p => (porG[p.grupo] = porG[p.grupo] || []).push(p)); return Object.entries(porG).map(([g, l]) => { const gg = D.grupos.find(x => x.id === g); return `<optgroup label="${esc(gg ? gg.nome : g)}">${l.map(p => `<option value="${esc(p.cod)}" ${p.cod === sel ? "selected" : ""}>${esc(p.rotulo)}</option>`).join("")}</optgroup>`; }).join(""); }
+const selFunc = sel => `<option value="">— sem vínculo —</option>` + D.funcionarios.map(f => `<option value="${esc(f.id)}" ${f.id === sel ? "selected" : ""}>${esc(f.nome)}${f.nivel ? " (" + esc(f.nivel) + ")" : ""}</option>`).join("");
+const campoData = (id, iso) => `<div class="dt"><input id="${id}" inputmode="numeric" placeholder="dd/mm/aaaa" value="${esc(isoParaBR(iso))}" oninput="mascara(this)"><label class="btn btn-ghost">📅<input type="date" value="${esc(iso || "")}" onchange="document.getElementById('${id}').value=isoParaBR(this.value)"></label></div>`;
+function abrirEditar(id) { const x = D.itens.find(i => i.id === id); if (!x) return; const paga = x.status === "paga";
+  abrirJanela(`<h3 style="margin:0 0 4px">✏️ Editar custo</h3><div class="ic" style="white-space:normal">${paga ? "Esta conta já está paga: dá para mudar a descrição, a categoria e o funcionário. Para mudar valor ou vencimento, desfaça o pagamento em Contas a Pagar." : "Mudanças valem para este lançamento."}</div>
+    <label><span class="ic">Descrição</span><input id="eDesc" value="${esc(x.descricao)}"></label>
+    <label><span class="ic">Categoria</span><select id="eCat">${selCategoria(x.cod)}</select></label>
+    <label><span class="ic">👤 Funcionário (para custos de pessoal)</span><select id="eFunc">${selFunc(x.funcionarioId)}</select></label>
+    <label><span class="ic">Valor R$ ${x.meses > 1 ? "(total, dividido em " + x.meses + " meses)" : ""}</span><input id="eVal" inputmode="decimal" value="${String(x.valor).replace(".", ",")}" ${paga ? "disabled" : ""}></label>
+    <label><span class="ic">Vencimento</span>${paga ? `<input value="${esc(isoParaBR(x.vencimento))}" disabled>` : campoData("eVenc", x.vencimento)}</label>
+    <label><span class="ic">Observação</span><input id="eObs" value="${esc(x.observacao)}"></label>
+    ${x.recorrenteId ? `<div style="margin-top:8px" class="ic"><b style="color:#fff">Despesa fixa mensal.</b> Aplicar a:<br><label style="display:inline"><input type="radio" name="eEsc" value="este" checked style="width:auto"> só este mês</label> &nbsp; <label style="display:inline"><input type="radio" name="eEsc" value="proximos" style="width:auto"> este e os próximos meses</label></div>` : ""}
+    <div id="eMsg" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharJanela()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarEditar('${esc(id)}')">💾 Salvar</button></div>
+    ${paga ? "" : `<a href="/contas-pagar" style="display:block;text-align:center;margin-top:10px;color:#ff5fa8;font-size:13px">Pagar esta conta em Contas a Pagar →</a>`}`); }
+async function salvarEditar(id) {
+  const g = i => (document.getElementById(i) || {}).value, msg = document.getElementById("eMsg"), x = D.itens.find(i => i.id === id);
+  const corpo = { descricao: g("eDesc"), categoria: g("eCat"), funcionarioId: g("eFunc"), observacao: g("eObs") }; if (g("eVal") != null) corpo.valor = g("eVal");
+  if (document.getElementById("eVenc")) { const v = brParaISO(g("eVenc")); if (!v) { msg.innerHTML = '<div class="err">Vencimento inválido. Digite dia/mês/ano.</div>'; return; } corpo.vencimento = v; }
+  const esc2 = document.querySelector('input[name="eEsc"]:checked'); if (esc2) corpo.escopo = esc2.value;
+  const catPlano = D.plano.find(p => p.cod === corpo.categoria); if (catPlano) corpo.categoria = catPlano.rotulo;
+  msg.innerHTML = '<div class="ic">Salvando…</div>'; const { ok, j } = await api("/api/custos/lancamento/" + encodeURIComponent(id), { method: "POST", body: JSON.stringify(corpo) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Salvo${j.afetados > 1 ? " em " + j.afetados + " meses" : ""}.</div>`; await carregar(); setTimeout(fecharJanela, 700); }
+function abrirNovo() { const cat = CAT || (GRUPO === "pessoal" ? "5.1.1" : GRUPO === "ocupacao" ? "5.2.1" : GRUPO === "admin" ? "5.3.1" : "5.9"), venc = MES + "-" + hojeISO().slice(8, 10);
+  abrirJanela(`<h3 style="margin:0 0 4px">➕ Novo custo</h3>
+    <label><span class="ic">Descrição</span><input id="nDesc" placeholder="ex.: Aluguel da loja"></label>
+    <label><span class="ic">Categoria</span><select id="nCat">${selCategoria(cat)}</select></label>
+    <label><span class="ic">👤 Funcionário (para custos de pessoal)</span><select id="nFunc">${selFunc("")}</select></label>
+    <label><span class="ic">Valor R$</span><input id="nVal" inputmode="decimal" placeholder="0,00"></label>
+    <label><span class="ic">Vencimento</span>${campoData("nVenc", venc)}</label>
+    <label style="display:flex;gap:8px;align-items:center"><input id="nRep" type="checkbox" style="width:auto"><span class="ic" style="margin:0">Repetir todo mês (despesa fixa)</span></label>
+    <div id="nMsg" style="margin-top:8px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharJanela()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarNovo()">💾 Salvar</button></div>`); }
+async function salvarNovo() {
+  const g = i => document.getElementById(i).value.trim(), msg = document.getElementById("nMsg"), v = brParaISO(g("nVenc")); if (!v) { msg.innerHTML = '<div class="err">Vencimento inválido.</div>'; return; }
+  const cat = D.plano.find(p => p.cod === g("nCat")), corpo = { descricao: g("nDesc"), categoria: cat ? cat.rotulo : "", funcionarioId: g("nFunc"), valor: g("nVal"), vencimento: v, repetirMensal: document.getElementById("nRep").checked, competencia: v.slice(0, 7) };
+  const { ok, j } = await api("/api/custos/lancamento", { method: "POST", body: JSON.stringify(corpo) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  msg.innerHTML = '<div style="color:#3ce88a;font-weight:800">✅ Custo lançado.</div>'; await carregar(); setTimeout(fecharJanela, 600); }
+// ---------- sugestões de vínculo pelo nome ----------
+let SUG = [];
+async function abrirSugestoes() { abrirJanela('<div class="ic">Procurando pelo nome…</div>'); const { ok, j } = await api("/api/custos/sugestoes"); if (!ok) { abrirJanela(`<div class="err">${esc(j.erro || "Não consegui buscar.")}</div><button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharJanela()">Fechar</button>`); return; }
+  SUG = j.itens;
+  abrirJanela(`<h3 style="margin:0 0 2px">🔗 Vincular custos de pessoal</h3><div class="ic" style="white-space:normal;margin-bottom:6px">${j.comSugestao} de ${j.total} lançamento(s) têm um funcionário sugerido pelo nome. Confira e desmarque o que estiver errado. Nos demais, abra o lançamento e escolha a pessoa.</div>
+    <div style="max-height:52vh;overflow:auto">${SUG.map((x, i) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #221e4f;margin:0"><input type="checkbox" class="sg" data-i="${i}" ${x.sugestao ? "checked" : "disabled"} style="width:auto;margin-top:3px"><span style="flex:1"><b>${esc(x.descricao)}</b><br><span class="ic" style="white-space:normal">${esc(x.fornecedor)} · ${brl(x.valor)} · ${isoParaBR(x.vencimento)}</span><br>${x.sugestao ? `<span style="color:#3ce88a">→ ${esc(x.sugestao.nome)}</span>` : (x.ambigua ? '<span style="color:#ffd23f">mais de uma pessoa combina: escolha à mão</span>' : '<span class="ic">nenhuma pessoa combina</span>')}</span></label>`).join("")}</div>
+    <div id="sgMsg" style="margin-top:8px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharJanela()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="aplicarSugestoes()" ${j.comSugestao ? "" : "disabled"}>✅ Vincular marcados</button></div>`); }
+async function aplicarSugestoes() { const pares = [...document.querySelectorAll(".sg:checked")].map(c => SUG[Number(c.dataset.i)]).filter(x => x && x.sugestao).map(x => ({ id: x.id, funcionarioId: x.sugestao.id })), msg = document.getElementById("sgMsg");
+  if (!pares.length) { msg.innerHTML = '<div class="err">Marque ao menos um.</div>'; return; }
+  const { ok, j } = await api("/api/custos/vincular", { method: "POST", body: JSON.stringify({ pares }) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui vincular.")}</div>`; return; }
+  msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ ${j.vinculados} lançamento(s) vinculado(s).</div>`; await carregar(); setTimeout(fecharJanela, 800); }
+// ---------- ficha de custo do funcionário ----------
+let FICHA = null;
+async function abrirFicha(fid) { abrirJanela('<div class="ic">Carregando…</div>'); const { ok, j } = await api("/api/custos/ficha/" + encodeURIComponent(fid)); if (!ok) { abrirJanela(`<div class="err">${esc(j.erro || "Não consegui abrir.")}</div><button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharJanela()">Fechar</button>`); return; }
+  FICHA = j; const f = j.ficha || {}, num = n => n == null || n === "" ? "" : String(n).replace(".", ",");
+  abrirJanela(`<h3 style="margin:0 0 2px">📝 Ficha de custo</h3><div class="ic" style="white-space:normal;margin-bottom:4px"><b style="color:#fff">${esc(j.funcionario.nome)}</b>${j.funcionario.nivel ? " · " + esc(j.funcionario.nivel) : ""}. Ao salvar, o sistema cria as despesas fixas mensais desta pessoa (salário, encargos, benefícios e provisão) e ajusta as contas em aberto.</div>
+    <label><span class="ic">Salário mensal R$</span><input id="fSal" inputmode="decimal" value="${num(f.salario)}" oninput="prevFicha()" placeholder="0,00"></label>
+    <label><span class="ic">Encargos (FGTS, INSS)</span><div style="display:flex;gap:6px"><select id="fEncModo" onchange="prevFicha()" style="width:120px"><option value="pct" ${f.encargosModo !== "valor" ? "selected" : ""}>% do salário</option><option value="valor" ${f.encargosModo === "valor" ? "selected" : ""}>R$ fixo</option></select><input id="fEnc" inputmode="decimal" value="${num(f.encargos)}" oninput="prevFicha()" placeholder="0"></div></label>
+    <label><span class="ic">Benefícios por mês R$ (vale-transporte, alimentação)</span><input id="fBen" inputmode="decimal" value="${num(f.beneficios)}" oninput="prevFicha()" placeholder="0,00"></label>
+    <label><span class="ic">Provisão de 13º e férias (% do salário). Referência: 1/12 do 13º + 1/12 de férias + 1/3 constitucional ≈ 11,11%</span><input id="fProv" inputmode="decimal" value="${num(f.provisaoPct)}" oninput="prevFicha()" placeholder="0"></label>
+    <label><span class="ic">Pagamento</span><div style="display:flex;gap:6px"><select id="fDiaTipo" style="width:150px"><option value="dia" ${f.diaTipo !== "util" ? "selected" : ""}>dia do mês</option><option value="util" ${f.diaTipo === "util" ? "selected" : ""}>dia útil nº</option></select><input id="fDia" inputmode="numeric" value="${f.dia || 5}" placeholder="5"></div></label>
+    <label><span class="ic">Valer a partir de (mês). Se o salário deste mês já foi pago, escolha o próximo mês, para não gerar uma conta repetida.</span><input id="fIni" type="month" value="${esc(f.inicio || MES)}"></label>
+    <label style="display:flex;gap:8px;align-items:center"><input id="fAtivo" type="checkbox" style="width:auto" ${f.ativo === false ? "" : "checked"}><span class="ic" style="margin:0">Ficha ativa (desmarque quando a pessoa sair da empresa)</span></label>
+    <label><span class="ic">Observação</span><input id="fObs" value="${esc(f.observacao || "")}"></label>
+    <div id="fPrev" style="margin-top:10px;background:#0f0d24;border:1px solid #37327a;border-radius:10px;padding:8px 10px"></div><div id="fMsg" style="margin-top:6px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fecharJanela()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarFicha()">💾 Salvar ficha</button></div>`); prevFicha(); }
+const nm = v => { const t = String(v || "").trim(); if (!t) return 0; const n = t.includes(",") ? Number(t.replace(/\./g, "").replace(",", ".")) : /^\d{1,3}(\.\d{3})+$/.test(t) ? Number(t.replace(/\./g, "")) : Number(t); return isFinite(n) ? n : 0; };
+function prevFicha() { const sal = nm(document.getElementById("fSal").value), enc = document.getElementById("fEncModo").value === "pct" ? sal * nm(document.getElementById("fEnc").value) / 100 : nm(document.getElementById("fEnc").value), ben = nm(document.getElementById("fBen").value), prov = sal * nm(document.getElementById("fProv").value) / 100;
+  document.getElementById("fPrev").innerHTML = `<div class="ic">Salário ${brl(sal)} + encargos ${brl(enc)} + benefícios ${brl(ben)} + provisão ${brl(prov)}</div><div style="font-size:18px;font-weight:900;margin-top:2px">Custo mensal: ${brl(sal + enc + ben + prov)}</div><div class="ic">≈ ${brl((sal + enc + ben + prov) * 12)} por ano</div>`; }
+async function salvarFicha() { const g = i => document.getElementById(i).value, msg = document.getElementById("fMsg");
+  const corpo = { salario: g("fSal"), encargosModo: g("fEncModo"), encargos: g("fEnc"), beneficios: g("fBen"), provisaoPct: g("fProv"), diaTipo: g("fDiaTipo"), dia: g("fDia"), inicio: g("fIni"), ativo: document.getElementById("fAtivo").checked, observacao: g("fObs") };
+  msg.innerHTML = '<div class="ic">Salvando…</div>'; const { ok, j } = await api("/api/custos/ficha/" + encodeURIComponent(FICHA.funcionario.id), { method: "POST", body: JSON.stringify(corpo) });
+  if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Ficha salva. Custo mensal ${brl(j.custoMensal)}.</div>`; await carregar(); setTimeout(fecharJanela, 900); }
+carregar();
+</script>
+</body>
+</html>
