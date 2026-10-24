@@ -11422,6 +11422,10 @@ const _TPAG={"01":"Dinheiro","02":"Cheque","03":"Cartão de crédito","04":"Cart
 let _catCache={em:0,m:{}}; function _catPorId(){ if(Date.now()-_catCache.em>5*60000){ const m={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) m[String(c.id)]={a:Number(c.a)||0,f:Number(c.f)||0,q:Number(c.q)||0,p:Number(c.p)||0}; }); }catch(e){} _catCache={em:Date.now(),m}; } return _catCache.m; }
 function _mesclarSugestoes(a,b){ const out=[...a]; (b||[]).forEach(s=>{ if(s&&s.produtoId&&!out.some(o=>String(o.produtoId)===String(s.produtoId))) out.push({produtoId:s.produtoId,nome:s.nome,confianca:"fraca"}); }); return out.slice(0,6); }
 // a consulta do fornecedor no Bling era refeita a cada abertura da nota (2 a 3 s cada); guarda por alguns minutos
+// CORREÇÃO DE CUSTO: o financeiro pode ajustar o custo por unidade de um item ANTES de dar entrada; vale para o preço de custo enviado ao Bling,
+// o cadastro do produto, o último custo do fornecedor e a margem. Guarda quem mudou e o valor que o sistema tinha calculado.
+const ENTRADA_AJUSTES_FILE=`${DATA_DIR}/entrada_nota_ajustes.json`;
+const _ajustesDaNota=id=>lerJSON(ENTRADA_AJUSTES_FILE,{})[String(id)]||{};
 const _fornCache=new Map();
 async function _fornecedorCacheado(cnpj){ const k=String(cnpj||"").replace(/\D/g,""); if(!k) return null; const c=_fornCache.get(k); if(c&&Date.now()-c.em<(c.v?10*60000:2*60000)) return c.v;
   let v=null; try{ v=await encontrarContatoPorDoc(cnpj); }catch(e){ return null; } _fornCache.set(k,{em:Date.now(),v}); return v; }
@@ -11431,14 +11435,15 @@ async function _resumoEntradaNota(n){
   let forn=null; try{ forn=await _fornecedorCacheado(n.emitente?.cnpj); }catch(e){}
   let ENT={}; try{ ENT=_entradasPorProduto(); }catch(e){} const CAT=_catPorId();
   const arred=v=>{ if(!(v>0)) return 0; const r=Math.ceil(v*10-0.0001)/10-0.01; return +(r>=v-0.0001?r:r+0.10).toFixed(2); }; // termina em ,x9
-  const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, cr=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0;
+  const AJC=_ajustesDaNota(n.id);
+  const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, crCalc=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0, aj=AJC[x.nItem], editado=!!(aj&&aj.custoUn>0&&crCalc>0), cr=editado?+Number(aj.custoUn).toFixed(4):crCalc;
     const ue=x.produtoId?ENT[String(x.produtoId)]:null, cRef=ue&&ue.custoUlt>0?ue.custoUlt:(p&&p.pc>0?p.pc:null), fonteRef=ue&&ue.custoUlt>0?"última entrada":"cadastro";
     const alta=cRef&&cr>0?+((cr-cRef)/cRef*100).toFixed(1):null, cat=x.produtoId?CAT[String(x.produtoId)]:null;
     const sobe=alta!=null&&alta>=0.5, fator=sobe?cr/cRef:1;
     const reajuste=sobe&&p&&p.p>0?{custoAnterior:cRef,fonte:fonteRef,ultimaEntradaEm:ue?ue.ultima:null,altaPct:alta,precoAtual:p.p,precoSugerido:arred(p.p*fator),
       margemAntes:+((p.p-cRef)/p.p*100).toFixed(1),margemSemReajuste:+((p.p-cr)/p.p*100).toFixed(1),atacadoAtual:cat&&cat.a>0?cat.a:null,atacadoSugerido:cat&&cat.a>0?arred(cat.a*fator):null}:null;
     return {nItem:x.nItem,xProd:x.xProd,cProd:x.cProd,cEAN:x.cEAN,uCom:x.uCom,qCom:x.qCom,vProd:x.vProd,vDesc:x.vDesc,vUnCom:(Number(x.vUnCom)||(Number(x.qCom)>0?+((Number(x.vProd)||0)/Number(x.qCom)).toFixed(4):0)),cfop:x.cfop,classe:x.classe,status:x.status,motivo:x.motivo||"",fonte:x.fonte||"",
-      produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,
+      produtoId:x.produtoId||null,produtoNome:x.produtoNome||(p?p.n:""),fator:x.fator||0,qtdUn:x.qtdUn||0,custoUn:x.custoUn||0,custoRealUn:cr,custoCalculadoUn:crCalc,custoEditado:editado,custoEditadoPor:editado?(aj.por||""):"",custoEditadoEm:editado?aj.em:0,
       custoAnterior:cRef!=null?cRef:(p&&p.pc>0?p.pc:null),precoVenda:p?p.p:null,reajuste,margemNova:p&&p.p>0&&cr>0?+((p.p-cr)/p.p*100).toFixed(1):null,
       ...(()=>{ if(x.status==="ok") return {sugestoes:[],sugestaoFator:0};
         const sg=_mesclarSugestoes(_sugerirProdutos(x.xProd,5),x.sugestoes||[]), lido=x.sugestaoFator||x.fatorLido||_fatorDoNome(x.xProd);
@@ -11769,6 +11774,21 @@ app.post("/api/entrada-nota/carregar",acessoEntradaNota,express.json({limit:"6mb
   }catch(e){ res.status(400).json({erro:e.message}); }
 });
 app.get("/api/entrada-nota/produtos",acessoEntradaNota,(req,res)=>{ try{ const q=String(req.query.q||""); res.json({itens:_mesclarSugestoes(_sugerirProdutos(q,8),_FISCAL?_FISCAL.buscarProdutos(q):[])}); }catch(e){ res.json({itens:[]}); } });
+app.post("/api/entrada-nota/ajuste-custo",acessoEntradaNota,async(req,res)=>{
+  try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
+    const nItem=Number(b.nItem), quem=req.sessao?.nome||"", LI=lerJSON(ENTRADA_ITENS_FILE,{})[String(n.id)]||{};
+    if(LI[nItem]) return res.status(409).json({erro:"esse item já entrou no estoque com o custo anterior. Para corrigir, reabra a nota (ou ajuste o custo no cadastro do produto)."});
+    if(n.entrada&&n.entrada.em) return res.status(409).json({erro:"essa nota já foi lançada: o custo já foi enviado ao Bling. Reabra a nota para corrigir."});
+    const R0=await _resumoEntradaNota(n), x=R0.itens.find(i=>Number(i.nItem)===nItem); if(!x) return res.status(404).json({erro:"item não encontrado"});
+    if(!(x.custoCalculadoUn>0)) return res.status(400).json({erro:"ligue o item a um produto e informe a conversão antes de corrigir o custo"});
+    const A=lerJSON(ENTRADA_AJUSTES_FILE,{}), mapa=A[String(n.id)]||(A[String(n.id)]={}), bruto=String(b.custoUn==null?"":b.custoUn).trim();
+    if(!bruto){ delete mapa[nItem]; if(!Object.keys(mapa).length) delete A[String(n.id)]; }
+    else { const v=_numBR(bruto); if(!isFinite(v)||v<=0) return res.status(400).json({erro:"informe um custo maior que zero (ex.: 7,50)"}); if(v>50000) return res.status(400).json({erro:"esse custo parece alto demais; confira o valor"});
+      mapa[nItem]={custoUn:+v.toFixed(4),calculado:x.custoCalculadoUn,por:quem,em:Date.now()}; }
+    salvarJSON(ENTRADA_AJUSTES_FILE,A);
+    addLog("nota-"+(n.chave||n.id),"entrada_nota_custo_editado",req.sessao?.funcionarioId||"",quem,{numero:n.numero,item:x.xProd,produto:x.produtoNome,calculado:x.custoCalculadoUn,anterior:x.custoRealUn,novo:bruto?_numBR(bruto):"(voltou ao calculado)"});
+    res.json({ok:true,nota:await _resumoEntradaNota(n)});
+  }catch(e){ res.status(400).json({erro:e.message}); } });
 app.post("/api/entrada-nota/ligar",acessoEntradaNota,async(req,res)=>{
   try{
     const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
@@ -11776,6 +11796,7 @@ app.post("/api/entrada-nota/ligar",acessoEntradaNota,async(req,res)=>{
     const fator=Number(String(b.fator||"").replace(",",".")); if(!(fator>0)||fator>1000) return res.status(400).json({erro:"informe quantas unidades vêm em cada "+(it.uCom||"unidade")+" da nota"});
     const pid=String(b.produtoId||""), P=lerProdutosBling().porId[pid]; if(!pid) return res.status(400).json({erro:"escolha o produto"});
     const v=_FISCAL.salvarVinculo({cnpj:n.semNota?_chaveFornSemNota(n):n.emitente?.cnpj,semDoc:!!n.semNota&&!/^\d{11,14}$/.test(String(n.emitente?.cnpj||"")),cProd:it.cProd,uCom:it.uCom,fator,produtoId:pid,produtoNome:P?P.n:"",xProd:it.xProd,fornecedorNome:n.emitente?.nome,por:req.sessao?.nome||""});
+    { const A=lerJSON(ENTRADA_AJUSTES_FILE,{}); if(A[String(n.id)]&&A[String(n.id)][it.nItem]){ delete A[String(n.id)][it.nItem]; salvarJSON(ENTRADA_AJUSTES_FILE,A); } } // a conversão mudou: o custo corrigido à mão não vale mais
     if(n.semNota) _casarSemNota(n,true); else await _FISCAL.reassociar(n.id);
     setTimeout(()=>{ const comp=_FISCAL.vinculosDoProduto(pid).find(x=>x.chave===v.chave); if(comp) _enviarFornecedorBling(pid,comp); },200); // aprende também no Bling
     res.json({ok:true,nota:await _resumoEntradaNota(_notaEntrada(n.id))});

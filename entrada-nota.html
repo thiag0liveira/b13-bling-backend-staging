@@ -76,7 +76,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 #video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
 .itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
 .wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
-.vun{background:#0d2230;border:1px solid #1f6f93;border-radius:10px;padding:7px 10px;margin:6px 0;font-size:13px;color:#cfeeff;line-height:1.5}.vun .g{font-size:17px;font-weight:900;color:#fff}.vun .tt{font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:#7fc8ea;margin-bottom:2px}</style>
+.vun{background:#0d2230;border:1px solid #1f6f93;border-radius:10px;padding:7px 10px;margin:6px 0;font-size:13px;color:#cfeeff;line-height:1.5}.vun .g{font-size:17px;font-weight:900;color:#fff}.vun .tt{font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:#7fc8ea;margin-bottom:2px}.cst{border-color:#1f6f93}.cst .lc{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #1b3a4c;font-size:13px}.cst .lc b.n{color:#fff}.cst .tot{display:flex;justify-content:space-between;gap:10px;font-size:15px;font-weight:900;padding-top:8px}.vun .ed{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px dashed #1f6f93}.vun .ed input{width:90px}.vun .ed .ic{white-space:normal}</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -182,7 +182,7 @@ function renderNota() {
   const it = x => { const ign = IGN.has(x.nItem), dif = x.custoAnterior && x.custoRealUn ? Math.round((x.custoRealUn - x.custoAnterior) / x.custoAnterior * 100) : null;
     if (x.status === "ok") return `<div class="itn ${ign ? "ign" : ""}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="min-width:0"><b>✅ ${esc(x.produtoNome)}</b>
         <div class="ic" style="white-space:normal">nota: ${esc(x.xProd)} · ${num(x.qCom)} ${esc(x.uCom)} → <b style="color:#fff">${num(x.qtdUn)} un</b> (1 ${esc(x.uCom)} = ${num(x.fator)}) · ligado por ${esc(x.fonte || "—")}</div>
-        <div class="vun">${vunConteudo(x, x.fator)}</div></div>
+        <div class="vun">${vunConteudo(x, x.fator, true)}</div></div>
         <div style="text-align:right"><b>${brl(x.custoRealUn)}</b><span class="ic">/un</span>${dif != null ? `<div class="ic">antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span></div>` : ""}
         ${x.precoVenda ? `<div class="ic">venda ${brl(x.precoVenda)} · margem <b style="color:${x.margemNova != null && x.margemNova < 10 ? "#ff8aa3" : "#3ce88a"}">${x.margemNova != null ? String(x.margemNova).replace(".", ",") + "%" : "—"}</b></div>` : ""}</div></div>
         ${x.reajuste ? (() => { const r = x.reajuste, ok = REAJ[x.produtoId] != null;
@@ -214,6 +214,7 @@ function renderNota() {
       ${T.vIPI || T.vST ? `<div class="lin"><span>IPI · ST</span><b>${brl(T.vIPI)} · ${brl(T.vST)}</b></div>` : ""}${T.vFrete ? `<div class="lin"><span>Frete</span><b>${brl(T.vFrete)}</b></div>` : ""}<div class="lin"><span>Pagamento na nota</span><b>${esc(n.formaNaNota || "—")}</b></div></div></div></div>
   ${(n.anexos || []).length ? `<div class="card">${blocoAnexos(n)}</div>` : ""}
   ${blocoBoletosLidos(n)}
+  ${blocoCustoNota(n)}
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const al = n.itens.filter(x => x.reajuste); return al.length ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-bottom:8px;color:#ffe9a8;font-size:13px">⚠️ <b>${al.length} produto(s) com custo maior que na última entrada.</b> Confira os preços de venda sugeridos em cada um.
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn btn-ghost" style="padding:4px 10px" onclick="marcarTodosReajustes()">Marcar todos os sugeridos</button>
@@ -258,13 +259,16 @@ function iniciarBol(n) { if (BOLNOTA === n.id && BOL) return; BOLNOTA = n.id; co
   BOL = lidos.length ? lidos.map(b => ({ vencimento: b.vencimento || "", valor: String(b.valor != null ? b.valor : "").replace(".", ","), boletoId: b.id })) : (n.duplicatas || []).map(d => ({ vencimento: String(d.vencimento || "").slice(0, 10), valor: String(d.valor != null ? d.valor : "").replace(".", ",") })); }
 // QUADRO "VALOR UNITÁRIO CALCULADO": aparece em todo item, em qualquer situação (ligado, para revisar, sugerido ou ainda sem conversão)
 function fatorDoItem(x) { return Number(x.fator) > 0 ? Number(x.fator) : (Number(x.sugestaoFator) > 0 ? Number(x.sugestaoFator) : (/^(UN|UND|UNID)$/i.test(x.uCom || "") ? 1 : 0)); }
-function vunConteudo(x, f) {
+function vunConteudo(x, f, edit) {
   f = Number(f) || 0; const liq = (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), qc = Number(x.qCom) || 0, unit = Number(x.vUnCom) || (qc > 0 ? Number(x.vProd) / qc : 0);
   const real = f > 0 && Number(x.fator) === f && Number(x.custoRealUn) > 0 ? Number(x.custoRealUn) : 0, dif = real && x.custoAnterior ? Math.round((real - x.custoAnterior) / x.custoAnterior * 100) : null;
   const ligado = Number(x.fator) > 0 && f === Number(x.fator), por = f > 0 && qc > 0 ? liq / (qc * f) : 0;
   return `<div class="tt">💲 Valor unitário calculado</div>
     Na nota: <b style="color:#fff">${brl(unit)}</b> por ${esc(x.uCom)} × ${num(qc)} = ${brl(x.vProd)}${Number(x.vDesc) > 0 ? " (desconto " + brl(x.vDesc) + ")" : ""}<br>
-    ${f > 0 && qc > 0 ? `${/^(UN|UND|UNID)$/i.test(x.uCom || "") && f === 1 ? "Já vem em unidade" : (ligado ? "Cada " + esc(x.uCom) + " tem" : "Se cada " + esc(x.uCom) + " tiver") + " <b style=\"color:#fff\">" + num(f) + "</b> un" + (ligado ? "" : " (sugestão: confirme)")}: <span class="g">${brl(por)}</span> por unidade${real ? `<br>Custo real <b style="color:#fff">${brl(real)}</b> por unidade (com frete e impostos)${dif != null ? ` · antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span>` : ""}` : ""}` : `<span style="color:#ffd23f">Informe quantas unidades vêm em cada ${esc(x.uCom || "embalagem")} para calcular o valor por unidade.</span>`}`;
+    ${f > 0 && qc > 0 ? `${/^(UN|UND|UNID)$/i.test(x.uCom || "") && f === 1 ? "Já vem em unidade" : (ligado ? "Cada " + esc(x.uCom) + " tem" : "Se cada " + esc(x.uCom) + " tiver") + " <b style=\"color:#fff\">" + num(f) + "</b> un" + (ligado ? "" : " (sugestão: confirme)")}: <span class="g">${brl(por)}</span> por unidade${real ? `<br>Custo real <b style="color:#fff">${brl(real)}</b> por unidade (com frete e impostos)${dif != null ? ` · antes ${brl(x.custoAnterior)} <span style="color:${dif > 0 ? "#ff8aa3" : "#3ce88a"}">${dif > 0 ? "▲" : "▼"}${Math.abs(dif)}%</span>` : ""}` : ""}` : `<span style="color:#ffd23f">Informe quantas unidades vêm em cada ${esc(x.uCom || "embalagem")} para calcular o valor por unidade.</span>`}`
+    + (edit && !(N && N.entrada) && Number(x.custoCalculadoUn) > 0 ? `<div class="ed"><span class="ic"><b style="color:#fff">Custo por unidade que vai entrar</b> R$</span><input id="cu${x.nItem}" inputmode="decimal" value="${String(x.custoRealUn).replace(".", ",")}"><button class="btn btn-mag" style="padding:5px 12px" onclick="salvarCustoItem(${x.nItem})">Salvar</button>${x.custoEditado ? `<button class="btn btn-ghost" style="padding:5px 10px" onclick="salvarCustoItem(${x.nItem}, true)">↺ voltar ao calculado (${brl(x.custoCalculadoUn)})</button>` : ""}</div>`
+      + (x.custoEditado ? `<div class="ic" style="color:#ffd23f">✏️ Custo corrigido à mão${x.custoEditadoPor ? " por " + esc(x.custoEditadoPor) : ""}. O sistema tinha calculado ${brl(x.custoCalculadoUn)}.</div>` : `<div class="ic">Calculado a partir da nota, com frete e impostos rateados. Mude só se o custo real for outro.</div>`)
+      + `<div class="ed" style="border-top:0;margin-top:2px"><span class="ic">Unidades por ${esc(x.uCom)}</span><input id="fe${x.nItem}" inputmode="decimal" value="${String(x.fator).replace(".", ",")}" style="width:70px"><button class="btn btn-ghost" style="padding:5px 10px" onclick="trocarFator(${x.nItem})">Aplicar conversão</button></div>` : "");
 }
 // valor por unidade enquanto se informa quantas unidades vêm em cada embalagem da nota
 function puTxtAntigo(x, f) { f = Number(String(f || "").replace(",", ".")); if (!(f > 0) || !(Number(x.qCom) > 0)) return ""; return `💲 ${brl(x.vUnCom)} por ${esc(x.uCom)} ÷ ${num(f)} = <b style="color:#fff">${brl(((Number(x.vProd) || 0) - (Number(x.vDesc) || 0)) / (Number(x.qCom) * f))}</b> por unidade (sem frete e impostos)`; }
@@ -401,6 +405,24 @@ function mostrarFalhaEntrada(j, el) {
     + (conf.length ? `<div class="ic" style="white-space:normal;margin-top:6px">Já conferido no Bling: ${conf.slice(0, 8).map(c => esc(c.nome) + " " + c.antes + " → " + c.depois).join(" · ")}</div>` : "");
 }
 const confTxt = j => (j.conferencia || []).length ? `<div class="ic" style="white-space:normal;margin-top:4px">📦 Conferido no Bling (saldo antes → depois): ${(j.conferencia || []).slice(0, 8).map(c => esc(c.nome) + " <b style='color:#fff'>" + c.antes + " → " + c.depois + "</b>").join(" · ")}${(j.conferencia || []).length > 8 ? " …" : ""}</div>` : "";
+// ---- custo que está entrando: quadro-resumo + correção por item ----
+async function salvarCustoItem(nItem, voltar) { const el = document.getElementById("cu" + nItem), v = voltar ? "" : (el ? el.value : "");
+  const { ok, j } = await api("/api/entrada-nota/ajuste-custo", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, custoUn: v }) });
+  if (!ok) { alert(j.erro || "Não consegui salvar o custo."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
+async function trocarFator(nItem) { const x = N.itens.find(i => i.nItem === nItem), f = (document.getElementById("fe" + nItem) || {}).value;
+  if (!x || !confirm("Mudar para " + f + " unidade(s) por " + x.uCom + "?\\n\\nIsso recalcula o custo desta nota e vale também para as próximas notas deste fornecedor.")) return;
+  const { ok, j } = await api("/api/entrada-nota/ligar", { method: "POST", body: JSON.stringify({ notaId: N.id, nItem, produtoId: x.produtoId, fator: f }) });
+  if (!ok) { alert(j.erro || "Não consegui aplicar."); return; } const y = window.scrollY; N = j.nota; renderNota(); window.scrollTo(0, y); }
+function blocoCustoNota(n) {
+  if (!n.itens.length) return "";
+  const lig = n.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && Number(x.qtdUn) > 0), tot = lig.reduce((s, x) => s + x.qtdUn * (Number(x.custoRealUn) || Number(x.custoUn) || 0), 0),
+    vNF = Number((n.totais || {}).vNF) || 0, falt = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)).length, ign = n.itens.filter(x => IGN.has(x.nItem)).length, ed = lig.filter(x => x.custoEditado).length,
+    dif = vNF > 0 ? Math.round((tot - vNF) * 100) / 100 : null, completo = !falt && !ign;
+  return `<div class="card cst"><h3 style="margin:0 0 2px">💰 Custo da nota que está entrando</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Custo por unidade de cada produto, com frete e impostos já rateados. É este valor que vai para o estoque e para o cadastro do produto. ${n.entrada ? "" : "Para corrigir, use o campo dentro de cada item abaixo."}</div>
+    ${lig.map(x => `<div class="lc"><span style="min-width:0"><b class="n">${esc(x.produtoNome || x.xProd)}</b>${x.custoEditado ? ' <span style="color:#ffd23f">✏️ corrigido</span>' : ""}<br><span class="ic">${num(x.qtdUn)} un × <b style="color:#fff">${brl(x.custoRealUn)}</b>/un${x.custoAnterior ? ` · antes ${brl(x.custoAnterior)}` : ""}</span></span><b style="white-space:nowrap">${brl(x.qtdUn * x.custoRealUn)}</b></div>`).join("") || '<div class="ic" style="padding:6px 0">Ligue os itens a produtos para ver o custo.</div>'}
+    <div class="tot"><span>Custo que entra no estoque</span><span>${brl(tot)}</span></div>
+    <div class="ic" style="white-space:normal;margin-top:2px">Valor total da nota: <b style="color:#fff">${brl(vNF)}</b>${dif != null && completo ? ` · diferença ${dif === 0 ? "nenhuma" : brl(Math.abs(dif)) + (dif > 0 ? " a mais" : " a menos")}${Math.abs(dif) > Math.max(1, vNF * 0.01) ? ' <span style="color:#ffd23f">⚠️ confira os custos e as conversões</span>' : ' <span style="color:#3ce88a">✅ bate com a nota</span>'}` : ""}
+    ${falt ? `<br><span style="color:#ffd23f">⚠️ ${falt} item(ns) ainda sem produto ligado: o total está incompleto.</span>` : ""}${ign ? `<br><span style="color:#ffd23f">${ign} item(ns) marcado(s) para não lançar não entram nesta soma.</span>` : ""}${ed ? `<br>✏️ ${ed} custo(s) corrigido(s) à mão.` : ""}</div></div>`; }
 // ---- notas que ficaram incompletas (erro da versão antiga: marcava como lançada mesmo com item recusado) ----
 async function carregarIncompletas() { const { ok, j } = await api("/api/entrada-nota/incompletas"), el = document.getElementById("incompletas"); if (!el) return;
   if (!ok || !j.total) { el.innerHTML = ""; return; }
