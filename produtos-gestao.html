@@ -120,6 +120,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   <div class="card"><h3>🏷️ Produtos <span class="ic" id="qtdLista"></span></h3><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
 </div>
 <div class="fundo" id="mProd"><div class="modal" id="mProdCorpo" style="max-width:980px"></div></div>
+<div class="fundo" id="mAjuste" style="z-index:300"><div class="modal" id="mAjusteCorpo" style="max-width:440px;margin-top:30px"></div></div>
 <script>
 const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
 const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -176,7 +177,7 @@ function linha(r) {
   if (r.situacao === "I") tg.unshift(`<span class="tagp al">inativo</span>`);
   return `<div class="ped" onclick="abrirProduto('${esc(r.id)}')">${r.img ? `<img class="thumb" src="${esc(r.img)}" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="thumb"></div>`}
     <div class="x"><b>${esc(r.nome || "(sem nome)")}</b><span>${r.codigo ? "cód. " + esc(r.codigo) + " · " : ""}estoque <b style="color:${r.estoque != null && r.estoque <= 0 ? "#ff8aa3" : "inherit"}">${num(r.estoque)}</b>${r.cobertura != null ? ` (${r.cobertura} dia${r.cobertura === 1 ? "" : "s"})` : ""} · ${num(r.mediaDia)}/dia${r.ultimaVenda ? " · última venda " + dmy(r.ultimaVenda) : " · nunca vendeu"}</span><div>${tg.join("")}</div></div>
-    <div style="text-align:right"><b>${brl(r.valor)}</b><div class="ic">${num(r.qtd)} un${r.margem != null ? " · " + String(r.margem).replace(".", ",") + "%" : ""}</div></div></div>`;
+    <div style="text-align:right"><b>${brl(r.valor)}</b><div class="ic">${num(r.qtd)} un${r.margem != null ? " · " + String(r.margem).replace(".", ",") + "%" : ""}</div><button class="btn btn-ghost" style="padding:4px 9px;margin-top:5px;font-size:12px;white-space:nowrap" onclick="event.stopPropagation();abrirAjuste('${esc(r.id)}')">📦 Ajustar estoque</button></div></div>`;
 }
 function renderLista() { document.getElementById("lista").innerHTML = (ITENS.length ? ITENS.map(linha).join("") : `<div class="vazio">Nenhum produto nesse filtro.</div>`) + (ITENS.length < D.total ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(D.total - ITENS.length)} restantes)</button></div>` : ""); }
 function exportarCsv() { fetch(B + "/api/produtos-gestao.csv?" + new URLSearchParams(filtros()), { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "produtos_" + hojeISO() + ".csv"; a.click(); }); }
@@ -187,6 +188,77 @@ async function abrirProduto(id) {
   if (!ok) { document.getElementById("mProdCorpo").innerHTML = `<div class="err">${esc(j.erro || "Não consegui abrir.")}</div>`; return; }
   PR = j.produto; ABA = "resumo"; ED = null; FORN = null; renderFicha();
 }
+// ===== AJUSTE RÁPIDO DE ESTOQUE (contei / entrou / saiu), com motivo pronto e QR lembrado nesta sessão =====
+const MOTIVOS_AJ = { contei: ["Contagem de estoque", "Correção de erro", "Inventário"], entrou: ["Entrada sem nota", "Devolução de cliente", "Bonificação recebida", "Correção de erro"], saiu: ["Quebra ou perda", "Consumo interno", "Vencido", "Correção de erro"] };
+let AJ = null, QR_AUT = "", QR_NOME = "";
+const fmtQ = n => String(Math.round(Number(n || 0) * 1000) / 1000).replace(".", ",");
+const numAj = v => { const t = String(v == null ? "" : v).trim(); if (!t) return NaN; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t); };
+async function abrirAjuste(id) {
+  const item = ITENS.find(x => String(x.id) === String(id)) || (PR && String(PR.id) === String(id) ? PR : null);
+  AJ = { id, nome: (item && item.nome) || "Produto", atual: null, modo: "contei", qtd: "", motivo: MOTIVOS_AJ.contei[0], outro: "", carregando: true };
+  document.getElementById("mAjuste").classList.add("aberto"); renderAjuste();
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(id) + "?bling=1"), b = ok && j.produto && j.produto.bling;
+  if (!AJ || AJ.id !== id) return;
+  AJ.carregando = false;
+  if (!b || b.estoque == null) { AJ.erroLeitura = (j && j.produto && j.produto.blingErro) || (j && j.erro) || "Não consegui ler o saldo no Bling agora."; }
+  else { AJ.atual = Number(b.estoque); if (j.produto.nome) AJ.nome = j.produto.nome; AJ.unidade = b.unidade || j.produto.unidade || ""; }
+  renderAjuste(); const q = document.getElementById("ajQtd"); if (q) q.focus();
+}
+function fecharAjuste() { document.getElementById("mAjuste").classList.remove("aberto"); AJ = null; }
+function renderAjuste() {
+  const a = AJ, el = document.getElementById("mAjusteCorpo"); if (!a) return;
+  if (a.carregando) { el.innerHTML = `<h3 style="margin:0 0 8px">📦 ${esc(a.nome)}</h3><div class="vazio"><div class="spin"></div> Lendo o saldo agora no Bling…</div>`; return; }
+  if (a.erroLeitura) { el.innerHTML = `<h3 style="margin:0 0 8px">📦 ${esc(a.nome)}</h3><div class="err">${esc(a.erroLeitura)}</div><button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fecharAjuste()">Fechar</button>`; return; }
+  const modos = [["contei", "Contei"], ["entrou", "Entrou (+)"], ["saiu", "Saiu (−)"]];
+  const ehQtd = a.modo !== "contei", rotulo = a.modo === "contei" ? "Quantidade contada (novo saldo)" : a.modo === "entrou" ? "Quantas entraram" : "Quantas saíram";
+  const motivos = MOTIVOS_AJ[a.modo].concat(["Outro motivo…"]);
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><h3 style="margin:0 0 4px">📦 ${esc(a.nome)}</h3><button class="btn btn-ghost" style="padding:3px 9px" onclick="fecharAjuste()">✕</button></div>
+    <div style="background:#0f0d24;border:1px solid #37327a;border-radius:12px;padding:8px 12px;margin:6px 0;display:flex;justify-content:space-between;align-items:baseline"><span class="ic">Saldo agora no Bling</span><b style="font-size:26px">${fmtQ(a.atual)}</b></div>
+    <div style="display:flex;gap:6px;margin:8px 0">${modos.map(([k, t]) => `<button class="btn ${a.modo === k ? "btn-mag" : "btn-ghost"}" style="flex:1;padding:9px 4px" onclick="setModoAj('${k}')">${t}</button>`).join("")}</div>
+    <div class="ic" style="margin-bottom:3px">${rotulo}</div>
+    <div style="display:flex;gap:6px;align-items:center"><button class="btn btn-ghost" style="padding:10px 16px;font-size:20px" onclick="somarAj(-1)">−</button>
+      <input id="ajQtd" inputmode="decimal" value="${esc(a.qtd)}" placeholder="0" oninput="AJ.qtd=this.value;prevAj()" onkeydown="if(event.key==='Enter')salvarAjuste()" style="flex:1;min-width:0;text-align:center;font-size:24px;font-weight:900;padding:8px">
+      <button class="btn btn-ghost" style="padding:10px 16px;font-size:20px" onclick="somarAj(1)">+</button></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${[6, 12, 24, 48].map(n => `<button class="btn btn-ghost" style="padding:5px 12px" onclick="somarAj(${n})">+${n}</button>`).join("")}<button class="btn btn-ghost" style="padding:5px 12px" onclick="AJ.qtd='';renderAjuste()">limpar</button></div>
+    <div id="ajPrev" style="margin:10px 0 6px;font-size:15px"></div>
+    <div class="ic" style="margin-bottom:3px">Motivo</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${motivos.map(m => { const ativo = m === "Outro motivo…" ? a.motivo === "Outro motivo…" : a.motivo === m; return `<button class="btn ${ativo ? "btn-mag" : "btn-ghost"}" style="padding:6px 10px;font-size:13px" onclick="setMotivoAj(this.dataset.m)" data-m="${esc(m)}">${esc(m)}</button>`; }).join("")}</div>
+    <input id="ajOutro" placeholder="Descreva o motivo" value="${esc(a.outro)}" oninput="AJ.outro=this.value" style="width:100%;margin-top:6px;${a.motivo === "Outro motivo…" ? "" : "display:none"}">
+    ${QR_AUT ? `<div class="ic" style="margin-top:10px">🔓 Autorizado por <b>${esc(QR_NOME || "gerente")}</b> nesta sessão · <a href="#" onclick="QR_AUT='';renderAjuste();return false" style="color:#ff5fa8">trocar</a></div>`
+      : `<div class="ic" style="margin-top:10px">🔒 QR de autorização do dia (gerente, financeiro ou admin)</div><input id="ajQr" type="password" placeholder="Leia o QR do dia" style="width:100%" onkeydown="if(event.key==='Enter')salvarAjuste()">`}
+    <div id="ajMsg" style="margin-top:8px"></div>
+    <button class="btn btn-mag" style="width:100%;margin-top:6px;padding:13px;font-size:16px" onclick="salvarAjuste()">💾 Ajustar estoque</button>`;
+  prevAj();
+}
+function setModoAj(m) { AJ.modo = m; if (!MOTIVOS_AJ[m].includes(AJ.motivo)) AJ.motivo = MOTIVOS_AJ[m][0]; renderAjuste(); const q = document.getElementById("ajQtd"); if (q) q.focus(); }
+function setMotivoAj(m) { AJ.motivo = m; renderAjuste(); const o = document.getElementById("ajOutro"); if (m === "Outro motivo…" && o) o.focus(); }
+function somarAj(n) { const v = numAj(AJ.qtd); AJ.qtd = fmtQ(Math.max(0, (isNaN(v) ? 0 : v) + n)); const q = document.getElementById("ajQtd"); if (q) q.value = AJ.qtd; prevAj(); }
+// quanto vai ficar o saldo
+function novoSaldoAj() { const q = numAj(AJ.qtd); if (isNaN(q) || q < 0) return null; return Math.round((AJ.modo === "contei" ? q : AJ.modo === "entrou" ? AJ.atual + q : AJ.atual - q) * 1000) / 1000; }
+function prevAj() { const el = document.getElementById("ajPrev"); if (!el || !AJ) return; const n = novoSaldoAj();
+  if (n == null) { el.innerHTML = `<span class="ic">Digite a quantidade para ver o novo saldo.</span>`; return; }
+  const d = Math.round((n - AJ.atual) * 1000) / 1000;
+  if (n < 0) { el.innerHTML = `<span style="color:#ff8aa3">⚠️ O saldo não pode ficar negativo (${fmtQ(AJ.atual)} − ${fmtQ(numAj(AJ.qtd))}).</span>`; return; }
+  el.innerHTML = `Novo saldo: <b style="font-size:20px">${fmtQ(n)}</b> <span style="color:${d > 0 ? "#3ce88a" : d < 0 ? "#ff8aa3" : "#aaa"}">${d > 0 ? "▲ +" + fmtQ(d) : d < 0 ? "▼ " + fmtQ(d) : "sem mudança"}</span>`; }
+async function salvarAjuste() {
+  const a = AJ, msg = document.getElementById("ajMsg"), n = novoSaldoAj(); if (!a) return;
+  if (n == null) { msg.innerHTML = `<div class="err">Digite a quantidade.</div>`; return; }
+  if (n < 0) { msg.innerHTML = `<div class="err">O saldo não pode ficar negativo.</div>`; return; }
+  if (Math.abs(n - a.atual) < 0.0005) { msg.innerHTML = `<div class="err">O novo saldo é igual ao atual. Nada para ajustar.</div>`; return; }
+  const motivo = a.motivo === "Outro motivo…" ? String(a.outro || "").trim() : a.motivo; if (!motivo) { msg.innerHTML = `<div class="err">Informe o motivo.</div>`; return; }
+  const qr = QR_AUT || ((document.getElementById("ajQr") || {}).value || "").trim(); if (!qr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
+  const dif = n - a.atual;
+  if (Math.abs(dif) >= 100 && !confirm(`O saldo vai mudar ${dif > 0 ? "+" : ""}${fmtQ(dif)} (de ${fmtQ(a.atual)} para ${fmtQ(n)}). Confirma?`)) return;
+  msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
+  const { ok, j } = await api("/api/produtos-gestao/" + encodeURIComponent(a.id), { method: "PUT", body: JSON.stringify({ tokenQr: qr, estoqueBalanco: String(n).replace(".", ","), motivo: `${motivo}${a.modo === "contei" ? "" : a.modo === "entrou" ? " (+" + fmtQ(numAj(a.qtd)) + ")" : " (−" + fmtQ(numAj(a.qtd)) + ")"}` }) });
+  if (!ok) { if (/qr|autoriz/i.test(j.erro || "")) QR_AUT = ""; msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui ajustar.")}</div>`; const q = document.getElementById("ajQr"); if (q) q.value = ""; return; }
+  QR_AUT = qr; QR_NOME = j.autorizadoPor || QR_NOME;
+  const it = ITENS.find(x => String(x.id) === String(a.id)); if (it) it.estoque = n; if (PR && String(PR.id) === String(a.id)) { PR.estoque = n; ED = null; } renderLista();
+  if (document.getElementById("mProd").classList.contains("aberto") && PR && String(PR.id) === String(a.id)) renderFicha();
+  msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Estoque ajustado: ${fmtQ(a.atual)} → ${fmtQ(n)}</div>`;
+  setTimeout(fecharAjuste, 1100);
+}
+document.getElementById("mAjuste").addEventListener("click", e => { if (e.target.id === "mAjuste") fecharAjuste(); });
 function fechar() { document.getElementById("mProd").classList.remove("aberto"); }
 const L2 = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
 function renderFicha() {
@@ -215,7 +287,7 @@ function abaVendas() { const p = PR, MS = ["jan", "fev", "mar", "abr", "mai", "j
       <div class="card" style="margin:0"><h3>Clientes que mais compram</h3>${p.topClientes.map(c => `<div class="lin"><a href="/clientes?cliente=${encodeURIComponent(c.id)}" target="_blank" style="color:#7fd0ff">${esc(c.nome)}</a><b>${brl(c.valor)}</b></div>`).join("") || `<div class="ic">—</div>`}</div></div>`; }
 function abaPedidos() { return (PR.pedidosRecentes || []).map(x => `<div class="lin"><a href="/pedidos-vendas?pedido=${encodeURIComponent(x.pedidoId)}" target="_blank" style="color:#7fd0ff">#${esc(x.numero)} · ${esc(x.cliente || "—")}</a><span class="ic">${dmy(x.data)} · ${esc(x.vendedor || "")} · ${num(x.quantidade)} × ${brl(x.valor)}</span></div>`).join("") || `<div class="ic">Nenhum pedido nos últimos 12 meses.</div>`; }
 function abaEstoque() { const h = PR.historicoEstoque || [];
-  return `<h3>Saldo no Bling dia a dia</h3>${h.length > 1 ? barras(h.slice(-45).map(([d, v]) => ({ d, v })), x => x.d.slice(8, 10) + "/" + x.d.slice(5, 7), x => Math.max(0, x.v), 100, num) : `<div class="ic">O histórico do saldo começa a ser guardado a partir de hoje (uma foto por dia).</div>`}
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0f0d24;border:1px solid #37327a;border-radius:12px;padding:10px 12px;margin-bottom:10px"><div><div class="ic">Saldo no Bling</div><div style="font-size:26px;font-weight:900">${num(PR.estoque)}${PR.unidade ? " <span class=\"ic\">" + esc(PR.unidade) + "</span>" : ""}</div></div><button class="btn btn-mag" style="padding:10px 16px" onclick="abrirAjuste('${esc(PR.id)}')">📦 Ajustar estoque</button></div><h3>Saldo no Bling dia a dia</h3>${h.length > 1 ? barras(h.slice(-45).map(([d, v]) => ({ d, v })), x => x.d.slice(8, 10) + "/" + x.d.slice(5, 7), x => Math.max(0, x.v), 100, num) : `<div class="ic">O histórico do saldo começa a ser guardado a partir de hoje (uma foto por dia).</div>`}
     <h3 style="margin-top:10px">Entradas</h3>${(PR.entradas || []).map(e => L2(`${dth(e.em)} · ${esc(e.fornecedor || "—")}${e.nota ? " · NF " + esc(e.nota) : ""}`, `${num(e.quantidade)} un${e.custo ? " a " + brl(e.custo) : ""}`)).join("") || `<div class="ic">Nenhuma entrada registrada no sistema.</div>`}`; }
 function abaHist() { return (PR.log || []).map(l => `<div class="lin"><span>${esc(String(l.evento || "").replace(/_/g, " "))}${l.detalhes ? `<br><span class="ic">${esc(Object.entries(l.detalhes).filter(([k, v]) => typeof v !== "object").map(([k, v]) => k + ": " + v).join(" · "))}</span>` : ""}</span><span class="ic">${dth(l.em)}<br>${esc(l.por || "")}</span></div>`).join("") || `<div class="ic">Sem alterações feitas pelo sistema.</div>`; }
 // ===== FORNECEDORES DO PRODUTO: quem vende, o código de cada um e a conversão para unidade (a nota se liga sozinha) =====
