@@ -1401,19 +1401,30 @@ function b13TrocarGrupo(id){ var m=document.getElementById("b13menu"); if(!m||m.
 function b13MenuCelular(){ var m=document.getElementById("b13menu"); if(m) m.classList.toggle("b13mob"); }
 document.addEventListener("click",function(e){ if(!e.target.closest||!e.target.closest("#b13menu .b13grp")) b13FecharGrupos(); });
 document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ b13FecharGrupos(); var m=document.getElementById("b13menu"); if(m) m.classList.remove("b13mob"); } });
-// PEDIDO NOVO DO SITE: VENDA pisca (com a quantidade) e, dentro dele, Pedidos e Venda Atacado — conferido a cada 30 s
-function b13ConferirSiteNovos(){
+// PEDIDO NOVO (SITE OU TOTEM): o menu VENDA pisca com a quantidade até a pessoa APERTAR em Venda; dentro dele, Pedidos e
+// Site e Totem por dia continuam piscando até ela abrir um deles. Venda Atacado pisca enquanto houver pedido do site sem dono.
+function b13VendaAck(alvo){ try{ var s=b13GetSession(); if(!s||!s.token) return; fetch(B13_BACKEND+"/api/venda/novos-menu/visto",{method:"POST",keepalive:true,headers:{"X-Auth-Token":s.token,"Content-Type":"application/json"},body:JSON.stringify({alvo:alvo})}).catch(function(){}); }catch(e){} }
+function b13PiscaMarcar(el,n,titulo){ if(!el) return; var bd=el.querySelector(".b13badge");
+  if(n>0){ el.classList.add("b13novo"); if(!bd){ bd=document.createElement("span"); bd.className="b13badge"; el.appendChild(bd); } bd.textContent=n; if(titulo) el.title=titulo; }
+  else { el.classList.remove("b13novo"); if(bd) bd.remove(); el.title=""; } }
+function b13ConferirVendaNovos(){
   try{ var s=b13GetSession(); if(!s||!s.token) return; if(!(b13Pode("acesso_venda_atacado")||b13Pode("acesso_pedidos_online"))) return;
-    fetch(B13_BACKEND+"/api/site/pedidos-novos",{headers:{"X-Auth-Token":s.token}}).then(function(r){ return r.ok?r.json():null; }).then(function(j){ if(!j) return;
-      var n=(j.itens||[]).length, bt=document.getElementById("b13gVENDA"), ham=document.querySelector("#b13menu .b13ham");
-      if(bt){ var bd=bt.querySelector(".b13badge"); if(n){ bt.classList.add("b13novo"); if(!bd){ bd=document.createElement("span"); bd.className="b13badge"; bt.appendChild(bd); } bd.textContent=n; bt.title=n+" pedido(s) novo(s) pelo site"; } else { bt.classList.remove("b13novo"); if(bd) bd.remove(); bt.title=""; } }
-      if(ham){ if(n) ham.classList.add("b13novo"); else ham.classList.remove("b13novo"); }
-      ["/pedidos-online","/venda-atacado"].forEach(function(h){ var a=document.querySelector('#b13menu .b13mi[data-href="'+h+'"]'); if(!a) return; var bd2=a.querySelector(".b13badge");
-        if(n){ a.classList.add("b13novo"); if(!bd2){ bd2=document.createElement("span"); bd2.className="b13badge"; a.appendChild(bd2); } bd2.textContent=n; } else { a.classList.remove("b13novo"); if(bd2) bd2.remove(); } });
+    var pg=location.pathname.replace(/[/]+$/,""); // quem já está olhando os pedidos não precisa do aviso
+    if(pg==="/pedidos-online"||pg==="/pedidos-site-totem") b13VendaAck("ambos"); else if(pg==="/venda-atacado") b13VendaAck("grupo");
+    fetch(B13_BACKEND+"/api/venda/novos-menu",{headers:{"X-Auth-Token":s.token}}).then(function(r){ return r.ok?r.json():null; }).then(function(j){ if(!j) return;
+      var g=(j.grupo&&j.grupo.novos)|0, it=(j.itens&&j.itens.novos)|0, na=j.naoAssumidos|0, u=j.ultimo, bt=document.getElementById("b13gVENDA"), ham=document.querySelector("#b13menu .b13ham");
+      var dica=g+" pedido(s) novo(s) ("+(j.grupo.site|0)+" do site, "+(j.grupo.totem|0)+" do totem)"+(u?" · último: #"+u.numero+" "+(u.origem==="totem"?"totem":"site")+(u.cliente?" · "+u.cliente:""):"");
+      b13PiscaMarcar(bt,g,dica); if(ham){ if(g>0) ham.classList.add("b13novo"); else ham.classList.remove("b13novo"); }
+      ["/pedidos-online","/pedidos-site-totem"].forEach(function(h){ var a=document.querySelector('#b13menu .b13mi[data-href="'+h+'"]'); b13PiscaMarcar(a,it,it+" pedido(s) novo(s) ainda não vistos aqui"); });
+      var va=document.querySelector('#b13menu .b13mi[data-href="/venda-atacado"]'); b13PiscaMarcar(va,na,na+" pedido(s) do site esperando alguém assumir");
     }).catch(function(){});
-  }catch(e){}
-}
-setTimeout(b13ConferirSiteNovos,2500); setInterval(b13ConferirSiteNovos,30000);
+  }catch(e){} }
+document.addEventListener("click",function(e){ var t=e.target; if(!t||!t.closest) return;
+  var gb=t.closest("#b13gVENDA"); if(gb){ gb.classList.remove("b13novo"); var bd=gb.querySelector(".b13badge"); if(bd) bd.remove(); var ham=document.querySelector("#b13menu .b13ham"); if(ham) ham.classList.remove("b13novo"); b13VendaAck("grupo"); return; }
+  var a=t.closest("#b13menu .b13mi"); if(a&&(a.getAttribute("data-href")==="/pedidos-online"||a.getAttribute("data-href")==="/pedidos-site-totem")){ b13VendaAck("itens"); } },true);
+document.addEventListener("visibilitychange",function(){ if(!document.hidden) b13ConferirVendaNovos(); });
+setTimeout(b13ConferirVendaNovos,2000); setInterval(b13ConferirVendaNovos,20000);
+function b13ConferirSiteNovos(){ b13ConferirVendaNovos(); } // (nome antigo mantido)
 function b13NavHtml(links,ativo){ return ""; } // (menu lateral antigo: substituído pelo menu do topo)
 
 // mostra o QR do caixa do próprio usuário logado (em qualquer página). Só funciona
@@ -15540,6 +15551,23 @@ app.get("/api/pedidos-online",async(req,res)=>{
     res.json({data:lista, situacoesCarregando:_sitOnlineRodando, periodo:{ini:iniISO, fim:fimISO}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// MENU "VENDA" PISCANDO: pedido novo do SITE ou do TOTEM. Cada usuário tem duas marcas de "já vi até aqui": uma do grupo Venda
+// (zera quando ele aperta o menu Venda) e uma dos itens Pedidos / Site e Totem por dia (zera quando ele abre um deles).
+const VENDA_MENU_FILE=`${DATA_DIR}/venda_menu_vistos.json`;
+function _chaveUsuarioMenu(req){ return String(req.sessao?.funcionarioId||req.sessao?.nome||""); }
+app.get("/api/venda/novos-menu",requireSessao,(req,res)=>{
+  try{ const fid=_chaveUsuarioMenu(req); if(!fid) return res.json({ok:true,grupo:{novos:0},itens:{novos:0},naoAssumidos:0,ultimo:null});
+    const d=lerJSON(VENDA_MENU_FILE,{}); let m=d[fid];
+    if(!m){ m={grupo:Date.now(),itens:Date.now()}; d[fid]=m; salvarJSON(VENDA_MENU_FILE,d); } // primeiro uso: não pisca por pedidos antigos
+    const lista=_listaOnlineSimples(3).filter(p=>{ const sit=_sitOnline[String(p.pedidoBlingId)]; return !(sit&&sit.situacaoId===SIT.CANCELADO); });
+    const g=lista.filter(p=>(p.criadoEm||0)>Number(m.grupo||0)), it=lista.filter(p=>(p.criadoEm||0)>Number(m.itens||0)), u=lista[0]||null, conta=l=>({novos:l.length,site:l.filter(p=>p.origem==="site").length,totem:l.filter(p=>p.origem==="totem").length});
+    res.json({ok:true,grupo:conta(g),itens:conta(it),naoAssumidos:lista.filter(p=>p.origem==="site"&&p.pedidoBlingId&&!(p.avisoSite&&p.avisoSite.assumidoPor)).length,
+      ultimo:u?{numero:u.pedidoBlingNumero||u.pedidoBlingId||"",origem:u.origem||"",cliente:u.cliente?.nome||"",total:Number(u.total)||0,criadoEm:u.criadoEm||0}:null});
+  }catch(e){ res.json({ok:false,grupo:{novos:0},itens:{novos:0},naoAssumidos:0,ultimo:null}); } });
+app.post("/api/venda/novos-menu/visto",requireSessao,(req,res)=>{
+  try{ const fid=_chaveUsuarioMenu(req); if(!fid) return res.json({ok:true}); const alvo=String(req.body?.alvo||"ambos"), d=lerJSON(VENDA_MENU_FILE,{}), m=d[fid]||{grupo:0,itens:0}, lista=_listaOnlineSimples(3), marca=Math.max(Date.now(),...lista.map(p=>p.criadoEm||0));
+    if(alvo==="grupo"||alvo==="ambos") m.grupo=marca; if(alvo==="itens"||alvo==="ambos") m.itens=marca; d[fid]=m; salvarJSON(VENDA_MENU_FILE,d); res.json({ok:true});
+  }catch(e){ res.json({ok:false}); } });
 // contagem de NOVOS pedidos online por usuário (cada um tem seu "já vi até aqui")
 const VISTOS_ONLINE_FILE=`${DATA_DIR}/pedidos_online_vistos.json`;
 function _listaOnlineSimples(dias){
