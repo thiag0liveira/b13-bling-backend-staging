@@ -112,7 +112,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
       <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
       <select id="fSo"><option value="">Todos</option><option value="com_custo">Só com custo</option><option value="sem_custo">Só sem custo</option></select></span>
-    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora ou nº do pedido" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
+    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora, nº" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
     <div id="msgBusca" class="ic" style="white-space:normal;margin-top:6px"></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Margem bruta só dos itens cujo produto tem preço de compra (custo) no cadastro. Itens sem custo aparecem à parte, para saber se a margem está completa.</div></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
@@ -133,7 +133,8 @@ async function carregar() {
   const r = await fetch(B + "/api/margem-bruta?" + q, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({})); if (_meu !== _seq) return; // chegou uma resposta mais nova
   if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; }
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
-  kpis.innerHTML = k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
+  const F = D.faturamento || { total: T.fatCusto + T.fatSemCusto, pedidos: T.pedidos }, tk = F.pedidos ? F.total / F.pedidos : 0;
+  kpis.innerHTML = `<div class="kpi" style="grid-column:1/-1;border-color:#2aa876"><div class="v" style="font-size:26px">${brl(F.total)}</div><div class="l">Faturamento total neste filtro</div><div class="s">${F.pedidos} pedido(s)${F.pedidos ? " · ticket médio " + brl(tk) : ""} · valor dos itens vendidos, sem o frete</div></div>` + k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
   atualizarMsgBusca();
   if (D.agrupar === "produto") { renderProdutos(); return; }
   cards.innerHTML = ""; tab.style.display = ""; tab.style.minWidth = ""; tab.parentElement.style.overflowX = "auto"; semCusto.parentElement.style.display = ""; // vindo de "Por produto" no celular: tira os cartões antigos e mostra a tabela
@@ -179,9 +180,11 @@ function ligarData(idT, idD) { const T = document.getElementById(idT), D = docum
   T.addEventListener("blur", () => { if (!isoDeBr(T.value)) T.value = brDeIso(D.value); T.style.borderColor = ""; }); // data incompleta ou inválida: volta para a que está valendo
   D.addEventListener("change", () => { T.value = brDeIso(D.value); T.style.borderColor = ""; }); T.value = brDeIso(D.value); }
 fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar);
-function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"); if (!b) { el.textContent = ""; return; }
-  const n = (D.totais && D.totais.pedidos) || 0, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
-  el.innerHTML = n ? `🔎 “${esc(b)}”: <b style="color:#fff">${n}</b> pedido(s) entre ${per}. A busca olha cliente, produto, vendedora e nº do pedido.` : `🔎 Nada encontrado para “${esc(b)}” entre ${per}. A busca olha cliente, produto, vendedora e nº do pedido <b>dentro deste período</b>: amplie as datas se precisar.`; }
+function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"), F = D.faturamento || { total: ((D.totais || {}).fatCusto || 0) + ((D.totais || {}).fatSemCusto || 0), pedidos: (D.totais || {}).pedidos || 0 }, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
+  const extra = (D.agrupar === "produto" && (fMax.value.trim() || fSo.value)) ? " (com o filtro de margem/custo aplicado)" : "";
+  let t = `<div style="font-size:15px;color:#fff">💰 Faturamento total: <b style="color:#3ce88a;font-size:18px">${brl(F.total)}</b> <span class="ic">· ${F.pedidos} pedido(s) · ${per}${extra}</span></div>`;
+  if (b) t += F.pedidos ? `<div style="margin-top:2px">🔎 “${esc(b)}”: a busca olha cliente, produto, vendedora e nº do pedido.</div>` : `<div style="margin-top:2px">🔎 Nada encontrado para “${esc(b)}” neste período. A busca olha cliente, produto, vendedora e nº do pedido <b>dentro das datas escolhidas</b>: amplie-as se precisar.</div>`;
+  el.innerHTML = t; }
 let _tb; // busca automática: ao digitar (depois de uma pausa), ao tocar em Enter/Ir/Buscar no teclado do celular e ao limpar o campo
 fBusca.addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(carregar, 450); });
 fBusca.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(_tb); carregar(); fBusca.blur(); } });

@@ -11078,16 +11078,19 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
-        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,pedidos:x.pedidos.size}; });
+        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
       const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
       if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
       if(mx!=null&&Number.isFinite(mx)) L=L.filter(x=>x.margem!=null&&x.margem<mx);
       const ord={menor_margem:(a,b)=>(a.margem??1e9)-(b.margem??1e9),maior_margem:(a,b)=>(b.margem??-1e9)-(a.margem??-1e9),maior_lucro:(a,b)=>(b.lucro??-1e12)-(a.lucro??-1e12),maior_fat:(a,b)=>b.fat-a.fat,maior_qtd:(a,b)=>b.qtd-a.qtd}[q.ordem]||((a,b)=>(a.margem??1e9)-(b.margem??1e9));
       L.sort(ord); const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto});
-      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
+      // FATURAMENTO do que está listado (respeita busca, "só com/sem custo" e "margem abaixo de"): soma das linhas filtradas
+      const uni=new Set(); L.forEach(x=>{ x._ped.forEach(i=>uni.add(i)); }); const fatL=_round2(L.reduce((a,x)=>a+x.fat,0)), fatSem=_round2(L.filter(x=>x.custoUn==null).reduce((a,x)=>a+x.fat,0));
+      const faturamento={total:fatL,comCusto:_round2(fatL-fatSem),semCusto:fatSem,pedidos:uni.size,qtd:+L.reduce((a,x)=>a+x.qtd,0).toFixed(2),linhas:L.length}; L.forEach(x=>{ delete x._ped; });
+      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,faturamento,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
     }
     const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto}), cob=T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null;
-    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
+    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,faturamento:{total:_round2(T.fatCusto+T.fatSemCusto),comCusto:_round2(T.fatCusto),semCusto:_round2(T.fatSemCusto),pedidos:T.pedidos,linhas:linhas.length},totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
       semCusto:Object.entries(T.itensSemCusto).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([nome,v])=>({nome,valor:_round2(v)}))});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
