@@ -112,7 +112,8 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <span id="parProd" style="display:none;gap:6px;flex-wrap:wrap;align-items:center"><select id="fOrdem"><option value="menor_margem">Menor margem</option><option value="maior_margem">Maior margem</option><option value="maior_lucro">Maior lucro</option><option value="maior_fat">Maior faturamento</option><option value="maior_qtd">Mais vendidos</option></select>
       <label class="ic">margem abaixo de <input id="fMax" inputmode="decimal" placeholder="%" style="width:56px"></label>
       <select id="fSo"><option value="">Todos</option><option value="com_custo">Só com custo</option><option value="sem_custo">Só sem custo</option></select></span>
-    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
+    <input id="fBusca" type="search" placeholder="🔎 cliente, produto, vendedora ou nº do pedido" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:160px"><button class="chip" onclick="carregar()">Aplicar</button></div>
+    <div id="msgBusca" class="ic" style="white-space:normal;margin-top:6px"></div>
     <div class="ic" style="white-space:normal;margin-top:6px">Margem bruta só dos itens cujo produto tem preço de compra (custo) no cadastro. Itens sem custo aparecem à parte, para saber se a margem está completa.</div></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
   <div class="card" style="overflow-x:auto"><table id="tab" style="width:100%;border-collapse:collapse;font-size:13px;min-width:560px"></table><div id="cards"></div></div>
@@ -124,17 +125,21 @@ const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g,
 const brl = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), pct = v => v == null ? "—" : String(v).replace(".", ",") + "%";
 const hoje = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 let D = null;
+let _seq = 0;
 async function carregar() {
+  const _meu = ++_seq;
   parProd.style.display = fAg.value === "produto" ? "inline-flex" : "none";
   const q = new URLSearchParams({ ini: fIni.value, fim: fFim.value, agrupar: fAg.value, busca: fBusca.value.trim(), ordem: fOrdem.value, margemMax: fMax.value.trim(), so: fSo.value });
-  const r = await fetch(B + "/api/margem-bruta?" + q, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({}));
+  const r = await fetch(B + "/api/margem-bruta?" + q, { headers: { "X-Auth-Token": (b13GetSession() || {}).token || "" } }); D = await r.json().catch(() => ({})); if (_meu !== _seq) return; // chegou uma resposta mais nova
   if (!r.ok) { kpis.innerHTML = `<div class="err">${esc(D.erro || "Não consegui carregar.")}</div>`; return; }
   const T = D.totais, k = (v, l, s) => `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
   kpis.innerHTML = k(pct(T.margem), "Margem bruta", brl(T.lucro) + " de lucro bruto") + k(brl(T.fatCusto), "Faturamento com custo", T.pedidos + " pedido(s)") + k(brl(T.custo), "Custo das mercadorias") + k(pct(T.coberturaPct), "Faturamento coberto por custo", brl(T.fatSemCusto) + " sem custo");
+  atualizarMsgBusca();
   if (D.agrupar === "produto") { renderProdutos(); return; }
+  cards.innerHTML = ""; tab.style.display = ""; tab.style.minWidth = ""; tab.parentElement.style.overflowX = "auto"; semCusto.parentElement.style.display = ""; // vindo de "Por produto" no celular: tira os cartões antigos e mostra a tabela
   const nome = { mes: "Mês", semana: "Semana", dia: "Dia", pedido: "Pedido" }[D.agrupar];
   tab.innerHTML = `<tr class="ic"><td>${nome}</td><td style="text-align:right">Pedidos</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Custo</td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td><td style="text-align:right">Sem custo</td></tr>` +
-    D.linhas.map(l => `<tr style="border-top:1px solid #2a2660"><td>${l.pedidoId ? `<a href="/pedidos-vendas?pedido=${l.pedidoId}" style="color:#7fd0ff">${esc(l.rotulo)}</a>` : esc(l.rotulo)}</td><td style="text-align:right">${l.pedidos}</td><td style="text-align:right">${brl(l.fatCusto)}</td><td style="text-align:right">${brl(l.custo)}</td><td style="text-align:right"><b>${brl(l.lucro)}</b></td><td style="text-align:right"><b>${pct(l.margem)}</b></td><td style="text-align:right;color:#9a95c9">${brl(l.fatSemCusto)}</td></tr>`).join("");
+    (D.linhas.length ? "" : `<tr><td colspan="7" class="ic" style="white-space:normal;padding:10px 4px">Nenhum pedido nesse período${fBusca.value.trim() ? " para “" + esc(fBusca.value.trim()) + "”" : ""}.</td></tr>`) + D.linhas.map(l => `<tr style="border-top:1px solid #2a2660"><td>${l.pedidoId ? `<a href="/pedidos-vendas?pedido=${l.pedidoId}" style="color:#7fd0ff">${esc(l.rotulo)}</a>` : esc(l.rotulo)}</td><td style="text-align:right">${l.pedidos}</td><td style="text-align:right">${brl(l.fatCusto)}</td><td style="text-align:right">${brl(l.custo)}</td><td style="text-align:right"><b>${brl(l.lucro)}</b></td><td style="text-align:right"><b>${pct(l.margem)}</b></td><td style="text-align:right;color:#9a95c9">${brl(l.fatSemCusto)}</td></tr>`).join("");
   semCusto.innerHTML = D.semCusto.map(x => `<div class="lin"><span>${esc(x.nome)}</span><b>${brl(x.valor)}</b></div>`).join("") || `<div class="ic">Todos os itens vendidos têm custo.</div>`;
 }
 function renderProdutos() {
@@ -144,13 +149,13 @@ function renderProdutos() {
     cards.innerHTML = `${D.produtos.map((x, k) => `<div class="pcard"><div class="n"><span>${esc(x.nome)}</span><span style="color:${corM(x.margem)}">${pct(x.margem)}</span></div>
       <div class="g3"><div><span>Venda</span><b>${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</b></div><div><span>Médio</span><b>${x.precoMedio != null ? brl(x.precoMedio) : "—"}</b></div>
         <div><span>Custo</span>${x.produtoId ? `<div class="ced"><input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="—" onkeydown="if(event.key==='Enter')salvarCusto(${k})"><button onclick="salvarCusto(${k})">💾</button></div>` : "<b>—</b>"}</div>
-        <div><span>Qtd</span><b>${String(x.qtd).replace(".", ",")}</b></div><div><span>Faturou</span><b>${brl(x.fat)}</b></div><div><span>Lucro</span><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></div></div></div>`).join("") || `<div class="ic">Nenhum produto com esses parâmetros.</div>`}`;
+        <div><span>Qtd</span><b>${String(x.qtd).replace(".", ",")}</b></div><div><span>Faturou</span><b>${brl(x.fat)}</b></div><div><span>Lucro</span><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></div></div></div>`).join("") || `<div class="ic" style="white-space:normal">Nenhum produto com esses parâmetros${fBusca.value.trim() ? " para “" + esc(fBusca.value.trim()) + "”: amplie as datas ou confira a escrita" : ""}.</div>`}`;
     tab.style.minWidth = "0"; semCusto.parentElement.style.display = "none"; return; }
   cards.innerHTML = ""; tab.style.display = ""; tab.parentElement.style.overflowX = "auto"; tab.style.minWidth = "560px";
   tab.innerHTML = `<tr class="ic"><td>Produto</td><td style="text-align:right">Qtd</td><td style="text-align:right">Faturamento</td><td style="text-align:right">Preço de venda<div style="font-weight:400">(cadastro)</div></td><td style="text-align:right">Preço médio<div style="font-weight:400">(vendido)</div></td><td style="text-align:right">Preço de custo<div style="font-weight:400">(editar)</div></td><td style="text-align:right">Lucro bruto</td><td style="text-align:right">Margem</td></tr>` +
     D.produtos.map((x, k) => `<tr style="border-top:1px solid #2a2660"><td>${esc(x.nome)}<div class="ic">${x.pedidos} pedido(s)</div></td><td style="text-align:right">${String(x.qtd).replace(".", ",")}</td><td style="text-align:right">${brl(x.fat)}</td><td style="text-align:right">${x.precoVenda > 0 ? brl(x.precoVenda) : "—"}</td><td style="text-align:right">${x.precoMedio != null ? brl(x.precoMedio) : "—"}</td>
       <td style="text-align:right;white-space:nowrap">${x.produtoId ? `<input id="cu${k}" inputmode="decimal" value="${x.custoUn != null ? String(x.custoUn).replace(".", ",") : ""}" placeholder="sem custo" style="width:76px;text-align:right" onkeydown="if(event.key==='Enter')salvarCusto(${k})"> <button class="chip" onclick="salvarCusto(${k})">💾</button>` : "—"}</td>
-      <td style="text-align:right"><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></td><td style="text-align:right"><b style="color:${corM(x.margem)}">${pct(x.margem)}</b></td></tr>`).join("") || `<tr><td class="ic">Nenhum produto com esses parâmetros.</td></tr>`;
+      <td style="text-align:right"><b>${x.lucro != null ? brl(x.lucro) : "—"}</b></td><td style="text-align:right"><b style="color:${corM(x.margem)}">${pct(x.margem)}</b></td></tr>`).join("") || `<tr><td class="ic" style="white-space:normal">Nenhum produto com esses parâmetros${fBusca.value.trim() ? " para “" + esc(fBusca.value.trim()) + "”: amplie as datas ou confira a escrita" : ""}.</td></tr>`;
   semCusto.parentElement.style.display = "none";
 }
 async function salvarCusto(k) { const x = D.produtos[k], inp = document.getElementById("cu" + k), v = (inp.value || "").replace(",", ".");
@@ -173,7 +178,15 @@ function ligarData(idT, idD) { const T = document.getElementById(idT), D = docum
     const iso = isoDeBr(T.value); T.style.borderColor = T.value.length === 10 && !iso ? "#ff5f8a" : ""; if (iso && D.value !== iso) { D.value = iso; D.dispatchEvent(new Event("change")); } });
   T.addEventListener("blur", () => { if (!isoDeBr(T.value)) T.value = brDeIso(D.value); T.style.borderColor = ""; }); // data incompleta ou inválida: volta para a que está valendo
   D.addEventListener("change", () => { T.value = brDeIso(D.value); T.style.borderColor = ""; }); T.value = brDeIso(D.value); }
-fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar); carregar(); let _rz, _larg = innerWidth; // o teclado do celular muda só a ALTURA: redesenhar ali apagava o campo e fechava o teclado
+fIni.value = hoje().slice(0, 8) + "01"; fFim.value = hoje(); ligarData("fIniT", "fIni"); ligarData("fFimT", "fFim"); [fIni, fFim, fAg, fOrdem, fSo].forEach(e => e.addEventListener("change", carregar)); fMax.addEventListener("change", carregar);
+function atualizarMsgBusca() { const b = fBusca.value.trim(), el = document.getElementById("msgBusca"); if (!b) { el.textContent = ""; return; }
+  const n = (D.totais && D.totais.pedidos) || 0, per = brDeIso(fIni.value) + " até " + brDeIso(fFim.value);
+  el.innerHTML = n ? `🔎 “${esc(b)}”: <b style="color:#fff">${n}</b> pedido(s) entre ${per}. A busca olha cliente, produto, vendedora e nº do pedido.` : `🔎 Nada encontrado para “${esc(b)}” entre ${per}. A busca olha cliente, produto, vendedora e nº do pedido <b>dentro deste período</b>: amplie as datas se precisar.`; }
+let _tb; // busca automática: ao digitar (depois de uma pausa), ao tocar em Enter/Ir/Buscar no teclado do celular e ao limpar o campo
+fBusca.addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(carregar, 450); });
+fBusca.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(_tb); carregar(); fBusca.blur(); } });
+fBusca.addEventListener("search", () => { clearTimeout(_tb); carregar(); });
+ carregar(); let _rz, _larg = innerWidth; // o teclado do celular muda só a ALTURA: redesenhar ali apagava o campo e fechava o teclado
 addEventListener("resize", () => { clearTimeout(_rz); _rz = setTimeout(() => { const a = document.activeElement; if (a && a.tagName === "INPUT") return;
   if (Math.abs(innerWidth - _larg) < 40) return; _larg = innerWidth; if (D && D.agrupar === "produto") renderProdutos(); }, 250); });
 </script></body></html>

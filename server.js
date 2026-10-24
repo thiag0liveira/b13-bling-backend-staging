@@ -11061,10 +11061,14 @@ app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),asyn
 });
 app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
-    const r=_filtrarPedidos({...q}), G={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}};
+    // BUSCA: cliente, vendedora, nº do pedido OU produto (nome ou código). Várias palavras: todas precisam aparecer. Se a busca é de produto, só os itens daquele produto entram nas contas.
+    const r=_filtrarPedidos({...q,busca:""}), G={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}};
+    const nrmB=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), toks=nrmB(q.busca||"").split(/\s+/).filter(Boolean), dgB=String(q.busca||"").replace(/\D/g,"");
+    const tokOk=txt=>toks.every(t=>txt.includes(t)), casaPed=p=>tokOk(nrmB(p.cliente)+" "+nrmB(p.vendedor))||(dgB.length>=3&&(String(p.numero).includes(dgB)||String(p.id)===dgB)),
+      casaItem=i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null; return tokOk(nrmB(i.nome)+" "+nrmB(pr&&pr.n)+" "+nrmB(pr&&pr.c)); };
     const chave=p=>{ const d=p.dia||_diaBRk(p.em||Date.now()); if(ag==="dia") return d; if(ag==="mes") return d.slice(0,7);
       if(ag==="semana"){ const dt=new Date(d+"T12:00:00Z"), w=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-w); return "semana de "+dt.toISOString().slice(0,10); } return String(p.id); };
-    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} if(!it.length) return; T.pedidos++;
+    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} if(toks.length&&!casaPed(p)) it=it.filter(casaItem); if(!it.length) return; T.pedidos++;
       const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0}); g.pedidos++;
       it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null;
         if(ag==="produto"){ const pk=String(i.produtoId||i.nome||"?"), x=(PROD[pk]||={produtoId:i.produtoId||null,nome:(pr&&pr.n)||i.nome||pk,qtd:0,fat:0,custo:0,custoUn:pr&&pr.pc>0?pr.pc:null,precoVenda:pr?pr.p:null,pedidos:new Set()});
