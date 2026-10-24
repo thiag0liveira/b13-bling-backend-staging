@@ -10239,8 +10239,8 @@ function _statusHistorico(){
 const PEDIDOS_DET_FILE=`${DATA_DIR}/pedidos_bling_det.json`;
 let _detMem=null, _det={rodando:false,progresso:""};
 function lerDetPedidos(){ if(!_detMem){ _detMem=lerJSON(PEDIDOS_DET_FILE,null)||{}; _detMem.porId||={}; _detMem.prod||={}; _detMem.vend||={}; _detMem.formas||={}; } return _detMem; }
-function _pendentesDetalhe(){ const h=lerHistPedidos().porId, d=lerDetPedidos(), locais=new Set(Object.values(lerPropostas()||{}).map(p=>String(p?.pedidoBlingId||"")));
-  return Object.entries(h).filter(([id,x])=>x&&x.c&&x.s!==SIT.CANCELADO&&!d.porId[id]&&!locais.has(id)).sort((a,b)=>String(b[1].d).localeCompare(String(a[1].d))).map(([id])=>id); }
+function _pendentesDetalhe(incluirSemCliente){ const h=lerHistPedidos().porId, d=lerDetPedidos(), locais=new Set(Object.values(lerPropostas()||{}).map(p=>String(p?.pedidoBlingId||"")));
+  return Object.entries(h).filter(([id,x])=>x&&(x.c||incluirSemCliente)&&x.s!==SIT.CANCELADO&&!d.porId[id]&&!locais.has(id)).sort((a,b)=>String(b[1].d).localeCompare(String(a[1].d))).map(([id])=>id); }
 async function varrerDetalhesBling(ate){
   if(_det.rodando) return; _det.rodando=true;
   try{
@@ -10967,9 +10967,9 @@ function _whSalvarDepois(){ if(_whSalvarT) return; _whSalvarT=setTimeout(()=>{ _
 // avisos chegando para um assunto nas últimas 2 h? (usado para espaçar as conferências periódicas)
 function _webhookAtivo(prefixo){ return Object.entries(_wh.ultimoEm).some(([k,t])=>k.startsWith(prefixo)&&Date.now()-t<2*3600e3); }
 const _detPendentes=new Set(); let _detFilaRodando=false;
-async function _buscarDetalhesAvisados(){ if(_detFilaRodando) return; _detFilaRodando=true;
+async function _buscarDetalhesAvisados(prio){ if(_detFilaRodando) return; _detFilaRodando=true;
   try{ while(_detPendentes.size){ const id=_detPendentes.values().next().value; _detPendentes.delete(id);
-      try{ const p=(await blingLento(`/pedidos/vendas/${id}`))?.data; if(!p) continue; const d=lerDetPedidos();
+      try{ const p=(await bling(`/pedidos/vendas/${id}`,{},prio||"baixa"))?.data; if(!p) continue; const d=lerDetPedidos();
         for(const pc of (p.parcelas||[])){ const fid=pc.formaPagamento?.id; if(fid&&!d.formas[fid]) try{ d.formas[fid]=await nomeFormaPagamentoId(fid); }catch(e){} }
         d.porId[String(id)]={i:(p.itens||[]).map(it=>{ const pp=Number(it.produto?.id)||0; if(pp&&!d.prod[pp]) d.prod[pp]=String(it.descricao||"").trim().slice(0,70); return pp?[pp,Number(it.quantidade)||0,Number(it.valor)||0]:[0,Number(it.quantidade)||0,Number(it.valor)||0,String(it.descricao||"").trim().slice(0,70)]; }),
           v:Number(p.vendedor?.id)||0,f:Number(p.transporte?.frete)||0,pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0])};
@@ -11084,7 +11084,10 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const montarClientes=permitidos=>Object.values(CLI).map(c=>{ let fat=0,fc=0,cu=0; const ped=new Set(); Object.entries(c.prod).forEach(([pk,x])=>{ if(permitidos&&!permitidos.has(pk)) return; fat+=x.fat; fc+=x.fatCusto; cu+=x.custo; x.ped.forEach(i=>ped.add(i)); });
       return ped.size?{clienteId:c.clienteId,nome:nomeCli(c),pedidos:ped.size,fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),lucro:_round2(fc-cu),margem:fc>0?+(((fc-cu)/fc)*100).toFixed(1):null}:null; }).filter(Boolean).sort((a,b)=>b.fat-a.fat);
     const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null});
-    const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em};
+    // período que toca os últimos 3 dias: confere os pedidos do Bling (no máximo a cada 4 min), sem esperar aviso nem a madrugada
+    const limRec=new Date(Date.now()-3*3600e3-3*_DIA).toISOString().slice(0,10); if(r.fim>=limRec&&!_recentes.rodando&&Date.now()-_recentes.em>4*60000) atualizarRecentesBling(3);
+    const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em,
+      bling:{atualizando:!!(_recentes.rodando||_detFilaRodando||(_detPendentes&&_detPendentes.size)),recentesEm:_recentes.em||0,lidos:_recentes.lidos,novos:_recentes.novos,erro:_recentes.erro}};
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
@@ -11107,12 +11110,29 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
-app.post("/api/margem-bruta/atualizar",requireAcesso("acesso_margem_bruta"),(req,res)=>{
+app.post("/api/margem-bruta/atualizar",requireAcesso("acesso_margem_bruta"),async(req,res)=>{
   try{ const b=req.body||{}, ini=/^\d{4}-\d{2}-\d{2}$/.test(String(b.ini||""))?b.ini:"0000-00-00", fim=/^\d{4}-\d{2}-\d{2}$/.test(String(b.fim||""))?b.fim:"9999-99-99";
-    _idxPed.em=0; const H=lerHistPedidos().porId, todos=_pendentesDetalhe(), ids=todos.filter(id=>{ const d=String((H[id]||{}).d||""); return d>=ini&&d<=fim; }).slice(0,60);
-    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(_buscarDetalhesAvisados,50);
-    res.json({ok:true,enfileirados:ids.length,restantes:Math.max(0,todos.length-ids.length)});
+    _idxPed.em=0; const hojeBR=new Date(Date.now()-3*3600e3).toISOString().slice(0,10), dias=Math.min(31,Math.max(3,Math.ceil((Date.parse(hojeBR)-Date.parse(ini==="0000-00-00"?hojeBR:ini))/_DIA)+1));
+    if(fim>=new Date(Date.now()-3*3600e3-7*_DIA).toISOString().slice(0,10)){ const t=atualizarRecentesBling(dias,{max:80}); await Promise.race([t||Promise.resolve(),sleep(25000)]); }
+    const H=lerHistPedidos().porId, todos=_pendentesDetalhe(true), ids=todos.filter(id=>{ const d=String((H[id]||{}).d||""); return d>=ini&&d<=fim; }).slice(0,80);
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50);
+    res.json({ok:true,enfileirados:ids.length,restantes:Math.max(0,todos.length-ids.length),novos:_recentes.novos,lidos:_recentes.lidos,erro:_recentes.erro});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// PEDIDOS RECENTES DO BLING: o varejo é lançado direto no Bling e só chegava por aviso do Bling ou pela sincronização da madrugada.
+// Aqui a Margem Bruta busca sozinha os últimos dias (lista + itens), no máximo a cada poucos minutos, e a tela mostra o andamento.
+const _recentes={rodando:false,em:0,lidos:0,novos:0,erro:"",enfileirados:0};
+async function atualizarRecentesBling(dias,opts={}){
+  if(_recentes.rodando) return; _recentes.rodando=true; _recentes.erro=""; _recentes.novos=0;
+  try{ const h=lerHistPedidos(), hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10), ini=new Date(Date.now()-3*3600e3-Math.max(1,dias||3)*_DIA).toISOString().slice(0,10); let lidos=0;
+    for(let pg=1;pg<=40;pg++){ const r=await bling(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${ini}&dataFinal=${hoje}`,{},"alta"); const arr=(r&&r.data)||[];
+      arr.forEach(p=>{ if(!p||!p.id) return; const k=String(p.id), ant=h.porId[k]; if(!ant) _recentes.novos++; h.porId[k]={n:p.numero||null,d:p.data||"",t:Number(p.total||p.totalProdutos||0),s:Number(p.situacao?.id)||0,c:p.contato?.id?String(p.contato.id):""}; });
+      lidos+=arr.length; if(arr.length<100) break; await sleep(300); }
+    h.sincRecentesEm=Date.now(); _histMem=h; _whSujo.hist=true; _idxPed.em=0; _idxCli.em=0; _recentes.lidos=lidos;
+    // itens dos pedidos que só existem no Bling (inclusive os do balcão, sem cliente), dos mais novos para os mais antigos
+    const H=h.porId, ids=_pendentesDetalhe(true).filter(id=>String((H[id]||{}).d||"")>=ini).slice(0,opts.max||80); _recentes.enfileirados=ids.length;
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50);
+  }catch(e){ _recentes.erro=String(e.message||e).slice(0,160); console.error("[margem] atualizar pedidos recentes do Bling:",e.message); }
+  finally{ _recentes.rodando=false; _recentes.em=Date.now(); } }
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
 const _nrmMot=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
