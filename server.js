@@ -1407,6 +1407,21 @@ function b13VendaAck(alvo){ try{ var s=b13GetSession(); if(!s||!s.token) return;
 function b13PiscaMarcar(el,n,titulo){ if(!el) return; var bd=el.querySelector(".b13badge");
   if(n>0){ el.classList.add("b13novo"); if(!bd){ bd=document.createElement("span"); bd.className="b13badge"; el.appendChild(bd); } bd.textContent=n; if(titulo) el.title=titulo; }
   else { el.classList.remove("b13novo"); if(bd) bd.remove(); el.title=""; } }
+// AVISO PISCANDO DENTRO DA VENDA ATACADO: pedido novo do site ou do totem. Fica ligado para cada vendedora até ELA abrir a página
+// de pedidos do site e totem (a marca de "já vi" é por usuário, no servidor, e vale em qualquer aparelho). Não tem botão de fechar.
+function b13BannerNovos(j){
+  try{ var pg=location.pathname.replace(/[/]+$/,""); if(pg!=="/venda-atacado") return;
+    var n=(j&&j.itens&&j.itens.novos)|0, el=document.getElementById("b13BannerNovos");
+    if(!n){ if(el) el.remove(); return; }
+    if(!document.getElementById("b13AlertaCss")){ var st=document.createElement("style"); st.id="b13AlertaCss"; st.textContent="@keyframes b13alerta{0%,100%{background:#FF0082;color:#fff}50%{background:#3a0020;color:#ffd23f}}@keyframes b13sino{0%,100%{transform:rotate(0)}20%{transform:rotate(-18deg)}40%{transform:rotate(16deg)}60%{transform:rotate(-10deg)}80%{transform:rotate(8deg)}}"; document.head.appendChild(st); }
+    if(!el){ el=document.createElement("a"); el.id="b13BannerNovos"; el.href="/pedidos-site-totem"; el.setAttribute("style","display:block;position:sticky;top:48px;z-index:900;text-decoration:none;font-family:Arial,sans-serif;font-weight:800;font-size:15px;line-height:1.35;padding:11px 14px;text-align:center;border-bottom:2px solid #fff;animation:b13alerta 1s infinite;cursor:pointer");
+      el.addEventListener("click",function(){ b13VendaAck("itens"); });
+      var m=document.getElementById("b13menu"), wrap=m&&m.parentNode;
+      if(wrap&&wrap!==document.body&&wrap.parentNode) wrap.parentNode.insertBefore(el,wrap.nextSibling); else document.body.insertBefore(el,m?m.nextSibling:document.body.firstChild); }
+    var si=(j.itens.site|0), to=(j.itens.totem|0), u=j.ultimo, quem=(si&&to)?"SITE E TOTEM":(si?"SITE":"TOTEM");
+    el.innerHTML='<span style="display:inline-block;animation:b13sino 1.2s infinite;transform-origin:50% 0">🔔</span> PEDIDO NOVO PELO '+quem+' ('+n+')'+(si&&to?' · '+si+' do site, '+to+' do totem':'')
+      +'<div style="font-size:12px;font-weight:600;opacity:.95">'+(u?'Último: #'+String(u.numero).replace(/[<>&]/g,"")+' · '+(u.origem==="totem"?"totem":"site")+(u.cliente?' · '+String(u.cliente).replace(/[<>&]/g,""):"")+' · ':'')+'toque aqui para ver os pedidos</div>';
+  }catch(e){} }
 function b13ConferirVendaNovos(){
   try{ var s=b13GetSession(); if(!s||!s.token) return; if(!(b13Pode("acesso_venda_atacado")||b13Pode("acesso_pedidos_online"))) return;
     var pg=location.pathname.replace(/[/]+$/,""); // quem já está olhando os pedidos não precisa do aviso
@@ -1417,6 +1432,7 @@ function b13ConferirVendaNovos(){
       b13PiscaMarcar(bt,g,dica); if(ham){ if(g>0) ham.classList.add("b13novo"); else ham.classList.remove("b13novo"); }
       ["/pedidos-online","/pedidos-site-totem"].forEach(function(h){ var a=document.querySelector('#b13menu .b13mi[data-href="'+h+'"]'); b13PiscaMarcar(a,it,it+" pedido(s) novo(s) ainda não vistos aqui"); });
       var va=document.querySelector('#b13menu .b13mi[data-href="/venda-atacado"]'); b13PiscaMarcar(va,na,na+" pedido(s) do site esperando alguém assumir");
+      b13BannerNovos(j);
     }).catch(function(){});
   }catch(e){} }
 document.addEventListener("click",function(e){ var t=e.target; if(!t||!t.closest) return;
