@@ -12306,10 +12306,14 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
       if(q.alerta&&!r.flags.includes(q.alerta)) return false;
       if(q.estoque==="com"&&!(r.estoque>0)) return false; if(q.estoque==="sem"&&!(r.estoque!=null&&r.estoque<=0)) return false;
       if(q.vendeu==="sim"&&!(r.qtd>0)) return false; if(q.vendeu==="nao"&&r.qtd>0) return false;
-      const cmin=Number(String(q.custoMin||"").replace(",","."))||0; if(cmin>0&&!(r.valorEstoqueCusto>=cmin)) return false; // só produtos cujo estoque, a custo, vale pelo menos isso
+      const nf=x=>{ const t=String(x==null?"":x).trim(); if(!t) return null; const v=Number(t.replace(",",".")); return isFinite(v)?v:null; };
+      const cmin=nf(q.custoMin), cmax=nf(q.custoMax), umin=nf(q.custoUnMin), umax=nf(q.custoUnMax);
+      if(cmin!=null&&cmin>0&&!(r.valorEstoqueCusto>=cmin)) return false; // quanto vale o ESTOQUE do produto, a custo (saldo × custo): mínimo
+      if(cmax!=null&&!(r.custo!=null&&r.estoque>0&&r.valorEstoqueCusto<=cmax)) return false; // máximo (só produtos com custo e estoque)
+      if(umin!=null&&!(r.custo!=null&&r.custo>=umin)) return false; if(umax!=null&&!(r.custo!=null&&r.custo<=umax)) return false; // PREÇO DE CUSTO de cada unidade
       return true; });
     const ord=String(q.ordem||"valor"), cmp={valor:(a,b)=>b.valor-a.valor,qtd:(a,b)=>b.qtd-a.qtd,lucro:(a,b)=>(b.lucro||0)-(a.lucro||0),estoque:(a,b)=>(b.estoque||0)-(a.estoque||0),
-      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),valorestoque:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0)||(b.estoque||0)-(a.estoque||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
+      cobertura:(a,b)=>(a.cobertura??1e9)-(b.cobertura??1e9),parado:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0),valorestoque:(a,b)=>(b.valorEstoqueCusto||0)-(a.valorEstoqueCusto||0)||(b.estoque||0)-(a.estoque||0),custo:(a,b)=>(b.custo||0)-(a.custo||0),custoasc:(a,b)=>(a.custo==null)-(b.custo==null)||(a.custo||0)-(b.custo||0),queda:(a,b)=>((a.valor-a.valorAnt)-(b.valor-b.valorAnt)),alta:(a,b)=>((b.valor-b.valorAnt)-(a.valor-a.valorAnt)),
       compra:(a,b)=>(b.sugestaoCompra*(b.precoMedio||b.preco||1))-(a.sugestaoCompra*(a.precoMedio||a.preco||1)),nome:(a,b)=>String(a.nome).localeCompare(String(b.nome))}[ord]||((a,b)=>b.valor-a.valor);
     const O=L.slice().sort(cmp), off=Math.max(0,Number(q.offset)||0), lim=Math.min(200,Math.max(1,Number(q.limite)||100));
     const ativos=Todos.filter(r=>r.noBling&&r.situacao==="A"), soma=(l,f)=>_round2(l.reduce((a,r)=>a+(Number(f(r))||0),0)), cont=f=>Todos.filter(r=>r.flags.includes(f)).length;
