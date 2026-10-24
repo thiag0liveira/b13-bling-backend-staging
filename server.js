@@ -11421,10 +11421,14 @@ function lerContasPagar(){ const d=lerJSON(CONTAS_PAGAR_FILE,null)||{}; d.seq||=
 const _TPAG={"01":"Dinheiro","02":"Cheque","03":"Cartão de crédito","04":"Cartão de débito","05":"Crédito loja","15":"Boleto","16":"Depósito","17":"Pix","18":"Transferência","90":"Sem pagamento (a prazo)","99":"Outros"};
 let _catCache={em:0,m:{}}; function _catPorId(){ if(Date.now()-_catCache.em>5*60000){ const m={}; try{ (_catalogoPreco().itens||[]).forEach(c=>{ if(c.id) m[String(c.id)]={a:Number(c.a)||0,f:Number(c.f)||0,q:Number(c.q)||0,p:Number(c.p)||0}; }); }catch(e){} _catCache={em:Date.now(),m}; } return _catCache.m; }
 function _mesclarSugestoes(a,b){ const out=[...a]; (b||[]).forEach(s=>{ if(s&&s.produtoId&&!out.some(o=>String(o.produtoId)===String(s.produtoId))) out.push({produtoId:s.produtoId,nome:s.nome,confianca:"fraca"}); }); return out.slice(0,6); }
+// a consulta do fornecedor no Bling era refeita a cada abertura da nota (2 a 3 s cada); guarda por alguns minutos
+const _fornCache=new Map();
+async function _fornecedorCacheado(cnpj){ const k=String(cnpj||"").replace(/\D/g,""); if(!k) return null; const c=_fornCache.get(k); if(c&&Date.now()-c.em<(c.v?10*60000:2*60000)) return c.v;
+  let v=null; try{ v=await encontrarContatoPorDoc(cnpj); }catch(e){ return null; } _fornCache.set(k,{em:Date.now(),v}); return v; }
 async function _resumoEntradaNota(n){
   const P=lerProdutosBling().porId, it=n.itens||[], base=it.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
   const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0, k=base>0?extras/base:0;
-  let forn=null; try{ forn=await encontrarContatoPorDoc(n.emitente?.cnpj); }catch(e){}
+  let forn=null; try{ forn=await _fornecedorCacheado(n.emitente?.cnpj); }catch(e){}
   let ENT={}; try{ ENT=_entradasPorProduto(); }catch(e){} const CAT=_catPorId();
   const arred=v=>{ if(!(v>0)) return 0; const r=Math.ceil(v*10-0.0001)/10-0.01; return +(r>=v-0.0001?r:r+0.10).toFixed(2); }; // termina em ,x9
   const itens=it.map(x=>{ const p=x.produtoId?P[String(x.produtoId)]:null, cr=x.custoUn>0?+(x.custoUn*(1+k)).toFixed(4):0;
@@ -11619,7 +11623,7 @@ function _duplicatasEditadas(n,vNF){ const base=n.duplicatas||[], ov=lerJSON(ENT
   const tot=Number(vNF)||Number(n.totais?.vNF)||base.reduce((a,d)=>a+(Number(d.valor)||0),0)||0, cada=_round2(tot/ov.length); // outra quantidade: divide o total
   return ov.map((v,i)=>({numero:String(i+1),vencimento:v,valor:i===ov.length-1?_round2(tot-cada*(ov.length-1)):cada})); }
 function acessoEntradaNota(req,res,next){ return req.produtosMode?next():requireAcesso("acesso_entrada_nota")(req,res,next); }
-const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1,"GET /buscar-notas":1,"POST /juntar":1,"POST /desjuntar":1};
+const _ENT_PROD_ROTAS={"POST /carregar":1,"GET /produtos":1,"POST /ligar":1,"POST /confirmar":1,"POST /foto":1,"POST /sem-nota/editar":1,"POST /vencimentos":1,"POST /anexo":1,"GET /anexo/:id":1,"POST /reabrir":1,"GET /buscar-notas":1,"POST /juntar":1,"POST /desjuntar":1};
 function _motivoSemValor(m){ m=String(m||""); return /R\$|\d+[.,]\d{2}/.test(m)?"confira se o produto ligado e a quantidade estão certos":m; }
 function _notaSemValores(n){
   if(!n||typeof n!=="object") return n;
@@ -11649,6 +11653,7 @@ function _semValoresEntrada(o){
   if(Array.isArray(o.boletos)) r.boletos=o.boletos.map(b=>({id:b.id,anexoId:b.anexoId,vencimento:b.vencimento,confira:!b.conferido}));
   if(o.semEstoque) r.semEstoque=true; if(Array.isArray(o.anexos)) r.anexos=o.anexos.map(a=>({id:a.id,tipo:a.tipo,nome:a.nome,em:a.em}));
   if(Array.isArray(o.falhas)) r.falhas=o.falhas.map(f=>({nItem:f.nItem,xProd:f.xProd,produtoNome:f.produtoNome||"",erro:f.erro||"",semEfeito:!!f.semEfeito}));
+  if(o.jaLancados!==undefined) r.jaLancados=o.jaLancados; if(o.preservados!==undefined) r.preservados=o.preservados;
   if(o.parcial!==undefined) r.parcial=!!o.parcial; if(Array.isArray(o.conferencia)) r.conferencia=o.conferencia.map(c=>({nome:c.nome,antes:c.antes,depois:c.depois}));
   return r;
 }
@@ -11661,6 +11666,7 @@ app.use((req,res,next)=>{ if(!req.path.startsWith("/api/entrada-produtos/")) ret
   if(sub==="/vencimentos") req.body={notaId:b.notaId,vencimentos:b.vencimentos};                       // só as datas, nunca valores
   if(sub==="/anexo") req.body={notaId:b.notaId,nome:b.nome,dados:b.dados,ler:!!b.ler};
   if(sub==="/juntar"||sub==="/desjuntar") req.body={notaId:b.notaId,outraId:b.outraId};
+  if(sub==="/reabrir") req.body={notaId:b.notaId}; // o estoquista nunca confirma duplicidade: isso é do financeiro
   if(sub==="/sem-nota/editar") req.body={id:b.id,nItem:b.nItem,qCom:b.qCom,xProd:b.xProd,remover:b.remover,fornecedor:b.fornecedor}; // sem valores
   const orig=res.json.bind(res);
   res.json=o=>{ const r=_semValoresEntrada(o); if(r&&r.erro&&!(o&&o.erro)&&res.statusCode<400) res.status(422); return orig(r); };
@@ -11704,13 +11710,14 @@ app.get("/api/entrada-nota/incompletas",acessoEntradaNota,(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/entrada-nota/reabrir",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"}); const e=n.entrada; if(!(e&&e.em)) return res.status(400).json({erro:"essa nota ainda não foi lançada"});
-    const quem=req.sessao?.nome||"", R=await _resumoEntradaNota(n), db=lerEntradasEstoque(), rec=(db.entradas||[]).find(x=>x.id===(n.semNota?n.id:"nf-"+(n.chave||n.id))), LI=lerJSON(ENTRADA_ITENS_FILE,{}), jaL=LI[String(n.id)]||{}, preservados=[];
+    if(req.produtosMode&&(e.jaNoBling||e.soBoletos)) return res.status(403).json({erro:"os produtos desta nota foram marcados como já lançados no Bling pelo financeiro: peça a ele para reabrir, se for preciso"});
+    const quem=req.sessao?.nome||"", R=await _resumoEntradaNota(n), db=lerEntradasEstoque(), recs=(db.entradas||[]).filter(x=>x.id===(n.semNota?n.id:"nf-"+(n.chave||n.id))), rec=recs[0], LI=lerJSON(ENTRADA_ITENS_FILE,{}), jaL=LI[String(n.id)]||{}, preservados=[];
     // o que já tinha entrado de verdade (pelo registro) fica marcado, para não entrar em dobro
-    if(rec) R.itens.forEach(x=>{ if(x.status==="ok"&&(rec.itens||[]).some(i=>i.ok&&String(i.produtoId)===String(x.produtoId)&&Math.abs((Number(i.quantidade)||0)-(Number(x.qtdUn)||0))<0.0005)&&!jaL[x.nItem]){ jaL[x.nItem]={em:rec.em,por:rec.por||"",produtoId:x.produtoId,qtd:x.qtdUn,doRegistro:true}; preservados.push(x.nItem); } });
-    if(!rec&&e.itensLancados>0&&!b.confirmaDuplicidade) return res.status(409).json({erro:`Não achei o registro dos itens que já entraram (${e.itensLancados}). Para não entrar em dobro, confira o saldo no Bling antes. Se tiver certeza, reabra confirmando.`,precisaConfirmar:true});
+    if(recs.length) R.itens.forEach(x=>{ const r0=x.status==="ok"&&recs.find(r=>(r.itens||[]).some(i=>i.ok&&String(i.produtoId)===String(x.produtoId)&&Math.abs((Number(i.quantidade)||0)-(Number(x.qtdUn)||0))<0.0005)); if(r0&&!jaL[x.nItem]){ jaL[x.nItem]={em:r0.em,por:r0.por||"",produtoId:x.produtoId,qtd:x.qtdUn,doRegistro:true}; preservados.push(x.nItem); } }); // junta TODOS os registros da nota (tentativa parcial + completa)
+    if(!rec&&e.itensLancados>0&&!b.confirmaDuplicidade) return res.status(409).json({erro:req.produtosMode?`Não achei o registro dos itens que já entraram (${e.itensLancados}). Para não entrar em dobro, peça ao financeiro para reabrir esta nota depois de conferir o saldo no Bling.`:`Não achei o registro dos itens que já entraram (${e.itensLancados}). Para não entrar em dobro, confira o saldo no Bling antes. Se tiver certeza, reabra confirmando.`,precisaConfirmar:!req.produtosMode});
     LI[String(n.id)]=jaL; salvarJSON(ENTRADA_ITENS_FILE,LI); _desmarcarEntradaNota(n);
     addLog("nota-"+(n.chave||n.id),"entrada_nota_reaberta",req.sessao?.funcionarioId||"",quem,{numero:n.numero,preservados:preservados.length});
-    res.json({ok:true,jaLancados:Object.keys(jaL).length,preservados:preservados.length,nota:await _resumoEntradaNota(n)});
+    R.entrada=null; res.json({ok:true,jaLancados:Object.keys(jaL).length,preservados:preservados.length,nota:R});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/entrada-nota/vencimentos",acessoEntradaNota,async(req,res)=>{
   try{ const b=req.body||{}, n=_notaEntrada(String(b.notaId||"")); if(!n) return res.status(404).json({erro:"nota não encontrada"});
@@ -11819,6 +11826,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       return res.json({ok:true,soBoletos:true,lancados:0,falhas:[],contas:tit});
     }
     const R=await _resumoEntradaNota(n), ign=new Set((b.ignorar||[]).map(Number)), quem=req.sessao?.nome||"";
+    addLog("nota-"+(R.chave||n.id),"entrada_nota_tentativa",req.sessao?.funcionarioId||"",quem,{numero:R.numero,itens:R.itens.length,ignorados:ign.size,pendentes:R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))).length,tela:req.produtosMode?"produtos":"financeiro"});
     const falta=R.itens.filter(x=>x.status!=="ok"&&!ign.has(Number(x.nItem))); if(falta.length) return res.status(400).json({erro:`Ligue ${falta.length} item(ns) a um produto (ou marque para não lançar) antes de dar entrada.`});
     const dep=await _depositoPadraoId(); if(!dep) return res.status(502).json({erro:"não encontrei o depósito padrão no Bling",falhas:[]});
     const lanc=[], P=lerProdutosBling(), LI=lerJSON(ENTRADA_ITENS_FILE,{}), jaL=LI[String(n.id)]||{}, elegiveis=R.itens.filter(x=>x.status==="ok"&&!ign.has(Number(x.nItem)));

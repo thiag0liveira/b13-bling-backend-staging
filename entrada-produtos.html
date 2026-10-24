@@ -196,7 +196,7 @@ function renderNota() {
   <div class="card"><h3>3. Produtos <span class="ic">(${n.itens.length - n.pendentes} ligados sozinhos${n.pendentes ? " · " + n.pendentes + " para ligar" : ""})</span></h3>
     ${(() => { const f = fortes(); return f.length ? `<button class="btn btn-mag" style="margin-bottom:8px" onclick="aceitarFortes()">✨ Aceitar sugestões fortes (${f.length})</button> <span class="ic">liga de uma vez os itens com sugestão forte e conversão conhecida</span>` : ""; })()}
     ${n.itens.map(it).join("")}</div>
-  <div class="card"><div id="confMsg"></div><button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || n.entrada ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>
+  <div class="card"><div id="confMsg"></div>${n.entrada ? blocoJaLancada(n, "reabrirAqui()") : `<button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada no estoque${pend ? " (ligue " + pend + " item(ns) antes)" : ""}</button>${motivosEntrada(n)}`}
     <div style="text-align:center;margin-top:14px"><button ${n.entrada ? "disabled" : ""} onclick="registrarSemEstoque()" style="background:none;border:0;color:#9a95c9;text-decoration:underline;font-size:12px;padding:4px 8px;cursor:pointer">Só registrar a nota, sem somar no estoque</button></div>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px;padding:11px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button>
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada, o estoque de cada produto sobe no Bling. Se não quiser mexer no estoque desta nota, use “Não dar entrada no estoque”: a nota fica registrada com a imagem e as datas, sem alterar nenhum produto. Os boletos e pagamentos são lançados depois pelo financeiro.</div></div>`;
@@ -336,13 +336,36 @@ function mostrarFalhaEntrada(j, el) {
     + (conf.length ? `<div class="ic" style="white-space:normal;margin-top:6px">Já conferido no Bling: ${conf.slice(0, 8).map(c => esc(c.nome) + " " + c.antes + " → " + c.depois).join(" · ")}</div>` : "");
 }
 const confTxt = j => (j.conferencia || []).length ? `<div class="ic" style="white-space:normal;margin-top:4px">📦 Conferido no Bling (saldo antes → depois): ${(j.conferencia || []).slice(0, 8).map(c => esc(c.nome) + " <b style='color:#fff'>" + c.antes + " → " + c.depois + "</b>").join(" · ")}${(j.conferencia || []).length > 8 ? " …" : ""}</div>` : "";
+// ---- o botão de dar entrada nunca fica mudo: explica por que está desativado, oferece reabrir e trata demora ou falta de rede ----
+function motivosEntrada(n) { const m = [], pend = n.itens.filter(x => x.status !== "ok" && !IGN.has(x.nItem)), zero = n.itens.filter(x => x.status === "ok" && !IGN.has(x.nItem) && !(Number(x.qtdUn) > 0));
+  if (pend.length) m.push(`Faltam <b>${pend.length}</b> item(ns) para ligar a um produto: ${pend.slice(0, 4).map(x => esc(x.xProd)).join(", ")}${pend.length > 4 ? "…" : ""}`);
+  if (zero.length) m.push(`${zero.length} item(ns) ficaram com <b>0 unidade</b> (confira quantas unidades vêm em cada embalagem): ${zero.slice(0, 3).map(x => esc(x.xProd)).join(", ")}`);
+  if (n.itens.length && n.itens.every(x => IGN.has(x.nItem))) m.push("Todos os itens estão marcados como <b>“não alterar o estoque”</b>: desmarque os que devem entrar.");
+  else if (IGN.size) m.push(`${IGN.size} item(ns) marcado(s) como <b>“não alterar o estoque”</b> não vão entrar.`);
+  return m.length ? `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:8px 10px;margin-top:8px;color:#ffe9a8;font-size:12.5px;white-space:normal"><b>Por que ainda não dá para dar entrada?</b><ul style="margin:4px 0 0 16px;padding:0">${m.map(x => "<li>" + x + "</li>").join("")}</ul></div>` : ""; }
+function blocoJaLancada(n, reabrirFn) { const e = n.entrada, quando = new Date(e.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }), podeReabrir = !e.jaNoBling && !e.soBoletos,
+    tipo = e.semEstoque ? "foi só <b>registrada</b>, sem somar no estoque," : (e.jaNoBling || e.soBoletos) ? "foi marcada como <b>já lançada no Bling</b> pelo financeiro," : "já foi marcada como <b>lançada</b>,";
+  return `<div style="background:#3a2e08;border:1px solid #8a7a1f;border-radius:10px;padding:10px 12px;color:#ffe9a8;font-size:13px;white-space:normal">🔒 Esta nota ${tipo} em <b>${quando}</b>${e.por ? " por <b>" + esc(e.por) + "</b>" : ""}. É por isso que o botão de dar entrada está desativado.${podeReabrir ? " <b>Se o estoque NÃO subiu, toque em Reabrir.</b> O que já entrou (registrado) não é lançado de novo." : " Peça ao financeiro para reabrir, se for preciso."}</div>${podeReabrir ? `<button class="btn btn-mag" style="width:100%;margin-top:8px;padding:12px" onclick="${reabrirFn}">🔁 Reabrir para dar entrada</button>` : ""}`; }
+let _confirmando = false;
+async function chamarComTempo(caminho, corpo, ms) { const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms || 170000); try { return await api(caminho, { method: "POST", body: JSON.stringify(corpo), signal: ctl.signal }); } finally { clearTimeout(t); } }
+function falhaDeRede(e, el) { el.innerHTML = `<div class="err" style="white-space:normal">⚠️ ${e && e.name === "AbortError" ? "A resposta demorou demais (mais de 2 minutos)." : "Não consegui falar com o servidor (" + esc((e && e.message) || "sem conexão") + ")."} <b>Nada foi lançado em duplicidade:</b> o sistema não repete o que já entrou. Toque em <b>Dar entrada</b> de novo para conferir e terminar.</div>`; }
+async function reabrirAqui() {
+  if (!confirm("Reabrir esta nota para dar entrada?\n\nOs itens que já entraram no estoque (registrados) NÃO serão lançados de novo.")) return;
+  const el = document.getElementById("confMsg"); el.innerHTML = '<div class="ic">⏳ Reabrindo… (pode levar alguns segundos)</div>';
+  try { const { ok, j } = await chamarComTempo(P + "/reabrir", { notaId: N.id }, 60000); if (!ok) { el.innerHTML = `<div class="err" style="white-space:normal">${esc(j.erro || "Não consegui reabrir.")}</div>`; return; }
+    N = j.nota; IGN = new Set(); renderNota(); document.getElementById("confMsg").innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ Nota reaberta.${j.jaLancados ? " " + j.jaLancados + " item(ns) que já tinham entrado ficam marcados e não repetem." : ""} Confira os itens e toque em Dar entrada.</div>`; }
+  catch (e) { falhaDeRede(e, el); } }
 async function confirmar() {
-  const el = document.getElementById("confMsg"); el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling…</div>`;
-  const { ok, j } = await api(P + "/confirmar", { method: "POST", body: JSON.stringify({ notaId: N.id, ignorar: [...IGN] }) });
-  if (!ok) { if (j.falhas) mostrarFalhaEntrada(j, el); else el.innerHTML = `<div class="err">${esc(j.erro || "Não consegui dar entrada.")}</div>`; return; }
-  const msgOk = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque.</div>${confTxt(j)}`;
-  N.entrada = { em: Date.now(), por: "" };
-  renderNota(); document.getElementById("confMsg").innerHTML = msgOk;
+  if (_confirmando) return; _confirmando = true;
+  const el = document.getElementById("confMsg"), btn = document.querySelector('button[onclick="confirmar()"]'); if (btn) { btn.disabled = true; btn.textContent = "⏳ Dando entrada…"; }
+  el.innerHTML = `<div class="ic">⏳ Dando entrada no estoque do Bling… (pode levar alguns segundos por item; não feche a tela)</div>`;
+  try {
+    const { ok, j } = await chamarComTempo(P + "/confirmar", { notaId: N.id, ignorar: [...IGN] });
+    if (!ok) { if (j.falhas) mostrarFalhaEntrada(j, el); else el.innerHTML = `<div class="err" style="white-space:normal">${esc(j.erro || "Não consegui dar entrada.")}</div>`; if (btn) { btn.disabled = false; btn.textContent = "🔁 Dar entrada de novo (só o que faltou)"; } return; }
+    const msgOk = `<div style="color:#3ce88a;font-weight:800">✅ Entrada feita: ${j.lancados} produto(s) no estoque.</div>${confTxt(j)}`;
+    N.entrada = { em: Date.now(), por: "" }; renderNota(); document.getElementById("confMsg").innerHTML = msgOk;
+  } catch (e) { falhaDeRede(e, el); if (btn) { btn.disabled = false; btn.textContent = "🔁 Dar entrada de novo"; } }
+  finally { _confirmando = false; }
 }
 const _renderNotaBase = renderNota; renderNota = function () { _renderNotaBase(); carregarThumbs(); };
 </script>
