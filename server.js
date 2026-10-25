@@ -11108,7 +11108,7 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
-        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
+        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,markupUn:tem&&x.qtd>0?_round2((x.fat-x.custo)/x.qtd):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
       const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
       if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
       if(mx!=null&&Number.isFinite(mx)) L=L.filter(x=>x.margem!=null&&x.margem<mx);
