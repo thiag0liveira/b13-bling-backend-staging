@@ -1288,6 +1288,7 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/entrada-produtos",label:"📦 Entrada de Produtos",acoes:["acesso_entrada_produtos"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota (financeiro)",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
+  {grupo:"ESTOQUE",href:"/fotos-produtos",label:"📷 Fotos dos Produtos",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/analise-precos",label:"📊 Análise de Preços",acoes:["acesso_tabela_varejo"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
@@ -11265,6 +11266,110 @@ app.post("/api/tabela-varejo/rascunhos",requireAcesso("acesso_tabela_varejo"),(r
 app.post("/api/tabela-varejo/descartar-rascunhos",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), ids=Array.isArray(req.body?.ids)&&req.body.ids.length?req.body.ids.map(String):Object.keys(TV.itens); let n=0;
     ids.forEach(id=>{ const t=TV.itens[id]; if(t&&t.precoNovo){ delete t.precoNovo; n++; if(!t.categoriaId&&!t.qtdFardo&&!t.precoFardo) delete TV.itens[id]; } }); _salvarTV(TV); res.json({ok:true,descartados:n});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== FOTOS DOS PRODUTOS =====================
+// Mostra quais produtos estão sem foto ou com o link da foto fora do ar, sugere uma foto (código de barras na Open Food Facts e,
+// se não achar, a IA com busca na web), guarda uma CÓPIA da foto escolhida no nosso servidor (link que não quebra) e exporta a planilha para o Bling.
+// Nada é trocado sozinho: a pessoa confere a foto e aceita. Todo link baixado passa por conferência (precisa ser mesmo uma imagem) e só de endereço público.
+const FOTOS_STATUS_FILE=`${DATA_DIR}/fotos_status.json`, FOTOS_SUG_FILE=`${DATA_DIR}/fotos_sugestoes.json`, FOTOS_NOVAS_FILE=`${DATA_DIR}/fotos_novas.json`, FOTOS_DIR=`${DATA_DIR}/fotos_hospedadas`;
+let _fst=null, _fsug=null, _fnov=null;
+const _fStatus=()=>_fst||(_fst=lerJSON(FOTOS_STATUS_FILE,{itens:{},ultima:0})), _fSug=()=>_fsug||(_fsug=lerJSON(FOTOS_SUG_FILE,{})), _fNov=()=>_fnov||(_fnov=lerJSON(FOTOS_NOVAS_FILE,{}));
+const _fSalvar=()=>{ if(_fst) salvarJSON(FOTOS_STATUS_FILE,_fst); if(_fsug) salvarJSON(FOTOS_SUG_FILE,_fsug); if(_fnov) salvarJSON(FOTOS_NOVAS_FILE,_fnov); };
+function _ipPrivado(net,ip){ if(net.isIPv6(ip)){ const t=ip.toLowerCase(); return t==="::1"||t==="::"||t.startsWith("fc")||t.startsWith("fd")||t.startsWith("fe80")||/^::ffff:(127|10|0)\./.test(t)||t.startsWith("::ffff:192.168.")||t.startsWith("::ffff:169.254."); }
+  const q=ip.split(".").map(Number); return q[0]===10||q[0]===127||q[0]===0||(q[0]===169&&q[1]===254)||(q[0]===172&&q[1]>=16&&q[1]<=31)||(q[0]===192&&q[1]===168)||(q[0]===100&&q[1]>=64&&q[1]<=127)||q[0]>=224; }
+// devolve "" se o endereço é público e pode ser baixado; senão o motivo (evita usar o servidor para acessar a rede interna)
+async function _urlPublica(u){ let x; try{ x=new URL(u); }catch(e){ return "link inválido"; } if(!/^https?:$/.test(x.protocol)) return "só links http ou https"; if(process.env.FOTOS_PERMITIR_LOCAL==="1") return "";
+  const net=await import("node:net"), h=x.hostname.replace(/^\[|\]$/g,""); if(net.isIP(h)) return _ipPrivado(net,h)?"endereço interno não é permitido":"";
+  try{ const dnsP=await import("node:dns/promises"), r=await dnsP.lookup(h,{all:true}); if(!r.length||r.some(a=>_ipPrivado(net,a.address))) return "endereço interno não é permitido"; }catch(e){ return "não achei esse site"; } return ""; }
+function _tipoImagem(b){ if(!b||b.length<12) return null; if(b[0]===0xFF&&b[1]===0xD8&&b[2]===0xFF) return {ext:"jpg",mime:"image/jpeg"}; if(b[0]===0x89&&b[1]===0x50&&b[2]===0x4E&&b[3]===0x47) return {ext:"png",mime:"image/png"}; if(b.slice(0,4).toString()==="GIF8") return {ext:"gif",mime:"image/gif"}; if(b.slice(0,4).toString()==="RIFF"&&b.slice(8,12).toString()==="WEBP") return {ext:"webp",mime:"image/webp"}; return null; }
+function _dimImagem(b,t){ try{ if(t.ext==="png") return {w:b.readUInt32BE(16),h:b.readUInt32BE(20)};
+    if(t.ext==="jpg"){ let i=2; while(i<b.length-9){ if(b[i]!==0xFF){ i++; continue; } const m=b[i+1]; if(m>=0xC0&&m<=0xCF&&m!==0xC4&&m!==0xC8&&m!==0xCC) return {h:b.readUInt16BE(i+5),w:b.readUInt16BE(i+7)}; i+=2+b.readUInt16BE(i+2); } } }catch(e){} return null; }
+// baixa (ou só confere o começo de) uma imagem: segue até 3 redirecionamentos conferindo cada endereço, exige que o arquivo seja mesmo uma imagem
+async function _baixarImagem(url,op){ op=op||{}; const max=op.max||1500000, so=!!op.soCabecalho; let atual=url;
+  for(let salto=0;salto<4;salto++){ const bloq=await _urlPublica(atual); if(bloq) return {ok:false,motivo:bloq}; const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),10000);
+    try{ const r=await fetch(atual,{redirect:"manual",signal:ctrl.signal,headers:{"user-agent":"Mozilla/5.0 (compatible; B13Bebidas/1.0)","accept":"image/*,*/*;q=0.5",...(so?{range:"bytes=0-16383"}:{})}});
+      if([301,302,303,307,308].includes(r.status)){ const loc=r.headers.get("location"); if(!loc) return {ok:false,http:r.status,motivo:"redirecionamento sem destino"}; atual=new URL(loc,atual).toString(); continue; }
+      if(r.status!==200&&r.status!==206) return {ok:false,http:r.status,motivo:r.status===404||r.status===410?"o link não existe mais (HTTP "+r.status+")":r.status===403||r.status===401?"o site bloqueou o acesso (HTTP "+r.status+")":"HTTP "+r.status};
+      const ct=(r.headers.get("content-type")||"").split(";")[0].trim().toLowerCase(), reader=r.body.getReader(), partes=[], lim=so?16384:max+1; let total=0;
+      while(true){ const {done,value}=await reader.read(); if(done) break; partes.push(Buffer.from(value)); total+=value.length; if(total>=lim){ try{ ctrl.abort(); }catch(e){} break; } }
+      const buf=Buffer.concat(partes), tipo=_tipoImagem(buf); if(!tipo) return {ok:false,http:r.status,ct,motivo:"o link não devolve uma imagem ("+(ct||"tipo desconhecido")+")"};
+      const cr=r.headers.get("content-range"), tam=Number(cr?String(cr).split("/")[1]:r.headers.get("content-length"))||total, dim=_dimImagem(buf,tipo);
+      if(!so&&total>max) return {ok:false,http:r.status,ct,motivo:"imagem grande demais (mais de 1,5 MB)"}; if(tam<2500) return {ok:false,http:r.status,ct,bytes:tam,motivo:"imagem pequena demais (parece um ícone)"};
+      if(dim&&Math.min(dim.w,dim.h)<120) return {ok:false,http:r.status,ct,bytes:tam,w:dim.w,h:dim.h,motivo:`imagem muito pequena (${dim.w}×${dim.h})`};
+      return {ok:true,http:r.status,ct:tipo.mime,ext:tipo.ext,bytes:tam,w:dim?dim.w:null,h:dim?dim.h:null,buf:so?null:buf,final:atual};
+    }catch(e){ return {ok:false,motivo:e&&e.name==="AbortError"?"o site demorou demais para responder":("não consegui abrir o link ("+String(e.cause&&e.cause.code||e.message||e).slice(0,50)+")")}; } finally{ clearTimeout(to); } }
+  return {ok:false,motivo:"redirecionamentos demais"}; }
+function _gtinPorProduto(){ const m={}; try{ Object.entries(lerJSON(GTIN_INDEX_FILE,{})).forEach(([k,v])=>{ const pid=String((v&&(v.produtoId||v.id))||""); if(!pid) return; const kd=String(k).replace(/\D/g,""), g=(kd.length>=8&&kd.length<=14)?kd:String((v&&(v.gtin||v.ean))||"").replace(/\D/g,""); if(g.length>=8&&g.length<=14&&!m[pid]) m[pid]=g; }); }catch(e){} return m; }
+function _produtosFoto(){ const P=lerProdutosBling().porId, F=_lerFotos(), G=_gtinPorProduto(), out=[]; Object.entries(P).forEach(([id,x])=>{ if(x.s==="I"||x.f==="V") return; out.push({id:String(id),codigo:String(x.c||""),nome:String(x.n||""),gtin:G[id]||"",url:String(F["id:"+id]||F[String(x.c)]||x.img||"")}); }); return out; }
+// ---- verificação dos links (devagar, 4 por vez)
+const FJOB={rodando:false,total:0,feito:0,ok:0,quebrado:0,semfoto:0,inicio:0,fim:0,erro:""};
+async function verificarFotos(forcar){ if(FJOB.rodando) return; Object.assign(FJOB,{rodando:true,total:0,feito:0,ok:0,quebrado:0,semfoto:0,inicio:Date.now(),fim:0,erro:""});
+  try{ const S=_fStatus(), lista=_produtosFoto(); FJOB.total=lista.length; const fila=[], agora=Date.now();
+    lista.forEach(p=>{ const a=S.itens[p.id]; if(!p.url){ S.itens[p.id]={url:"",estado:"semfoto",em:agora}; FJOB.semfoto++; FJOB.feito++; return; }
+      if(!forcar&&a&&a.url===p.url&&a.em&&agora-a.em<(a.estado==="ok"?6*864e5:12*36e5)){ if(a.estado==="ok") FJOB.ok++; else FJOB.quebrado++; FJOB.feito++; return; } fila.push(p); });
+    let i=0; const trab=async()=>{ while(i<fila.length){ const p=fila[i++], r=await _baixarImagem(p.url,{soCabecalho:true}); S.itens[p.id]={url:p.url,estado:r.ok?"ok":"quebrado",http:r.http||null,motivo:r.ok?"":r.motivo,ct:r.ct||"",bytes:r.bytes||null,w:r.w||null,h:r.h||null,em:Date.now()}; if(r.ok) FJOB.ok++; else FJOB.quebrado++; FJOB.feito++; if(FJOB.feito%30===0) _fSalvar(); await sleep(120); } };
+    await Promise.all([trab(),trab(),trab(),trab()]); S.ultima=Date.now(); _fSalvar();
+  }catch(e){ FJOB.erro=String(e.message||e).slice(0,160); } FJOB.rodando=false; FJOB.fim=Date.now(); }
+setInterval(()=>{ try{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if(h===4&&Date.now()-(_fStatus().ultima||0)>20*3600e3) verificarFotos(false); }catch(e){} },30*60000);
+// ---- sugestão de foto
+const SFJOB={rodando:false,total:0,feito:0,achou:0,semResultado:0,erros:0,inicio:0,fim:0,erro:""};
+async function _sugerirFotoUm(p){ const recus=(_fSug()[p.id]&&_fSug()[p.id].recusadas)||[], KEY=process.env.ANTHROPIC_API_KEY;
+  if(p.gtin){ try{ const base=process.env.OFF_BASE_URL||"https://world.openfoodfacts.org", r=await fetch(`${base}/api/v2/product/${p.gtin}.json?fields=image_front_url,image_url,product_name`,{headers:{"user-agent":"B13Bebidas/1.0 (adega 13)"},signal:AbortSignal.timeout(9000)}); const j=await r.json().catch(()=>({})), u=j&&j.product&&(j.product.image_front_url||j.product.image_url);
+      if(u&&!recus.includes(u)){ const v=await _baixarImagem(u,{soCabecalho:true}); if(v.ok) return {url:u,fonte:"Open Food Facts (pelo código de barras "+p.gtin+")",pagina:`https://world.openfoodfacts.org/product/${p.gtin}`,conf:"alta",desc:(j.product.product_name||""),w:v.w,h:v.h,bytes:v.bytes}; } }catch(e){} }
+  if(!KEY) return null;
+  const prompt=`Encontre uma imagem do produto abaixo para o cadastro de uma loja de bebidas.\nProduto: ${p.nome}\nCódigo interno: ${p.codigo||"-"}\nCódigo de barras (GTIN): ${p.gtin||"não informado"}\nUse a busca na web. Quero o LINK DIRETO do arquivo da imagem (geralmente termina em .jpg, .jpeg, .png ou .webp) da embalagem vista de frente, de preferência com fundo claro ou sem fundo e boa resolução, de site do fabricante ou de varejista conhecido. NÃO invente links: só devolva endereços que apareceram nos resultados da busca. Se não achar com segurança, devolva "url" vazia.${recus.length?"\nJá recusei estes links, não repita: "+recus.join(" ; "):""}\nResponda SOMENTE com JSON, sem texto antes ou depois: {"url":"","pagina":"página onde achou","descricao":"o que a imagem mostra","confianca":"alta|media|baixa","alternativas":["url2","url3"]}`;
+  const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
+  try{ const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:1500,temperature:0,tools:[{type:"web_search_20250305",name:"web_search",max_uses:3}],messages:[{role:"user",content:prompt}]}),signal:ctrl.signal});
+    const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error((j.error&&j.error.message)||("HTTP "+r.status));
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text||"").join("\n"), m=txt.match(/\{[\s\S]*\}/g); let o=null; for(let k=(m||[]).length-1;k>=0&&!o;k--){ try{ o=JSON.parse(m[k]); }catch(e){} } if(!o) return null;
+    const cands=[o.url].concat(Array.isArray(o.alternativas)?o.alternativas:[]).map(x=>String(x||"").trim()).filter(x=>/^https?:\/\//i.test(x)&&!recus.includes(x)).slice(0,4);
+    for(const u of cands){ const v=await _baixarImagem(u,{soCabecalho:true}); if(v.ok) return {url:u,fonte:"IA (busca na web)",pagina:String(o.pagina||"").slice(0,300),conf:["alta","media","baixa"].includes(o.confianca)?o.confianca:"media",desc:String(o.descricao||"").slice(0,160),w:v.w,h:v.h,bytes:v.bytes}; }
+    return null;
+  }finally{ clearTimeout(to); } }
+async function sugerirFotos(ids){ if(SFJOB.rodando) return; Object.assign(SFJOB,{rodando:true,total:ids.length,feito:0,achou:0,semResultado:0,erros:0,inicio:Date.now(),fim:0,erro:""});
+  try{ const todos=Object.fromEntries(_produtosFoto().map(p=>[p.id,p])), SG=_fSug(); for(const id of ids){ const p=todos[id]; SFJOB.feito++; if(!p) continue;
+      try{ const s=await _sugerirFotoUm(p); const ant=SG[id]||{}; if(s){ SG[id]={...s,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.achou++; } else { SG[id]={url:"",semResultado:true,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.semResultado++; } }
+      catch(e){ SFJOB.erros++; SFJOB.erro=String(e.message||e).slice(0,140); if(/credit|billing|authentication|api key|invalid x-api-key/i.test(SFJOB.erro)) break; }
+      if(SFJOB.feito%5===0) _fSalvar(); await sleep(800); } _fSalvar();
+  }catch(e){ SFJOB.erro=String(e.message||e).slice(0,160); } SFJOB.rodando=false; SFJOB.fim=Date.now(); }
+const _fBase=()=>(process.env.PUBLIC_BASE_URL||"https://app.b13bebidas.com.br").replace(/\/$/,"");
+// ---- rotas
+app.get("/api/fotos",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const S=_fStatus(), SG=_fSug(), NV=_fNov(), q=_nrmP(req.query.q||""), est=String(req.query.estado||"problemas"), pg=Math.max(1,Number(req.query.pagina)||1), lim=Math.min(120,Math.max(20,Number(req.query.limite)||60));
+    const todos=_produtosFoto().map(p=>{ const a=S.itens[p.id], nv=NV[p.id], sg=SG[p.id]; let estado=!p.url?"semfoto":(a&&a.url===p.url?a.estado:"naoverificada"); return {...p,estado,http:a&&a.url===p.url?a.http:null,motivo:a&&a.url===p.url?(a.motivo||""):"",w:a&&a.w||null,h:a&&a.h||null,verificadaEm:a&&a.em||null,sugestao:sg&&sg.url?{url:sg.url,fonte:sg.fonte,pagina:sg.pagina,conf:sg.conf,desc:sg.desc,w:sg.w,h:sg.h}:null,semResultado:!!(sg&&sg.semResultado),nova:nv?{url:nv.url,fonte:nv.fonte,aceitaEm:nv.aceitaEm,exportadaEm:nv.exportadaEm||null}:null}; });
+    const tot={produtos:todos.length,semfoto:todos.filter(p=>p.estado==="semfoto").length,quebrado:todos.filter(p=>p.estado==="quebrado").length,ok:todos.filter(p=>p.estado==="ok").length,naoverificada:todos.filter(p=>p.estado==="naoverificada").length,comSugestao:todos.filter(p=>p.sugestao&&!p.nova).length,prontas:todos.filter(p=>p.nova).length,prontasNaoExportadas:todos.filter(p=>p.nova&&!p.nova.exportadaEm).length};
+    let lista=todos.filter(p=>est==="todas"||(est==="problemas"&&(p.estado==="semfoto"||p.estado==="quebrado")&&!p.nova)||(est==="semfoto"&&p.estado==="semfoto")||(est==="quebrado"&&p.estado==="quebrado")||(est==="ok"&&p.estado==="ok")||(est==="naoverificada"&&p.estado==="naoverificada")||(est==="sugestao"&&p.sugestao&&!p.nova)||(est==="prontas"&&p.nova));
+    if(q) lista=lista.filter(p=>_nrmP(p.nome+" "+p.codigo+" "+p.gtin).includes(q));
+    const peso={semfoto:0,quebrado:1,naoverificada:2,ok:3}; lista.sort((a,b)=>(peso[a.estado]-peso[b.estado])||a.nome.localeCompare(b.nome));
+    res.json({ok:true,totais:tot,total:lista.length,pagina:pg,itens:lista.slice((pg-1)*lim,pg*lim),verificacao:{ultima:S.ultima||0,job:FJOB},sugestao:{job:SFJOB,iaAtiva:!!process.env.ANTHROPIC_API_KEY},colunaBling:process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas"});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/fotos/job",requireAcesso("acesso_produtos_gestao"),(req,res)=>res.json({ok:true,verificacao:FJOB,sugestao:SFJOB}));
+app.post("/api/fotos/verificar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ if(FJOB.rodando) return res.json({ok:true,jaRodando:true}); verificarFotos(!!(req.body&&req.body.forcar)); res.json({ok:true,iniciado:true}); });
+app.post("/api/fotos/sugerir",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ if(SFJOB.rodando) return res.json({ok:true,jaRodando:true});
+    const b=req.body||{}, S=_fStatus(), SG=_fSug(), NV=_fNov(), max=Math.min(40,Math.max(1,Number(b.max)||25)); let ids=(Array.isArray(b.ids)?b.ids:[]).map(String);
+    if(!ids.length){ ids=_produtosFoto().filter(p=>{ const a=S.itens[p.id], prob=!p.url||(a&&a.url===p.url&&a.estado==="quebrado"); return prob&&!NV[p.id]&&!(SG[p.id]&&(SG[p.id].url||SG[p.id].semResultado)); }).map(p=>p.id).slice(0,max); }
+    if(!ids.length) return res.json({ok:true,iniciado:false,mensagem:"Nada novo para sugerir."});
+    sugerirFotos(ids.slice(0,40)); res.json({ok:true,iniciado:true,produtos:Math.min(ids.length,40)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/rejeitar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), SG=_fSug(), s=SG[id]; if(!s) return res.json({ok:true}); const rec=(s.recusadas||[]).concat(s.url?[s.url]:[]); SG[id]={url:"",recusadas:rec.slice(-8),em:Date.now()}; _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// aceita a foto (a sugerida ou um link colado): confere, baixa e guarda a cópia no nosso servidor
+app.post("/api/fotos/aceitar",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const b=req.body||{}, id=String(b.id||""), p=_produtosFoto().find(x=>x.id===id); if(!p) return res.status(404).json({erro:"produto não encontrado"});
+    const SG=_fSug(), NV=_fNov(), url=String(b.url||(SG[id]&&SG[id].url)||"").trim(); if(!url) return res.status(400).json({erro:"informe o link da foto"});
+    const v=await _baixarImagem(url); if(!v.ok) return res.status(422).json({erro:"Essa foto não serve: "+v.motivo});
+    fs.mkdirSync(FOTOS_DIR,{recursive:true}); ["jpg","png","gif","webp"].forEach(e=>{ try{ fs.unlinkSync(`${FOTOS_DIR}/${id}.${e}`); }catch(_e){} });
+    const arq=`${id}.${v.ext}`; fs.writeFileSync(`${FOTOS_DIR}/${arq}`,v.buf);
+    NV[id]={url:`${_fBase()}/foto-produto/${arq}`,arquivo:arq,origem:v.final||url,fonte:b.url?"link colado":((SG[id]&&SG[id].fonte)||""),aceitaEm:Date.now(),por:(req.sessao&&req.sessao.nome)||"",exportadaEm:null,w:v.w,h:v.h,bytes:v.bytes};
+    if(SG[id]) delete SG[id]; _fSalvar(); res.json({ok:true,nova:{url:NV[id].url}}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/desfazer",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(); if(NV[id]){ try{ fs.unlinkSync(`${FOTOS_DIR}/${NV[id].arquivo}`); }catch(e){} delete NV[id]; _fSalvar(); } res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/foto-produto/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^\d+\.(jpg|png|gif|webp)$/.test(a)) return res.status(404).end(); const f=`${FOTOS_DIR}/${a}`; if(!fs.existsSync(f)) return res.status(404).end();
+  res.set("Content-Type",{jpg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp"}[a.split(".")[1]]); res.set("Cache-Control","public, max-age=86400"); res.sendFile(f); });
+// planilha para importar no Bling: ID, Código, Descrição e o link da foto (só as aceitas; as já exportadas só se pedir "todas")
+app.get("/api/fotos/exportar",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const NV=_fNov(), todas=req.query.todas==="1", marcar=req.query.marcar==="1", fmt=req.query.formato==="csv"?"csv":"xlsx", col=String(req.query.coluna||process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas").slice(0,60), P=Object.fromEntries(_produtosFoto().map(p=>[p.id,p]));
+    const ids=Object.keys(NV).filter(id=>P[id]&&(todas||!NV[id].exportadaEm)); if(!ids.length) return res.status(404).json({erro:"Nenhuma foto pronta para exportar. Aceite fotos primeiro."});
+    const linhas=ids.map(id=>[id,P[id].codigo,P[id].nome,NV[id].url]), cab=["ID","Código","Descrição",col];
+    if(marcar) ids.forEach(id=>{ NV[id].exportadaEm=Date.now(); }); if(marcar) _fSalvar();
+    if(fmt==="csv"){ const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"'; res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="fotos_para_importar_no_bling.csv"'); return res.send("\ufeff"+[cab].concat(linhas).map(l=>l.map(q).join(";")).join("\r\n")); }
+    const wb=new ExcelJS.Workbook(); wb.creator="B13 Bebidas"; const ws=wb.addWorksheet("Produtos"); ws.addRow(cab); linhas.forEach(l=>ws.addRow(l)); ws.getRow(1).font={bold:true}; ws.columns=[{width:10},{width:16},{width:50},{width:60}];
+    res.set("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); res.set("Content-Disposition",'attachment; filename="fotos_para_importar_no_bling.xlsx"'); await wb.xlsx.write(res); res.end();
+  }catch(e){ if(!res.headersSent) res.status(500).json({erro:e.message}); } });
+app.get("/fotos-produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"fotos-produtos.html")); });
 // ---- SUGESTÃO DE CATEGORIA POR IA: produtos sem categoria na Análise de Preços ----
 // A IA escolhe entre as categorias que já existem (olhando exemplos de cada uma) e só propõe uma categoria NOVA se nenhuma servir.
 // Nada é aplicado sozinho: a sugestão fica no produto (💡) e a pessoa aplica uma a uma ou todas de uma vez.

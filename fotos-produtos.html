@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Fotos dos Produtos</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+.mv{padding:9px 0;border-bottom:1px solid #221e4f}.mv .t{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mv b.n{cursor:pointer;line-height:1.25}.qtd{font-weight:900;font-size:18px;white-space:nowrap}.qtd.mais{color:#3ce88a}.qtd.menos{color:#ff8aa3}.qtd.zero{color:#aaa}
+.tp{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;margin-right:6px;border:1px solid #37327a;background:#0f0d24}
+.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.g4{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kpi{background:#0f0d24;border:1px solid #37327a;border-radius:12px;padding:10px 12px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:11px;color:#a9a4d6;text-transform:uppercase;letter-spacing:.3px}.kpi .s{font-size:12px;color:#cfcaf5;margin-top:2px}
+.gr{display:block;border:1px solid #2b2760;border-radius:12px;padding:9px 12px;margin:6px 0;background:#120f2c;cursor:pointer}.gr.on{border-color:#ff1a8c;background:#1b1442}.gr .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.gr .t b:last-child{white-space:nowrap}.gr .bar{height:5px;border-radius:4px;background:#241f55;margin-top:6px;overflow:hidden}.gr .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff1a8c,#ff7ac3)}
+.mes{display:flex;align-items:center;justify-content:space-between;gap:8px}.mes b{font-size:18px}
+.fx{background:#120f2c;border:1px solid #2b2760;border-radius:12px;padding:10px 12px;margin:8px 0}.fx .nm{font-weight:900}.fx .cmp{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:#cfcaf5;margin:4px 0}.fx .cmp b{color:#fff}
+.ls{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #221e4f;cursor:pointer}.ls .d{font-weight:800;line-height:1.25}.ls .m{font-size:12px;color:#a9a4d6}.ls .v{text-align:right;white-space:nowrap;font-weight:900}
+.bd{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:4px}.bd.paga{background:#11352a;color:#6be3a8}.bd.aberta{background:#24205a;color:#cfcaf5}.bd.vencida{background:#4a1230;color:#ff8aa3}.bd.vence{background:#3a2e08;color:#ffd23f}
+.fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:460px}
+.modal2 label{display:block;margin-top:8px}.modal2 label .ic{display:block;margin-bottom:2px;white-space:normal}.modal2 input,.modal2 select,.modal2 textarea{width:100%}.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.dt{display:flex;gap:6px;align-items:center}.dt label.btn{position:relative;overflow:hidden;cursor:pointer;padding:8px 11px;margin:0}.dt label.btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}.txg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.txk{background:#151233;border:1px solid #2b2760;border-radius:12px;padding:10px}.txk .v{font-size:20px;font-weight:900}.txk .l{font-size:11px;text-transform:uppercase;color:#a9a4d6;letter-spacing:.3px}.txk .s{font-size:11.5px;color:#a9a4d6;margin-top:2px}
+.txt{width:100%;border-collapse:collapse;font-size:12.5px}.txt td,.txt th{padding:5px 4px;border-bottom:1px solid #221e4f;text-align:right}.txt td:first-child,.txt th:first-child{text-align:left}.txt th{font-size:10.5px;text-transform:uppercase;color:#8f89c9;font-weight:700}
+.txt input,.txt select{background:#0f0d24;border:1px solid #37327a;border-radius:7px;color:#fff;padding:4px 6px;font-size:13px;width:72px;text-align:right}.txt select{width:auto;max-width:130px;text-align:left}
+.txaviso{border-radius:10px;padding:8px 10px;margin-top:8px;font-size:13px;white-space:normal}.txaviso.am{background:#3a2e08;border:1px solid #8a7a1f;color:#ffe9a8}.txaviso.ve{background:#4a1230;border:1px solid #ff5f8a;color:#ffb3c6}.txaviso.az{background:#0d2230;border:1px solid #1f6f93;color:#bfe6ff}
+.txb{padding:6px 12px;border-radius:9px;border:1px solid #37327a;background:#1b1442;color:#fff;cursor:pointer;font-size:13px}.txb.m{background:#FF0082;border-color:#FF0082;font-weight:800}
+.wrap{grid-template-columns:minmax(0,1fr)}table.txt{min-width:0;table-layout:auto}.txt td{overflow-wrap:anywhere}.txt select{max-width:104px;font-size:12px}.txr{overflow-x:auto;-webkit-overflow-scrolling:touch}#txForm select{max-width:74px;padding:3px 0;font-size:11px}#txForm td{padding:5px 2px;vertical-align:top}#txForm td:first-child{min-width:64px}#txForm .ic{white-space:normal;font-size:10px}.wrap{grid-template-columns:minmax(0,1fr)}.fk{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.fk .k{background:#151233;border:1px solid #2b2760;border-radius:10px;padding:6px 8px;cursor:pointer}.fk .k.on{border-color:#ff1a8c}.fk .v{font-size:19px;font-weight:900}.fk .l{font-size:10.5px;text-transform:uppercase;color:#a9a4d6}
+.fb{padding:6px 11px;border-radius:9px;border:1px solid #37327a;background:#1b1442;color:#fff;cursor:pointer;font-size:13px}.fb.m{background:#FF0082;border-color:#FF0082;font-weight:800}.fb.v{background:#0f6b3a;border-color:#1c9a58;font-weight:800}.fb[disabled]{opacity:.5}
+.fp{display:flex;gap:10px;background:#151233;border:1px solid #2b2760;border-radius:12px;padding:8px;margin-top:8px}.fp .th{flex:0 0 76px;height:76px;border-radius:8px;background:#0f0d24;border:1px solid #2b2760;display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center;font-size:10.5px;color:#8f89c9}.fp .th img{max-width:100%;max-height:100%;object-fit:contain;background:#fff}
+.fp .inf{flex:1;min-width:0}.fp .nm{font-weight:800;font-size:13.5px;overflow-wrap:anywhere}.fe{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:800;margin-top:3px}.fe.sf{background:#4a1230;color:#ff9db8}.fe.qb{background:#4a2a08;color:#ffc27a}.fe.ok{background:#0d3a22;color:#7fe3a8}.fe.nv{background:#2a2a45;color:#c9c4f0}
+.sg{display:flex;gap:8px;margin-top:6px;background:#0f0d24;border:1px dashed #6a3d8f;border-radius:10px;padding:6px}.sg .th{flex:0 0 64px;height:64px}.ur{font-size:10.5px;color:#8f89c9;overflow-wrap:anywhere}.ac{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}.ac input{flex:1 1 150px;min-width:0;background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:5px 7px;font-size:12.5px}
+.fbar{background:#0d2230;border:1px solid #1f6f93;border-radius:10px;padding:7px 9px;margin-top:8px;color:#bfe6ff;font-size:12.5px;white-space:normal}.ferr{color:#ff8aa3}.pr{height:6px;background:#221e4f;border-radius:4px;margin-top:5px;overflow:hidden}.pr>i{display:block;height:100%;background:#ff1a8c}
+</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+.fp{overflow:hidden}.fp .ic,.fp .ur,.fp .nm{white-space:normal;overflow-wrap:anywhere}
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/fotos-produtos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/fotos-produtos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📷 Fotos dos Produtos</div><div class="sp"></div></div>
+<div class="wrap">
+  <div class="card">
+    <b style="font-size:15px">📷 Fotos dos produtos</b>
+    <div class="ic" style="white-space:normal;margin-top:3px">Veja quem está sem foto ou com o link fora do ar, peça uma sugestão de foto e exporte a planilha para importar no Bling. A foto aceita é <b>copiada para o nosso servidor</b>, então o link não quebra de novo.</div>
+    <div id="fK" class="fk" style="margin-top:8px"></div>
+    <div id="fJob"></div>
+    <div class="ac" style="margin-top:8px"><button class="fb" id="bVer" onclick="verificar()">🔍 Verificar as fotos agora</button><button class="fb m" id="bSug" onclick="sugerirLote()">🤖 Sugerir fotos (25 de cada vez)</button><button class="fb v" onclick="abrirExportar()">⬇️ Exportar para o Bling</button></div>
+    <div id="fMsg" class="ic" style="white-space:normal;margin-top:6px"></div>
+    <div id="fAviso" class="fbar" style="display:none"></div>
+  </div>
+  <div class="card">
+    <div class="ac" style="margin-top:0"><input id="fQ" placeholder="🔎 produto, código ou código de barras" oninput="buscar()" autocomplete="off"></div>
+    <div id="fFiltros" class="ac"></div>
+  </div>
+  <div id="fLista"></div>
+  <div id="fMais" style="text-align:center;margin:10px 0"></div>
+  <div class="card" id="fExp" style="display:none"></div>
+  <div style="height:30px"></div>
+</div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+let D = null, FILTRO = "problemas", Q = "", PG = 1, ACUM = [], _tq = null, _poll = null;
+const FILTROS = [["problemas", "Com problema"], ["semfoto", "Sem foto"], ["quebrado", "Link fora do ar"], ["sugestao", "Com sugestão"], ["prontas", "Prontas p/ Bling"], ["ok", "Fotos OK"], ["naoverificada", "Não verificadas"], ["todas", "Todas"]];
+const quando = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "nunca";
+function buscar() { clearTimeout(_tq); _tq = setTimeout(() => { Q = document.getElementById("fQ").value; PG = 1; carregar(); }, 350); }
+let _seq = 0;
+async function carregar(mais) { const meu = ++_seq, { ok, j } = await api(`/api/fotos?estado=${FILTRO}&q=${encodeURIComponent(Q)}&pagina=${PG}`); if (meu !== _seq) return; if (!ok) { document.getElementById("fLista").innerHTML = `<div class="fbar ferr">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
+  D = j; if (mais) ACUM = ACUM.concat(j.itens); else ACUM = j.itens.slice(); desenhar(); if ((j.verificacao.job.rodando || j.sugestao.job.rodando) && !_poll) _poll = setInterval(acompanhar, 3000); }
+async function acompanhar() { const { ok, j } = await api("/api/fotos/job"); if (!ok) return; const v = j.verificacao, s = j.sugestao; desenharJob(v, s); if (!v.rodando && !s.rodando) { clearInterval(_poll); _poll = null; PG = 1; carregar(); } }
+function desenharJob(v, s) { const el = document.getElementById("fJob"); let h = "";
+  if (v.rodando) h += `<div class="fbar">🔍 Conferindo os links das fotos… ${v.feito} de ${v.total}<div class="pr"><i style="width:${v.total ? Math.round(v.feito / v.total * 100) : 0}%"></i></div></div>`;
+  if (s.rodando) h += `<div class="fbar">🤖 Procurando fotos… ${s.feito} de ${s.total} (${s.achou} achada(s), ${s.semResultado} sem resultado)<div class="pr"><i style="width:${s.total ? Math.round(s.feito / s.total * 100) : 0}%"></i></div></div>`;
+  else if (s.fim && s.fim > (Date.now() - 600000)) h += `<div class="fbar">🤖 Última busca: ${s.achou} foto(s) sugerida(s), ${s.semResultado} sem resultado${s.erros ? ", " + s.erros + " com erro" : ""}.${s.erro ? ' <span class="ferr">' + esc(s.erro) + "</span>" : ""}</div>`;
+  el.innerHTML = h; document.getElementById("bVer").disabled = !!v.rodando; document.getElementById("bSug").disabled = !!s.rodando; }
+function desenhar() { const t = D.totais, K = (k, rot, n) => `<div class="k ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';PG=1;carregar()"><div class="v">${n}</div><div class="l">${rot}</div></div>`;
+  document.getElementById("fK").innerHTML = K("semfoto", "Sem foto", t.semfoto) + K("quebrado", "Link fora do ar", t.quebrado) + K("ok", "Fotos OK", t.ok) + K("sugestao", "Com sugestão", t.comSugestao) + K("prontas", "Prontas p/ Bling", t.prontas) + K("naoverificada", "Não verificadas", t.naoverificada);
+  document.getElementById("fFiltros").innerHTML = FILTROS.map(f => `<button class="fb ${FILTRO === f[0] ? "m" : ""}" onclick="FILTRO='${f[0]}';PG=1;carregar()">${f[1]}</button>`).join("");
+  desenharJob(D.verificacao.job, D.sugestao.job); document.getElementById("fMsg").innerHTML = `Última verificação dos links: <b style="color:#fff">${quando(D.verificacao.ultima)}</b>.${D.sugestao.iaAtiva ? "" : " A IA não está ligada (falta a chave no Railway): as sugestões usam só o código de barras."}`;
+  document.getElementById("fLista").innerHTML = ACUM.length ? ACUM.map(card).join("") : '<div class="card ic">Nenhum produto neste filtro.</div>';
+  const falta = D.total - ACUM.length; document.getElementById("fMais").innerHTML = falta > 0 ? `<button class="fb" onclick="PG++;carregar(true)">Mostrar mais (${falta})</button>` : (D.total ? `<span class="ic">${D.total} produto(s)</span>` : ""); }
+const badge = p => p.nova ? '<span class="fe ok">✅ pronta para o Bling</span>' : p.estado === "semfoto" ? '<span class="fe sf">Sem foto</span>' : p.estado === "quebrado" ? `<span class="fe qb">Link fora do ar</span> <span class="ic">${esc(p.motivo || "")}</span>` : p.estado === "ok" ? `<span class="fe ok">Foto OK</span> <span class="ic">${p.w ? p.w + "×" + p.h : ""}</span>` : '<span class="fe nv">Não verificada</span>';
+function card(p) { const im = p.nova ? p.nova.url : (p.estado === "ok" || p.estado === "naoverificada") && p.url ? p.url : "";
+  let h = `<div class="fp" id="p-${p.id}"><div class="th">${im ? `<img loading="lazy" src="${esc(im)}" alt="" onerror="this.parentNode.textContent='sem imagem'">` : "sem foto"}</div><div class="inf"><div class="nm">${esc(p.nome)}</div><div class="ic">${esc(p.codigo)}${p.gtin ? " · " + esc(p.gtin) : ""}</div><div>${badge(p)}</div>`;
+  if (p.url && !p.nova) h += `<div class="ur">atual: <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:#9fd0ff">${esc(p.url.length > 70 ? p.url.slice(0, 70) + "…" : p.url)}</a></div>`;
+  if (p.nova) h += `<div class="ur">novo link: <a href="${esc(p.nova.url)}" target="_blank" rel="noopener" style="color:#9fd0ff">${esc(p.nova.url)}</a>${p.nova.exportadaEm ? " · já exportada em " + quando(p.nova.exportadaEm) : ""}</div><div class="ac"><button class="fb" onclick="desfazer('${p.id}')">↩ Desfazer</button></div>`;
+  else {
+    if (p.sugestao) h += `<div class="sg"><div class="th"><img loading="lazy" src="${esc(p.sugestao.url)}" alt="" onerror="this.parentNode.textContent='sem imagem'"></div><div class="inf"><div class="ic" style="white-space:normal">💡 Sugestão · ${esc(p.sugestao.fonte)} · confiança ${esc(p.sugestao.conf)}${p.sugestao.w ? " · " + p.sugestao.w + "×" + p.sugestao.h : ""}</div>${p.sugestao.desc ? `<div class="ic" style="white-space:normal">${esc(p.sugestao.desc)}</div>` : ""}${p.sugestao.pagina ? `<div class="ur"><a href="${esc(p.sugestao.pagina)}" target="_blank" rel="noopener" style="color:#9fd0ff">ver a página de origem</a></div>` : ""}<div class="ac"><button class="fb v" onclick="aceitar('${p.id}')">✅ Usar esta foto</button><button class="fb" onclick="rejeitar('${p.id}')">🚫 Não serve</button></div></div></div>`;
+    else if (p.semResultado) h += `<div class="ic" style="margin-top:4px">🤖 Não achei uma foto confiável. Cole um link abaixo ou tente de novo.</div>`;
+    if (p.estado !== "ok") h += `<div class="ac"><input id="l-${p.id}" placeholder="colar o link de uma foto" autocomplete="off"><button class="fb" onclick="aceitarLink('${p.id}')">Usar link</button>${p.sugestao ? "" : `<button class="fb m" onclick="sugerirUm('${p.id}')">🤖 Sugerir</button>`}</div>`;
+  } return h + "</div></div>"; }
+function msg(t, erro) { const el = document.getElementById("fAviso"); el.style.display = "block"; el.innerHTML = (erro ? '<span class="ferr">' : "") + esc(t) + (erro ? "</span>" : ""); }
+async function verificar() { const { ok, j } = await api("/api/fotos/verificar", { method: "POST", body: JSON.stringify({ forcar: true }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
+async function sugerirLote() { const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ max: 25 }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (j.mensagem) { msg(j.mensagem); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
+async function sugerirUm(id) { const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ ids: [id] }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
+async function aceitar(id, url) { msg("Baixando e conferindo a foto…"); const { ok, j } = await api("/api/fotos/aceitar", { method: "POST", body: JSON.stringify({ id, url }) }); if (!ok) { msg(j.erro || "Não consegui usar essa foto.", true); return; } msg("✅ Foto guardada. Ela entra na planilha para o Bling."); PG = 1; await carregar(); }
+function aceitarLink(id) { const u = (document.getElementById("l-" + id).value || "").trim(); if (!u) { msg("Cole o link da foto.", true); return; } aceitar(id, u); }
+async function rejeitar(id) { await api("/api/fotos/rejeitar", { method: "POST", body: JSON.stringify({ id }) }); PG = 1; await carregar(); sugerirUm(id); }
+async function desfazer(id) { await api("/api/fotos/desfazer", { method: "POST", body: JSON.stringify({ id }) }); PG = 1; await carregar(); }
+function abrirExportar() { const t = D ? D.totais : { prontas: 0, prontasNaoExportadas: 0 }, el = document.getElementById("fExp"); el.style.display = "block";
+  el.innerHTML = `<b>⬇️ Exportar para importar no Bling</b><div class="ic" style="white-space:normal;margin:3px 0 6px">A planilha traz o ID, o código, a descrição e o link da foto (a cópia guardada no nosso servidor). Prontas: <b style="color:#fff">${t.prontas}</b> · ainda não exportadas: <b style="color:#fff">${t.prontasNaoExportadas}</b>.</div>
+    <div class="ac"><span class="ic">Nome da coluna da foto:</span><input id="eCol" value="${esc(D ? D.colunaBling : "URL Imagens Externas")}"></div>
+    <label class="ic" style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox" id="eTodas" style="width:15px;height:15px;flex:none"> incluir também as já exportadas</label>
+    <div class="ac"><button class="fb v" onclick="exportar('xlsx')">Baixar XLSX</button><button class="fb" onclick="exportar('csv')">Baixar CSV</button></div>
+    <div class="ic" style="white-space:normal;margin-top:8px">No Bling: <b style="color:#fff">Cadastros › Produtos › Importar produtos</b>. Baixe o modelo do próprio Bling e confira o nome da coluna das imagens externas (ajuste acima se for diferente). Teste com 2 produtos antes. Se o produto já tem foto, o Bling pode manter a antiga junto da nova.</div>`; el.scrollIntoView({ behavior: "smooth" }); }
+async function exportar(fmt) { const col = document.getElementById("eCol").value, todas = document.getElementById("eTodas").checked, url = `${B}/api/fotos/exportar?formato=${fmt}&coluna=${encodeURIComponent(col)}&todas=${todas ? 1 : 0}&marcar=1`;
+  const r = await fetch(url, { headers: { "X-Auth-Token": token() } }); if (!r.ok) { const j = await r.json().catch(() => ({})); msg(j.erro || "Não consegui exportar.", true); return; }
+  const b = await r.blob(), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "fotos_para_importar_no_bling." + fmt; a.click(); msg("Planilha baixada. As fotos exportadas ficam marcadas como exportadas."); PG = 1; carregar(); }
+carregar();
+</script>
+</body>
+</html>
