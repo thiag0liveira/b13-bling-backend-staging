@@ -61,7 +61,8 @@ const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g,
 const brl = v => "R$ " + (+v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const SEM = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 let DIA = new URLSearchParams(location.search).get("dia") || null;
-let ORIGEM = "todos";
+let ORIGEM = "todos", ESTADO = "todos", SITU = "";
+const tokenSessao = () => { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } };
 let DADOS = null;
 let ERRO = "";
 let CONF = {};          // id do registro -> resultado da conferência no Bling
@@ -74,8 +75,8 @@ function somaDias(dia, n) { const d = dataDe(dia); d.setUTCDate(d.getUTCDate() +
 
 async function carregar(silencioso) {
   try {
-    const q = "?dia=" + encodeURIComponent(DIA || "") + "&origem=" + ORIGEM + "&dias=14";
-    const j = await fetch(B + "/api/pedidos-origem" + q).then(r => r.json());
+    const q = "?dia=" + encodeURIComponent(DIA || "") + "&origem=" + ORIGEM + "&estado=" + ESTADO + "&situacao=" + encodeURIComponent(SITU) + "&dias=14";
+    const j = await fetch(B + "/api/pedidos-origem" + q, { headers: { "X-Auth-Token": tokenSessao() } }).then(r => r.json());
     if (j.erro) throw new Error(j.erro);
     DADOS = j; DIA = j.dia; ERRO = "";
     try { history.replaceState({}, "", "?dia=" + DIA); } catch (e) {}
@@ -84,11 +85,14 @@ async function carregar(silencioso) {
 }
 function irDia(d) { DIA = d; CONF = {}; CONF_MSG = ""; carregar(); }
 function setOrigem(o) { ORIGEM = o; carregar(); }
+function setEstado(e) { ESTADO = ESTADO === e ? "todos" : e; if (ESTADO !== "no_bling") SITU = ""; carregar(); }
+function setSitu(v) { SITU = v; if (v) ESTADO = "no_bling"; carregar(); }
+function limparStatus() { ESTADO = "todos"; SITU = ""; carregar(); }
 
 function estadoTag(x) {
   if (x.estado === "cancelada") return '<span class="tag e-can">Cancelado</span>';
   if (x.estado === "aguardando_revisao") return '<span class="tag e-esp">⏳ Aguardando revisão (ainda não está no Bling)</span>';
-  return '<span class="tag e-ok">✅ Pedido no Bling</span>';
+  return '<span class="tag e-ok">✅ Pedido no Bling' + (x.situacao ? " · " + esc(x.situacao) : "") + "</span>";
 }
 function confHtml(x) {
   const c = CONF[x.id];
@@ -138,7 +142,7 @@ async function conferirNoBling() {
     render();
     try {
       const j = await fetch(B + "/api/pedidos-origem/conferir-bling", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", "X-Auth-Token": tokenSessao() },
         body: JSON.stringify({ ids: ids.slice(i, i + 8) })
       }).then(r => r.json());
       Object.assign(CONF, j.data || {});
@@ -168,10 +172,11 @@ function render() {
       '<div class="d">' + (x.dia === hoje ? "Hoje" : SEM[dataDe(x.dia).getUTCDay()] + " " + fmtDia(x.dia)) + "</div>" +
       '<div class="s">🌐 ' + x.site + " · 🖥️ " + x.totem + "</div>" + w + "</div>";
   }).join("");
+  const chipE = (e, rot) => '<button class="chip ' + (ESTADO === e ? "on" : "") + '" onclick="' + (e === "todos" ? "limparStatus()" : "setEstado(\'" + e + "\')") + '">' + rot + "</button>";
   const chip = (o, rot) => '<button class="chip ' + (ORIGEM === o ? "on" : "") + '" onclick="setOrigem(\'' + o + '\')">' + rot + "</button>";
   const lista = d.lista.length
     ? d.lista.map(cardPedido).join("")
-    : '<div class="card muted">Nenhum pedido ' + (ORIGEM === "todos" ? "do site ou do totem" : ORIGEM === "site" ? "do site" : "do totem") + " em " + esc(fmtDiaLongo(d.dia)) + ".</div>";
+    : '<div class="card muted">Nenhum pedido ' + (ORIGEM === "todos" ? "do site ou do totem" : ORIGEM === "site" ? "do site" : "do totem") + ((ESTADO !== "todos" || SITU) ? " com este status" : "") + " em " + esc(fmtDiaLongo(d.dia)) + "." + ((ESTADO !== "todos" || SITU) ? ' <a href="#" style="color:#ff5fa8" onclick="limparStatus();return false">Limpar filtro de status</a>' : "") + "</div>";
   app.innerHTML = topo + '<div class="wrap">' +
     '<div class="nav">' +
       '<button class="btn btn-ghost" onclick="irDia(somaDias(DIA,-1))">◀</button>' +
@@ -182,8 +187,10 @@ function render() {
     "</div>" +
     '<div class="dias">' + faixa + "</div>" +
     '<div class="nav">' + chip("todos", "Todos (" + resDia.total + ")") + chip("site", "🌐 Site (" + resDia.site + ")") + chip("totem", "🖥️ Totem (" + resDia.totem + ")") + "</div>" +
+    '<div class="nav" style="flex-wrap:wrap"><span class="muted">Status:</span>' + chipE("todos", "Todos (" + (d.resumoEstados || {}).todos + ")") + chipE("aguardando_revisao", "⏳ Aguardando revisão (" + (d.resumoEstados || {}).aguardando_revisao + ")") + chipE("no_bling", "✅ No Bling (" + (d.resumoEstados || {}).no_bling + ")") + chipE("cancelada", "❌ Cancelados (" + (d.resumoEstados || {}).cancelada + ")") + "</div>" +
+    ((d.situacoes || []).length ? '<div class="nav"><span class="muted">Etapa no Bling:</span><select onchange="setSitu(this.value)" style="flex:1;min-width:150px"><option value="">Todas as etapas</option>' + d.situacoes.map(x => '<option value="' + x.id + '" ' + (String(x.id) === String(SITU) ? "selected" : "") + ">" + esc(x.nome) + " (" + x.qtd + ")</option>").join("") + "</select>" + ((ESTADO !== "todos" || SITU) ? '<button class="btn btn-ghost" onclick="limparStatus()">Limpar filtro</button>' : "") + "</div>" : ((ESTADO !== "todos") ? '<div class="nav"><button class="btn btn-ghost" onclick="limparStatus()">Limpar filtro de status</button></div>' : "")) +
     '<div class="card" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">' +
-      "<div><b>" + resDia.total + " pedido(s)</b> neste dia · <b style=\"color:#ffd23f\">" + brl(d.totalDia) + "</b>" +
+      "<div><b>" + (ESTADO === "todos" && !SITU ? resDia.total : d.lista.length) + " pedido(s)</b> " + (ESTADO === "todos" && !SITU ? "neste dia" : "neste filtro") + " · <b style=\"color:#ffd23f\">" + brl(d.totalDia) + "</b>" +
       (resDia.semBling ? ' · <span class="warn">⏳ ' + resDia.semBling + " aguardando revisão</span>" : "") +
       '<div class="muted" style="margin-top:3px">' + (CONF_MSG ? esc(CONF_MSG) : "Pedidos do site ficam aguardando revisão até alguém gerar o pedido no Bling.") + "</div></div>" +
       '<button class="btn btn-grn" ' + (CONFERINDO ? "disabled" : "") + ' onclick="conferirNoBling()">🔍 Conferir no Bling</button>' +

@@ -17708,13 +17708,15 @@ function _origemSiteTotem(p){
   if(p?.origemPedido==="site") return "site";
   return null;
 }
-app.get("/api/pedidos-origem",(req,res)=>{
+app.get("/api/pedidos-origem",requireSessao,(req,res)=>{
   try{
     const janela=Math.min(Math.max(Number(req.query.dias)||14,1),60);
     const hoje=_diaBRde(Date.now());
     const dia=/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia||""))?String(req.query.dia):hoje;
     const filtro=["site","totem"].includes(String(req.query.origem))?String(req.query.origem):"todos";
-    const porDia={}; const lista=[];
+    // FILTROS DE STATUS: "estado" (no sistema: aguardando revisão, já no Bling, cancelado) e "situacao" (a etapa do pedido no Bling: separado, em rota, atendido…)
+    const fEstado=["aguardando_revisao","no_bling","cancelada"].includes(String(req.query.estado))?String(req.query.estado):"todos", fSit=String(req.query.situacao||"").replace(/\D/g,"");
+    const porDia={}; const doDia=[], hist=lerHistPedidos().porId;
     for(const p of Object.values(lerPropostas())){
       const origem=_origemSiteTotem(p);
       if(!origem||!p.criadoEm) continue;
@@ -17726,8 +17728,8 @@ app.get("/api/pedidos-origem",(req,res)=>{
       if(!cancelada){ r.valor=+(r.valor+Number(p.total||0)).toFixed(2); if(!noBling) r.semBling++; }
       if(d!==dia||(filtro!=="todos"&&origem!==filtro)) continue;
       const hora=new Date(p.criadoEm-3*3600*1000).toISOString().slice(11,16);
-      const itens=p.itens||[];
-      lista.push({
+      const itens=p.itens||[], sitId=noBling?(Number((_sitOnline[String(p.pedidoBlingId)]||{}).situacaoId)||Number((hist[String(p.pedidoBlingId)]||{}).s)||0):0;
+      doDia.push({
         id:p.id, origem, em:p.criadoEm, hora,
         cliente:p.cliente?.nome||"", telefone:p.cliente?.telefone||"",
         clienteAssociado:!!p.cliente?.id, clienteBling:p.cliente?.blingNome||"",
@@ -17736,8 +17738,13 @@ app.get("/api/pedidos-origem",(req,res)=>{
         itensTxt:itens.slice(0,3).map(i=>`${i.quantidade}x ${i.nome}`).join(", ")+(itens.length>3?` +${itens.length-3}`:""),
         estado: cancelada?"cancelada":(noBling?"no_bling":"aguardando_revisao"),
         pedidoBlingId:p.pedidoBlingId||null, numero:p.pedidoBlingNumero||null,
+        situacaoId:sitId||null, situacao:sitId?nomeSituacao(sitId):"",
       });
     }
+    // contagens do dia (já com a origem escolhida) para os botões de filtro; depois aplica os filtros de status
+    const resumoEstados={todos:doDia.length,aguardando_revisao:0,no_bling:0,cancelada:0}, mapaSit={};
+    doDia.forEach(x=>{ resumoEstados[x.estado]++; if(x.estado==="no_bling"){ const k=String(x.situacaoId||0); (mapaSit[k]||(mapaSit[k]={id:x.situacaoId||0,nome:x.situacao||"Situação não informada",qtd:0})).qtd++; } });
+    const lista=doDia.filter(x=>(fEstado==="todos"||x.estado===fEstado)&&(!fSit||(x.estado==="no_bling"&&String(x.situacaoId||0)===fSit)));
     lista.sort((a,b)=>b.em-a.em);
     // faixa de dias (hoje pra trás), incluindo os que não tiveram nenhum pedido
     const dias=[];
@@ -17746,14 +17753,15 @@ app.get("/api/pedidos-origem",(req,res)=>{
       dias.push(porDia[d]||{dia:d,site:0,totem:0,total:0,valor:0,semBling:0});
     }
     if(!dias.some(x=>x.dia===dia)) dias.push(porDia[dia]||{dia,site:0,totem:0,total:0,valor:0,semBling:0});
-    res.json({dia,hoje,filtro,dias,lista,
+    res.json({dia,hoje,filtro,estado:fEstado,situacao:fSit,resumoEstados,situacoes:Object.values(mapaSit).sort((a,b)=>b.qtd-a.qtd),dias,lista,
       totalDia:lista.filter(x=>x.estado!=="cancelada").reduce((s2,x)=>+(s2+x.total).toFixed(2),0)});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+
 // confere no Bling, sob demanda, se os pedidos gravados aqui existem lá e em que
 // situação estão. Lotes pequenos (a tela chama em partes) e com a fila de BAIXA
 // prioridade, pra não atrapalhar o caixa nem estourar o tempo quando o Bling está lento.
-app.post("/api/pedidos-origem/conferir-bling",async(req,res)=>{
+app.post("/api/pedidos-origem/conferir-bling",requireSessao,async(req,res)=>{
   try{
     const ids=(Array.isArray(req.body?.ids)?req.body.ids:[]).map(String).slice(0,10);
     const props=lerPropostas(); const out={};
