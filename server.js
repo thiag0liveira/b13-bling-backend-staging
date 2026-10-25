@@ -1287,6 +1287,7 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/entrada-produtos",label:"📦 Entrada de Produtos",acoes:["acesso_entrada_produtos"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota (financeiro)",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
+  {grupo:"ESTOQUE",href:"/tabela-varejo",label:"📊 Tabela de Varejo (preços)",acoes:["acesso_tabela_varejo"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
   {grupo:"ESTOQUE",href:"/entrada-estoque",label:"📥 Entrada de Estoque",acoes:["acesso_entrada_estoque"]},
@@ -11149,6 +11150,81 @@ async function atualizarRecentesBling(dias,opts={}){
     ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50);
   }catch(e){ _recentes.erro=String(e.message||e).slice(0,160); console.error("[margem] atualizar pedidos recentes do Bling:",e.message); }
   finally{ _recentes.rodando=false; _recentes.em=Date.now(); } }
+// ===================== TABELA DE VAREJO / ANÁLISE DE PREÇOS =====================
+// Uma lista única de todos os produtos ativos, agrupada por categoria (escolhida aqui), com o custo, os três preços (varejo, atacado e fardo)
+// e a porcentagem de cada um. Varejo = preço do Bling; atacado e caixa = tabela de atacado; fardo e quantidade do fardo = o que for informado aqui.
+// Preço de varejo alterado fica como RASCUNHO até alguém aplicar no Bling (com o QR do dia, como em Produtos).
+const TABELA_VAREJO_FILE=`${DATA_DIR}/tabela_varejo.json`;
+const _lerTV=()=>{ const d=lerJSON(TABELA_VAREJO_FILE,{}); d.categorias=d.categorias||[]; d.itens=d.itens||{}; return d; };
+const _salvarTV=d=>salvarJSON(TABELA_VAREJO_FILE,d);
+function _itensTV(){ const P=lerProdutosBling().porId, TV=_lerTV(); let I={porCodigo:{}}; try{ I=_indicePrecosTabela(); }catch(e){}
+  const out=[]; for(const [id,x] of Object.entries(P)){ if(!x||x.s==="I"||x.f==="V") continue; const t=TV.itens[id]||{}, at=(x.c&&I.porCodigo[String(x.c)])||null, pos=v=>Number(v)>0?Number(v):null;
+    out.push({id:String(id),codigo:x.c||"",nome:x.n||"",un:x.u||"",estoque:Number(x.est)||0,custo:pos(x.pc),precoVarejo:pos(x.p),precoNovo:pos(t.precoNovo),precoAtacado:at?pos(at.precoAtacado):null,precoFardoAtacado:at?pos(at.precoFardo):null,caixaQtd:at?(Number(at.caixaQtd)||null):null,
+      catAtacado:at?(at.categoria||""):"",categoriaId:t.categoriaId&&TV.categorias.some(c=>c.id===t.categoriaId)?t.categoriaId:"",qtdFardo:Number(t.qtdFardo)>0?Number(t.qtdFardo):null,precoFardo:pos(t.precoFardo)}); }
+  return out; }
+app.get("/api/tabela-varejo",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), itens=_itensTV(), cont={};
+    itens.forEach(i=>{ cont[i.categoriaId||""]=(cont[i.categoriaId||""]||0)+1; });
+    res.json({ok:true,categorias:TV.categorias.slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0)||a.nome.localeCompare(b.nome)).map(c=>({...c,qtd:cont[c.id]||0})),itens,
+      totais:{produtos:itens.length,semCategoria:cont[""]||0,comAlteracao:itens.filter(i=>i.precoNovo&&i.precoNovo!==i.precoVarejo).length},atualizadoEm:Date.now()});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+const _posNum=v=>{ const t=String(v==null?"":v).trim(); if(!t) return null; const n=_numBR(t); return isFinite(n)&&n>0?_round2(n*10000)/10000:NaN; };
+app.put("/api/tabela-varejo/item/:id",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const id=String(req.params.id), P=lerProdutosBling().porId; if(!P[id]) return res.status(404).json({erro:"produto não encontrado"});
+    const b=req.body||{}, TV=_lerTV(), t=TV.itens[id]||(TV.itens[id]={}), quem=req.sessao?.nome||"";
+    if(b.categoriaId!==undefined){ if(b.categoriaId&&!TV.categorias.some(c=>c.id===b.categoriaId)) return res.status(400).json({erro:"categoria não existe"}); t.categoriaId=b.categoriaId||""; }
+    if(b.qtdFardo!==undefined){ const v=b.qtdFardo===""||b.qtdFardo==null?null:Math.round(Number(String(b.qtdFardo).replace(",","."))); if(v!=null&&!(v>0&&v<=5000)) return res.status(400).json({erro:"quantidade do fardo inválida (use um número inteiro maior que zero)"}); t.qtdFardo=v||undefined; }
+    if(b.precoFardo!==undefined){ const v=_posNum(b.precoFardo); if(Number.isNaN(v)||(v!=null&&v>100000)) return res.status(400).json({erro:"preço do fardo inválido"}); t.precoFardo=v||undefined; }
+    if(b.precoNovo!==undefined){ const v=_posNum(b.precoNovo); if(Number.isNaN(v)||(v!=null&&v>100000)) return res.status(400).json({erro:"preço de varejo inválido"}); t.precoNovo=(v&&v!==Number(P[id].p))?v:undefined; }
+    t.por=quem; t.em=Date.now(); if(!t.categoriaId&&!t.qtdFardo&&!t.precoFardo&&!t.precoNovo) delete TV.itens[id]; _salvarTV(TV);
+    res.json({ok:true,item:_itensTV().find(i=>i.id===id)});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/tabela-varejo/lote",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const b=req.body||{}, ids=(Array.isArray(b.ids)?b.ids:[]).map(String).slice(0,2000), TV=_lerTV(), P=lerProdutosBling().porId;
+    if(b.categoriaId&&!TV.categorias.some(c=>c.id===b.categoriaId)) return res.status(400).json({erro:"categoria não existe"});
+    let n=0; ids.forEach(id=>{ if(!P[id]) return; const t=TV.itens[id]||(TV.itens[id]={}); t.categoriaId=b.categoriaId||""; t.por=req.sessao?.nome||""; t.em=Date.now(); if(!t.categoriaId&&!t.qtdFardo&&!t.precoFardo&&!t.precoNovo) delete TV.itens[id]; n++; });
+    _salvarTV(TV); res.json({ok:true,movidos:n});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/tabela-varejo/categorias",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const nome=String(req.body?.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da categoria"});
+    const TV=_lerTV(); if(TV.categorias.some(c=>_nrmP(c.nome)===_nrmP(nome))) return res.status(409).json({erro:"já existe uma categoria com esse nome"});
+    const c={id:"cv"+Date.now().toString(36)+Math.random().toString(36).slice(2,4),nome,ordem:(Math.max(0,...TV.categorias.map(x=>x.ordem||0))+1)}; TV.categorias.push(c); _salvarTV(TV); res.json({ok:true,categoria:c});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.put("/api/tabela-varejo/categorias/:id",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), c=TV.categorias.find(x=>x.id===req.params.id); if(!c) return res.status(404).json({erro:"categoria não encontrada"}); const b=req.body||{};
+    if(b.nome!==undefined){ const nome=String(b.nome).trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome"}); if(TV.categorias.some(x=>x.id!==c.id&&_nrmP(x.nome)===_nrmP(nome))) return res.status(409).json({erro:"já existe uma categoria com esse nome"}); c.nome=nome; }
+    if(b.mover==="cima"||b.mover==="baixo"){ const L=TV.categorias.slice().sort((a,b2)=>(a.ordem||0)-(b2.ordem||0)), i=L.findIndex(x=>x.id===c.id), j=b.mover==="cima"?i-1:i+1; if(j>=0&&j<L.length){ L.splice(j,0,L.splice(i,1)[0]); L.forEach((x,k)=>{ x.ordem=k+1; }); TV.categorias=L; } }
+    _salvarTV(TV); res.json({ok:true});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.delete("/api/tabela-varejo/categorias/:id",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(); if(!TV.categorias.some(x=>x.id===req.params.id)) return res.status(404).json({erro:"categoria não encontrada"});
+    TV.categorias=TV.categorias.filter(x=>x.id!==req.params.id); let n=0; Object.entries(TV.itens).forEach(([id,t])=>{ if(t.categoriaId===req.params.id){ t.categoriaId=""; n++; if(!t.qtdFardo&&!t.precoFardo&&!t.precoNovo) delete TV.itens[id]; } }); _salvarTV(TV); res.json({ok:true,voltaramParaSemCategoria:n});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// atalho para quem tem muitos itens: cria as categorias da tabela de ATACADO e coloca nelas os produtos que ainda estão sem categoria
+app.post("/api/tabela-varejo/importar-categorias-atacado",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), itens=_itensTV(); let criadas=0, colocados=0;
+    const achar=nome=>TV.categorias.find(c=>_nrmP(c.nome)===_nrmP(nome));
+    itens.forEach(i=>{ if(i.categoriaId||!i.catAtacado) return; let c=achar(i.catAtacado); if(!c){ c={id:"cv"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),nome:String(i.catAtacado).slice(0,60),ordem:Math.max(0,...TV.categorias.map(x=>x.ordem||0))+1}; TV.categorias.push(c); criadas++; }
+      const t=TV.itens[i.id]||(TV.itens[i.id]={}); t.categoriaId=c.id; t.por=req.sessao?.nome||""; t.em=Date.now(); colocados++; });
+    _salvarTV(TV); res.json({ok:true,criadas,colocados});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+// aplica no Bling os preços de varejo que estão como rascunho (exige o QR do dia, como a alteração de preço em Produtos)
+app.post("/api/tabela-varejo/aplicar-bling",requireAcesso("acesso_tabela_varejo"),async(req,res)=>{ try{ const b=req.body||{}, auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
+    const TV=_lerTV(), quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", alvo=(Array.isArray(b.ids)&&b.ids.length?b.ids.map(String):Object.keys(TV.itens)).filter(id=>TV.itens[id]&&TV.itens[id].precoNovo).slice(0,25), out=[];
+    for(const id of alvo){ const novo=Number(TV.itens[id].precoNovo);
+      try{ const pd=(await bling(`/produtos/${id}`))?.data; if(!pd||!pd.nome) throw new Error("produto não encontrado no Bling"); const antes=Number(pd.preco)||0;
+        const payload={nome:pd.nome,codigo:pd.codigo||"",preco:novo,tipo:pd.tipo||"P",situacao:pd.situacao||"A",formato:pd.formato||"S"};
+        ["unidade","pesoBruto","pesoLiquido","volumes","itensPorCaixa","gtin","gtinEmbalagem","tipoProducao","condicao","freteGratis","marca","descricaoCurta","descricaoComplementar","linkExterno","observacoes","dataValidade","midia","tributacao","estoque","fornecedor","dimensoes"].forEach(k=>{ if(pd[k]!==undefined&&pd[k]!==null&&pd[k]!=="") payload[k]=pd[k]; });
+        if(pd.categoria?.id) payload.categoria={id:pd.categoria.id}; if(pd.linhaProduto?.id) payload.linhaProduto={id:pd.linhaProduto.id};
+        await bling(`/produtos/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+        const P=lerProdutosBling(); if(P.porId[id]){ P.porId[id].p=novo; salvarJSON(PRODUTOS_BLING_FILE,P); } delete TV.itens[id].precoNovo; if(!TV.itens[id].categoriaId&&!TV.itens[id].qtdFardo&&!TV.itens[id].precoFardo) delete TV.itens[id];
+        addLog("produto-"+id,"preco_varejo_tabela",req.sessao?.funcionarioId||"",pedidoPor,{produto:pd.nome,antes,depois:novo,autorizadoPor:quem}); out.push({id,nome:pd.nome,ok:true,antes,depois:novo});
+      }catch(e){ out.push({id,ok:false,erro:String(e.message||e).slice(0,160)}); }
+      await sleep(350); }
+    _salvarTV(TV); try{ _metProdCache.clear(); }catch(e){} res.json({ok:true,resultados:out,aplicados:out.filter(x=>x.ok).length,falhas:out.filter(x=>!x.ok).length,restantes:Object.values(TV.itens).filter(t=>t.precoNovo).length});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/tabela-varejo/descartar-rascunhos",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), ids=Array.isArray(req.body?.ids)&&req.body.ids.length?req.body.ids.map(String):Object.keys(TV.itens); let n=0;
+    ids.forEach(id=>{ const t=TV.itens[id]; if(t&&t.precoNovo){ delete t.precoNovo; n++; if(!t.categoriaId&&!t.qtdFardo&&!t.precoFardo) delete TV.itens[id]; } }); _salvarTV(TV); res.json({ok:true,descartados:n});
+  }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/tabela-varejo.csv",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), nomeCat=Object.fromEntries(TV.categorias.map(c=>[c.id,c.nome])), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(x).replace(".",","), mg=(p,c)=>(p>0&&c>0)?n(+(((p-c)/p)*100).toFixed(1)):"";
+    const linhas=[["Categoria","Código","Produto","Estoque","Custo","Varejo","Margem varejo %","Atacado","Margem atacado %","Fardo (preço)","Qtd no fardo","Fardo por unidade","Margem fardo %"].join(";")];
+    _itensTV().sort((a,b)=>(nomeCat[a.categoriaId]||"~").localeCompare(nomeCat[b.categoriaId]||"~")||a.nome.localeCompare(b.nome)).forEach(i=>{ const pv=i.precoNovo||i.precoVarejo, un=(i.precoFardo&&i.qtdFardo)?_round2(i.precoFardo/i.qtdFardo*10000)/10000:null;
+      linhas.push([q(nomeCat[i.categoriaId]||"(sem categoria)"),q(i.codigo),q(i.nome),n(i.estoque),n(i.custo),n(pv),mg(pv,i.custo),n(i.precoAtacado),mg(i.precoAtacado,i.custo),n(i.precoFardo),n(i.qtdFardo),n(un),mg(un,i.custo)].join(";")); });
+    res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="tabela_varejo.csv"'); res.send("\ufeff"+linhas.join("\r\n"));
+  }catch(e){ res.status(500).json({erro:e.message}); } });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
 const _nrmMot=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
@@ -16686,6 +16762,7 @@ app.get("/resultado",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, m
 app.get("/margem-bruta",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"margem-bruta.html")); });
 app.get("/painel/:g",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"painel-grupo.html")); });
 app.get("/contas-pagar",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-pagar.html")); });
+app.get("/tabela-varejo",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"tabela-varejo.html")); });
 app.get("/custos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"custos.html")); });
 app.get("/historico-estoque",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"historico-estoque.html")); });
 app.get("/entrada-produtos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"entrada-produtos.html")); });

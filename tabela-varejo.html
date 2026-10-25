@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Tabela de Varejo</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}
+.wrap{padding:14px;display:grid;gap:12px}
+.filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-block;background:#1c1846;border:1px solid #514c96;border-radius:20px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;user-select:none}
+.chip.on{background:var(--mag);border-color:var(--mag)}
+input,select{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:12px;position:relative}
+.kpi.alerta{border-color:#7a2a3a;background:#20122a}.kpi .v{font-size:22px;font-weight:900}.kpi .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th{background:#0d0b1e;padding:8px 10px;text-align:right;font-size:11px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.ped{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.ped:hover{border-color:var(--mag)}.ped .info{flex:1;min-width:220px}.ped .l1{font-weight:800;font-size:14.5px}.ped .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.ped .dir{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.valor{font-weight:900;font-size:15px;white-space:nowrap}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:#ff8aa3}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.ic{font-size:12px;color:#cfcaf5;white-space:nowrap}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:24px 10px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:860px}
+.bloco{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:12px;margin-top:10px}
+.bloco h4{font-size:13px;margin-bottom:8px;color:#cfcaf5}
+.lin{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px solid #1d1946}.lin:last-child{border-bottom:none}
+.lin span:first-child{color:var(--muted)}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.galeria a,.galeria div{display:block;border:1px solid var(--borda);border-radius:8px;overflow:hidden;background:#0b0a1e;text-decoration:none;color:#cfcaf5}
+.galeria img{width:100%;height:110px;object-fit:cover;display:block}.galeria video{width:100%;height:110px;display:block;background:#000}
+.galeria small{display:block;padding:5px 7px;font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--borda);padding-left:12px}.tl div{font-size:12.5px;padding:4px 0}.tl b{color:#fff}.tl span{color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs .chip{font-size:12.5px}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#3a3480;border-radius:4px 4px 0 0;position:relative;min-height:2px}
+.barras div.on{background:var(--mag)}.barras small{position:absolute;bottom:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted)}
+.cli{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--borda);border-radius:12px;margin-bottom:6px;background:#120f2c;cursor:pointer;flex-wrap:wrap}
+.cli:hover{border-color:var(--mag)}.cli .info{flex:1;min-width:230px}.cli .l1{font-weight:800;font-size:14.5px}.cli .l2{font-size:12px;color:var(--muted);margin-top:3px}
+.par{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.par div{background:#120f2c;border:1px solid var(--borda);border-radius:10px;padding:9px}.par b{display:block;font-size:16px}.par span{font-size:11px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}.form label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px}.form input,.form select,textarea{width:100%}
+textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;min-height:70px}
+#mapa{height:380px;border-radius:10px;border:1px solid var(--borda)}
+.err{background:#3d1020;color:#ff8aa3;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}.okmsg{background:#11352a;color:#6be3a8;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:6px}
+.wrap .filtros{flex-wrap:wrap;min-width:0}.wrap .card{min-width:0;max-width:100%}.wrap .filtros input,.wrap .filtros select{max-width:100%}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}.grid2>*{min-width:0}
+.dist .lin{cursor:pointer}.dist .lin:hover{background:#1c1846}.barra{height:6px;background:#221e4f;border-radius:4px;overflow:hidden;margin-top:3px}.barra i{display:block;height:100%;background:#FF0082}
+.ped{display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid #221e4f;cursor:pointer}.ped:hover{background:#1c1846}.ped .x{flex:1;min-width:0}.ped .x b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ped .x span{color:var(--muted);font-size:12px}.tagp{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;margin-left:4px;background:#2a2660;color:#cfcaff}
+.tagp.ok{background:#0f3a28;color:#3ce88a}.tagp.al{background:#3d1020;color:#ff8aa3}.tagp.am{background:#3a2e08;color:#ffd23f}
+.abas{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.abas span{padding:6px 12px;border-radius:999px;border:1px solid #3a3480;cursor:pointer;font-size:13px}.abas span.on{background:#FF0082;border-color:#FF0082;color:#fff}
+.edtab input{background:#0f0c29;color:#fff;border:1px solid #3a3480;border-radius:6px;padding:6px;width:100%}
+
+/* topo: o status do histórico quebra linha no celular em vez de esticar a página */
+.top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap input,.wrap select{min-width:0;max-width:100%}.wrap .card{overflow-wrap:anywhere}
+#video{width:100%;max-height:340px;background:#000;border-radius:12px;object-fit:cover}
+.itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
+.wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
+.mv{padding:9px 0;border-bottom:1px solid #221e4f}.mv .t{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mv b.n{cursor:pointer;line-height:1.25}.qtd{font-weight:900;font-size:18px;white-space:nowrap}.qtd.mais{color:#3ce88a}.qtd.menos{color:#ff8aa3}.qtd.zero{color:#aaa}
+.tp{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:800;margin-right:6px;border:1px solid #37327a;background:#0f0d24}
+.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.g4{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px}.kpi{background:#0f0d24;border:1px solid #37327a;border-radius:12px;padding:10px 12px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:11px;color:#a9a4d6;text-transform:uppercase;letter-spacing:.3px}.kpi .s{font-size:12px;color:#cfcaf5;margin-top:2px}
+.gr{display:block;border:1px solid #2b2760;border-radius:12px;padding:9px 12px;margin:6px 0;background:#120f2c;cursor:pointer}.gr.on{border-color:#ff1a8c;background:#1b1442}.gr .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.gr .t b:last-child{white-space:nowrap}.gr .bar{height:5px;border-radius:4px;background:#241f55;margin-top:6px;overflow:hidden}.gr .bar i{display:block;height:100%;background:linear-gradient(90deg,#ff1a8c,#ff7ac3)}
+.mes{display:flex;align-items:center;justify-content:space-between;gap:8px}.mes b{font-size:18px}
+.fx{background:#120f2c;border:1px solid #2b2760;border-radius:12px;padding:10px 12px;margin:8px 0}.fx .nm{font-weight:900}.fx .cmp{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:#cfcaf5;margin:4px 0}.fx .cmp b{color:#fff}
+.ls{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #221e4f;cursor:pointer}.ls .d{font-weight:800;line-height:1.25}.ls .m{font-size:12px;color:#a9a4d6}.ls .v{text-align:right;white-space:nowrap;font-weight:900}
+.bd{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:4px}.bd.paga{background:#11352a;color:#6be3a8}.bd.aberta{background:#24205a;color:#cfcaf5}.bd.vencida{background:#4a1230;color:#ff8aa3}.bd.vence{background:#3a2e08;color:#ffd23f}
+.fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:460px}
+.modal2 label{display:block;margin-top:8px}.modal2 label .ic{display:block;margin-bottom:2px;white-space:normal}.modal2 input,.modal2 select,.modal2 textarea{width:100%}.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.dt{display:flex;gap:6px;align-items:center}.dt label.btn{position:relative;overflow:hidden;cursor:pointer;padding:8px 11px;margin:0}.dt label.btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}.tb{position:static;background:#12102e;border:1px solid #2b2760;border-radius:12px;padding:10px;margin:8px 0}
+.tb input,.tb select{width:100%}.tb .l{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.tb .l>*{flex:1 1 130px}
+.chp{display:inline-block;padding:5px 10px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:12.5px;white-space:nowrap;flex:0 0 auto!important}.chp.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.gh{display:flex;align-items:center;gap:8px;background:#1b1442;border:1px solid #37327a;border-radius:10px;padding:9px 10px;margin:10px 0 0;cursor:pointer}
+.gh b{flex:1;min-width:0}.gh .seta{transition:transform .15s}.gh.aberta .seta{transform:rotate(90deg)}
+.rw{display:grid;grid-template-columns:22px 1fr;gap:4px 8px;padding:9px 6px;border-bottom:1px solid #221e4f}.rw.alt{background:#2a2406}
+@media(min-width:760px){.tb{position:sticky;top:48px;z-index:60}}
+.rw .nm{font-weight:800;line-height:1.25;word-break:break-word}.rw .sub{font-size:11.5px;color:#a9a4d6}
+.vals{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}@media(min-width:760px){.vals{grid-template-columns:repeat(4,1fr)}}
+.cel{background:#0f0d24;border:1px solid #2b2760;border-radius:9px;padding:6px 8px}.cel .t{font-size:10.5px;letter-spacing:.3px;text-transform:uppercase;color:#8f89c9}
+.cel input{width:100%;background:transparent;border:0;border-bottom:1px dashed #514c96;color:#fff;font-size:16px;font-weight:800;padding:2px 0;border-radius:0}.cel input:focus{outline:0;border-bottom-color:#ff1a8c}
+.cel .v{font-size:16px;font-weight:800;color:#fff}.pc{display:inline-block;border-radius:999px;padding:0 7px;font-size:11.5px;font-weight:900;margin-top:2px}.pc.ok{background:#11352a;color:#6be3a8}.pc.med{background:#3a2e08;color:#ffd23f}.pc.bad{background:#4a1230;color:#ff8aa3}.pc.nd{background:#241f55;color:#9a95c9}
+.mini{display:flex;gap:6px;align-items:center;margin-top:2px}.mini input{width:54px!important;font-size:14px!important}
+.cat select{width:100%;font-size:12.5px;padding:4px 6px}.ok1{color:#3ce88a;font-size:12px;opacity:0;transition:opacity .3s}.ok1.on{opacity:1}
+.barra{position:fixed;left:0;right:0;bottom:0;z-index:200;background:#1b1442;border-top:2px solid #FF0082;padding:9px 12px;display:none}.barra.on{display:block}
+.fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:520px}
+.modal2 input,.modal2 select{width:100%}</style>
+<script src="/nav.js"></script>
+<script src="/ficha-pedido.js"></script>
+<style>
+  body.b13nav-open{ overflow:hidden }
+  @media(min-width:900px){
+    #b13nav{transform:translateX(0%) !important}
+    #b13navOverlay{display:none !important}
+    button[onclick="b13ToggleNav()"]{display:none !important}
+    body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
+  }
+</style>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/tabela-varejo")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/tabela-varejo"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">📊 Tabela de Varejo</div><div class="sp"></div></div>
+<div class="wrap" id="topo">
+  <div class="tb" id="tb">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">📊 Tabela de Varejo e análise de preços</b><span class="ic" id="resumo"></span></div>
+    <input id="busca" placeholder="🔎 produto ou código" autocomplete="off" enterkeyhint="search" oninput="buscar()" style="margin-top:6px">
+    <div class="l"><select id="ir" onchange="irCat(this.value)"><option value="">Ir para a categoria…</option></select><select id="ord" onchange="ORD=this.value;render()"><option value="nome">Ordem: nome</option><option value="margem">Menor margem primeiro</option><option value="margemmaior">Maior margem primeiro</option><option value="varejo">Maior preço de varejo</option><option value="estoque">Maior estoque</option></select><select id="met" onchange="MET=this.value;render()"><option value="margem">% = margem (lucro ÷ preço)</option><option value="markup">% = markup (lucro ÷ custo)</option></select></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px" id="chips"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirCategorias()">⚙️ Categorias</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="importarAtacado()">📥 Categorias do atacado</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirTodas(true)">Abrir todas</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirTodas(false)">Fechar todas</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="baixarCsv()">⬇️ CSV</button></div>
+    <div id="msg" class="ic" style="white-space:normal;margin-top:6px"></div>
+  </div>
+  <div id="lista"><div class="ic" style="padding:14px">Carregando os produtos…</div></div>
+  <div style="height:150px"></div>
+</div>
+<div class="barra" id="barSel"></div>
+<div class="barra" id="barAlt"></div>
+<div class="fundo2" id="mdl"><div class="modal2" id="mdlCorpo"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const brl = n => n == null ? "—" : Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num2 = n => n == null ? "" : Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const numBR = t => { t = String(t == null ? "" : t).trim(); if (!t) return null; const n = t.includes(",") ? Number(t.replace(/\./g, "").replace(",", ".")) : /^\d{1,3}(\.\d{3})+$/.test(t) ? Number(t.replace(/\./g, "")) : Number(t); return isFinite(n) ? n : NaN; };
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+let D = null, FILTRO = "todos", BUSCA = "", ORD = "nome", MET = "margem", EST = new Map(), FORCA = null, SEL = new Set(), MAIS = {}, _tb = null;
+const LIM = 60;
+// ---------- cálculos ----------
+const pct = (p, c) => !(p > 0) || !(c > 0) ? null : MET === "markup" ? (p - c) / c * 100 : (p - c) / p * 100;
+const fmtPct = v => v == null ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%";
+const cls = v => v == null ? "nd" : v < 10 ? "bad" : v < 20 ? "med" : "ok";
+const badge = (p, c) => { const v = pct(p, c); return `<span class="pc ${cls(MET === "markup" ? (v == null ? null : v / (1 + v / 100)) : v)}">${fmtPct(v)}</span>`; };
+const precoVar = i => i.precoNovo || i.precoVarejo, qtdEf = i => i.qtdFardo || i.caixaQtd || null, fardoEf = i => i.precoFardo || i.precoFardoAtacado || null;
+const fardoUn = i => { const q = qtdEf(i), f = fardoEf(i); return q && f ? f / q : null; };
+const margemVar = i => { const v = pct(precoVar(i), i.custo); return v; };
+// ---------- dados ----------
+async function carregar() { const { ok, j } = await api("/api/tabela-varejo"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; prepararFiltros(); render(); }
+function prepararFiltros() { const ir = document.getElementById("ir"); ir.innerHTML = '<option value="">Ir para a categoria…</option><option value="__sem">Sem categoria</option>' + D.categorias.map(c => `<option value="${esc(c.id)}">${esc(c.nome)} (${c.qtd})</option>`).join(""); }
+const nomeCat = id => id ? ((D.categorias.find(c => c.id === id) || {}).nome || "") : "Sem categoria";
+function filtrados() { const q = BUSCA.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""), toks = q.split(/\s+/).filter(Boolean);
+  let L = D.itens.filter(i => { if (toks.length) { const t = (i.nome + " " + i.codigo).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (!toks.every(x => t.includes(x))) return false; }
+    if (FILTRO === "sem") return !i.categoriaId; if (FILTRO === "baixa") { const m = margemVar(i); return m != null && (MET === "markup" ? m < 18 : m < 15); } if (FILTRO === "alt") return i.precoNovo && i.precoNovo !== i.precoVarejo;
+    if (FILTRO === "semcusto") return !i.custo; if (FILTRO === "semfardo") return !fardoEf(i); if (FILTRO === "estoque") return i.estoque > 0; return true; });
+  const ordF = { nome: (a, b) => a.nome.localeCompare(b.nome), margem: (a, b) => (margemVar(a) ?? 1e9) - (margemVar(b) ?? 1e9), margemmaior: (a, b) => (margemVar(b) ?? -1e9) - (margemVar(a) ?? -1e9), varejo: (a, b) => (precoVar(b) || 0) - (precoVar(a) || 0), estoque: (a, b) => b.estoque - a.estoque }[ORD];
+  return L.sort(ordF); }
+// ---------- desenho ----------
+function celulas(i) { const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !== i.precoVarejo, q = qtdEf(i), fe = fardoEf(i), fu = fardoUn(i);
+  return `<div class="vals">
+    <div class="cel"><div class="t">Custo</div><div class="v" id="c-${i.id}">${i.custo ? brl(i.custo) : '<span style="color:#ffd23f;font-size:13px">sem custo</span>'}</div></div>
+    <div class="cel"><div class="t">Varejo ${alt ? '<span style="color:#ffd23f">· rascunho</span>' : ""}</div><input id="v-${i.id}" inputmode="decimal" enterkeyhint="done" value="${pv ? num2(pv) : ""}" placeholder="0,00" oninput="digitando('${i.id}','v')" onchange="salvar('${i.id}','v')" onkeydown="if(event.key==='Enter')this.blur()"><div id="pv-${i.id}">${badge(pv, i.custo)}${alt ? ` <span class="sub">Bling ${brl(i.precoVarejo)}</span>` : ""}</div></div>
+    <div class="cel"><div class="t">Atacado</div><div class="v">${i.precoAtacado ? brl(i.precoAtacado) : '<span style="color:#6f6aa8">—</span>'}</div><div>${i.precoAtacado ? badge(i.precoAtacado, i.custo) : ""}</div></div>
+    <div class="cel"><div class="t">Fardo ${i.precoFardo ? "" : (i.precoFardoAtacado ? '<span class="sub">(do atacado)</span>' : "")}</div><input id="f-${i.id}" inputmode="decimal" enterkeyhint="done" value="${i.precoFardo ? num2(i.precoFardo) : ""}" placeholder="${i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00"}" oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="if(event.key==='Enter')this.blur()">
+      <div class="mini"><input id="q-${i.id}" inputmode="numeric" enterkeyhint="done" value="${i.qtdFardo || ""}" placeholder="${i.caixaQtd || "un"}" oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="if(event.key==='Enter')this.blur()"><span class="sub">un</span><span id="fu-${i.id}" class="sub">${fu ? brl(fu) + "/un" : ""}</span></div><div id="pf-${i.id}">${fu ? badge(fu, i.custo) : ""}</div></div>
+  </div>`; }
+function linha(i) { const alt = i.precoNovo && i.precoNovo !== i.precoVarejo;
+  return `<div class="rw ${alt ? "alt" : ""}" id="r-${i.id}"><div><input type="checkbox" ${SEL.has(i.id) ? "checked" : ""} onchange="marcar('${i.id}',this.checked)" style="width:18px;height:18px"></div>
+    <div><div class="nm">${esc(i.nome)}</div><div class="sub">${esc(i.codigo)}${i.codigo ? " · " : ""}estoque ${Number(i.estoque).toLocaleString("pt-BR")} <span class="ok1" id="ok-${i.id}">✓ salvo</span></div><div class="cat" style="margin-top:3px"><select onchange="mudarCat('${i.id}',this.value)"><option value="">Sem categoria</option>${D.categorias.map(c => `<option value="${esc(c.id)}" ${c.id === i.categoriaId ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}<option value="__nova">➕ Nova categoria…</option></select></div></div>
+    ${celulas(i)}</div>`; }
+function render() { if (!D) return; const L = filtrados(), grupos = new Map(); L.forEach(i => { const k = i.categoriaId || ""; (grupos.get(k) || grupos.set(k, []).get(k)).push(i); });
+  const ordem = [...(grupos.has("") ? [{ id: "", nome: "Sem categoria" }] : []), ...D.categorias.filter(c => grupos.has(c.id))], buscando = BUSCA.trim().length > 0; window._padrao = FORCA !== null ? FORCA : (buscando || L.length <= 250); const aberta = id => EST.has(id) ? EST.get(id) : window._padrao;
+  const nAlt = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length, nSem = D.itens.filter(i => !i.categoriaId).length;
+  document.getElementById("resumo").textContent = `${D.itens.length} produtos · ${L.length} na lista${nSem ? " · " + nSem + " sem categoria" : ""}`;
+  const chip = (k, t) => `<span class="chp ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';render()">${t}</span>`;
+  document.getElementById("chips").innerHTML = chip("todos", "Todos") + chip("sem", `Sem categoria (${nSem})`) + chip("baixa", "Margem baixa") + chip("alt", `Com alteração (${nAlt})`) + chip("semcusto", "Sem custo") + chip("semfardo", "Sem fardo") + chip("estoque", "Com estoque");
+  document.getElementById("lista").innerHTML = ordem.length ? ordem.map(c => { const itens = grupos.get(c.id), isOpen = aberta(c.id), ms = itens.map(margemVar).filter(v => v != null), med = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null, lim = MAIS[c.id] || LIM;
+    return `<div><div class="gh ${isOpen ? "aberta" : ""}" onclick="alternar('${c.id}')"><span class="seta">▶</span><b>${esc(c.nome)} <span class="ic">(${itens.length})</span></b><span class="ic">média</span><span class="pc ${cls(med)}">${fmtPct(med)}</span><label onclick="event.stopPropagation()" class="ic" style="display:flex;gap:4px;align-items:center"><input type="checkbox" style="width:16px;height:16px" ${itens.every(i => SEL.has(i.id)) ? "checked" : ""} onchange="marcarGrupo('${c.id}',this.checked)">todos</label></div>
+      ${isOpen ? itens.slice(0, lim).map(linha).join("") + (itens.length > lim ? `<div style="text-align:center;padding:10px"><button class="btn btn-ghost" onclick="MAIS['${c.id}']=${lim + LIM};render()">Mostrar mais ${Math.min(LIM, itens.length - lim)} (faltam ${itens.length - lim})</button></div>` : "") : ""}</div>`; }).join("") : '<div class="ic" style="padding:14px">Nenhum produto neste filtro.</div>';
+  barras(); }
+function alternar(id) { const atual = EST.has(id) ? EST.get(id) : window._padrao; EST.set(id, !atual); render(); }
+function abrirTodas(sim) { EST.clear(); FORCA = sim; render(); }
+function irCat(id) { if (!id) return; const k = id === "__sem" ? "" : id; EST.set(k, true); FILTRO = "todos"; render(); const el = [...document.querySelectorAll(".gh")].find(g => g.getAttribute("onclick") === `alternar('${k}')`); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("ir").value = ""; }
+function buscar() { clearTimeout(_tb); _tb = setTimeout(() => { BUSCA = document.getElementById("busca").value; MAIS = {}; EST.clear(); FORCA = null; render(); }, 250); }
+// ---------- edição ----------
+function digitando(id, k) { const i = D.itens.find(x => x.id === id); if (!i) return; const g = x => numBR(document.getElementById(x + "-" + id).value);
+  if (k === "v") { const v = g("v"); document.getElementById("pv-" + id).innerHTML = badge(v > 0 ? v : null, i.custo) + (v > 0 && v !== i.precoVarejo ? ` <span class="sub">Bling ${brl(i.precoVarejo)}</span>` : ""); }
+  else { const f = g("f") > 0 ? g("f") : (i.precoFardoAtacado || null), q = g("q") > 0 ? g("q") : (i.caixaQtd || null), fu = f && q ? f / q : null; document.getElementById("fu-" + id).textContent = fu ? brl(fu) + "/un" : ""; document.getElementById("pf-" + id).innerHTML = fu ? badge(fu, i.custo) : ""; } }
+async function salvar(id, k) { const i = D.itens.find(x => x.id === id); if (!i) return; const el = document.getElementById(k + "-" + id), bruto = el.value.trim(), v = numBR(bruto);
+  if (bruto && (isNaN(v) || v <= 0)) { avisar("Valor inválido. Use números, por exemplo 9,50."); el.value = k === "v" ? num2(precoVar(i)) : k === "f" ? (i.precoFardo ? num2(i.precoFardo) : "") : (i.qtdFardo || ""); digitando(id, k); return; }
+  const corpo = k === "v" ? { precoNovo: bruto ? v : "" } : k === "f" ? { precoFardo: bruto ? v : "" } : { qtdFardo: bruto ? Math.round(v) : "" };
+  const { ok, j } = await api("/api/tabela-varejo/item/" + id, { method: "PUT", body: JSON.stringify(corpo) }); if (!ok) { avisar(j.erro || "Não consegui salvar."); return; }
+  Object.assign(i, j.item); atualizarLinha(i); piscaOk(id); barras(); }
+function atualizarLinha(i) { const r = document.getElementById("r-" + i.id); if (!r) return; const alt = i.precoNovo && i.precoNovo !== i.precoVarejo; r.classList.toggle("alt", !!alt); const v = r.querySelector(".vals"); const foco = document.activeElement && document.activeElement.id; const tmp = document.createElement("div"); tmp.innerHTML = celulas(i); v.replaceWith(tmp.firstElementChild); if (foco) { const e = document.getElementById(foco); if (e) e.blur && 0; } }
+const piscaOk = id => { const e = document.getElementById("ok-" + id); if (!e) return; e.classList.add("on"); setTimeout(() => e.classList.remove("on"), 1800); };
+async function mudarCat(id, v) { if (v === "__nova") { novaCategoria(id); render(); return; } const { ok, j } = await api("/api/tabela-varejo/item/" + id, { method: "PUT", body: JSON.stringify({ categoriaId: v }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); render(); return; }
+  const i = D.itens.find(x => x.id === id); Object.assign(i, j.item); await recarregarCategorias(); render(); }
+async function recarregarCategorias() { const { ok, j } = await api("/api/tabela-varejo"); if (ok) { D.categorias = j.categorias; prepararFiltros(); } }
+// ---------- seleção em lote ----------
+function marcar(id, sim) { if (sim) SEL.add(id); else SEL.delete(id); barras(); }
+function marcarGrupo(cid, sim) { filtrados().filter(i => (i.categoriaId || "") === cid).forEach(i => { if (sim) SEL.add(i.id); else SEL.delete(i.id); }); render(); }
+function barras() { const bs = document.getElementById("barSel"), ba = document.getElementById("barAlt"), nAlt = D ? D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length : 0;
+  bs.classList.toggle("on", SEL.size > 0); bs.style.bottom = nAlt ? "58px" : "0";
+  if (SEL.size) bs.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>${SEL.size} selecionado(s)</b><select id="lote" style="flex:1;min-width:150px"><option value="">Mover para…</option><option value="__sem">Sem categoria</option>${D.categorias.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join("")}<option value="__nova">➕ Nova categoria…</option></select><button class="btn btn-mag" style="padding:7px 14px" onclick="moverLote()">Mover</button><button class="btn btn-ghost" style="padding:7px 12px" onclick="SEL.clear();render()">✕</button></div>`;
+  ba.classList.toggle("on", nAlt > 0); if (nAlt) ba.innerHTML = `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>✏️ <b>${nAlt}</b> preço(s) de varejo alterado(s), ainda <b>só aqui</b></span><span style="display:flex;gap:6px"><button class="btn btn-mag" style="padding:7px 12px" onclick="abrirAplicar()">Aplicar no Bling</button><button class="btn btn-ghost" style="padding:7px 12px" onclick="descartar()">Descartar</button></span></div>`; }
+async function moverLote() { const v = document.getElementById("lote").value; if (!v) { avisar("Escolha a categoria de destino."); return; } if (v === "__nova") { novaCategoria(null, true); return; }
+  const { ok, j } = await api("/api/tabela-varejo/lote", { method: "POST", body: JSON.stringify({ ids: [...SEL], categoriaId: v === "__sem" ? "" : v }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); return; }
+  D.itens.forEach(i => { if (SEL.has(i.id)) i.categoriaId = v === "__sem" ? "" : v; }); SEL.clear(); await recarregarCategorias(); render(); avisar(j.movidos + " produto(s) movido(s).", true); }
+// ---------- avisos e janelas ----------
+function avisar(msg, ok) { const el = document.getElementById("msg"); el.innerHTML = `<span style="color:${ok ? "#3ce88a" : "#ff8aa3"}">${esc(msg)}</span>`; clearTimeout(avisar._t); avisar._t = setTimeout(() => { el.innerHTML = ""; }, 7000); }
+const janela = h => { document.getElementById("mdlCorpo").innerHTML = h; document.getElementById("mdl").classList.add("aberto"); };
+const fechar = () => document.getElementById("mdl").classList.remove("aberto");
+document.getElementById("mdl").addEventListener("click", e => { if (e.target.id === "mdl") fechar(); });
+function novaCategoria(paraItem, lote) { janela(`<h3 style="margin:0 0 6px">➕ Nova categoria</h3><input id="ncNome" placeholder="ex.: Cervejas, Refrigerantes, Águas…" autocomplete="off" onkeydown="if(event.key==='Enter')criarCat()"><div id="ncMsg" style="margin-top:6px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar();render()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="criarCat()">Criar</button></div>`); window._ncItem = paraItem || null; window._ncLote = !!lote; setTimeout(() => document.getElementById("ncNome").focus(), 50); }
+async function criarCat() { const nome = document.getElementById("ncNome").value.trim(), msg = document.getElementById("ncMsg"); if (!nome) { msg.innerHTML = '<div class="err">Informe o nome.</div>'; return; }
+  const { ok, j } = await api("/api/tabela-varejo/categorias", { method: "POST", body: JSON.stringify({ nome }) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui criar.")}</div>`; return; }
+  D.categorias.push({ ...j.categoria, qtd: 0 }); prepararFiltros();
+  if (window._ncItem) await mudarCat(window._ncItem, j.categoria.id); else if (window._ncLote) { document.getElementById("lote") && (document.getElementById("lote").value = j.categoria.id); fechar(); await moverLote(); return; }
+  fechar(); render(); }
+function abrirCategorias() { const L = D.categorias;
+  janela(`<h3 style="margin:0 0 6px">⚙️ Categorias</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Renomeie, mude a ordem ou apague. Apagar uma categoria devolve os produtos dela para "Sem categoria".</div>
+    ${L.map((c, k) => `<div style="display:flex;gap:6px;align-items:center;margin:5px 0"><input id="rn-${c.id}" value="${esc(c.nome)}" onchange="renomear('${c.id}',this.value)" style="flex:1"><span class="ic">${c.qtd}</span><button class="btn btn-ghost" style="padding:5px 9px" ${k === 0 ? "disabled" : ""} onclick="moverCat('${c.id}','cima')">↑</button><button class="btn btn-ghost" style="padding:5px 9px" ${k === L.length - 1 ? "disabled" : ""} onclick="moverCat('${c.id}','baixo')">↓</button><button class="btn btn-ghost" style="padding:5px 9px" onclick="apagarCat('${c.id}')">🗑️</button></div>`).join("") || '<div class="ic">Nenhuma categoria ainda.</div>'}
+    <div style="display:flex;gap:6px;margin-top:10px"><input id="ncNome" placeholder="Nova categoria" onkeydown="if(event.key==='Enter')criarCatLista()"><button class="btn btn-mag" style="padding:7px 14px" onclick="criarCatLista()">Criar</button></div><div id="ncMsg" style="margin-top:6px"></div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fechar();render()">Fechar</button>`); }
+async function criarCatLista() { const nome = document.getElementById("ncNome").value.trim(); if (!nome) return; const { ok, j } = await api("/api/tabela-varejo/categorias", { method: "POST", body: JSON.stringify({ nome }) }); if (!ok) { document.getElementById("ncMsg").innerHTML = `<div class="err">${esc(j.erro)}</div>`; return; } await recarregarCategorias(); abrirCategorias(); }
+async function renomear(id, nome) { const { ok, j } = await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ nome }) }); if (!ok) { avisar(j.erro || "Não consegui renomear."); } await recarregarCategorias(); abrirCategorias(); }
+async function moverCat(id, d) { await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ mover: d }) }); await recarregarCategorias(); abrirCategorias(); }
+async function apagarCat(id) { const c = D.categorias.find(x => x.id === id); janela(`<h3 style="margin:0 0 6px">🗑️ Apagar "${esc(c.nome)}"?</h3><div class="ic" style="white-space:normal">Os ${c.qtd} produto(s) dela voltam para "Sem categoria". Os preços não mudam.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="abrirCategorias()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="apagarCat2('${id}')">Apagar</button></div>`); }
+async function apagarCat2(id) { await api("/api/tabela-varejo/categorias/" + id, { method: "DELETE" }); const r = await api("/api/tabela-varejo"); if (r.ok) { D = r.j; prepararFiltros(); } abrirCategorias(); }
+async function importarAtacado() { const { ok, j } = await api("/api/tabela-varejo/importar-categorias-atacado", { method: "POST", body: "{}" }); if (!ok) { avisar(j.erro || "Não consegui importar."); return; } await carregar(); avisar(j.colocados ? `${j.colocados} produto(s) colocados em categorias (${j.criadas} categoria(s) nova(s)), usando a tabela de atacado.` : "Nenhum produto sem categoria combina com a tabela de atacado.", !!j.colocados); }
+// ---------- aplicar no Bling ----------
+function abrirAplicar() { const L = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo);
+  janela(`<h3 style="margin:0 0 4px">Aplicar no Bling</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Estes preços de varejo vão substituir os do Bling. Leia o QR do dia (gerente, financeiro ou admin).</div>
+    <div style="max-height:44vh;overflow:auto">${L.map(i => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #221e4f"><span style="min-width:0"><b>${esc(i.nome)}</b><br><span class="ic">${brl(i.precoVarejo)} → <b style="color:#fff">${brl(i.precoNovo)}</b></span></span><span style="text-align:right;white-space:nowrap" class="ic">margem<br>${fmtPct(pct(i.precoVarejo, i.custo))} → <b style="color:#fff">${fmtPct(pct(i.precoNovo, i.custo))}</b></span></div>`).join("")}</div>
+    <input id="qr" type="password" placeholder="QR de autorização do dia" style="margin-top:8px" onkeydown="if(event.key==='Enter')aplicar()"><div id="apMsg" style="margin-top:8px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="aplicar()">Aplicar ${L.length}</button></div>`); setTimeout(() => document.getElementById("qr").focus(), 60); }
+async function aplicar() { const qr = document.getElementById("qr").value.trim(), msg = document.getElementById("apMsg"); if (!qr) { msg.innerHTML = '<div class="err">Leia o QR de autorização.</div>'; return; }
+  let ids = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).map(i => i.id), feitos = 0, falhas = [];
+  while (ids.length) { const lote = ids.splice(0, 20); msg.innerHTML = `<div class="ic">⏳ Enviando ao Bling… ${feitos + falhas.length} de ${feitos + falhas.length + lote.length + ids.length}</div>`;
+    const { ok, j } = await api("/api/tabela-varejo/aplicar-bling", { method: "POST", body: JSON.stringify({ ids: lote, tokenQr: qr }) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui aplicar.")}</div>`; return; }
+    (j.resultados || []).forEach(r => { if (r.ok) feitos++; else falhas.push(r); }); }
+  await carregar(); msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ ${feitos} preço(s) aplicado(s) no Bling.</div>${falhas.length ? `<div class="err" style="white-space:normal">${falhas.length} não passaram: ${falhas.map(f => esc(f.erro)).join("; ")}</div>` : ""}`; setTimeout(() => { if (!falhas.length) fechar(); }, 1400); }
+async function descartar() { janela(`<h3 style="margin:0 0 6px">Descartar rascunhos?</h3><div class="ic" style="white-space:normal">Os preços de varejo alterados aqui voltam para os do Bling. Nada foi enviado ao Bling.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="descartar2()">Descartar</button></div>`); }
+async function descartar2() { await api("/api/tabela-varejo/descartar-rascunhos", { method: "POST", body: "{}" }); fechar(); await carregar(); }
+function baixarCsv() { fetch(B + "/api/tabela-varejo.csv", { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "tabela_varejo.csv"; a.click(); }); }
+carregar();
+</script>
+</body>
+</html>
