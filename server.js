@@ -1278,6 +1278,7 @@ window.B13_NAV_LINKS=[
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/taxas-cartao",label:"💳 Taxas de Cartão",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",oculto:true,href:"/caixa",label:"💳 Caixa",acoes:["acesso_caixa","receber_pagamento"]},
@@ -11079,28 +11080,29 @@ app.post("/api/margem-bruta/custo/:id",requireAcesso("acesso_margem_bruta"),asyn
 app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
   try{ const q=req.query, ag=["pedido","dia","semana","mes","produto"].includes(q.agrupar)?q.agrupar:"mes", P=lerProdutosBling().porId, PROD={};
     // BUSCA: cliente, vendedora, nº do pedido OU produto (nome ou código). Várias palavras: todas precisam aparecer. Se a busca é de produto, só os itens daquele produto entram nas contas.
-    const r=_filtrarPedidos({...q,busca:""}), G={}, CLI={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}}, SI={qtd:0,total:0,hoje:0,lista:[]};
+    const r=_filtrarPedidos({...q,busca:""}), G={}, CLI={}, T={fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,itensSemCusto:{}}, SI={qtd:0,total:0,hoje:0,lista:[]}; T.taxa=0; T.taxaCusto=0; T.varejoPedidos=0; T.txSemPagamento=0; T.txSemTaxa=0; const cfgTX=lerTaxasCartao(), DETX=lerDetPedidos();
     const nrmB=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), toks=nrmB(q.busca||"").split(/\s+/).filter(Boolean), dgB=String(q.busca||"").replace(/\D/g,"");
     const tokOk=txt=>toks.every(t=>txt.includes(t)), casaPed=p=>tokOk(nrmB(p.cliente)+" "+nrmB(p.vendedor))||(dgB.length>=3&&(String(p.numero).includes(dgB)||String(p.id)===dgB)),
       casaItem=i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null; return tokOk(nrmB(i.nome)+" "+nrmB(pr&&pr.n)+" "+nrmB(pr&&pr.c)); };
     const chave=p=>{ const d=p.dia||_diaBRk(p.em||Date.now()); if(ag==="dia") return d; if(ag==="mes") return d.slice(0,7);
       if(ag==="semana"){ const dt=new Date(d+"T12:00:00Z"), w=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-w); return "semana de "+dt.toISOString().slice(0,10); } return String(p.id); };
-    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){}
+    r.L.forEach(p=>{ let it=[]; try{ it=_itensDoPedido(p.id)||[]; }catch(e){} const somaOrd=it.reduce((a,i2)=>a+(Number(i2.valor)||0)*(Number(i2.quantidade)||0),0);
       // pedido do período que ainda está SEM os itens (o detalhe vem do Bling depois do aviso): não entra na conta, mas é contado para a tela avisar
       if(!it.length&&(!toks.length||casaPed(p))){ SI.qtd++; SI.total+=Number(p.total)||0; if(p.data===_diaBRk(Date.now())) SI.hoje++; if(SI.lista.length<8) SI.lista.push({numero:p.numero,dia:p.data,total:_round2(Number(p.total)||0),cliente:p.cliente||""}); }
       if(toks.length&&!casaPed(p)) it=it.filter(casaItem); if(!it.length) return; T.pedidos++;
+      const varejoTx=_ehVarejoTx(p), feeP=varejoTx?_taxasDoPedidoTx(p.id,cfgTX,DETX):null; if(varejoTx){ T.varejoPedidos++; if(feeP.semPagamento) T.txSemPagamento++; else if(feeP.semTaxa) T.txSemTaxa++; }
       const nmCli=p.cliente||((p.clienteId&&lerClientesBase().porId[String(p.clienteId)]||{}).nome)||"", cliK=nmCli?"N:"+nrmB(nmCli).replace(/\s+/g," ").trim():(p.clienteId?"I:"+p.clienteId:"N:"), cli=(CLI[cliK]||={clienteId:p.clienteId||null,nome:nmCli,prod:{}}); // mesmo nome = mesmo cliente (os pedidos podem trazer contatos repetidos no Bling)
-      const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0}); g.pedidos++;
-      it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null;
+      const k=chave(p), g=(G[k]||={chave:k,rotulo:ag==="pedido"?`#${p.numero||p.id} · ${p.cliente||""}`:k,dia:p.dia,pedidoId:ag==="pedido"?p.id:null,fatCusto:0,custo:0,fatSemCusto:0,pedidos:0,taxa:0,taxaCusto:0}); g.pedidos++;
+      it.forEach(i=>{ const pr=i.produtoId?P[String(i.produtoId)]:null, v=(Number(i.valor)||0)*(Number(i.quantidade)||0), c=pr&&pr.pc>0?pr.pc*(Number(i.quantidade)||0):null, tx=feeP&&!feeP.semPagamento&&somaOrd>0?feeP.total*v/somaOrd:0;
         { const cpk=String(i.produtoId||i.nome||"?"), cp=(cli.prod[cpk]||={fat:0,custo:0,fatCusto:0,ped:new Set()}); cp.fat+=v; cp.ped.add(p.id); if(c!=null){ cp.custo+=c; cp.fatCusto+=v; } }
-        if(ag==="produto"){ const pk=String(i.produtoId||i.nome||"?"), x=(PROD[pk]||={produtoId:i.produtoId||null,nome:(pr&&pr.n)||i.nome||pk,qtd:0,fat:0,custo:0,custoUn:pr&&pr.pc>0?pr.pc:null,precoVenda:pr?pr.p:null,pedidos:new Set()});
-          x.qtd+=Number(i.quantidade)||0; x.fat+=v; if(c!=null) x.custo+=c; x.pedidos.add(p.id); }
-        if(c!=null){ g.fatCusto+=v; g.custo+=c; T.fatCusto+=v; T.custo+=c; } else { g.fatSemCusto+=v; T.fatSemCusto+=v; const nk=i.nome||String(i.produtoId||"?"); T.itensSemCusto[nk]=(T.itensSemCusto[nk]||0)+v; } }); });
+        if(ag==="produto"){ const pk=String(i.produtoId||i.nome||"?"), x=(PROD[pk]||={produtoId:i.produtoId||null,nome:(pr&&pr.n)||i.nome||pk,qtd:0,fat:0,custo:0,custoUn:pr&&pr.pc>0?pr.pc:null,precoVenda:pr?pr.p:null,pedidos:new Set(),taxa:0,taxaCusto:0});
+          x.qtd+=Number(i.quantidade)||0; x.fat+=v; if(c!=null){ x.custo+=c; x.taxaCusto+=tx; } x.taxa+=tx; x.pedidos.add(p.id); }
+        g.taxa+=tx; T.taxa+=tx; if(c!=null){ g.taxaCusto+=tx; T.taxaCusto+=tx; g.fatCusto+=v; g.custo+=c; T.fatCusto+=v; T.custo+=c; } else { g.fatSemCusto+=v; T.fatSemCusto+=v; const nk=i.nome||String(i.produtoId||"?"); T.itensSemCusto[nk]=(T.itensSemCusto[nk]||0)+v; } }); });
     // CLIENTES do filtro: só os itens que entraram nas contas (respeita busca e, por produto, "só com/sem custo" e "margem abaixo de")
     const nomeCli=c=>c.nome||((c.clienteId&&lerClientesBase().porId[String(c.clienteId)]||{}).nome)||"(sem cliente informado)";
     const montarClientes=permitidos=>Object.values(CLI).map(c=>{ let fat=0,fc=0,cu=0; const ped=new Set(); Object.entries(c.prod).forEach(([pk,x])=>{ if(permitidos&&!permitidos.has(pk)) return; fat+=x.fat; fc+=x.fatCusto; cu+=x.custo; x.ped.forEach(i=>ped.add(i)); });
       return ped.size?{clienteId:c.clienteId,nome:nomeCli(c),pedidos:ped.size,fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),lucro:_round2(fc-cu),margem:fc>0?+(((fc-cu)/fc)*100).toFixed(1):null}:null; }).filter(Boolean).sort((a,b)=>b.fat-a.fat);
-    const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null,markup:x.custo>0?+((x.fatCusto-x.custo)/x.custo*100).toFixed(1):null});
+    const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),taxa:_round2(x.taxa||0),lucroLiq:_round2(x.fatCusto-x.custo-(x.taxaCusto||0)),margemLiq:x.fatCusto>0?+((x.fatCusto-x.custo-(x.taxaCusto||0))/x.fatCusto*100).toFixed(1):null,lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null,markup:x.custo>0?+((x.fatCusto-x.custo)/x.custo*100).toFixed(1):null});
     // período que toca os últimos 3 dias: confere os pedidos do Bling (no máximo a cada 4 min), sem esperar aviso nem a madrugada
     const limRec=new Date(Date.now()-3*3600e3-3*_DIA).toISOString().slice(0,10); if(r.fim>=limRec&&!_recentes.rodando&&Date.now()-_recentes.em>4*60000) atualizarRecentesBling(3);
     const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em,
@@ -11108,21 +11110,21 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
-        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,markupUn:tem&&x.qtd>0?_round2((x.fat-x.custo)/x.qtd):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
+        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,markupUn:tem&&x.qtd>0?_round2((x.fat-x.custo)/x.qtd):null,taxa:_round2(x.taxa||0),margemLiq:tem&&x.fat>0?+(((x.fat-x.custo-(x.taxaCusto||0))/x.fat)*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
       const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
       if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
       if(mx!=null&&Number.isFinite(mx)) L=L.filter(x=>x.margem!=null&&x.margem<mx);
       const ord={menor_margem:(a,b)=>(a.margem??1e9)-(b.margem??1e9),maior_margem:(a,b)=>(b.margem??-1e9)-(a.margem??-1e9),menor_markup:(a,b)=>(a.markup??1e9)-(b.markup??1e9),maior_markup:(a,b)=>(b.markup??-1e9)-(a.markup??-1e9),maior_lucro:(a,b)=>(b.lucro??-1e12)-(a.lucro??-1e12),maior_fat:(a,b)=>b.fat-a.fat,maior_qtd:(a,b)=>b.qtd-a.qtd}[q.ordem]||((a,b)=>(a.margem??1e9)-(b.margem??1e9));
-      L.sort(ord); const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto});
+      L.sort(ord); const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto,taxa:T.taxa,taxaCusto:T.taxaCusto});
       // FATURAMENTO do que está listado (respeita busca, "só com/sem custo" e "margem abaixo de"): soma das linhas filtradas
       const uni=new Set(); L.forEach(x=>{ x._ped.forEach(i=>uni.add(i)); }); const fatL=_round2(L.reduce((a,x)=>a+x.fat,0)), fatSem=_round2(L.filter(x=>x.custoUn==null).reduce((a,x)=>a+x.fat,0));
       const clientes=montarClientes(new Set(L.map(x=>String(x.produtoId||x.nome||"?"))));
       const faturamento={total:fatL,comCusto:_round2(fatL-fatSem),semCusto:fatSem,pedidos:uni.size,qtd:+L.reduce((a,x)=>a+x.qtd,0).toFixed(2),linhas:L.length}; L.forEach(x=>{ delete x._ped; });
-      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,faturamento,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,totais:{...tot,pedidos:T.pedidos,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
+      return res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,faturamento,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,totais:{...tot,pedidos:T.pedidos,varejoPedidos:T.varejoPedidos,txSemPagamento:T.txSemPagamento,txSemTaxa:T.txSemTaxa,coberturaPct:T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null},produtos:L.slice(0,800),linhas:[],semCusto:[]});
     }
     const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto}), cob=T.fatCusto+T.fatSemCusto>0?+(T.fatCusto/(T.fatCusto+T.fatSemCusto)*100).toFixed(1):null;
     const clientes=montarClientes(null);
-    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,faturamento:{total:_round2(T.fatCusto+T.fatSemCusto),comCusto:_round2(T.fatCusto),semCusto:_round2(T.fatSemCusto),pedidos:T.pedidos,linhas:linhas.length},totais:{...tot,pedidos:T.pedidos,coberturaPct:cob},linhas:linhas.slice(0,1500),
+    res.json({ok:true,ini:r.ini,fim:r.fim,agrupar:ag,...EXTRA,clientes:clientes.slice(0,1500),clientesTotal:clientes.length,faturamento:{total:_round2(T.fatCusto+T.fatSemCusto),comCusto:_round2(T.fatCusto),semCusto:_round2(T.fatSemCusto),pedidos:T.pedidos,linhas:linhas.length},totais:{...tot,pedidos:T.pedidos,varejoPedidos:T.varejoPedidos,txSemPagamento:T.txSemPagamento,txSemTaxa:T.txSemTaxa,coberturaPct:cob},linhas:linhas.slice(0,1500),
       semCusto:Object.entries(T.itensSemCusto).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([nome,v])=>({nome,valor:_round2(v)}))});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -11269,6 +11271,57 @@ app.get("/api/tabela-varejo.csv",requireAcesso("acesso_tabela_varejo"),(req,res)
       linhas.push([q(nomeCat[i.categoriaId]||"(sem categoria)"),q(i.codigo),q(i.nome),n(i.estoque),n(i.custo),n(pv),mg(pv,i.custo),mk2(pv,i.custo),lu2(pv,i.custo),n(i.precoAtacado),mg(i.precoAtacado,i.custo),mk2(i.precoAtacado,i.custo),lu2(i.precoAtacado,i.custo),n(i.precoFardo),n(i.qtdFardo),n(un),mg(un,i.custo),mk2(un,i.custo),lu2(un,i.custo),q(i.grupoId?((TV.grupos||{})[i.grupoId]||{}).nome||"":"")].join(";")); });
     res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="tabela_varejo.csv"'); res.send("\ufeff"+linhas.join("\r\n"));
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== TAXAS DE CARTÃO E PIX (VAREJO) =====================
+// O varejo é feito no Bling (cliente "Consumidor Final"); a maquininha (Rede) desconta uma taxa por modalidade, bandeira e parcelas.
+// Aqui a taxa de cada venda é calculada a partir dos pagamentos que o Bling guarda no pedido, e o total do mês entra nos Custos (conta 4.3).
+const TAXAS_CARTAO_FILE=`${DATA_DIR}/taxas_cartao.json`;
+const _TX_PADRAO={pix:0.59,vm:{debito:0.69,credito:{"1":3.10,"2":4.42,"3":5.10}},elo:{debito:1.49,credito:{"1":3.90,"2":5.22,"3":5.90}}};
+function lerTaxasCartao(){ const d=lerJSON(TAXAS_CARTAO_FILE,null)||{}, m=(x,pad)=>({debito:x&&x.debito!==undefined?x.debito:pad.debito,credito:{...pad.credito,...((x&&x.credito)||{})}});
+  return {pix:d.pix!==undefined?d.pix:_TX_PADRAO.pix,vm:m(d.vm,_TX_PADRAO.vm),elo:m(d.elo,_TX_PADRAO.elo),shareElo:Number(d.shareElo)||0,bandeiraPadrao:d.bandeiraPadrao==="elo"?"elo":"vm",incluirNosCustos:d.incluirNosCustos!==false,formas:d.formas||{},atualizadoEm:d.atualizadoEm||null,por:d.por||""}; }
+function _classFormaTx(nome){ const n=_nrmP(nome); let tipo="outro"; if(/\bpix\b/.test(n)) tipo="pix"; else if(/debito/.test(n)) tipo="debito"; else if(/credito|cartao|parcelad|maquina/.test(n)) tipo="credito"; else if(/dinheiro|especie/.test(n)) tipo="dinheiro";
+  const bandeira=/\belo\b/.test(n)?"elo":(/visa|master/.test(n)?"vm":""), q=n.match(/(\d{1,2})\s*x\b/); return {tipo,bandeira,parcelas:q?Math.min(12,Number(q[1])):null}; }
+// % da taxa; null = modalidade/parcela sem taxa cadastrada
+function _pctTx(cfg,tipo,bandeira,parc){ if(tipo==="pix") return cfg.pix; if(tipo!=="debito"&&tipo!=="credito") return 0;
+  const get=b=>tipo==="debito"?cfg[b].debito:(cfg[b].credito||{})[String(Math.min(12,Math.max(1,parc||1)))], ok=v=>v!=null&&v!==""&&isFinite(v);
+  if(!bandeira&&cfg.shareElo>0){ const a=get("vm"), e=get("elo"); if(ok(a)&&ok(e)) return +(Number(a)*(1-cfg.shareElo/100)+Number(e)*cfg.shareElo/100).toFixed(4); return ok(a)?Number(a):(ok(e)?Number(e):null); }
+  const v=get(bandeira||cfg.bandeiraPadrao); return ok(v)?Number(v):null; }
+// Vendas do Caixa Atacado e da Frente de Caixa NÃO entram: nelas a taxa do cartão já é somada à própria venda. Olha também as sessões arquivadas (mais de 180 dias).
+let _cxIds={em:0,set:new Set()};
+function _idsPedidosDeCaixa(){ if(Date.now()-_cxIds.em<120000) return _cxIds.set; const set=new Set(); try{ (lerCaixaSessoesCompleto().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) set.add(String(m.pedidoId)); })); }catch(e){} _cxIds={em:Date.now(),set}; return set; }
+const _ehVarejoTx=r=>r.origem==="bling"&&!_idsPedidosDeCaixa().has(String(r.id))&&(!r.cliente||/^consumidor final/.test(_nrmP(r.cliente)));
+// taxa de UM pedido: agrupa os pagamentos por forma (parcelas do cartão = quantas vezes a forma aparece no pedido, ou o "3x" do nome)
+function _taxasDoPedidoTx(id,cfg,DET){ const dt=DET.porId[String(id)]; if(!dt||!Array.isArray(dt.pg)||!dt.pg.length) return {semPagamento:true,total:0,linhas:[],semTaxa:false};
+  const por={}; dt.pg.forEach(([fid,v])=>{ const k=String(fid), o=por[k]||(por[k]={fid:k,valor:0,n:0}); o.valor+=Number(v)||0; o.n++; });
+  const linhas=[]; let total=0, semTaxa=false;
+  Object.values(por).forEach(o=>{ const nome=DET.formas[o.fid]||"", auto=_classFormaTx(nome), mp=cfg.formas[o.fid], tipo=mp&&mp.tipo?mp.tipo:auto.tipo, bandeira=mp&&mp.tipo?(mp.bandeira||""):auto.bandeira, parc=tipo==="credito"?(auto.parcelas||o.n):null, pct=_pctTx(cfg,tipo,bandeira,parc), taxa=pct==null?0:_round2(o.valor*pct/100);
+    if(pct==null) semTaxa=true; total+=taxa; linhas.push({fid:o.fid,nome,tipo,bandeira,parcelas:parc,valor:_round2(o.valor),pct,taxa,semTaxa:pct==null}); });
+  return {semPagamento:false,total:_round2(total),linhas,semTaxa}; }
+function _resumoTaxasCartao(ini,fim){ const cfg=lerTaxasCartao(), DET=lerDetPedidos(), I=_indicePedidos(), R={ini,fim,pedidos:0,vendido:0,comPagamento:0,semPagamento:0,semTaxaPedidos:0,total:0,baseTaxada:0,porForma:{},porFid:{},idsSemPagamento:[]};
+  (I.lista||[]).forEach(r=>{ if(!_ehVarejoTx(r)||r.data<ini||r.data>fim||r.cancelado||r.situacaoId===SIT.CANCELADO) return; R.pedidos++; R.vendido+=Number(r.total)||0; const t=_taxasDoPedidoTx(r.id,cfg,DET);
+    if(t.semPagamento){ R.semPagamento++; if(R.idsSemPagamento.length<400) R.idsSemPagamento.push(String(r.id)); return; } R.comPagamento++; if(t.semTaxa) R.semTaxaPedidos++; R.total+=t.total;
+    t.linhas.forEach(l=>{ const k=`${l.tipo}|${l.bandeira}|${l.parcelas||""}`, o=R.porForma[k]||(R.porForma[k]={tipo:l.tipo,bandeira:l.bandeira,parcelas:l.parcelas,qtd:0,valor:0,taxa:0,pct:l.pct,semTaxa:l.semTaxa}); o.qtd++; o.valor+=l.valor; o.taxa+=l.taxa; if(l.tipo==="pix"||l.tipo==="debito"||l.tipo==="credito") R.baseTaxada+=l.valor;
+      const f=R.porFid[l.fid]||(R.porFid[l.fid]={fid:l.fid,nome:l.nome,tipo:l.tipo,bandeira:l.bandeira,pedidos:0,valor:0,mapeado:!!cfg.formas[l.fid]}); f.pedidos++; f.valor+=l.valor; }); });
+  R.vendido=_round2(R.vendido); R.total=_round2(R.total); R.baseTaxada=_round2(R.baseTaxada); Object.values(R.porForma).forEach(o=>{ o.valor=_round2(o.valor); o.taxa=_round2(o.taxa); }); Object.values(R.porFid).forEach(o=>{ o.valor=_round2(o.valor); });
+  R.pctMedio=R.baseTaxada>0?+(R.total/R.baseTaxada*100).toFixed(2):null; return R; }
+const _numTx=v=>{ if(v===""||v==null) return null; const n=_numBR(v); return isFinite(n)&&n>=0&&n<=30?+n.toFixed(4):NaN; };
+const _mesAtualTx=()=>_diaBRk(Date.now()).slice(0,7);
+app.get("/api/taxas-cartao",requireAcesso("acesso_custos"),(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_mesAtualTx(), R=_resumoTaxasCartao(mes+"-01",mes+"-31"), cfg=lerTaxasCartao();
+    const manual=(()=>{ try{ const C=_gerarRecorrentes(lerContasPagar()); return _round2(_lancamentosDoMes(C,mes,lerJSON(FUNC_FILE,{}),_diaBRk(Date.now())).filter(x=>x.cod==="4.3"&&!x.sintetico).reduce((a,x)=>a+x.valorMes,0)); }catch(e){ return 0; } })();
+    const formas=Object.values(R.porFid).map(f=>{ const a=_classFormaTx(f.nome); return {...f,sugestao:{tipo:a.tipo,bandeira:a.bandeira}}; }).sort((a,b)=>b.valor-a.valor);
+    res.json({ok:true,mes,resumo:R,config:cfg,formas,lancamentosManuais43:manual}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.put("/api/taxas-cartao/config",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, cfg=lerTaxasCartao(), novo={pix:cfg.pix,vm:JSON.parse(JSON.stringify(cfg.vm)),elo:JSON.parse(JSON.stringify(cfg.elo)),shareElo:cfg.shareElo,bandeiraPadrao:cfg.bandeiraPadrao,incluirNosCustos:cfg.incluirNosCustos,formas:{...cfg.formas}};
+    const bad=(rot)=>res.status(400).json({erro:`valor inválido em ${rot} (use um número entre 0 e 30, por exemplo 3,10)`});
+    if(b.pix!==undefined){ const v=_numTx(b.pix); if(Number.isNaN(v)) return bad("Pix"); novo.pix=v; }
+    for(const bd of ["vm","elo"]){ if(!b[bd]) continue; if(b[bd].debito!==undefined){ const v=_numTx(b[bd].debito); if(Number.isNaN(v)) return bad("débito"); novo[bd].debito=v; }
+      for(const [k,x] of Object.entries(b[bd].credito||{})){ if(!/^([1-9]|1[0-2])$/.test(k)) continue; const v=_numTx(x); if(Number.isNaN(v)) return bad(`crédito ${k}x`); novo[bd].credito[k]=v; } }
+    if(b.shareElo!==undefined){ const v=b.shareElo===""||b.shareElo==null?0:_numBR(b.shareElo); if(!isFinite(v)||v<0||v>100) return res.status(400).json({erro:"a parte em Elo deve ficar entre 0 e 100 (%)"}); novo.shareElo=+v.toFixed(2); }
+    if(b.bandeiraPadrao!==undefined) novo.bandeiraPadrao=b.bandeiraPadrao==="elo"?"elo":"vm"; if(b.incluirNosCustos!==undefined) novo.incluirNosCustos=!!b.incluirNosCustos;
+    if(b.formas&&typeof b.formas==="object"){ for(const [fid,m] of Object.entries(b.formas)){ if(!/^\d+$/.test(fid)) continue; if(!m||!m.tipo){ delete novo.formas[fid]; continue; } if(!["pix","debito","credito","dinheiro","outro"].includes(m.tipo)) continue; novo.formas[fid]={tipo:m.tipo,bandeira:m.bandeira==="elo"?"elo":(m.bandeira==="vm"?"vm":"")}; } }
+    novo.atualizadoEm=Date.now(); novo.por=req.sessao?.nome||""; salvarJSON(TAXAS_CARTAO_FILE,novo); try{ addLog("taxas-cartao","taxas_cartao_config",req.sessao?.funcionarioId||"",novo.por,{pix:novo.pix,shareElo:novo.shareElo,incluirNosCustos:novo.incluirNosCustos}); }catch(e){} res.json({ok:true,config:lerTaxasCartao()}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// busca no Bling os pagamentos dos pedidos do varejo do período que ainda não os têm (até 150 por vez)
+app.post("/api/taxas-cartao/completar",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, ini=/^\d{4}-\d{2}-\d{2}$/.test(String(b.ini||""))?b.ini:_mesAtualTx()+"-01", fim=/^\d{4}-\d{2}-\d{2}$/.test(String(b.fim||""))?b.fim:_mesAtualTx()+"-31", R=_resumoTaxasCartao(ini,fim), ids=R.idsSemPagamento.slice(0,150);
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50); res.json({ok:true,enfileirados:ids.length,restantes:Math.max(0,R.semPagamento-ids.length)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/taxas-cartao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"taxas-cartao.html")); });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
 const _nrmMot=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
@@ -12470,6 +12523,10 @@ function _lancamentosDoMes(C,mes,F,hoje){ const d7=_diaBRk(Date.parse(hoje+"T12:
     out.push({id:t.id,origem:t.origem||"",descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),categoria:pl.rotulo,cod:pl.cod,grupo:_grupoDoCusto(pl.cod),
       fornecedor:t.fornecedor?.nome||"",vencimento:t.vencimento,valor:_round2(Number(t.valor)||0),valorMes,meses:c.meses,competencia:c.ini,status:t.status==="pago"?"paga":t.vencimento<hoje?"vencida":t.vencimento<=d7?"vence logo":"aberta",
       funcionarioId:t.funcionarioId||"",funcionarioNome:t.funcionarioId&&F[t.funcionarioId]?F[t.funcionarioId].nome:"",recorrenteId:t.recorrenteId||"",parcela:t.parcela||"",observacao:t.observacao||"",pagoEm:t.pagoEm||null}); }
+  // taxas de cartão e Pix do varejo, calculadas pelas vendas do mês (a Rede desconta no repasse: já está "paga")
+  try{ const cfgT=lerTaxasCartao(); if(cfgT.incluirNosCustos){ const t=_resumoTaxasCartao(mes+"-01",mes+"-31"); if(t.total>0){ const pl=PLANO_CONTAS.find(x=>x.cod==="4.3");
+      out.push({id:"taxa-cartao-"+mes,origem:"calculado",sintetico:true,descricao:`Taxas de cartão e Pix do varejo (${t.comPagamento} vendas, calculadas)`,categoria:pl?pl.rotulo:"4.3 Taxas de cartão e Pix",cod:"4.3",grupo:_grupoDoCusto("4.3"),fornecedor:"Rede (maquininha)",vencimento:mes+"-28",valor:t.total,valorMes:t.total,meses:1,competencia:mes,status:"paga",
+        funcionarioId:"",funcionarioNome:"",recorrenteId:"",parcela:"",observacao:"Calculado pelas vendas do varejo no Bling (Consumidor Final) com as taxas da tela Taxas de Cartão; a Rede desconta no repasse."+(t.semPagamento?` Há ${t.semPagamento} venda(s) sem pagamento carregado, ainda fora desta conta.`:""),pagoEm:mes+"-28"}); } } }catch(e){}
   return out; }
 const _somaMes=l=>_round2(l.reduce((a,x)=>a+x.valorMes,0));
 const _numBR=x=>{ const t=String(x==null?"":x).trim(); if(!t) return NaN; if(t.includes(",")) return Number(t.replace(/\./g,"").replace(",",".")); if(/^\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g,"")); return Number(t); }; // aceita 1234,56 · 1.234,56 · 2.800 (ponto de milhar) · 2.5
