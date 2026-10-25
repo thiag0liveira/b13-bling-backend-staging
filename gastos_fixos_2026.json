@@ -1,0 +1,2238 @@
+{
+"fonte": "Planilha de Controle Econômico e Financeiro (aba Planilha de Custos), realizado de janeiro a setembro de 2026",
+"atualizadoEm": "2026-10-25",
+"ultimoMesPlanilha": "2026-09",
+"grupos": {
+"pes": "Pessoal e encargos",
+"rh": "Segurança do trabalho e RH",
+"ocu": "Ocupação e utilidades",
+"fro": "Frota e logística",
+"ser": "Marketing, sistemas e serviços",
+"fin": "Financeiro, depreciação e imprevistos"
+},
+"itens": [
+{
+"id": "g10",
+"linha": 10,
+"nome": "Aluguel",
+"grupo": "ocu",
+"cod": "5.2.1",
+"previsto": [
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+null,
+null,
+null
+],
+"realizado": [
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17518.56,
+17419.8,
+17518.56,
+17518.56,
+null,
+null,
+null
+],
+"chaves": [
+"aluguel da loja",
+"aluguel loja"
+]
+},
+{
+"id": "g11",
+"linha": 11,
+"nome": "Contador",
+"grupo": "ser",
+"cod": "5.3.1",
+"previsto": [
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+null,
+null,
+null
+],
+"realizado": [
+3372.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+3242.0,
+null,
+null,
+null
+],
+"chaves": [
+"contabil",
+"contador"
+]
+},
+{
+"id": "g12",
+"linha": 12,
+"nome": "Luz",
+"grupo": "ocu",
+"cod": "5.2.3",
+"previsto": [
+200.0,
+3000.0,
+200.0,
+200.0,
+200.0,
+200.0,
+200.0,
+200.0,
+171.5,
+null,
+null,
+null
+],
+"realizado": [
+200.0,
+3000.0,
+158.93,
+162.5,
+200.0,
+183.88,
+174.08,
+143.69,
+171.5,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g13",
+"linha": 13,
+"nome": "Água",
+"grupo": "ocu",
+"cod": "5.2.4",
+"previsto": [
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+303.92,
+null,
+null,
+null
+],
+"realizado": [
+351.74,
+237.91,
+246.57,
+339.85,
+246.57,
+341.12,
+340.78,
+322.58,
+303.92,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g14",
+"linha": 14,
+"nome": "INSS",
+"grupo": "pes",
+"cod": "5.1.2",
+"previsto": [
+10885.2,
+10684.8,
+11770.57,
+11338.05,
+11437.2,
+11722.39,
+13176.88,
+13897.93,
+14279.23,
+null,
+null,
+null
+],
+"realizado": [
+10885.2,
+10684.8,
+11770.57,
+11338.05,
+11437.2,
+11722.39,
+13176.88,
+13897.93,
+14279.23,
+null,
+null,
+null
+],
+"chaves": [
+"inss",
+"previdencia",
+"receita federal"
+]
+},
+{
+"id": "g15",
+"linha": 15,
+"nome": "Alvará",
+"grupo": "ocu",
+"cod": "5.3.5",
+"previsto": [
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+null,
+null,
+null
+],
+"realizado": [
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+178.21,
+null,
+null,
+null
+],
+"chaves": [
+"alvara"
+]
+},
+{
+"id": "g16",
+"linha": 16,
+"nome": "Telefone Celular",
+"grupo": "ocu",
+"cod": "5.3.3",
+"previsto": [
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+null,
+null,
+null
+],
+"realizado": [
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+70.0,
+null,
+null,
+null
+],
+"chaves": [
+"telefone",
+"celular",
+"vivo",
+"claro",
+"tim "
+]
+},
+{
+"id": "g17",
+"linha": 17,
+"nome": "Internet",
+"grupo": "ocu",
+"cod": "5.3.3",
+"previsto": [
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+null,
+null,
+null
+],
+"realizado": [
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+109.0,
+null,
+null,
+null
+],
+"chaves": [
+"internet",
+"blink",
+"fibra"
+]
+},
+{
+"id": "g18",
+"linha": 18,
+"nome": "Mat de Limpeza",
+"grupo": "ocu",
+"cod": "5.3.4",
+"previsto": [
+200.0,
+200.0,
+200.0,
+200.0,
+1438.73,
+412.81,
+171.06,
+298.49,
+147.73,
+null,
+null,
+null
+],
+"realizado": [
+183.11,
+200.0,
+45.9,
+42.2,
+1438.73,
+412.81,
+171.06,
+298.49,
+169.25,
+null,
+null,
+null
+],
+"chaves": [
+"limpeza",
+"higiene"
+]
+},
+{
+"id": "g19",
+"linha": 19,
+"nome": "Papelaria",
+"grupo": "ocu",
+"cod": "5.3.4",
+"previsto": [
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+null,
+null,
+null
+],
+"realizado": [
+60.0,
+100.0,
+100.0,
+100.0,
+32.61,
+222.13,
+100.0,
+0.0,
+191.3,
+null,
+null,
+null
+],
+"chaves": [
+"papelaria",
+"escritorio",
+"bobina"
+]
+},
+{
+"id": "g20",
+"linha": 20,
+"nome": "Sindicato Patronal",
+"grupo": "pes",
+"cod": "5.1.2",
+"previsto": [
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+null,
+null,
+null
+],
+"realizado": [
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+47.85,
+null,
+null,
+null
+],
+"chaves": [
+"patronal"
+]
+},
+{
+"id": "g21",
+"linha": 21,
+"nome": "Pró-Labore retirada",
+"grupo": "pes",
+"cod": "5.1.5",
+"previsto": [
+27000.0,
+27000.0,
+27000.0,
+27000.0,
+27000.0,
+30000.0,
+30000.0,
+30000.0,
+30000.0,
+null,
+null,
+null
+],
+"realizado": [
+27000.0,
+27000.0,
+27000.0,
+27000.0,
+27000.0,
+30000.0,
+30000.0,
+30000.0,
+30000.0,
+null,
+null,
+null
+],
+"chaves": [
+"pro-labore",
+"pro labore",
+"prolabore"
+]
+},
+{
+"id": "g22",
+"linha": 22,
+"nome": "Salários do Mês",
+"grupo": "pes",
+"cod": "5.1.1",
+"previsto": [
+30339.0,
+30424.99,
+28302.0,
+29525.22,
+28272.88,
+34076.54,
+32041.21,
+35901.09,
+29169.17,
+null,
+null,
+null
+],
+"realizado": [
+30339.0,
+30424.99,
+28302.0,
+29525.22,
+28272.88,
+34076.54,
+32041.21,
+35901.09,
+29169.17,
+null,
+null,
+null
+],
+"chaves": [
+"salario",
+"adiantamento",
+"folha"
+]
+},
+{
+"id": "g23",
+"linha": 23,
+"nome": "FGTS do Mês",
+"grupo": "pes",
+"cod": "5.1.2",
+"previsto": [
+3027.25,
+2482.16,
+2712.29,
+2777.38,
+3464.98,
+4181.14,
+3894.9,
+3631.92,
+2506.0,
+null,
+null,
+null
+],
+"realizado": [
+3027.25,
+2482.16,
+2712.29,
+2777.38,
+3464.98,
+4181.14,
+3894.9,
+3631.92,
+2506.0,
+null,
+null,
+null
+],
+"chaves": [
+"fgts"
+]
+},
+{
+"id": "g24",
+"linha": 24,
+"nome": "Provisão Salários",
+"grupo": "pes",
+"cod": "5.1.4",
+"previsto": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"chaves": [
+"provisao",
+"13o",
+"ferias"
+]
+},
+{
+"id": "g25",
+"linha": 25,
+"nome": "Vale Transporte/ mobilidade",
+"grupo": "pes",
+"cod": "5.1.3",
+"previsto": [
+3995.17,
+5506.6,
+5436.87,
+5324.12,
+5376.29,
+5510.7,
+7170.07,
+6738.18,
+5117.82,
+null,
+null,
+null
+],
+"realizado": [
+3995.17,
+5506.6,
+5436.87,
+5324.12,
+5376.29,
+5510.7,
+7170.07,
+6738.18,
+5117.82,
+null,
+null,
+null
+],
+"chaves": [
+"vale transporte",
+"mobilidade",
+"vt "
+]
+},
+{
+"id": "g26",
+"linha": 26,
+"nome": "Vale alimentação",
+"grupo": "pes",
+"cod": "5.1.3",
+"previsto": [
+5200.0,
+5640.0,
+5781.8,
+5218.18,
+5596.52,
+6181.8,
+6618.12,
+6490.8,
+6285.82,
+null,
+null,
+null
+],
+"realizado": [
+5200.0,
+5640.0,
+5781.8,
+5218.18,
+5596.52,
+6181.8,
+6618.12,
+6490.8,
+6285.82,
+null,
+null,
+null
+],
+"chaves": [
+"vale alimentacao",
+"alimentacao",
+"vale refeicao",
+"sodexo",
+"alelo",
+"ticket"
+]
+},
+{
+"id": "g27",
+"linha": 27,
+"nome": "Uniforme",
+"grupo": "pes",
+"cod": "5.9",
+"previsto": [
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+null,
+null,
+null
+],
+"realizado": [
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+238.65,
+null,
+null,
+null
+],
+"chaves": [
+"uniforme"
+]
+},
+{
+"id": "g28",
+"linha": 28,
+"nome": "Depreciação Comp",
+"grupo": "fin",
+"cod": "6.1",
+"previsto": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g29",
+"linha": 29,
+"nome": "Depreciação Loja",
+"grupo": "fin",
+"cod": "6.1",
+"previsto": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g30",
+"linha": 30,
+"nome": "Depreciação Equip",
+"grupo": "fin",
+"cod": "6.1",
+"previsto": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g31",
+"linha": 31,
+"nome": "Combustível",
+"grupo": "fro",
+"cod": "4.1",
+"previsto": [
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+null,
+null,
+null
+],
+"realizado": [
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+2500.0,
+null,
+null,
+null
+],
+"chaves": [
+"combustivel",
+"gasolina",
+"diesel",
+"etanol",
+"posto"
+]
+},
+{
+"id": "g32",
+"linha": 32,
+"nome": "IPVA",
+"grupo": "fro",
+"cod": "5.5.2",
+"previsto": [
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+null,
+null,
+null
+],
+"realizado": [
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+100.0,
+null,
+null,
+null
+],
+"chaves": [
+"ipva"
+]
+},
+{
+"id": "g33",
+"linha": 33,
+"nome": "Pneus",
+"grupo": "fro",
+"cod": "5.5.2",
+"previsto": [
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+null,
+null,
+null
+],
+"realizado": [
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+null,
+null,
+null
+],
+"chaves": [
+"pneu"
+]
+},
+{
+"id": "g34",
+"linha": 34,
+"nome": "Seguro",
+"grupo": "fro",
+"cod": "5.5.3",
+"previsto": [
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+null,
+null,
+null
+],
+"realizado": [
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+333.0,
+null,
+null,
+null
+],
+"chaves": [
+"seguro"
+]
+},
+{
+"id": "g35",
+"linha": 35,
+"nome": "Depreciação Veículo",
+"grupo": "fro",
+"cod": "6.1",
+"previsto": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": []
+},
+{
+"id": "g36",
+"linha": 36,
+"nome": "Imprevistos",
+"grupo": "fin",
+"cod": "5.9",
+"previsto": [
+200.0,
+114.0,
+200.0,
+540.8,
+200.0,
+1980.0,
+200.0,
+200.0,
+200.0,
+null,
+null,
+null
+],
+"realizado": [
+200.0,
+114.0,
+200.0,
+540.8,
+200.0,
+1980.0,
+200.0,
+200.0,
+200.0,
+null,
+null,
+null
+],
+"chaves": [
+"imprevisto"
+]
+},
+{
+"id": "g37",
+"linha": 37,
+"nome": "Tarifas Bancárias",
+"grupo": "fin",
+"cod": "5.6.1",
+"previsto": [
+180.0,
+180.0,
+180.0,
+180.0,
+175.75,
+160.1,
+192.52,
+180.0,
+180.0,
+null,
+null,
+null
+],
+"realizado": [
+180.0,
+180.0,
+180.0,
+180.0,
+175.75,
+160.1,
+192.52,
+180.0,
+180.0,
+null,
+null,
+null
+],
+"chaves": [
+"tarifa",
+"banco"
+]
+},
+{
+"id": "g38",
+"linha": 38,
+"nome": "Juros de Chq Esp",
+"grupo": "fin",
+"cod": "7.1",
+"previsto": [
+0.0,
+0.0,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": [
+"cheque especial"
+]
+},
+{
+"id": "g39",
+"linha": 39,
+"nome": "JurosMora",
+"grupo": "fin",
+"cod": "7.1",
+"previsto": [
+0.0,
+0.0,
+null,
+null,
+null,
+0.0,
+0.0,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+null,
+null,
+null,
+2.2,
+79.86,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": [
+"juros",
+"mora"
+]
+},
+{
+"id": "g40",
+"linha": 40,
+"nome": "Propaganda/tráfego pago",
+"grupo": "ser",
+"cod": "5.4.1",
+"previsto": [
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+12997.0,
+12997.0,
+null,
+null,
+null
+],
+"realizado": [
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+4000.0,
+12997.0,
+12997.0,
+null,
+null,
+null
+],
+"chaves": [
+"propaganda",
+"trafego",
+"anuncio",
+"google ads",
+"meta ads",
+"facebook"
+]
+},
+{
+"id": "g41",
+"linha": 41,
+"nome": "Software de gestão",
+"grupo": "ser",
+"cod": "5.3.2",
+"previsto": [
+1100.0,
+1100.0,
+1100.0,
+650.0,
+650.0,
+650.0,
+650.0,
+650.0,
+1150.0,
+null,
+null,
+null
+],
+"realizado": [
+1100.0,
+1100.0,
+1100.0,
+650.0,
+650.0,
+650.0,
+650.0,
+650.0,
+1150.0,
+null,
+null,
+null
+],
+"chaves": [
+"bling",
+"software",
+"erp",
+"sistema de gestao"
+]
+},
+{
+"id": "g42",
+"linha": 42,
+"nome": "Manutenção Equipamentos",
+"grupo": "fro",
+"cod": "5.5.1",
+"previsto": [
+390.0,
+null,
+null,
+null,
+null,
+99.9,
+null,
+750.0,
+500.0,
+null,
+null,
+null
+],
+"realizado": [
+390.0,
+null,
+null,
+null,
+null,
+99.9,
+null,
+750.0,
+500.0,
+null,
+null,
+null
+],
+"chaves": [
+"equipamento",
+"manutencao de equip"
+]
+},
+{
+"id": "g43",
+"linha": 43,
+"nome": "Manutenção veículos",
+"grupo": "fro",
+"cod": "5.5.1",
+"previsto": [
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+null,
+null,
+null
+],
+"realizado": [
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+1000.0,
+null,
+null,
+null
+],
+"chaves": [
+"veiculo",
+"oficina",
+"mecanica"
+]
+},
+{
+"id": "g44",
+"linha": 44,
+"nome": "Manutenção predial",
+"grupo": "ocu",
+"cod": "5.5.1",
+"previsto": [
+null,
+2339.18,
+null,
+null,
+null,
+350.0,
+369.9,
+300.0,
+1000.0,
+null,
+null,
+null
+],
+"realizado": [
+null,
+2339.18,
+null,
+null,
+null,
+350.0,
+369.9,
+300.0,
+1000.0,
+null,
+null,
+null
+],
+"chaves": [
+"predial",
+"reforma",
+"obra"
+]
+},
+{
+"id": "g45",
+"linha": 45,
+"nome": "Plano de saúde colab",
+"grupo": "pes",
+"cod": "5.1.3",
+"previsto": [
+4527.82,
+4238.68,
+3450.9,
+4091.13,
+3516.61,
+3177.47,
+3487.38,
+4049.89,
+4468.6,
+null,
+null,
+null
+],
+"realizado": [
+4527.82,
+4238.68,
+3450.9,
+4091.13,
+3516.61,
+3177.47,
+3487.38,
+4049.89,
+4468.6,
+null,
+null,
+null
+],
+"chaves": [
+"saude",
+"unimed",
+"amil",
+"hapvida",
+"bradesco"
+]
+},
+{
+"id": "g46",
+"linha": 46,
+"nome": "Aluguel equipamentos/Empilhadeira",
+"grupo": "fro",
+"cod": "5.5.1",
+"previsto": [
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"realizado": [
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"chaves": [
+"empilhadeira",
+"locacao"
+]
+},
+{
+"id": "g47",
+"linha": 47,
+"nome": "Serviço de vigilância",
+"grupo": "ocu",
+"cod": "5.9",
+"previsto": [
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+null,
+null,
+null
+],
+"realizado": [
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+250.0,
+null,
+null,
+null
+],
+"chaves": [
+"vigilancia",
+"alarme",
+"monitoramento"
+]
+},
+{
+"id": "g48",
+"linha": 48,
+"nome": "Programa destaque da semana",
+"grupo": "rh",
+"cod": "5.1.3",
+"previsto": [
+0.0,
+0.0,
+0.0,
+0.0,
+100.0,
+400.0,
+400.0,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+0.0,
+100.0,
+400.0,
+400.0,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": [
+"destaque da semana"
+]
+},
+{
+"id": "g49",
+"linha": 49,
+"nome": "Programa destaque do mês",
+"grupo": "rh",
+"cod": "5.1.3",
+"previsto": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+400.0,
+400.0,
+null,
+null,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+400.0,
+400.0,
+null,
+null,
+null,
+null,
+null
+],
+"chaves": [
+"destaque do mes"
+]
+},
+{
+"id": "g50",
+"linha": 50,
+"nome": "Social mídia/ gestor de tráfego",
+"grupo": "ser",
+"cod": "5.4.1",
+"previsto": [
+850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+null,
+null,
+null
+],
+"realizado": [
+850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+1850.0,
+null,
+null,
+null
+],
+"chaves": [
+"social",
+"midia",
+"gestor"
+]
+},
+{
+"id": "g51",
+"linha": 51,
+"nome": "Analista da qualidade Autonomo",
+"grupo": "ser",
+"cod": "5.1.6",
+"previsto": [
+0.0,
+0.0,
+0.0,
+0.0,
+2500.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+0.0,
+2500.0,
+3000.0,
+3000.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"chaves": [
+"qualidade"
+]
+},
+{
+"id": "g52",
+"linha": 52,
+"nome": "Assessoria jurídica",
+"grupo": "ser",
+"cod": "5.9",
+"previsto": [
+0.0,
+600.0,
+600.0,
+0.0,
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+600.0,
+600.0,
+0.0,
+350.0,
+350.0,
+350.0,
+350.0,
+350.0,
+null,
+null,
+null
+],
+"chaves": [
+"juridic",
+"advogad",
+"advocac"
+]
+},
+{
+"id": "g53",
+"linha": 53,
+"nome": "Analista de TI",
+"grupo": "ser",
+"cod": "5.1.6",
+"previsto": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+0.0,
+3000.0,
+3000.0,
+null,
+null,
+null
+],
+"chaves": [
+"analista de ti",
+"suporte de ti"
+]
+},
+{
+"id": "g54",
+"linha": 54,
+"nome": "Transporte Coopermapp",
+"grupo": "fro",
+"cod": "4.1",
+"previsto": [
+773.9,
+3381.47,
+1617.66,
+11092.88,
+3682.66,
+8487.26,
+4615.38,
+12637.72,
+12909.75,
+null,
+null,
+null
+],
+"realizado": [
+773.9,
+3381.47,
+1617.66,
+11092.88,
+3682.66,
+8487.26,
+4615.38,
+12637.72,
+12909.75,
+null,
+null,
+null
+],
+"chaves": [
+"coopermapp",
+"cooper"
+]
+},
+{
+"id": "g55",
+"linha": 55,
+"nome": "Medicina e segurança do trabalho",
+"grupo": "rh",
+"cod": "5.9",
+"previsto": [
+760.0,
+775.0,
+250.0,
+1050.0,
+325.0,
+585.0,
+550.0,
+475.0,
+400.0,
+null,
+null,
+null
+],
+"realizado": [
+760.0,
+775.0,
+250.0,
+1050.0,
+325.0,
+585.0,
+550.0,
+475.0,
+400.0,
+null,
+null,
+null
+],
+"chaves": [
+"medicina",
+"seguranca do trabalho",
+"ergominas",
+"asos"
+]
+},
+{
+"id": "g56",
+"linha": 56,
+"nome": "Treinamentos e laudos seg do trabalho",
+"grupo": "rh",
+"cod": "5.9",
+"previsto": [
+0.0,
+0.0,
+800.0,
+null,
+2118.75,
+1318.75,
+1318.75,
+1318.75,
+1318.75,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+800.0,
+null,
+2118.75,
+1318.75,
+1318.75,
+1398.61,
+1318.75,
+null,
+null,
+null
+],
+"chaves": [
+"treinamento",
+"laudo"
+]
+},
+{
+"id": "g57",
+"linha": 57,
+"nome": "Aniversariantes do mês",
+"grupo": "rh",
+"cod": "5.1.3",
+"previsto": [
+0.0,
+0.0,
+0.0,
+260.0,
+595.4,
+406.05,
+357.84,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"realizado": [
+0.0,
+0.0,
+0.0,
+260.0,
+595.4,
+406.05,
+357.84,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"chaves": [
+"aniversari"
+]
+},
+{
+"id": "g58",
+"linha": 58,
+"nome": "Sindicato dos Comerciários",
+"grupo": "pes",
+"cod": "5.1.2",
+"previsto": [
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+null,
+null,
+null
+],
+"realizado": [
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+51.5,
+null,
+null,
+null
+],
+"chaves": [
+"comerciarios"
+]
+},
+{
+"id": "g59",
+"linha": 59,
+"nome": "Gás empilhadeira",
+"grupo": "fro",
+"cod": "5.5.1",
+"previsto": [
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+null,
+null,
+null
+],
+"realizado": [
+360.0,
+360.0,
+540.0,
+390.0,
+360.0,
+360.0,
+360.0,
+360.0,
+360.0,
+null,
+null,
+null
+],
+"chaves": [
+"gas "
+]
+},
+{
+"id": "g60",
+"linha": 60,
+"nome": "freelancer",
+"grupo": "ser",
+"cod": "4.9",
+"previsto": [
+2500.0,
+712.0,
+274.0,
+678.0,
+544.0,
+895.32,
+2136.74,
+900.0,
+2065.65,
+null,
+null,
+null
+],
+"realizado": [
+2500.0,
+712.0,
+274.0,
+678.0,
+544.0,
+895.32,
+2136.74,
+900.0,
+2065.65,
+null,
+null,
+null
+],
+"chaves": [
+"freelanc",
+"avulso"
+]
+},
+{
+"id": "g61",
+"linha": 61,
+"nome": "Material de depósito",
+"grupo": "ocu",
+"cod": "5.3.4",
+"previsto": [
+66.9,
+2.4,
+27.0,
+80.95,
+296.9,
+122.5,
+null,
+100.0,
+107.5,
+null,
+null,
+null
+],
+"realizado": [
+66.9,
+2.4,
+27.0,
+80.95,
+296.9,
+122.5,
+null,
+82.9,
+107.5,
+null,
+null,
+null
+],
+"chaves": [
+"deposito"
+]
+},
+{
+"id": "g62",
+"linha": 62,
+"nome": "Transporte Lalamove",
+"grupo": "fro",
+"cod": "4.1",
+"previsto": [
+2675.6,
+1988.2,
+1614.8,
+1732.4,
+1981.0,
+2501.4,
+1478.8,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"realizado": [
+2675.6,
+1988.2,
+1614.8,
+1732.4,
+1981.0,
+2501.4,
+1478.8,
+0.0,
+0.0,
+null,
+null,
+null
+],
+"chaves": [
+"lalamove"
+]
+},
+{
+"id": "g63",
+"linha": 63,
+"nome": "Faxineira",
+"grupo": "ocu",
+"cod": "5.3.4",
+"previsto": [
+826.9,
+1040.0,
+1360.0,
+1450.0,
+1600.0,
+0.0,
+0.0,
+180.0,
+1330.0,
+null,
+null,
+null
+],
+"realizado": [
+826.9,
+1040.0,
+1360.0,
+1450.0,
+1600.0,
+0.0,
+0.0,
+180.0,
+1330.0,
+null,
+null,
+null
+],
+"chaves": [
+"faxina",
+"diarista"
+]
+},
+{
+"id": "g64",
+"linha": 64,
+"nome": "Supermercado",
+"grupo": "ocu",
+"cod": "5.9",
+"previsto": [
+150.0,
+181.08,
+150.0,
+150.0,
+150.0,
+150.0,
+150.0,
+82.14,
+300.0,
+null,
+null,
+null
+],
+"realizado": [
+150.0,
+181.08,
+18.5,
+121.27,
+70.0,
+36.19,
+185.12,
+82.14,
+300.0,
+null,
+null,
+null
+],
+"chaves": [
+"supermercado",
+"copa",
+"cafe"
+]
+},
+{
+"id": "g65",
+"linha": 65,
+"nome": "Solides (sistema de ponto)",
+"grupo": "rh",
+"cod": "5.3.2",
+"previsto": [
+57.67,
+116.5,
+146.2,
+146.12,
+265.87,
+260.5,
+260.5,
+260.5,
+260.5,
+null,
+null,
+null
+],
+"realizado": [
+57.67,
+116.5,
+146.2,
+146.12,
+265.87,
+260.5,
+260.5,
+260.5,
+260.5,
+null,
+null,
+null
+],
+"chaves": [
+"solides",
+"sistema de rh",
+"ponto"
+]
+},
+{
+"id": "g66",
+"linha": 66,
+"nome": "Dedetização",
+"grupo": "ocu",
+"cod": "5.5.1",
+"previsto": [
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+null,
+null,
+null
+],
+"realizado": [
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+107.47,
+null,
+null,
+null
+],
+"chaves": [
+"dedetiz",
+"praga"
+]
+}
+]
+}
