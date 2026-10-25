@@ -11290,17 +11290,26 @@ let _cxIds={em:0,set:new Set()};
 function _idsPedidosDeCaixa(){ if(Date.now()-_cxIds.em<120000) return _cxIds.set; const set=new Set(); try{ (lerCaixaSessoesCompleto().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&m.pedidoId) set.add(String(m.pedidoId)); })); }catch(e){} _cxIds={em:Date.now(),set}; return set; }
 const _ehVarejoTx=r=>r.origem==="bling"&&!_idsPedidosDeCaixa().has(String(r.id))&&(!r.cliente||/^consumidor final/.test(_nrmP(r.cliente)));
 // taxa de UM pedido: agrupa os pagamentos por forma (parcelas do cartão = quantas vezes a forma aparece no pedido, ou o "3x" do nome)
+const TAXAS_REAIS_FILE=`${DATA_DIR}/taxas_cartao_reais.json`; let _reaisMem=null;
+function lerTaxasReais(){ if(!_reaisMem){ const d=lerJSON(TAXAS_REAIS_FILE,null)||{}; d.porPedido=d.porPedido||{}; d.importacoes=d.importacoes||[]; _reaisMem=d; } return _reaisMem; }
+function salvarTaxasReais(d){ _reaisMem=d; salvarJSON(TAXAS_REAIS_FILE,d); }
 function _taxasDoPedidoTx(id,cfg,DET){ const dt=DET.porId[String(id)]; if(!dt||!Array.isArray(dt.pg)||!dt.pg.length) return {semPagamento:true,total:0,linhas:[],semTaxa:false};
   const por={}; dt.pg.forEach(([fid,v])=>{ const k=String(fid), o=por[k]||(por[k]={fid:k,valor:0,n:0}); o.valor+=Number(v)||0; o.n++; });
   const linhas=[]; let total=0, semTaxa=false;
   Object.values(por).forEach(o=>{ const nome=DET.formas[o.fid]||"", auto=_classFormaTx(nome), mp=cfg.formas[o.fid], tipo=mp&&mp.tipo?mp.tipo:auto.tipo, bandeira=mp&&mp.tipo?(mp.bandeira||""):auto.bandeira, parc=tipo==="credito"?(auto.parcelas||o.n):null, pct=_pctTx(cfg,tipo,bandeira,parc), taxa=pct==null?0:_round2(o.valor*pct/100);
     if(pct==null) semTaxa=true; total+=taxa; linhas.push({fid:o.fid,nome,tipo,bandeira,parcelas:parc,valor:_round2(o.valor),pct,taxa,semTaxa:pct==null}); });
+  // taxa REAL do extrato da Rede (quando importada): vale no lugar da estimativa das linhas de cartão; o que sobrar sem extrato continua estimado
+  const real=lerTaxasReais().porPedido[String(id)];
+  if(real&&real.length){ const cartao=linhas.filter(l=>l.tipo==="debito"||l.tipo==="credito"), outras=linhas.filter(l=>!(l.tipo==="debito"||l.tipo==="credito")), valCartao=cartao.reduce((a,l)=>a+l.valor,0), estCartao=cartao.reduce((a,l)=>a+l.taxa,0), valReal=real.reduce((a,x)=>a+x.valor,0), resto=Math.max(0,valCartao-valReal);
+    const novas=real.map(x=>({fid:"real",nome:"Extrato da Rede",tipo:x.modalidade,bandeira:x.bandeira==="elo"||x.bandeira==="vm"?x.bandeira:"",parcelas:x.modalidade==="credito"?(x.parcelas||1):null,valor:_round2(x.valor),pct:x.pct,taxa:_round2(x.taxa),semTaxa:false,real:true}));
+    if(resto>0.05&&valCartao>0) novas.push({fid:"resto",nome:"Parte sem extrato (estimada)",tipo:"credito",bandeira:"",parcelas:null,valor:_round2(resto),pct:null,taxa:_round2(estCartao*resto/valCartao),semTaxa:false});
+    const t2=outras.reduce((a,l)=>a+l.taxa,0)+novas.reduce((a,l)=>a+l.taxa,0); return {semPagamento:false,total:_round2(t2),linhas:[...outras,...novas],semTaxa:outras.some(l=>l.semTaxa),real:true}; }
   return {semPagamento:false,total:_round2(total),linhas,semTaxa}; }
 function _resumoTaxasCartao(ini,fim){ const cfg=lerTaxasCartao(), DET=lerDetPedidos(), I=_indicePedidos(), R={ini,fim,pedidos:0,vendido:0,comPagamento:0,semPagamento:0,semTaxaPedidos:0,total:0,baseTaxada:0,porForma:{},porFid:{},idsSemPagamento:[]};
   (I.lista||[]).forEach(r=>{ if(!_ehVarejoTx(r)||r.data<ini||r.data>fim||r.cancelado||r.situacaoId===SIT.CANCELADO) return; R.pedidos++; R.vendido+=Number(r.total)||0; const t=_taxasDoPedidoTx(r.id,cfg,DET);
     if(t.semPagamento){ R.semPagamento++; if(R.idsSemPagamento.length<400) R.idsSemPagamento.push(String(r.id)); return; } R.comPagamento++; if(t.semTaxa) R.semTaxaPedidos++; R.total+=t.total;
     t.linhas.forEach(l=>{ const k=`${l.tipo}|${l.bandeira}|${l.parcelas||""}`, o=R.porForma[k]||(R.porForma[k]={tipo:l.tipo,bandeira:l.bandeira,parcelas:l.parcelas,qtd:0,valor:0,taxa:0,pct:l.pct,semTaxa:l.semTaxa}); o.qtd++; o.valor+=l.valor; o.taxa+=l.taxa; if(l.tipo==="pix"||l.tipo==="debito"||l.tipo==="credito") R.baseTaxada+=l.valor;
-      const f=R.porFid[l.fid]||(R.porFid[l.fid]={fid:l.fid,nome:l.nome,tipo:l.tipo,bandeira:l.bandeira,pedidos:0,valor:0,mapeado:!!cfg.formas[l.fid]}); f.pedidos++; f.valor+=l.valor; }); });
+      if(!/^\d+$/.test(String(l.fid))) return; const f=R.porFid[l.fid]||(R.porFid[l.fid]={fid:l.fid,nome:l.nome,tipo:l.tipo,bandeira:l.bandeira,pedidos:0,valor:0,mapeado:!!cfg.formas[l.fid]}); f.pedidos++; f.valor+=l.valor; }); });
   R.vendido=_round2(R.vendido); R.total=_round2(R.total); R.baseTaxada=_round2(R.baseTaxada); Object.values(R.porForma).forEach(o=>{ o.valor=_round2(o.valor); o.taxa=_round2(o.taxa); }); Object.values(R.porFid).forEach(o=>{ o.valor=_round2(o.valor); });
   R.pctMedio=R.baseTaxada>0?+(R.total/R.baseTaxada*100).toFixed(2):null; return R; }
 const _numTx=v=>{ if(v===""||v==null) return null; const n=_numBR(v); return isFinite(n)&&n>=0&&n<=30?+n.toFixed(4):NaN; };
@@ -11308,7 +11317,7 @@ const _mesAtualTx=()=>_diaBRk(Date.now()).slice(0,7);
 app.get("/api/taxas-cartao",requireAcesso("acesso_custos"),(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_mesAtualTx(), R=_resumoTaxasCartao(mes+"-01",mes+"-31"), cfg=lerTaxasCartao();
     const manual=(()=>{ try{ const C=_gerarRecorrentes(lerContasPagar()); return _round2(_lancamentosDoMes(C,mes,lerJSON(FUNC_FILE,{}),_diaBRk(Date.now())).filter(x=>x.cod==="4.3"&&!x.sintetico).reduce((a,x)=>a+x.valorMes,0)); }catch(e){ return 0; } })();
     const formas=Object.values(R.porFid).map(f=>{ const a=_classFormaTx(f.nome); return {...f,sugestao:{tipo:a.tipo,bandeira:a.bandeira}}; }).sort((a,b)=>b.valor-a.valor);
-    res.json({ok:true,mes,resumo:R,config:cfg,formas,lancamentosManuais43:manual}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    const RE=lerTaxasReais(); res.json({ok:true,mes,resumo:R,config:cfg,formas,lancamentosManuais43:manual,reais:{pedidos:Object.keys(RE.porPedido).length,importacoes:RE.importacoes.slice(-5).reverse()}}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.put("/api/taxas-cartao/config",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, cfg=lerTaxasCartao(), novo={pix:cfg.pix,vm:JSON.parse(JSON.stringify(cfg.vm)),elo:JSON.parse(JSON.stringify(cfg.elo)),shareElo:cfg.shareElo,bandeiraPadrao:cfg.bandeiraPadrao,incluirNosCustos:cfg.incluirNosCustos,formas:{...cfg.formas}};
     const bad=(rot)=>res.status(400).json({erro:`valor inválido em ${rot} (use um número entre 0 e 30, por exemplo 3,10)`});
     if(b.pix!==undefined){ const v=_numTx(b.pix); if(Number.isNaN(v)) return bad("Pix"); novo.pix=v; }
@@ -11321,6 +11330,61 @@ app.put("/api/taxas-cartao/config",requireAcesso("acesso_custos"),(req,res)=>{ t
 // busca no Bling os pagamentos dos pedidos do varejo do período que ainda não os têm (até 150 por vez)
 app.post("/api/taxas-cartao/completar",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, ini=/^\d{4}-\d{2}-\d{2}$/.test(String(b.ini||""))?b.ini:_mesAtualTx()+"-01", fim=/^\d{4}-\d{2}-\d{2}$/.test(String(b.fim||""))?b.fim:_mesAtualTx()+"-31", R=_resumoTaxasCartao(ini,fim), ids=R.idsSemPagamento.slice(0,150);
     ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50); res.json({ok:true,enfileirados:ids.length,restantes:Math.max(0,R.semPagamento-ids.length)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// ---- CONFERÊNCIA COM O EXTRATO DA REDE (relatório de vendas .xlsx) ----
+// Lê o extrato, corrige a troca de dia e mês que o Excel faz nas datas de 1 a 12, cruza cada venda da Rede com os pedidos (data + valor), aponta forma de pagamento
+// registrada diferente do que a Rede cobrou e, se pedido, grava a taxa REAL de cada venda para os cálculos.
+const _desMoji=v=>{ if(typeof v!=="string"||!/[ÃÂ]/.test(v)) return v; try{ const t=Buffer.from(v,"latin1").toString("utf8"); return t.includes("\uFFFD")?v:t; }catch(e){ return v; } };
+async function _lerExtratoRede(buf,nomeArq){
+  const wb=new ExcelJS.Workbook(); await wb.xlsx.load(buf); const ws=wb.worksheets[0]; if(!ws) throw new Error("planilha vazia");
+  const cab=[]; ws.getRow(1).eachCell({includeEmpty:true},(c,i)=>{ let v=c.value; if(v&&typeof v==="object"&&!(v instanceof Date)) v=v.result!==undefined?v.result:(v.richText?v.richText.map(t=>t.text).join(""):v.text); cab[i]=_nrmP(String(_desMoji(v)==null?"":_desMoji(v))); });
+  const col=n=>cab.findIndex(h=>h&&h.startsWith(n)); const C={data:col("data da venda"),hora:col("hora da venda"),status:col("status da venda"),valor:col("valor da venda atualizado"),mod:col("modalidade"),parc:col("numero de parcelas"),band:col("bandeira"),pct:col("taxas descontadas"),taxa:col("valor total das taxas"),liq:col("valor liquido"),nsu:col("nsu"),term:col("codigo da maquininha")};
+  for(const k of ["data","valor","mod","band","pct","taxa"]) if(C[k]<0) throw new Error("coluna não encontrada no extrato: "+k);
+  const m=String(nomeArq||"").match(/(\d{2})_(\d{2})_(\d{4})-(\d{2})_(\d{2})_(\d{4})/); let per=m?{ini:`${m[3]}-${m[2]}-${m[1]}`,fim:`${m[6]}-${m[5]}-${m[4]}`}:null;
+  const lin=[]; ws.eachRow({includeEmpty:false},(row,n)=>{ if(n===1) return; const g=c=>{ if(c<0) return null; let v=row.getCell(c).value; if(v&&typeof v==="object"&&!(v instanceof Date)) v=v.result!==undefined?v.result:(v.richText?v.richText.map(t=>t.text).join(""):v.text); return _desMoji(v); }; lin.push({n,g}); });
+  const cruas=lin.map(({g})=>g(C.data)), textos=[]; cruas.forEach(v=>{ const q=typeof v==="string"&&v.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(q) textos.push(`${q[3]}-${q[2]}-${q[1]}`); });
+  if(!per&&textos.length){ textos.sort(); per={ini:textos[0],fim:textos[textos.length-1]}; }
+  const noPer=d=>!per||(d>=per.ini&&d<=per.fim), iso=(a,mm,d)=>`${a}-${String(mm).padStart(2,"0")}-${String(d).padStart(2,"0")}`, num=v=>typeof v==="number"?v:_numBR(String(v==null?"":v).replace("%","").replace("R$","").trim());
+  const txs=[]; let corrigidas=0, ignoradas=0, suspeitas=0;
+  lin.forEach(({g},i)=>{ const st=C.status>=0?_nrmP(String(g(C.status)||"")):"aprovada"; if(st&&st!=="aprovada"){ ignoradas++; return; }
+    const v=cruas[i]; let data=""; if(v instanceof Date){ const a=v.getUTCFullYear(), mm=v.getUTCMonth()+1, d=v.getUTCDate(), A=iso(a,mm,d), Bq=d<=12&&d!==mm?iso(a,d,mm):null; if(noPer(A)&&!(Bq&&noPer(Bq)&&per)) data=A; else if(Bq&&noPer(Bq)){ data=Bq; corrigidas++; } else { data=A; suspeitas++; } }
+    else if(typeof v==="string"){ const q=v.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(q) data=`${q[3]}-${q[2]}-${q[1]}`; else if(/^\d{4}-\d{2}-\d{2}/.test(v)) data=v.slice(0,10); }
+    const valor=num(g(C.valor)), taxa=num(g(C.taxa)); if(!data||!isFinite(valor)) { ignoradas++; return; }
+    const modRaw=_nrmP(String(g(C.mod)||"")), bRaw=String(g(C.band)||"").trim(), bn=_nrmP(bRaw); let hora=""; const hv=C.hora>=0?g(C.hora):null; if(hv instanceof Date) hora=`${String(hv.getUTCHours()).padStart(2,"0")}:${String(hv.getUTCMinutes()).padStart(2,"0")}`; else if(typeof hv==="number"){ const mi=Math.round(hv*1440); hora=`${String(Math.floor(mi/60)%24).padStart(2,"0")}:${String(mi%60).padStart(2,"0")}`; }
+    txs.push({data,hora,valor:_round2(valor),modalidade:/deb/.test(modRaw)?"debito":"credito",parcelas:C.parc>=0?(Math.round(num(g(C.parc)))||1):1,bandeira:/visa|master/.test(bn)?"vm":(/^elo/.test(bn)?"elo":"outra"),bandeiraNome:bRaw,pct:isFinite(num(g(C.pct)))?num(g(C.pct)):null,taxa:isFinite(taxa)?_round2(taxa):0,liquido:C.liq>=0&&isFinite(num(g(C.liq)))?_round2(num(g(C.liq))):null,nsu:C.nsu>=0?String(g(C.nsu)||""):"",terminal:C.term>=0?String(g(C.term)||""):""}); });
+  return {txs,periodo:per,corrigidas,ignoradas,suspeitas}; }
+function _linhasCartaoBling(ini,fim){ const I=_indicePedidos(), DET=lerDetPedidos(), cfg=lerTaxasCartao(), out=[];
+  (I.lista||[]).forEach(r=>{ if(!r.data||r.data<ini||r.data>fim||r.cancelado||r.situacaoId===SIT.CANCELADO) return; const varejo=_ehVarejoTx(r), dt=DET.porId[String(r.id)]; let ls=[];
+    if(dt&&Array.isArray(dt.pg)&&dt.pg.length){ const por={}; dt.pg.forEach(([fid,v])=>{ const o=por[fid]||(por[fid]={fid:String(fid),nome:DET.formas[fid]||"",valor:0,n:0}); o.valor+=Number(v)||0; o.n++; }); ls=Object.values(por); }
+    else if(Array.isArray(r.formas)&&r.formas.length) ls=r.formas.map(f=>({fid:"",nome:f.forma||"",valor:Number(f.valor)||0,n:1}));
+    ls.forEach(l=>{ const auto=_classFormaTx(l.nome), mp=l.fid&&cfg.formas[l.fid], tipo=mp&&mp.tipo?mp.tipo:auto.tipo; if(tipo!=="debito"&&tipo!=="credito") return; const nn=_nrmP(l.nome), generico=!(mp&&mp.tipo)&&/cartao/.test(nn)&&!/debito|credito/.test(nn);
+      out.push({pedidoId:String(r.id),numero:r.numero,data:r.data,valor:_round2(l.valor),tipo,generico,parcelas:tipo==="credito"?(auto.parcelas||l.n):null,varejo,origem:r.origem,cliente:r.cliente||"",forma:l.nome,canal:r.caixa?r.caixa.caixa:(varejo?"Varejo (Bling)":(r.origem||"")),usada:false}); }); });
+  return out; }
+function _casarExtrato(txs,linhas){ const por={}; linhas.forEach(l=>{ const k=l.data+"|"+Math.round(l.valor*100); (por[k]||(por[k]=[])).push(l); }); Object.values(por).forEach(a=>a.sort((x,y)=>(y.varejo?1:0)-(x.varejo?1:0)));
+  const dia=(d,k)=>new Date(Date.parse(d+"T12:00:00Z")+k*864e5).toISOString().slice(0,10), pegar=(t,d,ex)=>(por[d+"|"+Math.round(t.valor*100)]||[]).find(l=>!l.usada&&(!ex||l.tipo===t.modalidade||l.generico));
+  txs.forEach(t=>{ t.casou=null; t.casamento=""; }); [[0,true],[0,false],[-1,true],[1,true],[-1,false],[1,false]].forEach(([k,ex])=>{ txs.forEach(t=>{ if(t.casou) return; const l=pegar(t,dia(t.data,k),ex); if(l){ l.usada=true; t.casou=l; t.casamento=k!==0?"data_diferente":(ex?"ok":"forma_diferente"); } }); }); }
+app.post("/api/taxas-cartao/extrato",requireAcesso("acesso_custos"),async(req,res)=>{ try{ const b=req.body||{}; if(!b.base64) return res.status(400).json({erro:"envie o arquivo do extrato (.xlsx)"});
+    const buf=Buffer.from(String(b.base64),"base64"), ex=await _lerExtratoRede(buf,b.nome); if(!ex.txs.length) return res.status(400).json({erro:"não encontrei vendas aprovadas neste arquivo. Use o relatório de vendas da Rede (.xlsx)."});
+    const datas=ex.txs.map(t=>t.data).sort(), ini=datas[0], fim=datas[datas.length-1], dd=k=>new Date(Date.parse(ini+"T12:00:00Z")+k*864e5).toISOString().slice(0,10), linhas=_linhasCartaoBling(dd(-1),new Date(Date.parse(fim+"T12:00:00Z")+864e5).toISOString().slice(0,10)), cfg=lerTaxasCartao();
+    _casarExtrato(ex.txs,linhas); const T=ex.txs, soma=(l,f)=>_round2(l.reduce((a,x)=>a+f(x),0));
+    const R={arquivo:b.nome||"",periodo:{ini,fim},vendas:T.length,valor:soma(T,t=>t.valor),taxaReal:soma(T,t=>t.taxa),datasCorrigidas:ex.corrigidas,datasSuspeitas:ex.suspeitas,ignoradas:ex.ignoradas};
+    const casouVarejo=T.filter(t=>t.casou&&t.casou.varejo), outro=T.filter(t=>t.casou&&!t.casou.varejo), sem=T.filter(t=>!t.casou);
+    const est=t=>{ const p=_pctTx(cfg,t.casou.tipo,"",t.casou.parcelas); return p==null?0:t.valor*p/100; };
+    R.varejo={vendas:casouVarejo.length,valor:soma(casouVarejo,t=>t.valor),taxaReal:soma(casouVarejo,t=>t.taxa),taxaEstimada:soma(casouVarejo,est)}; R.varejo.diferenca=_round2(R.varejo.taxaReal-R.varejo.taxaEstimada);
+    R.outroCanal={vendas:outro.length,valor:soma(outro,t=>t.valor),taxaReal:soma(outro,t=>t.taxa)}; R.semPedido={vendas:sem.length,valor:soma(sem,t=>t.valor),taxaReal:soma(sem,t=>t.taxa)};
+    const term={}; T.forEach(t=>{ const o=term[t.terminal||"?"]||(term[t.terminal||"?"]={terminal:t.terminal||"?",vendas:0,valor:0,taxa:0,varejo:0,outro:0,sem:0}); o.vendas++; o.valor+=t.valor; o.taxa+=t.taxa; if(!t.casou) o.sem++; else if(t.casou.varejo) o.varejo++; else o.outro++; });
+    R.terminais=Object.values(term).map(o=>({...o,valor:_round2(o.valor),taxa:_round2(o.taxa),ticket:_round2(o.valor/o.vendas),parece:(o.varejo+o.outro)<5?"":(o.varejo>=o.outro?"varejo":"atacado/caixa")})).sort((x,y)=>y.valor-x.valor);
+    R.porBandeira=["vm","elo","outra"].map(k=>{ const x=T.filter(t=>t.bandeira===k); return {bandeira:k==="vm"?"Visa/Master":(k==="elo"?"Elo":"Outras (Amex etc.)"),vendas:x.length,valor:soma(x,t=>t.valor),taxa:soma(x,t=>t.taxa)}; }).filter(o=>o.vendas);
+    const lin=t=>({data:t.data,hora:t.hora,valor:t.valor,modalidade:t.modalidade,parcelas:t.parcelas,bandeira:t.bandeiraNome,taxa:t.taxa,pct:t.pct,terminal:t.terminal,nsu:t.nsu});
+    R.divergentes=casouVarejo.filter(t=>t.casamento==="forma_diferente").map(t=>({...lin(t),pedidoId:t.casou.pedidoId,numero:t.casou.numero,registrada:t.casou.tipo,formaRegistrada:t.casou.forma,cliente:t.casou.cliente}));
+    R.dataDiferente=casouVarejo.filter(t=>t.casamento==="data_diferente").map(t=>({...lin(t),pedidoId:t.casou.pedidoId,numero:t.casou.numero,dataPedido:t.casou.data,registrada:t.casou.tipo}));
+    R.semPedidoLista=sem.map(lin); R.outroCanalLista=outro.map(t=>({...lin(t),numero:t.casou.numero,canal:t.casou.canal,cliente:t.casou.cliente}));
+    const rangeI=ini, rangeF=fim; R.semRedeLista=linhas.filter(l=>l.varejo&&!l.usada&&l.data>=rangeI&&l.data<=rangeF).map(l=>({pedidoId:l.pedidoId,numero:l.numero,data:l.data,valor:l.valor,tipo:l.tipo,forma:l.forma}));
+    R.genericas=casouVarejo.filter(t=>t.casou.generico).length;
+    if(b.aplicar){ const RE=lerTaxasReais(), novos={}; casouVarejo.forEach(t=>{ (novos[t.casou.pedidoId]||(novos[t.casou.pedidoId]=[])).push({valor:t.valor,taxa:t.taxa,pct:t.valor>0?+(t.taxa/t.valor*100).toFixed(4):0,modalidade:t.modalidade,bandeira:t.bandeira,bandeiraNome:t.bandeiraNome,parcelas:t.parcelas,nsu:t.nsu,terminal:t.terminal,data:t.data}); });
+      Object.entries(novos).forEach(([id,l])=>{ RE.porPedido[id]=l; }); RE.importacoes.push({em:Date.now(),por:req.sessao?.nome||"",arquivo:b.nome||"",ini,fim,vendas:T.length,pedidos:Object.keys(novos).length,taxaReal:R.taxaReal}); salvarTaxasReais(RE);
+      try{ addLog("taxas-cartao","taxas_reais_importadas",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{arquivo:b.nome,ini,fim,pedidos:Object.keys(novos).length}); }catch(e){} R.aplicado={pedidos:Object.keys(novos).length}; }
+    res.json({ok:true,...R}); }catch(e){ res.status(400).json({erro:String(e.message||e).slice(0,200)}); } });
+app.post("/api/taxas-cartao/reais/limpar",requireAcesso("acesso_custos"),(req,res)=>{ try{ const n=Object.keys(lerTaxasReais().porPedido).length; salvarTaxasReais({porPedido:{},importacoes:[]}); res.json({ok:true,removidos:n}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/taxas-cartao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"taxas-cartao.html")); });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
