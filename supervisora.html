@@ -102,8 +102,10 @@ th:first-child,td:first-child{text-align:left}
 <div class="fundo" id="mRisco"><div class="modal" id="mRiscoCorpo" style="max-width:860px"></div></div>
 <div class="wrap" style="max-width:none">
   <div class="kpis" id="kpis"></div>
+  <details id="supSimBox" style="background:#151233;border:1px solid #2b2760;border-radius:12px;padding:10px 12px;margin:8px 0"><summary style="cursor:pointer;font-weight:800">🧮 Simulador de taxas de cartão e Pix</summary><div class="ic" style="white-space:normal;margin:4px 0">Para negociar com o cliente: veja a taxa de cada forma de pagamento e quanto cobrar para a loja receber o valor inteiro.</div><div id="supSim"></div></details>
   <div class="grade" id="grade"><div class="vazio"><div class="spin"></div></div></div>
 </div>
+<script src="/simulador-taxas.js"></script>
 <script>
 const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
 const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -381,6 +383,7 @@ async function calcFrete() {
   L.circleMarker([r.destino.lat, r.destino.lng], { radius: 7, color: "#FF0082", fillOpacity: 1 }).addTo(MAPA).bindPopup("Cliente");
   MAPA.fitBounds(linha.getBounds(), { padding: [12, 12] });
 }
+document.getElementById("supSimBox").addEventListener("toggle", e => { if (e.target.open && !window._supSimOk && window.b13SimuladorTaxas) { window._supSimOk = true; b13SimuladorTaxas("supSim"); } });
 carregar().then(ligarAvisos); setInterval(carregar, 120000); // Pix e pendências chegam na hora; o resto a cada 2 min
 </script>
 </body>

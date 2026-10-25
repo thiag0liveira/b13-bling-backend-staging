@@ -120,12 +120,14 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   </div>
   <div class="txg" id="txKpis"></div>
   <div id="txAvisos"></div>
+  <div class="card" id="txSimCard"><b>🧮 Simulador de taxas</b><div class="ic" style="white-space:normal;margin:2px 0 4px">Digite o valor, escolha a forma de pagamento e veja a taxa, o que a loja recebe e quanto cobrar para receber o valor inteiro.</div><div id="txSim"></div></div>
   <div class="card" id="txExt"></div>
   <div class="card" id="txComo"></div>
   <div class="card" id="txCfg"></div>
   <div class="card" id="txFormas"></div>
   <div style="height:30px"></div>
 </div>
+<script src="/simulador-taxas.js"></script>
 <script>
 const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
 const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -174,7 +176,7 @@ function desenharFormas() { const F = D.formas, c = D.config;
 async function salvar() { const msg = document.getElementById("txMsg") || { textContent: "" }, corpo = { pix: document.getElementById("cfgPix").value, vm: { credito: {} }, elo: { credito: {} }, shareElo: document.getElementById("cfgShare").value, bandeiraPadrao: document.getElementById("cfgBand").value, incluirNosCustos: document.getElementById("cfgCustos").checked, formas: {} };
   document.querySelectorAll("#txTab input[data-b]").forEach(i => { const b = i.dataset.b, k = i.dataset.k; if (k === "debito") corpo[b].debito = i.value; else corpo[b].credito[k] = i.value; });
   document.querySelectorAll("#txForm tr[data-fid]").forEach(tr => { const t = tr.querySelector(".ftipo").value; corpo.formas[tr.dataset.fid] = t ? { tipo: t, bandeira: tr.querySelector(".fband").value } : {}; });
-  const { ok, j } = await api("/api/taxas-cartao/config", { method: "PUT", body: JSON.stringify(corpo) }); const el = document.getElementById("txMsg"); if (!ok) { if (el) el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui salvar.")}</span>`; return; } await carregar(); const e2 = document.getElementById("txMsg"); if (e2) e2.innerHTML = '<span style="color:#3ce88a">✅ Salvo. Os números acima foram recalculados.</span>'; }
+  const { ok, j } = await api("/api/taxas-cartao/config", { method: "PUT", body: JSON.stringify(corpo) }); const el = document.getElementById("txMsg"); if (!ok) { if (el) el.innerHTML = `<span style="color:#ff8aa3">${esc(j.erro || "Não consegui salvar.")}</span>`; return; } await carregar(); if (window.b13SimuladorTaxas) b13SimuladorTaxas("txSim"); const e2 = document.getElementById("txMsg"); if (e2) e2.innerHTML = '<span style="color:#3ce88a">✅ Salvo. Os números acima foram recalculados.</span>'; }
 async function completar() { const [a, m] = MES.split("-").map(Number), fim = new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); const { ok, j } = await api("/api/taxas-cartao/completar", { method: "POST", body: JSON.stringify({ ini: MES + "-01", fim }) }); if (!ok) { alert(j.erro || "Não consegui."); return; } _poll = 1; setTimeout(carregar, 5000); const av = document.getElementById("txAvisos"); av.innerHTML = `<div class="txaviso az">⏳ Buscando ${j.enfileirados} pagamento(s) no Bling${j.restantes ? " (faltam mais " + j.restantes + ": repita depois)" : ""}… a tela se atualiza sozinha.</div>` + av.innerHTML; }
 // ---------- leitura automática das vendas ----------
 function desenharLeitura() { const L = D.leitura || {}, el = document.getElementById("txLeitura"); if (!el) return; const hh = L.em ? new Date(L.em).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }) : "", falt = D.resumo.semPagamento;
@@ -215,7 +217,7 @@ function csvExtrato() { const R = EXT; if (!R) return; const q = v => '"' + Stri
   R.divergentes.forEach(r => add("forma diferente", r, { numero: r.numero, reg: r.registrada, obs: r.cliente })); R.dataDiferente.forEach(r => add("data diferente", r, { numero: r.numero, reg: r.registrada, obs: "pedido em " + r.dataPedido })); R.outroCanalLista.forEach(r => add("outro canal", r, { numero: r.numero, obs: r.canal + " " + r.cliente })); R.semPedidoLista.forEach(r => add("sem pedido", r, {}));
   R.semRedeLista.forEach(r => L.push([q("pedido sem venda na Rede"), r.data, "", n(r.valor), "", "", "", "", q(r.numero), q(r.tipo), q(r.forma)].join(";")));
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\r\n")], { type: "text/csv" })); a.download = "conferencia_rede_" + R.periodo.ini + "_" + R.periodo.fim + ".csv"; a.click(); }
-carregar();
+carregar(); if (window.b13SimuladorTaxas) b13SimuladorTaxas("txSim");
 </script>
 </body>
 </html>

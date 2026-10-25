@@ -11399,6 +11399,13 @@ async function lerVendasVarejoAuto(opts={}){ if(_leituraTx.rodando) return _leit
 setTimeout(()=>lerVendasVarejoAuto(),90000);
 setInterval(()=>{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if((h>=6&&h<=23)||Date.now()-_leituraTx.em>50*60000) lerVendasVarejoAuto(); },10*60000);
 app.post("/api/taxas-cartao/ler-agora",requireAcesso("acesso_custos"),async(req,res)=>{ try{ const r=await lerVendasVarejoAuto({forcar:true,max:60}); res.json({ok:true,leitura:r}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// SIMULADOR DE TAXAS (tela Taxas de Cartão e Apoio à Supervisora): só devolve a tabela de taxas, sem custos nem vendas
+const requireAcessoAlgum=lista=>(req,res,next)=>requireSessao(req,res,()=>{ const s=req.sessao||{}, p=s.permissoes||[]; if(s.nivel==="admin"||p.includes("admin")||lista.some(a=>p.includes(a))) return next(); return res.status(403).json({erro:"Sem permissão para o simulador de taxas"}); });
+app.get("/api/taxas-cartao/simulador",requireAcessoAlgum(["acesso_custos","acesso_supervisora"]),(req,res)=>{ try{ const cfg=lerTaxasCartao(), ok=v=>v!=null&&v!==""&&isFinite(v), n=v=>ok(v)?Number(v):null;
+    const marca=b=>({debito:n(cfg[b].debito),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n((cfg[b].credito||{})[String(k+1)])]))});
+    const padrao={debito:n(_pctTx(cfg,"debito","",1)),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n(_pctTx(cfg,"credito","",k+1))]))};
+    res.json({ok:true,pix:n(cfg.pix),vm:marca("vm"),elo:marca("elo"),padrao,descricaoPadrao:cfg.shareElo>0?`mistura com ${String(cfg.shareElo).replace(".",",")}% de Elo`:(cfg.bandeiraPadrao==="elo"?"Elo":"Visa/Master"),atualizadoEm:cfg.atualizadoEm}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/simulador-taxas.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript").sendFile(path.join(__dirname,"simulador-taxas.js")); });
 app.get("/taxas-cartao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"taxas-cartao.html")); });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
