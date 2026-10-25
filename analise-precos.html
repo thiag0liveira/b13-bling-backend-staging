@@ -96,7 +96,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 .tb .ln.sc,.sc{display:flex;flex-wrap:nowrap;gap:5px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}.sc .chp{flex:0 0 auto}.sc::-webkit-scrollbar{height:0}
 .bt{padding:3px 9px;font-size:11.5px;border-radius:8px;border:1px solid #37327a;background:#1b1442;color:#fff;cursor:pointer}
 .gh{display:flex;align-items:center;gap:6px;background:#1b1442;border:1px solid #37327a;border-radius:7px;padding:3px 8px;margin:7px 0 0;font-size:12.5px;cursor:pointer}.gh b{flex:1;min-width:0}.gh .seta{font-size:9px;transition:transform .12s}.gh.aberta .seta{transform:rotate(90deg)}
-.cols,.r{display:grid;grid-template-columns:20px minmax(150px,1fr) 62px 112px 92px 150px 98px 132px;gap:0 6px;align-items:center}
+.cols,.r{display:grid;grid-template-columns:20px minmax(150px,1fr) 52px 62px 112px 92px 150px 98px 170px;gap:0 6px;align-items:center}
 .cols{font-size:9.5px;letter-spacing:.3px;text-transform:uppercase;color:#8f89c9;padding:1px 4px;border-bottom:1px solid #2b2760}
 .r{padding:1px 4px;border-bottom:1px solid #1a1740;min-height:24px;line-height:1.15}.r:hover{background:#16133a}.r.alt{background:#2a2406}
 .r .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.r .cd{color:#7f79b8;font-weight:400;font-size:10px;margin-left:5px}
@@ -108,10 +108,10 @@ select.cat{font-size:11px;padding:1px 2px;height:22px;width:100%;border-radius:6
 .ok1{color:#3ce88a;font-size:10px;opacity:0;transition:opacity .3s;margin-left:4px}.ok1.on{opacity:1}
 .rasc{font-size:9px;color:#ffd23f;text-transform:uppercase}
 @media(max-width:759px){
-  .cols{grid-template-columns:20px 1fr 96px;padding:1px 2px}.cols .vl{display:grid;grid-column:2/-1;grid-row:2;grid-template-columns:.55fr 1.55fr 1.15fr 1.4fr 1.12fr;gap:4px}.cols .hc{grid-column:3;grid-row:1}.cols .hn{grid-column:2;grid-row:1}
+  .cols{grid-template-columns:20px 1fr 96px;padding:1px 2px}.cols .vl{display:grid;grid-column:2/-1;grid-row:2;grid-template-columns:.62fr .55fr 1.5fr 1.1fr 1.35fr 1.05fr;gap:4px}.cols .hc{grid-column:3;grid-row:1}.cols .hn{grid-column:2;grid-row:1}
   .r{grid-template-columns:20px 1fr 96px;padding:2px 2px;row-gap:1px}.r .ck{grid-row:1;grid-column:1}.r .nm{grid-row:1;grid-column:2;white-space:normal;overflow:visible;font-size:12px}.r select.cat{grid-row:1;grid-column:3}
-  .r .vl{display:grid;grid-row:2;grid-column:2/-1;grid-template-columns:.8fr 1.1fr .9fr 1.5fr 1fr;gap:4px;align-items:start}
-  .c{flex-wrap:wrap;gap:0 3px;align-items:center;font-size:11.5px}.in{width:40px;font-size:11.5px}.in.q{width:22px}.pc{font-size:9px;padding:0 3px}.fr span{display:none}.c{font-size:11px}.vl{grid-template-columns:.55fr 1.55fr 1.15fr 1.4fr 1.12fr!important}.r .nm{font-size:11.5px;line-height:1.2}.r{padding:1px 2px!important}.cols{font-size:9px}
+  .r .vl{display:grid;grid-row:2;grid-column:2/-1;grid-template-columns:.62fr .55fr 1.5fr 1.1fr 1.35fr 1.05fr;gap:4px;align-items:start}
+  .c{flex-wrap:wrap;gap:0 3px;align-items:center;font-size:11.5px}.in{width:40px;font-size:11.5px}.in.q{width:22px}.pc{font-size:9px;padding:0 3px}.fr span{display:none}.c{font-size:11px}.vl{grid-template-columns:.62fr .55fr 1.5fr 1.1fr 1.35fr 1.05fr!important}.r .nm{font-size:11.5px;line-height:1.2}.r{padding:1px 2px!important}.cols{font-size:9px}
 }
 .rodape{position:fixed;left:0;right:0;bottom:0;z-index:200;background:#1b1442;border-top:2px solid #FF0082;padding:8px 10px calc(8px + env(safe-area-inset-bottom,0px));display:none;box-sizing:border-box;height:auto;overflow:visible;margin:0}.rodape.on{display:block}
 .fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:520px}
@@ -125,14 +125,14 @@ select.cat{font-size:11px;padding:1px 2px;height:22px;width:100%;border-radius:6
 .h2{display:flex;align-items:center;gap:1px}
 .ghost{position:fixed;z-index:1000;pointer-events:none;background:#ff1a8c;color:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.5);max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.arrastando{user-select:none;-webkit-user-select:none;cursor:grabbing}
-.cols,.r{grid-template-columns:38px minmax(150px,1fr) 62px 112px 92px 150px 98px 132px!important}
+.cols,.r{grid-template-columns:38px minmax(150px,1fr) 52px 62px 112px 92px 150px 98px 170px!important}
 .r.g{background:#17123a;border-left:3px solid #ff1a8c}.r.g .nm{cursor:pointer}
 .gm{background:#120f30;border-left:3px solid #ff1a8c;padding:2px 4px 3px 42px;margin-bottom:2px}
-.mm{display:grid;grid-template-columns:minmax(120px,1fr) 62px 72px 80px 26px;gap:0 6px;align-items:center;font-size:11px;padding:1px 0;border-bottom:1px solid #1d1946}
+.mm{display:grid;grid-template-columns:minmax(120px,1fr) 40px 62px 72px 80px 26px;gap:0 6px;align-items:center;font-size:11px;padding:1px 0;border-bottom:1px solid #1d1946}
 .gm .ac{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:3px 0}.gm .ac input{font-size:12px;padding:2px 6px;height:24px;width:190px}
 @media(max-width:759px){
   .cols,.r{grid-template-columns:38px 1fr 96px!important}
-  .r .h2{grid-row:1;grid-column:1}.gm{padding-left:8px}.mm{grid-template-columns:minmax(80px,1fr) 52px 62px 70px 24px}
+  .r .h2{grid-row:1;grid-column:1}.gm{padding-left:8px}.mm{grid-template-columns:minmax(80px,1fr) 34px 52px 62px 70px 24px}
 }
 .tb{position:static!important}#topo{padding:8px;gap:6px}.wrap .tb{width:auto;font-size:12px}.mt{color:#ffd23f;font-size:10px;font-weight:800;cursor:pointer;border:1px dashed #ffd23f;border-radius:8px;padding:0 4px;white-space:nowrap;line-height:1.5}.mt:hover{background:#3a2e08}</style>
 <script src="/nav.js"></script>
@@ -145,6 +145,12 @@ body.arrastando{user-select:none;-webkit-user-select:none;cursor:grabbing}
     button[onclick="b13ToggleNav()"]{display:none !important}
     body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
   }
+.es{justify-content:flex-end;font-size:11px;color:#c9c4f0}.es.z{color:#ff8aa3;font-weight:800}
+.catw{display:flex;gap:3px;align-items:center;min-width:0}.catw select.cat{flex:1 1 60px;min-width:0}
+.iab{flex:0 1 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #ff1a8c;background:#2a1030;color:#fff;border-radius:6px;font-size:10.5px;padding:2px 5px;height:22px;cursor:pointer}
+@media(min-width:760px){.cols .hc{grid-column:9;grid-row:1}}
+@media(max-width:759px){.catw{flex-wrap:wrap}.catw .iab{flex:1 1 100%;height:auto;white-space:normal;text-align:left}}
+#resumo{white-space:normal;max-width:100%}
 </style>
 </head>
 <body><script>
@@ -160,9 +166,10 @@ body.arrastando{user-select:none;-webkit-user-select:none;cursor:grabbing}
   <div class="tb" id="tb">
     <div class="ln"><input id="busca" placeholder="🔎 produto ou código" autocomplete="off" enterkeyhint="search" oninput="buscar()"></div>
     <div class="ln sc" id="chips"></div>
-    <div class="ln"><select id="ord" onchange="ORD=this.value;render()"><option value="nome">Ordem: nome</option><option value="margem">Menor margem</option><option value="margemmaior">Maior margem</option><option value="varejo">Maior preço</option><option value="estoque">Maior estoque</option></select><select id="met" onchange="MET=this.value;render()"><option value="margem">% margem</option><option value="markup">% markup</option><option value="margem_rs">% margem + R$</option><option value="markup_rs">% markup + R$</option></select></div>
+    <div class="ln"><select id="ord" onchange="ORD=this.value;render()"><option value="nome">Ordem: nome</option><option value="margem">Menor margem</option><option value="margemmaior">Maior margem</option><option value="varejo">Maior preço</option><option value="estoque">Maior estoque</option><option value="estoquemenor">Menor estoque</option></select><select id="met" onchange="MET=this.value;render()"><option value="margem">% margem</option><option value="markup">% markup</option><option value="margem_rs">% margem + R$</option><option value="markup_rs">% markup + R$</option></select></div>
     <div class="ln" id="metaBox"><span class="ic">🎯 Meta</span><input id="meta" inputmode="decimal" placeholder="25" style="flex:0 0 56px;max-width:56px" oninput="metaMudou()"><select id="metaTipo" onchange="metaMudou()"><option value="margem">% de margem</option><option value="markup">% de markup</option></select><select id="metaArred" onchange="metaMudou()"><option value="10">arred. 0,10</option><option value="90">termina ,90</option><option value="0">exato</option></select><button class="bt" onclick="sugerirPrecos()">💡 Sugerir preços</button></div>
     <div class="ln sc"><button class="bt" onclick="abrirCategorias()">⚙️ Categorias</button><button class="bt" onclick="importarAtacado()">📥 Atacado</button><button class="bt" onclick="abrirTodas(true)">Abrir todas</button><button class="bt" onclick="abrirTodas(false)">Fechar todas</button><button class="bt" onclick="baixarCsv()">⬇️ CSV</button></div>
+    <div id="iaBox" class="ic" style="white-space:normal;margin-top:4px"></div>
     <div id="msg" class="ic" style="white-space:normal;margin-top:4px"></div>
   </div>
   <div id="lista"><div class="ic" style="padding:14px">Carregando os produtos…</div></div>
@@ -194,56 +201,63 @@ const margemVar = i => pct(precoVar(i), i.custo);
 const uniq = a => [...new Set(a.filter(Boolean))];
 const gDe = gid => (D.grupos || []).find(g => g.id === gid);
 // resumo de um grupo de sabores (todos têm o mesmo preço; o custo pode variar por sabor)
+const nv = (v, d) => (v == null ? d : v);
 function agg(ms) { const cus = ms.map(x => x.custo).filter(Boolean), custo = cus.length ? cus.reduce((a, b) => a + b, 0) / cus.length : null, pvs = uniq(ms.map(precoVar)), fds = uniq(ms.map(x => x.precoFardo)), qs = uniq(ms.map(x => x.qtdFardo)), at = uniq(ms.map(x => x.precoAtacado)), fa = uniq(ms.map(x => x.precoFardoAtacado)), cx = uniq(ms.map(x => x.caixaQtd));
   const pv = pvs.length === 1 ? pvs[0] : null, fd = fds.length === 1 ? fds[0] : null, q = qs.length === 1 ? qs[0] : null, f = fd || (fa.length === 1 ? fa[0] : null), qq = q || (cx.length === 1 ? cx[0] : null);
   return { custo, cmin: cus.length ? Math.min(...cus) : null, cmax: cus.length ? Math.max(...cus) : null, semCusto: ms.filter(x => !x.custo).length, pv, pvMisto: pvs.length > 1, pvs, fardo: fd, fardoMisto: fds.length > 1, qtd: q, atac: at.length === 1 ? at[0] : null, fAt: fa.length === 1 ? fa[0] : null, cx: cx.length === 1 ? cx[0] : null, fu: f && qq ? f / qq : null, estoque: ms.reduce((a, x) => a + x.estoque, 0), alt: ms.some(x => x.precoNovo && x.precoNovo !== x.precoVarejo) }; }
 // ---------- dados ----------
-async function carregar() { const { ok, j } = await api("/api/tabela-varejo"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; if (CAT && CAT !== "" && !D.categorias.some(c => c.id === CAT)) CAT = null; render();
+async function carregar() { const { ok, j } = await api("/api/tabela-varejo"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; if (CAT && CAT !== "" && !D.categorias.some(c => c.id === CAT)) CAT = null; render(); desenharIA();
+  if (D.iaAtiva && !IA_TENTOU && D.totais.semCategoria > D.totais.comSugestao) { IA_TENTOU = true; sugerirIA(false); }
   if (j.auto && (j.auto.criadas || j.auto.colocados || j.auto.grupos)) avisar(`✅ Puxei da tabela de atacado: ${j.auto.criadas} categoria(s), ${j.auto.colocados} produto(s) colocados nelas e ${j.auto.grupos || 0} grupo(s) de sabores (${j.auto.saboresColocados || 0} sabores).`, true); }
 function filtrados() { const q = BUSCA.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""), toks = q.split(/\s+/).filter(Boolean);
   return D.itens.filter(i => { if (CAT !== null && (i.categoriaId || "") !== CAT) return false; if (toks.length) { const g = i.grupoId ? (gDe(i.grupoId) || {}).nome || "" : "", t = (i.nome + " " + i.codigo + " " + g).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (!toks.every(x => t.includes(x))) return false; }
     if (FILTRO === "sem") return !i.categoriaId; if (FILTRO === "baixa") { const m = margemVar(i); return m != null && (isMk() ? m < 18 : m < 15); } if (FILTRO === "alt") return i.precoNovo && i.precoNovo !== i.precoVarejo;
-    if (FILTRO === "semcusto") return !i.custo; if (FILTRO === "semfardo") return !fardoEf(i); if (FILTRO === "estoque") return i.estoque > 0; return true; }); }
+    if (FILTRO === "semcusto") return !i.custo; if (FILTRO === "semfardo") return !fardoEf(i); if (FILTRO === "estoque") return i.estoque > 0; if (FILTRO === "semest") return !(i.estoque > 0); return true; }); }
 // junta os sabores de um grupo numa linha só
 function entradas(L) { const gm = new Map(), ent = []; L.forEach(i => { if (i.grupoId && gDe(i.grupoId)) { let e = gm.get(i.grupoId); if (!e) { e = { tipo: "g", g: gDe(i.grupoId), ms: [], cat: i.categoriaId || "" }; gm.set(i.grupoId, e); ent.push(e); } e.ms.push(i); } else ent.push({ tipo: "i", i, cat: i.categoriaId || "" }); });
   const nome = e => e.tipo === "g" ? e.g.nome : e.i.nome, mg = e => e.tipo === "g" ? (() => { const a = agg(e.ms); return pct(a.pv, a.custo); })() : margemVar(e.i), pr = e => e.tipo === "g" ? (agg(e.ms).pv || 0) : (precoVar(e.i) || 0), es = e => e.tipo === "g" ? agg(e.ms).estoque : e.i.estoque;
-  const f = { nome: (a, b) => nome(a).localeCompare(nome(b)), margem: (a, b) => (mg(a) ?? 1e9) - (mg(b) ?? 1e9), margemmaior: (a, b) => (mg(b) ?? -1e9) - (mg(a) ?? -1e9), varejo: (a, b) => pr(b) - pr(a), estoque: (a, b) => es(b) - es(a) }[ORD]; return ent.sort(f); }
+  const f = { nome: (a, b) => nome(a).localeCompare(nome(b)), margem: (a, b) => nv(mg(a), 1e9) - nv(mg(b), 1e9), margemmaior: (a, b) => nv(mg(b), -1e9) - nv(mg(a), -1e9), varejo: (a, b) => pr(b) - pr(a), estoque: (a, b) => es(b) - es(a), estoquemenor: (a, b) => es(a) - es(b) }[ORD]; return ent.sort(f); }
 // ---------- desenho ----------
-const cabecalho = '<div class="cols"><span></span><b class="hn">Produto</b><b class="hc">Categoria</b><div class="vl"><b>Custo</b><b>Varejo</b><b>Atacado</b><b>Fardo · un</b><b>Fardo/un</b></div></div>';
+const cabecalho = '<div class="cols"><span></span><b class="hn">Produto</b><b class="hc">Categoria</b><div class="vl"><b>Estoque</b><b>Custo</b><b>Varejo</b><b>Atacado</b><b>Fardo · un</b><b>Fardo/un</b></div></div>';
+const fmtEst = n => { n = Number(n) || 0; return n <= 0 ? "0" : String(Math.round(n * 10) / 10).replace(".", ","); };
+const celEst = n => `<div class="c es ${Number(n) > 0 ? "" : "z"}" title="estoque no sistema (Bling)">${fmtEst(n)}</div>`;
+const iaBtn = (ids, s) => s ? `<button class="iab" title="Sugestão da IA: ${esc(s.cat)}${s.nova ? " (categoria nova)" : ""} · confiança ${esc(s.conf || "")}. Toque para aplicar." onclick="aplicarIA('${ids.join(",")}')">💡 ${esc(s.cat)}${s.nova ? " ✦" : ""}</button>` : "";
 const optsCat = sel => D.categorias.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
 const campo = (id, col, val, ph, extra) => `<input id="${id}" data-col="${col}" class="in ${extra || ""}" inputmode="${col === "q" ? "numeric" : "decimal"}" enterkeyhint="next" value="${val}" placeholder="${ph}"`;
 function linha(i) { const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !== i.precoVarejo, fu = fardoUn(i);
   return `<div class="r ${alt ? "alt" : ""}" id="r-${i.id}"><div class="h2"><span class="hd" title="arraste até uma categoria" onpointerdown="iniciarArraste(event,'item','${i.id}')">⠿</span><input type="checkbox" class="ck" ${SEL.has(i.id) ? "checked" : ""} onchange="marcar('${i.id}',this.checked)" style="width:15px;height:15px;margin:0"></div>
     <div class="nm" title="${esc(i.nome)} · estoque ${i.estoque}">${esc(i.nome)}<span class="cd">${esc(i.codigo)}</span><span class="ok1" id="ok-${i.id}">✓</span></div>
     <div class="vl">
+      ${celEst(i.estoque)}
       <div class="c" id="c-${i.id}">${i.custo ? num2(i.custo) : '<span style="color:#ffd23f" title="sem custo no cadastro">s/c</span>'}</div>
       <div class="c">${campo("v-" + i.id, "v", pv ? num2(pv) : "", "0,00")} oninput="digitando('${i.id}','v')" onchange="salvar('${i.id}','v')" onkeydown="tecla(event,'r-${i.id}','v')"><span id="pv-${i.id}">${badge(pv, i.custo)}</span><span id="mt-${i.id}">${chipMeta(i.id, i.custo, pv, "i")}</span></div>
       <div class="c">${i.precoAtacado ? num2(i.precoAtacado) + badge(i.precoAtacado, i.custo) : DASH}</div>
       <div class="c"><div class="fr">${campo("f-" + i.id, "f", i.precoFardo ? num2(i.precoFardo) : "", i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00")} oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="tecla(event,'r-${i.id}','f')">${campo("q-" + i.id, "q", i.qtdFardo || "", i.caixaQtd || "un", "q")} oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="tecla(event,'r-${i.id}','q')"><span>un</span></div></div>
       <div class="c"><span id="fu-${i.id}">${fu ? num2(fu) : DASH}</span><span id="pf-${i.id}">${fu ? badge(fu, i.custo) : ""}</span></div>
     </div>
-    <select class="cat ${i.categoriaId ? "" : "pend"}" onchange="mudarCat('${i.id}',this.value)"><option value="">${i.categoriaId ? "— sem categoria —" : "Categoria…"}</option>${optsCat(i.categoriaId)}<option value="__nova">➕ nova…</option></select></div>`; }
+    <div class="catw"><select class="cat ${i.categoriaId ? "" : "pend"}" onchange="mudarCat('${i.id}',this.value)"><option value="">${i.categoriaId ? "— sem categoria —" : "Categoria…"}</option>${optsCat(i.categoriaId)}<option value="__nova">➕ nova…</option></select>${i.categoriaId ? "" : iaBtn([i.id], i.sugIA)}</div></div>`; }
 function linhaGrupo(e) { const a = agg(e.ms), gid = e.g.id, aberto = GAB.has(gid), todosSel = e.ms.every(m => SEL.has(m.id)), cus = a.custo == null ? '<span style="color:#ffd23f" title="nenhum sabor com custo">s/c</span>' : (a.cmin !== a.cmax || a.semCusto ? "~" : "") + num2(a.custo);
   return `<div class="r g ${a.alt ? "alt" : ""}" id="g-${gid}"><div class="h2"><span class="hd" title="arraste o grupo até uma categoria" onpointerdown="iniciarArraste(event,'grupo','${gid}')">⠿</span><input type="checkbox" class="ck" ${todosSel ? "checked" : ""} onchange="marcarSabores('${gid}',this.checked)" style="width:15px;height:15px;margin:0"></div>
     <div class="nm" onclick="alternarGrupo('${gid}')" title="${esc(e.g.nome)} · toque para ver os sabores">🍓 ${esc(e.g.nome)}<span class="cd">${e.ms.length} sabores ${aberto ? "▾" : "▸"}</span><span class="ok1" id="gok-${gid}">✓</span></div>
     <div class="vl">
+      ${celEst(a.estoque)}
       <div class="c" id="gc-${gid}" title="${a.cmin != null ? "custo de " + num2(a.cmin) + " a " + num2(a.cmax) : ""}">${cus}</div>
       <div class="c">${campo("gv-" + gid, "v", a.pv ? num2(a.pv) : "", a.pvMisto ? "vários" : "0,00")} oninput="digitandoGrupo('${gid}','v')" onchange="salvarGrupo('${gid}','v')" onkeydown="tecla(event,'g-${gid}','v')"><span id="gpv-${gid}">${a.pv ? badge(a.pv, a.custo) : (a.pvMisto ? '<span class="pc med">mix</span>' : "")}</span><span id="gmt-${gid}">${chipMeta(gid, a.cmax, a.pv || (a.pvs.length ? Math.min(...a.pvs) : 0), "g")}</span></div>
       <div class="c">${a.atac ? num2(a.atac) + badge(a.atac, a.custo) : DASH}</div>
       <div class="c"><div class="fr">${campo("gf-" + gid, "f", a.fardo ? num2(a.fardo) : "", a.fAt ? num2(a.fAt) : "0,00")} oninput="digitandoGrupo('${gid}','f')" onchange="salvarGrupo('${gid}','f')" onkeydown="tecla(event,'g-${gid}','f')">${campo("gq-" + gid, "q", a.qtd || "", a.cx || "un", "q")} oninput="digitandoGrupo('${gid}','q')" onchange="salvarGrupo('${gid}','q')" onkeydown="tecla(event,'g-${gid}','q')"><span>un</span></div></div>
       <div class="c"><span id="gfu-${gid}">${a.fu ? num2(a.fu) : DASH}</span><span id="gpf-${gid}">${a.fu ? badge(a.fu, a.custo) : ""}</span></div>
     </div>
-    <select class="cat" onchange="mudarCatGrupo('${gid}',this.value)"><option value="">${e.cat ? "— sem categoria —" : "Categoria…"}</option>${optsCat(e.cat)}<option value="__nova">➕ nova…</option></select></div>${aberto ? blocoSabores(e, a) : ""}`; }
+    <div class="catw"><select class="cat ${e.cat ? "" : "pend"}" onchange="mudarCatGrupo('${gid}',this.value)"><option value="">${e.cat ? "— sem categoria —" : "Categoria…"}</option>${optsCat(e.cat)}<option value="__nova">➕ nova…</option></select>${e.cat ? "" : iaBtn(e.ms.map(m => m.id), (e.ms.find(m => m.sugIA) || {}).sugIA)}</div></div>${aberto ? blocoSabores(e, a) : ""}`; }
 function blocoSabores(e, a) { const gid = e.g.id, naoMembros = [...SEL].filter(id => !e.g.membros.includes(id));
   return `<div class="gm" id="gm-${gid}"><div class="ac"><input value="${esc(e.g.nome)}" onchange="renomearGrupo('${gid}',this.value)" title="nome do grupo"><button class="bt" onclick="desfazerGrupo('${gid}')">✂️ Desfazer o grupo</button>${naoMembros.length ? `<button class="bt" onclick="adicionarAoGrupo('${gid}')">➕ Colocar os ${naoMembros.length} marcado(s) aqui</button>` : ""}<span class="ic">um preço só para todos os sabores${e.g.origemAtacado ? " · veio da tabela de atacado" : ""}</span></div>
-    ${e.ms.map(m => { const p = precoVar(m), g0 = e.g.nome.toLowerCase(), curto = m.nome.toLowerCase().startsWith(g0) && m.nome.length > g0.length ? m.nome.slice(g0.length).replace(/^[\s\-–,]+/, "") : m.nome; return `<div class="mm"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.nome)}">${esc(curto)}</span><span>${m.custo ? num2(m.custo) : '<span style="color:#ffd23f">s/c</span>'}</span><span>${p ? num2(p) : DASH}</span><span>${badge(p, m.custo)}</span><button class="bt" style="padding:0 6px" title="tirar do grupo" onclick="tirarDoGrupo('${gid}','${m.id}')">✂️</button></div>`; }).join("")}</div>`; }
+    ${e.ms.map(m => { const p = precoVar(m), g0 = e.g.nome.toLowerCase(), curto = m.nome.toLowerCase().startsWith(g0) && m.nome.length > g0.length ? m.nome.slice(g0.length).replace(/^[\s\-–,]+/, "") : m.nome; return `<div class="mm"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.nome)}">${esc(curto)}</span><span class="es ${Number(m.estoque) > 0 ? "" : "z"}" title="estoque deste sabor" style="text-align:right">${fmtEst(m.estoque)}</span><span>${m.custo ? num2(m.custo) : '<span style="color:#ffd23f">s/c</span>'}</span><span>${p ? num2(p) : DASH}</span><span>${badge(p, m.custo)}</span><button class="bt" style="padding:0 6px" title="tirar do grupo" onclick="tirarDoGrupo('${gid}','${m.id}')">✂️</button></div>`; }).join("")}</div>`; }
 function render() { if (!D) return; const L = filtrados(), ent = entradas(L), grupos = new Map(); ent.forEach(e => { (grupos.get(e.cat) || grupos.set(e.cat, []).get(e.cat)).push(e); });
   const ordem = [...(grupos.has("") ? [{ id: "", nome: "Sem categoria" }] : []), ...D.categorias.filter(c => grupos.has(c.id))], buscando = BUSCA.trim().length > 0; window._padrao = FORCA !== null ? FORCA : (CAT !== null || buscando || L.length <= 400); const aberta = id => EST.has(id) ? EST.get(id) : window._padrao;
-  const cont = {}; D.itens.forEach(i => { const k = i.categoriaId || ""; cont[k] = (cont[k] || 0) + 1; }); const nAlt = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length, nSem = cont[""] || 0;
-  document.getElementById("resumo").textContent = `${D.itens.length} produtos${D.grupos && D.grupos.length ? " · " + D.grupos.length + " grupos de sabores" : ""}${nSem ? " · " + nSem + " sem categoria" : ""}`;
+  const cont = {}; D.itens.forEach(i => { const k = i.categoriaId || ""; cont[k] = (cont[k] || 0) + 1; }); const nAlt = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length, nSem = cont[""] || 0, estTot = D.itens.reduce((s, i) => s + (i.estoque > 0 ? i.estoque : 0), 0), estVal = D.itens.reduce((s, i) => s + (i.estoque > 0 && i.custo ? i.estoque * i.custo : 0), 0);
+  document.getElementById("resumo").textContent = `${D.itens.length} produtos${D.grupos && D.grupos.length ? " · " + D.grupos.length + " grupos de sabores" : ""}${nSem ? " · " + nSem + " sem categoria" : ""} · estoque ${fmtEst(estTot)} un (R$ ${Math.round(estVal).toLocaleString("pt-BR")} ao custo)`;
   document.getElementById("cats").innerHTML = `<span class="cc ${CAT === null ? "on" : ""}" onclick="setCat(null)">Todas <i>${D.itens.length}</i></span>` + (nSem ? `<span class="cc sem ${CAT === "" ? "on" : ""}" data-cat="__sem" onclick="setCat('')">Sem categoria <i>${nSem}</i></span>` : `<span class="cc ${CAT === "" ? "on" : ""}" data-cat="__sem" onclick="setCat('')">Sem categoria <i>0</i></span>`) + D.categorias.map(c => `<span class="cc ${CAT === c.id ? "on" : ""}" data-cat="${esc(c.id)}" onclick="setCat('${c.id}')">${esc(c.nome)} <i>${cont[c.id] || 0}</i></span>`).join("");
   const chip = (k, t) => `<span class="chp ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';render()">${t}</span>`;
-  document.getElementById("chips").innerHTML = chip("todos", "Todos") + chip("baixa", "Margem baixa") + chip("alt", `Com alteração (${nAlt})`) + chip("semcusto", "Sem custo") + chip("semfardo", "Sem fardo") + chip("estoque", "Com estoque");
+  document.getElementById("chips").innerHTML = chip("todos", "Todos") + chip("baixa", "Margem baixa") + chip("alt", `Com alteração (${nAlt})`) + chip("semcusto", "Sem custo") + chip("semfardo", "Sem fardo") + chip("estoque", "Com estoque") + chip("semest", "Sem estoque");
   document.getElementById("lista").innerHTML = ordem.length ? ordem.map(c => { const es = grupos.get(c.id), isOpen = aberta(c.id), qt = es.reduce((a, e) => a + (e.tipo === "g" ? e.ms.length : 1), 0), ms = es.map(e => e.tipo === "g" ? (() => { const a = agg(e.ms); return pct(a.pv, a.custo); })() : margemVar(e.i)).filter(v => v != null), med = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null, lim = MAIS[c.id] || LIM, k = c.id === "" ? "__sem" : c.id;
     return `<div><div class="gh ${isOpen ? "aberta" : ""}" data-cat="${esc(k)}" onclick="alternar('${c.id}')"><span class="seta">▶</span><b>${esc(c.nome)} <span class="ic">(${qt})</span></b><span class="ic">média</span><span class="pc ${cls(med)}">${fmtPct(med)}</span><label onclick="event.stopPropagation()" class="ic" style="display:flex;gap:3px;align-items:center"><input type="checkbox" style="width:14px;height:14px;margin:0" ${L.filter(i => (i.categoriaId || "") === c.id).every(i => SEL.has(i.id)) ? "checked" : ""} onchange="marcarGrupo('${c.id}',this.checked)">todos</label></div>
       ${isOpen ? cabecalho + es.slice(0, lim).map(e => e.tipo === "g" ? linhaGrupo(e) : linha(e.i)).join("") + (es.length > lim ? `<div style="text-align:center;padding:8px"><button class="bt" onclick="MAIS['${c.id}']=${lim + LIM};render()">Mostrar mais ${Math.min(LIM, es.length - lim)} (faltam ${es.length - lim})</button></div>` : "") : ""}</div>`; }).join("") : `<div class="ic" style="padding:14px">Nenhum produto ${CAT !== null ? "nesta categoria" : "neste filtro"}.</div>`;
@@ -382,6 +396,26 @@ async function aplicar() { const qr = document.getElementById("qr").value.trim()
 function descartar() { janela(`<h3 style="margin:0 0 6px">Descartar rascunhos?</h3><div class="ic" style="white-space:normal">Os preços de varejo alterados aqui voltam para os do Bling. Nada foi enviado ao Bling.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="descartar2()">Descartar</button></div>`); }
 async function descartar2() { await api("/api/tabela-varejo/descartar-rascunhos", { method: "POST", body: "{}" }); fechar(); await carregar(); }
 function baixarCsv() { fetch(B + "/api/tabela-varejo.csv", { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "analise_de_precos.csv"; a.click(); }); }
+// ---------- sugestão de categoria pela IA (produtos sem categoria) ----------
+let IA_TENTOU = false, IA_OCUPADO = false;
+function desenharIA() { const el = document.getElementById("iaBox"); if (!el || !D) return; const sem = D.itens.filter(i => !i.categoriaId), com = sem.filter(i => i.sugIA);
+  if (!sem.length) { el.innerHTML = ""; return; }
+  if (IA_OCUPADO) { el.innerHTML = "🤖 A IA está sugerindo categorias para os produtos sem categoria…"; return; }
+  if (com.length) el.innerHTML = `🤖 A IA sugeriu categoria para <b style="color:#fff">${com.length}</b> de ${sem.length} produtos sem categoria (botão 💡 em cada um). <button class="bt" onclick="aplicarTodasIA()">Aplicar todas…</button> <button class="bt" onclick="sugerirIA(true)">Sugerir de novo</button>`;
+  else if (D.iaAtiva) el.innerHTML = `🤖 ${sem.length} produto(s) sem categoria. <button class="bt" onclick="sugerirIA(true)">Sugerir categorias com IA</button>`;
+  else el.innerHTML = ""; }
+async function sugerirIA(forcar) { if (IA_OCUPADO) return; IA_OCUPADO = true; desenharIA();
+  const { ok, j } = await api("/api/tabela-varejo/sugerir-categorias", { method: "POST", body: JSON.stringify({ forcar: !!forcar }) }); IA_OCUPADO = false;
+  if (!ok) { avisar(j.erro || "Não consegui pedir as sugestões."); desenharIA(); return; }
+  await carregar(); if (j.sugeridos) avisar(`🤖 ${j.sugeridos} produto(s) com sugestão de categoria. Toque no 💡 para aplicar${j.novas && j.novas.length ? " · categorias novas sugeridas: " + j.novas.join(", ") : ""}.`, true); }
+async function aplicarIA(idsTxt) { const ids = String(idsTxt).split(","), { ok, j } = await api("/api/tabela-varejo/aplicar-sugestoes", { method: "POST", body: JSON.stringify({ ids }) });
+  if (!ok) { avisar(j.erro || "Não consegui aplicar."); return; } await carregar();
+  avisar(`${j.aplicados} produto(s) colocado(s) na categoria sugerida${j.criadas && j.criadas.length ? " · categoria nova criada: " + j.criadas.join(", ") : ""}.`, true); }
+function aplicarTodasIA() { const com = D.itens.filter(i => !i.categoriaId && i.sugIA), por = {};
+  com.forEach(i => { const k = i.sugIA.cat + (i.sugIA.nova ? " ✦" : ""); por[k] = (por[k] || 0) + 1; });
+  janela(`<h3 style="margin:0 0 6px">🤖 Aplicar as sugestões da IA?</h3><div class="ic" style="white-space:normal">${com.length} produto(s) vão para a categoria sugerida. ✦ = categoria nova, criada agora. Dá para mover de novo depois.</div><div style="margin-top:8px;max-height:46vh;overflow:auto">${Object.entries(por).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<div style="display:flex;justify-content:space-between;border-bottom:1px solid #2b2760;padding:3px 0"><span>${esc(c)}</span><b>${n}</b></div>`).join("")}</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="fechar();aplicarIA('${com.map(i => i.id).join(",")}')">Aplicar todas</button></div>`); }
+
 try { const mt = JSON.parse(localStorage.getItem("b13meta") || "null"); if (mt) { document.getElementById("meta").value = mt.v || ""; if (mt.t) document.getElementById("metaTipo").value = mt.t; if (mt.a) document.getElementById("metaArred").value = mt.a; } } catch (e) {}
 carregar();
 </script>

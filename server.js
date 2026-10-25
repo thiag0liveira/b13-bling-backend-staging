@@ -11162,7 +11162,7 @@ const _salvarTV=d=>salvarJSON(TABELA_VAREJO_FILE,d);
 function _itensTV(){ const P=lerProdutosBling().porId, TV=_lerTV(), gDe={}; Object.values(TV.grupos||{}).forEach(g=>(g.membros||[]).forEach(m=>{ gDe[String(m)]=g.id; })); let I={porCodigo:{}}; try{ I=_indicePrecosTabela(); }catch(e){}
   const out=[]; for(const [id,x] of Object.entries(P)){ if(!x||x.s==="I"||x.f==="V") continue; const t=TV.itens[id]||{}, at=(x.c&&I.porCodigo[String(x.c)])||null, pos=v=>Number(v)>0?Number(v):null;
     out.push({id:String(id),codigo:x.c||"",nome:x.n||"",un:x.u||"",estoque:Number(x.est)||0,custo:pos(x.pc),precoVarejo:pos(x.p),precoNovo:pos(t.precoNovo),precoAtacado:at?pos(at.precoAtacado):null,precoFardoAtacado:at?pos(at.precoFardo):null,caixaQtd:at?(Number(at.caixaQtd)||null):null,
-      catAtacado:at?(at.categoria||""):"",grupoId:gDe[String(id)]||"",categoriaId:t.categoriaId&&TV.categorias.some(c=>c.id===t.categoriaId)?t.categoriaId:"",qtdFardo:Number(t.qtdFardo)>0?Number(t.qtdFardo):null,precoFardo:pos(t.precoFardo)}); }
+      catAtacado:at?(at.categoria||""):"",grupoId:gDe[String(id)]||"",categoriaId:t.categoriaId&&TV.categorias.some(c=>c.id===t.categoriaId)?t.categoriaId:"",qtdFardo:Number(t.qtdFardo)>0?Number(t.qtdFardo):null,precoFardo:pos(t.precoFardo),sugIA:t.sugIA||null}); }
   return out; }
 // GRUPOS DE SABORES: produtos que são o mesmo item em sabores diferentes e ficam com UM preço só.
 // Vêm da tabela de atacado (um item com vários produtos do Bling ligados) e também podem ser criados aqui.
@@ -11188,7 +11188,7 @@ function _sincAtacadoTV(TV,itens){ let criadas=0, colocados=0; const ign=new Set
 app.get("/api/tabela-varejo",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), cont={}; let itens=_itensTV(), auto=null; { const r=_sincAtacadoTV(TV,itens); if(r.criadas||r.colocados||r.grupos||r.saboresColocados){ _salvarTV(TV); auto=r; itens=_itensTV(); /* recalcula: agora os sabores já sabem de que grupo são */ } }
     itens.forEach(i=>{ cont[i.categoriaId||""]=(cont[i.categoriaId||""]||0)+1; });
     res.json({ok:true,auto,grupos:Object.values(TV.grupos||{}).map(g=>({id:g.id,nome:g.nome,membros:(g.membros||[]).filter(m=>itens.some(i=>i.id===m)),origemAtacado:g.origemAtacado||null})).filter(g=>g.membros.length>=1),categorias:TV.categorias.slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0)||a.nome.localeCompare(b.nome)).map(c=>({...c,qtd:cont[c.id]||0})),itens,
-      totais:{produtos:itens.length,semCategoria:cont[""]||0,comAlteracao:itens.filter(i=>i.precoNovo&&i.precoNovo!==i.precoVarejo).length},atualizadoEm:Date.now()});
+      totais:{produtos:itens.length,semCategoria:cont[""]||0,comAlteracao:itens.filter(i=>i.precoNovo&&i.precoNovo!==i.precoVarejo).length,comSugestao:itens.filter(i=>!i.categoriaId&&i.sugIA).length},iaAtiva:!!process.env.ANTHROPIC_API_KEY,atualizadoEm:Date.now()});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 const _posNum=v=>{ const t=String(v==null?"":v).trim(); if(!t) return null; const n=_numBR(t); return isFinite(n)&&n>0?_round2(n*10000)/10000:NaN; };
 // aplica uma edição (categoria, quantidade e preço do fardo, rascunho de varejo) a UM produto; devolve {erro} ou {}
@@ -11223,7 +11223,7 @@ app.delete("/api/tabela-varejo/grupos/:gid",requireAcesso("acesso_tabela_varejo"
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/tabela-varejo/lote",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const b=req.body||{}, ids=(Array.isArray(b.ids)?b.ids:[]).map(String).slice(0,2000), TV=_lerTV(), P=lerProdutosBling().porId;
     if(b.categoriaId&&!TV.categorias.some(c=>c.id===b.categoriaId)) return res.status(400).json({erro:"categoria não existe"});
-    let n=0; ids.forEach(id=>{ if(!P[id]) return; const t=TV.itens[id]||(TV.itens[id]={}); t.categoriaId=b.categoriaId||""; if(t.categoriaId){ delete t.semCat; delete t.auto; } else t.semCat=true; t.por=req.sessao?.nome||""; t.em=Date.now(); n++; });
+    let n=0; ids.forEach(id=>{ if(!P[id]) return; const t=TV.itens[id]||(TV.itens[id]={}); t.categoriaId=b.categoriaId||""; if(t.categoriaId){ delete t.semCat; delete t.auto; delete t.sugIA; } else t.semCat=true; t.por=req.sessao?.nome||""; t.em=Date.now(); n++; });
     _salvarTV(TV); res.json({ok:true,movidos:n});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/tabela-varejo/categorias",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const nome=String(req.body?.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da categoria"});
@@ -11265,6 +11265,48 @@ app.post("/api/tabela-varejo/rascunhos",requireAcesso("acesso_tabela_varejo"),(r
 app.post("/api/tabela-varejo/descartar-rascunhos",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), ids=Array.isArray(req.body?.ids)&&req.body.ids.length?req.body.ids.map(String):Object.keys(TV.itens); let n=0;
     ids.forEach(id=>{ const t=TV.itens[id]; if(t&&t.precoNovo){ delete t.precoNovo; n++; if(!t.categoriaId&&!t.qtdFardo&&!t.precoFardo) delete TV.itens[id]; } }); _salvarTV(TV); res.json({ok:true,descartados:n});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ---- SUGESTÃO DE CATEGORIA POR IA: produtos sem categoria na Análise de Preços ----
+// A IA escolhe entre as categorias que já existem (olhando exemplos de cada uma) e só propõe uma categoria NOVA se nenhuma servir.
+// Nada é aplicado sozinho: a sugestão fica no produto (💡) e a pessoa aplica uma a uma ou todas de uma vez.
+let _iaCatRodando=false;
+app.post("/api/tabela-varejo/sugerir-categorias",requireAcesso("acesso_tabela_varejo"),async(req,res)=>{
+  const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return res.status(503).json({erro:"A sugestão por IA não está ligada (falta ANTHROPIC_API_KEY no Railway)."});
+  if(_iaCatRodando) return res.json({ok:true,jaRodando:true,sugeridos:0});
+  _iaCatRodando=true;
+  try{ const forcar=!!(req.body&&req.body.forcar), TV=_lerTV(), itens=_itensTV(), tvi=id=>TV.itens[id]||{};
+    const semCat=itens.filter(i=>!i.categoriaId&&(forcar||(!i.sugIA&&!tvi(i.id).semCat&&!tvi(i.id).sugDescartada)));
+    if(!semCat.length) return res.json({ok:true,sugeridos:0,novas:[],mensagem:"Nada novo para sugerir."});
+    // sabores do mesmo grupo recebem a mesma sugestão: manda um representante por grupo
+    const unid=new Map(); semCat.forEach(i=>{ const k=i.grupoId?("g:"+i.grupoId):("i:"+i.id); if(!unid.has(k)) unid.set(k,{nome:i.grupoId?(((TV.grupos||{})[i.grupoId]||{}).nome||i.nome):i.nome,un:i.un||"",ids:[]}); unid.get(k).ids.push(i.id); });
+    const lista=[...unid.values()].slice(0,160);
+    const catalogo=TV.categorias.map(c=>`- ${c.nome}${itens.filter(x=>x.categoriaId===c.id).length?" (ex.: "+itens.filter(x=>x.categoriaId===c.id).slice(0,4).map(x=>x.nome).join("; ")+")":""}`).join("\n")||"(ainda não há categorias)";
+    const achaCat=nome=>{ const nn=_nrmP(nome), sing=v=>v.replace(/s$/,""); return TV.categorias.find(c=>_nrmP(c.nome)===nn)||TV.categorias.find(c=>sing(_nrmP(c.nome))===sing(nn)); };
+    const novasNomes={}; let sugeridos=0, erro="";
+    for(let a=0;a<lista.length;a+=40){ const lote=lista.slice(a,a+40);
+      const prompt=`Você organiza o catálogo de uma distribuidora e adega de bebidas. Escolha a categoria de cada produto abaixo.\nCATEGORIAS QUE JÁ EXISTEM:\n${catalogo}\n\nPRODUTOS SEM CATEGORIA:\n${lote.map((u,k)=>`${k+1}. ${u.nome}${u.un?" ("+u.un+")":""}`).join("\n")}\n\nRegras: use SEMPRE uma categoria que já existe quando ela servir, escrevendo o nome exatamente como está na lista. Só proponha uma categoria NOVA se nenhuma existente servir (nome curto, no plural, no mesmo estilo das existentes, e o mesmo nome novo para produtos parecidos). Não invente produtos. Responda SOMENTE com JSON, sem texto antes ou depois: [{"n":1,"categoria":"nome","nova":false,"confianca":"alta|media|baixa"}]`;
+      const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),70000);
+      try{ const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:3000,temperature:0,messages:[{role:"user",content:prompt}]}),signal:ctrl.signal});
+        const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error((j.error&&j.error.message)||("HTTP "+r.status));
+        const txt=(j.content||[]).map(c=>c.text||"").join(""), i0=txt.indexOf("["), i1=txt.lastIndexOf("]"); let arr=null; try{ arr=JSON.parse(txt.slice(i0,i1+1)); }catch(e){}
+        if(!Array.isArray(arr)) throw new Error("a IA devolveu uma resposta que não consegui ler");
+        arr.forEach(x=>{ const u=lote[Number(x&&x.n)-1]; const nome=String((x&&x.categoria)||"").trim().slice(0,60); if(!u||!nome) return;
+          const ex=achaCat(nome); let cat=ex?ex.nome:nome; if(!ex){ const nn=_nrmP(nome); novasNomes[nn]=novasNomes[nn]||nome; cat=novasNomes[nn]; }
+          const conf=["alta","media","baixa"].includes(String(x.confianca))?String(x.confianca):"media";
+          u.ids.forEach(id=>{ const t=TV.itens[id]||(TV.itens[id]={}); t.sugIA={cat,catId:ex?ex.id:null,nova:!ex,conf,em:Date.now()}; delete t.sugDescartada; sugeridos++; }); });
+        _salvarTV(TV);
+      }catch(e){ erro=String(e&&e.name==="AbortError"?"a IA demorou demais":(e.message||e)).slice(0,160); break; } finally{ clearTimeout(to); } }
+    if(!sugeridos&&erro) return res.status(502).json({erro:"Não consegui as sugestões da IA: "+erro});
+    res.json({ok:true,sugeridos,novas:Object.values(novasNomes),erro:erro||null,faltaveis:Math.max(0,[...unid.values()].length-lista.length)});
+  }catch(e){ res.status(500).json({erro:e.message}); } finally{ _iaCatRodando=false; } });
+// aplica a sugestão guardada (cria a categoria nova, se for o caso) nos produtos informados
+app.post("/api/tabela-varejo/aplicar-sugestoes",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const ids=(Array.isArray(req.body&&req.body.ids)?req.body.ids:[]).map(String).slice(0,2000), TV=_lerTV(), criadas=[]; let n=0;
+    ids.forEach(id=>{ const t=TV.itens[id]; const sg=t&&t.sugIA; if(!sg||t.categoriaId) return;
+      let c=(sg.catId&&TV.categorias.find(x=>x.id===sg.catId))||TV.categorias.find(x=>_nrmP(x.nome)===_nrmP(sg.cat));
+      if(!c){ c={id:"cv"+Date.now().toString(36)+Math.random().toString(36).slice(2,4),nome:String(sg.cat).slice(0,60),ordem:(Math.max(0,...TV.categorias.map(x=>x.ordem||0))+1)}; TV.categorias.push(c); criadas.push(c.nome); }
+      t.categoriaId=c.id; delete t.semCat; delete t.auto; delete t.sugIA; t.por=(req.sessao&&req.sessao.nome||"")+" (sugestão da IA)"; t.em=Date.now(); n++; });
+    _salvarTV(TV); res.json({ok:true,aplicados:n,criadas}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/tabela-varejo/descartar-sugestoes",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const ids=(Array.isArray(req.body&&req.body.ids)?req.body.ids:[]).map(String).slice(0,2000), TV=_lerTV(); let n=0;
+    ids.forEach(id=>{ const t=TV.itens[id]; if(t&&t.sugIA){ delete t.sugIA; t.sugDescartada=Date.now(); n++; } }); _salvarTV(TV); res.json({ok:true,descartados:n}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/tabela-varejo.csv",requireAcesso("acesso_tabela_varejo"),(req,res)=>{ try{ const TV=_lerTV(), nomeCat=Object.fromEntries(TV.categorias.map(c=>[c.id,c.nome])), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>x==null?"":String(x).replace(".",","), mg=(p,c)=>(p>0&&c>0)?n(+(((p-c)/p)*100).toFixed(1)):"", mk2=(p,c)=>(p>0&&c>0)?n(+(((p-c)/c)*100).toFixed(1)):"", lu2=(p,c)=>(p>0&&c>0)?n(+(p-c).toFixed(2)):"";
     const linhas=[["Categoria","Código","Produto","Estoque","Custo","Varejo","Margem varejo %","Markup varejo %","Lucro varejo R$/un","Atacado","Margem atacado %","Markup atacado %","Lucro atacado R$/un","Fardo (preço)","Qtd no fardo","Fardo por unidade","Margem fardo %","Markup fardo %","Lucro fardo R$/un","Grupo de sabores"].join(";")];
     _itensTV().sort((a,b)=>(nomeCat[a.categoriaId]||"~").localeCompare(nomeCat[b.categoriaId]||"~")||a.nome.localeCompare(b.nome)).forEach(i=>{ const pv=i.precoNovo||i.precoVarejo, un=(i.precoFardo&&i.qtdFardo)?_round2(i.precoFardo/i.qtdFardo*10000)/10000:null;
@@ -22211,7 +22253,10 @@ registrarConcursoSlogan(app, { expor:(api)=>{ _concursoApi=api; }, bling, blingL
   pagamentoDoPedido:_pagamentoDoPedido, mapaEntregasLocais:_mapaEntregasLocais, lerCaixaSessoes, requireAcesso,
   // quem tem a permissão do concurso (ativo): aparece no relatório de adesão mesmo sem ter usado
   usuariosComAcessoConcurso:()=>Object.values(lerJSON(FUNC_FILE,{})).filter(f=>f&&f.ativo!==false&&(f.permissoes||[]).includes("acesso_concurso")).map(f=>f.nome) });
-_FISCAL = registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname });
+// o que o sistema já sabe de cada produto (custo, unidades por fardo da Análise de Preços e por caixa da tabela de atacado), para o Estoque Fiscal estimar o fator sozinho
+let _refProdFiscal = { em: 0, map: {} };
+function _refProdutosFiscal() { if (Date.now() - _refProdFiscal.em < 60000) return _refProdFiscal.map; const m = {}; try { _itensTV().forEach(i => { m[i.id] = { id: i.id, codigo: i.codigo, nome: i.nome, un: i.un, custo: i.custo, qtdFardo: i.qtdFardo, caixaQtd: i.caixaQtd, precoVarejo: i.precoVarejo }; }); } catch (e) {} _refProdFiscal = { em: Date.now(), map: m }; return m; }
+_FISCAL = registrarEstoqueFiscal(app, { bling, blingLento, lerJSON, salvarJSON, requireAdmin, DATA_DIR, sleep, GTIN_INDEX_FILE, rootDir: __dirname, refProdutos: _refProdutosFiscal });
 registrarGestaoPedidos(app, { bling, SIT, nomeSituacao, montarPedidoDoBling:_montarPedidoDoBling, lerLog, lerFilaSep, lerLocks:limparLocksExpirados,
   lerCaixaSessoes, lerPag, lerVendasPrazo, lerPropostas, lerViagensAtivas, mapaEntregasLocais:_mapaEntregasLocais, estimarPesoPedido });
 
