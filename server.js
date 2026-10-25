@@ -11099,8 +11099,8 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     // CLIENTES do filtro: só os itens que entraram nas contas (respeita busca e, por produto, "só com/sem custo" e "margem abaixo de")
     const nomeCli=c=>c.nome||((c.clienteId&&lerClientesBase().porId[String(c.clienteId)]||{}).nome)||"(sem cliente informado)";
     const montarClientes=permitidos=>Object.values(CLI).map(c=>{ let fat=0,fc=0,cu=0; const ped=new Set(); Object.entries(c.prod).forEach(([pk,x])=>{ if(permitidos&&!permitidos.has(pk)) return; fat+=x.fat; fc+=x.fatCusto; cu+=x.custo; x.ped.forEach(i=>ped.add(i)); });
-      return ped.size?{clienteId:c.clienteId,nome:nomeCli(c),pedidos:ped.size,fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),lucro:_round2(fc-cu),margem:fc>0?+(((fc-cu)/fc)*100).toFixed(1):null}:null; }).filter(Boolean).sort((a,b)=>b.fat-a.fat);
-    const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null});
+      return ped.size?{clienteId:c.clienteId,nome:nomeCli(c),pedidos:ped.size,fat:_round2(fat),fatCusto:_round2(fc),custo:_round2(cu),lucro:_round2(fc-cu),margem:fc>0?+(((fc-cu)/fc)*100).toFixed(1):null,markup:cu>0?+(((fc-cu)/cu)*100).toFixed(1):null}:null; }).filter(Boolean).sort((a,b)=>b.fat-a.fat);
+    const fin=x=>({...x,fatCusto:_round2(x.fatCusto),custo:_round2(x.custo),fatSemCusto:_round2(x.fatSemCusto),lucro:_round2(x.fatCusto-x.custo),margem:x.fatCusto>0?+((x.fatCusto-x.custo)/x.fatCusto*100).toFixed(1):null,markup:x.custo>0?+((x.fatCusto-x.custo)/x.custo*100).toFixed(1):null});
     // período que toca os últimos 3 dias: confere os pedidos do Bling (no máximo a cada 4 min), sem esperar aviso nem a madrugada
     const limRec=new Date(Date.now()-3*3600e3-3*_DIA).toISOString().slice(0,10); if(r.fim>=limRec&&!_recentes.rodando&&Date.now()-_recentes.em>4*60000) atualizarRecentesBling(3);
     const EXTRA={semItens:{qtd:SI.qtd,total:_round2(SI.total),hoje:SI.hoje,lista:SI.lista},atualizadoEm:Date.now(),indiceEm:_idxPed.em,
@@ -11108,11 +11108,11 @@ app.get("/api/margem-bruta",requireAcesso("acesso_margem_bruta"),(req,res)=>{
     const linhas=Object.values(G).map(fin).sort((a,b)=>ag==="pedido"?String(b.dia).localeCompare(String(a.dia)):String(a.chave).localeCompare(String(b.chave)));
     if(ag==="produto"){ // lista de produtos com parâmetros de análise
       let L=Object.values(PROD).map(x=>{ const tem=x.custoUn!=null, lucro=tem?_round2(x.fat-x.custo):null; return {produtoId:x.produtoId,nome:x.nome,qtd:+x.qtd.toFixed(2),fat:_round2(x.fat),custo:tem?_round2(x.custo):null,custoUn:x.custoUn,precoVenda:x.precoVenda,
-        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
+        precoMedio:x.qtd?_round2(x.fat/x.qtd):null,lucro,margem:tem&&x.fat>0?+((x.fat-x.custo)/x.fat*100).toFixed(1):null,markup:tem&&x.custo>0?+((x.fat-x.custo)/x.custo*100).toFixed(1):null,pedidos:x.pedidos.size,_ped:x.pedidos}; });
       const mx=q.margemMax!=null&&q.margemMax!==""?Number(String(q.margemMax).replace(",",".")):null;
       if(q.so==="sem_custo") L=L.filter(x=>x.custoUn==null); else if(q.so==="com_custo") L=L.filter(x=>x.custoUn!=null);
       if(mx!=null&&Number.isFinite(mx)) L=L.filter(x=>x.margem!=null&&x.margem<mx);
-      const ord={menor_margem:(a,b)=>(a.margem??1e9)-(b.margem??1e9),maior_margem:(a,b)=>(b.margem??-1e9)-(a.margem??-1e9),maior_lucro:(a,b)=>(b.lucro??-1e12)-(a.lucro??-1e12),maior_fat:(a,b)=>b.fat-a.fat,maior_qtd:(a,b)=>b.qtd-a.qtd}[q.ordem]||((a,b)=>(a.margem??1e9)-(b.margem??1e9));
+      const ord={menor_margem:(a,b)=>(a.margem??1e9)-(b.margem??1e9),maior_margem:(a,b)=>(b.margem??-1e9)-(a.margem??-1e9),menor_markup:(a,b)=>(a.markup??1e9)-(b.markup??1e9),maior_markup:(a,b)=>(b.markup??-1e9)-(a.markup??-1e9),maior_lucro:(a,b)=>(b.lucro??-1e12)-(a.lucro??-1e12),maior_fat:(a,b)=>b.fat-a.fat,maior_qtd:(a,b)=>b.qtd-a.qtd}[q.ordem]||((a,b)=>(a.margem??1e9)-(b.margem??1e9));
       L.sort(ord); const tot=fin({fatCusto:T.fatCusto,custo:T.custo,fatSemCusto:T.fatSemCusto});
       // FATURAMENTO do que está listado (respeita busca, "só com/sem custo" e "margem abaixo de"): soma das linhas filtradas
       const uni=new Set(); L.forEach(x=>{ x._ped.forEach(i=>uni.add(i)); }); const fatL=_round2(L.reduce((a,x)=>a+x.fat,0)), fatSem=_round2(L.filter(x=>x.custoUn==null).reduce((a,x)=>a+x.fat,0));
@@ -11545,7 +11545,7 @@ app.get("/api/painel-b13",requireAcesso("acesso_painel_b13"),(req,res)=>{
     const PR=_montarProdutos({ini,fim}).L, ativos=PR.filter(r=>r.noBling&&r.situacao==="A"), cont=f=>PR.filter(r=>r.flags.includes(f)).length;
     const lucro=_round2(PR.filter(r=>r.lucro!=null).reduce((a,r)=>a+r.lucro,0)), fatCusto=_round2(PR.filter(r=>r.lucro!=null).reduce((a,r)=>a+r.valor,0));
     const produtos={ativos:ativos.length,comEstoque:ativos.filter(r=>r.estoque>0).length,valorEstoqueCusto:_round2(ativos.reduce((a,r)=>a+(r.valorEstoqueCusto||0),0)),
-      lucro,margem:fatCusto>0?+(lucro/fatCusto*100).toFixed(1):null,ruptura:cont("ruptura"),rupturaA:PR.filter(r=>r.flags.includes("ruptura")&&r.curva==="A").length,baixo:cont("baixo"),parado:cont("parado"),negativo:cont("negativo"),semCusto:cont("sem custo"),
+      lucro,margem:fatCusto>0?+(lucro/fatCusto*100).toFixed(1):null,markup:(fatCusto-lucro)>0?+(lucro/(fatCusto-lucro)*100).toFixed(1):null,ruptura:cont("ruptura"),rupturaA:PR.filter(r=>r.flags.includes("ruptura")&&r.curva==="A").length,baixo:cont("baixo"),parado:cont("parado"),negativo:cont("negativo"),semCusto:cont("sem custo"),
       valorParado:_round2(PR.filter(r=>r.flags.includes("parado")).reduce((a,r)=>a+(r.valorEstoqueCusto||0),0)),
       compras:PR.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,8).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,cobertura:r.cobertura,sugestao:r.sugestaoCompra,curva:r.curva})),
       parados:PR.filter(r=>r.flags.includes("parado")).sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,6).map(r=>({id:r.id,nome:r.nome,valor:r.valorEstoqueCusto,diasSemVenda:r.diasSemVenda})),
@@ -12743,7 +12743,7 @@ function _montarProdutos(q){
     const diasSemVenda=ult?Math.round((Date.parse(hoje)-Date.parse(ult))/_DIA):null;
     const r={id,nome:p?p.n:(v?v.nome:""),codigo:p?p.c:"",situacao:p?p.s:"?",noBling:!!p,unidade:p?p.u:"",img:(c&&c.i)||(p&&p.img)||"",gtins:c?c.k:[],
       preco:p?p.p:null,custo,precoVarejo:c?c.p:null,precoAtacado:c?c.a:null,precoFardo:c?c.f:null,qtdFardo:c?c.q:null,estoque:est,
-      qtd:_round2(qtd),valor,pedidos:v?v.pedidos:0,clientes:v?v.clientes.size:0,precoMedio,lucro,margem:lucro!=null&&valor>0?+(lucro/valor*100).toFixed(1):null,
+      qtd:_round2(qtd),valor,pedidos:v?v.pedidos:0,clientes:v?v.clientes.size:0,precoMedio,lucro,margem:lucro!=null&&valor>0?+(lucro/valor*100).toFixed(1):null,markup:lucro!=null&&(valor-lucro)>0?+(lucro/(valor-lucro)*100).toFixed(1):null,
       qtdAnt:va?_round2(va.qtd):0,valorAnt:va?_round2(va.valor):0,v30:v30?_round2(v30.qtd):0,v90:v90?_round2(v90.qtd):0,mediaDia:+media.toFixed(2),cobertura:cob,ultimaVenda:ult,diasSemVenda,
       sugestaoCompra:media>0&&est!=null?Math.max(0,Math.ceil(media*15-est)):0,perdas:perdas[id]?{qtd:_round2(perdas[id].qtd),valor:_round2(perdas[id].valor)}:null,entrada:ent[id]||null,
       valorEstoqueCusto:est>0&&custo?_round2(est*custo):0,valorEstoqueVenda:est>0&&(p&&p.p)?_round2(est*p.p):0};
@@ -12790,12 +12790,12 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
       faturamentoComCusto:soma(Todos.filter(r=>r.lucro!=null),r=>r.valor),alertas:{ruptura:cont("ruptura"),baixo:cont("baixo"),parado:cont("parado"),negativo:cont("negativo"),excesso:cont("excesso"),"sem custo":cont("sem custo"),"margem baixa":cont("margem baixa"),"fora do catálogo":cont("fora do catálogo")},
       valorParado:soma(Todos.filter(r=>r.flags.includes("parado")),r=>r.valorEstoqueCusto),curva:{A:Todos.filter(r=>r.curva==="A").length,B:Todos.filter(r=>r.curva==="B").length,C:Todos.filter(r=>r.curva==="C").length},
       topValor:Todos.filter(r=>r.valor>0).sort((a,b)=>b.valor-a.valor).slice(0,10).map(r=>({id:r.id,nome:r.nome,valor:r.valor,qtd:r.qtd})),
-      topLucro:Todos.filter(r=>r.lucro>0).sort((a,b)=>b.lucro-a.lucro).slice(0,10).map(r=>({id:r.id,nome:r.nome,lucro:r.lucro,margem:r.margem})),
+      topLucro:Todos.filter(r=>r.lucro>0).sort((a,b)=>b.lucro-a.lucro).slice(0,10).map(r=>({id:r.id,nome:r.nome,lucro:r.lucro,margem:r.margem,markup:r.markup})),
       altas:Todos.filter(r=>r.valor-r.valorAnt>0).sort((a,b)=>(b.valor-b.valorAnt)-(a.valor-a.valorAnt)).slice(0,8).map(r=>({id:r.id,nome:r.nome,valor:r.valor,valorAnt:r.valorAnt})),
       quedas:Todos.filter(r=>r.valor-r.valorAnt<0).sort((a,b)=>(a.valor-a.valorAnt)-(b.valor-b.valorAnt)).slice(0,8).map(r=>({id:r.id,nome:r.nome,valor:r.valor,valorAnt:r.valorAnt})),
       compras:Todos.filter(r=>r.sugestaoCompra>0&&r.situacao==="A").sort((a,b)=>(a.cobertura??0)-(b.cobertura??0)).slice(0,12).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,cobertura:r.cobertura,sugestao:r.sugestaoCompra,mediaDia:r.mediaDia})),
       paradosValor:Todos.filter(r=>r.flags.includes("parado")).sort((a,b)=>b.valorEstoqueCusto-a.valorEstoqueCusto).slice(0,8).map(r=>({id:r.id,nome:r.nome,estoque:r.estoque,valor:r.valorEstoqueCusto,diasSemVenda:r.diasSemVenda}))};
-    M.margem=M.faturamentoComCusto>0?+(M.lucro/M.faturamentoComCusto*100).toFixed(1):null;
+    M.margem=M.faturamentoComCusto>0?+(M.lucro/M.faturamentoComCusto*100).toFixed(1):null; M.markup=(M.faturamentoComCusto-M.lucro)>0?+(M.lucro/(M.faturamentoComCusto-M.lucro)*100).toFixed(1):null;
     const comEst=L.filter(r=>r.estoque>0), filtro={produtos:L.length,comEstoque:comEst.length,unidades:soma(comEst,r=>r.estoque),valorEstoqueCusto:soma(L,r=>r.valorEstoqueCusto),valorEstoqueVenda:soma(L,r=>r.valorEstoqueVenda),semCusto:comEst.filter(r=>!r.custo).length}; // soma do que está listado agora (respeita todos os filtros)
     res.json({ok:true,filtro,ini,fim,anterior:{ini:aIni,fim:aFim},total:O.length,itens:O.slice(off,off+lim),metricas:M,
       catalogo:{em:PB.em||null,estoqueEm:PB.estoqueEm||null,produtos:Object.keys(PB.porId||{}).length,rodando:_prodSync.rodando,progresso:_prodSync.progresso},historico:_statusHistorico(),ms:Date.now()-T0});
@@ -12803,8 +12803,8 @@ app.get("/api/produtos-gestao",requireAcesso("acesso_produtos_gestao"),(req,res)
 });
 app.get("/api/produtos-gestao.csv",requireAcesso("acesso_produtos_gestao"),(req,res)=>{
   try{ const {L}=_montarProdutos(req.query); const c=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`, n=v=>v==null?"":String(v).replace(".",",");
-    const linhas=[["id","codigo","produto","situacao","estoque","cobertura_dias","media_dia_90d","vendido_qtd","vendido_valor","pedidos","clientes","preco_medio","preco_bling","custo","lucro","margem_pct","curva","ultima_venda","dias_sem_venda","sugestao_compra_15d","alertas","varejo","atacado","fardo","valor_estoque_custo","valor_estoque_venda"].join(";")];
-    L.filter(r=>r.noBling||r.qtd>0).forEach(r=>linhas.push([r.id,r.codigo,r.nome,r.situacao,n(r.estoque),n(r.cobertura),n(r.mediaDia),n(r.qtd),n(r.valor),r.pedidos,r.clientes,n(r.precoMedio),n(r.preco),n(r.custo),n(r.lucro),n(r.margem),r.curva,r.ultimaVenda,n(r.diasSemVenda),r.sugestaoCompra,r.flags.join(" | "),n(r.precoVarejo),n(r.precoAtacado),n(r.precoFardo),n(r.valorEstoqueCusto),n(r.valorEstoqueVenda)].map(c).join(";")));
+    const linhas=[["id","codigo","produto","situacao","estoque","cobertura_dias","media_dia_90d","vendido_qtd","vendido_valor","pedidos","clientes","preco_medio","preco_bling","custo","lucro","margem_pct","curva","ultima_venda","dias_sem_venda","sugestao_compra_15d","alertas","varejo","atacado","fardo","valor_estoque_custo","valor_estoque_venda","markup_vendas_pct","markup_preco_pct","margem_preco_pct"].join(";")];
+    L.filter(r=>r.noBling||r.qtd>0).forEach(r=>linhas.push([r.id,r.codigo,r.nome,r.situacao,n(r.estoque),n(r.cobertura),n(r.mediaDia),n(r.qtd),n(r.valor),r.pedidos,r.clientes,n(r.precoMedio),n(r.preco),n(r.custo),n(r.lucro),n(r.margem),r.curva,r.ultimaVenda,n(r.diasSemVenda),r.sugestaoCompra,r.flags.join(" | "),n(r.precoVarejo),n(r.precoAtacado),n(r.precoFardo),n(r.valorEstoqueCusto),n(r.valorEstoqueVenda),n(r.markup),n(r.custo>0&&r.preco>0?+((r.preco-r.custo)/r.custo*100).toFixed(1):null),n(r.custo>0&&r.preco>0?+((r.preco-r.custo)/r.preco*100).toFixed(1):null)].map(c).join(";")));
     res.setHeader("Content-Type","text/csv; charset=utf-8"); res.setHeader("Content-Disposition",`attachment; filename="produtos_${_diaBRk(Date.now())}.csv"`); res.send("\uFEFF"+linhas.join("\n")); }
   catch(e){ res.status(500).send(e.message); }
 });
