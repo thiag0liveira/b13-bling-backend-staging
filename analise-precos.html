@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>B13 — Tabela de Varejo</title>
+<title>B13 — Análise de Preços</title>
 <style>
 *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
 :root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8f7a}
@@ -88,23 +88,53 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 .bd{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800;margin-left:4px}.bd.paga{background:#11352a;color:#6be3a8}.bd.aberta{background:#24205a;color:#cfcaf5}.bd.vencida{background:#4a1230;color:#ff8aa3}.bd.vence{background:#3a2e08;color:#ffd23f}
 .fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:460px}
 .modal2 label{display:block;margin-top:8px}.modal2 label .ic{display:block;margin-bottom:2px;white-space:normal}.modal2 input,.modal2 select,.modal2 textarea{width:100%}.chipf{display:inline-block;margin:3px 4px 3px 0;padding:6px 11px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:13px}.chipf.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
-.dt{display:flex;gap:6px;align-items:center}.dt label.btn{position:relative;overflow:hidden;cursor:pointer;padding:8px 11px;margin:0}.dt label.btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}.tb{position:static;background:#12102e;border:1px solid #2b2760;border-radius:12px;padding:10px;margin:8px 0}
-.tb input,.tb select{width:100%}.tb .l{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.tb .l>*{flex:1 1 130px}
-.chp{display:inline-block;padding:5px 10px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:12.5px;white-space:nowrap;flex:0 0 auto!important}.chp.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
-.gh{display:flex;align-items:center;gap:8px;background:#1b1442;border:1px solid #37327a;border-radius:10px;padding:9px 10px;margin:10px 0 0;cursor:pointer}
-.gh b{flex:1;min-width:0}.gh .seta{transition:transform .15s}.gh.aberta .seta{transform:rotate(90deg)}
-.rw{display:grid;grid-template-columns:22px 1fr;gap:4px 8px;padding:9px 6px;border-bottom:1px solid #221e4f}.rw.alt{background:#2a2406}
+.dt{display:flex;gap:6px;align-items:center}.dt label.btn{position:relative;overflow:hidden;cursor:pointer;padding:8px 11px;margin:0}.dt label.btn input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}body{font-size:12px}
+.tb{background:#12102e;border:1px solid #2b2760;border-radius:10px;padding:6px 8px;margin:6px 0}
 @media(min-width:760px){.tb{position:sticky;top:48px;z-index:60}}
-.rw .nm{font-weight:800;line-height:1.25;word-break:break-word}.rw .sub{font-size:11.5px;color:#a9a4d6}
-.vals{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}@media(min-width:760px){.vals{grid-template-columns:repeat(4,1fr)}}
-.cel{background:#0f0d24;border:1px solid #2b2760;border-radius:9px;padding:6px 8px}.cel .t{font-size:10.5px;letter-spacing:.3px;text-transform:uppercase;color:#8f89c9}
-.cel input{width:100%;background:transparent;border:0;border-bottom:1px dashed #514c96;color:#fff;font-size:16px;font-weight:800;padding:2px 0;border-radius:0}.cel input:focus{outline:0;border-bottom-color:#ff1a8c}
-.cel .v{font-size:16px;font-weight:800;color:#fff}.pc{display:inline-block;border-radius:999px;padding:0 7px;font-size:11.5px;font-weight:900;margin-top:2px}.pc.ok{background:#11352a;color:#6be3a8}.pc.med{background:#3a2e08;color:#ffd23f}.pc.bad{background:#4a1230;color:#ff8aa3}.pc.nd{background:#241f55;color:#9a95c9}
-.mini{display:flex;gap:6px;align-items:center;margin-top:2px}.mini input{width:54px!important;font-size:14px!important}
-.cat select{width:100%;font-size:12.5px;padding:4px 6px}.ok1{color:#3ce88a;font-size:12px;opacity:0;transition:opacity .3s}.ok1.on{opacity:1}
+.tb .ln{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px}.tb input,.tb select{font-size:12px;padding:3px 6px;height:28px}.tb .ln>input{flex:1 1 200px}.tb .ln>select{flex:1 1 90px;min-width:0}
+.chp{display:inline-block;padding:2px 9px;border:1px solid #37327a;border-radius:999px;background:#0f0d24;cursor:pointer;font-size:11.5px;white-space:nowrap;line-height:1.5}.chp.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}
+.tb .ln.sc,.sc{display:flex;flex-wrap:nowrap;gap:5px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch}.sc .chp{flex:0 0 auto}.sc::-webkit-scrollbar{height:0}
+.bt{padding:3px 9px;font-size:11.5px;border-radius:8px;border:1px solid #37327a;background:#1b1442;color:#fff;cursor:pointer}
+.gh{display:flex;align-items:center;gap:6px;background:#1b1442;border:1px solid #37327a;border-radius:7px;padding:3px 8px;margin:7px 0 0;font-size:12.5px;cursor:pointer}.gh b{flex:1;min-width:0}.gh .seta{font-size:9px;transition:transform .12s}.gh.aberta .seta{transform:rotate(90deg)}
+.cols,.r{display:grid;grid-template-columns:20px minmax(150px,1fr) 62px 112px 92px 150px 98px 132px;gap:0 6px;align-items:center}
+.cols{font-size:9.5px;letter-spacing:.3px;text-transform:uppercase;color:#8f89c9;padding:1px 4px;border-bottom:1px solid #2b2760}
+.r{padding:1px 4px;border-bottom:1px solid #1a1740;min-height:24px;line-height:1.15}.r:hover{background:#16133a}.r.alt{background:#2a2406}
+.r .nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.r .cd{color:#7f79b8;font-weight:400;font-size:10px;margin-left:5px}
+.vl{display:contents}.c{display:flex;align-items:center;gap:4px;white-space:nowrap;min-width:0}
+.in{background:transparent;border:0;border-bottom:1px dashed #514c96;color:#fff;font-size:12px;font-weight:800;padding:1px 0;width:56px;border-radius:0;height:20px;text-align:left}.in:focus{outline:0;border-bottom:1px solid #ff1a8c;background:#1b1442}.in.q{width:30px}
+.fr{display:flex;align-items:center;gap:3px}.fr span{font-size:10px;color:#7f79b8}
+.pc{display:inline-block;border-radius:8px;padding:0 5px;font-size:10px;font-weight:900;line-height:1.5}.pc.ok{background:#11352a;color:#6be3a8}.pc.med{background:#3a2e08;color:#ffd23f}.pc.bad{background:#4a1230;color:#ff8aa3}.pc.nd{background:#241f55;color:#9a95c9}
+select.cat{font-size:11px;padding:1px 2px;height:22px;width:100%;border-radius:6px}select.cat.pend{border-color:#ff1a8c;background:#2a1030}
+.ok1{color:#3ce88a;font-size:10px;opacity:0;transition:opacity .3s;margin-left:4px}.ok1.on{opacity:1}
+.rasc{font-size:9px;color:#ffd23f;text-transform:uppercase}
+@media(max-width:759px){
+  .cols{grid-template-columns:20px 1fr 96px;padding:1px 2px}.cols .vl{display:grid;grid-column:2/-1;grid-row:2;grid-template-columns:.55fr 1.55fr 1.15fr 1.4fr 1.12fr;gap:4px}.cols .hc{grid-column:3;grid-row:1}.cols .hn{grid-column:2;grid-row:1}
+  .r{grid-template-columns:20px 1fr 96px;padding:2px 2px;row-gap:1px}.r .ck{grid-row:1;grid-column:1}.r .nm{grid-row:1;grid-column:2;white-space:normal;overflow:visible;font-size:12px}.r select.cat{grid-row:1;grid-column:3}
+  .r .vl{display:grid;grid-row:2;grid-column:2/-1;grid-template-columns:.8fr 1.1fr .9fr 1.5fr 1fr;gap:4px;align-items:start}
+  .c{flex-wrap:wrap;gap:0 3px;align-items:center;font-size:11.5px}.in{width:40px;font-size:11.5px}.in.q{width:22px}.pc{font-size:9px;padding:0 3px}.fr span{display:none}.c{font-size:11px}.vl{grid-template-columns:.55fr 1.55fr 1.15fr 1.4fr 1.12fr!important}.r .nm{font-size:11.5px;line-height:1.2}.r{padding:1px 2px!important}.cols{font-size:9px}
+}
 .barra{position:fixed;left:0;right:0;bottom:0;z-index:200;background:#1b1442;border-top:2px solid #FF0082;padding:9px 12px;display:none}.barra.on{display:block}
 .fundo2{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:300;overflow-y:auto;padding:20px 10px}.fundo2.aberto{display:flex}.modal2{background:#151233;border:1px solid #37327a;border-radius:14px;padding:14px;width:100%;max-width:520px}
-.modal2 input,.modal2 select{width:100%}</style>
+.modal2 input,.modal2 select{width:100%}
+.stk{position:sticky;top:48px;z-index:70;background:#0e0b26;padding:4px 0 3px;border-bottom:1px solid #2b2760}
+.cats{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.cc{display:inline-flex;gap:4px;align-items:center;padding:2px 9px;border:1px solid #37327a;border-radius:999px;background:#17123a;cursor:pointer;font-size:11.5px;line-height:1.5;white-space:nowrap;user-select:none}.cc i{font-style:normal;color:#9a95c9;font-size:10.5px}.cc.on{background:#ff1a8c;border-color:#ff1a8c;color:#fff}.cc.on i{color:#ffd9ec}
+.cc.drop,.gh.drop{outline:2px dashed #ffd23f;background:#3a2e08!important;color:#fff}
+.cc.sem{border-color:#ff1a8c}
+.hd{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;color:#8f89c9;font-size:15px;text-align:center;line-height:1}.hd:active{cursor:grabbing;color:#ff1a8c}
+.h2{display:flex;align-items:center;gap:1px}
+.ghost{position:fixed;z-index:1000;pointer-events:none;background:#ff1a8c;color:#fff;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.5);max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.arrastando{user-select:none;-webkit-user-select:none;cursor:grabbing}
+.cols,.r{grid-template-columns:38px minmax(150px,1fr) 62px 112px 92px 150px 98px 132px!important}
+.r.g{background:#17123a;border-left:3px solid #ff1a8c}.r.g .nm{cursor:pointer}
+.gm{background:#120f30;border-left:3px solid #ff1a8c;padding:2px 4px 3px 42px;margin-bottom:2px}
+.mm{display:grid;grid-template-columns:minmax(120px,1fr) 62px 72px 80px 26px;gap:0 6px;align-items:center;font-size:11px;padding:1px 0;border-bottom:1px solid #1d1946}
+.gm .ac{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:3px 0}.gm .ac input{font-size:12px;padding:2px 6px;height:24px;width:190px}
+@media(max-width:759px){
+  .cols,.r{grid-template-columns:38px 1fr 96px!important}
+  .r .h2{grid-row:1;grid-column:1}.gm{padding-left:8px}.mm{grid-template-columns:minmax(80px,1fr) 52px 62px 70px 24px}
+}
+.tb{position:static!important}</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -118,21 +148,24 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 </style>
 </head>
 <body><script>
-  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/tabela-varejo")) return;
-    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/tabela-varejo"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/analise-precos")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/analise-precos"); document.body.insertBefore(nav,document.body.firstChild); }); })();
 </script>
-<div class="top"><img src="/logo"><div class="t">📊 Tabela de Varejo</div><div class="sp"></div></div>
+<div class="top"><img src="/logo"><div class="t">📊 Análise de Preços</div><div class="sp"></div></div>
 <div class="wrap" id="topo">
+  <div class="stk" id="stk">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">📊 Análise de Preços</b><span class="ic" id="resumo"></span></div>
+    <div class="cats" id="cats"></div>
+  </div>
   <div class="tb" id="tb">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">📊 Tabela de Varejo e análise de preços</b><span class="ic" id="resumo"></span></div>
-    <input id="busca" placeholder="🔎 produto ou código" autocomplete="off" enterkeyhint="search" oninput="buscar()" style="margin-top:6px">
-    <div class="l"><select id="ir" onchange="irCat(this.value)"><option value="">Ir para a categoria…</option></select><select id="ord" onchange="ORD=this.value;render()"><option value="nome">Ordem: nome</option><option value="margem">Menor margem primeiro</option><option value="margemmaior">Maior margem primeiro</option><option value="varejo">Maior preço de varejo</option><option value="estoque">Maior estoque</option></select><select id="met" onchange="MET=this.value;render()"><option value="margem">% = margem (lucro ÷ preço)</option><option value="markup">% = markup (lucro ÷ custo)</option></select></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px" id="chips"></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirCategorias()">⚙️ Categorias</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="importarAtacado()">📥 Categorias do atacado</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirTodas(true)">Abrir todas</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="abrirTodas(false)">Fechar todas</button><button class="btn btn-ghost" style="padding:6px 11px" onclick="baixarCsv()">⬇️ CSV</button></div>
-    <div id="msg" class="ic" style="white-space:normal;margin-top:6px"></div>
+    <div class="ln"><input id="busca" placeholder="🔎 produto ou código" autocomplete="off" enterkeyhint="search" oninput="buscar()"></div>
+    <div class="ln sc" id="chips"></div>
+    <div class="ln"><select id="ord" onchange="ORD=this.value;render()"><option value="nome">Ordem: nome</option><option value="margem">Menor margem</option><option value="margemmaior">Maior margem</option><option value="varejo">Maior preço</option><option value="estoque">Maior estoque</option></select><select id="met" onchange="MET=this.value;render()"><option value="margem">% margem</option><option value="markup">% markup</option></select></div>
+    <div class="ln sc"><button class="bt" onclick="abrirCategorias()">⚙️ Categorias</button><button class="bt" onclick="importarAtacado()">📥 Atacado</button><button class="bt" onclick="abrirTodas(true)">Abrir todas</button><button class="bt" onclick="abrirTodas(false)">Fechar todas</button><button class="bt" onclick="baixarCsv()">⬇️ CSV</button></div>
+    <div id="msg" class="ic" style="white-space:normal;margin-top:4px"></div>
   </div>
   <div id="lista"><div class="ic" style="padding:14px">Carregando os produtos…</div></div>
-  <div style="height:150px"></div>
+  <div style="height:130px"></div>
 </div>
 <div class="barra" id="barSel"></div>
 <div class="barra" id="barAlt"></div>
@@ -145,8 +178,8 @@ const num2 = n => n == null ? "" : Number(n).toLocaleString("pt-BR", { minimumFr
 const numBR = t => { t = String(t == null ? "" : t).trim(); if (!t) return null; const n = t.includes(",") ? Number(t.replace(/\./g, "").replace(",", ".")) : /^\d{1,3}(\.\d{3})+$/.test(t) ? Number(t.replace(/\./g, "")) : Number(t); return isFinite(n) ? n : NaN; };
 function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
-let D = null, FILTRO = "todos", BUSCA = "", ORD = "nome", MET = "margem", EST = new Map(), FORCA = null, SEL = new Set(), MAIS = {}, _tb = null;
-const LIM = 60;
+let D = null, FILTRO = "todos", BUSCA = "", ORD = "nome", MET = "margem", CAT = null, EST = new Map(), FORCA = null, SEL = new Set(), MAIS = {}, GAB = new Set(), _tb = null;
+const LIM = 80, DASH = '<span style="color:#6f6aa8">—</span>';
 // ---------- cálculos ----------
 const pct = (p, c) => !(p > 0) || !(c > 0) ? null : MET === "markup" ? (p - c) / c * 100 : (p - c) / p * 100;
 const fmtPct = v => v == null ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%";
@@ -154,93 +187,165 @@ const cls = v => v == null ? "nd" : v < 10 ? "bad" : v < 20 ? "med" : "ok";
 const badge = (p, c) => { const v = pct(p, c); return `<span class="pc ${cls(MET === "markup" ? (v == null ? null : v / (1 + v / 100)) : v)}">${fmtPct(v)}</span>`; };
 const precoVar = i => i.precoNovo || i.precoVarejo, qtdEf = i => i.qtdFardo || i.caixaQtd || null, fardoEf = i => i.precoFardo || i.precoFardoAtacado || null;
 const fardoUn = i => { const q = qtdEf(i), f = fardoEf(i); return q && f ? f / q : null; };
-const margemVar = i => { const v = pct(precoVar(i), i.custo); return v; };
+const margemVar = i => pct(precoVar(i), i.custo);
+const uniq = a => [...new Set(a.filter(Boolean))];
+const gDe = gid => (D.grupos || []).find(g => g.id === gid);
+// resumo de um grupo de sabores (todos têm o mesmo preço; o custo pode variar por sabor)
+function agg(ms) { const cus = ms.map(x => x.custo).filter(Boolean), custo = cus.length ? cus.reduce((a, b) => a + b, 0) / cus.length : null, pvs = uniq(ms.map(precoVar)), fds = uniq(ms.map(x => x.precoFardo)), qs = uniq(ms.map(x => x.qtdFardo)), at = uniq(ms.map(x => x.precoAtacado)), fa = uniq(ms.map(x => x.precoFardoAtacado)), cx = uniq(ms.map(x => x.caixaQtd));
+  const pv = pvs.length === 1 ? pvs[0] : null, fd = fds.length === 1 ? fds[0] : null, q = qs.length === 1 ? qs[0] : null, f = fd || (fa.length === 1 ? fa[0] : null), qq = q || (cx.length === 1 ? cx[0] : null);
+  return { custo, cmin: cus.length ? Math.min(...cus) : null, cmax: cus.length ? Math.max(...cus) : null, semCusto: ms.filter(x => !x.custo).length, pv, pvMisto: pvs.length > 1, pvs, fardo: fd, fardoMisto: fds.length > 1, qtd: q, atac: at.length === 1 ? at[0] : null, fAt: fa.length === 1 ? fa[0] : null, cx: cx.length === 1 ? cx[0] : null, fu: f && qq ? f / qq : null, estoque: ms.reduce((a, x) => a + x.estoque, 0), alt: ms.some(x => x.precoNovo && x.precoNovo !== x.precoVarejo) }; }
 // ---------- dados ----------
-async function carregar() { const { ok, j } = await api("/api/tabela-varejo"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; prepararFiltros(); render(); }
-function prepararFiltros() { const ir = document.getElementById("ir"); ir.innerHTML = '<option value="">Ir para a categoria…</option><option value="__sem">Sem categoria</option>' + D.categorias.map(c => `<option value="${esc(c.id)}">${esc(c.nome)} (${c.qtd})</option>`).join(""); }
-const nomeCat = id => id ? ((D.categorias.find(c => c.id === id) || {}).nome || "") : "Sem categoria";
+async function carregar() { const { ok, j } = await api("/api/tabela-varejo"); if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; if (CAT && CAT !== "" && !D.categorias.some(c => c.id === CAT)) CAT = null; render();
+  if (j.auto && (j.auto.criadas || j.auto.colocados || j.auto.grupos)) avisar(`✅ Puxei da tabela de atacado: ${j.auto.criadas} categoria(s), ${j.auto.colocados} produto(s) colocados nelas e ${j.auto.grupos || 0} grupo(s) de sabores (${j.auto.saboresColocados || 0} sabores).`, true); }
 function filtrados() { const q = BUSCA.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""), toks = q.split(/\s+/).filter(Boolean);
-  let L = D.itens.filter(i => { if (toks.length) { const t = (i.nome + " " + i.codigo).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (!toks.every(x => t.includes(x))) return false; }
+  return D.itens.filter(i => { if (CAT !== null && (i.categoriaId || "") !== CAT) return false; if (toks.length) { const g = i.grupoId ? (gDe(i.grupoId) || {}).nome || "" : "", t = (i.nome + " " + i.codigo + " " + g).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); if (!toks.every(x => t.includes(x))) return false; }
     if (FILTRO === "sem") return !i.categoriaId; if (FILTRO === "baixa") { const m = margemVar(i); return m != null && (MET === "markup" ? m < 18 : m < 15); } if (FILTRO === "alt") return i.precoNovo && i.precoNovo !== i.precoVarejo;
-    if (FILTRO === "semcusto") return !i.custo; if (FILTRO === "semfardo") return !fardoEf(i); if (FILTRO === "estoque") return i.estoque > 0; return true; });
-  const ordF = { nome: (a, b) => a.nome.localeCompare(b.nome), margem: (a, b) => (margemVar(a) ?? 1e9) - (margemVar(b) ?? 1e9), margemmaior: (a, b) => (margemVar(b) ?? -1e9) - (margemVar(a) ?? -1e9), varejo: (a, b) => (precoVar(b) || 0) - (precoVar(a) || 0), estoque: (a, b) => b.estoque - a.estoque }[ORD];
-  return L.sort(ordF); }
+    if (FILTRO === "semcusto") return !i.custo; if (FILTRO === "semfardo") return !fardoEf(i); if (FILTRO === "estoque") return i.estoque > 0; return true; }); }
+// junta os sabores de um grupo numa linha só
+function entradas(L) { const gm = new Map(), ent = []; L.forEach(i => { if (i.grupoId && gDe(i.grupoId)) { let e = gm.get(i.grupoId); if (!e) { e = { tipo: "g", g: gDe(i.grupoId), ms: [], cat: i.categoriaId || "" }; gm.set(i.grupoId, e); ent.push(e); } e.ms.push(i); } else ent.push({ tipo: "i", i, cat: i.categoriaId || "" }); });
+  const nome = e => e.tipo === "g" ? e.g.nome : e.i.nome, mg = e => e.tipo === "g" ? (() => { const a = agg(e.ms); return pct(a.pv, a.custo); })() : margemVar(e.i), pr = e => e.tipo === "g" ? (agg(e.ms).pv || 0) : (precoVar(e.i) || 0), es = e => e.tipo === "g" ? agg(e.ms).estoque : e.i.estoque;
+  const f = { nome: (a, b) => nome(a).localeCompare(nome(b)), margem: (a, b) => (mg(a) ?? 1e9) - (mg(b) ?? 1e9), margemmaior: (a, b) => (mg(b) ?? -1e9) - (mg(a) ?? -1e9), varejo: (a, b) => pr(b) - pr(a), estoque: (a, b) => es(b) - es(a) }[ORD]; return ent.sort(f); }
 // ---------- desenho ----------
-function celulas(i) { const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !== i.precoVarejo, q = qtdEf(i), fe = fardoEf(i), fu = fardoUn(i);
-  return `<div class="vals">
-    <div class="cel"><div class="t">Custo</div><div class="v" id="c-${i.id}">${i.custo ? brl(i.custo) : '<span style="color:#ffd23f;font-size:13px">sem custo</span>'}</div></div>
-    <div class="cel"><div class="t">Varejo ${alt ? '<span style="color:#ffd23f">· rascunho</span>' : ""}</div><input id="v-${i.id}" inputmode="decimal" enterkeyhint="done" value="${pv ? num2(pv) : ""}" placeholder="0,00" oninput="digitando('${i.id}','v')" onchange="salvar('${i.id}','v')" onkeydown="if(event.key==='Enter')this.blur()"><div id="pv-${i.id}">${badge(pv, i.custo)}${alt ? ` <span class="sub">Bling ${brl(i.precoVarejo)}</span>` : ""}</div></div>
-    <div class="cel"><div class="t">Atacado</div><div class="v">${i.precoAtacado ? brl(i.precoAtacado) : '<span style="color:#6f6aa8">—</span>'}</div><div>${i.precoAtacado ? badge(i.precoAtacado, i.custo) : ""}</div></div>
-    <div class="cel"><div class="t">Fardo ${i.precoFardo ? "" : (i.precoFardoAtacado ? '<span class="sub">(do atacado)</span>' : "")}</div><input id="f-${i.id}" inputmode="decimal" enterkeyhint="done" value="${i.precoFardo ? num2(i.precoFardo) : ""}" placeholder="${i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00"}" oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="if(event.key==='Enter')this.blur()">
-      <div class="mini"><input id="q-${i.id}" inputmode="numeric" enterkeyhint="done" value="${i.qtdFardo || ""}" placeholder="${i.caixaQtd || "un"}" oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="if(event.key==='Enter')this.blur()"><span class="sub">un</span><span id="fu-${i.id}" class="sub">${fu ? brl(fu) + "/un" : ""}</span></div><div id="pf-${i.id}">${fu ? badge(fu, i.custo) : ""}</div></div>
-  </div>`; }
-function linha(i) { const alt = i.precoNovo && i.precoNovo !== i.precoVarejo;
-  return `<div class="rw ${alt ? "alt" : ""}" id="r-${i.id}"><div><input type="checkbox" ${SEL.has(i.id) ? "checked" : ""} onchange="marcar('${i.id}',this.checked)" style="width:18px;height:18px"></div>
-    <div><div class="nm">${esc(i.nome)}</div><div class="sub">${esc(i.codigo)}${i.codigo ? " · " : ""}estoque ${Number(i.estoque).toLocaleString("pt-BR")} <span class="ok1" id="ok-${i.id}">✓ salvo</span></div><div class="cat" style="margin-top:3px"><select onchange="mudarCat('${i.id}',this.value)"><option value="">Sem categoria</option>${D.categorias.map(c => `<option value="${esc(c.id)}" ${c.id === i.categoriaId ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}<option value="__nova">➕ Nova categoria…</option></select></div></div>
-    ${celulas(i)}</div>`; }
-function render() { if (!D) return; const L = filtrados(), grupos = new Map(); L.forEach(i => { const k = i.categoriaId || ""; (grupos.get(k) || grupos.set(k, []).get(k)).push(i); });
-  const ordem = [...(grupos.has("") ? [{ id: "", nome: "Sem categoria" }] : []), ...D.categorias.filter(c => grupos.has(c.id))], buscando = BUSCA.trim().length > 0; window._padrao = FORCA !== null ? FORCA : (buscando || L.length <= 250); const aberta = id => EST.has(id) ? EST.get(id) : window._padrao;
-  const nAlt = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length, nSem = D.itens.filter(i => !i.categoriaId).length;
-  document.getElementById("resumo").textContent = `${D.itens.length} produtos · ${L.length} na lista${nSem ? " · " + nSem + " sem categoria" : ""}`;
+const cabecalho = '<div class="cols"><span></span><b class="hn">Produto</b><b class="hc">Categoria</b><div class="vl"><b>Custo</b><b>Varejo</b><b>Atacado</b><b>Fardo · un</b><b>Fardo/un</b></div></div>';
+const optsCat = sel => D.categorias.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? "selected" : ""}>${esc(c.nome)}</option>`).join("");
+const campo = (id, col, val, ph, extra) => `<input id="${id}" data-col="${col}" class="in ${extra || ""}" inputmode="${col === "q" ? "numeric" : "decimal"}" enterkeyhint="next" value="${val}" placeholder="${ph}"`;
+function linha(i) { const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !== i.precoVarejo, fu = fardoUn(i);
+  return `<div class="r ${alt ? "alt" : ""}" id="r-${i.id}"><div class="h2"><span class="hd" title="arraste até uma categoria" onpointerdown="iniciarArraste(event,'item','${i.id}')">⠿</span><input type="checkbox" class="ck" ${SEL.has(i.id) ? "checked" : ""} onchange="marcar('${i.id}',this.checked)" style="width:15px;height:15px;margin:0"></div>
+    <div class="nm" title="${esc(i.nome)} · estoque ${i.estoque}">${esc(i.nome)}<span class="cd">${esc(i.codigo)}</span><span class="ok1" id="ok-${i.id}">✓</span></div>
+    <div class="vl">
+      <div class="c" id="c-${i.id}">${i.custo ? num2(i.custo) : '<span style="color:#ffd23f" title="sem custo no cadastro">s/c</span>'}</div>
+      <div class="c">${campo("v-" + i.id, "v", pv ? num2(pv) : "", "0,00")} oninput="digitando('${i.id}','v')" onchange="salvar('${i.id}','v')" onkeydown="tecla(event,'r-${i.id}','v')"><span id="pv-${i.id}">${badge(pv, i.custo)}</span></div>
+      <div class="c">${i.precoAtacado ? num2(i.precoAtacado) + badge(i.precoAtacado, i.custo) : DASH}</div>
+      <div class="c"><div class="fr">${campo("f-" + i.id, "f", i.precoFardo ? num2(i.precoFardo) : "", i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00")} oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="tecla(event,'r-${i.id}','f')">${campo("q-" + i.id, "q", i.qtdFardo || "", i.caixaQtd || "un", "q")} oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="tecla(event,'r-${i.id}','q')"><span>un</span></div></div>
+      <div class="c"><span id="fu-${i.id}">${fu ? num2(fu) : DASH}</span><span id="pf-${i.id}">${fu ? badge(fu, i.custo) : ""}</span></div>
+    </div>
+    <select class="cat ${i.categoriaId ? "" : "pend"}" onchange="mudarCat('${i.id}',this.value)"><option value="">${i.categoriaId ? "— sem categoria —" : "Categoria…"}</option>${optsCat(i.categoriaId)}<option value="__nova">➕ nova…</option></select></div>`; }
+function linhaGrupo(e) { const a = agg(e.ms), gid = e.g.id, aberto = GAB.has(gid), todosSel = e.ms.every(m => SEL.has(m.id)), cus = a.custo == null ? '<span style="color:#ffd23f" title="nenhum sabor com custo">s/c</span>' : (a.cmin !== a.cmax || a.semCusto ? "~" : "") + num2(a.custo);
+  return `<div class="r g ${a.alt ? "alt" : ""}" id="g-${gid}"><div class="h2"><span class="hd" title="arraste o grupo até uma categoria" onpointerdown="iniciarArraste(event,'grupo','${gid}')">⠿</span><input type="checkbox" class="ck" ${todosSel ? "checked" : ""} onchange="marcarSabores('${gid}',this.checked)" style="width:15px;height:15px;margin:0"></div>
+    <div class="nm" onclick="alternarGrupo('${gid}')" title="${esc(e.g.nome)} · toque para ver os sabores">🍓 ${esc(e.g.nome)}<span class="cd">${e.ms.length} sabores ${aberto ? "▾" : "▸"}</span><span class="ok1" id="gok-${gid}">✓</span></div>
+    <div class="vl">
+      <div class="c" id="gc-${gid}" title="${a.cmin != null ? "custo de " + num2(a.cmin) + " a " + num2(a.cmax) : ""}">${cus}</div>
+      <div class="c">${campo("gv-" + gid, "v", a.pv ? num2(a.pv) : "", a.pvMisto ? "vários" : "0,00")} oninput="digitandoGrupo('${gid}','v')" onchange="salvarGrupo('${gid}','v')" onkeydown="tecla(event,'g-${gid}','v')"><span id="gpv-${gid}">${a.pv ? badge(a.pv, a.custo) : (a.pvMisto ? '<span class="pc med">mix</span>' : "")}</span></div>
+      <div class="c">${a.atac ? num2(a.atac) + badge(a.atac, a.custo) : DASH}</div>
+      <div class="c"><div class="fr">${campo("gf-" + gid, "f", a.fardo ? num2(a.fardo) : "", a.fAt ? num2(a.fAt) : "0,00")} oninput="digitandoGrupo('${gid}','f')" onchange="salvarGrupo('${gid}','f')" onkeydown="tecla(event,'g-${gid}','f')">${campo("gq-" + gid, "q", a.qtd || "", a.cx || "un", "q")} oninput="digitandoGrupo('${gid}','q')" onchange="salvarGrupo('${gid}','q')" onkeydown="tecla(event,'g-${gid}','q')"><span>un</span></div></div>
+      <div class="c"><span id="gfu-${gid}">${a.fu ? num2(a.fu) : DASH}</span><span id="gpf-${gid}">${a.fu ? badge(a.fu, a.custo) : ""}</span></div>
+    </div>
+    <select class="cat" onchange="mudarCatGrupo('${gid}',this.value)"><option value="">${e.cat ? "— sem categoria —" : "Categoria…"}</option>${optsCat(e.cat)}<option value="__nova">➕ nova…</option></select></div>${aberto ? blocoSabores(e, a) : ""}`; }
+function blocoSabores(e, a) { const gid = e.g.id, naoMembros = [...SEL].filter(id => !e.g.membros.includes(id));
+  return `<div class="gm" id="gm-${gid}"><div class="ac"><input value="${esc(e.g.nome)}" onchange="renomearGrupo('${gid}',this.value)" title="nome do grupo"><button class="bt" onclick="desfazerGrupo('${gid}')">✂️ Desfazer o grupo</button>${naoMembros.length ? `<button class="bt" onclick="adicionarAoGrupo('${gid}')">➕ Colocar os ${naoMembros.length} marcado(s) aqui</button>` : ""}<span class="ic">um preço só para todos os sabores${e.g.origemAtacado ? " · veio da tabela de atacado" : ""}</span></div>
+    ${e.ms.map(m => { const p = precoVar(m), g0 = e.g.nome.toLowerCase(), curto = m.nome.toLowerCase().startsWith(g0) && m.nome.length > g0.length ? m.nome.slice(g0.length).replace(/^[\s\-–,]+/, "") : m.nome; return `<div class="mm"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.nome)}">${esc(curto)}</span><span>${m.custo ? num2(m.custo) : '<span style="color:#ffd23f">s/c</span>'}</span><span>${p ? num2(p) : DASH}</span><span>${badge(p, m.custo)}</span><button class="bt" style="padding:0 6px" title="tirar do grupo" onclick="tirarDoGrupo('${gid}','${m.id}')">✂️</button></div>`; }).join("")}</div>`; }
+function render() { if (!D) return; const L = filtrados(), ent = entradas(L), grupos = new Map(); ent.forEach(e => { (grupos.get(e.cat) || grupos.set(e.cat, []).get(e.cat)).push(e); });
+  const ordem = [...(grupos.has("") ? [{ id: "", nome: "Sem categoria" }] : []), ...D.categorias.filter(c => grupos.has(c.id))], buscando = BUSCA.trim().length > 0; window._padrao = FORCA !== null ? FORCA : (CAT !== null || buscando || L.length <= 400); const aberta = id => EST.has(id) ? EST.get(id) : window._padrao;
+  const cont = {}; D.itens.forEach(i => { const k = i.categoriaId || ""; cont[k] = (cont[k] || 0) + 1; }); const nAlt = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length, nSem = cont[""] || 0;
+  document.getElementById("resumo").textContent = `${D.itens.length} produtos${D.grupos && D.grupos.length ? " · " + D.grupos.length + " grupos de sabores" : ""}${nSem ? " · " + nSem + " sem categoria" : ""}`;
+  document.getElementById("cats").innerHTML = `<span class="cc ${CAT === null ? "on" : ""}" onclick="setCat(null)">Todas <i>${D.itens.length}</i></span>` + (nSem ? `<span class="cc sem ${CAT === "" ? "on" : ""}" data-cat="__sem" onclick="setCat('')">Sem categoria <i>${nSem}</i></span>` : `<span class="cc ${CAT === "" ? "on" : ""}" data-cat="__sem" onclick="setCat('')">Sem categoria <i>0</i></span>`) + D.categorias.map(c => `<span class="cc ${CAT === c.id ? "on" : ""}" data-cat="${esc(c.id)}" onclick="setCat('${c.id}')">${esc(c.nome)} <i>${cont[c.id] || 0}</i></span>`).join("");
   const chip = (k, t) => `<span class="chp ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';render()">${t}</span>`;
-  document.getElementById("chips").innerHTML = chip("todos", "Todos") + chip("sem", `Sem categoria (${nSem})`) + chip("baixa", "Margem baixa") + chip("alt", `Com alteração (${nAlt})`) + chip("semcusto", "Sem custo") + chip("semfardo", "Sem fardo") + chip("estoque", "Com estoque");
-  document.getElementById("lista").innerHTML = ordem.length ? ordem.map(c => { const itens = grupos.get(c.id), isOpen = aberta(c.id), ms = itens.map(margemVar).filter(v => v != null), med = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null, lim = MAIS[c.id] || LIM;
-    return `<div><div class="gh ${isOpen ? "aberta" : ""}" onclick="alternar('${c.id}')"><span class="seta">▶</span><b>${esc(c.nome)} <span class="ic">(${itens.length})</span></b><span class="ic">média</span><span class="pc ${cls(med)}">${fmtPct(med)}</span><label onclick="event.stopPropagation()" class="ic" style="display:flex;gap:4px;align-items:center"><input type="checkbox" style="width:16px;height:16px" ${itens.every(i => SEL.has(i.id)) ? "checked" : ""} onchange="marcarGrupo('${c.id}',this.checked)">todos</label></div>
-      ${isOpen ? itens.slice(0, lim).map(linha).join("") + (itens.length > lim ? `<div style="text-align:center;padding:10px"><button class="btn btn-ghost" onclick="MAIS['${c.id}']=${lim + LIM};render()">Mostrar mais ${Math.min(LIM, itens.length - lim)} (faltam ${itens.length - lim})</button></div>` : "") : ""}</div>`; }).join("") : '<div class="ic" style="padding:14px">Nenhum produto neste filtro.</div>';
+  document.getElementById("chips").innerHTML = chip("todos", "Todos") + chip("baixa", "Margem baixa") + chip("alt", `Com alteração (${nAlt})`) + chip("semcusto", "Sem custo") + chip("semfardo", "Sem fardo") + chip("estoque", "Com estoque");
+  document.getElementById("lista").innerHTML = ordem.length ? ordem.map(c => { const es = grupos.get(c.id), isOpen = aberta(c.id), qt = es.reduce((a, e) => a + (e.tipo === "g" ? e.ms.length : 1), 0), ms = es.map(e => e.tipo === "g" ? (() => { const a = agg(e.ms); return pct(a.pv, a.custo); })() : margemVar(e.i)).filter(v => v != null), med = ms.length ? ms.reduce((a, b) => a + b, 0) / ms.length : null, lim = MAIS[c.id] || LIM, k = c.id === "" ? "__sem" : c.id;
+    return `<div><div class="gh ${isOpen ? "aberta" : ""}" data-cat="${esc(k)}" onclick="alternar('${c.id}')"><span class="seta">▶</span><b>${esc(c.nome)} <span class="ic">(${qt})</span></b><span class="ic">média</span><span class="pc ${cls(med)}">${fmtPct(med)}</span><label onclick="event.stopPropagation()" class="ic" style="display:flex;gap:3px;align-items:center"><input type="checkbox" style="width:14px;height:14px;margin:0" ${L.filter(i => (i.categoriaId || "") === c.id).every(i => SEL.has(i.id)) ? "checked" : ""} onchange="marcarGrupo('${c.id}',this.checked)">todos</label></div>
+      ${isOpen ? cabecalho + es.slice(0, lim).map(e => e.tipo === "g" ? linhaGrupo(e) : linha(e.i)).join("") + (es.length > lim ? `<div style="text-align:center;padding:8px"><button class="bt" onclick="MAIS['${c.id}']=${lim + LIM};render()">Mostrar mais ${Math.min(LIM, es.length - lim)} (faltam ${es.length - lim})</button></div>` : "") : ""}</div>`; }).join("") : `<div class="ic" style="padding:14px">Nenhum produto ${CAT !== null ? "nesta categoria" : "neste filtro"}.</div>`;
   barras(); }
+function setCat(v) { CAT = v; EST.clear(); FORCA = null; MAIS = {}; render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
 function alternar(id) { const atual = EST.has(id) ? EST.get(id) : window._padrao; EST.set(id, !atual); render(); }
 function abrirTodas(sim) { EST.clear(); FORCA = sim; render(); }
-function irCat(id) { if (!id) return; const k = id === "__sem" ? "" : id; EST.set(k, true); FILTRO = "todos"; render(); const el = [...document.querySelectorAll(".gh")].find(g => g.getAttribute("onclick") === `alternar('${k}')`); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); document.getElementById("ir").value = ""; }
 function buscar() { clearTimeout(_tb); _tb = setTimeout(() => { BUSCA = document.getElementById("busca").value; MAIS = {}; EST.clear(); FORCA = null; render(); }, 250); }
-// ---------- edição ----------
-function digitando(id, k) { const i = D.itens.find(x => x.id === id); if (!i) return; const g = x => numBR(document.getElementById(x + "-" + id).value);
-  if (k === "v") { const v = g("v"); document.getElementById("pv-" + id).innerHTML = badge(v > 0 ? v : null, i.custo) + (v > 0 && v !== i.precoVarejo ? ` <span class="sub">Bling ${brl(i.precoVarejo)}</span>` : ""); }
-  else { const f = g("f") > 0 ? g("f") : (i.precoFardoAtacado || null), q = g("q") > 0 ? g("q") : (i.caixaQtd || null), fu = f && q ? f / q : null; document.getElementById("fu-" + id).textContent = fu ? brl(fu) + "/un" : ""; document.getElementById("pf-" + id).innerHTML = fu ? badge(fu, i.custo) : ""; } }
+function alternarGrupo(gid) { if (GAB.has(gid)) GAB.delete(gid); else GAB.add(gid); render(); }
+// ---------- edição: Enter ou seta passa para a mesma coluna da linha seguinte ----------
+function tecla(e, rowId, col) { if (e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return; e.preventDefault(); const rows = [...document.querySelectorAll(".r")], k = rows.findIndex(r => r.id === rowId), alvo = rows[k + (e.key === "ArrowUp" ? -1 : 1)]; e.target.blur();
+  if (alvo) { const nx = alvo.querySelector('[data-col="' + col + '"]'); if (nx) setTimeout(() => { nx.focus(); nx.select && nx.select(); nx.scrollIntoView({ block: "center" }); }, 30); } }
+const valor = id => numBR((document.getElementById(id) || {}).value);
+function digitando(id, k) { const i = D.itens.find(x => x.id === id); if (!i) return;
+  if (k === "v") { const v = valor("v-" + id); document.getElementById("pv-" + id).innerHTML = badge(v > 0 ? v : null, i.custo); }
+  else { const f = valor("f-" + id) > 0 ? valor("f-" + id) : (i.precoFardoAtacado || null), q = valor("q-" + id) > 0 ? valor("q-" + id) : (i.caixaQtd || null), fu = f && q ? f / q : null; document.getElementById("fu-" + id).innerHTML = fu ? num2(fu) : DASH; document.getElementById("pf-" + id).innerHTML = fu ? badge(fu, i.custo) : ""; } }
+const corpoEdicao = (k, bruto, v) => k === "v" ? { precoNovo: bruto ? v : "" } : k === "f" ? { precoFardo: bruto ? v : "" } : { qtdFardo: bruto ? Math.round(v) : "" };
 async function salvar(id, k) { const i = D.itens.find(x => x.id === id); if (!i) return; const el = document.getElementById(k + "-" + id), bruto = el.value.trim(), v = numBR(bruto);
-  if (bruto && (isNaN(v) || v <= 0)) { avisar("Valor inválido. Use números, por exemplo 9,50."); el.value = k === "v" ? num2(precoVar(i)) : k === "f" ? (i.precoFardo ? num2(i.precoFardo) : "") : (i.qtdFardo || ""); digitando(id, k); return; }
-  const corpo = k === "v" ? { precoNovo: bruto ? v : "" } : k === "f" ? { precoFardo: bruto ? v : "" } : { qtdFardo: bruto ? Math.round(v) : "" };
-  const { ok, j } = await api("/api/tabela-varejo/item/" + id, { method: "PUT", body: JSON.stringify(corpo) }); if (!ok) { avisar(j.erro || "Não consegui salvar."); return; }
-  Object.assign(i, j.item); atualizarLinha(i); piscaOk(id); barras(); }
-function atualizarLinha(i) { const r = document.getElementById("r-" + i.id); if (!r) return; const alt = i.precoNovo && i.precoNovo !== i.precoVarejo; r.classList.toggle("alt", !!alt); const v = r.querySelector(".vals"); const foco = document.activeElement && document.activeElement.id; const tmp = document.createElement("div"); tmp.innerHTML = celulas(i); v.replaceWith(tmp.firstElementChild); if (foco) { const e = document.getElementById(foco); if (e) e.blur && 0; } }
-const piscaOk = id => { const e = document.getElementById("ok-" + id); if (!e) return; e.classList.add("on"); setTimeout(() => e.classList.remove("on"), 1800); };
-async function mudarCat(id, v) { if (v === "__nova") { novaCategoria(id); render(); return; } const { ok, j } = await api("/api/tabela-varejo/item/" + id, { method: "PUT", body: JSON.stringify({ categoriaId: v }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); render(); return; }
-  const i = D.itens.find(x => x.id === id); Object.assign(i, j.item); await recarregarCategorias(); render(); }
-async function recarregarCategorias() { const { ok, j } = await api("/api/tabela-varejo"); if (ok) { D.categorias = j.categorias; prepararFiltros(); } }
-// ---------- seleção em lote ----------
+  if (bruto && (isNaN(v) || v <= 0)) { avisar("Valor inválido. Use números, por exemplo 9,50."); atualizarLinha(i, true); return; }
+  const { ok, j } = await api("/api/tabela-varejo/item/" + id, { method: "PUT", body: JSON.stringify(corpoEdicao(k, bruto, v)) }); if (!ok) { avisar(j.erro || "Não consegui salvar."); atualizarLinha(i, true); return; }
+  Object.assign(i, j.item); atualizarLinha(i); piscaOk("ok-" + id); barras(); }
+// atualiza só o que mudou (sem refazer os campos, para não tirar o foco de quem está digitando)
+function atualizarLinha(i, forcar) { const r = document.getElementById("r-" + i.id); if (!r) return; const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !== i.precoVarejo, fu = fardoUn(i), foco = document.activeElement && document.activeElement.id; r.classList.toggle("alt", !!alt);
+  const set = (id, v) => { const e = document.getElementById(id + "-" + i.id); if (e && (forcar || e.id !== foco)) e.value = v; }; set("v", pv ? num2(pv) : ""); set("f", i.precoFardo ? num2(i.precoFardo) : ""); set("q", i.qtdFardo || "");
+  document.getElementById("pv-" + i.id).innerHTML = badge(pv, i.custo); document.getElementById("fu-" + i.id).innerHTML = fu ? num2(fu) : DASH; document.getElementById("pf-" + i.id).innerHTML = fu ? badge(fu, i.custo) : ""; }
+const piscaOk = id => { const e = document.getElementById(id); if (!e) return; e.classList.add("on"); setTimeout(() => e.classList.remove("on"), 1500); };
+// ---------- edição do GRUPO de sabores: um valor só para todos ----------
+const membrosDe = gid => D.itens.filter(i => i.grupoId === gid);
+function digitandoGrupo(gid, k) { const ms = membrosDe(gid), a = agg(ms);
+  if (k === "v") { const v = valor("gv-" + gid); document.getElementById("gpv-" + gid).innerHTML = v > 0 ? badge(v, a.custo) : ""; }
+  else { const f = valor("gf-" + gid) > 0 ? valor("gf-" + gid) : (a.fAt || null), q = valor("gq-" + gid) > 0 ? valor("gq-" + gid) : (a.cx || null), fu = f && q ? f / q : null; document.getElementById("gfu-" + gid).innerHTML = fu ? num2(fu) : DASH; document.getElementById("gpf-" + gid).innerHTML = fu ? badge(fu, a.custo) : ""; } }
+async function salvarGrupo(gid, k) { const el = document.getElementById("g" + k + "-" + gid), bruto = el.value.trim(), v = numBR(bruto);
+  if (bruto && (isNaN(v) || v <= 0)) { avisar("Valor inválido. Use números, por exemplo 9,50."); atualizarGrupo(gid, true); return; }
+  const { ok, j } = await api("/api/tabela-varejo/grupos/" + gid + "/valores", { method: "PUT", body: JSON.stringify(corpoEdicao(k, bruto, v)) }); if (!ok) { avisar(j.erro || "Não consegui salvar."); atualizarGrupo(gid, true); return; }
+  j.itens.forEach(n => { const i = D.itens.find(x => x.id === n.id); if (i) Object.assign(i, n); }); atualizarGrupo(gid); piscaOk("gok-" + gid); barras(); }
+function atualizarGrupo(gid, forcar) { const ms = membrosDe(gid), a = agg(ms), foco = document.activeElement && document.activeElement.id, r = document.getElementById("g-" + gid); if (!r) return; r.classList.toggle("alt", !!a.alt);
+  const set = (id, v) => { const e = document.getElementById(id + "-" + gid); if (e && (forcar || e.id !== foco)) { e.value = v; e.placeholder = id === "gv" && a.pvMisto ? "vários" : e.placeholder; } }; set("gv", a.pv ? num2(a.pv) : ""); set("gf", a.fardo ? num2(a.fardo) : ""); set("gq", a.qtd || "");
+  document.getElementById("gpv-" + gid).innerHTML = a.pv ? badge(a.pv, a.custo) : (a.pvMisto ? '<span class="pc med">mix</span>' : ""); document.getElementById("gfu-" + gid).innerHTML = a.fu ? num2(a.fu) : DASH; document.getElementById("gpf-" + gid).innerHTML = a.fu ? badge(a.fu, a.custo) : "";
+  const gm = document.getElementById("gm-" + gid); if (gm) { const e = { g: gDe(gid), ms: ms.filter(m => filtrados().some(f => f.id === m.id)) }; const tmp = document.createElement("div"); tmp.innerHTML = blocoSabores(e, a); gm.replaceWith(tmp.firstElementChild); } }
+async function mudarCatGrupo(gid, v) { if (v === "__nova") { novaCategoria(null, false, gid); render(); return; } const { ok, j } = await api("/api/tabela-varejo/grupos/" + gid + "/valores", { method: "PUT", body: JSON.stringify({ categoriaId: v }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); render(); return; } await carregar(); }
+async function renomearGrupo(gid, nome) { const { ok, j } = await api("/api/tabela-varejo/grupos/" + gid, { method: "PUT", body: JSON.stringify({ nome }) }); if (!ok) avisar(j.erro || "Não consegui renomear."); await carregar(); }
+async function tirarDoGrupo(gid, id) { await api("/api/tabela-varejo/grupos/" + gid, { method: "PUT", body: JSON.stringify({ remover: [id] }) }); await carregar(); }
+async function adicionarAoGrupo(gid) { const g = gDe(gid), ids = [...SEL].filter(id => !g.membros.includes(id)); await api("/api/tabela-varejo/grupos/" + gid, { method: "PUT", body: JSON.stringify({ adicionar: ids }) }); SEL.clear(); await carregar(); avisar(ids.length + " sabor(es) colocado(s) no grupo.", true); }
+function desfazerGrupo(gid) { const g = gDe(gid); janela(`<h3 style="margin:0 0 6px">✂️ Desfazer "${esc(g.nome)}"?</h3><div class="ic" style="white-space:normal">Os ${g.membros.length} produtos voltam a ter preço cada um. Os preços não mudam. ${g.origemAtacado ? "O grupo não volta sozinho (o botão 📥 Atacado traz de novo)." : ""}</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="desfazerGrupo2('${gid}')">Desfazer</button></div>`); }
+async function desfazerGrupo2(gid) { await api("/api/tabela-varejo/grupos/" + gid, { method: "DELETE" }); fechar(); GAB.delete(gid); await carregar(); }
+// união de sabores: marque os produtos e toque em "Unir sabores"
+function prefixoComum(nomes) { const ps = nomes.map(n => n.split(/\s+/)); let k = 0; while (ps.every(p => p[k] && p[k].toLowerCase() === ps[0][k].toLowerCase())) k++; const t = ps[0].slice(0, k).join(" ").replace(/[\s\-–,]+$/, ""); return t.length >= 4 ? t : nomes[0]; }
+function unirAbrir() { const ids = [...SEL], ms = D.itens.filter(i => ids.includes(i.id)); if (ms.length < 2) { avisar("Marque pelo menos 2 produtos para unir."); return; }
+  janela(`<h3 style="margin:0 0 4px">🍓 Unir como sabores</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Os ${ms.length} produtos passam a ter <b>um preço só</b>: ao mudar o preço do grupo, todos mudam. Cada um continua com o seu custo.</div>
+    <input id="gNome" value="${esc(prefixoComum(ms.map(m => m.nome)))}" placeholder="Nome do grupo (ex.: Suco Del Valle 1L)" onkeydown="if(event.key==='Enter')unirCriar()"><div class="ic" style="white-space:normal;margin-top:6px;max-height:20vh;overflow:auto">${ms.map(m => esc(m.nome)).join(" · ")}</div><div id="gMsg" style="margin-top:6px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="unirCriar()">Unir</button></div>`); setTimeout(() => { const e = document.getElementById("gNome"); e.focus(); e.select(); }, 60); }
+async function unirCriar() { const nome = document.getElementById("gNome").value.trim(); if (!nome) { document.getElementById("gMsg").innerHTML = '<div class="err">Informe o nome do grupo.</div>'; return; }
+  const { ok, j } = await api("/api/tabela-varejo/grupos", { method: "POST", body: JSON.stringify({ nome, ids: [...SEL] }) }); if (!ok) { document.getElementById("gMsg").innerHTML = `<div class="err">${esc(j.erro || "Não consegui unir.")}</div>`; return; }
+  GAB.add(j.grupo.id); SEL.clear(); fechar(); await carregar(); avisar(`Grupo "${nome}" criado com ${j.grupo.membros.length} sabores. Edite o preço na linha dele.`, true); }
+async function mudarCat(id, v) { if (v === "__nova") { novaCategoria(id); render(); return; } await moverIds([id], v); }
+// ---------- mover para categoria: seletor, marcar + tocar, ou ARRASTAR ----------
+async function moverIds(ids, catId) { const { ok, j } = await api("/api/tabela-varejo/lote", { method: "POST", body: JSON.stringify({ ids, categoriaId: catId }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); render(); return; }
+  await carregar(); const nome = catId ? (D.categorias.find(c => c.id === catId) || {}).nome : "Sem categoria"; avisar(`${ids.length} produto(s) movido(s) para ${nome}.`, true); }
+let DRAG = null;
+function iniciarArraste(e, tipo, id) { if (e.button !== undefined && e.button !== 0) return; e.preventDefault(); let ids;
+  if (tipo === "item") ids = SEL.has(id) && SEL.size > 1 ? [...SEL] : [id]; else { const g = gDe(id), todos = g.membros.every(m => SEL.has(m)); ids = todos && SEL.size > g.membros.length ? [...SEL] : g.membros.slice(); }
+  const rot = tipo === "grupo" && ids.length === gDe(id).membros.length ? "🍓 " + gDe(id).nome + " (" + ids.length + ")" : ids.length > 1 ? ids.length + " produtos" : ((D.itens.find(i => i.id === ids[0]) || {}).nome || "produto");
+  const gh = document.createElement("div"); gh.className = "ghost"; gh.textContent = rot; document.body.appendChild(gh); document.body.classList.add("arrastando"); DRAG = { ids, gh, alvo: null, x: e.clientX, y: e.clientY };
+  try { e.target.setPointerCapture(e.pointerId); } catch (x) {} window.addEventListener("pointermove", arrastando, { passive: false }); window.addEventListener("pointerup", soltar); window.addEventListener("pointercancel", cancelarArraste); arrastando(e); requestAnimationFrame(rolagem); }
+function arrastando(e) { if (!DRAG) return; if (e.cancelable) e.preventDefault(); DRAG.x = e.clientX; DRAG.y = e.clientY; DRAG.gh.style.left = (e.clientX + 14) + "px"; DRAG.gh.style.top = (e.clientY + 14) + "px";
+  const el = document.elementFromPoint(e.clientX, e.clientY), alvo = el && el.closest ? el.closest("[data-cat]") : null; document.querySelectorAll(".drop").forEach(x => x.classList.remove("drop")); DRAG.alvo = null; if (alvo) { alvo.classList.add("drop"); DRAG.alvo = alvo.getAttribute("data-cat"); } }
+// rolagem automática só depois de ficar ~0,25 s parado perto da borda (passar rápido pelo topo não rola a tela e tira a categoria do lugar)
+function rolagem() { if (!DRAG) return; const base = document.getElementById("stk").getBoundingClientRect().bottom; let dir = 0; if (DRAG.y > innerHeight - 70) dir = 1; else if (!DRAG.alvo && DRAG.y > base && DRAG.y < base + 44) dir = -1;
+  if (dir) { if (DRAG.dir !== dir) { DRAG.dir = dir; DRAG.zona = Date.now(); } if (Date.now() - DRAG.zona > 250) scrollBy(0, 16 * dir); } else { DRAG.dir = 0; DRAG.zona = 0; } requestAnimationFrame(rolagem); }
+function fimArraste() { window.removeEventListener("pointermove", arrastando); window.removeEventListener("pointerup", soltar); window.removeEventListener("pointercancel", cancelarArraste); document.querySelectorAll(".drop").forEach(x => x.classList.remove("drop")); if (DRAG) DRAG.gh.remove(); document.body.classList.remove("arrastando"); const d = DRAG; DRAG = null; return d; }
+function cancelarArraste() { fimArraste(); }
+function soltar() { const d = fimArraste(); if (d && d.alvo) moverIds(d.ids, d.alvo === "__sem" ? "" : d.alvo); }
+// ---------- seleção em lote: marque e toque na categoria ----------
 function marcar(id, sim) { if (sim) SEL.add(id); else SEL.delete(id); barras(); }
+function marcarSabores(gid, sim) { gDe(gid).membros.forEach(m => { if (sim) SEL.add(m); else SEL.delete(m); }); barras(); }
 function marcarGrupo(cid, sim) { filtrados().filter(i => (i.categoriaId || "") === cid).forEach(i => { if (sim) SEL.add(i.id); else SEL.delete(i.id); }); render(); }
 function barras() { const bs = document.getElementById("barSel"), ba = document.getElementById("barAlt"), nAlt = D ? D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).length : 0;
-  bs.classList.toggle("on", SEL.size > 0); bs.style.bottom = nAlt ? "58px" : "0";
-  if (SEL.size) bs.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>${SEL.size} selecionado(s)</b><select id="lote" style="flex:1;min-width:150px"><option value="">Mover para…</option><option value="__sem">Sem categoria</option>${D.categorias.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join("")}<option value="__nova">➕ Nova categoria…</option></select><button class="btn btn-mag" style="padding:7px 14px" onclick="moverLote()">Mover</button><button class="btn btn-ghost" style="padding:7px 12px" onclick="SEL.clear();render()">✕</button></div>`;
-  ba.classList.toggle("on", nAlt > 0); if (nAlt) ba.innerHTML = `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>✏️ <b>${nAlt}</b> preço(s) de varejo alterado(s), ainda <b>só aqui</b></span><span style="display:flex;gap:6px"><button class="btn btn-mag" style="padding:7px 12px" onclick="abrirAplicar()">Aplicar no Bling</button><button class="btn btn-ghost" style="padding:7px 12px" onclick="descartar()">Descartar</button></span></div>`; }
-async function moverLote() { const v = document.getElementById("lote").value; if (!v) { avisar("Escolha a categoria de destino."); return; } if (v === "__nova") { novaCategoria(null, true); return; }
-  const { ok, j } = await api("/api/tabela-varejo/lote", { method: "POST", body: JSON.stringify({ ids: [...SEL], categoriaId: v === "__sem" ? "" : v }) }); if (!ok) { avisar(j.erro || "Não consegui mover."); return; }
-  D.itens.forEach(i => { if (SEL.has(i.id)) i.categoriaId = v === "__sem" ? "" : v; }); SEL.clear(); await recarregarCategorias(); render(); avisar(j.movidos + " produto(s) movido(s).", true); }
+  bs.classList.toggle("on", SEL.size > 0); bs.style.bottom = nAlt ? "50px" : "0";
+  if (SEL.size) bs.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><b style="white-space:nowrap">${SEL.size} marcado(s) →</b><div class="sc" style="flex:1">${SEL.size >= 2 ? '<span class="chp" style="border-color:#ff1a8c" onclick="unirAbrir()">🍓 Unir sabores</span>' : ""}${D.categorias.map(c => `<span class="chp" onclick="moverIds([...SEL],'${c.id}')">${esc(c.nome)}</span>`).join("")}<span class="chp" onclick="moverIds([...SEL],'')">Sem categoria</span><span class="chp" onclick="novaCategoria(null,true)">➕ nova</span></div><button class="bt" onclick="SEL.clear();render()">✕</button></div>`;
+  ba.classList.toggle("on", nAlt > 0); if (nAlt) ba.innerHTML = `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>✏️ <b>${nAlt}</b> preço(s) de varejo alterado(s), só aqui</span><span style="display:flex;gap:6px"><button class="btn btn-mag" style="padding:5px 12px" onclick="abrirAplicar()">Aplicar no Bling</button><button class="bt" onclick="descartar()">Descartar</button></span></div>`; }
 // ---------- avisos e janelas ----------
-function avisar(msg, ok) { const el = document.getElementById("msg"); el.innerHTML = `<span style="color:${ok ? "#3ce88a" : "#ff8aa3"}">${esc(msg)}</span>`; clearTimeout(avisar._t); avisar._t = setTimeout(() => { el.innerHTML = ""; }, 7000); }
+function avisar(msg, ok) { const el = document.getElementById("msg"); el.innerHTML = `<span style="color:${ok ? "#3ce88a" : "#ff8aa3"}">${esc(msg)}</span>`; clearTimeout(avisar._t); avisar._t = setTimeout(() => { el.innerHTML = ""; }, 9000); }
 const janela = h => { document.getElementById("mdlCorpo").innerHTML = h; document.getElementById("mdl").classList.add("aberto"); };
 const fechar = () => document.getElementById("mdl").classList.remove("aberto");
 document.getElementById("mdl").addEventListener("click", e => { if (e.target.id === "mdl") fechar(); });
-function novaCategoria(paraItem, lote) { janela(`<h3 style="margin:0 0 6px">➕ Nova categoria</h3><input id="ncNome" placeholder="ex.: Cervejas, Refrigerantes, Águas…" autocomplete="off" onkeydown="if(event.key==='Enter')criarCat()"><div id="ncMsg" style="margin-top:6px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar();render()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="criarCat()">Criar</button></div>`); window._ncItem = paraItem || null; window._ncLote = !!lote; setTimeout(() => document.getElementById("ncNome").focus(), 50); }
+function novaCategoria(paraItem, lote, paraGrupo) { janela(`<h3 style="margin:0 0 6px">➕ Nova categoria</h3><input id="ncNome" placeholder="ex.: Cervejas, Refrigerantes, Águas…" autocomplete="off" onkeydown="if(event.key==='Enter')criarCat()"><div id="ncMsg" style="margin-top:6px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar();render()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="criarCat()">Criar</button></div>`); window._ncItem = paraItem || null; window._ncLote = !!lote; window._ncGrupo = paraGrupo || null; setTimeout(() => document.getElementById("ncNome").focus(), 50); }
 async function criarCat() { const nome = document.getElementById("ncNome").value.trim(), msg = document.getElementById("ncMsg"); if (!nome) { msg.innerHTML = '<div class="err">Informe o nome.</div>'; return; }
   const { ok, j } = await api("/api/tabela-varejo/categorias", { method: "POST", body: JSON.stringify({ nome }) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui criar.")}</div>`; return; }
-  D.categorias.push({ ...j.categoria, qtd: 0 }); prepararFiltros();
-  if (window._ncItem) await mudarCat(window._ncItem, j.categoria.id); else if (window._ncLote) { document.getElementById("lote") && (document.getElementById("lote").value = j.categoria.id); fechar(); await moverLote(); return; }
-  fechar(); render(); }
+  D.categorias.push({ ...j.categoria, qtd: 0 }); fechar();
+  if (window._ncItem) await moverIds([window._ncItem], j.categoria.id); else if (window._ncGrupo) await mudarCatGrupo(window._ncGrupo, j.categoria.id); else if (window._ncLote) await moverIds([...SEL], j.categoria.id); else await carregar(); }
+async function recarregarCategorias() { const { ok, j } = await api("/api/tabela-varejo"); if (ok) D.categorias = j.categorias; }
 function abrirCategorias() { const L = D.categorias;
-  janela(`<h3 style="margin:0 0 6px">⚙️ Categorias</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Renomeie, mude a ordem ou apague. Apagar uma categoria devolve os produtos dela para "Sem categoria".</div>
-    ${L.map((c, k) => `<div style="display:flex;gap:6px;align-items:center;margin:5px 0"><input id="rn-${c.id}" value="${esc(c.nome)}" onchange="renomear('${c.id}',this.value)" style="flex:1"><span class="ic">${c.qtd}</span><button class="btn btn-ghost" style="padding:5px 9px" ${k === 0 ? "disabled" : ""} onclick="moverCat('${c.id}','cima')">↑</button><button class="btn btn-ghost" style="padding:5px 9px" ${k === L.length - 1 ? "disabled" : ""} onclick="moverCat('${c.id}','baixo')">↓</button><button class="btn btn-ghost" style="padding:5px 9px" onclick="apagarCat('${c.id}')">🗑️</button></div>`).join("") || '<div class="ic">Nenhuma categoria ainda.</div>'}
-    <div style="display:flex;gap:6px;margin-top:10px"><input id="ncNome" placeholder="Nova categoria" onkeydown="if(event.key==='Enter')criarCatLista()"><button class="btn btn-mag" style="padding:7px 14px" onclick="criarCatLista()">Criar</button></div><div id="ncMsg" style="margin-top:6px"></div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fechar();render()">Fechar</button>`); }
-async function criarCatLista() { const nome = document.getElementById("ncNome").value.trim(); if (!nome) return; const { ok, j } = await api("/api/tabela-varejo/categorias", { method: "POST", body: JSON.stringify({ nome }) }); if (!ok) { document.getElementById("ncMsg").innerHTML = `<div class="err">${esc(j.erro)}</div>`; return; } await recarregarCategorias(); abrirCategorias(); }
-async function renomear(id, nome) { const { ok, j } = await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ nome }) }); if (!ok) { avisar(j.erro || "Não consegui renomear."); } await recarregarCategorias(); abrirCategorias(); }
-async function moverCat(id, d) { await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ mover: d }) }); await recarregarCategorias(); abrirCategorias(); }
-async function apagarCat(id) { const c = D.categorias.find(x => x.id === id); janela(`<h3 style="margin:0 0 6px">🗑️ Apagar "${esc(c.nome)}"?</h3><div class="ic" style="white-space:normal">Os ${c.qtd} produto(s) dela voltam para "Sem categoria". Os preços não mudam.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="abrirCategorias()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="apagarCat2('${id}')">Apagar</button></div>`); }
-async function apagarCat2(id) { await api("/api/tabela-varejo/categorias/" + id, { method: "DELETE" }); const r = await api("/api/tabela-varejo"); if (r.ok) { D = r.j; prepararFiltros(); } abrirCategorias(); }
-async function importarAtacado() { const { ok, j } = await api("/api/tabela-varejo/importar-categorias-atacado", { method: "POST", body: "{}" }); if (!ok) { avisar(j.erro || "Não consegui importar."); return; } await carregar(); avisar(j.colocados ? `${j.colocados} produto(s) colocados em categorias (${j.criadas} categoria(s) nova(s)), usando a tabela de atacado.` : "Nenhum produto sem categoria combina com a tabela de atacado.", !!j.colocados); }
+  janela(`<h3 style="margin:0 0 6px">⚙️ Categorias</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Renomeie, mude a ordem ou apague. Apagar devolve os produtos para "Sem categoria" e a categoria não volta sozinha (o botão 📥 Atacado traz de novo).</div>
+    ${L.map((c, k) => `<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><input id="rn-${c.id}" value="${esc(c.nome)}" onchange="renomear('${c.id}',this.value)" style="flex:1"><span class="ic">${c.qtd}</span><button class="bt" ${k === 0 ? "disabled" : ""} onclick="moverCat('${c.id}','cima')">↑</button><button class="bt" ${k === L.length - 1 ? "disabled" : ""} onclick="moverCat('${c.id}','baixo')">↓</button><button class="bt" onclick="apagarCat('${c.id}')">🗑️</button></div>`).join("") || '<div class="ic">Nenhuma categoria ainda.</div>'}
+    <div style="display:flex;gap:6px;margin-top:10px"><input id="ncNome" placeholder="Nova categoria" onkeydown="if(event.key==='Enter')criarCatLista()"><button class="btn btn-mag" style="padding:6px 14px" onclick="criarCatLista()">Criar</button></div><div id="ncMsg" style="margin-top:6px"></div><button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="fechar();render()">Fechar</button>`); }
+async function criarCatLista() { const nome = document.getElementById("ncNome").value.trim(); if (!nome) return; const { ok, j } = await api("/api/tabela-varejo/categorias", { method: "POST", body: JSON.stringify({ nome }) }); if (!ok) { document.getElementById("ncMsg").innerHTML = `<div class="err">${esc(j.erro)}</div>`; return; } await carregar(); abrirCategorias(); }
+async function renomear(id, nome) { const { ok, j } = await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ nome }) }); if (!ok) avisar(j.erro || "Não consegui renomear."); await carregar(); abrirCategorias(); }
+async function moverCat(id, d) { await api("/api/tabela-varejo/categorias/" + id, { method: "PUT", body: JSON.stringify({ mover: d }) }); await carregar(); abrirCategorias(); }
+function apagarCat(id) { const c = D.categorias.find(x => x.id === id); janela(`<h3 style="margin:0 0 6px">🗑️ Apagar "${esc(c.nome)}"?</h3><div class="ic" style="white-space:normal">Os ${c.qtd} produto(s) dela voltam para "Sem categoria". Os preços não mudam.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="abrirCategorias()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="apagarCat2('${id}')">Apagar</button></div>`); }
+async function apagarCat2(id) { await api("/api/tabela-varejo/categorias/" + id, { method: "DELETE" }); if (CAT === id) CAT = null; await carregar(); abrirCategorias(); }
+async function importarAtacado() { const { ok, j } = await api("/api/tabela-varejo/importar-categorias-atacado", { method: "POST", body: "{}" }); if (!ok) { avisar(j.erro || "Não consegui importar."); return; } await carregar(); avisar(j.colocados || j.criadas || j.grupos ? `${j.criadas} categoria(s) nova(s), ${j.colocados} produto(s) colocados e ${j.grupos || 0} grupo(s) de sabores, usando a tabela de atacado.` : "Tudo da tabela de atacado já está aqui.", true); }
 // ---------- aplicar no Bling ----------
 function abrirAplicar() { const L = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo);
   janela(`<h3 style="margin:0 0 4px">Aplicar no Bling</h3><div class="ic" style="white-space:normal;margin-bottom:6px">Estes preços de varejo vão substituir os do Bling. Leia o QR do dia (gerente, financeiro ou admin).</div>
-    <div style="max-height:44vh;overflow:auto">${L.map(i => `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #221e4f"><span style="min-width:0"><b>${esc(i.nome)}</b><br><span class="ic">${brl(i.precoVarejo)} → <b style="color:#fff">${brl(i.precoNovo)}</b></span></span><span style="text-align:right;white-space:nowrap" class="ic">margem<br>${fmtPct(pct(i.precoVarejo, i.custo))} → <b style="color:#fff">${fmtPct(pct(i.precoNovo, i.custo))}</b></span></div>`).join("")}</div>
+    <div style="max-height:44vh;overflow:auto">${L.map(i => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #221e4f"><span style="min-width:0"><b>${esc(i.nome)}</b><br><span class="ic">${brl(i.precoVarejo)} → <b style="color:#fff">${brl(i.precoNovo)}</b></span></span><span style="text-align:right;white-space:nowrap" class="ic">margem<br>${fmtPct(pct(i.precoVarejo, i.custo))} → <b style="color:#fff">${fmtPct(pct(i.precoNovo, i.custo))}</b></span></div>`).join("")}</div>
     <input id="qr" type="password" placeholder="QR de autorização do dia" style="margin-top:8px" onkeydown="if(event.key==='Enter')aplicar()"><div id="apMsg" style="margin-top:8px"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="aplicar()">Aplicar ${L.length}</button></div>`); setTimeout(() => document.getElementById("qr").focus(), 60); }
 async function aplicar() { const qr = document.getElementById("qr").value.trim(), msg = document.getElementById("apMsg"); if (!qr) { msg.innerHTML = '<div class="err">Leia o QR de autorização.</div>'; return; }
   let ids = D.itens.filter(i => i.precoNovo && i.precoNovo !== i.precoVarejo).map(i => i.id), feitos = 0, falhas = [];
@@ -248,9 +353,9 @@ async function aplicar() { const qr = document.getElementById("qr").value.trim()
     const { ok, j } = await api("/api/tabela-varejo/aplicar-bling", { method: "POST", body: JSON.stringify({ ids: lote, tokenQr: qr }) }); if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui aplicar.")}</div>`; return; }
     (j.resultados || []).forEach(r => { if (r.ok) feitos++; else falhas.push(r); }); }
   await carregar(); msg.innerHTML = `<div style="color:#3ce88a;font-weight:800">✅ ${feitos} preço(s) aplicado(s) no Bling.</div>${falhas.length ? `<div class="err" style="white-space:normal">${falhas.length} não passaram: ${falhas.map(f => esc(f.erro)).join("; ")}</div>` : ""}`; setTimeout(() => { if (!falhas.length) fechar(); }, 1400); }
-async function descartar() { janela(`<h3 style="margin:0 0 6px">Descartar rascunhos?</h3><div class="ic" style="white-space:normal">Os preços de varejo alterados aqui voltam para os do Bling. Nada foi enviado ao Bling.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="descartar2()">Descartar</button></div>`); }
+function descartar() { janela(`<h3 style="margin:0 0 6px">Descartar rascunhos?</h3><div class="ic" style="white-space:normal">Os preços de varejo alterados aqui voltam para os do Bling. Nada foi enviado ao Bling.</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="descartar2()">Descartar</button></div>`); }
 async function descartar2() { await api("/api/tabela-varejo/descartar-rascunhos", { method: "POST", body: "{}" }); fechar(); await carregar(); }
-function baixarCsv() { fetch(B + "/api/tabela-varejo.csv", { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "tabela_varejo.csv"; a.click(); }); }
+function baixarCsv() { fetch(B + "/api/tabela-varejo.csv", { headers: { "X-Auth-Token": token() } }).then(r => r.blob()).then(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "analise_de_precos.csv"; a.click(); }); }
 carregar();
 </script>
 </body>
