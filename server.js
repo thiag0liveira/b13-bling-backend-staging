@@ -10273,7 +10273,7 @@ async function varrerDetalhesBling(ate){
       for(const pc of (p.parcelas||[])){ const fid=pc.formaPagamento?.id; if(fid&&!d.formas[fid]) try{ d.formas[fid]=await nomeFormaPagamentoId(fid); }catch(e){} }
       d.porId[id]={i:(p.itens||[]).map(it=>{ const pp=Number(it.produto?.id)||0; if(pp&&!d.prod[pp]) d.prod[pp]=String(it.descricao||"").trim().slice(0,70);
           return pp?[pp,Number(it.quantidade)||0,Number(it.valor)||0]:[0,Number(it.quantidade)||0,Number(it.valor)||0,String(it.descricao||"").trim().slice(0,70)]; }),
-        v:Number(p.vendedor?.id)||0, f:Number(p.transporte?.frete)||0, pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0])};
+        v:Number(p.vendedor?.id)||0, f:Number(p.transporte?.frete)||0, pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0]),pgEm:Date.now()};
       n++; _det.progresso=`detalhes: ${n} lidos nesta noite, faltam ${Math.max(0,fila.length-n)}`;
       if(n%50===0){ salvarJSON(PEDIDOS_DET_FILE,d); _idxCli.em=0; }
     }
@@ -10990,7 +10990,7 @@ async function _buscarDetalhesAvisados(prio){ if(_detFilaRodando) return; _detFi
       try{ const p=(await bling(`/pedidos/vendas/${id}`,{},prio||"baixa"))?.data; if(!p) continue; const d=lerDetPedidos();
         for(const pc of (p.parcelas||[])){ const fid=pc.formaPagamento?.id; if(fid&&!d.formas[fid]) try{ d.formas[fid]=await nomeFormaPagamentoId(fid); }catch(e){} }
         d.porId[String(id)]={i:(p.itens||[]).map(it=>{ const pp=Number(it.produto?.id)||0; if(pp&&!d.prod[pp]) d.prod[pp]=String(it.descricao||"").trim().slice(0,70); return pp?[pp,Number(it.quantidade)||0,Number(it.valor)||0]:[0,Number(it.quantidade)||0,Number(it.valor)||0,String(it.descricao||"").trim().slice(0,70)]; }),
-          v:Number(p.vendedor?.id)||0,f:Number(p.transporte?.frete)||0,pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0])};
+          v:Number(p.vendedor?.id)||0,f:Number(p.transporte?.frete)||0,pg:(p.parcelas||[]).map(pc=>[Number(pc.formaPagamento?.id)||0,Number(pc.valor)||0]),pgEm:Date.now()};
         salvarJSON(PEDIDOS_DET_FILE,d); _idxPed.em=0; _idxCli.em=0; _metProdCache.clear(); }catch(e){} }
   }finally{ _detFilaRodando=false; } }
 function _processarAvisoBling(ev){
@@ -11143,13 +11143,13 @@ const _recentes={rodando:false,em:0,lidos:0,novos:0,erro:"",enfileirados:0};
 async function atualizarRecentesBling(dias,opts={}){
   if(_recentes.rodando) return; _recentes.rodando=true; _recentes.erro=""; _recentes.novos=0;
   try{ const h=lerHistPedidos(), hoje=new Date(Date.now()-3*3600e3).toISOString().slice(0,10), ini=new Date(Date.now()-3*3600e3-Math.max(1,dias||3)*_DIA).toISOString().slice(0,10); let lidos=0;
-    for(let pg=1;pg<=40;pg++){ const r=await bling(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${ini}&dataFinal=${hoje}`,{},"alta"); const arr=(r&&r.data)||[];
+    for(let pg=1;pg<=40;pg++){ const r=await bling(`/pedidos/vendas?pagina=${pg}&limite=100&dataInicial=${ini}&dataFinal=${hoje}`,{},opts.prio||"alta"); const arr=(r&&r.data)||[];
       arr.forEach(p=>{ if(!p||!p.id) return; const k=String(p.id), ant=h.porId[k]; if(!ant) _recentes.novos++; h.porId[k]={n:p.numero||null,d:p.data||"",t:Number(p.total||p.totalProdutos||0),s:Number(p.situacao?.id)||0,c:p.contato?.id?String(p.contato.id):""}; });
       lidos+=arr.length; if(arr.length<100) break; await sleep(300); }
     h.sincRecentesEm=Date.now(); _histMem=h; _whSujo.hist=true; _idxPed.em=0; _idxCli.em=0; _recentes.lidos=lidos;
     // itens dos pedidos que só existem no Bling (inclusive os do balcão, sem cliente), dos mais novos para os mais antigos
     const H=h.porId, ids=_pendentesDetalhe(true).filter(id=>String((H[id]||{}).d||"")>=ini).slice(0,opts.max||80); _recentes.enfileirados=ids.length;
-    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados("alta"),50);
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) setTimeout(()=>_buscarDetalhesAvisados(opts.prio||"alta"),50);
   }catch(e){ _recentes.erro=String(e.message||e).slice(0,160); console.error("[margem] atualizar pedidos recentes do Bling:",e.message); }
   finally{ _recentes.rodando=false; _recentes.em=Date.now(); } }
 // ===================== TABELA DE VAREJO / ANÁLISE DE PREÇOS =====================
@@ -11293,7 +11293,7 @@ const _ehVarejoTx=r=>r.origem==="bling"&&!_idsPedidosDeCaixa().has(String(r.id))
 const TAXAS_REAIS_FILE=`${DATA_DIR}/taxas_cartao_reais.json`; let _reaisMem=null;
 function lerTaxasReais(){ if(!_reaisMem){ const d=lerJSON(TAXAS_REAIS_FILE,null)||{}; d.porPedido=d.porPedido||{}; d.importacoes=d.importacoes||[]; _reaisMem=d; } return _reaisMem; }
 function salvarTaxasReais(d){ _reaisMem=d; salvarJSON(TAXAS_REAIS_FILE,d); }
-function _taxasDoPedidoTx(id,cfg,DET){ const dt=DET.porId[String(id)]; if(!dt||!Array.isArray(dt.pg)||!dt.pg.length) return {semPagamento:true,total:0,linhas:[],semTaxa:false};
+function _taxasDoPedidoTx(id,cfg,DET){ const dt=DET.porId[String(id)]; if(dt&&Array.isArray(dt.pg)&&!dt.pg.length&&dt.pgEm) return {semPagamento:false,semParcelas:true,total:0,linhas:[],semTaxa:false}; if(!dt||!Array.isArray(dt.pg)||!dt.pg.length) return {semPagamento:true,total:0,linhas:[],semTaxa:false};
   const por={}; dt.pg.forEach(([fid,v])=>{ const k=String(fid), o=por[k]||(por[k]={fid:k,valor:0,n:0}); o.valor+=Number(v)||0; o.n++; });
   const linhas=[]; let total=0, semTaxa=false;
   Object.values(por).forEach(o=>{ const nome=DET.formas[o.fid]||"", auto=_classFormaTx(nome), mp=cfg.formas[o.fid], tipo=mp&&mp.tipo?mp.tipo:auto.tipo, bandeira=mp&&mp.tipo?(mp.bandeira||""):auto.bandeira, parc=tipo==="credito"?(auto.parcelas||o.n):null, pct=_pctTx(cfg,tipo,bandeira,parc), taxa=pct==null?0:_round2(o.valor*pct/100);
@@ -11305,9 +11305,9 @@ function _taxasDoPedidoTx(id,cfg,DET){ const dt=DET.porId[String(id)]; if(!dt||!
     if(resto>0.05&&valCartao>0) novas.push({fid:"resto",nome:"Parte sem extrato (estimada)",tipo:"credito",bandeira:"",parcelas:null,valor:_round2(resto),pct:null,taxa:_round2(estCartao*resto/valCartao),semTaxa:false});
     const t2=outras.reduce((a,l)=>a+l.taxa,0)+novas.reduce((a,l)=>a+l.taxa,0); return {semPagamento:false,total:_round2(t2),linhas:[...outras,...novas],semTaxa:outras.some(l=>l.semTaxa),real:true}; }
   return {semPagamento:false,total:_round2(total),linhas,semTaxa}; }
-function _resumoTaxasCartao(ini,fim){ const cfg=lerTaxasCartao(), DET=lerDetPedidos(), I=_indicePedidos(), R={ini,fim,pedidos:0,vendido:0,comPagamento:0,semPagamento:0,semTaxaPedidos:0,total:0,baseTaxada:0,porForma:{},porFid:{},idsSemPagamento:[]};
+function _resumoTaxasCartao(ini,fim){ const cfg=lerTaxasCartao(), DET=lerDetPedidos(), I=_indicePedidos(), R={ini,fim,pedidos:0,vendido:0,comPagamento:0,semParcelas:0,semPagamento:0,semTaxaPedidos:0,total:0,baseTaxada:0,porForma:{},porFid:{},idsSemPagamento:[]};
   (I.lista||[]).forEach(r=>{ if(!_ehVarejoTx(r)||r.data<ini||r.data>fim||r.cancelado||r.situacaoId===SIT.CANCELADO) return; R.pedidos++; R.vendido+=Number(r.total)||0; const t=_taxasDoPedidoTx(r.id,cfg,DET);
-    if(t.semPagamento){ R.semPagamento++; if(R.idsSemPagamento.length<400) R.idsSemPagamento.push(String(r.id)); return; } R.comPagamento++; if(t.semTaxa) R.semTaxaPedidos++; R.total+=t.total;
+    if(t.semParcelas){ R.semParcelas++; return; } if(t.semPagamento){ R.semPagamento++; if(R.idsSemPagamento.length<400) R.idsSemPagamento.push(String(r.id)); return; } R.comPagamento++; if(t.semTaxa) R.semTaxaPedidos++; R.total+=t.total;
     t.linhas.forEach(l=>{ const k=`${l.tipo}|${l.bandeira}|${l.parcelas||""}`, o=R.porForma[k]||(R.porForma[k]={tipo:l.tipo,bandeira:l.bandeira,parcelas:l.parcelas,qtd:0,valor:0,taxa:0,pct:l.pct,semTaxa:l.semTaxa}); o.qtd++; o.valor+=l.valor; o.taxa+=l.taxa; if(l.tipo==="pix"||l.tipo==="debito"||l.tipo==="credito") R.baseTaxada+=l.valor;
       if(!/^\d+$/.test(String(l.fid))) return; const f=R.porFid[l.fid]||(R.porFid[l.fid]={fid:l.fid,nome:l.nome,tipo:l.tipo,bandeira:l.bandeira,pedidos:0,valor:0,mapeado:!!cfg.formas[l.fid]}); f.pedidos++; f.valor+=l.valor; }); });
   R.vendido=_round2(R.vendido); R.total=_round2(R.total); R.baseTaxada=_round2(R.baseTaxada); Object.values(R.porForma).forEach(o=>{ o.valor=_round2(o.valor); o.taxa=_round2(o.taxa); }); Object.values(R.porFid).forEach(o=>{ o.valor=_round2(o.valor); });
@@ -11317,7 +11317,7 @@ const _mesAtualTx=()=>_diaBRk(Date.now()).slice(0,7);
 app.get("/api/taxas-cartao",requireAcesso("acesso_custos"),(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_mesAtualTx(), R=_resumoTaxasCartao(mes+"-01",mes+"-31"), cfg=lerTaxasCartao();
     const manual=(()=>{ try{ const C=_gerarRecorrentes(lerContasPagar()); return _round2(_lancamentosDoMes(C,mes,lerJSON(FUNC_FILE,{}),_diaBRk(Date.now())).filter(x=>x.cod==="4.3"&&!x.sintetico).reduce((a,x)=>a+x.valorMes,0)); }catch(e){ return 0; } })();
     const formas=Object.values(R.porFid).map(f=>{ const a=_classFormaTx(f.nome); return {...f,sugestao:{tipo:a.tipo,bandeira:a.bandeira}}; }).sort((a,b)=>b.valor-a.valor);
-    const RE=lerTaxasReais(); res.json({ok:true,mes,resumo:R,config:cfg,formas,lancamentosManuais43:manual,reais:{pedidos:Object.keys(RE.porPedido).length,importacoes:RE.importacoes.slice(-5).reverse()}}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    const RE=lerTaxasReais(); res.json({ok:true,mes,resumo:R,config:cfg,formas,lancamentosManuais43:manual,leitura:{..._leituraTx},reais:{pedidos:Object.keys(RE.porPedido).length,importacoes:RE.importacoes.slice(-5).reverse()}}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.put("/api/taxas-cartao/config",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, cfg=lerTaxasCartao(), novo={pix:cfg.pix,vm:JSON.parse(JSON.stringify(cfg.vm)),elo:JSON.parse(JSON.stringify(cfg.elo)),shareElo:cfg.shareElo,bandeiraPadrao:cfg.bandeiraPadrao,incluirNosCustos:cfg.incluirNosCustos,formas:{...cfg.formas}};
     const bad=(rot)=>res.status(400).json({erro:`valor inválido em ${rot} (use um número entre 0 e 30, por exemplo 3,10)`});
     if(b.pix!==undefined){ const v=_numTx(b.pix); if(Number.isNaN(v)) return bad("Pix"); novo.pix=v; }
@@ -11385,6 +11385,20 @@ app.post("/api/taxas-cartao/extrato",requireAcesso("acesso_custos"),async(req,re
       try{ addLog("taxas-cartao","taxas_reais_importadas",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{arquivo:b.nome,ini,fim,pedidos:Object.keys(novos).length}); }catch(e){} R.aplicado={pedidos:Object.keys(novos).length}; }
     res.json({ok:true,...R}); }catch(e){ res.status(400).json({erro:String(e.message||e).slice(0,200)}); } });
 app.post("/api/taxas-cartao/reais/limpar",requireAcesso("acesso_custos"),(req,res)=>{ try{ const n=Object.keys(lerTaxasReais().porPedido).length; salvarTaxasReais({porPedido:{},importacoes:[]}); res.json({ok:true,removidos:n}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// LEITURA AUTOMÁTICA DAS VENDAS DO VAREJO: a cada 10 minutos (de dia) traz do Bling os pedidos novos dos últimos dias e os pagamentos que ainda faltam
+// (mês atual e anterior), sem ninguém abrir tela. A taxa de cada venda é calculada na hora em que o pagamento chega.
+const _leituraTx={em:0,rodando:false,erro:"",faltavam:0,enfileirados:0,proximaEm:0};
+async function lerVendasVarejoAuto(opts={}){ if(_leituraTx.rodando) return _leituraTx; _leituraTx.rodando=true; _leituraTx.erro="";
+  try{ const hoje=_diaBRk(Date.now()), ini=_addMes(hoje.slice(0,7),-1)+"-01";
+    if(!_recentes.rodando&&(opts.forcar||Date.now()-_recentes.em>8*60000)) await atualizarRecentesBling(3,{max:40,prio:opts.forcar?"alta":"baixa"});
+    const R=_resumoTaxasCartao(ini,hoje), D=lerDetPedidos(), recentes=id=>{ const dt=D.porId[id]; return dt&&dt.pgEm&&Date.now()-dt.pgEm<6*3600e3; };
+    const ids=R.idsSemPagamento.filter(id=>!recentes(id)).slice(0,opts.max||30); _leituraTx.faltavam=R.semPagamento; _leituraTx.enfileirados=ids.length;
+    ids.forEach(id=>_detPendentes.add(id)); if(ids.length) _buscarDetalhesAvisados(opts.forcar?"alta":"baixa");
+  }catch(e){ _leituraTx.erro=String(e.message||e).slice(0,160); console.error("[taxas] leitura automática:",e.message); }
+  finally{ _leituraTx.rodando=false; _leituraTx.em=Date.now(); } return _leituraTx; }
+setTimeout(()=>lerVendasVarejoAuto(),90000);
+setInterval(()=>{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if((h>=6&&h<=23)||Date.now()-_leituraTx.em>50*60000) lerVendasVarejoAuto(); },10*60000);
+app.post("/api/taxas-cartao/ler-agora",requireAcesso("acesso_custos"),async(req,res)=>{ try{ const r=await lerVendasVarejoAuto({forcar:true,max:60}); res.json({ok:true,leitura:r}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/taxas-cartao",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"taxas-cartao.html")); });
 // QUEM ENTREGA: motorista -> frota (própria, Coopermapp, Lalamove, outro). Sem cadastro, pelo nome ("Coopermaq"/"Coopermapp" no nome)
 const MOT_FROTA_FILE=`${DATA_DIR}/motoristas_frota.json`;
