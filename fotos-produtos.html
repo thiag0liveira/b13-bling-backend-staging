@@ -111,6 +111,11 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     body > *:not(#b13nav):not([onclick="b13ToggleNav()"]):not(#b13navOverlay):not(.fundo){ /* menu agora no topo */ }
   }
 .fp{overflow:hidden}.fp .ic,.fp .ur,.fp .nm{white-space:normal;overflow-wrap:anywhere}
+.fixbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:#0d2230;border-top:2px solid #1f6f93;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));color:#bfe6ff;font-size:13px;display:none}.fixbar.err{background:#3a1020;border-color:#ff5f8a;color:#ffb3c6}.fixbar .rw{display:flex;gap:8px;align-items:center;justify-content:space-between}.fixbar b{color:#fff}
+.sp{display:inline-block;width:13px;height:13px;border:2px solid #4b4690;border-top-color:#ff1a8c;border-radius:50%;animation:gira .8s linear infinite;vertical-align:-2px;margin-right:5px}@keyframes gira{to{transform:rotate(360deg)}}
+.bsc{margin-top:8px;background:#0f0d24;border:1px dashed #1f6f93;border-radius:10px;padding:8px;color:#bfe6ff;font-size:12.5px;white-space:normal}
+.cg{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}.cd{flex:0 0 calc(33.3% - 6px);min-width:92px;max-width:150px;background:#0f0d24;border:1px solid #6a3d8f;border-radius:10px;padding:5px;text-align:center}.cd .th{flex:none;width:100%;height:96px;margin:0 auto 4px}.cd .fb{width:100%;padding:5px 4px;font-size:12px}
+.sem{margin-top:8px;background:#2a1030;border:1px solid #6a3d8f;border-radius:10px;padding:8px;font-size:12.5px;white-space:normal}body{padding-bottom:70px}
 </style>
 </head>
 <body><script>
@@ -121,10 +126,10 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="wrap">
   <div class="card">
     <b style="font-size:15px">📷 Fotos dos produtos</b>
-    <div class="ic" style="white-space:normal;margin-top:3px">Veja quem está sem foto ou com o link fora do ar, peça uma sugestão de foto e exporte a planilha para importar no Bling. A foto aceita é <b>copiada para o nosso servidor</b>, então o link não quebra de novo.</div>
+    <div class="ic" style="white-space:normal;margin-top:3px">Veja quem está sem foto ou com o link fora do ar, procure fotos (a mesma busca da tela Imagens, com a foto já conferida) e exporte a planilha para importar no Bling. A foto aceita é <b>copiada para o nosso servidor</b>, então o link não quebra de novo.</div>
     <div id="fK" class="fk" style="margin-top:8px"></div>
-    <div id="fJob"></div>
-    <div class="ac" style="margin-top:8px"><button class="fb" id="bVer" onclick="verificar()">🔍 Verificar as fotos agora</button><button class="fb m" id="bSug" onclick="sugerirLote()">🤖 Sugerir fotos (25 de cada vez)</button><button class="fb v" onclick="abrirExportar()">⬇️ Exportar para o Bling</button></div>
+    <div class="ac" style="margin-top:8px"><button class="fb" id="bVer" onclick="verificar()">🔍 Verificar as fotos agora</button><button class="fb m" id="bSug" onclick="sugerirLote()">🔎 Procurar fotos (25 de cada vez)</button><button class="fb v" onclick="abrirExportar()">⬇️ Exportar para o Bling</button></div>
+    <label class="ic" style="display:flex;gap:6px;align-items:center;margin-top:8px;white-space:normal"><input type="checkbox" id="cIA" style="width:15px;height:15px;flex:none"> Se a busca não achar nada, tentar também com a IA (mais lento e custa alguns centavos por produto)</label>
     <div id="fMsg" class="ic" style="white-space:normal;margin-top:6px"></div>
     <div id="fAviso" class="fbar" style="display:none"></div>
   </div>
@@ -135,6 +140,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   <div id="fLista"></div>
   <div id="fMais" style="text-align:center;margin:10px 0"></div>
   <div class="card" id="fExp" style="display:none"></div>
+  <div id="fBar" class="fixbar"></div>
   <div style="height:30px"></div>
 </div>
 <script>
@@ -148,37 +154,59 @@ const quando = ms => ms ? new Date(ms).toLocaleString("pt-BR", { timeZone: "Amer
 function buscar() { clearTimeout(_tq); _tq = setTimeout(() => { Q = document.getElementById("fQ").value; PG = 1; carregar(); }, 350); }
 let _seq = 0;
 async function carregar(mais) { const meu = ++_seq, { ok, j } = await api(`/api/fotos?estado=${FILTRO}&q=${encodeURIComponent(Q)}&pagina=${PG}`); if (meu !== _seq) return; if (!ok) { document.getElementById("fLista").innerHTML = `<div class="fbar ferr">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
-  D = j; if (mais) ACUM = ACUM.concat(j.itens); else ACUM = j.itens.slice(); desenhar(); if ((j.verificacao.job.rodando || j.sugestao.job.rodando) && !_poll) _poll = setInterval(acompanhar, 3000); }
-async function acompanhar() { const { ok, j } = await api("/api/fotos/job"); if (!ok) return; const v = j.verificacao, s = j.sugestao; desenharJob(v, s); if (!v.rodando && !s.rodando) { clearInterval(_poll); _poll = null; PG = 1; carregar(); } }
-function desenharJob(v, s) { const el = document.getElementById("fJob"); let h = "";
-  if (v.rodando) h += `<div class="fbar">🔍 Conferindo os links das fotos… ${v.feito} de ${v.total}<div class="pr"><i style="width:${v.total ? Math.round(v.feito / v.total * 100) : 0}%"></i></div></div>`;
-  if (s.rodando) h += `<div class="fbar">🤖 Procurando fotos… ${s.feito} de ${s.total} (${s.achou} achada(s), ${s.semResultado} sem resultado)<div class="pr"><i style="width:${s.total ? Math.round(s.feito / s.total * 100) : 0}%"></i></div></div>`;
-  else if (s.fim && s.fim > (Date.now() - 600000)) h += `<div class="fbar">🤖 Última busca: ${s.achou} foto(s) sugerida(s), ${s.semResultado} sem resultado${s.erros ? ", " + s.erros + " com erro" : ""}.${s.erro ? ' <span class="ferr">' + esc(s.erro) + "</span><div class=\"ic\" style=\"white-space:normal\">Se a mensagem fala de busca na web, o administrador da conta Anthropic precisa ativá-la no Console.</div>" : ""}</div>`;
-  el.innerHTML = h; document.getElementById("bVer").disabled = !!v.rodando; document.getElementById("bSug").disabled = !!s.rodando; }
-function desenhar() { const t = D.totais, K = (k, rot, n) => `<div class="k ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';PG=1;carregar()"><div class="v">${n}</div><div class="l">${rot}</div></div>`;
+  D = j; if (mais) ACUM = ACUM.concat(j.itens); else ACUM = j.itens.slice(); desenhar(); if ((j.verificacao.job.rodando || j.sugestao.job.rodando) && !_poll) iniciarAcompanhamento(); }
+let JOB = null, OPT = new Set(), VISTOS = new Set(), ESTADOS = "", FIM = 0, ERRO_FECHADO = "";
+const nomeDe = id => { const p = ACUM.find(x => x.id === id); return p ? p.nome : id; };
+function trocarCard(p) { const el = document.getElementById("p-" + p.id); if (!el) return; const t = document.createElement("div"); t.innerHTML = card(p); el.replaceWith(t.firstElementChild); }
+function repintar(ids) { ids.forEach(id => { const p = ACUM.find(x => x.id === id); if (p) trocarCard(p); }); }
+async function atualizarCards(ids) { const { ok, j } = await api("/api/fotos?ids=" + ids.join(",")); if (!ok) return; j.itens.forEach(n => { const i = ACUM.findIndex(x => x.id === n.id); if (i >= 0) ACUM[i] = n; trocarCard(n); }); if (D) { D.totais = j.totais; desenharQuadros(); } }
+async function acompanhar() { const { ok, j } = await api("/api/fotos/job"); if (!ok) return; JOB = j; const s = j.sugestao, v = j.verificacao;
+  const novos = (s.prontos || []).filter(id => !VISTOS.has(id)); novos.forEach(id => { VISTOS.add(id); OPT.delete(id); });
+  if (novos.length) await atualizarCards(novos);
+  const est = (s.andando || []).join(",") + "|" + (s.fila || []).join(","); if (est !== ESTADOS) { ESTADOS = est; repintar((s.andando || []).concat(s.fila || [])); }
+  desenharBarra(v, s);
+  if (!v.rodando && !s.rodando) { clearInterval(_poll); _poll = null; ESTADOS = ""; FIM = Date.now(); OPT.clear(); desenharBarra(v, s); PG = 1; await carregar(); } }
+function desenharBarra(v, s) { const el = document.getElementById("fBar"); let h = "", cls = "fixbar";
+  if (s.rodando) { const agora = (s.andando || []).slice(0, 2).map(nomeDe).join(" · "); h = `<div class="rw"><div><span class="sp"></span><b>Procurando fotos…</b> ${s.feito} de ${s.total} · ${s.achou} com fotos · ${s.semResultado} sem resultado${agora ? '<div class="ic" style="white-space:normal">agora: ' + esc(agora) + "</div>" : ""}</div><button class="fb" onclick="parar()">Parar</button></div><div class="pr"><i style="width:${s.total ? Math.round(s.feito / s.total * 100) : 0}%"></i></div>`; }
+  else if (v.rodando) h = `<div class="rw"><div><span class="sp"></span><b>Conferindo os links das fotos…</b> ${v.feito} de ${v.total}</div></div><div class="pr"><i style="width:${v.total ? Math.round(v.feito / v.total * 100) : 0}%"></i></div>`;
+  else if (s.erro && s.erro !== ERRO_FECHADO && s.fim && s.fim > Date.now() - 1800000) { cls += " err"; h = `<div class="rw"><div><b>A busca parou:</b> ${esc(s.erro)}<div class="ic" style="white-space:normal;color:#ffd0da">Se fala de busca na web, o administrador da conta Anthropic precisa ativá-la no Console.</div></div><button class="fb" onclick="ERRO_FECHADO='${esc(s.erro).replace(/'/g, "")}';desenharBarra(JOB.verificacao,JOB.sugestao)">✕</button></div>`; }
+  else if (FIM && Date.now() - FIM < 12000 && s.fim) h = `<div class="rw"><div>✅ <b>Busca concluída.</b> ${s.achou} produto(s) com fotos para escolher, ${s.semResultado} sem resultado${s.erros ? ", " + s.erros + " com erro" : ""}.</div></div>`;
+  el.className = cls; el.style.display = h ? "block" : "none"; el.innerHTML = h; document.getElementById("bVer").disabled = !!v.rodando; document.getElementById("bSug").disabled = !!s.rodando; if (h && FIM && !s.rodando && !v.rodando) setTimeout(() => desenharBarra(v, s), 12500); }
+async function parar() { await api("/api/fotos/parar", { method: "POST", body: "{}" }); msg("Vou parar depois do que já está sendo procurado."); }
+function iniciarAcompanhamento() { VISTOS = new Set(); FIM = 0; if (!_poll) _poll = setInterval(acompanhar, 1500); acompanhar(); }
+function desenharQuadros() { const t = D.totais, K = (k, rot, n) => `<div class="k ${FILTRO === k ? "on" : ""}" onclick="FILTRO='${k}';PG=1;carregar()"><div class="v">${n}</div><div class="l">${rot}</div></div>`;
   document.getElementById("fK").innerHTML = K("semfoto", "Sem foto", t.semfoto) + K("quebrado", "Link fora do ar", t.quebrado) + K("ok", "Fotos OK", t.ok) + K("sugestao", "Com sugestão", t.comSugestao) + K("prontas", "Prontas p/ Bling", t.prontas) + K("naoverificada", "Não verificadas", t.naoverificada);
   document.getElementById("fFiltros").innerHTML = FILTROS.map(f => `<button class="fb ${FILTRO === f[0] ? "m" : ""}" onclick="FILTRO='${f[0]}';PG=1;carregar()">${f[1]}</button>`).join("");
-  desenharJob(D.verificacao.job, D.sugestao.job); document.getElementById("fMsg").innerHTML = `Última verificação dos links: <b style="color:#fff">${quando(D.verificacao.ultima)}</b>.${D.sugestao.iaAtiva ? "" : " A IA não está ligada (falta a chave no Railway): as sugestões usam só o código de barras."}`;
+}
+function desenhar() { desenharQuadros();
+  document.getElementById("fMsg").innerHTML = `Última verificação dos links: <b style="color:#fff">${quando(D.verificacao.ultima)}</b>.${D.sugestao.iaAtiva ? "" : " A IA não está ligada (falta a chave no Railway): as sugestões usam só o código de barras."}`;
   document.getElementById("fLista").innerHTML = ACUM.length ? ACUM.map(card).join("") : '<div class="card ic">Nenhum produto neste filtro.</div>';
   const falta = D.total - ACUM.length; document.getElementById("fMais").innerHTML = falta > 0 ? `<button class="fb" onclick="PG++;carregar(true)">Mostrar mais (${falta})</button>` : (D.total ? `<span class="ic">${D.total} produto(s)</span>` : ""); }
 const badge = p => p.nova ? '<span class="fe ok">✅ pronta para o Bling</span>' : p.estado === "semfoto" ? '<span class="fe sf">Sem foto</span>' : p.estado === "quebrado" ? `<span class="fe qb">Link fora do ar</span> <span class="ic">${esc(p.motivo || "")}</span>` : p.estado === "ok" ? `<span class="fe ok">Foto OK</span> <span class="ic">${p.w ? p.w + "×" + p.h : ""}</span>` : '<span class="fe nv">Não verificada</span>';
-function card(p) { const im = p.nova ? p.nova.url : (p.estado === "ok" || p.estado === "naoverificada") && p.url ? p.url : "";
+function estadoBusca(id) { if (OPT.has(id)) return "andando"; const s = JOB && JOB.sugestao; if (!s) return ""; return (s.andando || []).indexOf(id) >= 0 ? "andando" : ((s.fila || []).indexOf(id) >= 0 ? "fila" : ""); }
+const gUrl = n => "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(n + " supermercado");
+function card(p) { const im = p.nova ? p.nova.url : (p.estado === "ok" || p.estado === "naoverificada") && p.url ? p.url : "", eb = p.nova ? "" : estadoBusca(p.id);
   let h = `<div class="fp" id="p-${p.id}"><div class="th">${im ? `<img loading="lazy" src="${esc(im)}" alt="" onerror="this.parentNode.textContent='sem imagem'">` : "sem foto"}</div><div class="inf"><div class="nm">${esc(p.nome)}</div><div class="ic">${esc(p.codigo)}${p.gtin ? " · " + esc(p.gtin) : ""}</div><div>${badge(p)}</div>`;
   if (p.url && !p.nova) h += `<div class="ur">atual: <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:#9fd0ff">${esc(p.url.length > 70 ? p.url.slice(0, 70) + "…" : p.url)}</a></div>`;
-  if (p.nova) h += `<div class="ur">novo link: <a href="${esc(p.nova.url)}" target="_blank" rel="noopener" style="color:#9fd0ff">${esc(p.nova.url)}</a>${p.nova.exportadaEm ? " · já exportada em " + quando(p.nova.exportadaEm) : ""}</div><div class="ac"><button class="fb" onclick="desfazer('${p.id}')">↩ Desfazer</button></div>`;
-  else {
-    if (p.sugestao) h += `<div class="sg"><div class="th"><img loading="lazy" src="${esc(p.sugestao.url)}" alt="" onerror="this.parentNode.textContent='sem imagem'"></div><div class="inf"><div class="ic" style="white-space:normal">💡 Sugestão · ${esc(p.sugestao.fonte)} · confiança ${esc(p.sugestao.conf)}${p.sugestao.w ? " · " + p.sugestao.w + "×" + p.sugestao.h : ""}</div>${p.sugestao.desc ? `<div class="ic" style="white-space:normal">${esc(p.sugestao.desc)}</div>` : ""}${p.sugestao.pagina ? `<div class="ur"><a href="${esc(p.sugestao.pagina)}" target="_blank" rel="noopener" style="color:#9fd0ff">ver a página de origem</a></div>` : ""}<div class="ac"><button class="fb v" onclick="aceitar('${p.id}')">✅ Usar esta foto</button><button class="fb" onclick="rejeitar('${p.id}')">🚫 Não serve</button></div></div></div>`;
-    else if (p.semResultado) h += `<div class="ic" style="margin-top:4px">🤖 Não achei uma foto confiável. Cole um link abaixo ou tente de novo.</div>`;
-    if (p.estado !== "ok") h += `<div class="ac"><input id="l-${p.id}" placeholder="colar o link de uma foto" autocomplete="off"><button class="fb" onclick="aceitarLink('${p.id}')">Usar link</button>${p.sugestao ? "" : `<button class="fb m" onclick="sugerirUm('${p.id}')">🤖 Sugerir</button>`}</div>`;
-  } return h + "</div></div>"; }
+  if (p.nova) return h + `<div class="ur">novo link: <a href="${esc(p.nova.url)}" target="_blank" rel="noopener" style="color:#9fd0ff">${esc(p.nova.url)}</a>${p.nova.exportadaEm ? " · já exportada em " + quando(p.nova.exportadaEm) : ""}</div><div class="ac"><button class="fb" onclick="desfazer('${p.id}')">↩ Desfazer</button></div></div></div>`;
+  if (eb === "andando") h += `<div class="bsc"><span class="sp"></span><b>Procurando fotos para este produto…</b><div class="ic" style="white-space:normal">Leva alguns segundos. As fotos aparecem aqui assim que forem conferidas.</div></div>`;
+  else if (eb === "fila") h += `<div class="bsc">⏳ Na fila: vou procurar as fotos deste produto em instantes.</div>`;
+  else if (p.sugestao) { const cs = p.sugestao.candidatas || [];
+    h += `<div class="ic" style="margin-top:8px;white-space:normal">💡 <b style="color:#fff">${cs.length} foto(s) encontrada(s)</b>, escolha a melhor:</div><div class="cg">` + cs.map((c, i) => `<div class="cd"><div class="th"><img loading="lazy" src="${esc(c.previa || c.url)}" alt="" onclick="ampliar('${esc(c.previa || c.url)}')" style="cursor:zoom-in" onerror="this.parentNode.textContent='sem imagem'"></div><div class="ic">${c.w ? c.w + "×" + c.h : ""}</div><button class="fb v" onclick="aceitar('${p.id}',${i})">✅ Usar</button></div>`).join("") + `</div>`
+      + `<div class="ac"><button class="fb" onclick="outras('${p.id}')">🚫 Nenhuma serve, procurar outras</button><a class="ic" href="${gUrl(p.nome)}" target="_blank" rel="noopener" style="color:#9fd0ff">🔍 ver no Google</a></div><div class="ur">${esc(cs[0] ? cs[0].fonte : "")}${cs[0] && cs[0].pagina ? ' · <a href="' + esc(cs[0].pagina) + '" target="_blank" rel="noopener" style="color:#9fd0ff">página de origem</a>' : ""}</div>`; }
+  else if (p.semResultado) h += `<div class="sem">🔎 Não achei uma foto confiável na busca. Tente a IA, abra o Google ou cole um link abaixo.<div class="ac"><button class="fb m" onclick="sugerirUm('${p.id}',true)">🤖 Tentar com a IA</button><a class="ic" href="${gUrl(p.nome)}" target="_blank" rel="noopener" style="color:#9fd0ff">🔍 ver no Google</a></div></div>`;
+  if (!eb && p.estado !== "ok") h += `<div class="ac"><input id="l-${p.id}" placeholder="colar o link de uma foto" autocomplete="off"><button class="fb" onclick="aceitarLink('${p.id}')">Usar link</button>${p.sugestao || p.semResultado ? "" : `<button class="fb m" onclick="sugerirUm('${p.id}')">🔎 Procurar fotos</button>`}</div>`;
+  return h + "</div></div>"; }
+function ampliar(u) { window.open(u, "_blank"); }
 function msg(t, erro) { const el = document.getElementById("fAviso"); el.style.display = "block"; el.innerHTML = (erro ? '<span class="ferr">' : "") + esc(t) + (erro ? "</span>" : ""); }
 async function verificar() { const { ok, j } = await api("/api/fotos/verificar", { method: "POST", body: JSON.stringify({ forcar: true }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
-async function sugerirLote() { const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ max: 25 }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (j.mensagem) { msg(j.mensagem); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
-async function sugerirUm(id) { const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ ids: [id] }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (!_poll) _poll = setInterval(acompanhar, 3000); acompanhar(); }
-async function aceitar(id, url) { msg("Baixando e conferindo a foto…"); const { ok, j } = await api("/api/fotos/aceitar", { method: "POST", body: JSON.stringify({ id, url }) }); if (!ok) { msg(j.erro || "Não consegui usar essa foto.", true); return; } msg("✅ Foto guardada. Ela entra na planilha para o Bling."); PG = 1; await carregar(); }
-function aceitarLink(id) { const u = (document.getElementById("l-" + id).value || "").trim(); if (!u) { msg("Cole o link da foto.", true); return; } aceitar(id, u); }
-async function rejeitar(id) { await api("/api/fotos/rejeitar", { method: "POST", body: JSON.stringify({ id }) }); PG = 1; await carregar(); sugerirUm(id); }
-async function desfazer(id) { await api("/api/fotos/desfazer", { method: "POST", body: JSON.stringify({ id }) }); PG = 1; await carregar(); }
+async function sugerirLote() { const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ max: 25, ia: document.getElementById("cIA").checked }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } if (j.mensagem) { msg(j.mensagem); return; } msg(`Procurando fotos para ${j.produtos} produto(s). Acompanhe pela barra de baixo; cada produto se atualiza quando termina.`); iniciarAcompanhamento(); }
+async function sugerirUm(id, ia) { OPT.add(id); repintar([id]); const { ok, j } = await api("/api/fotos/sugerir", { method: "POST", body: JSON.stringify({ ids: [id], ia: !!ia }) }); if (!ok) { OPT.delete(id); repintar([id]); msg(j.erro || "Não consegui iniciar.", true); return; } if (j.jaRodando) { msg("Já tem uma busca em andamento. Espere terminar para pedir outra.", true); OPT.delete(id); repintar([id]); return; } iniciarAcompanhamento(); }
+async function aceitar(id, indice, url) { msg("Guardando a foto…"); const { ok, j } = await api("/api/fotos/aceitar", { method: "POST", body: JSON.stringify({ id, indice, url }) }); if (!ok) { msg(j.erro || "Não consegui usar essa foto.", true); return; } msg("✅ Foto guardada. Ela entra na planilha para o Bling."); await atualizarCards([id]); }
+function aceitarLink(id) { const u = (document.getElementById("l-" + id).value || "").trim(); if (!u) { msg("Cole o link da foto.", true); return; } aceitar(id, null, u); }
+async function outras(id) { await api("/api/fotos/rejeitar", { method: "POST", body: JSON.stringify({ id }) }); await atualizarCards([id]); sugerirUm(id); }
+async function desfazer(id) { await api("/api/fotos/desfazer", { method: "POST", body: JSON.stringify({ id }) }); await atualizarCards([id]); }
+async function verificar() { const { ok, j } = await api("/api/fotos/verificar", { method: "POST", body: JSON.stringify({ forcar: true }) }); if (!ok) { msg(j.erro || "Não consegui iniciar.", true); return; } iniciarAcompanhamento(); }
 function abrirExportar() { const t = D ? D.totais : { prontas: 0, prontasNaoExportadas: 0 }, el = document.getElementById("fExp"); el.style.display = "block";
   el.innerHTML = `<b>⬇️ Exportar para importar no Bling</b><div class="ic" style="white-space:normal;margin:3px 0 6px">A planilha traz o ID, o código, a descrição e o link da foto (a cópia guardada no nosso servidor). Prontas: <b style="color:#fff">${t.prontas}</b> · ainda não exportadas: <b style="color:#fff">${t.prontasNaoExportadas}</b>.</div>
     <div class="ac"><span class="ic">Nome da coluna da foto:</span><input id="eCol" value="${esc(D ? D.colunaBling : "URL Imagens Externas")}"></div>

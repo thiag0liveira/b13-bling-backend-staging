@@ -11300,6 +11300,16 @@ async function _baixarImagem(url,op){ op=op||{}; const max=op.max||1500000, so=!
   return {ok:false,motivo:"redirecionamentos demais"}; }
 function _gtinPorProduto(){ const m={}; try{ Object.entries(lerJSON(GTIN_INDEX_FILE,{})).forEach(([k,v])=>{ const pid=String((v&&(v.produtoId||v.id))||""); if(!pid) return; const kd=String(k).replace(/\D/g,""), g=(kd.length>=8&&kd.length<=14)?kd:String((v&&(v.gtin||v.ean))||"").replace(/\D/g,""); if(g.length>=8&&g.length<=14&&!m[pid]) m[pid]=g; }); }catch(e){} return m; }
 function _produtosFoto(){ const P=lerProdutosBling().porId, F=_lerFotos(), G=_gtinPorProduto(), out=[]; Object.entries(P).forEach(([id,x])=>{ if(x.s==="I"||x.f==="V") return; out.push({id:String(id),codigo:String(x.c||""),nome:String(x.n||""),gtin:G[id]||"",url:String(F["id:"+id]||F[String(x.c)]||x.img||"")}); }); return out; }
+// busca de imagens na web, a mesma fonte da tela /imagens (Google Custom Search se houver chave, DuckDuckGo e SerpAPI). Devolve até "max" links, sem conferir.
+async function _buscarImagensWeb(consulta,max){ const imgs=[], ddg=process.env.DDG_BASE_URL||"https://duckduckgo.com", UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  const add=u=>{ u=String(u||"").trim(); if(/^https?:\/\//i.test(u)&&!/tse\d\.mm\.bing/i.test(u)&&!imgs.includes(u)) imgs.push(u); };
+  const gcKey=process.env.GOOGLE_SEARCH_KEY, gcCx=process.env.GOOGLE_SEARCH_CX;
+  if(gcKey&&gcCx){ try{ const r=await fetch(`https://www.googleapis.com/customsearch/v1?key=${gcKey}&cx=${gcCx}&q=${encodeURIComponent(consulta)}&searchType=image&num=10&safe=active`,{signal:AbortSignal.timeout(9000)}); const j=await r.json(); (j.items||[]).forEach(i=>add(i.link)); }catch(e){ console.log("[fotos] Google CSE erro:",e.message); } }
+  if(imgs.length<max){ try{ const r1=await fetch(`${ddg}/?q=${encodeURIComponent(consulta)}&iax=images&ia=images`,{headers:{"User-Agent":UA,"Accept-Language":"pt-BR,pt;q=0.9"},signal:AbortSignal.timeout(9000)}); const html=await r1.text(), m=html.match(/vqd="([^"]+)"/)||html.match(/vqd='([^']+)'/)||html.match(/vqd=([\d-]+)&/);
+      if(m){ await sleep(250); const r2=await fetch(`${ddg}/i.js?q=${encodeURIComponent(consulta)}&vqd=${encodeURIComponent(m[1])}&p=1&s=0&u=bing&f=,,,,,&l=pt-br`,{headers:{"User-Agent":UA,"Referer":"https://duckduckgo.com/","Accept":"application/json"},signal:AbortSignal.timeout(9000)}); const j2=await r2.json(); (j2.results||[]).forEach(x=>add(x.image)); }
+      else console.log("[fotos] DuckDuckGo: vqd não encontrado"); }catch(e){ console.log("[fotos] DuckDuckGo erro:",e.message); } }
+  if(imgs.length<3&&process.env.SERPAPI_KEY){ try{ const r=await fetch(`https://serpapi.com/search.json?engine=google_images&q=${encodeURIComponent(consulta)}&api_key=${process.env.SERPAPI_KEY}&num=10&hl=pt&gl=br`,{signal:AbortSignal.timeout(9000)}); if(r.ok){ const j=await r.json(); (j.images_results||[]).forEach(i=>add(i.original||i.thumbnail)); } }catch(e){} }
+  return imgs.slice(0,max); }
 // ---- verificação dos links (devagar, 4 por vez)
 const FJOB={rodando:false,total:0,feito:0,ok:0,quebrado:0,semfoto:0,inicio:0,fim:0,erro:""};
 async function verificarFotos(forcar){ if(FJOB.rodando) return; Object.assign(FJOB,{rodando:true,total:0,feito:0,ok:0,quebrado:0,semfoto:0,inicio:Date.now(),fim:0,erro:""});
@@ -11310,36 +11320,52 @@ async function verificarFotos(forcar){ if(FJOB.rodando) return; Object.assign(FJ
     await Promise.all([trab(),trab(),trab(),trab()]); S.ultima=Date.now(); _fSalvar();
   }catch(e){ FJOB.erro=String(e.message||e).slice(0,160); } FJOB.rodando=false; FJOB.fim=Date.now(); }
 setInterval(()=>{ try{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if(h===4&&Date.now()-(_fStatus().ultima||0)>20*3600e3) verificarFotos(false); }catch(e){} },30*60000);
-// ---- sugestão de foto
-const SFJOB={rodando:false,total:0,feito:0,achou:0,semResultado:0,erros:0,inicio:0,fim:0,erro:""};
-async function _sugerirFotoUm(p){ const recus=(_fSug()[p.id]&&_fSug()[p.id].recusadas)||[], KEY=process.env.ANTHROPIC_API_KEY;
-  if(p.gtin){ try{ const base=process.env.OFF_BASE_URL||"https://world.openfoodfacts.org", r=await fetch(`${base}/api/v2/product/${p.gtin}.json?fields=image_front_url,image_url,product_name`,{headers:{"user-agent":"B13Bebidas/1.0 (adega 13)"},signal:AbortSignal.timeout(9000)}); const j=await r.json().catch(()=>({})), u=j&&j.product&&(j.product.image_front_url||j.product.image_url);
-      if(u&&!recus.includes(u)){ const v=await _baixarImagem(u,{soCabecalho:true}); if(v.ok) return {url:u,fonte:"Open Food Facts (pelo código de barras "+p.gtin+")",pagina:`https://world.openfoodfacts.org/product/${p.gtin}`,conf:"alta",desc:(j.product.product_name||""),w:v.w,h:v.h,bytes:v.bytes}; } }catch(e){} }
-  if(!KEY) return null;
+// ---- sugestão de foto: junta candidatas de várias fontes, confere cada uma (baixa de verdade) e guarda até 3 prévias no nosso servidor
+const SFJOB={rodando:false,total:0,feito:0,achou:0,semResultado:0,erros:0,inicio:0,fim:0,erro:"",fila:[],andando:[],prontos:[],parar:false};
+const FOTOS_PREV=`${FOTOS_DIR}/previas`;
+function _limparPrevias(id){ try{ fs.readdirSync(FOTOS_PREV).forEach(f=>{ if(f.startsWith(id+"-")){ try{ fs.unlinkSync(`${FOTOS_PREV}/${f}`); }catch(e){} } }); }catch(e){} }
+(function(){ try{ fs.readdirSync(FOTOS_PREV).forEach(f=>{ const st=fs.statSync(`${FOTOS_PREV}/${f}`); if(Date.now()-st.mtimeMs>7*864e5) fs.unlinkSync(`${FOTOS_PREV}/${f}`); }); }catch(e){} })();
+async function _iaFotoUrls(p,recus){ const KEY=process.env.ANTHROPIC_API_KEY; if(!KEY) return [];
   const prompt=`Encontre uma imagem do produto abaixo para o cadastro de uma loja de bebidas.\nProduto: ${p.nome}\nCódigo interno: ${p.codigo||"-"}\nCódigo de barras (GTIN): ${p.gtin||"não informado"}\nUse a busca na web. Quero o LINK DIRETO do arquivo da imagem (geralmente termina em .jpg, .jpeg, .png ou .webp) da embalagem vista de frente, de preferência com fundo claro ou sem fundo e boa resolução, de site do fabricante ou de varejista conhecido. NÃO invente links: só devolva endereços que apareceram nos resultados da busca. Se não achar com segurança, devolva "url" vazia.${recus.length?"\nJá recusei estes links, não repita: "+recus.join(" ; "):""}\nResponda SOMENTE com JSON, sem texto antes ou depois: {"url":"","pagina":"página onde achou","descricao":"o que a imagem mostra","confianca":"alta|media|baixa","alternativas":["url2","url3"]}`;
   const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(),90000);
   try{ const r=await fetch((process.env.ANTHROPIC_BASE_URL||"https://api.anthropic.com")+"/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":KEY,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:process.env.ANTHROPIC_MODEL||"claude-sonnet-5-5",max_tokens:1500,tools:[{type:"web_search_20250305",name:"web_search",max_uses:3}],messages:[{role:"user",content:prompt}]}),signal:ctrl.signal});
     const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error((j.error&&j.error.message)||("HTTP "+r.status));
-    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text||"").join("\n"), m=txt.match(/\{[\s\S]*\}/g); let o=null; for(let k=(m||[]).length-1;k>=0&&!o;k--){ try{ o=JSON.parse(m[k]); }catch(e){} } if(!o) return null;
-    const cands=[o.url].concat(Array.isArray(o.alternativas)?o.alternativas:[]).map(x=>String(x||"").trim()).filter(x=>/^https?:\/\//i.test(x)&&!recus.includes(x)).slice(0,4);
-    for(const u of cands){ const v=await _baixarImagem(u,{soCabecalho:true}); if(v.ok) return {url:u,fonte:"IA (busca na web)",pagina:String(o.pagina||"").slice(0,300),conf:["alta","media","baixa"].includes(o.confianca)?o.confianca:"media",desc:String(o.descricao||"").slice(0,160),w:v.w,h:v.h,bytes:v.bytes}; }
-    return null;
+    const txt=(j.content||[]).filter(c=>c.type==="text").map(c=>c.text||"").join("\n"), m=txt.match(/\{[\s\S]*\}/g); let o=null; for(let k=(m||[]).length-1;k>=0&&!o;k--){ try{ o=JSON.parse(m[k]); }catch(e){} } if(!o) return [];
+    return [o.url].concat(Array.isArray(o.alternativas)?o.alternativas:[]).map(x=>({url:String(x||"").trim(),fonte:"IA (busca na web)",pagina:String(o.pagina||"").slice(0,300),conf:["alta","media","baixa"].includes(o.confianca)?o.confianca:"media",desc:String(o.descricao||"").slice(0,160)})).filter(c=>/^https?:\/\//i.test(c.url)).slice(0,4);
   }finally{ clearTimeout(to); } }
-async function sugerirFotos(ids){ if(SFJOB.rodando) return; Object.assign(SFJOB,{rodando:true,total:ids.length,feito:0,achou:0,semResultado:0,erros:0,inicio:Date.now(),fim:0,erro:""});
-  try{ const todos=Object.fromEntries(_produtosFoto().map(p=>[p.id,p])), SG=_fSug(); let seguidos=0; for(const id of ids){ const p=todos[id]; SFJOB.feito++; if(!p) continue;
-      try{ const s=await _sugerirFotoUm(p); seguidos=0; const ant=SG[id]||{}; if(s){ SG[id]={...s,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.achou++; } else { SG[id]={url:"",semResultado:true,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.semResultado++; } }
-      catch(e){ SFJOB.erros++; seguidos++; SFJOB.erro=String(e.message||e).slice(0,200); if(seguidos>=3||/credit|billing|authentication|api key|invalid x-api-key|invalid_request|deprecated|not enabled|permission|web.?search|model/i.test(SFJOB.erro)) break; }
-      if(SFJOB.feito%5===0) _fSalvar(); await sleep(800); } _fSalvar();
-  }catch(e){ SFJOB.erro=String(e.message||e).slice(0,160); } SFJOB.rodando=false; SFJOB.fim=Date.now(); }
+async function _sugerirFotoUm(p,opts){ opts=opts||{}; const recus=(_fSug()[p.id]&&_fSug()[p.id].recusadas)||[], cands=[], vistos=new Set(recus);
+  const junta=(lista)=>lista.forEach(c=>{ if(c&&c.url&&!vistos.has(c.url)){ vistos.add(c.url); cands.push(c); } });
+  // fontes, da mais confiável para a mais ampla
+  if(p.gtin){ try{ const base=process.env.OFF_BASE_URL||"https://world.openfoodfacts.org", r=await fetch(`${base}/api/v2/product/${p.gtin}.json?fields=image_front_url,image_url,product_name`,{headers:{"user-agent":"B13Bebidas/1.0 (adega 13)"},signal:AbortSignal.timeout(9000)}); const j=await r.json().catch(()=>({})), u=j&&j.product&&(j.product.image_front_url||j.product.image_url);
+      if(u) junta([{url:u,fonte:"Open Food Facts (código de barras "+p.gtin+")",pagina:`https://world.openfoodfacts.org/product/${p.gtin}`,conf:"alta",desc:(j.product.product_name||"")}]); }catch(e){} }
+  const busca=await _buscarImagensWeb(p.nome+" supermercado",12).catch(()=>[]); junta(busca.map(u=>({url:u,fonte:"busca de imagens na web",pagina:"",conf:"media",desc:""})));
+  if(p.gtin&&busca.length<4){ const b2=await _buscarImagensWeb(p.gtin+" "+p.nome,8).catch(()=>[]); junta(b2.map(u=>({url:u,fonte:"busca de imagens pelo código de barras",pagina:"",conf:"media",desc:""}))); }
+  // confere de verdade (baixa) de 4 em 4 até juntar 3 boas
+  const boas=[], finais=new Set(); let i=0; const MAXC=Math.min(cands.length,16);
+  while(boas.length<3&&i<MAXC){ const lote=cands.slice(i,i+4); i+=4; const rs=await Promise.all(lote.map(c=>_baixarImagem(c.url).then(v=>({c,v})).catch(()=>({c,v:{ok:false}})))); rs.forEach(({c,v})=>{ if(v.ok&&boas.length<3&&(!v.w||Math.min(v.w,v.h)>=180)&&!finais.has(v.final||c.url)){ finais.add(v.final||c.url); boas.push({...c,w:v.w,h:v.h,bytes:v.bytes,ext:v.ext,buf:v.buf}); } }); }
+  // IA só se pediram (mais lenta e com custo) e nada serviu
+  if(!boas.length&&opts.ia){ const ia=await _iaFotoUrls(p,recus); for(const c of ia){ const v=await _baixarImagem(c.url); if(v.ok&&boas.length<3) boas.push({...c,w:v.w,h:v.h,bytes:v.bytes,ext:v.ext,buf:v.buf}); } }
+  if(!boas.length) return null;
+  fs.mkdirSync(FOTOS_PREV,{recursive:true}); _limparPrevias(p.id);
+  const candidatas=boas.map((c,k)=>{ const arq=`${p.id}-${k}.${c.ext}`; fs.writeFileSync(`${FOTOS_PREV}/${arq}`,c.buf); return {url:c.url,previa:`/foto-previa/${arq}`,fonte:c.fonte,pagina:c.pagina,conf:c.conf,desc:c.desc,w:c.w,h:c.h,bytes:c.bytes}; });
+  return {...candidatas[0],candidatas}; }
+async function sugerirFotos(ids,opts){ opts=opts||{}; if(SFJOB.rodando) return; Object.assign(SFJOB,{rodando:true,total:ids.length,feito:0,achou:0,semResultado:0,erros:0,inicio:Date.now(),fim:0,erro:"",fila:ids.slice(),andando:[],prontos:[],parar:false});
+  try{ const todos=Object.fromEntries(_produtosFoto().map(p=>[p.id,p])), SG=_fSug(); let seguidos=0, parou=false;
+    const trab=async()=>{ while(SFJOB.fila.length&&!parou&&!SFJOB.parar){ const id=SFJOB.fila.shift(), p=todos[id]; if(!p){ SFJOB.feito++; continue; } SFJOB.andando.push(id);
+        try{ const s=await _sugerirFotoUm(p,opts); seguidos=0; const ant=SG[id]||{}; if(s){ SG[id]={...s,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.achou++; } else { SG[id]={url:"",semResultado:true,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.semResultado++; } }
+        catch(e){ SFJOB.erros++; seguidos++; SFJOB.erro=String(e.message||e).slice(0,200); if(seguidos>=3||/credit|billing|authentication|api key|invalid x-api-key|invalid_request|deprecated|not enabled|permission|web.?search|model/i.test(SFJOB.erro)){ parou=true; } }
+        SFJOB.andando=SFJOB.andando.filter(x=>x!==id); SFJOB.feito++; SFJOB.prontos.push(id); if(SFJOB.feito%5===0) _fSalvar(); await sleep(300); } };
+    await Promise.all([trab(),trab(),trab()]); _fSalvar();
+  }catch(e){ SFJOB.erro=String(e.message||e).slice(0,160); } SFJOB.rodando=false; SFJOB.andando=[]; SFJOB.fila=[]; SFJOB.fim=Date.now(); }
 const _fBase=()=>(process.env.PUBLIC_BASE_URL||"https://app.b13bebidas.com.br").replace(/\/$/,"");
 // ---- rotas
 app.get("/api/fotos",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const S=_fStatus(), SG=_fSug(), NV=_fNov(), q=_nrmP(req.query.q||""), est=String(req.query.estado||"problemas"), pg=Math.max(1,Number(req.query.pagina)||1), lim=Math.min(120,Math.max(20,Number(req.query.limite)||60));
-    const todos=_produtosFoto().map(p=>{ const a=S.itens[p.id], nv=NV[p.id], sg=SG[p.id]; let estado=!p.url?"semfoto":(a&&a.url===p.url?a.estado:"naoverificada"); return {...p,estado,http:a&&a.url===p.url?a.http:null,motivo:a&&a.url===p.url?(a.motivo||""):"",w:a&&a.w||null,h:a&&a.h||null,verificadaEm:a&&a.em||null,sugestao:sg&&sg.url?{url:sg.url,fonte:sg.fonte,pagina:sg.pagina,conf:sg.conf,desc:sg.desc,w:sg.w,h:sg.h}:null,semResultado:!!(sg&&sg.semResultado),nova:nv?{url:nv.url,fonte:nv.fonte,aceitaEm:nv.aceitaEm,exportadaEm:nv.exportadaEm||null}:null}; });
+    const por=String(req.query.ids||"").split(",").filter(Boolean), todos=_produtosFoto().filter(p=>!por.length||por.includes(p.id)).map(p=>{ const a=S.itens[p.id], nv=NV[p.id], sg=SG[p.id]; let estado=!p.url?"semfoto":(a&&a.url===p.url?a.estado:"naoverificada"); return {...p,estado,http:a&&a.url===p.url?a.http:null,motivo:a&&a.url===p.url?(a.motivo||""):"",w:a&&a.w||null,h:a&&a.h||null,verificadaEm:a&&a.em||null,sugestao:sg&&sg.url?{url:sg.url,fonte:sg.fonte,pagina:sg.pagina,conf:sg.conf,desc:sg.desc,w:sg.w,h:sg.h,candidatas:(sg.candidatas||[{url:sg.url,previa:"",fonte:sg.fonte,conf:sg.conf,w:sg.w,h:sg.h}]).map(c=>({url:c.url,previa:c.previa||"",fonte:c.fonte,pagina:c.pagina||"",conf:c.conf,w:c.w,h:c.h}))}:null,semResultado:!!(sg&&sg.semResultado),nova:nv?{url:nv.url,fonte:nv.fonte,aceitaEm:nv.aceitaEm,exportadaEm:nv.exportadaEm||null}:null}; });
     const tot={produtos:todos.length,semfoto:todos.filter(p=>p.estado==="semfoto").length,quebrado:todos.filter(p=>p.estado==="quebrado").length,ok:todos.filter(p=>p.estado==="ok").length,naoverificada:todos.filter(p=>p.estado==="naoverificada").length,comSugestao:todos.filter(p=>p.sugestao&&!p.nova).length,prontas:todos.filter(p=>p.nova).length,prontasNaoExportadas:todos.filter(p=>p.nova&&!p.nova.exportadaEm).length};
-    let lista=todos.filter(p=>est==="todas"||(est==="problemas"&&(p.estado==="semfoto"||p.estado==="quebrado")&&!p.nova)||(est==="semfoto"&&p.estado==="semfoto")||(est==="quebrado"&&p.estado==="quebrado")||(est==="ok"&&p.estado==="ok")||(est==="naoverificada"&&p.estado==="naoverificada")||(est==="sugestao"&&p.sugestao&&!p.nova)||(est==="prontas"&&p.nova));
-    if(q) lista=lista.filter(p=>_nrmP(p.nome+" "+p.codigo+" "+p.gtin).includes(q));
+    let lista=por.length?todos:todos.filter(p=>est==="todas"||(est==="problemas"&&(p.estado==="semfoto"||p.estado==="quebrado")&&!p.nova)||(est==="semfoto"&&p.estado==="semfoto")||(est==="quebrado"&&p.estado==="quebrado")||(est==="ok"&&p.estado==="ok")||(est==="naoverificada"&&p.estado==="naoverificada")||(est==="sugestao"&&p.sugestao&&!p.nova)||(est==="prontas"&&p.nova));
+    if(q&&!por.length) lista=lista.filter(p=>_nrmP(p.nome+" "+p.codigo+" "+p.gtin).includes(q));
     const peso={semfoto:0,quebrado:1,naoverificada:2,ok:3}; lista.sort((a,b)=>(peso[a.estado]-peso[b.estado])||a.nome.localeCompare(b.nome));
-    res.json({ok:true,totais:tot,total:lista.length,pagina:pg,itens:lista.slice((pg-1)*lim,pg*lim),verificacao:{ultima:S.ultima||0,job:FJOB},sugestao:{job:SFJOB,iaAtiva:!!process.env.ANTHROPIC_API_KEY},colunaBling:process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas"});
+    res.json({ok:true,totais:tot,total:lista.length,pagina:pg,itens:lista.slice((pg-1)*lim,pg*lim),verificacao:{ultima:S.ultima||0,job:FJOB},sugestao:{job:SFJOB,iaAtiva:!!process.env.ANTHROPIC_API_KEY,buscaAtiva:true},colunaBling:process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas"});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/fotos/job",requireAcesso("acesso_produtos_gestao"),(req,res)=>res.json({ok:true,verificacao:FJOB,sugestao:SFJOB}));
 app.post("/api/fotos/verificar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ if(FJOB.rodando) return res.json({ok:true,jaRodando:true}); verificarFotos(!!(req.body&&req.body.forcar)); res.json({ok:true,iniciado:true}); });
@@ -11347,17 +11373,21 @@ app.post("/api/fotos/sugerir",requireAcesso("acesso_produtos_gestao"),(req,res)=
     const b=req.body||{}, S=_fStatus(), SG=_fSug(), NV=_fNov(), max=Math.min(40,Math.max(1,Number(b.max)||25)); let ids=(Array.isArray(b.ids)?b.ids:[]).map(String);
     if(!ids.length){ ids=_produtosFoto().filter(p=>{ const a=S.itens[p.id], prob=!p.url||(a&&a.url===p.url&&a.estado==="quebrado"); return prob&&!NV[p.id]&&!(SG[p.id]&&(SG[p.id].url||SG[p.id].semResultado)); }).map(p=>p.id).slice(0,max); }
     if(!ids.length) return res.json({ok:true,iniciado:false,mensagem:"Nada novo para sugerir."});
-    sugerirFotos(ids.slice(0,40)); res.json({ok:true,iniciado:true,produtos:Math.min(ids.length,40)}); }catch(e){ res.status(500).json({erro:e.message}); } });
-app.post("/api/fotos/rejeitar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), SG=_fSug(), s=SG[id]; if(!s) return res.json({ok:true}); const rec=(s.recusadas||[]).concat(s.url?[s.url]:[]); SG[id]={url:"",recusadas:rec.slice(-8),em:Date.now()}; _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    sugerirFotos(ids.slice(0,40),{ia:!!b.ia}); res.json({ok:true,iniciado:true,produtos:Math.min(ids.length,40)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/parar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ SFJOB.parar=true; res.json({ok:true}); });
+app.post("/api/fotos/rejeitar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), SG=_fSug(), s=SG[id]; if(!s) return res.json({ok:true}); const rec=(s.recusadas||[]).concat((s.candidatas||[]).map(c=>c.url)).concat(s.url?[s.url]:[]); SG[id]={url:"",recusadas:Array.from(new Set(rec)).slice(-12),em:Date.now()}; _limparPrevias(id); _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // aceita a foto (a sugerida ou um link colado): confere, baixa e guarda a cópia no nosso servidor
 app.post("/api/fotos/aceitar",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const b=req.body||{}, id=String(b.id||""), p=_produtosFoto().find(x=>x.id===id); if(!p) return res.status(404).json({erro:"produto não encontrado"});
-    const SG=_fSug(), NV=_fNov(), url=String(b.url||(SG[id]&&SG[id].url)||"").trim(); if(!url) return res.status(400).json({erro:"informe o link da foto"});
-    const v=await _baixarImagem(url); if(!v.ok) return res.status(422).json({erro:"Essa foto não serve: "+v.motivo});
+    const SG=_fSug(), NV=_fNov(), cand=SG[id]&&Array.isArray(SG[id].candidatas)&&b.indice!=null?SG[id].candidatas[Number(b.indice)]:null, url=String(b.url||(cand&&cand.url)||(SG[id]&&SG[id].url)||"").trim(); if(!url) return res.status(400).json({erro:"informe o link da foto"});
+    let v=null; if(cand&&cand.previa){ try{ const bf=fs.readFileSync(`${FOTOS_PREV}/${cand.previa.split("/").pop()}`), t=_tipoImagem(bf); if(t) v={ok:true,buf:bf,ext:t.ext,w:cand.w,h:cand.h,bytes:bf.length,final:url}; }catch(e){} }
+    if(!v) v=await _baixarImagem(url); if(!v.ok) return res.status(422).json({erro:"Essa foto não serve: "+v.motivo});
     fs.mkdirSync(FOTOS_DIR,{recursive:true}); ["jpg","png","gif","webp"].forEach(e=>{ try{ fs.unlinkSync(`${FOTOS_DIR}/${id}.${e}`); }catch(_e){} });
     const arq=`${id}.${v.ext}`; fs.writeFileSync(`${FOTOS_DIR}/${arq}`,v.buf);
     NV[id]={url:`${_fBase()}/foto-produto/${arq}`,arquivo:arq,origem:v.final||url,fonte:b.url?"link colado":((SG[id]&&SG[id].fonte)||""),aceitaEm:Date.now(),por:(req.sessao&&req.sessao.nome)||"",exportadaEm:null,w:v.w,h:v.h,bytes:v.bytes};
-    if(SG[id]) delete SG[id]; _fSalvar(); res.json({ok:true,nova:{url:NV[id].url}}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    if(SG[id]) delete SG[id]; _limparPrevias(id); _fSalvar(); res.json({ok:true,nova:{url:NV[id].url}}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/fotos/desfazer",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(); if(NV[id]){ try{ fs.unlinkSync(`${FOTOS_DIR}/${NV[id].arquivo}`); }catch(e){} delete NV[id]; _fSalvar(); } res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/foto-previa/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^\d+-\d\.(jpg|png|gif|webp)$/.test(a)) return res.status(404).end(); const f=`${FOTOS_PREV}/${a}`; if(!fs.existsSync(f)) return res.status(404).end();
+  res.set("Content-Type",{jpg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp"}[a.split(".")[1]]); res.set("Cache-Control","private, max-age=3600"); res.sendFile(f); });
 app.get("/foto-produto/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^\d+\.(jpg|png|gif|webp)$/.test(a)) return res.status(404).end(); const f=`${FOTOS_DIR}/${a}`; if(!fs.existsSync(f)) return res.status(404).end();
   res.set("Content-Type",{jpg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp"}[a.split(".")[1]]); res.set("Cache-Control","public, max-age=86400"); res.sendFile(f); });
 // planilha para importar no Bling: ID, Código, Descrição e o link da foto (só as aceitas; as já exportadas só se pedir "todas")
