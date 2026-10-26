@@ -229,15 +229,22 @@ const nq = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 
 const dmyEm = v => { if (!v) return ""; if (typeof v === "number" || /^\d{9,13}$/.test(String(v))) { const n = Number(v); return dmy(new Date((n > 1e12 ? n : n * 1000) - 3 * 3600e3).toISOString().slice(0, 10)); } return dmy(v); };
 const dmyTs = ms => ms ? dmy(new Date(ms - 3 * 3600e3).toISOString().slice(0, 10)) : "";
 function itensNotaHtml(r, aviso) {
-  const it = r.itens || [], u = r.ultimo, soma = it.filter(x => !x.frete).reduce((a, x) => a + (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), 0);
+  const it = r.itens || [], u = r.ultimo, soma = it.filter(x => !x.frete).reduce((a, x) => a + (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), 0), brlU = n => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 4 });
   let h = '<div class="ic" style="white-space:normal;color:#e6e3ff">' + (r.semNota ? "Compra sem nota" : "NF " + esc(r.numero)) + " · " + esc(r.fornecedor) + (r.emissao ? " · emissão " + dmyEm(r.emissao) : "") + " · total " + brl(r.vNF) + (r.modoTexto ? " · <b>" + esc(r.modoTexto) + "</b>" : "") + (u ? " em " + dmyTs(u.em) + (u.por ? " por " + esc(u.por) : "") : "") + "</div>";
   if (aviso) h += '<div class="ic" style="white-space:normal;color:#ffd27a;margin-top:4px">' + esc(aviso) + "</div>";
   if (r.retroativo) h += '<div class="ic" style="white-space:normal;margin-top:4px">Registro refeito a partir dos itens que ficaram guardados da nota.</div>';
-  h += '<div style="margin-top:6px">';
+  h += '<div class="ic" style="white-space:normal;margin-top:4px">O preço por unidade usa o mesmo método da Entrada de Nota: valor do item ÷ (quantidade × unidades por embalagem).</div><div style="margin-top:6px">';
   it.forEach(x => {
-    const ean = x.cEAN && x.cEAN !== "SEM GTIN" ? " · " + esc(x.cEAN) : "", tot = (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), un = x.qtdUn && Math.abs(x.qtdUn - x.qCom) > 0.0005 ? " (" + nq(x.qtdUn) + " un)" : "";
-    h += '<div style="border-top:1px solid #221e4f;padding:7px 0"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">' + esc(x.xProd) + '</b><b style="white-space:nowrap">' + nq(x.qCom) + " " + esc(x.uCom) + "</b></div>"
-      + '<div style="font-size:11px;color:#8f89c9">' + esc(x.cProd) + ean + un + '</div><div style="font-size:12.5px">' + brl(x.vUnCom) + " cada · total <b>" + brl(tot) + "</b></div>"
+    const ean = x.cEAN && x.cEAN !== "SEM GTIN" ? " · " + esc(x.cEAN) : "", tot = (Number(x.vProd) || 0) - (Number(x.vDesc) || 0), un = x.qtdUn && Math.abs(x.qtdUn - x.qCom) > 0.0005 ? " (" + nq(x.qtdUn) + " un)" : "", uc = esc(x.uCom || "un");
+    const pu = Number(x.custoUn) || 0, real = Number(x.custoRealUn) || 0, ehUn = Number(x.fator) === 1 || /^(UN|UNID|UND|PC|PÇ)$/i.test(String(x.uCom || "")), rateio = real > pu * 1.005 ? " · custo real " + brlU(real) + " com frete e impostos rateados" : "";
+    let linhaUn = "";
+    if (x.frete) linhaUn = "";
+    else if (pu > 0 && !ehUn) linhaUn = '<div style="color:#7fe3a8;font-size:13px"><b>= ' + brlU(pu) + " por unidade</b> <span style=\"color:#a9a4d6;font-size:11.5px\">(" + nq(x.fator) + " un por " + uc + ")" + rateio + "</span></div>";
+    else if (pu > 0) linhaUn = rateio ? '<div style="color:#a9a4d6;font-size:11.5px">' + rateio.slice(3) + "</div>" : "";
+    else if (x.precoUnEst > 0 && x.sugestaoFator > 0) linhaUn = '<div style="color:#ffd27a;font-size:12.5px"><b>≈ ' + brlU(x.precoUnEst) + " por unidade</b> <span style=\"font-size:11.5px\">(estimado: a descrição indica " + nq(x.sugestaoFator) + " un por " + uc + "; confirme na Entrada de Nota)</span></div>";
+    else linhaUn = '<div style="color:#ffd27a;font-size:12px">Preço por unidade ainda não definido: informe quantas unidades vêm em cada ' + uc + " na Entrada de Nota.</div>";
+    h += '<div style="border-top:1px solid #221e4f;padding:7px 0"><div style="display:flex;justify-content:space-between;gap:8px"><b style="overflow-wrap:anywhere">' + esc(x.xProd) + '</b><b style="white-space:nowrap">' + nq(x.qCom) + " " + uc + "</b></div>"
+      + '<div style="font-size:11px;color:#8f89c9">' + esc(x.cProd) + ean + un + '</div><div style="font-size:12.5px">' + brl(x.vUnCom) + " por " + uc + " · total <b>" + brl(tot) + "</b></div>" + linhaUn
       + '<div style="font-size:11.5px;color:#a9a4d6">' + (x.frete ? "frete" : (x.produtoNome ? "Ligado a: " + esc(x.produtoNome) : "não ligado a produto")) + (x.lancouEstoque ? ' · <span style="color:#3ce88a">✓ entrou no estoque</span>' : (x.ignorado ? " · não lançado (marcado para ignorar)" : "")) + "</div></div>";
   });
   return h + '</div><div style="border-top:2px solid #37327a;padding-top:6px;text-align:right;color:#8f89c9">' + it.filter(x => !x.frete).length + " item(ns) · soma dos produtos <b style=\"color:#fff\">" + brl(soma) + "</b></div>";
