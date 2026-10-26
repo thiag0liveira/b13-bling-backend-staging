@@ -48,7 +48,8 @@ null
 "chaves": [
 "aluguel da loja",
 "aluguel loja"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g11",
@@ -87,7 +88,8 @@ null
 "chaves": [
 "contabil",
 "contador"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g12",
@@ -123,7 +125,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "variavel"
 },
 {
 "id": "g13",
@@ -159,7 +162,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "variavel"
 },
 {
 "id": "g14",
@@ -199,7 +203,8 @@ null
 "inss",
 "previdencia",
 "receita federal"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g15",
@@ -237,7 +242,8 @@ null
 ],
 "chaves": [
 "alvara"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g16",
@@ -279,7 +285,8 @@ null
 "vivo",
 "claro",
 "tim "
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g17",
@@ -319,7 +326,8 @@ null
 "internet",
 "blink",
 "fibra"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g18",
@@ -358,7 +366,8 @@ null
 "chaves": [
 "limpeza",
 "higiene"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g19",
@@ -398,7 +407,8 @@ null
 "papelaria",
 "escritorio",
 "bobina"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g20",
@@ -436,7 +446,8 @@ null
 ],
 "chaves": [
 "patronal"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g21",
@@ -476,7 +487,8 @@ null
 "pro-labore",
 "pro labore",
 "prolabore"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g22",
@@ -516,7 +528,8 @@ null
 "salario",
 "adiantamento",
 "folha"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g23",
@@ -554,7 +567,8 @@ null
 ],
 "chaves": [
 "fgts"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g24",
@@ -594,7 +608,8 @@ null
 "provisao",
 "13o",
 "ferias"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g25",
@@ -634,7 +649,8 @@ null
 "vale transporte",
 "mobilidade",
 "vt "
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g26",
@@ -677,7 +693,8 @@ null
 "sodexo",
 "alelo",
 "ticket"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g27",
@@ -715,7 +732,8 @@ null
 ],
 "chaves": [
 "uniforme"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g28",
@@ -751,7 +769,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "fixo"
 },
 {
 "id": "g29",
@@ -787,7 +806,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "fixo"
 },
 {
 "id": "g30",
@@ -823,7 +843,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "fixo"
 },
 {
 "id": "g31",
@@ -865,7 +886,8 @@ null
 "diesel",
 "etanol",
 "posto"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g32",
@@ -903,7 +925,8 @@ null
 ],
 "chaves": [
 "ipva"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g33",
@@ -941,7 +964,8 @@ null
 ],
 "chaves": [
 "pneu"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g34",
@@ -979,7 +1003,8 @@ null
 ],
 "chaves": [
 "seguro"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g35",
@@ -1015,7 +1040,8 @@ null,
 null,
 null
 ],
-"chaves": []
+"chaves": [],
+"tipo": "fixo"
 },
 {
 "id": "g36",
@@ -1053,7 +1079,8 @@ null
 ],
 "chaves": [
 "imprevisto"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g37",
@@ -1092,7 +1119,8 @@ null
 "chaves": [
 "tarifa",
 "banco"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g38",
@@ -1130,7 +1158,8 @@ null
 ],
 "chaves": [
 "cheque especial"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g39",
@@ -1169,7 +1198,8 @@ null
 "chaves": [
 "juros",
 "mora"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g40",
@@ -1212,7 +1242,8 @@ null
 "google ads",
 "meta ads",
 "facebook"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g41",
@@ -1254,7 +1285,8 @@ null
 "base": {
 "desde": "2026-10",
 "valor": 650.0
-}
+},
+"tipo": "fixo"
 },
 {
 "id": "g42",
@@ -1293,7 +1325,8 @@ null
 "chaves": [
 "equipamento",
 "manutencao de equip"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g43",
@@ -1333,7 +1366,8 @@ null
 "veiculo",
 "oficina",
 "mecanica"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g44",
@@ -1373,7 +1407,8 @@ null
 "predial",
 "reforma",
 "obra"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g45",
@@ -1415,7 +1450,8 @@ null
 "amil",
 "hapvida",
 "bradesco"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g46",
@@ -1454,7 +1490,8 @@ null
 "chaves": [
 "empilhadeira",
 "locacao"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g47",
@@ -1494,7 +1531,8 @@ null
 "vigilancia",
 "alarme",
 "monitoramento"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g48",
@@ -1532,7 +1570,8 @@ null
 ],
 "chaves": [
 "destaque da semana"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g49",
@@ -1570,7 +1609,8 @@ null
 ],
 "chaves": [
 "destaque do mes"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g50",
@@ -1610,7 +1650,8 @@ null
 "social",
 "midia",
 "gestor"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g51",
@@ -1648,7 +1689,8 @@ null
 ],
 "chaves": [
 "qualidade"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g52",
@@ -1688,7 +1730,8 @@ null
 "juridic",
 "advogad",
 "advocac"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g53",
@@ -1727,7 +1770,8 @@ null
 "chaves": [
 "analista de ti",
 "suporte de ti"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g54",
@@ -1766,7 +1810,8 @@ null
 "chaves": [
 "coopermapp",
 "cooper"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g55",
@@ -1807,7 +1852,8 @@ null
 "seguranca do trabalho",
 "ergominas",
 "asos"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g56",
@@ -1846,7 +1892,8 @@ null
 "chaves": [
 "treinamento",
 "laudo"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g57",
@@ -1884,7 +1931,8 @@ null
 ],
 "chaves": [
 "aniversari"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g58",
@@ -1922,7 +1970,8 @@ null
 ],
 "chaves": [
 "comerciarios"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g59",
@@ -1960,7 +2009,8 @@ null
 ],
 "chaves": [
 "gas "
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g60",
@@ -1999,7 +2049,8 @@ null
 "chaves": [
 "freelanc",
 "avulso"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g61",
@@ -2037,7 +2088,8 @@ null
 ],
 "chaves": [
 "deposito"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g62",
@@ -2075,7 +2127,8 @@ null
 ],
 "chaves": [
 "lalamove"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g63",
@@ -2114,7 +2167,8 @@ null
 "chaves": [
 "faxina",
 "diarista"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g64",
@@ -2154,7 +2208,8 @@ null
 "supermercado",
 "copa",
 "cafe"
-]
+],
+"tipo": "variavel"
 },
 {
 "id": "g65",
@@ -2194,7 +2249,8 @@ null
 "solides",
 "sistema de rh",
 "ponto"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g66",
@@ -2233,7 +2289,8 @@ null
 "chaves": [
 "dedetiz",
 "praga"
-]
+],
+"tipo": "fixo"
 },
 {
 "id": "g67",
@@ -2277,7 +2334,8 @@ null
 "desde": "2026-10",
 "valor": 600.0
 },
-"obs": "Separado da linha \"Software de gestão\" da planilha: o Bling ficou com até R$ 650 por mês e o restante foi atribuído ao Claude. De abril a agosto a planilha só mostra R$ 650, então a assinatura do Claude não aparece nesses meses."
+"obs": "Separado da linha \"Software de gestão\" da planilha: o Bling ficou com até R$ 650 por mês e o restante foi atribuído ao Claude. De abril a agosto a planilha só mostra R$ 650, então a assinatura do Claude não aparece nesses meses.",
+"tipo": "fixo"
 }
 ]
 }
