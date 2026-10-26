@@ -1273,7 +1273,7 @@ window.B13_NAV_LINKS=[
   {grupo:"CADASTROS",href:"/listas",label:"💲 Listas de Preço",acoes:["acesso_listas_preco","ver_listas"]},
   {grupo:"CADASTROS",href:"/lista-fardo",label:"📋 Lista de Fardos",acoes:["acesso_lista_fardo","editar_pedido"]},
   {grupo:"CADASTROS",href:"/listas-extras",label:"📑 Listas Extras",acoes:["acesso_listas_extras","editar_pedido"]},
-  {grupo:"CADASTROS",href:"/imagens",label:"🖼️ Imagens",acoes:["acesso_imagens","admin"]},
+  {grupo:"CADASTROS",href:"/fotos-produtos",label:"📷 Fotos e Imagens dos Produtos",acoes:["acesso_produtos_gestao","acesso_imagens","admin"]},
   {grupo:"CADASTROS",href:"/etiquetas",label:"🏷️ Etiquetas",acoes:["acesso_etiquetas","editar_pedido"]},
 
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
@@ -1289,7 +1289,6 @@ window.B13_NAV_LINKS=[
   {grupo:"ESTOQUE",href:"/entrada-produtos",label:"📦 Entrada de Produtos",acoes:["acesso_entrada_produtos"]},
   {grupo:"ESTOQUE",href:"/entrada-nota",label:"📷 Entrada de Nota (financeiro)",acoes:["acesso_entrada_nota"]},
   {grupo:"ESTOQUE",href:"/produtos",label:"🍺 Produtos (análise)",acoes:["acesso_produtos_gestao"]},
-  {grupo:"ESTOQUE",href:"/fotos-produtos",label:"📷 Fotos dos Produtos",acoes:["acesso_produtos_gestao"]},
   {grupo:"ESTOQUE",href:"/analise-precos",label:"📊 Análise de Preços",acoes:["acesso_tabela_varejo"]},
   {grupo:"ESTOQUE",href:"/estoque",label:"📦 Estoque (painel)",acoes:["acesso_estoque_painel"]},
   {grupo:"ESTOQUE",href:"/estoque-simples",label:"⚡ Ajuste rápido",acoes:["acesso_estoque"]},
@@ -11300,7 +11299,9 @@ async function _baixarImagem(url,op){ op=op||{}; const max=op.max||1500000, so=!
     }catch(e){ return {ok:false,motivo:e&&e.name==="AbortError"?"o site demorou demais para responder":("não consegui abrir o link ("+String(e.cause&&e.cause.code||e.message||e).slice(0,50)+")")}; } finally{ clearTimeout(to); } }
   return {ok:false,motivo:"redirecionamentos demais"}; }
 function _gtinPorProduto(){ const m={}; try{ Object.entries(lerJSON(GTIN_INDEX_FILE,{})).forEach(([k,v])=>{ const pid=String((v&&(v.produtoId||v.id))||""); if(!pid) return; const kd=String(k).replace(/\D/g,""), g=(kd.length>=8&&kd.length<=14)?kd:String((v&&(v.gtin||v.ean))||"").replace(/\D/g,""); if(g.length>=8&&g.length<=14&&!m[pid]) m[pid]=g; }); }catch(e){} return m; }
-function _produtosFoto(){ const P=lerProdutosBling().porId, F=_lerFotos(), G=_gtinPorProduto(), out=[]; Object.entries(P).forEach(([id,x])=>{ if(x.s==="I"||x.f==="V") return; out.push({id:String(id),codigo:String(x.c||""),nome:String(x.n||""),gtin:G[id]||"",url:String(F["id:"+id]||F[String(x.c)]||x.img||"")}); }); return out; }
+let _fCat={em:0,map:{}};
+function _fotoCategorias(){ if(Date.now()-_fCat.em<60000) return _fCat.map; const m={}; try{ const TV=_lerTV(), nomes=Object.fromEntries((TV.categorias||[]).map(c=>[c.id,c.nome])); _itensTV().forEach(i=>{ m[String(i.id)]=nomes[i.categoriaId]||""; }); }catch(e){} _fCat={em:Date.now(),map:m}; return m; }
+function _produtosFoto(){ const P=lerProdutosBling().porId, F=_lerFotos(), G=_gtinPorProduto(), CT=_fotoCategorias(), out=[]; Object.entries(P).forEach(([id,x])=>{ if(x.s==="I"||x.f==="V") return; out.push({id:String(id),codigo:String(x.c||""),nome:String(x.n||""),categoria:CT[String(id)]||"",gtin:G[id]||"",url:String(F["id:"+id]||F[String(x.c)]||x.img||"")}); }); return out; }
 // busca de imagens na web, a mesma fonte da tela /imagens (Google Custom Search se houver chave, DuckDuckGo e SerpAPI). Devolve até "max" links, sem conferir.
 async function _buscarImagensWeb(consulta,max){ const imgs=[], ddg=process.env.DDG_BASE_URL||"https://duckduckgo.com", UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
   const add=u=>{ u=String(u||"").trim(); if(/^https?:\/\//i.test(u)&&!/tse\d\.mm\.bing/i.test(u)&&!imgs.includes(u)) imgs.push(u); };
@@ -11339,7 +11340,7 @@ async function _sugerirFotoUm(p,opts){ opts=opts||{}; const recus=(_fSug()[p.id]
   // fontes, da mais confiável para a mais ampla
   if(p.gtin){ try{ const base=process.env.OFF_BASE_URL||"https://world.openfoodfacts.org", r=await fetch(`${base}/api/v2/product/${p.gtin}.json?fields=image_front_url,image_url,product_name`,{headers:{"user-agent":"B13Bebidas/1.0 (adega 13)"},signal:AbortSignal.timeout(9000)}); const j=await r.json().catch(()=>({})), u=j&&j.product&&(j.product.image_front_url||j.product.image_url);
       if(u) junta([{url:u,fonte:"Open Food Facts (código de barras "+p.gtin+")",pagina:`https://world.openfoodfacts.org/product/${p.gtin}`,conf:"alta",desc:(j.product.product_name||"")}]); }catch(e){} }
-  const busca=await _buscarImagensWeb(p.nome+" supermercado",12).catch(()=>[]); junta(busca.map(u=>({url:u,fonte:"busca de imagens na web",pagina:"",conf:"media",desc:""})));
+  const busca=await _buscarImagensWeb(opts.termo?opts.termo:(p.nome+" supermercado"),12).catch(()=>[]); junta(busca.map(u=>({url:u,fonte:"busca de imagens na web",pagina:"",conf:"media",desc:""})));
   if(p.gtin&&busca.length<4){ const b2=await _buscarImagensWeb(p.gtin+" "+p.nome,8).catch(()=>[]); junta(b2.map(u=>({url:u,fonte:"busca de imagens pelo código de barras",pagina:"",conf:"media",desc:""}))); }
   // confere em paralelo (até 12, no máximo 8 s). Tira só o que é CLARAMENTE inútil (link que não existe, página HTML, ícone);
   // o que o servidor não conseguiu baixar (site bloqueia robô, demora) continua na lista, como na tela Imagens, e o navegador mostra.
@@ -11354,35 +11355,42 @@ async function _sugerirFotoUm(p,opts){ opts=opts||{}; const recus=(_fSug()[p.id]
   const candidatas=boas.map((c,k)=>{ const arq=`${p.id}-${k}.${c.ext}`; fs.writeFileSync(`${FOTOS_PREV}/${arq}`,c.buf); return {url:c.url,previa:`/foto-previa/${arq}`,fonte:c.fonte,pagina:c.pagina,conf:c.conf,desc:c.desc,w:c.w,h:c.h,bytes:c.bytes,verificada:true}; })
     .concat(talvez.slice(0,Math.max(0,6-boas.length)).map(c=>({url:c.url,previa:"",fonte:c.fonte,pagina:c.pagina,conf:c.conf,desc:c.desc,w:null,h:null,bytes:null,verificada:false,aviso:c.aviso})));
   return {...candidatas[0],candidatas}; }
-async function sugerirFotos(ids,opts){ opts=opts||{}; if(SFJOB.rodando) return; Object.assign(SFJOB,{rodando:true,total:ids.length,feito:0,achou:0,semResultado:0,erros:0,inicio:Date.now(),fim:0,erro:"",fila:ids.slice(),andando:[],prontos:[],parar:false});
+async function sugerirFotos(ids,opts){ opts=opts||{}; if(SFJOB.rodando) return; Object.assign(SFJOB,{rodando:true,total:ids.length,feito:0,achou:0,semResultado:0,erros:0,inicio:Date.now(),fim:0,erro:"",fila:ids.slice(),andando:[],prontos:[],parar:false,opc:{}});
   try{ const todos=Object.fromEntries(_produtosFoto().map(p=>[p.id,p])), SG=_fSug(); let seguidos=0, parou=false;
     const trab=async()=>{ while(SFJOB.fila.length&&!parou&&!SFJOB.parar){ const id=SFJOB.fila.shift(), p=todos[id]; if(!p){ SFJOB.feito++; continue; } SFJOB.andando.push(id);
-        try{ const s=await _sugerirFotoUm(p,opts); seguidos=0; const ant=SG[id]||{}; if(s){ SG[id]={...s,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.achou++; } else { SG[id]={url:"",semResultado:true,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.semResultado++; } }
+        try{ const s=await _sugerirFotoUm(p,Object.assign({},opts,(SFJOB.opc&&SFJOB.opc[id])||{})); seguidos=0; const ant=SG[id]||{}; if(s){ SG[id]={...s,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.achou++; } else { SG[id]={url:"",semResultado:true,em:Date.now(),recusadas:ant.recusadas||[]}; SFJOB.semResultado++; } }
         catch(e){ SFJOB.erros++; seguidos++; SFJOB.erro=String(e.message||e).slice(0,200); if(seguidos>=3||/credit|billing|authentication|api key|invalid x-api-key|invalid_request|deprecated|not enabled|permission|web.?search|model/i.test(SFJOB.erro)){ parou=true; } }
         SFJOB.andando=SFJOB.andando.filter(x=>x!==id); SFJOB.feito++; SFJOB.prontos.push(id); if(SFJOB.feito%5===0) _fSalvar(); await sleep(300); } };
     await Promise.all([trab(),trab(),trab()]); _fSalvar();
   }catch(e){ SFJOB.erro=String(e.message||e).slice(0,160); } SFJOB.rodando=false; SFJOB.andando=[]; SFJOB.fila=[]; SFJOB.fim=Date.now(); }
 const _fBase=()=>(process.env.PUBLIC_BASE_URL||"https://app.b13bebidas.com.br").replace(/\/$/,"");
 // ---- rotas
-app.get("/api/fotos",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const S=_fStatus(), SG=_fSug(), NV=_fNov(), q=_nrmP(req.query.q||""), est=String(req.query.estado||"problemas"), pg=Math.max(1,Number(req.query.pagina)||1), lim=Math.min(120,Math.max(20,Number(req.query.limite)||60));
-    const por=String(req.query.ids||"").split(",").filter(Boolean), todos=_produtosFoto().filter(p=>!por.length||por.includes(p.id)).map(p=>{ const a=S.itens[p.id], nv=NV[p.id], sg=SG[p.id]; let estado=!p.url?"semfoto":(a&&a.url===p.url?a.estado:"naoverificada"); return {...p,estado,http:a&&a.url===p.url?a.http:null,motivo:a&&a.url===p.url?(a.motivo||""):"",w:a&&a.w||null,h:a&&a.h||null,verificadaEm:a&&a.em||null,sugestao:sg&&sg.url?{url:sg.url,fonte:sg.fonte,pagina:sg.pagina,conf:sg.conf,desc:sg.desc,w:sg.w,h:sg.h,candidatas:(sg.candidatas||[{url:sg.url,previa:"",fonte:sg.fonte,conf:sg.conf,w:sg.w,h:sg.h}]).map(c=>({url:c.url,previa:c.previa||"",fonte:c.fonte,pagina:c.pagina||"",conf:c.conf,w:c.w,h:c.h,verificada:c.verificada!==false,aviso:c.aviso||""}))}:null,semResultado:!!(sg&&sg.semResultado),nova:nv?{url:nv.url,fonte:nv.fonte,aceitaEm:nv.aceitaEm,exportadaEm:nv.exportadaEm||null,semCopia:!!nv.semCopia}:null}; });
+app.get("/api/fotos",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{ const S=_fStatus(), SG=_fSug(), NV=_fNov(), q=_nrmP(req.query.q||""), est=String(req.query.estado||"problemas"), pg=Math.max(1,Number(req.query.pagina)||1), lim=Math.min(120,Math.max(20,Number(req.query.limite)||60));
+    const por=String(req.query.ids||"").split(",").filter(Boolean), todos=_produtosFoto().filter(p=>!por.length||por.includes(p.id)).map(p=>{ const a=S.itens[p.id], nv=NV[p.id], sg=SG[p.id]; let estado=!p.url?"semfoto":(a&&a.url===p.url?a.estado:"naoverificada"); return {...p,estado,http:a&&a.url===p.url?a.http:null,motivo:a&&a.url===p.url?(a.motivo||""):"",w:a&&a.w||null,h:a&&a.h||null,verificadaEm:a&&a.em||null,sugestao:sg&&sg.url?{url:sg.url,fonte:sg.fonte,pagina:sg.pagina,conf:sg.conf,desc:sg.desc,w:sg.w,h:sg.h,candidatas:(sg.candidatas||[{url:sg.url,previa:"",fonte:sg.fonte,conf:sg.conf,w:sg.w,h:sg.h}]).map(c=>({url:c.url,previa:c.previa||"",fonte:c.fonte,pagina:c.pagina||"",conf:c.conf,w:c.w,h:c.h,verificada:c.verificada!==false,aviso:c.aviso||""}))}:null,semResultado:!!(sg&&sg.semResultado),nova:nv?{url:nv.url,fonte:nv.fonte,aceitaEm:nv.aceitaEm,exportadaEm:nv.exportadaEm||null,semCopia:!!nv.semCopia,manual:!!nv.manual,enviadoBling:!!nv.enviadoBling}:null}; });
     const tot={produtos:todos.length,semfoto:todos.filter(p=>p.estado==="semfoto").length,quebrado:todos.filter(p=>p.estado==="quebrado").length,ok:todos.filter(p=>p.estado==="ok").length,naoverificada:todos.filter(p=>p.estado==="naoverificada").length,comSugestao:todos.filter(p=>p.sugestao&&!p.nova).length,prontas:todos.filter(p=>p.nova).length,prontasNaoExportadas:todos.filter(p=>p.nova&&!p.nova.exportadaEm).length};
     let lista=por.length?todos:todos.filter(p=>est==="todas"||(est==="problemas"&&(p.estado==="semfoto"||p.estado==="quebrado")&&!p.nova)||(est==="semfoto"&&p.estado==="semfoto")||(est==="quebrado"&&p.estado==="quebrado")||(est==="ok"&&p.estado==="ok")||(est==="naoverificada"&&p.estado==="naoverificada")||(est==="sugestao"&&p.sugestao&&!p.nova)||(est==="prontas"&&p.nova));
+    const cat=String(req.query.categoria||""); if(cat&&!por.length) lista=lista.filter(p=>cat==="__sem"?!p.categoria:p.categoria===cat);
     if(q&&!por.length) lista=lista.filter(p=>_nrmP(p.nome+" "+p.codigo+" "+p.gtin).includes(q));
     const peso={semfoto:0,quebrado:1,naoverificada:2,ok:3}; lista.sort((a,b)=>(peso[a.estado]-peso[b.estado])||a.nome.localeCompare(b.nome));
-    res.json({ok:true,totais:tot,total:lista.length,pagina:pg,itens:lista.slice((pg-1)*lim,pg*lim),verificacao:{ultima:S.ultima||0,job:FJOB},sugestao:{job:SFJOB,iaAtiva:!!process.env.ANTHROPIC_API_KEY,buscaAtiva:true},colunaBling:process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas"});
+    const cc={}; todos.forEach(p=>{ if((p.estado==="semfoto"||p.estado==="quebrado")&&!p.nova){ const k=p.categoria||"__sem"; cc[k]=(cc[k]||0)+1; } });
+    res.json({ok:true,totais:tot,total:lista.length,pagina:pg,categorias:Object.keys(cc).sort((a,b)=>a==="__sem"?1:b==="__sem"?-1:a.localeCompare(b)).map(k=>({nome:k,qtd:cc[k]})),itens:lista.slice((pg-1)*lim,pg*lim),verificacao:{ultima:S.ultima||0,job:FJOB},sugestao:{job:SFJOB,iaAtiva:!!process.env.ANTHROPIC_API_KEY,buscaAtiva:true},colunaBling:process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas"});
   }catch(e){ res.status(500).json({erro:e.message}); } });
-app.get("/api/fotos/job",requireAcesso("acesso_produtos_gestao"),(req,res)=>res.json({ok:true,verificacao:FJOB,sugestao:SFJOB}));
-app.post("/api/fotos/verificar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ if(FJOB.rodando) return res.json({ok:true,jaRodando:true}); verificarFotos(!!(req.body&&req.body.forcar)); res.json({ok:true,iniciado:true}); });
-app.post("/api/fotos/sugerir",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ if(SFJOB.rodando) return res.json({ok:true,jaRodando:true});
+app.get("/api/fotos/job",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>res.json({ok:true,verificacao:FJOB,sugestao:SFJOB}));
+app.post("/api/fotos/verificar",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ if(FJOB.rodando) return res.json({ok:true,jaRodando:true}); verificarFotos(!!(req.body&&req.body.forcar)); res.json({ok:true,iniciado:true}); });
+app.post("/api/fotos/sugerir",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{
     const b=req.body||{}, S=_fStatus(), SG=_fSug(), NV=_fNov(), max=Math.min(40,Math.max(1,Number(b.max)||25)); let ids=(Array.isArray(b.ids)?b.ids:[]).map(String);
     if(!ids.length){ ids=_produtosFoto().filter(p=>{ const a=S.itens[p.id], prob=!p.url||(a&&a.url===p.url&&a.estado==="quebrado"); return prob&&!NV[p.id]&&!(SG[p.id]&&(SG[p.id].url||SG[p.id].semResultado)); }).map(p=>p.id).slice(0,max); }
     if(!ids.length) return res.json({ok:true,iniciado:false,mensagem:"Nada novo para sugerir."});
-    sugerirFotos(ids.slice(0,40),{ia:!!b.ia}); res.json({ok:true,iniciado:true,produtos:Math.min(ids.length,40)}); }catch(e){ res.status(500).json({erro:e.message}); } });
-app.post("/api/fotos/parar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ SFJOB.parar=true; res.json({ok:true}); });
-app.post("/api/fotos/rejeitar",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), SG=_fSug(), s=SG[id]; if(!s) return res.json({ok:true}); const rec=(s.recusadas||[]).concat((s.candidatas||[]).map(c=>c.url)).concat(s.url?[s.url]:[]); SG[id]={url:"",recusadas:Array.from(new Set(rec)).slice(-12),em:Date.now()}; _limparPrevias(id); _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    const op={ia:!!b.ia,termo:String(b.termo||"").trim().slice(0,120)};
+    if(SFJOB.rodando){ let n=0; ids.slice(0,40).forEach(id=>{ if(SFJOB.fila.includes(id)||SFJOB.andando.includes(id)) return; SFJOB.fila.push(id); (SFJOB.opc||(SFJOB.opc={}))[id]=op; SFJOB.total++; n++; }); return res.json({ok:true,iniciado:true,enfileirado:true,produtos:n}); }
+    sugerirFotos(ids.slice(0,40),op); res.json({ok:true,iniciado:true,produtos:Math.min(ids.length,40)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/enviado",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(); if(!NV[id]) return res.status(404).json({erro:"foto não encontrada"}); NV[id].exportadaEm=Date.now(); NV[id].enviadoBling=true; _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/marcar-manual",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(), SG=_fSug(); if(!_produtosFoto().some(p=>p.id===id)) return res.status(404).json({erro:"produto não encontrado"});
+    NV[id]={url:"",arquivo:null,fonte:"colada no Bling à mão",manual:true,aceitaEm:Date.now(),por:(req.sessao&&req.sessao.nome)||"",exportadaEm:Date.now()}; delete SG[id]; _limparPrevias(id); _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/parar",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ SFJOB.parar=true; res.json({ok:true}); });
+app.post("/api/fotos/rejeitar",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), SG=_fSug(), s=SG[id]; if(!s) return res.json({ok:true}); const rec=(s.recusadas||[]).concat((s.candidatas||[]).map(c=>c.url)).concat(s.url?[s.url]:[]); SG[id]={url:"",recusadas:Array.from(new Set(rec)).slice(-12),em:Date.now()}; _limparPrevias(id); _fSalvar(); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // aceita a foto (a sugerida ou um link colado): confere, baixa e guarda a cópia no nosso servidor
-app.post("/api/fotos/aceitar",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const b=req.body||{}, id=String(b.id||""), p=_produtosFoto().find(x=>x.id===id); if(!p) return res.status(404).json({erro:"produto não encontrado"});
+app.post("/api/fotos/aceitar",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),async(req,res)=>{ try{ const b=req.body||{}, id=String(b.id||""), p=_produtosFoto().find(x=>x.id===id); if(!p) return res.status(404).json({erro:"produto não encontrado"});
     const SG=_fSug(), NV=_fNov(), cand=SG[id]&&Array.isArray(SG[id].candidatas)&&b.indice!=null?SG[id].candidatas[Number(b.indice)]:null, url=String(b.url||(cand&&cand.url)||(SG[id]&&SG[id].url)||"").trim(); if(!url) return res.status(400).json({erro:"informe o link da foto"});
     let v=null; if(cand&&cand.previa){ try{ const bf=fs.readFileSync(`${FOTOS_PREV}/${cand.previa.split("/").pop()}`), t=_tipoImagem(bf); if(t) v={ok:true,buf:bf,ext:t.ext,w:cand.w,h:cand.h,bytes:bf.length,final:url}; }catch(e){} }
     if(!v) v=await _baixarImagem(url);
@@ -11393,14 +11401,14 @@ app.post("/api/fotos/aceitar",requireAcesso("acesso_produtos_gestao"),async(req,
     const arq=`${id}.${v.ext}`; fs.writeFileSync(`${FOTOS_DIR}/${arq}`,v.buf);
     NV[id]={url:`${_fBase()}/foto-produto/${arq}`,arquivo:arq,origem:v.final||url,fonte:b.url?"link colado":((SG[id]&&SG[id].fonte)||""),aceitaEm:Date.now(),por:(req.sessao&&req.sessao.nome)||"",exportadaEm:null,w:v.w,h:v.h,bytes:v.bytes};
     if(SG[id]) delete SG[id]; _limparPrevias(id); _fSalvar(); res.json({ok:true,nova:{url:NV[id].url}}); }catch(e){ res.status(500).json({erro:e.message}); } });
-app.post("/api/fotos/desfazer",requireAcesso("acesso_produtos_gestao"),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(); if(NV[id]){ try{ fs.unlinkSync(`${FOTOS_DIR}/${NV[id].arquivo}`); }catch(e){} delete NV[id]; _fSalvar(); } res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/fotos/desfazer",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),(req,res)=>{ try{ const id=String((req.body&&req.body.id)||""), NV=_fNov(); if(NV[id]){ try{ fs.unlinkSync(`${FOTOS_DIR}/${NV[id].arquivo}`); }catch(e){} delete NV[id]; _fSalvar(); } res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/foto-previa/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^\d+-\d\.(jpg|png|gif|webp)$/.test(a)) return res.status(404).end(); const f=`${FOTOS_PREV}/${a}`; if(!fs.existsSync(f)) return res.status(404).end();
   res.set("Content-Type",{jpg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp"}[a.split(".")[1]]); res.set("Cache-Control","private, max-age=3600"); res.sendFile(f); });
 app.get("/foto-produto/:arq",(req,res)=>{ const a=String(req.params.arq||""); if(!/^\d+\.(jpg|png|gif|webp)$/.test(a)) return res.status(404).end(); const f=`${FOTOS_DIR}/${a}`; if(!fs.existsSync(f)) return res.status(404).end();
   res.set("Content-Type",{jpg:"image/jpeg",png:"image/png",gif:"image/gif",webp:"image/webp"}[a.split(".")[1]]); res.set("Cache-Control","public, max-age=86400"); res.sendFile(f); });
 // planilha para importar no Bling: ID, Código, Descrição e o link da foto (só as aceitas; as já exportadas só se pedir "todas")
-app.get("/api/fotos/exportar",requireAcesso("acesso_produtos_gestao"),async(req,res)=>{ try{ const NV=_fNov(), todas=req.query.todas==="1", marcar=req.query.marcar==="1", fmt=req.query.formato==="csv"?"csv":"xlsx", col=String(req.query.coluna||process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas").slice(0,60), P=Object.fromEntries(_produtosFoto().map(p=>[p.id,p]));
-    const ids=Object.keys(NV).filter(id=>P[id]&&(todas||!NV[id].exportadaEm)); if(!ids.length) return res.status(404).json({erro:"Nenhuma foto pronta para exportar. Aceite fotos primeiro."});
+app.get("/api/fotos/exportar",requireAcessoAlgum(["acesso_produtos_gestao","acesso_imagens"]),async(req,res)=>{ try{ const NV=_fNov(), todas=req.query.todas==="1", marcar=req.query.marcar==="1", fmt=req.query.formato==="csv"?"csv":"xlsx", col=String(req.query.coluna||process.env.FOTOS_COLUNA_BLING||"URL Imagens Externas").slice(0,60), P=Object.fromEntries(_produtosFoto().map(p=>[p.id,p]));
+    const ids=Object.keys(NV).filter(id=>P[id]&&NV[id].url&&(todas||!NV[id].exportadaEm)); if(!ids.length) return res.status(404).json({erro:"Nenhuma foto pronta para exportar. Aceite fotos primeiro."});
     const linhas=ids.map(id=>[id,P[id].codigo,P[id].nome,NV[id].url]), cab=["ID","Código","Descrição",col];
     if(marcar) ids.forEach(id=>{ NV[id].exportadaEm=Date.now(); }); if(marcar) _fSalvar();
     if(fmt==="csv"){ const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"'; res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",'attachment; filename="fotos_para_importar_no_bling.csv"'); return res.send("\ufeff"+[cab].concat(linhas).map(l=>l.map(q).join(";")).join("\r\n")); }
@@ -11585,8 +11593,8 @@ setTimeout(()=>lerVendasVarejoAuto(),90000);
 setInterval(()=>{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if((h>=6&&h<=23)||Date.now()-_leituraTx.em>50*60000) lerVendasVarejoAuto(); },10*60000);
 app.post("/api/taxas-cartao/ler-agora",requireAcesso("acesso_custos"),async(req,res)=>{ try{ const r=await lerVendasVarejoAuto({forcar:true,max:60}); res.json({ok:true,leitura:r}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // SIMULADOR DE TAXAS (tela Taxas de Cartão e Apoio à Supervisora): só devolve a tabela de taxas, sem custos nem vendas
-const requireAcessoAlgum=lista=>(req,res,next)=>requireSessao(req,res,()=>{ const s=req.sessao||{}, p=s.permissoes||[]; if(s.nivel==="admin"||p.includes("admin")||lista.some(a=>p.includes(a))) return next(); return res.status(403).json({erro:"Sem permissão para o simulador de taxas"}); });
-app.get("/api/taxas-cartao/simulador",requireAcessoAlgum(["acesso_custos","acesso_supervisora"]),(req,res)=>{ try{ const cfg=lerTaxasCartao(), ok=v=>v!=null&&v!==""&&isFinite(v), n=v=>ok(v)?Number(v):null;
+function requireAcessoAlgum(lista,msg){ return (req,res,next)=>requireSessao(req,res,()=>{ const s=req.sessao||{}, p=s.permissoes||[]; if(s.nivel==="admin"||p.includes("admin")||lista.some(a=>p.includes(a))) return next(); return res.status(403).json({erro:msg||"Sem permissão para esta tela"}); }); }
+app.get("/api/taxas-cartao/simulador",requireAcessoAlgum(["acesso_custos","acesso_supervisora"],"Sem permissão para o simulador de taxas"),(req,res)=>{ try{ const cfg=lerTaxasCartao(), ok=v=>v!=null&&v!==""&&isFinite(v), n=v=>ok(v)?Number(v):null;
     const marca=b=>({debito:n(cfg[b].debito),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n((cfg[b].credito||{})[String(k+1)])]))});
     const padrao={debito:n(_pctTx(cfg,"debito","",1)),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n(_pctTx(cfg,"credito","",k+1))]))};
     res.json({ok:true,pix:n(cfg.pix),vm:marca("vm"),elo:marca("elo"),padrao,descricaoPadrao:cfg.shareElo>0?`mistura com ${String(cfg.shareElo).replace(".",",")}% de Elo`:(cfg.bandeiraPadrao==="elo"?"Elo":"Visa/Master"),atualizadoEm:cfg.atualizadoEm}); }catch(e){ res.status(500).json({erro:e.message}); } });
@@ -18784,7 +18792,7 @@ Content-Type: ${ct}
     res.status(e.status||500).json({erro:e.message,body:e.body});
   }
 });
-app.get("/imagens",(req,res)=>res.sendFile(path.join(__dirname,"imagens.html")));
+app.get("/imagens",(req,res)=>res.redirect(302,"/fotos-produtos")); // a antiga tela Imagens virou parte da tela Fotos e Imagens dos Produtos
 
 // Contar total de produtos no Bling
 // ------------------------- Consulta de Preço (leitor tipo supermercado) -------------------------
