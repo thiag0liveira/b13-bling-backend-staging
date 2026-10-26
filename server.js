@@ -11200,9 +11200,15 @@ async function atualizarRecentesBling(dias,opts={}){
 const TABELA_VAREJO_FILE=`${DATA_DIR}/tabela_varejo.json`;
 const _lerTV=()=>{ const d=lerJSON(TABELA_VAREJO_FILE,{}); d.categorias=d.categorias||[]; d.itens=d.itens||{}; return d; };
 const _salvarTV=d=>salvarJSON(TABELA_VAREJO_FILE,d);
-function _itensTV(){ const P=lerProdutosBling().porId, TV=_lerTV(), gDe={}; Object.values(TV.grupos||{}).forEach(g=>(g.membros||[]).forEach(m=>{ gDe[String(m)]=g.id; })); let I={porCodigo:{}}; try{ I=_indicePrecosTabela(); }catch(e){}
+// Fardo da LISTA DE FARDO por produto do Bling (id). Cobre os itens da tabela de atacado (pelo id dos produtos ligados, mesmo sem código) e os AVULSOS
+// (os que foram associados à mão na Lista de Fardo e não pertencem a nenhum item da tabela). A Análise de Preços usa isto além da ligação por código.
+function _fardoPorProduto(){ const fardo=lerListaFardo(), tab=lerTabela(), m={}, preco=e=>{ const v=e&&typeof e==="object"?e.preco:e; return v!=null&&Number(v)>0?Number(v):null; };
+  (tab&&tab.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>{ const p=preco(fardo[it.id]); if(!p) return; (it.bling||[]).forEach(b=>{ if(b&&b.id!=null) m[String(b.id)]={preco:p,itemId:it.id,origem:"tabela",caixaQtd:Number(it.caixa)||null}; }); }));
+  Object.entries(fardo).forEach(([k,v])=>{ if(!v||typeof v!=="object"||v.origem!=="avulso"||v.produtoId==null) return; const p=preco(v); if(p&&!m[String(v.produtoId)]) m[String(v.produtoId)]={preco:p,itemId:k,origem:"avulso",caixaQtd:null}; });
+  return m; }
+function _itensTV(){ const P=lerProdutosBling().porId, TV=_lerTV(), gDe={}, FP=_fardoPorProduto(); Object.values(TV.grupos||{}).forEach(g=>(g.membros||[]).forEach(m=>{ gDe[String(m)]=g.id; })); let I={porCodigo:{}}; try{ I=_indicePrecosTabela(); }catch(e){}
   const out=[]; for(const [id,x] of Object.entries(P)){ if(!x||x.s==="I"||x.f==="V") continue; const t=TV.itens[id]||{}, at=(x.c&&I.porCodigo[String(x.c)])||null, pos=v=>Number(v)>0?Number(v):null;
-    out.push({id:String(id),codigo:x.c||"",nome:x.n||"",un:x.u||"",estoque:Number(x.est)||0,custo:pos(x.pc),precoVarejo:pos(x.p),precoNovo:pos(t.precoNovo),precoAtacado:at?pos(at.precoAtacado):null,precoFardoAtacado:at?pos(at.precoFardo):null,caixaQtd:at?(Number(at.caixaQtd)||null):null,
+    out.push({id:String(id),codigo:x.c||"",nome:x.n||"",un:x.u||"",estoque:Number(x.est)||0,custo:pos(x.pc),precoVarejo:pos(x.p),precoNovo:pos(t.precoNovo),precoAtacado:at?pos(at.precoAtacado):null,precoFardoAtacado:(at?pos(at.precoFardo):null)||(FP[String(id)]?FP[String(id)].preco:null),fardoDe:(at&&pos(at.precoFardo))?"tabela":(FP[String(id)]?FP[String(id)].origem:""),caixaQtd:(at?(Number(at.caixaQtd)||null):null)||(FP[String(id)]?FP[String(id)].caixaQtd:null),
       catAtacado:at?(at.categoria||""):"",grupoId:gDe[String(id)]||"",categoriaId:t.categoriaId&&TV.categorias.some(c=>c.id===t.categoriaId)?t.categoriaId:"",qtdFardo:Number(t.qtdFardo)>0?Number(t.qtdFardo):null,precoFardo:pos(t.precoFardo),sugIA:t.sugIA||null}); }
   return out; }
 // GRUPOS DE SABORES: produtos que são o mesmo item em sabores diferentes e ficam com UM preço só.

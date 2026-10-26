@@ -134,7 +134,8 @@ body.arrastando{user-select:none;-webkit-user-select:none;cursor:grabbing}
   .cols,.r{grid-template-columns:38px 1fr 96px!important}
   .r .h2{grid-row:1;grid-column:1}.gm{padding-left:8px}.mm{grid-template-columns:minmax(80px,1fr) 34px 52px 62px 70px 24px}
 }
-.tb{position:static!important}#topo{padding:8px;gap:6px}.wrap .tb{width:auto;font-size:12px}.mt{color:#ffd23f;font-size:10px;font-weight:800;cursor:pointer;border:1px dashed #ffd23f;border-radius:8px;padding:0 4px;white-space:nowrap;line-height:1.5}.mt:hover{background:#3a2e08}</style>
+.tb{position:static!important}#topo{padding:8px;gap:6px}.wrap .tb{width:auto;font-size:12px}.mt{color:#ffd23f;font-size:10px;font-weight:800;cursor:pointer;border:1px dashed #ffd23f;border-radius:8px;padding:0 4px;white-space:nowrap;line-height:1.5}.mt:hover{background:#3a2e08}.in.lf::placeholder{color:#7fd0ff;opacity:1;font-weight:800}
+</style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
 <style>
@@ -196,6 +197,7 @@ const fmtPct = v => v == null ? "—" : v.toLocaleString("pt-BR", { maximumFract
 const cls = v => v == null ? "nd" : v < 10 ? "bad" : v < 20 ? "med" : "ok";
 const badge = (p, c) => { const v = pct(p, c); if (v == null) return '<span class="pc nd">—</span>'; const m = isMk() ? v / (1 + v / 100) : v; return `<span class="pc ${cls(m)}">${fmtPct(v)}${comRs() ? " · " + rs(p - c) : ""}</span>`; };
 const precoVar = i => i.precoNovo || i.precoVarejo, qtdEf = i => i.qtdFardo || i.caixaQtd || null, fardoEf = i => i.precoFardo || i.precoFardoAtacado || null;
+const tituloFardo = i => !i.precoFardo && i.precoFardoAtacado ? "Fardo vindo da Lista de Fardo" + (i.fardoDe === "avulso" ? " (item avulso)" : "") + ". Digite aqui para usar outro valor só nesta análise." : "";
 const fardoUn = i => { const q = qtdEf(i), f = fardoEf(i); return q && f ? f / q : null; };
 const margemVar = i => pct(precoVar(i), i.custo);
 const uniq = a => [...new Set(a.filter(Boolean))];
@@ -232,7 +234,7 @@ function linha(i) { const pv = precoVar(i), alt = i.precoNovo && i.precoNovo !==
       <div class="c" id="c-${i.id}">${i.custo ? num2(i.custo) : '<span style="color:#ffd23f" title="sem custo no cadastro">s/c</span>'}</div>
       <div class="c">${campo("v-" + i.id, "v", pv ? num2(pv) : "", "0,00")} oninput="digitando('${i.id}','v')" onchange="salvar('${i.id}','v')" onkeydown="tecla(event,'r-${i.id}','v')"><span id="pv-${i.id}">${badge(pv, i.custo)}</span><span id="mt-${i.id}">${chipMeta(i.id, i.custo, pv, "i")}</span></div>
       <div class="c">${i.precoAtacado ? num2(i.precoAtacado) + badge(i.precoAtacado, i.custo) : DASH}</div>
-      <div class="c"><div class="fr">${campo("f-" + i.id, "f", i.precoFardo ? num2(i.precoFardo) : "", i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00")} oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="tecla(event,'r-${i.id}','f')">${campo("q-" + i.id, "q", i.qtdFardo || "", i.caixaQtd || "un", "q")} oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="tecla(event,'r-${i.id}','q')"><span>un</span></div></div>
+      <div class="c"><div class="fr" title="${tituloFardo(i)}">${campo("f-" + i.id, "f", i.precoFardo ? num2(i.precoFardo) : "", i.precoFardoAtacado ? num2(i.precoFardoAtacado) : "0,00", !i.precoFardo && i.precoFardoAtacado ? "lf" : "")} oninput="digitando('${i.id}','f')" onchange="salvar('${i.id}','f')" onkeydown="tecla(event,'r-${i.id}','f')">${campo("q-" + i.id, "q", i.qtdFardo || "", i.caixaQtd || "un", "q")} oninput="digitando('${i.id}','q')" onchange="salvar('${i.id}','q')" onkeydown="tecla(event,'r-${i.id}','q')"><span>un</span></div></div>
       <div class="c"><span id="fu-${i.id}">${fu ? num2(fu) : DASH}</span><span id="pf-${i.id}">${fu ? badge(fu, i.custo) : ""}</span></div>
     </div>
     <div class="catw"><select class="cat ${i.categoriaId ? "" : "pend"}" onchange="mudarCat('${i.id}',this.value)"><option value="">${i.categoriaId ? "— sem categoria —" : "Categoria…"}</option>${optsCat(i.categoriaId)}<option value="__nova">➕ nova…</option></select>${i.categoriaId ? "" : iaBtn([i.id], i.sugIA)}</div></div>`; }
@@ -244,7 +246,7 @@ function linhaGrupo(e) { const a = agg(e.ms), gid = e.g.id, aberto = GAB.has(gid
       <div class="c" id="gc-${gid}" title="${a.cmin != null ? "custo de " + num2(a.cmin) + " a " + num2(a.cmax) : ""}">${cus}</div>
       <div class="c">${campo("gv-" + gid, "v", a.pv ? num2(a.pv) : "", a.pvMisto ? "vários" : "0,00")} oninput="digitandoGrupo('${gid}','v')" onchange="salvarGrupo('${gid}','v')" onkeydown="tecla(event,'g-${gid}','v')"><span id="gpv-${gid}">${a.pv ? badge(a.pv, a.custo) : (a.pvMisto ? '<span class="pc med">mix</span>' : "")}</span><span id="gmt-${gid}">${chipMeta(gid, a.cmax, a.pv || (a.pvs.length ? Math.min(...a.pvs) : 0), "g")}</span></div>
       <div class="c">${a.atac ? num2(a.atac) + badge(a.atac, a.custo) : DASH}</div>
-      <div class="c"><div class="fr">${campo("gf-" + gid, "f", a.fardo ? num2(a.fardo) : "", a.fAt ? num2(a.fAt) : "0,00")} oninput="digitandoGrupo('${gid}','f')" onchange="salvarGrupo('${gid}','f')" onkeydown="tecla(event,'g-${gid}','f')">${campo("gq-" + gid, "q", a.qtd || "", a.cx || "un", "q")} oninput="digitandoGrupo('${gid}','q')" onchange="salvarGrupo('${gid}','q')" onkeydown="tecla(event,'g-${gid}','q')"><span>un</span></div></div>
+      <div class="c"><div class="fr">${campo("gf-" + gid, "f", a.fardo ? num2(a.fardo) : "", a.fAt ? num2(a.fAt) : "0,00", !a.fardo && a.fAt ? "lf" : "")} oninput="digitandoGrupo('${gid}','f')" onchange="salvarGrupo('${gid}','f')" onkeydown="tecla(event,'g-${gid}','f')">${campo("gq-" + gid, "q", a.qtd || "", a.cx || "un", "q")} oninput="digitandoGrupo('${gid}','q')" onchange="salvarGrupo('${gid}','q')" onkeydown="tecla(event,'g-${gid}','q')"><span>un</span></div></div>
       <div class="c"><span id="gfu-${gid}">${a.fu ? num2(a.fu) : DASH}</span><span id="gpf-${gid}">${a.fu ? badge(a.fu, a.custo) : ""}</span></div>
     </div>
     <div class="catw"><select class="cat ${e.cat ? "" : "pend"}" onchange="mudarCatGrupo('${gid}',this.value)"><option value="">${e.cat ? "— sem categoria —" : "Categoria…"}</option>${optsCat(e.cat)}<option value="__nova">➕ nova…</option></select>${e.cat ? "" : iaBtn(e.ms.map(m => m.id), (e.ms.find(m => m.sugIA) || {}).sugIA)}</div></div>${aberto ? blocoSabores(e, a) : ""}`; }
