@@ -543,7 +543,7 @@ async function salvarTipoEntregaEd(idAlvo) {
 function renderEdicao() {
   const rows = (window.itensEd || []).map((it, ix) => {
     if (it._rm) return '<div class="itEd" style="opacity:.5"><div style="flex:1;text-decoration:line-through;font-size:13px">' + esc(it.descricao) + '</div>' + '<button class="btn btn-ghost" style="padding:4px 8px;font-size:11px" onclick="restaurarItemEd(' + ix + ')">desfazer</button></div>';
-    return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">' + esc(it.descricao) + '<div class="muted" style="font-size:11px">' + brl(it.valor) + ' un' + (it._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + it.quantidade + '" onchange="mudarQtdEd(' + ix + ',this.value)">' + '<button class="rmEd" onclick="removerItemEd(' + ix + ')">🗑</button></div>';
+    return '<div class="itEd"><div style="flex:1;min-width:0;font-size:13px">' + esc(it.descricao) + '<div class="muted" style="font-size:11px">' + brl(it.valor) + ' un' + (it._conferindo ? ' · <span style="color:#ffd23f">conferindo o preço…</span>' : '') + (it._novo ? ' · <span style="color:#3ce88a">novo</span>' : '') + '</div></div>' + '<input type="number" min="1" step="1" value="' + it.quantidade + '" onchange="mudarQtdEd(' + ix + ',this.value)">' + '<button class="rmEd" onclick="removerItemEd(' + ix + ')">🗑</button></div>';
   }).join("");
   const idAlvo = window.pedEd.ehProposta ? window.pedEd.propostaId : window.pedEd.id;
   const tipoBloco = `<div style="background:#1c1846;border:1px solid #37327a;border-radius:8px;padding:8px 10px;margin-bottom:8px">
@@ -607,19 +607,41 @@ function buscarItemEd(q) {
 }
 function addItemEd(r) {
   const ja = window.itensEd.find(i => String(i.produtoId) === String(r.id) && !i._rm);
-  if (ja) ja.quantidade += 1;else window.itensEd.push({
-    produtoId: r.id,
-    descricao: r.nome,
-    quantidade: 1,
-    valor: Number(r.preco) || 0,
-    _rm: false,
-    _novo: true
-  });
+  if (ja) ja.quantidade += 1;else {
+    const novo = {
+      produtoId: r.id,
+      descricao: r.nome,
+      quantidade: 1,
+      valor: Number(r.preco) || 0,
+      _rm: false,
+      _novo: true,
+      _conferindo: true
+    };
+    window.itensEd.push(novo);
+    conferirPrecoItemEd(novo);
+  }
   const b = document.getElementById("buscaEdProp");
   if (b) b.value = "";
   const box = document.getElementById("resEdProp");
   if (box) box.innerHTML = "";
   renderEdicao();
+}
+// o preço mostrado na busca pode estar velho (reajuste feito na Entrada de Nota ou na Análise de Preços): confere o preço atual no momento de adicionar
+async function conferirPrecoItemEd(it) {
+  let aviso = "";
+  try {
+    const j = await fetch(B + "/api/atacado/preco-produto?produtoId=" + encodeURIComponent(it.produtoId)).then(r => r.json());
+    if (j && j.ok && Number(j.preco) > 0 && Math.abs(Number(j.preco) - Number(it.valor)) > 0.004) {
+      const antes = Number(it.valor) || 0;
+      it.valor = Number(j.preco);
+      aviso = '<div style="color:#ffd23f;font-size:12px">💲 Preço de "' + esc(it.descricao) + '" atualizado: de ' + brl(antes) + ' para ' + brl(it.valor) + '.</div>';
+    }
+  } catch (e) {}
+  it._conferindo = false;
+  if (document.getElementById("boxEd")) {
+    renderEdicao();
+    if (aviso) edMsg(aviso);
+  }
 }
 async function salvarEdicao() {
   const ehProp = !!(window.pedEd && window.pedEd.ehProposta);
@@ -627,7 +649,8 @@ async function salvarEdicao() {
     produtoId: i.produtoId,
     nome: i.descricao,
     quantidade: Number(i.quantidade),
-    valor: Number(i.valor)
+    valor: Number(i.valor),
+    novo: !!i._novo
   }));
   if (!itens.length) {
     edMsg('<div style="color:#ff8090;font-size:12px">Precisa ter ao menos 1 item.</div>');
@@ -652,6 +675,7 @@ async function salvarEdicao() {
       edMsg('<div style="color:#ff8090;font-size:12px">❌ ' + esc(j.erro) + '</div>');
       return;
     }
+    if (j.precosCorrigidos && j.precosCorrigidos.length) alert("💲 Preço atualizado ao salvar:\n" + j.precosCorrigidos.map(x => x.nome + ": " + brl(x.de) + " → " + brl(x.para)).join("\n"));
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
     // a taxa de entrega depende do valor dos itens: avisa quando ela mudou ou quando não foi mexida
     if (j.freteRecalculado) alert("🛵 A taxa de entrega foi recalculada: de " + brl(j.taxaAntiga) + " para " + brl(j.taxa) + " (a faixa muda conforme o valor dos itens).");

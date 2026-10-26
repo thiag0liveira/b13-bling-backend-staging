@@ -3493,9 +3493,13 @@ app.get("/api/buscar",async(req,res)=>{
       const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=100`);
       (d.data||[]).forEach(p=>{ if((p.nome||"").toLowerCase().includes(t)) porId[p.id]={id:p.id,nome:p.nome,codigo:p.codigo,
         estoque:p.estoque?.saldoVirtualTotal ?? null,
-        preco: p.preco!=null ? +p.preco : (porId[p.id]?.preco ?? null),
+        preco: p.preco!=null ? +p.preco : (porId[p.id]?.preco ?? null), precoLista: Number(p.preco)||0,
         imagem: p.imagemURL || p.imagem?.link?.grande || porId[p.id]?.imagem || null }; });
     }catch(e){}
+
+    // preço mais atual: o confirmado há pouco; se a listagem do Bling não trouxe preço, o do cadastro de produtos (atualizado nos reajustes), e só depois o do índice antigo
+    { const PB=lerProdutosBling().porId; Object.values(porId).forEach(p=>{ const c=_precoConfirmado.get(String(p.id)), x=PB[String(p.id)];
+        if(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0) p.preco=c.preco; else if(!(p.precoLista>0)&&x&&Number(x.p)>0) p.preco=Number(x.p); delete p.precoLista; }); }
 
     res.json({data:Object.values(porId)});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
@@ -6732,6 +6736,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
       if(authSt.erro) return res.status(401).json({erro:authSt.erro});
       autorizadoPorStatus=authSt.funcionario.nome;
     }
+    const precosCorrigidos=await _corrigirPrecosNovos(itens);
     const itensAntes=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,descricao:i.descricao||i.produto?.nome||"",quantidade:i.quantidade}));
     const idsDepois=new Set(itens.map(i=>Number(i.produtoId)));
     const removidos=itensAntes.filter(a=>!idsDepois.has(Number(a.produtoId)));
@@ -7010,7 +7015,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         }
       }catch(e){}
     }
-    res.json({ok:true, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
+    res.json({ok:true, precosCorrigidos, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
       autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
@@ -13601,12 +13606,13 @@ app.put("/api/pedidos-vendas/:id",requireAcesso("acesso_pedidos_vendas"),async(r
   try{
     const id=String(req.params.id), b=req.body||{};
     const auth=validarTokenQrAtacado(b.tokenQr); if(auth.erro) return res.status(401).json({erro:auth.erro});
-    const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", feito=[];
+    const quem=auth.funcionario.nome||"", pedidoPor=req.sessao?.nome||"", feito=[]; let precosCorrigidos=[];
     const I=_indicePedidos(), r=I.porId[id];
     if(Array.isArray(b.itens)){
       if(r&&r.caixa) return res.status(409).json({erro:`Esse pedido passou pelo ${r.caixa.caixa}. Para mudar os itens use a Gestão de Caixas (Editar itens), que mantém o caixa igual ao Bling.`});
-      const itens=b.itens.map(i=>({produtoId:Number(i.produtoId)||null,nome:String(i.nome||"").slice(0,120),quantidade:Number(String(i.quantidade).replace(",","."))||0,valor:Number(String(i.valor).replace(",","."))||0})).filter(i=>i.produtoId&&i.quantidade>0);
+      const itens=b.itens.map(i=>({produtoId:Number(i.produtoId)||null,nome:String(i.nome||"").slice(0,120),quantidade:Number(String(i.quantidade).replace(",","."))||0,valor:Number(String(i.valor).replace(",","."))||0,novo:i.novo===true})).filter(i=>i.produtoId&&i.quantidade>0);
       if(!itens.length) return res.status(400).json({erro:"o pedido precisa de ao menos um item com produto"});
+      precosCorrigidos=await _corrigirPrecosNovos(itens);
       let ri; try{ ri=await atualizarItensBling(id,itens,`[Itens alterados em Pedidos de Venda por ${pedidoPor||"—"}, autorizado por ${quem}]`); }catch(e){ ri={ok:false,erro:e.message}; }
       if(!ri||ri.ok===false) return res.status(502).json({erro:"O Bling não aceitou os itens: "+((ri&&ri.erro)||"erro")+". Nada foi alterado."});
       const p=I.props[id]; if(p){ const all=lerPropostas()||{}; const k=Object.keys(all).find(x=>String(all[x]?.pedidoBlingId)===id);
@@ -13629,7 +13635,7 @@ app.put("/api/pedidos-vendas/:id",requireAcesso("acesso_pedidos_vendas"),async(r
     if(!feito.length) return res.status(400).json({erro:"nada para alterar"});
     addLog(id,"pedido_editado_pedidos_venda",req.sessao?.funcionarioId||"",pedidoPor,{autorizadoPor:quem,alteracoes:feito.join(", ")});
     _idxPed.em=0; _idxCli.em=0;
-    res.json({ok:true,autorizadoPor:quem,feito});
+    res.json({ok:true,autorizadoPor:quem,feito,precosCorrigidos});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
@@ -13857,6 +13863,16 @@ app.patch("/api/pedidos/:id/situacao", async (req, res) => {
 });
 
 // Busca produtos com PREÇO DE ATACADO (da tabela publicada) + estoque ao vivo
+// PREÇO ATUAL de um produto para vender no atacado: o preço de atacado da tabela, se houver; senão o preço de varejo do Bling.
+// Com vivo:true confere no Bling na hora (e corrige o cadastro em cache e o preço confirmado, para as demais telas também ficarem certas).
+async function _precoAtualProduto(produtoId,opc){ const id=String(produtoId), vivo=!!(opc&&opc.vivo), P0=lerProdutosBling().porId[id]||{}, cod=String(P0.c||""), idx=_indicePrecosTabela();
+  const vinc=(cod&&idx.porCodigo[cod])||idx.porNome[String(P0.n||"").toLowerCase().trim()]||null, atac=vinc&&vinc.precoAtacado!=null&&Number(vinc.precoAtacado)>0?Number(vinc.precoAtacado):null; let pb=null, aoVivo=false, nome=P0.n||"";
+  if(atac==null||vivo){ try{ if(vivo){ try{ _invalidarProduto(id); }catch(e){} } /* a leitura de produto tem cache curto: conferir "na hora" exige limpá-lo */ const r=await bling(`/produtos/${id}`), v=Number(r&&r.data&&r.data.preco)||0; if(v>0){ pb=v; aoVivo=true; nome=(r.data.nome||nome); const PP=lerProdutosBling(); if(PP.porId[id]&&Number(PP.porId[id].p)!==v){ PP.porId[id].p=v; salvarJSON(PRODUTOS_BLING_FILE,PP); } _precoConfirmado.set(id,{preco:v,nome,em:Date.now()}); } }catch(e){} }
+  if(pb==null){ const c=_precoConfirmado.get(id); pb=(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0)?c.preco:(Number(P0.p)>0?Number(P0.p):null); }
+  return {produtoId:id,nome,preco:atac!=null?atac:(pb||0),origem:atac!=null?"atacado":"bling",precoAtacado:atac,precoBling:pb,aoVivo}; }
+// itens NOVOS de uma edição (a tela manda novo:true) são repreçados com o preço atual, para não entrarem com o valor antigo; devolve o que mudou
+async function _corrigirPrecosNovos(itens){ const mudou=[]; for(const i of (itens||[])){ if(!i||i.novo!==true||!i.produtoId) continue; try{ const r=await _precoAtualProduto(i.produtoId,{vivo:true}); if(r.preco>0&&Math.abs(r.preco-Number(i.valor))>0.004){ mudou.push({produtoId:i.produtoId,nome:i.nome||r.nome,de:Number(i.valor)||0,para:r.preco}); i.valor=r.preco; } }catch(e){} } return mudou; }
+app.get("/api/atacado/preco-produto",async(req,res)=>{ try{ const id=String(req.query.produtoId||"").replace(/\D/g,""); if(!id) return res.status(400).json({erro:"informe ?produtoId="}); res.json({ok:true,...(await _precoAtualProduto(id,{vivo:true}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/buscar-atacado", async (req, res) => {
   try {
     const nome = (req.query.nome || "").trim();
@@ -13877,6 +13893,9 @@ app.get("/api/buscar-atacado", async (req, res) => {
       try{ const d=await bling(`/produtos?nome=${encodeURIComponent(nome)}&limite=50`); add(d.data); }catch(e){}
     }
     let lista=Object.values(porId);
+    // o índice de GTIN pode estar desatualizado (um reajuste na Entrada de Nota ou na Análise de Preços atualiza o Bling e o cadastro de produtos, não ele):
+    // usa o preço confirmado há pouco, depois o cadastro de produtos, e só por último o índice
+    { const PB=lerProdutosBling().porId; lista.forEach(p=>{ const c=_precoConfirmado.get(String(p.id)), x=PB[String(p.id)]; if(c&&Date.now()-c.em<PRECO_CONFIRMA_TTL&&c.preco>0) p.precoBling=c.preco; else if(x&&Number(x.p)>0) p.precoBling=Number(x.p); }); }
 
     // aplica o preço de atacado (tabela publicada); exclui da busca produto marcado
     // como "desabilitado" (🚫) na tabela -- antes só o /pedir-online (site/totem)
@@ -20747,7 +20766,7 @@ app.post("/api/atacado/propostas/:id/editar-entrega",(req,res)=>{
     res.json({ok:true, total:prop.total, entrega:prop.entrega});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
-app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
+app.post("/api/atacado/propostas/:id/editar-itens",async(req,res)=>{
   try{
     const props=lerPropostas();
     const prop=props[req.params.id];
@@ -20760,6 +20779,7 @@ app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
       if(!i.produtoId) return res.status(400).json({erro:"todos os itens precisam de produto"});
       if(!(Number(i.quantidade)>0)) return res.status(400).json({erro:"quantidade inválida em algum item"});
     }
+    const precosCorrigidos=await _corrigirPrecosNovos(itens);
     const antes=(prop.itens||[]).map(i=>`${Number(i.quantidade)}x ${i.nome||i.produtoId}`).join(", ");
     const totalAntes=(prop.itens||[]).reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
     prop.itens=itens.map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor)}));
@@ -20784,7 +20804,7 @@ app.post("/api/atacado/propostas/:id/editar-itens",(req,res)=>{
     const depois=prop.itens.map(i=>`${i.quantidade}x ${i.nome||i.produtoId}`).join(", ")+(freteRecalculado?` (taxa R$ ${taxaAntiga} → R$ ${prop.entrega.taxa})`:"");
     prop.historicoEdicoes=[...(prop.historicoEdicoes||[]),{em:Date.now(),por:funcionarioNome||"—",de:antes,para:depois}];
     props[prop.id]=prop; salvarPropostas(props);
-    res.json({ok:true, total:prop.total, itens:prop.itens, taxa:prop.entrega?.tipo==="entrega"?Number(prop.entrega.taxa||0):0, freteRecalculado, taxaAntiga, freteManualMantido, abaixoMinimoEntrega, minimoEntrega});
+    res.json({ok:true, precosCorrigidos, total:prop.total, itens:prop.itens, taxa:prop.entrega?.tipo==="entrega"?Number(prop.entrega.taxa||0):0, freteRecalculado, taxaAntiga, freteManualMantido, abaixoMinimoEntrega, minimoEntrega});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 

@@ -343,7 +343,12 @@ async function buscarProd() {
   const l = (r.data || r.itens || r || []).slice ? (r.data || r.itens || r).slice(0, 10) : [];
   document.getElementById("edRes").innerHTML = l.map(p => `<div class="lin" style="cursor:pointer" onclick='addProd(${JSON.stringify({ id: p.id, nome: p.nome || p.descricao, preco: p.preco || p.precoVenda || 0 }).replace(/'/g, "&#39;")})'><span>${esc(p.nome || p.descricao)}</span><b>${brl(p.preco || p.precoVenda || 0)}</b></div>`).join("") || `<div class="ic">Nada encontrado.</div>`;
 }
-function addProd(p) { ED.itens.push({ produtoId: p.id, nome: p.nome, quantidade: 1, valor: Number(p.preco) || 0 }); ED.mudouItens = true; document.getElementById("abaCorpo").innerHTML = abaEditar(); }
+function addProd(p) {
+  const it = { produtoId: p.id, nome: p.nome, quantidade: 1, valor: Number(p.preco) || 0, novo: true };
+  ED.itens.push(it); ED.mudouItens = true; document.getElementById("abaCorpo").innerHTML = abaEditar();
+  // o preço da busca pode estar velho (reajuste recente): confere o preço atual ao adicionar
+  api("/api/atacado/preco-produto?produtoId=" + encodeURIComponent(p.id)).then(({ ok, j }) => { if (ok && j && Number(j.preco) > 0 && Math.abs(Number(j.preco) - it.valor) > 0.004 && ED.itens.indexOf(it) >= 0) { it.valor = Number(j.preco); document.getElementById("abaCorpo").innerHTML = abaEditar(); } }).catch(() => {});
+}
 async function salvarEdicao() {
   const qr = document.getElementById("edQr").value.trim(), msg = document.getElementById("edMsg");
   if (!qr) { msg.innerHTML = `<div class="err">Leia o QR de autorização.</div>`; return; }
@@ -355,7 +360,7 @@ async function salvarEdicao() {
   msg.innerHTML = `<div class="ic">Salvando no Bling…</div>`;
   const { ok, j } = await api("/api/pedidos-vendas/" + encodeURIComponent(PED.id), { method: "PUT", body: JSON.stringify(corpo) });
   if (!ok) { msg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui salvar.")}${j.feito && j.feito.length ? "<br>Já gravado: " + esc(j.feito.join(", ")) : ""}</div>`; document.getElementById("edQr").value = ""; return; }
-  msg.innerHTML = `<div style="color:#3ce88a">✅ Salvo no Bling: ${esc(j.feito.join(", "))}. Autorizado por ${esc(j.autorizadoPor)}.</div>`;
+  msg.innerHTML = `<div style="color:#3ce88a">✅ Salvo no Bling: ${esc(j.feito.join(", "))}. Autorizado por ${esc(j.autorizadoPor)}.</div>` + ((j.precosCorrigidos || []).length ? `<div style="color:#ffd23f;margin-top:4px">💲 Preço atualizado ao salvar: ${j.precosCorrigidos.map(x => esc(x.nome) + " " + brl(x.de) + " → " + brl(x.para)).join("; ")}</div>` : "");
   setTimeout(() => { abrirPedido(PED.id); carregar(true); }, 1200);
 }
 document.getElementById("mPed").addEventListener("click", e => { if (e.target.id === "mPed") fecharPed(); });
