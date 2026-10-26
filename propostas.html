@@ -534,6 +534,7 @@ async function salvarTipoEntregaEd(idAlvo) {
     window.pedEd.enderecoEntrega = tipo === "entrega" ? endereco : "";
     window.pedEd.freteEntrega = tipo === "entrega" ? frete : 0;
     if (msg) msg.innerHTML = '<span style="color:#3ce88a;font-size:12px">✅ Salvo!</span>';
+    if (j.avisoSituacao) alert("⚠️ " + j.avisoSituacao);
     if (typeof carregar === "function") carregar();
   } catch (e) {
     esconderCarregando();

@@ -1711,6 +1711,7 @@ async function salvarTipoEntrega(id) {
     });
     esconderCarregando();
     if (j.erro) throw new Error(j.erro);
+    if (j.avisoSituacao) alert("⚠️ " + j.avisoSituacao);
     // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
     if (tipo === "retirada" && j.agendamentoRemovido) {
       const ag = j.agendamentoRemovido;

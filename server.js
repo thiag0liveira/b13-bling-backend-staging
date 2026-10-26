@@ -18345,7 +18345,9 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
           : +(somaAtual? (Number(p.valor)/somaAtual*novoTotal):0).toFixed(2) }));
     }
     const sitOrig=Number(ped.situacao?.id||0);
-    const r=await atualizarComDestrave(id, payload, sitOrig);
+    const opcDestrave={};
+    const r=await atualizarComDestrave(id, payload, sitOrig, opcDestrave);
+    const avisoSituacao=opcDestrave.avisoSituacao||"";
     if(!r.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(r.erro||"erro")});
     // Pedido ainda em "Em digitação" (21) = nunca saiu do rascunho — geralmente porque
     // a mudança automática pra "Aguardando separação" falhou na criação (mesmo bug já
@@ -18400,29 +18402,55 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     // aparece pra tela através desse cache (até 2 min de vida); sem isso, a mudança
     // só refletia depois do cache expirar sozinho, parecendo que "não funcionou"
     _atualizarPedidoNoCacheBling(id, { tipo, endereco: tipo==="entrega"?(endereco||""):"", frete:taxa });
-    res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior});
+    res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior,avisoSituacao});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
 });
 // PUT no pedido destravando a situação quando necessário (reusa a lógica já testada)
-async function atualizarComDestrave(id, payload, sitAtual){
+// O Bling baixa o estoque quando o pedido está em certas etapas; ao regravar os itens num pedido nessas etapas ele tenta baixar DE NOVO e acusa
+// "saldo insuficiente" mesmo havendo estoque. Por isso o pedido volta antes para "Em digitação" (que devolve o estoque), é alterado, e retorna à etapa de origem.
+async function atualizarComDestrave(id, payload, sitAtual, _opc){
   // "Em aberto" (6) entrou na lista: pedidos que nunca saíram do estado inicial
   // (55338) também precisam do destrave — o Bling pode ignorar silenciosamente a
   // edição de transporte/parcelas nessa situação, sem devolver erro nenhum.
-  const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.EM_ROTA,SIT.ATENDIDO,SIT.EM_ABERTO];
-  const precisa=BLOQ.includes(Number(sitAtual)) && Number(sitAtual)!==21; // já em Em digitação não precisa destravar de novo
+  // VERIFICADO (24): já passou por Separado (estoque baixado) e também precisa.
+  const BLOQ=[SIT.EM_SEP,SIT.SEP_PEND,SIT.SEPARADO,SIT.CONF_ENTREGA,SIT.VERIFICADO,SIT.EM_ROTA,SIT.ATENDIDO,SIT.EM_ABERTO];
+  const forcar=!!(_opc&&_opc.forcar), precisa=(BLOQ.includes(Number(sitAtual))||forcar) && Number(sitAtual)!==21; // já em Em digitação não precisa destravar de novo
+  const ehEstoque=e=>/estoque|saldo/i.test((e&&e.message)||"")||/estoque|saldo/i.test(JSON.stringify((e&&e.body)||{}));
+  let destravou=false;
   try{
     // usa o helper seguro (trata "mesma situação" e "sem transição definida" via
     // situação-ponte) — antes chamava o Bling direto e um erro aqui derrubava a
     // troca de Entrega/Retirada inteira, mesmo o pedido estando na situação certa
-    if(precisa){ await mudarSituacaoPedido(id, 21); await sleep(350); }
+    if(precisa){
+      const rd=await mudarSituacaoPedido(id, 21);
+      // se não conseguiu destravar, NÃO tenta gravar (daria o erro de estoque, confuso) e nada foi mexido no pedido
+      if(!rd||rd.ok===false){
+        // a tentativa de destravar pode ter deixado o pedido numa etapa-ponte (ex.: Em aberto): devolve à etapa de origem antes de avisar
+        let ficou=null; try{ const cur=Number((await bling(`/pedidos/vendas/${id}`))?.data?.situacao?.id||0); if(cur&&cur!==Number(sitAtual)){ const rv=await mudarSituacaoPedido(id,Number(sitAtual)); ficou=(rv&&rv.ok!==false)?null:cur; } }catch(e){}
+        if(ficou){ const msg=`Pedido ${id}: não consegui alterar nem devolver à etapa "${nomeSituacao(Number(sitAtual))}"; ele ficou em "${nomeSituacao(ficou)}". Volte a etapa manualmente no Bling.`; try{ registrarAviso({tipo:"pedido_nao_voltou_etapa",titulo:`Pedido #${id} ficou em "${nomeSituacao(ficou)}" depois de uma tentativa de alteração`,pedidoId:id,origem:"Alterar tipo de entrega",fingerprint:"restaura-"+id+"-"+Date.now(),oQueFazer:msg}); }catch(e2){} return {ok:false,erro:`não consegui tirar o pedido de "${nomeSituacao(Number(sitAtual))}" para alterá-lo (${(rd&&rd.erro)||"o Bling recusou"}). ATENÇÃO: ${msg}`}; }
+        return {ok:false,erro:`não consegui tirar o pedido de "${nomeSituacao(Number(sitAtual))}" para alterá-lo (${(rd&&rd.erro)||"o Bling recusou"}). O pedido continua em "${nomeSituacao(Number(sitAtual))}" e nada foi alterado.`};
+      }
+      destravou=true; await sleep(350);
+    }
     await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
     return {ok:true};
-  }catch(e){ return {ok:false,erro:e.message}; }
+  }catch(e){
+    // etapa que não estava na lista mas baixa estoque: tenta de novo, agora destravando (devolve o estoque, grava, e volta à etapa)
+    if(!precisa&&!forcar&&ehEstoque(e)&&Number(sitAtual)!==21){ return await atualizarComDestrave(id,payload,sitAtual,Object.assign(_opc||{},{forcar:true})); }
+    return {ok:false,erro:e.message};
+  }
   finally{
-    if(precisa){
+    if(destravou){
       await sleep(400);
-      if(Number(sitAtual)===SIT.ATENDIDO||Number(sitAtual)===SIT.SEPARADO){ await _restaurarSituacaoComRetry(id,Number(sitAtual),(payload.itens||[]).map(i=>({produtoId:i.produto?.id,quantidade:i.quantidade}))); }
-      else { await mudarSituacaoPedido(id, sitAtual); }
+      let rr=null;
+      try{ rr=(Number(sitAtual)===SIT.ATENDIDO||Number(sitAtual)===SIT.SEPARADO)?await _restaurarSituacaoComRetry(id,Number(sitAtual),(payload.itens||[]).map(i=>({produtoId:i.produto?.id,quantidade:i.quantidade}))):await mudarSituacaoPedido(id, sitAtual); }catch(e){ rr={ok:false,erro:e.message}; }
+      // se não conseguiu voltar à etapa de origem, o pedido ficou "Em digitação" e SEM baixa de estoque: avisa para ninguém descobrir só depois
+      if(!rr||rr.ok===false){
+        const msg=`Pedido ${id} foi alterado, mas NÃO voltou para "${nomeSituacao(Number(sitAtual))}" (${(rr&&rr.erro)||"erro"}). Ele está em Em digitação: volte a etapa manualmente no Bling.`;
+        console.log("[atualizarComDestrave]",msg);
+        try{ registrarAviso({tipo:"pedido_nao_voltou_etapa",titulo:`Pedido #${id} não voltou para "${nomeSituacao(Number(sitAtual))}" depois de ser alterado`,pedidoId:id,origem:"Alterar tipo de entrega",fingerprint:"restaura-"+id+"-"+Date.now(),oQueFazer:msg}); }catch(e2){}
+        if(_opc) _opc.avisoSituacao=msg;
+      }
     }
   }
 }
