@@ -186,7 +186,7 @@ function acaoPropriaDe(tab) {
 }
 // exibição do checkbox: olha SÓ a ação própria da aba (nunca as compartilhadas),
 // pra marcar/desmarcar uma aba não afetar as outras.
-let NEGADOS_ATUAL = [];
+let NEGADOS_ATUAL = [], EDIT_ID = null;
 const ehGestaoAtual = () => PERMS_ATUAL.includes("gestao") && !PERMS_ATUAL.includes("admin");
 function abaLiberada(tab) {
   if (PERMS_ATUAL.includes("admin")) return true;
@@ -218,8 +218,14 @@ function htmlPermsBlock(checked, negados) {
   PERMS_ATUAL = (checked || []).slice();
   NEGADOS_ATUAL = (negados || []).slice();
   normalizarPermsParaAbas(); // converte acessos por nível/capacidade em ações próprias das abas
+  const fontes = funcs.filter(x => x.id !== EDIT_ID && x.ativo !== false).sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+  const copiar = `<div style="padding:4px 0 10px;border-bottom:1px solid #201d47">
+        <div style="font-size:12px;font-weight:800;margin-bottom:4px">📋 Copiar o acesso de outro funcionário</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><select id="fCopiaDe" style="flex:1 1 190px"><option value="">Escolha quem copiar…</option>${fontes.map(x => `<option value="${esc(x.id)}">${esc(x.nome)} — ${esc(NIVEIS[x.nivel] || x.nivel)}</option>`).join("")}</select><button type="button" class="btn btn-ghost" style="font-size:12px;padding:7px 12px" onclick="copiarAcesso()">Copiar</button></div>
+        <label style="display:flex;gap:6px;align-items:center;font-size:12px;margin-top:6px"><input type="checkbox" id="fCopiaGrupo" checked style="width:15px;height:15px"> copiar também o grupo (nível) dele</label>
+        <div id="fCopiaMsg" class="muted" style="font-size:11.5px;margin-top:4px"></div></div>`;
   return `<div class="lbl">Acesso às abas do sistema</div>
-    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
+    <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">${copiar}
       <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #201d47;font-size:13px;font-weight:800">
         <input type="checkbox" id="fAdmin" ${PERMS_ATUAL.includes("admin") ? "checked" : ""} onclick="toggleAdmin()"> Admin — acesso total a tudo (não dá para retirar nada)
       </label>
@@ -245,6 +251,30 @@ function renderAbasLista() {
       </span>
     </label>`;
   }).join("");
+}
+// copia o acesso (abas, Admin/Gestão, acessos retirados e, se marcado, o grupo) de outro funcionário para o que está aberto; só vale depois de Salvar
+function copiarAcesso() {
+  const sel = document.getElementById("fCopiaDe"), msgEl = document.getElementById("fCopiaMsg"), src = funcs.find(x => x.id === (sel && sel.value));
+  if (!src) { if (msgEl) msgEl.innerHTML = '<span style="color:#ff8090">Escolha de quem copiar.</span>'; return; }
+  const comGrupo = document.getElementById("fCopiaGrupo").checked, nivelSel = document.getElementById("fNivel");
+  // o acesso de quem usa só o grupo (ex.: Expedição) vem do próprio grupo: converte em abas ANTES de separar o grupo, senão o acesso sumiria
+  PERMS_ATUAL = (src.permissoes && src.permissoes.length ? src.permissoes : [src.nivel]).slice(); NEGADOS_ATUAL = [];
+  normalizarPermsParaAbas();
+  let perms = PERMS_ATUAL.slice();
+  const neg = PERMS_ATUAL.includes("gestao") && !PERMS_ATUAL.includes("admin") ? (src.negados || []).slice() : [];
+  if (!comGrupo) { // fica com o grupo atual de quem está sendo editado e leva só o acesso às abas (e Admin/Gestão, que são tipos de acesso)
+    const grupos = Object.keys(NIVEIS).filter(k => k !== "admin" && k !== "gestao");
+    perms = perms.filter(p => grupos.indexOf(p) < 0);
+    const atual = nivelSel ? nivelSel.value : "";
+    if (atual && atual !== "admin" && atual !== "gestao" && perms.indexOf(atual) < 0) perms.unshift(atual);
+  } else if (nivelSel && NIVEIS[src.nivel]) nivelSel.value = src.nivel;
+  PERMS_ATUAL = perms; NEGADOS_ATUAL = neg;
+  const ad = document.getElementById("fAdmin"), ge = document.getElementById("fGestao");
+  if (ad) ad.checked = PERMS_ATUAL.includes("admin");
+  if (ge) { ge.checked = ehGestaoAtual(); ge.disabled = PERMS_ATUAL.includes("admin"); }
+  renderAbasLista();
+  const abas = (window.B13_NAV_LINKS || []), n = abas.filter(l => abaLiberada(l)).length, poder = PERMS_ATUAL.includes("admin") ? " <b style=\"color:#ff8090\">Atenção: ele será Admin (acesso total).</b>" : (ehGestaoAtual() ? " Ele será Gestão" + (NEGADOS_ATUAL.length ? " com " + NEGADOS_ATUAL.length + " acesso(s) retirado(s)" : "") + "." : "");
+  if (msgEl) msgEl.innerHTML = `<span style="color:#3ce88a">✅ Acesso de ${esc(src.nome)} copiado: ${n} de ${abas.length} abas liberadas.</span>${poder} Confira a lista e toque em <b>Salvar</b>.`;
 }
 function toggleGestao() {
   const marcado = document.getElementById("fGestao").checked;
@@ -290,6 +320,7 @@ function toggleAba(href) {
   renderAbasLista();
 }
 function abrirNovo() {
+  EDIT_ID = null;
   document.getElementById("modal").style.display = "flex";
   document.getElementById("mbox").innerHTML = `<h3>Novo Funcionário</h3>
     <div class="lbl">Nome</div><input id="fNome" placeholder="Nome completo">
@@ -371,6 +402,7 @@ async function buscarVendedor() {
 function abrirEditar(id) {
   const f = funcs.find(x => x.id === id);
   if (!f) return;
+  EDIT_ID = id;
   const perms = f.permissoes || [f.nivel];
   document.getElementById("modal").style.display = "flex";
   document.getElementById("mbox").innerHTML = `<h3>Editar — ${esc(f.nome)}</h3>
