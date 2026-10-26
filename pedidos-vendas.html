@@ -72,6 +72,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 
 /* topo: o status do histórico quebra linha no celular em vez de esticar a página */
 .top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
+.card h3{white-space:normal}.wrap{overflow-x:hidden}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -95,7 +96,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="wrap">
   <div class="card"><div class="filtros" style="margin-bottom:8px">
       <label class="ic">De <input type="date" id="fIni"></label><label class="ic">até <input type="date" id="fFim"></label>
-      <span class="chip" onclick="periodo(0)">Hoje</span><span class="chip" onclick="periodo(6)">7 dias</span><span class="chip" onclick="periodo(29)">30 dias</span><span class="chip" onclick="periodoMes(0)">Este mês</span><span class="chip" onclick="periodoMes(1)">Mês passado</span><span class="chip" onclick="periodo(89)">90 dias</span><span class="chip" onclick="periodo(364)">12 meses</span>
+      <span class="chip" onclick="periodo(0)">Hoje</span><span class="chip" onclick="periodo(6)">7 dias</span><span class="chip" onclick="periodo(29)">30 dias</span><span class="chip" onclick="periodoMes(0)">Este mês</span><span class="chip" onclick="periodoMes(1)">Mês passado</span><span class="chip" onclick="periodo(89)">90 dias</span><span class="chip" onclick="periodo(364)">12 meses</span><span class="chip" onclick="periodoTudo()">Todo o período</span><span class="chip" style="border-color:#ff8aa3;color:#ffb3c6" onclick="auditoriaCaixa()">⚠️ Clientes sem caixa (todo o período)</span>
     </div>
     <div class="filtros" style="margin-bottom:8px">
       <input id="busca" type="search" placeholder="🔎 Nº do pedido, cliente ou vendedora" style="flex:1;min-width:200px">
@@ -108,7 +109,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="filtros">
       <select id="fTipo"><option value="">Entrega e retirada</option><option value="entrega">Só entrega</option><option value="retirada">Só retirada / balcão</option></select>
       <select id="fPag"><option value="">Pago ou não</option><option value="pago">Pagos</option><option value="aberto">Em aberto</option></select>
-      <select id="fCaixa"><option value="">Com ou sem caixa</option><option value="sim">Passaram por caixa</option><option value="nao">Não passaram por caixa</option></select>
+      <select id="fCaixa"><option value="">Com ou sem caixa</option><option value="sim">Passaram por caixa</option><option value="nao">Não passaram por caixa</option></select> <select id="fCons"><option value="">Todos os clientes</option><option value="nao">Só clientes cadastrados (não consumidor final)</option><option value="sim">Só consumidor final</option></select> <select id="fReg"><option value="">Registro de pagamento: qualquer</option><option value="sem">Sem nenhum registro de pagamento</option><option value="outro">Pago por outro meio</option><option value="prazo">A prazo</option><option value="caixa">Passou por caixa</option></select>
       <select id="fFonte"><option value="">Sistema e Bling</option><option value="sistema">Feitos no sistema</option><option value="bling">Feitos só no Bling</option></select>
       <label class="ic"><input type="checkbox" id="fPrazo"> a prazo</label><label class="ic"><input type="checkbox" id="fOcor"> com ocorrência</label>
       <input id="fMin" inputmode="decimal" placeholder="valor mín." style="width:90px"><input id="fMax" inputmode="decimal" placeholder="valor máx." style="width:90px">
@@ -116,6 +117,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
       <button class="btn btn-ghost" onclick="limparFiltros()">Limpar</button>
     </div>
     <div id="filtroAtivo" class="ic" style="margin-top:6px"></div></div>
+  <div id="regResumo"></div>
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
   <div class="card"><h3>📈 Vendas por dia</h3><div id="gDia"></div></div>
   <div class="grid2">
@@ -153,12 +155,16 @@ let D = null, ITENS = [], OFF = 0, PED = null, ABA = "resumo", ED = null;
 function filtros() {
   const v = id => document.getElementById(id).value.trim();
   return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), produto: v("fProd"), situacao: v("fSit"), vendedora: v("fVend"), origem: v("fOrig"), forma: v("fForma"), tipo: v("fTipo"), pagamento: v("fPag"), caixa: v("fCaixa"), fonte: v("fFonte"),
-    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
+    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", consumidor: v("fCons"), registro: v("fReg"), min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
 }
 function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
 function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h;
   document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(true); }
-function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
+function periodoTudo() { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
+// auditoria: pedidos de clientes cadastrados (não consumidor final) que NÃO passaram por nenhum caixa, em todo o período
+function auditoriaCaixa() { limparSemRecarregar(); document.getElementById("fCons").value = "nao"; document.getElementById("fCaixa").value = "nao"; document.getElementById("fOrdem").value = "cliente"; document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
+function limparSemRecarregar() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; }
+function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
 function setFiltro(id, v) { document.getElementById(id).value = v; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 async function carregar(novo) {
   if (novo) { OFF = 0; ITENS = []; }
@@ -174,7 +180,13 @@ function preencherOpcoes() {
 }
 // período longo: soma blocos de N dias em uma barra (nada fica de fora)
 function agrupar(l, n) { const out = []; for (let i = 0; i < l.length; i += n) { const g = l.slice(i, i + n); out.push({ dia: g[0].dia, qtd: g.reduce((a, x) => a + x.qtd, 0), valor: g.reduce((a, x) => a + x.valor, 0) }); } return out; }
+function renderRegistro() {
+  const R = D.resumoRegistro || {}, total = ["sem", "outro", "prazo", "caixa"].reduce((a, k) => a + ((R[k] || {}).qtd || 0), 0), at = document.getElementById("fReg").value;
+  const chip = (k, rot, cor) => { const x = R[k] || { qtd: 0, valor: 0 }; return `<div onclick="setFiltro('fReg','${at === k ? "" : k}')" style="cursor:pointer;flex:1 1 150px;background:#151233;border:1px solid ${at === k ? "#FF0082" : cor};border-radius:10px;padding:8px 10px"><div style="font-size:11px;color:#a9a4d6">${rot}</div><div style="font-size:17px;font-weight:900">${num(x.qtd)} <span style="font-size:12px;font-weight:600;color:#c9c4f0">pedido(s)</span></div><div style="font-size:12px">${brl(x.valor)}</div></div>`; };
+  document.getElementById("regResumo").innerHTML = `<div class="card" style="margin-bottom:10px"><b>Como o pagamento foi registrado</b> <span class="ic">· ${num(total)} pedido(s) com os filtros atuais. Toque para filtrar.</span><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${chip("sem", "⚠️ Sem nenhum registro de pagamento", "#ff5f8a")}${chip("outro", "Pago ou registrado por outro meio", "#2b2760")}${chip("prazo", "A prazo", "#2b2760")}${chip("caixa", "Passou por caixa", "#2b2760")}</div>${D.semNome ? `<div class="ic" style="margin-top:6px;white-space:normal">${num(D.semNome)} pedido(s) estão sem nome de cliente e, no filtro "só clientes cadastrados", não entram.</div>` : ""}</div>`;
+}
 function render() {
+  renderRegistro();
   const M = D.metricas, A = M.anterior, H = D.historico || {};
   document.getElementById("sinc").innerHTML = (H.varreduraCompleta ? `histórico completo do Bling desde ${H.blingDesde ? H.blingDesde.split("-").reverse().slice(1).join("/") : "—"}` : `⏳ trazendo o histórico do Bling${H.progresso ? " (" + esc(H.progresso) + ")" : ""}`)
     + (H.detalhes && H.detalhes.total ? ` · produtos dos pedidos do Bling: ${num(H.detalhes.feitos)} de ${num(H.detalhes.total)}` : "") + ` · ${D.ms} ms`;
@@ -196,7 +208,7 @@ function render() {
       return `<rect x="${x + 2}" y="${alt - h + 10}" width="${w}" height="${h}" rx="3" fill="${destaque && destaque(d) ? "#ffd23f" : "#FF0082"}"><title>${esc(rot(d))}: ${fmt(val(d))} · ${num(d.qtd)} pedido(s)</title></rect>${i % cada === 0 || i === dados.length - 1 ? `<text x="${x + w / 2 + 2}" y="${alt + 26}" fill="#9a95c9" font-size="10" text-anchor="middle">${esc(rot(d))}</text>` : ""}`; }).join("")}</svg></div>`; };
   const passo = Math.ceil(M.porDia.length / 62);
   document.getElementById("gDia").innerHTML = barras(passo === 1 ? M.porDia : agrupar(M.porDia, passo), d => d.dia.slice(8, 10) + "/" + d.dia.slice(5, 7), d => d.valor, 130, brl, d => [0, 6].includes(new Date(d.dia + "T12:00:00Z").getUTCDay()))
-    + `<div class="ic">${passo > 1 ? "Cada barra soma " + passo + " dias (período longo). " : "Em amarelo: fins de semana. "}Passe o mouse para ver o valor.</div>`;
+    + `<div class="ic" style="white-space:normal">${passo > 1 ? "Cada barra soma " + passo + " dias (período longo). " : "Em amarelo: fins de semana. "}Passe o mouse para ver o valor.</div>`;
   document.getElementById("gSem").innerHTML = barras(M.porDiaSemana, d => DS[d.dia], d => d.valor, 110, brl);
   document.getElementById("gHora").innerHTML = barras(M.porHora.filter(h => h.hora >= 6 && h.hora <= 23), d => d.hora + "h", d => d.qtd, 110, x => num(x) + " pedido(s)");
   document.getElementById("gHoraObs").textContent = `(${num(M.comHora)} pedidos do sistema; os feitos só no Bling não têm hora)`;
@@ -224,6 +236,7 @@ function linhaPed(r) {
   t.push(`<span class="tagp ${r.cancelado ? "al" : r.situacao === "Atendido" ? "ok" : ""}">${esc(r.situacao)}</span>`);
   if (r.soBling) t.push(`<span class="tagp">Bling</span>`);
   if (r.caixa) t.push(`<span class="tagp ok">${esc(r.caixa.caixa)}</span>`); else if (!r.soBling && !r.cancelado) t.push(`<span class="tagp am">sem caixa</span>`);
+  if (!r.cancelado && r.registro === "sem") t.push(`<span class="tagp al">sem registro de pagamento</span>`); else if (!r.cancelado && r.registro === "outro" && !r.caixa) t.push(`<span class="tagp">pago por outro meio</span>`);
   if (r.tipo === "entrega") t.push(`<span class="tagp">${r.entregue ? "✅ entregue" : "🛵 entrega"}</span>`);
   if (r.prazo && !r.prazo.pago) t.push(`<span class="tagp ${r.prazo.venceEm && r.prazo.venceEm < Date.now() ? "al" : "am"}">prazo${r.prazo.venceEm ? " " + new Date(r.prazo.venceEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}</span>`);
   if (r.ocorrencia) t.push(`<span class="tagp al">ocorrência</span>`);
