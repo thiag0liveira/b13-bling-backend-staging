@@ -12848,6 +12848,33 @@ app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
         pagoMes:_round2(pm.reduce((a,t)=>a+(Number(t.valorPago||t.valor)||0),0)),qPagoMes:pm.length,pagoPorCategoria:Object.entries(pc).map(([k,v])=>({categoria:k,valor:_round2(v)})).sort((a,b)=>b.valor-a.valor)}});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+// ===================== CUSTOS LANÇADOS (visão por mês, com busca e totais para agrupar) =====================
+// Mesmos títulos do Contas a Pagar, vistos por mês de competência, vencimento ou pagamento; a tela agrupa por grupo, fornecedor, categoria ou dia.
+app.get("/api/contas-pagar/lancamentos",requireAcesso("acesso_contas_pagar"),(req,res)=>{ try{
+  const C=_gerarRecorrentes(lerContasPagar()), F=lerJSON(FUNC_FILE,{}), q=req.query, hoje=_diaBRk(Date.now()), d7=_diaBRk(Date.now()+7*_DIA), nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const base=["competencia","vencimento","pagamento"].includes(q.base)?q.base:"competencia", mes=/^\d{4}-\d{2}$/.test(String(q.mes||""))?q.mes:"todos", leve=t=>Object.fromEntries(Object.entries(t).filter(([k,v])=>!(typeof v==="string"&&v.length>2000)));
+  let rows=[];
+  for(const t of C.titulos){ const c=_competenciaDoTitulo(t), pl=_contaDoPlano(t.categoria||(t.origem==="nota"?"Fornecedores (mercadoria)":"Outros")), canc=t.status==="cancelado", pago=t.status==="pago", dp=pago?(t.dataPagamento||(t.pagoEm?_diaBRk(t.pagoEm):"")):"";
+    let valorMes=_round2(Number(t.valor)||0), ok=mes==="todos";
+    if(!ok){ if(base==="competencia"){ for(let k=0;k<c.meses;k++){ if(_addMes(c.ini,k)===mes){ ok=true; valorMes=_round2((Number(t.valor)||0)/c.meses); break; } } } else if(base==="vencimento") ok=String(t.vencimento||"").slice(0,7)===mes; else { ok=pago&&String(dp).slice(0,7)===mes; valorMes=_round2(Number(t.valorPago||t.valor)||0); } }
+    if(!ok) continue;
+    rows.push({...leve(t),categoria:pl.rotulo,cod:pl.cod,grupo:_grupoDoCusto(pl.cod),competenciaTxt:c.meses>1?`${c.ini} (÷${c.meses} meses)`:c.ini,descricao:t.descricao||(t.numeroNota?`${t.origem==="boleto"?"Boleto":"NF"} ${t.numeroNota}`:(t.origem==="boleto"?"Boleto":"Compra")),
+      valorMes,dataPagamento:dp,funcionarioNome:t.funcionarioId&&F[t.funcionarioId]?F[t.funcionarioId].nome:"",situacao:canc?"cancelada":pago?"paga":t.vencimento<hoje?"vencida":t.vencimento<=d7?"vence logo":"aberta"}); }
+  if(base==="competencia"&&mes!=="todos") _lancamentosDoMes(C,mes,F,hoje).filter(l=>l.sintetico).forEach(l=>rows.push({...l,fornecedor:{nome:l.fornecedor||""},competenciaTxt:l.competencia,situacao:"paga",dataPagamento:l.pagoEm||""}));
+  const nomeF=t=>(t.fornecedor&&t.fornecedor.nome)||"(sem fornecedor)", gruposMeta=_GRUPOS_CUSTO.map(g=>({id:g.id,nome:g.nome,icone:g.icone,fora:!!g.foraDoTotal}));
+  const opc=(f)=>{ const m={}; rows.forEach(r=>{ const k=f(r); if(k) m[k]=(m[k]||0)+1; }); return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).map(([nome,qtd])=>({nome,qtd})); };
+  const fornecedores=opc(nomeF), categorias=opc(r=>r.categoria);
+  const termos=nrm(q.busca||"").split(/\s+/).filter(Boolean), mn=q.min!==""&&q.min!=null?Number(String(q.min).replace(",",".")):null, mx=q.max!==""&&q.max!=null?Number(String(q.max).replace(",",".")):null;
+  const bate=r=>{ if(q.grupo&&r.grupo!==q.grupo) return false; if(q.categoria&&r.categoria!==q.categoria) return false; if(q.fornecedor&&nomeF(r)!==q.fornecedor) return false; if(mn!=null&&isFinite(mn)&&r.valorMes<mn) return false; if(mx!=null&&isFinite(mx)&&r.valorMes>mx) return false;
+    if(termos.length){ const txt=nrm([nomeF(r),r.descricao,r.categoria,r.numeroNota,r.observacao,r.funcionarioNome,r.parcela,r.motivoCancelamento].join(" ")), vals=[r.valor,r.valorMes,r.valorPago].filter(v=>v!=null).map(v=>[String(v),Number(v).toFixed(2),Number(v).toFixed(2).replace(".",","),Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2})].join(" "));
+      for(const tm of termos){ const num=/^[\d.,]+$/.test(tm)&&/\d/.test(tm)?Number(tm.replace(/\./g,"").replace(",",".")):null; if(!(txt.includes(tm)||vals.some(v=>v.includes(tm))||(num!=null&&[r.valor,r.valorMes,r.valorPago].some(v=>v!=null&&Math.abs(Number(v)-num)<0.01)))) return false; } } return true; };
+  rows=rows.filter(bate);
+  const soma=l=>_round2(l.reduce((a,r)=>a+(r.valorMes||0),0)), ab=r=>["aberta","vence logo","vencida"].includes(r.situacao), chip=l=>({q:l.length,v:soma(l)});
+  const chips={todas:chip(rows.filter(r=>r.situacao!=="cancelada")),abertas:chip(rows.filter(ab)),vencidas:chip(rows.filter(r=>r.situacao==="vencida")),semana:chip(rows.filter(r=>r.situacao==="vencida"||r.situacao==="vence logo")),pagas:chip(rows.filter(r=>r.situacao==="paga")),canceladas:chip(rows.filter(r=>r.situacao==="cancelada"))};
+  const st=String(q.situacao||"todas"); let L=rows.filter(r=>st==="todas"?r.situacao!=="cancelada":st==="abertas"?ab(r):st==="vencidas"?r.situacao==="vencida":st==="semana"?(r.situacao==="vencida"||r.situacao==="vence logo"):st==="pagas"?r.situacao==="paga":st==="canceladas"?r.situacao==="cancelada":true);
+  const ord=String(q.ordem||"venc"), cmp={venc:(a,b)=>String(a.vencimento).localeCompare(String(b.vencimento)),"venc-desc":(a,b)=>String(b.vencimento).localeCompare(String(a.vencimento)),"valor-desc":(a,b)=>b.valorMes-a.valorMes,"valor-asc":(a,b)=>a.valorMes-b.valorMes,forn:(a,b)=>nomeF(a).localeCompare(nomeF(b))};
+  L.sort(cmp[ord]||cmp.venc); const cortado=L.length>3000; if(cortado) L=L.slice(0,3000);
+  res.json({ok:true,mes,base,itens:L,total:L.length,cortado,somaMes:soma(L),pago:soma(L.filter(r=>r.situacao==="paga")),aberto:soma(L.filter(ab)),chips,fornecedores,categorias,grupos:gruposMeta}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // nova despesa (com parcelas e/ou repetir todo mês)
 app.post("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, v=Number(String(b.valor||"").replace(",",".")), n=Math.min(48,Math.max(1,Math.round(Number(b.parcelas)||1))), quem=req.sessao?.nome||"";

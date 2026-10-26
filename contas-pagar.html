@@ -77,6 +77,11 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 .itn{border:1px solid #2a2660;border-radius:12px;padding:10px;margin-bottom:8px;background:#1c1846}.itn.pend{border-color:#ffd23f}.itn.ign{opacity:.5}
 .wrap .tb{width:100%;border-collapse:collapse;font-size:12.5px;min-width:0}.tb td{padding:3px 4px}
 .wrap>*{min-width:0;max-width:100%;box-sizing:border-box}.wrap .filtros{flex-wrap:wrap}.wrap input,.wrap select{max-width:100%;min-width:0}#comp{max-width:100%}#lista .ic,#recs .ic,#contasFin .ic{white-space:normal}
+.lbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}.lbar select,.lbar input{background:#0f0d24;border:1px solid #37327a;border-radius:8px;color:#fff;padding:6px 8px;font-size:13px}
+.lchips{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px}.lc{flex:none;background:#151233;border:1px solid #2b2760;border-radius:10px;padding:6px 10px;cursor:pointer;color:#fff;text-align:left}.lc.on{background:#FF0082;border-color:#FF0082}.lc b{display:block;font-size:14px}.lc span{font-size:11px;color:#c9c4f0}.lc.on span{color:#ffe1f0}
+.lv2{display:inline-block;padding:5px 10px;border-radius:9px;border:1px solid #37327a;background:#1b1442;color:#fff;cursor:pointer;font-size:13px}.lv2.on{background:#FF0082;border-color:#FF0082;font-weight:800}
+.lg{background:#151233;border:1px solid #2b2760;border-radius:12px;margin-top:8px;overflow:hidden}.lgh{display:flex;gap:8px;align-items:center;padding:9px 10px;cursor:pointer;border-left:5px solid var(--cg,#4b4690)}.lgh .n{flex:1;min-width:0;overflow-wrap:anywhere}.lgh .n b{font-size:14px}.lgh .t{text-align:right;white-space:nowrap}.lgh .t b{font-size:15px}.lgb{height:5px;background:#221e4f;border-radius:3px;margin-top:4px;overflow:hidden}.lgb i{display:block;height:100%;background:var(--cg,#4b4690)}
+.lr{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-top:1px solid #221e4f}.lr .lm{flex:1;min-width:0;overflow-wrap:anywhere}.lr .lv{text-align:right;white-space:nowrap}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -97,13 +102,20 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 <div class="top"><img src="/logo"><div class="t">📒 Contas a Pagar</div><div class="sp"></div><button class="btn btn-mag" onclick="abrirNova()">➕ Nova despesa</button></div>
 <div class="wrap">
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  <div class="card" id="lanCard"><h3 style="margin:0 0 4px">🔎 Custos lançados</h3><div class="ic" style="white-space:normal">Veja tudo que foi lançado, por mês, e agrupe como preferir. Toque no nome de um grupo para abrir.</div>
+  <div class="lbar"><button class="btn btn-ghost" onclick="lanMes(-1)">◀</button><select id="lMes" onchange="lanMudou()"></select><button class="btn btn-ghost" onclick="lanMes(1)">▶</button><select id="lBase" onchange="lanMudou()"><option value="competencia">mês de competência (a que mês pertence)</option><option value="vencimento">mês de vencimento</option><option value="pagamento">mês de pagamento</option></select></div>
+  <div class="lchips" id="lChips"></div>
+  <div class="lbar"><input id="lBusca" type="search" placeholder="🔎 fornecedor, descrição, nota ou valor (ex.: 1500)" oninput="lanBusca()" style="flex:1;min-width:190px"></div>
+  <details id="lMais" style="margin-top:8px"><summary class="ic" style="cursor:pointer;color:#cfcaff">⚙️ Mais filtros (grupo, categoria, fornecedor e valor)</summary>  <div class="lbar"><select id="lGrupo" onchange="lanMudou()"></select><select id="lCat" onchange="lanMudou()"></select><select id="lForn" onchange="lanMudou()"></select><input id="lMin" inputmode="decimal" placeholder="R$ mín" style="width:80px" onchange="lanMudou()"><input id="lMax" inputmode="decimal" placeholder="R$ máx" style="width:80px" onchange="lanMudou()"><button class="btn btn-ghost" style="padding:5px 9px" onclick="lanLimpar()">Limpar filtros</button></div></details>
+  <div class="lbar" id="lVis"></div><div class="ic" id="lRes" style="margin-top:8px;white-space:normal"></div><div id="lLista"></div></div>
+  <details style="margin-top:10px"><summary class="ic" style="cursor:pointer;padding:8px 2px;color:#cfcaff">📋 Lista simples de contas (filtros antigos)</summary>
   <div class="card"><div class="filtros">
     <select id="fSit"><option value="abertas">Em aberto</option><option value="semana">Vencidas e próximos 7 dias</option><option value="vencidas">Só vencidas</option><option value="pagas">Pagas</option><option value="canceladas">Canceladas</option><option value="todas">Todas</option></select>
     <label class="ic">Vence de <input type="date" id="fDe"></label><label class="ic">até <input type="date" id="fAte"></label>
     <select id="fCat"><option value="">Todas as categorias</option></select>
     <input id="fBusca" type="search" placeholder="🔎 fornecedor, descrição ou nº da nota" style="flex:1;min-width:180px"><label class="ic"><input type="checkbox" id="fBol" onchange="render()"> só com boleto (código para pagar)</label></div>
     <div class="ic" id="fRes" style="margin-top:6px"></div></div>
-  <div class="card"><div id="lista"></div></div>
+  <div class="card"><div id="lista"></div></div></details>
   <div class="card"><h3>📊 Despesas por competência <select id="anoComp" onchange="carregarComp()" style="margin-left:8px"></select></h3><div class="ic" style="white-space:normal">Cada despesa no mês a que pertence (eventos anuais divididos nos meses). É a base da DRE e do ponto de equilíbrio.</div><div id="comp" style="overflow-x:auto;margin-top:6px"></div></div>
   <div class="card"><h3>📋 Orçamento previsto (planilha de custos)</h3><div id="orc" style="overflow-x:auto"></div></div>
   <div class="card"><h3>🏦 Contas e saldos iniciais</h3><div id="contasFin"></div>
@@ -126,10 +138,10 @@ async function carregar() {
   const q = new URLSearchParams({ situacao: fSit.value, de: fDe.value, ate: fAte.value, categoria: fCat.value, busca: fBusca.value.trim() });
   const { ok, j } = await api("/api/contas-pagar?" + q); if (!ok) { lista.innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; render(); }
 function render() {
-  const R = D.resumo, k = (v, l, s, cls, f) => `<a class="kpi ${cls || ""}" style="cursor:pointer;text-decoration:none;color:inherit" onclick="fSit.value='${f}';carregar()"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></a>`;
+  const R = D.resumo, k = (v, l, s, cls, f) => `<a class="kpi ${cls || ""}" style="cursor:pointer;text-decoration:none;color:inherit" onclick="irSit('${f}')"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></a>`;
   kpis.innerHTML = k(brl(R.aberto), "Em aberto", R.qAberto + " conta(s)", "", "abertas") + k(brl(R.vencido), "Vencidas", R.qVencido + " conta(s)", R.qVencido ? "alerta" : "", "vencidas") + k(brl(R.semana), "Vencidas e próximos 7 dias", R.qSemana + " conta(s)", "", "semana") + k(brl(R.pagoMes), "Pagas no mês", R.qPagoMes + " conta(s)", "", "pagas");
   if (!fCat.dataset.ok) { fCat.innerHTML = `<option value="">Todas as categorias</option>` + D.categorias.map(c => `<option>${esc(c)}</option>`).join(""); fCat.dataset.ok = 1; }
-  fRes.textContent = `${D.total} conta(s) · ${brl(D.somaFiltro)}`;
+  fRes.textContent = `${D.total} conta(s) · ${brl(D.somaFiltro)}`; if (typeof carregarLan === "function") carregarLan();
   const cor = { vencida: "#ff8aa3", "vence logo": "#ffd23f", aberta: "#cfcaff", paga: "#3ce88a", cancelada: "#9a95c9" };
   lista.innerHTML = D.itens.filter(t => !(document.getElementById("fBol") || {}).checked || t.linhaDigitavel).map(t => `<div class="lin" style="align-items:flex-start;padding:9px 4px"><div style="min-width:0;flex:1"><b>${esc(t.fornecedor?.nome || t.descricao)}</b> <span class="ic">· ${esc(t.descricao)}${t.parcela && t.parcela !== "1/1" ? " · " + esc(t.parcela) : ""} · ${esc(t.categoria)} · competência ${esc(t.competenciaTxt || "")}</span>
       <div class="ic" style="white-space:normal">vence ${dmy(t.vencimento)} · <b style="color:${cor[t.situacao]}">${esc(t.situacao)}</b>${t.status === "pago" ? ` em ${dmy(t.dataPagamento || "")} · ${esc(t.forma || "")}${t.banco ? " " + esc(t.banco) : ""}${t.valorPago && t.valorPago !== t.valor ? " · pago " + brl(t.valorPago) : ""}` : ""}${t.motivoCancelamento ? " · " + esc(t.motivoCancelamento) : ""}${t.origem === "recorrente" ? " · 🔁 fixa" : ""}</div></div>
@@ -142,7 +154,7 @@ const abrir = h => { modCorpo.innerHTML = h; mod.classList.add("aberto"); }, fec
 const selBanco = id => `<select id="${id}" style="width:100%"><option value="">—</option>${CONTAS.filter(c => c.ativa !== false).map(c => `<option>${esc(c.nome)}</option>`).join("")}${BANCOS.filter(b => !CONTAS.some(c => c.nome === (b.nome || b))).map(b => `<option>${esc(b.nome || b)}</option>`).join("")}<option>Cofre / dinheiro</option></select>`;
 const fmtLinha = l => { l = String(l || ""); if (l.length === 47) return `${l.slice(0, 5)}.${l.slice(5, 10)} ${l.slice(10, 15)}.${l.slice(15, 21)} ${l.slice(21, 26)}.${l.slice(26, 32)} ${l[32]} ${l.slice(33)}`; if (l.length === 48) return l.match(/.{1,12}/g).join(" "); return l; };
 async function copiar(txt, el) { try { await navigator.clipboard.writeText(txt); } catch (e) { const t = document.createElement("textarea"); t.value = txt; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); } catch (x) {} t.remove(); } if (el) { const o = el.textContent; el.textContent = "✅ Copiado"; setTimeout(() => el.textContent = o, 1400); } }
-function abrirBoleto(id) { const t = D.itens.find(x => x.id === id); if (!t) return;
+function abrirBoleto(id) { const t = achaT(id); if (!t) return;
   abrir(`<h3>🧾 Boleto · ${esc(t.boletoBeneficiario || t.fornecedor?.nome || t.descricao)}</h3><div class="ic">vence ${dmy(t.vencimento)} · <b style="color:#fff">${brl(t.valor)}</b>${t.status === "pago" ? " · já paga" : ""}</div>
   <div class="ic" style="margin-top:10px">Linha digitável</div><div style="font-family:monospace;font-size:14px;word-break:break-all;color:#fff;margin:2px 0 6px">${esc(fmtLinha(t.linhaDigitavel))}</div>
   <button class="btn btn-mag" style="width:100%;padding:11px" onclick="copiar('${esc(t.linhaDigitavel)}',this)">📋 Copiar linha digitável</button>
@@ -163,7 +175,7 @@ function abrirNova() { abrir(`<h3>➕ Nova despesa</h3><div class="grid2">
 async function salvarNova() { const v = id => document.getElementById(id).value; const { ok, j } = await api("/api/contas-pagar", { method: "POST", body: JSON.stringify({ descricao: v("nDesc"), fornecedor: v("nForn"), categoria: v("nCat"), valor: v("nValor").replace(",", "."), vencimento: v("nVenc"), parcelas: v("nParc"), competencia: v("nComp"), competenciaMeses: v("nCompM"), repetirMensal: nRep.checked, pago: nPago.checked, forma: v("nForma"), banco: v("nBanco") }) });
   if (!ok) { nMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui lançar.")}</div>`; return; } fechar(); carregar(); carregarComp(); }
 async function abrirPagar(id) { try { const { j } = await api("/api/contas-pagar-caixas"); CAIXAS = j.caixas || []; } catch (e) {} abrirPagar2(id); }
-function abrirPagar2(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>Pagar · ${esc(t.fornecedor?.nome || t.descricao)}</h3><div class="ic">${esc(t.descricao)} · vence ${dmy(t.vencimento)} · ${brl(t.valor)}</div><div class="grid2" style="margin-top:8px">
+function abrirPagar2(id) { const t = achaT(id); abrir(`<h3>Pagar · ${esc(t.fornecedor?.nome || t.descricao)}</h3><div class="ic">${esc(t.descricao)} · vence ${dmy(t.vencimento)} · ${brl(t.valor)}</div><div class="grid2" style="margin-top:8px">
   <label><div class="ic">Data do pagamento</div><input id="pData" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Valor pago</div><input id="pValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label>
   <label><div class="ic">Forma</div><select id="pForma" style="width:100%" onchange="pCxBox.style.display=this.value==='Dinheiro do caixa'?'':'none';pBcBox.style.display=this.value==='Dinheiro do caixa'?'none':''">${FORMAS.map(f => `<option>${f}</option>`).join("")}</select></label><label id="pBcBox"><div class="ic">Banco / conta</div>${selBanco("pBanco")}</label>
   <label id="pCxBox" style="display:none"><div class="ic">De qual caixa (vira sangria nele)</div><select id="pCaixa" style="width:100%">${CAIXAS.map(c => `<option value="${c.id}">${esc(c.nome)} · gaveta ${brl(c.gaveta)}</option>`).join("") || "<option value=''>nenhum caixa aberto</option>"}</select></label></div>
@@ -171,7 +183,7 @@ function abrirPagar2(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="pagar('${id}')">✅ Confirmar pagamento</button></div>`); }
 async function pagar(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/pagar`, { method: "POST", body: JSON.stringify({ data: v("pData"), valorPago: v("pValor").replace(",", "."), forma: v("pForma"), banco: v("pBanco"), sessaoId: v("pCaixa"), observacao: v("pObs") }) });
   if (!ok) { pMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
-function abrirEditar(id) { const t = D.itens.find(x => x.id === id); abrir(`<h3>✏️ Editar conta</h3><div class="grid2"><label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
+function abrirEditar(id) { const t = achaT(id); abrir(`<h3>✏️ Editar conta</h3><div class="grid2"><label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
   <label><div class="ic">Categoria</div><select id="eCat" style="width:100%">${D.categorias.map(c => `<option ${c === t.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
   <label><div class="ic">Valor</div><input id="eValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label><label><div class="ic">Vencimento</div><input id="eVenc" type="date" value="${t.vencimento}" style="width:100%"></label>
   <label><div class="ic">Competência</div><input id="eComp" type="month" value="${esc(t.competencia || String(t.vencimento).slice(0, 7))}" style="width:100%"></label><label><div class="ic">Distribuir em meses</div><input id="eCompM" inputmode="numeric" value="${t.competenciaMeses || 1}" style="width:100%"></label></div><div id="eMsg"></div>
@@ -204,6 +216,71 @@ async function carregarComp() { const { j } = await api("/api/financeiro/compete
   comp.innerHTML = j.linhas.length ? `<table style="min-width:900px;width:100%;border-collapse:collapse;font-size:12px"><tr class="ic"><td style="text-align:left">Conta</td>${M.map(m => `<td style="text-align:right">${nomeM(m)}</td>`).join("")}<td style="text-align:right">Ano</td></tr>
     ${j.linhas.map(l => linha(`${esc(l.cod)} ${esc(l.nome)}`, M.map(m => l.meses[m] || 0), l.total)).join("")}
     ${linha("<b>Despesas variáveis</b>", j.totais.variaveis, sum(j.totais.variaveis), "border-top:1px solid #3a3480")}${linha("<b>Despesas fixas</b>", j.totais.fixas, sum(j.totais.fixas))}${linha("Compras de mercadoria (vão para o CMV)", j.totais.compras, sum(j.totais.compras), "color:#9a95c9")}</table>` : `<div class="ic">Nenhuma despesa lançada para este ano.</div>`; }
+
+// ===== CUSTOS LANÇADOS: visão por mês com busca e agrupamento =====
+let LAN = { itens: [], chips: {}, fornecedores: [], categorias: [], grupos: [] }, LOPEN = {}, _tl = null;
+const hojeL = new Date(), MESATUAL = hojeL.getFullYear() + "-" + String(hojeL.getMonth() + 1).padStart(2, "0");
+const LF = { mes: MESATUAL, base: "competencia", sit: "todas", vis: "grupo", busca: "", grupo: "", cat: "", forn: "", min: "", max: "", ord: "venc" };
+const NMES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+const GCOR = { pessoal: "#ff1a8c", ocupacao: "#4aa3ff", admin: "#b57cff", marketing: "#3ce88a", manutencao: "#ffb347", financeiro: "#9aa0b8", variaveis: "#ffd23f", mercadoria: "#5fd0c8", impostos: "#ff8aa3", outros: "#8f89c9", fora: "#6b6b8a" };
+function achaT(id) { return (D && D.itens ? D.itens.find(x => x.id === id) : null) || LAN.itens.find(x => x.id === id); }
+function montarMeses() { const sel = document.getElementById("lMes"), a = []; for (let k = 18; k >= -6; k--) { const d = new Date(hojeL.getFullYear(), hojeL.getMonth() - k, 1), v = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); a.push('<option value="' + v + '">' + NMES[d.getMonth()] + "/" + d.getFullYear() + "</option>"); } sel.innerHTML = a.join("") + '<option value="todos">Todo o período</option>'; sel.value = LF.mes; }
+function lanMes(k) { const sel = document.getElementById("lMes"), i = sel.selectedIndex + k; if (i < 0 || i >= sel.options.length - 1) return; sel.selectedIndex = i; lanMudou(); }
+function lerFiltrosLan() { LF.mes = document.getElementById("lMes").value; LF.base = document.getElementById("lBase").value; LF.grupo = document.getElementById("lGrupo").value; LF.cat = document.getElementById("lCat").value; LF.forn = document.getElementById("lForn").value; LF.min = document.getElementById("lMin").value.trim(); LF.max = document.getElementById("lMax").value.trim(); }
+function lanMudou() { lerFiltrosLan(); carregarLan(); }
+function lanBusca() { clearTimeout(_tl); _tl = setTimeout(function () { LF.busca = document.getElementById("lBusca").value.trim(); carregarLan(); }, 300); }
+function lanLimpar() { LF.busca = ""; LF.grupo = LF.cat = LF.forn = LF.min = LF.max = ""; LF.sit = "todas"; document.getElementById("lBusca").value = ""; document.getElementById("lMin").value = ""; document.getElementById("lMax").value = ""; carregarLan(); }
+function irSit(f) { fSit.value = f; LF.sit = f; if (f === "pagas") { LF.mes = MESATUAL; LF.base = "pagamento"; } else { LF.mes = "todos"; LF.base = "vencimento"; } document.getElementById("lMes").value = LF.mes; document.getElementById("lBase").value = LF.base; carregar(); document.getElementById("lanCard").scrollIntoView(); }
+function setSit(s) { LF.sit = s; carregarLan(); }
+function setVis(v) { LF.vis = v; renderLan(); }
+async function carregarLan() {
+  if (!document.getElementById("lMes")) return; if (!document.getElementById("lMes").options.length) montarMeses();
+  const q = new URLSearchParams({ mes: LF.mes, base: LF.base, situacao: LF.sit, busca: LF.busca, grupo: LF.grupo, categoria: LF.cat, fornecedor: LF.forn, min: LF.min, max: LF.max, ordem: LF.ord }), r = await api("/api/contas-pagar/lancamentos?" + q);
+  if (!r.ok) { document.getElementById("lLista").innerHTML = '<div class="err">' + esc(r.j.erro || "Não consegui carregar.") + "</div>"; return; } LAN = r.j; renderLan(); }
+function opcoes(id, lista, atual, todos, fmt) { const el = document.getElementById(id); el.innerHTML = '<option value="">' + todos + "</option>" + lista.map(o => '<option value="' + esc(o.nome) + '" ' + (o.nome === atual ? "selected" : "") + ">" + esc(fmt ? fmt(o) : o.nome + " (" + o.qtd + ")") + "</option>").join(""); }
+const corSit = { vencida: "#ff8aa3", "vence logo": "#ffd23f", aberta: "#cfcaff", paga: "#3ce88a", cancelada: "#9a95c9" };
+function linhaLan(t) {
+  const forn = (t.fornecedor && t.fornecedor.nome) || t.descricao, pago = t.situacao === "paga" && !t.sintetico;
+  const btn = (cl, st, oc, tx) => '<button class="btn ' + cl + '" style="' + st + '" onclick="' + oc + '">' + tx + "</button>";
+  let acoes = "";
+  if (t.sintetico) acoes = btn("btn-ghost", "padding:4px 8px", "location.href='" + esc(t.destino || "/taxas-cartao?mes=" + LAN.mes) + "'", "ver como");
+  else { if (t.linhaDigitavel) acoes += btn("btn-ghost", "padding:4px 8px", "abrirBoleto('" + t.id + "')", "🧾");
+    if (t.status === "aberto") acoes += btn("btn-mag", "padding:4px 10px", "abrirPagar('" + t.id + "')", "Pagar") + btn("btn-ghost", "padding:4px 8px", "abrirEditar('" + t.id + "')", "✏️") + btn("btn-ghost", "padding:4px 8px", "cancelar('" + t.id + "')", "🗑");
+    else acoes += btn("btn-ghost", "padding:4px 8px", "reabrir('" + t.id + "')", "↩️"); }
+  const parc = t.parcela && t.parcela !== "1/1" && t.parcela !== "mensal" ? " · " + esc(t.parcela) : "";
+  const info = esc(t.categoria) + " · competência " + esc(t.competenciaTxt || "") + " · vence " + dmy(t.vencimento) + ' · <b style="color:' + corSit[t.situacao] + '">' + esc(t.situacao) + "</b>" + (pago ? " em " + dmy(t.dataPagamento || "") + (t.forma ? " · " + esc(t.forma) : "") + (t.banco ? " " + esc(t.banco) : "") : "") + (t.estimado ? " · valor estimado" : "") + (t.origem === "recorrente" ? " · 🔁 fixa" : "") + (t.numeroNota ? " · nota " + esc(t.numeroNota) : "") + (t.motivoCancelamento ? " · " + esc(t.motivoCancelamento) : "");
+  return '<div class="lr"><div class="lm"><b>' + esc(forn) + '</b> <span class="ic">· ' + esc(t.descricao) + parc + '</span><div class="ic" style="white-space:normal">' + info + '</div></div><div class="lv"><b>' + brl(t.valorMes) + "</b>" + (Math.abs(t.valor - t.valorMes) > 0.01 ? '<div class="ic">de ' + brl(t.valor) + "</div>" : "") + '<div style="margin-top:4px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' + acoes + "</div></div></div>"; }
+function agruparLan(chave, titulo, ordem) {
+  const m = {}; LAN.itens.forEach(t => { const k = chave(t), g = m[k] || (m[k] = { k: k, itens: [], valor: 0, pago: 0, aberto: 0 }); g.itens.push(t); g.valor += t.valorMes; if (t.situacao === "paga") g.pago += t.valorMes; else if (t.situacao !== "cancelada") g.aberto += t.valorMes; });
+  const L = Object.keys(m).map(k => m[k]); L.sort(ordem === "chave" ? (a, b) => String(a.k).localeCompare(String(b.k)) : (a, b) => b.valor - a.valor); const tot = L.reduce((s, g) => s + g.valor, 0) || 1;
+  return L.map((g, i) => { const key = (LF.vis + "|" + g.k).replace(/['"\\]/g, ""), aberto = LOPEN[key] != null ? LOPEN[key] : (i === 0 && L.length > 1) || L.length === 1, cor = (LF.vis === "grupo" && GCOR[g.k]) || "#4b4690";
+    return '<div class="lg" style="--cg:' + cor + '"><div class="lgh" onclick="LOPEN[\'' + key + "']=" + (!aberto) + ';renderLan()"><div class="n"><b>' + titulo(g.k) + '</b><div class="ic">' + g.itens.length + " lançamento(s)" + (g.aberto > 0.004 ? " · em aberto " + brl(g.aberto) : "") + (g.pago > 0.004 ? " · pago " + brl(g.pago) : "") + '</div><div class="lgb"><i style="width:' + Math.min(100, g.valor / tot * 100) + '%"></i></div></div><div class="t"><b>' + brl(g.valor) + '</b><div class="ic">' + Math.round(g.valor / tot * 100) + "%</div></div><span>" + (aberto ? "▾" : "▸") + "</span></div>" + (aberto ? g.itens.map(linhaLan).join("") : "") + "</div>"; }).join(""); }
+function chaveVis(t) { return LF.vis === "grupo" ? t.grupo : LF.vis === "forn" ? ((t.fornecedor && t.fornecedor.nome) || "(sem fornecedor)") : LF.vis === "cat" ? t.categoria : ((LF.base === "pagamento" ? t.dataPagamento : t.vencimento) || ""); }
+function abrirTodos(sim) { LAN.itens.forEach(t => { LOPEN[(LF.vis + "|" + chaveVis(t)).replace(/['"\\]/g, "")] = sim; }); renderLan(); }
+function renderLan() {
+  const C = LAN.chips || {}, SITS = [["todas", "Todas"], ["abertas", "Em aberto"], ["vencidas", "Vencidas"], ["pagas", "Pagas"], ["canceladas", "Canceladas"]];
+  document.getElementById("lChips").innerHTML = SITS.map(s => '<div class="lc ' + (LF.sit === s[0] ? "on" : "") + '" onclick="setSit(\'' + s[0] + '\')"><b>' + s[1] + "</b><span>" + (C[s[0]] || { q: 0 }).q + " · " + brl((C[s[0]] || { v: 0 }).v) + "</span></div>").join("");
+  const nAt = [LF.grupo, LF.cat, LF.forn, LF.min, LF.max].filter(Boolean).length; document.querySelector("#lMais summary").textContent = "⚙️ Mais filtros" + (nAt ? " (" + nAt + " ativo" + (nAt > 1 ? "s" : "") + ")" : " (grupo, categoria, fornecedor e valor)");
+  opcoes("lGrupo", (LAN.grupos || []).map(g => ({ nome: g.id, rot: g.icone + " " + g.nome })), LF.grupo, "Todos os grupos", o => o.rot); opcoes("lCat", LAN.categorias || [], LF.cat, "Todas as categorias"); opcoes("lForn", LAN.fornecedores || [], LF.forn, "Todos os fornecedores");
+  document.getElementById("lVis").innerHTML = [["grupo", "Por grupo"], ["forn", "Por fornecedor"], ["cat", "Por categoria"], ["dia", "Por dia"], ["lista", "Lista"]].map(v => '<span class="lv2 ' + (LF.vis === v[0] ? "on" : "") + '" onclick="setVis(\'' + v[0] + '\')">' + v[1] + "</span>").join("") + '<select id="lOrd" onchange="LF.ord=this.value;carregarLan()" style="margin-left:auto"><option value="venc">Ordem: vencimento ↑</option><option value="venc-desc">vencimento ↓</option><option value="valor-desc">maior valor</option><option value="valor-asc">menor valor</option><option value="forn">fornecedor A–Z</option></select><button class="btn btn-ghost" style="padding:5px 9px" onclick="exportarLan()">⬇️ CSV</button><button class="btn btn-ghost" style="padding:5px 9px" onclick="abrirTodos(true)">Abrir tudo</button><button class="btn btn-ghost" style="padding:5px 9px" onclick="abrirTodos(false)">Fechar tudo</button>';
+  document.getElementById("lOrd").value = LF.ord;
+  const mesTxt = LAN.mes === "todos" ? "todo o período" : NMES[Number(LAN.mes.split("-")[1]) - 1] + "/" + LAN.mes.split("-")[0];
+  document.getElementById("lRes").innerHTML = '<b style="color:#fff">' + LAN.total + "</b> lançamento(s) em " + mesTxt + ' · total <b style="color:#fff">' + brl(LAN.somaMes) + "</b> · pago " + brl(LAN.pago) + " · em aberto " + brl(LAN.aberto) + (LAN.cortado ? ' · <b style="color:#ff8aa3">mostrando só os 3.000 primeiros, use os filtros</b>' : "") + ((LF.busca || nAt || LF.sit !== "todas") ? ' · <a onclick="lanLimpar()" style="color:#9fd0ff;cursor:pointer;text-decoration:underline">limpar filtros</a>' : "");
+  const dn = d => { const x = String(d || "").split("-"); return x.length === 3 ? x[2] + "/" + x[1] : "sem data"; }, sem = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const gnome = id => { const g = (LAN.grupos || []).find(x => x.id === id); return g ? g.icone + " " + esc(g.nome) : esc(id); };
+  let h = "";
+  if (!LAN.itens.length) h = '<div class="ic" style="margin-top:10px">Nenhum lançamento com esses filtros.</div>';
+  else if (LF.vis === "grupo") h = agruparLan(t => t.grupo, gnome);
+  else if (LF.vis === "forn") h = agruparLan(t => (t.fornecedor && t.fornecedor.nome) || "(sem fornecedor)", k => esc(k));
+  else if (LF.vis === "cat") h = agruparLan(t => t.categoria, k => esc(k));
+  else if (LF.vis === "dia") h = agruparLan(t => (LF.base === "pagamento" ? t.dataPagamento : t.vencimento) || "", k => dn(k) + ' <span class="ic">' + (k ? sem[new Date(k + "T12:00:00").getDay()] : "") + "</span>", "chave");
+  else h = '<div class="lg">' + LAN.itens.map(linhaLan).join("") + "</div>";
+  document.getElementById("lLista").innerHTML = h; }
+function exportarLan() {
+  const v = n => String(Number(n || 0).toFixed(2)).replace(".", ","), c = s => '"' + String(s == null ? "" : s).replace(/"/g, '""') + '"', L = [["Vencimento", "Competência", "Fornecedor", "Descrição", "Categoria", "Valor total", "Valor do mês", "Situação", "Pago em", "Forma", "Nota"].map(c).join(";")];
+  LAN.itens.forEach(t => L.push([dmy(t.vencimento), t.competenciaTxt, (t.fornecedor && t.fornecedor.nome) || "", t.descricao, t.categoria, v(t.valor), v(t.valorMes), t.situacao, t.dataPagamento ? dmy(t.dataPagamento) : "", t.forma || "", t.numeroNota || ""].map(c).join(";")));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\r\n")], { type: "text/csv;charset=utf-8" })); a.download = "custos-lancados-" + LAN.mes + ".csv"; document.body.appendChild(a); a.click(); a.remove(); }
+
 (async () => { const a = Number(hoje().slice(0, 4)); anoComp.innerHTML = [a - 1, a, a + 1].map(x => `<option ${x === a ? "selected" : ""}>${x}</option>`).join(""); cfData.value = hoje();
   try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContasFin(); carregarComp(); carregarOrc(); carregar(); })();
 </script>
