@@ -13444,6 +13444,8 @@ app.put("/api/produtos-gestao/:id",requireAcesso("acesso_produtos_gestao"),async
 let _idxPed={em:0,lista:null,porId:null,props:null};
 const PEDIDOS_NOTAS_FILE=`${DATA_DIR}/pedidos_notas.json`; // observações registradas no sistema (pedidos Atendidos ou recusadas pelo Bling)
 // como o pagamento do pedido foi registrado: passou por caixa, a prazo, pago/registrado por outro meio, ou NENHUM registro
+// chave para agrupar pedidos por cliente: o id do cadastro; sem id, o nome sem acento
+function _chaveClientePed(r){ return r.clienteId?String(r.clienteId):"n:"+_nrmP(r.cliente||"(sem nome)"); }
 function _registroPed(r){ if(r.caixa) return "caixa"; if(r.prazo) return "prazo"; if(r.pago||(r.formas||[]).length) return "outro"; return "sem"; }
 const _REG_NOME={caixa:"Passou por caixa",prazo:"A prazo",outro:"Pago ou registrado por outro meio",sem:"Sem nenhum registro de pagamento"};
 const _nomeOrigemPed=o=>({site:"Site",totem:"Totem",atacado:"Vendedoras",proposta:"Propostas",caixa:"Caixa",caixa_atacado:"Caixa",pdv:"Caixa",bling:"Só no Bling"})[o]||(o?String(o):"Sistema");
@@ -13498,6 +13500,7 @@ function _filtrarPedidos(q){
     if(q.caixa==="sim"&&!r.caixa) return false; if(q.caixa==="nao"&&r.caixa) return false;
     if(q.consumidor){ const cf=!r.cliente||/^consumidor final/.test(_nrmP(r.cliente)); if(q.consumidor==="nao"&&cf) return false; if(q.consumidor==="sim"&&!cf) return false; } // "nao" = só clientes cadastrados (com nome, que não é Consumidor Final)
     if(q.registro&&_registroPed(r)!==q.registro) return false;
+    if(q.clienteChave&&_chaveClientePed(r)!==String(q.clienteChave)) return false;
     if(q.prazo==="1"&&!r.prazo) return false; if(q.ocorrencia==="1"&&!r.ocorrencia) return false;
     if(q.fonte==="sistema"&&r.soBling) return false; if(q.fonte==="bling"&&!r.soBling) return false;
     if(q.cliente&&String(r.clienteId)!==String(q.cliente)) return false;
@@ -13539,7 +13542,11 @@ app.get("/api/pedidos-vendas",requireAcesso("acesso_pedidos_vendas"),(req,res)=>
     const off=Math.max(0,Number(req.query.offset)||0), lim=Math.min(200,Math.max(1,Number(req.query.limite)||100));
     const I=_indicePedidos(), uniq=(f)=>[...new Set(I.lista.map(f).filter(Boolean))].sort();
     const RR={caixa:{qtd:0,valor:0},prazo:{qtd:0,valor:0},outro:{qtd:0,valor:0},sem:{qtd:0,valor:0}}; L.forEach(r=>{ const k=_registroPed(r); RR[k].qtd++; RR[k].valor=_round2(RR[k].valor+(Number(r.total)||0)); });
-    res.json({ok:true,ini,fim,total:O.length,itens:O.slice(off,off+lim).map(r=>({...r,situacao:r.situacaoId?nomeSituacao(r.situacaoId):"—",origemNome:_nomeOrigemPed(r.origem),registro:_registroPed(r),registroNome:_REG_NOME[_registroPed(r)]})),metricas:M,resumoRegistro:RR,semNome:L.filter(r=>!r.cliente).length,
+    let porCliente=null; if(req.query.agrupar==="cliente"){ const G={};
+      L.forEach(r=>{ const k=_chaveClientePed(r), g=G[k]||(G[k]={chave:k,clienteId:r.clienteId||"",cliente:r.cliente||"(sem nome)",qtd:0,valor:0,sem:0,semValor:0,outro:0,prazo:0,caixa:0,primeira:"",ultima:""}); const rg=_registroPed(r); g.qtd++; g.valor=_round2(g.valor+(Number(r.total)||0)); g[rg]++; if(rg==="sem") g.semValor=_round2(g.semValor+(Number(r.total)||0));
+        if(!g.ultima||r.data>g.ultima) g.ultima=r.data; if(!g.primeira||r.data<g.primeira) g.primeira=r.data; });
+      const todos=Object.values(G).sort((a,b)=>b.qtd-a.qtd||b.valor-a.valor); porCliente={total:todos.length,lista:todos.slice(0,1000)}; }
+    res.json({ok:true,ini,fim,total:O.length,porCliente,itens:O.slice(off,off+lim).map(r=>({...r,situacao:r.situacaoId?nomeSituacao(r.situacaoId):"—",origemNome:_nomeOrigemPed(r.origem),registro:_registroPed(r),registroNome:_REG_NOME[_registroPed(r)]})),metricas:M,resumoRegistro:RR,semNome:L.filter(r=>!r.cliente).length,
       opcoes:{vendedoras:uniq(r=>r.vendedor),origens:uniq(r=>_nomeOrigemPed(r.origem)),formas:[...new Set(I.lista.slice(0,20000).flatMap(r=>(r.formas||[]).map(f=>f.forma)).filter(Boolean))].sort(),
         situacoes:[...new Set(I.lista.map(r=>r.situacaoId).filter(Boolean))].map(id=>({id,nome:nomeSituacao(id)})).sort((a,b)=>a.nome.localeCompare(b.nome))},
       historico:_statusHistorico(),ms:Date.now()-T0});

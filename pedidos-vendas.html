@@ -73,6 +73,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 /* topo: o status do histórico quebra linha no celular em vez de esticar a página */
 .top{flex-wrap:wrap}#sinc{white-space:normal;min-width:0;flex:1 1 180px;text-align:right}@media(max-width:600px){#sinc{font-size:10.5px;text-align:left}}
 .card h3{white-space:normal}.wrap{overflow-x:hidden}
+.chip.on{background:#FF0082;border-color:#FF0082;color:#fff}.cli{background:#151233;border:1px solid #2b2760;border-radius:12px;margin-top:8px;overflow:hidden}.cli .cab{display:flex;gap:8px;align-items:center;padding:9px 10px;cursor:pointer}.cli .cab .n{flex:1;min-width:0;overflow-wrap:anywhere}.cli .cab .n b{font-size:14px}.cli .cab .t{text-align:right;white-space:nowrap}.cli .corpo{border-top:1px solid #221e4f;padding:4px 6px 8px}
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
@@ -136,7 +137,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="card"><h3>📦 Produtos mais vendidos</h3><div id="dProd" class="rolagem"></div></div>
     <div class="card"><h3>👥 Clientes que mais compraram</h3><div id="dCli"></div></div>
   </div>
-  <div class="card"><h3>🧾 Pedidos <span class="ic" id="qtdLista"></span></h3><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
+  <div class="card"><h3>🧾 Pedidos <span class="ic" id="qtdLista"></span></h3><div class="filtros" id="visaoBar" style="margin-bottom:8px"></div><div id="lista"><div class="vazio"><div class="spin"></div></div></div></div>
 </div>
 <div class="fundo" id="mPed"><div class="modal" id="mPedCorpo" style="max-width:980px"></div></div>
 <script>
@@ -155,20 +156,20 @@ let D = null, ITENS = [], OFF = 0, PED = null, ABA = "resumo", ED = null;
 function filtros() {
   const v = id => document.getElementById(id).value.trim();
   return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), produto: v("fProd"), situacao: v("fSit"), vendedora: v("fVend"), origem: v("fOrig"), forma: v("fForma"), tipo: v("fTipo"), pagamento: v("fPag"), caixa: v("fCaixa"), fonte: v("fFonte"),
-    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", consumidor: v("fCons"), registro: v("fReg"), min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
+    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", consumidor: v("fCons"), registro: v("fReg"), agrupar: VISAO === "cliente" ? "cliente" : "", min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
 }
 function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
 function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h;
   document.getElementById("fIni").value = ini.toISOString().slice(0, 10); document.getElementById("fFim").value = fim.toISOString().slice(0, 10); carregar(true); }
 function periodoTudo() { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
 // auditoria: pedidos de clientes cadastrados (não consumidor final) que NÃO passaram por nenhum caixa, em todo o período
-function auditoriaCaixa() { limparSemRecarregar(); document.getElementById("fCons").value = "nao"; document.getElementById("fCaixa").value = "nao"; document.getElementById("fOrdem").value = "cliente"; document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
+function auditoriaCaixa() { limparSemRecarregar(); VISAO = "cliente"; ORDCLI = "sem"; CLI_ABERTO = {}; document.getElementById("fCons").value = "nao"; document.getElementById("fCaixa").value = "nao"; document.getElementById("fOrdem").value = "cliente"; document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
 function limparSemRecarregar() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; }
 function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
 function setFiltro(id, v) { document.getElementById(id).value = v; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 async function carregar(novo) {
   if (novo) { OFF = 0; ITENS = []; }
-  const q = new URLSearchParams({ ...filtros(), offset: OFF, limite: 100 });
+  const q = new URLSearchParams({ ...filtros(), offset: OFF, limite: VISAO === "cliente" ? 1 : 100 });
   const { ok, j } = await api("/api/pedidos-vendas?" + q);
   if (!ok) { document.getElementById("lista").innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; }
   D = j; ITENS = ITENS.concat(j.itens || []); preencherOpcoes(); render();
@@ -243,7 +244,32 @@ function linhaPed(r) {
   return `<div class="ped" onclick="abrirPedido('${esc(r.id)}')"><div class="x"><b>#${esc(r.numero)} · ${esc(r.cliente || "—")}</b>
     <span>${dmy(r.data)} · ${esc(r.vendedor || "sem vendedora")} · ${esc(r.origemNome)}${(r.formas || []).length ? " · " + esc(r.formas.map(f => f.forma).filter(Boolean).join(" + ")) : ""}</span><div>${t.join("")}</div></div><b>${brl(r.total)}</b></div>`;
 }
+let VISAO = "pedidos", ORDCLI = "qtd", CLI_ABERTO = {};
+function setVisao(v) { VISAO = v; CLI_ABERTO = {}; carregar(true); }
+const _dm = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "—";
+function renderClientes() {
+  const P = D.porCliente || { lista: [], total: 0 }, L = P.lista.slice(), ord = { qtd: (a, b) => b.qtd - a.qtd || b.valor - a.valor, valor: (a, b) => b.valor - a.valor, sem: (a, b) => b.sem - a.sem || b.semValor - a.semValor || b.qtd - a.qtd, nome: (a, b) => String(a.cliente).localeCompare(String(b.cliente)) };
+  L.sort(ord[ORDCLI] || ord.qtd);
+  const cab = `<div class="ic" style="margin-bottom:4px;white-space:normal"><b style="color:#fff">${num(P.total)}</b> cliente(s) · <b style="color:#fff">${num(D.total)}</b> pedido(s)${P.total > L.length ? " · mostrando os " + L.length + " primeiros" : ""}. Toque no cliente para ver os pedidos.</div>`;
+  const corpo = L.map(g => { const k = g.chave, ab = CLI_ABERTO[k], tags = [g.sem ? `<span class="tagp al">${g.sem} sem registro de pagamento · ${brl(g.semValor)}</span>` : "", g.outro ? `<span class="tagp">${g.outro} pago por outro meio</span>` : "", g.prazo ? `<span class="tagp am">${g.prazo} a prazo</span>` : "", g.caixa ? `<span class="tagp ok">${g.caixa} passou por caixa</span>` : ""].join("");
+    return `<div class="cli"><div class="cab" onclick="toggleCli('${esc(k).replace(/'/g, "\\'")}')"><div class="n"><b>${esc(g.cliente)}</b><div class="ic" style="white-space:normal">${g.primeira === g.ultima ? dmy(g.ultima) : "de " + dmy(g.primeira) + " a " + dmy(g.ultima)}</div><div>${tags}</div></div><div class="t"><b>${num(g.qtd)} pedido${g.qtd > 1 ? "s" : ""}</b><div class="ic">${brl(g.valor)}</div></div><span>${ab ? "▾" : "▸"}</span></div>`
+      + (ab ? `<div class="corpo">${ab.carregando ? '<div class="vazio"><div class="spin"></div></div>' : (ab.itens.length ? ab.itens.map(linhaPed).join("") : '<div class="ic" style="padding:8px">Nenhum pedido.</div>') + (ab.total > ab.itens.length ? `<div class="ic" style="padding:6px;white-space:normal">Mostrando ${ab.itens.length} de ${num(ab.total)}. ${g.clienteId ? `<a onclick="verTodosCli('${esc(g.clienteId)}')" style="color:#9fd0ff;cursor:pointer;text-decoration:underline">Ver todos na lista</a>` : ""}</div>` : "")}</div>` : "") + `</div>`; }).join("");
+  document.getElementById("lista").innerHTML = cab + (corpo || '<div class="vazio">Nenhum cliente nesse filtro.</div>');
+}
+async function toggleCli(k) {
+  if (CLI_ABERTO[k]) { delete CLI_ABERTO[k]; renderClientes(); return; }
+  CLI_ABERTO[k] = { carregando: true, itens: [], total: 0 }; renderClientes();
+  const q = new URLSearchParams({ ...filtros(), agrupar: "", cliente: "", clienteChave: k, ordem: "recentes", offset: 0, limite: 200 }), { ok, j } = await api("/api/pedidos-vendas?" + q);
+  CLI_ABERTO[k] = ok ? { carregando: false, itens: j.itens || [], total: j.total || 0 } : { carregando: false, itens: [], total: 0 }; renderClientes();
+}
+function verTodosCli(id) { window._FCLI = id; VISAO = "pedidos"; carregar(true); }
+function csvClientes() { const P = (D.porCliente || {}).lista || [], v = n => String(Number(n || 0).toFixed(2)).replace(".", ","), c = s => '"' + String(s == null ? "" : s).replace(/"/g, '""') + '"', L = [["Cliente", "Pedidos", "Valor total", "Sem registro de pagamento (pedidos)", "Sem registro de pagamento (valor)", "Pago por outro meio", "A prazo", "Passou por caixa", "Primeiro pedido", "Último pedido"].map(c).join(";")];
+  P.forEach(g => L.push([g.cliente, g.qtd, v(g.valor), g.sem, v(g.semValor), g.outro, g.prazo, g.caixa, dmy(g.primeira), dmy(g.ultima)].map(c).join(";")));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + L.join("\r\n")], { type: "text/csv;charset=utf-8" })); a.download = "pedidos_por_cliente_" + hojeISO() + ".csv"; document.body.appendChild(a); a.click(); a.remove(); }
 function renderLista() {
+  document.getElementById("visaoBar").innerHTML = `<span class="chip ${VISAO === "pedidos" ? "on" : ""}" onclick="setVisao('pedidos')">📋 Pedidos</span><span class="chip ${VISAO === "cliente" ? "on" : ""}" onclick="setVisao('cliente')">👥 Agrupar por cliente</span>`
+    + (VISAO === "cliente" ? `<select id="ordCli" onchange="ORDCLI=this.value;renderClientes()"><option value="qtd" ${ORDCLI === "qtd" ? "selected" : ""}>Mais pedidos</option><option value="sem" ${ORDCLI === "sem" ? "selected" : ""}>Mais sem registro de pagamento</option><option value="valor" ${ORDCLI === "valor" ? "selected" : ""}>Maior valor</option><option value="nome" ${ORDCLI === "nome" ? "selected" : ""}>Nome (A-Z)</option></select><button class="btn btn-ghost" style="padding:4px 9px" onclick="csvClientes()">⬇️ CSV por cliente</button>` : "");
+  if (VISAO === "cliente") { renderClientes(); return; }
   document.getElementById("lista").innerHTML = (ITENS.length ? ITENS.map(linhaPed).join("") : `<div class="vazio">Nenhum pedido nesse filtro.</div>`)
     + (ITENS.length < D.total ? `<div style="text-align:center;margin-top:10px"><button class="btn btn-ghost" onclick="OFF+=100;carregar(false)">Mostrar mais (${num(D.total - ITENS.length)} restantes)</button></div>` : "");
 }
