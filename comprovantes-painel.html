@@ -180,7 +180,8 @@ async function carregarUso(){
   const { status, j } = await api("/api/comprovantes/uso"); if (status !== 200 || j.erro) return;
   document.getElementById("uso").innerHTML = `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)"><span>💾 Armazenamento dos comprovantes: ${j.totalMB} MB de ${j.limiteMB} MB</span><span>${j.pctUsado}%</span></div>
     <div style="background:#0f0c22;border-radius:6px;height:8px;overflow:hidden;margin-top:5px"><div style="height:100%;width:${Math.min(100, j.pctUsado)}%;background:${j.pctUsado > 85 ? "#ff3b3b" : j.pctUsado > 70 ? "#ffd23f" : "#3ce88a"}"></div></div>
-    <div class="muted" style="margin-top:5px;font-size:11px">${j.videos} vídeos (${j.videoMB} MB) · ${j.fotos} fotos (${j.fotoMB} MB) · guarda ${j.diasManter} dias${j.maisAntigo ? " · mais antigo: " + esc(j.maisAntigo) : ""}</div>`;
+    <div class="muted" style="margin-top:5px;font-size:11px">${j.videos} vídeos (${j.videoMB} MB) · ${j.fotos} fotos (${j.fotoMB} MB) · guarda ${j.diasManter} dias${j.maisAntigo ? " · mais antigo: " + esc(j.maisAntigo) : ""}</div>
+    ${j.disco ? `<div class="muted" style="margin-top:4px;font-size:11px;white-space:normal;${j.disco.pctLivre < 25 ? "color:#ff8aa3" : ""}">🖴 Disco do servidor: ${j.disco.pctLivre}% livre (${j.disco.livreMB} MB de ${j.disco.totalMB} MB). Quando fica abaixo de ${j.disco.alvoLivreMB} MB livres, a limpeza automática apaga os vídeos mais antigos primeiro${j.disco.pctLivre < 25 ? " — <b>é o que está acontecendo agora</b>" : ""}.</div>` : ""}`;
 }
 periodo("hoje"); carregar(); carregarUso();
 </script>

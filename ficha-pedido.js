@@ -60,7 +60,8 @@
     var capa = m.tipo === "video"
       ? (m.thumb ? '<img src="' + esc(B + m.thumb) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">' : '<div style="height:110px;background:#000"></div>')
       : '<img src="' + esc(B + (m.thumb || m.url)) + '" loading="lazy" onerror="B13Ficha._semArquivo(this)">';
-    return '<div class="b13f-mid" onclick="B13Ficha.ver(' + i + ')">' + capa + (m.tipo === "video" ? '<span class="b13f-play">▶</span>' : "") +
+    if (m.existe === false) capa = '<div style="height:110px;background:#1a1530;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ff8aa3;font-size:12px;text-align:center;padding:6px"><span style="font-size:24px">🗑</span>arquivo apagado</div>';
+    return '<div class="b13f-mid" onclick="B13Ficha.ver(' + i + ')">' + capa + (m.tipo === "video" && m.existe !== false ? '<span class="b13f-play">▶</span>' : "") +
       "<small>" + (m.tipo === "video" ? "🎥 " : "📷 ") + orig + " · " + hora(m.em) + " · " + esc(m.por) + "</small></div>";
   }
   // VISUALIZADOR: vídeo abre em TELA CHEIA e já tocando; foto abre grande. Setas (ou ← →) passam para a próxima; Esc fecha.
@@ -71,6 +72,23 @@
     document.addEventListener("keydown", function (e) { if (!el.classList.contains("aberto")) return; if (e.key === "Escape") fecharLb(); if (e.key === "ArrowRight") ver(LB_I + 1); if (e.key === "ArrowLeft") ver(LB_I - 1); });
     document.body.appendChild(el); return el;
   }
+  // vídeo que não abre: descobre se o arquivo foi apagado (limpeza automática) ou se o aparelho não toca o formato, e explica
+  function msgSemArquivo(tipo) {
+    return '🗑 <b>Este ' + (tipo === "video" ? "vídeo" : "arquivo") + ' não existe mais no servidor.</b><br>O sistema apaga fotos e vídeos de conferência antigos e, quando o espaço do servidor aperta, os mais antigos primeiro. Não dá para recuperar.';
+  }
+  function erroVideo(v) {
+    if (!v || !v.parentNode) return;
+    var url = v.currentSrc || v.getAttribute("src") || "", ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+    var box = document.createElement("div"); box.className = "b13f-sem";
+    box.style.cssText = "padding:16px;border-radius:10px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:13px;line-height:1.45;max-width:440px;margin:auto";
+    box.innerHTML = "Verificando o arquivo…"; v.parentNode.replaceChild(box, v);
+    fetch(url, { method: "HEAD", cache: "no-store" }).then(function (r) {
+      if (r.status === 404 || r.status === 410) box.innerHTML = msgSemArquivo("video");
+      else if (r.ok) box.innerHTML = '⚠️ <b>Este aparelho não conseguiu tocar o vídeo</b> (formato .' + esc(ext) + ').<br>Toque em <b>⬇ Baixar</b> e abra em outro aplicativo, ou veja em outro aparelho. Vídeos gravados no Android costumam ser .webm e alguns iPhones não abrem.';
+      else box.innerHTML = 'Não consegui carregar o vídeo (erro ' + r.status + ').';
+    }).catch(function () { box.innerHTML = "Sem conexão com o servidor para carregar o vídeo. Tente de novo."; });
+  }
   var LB_I = 0;
   function ver(i) {
     if (!MID.length) return; LB_I = (i + MID.length) % MID.length; var m = MID[LB_I], el = lb();
@@ -78,11 +96,12 @@
     el.innerHTML = '<div class="b13f-lb-top"><span>' + (LB_I + 1) + " de " + MID.length + " · " + (m.tipo === "video" ? "🎥" : "📷") + " " + hora(m.em) + (m.por ? " · " + esc(m.por) : "") + "</span>" +
       '<a class="b13f-btn" href="' + esc(url) + '" download target="_blank" rel="noopener">⬇ Baixar</a><button class="b13f-btn" onclick="B13Ficha.fecharLb()">✕ Fechar</button></div>' +
       '<div class="b13f-lb-palco">' + (MID.length > 1 ? '<button class="b13f-seta" style="left:8px" onclick="B13Ficha.ver(' + (LB_I - 1) + ')">‹</button>' : "") +
-      (m.tipo === "video" ? '<video id="b13fVideo" src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" onerror="B13Ficha._semArquivo(this)">') +
+      (m.existe === false ? '<div class="b13f-sem" style="padding:16px;border-radius:10px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:13px;line-height:1.45;max-width:440px;margin:auto">' + msgSemArquivo(m.tipo) + "</div>" : m.tipo === "video" ? '<video id="b13fVideo" src="' + esc(url) + '" controls autoplay playsinline></video>' : '<img src="' + esc(url) + '" onerror="B13Ficha._semArquivo(this)">') +
       (MID.length > 1 ? '<button class="b13f-seta" style="right:8px" onclick="B13Ficha.ver(' + (LB_I + 1) + ')">›</button>' : "") + "</div>";
     el.classList.add("aberto");
-    if (m.tipo === "video") {
+    if (m.tipo === "video" && m.existe !== false) {
       var v = document.getElementById("b13fVideo");
+      v.addEventListener("error", function () { erroVideo(v); });
       try { // tela cheia direto (o toque do usuário permite); se o aparelho não deixar, fica grande no visualizador
         var p = v.requestFullscreen ? v.requestFullscreen() : v.webkitRequestFullscreen ? v.webkitRequestFullscreen() : v.webkitEnterFullscreen ? v.webkitEnterFullscreen() : null;
         if (p && p.catch) p.catch(function () {});
@@ -158,5 +177,5 @@
   }
   // arquivo apagado pela limpeza automática (ou que não existe mais): aviso no lugar da imagem quebrada
   function semArquivo(img) { var d = document.createElement("div"); d.style.cssText = "height:110px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:11px;color:#9a95c9;padding:8px"; d.textContent = "arquivo não está mais disponível (limpeza automática de arquivos antigos)"; if (img.parentNode) { var a = img.parentNode; if (a.tagName === "A") a.removeAttribute("href"); a.replaceChild(d, img); } }
-  window.B13Ficha = { abrir: abrir, fechar: fechar, assinatura: assinatura, ver: ver, fecharLb: fecharLb, _semArquivo: semArquivo };
+  window.B13Ficha = { abrir: abrir, fechar: fechar, assinatura: assinatura, ver: ver, fecharLb: fecharLb, _semArquivo: semArquivo, _erroVideo: erroVideo };
 })();

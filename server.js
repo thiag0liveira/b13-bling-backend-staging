@@ -991,6 +991,8 @@ try { fs.mkdirSync(COMPROVANTES_DIR, { recursive: true }); } catch (e) {}
 const MINIATURAS_DIR = path.join(COMPROVANTES_DIR, "miniaturas");
 try { fs.mkdirSync(MINIATURAS_DIR, { recursive: true }); } catch (e) {}
 // os nomes dos comprovantes são únicos (pedido_data_aleatório) e nunca são reescritos: o navegador pode guardar em cache
+// o arquivo (foto/vídeo) ainda existe no servidor? A limpeza automática apaga por idade e por falta de espaço; as telas mostram isso em vez de um player preto
+function _comprovanteExiste(url){ try{ const nm=String(url||"").split("?")[0].split("/").pop(); if(!/^[A-Za-z0-9_.-]+$/.test(nm)) return null; return fs.existsSync(path.join(COMPROVANTES_DIR,nm)); }catch(e){ return null; } }
 app.use("/comprovantes", express.static(COMPROVANTES_DIR, { maxAge: "30d", immutable: true }));
 app.post("/api/comprovantes/miniatura", express.json({ limit: "600kb" }), requireSessao, (req, res) => {
   try{
@@ -4436,6 +4438,7 @@ app.get("/api/comprovantes/uso",(req,res)=>{
       videoMB:+(bytesVideo/1048576).toFixed(1), fotoMB:+(bytesFoto/1048576).toFixed(1),
       limiteMB:COMPROV_LIMITE_MB, pctUsado:+(totalBytes/tetoBytes*100).toFixed(1),
       diasManter:COMPROV_DIAS_MANTER, maisAntigo,
+      disco:(()=>{ const d=_discoInfo(); return d?{totalMB:Math.round(d.total/1048576),livreMB:Math.round(d.livre/1048576),pctLivre:d.pctLivre,alvoLivreMB:Math.round(Math.max(d.total*0.25,300*1048576)/1048576)}:null; })(),
     });
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
@@ -17075,7 +17078,7 @@ app.get("/api/rotas/ocorrencias",(req,res)=>{
         if(!(e.ocorrencia||itensP.length||vp>0)) return;
         const p=ctx.props[pid]||null, t=ctx.turnos[pid]||{}, mv=(ctx.movCx||{})[pid]||null;
         const midias=[], vistas=new Set(), mini=ctx.mini;
-        const add=(url,tipo,em)=>{ if(!url||vistas.has(url)) return; vistas.add(url); const nm=String(url).split("/").pop(); midias.push({url,tipo:tipo||(/\.(mp4|mov|webm|3gp)$/i.test(url)?"video":"foto"),em:em||null,thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); };
+        const add=(url,tipo,em)=>{ if(!url||vistas.has(url)) return; vistas.add(url); const nm=String(url).split("/").pop(); midias.push({url,tipo:tipo||(/\.(mp4|mov|webm|3gp)$/i.test(url)?"video":"foto"),em:em||null,existe:_comprovanteExiste(url),thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); };
         ((e.ocorrencia&&e.ocorrencia.anexos)||[]).forEach(a=>add(a&&a.url,a&&a.tipo,e.em));
         if(e.ocorrencia&&e.ocorrencia.url) add(e.ocorrencia.url,e.ocorrencia.tipo,e.em);
         (ctx.log[pid]||[]).forEach(l=>{ const d=l.detalhes||{}; if(d.url&&/ocorr|entrega|motorista/i.test(l.evento||"")) add(d.url,d.tipo,l.em); });
@@ -17178,8 +17181,8 @@ function _montarFicha(it,ctx){
     (log[pid]||[]).forEach(e=>{ const d=e.detalhes||{}; if(!d.url||vistas.has(d.url)) return; vistas.add(d.url);
       const nm=String(d.url).split("/").pop();
       midias.push({url:d.url,tipo:d.tipo||(/\.(mp4|mov|webm|3gp)$/i.test(d.url)?"video":"foto"),origem:/ocorr|entrega|motorista/i.test(e.evento||"")?"entrega":/confer/i.test(e.evento||"")?"conferencia":"outro",
-        em:e.em||null,por:e.funcionarioNome||"",thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
-    ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",thumb:null}); } });
+        em:e.em||null,por:e.funcionarioNome||"",existe:_comprovanteExiste(d.url),thumb:mini.has(nm+".jpg")?`/comprovantes/miniaturas/${nm}.jpg`:null}); });
+    ((reg&&reg.ocorrencia&&reg.ocorrencia.anexos)||[]).forEach(a=>{ if(a&&a.url&&!vistas.has(a.url)){ vistas.add(a.url); midias.push({url:a.url,tipo:a.tipo||"foto",origem:"entrega",em:reg.em||null,por:it.viagem?.motorista||"",existe:_comprovanteExiste(a.url),thumb:null}); } });
     const linha=(log[pid]||[]).filter(e=>!(e.detalhes&&e.detalhes.url)).map(e=>({em:e.em,texto:(typeof LOG_LABELS!=="undefined"&&LOG_LABELS[e.evento]&&LOG_LABELS[e.evento].txt)||_rotuloEvento(e.evento),por:e.funcionarioNome||""}));
     // separação e conferência (quem fez, quando, quanto tempo)
     const evs=log[pid]||[]; const ultimo=re=>{ for(let i=evs.length-1;i>=0;i--) if(re.test(evs[i].evento||"")) return evs[i]; return null; };

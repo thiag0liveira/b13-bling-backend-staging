@@ -939,7 +939,7 @@ async function verFilmagem(id, numero) {
     var html = c.map(function (x) {
       var url = B + (x.detalhes && x.detalhes.url ? x.detalhes.url : "");
       var ehVideo = /\.(mp4|mov|webm|3gp)$/i.test(url) || (x.detalhes && x.detalhes.tipo === "video");
-      return ehVideo ? '<video src="' + url + '" controls playsinline style="width:100%;border-radius:8px;margin-bottom:8px"></video>' : '<img src="' + url + '" style="width:100%;border-radius:8px;margin-bottom:8px">';
+      return ehVideo ? '<video src="' + url + '" controls playsinline onerror="videoSemArquivo(this)" style="width:100%;border-radius:8px;margin-bottom:8px"></video>' : '<img src="' + url + '" style="width:100%;border-radius:8px;margin-bottom:8px">';
     }).join("");
     document.getElementById("modais").innerHTML = '<div class="modalBg" onclick="if(event.target===this)fechar()"><div class="modal" style="max-width:520px;max-height:88vh;overflow:auto"><h3>🎥 Conferência do pedido ' + esc(numero) + '</h3>' + html + '<button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="fechar()">Fechar</button></div></div>';
   } catch (e) { alert("Erro ao buscar a filmagem: " + e.message); }
@@ -1023,6 +1023,15 @@ async function verDetalhe(id) {
   }).join("") + '</div>' : '') + ((alt.alterados || []).length ? '<div style="background:#2a2410;border:1px solid #6b5f1f;border-radius:8px;padding:8px">' + '<div style="color:#ffd23f;font-weight:800;font-size:12px;margin-bottom:4px">🔄 Quantidade alterada</div>' + alt.alterados.map(function (x) {
     return '<div style="font-size:12px;color:#ffe89a">• ' + esc(x) + '</div>';
   }).join("") + '</div>' : '') + '</div>' : '<div class="muted" style="border-top:1px solid #2a2660;margin-top:8px;padding-top:8px;font-size:12px">Nenhuma alteração neste pedido.</div>') + '<button class="btn btn-ghost" onclick="fechar()">Fechar</button></div></div>';
+}
+// vídeo da conferência que não abre: diz se o arquivo foi apagado pela limpeza automática ou se o aparelho não toca o formato
+function videoSemArquivo(v) {
+  var url = v.currentSrc || v.getAttribute("src") || "", box = document.createElement("div");
+  box.style.cssText = "padding:12px;border-radius:8px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:12.5px;line-height:1.45;margin-bottom:8px";
+  box.textContent = "Verificando o arquivo…"; v.parentNode.replaceChild(box, v);
+  fetch(url, { method: "HEAD", cache: "no-store" }).then(function (r) {
+    box.innerHTML = (r.status === 404 || r.status === 410) ? "🗑 <b>Este vídeo não existe mais no servidor.</b> O sistema apaga fotos e vídeos de conferência antigos e, quando o espaço aperta, os mais antigos primeiro." : r.ok ? "⚠️ <b>Este aparelho não conseguiu tocar o vídeo.</b> Tente em outro aparelho ou navegador (vídeos gravados no Android costumam ser .webm e alguns iPhones não abrem)." : "Não consegui carregar o vídeo (erro " + r.status + ").";
+  }).catch(function () { box.textContent = "Sem conexão com o servidor para carregar o vídeo."; });
 }
 function fechar() {
   document.getElementById("modais").innerHTML = "";

@@ -204,7 +204,7 @@ function abrirPedido(pid){
   const x = D.pedidos.find(p => p.pedidoId === pid); if (!x) return;
   const lin = (a, b) => `<div class="lin"><span>${a}</span><b>${b}</b></div>`;
   const midia = (m) => m.tipo === "video"
-    ? `<div><video src="${esc(m.url)}" controls preload="none" ${m.thumb ? `poster="${esc(m.thumb)}"` : ""}></video><small>🎥 ${m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro"} · ${hora(m.em)} · ${esc(m.por)}</small></div>`
+    ? `<div>${m.existe === false ? `<div style="padding:12px;border-radius:8px;background:#2a1020;border:1px solid #ff5f8a;color:#ffd0da;font-size:12px">🗑 <b>Vídeo apagado.</b> O sistema apaga arquivos antigos (e os mais antigos primeiro quando falta espaço).</div>` : `<video src="${esc(m.url)}" controls preload="none" onerror="window.B13Ficha&&B13Ficha._erroVideo(this)" ${m.thumb ? `poster="${esc(m.thumb)}"` : ""}></video>`}<small>🎥 ${m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro"} · ${hora(m.em)} · ${esc(m.por)}</small></div>`
     : `<a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.thumb || m.url)}" loading="lazy"><small>📷 ${m.origem === "entrega" ? "entrega/ocorrência" : m.origem === "conferencia" ? "conferência" : "outro"} · ${hora(m.em)} · ${esc(m.por)}</small></a>`;
   const conf = x.midias.filter(m => m.origem === "conferencia"), ent = x.midias.filter(m => m.origem !== "conferencia");
   document.getElementById("mPedCorpo").innerHTML = `
