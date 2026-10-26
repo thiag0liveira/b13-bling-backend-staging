@@ -12152,6 +12152,45 @@ const ENTRADA_FIN_FILE=`${DATA_DIR}/entrada_nota_financeiro.json`;
 function _finNota(n){ try{ const f=lerJSON(ENTRADA_FIN_FILE,{})[String(n&&n.id)]; if(f) return f; }catch(e){}
   return n&&n.entrada&&n.entrada.soBoletos?{em:n.entrada.em,por:n.entrada.por||"",contas:n.entrada.contas||[]}:null; } // compatível com o que já foi marcado antes
 function _marcarFinNota(n,info){ const d=lerJSON(ENTRADA_FIN_FILE,{}); d[String(n.id)]=info; salvarJSON(ENTRADA_FIN_FILE,d); }
+// ===================== ITENS DA NOTA (cópia fixa de produtos e quantidades) =====================
+// Toda vez que uma nota recebe entrada (com estoque, SEM estoque ou só boletos) o sistema grava uma cópia dos itens e das quantidades da nota.
+// Assim dá para consultar depois a que se refere aquela nota, mesmo que ela não tenha entrado no estoque.
+const ENTRADA_NOTAS_ITENS_FILE=`${DATA_DIR}/entrada_nota_itens.json`;
+function _dataNota(v){ if(!v) return ""; if(typeof v==="number"||/^\d{9,13}$/.test(String(v))){ const n=Number(v), ms=n>1e12?n:n*1000; return new Date(ms-3*3600e3).toISOString().slice(0,10); } return String(v).slice(0,10); }
+function _gravarItensNota(n,modo,quem,extra){ try{ extra=extra||{}; const D=lerJSON(ENTRADA_NOTAS_ITENS_FILE,{}), P=lerProdutosBling().porId, id=String(n.id), ant=D[id]||null, T=n.totais||{}, lanc=extra.lancados||{}, ign=new Set((extra.ignorados||[]).map(Number));
+  const itens=(n.itens||[]).map(x=>{ const o=ant&&Array.isArray(ant.itens)?ant.itens.find(y=>Number(y.nItem)===Number(x.nItem)):null, pid=x.produtoId||null;
+    return {nItem:x.nItem,cProd:x.cProd||"",xProd:x.xProd||"",cEAN:x.cEAN||"",uCom:x.uCom||"",qCom:Number(x.qCom)||0,vUnCom:Number(x.vUnCom)||(Number(x.qCom)>0?_round2((Number(x.vProd)||0)/Number(x.qCom)):0),vProd:_round2(Number(x.vProd)||0),vDesc:_round2(Number(x.vDesc)||0),
+      qtdUn:Number(x.qtdUn)||0,fator:Number(x.fator)||0,produtoId:pid,produtoNome:x.produtoNome||(pid&&P[String(pid)]?P[String(pid)].n:""),frete:x.status==="frete",ignorado:ign.has(Number(x.nItem))||!!(o&&o.ignorado),
+      lancouEstoque:!!(lanc[String(x.nItem)]||(o&&o.lancouEstoque))}; });
+  const reg={id,chave:n.chave||"",numero:n.numero||"",serie:n.serie||"",emissao:_dataNota(n.emissao),semNota:!!n.semNota,fornecedor:(n.emitente&&n.emitente.nome)||"",cnpj:(n.emitente&&n.emitente.cnpj)||"",vNF:_round2(Number(T.vNF||n.vNF)||0),itens,
+    ultimoModo:modo,historico:((ant&&ant.historico)||[]).concat([{modo,em:Date.now(),por:quem||""}]).slice(-20),criadoEm:(ant&&ant.criadoEm)||Date.now(),retroativo:false,...(extra.produtosJaEntraram?{produtosJaEntraram:true}:{}),...(extra.produtosMode?{pelaTelaDeProdutos:true}:{})};
+  D[id]=reg; salvarJSON(ENTRADA_NOTAS_ITENS_FILE,D); return reg; }catch(e){ console.log("[notas-itens] erro:",e.message); return null; } }
+// preenche o histórico com as notas que já tinham recebido entrada antes desta cópia existir (usa os itens guardados no módulo fiscal)
+function _backfillItensNotas(){ try{ const D=lerJSON(ENTRADA_NOTAS_ITENS_FILE,{}), NF=lerJSON(`${DATA_DIR}/fiscal_notas.json`,{}), SN=lerJSON(SEMNOTA_FILE,{}), LI=lerJSON(ENTRADA_ITENS_FILE,{}), P=lerProdutosBling().porId; let novos=0;
+  const todas=Object.values(NF).concat(Object.values(SN)); for(const n of todas){ if(!n||!n.id||!(n.entrada&&n.entrada.em)||D[String(n.id)]) continue; const e=n.entrada, modo=e.semEstoque?"sem_estoque":(e.soBoletos||e.jaNoBling)?"so_boletos":"estoque", T=n.totais||{}, jl=LI[String(n.id)]||{};
+    D[String(n.id)]={id:String(n.id),chave:n.chave||"",numero:n.numero||"",serie:n.serie||"",emissao:_dataNota(n.emissao),semNota:!!n.semNota,fornecedor:(n.emitente&&n.emitente.nome)||"",cnpj:(n.emitente&&n.emitente.cnpj)||"",vNF:_round2(Number(T.vNF||n.vNF)||0),
+      itens:(n.itens||[]).map(x=>({nItem:x.nItem,cProd:x.cProd||"",xProd:x.xProd||"",cEAN:x.cEAN||"",uCom:x.uCom||"",qCom:Number(x.qCom)||0,vUnCom:Number(x.vUnCom)||(Number(x.qCom)>0?_round2((Number(x.vProd)||0)/Number(x.qCom)):0),vProd:_round2(Number(x.vProd)||0),vDesc:_round2(Number(x.vDesc)||0),qtdUn:Number(x.qtdUn)||0,fator:Number(x.fator)||0,produtoId:x.produtoId||null,
+        produtoNome:x.produtoNome||(x.produtoId&&P[String(x.produtoId)]?P[String(x.produtoId)].n:""),frete:x.status==="frete",ignorado:false,lancouEstoque:!!jl[x.nItem]})),
+      ultimoModo:modo,historico:[{modo,em:e.em,por:e.por||""}],criadoEm:e.em||Date.now(),retroativo:true}; novos++; }
+  if(novos){ salvarJSON(ENTRADA_NOTAS_ITENS_FILE,D); console.log("[notas-itens] histórico preenchido com",novos,"nota(s) que já tinham entrada"); } }catch(e){ console.log("[notas-itens] backfill:",e.message); } }
+setTimeout(_backfillItensNotas,30000);
+const _verNotas=requireAcessoAlgum(["acesso_entrada_nota","acesso_contas_pagar","acesso_produtos_gestao","acesso_custos"],"Sem permissão para ver as notas");
+const _MODO_NOTA={estoque:"entrou no estoque",estoque_parcial:"entrada parcial no estoque",sem_estoque:"registrada sem entrada no estoque",so_boletos:"só os boletos foram lançados"};
+// uma nota: por id, chave ou número (com parte do nome do fornecedor); se não houver cópia, mostra os itens lidos da nota
+app.get("/api/entrada-nota/itens",_verNotas,(req,res)=>{ try{ const D=lerJSON(ENTRADA_NOTAS_ITENS_FILE,{}), q=req.query, id=String(q.id||""), ch=String(q.chave||"").replace(/\D/g,""), num=String(q.numero||"").trim(), forn=_nrmF(q.fornecedor||"");
+  let r=(id&&D[id])||(ch.length===44&&Object.values(D).find(x=>x.chave===ch))||(num&&Object.values(D).find(x=>String(x.numero)===num&&(!forn||_nrmF(x.fornecedor).includes(forn)||forn.includes(_nrmF(x.fornecedor)))))||null, aviso="";
+  if(!r){ const n=(id&&_notaEntrada(id))||(ch.length===44&&_FISCAL&&_FISCAL.nota(ch))||null; if(n){ const P=lerProdutosBling().porId; r={id:String(n.id),chave:n.chave||"",numero:n.numero||"",serie:n.serie||"",emissao:_dataNota(n.emissao),semNota:!!n.semNota,fornecedor:(n.emitente&&n.emitente.nome)||"",cnpj:(n.emitente&&n.emitente.cnpj)||"",vNF:_round2(Number((n.totais&&n.totais.vNF)||n.vNF)||0),
+      itens:(n.itens||[]).map(x=>({nItem:x.nItem,cProd:x.cProd||"",xProd:x.xProd||"",cEAN:x.cEAN||"",uCom:x.uCom||"",qCom:Number(x.qCom)||0,vUnCom:Number(x.vUnCom)||0,vProd:_round2(Number(x.vProd)||0),vDesc:_round2(Number(x.vDesc)||0),qtdUn:Number(x.qtdUn)||0,produtoId:x.produtoId||null,produtoNome:x.produtoNome||(x.produtoId&&P[String(x.produtoId)]?P[String(x.produtoId)].n:""),frete:x.status==="frete",lancouEstoque:false})),ultimoModo:"",historico:[]}; aviso="Esta nota ainda não recebeu entrada. Os itens abaixo são os lidos da própria nota."; } }
+  if(!r) return res.status(404).json({erro:"não encontrei os itens desta nota. Se ela foi lançada antes de existir este registro e não está mais no sistema, abra a nota pela Entrada de Nota."});
+  const ult=(r.historico||[])[(r.historico||[]).length-1]||null;
+  res.json({ok:true,aviso,registro:{...r,modoTexto:_MODO_NOTA[r.ultimoModo]||"",ultimo:ult,totalItens:r.itens.length,totalQtd:_round2(r.itens.filter(x=>!x.frete).reduce((a,x)=>a+(x.qCom||0),0))}}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// lista das notas registradas, com busca por fornecedor, número, chave ou PRODUTO ("em que notas entrou a Heineken?")
+app.get("/api/entrada-nota/registradas",_verNotas,(req,res)=>{ try{ const D=lerJSON(ENTRADA_NOTAS_ITENS_FILE,{}), termos=_nrmF(req.query.q||"").split(" ").filter(Boolean), modo=String(req.query.modo||"");
+  let L=Object.values(D).map(r=>{ const ult=(r.historico||[])[(r.historico||[]).length-1]||{}; const txt=_nrmF([r.fornecedor,r.numero,r.chave].join(" ")), achados=termos.length?r.itens.filter(x=>{ const t=_nrmF([x.xProd,x.produtoNome,x.cProd,x.cEAN].join(" ")); return termos.every(w=>t.includes(w)||txt.includes(w)); }):[];
+    const bateNota=termos.length&&termos.every(w=>txt.includes(w)); return {r,ult,achados,ok:!termos.length||bateNota||achados.length>0}; }).filter(x=>x.ok&&(!modo||x.r.ultimoModo===modo));
+  L.sort((a,b)=>(b.ult.em||b.r.criadoEm||0)-(a.ult.em||a.r.criadoEm||0));
+  res.json({ok:true,total:L.length,notas:L.slice(0,200).map(({r,ult,achados})=>({id:r.id,chave:r.chave,numero:r.numero,serie:r.serie,emissao:r.emissao,fornecedor:r.fornecedor,vNF:r.vNF,semNota:r.semNota,modo:r.ultimoModo,modoTexto:_MODO_NOTA[r.ultimoModo]||"",em:ult.em||r.criadoEm||0,por:ult.por||"",retroativo:!!r.retroativo,
+      totalItens:r.itens.length,totalQtd:_round2(r.itens.filter(x=>!x.frete).reduce((a,x)=>a+(x.qCom||0),0)),achados:achados.slice(0,6).map(x=>({xProd:x.xProd,qCom:x.qCom,uCom:x.uCom,produtoNome:x.produtoNome}))}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // IMAGEM LIDA + DIA DE PAGAMENTO EDITÁVEL
 const ENTRADA_ANEXOS_DIR=`${DATA_DIR}/entrada_anexos`, ENTRADA_ANEXOS_IDX=`${DATA_DIR}/entrada_nota_anexos.json`, ENTRADA_VENC_FILE=`${DATA_DIR}/entrada_nota_vencimentos.json`;
 const _EXT_ANEXO={"image/jpeg":"jpg","image/png":"png","image/webp":"webp","application/pdf":"pdf","text/xml":"xml","application/xml":"xml"};
@@ -12493,6 +12532,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       if(n.entrada&&n.entrada.em) return res.status(409).json({erro:`Essa nota já foi registrada em ${new Date(n.entrada.em-3*3600e3).toISOString().slice(0,16).replace("T"," ")} por ${n.entrada.por||"—"}.`});
       const quem=req.sessao?.nome||"";
       _marcarEntradaNota(n,{em:Date.now(),por:quem,itensLancados:0,falhas:0,semEstoque:true});
+      _gravarItensNota(n,"sem_estoque",quem);
       addLog("nota-"+(n.chave||n.id),"entrada_nota_sem_estoque",req.sessao?.funcionarioId||"",quem,{numero:n.numero,fornecedor:n.emitente?.nome});
       return res.json({ok:true,semEstoque:true,lancados:0,falhas:[],contas:[]});
     }
@@ -12517,6 +12557,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       salvarJSON(CONTAS_PAGAR_FILE,C);
       // um boleto que paga várias notas: todas ficam marcadas (assim nenhuma cria contas de novo pelas próprias duplicatas)
       grupoNotas.forEach(g=>_marcarFinNota(g,{em:Date.now(),por:quem,contas:tit.map(t=>t.id),...(grupoNotas.length>1?{juntas:grupoNotas.map(x=>String(x.id))}:{})}));
+      grupoNotas.forEach(g=>_gravarItensNota(g,"so_boletos",quem,{produtosJaEntraram:!!b.produtosJaEntraram}));
       // produtos que já entraram no Bling por fora: tira a nota dos avisos de "sem entrada" e impede lançar o estoque em duplicidade
       if(b.produtosJaEntraram) grupoNotas.forEach(g=>{ if(!(g.entrada&&g.entrada.em)) _marcarEntradaNota(g,{em:Date.now(),por:quem,itensLancados:0,falhas:0,jaNoBling:true}); });
       addLog("nota-"+(n.chave||n.id),"entrada_nota_so_boletos",req.sessao?.funcionarioId||"",quem,{numero:n.numero,fornecedor:n.emitente?.nome,boletos:tit.length,valor:_round2(tit.reduce((s,t)=>s+t.valor,0)),pago:!!pg.pago});
@@ -12548,6 +12589,7 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
       lanc.push({...x,ok:true,antes:a0!=null?a0:undefined,depois:d0!=null?d0:undefined}); }
     try{ salvarJSON(ENTRADA_ITENS_FILE,LI); salvarJSON(PRODUTOS_BLING_FILE,P); _metProdCache.clear(); }catch(e){}
     const okN=lanc.filter(x=>x.ok).length, falhas=lanc.filter(x=>!x.ok), novos=lanc.filter(x=>x.ok&&!x.jaLancado);
+    _gravarItensNota(n,falhas.length?"estoque_parcial":"estoque",quem,{lancados:Object.fromEntries(lanc.filter(x=>x.ok).map(x=>[String(x.nItem),true])),ignorados:[...ign],produtosMode:!!req.produtosMode});
     const conferencia=novos.filter(x=>x.antes!=null&&x.depois!=null).map(x=>({nome:x.produtoNome||x.xProd,antes:x.antes,depois:x.depois}));
     // NÃO marca a nota como "já deu entrada" se algum item ficou de fora: assim dá para tentar de novo só o que faltou
     if(falhas.length){
