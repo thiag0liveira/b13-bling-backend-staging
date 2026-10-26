@@ -172,6 +172,10 @@ document.addEventListener("DOMContentLoaded",function(){
     <div class="muted" style="margin-bottom:6px">Selecione os produtos pra gerar etiquetas (mostra Atacado, Fardo e Varejo)</div>
     <div id="categorias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <button class="btn btn-ghost" id="btnTodosBling" onclick="carregarTodosBling()" style="border-color:#ffd23f;color:#ffd23f">📦 Trazer todos os produtos do Bling</button>
+      <span class="muted" id="infoBling"></span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <button class="btn" id="btnSelTodos" onclick="selecionarTodos()">✅ Selecionar todos</button>
       <button class="btn btn-ghost" onclick="limparSelecao()">⬜ Limpar seleção</button>
       <span class="muted" id="contSel"></span>
@@ -217,6 +221,7 @@ async function carregar() {
   } catch (e) {
     TODOS = [];
   }
+  if (BLING_ITENS) { mesclarBling(); return; }
   renderCategorias();
   renderLista();
 }
@@ -316,6 +321,47 @@ async function adicionarAvulsoBling(p) {
     alert("Erro ao adicionar produto.");
   }
 }
+
+// ===== todos os produtos do Bling =====
+let BLING_ITENS = null;
+async function carregarTodosBling() {
+  const btn = document.getElementById("btnTodosBling"), info = document.getElementById("infoBling");
+  btn.disabled = true; info.textContent = "Buscando os produtos…";
+  try {
+    const s = (typeof b13GetSession === "function" && b13GetSession()) || {};
+    const j = await fetch(BACKEND + "/api/etiquetas/produtos-bling", { headers: { "X-Auth-Token": s.token || "" } }).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    BLING_ITENS = j;
+    const antes = TODOS.length; mesclarBling();
+    info.innerHTML = `✅ <b style="color:#fff">${TODOS.length - antes}</b> produto(s) do Bling somados à lista (${TODOS.length} no total). ${j.semPreco ? j.semPreco + " sem preço de varejo ficaram de fora. " : ""}O preço vem do cadastro do sistema; use "🔃 Atualizar produtos varejo" se mudou agora há pouco.`;
+    btn.textContent = "📦 Atualizar a lista do Bling";
+  } catch (e) { info.textContent = "Não consegui trazer os produtos: " + e.message; }
+  btn.disabled = false;
+}
+// soma os produtos do Bling (que ainda não estão na lista) como itens só de varejo
+function mesclarBling() {
+  if (!BLING_ITENS) return;
+  const tem = new Set(TODOS.map(i => i.itemId));
+  BLING_ITENS.itens.forEach(p => {
+    if (tem.has(p.itemId)) return;
+    tem.add(p.itemId);
+    TODOS.push({ itemId: p.itemId, categoriaNome: p.categoriaNome, itemNome: p.nome + (p.codigo ? " (" + p.codigo + ")" : ""), precoAtacado: null, precoFardo: null, precoVarejo: p.preco, doBling: true });
+  });
+  TODOS.sort((a, b) => a.itemNome.localeCompare(b.itemNome, "pt-BR"));
+  renderCategorias();
+  renderLista();
+}
+// busca os dados das etiquetas em lotes (a lista inteira numa chamada só estoura o limite do endereço e demora)
+async function buscarEtiquetas(ids) {
+  const folha = document.getElementById("folhaEtiquetas"), LOTE = 40, rapido = ids.length > LOTE, saida = [];
+  for (let i = 0; i < ids.length; i += LOTE) {
+    if (rapido) folha.innerHTML = `<div class="muted noprint">Gerando… ${Math.min(i + LOTE, ids.length)} de ${ids.length}</div>`;
+    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + ids.slice(i, i + LOTE).join(",") + (rapido ? "&rapido=1" : "")).then(r => r.json());
+    if (j.erro) throw new Error(j.erro);
+    (j.data || []).forEach(x => saida.push(x));
+  }
+  return { data: saida };
+}
 function categoriasUnicas() {
   return [...new Set(TODOS.map(i => i.categoriaNome || "(sem categoria)"))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
@@ -354,7 +400,7 @@ function renderLista() {
     <label class="linha">
       <input type="checkbox" ${SELECIONADOS.has(i.itemId) ? "checked" : ""} onchange="toggleSel('${i.itemId}',this.checked)">
       <span style="flex:1">${esc(i.itemNome)}</span>
-      <span class="muted">Atacado ${brl(i.precoAtacado)}${i.precoFardo != null ? " · Fardo " + brl(i.precoFardo) : ""}</span>
+      <span class="muted">${i.precoAtacado != null ? "Atacado " + brl(i.precoAtacado) : (i.precoVarejo != null ? "Varejo " + brl(i.precoVarejo) : "só varejo")}${i.precoFardo != null ? " · Fardo " + brl(i.precoFardo) : ""}</span>
     </label>`).join("");
   atualizarContSel();
 }
@@ -405,7 +451,7 @@ async function gerarEtiquetas() {
   folha.className = "folha";
   folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
-    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    const j = await buscarEtiquetas([...SELECIONADOS]);
     folha.innerHTML = (j.data || []).map(it => {
       if (it.erro) return "";
       const temFardo = it.precoFardo != null;
@@ -513,7 +559,7 @@ async function gerarEtiquetasModelo2() {
   folha.className = "folha modelo2";
   folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
-    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    const j = await buscarEtiquetas([...SELECIONADOS]);
     folha.innerHTML = (j.data || []).map(montarEtq2).join("");
     document.getElementById("btnImprimir").style.display = "inline-block";
   } catch (e) {
@@ -531,7 +577,7 @@ async function gerarEtiquetasModelo3() {
   folha.className = "folha modelo3";
   folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
-    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    const j = await buscarEtiquetas([...SELECIONADOS]);
     folha.innerHTML = (j.data || []).map(montarEtq2).join("");
     document.getElementById("btnImprimir").style.display = "inline-block";
   } catch (e) {
@@ -552,7 +598,7 @@ async function gerarVaral() {
   if (!SELECIONADOS.size) { alert("Selecione ao menos um produto."); return; }
   const folha = document.getElementById("folhaEtiquetas"); folha.className = "folha modelo3 varal3"; folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
-    const j = await fetch(BACKEND + "/api/etiquetas?itens=" + [...SELECIONADOS].join(",")).then(r => r.json());
+    const j = await buscarEtiquetas([...SELECIONADOS]);
     folha.innerHTML = (j.data || []).filter(it => !it.erro).map(it => `<div class="varalPag"><div class="varalTopo">prender aqui</div>${montarEtq2(it)}</div>`).join("");
     document.getElementById("btnImprimir").style.display = "inline-block";
   } catch (e) { folha.innerHTML = `<div class="muted">Erro ao gerar as folhas do varal.</div>`; }

@@ -7385,6 +7385,15 @@ app.put("/api/lista-fardo/:itemId",(req,res)=>{
   res.json({ok:true});
 });
 
+// Etiquetas: todos os produtos ATIVOS do Bling (cadastro em cache), com preço de varejo. Produtos que já estão na Tabela Atacado usam o item dela (assim a etiqueta traz atacado e fardo);
+// os demais entram como "avulso_<id>" (só varejo). Produtos sem preço de varejo ficam de fora.
+app.get("/api/etiquetas/produtos-bling",requireAcessoAlgum(["acesso_etiquetas","editar_pedido"],"Sem permissão para as etiquetas"),(req,res)=>{ try{
+  const P=lerProdutosBling().porId, CT=_fotoCategorias(), tab=lerTabela(), porProd={};
+  (tab&&tab.model||[]).forEach(cat=>(cat.itens||[]).forEach(it=>(it.bling||[]).forEach(b=>{ if(b&&b.id!=null) porProd[String(b.id)]=it.id; })));
+  let semPreco=0, inativos=0; const itens=[];
+  Object.entries(P).forEach(([id,x])=>{ if(!x||!x.n) return; if(x.s&&x.s!=="A"){ inativos++; return; } const preco=Number(x.p)||0; if(!(preco>0)){ semPreco++; return; }
+    itens.push({itemId:porProd[id]||("avulso_"+id),produtoId:id,nome:x.n,codigo:x.c||"",categoriaNome:CT[id]||"(sem categoria)",preco,naTabela:!!porProd[id]}); });
+  itens.sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR")); res.json({ok:true,total:itens.length,semPreco,inativos,atualizadoEm:lerProdutosBling().em||0,itens}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // etiqueta de preço: pra cada item pedido, traz Atacado + Fardo + Varejo (preço ao vivo do Bling)
 // DIAGNÓSTICO da etiqueta de um item — mostra exatamente de onde vem cada dado, pra
 // achar por que um preço saiu errado (nome batendo com outro produto, vinculo errado
@@ -7490,7 +7499,10 @@ app.get("/api/diag/etiqueta/:id",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+// produto do Bling que ainda não foi salvo como avulso: monta o item na hora a partir do cadastro em cache
+function _avulsoVirtualEtq(id){ const m=/^avulso_(\d+)$/.exec(String(id)); if(!m) return null; const x=lerProdutosBling().porId[m[1]]; return x&&x.n?{nome:x.n,produtoId:m[1],origem:"avulso",categoriaNome:"(avulso)",preco:null}:null; }
 app.get("/api/etiquetas",async(req,res)=>{
+  const rapido=req.query.rapido==="1";
   const ids=String(req.query.itens||"").split(",").map(s=>s.trim()).filter(Boolean);
   if(!ids.length) return res.status(400).json({erro:"informe ?itens=id1,id2,..."});
   const tab=lerTabela();
@@ -7500,7 +7512,7 @@ app.get("/api/etiquetas",async(req,res)=>{
 
   const resultado=[];
   for(const id of ids){
-    const avulso=fardo[id]?.origem==="avulso"?fardo[id]:null;
+    const avulso=(fardo[id]?.origem==="avulso"?fardo[id]:null)||_avulsoVirtualEtq(id);
     let it=itensPorId[id];
 
     // se é avulso (buscado direto no Bling), verifica se esse mesmo produto do Bling
@@ -7517,7 +7529,9 @@ app.get("/api/etiquetas",async(req,res)=>{
     let precoVarejo=null, nomeCompleto="", imagem="";
     const produtoIdParaBusca=avulso?avulso.produtoId:(it.bling||[])[0]?.id;
     if(produtoIdParaBusca){
-      try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); nomeCompleto=r?.data?.nome||""; imagem=r?.data?.imagemURL||(r?.data?.midia?.imagens?.externas||[])[0]?.link||""; }catch(e){}
+      const cx=rapido?lerProdutosBling().porId[String(produtoIdParaBusca)]:null; // lote grande: preço do cadastro em cache (evita centenas de chamadas ao Bling)
+      if(cx&&Number(cx.p)>0){ precoVarejo=+cx.p; nomeCompleto=cx.n||""; imagem=cx.img||""; }
+      else try{ const r=await bling(`/produtos/${produtoIdParaBusca}`); precoVarejo=+(r?.data?.preco||0); nomeCompleto=r?.data?.nome||""; imagem=r?.data?.imagemURL||(r?.data?.midia?.imagens?.externas||[])[0]?.link||""; }catch(e){}
       if(!imagem||!nomeCompleto){ try{ const c=(_catalogoPreco().itens||[]).find(x=>String(x.id)===String(produtoIdParaBusca)); if(c){ imagem=imagem||c.i||""; nomeCompleto=nomeCompleto||c.n||""; } }catch(e){} }
     }
 
@@ -7530,7 +7544,7 @@ app.get("/api/etiquetas",async(req,res)=>{
     resultado.push({
       itemId:id,
       nome: (fonteAtacado?fonteAtacado.nome:null) || (avulso?avulso.nome:null) || (it?it.nome:""),
-      categoriaNome: fonteAtacado?fonteAtacado.categoriaNome:(avulso?"(avulso)":it.categoriaNome),
+      categoriaNome: fonteAtacado?fonteAtacado.categoriaNome:(avulso?(_fotoCategorias()[String(avulso.produtoId)]||""):it.categoriaNome),
       precoAtacado: fonteAtacado?(fonteAtacado.preco??null):null,
       precoFardo,
       caixaQtd: fonteAtacado?(fonteAtacado.caixa||null):null,
