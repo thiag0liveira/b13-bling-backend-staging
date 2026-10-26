@@ -225,7 +225,7 @@ const dataBR = s => s ? s.split("-").reverse().join("/") : "";
 const fmtDoc = d => { d=String(d||""); return d.length===14?d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,"$1.$2.$3/$4-$5"):d; };
 const fmtTel = d => { d=String(d||"").replace(/\D/g,"").replace(/^55(?=\d{10,11}$)/,""); return d.length===11?d.replace(/(\d{2})(\d{5})(\d{4})/,"($1) $2-$3"):d.length===10?d.replace(/(\d{2})(\d{4})(\d{4})/,"($1) $2-$3"):d; };
 const SESS=(()=>{ try{ return (typeof b13GetSession==="function"&&b13GetSession())||{}; }catch(e){ return {}; } })();
-const EH_ADMIN=SESS.nivel==="admin"||(SESS.permissoes||[]).includes("admin");
+const EH_ADMIN=SESS.nivel==="admin"||(SESS.permissoes||[]).includes("admin")||(SESS.permissoes||[]).includes("gestao");
 let ABA="afazer", LINKS=[], FRASES=[], SUG=[], PREVIA=null, FILTRO_FRASE="todas";
 let ELEG=[], SYNC=null, FAIXA=3000, CLIENTES=[], FILTRO_ELEG="todos", _pollSync=null, BUSCA="", REL=null, RESUMO=null;
 let SO_MEUS=false; try{ SO_MEUS=localStorage.getItem("concurso_so_meus")==="1"; }catch(e){}

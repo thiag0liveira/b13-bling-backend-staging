@@ -39,6 +39,7 @@
   .muted{color:#9a95c9;font-size:13px}
   .login-wrap{max-width:380px;margin:12vh auto;text-align:center}
   .login-wrap input{width:100%;padding:13px;border-radius:10px;border:2px solid #514c96;background:var(--card);color:#fff;font-size:16px;margin-bottom:10px}
+.badge-gestao{background:#16384a;color:#7fe0ff}
 </style>
 <script src="/nav.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -77,6 +78,7 @@
 const LOGO = "/logo";
 const NIVEIS = {
   admin: "Admin",
+  gestao: "Gestão",
   gerente: "Gerente",
   lider_caixa: "Líder de Caixa",
   expedicao: "Expedição",
@@ -84,7 +86,7 @@ const NIVEIS = {
   vendedor: "Vendedor",
   conferente: "Conferente"
 };
-const GRUPOS_AUTORIZAM_PDV = ["admin", "gerente", "lider_caixa"]; // grupos que conseguem autorizar ações no Frente de Caixa
+const GRUPOS_AUTORIZAM_PDV = ["admin", "gestao", "gerente", "lider_caixa"]; // grupos que conseguem autorizar ações no Frente de Caixa
 let logado = false,
   funcs = [],
   msg = "";
@@ -120,11 +122,12 @@ function render() {
     return;
   }
   const cards = funcs.length ? funcs.map(f => {
-    const temQr = (GRUPOS_AUTORIZAM_PDV.includes(f.nivel) || (f.permissoes || []).some(p => GRUPOS_AUTORIZAM_PDV.includes(p))) && f.ativo;
+    const gest = f.nivel === "gestao" || (f.permissoes || []).includes("gestao"), qrRetirado = gest && !(f.permissoes || []).includes("admin") && (f.negados || []).includes("qr_liberar");
+    const temQr = (GRUPOS_AUTORIZAM_PDV.includes(f.nivel) || (f.permissoes || []).some(p => GRUPOS_AUTORIZAM_PDV.includes(p))) && f.ativo && !qrRetirado;
     const nomeClicavel = temQr ? `<span onclick="mostrarQrCaixa('${f.id}','${esc(f.nome).replace(/'/g, "")}')" style="cursor:pointer;text-decoration:underline dotted #00bc98;text-underline-offset:3px" title="Toque pra ver o QR do caixa">${esc(f.nome)}</span>` : esc(f.nome);
     return `
     <div class="card ${!f.ativo ? 'inativo' : ''}">
-      <div style="font-size:28px">${f.nivel === 'admin' ? '👑' : f.nivel === 'gerente' ? '🧑‍💼' : '🔧'}</div>
+      <div style="font-size:28px">${f.nivel === 'admin' ? '👑' : f.nivel === 'gestao' ? '🧭' : f.nivel === 'gerente' ? '🧑‍💼' : '🔧'}</div>
       <div class="info">
         <div class="nome">${nomeClicavel} <span class="badge badge-${f.nivel}">${esc(NIVEIS[f.nivel] || f.nivel)}</span>
           ${!f.ativo ? '<span class="badge" style="background:#3a2030;color:#ff9db0">Inativo</span>' : ''}
@@ -183,8 +186,11 @@ function acaoPropriaDe(tab) {
 }
 // exibição do checkbox: olha SÓ a ação própria da aba (nunca as compartilhadas),
 // pra marcar/desmarcar uma aba não afetar as outras.
+let NEGADOS_ATUAL = [];
+const ehGestaoAtual = () => PERMS_ATUAL.includes("gestao") && !PERMS_ATUAL.includes("admin");
 function abaLiberada(tab) {
   if (PERMS_ATUAL.includes("admin")) return true;
+  if (ehGestaoAtual()) return !NEGADOS_ATUAL.includes(acaoPropriaDe(tab)); // Gestão: tem tudo, menos o que foi retirado
   return PERMS_ATUAL.includes(acaoPropriaDe(tab));
 }
 // "normaliza" as permissões: converte o acesso que o funcionário TINHA (por nível
@@ -197,7 +203,7 @@ function abaLiberada(tab) {
 // não entram aqui de propósito: tela nova nasce sem acesso pra todos, só admin vê,
 // e você libera manualmente pra quem precisar.
 function normalizarPermsParaAbas() {
-  if (PERMS_ATUAL.includes("admin")) return;
+  if (PERMS_ATUAL.includes("admin") || PERMS_ATUAL.includes("gestao")) return;
   if (typeof b13PodeComPermissoes !== "function") return;
   (window.B13_NAV_LINKS || []).forEach(tab => {
     const propria = acaoPropriaDe(tab);
@@ -208,13 +214,17 @@ function normalizarPermsParaAbas() {
 }
 
 // bloco: uma linha por aba do menu lateral (igual o menu de verdade), com toggle de acesso
-function htmlPermsBlock(checked) {
+function htmlPermsBlock(checked, negados) {
   PERMS_ATUAL = (checked || []).slice();
+  NEGADOS_ATUAL = (negados || []).slice();
   normalizarPermsParaAbas(); // converte acessos por nível/capacidade em ações próprias das abas
   return `<div class="lbl">Acesso às abas do sistema</div>
     <div id="fPerms" style="background:#0f0d24;border:1px solid #514c96;border-radius:9px;padding:10px;margin-bottom:10px">
       <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #201d47;font-size:13px;font-weight:800">
-        <input type="checkbox" id="fAdmin" ${PERMS_ATUAL.includes("admin") ? "checked" : ""} onclick="toggleAdmin()"> Admin — acesso total a tudo
+        <input type="checkbox" id="fAdmin" ${PERMS_ATUAL.includes("admin") ? "checked" : ""} onclick="toggleAdmin()"> Admin — acesso total a tudo (não dá para retirar nada)
+      </label>
+      <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #201d47;font-size:13px;font-weight:800;color:#7fe0ff">
+        <input type="checkbox" id="fGestao" ${ehGestaoAtual() ? "checked" : ""} ${PERMS_ATUAL.includes("admin") ? "disabled" : ""} onclick="toggleGestao()"> Gestão — acesso total como o admin, mas dá para retirar abas e o QR
       </label>
       <div id="fAbasLista"></div>
     </div>
@@ -223,8 +233,9 @@ function htmlPermsBlock(checked) {
 function renderAbasLista() {
   const box = document.getElementById("fAbasLista");
   if (!box) return;
-  const isAdmin = PERMS_ATUAL.includes("admin");
-  box.innerHTML = (window.B13_NAV_LINKS || []).map(l => {
+  const isAdmin = PERMS_ATUAL.includes("admin"), gest = ehGestaoAtual();
+  const linhaQr = gest ? `<label style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #201d47;font-size:13px"><span>📱 <b>QR do caixa</b> libera ações (Frente de Caixa e Caixa Atacado)</span><span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;color:${NEGADOS_ATUAL.includes("qr_liberar") ? '#ff8090' : '#3ce88a'}">${NEGADOS_ATUAL.includes("qr_liberar") ? '🚫 Retirado' : '✅ Libera'}</span><input type="checkbox" ${NEGADOS_ATUAL.includes("qr_liberar") ? "" : "checked"} onclick="toggleQr()"></span></label>` : "";
+  box.innerHTML = linhaQr + (window.B13_NAV_LINKS || []).map(l => {
     const liberado = abaLiberada(l);
     return `<label style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #201d47;font-size:13px;${isAdmin ? 'opacity:.6' : ''}">
       <span><code style="background:#1c1846;padding:1px 5px;border-radius:4px;margin-right:6px">${esc(l.href)}</code>${esc(l.label)}</span>
@@ -235,7 +246,19 @@ function renderAbasLista() {
     </label>`;
   }).join("");
 }
+function toggleGestao() {
+  const marcado = document.getElementById("fGestao").checked;
+  if (marcado) { PERMS_ATUAL = ["gestao"]; NEGADOS_ATUAL = []; const n = document.getElementById("fNivel"); if (n) n.value = "gestao"; }
+  else { PERMS_ATUAL = []; NEGADOS_ATUAL = []; }
+  renderAbasLista();
+}
+function toggleQr() {
+  if (NEGADOS_ATUAL.includes("qr_liberar")) NEGADOS_ATUAL = NEGADOS_ATUAL.filter(x => x !== "qr_liberar"); else NEGADOS_ATUAL.push("qr_liberar");
+  renderAbasLista();
+}
 function toggleAdmin() {
+  if (!PERMS_ATUAL.includes("admin")) { NEGADOS_ATUAL = []; const g = document.getElementById("fGestao"); if (g) { g.checked = false; g.disabled = true; } }
+  else { const g = document.getElementById("fGestao"); if (g) g.disabled = false; }
   if (PERMS_ATUAL.includes("admin")) {
     if (!confirm("Remover Admin? O acesso vai voltar a ser controlado aba por aba (tudo desmarcado até você escolher de novo).")) {
       document.getElementById("fAdmin").checked = true;
@@ -251,6 +274,11 @@ function toggleAba(href) {
   const tab = (window.B13_NAV_LINKS || []).find(l => l.href === href);
   if (!tab) return;
   const acao = acaoPropriaDe(tab);
+  if (ehGestaoAtual()) { // Gestão: marcar/desmarcar = tirar ou devolver a aba
+    if (NEGADOS_ATUAL.includes(acao)) NEGADOS_ATUAL = NEGADOS_ATUAL.filter(x => x !== acao); else NEGADOS_ATUAL.push(acao);
+    renderAbasLista();
+    return;
+  }
   if (PERMS_ATUAL.includes(acao)) {
     // desmarca: tira só a ação PRÓPRIA dessa aba. Como cada aba tem a sua, isso
     // nunca afeta outra aba.
@@ -277,6 +305,7 @@ function abrirNovo() {
       <option value="conferente">Conferente</option>
       <option value="lider_caixa">Líder de Caixa</option>
       <option value="gerente">Gerente</option>
+      <option value="gestao">Gestão</option>
       <option value="admin">Admin</option>
     </select><div class="lbl">Entregas por (se for motorista)</div><select id="fEntregasPor" onchange="salvarFrotaMot(this.value)"><option value="">—</option><option value="propria">Frota própria</option><option value="coopermapp">Coopermapp</option><option value="lalamove">Lalamove</option><option value="outro">Outro</option></select>
     <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
@@ -352,7 +381,7 @@ function abrirEditar(id) {
       <button class="btn btn-ghost" style="font-size:11px;padding:5px 10px" onclick="resetarSenhaPadrao('${id}')">🔄 Resetar p/ senha padrão (12345)</button>
       ${f.precisaTrocarSenha ? '<span class="badge" style="background:#3a2a00;color:#ffd23f;margin-left:6px">🔑 Aguardando troca no próximo login</span>' : ''}
     </div>
-    ${htmlPermsBlock(perms)}
+    ${htmlPermsBlock(perms, f.negados)}
     <div class="lbl">Nível (referência)</div>
     <select id="fNivel">
       <option value="expedicao" ${f.nivel === 'expedicao' ? 'selected' : ''}>Expedição</option>
@@ -361,6 +390,7 @@ function abrirEditar(id) {
       <option value="conferente" ${f.nivel === 'conferente' ? 'selected' : ''}>Conferente</option>
       <option value="lider_caixa" ${f.nivel === 'lider_caixa' ? 'selected' : ''}>Líder de Caixa</option>
       <option value="gerente" ${f.nivel === 'gerente' ? 'selected' : ''}>Gerente</option>
+      <option value="gestao" ${f.nivel === 'gestao' ? 'selected' : ''}>Gestão</option>
       <option value="admin" ${f.nivel === 'admin' ? 'selected' : ''}>Admin</option>
     </select><div class="lbl">Entregas por (se for motorista)</div><select id="fEntregasPor" onchange="salvarFrotaMot(this.value)"><option value="">—</option><option value="propria">Frota própria</option><option value="coopermapp">Coopermapp</option><option value="lalamove">Lalamove</option><option value="outro">Outro</option></select>
     <div class="lbl">Vendedor Bling (pra vincular as vendas no Frente de Caixa)</div>
@@ -438,6 +468,7 @@ async function salvarNovo() {
         senha,
         nivel,
         permissoes,
+        negados: NEGADOS_ATUAL.slice(),
         vendedorBlingId,
         vendedorBlingNome
       })
@@ -493,6 +524,7 @@ async function salvarEditar(id) {
     nivel,
     login,
     permissoes,
+    negados: NEGADOS_ATUAL.slice(),
     vendedorBlingId,
     vendedorBlingNome
   };

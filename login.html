@@ -108,7 +108,7 @@ function irPara(f){
   if(next&&next.startsWith("/")&&next!=="/login") { location.href=next; return; }
   // redireciona conforme permissões
   const p=f.permissoes||[f.nivel];
-  const tem=a=>p.includes("admin")||p.includes(a);
+  const tem=a=>p.includes("admin")||(p.includes("gestao")&&!(f.negados||[]).includes(a))||p.includes(a);
   // quem tem acesso de gestão cai na Central (resumo geral do dia)
   if(tem("acesso_propostas")||tem("receber_pagamento")||tem("editar_pedido")) { location.href="/central"; return; }
   if(tem("ver_aguardando")||tem("ver_separacao")||tem("conferir")) { location.href="/operacional"; return; }

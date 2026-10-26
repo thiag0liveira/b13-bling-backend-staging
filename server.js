@@ -1149,9 +1149,9 @@ function b13SincronizarSessao(){
     if(r.status===401){ b13ClearSession(); if(window.__b13PrecisaLogin&&location.pathname!=="/login") location.href="/login?expirou=1&next="+encodeURIComponent(location.pathname+location.search); return null; }
     return r.ok?r.json():null; }).then(function(j){
     if(!j||!j.ok) return;
-    var antes=JSON.stringify([s.nivel,(s.permissoes||[]).slice().sort()]), depois=JSON.stringify([j.nivel,(j.permissoes||[]).slice().sort()]);
+    var antes=JSON.stringify([s.nivel,(s.permissoes||[]).slice().sort(),(s.negados||[]).slice().sort()]), depois=JSON.stringify([j.nivel,(j.permissoes||[]).slice().sort(),(j.negados||[]).slice().sort()]);
     if(antes===depois) return;
-    s.nivel=j.nivel; s.permissoes=j.permissoes; if(j.nome) s.nome=j.nome; b13SetSession(s);
+    s.nivel=j.nivel; s.permissoes=j.permissoes; s.negados=j.negados||[]; if(j.nome) s.nome=j.nome; b13SetSession(s);
     try{ var el=document.getElementById("b13nav"); if(el&&el.parentElement&&typeof b13RenderNav==="function") el.parentElement.innerHTML=b13RenderNav(location.pathname); }catch(e){}
   }).catch(function(){});
 }
@@ -1174,11 +1174,12 @@ function b13ClearSession(){
 function b13Pode(acao){
   const f=b13GetSession(); if(!f) return false;
   const n=f.permissoes||[f.nivel];
-  return b13PodeComPermissoes(acao,n);
+  return b13PodeComPermissoes(acao,n,f.negados);
 }
-function b13PodeComPermissoes(acao,n){
+function b13PodeComPermissoes(acao,n,neg){
   n=n||[];
   if(n.includes("admin")) return true;
+  if(n.includes("gestao")){ if(acao==="ver_funcionarios") return false; return (neg||[]).indexOf(acao)<0; } // Gestão: tudo, menos o que foi retirado
   if(n.includes(acao)) return true; // permissão granular marcada diretamente pro funcionário
   const mapa={
     ver_aguardando:["financeiro_atacado","vendedor","gerente"],
@@ -1198,10 +1199,11 @@ function b13PodeComPermissoes(acao,n){
 function b13RequireLogin(){ window.__b13PrecisaLogin=true; if(!b13GetSession()){ location.href="/login?next="+encodeURIComponent(location.pathname); return false; } return true; }
 // checa se o funcionário logado tem acesso a uma aba específica, usando a
 // MESMA lista/regras do menu lateral — fonte única de verdade
+function b13PodeLink(l){ var f=b13GetSession(); if(f&&(f.permissoes||[]).indexOf("gestao")>=0&&(f.permissoes||[]).indexOf("admin")<0) return b13Pode(l.acoes[0]); return l.acoes.some(function(a){ return b13Pode(a); }); } // Gestão: vale a permissão PRÓPRIA da aba (retirar uma aba tira de verdade)
 function b13PodeAba(href){
   const l=(window.B13_NAV_LINKS||[]).find(x=>x.href===href);
   if(!l) return true; // aba não cadastrada na lista: não bloqueia (evita travar telas fora do menu, tipo /login)
-  return l.acoes.some(a=>b13Pode(a));
+  return b13PodeLink(l);
 }
 // bloqueia a página inteira com uma mensagem de acesso negado se a aba não for permitida.
 // Uso: no topo de cada página, logo depois do require de login:
@@ -1359,9 +1361,10 @@ async function b13MarcarPedidosVistos(){}
 function b13RenderNav(ativo){
   // MENU NO TOPO (como no Bling): logo B13 BEBIDAS + grupos; clicar abre o grupo para baixo. No celular, ☰ abre os grupos em lista.
   var f=b13GetSession(); if(!f) return "";
-  var links=B13_NAV_LINKS.filter(function(l){ return !l.oculto&&l.acoes.some(function(a){ return b13Pode(a); }); });
-  var gruposQr=["admin","gerente","lider_caixa","financeiro","financeiro_atacado"];
+  var links=B13_NAV_LINKS.filter(function(l){ return !l.oculto&&b13PodeLink(l); });
+  var gruposQr=["admin","gestao","gerente","lider_caixa","financeiro","financeiro_atacado"];
   var temQr=gruposQr.indexOf(f.nivel)>=0||(f.permissoes||[]).some(function(p){ return gruposQr.indexOf(p)>=0; });
+  if(temQr&&(f.permissoes||[]).indexOf("gestao")>=0&&(f.permissoes||[]).indexOf("admin")<0&&(f.negados||[]).indexOf("qr_liberar")>=0) temQr=false;
   var nomeTopo=temQr?'<span onclick="b13MostrarMeuQr()" style="cursor:pointer;text-decoration:underline dotted #00e0b0;text-underline-offset:3px" title="Toque pra ver seu QR do caixa">'+f.nome+' <span style="font-size:11px">📱</span></span>':f.nome;
   var grupos=[]; links.forEach(function(l){ if(l.href==="/inicio") return; var g=null; for(var k=0;k<grupos.length;k++){ if(grupos[k].nome===l.grupo){ g=grupos[k]; break; } } if(!g){ g={nome:l.grupo||"OUTROS",itens:[]}; grupos.push(g); } g.itens.push(l); });
   var podeInicio=links.some(function(l){ return l.href==="/inicio"; });
@@ -1618,7 +1621,7 @@ function criarSessao(f){
   const token=crypto.randomBytes(24).toString("hex");
   // sessão dura 7 dias e é renovada a cada uso (ver renovarSessao) — assim ninguém
   // é deslogado no meio do expediente; só expira depois de 7 dias SEM usar.
-  sessoes[token]={funcionarioId:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],criadoEm:Date.now(),expiraEm:Date.now()+7*24*3600*1000};
+  sessoes[token]={funcionarioId:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],negados:Array.isArray(f.negados)?f.negados:[],criadoEm:Date.now(),expiraEm:Date.now()+7*24*3600*1000};
   salvarSessoes(sessoes);
   return token;
 }
@@ -1641,8 +1644,16 @@ function senhaForte(s){
 function _permsVivas(s){
   try{ const f=lerJSON(FUNC_FILE,{})[s.funcionarioId]; if(!f) return true;
     if(f.ativo===false) return false;
-    s.permissoes=f.permissoes||[f.nivel]; s.nivel=f.nivel; if(f.nome) s.nome=f.nome; return true; }catch(e){ return true; }
+    s.permissoes=f.permissoes||[f.nivel]; s.nivel=f.nivel; s.negados=Array.isArray(f.negados)?f.negados:[]; if(f.nome) s.nome=f.nome; return true; }catch(e){ return true; }
 }
+// ---- NÍVEL GESTÃO: tem o poder do admin, mas dá para RETIRAR acessos (campo "negados" do funcionário). O admin não pode ser restringido.
+const _ehAdminP=(nivel,perms)=>nivel==="admin"||(perms||[]).includes("admin");
+const _ehGestaoP=(nivel,perms)=>nivel==="gestao"||(perms||[]).includes("gestao");
+function _podeP(s,acao){ const p=s.permissoes||[]; if(_ehAdminP(s.nivel,p)) return true; if(_ehGestaoP(s.nivel,p)) return !(s.negados||[]).includes(acao); return p.includes(acao); }
+function _autorizaGrupo(f,lista){ const p=f.permissoes||[]; if(!(lista.includes(f.nivel)||p.some(x=>lista.includes(x)))) return false;
+  if(_ehGestaoP(f.nivel,p)&&!_ehAdminP(f.nivel,p)&&(f.negados||[]).includes("qr_liberar")) return false; return true; }
+function _limparNegados(neg,nivel,perms){ if(!_ehGestaoP(nivel,perms)||_ehAdminP(nivel,perms)) return []; return Array.from(new Set((Array.isArray(neg)?neg:[]).map(x=>String(x)).filter(x=>/^[a-z0-9_]{1,60}$/.test(x)))).slice(0,300); }
+function _permsDoNivel(nivel,perms){ const p=Array.isArray(perms)&&perms.length?perms.slice():[nivel]; if(nivel==="gestao"&&!p.includes("gestao")) p.push("gestao"); return p; }
 function requireSessao(req,res,next){
   const token=req.headers["x-auth-token"];
   if(!token) return res.status(401).json({erro:"Não autenticado — faça login novamente"});
@@ -1658,7 +1669,7 @@ function requireSessao(req,res,next){
 function requireAcesso(acao){
   return (req,res,next)=>requireSessao(req,res,()=>{
     const s=req.sessao||{};
-    if(s.nivel==="admin"||(s.permissoes||[]).includes("admin")||(s.permissoes||[]).includes(acao)) return next();
+    if(_podeP(s,acao)) return next();
     return res.status(403).json({erro:"Sem permissão para esta tela ("+acao+")"});
   });
 }
@@ -1670,7 +1681,21 @@ function requireAdmin(req,res,next){
   const s=sessoes[token];
   if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
   if(!_permsVivas(s)) return res.status(401).json({erro:"Usuário desativado"});
-  if(s.nivel!=="admin"&&!(s.permissoes||[]).includes("admin")) return res.status(403).json({erro:"Sem permissão de administrador"});
+  if(!_ehAdminP(s.nivel,s.permissoes)&&!(_ehGestaoP(s.nivel,s.permissoes)&&!(s.negados||[]).includes("admin"))) return res.status(403).json({erro:"Sem permissão de administrador"});
+  renovarSessao(sessoes,token,s); // renovação deslizante
+  req.sessao=s;
+  next();
+}
+
+// Exige o administrador DE VERDADE (não vale Gestão): controle de acessos e ações destrutivas
+function requireAdminReal(req,res,next){
+  const token=req.headers["x-auth-token"];
+  if(!token) return res.status(401).json({erro:"Não autenticado — faça login novamente"});
+  const sessoes=lerSessoes();
+  const s=sessoes[token];
+  if(!s||s.expiraEm<Date.now()) return res.status(401).json({erro:"Sessão expirada — faça login novamente"});
+  if(!_permsVivas(s)) return res.status(401).json({erro:"Usuário desativado"});
+  if(s.nivel!=="admin"&&!(s.permissoes||[]).includes("admin")) return res.status(403).json({erro:"Só o administrador pode fazer isso"});
   renovarSessao(sessoes,token,s); // renovação deslizante
   req.sessao=s;
   next();
@@ -1679,9 +1704,9 @@ function requireAdmin(req,res,next){
 // ---- FUNCIONÁRIOS ----
 app.get("/api/funcionarios",(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{});
-  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao,precisaTrocarSenha:!!f.precisaTrocarSenha,vendedorBlingId:f.vendedorBlingId||null,vendedorBlingNome:f.vendedorBlingNome||""}))});
+  res.json({data:Object.values(funcs).map(f=>({id:f.id,nome:f.nome,login:f.login||"",nivel:f.nivel,permissoes:f.permissoes||[f.nivel],negados:f.negados||[],ativo:f.ativo,codigoConfirmacao:f.codigoConfirmacao||"",temPin:!!f.pinConfirmacao,precisaTrocarSenha:!!f.precisaTrocarSenha,vendedorBlingId:f.vendedorBlingId||null,vendedorBlingNome:f.vendedorBlingNome||""}))});
 });
-app.post("/api/funcionarios",requireAdmin,(req,res)=>{
+app.post("/api/funcionarios",requireAdminReal,(req,res)=>{
   const {nome,nivel}=req.body||{};
   const senha=req.body.senha||"12345"; // senha padrão — o funcionário troca no primeiro acesso
   if(!nome||!nivel) return res.status(400).json({erro:"nome e nivel obrigatórios"});
@@ -1697,13 +1722,13 @@ app.post("/api/funcionarios",requireAdmin,(req,res)=>{
   do{
     codigoConfirmacao=letras[Math.floor(Math.random()*letras.length)]+String(Math.floor(Math.random()*100)).padStart(2,"0");
   }while(Object.values(funcs).some(f=>f.codigoConfirmacao===codigoConfirmacao));
-  funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:req.body.permissoes||[nivel],senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now(),
+  funcs[id]={id,nome,login:req.body.login||"",nivel,permissoes:_permsDoNivel(nivel,req.body.permissoes),negados:_limparNegados(req.body.negados,nivel,_permsDoNivel(nivel,req.body.permissoes)),senhaHash:hashSenha(senha),ativo:true,criadoEm:Date.now(),
     precisaTrocarSenha:true, // sempre pede pra trocar a senha padrão no primeiro acesso
     codigoConfirmacao,pinConfirmacao:req.body.pinConfirmacao||"",
     vendedorBlingId:req.body.vendedorBlingId?Number(req.body.vendedorBlingId):null,vendedorBlingNome:req.body.vendedorBlingNome||""};
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true,id,codigoConfirmacao,senhaPadrao:senha});
 });
-app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
+app.patch("/api/funcionarios/:id",requireAdminReal,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); const f=funcs[req.params.id];
   if(!f) return res.status(404).json({erro:"funcionário não encontrado"});
   if(req.body.nome) f.nome=req.body.nome;
@@ -1715,6 +1740,8 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   }
   if(req.body.nivel) f.nivel=req.body.nivel;
   if(req.body.permissoes) f.permissoes=req.body.permissoes;
+  if(req.body.nivel==="gestao"||req.body.permissoes) f.permissoes=_permsDoNivel(f.nivel,f.permissoes);
+  if(req.body.negados!==undefined||req.body.nivel||req.body.permissoes) f.negados=_limparNegados(req.body.negados!==undefined?req.body.negados:f.negados,f.nivel,f.permissoes);
   if(typeof req.body.ativo==="boolean") f.ativo=req.body.ativo;
   if(req.body.senha) { f.senhaHash=hashSenha(req.body.senha); f.precisaTrocarSenha=true; } // reset manual de senha pelo admin também força troca
   if(req.body.resetarSenhaPadrao){ f.senhaHash=hashSenha("12345"); f.precisaTrocarSenha=true; }
@@ -1732,7 +1759,7 @@ app.patch("/api/funcionarios/:id",requireAdmin,(req,res)=>{
   }
   salvarJSON(FUNC_FILE,funcs); res.json({ok:true,codigoConfirmacao:f.codigoConfirmacao});
 });
-app.delete("/api/funcionarios/:id",requireAdmin,(req,res)=>{
+app.delete("/api/funcionarios/:id",requireAdminReal,(req,res)=>{
   const funcs=lerJSON(FUNC_FILE,{}); if(!funcs[req.params.id]) return res.status(404).json({erro:"não encontrado"});
   delete funcs[req.params.id]; salvarJSON(FUNC_FILE,funcs); res.json({ok:true});
 });
@@ -1773,20 +1800,20 @@ app.post("/api/funcionarios/login",(req,res)=>{
   const f=Object.values(funcs).find(x=>{
     // usuário não diferencia maiúscula/minúscula nem espaços sobrando; a SENHA continua exata
     const loginOk=login?String(x.login||"").toLowerCase().trim()===loginNorm:true;
-    return loginOk&&verificarSenha(senha||"",x.senhaHash)&&x.ativo&&(!nivel||x.nivel===nivel||(x.permissoes||[]).includes(nivel)||x.nivel==="admin");
+    return loginOk&&verificarSenha(senha||"",x.senhaHash)&&x.ativo&&(!nivel||x.nivel===nivel||(x.permissoes||[]).includes(nivel)||x.nivel==="admin"||x.nivel==="gestao");
   });
   if(!f){ registrarFalhaLogin(ip); return res.status(401).json({erro:"Login ou senha incorretos"}); }
   limparTentativasLogin(ip);
   // migra sozinho pro hash forte (scrypt) se ainda estava no formato antigo
   if(!f.senhaHash.includes(":")){ f.senhaHash=hashSenha(senha); salvarJSON(FUNC_FILE,funcs); }
   const token=criarSessao(f);
-  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],precisaTrocarSenha:!!f.precisaTrocarSenha,token}});
+  res.json({ok:true,funcionario:{id:f.id,nome:f.nome,nivel:f.nivel,permissoes:f.permissoes||[f.nivel],negados:f.negados||[],precisaTrocarSenha:!!f.precisaTrocarSenha,token}});
 });
 
 // troca de senha pelo próprio funcionário logado — usada tanto no fluxo
 // obrigatório do primeiro acesso quanto numa troca voluntária futura
 // permissões atuais de quem está logado (o menu de cada tela usa para se atualizar sozinho)
-app.get("/api/sessao/atual",requireSessao,(req,res)=>{ const s=req.sessao; res.json({ok:true,nome:s.nome,nivel:s.nivel,permissoes:s.permissoes||[s.nivel]}); });
+app.get("/api/sessao/atual",requireSessao,(req,res)=>{ const s=req.sessao; res.json({ok:true,nome:s.nome,nivel:s.nivel,permissoes:s.permissoes||[s.nivel],negados:s.negados||[]}); });
 // SAIR: apaga a sessão no servidor (o token deixa de valer em qualquer aba ou aparelho)
 app.post("/api/funcionarios/logout",(req,res)=>{
   const t=String(req.headers["x-auth-token"]||""); if(!t) return res.json({ok:true});
@@ -4384,7 +4411,7 @@ app.get("/api/diag/comprovante/:pedido",(req,res)=>{
 // DISCO: espaço total/livre e o que mais ocupa (para saber o que encheu). ?faxina=1 roda a faxina antes (admin).
 app.get("/api/saude/disco",requireSessao,(req,res)=>{
   try{
-    let fax=null; if(req.query.faxina==="1"&&(req.sessao?.nivel==="admin"||(req.sessao?.permissoes||[]).includes("admin"))) fax=faxinaDisco("pedido manual",true);
+    let fax=null; if(req.query.faxina==="1"&&(_ehAdminP(req.sessao?.nivel,req.sessao?.permissoes)||_ehGestaoP(req.sessao?.nivel,req.sessao?.permissoes))) fax=faxinaDisco("pedido manual",true);
     const d=_discoInfo(); const MB=b=>+(b/1048576).toFixed(1);
     const tam=(p)=>{ try{ const st=fs.statSync(p); if(st.isFile()) return st.size; return fs.readdirSync(p).reduce((s2,f)=>s2+tam(path.join(p,f)),0); }catch(e){ return 0; } };
     const itens=fs.readdirSync(DATA_DIR).map(f=>({nome:f,mb:MB(tam(path.join(DATA_DIR,f)))})).sort((a,b)=>b.mb-a.mb).slice(0,20);
@@ -7517,7 +7544,7 @@ app.get("/api/etiquetas",async(req,res)=>{
 // Autorização especial pra remover produto/aplicar desconto/ajustar estoque na Frente de
 // Caixa — exige ID (dia do mês + código do funcionário) e senha (PIN do funcionário + dia
 // do mês). Só libera pra quem é admin, gerente ou lider_caixa.
-const GRUPOS_AUTORIZAM_PDV=["admin","gerente","lider_caixa"];
+const GRUPOS_AUTORIZAM_PDV=["admin","gestao","gerente","lider_caixa"];
 
 // ---- Autorização por QR code (muda por dia) ----
 // O QR de cada funcionário autorizado codifica um token que muda diariamente.
@@ -7545,12 +7572,12 @@ function validarTokenQr(token){
   const funcs=lerJSON(FUNC_FILE,{});
   const f=funcs[funcId];
   if(!f||!f.ativo) return {erro:"funcionário não encontrado ou inativo"};
-  const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p));
+  const autoriza=_autorizaGrupo(f,GRUPOS_AUTORIZAM_PDV);
   if(!autoriza) return {erro:"esse funcionário não pode autorizar"};
   return {funcionario:f};
 }
 // grupos que autorizam ações no CAIXA ATACADO (mudar preço): gerente, financeiro e admin
-const GRUPOS_AUTORIZAM_ATACADO=["admin","gerente","financeiro","financeiro_atacado"];
+const GRUPOS_AUTORIZAM_ATACADO=["admin","gestao","gerente","financeiro","financeiro_atacado"];
 // valida um QR pro caixa atacado — mesmo token do dia, mas exige grupo do atacado
 function validarTokenQrAtacado(token){
   if(!token||typeof token!=="string") return {erro:"QR inválido"};
@@ -7562,7 +7589,7 @@ function validarTokenQrAtacado(token){
   const funcs=lerJSON(FUNC_FILE,{});
   const f=funcs[funcId];
   if(!f||!f.ativo) return {erro:"funcionário não encontrado ou inativo"};
-  const autoriza=GRUPOS_AUTORIZAM_ATACADO.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_ATACADO.includes(p));
+  const autoriza=_autorizaGrupo(f,GRUPOS_AUTORIZAM_ATACADO);
   if(!autoriza) return {erro:"Só gerente, financeiro ou admin autorizam no caixa atacado"};
   return {funcionario:f};
 }
@@ -7574,7 +7601,7 @@ function validarAutorizacaoPdv(idDigitado,senhaDigitada){
   const codigo=String(idDigitado).slice(dia.length).toUpperCase();
   const funcs=lerJSON(FUNC_FILE,{});
   const f=Object.values(funcs).find(x=>x.ativo&&x.codigoConfirmacao===codigo&&
-    (GRUPOS_AUTORIZAM_PDV.includes(x.nivel)||(x.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))));
+    _autorizaGrupo(x,GRUPOS_AUTORIZAM_PDV));
   if(!f) return {erro:"ID ou senha incorretos"};
   const senhaEsperada=(f.pinConfirmacao||"")+dia;
   if(senhaDigitada!==senhaEsperada) return {erro:"ID ou senha incorretos"};
@@ -8140,8 +8167,7 @@ app.get("/api/pdv/meu-qr/:funcId",(req,res)=>{
     // quem pode gerar QR: quem autoriza o Frente de Caixa (admin/gerente/líder) OU
     // quem autoriza o Caixa Atacado (admin/gerente/financeiro) — assim o financeiro
     // também tem seu QR do dia pra autorizar mudança de preço no atacado.
-    const autoriza=GRUPOS_AUTORIZAM_PDV.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_PDV.includes(p))
-      ||GRUPOS_AUTORIZAM_ATACADO.includes(f.nivel)||(f.permissoes||[]).some(p=>GRUPOS_AUTORIZAM_ATACADO.includes(p));
+    const autoriza=_autorizaGrupo(f,GRUPOS_AUTORIZAM_PDV)||_autorizaGrupo(f,GRUPOS_AUTORIZAM_ATACADO);
     if(!autoriza) return res.status(403).json({erro:"esse funcionário não pode autorizar caixa"});
     const dia=_diaBR();
     res.json({ok:true, nome:f.nome, dia, token:gerarTokenQr(f.id,dia)});
@@ -10615,7 +10641,7 @@ app.get("/api/supervisora/eventos",(req,res)=>{
   // EventSource não manda cabeçalho: o token vem na URL; mesma checagem de permissão da tela
   const s0=lerSessoes()[String(req.query.t||"")];
   if(!s0||s0.expiraEm<Date.now()||!_permsVivas(s0)) return res.status(401).end();
-  const pe=s0.permissoes||[s0.nivel]; if(!(s0.nivel==="admin"||pe.includes("admin")||pe.includes("acesso_supervisora"))) return res.status(403).end();
+  const pe=s0.permissoes||[s0.nivel]; if(!_podeP(s0,"acesso_supervisora")) return res.status(403).end();
   res.setHeader("Content-Type","text/event-stream"); res.setHeader("Cache-Control","no-cache"); res.setHeader("Connection","keep-alive"); res.setHeader("X-Accel-Buffering","no"); res.flushHeaders();
   res.write(`event: pronto\ndata: {}\n\n`); _supConexoes.add(res);
   const hb=setInterval(()=>{ try{ res.write(": ping\n\n"); }catch(e){} },25000);
@@ -11593,7 +11619,7 @@ setTimeout(()=>lerVendasVarejoAuto(),90000);
 setInterval(()=>{ const h=Number(new Date(Date.now()-3*3600e3).toISOString().slice(11,13)); if((h>=6&&h<=23)||Date.now()-_leituraTx.em>50*60000) lerVendasVarejoAuto(); },10*60000);
 app.post("/api/taxas-cartao/ler-agora",requireAcesso("acesso_custos"),async(req,res)=>{ try{ const r=await lerVendasVarejoAuto({forcar:true,max:60}); res.json({ok:true,leitura:r}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // SIMULADOR DE TAXAS (tela Taxas de Cartão e Apoio à Supervisora): só devolve a tabela de taxas, sem custos nem vendas
-function requireAcessoAlgum(lista,msg){ return (req,res,next)=>requireSessao(req,res,()=>{ const s=req.sessao||{}, p=s.permissoes||[]; if(s.nivel==="admin"||p.includes("admin")||lista.some(a=>p.includes(a))) return next(); return res.status(403).json({erro:msg||"Sem permissão para esta tela"}); }); }
+function requireAcessoAlgum(lista,msg){ return (req,res,next)=>requireSessao(req,res,()=>{ const s=req.sessao||{}, p=s.permissoes||[]; if(_ehAdminP(s.nivel,p)||lista.some(a=>_podeP(s,a))) return next(); return res.status(403).json({erro:msg||"Sem permissão para esta tela"}); }); }
 app.get("/api/taxas-cartao/simulador",requireAcessoAlgum(["acesso_custos","acesso_supervisora"],"Sem permissão para o simulador de taxas"),(req,res)=>{ try{ const cfg=lerTaxasCartao(), ok=v=>v!=null&&v!==""&&isFinite(v), n=v=>ok(v)?Number(v):null;
     const marca=b=>({debito:n(cfg[b].debito),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n((cfg[b].credito||{})[String(k+1)])]))});
     const padrao={debito:n(_pctTx(cfg,"debito","",1)),credito:Object.fromEntries(Array.from({length:12},(_,k)=>[String(k+1),n(_pctTx(cfg,"credito","",k+1))]))};
@@ -14727,7 +14753,7 @@ app.get("/api/ledger/sincronizar", async(req,res)=>{
 // ainda está em aberto/sem pagamento daquele dia, mesmo que feche em outro dia).
 // Limpa a ficha local — tudo, ou só as entradas de um período (por data do PEDIDO).
 // Não mexe no Bling, só apaga o que está guardado aqui pra poder sincronizar de novo do zero.
-app.post("/api/ledger/limpar", requireAdmin, (req,res)=>{
+app.post("/api/ledger/limpar", requireAdminReal, (req,res)=>{
   const {dataInicial,dataFinal}=req.body||{};
   const ledger=lerLedger();
   if(!dataInicial||!dataFinal){
@@ -17013,7 +17039,7 @@ app.get("/api/rotas/ocorrencias",(req,res)=>{
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/rotas/custos-frete",requireSessao,(req,res)=>{
-  const pe=req.sessao?.permissoes||[req.sessao?.nivel]; if(!(req.sessao?.nivel==="admin"||pe.includes("admin")||["acesso_rotas","acesso_dashboard","ver_dashboard"].some(x=>pe.includes(x)))) return res.status(403).json({erro:"sem permissão"});
+  const pe=req.sessao?.permissoes||[req.sessao?.nivel]; if(!(["acesso_rotas","acesso_dashboard","ver_dashboard"].some(x=>_podeP(req.sessao||{},x)))) return res.status(403).json({erro:"sem permissão"});
   const n=x=>{ const v=Number(String(x??"").replace(",",".")); return v>=0&&v<100000?_round2(v):0; };
   const c={custoKm:n(req.body?.custoKm),custoViagem:n(req.body?.custoViagem),custoEntrega:n(req.body?.custoEntrega),por:req.sessao?.nome||"",em:Date.now()};
   salvarJSON(CUSTOS_FRETE_FILE,c); res.json({ok:true,...c});
@@ -22507,7 +22533,7 @@ app.get("/api/vendedor/top-produto",async(req,res)=>{
 // "b13PodeComPermissoes is not defined", e nenhuma permissão era preservada.
 function _podeNoServidor(acao, perms){
   const n=perms||[];
-  if(n.includes("admin")) return true;
+  if(n.includes("admin")||n.includes("gestao")) return true;
   if(n.includes(acao)) return true;
   const mapa={
     ver_aguardando:["financeiro_atacado","vendedor","gerente"],
@@ -22542,7 +22568,7 @@ function migrarPermissoesPorAba(){
     let mudou=0;
     Object.values(funcs).forEach(f=>{
       if(!f||!Array.isArray(f.permissoes)) return;
-      if(f.permissoes.includes("admin")) return; // admin já vê tudo
+      if(f.permissoes.includes("admin")||f.permissoes.includes("gestao")) return; // admin e gestão já veem tudo
       links.forEach(([href,propria,antigas])=>{
         if(f.permissoes.includes(propria)) return;
         const tinhaAcesso=antigas.some(a=>_podeNoServidor(a,f.permissoes));
