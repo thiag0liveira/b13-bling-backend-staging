@@ -136,6 +136,7 @@
   .vf, .vf div, .vf b{ font-family:B13Archivo,"Arial Black",Arial,sans-serif !important }
   .vf .vpreco, .vf .vpreco span{ font-family:B13Anton,Impact,"Arial Narrow",sans-serif !important }
   .vf .vtopo, .vf .vun, .vf .vval, .vf .vvant span, .vf .vrod span{ font-family:Arial,sans-serif !important }
+.top{flex-wrap:wrap;row-gap:6px}
 </style>
 </head>
 <body>
@@ -170,9 +171,14 @@ document.addEventListener("DOMContentLoaded",function(){
   <div class="card">
     <div class="muted" style="margin-bottom:6px">Selecione os produtos pra gerar etiquetas (mostra Atacado, Fardo e Varejo)</div>
     <div id="categorias" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <button class="btn" id="btnSelTodos" onclick="selecionarTodos()">✅ Selecionar todos</button>
+      <button class="btn btn-ghost" onclick="limparSelecao()">⬜ Limpar seleção</button>
+      <span class="muted" id="contSel"></span>
+    </div>
     <input class="busca" id="filtro" placeholder="Filtrar por nome…" oninput="renderLista()">
     <div class="lista" id="lista"><div class="muted">Carregando…</div></div>
-    <div style="display:flex;gap:8px;margin-top:12px">
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn" onclick="gerarEtiquetas()">🏷 Gerar etiquetas (modelo 1)</button>
       <button class="btn btn-ghost" onclick="gerarEtiquetasModelo2()">🏷 Gerar etiquetas (modelo 2)</button>
       <button class="btn btn-ghost" onclick="gerarEtiquetasModelo3()">📄 Gerar etiqueta (folha A4 — 1 por página)</button>
@@ -341,6 +347,7 @@ function renderLista() {
   const filtrados = TODOS.filter(i => i.itemNome.toLowerCase().includes(termo));
   if (!filtrados.length) {
     box.innerHTML = `<div class="muted">Nenhum produto encontrado.</div>`;
+    atualizarContSel();
     return;
   }
   box.innerHTML = filtrados.map(i => `
@@ -349,10 +356,34 @@ function renderLista() {
       <span style="flex:1">${esc(i.itemNome)}</span>
       <span class="muted">Atacado ${brl(i.precoAtacado)}${i.precoFardo != null ? " · Fardo " + brl(i.precoFardo) : ""}</span>
     </label>`).join("");
+  atualizarContSel();
 }
 function toggleSel(id, marcado) {
   if (marcado) SELECIONADOS.add(id);else SELECIONADOS.delete(id);
   renderCategorias();
+  atualizarContSel();
+}
+// itens que aparecem na lista agora (respeita o filtro por nome)
+function itensFiltrados() {
+  const termo = (document.getElementById("filtro").value || "").toLowerCase();
+  return TODOS.filter(i => i.itemNome.toLowerCase().includes(termo));
+}
+// marca todos os que estão na lista; com filtro por nome ativo, marca só os filtrados
+function selecionarTodos() {
+  itensFiltrados().forEach(i => SELECIONADOS.add(i.itemId));
+  renderCategorias();
+  renderLista();
+}
+function limparSelecao() {
+  SELECIONADOS.clear();
+  renderCategorias();
+  renderLista();
+}
+function atualizarContSel() {
+  const f = itensFiltrados(), filtrando = !!(document.getElementById("filtro").value || "").trim(), marcadosNaLista = f.filter(i => SELECIONADOS.has(i.itemId)).length;
+  const btn = document.getElementById("btnSelTodos"), c = document.getElementById("contSel");
+  if (btn) btn.textContent = filtrando ? `✅ Selecionar os ${f.length} filtrados` : `✅ Selecionar todos (${f.length})`;
+  if (c) c.innerHTML = `<b style="color:#fff">${SELECIONADOS.size}</b> de ${TODOS.length} produto(s) selecionado(s)` + (filtrando && marcadosNaLista !== SELECIONADOS.size ? ` · ${marcadosNaLista} nesta busca` : "");
 }
 function fmtPreco(v) {
   if (v == null) return "—";
