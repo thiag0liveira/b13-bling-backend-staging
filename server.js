@@ -8711,7 +8711,7 @@ app.get("/api/pedido-por-numero/:numero",async(req,res)=>{
   try{ const n=String(req.params.numero||"").replace(/\D/g,""); if(!n) return res.status(400).json({erro:"informe o número"});
     let r=null; try{ r=_indicePedidos().lista.find(x=>String(x.numero)===n); }catch(e){}
     if(r) return res.json({ok:true,id:String(r.id),numero:n,cliente:r.cliente||""});
-    try{ const b=await bling(`/pedidos/vendas?numero=${n}`); const p=(b?.data||[]).find(x=>String(x.numero)===n)||(b?.data||[])[0]; if(p) return res.json({ok:true,id:String(p.id),numero:n,cliente:p.contato?.nome||""}); }catch(e){}
+    try{ const b=await bling(`/pedidos/vendas?numero=${n}`); const p=(b?.data||[]).find(x=>String(x.numero)===n); if(p) return res.json({ok:true,id:String(p.id),numero:n,cliente:p.contato?.nome||""}); }catch(e){}
     res.status(404).json({erro:`Não achei o pedido ${n}.`});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
