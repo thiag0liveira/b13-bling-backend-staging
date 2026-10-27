@@ -271,10 +271,10 @@ function filaHtml(){
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
             <div class="fi-num">Pedido ${p.numero||p.id}</div>
-            <div class="fi-cli">👤 ${esc((p.contato&&p.contato.nome)||"—")} · ${dataBR(p.data)}</div>
+            <div class="fi-cli">👤 ${esc(nomeOf(p))} · ${dataBR(p.data)}</div>
             <div class="fi-total">${brl(p.total||0)}</div>
           </div>
-          <span class="fi-badge badge-sep">SEPARADO</span>
+          <div style="text-align:right"><span class="fi-badge badge-sep">SEPARADO</span><div style="font-size:10px;margin-top:3px">${p.oficial?(p.oficial.tipo==="entrega"?"🛵 Entrega":"🏪 Retirada"):""}</div></div>
         </div>
       </div>`).join("")}
     </div>`;
@@ -320,7 +320,8 @@ async function abrirPedido(id){
     // faixa sem cobrança) tinha frete=0 e caía errado como "retirada" aqui.
     const temEnderecoEntregaBling = !!(sel.transporte?.enderecoEntrega?.endereco || sel.transporte?.etiqueta?.endereco);
     const obsIndicaEntrega = /ENTREGA\s*—/i.test(String(sel.observacoes||""));
-    sel._tipoEntrega=entregaInfo?entregaInfo.tipo:((freteCalc>0.01||temEnderecoEntregaBling||obsIndicaEntrega)?"entrega":"retirada");
+    // o servidor decide pelo tipo de TODAS as fontes (proposta, registro de entregas, agendamento e Bling); as regras antigas ficam só de reserva
+    sel._tipoEntrega=(sel.oficial&&sel.oficial.tipo)||(entregaInfo?entregaInfo.tipo:((freteCalc>0.01||temEnderecoEntregaBling||obsIndicaEntrega)?"entrega":"retirada"));
     const logItems=rLog.data||[];
     const pend=rPend.data;
     const faltas=(pend&&pend.faltas)||[];
@@ -401,7 +402,7 @@ function renderConferencia(){
       <div class="conf-header">
         <div class="conf-info">
           <h2>Pedido ${p.numero||p.id}</h2>
-          <div class="cli">👤 ${esc((p.contato&&p.contato.nome)||"—")} · ${dataBR(p.data)}</div>
+          <div class="cli">👤 ${esc(nomeOf(p))} · ${dataBR(p.data)}</div>
           <div class="total">${brl(p.total||0)}</div>
           ${p._pago
             ?`<div style="font-size:11px;color:#a8f0c8;margin-top:3px">✅ Pago: ${brl((p._pag&&p._pag.valorPago)||0)}</div>`
@@ -503,7 +504,7 @@ async function confirmarConferencia(){
     const j=await r.json();
     if(r.ok&&!j.erro){
       // pergunta se quer imprimir a etiqueta do pedido conferido
-      const num=sel.numero||id, cli=(sel.contato&&sel.contato.nome)||sel.clienteNome||"", ehEnt=(tipoSel!=="retirada");
+      const num=sel.numero||id, cli=nomeOf(sel)!=="—"?nomeOf(sel):(sel.clienteNome||""), ehEnt=(tipoSel!=="retirada");
       document.getElementById("modais")||document.body;
       const cx=document.getElementById("msgModal");
       if(cx){
@@ -551,6 +552,8 @@ function imprimirEtiquetaConf(id,numero,clienteCod,ehEntrega,conferentePor){
 }
 
 // Utils
+// nome do cliente que o servidor definiu (cadastro atual); reserva: o do Bling
+function nomeOf(p){ return (p&&p.oficial&&p.oficial.cliente)||(p&&p.contato&&p.contato.nome)||"—"; }
 function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function brl(n){ return Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
 function dataBR(d){ if(!d) return "—"; const p=String(d).split("-"); return p.length===3?`${p[2]}/${p[1]}`:d; }

@@ -451,7 +451,7 @@ async function editarPedido(blingId, numero) {
     // ou a marcação "ENTREGA —" (o endereço da etiqueta do Bling é copiado do cadastro e não indica entrega).
     const _reg = (typeof LISTA !== "undefined" ? LISTA : []).find(x => String(x.pedidoBlingId || "") === String(blingId));
     const _obsB = String(ped.observacoes || "");
-    const _ehEntregaB = _reg && _reg.entrega && _reg.entrega.tipo ? _reg.entrega.tipo === "entrega" : (Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB));
+    const _ehEntregaB = ped.oficial && ped.oficial.tipo ? ped.oficial.tipo === "entrega" : (_reg && _reg.entrega && _reg.entrega.tipo ? _reg.entrega.tipo === "entrega" : (Number(ped.transporte?.frete || 0) > 0 || /ENTREGA\s*—/i.test(_obsB)));
     window.pedEd.tipoEntrega = _ehEntregaB ? "entrega" : "retirada";
     // ENDEREÇO: só preenche se é entrega; em retirada fica vazio e é buscado ao clicar em Entrega (enderecoEdSugerido)
     window.pedEd._endDigitado = (_reg && _reg.entrega && _reg.entrega.endereco) || "";

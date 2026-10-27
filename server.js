@@ -1903,24 +1903,63 @@ const MESA_FILE=`${DATA_DIR}/mesa_separacao.json`; // {ativos:[funcionarioId], e
 // ordem de criação do pedido. Aqui fica pedidoId -> {em, tipo:retirada|entrega, por}
 const FILA_SEP_FILE=`${DATA_DIR}/fila_separacao.json`;
 function lerFilaSep(){ return lerJSON(FILA_SEP_FILE,{}); }
-// Deduz se o pedido é ENTREGA ou RETIRADA a partir do que o sistema já sabe.
-// Serve pra todos os caminhos que mandam pra separação (tela de Pedidos, caixa
-// atacado e venda nova), pra o selo da separação nunca sair diferente do pedido.
-function _tipoEntregaDoPedido(pedidoId, ped){
-  const id=String(pedidoId);
-  try{
-    const props=lerPropostas();
-    const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===id);
-    if(prop?.entrega?.tipo) return prop.entrega.tipo==="entrega"?"entrega":"retirada";
-  }catch(e){}
-  try{ const ent=lerJSON(ENTREGAS_FILE,{})[id]; if(ent?.tipo) return ent.tipo; }catch(e){}
-  try{ if(_turnosEntrega()[id]) return "entrega"; }catch(e){}
-  if(ped){
-    if(Number(ped.transporte?.frete||0)>0) return "entrega";
-    if(ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco) return "entrega";
-    if(/ENTREGA\s*—/i.test(String(ped.observacoes||""))) return "entrega";
+// ===== TIPO DO PEDIDO (ENTREGA x RETIRADA): UMA regra só, usada por todas as telas =====
+// O tipo fica guardado em mais de um lugar (proposta, registro de entregas, agendamento de entrega, e o próprio Bling).
+// Antes cada tela escolhia por conta própria qual olhar, e elas divergiam. Agora tudo passa por aqui.
+let _ctxTipoCache={t:0,v:null};
+function _ctxTipoEntrega(){
+  if(_ctxTipoCache.v&&Date.now()-_ctxTipoCache.t<3000) return _ctxTipoCache.v;
+  const propPorPedido={};
+  try{ Object.values(lerPropostas()||{}).forEach(p=>{ if(!p||!p.pedidoBlingId) return; const k=String(p.pedidoBlingId), a=propPorPedido[k];
+      const real=x=>String(x.origem||"")!=="bling", t=x=>Number(x.atualizadoEm||x.criadoEm||0);
+      if(!a||(real(p)&&!real(a))||(real(p)===real(a)&&t(p)>t(a))) propPorPedido[k]=p; }); }catch(e){}
+  let entregas={}; try{ entregas=lerJSON(ENTREGAS_FILE,{}); }catch(e){}
+  let turnos={}; try{ turnos=_turnosEntrega(); }catch(e){}
+  _ctxTipoCache={t:Date.now(),v:{propPorPedido,entregas,turnos}}; return _ctxTipoCache.v;
+}
+// o que cada fonte diz sobre o pedido (serve para decidir e para o diagnóstico)
+function _fontesTipoEntrega(pedidoId, ped, ctx){
+  ctx=ctx||_ctxTipoEntrega(); const id=String(pedidoId), prop=ctx.propPorPedido[id]||null, ent=ctx.entregas[id]||null, fb=ped?{}:null;
+  // só o ENDEREÇO DE ENTREGA conta: o sistema sempre o preenche numa entrega; o endereço da "etiqueta" o Bling copia do cadastro do cliente até em retirada
+  if(ped){ const end=ped.transporte?.enderecoEntrega?.endereco||""; fb.frete=Number(ped.transporte?.frete||0); fb.endereco=!!end; fb.obs=/ENTREGA\s*—/i.test(String(ped.observacoes||"")); fb.entrega=fb.frete>0||fb.endereco||fb.obs; }
+  return { proposta: prop&&prop.entrega&&prop.entrega.tipo?{tipo:prop.entrega.tipo==="entrega"?"entrega":"retirada",em:Number(prop.entrega.tipoEm)||0,emAprox:Number(prop.atualizadoEm||prop.criadoEm)||0,origem:String(prop.origem||"")}:null,
+           entregasJson: ent&&ent.tipo?{tipo:ent.tipo==="entrega"?"entrega":"retirada",em:Number(ent.em)||0}:null,
+           agendada: !!ctx.turnos[id], bling: fb };
+}
+function _tipoEntregaDoPedido(pedidoId, ped, ctx, opc){
+  const f=_fontesTipoEntrega(pedidoId,ped,ctx), c=[f.proposta,f.entregasJson].filter(Boolean);
+  if(c.length===1) return c[0].tipo;
+  if(c.length===2){
+    if(c[0].tipo===c[1].tipo) return c[0].tipo;
+    // as duas decisões divergem: vale a mais NOVA. A proposta tem a data exata quando foi gravada por esta regra; senão, usa a data da última alteração dela.
+    // (não depende do Bling estar disponível, para todas as telas darem a mesma resposta; o diagnóstico mostra o que o Bling diz para conferir)
+    const tp=f.proposta.em>0?f.proposta.em:f.proposta.emAprox;
+    return tp>=f.entregasJson.em?f.proposta.tipo:f.entregasJson.tipo;
   }
-  return "retirada";
+  if(f.agendada) return "entrega";
+  if(f.bling&&f.bling.entrega) return "entrega";
+  return (opc&&opc.vazioSeDesconhecido)?"":"retirada";
+}
+// grava a decisão em TODOS os lugares de uma vez (antes cada rota atualizava só um ou dois, e as telas passavam a discordar)
+function _gravarTipoEntrega(pedidoId, o){
+  const id=String(pedidoId), tipo=o&&o.tipo==="entrega"?"entrega":"retirada", agora=Date.now();
+  try{ const e=lerJSON(ENTREGAS_FILE,{}), ant=e[id]||{};
+    e[id]={...ant,tipo,freteOriginal:tipo==="entrega"?(o.taxa!=null?Number(o.taxa)||0:(ant.freteOriginal||0)):0,endereco:tipo==="entrega"?(o.endereco!=null?String(o.endereco):(ant.endereco||"")):(ant.endereco||""),em:agora,
+      ...(o.origem?{origem:o.origem}:{}),...(tipo==="retirada"&&o.convertidoDeEntrega?{convertidoDeEntrega:true}:{})}; salvarJSON(ENTREGAS_FILE,e); }catch(err){}
+  try{ const props=lerPropostas(); let mudou=false;
+    Object.values(props||{}).forEach(p=>{ if(!p||String(p.pedidoBlingId)!==id) return; const ant=p.entrega||{};
+      p.entrega= tipo==="entrega" ? {...ant,tipo:"entrega",...(o.endereco!=null?{endereco:String(o.endereco)}:{}),...(o.taxa!=null?{taxa:Number(o.taxa)||0}:{}),tipoEm:agora} : {tipo:"retirada",tipoEm:agora}; mudou=true; });
+    if(mudou) salvarPropostas(props); }catch(err){}
+  try{ const fq=lerFilaSep(); if(fq[id]){ fq[id].tipo=tipo; salvarJSON(FILA_SEP_FILE,fq); } }catch(err){}
+  _ctxTipoCache.t=0;
+}
+// NOME do cliente de um pedido: o cadastro ATUAL (o que foi editado ou unificado em Clientes) vale mais que o nome gravado na hora da venda
+function _nomeClienteOficial(clienteId, nomeBling, nomeProposta){
+  const cur=clienteId?String(((lerClientesBase().porId||{})[String(clienteId)]||{}).nome||"").trim():"", snap=String(nomeProposta||"").trim(), bl=String(nomeBling||"").trim(), gen=n=>/^consumidor\s*final/i.test(n);
+  if(cur&&!gen(cur)) return cur;     // cadastro atual
+  if(snap&&!gen(snap)) return snap;  // nome digitado na venda (balcão, totem)
+  if(bl&&!gen(bl)) return bl;
+  return cur||bl||snap||"—";
 }
 function registrarNaFilaSeparacao(pedidoId,tipo,por,numero){
   try{
@@ -2823,14 +2862,11 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
     // pedido de RETIRADA precisa sempre receber o pagamento antes de separar —
     // não existe "retirar sem pagar". Se não veio pagamento junto, bloqueia.
     if(!pagamento?.valor){
-      const entregas=lerJSON(ENTREGAS_FILE,{});
-      const entInfo=entregas[id]||null;
-      let ehEntrega=entInfo?entInfo.tipo==="entrega":null;
+      let tipoSep=_tipoEntregaDoPedido(id,null,null,{vazioSeDesconhecido:true}), ehEntrega=tipoSep?tipoSep==="entrega":null;
       if(ehEntrega===null){
         try{
           const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
-          const freteCalc=+(((ped?.total||0)-(ped?.totalProdutos||0))).toFixed(2);
-          ehEntrega=freteCalc>0.01;
+          ehEntrega=_tipoEntregaDoPedido(id,ped)==="entrega";
         }catch(e){ ehEntrega=true; } // se não conseguir checar, não bloqueia (evita falso positivo)
       }
       if(!ehEntrega){
@@ -3017,8 +3053,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar pela
     // conferência real de entrega.
     const obsPed=String(ped?.observacoes||"");
-    const ehEntregaReal = /ENTREGA\s*—/i.test(obsPed) || Number(ped?.transporte?.frete||0)>0
-      || !!ped?.transporte?.enderecoEntrega?.endereco || !!ped?.transporte?.etiqueta?.endereco;
+    const ehEntregaReal = _tipoEntregaDoPedido(id,ped)==="entrega"; // mesma regra de todas as telas (proposta, registro de entregas, agendamento e Bling)
     // PAGAMENTO: só exige pagamento antes de conferir pra RETIRADA — o cliente leva
     // na hora, então tem que estar pago. ENTREGA é paga pelo motorista ao finalizar
     // a entrega (dinheiro, cartão, pix), então segue pra Verificado mesmo sem
@@ -6769,7 +6804,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     try{
       const props0=lerPropostas();
       const prop0=Object.values(props0||{}).find(p=>String(p.pedidoBlingId)===String(id));
-      const ehEntrega = prop0 ? (prop0.entrega&&prop0.entrega.tipo==="entrega") : (freteAtual>0);
+      const ehEntrega = _tipoEntregaDoPedido(id,ped)==="entrega";
       const km = prop0&&prop0.entrega ? Number(prop0.entrega.km||0) : 0;
       if(ehEntrega && km>0){
         const cfg=configEntrega();
@@ -13488,12 +13523,12 @@ function _indicePedidos(){
   const props={}; Object.values(propsObj).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
   const porId={};
   Object.entries(props).forEach(([id,p])=>{ porId[id]={id,numero:String(p.pedidoBlingNumero||id),em:Number(p.criadoEm)||0,data:p.criadoEm?_diaBRk(Number(p.criadoEm)):"",total:_round2(Number(p.total)||0),
-    clienteId:String(p.cliente?.id||""),cliente:p.cliente?.nome||"",vendedor:p.vendedorNome||p.funcionarioNome||"",origem:String(p.origem||"sistema"),tipo:p.entrega?.tipo||"",frete:Number(p.entrega?.taxa)||0,
+    clienteId:String(p.cliente?.id||""),cliente:(x=>x==="—"?"":x)(_nomeClienteOficial(p.cliente?.id,"",p.cliente?.nome)),vendedor:p.vendedorNome||p.funcionarioNome||"",origem:String(p.origem||"sistema"),tipo:(p.pedidoBlingId?_tipoEntregaDoPedido(p.pedidoBlingId,null,null,{vazioSeDesconhecido:true}):"")||p.entrega?.tipo||"",frete:Number(p.entrega?.taxa)||0,
     km:Number(p.entrega?.km)||0,nItens:(p.itens||[]).length,soBling:false,detalhado:true,sitB:0}; });
   Object.entries(hist).forEach(([id,h])=>{ if(!h) return; const r=porId[id]; if(r){ r.sitB=h.s||0; if(!r.data) r.data=h.d||""; if(!r.clienteId&&h.c) r.clienteId=h.c; if(!r.em&&h.d) r.em=Date.parse(h.d+"T12:00:00-03:00"); return; }
     const dt=DET.porId[id]&&!DET.porId[id].x?DET.porId[id]:null;
     porId[id]={id,numero:String(h.n||id),em:h.d?Date.parse(h.d+"T12:00:00-03:00"):0,data:h.d||"",total:_round2(Number(h.t)||0),clienteId:h.c||"",cliente:"",vendedor:dt?(DET.vend[String(dt.v)]||""):"",
-      origem:"bling",tipo:dt&&dt.f>0?"entrega":"",frete:dt?Number(dt.f)||0:0,km:0,nItens:dt?(dt.i||[]).length:0,soBling:true,detalhado:!!dt,sitB:h.s||0}; });
+      origem:"bling",tipo:_tipoEntregaDoPedido(id,null,null,{vazioSeDesconhecido:true})||(dt&&dt.f>0?"entrega":""),frete:dt?Number(dt.f)||0:0,km:0,nItens:dt?(dt.i||[]).length:0,soBling:true,detalhado:!!dt,sitB:h.s||0}; });
   Object.values(porId).forEach(r=>{
     const sOn=_sitOnline[r.id]; r.situacaoId=Number(sOn?.situacaoId||r.sitB||0)||null; delete r.sitB;
     const cid=r.clienteId?_principalDe(r.clienteId):""; if(cid) r.clienteId=cid; if(!r.cliente&&cid) r.cliente=(base[cid]||{}).nome||"";
@@ -13768,11 +13803,46 @@ app.get("/api/pedidos", async (req, res) => {
     // sempre inclui datas — padrão 30 dias se não informado
     p.set("dataInicial", req.query.dataInicial||dataIniDefault);
     p.set("dataFinal", req.query.dataFinal||hojeBR);
-    res.json(await bling(`/pedidos/vendas?${p.toString()}`));
+    const rLista=await bling(`/pedidos/vendas?${p.toString()}`);
+    try{ const ctx=_ctxTipoEntrega(); (rLista.data||[]).forEach(x=>{ x.oficial={tipo:_tipoEntregaDoPedido(x.id,x,ctx),cliente:_nomeClienteOficial(x.contato?.id,x.contato?.nome,(ctx.propPorPedido[String(x.id)]||{}).cliente?.nome)}; }); }catch(e){}
+    res.json(rLista);
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
+// DIAGNÓSTICO de divergência entre as telas: para cada pedido recente, o que cada fonte diz sobre o TIPO (entrega/retirada) e o NOME do cliente.
+// ?dias=30  ?so=tipo|nome|todos  ?bling=1 (consulta o Bling dos pedidos com tipo divergente, até 40, e usa o que ele diz como sugestão)
+// ?corrigir=tipo|nome|todos (grava a decisão em todos os lugares que discordam e alinha o nome da proposta ao cadastro atual; só admin)
+app.get("/api/diag/divergencias-pedidos",requireAdmin,async(req,res)=>{ try{
+  const dias=Math.min(Math.max(Number(req.query.dias)||30,1),365), desde=Date.now()-dias*86400000, so=String(req.query.so||"todos"), corrigir=String(req.query.corrigir||""), comBling=String(req.query.bling||"")==="1";
+  const ctx=_ctxTipoEntrega(), props=lerPropostas()||{}, base=lerClientesBase().porId||{}, gen=n=>/^consumidor\s*final/i.test(String(n||"")), linhas=[];
+  Object.entries(props).forEach(([chave,p])=>{ if(!p||!p.pedidoBlingId||(p.criadoEm||0)<desde) return; if(String(p.origem||"")==="bling") return;
+    const id=String(p.pedidoBlingId), pe=ctx.propPorPedido[id]; if(!pe||String(pe.id||pe.criadoEm)!==String(p.id||p.criadoEm)) return; // 1 linha por pedido (a proposta real, não o registro automático do Bling)
+    const f=_fontesTipoEntrega(id,null,ctx), oficial=_tipoEntregaDoPedido(id,null,ctx,{vazioSeDesconhecido:true})||"(sem registro)";
+    const tipos=[f.proposta&&f.proposta.tipo,f.entregasJson&&f.entregasJson.tipo].filter(Boolean), divTipo=new Set(tipos).size>1;
+    const cur=String((base[String(p.cliente?.id||"")]||{}).nome||"").trim(), snap=String(p.cliente?.nome||"").trim(), divNome=!!cur&&!!snap&&!gen(cur)&&!gen(snap)&&_nrmP(cur)!==_nrmP(snap);
+    if(!divTipo&&!divNome) return; if(so==="tipo"&&!divTipo) return; if(so==="nome"&&!divNome) return;
+    const sit=_sitOnline[id]||null;
+    linhas.push({p,chave,id,divTipo,divNome,cur,snap,f,oficial,sit}); });
+  // o que o Bling diz (só para os de tipo divergente, e só se pedido)
+  let consultados=0;
+  if(comBling){ for(const L of linhas){ if(!L.divTipo||consultados>=40) continue; consultados++;
+      try{ const d=(await blingLento(`/pedidos/vendas/${L.id}`))?.data; if(d){ const fb=_fontesTipoEntrega(L.id,d,ctx).bling; L.blingDiz=fb.entrega?"entrega":"retirada"; L.blingDetalhe={frete:fb.frete,enderecoDeEntrega:fb.endereco,obsEntrega:fb.obs}; } }catch(e){ L.blingErro=e.message; } } }
+  let corrigidosTipo=0, corrigidosNome=0;
+  linhas.forEach(L=>{ L.acao=[];
+    const alvo=L.blingDiz||((L.oficial==="entrega"||L.oficial==="retirada")?L.oficial:"");
+    L.sugestao=L.divTipo?alvo:undefined;
+    if(L.divTipo&&alvo&&(corrigir==="tipo"||corrigir==="todos")){ _gravarTipoEntrega(L.id,{tipo:alvo,origem:"diag-corrigir"}); corrigidosTipo++; L.acao.push("tipo ajustado para "+alvo+(L.blingDiz?" (conforme o Bling)":" (regra única)")); }
+    if(L.divNome&&(corrigir==="nome"||corrigir==="todos")) L.corrigirNome=true; });
+  // o nome é gravado DEPOIS do tipo e numa leitura nova das propostas: a correção do tipo já regravou o arquivo, e salvar a lista lida antes a desfaria
+  if(linhas.some(L=>L.corrigirNome)){ const props2=lerPropostas()||{}; linhas.forEach(L=>{ if(L.corrigirNome&&props2[L.chave]){ props2[L.chave].cliente={...(props2[L.chave].cliente||{}),nome:L.cur}; corrigidosNome++; L.acao.push("nome da proposta ajustado para o cadastro atual"); } }); salvarPropostas(props2); }
+  const saida=linhas.map(L=>({pedidoId:L.id,numero:L.p.pedidoBlingNumero||L.id,criadoEm:L.p.criadoEm?new Date(L.p.criadoEm-3*3600e3).toISOString().slice(0,16).replace("T"," "):"",origem:L.p.origem||"atacado",situacao:L.sit?L.sit.situacao:"",
+    tipo:{regraUnicaMostra:L.oficial,proposta:L.f.proposta?L.f.proposta.tipo:null,registroDeEntregas:L.f.entregasJson?L.f.entregasJson.tipo:null,entregaAgendada:L.f.agendada,divergem:L.divTipo,...(L.blingDiz?{blingDiz:L.blingDiz,blingDetalhe:L.blingDetalhe}:{}),...(L.blingErro?{blingErro:L.blingErro}:{}),sugestao:L.sugestao},
+    cliente:{cadastroAtual:L.cur||null,gravadoNaVenda:L.snap||null,divergem:L.divNome},acao:L.acao.join("; ")||undefined})).sort((a,b)=>String(b.criadoEm).localeCompare(String(a.criadoEm)));
+  res.json({ok:true,dias,divergenciasDeTipo:saida.filter(l=>l.tipo.divergem).length,divergenciasDeNome:saida.filter(l=>l.cliente.divergem).length,consultadosNoBling:consultados,corrigidosTipo,corrigidosNome,
+    como:"tipo.regraUnicaMostra é o que todas as telas mostram. Acrescente &bling=1 para consultar o que o Bling diz (até 40 pedidos). Para alinhar os registros: &corrigir=tipo, &corrigir=nome ou &corrigir=todos",pedidos:saida}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/pedidos/:id", async (req, res) => {
-  try { res.json(await bling(`/pedidos/vendas/${req.params.id}`)); }
+  try { const r=await bling(`/pedidos/vendas/${req.params.id}`);
+    try{ const d=r&&r.data; if(d){ const ctx=_ctxTipoEntrega(); d.oficial={tipo:_tipoEntregaDoPedido(d.id,d,ctx),cliente:_nomeClienteOficial(d.contato?.id,d.contato?.nome,(ctx.propPorPedido[String(d.id)]||{}).cliente?.nome),fontes:_fontesTipoEntrega(d.id,d,ctx)}; } }catch(e){}
+    res.json(r); }
   catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
 
@@ -13978,7 +14048,7 @@ function recalcularFreteEdicao(id,ped,totalItensNovo){
   try{
     const props=lerPropostas();
     const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id));
-    const ehEntrega=prop?(prop.entrega&&prop.entrega.tipo==="entrega"):(freteBling>0);
+    const ehEntrega=_tipoEntregaDoPedido(id,ped)==="entrega";
     const km=prop&&prop.entrega?Number(prop.entrega.km||0):0;
     if(ehEntrega&&km>0){
       const cfg=configEntrega(), rf=calcularFretePorKm(km,totalItensNovo,cfg);
@@ -16238,9 +16308,9 @@ function _montarPedidoDoBling(b){
     ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
     criadoEm: b.data? new Date(b.data+"T12:00:00").getTime() : Date.now(),
     origem:"bling", noSistema:false, veioPorApi:_veioPorApi(b),
-    vendedor:"", cliente:b.contato?.nome||"—", telefone:"",
+    vendedor:"", cliente:_nomeClienteOficial(b.contato?.id,b.contato?.nome,""), telefone:"",
     total:Number(b.total)||0, frete:Number(b.transporte?.frete||0),
-    tipo: ehEntregaB?"entrega":"retirada",
+    tipo: _tipoEntregaDoPedido(b.id,b),
     endereco:enderecoB, itens:[],
     situacaoId:sitId, situacao:nomeSituacao(sitId),
     cancelado:sitId===SIT.CANCELADO };
@@ -16400,9 +16470,9 @@ app.get("/api/pedidos-online",async(req,res)=>{
         ok: !!okReg, okStatus: okReg?okReg.status||"confirmado":null, okPor: okReg?okReg.por:null,
         criadoEm:p.criadoEm||0, origem:p.origem||"atacado", noSistema:true,
         vendedor:p.vendedorNome||p.funcionarioNome||"",
-        cliente:p.cliente?.nome||"—", telefone:p.cliente?.telefone||"",
+        cliente:_nomeClienteOficial(p.cliente?.id,"",p.cliente?.nome), clienteNomeVenda:p.cliente?.nome||"", telefone:p.cliente?.telefone||"",
         total:snap?snap.total:(Number(p.total)||0), frete:snap?snap.frete:(Number(p.entrega?.taxa)||0),
-        tipo:(p.entrega?.tipo==="entrega")?"entrega":"retirada",
+        tipo:_tipoEntregaDoPedido(p.pedidoBlingId,null),
         endereco:p.entrega?.endereco||"",
         itens:snap?snap.itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
         situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
@@ -18400,6 +18470,7 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
       });
       if(mudou) salvarPropostas(props);
     }catch(e){}
+    _gravarTipoEntrega(id,{tipo,endereco:tipo==="entrega"?(endereco||""):undefined,taxa:tipo==="entrega"?taxa:0,origem:"tipo-entrega"});
     addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa});
     // atualiza o cache de pedidos do Bling NA HORA — pedido sem registro local só
     // aparece pra tela através desse cache (até 2 min de vida); sem isso, a mudança
@@ -19740,14 +19811,13 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     if(ped.loja?.id) payload.loja={id:ped.loja.id};
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
 
-    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    const rConv=await atualizarComDestrave(id,payload,Number(ped.situacao?.id||0)); // mesma rotina da troca de tipo: etapas que já baixaram o estoque não dão erro de saldo
+    if(!rConv.ok) return res.status(502).json({erro:"Não consegui salvar no Bling: "+(rConv.erro||"erro")});
     const novoTotal=+((ped.total||ped.totalProdutos||0)-freteAtual).toFixed(2);
-    // atualiza o registro local (senão a tag "Entrega" continuaria aparecendo)
-    try{
-      const entregas=lerJSON(ENTREGAS_FILE,{});
-      entregas[id]={...(entregas[id]||{}),tipo:"retirada",freteOriginal:0,convertidoDeEntrega:true,em:Date.now()};
-      salvarJSON(ENTREGAS_FILE,entregas);
-    }catch(e){}
+    // atualiza o registro local em TODOS os lugares (proposta, registro de entregas, fila de separação): antes só o registro de entregas mudava e a tela de Pedidos continuava mostrando Entrega
+    _gravarTipoEntrega(id,{tipo:"retirada",convertidoDeEntrega:true,origem:"converter-retirada"});
+    try{ const props=lerPropostas(); let mudou=false; Object.values(props||{}).forEach(p=>{ if(!p||String(p.pedidoBlingId)!==String(id)) return; const ti=(p.itens||[]).reduce((a,i)=>a+Number(i.quantidade||0)*Number(i.valor||0),0); p.total=+ti.toFixed(2); p.atualizadoEm=Date.now(); mudou=true; }); if(mudou) salvarPropostas(props); }catch(e){}
+    _atualizarPedidoNoCacheBling(id,{tipo:"retirada",endereco:"",frete:0});
     addLog(id,"retirada_convertida_frete_removido",funcionarioId,funcionarioNome,{freteRemovido:freteAtual,novoTotal});
     res.json({ok:true,semFrete:false,freteRemovido:freteAtual,total:novoTotal});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
@@ -21038,6 +21108,7 @@ app.post("/api/atacado/propostas/:id/gerar-pedido",async(req,res)=>{
     // recém-criado (não um cálculo nosso) -- reaproveita a mesma função que já
     // absorve qualquer diferença de centavo na última parcela, usada no resto do
     // sistema pra registrar pagamento sem cair nesse mesmo erro.
+    try{ if(criado?.data?.id) _gravarTipoEntrega(criado.data.id,{tipo:entregaProp.tipo,endereco:entregaProp.tipo==="entrega"?(entregaProp.endereco||""):undefined,taxa:entregaProp.tipo==="entrega"?freteProp:0,origem:"proposta"}); }catch(e){} // o Bling pode não receber endereço nem frete (entrega grátis): o tipo precisa ficar guardado
     if(formaFicha && !(criado?.data?.parcelas||[]).length){
       try{
         const rParc=await atualizarParcelasBling(pedidoId, [{formaId:formaFicha, valor:Number(criado?.data?.total)||0}], {ped:criado.data});
