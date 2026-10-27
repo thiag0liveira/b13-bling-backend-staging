@@ -1735,6 +1735,8 @@ async function salvarTipoEntrega(id) {
     esconderCarregando();
     if (j.erro) throw new Error(j.erro);
     if (j.avisoSituacao) alert("⚠️ " + j.avisoSituacao);
+    // mostra o novo tipo na hora no card que está na tela (a releitura do servidor vem logo depois): quem abre "Agendar entrega" em seguida já vê o tipo certo
+    try { const _pp = acharPedido(id); if (_pp) { _pp.tipo = tipo; _pp.frete = tipo === "entrega" ? frete : 0; _pp.endereco = tipo === "entrega" ? endereco : ""; } } catch (e) {}
     // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
     if (tipo === "retirada" && j.agendamentoRemovido) {
       const ag = j.agendamentoRemovido;

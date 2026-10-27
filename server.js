@@ -13849,6 +13849,22 @@ app.get("/api/pedidos", async (req, res) => {
     res.json(rLista);
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
+// DIAGNÓSTICO do TIPO de um pedido (entrega x retirada), pelo número ou código: o que cada fonte diz, o que o Bling diz agora e as últimas trocas (com tempo e erro)
+app.get("/api/diag/tipo-pedido/:ref",requireAdmin,async(req,res)=>{ try{
+  const ref=String(req.params.ref||"").replace(/\D/g,""); if(!ref) return res.status(400).json({erro:"informe o número ou o código do pedido"});
+  let id=ref; const props=lerPropostas()||{}; const achada=Object.values(props).find(p=>String(p.pedidoBlingNumero)===ref||String(p.pedidoBlingId)===ref); if(achada&&achada.pedidoBlingId) id=String(achada.pedidoBlingId);
+  let ped=null, erroBling=null; try{ ped=(await bling(`/pedidos/vendas/${id}`,{},"urgente"))?.data; }catch(e){ erroBling=e.message; }
+  if(!ped&&ref.length<10&&!achada){ try{ const r=await bling(`/pedidos/vendas?numero=${ref}`,{},"urgente"); const a=(r?.data||[]).find(x=>String(x.numero)===ref); if(a){ id=String(a.id); ped=(await bling(`/pedidos/vendas/${id}`,{},"urgente"))?.data; erroBling=null; } }catch(e){ erroBling=e.message; } }
+  _ctxTipoCache.t=0; const ctx=_ctxTipoEntrega(), f=_fontesTipoEntrega(id,ped,ctx), registros=Object.values(props).filter(p=>p&&String(p.pedidoBlingId)===id).map(p=>({propostaId:p.id,origem:p.origem||"",entrega:p.entrega||null,atualizadoEm:p.atualizadoEm?new Date(p.atualizadoEm-3*3600e3).toISOString().slice(0,19).replace("T"," "):"",totalNaProposta:p.total}));
+  const logs=(lerLog()[id]||[]).filter(e=>/tipo_entrega|retirada_convertida|agendamento|entrega/i.test(String(e.evento))).slice(-15).map(e=>({quando:e.em?new Date(e.em-3*3600e3).toISOString().slice(0,19).replace("T"," "):"",evento:e.evento,por:e.funcionarioNome||"",detalhes:e.detalhes||null}));
+  let fila=null; try{ const fq=lerFilaSep(); fila=fq[id]?fq[id].tipo:null; }catch(e){}
+  const oficial=_tipoEntregaDoPedido(id,ped,ctx), blingDiz=f.bling?(f.bling.entrega?"entrega":"retirada"):null;
+  res.json({ok:true,pedidoId:id,numero:ped?.numero||ref,etapa:ped?nomeSituacao(Number(ped.situacao?.id||0)):null,errosAoLerNoBling:erroBling,
+    asTelasMostram:oficial,
+    fontes:{propostas:registros,registroDeEntregas:ctx.entregas[id]||null,entregaAgendada:ctx.turnos[id]||null,filaDeSeparacao:fila,
+      bling:ped?{frete:f.bling.frete,enderecoDeEntrega:(ped.transporte?.enderecoEntrega?.endereco)||"",enderecoDaEtiqueta:(ped.transporte?.etiqueta?.endereco)||"",observacaoComEntrega:f.bling.obs,total:ped.total,totalProdutos:ped.totalProdutos}:null,blingDiz},
+    ultimasTrocasDeTipo:logs,
+    leitura:oficial===blingDiz||!blingDiz?"As telas e o Bling concordam.":"O Bling diz "+blingDiz+" e as telas mostram "+oficial+" (a decisão gravada no sistema vale mais que o endereço e o frete do Bling)."}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO de divergência entre as telas: para cada pedido recente, o que cada fonte diz sobre o TIPO (entrega/retirada) e o NOME do cliente.
 // ?dias=30  ?so=tipo|nome|todos  ?bling=1 (consulta o Bling dos pedidos com tipo divergente, até 40, e usa o que ele diz como sugestão)
 // ?corrigir=tipo|nome|todos (grava a decisão em todos os lugares que discordam e alinha o nome da proposta ao cadastro atual; só admin)
@@ -18430,11 +18446,12 @@ app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
 });
 
 app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
+  let _t0=Date.now();
   try{
-    const id=req.params.blingId;
+    const id=req.params.blingId; _t0=Date.now();
     const {tipo,endereco,frete,funcionarioId}=req.body||{};
     if(!["entrega","retirada"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser entrega ou retirada"});
-    const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
+    const ped=await bling(`/pedidos/vendas/${id}`,{},"urgente").then(r=>r?.data); // "urgente": a pessoa está olhando a tela esperando
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     if(Number(ped.situacao?.id)===SIT.CANCELADO) return res.status(400).json({erro:"pedido cancelado"});
     // virar RETIRADA tira o pedido da rota: não faz isso com ele numa viagem fechada/em andamento
@@ -18526,13 +18543,13 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
       if(mudou) salvarPropostas(props);
     }catch(e){}
     _gravarTipoEntrega(id,{tipo,endereco:tipo==="entrega"?(endereco||""):undefined,taxa:tipo==="entrega"?taxa:0,origem:"tipo-entrega"});
-    addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa});
+    addLog(String(id),"tipo_entrega_alterado",funcionarioId,funcNome,{tipo,endereco:endereco||"",frete:taxa,ms:Date.now()-_t0,etapa:nomeSituacao(sitOrig)});
     // atualiza o cache de pedidos do Bling NA HORA — pedido sem registro local só
     // aparece pra tela através desse cache (até 2 min de vida); sem isso, a mudança
     // só refletia depois do cache expirar sozinho, parecendo que "não funcionou"
     _atualizarPedidoNoCacheBling(id, { tipo, endereco: tipo==="entrega"?(endereco||""):"", frete:taxa });
     res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior,avisoSituacao});
-  }catch(e){ res.status(e.status||500).json({erro:e.message}); }
+  }catch(e){ try{ addLog(String(req.params.blingId),"tipo_entrega_erro",(req.body||{}).funcionarioId,"",{tipo:(req.body||{}).tipo,erro:String(e.message).slice(0,300),ms:Date.now()-(_t0||Date.now())}); }catch(e2){} res.status(e.status||500).json({erro:e.message}); }
 });
 // PUT no pedido destravando a situação quando necessário (reusa a lógica já testada)
 // O Bling baixa o estoque quando o pedido está em certas etapas; ao regravar os itens num pedido nessas etapas ele tenta baixar DE NOVO e acusa
@@ -18561,7 +18578,7 @@ async function atualizarComDestrave(id, payload, sitAtual, _opc){
       }
       destravou=true; await sleep(350);
     }
-    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)});
+    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(payload)},"urgente"); // quem chama (troca de tipo, conversão para retirada) tem uma pessoa esperando
     return {ok:true};
   }catch(e){
     // etapa que não estava na lista mas baixa estoque: tenta de novo, agora destravando (devolve o estoque, grava, e volta à etapa)
