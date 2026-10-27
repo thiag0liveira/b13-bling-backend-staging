@@ -1705,6 +1705,18 @@ async function calcularFretePedido(id) {
     if (info) info.innerHTML = '<span style="color:#ff8090">' + esc(e.message) + '</span>';
   }
 }
+// confirmação rápida no pé da tela (some sozinha): o operador precisa saber que a troca foi gravada, senão tenta de novo
+function avisoOk(texto) {
+  try {
+    var el = document.getElementById("avisoOkTE") || document.createElement("div");
+    el.id = "avisoOkTE";
+    el.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#0e5a32;color:#fff;border:1px solid #3ce88a;border-radius:12px;padding:12px 18px;font-size:14px;font-weight:800;z-index:99999;box-shadow:0 6px 24px rgba(0,0,0,.5);max-width:92vw;text-align:center";
+    el.textContent = texto;
+    document.body.appendChild(el);
+    clearTimeout(window._avisoOkT);
+    window._avisoOkT = setTimeout(function () { var e = document.getElementById("avisoOkTE"); if (e) e.remove(); }, 6000);
+  } catch (e) {}
+}
 async function salvarTipoEntrega(id) {
   const el = document.querySelector('input[name="teTipo"]:checked');
   const tipo = el ? el.value : "retirada";
@@ -1737,6 +1749,7 @@ async function salvarTipoEntrega(id) {
     if (j.avisoSituacao) alert("⚠️ " + j.avisoSituacao);
     // mostra o novo tipo na hora no card que está na tela (a releitura do servidor vem logo depois): quem abre "Agendar entrega" em seguida já vê o tipo certo
     try { const _pp = acharPedido(id); if (_pp) { _pp.tipo = tipo; _pp.frete = tipo === "entrega" ? frete : 0; _pp.endereco = tipo === "entrega" ? endereco : ""; } } catch (e) {}
+    avisoOk("✅ Pedido " + ((acharPedido(id) || {}).numero || id) + " agora é " + (tipo === "entrega" ? "ENTREGA" + (frete > 0 ? " (frete " + brl(frete) + ")" : " (sem frete)") : "RETIRADA") + " — gravado no Bling");
     // virou retirada e tinha entrega agendada: avisa e deixa desfazer na hora
     if (tipo === "retirada" && j.agendamentoRemovido) {
       const ag = j.agendamentoRemovido;

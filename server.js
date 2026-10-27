@@ -763,6 +763,25 @@ function _enfileirarBling(prioridade,item){
 }
 function blingLento(path,options={}){ return bling(path,options,"baixa"); } // uso: tarefas de fundo (nunca o caixa)
 const soDigitos=(s)=>(s||"").replace(/\D/g,"");
+// ENDEREÇO DE ENTREGA em texto ("Rua X, nº 10, Bairro, Cidade/UF, CEP 30000000") <-> campos do Bling.
+// O Bling só guarda o endereço de entrega quando ele vem COMPLETO (rua, número, bairro, cidade, UF e CEP) nos dois blocos de transporte; só a rua em texto é descartada.
+function _limparEnderecoTexto(s){ return String(s||"").replace(/\s*·\s*frete\b.*$/i,"").replace(/\s*\(\s*frete\b.*$/i,"").replace(/\s+/g," ").trim(); }
+function _parseEnderecoTexto(txt){
+  const t=_limparEnderecoTexto(txt); if(!t) return null;
+  const partes=t.split(",").map(x=>x.trim()).filter(Boolean), r={endereco:"",numero:"",complemento:"",bairro:"",municipio:"",uf:"",cep:""}, sobras=[];
+  partes.forEach((p,ix)=>{ let m;
+    if((m=/^CEP\s*([\d.\-]+)$/i.exec(p))||(m=/^(\d{5}-?\d{3})$/.exec(p))){ const d=m[1].replace(/\D/g,""); if(d.length===8&&!r.cep){ r.cep=d.slice(0,5)+"-"+d.slice(5); return; } }
+    if(ix>0&&!r.municipio&&(m=/^(.+?)\s*[\/\-]\s*([A-Za-z]{2})$/.exec(p))){ r.municipio=m[1].trim(); r.uf=m[2].toUpperCase(); return; }
+    if(ix>0&&!r.numero&&(m=/^(?:n[ºo°]\.?|num\.?|n[úu]mero)\s*(.+)$/i.exec(p))){ r.numero=m[1].trim(); return; }
+    if(ix>0&&!r.numero&&/^\d+[A-Za-z]?$/.test(p)){ r.numero=p; return; }
+    if(ix>0&&!r.numero&&/^s\/?n$/i.test(p)){ r.numero="S/N"; return; }
+    sobras.push(p); });
+  r.endereco=sobras.shift()||"";
+  // sem "Cidade/UF" no texto: com 2 ou mais trechos sobrando, o último é a cidade (o formato digitado costuma ser rua, número, bairro, cidade)
+  if(!r.municipio&&sobras.length>=2) r.municipio=sobras.pop();
+  if(sobras.length>=2){ r.bairro=sobras.pop(); r.complemento=sobras.join(", "); } else if(sobras.length===1) r.bairro=sobras[0];
+  return r.endereco?r:null;
+}
 // monta o bloco de endereço de entrega no formato que o Bling realmente usa —
 // descobrimos (endereço sumindo mesmo com o campo certo preenchido) que a seção
 // "Endereço de entrega" da tela do Bling corresponde ao objeto `etiqueta` dentro
@@ -4163,7 +4182,7 @@ app.get("/api/diag/rota-pedido/:numero",async(req,res)=>{
     const endObj = det?.transporte?.enderecoEntrega?.endereco ? det.transporte.enderecoEntrega
                  : det?.transporte?.etiqueta?.endereco ? det.transporte.etiqueta : null;
     let enderecoTxt = endObj?[endObj.endereco,endObj.numero,endObj.bairro,endObj.municipio,endObj.uf].filter(Boolean).join(", "):"";
-    if(!enderecoTxt && det?.observacoes){ const m=det.observacoes.match(/ENTREGA\s*—\s*([^(]+)/); if(m) enderecoTxt=m[1].trim(); }
+    if(!enderecoTxt && det?.observacoes){ const m=det.observacoes.match(/ENTREGA\s*—\s*([^(]+)/); if(m) enderecoTxt=_limparEnderecoTexto(m[1]); }
     const situacaoId=Number(det?.situacao?.id||0);
     const statusEntram=[SIT.EM_ABERTO,SIT.EM_DIGITACAO,SIT.AGUARDANDO,SIT.SEPARADO,SIT.SEP_PEND,SIT.EM_ROTA];
     res.json({
@@ -16358,7 +16377,7 @@ function _montarPedidoDoBling(b){
                 : null;
   let enderecoB = endObjB ? [endObjB.endereco,endObjB.numero,endObjB.bairro,endObjB.municipio,endObjB.uf].filter(Boolean).join(", ") : "";
   const obsB=String(b.observacoes||"");
-  if(!enderecoB){ const m=obsB.match(/ENTREGA\s*—\s*([^(]+)/i); if(m) enderecoB=m[1].trim(); }
+  if(!enderecoB){ const m=obsB.match(/ENTREGA\s*—\s*([^(]+)/i); if(m) enderecoB=_limparEnderecoTexto(m[1]); }
   const ehEntregaB = !!enderecoB || Number(b.transporte?.frete||0)>0 || /ENTREGA\s*—/i.test(obsB);
   return { id:b.id, numero:b.numero||b.id,
     agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
@@ -18438,7 +18457,7 @@ app.get("/api/pedidos-online/:blingId/endereco",async(req,res)=>{
     // 3) o que o totem/site gravou na observação
     let daObservacao="";
     const m=String(ped.observacoes||"").match(/ENTREGA\s*—\s*([^(\n]+)/i);
-    if(m) daObservacao=m[1].trim();
+    if(m) daObservacao=_limparEnderecoTexto(m[1]);
     res.json({ cliente, noPedido, doCadastro, entregaCadastro, daObservacao, completadoComCadastro:completado,
       sugerido: noPedidoCompleto||noPedido||daObservacao||doCadastro||"",
       divergente: !!(noPedido&&doCadastro&&noPedido.replace(/\s+/g," ").toLowerCase()!==doCadastro.replace(/\s+/g," ").toLowerCase()) });
@@ -18449,7 +18468,8 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
   let _t0=Date.now();
   try{
     const id=req.params.blingId; _t0=Date.now();
-    const {tipo,endereco,frete,funcionarioId}=req.body||{};
+    const {tipo,frete,funcionarioId}=req.body||{};
+    const endereco=_limparEnderecoTexto((req.body||{}).endereco); // sem o "· frete 0.00" que o próprio sistema anota na observação
     if(!["entrega","retirada"].includes(tipo)) return res.status(400).json({erro:"tipo deve ser entrega ou retirada"});
     const ped=await bling(`/pedidos/vendas/${id}`,{},"urgente").then(r=>r?.data); // "urgente": a pessoa está olhando a tela esperando
     if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
@@ -18459,7 +18479,7 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     const taxa=tipo==="entrega"?+Number(frete||0).toFixed(2):0;
     const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo",day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
-    const nota=`[${quando} — ${funcNome}] Alterado para ${tipo.toUpperCase()}${tipo==="entrega"?` — ${endereco||"(sem endereço)"} · frete ${taxa.toFixed(2)}`:""}`;
+    const nota=`[${quando} — ${funcNome}] Alterado para ${tipo.toUpperCase()}${tipo==="entrega"?` — ${endereco||"(sem endereço)"} (frete R$ ${taxa.toFixed(2)})`:""}`;
     // ao virar RETIRADA, tira qualquer linha "ENTREGA — ..." que tenha ficado de uma
     // troca anterior — sem isso, o pedido continuava sendo detectado como entrega em
     // todo o resto do sistema (conferência, viagem etc.), porque a detecção de
@@ -18473,7 +18493,7 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
       // enderecoEntrega vazio) — antes só zerava o frete e deixava o endereço antigo
       // intacto, e a detecção de entrega usada no resto do sistema olha esse campo.
       transporte: tipo==="entrega"
-        ? { frete:taxa, ...(endereco?{enderecoEntrega:{endereco:String(endereco).slice(0,180)}}:{}) }
+        ? { frete:taxa, ...(endereco?montarBlocoEnderecoEntrega(_parseEnderecoTexto(endereco)||{endereco:String(endereco).slice(0,180)},ped.contato?.nome||""):{}) } // endereço COMPLETO nos dois blocos: só a rua em texto o Bling descarta
         : { frete:0, enderecoEntrega:{endereco:""}, etiqueta:{endereco:""} },
     };
     if(ped.vendedor?.id) payload.vendedor={id:ped.vendedor.id};
