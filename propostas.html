@@ -335,6 +335,8 @@ function cardProposta(p) {
   }) : "";
   const itensTxt = (p.itens || []).map(i => `${i.quantidade}x ${i.nome}${i.categoria ? ` (${i.categoria})` : ""}`).join(", ");
   const ehSite = p.origemPedido === "site";
+  const _ret = p.itensRetirados || [];
+  const retiradosHtml = _ret.length ? `<div style="font-size:12px;margin:6px 0;padding:6px 8px;border-radius:8px;background:${p.retiradosPendente ? "#3a1020" : "#1d1a3d"};border:1px solid ${p.retiradosPendente ? "#ff5f8a" : "#3b3680"}">🚫 <b>Retirados do pedido:</b> ${esc(_ret.map(r => r.tipo === "reduzido" ? r.nome + " (de " + r.de + " para " + r.para + ")" : r.quantidade + "x " + r.nome).join(", "))}<br><span class="muted">${p.retiradosPendente ? "⚠️ o cliente ainda NÃO foi avisado (use o botão do WhatsApp)" : p.retiradosInformado ? "✓ cliente avisado em " + new Date(p.retiradosInformado.em).toLocaleString("pt-BR") + (p.retiradosInformado.por ? " por " + esc(p.retiradosInformado.por) : "") : ""}</span></div>` : "";
   return `<div class="card" id="proposta-${esc(p.id)}" style="${ehSite ? 'border:2px solid #25D366;background:rgba(37,211,102,.06)' : ''}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
@@ -350,6 +352,7 @@ function cardProposta(p) {
       </div>
     </div>
     <div class="muted" style="font-size:12px;margin:8px 0;line-height:1.4">${esc(itensTxt)}</div>
+    ${retiradosHtml}
     ${p.observacao ? `<div class="muted" style="font-size:11px">💬 ${esc(p.observacao)}</div>` : ''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
       <button class="btn btn-wa" onclick='enviarWhats(${JSON.stringify(p.id)})'>📱 WhatsApp (imagem)</button>
@@ -739,7 +742,8 @@ function desenharNota(p) {
     headerH = 150,
     itemH = 40,
     footerH = 90;
-  const H = headerH + itens.length * itemH + footerH + 30;
+  const ret = p.itensRetirados || [], blocoRetH = ret.length ? 34 + ret.length * itemH + 22 : 0;
+  const H = headerH + itens.length * itemH + blocoRetH + footerH + 30;
   const cv = document.getElementById("cvNota");
   if (!cv) return;
   const dpr = 2;
@@ -838,6 +842,47 @@ function desenharNota(p) {
     ctx.stroke();
     y += itemH;
   });
+  // itens retirados: aparecem riscados, para o cliente ver o que NÃO vai receber
+  if (ret.length) {
+    y += 14;
+    ctx.fillStyle = "#c0182f";
+    ctx.font = "700 12px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("ITENS RETIRADOS DO PEDIDO", padd, y);
+    y += 8;
+    ret.forEach(r => {
+      const qn = Number(r.quantidade) || 1, un = Number(r.valor) || 0;
+      let nome = (r.tipo === "reduzido" ? r.nome + " (de " + r.de + " para " + r.para + ")" : r.nome) || "";
+      if (nome.length > 34) nome = nome.slice(0, 33) + "…";
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#9a2a3a";
+      ctx.textAlign = "left";
+      const ty = y + itemH / 2 + 4;
+      ctx.fillText(nome, padd, ty);
+      const wN = ctx.measureText(nome).width;
+      ctx.strokeStyle = "#9a2a3a";
+      ctx.beginPath();
+      ctx.moveTo(padd, ty - 5);
+      ctx.lineTo(padd + wN, ty - 5);
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.fillText("-" + qn, W - 260, ty);
+      ctx.textAlign = "right";
+      ctx.fillText(un ? brl(un) : "", W - 140, ty);
+      ctx.fillText(un ? brl(un * qn) : "", W - padd, ty);
+      ctx.strokeStyle = "#f3d5d9";
+      ctx.beginPath();
+      ctx.moveTo(padd, y + itemH);
+      ctx.lineTo(W - padd, y + itemH);
+      ctx.stroke();
+      y += itemH;
+    });
+    ctx.fillStyle = "#777";
+    ctx.font = "italic 12px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("O total abaixo já está atualizado.", padd, y + 14);
+    y += 8;
+  }
   y += 10;
   ctx.fillStyle = "#262366";
   ctx.fillRect(padd, y, W - padd * 2, 44);
@@ -1199,7 +1244,20 @@ function textoWhatsProposta(p) {
   const titulo = p.pedidoBlingId ? `*Pedido #${p.pedidoBlingNumero} — B13 Bebidas*` : "*Proposta comercial — B13 Bebidas*";
   const ent = p.entrega || {}, taxa = Number(ent.taxa || 0);
   const entrega = ent.tipo === "entrega" ? `\n🛵 Entrega${ent.endereco ? ": " + (typeof ent.endereco === "string" ? ent.endereco : [ent.endereco.logradouro || ent.endereco.rua, ent.endereco.numero, ent.endereco.bairro].filter(Boolean).join(", ")) : ""}${taxa > 0 ? `\nTaxa de entrega: ${brl(taxa)}` : ""}` : (ent.tipo === "retirada" ? "\n🏪 Retirada na loja" : "");
-  return `${titulo}\n\nOlá, ${p.cliente?.nome || ""}!\n\n${itens}\n${entrega}\n\n*Total: ${brl(p.total)}*${p.observacao ? `\n\n${p.observacao}` : ""}`;
+  // o que foi retirado do pedido: o cliente precisa saber o que NÃO vai receber
+  const ret = p.itensRetirados || [], q = n => Number(n).toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+  const retirados = ret.length ? "\n\n🚫 *Itens retirados do seu pedido*\n" + ret.map(r => r.tipo === "reduzido" ? `• ${r.nome} — retiramos ${q(r.quantidade)} (de ${q(r.de)} para ${q(r.para)})` : `• ${r.quantidade > 1 ? q(r.quantidade) + "x " : ""}${r.nome}`).join("\n") + "\n_(o total abaixo já está atualizado)_" : "";
+  return `${titulo}\n\nOlá, ${p.cliente?.nome || ""}!\n\n${itens}${retirados}\n${entrega}\n\n*Total: ${brl(p.total)}*${p.observacao ? `\n\n${p.observacao}` : ""}`;
+}
+// registra que a lista de itens retirados foi enviada ao cliente (controle: quem, quando e o que foi avisado)
+function avisarRetirados(p) {
+  const ret = p.itensRetirados || [];
+  if (!ret.length) return;
+  const por = (typeof FUNC !== "undefined" && FUNC && FUNC.nome) || "";
+  fetch(B + "/api/itens-retirados/informar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ propostaId: p.id, pedidoId: p.pedidoBlingId || null, por, lista: ret }) }).catch(() => {});
+  p.retiradosPendente = false;
+  p.retiradosInformado = { em: Date.now(), por };
+  if (typeof render === "function") render();
 }
 // envia SÓ O TEXTO: abre a conversa direto no WhatsApp Web (computador) ou no aplicativo (celular)
 function enviarWhatsTexto(id) {
@@ -1215,6 +1273,7 @@ function enviarWhatsTexto(id) {
   const txt = encodeURIComponent(textoWhatsProposta(p));
   const celular = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const url = celular ? `https://wa.me/${tel55}?text=${txt}` : `https://web.whatsapp.com/send?${tel55 ? "phone=" + tel55 + "&" : ""}text=${txt}`;
+  avisarRetirados(p);
   window.open(url, "_blank");
 }
 async function enviarWhats(id) {
@@ -1247,6 +1306,7 @@ async function enviarWhats(id) {
           files: [file],
           text: msg
         });
+        avisarRetirados(p);
         return;
       } catch (e) {
         if (e && e.name === "AbortError") return;
@@ -1255,6 +1315,7 @@ async function enviarWhats(id) {
   }
   // fallback (computador ou sem suporte a compartilhar arquivo): abre o modal da imagem
   // pra baixar/compartilhar manualmente, já com o texto no WhatsApp
+  avisarRetirados(p);
   verImagem(id);
   let tel = soDig(((_p$cliente9 = p.cliente) === null || _p$cliente9 === void 0 ? void 0 : _p$cliente9.telefone) || "");
   if (tel.length >= 10) {
@@ -1287,7 +1348,8 @@ async function desenharNotaEm(cv, p) {
     headerH = 150,
     itemH = 40,
     footerH = 90;
-  const H = headerH + itens.length * itemH + footerH + 30;
+  const ret = p.itensRetirados || [], blocoRetH = ret.length ? 34 + ret.length * itemH + 22 : 0;
+  const H = headerH + itens.length * itemH + blocoRetH + footerH + 30;
   const dpr = 2;
   cv.width = W * dpr;
   cv.height = H * dpr;
@@ -1375,6 +1437,47 @@ async function desenharNotaEm(cv, p) {
     ctx.stroke();
     y += itemH;
   });
+  // itens retirados: aparecem riscados, para o cliente ver o que NÃO vai receber
+  if (ret.length) {
+    y += 14;
+    ctx.fillStyle = "#c0182f";
+    ctx.font = "700 12px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("ITENS RETIRADOS DO PEDIDO", padd, y);
+    y += 8;
+    ret.forEach(r => {
+      const qn = Number(r.quantidade) || 1, un = Number(r.valor) || 0;
+      let nome = (r.tipo === "reduzido" ? r.nome + " (de " + r.de + " para " + r.para + ")" : r.nome) || "";
+      if (nome.length > 34) nome = nome.slice(0, 33) + "…";
+      ctx.font = "14px Arial";
+      ctx.fillStyle = "#9a2a3a";
+      ctx.textAlign = "left";
+      const ty = y + itemH / 2 + 4;
+      ctx.fillText(nome, padd, ty);
+      const wN = ctx.measureText(nome).width;
+      ctx.strokeStyle = "#9a2a3a";
+      ctx.beginPath();
+      ctx.moveTo(padd, ty - 5);
+      ctx.lineTo(padd + wN, ty - 5);
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.fillText("-" + qn, W - 260, ty);
+      ctx.textAlign = "right";
+      ctx.fillText(un ? brl(un) : "", W - 140, ty);
+      ctx.fillText(un ? brl(un * qn) : "", W - padd, ty);
+      ctx.strokeStyle = "#f3d5d9";
+      ctx.beginPath();
+      ctx.moveTo(padd, y + itemH);
+      ctx.lineTo(W - padd, y + itemH);
+      ctx.stroke();
+      y += itemH;
+    });
+    ctx.fillStyle = "#777";
+    ctx.font = "italic 12px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("O total abaixo já está atualizado.", padd, y + 14);
+    y += 8;
+  }
   y += 10;
   ctx.fillStyle = "#262366";
   ctx.fillRect(padd, y, W - padd * 2, 44);

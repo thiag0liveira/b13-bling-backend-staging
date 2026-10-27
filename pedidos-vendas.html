@@ -110,7 +110,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
     <div class="filtros">
       <select id="fTipo"><option value="">Entrega e retirada</option><option value="entrega">Só entrega</option><option value="retirada">Só retirada / balcão</option></select>
       <select id="fPag"><option value="">Pago ou não</option><option value="pago">Pagos</option><option value="aberto">Em aberto</option></select>
-      <select id="fCaixa"><option value="">Com ou sem caixa</option><option value="sim">Passaram por caixa</option><option value="nao">Não passaram por caixa</option></select> <select id="fCons"><option value="">Todos os clientes</option><option value="nao">Só clientes cadastrados (não consumidor final)</option><option value="sim">Só consumidor final</option></select> <select id="fReg"><option value="">Registro de pagamento: qualquer</option><option value="sem">Sem nenhum registro de pagamento</option><option value="outro">Pago por outro meio</option><option value="prazo">A prazo</option><option value="caixa">Passou por caixa</option></select>
+      <select id="fCaixa"><option value="">Com ou sem caixa</option><option value="sim">Passaram por caixa</option><option value="nao">Não passaram por caixa</option></select> <select id="fCons"><option value="">Todos os clientes</option><option value="nao">Só clientes cadastrados (não consumidor final)</option><option value="sim">Só consumidor final</option></select> <select id="fReg"><option value="">Registro de pagamento: qualquer</option><option value="sem">Sem nenhum registro de pagamento</option><option value="outro">Pago por outro meio</option><option value="prazo">A prazo</option><option value="caixa">Passou por caixa</option></select> <select id="fRet"><option value="">Itens retirados: qualquer</option><option value="1">Tiveram itens retirados</option><option value="pend">Cliente ainda não avisado do que foi retirado</option></select>
       <select id="fFonte"><option value="">Sistema e Bling</option><option value="sistema">Feitos no sistema</option><option value="bling">Feitos só no Bling</option></select>
       <label class="ic"><input type="checkbox" id="fPrazo"> a prazo</label><label class="ic"><input type="checkbox" id="fOcor"> com ocorrência</label>
       <input id="fMin" inputmode="decimal" placeholder="valor mín." style="width:90px"><input id="fMax" inputmode="decimal" placeholder="valor máx." style="width:90px">
@@ -156,7 +156,7 @@ let D = null, ITENS = [], OFF = 0, PED = null, ABA = "resumo", ED = null;
 function filtros() {
   const v = id => document.getElementById(id).value.trim();
   return { ini: v("fIni"), fim: v("fFim"), busca: v("busca"), produto: v("fProd"), situacao: v("fSit"), vendedora: v("fVend"), origem: v("fOrig"), forma: v("fForma"), tipo: v("fTipo"), pagamento: v("fPag"), caixa: v("fCaixa"), fonte: v("fFonte"),
-    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", consumidor: v("fCons"), registro: v("fReg"), agrupar: VISAO === "cliente" ? "cliente" : "", min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
+    prazo: document.getElementById("fPrazo").checked ? "1" : "", ocorrencia: document.getElementById("fOcor").checked ? "1" : "", consumidor: v("fCons"), registro: v("fReg"), retirados: v("fRet"), agrupar: VISAO === "cliente" ? "cliente" : "", min: v("fMin").replace(",", "."), max: v("fMax").replace(",", "."), ordem: v("fOrdem"), cliente: window._FCLI || "" };
 }
 function periodo(n) { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - n * 86400000); carregar(true); }
 function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k, 1)), fim = k ? new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - k + 1, 0)) : h;
@@ -164,8 +164,8 @@ function periodoMes(k) { const h = new Date(Date.now() - 3 * 3600e3); const ini 
 function periodoTudo() { document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
 // auditoria: pedidos de clientes cadastrados (não consumidor final) que NÃO passaram por nenhum caixa, em todo o período
 function auditoriaCaixa() { limparSemRecarregar(); VISAO = "cliente"; ORDCLI = "sem"; CLI_ABERTO = {}; document.getElementById("fCons").value = "nao"; document.getElementById("fCaixa").value = "nao"; document.getElementById("fOrdem").value = "cliente"; document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = "2000-01-01"; carregar(true); }
-function limparSemRecarregar() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; }
-function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
+function limparSemRecarregar() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fRet", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; }
+function limparFiltros() { ["busca", "fProd", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fRet", "fFonte", "fMin", "fMax"].forEach(id => document.getElementById(id).value = ""); document.getElementById("fPrazo").checked = false; document.getElementById("fOcor").checked = false; window._FCLI = ""; carregar(true); }
 function setFiltro(id, v) { document.getElementById(id).value = v; carregar(true); window.scrollTo({ top: 0, behavior: "smooth" }); }
 async function carregar(novo) {
   if (novo) { OFF = 0; ITENS = []; }
@@ -238,6 +238,7 @@ function linhaPed(r) {
   if (r.soBling) t.push(`<span class="tagp">Bling</span>`);
   if (r.caixa) t.push(`<span class="tagp ok">${esc(r.caixa.caixa)}</span>`); else if (!r.soBling && !r.cancelado) t.push(`<span class="tagp am">sem caixa</span>`);
   if (!r.cancelado && r.registro === "sem") t.push(`<span class="tagp al">sem registro de pagamento</span>`); else if (!r.cancelado && r.registro === "outro" && !r.caixa) t.push(`<span class="tagp">pago por outro meio</span>`);
+  if (r.retirados > 0) t.push(`<span class="tagp ${r.retiradosPend ? "al" : ""}" title="${esc(r.retiradosTxt || "")}">🚫 ${r.retirados} item(ns) retirado(s)${r.retiradosPend ? " · cliente não avisado" : " · cliente avisado"}</span>`);
   if (r.tipo === "entrega") t.push(`<span class="tagp">${r.entregue ? "✅ entregue" : "🛵 entrega"}</span>`);
   if (r.prazo && !r.prazo.pago) t.push(`<span class="tagp ${r.prazo.venceEm && r.prazo.venceEm < Date.now() ? "al" : "am"}">prazo${r.prazo.venceEm ? " " + new Date(r.prazo.venceEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : ""}</span>`);
   if (r.ocorrencia) t.push(`<span class="tagp al">ocorrência</span>`);
@@ -365,7 +366,7 @@ async function salvarEdicao() {
 }
 document.getElementById("mPed").addEventListener("click", e => { if (e.target.id === "mPed") fecharPed(); });
 let _tb; ["busca", "fProd", "fMin", "fMax"].forEach(id => document.getElementById(id).addEventListener("input", () => { clearTimeout(_tb); _tb = setTimeout(() => carregar(true), 400); }));
-["fIni", "fFim", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fFonte", "fPrazo", "fOcor", "fOrdem"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
+["fIni", "fFim", "fSit", "fVend", "fOrig", "fForma", "fTipo", "fPag", "fCaixa", "fCons", "fReg", "fRet", "fFonte", "fPrazo", "fOcor", "fOrdem"].forEach(id => document.getElementById(id).addEventListener("change", () => carregar(true)));
 (function () { const u = new URLSearchParams(location.search); document.getElementById("fFim").value = hojeISO(); document.getElementById("fIni").value = diaISO(Date.now() - 29 * 86400000);
   if (u.get("cliente")) window._FCLI = u.get("cliente"); carregar(true).then(() => { if (u.get("pedido")) abrirPedido(u.get("pedido")); }); })();
 </script>

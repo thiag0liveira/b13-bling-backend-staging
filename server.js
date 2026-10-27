@@ -679,10 +679,23 @@ function cachearObservacaoPedido(id, observacoes, numero){
   _obsPedidoSujo=true;
 }
 setInterval(()=>{ if(_obsPedidoSujo && _obsPedidoCache){ try{ salvarJSON(OBSERVACOES_PEDIDO_FILE,_obsPedidoCache); _obsPedidoSujo=false; }catch(e){} } }, 60000); // grava no máximo 1x por minuto
+const _baseItensTentada={}; // pedidos cujos itens originais já foram lidos nesta execução
 function bling(path,options={},prioridade="alta"){
   // só cacheia LEITURA simples de produto (GET /produtos/<id>, sem query)
   const metodo=String(options.method||"GET").toUpperCase();
   const mProd=/^\/produtos\/(\d+)$/.exec(String(path));
+  // QUALQUER gravação de itens num pedido (expedição, separação, conferência, edição, central...): antes da PRIMEIRA vez, guarda os itens que ele tinha,
+  // para o sistema saber depois o que foi retirado e poder avisar o cliente. Uma leitura só por pedido; falha aqui nunca impede a gravação.
+  if(metodo==="PUT"){
+    const mPed=/^\/pedidos\/vendas\/(\d+)$/.exec(String(path));
+    if(mPed&&(!_baseItensTentada[mPed[1]]||Date.now()-_baseItensTentada[mPed[1]]>600000)){
+      let temItens=false; try{ temItens=Array.isArray(JSON.parse(options.body||"{}").itens); }catch(e){}
+      if(temItens&&!_lerBaseItens()[mPed[1]]){
+        const pid=mPed[1]; _baseItensTentada[pid]=Date.now();
+        return (async()=>{ try{ const cur=await bling(`/pedidos/vendas/${pid}`); _garantirBaseItens(pid,(_ctxTipoEntrega().propPorPedido[pid]||{}).id,cur&&cur.data&&cur.data.itens); }catch(e){} return bling(path,options,prioridade); })();
+      }
+    }
+  }
   if(mProd && metodo==="GET"){
     const id=mProd[1];
     const c=_cacheProduto[id];
@@ -9089,6 +9102,31 @@ const _pedidosEmFinalizacao=new Map(); // pedidoId -> {opId, desde}
 
 const _fmtItem=(i)=>`${Number(i.quantidade)}x ${i.nome||("produto "+i.produtoId)}`;
 // compara itens (antes x depois) por produtoId -> {mudou, retirados, acrescentados, alterados, de, para}
+// ===== ITENS RETIRADOS DO PEDIDO: controle e aviso ao cliente =====
+// Na PRIMEIRA alteração de itens de um pedido/proposta o sistema guarda uma "foto" dos itens originais. O que ficou de fora é a diferença entre a foto e os itens de agora
+// (se o item voltou depois, deixa de contar como retirado). Também guarda quando o cliente foi avisado (botão WhatsApp), para saber se ele já viu o que saiu.
+const ITENS_BASE_FILE=`${DATA_DIR}/itens_base_pedido.json`;
+let _baseItensCache={m:0,v:null};
+function _lerBaseItens(){ try{ const m=fs.statSync(ITENS_BASE_FILE).mtimeMs; if(_baseItensCache.v&&_baseItensCache.m===m) return _baseItensCache.v; const v=JSON.parse(fs.readFileSync(ITENS_BASE_FILE,"utf8")); _baseItensCache={m,v}; return v; }catch(e){ return _baseItensCache.v||{}; } }
+function _salvarBaseItens(B){ salvarJSON(ITENS_BASE_FILE,B); try{ _baseItensCache={m:fs.statSync(ITENS_BASE_FILE).mtimeMs,v:B}; }catch(e){} try{ _idxPed.em=0; }catch(e){} /* o índice de Pedidos de Venda mostra retirados/avisado: refaz na próxima leitura */ }
+function _chavesBaseItens(pedidoId,propId){ const k=[]; if(pedidoId) k.push(String(pedidoId)); if(propId) k.push("prop:"+propId); return k; }
+function _normItemBase(i){ return {produtoId:String(i.produtoId!=null?i.produtoId:(i.produto&&i.produto.id)||""),nome:String(i.nome||i.descricao||(i.produto&&i.produto.nome)||""),quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0}; }
+function _garantirBaseItens(pedidoId,propId,itensAntes){
+  const ks=_chavesBaseItens(pedidoId,propId); if(!ks.length) return; const B={..._lerBaseItens()}; const ja=ks.map(k=>B[k]).find(x=>x&&x.base); let mudou=false;
+  if(ja){ ks.forEach(k=>{ if(!B[k]){ B[k]={base:ja.base,criadoEm:ja.criadoEm,informado:ja.informado||null}; mudou=true; } }); }
+  else{ const base=(itensAntes||[]).map(_normItemBase).filter(i=>i.produtoId&&i.quantidade>0); if(!base.length) return; ks.forEach(k=>{ B[k]={base,criadoEm:Date.now(),informado:null}; }); mudou=true; }
+  if(mudou) _salvarBaseItens(B);
+}
+// o que ficou de fora do pedido hoje: {lista:[{produtoId,nome,valor,quantidade (retirada),de,para,tipo:"retirado"|"reduzido"}], informado, pendente}
+function _retiradosDe(pedidoId,propId,itensAtuais){
+  const B=_lerBaseItens(), r=_chavesBaseItens(pedidoId,propId).map(k=>B[k]).find(x=>x&&x.base); if(!r||!Array.isArray(itensAtuais)||!itensAtuais.length) return {lista:[],informado:r&&r.informado?{em:r.informado.em,por:r.informado.por||""}:null,pendente:false};
+  const atual={}, nomeAtual={}; (itensAtuais||[]).forEach(i=>{ const n=_normItemBase(i); if(n.produtoId){ atual[n.produtoId]=(atual[n.produtoId]||0)+n.quantidade; if(n.nome&&!nomeAtual[n.produtoId]) nomeAtual[n.produtoId]=n.nome; } });
+  const vistos={}, lista=[]; r.base.forEach(b=>{ vistos[b.produtoId]=(vistos[b.produtoId]||0)+b.quantidade; });
+  Object.keys(vistos).forEach(pid=>{ const b0=r.base.find(x=>x.produtoId===pid), q=atual[pid]||0, dif=+(vistos[pid]-q).toFixed(3); if(dif>0.0009) lista.push({produtoId:pid,nome:nomeAtual[pid]||b0.nome,valor:b0.valor,quantidade:dif,de:vistos[pid],para:q,tipo:q>0?"reduzido":"retirado"}); });
+  const inf=r.informado||null, pend=lista.length>0&&lista.some(x=>!(inf&&(inf.lista||[]).some(y=>String(y.produtoId)===String(x.produtoId)&&Math.abs(Number(y.quantidade)-Number(x.quantidade))<0.001)));
+  return {lista,informado:inf?{em:inf.em,por:inf.por||""}:null,pendente:pend};
+}
+function _marcarRetiradosInformados(pedidoId,propId,por,lista){ const ks=_chavesBaseItens(pedidoId,propId), B={..._lerBaseItens()}; let ok=false; ks.forEach(k=>{ if(B[k]&&B[k].base){ B[k]={...B[k],informado:{em:Date.now(),por:por||"",lista:(lista||[]).map(x=>({produtoId:String(x.produtoId),quantidade:Number(x.quantidade)}))}}; ok=true; } }); if(ok) _salvarBaseItens(B); return ok; }
 function diffItens(antes, depois){
   const A={}, D={};
   (antes||[]).forEach(i=>{ if(i.produtoId) A[String(i.produtoId)]={...i,quantidade:Number(i.quantidade),valor:Number(i.valor)}; });
@@ -13523,7 +13561,7 @@ function _indicePedidos(){
   const props={}; Object.values(propsObj).forEach(p=>{ if(p&&p.pedidoBlingId) props[String(p.pedidoBlingId)]=p; });
   const porId={};
   Object.entries(props).forEach(([id,p])=>{ porId[id]={id,numero:String(p.pedidoBlingNumero||id),em:Number(p.criadoEm)||0,data:p.criadoEm?_diaBRk(Number(p.criadoEm)):"",total:_round2(Number(p.total)||0),
-    clienteId:String(p.cliente?.id||""),cliente:(x=>x==="—"?"":x)(_nomeClienteOficial(p.cliente?.id,"",p.cliente?.nome)),vendedor:p.vendedorNome||p.funcionarioNome||"",origem:String(p.origem||"sistema"),tipo:(p.pedidoBlingId?_tipoEntregaDoPedido(p.pedidoBlingId,null,null,{vazioSeDesconhecido:true}):"")||p.entrega?.tipo||"",frete:Number(p.entrega?.taxa)||0,
+    clienteId:String(p.cliente?.id||""),cliente:(x=>x==="—"?"":x)(_nomeClienteOficial(p.cliente?.id,"",p.cliente?.nome)),vendedor:p.vendedorNome||p.funcionarioNome||"",origem:String(p.origem||"sistema"),tipo:(p.pedidoBlingId?_tipoEntregaDoPedido(p.pedidoBlingId,null,null,{vazioSeDesconhecido:true}):"")||p.entrega?.tipo||"",...(()=>{ const rr=_retiradosDe(p.pedidoBlingId,p.id,p.itens); return {retirados:rr.lista.length,retiradosPend:rr.pendente,retiradosTxt:rr.lista.map(x=>(x.tipo==="reduzido"?`${x.quantidade}x ${x.nome} (de ${x.de} para ${x.para})`:`${x.quantidade}x ${x.nome}`)).join("; ")}; })(),frete:Number(p.entrega?.taxa)||0,
     km:Number(p.entrega?.km)||0,nItens:(p.itens||[]).length,soBling:false,detalhado:true,sitB:0}; });
   Object.entries(hist).forEach(([id,h])=>{ if(!h) return; const r=porId[id]; if(r){ r.sitB=h.s||0; if(!r.data) r.data=h.d||""; if(!r.clienteId&&h.c) r.clienteId=h.c; if(!r.em&&h.d) r.em=Date.parse(h.d+"T12:00:00-03:00"); return; }
     const dt=DET.porId[id]&&!DET.porId[id].x?DET.porId[id]:null;
@@ -13563,6 +13601,7 @@ function _filtrarPedidos(q){
     if(q.caixa==="sim"&&!r.caixa) return false; if(q.caixa==="nao"&&r.caixa) return false;
     if(q.consumidor){ const cf=!r.cliente||/^consumidor final/.test(_nrmP(r.cliente)); if(q.consumidor==="nao"&&cf) return false; if(q.consumidor==="sim"&&!cf) return false; } // "nao" = só clientes cadastrados (com nome, que não é Consumidor Final)
     if(q.registro&&_registroPed(r)!==q.registro) return false;
+    if(q.retirados==="1"&&!(r.retirados>0)) return false; if(q.retirados==="pend"&&!r.retiradosPend) return false;
     if(q.clienteChave&&_chaveClientePed(r)!==String(q.clienteChave)) return false;
     if(q.prazo==="1"&&!r.prazo) return false; if(q.ocorrencia==="1"&&!r.ocorrencia) return false;
     if(q.fonte==="sistema"&&r.soBling) return false; if(q.fonte==="bling"&&!r.soBling) return false;
@@ -13617,9 +13656,9 @@ app.get("/api/pedidos-vendas",requireAcesso("acesso_pedidos_vendas"),(req,res)=>
 });
 app.get("/api/pedidos-vendas.csv",requireAcesso("acesso_pedidos_vendas"),(req,res)=>{
   try{ const {L}=_filtrarPedidos(req.query); const c=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
-    const linhas=[["numero","data","cliente","vendedora","origem","situacao","tipo","total","frete","pago","registro de pagamento","formas","caixa","entregue","ocorrencia","fonte"].join(";")];
+    const linhas=[["numero","data","cliente","vendedora","origem","situacao","tipo","total","frete","pago","registro de pagamento","formas","caixa","entregue","ocorrencia","fonte","itens retirados","cliente avisado dos itens retirados"].join(";")];
     L.forEach(r=>linhas.push([r.numero,r.data,r.cliente,r.vendedor,_nomeOrigemPed(r.origem),r.situacaoId?nomeSituacao(r.situacaoId):"",r.tipo||"retirada",String(r.total).replace(".",","),String(r.frete||0).replace(".",","),r.pago?"sim":"nao",_REG_NOME[_registroPed(r)],
-      (r.formas||[]).map(f=>`${f.forma} ${String(f.valor).replace(".",",")}`).join(" + "),r.caixa?r.caixa.caixa:"",r.entregue?"sim":"",r.ocorrencia?r.ocorrencia.descricao||"sim":"",r.soBling?"so Bling":"sistema"].map(c).join(";")));
+      (r.formas||[]).map(f=>`${f.forma} ${String(f.valor).replace(".",",")}`).join(" + "),r.caixa?r.caixa.caixa:"",r.entregue?"sim":"",r.ocorrencia?r.ocorrencia.descricao||"sim":"",r.soBling?"so Bling":"sistema",r.retiradosTxt||"",r.retirados>0?(r.retiradosPend?"nao":"sim"):""].map(c).join(";")));
     res.setHeader("Content-Type","text/csv; charset=utf-8"); res.setHeader("Content-Disposition",`attachment; filename="pedidos_${_diaBRk(Date.now())}.csv"`); res.send("\uFEFF"+linhas.join("\n")); }
   catch(e){ res.status(500).send(e.message); }
 });
@@ -14078,6 +14117,7 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
     const ped=atualJson?.data; if(!ped) return {ok:false,erro:"pedido não encontrado"};
     const sit=ped.situacao?.id;
     if(sit===12) return {ok:false,erro:"Pedido Cancelado não pode ser editado."};
+    try{ _garantirBaseItens(id,(_ctxTipoEntrega().propPorPedido[String(id)]||{}).id,ped.itens); }catch(e){} // foto dos itens ANTES da primeira alteração (para saber o que foi retirado)
 
     const blingComRetry=async(url,opts={},tentativas=3,delayMs=1200)=>{
       for(let t=0;t<tentativas;t++){
@@ -16473,6 +16513,7 @@ app.get("/api/pedidos-online",async(req,res)=>{
         cliente:_nomeClienteOficial(p.cliente?.id,"",p.cliente?.nome), clienteNomeVenda:p.cliente?.nome||"", telefone:p.cliente?.telefone||"",
         total:snap?snap.total:(Number(p.total)||0), frete:snap?snap.frete:(Number(p.entrega?.taxa)||0),
         tipo:_tipoEntregaDoPedido(p.pedidoBlingId,null),
+        ...(()=>{ const rr=_retiradosDe(p.pedidoBlingId,p.id,p.itens); return {retiradosAtuais:rr.lista,retiradosInformado:rr.informado,retiradosPendente:rr.pendente}; })(),
         endereco:p.entrega?.endereco||"",
         itens:snap?snap.itens:(p.itens||[]).map(i=>({nome:i.nome||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
         situacaoId: sit?sit.situacaoId:null, situacao: sit?sit.situacao:"carregando…",
@@ -18222,6 +18263,11 @@ app.get("/api/pedidos-online/situacoes-disponiveis",async(req,res)=>{
   }catch(e){ res.json({data:[]}); }
 });
 
+// o cliente foi avisado dos itens retirados (botão WhatsApp): guarda quando, quem e a lista enviada
+app.post("/api/itens-retirados/informar",(req,res)=>{ try{ const b=req.body||{}, pedidoId=b.pedidoId?String(b.pedidoId).replace(/\D/g,""):null, propId=b.propostaId?String(b.propostaId):null;
+  if(!pedidoId&&!propId) return res.status(400).json({erro:"informe pedidoId ou propostaId"});
+  let pid=pedidoId, pr=propId; if(pedidoId&&!pr){ const x=_ctxTipoEntrega().propPorPedido[pedidoId]; if(x) pr=x.id; } if(propId&&!pid){ const x=(lerPropostas()||{})[propId]; if(x&&x.pedidoBlingId) pid=String(x.pedidoBlingId); }
+  const ok=_marcarRetiradosInformados(pid,pr,String(b.por||b.funcionarioNome||"").slice(0,60),Array.isArray(b.lista)?b.lista:[]); res.json({ok}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/pedidos-online/:blingId/alteracoes",async(req,res)=>{
   try{
     const id=String(req.params.blingId);
@@ -18256,8 +18302,13 @@ app.get("/api/pedidos-online/:blingId/alteracoes",async(req,res)=>{
       if(prop&&prop.entrega&&prop.entrega.tipo==="entrega"){ ehEntrega=true; frete=Number(prop.entrega.taxa||0); }
       if(!ehEntrega){ try{ const d=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data); const f=Number(d?.transporte?.frete||0); if(f>0){ ehEntrega=true; frete=f; } }catch(e){} }
     }catch(e){}
-    res.json({ pedidoId:id, teveAlteracao:!!(retirados.length||acrescentados.length||alterados.length),
-      retirados, acrescentados, alterados, ehEntrega, frete:+Number(frete).toFixed(2) });
+    // o que ficou de fora HOJE (itens originais menos os de agora; item recolocado depois não conta), com quantidade e valor
+    let retiradosAtuais=[], retiradosInformado=null, retiradosPendente=false;
+    try{ const props2=lerPropostas()||{}, pr=Object.values(props2).find(p=>String(p.pedidoBlingId)===id&&String(p.origem||"")!=="bling")||Object.values(props2).find(p=>String(p.pedidoBlingId)===id);
+      const B=_lerBaseItens(); if(B[id]||(pr&&B["prop:"+pr.id])){ let atuais=pr&&Array.isArray(pr.itens)&&pr.itens.length?pr.itens:null; if(!atuais){ try{ atuais=(await bling(`/pedidos/vendas/${id}`))?.data?.itens||null; }catch(e){} }
+        const rr=_retiradosDe(id,pr&&pr.id,atuais); retiradosAtuais=rr.lista; retiradosInformado=rr.informado; retiradosPendente=rr.pendente; } }catch(e){}
+    res.json({ pedidoId:id, teveAlteracao:!!(retirados.length||acrescentados.length||alterados.length||retiradosAtuais.length),
+      retirados, acrescentados, alterados, retiradosAtuais, retiradosInformado, retiradosPendente, ehEntrega, frete:+Number(frete).toFixed(2) });
   }catch(e){ res.json({retirados:[],acrescentados:[],alterados:[],teveAlteracao:false}); }
 });
 
@@ -19783,8 +19834,18 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     const ped=pj?.data; if(!ped) return res.status(404).json({erro:"pedido não encontrado"});
     const freteAtual=+(ped.transporte?.frete||0);
     if(freteAtual<=0){
-      // não tinha frete (já era retirada, ou entrega grátis) — nada a remover
-      return res.json({ok:true,semFrete:true,total:+(ped.total||ped.totalProdutos||0)});
+      // sem frete a remover no Bling (entrega GRÁTIS, dentro do raio): não há o que mexer lá, mas o TIPO do pedido precisa mudar nos registros do sistema
+      // (antes só respondia "ok" e o pedido continuava como Entrega em todas as telas, parecendo que o botão não funcionava)
+      let agendamentoRemovido=null;
+      const sitSf=Number(ped.situacao?.id||0);
+      if(sitSf!==9&&sitSf!==12){
+        try{ const t=lerJSON(TURNOS_ENTREGA_FILE,{}); agendamentoRemovido=t[id]||null; if(agendamentoRemovido){ const hist=lerJSON(`${DATA_DIR}/agendamentos_removidos.json`,{}); hist[id]={...agendamentoRemovido,removidoEm:Date.now(),removidoPor:funcionarioNome||""}; salvarJSON(`${DATA_DIR}/agendamentos_removidos.json`,hist); removerPedidoDeTodasRotas(Number(id)); delete t[id]; salvarJSON(TURNOS_ENTREGA_FILE,t); } }catch(e){}
+        const antes=_tipoEntregaDoPedido(id,ped);
+        _gravarTipoEntrega(id,{tipo:"retirada",convertidoDeEntrega:true,origem:"converter-retirada"});
+        _atualizarPedidoNoCacheBling(id,{tipo:"retirada",endereco:"",frete:0});
+        if(antes==="entrega") addLog(id,"retirada_convertida_sem_frete",funcionarioId,funcionarioNome,{});
+      }
+      return res.json({ok:true,semFrete:true,total:+(ped.total||ped.totalProdutos||0),agendamentoRemovido});
     }
     const sit=ped.situacao?.id;
     if(sit===9||sit===12) return res.status(400).json({erro:"Pedido Atendido/Cancelado não pode ser editado."});
@@ -20389,6 +20450,7 @@ app.get("/api/atacado/propostas",(req,res)=>{
   else if(tipo==="proposta") lista=lista.filter(p=>!p.pedidoBlingId);
   if(status) lista=lista.filter(p=>p.status===status);
   lista.sort((a,b)=>(b.criadoEm||0)-(a.criadoEm||0));
+  lista=lista.map(p=>{ try{ const r=_retiradosDe(p.pedidoBlingId,p.id,p.itens); return r.lista.length||r.informado?{...p,itensRetirados:r.lista,retiradosInformado:r.informado,retiradosPendente:r.pendente}:p; }catch(e){ return p; } });
   res.json({data:lista});
 });
 
@@ -20883,6 +20945,7 @@ app.post("/api/atacado/propostas/:id/editar-itens",async(req,res)=>{
     const precosCorrigidos=await _corrigirPrecosNovos(itens);
     const antes=(prop.itens||[]).map(i=>`${Number(i.quantidade)}x ${i.nome||i.produtoId}`).join(", ");
     const totalAntes=(prop.itens||[]).reduce((s,i)=>s+Number(i.quantidade)*Number(i.valor),0);
+    try{ _garantirBaseItens(prop.pedidoBlingId||null,prop.id,prop.itens); }catch(e){} // foto dos itens antes da primeira alteração
     prop.itens=itens.map(i=>({produtoId:i.produtoId, nome:i.nome||"", quantidade:Number(i.quantidade), valor:Number(i.valor)}));
     const totalItens=prop.itens.reduce((s,i)=>s+i.quantidade*i.valor,0);
     // TAXA DE ENTREGA: ela depende do valor dos itens (faixas). Antes a taxa ficava PARADA ao editar os itens da proposta

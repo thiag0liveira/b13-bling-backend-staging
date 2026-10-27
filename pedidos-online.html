@@ -389,7 +389,7 @@ function chipMini(p) {
     return '<div style="font-size:10px;color:' + cor + ';margin-top:3px;line-height:1.3">' + ico + " " + esc(arr.slice(0, 2).join(", ")) + (arr.length > 2 ? " +" + (arr.length - 2) : "") + "</div>";
   };
   if (p.teveRetirada && !(p.retirados && p.retirados.length)) return '<div style="font-size:10px;color:#ffd23f;margin-top:3px">✂️ item retirado</div>';
-  return linha(p.retirados, "✂️ retirado:", "#ffd23f") + linha(p.acrescentados, "➕ acrescentado:", "#3ce88a") + linha(p.alterados, "✏️ alterado:", "#9fd2ff");
+  return linha(p.retirados, "✂️ retirado:", "#ffd23f") + linha(p.acrescentados, "➕ acrescentado:", "#3ce88a") + linha(p.alterados, "✏️ alterado:", "#9fd2ff") + (p.retiradosPendente ? '<div style="font-size:10px;color:#ff8aa3;margin-top:3px;font-weight:800">⚠️ cliente NÃO avisado do que foi retirado</div>' : "");
 }
 // o que mudou no pedido depois de criado, direto no card: itens retirados, acrescentados
 // e quantidades alteradas (o detalhe completo continua em "Ver itens")
@@ -401,7 +401,7 @@ function chipsAlteracao(p) {
   if (p.teveRetirada && !(p.retirados && p.retirados.length)) {
     return '<div style="margin-top:4px"><span class="chip" style="background:#3a2a0a;color:#ffd23f">✂️ TEVE ITEM RETIRADO</span></div>';
   }
-  return un(p.retirados, "✂️ RETIRADO", "#ffd23f", "#3a2a0a") + un(p.acrescentados, "➕ ACRESCENTADO", "#3ce88a", "#0a2a1a") + un(p.alterados, "✏️ ALTERADO", "#9fd2ff", "#10243a");
+  return un(p.retirados, "✂️ RETIRADO", "#ffd23f", "#3a2a0a") + un(p.acrescentados, "➕ ACRESCENTADO", "#3ce88a", "#0a2a1a") + un(p.alterados, "✏️ ALTERADO", "#9fd2ff", "#10243a") + (p.retiradosPendente ? '<div style="margin-top:4px"><span class="chip" style="background:#3a1020;color:#ff8aa3">⚠️ CLIENTE NÃO AVISADO DO QUE FOI RETIRADO</span></div>' : "");
 }
 async function reaplicarStatusProntos(qp) {
   const chaves = Object.keys(BLING_STATUS).filter(function (k) { return BLING_STATUS[k] && BLING_STATUS[k].pronto; });
@@ -1040,6 +1040,14 @@ function editarNoCaixa(numero) {
   location.href = "/caixa-atacado?abrirPedido=" + encodeURIComponent(numero);
 }
 // mesma mensagem do /operacional: pedido completo com itens e total
+// registra que a lista de itens retirados foi enviada ao cliente (controle de quem avisou e quando)
+function avisarRetiradosOnline(id, alt) {
+  try {
+    var l = alt && alt.retiradosAtuais || [];
+    if (!l.length) return;
+    fetch(B + "/api/itens-retirados/informar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pedidoId: id, por: typeof S !== "undefined" && S && S.nome || "", lista: l }) }).catch(function () {});
+  } catch (e) {}
+}
 async function whats(tel, numero, cliente, id) {
   try {
     var _ped, _ped2, _ref, _ped$total, _ped3, _ped4;
@@ -1083,15 +1091,21 @@ async function whats(tel, numero, cliente, id) {
     let blocoAlt = "";
     if (alt && alt.teveAlteracao) {
       const partes = [];
-      if (alt.retirados && alt.retirados.length) partes.push("❌ *Retirado(s) do pedido:*\n" + alt.retirados.map(x => "- " + x).join("\n"));
+      const _retEst = alt.retiradosAtuais || [];
+      // lista exata do que ficou de fora (item recolocado depois não aparece), com a quantidade
+      if (_retEst.length) partes.push("❌ *Itens retirados do seu pedido:*\n" + _retEst.map(function (r) { var q = Number(r.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 }); return r.tipo === "reduzido" ? "- " + r.nome + " — retiramos " + q + " (de " + r.de + " para " + r.para + ")" : "- " + (r.quantidade > 1 ? q + "x " : "") + r.nome; }).join("\n"));
+      else if (alt.retirados && alt.retirados.length) partes.push("❌ *Retirado(s) do pedido:*\n" + alt.retirados.map(x => "- " + x).join("\n"));
       if (alt.acrescentados && alt.acrescentados.length) partes.push("➕ *Acrescentado(s):*\n" + alt.acrescentados.map(x => "- " + x).join("\n"));
-      if (alt.alterados && alt.alterados.length) partes.push("🔄 *Quantidade alterada:*\n" + alt.alterados.map(x => "- " + x).join("\n"));
+      // quando há a lista exata de retirados, as REDUÇÕES de quantidade já estão nela (o histórico antigo repetia "5x→4x" e "5x→3x"): fica só o que aumentou
+      const _alt = (alt.alterados || []).filter(function (x) { if (!_retEst.length) return true; var m = /(\d+)x\s*→\s*(\d+)x/.exec(String(x)); return !(m && Number(m[2]) < Number(m[1])); });
+      if (_alt.length) partes.push("🔄 *Quantidade alterada:*\n" + _alt.map(x => "- " + x).join("\n"));
       blocoAlt = "\n\n" + partes.join("\n\n") + "\n_(o valor abaixo já está atualizado)_";
     }
     // frete: quando é entrega, mostra o valor na mensagem (só o valor, sem dizer que foi recalculado)
     var blocoFrete = "";
     if (alt && alt.ehEntrega && Number(alt.frete) > 0) blocoFrete = "\n*Frete: " + brl(alt.frete) + "*";
     const msg = "Olá" + (nome ? " " + nome : "") + "! Seu pedido *" + (((_ped4 = ped) === null || _ped4 === void 0 ? void 0 : _ped4.numero) || numero) + "* foi recebido na B13 Bebidas. ✅\n\n" + "*Itens do pedido:*\n" + itens + blocoAlt + blocoFrete + "\n\n*Total: " + brl(total) + "*\n\nEm breve entraremos em contato! 😊";
+    avisarRetiradosOnline(id, alt);
     if (!t) {
       alert("Não achei o telefone do cliente. Vou abrir o WhatsApp com a mensagem pronta pra você escolher a conversa.");
       window.open("https://wa.me/?text=" + encodeURIComponent(msg), "_blank");
