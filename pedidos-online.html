@@ -1755,7 +1755,7 @@ async function salvarTipoEntrega(id) {
 }
 
 /* ===== BUSCA DE PEDIDO (acha até o que saiu da tela) ===== */
-async function buscarPedido() {
+async function buscarPedido(fresh) {
   const el = document.getElementById("buscaPed");
   const termo = (el ? el.value : "").trim();
   window._buscaTxt = termo;
@@ -1766,7 +1766,7 @@ async function buscarPedido() {
   // se já está na lista carregada E já tem uma situação de verdade (não o placeholder
   // "carregando…", que fica assim pra sempre desde que a sincronização automática de
   // fundo parou de rodar), mostra na hora. Senão, cai pra busca de verdade abaixo.
-  const local = PEDIDOS.filter(p => (String(p.numero) === termo || String(p.id) === termo) && p.situacao !== "carregando…");
+  const local = fresh ? [] : PEDIDOS.filter(p => (String(p.numero) === termo || String(p.id) === termo) && p.situacao !== "carregando…");
   if (local.length) {
     BUSCA_RES = local;
     render();
@@ -1775,7 +1775,7 @@ async function buscarPedido() {
   BUSCANDO = true;
   render();
   try {
-    const j = await fetch(B + "/api/pedidos-online/buscar/" + encodeURIComponent(termo)).then(r => r.json());
+    const j = await fetch(B + "/api/pedidos-online/buscar/" + encodeURIComponent(termo) + (fresh ? "?fresh=1" : "")).then(r => r.json());
     if (j.naoEncontrado || !(j.data || []).length) {
       BUSCA_RES = [];
       alert("Pedido " + termo + " não encontrado no Bling.");
@@ -1800,7 +1800,7 @@ function recarregarAtual() {
   // com um resultado de busca na tela, atualiza primeiro a lista (que traz a situação,
   // o total e os itens já como estão no Bling) e só depois refaz a busca; senão o atalho
   // da busca usava a lista VELHA, de antes da edição
-  if (BUSCA_RES) carregar(true).then(function () { buscarPedido(); });else carregar();
+  if (BUSCA_RES) carregar(true).then(function () { buscarPedido(true); });else carregar();
 }
 
 /* ===== MOVER O STATUS DO PEDIDO ===== */

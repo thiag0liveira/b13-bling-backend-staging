@@ -1954,6 +1954,7 @@ function _tipoEntregaDoPedido(pedidoId, ped, ctx, opc){
   return (opc&&opc.vazioSeDesconhecido)?"":"retirada";
 }
 // grava a decisão em TODOS os lugares de uma vez (antes cada rota atualizava só um ou dois, e as telas passavam a discordar)
+function _limparCacheBuscaDoPedido(pedidoId){ try{ Object.keys(_cacheBusca).forEach(k=>{ const d=_cacheBusca[k]&&_cacheBusca[k].resp&&_cacheBusca[k].resp.data&&_cacheBusca[k].resp.data[0]; if(d&&String(d.id)===String(pedidoId)) delete _cacheBusca[k]; }); }catch(e){} }
 function _gravarTipoEntrega(pedidoId, o){
   const id=String(pedidoId), tipo=o&&o.tipo==="entrega"?"entrega":"retirada", agora=Date.now();
   try{ const e=lerJSON(ENTREGAS_FILE,{}), ant=e[id]||{};
@@ -1965,6 +1966,7 @@ function _gravarTipoEntrega(pedidoId, o){
     if(mudou) salvarPropostas(props); }catch(err){}
   try{ const fq=lerFilaSep(); if(fq[id]){ fq[id].tipo=tipo; salvarJSON(FILA_SEP_FILE,fq); } }catch(err){}
   _ctxTipoCache.t=0;
+  _limparCacheBuscaDoPedido(pedidoId);
 }
 // NOME do cliente de um pedido: o cadastro ATUAL (o que foi editado ou unificado em Clientes) vale mais que o nome gravado na hora da venda
 function _nomeClienteOficial(clienteId, nomeBling, nomeProposta){
@@ -18034,7 +18036,8 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
     if(!t) return res.json({data:[]});
     _marcarBusca();   // avisa a varredura de fundo pra dar passagem
     const cc=_cacheBusca[t];
-    if(cc && (Date.now()-cc.em)<60000) return res.json({...cc.resp, doCache:true});
+    // ?fresh=1: a tela acabou de alterar o pedido e precisa do que está valendo agora (o resultado guardado por 60 s é de ANTES da alteração)
+    if(cc && (Date.now()-cc.em)<60000 && String(req.query.fresh||"")!=="1") return res.json({...cc.resp, doCache:true});
 
     let ped=null;
     // 1) ATALHO LOCAL: se o número já está no registro local, pega o id direto e faz
@@ -18076,7 +18079,7 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
     // registro local, sem olhar o endereço salvo no pedido, então um pedido de entrega
     // com frete grátis e sem registro local aparecia como retirada na busca.
     const endBusca = ped.transporte?.enderecoEntrega?.endereco || ped.transporte?.etiqueta?.endereco || "";
-    const ehEntrega=(prop?.entrega?.tipo==="entrega")||!!endBusca||/ENTREGA\s*—/i.test(obs)||Number(ped.transporte?.frete||0)>0;
+    const ehEntrega=_tipoEntregaDoPedido(ped.id,ped)==="entrega"; // mesma regra de todas as telas (antes a busca tinha a sua própria e discordava)
     const _resp={ data:[{
       id:ped.id, numero:ped.numero, criadoEm:prop?.criadoEm||null,
       origem:prop?.origem||"bling", vendedor:prop?.vendedorNome||prop?.funcionarioNome||nomeVendedorRapido(ped.vendedor?.id||null),
@@ -18087,6 +18090,7 @@ app.get("/api/pedidos-online/buscar/:termo",async(req,res)=>{
       itens:(ped.itens||[]).map(i=>({nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0})),
       situacaoId:sit, situacao:nomeSituacao(sit), cancelado:sit===SIT.CANCELADO,
       agendamento: ag?{data:ag.data,turno:ag.turno,obsEntrega:ag.obsEntrega||"",por:ag.por}:null,
+      entregaLocal:_mapaEntregasLocais()[String(ped.id)]||null,
       buscado:true }] };
     _cacheBusca[t]={em:Date.now(), resp:_resp};
     // limpa o cache quando cresce demais
