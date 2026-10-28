@@ -13100,7 +13100,14 @@ app.get("/api/contas-pagar/lancamentos",requireAcesso("acesso_contas_pagar"),(re
   const st=String(q.situacao||"todas"); let L=rows.filter(r=>st==="todas"?r.situacao!=="cancelada":st==="abertas"?ab(r):st==="vencidas"?r.situacao==="vencida":st==="semana"?(r.situacao==="vencida"||r.situacao==="vence logo"):st==="pagas"?r.situacao==="paga":st==="canceladas"?r.situacao==="cancelada":true);
   const ord=String(q.ordem||"venc"), cmp={venc:(a,b)=>String(a.vencimento).localeCompare(String(b.vencimento)),"venc-desc":(a,b)=>String(b.vencimento).localeCompare(String(a.vencimento)),"valor-desc":(a,b)=>b.valorMes-a.valorMes,"valor-asc":(a,b)=>a.valorMes-b.valorMes,forn:(a,b)=>nomeF(a).localeCompare(nomeF(b))};
   L.sort(cmp[ord]||cmp.venc); const cortado=L.length>3000; if(cortado) L=L.slice(0,3000);
-  res.json({ok:true,mes,base,itens:L,total:L.length,cortado,somaMes:soma(L),pago:soma(L.filter(r=>r.situacao==="paga")),aberto:soma(L.filter(ab)),chips,fornecedores,categorias,grupos:gruposMeta}); }catch(e){ res.status(500).json({erro:e.message}); } });
+  // CONCILIAÇÃO com os cartões de cima da tela: lá o "Em aberto" soma TODOS os meses; aqui só o mês escolhido. Devolve o total geral e como ele se divide por mês (mesma base).
+  let conc=null;
+  if(mes!=="todos"&&base!=="pagamento"){ const porMes={}; let tq=0,tv=0;
+    for(const t of C.titulos){ if(t.status==="pago"||t.status==="cancelado") continue; const v=Number(t.valor)||0; tq++; tv+=v;
+      if(base==="competencia"){ const c=_competenciaDoTitulo(t); for(let k=0;k<c.meses;k++){ const m=_addMes(c.ini,k), a=porMes[m]||(porMes[m]={q:0,v:0}); a.q++; a.v+=v/c.meses; } }
+      else{ const m=String(t.vencimento||"").slice(0,7), a=porMes[m]||(porMes[m]={q:0,v:0}); a.q++; a.v+=v; } }
+    const no=porMes[mes]||{q:0,v:0}; conc={totalQ:tq,totalV:_round2(tv),mesQ:no.q,mesV:_round2(no.v),outros:Object.keys(porMes).filter(m=>m!==mes).sort().map(m=>({mes:m,q:porMes[m].q,v:_round2(porMes[m].v)}))}; }
+  res.json({ok:true,mes,base,itens:L,total:L.length,cortado,somaMes:soma(L),pago:soma(L.filter(r=>r.situacao==="paga")),aberto:soma(L.filter(ab)),chips,conc,fornecedores,categorias,grupos:gruposMeta}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // nova despesa (com parcelas e/ou repetir todo mês)
 app.post("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, v=Number(String(b.valor||"").replace(",",".")), n=Math.min(48,Math.max(1,Math.round(Number(b.parcelas)||1))), quem=req.sessao?.nome||"";

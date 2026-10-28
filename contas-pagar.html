@@ -140,7 +140,7 @@ async function carregar() {
   const { ok, j } = await api("/api/contas-pagar?" + q); if (!ok) { lista.innerHTML = `<div class="err">${esc(j.erro || "Não consegui carregar.")}</div>`; return; } D = j; render(); }
 function render() {
   const R = D.resumo, k = (v, l, s, cls, f) => `<a class="kpi ${cls || ""}" style="cursor:pointer;text-decoration:none;color:inherit" onclick="irSit('${f}')"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s}</div></a>`;
-  kpis.innerHTML = k(brl(R.aberto), "Em aberto", R.qAberto + " conta(s)", "", "abertas") + k(brl(R.vencido), "Vencidas", R.qVencido + " conta(s)", R.qVencido ? "alerta" : "", "vencidas") + k(brl(R.semana), "Vencidas e próximos 7 dias", R.qSemana + " conta(s)", "", "semana") + k(brl(R.pagoMes), "Pagas no mês", R.qPagoMes + " conta(s)", "", "pagas");
+  kpis.innerHTML = k(brl(R.aberto), "Em aberto", R.qAberto + " conta(s) · todos os meses", "", "abertas") + k(brl(R.vencido), "Vencidas", R.qVencido + " conta(s) · todos os meses", R.qVencido ? "alerta" : "", "vencidas") + k(brl(R.semana), "Vencidas e próximos 7 dias", R.qSemana + " conta(s) · todos os meses", "", "semana") + k(brl(R.pagoMes), "Pagas neste mês", R.qPagoMes + " conta(s) · pela data do pagamento", "", "pagas");
   if (!fCat.dataset.ok) { fCat.innerHTML = `<option value="">Todas as categorias</option>` + D.categorias.map(c => `<option>${esc(c)}</option>`).join(""); fCat.dataset.ok = 1; }
   fRes.textContent = `${D.total} conta(s) · ${brl(D.somaFiltro)}`; if (typeof carregarLan === "function") carregarLan();
   const cor = { vencida: "#ff8aa3", "vence logo": "#ffd23f", aberta: "#cfcaff", paga: "#3ce88a", cancelada: "#9a95c9" };
@@ -325,6 +325,7 @@ function achaT(id) { return (D && D.itens ? D.itens.find(x => x.id === id) : nul
 function montarMeses() { const sel = document.getElementById("lMes"), a = []; for (let k = 18; k >= -6; k--) { const d = new Date(hojeL.getFullYear(), hojeL.getMonth() - k, 1), v = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); a.push('<option value="' + v + '">' + NMES[d.getMonth()] + "/" + d.getFullYear() + "</option>"); } sel.innerHTML = a.join("") + '<option value="todos">Todo o período</option>'; sel.value = LF.mes; }
 function lanMes(k) { const sel = document.getElementById("lMes"), i = sel.selectedIndex + k; if (i < 0 || i >= sel.options.length - 1) return; sel.selectedIndex = i; lanMudou(); }
 function lerFiltrosLan() { LF.mes = document.getElementById("lMes").value; LF.base = document.getElementById("lBase").value; LF.grupo = document.getElementById("lGrupo").value; LF.cat = document.getElementById("lCat").value; LF.forn = document.getElementById("lForn").value; LF.min = document.getElementById("lMin").value.trim(); LF.max = document.getElementById("lMax").value.trim(); }
+function irMes(m) { const sel = document.getElementById("lMes"); if (![...sel.options].some(o => o.value === m)) return; sel.value = m; lanMudou(); }
 function lanMudou() { lerFiltrosLan(); carregarLan(); }
 function lanBusca() { clearTimeout(_tl); _tl = setTimeout(function () { LF.busca = document.getElementById("lBusca").value.trim(); carregarLan(); }, 300); }
 function lanLimpar() { LF.busca = ""; LF.grupo = LF.cat = LF.forn = LF.min = LF.max = ""; LF.sit = "todas"; document.getElementById("lBusca").value = ""; document.getElementById("lMin").value = ""; document.getElementById("lMax").value = ""; carregarLan(); }
@@ -364,6 +365,17 @@ function renderLan() {
   document.getElementById("lOrd").value = LF.ord;
   const mesTxt = LAN.mes === "todos" ? "todo o período" : NMES[Number(LAN.mes.split("-")[1]) - 1] + "/" + LAN.mes.split("-")[0];
   document.getElementById("lRes").innerHTML = '<b style="color:#fff">' + LAN.total + "</b> lançamento(s) em " + mesTxt + ' · total <b style="color:#fff">' + brl(LAN.somaMes) + "</b> · pago " + brl(LAN.pago) + " · em aberto " + brl(LAN.aberto) + (LAN.cortado ? ' · <b style="color:#ff8aa3">mostrando só os 3.000 primeiros, use os filtros</b>' : "") + ((LF.busca || nAt || LF.sit !== "todas") ? ' · <a onclick="lanLimpar()" style="color:#9fd0ff;cursor:pointer;text-decoration:underline">limpar filtros</a>' : "");
+  // por que o "Em aberto" daqui é diferente do quadro de cima: lá são todos os meses, aqui só o mês escolhido
+  (function () {
+    let cc = document.getElementById("lConc");
+    if (!cc) { cc = document.createElement("div"); cc.id = "lConc"; document.getElementById("lRes").insertAdjacentElement("afterend", cc); }
+    const K = LAN.conc;
+    if (!K || LAN.mes === "todos" || LF.busca || nAt) { cc.innerHTML = ""; return; }
+    const NM = m => NMES[Number(m.split("-")[1]) - 1] + "/" + m.split("-")[0], outQ = K.totalQ - K.mesQ, outV = Math.round((K.totalV - K.mesV) * 100) / 100;
+    const base = LAN.base === "vencimento" ? "vencimento" : "competência";
+    const meses = K.outros.map(o => `<a onclick="irMes('${o.mes}')" style="cursor:pointer;color:#9fd0ff;text-decoration:underline;white-space:nowrap">${NM(o.mes)}: ${brl(o.v)}</a>`).join(" · ");
+    cc.innerHTML = `<div class="ic" style="white-space:normal;margin-top:8px;padding:8px 10px;border-radius:10px;background:#16143a;border:1px solid #2b2760;line-height:1.5">ℹ️ <b style="color:#fff">Por que o "Em aberto" daqui é diferente do quadro de cima?</b> Lá ele soma <b style="color:#fff">todos os meses</b>: ${K.totalQ} conta(s) · ${brl(K.totalV)}. Aqui é só <b style="color:#fff">${NM(LAN.mes)}</b> (mês de ${base}): ${K.mesQ} conta(s) · ${brl(K.mesV)}. ${outQ > 0 ? `As outras <b style="color:#fff">${outQ} conta(s) · ${brl(outV)}</b> são de outros meses${meses ? ": " + meses : ""}.` : ""} <a onclick="irMes('todos')" style="cursor:pointer;color:#ffd23f;text-decoration:underline;white-space:nowrap">Ver todo o período</a></div>`;
+  })();
   const dn = d => { const x = String(d || "").split("-"); return x.length === 3 ? x[2] + "/" + x[1] : "sem data"; }, sem = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
   const gnome = id => { const g = (LAN.grupos || []).find(x => x.id === id); return g ? g.icone + " " + esc(g.nome) : esc(id); };
   let h = "";
