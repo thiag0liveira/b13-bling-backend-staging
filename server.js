@@ -1959,6 +1959,9 @@ function _fontesTipoEntrega(pedidoId, ped, ctx){
            entregasJson: ent&&ent.tipo?{tipo:ent.tipo==="entrega"?"entrega":"retirada",em:Number(ent.em)||0}:null,
            agendada: !!ctx.turnos[id], bling: fb };
 }
+// CUSTO na movimentação de estoque do Bling: a API v3 usa os campos "preco" e "custo" (o nome "precoCusto" NÃO existe e o Bling ignorava, gravando a entrada sem custo)
+function _custoParaBling(c){ const n=Number(c); return n>0&&isFinite(n)?{preco:+n.toFixed(4),custo:+n.toFixed(4)}:{}; }
+function _txtCustoBling(c){ const n=Number(c); return n>0&&isFinite(n)?` · custo R$ ${n.toFixed(2).replace(".",",")}/un`:""; }
 // Corpo COMPLETO para regravar um pedido no Bling mudando só o que se quer (itens, observação). O Bling apaga o que não vem na gravação: antes, as gravações
 // "enxutas" (anotar pendência, conferir a prazo, venda a prazo) mandavam só data, cliente, itens e observação e o pedido perdia FRETE, ENDEREÇO DE ENTREGA, desconto,
 // taxa do cartão e parcelas — e deixava de parecer entrega.
@@ -12747,8 +12750,8 @@ app.post("/api/entrada-nota/confirmar",acessoEntradaNota,async(req,res)=>{
     for(const x of elegiveis){
       if(jaL[x.nItem]){ lanc.push({...x,ok:true,jaLancado:true}); continue; } // já entrou numa tentativa anterior: não lança de novo
       if(!(x.qtdUn>0)){ lanc.push({...x,ok:false,erro:"a quantidade em unidades ficou 0: confira quantas unidades vêm em cada embalagem da nota"}); continue; } // antes era pulado sem avisar
-      try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,precoCusto:x.custoRealUn||x.custoUn,
-          observacoes:`${n.semNota?"Entrada SEM NOTA":"Entrada NF "+(R.numero||"")} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
+      try{ await bling(`/estoques`,{method:"POST",body:JSON.stringify({produto:{id:Number(x.produtoId)},deposito:{id:Number(dep)},operacao:"E",quantidade:x.qtdUn,..._custoParaBling(x.custoRealUn||x.custoUn),
+          observacoes:`${n.semNota?"Entrada SEM NOTA":"Entrada NF "+(R.numero||"")}${_txtCustoBling(x.custoRealUn||x.custoUn)} ${String(R.emitente?.nome||"").slice(0,60)} (por ${quem})`.slice(0,190)})});
         postados.push(x); }
       catch(e){ lanc.push({...x,ok:false,erro:e.message}); }
       await sleep(320); }
@@ -19107,7 +19110,7 @@ app.post("/api/estoque/lancar",async(req,res)=>{
           produto:{id:pid},
           deposito:{id:Number(depositoId)},
           operacao, quantidade,
-          precoCusto: it.precoCusto!=null?Number(it.precoCusto):undefined,
+          ...(operacao!=="S"?_custoParaBling(it.precoCusto!=null?it.precoCusto:it.custo):{}),
           observacoes:(observacao||`Ajuste pelo painel de estoque (${modo}) — por ${funcNome}`).slice(0,300),
         })}); _estoqueMudou(pid,operacao==="B"?quantidade:(operacao==="E"?quantidade:-quantidade),operacao==="B"?"set":"add",{tipo:operacao==="B"?"balanco":(operacao==="E"?"entrada":"saida"),por:funcNome,nome:it.nome,motivo:String(observacao||`Ajuste pelo painel de estoque (${modo})`).slice(0,150),origem:"Painel de estoque"});
         resultados.push({produtoId:pid,nome:it.nome||"",ok:true,operacao,quantidade,antes,
