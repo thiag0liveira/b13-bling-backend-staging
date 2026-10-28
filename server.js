@@ -11828,7 +11828,7 @@ function _gfSugestoes(M){ const {out,fim,U}=M, reais=out.filter(x=>x.ativo&&!x.v
   S.push({id:"variaveis-em-branco",titulo:"Comissões, taxas de cartão, perdas e antecipação ficam em branco na planilha",cod:"4.3",grupo:"fin",nivel:"info",estimativa:null,motivo:"As taxas de cartão já são calculadas pelo sistema (tela Taxas de Cartão). Comissões e perdas ainda precisam de lançamento.",acao:"entendi"});
   return S.filter(x=>!U.sugestoes[x.id]); }
 app.get("/api/gastos-fixos",requireAcesso("acesso_custos"),(req,res)=>{ try{ const mes=_GF_MESES.includes(String(req.query.mes||""))?req.query.mes:(_GF_MESES.includes(_diaBRk(Date.now()).slice(0,7))?_diaBRk(Date.now()).slice(0,7):_GF_MESES[8]), M=_gfMontar(mes);
-    res.json({ok:true,mes,meses:_GF_MESES,mesHoje:M.mesHoje,ultimoMesPlanilha:M.ult,fonte:_gfSeedLer().fonte,grupos:M.grupos,totais:{previsto:M.totPrev,realizado:M.totReal,diferenca:_round2(M.totReal-M.totPrev),serie:M.totalSerie,porTipo:M.porTipo},aConfirmar:M.aConfirmar,analise:_gfAnalise(M),sugestoes:_gfSugestoes(M),categorias:PLANO_CONTAS.filter(p=>["fixa","variavel","depreciacao","financeiro"].includes(p.tipo)).map(p=>({cod:p.cod,nome:p.rotulo})),gruposLista:_gfSeedLer().grupos}); }catch(e){ res.status(500).json({erro:e.message}); } });
+    res.json({ok:true,mes,meses:_GF_MESES,mesHoje:M.mesHoje,ultimoMesPlanilha:M.ult,fonte:_gfSeedLer().fonte,grupos:M.grupos,totais:{previsto:M.totPrev,realizado:M.totReal,diferenca:_round2(M.totReal-M.totPrev),serie:M.totalSerie,porTipo:M.porTipo},aConfirmar:M.aConfirmar,analise:_gfAnalise(M),sugestoes:_gfSugestoes(M),categorias:PLANO_CONTAS.filter(p=>["fixa","variavel","depreciacao","financeiro"].includes(p.tipo)&&!p.oculta).map(p=>({cod:p.cod,nome:p.rotulo})),gruposLista:_gfSeedLer().grupos}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/gastos-fixos/previsto",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, U=_gfLer(), id=String(b.id||""), mes=String(b.mes||""); if(!id||!_GF_MESES.includes(mes)) return res.status(400).json({erro:"item ou mês inválido"});
     const v=b.valor===""||b.valor==null?null:Number(String(b.valor).replace(/\./g,"").replace(",",".")); if(v!=null&&!(v>=0)) return res.status(400).json({erro:"valor inválido"}); const u=U.itens[id]||(U.itens[id]={});
     if(b.aPartirDe){ if(v==null) delete u.base; else u.base={desde:mes,valor:_round2(v)}; } else { u.previsto||={}; if(v==null) delete u.previsto[mes]; else u.previsto[mes]=_round2(v); }
@@ -12999,9 +12999,30 @@ const PLANO_CONTAS=[
   ["9.1","Compra de equipamentos e veículos (ativo)","ativo"],["9.2","Empréstimos e financiamentos (amortização)","fora"],["9.3","Distribuição de lucros / retiradas","fora"],["9.4","Baixa de provisão (13º e férias pagos)","fora"],["9.9","Outros fora do resultado","fora"]
 ].map(([cod,nome,tipo])=>({cod,nome,tipo,rotulo:cod+" "+nome}));
 const CATEGORIAS_DESPESA=PLANO_CONTAS.map(p=>p.rotulo);
+// ===== CATEGORIAS DAS DESPESAS: o plano de contas acima é a base (cada conta tem um TIPO que define onde a despesa cai no resultado). O usuário pode ADICIONAR contas novas,
+// RENOMEAR e REMOVER (as originais ficam só ocultas das listas, para o histórico continuar certo; as criadas por ele são apagadas, movendo antes o que usa).
+const CATEG_FILE=`${DATA_DIR}/categorias_despesa.json`;
+const _PLANO_BASE=PLANO_CONTAS.map(p=>({cod:p.cod,nome:p.nome,tipo:p.tipo}));
+const _CATEG_TIPOS=[{id:"fixa",nome:"Despesa fixa",prefixo:"5.8"},{id:"variavel",nome:"Despesa variável (ligada às vendas)",prefixo:"4.8"},{id:"financeiro",nome:"Financeira (juros, tarifas)",prefixo:"7.8"},{id:"fora",nome:"Fora do resultado (retiradas, empréstimos)",prefixo:"9.8"}];
+const _TIPO_NOME={deducao:"Dedução da receita (impostos sobre vendas)",compra:"Compra de mercadoria (estoque)",variavel:"Despesa variável (ligada às vendas)",fixa:"Despesa fixa",depreciacao:"Depreciação",financeiro:"Financeira (juros, tarifas)",imposto_lucro:"Imposto sobre o lucro",ativo:"Investimento (ativo)",fora:"Fora do resultado (retiradas, empréstimos)"};
+const _CATEG_PROTEGIDAS=["5.9"]; // "Outras despesas fixas": para onde o sistema manda o que não reconhece
+function _lerCateg(){ const d=lerJSON(CATEG_FILE,null)||{}; d.extras||=[]; d.ocultas||=[]; d.renomeadas||={}; return d; }
+function _cmpCod(a,b){ const x=String(a).split(".").map(Number), y=String(b).split(".").map(Number); for(let i=0;i<Math.max(x.length,y.length);i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d; } return 0; }
+function _aplicarCategorias(){ // reconstrói PLANO_CONTAS e CATEGORIAS_DESPESA NO MESMO array (o resto do sistema usa essas variáveis)
+  const d=_lerCateg(), todos=[..._PLANO_BASE.map(p=>({...p})),...d.extras.map(e=>({cod:e.cod,nome:e.nome,tipo:e.tipo,custom:true}))]
+    .map(p=>({...p,nome:d.renomeadas[p.cod]||p.nome})).sort((a,b)=>_cmpCod(a.cod,b.cod)).map(p=>({...p,rotulo:p.cod+" "+p.nome,oculta:d.ocultas.includes(p.cod)}));
+  PLANO_CONTAS.length=0; todos.forEach(p=>PLANO_CONTAS.push(p));
+  CATEGORIAS_DESPESA.length=0; todos.filter(p=>!p.oculta).forEach(p=>CATEGORIAS_DESPESA.push(p.rotulo));
+}
+// cod da categoria de um texto salvo ("5.2.1 Aluguel"): só pelo código, assim um nome trocado depois não desliga o que já foi lançado; null se não reconhece
+function _codDaCategoria(c){ c=String(c||""); const p=PLANO_CONTAS.find(x=>x.rotulo===c)||(/^\d/.test(c)&&PLANO_CONTAS.find(x=>x.cod===c.split(" ")[0]))||PLANO_CONTAS.find(x=>x.cod===_CAT_ANTIGA[c]); return p?p.cod:null; }
+function _catAtual(c){ const cod=_codDaCategoria(c); const p=cod&&PLANO_CONTAS.find(x=>x.cod===cod); return p?p.rotulo:c; }
+function _usoCategoria(cod){ let t=0,r=0,g=0; try{ const C=lerContasPagar(); t=(C.titulos||[]).filter(x=>_codDaCategoria(x.categoria)===cod).length; r=(C.recorrentes||[]).filter(x=>_codDaCategoria(x.categoria)===cod).length; }catch(e){} try{ g=(_gfLer().novos||[]).filter(n=>n.cod===cod).length; }catch(e){} return {titulos:t,fixas:r,gastosFixos:g,total:t+r+g}; }
+function _moverCategoria(de,para){ const pl=PLANO_CONTAS.find(p=>p.cod===para); if(!pl) return 0; let n=0; try{ const C=lerContasPagar(); (C.titulos||[]).forEach(x=>{ if(_codDaCategoria(x.categoria)===de){ x.categoria=pl.rotulo; n++; } }); (C.recorrentes||[]).forEach(x=>{ if(_codDaCategoria(x.categoria)===de){ x.categoria=pl.rotulo; n++; } }); _salvarContas(C); }catch(e){} try{ const U=_gfLer(); let m=false; (U.novos||[]).forEach(x=>{ if(x.cod===de){ x.cod=para; m=true; n++; } }); if(m) salvarJSON(GF_FILE,U); }catch(e){} return n; }
+_aplicarCategorias();
 // categorias antigas (antes do plano de contas) -> conta do plano
 const _CAT_ANTIGA={"Fornecedores (mercadoria)":"3.1","Aluguel":"5.2.1","Salários e encargos":"5.1.1","Energia":"5.2.3","Água":"5.2.4","Internet e telefone":"5.3.3","Impostos e taxas":"5.3.5","Frete e combustível":"4.1","Manutenção":"5.5.1","Marketing":"5.4.1","Tarifas bancárias":"5.6.1","Outros":"5.9"};
-function _contaDoPlano(cat){ const c=String(cat||""); const p=PLANO_CONTAS.find(x=>x.rotulo===c||x.cod===c.split(" ")[0]&&c.includes(x.nome))||PLANO_CONTAS.find(x=>x.cod===_CAT_ANTIGA[c]); return p||PLANO_CONTAS.find(x=>x.cod==="5.9"); }
+function _contaDoPlano(cat){ const cod=_codDaCategoria(cat); return PLANO_CONTAS.find(x=>x.cod===cod)||PLANO_CONTAS.find(x=>x.cod==="5.9"); }
 // competência: mês (YYYY-MM) e em quantos meses distribuir (eventos anuais: IPVA, seguro, alvará…)
 function _competenciaDoTitulo(t){ const ini=/^\d{4}-\d{2}$/.test(String(t.competencia||""))?t.competencia:String(t.vencimento||"").slice(0,7); return {ini,meses:Math.min(60,Math.max(1,Number(t.competenciaMeses)||1))}; }
 // CONTAS FINANCEIRAS (bancos, cofre, caixas) com saldo inicial
@@ -13048,7 +13069,7 @@ app.get("/api/contas-pagar",requireAcesso("acesso_contas_pagar"),(req,res)=>{
       .sort((a,b)=>st==="pagas"?(b.pagoEm||0)-(a.pagoEm||0):String(a.vencimento).localeCompare(String(b.vencimento)));
     const ab=T.filter(t=>["aberta","vencida","vence logo"].includes(t.situacao)), soma=l=>_round2(l.reduce((a,t)=>a+(Number(t.valor)||0),0));
     const pm=T.filter(t=>t.situacao==="paga"&&(t.pagoEm||0)>=iniM), pc={}; pm.forEach(t=>{ pc[t.categoria]=(pc[t.categoria]||0)+(Number(t.valorPago||t.valor)||0); });
-    res.json({ok:true,itens:L.slice(0,500),total:L.length,somaFiltro:soma(L),categorias:CATEGORIAS_DESPESA,recorrentes:(C.recorrentes||[]),
+    res.json({ok:true,itens:L.slice(0,500).map(t=>({...t,categoria:_catAtual(t.categoria)})),total:L.length,somaFiltro:soma(L),categorias:CATEGORIAS_DESPESA,recorrentes:(C.recorrentes||[]),
       resumo:{aberto:soma(ab),qAberto:ab.length,vencido:soma(ab.filter(t=>t.situacao==="vencida")),qVencido:ab.filter(t=>t.situacao==="vencida").length,semana:soma(ab.filter(t=>t.situacao!=="aberta")),qSemana:ab.filter(t=>t.situacao!=="aberta").length,
         pagoMes:_round2(pm.reduce((a,t)=>a+(Number(t.valorPago||t.valor)||0),0)),qPagoMes:pm.length,pagoPorCategoria:Object.entries(pc).map(([k,v])=>({categoria:k,valor:_round2(v)})).sort((a,b)=>b.valor-a.valor)}});
   }catch(e){ res.status(500).json({erro:e.message}); }
@@ -13114,9 +13135,19 @@ app.post("/api/contas-pagar/:id/:acao",requireAcesso("acesso_contas_pagar"),(req
       ["pagoEm","dataPagamento","forma","banco","valorPago","pagoPor","observacaoPagamento","canceladoEm","motivoCancelamento"].forEach(k=>delete t[k]); t.status="aberto"; }
     else if(a==="cancelar"){ if(!String(b.motivo||"").trim()) return res.status(400).json({erro:"informe o motivo"}); if(t.status==="pago") return res.status(409).json({erro:"desfaça o pagamento antes de cancelar"});
       Object.assign(t,{status:"cancelado",canceladoEm:Date.now(),motivoCancelamento:String(b.motivo).slice(0,200)}); hist({acao:"cancelou",motivo:t.motivoCancelamento}); }
-    else if(a==="editar"){ const v=b.valor!=null?Number(String(b.valor).replace(",",".")):null; if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"});
-      const antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao};
-      if(v!=null) t.valor=_round2(v); if(/^\d{4}-\d{2}-\d{2}$/.test(String(b.vencimento||""))) t.vencimento=b.vencimento; if(b.categoria) t.categoria=_contaDoPlano(b.categoria).rotulo; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
+    else if(a==="editar"){
+      // campos de texto (descrição, fornecedor, categoria, observação, competência) podem ser corrigidos SEMPRE; os de dinheiro e data só quando não mexem num pagamento que saiu do caixa
+      const vazio=x=>x==null||String(x).trim()==="", v=!vazio(b.valor)?Number(String(b.valor).replace(",",".")):null, vp=!vazio(b.valorPago)?Number(String(b.valorPago).replace(",",".")):null;
+      if(v!=null&&!(v>0)) return res.status(400).json({erro:"valor inválido"}); if(vp!=null&&!(vp>0)) return res.status(400).json({erro:"valor pago inválido"});
+      const dataOk=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||"")), pago=t.status==="pago", cancel=t.status==="cancelado";
+      const antes={valor:t.valor,vencimento:t.vencimento,categoria:t.categoria,descricao:t.descricao,fornecedor:t.fornecedor&&t.fornecedor.nome||"",observacao:t.observacao||"",...(pago?{valorPago:t.valorPago,dataPagamento:t.dataPagamento,forma:t.forma,banco:t.banco}:{})};
+      const mudaDinheiro=(v!=null&&_round2(v)!==t.valor)||(dataOk(b.vencimento)&&b.vencimento!==t.vencimento)||(pago&&((vp!=null&&_round2(vp)!==t.valorPago)||(dataOk(b.dataPagamento)&&b.dataPagamento!==t.dataPagamento)||(b.forma!=null&&String(b.forma)!==String(t.forma||""))||(b.banco!=null&&String(b.banco)!==String(t.banco||""))));
+      if(mudaDinheiro&&cancel) return res.status(409).json({erro:"essa conta está cancelada: reabra para mudar valor ou datas (descrição, fornecedor e categoria podem ser corrigidos)"});
+      if(mudaDinheiro&&pago&&t.sangria) return res.status(409).json({erro:"o pagamento saiu de um caixa: desfaça o pagamento para mudar valores ou datas (descrição, fornecedor e categoria podem ser corrigidos)"});
+      if(v!=null) t.valor=_round2(v); if(dataOk(b.vencimento)) t.vencimento=b.vencimento;
+      if(pago){ if(vp!=null) t.valorPago=_round2(vp); if(dataOk(b.dataPagamento)){ t.dataPagamento=b.dataPagamento; t.pagoEm=Date.parse(b.dataPagamento+"T12:00:00-03:00"); } if(b.forma!=null&&String(b.forma).trim()) t.forma=String(b.forma).slice(0,40); if(b.banco!=null) t.banco=String(b.banco).slice(0,60); }
+      if(b.categoria) t.categoria=_contaDoPlano(b.categoria).rotulo; if(b.descricao!=null&&String(b.descricao).trim()) t.descricao=String(b.descricao).trim().slice(0,120);
+      if(b.fornecedor!=null) t.fornecedor={...(t.fornecedor||{}),nome:String(b.fornecedor).trim().slice(0,120)}; if(b.observacao!=null) t.observacao=String(b.observacao).slice(0,200);
       if(/^\d{4}-\d{2}$/.test(String(b.competencia||""))) t.competencia=b.competencia; if(b.competenciaMeses!=null) t.competenciaMeses=Math.min(60,Math.max(1,Math.round(Number(b.competenciaMeses)||1)));
       hist({acao:"editou",antes}); }
     else return res.status(400).json({erro:"ação desconhecida"});
@@ -13132,9 +13163,9 @@ const CUSTOS_FICHAS_FILE=`${DATA_DIR}/custos_fichas_funcionarios.json`;
 const _GRUPOS_CUSTO=[
   {id:"pessoal",nome:"Pessoal e folha",icone:"👥",pref:["5.1"]},{id:"ocupacao",nome:"Ocupação (aluguel, energia, água)",icone:"🏢",pref:["5.2"]},
   {id:"admin",nome:"Administrativo",icone:"🗂️",pref:["5.3"]},{id:"marketing",nome:"Marketing",icone:"📣",pref:["5.4"]},
-  {id:"manutencao",nome:"Manutenção, veículos e seguros",icone:"🛠️",pref:["5.5"]},{id:"financeiro",nome:"Financeiro e tarifas",icone:"🏦",pref:["5.6","7.1"]},
+  {id:"manutencao",nome:"Manutenção, veículos e seguros",icone:"🛠️",pref:["5.5"]},{id:"financeiro",nome:"Financeiro e tarifas",icone:"🏦",pref:["5.6","7.1","7.8"]},
   {id:"variaveis",nome:"Custos de venda",icone:"🚚",pref:["4."]},{id:"mercadoria",nome:"Mercadorias (compras)",icone:"📦",pref:["3."]},
-  {id:"impostos",nome:"Impostos sobre vendas e lucro",icone:"🧾",pref:["2.","8."]},{id:"outros",nome:"Outros",icone:"📎",pref:[]},
+  {id:"impostos",nome:"Impostos sobre vendas e lucro",icone:"🧾",pref:["2.","8."]},{id:"outros",nome:"Outros (despesas fixas criadas por você)",icone:"📎",pref:["5.8"]},
   {id:"fora",nome:"Fora do resultado (empréstimos, retiradas, ativos)",icone:"↔️",pref:["9."],foraDoTotal:true}];
 function _grupoDoCusto(cod){ cod=String(cod||""); if(cod==="7.2") return "fora"; for(const g of _GRUPOS_CUSTO){ if(g.pref.some(p=>cod.startsWith(p))) return g.id; } return "outros"; }
 const _COMP_PESSOAL={"5.1.1":"salario","5.1.2":"encargos","5.1.3":"beneficios","5.1.4":"provisao","5.1.5":"prolabore","5.1.6":"prestador"};
@@ -13178,7 +13209,7 @@ app.get("/api/custos",requireAcesso("acesso_custos"),(req,res)=>{
       lista.sort((a,b)=>b.total-a.total||a.nome.localeCompare(b.nome));
       pessoal={funcionarios:lista,semVinculo:_blocoPessoal(pes.filter(x=>!x.funcionarioId&&x.cod!=="5.1.2")),encargosEmpresa:_blocoPessoal(pes.filter(x=>!x.funcionarioId&&x.cod==="5.1.2")),total:_somaMes(pes),pago:_somaMes(pes.filter(x=>x.status==="paga")),aberto:_somaMes(pes.filter(x=>x.status!=="paga"))}; }
     res.json({ok:true,resumo,grupos,categorias,pessoal,itens:L.slice(0,400),totalItens:L.length,somaItens:_somaMes(L),
-      funcionarios:Object.values(F).filter(f=>f.ativo!==false).map(f=>({id:f.id,nome:f.nome,nivel:f.nivel||""})).sort((a,b)=>a.nome.localeCompare(b.nome)),plano:PLANO_CONTAS.filter(p=>p.cod!=="7.2").map(p=>({cod:p.cod,rotulo:p.rotulo,grupo:_grupoDoCusto(p.cod)}))});
+      funcionarios:Object.values(F).filter(f=>f.ativo!==false).map(f=>({id:f.id,nome:f.nome,nivel:f.nivel||""})).sort((a,b)=>a.nome.localeCompare(b.nome)),plano:PLANO_CONTAS.filter(p=>p.cod!=="7.2"&&!p.oculta).map(p=>({cod:p.cod,rotulo:p.rotulo,grupo:_grupoDoCusto(p.cod)}))});
   }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/custos.csv",requireAcesso("acesso_custos"),(req,res)=>{
   try{ const C=lerContasPagar(), hoje=_diaBRk(Date.now()), mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:hoje.slice(0,7), F=lerJSON(FUNC_FILE,{}), q=x=>`"${String(x==null?"":x).replace(/"/g,'""')}"`, n=x=>String(x==null?"":x).replace(".",",");
@@ -13276,11 +13307,45 @@ app.get("/api/financeiro/competencia",requireAcesso("acesso_contas_pagar"),(req,
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
 app.post("/api/contas-pagar-recorrentes/:id",requireAcesso("acesso_contas_pagar"),(req,res)=>{
-  try{ const C=lerContasPagar(), r=(C.recorrentes||[]).find(x=>x.id===req.params.id), b=req.body||{}; if(!r) return res.status(404).json({erro:"despesa fixa não encontrada"});
+  try{ const C=lerContasPagar(), r=(C.recorrentes||[]).find(x=>x.id===req.params.id), b=req.body||{}, quem=req.sessao?.nome||""; if(!r) return res.status(404).json({erro:"despesa fixa não encontrada"});
+    const hoje=_diaBRk(Date.now()), geradas=()=>C.titulos.filter(t=>t.recorrenteId===r.id);
+    // excluir: a despesa deixa de se repetir; as contas já pagas ficam; as abertas de hoje em diante saem só se pedido
+    if(b.excluir){ let removidas=0; if(b.removerAbertas){ const antes=C.titulos.length; C.titulos=C.titulos.filter(t=>!(t.recorrenteId===r.id&&t.status==="aberto"&&String(t.vencimento)>=hoje)); removidas=antes-C.titulos.length; }
+      C.recorrentes=C.recorrentes.filter(x=>x.id!==r.id); _salvarContas(C); return res.json({ok:true,excluida:true,removidas}); }
     if(b.ativo!=null) r.ativo=!!b.ativo; if(b.valor!=null&&Number(String(b.valor).replace(",","."))>0) r.valor=_round2(Number(String(b.valor).replace(",",".")));
-    _salvarContas(C); res.json({ok:true,recorrente:r}); }catch(e){ res.status(500).json({erro:e.message}); }
+    if(b.descricao!=null&&String(b.descricao).trim()) r.descricao=String(b.descricao).trim().slice(0,120); if(b.categoria) r.categoria=_contaDoPlano(b.categoria).rotulo;
+    if(b.fornecedor!=null) r.fornecedor=String(b.fornecedor).trim().slice(0,120); if(b.dia!=null&&Number(b.dia)>=1){ r.dia=Math.min(28,Math.max(1,Math.round(Number(b.dia)))); delete r.diaUtil; }
+    let atualizadas=0;
+    if(b.aplicarAbertas){ geradas().filter(t=>t.status==="aberto"&&String(t.vencimento)>=hoje.slice(0,7)+"-01").forEach(t=>{ t.valor=_round2(r.valor); t.categoria=r.categoria; t.descricao=r.descricao+(r.variavel?" (estimado)":""); t.fornecedor={...(t.fornecedor||{}),nome:r.fornecedor||""}; if(t.competencia) t.vencimento=r.diaUtil?_diaUtil(t.competencia,r.diaUtil):_diaVenc(t.competencia,r.dia); (t.historico||=[]).push({em:Date.now(),por:quem,acao:"atualizada pela despesa fixa"}); atualizadas++; }); }
+    _salvarContas(C); res.json({ok:true,recorrente:r,atualizadas}); }catch(e){ res.status(500).json({erro:e.message}); }
 });
 
+
+// ===== gerenciar as CATEGORIAS das despesas (adicionar, renomear, remover) =====
+const _permCateg=requireAcessoAlgum(["acesso_contas_pagar","acesso_custos"],"Sem permissão para as categorias das despesas");
+app.get("/api/categorias-despesa",_permCateg,(req,res)=>{ try{
+  const lista=PLANO_CONTAS.map(p=>{ const g=_grupoDoCusto(p.cod), G=_GRUPOS_CUSTO.find(x=>x.id===g)||{}; return {cod:p.cod,nome:p.nome,rotulo:p.rotulo,tipo:p.tipo,tipoNome:_TIPO_NOME[p.tipo]||p.tipo,grupo:g,grupoNome:G.nome||"Outros",custom:!!p.custom,oculta:!!p.oculta,protegida:_CATEG_PROTEGIDAS.includes(p.cod),emUso:_usoCategoria(p.cod)}; });
+  res.json({ok:true,categorias:lista,tipos:_CATEG_TIPOS.map(t=>({id:t.id,nome:t.nome}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/categorias-despesa",_permCateg,(req,res)=>{ try{ const b=req.body||{}, quem=req.sessao?.nome||"", nome=String(b.nome||"").replace(/\s+/g," ").trim().slice(0,60), tipo=_CATEG_TIPOS.find(t=>t.id===b.tipo);
+  if(nome.length<2) return res.status(400).json({erro:"informe o nome da categoria"}); if(!tipo) return res.status(400).json({erro:"escolha o tipo da categoria"});
+  if(PLANO_CONTAS.some(p=>!p.oculta&&_nrmP(p.nome)===_nrmP(nome))) return res.status(409).json({erro:"já existe uma categoria com esse nome"});
+  const d=_lerCateg(), usados=d.extras.filter(e=>String(e.cod).startsWith(tipo.prefixo+".")).map(e=>Number(String(e.cod).split(".").pop())||0), cod=`${tipo.prefixo}.${(usados.length?Math.max(...usados):0)+1}`;
+  d.extras.push({cod,nome,tipo:tipo.id,criadoEm:Date.now(),por:quem}); salvarJSON(CATEG_FILE,d); _aplicarCategorias(); res.json({ok:true,categoria:PLANO_CONTAS.find(p=>p.cod===cod)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/categorias-despesa/:cod",_permCateg,(req,res)=>{ try{ const cod=req.params.cod, b=req.body||{}, p=PLANO_CONTAS.find(x=>x.cod===cod); if(!p) return res.status(404).json({erro:"categoria não encontrada"});
+  const d=_lerCateg(); let renomeou=false;
+  if(b.nome!=null){ const nome=String(b.nome).replace(/\s+/g," ").trim().slice(0,60); if(nome.length<2) return res.status(400).json({erro:"informe o nome da categoria"});
+    if(PLANO_CONTAS.some(x=>x.cod!==cod&&!x.oculta&&_nrmP(x.nome)===_nrmP(nome))) return res.status(409).json({erro:"já existe uma categoria com esse nome"});
+    if(nome!==p.nome){ renomeou=true; if(p.custom){ const e=d.extras.find(x=>x.cod===cod); if(e) e.nome=nome; } else if(nome===(_PLANO_BASE.find(x=>x.cod===cod)||{}).nome) delete d.renomeadas[cod]; else d.renomeadas[cod]=nome; } }
+  if(b.oculta!=null){ if(b.oculta&&_CATEG_PROTEGIDAS.includes(cod)) return res.status(409).json({erro:"essa categoria é usada pelo sistema e não pode ser removida"}); d.ocultas=d.ocultas.filter(c=>c!==cod); if(b.oculta) d.ocultas.push(cod); }
+  salvarJSON(CATEG_FILE,d); _aplicarCategorias(); let atualizados=0; if(renomeou) atualizados=_moverCategoria(cod,cod); // o texto já gravado nas contas passa a ter o nome novo
+  res.json({ok:true,categoria:PLANO_CONTAS.find(x=>x.cod===cod),atualizados}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.delete("/api/categorias-despesa/:cod",_permCateg,(req,res)=>{ try{ const cod=req.params.cod, b=req.body||{}, p=PLANO_CONTAS.find(x=>x.cod===cod); if(!p) return res.status(404).json({erro:"categoria não encontrada"});
+  if(_CATEG_PROTEGIDAS.includes(cod)) return res.status(409).json({erro:"essa categoria é usada pelo sistema e não pode ser removida"});
+  const d=_lerCateg();
+  if(!p.custom){ if(!d.ocultas.includes(cod)) d.ocultas.push(cod); salvarJSON(CATEG_FILE,d); _aplicarCategorias(); return res.json({ok:true,acao:"ocultada"}); } // original do plano: some das listas, o histórico continua
+  const uso=_usoCategoria(cod); let movidos=0;
+  if(uso.total>0){ const dest=PLANO_CONTAS.find(x=>x.cod===String(b.moverPara||"")&&x.cod!==cod&&!x.oculta); if(!dest) return res.status(409).json({erro:`essa categoria está em uso (${uso.total} lançamento(s)): escolha para qual categoria mover`,precisaMover:true,emUso:uso}); movidos=_moverCategoria(cod,dest.cod); }
+  d.extras=d.extras.filter(e=>e.cod!==cod); delete d.renomeadas[cod]; d.ocultas=d.ocultas.filter(c=>c!==cod); salvarJSON(CATEG_FILE,d); _aplicarCategorias(); res.json({ok:true,acao:"removida",movidos}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // ===================== FORNECEDORES DO PRODUTO (ficha do produto) =====================
 // Cada produto guarda quem o vende e o código que cada fornecedor usa (as mesmas ligações do Estoque fiscal: assim a
 // nota se liga sozinha). Grava no sistema e no Bling (cadastro "fornecedores do produto", com código e preço de custo).
@@ -17400,6 +17465,7 @@ app.put("/api/pedidos/:id/obs-impressa",(req,res)=>{
     res.json({ok:true,texto});
   }catch(e){ res.status(500).json({erro:e.message}); }
 });
+app.get("/categorias-despesa.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"categorias-despesa.js")); });
 app.get("/ficha-pedido.js",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.type("application/javascript"); res.sendFile(path.join(__dirname,"ficha-pedido.js")); });
 
 // ===================== PAINEL DE CONFERÊNCIAS (Comprovantes) =====================

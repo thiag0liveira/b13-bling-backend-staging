@@ -85,6 +85,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
 </style>
 <script src="/nav.js"></script>
 <script src="/ficha-pedido.js"></script>
+<script src="/categorias-despesa.js"></script>
 <style>
   body.b13nav-open{ overflow:hidden }
   @media(min-width:900px){
@@ -99,7 +100,7 @@ textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:
   (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/contas-pagar")) return;
     document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/contas-pagar"); document.body.insertBefore(nav,document.body.firstChild); }); })();
 </script>
-<div class="top"><img src="/logo"><div class="t">📒 Contas a Pagar</div><div class="sp"></div><button class="btn btn-mag" onclick="abrirNova()">➕ Nova despesa</button></div>
+<div class="top"><img src="/logo"><div class="t">📒 Contas a Pagar</div><div class="sp"></div><button class="btn btn-ghost" onclick="gerenciarCategorias()">⚙️ Categorias</button><button class="btn btn-mag" onclick="abrirNova()">➕ Nova despesa</button></div>
 <div class="wrap">
   <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
   <div class="card" id="lanCard"><h3 style="margin:0 0 4px">🔎 Custos lançados</h3><div class="ic" style="white-space:normal">Veja tudo que foi lançado, por mês, e agrupe como preferir. Toque no nome de um grupo para abrir.</div>
@@ -146,8 +147,8 @@ function render() {
   lista.innerHTML = D.itens.filter(t => !(document.getElementById("fBol") || {}).checked || t.linhaDigitavel).map(t => `<div class="lin" style="align-items:flex-start;padding:9px 4px"><div style="min-width:0;flex:1"><b>${esc(t.fornecedor?.nome || t.descricao)}</b> <span class="ic">· ${esc(t.descricao)}${t.parcela && t.parcela !== "1/1" ? " · " + esc(t.parcela) : ""} · ${esc(t.categoria)} · competência ${esc(t.competenciaTxt || "")}</span>
       <div class="ic" style="white-space:normal">vence ${dmy(t.vencimento)} · <b style="color:${cor[t.situacao]}">${esc(t.situacao)}</b>${t.status === "pago" ? ` em ${dmy(t.dataPagamento || "")} · ${esc(t.forma || "")}${t.banco ? " " + esc(t.banco) : ""}${t.valorPago && t.valorPago !== t.valor ? " · pago " + brl(t.valorPago) : ""}` : ""}${t.motivoCancelamento ? " · " + esc(t.motivoCancelamento) : ""}${t.origem === "recorrente" ? " · 🔁 fixa" : ""}</div></div>
     <div style="text-align:right;white-space:nowrap"><b>${brl(t.valor)}</b><div style="margin-top:4px;display:flex;gap:4px;justify-content:flex-end">
-      ${t.linhaDigitavel ? `<button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirBoleto('${t.id}')">🧾 Boleto</button>` : ""}${t.status === "aberto" ? `<button class="btn btn-mag" style="padding:4px 10px" onclick="abrirPagar('${t.id}')">Pagar</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirEditar('${t.id}')">✏️</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="cancelar('${t.id}')">🗑</button>` : `<button class="btn btn-ghost" style="padding:4px 8px" onclick="reabrir('${t.id}')">↩️ ${t.status === "pago" ? "Desfazer pagamento" : "Reabrir"}</button>`}</div></div></div>`).join("") || `<div class="ic">Nenhuma conta nesse filtro.</div>`;
-  recs.innerHTML = (D.recorrentes || []).map(r => `<div class="lin"><span>${esc(r.descricao)} <span class="ic">· ${esc(r.categoria)} · todo dia ${r.dia}${r.ativo === false ? " · ⏸ pausada" : ""}</span></span><span><b>${brl(r.valor)}</b> <button class="btn btn-ghost" style="padding:2px 8px" onclick="pausar('${r.id}',${r.ativo === false})">${r.ativo === false ? "▶️" : "⏸"}</button></span></div>`).join("") || `<div class="ic">Nenhuma. Ao lançar uma despesa, marque "repetir todo mês".</div>`;
+      ${t.linhaDigitavel ? `<button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirBoleto('${t.id}')">🧾 Boleto</button>` : ""}${t.status === "aberto" ? `<button class="btn btn-mag" style="padding:4px 10px" onclick="abrirPagar('${t.id}')">Pagar</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirEditar('${t.id}')">✏️</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="cancelar('${t.id}')">🗑</button>` : `<button class="btn btn-ghost" style="padding:4px 8px" onclick="abrirEditar('${t.id}')">✏️</button><button class="btn btn-ghost" style="padding:4px 8px" onclick="reabrir('${t.id}')">↩️ ${t.status === "pago" ? "Desfazer pagamento" : "Reabrir"}</button>`}</div></div></div>`).join("") || `<div class="ic">Nenhuma conta nesse filtro.</div>`;
+  recs.innerHTML = (D.recorrentes || []).map(r => `<div class="lin"><span>${esc(r.descricao)} <span class="ic">· ${esc(r.categoria)} · todo dia ${r.dia}${r.ativo === false ? " · ⏸ pausada" : ""}</span></span><span><b>${brl(r.valor)}</b> <button class="btn btn-ghost" style="padding:2px 8px" onclick="pausar('${r.id}',${r.ativo === false})">${r.ativo === false ? "▶️" : "⏸"}</button> <button class="btn btn-ghost" style="padding:2px 8px" title="Editar" onclick="abrirEditarFixa('${r.id}')">✏️</button> <button class="btn btn-ghost" style="padding:2px 8px" title="Excluir" onclick="excluirFixa('${r.id}')">🗑</button></span></div>`).join("") || `<div class="ic">Nenhuma. Ao lançar uma despesa, marque "repetir todo mês".</div>`;
   porCat.innerHTML = (D.resumo.pagoPorCategoria || []).map(c => `<div class="lin"><span>${esc(c.categoria)}</span><b>${brl(c.valor)}</b></div>`).join("") || `<div class="ic">Nada pago neste mês ainda.</div>`;
 }
 const abrir = h => { modCorpo.innerHTML = h; mod.classList.add("aberto"); }, fechar = () => mod.classList.remove("aberto");
@@ -164,7 +165,7 @@ function abrirBoleto(id) { const t = achaT(id); if (!t) return;
 async function verImagemBoleto(id) { const w = window.open("", "_blank"); try { const r = await fetch(B + "/api/contas-pagar/" + id + "/boleto-imagem", { headers: { "X-Auth-Token": token() } }); if (!r.ok) throw 0; w.location = URL.createObjectURL(await r.blob()); } catch (e) { try { w.close(); } catch (x) {} alert("Não consegui abrir a imagem do boleto."); } }
 function abrirNova() { abrir(`<h3>➕ Nova despesa</h3><div class="grid2">
   <label><div class="ic">Descrição</div><input id="nDesc" style="width:100%" placeholder="ex.: Aluguel da loja"></label><label><div class="ic">Fornecedor / quem recebe</div><input id="nForn" style="width:100%"></label>
-  <label><div class="ic">Categoria</div><select id="nCat" style="width:100%">${D.categorias.map(c => `<option>${esc(c)}</option>`).join("")}</select></label><label><div class="ic">Valor total</div><input id="nValor" inputmode="decimal" style="width:100%"></label>
+  <label><div class="ic">Categoria · <a href="#" onclick="gerenciarCategorias();return false" style="color:#9fd2ff">⚙️ gerenciar</a></div><select id="nCat" style="width:100%">${D.categorias.map(c => `<option>${esc(c)}</option>`).join("")}</select></label><label><div class="ic">Valor total</div><input id="nValor" inputmode="decimal" style="width:100%"></label>
   <label><div class="ic">Vencimento (1ª parcela)</div><input id="nVenc" type="date" value="${hoje()}" style="width:100%"></label><label><div class="ic">Parcelas (pagamentos)</div><input id="nParc" inputmode="numeric" value="1" style="width:100%"></label>
   <label><div class="ic">Competência (mês a que pertence)</div><input id="nComp" type="month" value="${hoje().slice(0, 7)}" style="width:100%"></label><label><div class="ic">Distribuir em quantos meses</div><input id="nCompM" inputmode="numeric" value="1" style="width:100%"></label></div>
   <div class="ic" style="white-space:normal;margin-top:4px">Ex.: IPVA ou seguro pagos de uma vez valem para o ano todo: competência no 1º mês e distribuir em 12. As parcelas são as datas de pagamento; a distribuição é para o custo mensal.</div>
@@ -183,13 +184,76 @@ function abrirPagar2(id) { const t = achaT(id); abrir(`<h3>Pagar · ${esc(t.forn
   <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="pagar('${id}')">✅ Confirmar pagamento</button></div>`); }
 async function pagar(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/pagar`, { method: "POST", body: JSON.stringify({ data: v("pData"), valorPago: v("pValor").replace(",", "."), forma: v("pForma"), banco: v("pBanco"), sessaoId: v("pCaixa"), observacao: v("pObs") }) });
   if (!ok) { pMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
-function abrirEditar(id) { const t = achaT(id); abrir(`<h3>✏️ Editar conta</h3><div class="grid2"><label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
-  <label><div class="ic">Categoria</div><select id="eCat" style="width:100%">${D.categorias.map(c => `<option ${c === t.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
-  <label><div class="ic">Valor</div><input id="eValor" inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label><label><div class="ic">Vencimento</div><input id="eVenc" type="date" value="${t.vencimento}" style="width:100%"></label>
-  <label><div class="ic">Competência</div><input id="eComp" type="month" value="${esc(t.competencia || String(t.vencimento).slice(0, 7))}" style="width:100%"></label><label><div class="ic">Distribuir em meses</div><input id="eCompM" inputmode="numeric" value="${t.competenciaMeses || 1}" style="width:100%"></label></div><div id="eMsg"></div>
-  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarEdicao('${id}')">💾 Salvar</button></div>`); }
-async function salvarEdicao(id) { const v = x => document.getElementById(x).value; const { ok, j } = await api(`/api/contas-pagar/${id}/editar`, { method: "POST", body: JSON.stringify({ descricao: v("eDesc"), categoria: v("eCat"), valor: v("eValor").replace(",", "."), vencimento: v("eVenc"), competencia: v("eComp"), competenciaMeses: v("eCompM") }) });
-  if (!ok) { eMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; } fechar(); carregar(); }
+// atualiza as listas de categoria (formulário aberto e filtro) quando o painel de categorias muda algo
+function atualizarCategoriasNaTela(rotulos) {
+  D.categorias = rotulos;
+  ["nCat", "eCat", "fCatEdit"].forEach(id => { const s = document.getElementById(id); if (!s) return; const atual = s.value; const lista = rotulos.includes(atual) || !atual ? rotulos : [atual].concat(rotulos); s.innerHTML = lista.map(c => `<option ${c === atual ? "selected" : ""}>${esc(c)}</option>`).join(""); });
+  const f = document.getElementById("fCat");
+  if (f) { const a = f.value; f.innerHTML = `<option value="">Todas as categorias</option>` + rotulos.map(c => `<option>${esc(c)}</option>`).join(""); f.value = a; }
+}
+function gerenciarCategorias() { B13Categorias.abrir({ aoMudar: atualizarCategoriasNaTela, aoFechar: function (mudou) { if (mudou) carregar(); } }); }
+const LINK_CAT = `<a href="#" onclick="gerenciarCategorias();return false" style="color:#9fd2ff">⚙️ gerenciar</a>`;
+function abrirEditar(id) {
+  const t = achaT(id); if (!t) return;
+  const pago = t.status === "pago", cancel = t.status === "cancelado", trava = cancel || (pago && !!t.sangria), dis = trava ? "disabled" : "";
+  const cats = D.categorias.includes(t.categoria) ? D.categorias : [t.categoria].concat(D.categorias);
+  const formas = !t.forma || FORMAS.includes(t.forma) ? FORMAS : [t.forma].concat(FORMAS);
+  const aviso = trava ? `<div class="ic" style="white-space:normal;color:#ffd23f;margin:6px 0">${cancel ? "Conta cancelada: reabra para mudar valor ou datas." : "O pagamento saiu de um caixa: desfaça o pagamento para mudar valor ou datas."} Descrição, fornecedor, categoria e observação podem ser corrigidos.</div>` : "";
+  abrir(`<h3>✏️ Editar ${pago ? "despesa paga" : cancel ? "conta cancelada" : "conta"}</h3>${aviso}<div class="grid2">
+  <label><div class="ic">Descrição</div><input id="eDesc" value="${esc(t.descricao)}" style="width:100%"></label>
+  <label><div class="ic">Fornecedor / quem recebe</div><input id="eForn" value="${esc(t.fornecedor?.nome || "")}" style="width:100%"></label>
+  <label><div class="ic">Categoria · ${LINK_CAT}</div><select id="eCat" style="width:100%">${cats.map(c => `<option ${c === t.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+  <label><div class="ic">Valor</div><input id="eValor" ${dis} inputmode="decimal" value="${String(t.valor).replace(".", ",")}" style="width:100%"></label>
+  <label><div class="ic">Vencimento</div><input id="eVenc" ${dis} type="date" value="${t.vencimento}" style="width:100%"></label>
+  <label><div class="ic">Competência</div><input id="eComp" type="month" value="${esc(t.competencia || String(t.vencimento).slice(0, 7))}" style="width:100%"></label>
+  <label><div class="ic">Distribuir em meses</div><input id="eCompM" inputmode="numeric" value="${t.competenciaMeses || 1}" style="width:100%"></label>
+  ${pago ? `<label><div class="ic">Valor pago</div><input id="eVP" ${dis} inputmode="decimal" value="${String(t.valorPago != null ? t.valorPago : t.valor).replace(".", ",")}" style="width:100%"></label>
+  <label><div class="ic">Data do pagamento</div><input id="eDP" ${dis} type="date" value="${esc(t.dataPagamento || "")}" style="width:100%"></label>
+  <label><div class="ic">Forma</div><select id="eForma" ${dis} style="width:100%">${formas.map(f => `<option ${f === t.forma ? "selected" : ""}>${esc(f)}</option>`).join("")}</select></label>
+  <label><div class="ic">Banco / conta</div>${selBanco("eBanco")}</label>` : ""}
+  <label style="grid-column:1/-1"><div class="ic">Observação</div><input id="eObs" value="${esc(t.observacao || "")}" style="width:100%"></label></div><div id="eMsg"></div>
+  <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarEdicao('${id}')">💾 Salvar</button></div>`);
+  if (pago) { const eb = document.getElementById("eBanco"); if (eb) { if (t.banco && ![...eb.options].some(o => o.value === t.banco)) eb.add(new Option(t.banco, t.banco)); eb.value = t.banco || ""; eb.disabled = trava; } }
+}
+async function salvarEdicao(id) {
+  const v = x => document.getElementById(x).value, ex = x => document.getElementById(x), t = achaT(id), pago = t && t.status === "pago";
+  const body = { descricao: v("eDesc"), fornecedor: v("eForn"), categoria: v("eCat"), observacao: v("eObs"), competencia: v("eComp"), competenciaMeses: v("eCompM") };
+  if (!ex("eValor").disabled) { body.valor = v("eValor").replace(",", "."); body.vencimento = v("eVenc"); }
+  if (pago && !ex("eVP").disabled) { body.valorPago = v("eVP").replace(",", "."); body.dataPagamento = v("eDP"); body.forma = v("eForma"); body.banco = v("eBanco"); }
+  const { ok, j } = await api(`/api/contas-pagar/${id}/editar`, { method: "POST", body: JSON.stringify(body) });
+  if (!ok) { eMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; }
+  fechar(); carregar(); carregarComp();
+}
+// despesa fixa (repete todo mês): editar e excluir
+function abrirEditarFixa(id) {
+  const r = (D.recorrentes || []).find(x => x.id === id); if (!r) return;
+  const cats = D.categorias.includes(r.categoria) ? D.categorias : [r.categoria].concat(D.categorias);
+  abrir(`<h3>✏️ Editar despesa fixa</h3><div class="grid2">
+  <label><div class="ic">Descrição</div><input id="fDesc" value="${esc(r.descricao)}" style="width:100%"></label>
+  <label><div class="ic">Fornecedor / quem recebe</div><input id="fForn" value="${esc(r.fornecedor || "")}" style="width:100%"></label>
+  <label><div class="ic">Categoria · ${LINK_CAT}</div><select id="fCatEdit" style="width:100%">${cats.map(c => `<option ${c === r.categoria ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>
+  <label><div class="ic">Valor todo mês</div><input id="fValor" inputmode="decimal" value="${String(r.valor).replace(".", ",")}" style="width:100%"></label>
+  <label><div class="ic">Dia do vencimento (1 a 28)</div><input id="fDia" inputmode="numeric" value="${r.dia}" style="width:100%"></label></div>
+  <label class="ic" style="display:block;margin-top:8px;white-space:normal"><input type="checkbox" id="fAplicar" checked> aplicar também às contas deste mês e do próximo que ainda estão em aberto</label>
+  <div id="fMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarFixa('${id}')">💾 Salvar</button></div>`);
+}
+async function salvarFixa(id) {
+  const v = x => document.getElementById(x).value;
+  const { ok, j } = await api(`/api/contas-pagar-recorrentes/${id}`, { method: "POST", body: JSON.stringify({ descricao: v("fDesc"), fornecedor: v("fForn"), categoria: v("fCatEdit"), valor: v("fValor").replace(",", "."), dia: v("fDia"), aplicarAbertas: document.getElementById("fAplicar").checked }) });
+  if (!ok) { fMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; }
+  fechar(); carregar(); carregarComp();
+}
+function excluirFixa(id) {
+  const r = (D.recorrentes || []).find(x => x.id === id); if (!r) return;
+  abrir(`<h3>🗑 Excluir despesa fixa</h3><div style="font-size:13px;line-height:1.5"><b>${esc(r.descricao)}</b> (${brl(r.valor)} todo dia ${r.dia}) deixa de se repetir. As contas já pagas e as vencidas continuam; nada do histórico é apagado.</div>
+  <label class="ic" style="display:block;margin-top:8px;white-space:normal"><input type="checkbox" id="fRem" checked> também apagar as contas abertas que vencem de hoje em diante</label>
+  <div id="fMsg"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-ghost" style="flex:1" onclick="fechar()">Voltar</button><button class="btn btn-mag" style="flex:1" onclick="confirmarExcluirFixa('${id}')">🗑 Excluir</button></div>`);
+}
+async function confirmarExcluirFixa(id) {
+  const { ok, j } = await api(`/api/contas-pagar-recorrentes/${id}`, { method: "POST", body: JSON.stringify({ excluir: true, removerAbertas: document.getElementById("fRem").checked }) });
+  if (!ok) { fMsg.innerHTML = `<div class="err">${esc(j.erro || "Não consegui.")}</div>`; return; }
+  fechar(); carregar(); carregarComp();
+}
 async function cancelar(id) { const m = prompt("Motivo do cancelamento:"); if (!m) return; const { ok, j } = await api(`/api/contas-pagar/${id}/cancelar`, { method: "POST", body: JSON.stringify({ motivo: m }) }); if (!ok) alert(j.erro); carregar(); }
 async function reabrir(id) { if (!confirm("Voltar esta conta para 'em aberto'?")) return; const { ok, j } = await api(`/api/contas-pagar/${id}/reabrir`, { method: "POST", body: "{}" }); if (!ok) alert(j.erro); carregar(); }
 async function pausar(id, ativar) { await api(`/api/contas-pagar-recorrentes/${id}`, { method: "POST", body: JSON.stringify({ ativo: ativar }) }); carregar(); }
@@ -280,7 +344,7 @@ function linhaLan(t) {
   if (t.sintetico) acoes = btn("btn-ghost", "padding:4px 8px", "location.href='" + esc(t.destino || "/taxas-cartao?mes=" + LAN.mes) + "'", "ver como");
   else { acoes += btnNota(t); if (t.linhaDigitavel) acoes += btn("btn-ghost", "padding:4px 8px", "abrirBoleto('" + t.id + "')", "🧾");
     if (t.status === "aberto") acoes += btn("btn-mag", "padding:4px 10px", "abrirPagar('" + t.id + "')", "Pagar") + btn("btn-ghost", "padding:4px 8px", "abrirEditar('" + t.id + "')", "✏️") + btn("btn-ghost", "padding:4px 8px", "cancelar('" + t.id + "')", "🗑");
-    else acoes += btn("btn-ghost", "padding:4px 8px", "reabrir('" + t.id + "')", "↩️"); }
+    else acoes += btn("btn-ghost", "padding:4px 8px", "abrirEditar('" + t.id + "')", "✏️") + btn("btn-ghost", "padding:4px 8px", "reabrir('" + t.id + "')", "↩️"); }
   const parc = t.parcela && t.parcela !== "1/1" && t.parcela !== "mensal" ? " · " + esc(t.parcela) : "";
   const info = esc(t.categoria) + " · competência " + esc(t.competenciaTxt || "") + " · vence " + dmy(t.vencimento) + ' · <b style="color:' + corSit[t.situacao] + '">' + esc(t.situacao) + "</b>" + (pago ? " em " + dmy(t.dataPagamento || "") + (t.forma ? " · " + esc(t.forma) : "") + (t.banco ? " " + esc(t.banco) : "") : "") + (t.estimado ? " · valor estimado" : "") + (t.origem === "recorrente" ? " · 🔁 fixa" : "") + (t.numeroNota ? " · nota " + esc(t.numeroNota) : "") + (t.motivoCancelamento ? " · " + esc(t.motivoCancelamento) : "");
   return '<div class="lr"><div class="lm"><b>' + esc(forn) + '</b> <span class="ic">· ' + esc(t.descricao) + parc + '</span><div class="ic" style="white-space:normal">' + info + '</div></div><div class="lv"><b>' + brl(t.valorMes) + "</b>" + (Math.abs(t.valor - t.valorMes) > 0.01 ? '<div class="ic">de ' + brl(t.valor) + "</div>" : "") + '<div style="margin-top:4px;display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap">' + acoes + "</div></div></div>"; }
