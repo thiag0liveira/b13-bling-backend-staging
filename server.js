@@ -1959,6 +1959,21 @@ function _fontesTipoEntrega(pedidoId, ped, ctx){
            entregasJson: ent&&ent.tipo?{tipo:ent.tipo==="entrega"?"entrega":"retirada",em:Number(ent.em)||0}:null,
            agendada: !!ctx.turnos[id], bling: fb };
 }
+// Corpo COMPLETO para regravar um pedido no Bling mudando só o que se quer (itens, observação). O Bling apaga o que não vem na gravação: antes, as gravações
+// "enxutas" (anotar pendência, conferir a prazo, venda a prazo) mandavam só data, cliente, itens e observação e o pedido perdia FRETE, ENDEREÇO DE ENTREGA, desconto,
+// taxa do cartão e parcelas — e deixava de parecer entrega.
+function _corpoPedidoCompleto(ped,mud){ mud=mud||{}; const p={data:ped.data,contato:{id:ped.contato?.id},itens:mud.itens||(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor}))};
+  p.observacoes=mud.observacoes!==undefined?mud.observacoes:(ped.observacoes||"");
+  if(ped.vendedor?.id) p.vendedor={id:ped.vendedor.id}; if(ped.loja?.id) p.loja={id:ped.loja.id};
+  if(ped.transporte) p.transporte=ped.transporte;
+  if(ped.desconto&&ped.desconto.valor!=null) p.desconto={valor:Number(ped.desconto.valor)||0,unidade:ped.desconto.unidade||"REAL"};
+  if(ped.outrasDespesas!=null) p.outrasDespesas=+Number(ped.outrasDespesas).toFixed(2);
+  if(ped.parcelas?.length) p.parcelas=ped.parcelas.map(x=>({formaPagamento:{id:x.formaPagamento?.id},dataVencimento:x.dataVencimento||ped.data,valor:x.valor}));
+  return p; }
+// Decide o tipo (entrega/retirada) e, se for entrega só porque o Bling mostra frete/endereço, GRAVA isso no registro de entregas: depois, mesmo que alguma gravação apague o frete no Bling, o pedido continua entrega.
+function _tipoEntregaFirme(id,ped){ const t=_tipoEntregaDoPedido(id,ped);
+  if(t==="entrega"&&ped&&ped.id){ try{ const f=_fontesTipoEntrega(id,ped); if(!f.proposta&&!f.entregasJson) _gravarTipoEntrega(id,{tipo:"entrega",endereco:(ped.transporte?.enderecoEntrega?.endereco)||"",taxa:Number(ped.transporte?.frete||0),origem:"carimbo"}); }catch(e){} }
+  return t; }
 function _tipoEntregaDoPedido(pedidoId, ped, ctx, opc){
   const f=_fontesTipoEntrega(pedidoId,ped,ctx), c=[f.proposta,f.entregasJson].filter(Boolean);
   if(c.length===1) return c[0].tipo;
@@ -2901,7 +2916,7 @@ app.post("/api/fluxo/:id/enviar-separacao",async(req,res)=>{
       if(ehEntrega===null){
         try{
           const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r?.data);
-          ehEntrega=_tipoEntregaDoPedido(id,ped)==="entrega";
+          ehEntrega=_tipoEntregaFirme(id,ped)==="entrega";
         }catch(e){ ehEntrega=true; } // se não conseguir checar, não bloqueia (evita falso positivo)
       }
       if(!ehEntrega){
@@ -2973,7 +2988,7 @@ app.post("/api/fluxo/:id/separacao-concluida",async(req,res)=>{
       const ped=await bling(`/pedidos/vendas/${id}`).then(r=>r.data).catch(()=>({}));
       pend[id]={pedidoId:id,numero:ped.numero,cliente:ped.contato?.nome||"",telefone:ped.contato?.celular||"",faltas,sugestao:"",status:"pendente",em:Date.now()};
       salvarPend(pend);
-      if(texto) try{ await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({data:ped.data,contato:{id:ped.contato?.id},itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto})}); }catch(e){}
+      if(texto&&ped&&ped.id) try{ _tipoEntregaFirme(id,ped); await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(_corpoPedidoCompleto(ped,{observacoes:(ped.observacoes?ped.observacoes+" | ":"")+texto}))}); }catch(e){}
     }
     const rSit=await mudarSituacaoPedido(id, novoSit);
     if(!rSit.ok) return res.status(502).json({erro:"Não consegui mudar a situação no Bling: "+(rSit.erro||"erro")});
@@ -3088,7 +3103,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
     // é de entrega de verdade nunca fecha direto em ATENDIDO sem passar pela
     // conferência real de entrega.
     const obsPed=String(ped?.observacoes||"");
-    const ehEntregaReal = _tipoEntregaDoPedido(id,ped)==="entrega"; // mesma regra de todas as telas (proposta, registro de entregas, agendamento e Bling)
+    const ehEntregaReal = _tipoEntregaFirme(id,ped)==="entrega"; // mesma regra de todas as telas (proposta, registro de entregas, agendamento e Bling)
     // PAGAMENTO: só exige pagamento antes de conferir pra RETIRADA — o cliente leva
     // na hora, então tem que estar pago. ENTREGA é paga pelo motorista ao finalizar
     // a entrega (dinheiro, cartão, pix), então segue pra Verificado mesmo sem
@@ -3115,14 +3130,7 @@ app.post("/api/fluxo/:id/conferido",async(req,res)=>{
       const quando=new Date().toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"});
       const nota=`[CONFERIDO ${quando}] Conferido por ${funcionarioNome||"—"} — todos os produtos conferidos. Pedido segue A PRAZO (aguardando pagamento).`;
       try{
-        await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
-          data:ped.data, contato:{id:ped.contato?.id},
-          itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
-          observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
-          ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
-          ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
-          ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
-        })});
+        await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(_corpoPedidoCompleto(ped,{observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n")}))});
       }catch(e){}
       liberarLock(id,funcionarioId,funcionarioNome,"conferido");
       addLog(id,`conferido_prazo`,funcionarioId,funcionarioNome,{tipoEntrega,observacao:nota});
@@ -8489,7 +8497,7 @@ app.post("/api/pdv/venda", async(req,res)=>{
       if(statusFinalVenda==="separacao"){
         { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
         const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
-        registrarNaFilaSeparacao(pedidoId,_tipoEntregaDoPedido(pedidoId,criado?.data),fn,criado?.data?.numero||null);
+        registrarNaFilaSeparacao(pedidoId,_tipoEntregaFirme(pedidoId,criado?.data),fn,criado?.data?.numero||null);
         addLog(String(pedidoId),"enviado_separacao",funcionarioId,fn,{origem:"venda nova (caixa)",});
       } else {
         await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda);
@@ -8649,7 +8657,7 @@ app.post("/api/pdv/pendentes/:localId/sincronizar",async(req,res)=>{
       if(statusFinalVenda==="separacao"){
         const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação");
         const fn=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"";
-        registrarNaFilaSeparacao(pedidoId,_tipoEntregaDoPedido(pedidoId,criado?.data),fn,criado?.data?.numero||null);
+        registrarNaFilaSeparacao(pedidoId,_tipoEntregaFirme(pedidoId,criado?.data),fn,criado?.data?.numero||null);
       } else { await moverPedidoParaStatusFinal(pedidoId, statusFinalVenda); }
     }catch(e){ console.error("Falha ao mover pedido pendente pra "+statusFinalVenda+":",e.message); }
     let numeroPedido=criado?.data?.numero||null;
@@ -9484,7 +9492,7 @@ async function sincronizarFinalizacaoComBling(pedidoId, dados, ctx){
         ? await (async()=>{
             try{
               { const r=await mudarSituacaoPedido(pedidoId, SIT.EM_SEP); if(!r.ok) throw new Error(r.erro||"falha ao mudar situação"); }
-              registrarNaFilaSeparacao(pedidoId, _tipoEntregaDoPedido(pedidoId,ped), funcionarioNome, numero);
+              registrarNaFilaSeparacao(pedidoId, _tipoEntregaFirme(pedidoId,ped), funcionarioNome, numero);
               addLog(String(pedidoId),"enviado_separacao",null,funcionarioNome,{origem:"caixa atacado (pago, seg. plano)",numero});
               return {ok:true, caminho:["→ Em separação (pago no caixa)"], situacaoFinal:SIT.EM_SEP, reposto:[]};
             }catch(e){ return {ok:false, caminho:["falhou → Em separação: "+e.message], situacaoFinal:sitDepoisPut, reposto:[]}; }
@@ -14357,7 +14365,7 @@ function recalcularFreteEdicao(id,ped,totalItensNovo){
   try{
     const props=lerPropostas();
     const prop=Object.values(props||{}).find(p=>String(p.pedidoBlingId)===String(id));
-    const ehEntrega=_tipoEntregaDoPedido(id,ped)==="entrega";
+    const ehEntrega=_tipoEntregaFirme(id,ped)==="entrega";
     const km=prop&&prop.entrega?Number(prop.entrega.km||0):0;
     if(ehEntrega&&km>0){
       const cfg=configEntrega(), rf=calcularFretePorKm(km,totalItensNovo,cfg);
@@ -14629,13 +14637,8 @@ app.patch("/api/pedidos/:id/observacao", async (req, res) => {
     const atual = await bling(`/pedidos/vendas/${req.params.id}`);
     const ped = atual?.data; if (!ped) return res.status(404).json({ erro: "pedido não encontrado" });
     const obs = (ped.observacoes ? ped.observacoes + " | " : "") + texto;
-    const payload = {
-      data: ped.data, contato: { id: ped.contato?.id },
-      itens: (ped.itens || []).map(i => ({ produto: { id: i.produto?.id }, quantidade: i.quantidade, valor: i.valor })),
-      observacoes: obs,
-    };
-    if (ped.transporte?.frete) payload.transporte = { fretePorConta: ped.transporte.fretePorConta ?? 0, frete: ped.transporte.frete };
-    if (ped.vendedor?.id) payload.vendedor = { id: ped.vendedor.id };
+    _tipoEntregaFirme(req.params.id, ped);
+    const payload = _corpoPedidoCompleto(ped, { observacoes: obs });
     if (ped.situacao?.id) payload.situacao = { id: ped.situacao.id };
     res.json(await bling(`/pedidos/vendas/${req.params.id}`, { method: "PUT", body: JSON.stringify(payload) }));
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
@@ -16147,14 +16150,8 @@ async function _colocarAPrazo(id,{dias,observacao,autorizadoPorNome,funcNome,fun
     // registra na observação do Bling (fica visível pra quem abrir o pedido lá)
     try{
       const nota=`[VENDA A PRAZO ${quando}] Autorizado por ${auth.funcionario.nome} · operador ${funcNome} · vence em ${new Date(venceEm).toLocaleDateString("pt-BR")}${observacao?" · "+String(observacao).slice(0,120):""}`;
-      await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
-        data:ped.data, contato:{id:ped.contato?.id},
-        itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
-        observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n"),
-        ...(ped.vendedor?.id?{vendedor:{id:ped.vendedor.id}}:{}),
-        ...(ped.loja?.id?{loja:{id:ped.loja.id}}:{}),
-        ...(ped.parcelas?.length?{parcelas:ped.parcelas.map(p=>({formaPagamento:{id:p.formaPagamento?.id},dataVencimento:p.dataVencimento||ped.data,valor:p.valor}))}:{}),
-      })});
+      _tipoEntregaFirme(id,ped);
+      await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify(_corpoPedidoCompleto(ped,{observacoes:[String(ped.observacoes||"").trim(),nota].filter(Boolean).join("\n")}))});
     }catch(e){}
     const rSit=await mudarSituacaoPedido(id, SIT.PRAZO); if(!rSit.ok) throw Object.assign(new Error("Não consegui mudar o pedido pra PRAZO no Bling: "+(rSit.erro||"erro")),{status:502});
     const reg=lerVendasPrazo();
@@ -18385,7 +18382,7 @@ app.post("/api/pedidos-online/:blingId/situacao",async(req,res)=>{
     const funcNome=(lerJSON(FUNC_FILE,{})[funcionarioId]?.nome)||"—";
     addLog(String(id),"situacao_alterada",funcionarioId,funcNome,{de:nomeSituacao(de),para:nomeSituacao(alvo),numero:ped.numero,autorizadoPor:auth.funcionario.nome});
     // mantém a fila da mesa coerente
-    if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,_tipoEntregaDoPedido(id,ped),funcNome,ped.numero);
+    if(alvo===SIT.EM_SEP) registrarNaFilaSeparacao(id,_tipoEntregaFirme(id,ped),funcNome,ped.numero);
     if(alvo===SIT.ATENDIDO||alvo===SIT.CANCELADO){ try{ const fq=lerFilaSep(); delete fq[String(id)]; salvarJSON(FILA_SEP_FILE,fq); }catch(e){} }
     _sitOnline[String(id)]={situacaoId:alvo, situacao:nomeSituacao(alvo), em:Date.now()};
     res.json({ok:true, de:nomeSituacao(de), para:nomeSituacao(alvo), numero:ped.numero, autorizadoPor:auth.funcionario.nome});
@@ -20173,13 +20170,8 @@ app.patch("/api/pedidos/:id/observacao", async(req,res)=>{
     const obsAtual=ped.observacoes||"";
     const novaObs=obsAtual?(obsAtual+" | "+texto):texto;
     // PUT mínimo com nova obs
-    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({
-      nome:ped.contato?.nome||"",
-      contato:{id:ped.contato?.id},
-      data:ped.data,
-      itens:(ped.itens||[]).map(i=>({produto:{id:i.produto?.id},...(i.descricao?{descricao:i.descricao}:{}),quantidade:i.quantidade,valor:i.valor})),
-      observacoes:novaObs,
-    })});
+    _tipoEntregaFirme(id,ped);
+    await bling(`/pedidos/vendas/${id}`,{method:"PUT",body:JSON.stringify({nome:ped.contato?.nome||"",..._corpoPedidoCompleto(ped,{observacoes:novaObs})})});
     addLog(id,"observacao_salva",funcionarioId,funcionarioNome,{texto:texto.slice(0,100)});
     res.json({ok:true});
   }catch(e){ res.status(e.status||500).json({erro:e.message}); }
