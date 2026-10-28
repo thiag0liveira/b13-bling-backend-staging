@@ -1315,6 +1315,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-pagar",label:"📒 Contas a Pagar",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gastos-fixos",label:"📌 Gastos Fixos",acoes:["acesso_custos"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/folha",label:"👥 Folha e Pessoal",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/taxas-cartao",label:"💳 Taxas de Cartão",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
@@ -11875,6 +11876,7 @@ app.post("/api/gastos-fixos/provisao/config",requireAcesso("acesso_custos"),(req
     if(b.desde!==undefined){ if(!_GF_MESES.includes(String(b.desde))) return res.status(400).json({erro:"mês inicial inválido"}); nv.desde=String(b.desde); } if(b.ativo!==undefined) nv.ativo=!!b.ativo;
     U.provisao=nv; salvarJSON(GF_FILE,U); res.json({ok:true,config:nv,calculo:_gfProvCalc(nv)}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.post("/api/gastos-fixos/sugestao",requireAcesso("acesso_custos"),(req,res)=>{ try{ const b=req.body||{}, U=_gfLer(), id=String(b.id||""); if(!id) return res.status(400).json({erro:"sugestão inválida"}); U.sugestoes[id]=b.acao==="dispensar"?"dispensada":"vista"; salvarJSON(GF_FILE,U); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/folha",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"folha.html")); });
 app.get("/gastos-fixos",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"gastos-fixos.html")); });
 app.get("/api/financeiro/orcamento",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const O=lerOrcamento(), nomeConta=c=>(PLANO_CONTAS.find(p=>p.cod===c)||{}).nome||c, tipo=c=>(PLANO_CONTAS.find(p=>p.cod===c)||{}).tipo||"fixa";
@@ -13289,10 +13291,169 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
       if(!ligado){ C.titulos=C.titulos.filter(t=>!abertos.includes(t)); } // desligado: tira as contas em aberto deste mês em diante (as pagas ficam)
       else abertos.forEach(t=>{ t.valor=val; t.descricao=desc; t.categoria=rot; t.funcionarioId=f.id; t.fornecedor={...(t.fornecedor||{}),nome:f.nome}; t.vencimento=r.diaUtil?_diaUtil(t.competencia,r.diaUtil):_diaVenc(t.competencia,r.dia); }); });
     _gerarRecorrentes(C); _salvarContas(C);
-    fichas[f.id]={salario:valores.salario,encargosModo:encModo,encargos:encModo==="pct"?enc:_round2(enc),beneficios:valores.beneficios,provisaoPct:prov,diaTipo,dia,inicio,ativo,observacao:String(b.observacao||"").slice(0,300),recorrentes:rcs,valores,atualizadoEm:Date.now(),atualizadoPor:quem};
+    fichas[f.id]={...(fichas[f.id]||{}),encargosAuto:false,salario:valores.salario,encargosModo:encModo,encargos:encModo==="pct"?enc:_round2(enc),beneficios:valores.beneficios,provisaoPct:prov,diaTipo,dia,inicio,ativo,observacao:String(b.observacao||"").slice(0,300),recorrentes:rcs,valores,atualizadoEm:Date.now(),atualizadoPor:quem};
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== FOLHA E PESSOAL =====================
+// Uma tabela por pessoa com TODO o custo de manter o funcionário (salário, variável, alimentação, transporte, benefícios, encargos, provisão de 13º e férias),
+// os pagamentos do mês ligados a ele, a chave Pix, e métricas/previsões (passivo de 13º e férias, férias vencendo, rescisão estimada, 12 meses à frente).
+// Os dados ficam na mesma ficha de custo de cada funcionário (custos_fichas_funcionarios.json), que também alimenta Custos e Folha e a provisão geral.
+const FOLHA_PESSOAS_FILE=`${DATA_DIR}/folha_pessoas.json`; // pessoas da folha que NÃO usam o sistema (prestadores etc.)
+const _VINCULOS={clt:"CLT",prolabore:"Pró-labore (sócio)",prestador:"Prestador (sem carteira)",estagio:"Estagiário"};
+const _nz=x=>{ const n=_numBR(x); return isFinite(n)&&n>0?n:0; };
+const _isoOk=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""));
+function _mesesEntre(ini,fim){ if(!_isoOk(ini)||!_isoOk(fim)) return 0; const a=new Date(ini+"T12:00:00Z"), b=new Date(fim+"T12:00:00Z"); let m=(b.getUTCFullYear()-a.getUTCFullYear())*12+(b.getUTCMonth()-a.getUTCMonth()); if(b.getUTCDate()<a.getUTCDate()) m--; return Math.max(0,m); }
+function _isoMaisMeses(iso,k){ const d=new Date(iso+"T12:00:00Z"); d.setUTCMonth(d.getUTCMonth()+k); return d.toISOString().slice(0,10); }
+// meses do ano (jan até "ate") em que a pessoa trabalhou 15 dias ou mais: cada um gera 1/12 de 13º. diaLimite = dias já corridos no último mês.
+function _folhaMesesAno(adm,ano,ate,diaLimite){ let n=0; for(let m=1;m<=ate;m++){ const ref=`${ano}-${String(m).padStart(2,"0")}`, dm=new Date(Date.UTC(ano,m,0)).getUTCDate(); let ini=1;
+    if(_isoOk(adm)){ if(adm.slice(0,7)>ref) continue; if(adm.slice(0,7)===ref) ini=Number(adm.slice(8,10)); } let fim=dm; if(m===ate&&diaLimite) fim=Math.min(dm,diaLimite); if(fim-ini+1>=15) n++; } return n; }
+function _folhaCfg(){ const c=_gfProvCfg(); return {inss:Number(c.inss),rat:Number(c.rat),terceiros:Number(c.terceiros),fgts:Number(c.fgts),provisaoAtiva:!!c.ativo,desde:c.desde}; }
+// normaliza a ficha (aceita fichas antigas só com salário/encargos/benefícios/provisão)
+function _folhaFicha(f){ f=f||{}; const vinc=_VINCULOS[f.vinculo]?f.vinculo:"clt";
+  return {vinculo:vinc,cargo:String(f.cargo||"").slice(0,60),admissao:_isoOk(f.admissao)?f.admissao:"",feriasDesde:_isoOk(f.feriasDesde)?f.feriasDesde:"",salario:_nz(f.salario),variavel:_nz(f.variavel),alimentacao:_nz(f.alimentacao),transporteBruto:_nz(f.transporteBruto),descontaVT:f.descontaVT!==false,
+    beneficios:_nz(f.beneficios),encargosAuto:f.encargosAuto!==undefined?!!f.encargosAuto:!(_nz(f.encargos)>0),encargosModo:f.encargosModo==="valor"?"valor":"pct",encargos:_nz(f.encargos),provisaoPct:_nz(f.provisaoPct),
+    diaTipo:f.diaTipo==="util"?"util":"dia",dia:Math.min(31,Math.max(1,Math.round(Number(f.dia)||5))),diaBen:f.diaBen?Math.min(31,Math.max(1,Math.round(Number(f.diaBen)))):0,inicio:/^\d{4}-\d{2}$/.test(String(f.inicio||""))?f.inicio:"",
+    ativo:f.ativo!==false,emFolha:f.emFolha!==false,observacao:String(f.observacao||"").slice(0,300),pix:f.pix&&f.pix.chave?{tipo:f.pix.tipo||"",chave:String(f.pix.chave),banco:String(f.pix.banco||"").slice(0,60),titular:String(f.pix.titular||"").slice(0,80)}:null}; }
+// custo mensal, passivo (13º e férias devidos hoje), situação das férias e estimativa de rescisão de UMA pessoa
+function _folhaCalc(F,cfg,hoje,mes){
+  const clt=F.vinculo==="clt", pro=F.vinculo==="prolabore", sal=F.salario, vari=F.variavel, base=sal+vari;
+  const encPct=clt?cfg.inss+cfg.rat+cfg.terceiros+cfg.fgts:(pro?cfg.inss:0);
+  const encargos=F.encargosAuto?base*encPct/100:(F.encargosModo==="valor"?F.encargos:sal*F.encargos/100);
+  const vtDesc=clt&&F.descontaVT?Math.min(sal*0.06,F.transporteBruto):0, vtEmp=Math.max(0,F.transporteBruto-vtDesc);
+  const p13=clt?base/12:0, pFer=clt?base/12*4/3:0, encProv=(p13+pFer)*(clt?encPct:0)/100;
+  const direto=sal+vari+encargos+F.alimentacao+vtEmp+F.beneficios, total=direto+p13+pFer+encProv;
+  const r={salario:_round2(sal),variavel:_round2(vari),encargosPct:_round2(encPct),encargos:_round2(encargos),alimentacao:_round2(F.alimentacao),transporteBruto:_round2(F.transporteBruto),descontoVT:_round2(vtDesc),transporte:_round2(vtEmp),beneficios:_round2(F.beneficios),
+    direto:_round2(direto),prov13:_round2(p13),provFerias:_round2(pFer),encProv:_round2(encProv),provisao:_round2(p13+pFer+encProv),total:_round2(total),multiplicador:sal>0?_round2(total/sal):0,custoHora:_round2(total/220),custoAnual:_round2(total*12)};
+  // passivo e prazos (só CLT: 13º e férias)
+  if(clt&&_isoOk(F.admissao||F.feriasDesde)&&base>0){
+    const ano=Number(hoje.slice(0,4)), mAt=Number(hoje.slice(5,7)), dHoje=Number(hoje.slice(8,10)), adm=F.admissao||F.feriasDesde, ini=F.feriasDesde||F.admissao;
+    const m13=_folhaMesesAno(F.admissao||"",ano,mAt,dHoje), d13=base/12*m13, mAq=_mesesEntre(ini,hoje), per=Math.floor(mAq/12), resto=mAq%12, dFer=base*4/3*per+base/12*4/3*resto;
+    // o período aquisitivo fecha em ini+12 meses; a empresa tem mais 12 meses para conceder as férias (limite = ini+24 meses), senão paga em dobro
+    const limConc=_isoMaisMeses(ini,24), diasLim=Math.round((Date.parse(limConc+"T12:00:00Z")-Date.parse(hoje+"T12:00:00Z"))/864e5);
+    const mCasa=_mesesEntre(adm,hoje), anos=Math.floor(mCasa/12), avisoDias=Math.min(90,30+3*anos), aviso=base/30*avisoDias, fgtsSaldo=base*0.08*mCasa, multa=0.4*fgtsSaldo, fgtsVerbas=0.08*(aviso+d13);
+    r.passivo={meses13:m13,decimoTerceiro:_round2(d13),feriasPeriodosCompletos:per,feriasMesesNoPeriodo:resto,ferias:_round2(dFer),encargosSobre:_round2((d13+dFer)*encPct/100),total:_round2((d13+dFer)*(1+encPct/100))};
+    r.ferias={inicioAquisitivo:ini,completaEm:_isoMaisMeses(ini,12),podeTirar:per>=1,limiteConcessao:limConc,diasParaLimite:diasLim,situacao:per>=1?(diasLim<0?"vencida em dobro":(diasLim<=90?"vence em "+diasLim+" dias":"já pode tirar")):"em formação"};
+    r.rescisao={mesesDeCasa:mCasa,avisoDias,aviso:_round2(aviso),decimoTerceiro:_round2(d13),ferias:_round2(dFer),multaFgts:_round2(multa),fgtsSobreVerbas:_round2(fgtsVerbas),total:_round2(aviso+d13+dFer+multa+fgtsVerbas)};
+  }
+  return r; }
+// ---- chave Pix
+function _cpfValido(d){ if(!/^\d{11}$/.test(d)||/^(\d)\1{10}$/.test(d)) return false; const dv=(n)=>{ let s=0; for(let i=0;i<n;i++) s+=Number(d[i])*(n+1-i); const r=(s*10)%11; return r===10?0:r; }; return dv(9)===Number(d[9])&&dv(10)===Number(d[10]); }
+function _tipoPix(chave){ const t=String(chave||"").trim(), d=t.replace(/\D/g,"");
+  if(t.includes("@")) return "email"; if(/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(t)) return "aleatoria";
+  if(d.length===14&&!/[a-z]/i.test(t)) return "cnpj"; if(d.length===11&&_cpfValido(d)&&!/^\+|\(/.test(t)) return "cpf";
+  if((d.length===10||d.length===11)||((d.length===12||d.length===13)&&d.startsWith("55"))) return "telefone"; return "outra"; }
+function _normPix(chave,tipo){ const t=String(chave||"").trim(), d=t.replace(/\D/g,""); if(tipo==="email") return t.toLowerCase(); if(tipo==="aleatoria") return t.toLowerCase(); if(tipo==="cpf"||tipo==="cnpj") return d;
+  if(tipo==="telefone"){ const x=d.startsWith("55")&&d.length>=12?d:"55"+d; return "+"+x; } return t; }
+function _fmtPix(p){ if(!p||!p.chave) return ""; const c=p.chave, d=c.replace(/\D/g,"");
+  if(p.tipo==="cpf"&&d.length===11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,"$1.$2.$3-$4"); if(p.tipo==="cnpj"&&d.length===14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/,"$1.$2.$3/$4-$5");
+  if(p.tipo==="telefone"&&d.length>=12) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,d.length-4)}-${d.slice(-4)}`; return c; }
+function _pessoasFolha(){ const F=lerJSON(FUNC_FILE,{}), P=lerJSON(FOLHA_PESSOAS_FILE,{});
+  return Object.values(F).filter(f=>f&&f.id&&f.nome).map(f=>({id:f.id,nome:f.nome,sistema:true,cadAtivo:f.ativo!==false,nivel:f.nivel||""})).concat(Object.values(P).map(p=>({id:p.id,nome:p.nome,sistema:false,cadAtivo:p.ativo!==false,nivel:""}))); }
+// mantém as despesas fixas mensais da pessoa (Contas a Pagar) iguais à ficha: salário, encargos, alimentação, transporte, outros benefícios (e provisão, se a ficha antiga usa)
+function _folhaSincronizar(pessoa,F,valores,quem,fichaAnt){
+  const hoje=_diaBRk(Date.now()), mesAtual=hoje.slice(0,7), ativo=F.ativo&&F.emFolha, codSal=F.vinculo==="prolabore"?"5.1.5":F.vinculo==="prestador"?"5.1.6":"5.1.1", rotSal=F.vinculo==="prolabore"?"Pró-labore":F.vinculo==="prestador"?"Prestação de serviço":"Salário";
+  const COMP={salario:{cod:codSal,rot:rotSal},encargos:{cod:"5.1.2",rot:"Encargos"},alimentacao:{cod:"5.1.3",rot:"Alimentação",ben:true},transporte:{cod:"5.1.3",rot:"Vale-transporte",ben:true},beneficios:{cod:"5.1.3",rot:"Benefícios",ben:true},provisao:{cod:"5.1.4",rot:"Provisão de 13º e férias"}};
+  const C=lerContasPagar(); C.recorrentes||=[]; const rcs=(fichaAnt&&fichaAnt.recorrentes)||{}, inicio=(F.inicio||mesAtual);
+  Object.entries(COMP).forEach(([k,c])=>{ const val=_round2(valores[k]||0); let r=C.recorrentes.find(x=>x.id===rcs[k]); if(!r&&!(val>0)) return;
+    if(!r){ r={id:"rc"+Date.now().toString(36)+k,criadoEm:Date.now(),criadoPor:quem}; C.recorrentes.push(r); rcs[k]=r.id; }
+    const rot=(PLANO_CONTAS.find(x=>x.cod===c.cod)||_contaDoPlano("5.9")).rotulo, desc=`${c.rot} · ${pessoa.nome}`, ligado=ativo&&val>0, diaUso=(c.ben&&F.diaBen)?F.diaBen:F.dia;
+    Object.assign(r,{descricao:desc,fornecedor:pessoa.nome,categoria:rot,valor:val,dia:F.diaTipo==="dia"?diaUso:5,inicio:inicio+"-01",ativo:ligado,funcionarioId:pessoa.id,fichaComponente:k}); if(F.diaTipo==="util") r.diaUtil=diaUso; else delete r.diaUtil;
+    const abertos=C.titulos.filter(t=>t.recorrenteId===r.id&&t.status==="aberto"&&String(t.competencia)>=mesAtual);
+    if(!ligado){ C.titulos=C.titulos.filter(t=>!abertos.includes(t)); }
+    else abertos.forEach(t=>{ t.valor=val; t.descricao=desc; t.categoria=rot; t.funcionarioId=pessoa.id; t.fornecedor={...(t.fornecedor||{}),nome:pessoa.nome}; t.vencimento=r.diaUtil?_diaUtil(t.competencia,r.diaUtil):_diaVenc(t.competencia,r.dia); }); });
+  _gerarRecorrentes(C); _salvarContas(C); return rcs; }
+function _folhaConstruirFicha(b,antiga){ const m={...(antiga||{}),...b}; if(b.pix===null) m.pix=null; return _folhaFicha(m); }
+// ---- tela e métricas
+function _folhaDados(mes){
+  const hoje=_diaBRk(Date.now()), cfg=_folhaCfg(), fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), F=lerJSON(FUNC_FILE,{}), C=_gerarRecorrentes(lerContasPagar()), lan=_lancamentosDoMes(C,mes,F,hoje).filter(l=>!l.sintetico);
+  const pessoas=_pessoasFolha(), linhas=[], porFunc={}, ocultos=[]; lan.forEach(l=>{ if(l.funcionarioId) (porFunc[l.funcionarioId]||(porFunc[l.funcionarioId]=[])).push(l); });
+  const ultimoDiaMes=_diaVenc(mes,31), mesAtual=hoje.slice(0,7);
+  pessoas.forEach(p=>{ const raw=fichas[p.id], ficha=_folhaFicha(raw), temFicha=!!(raw&&ficha.salario>0);
+    if(raw&&raw.emFolha===false){ ocultos.push({id:p.id,nome:p.nome}); return; } if(!temFicha&&!p.cadAtivo) return; if(raw&&raw.ativo===false&&!p.cadAtivo) return;
+    const admMes=ficha.admissao&&ficha.admissao>ultimoDiaMes, calc=temFicha?_folhaCalc(ficha,cfg,hoje,mes):null, pags=(porFunc[p.id]||[]);
+    const pago=_round2(pags.filter(x=>x.status==="paga").reduce((a,x)=>a+x.valorMes,0)), aberto=_round2(pags.filter(x=>x.status!=="paga").reduce((a,x)=>a+x.valorMes,0));
+    linhas.push({id:p.id,nome:p.nome,sistema:p.sistema,nivel:p.nivel,cadAtivo:p.cadAtivo,temFicha,naoAdmitido:!!admMes,vinculo:ficha.vinculo,vinculoNome:_VINCULOS[ficha.vinculo],cargo:ficha.cargo,admissao:ficha.admissao,feriasDesde:ficha.feriasDesde,ficha,calc,
+      pix:ficha.pix?{...ficha.pix,formatada:_fmtPix(ficha.pix)}:null,pagamentos:pags.map(x=>({id:x.id,descricao:x.descricao,categoria:x.categoria,valorMes:x.valorMes,status:x.status,vencimento:x.vencimento,pagoEm:x.pagoEm,estimado:x.estimado})),pago,aberto}); });
+  linhas.sort((a,b)=>(b.temFicha-a.temFicha)||String(a.nome).localeCompare(String(b.nome),"pt-BR"));
+  const conta=l=>l.temFicha&&l.cadAtivo&&l.ficha.ativo&&!l.naoAdmitido, ativas=linhas.filter(conta), soma=(k)=>_round2(ativas.reduce((a,l)=>a+((l.calc&&l.calc[k])||0),0)), somaP=(k)=>_round2(ativas.reduce((a,l)=>a+((l.calc&&l.calc.passivo&&l.calc.passivo[k])||0),0));
+  const totais={pessoas:ativas.length,clt:ativas.filter(l=>l.vinculo==="clt").length,salario:soma("salario"),variavel:soma("variavel"),encargos:soma("encargos"),alimentacao:soma("alimentacao"),transporte:soma("transporte"),beneficios:soma("beneficios"),direto:soma("direto"),provisao:soma("provisao"),total:soma("total"),custoAnual:soma("custoAnual"),
+    passivo13:somaP("decimoTerceiro"),passivoFerias:somaP("ferias"),passivoEncargos:somaP("encargosSobre"),passivoTotal:somaP("total"),rescisao:_round2(ativas.reduce((a,l)=>a+((l.calc&&l.calc.rescisao&&l.calc.rescisao.total)||0),0)),pago:_round2(linhas.reduce((a,l)=>a+l.pago,0)),aberto:_round2(linhas.reduce((a,l)=>a+l.aberto,0))};
+  totais.multiplicador=totais.salario>0?_round2(totais.total/totais.salario):0; totais.custoMedio=ativas.length?_round2(totais.total/ativas.length):0;
+  // vendas do mês (pedidos não cancelados) para a folha sobre vendas
+  let vendas=0; try{ vendas=_round2(_indicePedidos().lista.filter(r=>!r.cancelado&&String(r.data||"").slice(0,7)===mes).reduce((a,r)=>a+(Number(r.total)||0),0)); }catch(e){}
+  totais.vendasMes=vendas; totais.folhaSobreVendas=vendas>0?_round2(totais.direto/vendas*100):null; totais.folhaTotalSobreVendas=vendas>0?_round2(totais.total/vendas*100):null;
+  // ligação com a provisão geral (Gastos Fixos): o que a soma das pessoas dá x o que o cálculo geral usa
+  let provGeral=null; try{ const P=_gfProvCfg(), c=_gfProvCalc(P); provGeral={ativa:!!P.ativo,base:c.base,fonte:c.fonte,provisao:_round2(c.provisao+c.encargosSobre),total:c.total}; }catch(e){}
+  // previsão: 12 meses à frente (competência x caixa, com 13º em nov/dez e encargos em jan)
+  const prev=[], anoNov=Number(mesAtual.slice(0,4));
+  for(let k=0;k<12;k++){ const m=_addMes(mesAtual,k), fimM=_diaVenc(m,31), ano=Number(m.slice(0,4)), nm=Number(m.slice(5,7)); let direto=0, provs=0, caixaExtra=0, n=0;
+    linhas.filter(l=>l.temFicha&&l.cadAtivo&&l.ficha.ativo).forEach(l=>{ if(l.ficha.admissao&&l.ficha.admissao>fimM) return; if(l.ficha.inicio&&l.ficha.inicio>m) return; n++; direto+=l.calc.direto; provs+=l.calc.provisao;
+      if(l.vinculo==="clt"){ const base=l.calc.salario+l.calc.variavel, m13=_folhaMesesAno(l.ficha.admissao||"",ano,12,0), v13=base/12*m13; if(nm===11) caixaExtra+=v13/2; if(nm===12) caixaExtra+=v13/2; if(nm===1){ const aPrev=_folhaMesesAno(l.ficha.admissao||"",ano-1,12,0); caixaExtra+=base/12*aPrev*(l.calc.encargosPct/100); } } });
+    prev.push({mes:m,pessoas:n,direto:_round2(direto),provisao:_round2(provs),competencia:_round2(direto+provs),caixa:_round2(direto+caixaExtra),extraCaixa:_round2(caixaExtra)}); }
+  // histórico: pessoal lançado nos últimos 6 meses (competência)
+  const hist=[]; for(let k=5;k>=0;k--){ const m=_addMes(mes,-k), l=_lancamentosDoMes(C,m,F,hoje).filter(x=>x.grupo==="pessoal"); hist.push({mes:m,total:_round2(l.reduce((a,x)=>a+x.valorMes,0)),pago:_round2(l.filter(x=>x.status==="paga").reduce((a,x)=>a+x.valorMes,0)),lancamentos:l.length,calculado:l.some(x=>x.sintetico)}); }
+  // alertas
+  const alertas=[];
+  linhas.forEach(l=>{ if(!l.temFicha){ alertas.push({n:"info",k:"semficha",nome:l.nome,t:`${l.nome}: sem ficha de custo (salário e benefícios). Preencha para entrar nos totais.`,id:l.id}); return; }
+    if(l.vinculo==="clt"&&!l.admissao) alertas.push({n:"info",k:"semadm",nome:l.nome,t:`${l.nome}: informe a data de admissão para calcular férias, 13º proporcional e rescisão.`,id:l.id});
+    if(l.calc&&l.calc.ferias){ const f=l.calc.ferias; if(f.situacao==="vencida em dobro") alertas.push({n:"alerta",k:"ferias",nome:l.nome,t:`${l.nome}: férias VENCIDAS (prazo de ${f.limiteConcessao.split("-").reverse().join("/")} passou). Pagamento em dobro.`,id:l.id}); else if(f.diasParaLimite<=90&&f.podeTirar) alertas.push({n:"alerta",k:"ferias",nome:l.nome,t:`${l.nome}: conceder as férias até ${f.limiteConcessao.split("-").reverse().join("/")} (${f.diasParaLimite} dias) para não pagar em dobro.`,id:l.id}); }
+    if(!l.pix) alertas.push({n:"info",k:"sempix",nome:l.nome,t:`${l.nome}: sem chave Pix cadastrada.`,id:l.id});
+    if(l.aberto>0&&!l.naoAdmitido&&mes<=mesAtual) alertas.push({n:"info",k:"aberto",nome:l.nome,valor:l.aberto,t:`${l.nome}: ${brlN(l.aberto)} ainda em aberto neste mês.`,id:l.id}); });
+  const sem=lan.filter(l=>!l.funcionarioId&&l.grupo==="pessoal"); if(sem.length) alertas.push({n:"info",t:`${sem.length} lançamento(s) de pessoal (${brlN(_round2(sem.reduce((a,x)=>a+x.valorMes,0)))}) sem funcionário associado.`,sem:true});
+  const nov=prev.find(p=>p.mes.slice(5)==="11"), dez=prev.find(p=>p.mes.slice(5)==="12"); if(nov) alertas.push({n:"info",t:`13º salário: 1ª parcela até 30/11 (${brlN(nov.extraCaixa)}) e 2ª parcela até 20/12 (${brlN(dez?dez.extraCaixa:0)}); encargos do 13º vão na guia de janeiro.`});
+  const semVinculo=sem.map(x=>({id:x.id,descricao:x.descricao,categoria:x.categoria,fornecedor:x.fornecedor,valorMes:x.valorMes,status:x.status,vencimento:x.vencimento}));
+  return {ok:true,mes,hoje,cfg,vinculos:_VINCULOS,ocultos,pessoas:linhas,totais,previsao:prev,historico:hist,alertas,provisaoGeral:provGeral,semVinculo,semPix:linhas.filter(l=>l.temFicha&&!l.pix).length}; }
+const _permFolha=requireAcesso("acesso_custos");
+app.get("/api/folha",_permFolha,(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_diaBRk(Date.now()).slice(0,7); res.json(_folhaDados(mes)); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/folha.csv",_permFolha,(req,res)=>{ try{ const mes=/^\d{4}-\d{2}$/.test(String(req.query.mes||""))?req.query.mes:_diaBRk(Date.now()).slice(0,7), D=_folhaDados(mes), v=n=>String(Number(n||0).toFixed(2)).replace(".",","), c=s=>'"'+String(s==null?"":s).replace(/"/g,'""')+'"';
+  const cab=["Pessoa","Vínculo","Cargo","Admissão","Salário","Variável","Alimentação","Transporte (empresa)","Outros benefícios","Encargos","Provisão 13º","Provisão férias","Encargos s/ provisão","Custo mensal total","Multiplicador","Custo por hora","13º devido hoje","Férias devidas hoje","Situação das férias","Rescisão estimada","Pago no mês","Em aberto no mês","Tipo da chave Pix","Chave Pix","Banco","Titular"];
+  const L=[cab.map(c).join(";")]; D.pessoas.filter(l=>l.temFicha).forEach(l=>{ const k=l.calc, p=k.passivo||{}, f=k.ferias||{}, r=k.rescisao||{};
+    L.push([l.nome,l.vinculoNome,l.cargo,l.admissao&&l.admissao.split("-").reverse().join("/"),v(k.salario),v(k.variavel),v(k.alimentacao),v(k.transporte),v(k.beneficios),v(k.encargos),v(k.prov13),v(k.provFerias),v(k.encProv),v(k.total),String(k.multiplicador).replace(".",","),v(k.custoHora),v(p.decimoTerceiro),v(p.ferias),f.situacao||"",v(r.total),v(l.pago),v(l.aberto),l.pix?l.pix.tipo:"",l.pix?l.pix.chave:"",l.pix?l.pix.banco:"",l.pix?l.pix.titular:""].map(c).join(";")); });
+  L.push([`TOTAL (${D.totais.pessoas})`,"","","",v(D.totais.salario),v(D.totais.variavel),v(D.totais.alimentacao),v(D.totais.transporte),v(D.totais.beneficios),v(D.totais.encargos),"","","",v(D.totais.total),String(D.totais.multiplicador).replace(".",","),"",v(D.totais.passivo13),v(D.totais.passivoFerias),"",v(D.totais.rescisao),v(D.totais.pago),v(D.totais.aberto)].map(c).join(";"));
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",`attachment; filename="folha_${mes}.csv"`); res.send("\ufeff"+L.join("\r\n")); }catch(e){ res.status(500).json({erro:e.message}); } });
+// pessoa que não usa o sistema (prestador, por exemplo)
+app.post("/api/folha/pessoa",_permFolha,(req,res)=>{ try{ const b=req.body||{}, nome=String(b.nome||"").replace(/\s+/g," ").trim().slice(0,80); if(nome.length<2) return res.status(400).json({erro:"informe o nome"});
+  const P=lerJSON(FOLHA_PESSOAS_FILE,{}), id="pe"+Date.now().toString(36); P[id]={id,nome,criadoEm:Date.now(),criadoPor:req.sessao?.nome||""}; salvarJSON(FOLHA_PESSOAS_FILE,P); res.json({ok:true,id,nome}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// prévia do custo com os valores do formulário (não grava)
+app.post("/api/folha/previa",_permFolha,(req,res)=>{ try{ const b=req.body||{}, fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), ant=b.id?fichas[b.id]:null, F=_folhaConstruirFicha(b,ant&&{pix:ant.pix}), hoje=_diaBRk(Date.now()); res.json({ok:true,calc:_folhaCalc(F,_folhaCfg(),hoje,hoje.slice(0,7))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// grava a ficha completa e atualiza as despesas fixas da pessoa
+app.post("/api/folha/ficha/:id",_permFolha,(req,res)=>{ try{ const id=req.params.id, pessoa=_pessoasFolha().find(p=>p.id===id); if(!pessoa) return res.status(404).json({erro:"pessoa não encontrada"});
+  const b=req.body||{}, quem=req.sessao?.nome||"", fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), ant=fichas[id]||{}, hoje=_diaBRk(Date.now());
+  for(const k of ["salario","variavel","alimentacao","transporteBruto","beneficios","encargos"]){ if(b[k]!==undefined&&String(b[k]).trim()!==""){ const n=_numBR(b[k]); if(!isFinite(n)||n<0) return res.status(400).json({erro:`confira o valor de ${k} (use números)`}); } }
+  for(const k of ["admissao","feriasDesde"]){ if(b[k]&&!_isoOk(b[k])) return res.status(400).json({erro:"data inválida ("+k+")"}); }
+  if(b.vinculo&&!_VINCULOS[b.vinculo]) return res.status(400).json({erro:"vínculo inválido"});
+  const F=_folhaConstruirFicha({...b,pix:ant.pix||null},ant); F.provisaoPct=0; /* a provisão agora é CALCULADA (aqui e em Gastos Fixos), não mais lançada como conta a pagar: evita contar duas vezes */ if(!(F.salario>0)) return res.status(400).json({erro:"informe o salário (ou pró-labore / valor do prestador)"});
+  const calc=_folhaCalc(F,_folhaCfg(),hoje,hoje.slice(0,7)), valores={salario:calc.salario,encargos:calc.encargos,alimentacao:calc.alimentacao,transporte:calc.transporte,beneficios:calc.beneficios,provisao:_round2(F.salario*F.provisaoPct/100)};
+  const rcs=_folhaSincronizar(pessoa,F,valores,quem,ant);
+  fichas[id]={...ant,...F,ativo:F.ativo&&F.emFolha,recorrentes:rcs,valores:{salario:valores.salario,encargos:valores.encargos,beneficios:_round2(valores.alimentacao+valores.transporte+valores.beneficios),provisao:valores.provisao},atualizadoEm:Date.now(),atualizadoPor:quem};
+  salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:pessoa.nome,custoMensal:calc.total});
+  res.json({ok:true,calc,ficha:fichas[id]}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// chave Pix de uma pessoa
+app.post("/api/folha/pix/:id",_permFolha,(req,res)=>{ try{ const id=req.params.id, pessoa=_pessoasFolha().find(p=>p.id===id); if(!pessoa) return res.status(404).json({erro:"pessoa não encontrada"}); const b=req.body||{}, fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), f=fichas[id]||{};
+  if(!String(b.chave||"").trim()){ delete f.pix; fichas[id]=f; salvarJSON(CUSTOS_FICHAS_FILE,fichas); return res.json({ok:true,pix:null}); }
+  const tipo=["cpf","cnpj","telefone","email","aleatoria"].includes(b.tipo)?b.tipo:_tipoPix(b.chave), chave=_normPix(b.chave,tipo); if(!chave||tipo==="outra") return res.status(400).json({erro:"chave Pix não reconhecida: use CPF, CNPJ, telefone, e-mail ou chave aleatória"});
+  f.pix={tipo,chave,banco:String(b.banco||"").slice(0,60),titular:String(b.titular||"").slice(0,80)}; fichas[id]=f; salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+id,"chave_pix_cadastrada",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{funcionario:pessoa.nome,tipo}); res.json({ok:true,pix:{...f.pix,formatada:_fmtPix(f.pix)}}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// importar várias chaves coladas ("Nome  chave" por linha): sem aplicar só mostra o que entendeu; com aplicar grava os pares escolhidos
+app.post("/api/folha/pix-importar",_permFolha,(req,res)=>{ try{ const b=req.body||{}, pessoas=_pessoasFolha(), nrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(), tok=x=>nrm(x).split(/[^a-z]+/).filter(t=>t.length>=2&&!["de","da","do","das","dos","e"].includes(t));
+  if(b.aplicar){ const fichas=lerJSON(CUSTOS_FICHAS_FILE,{}); let n=0; (b.pares||[]).forEach(p=>{ const pe=pessoas.find(x=>x.id===p.id); if(!pe||!String(p.chave||"").trim()) return; const tipo=_tipoPix(p.chave), chave=_normPix(p.chave,tipo); const f=fichas[pe.id]||{}; f.pix={tipo,chave,banco:String(p.banco||(f.pix&&f.pix.banco)||"").slice(0,60),titular:String(p.titular||(f.pix&&f.pix.titular)||pe.nome).slice(0,80)}; fichas[pe.id]=f; n++; });
+    salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("folha","chaves_pix_importadas",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{quantidade:n}); return res.json({ok:true,gravadas:n}); }
+  const linhas=String(b.texto||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean).slice(0,200), saida=[];
+  for(const linha of linhas){ // acha a chave (e-mail, aleatória, número com 10 a 14 dígitos) e deixa o resto como nome
+    let chave="", resto=linha, m;
+    if((m=linha.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/))) chave=m[0]; else if((m=linha.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/))) chave=m[0]; else if((m=linha.match(/\+?\d[\d().\-\/ ]{8,22}\d/))&&m[0].replace(/\D/g,"").length>=10&&m[0].replace(/\D/g,"").length<=14) chave=m[0].trim();
+    if(chave) resto=linha.replace(chave," "); const nomeTxt=resto.replace(/[:;|\t–—\-]+/g," ").replace(/\b(pix|chave|cpf|cnpj|tel|telefone|celular|email|e-mail|aleat[oó]ria)\b/gi," ").replace(/\s+/g," ").trim(), tl=tok(nomeTxt);
+    let cand=[]; if(tl.length){ cand=pessoas.filter(p=>{ const pt=tok(p.nome); return tl.every(t=>pt.some(x=>x===t||x.startsWith(t)))||pt.slice(0,2).every(x=>tl.includes(x)); }); if(cand.length>1){ const exato=cand.filter(p=>tok(p.nome).join(" ")===tl.join(" ")); if(exato.length===1) cand=exato; else { const ativos=cand.filter(p=>p.cadAtivo); if(ativos.length===1) cand=ativos; } } }
+    const tipo=chave?_tipoPix(chave):"", norm=chave?_normPix(chave,tipo):"";
+    saida.push({linha,nomeLido:nomeTxt,chave:norm,tipo,formatada:chave?_fmtPix({tipo,chave:norm}):"",pessoaId:cand.length===1?cand[0].id:"",pessoaNome:cand.length===1?cand[0].nome:"",situacao:!chave?"sem chave":cand.length===1?"ok":(cand.length>1?"mais de uma pessoa":"pessoa não encontrada"),candidatas:cand.slice(0,5).map(p=>({id:p.id,nome:p.nome}))}); }
+  res.json({ok:true,itens:saida,pessoas:pessoas.filter(p=>p.cadAtivo).map(p=>({id:p.id,nome:p.nome}))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// associa um lançamento de pessoal a um funcionário
+app.post("/api/folha/associar",_permFolha,(req,res)=>{ try{ const b=req.body||{}, C=lerContasPagar(), t=C.titulos.find(x=>x.id===b.tituloId); if(!t) return res.status(404).json({erro:"lançamento não encontrado"});
+  if(b.funcionarioId){ const pe=_pessoasFolha().find(p=>p.id===b.funcionarioId); if(!pe) return res.status(404).json({erro:"pessoa não encontrada"}); t.funcionarioId=pe.id; } else delete t.funcionarioId;
+  (t.historico||=[]).push({em:Date.now(),por:req.sessao?.nome||"",acao:"associou ao funcionário",funcionarioId:b.funcionarioId||""}); _salvarContas(C); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// tira (ou devolve) uma pessoa da folha sem apagar nada: contas e administradores que não são funcionários
+app.post("/api/folha/ocultar/:id",_permFolha,(req,res)=>{ try{ const id=req.params.id, pessoa=_pessoasFolha().find(p=>p.id===id); if(!pessoa) return res.status(404).json({erro:"pessoa não encontrada"}); const fichas=lerJSON(CUSTOS_FICHAS_FILE,{}), f=fichas[id]||{}, ocultar=!!(req.body||{}).ocultar;
+  f.emFolha=!ocultar; if(ocultar) f.ativo=false; else if(f.salario>0) f.ativo=true; fichas[id]=f; salvarJSON(CUSTOS_FICHAS_FILE,fichas); res.json({ok:true}); }catch(e){ res.status(500).json({erro:e.message}); } });
 app.get("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>res.json({contas:lerContasFin().contas}));
 app.post("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, d=lerContasFin(), nome=String(b.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da conta"});

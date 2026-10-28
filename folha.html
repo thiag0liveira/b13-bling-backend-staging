@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Folha e Pessoal</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}.btn-ok{background:#0e5a32;border:1px solid var(--ok)}
+.wrap{padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;max-width:1500px;margin:0 auto}
+.card,.modal{min-width:0}
+input,select,textarea{padding:8px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:13px;width:100%}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.45}
+.mes{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mes b{min-width:140px;text-align:center}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}.kpi .s{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.35}
+.kpi.dest{border-color:var(--mag)}.kpi.av{border-color:#8a7a1f;background:#2a2408}
+.rolagem{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:980px}
+th{background:#0d0b1e;padding:8px 8px;text-align:right;font-size:10.5px;color:var(--muted);border-bottom:1px solid var(--borda);white-space:nowrap;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid var(--borda);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+tr.p:hover td{background:#1a1640;cursor:pointer}
+tr.tot td{font-weight:900;background:#0d0b1e;border-top:2px solid var(--mag)}
+td.forte{font-weight:900;color:#fff}.suave{color:var(--muted)}
+.tag{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;white-space:nowrap;margin-left:4px}
+.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.erro{background:#3d1020;color:var(--ruim)}.tag.neu{background:#24205a;color:#cfcaf5}.tag.azul{background:#0d2a44;color:#7fd0ff}
+.cartoes{display:none}
+.cp{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px;margin-bottom:8px}.cp:active{border-color:var(--mag)}
+.cp .n{font-weight:900;font-size:15px}.cp .sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.cp .g{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:8px;font-size:12px}.cp .g span{color:var(--muted)}.cp .g b{float:right}
+.cp .tot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--borda)}.cp .tot b{font-size:17px}
+@media(max-width:820px){.tabela{display:none}.cartoes{display:block}}
+.alertas .a{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:9px;margin-bottom:5px;font-size:12.5px;line-height:1.4;background:#120f2c;border:1px solid var(--borda)}
+.alertas .a.alerta{background:#2a1020;border-color:#7a2a3a}.alertas .a.info{color:#cfcaf5}.alertas .a i{font-style:normal;cursor:pointer;color:#9fd0ff;text-decoration:underline;white-space:nowrap}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:16px 8px}
+.fundo.aberto{display:flex}.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:980px}
+.modal h3{font-size:16px;margin-bottom:8px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}.form label,.lb{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;font-weight:700}
+.sec{font-size:12px;font-weight:900;color:#9fd0ff;text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px}
+.dica{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35}
+.col2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}@media(max-width:820px){.col2{grid-template-columns:1fr}}
+.prev{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:12px;position:sticky;top:8px;align-self:start}
+.pl{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0;border-bottom:1px solid #1d1946}.pl:last-child{border-bottom:none}.pl span:first-child{color:var(--muted)}
+.pl.t{font-weight:900;border-top:1px solid var(--mag);margin-top:4px;padding-top:6px;font-size:14px}
+.pag{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #1d1946;font-size:12.5px;flex-wrap:wrap}.pag>span{min-width:0}
+.ck{display:flex;gap:7px;align-items:center;font-size:12.5px;color:#cfcaf5;cursor:pointer}.ck input{width:auto}
+.vazio{padding:26px;text-align:center;color:var(--muted)}
+.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.erro{background:#3a1020;border:1px solid #ff5f8a;border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:8px}.okm{background:#0e3a22;border:1px solid var(--ok);border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:8px}
+a.lk{color:#9fd0ff;cursor:pointer;text-decoration:underline}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/folha")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/folha"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">👥 Folha e Pessoal</div><div class="sp"></div>
+  <button class="btn btn-ghost" onclick="abrirEncargos()">⚙️ Encargos</button><button class="btn btn-ghost" onclick="abrirPix()">📥 Chaves Pix</button><a class="btn btn-ghost" id="lkCsv" href="#" onclick="baixarCsv();return false">⬇️ CSV</a><button class="btn btn-mag" onclick="novaPessoa()">➕ Pessoa</button></div>
+<div class="wrap">
+  <div class="card">
+    <div class="mes"><button class="btn btn-ghost" onclick="mudarMes(-1)">◀</button><b id="mesTxt">—</b><button class="btn btn-ghost" onclick="mudarMes(1)">▶</button><button class="btn btn-ghost" onclick="irHoje()">Mês atual</button><span class="dica" id="fonteTxt"></span></div>
+    <div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div>
+  </div>
+  <div class="card alertas" id="alertasCard" style="display:none"><h3>🔔 Atenção</h3><div id="alertas"></div></div>
+  <div class="card">
+    <h3>👥 Custo de cada pessoa por mês</h3>
+    <div class="desc">Tudo o que a empresa gasta para manter cada pessoa: salário, variável, alimentação, transporte, benefícios, encargos e a provisão mensal de 13º e férias (com os encargos sobre elas). Toque numa pessoa para ver os detalhes, editar a ficha, ver os pagamentos e a chave Pix.</div>
+    <div class="tabela rolagem"><table id="tab"></table></div>
+    <div class="cartoes" id="cards"></div>
+  </div>
+  <div class="card"><h3>📈 Próximos 12 meses</h3><div class="desc">"Custo" é o que pesa no resultado de cada mês (inclui a provisão de 13º e férias). "Caixa" é o dinheiro que realmente sai: o 13º aparece em novembro (1ª parcela) e dezembro (2ª parcela), e os encargos do 13º na guia de janeiro. Considera as fichas de hoje e as admissões já informadas.</div><div class="rolagem"><table id="prev"></table></div></div>
+  <div class="card"><h3>🧾 Pessoal lançado nos últimos 6 meses</h3><div class="desc">O que foi lançado em Contas a Pagar nas categorias de pessoal (por mês de competência), incluindo a provisão calculada em Gastos Fixos. Serve para comparar com o previsto das fichas.</div><div id="hist"></div></div>
+  <div class="card" id="semVincCard" style="display:none"><h3>🔗 Lançamentos de pessoal sem funcionário</h3><div class="desc">Associe cada um à pessoa certa para o pagamento aparecer na linha dela.</div><div id="semVinc"></div></div>
+  <div class="card" id="ocultosCard" style="display:none"><h3>🙈 Fora da folha</h3><div class="desc">Pessoas que você tirou da folha (por exemplo, contas de administrador). Os dados continuam guardados.</div><div id="ocultos"></div></div>
+</div>
+<div class="fundo" id="fundo"><div class="modal" id="modal"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => n == null ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const brl0 = n => n == null ? "—" : "R$ " + Number(n).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+const num = n => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+const NM = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const dmy = d => d ? d.split("-").reverse().join("/") : "—";
+const mesTxt = m => NM[Number(m.slice(5, 7)) - 1] + "/" + m.slice(0, 4);
+const hojeMes = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+let MES = hojeMes(), D = null, ATUAL = null, PREV_T = null;
+function addMes(m, k) { const d = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + k, 1)); return d.toISOString().slice(0, 7); }
+function mudarMes(k) { MES = addMes(MES, k); carregar(); }
+function irHoje() { MES = hojeMes(); carregar(); }
+function abrirM(h) { document.getElementById("modal").innerHTML = h; document.getElementById("fundo").classList.add("aberto"); }
+function fecharM() { document.getElementById("fundo").classList.remove("aberto"); ATUAL = null; }
+document.addEventListener("keydown", e => { if (e.key === "Escape") fecharM(); });
+
+async function carregar() {
+  document.getElementById("mesTxt").textContent = mesTxt(MES);
+  const { ok, j } = await api("/api/folha?mes=" + MES);
+  if (!ok) { document.getElementById("kpis").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui carregar a folha.")}</div>`; return; }
+  D = j; render();
+}
+function render() {
+  const T = D.totais;
+  document.getElementById("fonteTxt").textContent = D.cfg ? `encargos: INSS ${num(D.cfg.inss)}% + RAT ${num(D.cfg.rat)}% + terceiros ${num(D.cfg.terceiros)}% + FGTS ${num(D.cfg.fgts)}%` : "";
+  const k = (v, l, s, cl) => `<div class="kpi ${cl || ""}"><div class="v">${v}</div><div class="l">${l}</div><div class="s">${s || ""}</div></div>`;
+  document.getElementById("kpis").innerHTML =
+    k(brl0(T.total), "Custo total da folha / mês", `${T.pessoas} pessoa(s) · ${brl0(T.custoMedio)} em média · ${brl0(T.custoAnual)} por ano`, "dest") +
+    k(brl0(T.salario + T.variavel), "Salários e variável", `bruto · já pago neste mês ${brl0(T.pago)} · em aberto ${brl0(T.aberto)}`) +
+    k(brl0(T.encargos), "Encargos patronais", `INSS, FGTS, RAT e terceiros${T.salario ? " · " + num(T.encargos / (T.salario + T.variavel) * 100) + "% do salário" : ""}`) +
+    k(brl0(T.alimentacao + T.transporte + T.beneficios), "Alimentação, transporte e benefícios", `alimentação ${brl0(T.alimentacao)} · transporte ${brl0(T.transporte)} · outros ${brl0(T.beneficios)}`) +
+    k(brl0(T.provisao), "Provisão mensal de 13º e férias", "já com os encargos sobre elas; é custo do mês, mesmo sem sair dinheiro") +
+    k("× " + num(T.multiplicador), "Cada R$ 1 de salário custa", `R$ ${num(T.multiplicador)} para a empresa (média da folha)`) +
+    k(T.folhaSobreVendas == null ? "—" : num(T.folhaSobreVendas) + "%", "Folha sobre as vendas do mês", T.vendasMes ? `custo direto ÷ vendas de ${brl0(T.vendasMes)} (pedidos do mês)` : "sem vendas no mês") +
+    k(brl0(T.passivo13 + T.passivoFerias + T.passivoEncargos), "13º e férias que a empresa já deve hoje", `13º ${brl0(T.passivo13)} · férias ${brl0(T.passivoFerias)} · encargos ${brl0(T.passivoEncargos)}`, "av") +
+    k(brl0(T.rescisao), "Se todos fossem desligados hoje", "estimativa de rescisão sem justa causa (aviso, 13º, férias, multa do FGTS)");
+  // alertas
+  const A = D.alertas || [];
+  document.getElementById("alertasCard").style.display = A.length ? "" : "none";
+  document.getElementById("alertas").innerHTML = alertasHtml(A);
+  tabela(); previsao(); historico(); semVinculo(); ocultos();
+}
+// agrupa os avisos repetidos (sem ficha, sem Pix, sem admissão, pagamento em aberto) em uma linha cada
+function alertasHtml(A) {
+  const por = {}; A.forEach(a => { const k = a.k || "outro"; (por[k] = por[k] || []).push(a); });
+  const linha = (n, ic, txt) => `<div class="a ${n}"><span>${ic}</span><span>${txt}</span></div>`, nomes = L => L.map(a => `<i onclick="abrirPessoa('${esc(a.id)}')">${esc(a.nome)}</i>`).join(", ");
+  let h = "";
+  (por.ferias || []).forEach(a => h += linha("alerta", "⚠️", esc(a.t) + ` <i onclick="abrirPessoa('${esc(a.id)}')">abrir</i>`));
+  (por.outro || []).forEach(a => h += linha(a.n, "•", esc(a.t)));
+  if (por.aberto) h += linha("info", "•", `${por.aberto.length} pessoa(s) com pagamento deste mês em aberto (${brl0(por.aberto.reduce((s, a) => s + a.valor, 0))}): ${nomes(por.aberto)}`);
+  if (por.semadm) h += linha("info", "•", `Falta a data de admissão (para férias, 13º proporcional e rescisão): ${nomes(por.semadm)}`);
+  if (por.sempix) h += linha("info", "•", `Sem chave Pix: ${nomes(por.sempix)}. Use "Chaves Pix" para colar a lista.`);
+  if (por.semficha) h += linha("info", "•", `Sem ficha de custo (ficam fora dos totais): ${nomes(por.semficha)}. Toque para preencher, ou tire da folha quem não é funcionário.`);
+  return h;
+}
+const tagVinc = l => `<span class="tag ${l.vinculo === "clt" ? "azul" : "neu"}">${esc(l.vinculoNome)}</span>`;
+function tabela() {
+  const P = D.pessoas, T = D.totais;
+  const linha = l => {
+    if (!l.temFicha) return `<tr class="p" onclick="abrirPessoa('${esc(l.id)}')"><td><b>${esc(l.nome)}</b> <span class="tag warn">sem ficha</span></td><td colspan="10" class="suave" style="text-align:left">Toque para preencher salário, benefícios e data de admissão.</td></tr>`;
+    const c = l.calc, f = c.ferias;
+    return `<tr class="p ${l.naoAdmitido || !l.cadAtivo ? "suave" : ""}" onclick="abrirPessoa('${esc(l.id)}')"><td><b>${esc(l.nome)}</b>${tagVinc(l)}${!l.cadAtivo ? '<span class="tag erro">inativo</span>' : ""}${l.naoAdmitido ? '<span class="tag neu">ainda não admitido</span>' : ""}${f && f.situacao === "vencida em dobro" ? '<span class="tag erro">férias vencidas</span>' : (f && /vence em/.test(f.situacao) ? '<span class="tag warn">' + esc(f.situacao) + "</span>" : "")}<div class="suave" style="font-size:11px">${esc(l.cargo || "")}${l.admissao ? " · admitido em " + dmy(l.admissao) : ""}</div></td>` +
+      `<td>${brl(c.salario)}</td><td>${c.variavel ? brl(c.variavel) : '<span class="suave">—</span>'}</td><td>${c.alimentacao ? brl(c.alimentacao) : '<span class="suave">—</span>'}</td><td>${c.transporte ? brl(c.transporte) : '<span class="suave">—</span>'}</td><td>${c.beneficios ? brl(c.beneficios) : '<span class="suave">—</span>'}</td><td>${brl(c.encargos)}</td><td>${c.provisao ? brl(c.provisao) : '<span class="suave">—</span>'}</td>` +
+      `<td class="forte">${brl(c.total)}</td><td class="suave">× ${num(c.multiplicador)}</td><td>${l.pago || l.aberto ? `<span style="color:var(--ok)">${brl0(l.pago)}</span> / <span style="color:${l.aberto ? "var(--warn)" : "var(--muted)"}">${brl0(l.aberto)}</span>` : '<span class="suave">—</span>'}</td><td>${l.pix ? '<span class="tag ok">Pix ✓</span>' : '<span class="tag warn">sem Pix</span>'}</td></tr>`; };
+  document.getElementById("tab").innerHTML = `<thead><tr><th>Pessoa</th><th>Salário</th><th>Variável</th><th>Alimentação</th><th>Transporte</th><th>Outros benef.</th><th>Encargos</th><th>Provisão 13º + férias</th><th>Custo / mês</th><th>Mult.</th><th>Pago / em aberto (mês)</th><th>Pix</th></tr></thead><tbody>` + (P.length ? P.map(linha).join("") : `<tr><td colspan="12" class="vazio">Nenhuma pessoa.</td></tr>`) +
+    `<tr class="tot"><td>TOTAL (${T.pessoas})</td><td>${brl(T.salario)}</td><td>${brl(T.variavel)}</td><td>${brl(T.alimentacao)}</td><td>${brl(T.transporte)}</td><td>${brl(T.beneficios)}</td><td>${brl(T.encargos)}</td><td>${brl(T.provisao)}</td><td>${brl(T.total)}</td><td>× ${num(T.multiplicador)}</td><td>${brl0(T.pago)} / ${brl0(T.aberto)}</td><td></td></tr></tbody>`;
+  document.getElementById("cards").innerHTML = P.map(l => {
+    if (!l.temFicha) return `<div class="cp" onclick="abrirPessoa('${esc(l.id)}')"><div class="n">${esc(l.nome)} <span class="tag warn">sem ficha</span></div><div class="sub">Toque para preencher salário, benefícios e admissão.</div></div>`;
+    const c = l.calc, f = c.ferias;
+    return `<div class="cp" onclick="abrirPessoa('${esc(l.id)}')"><div class="n">${esc(l.nome)}${tagVinc(l)}${f && f.situacao === "vencida em dobro" ? '<span class="tag erro">férias vencidas</span>' : ""}</div><div class="sub">${esc(l.cargo || "")}${l.admissao ? " · admitido em " + dmy(l.admissao) : ""}${l.pix ? " · Pix ✓" : " · sem Pix"}</div>
+      <div class="g"><div><span>Salário</span><b>${brl0(c.salario)}</b></div><div><span>Variável</span><b>${brl0(c.variavel)}</b></div><div><span>Alimentação</span><b>${brl0(c.alimentacao)}</b></div><div><span>Transporte</span><b>${brl0(c.transporte)}</b></div><div><span>Outros benef.</span><b>${brl0(c.beneficios)}</b></div><div><span>Encargos</span><b>${brl0(c.encargos)}</b></div><div><span>Provisão 13º+férias</span><b>${brl0(c.provisao)}</b></div><div><span>Pago / aberto</span><b>${brl0(l.pago)} / ${brl0(l.aberto)}</b></div></div>
+      <div class="tot"><span class="suave">custo por mês · × ${num(c.multiplicador)}</span><b>${brl(c.total)}</b></div></div>`; }).join("") +
+    `<div class="cp" style="border-color:var(--mag)"><div class="n">TOTAL (${T.pessoas}) <span style="float:right">${brl(T.total)}</span></div><div class="sub">× ${num(T.multiplicador)} · pago ${brl0(T.pago)} · em aberto ${brl0(T.aberto)}</div></div>`;
+}
+function previsao() {
+  const P = D.previsao || [];
+  document.getElementById("prev").innerHTML = `<thead><tr><th>Mês</th><th>Pessoas</th><th>Folha (sem provisão)</th><th>Provisão 13º + férias</th><th>Custo do mês</th><th>Caixa do mês</th><th>O que entra no caixa</th></tr></thead><tbody>` +
+    P.map(p => { const m = p.mes.slice(5); const nota = m === "11" ? "1ª parcela do 13º" : m === "12" ? "2ª parcela do 13º" : m === "01" && p.extraCaixa ? "encargos do 13º (guia de janeiro)" : "";
+      return `<tr><td>${mesTxt(p.mes)}</td><td>${p.pessoas}</td><td>${brl0(p.direto)}</td><td>${brl0(p.provisao)}</td><td class="forte">${brl0(p.competencia)}</td><td class="forte" style="${p.extraCaixa ? "color:var(--warn)" : ""}">${brl0(p.caixa)}</td><td style="text-align:left">${p.extraCaixa ? "+ " + brl0(p.extraCaixa) + " · " + nota : '<span class="suave">—</span>'}</td></tr>`; }).join("") +
+    `<tr class="tot"><td>12 meses</td><td></td><td>${brl0(P.reduce((a, p) => a + p.direto, 0))}</td><td>${brl0(P.reduce((a, p) => a + p.provisao, 0))}</td><td>${brl0(P.reduce((a, p) => a + p.competencia, 0))}</td><td>${brl0(P.reduce((a, p) => a + p.caixa, 0))}</td><td></td></tr></tbody>`;
+}
+function historico() {
+  const H = D.historico || [], max = Math.max(1, ...H.map(h => h.total));
+  document.getElementById("hist").innerHTML = `<div class="rolagem"><table style="min-width:520px"><thead><tr><th>Mês</th><th>Lançado</th><th>Já pago</th><th>Lançamentos</th><th style="text-align:left;width:34%"></th></tr></thead><tbody>` +
+    H.map(h => `<tr><td>${mesTxt(h.mes)}</td><td class="forte">${brl0(h.total)}</td><td>${brl0(h.pago)}</td><td>${h.lancamentos}${h.calculado ? ' <span class="tag neu">com provisão calculada</span>' : ""}</td><td style="text-align:left"><div style="height:9px;border-radius:5px;background:${h.mes === MES ? "var(--mag)" : "#3a3480"};width:${Math.round(h.total / max * 100)}%"></div></td></tr>`).join("") + `</tbody></table></div>` +
+    (D.provisaoGeral ? `<div class="dica" style="margin-top:8px">Provisão geral (Gastos Fixos): ${D.provisaoGeral.ativa ? "ligada" : "desligada"} · base ${brl0(D.provisaoGeral.base)} (${esc(D.provisaoGeral.fonte)}) → ${brl0(D.provisaoGeral.provisao)}/mês. Soma das fichas aqui: ${brl0(D.totais.provisao)}/mês.</div>` : "");
+}
+function semVinculo() {
+  const L = D.semVinculo || [], card = document.getElementById("semVincCard"); card.style.display = L.length ? "" : "none";
+  const ops = D.pessoas.filter(p => p.cadAtivo).map(p => `<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join("");
+  document.getElementById("semVinc").innerHTML = L.map(x => `<div class="pag"><span>${esc(x.fornecedor || "")} · ${esc(x.descricao)} <span class="suave">· ${esc(x.categoria)} · ${esc(x.status)} · vence ${dmy(x.vencimento)}</span></span><span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>${brl(x.valorMes)}</b><select id="as_${esc(x.id)}" style="width:150px;max-width:100%"><option value="">escolher…</option>${ops}</select><button class="btn btn-ghost" onclick="associar('${esc(x.id)}')">Associar</button></span></div>`).join("");
+}
+async function associar(id) { const v = document.getElementById("as_" + id).value; if (!v) return; await api("/api/folha/associar", { method: "POST", body: JSON.stringify({ tituloId: id, funcionarioId: v }) }); carregar(); }
+function ocultos() {
+  const L = D.ocultos || [], card = document.getElementById("ocultosCard"); card.style.display = L.length ? "" : "none";
+  document.getElementById("ocultos").innerHTML = L.map(x => `<div class="pag"><span>${esc(x.nome)}</span><button class="btn btn-ghost" onclick="ocultar('${esc(x.id)}',false)">Trazer de volta</button></div>`).join("");
+}
+async function ocultar(id, sim) { await api("/api/folha/ocultar/" + id, { method: "POST", body: JSON.stringify({ ocultar: sim }) }); fecharM(); carregar(); }
+async function baixarCsv() { const r = await fetch(B + "/api/folha.csv?mes=" + MES, { headers: { "X-Auth-Token": token() } }); if (!r.ok) { alert("Não consegui gerar o CSV."); return; } const b = await r.blob(), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "folha_" + MES + ".csv"; document.body.appendChild(a); a.click(); a.remove(); }
+
+// ---------- ficha da pessoa
+const V = id => document.getElementById(id), VAL = id => (V(id) ? V(id).value : ""), CK = id => !!(V(id) && V(id).checked);
+function campo(id, rot, val, extra, dica) { return `<div><label class="lb" for="${id}">${rot}</label><input id="${id}" value="${esc(val == null ? "" : val)}" ${extra || ""} oninput="previaTimer()">${dica ? `<div class="dica">${dica}</div>` : ""}</div>`; }
+function abrirPessoa(id) {
+  const l = D.pessoas.find(x => x.id === id); if (!l) return; ATUAL = id; const f = l.ficha, pix = f.pix || {}, n = x => x ? String(x).replace(".", ",") : "";
+  abrirM(`<div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">${esc(l.nome)}${l.sistema ? "" : ' <span class="tag neu">não usa o sistema</span>'}</h3><button class="btn btn-ghost" onclick="fecharM()">✕ Fechar</button></div>
+  <div class="col2"><div>
+   <div class="sec">Vínculo e datas</div><div class="form">
+    <div><label class="lb">Vínculo</label><select id="fVinc" onchange="previaTimer()">${Object.entries(D.vinculos).map(([k, v]) => `<option value="${k}" ${f.vinculo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></div>
+    ${campo("fCargo", "Cargo / função", f.cargo)}
+    <div><label class="lb">Data de admissão</label><input id="fAdm" type="date" value="${esc(f.admissao)}" oninput="previaTimer()"><div class="dica">Usada em férias, 13º proporcional e rescisão.</div></div>
+    <div><label class="lb">Férias: início do período aquisitivo</label><input id="fFeriasDesde" type="date" value="${esc(f.feriasDesde)}" oninput="previaTimer()"><div class="dica">Vazio = a admissão. Depois de cada férias gozada, ponha o dia seguinte ao fim.</div></div></div>
+   <div class="sec">Remuneração</div><div class="form">
+    ${campo("fSal", "Salário bruto (ou pró-labore / valor do prestador)", n(f.salario), 'inputmode="decimal"')}
+    ${campo("fVar", "Variável: média mensal", n(f.variavel), 'inputmode="decimal"', "Comissão, prêmio, horas extras. Entra nos encargos, no 13º e nas férias.")}</div>
+   <div class="sec">Benefícios</div><div class="form">
+    ${campo("fAlim", "Alimentação (valor mensal)", n(f.alimentacao), 'inputmode="decimal"', "Vale-refeição ou alimentação paga pela empresa.")}
+    ${campo("fVT", "Vale-transporte (valor mensal total)", n(f.transporteBruto), 'inputmode="decimal"')}
+    ${campo("fOutros", "Outros benefícios (mensal)", n(f.beneficios), 'inputmode="decimal"', "Plano de saúde, seguro, uniforme etc.")}</div>
+   <label class="ck" style="margin-top:6px"><input type="checkbox" id="fVTDesc" ${f.descontaVT ? "checked" : ""} onchange="previaTimer()"> descontar 6% do salário no vale-transporte (CLT): o custo da empresa é o que passa disso</label>
+   <div class="sec">Encargos patronais</div><div class="form">
+    <div><label class="lb">Como calcular</label><select id="fEncAuto" onchange="previaTimer();V('fEncMan').style.display=this.value==='1'?'none':''"><option value="1" ${f.encargosAuto ? "selected" : ""}>Automático (taxas da empresa: ${num(D.cfg.inss + D.cfg.rat + D.cfg.terceiros + D.cfg.fgts)}% no CLT)</option><option value="0" ${f.encargosAuto ? "" : "selected"}>Informar na mão</option></select></div>
+    <div id="fEncMan" style="${f.encargosAuto ? "display:none" : ""}"><label class="lb">Encargos informados</label><div style="display:flex;gap:6px"><input id="fEnc" value="${esc(n(f.encargos))}" inputmode="decimal" oninput="previaTimer()"><select id="fEncModo" style="width:90px" onchange="previaTimer()"><option value="pct" ${f.encargosModo === "pct" ? "selected" : ""}>% do salário</option><option value="valor" ${f.encargosModo === "valor" ? "selected" : ""}>R$ por mês</option></select></div></div></div>
+   <div class="sec">Pagamento (gera as despesas fixas todo mês em Contas a Pagar)</div><div class="form">
+    <div><label class="lb">Dia do pagamento</label><div style="display:flex;gap:6px"><input id="fDia" value="${f.dia}" inputmode="numeric" style="width:70px"><select id="fDiaTipo"><option value="dia" ${f.diaTipo === "dia" ? "selected" : ""}>dia do mês</option><option value="util" ${f.diaTipo === "util" ? "selected" : ""}>dia útil</option></select></div></div>
+    ${campo("fDiaBen", "Dia dos benefícios (opcional)", f.diaBen || "", 'inputmode="numeric"', "Vazio = o mesmo do salário.")}
+    <div><label class="lb">Folha vale a partir de</label><input id="fInicio" type="month" value="${esc(f.inicio)}"><div class="dica">Vazio = este mês.</div></div></div>
+   <div class="sec">Chave Pix</div><div class="form">
+    ${campo("fPix", "Chave Pix", pix.chave ? (l.pix.formatada || pix.chave) : "", 'placeholder="CPF, telefone, e-mail ou chave aleatória"')}
+    ${campo("fPixBanco", "Banco", pix.banco || "")}${campo("fPixTit", "Titular", pix.titular || "")}</div>
+   <div class="sec">Outros</div><div class="form"><div style="grid-column:1/-1"><label class="lb">Observação</label><textarea id="fObs" rows="2">${esc(f.observacao)}</textarea></div></div>
+   <label class="ck" style="margin-top:8px"><input type="checkbox" id="fAtivo" ${f.ativo ? "checked" : ""}> pessoa ativa na folha (desmarque para parar de gerar as despesas)</label>
+   <div id="fMsg"></div>
+   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-mag" style="flex:1" onclick="salvarPessoa()">💾 Salvar ficha</button>${l.temFicha ? `<button class="btn btn-ghost" onclick="if(confirm('Tirar ${esc(l.nome).replace(/'/g, "")} da folha? Os dados ficam guardados e dá para trazer de volta.'))ocultar('${esc(l.id)}',true)">🙈 Tirar da folha</button>` : `<button class="btn btn-ghost" onclick="ocultar('${esc(l.id)}',true)">🙈 Não entra na folha</button>`}</div>
+  </div>
+  <div><div class="prev" id="prevBox"><div class="vazio"><div class="spin"></div></div></div><div class="prev" style="position:static;margin-top:10px"><div class="lb" style="margin-bottom:6px">PAGAMENTOS DE ${mesTxt(MES).toUpperCase()}</div>${pagamentosHtml(l)}</div></div></div>`);
+  previa();
+}
+function pagamentosHtml(l) {
+  if (!l.pagamentos.length) return `<div class="dica">Nenhum lançamento deste mês ligado a ${esc(l.nome)}. Ao salvar a ficha, as despesas fixas (salário, encargos, benefícios) passam a ser criadas todo mês.</div>`;
+  const cor = { paga: "var(--ok)", aberta: "#cfcaff", vencida: "var(--ruim)", "vence logo": "var(--warn)" };
+  return l.pagamentos.map(x => `<div class="pag"><span>${esc(x.descricao.split(" · ")[0])} <span class="dica">· ${esc((x.categoria || "").split(" ")[0])} · vence ${dmy(x.vencimento)}</span><br><b style="color:${cor[x.status] || "#fff"};font-size:11px">${esc(x.status)}</b></span><span style="text-align:right"><b>${brl(x.valorMes)}</b><br>${x.status === "paga" ? "" : `<button class="btn btn-ok" style="padding:4px 9px;margin-top:3px" onclick="abrirPagar('${esc(x.id)}','${esc(l.id)}')">Pagar</button>`}</span></div>`).join("") +
+    (l.pix ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--borda)"><div class="lb">PIX · ${esc(l.pix.tipo)}${l.pix.banco ? " · " + esc(l.pix.banco) : ""}</div><div style="display:flex;gap:6px;align-items:center"><code style="flex:1;font-size:12px;word-break:break-all;color:#fff">${esc(l.pix.formatada)}</code><button class="btn btn-ghost" onclick="copiar('${esc(l.pix.chave)}',this)">Copiar</button></div></div>` : `<div class="dica" style="margin-top:8px">Sem chave Pix cadastrada.</div>`);
+}
+async function copiar(t, el) { try { await navigator.clipboard.writeText(t); } catch (e) { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand("copy"); } catch (x) {} a.remove(); } if (el) { const o = el.textContent; el.textContent = "✅ Copiado"; setTimeout(() => el.textContent = o, 1400); } }
+function corpoFicha() {
+  return { vinculo: VAL("fVinc"), cargo: VAL("fCargo"), admissao: VAL("fAdm"), feriasDesde: VAL("fFeriasDesde"), salario: VAL("fSal"), variavel: VAL("fVar"), alimentacao: VAL("fAlim"), transporteBruto: VAL("fVT"), beneficios: VAL("fOutros"), descontaVT: CK("fVTDesc"),
+    encargosAuto: VAL("fEncAuto") === "1", encargos: VAL("fEnc"), encargosModo: VAL("fEncModo") || "pct", diaTipo: VAL("fDiaTipo") || "dia", dia: VAL("fDia"), diaBen: VAL("fDiaBen"), inicio: VAL("fInicio"), observacao: VAL("fObs"), ativo: CK("fAtivo") }; }
+let _pt = null;
+function previaTimer() { clearTimeout(_pt); _pt = setTimeout(previa, 350); }
+async function previa() {
+  if (!ATUAL || !V("prevBox")) return; const { ok, j } = await api("/api/folha/previa", { method: "POST", body: JSON.stringify({ ...corpoFicha(), id: ATUAL }) }); if (!ok || !V("prevBox")) return; const c = j.calc, L = (a, b, cl) => `<div class="pl ${cl || ""}"><span>${a}</span><span>${b}</span></div>`;
+  if (!(c.salario > 0)) { V("prevBox").innerHTML = `<div class="dica">Preencha o salário para ver o custo.</div>`; return; }
+  const p = c.passivo, f = c.ferias, r = c.rescisao;
+  V("prevBox").innerHTML = `<div class="lb" style="margin-bottom:6px">CUSTO POR MÊS</div>${L("Salário", brl(c.salario))}${c.variavel ? L("Variável (média)", brl(c.variavel)) : ""}${L(`Encargos (${num(c.encargosPct)}%)`, brl(c.encargos))}${c.alimentacao ? L("Alimentação", brl(c.alimentacao)) : ""}${c.transporteBruto ? L("Transporte (parte da empresa)", brl(c.transporte)) + (c.descontoVT ? `<div class="dica">funcionário paga ${brl(c.descontoVT)} (6%)</div>` : "") : ""}${c.beneficios ? L("Outros benefícios", brl(c.beneficios)) : ""}
+   ${L("Custo direto (sai do caixa)", brl(c.direto), "t")}${c.provisao ? L("Provisão de 13º", brl(c.prov13)) + L("Provisão de férias (+1/3)", brl(c.provFerias)) + L("Encargos sobre a provisão", brl(c.encProv)) : ""}
+   ${L("CUSTO TOTAL / MÊS", brl(c.total), "t")}${L("Cada R$ 1 de salário custa", "R$ " + num(c.multiplicador))}${L("Custo por hora (220 h/mês)", brl(c.custoHora))}${L("Custo por ano", brl(c.custoAnual))}
+   ${p ? `<div class="lb" style="margin:12px 0 6px">O QUE A EMPRESA JÁ DEVE HOJE</div>${L(`13º (${p.meses13} mês(es) no ano)`, brl(p.decimoTerceiro))}${L(`Férias (${p.feriasPeriodosCompletos ? p.feriasPeriodosCompletos + " período(s) + " : ""}${p.feriasMesesNoPeriodo} mês(es))`, brl(p.ferias))}${L("Encargos sobre os dois", brl(p.encargosSobre))}${L("Total devido", brl(p.total), "t")}` : ""}
+   ${f ? `<div class="lb" style="margin:12px 0 6px">FÉRIAS</div>${L("Situação", `<b style="color:${f.situacao === "vencida em dobro" ? "var(--ruim)" : /vence/.test(f.situacao) ? "var(--warn)" : "#fff"}">${esc(f.situacao)}</b>`)}${L("Período aquisitivo", dmy(f.inicioAquisitivo) + " → " + dmy(f.completaEm))}${L("Conceder até", dmy(f.limiteConcessao) + (f.diasParaLimite != null ? " (" + (f.diasParaLimite < 0 ? "passou há " + Math.abs(f.diasParaLimite) : "faltam " + f.diasParaLimite) + " dias)" : ""))}` : ""}
+   ${r ? `<div class="lb" style="margin:12px 0 6px">SE FOSSE DESLIGADO HOJE (SEM JUSTA CAUSA)</div>${L(`Aviso prévio (${r.avisoDias} dias)`, brl(r.aviso))}${L("13º proporcional", brl(r.decimoTerceiro))}${L("Férias + 1/3", brl(r.ferias))}${L("Multa de 40% do FGTS", brl(r.multaFgts))}${L("FGTS sobre as verbas", brl(r.fgtsSobreVerbas))}${L("Estimativa", brl(r.total), "t")}<div class="dica">Estimativa com o salário e a variável de hoje. Confirme com o contador antes de decidir qualquer coisa.</div>` : (c.passivo ? "" : `<div class="dica" style="margin-top:10px">Informe a data de admissão para ver 13º devido, prazo das férias e a estimativa de rescisão.</div>`)}`;
+}
+async function salvarPessoa() {
+  const msg = V("fMsg"); msg.innerHTML = ""; const { ok, j } = await api("/api/folha/ficha/" + ATUAL, { method: "POST", body: JSON.stringify(corpoFicha()) });
+  if (!ok) { msg.innerHTML = `<div class="erro">${esc(j.erro || "Não consegui salvar.")}</div>`; return; }
+  const chave = VAL("fPix").trim(), l = D.pessoas.find(x => x.id === ATUAL), tinha = l && l.pix ? l.pix.formatada : "";
+  if (chave !== tinha) { const r = await api("/api/folha/pix/" + ATUAL, { method: "POST", body: JSON.stringify({ chave, banco: VAL("fPixBanco"), titular: VAL("fPixTit") }) }); if (!r.ok) { msg.innerHTML = `<div class="erro">Ficha salva, mas a chave Pix não: ${esc(r.j.erro || "")}</div>`; carregar(); return; } }
+  else if (chave) { await api("/api/folha/pix/" + ATUAL, { method: "POST", body: JSON.stringify({ chave: l.pix.chave, banco: VAL("fPixBanco"), titular: VAL("fPixTit") }) }); }
+  msg.innerHTML = `<div class="okm">✅ Ficha salva. As despesas fixas mensais foram atualizadas em Contas a Pagar.</div>`; await carregar(); const nl = D.pessoas.find(x => x.id === ATUAL); if (nl) { const box = V("prevBox"); previa(); }
+}
+async function novaPessoa() {
+  abrirM(`<div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">➕ Pessoa na folha</h3><button class="btn btn-ghost" onclick="fecharM()">✕ Fechar</button></div><div class="desc">Quem usa o sistema já aparece na lista. Use este cadastro para quem <b>não</b> tem login, como prestadores e autônomos.</div><label class="lb">Nome</label><input id="npNome" placeholder="Nome completo"><div id="npMsg"></div><div style="margin-top:10px"><button class="btn btn-mag" onclick="criarPessoa()">Criar e preencher a ficha</button></div>`);
+}
+async function criarPessoa() { const { ok, j } = await api("/api/folha/pessoa", { method: "POST", body: JSON.stringify({ nome: VAL("npNome") }) }); if (!ok) { V("npMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui.")}</div>`; return; } await carregar(); abrirPessoa(j.id); }
+
+// ---------- pagar
+let CONTAS = null;
+async function abrirPagar(tid, pid) {
+  const l = D.pessoas.find(x => x.id === pid), t = l.pagamentos.find(x => x.id === tid); if (!CONTAS) { const r = await api("/api/financeiro/contas"); CONTAS = (r.j.contas || []).filter(c => c.ativa !== false).map(c => c.nome); }
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  abrirM(`<div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">💸 Pagar · ${esc(l.nome)}</h3><button class="btn btn-ghost" onclick="abrirPessoa('${esc(pid)}')">← Voltar</button></div>
+   <div class="desc">${esc(t.descricao)} · vence ${dmy(t.vencimento)}</div>${l.pix ? `<div class="prev" style="position:static;margin-bottom:10px"><div class="lb">CHAVE PIX · ${esc(l.pix.tipo)}${l.pix.banco ? " · " + esc(l.pix.banco) : ""}${l.pix.titular ? " · " + esc(l.pix.titular) : ""}</div><div style="display:flex;gap:6px;align-items:center"><code style="flex:1;word-break:break-all">${esc(l.pix.formatada)}</code><button class="btn btn-ghost" onclick="copiar('${esc(l.pix.chave)}',this)">Copiar</button></div></div>` : `<div class="erro" style="margin-bottom:10px">Esta pessoa ainda não tem chave Pix cadastrada.</div>`}
+   <div class="form"><div><label class="lb">Valor pago</label><input id="pgValor" value="${String(t.valorMes).replace(".", ",")}" inputmode="decimal"></div><div><label class="lb">Data</label><input id="pgData" type="date" value="${hoje}"></div>
+   <div><label class="lb">Forma</label><select id="pgForma"><option>Pix</option><option>Transferência</option><option>Dinheiro</option><option>Boleto</option></select></div>
+   <div><label class="lb">Banco / conta de onde saiu</label><select id="pgBanco"><option value="">—</option>${CONTAS.map(c => `<option>${esc(c)}</option>`).join("")}<option>Cofre / dinheiro</option></select></div></div>
+   <div id="pgMsg"></div><div style="margin-top:12px"><button class="btn btn-ok" onclick="confirmarPagar('${esc(tid)}','${esc(pid)}')">✅ Marcar como pago</button></div>`);
+}
+async function confirmarPagar(tid, pid) {
+  const { ok, j } = await api("/api/contas-pagar/" + tid + "/pagar", { method: "POST", body: JSON.stringify({ valorPago: VAL("pgValor").replace(",", "."), data: VAL("pgData"), forma: VAL("pgForma"), banco: VAL("pgBanco") }) });
+  if (!ok) { V("pgMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui registrar o pagamento.")}</div>`; return; } await carregar(); abrirPessoa(pid);
+}
+
+// ---------- chaves Pix coladas
+function abrirPix() {
+  abrirM(`<div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">📥 Chaves Pix da equipe</h3><button class="btn btn-ghost" onclick="fecharM()">✕ Fechar</button></div>
+  <div class="desc">Cole uma lista com <b>um nome e uma chave por linha</b> (CPF, CNPJ, telefone, e-mail ou chave aleatória). O sistema reconhece o tipo, liga cada chave à pessoa pelo nome e mostra o que entendeu <b>antes de gravar</b>. Exemplo:<br><code style="color:#cfcaf5">Maria Souza - 111.444.777-35<br>João Pereira: +55 31 98888-7777<br>Ana Lima  ana@email.com</code></div>
+  <textarea id="pxTexto" rows="7" placeholder="Nome  chave"></textarea><div style="margin-top:8px"><button class="btn btn-mag" onclick="conferirPix()">🔎 Conferir</button></div><div id="pxRes"></div>`);
+}
+async function conferirPix() {
+  const { ok, j } = await api("/api/folha/pix-importar", { method: "POST", body: JSON.stringify({ texto: VAL("pxTexto") }) }); if (!ok) { V("pxRes").innerHTML = `<div class="erro">${esc(j.erro || "Erro.")}</div>`; return; }
+  const ops = sel => j.pessoas.map(p => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.nome)}</option>`).join("");
+  window._PX = j.itens;
+  V("pxRes").innerHTML = `<div class="rolagem" style="margin-top:10px"><table style="min-width:640px"><thead><tr><th>Linha lida</th><th>Chave</th><th>Pessoa</th><th></th></tr></thead><tbody>` + j.itens.map((i, k) => `<tr><td style="text-align:left;white-space:normal">${esc(i.linha)}</td><td>${i.chave ? `<span class="tag azul">${esc(i.tipo)}</span> ${esc(i.formatada)}` : '<span class="tag erro">sem chave</span>'}</td><td><select id="pxP${k}" ${i.chave ? "" : "disabled"} style="min-width:170px"><option value="">— não gravar —</option>${ops(i.pessoaId)}</select></td><td>${i.situacao === "ok" ? '<span class="tag ok">ok</span>' : `<span class="tag warn">${esc(i.situacao)}</span>`}</td></tr>`).join("") + `</tbody></table></div><div id="pxMsg"></div><div style="margin-top:10px"><button class="btn btn-mag" onclick="gravarPix()">💾 Gravar as escolhidas</button></div>`;
+}
+async function gravarPix() {
+  const pares = []; (window._PX || []).forEach((i, k) => { const el = V("pxP" + k), v = el && el.value; if (v && i.chave) pares.push({ id: v, chave: i.chave }); });
+  if (!pares.length) { V("pxMsg").innerHTML = `<div class="erro">Escolha ao menos uma pessoa para gravar.</div>`; return; } const { ok, j } = await api("/api/folha/pix-importar", { method: "POST", body: JSON.stringify({ aplicar: true, pares }) });
+  if (!ok) { V("pxMsg").innerHTML = `<div class="erro">${esc(j.erro || "Erro.")}</div>`; return; } V("pxMsg").innerHTML = `<div class="okm">✅ ${j.gravadas} chave(s) gravada(s).</div>`; carregar();
+}
+// ---------- taxas de encargos (as mesmas da provisão em Gastos Fixos)
+function abrirEncargos() {
+  const c = D.cfg; abrirM(`<div style="display:flex;align-items:center;gap:8px"><h3 style="flex:1;margin:0">⚙️ Taxas de encargos</h3><button class="btn btn-ghost" onclick="fecharM()">✕ Fechar</button></div><div class="desc">Percentuais sobre a folha dos CLT, os mesmos usados na provisão de Gastos Fixos. Confirme com o contador o RAT/FAP e o percentual de terceiros do seu CNAE.</div>
+   <div class="form"><div><label class="lb">INSS patronal (%)</label><input id="ceInss" value="${c.inss}"></div><div><label class="lb">RAT / FAP (%)</label><input id="ceRat" value="${c.rat}"></div><div><label class="lb">Terceiros / Sistema S (%)</label><input id="ceTer" value="${c.terceiros}"></div><div><label class="lb">FGTS (%)</label><input id="ceFgts" value="${c.fgts}"></div></div>
+   <div class="dica">Total no CLT: ${num(c.inss + c.rat + c.terceiros + c.fgts)}%. Para pró-labore vale só o INSS patronal. Prestadores e estagiários não têm encargos aqui.</div><div id="ceMsg"></div><div style="margin-top:10px"><button class="btn btn-mag" onclick="salvarEncargos()">Salvar</button></div>`);
+}
+async function salvarEncargos() { const { ok, j } = await api("/api/gastos-fixos/provisao/config", { method: "POST", body: JSON.stringify({ inss: VAL("ceInss"), rat: VAL("ceRat"), terceiros: VAL("ceTer"), fgts: VAL("ceFgts") }) }); if (!ok) { V("ceMsg").innerHTML = `<div class="erro">${esc(j.erro || "Erro.")}</div>`; return; } fecharM(); carregar(); }
+carregar();
+</script>
+</body>
+</html>
