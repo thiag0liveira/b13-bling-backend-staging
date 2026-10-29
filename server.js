@@ -6983,6 +6983,22 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
           situacaoId:Number(pedNovo.situacao?.id||0), situacao:nomeSituacao(Number(pedNovo.situacao?.id||0)) });
       }catch(e){}
     }
+    // CONFERE O QUE O BLING GRAVOU DE VERDADE (itens e situação). Antes só se olhava o total: o Bling podia responder "salvei" e não ficar com o item
+    // pedido (ou deixar o pedido em "Em digitação"), e o sistema registrava a alteração como feita mesmo assim.
+    if(pedNovo){
+      const mapaIt=l=>{ const m={}; (l||[]).forEach(i=>{ const k=String(i.produto?.id!=null?i.produto.id:i.produtoId); m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; };
+      const esp=mapaIt(itens), grav=mapaIt(pedNovo.itens), nomeDe={}; itens.forEach(i=>{ nomeDe[String(i.produtoId)]=i.nome||i.descricao||""; }); (pedNovo.itens||[]).forEach(i=>{ if(i.produto?.id!=null&&!nomeDe[String(i.produto.id)]) nomeDe[String(i.produto.id)]=i.descricao||""; });
+      const dif=[]; new Set([...Object.keys(esp),...Object.keys(grav)]).forEach(k=>{ if(Math.abs((esp[k]||0)-(grav[k]||0))>0.0005) dif.push({produtoId:k,nome:nomeDe[k]||k,pedido:esp[k]||0,noBling:grav[k]||0}); });
+      if(dif.length){
+        const txt=dif.slice(0,6).map(d=>`${d.nome}: pedido ${d.pedido}, no Bling ${d.noBling}`).join("; ");
+        try{ addLog(String(id),"itens_nao_gravados_bling",null,funcionarioNome||"",{diferencas:dif.slice(0,10)}); registrarAviso({tipo:"itens_nao_gravados_bling",titulo:`Pedido #${ped.numero||id}: o Bling NÃO gravou os itens da edição`,pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens",fingerprint:`naogravou-${id}-${Date.now()}`,oQueFazer:`O Bling respondeu que salvou, mas os itens ficaram diferentes do pedido: ${txt}. Nada foi registrado como alterado no sistema. Confira o estoque desses produtos e o pedido no Bling e tente de novo.`}); }catch(e){}
+        return res.status(502).json({erro:`O Bling respondeu que salvou, mas os itens NÃO ficaram como você pediu (${txt}). Nada foi registrado como alterado. Confira o estoque desses produtos no Bling e tente de novo.`,divergencia:dif,situacaoNoBling:nomeSituacao(Number(pedNovo.situacao?.id||0))}); }
+    }
+    let avisoSituacaoEd=null;
+    if(pedNovo&&Number(pedNovo.situacao?.id||0)&&Number(pedNovo.situacao.id)!==_sitEd){ // o Bling deixou o pedido em outra etapa (ex.: "Em digitação"): tenta devolver à etapa em que estava
+      let voltou=false; try{ const rv=await mudarSituacaoPedido(Number(id),_sitEd); voltou=!!(rv&&rv.ok); }catch(e){}
+      if(!voltou){ avisoSituacaoEd=`Os itens foram gravados, mas o pedido ficou em "${nomeSituacao(Number(pedNovo.situacao.id))}" no Bling (estava em "${nomeSituacao(_sitEd)}") e não consegui devolver. Ele pode sumir da separação e da conferência: mude a etapa dele.`;
+        try{ addLog(String(id),"pedido_fora_do_fluxo",null,funcionarioNome||"",{de:nomeSituacao(_sitEd),para:nomeSituacao(Number(pedNovo.situacao.id))}); registrarAviso({tipo:"pedido_fora_do_fluxo",titulo:`Pedido #${ped.numero||id} ficou em "${nomeSituacao(Number(pedNovo.situacao.id))}" depois de editar`,pedidoId:String(id),numero:ped.numero,operador:funcionarioNome||"",origem:"Editar itens",fingerprint:`foradofluxo-${id}`,oQueFazer:avisoSituacaoEd}); }catch(e){} } }
     // confere se o Bling gravou o total certo — se não bater, avisa em vez de deixar
     // passar uma divergência silenciosa entre o que a tela mostra e o que está lá
     let alertaTotal=null;
@@ -7116,7 +7132,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
         }
       }catch(e){}
     }
-    res.json({ok:true, precosCorrigidos, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
+    res.json({ok:true, avisoSituacao:avisoSituacaoEd, precosCorrigidos, novoTotal, totalCalculado:totalCalc, freteRecalculado, novoFrete:+freteAtual.toFixed(2), abaixoMinimoEntrega, minimoEntrega:+minimoEntrega.toFixed(2), totalItensNovo:+totalItensNovo.toFixed(2), alertaTotal, avisosEstoque, removidos:removidos.map(r=>r.descricao), sincronizado, situacaoAvancada, autorizadoPorStatus, diferencaPagamento,
       autorizadoPorEstoque:autorizadoPorEstoqueEd, itensSemEstoque: autorizadoPorEstoqueEd?semEstoqueEd:undefined,
       itensAlterados:{retirados:diffEd.retirados.map(_fmtItem), acrescentados:diffEd.acrescentados.map(_fmtItem),
         alterados:diffEd.alterados.map(a=>`${a.nome}: ${a.de.quantidade}x→${a.para.quantidade}x`)}});
@@ -14169,6 +14185,8 @@ app.get("/api/diag/pedido/:ref",requireAdmin,async(req,res)=>{ try{
   const hb=(lerHistPedidos().porId||{})[id]||null, idx=(()=>{ try{ return _indicePedidos().lista.find(r=>String(r.id)===id)||null; }catch(e){ return null; } })();
   let retirados=null; try{ const rr=_retiradosDe(id,(propsPed[0]||{}).propostaId,itens); retirados={pendenteDeAviso:rr.pendente,itens:rr.lista.map(x=>x.tipo==="reduzido"?`${x.quantidade}x ${x.nome} (de ${x.de} para ${x.para})`:`${x.quantidade}x ${x.nome}`)}; }catch(e){}
   _ctxTipoCache.t=0; const ctx=_ctxTipoEntrega(), fontesTipo=_fontesTipoEntrega(id,ped,ctx), oficial=_tipoEntregaDoPedido(id,ped,ctx);
+  let moveu=null; const MOVER={aguardando:SIT.AGUARDANDO,separacao:SIT.EM_SEP,separado:SIT.SEPARADO,pendencia:SIT.SEP_PEND,verificado:SIT.VERIFICADO}, alvoMover=MOVER[String(req.query.mover||"")];
+  if(alvoMover){ try{ const rm=await mudarSituacaoPedido(Number(id),alvoMover); moveu={para:nomeSituacao(alvoMover),ok:!!(rm&&rm.ok),erro:(rm&&rm.erro)||null}; if(moveu.ok) addLog(String(id),"etapa_movida_pelo_diagnostico",req.sessao?.funcionarioId||"",req.sessao?.nome||"",{para:moveu.para}); }catch(e){ moveu={para:nomeSituacao(alvoMover),ok:false,erro:e.message}; } }
   const eventos=(lerLog()[id]||[]).slice(-25).map(e=>({quando:dh(e.em),evento:e.evento,por:e.funcionarioNome||"",detalhes:e.detalhes||null}));
   const L=[], ok=(a,b,t=0.05)=>Math.abs(Number(a)-Number(b))<=t;
   if(!ok(calculado,totalBling)) L.push(`O total do Bling (${totalBling}) não bate com itens + frete + outras despesas − desconto (${calculado}).`);
@@ -14179,12 +14197,17 @@ app.get("/api/diag/pedido/:ref",requireAdmin,async(req,res)=>{ try{
   propsPed.forEach(p=>{ if(!ok(p.total,totalBling)) L.push(`A proposta ${p.propostaId} guarda o total ${p.total}, diferente do Bling (${totalBling}).`); });
   mov.filter(m=>!m.cancelado).forEach(m=>{ if(!ok(m.total,totalBling)) L.push(`O movimento do caixa (${m.caixa}) guarda o total ${m.total}, diferente do Bling (${totalBling}).`); });
   if(hb&&Number(hb.t)>0&&!ok(hb.t,totalBling)) L.push(`A cópia sincronizada do Bling no sistema mostra ${_round2(Number(hb.t))}, o Bling agora mostra ${totalBling} (a cópia atualiza sozinha).`);
+  const sitNum=Number(ped.situacao?.id||0); if(sitNum===21||sitNum===6) L.push(`O pedido está em "${nomeSituacao(sitNum)}" no Bling: fora do fluxo (não aparece na separação nem na conferência). Mude para a etapa certa.`);
+  { const mp=l=>{ const m={}; (l||[]).forEach(i=>{ const k=String(i.produto?.id!=null?i.produto.id:i.produtoId); m[k]=_round2((m[k]||0)+(Number(i.quantidade)||0)); }); return m; }, bl=mp(ped.itens);
+    props.filter(p=>String(p.pedidoBlingId)===id).forEach(p=>{ const pm=mp(p.itens), nm={}; (p.itens||[]).forEach(i=>{ nm[String(i.produtoId)]=i.nome||""; }); const d=[]; new Set([...Object.keys(pm),...Object.keys(bl)]).forEach(k=>{ if(Math.abs((pm[k]||0)-(bl[k]||0))>0.0005) d.push(`${nm[k]||k}: proposta ${pm[k]||0}, Bling ${bl[k]||0}`); }); if(d.length) L.push(`Os itens da proposta ${p.id} NÃO são os do Bling (${d.slice(0,5).join("; ")}${d.length>5?"…":""}).`);
+      if(p.entrega&&p.entrega.tipo==="entrega"&&!ok(Number(p.entrega.taxa||0),frete,0.009)) L.push(`A proposta ${p.id} guarda frete ${_round2(Number(p.entrega.taxa||0))}, e o Bling tem frete ${frete}.`); }); }
   const blingDiz=fontesTipo.bling?(fontesTipo.bling.entrega?"entrega":"retirada"):null; if(blingDiz&&blingDiz!==oficial) L.push(`O Bling indica ${blingDiz}, mas as telas mostram ${oficial} (vale a decisão gravada no sistema).`);
   res.json({ok:true,pedidoId:id,numero:ped.numero||ref,cliente:ped.contato?.nome||"",data:ped.data||"",situacao:nomeSituacao(Number(ped.situacao?.id||0)),
     bling:{total:totalBling,somaItens,frete,outrasDespesas:outras,desconto:_round2(descReal),calculado,somaParcelas:somaParc,parcelas,observacoes:String(ped.observacoes||"").slice(-300)},itens,itensRetiradosDoPedido:retirados,
     pagamentoGuardado:pag?{valorPedido:pag.valorPedido,valorPago:pag.valorPago,status:pag.statusPagamento,valorPedidoAnterior:pag.valorPedidoAnterior??null,atualizadoEm:dh(pag.valorPedidoAtualizadoEm),historico:(pag.historico||[]).slice(-6).map(h=>({valor:h.valor,forma:h.formaNome||"",tipo:h.tipo||"",quando:dh(h.em)}))}:null,
     propostas:propsPed,caixa:mov,copiaDoBling:hb?{total:hb.t,situacaoId:hb.s}:null,indice:idx?{total:idx.total,situacaoId:idx.situacaoId}:null,
     tipo:{asTelasMostram:oficial,propostaDiz:fontesTipo.proposta?fontesTipo.proposta.tipo:null,registroDeEntregasDiz:fontesTipo.entregasJson?fontesTipo.entregasJson.tipo:null,blingDiz},eventos,
+    ...(moveu?{etapaMovida:moveu}:{}),
     leitura:L.length?L:["Tudo confere: total, parcelas, pagamento, proposta e caixa batem com o Bling."]}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO do TIPO de um pedido (entrega x retirada), pelo número ou código: o que cada fonte diz, o que o Bling diz agora e as últimas trocas (com tempo e erro)
 app.get("/api/diag/tipo-pedido/:ref",requireAdmin,async(req,res)=>{ try{
@@ -14574,6 +14597,7 @@ async function atualizarItensBling(id,itens,obsExtra,opts={}){
       }
     }
     const rest=_ultimaRestauracao||{ok:true,reposto:[],situacaoFinal:sit};
+    if(fezUnlock&&!rest.ok){ try{ addLog(String(id),"pedido_fora_do_fluxo",null,"sistema",{esperado:nomeSituacao(sit),erro:String(rest.erro||"").slice(0,200)}); registrarAviso({tipo:"pedido_fora_do_fluxo",titulo:`Pedido #${ped.numero||id} não voltou para "${nomeSituacao(sit)}" depois de editar`,pedidoId:String(id),numero:ped.numero,origem:"Edição de itens",fingerprint:`foradofluxo-${id}`,oQueFazer:`Os itens foram gravados no Bling, mas o pedido ficou fora da etapa "${nomeSituacao(sit)}" (provavelmente em "Em digitação"). Ele pode sumir da separação e da conferência. Mude a etapa dele${rest.erro?` (motivo: ${String(rest.erro).slice(0,120)})`:""}.`}); }catch(e){} }
     return {ok:true,resultado,fezUnlock,restaurouOk:rest.ok,situacaoFinal:rest.situacaoFinal||sit,reposto:rest.reposto||[],erroRestaurar:rest.erro||null,frete:freteUsado,freteInfo};
   }catch(e){ return {ok:false,erro:e.message,status:e.status,body:e.body}; }
 }

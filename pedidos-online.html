@@ -1515,6 +1515,7 @@ async function salvarEditarAguardando(id, tokenQr) {
     const situMsg = j.situacaoAvancada ? '<br><span style="color:#3ce88a;font-weight:800">✅ Pendência resolvida — pedido avançou pra ' + esc(j.situacaoAvancada) + '</span>' : '';
     edSetMsg('<div style="color:#3ce88a;font-size:12px">✅ Salvo em: ' + onde.join(" + ") + totalMsg + freteMsg + minMsg + situMsg + (resumo ? "<br><span style=\"color:#9a95c9\">" + esc(resumo) + "</span>" : "") + '</div>');
     if (j.alertaTotal) alert("⚠️ " + j.alertaTotal);
+    if (j.avisoSituacao) alert("⚠️ " + j.avisoSituacao);
     if (j.avisosEstoque && j.avisosEstoque.length) alert("⚠️ Atenção:\n" + j.avisosEstoque.join("\n"));
     // a lista já atualiza por trás agora; o aviso do que mudou (retirou/acrescentou) fica
     // na tela por mais tempo pra dar pra ler
