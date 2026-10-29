@@ -135,7 +135,7 @@ window.addEventListener("error", e => mostrarErroTela(e.message, e.error && e.er
 window.addEventListener("unhandledrejection", e => mostrarErroTela(e.reason && e.reason.message || e.reason, e.reason && e.reason.stack));
 async function removerItem(nItem) { if (await pergunta("Tirar este item da compra?", "Sim, tirar")) editarSN({ nItem, remover: true }); }
 async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
-let N = null, IGN = new Set(), BANCOS = [], PAGO = null, stream = null, lendo = false, zx = null;
+let N = null, IGN = new Set(), BANCOS = [], CONTAS_FIN = [], PAGO = null, stream = null, lendo = false, zx = null;
 const msgLer = h => document.getElementById("lerMsg").innerHTML = h;
 // ===== leitura do código de barras (câmera / foto) =====
 const achaChave = t => { const d = String(t || "").replace(/\D/g, ""); const m = d.match(/\d{44}/); return m ? m[0] : null; };
@@ -253,7 +253,7 @@ function renderNota() {
       ${x.fatorEstimado ? `<div style="color:#ffd23f;font-size:12px;margin-top:4px">⚠️ Quantas unidades vêm em cada ${esc(x.uCom || "embalagem")}? Não está escrito; estimei <b>${x.sugestaoFator}</b> pelo preço (${brl(x.vUnCom || (x.qCom ? x.vProd / x.qCom : 0))} cada). Confira antes de ligar.</div>` : x.fatorFonte && x.sugestaoFator > 1 ? `<div class="ic">conversão ${esc(x.fatorFonte)}</div>` : ""}
       <div class="ic" style="white-space:normal;margin-top:4px">Ligando uma vez, as próximas notas desse fornecedor reconhecem sozinhas (e o Bling também aprende).</div>
       ${edSN(x)}<label class="ic"><input type="checkbox" ${ign ? "checked" : ""} onchange="alternarIgn(${x.nItem})"> não lançar este item (ex.: bonificação que não vai para o estoque)</label></div>`; };
-  const bancos = BANCOS.map(b => `<option>${esc(b.nome || b)}</option>`).join("");
+  const bancos = opcoesBancoPg("Pix");
   document.getElementById("nota").innerHTML = `<div class="card">
     ${n.entrada ? `<div class="err" style="margin-bottom:8px">${n.entrada.semEstoque ? "Esta nota foi registrada SEM dar entrada no estoque em " : n.entrada.jaNoBling || n.entrada.soBoletos ? "Os produtos desta nota já foram marcados como lançados no Bling em " : n.entrada.soEstoque ? "Os produtos desta nota já deram entrada no estoque em " : "Esta nota já deu entrada em "}${new Date(n.entrada.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.entrada.por || "—")}.</div>` : ""}
     ${n.financeiro ? `<div class="okmsg" style="margin-bottom:8px">Os boletos desta nota já foram lançados em contas a pagar em ${new Date(n.financeiro.em).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} por ${esc(n.financeiro.por || "—")}.</div>` : (n.entrada && n.entrada.soEstoque ? `<div class="ic" style="margin-bottom:8px;color:#ffd23f">Falta lançar os boletos desta nota (use o bloco “Só lançar os boletos”).</div>` : "")}
@@ -275,14 +275,22 @@ function renderNota() {
     ${n.itens.map(it).join("")}</div>
   <div class="card"><h3>4. Pagamento</h3>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px"><label><input type="radio" name="pg" ${PAGO === false ? "checked" : ""} onchange="PAGO=false;renderNota()"> A pagar (gera contas a pagar)</label><label><input type="radio" name="pg" ${PAGO ? "checked" : ""} onchange="PAGO=true;renderNota()"> Já foi paga</label></div>
-    ${PAGO ? `<div class="grid2"><label><div class="ic">Forma</div><select id="pgForma" style="width:100%" onchange="renderBancoPg()"><option>Pix</option><option>Dinheiro</option><option>Boleto</option><option>Transferência</option><option>Cartão</option></select></label>
+    ${PAGO ? `<div class="grid2"><label><div class="ic">Forma</div><select id="pgForma" style="width:100%" onchange="renderBancoPg()"><option>Pix</option><option>Dinheiro</option><option>Boleto</option><option>Transferência</option><option>Cartão de crédito</option></select></label>
       <label id="pgBancoBox"><div class="ic">Banco</div><select id="pgBanco" style="width:100%">${bancos || "<option>—</option>"}</select></label></div>` : ""}
     <table class="tb" style="margin-top:8px"><tr class="ic"><td>Parcela</td><td>Vencimento</td><td style="text-align:right">Valor</td></tr>${n.duplicatas.map((d, i) => `<tr><td>${i + 1}/${n.duplicatas.length}</td><td>${dmy(d.vencimento)}</td><td style="text-align:right">${brl(d.valor)}</td></tr>`).join("")}</table></div>
   ${blocoBoletos(n)}
   <div class="card"><div id="confMsg"></div><button class="btn btn-ghost" style="width:100%;margin-bottom:8px;padding:10px" onclick="novaEntrada()">➕ Nova entrada (ler outra nota)</button>${n.entrada ? blocoJaLancada(n, "reabrirNota(N.id, false)") : `<button class="btn btn-mag" style="width:100%;padding:14px;font-size:16px" ${pend || freteIndeciso(n) ? "disabled" : ""} onclick="confirmar()">✅ Dar entrada${pend ? " (ligue " + pend + " item(ns) antes)" : freteIndeciso(n) ? " (responda sobre o frete antes)" : ""}</button>${motivosEntrada(n)}`}
     <div class="ic" style="white-space:normal;margin-top:6px">Ao dar entrada: o estoque de cada produto sobe no Bling com o custo real, a nota fica registrada na parte fiscal, as parcelas viram contas a pagar e o custo do fornecedor é atualizado no Bling.</div></div>`;
 }
-function renderBancoPg() { const f = document.getElementById("pgForma").value; document.getElementById("pgBancoBox").style.display = /Pix|Transfer|Boleto/.test(f) ? "" : "none"; }
+// bancos para Pix/transferência/boleto; para "Cartão de crédito" só os cartões cadastrados em Contas a Pagar (Contas e saldos iniciais)
+function opcoesBancoPg(forma) {
+  const ativas = CONTAS_FIN.filter(c => c.ativa !== false), cartoes = ativas.filter(c => c.tipo === "cartao");
+  if (/Cart/.test(forma)) return cartoes.length ? cartoes.map(c => `<option>${esc(c.nome)}</option>`).join("") : `<option value="">(nenhum cartão cadastrado: cadastre em Contas a Pagar, Contas e saldos iniciais)</option>`;
+  const contas = ativas.filter(c => c.tipo !== "cartao").map(c => c.nome), nomes = new Set(contas); BANCOS.forEach(b => nomes.add(b.nome || b));
+  return [...nomes].map(n => `<option>${esc(n)}</option>`).join("") || "<option>—</option>";
+}
+function renderBancoPg() { const f = document.getElementById("pgForma").value, box = document.getElementById("pgBancoBox"); box.style.display = /Pix|Transfer|Boleto|Cart/.test(f) ? "" : "none";
+  document.getElementById("pgBanco").innerHTML = opcoesBancoPg(f); const rot = box.querySelector(".ic"); if (rot) rot.textContent = /Cart/.test(f) ? "Qual cartão" : "Banco"; }
 function alternarIgn(n) { if (IGN.has(n)) IGN.delete(n); else IGN.add(n); renderNota(); }
 // itens pendentes com sugestão FORTE e conversão conhecida (pela descrição, ou 1 quando a unidade é UN)
 let REAJ = {}; // produtoId -> preço novo marcado
@@ -573,7 +581,7 @@ async function confirmar() {
 }
 async function carregarContas() { const { j } = await api("/api/entrada-nota/contas"); const t = (j.titulos || []).slice(0, 15);
   document.getElementById("contas").innerHTML = t.length ? `<div style="overflow-x:auto"><table class="tb" style="min-width:560px"><tr class="ic"><td>Fornecedor</td><td>NF</td><td>Parcela</td><td>Vence</td><td style="text-align:right">Valor</td><td>Situação</td></tr>${t.map(x => `<tr><td>${esc(x.fornecedor?.nome)}</td><td>${esc(x.numeroNota)}</td><td>${esc(x.parcela)}</td><td>${dmy(x.vencimento)}</td><td style="text-align:right">${brl(x.valor)}</td><td>${x.status === "pago" ? "✅ paga" + (x.forma ? " · " + esc(x.forma) + (x.banco ? " " + esc(x.banco) : "") : "") : (x.vencimento < new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) ? "🔴 vencida" : "⏳ a pagar")}</td></tr>`).join("")}</table></div>` : `<div class="ic">Nenhuma ainda.</div>`; }
-(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} carregarContas(); })();
+(async () => { try { const b = await fetch(B + "/api/pix-bancos").then(r => r.json()); BANCOS = (b && b.bancos) || []; } catch (e) {} try { const c = await api("/api/financeiro/contas"); if (c.ok) CONTAS_FIN = c.j.contas || []; } catch (e) {} carregarContas(); })();
 const _renderNotaBase = renderNota; renderNota = function () { _renderNotaBase(); carregarThumbs(); };
 carregarIncompletas();
 (function () { const q = new URLSearchParams(location.search), ch = q.get("chave"), sn = q.get("nota");

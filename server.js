@@ -13502,7 +13502,7 @@ app.get("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=
 app.post("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, d=lerContasFin(), nome=String(b.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da conta"});
     let c=d.contas.find(x=>x.id===b.id); if(!c){ c={id:"ct"+Date.now(),criadoEm:Date.now()}; d.contas.push(c); }
-    Object.assign(c,{nome,tipo:["banco","cofre","caixa"].includes(b.tipo)?b.tipo:"banco",saldoInicial:_round2(Number(String(b.saldoInicial||0).replace(",","."))||0),
+    Object.assign(c,{nome,tipo:["banco","cofre","caixa","cartao"].includes(b.tipo)?b.tipo:"banco",saldoInicial:_round2(Number(String(b.saldoInicial||0).replace(",","."))||0),
       dataInicial:/^\d{4}-\d{2}-\d{2}$/.test(String(b.dataInicial||""))?b.dataInicial:_diaBRk(Date.now()),ativa:b.ativa!==false,alteradoPor:req.sessao?.nome||""});
     salvarJSON(CONTAS_FIN_FILE,d); res.json({ok:true,conta:c}); }catch(e){ res.status(500).json({erro:e.message}); }
 });
