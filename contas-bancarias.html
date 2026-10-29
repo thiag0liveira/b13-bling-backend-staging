@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>B13 — Contas e Movimentação</title>
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;margin:0;padding:0}
+:root{--mag:#FF0082;--bg:#0f0d24;--card:#151233;--borda:#2c2660;--muted:#9a95c9;--ok:#3ce88a;--warn:#ffd23f;--ruim:#ff8aa3}
+body{background:var(--bg);color:#fff;min-height:100vh}
+.top{background:linear-gradient(180deg,#2b2870,#262366);border-bottom:3px solid var(--mag);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.top img{height:34px}.top .t{font-weight:900;font-size:16px}.top .sp{flex:1}
+.btn{border:none;border-radius:9px;font-weight:800;cursor:pointer;font-size:12px;padding:8px 12px;color:#fff;text-decoration:none;display:inline-block}
+.btn-ghost{background:#1c1846;border:1px solid #3a3480}.btn-mag{background:var(--mag)}.btn-ok{background:#0e5a32;border:1px solid var(--ok)}
+.wrap{padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;max-width:1100px;margin:0 auto}
+input,select,textarea{padding:9px 10px;border-radius:9px;border:1px solid #37327a;background:#0f0d24;color:#fff;font-size:14px;width:100%}
+.card{background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:14px;min-width:0}
+.card h3{font-size:14px;margin-bottom:4px}.desc{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.45}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.kpi{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:11px}.kpi .v{font-size:20px;font-weight:900}.kpi .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-top:3px}
+.conta{background:#120f2c;border:1px solid var(--borda);border-radius:12px;padding:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.conta.sel{border-color:var(--mag)}.conta.off{opacity:.55}
+.conta .nm{flex:1 1 180px;min-width:0}.conta .nm b{font-size:15px}.conta .nm .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+.conta .sd{text-align:right}.conta .sd .v{font-size:19px;font-weight:900}.conta .sd .l{font-size:10.5px;color:var(--muted)}
+.tag{display:inline-block;font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;margin-left:5px;white-space:nowrap}
+.tag.neu{background:#24205a;color:#cfcaf5}.tag.ok{background:#11352a;color:#6be3a8}.tag.warn{background:#3a2a0a;color:var(--warn)}.tag.azul{background:#0d2a44;color:#7fd0ff}.tag.erro{background:#3d1020;color:var(--ruim)}.tag.man{background:#3a1d4a;color:#e0a8ff}
+.mov{display:flex;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid #1d1946;font-size:13px}
+.mov .d{width:46px;color:var(--muted);font-size:12px;flex:none}.mov .x{flex:1;min-width:0;line-height:1.35}.mov .x small{color:var(--muted);display:block;font-size:11px}
+.mov .vl{text-align:right;flex:none;min-width:92px}.mov .vl b{font-size:14px}.mov .vl small{display:block;color:var(--muted);font-size:10.5px}
+.ent{color:var(--ok)}.sai{color:var(--ruim)}
+.barra{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.chip{padding:6px 11px;border-radius:999px;border:1px solid #3a3480;background:#1c1846;font-size:12px;font-weight:800;cursor:pointer}.chip.on{background:var(--mag);border-color:var(--mag)}
+.fundo{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;z-index:200;overflow-y:auto;padding:16px 8px}.fundo.aberto{display:flex}
+.modal{background:#151233;border:1px solid var(--borda);border-radius:14px;padding:16px;width:100%;max-width:520px}.modal h3{font-size:16px;margin-bottom:8px}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px}.lb{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;font-weight:700}
+.dica{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.4}
+.erro{background:#3a1020;border:1px solid #ff5f8a;border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:8px}.okm{background:#0e3a22;border:1px solid var(--ok);border-radius:8px;padding:7px 10px;font-size:12.5px;margin-top:8px}
+.vazio{padding:22px;text-align:center;color:var(--muted)}.spin{display:inline-block;width:20px;height:20px;border:3px solid #514c96;border-top-color:var(--mag);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="/nav.js"></script>
+</head>
+<body><script>
+  (function(){ if(!b13RequireLogin()) return; if(!b13BloquearSeSemAcesso("/contas-bancarias")) return;
+    document.addEventListener("DOMContentLoaded",function(){ const nav=document.createElement("div"); nav.innerHTML=b13RenderNav("/contas-bancarias"); document.body.insertBefore(nav,document.body.firstChild); }); })();
+</script>
+<div class="top"><img src="/logo"><div class="t">🏦 Contas e Movimentação</div><div class="sp"></div><button class="btn btn-mag" onclick="abrirConta()">➕ Nova conta</button></div>
+<div class="wrap">
+  <div class="card"><div class="kpis" id="kpis"><div class="vazio"><div class="spin"></div></div></div></div>
+  <div class="card" id="semCard" style="display:none"><h3>🧾 Bancos usados nos lançamentos que ainda não são conta</h3><div class="desc">Esses nomes aparecem em pagamentos e recebimentos. Crie a conta para acompanhar o saldo e o extrato. Informe a data a partir da qual o saldo inicial vale.</div><div id="semLista"></div></div>
+  <div id="contas"></div>
+  <div class="card" id="exCard" style="display:none"></div>
+</div>
+<div class="fundo" id="fundo"><div class="modal" id="modal"></div></div>
+<script>
+const B = location.protocol.indexOf("http") === 0 ? "" : "https://app.b13bebidas.com.br";
+const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function token() { try { return (b13GetSession() || {}).token || ""; } catch (e) { return ""; } }
+async function api(p, op) { op = op || {}; const r = await fetch(B + p, { ...op, headers: { "Content-Type": "application/json", "X-Auth-Token": token() } }); const j = await r.json().catch(() => ({})); return { ok: r.ok, j }; }
+const brl = n => "R$ " + Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dmy = d => d ? d.split("-").reverse().join("/") : "—", dm = d => d ? d.split("-").reverse().slice(0, 2).join("/") : "";
+const NM = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const mesTxt = m => NM[Number(m.slice(5, 7)) - 1] + "/" + m.slice(0, 4);
+const addMes = (m, k) => new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1 + k, 1)).toISOString().slice(0, 7);
+const TIPOS = { banco: "Banco", cofre: "Cofre", caixa: "Caixa", cartao: "Cartão de crédito" };
+const V = id => document.getElementById(id), VAL = id => (V(id) ? V(id).value : "");
+function abrirM(h) { V("modal").innerHTML = h; V("fundo").classList.add("aberto"); }
+function fecharM() { V("fundo").classList.remove("aberto"); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") fecharM(); });
+let S = null, EX = null; // EX = { id, mes ("" = tudo), tipo, dados }
+
+async function carregar() {
+  const { ok, j } = await api("/api/financeiro/saldos"); if (!ok) { V("kpis").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui carregar as contas.")}</div>`; return; }
+  S = j; const k = (v, l, cl) => `<div class="kpi"><div class="v ${cl || ""}">${v}</div><div class="l">${l}</div></div>`;
+  V("kpis").innerHTML = k(brl(S.totalContas), "Saldo total (bancos, cofre e caixas)", S.totalContas < 0 ? "sai" : "") + k(brl(S.entradasMes), "Entradas no mês", "ent") + k(brl(S.saidasMes), "Saídas no mês", "sai") + k(S.contas.filter(c => c.ativa !== false).length, "Contas ativas");
+  V("semCard").style.display = S.semConta.length ? "" : "none";
+  V("semLista").innerHTML = S.semConta.map(x => `<div class="mov"><div class="x"><b>${esc(x.nome)}</b><small>${x.qtd} lançamento(s) · entradas ${brl(x.entradas)} · saídas ${brl(x.saidas)}</small></div><button class="btn btn-ghost" onclick="abrirConta(null,'${esc(x.nome).replace(/'/g, "")}')">Criar conta</button></div>`).join("");
+  V("contas").innerHTML = S.contas.length ? S.contas.map(c => { const cartao = c.tipo === "cartao", neg = c.saldo < 0;
+    return `<div class="conta ${EX && EX.id === c.id ? "sel" : ""} ${c.ativa === false ? "off" : ""}" style="margin-bottom:8px"><div class="nm"><b>${esc(c.nome)}</b><span class="tag ${cartao ? "warn" : "azul"}">${esc(TIPOS[c.tipo] || c.tipo)}</span>${c.ativa === false ? '<span class="tag erro">desativada</span>' : ""}<div class="s">saldo inicial ${brl(c.saldoInicial)} em ${dmy(c.dataInicial)} · ${c.movimentos} movimento(s)${c.ultimo ? " · último em " + dmy(c.ultimo) : ""}</div><div class="s">no mês: <span class="ent">+${brl(c.entradasMes)}</span> · <span class="sai">−${brl(c.saidasMes)}</span></div></div>
+      <div class="sd"><div class="v ${neg ? "sai" : ""}">${cartao && neg ? brl(-c.saldo) : brl(c.saldo)}</div><div class="l">${cartao ? (neg ? "fatura em aberto" : "crédito") : "saldo atual"}</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-mag" onclick="abrirExtrato('${c.id}')">📒 Extrato</button><button class="btn btn-ghost" title="Editar" onclick="abrirConta('${c.id}')">✏️</button><button class="btn btn-ghost" title="${c.ativa === false ? "Reativar" : "Desativar"}" onclick="alternarConta('${c.id}')">${c.ativa === false ? "↩️" : "🚫"}</button></div></div>`; }).join("")
+    : `<div class="card"><div class="vazio">Nenhuma conta ainda. Toque em "➕ Nova conta" para cadastrar o banco, o cofre ou o cartão.</div></div>`;
+  if (EX) carregarExtrato();
+}
+// ---------- conta
+function abrirConta(id, nomeSug) {
+  const c = id ? S.contas.find(x => x.id === id) : null, hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), nome = c ? c.nome : (nomeSug || ""), tipoSug = !c && /cofre|dinheiro/i.test(nome) ? "cofre" : (c ? c.tipo : "banco");
+  abrirM(`<h3>${c ? "✏️ Editar conta" : "➕ Nova conta"}</h3><div class="form"><div style="grid-column:1/-1"><label class="lb">Nome</label><input id="cNome" value="${esc(nome)}" placeholder="Ex.: Banco Inter, Itaú PJ, Cofre"></div>
+    <div><label class="lb">Tipo</label><select id="cTipo">${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}" ${tipoSug === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+    <div><label class="lb">Saldo inicial (R$)</label><input id="cSaldo" inputmode="decimal" value="${c ? String(c.saldoInicial).replace(".", ",") : ""}" placeholder="0,00"></div>
+    <div style="grid-column:1/-1"><label class="lb">Vale a partir de</label><input id="cData" type="date" value="${esc(c ? c.dataInicial : hoje)}"></div></div>
+    <div class="dica">O saldo inicial vale nessa data. O sistema soma as contas pagas e os Pix recebidos nesse banco <b>a partir</b> dela, mais os lançamentos que você fizer aqui. Para acompanhar o histórico, use o dia do último saldo que você conhece (por exemplo, o do extrato do banco). Cartão de crédito: deixe 0; as compras viram a fatura em aberto.</div>
+    <div id="cMsg"></div><div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharM()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarConta('${id || ""}')">💾 Salvar</button></div>`);
+}
+async function salvarConta(id) {
+  const { ok, j } = await api("/api/financeiro/contas", { method: "POST", body: JSON.stringify({ id: id || undefined, nome: VAL("cNome"), tipo: VAL("cTipo"), saldoInicial: VAL("cSaldo").replace(",", "."), dataInicial: VAL("cData") }) });
+  if (!ok) { V("cMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui salvar.")}</div>`; return; } fecharM(); carregar();
+}
+async function alternarConta(id) {
+  const c = S.contas.find(x => x.id === id); if (c.ativa !== false && !confirm(`Desativar "${c.nome}"? Ela some das listas de pagamento; o histórico continua.`)) return;
+  await api("/api/financeiro/contas", { method: "POST", body: JSON.stringify({ id: c.id, nome: c.nome, tipo: c.tipo, saldoInicial: c.saldoInicial, dataInicial: c.dataInicial, ativa: c.ativa === false }) }); carregar();
+}
+// ---------- extrato
+function abrirExtrato(id) { EX = { id, mes: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7), tipo: "", dados: null }; carregar(); setTimeout(() => V("exCard").scrollIntoView({ behavior: "smooth", block: "start" }), 400); }
+function mudaMes(k) { EX.mes = EX.mes ? addMes(EX.mes, k) : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7); carregarExtrato(); }
+function tudo() { EX.mes = ""; carregarExtrato(); }
+function filtro(t) { EX.tipo = t; carregarExtrato(); }
+function qsExtrato() { const de = EX.mes ? EX.mes + "-01" : "", ate = EX.mes ? addMes(EX.mes, 1) + "-01" : ""; let ateD = ""; if (ate) { const d = new Date(ate + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); ateD = d.toISOString().slice(0, 10); } return `conta=${EX.id}&de=${de}&ate=${ateD}&tipo=${EX.tipo}`; }
+async function carregarExtrato() {
+  V("exCard").style.display = ""; const { ok, j } = await api("/api/financeiro/extrato?" + qsExtrato()); if (!ok) { V("exCard").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui carregar o extrato.")}</div>`; return; } EX.dados = j; renderExtrato();
+}
+const COR_ORIGEM = { "Conta paga": "neu", "Recebido no caixa": "ok", "Recebido (pedido)": "ok", "Estorno ao cliente": "erro", "Lançamento": "man", "Transferência": "azul", "Ajuste": "warn" };
+function renderExtrato() {
+  const d = EX.dados, c = d.conta, cartao = c.tipo === "cartao", chip = (t, r) => `<span class="chip ${EX.tipo === t ? "on" : ""}" onclick="filtro('${t}')">${r}</span>`;
+  V("exCard").innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="flex:1;margin:0">📒 Extrato · ${esc(c.nome)}</h3><button class="btn btn-ghost" onclick="EX=null;V('exCard').style.display='none';carregar()">✕ Fechar</button></div>
+  <div class="barra"><button class="btn btn-ghost" onclick="mudaMes(-1)">◀</button><b style="min-width:130px;text-align:center">${EX.mes ? mesTxt(EX.mes) : "Desde o início"}</b><button class="btn btn-ghost" onclick="mudaMes(1)">▶</button><button class="btn btn-ghost" onclick="tudo()">Todo o período</button>
+    <span style="flex:1"></span>${chip("", "Todos")}${chip("entrada", "Entradas")}${chip("saida", "Saídas")}${chip("manual", "Manuais")}</div>
+  <div class="barra"><button class="btn btn-ok" onclick="abrirLanc()">➕ Lançamento</button><button class="btn btn-ghost" onclick="abrirTransf()">🔁 Transferir${cartao ? " (pagar fatura)" : ""}</button><button class="btn btn-ghost" onclick="abrirConferir()">⚖️ Conferir saldo</button><button class="btn btn-ghost" onclick="baixarCsv()">⬇️ CSV</button></div>
+  <div class="kpis" style="margin:6px 0 4px"><div class="kpi"><div class="v">${brl(d.saldoAnterior)}</div><div class="l">${EX.mes ? "Saldo no início do período" : "Saldo inicial"}</div></div><div class="kpi"><div class="v ent">+${brl(d.entradas)}</div><div class="l">Entradas</div></div><div class="kpi"><div class="v sai">−${brl(d.saidas)}</div><div class="l">Saídas</div></div><div class="kpi"><div class="v">${brl(d.saldoFinal)}</div><div class="l">Saldo no fim do período</div></div></div>
+  <div>${d.movimentos.length ? d.movimentos.map(m => `<div class="mov"><div class="d">${dm(m.data)}</div><div class="x">${esc(m.descricao || m.origem)}<small><span class="tag ${COR_ORIGEM[m.origem] || "neu"}" style="margin:0">${esc(m.origem)}</span>${m.manual && m.por ? " · por " + esc(m.por) : ""}</small></div>
+      <div class="vl"><b class="${m.tipo === "entrada" ? "ent" : "sai"}">${m.tipo === "entrada" ? "+" : "−"}${brl(m.valor)}</b><small>saldo ${brl(m.saldoApos)}</small></div>${m.manual ? `<button class="btn btn-ghost" style="padding:4px 8px" title="Cancelar lançamento${m.transferenciaId ? " (as duas pontas da transferência)" : ""}" onclick="cancelarMov('${m.id}',${!!m.transferenciaId})">🗑</button>` : ""}</div>`).join("") : `<div class="vazio">Nenhum movimento neste período.</div>`}</div>
+  <div class="dica">As saídas vêm das contas pagas com este banco e os Pix de clientes recebidos nele. Dinheiro e cartão da maquininha não entram sozinhos: lance à mão quando o valor cair no banco.</div>`;
+}
+function hojeIso() { return new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); }
+function abrirLanc() {
+  abrirM(`<h3>➕ Lançamento · ${esc(EX.dados.conta.nome)}</h3><div class="form"><div><label class="lb">Tipo</label><select id="lTipo"><option value="entrada">Entrada (dinheiro entrou)</option><option value="saida">Saída (dinheiro saiu)</option></select></div><div><label class="lb">Data</label><input id="lData" type="date" value="${hojeIso()}"></div>
+    <div><label class="lb">Valor (R$)</label><input id="lValor" inputmode="decimal" placeholder="0,00"></div><div><label class="lb">O que foi</label><input id="lDesc" placeholder="Ex.: tarifa, rendimento, depósito, maquininha"></div></div>
+    <div class="dica">Para mover dinheiro entre as suas contas use "Transferir", assim as duas contas ficam certas. Pagamento de fornecedor deve ser feito em Contas a Pagar, para entrar na despesa.</div><div id="lMsg"></div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharM()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarLanc()">💾 Lançar</button></div>`);
+}
+async function salvarLanc() {
+  const { ok, j } = await api("/api/financeiro/movimento", { method: "POST", body: JSON.stringify({ contaId: EX.id, tipo: VAL("lTipo"), data: VAL("lData"), valor: VAL("lValor"), descricao: VAL("lDesc") }) });
+  if (!ok) { V("lMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui.")}</div>`; return; } fecharM(); carregar();
+}
+function abrirTransf() {
+  const outras = S.contas.filter(c => c.ativa !== false && c.id !== EX.id); if (!outras.length) { alert("Cadastre outra conta para transferir."); return; }
+  abrirM(`<h3>🔁 Transferir · de ${esc(EX.dados.conta.nome)}</h3><div class="form"><div><label class="lb">Para a conta</label><select id="tDest">${outras.map(c => `<option value="${c.id}">${esc(c.nome)}${c.tipo === "cartao" ? " (pagar fatura)" : ""}</option>`).join("")}</select></div><div><label class="lb">Data</label><input id="tData" type="date" value="${hojeIso()}"></div>
+    <div><label class="lb">Valor (R$)</label><input id="tValor" inputmode="decimal" placeholder="0,00"></div><div><label class="lb">Observação (opcional)</label><input id="tDesc" placeholder="Ex.: reforço, fatura de outubro"></div></div>
+    <div class="dica">Sai desta conta e entra na outra, com a mesma data. Para pagar a fatura do cartão, transfira do banco para o cartão.</div><div id="tMsg"></div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharM()">Cancelar</button><button class="btn btn-mag" style="flex:1" onclick="salvarTransf()">🔁 Transferir</button></div>`);
+}
+async function salvarTransf() {
+  const { ok, j } = await api("/api/financeiro/transferencia", { method: "POST", body: JSON.stringify({ origem: EX.id, destino: VAL("tDest"), data: VAL("tData"), valor: VAL("tValor"), descricao: VAL("tDesc") }) });
+  if (!ok) { V("tMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui.")}</div>`; return; } fecharM(); carregar();
+}
+function abrirConferir() {
+  abrirM(`<h3>⚖️ Conferir saldo · ${esc(EX.dados.conta.nome)}</h3><div class="desc">Digite o saldo que aparece no extrato do banco numa data. Se for diferente do que o sistema calculou, ele lança a diferença como "Ajuste", e o extrato passa a fechar com o banco.</div>
+    <div class="form"><div><label class="lb">Data do saldo</label><input id="fData" type="date" value="${hojeIso()}"></div><div><label class="lb">Saldo real no banco (R$)</label><input id="fSaldo" inputmode="decimal" placeholder="0,00"></div></div><div id="fMsg"></div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-ghost" style="flex:1" onclick="fecharM()">Fechar</button><button class="btn btn-mag" style="flex:1" onclick="salvarConferir()">⚖️ Conferir</button></div>`);
+}
+async function salvarConferir() {
+  const { ok, j } = await api("/api/financeiro/conferir", { method: "POST", body: JSON.stringify({ contaId: EX.id, data: VAL("fData"), saldoReal: VAL("fSaldo").replace(",", ".") }) });
+  if (!ok) { V("fMsg").innerHTML = `<div class="erro">${esc(j.erro || "Não consegui.")}</div>`; return; }
+  V("fMsg").innerHTML = `<div class="okm">${esc(j.mensagem)}${j.diferenca ? ` O sistema tinha ${brl(j.calculado)}.` : ""}</div>`; carregar();
+}
+async function cancelarMov(id, transf) {
+  if (!confirm(transf ? "Cancelar esta transferência? As duas contas voltam como estavam." : "Cancelar este lançamento?")) return;
+  const { ok, j } = await api(`/api/financeiro/movimento/${id}/cancelar`, { method: "POST", body: "{}" }); if (!ok) { alert(j.erro || "Não consegui."); return; } carregar();
+}
+async function baixarCsv() {
+  const r = await fetch(B + "/api/financeiro/extrato.csv?" + qsExtrato(), { headers: { "X-Auth-Token": token() } }); if (!r.ok) { alert("Não consegui gerar o CSV."); return; }
+  const b = await r.blob(), a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = "extrato_" + (EX.dados.conta.nome || "conta").replace(/[^a-z0-9]+/gi, "_") + ".csv"; document.body.appendChild(a); a.click(); a.remove();
+}
+carregar();
+</script>
+</body>
+</html>

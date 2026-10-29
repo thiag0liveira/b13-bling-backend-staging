@@ -1316,6 +1316,7 @@ window.B13_NAV_LINKS=[
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/custos",label:"💼 Custos e Folha",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gastos-fixos",label:"📌 Gastos Fixos",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/folha",label:"👥 Folha e Pessoal",acoes:["acesso_custos"]},
+  {grupo:"NOTA FISCAL E FINANCEIRO",href:"/contas-bancarias",label:"🏦 Contas e Movimentação",acoes:["acesso_contas_pagar"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/taxas-cartao",label:"💳 Taxas de Cartão",acoes:["acesso_custos"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-nfce",label:"🧾 Gestão de NFC-e",acoes:["acesso_gestao_nfce"]},
   {grupo:"NOTA FISCAL E FINANCEIRO",href:"/gestao-caixas",label:"🗃️ Gestão de Caixas",acoes:["acesso_gestao_caixas"]},
@@ -13344,6 +13345,65 @@ app.post("/api/custos/ficha/:fid",requireAcesso("acesso_custos"),(req,res)=>{
     salvarJSON(CUSTOS_FICHAS_FILE,fichas); addLog("funcionario-"+f.id,"ficha_de_custo",req.sessao?.funcionarioId||"",quem,{funcionario:f.nome,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao)});
     res.json({ok:true,valores,custoMensal:_round2(valores.salario+valores.encargos+valores.beneficios+valores.provisao),ficha:fichas[f.id]});
   }catch(e){ res.status(500).json({erro:e.message}); } });
+// ===================== CONTAS BANCÁRIAS: SALDO E MOVIMENTAÇÃO =====================
+// Saída = conta paga com aquele banco/cartão. Entrada = Pix de cliente recebido naquele banco (caixa, entrega e ficha). Estorno de cliente pelo banco = saída.
+// Além disso, lançamentos MANUAIS: entrada, saída (tarifa, rendimento, depósito...), transferência entre contas e ajuste de conferência. Dinheiro e cartão da maquininha NÃO entram sozinhos (o banco que recebe é outro e o valor vem líquido): lance à mão quando cair.
+const CONTAS_MOVS_FILE=`${DATA_DIR}/contas_fin_movs.json`;
+function lerMovsFin(){ const d=lerJSON(CONTAS_MOVS_FILE,null)||{}; d.movs||=[]; return d; }
+const _nomeNrm=x=>String(x||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+const _ehDiaIso=x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x||""));
+function _movsBancariosAuto(){
+  const out=[], chaves=new Set(), semDinheiroNemCartao=f=>!(/dinheiro|cart[aã]o|cr[eé]dito|d[eé]bito/i.test(String(f||""))&&!/pix/i.test(String(f||"")));
+  try{ (lerContasPagar().titulos||[]).forEach(t=>{ if(t.status!=="pago"||t.sangria||!t.banco||/dinheiro do caixa/i.test(t.forma||"")) return; const v=Number(t.valorPago!=null?t.valorPago:t.valor)||0; if(!(v>0)) return;
+      const data=_ehDiaIso(t.dataPagamento)?t.dataPagamento:(t.pagoEm?_diaBRk(t.pagoEm):String(t.vencimento||"")); out.push({id:"t:"+t.id,data,ms:Number(t.pagoEm)||Date.parse(data+"T12:00:00-03:00")||0,tipo:"saida",valor:_round2(v),banco:t.banco,origem:"Conta paga",forma:t.forma||"",descricao:`${(t.fornecedor&&t.fornecedor.nome)||""}${t.descricao?" · "+t.descricao:""}`.replace(/^ · /,""),ref:{tipo:"titulo",id:t.id}}); }); }catch(e){}
+  try{ (lerCaixaSessoesCompleto().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(!m||m.cancelado) return;
+      if(m.tipo==="venda") (m.pagamentos||[]).forEach(p=>{ const v=Number(p.valor)||0; if(!p.banco||!(v>0)||!semDinheiroNemCartao(p.formaNome)) return; chaves.add(`${m.pedidoId}|${v.toFixed(2)}|${_nomeNrm(p.banco)}`);
+        out.push({id:`c:${m.pedidoId||""}:${m.em}:${v}`,data:_diaBRk(m.em),ms:Number(m.em)||0,tipo:"entrada",valor:_round2(v),banco:p.banco,origem:"Recebido no caixa",forma:p.formaNome||"Pix",descricao:`${p.formaNome||"Pix"} · ${m.clienteNome||"cliente"}${m.pedidoNumero?" · pedido "+m.pedidoNumero:""}`,ref:{tipo:"pedido",id:m.pedidoId}}); });
+      else if(m.tipo==="estorno"&&m.banco){ const v=Number(m.valor)||0; if(v>0){ chaves.add(`${m.pedidoId}|${v.toFixed(2)}|${_nomeNrm(m.banco)}`); out.push({id:`e:${m.pedidoId||""}:${m.em}:${v}`,data:_diaBRk(m.em),ms:Number(m.em)||0,tipo:"saida",valor:_round2(v),banco:m.banco,origem:"Estorno ao cliente",forma:"Pix",descricao:`Estorno · ${m.clienteNome||"cliente"}${m.pedidoNumero?" · pedido "+m.pedidoNumero:""}`,ref:{tipo:"pedido",id:m.pedidoId}}); } } })); }catch(e){}
+  try{ Object.entries(lerPag()||{}).forEach(([pid,r])=>(r.historico||[]).forEach(h=>{ if(!h||!h.banco||h.soRegistrarLog) return; const v=Number(h.valor)||0; if(!v||!semDinheiroNemCartao(h.formaNome)) return;
+      if(chaves.has(`${pid}|${Math.abs(v).toFixed(2)}|${_nomeNrm(h.banco)}`)) return; // já veio do movimento do caixa
+      out.push({id:`p:${pid}:${h.em}:${v}`,data:_diaBRk(h.em),ms:Number(h.em)||0,tipo:v>0?"entrada":"saida",valor:_round2(Math.abs(v)),banco:h.banco,origem:v>0?"Recebido (pedido)":"Estorno ao cliente",forma:h.formaNome||"Pix",descricao:`${h.formaNome||"Pix"} · pedido ${pid}${h.origem?" · "+h.origem:""}`,ref:{tipo:"pedido",id:pid}}); })); }catch(e){}
+  return out; }
+function _movsDaContaFin(c,auto,manuais){
+  const nomes=new Set([c.nome,...(c.aliases||[])].map(_nomeNrm)), ini=c.dataInicial||"0000-00-00", L=[];
+  auto.forEach(m=>{ if(nomes.has(_nomeNrm(m.banco))&&m.data>=ini) L.push({id:m.id,data:m.data,ms:m.ms,tipo:m.tipo,valor:m.valor,origem:m.origem,descricao:m.descricao,forma:m.forma,ref:m.ref,manual:false}); });
+  manuais.forEach(m=>{ if(m.contaId===c.id&&!m.cancelado&&m.data>=ini) L.push({id:m.id,data:m.data,ms:Number(m.em)||0,tipo:m.tipo,valor:Number(m.valor)||0,origem:m.origem||"Lançamento",descricao:m.descricao||"",forma:"",ref:m.transferenciaId?{tipo:"transferencia",id:m.transferenciaId}:null,manual:true,por:m.por||"",transferenciaId:m.transferenciaId||null}); });
+  return L.sort((a,b)=>String(a.data).localeCompare(String(b.data))||a.ms-b.ms); }
+const _sinal=m=>m.tipo==="entrada"?1:-1;
+function _saldoConta(c,movs,ate){ return _round2((Number(c.saldoInicial)||0)+movs.filter(m=>!ate||m.data<=ate).reduce((a,m)=>a+_sinal(m)*m.valor,0)); }
+const _permContaFin=requireAcesso("acesso_contas_pagar");
+app.get("/api/financeiro/saldos",_permContaFin,(req,res)=>{ try{
+  const d=lerContasFin(), M=lerMovsFin().movs, auto=_movsBancariosAuto(), hoje=_diaBRk(Date.now()), mes=hoje.slice(0,7), conhecidos=new Set(); let total=0, entMes=0, saiMes=0;
+  const contas=d.contas.map(c=>{ [c.nome,...(c.aliases||[])].forEach(n=>conhecidos.add(_nomeNrm(n))); const L=_movsDaContaFin(c,auto,M), saldo=_saldoConta(c,L,hoje), dm=L.filter(m=>m.data.slice(0,7)===mes), e=_round2(dm.filter(m=>m.tipo==="entrada").reduce((a,m)=>a+m.valor,0)), s=_round2(dm.filter(m=>m.tipo==="saida").reduce((a,m)=>a+m.valor,0));
+    if(c.ativa!==false&&c.tipo!=="cartao"){ total+=saldo; entMes+=e; saiMes+=s; } return {...c,saldo,entradasMes:e,saidasMes:s,movimentos:L.length,ultimo:L.length?L[L.length-1].data:null}; });
+  const sem={}; auto.forEach(m=>{ const k=_nomeNrm(m.banco); if(!k||conhecidos.has(k)) return; const o=sem[k]||(sem[k]={nome:m.banco,entradas:0,saidas:0,qtd:0}); o.qtd++; if(m.tipo==="entrada") o.entradas=_round2(o.entradas+m.valor); else o.saidas=_round2(o.saidas+m.valor); });
+  res.json({ok:true,hoje,contas,totalContas:_round2(total),entradasMes:_round2(entMes),saidasMes:_round2(saiMes),semConta:Object.values(sem).sort((a,b)=>b.qtd-a.qtd)}); }catch(e){ res.status(500).json({erro:e.message}); } });
+function _extratoDados(q){
+  const d=lerContasFin(), c=d.contas.find(x=>x.id===q.conta); if(!c) return {erro:"conta não encontrada",status:404};
+  const L=_movsDaContaFin(c,_movsBancariosAuto(),lerMovsFin().movs), hoje=_diaBRk(Date.now()), de=_ehDiaIso(q.de)?q.de:"0000-00-00", ate=_ehDiaIso(q.ate)?q.ate:"9999-12-31", filtro=String(q.tipo||"");
+  const antes=L.filter(m=>m.data<de), saldoAnterior=_round2((Number(c.saldoInicial)||0)+antes.reduce((a,m)=>a+_sinal(m)*m.valor,0));
+  let corr=saldoAnterior; const linhas=[]; L.filter(m=>m.data>=de&&m.data<=ate).forEach(m=>{ corr=_round2(corr+_sinal(m)*m.valor); linhas.push({...m,valorAssinado:_sinal(m)*m.valor,saldoApos:corr}); });
+  const vis=linhas.filter(m=>filtro==="entrada"||filtro==="saida"?m.tipo===filtro:(filtro==="manual"?m.manual:true));
+  return {ok:true,conta:{id:c.id,nome:c.nome,tipo:c.tipo,saldoInicial:c.saldoInicial,dataInicial:c.dataInicial,ativa:c.ativa!==false},hoje,de:de==="0000-00-00"?"":de,ate:ate==="9999-12-31"?"":ate,saldoAnterior,saldoFinal:corr,saldoAtual:_saldoConta(c,L,hoje),
+    entradas:_round2(linhas.filter(m=>m.tipo==="entrada").reduce((a,m)=>a+m.valor,0)),saidas:_round2(linhas.filter(m=>m.tipo==="saida").reduce((a,m)=>a+m.valor,0)),movimentos:vis}; }
+app.get("/api/financeiro/extrato",_permContaFin,(req,res)=>{ try{ const r=_extratoDados(req.query||{}); if(r.erro) return res.status(r.status||400).json({erro:r.erro}); res.json(r); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/api/financeiro/extrato.csv",_permContaFin,(req,res)=>{ try{ const r=_extratoDados(req.query||{}); if(r.erro) return res.status(r.status||400).send(r.erro); const v=n=>String(Number(n||0).toFixed(2)).replace(".",","), c=s=>'"'+String(s==null?"":s).replace(/"/g,'""')+'"', dm=x=>String(x||"").split("-").reverse().join("/");
+  const L=[["Data","Origem","Descrição","Entrada","Saída","Saldo"].map(c).join(";"),[dm(r.de)||"início","Saldo anterior","","","",v(r.saldoAnterior)].map(c).join(";")]; r.movimentos.forEach(m=>L.push([dm(m.data),m.origem,m.descricao,m.tipo==="entrada"?v(m.valor):"",m.tipo==="saida"?v(m.valor):"",v(m.saldoApos)].map(c).join(";"))); L.push(["","TOTAL do período","",v(r.entradas),v(r.saidas),v(r.saldoFinal)].map(c).join(";"));
+  res.set("Content-Type","text/csv; charset=utf-8"); res.set("Content-Disposition",`attachment; filename="extrato_${_nomeNrm(r.conta.nome).replace(/[^a-z0-9]+/g,"_")}.csv"`); res.send("\ufeff"+L.join("\r\n")); }catch(e){ res.status(500).send(e.message); } });
+function _validaMov(b){ const v=_numBR(b.valor); if(!isFinite(v)||!(v>0)) return {erro:"informe um valor maior que zero"}; if(!_ehDiaIso(b.data)) return {erro:"informe a data"}; return {v:_round2(v)}; }
+app.post("/api/financeiro/movimento",_permContaFin,(req,res)=>{ try{ const b=req.body||{}, d=lerContasFin(), c=d.contas.find(x=>x.id===b.contaId); if(!c) return res.status(404).json({erro:"conta não encontrada"});
+  const t=["entrada","saida"].includes(b.tipo)?b.tipo:null; if(!t) return res.status(400).json({erro:"escolha entrada ou saída"}); const vv=_validaMov(b); if(vv.erro) return res.status(400).json({erro:vv.erro}); const desc=String(b.descricao||"").trim().slice(0,120); if(desc.length<2) return res.status(400).json({erro:"descreva o lançamento (ex.: tarifa, rendimento, depósito)"});
+  const M=lerMovsFin(), m={id:"mv"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),contaId:c.id,data:b.data,tipo:t,valor:vv.v,descricao:desc,origem:String(b.origem||"Lançamento").slice(0,30),em:Date.now(),por:req.sessao?.nome||""}; M.movs.push(m); salvarJSON(CONTAS_MOVS_FILE,M); res.json({ok:true,movimento:m}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/financeiro/transferencia",_permContaFin,(req,res)=>{ try{ const b=req.body||{}, d=lerContasFin(), o=d.contas.find(x=>x.id===b.origem), de=d.contas.find(x=>x.id===b.destino); if(!o||!de) return res.status(404).json({erro:"escolha as duas contas"}); if(o.id===de.id) return res.status(400).json({erro:"origem e destino são a mesma conta"});
+  const vv=_validaMov(b); if(vv.erro) return res.status(400).json({erro:vv.erro}); const M=lerMovsFin(), tid="tr"+Date.now().toString(36), base={data:b.data,valor:vv.v,origem:"Transferência",em:Date.now(),por:req.sessao?.nome||"",transferenciaId:tid}, txt=String(b.descricao||"").trim().slice(0,80);
+  M.movs.push({...base,id:tid+"a",contaId:o.id,tipo:"saida",descricao:`Para ${de.nome}${txt?" · "+txt:""}`},{...base,id:tid+"b",contaId:de.id,tipo:"entrada",descricao:`De ${o.nome}${txt?" · "+txt:""}`}); salvarJSON(CONTAS_MOVS_FILE,M); res.json({ok:true,transferenciaId:tid}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.post("/api/financeiro/movimento/:id/cancelar",_permContaFin,(req,res)=>{ try{ const M=lerMovsFin(), m=M.movs.find(x=>x.id===req.params.id); if(!m) return res.status(404).json({erro:"lançamento não encontrado"}); const alvo=m.transferenciaId?M.movs.filter(x=>x.transferenciaId===m.transferenciaId):[m]; alvo.forEach(x=>{ x.cancelado=true; x.canceladoEm=Date.now(); x.canceladoPor=req.sessao?.nome||""; }); salvarJSON(CONTAS_MOVS_FILE,M); res.json({ok:true,cancelados:alvo.length}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// conferir: o saldo real do extrato do banco numa data; a diferença vira um lançamento de ajuste
+app.post("/api/financeiro/conferir",_permContaFin,(req,res)=>{ try{ const b=req.body||{}, d=lerContasFin(), c=d.contas.find(x=>x.id===b.contaId); if(!c) return res.status(404).json({erro:"conta não encontrada"}); if(!_ehDiaIso(b.data)) return res.status(400).json({erro:"informe a data do saldo"});
+  const real=_numBR(b.saldoReal); if(!isFinite(real)) return res.status(400).json({erro:"informe o saldo real"}); const M=lerMovsFin(), calc=_saldoConta(c,_movsDaContaFin(c,_movsBancariosAuto(),M.movs),b.data), dif=_round2(real-calc);
+  if(Math.abs(dif)<0.01) return res.json({ok:true,diferenca:0,calculado:calc,mensagem:"O saldo do sistema já confere com o do banco."});
+  M.movs.push({id:"mv"+Date.now().toString(36),contaId:c.id,data:b.data,tipo:dif>0?"entrada":"saida",valor:Math.abs(dif),descricao:`Ajuste de conferência: saldo real ${_round2(real)} em ${b.data.split("-").reverse().join("/")} (sistema tinha ${calc})`,origem:"Ajuste",em:Date.now(),por:req.sessao?.nome||""}); salvarJSON(CONTAS_MOVS_FILE,M); res.json({ok:true,diferenca:dif,calculado:calc,mensagem:`Ajuste de ${dif>0?"+":"−"}${Math.abs(dif).toFixed(2).replace(".",",")} lançado.`}); }catch(e){ res.status(500).json({erro:e.message}); } });
+app.get("/contas-bancarias",(req,res)=>{ res.set("Cache-Control","no-store, no-cache, must-revalidate"); res.sendFile(path.join(__dirname,"contas-bancarias.html")); });
 // ===================== FOLHA E PESSOAL =====================
 // Uma tabela por pessoa com TODO o custo de manter o funcionário (salário, variável, alimentação, transporte, benefícios, encargos, provisão de 13º e férias),
 // os pagamentos do mês ligados a ele, a chave Pix, e métricas/previsões (passivo de 13º e férias, férias vencendo, rescisão estimada, 12 meses à frente).
@@ -13506,9 +13566,10 @@ app.post("/api/folha/ocultar/:id",_permFolha,(req,res)=>{ try{ const id=req.para
 app.get("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>res.json({contas:lerContasFin().contas}));
 app.post("/api/financeiro/contas",requireAcesso("acesso_contas_pagar"),(req,res)=>{
   try{ const b=req.body||{}, d=lerContasFin(), nome=String(b.nome||"").trim().slice(0,60); if(!nome) return res.status(400).json({erro:"informe o nome da conta"});
-    let c=d.contas.find(x=>x.id===b.id); if(!c){ c={id:"ct"+Date.now(),criadoEm:Date.now()}; d.contas.push(c); }
+    let c=d.contas.find(x=>x.id===b.id); if(!c){ c={id:"ct"+Date.now(),criadoEm:Date.now()}; d.contas.push(c); } const nomeAntigo=c.nome||"";
     Object.assign(c,{nome,tipo:["banco","cofre","caixa","cartao"].includes(b.tipo)?b.tipo:"banco",saldoInicial:_round2(Number(String(b.saldoInicial||0).replace(",","."))||0),
       dataInicial:/^\d{4}-\d{2}-\d{2}$/.test(String(b.dataInicial||""))?b.dataInicial:_diaBRk(Date.now()),ativa:b.ativa!==false,alteradoPor:req.sessao?.nome||""});
+    if(nomeAntigo&&String(nomeAntigo).trim().toLowerCase()!==nome.toLowerCase()) c.aliases=[...new Set([...(c.aliases||[]),nomeAntigo])]; // o nome antigo continua valendo para os pagamentos já lançados com ele
     salvarJSON(CONTAS_FIN_FILE,d); res.json({ok:true,conta:c}); }catch(e){ res.status(500).json({erro:e.message}); }
 });
 // DESPESAS POR COMPETÊNCIA (mês a mês por conta do plano, com a distribuição dos eventos em meses) — base da DRE
