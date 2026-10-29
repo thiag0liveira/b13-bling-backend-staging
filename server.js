@@ -14153,6 +14153,39 @@ app.get("/api/diag/pagamentos-defasados",requireAdmin,(req,res)=>{ try{
     if(corrigir){ p.valorPedidoAnterior=guardado; p.valorPedido=atual; p.statusPagamento=st; p.valorPedidoAtualizadoEm=Date.now(); mudou=true; } });
   if(mudou) salvarPag(pags);
   res.json({ok:true,dias,corrigido:corrigir,tipos,so:so||"todos",resumo,encontrados:itens.length,itens:itens.sort((a,b)=>String(b.data).localeCompare(String(a.data)))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+// DIAGNÓSTICO COMPLETO DE UM PEDIDO (pelo número): Bling ao vivo x pagamento guardado x proposta x caixa x histórico, com a leitura do que não bate
+app.get("/api/diag/pedido/:ref",requireAdmin,async(req,res)=>{ try{
+  const ref=String(req.params.ref||"").replace(/\D/g,""); if(!ref) return res.status(400).json({erro:"informe o número do pedido"});
+  const props=Object.values(lerPropostas()||{}), achada=props.find(p=>String(p.pedidoBlingNumero)===ref||String(p.pedidoBlingId)===ref); let id=achada&&achada.pedidoBlingId?String(achada.pedidoBlingId):ref, ped=null, erroBling=null;
+  try{ ped=(await bling(`/pedidos/vendas/${id}`,{},"urgente"))?.data; }catch(e){ erroBling=e.message; }
+  if(!ped&&ref.length<10){ try{ const r=await bling(`/pedidos/vendas?numero=${ref}`,{},"urgente"); const a=(r?.data||[]).find(x=>String(x.numero)===ref); if(a){ id=String(a.id); ped=(await bling(`/pedidos/vendas/${id}`,{},"urgente"))?.data; erroBling=null; } }catch(e){ erroBling=e.message; } }
+  if(!ped) return res.status(404).json({erro:"não achei o pedido no Bling",detalhe:erroBling});
+  const dh=ms=>ms?new Date(Number(ms)-3*3600e3).toISOString().slice(0,19).replace("T"," "):"";
+  const itens=(ped.itens||[]).map(i=>({produtoId:i.produto?.id,nome:i.descricao||"",quantidade:Number(i.quantidade)||0,valor:Number(i.valor)||0,subtotal:_round2((Number(i.quantidade)||0)*(Number(i.valor)||0))}));
+  const somaItens=_round2(itens.reduce((a,i)=>a+i.subtotal,0)), frete=Number(ped.transporte?.frete||0), outras=Number(ped.outrasDespesas||0), dv=Number(ped.desconto?.valor||0), descReal=ped.desconto?.unidade==="PERCENTUAL"?somaItens*dv/100:dv;
+  const calculado=_round2(somaItens+frete+outras-descReal), totalBling=_round2(Number(ped.total)||0), parcelas=(ped.parcelas||[]).map(p=>({forma:p.formaPagamento?.descricao||p.formaPagamento?.id||"",valor:_round2(Number(p.valor)||0),vencimento:p.dataVencimento||""})), somaParc=_round2(parcelas.reduce((a,p)=>a+p.valor,0));
+  const pagAll=lerPag(), pag=pagAll[id]||null, propsPed=props.filter(p=>String(p.pedidoBlingId)===id).map(p=>({propostaId:p.id,origem:p.origem||"",total:_round2(Number(p.total)||0),itens:(p.itens||[]).length,entrega:p.entrega||null,atualizadoEm:dh(p.atualizadoEm)}));
+  const mov=[]; try{ (lerCaixaSessoes().sessoes||[]).forEach(sx=>(sx.movimentos||[]).forEach(m=>{ if(m.tipo==="venda"&&String(m.pedidoId)===id) mov.push({caixa:sx.tipoCaixa||"",operador:m.operador||"",total:_round2(Number(m.total)||0),alterado:!!m.alterado,cancelado:!!m.cancelado,pagamentos:(m.pagamentos||[]).map(p=>({forma:p.formaNome,valor:p.valor})),em:dh(m.em)}); })); }catch(e){}
+  const hb=(lerHistPedidos().porId||{})[id]||null, idx=(()=>{ try{ return _indicePedidos().lista.find(r=>String(r.id)===id)||null; }catch(e){ return null; } })();
+  let retirados=null; try{ const rr=_retiradosDe(id,(propsPed[0]||{}).propostaId,itens); retirados={pendenteDeAviso:rr.pendente,itens:rr.lista.map(x=>x.tipo==="reduzido"?`${x.quantidade}x ${x.nome} (de ${x.de} para ${x.para})`:`${x.quantidade}x ${x.nome}`)}; }catch(e){}
+  _ctxTipoCache.t=0; const ctx=_ctxTipoEntrega(), fontesTipo=_fontesTipoEntrega(id,ped,ctx), oficial=_tipoEntregaDoPedido(id,ped,ctx);
+  const eventos=(lerLog()[id]||[]).slice(-25).map(e=>({quando:dh(e.em),evento:e.evento,por:e.funcionarioNome||"",detalhes:e.detalhes||null}));
+  const L=[], ok=(a,b,t=0.05)=>Math.abs(Number(a)-Number(b))<=t;
+  if(!ok(calculado,totalBling)) L.push(`O total do Bling (${totalBling}) não bate com itens + frete + outras despesas − desconto (${calculado}).`);
+  if(parcelas.length&&!ok(somaParc,totalBling)) L.push(`A soma das parcelas no Bling (${somaParc}) é diferente do total (${totalBling}).`);
+  if(pag){ if(!ok(pag.valorPedido,totalBling,0.009)) L.push(`O valor guardado no registro de pagamento (${_round2(Number(pag.valorPedido)||0)}) é diferente do total do Bling (${totalBling}).`);
+    const pg=_round2(Number(pag.valorPago)||0); if(pg>totalBling+0.05) L.push(`Foi recebido ${pg}, mais que o total atual ${totalBling}: sobra de ${_round2(pg-totalBling)} para devolver ou creditar.`); else if(pg<totalBling-0.05&&pag.statusPagamento==="pago") L.push(`Consta como pago, mas o recebido (${pg}) é menor que o total (${totalBling}): faltam ${_round2(totalBling-pg)}.`); }
+  else L.push("Não há registro de pagamento do sistema para este pedido (vale o que está no Bling e no caixa).");
+  propsPed.forEach(p=>{ if(!ok(p.total,totalBling)) L.push(`A proposta ${p.propostaId} guarda o total ${p.total}, diferente do Bling (${totalBling}).`); });
+  mov.filter(m=>!m.cancelado).forEach(m=>{ if(!ok(m.total,totalBling)) L.push(`O movimento do caixa (${m.caixa}) guarda o total ${m.total}, diferente do Bling (${totalBling}).`); });
+  if(hb&&Number(hb.t)>0&&!ok(hb.t,totalBling)) L.push(`A cópia sincronizada do Bling no sistema mostra ${_round2(Number(hb.t))}, o Bling agora mostra ${totalBling} (a cópia atualiza sozinha).`);
+  const blingDiz=fontesTipo.bling?(fontesTipo.bling.entrega?"entrega":"retirada"):null; if(blingDiz&&blingDiz!==oficial) L.push(`O Bling indica ${blingDiz}, mas as telas mostram ${oficial} (vale a decisão gravada no sistema).`);
+  res.json({ok:true,pedidoId:id,numero:ped.numero||ref,cliente:ped.contato?.nome||"",data:ped.data||"",situacao:nomeSituacao(Number(ped.situacao?.id||0)),
+    bling:{total:totalBling,somaItens,frete,outrasDespesas:outras,desconto:_round2(descReal),calculado,somaParcelas:somaParc,parcelas,observacoes:String(ped.observacoes||"").slice(-300)},itens,itensRetiradosDoPedido:retirados,
+    pagamentoGuardado:pag?{valorPedido:pag.valorPedido,valorPago:pag.valorPago,status:pag.statusPagamento,valorPedidoAnterior:pag.valorPedidoAnterior??null,atualizadoEm:dh(pag.valorPedidoAtualizadoEm),historico:(pag.historico||[]).slice(-6).map(h=>({valor:h.valor,forma:h.formaNome||"",tipo:h.tipo||"",quando:dh(h.em)}))}:null,
+    propostas:propsPed,caixa:mov,copiaDoBling:hb?{total:hb.t,situacaoId:hb.s}:null,indice:idx?{total:idx.total,situacaoId:idx.situacaoId}:null,
+    tipo:{asTelasMostram:oficial,propostaDiz:fontesTipo.proposta?fontesTipo.proposta.tipo:null,registroDeEntregasDiz:fontesTipo.entregasJson?fontesTipo.entregasJson.tipo:null,blingDiz},eventos,
+    leitura:L.length?L:["Tudo confere: total, parcelas, pagamento, proposta e caixa batem com o Bling."]}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO do TIPO de um pedido (entrega x retirada), pelo número ou código: o que cada fonte diz, o que o Bling diz agora e as últimas trocas (com tempo e erro)
 app.get("/api/diag/tipo-pedido/:ref",requireAdmin,async(req,res)=>{ try{
   const ref=String(req.params.ref||"").replace(/\D/g,""); if(!ref) return res.status(400).json({erro:"informe o número ou o código do pedido"});
