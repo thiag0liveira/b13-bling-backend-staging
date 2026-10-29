@@ -154,7 +154,11 @@ function imprimirPedidoComprovante(id) {
         return { nome: i.descricao || ((_i$produto = i.produto) === null || _i$produto === void 0 ? void 0 : _i$produto.nome) || "produto", quantidade: i.quantidade, valor: i.valor };
       }),
     } : p; // se a busca fresca falhar, cai pro dado que já tinha (melhor que não imprimir nada)
-    _continuarImpressaoComprovante(pFresco, w);
+    // situação de pagamento ATUAL (a do card pode ser de antes da edição); o servidor também acerta o valor guardado pelo total de agora
+    return fetch(B + "/api/pagamentos/" + id).then(function (x) { return x.json(); }).then(function (j) {
+      var d = j && j.data; if (d) pFresco.pagamento = Object.assign({}, pFresco.pagamento || {}, { pago: d.statusPagamento === "pago" });
+      _continuarImpressaoComprovante(pFresco, w);
+    }).catch(function () { _continuarImpressaoComprovante(pFresco, w); });
   }).catch(function () { _continuarImpressaoComprovante(p, w); });
 }
 // antes de desenhar, busca o endereço de entrega do pedido (o mesmo usado no frete) e a observação impressa

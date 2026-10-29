@@ -2221,6 +2221,17 @@ app.patch("/api/acrescimos/:id",(req,res)=>{
 });
 
 // ---- PAGAMENTOS ----
+// O total do pedido muda (itens retirados na pendência, frete trocado...) e o valor guardado em pagamentos.json ficava com o total ANTIGO: as telas de pagamento, a conferência e a
+// cobrança seguiam usando o valor de antes. Esta rotina acerta o valor guardado e o status (pago / parcial / pendente). Sem total informado, lê o atual no Bling.
+async function _sincronizarPagamentoComBling(id,totalConhecido){
+  try{ const pags=lerPag(), p=pags[String(id)]; if(!p||p.statusPagamento==="cancelado") return null;
+    let total=Number(totalConhecido);
+    if(!(total>=0)){ const r=await bling(`/pedidos/vendas/${id}`,{},"urgente"); if(Number(r?.data?.situacao?.id)===SIT.CANCELADO) return null; total=Number(r?.data?.total); }
+    if(!isFinite(total)||total<0) return null; total=_round2(total);
+    const antes=Number(p.valorPedido||0); if(Math.abs(antes-total)<=0.009) return {mudou:false,total,status:p.statusPagamento};
+    const pg=Number(p.valorPago||0); p.valorPedido=total; p.statusPagamento=pg>=total-0.05?"pago":(pg>0?"parcial":"pendente"); p.valorPedidoAtualizadoEm=Date.now(); p.valorPedidoAnterior=antes;
+    pags[String(id)]=p; salvarPag(pags); return {mudou:true,antes,total,status:p.statusPagamento};
+  }catch(e){ return null; } }
 function lerPag(){ return lerJSON(PAG_FILE,{}); }
 function salvarPag(o){
   salvarJSON(PAG_FILE,o);
@@ -2828,6 +2839,8 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
       try{
         const rPed=await bling(`/pedidos/vendas/${id}`);
         const ped=rPed?.data||{};
+        // o valor guardado é o do momento do pagamento: se o pedido foi editado depois (item retirado, frete trocado), acerta pelo total de agora
+        if(ped.id&&Number(ped.situacao?.id)!==SIT.CANCELADO){ const sy=await _sincronizarPagamentoComBling(id,Number(ped.total)); if(sy&&sy.mudou){ pagLocal.valorPedido=sy.total; pagLocal.statusPagamento=sy.status; } }
         const parcelas=ped.parcelas||[];
         const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
         if(parcelasPagas.length>0){
@@ -7050,6 +7063,7 @@ app.post("/api/pedidos/:id/editar-itens",async(req,res)=>{
     // "parcial" (o caixa passa a cobrar a diferença); se sobrou, vira Aviso pra
     // devolver. Cartão leva a taxa embutida, então o teto de "pago demais" a inclui.
     let diferencaPagamento=null;
+    await _sincronizarPagamentoComBling(id,+Number(novoTotal||totalCalc).toFixed(2)); // o total guardado acompanha a edição (pago ou não)
     try{
       const pgAll=lerPag(); const regPg=pgAll[String(id)]; const pago=Number(regPg?.valorPago||0);
       if(regPg && pago>0 && diffEd.mudou){
@@ -14112,6 +14126,16 @@ app.get("/api/pedidos", async (req, res) => {
     res.json(rLista);
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
+// DIAGNÓSTICO: pedidos cujo valor guardado em pagamentos.json ficou diferente do total atual (edição de itens, troca de frete...). ?dias=90 &corrigir=1 acerta todos.
+app.get("/api/diag/pagamentos-defasados",requireAdmin,(req,res)=>{ try{
+  const dias=Math.min(365,Math.max(1,Number(req.query.dias)||90)), corrigir=String(req.query.corrigir||"")==="1", limite=_diaBRk(Date.now()-dias*864e5), pags=lerPag(), idx=_indicePedidos().lista, porId={}; idx.forEach(r=>{ porId[String(r.id)]=r; });
+  const itens=[]; let mudou=false;
+  Object.entries(pags).forEach(([id,p])=>{ const r=porId[id]; if(!r||r.cancelado||p.statusPagamento==="cancelado"||String(r.data||"")<limite) return; const atual=_round2(Number(r.total)||0), guardado=_round2(Number(p.valorPedido)||0); if(Math.abs(atual-guardado)<=0.009) return;
+    const pg=Number(p.valorPago||0), statusNovo=pg>=atual-0.05?"pago":(pg>0?"parcial":"pendente");
+    itens.push({pedidoId:id,numero:r.numero,cliente:r.cliente||"",data:r.data,guardado,atual,diferenca:_round2(atual-guardado),valorPago:pg,statusAntes:p.statusPagamento,statusDepois:statusNovo});
+    if(corrigir){ p.valorPedidoAnterior=guardado; p.valorPedido=atual; p.statusPagamento=statusNovo; p.valorPedidoAtualizadoEm=Date.now(); mudou=true; } });
+  if(mudou) salvarPag(pags);
+  res.json({ok:true,dias,corrigido:corrigir,encontrados:itens.length,itens:itens.sort((a,b)=>String(b.data).localeCompare(String(a.data)))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO do TIPO de um pedido (entrega x retirada), pelo número ou código: o que cada fonte diz, o que o Bling diz agora e as últimas trocas (com tempo e erro)
 app.get("/api/diag/tipo-pedido/:ref",requireAdmin,async(req,res)=>{ try{
   const ref=String(req.params.ref||"").replace(/\D/g,""); if(!ref) return res.status(400).json({erro:"informe o número ou o código do pedido"});
@@ -18802,6 +18826,7 @@ app.post("/api/pedidos-online/:blingId/tipo-entrega",async(req,res)=>{
     // aparece pra tela através desse cache (até 2 min de vida); sem isso, a mudança
     // só refletia depois do cache expirar sozinho, parecendo que "não funcionou"
     _atualizarPedidoNoCacheBling(id, { tipo, endereco: tipo==="entrega"?(endereco||""):"", frete:taxa });
+    await _sincronizarPagamentoComBling(id); // frete novo = total novo
     res.json({ok:true,tipo,frete:taxa,agendamentoRemovido:agendamentoAnterior,avisoSituacao});
   }catch(e){ try{ addLog(String(req.params.blingId),"tipo_entrega_erro",(req.body||{}).funcionarioId,"",{tipo:(req.body||{}).tipo,erro:String(e.message).slice(0,300),ms:Date.now()-(_t0||Date.now())}); }catch(e2){} res.status(e.status||500).json({erro:e.message}); }
 });
@@ -20119,6 +20144,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
         _gravarTipoEntrega(id,{tipo:"retirada",convertidoDeEntrega:true,origem:"converter-retirada"});
         _atualizarPedidoNoCacheBling(id,{tipo:"retirada",endereco:"",frete:0});
         if(antes==="entrega") addLog(id,"retirada_convertida_sem_frete",funcionarioId,funcionarioNome,{});
+        await _sincronizarPagamentoComBling(id);
       }
       return res.json({ok:true,semFrete:true,total:+(ped.total||ped.totalProdutos||0),agendamentoRemovido});
     }
@@ -20154,6 +20180,7 @@ app.post("/api/fluxo/:id/converter-retirada", async(req,res)=>{
     _gravarTipoEntrega(id,{tipo:"retirada",convertidoDeEntrega:true,origem:"converter-retirada"});
     try{ const props=lerPropostas(); let mudou=false; Object.values(props||{}).forEach(p=>{ if(!p||String(p.pedidoBlingId)!==String(id)) return; const ti=(p.itens||[]).reduce((a,i)=>a+Number(i.quantidade||0)*Number(i.valor||0),0); p.total=+ti.toFixed(2); p.atualizadoEm=Date.now(); mudou=true; }); if(mudou) salvarPropostas(props); }catch(e){}
     _atualizarPedidoNoCacheBling(id,{tipo:"retirada",endereco:"",frete:0});
+    await _sincronizarPagamentoComBling(id,novoTotal);
     addLog(id,"retirada_convertida_frete_removido",funcionarioId,funcionarioNome,{freteRemovido:freteAtual,novoTotal});
     res.json({ok:true,semFrete:false,freteRemovido:freteAtual,total:novoTotal});
   }catch(e){ res.status(e.status||500).json({erro:e.message,body:e.body}); }
