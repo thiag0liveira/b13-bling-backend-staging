@@ -2223,13 +2223,16 @@ app.patch("/api/acrescimos/:id",(req,res)=>{
 // ---- PAGAMENTOS ----
 // O total do pedido muda (itens retirados na pendência, frete trocado...) e o valor guardado em pagamentos.json ficava com o total ANTIGO: as telas de pagamento, a conferência e a
 // cobrança seguiam usando o valor de antes. Esta rotina acerta o valor guardado e o status (pago / parcial / pendente). Sem total informado, lê o atual no Bling.
-async function _sincronizarPagamentoComBling(id,totalConhecido){
+async function _sincronizarPagamentoComBling(id,totalConhecido,opc){ opc=opc||{};
   try{ const pags=lerPag(), p=pags[String(id)]; if(!p||p.statusPagamento==="cancelado") return null;
     let total=Number(totalConhecido);
     if(!(total>=0)){ const r=await bling(`/pedidos/vendas/${id}`,{},"urgente"); if(Number(r?.data?.situacao?.id)===SIT.CANCELADO) return null; total=Number(r?.data?.total); }
     if(!isFinite(total)||total<0) return null; total=_round2(total);
     const antes=Number(p.valorPedido||0); if(Math.abs(antes-total)<=0.009) return {mudou:false,total,status:p.statusPagamento};
-    const pg=Number(p.valorPago||0); p.valorPedido=total; p.statusPagamento=pg>=total-0.05?"pago":(pg>0?"parcial":"pendente"); p.valorPedidoAtualizadoEm=Date.now(); p.valorPedidoAnterior=antes;
+    const pg=Number(p.valorPago||0), novoStatus=pg>=total-0.05?"pago":(pg>0?"parcial":"pendente");
+    // pedido já ENTREGUE (Atendido) que estava pago: ao apenas LER o pagamento, não vira "parcial" por diferença de total (pode ser taxa, arredondamento ou ajuste feito no Bling); a diferença vai para revisão no diagnóstico
+    if(opc.protegerFinalizados&&Number(opc.situacaoId)===SIT.ATENDIDO&&p.statusPagamento==="pago"&&novoStatus!=="pago") return {mudou:false,ignorado:"pedido entregue",total,status:p.statusPagamento};
+    p.valorPedido=total; p.statusPagamento=novoStatus; p.valorPedidoAtualizadoEm=Date.now(); p.valorPedidoAnterior=antes;
     pags[String(id)]=p; salvarPag(pags); return {mudou:true,antes,total,status:p.statusPagamento};
   }catch(e){ return null; } }
 function lerPag(){ return lerJSON(PAG_FILE,{}); }
@@ -2840,7 +2843,7 @@ app.get("/api/pagamentos/:id",async(req,res)=>{
         const rPed=await bling(`/pedidos/vendas/${id}`);
         const ped=rPed?.data||{};
         // o valor guardado é o do momento do pagamento: se o pedido foi editado depois (item retirado, frete trocado), acerta pelo total de agora
-        if(ped.id&&Number(ped.situacao?.id)!==SIT.CANCELADO){ const sy=await _sincronizarPagamentoComBling(id,Number(ped.total)); if(sy&&sy.mudou){ pagLocal.valorPedido=sy.total; pagLocal.statusPagamento=sy.status; } }
+        if(ped.id&&Number(ped.situacao?.id)!==SIT.CANCELADO){ const sy=await _sincronizarPagamentoComBling(id,Number(ped.total),{protegerFinalizados:true,situacaoId:ped.situacao?.id}); if(sy&&sy.mudou){ pagLocal.valorPedido=sy.total; pagLocal.statusPagamento=sy.status; } }
         const parcelas=ped.parcelas||[];
         const parcelasPagas=parcelas.filter(p=>parcelaEhAVista(p,ped));
         if(parcelasPagas.length>0){
@@ -14126,16 +14129,30 @@ app.get("/api/pedidos", async (req, res) => {
     res.json(rLista);
   } catch (e) { res.status(e.status || 500).json({ erro: e.message, body: e.body }); }
 });
-// DIAGNÓSTICO: pedidos cujo valor guardado em pagamentos.json ficou diferente do total atual (edição de itens, troca de frete...). ?dias=90 &corrigir=1 acerta todos.
+// DIAGNÓSTICO: pedidos cujo valor guardado em pagamentos.json ficou diferente do total atual (edição de itens, troca de frete...).
+// Categorias: "zerado" (registro sem valor guardado), "reduzido" (o total caiu: item retirado, sobra de pagamento) e "aumentou" (o total subiu: pode ser diferença a receber OU só taxa/ajuste feito no Bling).
+// ?dias=90  ?tipos=zerado,reduzido,aumentou  ?so=finalizados|abertos (finalizado = Atendido)  ?corrigir=1 (sem ?tipos corrige só zerado e reduzido)  ?desfazer=1&horas=24 (restaura o que foi corrigido nas últimas horas)
 app.get("/api/diag/pagamentos-defasados",requireAdmin,(req,res)=>{ try{
-  const dias=Math.min(365,Math.max(1,Number(req.query.dias)||90)), corrigir=String(req.query.corrigir||"")==="1", limite=_diaBRk(Date.now()-dias*864e5), pags=lerPag(), idx=_indicePedidos().lista, porId={}; idx.forEach(r=>{ porId[String(r.id)]=r; });
-  const itens=[]; let mudou=false;
-  Object.entries(pags).forEach(([id,p])=>{ const r=porId[id]; if(!r||r.cancelado||p.statusPagamento==="cancelado"||String(r.data||"")<limite) return; const atual=_round2(Number(r.total)||0), guardado=_round2(Number(p.valorPedido)||0); if(Math.abs(atual-guardado)<=0.009) return;
-    const pg=Number(p.valorPago||0), statusNovo=pg>=atual-0.05?"pago":(pg>0?"parcial":"pendente");
-    itens.push({pedidoId:id,numero:r.numero,cliente:r.cliente||"",data:r.data,guardado,atual,diferenca:_round2(atual-guardado),valorPago:pg,statusAntes:p.statusPagamento,statusDepois:statusNovo});
-    if(corrigir){ p.valorPedidoAnterior=guardado; p.valorPedido=atual; p.statusPagamento=statusNovo; p.valorPedidoAtualizadoEm=Date.now(); mudou=true; } });
+  const q=req.query, dias=Math.min(365,Math.max(1,Number(q.dias)||90)), corrigir=String(q.corrigir||"")==="1", desfazer=String(q.desfazer||"")==="1", so=String(q.so||""), horas=Math.min(720,Math.max(1,Number(q.horas)||24));
+  const tipos=String(q.tipos||(corrigir?"zerado,reduzido":"zerado,reduzido,aumentou")).split(",").map(x=>x.trim()).filter(Boolean);
+  // O TOTAL que vale é o do BLING (lista de pedidos sincronizada); o total do índice, para pedido criado pelo sistema, vem da proposta e pode diferir (frete, taxa)
+  const limite=_diaBRk(Date.now()-dias*864e5), pags=lerPag(), idx=_indicePedidos().lista, porId={}, histB=(lerHistPedidos().porId)||{}; idx.forEach(r=>{ porId[String(r.id)]=r; });
+  const totalBling=(id,r)=>{ const h=histB[String(id)]; return h&&Number(h.t)>0?{v:_round2(Number(h.t)),fonte:"Bling"}:{v:_round2(Number(r&&r.total)||0),fonte:"índice do sistema"}; };
+  const fin=r=>!!r&&Number(r.situacaoId)===SIT.ATENDIDO, passa=r=>so==="finalizados"?fin(r):(so==="abertos"?!fin(r):true), catDe=(ant,atual)=>ant===0?"zerado":(atual<ant?"reduzido":"aumentou");
+  const statusDe=(pg,t)=>pg>=t-0.05?"pago":(pg>0?"parcial":"pendente");
+  if(desfazer){ const desde=Date.now()-horas*3600e3, lista=[]; let mudou=false;
+    Object.entries(pags).forEach(([id,p])=>{ if(!p||!p.valorPedidoAtualizadoEm||p.valorPedidoAtualizadoEm<desde||p.valorPedidoAnterior==null) return; const r=porId[id], ant=_round2(Number(p.valorPedidoAnterior)||0), atual=_round2(Number(p.valorPedido)||0), cat=catDe(ant,atual);
+      if(!tipos.includes(cat)||!passa(r)) return; const pg=Number(p.valorPago||0), st=ant>0?statusDe(pg,ant):(p.statusPagamento||"pendente");
+      lista.push({pedidoId:id,numero:r?r.numero:"",cliente:r?r.cliente:"",categoria:cat,voltouPara:ant,eraAtual:atual,statusDepois:st}); p.valorPedido=ant; p.statusPagamento=st; delete p.valorPedidoAnterior; delete p.valorPedidoAtualizadoEm; mudou=true; });
+    if(mudou) salvarPag(pags); return res.json({ok:true,desfeito:true,horas,tipos,so:so||"todos",restaurados:lista.length,itens:lista}); }
+  const itens=[], resumo={zerado:0,reduzido:0,aumentou:0,aumentouFinalizados:0,aumentouAbertos:0,viraramParcial:0}; let mudou=false;
+  Object.entries(pags).forEach(([id,p])=>{ const r=porId[id]; if(!r||r.cancelado||p.statusPagamento==="cancelado"||String(r.data||"")<limite) return; const tb=totalBling(id,r), atual=tb.v, guardado=_round2(Number(p.valorPedido)||0); if(Math.abs(atual-guardado)<=0.009) return;
+    const pg=Number(p.valorPago||0), st=statusDe(pg,atual), cat=catDe(guardado,atual), final=fin(r); resumo[cat]++; if(cat==="aumentou"){ if(final) resumo.aumentouFinalizados++; else resumo.aumentouAbertos++; if(st!=="pago") resumo.viraramParcial++; }
+    if(!tipos.includes(cat)||!passa(r)) return;
+    itens.push({pedidoId:id,numero:r.numero,cliente:r.cliente||"",data:r.data,situacao:nomeSituacao(Number(r.situacaoId)||0),categoria:cat,fonteDoTotal:tb.fonte,guardado,atual,diferenca:_round2(atual-guardado),valorPago:pg,statusAntes:p.statusPagamento,statusDepois:st});
+    if(corrigir){ p.valorPedidoAnterior=guardado; p.valorPedido=atual; p.statusPagamento=st; p.valorPedidoAtualizadoEm=Date.now(); mudou=true; } });
   if(mudou) salvarPag(pags);
-  res.json({ok:true,dias,corrigido:corrigir,encontrados:itens.length,itens:itens.sort((a,b)=>String(b.data).localeCompare(String(a.data)))}); }catch(e){ res.status(500).json({erro:e.message}); } });
+  res.json({ok:true,dias,corrigido:corrigir,tipos,so:so||"todos",resumo,encontrados:itens.length,itens:itens.sort((a,b)=>String(b.data).localeCompare(String(a.data)))}); }catch(e){ res.status(500).json({erro:e.message}); } });
 // DIAGNÓSTICO do TIPO de um pedido (entrega x retirada), pelo número ou código: o que cada fonte diz, o que o Bling diz agora e as últimas trocas (com tempo e erro)
 app.get("/api/diag/tipo-pedido/:ref",requireAdmin,async(req,res)=>{ try{
   const ref=String(req.params.ref||"").replace(/\D/g,""); if(!ref) return res.status(400).json({erro:"informe o número ou o código do pedido"});
