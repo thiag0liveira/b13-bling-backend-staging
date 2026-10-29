@@ -12249,7 +12249,12 @@ async function _fornecedorCacheado(cnpj){ const k=String(cnpj||"").replace(/\D/g
   let v=null; try{ v=await encontrarContatoPorDoc(cnpj); }catch(e){ return null; } _fornCache.set(k,{em:Date.now(),v}); return v; }
 async function _resumoEntradaNota(n,opc){
   const P=lerProdutosBling().porId, it=n.itens||[], itP=n.semNota?it.filter(x=>x.status!=="frete"):it, base=itP.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
-  const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, extras=vNF>0&&base>0?Math.max(0,vNF-base):0;
+  // BONIFICAÇÃO (CFOP x910 / classe "bonificação"): o valor de tabela dela entra na soma dos itens, mas NÃO foi pago (a nota fecha com o total sem ela). Antes o "extras" negativo era zerado e o item
+  // bonificado entrava a preço cheio: o estoque era avaliado por mais do que se pagou. Agora, quando a diferença é explicada pela bonificação, o que foi pago de verdade (total da nota, com frete e impostos)
+  // é dividido entre TODAS as unidades recebidas (pagas e bonificadas), proporcional ao valor de tabela: cada item, inclusive o bonificado, fica com o custo real.
+  const T=n.totais||{}, vNF=Number(T.vNF||n.vNF)||0, brutoExtras=vNF>0&&base>0?vNF-base:0;
+  const bonusIt=itP.filter(x=>/^[1-3567]910$/.test(String(x.cfop||""))||x.classe==="bonificação"), bonusVal=bonusIt.reduce((a,x)=>a+(Number(x.vProd)||0)-(Number(x.vDesc)||0),0);
+  const bonusExplica=!n.semNota&&brutoExtras<-0.01&&bonusVal>0&&(-brutoExtras)<=bonusVal*1.02+1, extras=bonusExplica?brutoExtras:Math.max(0,brutoExtras);
   // FRETE em compra SEM nota fiscal: só entra no custo depois que o financeiro responde como dividir (por valor, por unidades ou não dividir)
   const freteVal=n.semNota?_round2((Number(T.vFrete)||0)+(Number(T.vFreteLinhas)||0)):0, freteModo=freteVal>0?((n.freteRateio&&n.freteRateio.modo)||null):null;
   const k=base>0?(n.semNota?Math.max(0,extras-freteVal):extras)/base:0, totalUn=itP.reduce((a,x)=>a+(x.status==="ok"?(Number(x.qtdUn)||0):0),0);
@@ -12292,7 +12297,7 @@ async function _resumoEntradaNota(n,opc){
   if(n.semNota&&!forn&&n.fornecedorBlingId){ const cb=lerClientesBase().porId[String(n.fornecedorBlingId)]; forn={id:n.fornecedorBlingId,nome:cb?cb.nome:(n.emitente?.nome||"")}; }
   if(n.semNota&&!forn&&n.emitente?.nome) forn=_acharFornecedorPorNome(n.emitente.nome);
   return {id:n.id,chave:n.chave||"",numero:n.numero,serie:n.serie,emissao:n.emissao,emitente:n.emitente,fornecedorBling:forn?{id:forn.id,nome:forn.nome}:null,sugestoesFornecedor:(n.semNota&&!(n.entrada&&n.entrada.em))?_sugerirFornecedores(n):[],
-    totais:{...T,vNF,extras:_round2(extras),rateioPct:+((k+kFrete)*100).toFixed(2)},
+    totais:{...T,vNF,extras:_round2(extras),rateioPct:+((k+kFrete)*100).toFixed(2)},bonificacao:bonusIt.length?{itens:bonusIt.length,valorDeTabela:_round2(bonusVal),aplicada:bonusExplica,aviso:bonusExplica?"":(brutoExtras>=-0.01?"O total da nota inclui o valor da bonificação: confira se ela foi mesmo cobrada. Se não foi, edite o custo do item.":"A diferença entre o total da nota e a soma dos itens não bate com o valor da bonificação: o custo não foi ajustado. Confira o desconto da nota.")}:null,
     frete:n.semNota?{valor:freteVal,campo:_round2(Number(T.vFrete)||0),linhas:it.filter(x=>x.status==="frete").map(x=>({nItem:x.nItem,xProd:x.xProd,valor:_round2(Number(x.vProd)||0)})),modo:freteModo,decidido:!!freteModo,por:(n.freteRateio&&n.freteRateio.por)||"",baseItens:_round2(base),unidades:totalUn}:null,duplicatas:dups,formaNaNota:tp?(_TPAG[tp]||tp):(n.formaTexto||""),aPrazo:n.aPrazo!=null?!!n.aPrazo:((n.duplicatas||[]).length>0||tp==="90"||tp==="15"),semNota:!!n.semNota,
     itens,pendentes:pend,origemDados:n.origemDados||"",entrada:n.entrada||null,financeiro:_finNota(n),anexos:_anexosPublicos(n.id),fotoDanfe:!!n.fotoDanfe,notasJuntas:_grupoDaNota(n.id).filter(x=>x!==String(n.id)).map(_resumoNotaJunta).filter(Boolean),boletosLidos:_boletosDaNota(n.id),pagamentoLido:(n.duplicatas||[]).length>0,vencimentosEditados:_temOv};
 }
