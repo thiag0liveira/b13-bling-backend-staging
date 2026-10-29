@@ -6,6 +6,7 @@
 <title>B13 — Etiquetas de Preço</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
   body{background:#0f0d24;color:#fff;min-height:100vh}
   .top{background:#181542;padding:14px 20px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
@@ -137,6 +138,47 @@
   .vf .vpreco, .vf .vpreco span{ font-family:B13Anton,Impact,"Arial Narrow",sans-serif !important }
   .vf .vtopo, .vf .vun, .vf .vval, .vf .vvant span, .vf .vrod span{ font-family:Arial,sans-serif !important }
 .top{flex-wrap:wrap;row-gap:6px}
+
+  /* ===== Modelo 1 (novo visual, 29/10/2026) =====
+     Etiqueta de gôndola para o porta-etiqueta U transparente de 10 × 3,5 cm.
+     Corte de 100 × 35 mm (linha tracejada clara), arte de 97 × 32 mm com 1,5 mm de folga de corte.
+     A4 com 2 colunas × 8 linhas = 16 por folha, sem espaço entre etiquetas (um corte separa duas).
+     Margem da folha controlada aqui (página nomeada etq1), por isso imprime em escala 100% e sem cabeçalho/rodapé do navegador. */
+  @page etq1{ size:A4; margin:0 }
+  html:has(.folha.etq1), body:has(.folha.etq1), body:has(.folha.etq1) .wrap, .folha.etq1{ page:etq1 }
+  .folha.etq1{ display:flex; flex-direction:column; align-items:center; gap:16px }
+  .e1-pag{ width:210mm; height:297mm; background:#fff; padding:8.5mm 5mm; display:grid; grid-template-columns:repeat(2,100mm); grid-auto-rows:35mm; align-content:start; overflow:hidden; box-shadow:0 0 0 1px #ccc; page:etq1; break-after:page; page-break-after:always }
+  .e1-pag:last-child{ break-after:auto; page-break-after:auto }
+  @media print{ .folha.etq1{ display:block; gap:0 } .e1-pag{ box-shadow:none; margin:0 } }
+  .e1-pag, .e1-pag *{ -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; color-adjust:exact!important }
+  .e1-pag, .e1-pag *{ font-family:"Archivo",Arial,Helvetica,sans-serif }
+  .e1-cel{ width:100mm; height:35mm; padding:1.5mm; outline:.15mm dashed #B9B4D6; outline-offset:-.075mm; display:flex }
+  .e1{ width:97mm; height:32mm; background:#fff; color:#0C0733; border:.35mm solid #0C0733; border-radius:2mm; overflow:hidden; display:flex; flex-direction:column; gap:1.1mm; padding:1.7mm 2mm 1.2mm }
+  .e1-cab{ display:flex; align-items:baseline; justify-content:space-between; gap:2mm; min-width:0; padding:0 .4mm }
+  .e1-nome{ flex:1; min-width:0; font-size:12pt; font-weight:900; font-stretch:68%; line-height:1; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .e1-nome.longo{ font-size:10.5pt }
+  .e1-cat{ flex:none; font-size:5.4pt; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#E00F73; line-height:1 }
+  .e1-cat::before{ content:"◆ " }
+  /* preços lado a lado, mesma largura e mesmo tamanho de número */
+  .e1-precos{ flex:1; display:flex; gap:1.1mm; min-height:0 }
+  .e1-p{ flex:1; min-width:0; border-radius:1.3mm; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1mm }
+  .e1-lbl{ font-size:5.4pt; font-weight:800; letter-spacing:.16em; text-transform:uppercase; line-height:1; white-space:nowrap }
+  .e1-v{ display:flex; align-items:flex-start; line-height:.8; font-variant-numeric:tabular-nums; white-space:nowrap }
+  .e1-rs{ font-size:6.5pt; font-weight:800; margin-top:.5mm; margin-right:.4mm }
+  .e1-int{ font-size:24pt; font-weight:900; font-stretch:88%; letter-spacing:-.02em }
+  .e1-cent{ font-size:11pt; font-weight:900; font-stretch:88%; margin-left:.2mm }
+  .e1-vj{ background:#F2F1F9; color:#0C0733 } .e1-vj .e1-lbl{ color:#4A4570 }
+  .e1-fd{ background:#FDE7F1; color:#E00F73 } .e1-fd .e1-lbl{ color:#0C0733 }
+  .e1-at{ background:#0C0733; color:#fff } .e1-at .e1-lbl{ color:#B7B0E6 }
+  .e1-rod{ display:flex; justify-content:space-between; align-items:center; gap:2mm; font-size:5pt; font-weight:600; color:#4A4570; line-height:1; padding:0 .4mm; font-variant-numeric:tabular-nums }
+  .e1-rod b{ color:#0C0733; font-weight:800 }
+  .e1-selo{ font-weight:900; color:#0C0733; letter-spacing:.04em }
+  .e1-selo i{ font-style:normal; color:#E00F73; letter-spacing:.2em; font-size:4.4pt }
+  /* separador de categoria: cartão do mesmo tamanho, abre cada bloco */
+  .e1-sep{ width:97mm; height:32mm; border-radius:2mm; background:#0C0733; color:#fff; display:flex; flex-direction:column; justify-content:center; gap:1.4mm; padding:0 4mm }
+  .e1-sep b{ font-size:20pt; line-height:1; font-weight:900; font-stretch:75%; text-transform:uppercase; color:#fff }
+  .e1-sep b::before{ content:"◆ "; color:#F5127E }
+  .e1-sep span{ font-size:6.5pt; font-weight:700; color:#B7B0E6; letter-spacing:.08em; text-transform:uppercase }
 </style>
 </head>
 <body>
@@ -442,30 +484,81 @@ function hojeFmt() {
   const d = new Date();
   return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
 }
+// ===== Modelo 1 (novo visual, 29/10/2026) — etiqueta 100 × 35 mm para porta-etiqueta U 10 × 3,5 cm =====
+// true = ordena por categoria e abre cada categoria com um cartão separador (facilita colar por corredor)
+const E1_SEPARAR_CATEGORIAS = true;
+const E1_POR_FOLHA = 16; // 2 colunas × 8 linhas
+function e1HojeCurto() {
+  const d = new Date();
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getFullYear()).slice(2);
+}
+// volume em litros a partir do nome ("750ml", "1L", "2,5L"); kit/bipack/fardo ficam sem cálculo para não informar valor errado
+function e1VolumeLitros(nome) {
+  nome = String(nome || "");
+  if (/\b(bi\s?pack|pack|kit|fardo|c\/\s?\d|cx)\b/i.test(nome)) return null;
+  const m = nome.match(/(\d+(?:[.,]\d+)?)\s*(ml|l)\b/i);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(",", "."));
+  if (!(n > 0)) return null;
+  return m[2].toLowerCase() === "ml" ? n / 1000 : n;
+}
+function e1Preco(v) {
+  if (v == null || isNaN(Number(v))) return `<span class="e1-int">—</span>`;
+  const [i, c] = Number(v).toFixed(2).split(".");
+  return `<span class="e1-rs">R$</span><span class="e1-int">${Number(i).toLocaleString("pt-BR")}</span><span class="e1-cent">,${c}</span>`;
+}
+function e1Etiqueta(it, hoje) {
+  const temF = it.precoFardo != null, temA = it.precoAtacado != null;
+  const cel = (cls, lbl, v) => `<div class="e1-p ${cls}"><span class="e1-lbl">${lbl}</span><span class="e1-v">${e1Preco(v)}</span></div>`;
+  const precos = [cel("e1-vj", "Varejo", it.precoVarejo)];
+  if (temF) precos.push(cel("e1-fd", `Fardo ${esc(it.caixaQtd || "—")}+ un`, it.precoFardo));
+  if (temA) precos.push(cel("e1-at", "Atacado*", it.precoAtacado));
+  const L = e1VolumeLitros(it.nome);
+  const esq = (L && it.precoVarejo > 0)
+    ? `${L >= 1 ? String(L).replace(".", ",") + " L" : Math.round(L * 1000) + " ml"} · <b>R$ ${fmtPreco(it.precoVarejo / L)}</b> o litro`
+    : `<span class="e1-selo">B13 <i>BEBIDAS</i></span>`;
+  const nome = String(it.nome || "");
+  return `<div class="e1">
+    <div class="e1-cab"><span class="e1-nome${nome.length > 30 ? " longo" : ""}">${esc(nome)}</span>${it.categoriaNome ? `<span class="e1-cat">${esc(it.categoriaNome)}</span>` : ""}</div>
+    <div class="e1-precos">${precos.join("")}</div>
+    <div class="e1-rod"><span>${esq}</span>${temA ? "<span>* atacado sujeito à taxa do cartão</span>" : ""}<span>${hoje}</span></div>
+  </div>`;
+}
+function e1Separador(cat, n) {
+  return `<div class="e1-sep"><b>${esc(cat)}</b><span>${n} etiqueta${n > 1 ? "s" : ""} a seguir</span></div>`;
+}
 async function gerarEtiquetas() {
   if (!SELECIONADOS.size) {
     alert("Selecione ao menos um produto.");
     return;
   }
   const folha = document.getElementById("folhaEtiquetas");
-  folha.className = "folha";
+  folha.className = "folha etq1";
   folha.innerHTML = `<div class="muted noprint">Gerando…</div>`;
   try {
     const j = await buscarEtiquetas([...SELECIONADOS]);
-    folha.innerHTML = (j.data || []).map(it => {
-      if (it.erro) return "";
-      const temFardo = it.precoFardo != null;
-      const temAtacado = it.precoAtacado != null;
-      const secoes = [];
-      secoes.push(`<div class="secao preta"><div class="rotulo">VAREJO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoVarejo)}</div></div>`);
-      if (temFardo) secoes.push(`<div class="secao rosa"><div class="rotulo">FARDO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoFardo)}</div></div>`);
-      if (temAtacado) secoes.push(`<div class="secao branca"><div class="rotulo">ATACADO</div><div class="valor"><span class="cifra">R$</span>${fmtPreco(it.precoAtacado)}</div></div>`);
-      return `<div class="etiqueta">
-        <div class="nome">${esc(it.nome)}</div>
-        <div class="secoes">${secoes.join("")}</div>
-        <div class="rodape"><span class="categoria">${esc(it.categoriaNome || "")}</span><span>${hojeFmt()}</span></div>
-      </div>`;
-    }).join("");
+    const hoje = e1HojeCurto();
+    let itens = (j.data || []).filter(it => !it.erro);
+    const celulas = [];
+    if (E1_SEPARAR_CATEGORIAS) {
+      const cat = it => it.categoriaNome || "Sem categoria";
+      itens = itens.slice().sort((a, b) => cat(a).localeCompare(cat(b), "pt-BR") || String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+      let atual = null;
+      itens.forEach(it => {
+        if (cat(it) !== atual) {
+          atual = cat(it);
+          celulas.push(e1Separador(atual, itens.filter(x => cat(x) === atual).length));
+        }
+        celulas.push(e1Etiqueta(it, hoje));
+      });
+    } else {
+      itens.forEach(it => celulas.push(e1Etiqueta(it, hoje)));
+    }
+    const paginas = [];
+    for (let i = 0; i < celulas.length; i += E1_POR_FOLHA) {
+      paginas.push(`<div class="e1-pag">${celulas.slice(i, i + E1_POR_FOLHA).map(c => `<div class="e1-cel">${c}</div>`).join("")}</div>`);
+    }
+    folha.innerHTML = paginas.join("") || `<div class="muted">Nenhuma etiqueta gerada.</div>`;
     document.getElementById("btnImprimir").style.display = "inline-block";
   } catch (e) {
     folha.innerHTML = `<div class="muted">Erro ao gerar etiquetas.</div>`;
